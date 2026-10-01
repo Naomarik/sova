@@ -28,7 +28,8 @@ const { archiveSession, getSessionSummary, onSessionArchived } = await import(".
 const { normalizeEntries, readActiveBranch } = await import("./transcript");
 const { parseProfile, PROFILE_ENTRY } = await import("../shared/profiles");
 const { parseTopicBatch, formatTopicBatch } = await import("../shared/topic-message");
-const { setTopicStore, topicStore, QUEUE_PUSH_DESCRIPTION, pushNote } = await import("./topics");
+const { setTopicStore, topicStore, QUEUE_PUSH_DESCRIPTION, pushNote, namesTopic } = await import("./topics");
+const { setArchived } = await import("./archived-sessions");
 const { TopicStore, TOPIC_PENDING_CAP } = await import("./topic-store");
 const { TopicDelivery, receiverSpecial } = await import("./topic-delivery");
 const { projectOverseerOfPath } = await import("./project-overseer-store");
@@ -139,9 +140,11 @@ async function held(path: string): Promise<Chat> {
   fakeRuns(chat);
   return chat;
 }
-/** The delivery the server runs, bound to these runtimes, with short waits. */
-const delivery = () =>
-  new TopicDelivery(
+/** The delivery the server runs, bound to these runtimes, with short waits; `log` is what its
+    drain observer was told. */
+const delivery = () => {
+  const log: { topic: string; outcome: string }[] = [];
+  const d = new TopicDelivery(
     {
       async summary(path) {
         // The same gate server/index.ts gives startTopicDelivery: same function, same arguments.
@@ -156,9 +159,11 @@ const delivery = () =>
       onIdle: onReceiverIdle,
       onArchived: onSessionArchived,
     },
-    { debounceMs: 40, settleMs: 20, maxWaitMs: 120 },
+    { debounceMs: 40, settleMs: 20, maxWaitMs: 120, onDrain: (topic, outcome) => void log.push({ topic, outcome }) },
   );
-let running: InstanceType<typeof TopicDelivery> | null = null;
+  return Object.assign(d, { log });
+};
+let running: ReturnType<typeof delivery> | null = null;
 let storeDir = 0;
 function freshStore(): void {
   setTopicStore(new TopicStore(join(agentDir, `topics-${storeDir++}`)));
@@ -168,8 +173,24 @@ afterEach(() => {
   running = null;
 });
 
-/** A captain with an open topic, and an ordinary owner session. */
-async function pair() {
+const send = (session: string, text: string) => ({ toolCall: { name: "session_send", arguments: { session, text } } });
+const askText = (name: string) => `Is feat/x ready to merge at its current head? Reply with queue_push, topic "${name}", text one line: READY feat/x <sha>, or NOT READY: <why>.`;
+
+/** `cap` session_sends `text` to the held session at `targetPath` (a real send, as the server runs
+    it), and waits for the turn it starts there to end. */
+async function ask(cap: Chat, capPath: string, targetPath: string, text: string): Promise<void> {
+  const before = userTexts(targetPath).length;
+  const sends = toolResults(capPath, "session_send").length;
+  await turn(cap, capPath, [() => send(idOfPath(targetPath), text)], "ask");
+  const r = toolResults(capPath, "session_send")[sends]!;
+  assert.equal(r.isError, false, r.text);
+  await until(() => userTexts(targetPath).length > before);
+  await (await acquireChat(targetPath, true)).session.waitForIdle();
+}
+
+/** A captain with an open topic, and an ordinary owner session the captain asked on it (so the
+    owner is invited) unless `invite` is false. */
+async function pair(invite = true) {
   freshStore();
   const capPath = makeSession(CAPTAIN);
   const ownPath = makeSession();
@@ -178,6 +199,7 @@ async function pair() {
   await turn(cap, capPath, [() => open("merge")], "start the round");
   const opened = toolResults(capPath, "queue_open")[0]!;
   const name = /"(merge-[a-z0-9]{6})"/.exec(opened.text)![1]!;
+  if (invite) await ask(cap, capPath, ownPath, askText(name));
   return { capPath, ownPath, cap, own, name, cid: idOfPath(capPath), oid: idOfPath(ownPath) };
 }
 
@@ -246,9 +268,119 @@ describe("the tools (§chat.topics/open, §chat.topics/push)", () => {
     while (s.pending(name).length < TOPIC_PENDING_CAP) s.push(name, { sessionId: "elsewhere", title: "x" }, "fill");
     const other = makeSession();
     const oc = await held(other);
+    s.invite(name, idOfPath(other));
     await turn(oc, other, [() => push(name, "past the cap")]);
     assert.match(toolResults(other, "queue_push")[0]!.text, /already holds 200 undelivered notes/);
     assert.equal(s.pending(name)[0]!.text, "n0");
+  });
+});
+
+describe("invitations: only a session its receiver asked may push", () => {
+  const auditLines = () => readFileSync(join(topicStore().dir, "audit.jsonl"), "utf8").trim().split("\n").map((l) => JSON.parse(l));
+
+  test("an uninvited sender with the real name gets exactly the unknown name's sentence; nothing is kept; the audit says why", async () => {
+    const { name, ownPath, own } = await pair();
+    const yPath = makeSession();
+    const y = await held(yPath);
+    await turn(y, yPath, [() => push(name, "READY feat/x 0123456"), () => push(name, "   "), () => push("merge-zzzzzz", "guess")]);
+    const r = toolResults(yPath, "queue_push");
+    // The same sentence as a name that doesn't exist, and before any other check (a blank text
+    // can't tell the two apart either).
+    assert.deepEqual(r.map((x) => x.text), [`No open topic "${name}".`, `No open topic "${name}".`, 'No open topic "merge-zzzzzz".']);
+    assert.equal(topicStore().pending(name).length, 0, "nothing kept");
+    const refused = auditLines().filter((l) => l.tool === "queue_push" && l.sessionId === idOfPath(yPath));
+    assert.deepEqual(refused.map((l) => l.reason), ["not-invited", "not-invited", "not-open"]);
+    // The session the captain asked is invited, and pushes.
+    await turn(own, ownPath, [() => push(name, "READY feat/x 0123456")]);
+    assert.equal(toolResults(ownPath, "queue_push")[0]!.text, `Queued on "${name}".`);
+  });
+
+  test("only an accepted session_send naming the topic as a whole word invites; again changes nothing; it outlives a reload", async () => {
+    const { cap, capPath, name, oid } = await pair();
+    const zPath = makeSession();
+    const z = await held(zPath);
+    const zid = idOfPath(zPath);
+    // Inside a longer name, or as a prefix of one: not this topic.
+    await ask(cap, capPath, zPath, `topics ${name}x, x${name}, ${name}-2 and ${name.slice(0, -1)}`);
+    assert.equal(topicStore().invited(name, zid), false);
+    await turn(z, zPath, [() => push(name, "hi")]);
+    assert.equal(toolResults(zPath, "queue_push")[0]!.text, `No open topic "${name}".`);
+    // A send the target's side refuses (its model is turned off) invites no one, even though the
+    // text names the topic.
+    calls.set(idOfPath(capPath), [
+      () => {
+        writeModelPolicy({ ...EMPTY_POLICY, disabledProviders: ["stub"] });
+        return send(zid, askText(name));
+      },
+      () => {
+        writeModelPolicy(EMPTY_POLICY);
+        return undefined;
+      },
+    ]);
+    try {
+      await new Promise<void>((done) => {
+        const off = cap.session.subscribe((e) => {
+          if (e.type === "agent_settled") (off(), done());
+        });
+        cap.handle(sink().client, { type: "prompt", text: "ask z" });
+      });
+    } finally {
+      writeModelPolicy(EMPTY_POLICY);
+    }
+    const refusedSend = toolResults(capPath, "session_send").at(-1)!;
+    assert.equal(refusedSend.isError, true, refusedSend.text);
+    assert.equal(topicStore().invited(name, zid), false, "a refused send invites no one");
+    // Accepted: invited. Asked again: still one invitation, one audit line.
+    await ask(cap, capPath, zPath, askText(name));
+    await ask(cap, capPath, zPath, `Again: answer on ${name}.`);
+    assert.deepEqual(topicStore().topic(name)!.invited, [oid, zid]);
+    assert.equal(auditLines().filter((l) => l.outcome === "invited" && l.target === zid).length, 1);
+    assert.deepEqual(auditLines().find((l) => l.outcome === "invited" && l.target === zid)!.tool, "session_send");
+    // Kept with the topic: a fresh store on the same directory (a restart) still has it.
+    setTopicStore(new TopicStore(topicStore().dir));
+    assert.equal(topicStore().invited(name, zid), true);
+    await turn(z, zPath, [() => push(name, "READY feat/x 0123456")]);
+    assert.equal(toolResults(zPath, "queue_push").at(-1)!.text, `Queued on "${name}".`);
+  });
+
+  test("namesTopic: a whole word only", () => {
+    const n = "merge-k7m4qz";
+    for (const [t, want] of [
+      [`topic "${n}"`, true], [n, true], [`${n}.`, true], [`(${n})`, true], [`${n}\n`, true],
+      [`${n}x`, false], [`x${n}`, false], [`${n}-2`, false], [`a-${n}`, false], [`MERGE-K7M4QZ`, false], ["", false],
+    ] as const)
+      assert.equal(namesTopic(t, n), want, t);
+  });
+});
+
+describe("a receiver gone before the push closes its topic", () => {
+  test("its file deleted: the push is refused as no open topic, the topic closes, nothing is kept", async () => {
+    const { capPath, ownPath, own, name, cid } = await pair();
+    assert.ok(await disposeHeldChat(capPath, "test"));
+    rmSync(capPath);
+    await turn(own, ownPath, [() => push(name, "READY feat/x 0123456")]);
+    assert.equal(toolResults(ownPath, "queue_push")[0]!.text, `No open topic "${name}".`);
+    assert.equal(topicStore().topic(name), null, "closed");
+    const lines = readFileSync(join(topicStore().dir, "audit.jsonl"), "utf8").trim().split("\n").map((l) => JSON.parse(l));
+    assert.ok(lines.some((l) => l.tool === "queue_open" && l.outcome === "closed" && l.topic === name && l.sessionId === cid));
+    assert.equal(lines.filter((l) => l.tool === "queue_push").at(-1)!.reason, "receiver-gone");
+  });
+
+  test("archived while the server was down: found at the push after a store reload", async () => {
+    const { capPath, ownPath, own, name, cid } = await pair();
+    assert.ok(await disposeHeldChat(capPath, "test"));
+    // The archive set changes with no hook running (as across a restart), and the store is read again.
+    setArchived(cid, true);
+    try {
+      setTopicStore(new TopicStore(topicStore().dir));
+      assert.ok(topicStore().topic(name), "still open on disk");
+      await turn(own, ownPath, [() => push(name, "READY feat/x 0123456")]);
+      assert.equal(toolResults(ownPath, "queue_push")[0]!.text, `No open topic "${name}".`);
+      assert.equal(topicStore().topic(name), null);
+      assert.equal(new TopicStore(topicStore().dir).topic(name), null, "closed on disk too");
+    } finally {
+      setArchived(cid, false);
+    }
   });
 });
 
@@ -424,8 +556,9 @@ describe("delivery (§chat.topics/delivery, §chat.topics/row)", () => {
     calls.set(cid, [() => ({ toolCall: { name: "session_send", arguments: { session: oid, text: "thanks, merging" } } }), () => undefined]);
     calls.set(oid, [() => undefined]);
     await turn(own, ownPath, [() => push(name, "READY feat/x 0123456")]);
-    await until(() => toolResults(capPath, "session_send").length === 1, 6000);
-    assert.equal(toolResults(capPath, "session_send")[0]!.isError, false, toolResults(capPath, "session_send")[0]!.text);
+    // The pair's own ask is the first send (an attended turn); this one is the second.
+    await until(() => toolResults(capPath, "session_send").length === 2, 6000);
+    assert.equal(toolResults(capPath, "session_send")[1]!.isError, false, toolResults(capPath, "session_send")[1]!.text);
     assert.equal(ownDay(), before + 1);
   });
 
@@ -468,6 +601,24 @@ describe("delivery (§chat.topics/delivery, §chat.topics/row)", () => {
     await sleep(50);
     assert.equal(topicStore().pending(name).length, 1);
     assert.equal(await running.drain(name), "started", "not stuck in flight: tried again");
+  });
+  test("a batch whose prompt resolves without its message entering (an input handler took it) isn't stuck in flight", async () => {
+    const { capPath, cap, name } = await pair();
+    const real = cap.session.prompt.bind(cap.session);
+    const marks = () => (cap as unknown as { topicMarks: unknown[] }).topicMarks.length;
+    topicStore().push(name, { sessionId: "x", title: "x" }, "READY feat/x 0123456");
+    running = delivery();
+    // What the SDK does when an input handler returns "handled": resolves, no events, no run.
+    (cap.session as unknown as { prompt: () => Promise<void> }).prompt = async () => {};
+    assert.equal(await running.drain(name), "started");
+    await sleep(20);
+    assert.equal(marks(), 0, "the mark is dropped");
+    assert.equal(topicStore().pending(name).length, 1, "stays undelivered");
+    assert.equal(batchesIn(capPath).length, 0);
+    (cap.session as unknown as { prompt: typeof real }).prompt = real;
+    assert.equal(await running.drain(name), "started", "not stuck in flight: tried again");
+    await until(() => batchesIn(capPath).length === 1);
+    await until(() => topicStore().pending(name).length === 0);
   });
 });
 

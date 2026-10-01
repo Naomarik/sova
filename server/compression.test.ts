@@ -43,6 +43,9 @@ writeFileSync(pngPath, Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d,
 
 const { app, server } = await import("./index");
 const { isDirectLocal } = await import("./compression");
+const { AUTH_COOKIE, sovaToken } = await import("./auth");
+// The real-socket requests below pass the main listener's gate as a browser would: with the cookie.
+const AUTH = { Cookie: `${AUTH_COOKIE}=${sovaToken()}` };
 if (!server.listening) await new Promise((r) => server.once("listening", r));
 const port = (server.address() as AddressInfo).port;
 
@@ -57,7 +60,7 @@ const transcriptUrl = `/api/transcript?path=${encodeURIComponent(sessionPath)}`;
 /** Open /ws/watch on the session and read its snapshot, with the handshake's extensions and the
     bytes that crossed the socket for it. */
 async function watchSnapshot(perMessageDeflate: boolean, headers: Record<string, string> = {}) {
-  const ws = new WebSocket(`ws://127.0.0.1:${port}/ws/watch?path=${encodeURIComponent(sessionPath)}`, { perMessageDeflate, headers });
+  const ws = new WebSocket(`ws://127.0.0.1:${port}/ws/watch?path=${encodeURIComponent(sessionPath)}`, { perMessageDeflate, headers: { ...AUTH, ...headers } });
   let extensions = "";
   ws.once("upgrade", (res) => void (extensions = String(res.headers["sec-websocket-extensions"] ?? "")));
   const [raw] = await new Promise<[string]>((resolve, reject) => {
@@ -133,10 +136,10 @@ describe("REST gzip", () => {
   });
 
   test("over a real socket: gzip through a proxy, identity for a direct client on this machine", async () => {
-    const proxied = await fetch(`http://127.0.0.1:${port}${transcriptUrl}`, { headers: { "Accept-Encoding": "gzip", ...TAILSCALE } });
+    const proxied = await fetch(`http://127.0.0.1:${port}${transcriptUrl}`, { headers: { "Accept-Encoding": "gzip", ...TAILSCALE, ...AUTH } });
     assert.equal(proxied.headers.get("content-encoding"), "gzip");
     assert.equal(((await proxied.json()) as { items: TranscriptItem[] }).items.length, 40); // fetch decodes it
-    const direct = await fetch(`http://127.0.0.1:${port}${transcriptUrl}`, { headers: { "Accept-Encoding": "gzip" } });
+    const direct = await fetch(`http://127.0.0.1:${port}${transcriptUrl}`, { headers: { "Accept-Encoding": "gzip", ...AUTH } });
     assert.equal(direct.headers.get("content-encoding"), null);
     assert.equal(((await direct.json()) as { items: TranscriptItem[] }).items.length, 40);
   });

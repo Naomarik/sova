@@ -3,6 +3,7 @@ import type { IncomingMessage, Server } from "node:http";
 import type { Duplex } from "node:stream";
 import { type WebSocket, WebSocketServer } from "ws";
 import type { ChatClientMessage, ChatServerMessage, SessionFeedMessage, WatchServerMessage } from "../shared/protocol";
+import { refuseUpgrade } from "./auth";
 import { isDirectLocal } from "./compression";
 import { acquireChat, BusyError, ConfigError, type ChatClient } from "./chat-manager";
 import { normalizeClaudeText, resolveClaudeSession } from "./claude-transcript";
@@ -209,6 +210,10 @@ export function upgradeSovaSocket(req: IncomingMessage, socket: Duplex, head: Bu
 
 export function attachWebSockets(server: Server): void {
   server.on("upgrade", (req: IncomingMessage, socket: Duplex, head: Buffer) => {
+    // The main listener's gate (server/auth.ts upgradeAllowed): the token, and the Host and Origin
+    // rules, before any socket is dispatched. Not in upgradeSovaSocket: the peer listener calls
+    // that directly, and a peer is answered by its Tailscale identity.
+    if (refuseUpgrade(req, socket)) return;
     const url = new URL(req.url ?? "/", "http://localhost");
     // An extension's own socket, forwarded to its backend (server/extensions.ts).
     const ext = extensionSocketRoute(url.pathname);

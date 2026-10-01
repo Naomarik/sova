@@ -1,7 +1,7 @@
 // Run through tests/run.mjs (pi imports resolve from the installed package).
 import assert from "node:assert/strict";
 import test from "node:test";
-import link, { FLAG, SECTION } from "./index.ts";
+import link, { FLAG, SECTION, TOKEN_FLAG } from "./index.ts";
 import { NOT_HOSTED, NOT_LINKED } from "./client.ts";
 
 const ORIGIN = "http://127.0.0.1:4810";
@@ -67,6 +67,21 @@ test("the same seven tools, with the same schema, with or without the flag", () 
 	const tui = rig(undefined);
 	assert.deepEqual([...hosted.tools.keys()], TOOLS);
 	assert.deepEqual(shape(hosted.tools), shape(tui.tools));
+});
+
+test("the sova-link-token flag is sent back to the host on every call", async () => {
+	const headers: Headers[] = [];
+	const fetchImpl = (async (_u: string, init: RequestInit) => {
+		headers.push(new Headers(init.headers));
+		return new Response(JSON.stringify({ links: [] }));
+	}) as unknown as typeof fetch;
+	const tools = new Map<string, any>();
+	const flags: Record<string, string> = { [FLAG]: ORIGIN, [TOKEN_FLAG]: "tok-abc" };
+	const pi = { registerFlag: () => {}, getFlag: (n: string) => flags[n], registerTool: (t: any) => tools.set(t.name, t), on: () => {} };
+	link(pi as any, { fetch: fetchImpl });
+	await tools.get("link_members").execute("c1", {}, undefined, undefined, { sessionManager: { getSessionId: () => "s-me" } });
+	assert.equal(headers.length, 1);
+	assert.equal(headers[0]!.get("x-sova-token"), "tok-abc");
 });
 
 test("without the flag (a TUI, a worker) everything is inert", async () => {

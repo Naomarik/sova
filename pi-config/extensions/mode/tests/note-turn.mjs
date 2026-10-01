@@ -7,7 +7,7 @@
 // AgentSession with a scripted provider and the real mode extension through a toggle on, a toggle off
 // in a run a worker's report starts, a reopen and a compaction. No model requests.
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync, renameSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 import { jiti } from "../../subagents/tests/runtime.mjs";
@@ -67,7 +67,7 @@ async function open(sessionManager) {
 					baseUrl: "http://localhost",
 					apiKey: "unused",
 					api: "openai-completions",
-					models: [{ id: "scripted-1", name: "Scripted", reasoning: false, input: ["text"], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 100000, maxTokens: 1000 }],
+					models: ["scripted-1", "writer-a", "writer-b"].map(id => ({ id, name: id, reasoning: false, input: ["text"], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 100000, maxTokens: 1000 })),
 					streamSimple,
 				});
 				// A compaction without a summarizer request, keeping from the entry the scenario names.
@@ -182,6 +182,42 @@ try {
 	} finally {
 		session.dispose();
 	}
+	// Writer routes for spec introduced only by a note must reach actual requests, once per change.
+	session = await open(SessionManager.inMemory(cwd));
+	const setWriter = (id) => {
+		const file = path.join(agentDir, "mode-spec.json");
+		writeFileSync(`${file}.tmp`, JSON.stringify({ version: 1, writer: id ? { primary: { backend: "pi", model: `scripted/${id}`, effort: "off" }, fallback: null } : null }));
+		renameSync(`${file}.tmp`, file);
+	};
+	try {
+		await session.prompt("writer baseline");
+		const withoutSpec = requests.at(-1).prompt;
+		assert.doesNotMatch(withoutSpec, /# Minor mode: spec/);
+		setWriter("writer-a");
+		await mode(session, "spec on");
+		await session.prompt("enable spec by note");
+		assert.equal(requests.at(-1).prompt, withoutSpec, "spec still absent from head");
+		assert.match(requests.at(-1).users.at(-1), /scripted\/writer-a/);
+		setWriter("writer-b");
+		const beforeNotes = noteEntries(session).length;
+		await session.sendCustomMessage({ customType: "subagent-complete", content: "writer wake", display: true }, { triggerTurn: true });
+		await session.waitForIdle();
+		const request = requests.at(-1), latest = request.users.at(-1);
+		assert.equal(request.prompt, withoutSpec);
+		assert.match(latest, /routing now applies instead of any earlier writer routing/);
+		assert.match(latest, /scripted\/writer-b/);
+		assert.doesNotMatch(latest, /scripted\/writer-a/);
+		assert.equal(request.users.join("\n").split("scripted/writer-b").length - 1, 1, "new route reaches actual request exactly once");
+		assert.equal(noteEntries(session).length, beforeNotes + 1, "one stored route-change note");
+		await session.prompt("unchanged writer");
+		assert.equal(noteEntries(session).length, beforeNotes + 1, "no duplicate note next prompt");
+		setWriter(null);
+		await session.sendCustomMessage({ customType: "subagent-complete", content: "cleared writer wake", display: true }, { triggerTurn: true });
+		await session.waitForIdle();
+		assert.match(requests.at(-1).users.at(-1), /no worker is configured; write draft claims and evidence yourself/);
+		assert.doesNotMatch(requests.at(-1).users.at(-1), /scripted\/writer-[ab]/);
+		assert.equal(noteEntries(session).length, beforeNotes + 2, "clearing writer delivered once");
+	} finally { session.dispose(); }
 	console.log("note-turn: ok");
 } finally {
 	rmSync(agentDir, { recursive: true, force: true });

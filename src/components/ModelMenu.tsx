@@ -1,7 +1,8 @@
-import { createEffect, createMemo, createSignal, For, on, onMount, Show, type Accessor, type JSX } from "solid-js";
+import { createEffect, createMemo, createSignal, For, on, onMount, Show, type Accessor } from "solid-js";
 import type { ModelInfo } from "../../shared/protocol";
 import { loadModelPolicy, usableModels } from "../lib/model-policy";
 import { loadModels, modelList, toggleFavorite } from "../lib/models";
+import { initialActive, modelCount, modelKey, onlyProvider, pickerGroups, providerKey, type PickerItem, type PickerStep } from "../lib/model-picker";
 import { useHostScope } from "../lib/host-scope";
 import { usePaneId } from "../lib/pane-scope";
 import { announce } from "../lib/ui-state";
@@ -18,20 +19,24 @@ export interface ModelControl {
   choose(ref: string): void;
 }
 
-const baseOptionId = (ref: string) => `mo-${ref.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
+const domSafe = (s: string) => s.replace(/[^a-zA-Z0-9_-]/g, "-");
+const baseOptionId = (item: PickerItem) => (item.kind === "model" ? `mo-${domSafe(item.model.ref)}` : `mp-${domSafe(item.provider)}`);
 const PAGE = 8;
 
 /**
  * The model picker: a combobox input over a listbox, shown as the composer
- * flyout's second panel. Mounting focuses the listbox, never the input, so a phone doesn't
- * raise its keyboard; typing there moves into the input. The keyboard position is
- * aria-activedescendant. The list comes from the shared cache (`src/lib/models.ts`) and refreshes
- * on every mount, so a stale list is still shown while the new one lands.
+ * flyout's picker panel, in two steps — Providers (favorites, then one row per provider), then one
+ * provider's models; typing on Providers searches every model. Both steps share the input and the
+ * listbox, so a step change never drops focus out of the flyout. Mounting or changing step focuses
+ * the listbox, never the input, so a phone doesn't raise its keyboard; typing there moves into the
+ * input. The keyboard position is aria-activedescendant. The list comes from the shared cache
+ * (`src/lib/models.ts`) and refreshes on every mount, so a stale list is still shown while the new
+ * one lands.
  */
 export function ModelPicker(props: {
   control: ModelControl;
-  /** Rendered above the search field: the flyout's way back to its root panel. */
-  head?: JSX.Element;
+  /** Back from the first step: the flyout's way back to its model panel. */
+  onBack(): void;
   /** After a choice — including re-choosing the current model — so the shell can close. */
   onChosen(): void;
   /** Take focus on mount (the listbox). False when the picker isn't the panel in front. */
@@ -45,9 +50,11 @@ export function ModelPicker(props: {
   /** The host whose models these are: a peer session's own (lib/host-scope.ts). */
   const host = useHostScope();
   const models = () => modelList(host());
-  const optionId = (ref: string) => paneId(baseOptionId(ref));
+  const optionId = (item: PickerItem) => paneId(baseOptionId(item));
 
   const [query, setQuery] = createSignal("");
+  const [step, setStep] = createSignal<PickerStep>({ kind: "providers" });
+  /** The active row's key (lib/model-picker.ts: "m:<ref>" or "p:<provider>"). */
   const [active, setActive] = createSignal<string | null>(null);
   const [loading, setLoading] = createSignal(false);
   const [showSkeleton, setShowSkeleton] = createSignal(false);
@@ -73,44 +80,76 @@ export function ModelPicker(props: {
     }
   };
 
-  /** Every query token must appear in provider/id, case-insensitively. */
-  const matches = createMemo(() => {
-    const tokens = query().toLowerCase().split(/\s+/).filter(Boolean);
-    return usableModels(models() ?? [], host()).filter((m) => tokens.every((t) => m.ref.toLowerCase().includes(t)));
+  const usable = createMemo(() => usableModels(models() ?? [], host()));
+  /** With exactly one provider to choose from, there is no Providers step. */
+  const only = createMemo(() => onlyProvider(usable()));
+  /** The step on screen: Providers, unless there's only one provider to open. */
+  const view = createMemo<PickerStep>(() => {
+    const s = step();
+    const one = only();
+    return s.kind === "providers" && one ? { kind: "provider", provider: one } : s;
   });
-  const favorites = createMemo(() => matches().filter((m) => m.favorite).sort((a, b) => a.ref.localeCompare(b.ref)));
-  const others = createMemo(() =>
-    matches()
-      .filter((m) => !m.favorite)
-      .sort((a, b) => a.provider.localeCompare(b.provider) || a.id.localeCompare(b.id)),
-  );
-  /** Keyboard order: favorites, then the rest. */
-  const flat = createMemo(() => [...favorites(), ...others()]);
+  const viewProvider = () => {
+    const v = view();
+    return v.kind === "provider" ? v.provider : null;
+  };
+  const groups = createMemo(() => pickerGroups(usable(), view(), query(), props.control.model()));
+  /** Keyboard order: the rows as rendered. */
+  const flat = createMemo(() => groups().flatMap((g) => g.items));
+  const activeItem = () => flat().find((i) => i.key === active());
   const blocked = () => props.control.blocked();
 
   const scrollActive = () =>
     queueMicrotask(() => {
-      const ref = active();
-      if (ref) document.getElementById(optionId(ref))?.scrollIntoView({ block: "nearest" });
+      const item = activeItem();
+      if (item) document.getElementById(optionId(item))?.scrollIntoView({ block: "nearest" });
     });
-  // The active option resets to the first match whenever the query changes.
-  createEffect(on(query, () => setActive(flat()[0]?.ref ?? null), { defer: true }));
   createEffect(on(active, scrollActive));
 
+  const startActive = () => initialActive(groups(), view(), props.control.model());
+
   onMount(() => {
-    setActive(props.control.model() ?? flat()[0]?.ref ?? null);
+    setActive(startActive());
     if (props.autoFocus) listbox.focus({ preventScroll: true }); // not the input: that would raise a phone's keyboard
     void load().then(() => {
-      if (!active()) setActive(props.control.model() ?? flat()[0]?.ref ?? null);
+      // The list (or the one-provider skip) may have changed under the first position.
+      if (!activeItem()) setActive(startActive());
       scrollActive();
     });
   });
+
+  /** The active option resets to the first match whenever the query changes. */
+  const changeQuery = (q: string) => {
+    setQuery(q);
+    listbox.scrollTop = 0; // a new list starts at its top, its first group label included
+    setActive(flat()[0]?.key ?? null);
+    scrollActive();
+  };
+
+  /** Changes step: the query clears, the listbox takes focus, and `to` (else the step's start) is active. */
+  const goTo = (next: PickerStep, to?: string) => {
+    setQuery("");
+    setStep(next);
+    listbox.scrollTop = 0;
+    setActive(to ?? startActive());
+    scrollActive();
+    listbox.focus({ preventScroll: true });
+  };
+  const openProvider = (provider: string) => goTo({ kind: "provider", provider });
+  /** One provider's step returns to Providers on the provider it came from; otherwise back is the flyout's. */
+  const back = () => {
+    const s = step();
+    if (s.kind === "provider" && !only()) goTo({ kind: "providers" }, providerKey(s.provider));
+    else props.onBack();
+  };
 
   const choose = (ref: string) => {
     if (blocked()) return;
     if (ref !== props.control.model()) props.control.choose(ref);
     props.onChosen(); // choosing the current model just closes, per the model menu spec
   };
+  /** Enter or a click: a model is chosen, a provider is opened. */
+  const activate = (item: PickerItem) => (item.kind === "model" ? choose(item.model.ref) : openProvider(item.provider));
 
   /**
    * Star or unstar a row without choosing it. The row moves between groups at once (the shared
@@ -121,13 +160,13 @@ export function ModelPicker(props: {
     const favorite = !m.favorite;
     setStarError(null);
     holdHover = true;
-    setActive(m.ref);
+    setActive(modelKey(m.ref));
     scrollActive();
     toggleFavorite(m.ref, favorite, undefined, host()).then(
       () => announce(favorite ? `Added ${m.id} to favorites.` : `Removed ${m.id} from favorites.`),
       (error: unknown) => {
         setStarError({ id: m.id, favorite, message: error instanceof Error ? error.message : String(error) });
-        if (active() === m.ref) scrollActive();
+        if (active() === modelKey(m.ref)) scrollActive();
       },
     );
   };
@@ -140,64 +179,70 @@ export function ModelPicker(props: {
    */
   let holdHover = false;
   let lastPointer: { x: number; y: number } | null = null;
-  const hover = (ref: string) => {
-    if (!holdHover) setActive(ref);
+  const hover = (key: string) => {
+    if (!holdHover) setActive(key);
   };
   const onPointerMove = (e: MouseEvent) => {
     const still = lastPointer?.x === e.clientX && lastPointer.y === e.clientY;
     lastPointer = { x: e.clientX, y: e.clientY };
     if (!holdHover || still) return;
     holdHover = false;
-    const ref = (e.target as Element).closest<HTMLElement>(".model-row")?.dataset.ref;
-    if (ref) setActive(ref);
+    const key = (e.target as Element).closest<HTMLElement>(".model-row")?.dataset.key;
+    if (key) setActive(key);
   };
 
   const move = (delta: number) => {
     const list = flat();
     if (list.length === 0) return;
-    const i = list.findIndex((m) => m.ref === active());
+    const i = list.findIndex((x) => x.key === active());
     const next = i < 0 ? (delta > 0 ? 0 : list.length - 1) : Math.abs(delta) === 1 ? (i + delta + list.length) % list.length : Math.min(list.length - 1, Math.max(0, i + delta));
-    setActive(list[next]!.ref);
+    setActive(list[next]!.key);
   };
 
-  /** ↑ ↓ PageUp PageDown, Enter and Ctrl+F, from the input or the listbox. */
-  const navKey = (e: KeyboardEvent): boolean => {
+  /** ↑ ↓ PageUp PageDown, Enter and Ctrl+F from the input or the listbox; ← → there too, but in the input only with no query. */
+  const navKey = (e: KeyboardEvent, inInput: boolean): boolean => {
     // Ctrl+F stars the active row, as in the TUI palette. Ctrl only: ⌘F stays the browser's find.
     if (e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "f") {
       e.preventDefault();
-      const m = flat().find((x) => x.ref === active());
-      if (m) star(m);
+      const item = activeItem();
+      if (item?.kind === "model") star(item.model);
       return true;
     }
+    const arrows = !inInput || !query();
     const keys: Record<string, () => void> = {
       ArrowDown: () => move(1),
       ArrowUp: () => move(-1),
       PageDown: () => move(PAGE),
       PageUp: () => move(-PAGE),
       Enter: () => {
-        const ref = active();
-        if (ref) choose(ref);
+        const item = activeItem();
+        if (item) activate(item);
       },
     };
+    if (arrows) {
+      keys.ArrowLeft = back;
+      const item = activeItem();
+      if (item?.kind === "provider") keys.ArrowRight = () => openProvider(item.provider);
+    }
     const act = keys[e.key];
-    if (!act) return false;
+    if (!act || e.altKey || e.metaKey) return false;
     e.preventDefault();
     act();
     return true;
   };
   /** On the listbox: Home/End too, and typing goes to the input (the user chose to type). */
   const onListKey = (e: KeyboardEvent) => {
-    if (navKey(e)) return;
+    if (navKey(e, false)) return;
     const list = flat();
     if ((e.key === "Home" || e.key === "End") && list.length) {
       e.preventDefault();
-      setActive(list[e.key === "Home" ? 0 : list.length - 1]!.ref);
+      setActive(list[e.key === "Home" ? 0 : list.length - 1]!.key);
       return;
     }
     const typed = e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey;
     if (!typed && !(e.key === "Backspace" && query())) return;
     e.preventDefault();
-    setQuery((q) => (typed ? q + e.key : q.slice(0, -1)));
+    changeQuery(typed ? query() + e.key : query().slice(0, -1));
     search.focus();
     const end = search.value.length;
     search.setSelectionRange(end, end);
@@ -206,41 +251,43 @@ export function ModelPicker(props: {
   // The star is the option's sibling, not its child: an option's content is presentational, so a
   // button inside it would be unreachable. It's out of the tab order (focus stays in the input or
   // listbox, and Tab closes the menu); Ctrl+F is its keyboard path.
-  const Option = (p: { m: ModelInfo }) => (
-    <div class="model-row" role="none" data-ref={p.m.ref}>
+  const ModelRow = (p: { item: Extract<PickerItem, { kind: "model" }> }) => (
+    <div class="model-row" role="none" data-key={p.item.key}>
       <div
         class="model-option"
         role="option"
-        id={optionId(p.m.ref)}
-        aria-selected={p.m.ref === props.control.model() ? "true" : "false"}
+        id={optionId(p.item)}
+        aria-selected={p.item.model.ref === props.control.model() ? "true" : "false"}
         aria-disabled={blocked() ? "true" : undefined}
-        data-active={active() === p.m.ref ? "" : undefined}
-        onMouseEnter={() => hover(p.m.ref)}
+        data-active={active() === p.item.key ? "" : undefined}
+        onMouseEnter={() => hover(p.item.key)}
         onMouseDown={(e) => e.preventDefault() /* keep focus where it is (input or listbox) */}
-        onClick={() => choose(p.m.ref)}
+        onClick={() => choose(p.item.model.ref)}
       >
         <Icon name="check" small class="model-option-check" />
-        <span class="model-option-id">{p.m.id}</span>
+        <span class="model-option-id">{p.item.model.id}</span>
         {/* Metadata, not status: only for models that take images, and never when input is unknown. */}
-        <Show when={p.m.input?.includes("image")}>
+        <Show when={p.item.model.input?.includes("image")}>
           <span class="model-option-vision" title="Accepts images">
             vision
           </span>
         </Show>
-        <span class="model-option-provider">{p.m.provider}</span>
+        <Show when={p.item.caption}>
+          <span class="model-option-provider">{p.item.model.provider}</span>
+        </Show>
       </div>
       <button
         type="button"
         class="button button-icon button-ghost model-option-star"
         tabindex="-1"
-        aria-pressed={p.m.favorite ? "true" : "false"}
-        aria-label={`Favorite ${p.m.ref}`}
-        title={`${p.m.favorite ? "Remove from" : "Add to"} favorites (Ctrl+F)`}
-        onMouseEnter={() => hover(p.m.ref)}
+        aria-pressed={p.item.model.favorite ? "true" : "false"}
+        aria-label={`Favorite ${p.item.model.ref}`}
+        title={`${p.item.model.favorite ? "Remove from" : "Add to"} favorites (Ctrl+F)`}
+        onMouseEnter={() => hover(p.item.key)}
         onMouseDown={(e) => e.preventDefault() /* same: never take focus from the menu */}
         onClick={(e) => {
           lastPointer = { x: e.clientX, y: e.clientY };
-          star(p.m);
+          star(p.item.model);
         }}
       >
         <Icon name="star" small />
@@ -248,9 +295,42 @@ export function ModelPicker(props: {
     </div>
   );
 
+  // A provider row opens its step rather than choosing: the chevron says so. It stays enabled
+  // while changing is blocked, so the list is still browsable.
+  const ProviderRow = (p: { item: Extract<PickerItem, { kind: "provider" }> }) => (
+    <div class="model-row" role="none" data-key={p.item.key}>
+      <div
+        class="model-option model-option-nav"
+        role="option"
+        id={optionId(p.item)}
+        aria-selected={p.item.current ? "true" : "false"}
+        data-active={active() === p.item.key ? "" : undefined}
+        onMouseEnter={() => hover(p.item.key)}
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={() => openProvider(p.item.provider)}
+      >
+        <Icon name="check" small class="model-option-check" />
+        <span class="model-option-id">{p.item.provider}</span>
+        <span class="model-option-count">{modelCount(p.item.count)}</span>
+        <Icon name="chevron-right" small class="model-option-chevron" />
+      </div>
+    </div>
+  );
+
+  const Row = (p: { item: PickerItem }) => {
+    const item = p.item;
+    return item.kind === "model" ? <ModelRow item={item} /> : <ProviderRow item={item} />;
+  };
+
   return (
     <>
-      {props.head}
+      <div class="composer-flyout-head">
+        <button type="button" class="button button-sm button-ghost composer-flyout-back" onClick={back}>
+          <Icon name="chevron-left" small />
+          Back
+        </button>
+        <Show when={viewProvider()}>{(p) => <span class="model-menu-head-title">{p()}</span>}</Show>
+      </div>
       <div class="model-menu-search">
         <div class="search">
           <Icon name="search" />
@@ -259,17 +339,17 @@ export function ModelPicker(props: {
             class="input"
             type="text"
             role="combobox"
-            aria-label="Search models"
-            placeholder="Search models"
+            aria-label={viewProvider() ? `Search ${viewProvider()}` : "Search models"}
+            placeholder={viewProvider() ? `Search ${viewProvider()}` : "Search models"}
             autocomplete="off"
             spellcheck={false}
             aria-expanded="true"
             aria-controls={paneId("model-listbox")}
             aria-autocomplete="list"
-            aria-activedescendant={active() ? optionId(active()!) : undefined}
+            aria-activedescendant={activeItem() ? optionId(activeItem()!) : undefined}
             value={query()}
-            onInput={(e) => setQuery(e.currentTarget.value)}
-            onKeyDown={navKey}
+            onInput={(e) => changeQuery(e.currentTarget.value)}
+            onKeyDown={(e) => navKey(e, true)}
           />
         </div>
       </div>
@@ -311,9 +391,9 @@ export function ModelPicker(props: {
         class="model-menu-list"
         id={paneId("model-listbox")}
         role="listbox"
-        aria-label="Models"
+        aria-label={viewProvider() ? `${viewProvider()} models` : "Models"}
         tabindex="-1"
-        aria-activedescendant={active() ? optionId(active()!) : undefined}
+        aria-activedescendant={activeItem() ? optionId(activeItem()!) : undefined}
         aria-busy={loading() && !models() ? "true" : undefined}
         ref={listbox}
         onKeyDown={onListKey}
@@ -347,22 +427,20 @@ export function ModelPicker(props: {
               </p>
             }
           >
-            <Show when={favorites().length > 0}>
-              <div class="model-menu-group" role="group" aria-labelledby={paneId("mg-fav")}>
-                <div class="list-group-label" id={paneId("mg-fav")}>
-                  Favorites
-                </div>
-                <For each={favorites()}>{(m) => <Option m={m} />}</For>
-              </div>
-            </Show>
-            <Show when={others().length > 0}>
-              <div class="model-menu-group" role="group" aria-labelledby={paneId("mg-all")}>
-                <div class="list-group-label" id={paneId("mg-all")}>
-                  All models
-                </div>
-                <For each={others()}>{(m) => <Option m={m} />}</For>
-              </div>
-            </Show>
+            <For each={groups()}>
+              {(g) => (
+                <Show when={g.label} fallback={<For each={g.items}>{(item) => <Row item={item} />}</For>}>
+                  {(label) => (
+                    <div class="model-menu-group" role="group" aria-labelledby={paneId(`mg-${domSafe(g.key)}`)}>
+                      <div class="list-group-label" id={paneId(`mg-${domSafe(g.key)}`)}>
+                        {label()}
+                      </div>
+                      <For each={g.items}>{(item) => <Row item={item} />}</For>
+                    </div>
+                  )}
+                </Show>
+              )}
+            </For>
           </Show>
         </Show>
       </div>

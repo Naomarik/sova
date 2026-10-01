@@ -192,8 +192,10 @@ A chat's system prompt is the same whether its turn was started by the user's me
 extension's message: a subagent settling (`subagent-complete`), a team question, an Overseer
 wake-up. In particular the mode extension's `<mode>` section (delegate instructions, minor-mode
 biases) is neither dropped nor re-added because of *who* started the turn; it changes only when
-the major mode, the Delegate or spec-writer routing, or align while in delegate changes, and at the
-first run after a compaction. Any other minor-mode toggle leaves it alone
+the major mode, Delegate routing, a spec-writer route already present in the prompt head, or align
+while in delegate changes, and at the first run after a compaction. Spec-writer routing introduced
+by a mode note is refreshed by another note instead of rewriting that head. Any other minor-mode
+toggle leaves it alone
 (§chat.mode-menu/minor-toggle-keeps-prompt).
 
 Why this needs saying: pi builds a user turn's prompt in `before_agent_start`, where the mode
@@ -257,6 +259,11 @@ once, as their net change.
   `spec`, with its writer paragraph), unless the block is already in context — in the head, or in an
   earlier note since the last compaction — when the note points back to it instead.
 - **Turning a mode off** says the mode is off and its earlier instructions no longer apply.
+- **Spec-writer routing.** If spec was enabled by a note rather than included in the head, a later
+  change to its configured writer reaches the next run in a new hidden note, even though the set
+  of active minor modes did not change. It supersedes the earlier route without resending the
+  whole spec guide. A worker-wake run refreshes it too. Clearing the writer explicitly returns
+  drafting to the session; the status and the model's instructions must not silently disagree.
 - **Reopen.** The head is persisted additively in the session's `mode` entries (`head`, recorded
   while it differs from that entry's `active.minorModes`; entries Sova writes with `pinEntryFor`
   never carry it) and each note's details record what the model was told. A reopened session, after

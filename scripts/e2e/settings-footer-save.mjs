@@ -19,6 +19,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { join, resolve } from "node:path";
+import { tokenHeaders } from "../sova-token.mjs";
 
 const ROOT = resolve(import.meta.dirname, "../..");
 const AGENT = join(ROOT, ".agent");
@@ -46,7 +47,7 @@ function assert(cond, message) {
 const eq = (actual, expected, what) => assert(JSON.stringify(actual) === JSON.stringify(expected), `${what}: expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`);
 
 const api = async (path) => {
-  const r = await fetch(`${BASE}${path}`);
+  const r = await fetch(`${BASE}${path}`, { headers: tokenHeaders(AGENT) });
   if (!r.ok) throw new Error(`GET ${path}: ${r.status}`);
   return r.json();
 };
@@ -76,7 +77,8 @@ if (!cdpPort) throw new Error(`start-browser.sh printed no PW_PORT:\n${started}`
 const browser = await chromium.connectOverCDP(`http://127.0.0.1:${cdpPort}`);
 
 try {
-  const context = await browser.newContext({ viewport: { width: 1280, height: 860 }, deviceScaleFactor: 1, colorScheme: "dark" });
+  // The token on every request the page makes (the gate's header): no unlock screen to pass.
+  const context = await browser.newContext({ viewport: { width: 1280, height: 860 }, deviceScaleFactor: 1, colorScheme: "dark", extraHTTPHeaders: tokenHeaders(AGENT) });
   const page = await context.newPage();
   // The app's service worker serves the build it cached, not the one on disk: drop it first.
   await page.goto(`${BASE}/`);

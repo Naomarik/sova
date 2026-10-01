@@ -9,6 +9,7 @@ import { getMimeType } from "hono/utils/mime";
 import { WebSocket, WebSocketServer } from "ws";
 import type { ExtensionInfo } from "../shared/protocol";
 import { stateRoot } from "./state-root";
+import { sovaToken } from "./auth";
 
 // The generic extension host (ext-contract-v1.2). An extension is a static UI (`dist`) plus a
 // loopback HTTP backend (`api`), both named in a manifest the user installs; Sova never writes it.
@@ -252,10 +253,33 @@ export const sovaOrigin = (): string => `http://127.0.0.1:${sovaPort}`;
 
 const HOP_BY_HOP = ["connection", "keep-alive", "proxy-authenticate", "proxy-authorization", "te", "trailer", "transfer-encoding", "upgrade"];
 
+/** Every install's auth cookie is `sova_token_<id>`; a browser sends them all to any port. */
+const AUTH_COOKIE_RE = /^sova_token(_|$)/;
+
+/**
+ * Drop Sova's own credentials from headers bound for an extension backend: every install's auth
+ * cookie (other cookies stay), `x-sova-token`, and an `Authorization` that carries this install's
+ * token (an extension's own Authorization passes). A backend is a separate program; one that
+ * calls Sova back reads the token itself (docs/customization.md).
+ */
+export function stripSovaCredentials(headers: Headers): void {
+  headers.delete("x-sova-token");
+  if (headers.get("authorization")?.includes(sovaToken())) headers.delete("authorization");
+  const cookie = headers.get("cookie");
+  if (cookie === null) return;
+  const kept = cookie
+    .split(";")
+    .map((p) => p.trim())
+    .filter((p) => p && !AUTH_COOKIE_RE.test(p.split("=")[0]!.trim()));
+  if (kept.length) headers.set("cookie", kept.join("; "));
+  else headers.delete("cookie");
+}
+
 /**
  * Forward the request to `<api><tail><search>`, where `tail` is `/api/...` (the path after
  * `/ext/<id>`, still encoded). Every request header goes along except `host` (fetch sets the
- * backend's) and the hop-by-hop ones; the response comes back as the backend sent it. A backend
+ * backend's), the hop-by-hop ones and Sova's own credential (stripSovaCredentials); the response
+ * comes back as the backend sent it. A backend
  * that can't be reached is a 502. Node's fetch gives up connecting after 10 s; there is no read
  * timeout of ours, so a streamed body runs as long as the backend keeps it open.
  */
@@ -265,6 +289,7 @@ export async function proxyExtension(c: Context, entry: ExtensionEntry, tail: st
   const host = headers.get("host");
   headers.delete("host");
   for (const h of HOP_BY_HOP) headers.delete(h);
+  stripSovaCredentials(headers);
   if (host) headers.set("X-Forwarded-Host", host);
   headers.set("X-Sova-Origin", sovaOrigin());
   try {

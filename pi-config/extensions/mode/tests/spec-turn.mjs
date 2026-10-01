@@ -72,7 +72,7 @@ function streamSimple(model, context, options) {
 	requests.push({ messages: context.messages });
 	const step = script.shift() ?? { text: "ok" };
 	step.effect?.();
-	const message = { role: "assistant", content: [], api: model.api, provider: model.provider, model: model.id, usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 2, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } }, stopReason: "stop", timestamp: Date.now() };
+	const message = { role: "assistant", content: [], api: model.api, provider: model.provider, model: model.id, usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 2, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } }, stopReason: step.outcome ?? "stop", timestamp: Date.now() };
 	(async () => {
 		options?.onPayload?.({});
 		stream.push({ type: "start", partial: message });
@@ -575,12 +575,20 @@ try {
 	git("commit", "-qam", "spec: a third party");
 	at = requests.length;
 	const beforeD = checks().length;
-	script.push({ text: "The worker finished.\nAlso changes: none" }, { text: "The worker finished.\nAlso changes: §app/shell — own-tree worker wording" });
+	script.push({ text: "The worker finished.\nAlso changes: none" }, { text: "The worker finished.\nAlso changes: none" }, { text: "The worker finished.\nAlso changes: §app/shell — own-tree worker wording" });
 	await session.sendCustomMessage({ customType: "subagent-complete", content: "### ag_07 finished", display: true }, { triggerTurn: true });
-	assert.equal(requests.length, at + 2, "one re-prompt for the worker's own-tree commit");
-	assert.equal(checks().length, beforeD + 1);
+	assert.equal(requests.length, at + 3, "the worker obligation survives both wrong corrective replies");
+	assert.equal(checks().length, beforeD + 2);
+	for (const correction of checks().slice(beforeD)) assert.match(correction.content, /computed from Git: §app\/shell\./, "the retained ledger obligation never disappears");
 	assert.match(checks().at(-1).content, /commit by ag_07 in project/);
 	assert.match(checks().at(-1).content, /computed from Git: §app\/shell\./, "the third party's §app/other is not listed");
+	// A following relay would re-read the ledger if consumption were premature or absent.
+	at = requests.length;
+	const consumedChecks = checks().length;
+	script.push({ text: "No further landing.\nAlso changes: none" });
+	await session.sendCustomMessage({ customType: "subagent-complete", content: "### ag_07 reported again", display: true }, { triggerTurn: true });
+	assert.equal(requests.length, at + 1, "settled ledger obligation is not replayed on the next relay");
+	assert.equal(checks().length, consumedChecks);
 
 	// M5: a run that merges is pinned to its merges. A worker's wake starts it and the parent merges featE
 	// (§app/other); the worker's own ledger commit in wt5 (§app/shell) is no part of this list. It is the
@@ -604,6 +612,31 @@ try {
 	assert.equal(requests.length, at + 3, "the worker's landing is the next change run's");
 	assert.match(checks().at(-1).content, /commit by ag_05 in wt5/);
 	assert.match(checks().at(-1).content, /computed from Git: §app\/shell\./);
+
+	// F11: an interrupted run's own operation, with no worker ledger obligation, survives both corrections.
+	at = requests.length;
+	const outcomes = [];
+	const unsubscribe = hostPi.on("agent_before_settle", e => { outcomes.push(e.outcome); });
+	script.push(
+		{ tool: "bash", args: { command: "printf '# §app/shell\\n\\nShell, carried only.\\n' > .sova/spec/claims/app/shell.md && git add .sova/spec/claims/app/shell.md && git commit -qm carried-only" } },
+		{ text: "Interrupted before accounting.", outcome: "aborted" },
+	);
+	await session.prompt("perform operation then interrupt");
+	assert.equal(requests.length, at + 2);
+	assert.equal(outcomes.at(-1), "aborted", "actual SDK aborted settle boundary");
+	unsubscribe();
+	const carriedChecks = checks().length;
+	at = requests.length;
+	script.push({ text: "Resumed.\nAlso changes: none" }, { text: "Resumed.\nAlso changes: none" }, { text: "Resumed.\nAlso changes: §app/shell — carried-only wording" });
+	await session.prompt("finish interrupted accounting");
+	assert.equal(requests.length, at + 3, "carried-only obligation survives two bad replies");
+	assert.equal(checks().length, carriedChecks + 2);
+	for (const correction of checks().slice(carriedChecks)) assert.match(correction.content, /computed from Git: §app\/shell\./);
+	at = requests.length;
+	script.push({ text: "Nothing more changed." });
+	await session.prompt("a later question");
+	assert.equal(requests.length, at + 1, "completed carried operation is consumed for later turns");
+	assert.equal(checks().length, carriedChecks + 2);
 
 	// PI_SPEC_CHECK=0 turns the line check off.
 	process.env.PI_SPEC_CHECK = "0";

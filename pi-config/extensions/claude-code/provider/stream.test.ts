@@ -20,7 +20,7 @@ import {
 	Type,
 } from "@earendil-works/pi-ai";
 import { dropLeadingUntaggedSection, streamClaudeCode, resolveClaudeEffort } from "./stream.ts";
-import { parseClaudeFrame, type ClaudeFrame, type ClaudeSessionBridge, type ClaudeTurnRequest } from "./types.ts";
+import { parseClaudeFrame, parseToolInput, type ClaudeFrame, type ClaudeSessionBridge, type ClaudeTurnRequest } from "./types.ts";
 import { STATIC_MODELS, toProviderModel } from "./index.ts";
 
 const fixtures = fileURLToPath(new URL("./fixtures/", import.meta.url));
@@ -278,19 +278,275 @@ test("a stream that just ends is protocol corruption, not a silent stop", async 
 	assert.match(message.errorMessage ?? "", /without a stop reason/);
 });
 
-test("invalid tool-call JSON fails the stream instead of inventing arguments", async () => {
-	const frames = load("tool-turn.ndjson").map((frame) => {
-		if (frame.type === "stream" && frame.event.type === "content_block_delta" && frame.event.delta.kind === "input_json") {
-			return { ...frame, event: { ...frame.event, delta: { kind: "input_json" as const, partialJson: "{oops" } } };
+// ---------------------------------------------------------------------------
+// Tool calls whose arguments are not valid JSON (§app.claude-code-provider/invalid-tool-input)
+// ---------------------------------------------------------------------------
+
+/** Parsed frames from raw stream-json objects, as the bridge hands them over. */
+function frames(lines: unknown[]): ClaudeFrame[] {
+	return lines.flatMap((line) => { const frame = parseClaudeFrame(line); return frame ? [frame] : []; });
+}
+
+type CliBlock = { text: string } | { tool: string; id: string; json: string };
+
+/** One streamed CLI message: its blocks, its stop reason, and its usage at start and end. */
+function cliMessage(blocks: CliBlock[], stop: string, usage: { input: number; cacheRead?: number; output: number } = { input: 10, output: 5 }): unknown[] {
+	const u = (output: number) => ({ input_tokens: usage.input, cache_read_input_tokens: usage.cacheRead ?? 0, cache_creation_input_tokens: 0, output_tokens: output });
+	const out: unknown[] = [{ type: "stream_event", event: { type: "message_start", message: { usage: u(1) } } }];
+	blocks.forEach((block, index) => {
+		if ("text" in block) {
+			out.push({ type: "stream_event", event: { type: "content_block_start", index, content_block: { type: "text", text: "" } } });
+			out.push({ type: "stream_event", event: { type: "content_block_delta", index, delta: { type: "text_delta", text: block.text } } });
+		} else {
+			out.push({ type: "stream_event", event: { type: "content_block_start", index, content_block: { type: "tool_use", id: block.id, name: `mcp__sova__${block.tool}`, input: {} } } });
+			out.push({ type: "stream_event", event: { type: "content_block_delta", index, delta: { type: "input_json_delta", partial_json: block.json } } });
 		}
-		return frame;
+		out.push({ type: "stream_event", event: { type: "content_block_stop", index } });
 	});
-	const { bridge } = fakeBridge(frames);
+	out.push({ type: "stream_event", event: { type: "message_delta", delta: { stop_reason: stop }, usage: u(usage.output) } });
+	out.push({ type: "stream_event", event: { type: "message_stop" } });
+	return out;
+}
+
+const BAD_JSON = "{\"command\":\"ls\"}]}"; // closed early, closers left over: the shape seen live
+const invalidDiagnostics = (message: ReturnType<typeof finalMessage>) => (message.diagnostics ?? []).filter((d) => d.type === "claude-code.invalid-tool-input");
+const toolCallEnds = (events: AssistantMessageEvent[]) => events.flatMap((e) => e.type === "toolcall_end" ? [e.toolCall.id] : []);
+
+test("parseToolInput: the block-start input for no deltas, a plain object only, never the input quoted", () => {
+	assert.deepEqual(parseToolInput("", { a: 1 }), { ok: true, args: { a: 1 } });
+	assert.deepEqual(parseToolInput(""), { ok: true, args: {} });
+	assert.deepEqual(parseToolInput("{\"path\":\"a\"}"), { ok: true, args: { path: "a" } });
+	for (const json of ["[1]", "\"x\"", "null", "3", "true"]) {
+		const verdict = parseToolInput(json);
+		assert.equal(verdict.ok, false, json);
+		assert.match(!verdict.ok ? verdict.error : "", /^not a JSON object/);
+	}
+	const extra = parseToolInput(BAD_JSON);
+	assert.ok(!extra.ok);
+	assert.equal(extra.bytes, Buffer.byteLength(BAD_JSON));
+	assert.equal(extra.position, BAD_JSON.indexOf("]}"));
+	const cut = parseToolInput("{\"a\":");
+	assert.ok(!cut.ok);
+	assert.equal(cut.position, 5);
+	// V8 quotes the input in some messages; a verdict never carries it.
+	const quoted = parseToolInput("oops-secret");
+	assert.ok(!quoted.ok);
+	assert.doesNotMatch(quoted.error, /oops|secret/);
+	const wide = parseToolInput("{\"é\":");
+	assert.ok(!wide.ok);
+	assert.equal(wide.bytes, 6, "bytes, not characters");
+});
+
+test("a rejected-only tool call and the CLI's valid retry stay one pi message, on the retry's usage", async () => {
+	const lines = readFileSync(`${fixtures}invalid-tool-input-turn.ndjson`, "utf8").split("\n").filter((l) => l.trim());
+	const raw = JSON.parse(lines.find((l) => l.includes("__unparsedToolInput"))!).message.content[0].input.__unparsedToolInput.raw as string;
+	const { bridge } = fakeBridge(load("invalid-tool-input-turn.ndjson"));
+	const events = await collect(streamClaudeCode(bridge, model("opus"), context()));
+	const terminal = last(events);
+	assert.equal(terminal.type, "done");
+	const message = finalMessage(terminal);
+	assert.equal(message.stopReason, "toolUse");
+	// The rejected attempt's thinking and text stay, in order; only the retry's call is a call.
+	assert.deepEqual(message.content.map((block) => block.type), ["thinking", "text", "toolCall"]);
+	const call = message.content[2];
+	assert.ok(call?.type === "toolCall");
+	assert.equal(call.id, "toolu_IJ_GOOD");
+	assert.equal(call.name, "align");
+	assert.deepEqual(call.arguments, { ops: [{ op: "decide", q: "q1", decision: "Diagnostic only" }, { op: "accept", qs: ["q2"] }] });
+	assert.deepEqual(toolCallEnds(events), ["toolu_IJ_GOOD"], "the rejected call must never reach toolcall_end");
+	assertNoPartialToolCalls(message.content);
+	assert.ok(!JSON.stringify(message.content).includes("toolu_IJ_BAD"));
+	// One diagnostic, with no raw arguments in it.
+	const [diagnostic, ...more] = invalidDiagnostics(message);
+	assert.equal(more.length, 0);
+	assert.deepEqual(diagnostic?.details, {
+		tool: "align", toolCallId: "toolu_IJ_BAD", bytes: Buffer.byteLength(raw), position: raw.length - 2,
+		// The superseded attempt's own counts: its usage is not the message's.
+		usage: { input: 6, output: 1224, cacheRead: 60000, cacheWrite: 800, cacheWrite1h: 800 },
+	});
+	assert.ok(!JSON.stringify(message.diagnostics).includes("Diagnostic only"), "the diagnostic kept argument text");
+	// Usage is the last CLI message's, its 1h split included: context fill reads 2 + 61500 + 1300.
+	assert.equal(message.usage.input, 2);
+	assert.equal(message.usage.cacheRead, 61500);
+	assert.equal(message.usage.cacheWrite, 1300);
+	assert.equal(message.usage.cacheWrite1h, 0);
+	assert.equal(message.usage.output, 310);
+	assert.equal(message.usage.totalTokens, 2 + 61500 + 1300 + 310);
+	assert.equal(message.responseModel, "claude-opus-5-5");
+});
+
+test("the rejected attempt's 1-hour cache split never carries into the retry's usage", async () => {
+	const split = { input_tokens: 5, cache_read_input_tokens: 0, cache_creation_input_tokens: 900, cache_creation: { ephemeral_1h_input_tokens: 900, ephemeral_5m_input_tokens: 0 }, output_tokens: 1 };
+	// The rejected attempt: its start and delta both report the 1h split, as the API does.
+	const attemptLines = cliMessage([{ tool: "bash", id: "toolu_BAD", json: BAD_JSON }], "tool_use").map((line) => {
+		const event = (line as { event: { type: string } }).event;
+		if (event.type === "message_start") return { type: "stream_event", event: { type: "message_start", message: { usage: split } } };
+		if (event.type === "message_delta") return { type: "stream_event", event: { ...event, usage: { ...split, output_tokens: 40 } } };
+		return line;
+	});
+	const { bridge } = fakeBridge(frames([
+		...attemptLines,
+		// The retry's usage carries no split at all.
+		...cliMessage([{ tool: "read", id: "toolu_OK", json: "{\"path\":\"a\"}" }], "tool_use", { input: 7, output: 9 }),
+	]));
+	const message = finalMessage(last(await collect(streamClaudeCode(bridge, model(), context()))));
+	assert.equal(message.stopReason, "toolUse");
+	assert.equal(message.usage.cacheWrite, 0);
+	assert.equal(message.usage.cacheWrite1h, undefined);
+	assert.equal(invalidDiagnostics(message)[0]?.details?.usage && (invalidDiagnostics(message)[0]!.details!.usage as { cacheWrite1h?: number }).cacheWrite1h, 900);
+});
+
+/** A tool_use block that streams no input_json: its block-start input is all there is. */
+function noDeltaToolMessage(id: string, input: { value: unknown } | undefined): unknown[] {
+	const block: Record<string, unknown> = { type: "tool_use", id, name: "mcp__sova__read" };
+	if (input) block.input = input.value;
+	return [
+		{ type: "stream_event", event: { type: "message_start", message: { usage: { input_tokens: 4, output_tokens: 1 } } } },
+		{ type: "stream_event", event: { type: "content_block_start", index: 0, content_block: block } },
+		{ type: "stream_event", event: { type: "content_block_stop", index: 0 } },
+		{ type: "stream_event", event: { type: "message_delta", delta: { stop_reason: "tool_use" }, usage: { input_tokens: 4, output_tokens: 3 } } },
+		{ type: "stream_event", event: { type: "message_stop" } },
+	];
+}
+
+test("with no deltas, a block-start input that is not an object is rejected, never coerced to {}", async () => {
+	for (const [label, value] of [["null", null], ["a string", "a.txt"], ["an array", ["a.txt"]], ["a number", 3]] as const) {
+		const { bridge } = fakeBridge(frames([
+			...noDeltaToolMessage("toolu_START", { value }),
+			...cliMessage([{ text: "Never mind." }], "end_turn"),
+			{ type: "result", subtype: "success", is_error: false, result: "" },
+		]));
+		const events = await collect(streamClaudeCode(bridge, model(), context()));
+		const message = finalMessage(last(events));
+		assert.equal(message.stopReason, "stop", label);
+		assert.ok(!message.content.some((block) => block.type === "toolCall"), `${label} start input reached pi as a call`);
+		assert.deepEqual(toolCallEnds(events), [], label);
+		assert.equal(invalidDiagnostics(message)[0]?.details?.toolCallId, "toolu_START", label);
+		assert.equal(invalidDiagnostics(message)[0]?.details?.bytes, 0, label);
+	}
+});
+
+test("with no deltas, an absent block-start input is {} and an object one is the arguments", async () => {
+	for (const [input, expected] of [[undefined, {}], [{ value: {} }, {}], [{ value: { path: "a.txt" } }, { path: "a.txt" }]] as const) {
+		const { bridge } = fakeBridge(frames(noDeltaToolMessage("toolu_START", input)));
+		const message = finalMessage(last(await collect(streamClaudeCode(bridge, model(), context()))));
+		assert.equal(message.stopReason, "toolUse", JSON.stringify(input));
+		const call = message.content.find((block) => block.type === "toolCall");
+		assert.ok(call?.type === "toolCall");
+		assert.deepEqual(call.arguments, expected);
+		assert.equal(invalidDiagnostics(message).length, 0);
+		assertNoPartialToolCallState(message.content);
+	}
+});
+
+/** No adapter state on a message (an empty-argument call may be legitimate here). */
+function assertNoPartialToolCallState(content: ReturnType<typeof finalMessage>["content"]) {
+	for (const block of content) {
+		assert.ok(!Object.hasOwn(block, "partialJson"), "partialJson leaked onto the message");
+		assert.ok(!Object.hasOwn(block, "index"), "the CLI block index leaked onto the message");
+	}
+}
+
+test("a message with valid and invalid calls ends as toolUse with only the valid ones", async () => {
+	const { bridge } = fakeBridge(frames([
+		{ type: "system", subtype: "init", session_id: "s" },
+		...cliMessage([{ text: "Both." }, { tool: "read", id: "toolu_OK", json: "{\"path\":\"a.txt\"}" }, { tool: "bash", id: "toolu_BAD", json: BAD_JSON }], "tool_use", { input: 40, output: 30 }),
+	]));
 	const events = await collect(streamClaudeCode(bridge, model(), context()));
 	const terminal = last(events);
-	assert.equal(terminal.type, "error");
+	assert.equal(terminal.type, "done");
 	const message = finalMessage(terminal);
-	assert.match(message.errorMessage ?? "", /invalid JSON arguments for tool "read"/);
+	assert.equal(message.stopReason, "toolUse");
+	assert.deepEqual(message.content.map((block) => block.type), ["text", "toolCall"]);
+	assert.deepEqual(toolCallEnds(events), ["toolu_OK"]);
+	assertNoPartialToolCalls(message.content);
+	const [diagnostic] = invalidDiagnostics(message);
+	// Its usage IS the message's: nothing superseded it, so the diagnostic carries none.
+	assert.deepEqual(diagnostic?.details, { tool: "bash", toolCallId: "toolu_BAD", bytes: Buffer.byteLength(BAD_JSON), position: BAD_JSON.indexOf("]}") });
+	assert.equal(message.usage.output, 30);
+});
+
+test("a call valid as JSON but not an object is rejected, never run with other arguments", async () => {
+	const { bridge } = fakeBridge(frames([
+		...cliMessage([{ tool: "read", id: "toolu_ARR", json: "[\"a.txt\"]" }], "tool_use"),
+		...cliMessage([{ text: "Sorry." }], "end_turn"),
+		{ type: "result", subtype: "success", is_error: false, result: "Sorry." },
+	]));
+	const message = finalMessage(last(await collect(streamClaudeCode(bridge, model(), context()))));
+	assert.equal(message.stopReason, "stop");
+	assert.ok(!message.content.some((block) => block.type === "toolCall"));
+	assert.match(invalidDiagnostics(message)[0]?.error?.message ?? "", /not a JSON object \(array\)/);
+});
+
+test("a reply in text instead of a retry ends the message as stop and keeps every text", async () => {
+	const { bridge } = fakeBridge(frames([
+		...cliMessage([{ text: "Recording." }, { tool: "bash", id: "toolu_BAD", json: BAD_JSON }], "tool_use", { input: 50, output: 70 }),
+		...cliMessage([{ text: "I could not record it; here it is in prose." }], "end_turn", { input: 60, output: 12 }),
+		{ type: "result", subtype: "success", is_error: false, result: "", usage: { input_tokens: 110, output_tokens: 82 } },
+	]));
+	const events = await collect(streamClaudeCode(bridge, model(), context()));
+	const terminal = last(events);
+	assert.equal(terminal.type, "done");
+	assert.equal(terminal.type === "done" && terminal.reason, "stop");
+	const message = finalMessage(terminal);
+	assert.deepEqual(message.content, [{ type: "text", text: "Recording." }, { type: "text", text: "I could not record it; here it is in prose." }]);
+	assert.deepEqual(toolCallEnds(events), []);
+	// The last call's usage, never the result's sum.
+	assert.equal(message.usage.input, 60);
+	assert.equal(message.usage.output, 12);
+	assert.deepEqual(invalidDiagnostics(message)[0]?.details?.usage, { input: 50, output: 70, cacheRead: 0, cacheWrite: 0 });
+});
+
+test("a reply cut at max_tokens after a rejected call ends as length with its text", async () => {
+	const { bridge } = fakeBridge(frames([
+		...cliMessage([{ tool: "bash", id: "toolu_BAD", json: BAD_JSON }], "tool_use"),
+		...cliMessage([{ text: "Long answer" }], "max_tokens"),
+		{ type: "result", subtype: "success", is_error: false, result: "" },
+	]));
+	const message = finalMessage(last(await collect(streamClaudeCode(bridge, model(), context()))));
+	assert.equal(message.stopReason, "length");
+	assert.deepEqual(message.content, [{ type: "text", text: "Long answer" }]);
+});
+
+test("the bridge's give-up after repeated rejections ends the message as an error, keeping text and diagnostics", async () => {
+	const bad = (n: number) => cliMessage([{ text: `try ${n}` }, { tool: "bash", id: `toolu_BAD${n}`, json: BAD_JSON }], "tool_use");
+	const { bridge } = fakeBridge(frames([
+		...bad(1), ...bad(2), ...bad(3),
+		{ type: "result", subtype: "error_during_execution", is_error: true, result: "Claude sent invalid JSON arguments for tool \"bash\" 3 times in a row" },
+	]));
+	const terminal = last(await collect(streamClaudeCode(bridge, model(), context())));
+	assert.equal(terminal.type, "error");
+	assert.equal(terminal.type === "error" && terminal.reason, "error");
+	const message = finalMessage(terminal);
+	assert.match(message.errorMessage ?? "", /invalid JSON arguments for tool "bash" 3 times in a row/);
+	assert.deepEqual(message.content.map((block) => block.type === "text" && block.text), ["try 1", "try 2", "try 3"]);
+	assertNoPartialToolCalls(message.content);
+	assert.deepEqual(invalidDiagnostics(message).map((d) => d.details?.toolCallId), ["toolu_BAD1", "toolu_BAD2", "toolu_BAD3"]);
+	// Two attempts were superseded; the third's counts are the message's own.
+	assert.deepEqual(invalidDiagnostics(message).map((d) => d.details?.usage !== undefined), [true, true, false]);
+});
+
+test("an abort between the rejected attempt and its retry ends the message as aborted, with no call", async () => {
+	const lines = frames([...cliMessage([{ text: "Recording." }, { tool: "bash", id: "toolu_BAD", json: BAD_JSON }], "tool_use")]);
+	const { bridge, state } = fakeBridge(lines, { pauseAfter: lines.length, hang: true });
+	const controller = new AbortController();
+	const streaming = collect(streamClaudeCode(bridge, model(), context(), { signal: controller.signal }));
+	while (state.delivered < lines.length) await new Promise((resolve) => setTimeout(resolve, 1));
+	controller.abort();
+	const terminal = last(await streaming);
+	assert.equal(terminal.type, "error");
+	assert.equal(terminal.type === "error" && terminal.reason, "aborted");
+	const message = finalMessage(terminal);
+	assert.deepEqual(message.content, [{ type: "text", text: "Recording." }]);
+	assert.equal(invalidDiagnostics(message).length, 1);
+});
+
+test("a stream that ends after only a rejected call is still corruption, not a tool turn", async () => {
+	const { bridge } = fakeBridge(frames(cliMessage([{ tool: "bash", id: "toolu_BAD", json: BAD_JSON }], "tool_use")));
+	const terminal = last(await collect(streamClaudeCode(bridge, model(), context())));
+	assert.equal(terminal.type, "error");
+	assert.match(finalMessage(terminal).errorMessage ?? "", /without a stop reason/);
+	assert.ok(!finalMessage(terminal).content.some((block) => block.type === "toolCall"));
 });
 
 test("a delta for an unknown content block is reported, never dropped", async () => {

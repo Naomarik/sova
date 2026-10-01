@@ -29,6 +29,9 @@ const { acquireChat, disposeAllChats } = await import("./chat-manager");
 const { canonicalPath } = await import("./paths");
 if (!server.listening) await new Promise((r) => server.once("listening", r));
 const wsBase = `ws://127.0.0.1:${(server.address() as AddressInfo).port}`;
+const { AUTH_COOKIE, sovaToken } = await import("./auth");
+// The sockets below pass the main listener's gate as a browser's would: with the cookie.
+const AUTH = { Cookie: `${AUTH_COOKIE}=${sovaToken()}` };
 
 const closing: Promise<void>[] = [];
 after(async () => {
@@ -216,7 +219,7 @@ describe("GET /api/transcript rows", () => {
 // ---- The sockets --------------------------------------------------------------------------
 
 async function frames(route: string, until: (got: string[]) => boolean, headers: Record<string, string> = {}, quietMs = 300, onFirst?: () => void): Promise<string[]> {
-  const ws = new WebSocket(`${wsBase}${route}`, { headers });
+  const ws = new WebSocket(`${wsBase}${route}`, { headers: { ...AUTH, ...headers } });
   const got: string[] = [];
   await new Promise<void>((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error(`timed out; got ${got.map((g) => JSON.parse(g).type).join(",")}`)), 15_000);

@@ -28,8 +28,12 @@ import {
 	type ClaudeTurnPayload,
 	type ClaudeUsage,
 	ClaudeProtocolError,
+	parseToolInput,
 	toPiToolName,
 } from "./types.ts";
+
+/** The diagnostic a rejected tool call leaves on its pi message (never shown, never sent to a model). */
+export const INVALID_TOOL_INPUT_DIAGNOSTIC = "claude-code.invalid-tool-input";
 
 /** Anthropic stop reasons the CLI passes through, mapped onto pi's ladder. */
 function mapStopReason(reason: string): StopReason {
@@ -56,6 +60,14 @@ export function resolveClaudeEffort(model: Model<Api>, reasoning: string | undef
 
 function emptyUsage(): AssistantMessage["usage"] {
 	return { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
+}
+
+/** A message's token counts, for a diagnostic. */
+function usageDetails(usage: AssistantMessage["usage"]): JsonObject {
+	return {
+		input: usage.input, output: usage.output, cacheRead: usage.cacheRead, cacheWrite: usage.cacheWrite,
+		...(usage.cacheWrite1h === undefined ? {} : { cacheWrite1h: usage.cacheWrite1h }),
+	};
 }
 
 function abortError(): Error {
@@ -98,6 +110,8 @@ async function* untilAborted<T>(source: AsyncIterable<T>, signal: AbortSignal | 
 
 /** Mutable per-block state; `index` is the CLI's content index, not pi's. */
 type Block = (ThinkingContent | TextContent | (ToolCall & { partialJson: string })) & { index: number };
+
+type Diagnostic = NonNullable<AssistantMessage["diagnostics"]>[number];
 
 const SECTION_OPEN_TAG = /^<[a-z][a-z0-9_-]*>$/;
 
@@ -150,10 +164,18 @@ export function streamClaudeCode(
 			timestamp: Date.now(),
 		};
 		const blocks = output.content as Block[];
+		/** An accepted tool call; a rejected one (invalid JSON arguments) never counts. */
 		let sawToolCall = false;
 		let sawStreamedContent = false;
 		let responded = false;
 		let sawUsage = false;
+		/**
+		 * The current CLI message, of possibly several in this pi message: the CLI
+		 * retries a rejected tool call by calling the model again in the same turn.
+		 */
+		let attempt: { rejected: Diagnostic[]; accepted: number; started: boolean } = { rejected: [], accepted: 0, started: false };
+		/** Each streamed tool call's block-start input, untouched (never on the message itself). */
+		const startInputs = new WeakMap<object, unknown>();
 
 		const applyUsage = (usage: ClaudeUsage | undefined): void => {
 			if (!usage) return;
@@ -184,17 +206,35 @@ export function streamClaudeCode(
 			}
 			else {
 				const call = block as ToolCall & { partialJson?: string };
-				if (call.partialJson) {
-					try {
-						call.arguments = JSON.parse(call.partialJson) as JsonObject;
-					} catch {
-						throw new ClaudeProtocolError(`Claude sent invalid JSON arguments for tool "${call.name}"`);
-					}
-				}
+				// "" (no deltas) is the block-start input, as the CLI sent it.
+				const verdict = parseToolInput(call.partialJson ?? "", startInputs.get(block));
 				delete call.partialJson;
+				if (!verdict.ok) {
+					// Never run, never repaired: the CLI rejects the same bytes and
+					// asks the model again in this CLI turn (the bridge keeps the pi
+					// message open for that). The block is the last one open, so a
+					// later block takes its content index; message_end replaces the
+					// partial the live view saw.
+					blocks.splice(contentIndex, 1);
+					const diagnostic: Diagnostic = {
+						type: INVALID_TOOL_INPUT_DIAGNOSTIC,
+						timestamp: Date.now(),
+						error: { name: "ClaudeInvalidToolInput", message: `Claude sent invalid JSON arguments for tool "${call.name}": ${verdict.error}` },
+						// Never the raw arguments: their length and where parsing failed only.
+						details: { tool: call.name, toolCallId: call.id, bytes: verdict.bytes, ...(verdict.position === undefined ? {} : { position: verdict.position }) },
+					};
+					output.diagnostics = [...(output.diagnostics ?? []), diagnostic];
+					attempt.rejected.push(diagnostic);
+					return;
+				}
+				call.arguments = verdict.args as JsonObject;
+				sawToolCall = true;
+				attempt.accepted++;
 				stream.push({ type: "toolcall_end", contentIndex, toolCall: call, partial: output });
 			}
 		};
+		/** The CLI message's tool calls were all rejected: it ends nothing, the next one decides. */
+		const rejectedOnly = (): boolean => attempt.rejected.length > 0 && attempt.accepted === 0;
 
 		try {
 			let payload: ClaudeTurnPayload = {
@@ -333,6 +373,17 @@ export function streamClaudeCode(
 					// would capture the next message's deltas.
 					const open = blocks.find((block) => block.index !== undefined);
 					if (open) throw new ClaudeProtocolError(`Claude started a new message while content block ${open.index} was open`);
+					if (attempt.started) {
+						// The CLI's retry after a message whose calls were all rejected.
+						// This message's usage replaces that one's, as the last call's
+						// always does (its input already holds the rejected attempt), so
+						// the superseded counts go on that attempt's diagnostic.
+						if (rejectedOnly()) attempt.rejected[0]!.details = { ...attempt.rejected[0]!.details, usage: usageDetails(output.usage) };
+						// A split left from the previous message is not this one's.
+						delete output.usage.cacheWrite1h;
+						attempt = { rejected: [], accepted: 0, started: true };
+					}
+					attempt.started = true;
 					applyUsage(event.usage);
 					// The model that answered: the pi model id is only the CLI alias (`opus[1m]`).
 					if (event.model) output.responseModel = event.model;
@@ -351,9 +402,12 @@ export function streamClaudeCode(
 						blocks.push({ type: "thinking", thinking: "", thinkingSignature: event.block.data, redacted: true, index: event.index });
 						stream.push({ type: "thinking_start", contentIndex, partial: output });
 					} else {
-						sawToolCall = true;
+						// Counted (sawToolCall) only once its arguments parse, at its stop.
 						const input = typeof event.block.input === "object" && event.block.input !== null ? (event.block.input as JsonObject) : {};
-						blocks.push({ type: "toolCall", id: event.block.id, name: toPiToolName(event.block.name, tools), arguments: input, partialJson: "", index: event.index });
+						const block: Block = { type: "toolCall", id: event.block.id, name: toPiToolName(event.block.name, tools), arguments: input, partialJson: "", index: event.index };
+						// Judged untouched at the stop: a null, string or array start input is invalid, not `{}`.
+						startInputs.set(block, event.block.input);
+						blocks.push(block);
 						stream.push({ type: "toolcall_start", contentIndex, partial: output });
 					}
 					return;
@@ -399,6 +453,9 @@ export function streamClaudeCode(
 					if (event.stopReason) output.stopReason = mapStopReason(event.stopReason);
 					return;
 				case "message_stop":
+					// Its tool_use stop named only rejected calls: the retry, a reply in
+					// text or the turn's result decides how this pi message ends.
+					if (output.stopReason === "toolUse" && rejectedOnly()) output.stopReason = "pending";
 					if (output.stopReason === "pending" && sawToolCall) output.stopReason = "toolUse";
 					return;
 			}

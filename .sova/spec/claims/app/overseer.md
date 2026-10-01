@@ -170,7 +170,8 @@ host's sender secret never leaves it. The peer's own routes and refusals apply.
     `models.json` anywhere under `~/.pi` and under the active agent dir (the model registry, whose
     `apiKey` and headers may be a literal key or a `!command`); Claude Code's
     `~/.claude/.credentials.json` and `~/.claude.json`; `~/.netrc`; `~/.config/gh/hosts.yml`;
-    `<stateRoot>/outreach.json` and `outreach-receipts.json` (§app.outreach/secrets);
+    `<stateRoot>/outreach.json` and `outreach-receipts.json` (§app.outreach/secrets); Sova's access
+    token, `sova/auth-token` in `~/.pi/agent` and in the active agent dir;
   - whole directories: `~/.ssh`, `~/.gnupg`, `~/.aws`, `~/.claude/backups`, `/proc` (every
     process's environment and command line, the server's own included), `/sys` and `/dev/fd`
     (the server's own open files; on Linux it resolves into `/proc`, on macOS it does not), and
@@ -205,7 +206,8 @@ host's sender secret never leaves it. The peer's own routes and refusals apply.
   `~/.claude/.credentials.json` (every value but the descriptive fields: scopes, subscription type,
   rate-limit tier) and `~/.claude.json`'s `primaryApiKey`, the literal `apiKey` and header values
   in both `models.json` files (the literal parts of a `$NAME` template; a `!command` is never run
-  and never taken as a value), and the server's environment variables whose name contains `KEY`,
+  and never taken as a value), Sova's access token (`sova/auth-token` in `~/.pi/agent` and in the
+  active agent dir, the whole file), and the server's environment variables whose name contains `KEY`,
   `TOKEN`, `SECRET`, `PASSWORD` or `AUTH` (not `AUTHOR`/`AUTHORITY`). A value counts only when it
   is at least 12 characters and not a boolean, a number, a path or a URL without credentials. A
   secret cut short at either end (a truncated transcript row, `sk-…`) is redacted from 16 of its
@@ -501,6 +503,15 @@ who the run belongs to (§app.overseer/tools).
   ends, and "Or type your answer." follows the buttons. The click is only that message: it approves
   nothing and shows no approval state, since the project overseer's cards carry no `at` or `rule`.
 - An earlier project overseer conversation stays read only: its cards show no live buttons.
+
+## §app.overseer/transcript-window — Only the rows shown or jumped to
+
+The Overseer's chat and its earlier conversations never fetch their older rows in the
+background, in a browser on this machine too: they hold the newest rows and the ones the reader
+scrolls up to or a jump fetches (§chat.transcript/rendering), so the end of a reply fetches again
+only those. The card chip still counts every open card on the branch, and the chip, a card
+reference and the Timeline still reach every card and message on it: one above the rows held is
+fetched down to, then lands.
 
 ## §app.overseer/caps — Limits and the audit log
 

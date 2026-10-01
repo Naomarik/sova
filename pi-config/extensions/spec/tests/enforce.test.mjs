@@ -11,6 +11,7 @@ import { fileURLToPath } from "node:url";
 const HERE = dirname(fileURLToPath(import.meta.url));
 const CORE = resolve(HERE, "../core/sova-spec.mjs");
 const DRAFT = resolve(HERE, "../core/sova-spec-draft.mjs");
+const fixtureEnv = (root) => ({ ...Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith("GIT_"))), HOME: join(root, "home"), XDG_CONFIG_HOME: join(root, "home") });
 
 const roots = [];
 process.on("exit", () => { for (const r of roots) rmSync(r, { recursive: true, force: true }); });
@@ -21,13 +22,13 @@ function write(root, rel, text) {
 }
 const read = (root, rel) => readFileSync(join(root, rel), "utf8");
 function git(root, ...a) {
-  const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith("GIT_")));
+  const env = fixtureEnv(root);
   const r = spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "-c", "init.defaultBranch=master", "-C", root, ...a], { encoding: "utf8", env });
   return { status: r.status, out: r.stdout.trim(), err: r.stderr };
 }
 const ok = (root, ...a) => { const r = git(root, ...a); assert.equal(r.status, 0, `git ${a.join(" ")}: ${r.err}`); return r.out; };
 function cli(tool, root, ...args) {
-  const r = spawnSync(process.execPath, [tool, ...args, "--root", root, "--json"], { encoding: "utf8", cwd: root });
+  const r = spawnSync(process.execPath, [tool, ...args, "--root", root, "--json"], { encoding: "utf8", cwd: root, env: fixtureEnv(root) });
   let j;
   try { j = JSON.parse(r.stdout); } catch { assert.fail(`non-JSON stdout (status ${r.status}): ${r.stdout}\n${r.stderr}`); }
   assert.equal(r.status, j.exit, "process status equals JSON exit");

@@ -194,7 +194,8 @@
       "code": [
         "src/components/Sidebar.tsx",
         "src/lib/storage-keys.ts",
-        "src/lib/archive.ts"
+        "src/lib/archive.ts",
+        "src/lib/archive.test.ts"
       ]
     },
     "§app.session-list/archive-cleanup": {
@@ -214,7 +215,7 @@
         "§chat.context-window/sidebar-ring"
       ],
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "code": [
         "src/components/Sidebar.tsx",
         "src/design/base.css",
@@ -623,7 +624,9 @@
         "src/lib/input-mode.ts",
         "src/lib/input-mode.test.ts",
         "src/components/VoiceInput.tsx",
-        "src/design/base.css"
+        "src/design/base.css",
+        "src/lib/release-control.ts",
+        "src/lib/release-control.test.ts"
       ],
       "requires": [
         "§chat.images/composer-attachments"
@@ -871,8 +874,15 @@
     },
     "§chat.model-menu/content-and-order": {
       "kind": "behavior",
-      "authority": "migrated",
-      "evidence": "unreviewed"
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "code": [
+        "src/components/ModelMenu.tsx",
+        "src/components/ComposerMenu.tsx",
+        "src/design/base.css",
+        "src/lib/model-picker.ts",
+        "src/lib/model-picker.test.ts"
+      ]
     },
     "§chat.model-menu/contrast": {
       "kind": "behavior",
@@ -886,8 +896,15 @@
     },
     "§chat.model-menu/keyboard": {
       "kind": "behavior",
-      "authority": "migrated",
-      "evidence": "unreviewed"
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "code": [
+        "src/components/ModelMenu.tsx",
+        "src/components/ComposerMenu.tsx",
+        "src/design/base.css",
+        "src/lib/model-picker.ts",
+        "src/lib/model-picker.test.ts"
+      ]
     },
     "§chat.model-menu/menu": {
       "kind": "behavior",
@@ -895,14 +912,26 @@
         "§chat.composer/composer-flyout"
       ],
       "authority": "accepted",
-      "evidence": "unreviewed"
+      "evidence": "reviewed",
+      "code": [
+        "src/components/ModelMenu.tsx",
+        "src/components/ComposerMenu.tsx",
+        "src/design/base.css",
+        "src/lib/model-picker.ts",
+        "src/lib/model-picker.test.ts"
+      ]
     },
     "§chat.model-menu/states": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "reviewed",
       "code": [
-        "src/components/ChatView.tsx"
+        "src/components/ChatView.tsx",
+        "src/components/ModelMenu.tsx",
+        "src/components/ComposerMenu.tsx",
+        "src/design/base.css",
+        "src/lib/model-picker.ts",
+        "src/lib/model-picker.test.ts"
       ]
     },
     "§chat.model-menu/tokens": {
@@ -2885,7 +2914,9 @@
         "src/lib/signals.ts",
         "src/lib/summary-diff.ts",
         "server/turn-error.test.ts",
-        "src/lib/summary-diff.test.ts"
+        "src/lib/summary-diff.test.ts",
+        "server/unread-replies.ts",
+        "server/unread-replies.test.ts"
       ],
       "requires": []
     },
@@ -5960,7 +5991,7 @@
         "§chat.images/thread-thumbnails"
       ],
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "code": [
         "src/lib/tail-render.ts",
         "src/lib/tail-render.test.ts",
@@ -10410,69 +10441,6 @@
         "src/projects.css"
       ]
     },
-    "§app.overseer/input-source": {
-      "kind": "behavior",
-      "authority": "accepted",
-      "evidence": "verified",
-      "code": [
-        "server/chat-manager.ts",
-        "server/queue.ts",
-        "server/group-prompt.ts",
-        "server/input-source.test.ts"
-      ],
-      "requires": [
-        "§app.overseer/tools"
-      ]
-    },
-    "§app.overseer/run-note": {
-      "kind": "behavior",
-      "authority": "accepted",
-      "evidence": "verified",
-      "code": [
-        "server/overseer.ts",
-        "server/overseer-run-note.ts",
-        "server/overseer-run-note.test.ts"
-      ],
-      "requires": [
-        "§app.overseer/confirm",
-        "§app.overseer/proactivity",
-        "§app.overseer/attention-digest",
-        "§chat.worktrees/readiness",
-        "§app.overseer/tools"
-      ]
-    },
-    "§app.overseer/session-truth": {
-      "kind": "behavior",
-      "authority": "accepted",
-      "evidence": "verified",
-      "code": [
-        "server/overseer-tools.ts",
-        "server/overseer.ts",
-        "server/align-state.ts",
-        "server/merge-readiness.ts",
-        "server/worktrees.ts",
-        "server/overseer-tools.test.ts"
-      ],
-      "requires": [
-        "§app.overseer/tools",
-        "§chat.worktrees/readiness",
-        "§chat.alignment/session-mark",
-        "§app.overseer/seen"
-      ]
-    },
-    "§app.overseer/verify-first": {
-      "kind": "behavior",
-      "authority": "accepted",
-      "evidence": "reviewed",
-      "code": [
-        "server/overseer-prompt.md",
-        "server/project-overseer-prompt.md"
-      ],
-      "requires": [
-        "§app.overseer/session-truth",
-        "§app.overseer/run-note"
-      ]
-    },
     "§chat.playbooks/bundles": {
       "kind": "behavior",
       "authority": "accepted",
@@ -10834,6 +10802,156 @@
         "§chat.worktrees/readiness"
       ]
     },
+    "§app.access/callers": {
+      "kind": "behavior",
+      "requires": [
+        "§app.access/token",
+        "§app.extensions/serving"
+      ],
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "code": [
+        "server/chat-manager.ts",
+        "server/extensions.ts",
+        "pi-config/extensions/link/index.ts",
+        "pi-config/extensions/link/client.ts",
+        "scripts/hermetic-agent-dir.mjs",
+        "scripts/sova-token.mjs",
+        "scripts/sova-project.mjs",
+        "scripts/install.sh",
+        "docs/getting-started.md",
+        "docs/customization.md",
+        "docs/public-links.md",
+        "README.md",
+        "vite.config.ts"
+      ]
+    },
+    "§app.access/gate": {
+      "kind": "behavior",
+      "requires": [
+        "§app.access/token",
+        "§mesh.peers/listener",
+        "§mesh.public/preview"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/auth.ts",
+        "server/index.ts",
+        "server/auth.test.ts",
+        "server/auth-gate.test.ts"
+      ]
+    },
+    "§app.access/token": {
+      "kind": "behavior",
+      "requires": [],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/auth.ts",
+        "server/index.ts",
+        "server/auth.test.ts",
+        "server/auth-gate.test.ts"
+      ]
+    },
+    "§app.access/unlock": {
+      "kind": "behavior",
+      "requires": [
+        "§app.access/token"
+      ],
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "code": [
+        "README.md",
+        "docs/customization.md",
+        "docs/getting-started.md",
+        "docs/public-links.md",
+        "package.json",
+        "scripts/install.sh",
+        "server/auth.ts",
+        "src/components/Unlock.tsx",
+        "src/lib/api.ts",
+        "src/lib/auth.test.ts",
+        "src/lib/auth.ts",
+        "src/lib/socket.ts",
+        "src/main.tsx"
+      ]
+    },
+    "§app/access": {
+      "kind": "surface",
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "code": [
+        "server/auth.ts",
+        "server/index.ts",
+        "server/ws.ts",
+        "src/lib/auth.ts",
+        "src/components/Unlock.tsx"
+      ]
+    },
+    "§app.overseer/input-source": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/chat-manager.ts",
+        "server/queue.ts",
+        "server/group-prompt.ts",
+        "server/input-source.test.ts"
+      ],
+      "requires": [
+        "§app.overseer/tools"
+      ]
+    },
+    "§app.overseer/run-note": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/overseer.ts",
+        "server/overseer-run-note.ts",
+        "server/overseer-run-note.test.ts"
+      ],
+      "requires": [
+        "§app.overseer/confirm",
+        "§app.overseer/proactivity",
+        "§app.overseer/attention-digest",
+        "§chat.worktrees/readiness",
+        "§app.overseer/tools"
+      ]
+    },
+    "§app.overseer/session-truth": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/overseer-tools.ts",
+        "server/overseer.ts",
+        "server/align-state.ts",
+        "server/merge-readiness.ts",
+        "server/worktrees.ts",
+        "server/overseer-tools.test.ts"
+      ],
+      "requires": [
+        "§app.overseer/tools",
+        "§chat.worktrees/readiness",
+        "§chat.alignment/session-mark",
+        "§app.overseer/seen"
+      ]
+    },
+    "§app.overseer/verify-first": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "code": [
+        "server/overseer-prompt.md",
+        "server/project-overseer-prompt.md"
+      ],
+      "requires": [
+        "§app.overseer/session-truth",
+        "§app.overseer/run-note"
+      ]
+    },
     "§chat.topics/delivery": {
       "kind": "behavior",
       "authority": "accepted",
@@ -10876,7 +10994,8 @@
       "code": [
         "server/topics.ts",
         "server/chat-manager.ts",
-        "server/topics-runtime.test.ts"
+        "server/topics-runtime.test.ts",
+        "server/topic-store.ts"
       ],
       "requires": [
         "§chat.topics/open",
@@ -10921,7 +11040,10 @@
       "evidence": "verified",
       "code": [
         "server/topic-store.ts",
-        "server/topic-store.test.ts"
+        "server/topic-store.test.ts",
+        "pi-config/extensions/sandbox/backends/linux-bwrap.ts",
+        "pi-config/extensions/sandbox/backends/darwin-seatbelt.ts",
+        "pi-config/extensions/sandbox/tests/unit/linux-bwrap.unit.test.ts"
       ],
       "requires": []
     },
@@ -10934,6 +11056,116 @@
         "server/topic-store.ts",
         "server/topic-delivery.ts",
         "shared/topic-message.ts"
+      ]
+    },
+    "§app.access/devices": {
+      "kind": "behavior",
+      "requires": [
+        "§app.access/gate",
+        "§app.access/unlock"
+      ],
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "code": [
+        "package.json",
+        "server/auth-devices.ts",
+        "server/auth.ts",
+        "server/index.ts",
+        "src/components/AccessPage.tsx",
+        "src/components/OverviewActions.tsx",
+        "src/components/Unlock.tsx",
+        "src/lib/auth.ts",
+        "src/lib/qr.test.ts",
+        "src/lib/qr.ts"
+      ]
+    },
+    "§tools.spec/inspection-safety": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [],
+      "code": [
+        "pi-config/extensions/spec/core/sova-spec.mjs",
+        "pi-config/extensions/spec/core/sova-spec-review.mjs",
+        "pi-config/extensions/spec/core/sova-spec-draft.mjs",
+        "pi-config/extensions/spec/tests/core.test.mjs",
+        "pi-config/extensions/spec/tests/milestone-integrity.test.mjs",
+        "pi-config/extensions/spec/README.md",
+        "pi-config/extensions/spec/core/README.md",
+        "pi-config/extensions/spec/tests/inspection.test.mjs"
+      ]
+    },
+    "§tools.spec/promotion-integrity": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [],
+      "code": [
+        "pi-config/extensions/spec/core/sova-spec-draft.mjs",
+        "pi-config/extensions/spec/tests/draft.test.mjs",
+        "pi-config/extensions/spec/tests/enforce.test.mjs",
+        "pi-config/extensions/spec/tests/publication.test.mjs",
+        "pi-config/extensions/spec/tests/milestone-integrity.test.mjs",
+        "pi-config/extensions/spec/PROMOTE.md",
+        "pi-config/extensions/spec/DRAFTS.md"
+      ]
+    },
+    "§tools.spec/runtime-accounting": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [],
+      "code": [
+        "pi-config/extensions/mode/spec-guard.ts",
+        "pi-config/extensions/mode/index.ts",
+        "pi-config/extensions/mode/spec-worker.ts",
+        "pi-config/extensions/claude-code/spec-hooks.ts",
+        "pi-config/extensions/claude-code/spec-hooks.test.ts",
+        "pi-config/extensions/mode/tests/spec-turn.mjs",
+        "pi-config/extensions/mode/tests/ordinary-mapped.mjs",
+        "pi-config/extensions/mode/tests/smoke.mjs",
+        "pi-config/extensions/mode/tests/note-turn.mjs",
+        "pi-config/extensions/mode/README.md",
+        "pi-config/extensions/claude-code/README.md",
+        "pi-config/extensions/spec/README.md"
+      ]
+    },
+    "§app.overseer/transcript-window": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/components/ChatView.tsx",
+        "src/components/WatchView.tsx",
+        "src/components/OverseerView.tsx",
+        "src/lib/older-rows-view.ts"
+      ],
+      "requires": [
+        "§chat.transcript/rendering",
+        "§app.overseer/confirm"
+      ]
+    },
+    "§app.claude-code-provider/invalid-tool-input": {
+      "kind": "behavior",
+      "requires": [],
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "code": [
+        "pi-config/extensions/claude-code/provider/stream.ts",
+        "pi-config/extensions/claude-code/provider/session-bridge.ts",
+        "pi-config/extensions/claude-code/provider/types.ts",
+        "pi-config/extensions/claude-code/provider/stream.test.ts",
+        "pi-config/extensions/claude-code/provider/bridge.test.ts",
+        "pi-config/extensions/claude-code/provider/fixtures/invalid-tool-input-turn.ndjson"
+      ]
+    },
+    "§app/claude-code-provider": {
+      "kind": "surface",
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "code": [
+        "pi-config/extensions/claude-code/provider/stream.ts",
+        "pi-config/extensions/claude-code/provider/session-bridge.ts"
       ]
     }
   },

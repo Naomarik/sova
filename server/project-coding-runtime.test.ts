@@ -340,7 +340,7 @@ describe("a project's coding sessions", async () => {
     const { currentLinkOrigin, extensionFlagsFor } = await import("./chat-manager");
     assert.ok(currentLinkOrigin(), "the listener is bound, so ordinary runtimes get the link flag too");
     assert.deepEqual([...extensionFlagsFor(plainRoot, false, true, true)], [], "the project overseer and baton sessions: none, even with the Claude Code switch on");
-    assert.deepEqual([...extensionFlagsFor(plainRoot, false, false, true).keys()], ["claude-code-provider", "sova-link"], "an ordinary session keeps them");
+    assert.deepEqual([...extensionFlagsFor(plainRoot, false, false, true).keys()], ["claude-code-provider", "sova-link", "sova-link-token"], "an ordinary session keeps them");
   });
 
   test("F20 (r3): at L3 the item statechart's own build of a gap's promoted decisions gets the project's mode, then its first prompt", async () => {

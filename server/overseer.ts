@@ -1,6 +1,6 @@
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import { closeSync, mkdirSync, openSync, readFileSync, readSync, statSync, writeFileSync } from "node:fs";
-import { readFile, stat } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { type AgentSession, SessionManager } from "@earendil-works/pi-coding-agent";
@@ -75,6 +75,7 @@ import { projectOverseerOfPath } from "./project-overseer-store";
 import { type Redactor, redactExtensionMessages, serverRedactor } from "./overseer-redact";
 import { canonicalPath, resolveSessionPath } from "./paths";
 import { isViewing, markSeen, readSeen } from "./seen";
+import { UnreadReplies } from "./unread-replies";
 import { cleanupSessions, getSessionSummary, idOf, indexedSessionPaths, lastReplyAtOf, listSessionFiles, listSessions } from "./sessions-index";
 import { getSessionInsight } from "./insights";
 import { runNote, runNoteSessionIds, type SessionNow } from "./overseer-run-note";
@@ -272,23 +273,10 @@ export async function clearOverseer(): Promise<OverseerInfo> {
 
 // ---- info, unread ------------------------------------------------------------------------------
 
-/** Final replies (not tool-use steps) in the Overseer's file newer than `since`. Cached per mtime. */
-let unreadMemo: { path: string; mtimeMs: number; since: number; count: number } | null = null;
-async function unreadReplies(path: string, since: number | undefined): Promise<number> {
-  if (since === undefined) return 0;
-  const st = await stat(path).catch(() => null);
-  if (!st) return 0;
-  if (unreadMemo && unreadMemo.path === path && unreadMemo.mtimeMs === st.mtimeMs && unreadMemo.since === since) return unreadMemo.count;
-  let count = 0;
-  for (const e of await readActiveBranch(path)) {
-    const m = e.type === "message" ? e.message : null;
-    if (m?.role !== "assistant" || m.stopReason === "toolUse") continue;
-    const t = typeof m.timestamp === "number" ? m.timestamp : Date.parse(e.timestamp ?? "");
-    if (Number.isFinite(t) && t > since) count++;
-  }
-  unreadMemo = { path, mtimeMs: st.mtimeMs, since, count };
-  return count;
-}
+/** Final replies (not tool-use steps) in the Overseer's file newer than `since`: while it only
+    grows, only its new lines are read (server/unread-replies). */
+const unread = new UnreadReplies();
+const unreadReplies = (path: string, since: number | undefined): Promise<number> => unread.count(path, since);
 
 export async function overseerInfo(): Promise<OverseerInfo> {
   const cur = await ensureOverseer();

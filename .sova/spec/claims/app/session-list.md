@@ -383,6 +383,10 @@ label a person reads says "sessions pane".
     has to be visible); when the search ends it goes back to the stored choice (`folderOpen`).
     Unlike an Archive date section, holding the selected session does NOT force it open: an active
     session is already in Recent, and the folder keeps the user's choice.
+  - A folder builds its rows only once it is first open (by the user, a stored choice or a
+    search), and keeps them after it closes again. A folder never opened holds its head and count
+    but no rows, so the browser's own find-in-page does not reach them; the sidebar search does,
+    since it opens every folder with a hit.
   - The heading keeps its element, its level and its `id`: it sits inside the `<summary>`, which
     is what toggles, and `aria-labelledby` on the `<details>` still points at it. The sticky
     behaviour moves to the `<summary>` — a sticky heading inside a summary has nothing to stick in.

@@ -1,4 +1,5 @@
 import { createSignal, onCleanup, type Accessor } from "solid-js";
+import { checkAccess } from "./auth";
 
 export type SocketStatus = "connecting" | "open" | "reconnecting" | "failed" | "closed";
 
@@ -14,6 +15,13 @@ const BACKOFF_MS = [1000, 2000, 5000, 5000, 5000];
 const PERMANENT_CLOSE = new Set([4422]);
 
 export const isPermanentClose = (code: number): boolean => PERMANENT_CLOSE.has(code);
+
+/**
+ * Whether a close may be the token gate refusing the upgrade: 1008 (policy) or
+ * 4401 from a server that accepted and then refused, or a socket that closed before it ever opened —
+ * a browser reports an upgrade answered 401 only as 1006, with no status to read.
+ */
+export const mayBeRefused = (code: number, opened: boolean): boolean => code === 1008 || code === 4401 || (!opened && code === 1006);
 
 const [reconnects, setReconnects] = createSignal(0);
 /** Bumped whenever any socket reconnects after having been open: the server may have changed
@@ -55,8 +63,10 @@ export function createReconnectingSocket<M>(url: string, handlers: SocketHandler
     if (stopped) return;
     const sock = new WebSocket(url);
     ws = sock;
+    let opened = false;
     sock.onopen = () => {
       if (ws !== sock) return;
+      opened = true;
       setAttempt(0);
       setStatus("open");
       handlers.onOpen?.(everOpened);
@@ -95,7 +105,21 @@ export function createReconnectingSocket<M>(url: string, handlers: SocketHandler
       }
       setAttempt(next);
       setStatus("reconnecting");
-      timer = setTimeout(connect, BACKOFF_MS[next - 1]);
+      if (!mayBeRefused(ev.code, opened)) {
+        timer = setTimeout(connect, BACKOFF_MS[next - 1]);
+        return;
+      }
+      // Ask the gate before retrying: a refused token stays down (the shell shows the unlock
+      // screen), so a missing cookie is one probe, never a reconnect storm.
+      void checkAccess().then((allowed) => {
+        if (stopped || ws) return;
+        if (!allowed) {
+          stopped = true;
+          setStatus("closed");
+          return;
+        }
+        timer = setTimeout(connect, BACKOFF_MS[next - 1]);
+      });
     };
   };
 

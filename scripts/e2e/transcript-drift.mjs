@@ -24,6 +24,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, utimesSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { join, resolve } from "node:path";
+import { tokenHeaders } from "../sova-token.mjs";
 import { deflateSync } from "node:zlib";
 
 const ROOT = resolve(import.meta.dirname, "../..");
@@ -48,7 +49,7 @@ function assert(cond, message) {
   if (!cond) throw new Error(message);
 }
 const api = async (path) => {
-  const r = await fetch(`${BASE}${path}`);
+  const r = await fetch(`${BASE}${path}`, { headers: tokenHeaders(AGENT) });
   if (!r.ok) throw new Error(`GET ${path}: ${r.status}`);
   return r.json();
 };
@@ -196,8 +197,9 @@ const RECORDER = () => {
 
 async function open(viewport, { remote }) {
   const ctx = await browser.newContext({ serviceWorkers: "block", viewport, deviceScaleFactor: 1 });
-  // Through a proxy, as a phone on the tailnet reaches it: no background prefetch, chunks on scroll.
-  if (remote) await ctx.setExtraHTTPHeaders({ "X-Forwarded-For": "100.64.0.9" });
+  // The token on every request (the gate's header), and through a proxy, as a phone on the tailnet
+  // reaches it: no background prefetch, chunks on scroll.
+  await ctx.setExtraHTTPHeaders({ ...tokenHeaders(AGENT), ...(remote ? { "X-Forwarded-For": "100.64.0.9" } : {}) });
   await ctx.addInitScript(RECORDER);
   const page = await ctx.newPage();
   const cdpSession = await ctx.newCDPSession(page);

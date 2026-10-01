@@ -2,7 +2,8 @@
 // Drives the real index.ts through the globally installed pi runtime (jiti alias),
 // with a fake ExtensionAPI/TUI and a fake claude-code backend registration.
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -1014,6 +1015,32 @@ await commands.get("mode").handler("normal", ctx);
 	assert.deepEqual(worker.getTools(), ["read", "bash", "edit", "write", "grep"], "strict never strips a worker's edit/write");
 	const block = (await worker.hooks.get("before_agent_start")[0]({ systemPrompt: "base" }, worker.ctx)).systemPrompt;
 	assert.equal(block, `base\n\n${composeWorkerPrompt({ minorModes: ["spec"] })}`, "the worker form, with no writer paragraph although one is set");
+	// The full worktree-config mode extension appends the supplied parent ledger, not just spec-worker.ts.
+	const ledgerFixture = mkdtempSync(path.join(tmpdir(), "mode-worker-ledger-"));
+	const oldLedger = process.env.SOVA_SPEC_LEDGER;
+	try {
+		const ledger = path.join(ledgerFixture, "parent.jsonl");
+		const repo = path.join(ledgerFixture, "repo");
+		mkdirSync(repo);
+		const git = (...args) => { const r = spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "-C", repo, ...args], { encoding: "utf8" }); assert.equal(r.status, 0, r.stderr); return r.stdout.trim(); };
+		git("init", "-qb", "main");
+		writeFileSync(path.join(repo, "code.txt"), "before\n");
+		git("add", "."); git("commit", "-qm", "base");
+		const before = git("rev-parse", "HEAD");
+		worker.ctx.cwd = repo;
+		worker.ctx.sessionManager.getSessionId = () => "worker-fixture";
+		worker.ctx.sessionManager.getHeader = () => undefined;
+		process.env.SOVA_SPEC_LEDGER = ledger;
+		for (const fn of worker.hooks.get("agent_start")) await fn({}, worker.ctx);
+		writeFileSync(path.join(repo, "code.txt"), "after\n");
+		const call = { toolCallId: "worker-commit", toolName: "bash", input: { command: "git commit -qam work" } };
+		for (const fn of worker.hooks.get("tool_call")) await fn(call, worker.ctx);
+		git("commit", "-qam", "work");
+		for (const fn of worker.hooks.get("tool_result")) await fn({ ...call, content: [], isError: false }, worker.ctx);
+		const rows = readFileSync(ledger, "utf8").trim().split("\n").map(JSON.parse);
+		assert.equal(rows.length, 1, "actual worker operation appended exactly once");
+		assert.deepEqual([rows[0].top, rows[0].before, rows[0].after, rows[0].kind, rows[0].actor.session], [repo, before, git("rev-parse", "HEAD"), "commit", "worker-fixture"]);
+	} finally { if (oldLedger === undefined) delete process.env.SOVA_SPEC_LEDGER; else process.env.SOVA_SPEC_LEDGER = oldLedger; rmSync(ledgerFixture, { recursive: true, force: true }); }
 	// The same branch and flags without the marker: the snapshot wins, as before (the regression's other side).
 	const parent = load(false);
 	for (const fn of parent.hooks.get("session_start")) await fn({ reason: "startup" }, parent.ctx);
@@ -1177,6 +1204,35 @@ await commands.get("mode").handler("normal", ctx);
 	turn = await session.userTurn();
 	assert.equal(turn.section, rebuilt, "reopened after the compaction: the rebuilt head again");
 	assert.deepEqual(turn.notes, []);
+}
+
+// Note-only spec activation gets subsequent writer changes, including a worker-wake run.
+{
+	const host = makeApi();
+	const s = { status: new Map(), notices: [], widgets: new Map(), branch: [{ type: "custom", customType: "mode", data: { active: { version: 1, mode: "normal", strict: false, minorModes: [] } } }], customCalls: [] };
+	const c = makeCtx(s);
+	modeExtension(host.api);
+	const fire = async (name, event = {}) => { for (const fn of host.hooks.get(name) ?? []) await fn(event, c); };
+	const specFile = path.join(process.env.PI_CODING_AGENT_DIR, "mode-spec.json");
+	const writer = (model) => { writeFileSync(`${specFile}.tmp`, JSON.stringify({ version: 1, writer: { primary: { backend: "pi", model, effort: "high" }, fallback: null } })); renameSync(`${specFile}.tmp`, specFile); };
+	try {
+		await fire("session_start", { reason: "startup" });
+		await fire("before_agent_start", { systemPrompt: "base", prompt: "go" });
+		await fire("agent_start"); await fire("agent_settled");
+		writer("fixture/writer-a");
+		await host.commands.get("mode").handler("spec on", c);
+		await fire("before_agent_start", { systemPrompt: "base", prompt: "go" });
+		await fire("agent_start"); await fire("agent_settled");
+		assert.match(host.sent.at(-1).message.content, /fixture\/writer-a/);
+		const at = host.sent.length;
+		writer("fixture/writer-b");
+		await fire("agent_start"); // deliberately no before_agent_start: worker wake
+		await fire("agent_settled");
+		assert.equal(host.sent.length, at + 1, "writer-only change emits fresh context");
+		assert.match(host.sent.at(-1).message.content, /routing now applies instead of any earlier writer routing/);
+		assert.match(host.sent.at(-1).message.content, /fixture\/writer-b/);
+		assert.doesNotMatch(host.sent.at(-1).message.content, /fixture\/writer-a/);
+	} finally { rmSync(specFile, { force: true }); }
 }
 
 console.log("mode smoke tests passed");

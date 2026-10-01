@@ -41,7 +41,7 @@ test("round.mjs's tempCommitOf matches merge-readiness over every enumerated sub
 // the batch format and of queue_open's name rule (shared/topic-message.ts).
 interface RoundTopics {
   TOPIC_NAME_RE: RegExp;
-  parseBatch: (text: string) => { topic: string; notes: { id: string; from: string; lines: string[] }[] } | null;
+  parseBatch: (text: string) => { topic: string; notes: { id: string; from: string; at: string; lines: string[] }[] } | null;
 }
 
 test("round.mjs reads every batch the server frames, note by note, and the same topic names", async () => {
@@ -51,13 +51,14 @@ test("round.mjs reads every batch the server frames, note by note, and the same 
   const titles = ['Fix "login"', "multi\nline", "", "a".repeat(90)];
   let n = 0;
   for (const t of texts) for (const title of titles) for (const count of [1, 2]) {
-    const notes = Array.from({ length: count }, (_, i) => ({ id: `qi_00000000000${i}`, from: { sessionId: `s-${i}`, title }, at: "2026-10-01T10:00:00.000Z", text: t }));
+    const notes = Array.from({ length: count }, (_, i) => ({ id: `qi_00000000000${i}`, from: { sessionId: `s-${i}`, title }, at: `2026-10-01T10:00:0${i}.000Z`, text: t }));
     const framed = formatTopicBatch({ topic: "merge-k7m4qz", batch: "tb_0123456789ab", notes });
     const theirs = round.parseBatch(framed);
     const ours = parseTopicBatch(framed);
     assert.ok(theirs && ours, framed);
     assert.equal(theirs.topic, ours.topic);
-    assert.deepEqual(theirs.notes.map((x) => [x.id, x.from, x.lines.join("\n")]), ours.notes.map((x) => [x.id, x.from.sessionId, x.text]), framed);
+    // The note's time too: `reply` keeps only notes stamped after its ask.
+    assert.deepEqual(theirs.notes.map((x) => [x.id, x.from, x.at, x.lines.join("\n")]), ours.notes.map((x) => [x.id, x.from.sessionId, x.at, x.text]), framed);
     n++;
   }
   assert.ok(n >= 50);

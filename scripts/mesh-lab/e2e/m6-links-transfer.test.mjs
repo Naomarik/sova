@@ -25,7 +25,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { after, before, describe, test } from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { chaos, container, hostUrl, lab, laptopFetch, readAgentFile, requireLab, sh, tailnetIp, waitFor, writeAgentFile } from "./lib.mjs";
+import { chaos, container, hostUrl, lab, labTokenHeaders, laptopFetch, readAgentFile, requireLab, sh, tailnetIp, waitFor, writeAgentFile } from "./lib.mjs";
 import { accept, api, byId, decline, inbox, link, makeTree, MODEL, newSession, offer, offers, prompt, releaseLock, rowOf, send, takeLock, transcript, treeHash, unlink, waitIdle, waitInbox, waitOffer, writeLinksFile } from "./links-lib.mjs";
 
 const REPO = fileURLToPath(new URL("../../..", import.meta.url));
@@ -661,7 +661,7 @@ describe("10. the Agents tab: transfer chip and offer rows", () => {
     if (!existsSync(PW)) throw new Error(`Playwright not found at ${PW}: install the playwright skill or set PLAYWRIGHT_MODULE`);
     const { chromium } = await import(pathToFileURL(PW).href);
     browser = await chromium.launch({ headless: true, executablePath: chromiumBin() });
-    page = await (await browser.newContext({ serviceWorkers: "block" })).newPage();
+    page = await (await browser.newContext({ serviceWorkers: "block", extraHTTPHeaders: labTokenHeaders() })).newPage();
     await page.setViewportSize({ width: 1440, height: 900 });
   });
   after(async () => {

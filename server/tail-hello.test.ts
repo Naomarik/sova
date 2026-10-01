@@ -24,6 +24,7 @@ const { activeBranch, normalizeEntries, parseLines } = await import("./transcrip
 const { acquireChat, disposeAllChats } = await import("./chat-manager");
 const { canonicalPath } = await import("./paths");
 const { attachWebSockets } = await import("./ws");
+const { AUTH_COOKIE, sovaToken } = await import("./auth");
 
 /** Sockets still closing: their server side writes seen.json (server/seen.ts) on close. */
 const closing: Promise<void>[] = [];
@@ -232,7 +233,8 @@ after(() => server.close());
 
 /** Every frame a socket gets, raw, until `done` says so. */
 async function frames(route: string, done: (got: string[]) => boolean, onOpen?: (ws: WebSocket, got: string[]) => void): Promise<string[]> {
-  const ws = new WebSocket(`${await listening}${route}`);
+  // attachWebSockets is the main listener's gate too: the upgrade carries the cookie, as a browser's would.
+  const ws = new WebSocket(`${await listening}${route}`, { headers: { Cookie: `${AUTH_COOKIE}=${sovaToken()}` } });
   const got: string[] = [];
   await new Promise<void>((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error(`timed out; got ${got.map((g) => JSON.parse(g).type).join(",")}`)), 15_000);

@@ -43,6 +43,8 @@ export function secretRules(home = homedir(), agentDir = getAgentDir(), state = 
       // Sova's link stores: every hand-off link's and owner link's token hash (§app.overseer/tools).
       join(state, "baton-links.json"),
       join(state, "person-links.json"),
+      // The main listener's per-install token (§app.access/token): whoever has it has the app.
+      ...[join(home, ".pi", "agent"), agentDir].map((d) => join(d, "sova", "auth-token")),
       // The outreach setting and its receipts (§app.outreach/secrets).
       ...outreachSecretFiles(state),
     ],

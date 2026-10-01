@@ -2,6 +2,7 @@
 // chat on /ws/chat. Records every message in arrival order plus the close code.
 
 import { createRequire } from "node:module";
+import { tokenHeaders } from "./side.mjs";
 
 function wsClass(tree) {
   return createRequire(`${tree}/package.json`)("ws");
@@ -13,7 +14,7 @@ export function collect(tree, url, { ms = 1500, onMessage } = {}) {
   return new Promise((resolve) => {
     const msgs = [];
     let close = null;
-    const ws = new WebSocket(url);
+    const ws = new WebSocket(url, { headers: tokenHeaders() });
     const done = () => resolve({ msgs, close });
     const timer = setTimeout(() => ws.close(1000), ms);
     ws.on("message", (d) => {
@@ -63,7 +64,7 @@ export async function watchPhase(tree, wsBase, f) {
  * sides send the same messages at the same protocol points.
  */
 export async function chatPhase(tree, base, cwd) {
-  const r = await fetch(`${base}/api/sessions`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ cwd }) });
+  const r = await fetch(`${base}/api/sessions`, { method: "POST", headers: { ...tokenHeaders(), "content-type": "application/json" }, body: JSON.stringify({ cwd }) });
   const created = await r.json();
   if (r.status !== 201) return { created: { status: r.status, body: created }, msgs: [], close: null };
   let step = 0;

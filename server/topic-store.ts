@@ -12,7 +12,7 @@ import { stateRoot } from "./state-root";
 
 export const TOPIC_PENDING_CAP = 200;
 export const TOPIC_TEXT_MAX = 4000;
-export const TOPICS_PER_SESSION = 5;
+export const TOPICS_PER_SESSION = 10;
 const BASE_MAX = 16;
 const SUFFIX = 6;
 /** Closed topics' records are kept this long (so a name is never handed out twice meanwhile). */
@@ -24,6 +24,8 @@ export interface TopicRecord {
   project?: string;
   createdAt: string;
   closedAt?: string;
+  /** Sessions the receiver asked to answer here: only they may push. */
+  invited?: string[];
 }
 
 export interface TopicItem {
@@ -145,6 +147,30 @@ export class TopicStore {
     all[made] = { receiver: { ...receiver }, base, ...(project ? { project } : {}), createdAt: new Date(this.now()).toISOString() };
     this.saveTopics();
     return { name: made, reused: false };
+  }
+
+  /** Record `sessionId` as invited on the open topic `name`. Returns whether
+      that is new: an invitation lasts until the topic closes, and asking again changes nothing. */
+  invite(name: string, sessionId: string): boolean {
+    const t = this.topic(name);
+    if (!t || !sessionId || t.invited?.includes(sessionId)) return false;
+    (t.invited ??= []).push(sessionId);
+    this.saveTopics();
+    return true;
+  }
+
+  /** Take back an invitation `invite` just made, for a send that was then refused. */
+  uninvite(name: string, sessionId: string): void {
+    const t = this.topic(name);
+    const i = t?.invited?.indexOf(sessionId) ?? -1;
+    if (i < 0) return;
+    t!.invited!.splice(i, 1);
+    if (!t!.invited!.length) delete t!.invited;
+    this.saveTopics();
+  }
+
+  invited(name: string, sessionId: string): boolean {
+    return !!this.topic(name)?.invited?.includes(sessionId);
   }
 
   /** Close a topic: its record says so, its undelivered notes are dropped. Returns how many. */
@@ -286,7 +312,17 @@ export class TopicStore {
   }
 
   /** One audit line (§chat.topics/push), never a note's text. */
-  audit(line: { sessionId: string; tool: "queue_open" | "queue_push"; topic?: string; outcome: "ok" | "refused" | "closed"; item?: string; error?: string; dropped?: number }): void {
+  audit(line: {
+    sessionId: string;
+    tool: "queue_open" | "queue_push" | "session_send";
+    topic?: string;
+    outcome: "ok" | "refused" | "closed" | "invited";
+    item?: string;
+    error?: string;
+    reason?: "not-open" | "not-invited" | "receiver-gone";
+    target?: string;
+    dropped?: number;
+  }): void {
     try {
       mkdirSync(this.dir, { recursive: true });
       appendFileSync(join(this.dir, "audit.jsonl"), `${JSON.stringify({ at: new Date(this.now()).toISOString(), ...line })}\n`);

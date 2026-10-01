@@ -5,7 +5,7 @@
 //   scripts/mesh-lab/lab e2e m2        (spends two short glm-5.3 turns; needs the zai key on a, b)
 import assert from "node:assert/strict";
 import { before, describe, test } from "node:test";
-import { chaos, hostUrl, lab, laptopFetch, requireLab, sh, waitFor, writeAgentFile } from "./lib.mjs";
+import { chaos, hostUrl, lab, labTokenHeaders, laptopFetch, requireLab, sh, waitFor, writeAgentFile } from "./lib.mjs";
 
 const MODEL = "zai/glm-5.3";
 /** ws://127.0.0.1:<node's laptop port> */
@@ -20,7 +20,7 @@ const peerState = async (n, id) => (await meshOf(n)).peers?.find((p) => p.id ===
 function chat(url, text, { timeoutMs = 120000 } = {}) {
   return new Promise((resolve) => {
     const r = { opened: false, hello: null, model: null, deltas: "", eventTypes: new Set(), closeCode: null, closeReason: null, error: null };
-    const ws = new WebSocket(url);
+    const ws = new WebSocket(url, { headers: labTokenHeaders() });
     const done = () => {
       clearTimeout(timer);
       try {

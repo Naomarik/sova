@@ -1485,8 +1485,8 @@ example when its TUI closes and `live` becomes null. If it's the selected row, i
 **Archiving.** Sessions started from Sova (`origin === "web"`) can be archived by hand, so
 the top region doesn't keep every one of them forever.
 
-- **Where.** An Archive Session button (`archive.svg`) in the Session pane (§chat/transcript), only
-  on web sessions. Rows are links, so it can't live in them: a button inside `<a>` is invalid and
+- **Where.** An Archive Session button, a small red trash icon (`trash.svg`) with no words, at the
+  right end of the Session tab's Path heading row (§app.subagents-pane/tabs), only on web sessions. Rows are links, so it can't live in them: a button inside `<a>` is invalid and
   splits the row's single target. Dragging a row to the drop overlay's Archive tile
   (§app.session-list/drop-overlay) does the same, with an `Undo` on its toast.
 - **What it does.** `POST /api/sessions/archive { path, archived }`, then a list refresh. The id
@@ -1496,7 +1496,8 @@ the top region doesn't keep every one of them forever.
   toast is "Deleted. It had no messages, so there was nothing to archive." with no Undo.
   Otherwise the toast is "Archived. Find it under Archive." The row moves to the Archive, and case 2 keeps it
   visible while it's open.
-- **Undo.** On an archived session the same button is Unarchive Session. Toast: "Moved back to
+- **Undo.** On an archived session the same button, not red and with the undo icon
+  (`undo.svg`), is Unarchive Session. Toast: "Moved back to
   Live & web."
 - **Live.** A live session stays on top whether archived or not, and still shows its TUI rail
   pill.

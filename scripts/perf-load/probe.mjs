@@ -318,12 +318,22 @@ async function overseerCheck(rowsInBranch, earlierId) {
   const afterGc = await cdp.metrics();
   // Scrolling up: within 2 viewports of the top of the built rows, more are built (or fetched) and
   // the row at the top of the view stays where it was, to the pixel.
-  // The row is the first one reaching into the view (ThreadScroller's own spot), read right after
-  // the scroll is written and before its scroll event builds anything; then again once the build
-  // and the drawing of what it built are over.
+  // Scrolled up the way a wheel does, a quarter of a viewport every 150 ms from 3 viewports above
+  // the top of the rows, so the rows coming into view are drawn as they come (a single jump onto
+  // rows never drawn moves the view by itself as they draw, on master too, and isn't what this
+  // measures). The row is the first one reaching into the view (ThreadScroller's own spot), read
+  // at the step that enters the near-top zone, before its scroll event builds or fetches anything;
+  // then again once that and the drawing of what it built are over.
+  await cdp.evaluate(`(async () => {
+    const root = ${transcript};
+    for (let k = 0; k <= 6; k++) {
+      root.scrollTop = Math.round(root.clientHeight * (3.75 - 0.25 * k));
+      await new Promise((r) => setTimeout(r, 150));
+    }
+  })()`);
   const anchorBefore = await cdp.evaluate(`(() => {
     const root = ${transcript};
-    root.scrollTop = Math.round(root.clientHeight * 1.2);
+    root.scrollTop = Math.round(root.clientHeight * 1.75);
     const top = root.getBoundingClientRect().top;
     const row = [...root.querySelectorAll(".thread > .entry")].find((e) => { const b = e.getBoundingClientRect(); return b.height > 0 && b.bottom > top; });
     window.__perfAnchor = row;

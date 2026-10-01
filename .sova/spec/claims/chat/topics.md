@@ -19,12 +19,20 @@ topic-outline's topics and to a session's taxonomy topic tag (§app.decisions/se
 - **Reuse.** Opening the same base name again from the same session returns the topic it already
   has open under that base, so a captain that opens `merge` every round keeps one topic. A session
   holds at most 5 open topics. The sixth is refused.
-- **Closing.** A topic closes when its receiver is archived or its file is gone. The server notices
-  this the next time it pushes to or delivers on that topic. Notes still waiting then are dropped,
-  and the audit records how many.
+- **Invitations.** Only a session the receiver asked may push to its topic. When the receiver's
+  `session_send` is accepted (handed to its target or queued there, not refused) and its text names
+  one of the receiver's own open topics as a whole word (not inside a longer name), the server
+  records the target session as invited on that topic. Nothing else invites: no parameter, and
+  neither `queue_open` nor `queue_push` says anything about it. An invitation lasts until the topic
+  closes, and asking the same session again changes nothing. Each new invitation adds an audit line
+  `{at, sessionId, tool: "session_send", topic, outcome: "invited", target}`. Knowing the name is not
+  enough.
+- **Closing.** A topic closes when its receiver is archived or its file is gone. The server checks
+  this before it accepts a push to the topic, and again when it delivers on it. Notes still waiting
+  then are dropped, and the audit records how many.
 - **Kept.** Open topics are kept with the store (§chat.topics/store), as `{receiver session id,
-  receiver path, base, project?, createdAt, closedAt?}`. The project is recorded for the record
-  only: knowing the name is what lets a session push.
+  receiver path, base, project?, createdAt, closedAt?, invited?}`, `invited` being the invited
+  sessions' ids, so an invitation outlives a restart. The project is recorded for the record only.
 
 ## §chat.topics/push — `queue_push`
 
@@ -39,12 +47,16 @@ topic-outline's topics and to a session's taxonomy topic tag (§app.decisions/se
   The sender is never taken from a parameter.
 - **The result is one sentence**: `Queued on "{topic}".`, or a refusal that says why and takes nothing.
   A name that is not an open topic gets `No open topic "{topic}".`, with no hint about which topics
-  exist. The other refusals are a blank text, a text over 4,000 characters, the topic's own
+  exist. A sender the topic's receiver never invited (§chat.topics/open), and a push to a topic
+  whose receiver turns out to be archived or gone (which closes it), get exactly that sentence too,
+  so a refusal never tells whether the name exists; the audit line records the real reason. The
+  other refusals are a blank text, a text over 4,000 characters, the topic's own
   receiver, a sixth push from one session to one topic within 10 minutes, and a topic already holding
   200 undelivered notes.
 - **Audit.** Every `queue_open` and `queue_push`, refused or not, adds one line to
-  `<state root>/topics/audit.jsonl`: `{at, sessionId, tool, topic?, outcome, item?, error?}`. The text
-  is never logged.
+  `<state root>/topics/audit.jsonl`: `{at, sessionId, tool, topic?, outcome, item?, error?, reason?}`,
+  `reason` saying why a push got `No open topic` (`not-open`, `not-invited`, `receiver-gone`). The
+  text is never logged.
 
 ## §chat.topics/store — The notes, kept until delivered
 
@@ -55,7 +67,9 @@ topic-outline's topics and to a session's taxonomy topic tag (§app.decisions/se
   delivered, and a torn last line is skipped. Lines are appended one at a time. Once delivered notes
   make up most of the file, it is rewritten by atomic rename. The Stop pauses of receivers are kept
   there too, in `paused.json` (a pause outlives a restart; a path whose file is gone is pruned, and
-  closing a receiver's last topic lifts its pause). The store survives restarts.
+  closing a receiver's last topic lifts its pause). The store survives restarts. Sandboxed sessions
+  can't read it: `<agent dir>/sova/topics` is on the sandbox's built-in hidden list, beside
+  `auth.json` and `sova/api-token`.
 - **Never expired.** A note is kept until it is delivered or its topic closes. A topic holding 200
   undelivered notes refuses new pushes rather than dropping old ones.
 
@@ -70,7 +84,9 @@ topic-outline's topics and to a session's taxonomy topic tag (§app.decisions/se
   interrupted: one that is mid-turn, starting a turn, compacting, or holding messages in Sova's
   queue or the agent's own queue. Its notes go in when its turn settles or its compaction ends. The
   user's messages go first: when the web queue hands a message over at that settle, the batch waits
-  for the next one.
+  for the next one. A batch whose prompt finishes without its message ever entering the context
+  (an extension's input handler took it) is not delivered: its notes stay undelivered and nothing
+  stays in flight, so the next push or settle tries again.
 - **The writing guards hold.** A batch is refused, and its notes stay undelivered, for a TUI-live
   receiver, one another process is writing, one whose model the model policy has turned off, or a
   special session — the Overseer's, a baton's, a project overseer's or a worker's conversation. An

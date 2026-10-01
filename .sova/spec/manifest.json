@@ -10876,7 +10876,8 @@
       "code": [
         "server/topics.ts",
         "server/chat-manager.ts",
-        "server/topics-runtime.test.ts"
+        "server/topics-runtime.test.ts",
+        "server/topic-store.ts"
       ],
       "requires": [
         "§chat.topics/open",
@@ -10921,7 +10922,10 @@
       "evidence": "verified",
       "code": [
         "server/topic-store.ts",
-        "server/topic-store.test.ts"
+        "server/topic-store.test.ts",
+        "pi-config/extensions/sandbox/backends/linux-bwrap.ts",
+        "pi-config/extensions/sandbox/backends/darwin-seatbelt.ts",
+        "pi-config/extensions/sandbox/tests/unit/linux-bwrap.unit.test.ts"
       ],
       "requires": []
     },

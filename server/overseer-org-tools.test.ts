@@ -27,6 +27,7 @@ const po = await import("./project-overseer");
 const store = await import("./project-overseer-store");
 const overseer = await import("./overseer");
 const tools = await import("./overseer-tools");
+const { UserTurns } = await import("./user-turns");
 const view = await import("./overseer-org-view");
 const confirm = await import("./overseer-confirm");
 const { applyCardCall, cardLines } = await import("../shared/overseer-card");
@@ -616,7 +617,7 @@ describe("the confirm card: people and projects, and the click that opens a conf
   });
 
   test("UserTurns: a click's card lasts for its own run only; a typed message opens none", () => {
-    const turns = new tools.UserTurns();
+    const turns = new UserTurns();
     const agent = { prompt: async (_m: unknown) => {}, steer: (_m: unknown) => {}, followUp: (_m: unknown) => {} };
     turns.watch(agent as never);
     const msg = { role: "user", content: "Start the session with Lee." };
@@ -634,7 +635,7 @@ describe("the confirm card: people and projects, and the click that opens a conf
   });
 
   test("UserTurns: the open-cards note is state, not input; any other extension message still ends the user's part", () => {
-    const turns = new tools.UserTurns();
+    const turns = new UserTurns();
     const agent = { prompt: async (_m: unknown) => {}, steer: (_m: unknown) => {}, followUp: (_m: unknown) => {} };
     turns.watch(agent as never);
     const msg = { role: "user", content: "c_1 a: Start the session with Lee." };

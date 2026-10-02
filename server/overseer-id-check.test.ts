@@ -12,7 +12,7 @@ process.env.PI_CODING_AGENT_DIR = agentDir;
 
 const { assistantText, editDistance, ID_NOTE_MAX, ID_NOTE_MESSAGE, idCheckNote, linkedSessionIds, nearestId, nearMaxEdits } = await import("./overseer-id-check");
 const { idNoteMessage } = await import("./overseer");
-const { UserTurns } = await import("./overseer-tools");
+const { UserTurns } = await import("./user-turns");
 const { disposeAllChats } = await import("./chat-manager");
 
 after(async () => {

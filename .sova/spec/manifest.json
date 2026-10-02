@@ -792,12 +792,7 @@
       "authority": "accepted",
       "evidence": "verified",
       "code": [
-        "src/components/ToolCard.tsx",
-        "src/design/base.css",
-        "src/components/ImageStrip.tsx",
-        "src/lib/image-size.ts",
-        "src/lib/image-size.test.ts",
-        "src/app.css"
+        "src/design/base.css"
       ]
     },
     "§chat.markdown/accessibility": {
@@ -1245,22 +1240,8 @@
       "authority": "accepted",
       "evidence": "verified",
       "code": [
-        "server/transcript.ts",
-        "src/lib/change-rows.ts",
         "src/components/Thread.tsx",
-        "shared/link-message.ts",
-        "src/lib/turn.ts",
-        "src/lib/live.ts",
-        "src/components/ToolCard.tsx",
-        "src/components/AlignDocCard.tsx",
-        "shared/protocol.ts",
-        "src/components/ExplainCard.tsx",
-        "server/explanations.test.ts",
-        "src/lib/explain.ts",
-        "src/lib/explain.test.ts",
-        "src/components/SessionPane.tsx",
-        "pi-config/extensions/stamp/format.ts",
-        "shared/topic-message.ts"
+        "src/design/base.css"
       ]
     },
     "§chat/composer": {
@@ -11346,12 +11327,9 @@
     "§chat.transcript/work-chain": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "verified",
       "code": [
-        "src/lib/chain-rows.ts",
-        "src/lib/chain-rows.test.ts",
         "src/components/Thread.tsx",
-        "src/lib/tail-render.ts",
         "src/design/base.css"
       ]
     },

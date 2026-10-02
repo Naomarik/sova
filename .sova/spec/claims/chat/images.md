@@ -62,7 +62,7 @@ summary row, whether the card is open or closed. Opening and closing the card sh
 Arguments and Output only, never the images. A closed `<details>` hides everything but its
 summary, so the card is a `.toolcard` wrapper holding the `<details>` and, after it, a
 `.toolcard-media` strip: one card to the eye (the wrapper carries the border, radius and sunken
-ground; the strip is set off by a 1px `--color-border` rule and padded `--space-2`
+ground; the strip has no horizontal separator and is padded `--space-2`
 `--space-3`). Once the card is open, Arguments and Output come between the summary and the
 images. There is no separate count: the summary has no image badge, and the body has no
 "Images" section, because the strip is the images' one place.

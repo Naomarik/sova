@@ -115,7 +115,11 @@ drop `.message-text`. `.message-body` already styles `p`, `ul`, `ol`, inline `co
 Don't syntax-highlight in accent colors; the accent means action.
 
 **thinking.** Collapsed by default. A native `<details>`, so it needs no script and AT announces
-expanded or collapsed.
+expanded or collapsed. Only the expanded thinking content is inset 20px on each side and
+uses italic 13.5px body text (`--fs-body` minus 1px) in `--color-ink-2`, on a subtle
+`--color-sunken` quote-like block with `--space-3` padding and `--r-sm` corners. It draws no border.
+Its summary stays unchanged; other disclosure bodies and tool output keep their own styles.
+This treatment applies to settled and streaming thinking, with compact working rows enabled or disabled.
 
 ```html
 <details class="disclosure">
@@ -124,7 +128,7 @@ expanded or collapsed.
     <span class="disclosure-label">Thinking</span>
     <span class="disclosure-preview">· {first line of text, ~80 chars}</span>
   </summary>
-  <div class="disclosure-body">{text}</div>
+  <div class="disclosure-body thinking-body">{text}</div>
 </details>
 ```
 
@@ -132,7 +136,9 @@ While thinking streams, the summary shows `<span class="live-dot"></span>` after
 preview updates live and the disclosure stays closed unless the user opened it. If the user opens
 it, keep it open across updates, because the open state is theirs.
 
-**tool-call and tool-result.** One card per call. Pair them by `toolCallId`, and render the card
+**tool-call and tool-result.** One card per call. Expanded tool content and returned media
+have no horizontal separator beneath the summary; spacing, outer card boundaries, and focus
+styles remain unchanged. Pair them by `toolCallId`, and render the card
 at the tool-call's position. A result with no matching call gets its own card with the name
 "result".
 
@@ -1295,8 +1301,9 @@ A run of consecutive working rows — a thinking row, a plain tool call, an orph
 there is one of them or twenty — draws as a single timeline: one bare hairline rail in
 `--color-border`, one line per step of `--timeline-row` (`--space-5`, 24px: the summary's
 `min-height` and each rail segment's height) with `--timeline-gap` (`--space-2`) of air between two
-steps, and no card behind any of them — no fill, no border, no rounding, and no head line above
-them. The timeline is indented `--space-5` with the rail drawn inside that gutter: it runs from the
+steps, and no card behind any step summary — no fill, no border, no rounding, and no head line above
+them. Expanded thinking content alone uses the inset, italic, subtly shaded quote-like block
+specified in the transcript items; it adds no border or rail. The timeline is indented `--space-5` with the rail drawn inside that gutter: it runs from the
 run's first line to its last, and reaches half the gap past its own row at each end so the air
 between two steps never breaks the line.
 
@@ -1323,7 +1330,7 @@ The timeline breaks at anything that is the message rather than the working — 
 message, a report, a card tool (`sova_card`, `sova_confirm`, `sova_link`, `sova_unlink`, `align`,
 `session_send`, `sova_create_session`, or `show_changes` with valid successful details),
 a compaction, a topic, a wake, a worktree merge — so a card tool is never swallowed into a step.
-Nothing about a step is a card, and no step draws as one.
+No step summary draws as a card; the expanded thinking aside is the only subtly shaded content.
 
 A row that draws nothing is TRANSPARENT to the timeline: it is not a step and it never breaks a
 run, so consecutive visible working rows join up across it with no gap. That is a tool result whose

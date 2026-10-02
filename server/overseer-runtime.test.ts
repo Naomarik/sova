@@ -297,7 +297,7 @@ describe("turns the user did not start are read-only", () => {
     sova_unlink: { link: "lk_0123456789abcdef" },
     // §app.overseer/org-tools: every organization act.
     sova_org: { op: "create", name: "Probe Org" },
-    sova_org_project: { op: "add", org: "any", name: "p", root: agentDir },
+    sova_org_project: { op: "edit", project: "any", name: "p" },
     sova_roster: { op: "add", org: "any", name: "Probe Person" },
     sova_owner: { op: "set", org: "any", person: null },
     sova_project_decisions: { op: "reconcile", org: "any", project: "any" },
@@ -320,7 +320,7 @@ describe("turns the user did not start are read-only", () => {
     sova_card: { ops: [{ op: "create", title: "Archive these?", options: [{ label: "Yes" }, { label: "No" }] }] },
     sova_navigate: { page: "usage" },
   };
-  const READS = ["sova_attention", "sova_list_sessions", "sova_session", "sova_alignment", "sova_read_session", "sova_list_groups", "sova_list_targets", "sova_list_models", "sova_list_subagent_profiles", "sova_list_folders", "sova_ideas", "sova_todos", "sova_links", "sova_orgs", "sova_org_person"];
+  const READS = ["sova_attention", "sova_list_sessions", "sova_session", "sova_alignment", "sova_read_session", "sova_list_groups", "sova_list_targets", "sova_list_models", "sova_list_subagent_profiles", "sova_list_folders", "sova_ideas", "sova_todos", "sova_links", "sova_orgs", "sova_org_person", "sova_projects"];
   /** Reads by their parameters: sova_org_project without op reads (with op it acts, above). */
   const READ_CALLS: [string, Record<string, unknown>][] = [
     ["sova_org_project", { org: "any", project: "any" }],

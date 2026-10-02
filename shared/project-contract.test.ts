@@ -2,10 +2,12 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   closureOf,
+  DEFINITION_KEYS,
   DefinitionError,
   ERROR_CODES,
   exitOf,
   httpStatusOf,
+  ISOLATION_METHODS,
   isVerbResult,
   ordered,
   parseDefinition,
@@ -204,4 +206,38 @@ test("a tests block goes between conform and error", () => {
   const swapped = { ...head, error, tests, defHash, approved, at };
   assert.deepEqual(Object.keys(swapped).slice(-5), ["error", "tests", "defHash", "approved", "at"]);
   assert.ok(!isVerbResult(swapped), "tests after error is not the shape");
+});
+
+test("sources and isolation: parsed strictly, kept as written, and the key lists name every accepted key", () => {
+  const def = parse({
+    version: 1,
+    sources: ["bb.edn", ".mise.toml", "infra/compose.yml"],
+    services: { web: { cmd: ["bb", "clj"], ports: { http: { base: 4000, stride: 10 } }, isolation: { method: "ports", why: "Its own port per slot; its data is cloned from main." } } },
+  });
+  assert.deepEqual(def.sources, ["bb.edn", ".mise.toml", "infra/compose.yml"], "dot-files allowed");
+  assert.deepEqual(def.services[0]!.isolation, { method: "ports", why: "Its own port per slot; its data is cloned from main." });
+  assert.equal(parse({ version: 1, services: { a: { cmd: ["x"] } } }).sources, undefined);
+  const svc = { cmd: ["x"] };
+  assert.equal(refusedAt({ version: 1, sources: ["../up"], services: { a: svc } }), "$.sources[0]");
+  assert.equal(refusedAt({ version: 1, sources: ["/etc/passwd"], services: { a: svc } }), "$.sources[0]");
+  assert.equal(refusedAt({ version: 1, sources: ["a", "a"], services: { a: svc } }), "$.sources");
+  assert.equal(refusedAt({ version: 1, sources: Array.from({ length: 51 }, (_, i) => `f${i}`), services: { a: svc } }), "$.sources");
+  assert.equal(refusedAt({ version: 1, sources: "bb.edn", services: { a: svc } }), "$.sources");
+  assert.equal(refusedAt({ version: 1, services: { a: { ...svc, isolation: { method: "vm", why: "x" } } } }), "$.services.a.isolation.method");
+  assert.equal(refusedAt({ version: 1, services: { a: { ...svc, isolation: { method: "ports" } } } }), "$.services.a.isolation.why");
+  assert.equal(refusedAt({ version: 1, services: { a: { ...svc, isolation: { method: "ports", why: "x".repeat(201) } } } }), "$.services.a.isolation.why");
+  assert.equal(refusedAt({ version: 1, services: { a: { ...svc, isolation: { method: "ports", why: "x", how: 1 } } } }), "$.services.a.isolation.how");
+  for (const m of ISOLATION_METHODS) assert.equal(parse({ version: 1, services: { a: { ...svc, isolation: { method: m, why: "x" } } } }).services[0]!.isolation!.method, m);
+  // The lists the playbook's reference is pinned to are the ones the parse enforces.
+  assert.ok(DEFINITION_KEYS.top.includes("sources") && DEFINITION_KEYS.service.includes("isolation"));
+  const known = (o: object) => {
+    try {
+      parse(o);
+    } catch (err) {
+      assert.doesNotMatch(String(err), /unknown key/, JSON.stringify(o));
+    }
+  };
+  for (const k of DEFINITION_KEYS.top) known({ version: 1, services: { a: svc }, [k]: 12 });
+  for (const k of DEFINITION_KEYS.service) known({ version: 1, services: { a: { ...svc, [k]: 12 } } });
+  assert.equal(refusedAt({ version: 1, services: { a: svc }, nope: 1 }), "$.nope");
 });

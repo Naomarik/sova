@@ -98,6 +98,13 @@ export interface ServiceDecl {
   start: "up" | "on-demand";
   /** How a builder uses it (a template, no `${host.…}`), for the instance note; outside the hash. */
   about?: string;
+  /** How it is isolated and why: a record for the reader, never applied; outside the hash. */
+  isolation?: IsolationDecl;
+}
+export const ISOLATION_METHODS = ["ports", "names", "process", "container", "netns", "shared"] as const;
+export interface IsolationDecl {
+  method: (typeof ISOLATION_METHODS)[number];
+  why: string;
 }
 /** The project's test command (§app.project-services/test). */
 export interface TestDecl {
@@ -123,6 +130,8 @@ export interface ProjectDef {
   test?: TestDecl;
   /** Reserved (share, deploy): kept as written, not used yet. */
   reserved: { share?: unknown; deploy?: unknown };
+  /** The checkout files the definition was written from; their change at HEAD is drift. Outside the hash. */
+  sources?: string[];
 }
 
 export const CONTRACT_FILE = ".sova/project.json";
@@ -134,6 +143,7 @@ export const HOOK_TIMEOUT_DEFAULT = 120;
 export const HOOK_TIMEOUT_MAX = 1800;
 export const TEST_TIMEOUT_DEFAULT = 600;
 export const ABOUT_MAX = 200;
+export const SOURCES_MAX = 50;
 export const SELECTORS_MAX = 50;
 /** A test selector: never empty, never a flag (§app.project-services/contract). */
 export const SELECTOR = /^[A-Za-z0-9_][A-Za-z0-9_./:*-]{0,199}$/;
@@ -166,6 +176,25 @@ export class DefinitionError extends Error {
 
 type Obj = Record<string, unknown>;
 const isObj = (v: unknown): v is Obj => !!v && typeof v === "object" && !Array.isArray(v);
+
+/** Every key the declaration accepts, by where it sits (the parse refuses any other; the playbook's reference is pinned to these). */
+export const DEFINITION_KEYS = {
+  top: ["version", "slots", "host", "setup", "data", "services", "hooks", "test", "share", "deploy", "sources"],
+  slots: ["cap"],
+  step: ["id", "run", "inputs", "timeout"],
+  service: ["cmd", "static", "cwd", "env", "ports", "requires", "ready", "reload", "build", "scope", "container", "start", "about", "isolation"],
+  port: [["base", "stride"], ["fixed"]],
+  ready: [["tcp", "timeout"], ["http", "path", "timeout"]],
+  reload: [["signal"], ["cmd"]],
+  build: ["run", "inputs", "timeout"],
+  container: ["name", "engine"],
+  isolation: ["method", "why"],
+  data: [["kind", "path", "from"], ["kind", "provision", "deprovision", "timeout"]],
+  hooks: ["probe"],
+  probe: ["run", "inputs", "timeout"],
+  test: ["run", "requires", "timeout", "smoke"],
+} as const;
+const K = DEFINITION_KEYS;
 
 function keysOnly(o: Obj, allowed: readonly string[], path: string): void {
   for (const k of Object.keys(o)) if (!allowed.includes(k)) throw new DefinitionError(`${path}.${k}`, "unknown key");
@@ -214,7 +243,7 @@ function strList(v: unknown, path: string): string[] {
 
 function step(v: unknown, path: string, withId: boolean): StepDecl {
   const o = obj(v, path);
-  keysOnly(o, withId ? ["id", "run", "inputs", "timeout"] : ["run", "inputs", "timeout"], path);
+  keysOnly(o, withId ? K.step : K.build, path);
   const id = withId ? name(typeof o.id === "string" ? o.id : "", `${path}.id`) : "";
   return { id, run: argv(o.run, `${path}.run`), inputs: strList(o.inputs, `${path}.inputs`).map((p, i) => relPath(p, `${path}.inputs[${i}]`, true)), timeout: timeout(o.timeout, `${path}.timeout`, HOOK_TIMEOUT_DEFAULT, HOOK_TIMEOUT_MAX) };
 }
@@ -222,10 +251,10 @@ function step(v: unknown, path: string, withId: boolean): StepDecl {
 function port(v: unknown, path: string): PortDecl {
   const o = obj(v, path);
   if ("fixed" in o) {
-    keysOnly(o, ["fixed"], path);
+    keysOnly(o, K.port[1], path);
     return { fixed: int(o.fixed, `${path}.fixed`, 1024, 65535) };
   }
-  keysOnly(o, ["base", "stride"], path);
+  keysOnly(o, K.port[0], path);
   return { base: int(o.base, `${path}.base`, 1024, 65535), stride: o.stride === undefined ? 1 : int(o.stride, `${path}.stride`, 1, 1000) };
 }
 
@@ -237,11 +266,11 @@ function ready(v: unknown, path: string, ports: Record<string, PortDecl>): Ready
     return x;
   };
   if ("tcp" in o) {
-    keysOnly(o, ["tcp", "timeout"], path);
+    keysOnly(o, K.ready[0], path);
     return { tcp: portName(o.tcp, `${path}.tcp`), timeout: t };
   }
   if ("http" in o) {
-    keysOnly(o, ["http", "path", "timeout"], path);
+    keysOnly(o, K.ready[1], path);
     const p = o.path === undefined ? "/" : o.path;
     if (typeof p !== "string" || !p.startsWith("/")) throw new DefinitionError(`${path}.path`, "must start with /");
     return { http: portName(o.http, `${path}.http`), path: p, timeout: t };
@@ -254,17 +283,17 @@ function reload(v: unknown, path: string): ReloadDecl {
   if (v === "restart" || v === "none") return v;
   const o = obj(v, path);
   if ("signal" in o) {
-    keysOnly(o, ["signal"], path);
+    keysOnly(o, K.reload[0], path);
     if (!(SIGNALS as readonly unknown[]).includes(o.signal)) throw new DefinitionError(`${path}.signal`, `must be one of ${SIGNALS.join(", ")}`);
     return { signal: o.signal as (typeof SIGNALS)[number] };
   }
-  keysOnly(o, ["cmd"], path);
+  keysOnly(o, K.reload[1], path);
   return { cmd: argv(o.cmd, `${path}.cmd`) };
 }
 
 function service(nm: string, v: unknown, path: string): ServiceDecl {
   const o = obj(v, path);
-  keysOnly(o, ["cmd", "static", "cwd", "env", "ports", "requires", "ready", "reload", "build", "scope", "container", "start", "about"], path);
+  keysOnly(o, K.service, path);
   const hasCmd = o.cmd !== undefined;
   const hasStatic = o.static !== undefined;
   if (hasCmd === hasStatic) throw new DefinitionError(path, "needs exactly one of cmd (an argv) and static (a folder)");
@@ -299,6 +328,13 @@ function service(nm: string, v: unknown, path: string): ServiceDecl {
     if (/\$\{host\./.test(o.about)) throw new DefinitionError(`${path}.about`, "may not read ${host.…}: the note is shown to sessions");
     out.about = o.about;
   }
+  if (o.isolation !== undefined) {
+    const i = obj(o.isolation, `${path}.isolation`);
+    keysOnly(i, K.isolation, `${path}.isolation`);
+    if (!(ISOLATION_METHODS as readonly unknown[]).includes(i.method)) throw new DefinitionError(`${path}.isolation.method`, `must be one of ${ISOLATION_METHODS.join(", ")}`);
+    if (typeof i.why !== "string" || !i.why.trim() || i.why.length > ABOUT_MAX) throw new DefinitionError(`${path}.isolation.why`, `must be a sentence of at most ${ABOUT_MAX} characters`);
+    out.isolation = { method: i.method as IsolationDecl["method"], why: i.why };
+  }
   if (hasStatic) {
     out.static = relPath(o.static, `${path}.static`);
     if (Object.keys(ports).length !== 1) throw new DefinitionError(`${path}.ports`, "a static service has exactly one port");
@@ -314,7 +350,7 @@ function service(nm: string, v: unknown, path: string): ServiceDecl {
   }
   if (o.container !== undefined) {
     const c = obj(o.container, `${path}.container`);
-    keysOnly(c, ["name", "engine"], `${path}.container`);
+    keysOnly(c, K.container, `${path}.container`);
     if (typeof c.name !== "string" || !c.name) throw new DefinitionError(`${path}.container.name`, "must be a container name (a template)");
     const engine = c.engine === undefined ? "docker" : c.engine;
     if (engine !== "docker" && engine !== "podman") throw new DefinitionError(`${path}.container.engine`, "must be docker or podman");
@@ -328,13 +364,13 @@ function service(nm: string, v: unknown, path: string): ServiceDecl {
 function data(nm: string, v: unknown, path: string): DataDecl {
   const o = obj(v, path);
   if (o.kind === "dir") {
-    keysOnly(o, ["kind", "path", "from"], path);
+    keysOnly(o, K.data[0], path);
     const from = o.from === undefined ? "empty" : o.from;
     if (typeof from !== "string" || !from) throw new DefinitionError(`${path}.from`, 'must be "empty" or a folder (a template)');
     return { name: nm, kind: "dir", ...(o.path !== undefined ? { path: relPath(o.path, `${path}.path`, true) } : {}), from };
   }
   if (o.kind === "hook") {
-    keysOnly(o, ["kind", "provision", "deprovision", "timeout"], path);
+    keysOnly(o, K.data[1], path);
     return { name: nm, kind: "hook", provision: argv(o.provision, `${path}.provision`), deprovision: argv(o.deprovision, `${path}.deprovision`), timeout: timeout(o.timeout, `${path}.timeout`, HOOK_TIMEOUT_DEFAULT, HOOK_TIMEOUT_MAX) };
   }
   throw new DefinitionError(`${path}.kind`, 'must be "dir" or "hook"');
@@ -373,12 +409,12 @@ export function parseDefinition(text: string): ProjectDef {
     throw new DefinitionError("$", `not JSON (${err instanceof Error ? err.message : String(err)})`);
   }
   const o = obj(raw, "$");
-  keysOnly(o, ["version", "slots", "host", "setup", "data", "services", "hooks", "test", "share", "deploy"], "$");
+  keysOnly(o, K.top, "$");
   if (o.version !== 1) throw new DefinitionError("$.version", "must be 1");
   let cap = SLOT_CAP_DEFAULT;
   if (o.slots !== undefined) {
     const s = obj(o.slots, "$.slots");
-    keysOnly(s, ["cap"], "$.slots");
+    keysOnly(s, K.slots, "$.slots");
     if (s.cap !== undefined) cap = int(s.cap, "$.slots.cap", 1, SLOT_CAP_MAX);
   }
   const host = strList(o.host, "$.host");
@@ -393,16 +429,23 @@ export function parseDefinition(text: string): ProjectDef {
   const hooks: ProjectDef["hooks"] = {};
   if (o.hooks !== undefined) {
     const h = obj(o.hooks, "$.hooks");
-    keysOnly(h, ["probe"], "$.hooks");
+    keysOnly(h, K.hooks, "$.hooks");
     if (h.probe !== undefined) {
       const p = step(h.probe, "$.hooks.probe", false);
       hooks.probe = { run: p.run, timeout: p.timeout };
     }
   }
+  let sources: string[] | undefined;
+  if (o.sources !== undefined) {
+    const list = strList(o.sources, "$.sources");
+    if (list.length > SOURCES_MAX) throw new DefinitionError("$.sources", `at most ${SOURCES_MAX} files`);
+    sources = list.map((p, i) => relPath(p, `$.sources[${i}]`, true));
+    if (new Set(sources).size !== sources.length) throw new DefinitionError("$.sources", "each file once");
+  }
   let test: TestDecl | undefined;
   if (o.test !== undefined) {
     const t = obj(o.test, "$.test");
-    keysOnly(t, ["run", "requires", "timeout", "smoke"], "$.test");
+    keysOnly(t, K.test, "$.test");
     const requires = strList(t.requires, "$.test.requires");
     for (const r of requires) if (!services.some((x) => x.name === r)) throw new DefinitionError("$.test.requires", `names no service "${r}"`);
     if (!Array.isArray(t.smoke) || !t.smoke.length) throw new DefinitionError("$.test.smoke", "name the smoke selection: 1 to 50 selectors, green on the main checkout");
@@ -420,6 +463,7 @@ export function parseDefinition(text: string): ProjectDef {
     hooks,
     ...(test ? { test } : {}),
     reserved: { ...(o.share !== undefined ? { share: o.share } : {}), ...(o.deploy !== undefined ? { deploy: o.deploy } : {}) },
+    ...(sources ? { sources } : {}),
   };
   // requires: known, scope-consistent, acyclic.
   const byName = new Map(services.map((s) => [s.name, s]));
@@ -560,6 +604,8 @@ export interface ServiceView {
   ports: Record<string, number>;
   ready?: { probe: string; ok: boolean; ms: number };
   detail?: string;
+  /** The resident memory of its unit's processes now, while a process or container service runs. */
+  rssBytes?: number;
 }
 export interface DataView {
   name: string;
@@ -588,6 +634,15 @@ export interface LogLine {
   service: string;
   text: string;
 }
+/** One service's resident memory over a conformance run: its peak, and its steady reading (null: never read). */
+export interface MemoryReading {
+  peakBytes: number | null;
+  steadyBytes: number | null;
+}
+/** Each scratch instance's memory (the sum of its services), and each service's (§app.project-services/conform). */
+export interface ConformMemory {
+  instances: (MemoryReading & { label: "A" | "B"; services: (MemoryReading & { name: string })[] })[];
+}
 export interface ConformReport {
   suiteVersion: number;
   defHash: string;
@@ -595,6 +650,9 @@ export interface ConformReport {
   pass: boolean;
   checks: Check[];
   leaks: string[];
+  /** Run in a private network namespace under the sandbox policy, before approval (§app.project-services/confined). */
+  confined?: boolean;
+  memory?: ConformMemory;
 }
 export interface TestFailure {
   name: string;

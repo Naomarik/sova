@@ -15,6 +15,7 @@ import {
   READ_VERBS,
   render,
   RESERVED_VERBS,
+  scratchSlots as scratchSlotsOf,
   selectorsProblem,
   serviceOrder,
   FAILURE_MESSAGE_MAX,
@@ -39,7 +40,8 @@ import {
 import type { PortOwner } from "../port-owner";
 import { startStaticServe, staticServes, StaticServeError, stopStaticServe } from "../preview-serve";
 import { projectOf } from "../project-root";
-import { DriverError, type Driver, type UnitSpec } from "./drivers";
+import { confinementOf, type Confinement } from "./confine";
+import { DriverError, rssOf, type Driver, type OnceSpec, type UnitSpec } from "./drivers";
 import { hostPortOwner } from "./proctable";
 import type { NoteFacts } from "./note";
 import { hostedBusy, serverCheckout } from "./self-host";
@@ -75,7 +77,8 @@ export type Caller =
       level; the engine checks none. */
   | { kind: "project-overseer"; id: string; root: string; act: VerbAct }
   | { kind: "session"; id: string; root: string | null; own: string[] }
-  | { kind: "conform"; id: string };
+  /** `confine`: a confined run (§app.project-services/confined): the instances it makes run inside it, unapproved. */
+  | { kind: "conform"; id: string; confine?: Confinement };
 
 /** Resolves once the project statechart took the verb's act; throws its refusal otherwise. */
 export type VerbAct = (verb: AnyVerb, instance: string | null) => Promise<void>;
@@ -303,12 +306,28 @@ interface Scope {
   slot: number;
   ports: Record<string, Record<string, number>>;
   data: Record<string, string>;
+  /** Its confined run, or "ended" when the run it belongs to is over (nothing of it may start). */
+  confine: Confinement | "ended" | null;
+  /** The project's shared services' scope. */
+  shared?: boolean;
 }
 
 /** Whether a definition runs any process (a cmd service, a setup step, a data or probe hook), rather than only static folders. */
 const runsProcesses = (def: ProjectDef) => def.services.some((s) => s.static === undefined) || def.setup.length > 0 || def.data.some((d) => d.kind === "hook") || !!def.hooks.probe;
 
-const scopeOf = (rec: InstanceRecord): Scope => ({ id: rec.id, project: rec.project, checkout: rec.checkout, branch: rec.branch, slot: rec.slot, ports: rec.ports, data: rec.data });
+const scopeOf = (rec: InstanceRecord): Scope => ({
+  id: rec.id,
+  project: rec.project,
+  checkout: rec.checkout,
+  branch: rec.branch,
+  slot: rec.slot,
+  ports: rec.ports,
+  data: rec.data,
+  confine: rec.confined ? (confinementOf(rec.confined) ?? "ended") : null,
+});
+
+/** The confined run a caller acts in, if any. */
+const confineOf = (c: Caller): Confinement | null => (c.kind === "conform" && c.confine ? c.confine : null);
 
 export class ProjectEngine {
   readonly driver: Driver;
@@ -356,6 +375,30 @@ export class ProjectEngine {
   /** Every unit name of this state root starts with it. */
   unitPrefix(): string {
     return `sova-svc-${stateHash()}-`;
+  }
+
+  /** `spec` as it runs in `scope`: as it is, or inside the scope's confined run (§app.project-services/confined). */
+  private async inScope<T extends UnitSpec>(scope: Scope, spec: T): Promise<T> {
+    const c = scope.confine;
+    if (!c) return spec;
+    if (c === "ended") throw new VerbFailure("not-approved", `${scope.id} belonged to a confined conformance run that has ended: nothing of it starts again`);
+    // Its own writable state: the checkout and data dir (a shared service's: a data dir of the run's own, never the main checkout).
+    const dataDir = dataRootOf(scope.id);
+    mkdirSync(dataDir, { recursive: true });
+    try {
+      const w = await c.wrap({ argv: spec.argv, cwd: spec.cwd, env: spec.env, checkout: scope.shared ? dataDir : scope.checkout, dataDir, tmpKey: scope.id });
+      c.units.add(spec.unit);
+      return { ...spec, argv: w.argv, env: w.env };
+    } catch (err) {
+      throw new VerbFailure("start-failed", `confining ${spec.unit} failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  /** Who listens on `port` as `s` in `scope` sees it: inside its confined run, or on this host (a static service is served here). */
+  private ownerIn(scope: Scope, s?: ServiceDecl): (port: number) => PortOwner {
+    const c = scope.confine;
+    if (c && c !== "ended" && s?.static === undefined) return (p) => c.portOwner(p);
+    return this.portOwner;
   }
 
   // ---- entry --------------------------------------------------------------------------------------
@@ -505,11 +548,17 @@ export class ProjectEngine {
     if (!d.ok) throw new VerbFailure("unsupported", `${d.detail}: this host can't run a project's processes`);
   }
 
+  /** A confined run acting on its own instances (or making one), which run unapproved, only inside it (§app.project-services/confined). */
+  private confinedRun(run: Run): boolean {
+    const c = confineOf(run.caller);
+    return !!c && (!run.rec || run.rec.confined === c.runId);
+  }
+
   /** The definition, valid and approved, or the refusal. */
   private need(run: Run, approved = true): ProjectDef {
     if (run.defError) throw new VerbFailure("invalid-definition", run.defError.message);
     if (!run.def) throw new VerbFailure("invalid-definition", `no ${CONTRACT_FILE}`);
-    if (approved && !run.approved)
+    if (approved && !run.approved && !this.confinedRun(run))
       throw new VerbFailure("not-approved", `this definition (${run.defHash}) is not approved on this host: the operator approves it (sova-project approve --project ${run.project} --def-hash ${run.defHash})`);
     return run.def;
   }
@@ -692,7 +741,7 @@ export class ProjectEngine {
       env: this.env(def, scope, { verb, step: stepId, out: outFile }),
       timeoutSec,
     };
-    const r = await this.driver.runOnce(spec);
+    const r = await this.driver.runOnce(await this.inScope(scope, spec));
     if (r.timedOut) throw new VerbFailure("hook-failed", `${stepId} timed out after ${timeoutSec}s`, { step: stepId });
     if (r.code !== 0) throw new VerbFailure("hook-failed", `${stepId} exited with ${r.code}`, { step: stepId });
     try {
@@ -773,6 +822,7 @@ export class ProjectEngine {
           createdBy: callerTag(run.caller),
           createdAt: new Date().toISOString(),
           cutWorktree: target.cut,
+          ...(confineOf(run.caller) ? { confined: confineOf(run.caller)!.runId } : {}),
           desired: {},
           prints: {},
           data: {},
@@ -856,6 +906,10 @@ export class ProjectEngine {
       return path;
     }
     const src = render(d.from, this.vars(def, scope));
+    // Copied by the server itself, so a confined run copies only what its own processes could read (§app.project-services/confined).
+    if (scope.confine === "ended") throw new VerbFailure("not-approved", `${scope.id} belonged to a confined conformance run that has ended`);
+    const hidden = scope.confine?.fromRefusal(src, [rec.project, rec.checkout]);
+    if (hidden) throw new VerbFailure("not-approved", `data.${d.name}.from: ${hidden}`);
     if (!existsSync(src) || !statSync(src).isDirectory()) throw new VerbFailure("not-found", `data.${d.name}.from: ${src} is not a folder`);
     mkdirSync(path, { recursive: true });
     const code = await this.containerExecLike("cp", ["-a", "--reflink=auto", `${src}/.`, path]);
@@ -882,8 +936,13 @@ export class ProjectEngine {
     return s.static !== undefined ? "static" : s.container ? "container" : "process";
   }
 
-  private sharedScope(def: ProjectDef, project: string): Scope {
-    return { id: sharedIdOf(project), project, checkout: project, branch: null, slot: 0, ports: {}, data: {} };
+  /**
+   * The project's shared services' scope. A confined run has its own, with its own units (never the host's shared
+   * ones), run from the checkout of the instance that needs them: the run's ref, not the main checkout's files.
+   */
+  private sharedScope(def: ProjectDef, project: string, confine: Scope["confine"] = null, from?: string): Scope {
+    const runOf = confine && confine !== "ended" ? confine.runId : null;
+    return { id: runOf ? `${sharedIdOf(project)}-${runOf}` : sharedIdOf(project), project, checkout: runOf && from ? from : project, branch: null, slot: 0, ports: {}, data: {}, confine, shared: true };
   }
 
   private async isActive(unit: string, s: ServiceDecl): Promise<{ active: boolean; pid: number | null }> {
@@ -897,14 +956,16 @@ export class ProjectEngine {
     const t0 = Date.now();
     const ports = this.allPorts(def, scope)[s.name] ?? {};
     if (s.static !== undefined) return { probe: "serve", ok: staticServes().some((x) => x.id === unit), ms: 0 };
+    // Inside a confined run, through its anchor: the run's ports are not on this host.
+    const c = scope.confine && scope.confine !== "ended" ? scope.confine : null;
     if (s.ready && "http" in s.ready) {
       const port = ports[s.ready.http]!;
-      return { probe: `http :${port}${s.ready.path}`, ok: await httpOk(port, s.ready.path), ms: Date.now() - t0 };
+      return { probe: `http :${port}${s.ready.path}`, ok: c ? await c.http(port, s.ready.path) : await httpOk(port, s.ready.path), ms: Date.now() - t0 };
     }
     const portName = s.ready && "tcp" in s.ready ? s.ready.tcp : Object.keys(ports)[0];
     if (portName !== undefined) {
       const port = ports[portName]!;
-      return { probe: `tcp :${port}`, ok: await tcpOpen(port), ms: Date.now() - t0 };
+      return { probe: `tcp :${port}`, ok: c ? await c.tcp(port) : await tcpOpen(port), ms: Date.now() - t0 };
     }
     const st = await this.driver.status(unit);
     return { probe: "running", ok: st.state === "active", ms: Date.now() - t0 };
@@ -954,7 +1015,7 @@ export class ProjectEngine {
    * the definition's engines that publishes the port.
    */
   private async claimOf(def: ProjectDef, scope: Scope, s: ServiceDecl, port: number): Promise<PortClaim> {
-    const o = this.portOwner(port);
+    const o = this.ownerIn(scope, s)(port);
     const unit = this.unitOf(scope.id, s.name);
     if (typeof o === "object" && (s.static !== undefined ? o.pid === process.pid : this.driver.owns(unit, o.pid))) return { held: true, own: true, who: `its own process (pid ${o.pid})` };
     const mine = this.containerOf(def, scope, s);
@@ -975,8 +1036,13 @@ export class ProjectEngine {
   /** `claimOf` for conform: a declared port of `rec`'s checkout service `service`. */
   async portClaim(rec: InstanceRecord, def: ProjectDef, service: string, port: number): Promise<PortClaim> {
     const s = def.services.find((x) => x.name === service);
-    if (!s) return { held: this.portOwner(port) !== "none", own: false, who: `an undeclared service ${service}` };
+    if (!s) return { held: this.ownerIn(scopeOf(rec))(port) !== "none", own: false, who: `an undeclared service ${service}` };
     return this.claimOf(def, scopeOf(rec), s, port);
+  }
+
+  /** Whether anything listens on `port` where `rec`'s processes run (its confined run, or this host). */
+  portHeld(rec: InstanceRecord, port: number): boolean {
+    return this.ownerIn(scopeOf(rec))(port) !== "none";
   }
 
   private async removeContainer(def: ProjectDef, scope: Scope, s: ServiceDecl): Promise<void> {
@@ -1111,8 +1177,9 @@ export class ProjectEngine {
       await this.removeContainer(def, scope, s);
       this.noteContainer(run, def, scope, s);
       const vars = this.vars(def, scope);
+      const spec = await this.inScope(scope, { unit, argv: s.cmd!.map((a) => render(a, vars)), cwd: join(scope.checkout, s.cwd), env: this.env(def, scope, { service: s }) });
       try {
-        await this.driver.start({ unit, argv: s.cmd!.map((a) => render(a, vars)), cwd: join(scope.checkout, s.cwd), env: this.env(def, scope, { service: s }) });
+        await this.driver.start(spec);
       } catch (err) {
         throw new VerbFailure("start-failed", err instanceof DriverError ? err.message : String(err), { service: s.name });
       }
@@ -1149,7 +1216,8 @@ export class ProjectEngine {
     const until = Date.now() + 5_000;
     for (;;) {
       const published = mine ? await publishedPorts(this.containerQuery, mine.engine, mine.name) : new Set<number>();
-      if (!ports.some((p) => published.has(p) || this.portOwner(p) !== "none") || Date.now() >= until) return;
+      const owner = this.ownerIn(scope, s);
+      if (!ports.some((p) => published.has(p) || owner(p) !== "none") || Date.now() >= until) return;
       await sleep(50);
     }
   }
@@ -1158,10 +1226,13 @@ export class ProjectEngine {
   private async upShared(run: Run, def: ProjectDef, names: ServiceDecl[]): Promise<void> {
     if (!names.length) return;
     const project = run.project!;
-    const prev = this.sharedChain.get(project) ?? Promise.resolve();
+    const confine = run.rec ? scopeOf(run.rec).confine : null;
+    const chainKey = confine && confine !== "ended" ? `${project}\0${confine.runId}` : project;
+    const prev = this.sharedChain.get(chainKey) ?? Promise.resolve();
     const job = prev.catch(() => undefined).then(async () => {
-      const scope = this.sharedScope(def, project);
-      mutateRegistry((r) => {
+      const scope = this.sharedScope(def, project, confine, run.rec?.checkout);
+      // A confined run's shared services are the run's alone: the registry's shared record is the host's.
+      if (!confine) mutateRegistry((r) => {
         let sh = r.shared.find((x) => x.project === project);
         if (!sh) {
           sh = { project, id: scope.id, desired: {}, ports: {} } satisfies SharedRecord;
@@ -1183,7 +1254,7 @@ export class ProjectEngine {
         else await this.startService(run, def, scope, s);
       }
     });
-    this.sharedChain.set(project, job);
+    this.sharedChain.set(chainKey, job);
     await job;
   }
 
@@ -1203,7 +1274,8 @@ export class ProjectEngine {
   /** Start `names` and what they require (shared first), each waiting for its readiness; what already runs is left alone. */
   private async bringUp(run: Run, rec: InstanceRecord, def: ProjectDef, names: string[]): Promise<void> {
     await this.stopRemovedDue(run, rec, def);
-    await this.stopSharedRemoved(run, rec.project);
+    // The host's shared services are never a confined run's to stop.
+    if (!rec.confined) await this.stopSharedRemoved(run, rec.project);
     const wanted = closureOf(def, names);
     await this.upShared(run, def, wanted.filter((s) => s.scope === "shared"));
     const scope = scopeOf(rec);
@@ -1260,7 +1332,7 @@ export class ProjectEngine {
     const vars = this.vars(def, scope);
     const env = { ...this.env(def, scope, { verb: "test", step: "test", out: outFile }), SOVA_TEST_SELECT: JSON.stringify(select) };
     const t0 = Date.now();
-    const r = await this.driver.runOnce({ unit, argv: [...t.run.map((a) => render(a, vars)), ...select], cwd: scope.checkout, env, timeoutSec: t.timeout, ...(run.signal ? { signal: run.signal } : {}) });
+    const r = await this.driver.runOnce(await this.inScope<OnceSpec>(scope, { unit, argv: [...t.run.map((a) => render(a, vars)), ...select], cwd: scope.checkout, env, timeoutSec: t.timeout, ...(run.signal ? { signal: run.signal } : {}) }));
     const counts = readTestOut(outFile);
     const exit = r.code;
     const pass = !r.timedOut && !r.aborted && exit === 0 && (counts?.failed ?? 0) === 0 && (counts?.errors ?? 0) === 0;
@@ -1305,8 +1377,8 @@ export class ProjectEngine {
     const order = [...known].reverse().filter((s) => names.includes(s.name) && !removed.includes(s.name));
     for (const s of order) {
       if (s.scope === "shared") {
-        await this.stopService(run, def, this.sharedScope(def!, rec.project), s.name, s);
-        mutateRegistry((r) => {
+        await this.stopService(run, def, this.sharedScope(def!, rec.project, scopeOf(rec).confine), s.name, s);
+        if (!rec.confined) mutateRegistry((r) => {
           const sh = r.shared.find((x) => x.project === rec.project);
           if (sh) sh.desired[s.name] = "stopped";
         });
@@ -1316,7 +1388,7 @@ export class ProjectEngine {
       this.save(rec);
       await this.stopService(run, def, scopeOf(rec), s.name, s);
     }
-    if (!run.req.services?.length) await this.stopSharedRemoved(run, rec.project);
+    if (!run.req.services?.length && !rec.confined) await this.stopSharedRemoved(run, rec.project);
   }
 
   private async apply(run: Run): Promise<void> {
@@ -1358,7 +1430,7 @@ export class ProjectEngine {
           this.preflight(def, scope, s);
           this.noteContainer(run, def, scope, s);
           const vars = this.vars(def, scope);
-          await this.driver.start({ unit, argv: s.cmd!.map((a) => render(a, vars)), cwd: join(scope.checkout, s.cwd), env: this.env(def, scope, { service: s }) });
+          await this.driver.start(await this.inScope(scope, { unit, argv: s.cmd!.map((a) => render(a, vars)), cwd: join(scope.checkout, s.cwd), env: this.env(def, scope, { service: s }) }));
           return { result: "done", detail: "restarted" };
         }
         if ("signal" in how) {
@@ -1471,7 +1543,8 @@ export class ProjectEngine {
     const checks: Check[] = [];
     const add = (id: string, ok: boolean, detail: string) => checks.push({ id, ok, detail });
     add("definition", !run.defError && !!run.def, run.defError ? run.defError.message : run.def ? `valid (${run.defHash})` : `no ${CONTRACT_FILE}`);
-    add("approved", run.approved, run.approved ? "approved on this host" : `not approved: ${run.defHash ?? "no definition"}`);
+    const confined = !run.approved && this.confinedRun(run);
+    add("approved", run.approved || confined, run.approved ? "approved on this host" : confined ? `not approved: ${run.defHash}, running confined` : `not approved: ${run.defHash ?? "no definition"}`);
     checks.push(await this.supervisorCheck(run.def));
     if (run.def) {
       const def = run.def;
@@ -1486,7 +1559,7 @@ export class ProjectEngine {
       }
       const hv = hostVars(run.project!);
       for (const h of def.host) add(`host:${h}`, h in hv, h in hv ? "set" : `set it in ${CONTRACT_FILE}'s host overlay (<state root>/project-services/host.json)`);
-      const scope: Scope = run.rec ? scopeOf(run.rec) : { id: "doctor", project: run.project!, checkout: run.project!, branch: null, slot: 0, ports: {}, data: {} };
+      const scope: Scope = run.rec ? scopeOf(run.rec) : { id: "doctor", project: run.project!, checkout: run.project!, branch: null, slot: 0, ports: {}, data: {}, confine: null };
       for (const d of def.data)
         if (d.kind === "dir" && d.from !== "empty") {
           const src = render(d.from, this.vars(def, scope));
@@ -1494,7 +1567,7 @@ export class ProjectEngine {
         }
       if (run.rec) {
         for (const s of def.services) {
-          const sc = s.scope === "shared" ? this.sharedScope(def, run.project!) : scope;
+          const sc = s.scope === "shared" ? this.sharedScope(def, run.project!, scope.confine) : scope;
           for (const [k, port] of Object.entries(this.allPorts(def, sc)[s.name] ?? {})) {
             const c = await this.claimOf(def, sc, s, port);
             add(`port:${s.name}.${k}`, !c.held || c.own, c.held ? `${port} held by ${c.who}` : `${port} free`);
@@ -1524,21 +1597,23 @@ export class ProjectEngine {
     const out: ServiceView[] = [];
     const scope = scopeOf(rec);
     for (const s of def.services) {
-      const sc = s.scope === "shared" ? this.sharedScope(def, rec.project) : scope;
+      const sc = s.scope === "shared" ? this.sharedScope(def, rec.project, scope.confine) : scope;
       const unit = this.unitOf(sc.id, s.name);
       const ports = this.allPorts(def, sc)[s.name] ?? {};
       const kind = this.kindOf(s);
       if (s.static !== undefined) {
         const serving = staticServes().some((x) => x.id === unit);
-        out.push({ name: s.name, scope: s.scope, kind, state: serving ? "ready" : this.heldElsewhere(ports) ? "external" : "stopped", unit, pid: serving ? process.pid : null, ports, ...(serving ? { ready: { probe: "serve", ok: true, ms: 0 } } : {}) });
+        out.push({ name: s.name, scope: s.scope, kind, state: serving ? "ready" : this.heldElsewhere(sc, s, ports) ? "external" : "stopped", unit, pid: serving ? process.pid : null, ports, ...(serving ? { ready: { probe: "serve", ok: true, ms: 0 } } : {}) });
         continue;
       }
       const st = await this.driver.status(unit);
       if (st.state === "active" || st.state === "activating") {
         const p = await this.probe(def, sc, s, unit);
-        out.push({ name: s.name, scope: s.scope, kind, state: p.ok ? "ready" : st.state === "activating" ? "starting" : "degraded", unit, pid: st.pid, ports, ready: p });
+        // A process service's resident memory now (a container's lives in its engine, not its unit).
+        const rss = kind === "process" ? rssOf(this.driver.pids(unit)) : null;
+        out.push({ name: s.name, scope: s.scope, kind, state: p.ok ? "ready" : st.state === "activating" ? "starting" : "degraded", unit, pid: st.pid, ports, ready: p, ...(rss !== null ? { rssBytes: rss } : {}) });
       } else {
-        const state = st.state === "failed" ? "failed" : this.heldElsewhere(ports) ? "external" : "stopped";
+        const state = st.state === "failed" ? "failed" : this.heldElsewhere(sc, s, ports) ? "external" : "stopped";
         out.push({ name: s.name, scope: s.scope, kind, state, unit, pid: null, ports, ...(st.detail && st.state === "failed" ? { detail: st.detail } : {}) });
       }
     }
@@ -1550,7 +1625,7 @@ export class ProjectEngine {
       if (st.state !== "active" && st.state !== "activating") continue;
       out.push({ name, scope: "checkout", kind: serving ? "static" : rec.containers?.[name] ? "container" : "process", state: "degraded", unit, pid: st.pid, ports: rec.ports[name] ?? {}, detail: "no longer in the definition" });
     }
-    for (const name of this.sharedRemovedOf(rec.project)) {
+    for (const name of rec.confined ? [] : this.sharedRemovedOf(rec.project)) {
       const unit = this.unitOf(sharedIdOf(rec.project), name);
       const st = await this.driver.status(unit);
       if (st.state !== "active" && st.state !== "activating") continue;
@@ -1559,8 +1634,9 @@ export class ProjectEngine {
     return out;
   }
 
-  private heldElsewhere(ports: Record<string, number>): boolean {
-    return Object.values(ports).some((p) => this.portOwner(p) !== "none");
+  private heldElsewhere(scope: Scope, s: ServiceDecl, ports: Record<string, number>): boolean {
+    const owner = this.ownerIn(scope, s);
+    return Object.values(ports).some((p) => owner(p) !== "none");
   }
 
   private stateOf(run: Run, services: ServiceView[]): InstanceState {
@@ -1684,14 +1760,22 @@ export class ProjectEngine {
     if (!run.def || !probe) return null;
     const scope = scopeOf(rec);
     const vars = this.vars(run.def, scope);
-    const r = await this.driver.runOnce({
-      unit: this.hookUnitOf(scope.id, "probe"),
-      argv: [...probe.run.map((a) => render(a, vars)), ...args],
-      cwd: scope.checkout,
-      env: this.env(run.def, scope, { verb: "conform", step: "probe" }),
-      timeoutSec: probe.timeout,
-    });
+    const r = await this.driver.runOnce(
+      await this.inScope<OnceSpec>(scope, {
+        unit: this.hookUnitOf(scope.id, "probe"),
+        argv: [...probe.run.map((a) => render(a, vars)), ...args],
+        cwd: scope.checkout,
+        env: this.env(run.def, scope, { verb: "conform", step: "probe" }),
+        timeoutSec: probe.timeout,
+      }),
+    );
     return r.timedOut ? -1 : r.code;
+  }
+
+  /** The folders `def`'s dir resources copy, as the main checkout would render them (confined conformance checks them first). */
+  dataSources(def: ProjectDef, project: string): string[] {
+    const scope: Scope = { id: "conform", project, checkout: project, branch: null, slot: scratchSlotsOf(def)[0], ports: {}, data: {}, confine: null };
+    return def.data.flatMap((d) => (d.kind === "dir" && d.from !== "empty" ? [render(d.from, this.vars(def, scope))] : []));
   }
 
   /** Container names `rec`'s definition gives its services (for leak checks). */
@@ -1714,6 +1798,22 @@ export class ProjectEngine {
     for (const rec of reg.instances) {
       const want = Object.entries(rec.desired);
       if (!want.length) continue;
+      // A confined run ended with the server that ran it: its units are stopped, never started (§app.project-services/confined).
+      if (rec.confined && !confinementOf(rec.confined)) {
+        const live: string[] = [];
+        for (const name of Object.keys(rec.desired)) {
+          const unit = this.unitOf(rec.id, name);
+          const st = await this.driver.status(unit);
+          if (st.state !== "missing") await this.driver.stop(unit);
+          if (st.state === "active" || st.state === "activating") live.push(name);
+        }
+        mutateRegistry((r) => {
+          const i = r.instances.find((x) => x.id === rec.id);
+          if (i) for (const n of Object.keys(i.desired)) i.desired[n] = "stopped";
+        });
+        did.push(`${rec.id}: stopped${live.length ? ` ${live.join(", ")}` : ""} (its confined conformance run ended)`);
+        continue;
+      }
       const lock = tryLock(instanceLockFile(rec.project, rec.checkout));
       if ("heldBy" in lock) continue;
       try {

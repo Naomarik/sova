@@ -64,6 +64,8 @@ import type { SubagentTool } from "./overseer-idea-tools";
 import { workerDenial } from "./delegate";
 import { BUILTIN_ALLOWED, overseerTools, type OverseerToolHost, renderTranscript, TurnLimits } from "./overseer-tools";
 import { userMessageText, UserTurns } from "./user-turns";
+import { OVERSEER_SENDER_HEADER, overseerSender, senderSecret } from "./overseer-sender";
+
 import { cardsNoteMessage, onSessionPrompted, pathOfId, promptSession, sessionActivity, toolCatalogue, type PromptDelivery, type PromptResult } from "./session-prompt";
 import { contactRedactor } from "./overseer-org-view";
 import { CARDS_NOTE_MESSAGE, cardsNote, clickItems, foldCards, matchCardClick } from "../shared/overseer-card";
@@ -108,20 +110,6 @@ const PROMPT_FILE = fileURLToPath(new URL("./overseer-prompt.md", import.meta.ur
 
 let dispatch: ((path: string, init?: RequestInit) => Promise<Response>) | null = null;
 
-/** The header the Overseer's in-process tool calls carry, and its value: a secret made at server
-    start, held only in memory, never written or sent to a client. A prompt carrying it is tagged
-    as the Overseer's; any HTTP client can send the header, but not the value. */
-export const OVERSEER_SENDER_HEADER = "x-sova-overseer";
-const SENDER_SECRET = randomBytes(32).toString("hex");
-
-/** The current Overseer's id when `header` is the sender secret (a tool call of its own), else undefined. */
-export function overseerSender(header: string | undefined): string | undefined {
-  if (!header) return undefined;
-  const got = Buffer.from(header);
-  const want = Buffer.from(SENDER_SECRET);
-  if (got.length !== want.length || !timingSafeEqual(got, want)) return undefined;
-  return readOverseerState()?.current || undefined;
-}
 
 /** An in-process request to the app, as the browser makes it (no Overseer sender mark): the
     project overseer's session creation goes through the same route and guards. */
@@ -542,7 +530,7 @@ const host: OverseerToolHost = {
   request: (path, init) => {
     if (!dispatch) throw new Error("The Overseer's tools are not wired to the server yet.");
     const headers = new Headers(init?.headers);
-    headers.set(OVERSEER_SENDER_HEADER, SENDER_SECRET);
+    headers.set(OVERSEER_SENDER_HEADER, senderSecret());
     return dispatch(path, { ...init, headers });
   },
   overseerId: () => readOverseerState()?.current ?? "",

@@ -81,6 +81,7 @@ const { getSessionSummary } = await import("./sessions-index");
 // Registers the Overseer runtime with chat-manager, as index.ts does.
 const overseer = await import("./overseer");
 const sessionPrompt = await import("./session-prompt");
+const sender_ = await import("./overseer-sender");
 const { DEFAULT_CAPS, defaultSettings, overseerTurnFile, readOverseerSettings, writeNotes, writeOverseerSettings } = await import("./overseer-store");
 const { OVERSEER_BRIEF_PREFIX } = await import("../shared/protocol");
 const { addIdea, getIdea } = await import("./overseer-ideas");
@@ -618,7 +619,7 @@ describe("sova_send into a session mid-turn (the in-process route, as the server
     overseer.setOverseerDispatch(async (path, init) => {
       if (path !== "/api/sessions/prompt") return Response.json({ error: "not wired in this test" }, { status: 404 });
       const body = JSON.parse(String(init?.body));
-      const sender = overseer.overseerSender(new Headers(init?.headers).get(overseer.OVERSEER_SENDER_HEADER) ?? undefined);
+      const sender = sender_.overseerSender(new Headers(init?.headers).get(sender_.OVERSEER_SENDER_HEADER) ?? undefined);
       const r = await sessionPrompt.promptSession(body.path, body.text, sender, body.delivery);
       return r.ok ? Response.json({ ok: true, queued: r.queued, kind: r.kind }) : Response.json({ error: r.error }, { status: r.status });
     });

@@ -264,7 +264,7 @@ async function addWorkers(w: Walk, workers: WorkerManifest[], by: CostStarter, d
     }
     const title = m.name || m.team?.role || m.workerId;
     if (file && w.seen.has(file)) continue;
-    const count = file ? (m.backend === "claude-code" ? await countClaudeFiles(file) : await countPiFile(file, "workers", false)) : null;
+    const count = file ? (m.backend === "claude-code" ? await countClaudeFiles(file) : await countPiFile(file, "workers")) : null;
     if (count) {
       w.seen.add(file!);
       w.sources.push({ key, sessionId: m.ref?.sessionId ?? m.ref?.locator.split("/").pop() ?? m.workerId, title, kind: "workers", by, path: m.backend === "claude-code" ? null : file, buckets: count.buckets, live: true });

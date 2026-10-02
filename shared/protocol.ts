@@ -129,9 +129,12 @@ export interface SessionSummary {
       registered there. Who holds the baton now, the state, and what the operator must do (Needs you:
       answer, or send a link). Safe by absence. */
   baton?: BatonSummaryField;
-  /** Present on a project overseer's own session (§app/project-overseer): which org's project it
+  /** Present on a project overseer's own session (§app/project-overseer): which project it
       oversees. Like `overseer`, it is never classified, tagged or listed for attention. */
-  projectOverseer?: { orgId: string; projectId: string };
+  projectOverseer?: { projectId: string };
+  /** A registered project's session (§app/projects): its overseer's conversations and the coding
+      sessions it started, standalone or placed in an organization. */
+  project?: SessionProject;
   /** An ORGANIZATIONAL session (§app.session-list/organizations): the org's own records make it one —
       every file in an attached org's workspace `sessions/` (baton sessions, offers, the project
       overseer's current and cleared conversations, any unregistered file there), and every coding
@@ -2654,6 +2657,18 @@ export interface SessionOrgRef {
   /** The project is archived (§app.organizations/archive): the Organizations region leaves it out,
       except in its own Needs you. Safe by absence. */
   projectArchived?: true;
+}
+
+/** Which project a session belongs to, and as what; names as they read now. */
+export interface SessionProject {
+  projectId: string;
+  projectName: string;
+  /** `overseer`: one of its overseer's conversations; `coding`: a coding session the project started. */
+  kind: "overseer" | "coding";
+  /** A cleared (not the current) overseer conversation, or a build git says is merged. */
+  finished?: true;
+  /** The project is archived. */
+  archived?: true;
 }
 
 export interface SessionOrg extends SessionOrgRef {

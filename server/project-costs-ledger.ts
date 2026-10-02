@@ -1,5 +1,5 @@
 import { appendFileSync, mkdirSync, readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, isAbsolute, join } from "node:path";
 import type { CostKind, CostStarter } from "../shared/costs";
 import { writeAtomic } from "./overseer-store";
 import { OrgError } from "./org-error";
@@ -26,6 +26,7 @@ export interface LedgerPaths {
 
 export function ledgerPaths(projectId: string, workspace?: string): LedgerPaths {
   if (!SAFE_ID.test(projectId)) throw new OrgError("Unknown project", 404);
+  if (workspace !== undefined && !isAbsolute(workspace)) throw new Error(`ledgerPaths: the engine's directory must be absolute, not ${JSON.stringify(workspace)}`);
   const dir = join(workspace ?? projectDir(projectId), "projects", projectId);
   return { usage: join(dir, "usage.jsonl"), costs: join(dir, "costs.json") };
 }

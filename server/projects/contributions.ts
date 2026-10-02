@@ -5,6 +5,7 @@ import type { ProjectSpace, ProjectSummary } from "../../shared/projects";
 import type { Envelope } from "../org-envelope";
 import type { ProjectOverseerPaths } from "../project-overseer-store";
 import type { Hold } from "../statecharts";
+import type { ActResult } from "../org-host";
 
 /**
  * What another layer adds to a project (design: "What crosses the seam"). The project layer reads
@@ -15,6 +16,9 @@ import type { Hold } from "../statecharts";
  */
 
 /** What an overseer's turn offers a contributed tool (the project's own facts and this turn's envelope). */
+/** A tool's execute, as the overseer's wrappers make it. */
+export type PartExecute = (toolCallId: string, params: any) => Promise<any>;
+
 export interface OverseerPartCtx {
   engine: string;
   projectId: string;
@@ -35,13 +39,36 @@ export interface OverseerPartCtx {
   limitRefused(kind: PoLimitKind): Promise<void>;
 }
 
+/** What contributed tools are built with: the context, plus the overseer's own wrappers (an act is logged to its
+    actions and its refusals relayed as its own tools' are; `counts`: the allowance it draws on, for the hold a
+    refused allowance puts on it). */
+export interface OverseerToolCtx extends OverseerPartCtx {
+  act(name: string, run: (params: any, toolCallId: string) => Promise<any>, counts?: PoLimitKind): PartExecute;
+  read(run: (params: any) => Promise<any>): PartExecute;
+  /** "Held: {what} waits until …": an act the statechart holds, in the words the overseer's tools use. */
+  heldText(what: string, held: { until: number }): string;
+}
+
+/** Sessions of the project that another layer keeps (gathering sessions), for sova_list_sessions and sova_read_session. */
+export interface OtherSessions {
+  /** The list's heading ("Gathering"). */
+  heading: string;
+  list(): { id: string; line: string }[];
+  /** One of them as the overseer reads it, or null: not one of these. */
+  read(id: string, items: number): Promise<{ content: { type: "text"; text: string }[]; details: any } | null>;
+}
+
 export interface ProjectPart {
   /** A cap on the project's level (the envelope's `ceiling` and the watch fact), or null: none. */
   ceiling?(engine: string, projectId: string): { autonomy: Autonomy; reason: string } | null;
   /** Text appended to the watch's look (the watch fact `lookHint`), or null. */
   lookHint?(engine: string, projectId: string): string | null;
   /** More tools for the project's overseer, wrapped like its own. */
-  overseerTools?(ctx: OverseerPartCtx): ToolDefinition[];
+  overseerTools?(ctx: OverseerToolCtx): ToolDefinition[];
+  /** Lines sova_project adds after the level (an org's roster, gatherings, decisions, conflicts, spec). */
+  overseerRead?(engine: string, projectId: string): Promise<string[]>;
+  /** Sessions sova_list_sessions lists and sova_read_session reads besides the project's coding sessions. */
+  overseerSessions?(engine: string, projectId: string): OtherSessions | null;
   /** Sections appended to the overseer's system prompt, before the operator's extra instructions. */
   overseerPrompt?(engine: string, projectId: string): string[];
   /** Lines for a look's untrusted appendix. */
@@ -58,6 +85,12 @@ export interface ProjectPart {
   sentToName?(engine: string, projectId: string, personId: string): string | null;
   /** How a held act this part owns reads (its `what`, the person an hours wait waits for, its item and gap), or null. */
   holdDetails?(engine: string, hold: Hold): HoldDetails | null;
+  /** Lines sova_pipeline starts with (an org's gaps, with their session ids). */
+  pipelineLines?(engine: string, projectId: string): string[];
+  /** A held act this part owns was approved and went ahead, but did not do what it is for (a message not sent): who and why, or null. */
+  releasedNotDone?(engine: string, hold: Hold, out: ActResult): { name: string; why: string } | null;
+  /** Since when the project's overseer is paused by something this part did on this host (ISO), or null. */
+  pausedSince?(engine: string, projectId: string): string | null;
   /** Where the project lives, when this part holds it (the read's `space`; none: standalone). */
   space?(engine: string, projectId: string): ProjectSpace | null;
   /** Gaps: a project whose work is tracked as gaps (§gap/… ideas filed as items elsewhere). Null: none, so the
@@ -121,7 +154,13 @@ export function lookHintOf(engine: string, projectId: string): string | null {
   return hints.length ? hints.join("\n\n") : null;
 }
 
-export const contributedTools = (ctx: OverseerPartCtx): ToolDefinition[] => parts.flatMap((p) => p.overseerTools?.(ctx) ?? []);
+export const contributedTools = (ctx: OverseerToolCtx): ToolDefinition[] => parts.flatMap((p) => p.overseerTools?.(ctx) ?? []);
+export async function contributedRead(engine: string, projectId: string): Promise<string[]> {
+  const out: string[] = [];
+  for (const p of parts) if (p.overseerRead) out.push(...(await p.overseerRead(engine, projectId)));
+  return out;
+}
+export const otherSessionsOf = (engine: string, projectId: string): OtherSessions[] => parts.map((p) => p.overseerSessions?.(engine, projectId) ?? null).filter((x): x is OtherSessions => !!x);
 export const contributedPrompt = (engine: string, projectId: string): string[] => parts.flatMap((p) => p.overseerPrompt?.(engine, projectId) ?? []).filter((s) => s.trim());
 export const contributedLookLines = (engine: string, projectId: string): string[] => parts.flatMap((p) => p.lookAppendix?.(engine, projectId) ?? []);
 export const contributedBlockers = (engine: string, projectId: string): string[] => parts.flatMap((p) => p.archiveBlockers?.(engine, projectId) ?? []);
@@ -138,6 +177,21 @@ export function holdDetailsOf(engine: string, hold: Hold): HoldDetails | null {
   for (const p of parts) {
     const d = p.holdDetails?.(engine, hold);
     if (d) return d;
+  }
+  return null;
+}
+export function pausedSinceOf(engine: string, projectId: string): string | null {
+  for (const p of parts) {
+    const at = p.pausedSince?.(engine, projectId);
+    if (at) return at;
+  }
+  return null;
+}
+export const contributedPipelineLines = (engine: string, projectId: string): string[] => parts.flatMap((p) => p.pipelineLines?.(engine, projectId) ?? []);
+export function releasedNotDoneOf(engine: string, hold: Hold, out: ActResult): { name: string; why: string } | null {
+  for (const p of parts) {
+    const r = p.releasedNotDone?.(engine, hold, out);
+    if (r) return r;
   }
   return null;
 }

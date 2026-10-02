@@ -24,10 +24,15 @@ let extraRoots: () => readonly string[] = () => [];
 export function setExtraSessionRoots(provider: () => readonly string[]): void {
   extraRoots = provider;
 }
-export const extraSessionRoots = (): readonly string[] => extraRoots();
+/** Each standalone project's `<stateRoot>/projects/<pid>/sessions/` (server/projects/spaces.ts registers it). */
+let projectRoots: () => readonly string[] = () => [];
+export function setProjectSessionRoots(provider: () => readonly string[]): void {
+  projectRoots = provider;
+}
+export const extraSessionRoots = (): readonly string[] => [...extraRoots(), ...projectRoots()];
 
 const isInsideSessions = (p: string) =>
-  (p.startsWith(SESSIONS_DIR + sep) && !p.startsWith(LIVE_DIR + sep)) || extraRoots().includes(dirname(p));
+  (p.startsWith(SESSIONS_DIR + sep) && !p.startsWith(LIVE_DIR + sep)) || extraSessionRoots().includes(dirname(p));
 
 /**
  * The fs-FREE half of resolveSessionPath: a .jsonl inside SESSIONS_DIR (not live/), with the

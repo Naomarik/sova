@@ -1,8 +1,12 @@
+import { join } from "node:path";
 import type { ProjectSummary } from "../../shared/projects";
-import { engineDir, hostOf, isOrgHostOpen, onOrgChange, onOrgHostOpened, openEngineIds, openOrgHost, type OrgHostApi } from "../org-engine";
+import { actOrThrow, engineDir, envelopeFor, hostOf, isOrgHostOpen, onOrgChange, onOrgHostOpened, openEngineIds, openOrgHost, type OrgHostApi } from "../org-engine";
+import type { Envelope, EnvelopeCard } from "../org-envelope";
+import type { StampWho } from "../org-stamp";
 import { OrgError } from "../org-error";
+import { canonicalPath, setProjectSessionRoots } from "../paths";
 import { stateRoot } from "../state-root";
-import { reservedRoots, spaceOf } from "./contributions";
+import { pausedSinceOf, reservedRoots, spaceOf } from "./contributions";
 import { addRegistryEntry, mintProjectId, prepareRegistration, readRegistry, removeRegistryEntry, RegistryError } from "./registry";
 import { buildSid, projectSid, runtimeSid, watchSid } from "./sids";
 
@@ -103,6 +107,102 @@ export function projectsOfEngine(engine: string): ProjectSummary[] {
     .map((s) => summaryOf(engine, s.data, s.configuration));
 }
 
+// ---- acts on a project -------------------------------------------------------------------------------
+
+/** The envelope for an act of `who` on the project, from its engine's statecharts as they stand now. */
+export const projectEnvelope = (projectId: string, who: StampWho): Envelope => envelopeFor(engineOrThrow(projectId), projectId, who);
+
+/** Who an operator's act is: from the page, or the global Overseer for them (`via`, its conversation, its card). */
+export type OperatorBy = { kind: "operator"; via?: "overseer"; overseerId?: string; card?: EnvelopeCard };
+const OPERATOR_BY: OperatorBy = { kind: "operator" };
+
+/** The operator's envelope for an act on the project. */
+export function operatorEnvelopeOf(projectId: string, by: OperatorBy = OPERATOR_BY, extra: Record<string, unknown> = {}): Envelope {
+  return { ...projectEnvelope(projectId, { by: "operator", attended: true, ...(by.via ? { via: by.via } : {}), ...(by.overseerId ? { overseerId: by.overseerId } : {}), ...(by.card ? { card: by.card } : {}) }), ...extra };
+}
+
+/** Whether the project is archived (false for an unknown one). */
+export function projectArchived(projectId: string): boolean {
+  const engine = engineOf(projectId);
+  return !!engine && !!hostOf(engine).configuration(projectSid(projectId))?.includes("archived");
+}
+
+/** "{project} is archived. Unarchive it first.": every new start in an archived project. */
+export const archivedRefusal = (name: string) => `${name} is archived. Unarchive it first.`;
+/** Its overseer's: Run Now, a message to it, its start. */
+export const archivedOverseerRefusal = (name: string) => `${name} is archived. Unarchive it to use its overseer.`;
+
+/** Refuse a new start in an archived project (409). */
+export function assertNotArchived(projectId: string): void {
+  const p = readProject(projectId);
+  if (p.archived) throw new OrgError(archivedRefusal(p.name), 409);
+}
+
+const NAME_MAX = 80;
+
+/** Why a name can't be a project's, or null. */
+function nameProblem(v: unknown): string | null {
+  return typeof v === "string" && v.trim() && v.trim().length <= NAME_MAX ? null : `name must be 1–${NAME_MAX} characters`;
+}
+
+/**
+ * Rename the project or move its root (`project/edit`): every part checked before anything is written, a
+ * root normalized to its checkout root and refused like a registration's (reserved, or another project's).
+ */
+export async function editProject(projectId: string, patch: { name?: unknown; root?: unknown }, by: OperatorBy = OPERATOR_BY): Promise<ProjectSummary> {
+  const before = readProject(projectId);
+  const edit: Record<string, unknown> = {};
+  if (patch.name !== undefined) {
+    const why = nameProblem(patch.name);
+    if (why) throw new OrgError(why);
+    edit.name = (patch.name as string).trim();
+  }
+  if (patch.root !== undefined) {
+    const prepared = await prepareRegistration(patch.root, { rootsInUse: () => listProjects().filter((p) => p.id !== projectId), reservedRoots });
+    if (prepared.root !== before.root) edit.root = prepared.root;
+  }
+  if (Object.keys(edit).length) await actOrThrow(engineOrThrow(projectId), projectSid(projectId), "project/edit", edit, operatorEnvelopeOf(projectId, by));
+  return readProject(projectId);
+}
+
+/** What must be stopped before a project is archived, as the archive act's `blockers` stamp: other layers'
+    phrases ("2 gathering sessions open (A, B)"), its coding sessions' titles, whether its overseer works. */
+export interface ArchiveBlockers {
+  phrases: string[];
+  coding: string[];
+  overseerWorking: boolean;
+}
+
+/**
+ * Archive or unarchive a project (§app.organizations/archive): the project statechart refuses an archive while
+ * anything is open ("Stop these first: …", from `blockers`, which the caller reads); the same state again writes nothing.
+ */
+export async function setProjectArchived(projectId: string, archived: boolean, by: OperatorBy = OPERATOR_BY, blockers?: ArchiveBlockers, extra: Record<string, unknown> = {}): Promise<ProjectSummary> {
+  readProject(projectId);
+  await actOrThrow(
+    engineOrThrow(projectId),
+    projectSid(projectId),
+    archived ? "project/archive" : "project/unarchive",
+    archived ? { blockers: blockers ?? { phrases: [], coding: [], overseerWorking: false } } : {},
+    operatorEnvelopeOf(projectId, by, extra),
+  );
+  return readProject(projectId);
+}
+
+/** When the project's overseer was paused on this host (ISO), or null: not paused. */
+export function overseerPausedSince(projectId: string): string | null {
+  const engine = engineOf(projectId);
+  if (!engine || !hostOf(engine).configuration(watchSid(projectId))?.includes("paused")) return null;
+  return pausedSinceOf(engine, projectId) ?? new Date(0).toISOString();
+}
+
+/** The operator set the project overseer's level on this host (`resumeAt`, the level they chose): a pause ends (any level). */
+export async function resumeOverseer(projectId: string, resumeAt?: string): Promise<void> {
+  const engine = engineOf(projectId);
+  if (!engine || !hostOf(engine).configuration(watchSid(projectId))) return;
+  await hostOf(engine).act(watchSid(projectId), "operator/level-set", resumeAt ? { resumeAt } : {}, operatorEnvelopeOf(projectId));
+}
+
 // ---- standalone engines --------------------------------------------------------------------------
 
 /** The modules whose handlers a project's engine needs, loaded before it opens (they import this module). */
@@ -129,6 +229,9 @@ export async function openRegisteredProjects(): Promise<void> {
     }
   }
 }
+
+/** Every registered project's `sessions/` dir: its overseer conversations are session files like any other. */
+setProjectSessionRoots(() => readRegistry().filter((e) => !e.importing).map((e) => canonicalPath(join(e.dir, "sessions"))));
 
 // ---- registration ----------------------------------------------------------------------------------
 

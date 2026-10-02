@@ -1,5 +1,5 @@
 import { closeSync, existsSync, openSync, readFileSync, readSync, statSync } from "node:fs";
-import { basename, dirname, join } from "node:path";
+import { basename, dirname, isAbsolute, join } from "node:path";
 import { canonicalPath } from "./paths";
 import {
   AT_ONCE_MAX,
@@ -67,6 +67,7 @@ const SAFE_ID = /^[a-z0-9_]{1,40}$/;
 export function projectOverseerPaths(projectId: string, workspace?: string): ProjectOverseerPaths {
   // The id becomes a path segment: never anything but the store's own id shape.
   if (!SAFE_ID.test(projectId)) throw new OrgError("Unknown project", 404);
+  if (workspace !== undefined && !isAbsolute(workspace)) throw new Error(`projectOverseerPaths: the engine's directory must be absolute, not ${JSON.stringify(workspace)}`);
   const dir = join(workspace ?? projectDir(projectId), "projects", projectId, "overseer");
   return {
     projectId,

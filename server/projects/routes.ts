@@ -3,7 +3,7 @@ import type { ProjectList, ProjectRegistered } from "../../shared/projects";
 import { BusyError } from "../chat-manager";
 import { localRequest } from "../mesh/proxy";
 import { OrgError } from "../org-error";
-import { OVERSEER_SENDER_HEADER, overseerSender } from "../overseer-sender";
+import { OVERSEER_CARD_HEADER, OVERSEER_SENDER_HEADER, overseerCard, overseerSender } from "../overseer-sender";
 import { cancelHeld } from "../project-holds";
 import { archiveBlockers } from "../project-overseer";
 import { nudgeMarks } from "../session-feed";
@@ -40,10 +40,13 @@ const handle =
     }
   };
 
-/** The operator, or the global Overseer acting for them (its own in-process call). */
+/** The operator, or the global Overseer acting for them (its own in-process call), with the confirm card its
+    call carried: a card-gated act (archive) checks the card (§app.overseer/org-attribution). */
 function operatorBy(c: Context): OperatorBy {
   const overseerId = overseerSender(c.req.header(OVERSEER_SENDER_HEADER));
-  return overseerId ? { kind: "operator", via: "overseer", overseerId } : { kind: "operator" };
+  if (!overseerId) return { kind: "operator" };
+  const card = overseerCard(c.req.header(OVERSEER_CARD_HEADER));
+  return { kind: "operator", via: "overseer", overseerId, ...(card ? { card } : {}) };
 }
 
 const pidOf = (c: Context): string => c.req.param("pid") ?? "";

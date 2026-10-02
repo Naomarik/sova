@@ -437,7 +437,8 @@ const bool = (description: string) => ({ type: "boolean", description });
 /** The confirm card whose click opened this turn, on every route call the tools make: the org statecharts
     check that a people-facing act's targets are on it (§app.overseer/org-people-facing). Read by a
     route only next to the sender mark (org-routes operatorBy). */
-export const OVERSEER_CARD_HEADER = "x-sova-overseer-card";
+import { OVERSEER_CARD_HEADER } from "./overseer-sender";
+export { OVERSEER_CARD_HEADER };
 export function cardHeader(items: readonly SovaConfirmItem[]): string {
   const ids = (kind: SovaConfirmItem["kind"]) => items.filter((i) => i.kind === kind).map((i) => i.id);
   return JSON.stringify({ people: ids("person"), projects: ids("project"), sessions: ids("session") });

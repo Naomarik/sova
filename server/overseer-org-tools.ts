@@ -219,6 +219,7 @@ export function orgTools(d: OrgToolDeps): Tool[] {
   );
   const projectAct = d.act("sova_org_project", async (p) =>
     guard(async () => {
+      if (p.op !== "edit" && p.op !== "archive" && p.op !== "unarchive") throw refuse("op must be edit, archive or unarchive (leave op out to read the project). Only the user adds a project, from Projects.");
       const project = resolveAnyProject(p.project, p.org);
       const details = { ...(project.orgId ? { org: project.orgId } : {}), project: project.id };
       switch (p.op) {

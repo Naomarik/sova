@@ -708,3 +708,29 @@ describe("the Overseer's file tools never open a workspace or a link store (§ap
     assert.ok(existsSync(join(root, "fws", "alias")));
   });
 });
+
+describe("any registered project, org optional (sova_projects, sova_org_project)", async () => {
+  const { registerProjectIn } = await import("./projects/spaces");
+  mkdirSync(join(root, "solo"), { recursive: true });
+  const solo = (await registerProjectIn("standalone", join(root, "solo"), { name: "Solo Tool", origin: "folder" })).project;
+
+  test("sova_projects lists a standalone project with no org; a read needs none", async () => {
+    const list = await call("sova_projects", {});
+    assert.ok(list.ok, list.text);
+    assert.match(list.text, new RegExp(`- Solo Tool \\(${solo.id}\\) · in no organization · root `));
+    const read = await call("sova_org_project", { project: solo.id });
+    assert.ok(read.ok, read.text);
+    assert.match(read.text, /# Solo Tool .*\(in no organization\)/);
+    assert.doesNotMatch(read.text, /Gathering sessions|Decisions:|Last owner update/, "no org part for a standalone project");
+  });
+
+  test("its org part is refused with why; there is no add", async () => {
+    attended = true;
+    const edit = await call("sova_org_project", { op: "edit", project: solo.id, stakeholder: "none" });
+    assert.equal(edit.ok, false);
+    assert.match(edit.text, /Solo Tool is in no organization/);
+    const add = await call("sova_org_project", { op: "add", project: "x", name: "x", root: join(root, "solo") });
+    assert.equal(add.ok, false);
+    assert.match(add.text, /Only the user adds a project/);
+  });
+});

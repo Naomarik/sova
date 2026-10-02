@@ -15,6 +15,7 @@ import {
   claudeLoginNote,
   claudeLoginStanding,
   claudeLoginTitle,
+  claudePastNote,
   claudeReading,
   extraUsageMeter,
   meterReset,
@@ -31,6 +32,9 @@ import {
   usesLine,
   windowLabel,
 } from "./insights";
+
+/** A clock for tests before NOW below: every window in them has no reset, so any time works. */
+const T = Date.parse("2026-09-19T05:33:00Z");
 
 const provider = (p: Partial<UsageProvider> & Pick<UsageProvider, "id">): UsageProvider => ({ state: "ok", windows: [], ...p });
 
@@ -82,7 +86,7 @@ test("usageGlance shows DeepSeek's balance last, and every window provider as a 
       deepseek(true),
     ],
   };
-  const parts = usageGlance(usage);
+  const parts = usageGlance(usage, T);
   assert.deepEqual(parts.map((p) => p.id), ["claude", "openai", "ollama", "zai", "deepseek"]);
   assert.deepEqual(
     parts.map((p) => `${p.abbr} ${p.amount ?? `${p.pct}%`}`),
@@ -124,7 +128,7 @@ test("usageGlance: a rounded balance in the row, the exact one in the tooltip", 
     stale: false,
     providers: [provider({ id: "deepseek", balance: { currency: "USD", total: 4.99, granted: 0, toppedUp: 4.99, available: true } })],
   };
-  const part = usageGlance(usage)[0]!;
+  const part = usageGlance(usage, T)[0]!;
   assert.equal(part.amount, "$5");
   assert.equal(part.full, "DeepSeek balance $4.99");
 });
@@ -137,12 +141,12 @@ test("usageGlance: out of credit is the balance's emphasis, and only an old file
     stale,
     providers: [p],
   });
-  assert.equal(usageGlance(usage(deepseek(false)))[0]!.high, true);
-  const kept = usageGlance(usage({ ...deepseek(true), error: "deepseek HTTP 500" }))[0]!;
+  assert.equal(usageGlance(usage(deepseek(false)), T)[0]!.high, true);
+  const kept = usageGlance(usage({ ...deepseek(true), error: "deepseek HTTP 500" }), T)[0]!;
   assert.equal(kept.stale, false);
   assert.equal(kept.full, "DeepSeek balance $4.29");
   assert.equal(kept.amount, "$4");
-  assert.equal(usageGlance(usage(deepseek(true), true))[0]!.stale, true);
+  assert.equal(usageGlance(usage(deepseek(true), true), T)[0]!.stale, true);
 });
 
 test("usageGlance leaves out a DeepSeek without a balance, or one that isn't ok", () => {
@@ -154,9 +158,9 @@ test("usageGlance leaves out a DeepSeek without a balance, or one that isn't ok"
     providers: [p],
   });
   // No balance to show: nothing in the foot (it never gets a percentage).
-  assert.deepEqual(usageGlance(usage(provider({ id: "deepseek" }))), []);
-  assert.deepEqual(usageGlance(usage(provider({ id: "deepseek", state: "nokey" }))), []);
-  assert.deepEqual(usageGlance(usage({ ...deepseek(true), state: "error", error: "no data" })), []);
+  assert.deepEqual(usageGlance(usage(provider({ id: "deepseek" })), T), []);
+  assert.deepEqual(usageGlance(usage(provider({ id: "deepseek", state: "nokey" })), T), []);
+  assert.deepEqual(usageGlance(usage({ ...deepseek(true), state: "error", error: "no data" }), T), []);
 });
 
 test("windowLabel names the known windows", () => {
@@ -170,6 +174,7 @@ test("windowLabel names the known windows", () => {
 
 const NOW = Date.parse("2026-09-19T05:33:00Z");
 const inMs = (ms: number) => new Date(NOW + ms).toISOString();
+const H = 3_600_000;
 const usage = (providers: UsageProvider[]): UsageInsight => ({ available: true, fetchedAt: NOW, nextFetchAt: null, stale: false, providers });
 
 test("resetWhen / meterReset: under 24h a duration, else a date, past a clock time; never estimated", () => {
@@ -184,6 +189,7 @@ test("resetWhen / meterReset: under 24h a duration, else a date, past a clock ti
   assert.equal(past?.lead, "Reset at ");
   assert.match(past?.time ?? "", /^(1[0-2]|[1-9]):[0-5]\d [AP]M$/);
   assert.equal(past?.rest, ". New reading at the next refresh.");
+  assert.equal(meterReset({ label: "5h", pct: 96, resetsAt: inMs(-60_000) }, NOW, "Not read while it is free.")?.rest, ". Not read while it is free.");
   assert.equal(meterReset({ label: "7d", pct: 40 }, NOW), null);
 });
 
@@ -244,9 +250,13 @@ test("usageSummary: one sentence per problem provider, worst state first, payloa
   );
 });
 
-test("usageSummary: a passed reset drops the suffix; limitReached speaks only without a window sentence", () => {
-  const passed = usage([provider({ id: "claude", windows: [{ label: "5h", pct: 100, resetsAt: inMs(-60_000) }] })]);
-  assert.equal(usageSummary(passed, NOW), "Claude's 5-hour window is rate-limited.");
+test("usageSummary: a window whose reset passed adds no sentence; limitReached speaks only without a window sentence", () => {
+  // Like the head chip: the window is gone, so it is neither rate-limited nor used up.
+  const passed = usage([provider({ id: "claude", windows: [{ label: "5h", pct: 100, resetsAt: inMs(-60_000) }, { label: "7d", pct: 100, resetsAt: inMs(-H) }] })]);
+  assert.equal(providerChip(passed.providers[0]!, NOW), null);
+  assert.equal(usageSummary(passed, NOW), "All providers under limits.");
+  const stillAhead = usage([provider({ id: "claude", windows: [{ label: "5h", pct: 100, resetsAt: inMs(-60_000) }, { label: "7d", pct: 100, resetsAt: inMs(H) }] })]);
+  assert.equal(usageSummary(stillAhead, NOW), "Claude's 7-day quota is used up \u2014 resets in 1h.");
   const reached = usage([provider({ id: "openai", limitReached: true, windows: [{ label: "7d", pct: 40 }] })]);
   assert.equal(usageSummary(reached, NOW), "OpenAI's usage limit is reached.");
   const both = usage([provider({ id: "openai", limitReached: true, windows: [{ label: "7d", pct: 100 }] })]);
@@ -273,7 +283,6 @@ test("usageSummary: not-ok states each have a sentence; na and kept readings don
   assert.equal(usageSummary(quiet, NOW), "All providers under limits.");
 });
 
-const H = 3_600_000;
 const claudeAuth = (a: Partial<NonNullable<UsageProvider["auth"]>>): UsageProvider["auth"] => ({ kind: "oauth", source: "claude-cli", ...a });
 
 test("authCaption: a valid sign-in says when it renews by, and when it last did only when known", () => {
@@ -383,11 +392,11 @@ test("an account's one reading is its freshest, whichever login read it", () => 
   const a = login({ id: "l-0000000a", usage: older, fetchedAt: 100 });
   const b = login({ id: "l-0000000b", usage: newer, fetchedAt: 200 });
   const c = login({ id: "l-0000000c", usage: unread, inUse: true });
-  assert.equal(accountReading([a, b, c]).usage, newer);
-  assert.equal(accountReading([a, b, c]).login, b);
-  assert.equal(accountReading([c, a]).usage, older, "a login never read doesn't hide its account's reading");
+  assert.equal(accountReading([a, b, c], NOW).usage, newer);
+  assert.equal(accountReading([a, b, c], NOW).login, b);
+  assert.equal(accountReading([c, a], NOW).usage, older, "a login never read doesn't hide its account's reading");
   const d = login({ id: "l-0000000d", usage: unread });
-  assert.equal(accountReading([d, c]).login, c, "nothing read: the login in use speaks, for its note");
+  assert.equal(accountReading([d, c], NOW).login, c, "nothing read: the login in use speaks, for its note");
 });
 
 test("a login's standing reads as Settings → Accounts says it", () => {
@@ -459,59 +468,102 @@ const twoLogins = (): UsageInsight => ({
 
 test("claudeReading: the chat's recorded login, else the one in use for new chats, else providers' claude", () => {
   const u = twoLogins();
-  assert.equal(claudeReading(u, "default")!.usage, LIMITED, "a chat recorded on the default login");
-  assert.equal(claudeReading(u, "l-0000000a")!.usage, SPARE_READING);
-  assert.equal(claudeReading(u)!.usage, SPARE_READING, "no chat: the login in use for new chats");
-  assert.equal(claudeReading(u, null)!.usage, SPARE_READING);
-  assert.equal(claudeReading(u, "l-0000dead")!.usage, SPARE_READING, "a login no longer listed here");
+  assert.equal(claudeReading(u, NOW, "default")!.usage, LIMITED, "a chat recorded on the default login");
+  assert.equal(claudeReading(u, NOW, "l-0000000a")!.usage, SPARE_READING);
+  assert.equal(claudeReading(u, NOW)!.usage, SPARE_READING, "no chat: the login in use for new chats");
+  assert.equal(claudeReading(u, NOW, null)!.usage, SPARE_READING);
+  assert.equal(claudeReading(u, NOW, "l-0000dead")!.usage, SPARE_READING, "a login no longer listed here");
   // No login in use (none ready), or an older server without claudeLogins: Claude Code's own.
   const none: UsageInsight = { ...u, claudeLogins: u.claudeLogins!.map((l) => ({ ...l, inUse: false })) };
-  assert.equal(claudeReading(none)!.usage, LIMITED);
+  assert.equal(claudeReading(none, NOW)!.usage, LIMITED);
   const older: UsageInsight = { ...u, claudeLogins: undefined };
-  assert.deepEqual(claudeReading(older, "l-0000000a"), { usage: LIMITED, name: "Claude" });
-  assert.equal(claudeReading(usage([provider({ id: "openai" })])), null);
+  assert.deepEqual(claudeReading(older, NOW, "l-0000000a"), { usage: LIMITED, name: "Claude" });
+  assert.equal(claudeReading(usage([provider({ id: "openai" })]), NOW), null);
 });
 
 test("usageGlance: C reads the chosen login, and only several logins name it in the full text", () => {
   const u = twoLogins();
-  const c = usageGlance(u)[0]!;
+  const c = usageGlance(u, NOW)[0]!;
   assert.deepEqual({ abbr: c.abbr, pct: c.pct, high: c.high, full: c.full }, { abbr: "C", pct: 61, high: false, full: "Claude (spare@example.com) 7-day 61%" });
-  const onDefault = usageGlance(u, "default")[0]!;
+  const onDefault = usageGlance(u, NOW, "default")[0]!;
   assert.deepEqual({ pct: onDefault.pct, high: onDefault.high, full: onDefault.full }, { pct: 40, high: false, full: "Claude (own@example.com) 7-day 40%" });
   // The other providers are untouched.
-  assert.equal(usageGlance(u)[1]!.full, "OpenAI 7-day 14%");
+  assert.equal(usageGlance(u, NOW)[1]!.full, "OpenAI 7-day 14%");
   // One login: unchanged, no name.
   const one: UsageInsight = { ...u, claudeLogins: [login({ id: "default", email: "own@example.com", inUse: true, usage: LIMITED })] };
-  assert.equal(usageGlance(one)[0]!.full, "Claude 7-day 40%");
+  assert.equal(usageGlance(one, NOW)[0]!.full, "Claude 7-day 40%");
 });
 
-test("usageGlance: unreadable selected accounts fall back to the own login, including 100%", () => {
+test("usageGlance: a chosen login with no current reading is a pending C naming it, never another account's number", () => {
+  // Claude Code's own login is readable (and at 100%): it must not stand in under the same C.
   const own = provider({ id: "claude", windows: [{ label: "7d", pct: 100 }] });
-  for (const missing of [
-    provider({ id: "claude", state: "error", windows: [{ label: "7d", pct: 25 }] }),
-    provider({ id: "claude", windows: [] }),
-    provider({ id: "claude", windows: [{ label: "7d opus", pct: 25 }] }),
-  ]) {
+  for (const [why, missing] of [
+    ["never read: a login just taken", provider({ id: "claude", state: "error", windows: [], error: "not read yet" })],
+    ["every reset passed", provider({ id: "claude", windows: [{ label: "5h", pct: 19, resetsAt: inMs(-2 * H) }, { label: "7d", pct: 100, resetsAt: inMs(-H) }] })],
+    ["no window at all", provider({ id: "claude", windows: [] })],
+    ["only the Opus window", provider({ id: "claude", windows: [{ label: "7d opus", pct: 25 }] })],
+  ] as const) {
     const u = twoLogins();
     u.providers[0] = own;
     u.claudeLogins![1] = { ...u.claudeLogins![1]!, usage: missing };
     for (const id of [undefined, "l-0000000a"]) {
-      const c = usageGlance(u, id)[0]!;
-      assert.deepEqual({ id: c.id, pct: c.pct, high: c.high, full: c.full }, {
-        id: "claude", pct: 100, high: true, full: "Claude (Claude Code's own login) 7-day 100%",
-      });
-      assert.equal(usageGlance(u, id)[1]!.full, "OpenAI 7-day 14%");
+      const c = usageGlance(u, NOW, id)[0]!;
+      assert.deepEqual({ id: c.id, pending: c.pending, pct: c.pct, amount: c.amount, high: c.high, full: c.full }, {
+        id: "claude", pending: true, pct: undefined, amount: undefined, high: false, full: "Claude (spare@example.com) reading pending",
+      }, why);
+      assert.equal(usageGlance(u, NOW, id)[1]!.full, "OpenAI 7-day 14%");
     }
-    assert.equal(claudeReading(u)!.usage, missing, "summary selection is unchanged");
-    u.providers[0] = provider({ id: "claude", state: "error", windows: [] });
-    assert.equal(usageGlance(u).some((part) => part.id === "claude"), false, "no fabricated reading");
+    assert.equal(claudeReading(u, NOW)!.usage, missing, "summary selection is unchanged");
   }
+  // Named even when it is the only login.
+  const alone: UsageInsight = { ...usage([own]), claudeLogins: [login({ id: "l-0000000a", email: "spare@example.com", inUse: true, usage: provider({ id: "claude", state: "error", windows: [], error: "not read yet" }) })] };
+  assert.equal(usageGlance(alone, NOW)[0]!.full, "Claude (spare@example.com) reading pending");
+  // A chosen login in another not-ok state is missing data: left out, still no stand-in.
+  const u = twoLogins();
+  u.providers[0] = own;
+  u.claudeLogins![1] = { ...u.claudeLogins![1]!, usage: provider({ id: "claude", state: "expired" }) };
+  assert.equal(usageGlance(u, NOW).some((part) => part.id === "claude"), false);
+});
+
+test("usageGlance: no login chosen reads Claude Code's own login, pending once every reset passed", () => {
+  const older = usage([provider({ id: "claude", windows: [{ label: "7d", pct: 100, resetsAt: inMs(-H) }] })]);
+  assert.deepEqual(usageGlance(older, NOW).map((p) => ({ pending: p.pending, full: p.full })), [{ pending: true, full: "Claude (Claude Code's own login) reading pending" }]);
+  assert.deepEqual(usageGlance(usage([provider({ id: "claude", state: "error", windows: [], error: "no data" })]), NOW), [], "an own login never read: no data");
+  assert.equal(usageGlance(usage([provider({ id: "claude", windows: [{ label: "7d", pct: 40, resetsAt: inMs(H) }] })]), NOW)[0]!.pct, 40);
+});
+
+test("usageGlance: a window whose reset passed is never the foot's window", () => {
+  // The 7-day is preferred, but its reset is gone: the 5-hour is the current reading.
+  const u = usage([provider({ id: "claude", windows: [{ label: "5h", pct: 12, resetsAt: inMs(H) }, { label: "7d", pct: 100, resetsAt: inMs(-H) }] })]);
+  const c = usageGlance(u, NOW)[0]!;
+  assert.deepEqual({ pct: c.pct, high: c.high, full: c.full, pending: c.pending }, { pct: 12, high: false, full: "Claude 5-hour 12%", pending: undefined });
+});
+
+test("an account's reading prefers a login with a current window over a fresher one whose resets passed", () => {
+  // The user's case: a free spare login's pool figures (7-day 100%, reset gone) beside the pinned
+  // login's own first reading.
+  const frozen = provider({ id: "claude", windows: [{ label: "5h", pct: 19, resetsAt: inMs(-3 * H) }, { label: "7d", pct: 100, resetsAt: inMs(-H) }] });
+  const live = provider({ id: "claude", windows: [{ label: "5h", pct: 4, resetsAt: inMs(4 * H) }, { label: "7d", pct: 1, resetsAt: inMs(100 * H) }] });
+  const free = { label: "Free", self: false, free: true, stuck: false };
+  const spare = login({ id: "l-0000000a", accountUuid: "acct", usage: frozen, fetchedAt: NOW - 60_000, holder: free });
+  const pinned = login({ id: "l-0000000b", accountUuid: "acct", usage: live, fetchedAt: NOW - 10 * 60_000, inUse: true });
+  assert.equal(accountReading([spare, pinned], NOW).login, pinned, "older but current beats fresher but gone");
+  // Nothing current: the freshest still speaks (the card ghosts it), and a free login's ghost says why.
+  const notYet = { ...pinned, usage: provider({ id: "claude", state: "error", windows: [], error: "not read yet" }), fetchedAt: undefined };
+  assert.equal(accountReading([spare, notYet], NOW).login, spare);
+  assert.equal(claudePastNote(spare), "Not read while it is free.");
+  assert.equal(claudePastNote(pinned), undefined);
+  // And the foot never shows that frozen 100% as C: the login in use is pending.
+  const u: UsageInsight = { ...usage([provider({ id: "claude", windows: [{ label: "7d", pct: 100, resetsAt: inMs(80 * H) }] })]), claudeLogins: [spare, notYet] };
+  const c = usageGlance(u, NOW)[0]!;
+  assert.equal(c.pending, true);
+  assert.equal(usageSummary(u, NOW), "All providers under limits.", "nor does the summary call the quota used up");
 });
 
 test("usageGlance: readable selected accounts take precedence even at 100%", () => {
   const u = twoLogins();
   u.claudeLogins![1]!.usage = provider({ id: "claude", windows: [{ label: "7d", pct: 100 }] });
-  const c = usageGlance(u)[0]!;
+  const c = usageGlance(u, NOW)[0]!;
   assert.equal(c.pct, 100);
   assert.equal(c.high, true);
   assert.equal(c.full, "Claude (spare@example.com) 7-day 100%");
@@ -538,7 +590,7 @@ test("claudeReading: a login in use that has no reading of its own reads its acc
       login({ id: "default", email: "b@example.com", accountUuid: "acct-b", usage: LIMITED }),
     ],
   };
-  assert.equal(claudeReading(u)!.usage, SPARE_READING);
-  assert.equal(usageGlance(u)[0]!.full, "Claude (a@example.com) 7-day 61%");
-  assert.equal(claudeReading(u, "default")!.usage, LIMITED);
+  assert.equal(claudeReading(u, NOW)!.usage, SPARE_READING);
+  assert.equal(usageGlance(u, NOW)[0]!.full, "Claude (a@example.com) 7-day 61%");
+  assert.equal(claudeReading(u, NOW, "default")!.usage, LIMITED);
 });

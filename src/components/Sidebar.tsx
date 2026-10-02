@@ -998,6 +998,9 @@ function NameSessionsButton(props: { section: string; rows: readonly SessionSumm
   );
 }
 
+/** A glance part's figure: the money, the percentage, or "–" while Claude's reading is pending. */
+const glanceValue = (p: GlancePart) => p.amount ?? (p.pending ? "\u2013" : `${p.pct}%`);
+
 /** Usage foot row: every provider at a glance ("C 47%  O 95%  OL 80%  Z 0%  DS $4.29"), or the page name. */
 function UsageGlance(props: { parts: GlancePart[] }) {
   return (
@@ -1005,10 +1008,14 @@ function UsageGlance(props: { parts: GlancePart[] }) {
       <For each={props.parts}>
         {(p) => (
           // Stale wins over high: an old 95% isn't a current warning.
-          <span class="usage-glance-item" classList={{ "usage-glance-item-high": p.high && !p.stale, "usage-glance-item-stale": p.stale }}>
+          <span
+            class="usage-glance-item"
+            classList={{ "usage-glance-item-high": p.high && !p.stale, "usage-glance-item-stale": p.stale, "usage-glance-item-pending": p.pending === true }}
+          >
             <span class="usage-glance-tag">{p.abbr}</span>
-            {/* A credit provider shows the money left; a window provider its percentage. */}
-            <span class="text-num">{p.amount ?? `${p.pct}%`}</span>
+            {/* A credit provider shows the money left; a window provider its percentage; a Claude
+                login with no current reading a dash, never another account's number. */}
+            <span class="text-num">{glanceValue(p)}</span>
           </span>
         )}
       </For>
@@ -1549,7 +1556,7 @@ export function Sidebar(props: {
     writeKey(sessionStorage, archiveDateKey(d.id), open ? "1" : "0");
   };
   const liveCount = () => all().filter((s) => s.live).length;
-  const glance = createMemo(() => usageGlance(props.usage, props.claudeLogin));
+  const glance = createMemo(() => usageGlance(props.usage, props.now, props.claudeLogin));
   /** The foot's usage glance in full words, for its tooltip and accessible name. */
   const glanceText = () => (glance().length ? `Usage: ${glance().map((p) => p.full).join(", ")}` : "");
 
@@ -1782,9 +1789,9 @@ export function Sidebar(props: {
             {(p) => (
               <span
                 class="sidebar-footbar-seg sidebar-footbar-cap"
-                classList={{ "sidebar-footbar-cap-high": p.high && !p.stale, "sidebar-footbar-cap-stale": p.stale }}
+                classList={{ "sidebar-footbar-cap-high": p.high && !p.stale, "sidebar-footbar-cap-stale": p.stale || p.pending === true }}
               >
-                <span class="sidebar-footbar-tag">{p.abbr}</span> <span class="text-num">{p.amount ?? `${p.pct}%`}</span>
+                <span class="sidebar-footbar-tag">{p.abbr}</span> <span class="text-num">{glanceValue(p)}</span>
               </span>
             )}
           </For>

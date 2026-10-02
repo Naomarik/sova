@@ -90,6 +90,9 @@ export function meterTone(w: UsageWindow): "warn" | "error" | null {
 /** Whether a window's reset has already passed at `now` (its reading describes a window that's gone). */
 const resetPassed = (w: UsageWindow, now: number) => resetWhen(w.resetsAt, now)?.past === true;
 
+/** A current reading at `now`: a window whose reset (when it sends one) is still ahead. */
+export const liveWindow = (w: UsageWindow, now: number) => !resetPassed(w, now);
+
 /**
  * Card head chip for a provider: the worst window decides. Null when no limit applies.
  * A credit provider (DeepSeek) has a balance and no windows, so only the funding rule can fire.
@@ -183,12 +186,13 @@ export function resetWhen(resetsAt: string | undefined, now: number): { past: tr
 
 /**
  * A meter's reset line: "Resets in 2h 17m", "Resets Sep 25", or, past, "Reset at " + the clock
- * time (mono) + ". New reading at the next refresh.". Null when the window sends no reset.
+ * time (mono) + ". New reading at the next refresh." (`past` replaces that last sentence: a free
+ * login's figures are never read again). Null when the window sends no reset.
  */
-export function meterReset(w: UsageWindow, now: number): { lead: string; time?: string; rest?: string } | null {
+export function meterReset(w: UsageWindow, now: number, past = "New reading at the next refresh."): { lead: string; time?: string; rest?: string } | null {
   const r = resetWhen(w.resetsAt, now);
   if (!r) return null;
-  if (r.past) return { lead: "Reset at ", time: clockTime(w.resetsAt!), rest: ". New reading at the next refresh." };
+  if (r.past) return { lead: "Reset at ", time: clockTime(w.resetsAt!), rest: `. ${past}` };
   return { lead: `Resets ${r.when}` };
 }
 
@@ -240,13 +244,15 @@ export function claudeLoginName(l: UsageClaudeLogin, account: readonly UsageClau
 }
 
 /**
- * The account's one reading: the freshest among its logins that has one (they all read the same
- * quota), else the reading of the login in use, else of its first login. `login` is whose it is.
+ * The account's one reading (they all read the same quota): the freshest among its logins that
+ * still has a current window at `now`, else the freshest that has one at all, else the reading of
+ * the login in use, else of its first login. `login` is whose it is.
  */
-export function accountReading(account: readonly UsageClaudeLogin[]): { usage: UsageProvider; login: UsageClaudeLogin } {
+export function accountReading(account: readonly UsageClaudeLogin[], now: number): { usage: UsageProvider; login: UsageClaudeLogin } {
+  const freshest = (ls: UsageClaudeLogin[]) => ls.reduce<UsageClaudeLogin | undefined>((a, l) => (!a || (l.fetchedAt ?? -1) > (a.fetchedAt ?? -1) ? l : a), undefined);
   const read = account.filter((l) => l.usage.windows.length > 0 || l.usage.balance);
-  const best = read.reduce<UsageClaudeLogin | undefined>((a, l) => (!a || (l.fetchedAt ?? -1) > (a.fetchedAt ?? -1) ? l : a), undefined);
-  const login = best ?? account.find((l) => l.inUse) ?? account[0]!;
+  const live = read.filter((l) => l.usage.balance || l.usage.windows.some((w) => liveWindow(w, now)));
+  const login = freshest(live) ?? freshest(read) ?? account.find((l) => l.inUse) ?? account[0]!;
   return { usage: login.usage, login };
 }
 
@@ -324,6 +330,15 @@ export function claudeLoginNote(l: UsageClaudeLogin): string | null {
   return null;
 }
 
+/**
+ * What a ghost meter (reset passed) says in place of "New reading at the next refresh." when the
+ * reading is a free login's pool figures: nothing reads a free login, so none is coming. Undefined
+ * keeps the default.
+ */
+export function claudePastNote(l: UsageClaudeLogin): string | undefined {
+  return l.holder?.free ? "Not read while it is free." : undefined;
+}
+
 /** Claude's extra-usage meter, when it's switched on: a quota fill when there's a reading, else "On". */
 export function extraUsageMeter(p: UsageProvider): { pct: number } | { on: true } | null {
   const x = p.extraUsage;
@@ -359,11 +374,13 @@ function providerSentence(p: UsageProvider, now: number, name = PROVIDER_NAME[p.
     const r = resetWhen(w.resetsAt, now);
     return r && !r.past ? ` \u2014 resets ${r.when}` : "";
   };
-  const full = p.windows.filter((w) => w.pct >= 100);
+  // Like the head chip: a window whose reset has passed decides nothing.
+  const live = p.windows.filter((w) => liveWindow(w, now));
+  const full = live.filter((w) => w.pct >= 100);
   const quota = full.find((w) => !isShortWindow(w));
   if (quota) return `${name}'s ${windowLabel(quota)} quota is used up${resets(quota)}.`;
   if (full[0]) return `${name}'s ${windowLabel(full[0])} window is rate-limited${resets(full[0])}.`;
-  const near = p.windows.filter((w) => w.pct >= 80).sort((a, b) => b.pct - a.pct)[0];
+  const near = live.filter((w) => w.pct >= 80).sort((a, b) => b.pct - a.pct)[0];
   if (near) return `${name}'s ${windowLabel(near)} window is at ${pct(near)}%.`;
   if (p.limitReached) return `${name}'s usage limit is reached.`;
   return null;
@@ -374,24 +391,25 @@ function providerSentence(p: UsageProvider, now: number, name = PROVIDER_NAME[p.
  * login `loginId` names (the open chat's recorded login), else the one in use for new chats (the
  * first ready in this device's order), else `providers`' own claude — Claude Code's own login,
  * which is all an older server sends. The reading is that login's account card's (the account's
- * freshest: its logins share one quota). `name` is "Claude", or with several logins
- * "Claude ({the login's card title})", so the words say whose reading it is.
+ * freshest with a current window at `now`: its logins share one quota). `name` is "Claude", or
+ * with several logins "Claude ({the login's card title})", so the words say whose reading it is.
+ * `login` is the chosen login, absent when the reading is `providers`' own.
  */
-export function claudeReading(u: UsageInsight, loginId?: string | null): { usage: UsageProvider; name: string } | null {
+export function claudeReading(u: UsageInsight, now: number, loginId?: string | null): { usage: UsageProvider; name: string; login?: UsageClaudeLogin } | null {
   const own = u.providers.find((p) => p.id === "claude");
   const logins = u.claudeLogins ?? [];
   const login = (loginId ? logins.find((l) => l.id === loginId) : undefined) ?? logins.find((l) => l.inUse);
+  if (!login) return own ? { usage: own, name: PROVIDER_NAME.claude } : null;
   // Its account's card: the account's freshest reading (its logins share one quota).
-  const usage = login ? accountReading(claudeAccounts(logins).find((a) => a.includes(login))!).usage : own;
-  if (!usage) return null;
-  const name = login && logins.length > 1 ? `${PROVIDER_NAME.claude} (${claudeLoginTitle(login)})` : PROVIDER_NAME.claude;
-  return { usage, name };
+  const usage = accountReading(claudeAccounts(logins).find((a) => a.includes(login))!, now).usage;
+  const name = logins.length > 1 ? `${PROVIDER_NAME.claude} (${claudeLoginTitle(login)})` : PROVIDER_NAME.claude;
+  return { usage, name, login };
 }
 
-/** `providers` with Claude's entry swapped for the reading `claudeReading` chose, and its name. */
-function readings(u: UsageInsight, loginId?: string | null): { p: UsageProvider; name: string }[] {
-  const claude = claudeReading(u, loginId);
-  return u.providers.map((p) => (p.id === "claude" && claude ? { p: claude.usage, name: claude.name } : { p, name: PROVIDER_NAME[p.id] }));
+/** `providers` with Claude's entry swapped for the reading `claudeReading` chose, its name and login. */
+function readings(u: UsageInsight, now: number, loginId?: string | null): { p: UsageProvider; name: string; login?: UsageClaudeLogin }[] {
+  const claude = claudeReading(u, now, loginId);
+  return u.providers.map((p) => (p.id === "claude" && claude ? { p: claude.usage, name: claude.name, ...(claude.login ? { login: claude.login } : {}) } : { p, name: PROVIDER_NAME[p.id] }));
 }
 
 /**
@@ -401,7 +419,7 @@ function readings(u: UsageInsight, loginId?: string | null): { p: UsageProvider;
  */
 export function usageSummary(u: UsageInsight | undefined, now: number, loginId?: string | null): string | null {
   if (!u?.available) return null;
-  const sentences = readings(u, loginId).map(({ p, name }) => providerSentence(p, now, name)).filter((x): x is string => x !== null);
+  const sentences = readings(u, now, loginId).map(({ p, name }) => providerSentence(p, now, name)).filter((x): x is string => x !== null);
   return sentences.length ? sentences.join(" ") : "All providers under limits.";
 }
 
@@ -412,13 +430,14 @@ export const PROVIDER_ABBR: Record<UsageProvider["id"], string> = { claude: "C",
  * The one window a provider shows in the compact foot: the one the provider flags `active` (the
  * limit the current model counts against; first in source order), else the 7-day one, else its
  * longest (Ollama's month, Z.ai's plan window, OpenAI's "pri"/5h when that's all). Never the MCP
- * quota or Claude's Opus-only window. Null when the provider isn't ok or has no window — a
- * credit provider (DeepSeek, a balance and no windows) has no window to pick, and reaches the
- * foot through its balance instead (usageGlance).
+ * quota or Claude's Opus-only window, and never a window whose reset has passed at `now` (it is
+ * not a current reading). Null when the provider isn't ok or has no such window — a credit
+ * provider (DeepSeek, a balance and no windows) has no window to pick, and reaches the foot
+ * through its balance instead (usageGlance).
  */
-export function glanceWindow(p: UsageProvider): UsageWindow | null {
+export function glanceWindow(p: UsageProvider, now: number): UsageWindow | null {
   if (p.state !== "ok") return null;
-  const ws = p.windows.filter((w) => w.label !== "mcp" && w.label !== "7d opus");
+  const ws = p.windows.filter((w) => w.label !== "mcp" && w.label !== "7d opus" && liveWindow(w, now));
   const preferred = ws.find((w) => w.active) ?? ws.find((w) => w.label === "7d");
   if (preferred) return preferred;
   // Longest known length first; windows of unknown length ("pri", "plan") after, in API order.
@@ -432,8 +451,11 @@ export interface GlancePart {
   pct?: number;
   /** Money left for a credit provider (DeepSeek): it has no quota, and inventing a percentage for
       it would be a lie. Already formatted, and rounded to whole units for the foot ("$4"); `full`
-      carries the exact amount. A part carries `pct` or `amount`. */
+      carries the exact amount. A part carries `pct`, `amount`, or `pending`. */
   amount?: string;
+  /** Claude only: the chosen login has no current reading yet (never read, or every window's
+      reset passed). The foot shows a muted "C –", never another account's number. */
+  pending?: true;
   /** Emphasis: set in semibold ink (no hue: the foot has no word to pair a color with). ≥ 80%
       used for a window provider; out of credit for a credit one — its only bad state. */
   high: boolean;
@@ -444,38 +466,33 @@ export interface GlancePart {
 }
 
 /**
- * One part per provider with something to show — a readable window, or a credit provider's
+ * One part per provider with something to show — a current window, or a credit provider's
  * balance — in provider order; providers without data are left out. Claude's part reads the
- * login `claudeReading` chooses for `loginId` (the open chat's recorded login, if any).
+ * login `claudeReading` chooses for `loginId` (the open chat's recorded login, if any); when that
+ * reading has no current window (never read, or every reset passed) it is a pending part naming
+ * the login, never another account's number.
  */
-export function usageGlance(u: UsageInsight | undefined, loginId?: string | null): GlancePart[] {
+export function usageGlance(u: UsageInsight | undefined, now: number, loginId?: string | null): GlancePart[] {
   if (!u?.available) return [];
-  return readings(u, loginId).flatMap(({ p: selected, name: selectedName }): GlancePart[] => {
-    let p = selected;
-    let name = selectedName;
-    // A selected login without readable usage must not hide the own-login reading.
-    // Use the same eligibility as the glance below, rather than merely testing windows.length.
-    if (p.id === "claude" && !glanceWindow(p) && !(p.state === "ok" && p.balance)) {
-      const own = u.providers.find((provider) => provider.id === "claude");
-      if (own && (glanceWindow(own) || (own.state === "ok" && own.balance))) {
-        p = own;
-        name = "Claude (Claude Code's own login)";
-      }
-    }
+  return readings(u, now, loginId).flatMap(({ p, name, login }): GlancePart[] => {
     const abbr = PROVIDER_ABBR[p.id];
+    const stale = u.stale;
     if (p.state === "ok" && p.balance) {
-      const stale = u.stale;
       // Whole units in the row, the exact amount in the tooltip. No percentage: the only
       // emphasis a balance has is "this can't fund calls".
       const amount = moneyCompact(p.balance.total, p.balance.currency);
       const exact = money(p.balance.total, p.balance.currency);
       return [{ id: p.id, abbr, amount, high: !p.balance.available, stale, full: `${name} balance ${exact}` }];
     }
-    const w = glanceWindow(p);
-    if (!w) return [];
-    const stale = u.stale;
-    const full = `${name} ${windowLabel(w)} ${pct(w)}%`;
-    return [{ id: p.id, abbr, pct: pct(w), high: w.pct >= 80, stale, full }];
+    const w = glanceWindow(p, now);
+    if (w) return [{ id: p.id, abbr, pct: pct(w), high: w.pct >= 80, stale, full: `${name} ${windowLabel(w)} ${pct(w)}%` }];
+    // Read before but every reset passed, or a chosen login not read yet: pending, named even
+    // when it is the only login.
+    if (p.id === "claude" && (p.state === "ok" || (login && p.state === "error"))) {
+      const whose = login ? claudeLoginTitle(login) : "Claude Code's own login";
+      return [{ id: p.id, abbr, pending: true, high: false, stale, full: `${PROVIDER_NAME.claude} (${whose}) reading pending` }];
+    }
+    return [];
   });
 }
 

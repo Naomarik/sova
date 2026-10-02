@@ -12,6 +12,7 @@ import {
   claudeLoginHolder,
   claudeLoginName,
   claudeLoginNote,
+  claudePastNote,
   claudeLoginStanding,
   claudeLoginTitle,
   extraUsageMeter,
@@ -46,8 +47,8 @@ function Track(props: { pct: number }) {
   );
 }
 
-function Meter(props: { w: UsageWindow; now: number }) {
-  const reset = () => meterReset(props.w, props.now);
+function Meter(props: { w: UsageWindow; now: number; past?: string }) {
+  const reset = () => meterReset(props.w, props.now, props.past);
   /** The window already reset: the reading describes a window that's gone. */
   const past = () => Boolean(reset()?.time);
   return (
@@ -158,6 +159,8 @@ function UsageCard(props: {
   foot?: JSX.Element;
   /** No sign-in caption: the reading is one of several logins', each with its own sign-in. */
   noSignIn?: boolean;
+  /** A ghost meter's sentence in place of "New reading at the next refresh." (a free login's figures). */
+  past?: string;
 }) {
   const problem = (): UsageLine | null => (props.note ? { rest: props.note } : providerProblem(props.p, props.now));
   const signIn = () => (props.noSignIn ? null : authCaption(props.p, props.now));
@@ -179,7 +182,7 @@ function UsageCard(props: {
           when={problem()}
           fallback={
             <>
-              <Show when={props.p.balance} fallback={<For each={props.p.windows}>{(w) => <Meter w={w} now={props.now} />}</For>}>
+              <Show when={props.p.balance} fallback={<For each={props.p.windows}>{(w) => <Meter w={w} now={props.now} past={props.past} />}</For>}>
                 {(b) => <Balance b={b()} />}
               </Show>
               <Show when={extraUsageMeter(props.p)}>{(x) => <ExtraMeter x={x()} />}</Show>
@@ -243,7 +246,7 @@ function LoginChips(props: { l: UsageClaudeLogin; now: number; reading: UsagePro
  * for an account of one login outside the pool, that login's chips above the meters.
  */
 function ClaudeAccountCard(props: { account: UsageClaudeLogin[]; now: number }) {
-  const reading = () => accountReading(props.account);
+  const reading = () => accountReading(props.account, props.now);
   const first = () => props.account[0]!;
   const caption = () => claudeAccountLoginsCaption(props.account);
   const listed = () => caption() !== null;
@@ -255,6 +258,7 @@ function ClaudeAccountCard(props: { account: UsageClaudeLogin[]; now: number }) 
       plan={claudeAccountSubtitle(props.account)}
       headId={`u-claude-${first().id}`}
       note={claudeLoginNote(reading().login)}
+      past={claudePastNote(reading().login)}
       noSignIn={props.account.length > 1}
       lead={
         <Show when={!listed()}>

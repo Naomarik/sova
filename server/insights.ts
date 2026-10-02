@@ -38,7 +38,7 @@ import type {
 import type { LinkedAgentInfo } from "../shared/mesh-links";
 // The usage-status extension's fetch/cache core. Part of the sanctioned pi-config import
 // surface (node builtins only, like extensions/mode/state.ts) — see CLAUDE.md.
-import { forceRefresh } from "../pi-config/extensions/usage-status/fetch.ts";
+import { claudeLoginIds, forceRefresh } from "../pi-config/extensions/usage-status/fetch.ts";
 import { readAuthStatus, readClaudeLoginAuth } from "./auth-status";
 import { ClaudeAccountsService } from "./claude-accounts";
 import { hasPage, listExplanations, sortExplanations } from "./explanations";
@@ -89,12 +89,14 @@ interface ClaudeAccountReading {
   fetchedAt?: number;
   skipped?: "auth";
 }
-type ParsedUsage = { data: Omit<UsageInsight, "stale">; absent: UsageProvider["id"][]; claudeAccounts?: Record<string, ClaudeAccountReading> };
+/** `ownFetchedAt`: when `claude` (Claude Code's own login) was read — the cache's `claudeFetchedAt`,
+    else the file's `fetchedAt` (an older writer fetched it with the file). */
+type ParsedUsage = { data: Omit<UsageInsight, "stale">; absent: UsageProvider["id"][]; ownFetchedAt: number; claudeAccounts?: Record<string, ClaudeAccountReading> };
 
 let usageCache: ({ mtimeMs: number; size: number } & ParsedUsage) | null = null;
 
 const USAGE_PROVIDERS = ["claude", "openai", "ollama", "zai", "deepseek"] as const satisfies readonly UsageProvider["id"][];
-const USAGE_META_KEYS = new Set(["schemaVersion", "fetchedAt", "nextFetchAt", "errors", "claudeAccounts"]);
+const USAGE_META_KEYS = new Set(["schemaVersion", "fetchedAt", "nextFetchAt", "errors", "claudeAccounts", "claudeFetchedAt", "claudeNextFetchAt"]);
 const LOGIN_ID = /^l-[0-9a-f]{8}$/;
 
 /** Cache shapes we don't recognize are logged once per process, not on every poll. */
@@ -268,6 +270,7 @@ function parseUsage(text: string): ParsedUsage | null {
       providers: USAGE_PROVIDERS.map((id) => usageProvider(id, v[id], errors[id])),
     },
     absent: USAGE_PROVIDERS.filter((id) => v[id] === undefined),
+    ownFetchedAt: num(v.claudeFetchedAt) ?? v.fetchedAt,
     ...(v.claudeAccounts !== undefined ? { claudeAccounts: parseClaudeAccounts(v.claudeAccounts) } : {}),
   };
 }
@@ -394,11 +397,12 @@ export async function getUsageInsight(): Promise<UsageInsight> {
     if (!parsed) return unavailable("corrupt");
     // Once per new cache file, not per poll: the store skips the write when nothing changed.
     rememberUsage(parsed.data.providers);
-    // A file without `claudeAccounts` (an older pi rewrote it) keeps the logins' last readings.
-    const claudeAccounts = parsed.claudeAccounts ?? usageCache?.claudeAccounts;
-    usageCache = { mtimeMs: st.mtimeMs, size: st.size, data: parsed.data, absent: parsed.absent, ...(claudeAccounts ? { claudeAccounts } : {}) };
+    // A file without `claudeAccounts` (an older pi rewrote it) keeps the last readings of the
+    // logins still held here, never one handed back (its pre-reset reading would outlive it).
+    const claudeAccounts = parsed.claudeAccounts ?? carriedClaudeAccounts(usageCache?.claudeAccounts, claudeLoginIds());
+    usageCache = { mtimeMs: st.mtimeMs, size: st.size, data: parsed.data, absent: parsed.absent, ownFetchedAt: parsed.ownFetchedAt, ...(claudeAccounts ? { claudeAccounts } : {}) };
   }
-  const { data: d, absent, claudeAccounts } = usageCache;
+  const { data: d, absent, ownFetchedAt, claudeAccounts } = usageCache;
   // A key the cache doesn't carry: serve what we last read for it, said plainly. A key that IS
   // there always wins, error and "na" included — that is the extension's own answer.
   const read = absent.length === 0 ? d.providers : d.providers.map((p) => (absent.includes(p.id) ? lastKnown(p) : p));
@@ -406,8 +410,17 @@ export async function getUsageInsight(): Promise<UsageInsight> {
   const auth = await readAuthStatus();
   const providers = read.map((p) => (auth[p.id] ? { ...p, auth: auth[p.id] } : p));
   const own = providers.find((p) => p.id === "claude");
-  const claudeLogins = own ? await readClaudeLogins(own, d.fetchedAt, claudeAccounts) : undefined;
+  const claudeLogins = own ? await readClaudeLogins(own, ownFetchedAt, claudeAccounts) : undefined;
   return { ...d, providers, ...(claudeLogins ? { claudeLogins } : {}), stale: d.fetchedAt !== null && Date.now() - d.fetchedAt > USAGE_STALE_MS };
+}
+
+/**
+ * The logins' readings a cache without `claudeAccounts` carries over from the last one read: only
+ * those of logins in `held` (this host's added logins now); undefined when none is left.
+ */
+export function carriedClaudeAccounts(prev: Record<string, ClaudeAccountReading> | undefined, held: readonly string[]): Record<string, ClaudeAccountReading> | undefined {
+  const kept = Object.entries(prev ?? {}).filter(([id]) => held.includes(id));
+  return kept.length ? Object.fromEntries(kept) : undefined;
 }
 
 /** Single-flight: concurrent Refresh clicks share one force-fetch. */

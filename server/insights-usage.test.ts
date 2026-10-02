@@ -300,3 +300,24 @@ test("auth: the sign-in rides on its provider, and only there", async () => {
   writeCache({});
   assert.equal(byId((await getUsageInsight()).providers, "claude").auth, undefined, "signed out: no auth");
 });
+
+test("a cache without claudeAccounts carries over only the readings of logins still held here", async () => {
+  const { carriedClaudeAccounts } = await import("./insights");
+  const reading = (pct: number) => ({ usage: { id: "claude" as const, state: "ok" as const, windows: [{ label: "7d", pct }] }, fetchedAt: 1 });
+  const prev = { "l-0000000a": reading(10), "l-0000000b": reading(100) };
+  assert.deepEqual(carriedClaudeAccounts(prev, ["l-0000000a"]), { "l-0000000a": reading(10) }, "b was handed back: its reading goes with it");
+  assert.equal(carriedClaudeAccounts(prev, []), undefined, "nothing held here: nothing carried");
+  assert.equal(carriedClaudeAccounts(undefined, ["l-0000000a"]), undefined);
+});
+
+test("Claude Code's own login is dated by the cache's claudeFetchedAt, else the file's fetchedAt", async () => {
+  writeCache({ claudeFetchedAt: 12_345, claudeNextFetchAt: 99_999 });
+  const u = await getUsageInsight();
+  const own = u.claudeLogins?.find((l) => l.id === "default");
+  assert.ok(own, "this host lists Claude Code's own login");
+  assert.equal(own.fetchedAt, 12_345);
+  assert.notEqual(u.fetchedAt, 12_345, "the file's own age is unchanged");
+  writeCache({});
+  const older = (await getUsageInsight()).claudeLogins?.find((l) => l.id === "default");
+  assert.equal(older?.fetchedAt, (await getUsageInsight()).fetchedAt);
+});

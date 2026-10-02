@@ -4698,14 +4698,17 @@ a.group-option { color: inherit; text-decoration: none; }
    Never wraps; clips as a guard. Beside the monitor button the box is 215px in
    the 320px sidebar, so segments sit space-2 apart (twice the tag-to-number gap,
    so each still reads as one pair): a real five-provider reading is 210px.
-   High = weight, not hue (no word to pair a color with); stale = muted. */
+   High = weight, not hue (no word to pair a color with); stale = muted; pending (a Claude
+   login with no current reading, "C –") = muted the same way. */
 .usage-glance { display: flex; align-items: baseline; gap: var(--space-2); flex-wrap: nowrap; }
 .usage-glance-item { display: inline-flex; align-items: baseline; gap: var(--space-1); flex: none; }
 .usage-glance-tag { color: var(--color-ink-muted); }
 .usage-glance-item .text-num { font-family: var(--font-mono); font-size: var(--fs-mono); color: var(--color-ink-2); }
 .usage-glance-item-high .text-num { font-weight: var(--fw-semibold); color: var(--color-ink); }
 .usage-glance-item-stale .text-num,
-.usage-glance-item-stale .usage-glance-tag { color: var(--color-ink-muted); font-weight: var(--fw-regular); }
+.usage-glance-item-stale .usage-glance-tag,
+.usage-glance-item-pending .text-num,
+.usage-glance-item-pending .usage-glance-tag { color: var(--color-ink-muted); font-weight: var(--fw-regular); }
 
 
 /* ---- USAGE + AGENTS PAGES. A .pane in .app-main, under a .session-head. - */

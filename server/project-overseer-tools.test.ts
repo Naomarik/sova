@@ -71,13 +71,13 @@ function fake(opts: { attended?: boolean; autonomy?: Autonomy; roster?: Person[]
   /** The abilities each gathering start reached the host with. */
   const abilities: GatheringAbilities[] = [];
   const dir = join(root, `ws${n++}`);
-  const paths = projectOverseerPaths("org_aaaaaaaa", "prj_bbbbbbbb", dir);
+  const paths = projectOverseerPaths("prj_bbbbbbbb", dir);
   const roster = opts.roster ?? [person("p_tony0001", "Tony"), person("p_bob00001", "Bob", "proposed")];
   const settings = { ...defaultPoSettings(), autonomy: opts.autonomy ?? "L1", ...opts.settings };
   const sessions: SessionSummary[] = [
     { id: "in-root", path: "/s/in-root.jsonl", cwd: "/proj/app", title: "Inside" } as SessionSummary,
     { id: "outside", path: "/s/outside.jsonl", cwd: "/elsewhere", title: "Outside" } as SessionSummary,
-    { id: "po-self", path: "/s/po.jsonl", cwd: "/proj", title: "Overseer · Portal", projectOverseer: { orgId: "org_aaaaaaaa", projectId: "prj_bbbbbbbb" } } as SessionSummary,
+    { id: "po-self", path: "/s/po.jsonl", cwd: "/proj", title: "Overseer · Portal", projectOverseer: { projectId: "prj_bbbbbbbb" } } as SessionSummary,
     { id: "global", path: "/s/ov.jsonl", cwd: "/proj", title: "Overseer", overseer: true } as SessionSummary,
     { id: "worker", path: "/s/w.jsonl", cwd: "/proj/app", title: "worker", workerSession: { parent: "/s/in-root.jsonl" } } as unknown as SessionSummary,
     { id: "a-baton", path: "/s/b.jsonl", cwd: "/proj", title: "Baton", baton: { holder: null, state: "open" } } as SessionSummary,
@@ -149,7 +149,7 @@ function fake(opts: { attended?: boolean; autonomy?: Autonomy; roster?: Person[]
     pipeline: (q: { session?: string }) =>
       q.session
         ? { kind: "session" as const, id: q.session, statechart: "item", configuration: ["asking"], enabled: [{ event: "correct/reopen", enabled: false, refusal: { sentence: "It is not done." } }], corrections: ["correct/reopen"], holds: [] }
-        : { kind: "project" as const, rows: [], held: [{ id: "h1", orgId: "org_aaaaaaaa", projectId: "prj_bbbbbbbb", what: 'A gathering session "Pay"', kind: "act", goesAt: "2026-09-30T10:10:00.000Z", since: "2026-09-30T10:00:00.000Z" }], feed: [] },
+        : { kind: "project" as const, rows: [], held: [{ id: "h1", projectId: "prj_bbbbbbbb", what: 'A gathering session "Pay"', kind: "act", goesAt: "2026-09-30T10:10:00.000Z", since: "2026-09-30T10:00:00.000Z" }], feed: [] },
     decideHold: async (id: string, approve: boolean, reason: string) => void calls.push(`${approve ? "approve" : "cancel"}:${id}:${reason}`),
     correct: async (session: string, event: string, _payload: Record<string, unknown>, reason: string) => {
       calls.push(`${event}:${session}:${reason}`);
@@ -733,7 +733,7 @@ describe("preview links (§app.project-overseer/previews)", () => {
     const byId = Object.fromEntries(out.details.previews.map((h) => [h.id, h]));
     assert.equal(byId.pv_BBBBBBBBBBBBBBBB!.linkKept, false, "no link kept, never guessed");
     assert.equal(byId.pv_CCCCCCCCCCCCCCCC!.running, null, "running only while active");
-    assert.deepEqual(byId.pv_AAAAAAAAAAAAAAAA, { v: 1, id: PREVIEW.id, linkKept: true, purpose: "The shop for Ana", expiresAt: PREVIEW.expiresAt, orgId: "org_aaaaaaaa", projectId: "prj_bbbbbbbb", sessionId: "in-tree", branch: "sova/fix-abc123", target: { kind: "port", port: 5173 }, state: "active", running: true, createdBy: "session:po-1" });
+    assert.deepEqual(byId.pv_AAAAAAAAAAAAAAAA, { v: 1, id: PREVIEW.id, linkKept: true, purpose: "The shop for Ana", expiresAt: PREVIEW.expiresAt, projectId: "prj_bbbbbbbb", sessionId: "in-tree", branch: "sova/fix-abc123", target: { kind: "port", port: 5173 }, state: "active", running: true, createdBy: "session:po-1" });
   });
 
   test("sova_project lists the active ones under Previews", async () => {

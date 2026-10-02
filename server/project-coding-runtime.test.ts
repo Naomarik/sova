@@ -37,7 +37,7 @@ const { seedBuild } = await import("./org-test-fixtures");
 const { envelopeFor, hostOf } = await import("./org-engine");
 const { pipelineInfo } = await import("./project-pipeline");
 /** A project's builds with their worktree folders on this host. */
-const buildsOf = async (orgId: string, projectId: string, root: string) => Promise.all(readBuilds(orgId, projectId).map(async (r) => ({ ...r, worktree: (await withWorktreePath(r, root))?.worktree })));
+const buildsOf = async (projectId: string, root: string) => Promise.all(readBuilds(projectId).map(async (r) => ({ ...r, worktree: (await withWorktreePath(r, root))?.worktree })));
 
 after(async () => {
   await disposeAllChats();
@@ -80,9 +80,9 @@ describe("a project's coding sessions", async () => {
   test("Start coding session: its own worktree cut from HEAD, on its statechart at once, mode set and pinned before the prompt", async () => {
     // The default equals what the project asks for: the extension alone would write no entry.
     writeDefault("normal", ["spec"]);
-    const p = store.projectOverseerPaths(org.id, project.id);
+    const p = store.projectOverseerPaths(project.id);
     const todo = addTodo({ text: "Build the login page" }, p.todos, p.ideas);
-    const err = await po.codeItem(org.id, project.id, { todoId: todo.id }).then(
+    const err = await po.codeItem(project.id, { todoId: todo.id }).then(
       () => null,
       (e: Error) => e,
     );
@@ -115,19 +115,19 @@ describe("a project's coding sessions", async () => {
 
   test("the project page lists the worktree; the operator merges it back and removes it", async () => {
     assert.ok(started);
-    const p = store.projectOverseerPaths(org.id, project.id);
+    const p = store.projectOverseerPaths(project.id);
     const w = (await buildsOf(org.id, project.id, client)).find((r) => r.sessionId === started!.sessionId)!.worktree!;
-    let info = await po.projectOverseerInfo(org.id, project.id);
+    let info = await po.projectOverseerInfo(project.id);
     assert.equal(info.worktrees.available, true);
     assert.deepEqual(info.codingModeNow, { mode: "normal", minorModes: ["spec"] });
     const rowOf = () => info.worktrees.sessions.find((s) => s.sessionId === started!.sessionId);
     const r0 = rowOf();
     assert.deepEqual(r0 && { state: r0.state, merged: r0.merged, ahead: r0.ahead, startedBy: r0.startedBy, branch: r0.branch, target: r0.target }, { state: "open", merged: false, ahead: 0, startedBy: "operator", branch: w.branch, target: "master" });
-    await po.ensureProjectOverseer(org.id, project.id);
-    await assert.rejects(po.mergeCodingWorktree(org.id, project.id, started.sessionId), /has nothing to merge into master/);
+    await po.ensureProjectOverseer(project.id);
+    await assert.rejects(po.mergeCodingWorktree(project.id, started.sessionId), /has nothing to merge into master/);
     writeFileSync(join(w.path, "login.txt"), "login\n");
     // Uncommitted: refused, and the overseer is told (soon), so it can ask the session to commit.
-    await assert.rejects(po.mergeCodingWorktree(org.id, project.id, started.sessionId), /uncommitted changes in 1 file \(login.txt\)/);
+    await assert.rejects(po.mergeCodingWorktree(project.id, started.sessionId), /uncommitted changes in 1 file \(login.txt\)/);
     const memo = store.readMemo(p);
     assert.ok(
       memo.pending.some((r) => r.startsWith('Merge Branch for "Build the login page" was refused: The worktree has uncommitted changes in 1 file')),
@@ -138,7 +138,7 @@ describe("a project's coding sessions", async () => {
     git(w.path, "-c", "user.email=t@example.invalid", "-c", "user.name=T", "-c", "commit.gpgsign=false", "commit", "-q", "-m", "login");
     // The reasons noted from here on (the watch keeps them until its next look).
     const seen = store.readMemo(p).pending.length;
-    info = await po.mergeCodingWorktree(org.id, project.id, started.sessionId);
+    info = await po.mergeCodingWorktree(project.id, started.sessionId);
     assert.equal(readFileSync(join(client, "login.txt"), "utf8"), "login\n");
     // Merged: the overseer is told, soon, so it never waits on a merge that already happened (NEW-MS-3).
     const merged = store.readMemo(p);
@@ -150,31 +150,31 @@ describe("a project's coding sessions", async () => {
     writeFileSync(join(w.path, "logout.txt"), "logout\n");
     git(w.path, "add", "logout.txt");
     git(w.path, "-c", "user.email=t@example.invalid", "-c", "user.name=T", "-c", "commit.gpgsign=false", "commit", "-q", "-m", "logout");
-    info = await po.projectOverseerInfo(org.id, project.id);
+    info = await po.projectOverseerInfo(project.id);
     assert.deepEqual(
       [rowOf()?.state, rowOf()?.merged, rowOf()?.newSinceMerge, rowOf()?.mergedAt],
       ["open", false, 1, firstMerge],
       "a merged branch with a new commit is open again, and its last merge stays as history",
     );
     assert.equal(offersMerge(rowOf()!), true, "Merge Branch is offered again");
-    info = await po.mergeCodingWorktree(org.id, project.id, started.sessionId);
+    info = await po.mergeCodingWorktree(project.id, started.sessionId);
     assert.equal(readFileSync(join(client, "logout.txt"), "utf8"), "logout\n");
     assert.deepEqual([rowOf()?.state, rowOf()?.merged, rowOf()?.newSinceMerge], ["merged", true, undefined]);
     assert.equal(offersMerge(rowOf()!), false);
-    info = await po.removeCodingWorktree(org.id, project.id, started.sessionId);
+    info = await po.removeCodingWorktree(project.id, started.sessionId);
     assert.equal(existsSync(w.path), false);
     assert.equal(git(client, "branch", "--list", w.branch), "", "a merged branch goes with it");
     assert.deepEqual([rowOf()?.state, !!rowOf()?.removedAt, rowOf()?.merged, rowOf()?.branchGone], ["removed", true, true, true], "removed with its branch: still merged, nothing left to merge");
     assert.equal(offersMerge(rowOf()!), false, "merged and deleted: the record says merged, nothing to offer");
-    const row = readBuilds(org.id, project.id).find((r) => r.sessionId === started!.sessionId)!;
+    const row = readBuilds(project.id).find((r) => r.sessionId === started!.sessionId)!;
     assert.ok(row.removed && row.merged?.commit, JSON.stringify(row));
-    await assert.rejects(po.removeCodingWorktree(org.id, project.id, started.sessionId), /already removed/);
+    await assert.rejects(po.removeCodingWorktree(project.id, started.sessionId), /already removed/);
   });
 
   test("a coding row from another host: its recorded title, no link, not 'missing'", async () => {
     const gone = join(tmp, "elsewhere");
     await seedBuild(org.id, project.id, { sessionId: "01a0e321-a85c-74d4-9349-c48f99e8336d", kind: "operator-coding", path: join(gone, "s.jsonl"), title: "Add pickup hours", worktree: { path: join(gone, "wt"), branch: "sova/add-pickup-hours-abc123", base: git(client, "rev-parse", "HEAD"), target: "master" } });
-    const info = await po.projectOverseerInfo(org.id, project.id);
+    const info = await po.projectOverseerInfo(project.id);
     const row = info.worktrees.sessions.find((s) => s.sessionId === "01a0e321-a85c-74d4-9349-c48f99e8336d");
     assert.deepEqual(row && { title: row.title, path: row.path, branch: row.branch }, { title: "Add pickup hours", path: null, branch: "sova/add-pickup-hours-abc123" });
   });
@@ -190,44 +190,44 @@ describe("a project's coding sessions", async () => {
 
   test("the overseer's sova_create_session: a worktree too, and the mode it asked for within the ceiling", async () => {
     writeDefault("delegate", ["align", "spec"]);
-    await po.ensureProjectOverseer(org.id, project.id);
-    const tool = po.toolsForTest(org.id, project.id).find((t) => t.name === "sova_create_session")!;
+    await po.ensureProjectOverseer(project.id);
+    const tool = po.toolsForTest(project.id).find((t) => t.name === "sova_create_session")!;
     // Unattended at L1: refused before anything. At L3, delegate without the operator's opt-in: refused.
     await assert.rejects(tool.execute("t1", { gap: "none", prompt: "Build it" }, undefined, undefined, undefined as never), /needs L3/);
-    store.patchPoSettings(store.projectOverseerPaths(org.id, project.id), { autonomy: "L3", holdMin: 0 });
+    store.patchPoSettings(store.projectOverseerPaths(project.id), { autonomy: "L3", holdMin: 0 });
     // q7: unattended, a build names the gap whose promoted decisions it builds; with none it is refused.
     await assert.rejects(tool.execute("t1b", { gap: "none", prompt: "Build it" }, undefined, undefined, undefined as never), /Without a gap, a coding session starts only in a turn the operator started/);
     // In a turn the operator started it may start one tied to no gap.
-    const asked = po.toolsForTest(org.id, project.id, { attended: true }).find((t) => t.name === "sova_create_session")!;
-    const before = readBuilds(org.id, project.id).length;
+    const asked = po.toolsForTest(project.id, { attended: true }).find((t) => t.name === "sova_create_session")!;
+    const before = readBuilds(project.id).length;
     await assert.rejects(asked.execute("t2", { gap: "none", prompt: "Build it", mode: "delegate" }, undefined, undefined, undefined as never), /Delegate is off/);
-    assert.equal(readBuilds(org.id, project.id).length, before, "nothing created");
+    assert.equal(readBuilds(project.id).length, before, "nothing created");
     await asked.execute("t3", { gap: "none", prompt: "Build the API", title: "API" }, undefined, undefined, undefined as never).catch(() => {});
     const row = (await buildsOf(org.id, project.id, client)).find((r) => r.kind === "coding");
     assert.ok(row?.worktree && row.path, JSON.stringify(row));
     assert.match(row.worktree.branch, /^sova\/api-[0-9a-f]{6}$/);
     assert.equal(row.title, "API");
     // Untitled: the build still carries one, the prompt's first line (never Sova's commit paragraph).
-    const before2 = readBuilds(org.id, project.id).length;
+    const before2 = readBuilds(project.id).length;
     await asked.execute("t4", { gap: "none", prompt: "Fix the footer\nIt overlaps the menu on phones." }, undefined, undefined, undefined as never).catch(() => {});
-    const rows2 = readBuilds(org.id, project.id);
+    const rows2 = readBuilds(project.id);
     assert.equal(rows2.length, before2 + 1);
     assert.equal(rows2.at(-1)!.title, "Fix the footer");
-    const info2 = await po.projectOverseerInfo(org.id, project.id);
+    const info2 = await po.projectOverseerInfo(project.id);
     assert.equal(info2.worktrees.sessions.find((s) => s.sessionId === rows2.at(-1)!.sessionId)?.title, "Fix the footer");
     assert.deepEqual(modeEntries(row.path).at(-1)?.data.active, { version: 1, mode: "normal", strict: false, minorModes: ["spec"] });
   });
 
   test("a plain folder: runs in the root with the reason; Automatic without a spec is normal", async () => {
-    const p = store.projectOverseerPaths(org.id, plain.id);
+    const p = store.projectOverseerPaths(plain.id);
     const todo = addTodo({ text: "Tidy up" }, p.todos, p.ideas);
-    await po.codeItem(org.id, plain.id, { todoId: todo.id }).catch(() => null);
-    const row = readBuilds(org.id, plain.id).find((r) => r.kind === "operator-coding");
+    await po.codeItem(plain.id, { todoId: todo.id }).catch(() => null);
+    const row = readBuilds(plain.id).find((r) => r.kind === "operator-coding");
     assert.ok(row?.path && !row.worktree, JSON.stringify(row));
     assert.equal(row.inRoot, "it isn't a Git repository.");
     assert.equal(JSON.parse(readFileSync(row.path!, "utf8").split("\n")[0]!).cwd, plainRoot);
     assert.deepEqual(modeEntries(row.path).at(-1)?.data.active, { version: 1, mode: "normal", strict: false, minorModes: [] });
-    const info = await po.projectOverseerInfo(org.id, plain.id);
+    const info = await po.projectOverseerInfo(plain.id);
     assert.deepEqual({ available: info.worktrees.available, reason: info.worktrees.reason }, { available: false, reason: row.inRoot });
     const listed = info.worktrees.sessions.find((s) => s.sessionId === row.sessionId);
     assert.deepEqual(listed && { state: listed.state, branch: listed.branch, inRoot: listed.inRoot }, { state: "root", branch: null, inRoot: "it isn't a Git repository." });
@@ -239,11 +239,11 @@ describe("a project's coding sessions", async () => {
     const had = readFileSync(settingsFile, "utf8");
     writeFileSync(settingsFile, JSON.stringify({ extensions: [] }));
     try {
-      const p = store.projectOverseerPaths(org.id, plain.id);
+      const p = store.projectOverseerPaths(plain.id);
       const todo = addTodo({ text: "Never prompted" }, p.todos, p.ideas);
-      const made = await po.codeItem(org.id, plain.id, { todoId: todo.id });
+      const made = await po.codeItem(plain.id, { todoId: todo.id });
       assert.equal(made.notPrompted, "Started, but not prompted: its mode could not be set.");
-      assert.ok(readBuilds(org.id, plain.id).some((r) => r.sessionId === made.sessionId), "listed and counted");
+      assert.ok(readBuilds(plain.id).some((r) => r.sessionId === made.sessionId), "listed and counted");
       assert.doesNotMatch(readFileSync(made.path, "utf8"), /"role":"user"/, "no prompt reached it");
     } finally {
       writeFileSync(settingsFile, had);
@@ -258,8 +258,8 @@ describe("a project's coding sessions", async () => {
     const { convertToLlm } = await import("@earendil-works/pi-coding-agent");
     const app = new Hono();
     registerProjectOverseerRoutes(app);
-    const p = store.projectOverseerPaths(org.id, project.id);
-    await po.ensureProjectOverseer(org.id, project.id);
+    const p = store.projectOverseerPaths(project.id);
+    await po.ensureProjectOverseer(project.id);
     const pendingBefore = store.readMemo(p).pending;
     const todosBefore = JSON.stringify(readTodos(p.todos));
     const res = await app.request(`/api/orgs/${org.id}/projects/${project.id}/overseer/coding`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
@@ -267,7 +267,7 @@ describe("a project's coding sessions", async () => {
     const made = (await res.json()) as { path: string; sessionId: string; worktree?: { branch: string; path: string }; modeNotSet?: string };
     assert.equal(made.modeNotSet, undefined);
     assert.match(made.worktree?.branch ?? "", /^sova\/coding-[0-9a-f]{6}$/);
-    const row = readBuilds(org.id, project.id).find((r) => r.sessionId === made.sessionId)!;
+    const row = readBuilds(project.id).find((r) => r.sessionId === made.sessionId)!;
     assert.deepEqual([row.kind, row.title, row.worktree?.branch], ["operator-coding", undefined, made.worktree!.branch], "the operator's, untitled, in its worktree");
     const lines = readFileSync(made.path, "utf8").trim().split("\n").map((l) => JSON.parse(l));
     assert.equal(lines[0].cwd, made.worktree!.path);
@@ -286,11 +286,11 @@ describe("a project's coding sessions", async () => {
     const added = store.readMemo(p).pending.filter((t) => !pendingBefore.includes(t));
     assert.deepEqual(added.filter((t) => t.includes(made.sessionId) || t.includes(made.worktree!.branch)), [], "no reason to look");
     assert.equal(JSON.stringify(readTodos(p.todos)), todosBefore, "no to-do touched");
-    const info = await po.projectOverseerInfo(org.id, project.id);
+    const info = await po.projectOverseerInfo(project.id);
     const listed = info.worktrees.sessions.find((s) => s.sessionId === made.sessionId);
     assert.deepEqual(listed && { startedBy: listed.startedBy, title: listed.title, branch: listed.branch }, { startedBy: "operator", title: "", branch: made.worktree!.branch });
     // The overseer sees it, as the operator's.
-    const list = po.toolsForTest(org.id, project.id).find((t) => t.name === "sova_list_sessions")!;
+    const list = po.toolsForTest(project.id).find((t) => t.name === "sova_list_sessions")!;
     const out = ((await list.execute("t", {}, undefined, undefined, undefined as never)).content[0] as { text: string }).text;
     assert.ok(out.includes(`- ${made.sessionId} "Untitled coding session" · started by the operator · idle · ${made.worktree!.branch} · no commits yet`), out);
     // Clean Up's husk sweep never takes it; an ordinary empty session of the same age is taken.
@@ -313,7 +313,7 @@ describe("a project's coding sessions", async () => {
     const { registerProjectOverseerRoutes } = await import("./project-overseer-routes");
     const app = new Hono();
     registerProjectOverseerRoutes(app);
-    const made = await po.startCoding(org.id, plain.id, {});
+    const made = await po.startCoding(plain.id, {});
     assert.deepEqual([made.worktree, made.note], [undefined, "it isn't a Git repository."]);
     assert.equal(JSON.parse(readFileSync(made.path, "utf8").split("\n")[0]!).cwd, plainRoot);
     assert.doesNotMatch(readFileSync(made.path, "utf8"), /sova-coding-worktree|"type":"message"/);
@@ -326,9 +326,9 @@ describe("a project's coding sessions", async () => {
     const had = readFileSync(settingsFile, "utf8");
     writeFileSync(settingsFile, JSON.stringify({ extensions: [] }));
     try {
-      const made = await po.startCoding(org.id, project.id, {});
+      const made = await po.startCoding(project.id, {});
       assert.equal(made.modeNotSet, "Started, but its mode could not be set. Set it from the chat's mode menu before you send.");
-      const info = await po.projectOverseerInfo(org.id, project.id);
+      const info = await po.projectOverseerInfo(project.id);
       assert.ok(info.worktrees.sessions.some((s) => s.sessionId === made.sessionId), "listed");
       assert.doesNotMatch(readFileSync(made.path, "utf8"), /sova-coding-worktree|"type":"message"/, "no note, nothing sent");
     } finally {
@@ -346,12 +346,12 @@ describe("a project's coding sessions", async () => {
   test("F20 (r3): at L3 the item statechart's own build of a gap's promoted decisions gets the project's mode, then its first prompt", async () => {
     writeDefault("delegate", ["align"]);
     // Automatic (no coding mode set): normal · spec, for a project with a spec.
-    await po.patchProjectOverseer(org.id, project.id, { autonomy: "L3", holdMin: 0, codingMode: null });
+    await po.patchProjectOverseer(project.id, { autonomy: "L3", holdMin: 0, codingMode: null });
     const projectSid = `project/${org.id}/${project.id}`;
     const itemSid = `item/${org.id}/${project.id}/g_build1`;
     const envelope = envelopeFor(org.id, project.id, { by: "overseer", attended: true });
     assert.equal((await hostOf(org.id).act(projectSid, "gap/file", { gapId: "g_build1", ideaId: "§gap/login" }, envelope, { settle: true })).taken, true);
-    const before = readBuilds(org.id, project.id).length;
+    const before = readBuilds(project.id).length;
     // A promoted decision of the gap, as its decision session reports it: the statechart builds it itself.
     await hostOf(org.id).act(
       itemSid,
@@ -364,9 +364,9 @@ describe("a project's coding sessions", async () => {
     const sidOf = (r: { sessionId: string }) => `build/${org.id}/${project.id}/${r.sessionId}`;
     for (let i = 0; i < 200 && !(row && hostOf(org.id).configuration(sidOf(row))?.includes("ready")); i++) {
       await new Promise((r) => setTimeout(r, 50));
-      row = readBuilds(org.id, project.id).slice(before).find((r) => r.title === "Build §gap/login");
+      row = readBuilds(project.id).slice(before).find((r) => r.title === "Build §gap/login");
     }
-    assert.ok(row?.path, `the statechart started a build: ${JSON.stringify(readBuilds(org.id, project.id).slice(before))}`);
+    assert.ok(row?.path, `the statechart started a build: ${JSON.stringify(readBuilds(project.id).slice(before))}`);
     const sid = sidOf(row);
     const d = hostOf(org.id).data(sid) ?? {};
     assert.ok(hostOf(org.id).configuration(sid)?.includes("ready"), "its setup ended");
@@ -387,10 +387,10 @@ describe("a project's coding sessions", async () => {
     const had = readFileSync(settingsFile, "utf8");
     writeFileSync(settingsFile, JSON.stringify({ extensions: [] }));
     try {
-      await po.patchProjectOverseer(org.id, project.id, { autonomy: "L3", holdMin: 0 });
+      await po.patchProjectOverseer(project.id, { autonomy: "L3", holdMin: 0 });
       const envelope = envelopeFor(org.id, project.id, { by: "overseer", attended: true });
       await hostOf(org.id).act(`project/${org.id}/${project.id}`, "gap/file", { gapId: "g_build2", ideaId: "§gap/logout" }, envelope, { settle: true });
-      const before = readBuilds(org.id, project.id).length;
+      const before = readBuilds(project.id).length;
       await hostOf(org.id).act(
         `item/${org.id}/${project.id}/g_build2`,
         "link/moved",
@@ -401,7 +401,7 @@ describe("a project's coding sessions", async () => {
       let row: ReturnType<typeof readBuilds>[number] | undefined;
       for (let i = 0; i < 200 && !(row && hostOf(org.id).configuration(`build/${org.id}/${project.id}/${row.sessionId}`)?.includes("ready")); i++) {
         await new Promise((r) => setTimeout(r, 50));
-        row = readBuilds(org.id, project.id).slice(before).find((r) => r.title === "Build §gap/logout");
+        row = readBuilds(project.id).slice(before).find((r) => r.title === "Build §gap/logout");
       }
       assert.ok(row?.modeNotSet, "its mode was not set");
       assert.doesNotMatch(readFileSync(row.path!, "utf8"), /"role":"user"/, "no prompt reached it");
@@ -413,14 +413,14 @@ describe("a project's coding sessions", async () => {
   });
 
   test("F21: a build's turn start reaches its statechart: the Pipeline reads it working, and the at-once cap counts it", async () => {
-    const p = store.projectOverseerPaths(org.id, project.id);
+    const p = store.projectOverseerPaths(project.id);
     store.patchPoSettings(p, { autonomy: "L3", holdMin: 0, caps: { codingRunning: 1, createPerTurn: null, createPerDay: null } });
-    const asked = po.toolsForTest(org.id, project.id, { attended: true }).find((t) => t.name === "sova_create_session")!;
+    const asked = po.toolsForTest(project.id, { attended: true }).find((t) => t.name === "sova_create_session")!;
     // Another build may still run from an earlier test: the cap counts only this one's.
     for (const s of hostOf(org.id).sessions("build")) if (s.data.turn === "working") await hostOf(org.id).act(s.id, "turn/ended", {}, { by: "system" } as never);
-    const before = readBuilds(org.id, project.id).length;
+    const before = readBuilds(project.id).length;
     await asked.execute("f21a", { gap: "none", prompt: "Cap test", title: "Cap test" }, undefined, undefined, undefined as never).catch((e: Error) => assert.fail(e.message));
-    const row = readBuilds(org.id, project.id).slice(before).find((r) => r.title === "Cap test")!;
+    const row = readBuilds(project.id).slice(before).find((r) => r.title === "Cap test")!;
     assert.ok(row?.path);
     const sid = `build/${org.id}/${project.id}/${row.sessionId}`;
     // The runtime's own agent_start (its session's event; no model runs here) reaches the statechart.
@@ -433,7 +433,7 @@ describe("a project's coding sessions", async () => {
     for (let i = 0; i < 100 && hostOf(org.id).data(sid)?.turn !== "working"; i++) await new Promise((r) => setTimeout(r, 20));
     assert.ok(hostOf(org.id).log.rows({ sessions: [sid] }).some((r) => r.event === "turn/started"), "its statechart heard the turn start");
     // Mid-turn (as agent_start leaves it): the Pipeline's turn is working, and a second build is over the cap.
-    assert.equal(readBuild(org.id, project.id, row.sessionId)?.turn, "working");
+    assert.equal(readBuild(project.id, row.sessionId)?.turn, "working");
     await assert.rejects(
       () => asked.execute("f21b", { gap: "none", prompt: "Second", title: "Second" }, undefined, undefined, undefined as never),
       /1 of its coding sessions are running, and the limit is 1 at once\./,
@@ -443,14 +443,14 @@ describe("a project's coding sessions", async () => {
   });
 
   test("the operator's Start coding on a §gap/… idea: the gap's own build when it has promoted decisions to build, else a plain one", async () => {
-    await po.patchProjectOverseer(org.id, project.id, { autonomy: "L1", holdMin: 0 });
-    const idea = po.toolsForTest(org.id, project.id, { attended: true }).find((t) => t.name === "sova_idea")!;
+    await po.patchProjectOverseer(project.id, { autonomy: "L1", holdMin: 0 });
+    const idea = po.toolsForTest(project.id, { attended: true }).find((t) => t.name === "sova_idea")!;
     await idea.execute("gx", { op: "add", id: "§gap/export", title: "Export to CSV" }, undefined, undefined, undefined as never);
     const itemSid = po.itemOfGap(org.id, project.id, "§gap/export")!;
     assert.ok(itemSid);
     const gapBuilds = () => pipelineInfo(org.id, project.id).rows.find((r) => r.gap === "§gap/export")?.builds ?? [];
     // Nothing promoted yet: a plain coding session, as before.
-    const plain = await po.codeItem(org.id, project.id, { ideaId: "§gap/export" }).catch((e: Error) => assert.fail(e.message));
+    const plain = await po.codeItem(project.id, { ideaId: "§gap/export" }).catch((e: Error) => assert.fail(e.message));
     assert.ok(!gapBuilds().some((b) => b.sessionId === plain.sessionId), "not the gap's");
     // A promoted decision of the gap: Start coding is the gap's build, on its Pipeline row.
     await hostOf(org.id).act(
@@ -460,16 +460,16 @@ describe("a project's coding sessions", async () => {
       envelopeFor(org.id, project.id, { by: "statechart", attended: false }),
       { settle: true },
     );
-    const onGap = await po.codeItem(org.id, project.id, { ideaId: "§gap/export" }).catch((e: Error) => assert.fail(e.message));
+    const onGap = await po.codeItem(project.id, { ideaId: "§gap/export" }).catch((e: Error) => assert.fail(e.message));
     assert.ok(gapBuilds().some((b) => b.sessionId === onGap.sessionId), "the gap's build");
-    assert.equal(readBuild(org.id, project.id, onGap.sessionId)?.kind, "operator-coding", "still the operator's (never on the overseer's caps)");
+    assert.equal(readBuild(project.id, onGap.sessionId)?.kind, "operator-coding", "still the operator's (never on the overseer's caps)");
   });
 
   test("gathering sessions stay mode-less, whatever the project's coding mode and the default", async () => {
-    const p = store.projectOverseerPaths(org.id, project.id);
+    const p = store.projectOverseerPaths(project.id);
     // No hold (q10): the unattended start goes at once, so its session exists to open.
     store.patchPoSettings(p, { codingMode: { mode: "delegate", minorModes: ["spec"] }, holdMin: 0 });
-    const tool = po.toolsForTest(org.id, project.id).find((t) => t.name === "sova_start_gathering")!;
+    const tool = po.toolsForTest(project.id).find((t) => t.name === "sova_start_gathering")!;
     const out = await tool.execute("g1", { gap: "none", person: "Tony", why: "Nobody has said this yet.", public_title: "Hosting", goal: "Where it runs", question: "Where does it run?" }, undefined, undefined, undefined as never);
     const path = (out.details as { path: string }).path;
     const chat = await acquireChat(path);

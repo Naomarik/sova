@@ -3968,7 +3968,8 @@
         "src/share/ShareApp.tsx",
         "server/baton-handoff.test.ts",
         "server/public-links.test.ts",
-        "src/components/OwnerCard.tsx"
+        "src/components/OwnerCard.tsx",
+        "server/share/share-state.ts"
       ]
     },
     "§app.baton/needs-you": {
@@ -4107,7 +4108,8 @@
         "src/share/visit-tab.ts",
         "src/share/ShareApp.tsx",
         "server/share/edge.ts",
-        "server/public-links.test.ts"
+        "server/public-links.test.ts",
+        "server/share/share-state.ts"
       ],
       "requires": [
         "§app.baton/links",
@@ -5063,7 +5065,8 @@
         "src/share/visit-tab.ts",
         "src/lib/visit-tab.test.ts",
         "src/share/ShareApp.tsx",
-        "server/visits.test.ts"
+        "server/visits.test.ts",
+        "server/share/share-state.ts"
       ]
     },
     "§app.organizations/person-page": {
@@ -5143,7 +5146,7 @@
     "§app.session-list/organizations": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "requires": [
         "§app.session-list/ordinary-surfaces",
         "§app.organizations/org-sessions",
@@ -5753,7 +5756,8 @@
         "shared/owner.ts",
         "src/share/OwnerApp.tsx",
         "src/share/owner-view.tsx",
-        "server/owner-page.test.ts"
+        "server/owner-page.test.ts",
+        "server/share/share-state.ts"
       ]
     },
     "§app.owner-page/never": {
@@ -5807,7 +5811,8 @@
         "server/share/routes.ts",
         "server/owner-page.test.ts",
         "src/design/tokens.css",
-        "src/share/index.html"
+        "src/share/index.html",
+        "server/share/share-state.ts"
       ]
     },
     "§app.owner-page/rejected": {
@@ -5884,7 +5889,7 @@
         "§app.organizations/person-page"
       ],
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "code": [
         "src/lib/mesh.ts",
         "src/lib/mesh.test.ts",
@@ -7904,7 +7909,8 @@
         "shared/public-links.ts",
         "server/public-links.test.ts",
         "server/share-edge.test.ts",
-        "server/mesh/proxy-local.test.ts"
+        "server/mesh/proxy-local.test.ts",
+        "server/share/share-state.ts"
       ]
     },
     "§mesh/public": {
@@ -8318,7 +8324,8 @@
         "server/share/router.ts",
         "server/share-ingress.test.ts",
         "server/session-shares.test.ts",
-        "server/index.ts"
+        "server/index.ts",
+        "server/share/share-state.ts"
       ]
     },
     "§app.session-share/never": {
@@ -8658,7 +8665,8 @@
         "server/project-overseer-tools-statecharts.test.ts",
         "server/baton.ts",
         "server/orgs.ts",
-        "server/reconcile.ts"
+        "server/reconcile.ts",
+        "server/project-holds.ts"
       ],
       "requires": [
         "§app.project-overseer/statecharts",
@@ -8688,7 +8696,7 @@
     "§app.project-overseer/pipeline": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "code": [
         "src/lib/pipeline-view.ts",
         "shared/pipeline.ts",
@@ -9070,7 +9078,8 @@
         "src/lib/public-links.ts",
         "src/components/PublicLinksSettings.tsx",
         "server/public-links.test.ts",
-        "src/lib/public-links.test.ts"
+        "src/lib/public-links.test.ts",
+        "server/share/share-state.ts"
       ]
     },
     "§mesh.vps/arch": {
@@ -9995,7 +10004,7 @@
     "§app.project-overseer/previews": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "requires": [
         "§mesh.public/preview",
         "§mesh.public/preview-serve",
@@ -11629,6 +11638,130 @@
         "server/sync/docs.ts",
         "server/sync/docs.test.ts",
         "pi-config/extensions/usage-status/index.test.ts"
+      ]
+    },
+    "§app.projects/clone": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/projects/clone.ts",
+        "server/projects/routes.ts",
+        "server/projects/routes.test.ts",
+        "src/components/AddProjectDialog.tsx"
+      ],
+      "requires": [
+        "§app.projects/registration"
+      ]
+    },
+    "§app.projects/conversion": {
+      "kind": "note",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "scripts/oneshot-general-projects.mjs",
+        "scripts/backup-general-projects.mjs",
+        "scripts/restore-general-projects.mjs",
+        "scripts/general-projects-state.mjs",
+        "statecharts/src/sova/statecharts/proj_strip_org.cljc",
+        "statecharts/test/sova/statecharts/refit/proj_strip_org_test.cljs"
+      ]
+    },
+    "§app.projects/list": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/projects/routes.ts",
+        "shared/projects.ts",
+        "src/components/ProjectsView.tsx",
+        "src/components/Sidebar.tsx",
+        "src/lib/project-region.ts",
+        "src/lib/project-region.test.ts",
+        "src/lib/projects.ts"
+      ],
+      "requires": [
+        "§app.session-list/organizations"
+      ]
+    },
+    "§app.projects/placement": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/orgs.ts",
+        "server/org-routes.ts",
+        "server/overseer-org-part.ts",
+        "server/overseer-org-part.test.ts",
+        "src/components/ProjectOrgPart.tsx",
+        "statecharts/src/sova/statecharts/placement.cljc"
+      ],
+      "requires": [
+        "§app.projects/registration",
+        "§app.organizations/stakeholder"
+      ]
+    },
+    "§app.projects/registration": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/projects/registry.ts",
+        "server/projects/registry.test.ts",
+        "server/projects/routes.ts",
+        "server/projects/routes.test.ts",
+        "server/projects/spaces.ts",
+        "src/components/AddProjectDialog.tsx",
+        "src/components/SessionDetails.tsx",
+        "src/lib/projects.ts",
+        "src/lib/projects.test.ts"
+      ],
+      "requires": [
+        "§app.organizations/registry"
+      ]
+    },
+    "§app.projects/seam": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/projects/seam.test.ts",
+        "server/projects/contributions.ts",
+        "server/projects/sids.ts",
+        "server/user-turns.ts",
+        "server/session-prompt.ts",
+        "server/overseer-sender.ts",
+        "statecharts/test/sova/statecharts/refit/seam_test.cljs"
+      ],
+      "requires": []
+    },
+    "§app.projects/standalone": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/projects/spaces.ts",
+        "server/project-sessions.ts",
+        "server/projects/routes.ts",
+        "statecharts/test/sova/statecharts/refit/general_projects_test.cljs"
+      ],
+      "requires": [
+        "§app.project-overseer/statecharts",
+        "§app.projects/registration"
+      ]
+    },
+    "§app/projects": {
+      "kind": "surface",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "shared/projects.ts",
+        "server/projects/routes.ts",
+        "src/lib/projects-route.ts",
+        "src/lib/projects-route.test.ts",
+        "src/components/ProjectsView.tsx",
+        "src/App.tsx",
+        "src/lib/api.ts"
       ]
     }
   },

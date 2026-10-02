@@ -349,7 +349,7 @@ mesh off. Copy is §design.copy-deck/public-links.
   websocket and deep-link reload of the app works through it as it does on `localhost`, and two
   previews are two separate sites.
 - `<stateRoot>/preview-links.json` (0600, written atomically, parsed strictly: a file that breaks a
-  rule serves no preview and is never overwritten) keeps, per link, `{id, hash, orgId, projectId,
+  rule serves no preview and is never overwritten) keeps, per link, `{id, hash, projectId,
   port, createdAt, expiresAt, revokedAt?, createdBy, siblingOf?, sentTo?}`, where `hash` is the
   SHA-256 of the label and `createdBy` is `operator` or `session:<id>` (the project overseer's
   conversation, §app.project-overseer/previews). A **sibling** (`siblingOf`, `sentTo`) is a person's
@@ -364,7 +364,7 @@ mesh off. Copy is §design.copy-deck/public-links.
   (§app.project-overseer/previews). A preview made before this file existed has no kept link, only
   its hash: its link was shown once, when it was made, and is never guessed. A sibling has no entry
   of its own: it shows its original's target, session and purpose.
-- **Mint** (`POST /api/previews {orgId, projectId, port | folder, sessionId?, purpose?, days?}`,
+- **Mint** (`POST /api/previews {projectId, port | folder, sessionId?, purpose?, days?}`,
   main listener only, like the other local acts): exactly one of `port` and `folder`. `port` must
   be an integer 1–65535, not 4800, 4801, 4802 or 4810, and not a port this Sova process binds, its
   settings name (main, peer, share, ingress) or it serves a folder preview on. A `folder` is
@@ -379,8 +379,8 @@ mesh off. Copy is §design.copy-deck/public-links.
 - **Turn Off** (`POST /api/previews/<id>/off`) revokes it, and every sibling of it: from then on its origin answers 410,
   and every open HTTP connection and websocket through it is closed at once. The same happens
   when it expires. **Extend** (`POST /api/previews/<id>/extend {days}`) moves its expiry to `days`
-  from now (at most 30; a sibling's, never past its original's). `GET /api/previews?orgId&projectId`
-  lists a project's previews (every project's without them) with each one's port, target, expiry,
+  from now (at most 30; a sibling's, never past its original's). `GET /api/previews?projectId`
+  lists a project's previews (every project's without it) with each one's port, target, expiry,
   state and whether something listens on its port now (`running`; for a folder, whether Sova
   serves it now), its kept link (`url`, null when none is kept), purpose, coding session and branch
   (a recorded one, else the one matched by its worktree, §app.project-overseer/previews), with the

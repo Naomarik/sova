@@ -128,6 +128,9 @@ test("up starts shared services first, waits for readiness; again leaves the sam
   assert.deepEqual(again.services.map((s) => s.pid), up.services.map((s) => s.pid));
   const st = shaped(await engine.run("status", { instance: a.instance }, op));
   assert.deepEqual(st.services.map((s) => [s.name, s.state]), [["bus", "ready"], ["web", "ready"], ["site", "ready"]]);
+  // A running process service's resident memory; a static one, served in the server, has none of its own.
+  assert.ok((st.services.find((s) => s.name === "web")!.rssBytes ?? 0) > 1024 * 1024, JSON.stringify(st.services));
+  assert.equal(st.services.find((s) => s.name === "site")!.rssBytes, undefined);
   const all = shaped(await engine.run("status", { project }, op));
   assert.deepEqual(all.instances?.map((i) => [i.instance, i.state]), [[a.instance, "running"]]);
 });

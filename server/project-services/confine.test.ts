@@ -11,7 +11,7 @@ import { conformer, readStamp } from "./conform";
 import { openConfinement } from "./confine";
 import { DetachedDriver } from "./drivers";
 import { ProjectEngine, type Caller } from "./engine";
-import { readRegistry, sharedIdOf } from "./store";
+import { mutateRegistry, readRegistry, sharedIdOf } from "./store";
 import { defHashOf, isApproved } from "./trust";
 
 /**
@@ -185,4 +185,25 @@ test("what confinement can't hold is refused before anything starts: a container
   assert.equal(readRegistry().instances.length, before, "nothing was made");
   assert.equal(git(["branch", "--list", "sova/conform-*"], project).trim(), "");
   rmSync(outside, { recursive: true, force: true });
+});
+
+test("after a server start, a unit of a confined run that ended is stopped and marked stopped, never started", async () => {
+  const id = "demo-c0ffee00";
+  const checkout = mkdtempSync(join(tmpdir(), "sova-confine-ended-"));
+  const eng = engine ?? new ProjectEngine({ driver: new DetachedDriver(3_000), pollMs: 100 });
+  mutateRegistry((r) => {
+    r.instances.push({ id, project: checkout, checkout, branch: null, slot: 5, generation: 1, createdBy: "conform:x", createdAt: new Date().toISOString(), cutWorktree: false, confined: "0ended0", desired: { web: "running", idle: "running" }, prints: {}, data: {}, ports: {} });
+  });
+  const unit = eng.unitOf(id, "web");
+  await eng.driver.start({ unit, argv: ["sleep", "30"], cwd: checkout, env: { PATH: process.env.PATH! } });
+  assert.equal((await eng.driver.status(unit)).state, "active");
+  const did = await eng.reconcile();
+  assert.ok(did.includes(`${id}: stopped web (its confined conformance run ended)`), did.join("\n"));
+  assert.notEqual((await eng.driver.status(unit)).state, "active");
+  assert.deepEqual(readRegistry().instances.find((i) => i.id === id)?.desired, { web: "stopped", idle: "stopped" });
+  assert.equal((await eng.driver.status(eng.unitOf(id, "idle"))).state, "missing", "nothing was started");
+  mutateRegistry((r) => {
+    r.instances = r.instances.filter((i) => i.id !== id);
+  });
+  rmSync(checkout, { recursive: true, force: true });
 });

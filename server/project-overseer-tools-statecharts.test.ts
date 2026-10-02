@@ -530,9 +530,12 @@ describe("sova_project_verbs goes through the project statechart (§app.project-
       assert.deepEqual(actions().at(-1) && [actions().at(-1).tool, actions().at(-1).outcome], ["sova_project_verbs", "refused"]);
       assert.equal((await verb({ verb: "status" })).state, "absent", "nothing was made; a read runs at any level");
       await settings({ autonomy: "L3" });
-      const up = await verb({ verb: "up" });
+      const upOut = (await run("sova_project_verbs", { verb: "up" })) as { content: { text: string }[]; details: { result: Result } };
+      const up = upOut.details.result;
       assert.equal(up.ok, true, JSON.stringify(up.error));
       assert.equal(up.state, "running");
+      // The main checkout gets no instance note (§app.project-services/instance-note: a builder's own worktrees only).
+      assert.doesNotMatch(upOut.content[0]!.text, /Sova instance note/);
       assert.equal(await (await fetch(`http://127.0.0.1:${port}/`)).text(), "portal");
       await settings({ autonomy: "L0" });
       const down = await verb({ verb: "down", instance: up.instance });

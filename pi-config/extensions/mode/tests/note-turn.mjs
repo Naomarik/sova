@@ -188,6 +188,9 @@ try {
 		const file = path.join(agentDir, "mode-spec.json");
 		writeFileSync(`${file}.tmp`, JSON.stringify({ version: 1, writer: id ? { primary: { backend: "pi", model: `scripted/${id}`, effort: "off" }, fallback: null } : null }));
 		renameSync(`${file}.tmp`, file);
+		// The writer reaches a session through subagent-profiles.json, seeded from mode-spec.json
+		// when absent: drop it so the next read seeds again from the file just written.
+		rmSync(path.join(agentDir, "subagent-profiles.json"), { force: true });
 	};
 	try {
 		await session.prompt("writer baseline");

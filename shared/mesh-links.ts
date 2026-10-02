@@ -488,6 +488,7 @@ export interface LinkOffersList {
 // --- Configure (§mesh.links/configure) ---
 
 export interface SessionConfigure {
+  subagent_profile?: string;
   path: string;
   /** "provider/model". */
   model?: string;

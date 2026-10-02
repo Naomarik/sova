@@ -874,6 +874,12 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
     return { queued: r.json?.queued === true, kind: String(r.json?.kind ?? "prompt"), ...(r.json?.compacting ? { compacting: true } : {}) };
   }
 
+  async function checkSubagentProfile(id: unknown, peer: PeerRef | null = null) {
+    const r = peer ? await peerCall(peer, "GET", "/api/settings/subagents") : await call("GET", "/api/settings/subagents");
+    if (r.status !== 200 || r.json?.error || !Array.isArray(r.json?.profiles)) throw new Refusal("Subagent profiles couldn't be read. Nothing was changed.");
+    if (typeof id !== "string" || !r.json.profiles.some((p: any) => p.id === id)) throw new Refusal(`Unknown subagent profile "${String(id)}". Nothing was changed.`);
+  }
+
   /** sova_create_session after its caps: create, title, group, model, thinking, mode and minor
       modes, first prompt. */
   async function createSession(p: any, hasPrompt: boolean): Promise<{ content: ReturnType<typeof text>; details: unknown }> {
@@ -887,6 +893,7 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
         notes.push(`Target ${p.target} is ${info.status}${info.error ? ` (${info.error})` : ""}; its first prompt may fail.`);
     } else body = { cwd: p.cwd ?? "" };
     if ((typeof p.profile === "string" && p.profile) || (p.profile && typeof p.profile === "object")) body.profile = p.profile;
+    if (p.subagent_profile !== undefined) body.subagent_profile = p.subagent_profile;
     const created = await call("POST", "/api/sessions", body);
     if (created.status !== 201) throw failed(created, "Creating the session");
     const s = created.json as SessionSummary;
@@ -920,6 +927,12 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
           `Created ${link(s)} in ${whereOf(s)}, but its mode was not set (${r.json?.error ?? `HTTP ${r.status}`}), so ${hasPrompt ? "its first prompt was not sent" : "it is in its default mode"}. Set the mode with sova_set_session${hasPrompt ? ", then send the prompt with sova_send" : ""}.`,
         );
     }
+    if (p.subagent_profile !== undefined) {
+      await host.open(s.path);
+      const r = await call("POST", `/api/subagents?path=${encodeURIComponent(s.path)}`, { profile: p.subagent_profile });
+      if (r.status !== 200) throw new Refusal(`Created ${link(s)}, but its subagent profile was not set; its first prompt was not sent (${r.json?.error ?? r.status}).`);
+      notes.push(`Subagent profile: ${p.subagent_profile} (this session only).`);
+    }
     if (hasPrompt) await sendPrompt(s, p.prompt);
     // Before its first reply a new session's derived title is "Untitled"; its first prompt is
     // what the list will call it, so the link says that.
@@ -945,6 +958,7 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
       if (info && (info.status === "offline" || info.status === "error"))
         notes.push(`Target ${p.target} is ${info.status} from ${peer.label}${info.error ? ` (${info.error})` : ""}; its first prompt may fail.`);
     } else body = { cwd: p.cwd ?? "" };
+    if (p.subagent_profile !== undefined) body.subagent_profile = p.subagent_profile;
     const created = await peerCall(peer, "POST", "/api/sessions", body);
     if (created.status !== 201) throw failed(created, `Creating the session ${on}`);
     const s = created.json as SessionSummary;
@@ -960,6 +974,7 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
     if (p.thinking) configure.thinking = p.thinking;
     if (p.mode) configure.mode = p.mode;
     if (p.minor_modes !== undefined) configure.minorModes = p.minor_modes;
+    if (p.subagent_profile !== undefined) { configure.subagent_profile = p.subagent_profile; notes.push(`Subagent profile: ${p.subagent_profile} (this session only).`); }
     if (Object.keys(configure).length) {
       const r = await peerCall(peer, "POST", "/api/sessions/configure", { path: s.path, ...configure });
       if (r.status !== 200) {
@@ -1184,6 +1199,18 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
       }),
     },
     {
+      name: "sova_list_subagent_profiles",
+      label: "List subagent profiles",
+      description: "List subagent setups (Off, names, worker footprints, this host's default). Not capability/session profiles.",
+      parameters: obj({ host: str("Optional mesh peer id.") }),
+      execute: read(async p => {
+        const peer = p.host ? await peerOf(p.host) : null;
+        const r = peer ? await peerCall(peer, "GET", "/api/settings/subagents") : await call("GET", "/api/settings/subagents");
+        if (r.status !== 200 || r.json?.error) throw failed(r, "Listing subagent profiles");
+        return { content: text((r.json.profiles ?? []).map((p: any) => `${p.id}: ${p.name} · ${p.footprint}${r.json?.default === p.id ? " · default" : ""}`).join("\n")), details: r.json };
+      }),
+    },
+    {
       name: "sova_list_folders",
       label: "List folders",
       description: "Without a path: folders sessions have used, most recent first (where work happens). With a path: its subfolders (local).",
@@ -1217,6 +1244,7 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
         model: str('Model ref "provider/model" (see sova_list_models).'),
         thinking: str("off | minimal | low | medium | high | xhigh | max"),
         mode: str("normal | delegate (see the mode extension)."),
+        subagent_profile: str("Subagent profile id or off, from sova_list_subagent_profiles. This session only, before its first prompt; never saves a default."),
         minor_modes: { type: "array", items: { type: "string" }, description: 'Minor modes to have on from the first turn, e.g. ["spec"]; [] turns them all off. Omitted: the default.' },
         title: str("A title for the list, up to 80 characters."),
         group: str("Group id to add it to."),
@@ -1265,6 +1293,7 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
         }
         // A peer that is down or skewed refuses before any cap is taken.
         const peer = onPeer ? await peerOf(p.host) : null;
+        if (p.subagent_profile !== undefined) await checkSubagentProfile(p.subagent_profile, peer);
         // Every check and reservation happens with no await between them: parallel creates in one
         // message each see the others' reservations.
         if (hasPrompt) {
@@ -1347,12 +1376,14 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
           model: str('Model ref "provider/model".'),
           thinking: str("off | minimal | low | medium | high | xhigh | max"),
           mode: str("normal | delegate"),
+          subagent_profile: str("Subagent profile id or off. Changes only this chat's later work, not running workers or the default."),
           minor_modes: { type: "array", items: { type: "string" }, description: 'Minor modes to have on, e.g. ["spec"]; [] turns them all off.' },
         },
         ["session"],
       ),
       execute: act("sova_set_session", async (p) => {
         const s = await resolveWritable(p.session);
+        if (p.subagent_profile !== undefined) await checkSubagentProfile(p.subagent_profile);
         const done: string[] = [];
         if (p.title !== undefined) {
           const t = typeof p.title === "string" && p.title.trim() ? p.title.trim() : null;
@@ -1385,7 +1416,13 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
           });
           done.push(`mode ${r.json?.mode ?? p.mode ?? ""}${Array.isArray(r.json?.minorModes) && r.json.minorModes.length ? ` + ${r.json.minorModes.join(", ")}` : ""}${r.json?.applies && r.json.applies !== "now" ? ` (applies ${r.json.applies})` : ""}`);
         }
-        if (!done.length) throw new Refusal("Nothing to change: give title, alias, model, thinking, mode or minor_modes.");
+        if (p.subagent_profile !== undefined) {
+          await host.open(s.path);
+          const r = await call("POST", `/api/subagents?path=${encodeURIComponent(s.path)}`, { profile: p.subagent_profile });
+          if (r.status !== 200) throw failed(r, "Switching subagent profile");
+          done.push(`subagent profile ${p.subagent_profile} (running workers unchanged)`);
+        }
+        if (!done.length) throw new Refusal("Nothing to change: give title, alias, model, thinking, mode, minor_modes or subagent_profile.");
         return { content: text(`${link(s)}: ${done.join(", ")}.`), details: { id: s.id, path: s.path } };
       }),
     },

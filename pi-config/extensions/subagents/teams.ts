@@ -53,6 +53,8 @@ export interface TeamMemberInput {
 	cwd?: string;
 	wake?: boolean;
 	backendOptions?: Record<string, unknown>;
+	/** Caller choices, separate from the tuple filled by a subagent profile. Internal only. */
+	modelOverride?: Pick<TeamDefaults, "backend" | "model" | "effort">;
 	/** Set by the manager only (never a tool argument): a standing role from team defaults. */
 	duty?: MemberDuty;
 	/** Set by the manager only: the role this member succeeds (team_succeed). */
@@ -76,6 +78,8 @@ export interface ComposedMemberSpec {
 	backendOptions?: Record<string, unknown>;
 }
 export interface PersistedMember {
+	/** Explicit member/call choices; absent on older records. */
+	modelOverride?: Pick<TeamDefaults, "backend" | "model" | "effort">;
 	workerId: string;
 	role: string;
 	ownedPaths: string[];
@@ -573,7 +577,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function decodeMember(value: unknown): PersistedMember | undefined {
 	if (!isRecord(value)) return undefined;
-	const { workerId, role, ownedPaths, backend, model, groupId, addedAt, orchestrator, duty, successorOf } = value;
+	const { workerId, role, ownedPaths, backend, model, groupId, addedAt, orchestrator, duty, successorOf, modelOverride } = value;
+	if (modelOverride !== undefined && (!isRecord(modelOverride) || Object.entries(modelOverride).some(([k, v]) => !["backend", "model", "effort"].includes(k) || typeof v !== "string" || v.length > 200 || CONTROL.test(v)))) return undefined;
 	if (orchestrator !== undefined && typeof orchestrator !== "boolean") return undefined;
 	if (duty !== undefined && duty !== "coordinator" && duty !== "monitor") return undefined;
 	if (successorOf !== undefined && (typeof successorOf !== "string" || !WORKER_ID.test(successorOf))) return undefined;
@@ -587,6 +592,7 @@ function decodeMember(value: unknown): PersistedMember | undefined {
 			workerId, role: checkLabel("role", role), ownedPaths: checkPaths("member", ownedPaths), backend,
 			...(model === undefined ? {} : { model }), groupId, addedAt, ...(orchestrator ? { orchestrator: true } : {}),
 			...(duty === undefined ? {} : { duty }), ...(successorOf === undefined ? {} : { successorOf }),
+			...(modelOverride === undefined ? {} : { modelOverride: { ...modelOverride } }),
 		};
 	} catch {
 		return undefined;
@@ -672,6 +678,7 @@ export interface PreparedAdd {
 	release(): void;
 }
 export interface PreparedMember {
+	modelOverride?: Pick<TeamDefaults, "backend" | "model" | "effort">;
 	role: string;
 	ownedPaths: string[];
 	orchestrator: boolean;
@@ -697,6 +704,7 @@ const copyMember = (m: PersistedMember): PersistedMember => ({
 	workerId: m.workerId, role: m.role, ownedPaths: [...m.ownedPaths], backend: m.backend, groupId: m.groupId, addedAt: m.addedAt,
 	...(m.model === undefined ? {} : { model: m.model }), ...(m.orchestrator ? { orchestrator: true } : {}), ...(m.duty ? { duty: m.duty } : {}),
 	...(m.successorOf ? { successorOf: m.successorOf } : {}),
+	...(m.modelOverride ? { modelOverride: { ...m.modelOverride } } : {}),
 });
 function coordinationHeader(coordination: { handoffDir: string; defaults?: TeamDefaultsFile }, coordinatorRole: string): CoordinationHeader {
 	return {
@@ -714,6 +722,11 @@ function prepared(
 	const spec = resolveMemberSpec(routed ? { ...m.input, wake: false } : m.input, m.role, prompt, defaults);
 	return {
 		role: m.role, ownedPaths: m.ownedPaths, orchestrator: m.orchestrator, coordinated: routed, spec, task: m.task,
+		modelOverride: m.input.modelOverride ?? (m.duty ? {} : {
+			...(m.input.backend !== undefined ? { backend: m.input.backend } : defaults?.backend !== undefined ? { backend: defaults.backend } : {}),
+			...(spec.model !== undefined ? { model: spec.model } : {}),
+			...(spec.effort !== undefined ? { effort: spec.effort } : {}),
+		}),
 		...(m.duty ? { duty: m.duty } : {}), ...(m.successorOf ? { successorOf: m.successorOf } : {}),
 		...(m.successorOfId ? { successorOfId: m.successorOfId } : {}),
 	};

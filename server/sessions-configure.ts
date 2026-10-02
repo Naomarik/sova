@@ -7,6 +7,7 @@ import { parseModePatch, type ModePatch } from "./mode-state";
 import { modelDenial, readModelPolicy } from "./model-policy";
 import { resolveSessionPath } from "./paths";
 import { getSessionSummary } from "./sessions-index";
+import { requireSubagentProfile } from "./subagent-profiles";
 
 // POST /api/sessions/configure (§mesh.links/configure): a session's model, thinking, mode and minor
 // modes set over REST, opening its runtime here if it isn't loaded. The same code sova_set_session
@@ -33,10 +34,12 @@ export function parseConfigure(body: unknown): { req: SessionConfigure; patch: M
     if ("error" in p) return { error: p.error };
     patch = p;
   }
-  if (b.model === undefined && b.thinking === undefined && !patch) return { error: "Nothing to change: send model, thinking, mode and/or minorModes" };
+  if (b.subagent_profile !== undefined && typeof b.subagent_profile !== "string") return { error: "subagent_profile must be a profile id" };
+  if (b.model === undefined && b.thinking === undefined && !patch && b.subagent_profile === undefined) return { error: "Nothing to change: send model, thinking, mode and/or minorModes" };
   return {
     req: {
       path: b.path,
+      ...(typeof b.subagent_profile === "string" ? { subagent_profile: b.subagent_profile } : {}),
       ...(typeof b.model === "string" ? { model: b.model } : {}),
       ...(typeof b.thinking === "string" ? { thinking: b.thinking } : {}),
       ...(typeof b.mode === "string" ? { mode: b.mode } : {}),
@@ -47,15 +50,16 @@ export function parseConfigure(body: unknown): { req: SessionConfigure; patch: M
 }
 
 /** Why this session can't be configured from here, or null. Checked before the runtime opens. */
-export function configureRefusal(s: SessionSummary, busy: boolean, subagents: number): string | null {
+export function configureRefusal(s: SessionSummary, busy: boolean, subagents: number, profileOnly = false): string | null {
   if (s.overseer) return "That is the Overseer's own conversation.";
   if (s.projectOverseer) return "That is a project overseer's own conversation.";
   if (s.baton) return "That is a baton session: only its participants write in it.";
   if (s.workerSession) return "That is a subagent's own session; configure the session that runs it.";
   if (s.live) return `It is open in a terminal (pid ${s.live.pid}), so this server must not write to it.`;
   if (s.archived) return "That session is archived; unarchive it first.";
-  if (busy) return "It is running a turn; wait for it to finish.";
-  if (subagents > 0) return `Its subagents are working (${subagents}); wait for them to finish.`;
+  // A profile-only switch touches nothing running: it applies to later turns and team actions.
+  if (!profileOnly && busy) return "It is running a turn; wait for it to finish.";
+  if (!profileOnly && subagents > 0) return `Its subagents are working (${subagents}); wait for them to finish.`;
   return null;
 }
 
@@ -63,12 +67,17 @@ export async function configureSession(body: unknown): Promise<ConfigureOutcome>
   const parsed = parseConfigure(body);
   if ("error" in parsed) return { ok: false, status: 400, error: parsed.error };
   const { req, patch } = parsed;
+  if (req.subagent_profile !== undefined) {
+    try { requireSubagentProfile(req.subagent_profile); }
+    catch (err) { return { ok: false, status: 400, error: err instanceof Error ? err.message : String(err) }; }
+  }
   const path = resolveSessionPath(req.path);
   if (!path) return { ok: false, status: 400, error: "Invalid path (must be a .jsonl under the pi sessions dir)" };
   if (!existsSync(path)) return { ok: false, status: 404, error: "Session file not found" };
   const s = await getSessionSummary(path);
   if (!s) return { ok: false, status: 404, error: "Session file not found" };
-  const refused = configureRefusal(s, isSessionBusy(path), workingSubagents(path));
+  const profileOnly = req.subagent_profile !== undefined && req.model === undefined && req.thinking === undefined && !patch;
+  const refused = configureRefusal(s, isSessionBusy(path), workingSubagents(path), profileOnly);
   if (refused) return { ok: false, status: 409, error: refused };
   // The user's model policy refuses before anything opens or changes.
   if (req.model) {
@@ -78,6 +87,10 @@ export async function configureSession(body: unknown): Promise<ConfigureOutcome>
   const done: string[] = [];
   try {
     const chat = await acquireChat(path);
+    if (req.subagent_profile !== undefined) {
+      await chat.switchSubagentProfile(req.subagent_profile);
+      done.push(`subagent profile ${req.subagent_profile}`);
+    }
     if (req.model) {
       await chat.setModelRef(req.model);
       done.push(`model ${req.model}`);

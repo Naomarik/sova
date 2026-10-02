@@ -174,15 +174,22 @@ member's state.
 
 ## §mesh.links/configure — Set a session's model and modes over REST
 
-`POST /api/sessions/configure {path, model?, thinking?, mode?, minorModes?}` sets any of a
-session's model, thinking level, mode and minor modes, opening its runtime on this host if it isn't
+`POST /api/sessions/configure {path, model?, thinking?, mode?, minorModes?, subagent_profile?}`
+sets any of a session's model, thinking level, mode, minor modes and subagent-profile ID pick,
+opening its runtime on this host if it isn't
 loaded. It is the same code the Overseer runs in-process for `sova_set_session`, as a route: the
 same refusals (TUI-live, archived, mid-turn, subagents working, the model policy; an unknown mode
-or minor mode refuses the whole call before anything changes), and it applies to that session only:
+or minor mode, or an unknown subagent-profile id, refuses the whole call before anything changes).
+A profile-only switch bypasses only the mid-turn and working-subagent gates: it affects later
+turns and team actions, never running workers or the main model; TUI-live, archived, special-session
+and foreign-writer refusals remain. A combined model/mode/profile configure keeps the normal busy
+gates. It applies to that session only:
 the saved default new sessions start from is never changed (§chat.model-menu/saved-default), and
 the default mode moves only as §chat/mode-menu says. A mode or minor modes it sets are written into
 the session as its `mode` entry even when they equal the default, as `sova_set_session` writes
-them, so a later change to the default never moves it; a call that sets no mode writes none. It is an ordinary `/api/` route, so a peer
+them, so a later change to the default never moves it; a call that sets no mode writes none.
+`subagent_profile` writes a separate hidden `{v: 1, profile}` entry, an ID reference, not a snapshot
+(§chat.subagent-profiles/resolution). It is an ordinary `/api/` route, so a peer
 reaches it on the peer listener (§mesh.peers/listener); that is how the Overseer configures a
 session it created on a peer (§app.overseer/links-tools).
 

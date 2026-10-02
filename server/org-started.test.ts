@@ -47,6 +47,6 @@ test("a retired gathering and a retired coding session are no longer the org's; 
   assert.equal((await retire(`build/${org.id}/${project.id}/c-old`)).taken, false);
   await hostOf(org.id).act(`build/${org.id}/${project.id}/c-old`, "git/probe", { branch: "merged" }, { by: "system" }, { settle: true });
   assert.equal((await retire(`build/${org.id}/${project.id}/c-old`)).taken, true);
-  assert.ok(!readBuilds(org.id, project.id).some((r) => r.sessionId === "c-old"));
+  assert.ok(!readBuilds(project.id).some((r) => r.sessionId === "c-old"));
   assert.ok(!orgCodingIds().has("c-old"), "a retired coding session is no longer organizational");
 });

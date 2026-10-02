@@ -24,7 +24,8 @@ const { registerOrgRoutes } = await import("./org-routes");
 const { disposeAllChats } = await import("./chat-manager");
 const { settled } = await import("./workspace-git");
 const { hostOf } = await import("./org-engine");
-const { heldAttention, pipelineInfo } = await import("./project-pipeline");
+const { pipelineInfo } = await import("./project-pipeline");
+const { heldAttention } = await import("./project-holds");
 const { fakeLooks } = await import("./org-test-fixtures");
 
 after(async () => {

@@ -22,6 +22,7 @@ symlinkSync(resolve(import.meta.dirname, "..", "pi-config", "extensions"), join(
 
 const { Hono } = await import("hono");
 const orgs = await import("./orgs");
+const { setProjectArchived } = await import("./projects/spaces");
 const baton = await import("./baton");
 const po = await import("./project-overseer");
 const store = await import("./project-overseer-store");
@@ -456,7 +457,7 @@ describe("the organization tools (§app.overseer/org-tools)", async () => {
     const made = await call("sova_project_overseer", { op: "code", org: org.id, project: project.id, prompt: "Add a CSV export", title: "CSV export" });
     assert.ok(made.ok, made.text);
     assert.equal(limits.count("create"), 1);
-    const rows = readBuilds(org.id, project.id);
+    const rows = readBuilds(project.id);
     const row = rows.find((r) => r.sessionId === (made.details as { session: string }).session)!;
     assert.equal(row.kind, "operator-coding");
     assert.equal(row.via, "overseer");
@@ -543,10 +544,10 @@ describe("archive a project (§app.organizations/archive)", async () => {
 
   test("its composer is closed while archived (the project overseer's own)", async () => {
     const { path } = await po.ensureProjectOverseer(project.id);
-    await orgs.setProjectArchived(org.id, project.id, true);
+    await setProjectArchived(project.id, true);
     const chat = await acquireChat(path);
     assert.equal(chat.specialEntry?.composerClosed?.(path), "Old Site is archived. Unarchive it to use its overseer.");
-    await orgs.setProjectArchived(org.id, project.id, false);
+    await setProjectArchived(project.id, false);
     assert.equal(chat.specialEntry?.composerClosed?.(path), null);
   });
 });

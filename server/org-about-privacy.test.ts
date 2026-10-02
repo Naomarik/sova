@@ -210,7 +210,7 @@ describe("the About text reaches the project overseer's prompt and nothing else"
     const p = store.projectOverseerPaths(project.id);
     addTodo({ text: "Ask Tony about backups" }, p.todos, p.ideas);
     const todo = readTodos(p.todos).todos.at(-1)!;
-    const made = await po.sendItem(project.id, { todoId: todo.id, to: tony.id, publicTitle: "Backups", question: "How are backups made?" }, (t) => `/h/${t}`);
+    const made = await (await import("./overseer-org-part")).sendItem(org.id, project.id, { todoId: todo.id, to: tony.id, publicTitle: "Backups", question: "How are backups made?" }, (t: string) => `/h/${t}`);
     const token = made.links[0]!.link.slice(3);
     handoffs.push({ label: "send", sessionId: made.sessionId, path: made.path, token, person: tony.id });
     for (const got of await turn(made.path, "Nightly, to a USB disk.", { sessionId: made.sessionId, personId: tony.id })) assert.ok(!leaks(got), "send to person: a model request");

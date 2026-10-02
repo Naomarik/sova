@@ -218,24 +218,24 @@ describe("§app.outreach/send: a note, a preview link, the project overseer thro
   });
 
   test("a preview link: the person gets their own link to the same preview; the one named stays", async () => {
-    const { record } = mintPreview({ orgId: org.id, projectId: project.id, port: 5173, days: 3 }, new Set([4800]));
-    const before = listPreviews({ orgId: org.id }).length;
+    const { record } = mintPreview({ projectId: project.id, port: 5173, days: 3 }, new Set([4800]));
+    const before = listPreviews({ projectId: project.id }).length;
     const r = await json("POST", "/api/outreach/send", { orgId: org.id, projectId: project.id, personId: ann.id, link: { kind: "preview", preview: record.id }, note: "Here is the prototype." });
     assert.equal(r.body.outcome, "sent", JSON.stringify(r.body));
-    const all = listPreviews({ orgId: org.id });
+    const all = listPreviews({ projectId: project.id });
     assert.equal(all.length, before + 1, "a sibling preview was made for her");
     assert.ok(all.every((v) => v.state === "active"), "the original stays on");
     const line = logOf().filter((l) => l.personId === ann.id && l.event === "sent").at(-1)!;
     assert.equal(line.link, "preview");
     assert.ok(line.previewId && line.previewId !== record.id);
-    const sib = listPreviews({ orgId: org.id }).find((v) => v.id === line.previewId)!;
+    const sib = listPreviews({ projectId: project.id }).find((v) => v.id === line.previewId)!;
     assert.equal(sib.siblingOf, record.id);
     assert.equal(sib.sentTo, ann.id);
     assert.equal(sib.expiresAt, record.expiresAt, "never outlives the original");
     assert.equal(sib.port, record.port);
     const { revokePreview } = await import("./preview-links");
     revokePreview(record.id);
-    assert.equal(listPreviews({ orgId: org.id }).find((v) => v.id === sib.id)!.state, "off", "turned off with the original");
+    assert.equal(listPreviews({ projectId: project.id }).find((v) => v.id === sib.id)!.state, "off", "turned off with the original");
     const other = await json("POST", "/api/outreach/send", { orgId: org.id, projectId: project.id, personId: ann.id, link: { kind: "preview", preview: "pv_nope" } });
     assert.equal(other.status, 409);
   });
@@ -263,7 +263,7 @@ describe("§app.outreach/send: a note, a preview link, the project overseer thro
 
 describe("§app.outreach/links, /log, /send: a preview send's address, its codes, and a send that did not go after the hold", () => {
   const PIN = process.env.SOVA_SHARE_PREVIEW_URL!;
-  const preview = (port: number) => mintPreview({ orgId: org.id, projectId: project.id, port, days: 3 }, new Set([4800])).record;
+  const preview = (port: number) => mintPreview({ projectId: project.id, port, days: 3 }, new Set([4800])).record;
   const holdOf = () => {
     const h = hostOf(org.id).holds().find((x) => x.event === "outreach/send")!;
     assert.ok(h, "held on the project statechart");
@@ -299,14 +299,14 @@ describe("§app.outreach/links, /log, /send: a preview send's address, its codes
     assert.equal(r.body.outcome, "sent", JSON.stringify(r.body));
     const line = lastBy("operator");
     assert.equal(line.event, "sent");
-    const sib = listPreviews({ orgId: org.id }).find((v) => v.id === line.previewId)!;
+    const sib = listPreviews({ projectId: project.id }).find((v) => v.id === line.previewId)!;
     assert.equal(sib.state, "active", "the sibling that went stays on");
     assert.equal(sib.createdBy, "operator", "the operator's own send");
   });
 
   test("no preview address: refused before anything is minted or held, code preview-address, naming the setting", async () => {
     const record = preview(5175);
-    const before = listPreviews({ orgId: org.id }).length;
+    const before = listPreviews({ projectId: project.id }).length;
     delete process.env.SOVA_SHARE_PREVIEW_URL;
     try {
       const r = await json("POST", "/api/outreach/send", { orgId: org.id, projectId: project.id, personId: ann.id, link: { kind: "preview", preview: record.id } });
@@ -323,7 +323,7 @@ describe("§app.outreach/links, /log, /send: a preview send's address, its codes
     } finally {
       process.env.SOVA_SHARE_PREVIEW_URL = PIN;
     }
-    assert.equal(listPreviews({ orgId: org.id }).length, before, "no sibling minted");
+    assert.equal(listPreviews({ projectId: project.id }).length, before, "no sibling minted");
     const codes = logOf().filter((l) => l.event === "refused").map((l) => l.code);
     assert.ok(!codes.includes("link"), `no bare link code: ${codes.join(", ")}`);
   });
@@ -369,7 +369,7 @@ describe("§app.outreach/links, /log, /send: a preview send's address, its codes
     assert.match(JSON.stringify(out.content), /Approved .*: it goes ahead now\./);
     const line = lastBy("project-overseer");
     assert.equal(line.event, "sent", JSON.stringify(line));
-    const sib = listPreviews({ orgId: org.id }).find((v) => v.id === line.previewId)!;
+    const sib = listPreviews({ projectId: project.id }).find((v) => v.id === line.previewId)!;
     assert.equal(sib.siblingOf, record.id);
     assert.equal(sib.createdBy, `session:${overseerId}`);
   });

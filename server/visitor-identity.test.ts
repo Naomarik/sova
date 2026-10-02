@@ -124,7 +124,7 @@ test("both switches are off by default; anything odd reads as off; a write is 06
 test("off: a page load writes nothing, sets no cookie and sends no X-Forwarded-For; the visit cookie is still never passed on", async () => {
   const a = await app();
   const port = await edge();
-  const { label } = store.mintPreview({ orgId: "o", projectId: "p", port: a.port }, new Set());
+  const { label } = store.mintPreview({ projectId: "p", port: a.port }, new Set());
   const tab = "A".repeat(22);
   const got = await get(port, "/", { ...NAV, host: `${label}.preview.test`, cookie: `${VISIT_COOKIE}=${tab}; sid=1`, "x-forwarded-for": "6.6.6.6" });
   assert.equal(got.status, 200);
@@ -139,7 +139,7 @@ test("on: a page load is a visit with its cookie set once; assets are not; the a
   writeVisitorLogging({ logVisitors: true, forwardIp: false });
   const a = await app();
   const port = await edge();
-  const { record, label } = store.mintPreview({ orgId: "o", projectId: "p", port: a.port }, new Set());
+  const { record, label } = store.mintPreview({ projectId: "p", port: a.port }, new Set());
   const host = `${label}.preview.test`;
   const first = await get(port, "/dash?token=s3cret", { ...NAV, host, referer: "https://news.example.org/item?id=9" });
   const cookie = cookieOf(first.headers);
@@ -177,8 +177,8 @@ test("no label, hash, Host, cookie or Authorization in either file, whatever the
   writeVisitorLogging({ logVisitors: true, forwardIp: true });
   const a = await app();
   const port = await edge();
-  const { record, label } = store.mintPreview({ orgId: "o", projectId: "p", port: a.port }, new Set());
-  const other = store.mintPreview({ orgId: "o", projectId: "p", port: a.port }, new Set());
+  const { record, label } = store.mintPreview({ projectId: "p", port: a.port }, new Set());
+  const other = store.mintPreview({ projectId: "p", port: a.port }, new Set());
   const host = `${label}.preview.test`;
   const variants: Record<string, string>[] = [
     { origin: `http://${host}`, referer: `http://${host}/a?b=${label}` },
@@ -199,7 +199,7 @@ test("Send the visitor's address: exactly one X-Forwarded-For (the edge's client
   writeVisitorLogging({ logVisitors: false, forwardIp: true });
   const a = await app();
   const port = await edge();
-  const { label } = store.mintPreview({ orgId: "o", projectId: "p", port: a.port }, new Set());
+  const { label } = store.mintPreview({ projectId: "p", port: a.port }, new Set());
   const host = `${label}.preview.test`;
   await get(port, "/", { host, "x-forwarded-for": "6.6.6.6, 7.7.7.7", "x-forwarded-host": "evil", "x-real-ip": "6.6.6.6" });
   assert.equal(a.seen[0]!["x-forwarded-for"], CLIENT);
@@ -224,7 +224,7 @@ test("through a routed host's ingress: its own preview proxy gets the admitted g
     await ing.start();
     const port = ing.info().port;
     const a = await app();
-    const { record, label } = store.mintPreview({ orgId: "o", projectId: "p", port: a.port }, new Set());
+    const { record, label } = store.mintPreview({ projectId: "p", port: a.port }, new Set());
     // The gateway's hop: one X-Forwarded-For (the visitor it computed) and the label it matched.
     const hop = { "x-sova-preview": label, "x-forwarded-for": "203.0.113.7", "x-forwarded-proto": "https" };
     assert.equal((await get(port, "/dash", { ...NAV, ...hop })).status, 200);
@@ -250,7 +250,7 @@ test("a sibling's visits are its own; the Shares page joins identity by visit id
   writeVisitorLogging({ logVisitors: true, forwardIp: false });
   const a = await app();
   const port = await edge();
-  const orig = store.mintPreview({ orgId: "o", projectId: "p", port: a.port }, new Set());
+  const orig = store.mintPreview({ projectId: "p", port: a.port }, new Set());
   const sib = store.mintSibling(orig.record.id, "person1");
   await get(port, "/", { ...NAV, host: `${sib.label}.preview.test` });
   await get(port, "/about", { ...NAV, host: `${sib.label}.preview.test`, cookie: "" });

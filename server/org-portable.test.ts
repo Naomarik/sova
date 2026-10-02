@@ -18,7 +18,7 @@ mkdirSync(join(agentDir, "sessions", "live"), { recursive: true });
 symlinkSync(resolve(import.meta.dirname, "..", "pi-config", "extensions"), join(agentDir, "extensions"));
 
 const orgs = await import("./orgs");
-const { editProject } = await import("./projects/spaces");
+const { editProject, overseerPausedSince, watchSid } = await import("./projects/spaces");
 const baton = await import("./baton");
 await import("./baton-loadout"); // registers the baton kind (its loadout and its cwd), as the server does
 const links = await import("./baton-links");
@@ -62,7 +62,7 @@ describe("the sessions it started are the statecharts' (q1: no started.json; C13
     mkdirSync(join(memo, ".."), { recursive: true });
     const legacy = [{ sessionId: "s-code", kind: "coding", createdAt: "2026-09-02T00:00:00.000Z", path: "/nowhere/s-code.jsonl" }];
     writeFileSync(memo, JSON.stringify({ version: 1, pending: ["a reason"], lastRunAt: null, lastRun: null, perDay: { "2026-09-01": 2 }, started: legacy }));
-    assert.deepEqual(readBuilds(org.id, project.id), []);
+    assert.deepEqual(readBuilds(project.id), []);
     assert.deepEqual(store.readMemo(p).pending, [], "nor its reasons: the watch statechart's are the loop's");
     assert.equal(existsSync(started), false, "nothing moved into the repo");
   });
@@ -125,7 +125,7 @@ describe("clone + attach = the whole organization", async () => {
   });
 
   test("each project's watch starts on this host, paused, and sees its project at once (F14)", () => {
-    const sid = orgs.watchSid(b.id, project.id);
+    const sid = watchSid(project.id);
     const conf = hostOf(b.id).configuration(sid) ?? [];
     assert.ok(conf.includes("paused"), `paused since the attach: ${conf.join(",")}`);
     assert.ok(conf.includes("has-overseer"), "it watches the cloned project: its overseer exists");
@@ -146,7 +146,7 @@ describe("clone + attach = the whole organization", async () => {
     assert.equal(info.exists, true);
     assert.equal(info.id, overseer.id);
     assert.equal(info.settings.autonomy, "L2", "its setting came along");
-    const moved = readBuilds(b.id, project.id).find((r) => r.sessionId === "code-moved");
+    const moved = readBuilds(project.id).find((r) => r.sessionId === "code-moved");
     assert.deepEqual(moved && [moved.kind, moved.title, moved.worktree?.branch, moved.merged?.commit, moved.path], ["coding", "Moved build", "sova/moved-abc123", "c0ffee", undefined], "the builds it started, merged, with no file on this host");
   });
 
@@ -171,7 +171,7 @@ describe("clone + attach = the whole organization", async () => {
     const fresh = await orgs.createOrg({ name: "Fresh", dir: join(root, "ws-fresh") });
     mkdirSync(join(root, "proj-f"));
     const pr = await orgs.addProject(fresh.id, { name: "F", root: join(root, "proj-f") });
-    assert.equal(orgs.overseerPausedSince(fresh.id, pr.id), null);
+    assert.equal(overseerPausedSince(pr.id), null);
   });
 
   test("the attach derives this host's titles and web origin again from the repo", () => {

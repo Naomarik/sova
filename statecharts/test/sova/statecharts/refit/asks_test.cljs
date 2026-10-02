@@ -16,5 +16,5 @@
         ks  (into (set (keys now)) (keys ag/golden))
         bad (for [k (sort ks) :when (not= (get now k ::none) (get ag/golden k ::none))]
               [k :now (get now k ::none) :golden (get ag/golden k ::none)])]
-    (is (= 25 (count ag/golden)))
+    (is (= 43 (count ag/golden)))
     (is (empty? bad) (str (count bad) " differ: " (pr-str bad)))))

@@ -75,6 +75,8 @@
    ["project" ":project/unarchive"] {}
    ["project" ":services/down"] {:needs "L0", :tool "sova_project_verbs"}
    ["project" ":services/run"] {:needs "L3", :tool "sova_project_verbs"}
+   ["project" ":verbs/onboard"] {:code-facing true, :confirm? true, :counts "create", :hold true, :needs "L3", :tool "sova_project_verbs", :what? true}
+   ["runtime" ":runtime/approve"] {}
    ["project" ":session/prompt"] {:code-facing true, :confirm? true, :counts "prompt", :hold true, :needs "L3", :tool "sova_send", :what? true}
    ["placement" ":spec/freeze"] {}
    ["placement" ":stakeholder/set"] {}

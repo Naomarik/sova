@@ -81,6 +81,7 @@
 (defn project-sid [p] (sid-of "project" p))
 (defn watch-sid [p] (sid-of "watch" p))
 (defn build-sid [p sid] (sid-of "build" p sid))
+(defn runtime-sid [p] (sid-of "runtime" p))
 (defn placement-sid [org p] (sid-of "placement" org p))
 (defn baton-sid [org sid] (sid-of "baton" org sid))
 (defn decision-sid [org p did] (sid-of "decision" org p did))

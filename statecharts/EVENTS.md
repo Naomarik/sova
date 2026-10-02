@@ -110,8 +110,8 @@ invitee in their own hours: r12, baton). The server stamps the EFFECTIVE records
 
 ## project (`project/<p>`, portable, project layer)
 
-Start: `{id, name, root, origin, remote?, createdAt}`; spawns `watch/<p>` (no org, no reconciler: the
-placement spawns that). v2; `:migrate {1 strip-org}` (`proj_strip_org.cljc`, temporary: the cutover's v1
+Start: `{id, name, root, origin, remote?, createdAt}`; spawns `watch/<p>` and `runtime/<p>` (no org, no
+reconciler: the placement spawns that). v2; `:migrate {1 strip-org}` (`proj_strip_org.cljc`, temporary: the cutover's v1
 snapshots lose their org states and keys, the org's watcher and link, and their gathering rows).
 
 | event | by | payload | notes |
@@ -122,6 +122,7 @@ snapshots lose their org states and keys, the org's watcher and link, and their 
 | `preview/start` | overseer (L1, held unattended, confirm kind `preview`) · op | `{codingSession, port \| folder, purpose, days?, overseerId}` + the host's `invalid` (the session, the port's listener, the folder, Sova's ports, the address) | archived, the host's check, then the purpose; effect `preview {codingSession, port\|folder, purpose, days?, overseerId}` (never a link; the host mints and keeps it) |
 | `services/down` | overseer (L0 `sova_project_verbs down`; never held, counts nothing) | `{verb, instance?}` + the host's `invalid` | the host's check only (never refused for an archived project); no effect: the act is the gate, the host runs the verb once it is taken |
 | `services/run` | overseer (L3 `sova_project_verbs` create, up, apply, reset, teardown, conform, test; never held, counts nothing) | `{verb, instance?}` + the host's `invalid` | archived, then the host's check; no effect, as `services/down` |
+| `verbs/onboard` | op · overseer (L3 `sova_project_verbs onboard`, held unattended; confirm kind `build`; counts `create`) | `{sessionId, title?, prompt, model?, thinking?, mode?, why?}` + the host's `invalid` (the playbook missing, the folder not here, a run already live) and `runtimeStanding` | archived, the host's check, then an unattended overseer while `runtimeStanding` is registered: "The project's software is registered and current: the playbook has nothing to do."; caps; spawns `build/<p>/<sessionId>` (kind `onboard`, `gap: "none"`, the prompt the host stamps: the playbook's turn) and sends `playbook/started {sid, sessionId, startedBy, why?, title?}` to `runtime/<p>`. Not q7: a fixed prompt, a branch only, the operator merges |
 | `build/start` | op · overseer (L3, attended only: q7) · GO | `{sessionId, title?, prompt?, model?, thinking?, mode?, opItem?, folder?}` | q7, at every level: "A coding session starts only in a turn the operator started: ask with sova_card."; spawns `build/<p>/<sessionId>` (`gap: "none"`) |
 | `session/prompt` | overseer (L3 `sova_send`, held; confirm kind `prompt`) · op | `{sessionId, title, text, mode?}` + `live` (a terminal holds it), `invalid` (the mode check) | "\"{title}\" is open in a terminal, so it is read-only.", "text must not be blank."; caps (a prompt); effect `prompt {session, text, mode?}` (`session`: an effect's own sessionId is the statechart's). A coding session under the root that is NOT a build (a build's is `build/prompt`); never a gathering (F-128, r10) |
 | `started/noted` | item | `{sid, kind}` | a build an item started joins the list (watched) |
@@ -271,11 +272,35 @@ Acts: `build/prompt {text, mode?}` + `invalid`, `live` (overseer L3 `sova_send`,
 `remove-worktree`; `correct/merged {commit, reason}` (L2).
 Exported: `…, turn, workers, running, tree, branchState, merged, lastTurnAt`.
 
+## runtime (`runtime/<p>`, host-local, project layer)
+
+Start: `{projectId, root}`; spawned by its project at birth (`:if-exists :skip`) and started by the host for every
+existing project as its engine opens. v1. Regions: standing ‹unregistered · awaiting-approval · conforming ·
+registered · stale · failed› (eventless, by `rules/runtime standing-of` over the facts) × playbook ‹idle · running ·
+proposed›. Data mirrors: `standing`, `playbookState`.
+
+| event | by | payload | notes |
+|---|---|---|---|
+| `runtime/observed` | system (quiet; sent only when the facts changed) | any of `{commit, def {state absent\|invalid\|present, hash?, error?}, software [{name, kind, scope, ports [{name, port}], requires, isolation?}], sources {paths, files [{path, sha}], fingerprint}, approved {hash, at}\|null, proof\|null, confinedProof\|null, suite, branchFacts {ref, commit, def, approved, proof}}` | keys present are assigned; `branchFacts` only while a run is live; recomputes `drift {paths, fingerprint}`; after a merge adopts main's sources once (`adoptNext`) |
+| `runtime/approve` | op only (`:needs nil`; anyone else: 403 "Only the operator approves a definition.") | `{hash}` | main's hash while awaiting approval or failed, or the branch's while proposed; else "There is no definition waiting for approval." / "The definition changed since it was shown: look again."; effect `approve {hash, ref}` (`ref` "HEAD" or the branch) → `effect/done {result: {hash}}` (`approvedLast`; in failed: `clearedAt`, so conformance runs again) \| `effect/failed {detail}` (`approveRefused`) |
+| `playbook/started` | project (`verbs/onboard`) | `{sid, sessionId, startedBy, why?, title?}` | idle → running; watches the build |
+| `link/moved` (its build) | engine | | running → proposed (a turn ended, not running, commits unmerged; reason `runtime/proposed`), proposed → running (running again), → idle on merged / tree removed / not started / a turn ended with no commits (`playbook.result` merged · removed · not-started · no-change; reason `runtime/playbook-done`); no change, or a merge leaving main's hash, adopts main's sources as the registration's |
+
+Entering conforming emits effect `conform {hash}` → `effect/done {result: {hash, suite, pass, confined, at, failed?
+{check, detail}, memory?}}` (`conformResult`) \| `effect/failed {detail}` (a failed result, check "run"). Entering
+registered records `registered {hash, suite, fingerprint, files, commit, at}` unless it is already for main's hash and
+suite. Reasons: entering stale `runtime/stale {paths}` (asks), failed `runtime/failed {hash, check?, detail?, error?}`
+(asks, soon), registered `runtime/registered {n, hash}` (asks nothing). Exported: `projectId, root, standing,
+playbookState, commit, def, software, sources, approved, proof, confinedProof, suite, registered, drift, playbook,
+conformResult, approvedLast, approveRefused, clearedAt`.
+
 ## Reasons (to the watch)
 
 `reason/noted {kind, params, key, by}`; kinds and sentences in `reasons.cljc`: baton/done, baton/closed,
 baton/proposal, baton/asked-operator, reconcile/{conflict,resolved,drafted,promoted}, coding/settled,
-build/not-prompted, build/merged, build/merge-refused, held/{looks,day,message,raised}, item/{stalled,built}, hold/review.
+build/not-prompted, build/merged, build/merge-refused, held/{looks,day,message,raised}, item/{stalled,built}, hold/review,
+runtime/{registered,stale,failed,proposed,playbook-done} (all `by: statechart`; playbook-done asks only when the
+overseer started the run: `{"runtime/playbook-done" :overseer-started}`).
 `key` is typed (C3). A reason sent in a step whose event is `by` statechart (r3, a drive) says `by: statechart`.
 r14 (narrowing R3): every reason carries `asks` (bool), resolved from its transition's declaration
 `:sova/asks-overseer` (true, false, `:unwritten-false`: a closed gathering asks only when someone wrote in

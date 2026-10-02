@@ -64,7 +64,7 @@
   (let [eng (core/new-engine registry/statecharts {:level-check lv/level-check})
         att {:by "overseer" :attended true :autonomy "L1"}]
     (core/start! eng psid "project" {:id "pr1" :name "Site" :root "/r" :origin "folder" :created-at t0} t0)
-    (is (= [psid wsid] (core/session-ids eng)) "born with its watch only (no reconciler)")
+    (is (= [psid "runtime/pr1" wsid] (core/session-ids eng)) "born with its watch and its software registry only (no reconciler)")
     (core/send! eng psid :overseer/start (assoc op :conversation-id "c1") {:now (+ t0 1)})
     (testing "unattended at its setting (L1): no roster caps it"
       (is (nil? (refused (core/send! eng psid :services/run {:by "overseer" :autonomy "L3" :invalid nil} {:now (+ t0 2)}) :services/run))
@@ -89,11 +89,11 @@
       (core/send! eng psid :project/unarchive op {:now (+ t0 11)})
       (is (in? eng psid :active)))
     (testing "nothing of the org layer exists or is linked"
-      (is (every? #(re-matches #"(project|watch|build)/pr1(/.*)?" %) (core/session-ids eng)))
+      (is (every? #(re-matches #"(project|watch|build|runtime)/pr1(/.*)?" %) (core/session-ids eng)))
       (doseq [sid (core/session-ids eng)
               :let [d (core/data eng sid)]]
         (is (not (contains? d :org-id)) sid)
-        (is (every? #(re-matches #"(project|watch|build)/.*" %) (concat (:sova/watchers d) (vals (:sova/links d)))) sid)))))
+        (is (every? #(re-matches #"(project|watch|build|runtime)/.*" %) (concat (:sova/watchers d) (vals (:sova/links d)))) sid)))))
 
 ;; ---- placed: the placement follows its project --------------------------------------------------------
 

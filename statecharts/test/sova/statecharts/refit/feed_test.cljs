@@ -95,10 +95,15 @@
     (is (= :quiet (feed-of (mk) sid :workers/changed {:n 0})))
     (is (= :feed (feed-of (mk) sid :effect/failed {:kind "make-worktree" :detail "x"})))))
 
+(deftest runtime
+  (let [sid "runtime/pr1" mk #(started "runtime" sid {:project-id "pr1" :root "/r"})]
+    (is (= :quiet (feed-of (mk) sid :runtime/observed {:def {:state "absent"}})) "the host's observation is a mirror")
+    (is (= :feed (feed-of (mk) sid :runtime/approve (assoc op :hash "h1"))) "an act (taken or refused) is feed")))
+
 (deftest every-transitions-class-is-the-golden-one
   (let [now (ft/table)
         ks  (into (set (keys now)) (keys fg/golden))
         bad (for [k (sort ks) :when (not= (get now k ::none) (get fg/golden k ::none))]
               [k :now (get now k ::none) :golden (get fg/golden k ::none)])]
-    (is (= 452 (count fg/golden)))
+    (is (= 497 (count fg/golden)))
     (is (empty? bad) (str (count bad) " differ: " (pr-str (take 20 bad))))))

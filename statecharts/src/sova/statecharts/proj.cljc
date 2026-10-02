@@ -92,6 +92,27 @@
        :via (via data) :gap "none" :decisions [] :created-at (b/now-ms data)})))
 
 (def create-cap (lv/cap-check "create" (constantly 1) b/evt))
+
+;; ---- the Project verbs playbook (§app.project-runtime/onboard) ---------------------------------------
+
+(def nothing-to-do "The project's software is registered and current: the playbook has nothing to do.")
+
+(defn registered-check
+  "An unattended overseer starts no run while the software is registered and current (the host stamps the
+   registry's standing as `runtime-standing`): it would only loop."
+  [data]
+  (let [e (b/evt data)]
+    (when (and (= "overseer" (some-> (:by e) name)) (not (true? (:attended e))) (= "registered" (:runtime-standing e)))
+      (r/refuse 409 nothing-to-do))))
+
+(defn onboard-data
+  "The build the playbook runs in: kind `onboard`, no gap, the host-stamped playbook turn as its prompt."
+  [data]
+  (let [e (b/evt data)]
+    (merge (select-keys e [:title :prompt :model :thinking :mode])
+      {:project-id (:id data) :session-id (:session-id e) :kind "onboard"
+       :started-by (if (= "overseer" (some-> (:by e) name)) "overseer" "operator")
+       :via (via data) :gap "none" :decisions [] :created-at (b/now-ms data)})))
 (def prompt-cap (lv/cap-check "prompt" (constantly 1) b/evt))
 
 (defn root-prompt-check
@@ -134,7 +155,11 @@
         (script {:expr (fn [_ d] [(ops/assign :project-id (:id d))])})
         (dsl/spawn {:statechart "watch" :link :project :watch? false :if-exists :skip
                     :id (fn [d] (b/watch-sid (:id d)))
-                    :data (fn [d] {:project-id (:id d)})}))
+                    :data (fn [d] {:project-id (:id d)})})
+        ;; its software registry (host-local, §app.project-runtime/registry)
+        (dsl/spawn {:statechart "runtime" :link :project :watch? false :if-exists :skip
+                    :id (fn [d] (b/runtime-sid (:id d)))
+                    :data (fn [d] {:project-id (:id d) :root (:root d)})}))
 
       (dsl/act {:sova/feed :feed :event :project/edit :checks [invalid]}
         (script {:expr (fn [_ d] (let [e (b/evt d)]
@@ -164,6 +189,19 @@
       ;; are the engine's. Stopping is never refused for an archived project.
       (dsl/act {:sova/feed :feed :event :services/down :checks [invalid]})
       (dsl/act {:sova/feed :feed :event :services/run :checks [not-archived invalid]})
+      ;; The Project verbs playbook (§app.project-runtime/onboard): a build of kind onboard whose first prompt is
+      ;; the playbook's turn (fixed, so q7 does not apply: branch only, the operator merges); L3, held when
+      ;; unattended, counted as a coding session's start. The host's `invalid` carries the playbook missing, the
+      ;; folder elsewhere and a run already live; the registry hears of it (`playbook/started`).
+      (dsl/act {:sova/feed :feed :event :verbs/onboard :checks [not-archived invalid registered-check create-cap]}
+        (dsl/spawn {:statechart "build" :link :project :id (fn [d] (b/build-sid (:id d) (:session-id (b/evt d)))) :data onboard-data})
+        (b/ledger :ledger/take "create" (constantly 1))
+        (b/started-content (fn [d] {:row (b/started-row d "onboard" (b/build-sid (:id d) (:session-id (b/evt d))))}))
+        (b/send-if :playbook/started (fn [d] (b/runtime-sid (:id d)))
+          (fn [d] (let [e (b/evt d) od (onboard-data d)]
+                    (cond-> {:sid (b/build-sid (:id d) (:session-id e)) :session-id (:session-id e) :started-by (:started-by od)}
+                      (not (lv/blank? (:why e))) (assoc :why (str/trim (:why e)))
+                      (:title e) (assoc :title (:title e)))))))
 
       (parallel {:id :regions}
         (state {:id :shelf :initial :active}
@@ -206,6 +244,8 @@
                        :what (fn [d] (str "A preview link: " (str/trim (or (:purpose (b/evt d)) ""))))}
    :services/down     {:needs "L0" :tool "sova_project_verbs"}
    :services/run      {:needs "L3" :tool "sova_project_verbs"}
+   :verbs/onboard     {:needs "L3" :tool "sova_project_verbs" :code-facing true :counts "create" :hold true :confirm-kind "build"
+                       :what (fn [d] (str "The Project verbs playbook on " (:name d)))}
    :hold/cancel       {:needs "L0" :correction true}
    :hold/approve      {:needs "L0" :correction true}})
 

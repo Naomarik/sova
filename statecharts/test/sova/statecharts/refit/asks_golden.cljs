@@ -32,4 +32,22 @@
    ["reconciler" ":reconciler" [":hold/waiting"] "[]" 0] true
    ["reconciler" ":running" [":reconcile/finished"] "[:failed]" 0] {"reconcile/conflict" true "reconcile/resolved" true "reconcile/drafted" :unless-auto-promoted}
    ["reconciler" ":running" [":reconcile/finished"] "[:idle]" 0] {"reconcile/conflict" true "reconcile/resolved" true "reconcile/drafted" :unless-auto-promoted}
-   ["reconciler" ":running" [":reconcile/finished"] "[:running]" 0] {"reconcile/conflict" true "reconcile/resolved" true "reconcile/drafted" :unless-auto-promoted}})
+   ["reconciler" ":running" [":reconcile/finished"] "[:running]" 0] {"reconcile/conflict" true "reconcile/resolved" true "reconcile/drafted" :unless-auto-promoted}
+   ["runtime" ":awaiting-approval" [] "[:failed]" 0] true
+   ["runtime" ":awaiting-approval" [] "[:registered]" 0] false
+   ["runtime" ":awaiting-approval" [] "[:stale]" 0] true
+   ["runtime" ":conforming" [] "[:failed]" 0] true
+   ["runtime" ":conforming" [] "[:registered]" 0] false
+   ["runtime" ":conforming" [] "[:stale]" 0] true
+   ["runtime" ":failed" [] "[:registered]" 0] false
+   ["runtime" ":failed" [] "[:stale]" 0] true
+   ["runtime" ":proposed" [":link/moved"] "[:idle]" 0] {"runtime/playbook-done" :overseer-started}
+   ["runtime" ":registered" [] "[:failed]" 0] true
+   ["runtime" ":registered" [] "[:stale]" 0] true
+   ["runtime" ":running" [":link/moved"] "[:idle]" 0] {"runtime/playbook-done" :overseer-started}
+   ["runtime" ":running" [":link/moved"] "[:proposed]" 0] false
+   ["runtime" ":stale" [] "[:failed]" 0] true
+   ["runtime" ":stale" [] "[:registered]" 0] false
+   ["runtime" ":unregistered" [] "[:failed]" 0] true
+   ["runtime" ":unregistered" [] "[:registered]" 0] false
+   ["runtime" ":unregistered" [] "[:stale]" 0] true})

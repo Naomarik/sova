@@ -102,6 +102,9 @@
      "^It runs in the project root.*" "^The session is working\\.$" "^Its workers are running\\.$" "^On another host: its worktree is there\\.$"
      "^Its worktree was (already )?removed.*" "^\".*\" is open in a terminal, so it is read-only\\.$" "^text must not be blank\\.$"
      "^A merge is running\\.$" "^Name the commit it was merged by\\.$"
+     "^Only the operator approves a definition\\.$" "^There is no definition waiting for approval\\.$"
+     "^The definition changed since it was shown: look again\\.$"
+     "^The project's software is registered and current: the playbook has nothing to do\\.$"
      "^Say what it shows and to whom \\(purpose\\): one line\\.$" "^The purpose is one line of at most 200 characters\\.$"]))
 
 (defn in-catalogue? [s] (boolean (some #(re-matches % s) catalogue)))
@@ -125,7 +128,8 @@
    "reconciler" #{"watch/pr1"}
    "conflict"   #{"baton/o1/s9" "person/o1/p1" "watch/pr1"}
    "item"       #{"baton/o1/b1" "decision/o1/pr1/d1" "item/o1/pr1/g_2" "person/o1/p1" "placement/o1/pr1" "project/pr1" "watch/pr1"}
-   "build"      #{"watch/pr1"}})
+   "build"      #{"watch/pr1"}
+   "runtime"    #{"watch/pr1" "build/pr1/o1"}})
 
 (defn run [statechart sid spec]
   (matrix/run (merge {:statecharts registry/statecharts :statechart statechart :sid sid :level-check lv/level-check
@@ -194,7 +198,9 @@
               [:build/start {:session-id "c1" :title "T" :prompt "P"}]
               [:session/prompt {:session-id "c9" :title "T" :text "go"}] [:session/prompt {:session-id "c9" :title "T" :text " "}] [:session/prompt {:session-id "c9" :title "T" :text "go" :live true}]
               [:preview/start {:coding-session "c1" :port 5173 :purpose "The shop for Ana"}] [:preview/start {:coding-session "c1" :folder "dist" :purpose " "}]
-              [:services/run {:verb "up"}] [:services/down {:verb "down"}]]})))
+              [:services/run {:verb "up"}] [:services/down {:verb "down"}]
+              [:verbs/onboard {:session-id "o1" :title "Project verbs" :prompt "Run it" :why "w"}]
+              [:verbs/onboard {:session-id "o2" :prompt "Run it" :runtime-standing "registered"}]]})))
 
 (deftest placement-matrix
   (clean! "placement"
@@ -327,6 +333,35 @@
        :acts [[:build/prompt {:text "go"}] [:build/prompt {:text " "}] [:build/merge {}] [:build/remove-worktree {}]
               [:correct/merged {:commit "c" :reason "r"}]]
        :max-configs 6000})))
+
+(deftest runtime-matrix
+  ;; a solo world: the registry of a project in no organization; its reasons go to the watch, its run is a build
+  (let [files [{:path "bb.edn" :sha "a1"}]
+        obs   (fn [m] [:runtime/observed (merge {:commit "c1" :suite 2 :sources {:paths ["bb.edn"] :files files :fingerprint "f1"}} m)])
+        h1    {:state "present" :hash "h1"}
+        bm    (fn [states ex] (moved "build" "build/pr1/o1" states ex))]
+    (clean! "runtime"
+      (run "runtime" "runtime/pr1"
+        {:starts [{:project-id "pr1" :root "/r"}]
+         :drive [(obs {:def {:state "absent"}}) (obs {:def h1 :approved nil :proof nil}) (obs {:def h1 :approved {:hash "h1"} :proof nil})
+                 (obs {:def h1 :approved {:hash "h1"} :proof {:hash "h1" :suite 2 :pass true :confined false :at 1}})
+                 (obs {:def h1 :approved {:hash "h1"} :proof {:hash "h1" :suite 2 :pass true :confined false :at 1}
+                       :sources {:paths ["bb.edn"] :files [{:path "bb.edn" :sha "a2"}] :fingerprint "f2"}})
+                 (obs {:def {:state "invalid" :error "bad"}})
+                 [:effect/done {:kind "approve" :result {:hash "h1"}}] [:effect/failed {:kind "approve" :detail "The definition changed since it was shown: look again."}]
+                 [:effect/done {:kind "conform" :result {:hash "h1" :suite 2 :pass false :confined false :at 2 :failed {:check "ready" :detail "x"}}}]
+                 [:effect/failed {:kind "conform" :detail "x"}]
+                 [:playbook/started {:sid "build/pr1/o1" :session-id "o1" :started-by "overseer" :why "w"}]
+                 [:runtime/observed {:branch-facts {:ref "sova/v" :def {:state "present" :hash "hb"} :approved false}}]
+                 (bm [:build :turn-idle :no-commits] {:last-turn-at 5 :running false :branch-state "no-commits"})
+                 (bm [:build :turn-idle :unmerged] {:last-turn-at 5 :running false :branch-state "unmerged" :branch "sova/v"})
+                 (bm [:build :working :unmerged] {:last-turn-at 5 :running true :branch-state "unmerged"})
+                 (bm [:build :merged] {:branch-state "merged"})
+                 (bm [:build :tree-removed] {})]
+         :acts [[:runtime/approve {:hash "h1"}] [:runtime/approve {:hash "hb"}] [:runtime/approve {:hash "h0"}]]
+         :key (fn [d] [(:standing d) (some? (:registered d)) (some? (:drift d)) (some? (:conform-result d)) (some? (:cleared-at d))
+                       (some? (get-in d [:playbook :branch-facts])) (get-in d [:playbook :result])])
+         :max-configs 6000}))))
 
 (deftest every-statechart-has-its-own-world
   (is (= (set (keys registry/statecharts)) (set (keys worlds))))

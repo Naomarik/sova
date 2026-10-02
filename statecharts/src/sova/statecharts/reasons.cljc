@@ -4,6 +4,7 @@
    renders today's English sentence, and says whether it is a reason to look soon and whether it is
    one of the overseer's own acts (today's `soon` and `own` arguments)."
   (:require
+    [clojure.string]
     [sova.statecharts.base :as b]))
 
 (defn- plural [n one many] (if (= n 1) one many))
@@ -44,12 +45,23 @@
           "item/answered-nothing" (str "The gathering session for " item " ended with no decision.")
           "item/reopened" (str "A newer decision reopened " item ".")
           "item/built" (str item " is built: merged, and every decision it rests on is built per the spec.")
+          "runtime/registered" (str "The project's software is registered: " n " service" (plural n "" "s") ", proven at " (:hash params) ".")
+          "runtime/stale" (str "The project's stack changed since its software was registered (" (clojure.string/join ", " (:paths params)) "). Run the Project verbs playbook to bring it up to date.")
+          "runtime/failed" (if (:error params)
+                             (str "The definition on main is invalid: " (:error params))
+                             (str "Conformance failed on main at " (or (:check params) "run") ": " (:detail params)))
+          "runtime/proposed" (str "The Project verbs playbook proposes a definition on " branch ": approve it, then merge.")
+          "runtime/playbook-done" (case (:result params)
+                                    "no-change" "The Project verbs playbook finished with no change."
+                                    "merged" "The Project verbs playbook's branch was merged."
+                                    "not-started" "The Project verbs playbook could not start."
+                                    "The Project verbs playbook's worktree was removed.")
           "hold/review" (str what " waits for your review (hold " (or (:hold params) (:id params)) "): approve it, or cancel it with a reason. It does not go ahead until you do.")
           (str kind)))))
 
 (def soon-kinds
   #{"baton/done" "baton/asked-operator" "coding/settled" "build/not-prompted" "build/merged" "build/merge-refused"
-    "held/looks" "held/day" "held/raised" "item/stalled" "hold/review"})
+    "held/looks" "held/day" "held/raised" "item/stalled" "hold/review" "runtime/failed"})
 
 (defn soon?
   "A reason to look soon (today's `soon` argument)."

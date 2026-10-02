@@ -1,6 +1,6 @@
 (ns sova.statecharts.refit.seam-test
   "The seam between the project layer and the org layer (General Projects): the project-layer statecharts
-   (project, watch, build) and everything they require, transitively, never reach an org-layer
+   (project, watch, build, runtime) and everything they require, transitively, never reach an org-layer
    statechart, never build an org-layer session id and never read an org key. The org layer may address
    the project layer; the project layer never addresses the org layer. (The TS side has its own
    dependency-graph test.)"
@@ -11,7 +11,8 @@
 
 (def project-layer
   "The project-layer statecharts: registry name → namespace."
-  {"project" "sova.statecharts.proj" "watch" "sova.statecharts.watch" "build" "sova.statecharts.build"})
+  {"project" "sova.statecharts.proj" "watch" "sova.statecharts.watch" "build" "sova.statecharts.build"
+   "runtime" "sova.statecharts.runtime"})
 
 (def org-layer-ns
   "Namespaces of the org layer: its statecharts and the rules only they use."

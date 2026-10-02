@@ -1,4 +1,4 @@
-# Org statecharts: the refit's twelve statecharts, and every inventory item they stand for
+# Org statecharts: the refit's thirteen statecharts, and every inventory item they stand for
 
 ## Fast loop
 
@@ -13,7 +13,7 @@
 - Never cold-compile in a loop; run the matrices only at the end (`node scripts/build-statecharts.mjs --test`
   is the full cold path), and `release lib` (the vendored bundle, `scripts/build-statecharts.mjs`) only for the final bundle.
 
-Twelve statecharts in the fulcrologic/statecharts CLJC DSL (`com.fulcrologic/statecharts 1.4.0-RC18`) under
+Thirteen statecharts in the fulcrologic/statecharts CLJC DSL (`com.fulcrologic/statecharts 1.4.0-RC18`) under
 `src/sova/statecharts/`, registered in `registry.cljc` for the engine (`engine/API.md`). Every
 lifecycle state and every link of the organization layer lives here (q1: no state projection files;
 routes read the engine). The event vocabulary is `EVENTS.md`.
@@ -32,13 +32,14 @@ routes read the engine). The event vocabulary is `EVENTS.md`.
 | reconciler | `reconciler.cljc` | portable | `reconciler/<org>/<p>` | ‹off·idle·debouncing·running·failed› (+ `:sova/reconcile`); decision index; promotion |
 | item | `item.cljc` | portable | `item/<org>/<p>/<g_id>` | lane × follow-up × attention × drive; sets of gatherings and builds; owned links |
 | build | `build.cljc` | portable | `build/<p>/<sid>` | setup × turn × tree × branch × merge |
+| runtime | `runtime.cljc` | host-local | `runtime/<p>` | project layer, no org: the software registry; standing ‹unregistered·awaiting-approval·conforming·registered·stale·failed› (`rules/runtime standing-of`) × playbook ‹idle·running·proposed›; approval (operator only), the automatic conform, drift |
 
 Shared: `base.cljc` (event, time, ids, reasons and ledger sends, `relink`, `send-if`/`flush-transition`),
 `reasons.cljc` (typed reasons and today's sentences), `rules/*.cljc` (pure rules: `refusal`, `levels`
 (L0–L3, attended, forced L0, caps, the GO card), `person`, `baton`, `item`). Every rule is a pure
 function over (data, event) returning nil or `{sentence status code? tail?}` with today's sentence.
 
-**The seam (General Projects).** Project layer: `project`, `watch`, `build` (and `runtime`, al_4): ids with no
+**The seam (General Projects).** Project layer: `project`, `watch`, `build`, `runtime`: ids with no
 org, no `:org-id`, no org key, and nothing they require (transitively) is an org-layer namespace. Org layer:
 `org`, `residence`, `person`, `placement`, `baton`, `item`, `decision`, `conflict`, `reconciler`; it may address
 project-layer sessions (item spawns builds and notes them with the project; org charts send reasons, ledgers

@@ -16,6 +16,7 @@
     [sova.statecharts.proj :as proj]
     [sova.statecharts.proj-strip-org :as proj-strip-org]
     [sova.statecharts.residence :as residence]
+    [sova.statecharts.runtime :as runtime]
     [sova.statecharts.watch :as watch]
     [clojure.string :as str]
     [sova.statecharts.base :as b]
@@ -52,7 +53,8 @@
    "conflict"   conflict/entry
    "reconciler" reconciler/entry
    "item"       item/entry
-   "build"      build/entry})
+   "build"      build/entry
+   "runtime"    runtime/entry})
 
 (def statecharts (into {} (for [[k v] statecharts*] [k (with-card-checks v)])))
 

@@ -32,6 +32,13 @@ Paths here are relative to this playbook's folder. `scripts/project-verbs.mjs` d
 8. **Measure.** The passing report's `memory` gives each service's steady and peak resident memory, and each scratch instance's total. Report it as measured; never estimate.
 9. **Report** (below), and end your turn.
 
+## Traps seen in real projects
+- **The main checkout is not HEAD.** Its uncommitted edits (a new test alias, a classpath fix, a changed script) are what makes some commands work there; a fresh worktree at HEAD lacks them. Prove every command you declare from HEAD's files, and when HEAD lacks something, add it on your branch and say so.
+- **Gitignored files the code needs.** A file a task generates and the code reads at load (a version stamp, compiled assets) or a local config the tasks read is missing in a fresh worktree: a setup step generates or copies it (`references/recipes.md`).
+- **Tests that start the app.** A test fixture that boots the dev system binds the app's ports and opens its datastores: give the test service the copy's own env and require the datastores. A test profile's own fixed port collides between copies too.
+- **A selection that runs no test proves nothing.** Zero tests ran is a failure, never a green smoke.
+- **Datastores copied while they run** may be inconsistent: take per-copy data from a store at rest, a dump, or a seed (`references/isolation.md`).
+
 ## Report
 - `Services`: one line each: name · kind · scope · isolation method — why · ports (slot 0 → slot 1).
 - `Conform`: pass or fail, runs used of 6, confined or not, suite version, the definition's hash (first 12 hex), and for a failure the check, its detail and what you would try next.

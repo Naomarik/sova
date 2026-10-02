@@ -36,6 +36,7 @@ import { startStaticServe, staticServes, StaticServeError, stopStaticServe } fro
 import { projectOf } from "../project-root";
 import { DriverError, type Driver, type UnitSpec } from "./drivers";
 import { hostPortOwner } from "./proctable";
+import { hostedBusy, serverCheckout } from "./self-host";
 import { publishedPorts, publisherOf, type ContainerQuery } from "./container-ports";
 import {
   dataRootOf,
@@ -226,6 +227,10 @@ export interface EngineDeps {
   containerQuery?: ContainerQuery;
   /** Poll interval for readiness waits. */
   pollMs?: number;
+  /** The checkout the running server was loaded from (§app.project-services/self-host); tests set it. */
+  selfCheckout?: () => string | null;
+  /** Why this server's hosted sessions are busy, or null; tests fake it. */
+  hostBusy?: () => string | null;
 }
 
 /** Everything one verb run knows. */
@@ -270,6 +275,8 @@ export class ProjectEngine {
   private readonly containerExec: (engine: string, args: string[]) => Promise<number>;
   private readonly containerQuery: ContainerQuery;
   private readonly pollMs: number;
+  private readonly selfCheckout: () => string | null;
+  private readonly hostBusy: () => string | null;
   private sharedChain = new Map<string, Promise<unknown>>();
   /** The conformance runner (server/project-services/conform.ts), wired at startup. */
   conformer: ((body: unknown, caller: Caller) => Promise<VerbResult>) | null = null;
@@ -293,6 +300,8 @@ export class ProjectEngine {
           );
         }));
     this.pollMs = deps.pollMs ?? 250;
+    this.selfCheckout = deps.selfCheckout ?? serverCheckout;
+    this.hostBusy = deps.hostBusy ?? (() => hostedBusy());
   }
 
   unitOf(scopeId: string, service: string): string {
@@ -464,7 +473,24 @@ export class ProjectEngine {
 
   // ---- who may call what (§app.project-services/callers) --------------------------------------------
 
+  /**
+   * Sova hosting itself (§app.project-services/self-host): on the server's own checkout, a verb that
+   * stops or restarts slot 0 is the operator's, confirmed, and never while a hosted session is busy.
+   */
+  private selfHosted(run: Run): void {
+    const rec = run.rec;
+    if (!rec || rec.slot !== 0 || !["apply", "down", "reset", "teardown"].includes(run.verb)) return;
+    const self = this.selfCheckout();
+    if (!self || self !== run.project) return;
+    const what = `${run.verb} of the main checkout stops or restarts the Sova server's own checkout (${self})`;
+    if (run.caller.kind !== "operator") throw new VerbFailure("needs-confirm", `${what}: the operator does it, confirmed (sova-project ${run.verb} … --confirm)`);
+    if (!run.req.confirm) throw new VerbFailure("needs-confirm", `${what}: confirm it (sova-project ${run.verb} … --confirm)`);
+    const busy = this.hostBusy();
+    if (busy) throw new VerbFailure("busy", `${what}, and ${busy}: try again once they are idle`);
+  }
+
   private authorize(run: Run): void {
+    this.selfHosted(run);
     const { caller, verb } = run;
     const sharedNamed = verb === "down" && !!run.req.services?.length && !!run.def && run.req.services.some((n) => run.def!.services.find((s) => s.name === n)?.scope === "shared");
     const confirmShared = "stopping a shared service stops it for every instance of the project: the operator does it (sova-project down … --confirm)";
@@ -957,6 +983,54 @@ export class ProjectEngine {
     });
   }
 
+  /**
+   * The project's shared services its record names that no definition declares any more
+   * (§app.project-services/down): neither the main checkout's nor any registered instance's. None while
+   * any of those definitions is unreadable: a branch that still declares one may be what runs it.
+   */
+  private sharedRemovedOf(project: string): string[] {
+    const sh = readRegistry().shared.find((x) => x.project === project);
+    if (!sh || !Object.keys(sh.desired).length) return [];
+    const checkouts = new Set([project, ...readRegistry().instances.filter((i) => i.project === project).map((i) => i.checkout)]);
+    const declared = new Set<string>();
+    for (const c of checkouts) {
+      let def: ProjectDef;
+      try {
+        def = parseDefinition(readFileSync(join(c, CONTRACT_FILE), "utf8"));
+      } catch {
+        return [];
+      }
+      for (const s of def.services) if (s.scope === "shared") declared.add(s.name);
+    }
+    return Object.keys(sh.desired).filter((n) => !declared.has(n));
+  }
+
+  /** Stop each shared service of `project` that is in no definition any more and still runs or is still wanted; its names. */
+  private async stopSharedRemoved(run: Run, project: string): Promise<string[]> {
+    const out: string[] = [];
+    const id = sharedIdOf(project);
+    for (const name of this.sharedRemovedOf(project)) {
+      const unit = this.unitOf(id, name);
+      const st = await this.driver.status(unit);
+      const alive = st.state !== "missing" && st.state !== "inactive";
+      const wanted = readRegistry().shared.find((x) => x.project === project)?.desired[name] === "running";
+      if (!alive && !wanted) continue;
+      mutateRegistry((r) => {
+        const sh = r.shared.find((x) => x.project === project);
+        if (sh) sh.desired[name] = "stopped";
+      });
+      const ports = Object.values(readRegistry().shared.find((x) => x.project === project)?.ports[name] ?? {});
+      await this.step(run, `stop:${name}`, "stop", async () => {
+        if (st.state !== "missing") await this.driver.stop(unit);
+        // As after any stop: its ports released before anything starts on them (at most 5 s).
+        for (const until = Date.now() + 5_000; ports.some((p) => this.portOwner(p) !== "none") && Date.now() < until; ) await sleep(50);
+        return { result: "done", detail: `shared, no longer in any definition: ${alive ? unit : "marked stopped"}` };
+      });
+      out.push(name);
+    }
+    return out;
+  }
+
   /** Before up or apply: stop every service the record still wants or still runs that left the definition. */
   private async stopRemovedDue(run: Run, rec: InstanceRecord, def: ProjectDef): Promise<string[]> {
     const out: string[] = [];
@@ -1075,6 +1149,7 @@ export class ProjectEngine {
     const names = run.req.services?.length ? run.req.services : def.services.filter((s) => s.scope === "checkout").map((s) => s.name);
     for (const n of names) if (!def.services.some((s) => s.name === n)) throw new VerbFailure("invalid-request", `no service "${n}"`);
     await this.stopRemovedDue(run, rec, def);
+    await this.stopSharedRemoved(run, rec.project);
     const wanted = closureOf(def, names);
     await this.upShared(run, def, wanted.filter((s) => s.scope === "shared"));
     const scope = scopeOf(rec);
@@ -1128,6 +1203,7 @@ export class ProjectEngine {
       this.save(rec);
       await this.stopService(run, def, scopeOf(rec), s.name, s);
     }
+    if (!run.req.services?.length) await this.stopSharedRemoved(run, rec.project);
   }
 
   private async apply(run: Run): Promise<void> {
@@ -1353,6 +1429,20 @@ export class ProjectEngine {
         out.push({ name: s.name, scope: s.scope, kind, state, unit, pid: null, ports, ...(st.detail && st.state === "failed" ? { detail: st.detail } : {}) });
       }
     }
+    // What the definition no longer declares but still runs is never hidden (§app.project-services/status-logs).
+    for (const name of this.removedOf(rec, def)) {
+      const unit = this.unitOf(rec.id, name);
+      const serving = staticServes().some((x) => x.id === unit);
+      const st = serving ? { state: "active" as const, pid: process.pid } : await this.driver.status(unit);
+      if (st.state !== "active" && st.state !== "activating") continue;
+      out.push({ name, scope: "checkout", kind: serving ? "static" : rec.containers?.[name] ? "container" : "process", state: "degraded", unit, pid: st.pid, ports: rec.ports[name] ?? {}, detail: "no longer in the definition" });
+    }
+    for (const name of this.sharedRemovedOf(rec.project)) {
+      const unit = this.unitOf(sharedIdOf(rec.project), name);
+      const st = await this.driver.status(unit);
+      if (st.state !== "active" && st.state !== "activating") continue;
+      out.push({ name, scope: "shared", kind: "process", state: "degraded", unit, pid: st.pid, ports: readRegistry().shared.find((x) => x.project === rec.project)?.ports[name] ?? {}, detail: "shared, no longer in any definition" });
+    }
     return out;
   }
 
@@ -1516,6 +1606,11 @@ export class ProjectEngine {
     }
     for (const sh of reg.shared) {
       const run: Run = { verb: "up", caller: { kind: "operator" }, req: {}, project: sh.project, rec: null, def: null, defError: null, defHash: null, approved: false, steps: [], extra: {} };
+      try {
+        for (const name of await this.stopSharedRemoved(run, sh.project)) did.push(`${sh.id}: stopped ${name} (shared, no longer in any definition)`);
+      } catch (err) {
+        did.push(`${sh.id}: a shared service no longer in any definition failed to stop (${err instanceof Error ? err.message : String(err)})`);
+      }
       this.loadDefinition(run, sh.project);
       if (!run.def || !run.approved) continue;
       const names = run.def.services.filter((s) => s.scope === "shared" && sh.desired[s.name] === "running");

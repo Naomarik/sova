@@ -36,6 +36,7 @@ const { noteBuildStarted, readBuild, readBuilds, withWorktreePath } = await impo
 const { seedBuild } = await import("./org-test-fixtures");
 const { envelopeFor, hostOf } = await import("./org-engine");
 const { pipelineInfo } = await import("./project-pipeline");
+const sids = await import("./projects/sids");
 /** A project's builds with their worktree folders on this host. */
 const buildsOf = async (projectId: string, root: string) => Promise.all(readBuilds(projectId).map(async (r) => ({ ...r, worktree: (await withWorktreePath(r, root))?.worktree })));
 
@@ -88,7 +89,7 @@ describe("a project's coding sessions", async () => {
     );
     // No auth here: the prompt is accepted and its turn fails (or it is refused), after everything else.
     if (err) assert.doesNotMatch(err.message, /not prompted|worktree could not/, err.message);
-    const row = (await buildsOf(org.id, project.id, client)).find((r) => r.kind === "operator-coding");
+    const row = (await buildsOf(project.id, client)).find((r) => r.kind === "operator-coding");
     assert.ok(row?.worktree && row.path, JSON.stringify(row));
     started = { path: row.path, sessionId: row.sessionId };
     assert.equal(row.title, "Build the login page", "its title travels with the build, for a host without its file");
@@ -116,7 +117,7 @@ describe("a project's coding sessions", async () => {
   test("the project page lists the worktree; the operator merges it back and removes it", async () => {
     assert.ok(started);
     const p = store.projectOverseerPaths(project.id);
-    const w = (await buildsOf(org.id, project.id, client)).find((r) => r.sessionId === started!.sessionId)!.worktree!;
+    const w = (await buildsOf(project.id, client)).find((r) => r.sessionId === started!.sessionId)!.worktree!;
     let info = await po.projectOverseerInfo(project.id);
     assert.equal(info.worktrees.available, true);
     assert.deepEqual(info.codingModeNow, { mode: "normal", minorModes: ["spec"] });
@@ -196,14 +197,14 @@ describe("a project's coding sessions", async () => {
     await assert.rejects(tool.execute("t1", { gap: "none", prompt: "Build it" }, undefined, undefined, undefined as never), /needs L3/);
     store.patchPoSettings(store.projectOverseerPaths(project.id), { autonomy: "L3", holdMin: 0 });
     // q7: unattended, a build names the gap whose promoted decisions it builds; with none it is refused.
-    await assert.rejects(tool.execute("t1b", { gap: "none", prompt: "Build it" }, undefined, undefined, undefined as never), /Without a gap, a coding session starts only in a turn the operator started/);
+    await assert.rejects(tool.execute("t1b", { gap: "none", prompt: "Build it" }, undefined, undefined, undefined as never), /A coding session starts only in a turn the operator started: ask with sova_card\./);
     // In a turn the operator started it may start one tied to no gap.
     const asked = po.toolsForTest(project.id, { attended: true }).find((t) => t.name === "sova_create_session")!;
     const before = readBuilds(project.id).length;
     await assert.rejects(asked.execute("t2", { gap: "none", prompt: "Build it", mode: "delegate" }, undefined, undefined, undefined as never), /Delegate is off/);
     assert.equal(readBuilds(project.id).length, before, "nothing created");
     await asked.execute("t3", { gap: "none", prompt: "Build the API", title: "API" }, undefined, undefined, undefined as never).catch(() => {});
-    const row = (await buildsOf(org.id, project.id, client)).find((r) => r.kind === "coding");
+    const row = (await buildsOf(project.id, client)).find((r) => r.kind === "coding");
     assert.ok(row?.worktree && row.path, JSON.stringify(row));
     assert.match(row.worktree.branch, /^sova\/api-[0-9a-f]{6}$/);
     assert.equal(row.title, "API");
@@ -262,7 +263,7 @@ describe("a project's coding sessions", async () => {
     await po.ensureProjectOverseer(project.id);
     const pendingBefore = store.readMemo(p).pending;
     const todosBefore = JSON.stringify(readTodos(p.todos));
-    const res = await app.request(`/api/orgs/${org.id}/projects/${project.id}/overseer/coding`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+    const res = await app.request(`/api/projects/${project.id}/overseer/coding`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
     assert.equal(res.status, 201);
     const made = (await res.json()) as { path: string; sessionId: string; worktree?: { branch: string; path: string }; modeNotSet?: string };
     assert.equal(made.modeNotSet, undefined);
@@ -317,7 +318,7 @@ describe("a project's coding sessions", async () => {
     assert.deepEqual([made.worktree, made.note], [undefined, "it isn't a Git repository."]);
     assert.equal(JSON.parse(readFileSync(made.path, "utf8").split("\n")[0]!).cwd, plainRoot);
     assert.doesNotMatch(readFileSync(made.path, "utf8"), /sova-coding-worktree|"type":"message"/);
-    const res = await app.request(`/api/orgs/${org.id}/projects/prj_zzzzzzzz/overseer/coding`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+    const res = await app.request(`/api/projects/prj_zzzzzzzz/overseer/coding`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
     assert.equal(res.status, 404);
   });
 
@@ -347,10 +348,10 @@ describe("a project's coding sessions", async () => {
     writeDefault("delegate", ["align"]);
     // Automatic (no coding mode set): normal · spec, for a project with a spec.
     await po.patchProjectOverseer(project.id, { autonomy: "L3", holdMin: 0, codingMode: null });
-    const projectSid = `project/${org.id}/${project.id}`;
+    const placement = orgs.placementSid(org.id, project.id);
     const itemSid = `item/${org.id}/${project.id}/g_build1`;
     const envelope = envelopeFor(org.id, project.id, { by: "overseer", attended: true });
-    assert.equal((await hostOf(org.id).act(projectSid, "gap/file", { gapId: "g_build1", ideaId: "§gap/login" }, envelope, { settle: true })).taken, true);
+    assert.equal((await hostOf(org.id).act(placement, "gap/file", { gapId: "g_build1", ideaId: "§gap/login" }, envelope, { settle: true })).taken, true);
     const before = readBuilds(project.id).length;
     // A promoted decision of the gap, as its decision session reports it: the statechart builds it itself.
     await hostOf(org.id).act(
@@ -361,7 +362,7 @@ describe("a project's coding sessions", async () => {
       { settle: true },
     );
     let row: ReturnType<typeof readBuilds>[number] | undefined;
-    const sidOf = (r: { sessionId: string }) => `build/${org.id}/${project.id}/${r.sessionId}`;
+    const sidOf = (r: { sessionId: string }) => sids.buildSid(project.id, r.sessionId);
     for (let i = 0; i < 200 && !(row && hostOf(org.id).configuration(sidOf(row))?.includes("ready")); i++) {
       await new Promise((r) => setTimeout(r, 50));
       row = readBuilds(project.id).slice(before).find((r) => r.title === "Build §gap/login");
@@ -372,7 +373,7 @@ describe("a project's coding sessions", async () => {
     assert.ok(hostOf(org.id).configuration(sid)?.includes("ready"), "its setup ended");
     assert.equal(d["modeNotSet"], undefined, "its mode was set");
     assert.deepEqual(modeEntries(row.path).at(-1)?.data.active, { version: 1, mode: "normal", strict: false, minorModes: ["spec"] }, "the project's mode, never the default's");
-    assert.match((await buildsOf(org.id, project.id, client)).find((r) => r.sessionId === row!.sessionId)?.worktree?.branch ?? "", /^sova\/build-gap-login-[0-9a-f]{6}$/, "its branch is named after its title");
+    assert.match((await buildsOf(project.id, client)).find((r) => r.sessionId === row!.sessionId)?.worktree?.branch ?? "", /^sova\/build-gap-login-[0-9a-f]{6}$/, "its branch is named after its title");
     // No auth here: the runtime takes the prompt and its turn fails, so the file may never show it; the statechart's
     // log shows the first prompt sent and answered.
     const rows = hostOf(org.id).log.rows({ sessions: [sid] });
@@ -389,7 +390,7 @@ describe("a project's coding sessions", async () => {
     try {
       await po.patchProjectOverseer(project.id, { autonomy: "L3", holdMin: 0 });
       const envelope = envelopeFor(org.id, project.id, { by: "overseer", attended: true });
-      await hostOf(org.id).act(`project/${org.id}/${project.id}`, "gap/file", { gapId: "g_build2", ideaId: "§gap/logout" }, envelope, { settle: true });
+      await hostOf(org.id).act(orgs.placementSid(org.id, project.id), "gap/file", { gapId: "g_build2", ideaId: "§gap/logout" }, envelope, { settle: true });
       const before = readBuilds(project.id).length;
       await hostOf(org.id).act(
         `item/${org.id}/${project.id}/g_build2`,
@@ -399,7 +400,7 @@ describe("a project's coding sessions", async () => {
         { settle: true },
       );
       let row: ReturnType<typeof readBuilds>[number] | undefined;
-      for (let i = 0; i < 200 && !(row && hostOf(org.id).configuration(`build/${org.id}/${project.id}/${row.sessionId}`)?.includes("ready")); i++) {
+      for (let i = 0; i < 200 && !(row && hostOf(org.id).configuration(sids.buildSid(project.id, row.sessionId))?.includes("ready")); i++) {
         await new Promise((r) => setTimeout(r, 50));
         row = readBuilds(project.id).slice(before).find((r) => r.title === "Build §gap/logout");
       }
@@ -422,7 +423,7 @@ describe("a project's coding sessions", async () => {
     await asked.execute("f21a", { gap: "none", prompt: "Cap test", title: "Cap test" }, undefined, undefined, undefined as never).catch((e: Error) => assert.fail(e.message));
     const row = readBuilds(project.id).slice(before).find((r) => r.title === "Cap test")!;
     assert.ok(row?.path);
-    const sid = `build/${org.id}/${project.id}/${row.sessionId}`;
+    const sid = sids.buildSid(project.id, row.sessionId);
     // The runtime's own agent_start (its session's event; no model runs here) reaches the statechart.
     const seen: string[] = [];
     const off = onAgentStarted((path) => seen.push(path));
@@ -446,7 +447,7 @@ describe("a project's coding sessions", async () => {
     await po.patchProjectOverseer(project.id, { autonomy: "L1", holdMin: 0 });
     const idea = po.toolsForTest(project.id, { attended: true }).find((t) => t.name === "sova_idea")!;
     await idea.execute("gx", { op: "add", id: "§gap/export", title: "Export to CSV" }, undefined, undefined, undefined as never);
-    const itemSid = po.itemOfGap(org.id, project.id, "§gap/export")!;
+    const itemSid = (await import("./overseer-org-part")).itemOfGap(org.id, project.id, "§gap/export")!;
     assert.ok(itemSid);
     const gapBuilds = () => pipelineInfo(org.id, project.id).rows.find((r) => r.gap === "§gap/export")?.builds ?? [];
     // Nothing promoted yet: a plain coding session, as before.

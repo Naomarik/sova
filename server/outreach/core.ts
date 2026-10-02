@@ -166,7 +166,7 @@ export async function send(input: SendInput, channel: Channel = channels.whatsap
 /** A note repeating private text: refused like an owner update (the overseer's prompt holds it). */
 async function noteLeak(orgId: string, projectId: string, note: string): Promise<string | null> {
   if (!note) return null;
-  const { ownerUpdateLeak } = await import("../project-overseer");
+  const { ownerUpdateLeak } = await import("../overseer-org-part");
   return ownerUpdateLeak(orgId, projectId, note)
     ? "This note repeats private text (About this organization, notes, a goal or briefing, a profile or a contact). Write it again in your own words."
     : null;

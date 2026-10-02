@@ -241,9 +241,9 @@ describe("§app.outreach/send: a note, a preview link, the project overseer thro
   });
 
   test("the project overseer: sova_send_to_person waits in the hold, then goes once approved", async () => {
-    await po.ensureProjectOverseer(org.id, project.id);
-    await po.patchProjectOverseer(org.id, project.id, { autonomy: "L1", holdMin: 10 });
-    const tool = po.toolsForTest(org.id, project.id).find((t) => t.name === "sova_send_to_person")!;
+    await po.ensureProjectOverseer(project.id);
+    await po.patchProjectOverseer(project.id, { autonomy: "L1", holdMin: 10 });
+    const tool = po.toolsForTest(project.id).find((t) => t.name === "sova_send_to_person")!;
     const sid = await gathering(ann.id);
     const count = () => logOf().filter((l) => l.by === "project-overseer").length;
     const out = await tool.execute("t1", { person: "Ann", session: sid, note: "Your prototype is ready." } as never, undefined, undefined, undefined as never);
@@ -269,7 +269,7 @@ describe("§app.outreach/links, /log, /send: a preview send's address, its codes
     assert.ok(h, "held on the project statechart");
     return `${h.sessionId}:${h.id}`;
   };
-  const tool = (name: string) => po.toolsForTest(org.id, project.id).find((t) => t.name === name)!;
+  const tool = (name: string) => po.toolsForTest(project.id).find((t) => t.name === name)!;
   const run = (name: string, args: Record<string, unknown>) => tool(name).execute("t", args as never, undefined, undefined, undefined as never);
   const lastBy = (by: string) => logOf().filter((l) => l.by === by).at(-1)!;
 
@@ -277,8 +277,8 @@ describe("§app.outreach/links, /log, /send: a preview send's address, its codes
     if (!fake || fake.exitCode !== null) await startFake(); // one fake sender at a time: the previous block's may still run
     await json("PUT", "/api/outreach", { sender: { local: {} }, paused: false });
     for (let i = 0; i < 50 && (await json("GET", "/api/outreach")).body.sender.state !== "open"; i++) await new Promise((r) => setTimeout(r, 200));
-    await po.ensureProjectOverseer(org.id, project.id);
-    await po.patchProjectOverseer(org.id, project.id, { autonomy: "L1", holdMin: 10 });
+    await po.ensureProjectOverseer(project.id);
+    await po.patchProjectOverseer(project.id, { autonomy: "L1", holdMin: 10 });
   });
 
   test("the address is read once, before the mint: it going blank during the mint's wait (a gateway comeback) still sends", async () => {
@@ -362,7 +362,7 @@ describe("§app.outreach/links, /log, /send: a preview send's address, its codes
   });
 
   test("a sibling an overseer's send makes records that overseer, never the operator", async () => {
-    const { id: overseerId } = await po.ensureProjectOverseer(org.id, project.id);
+    const { id: overseerId } = await po.ensureProjectOverseer(project.id);
     const record = preview(5177);
     await run("sova_send_to_person", { person: "Ann", preview: record.id });
     const out = await run("sova_hold", { op: "approve", id: holdOf(), reason: "test: go now" });
@@ -388,11 +388,11 @@ describe("§app.outreach/links, /log, /send: a preview send's address, its codes
     assert.match(status, /Ann · a note · by the operator · (sent|delivered|read)/);
     assert.doesNotMatch(status, /5550000100|example\.com|https?:|One more thing|new build/, "never a number, a link or a note");
     // A look names each of its own sends that did not go, with the reason, and the next look doesn't repeat them.
-    const look = po.lookAppendix(org.id, project.id);
+    const look = po.lookAppendix(project.id);
     assert.match(look, /Your WhatsApp message to Ann did not go: the preview was turned off \(preview-off\)\./);
     assert.match(look, /Your WhatsApp message to Ann did not go: no preview address was available \(Settings → Public links\) \(preview-address\)\./);
     markSendsNoted(org.id, project.id, sendsToNote(org.id, project.id)); // what runLook does as it sends the look
-    assert.doesNotMatch(po.lookAppendix(org.id, project.id), /did not go/);
+    assert.doesNotMatch(po.lookAppendix(project.id), /did not go/);
     await run("sova_hold", { op: "cancel", id, reason: "test: done" });
   });
 });

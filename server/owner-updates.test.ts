@@ -81,10 +81,10 @@ describe("the updates store", () => {
 });
 
 describe("sova_owner_update, as the project overseer's runtime builds it", async () => {
-  const tool = () => po.toolsForTest(org.id, pa.id).find((t) => t.name === "sova_owner_update")!;
+  const tool = () => po.toolsForTest(pa.id).find((t) => t.name === "sova_owner_update")!;
   const run = (text: string) => tool().execute("t1", { text } as never, undefined, undefined, undefined as never);
-  await po.ensureProjectOverseer(org.id, pa.id);
-  await po.patchProjectOverseer(org.id, pa.id, { autonomy: "L1" });
+  await po.ensureProjectOverseer(pa.id);
+  await po.patchProjectOverseer(pa.id, { autonomy: "L1" });
 
   test("L1; with no owner it refuses: there is no page to post to", async () => {
     assert.equal(TOOL_NEEDS.sova_owner_update, "L1");
@@ -111,7 +111,7 @@ describe("sova_owner_update, as the project overseer's runtime builds it", async
   });
 
   test("unattended: nothing new refuses; a finished conversation is a milestone; then 24 hours", async () => {
-    assert.equal(po.attendedForTest(org.id, pa.id), false);
+    assert.equal(po.attendedForTest(pa.id), false);
     const NOTHING = "Nothing new since the last update: post one when a conversation finishes, a decision is agreed, or a coding session finishes or is merged.";
     await assert.rejects(() => run("The opening hours are agreed."), (e: Error) => e.message === NOTHING);
     const s = await baton.createBaton({ orgId: org.id, projectId: pa.id, to: kim.id, publicTitle: "Hours", goal: "g" }, { mintLink: false });
@@ -126,7 +126,7 @@ describe("sova_owner_update, as the project overseer's runtime builds it", async
     assert.equal(updates.readUpdates(org.id, pa.id).length, 0, "nothing posted while it is held");
     const hold = hostOf(org.id).holds().find((h) => h.event === "owner-update/post")!;
     await hostOf(org.id).act(`project/${org.id}/${pa.id}`, "hold/cancel", { id: hold.id, reason: "test: post it without the hold" }, { by: "operator", attended: true });
-    await po.patchProjectOverseer(org.id, pa.id, { holdMin: 0 });
+    await po.patchProjectOverseer(pa.id, { holdMin: 0 });
     const out = await run("The opening hours are agreed: 9 to 6, closed Mondays. See https://demo.example.test");
     assert.match(JSON.stringify(out.content), /Posted to Alperen Kaya's owner page/);
     await assert.rejects(() => run("More news."), /^Error: An update was posted less than an hour ago: at most one a day\.$/);
@@ -149,7 +149,7 @@ describe("sova_owner_update, as the project overseer's runtime builds it", async
   });
 
   test("its prompt carries the rule and the tool", () => {
-    const prompt = po.renderProjectOverseerPrompt(org.id, pa.id, po.toolsForTest(org.id, pa.id));
+    const prompt = po.renderProjectOverseerPrompt(pa.id, po.toolsForTest(pa.id));
     assert.match(prompt, /sova_owner_update/);
     assert.match(prompt, /at most one per project per\s+day/);
     assert.match(prompt, /never anything\s+from "About this organization"/);

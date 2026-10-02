@@ -173,7 +173,7 @@ describe("the About text reaches the project overseer's prompt and nothing else"
   const tony = await orgs.addPerson(org.id, { name: "Tony Reyes", role: "IT" });
   const ana = await orgs.addPerson(org.id, { name: "Ana Ruiz", role: "Sales" });
   await orgs.patchOrg(org.id, { about: ABOUT });
-  await po.ensureProjectOverseer(org.id, project.id);
+  await po.ensureProjectOverseer(project.id);
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 
@@ -181,14 +181,14 @@ describe("the About text reaches the project overseer's prompt and nothing else"
   const handoffs: { label: string; sessionId: string; path: string; token?: string; person: string }[] = [];
 
   test("positive control: the project overseer's model gets the text in its system prompt", async () => {
-    const { path } = await po.ensureProjectOverseer(org.id, project.id);
+    const { path } = await po.ensureProjectOverseer(project.id);
     const got = await turn(path, "What is pending?");
     assert.ok(got.some((c) => c.includes(MARK) && c.includes("pay late")), "the marker is in what its model was sent");
     assert.ok(got.every((c) => systemOf(c).includes(MARK)), "in its system prompt, on every request");
   });
 
   test("a gathering session the overseer starts: its model never gets it", async () => {
-    const tool = po.toolsForTest(org.id, project.id).find((t) => t.name === "sova_start_gathering")!;
+    const tool = po.toolsForTest(project.id).find((t) => t.name === "sova_start_gathering")!;
     const out = await tool.execute("t1", { gap: "none", person: "Tony Reyes", why: "Nobody has said this yet.", public_title: "Servers", goal: "Find where the ledger runs", question: "Where does it run?" }, undefined, undefined, undefined as never);
     const id = (out.details as { id: string }).id;
     const hit = baton.batonById(id)!;
@@ -210,7 +210,7 @@ describe("the About text reaches the project overseer's prompt and nothing else"
     const p = store.projectOverseerPaths(project.id);
     addTodo({ text: "Ask Tony about backups" }, p.todos, p.ideas);
     const todo = readTodos(p.todos).todos.at(-1)!;
-    const made = await po.sendItem(org.id, project.id, { todoId: todo.id, to: tony.id, publicTitle: "Backups", question: "How are backups made?" }, (t) => `/h/${t}`);
+    const made = await po.sendItem(project.id, { todoId: todo.id, to: tony.id, publicTitle: "Backups", question: "How are backups made?" }, (t) => `/h/${t}`);
     const token = made.links[0]!.link.slice(3);
     handoffs.push({ label: "send", sessionId: made.sessionId, path: made.path, token, person: tony.id });
     for (const got of await turn(made.path, "Nightly, to a USB disk.", { sessionId: made.sessionId, personId: tony.id })) assert.ok(!leaks(got), "send to person: a model request");
@@ -292,8 +292,8 @@ describe("the About text reaches the project overseer's prompt and nothing else"
     addTodo({ text: "Add a CSV export" }, p.todos, p.ideas);
     const todo = readTodos(p.todos).todos.at(-1)!;
     // The overseer's runtime runs the stub model, which a coding session would inherit: close it first.
-    await disposeHeldChat((await po.ensureProjectOverseer(org.id, project.id)).path, "closed by the test");
-    const made = await po.codeItem(org.id, project.id, { todoId: todo.id });
+    await disposeHeldChat((await po.ensureProjectOverseer(project.id)).path, "closed by the test");
+    const made = await po.codeItem(project.id, { todoId: todo.id });
     assert.equal(made.notPrompted, undefined, "its first prompt was sent");
     await (await acquireChat(made.path)).session.waitForIdle();
     await until(() => (sent.get(made.path)?.length ?? 0) > 0);

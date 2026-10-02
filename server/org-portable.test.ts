@@ -77,10 +77,10 @@ describe("clone + attach = the whole organization", async () => {
   const project = await orgs.addProject(a.id, { name: "Portal", root: join(root, "proj-a") });
   const c1 = await baton.createBaton({ orgId: a.id, projectId: project.id, to: tony.id, publicTitle: "Payroll day", goal: "Find the payroll day" });
   const again = baton.rotateLink(c1.sessionId);
-  const overseer = await po.ensureProjectOverseer(a.id, project.id);
+  const overseer = await po.ensureProjectOverseer(project.id);
   // A build of the project, merged (its worktree's folder was this host's).
   await seedBuild(a.id, project.id, { sessionId: "code-moved", kind: "coding", title: "Moved build", worktree: { path: join(root, "wt-a"), branch: "sova/moved-abc123", base: "abc", target: "main" }, merged: { commit: "c0ffee" } });
-  await po.patchProjectOverseer(a.id, project.id, { autonomy: "L2" });
+  await po.patchProjectOverseer(project.id, { autonomy: "L2" });
   // A conflict asking Tony in its settle session (the conflict statechart starts it).
   const seeded = await seedConflicts(a.id, project.id, [{ id: "cf_moved", orgId: a.id, projectId: project.id, areaKey: "payroll", a: "x", b: "y", p: 0.9, state: "open", routedTo: tony.id, routeReason: "owner", batonSessionId: randomUUID(), createdAt: "2026-09-27T00:00:00.000Z" }]);
   await orgs.patchOrg(a.id, { about: "Northwind closes its books on the 5th." });
@@ -141,8 +141,8 @@ describe("clone + attach = the whole organization", async () => {
     assert.equal(baton.batonById(c1.sessionId)?.row.publicTitle, "Payroll day");
     assert.equal(orgs.readOrgAbout(b.id), "Northwind closes its books on the 5th.", "the About text came along");
     assert.deepEqual(orgs.readOrgHistory(b.id).map((c) => c.to), ["Northwind closes its books on the 5th."], "and its history");
-    assert.match(po.renderProjectOverseerPrompt(b.id, project.id, []), /Northwind closes its books on the 5th\./, "its overseer here reads it");
-    const info = await po.projectOverseerInfo(b.id, project.id);
+    assert.match(po.renderProjectOverseerPrompt(project.id, []), /Northwind closes its books on the 5th\./, "its overseer here reads it");
+    const info = await po.projectOverseerInfo(project.id);
     assert.equal(info.exists, true);
     assert.equal(info.id, overseer.id);
     assert.equal(info.settings.autonomy, "L2", "its setting came along");
@@ -151,20 +151,20 @@ describe("clone + attach = the whole organization", async () => {
   });
 
   test("its project overseers are paused at L0 until the operator sets a level on this host", async () => {
-    const info = await po.projectOverseerInfo(b.id, project.id);
+    const info = await po.projectOverseerInfo(project.id);
     assert.ok(info.paused, "paused since the attach");
     assert.equal(info.effective.autonomy, "L0");
     assert.match(info.effective.reason ?? "", /attached on this host/);
     // Setting the SAME level resumes it: the gesture is what counts.
-    const resumed = await po.patchProjectOverseer(b.id, project.id, { autonomy: "L2" });
+    const resumed = await po.patchProjectOverseer(project.id, { autonomy: "L2" });
     assert.equal(resumed.paused, null);
     assert.equal(resumed.effective.autonomy, "L2");
     // Another settings change does not count as setting the level: only autonomy resumes.
     await orgs.detachOrg(b.id);
     await orgs.attachOrg({ dir: bDir });
-    await po.patchProjectOverseer(b.id, project.id, { watch: false });
-    assert.ok((await po.projectOverseerInfo(b.id, project.id)).paused, "a watch toggle leaves it paused");
-    await po.patchProjectOverseer(b.id, project.id, { autonomy: "L1", watch: true });
+    await po.patchProjectOverseer(project.id, { watch: false });
+    assert.ok((await po.projectOverseerInfo(project.id)).paused, "a watch toggle leaves it paused");
+    await po.patchProjectOverseer(project.id, { autonomy: "L1", watch: true });
   });
 
   test("an org created on this host is not paused", async () => {
@@ -188,7 +188,7 @@ describe("clone + attach = the whole organization", async () => {
     assert.equal(cwdOverride(batonPath), orgs.orgDir(b.id));
     const chat = await acquireChat(batonPath);
     assert.equal(chat.session.sessionManager.getCwd(), orgs.orgDir(b.id));
-    const poPath = (await po.projectOverseerInfo(b.id, project.id)).path!;
+    const poPath = (await po.projectOverseerInfo(project.id)).path!;
     assert.equal(cwdOverride(poPath), join(root, "proj-b"));
     const poChat = await acquireChat(poPath);
     assert.equal(poChat.special, "project-overseer");

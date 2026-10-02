@@ -1,4 +1,6 @@
 import type { Context, Hono } from "hono";
+import { sendItem } from "./overseer-org-part";
+import type { ItemSendInput } from "../shared/project-overseer";
 import { OPERATOR, type BatonInfo, type BatonSession, type BatonStartInput, type OfferInfo, type OfferLink } from "../shared/baton";
 import { statSync } from "node:fs";
 import { join } from "node:path";
@@ -40,7 +42,7 @@ import {
   setOperatorName,
   type OperatorBy,
 } from "./orgs";
-import { OVERSEER_SENDER_HEADER, overseerSender } from "./overseer";
+import { OVERSEER_SENDER_HEADER, overseerSender } from "./overseer-sender";
 import { batonData, startedOf, toldOf } from "./baton-told";
 import { OVERSEER_CARD_HEADER } from "./overseer-tools";
 import type { EnvelopeCard } from "./org-envelope";
@@ -527,6 +529,18 @@ export function registerOrgRoutes(app: Hono<any>): void {
       if (!("personId" in b)) throw new OrgError("personId is required (null: none)");
       await patchPlacement(id, p(c, "pid"), { stakeholder: b.personId }, operatorBy(c));
       return c.json(await orgPage(id));
+    }),
+  );
+  // Send to person… on a placed project's idea or to-do: a gathering session the operator owns, linked to the item.
+  app.post(
+    "/api/orgs/:id/projects/:pid/items/send",
+    handle(async (c) => {
+      const b = (await body(c)) as unknown as ItemSendInput;
+      const to = b.to;
+      if (!(typeof to === "string" && to) && !(Array.isArray(to) && to.length && to.every((x) => typeof x === "string"))) return c.json({ error: "to must be a person id or a list of them" }, 400);
+      // A minted link carries its warning when it may not open from outside (§app.baton/links).
+      const { result, outcome } = await awaitShareLinks(() => sendItem(p(c, "id"), p(c, "pid"), b, linkUrl));
+      return c.json({ ...result, ...(result.links.length ? linkWarning(outcome) : {}) }, 201);
     }),
   );
   app.put(

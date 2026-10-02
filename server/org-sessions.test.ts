@@ -135,7 +135,7 @@ describe("SessionSummary.org", async () => {
   });
 
   test("the overseer's budget and caps read only its own coding rows", () => {
-    const rows = readBuilds(org.id, project.id);
+    const rows = readBuilds(project.id);
     assert.deepEqual(rows.map((r) => r.kind).sort(), ["coding", "operator-coding"]);
     // codingOf (project-overseer.ts) filters `kind === "coding"`: the one row the overseer started.
     assert.deepEqual(rows.filter((r) => r.kind === "coding").map((r) => r.sessionId), [coding.id]);

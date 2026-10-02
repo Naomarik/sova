@@ -416,7 +416,7 @@ describe("the organization tools (§app.overseer/org-tools)", async () => {
     assert.ok((await call("sova_project_overseer", { op: "idea", action: "add", org: org.id, project: project.id, id: "§gap/exports", title: "Exports" })).ok);
     const todo = await call("sova_project_overseer", { op: "todo", action: "add", org: org.id, project: project.id, text: "Ask about backups" });
     assert.ok(todo.ok, todo.text);
-    const { path } = await po.ensureProjectOverseer(org.id, project.id);
+    const { path } = await po.ensureProjectOverseer(project.id);
     await stubbed(path);
     const sent = await call("sova_project_overseer", { op: "message", org: org.id, project: project.id, text: "Please check the backups." });
     assert.ok(sent.ok, sent.text);
@@ -426,7 +426,7 @@ describe("the organization tools (§app.overseer/org-tools)", async () => {
     const lines = readFileSync(path, "utf8").trim().split("\n").map((l) => JSON.parse(l));
     const marker = lines.find((l) => l.customType === OVERSEER_SENT_ENTRY);
     assert.equal(marker.data.overseerId, OVERSEER_ID, "marked as the Overseer's");
-    assert.equal(po.attendedForTest(org.id, project.id), true, "the run it opened is the operator's");
+    assert.equal(po.attendedForTest(project.id), true, "the run it opened is the operator's");
   });
 
   test("the message route: 403 without the secret; /commands, no overseer and prompt-route writes refused", async () => {
@@ -437,7 +437,7 @@ describe("the organization tools (§app.overseer/org-tools)", async () => {
     const slash = await overseer.requestAsOverseerForTest(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text: "/clear" }) });
     assert.equal(slash.status, 400);
     assert.match(((await slash.json()) as { error: string }).error, /Send words; use op clear to clear it\./);
-    const { path } = await po.ensureProjectOverseer(org.id, project.id);
+    const { path } = await po.ensureProjectOverseer(project.id);
     const viaPrompt = await sessionPrompt.promptSession(path, "hello", OVERSEER_ID);
     assert.deepEqual(viaPrompt, { ok: false, status: 409, error: "That is a project overseer's own conversation." });
     mkdirSync(join(root, "proj-b"), { recursive: true });
@@ -460,7 +460,7 @@ describe("the organization tools (§app.overseer/org-tools)", async () => {
     const row = rows.find((r) => r.sessionId === (made.details as { session: string }).session)!;
     assert.equal(row.kind, "operator-coding");
     assert.equal(row.via, "overseer");
-    const info = await po.projectOverseerInfo(org.id, project.id);
+    const info = await po.projectOverseerInfo(project.id);
     assert.equal(info.worktrees.sessions.find((s) => s.sessionId === row.sessionId)?.via, "overseer");
     // The page's own Start Coding Session still needs an item.
     const page = await app.request(`/api/orgs/${org.id}/projects/${project.id}/overseer/items/code`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ prompt: "x", title: "y" }) });
@@ -527,7 +527,7 @@ describe("archive a project (§app.organizations/archive)", async () => {
     const coding = await app.request(`/api/orgs/${org.id}/projects/${project.id}/overseer/coding`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
     assert.equal(coding.status, 409, "New Coding Session too");
     assert.deepEqual(await coding.json(), { error: "Old Site is archived. Unarchive it first." });
-    assert.deepEqual(await po.lookNow(org.id, project.id, true), { started: false, why: "the project is archived" });
+    assert.deepEqual(await po.lookNow(project.id, true), { started: false, why: "the project is archived" });
     const msg = await overseer.requestAsOverseerForTest(`/api/orgs/${org.id}/projects/${project.id}/overseer/message`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text: "hi" }) });
     assert.equal(msg.status, 409);
   });
@@ -542,7 +542,7 @@ describe("archive a project (§app.organizations/archive)", async () => {
   });
 
   test("its composer is closed while archived (the project overseer's own)", async () => {
-    const { path } = await po.ensureProjectOverseer(org.id, project.id);
+    const { path } = await po.ensureProjectOverseer(project.id);
     await orgs.setProjectArchived(org.id, project.id, true);
     const chat = await acquireChat(path);
     assert.equal(chat.specialEntry?.composerClosed?.(path), "Old Site is archived. Unarchive it to use its overseer.");

@@ -27,6 +27,9 @@ const { settled } = await import("./workspace-git");
 const baton = await import("./baton");
 const { envelopeFor, holdByRef, hostOf } = await import("./org-engine");
 const { readView } = await import("./share/hub");
+const { editProject } = await import("./projects/spaces");
+const { watchSid } = await import("./projects/sids");
+const orgPart = await import("./overseer-org-part");
 const { fakeLooks, noteWatchReason, seedBuild } = await import("./org-test-fixtures");
 const { stateRoot } = await import("./state-root");
 
@@ -77,7 +80,8 @@ describe("a project overseer", async () => {
     const chat = await acquireChat(path);
     assert.equal(chat.special, "project-overseer");
     assert.equal(chat.overseer, false, "not the Overseer");
-    const want = [...Object.keys(TOOL_NEEDS), ...PO_BUILTINS].sort();
+    // A placed project: the org part's reads (no statechart act names them) come with its tools.
+    const want = [...new Set([...Object.keys(TOOL_NEEDS), "sova_decisions", "sova_offer", "sova_send_status", ...PO_BUILTINS])].sort();
     assert.deepEqual([...chat.session.getActiveToolNames()].sort(), want);
     assert.deepEqual(chat.session.getAllTools().map((t) => t.name).sort(), want, "no bash, edit, write or extension tool");
     const loaded = chat.runtime.services.resourceLoader.getExtensions().extensions.map((e) => e.path);
@@ -201,8 +205,8 @@ describe("its reach: the project root only", async () => {
     mkdirSync(join(root, "ws4", "inner"), { recursive: true });
     mkdirSync(join(agentDir, "sova", "x"), { recursive: true });
     for (const bad of [join(root, "ws4"), join(root, "ws4", "inner"), root, join(agentDir, "sova", "x")])
-      await assert.rejects(orgs.addProject(org.id, { name: "Bad", root: bad }), /must not be, hold or sit inside/, bad);
-    await assert.rejects(orgs.patchProject(org.id, project.id, { root: join(root, "ws4") }), /must not be/);
+      await assert.rejects(orgs.addProject(org.id, { name: "Bad", root: bad }), /(is inside|holds) .*, which Sova keeps for itself, so it can't be a project\.|Sova.s own state can.t be a project/, bad);
+    await assert.rejects(editProject(project.id, { root: join(root, "ws4") }), /which Sova keeps for itself/);
     assert.equal((await orgs.addProject(org.id, { name: "Beside", root: box })).root, box, "beside the workspace is fine");
   });
 });
@@ -219,7 +223,7 @@ describe("the operator's to-dos and ideas are their own list, never a reason to 
   const app = new Hono();
   registerProjectOverseerRoutes(app);
   const post = (what: string, b: unknown) =>
-    app.request(`/api/orgs/${org.id}/projects/${project.id}/overseer/${what}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(b) });
+    app.request(`/api/projects/${project.id}/overseer/${what}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(b) });
 
   test("adding a to-do or an idea notes no reason; the prompt carries no to-do text; a look's message never points at them", async () => {
     const before = store.readMemo(p).pending.length;
@@ -287,7 +291,7 @@ describe("its gathering sessions, as the person sees them", async () => {
   test("people's events are kept even while it is busy; its own reconcile events only when idle; repeats fold", async () => {
     const p = store.projectOverseerPaths(project.id);
     const before = store.readMemo(p).pending.length;
-    const watch = `watch/${org.id}/${project.id}`;
+    const watch = watchSid(project.id);
     const done = { kind: "baton/done", params: { title: "Payment terms" }, key: "baton/done:pt", by: "person" };
     const drafted = { kind: "reconcile/drafted", params: { n: 2 }, key: "reconcile/drafted:a,b", by: "overseer" };
     // Busy: one of its runs is going on.
@@ -345,9 +349,9 @@ describe("its gathering sessions, as the person sees them", async () => {
       batonTools(sid, () => {})
         .find((t) => t.name === "hand_to")!
         .execute("id", { gap: "none", person: "operator", question: "Please build the journal page.", briefing: "Tony asked." } as never, undefined, undefined, { sessionManager: { getBranch: () => [] } } as never);
-    const theirs = await baton.createBaton({ projectId: project.id, to: tony.id, publicTitle: "Operator's", goal: "g" });
+    const theirs = await baton.createBaton({ orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "Operator's", goal: "g" });
     await handToOperator(theirs.sessionId);
-    const mine = await baton.createBaton({ projectId: project.id, to: tony.id, publicTitle: "Journal", goal: "g" }, { mintLink: false, envelope: envelopeFor(org.id, project.id, { by: "overseer", attended: true }) });
+    const mine = await baton.createBaton({ orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "Journal", goal: "g" }, { mintLink: false, envelope: envelopeFor(org.id, project.id, { by: "overseer", attended: true }) });
     await baton.takeBack(mine.sessionId); // the operator's own move (Take back): not news
     assert.deepEqual(store.readMemo(p).pending.slice(before), []);
     await baton.handTo(mine.sessionId, tony.id, "Back to you", "");
@@ -358,11 +362,11 @@ describe("its gathering sessions, as the person sees them", async () => {
   });
 
   test("the prompt names the project's main stakeholder while they are active", async () => {
-    await orgs.patchProject(org.id, project.id, { stakeholder: tony.id });
+    await orgs.patchPlacement(org.id, project.id, { stakeholder: tony.id });
     try {
       assert.match(po.renderProjectOverseerPrompt(project.id, []), /Main stakeholder: Tony: decides every area of this project that no one else on the roster decides\./);
     } finally {
-      await orgs.patchProject(org.id, project.id, { stakeholder: null });
+      await orgs.patchPlacement(org.id, project.id, { stakeholder: null });
     }
     assert.doesNotMatch(po.renderProjectOverseerPrompt(project.id, []), /Main stakeholder/);
   });
@@ -373,17 +377,17 @@ describe("its gathering sessions, as the person sees them", async () => {
     const t = addTodo({ text: "Ask Tony (gap: he stalls on approvals) about net-60" }, p.todos, p.ideas);
     const url = (tok: string) => `/h/${tok}`;
     for (const body of [{ todoId: t.id, to: tony.id }, { todoId: t.id, to: tony.id, publicTitle: "Payment terms" }, { todoId: t.id, to: tony.id, question: "Which terms?" }, { todoId: t.id, to: tony.id, publicTitle: " ", question: "q" }]) {
-      await assert.rejects(() => po.sendItem(org.id, project.id, body as never, url), (err: unknown) => err instanceof orgs.OrgError && err.status === 400 && /publicTitle and question are required/.test(err.message), JSON.stringify(body));
+      await assert.rejects(() => orgPart.sendItem(org.id, project.id, body as never, url), (err: unknown) => err instanceof orgs.OrgError && err.status === 400 && /publicTitle and question are required/.test(err.message), JSON.stringify(body));
     }
     assert.equal(readTodos(p.todos).todos.find((x) => x.id === t.id)?.sessionId, undefined, "nothing started, nothing linked");
-    const made = await po.sendItem(org.id, project.id, { todoId: t.id, to: tony.id, publicTitle: "Payment terms", question: "Which payment terms do we offer?" }, url);
+    const made = await orgPart.sendItem(org.id, project.id, { todoId: t.id, to: tony.id, publicTitle: "Payment terms", question: "Which payment terms do we offer?" }, url);
     assert.equal(made.links.length, 1);
     const row = baton.batonById(made.sessionId)!.row;
     assert.equal(row.publicTitle, "Payment terms");
     assert.equal(row.model, "ollama-cloud/own-model", "Send to person… too");
     await po.patchProjectOverseer(project.id, { gatheringModel: "ollama-cloud/talk-model", gatheringThinking: "minimal" });
     const t2 = addTodo({ text: "Second" }, p.todos, p.ideas);
-    const made2 = await po.sendItem(org.id, project.id, { todoId: t2.id, to: tony.id, publicTitle: "Bank", question: "Which bank?" }, url);
+    const made2 = await orgPart.sendItem(org.id, project.id, { todoId: t2.id, to: tony.id, publicTitle: "Bank", question: "Which bank?" }, url);
     assert.deepEqual([baton.batonById(made2.sessionId)!.row.model, baton.batonById(made2.sessionId)!.row.thinking], ["ollama-cloud/talk-model", "minimal"]);
     const view = JSON.stringify(await readView(row, baton.batonById(made.sessionId)!.dir, tony.id));
     assert.doesNotMatch(view, /stalls|gap/, "the item's own text never reaches the person");
@@ -405,7 +409,7 @@ describe("its gathering sessions, as the person sees them", async () => {
       po.setClockForTest(null);
     }
     // The old ticker's "watching is off" was its own return value, never recorded or shown: the watch statechart's switch is that rule now.
-    assert.ok(hostOf(org.id).configuration(`watch/${org.id}/${project.id}`)?.includes("watch-off"), "watching is off");
+    assert.ok(hostOf(org.id).configuration(watchSid(project.id))?.includes("watch-off"), "watching is off");
     assert.equal(looks.length, 0, "no look while watching is off");
     assert.deepEqual(store.readMemo(p).pending, before.pending);
     assert.deepEqual(store.readMemo(p).lastRun, before.lastRun);
@@ -423,7 +427,7 @@ describe("promotion: an out-of-area decision is never the overseer's", async () 
   const ana = await orgs.addPerson(org.id, { name: "Ana", role: "IT", decides: ["hosting"] });
   await po.ensureProjectOverseer(project.id);
   // A person with no say over invoicing states an invoicing rule in her own gathering session.
-  const b = await baton.createBaton({ projectId: project.id, to: ana.id, publicTitle: "Hosting", goal: "g", question: "q" });
+  const b = await baton.createBaton({ orgId: org.id, projectId: project.id, to: ana.id, publicTitle: "Hosting", goal: "g", question: "q" });
   const ts = new Date().toISOString();
   const last = JSON.parse(readFileSync(b.path, "utf8").trim().split("\n").at(-1)!).id;
   const lines = [
@@ -485,7 +489,7 @@ describe("the coding sessions' model", () => {
 describe("the store", () => {
   test("ids are path segments only in their own shape", () => {
     assert.throws(() => store.projectOverseerPaths("../../etc", "/ws"), /Unknown project/);
-    assert.throws(() => store.projectOverseerPaths("../o", "prj_x", "/ws"), /Unknown project/);
+    assert.throws(() => store.projectOverseerPaths("prj_x/../o", "/ws"), /Unknown project/);
   });
   test("a hand-edited settings file never breaks it: bad fields fall back", () => {
     const s = store.parsePoSettings({ autonomy: "L7", caps: { gatherPerTurn: -3, createPerTurn: 4 }, watch: "yes" });
@@ -537,7 +541,7 @@ describe("limits through PATCH, held items and their retry", async () => {
     assert.equal(readFileSync(p.settings, "utf8"), before, "a refused PATCH writes nothing");
   });
 
-  const watch = `watch/${org.id}/${project.id}`;
+  const watch = watchSid(project.id);
   /** Run `f` with the engines' clock at `at`, their due timers fired first. */
   const at = async <T>(t: number, f: () => Promise<T> | T = () => undefined as T): Promise<T> => {
     po.setClockForTest(() => t);
@@ -653,7 +657,7 @@ describe("limits through PATCH, held items and their retry", async () => {
     assert.match(prompt, /wait past the hold for your review: approve\s+them early or cancel them with `sova_hold` \(a reason is required\)/);
     assert.match(prompt, /`gap: "none"` builds only in a\s+turn the operator started\./);
     assert.match(prompt, /`sova_correct` and a reason/);
-    assert.match(prompt, /\(`sova_set_state`\) is only for a turn the operator started/);
+    assert.match(prompt, /\(`sova_set_state`\) is\s+only for a turn the operator started/);
     for (const t of ["sova_pipeline", "sova_hold", "sova_correct", "sova_set_state"]) assert.match(prompt, new RegExp(t), t);
   });
 
@@ -683,7 +687,7 @@ describe("a project with no overseer conversation never looks", async () => {
       po.setClockForTest(null);
     }
     assert.equal(looks.length, 0);
-    assert.ok(hostOf(org.id).configuration(`watch/${org.id}/${project.id}`)?.includes("no-overseer"));
+    assert.ok(hostOf(org.id).configuration(watchSid(project.id))?.includes("no-overseer"));
   });
 });
 
@@ -695,7 +699,7 @@ describe("the watch loop's decision, on its watch statechart", async () => {
   await po.ensureProjectOverseer(project.id);
   await po.patchProjectOverseer(project.id, { autonomy: "L1" });
   const p = store.projectOverseerPaths(project.id);
-  const watch = `watch/${org.id}/${project.id}`;
+  const watch = watchSid(project.id);
   const { looks } = fakeLooks(org.id);
   let t = Date.now() + 3 * 86_400_000;
   /** The engines' clock moved to `t`, their due timers fired. */

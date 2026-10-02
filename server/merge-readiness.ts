@@ -8,6 +8,7 @@ import { isTopicBatch } from "../shared/topic-message";
 import { normalizeMergeDetails, restoreActive, type TrackedWorktree, WORKTREE_MERGE_MESSAGE, WORKTREES_ENTRY_TYPE } from "../pi-config/extensions/worktrees/state.ts";
 import { deferredOf, followUpFor, type FollowUpInput, type MergeFollowUps } from "./merge-followup";
 import { asksUserOf } from "./signals-store";
+import { readSpecAssessmentObservations } from "./spec-assessment-observations";
 import { activeBranch, type Entry } from "./transcript";
 import { execGit, type GitRunner, worktreeInsights, type WorktreeInsights } from "./worktrees";
 
@@ -480,6 +481,8 @@ export interface ReadinessDeps {
   terminal?: (s: SessionSummary) => boolean;
   /** The attention answer for the session's last classified reply. */
   asksUser?: (sessionId: string) => { turnId: string; asks: boolean } | undefined;
+  /** Separate read-only facts; never used as inputs to the readiness rules. */
+  specObservations?: typeof readSpecAssessmentObservations;
 }
 
 const defaultDeps = (): ReadinessDeps => ({
@@ -489,6 +492,7 @@ const defaultDeps = (): ReadinessDeps => ({
   processStart: PROCESS_START_MS,
   now: Date.now,
   asksUser: (id) => asksUserOf(id),
+  specObservations: readSpecAssessmentObservations,
 });
 
 let deps: ReadinessDeps = defaultDeps();
@@ -598,7 +602,10 @@ export async function computeReadiness(s: SessionSummary, facts: FileFacts): Pro
   const followUp = newest ? followUpFor(s.id, newest.id) : undefined;
   const lastReplyAt = reply?.at ?? (Date.parse(s.lastActiveAt) || 0);
   checksBySession.set(s.path, { ...(facts.lastCheck ? { lastCheck: facts.lastCheck } : {}), heads });
-  return sessionReadinessOf(trees, { ...(newest ? { lastMerge: { at: newest.at, branch: newest.branch } } : {}), restartPending, pushPending, followUp }, lastReplyAt);
+  const readiness = sessionReadinessOf(trees, { ...(newest ? { lastMerge: { at: newest.at, branch: newest.branch } } : {}), restartPending, pushPending, followUp }, lastReplyAt);
+  if (!readiness || !deps.specObservations) return readiness;
+  const specObservations = await deps.specObservations(s, own.map(t => t.path)).catch(() => ({ state: "incomplete" as const, items: [], reasons: ["structured spec observation read failed"] }));
+  return specObservations ? { ...readiness, specObservations } : readiness;
 }
 
 /** Ask the follow-up check for every merge card with a reply it hasn't answered. */

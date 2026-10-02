@@ -3112,9 +3112,15 @@ test("the monitor: roster with context, thresholds and usage; notices recorded; 
 		assert.match(roster.text, /Thresholds \(team defaults, read now\): wrap-up at 60% context · check every 10 min · usage pause when no login of a provider has headroom \(a non-weekly window at 90%, a 7d window at 100%\), resume 5 min after the reset/);
 		assert.ok(roster.text.includes(`claude 5h: 92%, resets ${reset} — AT/OVER the 90% pause threshold`), roster.text);
 		assert.doesNotMatch(roster.text, /openai/, "only providers this team's models spend from");
-		// Thresholds are re-read: a later file change shows at the next roster.
-		fs.writeFileSync(path.join(h.agentDir, "team-defaults.json"), JSON.stringify({ ...DEFAULTS_FILE, monitor: { ...DEFAULTS_FILE.monitor, contextPct: 70 } }));
-		assert.match((await h.ask("ag_03", { type: "roster" })).text, /wrap-up at 70% context/);
+		// Thresholds are re-read: editing the chat's profile shows at the next roster; a legacy
+		// team-defaults.json written later does not move it (the library shadows the legacy file).
+		const lib = JSON.parse(fs.readFileSync(path.join(h.agentDir, "subagent-profiles.json"), "utf8"));
+		lib.profiles[0].teams.monitor.contextPct = 70;
+		fs.writeFileSync(path.join(h.agentDir, "subagent-profiles.json"), JSON.stringify(lib));
+		fs.writeFileSync(path.join(h.agentDir, "team-defaults.json"), JSON.stringify({ ...DEFAULTS_FILE, monitor: { ...DEFAULTS_FILE.monitor, contextPct: 80 } }));
+		const reread = (await h.ask("ag_03", { type: "roster" })).text;
+		assert.match(reread, /wrap-up at 70% context/);
+		assert.doesNotMatch(reread, /wrap-up at 80%/, "the library shadows a legacy team-defaults.json written after seeding");
 		assert.equal((await h.ask("ag_02", { type: "roster" })).ok, false, "a worker has no roster");
 		assert.match((await h.call("team_list")).content[0].text, /ag_01 coordinator \(coordinator\) \[claude-code\] working \(running\) · context 640k\/1M \(64%\)/);
 		// Notices: delivered with their kind, recorded as actions; pause/resume also as session events.
@@ -3670,8 +3676,88 @@ test("an idle team holds the monitor's checks until a teammate works again; a pa
 	} finally { await h.cleanup(); }
 });
 
+test("members default: member's own model, then the call's, then the profile's; a denied default is said, never used, and a successor keeps the tuple it ran on", async () => {
+	const h = coordinatedHarness(DEFAULTS_FILE);
+	try {
+		// The seeded "My setup" configures no members default; give it one: pi/test/model/high.
+		// (Seeding is lazy: a first read — here /team defaults — writes the library.)
+		await h.commands.get("team").handler("defaults", h.ctx);
+		const libPath = path.join(h.agentDir, "subagent-profiles.json");
+		const lib = JSON.parse(fs.readFileSync(libPath, "utf8"));
+		lib.profiles[0].members = { backend: "pi", model: "test/model", effort: "high" };
+		fs.writeFileSync(libPath, JSON.stringify(lib));
+		const created = await h.call("team_create", {
+			name: "Crew", objective: "Ship",
+			members: [
+				{ role: "dev", prompt: "build" },
+				{ role: "own", prompt: "mine", backend: "pi", model: "test/model", effort: "low" },
+				{ role: "cc", prompt: "claude work", backend: "claude-code" },
+			],
+		});
+		assert.match(created.content[0].text, /Members default: dev run on pi\/test\/model\/high \(subagent profile "My setup"\)/);
+		const dev = h.worker("ag_02"), own = h.worker("ag_03"), cc = h.worker("ag_04");
+		assert.deepEqual([dev.backend, dev.model, dev.effort], ["pi", "test/model", "high"], "the profile fills the member nobody gave a model");
+		assert.deepEqual([own.backend, own.model, own.effort], ["pi", "test/model", "low"], "the member's own choice wins over the profile");
+		assert.equal(cc.model, "sonnet", "a member naming another backend keeps to it: the backend's own prepare fills the model (the fixture's sonnet), never the pi default");
+		assert.notEqual(cc.effort, "high");
+		const entry = h.appended.filter((e) => e.customType === "subagents-team-v1" && e.data.op === "create").at(-1);
+		const recOf = (id: string) => entry.data.members.find((m: any) => m.workerId === id);
+		assert.deepEqual(recOf("ag_02").modelOverride, {}, "a profile-filled member records no explicit choice");
+		assert.deepEqual(recOf("ag_03").modelOverride, { backend: "pi", model: "test/model", effort: "low" }, "the member's own choice is recorded apart from the resolved tuple");
+		assert.deepEqual(recOf("ag_04").modelOverride, { backend: "claude-code" }, "an explicit backend is recorded");
+		// team_add reads the current profile too.
+		const add = await h.call("team_add", { team: "team_01", members: [{ role: "docs", prompt: "write" }] });
+		assert.match(add.content[0].text, /Members default: docs run on pi\/test\/model\/high/);
+		assert.equal(h.worker("ag_06").model, "test/model");
+		// A default that can't run here is said, never used: the member runs on the parent's model.
+		lib.profiles[0].members = { backend: "pi", model: "zai/not-here", effort: "low" };
+		fs.writeFileSync(libPath, JSON.stringify(lib));
+		const denied = await h.call("team_add", { team: "team_01", members: [{ role: "late", prompt: "join" }] });
+		assert.match(denied.content[0].text, /Members default pi\/zai\/not-here\/low \(subagent profile "My setup"\) can't run here — unknown model zai\/not-here in this session's registry — so late run on this session's model\./);
+		assert.equal(h.worker("ag_07").model, "test/model", "a denied default is not used: the member runs on the session's model (the harness's test/model), as the line said");
+		// Succession under a working default: the profile-filled member's successor takes the CURRENT default…
+		lib.profiles[0].members = { backend: "pi", model: "test/model", effort: "low" };
+		fs.writeFileSync(libPath, JSON.stringify(lib));
+		const r = await h.ask("ag_01", { type: "succeed", to: "dev" });
+		assert.equal(r.ok, true, r.text);
+		h.writeNote("dev");
+		dev.status = "running";
+		dev.settle();
+		await h.tick();
+		const startedDev2 = h.worker("ag_01").lastSteer.message;
+		assert.match(
+			startedDev2,
+			/Started dev-2 \(ag_\d+\) to succeed dev \(ag_02\) on pi\/test\/model\/low\.[\s\S]*Members default: dev-2 run on pi\/test\/model\/low/,
+			"the current default (not the tuple dev started with) fills the successor, and says so",
+		);
+		// …whereas a member's own recorded choice is preserved.
+		const r2 = await h.ask("ag_01", { type: "succeed", to: "own" });
+		assert.equal(r2.ok, true, r2.text);
+		h.writeNote("own");
+		own.status = "running";
+		own.settle();
+		await h.tick();
+		assert.match(h.worker("ag_01").lastSteer.message, /Started own-2 \(ag_\d+\) to succeed own \(ag_03\) on pi\/test\/model\/low\./);
+		// And a default that went bad since is said and NOT used: the successor keeps the tuple it ran on.
+		lib.profiles[0].members = { backend: "pi", model: "zai/not-here", effort: "low" };
+		fs.writeFileSync(libPath, JSON.stringify(lib));
+		const r3 = await h.ask("ag_01", { type: "succeed", to: "docs" });
+		assert.equal(r3.ok, true, r3.text);
+		h.writeNote("docs");
+		const docs = h.worker("ag_06");
+		docs.status = "running";
+		docs.settle();
+		await h.tick();
+		assert.match(
+			h.worker("ag_01").lastSteer.message,
+			/Started docs-2 \(ag_\d+\) to succeed docs \(ag_06\) on pi\/test\/model\/high\.[\s\S]*can't run here — unknown model zai\/not-here[\s\S]*keep the tuple they ran on\./,
+			"a denied default leaves the predecessor's tuple in place, and the notice says so",
+		);
+	} finally { await h.cleanup(); }
+});
+
 test("/team defaults prints the effective defaults, off, or the malformed reason, and sends nothing", async () => {
-	for (const [file, expected] of [[undefined, /^Team defaults: off \(no file at .*team-defaults\.json\)/], ["{", /is malformed[\s\S]*not valid JSON/], [DEFAULTS_FILE, /^Team defaults \(.*\):\n {2}Coordinator: on — role "coordinator"/]] as const) {
+	for (const [file, expected] of [[undefined, /^Team defaults: off \(the subagent profile "My setup" configures none\)/], ["{", /is malformed[\s\S]*not valid JSON/], [DEFAULTS_FILE, /^Team defaults \(.*subagent-profiles\.json \(subagent profile "My setup"\)\):\n {2}Coordinator: on — role "coordinator"/]] as const) {
 		const h = coordinatedHarness(file);
 		try {
 			await h.commands.get("team").handler("defaults", h.ctx);

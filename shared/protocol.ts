@@ -163,7 +163,7 @@ export interface SessionSummary {
       stamped shows it too). `message` = the reply's errorMessage, ≤300 chars. The sidebar's red
       mark in the unread dot's place, and the digest's act "error" item. Server-computed, needs no
       decisions feature; an aborted turn is not an error. Safe by absence. */
-  turnError?: { message?: string };
+  turnError?: { message?: string; /** The failed turn's own model's provider, when known. */ provider?: string };
 }
 
 /** A configured remote target (~/.pi/agent/targets.json, GET /api/targets). Credential-free. */
@@ -1840,6 +1840,8 @@ export type ChatServerMessage =
       clientId?: string;
       /** A One at a time profile's first message was refused: the session that holds it (§chat.profiles/singleton). */
       profileRunning?: { id: string; path: string; title: string };
+      /** The provider of the model whose turn failed, when the error IS the turn's failure (never a worker's or a guessed one); absent otherwise. */
+      provider?: string;
     };
 
 /** WS /ws/watch?path= — read-only live view. Safe for sessions a TUI currently owns. Never writes.
@@ -3481,6 +3483,50 @@ export interface WorktreeReadiness {
 /** The row's badge, the first that holds (§chat.worktrees/readiness). */
 export type ReadinessBadge = "waiting" | "ready" | "restart" | "merged";
 
+export interface SpecAssessmentAttribution {
+  ownerSessionId: string | null;
+  sessionId: string | null;
+  workerId: string | null;
+  teamId: string | null;
+  taskId: string | null;
+  attemptId: string | null;
+}
+
+/** Recorder declarations, not commands executed by the readiness reader. */
+export interface SpecVerificationBasis {
+  kind: "test" | "inspection" | "command";
+  revision: string | null;
+  result: "passed" | "failed" | "unknown";
+  summary: string;
+  revisionBinding?: {
+    source: "recorder-declaration";
+    revisionCommit: string | null;
+    inputApplicability: "matching" | "mismatched" | "unknown";
+  };
+}
+
+export interface SpecAssessmentObservation {
+  name: string;
+  worktree: string;
+  fingerprint?: string;
+  capturedGitHead?: string | null;
+  attribution: SpecAssessmentAttribution;
+  recordAttribution?: SpecAssessmentAttribution | null;
+  /** Exact input applicability is separate from task attribution and dispositions. */
+  applicability: "current" | "stale" | "unknown";
+  attributionState: "matched" | "unknown" | "conflicting";
+  assessmentState: "outstanding" | "recorded" | "unknown";
+  unresolved: number | null;
+  verification: SpecVerificationBasis[];
+  reasons: string[];
+}
+
+export interface SpecAssessmentObservations {
+  state: "observed" | "absent" | "incomplete";
+  items: SpecAssessmentObservation[];
+  reasons: string[];
+}
+
 export interface SessionReadiness {
   /** Every own, non-dropped tracked worktree, in recorded order. */
   trees: WorktreeReadiness[];
@@ -3502,6 +3548,8 @@ export interface SessionReadiness {
   /** The follow-up check's answer for the newest merge (§app.decisions/merge-followup), when it
       names work: its weight and the reply's own line naming it. */
   followUp?: { weight: "small" | "significant"; cue: string };
+  /** Observation only; never feeds readiness, lastCheck, badges, or attention policy. */
+  specObservations?: SpecAssessmentObservations;
 }
 
 export type TagsBackfillScope = "recent" | "all";
@@ -3527,7 +3575,7 @@ export interface SessionMarks {
   workerSignals?: { stuck: number } | null;
   tags?: SessionTags | null;
   /** SessionSummary.turnError, pushed so the red mark appears and clears at once. */
-  turnError?: { message?: string } | null;
+  turnError?: { message?: string; provider?: string } | null;
 }
 
 /** WS /ws/watch?feed=sessions (see the route comment at the top of this block). */

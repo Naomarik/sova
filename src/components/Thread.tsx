@@ -38,6 +38,8 @@ import { WakeCard } from "./WakeCard";
 import { TopicCard } from "./TopicCard";
 import { WorktreeMergeCard } from "./WorktreeMergeCard";
 import { ShowChangesCard } from "./ChangesViewer";
+import { SubagentLimitRow } from "./SubagentLimitRow";
+import { rowProvider } from "../lib/subagent-limit";
 import { normalizeShowChangesDetails, SHOW_CHANGES_TOOL } from "../../pi-config/extensions/show-changes/details";
 import { Banner, Chip, Icon } from "./ui";
 import { BriefRow, CardRevision, ConfirmCard, DeckCard, LinkCard, linkDetails, NavigateGo, OverseerChoiceRow, useOverseerThread } from "./OverseerCards";
@@ -432,6 +434,18 @@ export function TurnError(props: { message: string }) {
   );
 }
 
+/** A transcript row that ends a turn on an error (the `${entryId}:stop` info row): the error's own
+    words sit in its text, its producer's model on the row. */
+export function isErroredTurnStop(it: TranscriptItem): boolean {
+  return (
+    it.kind === "info" &&
+    it.id.endsWith(":stop") &&
+    isObj(it.raw) &&
+    isObj(it.raw.message) &&
+    (it.raw.message as { stopReason?: unknown }).stopReason === "error"
+  );
+}
+
 /**
  * Stands in for the rows "Hide tool calls" and "Hide thinking" remove: each count, with any
  * failures right after the tool count, and the blocks themselves on demand — so hiding is never a
@@ -484,6 +498,9 @@ export function HistoryItems(props: {
   streaming: boolean;
   hideTools?: boolean;
   hideThinking?: boolean;
+  /** The chat's own path when this transcript is a held chat (ChatView): an errored turn's `:stop`
+      row carries the limit row then. Never on a watched or subagent transcript. */
+  limitPath?: string;
   /** Index from which a call without a result may still be running; after the last user row by default. */
   openFrom?: number;
   /** Per-message actions. Absent: no strips at all (a subagent transcript, the hidden-rows
@@ -872,9 +889,17 @@ export function HistoryItems(props: {
                 {(raw) => <Compaction raw={raw()} />}
               </Match>
               <Match when={item.kind === "info"}>
-                <InfoRow>
-                  <PathText text={item.text ?? ""} attachments={item.attachments} />
-                </InfoRow>
+                <>
+                  <InfoRow>
+                    <PathText text={item.text ?? ""} attachments={item.attachments} />
+                  </InfoRow>
+                  {/* A turn that ended on an error keeps its "Error: …" row (the transcript's
+                      `${entryId}:stop`); the limit row rides beside it with that turn's own
+                      provider (the row's `model` — never the session's current one). */}
+                  <Show when={props.limitPath && isErroredTurnStop(item) ? { path: props.limitPath, item } : null}>
+                    {(x) => <SubagentLimitRow path={x().path} message={x().item.text?.replace(/^Error: /, "") ?? ""} provider={rowProvider(x().item.model)} />}
+                  </Show>
+                </>
               </Match>
               {/* A show_changes result whose details check out reads as a card that opens the
                   changes viewer (§chat.changes/show-changes-card); anything else, a tool card. */}
@@ -1082,6 +1107,9 @@ export function LiveEntries(props: {
   names?: Record<string, string>;
   hideTools?: boolean;
   hideThinking?: boolean;
+  /** The chat's own path when this thread is a held chat (ChatView): the limit row's switch is a
+      chat pick, so nothing else (a watched or a subagent transcript) ever gets one. */
+  limitPath?: string;
   /** What a message of ours that hasn't been delivered offers — one Remove, from the chat. A row
       the server has already taken (`delivered`) is never asked: nothing can be recalled then, and
       a disabled Remove under every message you ever sent is an affordance that lies. */
@@ -1231,7 +1259,14 @@ export function LiveEntries(props: {
                     </InfoRow>
                   </Show>
                   <Show when={e().error}>
-                    <TurnError message={e().error!} />
+                    {(err) => (
+                      <>
+                        <TurnError message={err()} />
+                        {/* The failure's own row carries its own provider (its producing model) —
+                            never a worker's, never the chat model of right now. */}
+                        <Show when={props.limitPath}>{(p) => <SubagentLimitRow path={p()} message={err()} provider={rowProvider(e().model)} />}</Show>
+                      </>
+                    )}
                   </Show>
                 </>
               )}

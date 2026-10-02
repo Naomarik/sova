@@ -95,7 +95,8 @@ are atomic tmp+rename.
 
 The tools call the existing REST routes in-process, so every guard those routes have already
 (TUI-live refusal, archived refusal, the model policy; for archive and set-session, the mid-turn and
-working-subagent refusals) applies unchanged, and their refusal sentences come back as the tool's
+working-subagent refusals, except a subagent-profile-only switch, which changes later work and
+is allowed while a turn or workers run) applies unchanged, and their refusal sentences come back as the tool's
 error. Sessions are addressed by id, bare or in any form the tools print it (`sova://s/<id>`,
 `s/<id>`, a `[title](sova://s/<id>)` link). No tool passes `force`. A call that names a peer (`host`) goes
 to that host over the peer hop (§mesh.peers/listener), never through the page's proxy, so this
@@ -110,7 +111,7 @@ host's sender secret never leaves it. The peer's own routes and refusals apply.
   (`Topics (newest first): Merge (1m ago); Sandbox menu (2h ago)`), and what is true of it now
   (§app.overseer/session-truth); a bounded transcript read (≤40 items, ≤12,000 characters, each item ≤1,000, wrapped as
   untrusted content from another session, read with Sova's own parser so a TUI-live file is never
-  opened for writing); list groups, targets, models and folders; the ideas backlog (`sova_ideas`: its table of contents,
+  opened for writing); list groups, targets, models, subagent profiles and folders; the ideas backlog (`sova_ideas`: its table of contents,
   a search, one idea, an idea's scope and impact, an idea's explorer; §app.overseer/ideas); the
   user's todos (`sova_todos`: open, done or all; §app.overseer/todos); the links this host knows
   (`sova_links`, §app.overseer/links-tools); this host's organizations, their projects and project
@@ -165,6 +166,15 @@ host's sender secret never leaves it. The peer's own routes and refusals apply.
   with a card saying "{label} is already running. It's set to One at a time, so only 1 session can
   use it." and **Open the Running {Label}**; nothing is created and no cap is taken.
   `sova_set_session` never changes a profile: it has no such parameter, so it can't widen one.
+- **Subagent profiles (§chat/subagent-profiles).** `sova_list_subagent_profiles` lists Off and
+  every named setup, their id, name, worker footprint and this host's default; an optional `host`
+  reads the peer's own library. `sova_create_session` and `sova_set_session` take
+  `subagent_profile` (a library id or `off`), pinning only that session's hidden ID pick, never a
+  setup snapshot or device default. The result names the pick; running workers and the main
+  model stay unchanged. An unknown id is refused before session creation or mutation; a create
+  with `host` checks the peer's list first and refuses if it cannot be read or resolve the id.
+  Create pins the pick before its first prompt. This parameter is distinct from the capability
+  session `profile` above: set-session still cannot widen a session's capabilities.
 - **TUI-live sessions are read-only**: every act on one is refused.
 - **Files: anywhere but credentials.** The Overseer's `read`, `grep`, `find` and `ls` reach any
   file on the machine except secret files, which none of them reads, lists or matches:
@@ -272,7 +282,8 @@ host's sender secret never leaves it. The peer's own routes and refusals apply.
   Overseer's prompt states the rule. Sessions the Overseer creates
   keep their full tools.
 - **Itself:** tools refuse to act on the Overseer's own session.
-- **A model, thinking level, mode or minor mode the Overseer sets applies to that session only.**
+- **A model, thinking level, mode, minor mode or subagent-profile pick the Overseer sets applies
+  to that session only.**
   Whether it sets them on a session it creates (`sova_create_session`) or on one it acts on
   (`sova_set_session`), even one with no messages yet, the saved default new sessions start from is
   never changed: only the user's own pick saves one (§chat.model-menu/saved-default), and the

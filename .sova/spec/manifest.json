@@ -350,13 +350,15 @@
     "§app.settings-dialog/modes": {
       "kind": "behavior",
       "requires": [
-        "§app.settings-dialog/models"
+        "§app.settings-dialog/models",
+        "§chat/subagent-profiles"
       ],
       "authority": "accepted",
       "evidence": "reviewed",
       "code": [
-        "server/delegate.ts",
-        "src/lib/delegate-form.ts"
+        "src/components/SettingsDialog.tsx",
+        "src/components/SubagentProfilesSettings.tsx",
+        "server/subagent-profiles.ts"
       ]
     },
     "§app.settings-dialog/one-height": {
@@ -845,16 +847,24 @@
     "§chat.mode-menu/how-a-switch-reaches-the-chat": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "code": [
-        "src/lib/change-rows.ts",
+        "server/chat-manager.ts",
+        "server/index.ts",
+        "pi-config/extensions/mode/index.ts",
         "src/components/Thread.tsx"
       ]
     },
     "§chat.mode-menu/menu": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified"
+      "evidence": "verified",
+      "code": [
+        "src/components/ModeMenu.tsx",
+        "src/lib/mode-menu.ts",
+        "src/lib/mode-menu.test.ts",
+        "server/chat-manager.ts"
+      ]
     },
     "§chat.mode-menu/rejected": {
       "kind": "note",
@@ -1291,8 +1301,11 @@
     },
     "§chat/mode-menu": {
       "kind": "surface",
+      "requires": [
+        "§chat/subagent-profiles"
+      ],
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "code": [
         "pi-config/extensions/mode/state.ts",
         "server/mode-state.ts",
@@ -3782,12 +3795,9 @@
         "§app.settings-dialog/modes"
       ],
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "code": [
-        "src/lib/delegate-form.ts",
-        "src/lib/summarizer-form.ts",
-        "src/lib/delegate-form.test.ts",
-        "src/lib/summarizer-form.test.ts"
+        "src/components/SubagentProfilesSettings.tsx"
       ]
     },
     "§app.settings-dialog/toggle-target": {
@@ -3799,7 +3809,7 @@
       "evidence": "verified",
       "code": [
         "src/design/base.css",
-        "src/components/SpecSettings.tsx"
+        "src/components/SubagentProfilesSettings.tsx"
       ]
     },
     "§app.settings-dialog/save-bar": {
@@ -3815,10 +3825,8 @@
         "src/lib/settings-draft.ts",
         "src/lib/settings-draft.test.ts",
         "src/components/SettingsDialog.tsx",
-        "src/lib/delegate-draft.ts",
-        "src/lib/delegate-draft.test.ts",
-        "src/lib/spec-draft.ts",
-        "src/lib/team-draft.ts",
+        "src/lib/subagent-profiles-draft.ts",
+        "src/lib/subagent-profiles-draft.test.ts",
         "src/lib/overseer-draft.ts",
         "src/lib/decision-draft.ts",
         "src/lib/model-policy-draft.ts",
@@ -3826,9 +3834,7 @@
         "src/lib/summarizer-form.ts",
         "src/lib/mesh-draft.ts",
         "src/lib/experimental-draft.ts",
-        "src/components/DelegateSettings.tsx",
-        "src/components/SpecSettings.tsx",
-        "src/components/TeamSettings.tsx",
+        "src/components/SubagentProfilesSettings.tsx",
         "src/components/OverseerSettings.tsx",
         "src/components/DecisionSettings.tsx",
         "src/components/SummarizerSettings.tsx",
@@ -5045,15 +5051,10 @@
         "§app.settings-dialog/claude-long-context-listed"
       ],
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "code": [
-        "server/delegate.ts",
-        "server/delegate.test.ts",
-        "pi-config/extensions/claude-code/context-window.ts",
-        "pi-config/extensions/claude-code/context-window.test.ts",
-        "pi-config/extensions/claude-code/tests/fixtures/long-context-lists.json",
-        "pi-config/extensions/claude-code/index.ts",
-        "pi-config/extensions/claude-code/provider/index.ts"
+        "src/components/SubagentProfilesSettings.tsx",
+        "server/subagent-profiles.ts"
       ]
     },
     "§app.session-list/cleanup-org-guard": {
@@ -8285,6 +8286,8 @@
       "authority": "accepted",
       "evidence": "verified",
       "code": [
+        "server/spec-assessment-observations.ts",
+        "server/spec-assessment-observations.test.ts",
         "server/merge-readiness.ts",
         "server/merge-readiness.test.ts",
         "server/worktrees.ts",
@@ -10410,7 +10413,8 @@
         "pi-config/extensions/claude-code/spec-hooks.ts",
         "pi-config/extensions/spec/core/sova-spec.mjs",
         "pi-config/extensions/spec/core/packet.mjs",
-        "pi-config/extensions/mode/spec-mode.md"
+        "pi-config/extensions/mode/spec-mode.md",
+        "pi-config/extensions/spec/core/sova-spec-assess.mjs"
       ]
     },
     "§chat.worktrees/merged-state": {
@@ -11382,6 +11386,168 @@
       "kind": "surface",
       "authority": "accepted",
       "evidence": "unreviewed"
+    },
+    "§chat.subagent-profiles/file": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/subagents/subagent-profiles.ts",
+        "pi-config/extensions/subagents/subagent-profiles.test.ts",
+        "server/subagent-profiles.ts",
+        "server/subagent-profiles.test.ts",
+        "server/sync/docs.ts",
+        "shared/subagent-profiles.ts"
+      ]
+    },
+    "§chat.subagent-profiles/limit-row": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/components/SubagentLimitRow.tsx",
+        "src/components/ChatView.tsx",
+        "src/components/Thread.tsx",
+        "src/lib/subagent-limit.ts",
+        "src/lib/subagent-limit.test.ts",
+        "server/transcript.ts",
+        "server/sessions-index.ts",
+        "server/turn-error.test.ts",
+        "shared/protocol.ts"
+      ]
+    },
+    "§chat.subagent-profiles/members-default": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/subagents/index.ts",
+        "pi-config/extensions/subagents/index.test.ts",
+        "pi-config/extensions/subagents/teams.ts"
+      ]
+    },
+    "§chat.subagent-profiles/menu": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/components/ModeMenu.tsx",
+        "src/lib/api.ts",
+        "src/lib/mode-menu.ts",
+        "src/lib/mode-menu.test.ts",
+        "src/design/base.css",
+        "server/chat-manager.ts"
+      ]
+    },
+    "§chat.subagent-profiles/off": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/subagents/subagent-profiles.ts",
+        "pi-config/extensions/mode/prompt.ts",
+        "pi-config/extensions/mode/tests/smoke.mjs"
+      ]
+    },
+    "§chat.subagent-profiles/overseer": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "code": [
+        "server/overseer-tools.ts",
+        "server/overseer-runtime.test.ts",
+        "server/index.ts",
+        "server/sessions-configure.ts",
+        "server/sessions-configure.test.ts"
+      ]
+    },
+    "§chat.subagent-profiles/resolution": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/mode/index.ts",
+        "pi-config/extensions/subagents/subagent-profiles.ts",
+        "pi-config/extensions/subagents/subagent-profiles.test.ts",
+        "pi-config/extensions/subagents/index.ts",
+        "pi-config/extensions/subagents/index.test.ts",
+        "pi-config/extensions/subagents/teams.ts",
+        "server/chat-manager.ts",
+        "server/index.ts",
+        "server/sessions-configure.ts",
+        "shared/mesh-links.ts"
+      ]
+    },
+    "§chat.subagent-profiles/settings": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/components/SubagentProfilesSettings.tsx",
+        "src/components/SettingsDialog.tsx",
+        "src/lib/subagent-profiles-draft.ts",
+        "src/lib/subagent-profiles-draft.test.ts",
+        "src/lib/settings-nav.ts",
+        "src/lib/settings-nav.test.ts",
+        "src/design/base.css",
+        "server/subagent-profiles.ts"
+      ]
+    },
+    "§chat/subagent-profiles": {
+      "kind": "surface",
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "code": [
+        "shared/subagent-profiles.ts",
+        "pi-config/extensions/subagents/subagent-profiles.ts"
+      ]
+    },
+    "§tools.spec/assessment-observations": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§tools.spec/change-assessments",
+        "§tools.spec/runtime-accounting"
+      ],
+      "code": [
+        "pi-config/extensions/mode/spec-assessment.ts",
+        "pi-config/extensions/mode/README.md",
+        "pi-config/extensions/mode/spec-assessment-tool.ts",
+        "pi-config/extensions/mode/spec-assessment.test.ts",
+        "pi-config/extensions/claude-code/spec-hooks.ts",
+        "pi-config/extensions/claude-code/spec-assessment.test.ts",
+        "pi-config/extensions/mode/index.ts",
+        "pi-config/extensions/mode/spec-worker.ts",
+        "server/tests/spec-assessment.mjs",
+        "pi-config/extensions/mode/tests/smoke.mjs",
+        "pi-config/extensions/subagents/index.ts",
+        "server/spec-assessment-observations.ts",
+        "server/spec-assessment-observations.test.ts",
+        "server/merge-readiness.ts",
+        "shared/protocol.ts",
+        "src/lib/readiness.ts",
+        "src/lib/readiness.test.ts",
+        "src/components/Sidebar.tsx",
+        "server/merge-readiness.test.ts"
+      ]
+    },
+    "§tools.spec/change-assessments": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§tools.spec/inspection-safety"
+      ],
+      "code": [
+        "pi-config/extensions/spec/core/sova-spec-assess.mjs",
+        "pi-config/extensions/spec/core/sova-spec.mjs",
+        "pi-config/extensions/spec/core/sova-spec-draft.mjs",
+        "pi-config/extensions/spec/tests/assessment.test.mjs",
+        "pi-config/extensions/spec/tests/assessment-efficiency.test.mjs",
+        "pi-config/extensions/spec/README.md",
+        "pi-config/extensions/spec/core/README.md"
+      ]
     }
   },
   "boundary": {

@@ -231,6 +231,32 @@ writer**).
     (landings re-prompted twice, anything else once), and a ledger entry per
     git operation for the parent.
 
+  - **Structured observations.** Separately from those guards, task changes create
+    unresolved input-bound receipts through the trusted assessment companion. The
+    `spec_assess` tool is callable while spec is on: prepare a comparison, record
+    explicit dispositions/reasons/verification bases, or query its current inputs.
+    The task base and initial dirty hash states persist with the actual user entry;
+    retries and reopen retain that base, while attempts and new user boundaries
+    remain distinct. Missing or corrupt initial state is unknown, not a new baseline.
+    A disposition and a recorded passed result are declarations, never semantic
+    proof. The server's neutral **Spec observations** field reads owner/team receipts
+    separately from the existing bash check, readiness badge, and release policy.
+    Verification input matching/mismatch/unknown is distinct from the result.
+    Failed or unavailable operations flag a tool error while retaining structured
+    content/details. Successful preparations/records remain normal operations even
+    with unresolved items or failed verification declarations; stale/unknown status
+    remains a valid query. None of these flags changes continuations or release policy.
+
+    Code-writing pi workers receive this observer/tool through `spec-worker.ts`.
+    Native Claude workers use the same capture helper in their hooks and the
+    companion CLI for explicit records; an absent native prompt id remains null.
+    The server cannot verify native task boundaries with its pi-session reader,
+    so native task attribution remains unknown. A private native hook error marker
+    is not itself transported as a parent receipt: missing receipts mean absent
+    evidence/unknown applicability, not a successful comparison or an invented cause.
+    These cooperative observations do not establish forensic authorship of shared
+    filesystem changes. Remote tool execution remains outside this local observer.
+
   See `../spec/README.md`.
 
 Like the major mode, the prompt is read per turn, so toggles apply from the
@@ -618,6 +644,13 @@ node tests/note-turn.mjs      # real pi session + scripted provider: a minor tog
 node tests/align-turn.mjs     # real pi session + scripted provider: the align tool, its hidden notes (per prompt, after a compaction) and the settle nudge
 node --test also-changes.test.ts # the Also-changes grammar (s2-3's line, suffix ids, format errors), Plumbing/Deferred lines, landingGate
 node --test spec-guard.test.ts # the spec checks: census per tree (real Git + spec tools), judgeOp (M3-B-s2-2's own claim), the ledger, command detection
+node --test spec-assessment.test.ts # portable assessment transport, task snapshot integrity and unknown-baseline controls
 node tests/spec-turn.mjs      # real pi session + scripted provider: census digest, forbidden writes, landings (two merges, Plumbing, Deferred, a worker's ledger commit), Q&A line, re-prompts, mode:state
 node tests/spec-worker.mjs    # real pi session loading only spec-worker.ts (a pi worker's -e): the census digest; the turn-end check (edit, promote x2, Q&A line) and its ledger entry
 ```
+
+Sova repository integration only, from its root: `node server/tests/spec-assessment.mjs`
+exercises actual common worker spawning through a scripted RPC child running the pinned SDK,
+owner reopen and readiness consumption, plus parent assessment-tool activation/record/status.
+This cross-boundary fixture is not required by, and does not run on, a standalone copy of
+`pi-config/`; the extension and its portable tests import no Sova runtime.

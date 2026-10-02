@@ -52,7 +52,20 @@ If a spawn fails because its model is unavailable, retry once with that profile'
 
 Worker prompts are self-contained: goal, files, conventions, verification, report-back. Batch independent spawns with non-overlapping files. Before reporting: read the diffs, run the project's tests or type checks — effort shapes how workers think, never how hard you check. Steer wrong work with agent_steer or respawn; never silently redo it; never present a worker report as your own (state what changed, what you verified, what remains).`;
 
+/**
+ * Off (no subagent profile routes anything): the same orchestration, the four work kinds named
+ * without a worker each, and the agent picks every worker itself.
+ */
+const DELEGATE_OFF_KINDS = `Work kinds — no subagent profile routes them, so choose each worker's backend, model and effort yourself (agent_models lists what you may use), fitted to the work:
+${DELEGATE_PROFILES.map((profile) => `- ${DELEGATE_PROFILE_INFO[profile].label} (${DELEGATE_PROFILE_INFO[profile].description.charAt(0).toLowerCase()}${DELEGATE_PROFILE_INFO[profile].description.slice(1)})`).join("\n")}`;
+
+/** The delegate block. No routes (the chat's subagent profile is Off) names the kinds and lets the agent pick. */
 export function buildDelegatePrompt(routes: readonly ProfileRoute[]): string {
+	if (routes.length === 0)
+		return DELEGATE_INSTRUCTIONS.replace("routed by the profiles below", "choosing a fitting worker for each")
+			.replace("Profiles — pass the backend, model and effort exactly as written:\n{PROFILES}", DELEGATE_OFF_KINDS)
+			.replace(/If a spawn fails because its model is unavailable, retry once[^\n]*? never substitute one of your own\. /, "If a spawn fails because its model is unavailable, say so and pick another, or ask the user. ")
+			.replace("that choice wins over the profile;", "that choice wins;");
 	const byProfile = new Map(routes.map((route) => [route.profile, route]));
 	const lines = DELEGATE_PROFILES.map((profile) => byProfile.get(profile)).filter((route): route is ProfileRoute => route !== undefined).map(profileLine);
 	return DELEGATE_INSTRUCTIONS.replace("{PROFILES}", lines.join("\n"));

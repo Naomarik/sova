@@ -182,6 +182,12 @@ New Session, a rounded square with a divider and a chevron pointing left (`panel
 Below 768px the button is not rendered, because the pane there is the whole screen and has
 nothing to collapse into.
 
+When the row carries structured spec observations, one additional neutral `list-meta` line
+below line 3 begins "Spec observations" and names current, stale, or unknown observations,
+outstanding assessments, and separately recorded verification outcomes. Missing or incomplete
+observations are said in words, never a green badge. This line is visible without hover and may
+add height only to rows with that observation field; ordinary rows retain the anatomy above.
+
 ## §app.session-list/spine — The spine
 
 The sessions pane, collapsed. From 768px up the pane is either **expanded** (everything above) or
@@ -519,6 +525,12 @@ label a person reads says "sessions pane".
   `title` is the head's exact sentence. It and the session pane's worker ring are the only
   places in the product where the context fill is a shape instead of a number, and
   §chat.context-window/sidebar-ring writes that exception down.
+- **Spec observation line.** A row with structured spec observations has one additional neutral
+  line below line 3, labelled "Spec observations". It reports input applicability and outstanding
+  assessments separately from recorder-declared verification outcomes; missing, incomplete, or
+  conflicting information stays explicit. It is not a readiness badge. This additional line is an
+  exception to the unchanged row-height measurements below; rows without observations retain
+  their existing geometry.
 - **Lines 2 and 3 are `.list-line`.** Each is a flex wrapper: the text block flexes and truncates,
   the indicator is `flex: none`. That puts the chip and the ring on **one right edge** down the
   whole list, which is the entire point — a ring that slid left and right with the text beside it

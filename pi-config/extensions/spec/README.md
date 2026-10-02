@@ -28,6 +28,7 @@ to assert that those decisions have been implemented.
 | `DRAFTS.md` | The draft workflow's reference |
 | `PROMOTE.md` | What promotion needs that the draft tool can't check; the spec mode points at it before a commit |
 | `core/sova-spec-review.mjs` | The review companion: `prepare`, `record`, `status`. It keeps the exact bytes a review compared |
+| `core/sova-spec-assess.mjs` | Observation-only input-bound dispositions and metadata-only receipts: `prepare`, `record`, `status` |
 | `tests/*.test.mjs` | Black-box fixture tests that spawn the CLIs against temporary projects |
 
 ## Core (read-only)
@@ -172,10 +173,18 @@ node core/sova-spec-draft.mjs merge-manifest --root DIR [--write] [--json]
 
 When to draft, and how to keep a baseline apart from a feature, is in
 [`../mode/spec-mode.md`](../mode/spec-mode.md). Evidence is bytes, revisions and the recorder's statement.
-No tool here checks that code implements prose. The draft tool runs only the
-sibling core and, in a Git project, read-only `git` plumbing, never a shell or
-a project script. [DRAFTS.md](DRAFTS.md) has the layout, exit codes, lock and
-limits.
+No tool here checks that code implements prose. The draft tool uses only the sibling core
+and, in a Git project, read-only `git` plumbing, never a shell or a project script. Its silent
+read-only `inspectDraft(root, name, {base, readPolicy})` export returns the existing check envelope;
+it exposes no write command. Assessment draft triage passes its assessment-specific pre-read
+refusal policy through proposed/baseline graph checks and proposed/baseline/current claim-tree
+reads, including receipt-store incumbents and a current claims root that names receipt storage.
+Only assessment-policy API results add metadata-only `inputSources` from actual draft-state and
+proposed/baseline/current manifest/claim-tree reads. The assessor binds those sources and refuses
+mixed read versions as a race; changed draft sources stale a receipt even when candidate routes do
+not change. Default API results and ordinary draft CLI checks keep their original JSON contracts
+and subprocess path.
+[DRAFTS.md](DRAFTS.md) has the layout, exit codes, lock and limits.
 
 ## Review companion
 
@@ -263,6 +272,65 @@ component is checked and the final open refuses symlinks. Even so, a parent
 directory swapped for a symlink between the check and the open is not fully
 prevented. Nothing here is a filesystem sandbox or safe against a hostile
 writer on the same machine.
+
+## Observation-only change assessments
+
+```sh
+node core/sova-spec-assess.mjs prepare NAME --root DIR [--base REV] [--spec REL] [--draft NAME] \
+  [--id '§id']… [--path REL]… [--baseline-json JSON] [--attribution-json JSON] [--write] --json
+node core/sova-spec-assess.mjs record NAME --root DIR --by WHO --decisions-json JSON \
+  [--attribution-json JSON] [--self] --write --json
+node core/sova-spec-assess.mjs status NAME --root DIR --json
+node core/sova-spec-assess.mjs status --root DIR --owner-session OWNER --json
+```
+
+This optional companion changes no review, promotion, footer or release gate. It routes candidates
+from mapped changed files, declared consumers, explicit IDs, and optional draft restatement/citation
+heuristics. Routing is not exhaustive behavioral discovery. Every candidate and unmapped change
+starts unresolved, even with a verified label. One explicit batch can retain many candidate IDs with
+a single reason and verification basis; omission never means not applicable. Legacy labels without
+an assessment remain declarations, not invented verification provenance.
+
+Git preparations bind a resolved base commit plus exact current dirty hashes. Explicit `--path`
+selects only those observed paths; otherwise the full changed census is used. A task's initial dirty
+snapshot can be passed as `--baseline-json '{"inputs":[{"path":"lib/file","state":"present",
+"sha256":"<64 hex>","bytes":123}]}'` (absent or refused states are also supported). Exact readable
+matches subtract pre-existing dirty paths; refused inputs remain unknown. Snapshot baselines are
+caller declarations, distinguished from Git blob hashes. Without Git, explicit paths and declared
+snapshot inputs work; missing baseline or change inventory is unknown, never complete.
+
+`--decisions-json` is `{ "decisions": [ { "ids": ["§app/rule"], "disposition": "preserved",
+"reason": "Compared the refactor", "basis": [{"kind":"inspection", "revision":null,
+"result":"passed", "summary":"Recorder's comparison"}], "acceptedIntent":true } ], "files": [] }`.
+Dispositions are `changed|preserved|not-applicable|unresolved`; file batches use `paths` instead of
+`ids` and classify unmapped changes. Basis kinds are `test|inspection|command`, outcomes
+`passed|failed|unknown`; intent is optional and never adopts a claim. The companion does not execute
+a basis. Status separately reports any declared revision's input matching/mismatch/unknown, not
+that a test was run. Self review is explicitly marked, not independent review.
+
+Attribution has exactly six nullable printable fields: `ownerSessionId`, `sessionId`, `workerId`,
+`teamId`, `taskId`, `attemptId`. Unknown fields default to null; identity is unauthenticated.
+
+Preparations and records are immutable under `.sova/spec/assessments/NAME/`. Cooperating writers use
+an exclusive lock, double capture and atomic no-overwrite publication. After a crash, an occupied
+lock requires an operator to verify its holder is gone; it is never automatically removed. Partial,
+corrupt, unreadable and capped (100 receipt) inventories are explicitly incomplete. Owner queries
+keep null attribution visible and count excluded known other owners. No raw source or log bytes
+are retained or printed. Metadata paths, names and rationale can themselves be private: receipts
+stay locally ignored by default; publishing JSON is a separate explicit decision.
+
+Each capture imports a fresh capture-local internal core reader and batches selected immutable Git
+blob hashes. Independent double captures and status do not reuse source state. Size, path, mode and
+credential refusals remain explicit; no raw blob contents are retained or printed. Existing core
+CLI outputs and packet behavior remain unchanged.
+
+Preparation preview exposes a stable fingerprint and exact current input metadata. Status reports
+input `applicability` (`current|stale|unknown`), unresolved coverage, declared labels, accepted-intent
+assertions and recorded verification separately. Status exit 0 means only current, known input
+binding, even with unresolved coverage or failed verification. Exit 1 means unknown/stale inputs or
+ordinary write refusal, 2 untrustworthy input/storage. Prepare/record exit 0 is operation success,
+not reconciliation. New observations never overwrite or hide older or newer unresolved receipts.
+Changed inputs stale an assessment; they do not automatically mean broken product behavior.
 
 ## What the minor mode checks by itself
 

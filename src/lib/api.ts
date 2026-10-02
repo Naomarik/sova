@@ -1,4 +1,5 @@
 import type { ProfilesListing } from "../../shared/profiles";
+import type { SubagentProfilesFile, SubagentProfilesInfo } from "../../shared/subagent-profiles";
 import type {
   VoiceDeviceInfo,
   VoiceStatus,
@@ -213,6 +214,14 @@ export const putProviderLimits = (limits: ProviderLimits) =>
   request<ProviderLimitsInfo>("/api/settings/provider-limits", { method: "PUT", body: JSON.stringify({ limits }) });
 /** Who waits on a provider's limit now, by session id (§app.provider-limits/waiting-shown). */
 export const getProviderWaiting = () => request<ProviderWaiting>("/api/provider-limits/waiting");
+
+/** Subagent profiles: the library and this chat's pick. All three are
+    host-scoped like any session request: a peer's chat reads and writes ITS library. */
+export const getSubagentProfiles = (path?: string, host?: string | null) => request<SubagentProfilesInfo>(hostUrl(host, `/api/settings/subagents${path ? `?path=${encodeURIComponent(path)}` : ""}`));
+export const putSubagentProfiles = (settings: SubagentProfilesFile, host?: string | null) => request<SubagentProfilesInfo>(hostUrl(host, "/api/settings/subagents"), { method: "PUT", body: JSON.stringify(settings) });
+/** This device's default (never synced): Make Default in Settings → Subagents writes it alone, always locally. */
+export const putSubagentProfileDefault = (id: string) => request<SubagentProfilesInfo>("/api/settings/subagents/default", { method: "PUT", body: JSON.stringify({ default: id }) });
+export const pickSubagentProfile = (path: string, profile: string, host?: string | null) => request<SubagentProfilesInfo>(hostUrl(host, `/api/subagents?path=${encodeURIComponent(path)}`), { method: "POST", body: JSON.stringify({ profile }) });
 
 /** Delegate mode's routing (Settings → Modes → Delegate): which worker each kind of work goes to. */
 export const getDelegateSettings = () => request<DelegateSettingsInfo>("/api/settings/delegate");

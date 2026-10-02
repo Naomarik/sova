@@ -76,7 +76,8 @@ export const DEFAULT_TEAM_DEFAULTS: TeamDefaultsFile = {
 
 export type TeamDefaultsParse = { ok: true; value: TeamDefaultsFile } | { ok: false; errors: string[] };
 export type TeamDefaultsState =
-	| { state: "absent"; file: string }
+	| { state: "absent"; file: string; /** Why the state here has nothing to give (a profile configures none); `file` stays the provenance. */
+	  note?: string }
 	| { state: "malformed"; file: string; errors: string[] }
 	| { state: "ok"; file: string; value: TeamDefaultsFile };
 
@@ -253,7 +254,7 @@ const tupleText = (t: WorkerTuple | null): string => (t ? `${t.backend} · ${t.m
 
 /** What `/team defaults` prints: the effective defaults, or why they are off. */
 export function describeTeamDefaults(state: TeamDefaultsState): string {
-	if (state.state === "absent") return `Team defaults: off (no file at ${state.file}). Teams get no coordinator or monitor.`;
+	if (state.state === "absent") return `Team defaults: off (${state.note ?? `no file at ${state.file}`}). Teams get no coordinator or monitor.`;
 	if (state.state === "malformed")
 		return [`Team defaults: off — ${state.file} is malformed (it is never overwritten here):`, ...state.errors.map((e) => `  - ${e}`)].join("\n");
 	const { coordinator: c, monitor: m, handover: h } = state.value;

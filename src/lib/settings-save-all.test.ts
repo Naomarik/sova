@@ -1,11 +1,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { DelegateSettings, SummarizerSettings } from "../../shared/protocol";
-import type { TeamDefaults } from "../../shared/team-defaults";
+import type { SummarizerSettings } from "../../shared/protocol";
 import { decisionDraftProblem } from "./decision-draft";
 import { draftOf } from "./decision-form";
-import { delegateDraftProblem } from "./delegate-draft";
-import { cloneSettings, draftComplete, draftConflicts } from "./delegate-form";
+import { profilesProblem, type LibraryDraft } from "./subagent-profiles-draft";
 import {
   createDraftStore,
   dirtyForms,
@@ -18,12 +16,8 @@ import {
   SaveFailed,
   savingAny,
 } from "./settings-draft";
-import { specDraftProblem } from "./spec-draft";
-import { specDraftComplete, specDraftConflict } from "./spec-form";
 import { summarizerDraftProblem } from "./summarizer-draft";
 import { summarizerComplete } from "./summarizer-form";
-import { teamDraftProblem } from "./team-draft";
-import { cloneTeam, teamDraftComplete, teamDraftConflict } from "./team-form";
 
 interface Doc {
   v: number;
@@ -214,67 +208,39 @@ test("the footer's status line: saving, then why Save waits, then a failure, the
   assert.equal(status({ dirty: f("Mesh"), lastSaved: f("Models") }), "Unsaved: Mesh", "a new edit outranks the last save");
 });
 
-// ---- each form's problem: a sentence exactly when its old Save gate said no ----
+// ---- the forms' problem sentences; the deleted Delegate/Spec/Teams editors' gates moved into the
+// subagent profiles draft, whose profilesProblem has its own suite (subagent-profiles-draft.test.ts) ----
 
 const choice = (model = "m", effort = "high") => ({ backend: "pi" as const, model, effort });
 
-test("Delegate's problem names the missing piece, and is null exactly when draftComplete and no conflict", () => {
-  const profile = { primary: choice(), fallback: null };
-  const ok = cloneSettings({ version: 1, profiles: { planning: profile, investigation: profile, routine: profile, complex: profile } } as DelegateSettings);
-  const withRoutine = (p: object) => ({ ...ok, profiles: { ...ok.profiles, routine: { ...ok.profiles.routine, ...p } } });
-  const cases = [
-    [ok, null],
-    [withRoutine({ primary: choice("") }), "Delegate needs a primary model."],
-    [withRoutine({ primary: choice("m", "") }), "Delegate needs an effort for a primary model."],
-    [withRoutine({ fallback: choice("") }), "Delegate needs a fallback model."],
-    [withRoutine({ fallback: choice("x", "") }), "Delegate needs an effort for a fallback model."],
-    [withRoutine({ fallback: choice() }), "Delegate has a fallback that's the same worker as its primary."],
-  ] as const;
-  for (const [d, want] of cases) {
-    assert.equal(delegateDraftProblem(d), want);
-    assert.equal(delegateDraftProblem(d) === null, draftComplete(d) && draftConflicts(d).length === 0, "the old gate, in words");
-  }
-});
-
-test("Spec's problem: none for no writer, a sentence exactly when the old gate refused", () => {
-  const cases = [
-    [{ version: 1, writer: null }, null],
-    [{ version: 1, writer: { primary: choice(), fallback: null } }, null],
-    [{ version: 1, writer: { primary: choice(""), fallback: null } }, "Spec needs a model for its writer."],
-    [{ version: 1, writer: { primary: choice(), fallback: choice("x", "") } }, "Spec needs an effort for its fallback model."],
-    [{ version: 1, writer: { primary: choice(), fallback: choice() } }, "Spec has a fallback that's the same worker as its writer."],
-  ] as const;
-  for (const [d, want] of cases) {
-    assert.equal(specDraftProblem(d), want);
-    assert.equal(specDraftProblem(d) === null, specDraftComplete(d) && !specDraftConflict(d));
-  }
-});
-
-test("Teams' problem: role names, rows, numbers, then conflicts — null exactly when the old gate passed", () => {
-  const member = { enabled: true, role: "coord", instructions: "", primary: choice(), fallback: null };
-  const ok = cloneTeam({
-    version: 1,
-    coordinator: member,
-    monitor: { ...member, role: "monitor", contextPct: 70, everyMinutes: 10, usage: { enabled: true, pausePct: 90, resumeMarginMinutes: 5 } },
-    handover: { retireTimeoutMinutes: 30 },
-  } as TeamDefaults);
-  const edit = (f: (d: typeof ok) => void) => {
-    const d = cloneTeam(ok);
-    f(d);
-    return d;
+test("Subagents' problem is null exactly when every worker row is complete and no fallback is its primary", () => {
+  const full = (model: string, effort = "medium") => ({ backend: "claude-code" as const, model, effort });
+  const lib: LibraryDraft = {
+    version: 1 as const,
+    default: "my-setup",
+    profiles: [
+      {
+        id: "my-setup",
+        name: "My setup",
+        delegate: {
+          planning: { primary: full("opus[1m]"), fallback: null },
+          investigation: { primary: full("opus[1m]", "low"), fallback: null },
+          routine: { primary: full("opus[1m]", "low"), fallback: null },
+          complex: { primary: full("opus[1m]"), fallback: null },
+        },
+        teams: null,
+        members: null,
+        specWriter: null,
+      },
+    ],
   };
-  const cases = [
-    [ok, null],
-    [edit((d) => (d.coordinator.role = " ")), "Teams needs a role name for the coordinator."],
-    [edit((d) => (d.monitor.primary.model = "")), "Teams needs a model and an effort for the monitor."],
-    [edit((d) => (d.monitor.contextPct = Number.NaN)), "Teams needs a number for the context threshold."],
-    [edit((d) => (d.handover.retireTimeoutMinutes = 0)), "Teams needs a whole number from 1 to 1440 for the retire timeout."],
-    [edit((d) => (d.monitor.role = "COORD")), "Teams: The coordinator and the monitor need different role names."],
-  ] as const;
-  for (const [d, want] of cases) {
-    assert.equal(teamDraftProblem(d), want);
-    assert.equal(teamDraftProblem(d) === null, teamDraftComplete(d) && teamDraftConflict(d) === null);
-  }
+  assert.equal(profilesProblem(lib), null);
+  const bad = structuredClone(lib);
+  bad.profiles[0]!.delegate.planning.primary = full("");
+  assert.match(profilesProblem(bad)!, /^Subagents: My setup's Delegate rows each need a model and an effort\.$/);
+  const conflict = structuredClone(lib);
+  conflict.profiles[0]!.delegate.routine.fallback = full("opus[1m]", "low");
+  assert.match(profilesProblem(conflict)!, /fallback is its primary/);
 });
 
 test("Summaries' and Decisions' problems match their old gates", () => {

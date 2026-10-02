@@ -45,6 +45,13 @@
 - **Model.** Chat sessions read it off the composer's model indicator (§chat/composer) and change it in the
   flyout's Model row (§chat/images); neither is in the head. Watch sessions keep it in
   `.session-head-meta`, as plain mono text they can't change.
+- **A usage-limit turn offers a subagent-profile switch.** In a held chat, the live errored
+  assistant and the historical `:stop` error row carry the calm limit row beside that actual
+  failure (§chat.subagent-profiles/limit-row). Its provider comes from the error text or that
+  failed assistant's own producing model, never the chat's current model. The error feed yields
+  to a matching live assistant row so the offer is not duplicated. Watched and worker transcripts,
+  tool failures, and non-limit errors carry no such switch. It changes this chat's later
+  subagent work only, and never switches automatically.
 - **Overseer marks.** A user row the Overseer sent carries an **Overseer** tag
   (§app.overseer/sent-marker); its actions are unchanged, Rewind included. An Overseer dialog
   answer renders as the machine row "Overseer chose: {answer}" (§app.overseer/dialog-answers).

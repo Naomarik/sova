@@ -61,8 +61,9 @@ It flags failed or unavailable CLI operations as SDK tool errors while retaining
 content and details. Successful preparations and records remain normal operations even with
 outstanding claims or failed verification declarations, and stale or unknown status remains a valid
 observation query. These flags never change continuations, release gates or readiness.
-An additive readiness observation consumes parent and team receipts without replacing existing
-readiness checks, footer rules or release gates. A newer unresolved same-task observation is not
+Session-list and merge-readiness refreshes do not consume assessment receipts or query their
+status. Explicit assessment queries and automatic runtime observations remain available without
+changing ordinary readiness checks, footer rules or release gates. A newer unresolved same-task observation is not
 hidden by an older preserved record. Failed verification remains an explicit outcome distinct from
 current input applicability and the recorder's disposition. Legacy labels without receipts remain
 declarations with unknown assessment provenance.

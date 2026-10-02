@@ -149,7 +149,7 @@ export interface OrgProject {
   name: string;
   /** Absolute directory on the home host. Need not be a git repo. */
   root: string;
-  origin: "manual";
+  origin: string;
   createdAt: string;
   /** Slice 3: the project's spec is frozen (only the reconciler's promotion writes claims/). */
   spec?: { frozen: boolean };

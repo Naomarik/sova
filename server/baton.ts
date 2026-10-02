@@ -29,7 +29,7 @@ import { readBatonSettings } from "./baton-settings";
 import { heldAt, hostOf, isOrgHostOpen, refusalError, type ActResult, type OrgHostApi, type SessionInfo } from "./org-engine";
 import type { Envelope } from "./org-envelope";
 import { envelopeFor } from "./org-engine";
-import { effectiveHoursOf, isoOf, onOrgAttached, operatorEnvelope, operatorName, orgDir, orgOfSessionPath, OrgError, readHistory, readIndex, readProjects, readRoster, setOpenBatonCounter, shortId, type OperatorBy } from "./orgs";
+import { effectiveHoursOf, isoOf, onOrgAttached, operatorEnvelope, operatorName, orgDir, orgOfSessionPath, OrgError, readHistory, readIndex, placementSid, readProjects, readRoster, setOpenBatonCounter, shortId, type OperatorBy } from "./orgs";
 import { baseAbilities, operatorAbilities } from "./gathering-abilities";
 import { canonicalPath } from "./paths";
 import { projectOverseerPaths, readPoSettings } from "./project-overseer-store";
@@ -614,7 +614,7 @@ export async function createBaton(input: BatonStartInput, opts: CreateOptions = 
   // An offer's invitees as the statechart reads them (r7: an offer waits until the earliest invitee's window).
   const targetPeople = targets ? targets.map((id) => roster.find((p) => p.id === id)).filter((p): p is Person => !!p).map(targetOfPerson) : undefined;
   const envelope = { ...(opts.envelope ?? operatorEnvelope(orgId, project.id, opts.by)), ...(invalid ? { invalid } : {}), ...(person ? { target: targetOfPerson(person) } : {}), ...(targetPeople ? { targetPeople } : {}) };
-  const [sid, event] = opts.item ? [opts.item, opts.plan ? "gather/plan" : "gather/start"] : [`project/${orgId}/${project.id}`, "baton/start"];
+  const [sid, event] = opts.item ? [opts.item, opts.plan ? "gather/plan" : "gather/start"] : [placementSid(orgId, project.id), "baton/start"];
   const out = await hostOf(orgId).act(sid, event, payload, envelope, { settle: true });
   if (!out.taken) throw refusalError(out.refusal ?? { sentence: "That can't be done now." });
   if (out.held) return { path: "", sessionId, held: heldAt(sid, out.held) };

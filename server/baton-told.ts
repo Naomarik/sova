@@ -8,7 +8,7 @@ import { photosFor } from "./baton-images";
 import { READ_LINK_TOOL, readLinkTool } from "./baton-read-link";
 import { WRAPUP_TOOL } from "./baton-wrapup";
 import { hostOf, isOrgHostOpen } from "./org-engine";
-import { readProjects } from "./orgs";
+import { placementSid, readProjects } from "./orgs";
 import { readManifest } from "./overseer-ideas";
 import { readOverseerState } from "./overseer-store";
 import { readTodos } from "./overseer-todos";
@@ -45,7 +45,7 @@ export function starterOf(data: Record<string, unknown>): { who: BatonStarter; o
 
 /** The overseer conversation that started it, from its start row in the transition log (a session from before `started`). */
 function overseerIdFromLog(orgId: string, projectId: string, sessionId: string, data: Record<string, unknown>): string | undefined {
-  const spawner = str(data["sova/spawnedBy"]) || `project/${orgId}/${projectId}`;
+  const spawner = str(data["sova/spawnedBy"]) || placementSid(orgId, projectId);
   try {
     const row = hostOf(orgId)
       .log.rows({ session: spawner })

@@ -18,13 +18,14 @@ import {
   createOrg,
   declinePerson,
   detachOrg,
+  orgCosts,
   orgDetail,
   orgDir,
   orgsInfo,
   OrgError,
   operatorEnvelope,
   patchOrg,
-  patchProject,
+  patchPlacement,
   readHistory,
   readOrg,
   readOrgOrPlaceholder,
@@ -37,15 +38,14 @@ import {
   setOrgHours,
   residenceSid,
   setOperatorName,
-  setProjectArchived,
   type OperatorBy,
 } from "./orgs";
 import { OVERSEER_SENDER_HEADER, overseerSender } from "./overseer";
 import { batonData, startedOf, toldOf } from "./baton-told";
 import { OVERSEER_CARD_HEADER } from "./overseer-tools";
 import type { EnvelopeCard } from "./org-envelope";
-import { archiveBlockers } from "./project-overseer";
-import { cancelHeld, heldActs, holdItem, itemTimeline, pipelineInfo } from "./project-pipeline";
+import { holdItem, itemTimeline, pipelineInfo } from "./project-pipeline";
+import { engineHeldActs } from "./project-holds";
 import { resolveSessionPath } from "./paths";
 import { refreshShare } from "./share/hub";
 import { awaitShareLinks } from "./share/links-events";
@@ -178,7 +178,7 @@ function waitingIn(orgId: string, dir: string, rows: readonly BatonSession[]): W
   try {
     w.needsYou.ownerLink = ownerLinkNeeds(orgId);
     // Acts waiting in a hold, one each as in Needs you (the same held-act items).
-    w.needsYou.held = heldActs(orgId).length;
+    w.needsYou.held = engineHeldActs(orgId).length;
     w.needsYou.proposals = readRoster(orgId).filter((p) => p.status === "proposed").length;
     for (const project of readProjects(orgId)) {
       if (project.stakeholderCleared) w.needsYou.stakeholders = (w.needsYou.stakeholders ?? 0) + 1;
@@ -507,50 +507,41 @@ export function registerOrgRoutes(app: Hono<any>): void {
       return c.json(await orgPage(id));
     }),
   );
+  // Add Project in an org (§app.organizations/projects): registered and placed here.
   app.post(
     "/api/orgs/:id/projects",
     handle(async (c) => {
       const id = p(c, "id");
       const b = await body(c);
-      await addProject(id, { name: b.name, root: b.root });
-      return c.json(await orgPage(id), 201);
+      const made = await addProject(id, { name: b.name, root: b.root });
+      return c.json({ ...(await orgPage(id)), ...(made.normalizedFrom ? { normalizedFrom: made.normalizedFrom } : {}) }, 201);
     }),
   );
-  app.patch(
-    "/api/orgs/:id/projects/:pid",
+  // The org's part of a placed project: its main stakeholder (a person, or null for none) and whether the
+  // owner's page shows it. The project's own name, root and shelf are /api/projects/:pid's.
+  app.put(
+    "/api/orgs/:id/projects/:pid/stakeholder",
     handle(async (c) => {
       const id = p(c, "id");
       const b = await body(c);
-      await patchProject(id, p(c, "pid"), {
-        name: b.name,
-        root: b.root,
-        ...(b.spec !== undefined ? { spec: b.spec } : {}),
-        ...(b.stakeholder !== undefined ? { stakeholder: b.stakeholder } : {}),
-        ...(b.ownerHidden !== undefined ? { ownerHidden: b.ownerHidden } : {}),
-      }, operatorBy(c));
+      if (!("personId" in b)) throw new OrgError("personId is required (null: none)");
+      await patchPlacement(id, p(c, "pid"), { stakeholder: b.personId }, operatorBy(c));
       return c.json(await orgPage(id));
     }),
   );
-  // Archive Project (§app.organizations/archive): refused while anything in it is open, naming each.
-  app.post(
-    "/api/orgs/:id/projects/:pid/archive",
+  app.put(
+    "/api/orgs/:id/projects/:pid/owner-hidden",
     handle(async (c) => {
       const id = p(c, "id");
-      const pid = p(c, "pid");
-      if (!readProjects(id).some((x) => x.id === pid)) throw new OrgError("Unknown project", 404);
-      await setProjectArchived(id, pid, true, operatorBy(c), await archiveBlockers(id, pid));
-      nudgeMarks(); // its sessions leave the Organizations region: re-diff the list now
+      await patchPlacement(id, p(c, "pid"), { ownerHidden: (await body(c)).ownerHidden }, operatorBy(c));
       return c.json(await orgPage(id));
     }),
   );
-  app.post(
-    "/api/orgs/:id/projects/:pid/unarchive",
-    handle(async (c) => {
-      const id = p(c, "id");
-      await setProjectArchived(id, p(c, "pid"), false, operatorBy(c));
-      nudgeMarks();
-      return c.json(await orgPage(id));
-    }),
+
+  // The org's cost rollup: its projects' totals (each project's own card is /api/projects/:pid/costs).
+  app.get(
+    "/api/orgs/:id/costs",
+    handle(async (c) => c.json(await orgCosts(p(c, "id")), 200, { "Cache-Control": "no-store" })),
   );
 
   // ---- the Pipeline and held acts (§app.project-overseer/pipeline, /holds) ---------------------------------
@@ -571,18 +562,6 @@ export function registerOrgRoutes(app: Hono<any>): void {
     "/api/orgs/:id/projects/:pid/pipeline/:itemId/timeline",
     handle((c) => c.json(itemTimeline(p(c, "id"), p(c, "pid"), p(c, "itemId"), { includeQuiet: c.req.query("quiet") === "1" }))),
   );
-  // The operator's Cancel on a held act (Needs you, the Pipeline): the statechart's hold/cancel.
-  app.post(
-    "/api/orgs/:id/held/:holdId/cancel",
-    handle(async (c) => {
-      const b = await body(c).catch(() => ({}) as Record<string, unknown>);
-      const reason = typeof b.reason === "string" && b.reason.trim() ? b.reason.trim() : undefined;
-      await cancelHeld(p(c, "id"), p(c, "holdId"), reason, operatorBy(c));
-      attentionChanged();
-      return c.json({ ok: true as const });
-    }),
-  );
-
   // ---- the owner and the Owner page (§app.owner-page) -----------------------------------------------
 
   app.put(

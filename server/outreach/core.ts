@@ -5,7 +5,8 @@ import { composeMessage, notSentReason, OUTREACH_NOT_READY, waDigits, type Chann
 import { batonById, currentOffer, targetOfPerson } from "../baton";
 import { hostOf, heldAt, onOrgHostOpened, refusalError, type Effect, type OrgHostApi } from "../org-engine";
 import type { Envelope } from "../org-envelope";
-import { OrgError, readRoster } from "../orgs";
+import { OrgError, placementSid, readRoster } from "../orgs";
+import { projectSid } from "../projects/sids";
 import { readOverseerState } from "../overseer-store";
 import { stateRoot } from "../state-root";
 import { LinkRefused, parseLinkRef, RESOLVERS } from "./links";
@@ -190,7 +191,7 @@ export async function sendAct(input: { orgId: string; projectId: string; personI
     ...(leak ? { leak } : {}),
     sentBy: input.sentBy,
   };
-  const sid = `project/${orgId}/${projectId}`;
+  const sid = placementSid(orgId, projectId);
   const out = await hostOf(orgId).act(sid, "outreach/send", payload, envelope, { settle: true });
   if (!out.taken) throw refusalError(out.refusal ?? { sentence: "That can't be done now." });
   const name = p?.name ?? "They";
@@ -221,9 +222,9 @@ export async function sendHandoffLink(sessionId: string, personId: string | unde
 // ---- the effect --------------------------------------------------------------------------------------
 
 /** Who a link a send makes records as its maker (§app.outreach/links): the operator, else the overseer that sent it —
-    the project's overseer conversation (the project statechart's own), or the current global Overseer. */
-function makerOf(host: OrgHostApi, sessionId: string, by: OutreachLogLine["by"]): string {
-  const id = by === "project-overseer" ? (host.data(sessionId)?.overseer as { id?: unknown } | undefined)?.id : by === "operator-via-overseer" ? readOverseerState()?.current : null;
+    the project's overseer conversation (its project statechart's own), or the current global Overseer. */
+function makerOf(host: OrgHostApi, projectId: string, by: OutreachLogLine["by"]): string {
+  const id = by === "project-overseer" ? (host.data(projectSid(projectId))?.overseer as { id?: unknown } | undefined)?.id : by === "operator-via-overseer" ? readOverseerState()?.current : null;
   return typeof id === "string" && id ? `session:${id}` : "operator";
 }
 
@@ -249,14 +250,14 @@ async function feedNotSent(host: OrgHostApi, orgId: string, sessionId: string, p
 
 function registerOutreachEffects(host: OrgHostApi, orgId: string): void {
   host.effects.register("outreach-send", async (e: Effect) => {
-    // `project/<org>/<project>`
+    // `placement/<org>/<project>`
     const sessionId = String(e.sessionId);
-    const projectId = sessionId.split("/").slice(2).join("/");
+    const projectId = String(host.data(sessionId)?.projectId ?? "");
     const link = parseLinkRef(e.link) ?? undefined;
     const by = e.by === "operator-via-overseer" || e.by === "project-overseer" ? e.by : "operator";
     const key = typeof e.statechartKey === "string" && e.statechartKey ? e.statechartKey : String(e.key);
     const personId = String(e.personId);
-    const r = await send({ orgId, projectId, personId, ...(link ? { link } : {}), ...(typeof e.note === "string" ? { note: e.note } : {}), by, createdBy: makerOf(host, sessionId, by), key });
+    const r = await send({ orgId, projectId, personId, ...(link ? { link } : {}), ...(typeof e.note === "string" ? { note: e.note } : {}), by, createdBy: makerOf(host, projectId, by), key });
     if (r.outcome !== "sent" && by === "project-overseer") await feedNotSent(host, orgId, sessionId, projectId, personId, r).catch((err) => console.warn(`[outreach] could not log a send that did not go: ${err instanceof Error ? err.name : "error"}`));
     return r;
   });

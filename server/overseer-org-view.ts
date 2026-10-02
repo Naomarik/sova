@@ -6,9 +6,9 @@ import type { NamedChange, OrgChange, OrgNeedsYou, OrgProject, Person, PersonCon
 import { AUTONOMY_MEANING, LIMIT_WHAT, PO_LIMIT_KINDS, type ProjectOverseerInfo } from "../shared/project-overseer";
 import { allBatons, batonById, nameOf, sessionPathOf, workspaceHasFile } from "./baton";
 import { personPage } from "./person-page";
-import { orgCosts, projectCost } from "./project-costs";
+import { projectCost } from "./project-costs";
 import { listDecisions } from "./reconcile";
-import { operatorName, orgDir, readHistory, readIndex, readOrg, readOrgAbout, readOrgHistory, readProjects, readRoster, recentChanges } from "./orgs";
+import { operatorName, orgCosts, orgDir, readHistory, readIndex, readOrg, readOrgAbout, readOrgHistory, readProjects, readRoster, recentChanges } from "./orgs";
 import { projectOverseerPaths } from "./project-overseer-store";
 import { lastUpdate } from "./project-updates";
 import { readTodos } from "./overseer-todos";
@@ -425,7 +425,7 @@ export async function projectView(orgId: string, projectId: string, items = fals
   const update = lastUpdate(orgId, projectId);
   lines.push("", `Last owner update: ${update ? `${ago(update.at, now)}${update.withdrawnAt ? " (taken down)" : ""}` : "none"}`);
   try {
-    const cost = await projectCost(orgId, projectId);
+    const cost = await projectCost(projectId);
     lines.push(`Cost: ${usd(cost.totalUsd)} at API prices, ${plural(cost.sessions, "session")} counted${cost.unpriced.length ? `; some tokens unpriced (${cost.unpriced.map((u) => u.model).join(", ")})` : ""}`);
   } catch {
     lines.push("Cost: unavailable");

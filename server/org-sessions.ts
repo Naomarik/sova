@@ -4,7 +4,7 @@ import type { SessionOrg, SessionOrgRef } from "../shared/protocol";
 import { allBatons, isRetiredBaton } from "./baton";
 import { buildMerged } from "./build-merged";
 import { orgOfSessionPath, readIndex, readOrg, readProjects } from "./orgs";
-import { readOrgBuilds, type BuildKind, type BuildRow } from "./build-loadout";
+import { readEngineBuilds, type BuildKind, type BuildRow } from "./build-loadout";
 import { projectOverseerPaths, readPoMarker, readPoState } from "./project-overseer-store";
 
 /**
@@ -84,7 +84,7 @@ export function orgLookup(): OrgLookup {
     if (!currents.has(k)) {
       let cur: string | null = null;
       try {
-        cur = readPoState(projectOverseerPaths(orgId, projectId, dir))?.current ?? null;
+        cur = readPoState(projectOverseerPaths(projectId, dir))?.current ?? null;
       } catch {
         // not a store id shape
       }
@@ -110,7 +110,7 @@ export function orgLookup(): OrgLookup {
         // The marker names the project; a file past the state's history cap is still that project's
         // (cleared) conversation — it sits in the org's own workspace, where no fork is ever written.
         const m = readPoMarker(path);
-        if (m && m.orgId === ws.orgId) {
+        if (m && namesOf(ws.orgId, ws.dir).projects.has(m.projectId)) {
           const current = currentOf(ws.orgId, m.projectId, ws.dir) === id;
           return { ...ref(ws.orgId, ws.dir, m.projectId), kind: "overseer", ...(current ? {} : { finished: true as const }) };
         }
@@ -137,7 +137,7 @@ export function orgCodingIds(): Set<string> {
 function codingSessions(orgs: readonly { id: string; dir: string }[]): Map<string, { orgId: string; dir: string; projectId: string; row: BuildRow }> {
   const out = new Map<string, { orgId: string; dir: string; projectId: string; row: BuildRow }>();
   for (const o of orgs) {
-    for (const r of readOrgBuilds(o.id)) if (ORG_CODING_KINDS.has(r.kind) && !out.has(r.sessionId)) out.set(r.sessionId, { orgId: o.id, dir: o.dir, projectId: r.projectId, row: r });
+    for (const r of readEngineBuilds(o.id)) if (ORG_CODING_KINDS.has(r.kind) && !out.has(r.sessionId)) out.set(r.sessionId, { orgId: o.id, dir: o.dir, projectId: r.projectId, row: r });
   }
   return out;
 }

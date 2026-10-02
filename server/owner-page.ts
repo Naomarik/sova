@@ -167,7 +167,7 @@ async function builtCounts(ctx: Ctx, project: OrgProject): Promise<{ finished: n
   let finished = 0;
   let inProgress = 0;
   const times: string[] = [];
-  for (const b of readBuilds(ctx.orgId, project.id)) {
+  for (const b of readBuilds(project.id)) {
     times.push(b.createdAt, b.merged?.at ?? "");
     const r = await withWorktreePath(b, project.root);
     if (!r) {

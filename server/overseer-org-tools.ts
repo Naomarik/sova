@@ -8,7 +8,7 @@ import { createBaton, handoffTo, offerTo, projectAbilities } from "./baton";
 import type { OperatorBy } from "./orgs";
 import { ABILITIES_PARAM, overseerAbilities } from "./gathering-abilities";
 import type { ToolCall } from "./overseer-idea-tools";
-import { readHistory } from "./orgs";
+import { orgOfProject, readHistory } from "./orgs";
 import {
   batonOf,
   displayName,
@@ -598,10 +598,12 @@ export function orgTools(d: OrgToolDeps): Tool[] {
               const pv = listPreviews().find((v) => v.id === (p.preview as string).trim());
               if (!pv) throw refuse("No such preview.");
               if (!p.person) throw refuse("person is required with preview.");
-              const who = resolvePerson(pv.orgId, p.person);
-              requireConfirm({ people: [personOf(pv.orgId, who)] });
+              const pvOrg = orgOfProject(pv.projectId);
+              if (!pvOrg) throw refuse("That preview's project is in no organization here, so there is no roster to send it to.");
+              const who = resolvePerson(pvOrg, p.person);
+              requireConfirm({ people: [personOf(pvOrg, who)] });
               const r = await counted("org", async () =>
-                ok(await d.call("POST", "/api/outreach/send", { orgId: pv.orgId, projectId: pv.projectId, personId: who.id, link: { kind: "preview", preview: pv.id }, ...(note ? { note } : {}) }), "Sending the link"),
+                ok(await d.call("POST", "/api/outreach/send", { orgId: pvOrg, projectId: pv.projectId, personId: who.id, link: { kind: "preview", preview: pv.id }, ...(note ? { note } : {}) }), "Sending the link"),
               );
               if (r?.outcome === "sent") return { content: text(`Sent ${who.name} the preview link on WhatsApp.`), details: { person: who.id } };
               throw refuse(`Not sent: ${typeof r?.why === "string" ? r.why : "the send failed."}`);

@@ -1659,6 +1659,12 @@ no region (they are in the overseer's own History, §app.project-overseer/page).
 **Conversations** and **Conflicts to settle** (each split Not started / In progress / Done) and
 **Builds** (running or waiting, then Done), every Done collapsed.
 
+Standalone projects (§app.projects/standalone) have a **Projects** region of their own, right
+before Organizations and shaped like it with no organization level: each project's heading with its
+overseer's eye, then its Builds (§app.projects/list). A standalone project's overseer
+conversations and coding sessions are listed there and on no ordinary surface, as an
+organization's are here.
+
 ```html
 <!-- Omitted entirely when it has no row and no eye (with a query: 0 hits), like the Archive. -->
 <details class="sidebar-region sidebar-orgs" aria-labelledby="r-orgs" open>

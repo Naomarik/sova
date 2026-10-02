@@ -254,7 +254,6 @@
 (def entry
   {:statechart statechart
    :version    version
-   ;; v1 → v2 (the organization left the project) is registry.cljc's, from proj-strip-org
    :migrate    {}
    :storage    :portable
    :exported   [:name :root :archived :overseer :started :last-merged-at]

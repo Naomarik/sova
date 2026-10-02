@@ -7,7 +7,7 @@ each other (§design/ground-rules and §design/deviations record the deviation).
 the session stays behind, closed by the scrim, Esc, or its Close button (Cancel while anything
 is unsaved, §app.settings-dialog/save-bar).
 
-The rail is the structure: each settings screen is one tab — General, Models, Accounts, Subagents, Modes, Teams,
+The rail is the structure: each settings screen is one tab — General, Models, Accounts, Subagents,
 Profiles, Overseer, Notifications, Decisions, Summaries, Organizations, Themes, Mesh, Public links, Outreach, Voice, Experimental.
 Tabs move with the arrow keys as well as the pointer, and the selected tab has focus on open: the
 two have to name the same screen. The gear opens General; the mode menu's **Configure Delegate** gear
@@ -134,12 +134,11 @@ reverted. A failed save keeps every switch where you put it and says so in an er
 While the model list or the policy loads, the panel shows skeleton rows. If the policy can't be
 read, an error banner offers Retry and touches nothing.
 
-## §app.settings-dialog/modes — Modes
+## §app.settings-dialog/modes — Worker rows
 
-The **Modes** tab explains that Delegate routing and the spec writer now belong to subagent
-profiles, and links to **Subagents** with Manage Subagent Profiles. The **Teams** tab explains
-the same move for coordinator, monitor and ordinary-member choices and offers the same link.
-Neither edits a legacy file. Major and minor modes are still chosen in each chat's mode menu.
+There is no Modes or Teams tab: Delegate routing, the spec writer and the standing team roles are
+edited only in **Subagents**, and major and minor modes are chosen in each chat's mode menu. No
+settings screen edits a legacy file.
 
 The **Subagents** tab edits named setups (§chat.subagent-profiles/settings): Delegate routing,
 team roles and thresholds, members default, and spec writer. The worker-row rules below apply
@@ -148,8 +147,9 @@ there; the chat's profile resolves the routing, not a global editor (§chat.suba
 Delegate routes four kinds of work, in this order: **Planning & specs** (non-editing design,
 including any investigation that feeds one), **Investigation** (focused read-only research or
 diagnosis), **Routine implementation** (mechanical, low-risk) and **Complex implementation**
-(ambiguous, cross-cutting, high-risk). Each is a `fieldset` with a **Primary** row and an optional
-**Fallback** row; a row is three native selects — Backend (`pi`, `Claude Code`), Model, Effort —
+(ambiguous, cross-cutting, high-risk). Each is a `fieldset` named by its work kind with one
+worker row and an optional **Fallback** row; while a fallback is set the first row is labelled
+**Primary**. A row is three native selects — Backend (`pi`, `Claude Code`), Model, Effort —
 side by side when the panel has room and stacked under 640px.
 
 - **Choices, not free text.** Models come from what each backend offers
@@ -185,9 +185,11 @@ side by side when the panel has room and stacked under 640px.
 - **The policy is shown, not enforced here.** A model Settings → Models keeps from subagents reads
   "— off for subagents" and warns under its row; spawn enforces the policy, and Delegate uses that
   profile's fallback, or asks.
-- **Fallback** is a toggle. Off: "No fallback: if the primary can't run, the agent asks you which
-  model to use." On: a second row starting blank on the primary's backend. A fallback identical to
-  its primary is refused.
+- **Fallback** is added and removed per row: **Add Fallback** under a lone row adds a second row
+  starting blank on the primary's backend; **Remove Fallback** under that row takes it away. What
+  happens without one is said once, as the section's lede, never under each row: "Without a
+  fallback, the agent asks you which model to use when a route's primary can't run." A fallback
+  identical to its primary is refused.
 - **Saving** is explicit — the dialog's Save Changes and Discard Changes
   (§app.settings-dialog/save-bar) — because a subagent setup is one coherent choice, not a save
   per worker row. Save waits for every chosen row to have a model and an effort, valid team
@@ -646,8 +648,7 @@ defaults, each photo field on its own).
 Every switch, checkbox and radio in Settings is a label row: the native input hidden inside it, so
 the label's text and its control are one target, at least 44px tall. A row that leads with its
 control and reads left to right (Subagents' **Add a coordinator/monitor to new teams**, **Pause the
-team**, members-default and spec-writer switches, and every **Fallback** switch — Subagents and
-Summaries — the Decisions switches and radios, Overseer proactivity radios, and the Typography text sizes) is only as
+team**, members-default and spec-writer switches, Summaries' **Fallback** switch, the Decisions switches and radios, Overseer proactivity radios, and the Typography text sizes) is only as
 wide as its text and control: a click on the empty row beside it does nothing. A row that spreads
 its text and switch across the panel (General's **Summary line**, the Claude Code provider, Mesh's
 sync rows, the Models policy switches) keeps the whole row as its target.

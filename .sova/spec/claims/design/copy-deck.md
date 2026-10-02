@@ -452,14 +452,16 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Where | Copy |
 |---|---|
 | Tab / section title | Subagents / Subagent profiles |
-| Intro | One bundle of every model your subagents are given: Delegate's routing, teams, and the spec writer. A chat picks one in its mode menu; new chats start on the default. Saving changes the library for every chat on the changed profile, from its next turn or team action — running workers keep their models. |
-| Legacy tabs | Modes and Teams explain the move and offer Manage Subagent Profiles; neither edits legacy files |
-| Editor groups | Delegate routing · Teams · Members default · Spec writer |
+| Intro | Which models your subagents use. A chat picks a profile in its mode menu; new chats start on the default. |
+| Editor head | ‹ Subagent profiles (back to the list) · Profile name · {saved footprint} or Not saved yet |
+| Editor sections (collapsible, summary when closed) | Delegate routing — {distinct primary models} · {n} fallback(s) / no fallbacks · Teams — Coordinator + monitor / Coordinator only / No standing roles · members on {model} / members on the lead's model · Spec writer — {model}[ · 1 fallback] / Off · the session writes it |
 | Work-kind legends | Planning & specs · Investigation · Routine implementation · Complex implementation |
-| Row labels | Primary · Backend · Model · Effort · Fallback (toggle) |
+| Row labels | Primary (only while a fallback is set) · Fallback · Backend · Model · Effort · [Add Fallback] · [Remove Fallback] |
+| Section ledes (no fallback, said once) | Delegate: Without a fallback, the agent asks you which model to use when a route's primary can't run. · Teams: Without a fallback, a team isn't created when a role's primary can't run. · Spec writer: Without a fallback, the session writes the spec itself when the writer can't run. |
+| Teams | Coordinator: Add a coordinator to new teams · Monitor: Add a monitor to new teams (hint while the coordinator is off: The monitor reports to the coordinator, so it needs one.) · Instructions fold: Instructions — {role name} · extra instructions set / no extra instructions; Role name; {Role} instructions, hint "Added to the {role}'s standing instructions in every new team." · Handover: Retire timeout (minutes) · Members default: Choose a model for ordinary members, off hint "A member nobody gave a model runs on its team lead's model." |
+| Spec writer | Use a spec writer while spec is on · off hint: The session writes the spec itself. |
 | Select placeholders | Choose a model (Checking… while asking) · Choose |
 | Model option suffixes | — off for subagents · — not offered · — not verified |
-| No fallback | No fallback: if the primary can't run, the agent asks you which model to use. |
 | Row notes | Choose a model. · Choose an effort. · {backend} doesn't offer {model}. · {model} doesn't take {effort} effort. · {policy reason}. Delegate uses the fallback, or asks. · Not verified: {backend} couldn't list its models. · Not verified: {provider} models exist only in sessions started with that provider on. · Same as the primary. Choose another worker, or no fallback. |
 | Checking | Checking which models each backend offers… |
 | Backend can't list | Stored choices remain in their rows as not verified; a save's notes name the affected slots and reason |

@@ -134,9 +134,10 @@ Delegate's row detail line reads "Profile: <name>".
 
 ## §chat.subagent-profiles/settings — Settings → Subagents
 
-Settings gains a **Subagents** tab whose sections edit one profile. The old Modes and Teams tabs
-explain the move and link to Subagents rather than editing legacy files, so there are never two
-editors for one setting.
+Settings has a **Subagents** tab that lists the profiles and edits one at a time. It is the only
+editor for these settings: there are no Modes or Teams tabs, and no settings screen edits the
+legacy files. The tab's intro is one sentence: "Which models your subagents use. A chat picks a
+profile in its mode menu; new chats start on the default."
 
 - **The list.** Off first, then every profile: its name, its footprint, and a "Default" chip on
   the one new sessions start from. With more than six rows, Off included, the list gains a search field; below
@@ -144,13 +145,31 @@ editors for one setting.
   has only Make Default. The list's head has **New Profile** and **Save Current as Profile** (this chat's effective setup when opened from its mode menu;
   otherwise what new sessions get now, saved under a new name). Deleting the default is refused: make another the
   default first. A chat whose pick is deleted follows the default.
-- **The editor** (Edit, or a new profile): the name, then **Delegate routing** (the four work
-  kinds), **Teams** (coordinator, monitor, their thresholds, and **Members default**: off, or one
-  worker), and **Spec writer** — the same rows, validation and save rules the old screens had
-  (§app.settings-dialog/modes): choices from discovery, a changed worker its backend can't run is
-  refused, one that can't be checked or that the policy denies saves with a note. The dialog's
-  Save Changes saves the profile being edited; its unsaved edits hold a close, and another profile
-  can't be opened over them.
+- **The editor** (Edit, or a new profile) replaces the list in the tab. Its head is a back
+  control, **Subagent profiles**, that returns to the list, then the profile's name field with the
+  saved footprint under it ("Not saved yet" for a new one). Below are three collapsible sections,
+  each a header that shows, while closed, a one-line summary of what is inside:
+  - **Delegate routing**, open when the editor opens; its summary is the routes' distinct primary
+    models and how many fallbacks are set ("fable · opus · 1 fallback"). The four work kinds
+    are compact rows (§app.settings-dialog/modes), each with Add Fallback or Remove Fallback.
+  - **Teams**; its summary names the standing roles and the members default ("Coordinator +
+    monitor · members on opus"; "No standing roles · members on the lead's model"). **Coordinator**
+    and **Monitor** each have one switch and, while on, their worker row and fallback, and an
+    **Instructions** fold holding the role name and the role's extra instructions. Turning the
+    coordinator off stores no standing roles (`teams: null`); turning it on again restores the
+    profile's saved roles, else the legacy team defaults. The monitor reports to the coordinator, so
+    its switch waits for one. The monitor's own settings sit under it: wrap-up context %, check
+    interval, and the pause near a usage limit with its resume margin. The retire timeout is a
+    **Handover** line under both roles. **Members default** is one switch and one worker row.
+  - **Spec writer**, one heading and one switch ("Use a spec writer while spec is on"); its summary
+    is the writer's model, or "Off · the session writes it".
+  A section holding something Save waits for opens itself, and a role whose fields need fixing
+  shows them even while switched off. The mode menu's spec gear opens the chat's profile with Spec
+  writer open and in view. Rows, validation and save rules are §app.settings-dialog/modes': choices
+  from discovery, a changed worker its backend can't run is refused, one that can't be checked or
+  that the policy denies saves with a note. The dialog's Save Changes saves the library; unsaved
+  edits hold a close. Going back keeps them: the list then offers only that profile's Edit, so
+  another profile can't be opened over them, and Discard Changes or Save Changes frees the rest.
 - A save reaches every chat on that profile from its next turn or team action.
 
 ## §chat.subagent-profiles/limit-row — After a usage limit

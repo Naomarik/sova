@@ -11436,7 +11436,10 @@
         "src/lib/settings-nav.ts",
         "src/lib/settings-nav.test.ts",
         "src/design/base.css",
-        "server/subagent-profiles.ts"
+        "server/subagent-profiles.ts",
+        "src/lib/subagent-editor.ts",
+        "src/lib/subagent-editor.test.ts",
+        "src/components/WorkerSlotRow.tsx"
       ]
     },
     "§chat/subagent-profiles": {

@@ -5,8 +5,8 @@ A team created with `team_create` (pi-config's subagents extension, in the TUI o
 Sova hosts) can get two standing members from its parent chat's effective subagent profile
 (§chat.subagent-profiles/resolution), instead of from the calling model's arguments: a **coordinator** that does no implementation and is the only member that talks to the
 main thread, and a **monitor** that watches the team's context and provider usage on a timer.
-Settings → Subagents edits these choices together with a members default; Modes and Teams
-only explain the move (§app.settings-dialog/modes). Nothing here depends on Sova running.
+Settings → Subagents edits these choices together with a members default; it is their only
+editor (§chat.subagent-profiles/settings). Nothing here depends on Sova running.
 `team-defaults.json` remains the legacy seeding/fallback input. Off configures neither standing
 role nor members default; it does not remove workers already running.
 

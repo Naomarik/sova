@@ -21,7 +21,7 @@ which nothing shows.
 
 The login registry, per-spawn selection and failover live in the claude-code extension
 (`pi-config/extensions/claude-code/accounts.ts`, node built-ins only); the server reads and
-writes the registry through that file, like Settings → Teams does `team-defaults.json`.
+writes the registry through that file, like Settings → Subagents does `subagent-profiles.json`.
 
 ## §app.claude-logins/registry — The registry and a login's directory
 

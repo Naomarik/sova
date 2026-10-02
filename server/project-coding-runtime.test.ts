@@ -6,7 +6,7 @@
 // session was created, its worktree cut and its mode set — which is what is checked.
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -320,6 +320,14 @@ describe("a project's coding sessions", async () => {
     assert.doesNotMatch(readFileSync(made.path, "utf8"), /sova-coding-worktree|"type":"message"/);
     const res = await app.request(`/api/projects/prj_zzzzzzzz/overseer/coding`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
     assert.equal(res.status, 404);
+    const listed = () => readdirSync(dirname(made.path)).length;
+    const before = listed();
+    const refused = await app.request(`/api/projects/${plain.id}/overseer/coding`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ prompt: "do it" }) });
+    assert.equal(refused.status, 400);
+    assert.equal((await refused.json()).error, "This starts a session with no first prompt. To send one, start it from a to-do or idea (items/code).");
+    assert.equal(listed(), before, "no session was started");
+    const ok = await app.request(`/api/projects/${plain.id}/overseer/coding`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ title: "fine" }) });
+    assert.equal(ok.status, 201);
   });
 
   test("New Coding Session whose mode can't be set: started and listed, and it says so", async () => {

@@ -4,6 +4,7 @@ import type { PlaybookInfo } from "../../shared/protocol";
 import { defaultRemoteOf } from "../files";
 import { listModels } from "../models";
 import { listPlaybooks } from "../playbooks";
+import { claudeCodeProviderEnabled } from "../web-settings";
 import { readProject } from "./spaces";
 
 /**
@@ -80,9 +81,15 @@ export async function onboardFacts(projectId: string): Promise<OnboardFacts> {
   };
 }
 
+/**
+ * The refs this host offers with credentials. Claude Code's models register per session runtime, so a
+ * server that opened none yet lists none: the Claude Code switch (Settings → Experimental) is what
+ * offers the default. Null: unknown (the default is kept).
+ */
 async function offeredRefs(): Promise<string[] | null> {
   try {
-    return (await listModels()).map((m) => m.ref);
+    const refs = (await listModels()).map((m) => m.ref);
+    return claudeCodeProviderEnabled() ? [...refs, ONBOARD_MODEL.model] : refs;
   } catch {
     return null;
   }

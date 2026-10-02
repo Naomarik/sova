@@ -1990,7 +1990,10 @@ export interface WorkerResumeResult { worker: WorkerInfo | null }
 export interface UsageWindow { label: string; pct: number; resetsAt?: string; /** Raw counts when the provider exposes them (e.g. z.ai MCP calls: used/limit). */
   used?: number; limit?: number; /** Model-family scope when the window only covers a subset (e.g. Claude's "7d scoped" Fable window). */
   scope?: string; /** Provider-flagged binding constraint (currently active limit). */
-  active?: boolean }
+  active?: boolean; /** When the window began, when its own data says (OpenAI: resetsAt minus its length; Ollama: the
+      user's reset day). Absent: its length is its label's, if the label states one (§app.insights/pace-tick). */
+  startsAt?: string; /** The reset is the user's declared day (usage-windows.json), not the provider's answer. */
+  declared?: true }
 /** Prepaid credit balance, for a provider that reports money left instead of usage windows (DeepSeek). */
 export interface UsageBalance { currency: string; total: number; granted: number; toppedUp: number; available: boolean }
 export interface UsageProvider {
@@ -2046,7 +2049,13 @@ export interface UsageInsight {
       (§app.insights/usage-cards). Absent from an older server; the page then shows the
       one Claude card from `providers`. */
   claudeLogins?: UsageClaudeLogin[];
+  /** Ollama Cloud's declared reset day (usage-windows.json, §app.insights/usage-reset-day): 1..31,
+      or null while none is set. Absent from an older server. */
+  ollamaResetDay?: number | null;
 }
+/** `PUT /api/insights/usage/reset-day`: set (1..31) or clear (null) a provider's declared reset
+    day; answers with the whole UsageInsight. */
+export interface UsageResetDayRequest { provider: "ollama"; day: number | null }
 /** One Claude login's card on the Usage page. Identity and standing only: never a token. */
 export interface UsageClaudeLogin {
   /** `default` (Claude Code's own directory) or `l-` and 8 hex digits. */

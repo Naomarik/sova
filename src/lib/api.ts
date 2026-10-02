@@ -52,6 +52,7 @@ import type {
   TranscriptRows,
   UploadResult,
   UsageInsight,
+  UsageResetDayRequest,
   WebSettings,
   WorktreesInsight,
   MeshCandidate,
@@ -793,6 +794,9 @@ export const fetchUsage =() => request<UsageInsight>("/api/insights/usage");
 
 /** Fetch every provider's usage now and rewrite the shared cache; resolves to the new insight. */
 export const refreshUsage = () => request<UsageInsight>("/api/insights/usage/refresh", { method: "POST" });
+/** Ollama Cloud's declared reset day (1..31, or null to clear; §app.insights/usage-reset-day): answers with the whole usage payload. */
+export const putUsageResetDay = (day: number | null) =>
+  request<UsageInsight>("/api/insights/usage/reset-day", { method: "PUT", body: JSON.stringify({ provider: "ollama", day } satisfies UsageResetDayRequest) });
 
 export const fetchAgents = () => request<AgentsInsight>("/api/insights/agents");
 

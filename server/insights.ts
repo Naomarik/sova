@@ -39,6 +39,8 @@ import type { LinkedAgentInfo } from "../shared/mesh-links";
 // The usage-status extension's fetch/cache core. Part of the sanctioned pi-config import
 // surface (node builtins only, like extensions/mode/state.ts) — see CLAUDE.md.
 import { claudeLoginIds, forceRefresh } from "../pi-config/extensions/usage-status/fetch.ts";
+// Ollama's declared reset day (usage-windows.json), the same sanctioned surface (builtins only).
+import { monthlyWindow, readUsageWindows, setOllamaResetDay } from "../pi-config/extensions/usage-status/windows.ts";
 import { readAuthStatus, readClaudeLoginAuth } from "./auth-status";
 import { ClaudeAccountsService } from "./claude-accounts";
 import { hasPage, listExplanations, sortExplanations } from "./explanations";
@@ -113,6 +115,15 @@ function usageWindow(label: string, w: unknown): UsageWindow | null {
   if (pct === undefined) return null;
   const resetsAt = str(w.resetsAt);
   return resetsAt ? { label, pct, resetsAt } : { label, pct };
+}
+
+/** An OpenAI window: its own length (`seconds`, additive in the cache) gives its start. */
+function openAiWindow(w: unknown): UsageWindow | null {
+  const out = usageWindow(isRec(w) && typeof w.label === "string" ? w.label : "?", w);
+  const seconds = isRec(w) ? num(w.seconds) : undefined;
+  const end = out?.resetsAt ? Date.parse(out.resetsAt) : NaN;
+  if (!out || seconds === undefined || seconds <= 0 || Number.isNaN(end)) return out;
+  return { ...out, startsAt: new Date(end - seconds * 1000).toISOString() };
 }
 
 function mcpWindow(m: unknown): UsageWindow | null {
@@ -204,8 +215,7 @@ function usageProvider(id: UsageProvider["id"], data: unknown, error: unknown): 
       id === "claude"
         ? claudeWindows(data)
         : id === "openai"
-          ? (Array.isArray(data.windows) ? data.windows : []).map((w: unknown) =>
-              usageWindow(isRec(w) && typeof w.label === "string" ? w.label : "?", w))
+          ? (Array.isArray(data.windows) ? data.windows : []).map(openAiWindow)
           : id === "zai"
             ? [
                 // coding-plan window, labelled by its length ("5h", "1d", "1w", "45m")
@@ -408,10 +418,35 @@ export async function getUsageInsight(): Promise<UsageInsight> {
   const read = absent.length === 0 ? d.providers : d.providers.map((p) => (absent.includes(p.id) ? lastKnown(p) : p));
   // Sign-in facts come from the credential files, per request (memoized there), never from the cache.
   const auth = await readAuthStatus();
-  const providers = read.map((p) => (auth[p.id] ? { ...p, auth: auth[p.id] } : p));
+  // Ollama's month is derived from the declared day now, never cached: a changed day or a month
+  // rollover shows at once (§app.insights/usage-reset-day).
+  const ollamaResetDay = readUsageWindows(getAgentDir()).ollama?.resetDay ?? null;
+  const providers = read.map((p) => withDeclaredReset(auth[p.id] ? { ...p, auth: auth[p.id] } : p, ollamaResetDay, Date.now()));
   const own = providers.find((p) => p.id === "claude");
   const claudeLogins = own ? await readClaudeLogins(own, ownFetchedAt, claudeAccounts) : undefined;
-  return { ...d, providers, ...(claudeLogins ? { claudeLogins } : {}), stale: d.fetchedAt !== null && Date.now() - d.fetchedAt > USAGE_STALE_MS };
+  return { ...d, providers, ...(claudeLogins ? { claudeLogins } : {}), ollamaResetDay, stale: d.fetchedAt !== null && Date.now() - d.fetchedAt > USAGE_STALE_MS };
+}
+
+/**
+ * `PUT /api/insights/usage/reset-day` `{provider: "ollama", day: 1..31 | null}`: writes the declared
+ * day through the extension's writer, then serves usage with it. `error` for a body it refuses.
+ */
+export async function setUsageResetDay(body: unknown): Promise<UsageInsight | { error: string }> {
+  if (!isRec(body) || body.provider !== "ollama") return { error: 'provider must be "ollama"' };
+  const day = body.day;
+  if (day !== null && !(typeof day === "number" && Number.isInteger(day) && day >= 1 && day <= 31)) return { error: "day must be a whole day from 1 to 31, or null" };
+  setOllamaResetDay(day, getAgentDir());
+  return getUsageInsight();
+}
+
+/**
+ * Ollama's `month` window with the span the declared reset day gives it at `now` (`startsAt`,
+ * `resetsAt`, `declared: true`); any other provider, or no day, as it is.
+ */
+export function withDeclaredReset(p: UsageProvider, resetDay: number | null, now: number): UsageProvider {
+  if (p.id !== "ollama" || resetDay === null) return p;
+  const span = monthlyWindow(resetDay, now);
+  return { ...p, windows: p.windows.map((w) => (w.label === "month" ? { ...w, ...span, declared: true as const } : w)) };
 }
 
 /**

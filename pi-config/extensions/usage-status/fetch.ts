@@ -74,8 +74,12 @@ export type ClaudeData =
 	| { state: "nologin" }
 	| { state: "expired" };
 
+/** An OpenAI window: `seconds` is its own `limit_window_seconds` (additive; absent when the API
+    sends none), which also picks its label. */
+export type OpenAiWindow = Window & { label: string; seconds?: number };
+
 export type OpenAiData =
-	| { state: "ok"; plan?: string; limitReached?: boolean; windows: (Window & { label: string })[] }
+	| { state: "ok"; plan?: string; limitReached?: boolean; windows: OpenAiWindow[] }
 	| { state: "nologin" }
 	| { state: "expired" }
 	| { state: "na" };
@@ -191,15 +195,18 @@ export async function fetchOpenAi(): Promise<OpenAiData> {
 	const body: any = await res.json();
 	const limits = body?.rate_limit;
 	if (!limits || typeof limits !== "object") return { state: "na" };
-	const windows: (Window & { label: string })[] = [];
-	const add = (w: any, label: string) => {
-		if (w && typeof w.used_percent === "number" && Number.isFinite(w.used_percent))
-			windows.push({ label, pct: w.used_percent, resetsAt: openAiReset(w) });
+	const windows: OpenAiWindow[] = [];
+	// Each window is labelled from its own length; with none sent, the secondary keeps "5h".
+	const add = (w: any, fallback: string) => {
+		if (!w || typeof w.used_percent !== "number" || !Number.isFinite(w.used_percent)) return;
+		const secs = num(w.limit_window_seconds);
+		const seconds = secs !== undefined && secs > 0 ? secs : undefined;
+		const near = (target: number) => seconds !== undefined && Math.abs(seconds - target) <= target * 0.05;
+		const label = near(604_800) ? "7d" : near(18_000) ? "5h" : seconds === undefined ? fallback : "pri";
+		windows.push({ label, pct: w.used_percent, resetsAt: openAiReset(w), ...(seconds !== undefined ? { seconds } : {}) });
 	};
-	const secs = limits.primary_window?.limit_window_seconds;
-	const near = (target: number) => typeof secs === "number" && Math.abs(secs - target) <= target * 0.05;
 	add(limits.secondary_window, "5h");
-	add(limits.primary_window, near(604_800) ? "7d" : near(18_000) ? "5h" : "pri");
+	add(limits.primary_window, "pri");
 	windows.sort((a, b) => (a.label === "5h" ? -1 : b.label === "5h" ? 1 : 0)); // 5h before 7d, like claude
 	if (!windows.length) return { state: "na" };
 	const plan = typeof body.plan_type === "string" && body.plan_type ? body.plan_type : undefined;

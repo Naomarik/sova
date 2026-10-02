@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { UsageClaudeLogin, UsageInsight, UsageProvider } from "../../shared/protocol";
-import { stampTime } from "./format";
+import { shortDate, stampTime } from "./format";
 import {
   authCaption,
   balanceBreakdown,
@@ -18,7 +18,12 @@ import {
   claudePastNote,
   claudeReading,
   extraUsageMeter,
+  glanceBars,
+  glanceLabel,
+  glanceTitle,
   meterReset,
+  paceTone,
+  paceWords,
   money,
   moneyCompact,
   planLabel,
@@ -31,7 +36,13 @@ import {
   usageSummary,
   usesLine,
   windowLabel,
+  windowPace,
+  windowSpan,
 } from "./insights";
+import type { GlancePart } from "./insights";
+
+/** A glance part's figure as text: the money, "pending", or each bar's percentage ("–" for an empty track). */
+const fig = (p: GlancePart) => p.amount ?? (p.pending ? "pending" : p.bars!.map((b) => (b.pct === null ? "\u2013" : `${b.pct}`)).join("/"));
 
 /** A clock for tests before NOW below: every window in them has no reset, so any time works. */
 const T = Date.parse("2026-09-19T05:33:00Z");
@@ -72,7 +83,7 @@ test("providerProblem: an ok provider with a balance renders the balance, not a 
   });
 });
 
-test("usageGlance shows DeepSeek's balance last, and every window provider as a percentage", () => {
+test("usageGlance shows DeepSeek's balance last, and every window provider as a meter", () => {
   const usage: UsageInsight = {
     available: true,
     fetchedAt: 1789796008254,
@@ -89,14 +100,16 @@ test("usageGlance shows DeepSeek's balance last, and every window provider as a 
   const parts = usageGlance(usage, T);
   assert.deepEqual(parts.map((p) => p.id), ["claude", "openai", "ollama", "zai", "deepseek"]);
   assert.deepEqual(
-    parts.map((p) => `${p.abbr} ${p.amount ?? `${p.pct}%`}`),
-    ["C 47%", "O 95%", "OL 80%", "Z 7%", "DS $4"],
+    parts.map((p) => `${p.abbr} ${fig(p)}`),
+    ["C 47", "O 95", "OL 80", "Z 7", "DS $4"],
   );
-  assert.equal(parts[0]!.full, "Claude 7-day 47%");
-  assert.equal(parts[1]!.high, true);
-  // The money part carries no percentage, and the window parts carry no amount.
+  assert.equal(parts[0]!.full, "Claude 7-day: 47% used");
+  // No reset sent: no tick, so 95% is an error fill on its own, and no balance emphasis.
+  assert.deepEqual(parts[1]!.bars, [{ pct: 95, elapsed: null, tone: "error" }]);
+  assert.equal(parts[1]!.high, false);
+  // The money part carries no meter, and the window parts carry no amount.
   const ds = parts[4]!;
-  assert.equal(ds.pct, undefined);
+  assert.equal(ds.bars, undefined);
   // The foot rounds to whole units; the tooltip keeps the cents.
   assert.equal(ds.amount, "$4");
   assert.equal(ds.full, "DeepSeek balance $4.29");
@@ -105,9 +118,15 @@ test("usageGlance shows DeepSeek's balance last, and every window provider as a 
   assert.equal(parts[0]!.amount, undefined);
   // The foot row's tooltip and accessible name spell the providers out.
   assert.equal(
-    `Usage: ${parts.map((p) => p.full).join(", ")}`,
-    "Usage: Claude 7-day 47%, OpenAI 7-day 95%, Ollama Cloud Monthly 80%, Z.ai 5-hour 7%, DeepSeek balance $4.29",
+    glanceLabel(parts),
+    "Usage: Claude 7-day: 47% used. OpenAI 7-day: 95% used. Ollama Cloud Monthly: 80% used. Z.ai 5-hour: 7% used. DeepSeek balance $4.29",
   );
+  assert.equal(
+    glanceTitle(parts),
+    "Usage\nClaude 7-day: 47% used\nOpenAI 7-day: 95% used\nOllama Cloud Monthly: 80% used\nZ.ai 5-hour: 7% used\nDeepSeek balance $4.29",
+  );
+  assert.equal(glanceTitle([]), "");
+  assert.equal(glanceLabel([]), "");
 });
 
 test("money keeps the cents, moneyCompact rounds to whole units", () => {
@@ -183,8 +202,11 @@ test("resetWhen / meterReset: under 24h a duration, else a date, past a clock ti
   assert.deepEqual(resetWhen(inMs(-60_000), NOW), { past: true });
   assert.equal(resetWhen(undefined, NOW), null);
   assert.equal(resetWhen("soon", NOW), null);
-  assert.deepEqual(meterReset({ label: "5h", pct: 96, resetsAt: inMs(2 * 3_600_000 + 17 * 60_000) }, NOW), { lead: "Resets in 2h 17m" });
-  assert.deepEqual(meterReset({ label: "7d", pct: 40, resetsAt: "2026-09-25T10:00:00Z" }, NOW), { lead: "Resets Sep 25" });
+  // With a tick, the context adds the window's progress.
+  assert.deepEqual(meterReset({ label: "5h", pct: 96, resetsAt: inMs(2 * 3_600_000 + 17 * 60_000) }, NOW), { lead: "Resets in 2h 17m \u00b7 2h 43m of 5h" });
+  assert.deepEqual(meterReset({ label: "7d", pct: 40, resetsAt: "2026-09-25T10:00:00Z" }, NOW), { lead: "Resets Sep 25 \u00b7 day 1 of 7" });
+  // A window of no stated length keeps the reset alone.
+  assert.deepEqual(meterReset({ label: "pri", pct: 40, resetsAt: inMs(3 * H) }, NOW), { lead: "Resets in 3h" });
   const past = meterReset({ label: "5h", pct: 96, resetsAt: inMs(-60_000) }, NOW);
   assert.equal(past?.lead, "Reset at ");
   assert.match(past?.time ?? "", /^(1[0-2]|[1-9]):[0-5]\d [AP]M$/);
@@ -484,14 +506,14 @@ test("claudeReading: the chat's recorded login, else the one in use for new chat
 test("usageGlance: C reads the chosen login, and only several logins name it in the full text", () => {
   const u = twoLogins();
   const c = usageGlance(u, NOW)[0]!;
-  assert.deepEqual({ abbr: c.abbr, pct: c.pct, high: c.high, full: c.full }, { abbr: "C", pct: 61, high: false, full: "Claude (spare@example.com) 7-day 61%" });
+  assert.deepEqual({ abbr: c.abbr, fig: fig(c), full: c.full }, { abbr: "C", fig: "30/61", full: "Claude (spare@example.com) 5-hour: 30% used; 7-day: 61% used" });
   const onDefault = usageGlance(u, NOW, "default")[0]!;
-  assert.deepEqual({ pct: onDefault.pct, high: onDefault.high, full: onDefault.full }, { pct: 40, high: false, full: "Claude (own@example.com) 7-day 40%" });
+  assert.deepEqual({ fig: fig(onDefault), full: onDefault.full }, { fig: "100/40", full: "Claude (own@example.com) 5-hour: 100% used; 7-day: 40% used" });
   // The other providers are untouched.
-  assert.equal(usageGlance(u, NOW)[1]!.full, "OpenAI 7-day 14%");
+  assert.equal(usageGlance(u, NOW)[1]!.full, "OpenAI 7-day: 14% used");
   // One login: unchanged, no name.
   const one: UsageInsight = { ...u, claudeLogins: [login({ id: "default", email: "own@example.com", inUse: true, usage: LIMITED })] };
-  assert.equal(usageGlance(one, NOW)[0]!.full, "Claude 7-day 40%");
+  assert.equal(usageGlance(one, NOW)[0]!.full, "Claude 5-hour: 100% used; 7-day: 40% used");
 });
 
 test("usageGlance: a chosen login with no current reading is a pending C naming it, never another account's number", () => {
@@ -508,10 +530,11 @@ test("usageGlance: a chosen login with no current reading is a pending C naming 
     u.claudeLogins![1] = { ...u.claudeLogins![1]!, usage: missing };
     for (const id of [undefined, "l-0000000a"]) {
       const c = usageGlance(u, NOW, id)[0]!;
-      assert.deepEqual({ id: c.id, pending: c.pending, pct: c.pct, amount: c.amount, high: c.high, full: c.full }, {
-        id: "claude", pending: true, pct: undefined, amount: undefined, high: false, full: "Claude (spare@example.com) reading pending",
+      assert.deepEqual({ id: c.id, pending: c.pending, bars: c.bars, amount: c.amount, high: c.high, full: c.full }, {
+        id: "claude", pending: true, bars: [{ pct: null, elapsed: null, tone: null, thin: true }, { pct: null, elapsed: null, tone: null }], amount: undefined, high: false,
+        full: "Claude (spare@example.com) reading pending",
       }, why);
-      assert.equal(usageGlance(u, NOW, id)[1]!.full, "OpenAI 7-day 14%");
+      assert.equal(usageGlance(u, NOW, id)[1]!.full, "OpenAI 7-day: 14% used");
     }
     assert.equal(claudeReading(u, NOW)!.usage, missing, "summary selection is unchanged");
   }
@@ -529,14 +552,16 @@ test("usageGlance: no login chosen reads Claude Code's own login, pending once e
   const older = usage([provider({ id: "claude", windows: [{ label: "7d", pct: 100, resetsAt: inMs(-H) }] })]);
   assert.deepEqual(usageGlance(older, NOW).map((p) => ({ pending: p.pending, full: p.full })), [{ pending: true, full: "Claude (Claude Code's own login) reading pending" }]);
   assert.deepEqual(usageGlance(usage([provider({ id: "claude", state: "error", windows: [], error: "no data" })]), NOW), [], "an own login never read: no data");
-  assert.equal(usageGlance(usage([provider({ id: "claude", windows: [{ label: "7d", pct: 40, resetsAt: inMs(H) }] })]), NOW)[0]!.pct, 40);
+  assert.equal(fig(usageGlance(usage([provider({ id: "claude", windows: [{ label: "7d", pct: 40, resetsAt: inMs(H) }] })]), NOW)[0]!), "40");
 });
 
-test("usageGlance: a window whose reset passed is never the foot's window", () => {
-  // The 7-day is preferred, but its reset is gone: the 5-hour is the current reading.
+test("usageGlance: a window whose reset passed is never a reading in the foot", () => {
+  // The 7-day's reset is gone: its bar is an empty track, and only the 5-hour speaks.
   const u = usage([provider({ id: "claude", windows: [{ label: "5h", pct: 12, resetsAt: inMs(H) }, { label: "7d", pct: 100, resetsAt: inMs(-H) }] })]);
   const c = usageGlance(u, NOW)[0]!;
-  assert.deepEqual({ pct: c.pct, high: c.high, full: c.full, pending: c.pending }, { pct: 12, high: false, full: "Claude 5-hour 12%", pending: undefined });
+  assert.deepEqual({ fig: fig(c), pending: c.pending }, { fig: "12/\u2013", pending: undefined });
+  assert.deepEqual(c.bars![1], { pct: null, elapsed: null, tone: null });
+  assert.equal(c.full, `Claude 5-hour: 12% used \u00b7 4h of 5h \u00b7 resets ${stampTime(NOW + H, NOW)}`);
 });
 
 test("an account's reading prefers a login with a current window over a fresher one whose resets passed", () => {
@@ -564,9 +589,9 @@ test("usageGlance: readable selected accounts take precedence even at 100%", () 
   const u = twoLogins();
   u.claudeLogins![1]!.usage = provider({ id: "claude", windows: [{ label: "7d", pct: 100 }] });
   const c = usageGlance(u, NOW)[0]!;
-  assert.equal(c.pct, 100);
-  assert.equal(c.high, true);
-  assert.equal(c.full, "Claude (spare@example.com) 7-day 100%");
+  assert.equal(fig(c), "100");
+  assert.equal(c.bars![0]!.tone, "error");
+  assert.equal(c.full, "Claude (spare@example.com) 7-day: 100% used");
 });
 
 test("usageSummary: Claude's sentence speaks for the login in use, not a limited default no chat is on", () => {
@@ -591,6 +616,126 @@ test("claudeReading: a login in use that has no reading of its own reads its acc
     ],
   };
   assert.equal(claudeReading(u, NOW)!.usage, SPARE_READING);
-  assert.equal(usageGlance(u, NOW)[0]!.full, "Claude (a@example.com) 7-day 61%");
+  assert.equal(usageGlance(u, NOW)[0]!.full, "Claude (a@example.com) 5-hour: 30% used; 7-day: 61% used");
   assert.equal(claudeReading(u, NOW, "default")!.usage, LIMITED);
+});
+
+// §app.insights/pace-tick: the tick, its words and the foot's tone.
+const D = 86_400_000;
+
+test("windowSpan: startsAt when sent, else resetsAt minus the label's length; never a guess", () => {
+  assert.deepEqual(windowSpan({ label: "5h", pct: 1, resetsAt: inMs(H) }), { start: NOW + H - 5 * H, end: NOW + H });
+  assert.deepEqual(windowSpan({ label: "7d scoped", scope: "Fable", pct: 1, resetsAt: inMs(D) }), { start: NOW + D - 7 * D, end: NOW + D });
+  assert.deepEqual(windowSpan({ label: "7d", pct: 1, resetsAt: inMs(D), startsAt: inMs(-D) }), { start: NOW - D, end: NOW + D }, "the window's own start wins");
+  // Unknown: no reset, a label of no stated length, Ollama's month without its declared start, MCP.
+  assert.equal(windowSpan({ label: "5h", pct: 0 }), null);
+  assert.equal(windowSpan({ label: "pri", pct: 1, resetsAt: inMs(H) }), null);
+  assert.equal(windowSpan({ label: "plan", pct: 1, resetsAt: inMs(H) }), null);
+  assert.equal(windowSpan({ label: "month", pct: 1, resetsAt: inMs(H) }), null);
+  assert.equal(windowSpan({ label: "mcp", pct: 1 }), null);
+});
+
+test("windowPace: the elapsed share and its words; no tick once the reset passed", () => {
+  // 7-day ending in 3.5 days: half gone, the fourth day.
+  assert.deepEqual(windowPace({ label: "7d", pct: 50, resetsAt: inMs(3.5 * D) }, NOW), { elapsed: 0.5, progress: "day 4 of 7" });
+  // Its first instant is day 1; its last, day 7.
+  assert.equal(windowPace({ label: "7d", pct: 0, resetsAt: inMs(7 * D) }, NOW)!.progress, "day 1 of 7");
+  assert.equal(windowPace({ label: "7d", pct: 0, resetsAt: inMs(60_000) }, NOW)!.progress, "day 7 of 7");
+  // A short window counts time: 2h 10m into a 5-hour window.
+  assert.deepEqual(windowPace({ label: "5h", pct: 10, resetsAt: inMs(2 * H + 50 * 60_000) }, NOW), { elapsed: 130 / 300, progress: "2h 10m of 5h" });
+  assert.equal(windowPace({ label: "7d", pct: 50, resetsAt: inMs(-1) }, NOW), null, "reset passed");
+  assert.equal(windowPace({ label: "7d", pct: 50 }, NOW), null, "no reset");
+  // A start in the future (clock skew) is the window's first instant, never a negative tick.
+  assert.equal(windowPace({ label: "7d", pct: 0, resetsAt: inMs(8 * D), startsAt: inMs(D) }, NOW)!.elapsed, 0);
+});
+
+test("windowPace: a declared month counts calendar days, Feb clamped from day 31", () => {
+  // The server's window for reset day 31, read on Feb 10 2027 (local): Jan 31 → Feb 28.
+  const now = new Date(2027, 1, 10, 15).getTime();
+  const w = { label: "month", pct: 40, startsAt: new Date(2027, 0, 31).toISOString(), resetsAt: new Date(2027, 1, 28).toISOString(), declared: true as const };
+  assert.equal(windowPace(w, now)!.progress, "day 11 of 28");
+  // Reset day 14: Sep 14 → Oct 14 is 30 days, and Oct 1 is its 18th.
+  const oct = { label: "month", pct: 97, startsAt: new Date(2026, 8, 14).toISOString(), resetsAt: new Date(2026, 9, 14).toISOString(), declared: true as const };
+  assert.equal(windowPace(oct, new Date(2026, 9, 1, 9).getTime())!.progress, "day 18 of 30");
+  // Its words: the reset is a date, with no clock time.
+  const at = new Date(2026, 9, 1, 9).getTime();
+  assert.equal(paceWords(oct, at), `Monthly: 97% used · day 18 of 30 · resets ${shortDate(Date.parse(oct.resetsAt), at)}`);
+  assert.equal(shortDate(Date.parse(oct.resetsAt), at), "Oct 14");
+  // And the card says the date, never a countdown to that midnight.
+  assert.equal(meterReset(oct, at)!.lead, "Resets Oct 14 · day 18 of 30");
+});
+
+test("paceTone: error at 90%, warn more than 10 points ahead of the tick, else from 80% without one", () => {
+  assert.equal(paceTone(90, 0.95), "error");
+  assert.equal(paceTone(61, 0.5), "warn");
+  assert.equal(paceTone(60, 0.5), null, "exactly 10 ahead is on pace");
+  assert.equal(paceTone(30, 0.9), null, "behind the tick");
+  assert.equal(paceTone(85, 0.8), null, "high but on pace");
+  assert.equal(paceTone(80, null), "warn");
+  assert.equal(paceTone(79, null), null);
+});
+
+test("paceWords: progress only with a tick, reset only when one is ahead", () => {
+  assert.equal(paceWords({ label: "7d", pct: 50, resetsAt: inMs(3.5 * D) }, NOW), `7-day: 50% used · day 4 of 7 · resets ${stampTime(NOW + 3.5 * D, NOW)}`);
+  assert.equal(paceWords({ label: "pri", pct: 5, resetsAt: inMs(3 * H) }, NOW), `Primary: 5% used · resets ${stampTime(NOW + 3 * H, NOW)}`);
+  assert.equal(paceWords({ label: "mcp", pct: 0, used: 0, limit: 1000 }, NOW), "MCP uses: 0% used");
+  assert.equal(paceWords({ label: "5h", pct: 0 }, NOW), "5-hour: 0% used", "an idle 5-hour window has no reset and no tick");
+});
+
+test("glanceBars: two stacked bars for Claude and Z.ai, one for OpenAI and Ollama", () => {
+  const claude = provider({ id: "claude", windows: [
+    { label: "5h", pct: 10, resetsAt: inMs(2 * H + 50 * 60_000) },
+    { label: "7d", pct: 30, resetsAt: inMs(3.5 * D) },
+    { label: "7d scoped", scope: "Fable", pct: 70, resetsAt: inMs(3.5 * D), active: true },
+    { label: "7d opus", pct: 99 },
+  ] });
+  const c = glanceBars(claude, NOW)!;
+  // The active 7-day window (Fable) is the long bar; Opus never is.
+  assert.deepEqual(c.bars, [{ pct: 10, elapsed: 130 / 300, tone: null, thin: true }, { pct: 70, elapsed: 0.5, tone: "warn" }]);
+  assert.equal(c.words.length, 2);
+  assert.match(c.words[1]!, /^7-day Fable: 70% used · day 4 of 7 · resets /);
+  // An active window that isn't a 7-day one leaves the 7-day as the long bar.
+  const active5h = glanceBars(provider({ id: "claude", windows: [{ label: "5h", pct: 1, active: true }, { label: "7d", pct: 2 }] }), NOW)!;
+  assert.deepEqual(active5h.bars.map((b) => b.pct), [1, 2]);
+  const zai = glanceBars(provider({ id: "zai", windows: [{ label: "5h", pct: 5, resetsAt: inMs(4 * H) }, { label: "mcp", pct: 0, used: 0, limit: 1000 }] }), NOW)!;
+  assert.deepEqual(zai.bars, [{ pct: 5, elapsed: 0.2, tone: null, thin: true }, { pct: 0, elapsed: null, tone: null }], "MCP uses: no reset read, no tick");
+  assert.equal(zai.words[1], "MCP uses: 0% used");
+  const openai = glanceBars(provider({ id: "openai", windows: [{ label: "5h", pct: 3, resetsAt: inMs(H) }, { label: "7d", pct: 97, resetsAt: inMs(5 * D), startsAt: inMs(-2 * D) }] }), NOW)!;
+  assert.deepEqual(openai.bars, [{ pct: 97, elapsed: 2 / 7, tone: "error" }], "OpenAI: its 7-day only, the tick from its own start");
+  assert.deepEqual(glanceBars(provider({ id: "ollama", windows: [{ label: "month", pct: 97 }] }), NOW)!.bars, [{ pct: 97, elapsed: null, tone: "error" }], "no reset day: no tick");
+  // A stale file mutes every tone; a provider that isn't ok has no meter.
+  assert.deepEqual(glanceBars(claude, NOW, true)!.bars.map((b) => b.tone), [null, null]);
+  assert.equal(glanceBars({ ...claude, state: "expired" }, NOW), null);
+});
+
+test("usageGlance: C's words add each other account usable here, once per account", () => {
+  const read = (pct: number) => provider({ id: "claude", windows: [{ label: "7d", pct }] });
+  const u: UsageInsight = {
+    ...usage([read(40)]),
+    claudeLogins: [
+      // The chosen login's account: two logins of one account, never listed.
+      login({ id: "l-0000000a", email: "spare@example.com", accountUuid: "acct-spare", inUse: true, usage: read(61) }),
+      login({ id: "l-000000a2", email: "spare@example.com", accountUuid: "acct-spare", usage: read(61) }),
+      // Claude Code's own login: another account, usable here.
+      login({ id: "default", email: "own@example.com", accountUuid: "acct-own", usage: read(40) }),
+      // Two logins of a third account: listed once.
+      login({ id: "l-0000000b", email: "team@example.com", accountUuid: "acct-team", usage: read(10), fetchedAt: 5 }),
+      login({ id: "l-0000000c", email: "team@example.com", accountUuid: "acct-team", usage: provider({ id: "claude", state: "error", windows: [], error: "not read yet" }) }),
+      // Held by another device, or kept free in the pool: not usable here.
+      login({ id: "l-0000000d", email: "far@example.com", accountUuid: "acct-far", usage: read(5), holder: { label: "Laptop", self: false, free: false, stuck: false } }),
+      login({ id: "l-0000000e", email: "free@example.com", accountUuid: "acct-free", usage: read(5), holder: { label: "Free", self: false, free: true, stuck: false } }),
+    ],
+  };
+  const c = usageGlance(u, NOW)[0]!;
+  assert.equal(c.full, "Claude (spare@example.com) 7-day: 61% used");
+  assert.deepEqual(c.others, ["Claude (own@example.com) 7-day: 40% used", "Claude (team@example.com) 7-day: 10% used"]);
+  assert.equal(glanceTitle([c]), "Usage\nClaude (spare@example.com) 7-day: 61% used\nClaude (own@example.com) 7-day: 40% used\nClaude (team@example.com) 7-day: 10% used");
+  // On the default login, the spare account is the other one.
+  assert.deepEqual(usageGlance(u, NOW, "default")[0]!.others, ["Claude (spare@example.com) 7-day: 61% used", "Claude (team@example.com) 7-day: 10% used"]);
+  // A pending C still lists them; an account with no current reading is pending too.
+  const pendingU: UsageInsight = { ...u, claudeLogins: u.claudeLogins!.map((l) => (l.id === "l-0000000b" ? { ...l, usage: provider({ id: "claude", windows: [{ label: "7d", pct: 9, resetsAt: inMs(-H) }] }) } : l)) };
+  assert.deepEqual(usageGlance(pendingU, NOW)[0]!.others, ["Claude (own@example.com) 7-day: 40% used", "Claude (team@example.com) reading pending"]);
+  // One account only: nothing else to say.
+  const one: UsageInsight = { ...u, claudeLogins: u.claudeLogins!.slice(0, 2) };
+  assert.equal(usageGlance(one, NOW)[0]!.others, undefined);
 });

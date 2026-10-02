@@ -9,7 +9,7 @@ import { autoTitleSessions, fetchTargets, sessionsDir as fetchSessionsDir, setSe
 import { nameableRows, nameLabel, nameSessions, namingIn, setNaming } from "../lib/auto-title";
 import { type ArchiveGroupId, groupByArchiveDate, sessionsWord, startOfDay } from "../lib/archive";
 import { relativeTime, shortModel, tildePath } from "../lib/format";
-import { agentsHref, type GlancePart, usageGlance, usageHref } from "../lib/insights";
+import { agentsHref, type GlancePart, glanceLabel, glanceTitle, usageGlance, usageHref } from "../lib/insights";
 import { isMainThread, isOrdinarySession, isOrgSession, isTopSession } from "../lib/regions";
 import {
   eyeLabel,
@@ -998,24 +998,58 @@ function NameSessionsButton(props: { section: string; rows: readonly SessionSumm
   );
 }
 
-/** A glance part's figure: the money, the percentage, or "–" while Claude's reading is pending. */
-const glanceValue = (p: GlancePart) => p.amount ?? (p.pending ? "\u2013" : `${p.pct}%`);
+/**
+ * A provider's pace meter (§app.insights/pace-tick): each bar's fill is the share used, its tick
+ * the share of the window gone; an empty track is a window with no current reading. Decorative:
+ * the row's words carry the numbers.
+ */
+function PaceMeter(props: { bars: GlancePart["bars"] & {} }) {
+  return (
+    <span class="pace" classList={{ "pace-two": props.bars.length > 1 }} aria-hidden="true">
+      <For each={props.bars}>
+        {(b) => (
+          <span class="pace-bar" classList={{ "pace-bar-thin": b.thin === true, "pace-bar-empty": b.pct === null }}>
+            <Show when={b.pct !== null}>
+              <span
+                class="pace-fill"
+                classList={{ "pace-fill-warn": b.tone === "warn", "pace-fill-error": b.tone === "error" }}
+                style={{ "--pace-pct": `${Math.min(100, Math.max(0, b.pct!))}%` }}
+              />
+            </Show>
+            <Show when={b.elapsed !== null}>
+              <span class="pace-tick" style={{ "--pace-at": `${b.elapsed! * 100}%` }} />
+            </Show>
+          </span>
+        )}
+      </For>
+    </span>
+  );
+}
 
-/** Usage foot row: every provider at a glance ("C 47%  O 95%  OL 80%  Z 0%  DS $4.29"), or the page name. */
+/** A glance part's figure: its pace meter, or a credit provider's money. */
+function GlanceFigure(props: { p: GlancePart }) {
+  return (
+    <Show when={props.p.bars} fallback={<span class="text-num">{props.p.amount}</span>}>
+      {(bars) => <PaceMeter bars={bars()} />}
+    </Show>
+  );
+}
+
+/** Usage foot row: every provider at a glance (a tag and its pace meter; "DS $4"), or the page name. */
 function UsageGlance(props: { parts: GlancePart[] }) {
   return (
     <Show when={props.parts.length > 0} fallback="Usage">
       <For each={props.parts}>
         {(p) => (
-          // Stale wins over high: an old 95% isn't a current warning.
+          // Stale wins over high: an old reading isn't a current warning.
           <span
             class="usage-glance-item"
             classList={{ "usage-glance-item-high": p.high && !p.stale, "usage-glance-item-stale": p.stale, "usage-glance-item-pending": p.pending === true }}
           >
             <span class="usage-glance-tag">{p.abbr}</span>
-            {/* A credit provider shows the money left; a window provider its percentage; a Claude
-                login with no current reading a dash, never another account's number. */}
-            <span class="text-num">{glanceValue(p)}</span>
+            {/* A window provider shows its meter; a credit provider the money left; a Claude login
+                with no current reading empty tracks, never another account's reading. */}
+            <GlanceFigure p={p} />
           </span>
         )}
       </For>
@@ -1557,8 +1591,9 @@ export function Sidebar(props: {
   };
   const liveCount = () => all().filter((s) => s.live).length;
   const glance = createMemo(() => usageGlance(props.usage, props.now, props.claudeLogin));
-  /** The foot's usage glance in full words, for its tooltip and accessible name. */
-  const glanceText = () => (glance().length ? `Usage: ${glance().map((p) => p.full).join(", ")}` : "");
+  /** The foot's usage glance in full words: a line per provider for its tooltip, one sentence for its accessible name. */
+  const glanceText = () => glanceTitle(glance());
+  const glanceName = () => glanceLabel(glance());
 
   const clear = () => {
     setQuery("");
@@ -1701,7 +1736,7 @@ export function Sidebar(props: {
           href={usageHref()}
           aria-current={props.insightsPage === "usage" ? "page" : undefined}
           title={glanceText() || undefined}
-          aria-label={glanceText() || undefined}
+          aria-label={glanceName() || undefined}
         >
           <Icon name="gauge" />
           <span class="insights-row-text" classList={{ "usage-glance": glance().length > 0 }}>
@@ -1760,8 +1795,8 @@ export function Sidebar(props: {
         facts.push(`${c.up} of ${c.total} hosts connected`);
       }
       facts.push(workingNow(agentsWorking()));
-      const caps = glance().map((p) => p.full);
-      if (caps.length) facts.push(caps.join(", "));
+      const caps = glance().flatMap((p) => [p.full, ...(p.others ?? [])]);
+      if (caps.length) facts.push(caps.join(". "));
       return `${facts.join(". ")}. Open hosts, usage, agents and shares.`;
     };
     return (
@@ -1791,7 +1826,7 @@ export function Sidebar(props: {
                 class="sidebar-footbar-seg sidebar-footbar-cap"
                 classList={{ "sidebar-footbar-cap-high": p.high && !p.stale, "sidebar-footbar-cap-stale": p.stale || p.pending === true }}
               >
-                <span class="sidebar-footbar-tag">{p.abbr}</span> <span class="text-num">{glanceValue(p)}</span>
+                <span class="sidebar-footbar-tag">{p.abbr}</span> <GlanceFigure p={p} />
               </span>
             )}
           </For>
@@ -1986,7 +2021,7 @@ export function Sidebar(props: {
             href={usageHref()}
             aria-current={props.insightsPage === "usage" ? "page" : undefined}
             title={glanceText() || "Usage"}
-            aria-label={glanceText() || "Usage"}
+            aria-label={glanceName() || "Usage"}
           >
             <Icon name="gauge" />
           </a>

@@ -286,3 +286,34 @@ test("a session with no recorded login reads the first ready login in this devic
 	assert.equal(firstReadyLogin(), "default");
 	assert.equal(firstReadyLogin({ selectId: () => { throw new Error("unreadable registry"); } }), undefined);
 });
+
+test("OpenAI: each window keeps its own length and is labelled from it", async () => {
+	setup();
+	fs.mkdirSync(path.join(ROOT, ".pi/agent"), { recursive: true });
+	fs.writeFileSync(path.join(ROOT, ".pi/agent/auth.json"), JSON.stringify({ "openai-codex": { access: "fake-openai" } }));
+	const answer = (rate_limit: unknown) => async () => ({ ok: true, status: 200, json: async () => ({ plan_type: "plus", rate_limit }) }) as Response;
+	const real = globalThis.fetch;
+	try {
+		globalThis.fetch = answer({
+			primary_window: { used_percent: 97, limit_window_seconds: 604_800, reset_at: 1_791_000_000 },
+			secondary_window: { used_percent: 12, limit_window_seconds: 18_000, reset_after_seconds: 60 },
+		});
+		const both = await fetchMod.fetchOpenAi();
+		assert.equal(both.state, "ok");
+		assert.deepEqual(both.state === "ok" && both.windows.map((w) => [w.label, w.pct, w.seconds]), [["5h", 12, 18_000], ["7d", 97, 604_800]]);
+		// A secondary window that isn't five hours is labelled by its own seconds, never "5h".
+		globalThis.fetch = answer({ secondary_window: { used_percent: 30, limit_window_seconds: 604_800 } });
+		const weekly = await fetchMod.fetchOpenAi();
+		assert.deepEqual(weekly.state === "ok" && weekly.windows.map((w) => [w.label, w.seconds]), [["7d", 604_800]]);
+		// No length sent: the old labels, and no `seconds`.
+		globalThis.fetch = answer({ primary_window: { used_percent: 5 }, secondary_window: { used_percent: 6 } });
+		const bare = await fetchMod.fetchOpenAi();
+		assert.deepEqual(bare.state === "ok" && bare.windows.map((w) => [w.label, "seconds" in w]), [["5h", false], ["pri", false]]);
+		// An odd length is "pri", with its seconds kept.
+		globalThis.fetch = answer({ primary_window: { used_percent: 5, limit_window_seconds: 86_400 } });
+		const odd = await fetchMod.fetchOpenAi();
+		assert.deepEqual(odd.state === "ok" && odd.windows.map((w) => [w.label, w.seconds]), [["pri", 86_400]]);
+	} finally {
+		globalThis.fetch = real;
+	}
+});

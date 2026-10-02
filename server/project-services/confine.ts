@@ -2,7 +2,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, readdirSync, readlinkSync, rmSync } from "node:fs";
 import { connect } from "node:net";
-import { homedir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
@@ -159,6 +159,20 @@ function insidePid(parent: number): number | null {
   return null;
 }
 
+/**
+ * What a dead anchor said, in one line: its first error line (`Error: listen EINVAL …`, `bwrap: …`) and,
+ * when different, its last line; never a stack frame, a source excerpt or Node's version banner.
+ */
+export function whyExited(stderr: string): string {
+  const lines = stderr
+    .split("\n")
+    .map((l) => l.trim())
+    .filter((l) => l && !/^at\s/.test(l) && !/^\^+$/.test(l) && !/^Node\.js v\d/.test(l) && !/^node:[\w/]+:\d+$/.test(l) && !/^(throw|Emitted 'error' event)/.test(l) && l !== "}" && !l.startsWith("{"));
+  const first = lines.find((l) => /(^bwrap: |Error\b|error:)/.test(l)) ?? lines[0];
+  const last = lines.at(-1);
+  return [first, last && last !== first ? last : null].filter(Boolean).join("; ").slice(0, 600);
+}
+
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /** JVMs ignore HTTP(S)_PROXY: the same proxy as system properties, loopback excepted. */
@@ -196,10 +210,14 @@ export async function openConfinement(opts: OpenOptions): Promise<Confinement | 
   const policy = base.value;
   let proxy: ProxyHandle | null = null;
   let child: ChildProcess | null = null;
+  // The probe agent's socket, in a short dir of its own: a Unix socket path holds at most 107 bytes, and the
+  // run dir under an agent dir (a worktree's hermetic one) can be longer than that.
+  const sockDir = join(tmpdir(), `sova-conform-${process.getuid?.() ?? "u"}`, runId);
   const fail = async (why: string) => {
     child?.kill("SIGKILL");
     await proxy?.close().catch(() => undefined);
     rmSync(dir, { recursive: true, force: true });
+    rmSync(sockDir, { recursive: true, force: true });
     return { refused: `the confined run could not start (${why}): approve this definition to conform it` };
   };
   try {
@@ -207,11 +225,17 @@ export async function openConfinement(opts: OpenOptions): Promise<Confinement | 
   } catch (err) {
     return fail(`its proxy: ${(err as Error).message}`);
   }
-  const sock = join(dir, "net.sock");
+  try {
+    mkdirSync(sockDir, { recursive: true, mode: 0o700 });
+  } catch (err) {
+    return fail(`its socket dir: ${(err as Error).message}`);
+  }
+  const sock = join(canonicalize(sockDir), "net.sock");
+  if (Buffer.byteLength(sock) > 107) return fail(`its socket path is too long for a Unix socket: ${sock}`);
   const anchorPolicy: Policy = {
     level: "workspace-write",
     workspaceRoot: canonicalize(dir),
-    writable: [canonicalize(dir)],
+    writable: [canonicalize(dir), canonicalize(sockDir)],
     readOnlyWithinWritable: [],
     hidden: policy.hidden,
     tmpDir: join(tmpRoot, "anchor"),
@@ -225,10 +249,10 @@ export async function openConfinement(opts: OpenOptions): Promise<Confinement | 
   const [cmd, ...args] = res.confined.argv;
   child = spawn(cmd!, args, { env: res.confined.env, stdio: ["ignore", "ignore", "pipe"] });
   let stderr = "";
-  child.stderr?.on("data", (d) => (stderr = (stderr + String(d)).slice(-2000)));
+  child.stderr?.on("data", (d) => (stderr = (stderr + String(d)).slice(-8000)));
   let anchorPid: number | null = null;
   for (let i = 0; i < 100; i++) {
-    if (child.exitCode !== null) return fail(`its anchor exited: ${stderr.trim().split("\n").slice(-2).join("; ") || `exit ${child.exitCode}`}`);
+    if (child.exitCode !== null) return fail(`its anchor exited: ${whyExited(stderr) || `exit ${child.exitCode}`}`);
     anchorPid ??= child.pid ? insidePid(child.pid) : null;
     if (anchorPid && (await ask(sock, { op: "ping" }, 500))?.ok) break;
     await sleep(50);
@@ -295,6 +319,7 @@ export async function openConfinement(opts: OpenOptions): Promise<Confinement | 
       if (child && child.exitCode === null) child.kill("SIGKILL");
       await proxy?.close().catch(() => undefined);
       rmSync(dir, { recursive: true, force: true });
+      rmSync(sockDir, { recursive: true, force: true });
     },
   };
   open.set(runId, c);

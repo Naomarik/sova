@@ -8,7 +8,7 @@ import { after, before, test } from "node:test";
 import { isVerbResult, parseDefinition, type VerbResult } from "../../shared/project-contract";
 import { staticServes, stopStaticServe } from "../preview-serve";
 import { conformer, readStamp } from "./conform";
-import { openConfinement } from "./confine";
+import { openConfinement, whyExited } from "./confine";
 import { DetachedDriver } from "./drivers";
 import { ProjectEngine, type Caller } from "./engine";
 import { mutateRegistry, readRegistry, sharedIdOf } from "./store";
@@ -206,4 +206,38 @@ test("after a server start, a unit of a confined run that ended is stopped and m
     r.instances = r.instances.filter((i) => i.id !== id);
   });
   rmSync(checkout, { recursive: true, force: true });
+});
+
+test("a run under a long agent dir still opens: the probe socket's path stays within a Unix socket's 107 bytes", { skip }, async () => {
+  const long = join(agentDir, "a-rather-long-hermetic-agent-directory-name", "under-a-worktree-checkout-of-some-length", "agent");
+  mkdirSync(join(long, "sandbox-policy", "linux"), { recursive: true });
+  writeFileSync(join(long, "sandbox-policy", "linux", "policy.json"), readFileSync(join(agentDir, "sandbox-policy", "linux", "policy.json")));
+  const was = process.env.PI_CODING_AGENT_DIR;
+  process.env.PI_CODING_AGENT_DIR = long;
+  try {
+    const c = await openConfinement({ project });
+    assert.ok(!("refused" in c), "refused" in c ? c.refused : "");
+    if (!("refused" in c)) await c.close();
+  } finally {
+    process.env.PI_CODING_AGENT_DIR = was;
+  }
+});
+
+test("a dead anchor is named by its first error line, not Node's stack or version banner", () => {
+  const stderr = [
+    "node:net:1937",
+    "      throw new ErrnoException(err, 'listen');",
+    "      ^",
+    "",
+    "Error: listen EINVAL: invalid argument /very/long/net.sock",
+    "    at Server.setupListenHandle [as _listen2] (node:net:1937:21)",
+    "    at listenInCluster (node:net:2016:12) {",
+    "  errno: -22,",
+    "}",
+    "",
+    "Node.js v25.2.1",
+  ].join("\n");
+  assert.equal(whyExited(stderr).split("; ")[0], "Error: listen EINVAL: invalid argument /very/long/net.sock");
+  assert.doesNotMatch(whyExited(stderr), /Node\.js v|^\s*at /);
+  assert.equal(whyExited("bwrap: Can't chdir to /x: No such file or directory\n"), "bwrap: Can't chdir to /x: No such file or directory");
 });

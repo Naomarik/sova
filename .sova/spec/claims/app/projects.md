@@ -113,17 +113,3 @@ for a project held on a peer (§mesh.remote-sessions/org-pages). API: `/api/proj
   §app.projects/registration does (same refusals) and places it at once.
 - Whenever an org opens, every project in its engine has a placement; one that lacks it gets one
   then.
-
-## §app.projects/conversion — The one-time move to org-free project ids (temporary)
-
-- Existing org projects move once, with the server stopped, by a throwaway script
-  (`scripts/oneshot-general-projects.mjs`, never part of the server): the project, watch and build
-  statecharts' ids and files lose their org segment, their snapshots lose the org id, and preview
-  records lose `orgId`. It refuses while the server runs, while a redo journal is not empty, or when
-  an old and a new name exist side by side, and a second run changes nothing.
-- At the next start the project statechart's version 2 migration drops the org states and keys
-  from each project snapshot, and the org-open rule above gives each project its placement. A
-  project's stakeholder is picked again by the operator.
-- The script and the migration are deleted once the live move is done; a known backup taken
-  before it (`scripts/backup-general-projects.mjs`, restored by
-  `scripts/restore-general-projects.mjs`) is the only way back.

@@ -46,7 +46,7 @@ and hold reviews to the watch; the placement watches the project). The project l
 layer: the placement reads the project's exported keys (`link/moved`). Enforced by `seam_test` (source and
 require graph) and the solo matrix worlds (project, watch, build reach no org session). A standalone project
 runs the same three statecharts in its own engine; a placed one lives in its org's engine beside its
-placement. The temporary `proj_strip_org.cljc` (proj v1 → v2) is the cutover's and is deleted after it.
+placement.
 
 ## How the rulings land
 

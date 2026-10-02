@@ -111,8 +111,7 @@ invitee in their own hours: r12, baton). The server stamps the EFFECTIVE records
 ## project (`project/<p>`, portable, project layer)
 
 Start: `{id, name, root, origin, remote?, createdAt}`; spawns `watch/<p>` (no org, no reconciler: the
-placement spawns that). v2; `:migrate {1 strip-org}` (`proj_strip_org.cljc`, temporary: the cutover's v1
-snapshots lose their org states and keys, the org's watcher and link, and their gathering rows).
+placement spawns that). v2.
 
 | event | by | payload | notes |
 |---|---|---|---|

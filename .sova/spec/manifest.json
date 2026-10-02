@@ -11654,19 +11654,6 @@
         "§app.projects/registration"
       ]
     },
-    "§app.projects/conversion": {
-      "kind": "note",
-      "authority": "accepted",
-      "evidence": "verified",
-      "code": [
-        "scripts/oneshot-general-projects.mjs",
-        "scripts/backup-general-projects.mjs",
-        "scripts/restore-general-projects.mjs",
-        "scripts/general-projects-state.mjs",
-        "statecharts/src/sova/statecharts/proj_strip_org.cljc",
-        "statecharts/test/sova/statecharts/refit/proj_strip_org_test.cljs"
-      ]
-    },
     "§app.projects/list": {
       "kind": "behavior",
       "authority": "accepted",

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { filterProfiles, FOOT_NOTE, isDefaultAll, isDefaultMode, modeSummary, nextSetup, noProfileMatch, SAVE_LABEL, SAVED_LABEL, saveLabel, saveTitle, savedAnnounce, SAVING_LABEL } from "./mode-menu";
 
@@ -73,6 +74,14 @@ test("the saved announcement names both halves of what was written", () => {
   assert.equal(savedAnnounce(def("delegate", ["align"], true), null), "Default saved: delegate · strict · align. New sessions start here.");
   assert.equal(savedAnnounce(null, "My setup"), "Default saved: Subagents: My setup. New sessions start here.");
   assert.equal(savedAnnounce(null, null), "Default saved. New sessions start here.");
+});
+
+test("a partial default save keeps the server's outcome instead of claiming nothing was saved", () => {
+  const source = readFileSync(new URL("../components/ModeMenu.tsx", import.meta.url), "utf8");
+  const save = source.slice(source.indexOf("const saveAsDefault ="), source.indexOf("const chooseProfile ="));
+  assert.match(save, /await saveModeDefault\(props\.control\.path\)/);
+  assert.match(save, /title: "Couldn't save the default\.", body: `\$\{why\}\.`/);
+  assert.doesNotMatch(save, /Nothing was saved|unchanged/, "the backend owns partial-write outcomes; the UI must not append an unconditional outcome");
 });
 
 test("the picker search is a case-insensitive name match that keeps list order", () => {

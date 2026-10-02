@@ -250,7 +250,7 @@ export function ModeMenu(props: { control: ModeControl }) {
       announce(savedAnnounce(shown(), profiles()?.current.name ?? null));
     } catch (err) {
       const why = (err instanceof Error ? err.message : String(err)).replace(/\.$/, "");
-      setError({ title: "Couldn't save the default.", body: `${why}. Nothing was saved.` });
+      setError({ title: "Couldn't save the default.", body: `${why}.` });
     } finally {
       setSaving(false);
     }

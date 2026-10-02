@@ -538,6 +538,16 @@ describe("sova_project_verbs goes through the project statechart (§app.project-
         ["services/run", "taken"],
         ["services/down", "taken"],
       ]);
+      // test runs project code: services/run, so L3 (§app.project-services/test); this project declares none.
+      const before = acts().length;
+      await assert.rejects(() => verb({ verb: "test" }), /your autonomy here is L0; sova_project_verbs needs L3/);
+      await settings({ autonomy: "L3" });
+      const t = await verb({ verb: "test" });
+      assert.equal(t.error?.code, "unsupported", "taken, then the engine's own answer");
+      assert.deepEqual(acts().slice(before), [
+        ["services/run", "refused"],
+        ["services/run", "taken"],
+      ]);
     } finally {
       for (const s of staticServes()) await stopStaticServe(s.id).catch(() => false);
     }

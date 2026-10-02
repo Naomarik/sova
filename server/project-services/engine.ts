@@ -15,7 +15,10 @@ import {
   READ_VERBS,
   render,
   RESERVED_VERBS,
+  selectorsProblem,
   serviceOrder,
+  FAILURE_MESSAGE_MAX,
+  FAILURES_MAX,
   type AnyVerb,
   type Check,
   type DataDecl,
@@ -29,6 +32,8 @@ import {
   type ServiceView,
   type Step,
   type StepKind,
+  type TestFailure,
+  type TestsReport,
   type VerbResult,
 } from "../../shared/project-contract";
 import type { PortOwner } from "../port-owner";
@@ -36,6 +41,7 @@ import { startStaticServe, staticServes, StaticServeError, stopStaticServe } fro
 import { projectOf } from "../project-root";
 import { DriverError, type Driver, type UnitSpec } from "./drivers";
 import { hostPortOwner } from "./proctable";
+import type { NoteFacts } from "./note";
 import { hostedBusy, serverCheckout } from "./self-host";
 import { publishedPorts, publisherOf, type ContainerQuery } from "./container-ports";
 import {
@@ -113,6 +119,8 @@ export interface VerbRequest {
   ref?: string;
   /** The operator's confirm (stopping a shared service). */
   confirm?: boolean;
+  /** test: the selectors appended to the test command (none: the whole suite). */
+  select?: string[];
 }
 
 export class VerbFailure extends Error {
@@ -140,6 +148,7 @@ const REQUEST_KEYS: Record<keyof VerbRequest, "string" | "number" | "boolean" | 
   resources: "strings",
   ref: "string",
   confirm: "boolean",
+  select: "strings",
 };
 
 /** A request body, checked strictly: unknown keys and wrong types are `invalid-request`. */
@@ -215,6 +224,38 @@ async function httpOk(port: number, path: string, timeoutMs = 2_000): Promise<bo
   }
 }
 
+/**
+ * A test runner's `SOVA_OUT` (§app.project-services/test): counts when it wrote numeric `passed` and `failed`,
+ * with optional `errors`, `skipped` and `failures` (at most 50, each message cut to 2000); null otherwise.
+ */
+export function readTestOut(file: string): { passed: number; failed: number; errors: number; skipped: number; failures: TestFailure[] } | null {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(readFileSync(file, "utf8"));
+  } catch {
+    return null;
+  }
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const o = raw as Record<string, unknown>;
+  const n = (v: unknown) => (typeof v === "number" && Number.isInteger(v) && v >= 0 ? v : null);
+  const passed = n(o.passed);
+  const failed = n(o.failed);
+  if (passed === null || failed === null) return null;
+  const failures: TestFailure[] = [];
+  for (const f of Array.isArray(o.failures) ? o.failures : []) {
+    if (failures.length >= FAILURES_MAX) break;
+    if (!f || typeof f !== "object" || typeof (f as { name?: unknown }).name !== "string") continue;
+    const x = f as Record<string, unknown>;
+    failures.push({
+      name: String(x.name).slice(0, 500),
+      ...(typeof x.message === "string" ? { message: x.message.slice(0, FAILURE_MESSAGE_MAX) } : {}),
+      ...(typeof x.file === "string" ? { file: x.file.slice(0, 500) } : {}),
+      ...(n(x.line) !== null ? { line: n(x.line)! } : {}),
+    });
+  }
+  return { passed, failed, errors: n(o.errors) ?? 0, skipped: n(o.skipped) ?? 0, failures };
+}
+
 // ---- the engine -----------------------------------------------------------------------------------
 
 export interface EngineDeps {
@@ -245,7 +286,9 @@ interface Run {
   defHash: string | null;
   approved: boolean;
   steps: Step[];
-  extra: Partial<Pick<VerbResult, "instances" | "lines" | "checks" | "conform">>;
+  extra: Partial<Pick<VerbResult, "instances" | "lines" | "checks" | "conform" | "tests">>;
+  /** The caller's abort (a cancelled tool call): a test run is stopped with it. */
+  signal?: AbortSignal;
 }
 
 /** Who holds a port, as one service sees it: nobody, its own, or someone it must not touch. */
@@ -318,8 +361,8 @@ export class ProjectEngine {
   // ---- entry --------------------------------------------------------------------------------------
 
   /** Run one verb for `caller`. Every outcome is a result, but the project overseer's refused act, which throws as the statechart refused it. */
-  async run(verb: string, body: unknown, caller: Caller): Promise<VerbResult> {
-    const run: Run = { verb: (isVerb(verb) ? verb : "status") as AnyVerb, caller, req: {}, project: null, rec: null, def: null, defError: null, defHash: null, approved: false, steps: [], extra: {} };
+  async run(verb: string, body: unknown, caller: Caller, opts: { signal?: AbortSignal } = {}): Promise<VerbResult> {
+    const run: Run = { verb: (isVerb(verb) ? verb : "status") as AnyVerb, caller, req: {}, project: null, rec: null, def: null, defError: null, defHash: null, approved: false, steps: [], extra: {}, ...(opts.signal ? { signal: opts.signal } : {}) };
     let release: (() => void) | null = null;
     if (verb === "conform" && this.conformer) return this.conformer(body, caller);
     try {
@@ -375,7 +418,7 @@ export class ProjectEngine {
     } else {
       if (!req.project && !req.checkout) throw new VerbFailure("invalid-request", "name the project (a path inside it) or an instance");
       run.project = await this.projectRoot(req.project ?? req.checkout!);
-      if (run.verb === "create" || run.verb === "up") {
+      if (run.verb === "create" || run.verb === "up" || run.verb === "test") {
         const target = await this.targetCheckout(run);
         (run as Run & { target?: string }).target = target.checkout;
         run.rec = reg.instances.find((i) => i.project === run.project && i.checkout === target.checkout) ?? null;
@@ -548,6 +591,8 @@ export class ProjectEngine {
         return this.reset(run);
       case "teardown":
         return this.teardown(run);
+      case "test":
+        return this.test(run);
       case "conform":
         throw new VerbFailure("unsupported", "conform runs through the conformance runner");
       default:
@@ -674,10 +719,12 @@ export class ProjectEngine {
 
   // ---- create --------------------------------------------------------------------------------------------
 
-  private async create(run: Run): Promise<InstanceRecord> {
+  /** `precheck` refuses a definition before anything is made (test: one that declares no test command). */
+  private async create(run: Run, precheck?: (def: ProjectDef) => void): Promise<InstanceRecord> {
     const project = run.project!;
     if (run.rec) {
       const def = this.need(run);
+      precheck?.(def);
       await this.supervised(def);
       await this.provision(run, def, run.rec, false);
       return run.rec;
@@ -698,6 +745,7 @@ export class ProjectEngine {
       }
     }
     const def = this.need(run);
+    precheck?.(def);
     await this.supervised(def);
     const main = target.checkout === project;
     if (!main && run.req.slot === 0) throw new VerbFailure("refused-slot0", "slot 0 is the main checkout's");
@@ -1146,8 +1194,14 @@ export class ProjectEngine {
     run.rec = rec;
     const def = this.need(run);
     await this.supervised(def);
-    const names = run.req.services?.length ? run.req.services : def.services.filter((s) => s.scope === "checkout").map((s) => s.name);
+    // Without a list, every checkout service but the on-demand ones (§app.project-services/up).
+    const names = run.req.services?.length ? run.req.services : def.services.filter((s) => s.scope === "checkout" && s.start === "up").map((s) => s.name);
     for (const n of names) if (!def.services.some((s) => s.name === n)) throw new VerbFailure("invalid-request", `no service "${n}"`);
+    await this.bringUp(run, rec, def, names);
+  }
+
+  /** Start `names` and what they require (shared first), each waiting for its readiness; what already runs is left alone. */
+  private async bringUp(run: Run, rec: InstanceRecord, def: ProjectDef, names: string[]): Promise<void> {
     await this.stopRemovedDue(run, rec, def);
     await this.stopSharedRemoved(run, rec.project);
     const wanted = closureOf(def, names);
@@ -1177,6 +1231,65 @@ export class ProjectEngine {
       }
       await this.startService(run, def, scope, s);
     }
+  }
+
+  /**
+   * test (§app.project-services/test): bring up what the test command requires, then run it once with the
+   * selectors appended, as a waited-for unit in the instance; a run that did not pass is `tests-failed`.
+   */
+  private async test(run: Run): Promise<void> {
+    const select = run.req.select ?? [];
+    const bad = selectorsProblem(select);
+    if (bad) throw new VerbFailure("invalid-request", `select: ${bad}`);
+    const precheck = (d: ProjectDef) => {
+      if (!d.test) throw new VerbFailure("unsupported", "This project declares no test command");
+    };
+    if (run.def) precheck(run.def);
+    const rec = run.rec ?? (await this.create(run, precheck));
+    run.rec = rec;
+    const def = this.need(run);
+    precheck(def);
+    await this.supervised(def);
+    const t = def.test!;
+    if (t.requires.length) await this.bringUp(run, rec, def, t.requires);
+    const scope = scopeOf(rec);
+    const unit = this.hookUnitOf(rec.id, "test");
+    const outFile = join(dataRootOf(rec.id), ".out", "test.json");
+    mkdirSync(dirname(outFile), { recursive: true });
+    rmSync(outFile, { force: true });
+    const vars = this.vars(def, scope);
+    const env = { ...this.env(def, scope, { verb: "test", step: "test", out: outFile }), SOVA_TEST_SELECT: JSON.stringify(select) };
+    const t0 = Date.now();
+    const r = await this.driver.runOnce({ unit, argv: [...t.run.map((a) => render(a, vars)), ...select], cwd: scope.checkout, env, timeoutSec: t.timeout, ...(run.signal ? { signal: run.signal } : {}) });
+    const counts = readTestOut(outFile);
+    const exit = r.code;
+    const pass = !r.timedOut && !r.aborted && exit === 0 && (counts?.failed ?? 0) === 0 && (counts?.errors ?? 0) === 0;
+    const report: TestsReport = {
+      select,
+      pass,
+      passed: counts?.passed ?? null,
+      failed: counts?.failed ?? null,
+      errors: counts?.errors ?? null,
+      skipped: counts?.skipped ?? null,
+      failures: counts?.failures ?? [],
+      exit,
+      timedOut: r.timedOut,
+      ms: r.ms,
+      peakBytes: r.peakBytes ?? null,
+    };
+    run.extra.tests = report;
+    run.extra.lines = (await this.driver.logs(unit, 100, t0)).map((l) => ({ t: l.t, service: "test", text: l.text }));
+    const bad2 = counts ? counts.failed + counts.errors : 0;
+    const why = r.timedOut
+      ? `timed out after ${t.timeout}s`
+      : r.aborted
+        ? "the test run was stopped: the call was cancelled"
+        : counts && bad2 > 0
+          ? `${bad2} of ${counts.passed + bad2} failed`
+          : `the test command exited with ${exit}`;
+    const shown = select.length ? select.join(" ") : "the whole suite";
+    run.steps.push({ id: "test", kind: "test", result: pass ? "done" : "failed", ms: r.ms, detail: pass ? `${shown}: passed${counts ? ` (${counts.passed} passed, ${counts.skipped} skipped)` : ""}` : `${shown}: ${why}` });
+    if (!pass) throw new VerbFailure("tests-failed", why, { step: "test" });
   }
 
   private async down(run: Run): Promise<void> {
@@ -1470,7 +1583,7 @@ export class ProjectEngine {
     const services = await this.observe(run).catch(() => []);
     const rec = run.rec;
     const gone = (run as Run & { tornDown?: InstanceRecord }).tornDown;
-    const changed = run.steps.some((s) => s.result === "done" && s.kind !== "check" && s.kind !== "ready");
+    const changed = run.steps.some((s) => s.result === "done" && s.kind !== "check" && s.kind !== "ready" && s.kind !== "test");
     // Only doctor's checks decide `ok`; status carries the supervisor's as a note.
     const checksOk = run.verb !== "doctor" || !run.extra.checks || run.extra.checks.every((c) => c.ok);
     return ordered({
@@ -1495,6 +1608,48 @@ export class ProjectEngine {
       approved: run.approved,
       at: new Date().toISOString(),
     });
+  }
+
+  // ---- the instance note (§app.project-services/instance-note) -------------------------------------------
+
+  /** What the note says about `checkout`: null for a main checkout, a folder outside a project, or one with no definition. */
+  async noteFacts(checkout: string): Promise<NoteFacts | null> {
+    const c = canonical(checkout);
+    const p = await projectOf(c);
+    if (p.state !== "ok" || p.root === c) return null;
+    const file = join(c, CONTRACT_FILE);
+    if (!existsSync(file)) return null;
+    let def: ProjectDef;
+    try {
+      def = parseDefinition(readFileSync(file, "utf8"));
+    } catch (err) {
+      return { kind: "invalid", checkout: c, problem: err instanceof Error ? err.message : String(err) };
+    }
+    const rec = readRegistry().instances.find((i) => i.project === p.root && i.checkout === c);
+    if (!rec) return { kind: "no-instance", checkout: c };
+    const scope = scopeOf(rec);
+    const vars = this.vars(def, scope);
+    const here = this.allPorts(def, scope);
+    const main = portsFor(def, 0);
+    const ports: Extract<NoteFacts, { kind: "instance" }>["ports"] = [];
+    for (const s of def.services)
+      for (const [k, port] of Object.entries(here[s.name] ?? {})) {
+        const url = s.ready && "http" in s.ready && s.ready.http === k ? `http://127.0.0.1:${port}${s.ready.path}` : undefined;
+        ports.push({ key: `${s.name}.${k}`, port, main: main[s.name]?.[k] ?? port, ...(url ? { url } : {}), shared: s.scope === "shared" });
+      }
+    return {
+      kind: "instance",
+      checkout: c,
+      branch: rec.branch,
+      project: rec.project,
+      instance: rec.id,
+      slot: rec.slot,
+      approved: isApproved(rec.project, defHashOf(def)),
+      ports,
+      services: def.services.map((s) => ({ name: s.name, ...(s.about ? { about: render(s.about, vars) } : {}), onDemand: s.start === "on-demand" })),
+      data: def.data.map((d) => ({ name: d.name, ref: rec.data[d.name] ?? this.dataPath(d, scope) })),
+      test: def.test ? { smoke: def.test.smoke } : null,
+    };
   }
 
   // ---- conformance helpers ----------------------------------------------------------------------------

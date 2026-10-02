@@ -239,7 +239,7 @@ function Thinking(props: { text: string; streaming?: boolean }) {
           <span class="disclosure-preview">· {preview()}</span>
         </Show>
       </summary>
-      <div class="disclosure-body">{props.text}</div>
+      <div class="disclosure-body thinking-body">{props.text}</div>
     </details>
   );
 }

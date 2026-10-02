@@ -2886,6 +2886,19 @@ a.group-option { color: inherit; text-decoration: none; }
 :is(.entry.chain-row, .chain-live) .chip .chip-dot { width: 4px; height: 4px; }
 :is(.entry.chain-row, .chain-live) .disclosure-summary { font-size: var(--fs-caption); }
 
+/* Thinking alone reads as a quiet aside; its summary and the work rail stay unchanged. */
+.disclosure > .disclosure-body.thinking-body {
+  margin: var(--space-1) 20px 0;
+  padding: var(--space-3);
+  border: 0;
+  border-radius: var(--r-sm);
+  background: var(--color-sunken);
+  color: var(--color-ink-2);
+  font-family: var(--font-body);
+  font-size: calc(var(--fs-body) - 1px);
+  font-style: italic;
+}
+
 /* Report rows: a subagent report or another long extension
    message. Same disclosure grammar as thinking; collapsed to ONE line (who,
    status chip, first line, ellipsis). Opened, the markdown sits on the left
@@ -2984,13 +2997,11 @@ a.group-option { color: inherit; text-decoration: none; }
   flex-direction: column;
   gap: var(--space-3);
   padding: var(--space-3);
-  border-top: var(--stroke-thin) solid var(--color-border);
 }
 /* Images the tool returned: under the summary (and the body, once open),
    outside the <details> so closing the card never hides them. */
 .toolcard-media {
   padding: var(--space-2) var(--space-3);
-  border-top: var(--stroke-thin) solid var(--color-border);
 }
 .toolcard-section { display: flex; flex-direction: column; gap: var(--space-1); }
 .toolcard-section-label {

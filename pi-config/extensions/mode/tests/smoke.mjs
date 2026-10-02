@@ -725,7 +725,8 @@ const delegateFile = path.join(process.env.PI_CODING_AGENT_DIR, "mode-delegate.j
 // The legacy files reach a session through subagent-profiles.json, seeded from them when it is
 // absent: these tests edit a legacy file, then drop the profiles file so the next read seeds again.
 const profilesFile = path.join(process.env.PI_CODING_AGENT_DIR, "subagent-profiles.json");
-const reseed = () => rmSync(profilesFile, { force: true });
+const profilesDefaultFile = path.join(process.env.PI_CODING_AGENT_DIR, "subagent-profiles-default.json");
+const reseed = () => { rmSync(profilesFile, { force: true }); rmSync(profilesDefaultFile, { force: true }); };
 const policyFile = path.join(process.env.PI_CODING_AGENT_DIR, "model-policy.json");
 const writeRouting = (mutate) => {
 	const settings = { version: 1, profiles: {
@@ -1258,7 +1259,8 @@ await commands.get("mode").handler("normal", ctx);
 	const fire = async (name, event = {}) => { let out; for (const fn of host.hooks.get(name) ?? []) out = (await fn(event, c)) ?? out; return out; };
 	const route = (model) => Object.fromEntries(["planning", "investigation", "routine", "complex"].map((k) => [k, { primary: { backend: "claude-code", model, effort: "low" }, fallback: null }]));
 	const empty = { teams: null, members: null, specWriter: null };
-	writeFileSync(profilesFile, JSON.stringify({ version: 1, default: "a", profiles: [{ id: "a", name: "A", delegate: route("opus[1m]"), ...empty }, { id: "b", name: "B", delegate: route("sonnet"), ...empty }] }));
+	writeFileSync(profilesFile, JSON.stringify({ version: 1, profiles: [{ id: "a", name: "A", delegate: route("opus[1m]"), ...empty }, { id: "b", name: "B", delegate: route("sonnet"), ...empty }] }));
+	writeFileSync(profilesDefaultFile, JSON.stringify({ version: 1, default: "a" }));
 	try {
 		await fire("session_start", { reason: "startup" });
 		let prompt = (await fire("before_agent_start", { systemPrompt: "base", prompt: "go" })).systemPrompt;
@@ -1285,7 +1287,7 @@ await commands.get("mode").handler("normal", ctx);
 		assert.match(s.notices.at(-1).message, /No subagent profile "nope"/);
 		await host.commands.get("mode").handler("status", c);
 		assert.match(s.notices.at(-1).message, /^subagent profile: B \(this chat's pick\)$/m);
-	} finally { rmSync(profilesFile, { force: true }); }
+	} finally { reseed(); }
 }
 
 console.log("mode smoke tests passed");

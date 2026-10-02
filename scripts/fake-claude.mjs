@@ -75,7 +75,10 @@ if (args[0] === "auth" && args[1] === "login") {
     let frame;
     try { frame = JSON.parse(line); } catch { return; }
     if (frame.type === "control_request") {
-      out({ type: "control_response", response: { subtype: "success", request_id: frame.request_id, response: {} } });
+      // Discovery (buildDiscoveryArgv) reads the initialize answer's model list; the fake offers
+      // exactly one so a hermetic server can put a session on claude-code-cli without Anthropic.
+      const models = frame.request?.subtype === "initialize" ? [{ value: "fake-opus", displayName: "Fake Opus", supportedEffortLevels: ["low", "medium", "high"] }] : undefined;
+      out({ type: "control_response", response: { subtype: "success", request_id: frame.request_id, response: models ? { models } : {} } });
       return;
     }
     if (frame.type !== "user") return;

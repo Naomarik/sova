@@ -2,9 +2,10 @@
  * Subagent profiles: the one reader and writer of `<agent dir>/subagent-profiles.json`, named
  * bundles of every model a session's subagents are given — Delegate's four work kinds, the team
  * coordinator, monitor and members default, and the spec writer. A chat picks one (its hidden
- * `subagent-profile` entry, newest on the branch wins); a chat with no pick follows the file's
- * `default`; a missing pick target falls to the default, and an unusable file to the legacy files
- * (`mode-delegate.json`, `team-defaults.json`, `mode-spec.json`), which nothing here deletes.
+ * `subagent-profile` entry, newest on the branch wins); a chat with no pick follows this device's
+ * default (`subagent-profiles-default.json`, its own tiny file so the mesh-synced library never
+ * moves it); a missing pick target falls to the default, and an unusable library to the legacy
+ * files (`mode-delegate.json`, `team-defaults.json`, `mode-spec.json`), which nothing here deletes.
  *
  * Node built-ins and builtins-only siblings only: the mode extension, the subagents extension and
  * Sova's server all import this file, so it must never import the pi runtime.
@@ -17,6 +18,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import {
 	DELEGATE_FILE_NAME,
+	DELEGATE_PROFILE_INFO,
 	DELEGATE_PROFILES,
 	loadDelegate,
 	parseChoice,
@@ -38,6 +40,8 @@ import {
 } from "./team-defaults.ts";
 
 export const SUBAGENT_PROFILES_FILE_NAME = "subagent-profiles.json";
+/** This device's default (never synced): which library profile a chat with no pick follows. */
+export const SUBAGENT_PROFILE_DEFAULT_FILE_NAME = "subagent-profiles-default.json";
 /** The built-in profile that configures nothing: never stored, always first. */
 export const OFF_PROFILE_ID = "off";
 export const OFF_PROFILE_NAME = "Off";
@@ -46,7 +50,6 @@ export const SEEDED_PROFILE_ID = "my-setup";
 export const SEEDED_PROFILE_NAME = "My setup";
 /** The session's hidden custom entry carrying its pick: `{v: 1, profile}`. */
 export const PICK_ENTRY_TYPE = "subagent-profile";
-export const MAX_PROFILES = 50;
 const MAX_NAME_CHARS = 48;
 const ID = /^[a-z0-9](?:[a-z0-9-]{0,46}[a-z0-9])?$/;
 const CONTROL = /[\u0000-\u001f\u007f-\u009f]/;
@@ -69,9 +72,13 @@ export interface SubagentProfile {
 }
 export interface SubagentProfilesFile {
 	version: 1;
+	profiles: SubagentProfile[];
+}
+/** The default file: this device's own choice, never synced (the library syncs). */
+export interface SubagentProfilesDefault {
+	version: 1;
 	/** A profile's id, or "off". */
 	default: string;
-	profiles: SubagentProfile[];
 }
 export interface PickEntryData {
 	v: 1;
@@ -83,11 +90,17 @@ export type ProfilesState =
 	| { state: "absent"; file: string }
 	| { state: "malformed"; file: string; errors: string[] }
 	| { state: "ok"; file: string; value: SubagentProfilesFile; seeded?: boolean };
+export type DefaultParse = { ok: true; value: SubagentProfilesDefault } | { ok: false; errors: string[] };
+export type DefaultState =
+	| { state: "absent"; file: string }
+	| { state: "malformed"; file: string; errors: string[] }
+	| { state: "ok"; file: string; value: SubagentProfilesDefault };
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value);
 const clone = <T,>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 
 export const subagentProfilesPath = (agentDir: string): string => path.join(agentDir, SUBAGENT_PROFILES_FILE_NAME);
+export const subagentProfileDefaultPath = (agentDir: string): string => path.join(agentDir, SUBAGENT_PROFILE_DEFAULT_FILE_NAME);
 
 /** A profile id's shape (the file's rule); "off" is never one. */
 export const isProfileId = (value: unknown): value is string => typeof value === "string" && ID.test(value) && value !== OFF_PROFILE_ID;
@@ -160,14 +173,19 @@ export function parseSubagentProfiles(input: unknown): ProfilesParse {
 		}
 	}
 	const errors: string[] = [];
-	if (!isRecord(json)) return { ok: false, errors: ["must be an object { version: 1, default, profiles }"] };
-	for (const key of Object.keys(json)) if (!["version", "default", "profiles"].includes(key)) errors.push(`${key}: unknown key`);
+	if (!isRecord(json)) return { ok: false, errors: ["must be an object { version: 1, profiles }"] };
+	for (const key of Object.keys(json))
+		if (!["version", "profiles"].includes(key))
+			errors.push(
+				key === "default"
+					? `default: the default is this device's own — move it to ${SUBAGENT_PROFILE_DEFAULT_FILE_NAME} and remove it here`
+					: `${key}: unknown key`,
+			);
 	if (json.version !== 1) errors.push("version: must be 1");
 	if (!Array.isArray(json.profiles)) {
 		errors.push("profiles: must be an array");
 		return { ok: false, errors };
 	}
-	if (json.profiles.length > MAX_PROFILES) errors.push(`profiles: at most ${MAX_PROFILES}`);
 	const profiles: SubagentProfile[] = [];
 	json.profiles.forEach((raw, i) => {
 		const profile = parseProfile(`profiles[${i}]`, raw, errors);
@@ -181,9 +199,7 @@ export function parseSubagentProfiles(input: unknown): ProfilesParse {
 		ids.add(p.id);
 		names.add(p.name.toLowerCase());
 	}
-	if (typeof json.default !== "string" || (json.default !== OFF_PROFILE_ID && !ids.has(json.default)))
-		errors.push(`default: must be "${OFF_PROFILE_ID}" or the id of a profile in the file`);
-	return errors.length ? { ok: false, errors } : { ok: true, value: { version: 1, default: json.default as string, profiles } };
+	return errors.length ? { ok: false, errors } : { ok: true, value: { version: 1, profiles } };
 }
 
 /** The file as it stands now: absent, malformed (with every error) or ok. Never writes. */
@@ -198,6 +214,55 @@ export function readSubagentProfiles(agentDir: string): ProfilesState {
 	}
 	const parsed = parseSubagentProfiles(raw);
 	return parsed.ok ? { state: "ok", file, value: parsed.value } : { state: "malformed", file, errors: parsed.errors };
+}
+
+/** Strict validation of the default file (or its raw text). */
+export function parseProfilesDefault(input: unknown): DefaultParse {
+	let json = input;
+	if (typeof input === "string") {
+		try {
+			json = JSON.parse(input);
+		} catch (error) {
+			return { ok: false, errors: [`not valid JSON: ${(error as Error).message}`] };
+		}
+	}
+	const errors: string[] = [];
+	if (!isRecord(json)) return { ok: false, errors: ["must be an object { version: 1, default }"] };
+	for (const key of Object.keys(json)) if (!["version", "default"].includes(key)) errors.push(`${key}: unknown key`);
+	if (json.version !== 1) errors.push("version: must be 1");
+	if (json.default !== OFF_PROFILE_ID && !isProfileId(json.default)) errors.push(`default: must be "${OFF_PROFILE_ID}" or a profile id`);
+	return errors.length ? { ok: false, errors } : { ok: true, value: { version: 1, default: json.default as string } };
+}
+
+/** The default file as it stands now. Never writes; absent means Off. */
+export function readProfilesDefault(agentDir: string): DefaultState {
+	const file = subagentProfileDefaultPath(agentDir);
+	let raw: string;
+	try {
+		raw = fs.readFileSync(file, "utf8");
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code === "ENOENT") return { state: "absent", file };
+		return { state: "malformed", file, errors: [`cannot read: ${(error as Error).message}`] };
+	}
+	const parsed = parseProfilesDefault(raw);
+	return parsed.ok ? { state: "ok", file, value: parsed.value } : { state: "malformed", file, errors: parsed.errors };
+}
+
+/**
+ * Validate, then write atomically (temp file + rename). Refuses a value that does not parse;
+ * returns the normalized value it wrote.
+ */
+function writeJsonAtomic<P>(file: string, parsed: P, dir: string): P {
+	fs.mkdirSync(dir, { recursive: true });
+	const tmp = `${file}.${process.pid}.${Date.now().toString(36)}.tmp`;
+	try {
+		fs.writeFileSync(tmp, `${JSON.stringify(parsed, null, 2)}\n`, { encoding: "utf8", mode: 0o644 });
+		fs.renameSync(tmp, file);
+	} catch (error) {
+		try { fs.rmSync(tmp, { force: true }); } catch { /* Best effort. */ }
+		throw error;
+	}
+	return parsed;
 }
 
 /** What the legacy files say now, as one profile (seeding, and "Save current" on a legacy chat). */
@@ -215,36 +280,49 @@ export function legacyProfile(agentDir: string, id = SEEDED_PROFILE_ID, name = S
 	};
 }
 
-/** A file holding exactly one profile seeded from the legacy files, and made the default. */
+/** A library holding exactly one profile seeded from the legacy files. */
 export function seededFile(agentDir: string): SubagentProfilesFile {
-	return { version: 1, default: SEEDED_PROFILE_ID, profiles: [legacyProfile(agentDir)] };
+	return { version: 1, profiles: [legacyProfile(agentDir)] };
+}
+
+/** The default a fresh seeding writes: the seeded profile. */
+export function seededDefault(): SubagentProfilesDefault {
+	return { version: 1, default: SEEDED_PROFILE_ID };
 }
 
 /**
- * The file, seeding it first when it is absent. The seed is written without ever replacing a
- * file another process made meanwhile (a hard link of a temp file, which fails if the target
- * exists); if it can't be written at all (a read-only agent dir), the seed is still returned, so
- * behaviour matches the legacy files either way.
+ * The library, seeding it first when it is absent (unless team-defaults.json is malformed: then it
+ * stays absent, so the legacy files and their warning keep applying): one profile from the legacy
+ * files, plus the default file naming it. Each seed is written without ever replacing a file
+ * another process made meanwhile (a hard link of a temp file, which fails if the target exists); if
+ * one can't be written at all (a read-only agent dir), the seed is still returned, so behaviour
+ * matches the legacy files either way. A library found with no default file is NOT re-seeded:
+ * the default reads as Off until the user saves one.
  */
 export function loadSubagentProfiles(agentDir: string): ProfilesState {
 	const state = readSubagentProfiles(agentDir);
 	if (state.state !== "absent") return state;
+	// A malformed team-defaults.json is reported at every team_create today; seeding it as "no teams"
+	// would hide that. Leave the file absent (resolution uses the legacy files) until it is fixed.
+	if (readTeamDefaults(agentDir).state === "malformed") return state;
 	const value = seededFile(agentDir);
-	const file = state.file;
+	seedNew(state.file, `${JSON.stringify(value, null, 2)}\n`);
+	seedNew(subagentProfileDefaultPath(agentDir), `${JSON.stringify(seededDefault(), null, 2)}\n`);
+	return { state: "ok", file: state.file, value, seeded: true };
+}
+
+/** Write `text` at `file` only if `file` still doesn't exist (a hard link, which fails if it does). */
+function seedNew(file: string, text: string): void {
 	const tmp = `${file}.${process.pid}.${Date.now().toString(36)}.seed`;
 	try {
-		fs.mkdirSync(agentDir, { recursive: true });
-		fs.writeFileSync(tmp, `${JSON.stringify(value, null, 2)}\n`, { encoding: "utf8", mode: 0o644 });
+		fs.mkdirSync(path.dirname(file), { recursive: true });
+		fs.writeFileSync(tmp, text, { encoding: "utf8", mode: 0o644 });
 		fs.linkSync(tmp, file);
-	} catch (error) {
-		if ((error as NodeJS.ErrnoException).code === "EEXIST") {
-			try { fs.rmSync(tmp, { force: true }); } catch { /* Best effort. */ }
-			return readSubagentProfiles(agentDir);
-		}
+	} catch {
+		/* EEXIST (another process made it first) or an unwritable dir: the in-memory seed stands. */
 	} finally {
 		try { fs.rmSync(tmp, { force: true }); } catch { /* Best effort. */ }
 	}
-	return { state: "ok", file, value, seeded: true };
 }
 
 /**
@@ -254,17 +332,14 @@ export function loadSubagentProfiles(agentDir: string): ProfilesState {
 export function writeSubagentProfiles(agentDir: string, value: unknown): SubagentProfilesFile {
 	const parsed = parseSubagentProfiles(clone(value));
 	if (!parsed.ok) throw new Error(`Refusing to write ${SUBAGENT_PROFILES_FILE_NAME}: ${parsed.errors.join("; ")}`);
-	const file = subagentProfilesPath(agentDir);
-	fs.mkdirSync(agentDir, { recursive: true });
-	const tmp = `${file}.${process.pid}.${Date.now().toString(36)}.tmp`;
-	try {
-		fs.writeFileSync(tmp, `${JSON.stringify(parsed.value, null, 2)}\n`, { encoding: "utf8", mode: 0o644 });
-		fs.renameSync(tmp, file);
-	} catch (error) {
-		try { fs.rmSync(tmp, { force: true }); } catch { /* Best effort. */ }
-		throw error;
-	}
-	return parsed.value;
+	return writeJsonAtomic(subagentProfilesPath(agentDir), parsed.value, agentDir);
+}
+
+/** Validate, then write the device default atomically. Refuses a value that does not parse. */
+export function writeProfilesDefault(agentDir: string, value: unknown): SubagentProfilesDefault {
+	const parsed = parseProfilesDefault(clone(value));
+	if (!parsed.ok) throw new Error(`Refusing to write ${SUBAGENT_PROFILE_DEFAULT_FILE_NAME}: ${parsed.errors.join("; ")}`);
+	return writeJsonAtomic(subagentProfileDefaultPath(agentDir), parsed.value, agentDir);
 }
 
 // ── A chat's pick ────────────────────────────────────────────────────────────
@@ -316,7 +391,7 @@ export interface ResolvedSubagents {
 /** The file's view of a profile's team section, as the subagents extension reads team-defaults.json. */
 export function teamsState(file: string, label: string, teams: TeamsSetting | null): TeamDefaultsState {
 	const where = `${file} (subagent profile "${label}")`;
-	if (!teams) return { state: "absent", file: where };
+	if (!teams) return { state: "absent", file: where, note: `the subagent profile "${label}" configures none` };
 	const value: TeamDefaultsFile = { version: 1, coordinator: clone(teams.coordinator), monitor: clone(teams.monitor), handover: clone(teams.handover) };
 	return { state: "ok", file: where, value };
 }
@@ -341,7 +416,7 @@ function off(file: string, source: "pick" | "default", note?: string): ResolvedS
 		name: OFF_PROFILE_NAME,
 		delegate: null,
 		spec: specDefaults(),
-		teams: { state: "absent", file: `${file} (subagent profile "${OFF_PROFILE_NAME}")` },
+		teams: { state: "absent", file: `${file} (subagent profile "${OFF_PROFILE_NAME}")`, note: `the subagent profile "${OFF_PROFILE_NAME}" configures nothing` },
 		members: null,
 		...(note ? { note } : {}),
 	};
@@ -362,45 +437,80 @@ export function legacyResolved(agentDir: string, note?: string): ResolvedSubagen
 }
 
 /**
- * The one resolution: the chat's pick, then the file's default, then the legacy files. `state` is
- * the file as already loaded (loadSubagentProfiles, which seeds an absent file); `agentDir` is
- * where the legacy files are.
+ * The one resolution: the chat's pick, then this device's default, then the legacy files. `state` is
+ * the library as already loaded (loadSubagentProfiles, which seeds an absent one) and `def` the
+ * default file as already read; `agentDir` is where the legacy files are. One step at a time,
+ * never a leap: a dangling pick falls to the default, a missing, malformed or dangling default
+ * reads as Off (with the reason in `note`), and only an unusable library falls to the legacy files.
  */
-export function resolveSubagents(agentDir: string, pick: string | undefined, state: ProfilesState = loadSubagentProfiles(agentDir)): ResolvedSubagents {
+export function resolveSubagents(
+	agentDir: string,
+	pick: string | undefined,
+	state: ProfilesState = loadSubagentProfiles(agentDir),
+	def: DefaultState = readProfilesDefault(agentDir),
+): ResolvedSubagents {
 	if (state.state !== "ok") {
 		const why = state.state === "malformed" ? `${state.file} is malformed (${state.errors.join("; ")})` : `${state.file} is missing`;
 		return legacyResolved(agentDir, `${why}; using the legacy settings files`);
 	}
-	const { value, file } = state;
+	const { file } = state;
 	let note: string | undefined;
 	if (pick === OFF_PROFILE_ID) return off(file, "pick");
 	if (pick !== undefined) {
-		const picked = value.profiles.find((p) => p.id === pick);
+		const picked = state.value.profiles.find((p) => p.id === pick);
 		if (picked) return fromProfile(file, picked, "pick");
 		note = `this chat's subagent profile "${pick}" no longer exists; using the default`;
 	}
-	if (value.default === OFF_PROFILE_ID) return off(file, "default", note);
-	const fallback = value.profiles.find((p) => p.id === value.default);
+	const d = profilesDefaultOf(state, def);
+	if (d.note) note = note ? `${note} (${d.note})` : d.note;
+	if (d.id === OFF_PROFILE_ID) return off(file, "default", note);
+	const fallback = state.value.profiles.find((p) => p.id === d.id);
 	return fallback ? fromProfile(file, fallback, "default", note) : legacyResolved(agentDir, note);
 }
 
 /**
- * A reader for a turn boundary: the file re-parsed only when its stat changes (one stat per call),
- * seeded on the first call that finds it absent.
+ * The default as resolution uses it: the file's choice when it names a library profile (or Off);
+ * absent, malformed or dangling reads as Off with the reason. A seeded-but-unwritable pair still
+ * means its seed, so a read-only agent dir behaves as if the seed had landed.
  */
-export function profilesReader(agentDir: string): () => ProfilesState {
-	const file = subagentProfilesPath(agentDir);
-	let cache: { stamp: string; value: ProfilesState } | undefined;
-	return () => {
-		let stamp: string;
+export function profilesDefaultOf(state: ProfilesState, def: DefaultState): { id: string; note?: string } {
+	if (def.state === "ok") {
+		const id = def.value.default;
+		if (id === OFF_PROFILE_ID) return { id };
+		if (state.state === "ok" && state.value.profiles.some((p) => p.id === id)) return { id };
+		return { id: OFF_PROFILE_ID, note: `the default "${id}" names no profile in the library; using Off` };
+	}
+	if (def.state === "malformed")
+		return { id: OFF_PROFILE_ID, note: `the default file ${def.file} is malformed (${def.errors.join("; ")}); using Off` };
+	if (state.state === "ok" && state.seeded) return { id: SEEDED_PROFILE_ID };
+	return { id: OFF_PROFILE_ID };
+}
+
+/**
+ * A reader for a turn boundary: the files re-parsed only when their stats change (one stat each per
+ * call), the library seeded on the first call that finds it absent.
+ */
+export function profilesReader(agentDir: string): () => { profiles: ProfilesState; default: DefaultState } {
+	const libFile = subagentProfilesPath(agentDir);
+	const defFile = subagentProfileDefaultPath(agentDir);
+	const stat = (f: string): string | null => {
 		try {
-			const stat = fs.statSync(file);
-			stamp = `${stat.mtimeMs}:${stat.size}:${stat.ino}`;
+			const s = fs.statSync(f);
+			return `${s.mtimeMs}:${s.size}:${s.ino}`;
 		} catch {
-			cache = undefined;
-			return loadSubagentProfiles(agentDir);
+			return null;
 		}
-		if (cache?.stamp !== stamp) cache = { stamp, value: readSubagentProfiles(agentDir) };
+	};
+	let cache: { libStamp: string | null; defStamp: string | null; value: { profiles: ProfilesState; default: DefaultState } } | undefined;
+	return () => {
+		const libStamp = stat(libFile);
+		if (libStamp === null) {
+			cache = undefined;
+			return { profiles: loadSubagentProfiles(agentDir), default: readProfilesDefault(agentDir) };
+		}
+		const defStamp = stat(defFile);
+		if (!cache || cache.libStamp !== libStamp || cache.defStamp !== defStamp)
+			cache = { libStamp, defStamp, value: { profiles: readSubagentProfiles(agentDir), default: readProfilesDefault(agentDir) } };
 		return cache.value;
 	};
 }
@@ -414,6 +524,28 @@ export function shortModel(model: string): string {
 	const claude = /^claude-(opus|sonnet|haiku|fable)\b/i.exec(m);
 	if (claude) return claude[1]!.toLowerCase();
 	return m;
+}
+
+/** Every slot a profile declares, for save validation — including a disabled coordinator's or monitor's tuples. */
+export function profileSlots(profile: SubagentProfile): { label: string; choice: WorkerChoice }[] {
+	const out: { label: string; choice: WorkerChoice }[] = [];
+	const push = (label: string, choice: WorkerChoice | null | undefined) => {
+		if (choice) out.push({ label, choice });
+	};
+	for (const id of DELEGATE_PROFILES) {
+		push(`${DELEGATE_PROFILE_INFO[id].label} primary`, profile.delegate[id].primary);
+		push(`${DELEGATE_PROFILE_INFO[id].label} fallback`, profile.delegate[id].fallback);
+	}
+	push("Members default", profile.members);
+	if (profile.teams) {
+		push("Coordinator primary", workerOf(profile.teams.coordinator.primary));
+		push("Coordinator fallback", profile.teams.coordinator.fallback ? workerOf(profile.teams.coordinator.fallback) : null);
+		push("Monitor primary", workerOf(profile.teams.monitor.primary));
+		push("Monitor fallback", profile.teams.monitor.fallback ? workerOf(profile.teams.monitor.fallback) : null);
+	}
+	push("Spec writer primary", profile.specWriter?.primary ?? null);
+	push("Spec writer fallback", profile.specWriter?.fallback ?? null);
+	return out;
 }
 
 /** Every worker a profile names, primaries first in a stable order, then fallbacks. */

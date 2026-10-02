@@ -403,6 +403,8 @@ export interface LastReply {
   at: number;
   stopReason: string;
   error?: string;
+  /** The failed reply's own model's provider (only set on stopReason "error"). */
+  provider?: string;
 }
 
 /** A parsed line as a finished reply, or null when it is not one. */
@@ -414,7 +416,8 @@ export function finishedReply(e: any): LastReply | null {
   if (at === null) return null;
   const msg = e.message.errorMessage;
   const error = stop === "error" && typeof msg === "string" && msg.trim() ? redactPreviewLinks(msg.trim()).slice(0, REPLY_ERROR_MAX) : undefined;
-  return { at, stopReason: stop, ...(error ? { error } : {}) };
+  const provider = stop === "error" && typeof e.message.provider === "string" ? e.message.provider : undefined;
+  return { at, stopReason: stop, ...(error ? { error } : {}), ...(provider ? { provider } : {}) };
 }
 
 /**
@@ -788,7 +791,7 @@ function attentionFields(
     ...(dialogs > 0 ? { pendingDialogs: dialogs } : {}),
     ...(seenAt !== undefined ? { seenAt } : {}),
     ...(unread ? { unread: true as const } : {}),
-    ...(turnError && lastReply ? { turnError: lastReply.error ? { message: lastReply.error } : {} } : {}),
+    ...(turnError && lastReply ? { turnError: lastReply.error ? { message: lastReply.error, ...(lastReply.provider ? { provider: lastReply.provider } : {}) } : {} } : {}),
   };
 }
 

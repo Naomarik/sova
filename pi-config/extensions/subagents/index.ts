@@ -58,7 +58,8 @@ import {
 	type MailboxResponse,
 	type MemberDuty,
 } from "./mailbox.ts";
-import { describeTeamDefaults, readTeamDefaults, type WorkerTuple } from "./team-defaults.ts";
+import { describeTeamDefaults, type TeamDefaultsState, type WorkerTuple } from "./team-defaults.ts";
+import { resolveSubagents, restorePick, type ResolvedSubagents } from "./subagent-profiles.ts";
 import {
 	NUDGE_MAX_ACTIVE,
 	NUDGE_MAX_IDLE_FIRES,
@@ -779,6 +780,22 @@ export function registerSubagents(
 		activeCtx = ctx;
 		pruneFinished();
 	};
+	/**
+	 * This session's subagent profile now (subagent-profiles.ts): its pick — the newest
+	 * `subagent-profile` entry on the parent's branch — else the default, else the legacy files.
+	 * Read fresh each time, like team-defaults.json was: a switch reaches the next team action.
+	 */
+	const subagentsNow = (ctx: ExtensionContext | undefined = activeCtx): ResolvedSubagents => {
+		let branch: unknown;
+		try {
+			branch = ctx?.sessionManager.getBranch?.();
+		} catch {
+			branch = undefined;
+		}
+		return resolveSubagents(agentDir(), restorePick(branch as never));
+	};
+	/** Team defaults as team_create reads them: the profile's teams section (or the legacy file). */
+	const teamDefaultsNow = (ctx?: ExtensionContext): TeamDefaultsState => subagentsNow(ctx).teams;
 	const timestamps = (a: Worker) => {
 		const out: { startedAt?: number; lastActivity?: number; endedAt?: number } = {};
 		for (const key of ["startedAt", "lastActivity", "endedAt"] as const)
@@ -1646,7 +1663,7 @@ export function registerSubagents(
 	 */
 	const recordWrapUps = (teamId: string, targets: readonly PersistedMember[], outcomes: readonly { workerId: string; ok: boolean }[]) => {
 		const routing = teams.routingCoordinator(teamId, isLiveWorker)?.workerId;
-		const state = readTeamDefaults(agentDir());
+		const state = teamDefaultsNow();
 		const threshold = state.state === "ok" ? state.value.monitor.contextPct : undefined;
 		for (const target of targets) {
 			if (!outcomes.find((o) => o.workerId === target.workerId)?.ok) continue;
@@ -1684,7 +1701,7 @@ export function registerSubagents(
 	});
 	/** For each of a team's providers that no login can use now, the windows of the login that frees soonest. */
 	const pausingWindows = (teamId: string): UsageWindow[] => {
-		const state = readTeamDefaults(agentDir());
+		const state = teamDefaultsNow();
 		const usage = state.state === "ok" && state.value.monitor.usage.enabled ? state.value.monitor.usage : undefined;
 		const t = teamViews().find((v) => v.id === teamId);
 		if (!usage || !t) return [];
@@ -1695,7 +1712,7 @@ export function registerSubagents(
 	const resumeNoticeRefusal = (teamId: string, now = Date.now()): string | undefined => {
 		const held = pauseHolds.get(teamId);
 		if (!held?.length) return undefined;
-		const state = readTeamDefaults(agentDir());
+		const state = teamDefaultsNow();
 		const margin = state.state === "ok" ? state.value.monitor.usage.resumeMarginMinutes : 0;
 		const last = held.reduce((a, w) => (Date.parse(w.resetsAt!) > Date.parse(a.resetsAt!) ? w : a));
 		const from = Date.parse(last.resetsAt!) + margin * 60_000;
@@ -1739,6 +1756,55 @@ export function registerSubagents(
 		const second = fallback ? tupleDenial(ctx, fallback) : "no fallback is configured";
 		if (fallback && !second) return { tuple: fallback, line: `Team defaults: ${duty} ${role} added on ${tupleText(fallback)} (fallback; primary ${tupleText(primary)} refused: ${first}).` };
 		throw new Error(`Team not created: team defaults require a ${duty} (${role}), but no configured model can run — primary ${tupleText(primary)}: ${first}; fallback${fallback ? ` ${tupleText(fallback)}` : ""}: ${second}. Fix the ${duty} in Sova's Settings, or pass defaults.${duty}: false.`);
+	};
+
+	/**
+	 * The profile's members default, filled into the
+	 * members nobody gave a model: a member's own model wins, then the call's defaults, then this,
+	 * then the parent's model. It applies only where any backend the member or the call states is
+	 * the default's own; its effort only where neither gave one. A default that can't run here
+	 * (policy, backend, registry) is not used, and the line says those members run on the parent's
+	 * model. Mutates `members`; returns the result lines.
+	 */
+	const applyMembersDefault = (
+		ctx: ExtensionContext,
+		members: TeamMemberInput[],
+		call: { backend?: string; model?: string; effort?: string } | undefined,
+		resolved: ResolvedSubagents,
+		/** What those members run on when the default can't run here: the parent's model (create/add), or the tuple they already ran on (a successor). */
+		denied: "parent-model" | "keep-tuple" = "parent-model",
+	): string[] => {
+		const d = resolved.members;
+		if (!d) return [];
+		const callBackend = call?.backend ?? "pi";
+		const takes = members.filter((m) => {
+			if (m.duty || m.model !== undefined) return false;
+			const backend = m.backend ?? call?.backend;
+			if (backend !== undefined && backend !== d.backend) return false;
+			// The call's defaults reach a member on their backend; a model there is the call's choice.
+			return !((m.backend ?? callBackend) === callBackend && call?.model !== undefined);
+		});
+		if (!takes.length) return [];
+		const roles = takes.map((m) => m.role).join(", ");
+		const named = `${d.backend}/${d.model}/${d.effort}`;
+		const denial = tupleDenial(ctx, { backend: d.backend, model: d.model, effort: d.effort as WorkerTuple["effort"] });
+		if (denial)
+			return [
+				denied === "keep-tuple"
+					? `Members default ${named} (subagent profile "${resolved.name}") can't run here — ${denial} — so ${roles} keep the tuple they ran on.`
+					: `Members default ${named} (subagent profile "${resolved.name}") can't run here — ${denial} — so ${roles} run on this session's model.`,
+			];
+		for (const m of takes) {
+			m.modelOverride = {
+				...(m.backend ?? call?.backend ? { backend: m.backend ?? call?.backend } : {}),
+				...(m.effort ?? call?.effort ? { effort: m.effort ?? call?.effort } : {}),
+			};
+			const callEffort = call?.effort !== undefined && callBackend === d.backend;
+			m.backend = d.backend;
+			m.model = d.model;
+			if (m.effort === undefined && !callEffort) m.effort = d.effort;
+		}
+		return [`Members default: ${roles} run on ${named} (subagent profile "${resolved.name}").`];
 	};
 
 	const coordinationTimer = (fn: () => void, ms: number): ReturnType<typeof setTimeout> => {
@@ -2022,7 +2088,7 @@ export function registerSubagents(
 		if (!t) return `Team ${teamId} is not available.`;
 		const standing: string[] = [];
 		if (viewer?.duty) {
-			const state = readTeamDefaults(agentDir());
+			const state = teamDefaultsNow();
 			const m = state.state === "ok" ? state.value.monitor : undefined;
 			standing.push(m
 				? `  Thresholds (team defaults, read now): wrap-up at ${m.contextPct}% context · check every ${m.everyMinutes} min · usage ${m.usage.enabled ? `pause when no login of a provider has headroom (a non-weekly window at ${m.usage.pausePct}%, a 7d window at 100%), resume ${m.usage.resumeMarginMinutes} min after the reset` : "not watched"}`
@@ -2784,7 +2850,7 @@ export function registerSubagents(
 		"Members are session-scoped: reload, session switch or quit stops them; agent_resume brings one back idle, rejoining its team.",
 	];
 	/** Runs inside spawnBatch before publication, so a failure rolls the batch back. */
-	const memberRecords = (members: readonly { role: string; ownedPaths: string[]; orchestrator: boolean; duty?: MemberDuty; successorOfId?: string }[], group: AgentGroup, addedAt: number): PersistedMember[] =>
+	const memberRecords = (members: readonly { role: string; ownedPaths: string[]; orchestrator: boolean; duty?: MemberDuty; successorOfId?: string; modelOverride?: PersistedMember["modelOverride"] }[], group: AgentGroup, addedAt: number): PersistedMember[] =>
 		group.agents.map((a, i) => ({
 			workerId: a.id,
 			role: members[i].role,
@@ -2792,6 +2858,7 @@ export function registerSubagents(
 			...(members[i].orchestrator ? { orchestrator: true } : {}),
 			...(members[i].duty ? { duty: members[i].duty } : {}),
 			...(members[i].successorOfId ? { successorOf: members[i].successorOfId } : {}),
+			...(members[i].modelOverride ? { modelOverride: { ...members[i].modelOverride } } : {}),
 			backend: a.backend ?? "pi",
 			...(a.model === undefined ? {} : { model: a.model }),
 			groupId: group.id,
@@ -2878,7 +2945,7 @@ export function registerSubagents(
 			throw new Error(`A successor for ${target.role} is already taking over; wait for its team_ready.`);
 		if ([...handovers.values()].some((h) => h.newId === target.workerId)) throw new Error(`${target.role} is itself still taking over; wait for its team_ready first.`);
 		if (!activeCtx) throw new Error("The parent session is not ready; retry shortly.");
-		const state = readTeamDefaults(agentDir());
+		const state = teamDefaultsNow();
 		const retireMinutes = (state.state === "ok" ? state.value.handover.retireTimeoutMinutes : undefined) ?? 10;
 		const note = path.join(teams.memberInfo(me.workerId)!.team.coordination!.handoffDir, `${roleSlug(target.role)}.md`);
 		if (target.duty === "monitor") return (await spawnSuccessor(team, target, me, note, retireMinutes)).text;
@@ -2954,7 +3021,8 @@ export function registerSubagents(
 		if (!activeCtx) throw new Error("The parent session is not ready; retry shortly.");
 		const old = agents.find((a) => a.id === target.workerId);
 		const launch = old ? launches.get(old) : undefined;
-		const state = readTeamDefaults(agentDir());
+		const now = subagentsNow();
+		const state = now.teams;
 		const defaults = state.state === "ok" ? state.value : undefined;
 		const role = successorRole(target.role, teams.roles(team.id), MAX_LABEL_CHARS);
 		const model = launch?.model ?? target.model;
@@ -2982,6 +3050,32 @@ export function registerSubagents(
 			successorOf: target.role,
 			successorOfId: target.workerId,
 		};
+		const explicit = target.modelOverride;
+		input.modelOverride = explicit ?? {};
+		const memberNotes: string[] = [];
+		if (!explicit?.model) {
+			const standing = target.duty && defaults?.[target.duty];
+			if (standing?.enabled) {
+				const pick = pickTuple(activeCtx, target.duty!, role, standing.primary, standing.fallback);
+				input.backend = pick.tuple.backend;
+				input.model = pick.tuple.model;
+				input.effort = pick.tuple.effort;
+			} else if (!target.duty && now.members) {
+				// The current members default replaces the tuple — but only where it actually takes:
+				// denied, or against the member's own backend, the predecessor's tuple stands.
+				const kept = { backend: input.backend, model: input.model, effort: input.effort };
+				delete input.model;
+				delete input.backend;
+				delete input.effort;
+				Object.assign(input, explicit ?? {});
+				memberNotes.push(...applyMembersDefault(activeCtx, [input], undefined, now, "keep-tuple"));
+				if (input.model === undefined) {
+					if (input.backend === undefined && kept.backend !== undefined) input.backend = kept.backend;
+					if (kept.model !== undefined) input.model = kept.model;
+					if (input.effort === undefined && kept.effort !== undefined) input.effort = kept.effort;
+				}
+			}
+		} else Object.assign(input, explicit);
 		const prepared = teams.prepareAdd(team.id, [input], observeWorker, defaults);
 		let added: Awaited<ReturnType<typeof addPrepared>>;
 		try {
@@ -2990,7 +3084,7 @@ export function registerSubagents(
 			prepared.release();
 		}
 		const successor = added.group.agents[0];
-		const detail = `successor ${role} (${successor.id}) on ${target.backend}/${model ?? "default model"}; retire on team_ready or after ${retireMinutes} min`;
+		const detail = `successor ${role} (${successor.id}) on ${successor.backend}/${successor.model ?? "default model"}; retire on team_ready or after ${retireMinutes} min`;
 		appendTeamEvent(team.id, "handover", target, detail);
 		if (isLiveWorker(target.workerId)) {
 			const h: Handover = { teamId: team.id, oldId: target.workerId, oldRole: target.role, newId: successor.id, newRole: role };
@@ -3012,9 +3106,9 @@ export function registerSubagents(
 		}
 		scheduleRefresh();
 		const effort = launch?.effort ?? old?.effort;
-		const text = `Started ${role} (${successor.id}) to succeed ${target.role} (${target.workerId}) on ${target.backend}/${model ?? "default model"}${effort ? `/${effort}` : ""}. ${isLiveWorker(target.workerId) ? `${target.role} was told to brief it; it is retired when ${role} calls team_ready, or after ${retireMinutes} min.` : `${target.role} has already ended; the successor works from the handover note.`}${missing ? ` The note may be missing (${missing}); the successor was told so.` : ""}${
+		const text = `Started ${role} (${successor.id}) to succeed ${target.role} (${target.workerId}) on ${successor.backend}/${successor.model ?? "default model"}${successor.effort ? `/${successor.effort}` : ""}. ${isLiveWorker(target.workerId) ? `${target.role} was told to brief it; it is retired when ${role} calls team_ready, or after ${retireMinutes} min.` : `${target.role} has already ended; the successor works from the handover note.`}${missing ? ` The note may be missing (${missing}); the successor was told so.` : ""}${
 			// N8: the coordinator is shown, unasked, that these are the successor's binding assignment.
-			steers.length ? `\n${bindingSteersLabel(role, `${target.role} (${target.workerId})`)}\n${steers.map((t) => `> ${steerPreview(t)}`).join("\n")}` : ""}`;
+			steers.length ? `\n${bindingSteersLabel(role, `${target.role} (${target.workerId})`)}\n${steers.map((t) => `> ${steerPreview(t)}`).join("\n")}` : ""}${memberNotes.length ? `\n${memberNotes.join("\n")}` : ""}`;
 		return { text, successorId: successor.id };
 	};
 	pi.registerTool({
@@ -3027,7 +3121,7 @@ export function registerSubagents(
 			"Use team_create when the user wants a coordinated team with distinct roles and ownership; use agent_spawn for ad hoc independent workers.",
 			"team_create ownership is advisory: members share the filesystem, and each settled member with wake=true starts a parent turn. Members (pi or Claude) can message teammates (team_msg) and ask you questions (team_ask); answer a team-question message with agent_steer on that worker ID.",
 			"Set orchestrator: true on one member (pi or claude-code) when the team should coordinate itself: it can see the roster and steer siblings by role, but never spawn or stop anyone; you keep the authority to add/stop members.",
-			"When ~/.pi/agent/team-defaults.json is valid, team_create itself adds a coordinator (your orchestrator member becomes it if you named one) and a monitor; only the coordinator then reaches you (completions, team-report messages that ask for nothing, team-question messages). Pass defaults.coordinator: false or defaults.monitor: false only when the user asks for a team without them. /team defaults shows the file's effect.",
+			"When this chat's subagent profile (or legacy team-defaults.json) configures standing roles, team_create itself adds a coordinator (your orchestrator member becomes it if you named one) and a monitor; only the coordinator then reaches you (completions, team-report messages that ask for nothing, team-question messages). Pass defaults.coordinator: false or defaults.monitor: false only when the user asks for a team without them. /team defaults shows the file's effect.",
 			"Never stop a coordinated team's coordinator or monitor while any of its members is still working (check team_list), even when the coordinator reports the objective complete; stopping them once no member is working is fine.",
 			"Use team_add to extend a team created in this session and team_list to see roles beside actual worker status; steer and stop members with agent_steer and agent_kill by exact worker ID; team_eject releases an ended member's seat when the team is full.",
 		],
@@ -3046,9 +3140,11 @@ export function registerSubagents(
 			checkTeamKeys(params.members, params.defaults);
 			// Team defaults (team-defaults.json), read now: a coordinator and a monitor, enforced here.
 			const { coordinator: coordinatorSwitch, monitor: monitorSwitch, ...storeDefaults } = params.defaults ?? {};
-			const plan = planTeamDefaults(readTeamDefaults(agentDir()), params.members, { coordinator: coordinatorSwitch, monitor: monitorSwitch });
+			const subagentsForTeam = subagentsNow(ctx);
+			const plan = planTeamDefaults(subagentsForTeam.teams, params.members, { coordinator: coordinatorSwitch, monitor: monitorSwitch });
 			const lines = [...(plan.warning ? [plan.warning] : []), ...plan.notes];
 			const members: TeamMemberInput[] = params.members.map((m: TeamMemberInput) => ({ ...m }));
+			lines.push(...applyMembersDefault(ctx, members, storeDefaults, subagentsForTeam));
 			if (plan.existingCoordinator !== undefined) members[plan.existingCoordinator].duty = "coordinator";
 			if (plan.synthesizeCoordinator) {
 				const c = plan.synthesizeCoordinator;
@@ -3114,15 +3210,18 @@ export function registerSubagents(
 			signal?.throwIfAborted();
 			checkTeamKeys(params.members);
 			// Re-read now: a coordinated team's new members get the current standing text; a malformed file is reported.
-			const state = readTeamDefaults(agentDir());
-			const prepared = teams.prepareAdd(params.team, params.members, observeWorker, state.state === "ok" ? state.value : undefined);
+			const now = subagentsNow(ctx);
+			const state = now.teams;
+			const additions: TeamMemberInput[] = params.members.map((m: TeamMemberInput) => ({ ...m }));
+			const membersLine = applyMembersDefault(ctx, additions, teams.find(params.team).defaults, now);
+			const prepared = teams.prepareAdd(params.team, additions, observeWorker, state.state === "ok" ? state.value : undefined);
 			try {
 				const { group, members } = await addPrepared(ctx, prepared, signal);
 				const told = await tellCoordinatorOfAdditions(prepared.teamId, members, prepared.members.map((m) => m.task));
 				return teamSpawnResult(
 					`Added ${group.agents.length} member(s) to ${prepared.teamId} (${prepared.name}) in ${group.id}. Task acceptance is asynchronous; inspect status for startup failures.`,
 					prepared.teamId, group, members,
-					[...(state.state === "malformed" ? [malformedWarning(state)] : []), ...(told ? [told] : [])],
+					[...(state.state === "malformed" ? [malformedWarning(state)] : []), ...membersLine, ...(told ? [told] : [])],
 				);
 			} finally {
 				prepared.release();
@@ -3376,7 +3475,11 @@ export function registerSubagents(
 		].join("\n");
 	/** The planning message's view of team-defaults.json, read now. */
 	const teamDefaultsPlanLines = (): string[] => {
-		const state = readTeamDefaults(agentDir());
+		const now = subagentsNow();
+		const members = now.members ? [`- Members you don't give a model run on ${now.members.backend}/${now.members.model}/${now.members.effort}; pass a member model to override.`] : [];
+		return [...teamStandingPlanLines(now.teams), ...members];
+	};
+	const teamStandingPlanLines = (state: TeamDefaultsState): string[] => {
 		if (state.state === "absent") return [];
 		if (state.state === "malformed") return [`- Team defaults are off: ${state.file} is malformed (team_create will say so).`];
 		const { coordinator: c, monitor: m } = state.value;
@@ -3406,7 +3509,7 @@ export function registerSubagents(
 		handler: async (args: string, ctx: ExtensionContext) => {
 			if (args.trim().toLowerCase() === "defaults") {
 				// Read-only: what team_create would apply now. Nothing is sent and no turn starts.
-				const text = describeTeamDefaults(readTeamDefaults(agentDir()));
+				const text = describeTeamDefaults(teamDefaultsNow(ctx));
 				if (ctx.hasUI) ctx.ui.notify(text, "info");
 				else console.log(text);
 				return;

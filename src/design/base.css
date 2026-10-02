@@ -1247,6 +1247,19 @@ button.list-row { width: 100%; border: 0; background: none; text-align: left; }
 /* Teams reuses the Delegate fieldset; its on/off switch leads the role, and number fields share a row. */
 .settings-team-enable { justify-content: flex-start; align-self: flex-start; width: fit-content; gap: var(--space-3); font-weight: var(--fw-semibold); }
 .settings-team-role { max-width: 20rem; }
+/* Settings → Subagents: one profile's editor is a bordered region of the list below it, its
+   sections named by semibold group labels a step under the tab's title. */
+.settings-subagents-editor {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  margin: 0;
+  padding: var(--space-4);
+  border: var(--stroke-thin) solid var(--color-border);
+  border-radius: var(--r-lg);
+}
+.settings-subagents-group { margin: 0; font-size: var(--fs-heading-s); line-height: var(--lh-heading-s); font-weight: var(--fw-semibold); color: var(--color-ink); }
+.settings-subagents-editor .banner { margin-top: calc(var(--space-2) * -1); }
 /* Settings → Modes → Spec: who writes the spec, two radio rows sized to their text. */
 .settings-spec-writer .toggle { justify-content: flex-start; width: fit-content; }
 .settings-team-numbers { display: grid; grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr)); gap: var(--space-3); }
@@ -3721,6 +3734,23 @@ a.group-option { color: inherit; text-decoration: none; }
 }
 .mode-option-gear:hover { color: var(--color-ink); }
 .mode-option-row:has(> .mode-option[aria-checked="true"]) { background: var(--color-accent-tint); }
+/* The Subagents row and the picker rows: a profile's name is a user-chosen label, not a machine
+   id, so it keeps the body face (the pickers' mono is for ids); its footprint stays mono. */
+.mode-option-name { color: var(--color-ink); }
+.mode-option-lead { flex: none; margin-top: 2px; color: var(--color-ink-muted); }
+.mode-option-caret { flex: none; align-self: center; margin-left: auto; color: var(--color-ink-muted); }
+/* The picker's inline Save Current form: a card of its own under the footer's buttons. */
+.mode-menu-save-as {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  align-self: stretch;
+  margin: 0;
+  padding: var(--space-3);
+  border: var(--stroke-thin) solid var(--color-border);
+  border-radius: var(--r-md);
+  background: var(--color-sunken);
+}
 .mode-menu-foot {
   flex: none;
   margin: 0;

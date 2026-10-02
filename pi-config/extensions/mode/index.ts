@@ -188,13 +188,16 @@ export default function modeExtension(pi: ExtensionAPI): void {
 	 * entry into a held chat directly.
 	 */
 	let pick: string | undefined;
-	/** subagent-profiles.json, re-read (one stat) whenever it is consulted; seeded on first read. */
+	/** The library and this device's default, re-read (one stat each) whenever consulted; seeded on first read. */
 	const readProfiles = profilesReader(getAgentDir());
 	/**
-	 * What this chat's subagents get now: its pick, else the default, else the legacy files
+	 * What this chat's subagents get now: its pick, else this device's default, else the legacy files
 	 * (mode-delegate.json, mode-spec.json). Delegate's routing is null under Off: the agent picks.
 	 */
-	const subagents = (): ResolvedSubagents => resolveSubagents(getAgentDir(), pick, readProfiles());
+	const subagents = (): ResolvedSubagents => {
+		const s = readProfiles();
+		return resolveSubagents(getAgentDir(), pick, s.profiles, s.default);
+	};
 	const readDelegate = () => subagents().delegate;
 	const readSpec = () => subagents().spec;
 	/** Re-read this chat's pick from its branch. */
@@ -829,7 +832,7 @@ export default function modeExtension(pi: ExtensionAPI): void {
 	 * entry, the shape Sova writes too). Takes an id or a name; nothing else moves.
 	 */
 	function setSubagentProfile(arg: string, ctx: ExtensionContext): void {
-		const state = readProfiles();
+		const { profiles: state } = readProfiles();
 		if (state.state !== "ok") {
 			ctx.ui.notify(`Subagent profiles can't be used now: ${state.state === "malformed" ? `${state.file} is malformed` : "no profiles file"}.`, "warning");
 			return;

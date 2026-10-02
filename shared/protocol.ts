@@ -163,7 +163,7 @@ export interface SessionSummary {
       stamped shows it too). `message` = the reply's errorMessage, ≤300 chars. The sidebar's red
       mark in the unread dot's place, and the digest's act "error" item. Server-computed, needs no
       decisions feature; an aborted turn is not an error. Safe by absence. */
-  turnError?: { message?: string };
+  turnError?: { message?: string; /** The failed turn's own model's provider, when known. */ provider?: string };
 }
 
 /** A configured remote target (~/.pi/agent/targets.json, GET /api/targets). Credential-free. */
@@ -1840,6 +1840,8 @@ export type ChatServerMessage =
       clientId?: string;
       /** A One at a time profile's first message was refused: the session that holds it (§chat.profiles/singleton). */
       profileRunning?: { id: string; path: string; title: string };
+      /** The provider of the model whose turn failed, when the error IS the turn's failure (never a worker's or a guessed one); absent otherwise. */
+      provider?: string;
     };
 
 /** WS /ws/watch?path= — read-only live view. Safe for sessions a TUI currently owns. Never writes.
@@ -3526,7 +3528,7 @@ export interface SessionMarks {
   workerSignals?: { stuck: number } | null;
   tags?: SessionTags | null;
   /** SessionSummary.turnError, pushed so the red mark appears and clears at once. */
-  turnError?: { message?: string } | null;
+  turnError?: { message?: string; provider?: string } | null;
 }
 
 /** WS /ws/watch?feed=sessions (see the route comment at the top of this block). */

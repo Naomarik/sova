@@ -32,6 +32,8 @@ import { decodeUsageTotal, decodeWorkers } from "./insights";
 import { readLive, readOwnLiveRecords, workerCountsOf } from "./live";
 import { appliesAfter, defaultPatchOf, mergeMode, MINOR_MODES, modeApplyPlan, modeInfo, pinEntryFor, readMode, resolveChatMode, writeMode, type ModePatch, type ModeState } from "./mode-state";
 import { loadDefaults, saveDefaults } from "./web-defaults";
+import { subagentProfilesInfo, requireSubagentProfile, saveSubagentProfileDefault } from "./subagent-profiles";
+import { restorePick, pickEntryFor } from "../pi-config/extensions/subagents/subagent-profiles.ts";
 import { modelAllowed, modelDenial, readModelPolicy } from "./model-policy";
 import { toContextInfo, workerWindowResolver } from "./models";
 import { claudeSpawnModels, WorkerContextReader, withWorkerContext } from "./worker-context";
@@ -1069,7 +1071,7 @@ class ChatSession {
       // line between. `queue_item_gone{reason:"failed"}` is now the single departure signal, which
       // also makes "failed" and "dropped" symmetric, and leaves `queue_cleared` meaning Stop and
       // nothing else.
-      this.broadcast({ type: "error", code, message, ...(item.origin === "client" ? { clientId: item.id } : {}) });
+      this.broadcast({ type: "error", code, message, ...(item.origin === "client" ? { clientId: item.id } : {}), ...(this.session.model?.provider ? { provider: this.session.model.provider } : {}) });
     },
   });
 
@@ -1822,11 +1824,41 @@ class ChatSession {
    * write of the default, a session that has never switched (no mode entry on its branch) follows
    * it too from its next start or reopen. "Unchanged" is true now, not forever.
    */
+  subagentProfileInfo() {
+    return subagentProfilesInfo(restorePick(this.session.sessionManager.getBranch()));
+  }
+
+  async switchSubagentProfile(id: unknown) {
+    if (this.disposed || this.overseer || this.specialEntry?.refuses?.("mode") || this.hasForeignWrites()) throw new ModeRefusedError();
+    assertNotLive(this.path);
+    const profile = requireSubagentProfile(id);
+    if (!this.modeCommand()) throw new ModeRefusedError("The mode extension isn't loaded in this chat.");
+    this.flushDeferredAppends();
+    const sm = this.session.sessionManager;
+    const entry = pickEntryFor(sm.getBranch(), profile);
+    if (entry) sm.appendCustomEntry(entry.customType, entry.data);
+    markOwned(this.path);
+    return { ...this.subagentProfileInfo(), applies: this.session.isStreaming ? "after-turn" as const : "now" as const };
+  }
+
   async saveModeDefault(): Promise<ModeInfo> {
     if (this.overseer) throw new ModeRefusedError();
     const refused = this.specialEntry?.refuses?.("mode");
     if (refused) throw new ModeRefusedError(refused);
-    return modeInfo(writeMode(defaultPatchOf(this.modeState)));
+    const profile = this.subagentProfileInfo().current.id;
+    if (profile === null) throw new ModeRefusedError("Fix the subagent profiles file before saving the default.");
+    // Two files, no transaction: the profile default first, then the mode. If the second write
+    // fails, say plainly that the first one already happened.
+    try {
+      saveSubagentProfileDefault(profile);
+    } catch (err) {
+      throw new ModeRefusedError(`The subagent profile default was not saved, and the mode default was not touched: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    try {
+      return modeInfo(writeMode(defaultPatchOf(this.modeState)));
+    } catch (err) {
+      throw new ModeRefusedError(`The subagent profile default "${profile}" WAS saved, but the mode default was not: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
 
   /**
@@ -2464,7 +2496,9 @@ class ChatSession {
       reports. Used for a turn nobody is awaiting (the group batch dispatches and returns). */
   reportTurnFailure(err: unknown): void {
     const code = errorCode(err);
-    this.broadcast({ type: "error", code, message: err instanceof Error ? err.message : String(err) });
+    // The turn failed on this session's model: name its provider (this session's model cannot move
+    // mid-turn — switches are idle-only), so the limit row never has to read the provider out of text.
+    this.broadcast({ type: "error", code, message: err instanceof Error ? err.message : String(err), ...(this.session.model?.provider ? { provider: this.session.model.provider } : {}) });
   }
 
   handle(client: ChatClient, msg: ChatClientMessage): void {

@@ -12,8 +12,8 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Search label (visually hidden) | Search sessions |
 | Search placeholder | Title, folder, or tag (model still matches; the placeholder must fit the 320px field) |
 | Count | `{n} sessions` · filtered: `{visible} of {total} sessions` |
-| Search icon button (folded toolbar line, §app.session-list/search) | wordless `search` · `aria-label` "Search sessions" · `title` "Search sessions · /" |
-| Close Search (folded toolbar line, while the search is open) | wordless `close` · `aria-label` and `title`: Close Search |
+| Search icon button (toolbar line, §app.session-list/search) | wordless `search` · `aria-label` "Search sessions" · `title` "Search sessions · /" |
+| Close Search (toolbar line, while the search is open) | wordless `close` · `aria-label` and `title`: Close Search |
 | Row TUI chip (rail) | `TUI`, static, no dot · `aria-label` (replaces the visible word in the accessible name): "Open in a TUI. Pid {pid}, status {status}." · `title`: "Open in a TUI · pid {pid} · {status}" · tap: the `title` as a toast |
 | Row Busy dot (rail) | wordless, pulsing · `aria-label` and `title`: "pi is replying in this session", or while its request waits on a provider's limit the waiting sentence, "Waiting for zai · 5 of 5 in use" (§app.provider-limits/waiting-shown) · tap: the same as a toast |
 | Row worker count (rail) | `{n}` + worker icon · `aria-label` and `title`: "{n} subagents working now" |
@@ -23,8 +23,8 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Row turn-error mark (line 1, in the unread dot's place; §app.overseer/seen) | wordless alert circle in error · hidden: "Turn failed. " · `title`: "The last turn stopped with an error: {message}" · without a message: "The last turn stopped with an error." |
 | Row needs-you mark (line 1, after the unread dot or turn-error mark; one per row, §chat.alignment/session-mark, §app.decisions/attention-signals) | open questions: the accent count `{n}` alone, no glyph (the count is aria-hidden) · hidden "{n} open questions. " (1: "1 open question. ") · `title` "{n} open questions in {m} alignments" (1 alignment: "{n} open questions in {al_N} {title}") · otherwise a wordless glyph · hidden: a reply that asks "Asks you something. " · looping "May be looping. " · a stuck subagent "A subagent may be stuck. " · a team gone quiet "Waiting on a quiet team. " · `title`: "The last reply asks you something." · "The last turn looks like it went in circles." · "A subagent looks stuck." · "Waiting on subagents that have gone quiet." · an ask and a quiet team are muted ink, never the accent: neither is a Needs you item |
 | Row meta title, when tagged | Topic: {topic word} (tagged automatically) |
-| Row readiness chip (leads line 3, before the time; §chat.worktrees/readiness) | a toned chip, dot and word, sentence case: ● Ready to merge (success) · ● Waiting for your OK (info) · `title`: one line per worktree, "{branch}: {state word}, {why}" ("feat/cc-sandbox: ready to merge, checks passed"), then the routine follow-ups: "A merge changed the server since it started: restart it to run the new code." · "The merge isn't pushed yet." · "{n} merged worktree(s) is/are still tracked active." · "Open work ({weight}): {cue}" |
-| Row readiness badge (line 3, between time and model, muted text, no tone) | restart pending · merged · {n} follow-up(s) · merged (lowercase), where {n} counts only the follow-up check's named work, never a leftover worktree · `title`: the chip's |
+| Row worktree count (line 3, after the time; §chat.worktrees/readiness) | a 12px branch glyph and a bare figure, "{merged} of {total}" over the worktrees the session owns ("0 of 1", "2 of 3"), in the meta's muted voice, no tone, never wrapped · the glyph and the figure in success while one or more of them is ready to merge (waiting for your OK included) · no count at all when it tracks none, or before git is read · the digits are aria-hidden; hidden: "2 of 3 worktrees merged" · ", one is ready to merge" · `title`: one line per worktree, "{branch}: {state word}, {why}" ("feat/cc-sandbox: ready to merge, checks passed"), then the routine follow-ups: "A merge changed the server since it started: restart it to run the new code." · "The merge isn't pushed yet." · "{n} merged worktree(s) is/are still tracked active." · "Open work ({weight}): {cue}" |
+| Row readiness badge (line 3, after the worktree count and before the model, muted text, no tone) | restart pending · {n} follow-up(s) (lowercase), where {n} counts only the follow-up check's named work, never a leftover worktree · never the word "merged", which the count says, and never the ready or waiting phrase, which the count's own light says · `title`: the count's |
 | Topic words (search; §app.decisions/session-tags) | feature · bug fix · refactor · tests · docs · infra · research · planning · review · data · config · experiment · chore · other |
 | Untitled row | Untitled (muted) |
 | Draft row (a never-sent session with a stored draft) | title Untitled (muted) · line 2: `pencil` icon, then the draft's first non-empty line, about 80 characters · image-only: `1 image` / `2 images` · accessible name and `title`: Draft: {preview} |
@@ -32,7 +32,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Needs you row, line 2 | the digest's sentence for the session's newest act item, verbatim ("2 open questions in al_3 Autonomy settings", "Waiting on a dialog.", "1 subagent ended in an error.") · `title`: every act sentence, newest first |
 | Needs you cut note | Some sessions may not be listed: this list stops at the 30 most urgent items. |
 | Needs you spine door | wordless `alert-circle` over {n} · `aria-label` and `title`: Needs you · {n} sessions (1: "1 session") |
-| Overseer entry button (eye) | wordless · badge: {unread}, "99+" past 99 · `aria-label`: Overseer / Overseer · {n} new messages (1: "1 new message") · `title`: the same + " · Alt+O" |
+| Overseer entry button | `eye` + the word `Overseer` on the toolbar line (§app.session-list/search); wordless `eye` on the spine · badge: {unread} at the button's top-right corner, "99+" past 99 · `aria-label`: Overseer / Overseer · {n} new messages (1: "1 new message") · `title`: the same + " · Alt+O" |
 | Top region head | Live & web · {n} · searching: Live & web · {hits} of {total} |
 | Archive head | Archive · {n} · searching: Archive · {hits} of {total} |
 | Organizations region head (§app.session-list/organizations) | Organizations · {n} · searching: Organizations · {hits} of {total} · `title`: "Hand-offs, project overseers, and the coding sessions they started, by organization and project." |
@@ -55,11 +55,12 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Select mode, org rows | Move to group: "Skipped 1: an organization session stays with its project." · "Skipped {n}: organization sessions stay with their project." · Archive: "{n} went to its project's Done list." (n > 1: "{n} went to their projects' Done lists.") |
 | Archive date sections | Today · Yesterday · Last 7 days · Last 30 days · Older (each with its count) |
 | Groups region head (§app.session-list/groups) | Groups · {n} where n = **groups** · searching: Groups · {matching groups} of {all groups} |
-| New group button (the `+` on the Groups region head) | wordless `+` · `aria-label` and `title`: New group |
-| Group name field (New group, Rename) | placeholder Group name · `aria-label` "New group name" / "Rename “{name}”" · button `Save` · Enter saves, blur saves, Escape cancels |
+| Open Groups button (on the Groups region head) | wordless `external` · `aria-label` and `title`: Open Groups · no groups: `title` "No groups yet. Drag a session to start one." |
+| Group picker (§app.session-list/group-picker) | title **Groups** · hint "Open one as a workspace." · `Close` · a group: {name}, then "{n} sessions" (1: "1 session") · empty: {name} with an `Empty` chip, then "Nothing is in it yet. Drag a session into it first." (wrapped, never truncated) · no groups: "No groups yet. Drag a session to start one." |
+| Group name field (Rename, and New group in the session pane's Move into group) | placeholder Group name · `aria-label` "New group name" / "Rename “{name}”" · button `Save` · Enter saves, blur saves, Escape cancels |
 | Group section label | {name} (own case, no eyebrow), then its count · `title`: {name} |
 | Empty group | No sessions yet. Drag a session to file it here. |
-| Groups region, no groups | No groups yet. Make one, then drag a session into it. |
+| Groups region, no groups | No groups yet. Drag a session to start one. |
 | Open workspace (group tool row, §workspace/groups) | `Open workspace` · `title`: Open “{name}” as a workspace — every member side by side |
 | Group tool row | `Rename` · `Delete group` · asking: with sessions "Delete “{name}”? Its {n} sessions stay in the list." (1 session: "… Its 1 session stays …"), empty "Delete “{name}”? Nothing is in it." — with `Delete group` · `Cancel` |
 | Group toasts | "Added to “{name}”." · "Moved to “{name}”." · "Removed from “{name}”." · "Deleted “{name}”. Its {n} sessions are ungrouped." (1: "… Its 1 session is ungrouped.") · "Deleted “{name}”. It had no sessions." · failures: "Couldn't create the group. {server message}" · "Couldn't rename the group. …" · "Couldn't delete the group. …" · "Couldn't move this session. {server message}" |
@@ -152,7 +153,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 |---|---|
 | Label (visually hidden) | Message |
 | Placeholder, idle | Enter sends: Enter sends · touch mode (§chat.composer/behavior) and read only: none |
-| Placeholder, streaming | Enter sends: Steer the current turn… Enter sends · touch mode: Steer the current turn… |
+| Placeholder, streaming | Enter sends: Steer the current turn… Enter sends · touch mode: Steer the current turn… · a box too narrow for either (§chat.composer/behavior): the key hint goes, then the caption size, then the string cut back to its last whole word with an ellipsis |
 | Buttons | `Send` · streaming: `Steer` + `Stop` · after Stop is pressed: "Stopping…" in run status |
 | Run status | Wide composer (≥ 620px): `Working` + detail: `· thinking` / `· writing` / `· running {tool}`, and beside it the subagents trigger: `2 of 5 subagents working` (team members among them: `2 of 5 team members working` · `3 of 5 workers working`, the split `1 subagent · 2 team members` in the tooltip), `5 subagents` once all have settled. Narrow: no visible words, the dot and the step's icon, and the trigger as its ring and a count (`2/5`, settled `5`); the same words are the tooltip and accessible name · in both: `Stopping…` · `Compacting context` · `Retrying after a provider error` · `Waiting for zai · 5 of 5 in use` (+ ` (lowered after a rate limit)`, §app.provider-limits/waiting-shown) · trigger name: `2 of 5 subagents working — show subagents` · settled: `5 subagents — show subagents` |
 | Alignment chip (§chat.alignment/chip) | `{n} aligns · {decided}/{total} decided` (1: `1 align · …`) · `aria-label` "{n} open alignments, {decided} of {total} questions decided — show alignments" · menu rows: {id} {title}, then "{decided}/{live}" (no live questions: the status word) · row `aria-label` "{id} {title}: {decided} of {live} questions decided — jump to its card" (no live questions: "{id} {title}: {status}, no questions — jump to its card") · off-screen toast: "That alignment isn't in the transcript on screen." |
@@ -366,6 +367,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Buttons | `Create Session` (pending: "Creating…") · `Cancel` |
 | 4xx error | {server message}, or: That folder doesn't exist. Pick one that does. |
 | Other error | **Couldn't create the session.** Nothing was written. Try again. |
+| Recent list header | checkbox "Show hidden folders" (the picker's own preference, not a second one) · caption "1 hidden folder is not listed." / "{n} hidden folders are not listed." — one line, only when rows were dropped |
 
 ## §design.copy-deck/insights — Insights (§app/insights)
 
@@ -508,7 +510,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Where | Copy |
 |---|---|
 | Tab | Overseer (icon `eye`) · Notifications (icon `bell`), the next tab, holding Phone Notifications |
-| Intro | The Overseer watches every session and acts on them for you. Open it with the eye beside the session search, or Alt+O. |
+| Intro | The Overseer watches every session and acts on them for you. Open it with the Overseer button on the toolbar line (its eye, the word, and its unread count), or Alt+O. |
 | Group order (legends) | Proactivity · Model and thinking · Limits · Quick actions · Standing notes · Advanced (folded) |
 | Model and thinking | labels Model · Thinking · options pi's default · Model default · {ref} (not available) · hint: Applies when the Overseer is idle. It never changes the model new sessions start with. |
 | Limits lede | Before acting, the Overseer checks these. When one is reached it stops and asks you instead. "Per message" counts restart each time you message it. |
@@ -704,7 +706,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Member chips | `Working` (live dot, mid-turn — the split row's only at-a-glance sign of who is still running; the tab strip's dot covers tabs mode) · `TUI` (accent, static) · `Archived` (neutral) · `Can't open` (error) · `Busy` (warn) |
 | Member composer reasons | "This session is open in a terminal, so Sova won't write to it." · "This session is archived. Unarchive it to send." · "This session can't be opened. The banner above says why." · "Another program is writing to this session." |
 | Member file gone | **This session's file is gone.** Its transcript was deleted outside Sova, so there's nothing left to read. Removing it from the group is all that's left. · button `Remove From Group` |
-| Group composer label and placeholder | `aria-label` "Message every member" · placeholder "Ask all {n} members…—Enter sends, Shift+Enter adds a line" (in touch mode, where Enter adds a line: "Ask all {n} members…"; 1 member: "Ask this member…") · **{n} is the group's size, never the available count**: availability belongs in the foot, where it can change without rewriting a placeholder under the caret, and "Ask this member…" in a 3-member group would be false |
+| Group composer label and placeholder | `aria-label` "Message every member" · placeholder "Ask all {n} members…—Enter sends, Shift+Enter adds a line" (in touch mode, where Enter adds a line: "Ask all {n} members…"; 1 member: "Ask this member…"; a box too narrow for the whole string: the key hint goes, then the caption size, then the ask cut back to its last whole word with an ellipsis — §chat.composer/behavior) · **{n} is the group's size, never the available count**: availability belongs in the foot, where it can change without rewriting a placeholder under the caret, and "Ask this member…" in a 3-member group would be false |
 | Group composer Send | `Send to All` · in flight `Sending…` · 1 member: `Send` |
 | Group composer targets line | `{n} of {m} members` then the excluded reasons, counted: `· 1 mid-turn` · `· 2 open in a terminal` · `· 1 archived` · `· 1 can't be opened` · `· 1 busy` · `· 1 file gone`. All available: `{n} members` alone |
 | Group composer off | 0 available: Send is `aria-disabled`, reason "No member can take a message right now." · 0 members: the composer isn't rendered |
@@ -896,6 +898,7 @@ page never names a host or a person.
 | Share port won't open (error banner under the Address row) | **The share port isn't open.** {reason} Links from this host can't be opened from outside until it is. Fix it, then save a different port or restart Sova. · {reason} (server): Another program is already using {host}:{port}. · This host doesn't let Sova use port {port}. · {host} isn't an address of this host. · SOVA_SHARE_PORT isn't a port number. · Couldn't open {host}:{port} ({code}). |
 | Address row | Address · {url}, or `None` · source `Set by environment ({var})` / `From this setting` / `From {gateway}` / `Bound address` |
 | Route legend and choices | Where links open · `Off` "Links work only on your own devices." · `This host is the gateway` "This host serves every public link, including those from hosts that go through it." · `Through {gateway}` "Links from this host open at {gateway}'s address. {gateway} must be on for them to open." |
+| Visitor logging (§mesh.public/visitor-log) | `Log visitors` "Records each visitor's IP address, browser, language and pages opened on this host's links." · `Send the visitor's address to preview apps` "Preview apps get X-Forwarded-For." · save failure (error banner): **Couldn't save visitor logging.** {reason} Your saved setting is unchanged. |
 | Gateway fields | Public address · Front (`Your web server` · `Caddy on this host` · `Tailscale Funnel` · `Cloudflare Tunnel`) · Local port · Accept links from (`All hosts` · `These hosts`) |
 | Pinned field hint | Set by environment ({var}). Change it there, then restart Sova. |
 | Front steps | heading "Set up the front once" · "Anything that serves {url} and forwards to 127.0.0.1:{port} works. Sova doesn't run this step for you." · chip `Needs root` · `Copy Step`, toast "Copied the step." · before a save: "Save Changes to see the step for this setting." |

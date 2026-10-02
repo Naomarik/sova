@@ -15,7 +15,9 @@ set +a
 export SOVA_FRONT_DOOR_BIND=127.0.0.1 SOVA_FRONT_DOOR_PORT=$FRONTDOOR_PORT
 # Caddy keeps its data/config dirs inside ~/sova-mesh/home (for Caddy only: they would mislead other tools)
 caddy() { XDG_DATA_HOME="$BASE/home/.local/share" XDG_CONFIG_HOME="$BASE/home/.config" "$BASE/bin/caddy" "$@"; }
-json=$(curl -fsS -m 10 "http://127.0.0.1:$PORT/api/mesh/front-door")
+# Sova's main listener asks for its token (minted at its first start in the agent dir): a header file, not argv.
+token=$(cat "${PI_CODING_AGENT_DIR:-$BASE/agent}/sova/auth-token") || { echo "no Sova token: has Sova started once?" >&2; exit 1; }
+json=$(curl -fsS -m 10 -H @<(printf 'x-sova-token: %s\n' "$token") "http://127.0.0.1:$PORT/api/mesh/front-door")
 node -e '
 const [json, port, admin] = process.argv.slice(1);
 let text = JSON.parse(json).caddyfile;

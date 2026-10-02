@@ -495,7 +495,7 @@ export function createGatewayRouter(opts: GatewayRouterOptions = {}): GatewayRou
   const previewDispatch: PreviewHooks["dispatch"] = async (req, res, label, client) => {
     const h = hashLabel(label);
     if (disposed) return previewAnswer(req, res, "busy");
-    if (isLocalPreview(h)) return previewLocal.dispatch(req, res, label);
+    if (isLocalPreview(h)) return previewLocal.dispatch(req, res, label, client);
     const route = previewRoute(h);
     if (route === "gone") return previewAnswer(req, res, "gone");
     if (route === "unknown") return previewAnswer(req, res, "unknown");
@@ -528,7 +528,7 @@ export function createGatewayRouter(opts: GatewayRouterOptions = {}): GatewayRou
   const previewUpgrade: PreviewHooks["upgrade"] = async (req, socket, head, label, client) => {
     const h = hashLabel(label);
     if (disposed) return previewUpgradeAnswer(socket, "busy");
-    if (isLocalPreview(h)) return previewLocal.upgrade(req, socket, head, label);
+    if (isLocalPreview(h)) return previewLocal.upgrade(req, socket, head, label, client);
     const route = previewRoute(h);
     if (route === "gone") return previewUpgradeAnswer(socket, "gone");
     if (route === "unknown") return previewUpgradeAnswer(socket, "unknown");

@@ -18,34 +18,23 @@
       <svg class="icon" aria-hidden="true">…panel-collapse…</svg></button>
   </div>
 
-  <div class="sidebar-search" role="search">
-    <label class="visually-hidden" for="session-search">Search sessions</label>
-    <div class="search">
-      <svg class="icon" aria-hidden="true">…search…</svg>
-      <input class="input" id="session-search" type="search" placeholder="Title, folder, or tag"
-             aria-describedby="session-count" autocomplete="off" spellcheck="false">
-      <!-- only when the query is non-empty -->
-      <button class="button button-icon" type="button" aria-label="Clear Search">…close…</button>
-    </div>
-    <div class="spread">
-      <p class="search-count" id="session-count" aria-live="polite">12 of 48 sessions</p>
-    </div>
-  </div>
-
-  <!-- folded (<768): the same region as ONE line (§app.session-list/search). Collapsed: -->
+  <!-- The one toolbar line (§app.session-list/search), the same at every width. At rest: -->
   <div class="sidebar-search" role="search">
     <label class="visually-hidden" for="session-search">Search sessions</label>
     <div class="sidebar-toolbar">
-      <a class="button button-icon overseer-entry button-ghost" href="#/overseer" aria-label="Overseer"
-         title="Overseer · Alt+O">…eye…</a>
       <p class="search-count" id="session-count" aria-live="polite">48 sessions</p>
-      <!-- not in selection mode -->
+      <!-- not in selection mode (§app.session-list/selecting-several-sessions) -->
       <button class="button button-sm button-ghost sidebar-select-start" type="button">…check…Select</button>
       <button class="button button-icon button-ghost" type="button" aria-label="Search sessions"
               title="Search sessions · /">…search…</button>
+      <!-- the Overseer entry button (§app.overseer/entry-button), with its unread badge -->
+      <a class="button button-sm button-ghost overseer-entry" href="#/overseer" aria-label="Overseer"
+         title="Overseer · Alt+O">…eye…Overseer</a>
     </div>
   </div>
-  <!-- open (after the search icon, or while there is a query): -->
+  <!-- search open (the icon pressed, or a query in force): -->
+  <div class="sidebar-search" role="search">
+    <label class="visually-hidden" for="session-search">Search sessions</label>
     <div class="sidebar-toolbar">
       <div class="search">
         <svg class="icon" aria-hidden="true">…search…</svg>
@@ -57,6 +46,7 @@
       <button class="button button-icon" type="button" aria-label="Close Search" title="Close Search">…close…</button>
       <p class="search-count visually-hidden" id="session-count" aria-live="polite">12 of 48 sessions</p>
     </div>
+  </div>
 
   <nav class="sidebar-list pane" aria-label="Session list">
     <!-- First region: Needs you (§app.session-list/needs-you), only while a session is blocked on
@@ -152,19 +142,21 @@
                 <p class="list-summary" title="…">Wiring /ws/watch to the session tailer</p>
                 <span class="session-topics text-num" title="7 topics in this session">7</span>
               </div>
-              <!-- line 3: the readiness chip when a worktree is ready or waiting for your OK
-                   (§chat.worktrees/readiness), leading the line, then time, the muted readiness
-                   badge when there is one ("restart pending", "merged · 2 follow-ups", "merged" —
-                   lowercase, the meta's own muted voice, no tone, never wrapped; its `title` the
-                   per-worktree lines), and model, then the context ring. With a chip:
-                   <span class="chip chip-success session-readiness-chip" title="feat/x: ready to merge, checks passed"><span class="chip-dot" aria-hidden="true"></span>Ready to merge</span>
-                   before the <p class="list-meta">. A tagged row's
+              <!-- line 3: time, then the worktrees the session tracks, "2 of 3" merged of the ones
+                   it owns (§chat.worktrees/readiness) — a 12px branch glyph and the bare figure in
+                   the meta's own muted voice, both in success while one of them is ready to merge,
+                   never wrapped and never grown, the digits aria-hidden with the words beside them
+                   for AT:
+                   <span class="session-worktrees session-worktrees-ready" title="feat/x: ready to merge, checks passed"><span class="icon icon-sm" style="--icon:url(/icons/branch.svg)" aria-hidden="true"></span><span class="text-num" aria-hidden="true">2 of 3</span><span class="visually-hidden">2 of 3 worktrees merged, one is ready to merge</span></span>
+                   — then the muted readiness badge when there is one ("restart pending", "2
+                   follow-ups" — lowercase, the meta's own muted voice, no tone, never wrapped; its
+                   `title` the per-worktree lines), then model, then the context ring. A tagged row's
                    `.list-meta` has the `title` "Topic: bug fix (tagged automatically)"; the topic
                    shows nowhere else on the row. A remote row opens the line with its
                    own mark (§app/session-list "Remote sessions"): one 6px muted dot before the time. Local rows
                    open with the time, as here. -->
               <div class="list-line list-meta-row">
-                <p class="list-meta">2h ago · <span class="session-readiness" title="feat/x: ready, checks passed">ready ✓</span> · <span class="text-mono" title="anthropic/claude-opus-5">claude-opus-5</span></p>
+                <p class="list-meta">2h ago · <span class="session-worktrees session-worktrees-ready" title="feat/x: ready to merge, checks passed"><span class="icon icon-sm" style="--icon:url(/icons/branch.svg)" aria-hidden="true"></span><span class="text-num" aria-hidden="true">2 of 3</span><span class="visually-hidden">2 of 3 worktrees merged, one is ready to merge</span></span> · <span class="session-readiness" title="feat/c: merged, 19 commits ahead">2 follow-ups</span> · <span class="text-mono" title="anthropic/claude-opus-5">claude-opus-5</span></p>
                 <span class="context-ring {context-warn|context-error}" title="{the head's exact sentence}">
                   <svg viewBox="0 0 12 12" aria-hidden="true">
                     <circle class="context-ring-track" cx="6" cy="6" r="5" fill="none"/>
@@ -499,16 +491,22 @@ label a person reads says "sessions pane".
   beside (`readTailOutline` returns gist, "now" and count from the accepted entry), so the sentence
   and the figure can never disagree. No count, no chip — and no chip without a summary line either,
   since the line is what it rides on: a hidden line hides its count.
-- **Row line 3.** When the session's readiness badge is ready or waiting (§chat.worktrees/readiness),
-  a toned chip **leads the line**, at the same left edge on every row that has one: "● Ready to
-  merge" in success, "● Waiting for your OK" in info — a dot and the word, sentence case (the
-  `.org-needs-chip` treatment), `flex: none`, its `title` each worktree's state and reason. It comes
-  before a remote row's mark. Every other readiness (restart pending, merged, merged · {n}
-  follow-ups) stays muted text after the time, where it was; a leftover worktree is only in the
-  `title`, never counted. The chip never truncates: the text block after it does, so the model's
-  name gives way first, then the badge, then the time — at a 280px desktop sidebar and on a 390px
-  phone alike. Then relative `lastActiveAt` ("just now", "4m ago", "2h ago", "yesterday", "Mar 4"),
-  then ` · `, then the model in mono. Show only the part after the first `/` and put the full
+- **Row line 3.** The worktrees the session tracks **lead the facts after the time**, when the
+  server has read at least one (§chat.worktrees/readiness): a 12px `branch` glyph and a bare figure,
+  "{merged} of {total}" — "0 of 1", "2 of 3" — over the session's own, non-dropped worktrees, in
+  the meta's own muted voice, `white-space: nowrap`, its `title` each worktree's state and reason.
+  Both the glyph and the figure take `--status-success` while **one or more** of those worktrees is
+  ready to merge, which includes one waiting for your OK: the light is the row's whole word for it,
+  so the row that can be merged is the row that glows — no check, no phrase. No worktrees, or none
+  the server has read yet, means no count at all, never "0 of 0". The digits are `aria-hidden` and
+  the row's accessible name carries the words ("2 of 3 worktrees merged, one is ready to merge").
+  The muted readiness badge follows it when there is one: "restart pending", or the follow-up count
+  ("1 follow-up", "2 follow-ups") — never the word "merged", which the count already says — and a
+  leftover worktree is only in the `title`, never counted. The line truncates from its end, so the
+  model's name gives way first, then the badge, then the count, the time last — at a 280px desktop
+  sidebar and on a 390px phone alike. Then relative `lastActiveAt` ("just now", "4m ago", "2h
+  ago", "yesterday", "Mar 4"), then ` · `, then the model in mono. Show only the part after the first
+  `/` and put the full
   `provider/model` in `title`. If `model` is null, omit the separator and the model. The line is
   `--fs-micro`, the model's mono included: two facts, never a sentence, under a title and a summary
   that carry the row (Tokens below). A remote row
@@ -719,7 +717,7 @@ whose branch is not merged (§chat.alignment/session-mark), and a baton hand-off
 their link, §app.baton/needs-you); a roster proposal stays a decide item. A reply that seems to ask you (§app.decisions/asks-user) and
 a team gone quiet (§app.decisions/team-stall) are not blockers: each is a quiet mark on its row,
 never a row here. Neither is a worktree ready to merge or waiting for your OK: that is the row's
-readiness chip (§chat.worktrees/readiness). A stuck subagent is not one either: it is its parent session's decide item. They are the attention digest's **act** tier (§app.overseer/attention-digest), read
+worktree count, lit (§chat.worktrees/readiness). A stuck subagent is not one either: it is its parent session's decide item. They are the attention digest's **act** tier (§app.overseer/attention-digest), read
 from `GET /api/overseer/attention`, the list the Overseer's "{a} need you" counts — less the
 organization sessions (§app.session-list/ordinary-surfaces), which wait in the Organizations
 region's own Needs you (§app.session-list/organizations). **The Overseer's count still includes
@@ -868,24 +866,15 @@ sessions shows as empty.
     <h2 class="sidebar-region-head" id="r-groups">
       <svg class="icon icon-sm icon-twist" aria-hidden="true">…chevron-right…</svg>
       Groups <span class="sidebar-region-count">· 2</span>
-      <!-- The region's one action, at the head's right end: there with the region shut, and
-           hidden while searching. Click and keydown stop here, as a group's `⋯` does, or they
-           would toggle the region. -->
-      <button type="button" class="button button-icon button-ghost group-new-toggle"
-              aria-label="New group" title="New group">
-        <svg class="icon icon-sm" aria-hidden="true">…plus…</svg>
+      <!-- The region's one action, at the head's right end: there with the region shut. It opens
+           the group picker (§app.session-list/group-picker) and makes nothing. Click and keydown
+           stop here, as a group's `⋯` does, or they would toggle the region. -->
+      <button type="button" class="button button-icon button-ghost group-picker-open"
+              aria-haspopup="dialog" aria-label="Open Groups" title="Open Groups">
+        <svg class="icon icon-sm" aria-hidden="true">…external…</svg>
       </button>
     </h2>
   </summary>
-
-  <!-- While a new group's name is being typed: the field opens where the region's rows start,
-       hidden while searching. -->
-  <div class="group-field-row">
-    <form class="group-field" aria-label="New group name">
-      <input class="input" type="text" maxlength="60" placeholder="Group name" aria-label="New group name">
-      <button type="submit" class="button button-sm">Save</button>
-    </form>
-  </div>
 
   <!-- One group: a <details>, like an Archive date section, and collapsed like one too. -->
   <details class="group-section">
@@ -931,9 +920,9 @@ sessions shows as empty.
 ```
 
 - **Placement.** Above Live & web, below the search field. The region is always rendered — with no
-groups it holds its head, with the `+` that makes a group, and the note "No groups yet. Make one,
-then drag a session into it." — because that `+` is the feature's front door, the way the top
-region keeps its head when it is empty.
+groups it holds its head, with its `Open Groups` button, and the note "No groups yet. Drag a
+session to start one." — because dragging a row is the feature's front door (its overlay's
+`+ New group` makes the first group), the way the top region keeps its head when it is empty.
 - **Order.** Groups keep their creation order, so a rename or a new group never shuffles the list.
 Within a group, rows and folder groups follow the usual rule (newest `lastActiveAt` first), and
 the folder labels are `h4`, one level under the group's own label.
@@ -959,31 +948,30 @@ opening the region lasts as long as the page does and no longer, so a reload alw
 This is the deliberate exception to the Archive's rule (§app/session-list "Regions"), and there is no storage key
 to read — `src/lib/group-open.ts` is the whole rule, inputs only.
 - **Forced open** — without changing the choice, exactly as the Archive is — while a search is on
-(a matching group must not hide its hits), and while the new-group
-name field is showing (it opens in the region's body, and a shut region would hide the field the
-user just asked for). When the field closes the choice answers again, so a region the user never
-opened is shut again.
+(a matching group must not hide its hits). When the search clears the choice answers again, so
+a region the user never opened is shut again.
 - **A group inside it is a `<details>` too**, like an Archive date section, and collapsed by
 default on the same terms: memory only, no storage key, reopened by hand each page.
 - **Empty.** An empty group stays visible with `0` and "No sessions yet. Drag a session to file it
 here.": it is what a group is when the user makes it, and its tile in the drop overlay is what fills it. While a search is on,
 a group with no matching session is left out entirely. Every group reaches this state when its
 last member leaves, an older build's `autoDissolve` group included (§workspace.groups/legacy-groups).
-- **Creating.** The region's one action is a `+` at the right end of its head
-(`.button-icon.button-ghost`, `aria-label` and `title` "New group"), not a row: a row read as one
-of the things it makes and sat inside the list it adds to. On the head it is there with the region
-shut, and at the end the name and count keep their place. It is quiet like a group's `⋯` — the
-count's muted ink, coming up to full ink when the head is hovered or the `+` has focus — with the
-standard 44px target, hung into the head's right padding so its glyph lines up with the `⋯` of the
-groups below. It stops its own click and keydown, as the `⋯` does, so a press on it is not also a
-press on the summary; and it is hidden while searching, with the field it opens. Pressing it opens
-the name field (focused) where the region's rows start, forcing the region open if it was shut.
-The field saves on Enter, saves what is there when it loses focus, and cancels on Escape or when
-empty. However it closes, focus goes back to the `+`, because the field is gone and the caret
-would otherwise drop to `<body>` — unless the blur that closed it already moved focus somewhere
-focusable, checked a frame later. `POST /api/session-groups`, then the group appears empty at the
-end of the region — collapsed like every other, with its `0` showing; the region it lands in is
-open, because the user is standing in it.
+- **Creating.** The region makes no group: it has no `+` and no name field. A group is made
+where a session is being filed: the drop overlay's `+ New group` (§app.session-list/drop-overlay),
+`New group…` in the session pane's `Move into group` and in the selection toolbar's Move to group,
+and the Overseer. `POST /api/session-groups`, then the group appears at the end of the region in
+creation order.
+- **Open Groups.** The region's one action is `Open Groups` at the right end of its head
+(`.button-icon.button-ghost` with the `external` glyph, as `Open workspace` has, `aria-label` and `title` "Open Groups",
+`aria-haspopup="dialog"`), not a row: a row read as one of the groups and sat inside the list.
+On the head it is there with the region shut and while searching, and at the end the name and
+count keep their place. It is quiet like a group's `⋯` — the count's muted ink, coming up to full
+ink when the head is hovered or it has focus — with the standard 44px target, hung into the head's
+right padding so its glyph lines up with the `⋯` of the groups below. It stops its own click and
+keydown, as the `⋯` does, so a press on it is not also a press on the summary, and it never opens
+or shuts the region. Pressing it opens the group picker (§app.session-list/group-picker). With no
+groups it is `aria-disabled` with the reason "No groups yet. Drag a session to start one." as its
+`title`, and a press only says that reason through the polite region.
 - **The actions menu.** A group's three actions live behind one `⋯` trigger on the group's own
 name row, in the `<summary>` after the count — not in a tool row under the section, which cost
 every group three buttons' worth of height whether or not anyone wanted them. The trigger is
@@ -1001,8 +989,10 @@ row is. Measured before the panel moved: pressing `Rename…` collapsed the grou
 the group's members side by side, each a whole chat, with one composer that writes to all of them
 (§workspace/groups). An empty group can't be opened as one: the row is `aria-disabled` with its reason under the
 label ("Nothing is in it yet. Drag a session into it first."), said before the press rather than
-discovered as a blank workspace. The
-section is still the place you file sessions into; the workspace is the place you read them in.
+discovered as a blank workspace. The head's `Open Groups` picker
+(§app.session-list/group-picker) opens the same `#/g/{id}`, with the same refusal for an empty
+group. The section is still the place you file sessions into; the workspace is the place you read
+them in.
 - **This is where membership changes.** The Groups region, the selection toolbar and the
 session details' `Move into group` are where a person puts a session into a group; the workspace
 takes members out but adds none (§workspace.groups/group-lifecycle).
@@ -1038,11 +1028,94 @@ Space opens and closes the section and AT announces expanded or collapsed. The `
 it keeps the section's own gestures: it stops click and keydown, so Enter or Space on the trigger
 opens the menu and does not also toggle the section, and Tab reaches the trigger after the
 summary. Escape closes the menu (and any screen it is showing) and returns focus to it. The region
-head's `+` is a named button (`aria-label` "New group") inside its `<summary>`, and it keeps the
-region's gestures the same way: it stops click and keydown, so Enter or Space on it opens the name
-field and does not also toggle the region. When the field closes it hands focus back to the `+`.
+head's `Open Groups` is a named button inside its `<summary>`, and it keeps the region's gestures
+the same way: it stops click and keydown, so Enter or Space on it opens the picker and does not
+also toggle the region. When the picker closes it hands focus back to `Open Groups`.
 Dragging is a pointer gesture only (§app.session-list/drop-overlay): the popover path is what a
 keyboard uses. Contrast is the region head's (ink-2 on sunken, 7.65 dark / 7.22 light).
+
+## §app.session-list/group-picker — Open Groups: the group picker
+
+The Groups head's `Open Groups` (§app.session-list/groups) opens a **group picker**: every group as
+a tile, in one panel sized to its list, and a press on a tile opens that group's
+workspace (`#/g/{id}`, §workspace.groups/routes). It is the drop overlay's shell and tiles
+(§app.session-list/drop-overlay) with nothing in flight: no floating card, no target under the
+pointer, no `+ New group`, no `Remove from …`, no Archive and no Cancel bar. It makes, moves,
+archives and removes nothing; it only opens. The overlay is `src/components/GroupPicker.tsx`; its
+tiles keep the drop overlay's row size (`DROP_LIST_FIT` in `src/lib/drag-overlay.ts`).
+
+```html
+<!-- Portalled to <body>, position fixed, inset 0, over everything. Only while the picker is open. -->
+<div class="drop-overlay group-picker" role="dialog" aria-modal="true" aria-labelledby="group-picker-title">
+  <!-- As big as the list, never the window: the drop overlay's own dropListLayout, written
+       inline — one 260–320px column, then 2 and 3, then shorter rows, then a scroll. -->
+  <div class="drop-overlay-panel" style="--drop-list-w: 320px; --pick-row-h: 52px; --pick-gap: 4px">
+    <div class="drop-overlay-head group-picker-head">
+      <div class="group-picker-head-text">
+        <h2 class="drop-overlay-title" id="group-picker-title">Groups</h2>
+        <p class="drop-overlay-hint">Open one as a workspace.</p>
+      </div>
+      <button type="button" class="button button-icon button-ghost" aria-label="Close" title="Close">…close…</button>
+    </div>
+    <!-- Row by row across the layout's columns (one full-width column when folded); the grid
+         scrolls when the list outgrows the window. -->
+    <div class="drop-overlay-grid group-picker-grid">
+      <a class="drop-tile group-picker-tile" href="#/g/g1" title="Work">…folder… Work · 4 sessions</a>
+      <!-- An empty group: shown, never a link: an `Empty` chip by the name, and its reason
+           under it, wrapped and read whole. -->
+      <a class="drop-tile group-picker-tile" role="link" tabindex="0" aria-disabled="true"
+         title="Nothing is in it yet. Drag a session into it first.">…folder… Home
+         <span class="chip drop-tile-chip">Empty</span> · Nothing is in it yet. Drag a session into it first.</a>
+    </div>
+  </div>
+</div>
+```
+
+- **The tiles.** One per group, in creation order, each the drop overlay's group tile: a folder
+  icon, the name on the first line, and its session count on the second ("1 session", "4
+  sessions"), counted as the drop overlay counts them, over the whole list and not the search's
+  slice. Every group is shown whatever the sidebar's search, and the region need not be open. With
+  no group (the last one deleted elsewhere while it is open) the head's note reads "No groups yet.
+  Drag a session to start one."
+- **Opening one.** A populated tile is a link to `#/g/{id}`. A press closes the picker and the
+  route opens the workspace, split. A modified click (a new tab or window) is the browser's and
+  leaves the picker open.
+- **An empty group can't be opened**, exactly as the group menu's `Open workspace` refuses it: the
+  tile is shown, `aria-disabled`, in the drop overlay's disabled look, with an `Empty` chip after
+  its name (the drop overlay's chip, where `Current` sits) and "Nothing is in it yet. Drag a
+  session into it first." under it as its title and its second line. That line is never cut to an
+  ellipsis: it wraps at any width and the tile grows to hold it, so the reason is on screen, not
+  only in a tooltip. A press on it does nothing but say that reason through the polite region.
+- **Nothing is being dragged.** The tiles never take the drop overlay's under-the-pointer look
+  (accent tint and outline, drop words). Hover and keyboard focus are the plain affordance: the
+  sunken fill under the pointer and the standard focus ring. The overlay keeps a normal cursor,
+  scrolls its list with a finger or a wheel, and leaves text selectable.
+- **Layout: the list's own size.** The drop overlay's shell (fixed to the window under `--scrim`,
+  `--color-bg` panel, the head at body size with the hint in caption) — the scrim still fills the
+  window, dimming the list the picker opened from — but the panel takes the **list's own size and
+  no more**, measured by the drop overlay's own `dropListLayout` (`src/lib/drag-overlay.ts`,
+  written inline by GroupPicker): one column of session-row tiles, a second and a third when the
+  window's height won't hold it, rows shortened toward the 44px floor, then a scroll inside the
+  panel (wheel, finger or keyboard) while the head stays put. So a few groups are a compact panel
+  centred on the scrim, like the drop overlay itself, and it grows toward the window only as the
+  list does — never a full screen holding one strip of rows. The tiles keep a session row's size,
+  never stretched into cards: 52px tall at rest, filled **row by row** across the layout's columns,
+  which share the panel's width evenly. An empty group's tile grows only as tall as its wrapped
+  reason. Under 768px it is the shell's bottom sheet — the window's full width, one column, as
+  tall as its list and no taller. The head carries the close control at its right end, a 44px
+  `.button-icon.button-ghost` named "Close".
+- **Closing.** The close control, Escape, and a press on the scrim outside the panel close it, and
+  nothing changes. Opening a workspace closes it too. However it closes, focus returns to
+  `Open Groups`.
+- **The drop overlay is unchanged.** Dragging a row still opens it with every one of its targets
+  and rules, at its own compact size; the picker only shares its shell, tile look and row size.
+
+**Accessibility.** The picker is a modal `role="dialog"` labelled by its title. Opening it moves
+focus to the first populated tile (else the first tile, else the close control), Tab and Shift+Tab
+stay inside it (`trapFocus`), and Escape closes it from anywhere inside. A populated tile is a
+link named by its own words, the group's name and count, under the hint that says what a link
+does, so Enter opens it. An empty tile is still in the Tab
+order, `role="link"` and `aria-disabled`, so its reason is read before any press.
 
 ## §app.session-list/drop-overlay — Dragging a row: the drop overlay
 
@@ -1192,7 +1265,7 @@ the hold lifts the row (§app.session-list/drop-overlay), and the release select
 sidebar in **selection mode**, on a Needs you row as on any other. The selection commits on the
 release, never at the hold, because a lifted row that moves is a drag. Press-and-hold is the accelerator; the **Select** button
 beside the session count is the door, for a keyboard and for anyone who has never held a row in
-their life — on a phone it shares the one toolbar line with the count, before the search icon
+their life — it shares the pane's one toolbar line with the count and the search icon
 (§app.session-list/search), and leaves it while the search is open. There is never only one way in.
 
 **What a press is, and what it stops being.** A press becomes a hold only if it stays within 10px
@@ -1221,8 +1294,12 @@ the list refreshes every few seconds and rebuilds every row, and a selection tha
 clear would be unusable. A poll may do exactly one thing to it: drop a session that is no longer in
 the list.
 
-**The toolbar sits inside the sidebar, above the list**, never floating over the rows it acts on:
-the count, `Cancel`, and the actions.
+**The toolbar sits inside the sidebar, above the list**, never floating over the rows it acts on —
+**one row**: the count ("**{n} selected**", a polite live region) leads at the left and takes the
+leftover width (it may ellipsize; the controls never shrink); the actions are one cluster at the
+right end — **Move** as a word, **Rename** and **Archive** as icons, the normal control gap apart
+— and `Cancel` ends them after a wider step, so it reads as the way out, not a fifth action. The
+rename field, while open, takes its own row below with its hint — that row is not the actions row.
 
 - **Rename** appears at **exactly one** selected session and is gone at two — one field cannot
   mean two titles. It opens an inline field: Enter saves, Escape cancels, and an **empty field
@@ -1236,8 +1313,10 @@ the count, `Cancel`, and the actions.
   (§app.session-list/organizations), and the run's sentence says so: "Archived 2 sessions. 1 went to
   its project's Done list." ({n} > 1: "{n} went to their projects' Done lists.")
 - **Archive** points one way for the whole selection. All archived → `Unarchive`. None archived →
-  `Archive`. **A mix is a disabled control** that says what it found ("2 of these 3 are archived
-  and the rest aren't. Select one kind, or the other."): guessing which half was meant is how a
+  `Archive`. **A mix is a disabled control**; what it found ("2 of these 3 are archived
+  and the rest aren't. Select one kind, or the other.") lives in the control's `title` and
+  **accessible name** — the bar is one row and there is no note line, so the reason can't exist
+  in a tooltip alone. Guessing which half was meant is how a
   bulk gesture loses work. Only eligible sessions are written — the single Archive button's own
   four rules, in one place (`archiveBlockReason`): open in a TUI, not started in Sova, mid-turn,
   or holding working subagents (archiving closes the runtime, so they would stop). The rest are
@@ -1284,7 +1363,7 @@ place for a keyboard to be in this mode — leaves the mode like Escape anywhere
 (`isTextEntry`). Every checkbox is a real
 `<input type="checkbox">` inside its label, named "Select {title}". The toolbar is a `role="group"`
 labelled "Selected sessions", its count is a polite live region, and every disabled control carries
-the reason it is disabled before it is pressed, never after. Every target in the mode is 44px.
+the reason it is disabled in its `title` and accessible name, before it is pressed, never after. Every target in the mode is 44px.
 
 ## §app.session-list/auto-titles — Automatic session titles
 
@@ -1559,7 +1638,7 @@ The rule is one predicate on the client, `isOrdinarySession` in `src/lib/regions
 `isMainThread`, which the Organizations region, the Overseer page and the Agents board still read.
 A server or mesh peer that sends no `org` leaves the session ordinary, exactly as it is listed today.
 
-The search row's count (`{n} sessions`, `{visible} of {total} sessions`) counts every session the pane
+The toolbar's count (`{n} sessions`, `{visible} of {total} sessions`) counts every session the pane
 draws once — org sessions included, the Overseer's never — so the number always matches the list.
 
 ## §app.session-list/organizations — Organizations
@@ -1988,25 +2067,25 @@ record whose transcript is gone.
   (`{visible} of {total} sessions`) covers both regions, and each region head shows its own
   filtered count.
 - **Count.** `.search-count` always shows `{visible} of {total} sessions`, and just
-  `{total} sessions` when the query is empty. It lives beside the filter it answers to,
-  following the filter-bar rule.
-- **Overseer button.** The search row also holds the Overseer entry button (§app.overseer/entry-button).
-  While the filter is focused or has a query, the button is removed (not just hidden) and the
-  field takes the full row; blur with an empty query brings it back.
-- **Folded (<768): one line.** On a phone the search row and the count row are one toolbar line:
-  the Overseer eye, the count, then at the far end `Select` (while not in selection mode) and a
-  wordless **search icon button**. The field is not on screen until that button is pressed; then
-  it opens **in the same line**, and the line holds only the field (with its Clear Search `×`
-  while there is a query) and a **Close Search** button — the eye, the count, `Select` and the
-  search icon are gone from it. The count stays in the DOM, visually hidden, so the field's
-  description and the live count still speak. The line stays open while there is a query, and
-  blur never closes it: tapping a row and coming back finds the field as it was left. **Close
-  Search** clears the query and folds the line back, and focus returns to the search icon.
-  Unfolding the screen drops the open state: the unfolded layout is the two rows above, always.
-- **Keys.** `/` anywhere, while focus isn't in a text field, focuses search — on a phone it opens
-  the folded line first. `Esc` inside search clears the query first; a second press blurs it
-  (unfolded) or closes the folded line, as Close Search does. Clear Search returns focus to the
-  input.
+  `{total} sessions` when the query is empty. It leads the toolbar line, beside the search icon
+  that opens the filter it answers to.
+- **One toolbar line, every width.** Below the brand row the pane carries exactly one toolbar
+  row, unfolded and folded alike — the desktop's separate search row and count row are gone.
+  Left to right it holds: the count, then `Select` (while not in selection mode,
+  §app.session-list/selecting-several-sessions), then a wordless **search icon button**, and at
+  the right end the Overseer entry button (§app.overseer/entry-button), a labelled button with
+  its unread badge. The field is not on screen until that icon is pressed; then it opens **in
+  the same line**, focused at once, and the line holds only the field (with its Clear Search `×`
+  while there is a query) and a **Close Search** button — the count, `Select`, the search icon
+  and the Overseer button are gone from it. The count stays in the DOM, visually hidden, so the
+  field's description and the live count still speak. The line stays open while there is a
+  query, and blur never closes it: leaving the field and coming back finds it as it was left.
+  **Close Search** clears the query and folds the line back, and focus returns to the search
+  icon.
+- **Keys.** `/` anywhere, while focus isn't in a text field, focuses search — on the closed line
+  it opens the line first, at every width (from the spine, the pane expands first,
+  §app.session-list/spine). `Esc` inside search clears the query first; a second press closes
+  the line, as Close Search does. Clear Search returns focus to the input.
 
 ## §app.session-list/states — States
 

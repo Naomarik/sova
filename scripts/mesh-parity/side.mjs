@@ -3,7 +3,7 @@
 
 import { execFileSync, spawn } from "node:child_process";
 import { copyFileSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { dirname, join, resolve } from "node:path";
 import { createServer } from "node:net";
 import { pathToFileURL } from "node:url";
@@ -100,9 +100,14 @@ export async function freePort(lo, hi, taken = new Set()) {
   throw new Error(`no free port in ${lo}-${hi}`);
 }
 
+/** One token for the whole run, pinned on both sides with SOVA_TOKEN (a server that predates the
+    auth gate ignores it), so every client sends the same `x-sova-token` to either. */
+export const RUN_TOKEN = randomBytes(32).toString("base64url");
+export const tokenHeaders = () => ({ "x-sova-token": RUN_TOKEN });
+
 /** Environment for a server or test run: nothing inherited but what is named here. */
 export function sideEnv({ home, tmp, agent, port }) {
-  const env = { HOME: home, TMPDIR: tmp, PATH: BARE_PATH, LANG: "C.UTF-8", TZ: "UTC", NO_COLOR: "1" };
+  const env = { HOME: home, TMPDIR: tmp, PATH: BARE_PATH, LANG: "C.UTF-8", TZ: "UTC", NO_COLOR: "1", SOVA_TOKEN: RUN_TOKEN };
   if (agent) env.PI_CODING_AGENT_DIR = agent;
   if (port !== undefined) env.PORT = String(port);
   return env;

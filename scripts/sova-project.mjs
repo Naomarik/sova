@@ -9,10 +9,12 @@
 //     [--keep-data] [--resources a,b] [--ref <ref>] [--confirm] [--url <http://127.0.0.1:4800>]
 //   node scripts/sova-project.mjs approve --project <path> --def-hash <sha256:…> [--checkout <path>]
 //
-// The server is --url, else $SOVA_URL, else http://127.0.0.1:$SOVA_PORT (default 4800).
+// The server is --url, else $SOVA_URL, else http://127.0.0.1:$SOVA_PORT (default 4800). Its token
+// is $SOVA_TOKEN, else the one in $PI_CODING_AGENT_DIR (default ~/.pi/agent) (scripts/sova-token.mjs).
 
 import { resolve } from "node:path";
 import { exitOf } from "../shared/project-contract.ts";
+import { tokenHeaders } from "./sova-token.mjs";
 
 const VALUE = new Set(["project", "instance", "checkout", "branch", "from", "slot", "services", "lines", "resources", "ref", "url", "def-hash"]);
 const FLAG = new Set(["restart", "keep-data", "confirm"]);
@@ -76,7 +78,7 @@ if (verb === "approve") {
 
 let res;
 try {
-  res = await fetch(`${base}${path}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  res = await fetch(`${base}${path}`, { method: "POST", headers: { ...tokenHeaders(), "content-type": "application/json" }, body: JSON.stringify(body) });
 } catch (err) {
   console.error(`sova-project: cannot reach Sova at ${base} (${err instanceof Error ? err.message : err})`);
   process.exit(1);

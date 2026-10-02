@@ -61,12 +61,16 @@ opens a folder picker in place, under the field, inside the same dialog.
 
     <!-- Closed picker: the recent list, as before -->
     <div class="field">
-      <span class="field-label" id="ns-recent">Recent folders</span>
+      <div class="spread">
+        <span class="field-label" id="ns-recent">Recent folders</span>
+        <label class="folder-picker-hidden"><input type="checkbox"> Show hidden folders</label>  <!-- the picker's own checkbox: one preference, two places -->
+      </div>
       <ul class="list folder-list" role="listbox" aria-labelledby="ns-recent">
         <li class="list-row list-row-interactive" role="option" aria-selected="true" tabindex="0">
           …folder… <span class="list-title truncate">~/webapps/sova</span>
         </li>
       </ul>
+      <span class="field-hint">3 hidden folders are not listed.</span>  <!-- only when rows were dropped -->
     </div>
   </form>
   <div class="modal-foot">
@@ -93,9 +97,12 @@ chosen here. Start that session from a TUI.
 The dialog makes one session. There is no type to choose: a group of sessions is made from the
 sidebar or by the Overseer (§workspace.groups/making-a-comparison).
 
-- **Prefill.** The `cwd` of the open session, else the most recently active session's `cwd`. The
-  field shows it with `~`, and the full path goes in `title`. With no prefill it reads "Choose a
-  folder" in `--color-ink-muted`, and Create Session is `aria-disabled`.
+- **Prefill.** The `cwd` of the open session, else the most recently active session's `cwd`,
+  skipping any folder that is hidden (below) while Show hidden folders is off. The field shows the
+  path with `~`, and the full path goes in `title`. With nothing to prefill it reads "Choose a
+  folder" in `--color-ink-muted`, and Create Session is `aria-disabled`. **The prefill is decided
+  once, when the dialog opens**: turning the toggle on afterwards offers the hidden folders in the
+  lists but never re-chooses the field.
 - **The choice is where you are.** Opening a folder in the picker makes it the chosen folder,
   and the field updates as you go. Create Session creates the session in the folder the field
   shows, with the picker open or closed. "Use This Folder" and Enter on an empty list just close
@@ -106,18 +113,33 @@ sidebar or by the Overseer (§workspace.groups/making-a-comparison).
   Filtering starts when the user taps the filter, or types while the panel has focus. The key
   then moves into the filter.
 - **Listing.** `GET /api/folders?path=` (§REST in `shared/protocol.ts`) returns subfolders only,
-  never files: dot folders only with "Show hidden folders", symlinks to folders marked "link",
-  names A to Z case-insensitively, at most 500. No path means `$HOME`. The first answer for
-  `$HOME` also seeds `home()` when the session list couldn't.
+  never files: dot folders only while "Show hidden folders" is on, symlinks to folders marked
+  "link", names A to Z case-insensitively, at most 500. No path means `$HOME`. The first answer
+  for `$HOME` also seeds `home()` when the session list couldn't.
+- **Hidden folders.** A folder is hidden when **any** component of its path starts with `.` (never
+  `.` or `..`), so `~/webapps/.worktrees/sova-x` is hidden though its own name is not. Hidden
+  folders are left out of every list this dialog offers — the picker's listing, the picker's
+  Recent view, This Computer's recents, and the Remote tab's — until Show hidden folders is on.
+  That is **one preference for this browser** (`sova:show-hidden-folders`, off unless it stores
+  `true`), not one per dialog or per picker: the checkbox in the picker foot and the checkbox in
+  each recent list's header read and write it, and it stays set until it is turned off. A remote
+  folder is judged by its path on the target, never by its local placeholder under
+  `~/.pi/agent/sova/targets/`, which is hidden itself. Browsing is never gated: a folder already
+  chosen stays chosen, and the folder opened in the picker is still the choice.
 - **Navigating.** Click a row, or Enter on the active row, to open it. Go up by clicking a
   breadcrumb segment, or with Backspace or ← while the filter is empty. **Home** opens `$HOME`.
-  **Recent** (`aria-pressed`) swaps the list for the folders sessions already use, and opening one
-  jumps there. Pressing Recent again goes back to the folder you were in.
+  **Recent** (`aria-pressed`) swaps the list for the folders sessions already use — the visible
+  ones, newest first, at most 20 — and opening one jumps there. Pressing Recent again goes back to
+  the folder you were in. Dropping hidden rows is said in the note line, not left silent.
 - **Filter.** Narrows the current list as you type (case-insensitive substring). It clears on
   every navigation.
-- **Recent folders, picker closed.** The distinct session `cwd`s, most recently active first, up
-  to 20. Click or Enter/Space picks one, and double-click picks it and submits, as before. The list
-  is hidden while the picker is open, since Recent is there.
+- **Recent folders, picker closed.** The distinct session `cwd`s, most recently active first,
+  hidden ones dropped while Show hidden folders is off, up to 20 rows. Click or Enter/Space picks
+  one, and double-click picks it and submits, as before. The header row carries the checkbox, and
+  when rows were dropped it is followed by one caption line, "3 hidden folders are not listed."
+  ("1 hidden folder is not listed." for one). With every recent hidden, the header and its caption
+  still render, so the toggle stays reachable and the missing rows are accounted for. The list is
+  hidden while the picker is open, since Recent is there.
 - **Submitting.** Create Session posts `{cwd}`. While pending, the button shows "Creating…" and
   is `aria-disabled`. Enter inside the picker never submits.
 - **On success.** Close the dialog, navigate to the new session, and focus the composer, except
@@ -140,7 +162,9 @@ sidebar or by the Overseer (§workspace.groups/making-a-comparison).
 Above the Folder field, a `.tabs` strip (`role="tablist"`, `aria-label="Where pi runs"`):
 **This Computer** (`folder`) and **Remote** (`terminal`). Selection follows ←/→/Home/End, like the
 session pane's tabs. The dialog opens on Remote when the prefill is a remote session's placeholder
-(below), with that target and folder chosen. Switching tabs closes the picker and clears the field
+(below), with that target and folder chosen — unless that folder is hidden and Show hidden folders
+is off, in which case the remote prefill is skipped like a local one and the dialog opens on This
+Computer with no folder. Switching tabs closes the picker and clears the field
 error; each tab keeps its own choice.
 
 ```html
@@ -208,8 +232,10 @@ error; each tab keeps its own choice.
 - **Recent remote folders.** No endpoint of their own. A remote session's local cwd is a
   placeholder that mirrors the remote folder, `~/.pi/agent/sova/targets/<target>/<remote path>`,
   so the recents from `GET /api/cwds` already hold them. The Remote tab lists those (up to 20,
-  newest first, the remote path with the target beside it), and This Computer's recents leave them
-  out. Click or Enter/Space picks target and folder at once, and double-click also submits.
+  newest first, the remote path with the target beside it, hidden ones dropped unless Show hidden
+  folders is on), and This Computer's recents leave them out. Its header carries the same checkbox
+  and the same caption. Click or Enter/Space picks target and folder at once, and double-click
+  also submits.
 - **Submitting** posts `{target, remoteCwd}` instead of `{cwd}`. Errors behave as on This Computer.
 - **Connect a New Target…** posts `POST /api/sessions/connect` and hands the returned session over
   like a created one: the dialog closes, the new chat opens, and the composer takes focus. While
@@ -241,6 +267,7 @@ say):
 | 404 (e.g. a deleted prefill) | This folder doesn't exist. Pick another one. |
 | Other failure | Couldn't list this folder. {server message} |
 | Recent, none yet | No recent folders yet. Sessions you start add theirs here. |
+| Recent, every folder hidden | 1 hidden folder is not listed. / {n} hidden folders are not listed. |
 
 **Keyboard** (on the panel or in the filter; both carry `aria-activedescendant` for the
 listbox):
@@ -265,7 +292,7 @@ listbox):
   `aria-current="location"` and not a button.
 - The field is a `<button>` labelled by the `<label for>` and described by the hint and error.
 - Every control is at least 44px: crumbs (`--tap-min` wide and tall), Home, Recent, the rows,
-  the checkbox row, and Use This Folder.
+  the checkbox rows (the picker foot and each recent list's header), and Use This Folder.
 
 **Tokens.** Modal `--color-surface`, `--r-xl`, `--shadow-3`, border `--color-border`, and scrim
 `--scrim`. Title `--fs-heading-m`. Field: `.input` with `--font-mono`. Picker `--color-sunken`,

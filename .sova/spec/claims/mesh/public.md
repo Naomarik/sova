@@ -281,7 +281,9 @@ reads again. Copy: §design.copy-deck/public-links.
   `Connection`, then sets exactly one `X-Forwarded-For` (the client address it computed),
   `X-Forwarded-Proto: https` and `X-Forwarded-Host` from its configured public URL, never from the
   incoming `Host`. A preview hop also sets `x-sova-preview: <label>` from the preview host it
-  matched; the minting host then sends the app none of these (§mesh.public/preview-proxy).
+  matched; the minting host then sends the app none of these (§mesh.public/preview-proxy), except
+  its own `X-Forwarded-For` (that client address) and `X-Forwarded-Proto` when its **Send the
+  visitor's address to preview apps** switch is on (§mesh.public/visitor-log).
 - A routed host's ingress believes `X-Forwarded-For` only on a connection its gate admitted, and
   only a single value; otherwise it keys on the socket address. No other tailnet device can choose
   its own rate-limit key.
@@ -297,7 +299,9 @@ mesh off. Copy is §design.copy-deck/public-links.
   source (`Set by environment ({var})`, `From this setting`, `From {gateway}`, `Bound address`), or
   `None`. Then **Where links open**, radios: `Off`, `This host is the gateway`, and one `Through
   {gateway}` per peer advertising a gateway (a saved gateway no longer advertised keeps its radio),
-  each with its hint.
+  each with its hint. Then **Visitor logging**, whatever the route: two checkboxes, **Log
+  visitors** and **Send the visitor's address to preview apps**, each with its hint
+  (§mesh.public/visitor-log). The route's own fields follow.
 - **This host is the gateway:** Public address, Preview address (optional, `https://*.<domain>`,
   §mesh.public/preview-address), Front (the four front labels), Local port, Accept
   links from (`All hosts` or `These hosts`, a checklist of every peer; a saved StableID with no
@@ -393,15 +397,19 @@ mesh off. Copy is §design.copy-deck/public-links.
   localhost:<port>`; an `Origin` equal to the preview's public origin becomes
   `http://localhost:<port>`, and so does the origin part of a `Referer` on it. Every
   `Forwarded`, `X-Forwarded-*`, `X-Real-IP`, `CF-*`, `True-Client-IP`, `Tailscale-*` and
-  `x-sova-*` header and the hop-by-hop ones are removed, and none is added. Cookies, bodies,
-  methods and the raw path and query pass through as they came.
+  `x-sova-*` header and the hop-by-hop ones are removed, and none is added, except the
+  `X-Forwarded-For` and `X-Forwarded-Proto` the host's **Send the visitor's address to preview
+  apps** switch adds (§mesh.public/visitor-log). Cookies (less the proxy's own `__Host-sova-pv`),
+  bodies, methods and the raw path and query pass through as they came.
 - Toward the visitor: an absolute `Location` or `Access-Control-Allow-Origin` on
   `http(s)://localhost|127.0.0.1|[::1]:<port>` is rewritten to the public origin; each
   `Set-Cookie` loses only its `Domain=` attribute, so cookies stay on the preview's own host;
   `Cache-Control` becomes `private` (a `public` or `s-maxage` is dropped, and `private` is added
   when neither `private` nor `no-store` is there) so no CDN keeps an app response past Turn Off;
-  and `Referrer-Policy: same-origin` is added when the app sent none. Response bodies are never
-  read or rewritten, and both directions stream.
+  and `Referrer-Policy: same-origin` is added when the app sent none; while the host logs visitors,
+  a page load that came without the proxy's `__Host-sova-pv` cookie also gets that cookie
+  (§mesh.public/visitor-log). Response bodies are never read or rewritten, and both directions
+  stream.
 - A websocket upgrade is passed through byte for byte after the same request headers, so its
   subprotocols, extensions and frames (any size) are the app's own.
 - An app response carrying any `x-sova-*` header is never passed on (it is a Sova port under
@@ -487,7 +495,9 @@ would have expired, and answers them 410 too.
   card says so and how to set it, and offers no New Preview.
 - The Shares page lists this host's live previews the same way, one row per original with the
   project, port, expiry and Turn Off, its recipients on a **Sent to** line each with its own Turn
-  Off, and a sibling whose original is not listed on a row of its own.
+  Off, and a sibling whose original is not listed on a row of its own. A preview with recorded
+  visits (§mesh.public/visitor-log) gets a **Visits** disclosure under its row, and a recipient
+  with visits one beside their name.
 
 ## §mesh.public/preview-serve — A preview of a folder, served by Sova
 
@@ -517,3 +527,44 @@ would have expired, and answers them 410 too.
   Sova itself serves that folder on it, so another
   program that took the port is never shown: the visitor gets the not-running page
   (§mesh.public/preview-offline).
+
+## §mesh.public/visitor-log — Who opened this host's links, with their address
+
+- **Two host-wide switches, both off by default**, in `<stateRoot>/visitor-logging.json`
+  `{version: 1, logVisitors, forwardIp}` (0600, written atomically, host-local, never synced or
+  committed). A missing file, or one that isn't exactly that shape, reads as both off. `GET` and
+  `PUT /api/visitor-logging {logVisitors, forwardIp}` answer on the main listener only, like the
+  public links setting. Settings → Public links shows them as two checkboxes after the route,
+  staged and written by Save Changes like its other fields: **Log visitors** ("Records each
+  visitor's IP address, browser, language and pages opened on this host's links.") and **Send the
+  visitor's address to preview apps** ("Preview apps get X-Forwarded-For."). Off means nothing
+  below is written and no address is sent.
+- **Log visitors** covers every link this host minted: hand-off (`/h/`), owner (`/i/`), session
+  share (`/s/`) and preview links. Each time the visit log records or continues a visit
+  (§app.baton/visits), Sova appends a line to `<stateRoot>/visitor-identity.jsonl` (0600,
+  host-local, never synced or committed) `{id, at, ip, ua, lang?, referer?, path?}`: `id` the
+  visit's id in its visit log, `ip` the client address as the share edge computed it
+  (§mesh.public/forwarded-for), `ua` the raw user agent (at most 512 characters), `lang` the
+  `Accept-Language`. A `/h/`, `/i/` or `/s/` visit gets one line per address and user agent (each
+  run of Sova); a preview visit one line per page load (at most 200 a visit each run), with its
+  path (no query) and, when the page came from another site, that `Referer`'s origin only (a path
+  can carry someone's token). A host under the preview zone is never another site. Never written there or anywhere: the token, the preview
+  label, any hash of either, `Host`, cookies or `Authorization`; a value that would carry the
+  preview's own origin is left out. The identity never goes into an org's `visits.jsonl`.
+- **Preview visits.** While Log visitors is on, a page load (a navigation, as the preview's own
+  pages judge it) through the minting host's proxy is recorded in
+  `<stateRoot>/preview-visits.jsonl` (0600, host-local) by the rules of §app.baton/visits, its
+  lines carrying `via: "preview"` and `previewId`. The tab is the proxy's own first-party cookie
+  `__Host-sova-pv` (22 base64url characters, `Path=/; Secure; HttpOnly; SameSite=Lax`, no
+  expiry), set on a navigation that came without one; the app never sees that cookie, on HTTP or
+  a websocket, whatever the switch. A sibling's visits are its own preview id's, so they name the
+  person it was sent to.
+- **Retention.** At startup and once a day, lines of `visitor-identity.jsonl` and
+  `preview-visits.jsonl` older than 120 days are dropped (the file is rewritten atomically).
+- **Send the visitor's address to preview apps:** after its strip (§mesh.public/preview-proxy),
+  the minting host's proxy sends the app exactly one `X-Forwarded-For: <client address>` and
+  `X-Forwarded-Proto: https`, on HTTP and websocket upgrades, never `X-Forwarded-Host`.
+- **Who reads it.** Only the operator, on the Shares page (§app.session-share/shares-page): each
+  visit there shows its address, browser (the raw user agent on hover), language and, for a
+  preview, its pages. It never reaches the project overseer's tools, a peer other than through
+  that page's own read, or a model prompt.

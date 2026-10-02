@@ -580,12 +580,16 @@ once), **lease** (an offer's lock on its first taker).
   `offerId`; they follow every rule here.
   A session share link's lines (§app.session-share/visits) carry `via:"session"`, `shareId` and
   `recipientId` and no `personId`, and go to a host-local log instead of the workspace repo; they
-  follow every rule here too.
+  follow every rule here too. So do a preview link's (§mesh.public/visitor-log: `via:"preview"`,
+  `previewId`, host-local, recorded only while the host logs visitors), except that they are
+  pruned after 120 days.
   An unknown token (404) records nothing: there is no person to record it against.
 - **Never recorded**: the token, its hash or any part of either, an IP address or anything
   derived from one, the raw user agent, cookies or headers, and anything the person wrote. The
   session id and hand-off number identify the link without the capability, as the session's statechart
-  already does.
+  already does. The one exception: while the host's **Log visitors** switch is on
+  (§mesh.public/visitor-log), a visit's address, raw user agent and language go to the host-local
+  `<stateRoot>/visitor-identity.jsonl`, keyed by the visit's `id`, never to this log.
 - **Cap.** At most 20 new visits per link per day (UTC), previews and refused attempts included;
   past that, one `capped` line for that link that day and nothing more until the next day. A
   continued visit is never capped. Lines are only ever appended, synchronously, one at a time; the

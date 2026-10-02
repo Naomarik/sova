@@ -9,7 +9,7 @@
 // Takes the lab LOCK; restores a's Overseer settings afterwards. Leaves a,b,c paired.
 import assert from "node:assert/strict";
 import { after, before, describe, test } from "node:test";
-import { hostUrl, lab, readAgentFile, requireLab, sh, waitFor } from "./lib.mjs";
+import { hostUrl, lab, labTokenHeaders, readAgentFile, requireLab, sh, waitFor } from "./lib.mjs";
 import { api, byId, MODEL, releaseLock, takeLock, waitIdle } from "./links-lib.mjs";
 
 const A = "a";
@@ -46,7 +46,7 @@ const userTexts = (es) =>
  */
 function overseerTurn(path, text, { timeoutMs = 240000 } = {}) {
   return new Promise((resolve, reject) => {
-    const ws = new WebSocket(`${hostUrl(A).replace(/^http/, "ws")}/ws/chat?path=${encodeURIComponent(path)}`);
+    const ws = new WebSocket(`${hostUrl(A).replace(/^http/, "ws")}/ws/chat?path=${encodeURIComponent(path)}`, { headers: labTokenHeaders() });
     const calls = new Map();
     let reply = "";
     let sent = false;

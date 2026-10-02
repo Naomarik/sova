@@ -99,6 +99,7 @@ import type { ProviderLimits, ProviderLimitsInfo, ProviderWaiting } from "../../
 import type { TargetInfo } from "./remote-session";
 import type { DecisionKeyInfo, DecisionProbeResult, DecisionSaveResult, DecisionSettings, DecisionSettingsInfo, TagsBackfillProgress, TagsBackfillScope } from "../../shared/protocol";
 import { hostOf, hostUrl, meshReadInit, noteHost, peerBase, routeUrl } from "./mesh";
+import { onAuthorized, onUnauthorized } from "./auth";
 import type { PreviewList, PreviewMint, PreviewMinted, PreviewView } from "../../shared/preview-links";
 
 /**
@@ -125,11 +126,21 @@ export class ApiError extends Error {
   }
 }
 
+/** A string body is JSON here (every caller passes `JSON.stringify(…)`); left unlabelled, the
+    browser would send it as `text/plain`, which the server refuses for a JSON route. */
+export function withJsonType(init?: RequestInit): RequestInit | undefined {
+  if (typeof init?.body !== "string") return init;
+  const headers = new Headers(init.headers);
+  if (headers.has("Content-Type")) return init;
+  headers.set("Content-Type", "application/json");
+  return { ...init, headers };
+}
+
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   let res: Response;
   try {
     // A request about a peer's session goes to that peer, through this host (lib/mesh.ts).
-    res = await fetch(routeUrl(url, init?.body), init);
+    res = await fetch(routeUrl(url, init?.body), withJsonType(init));
   } catch {
     throw new ApiError("The Sova server isn't reachable.", 0);
   }
@@ -143,10 +154,17 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
     } catch {
       // Non-JSON error body: keep the status line.
     }
+    // The gate refused this browser: show the unlock screen (or reload once, if it asked).
+    if (res.status === 401) onUnauthorized(parsed);
     throw new ApiError(message, res.status, parsed);
   }
+  onAuthorized();
   return (await res.json()) as T;
 }
+
+export const mintAccessCode = () =>
+  request<{ code: string; expiresAt: string; links?: { label: string; url: string }[] }>("/api/auth/pair", { method: "POST" });
+export const revealAccessToken = () => request<{ token: string }>("/api/auth/token", { cache: "no-store" });
 
 export const listSessions = () => request<SessionSummary[]>("/api/sessions");
 export const sessionsDir = () => request<SessionsDirInfo>("/api/sessions/dir");
@@ -705,6 +723,7 @@ export async function fetchTranscriptForCache(
   // The newest rows only, as a view's hello carries them (TranscriptRows): the view fetches the
   // rest when it wants them (lib/older-rows).
   const res = await fetch(routeUrl(`/api/transcript?path=${encodeURIComponent(path)}&tail=1`), { signal: aborter.signal });
+  if (res.status === 401) onUnauthorized(await res.json().catch(() => undefined));
   if (!res.ok) throw new ApiError(`${res.status} ${res.statusText}`, res.status);
   const announced = Number(res.headers.get("content-length")) || 0;
   if (announced && !fits(announced)) {

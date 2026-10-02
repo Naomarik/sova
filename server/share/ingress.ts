@@ -107,8 +107,8 @@ export function createIngress(deps: IngressDeps): Ingress {
   const proxy = deps.preview ? null : createPreviewProxy({ origin: localPreviewOrigin });
   const preview: PreviewHooks = deps.preview ?? {
     match: ingressPreviewMatch,
-    dispatch: (req, res, label) => proxy!.dispatch(req, res, label),
-    upgrade: (req, socket, head, label) => proxy!.upgrade(req, socket, head, label),
+    dispatch: (req, res, label, client) => proxy!.dispatch(req, res, label, client),
+    upgrade: (req, socket, head, label, client) => proxy!.upgrade(req, socket, head, label, client),
   };
   const serverFor = (): Server =>
     createShareServer({

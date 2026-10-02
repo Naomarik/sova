@@ -33,6 +33,7 @@ const V = {
   modelsHeader: fake("rdModelsHdr"),
   envToken: fake("rdEnvToken"),
   jevKey: fake("rdJevKey", 100), // Sova's own plain-text key file (decide-secret.ts)
+  authToken: fake("rdAuthToken", 43), // the main listener's access token (auth.ts)
 };
 /** Present but not secret: must come through untouched. */
 const PLAIN = {
@@ -64,6 +65,7 @@ put(
   }),
 );
 put(join(agentDir, "sova", "secrets", "jev-key"), `${V.jevKey}\n`);
+put(join(agentDir, "sova", "auth-token"), `${V.authToken}\n`);
 process.env.RD_TEST_API_TOKEN = V.envToken;
 process.env.RD_TEST_PLAIN = PLAIN.envPlain;
 process.env.GIT_AUTHOR_EMAIL = PLAIN.author;

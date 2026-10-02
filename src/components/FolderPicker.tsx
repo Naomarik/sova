@@ -2,6 +2,8 @@ import { createEffect, createMemo, createSignal, For, on, onMount, Show } from "
 import type { FolderListing } from "../../shared/protocol";
 import { ApiError, fetchTargetFolders, listFolders } from "../lib/api";
 import { tildePath } from "../lib/format";
+import { hiddenFolder, setShowHiddenFolders, showHiddenFolders } from "../lib/hidden-folders";
+import { hiddenRecentNote, MAX_RECENT } from "../lib/new-session";
 import { remoteCrumbs, remoteParent } from "../lib/remote-session";
 import { home, setHome } from "../lib/ui-state";
 import { Icon, trapFocus } from "./ui";
@@ -29,6 +31,9 @@ const LIST_ID = "ns-picker-list";
  * into the filter.
  * With `remote` it browses that target instead: paths are the target's, so crumbs start
  * at "/" and nothing is shown relative to our $HOME; no path means the target's configured folder.
+ * A folder whose path has a hidden component is listed only while "Show hidden folders" is on —
+ * the one browser preference (`hidden-folders.ts`) the picker's foot and the dialog's recent lists
+ * all share — and the Recent view drops such folders the same way.
  */
 export function FolderPicker(props: {
   start: string;
@@ -40,7 +45,6 @@ export function FolderPicker(props: {
   onClose(): void;
 }) {
   const [view, setView] = createSignal<View>({ kind: "folder", path: props.start || undefined });
-  const [hidden, setHidden] = createSignal(false);
   const [load, setLoad] = createSignal<Load>({ state: "loading" });
   const [filter, setFilter] = createSignal("");
   const [active, setActive] = createSignal(0);
@@ -69,7 +73,7 @@ export function FolderPicker(props: {
   };
 
   createEffect(
-    on([view, hidden], ([v, h]) => {
+    on([view, showHiddenFolders], ([v, h]) => {
       setFilter("");
       setActive(0);
       if (v.kind === "folder") void fetchFolder(v.path, h);
@@ -86,9 +90,15 @@ export function FolderPicker(props: {
     if (parent) open(parent);
   };
 
+  /** How many folders this view was handed that are hidden ones: a remote recent is judged by its
+      path on the target, which is what `props.recents` holds there. */
+  const hiddenRecents = createMemo(() => props.recents.filter((p) => hiddenFolder(p)).length);
+
   const allRows = createMemo<Row[]>(() => {
-    if (view().kind === "recent")
-      return props.recents.map((p, i) => ({ id: `ns-pr-${i}`, label: props.remote ? p : tildePath(p, home()), path: p }));
+    if (view().kind === "recent") {
+      const shown = showHiddenFolders() ? props.recents : props.recents.filter((p) => !hiddenFolder(p));
+      return shown.slice(0, MAX_RECENT).map((p, i) => ({ id: `ns-pr-${i}`, label: props.remote ? p : tildePath(p, home()), path: p }));
+    }
     const l = load();
     return l.state === "ok" ? l.listing.entries.map((e, i) => ({ id: `ns-pf-${i}`, label: e.name, path: e.path, symlink: e.symlink })) : [];
   });
@@ -123,8 +133,11 @@ export function FolderPicker(props: {
   const note = (): string | null => {
     const q = filter().trim();
     if (view().kind === "recent") {
-      if (allRows().length === 0)
+      if (allRows().length === 0) {
+        // Everything the view was handed is hidden: say that, rather than that there are none.
+        if (!showHiddenFolders() && hiddenRecents() > 0) return hiddenRecentNote(hiddenRecents());
         return props.remote ? `No recent folders on ${props.remote.name} yet.` : "No recent folders yet. Sessions you start add theirs here.";
+      }
       return q && rows().length === 0 ? `0 of ${allRows().length} match “${q}”.` : null;
     }
     const l = load();
@@ -332,7 +345,7 @@ export function FolderPicker(props: {
 
       <div class="folder-picker-foot">
         <label class="folder-picker-hidden">
-          <input type="checkbox" checked={hidden()} onChange={(e) => setHidden(e.currentTarget.checked)} />
+          <input type="checkbox" checked={showHiddenFolders()} onChange={(e) => setShowHiddenFolders(e.currentTarget.checked)} />
           Show hidden folders
         </label>
         <span class="modal-spacer" />

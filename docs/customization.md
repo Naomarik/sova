@@ -115,15 +115,28 @@ server logs why. The card shows `Running` when `GET <api>/api/health` answers 2x
 is down still opens its page.
 
 The UI is served from Sova's own origin, so it can call every Sova API (for example
-`POST /api/sessions`) and read Sova's local storage. Install only extensions you trust. Proxied
-requests carry `X-Sova-Origin`, the address the backend can use to call Sova back.
+`POST /api/sessions`) and read Sova's local storage, riding the browser's Sova cookie. Install
+only extensions you trust.
+
+Proxied requests carry `X-Sova-Origin`, the address the backend can use to call Sova back. They
+never carry Sova's own credential: Sova's `sova_token_*` cookies, `x-sova-token` and an
+`Authorization` holding Sova's token are dropped on the way to the backend (other cookies and
+headers, the extension's own `Authorization` included, pass through). A backend that calls Sova
+back sends the token itself as `x-sova-token: <token>`, reading it from the `SOVA_TOKEN`
+environment variable if you start the backend with it set, else from the token file,
+`~/.pi/agent/sova/auth-token` (or `$PI_CODING_AGENT_DIR/sova/auth-token`). Where the installer's
+launcher is present, `sova token` prints it; from the Sova checkout, `pnpm run auth:token` does.
 
 To open a session the extension just created, hand it to Sova rather than setting the page's
 hash. A new session has no messages yet, so it isn't in Sova's list, and `#/s/<path>` would find
 nothing:
 
 ```js
-const res = await fetch("/api/sessions", { method: "POST", body: JSON.stringify({ cwd }) });
+const res = await fetch("/api/sessions", {
+  method: "POST",
+  headers: { "content-type": "application/json" },
+  body: JSON.stringify({ cwd }),
+});
 const session = await res.json(); // 201: a SessionSummary
 window.parent.postMessage({ type: "sova:open-session", session }, location.origin);
 ```

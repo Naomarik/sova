@@ -183,6 +183,16 @@ export interface VerifyResult {
   preview?: { ok: boolean; status?: number; error?: string };
 }
 
+/** GET and PUT /api/visitor-logging (main listener only), `<stateRoot>/visitor-logging.json`
+    with `version: 1` (§mesh.public/visitor-log). Both off by default; not in PublicLinksFile,
+    whose strict parse an older build would fail on. */
+export interface VisitorLogging {
+  /** Record each visitor's address, user agent, language and pages, host-local. */
+  logVisitors: boolean;
+  /** The preview proxy sends the app `X-Forwarded-For` and `X-Forwarded-Proto`. */
+  forwardIp: boolean;
+}
+
 // ---- hello --------------------------------------------------------------------------------------
 
 /** A gateway's hello carries this; an older host omits it and every reader treats it as optional.

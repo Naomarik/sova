@@ -10,6 +10,7 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, realpathSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { join, resolve } from "node:path";
+import { tokenHeaders } from "./side.mjs";
 
 const SKILL = resolve(import.meta.dirname, "../../.claude/skills/playwright/scripts");
 // Hard rule 1: the skill's node_modules once was a symlink into the user's main checkout. Refuse
@@ -75,7 +76,7 @@ export async function captureScreens(browser, base, f, dir) {
   const shots = {};
   // One context per side: its own localStorage, so a theme or a sidebar width one side saved
   // cannot leak into the other.
-  const context = await browser.newContext({ deviceScaleFactor: 1, colorScheme: "dark", timezoneId: "UTC", locale: "en-US" });
+  const context = await browser.newContext({ deviceScaleFactor: 1, colorScheme: "dark", timezoneId: "UTC", locale: "en-US", extraHTTPHeaders: tokenHeaders() });
   try {
     // Two passes, the first one discarded: it warms the icon sprites and fonts, whose first load
     // could otherwise race the screenshot (measured: an icon missing on the first session page).

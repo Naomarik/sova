@@ -133,11 +133,20 @@ button in flow and drops the rest (the disabled reason stays for assistive techn
     newline.
   - Ignore `Enter` while `event.isComposing` (IME).
   - `enterkeyhint` is "enter" in touch mode and "send" otherwise.
-  - **The key hint is in the placeholder** exactly when `Enter` sends (touch mode off), at any
-    width: "Enter sends", and while streaming "Steer the current turn… Enter sends". A
-    placeholder wider than the box is cut on one line, never scrolled sideways. In touch mode it's the short string alone
-    (none / "Steer the current turn…"), swapped in place when the mode changes. A read-only
-    composer keeps the short string.
+  - **The key hint is in the placeholder** exactly when `Enter` sends (touch mode off): "Enter
+    sends", and while streaming "Steer the current turn… Enter sends". In touch mode it's the
+    short string alone (none / "Steer the current turn…"), swapped in place when the mode
+    changes. A read-only composer keeps the short string.
+  - **The placeholder fits its box.** One line, never wrapped, never scrolled sideways and never
+    cut mid-glyph: the string and the textarea's own text width are measured whenever either
+    changes, and the first of these that fits is the one shown, in this order — the whole string
+    at the body size, the whole string at the caption size, the string without the key hint at
+    the body size, that at the caption size, and last that string cut back to its last whole word
+    plus an ellipsis at the caption size. **The key hint is what goes first**: it is the part a
+    narrow box can spare, so a phone keeps "Steer the current turn…" whole and at full size
+    instead of a shrunken or half-said line. Nothing under `--fs-caption` is used — a placeholder
+    is a sentence, and `--fs-micro` is for labels and chips. A caption-size placeholder keeps the
+    body line height, so it stays centred in the box.
   - Empty or whitespace-only text doesn't send, and Send is `aria-disabled` with no reason text,
     because the reason is obvious.
 - **Send.** Sends `{type:"prompt"}`. Clear the textarea only after the socket accepts the message.
@@ -392,8 +401,10 @@ min, `--r-md`, `--color-border-strong` border, and an accent focus border. Its b
 left of `--control-md` after one body line (`--fs-body` × `--lh-body`) and the two borders as
 drawn (the 1.5px stroke snaps down to 1px), split evenly, so an empty or one-line box is exactly
 44px with its text centred at every text size; each added line grows it by one line height. Empty,
-it stays one line: a placeholder longer than the box ("Steer the current turn…" beside Steer and
-Stop) is cut, not wrapped, so a turn starting never makes the composer taller. Send is
+it stays one line — a placeholder wider than the box steps down and drops its key hint before it
+is cut (§chat.composer/behavior), and it is never wrapped, so a turn starting never makes the
+composer taller. A placeholder at the caption size keeps the body line height, so it stays centred
+in the 44px box instead of riding up with a smaller line box. Send is
 `.button-primary` (`--color-accent` / `--color-on-accent`). Stop is `.button-destructive`
 (`--status-error` border and label, `--status-error-bg` on hover). The reason is `--fs-caption` in
 `--color-ink-2`. The model indicator borrows the pair the foot uses — the id `--fs-mono` in `--color-ink-2`, everything else

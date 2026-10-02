@@ -64,7 +64,10 @@ export function ActionMenu(props: {
   label: string;
   /** The trigger's tooltip: the kind of thing, without the name ("Group actions"). */
   title?: string;
-  icon?: IconName;
+  /** The trigger's icon. `null` skips it: a word-plus-caret trigger for a narrow row. */
+  icon?: IconName | null;
+  /** The word trigger's dropdown caret. `false` skips it: the narrowest rows keep only the word. */
+  caret?: boolean;
   /** Extra classes on the trigger, for a head that reveals it on hover. */
   class?: string;
   /** A toolbar trigger says what it opens in words: the icon-only "⋯" is the default, and this
@@ -257,12 +260,12 @@ export function ActionMenu(props: {
         }}
         onKeyDown={stop}
       >
-        <Icon name={props.icon ?? "more"} />
+        {props.icon === null ? null : <Icon name={props.icon ?? "more"} />}
         <Show when={props.text}>
           {(text) => (
             <span class="action-menu-text">
               {text()}
-              <Icon name="chevron-down" small />
+              {props.caret !== false && <Icon name="chevron-down" small />}
             </span>
           )}
         </Show>

@@ -24,7 +24,8 @@ Requires Git, Node.js ≥22.19, and pnpm (without pnpm, the installer runs it th
 curl -fsSL https://raw.githubusercontent.com/Naomarik/sova/vNEXT/scripts/install.sh | bash
 ```
 
-Then run `sova` and open **http://127.0.0.1:4800**. Uses your existing pi provider login.
+Then run `sova`, and `sova open` to open **http://127.0.0.1:4800** already unlocked. Uses your
+existing pi provider login.
 [First-time login or command not found?](docs/getting-started.md)
 
 ## More work, less window switching
@@ -45,8 +46,12 @@ Then run `sova` and open **http://127.0.0.1:4800**. Uses your existing pi provid
 - **Share a session with anyone.** Send a read-only link to a whole session or just part of it, with
   [public links](docs/public-links.md) on an address you set up. Recipients need no account or tailnet.
 
-Single-user, loopback by default, no built-in authentication. Protect access before exposing it
-beyond your machine. Model requests go to your configured provider; tools and extensions may also
+Single-user and loopback by default; every browser unlocks once, per address it uses, with the
+install's token — read from the token file `~/.pi/agent/sova/auth-token` on the machine Sova runs
+on, printed by `pnpm run auth:token` in a checkout, and by `sova token` and `sova open` where the
+installer's launcher is installed. A second device — a phone — comes in with a one-use **pairing
+code** from **Access** on the app's home page, with the link it must open shown as a QR to scan.
+Protect access before exposing it beyond your machine. Model requests go to your configured provider; tools and extensions may also
 use the network.
 
 ## Make it yours

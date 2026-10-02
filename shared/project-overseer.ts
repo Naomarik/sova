@@ -68,6 +68,15 @@ export const AUTONOMY_MEANING: Record<Autonomy, string> = {
   L2: "Reconcile: may also promote agreed decisions into the spec and approve referrals.",
   L3: "Build: may also start coding sessions in the project, within its limits.",
 };
+/** The same levels on a standalone project: no organization, so nothing of a roster, gathering or promotion. */
+export const STANDALONE_AUTONOMY_MEANING: Record<Autonomy, string> = {
+  L0: "Propose: reads, files ideas, asks you before anything else.",
+  L1: "Gather: may also publish preview links of its coding sessions' apps.",
+  L2: "Reconcile: nothing more than L1 here; promoting decisions needs an organization.",
+  L3: "Build: may also run the project's instances; a coding session starts only in a turn you started.",
+};
+/** A level's line for a project an organization places (`placed`) or a standalone one. */
+export const autonomyMeaning = (level: Autonomy, placed: boolean): string => (placed ? AUTONOMY_MEANING : STANDALONE_AUTONOMY_MEANING)[level];
 
 /** A limit that may be Unlimited: `null` (§app.project-overseer/limits). */
 export type Allowance = number | null;

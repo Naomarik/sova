@@ -256,3 +256,17 @@ test("confirmKindsFor: a standalone project's approval list names nothing of an 
   assert.deepEqual(own, ["build", "prompt", "preview"]);
   for (const k of own) assert.doesNotMatch(confirmKindLabel(k), /gather|promot|owner|whatsapp|person/i, k);
 });
+
+test("the level lines: a standalone project's name nothing of an organization; a placed one's are the org's", async () => {
+  const { AUTONOMY_LEVELS, AUTONOMY_MEANING, autonomyMeaning } = await import("../../shared/project-overseer");
+  const { levelName } = await import("./project-overseer-view");
+  for (const l of AUTONOMY_LEVELS) {
+    assert.equal(autonomyMeaning(l, true), AUTONOMY_MEANING[l]);
+    assert.doesNotMatch(autonomyMeaning(l, false), /roster|gathering session|referral|gap/i, l);
+    // The level's name (the word before the colon) is the same either way.
+    assert.equal(autonomyMeaning(l, false).split(":")[0], AUTONOMY_MEANING[l].split(":")[0], l);
+  }
+  const info = { settings: { autonomy: "L1" as const }, effective: { autonomy: "L1" as const } };
+  assert.equal(levelName(info, false), "Level L1, Gather: may also publish preview links of its coding sessions' apps. Change level.");
+  assert.match(levelName(info), /people on the roster/);
+});

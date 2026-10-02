@@ -15,7 +15,7 @@ import {
   SOON_CHOICES,
   type ProjectOverseerCaps,
 } from "../../shared/project-overseer";
-import { AUTONOMY_LEVELS, AUTONOMY_MEANING, CONFIRM_KINDS, type ConfirmKind, type Autonomy, type CodingStartResult, type ItemCodeInput, type ItemCodeResult, type ItemSendResult, type CodingWorktree, type ProjectOverseerInfo, type ProjectOverseerPatch } from "../../shared/project-overseer";
+import { AUTONOMY_LEVELS, autonomyMeaning, CONFIRM_KINDS, type ConfirmKind, type Autonomy, type CodingStartResult, type ItemCodeInput, type ItemCodeResult, type ItemSendResult, type CodingWorktree, type ProjectOverseerInfo, type ProjectOverseerPatch } from "../../shared/project-overseer";
 import {
   addProjectOverseerIdea,
   addProjectOverseerTodo,
@@ -129,7 +129,7 @@ const setAutonomy = (po: ProjectOverseer, autonomy: Autonomy) => void po.run(() 
  * last run in the page's own words and today's runs, with Working, Run Now and Open Overseer
  * beside it; under it, only when true, what it waits to look at, the allowance used and what waits.
  */
-export function OverseerSummary(props: { po: ProjectOverseer; archived?: boolean; /** Who an attach pause names: only a placed project's workspace is ever attached, so the placing layer says it. */ attachedWho?: string }) {
+export function OverseerSummary(props: { po: ProjectOverseer; archived?: boolean; /** An organization places the project: the level lines are the org's. */ placed: boolean; /** Who an attach pause names: only a placed project's workspace is ever attached, so the placing layer says it. */ attachedWho?: string }) {
   const po = () => props.po;
   const i = () => po().info.data();
   const openChat = () =>
@@ -144,7 +144,7 @@ export function OverseerSummary(props: { po: ProjectOverseer; archived?: boolean
       <div class="project-summary-line">
         <p class="project-summary-status">
           <Show when={i()} fallback={po().info.pending() ? "Reading the overseer." : "The overseer didn't answer."}>
-            {(x) => <StatusWords info={x()} />}
+            {(x) => <StatusWords info={x()} placed={props.placed} />}
           </Show>
         </p>
         <div class="cluster project-summary-actions">
@@ -198,13 +198,13 @@ export function OverseerSummary(props: { po: ProjectOverseer; archived?: boolean
 }
 
 /** "L3 Build · Watching · Last looked on its own 2h ago, after …. 0 runs today." */
-function StatusWords(props: { info: ProjectOverseerInfo }) {
+function StatusWords(props: { info: ProjectOverseerInfo; placed: boolean }) {
   const i = () => props.info;
   const u = () => i().usage;
   const eff = () => i().effective.autonomy;
   return (
     <>
-      <span class="project-level" title={AUTONOMY_MEANING[eff()]}>
+      <span class="project-level" title={autonomyMeaning(eff(), props.placed)}>
         {levelWords(eff())}
       </span>
       {" · "}
@@ -272,7 +272,7 @@ export function OverseerSettings(props: { po: ProjectOverseer; /** An organizati
                 {watchHint(i().settings.watchGapMin, i().settings.soonLookSec, props.placed)}
               </p>
             </div>
-            <AutonomyPicker info={i()} busy={po().busy()} onPick={(a) => setAutonomy(po(), a)} />
+            <AutonomyPicker info={i()} placed={props.placed} busy={po().busy()} onPick={(a) => setAutonomy(po(), a)} />
             <ConfirmKindsPicker
               info={i()}
               kinds={confirmKindsFor(CONFIRM_KINDS, props.placed)}
@@ -320,7 +320,7 @@ export function OverseerSettings(props: { po: ProjectOverseer; /** An organizati
 }
 
 /** The level as a segmented control: one radio per level, the chosen level's sentence under it. Saves on pick. */
-function AutonomyPicker(props: { info: ProjectOverseerInfo; busy: boolean; onPick(a: Autonomy): void }) {
+function AutonomyPicker(props: { info: ProjectOverseerInfo; placed: boolean; busy: boolean; onPick(a: Autonomy): void }) {
   const chosen = () => props.info.settings.autonomy;
   const eff = () => props.info.effective;
   return (
@@ -329,7 +329,7 @@ function AutonomyPicker(props: { info: ProjectOverseerInfo; busy: boolean; onPic
       <div class="project-segments" role="radiogroup" aria-label="Autonomy level">
         <For each={AUTONOMY_LEVELS}>
           {(level) => (
-            <label class="project-segment" classList={{ "project-segment-on": chosen() === level }} title={AUTONOMY_MEANING[level]}>
+            <label class="project-segment" classList={{ "project-segment-on": chosen() === level }} title={autonomyMeaning(level, props.placed)}>
               <input type="radio" name="project-autonomy" value={level} checked={chosen() === level} disabled={props.busy} onChange={() => props.onPick(level)} />
               <span class="orgs-mono">{level}</span>
             </label>
@@ -337,7 +337,7 @@ function AutonomyPicker(props: { info: ProjectOverseerInfo; busy: boolean; onPic
         </For>
       </div>
       <p class="project-autonomy-meaning">
-        <span class="orgs-mono">{chosen()}</span> {AUTONOMY_MEANING[chosen()]}
+        <span class="orgs-mono">{chosen()}</span> {autonomyMeaning(chosen(), props.placed)}
       </p>
       <Show when={eff().autonomy !== chosen() || props.info.paused}>
         <p class="field-hint project-autonomy-note">

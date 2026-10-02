@@ -238,7 +238,7 @@ export function ProjectPage(props: {
         )}
       </Show>
       <div class="project-summary">
-        <OverseerSummary po={po} archived={!!archived()} attachedWho={org?.attachedWho} />
+        <OverseerSummary po={po} archived={!!archived()} placed={!!org} attachedWho={org?.attachedWho} />
         <Show when={chips().length}>
           <nav class="project-counts" aria-label="Project counts">
             <For each={chips()}>

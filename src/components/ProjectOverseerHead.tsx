@@ -1,6 +1,6 @@
 import { createEffect, createMemo, createResource, createSignal, For, on, Show } from "solid-js";
 import type { SessionSummary } from "../../shared/protocol";
-import { AUTONOMY_LEVELS, AUTONOMY_MEANING, type Autonomy, type ProjectOverseerInfo } from "../../shared/project-overseer";
+import { AUTONOMY_LEVELS, autonomyMeaning, type Autonomy, type ProjectOverseerInfo } from "../../shared/project-overseer";
 import { ApiError, clearProjectOverseer, getProjectOverseer, patchProjectOverseer, runProjectOverseer } from "../lib/api";
 import { relativeTime } from "../lib/format";
 import { projectHref, projectSessionHref } from "../lib/projects-route";
@@ -113,6 +113,8 @@ export function ProjectOverseerHead(props: {
   const c = props.control;
   const s = () => props.summary();
   const projectName = () => c.info()?.projectName ?? s().project?.projectName ?? "this project";
+  /** An organization places the project: a placed project's sessions carry the org's tag too. */
+  const placed = () => !!s().org;
   const age = (at: string) => relativeTime(at, props.now);
   const history = () => c.info()?.history ?? [];
 
@@ -142,8 +144,8 @@ export function ProjectOverseerHead(props: {
           <p.menu.Item
             label={level}
             icon={chosen() ? <Icon name="check" small /> : <span class="po-level-spacer" aria-hidden="true" />}
-            aria={`${level}, ${AUTONOMY_MEANING[level]}${chosen() ? " Chosen." : ""}`}
-            description={AUTONOMY_MEANING[level]}
+            aria={`${level}, ${autonomyMeaning(level, placed())}${chosen() ? " Chosen." : ""}`}
+            description={autonomyMeaning(level, placed())}
             onRun={() => setLevel(level)}
           />
         );
@@ -260,7 +262,7 @@ export function ProjectOverseerHead(props: {
         <ContextGauge path={props.path} />
         <Show when={c.info()}>
           {(i) => (
-            <ActionMenu label={levelName(i())} title="What it may do on its own" icon="sliders" text={i().settings.autonomy} class="button-sm button-ghost po-level po-wide">
+            <ActionMenu label={levelName(i(), placed())} title="What it may do on its own" icon="sliders" text={i().settings.autonomy} class="button-sm button-ghost po-level po-wide">
               {(menu) => <LevelRows menu={menu} />}
             </ActionMenu>
           )}
@@ -297,7 +299,7 @@ export function ProjectOverseerHead(props: {
               {/* Below 480px the level and Run Now leave line 1 and live here. */}
               <div class="po-menu-narrow">
                 <menu.Item label="Run Now" aria="Run Now" disabled={c.busy() ? "Working now" : undefined} onRun={runNow} />
-                <menu.Item label="Level…" aria={c.info() ? levelName(c.info()!) : "Level"} description={c.info()?.settings.autonomy} stayOpen onRun={() => showScreen(menu, "level")} />
+                <menu.Item label="Level…" aria={c.info() ? levelName(c.info()!, placed()) : "Level"} description={c.info()?.settings.autonomy} stayOpen onRun={() => showScreen(menu, "level")} />
               </div>
               <Show when={c.info()}>
                 {(i) => (

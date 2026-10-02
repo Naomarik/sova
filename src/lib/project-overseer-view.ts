@@ -3,7 +3,7 @@
 
 import type { IdeaRecord, OverseerAction } from "../../shared/protocol";
 import {
-  AUTONOMY_MEANING,
+  autonomyMeaning,
   capProblem,
   GAP_TAG,
   PER_DAY,
@@ -237,9 +237,9 @@ export function headState(i: LevelInfo, busy: boolean): { tone: "accent" | "warn
 }
 
 /** The level button's name: the chosen level and its meaning, what is in force while forced, and what it does. */
-export function levelName(i: LevelInfo): string {
+export function levelName(i: LevelInfo, placed = true): string {
   const l = i.settings.autonomy;
-  return `Level ${l}, ${AUTONOMY_MEANING[l]}${levelForced(i) ? ` In force now: ${i.effective.autonomy}.` : ""} Change level.`;
+  return `Level ${l}, ${autonomyMeaning(l, placed)}${levelForced(i) ? ` In force now: ${i.effective.autonomy}.` : ""} Change level.`;
 }
 
 /** Status line 1's run sentence, the project page's words: "Last looked on its own {when}{tail}." */

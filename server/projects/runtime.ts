@@ -243,7 +243,7 @@ function joinLive(software: Record<string, unknown>[], instances: InstanceSummar
   const sharedSeen = new Set<string>();
   for (const inst of instances)
     for (const sv of inst.services as ServiceView[]) {
-      if (!declared.has(sv.name) || String(sv.state) === "orphan") {
+      if (!declared.has(sv.name) || /no longer in (the|any) definition/.test(sv.detail ?? "")) {
         orphans.push({ name: sv.name, instance: inst.instance, label: labelOf(inst), state: sv.state });
         continue;
       }

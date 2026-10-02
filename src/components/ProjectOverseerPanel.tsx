@@ -42,7 +42,7 @@ import { hostLabel, projectHostOf } from "../lib/mesh";
 import { unchangedError } from "../lib/unchanged-error";
 import { createPoll, type Poll } from "../lib/poll";
 import { ACTIVITY_SHOWN, confirmSummary, levelWords, LIMIT_COLUMN_LABEL, LIMIT_COLUMNS, LIMIT_ROWS, limitCell, paceLine, type LimitColumn } from "../lib/project-page";
-import { actionLine, allowanceLine, confirmKindDone, confirmKindLabel, gapArea, gapWords, holdHint, holdWords, toggleConfirmKind, isGap, IDEA_TITLE_MAX, lastRunTail, limitsProblem, openIdeas, operatorIdeaId, pendingLine, soonWords, STARTED_KIND, waitingLines, watchHint } from "../lib/project-overseer-view";
+import { actionLine, allowanceLine, confirmKindDone, confirmKindLabel, gapArea, gapWords, holdHint, holdWords, toggleConfirmKind, confirmKindsFor, isGap, IDEA_TITLE_MAX, lastRunTail, limitsProblem, openIdeas, operatorIdeaId, pendingLine, soonWords, STARTED_KIND, waitingLines, watchHint } from "../lib/project-overseer-view";
 import { adoptSession, announce, home, toast } from "../lib/ui-state";
 import { ActionMenu } from "./ActionMenu";
 import { LinksBanner, type Links } from "./LinksBanner";
@@ -269,12 +269,13 @@ export function OverseerSettings(props: { po: ProjectOverseer; /** An organizati
                 <span class="toggle-box" />
               </label>
               <p class="field-hint" id="project-watch-hint">
-                {watchHint(i().settings.watchGapMin, i().settings.soonLookSec)}
+                {watchHint(i().settings.watchGapMin, i().settings.soonLookSec, props.placed)}
               </p>
             </div>
             <AutonomyPicker info={i()} busy={po().busy()} onPick={(a) => setAutonomy(po(), a)} />
             <ConfirmKindsPicker
               info={i()}
+              kinds={confirmKindsFor(CONFIRM_KINDS, props.placed)}
               busy={po().busy()}
               onPick={(kind, checked) => void po().run(() => patch({ confirmKinds: toggleConfirmKind(CONFIRM_KINDS, i().settings.confirmKinds, kind, checked) }), confirmKindDone(kind, checked))}
             />
@@ -352,14 +353,14 @@ function AutonomyPicker(props: { info: ProjectOverseerInfo; busy: boolean; onPic
  * The confirm list (r8, q14): the act kinds that, once held, wait for the overseer to approve
  * them. The rest go ahead when their hold ends. A summary line until Edit; each tick saves at once, like the level.
  */
-function ConfirmKindsPicker(props: { info: ProjectOverseerInfo; busy: boolean; onPick(kind: ConfirmKind, checked: boolean): void }) {
+function ConfirmKindsPicker(props: { info: ProjectOverseerInfo; /** The kinds this project offers (a standalone one: none of an organization's). */ kinds: readonly ConfirmKind[]; busy: boolean; onPick(kind: ConfirmKind, checked: boolean): void }) {
   const on = () => new Set<string>(props.info.settings.confirmKinds ?? []);
   const [editing, setEditing] = createSignal(false);
   return (
     <fieldset class="project-confirm">
       <legend class="field-label">Waits for the overseer's approval</legend>
       <div class="project-confirm-summary">
-        <span>{confirmSummary(props.info.settings.confirmKinds ?? [], CONFIRM_KINDS, confirmKindLabel)}</span>
+        <span>{confirmSummary(props.info.settings.confirmKinds ?? [], props.kinds, confirmKindLabel)}</span>
         <button type="button" class="button button-sm button-ghost" aria-expanded={editing()} aria-controls="project-confirm-list" onClick={() => setEditing(!editing())}>
           {editing() ? "Done" : "Edit"}
         </button>
@@ -369,7 +370,7 @@ function ConfirmKindsPicker(props: { info: ProjectOverseerInfo; busy: boolean; o
           When one of these is held, it goes ahead only once the overseer approves it; you can cancel it in Needs you. The rest go ahead when their hold ends.
         </p>
         <div class="project-confirm-list" id="project-confirm-list">
-          <For each={CONFIRM_KINDS}>
+          <For each={props.kinds}>
             {(kind) => (
               <label class="toggle project-confirm-row">
                 <input type="checkbox" checked={on().has(kind)} disabled={props.busy} onChange={(e) => props.onPick(kind, e.currentTarget.checked)} />

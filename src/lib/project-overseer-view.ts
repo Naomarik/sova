@@ -176,6 +176,11 @@ export const CONFIRM_KIND_LABEL: Record<string, string> = {
   "roster-decline": "Declining a proposed person",
   preview: "Publishing a preview link",
 };
+/** The kinds only an organization's tools take (gatherings, promotion, owner updates, WhatsApp, the
+    roster): a standalone project's approval list leaves them out. */
+const ORG_CONFIRM_KINDS: ReadonlySet<string> = new Set(["gather", "offer", "close", "promote", "owner-update", "send", "roster-approve", "roster-decline"]);
+/** The approval list's kinds for a project: all of them while an organization places it, else its own. */
+export const confirmKindsFor = <K extends string>(all: readonly K[], placed: boolean): K[] => all.filter((k) => placed || !ORG_CONFIRM_KINDS.has(k));
 /** A kind's row label; one this table lacks reads as its id. */
 export const confirmKindLabel = (kind: string): string => CONFIRM_KIND_LABEL[kind] ?? kind;
 /** The list after ticking or unticking one kind, in the server's order. */
@@ -191,9 +196,9 @@ export const confirmKindDone = (kind: string, checked: boolean): string =>
 /** A delay in seconds: "30 s", "1 min". */
 export const soonWords = (sec: number): string => (sec % 60 === 0 ? `${sec / 60} min` : `${sec} s`);
 
-/** The Watch hint, from the project's pace. */
-export function watchHint(gapMin: number, soonSec: number | null): string {
-  const head = "When a session finishes, a conflict appears, or you promote, it looks on its own";
+/** The Watch hint, from the project's pace; conflicts and promotion only while an organization places it. */
+export function watchHint(gapMin: number, soonSec: number | null, placed = true): string {
+  const head = placed ? "When a session finishes, a conflict appears, or you promote, it looks on its own" : "When a session finishes, it looks on its own";
   return soonSec === null ? `${head} at most every ${gapWords(gapMin)}.` : `${head}: within ${soonWords(soonSec)} for the important ones, otherwise at most every ${gapWords(gapMin)}.`;
 }
 

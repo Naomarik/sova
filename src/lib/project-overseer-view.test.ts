@@ -125,6 +125,7 @@ test("the watch hint is built from the pace", () => {
   assert.equal(watchHint(10, 60), "When a session finishes, a conflict appears, or you promote, it looks on its own: within 1 min for the important ones, otherwise at most every 10 min.");
   assert.equal(watchHint(60, 30), "When a session finishes, a conflict appears, or you promote, it looks on its own: within 30 s for the important ones, otherwise at most every 1 hour.");
   assert.equal(watchHint(5, null), "When a session finishes, a conflict appears, or you promote, it looks on its own at most every 5 min.");
+  assert.equal(watchHint(10, 60, false), "When a session finishes, it looks on its own: within 1 min for the important ones, otherwise at most every 10 min.", "standalone: no conflicts or promotion");
 });
 
 test("the readout names only what was used, Unlimited as no limit", () => {
@@ -245,4 +246,13 @@ test("every act kind the server lists has its own label", async () => {
   const { CONFIRM_KINDS } = await import("../../shared/project-overseer");
   const { CONFIRM_KIND_LABEL } = await import("./project-overseer-view");
   for (const k of CONFIRM_KINDS) assert.ok(CONFIRM_KIND_LABEL[k], k);
+});
+
+test("confirmKindsFor: a standalone project's approval list names nothing of an organization", async () => {
+  const { CONFIRM_KINDS } = await import("../../shared/project-overseer");
+  const { confirmKindsFor, confirmKindLabel } = await import("./project-overseer-view");
+  assert.deepEqual(confirmKindsFor(CONFIRM_KINDS, true), [...CONFIRM_KINDS]);
+  const own = confirmKindsFor(CONFIRM_KINDS, false);
+  assert.deepEqual(own, ["build", "prompt", "preview"]);
+  for (const k of own) assert.doesNotMatch(confirmKindLabel(k), /gather|promot|owner|whatsapp|person/i, k);
 });

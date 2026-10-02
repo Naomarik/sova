@@ -29,6 +29,9 @@
          :owner-hidden true :spec {:frozen true :at 1} :last-post-at (+ t0 1) :milestone true})
       (update-in [:wmem dm :sova/watchers] (fn [ws] (into ["org/o1"] ws)))
       (update-in [:wmem dm :sova/links] assoc :org "org/o1")
+      (update-in [:wmem dm] assoc :sova/spawned-by "org/o1")
+      (update-in [:wmem :com.fulcrologic.statecharts/invocation-data] merge
+        {:org-id "o1" :sova/links {:org "org/o1"} :sova/watchers ["org/o1"] :sova/spawned-by "org/o1"})
       (update-in [:wmem dm :sova/children] (fnil into []) [{:sid "reconciler/o1/pr1" :statechart "reconciler" :link :project}
                                                          {:sid "baton/o1/s1" :statechart "baton" :link :project}])
       (update-in [:wmem dm :started] (fn [rows] (into [{:sid "baton/o1/s1" :kind "gathering" :at 1 :settled false}] rows)))
@@ -48,6 +51,14 @@
       (is (= ["build/pr1/c1"] (map :sid (:started d))) "the gatherings leave its list (the placement keeps those)")
       (is (not-any? #{"org/o1"} (:sova/watchers d)))
       (is (not (contains? (:sova/links d) :org)))
+      (is (not (contains? d :sova/spawned-by)) "spawned by the org: no spawner left")
+      (let [inv (:com.fulcrologic.statecharts/invocation-data (:wmem (core/read-snapshot (core/dump eng psid))))]
+        (is (= {:id "pr1" :name "Site"} (select-keys inv [:id :name])) "the start data stays")
+        (is (not (contains? inv :org-id)))
+        (is (not (contains? inv :sova/spawned-by)))
+        (is (empty? (:sova/watchers inv)))
+        (is (empty? (:sova/links inv))))
+      (is (not (re-find #"org/o1|:org-id" (core/dump eng psid))) "no org sid or key anywhere in the snapshot")
       (is (not-any? #(re-find #"^(reconciler|baton)/" (:sid %)) (:sova/children d)))
       (is (= {:name "Site" :id "pr1" :project-id "pr1"} (select-keys d [:name :id :project-id]))))
     (testing "no org timer is left to fire"

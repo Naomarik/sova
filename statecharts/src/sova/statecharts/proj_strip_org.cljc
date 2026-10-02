@@ -20,15 +20,24 @@
 
 (defn- keep-only [data k f] (if (contains? data k) (update data k f) data))
 
+(defn- clean
+  "A project's data (or its frozen start data) without the org: its keys, and any org-layer sid among
+   its watchers, links, spawner, children and started rows."
+  [data]
+  (-> (apply dissoc data org-keys)
+    (keep-only :sova/watchers (fn [ws] (vec (remove org-sid? ws))))
+    (keep-only :sova/links (fn [ls] (into {} (remove (fn [[_ v]] (org-sid? v)) ls))))
+    (cond-> (and (contains? data :sova/spawned-by) (org-sid? (:sova/spawned-by data))) (dissoc :sova/spawned-by))
+    (keep-only :sova/children (fn [cs] (vec (remove #(org-sid? (:sid %)) cs))))
+    (keep-only :started (fn [rows] (vec (remove #(org-sid? (:sid %)) rows))))))
+
 (defn strip-org
-  "proj v1 → v2 (engine/API.md §6): drop the org's states and keys, the org's watcher and link, the
-   gatherings in `started`, the org-layer children, and any pending org timer."
-  [{:keys [config data history queue]}]
-  {:config  (set (remove org-states config))
-   :data    (-> (apply dissoc data org-keys)
-              (keep-only :sova/watchers (fn [ws] (vec (remove org-sid? ws))))
-              (keep-only :sova/links (fn [ls] (into {} (remove (fn [[_ v]] (org-sid? v)) ls))))
-              (keep-only :sova/children (fn [cs] (vec (remove #(org-sid? (:sid %)) cs))))
-              (keep-only :started (fn [rows] (vec (remove #(org-sid? (:sid %)) rows)))))
-   :history (or history {})
-   :queue   (vec (remove #(contains? org-events (get-in % [:event :name])) queue))})
+  "proj v1 → v2 (engine/API.md §6): drop the org's states and keys, the org's watcher, link and
+   spawner (in the data and in the start data the library keeps), the gatherings in `started`, the
+   org-layer children, and any pending org timer."
+  [{:keys [config data history invocation-data queue]}]
+  (cond-> {:config  (set (remove org-states config))
+           :data    (clean data)
+           :history (or history {})
+           :queue   (vec (remove #(contains? org-events (get-in % [:event :name])) queue))}
+    (map? invocation-data) (assoc :invocation-data (clean invocation-data))))

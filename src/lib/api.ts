@@ -1010,6 +1010,9 @@ export const previewAsPerson = (id: string, pid: string, sid: string) =>
 /** A new project born placed in the org (register, then place). */
 export const addOrgProject = (id: string, root: string, name?: string) =>
   request<OrgDetail & { normalizedFrom?: string }>(`/api/orgs/${encodeURIComponent(id)}/projects`, jsonInit("POST", { root, ...(name ? { name } : {}) }));
+/** Import a standalone project into the org (§app.projects/import); without `confirm` the server answers its confirm sentence (409, code "confirm"). */
+export const importOrgProject = (id: string, projectId: string, confirm = false) =>
+  request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}/projects/import`, jsonInit("POST", { projectId, ...(confirm ? { confirm: true } : {}) }));
 /** Set or clear a project's main stakeholder (a roster person's id, or null for none). */
 export const setProjectStakeholder = (id: string, pid: string, stakeholder: string | null) =>
   request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}/projects/${encodeURIComponent(pid)}/placement`, jsonInit("PATCH", { stakeholder }));

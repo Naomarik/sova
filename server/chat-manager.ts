@@ -49,6 +49,7 @@ import { sovaToken } from "./auth";
 import { claudeCodeProviderEnabled } from "./web-settings";
 import { ForeignWriteGuard, markOwned, markOwnedStat, recentForeignWriteAgeSec } from "./write-guard";
 import { monitorExtension } from "./resource-monitor";
+import { applyForkCacheRouting, forkCacheExtension } from "./session-fork-cache";
 import { visCheckExtension, type VisCheckHost } from "./vis-check";
 import { projectEngine } from "./project-services/routes";
 import { projectVerbsExtension } from "./project-services/tools";
@@ -110,9 +111,13 @@ export function extensionFlagsFor(cwd: string, outline: boolean, noExtensions: b
   return noExtensions ? new Map() : sessionFlags(cwd, outline, claudeCode);
 }
 
-/** The extensions every ordinary session loads beyond pi-config's: the resource monitor's listener.
+/** The extensions every ordinary session loads beyond pi-config's: resource monitoring and
+    inherited fork-cache affinity. Neither changes prompt sections or tool declarations.
     A caller that passes its own list for an ordinary session starts from this one. */
-const DEFAULT_EXTENSION_FACTORIES = [{ name: "sova-resource-monitor", factory: monitorExtension }];
+const DEFAULT_EXTENSION_FACTORIES = [
+  { name: "sova-resource-monitor", factory: monitorExtension },
+  { name: "sova-fork-cache", factory: forkCacheExtension },
+];
 
 /**
  * Build services for a webapp runtime.
@@ -3373,6 +3378,7 @@ async function openSession(path: string, onDisposed: () => void): Promise<ChatSe
       ...(special ? { tools: special.tools, ...(special.customTools ? { customTools: special.customTools } : {}) } : {}),
       ...(profile.excluded.length ? { excludeTools: profile.excluded } : {}),
     });
+    if (!special) applyForkCacheRouting(created.session);
     if (profile.run) {
       const run = profile.run;
       run.turns.watch(created.session.agent as unknown as Parameters<RunState["turns"]["watch"]>[0]);

@@ -141,7 +141,8 @@ and `fill="none" stroke="currentColor"`.
 | `more.svg` | Tool card for any other tool |
 | `copy.svg` | Copy Session Path, Copy Output |
 | `share.svg` | Share session (the session head) and a message's Share from here (§app.session-share/share-page): a tray with an arrow up out of it. New, drawn on the system grid |
-| `archive.svg` | Archive Session / Unarchive Session (Session pane, web sessions only, §app/session-list "Archiving"): a lidded box. New, drawn on the system grid |
+| `archive.svg` | Archive everywhere but the Session tab: a lidded box. New, drawn on the system grid |
+| `trash.svg` | Archive Session: the Session tab's icon-only button (web sessions only, §app/session-list "Archiving"); its Unarchive Session form uses `undo.svg` |
 | `chevron-left.svg` / `chevron-right.svg` | Also: lightbox Previous Image / Next Image |
 | `check.svg` | The copy button's icon for 1.5s after a copy; the current-model mark |
 | `folder.svg` | Folder picker rows, cwd group label, the group picker's group tiles |

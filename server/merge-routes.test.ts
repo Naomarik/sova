@@ -27,6 +27,7 @@ test("merge routes: the required registrations exist exactly once; removed endpo
     ["GET", "/api/themes"],
     ["POST", "/api/insights/usage/refresh"],
     ["POST", "/api/sessions"],
+    ["POST", "/api/sessions/fork"],
     ["GET", "/api/session-groups"],
     ["POST", "/api/session-groups"],
     ["DELETE", "/api/session-groups/:id"],
@@ -34,8 +35,8 @@ test("merge routes: the required registrations exist exactly once; removed endpo
   for (const [method, path] of required) {
     assert.equal(app.routes.filter((r) => r.method === method && r.path === path).length, 1, `${method} ${path}`);
   }
-  // Retired creation paths: one gesture making a group of sessions, and a per-message fork.
-  for (const path of ["/api/targets/:name/mount", "/api/session-groups/fanout", "/api/sessions/fork"]) {
+  // Retired creation paths: one gesture making a group of sessions, and target mounting.
+  for (const path of ["/api/targets/:name/mount", "/api/session-groups/fanout"]) {
     assert.equal(app.routes.filter((r) => r.path === path).length, 0, path);
   }
 });

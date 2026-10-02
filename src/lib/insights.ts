@@ -450,7 +450,18 @@ export interface GlancePart {
  */
 export function usageGlance(u: UsageInsight | undefined, loginId?: string | null): GlancePart[] {
   if (!u?.available) return [];
-  return readings(u, loginId).flatMap(({ p, name }): GlancePart[] => {
+  return readings(u, loginId).flatMap(({ p: selected, name: selectedName }): GlancePart[] => {
+    let p = selected;
+    let name = selectedName;
+    // A selected login without readable usage must not hide the own-login reading.
+    // Use the same eligibility as the glance below, rather than merely testing windows.length.
+    if (p.id === "claude" && !glanceWindow(p) && !(p.state === "ok" && p.balance)) {
+      const own = u.providers.find((provider) => provider.id === "claude");
+      if (own && (glanceWindow(own) || (own.state === "ok" && own.balance))) {
+        p = own;
+        name = "Claude (Claude Code's own login)";
+      }
+    }
     const abbr = PROVIDER_ABBR[p.id];
     if (p.state === "ok" && p.balance) {
       const stale = u.stale;

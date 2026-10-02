@@ -450,6 +450,14 @@ export const createSession = (where: string | { target: string; remoteCwd: strin
     body: JSON.stringify(typeof where === "string" ? { cwd: where } : { target: where.target, remoteCwd: where.remoteCwd }),
   });
 
+/** Create an independent conversation through a persisted assistant reply, on its source host. */
+export const forkSession = (path: string, entryId: string) =>
+  request<SessionSummary>("/api/sessions/fork", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ path, entryId }),
+  });
+
 export const fetchTargets = (host?: string | null) => request<TargetInfo[]>(hostUrl(host, "/api/targets"));
 
 /** How long the UI waits on a target's folder listing before saying so (the server bounds its own probe too). */

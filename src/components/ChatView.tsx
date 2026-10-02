@@ -25,7 +25,7 @@ import { CardJumpContext } from "../lib/card-refs";
 import { AlignAnswerContext, type AlignAnswer } from "./AlignDocCard";
 import { acceptAllMessage, choosePick, clearPicks, composeWithPicks, optionPick, pickCount, picksLabel, picksOf, prunePicks, samePicks } from "../lib/align-picks";
 import { BatonStrip } from "./BatonStrip";
-import { approveSchedule, getChatClaudeAccounts, getOverseerAutonomy, revokeOverseerPermit, revokeSchedule, setSandbox, setSessionArchived, wsUrl } from "../lib/api";
+import { approveSchedule, forkSession, getChatClaudeAccounts, getOverseerAutonomy, revokeOverseerPermit, revokeSchedule, setSandbox, setSessionArchived, wsUrl } from "../lib/api";
 import type { OverseerAutonomy, ScheduleInfo } from "../../shared/protocol";
 import { LOGIN_UNCHANGED } from "../../shared/protocol";
 import { contextStateFor, messageContextTokens, windowOf } from "../lib/context";
@@ -49,7 +49,7 @@ import {
 import { appendItems } from "../lib/explain";
 import { isObj, str } from "../lib/message";
 import { ensureModelPolicy, modelEnabled, modelPolicy } from "../lib/model-policy";
-import { HOST_MOVE_GRACE_MS, hostOf, mayBeHostMove, meshOn, recheckHost, sessionViewKey } from "../lib/mesh";
+import { HOST_MOVE_GRACE_MS, hostOf, mayBeHostMove, meshOn, recheckHost, sessionHrefOn, sessionViewKey } from "../lib/mesh";
 import { cachedTranscript, cacheItems, cacheSpot, keptOlder, transcripts } from "../lib/transcript-cache";
 import { inputsPending, knownInputs, knownWorkers, workersShown } from "../lib/known-before-mount";
 import { openFailureView } from "../lib/open-failure";
@@ -1057,6 +1057,25 @@ export function ChatView(props: {
   /** Queued messages with a removal out, by id, so only that row greys. */
   const [removing, setRemoving] = createSignal<string[]>([]);
 
+  const [forking, setForking] = createSignal(false);
+  const forkFrom = async (entryId: string) => {
+    if (forking()) return;
+    setForking(true);
+    setActionNote(null);
+    try {
+      const host = hostOf(props.path);
+      const made = await forkSession(props.path, entryId);
+      announce("Opened a fork. The original conversation is unchanged.");
+      location.hash = sessionHrefOn(host, made.path);
+    } catch (error) {
+      const text = error instanceof Error ? error.message : "Couldn't fork this reply.";
+      noteOn(entryId, text);
+      announce(text);
+    } finally {
+      setForking(false);
+    }
+  };
+
   /** What every strip in this chat is judged by. Reactive by construction: a turn starting, a
       compaction, a model switch or a reconnect re-enables the actions in place. */
   const actionState = (wake = false, link = false, topic = false): ActionState => ({
@@ -1066,7 +1085,7 @@ export function ChatView(props: {
     compacting: compacting(),
     // Rewind and Regenerate both move the branch on the same runtime, and the server has no
     // mutex between them: one in flight blocks the other, not just another of its own kind.
-    pending: pending().rewind + pending().regenerate > 0,
+    pending: forking() || pending().rewind + pending().regenerate > 0,
     paused: blocked()?.text ?? null,
     wake,
     link,
@@ -1115,6 +1134,8 @@ export function ChatView(props: {
             const id = shareId();
             return { kind, reason: id ? null : SHARE_WAIT_REASON, run: () => void (id && (location.hash = shareHref(id, { host: hostOf(props.path), from: strip.entryId }))) };
           }
+          case "fork":
+            return { kind, reason: actionReason("fork", actionState()), run: () => forkFrom(strip.entryId) };
           case "rewind":
             return { kind, reason: actionReason("rewind", actionState()), run: () => rewindFrom(strip.entryId) };
           case "regenerate":

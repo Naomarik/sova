@@ -60,8 +60,8 @@ for a project held on a peer (§mesh.remote-sessions/org-pages). API: `/api/proj
   and `projects/<pid>/` (overseer settings and files, costs, usage); its host-local statecharts are
   under `<stateRoot>/statecharts/<pid>/`. It opens at server start and when it is registered, and a
   restart reopens it with nothing lost.
-- It is host-local and in no git repo: it can't be cloned or attached elsewhere (an organization
-  importing it is a later step).
+- It is host-local and in no git repo: it can't be cloned or attached elsewhere until an
+  organization imports it (§app.projects/import).
 - Its sessions are listed and opened like an org's project's: its overseer conversations are
   accepted session paths, its coding sessions are ordinary sessions in their worktrees.
 - Its overseer runs at the level the operator set (default L1): no roster caps it
@@ -113,3 +113,50 @@ for a project held on a peer (§mesh.remote-sessions/org-pages). API: `/api/proj
   §app.projects/registration does (same refusals) and places it at once.
 - Whenever an org opens, every project in its engine has a placement; one that lacks it gets one
   then.
+
+## §app.projects/import — An organization imports a standalone project
+
+- `POST /api/orgs/:id/projects/import {projectId, confirm?}` moves a standalone project of this host
+  into an org attached here, with nothing lost. Main listener only, the operator's own (refused
+  through a peer, 403, and to the global Overseer, which never imports). Without `confirm: true` it
+  changes nothing and answers 409 with `code: "confirm"` and the sentence "Importing {project}
+  commits its history (overseer conversations, builds, costs) to {org}'s workspace repo. It can't
+  be undone."
+- **Refused, changing nothing** (409 unless said): an unknown project (404); a project placed in an
+  org ("{project} is already in {org}."); one already being imported ("{project id} is already being
+  imported."); a project that is not quiet ("{project} isn't quiet: {what}. Try again when it is.",
+  `{what}` naming each of, joined by semicolons: its overseer is working, a coding session is
+  working ({titles}), a held act waits, an effect is in progress, a run is in progress); and a
+  file that already exists in the org with other content ("{project} can't be imported: {path}
+  already exists in {org} with other content.", `{path}` relative to the workspace).
+- **The move.** The registry entry is marked `importing: {org, at}` (atomic). The project's engine
+  closes, and the quiet check runs again on what it left: not quiet, the engine reopens, the mark
+  is cleared and the import is refused as above. Every held chat of the project's conversations is
+  closed (its viewers are told and reopen it at its new path). Then its files are copied byte for
+  byte to the same relative paths: portable statecharts into the workspace's `statecharts/`,
+  host-local ones into `<stateRoot>/statecharts/<org>/`, its `projects/<pid>/` and its
+  `sessions/`; each log segment `<yyyy-mm>.jsonl` lands beside the org's as
+  `<yyyy-mm>.imported-<pid>.jsonl`, so the project's Activity keeps its rows, interleaved by time.
+  Nothing is rewritten; a destination already holding the same bytes is fine.
+- The org's live engine takes the copied statecharts in without closing (the org's other projects'
+  looks, replies and acts go on): an id it already holds refuses the whole set, and one that does
+  not load leaves nothing taken in (the files stay; the next start loads them). The project is then
+  placed (`placedVia: "import"`, §app.projects/placement), its conversations get their title, web
+  origin and write guard again as after an attach (§app.organizations/portability), and the workspace
+  commits the files ("Imported project {name}"). Last, its registry entry is dropped and the
+  project's dir moves to `<stateRoot>/projects/.imported/<pid>-<at>/` (its host-local statecharts
+  dir with it, as `host-local/`). The answer is the org's page (200). A copy or take-in that fails
+  after the mark answers 409 "The import of {project} stopped: {why} It finishes at the next server
+  start." and is never undone.
+- Once placed, everything continues where it was: its builds, Activity, overseer conversation,
+  settings, notes, costs and previews. The overseer gains the org's tools, prompt
+  and look hint at its next turn, and the org's ceiling applies (an empty roster caps it at L0).
+- **Never rolled back after the mark.** A start that finds an entry marked `importing` (a crash or
+  kill mid-import) finishes it: the copy again (idempotent), the org's open loads the files and
+  places the project, then the re-derivation, commit and clean-up run. Until then the project opens
+  nowhere and its standalone sessions are not listed.
+- **The picker.** The org's Projects tab has an **Import a Project** row under the Add Project form,
+  shown while any standalone project is on this host: a select of them (name and folder) and
+  **Import Project**. The server's confirm sentence then shows as a warning with **Import** and
+  **Cancel**; Import sends `confirm: true` and says "{project} is in {org} now.", and a refusal shows
+  as the tab's error. The tab's costs are read again once the list changes.

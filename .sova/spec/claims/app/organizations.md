@@ -138,7 +138,8 @@ the URL (§app.organizations/org-page); each roster person has a page of their o
     folder path, the project's cost at API prices, a trailing chevron) under the org's total
     (§app.project-costs/org-rollup), and the Add Project form (`Project name`, optional: the
     folder's name; `Folder`), which
-    registers the folder and places it in this org (§app.projects/placement); with none,
+    registers the folder and places it in this org (§app.projects/placement), then, while any
+    standalone project is on this host, the Import a Project row (§app.projects/import); with none,
     "No projects yet. A project is a folder that hand-off sessions and its overseer work in."
     Archived projects are not in that list: a collapsed **Archived Projects ({n})** disclosure
     under it (absent with none) lists them, each row the same link with the archive's age and

@@ -7,6 +7,7 @@ import { redactingTool, serverRedactor, type Redactor } from "../overseer-redact
 import { projectRootOf } from "../project-root";
 import { worktreesOf } from "../worktrees-state";
 import type { Caller, ProjectEngine, VerbAct } from "./engine";
+import { registerInstanceNote, resultNote } from "./note";
 
 /**
  * The verbs as tools (§app.project-services/callers), calling the engine in this process, never
@@ -32,6 +33,7 @@ const PARAMS = {
     keep_data: { type: "boolean", description: "teardown: keep the data resources." },
     resources: { type: "array", items: { type: "string" }, description: "reset: only these data resources." },
     ref: { type: "string", description: "conform: the branch or commit whose definition to prove (default the main checkout's HEAD)." },
+    select: { type: "array", items: { type: "string" }, maxItems: 50, description: "test: selectors appended to the project's test command (files, namespaces, test names); none runs the whole suite." },
   },
   required: ["verb"],
   additionalProperties: false,
@@ -40,21 +42,26 @@ const PARAMS = {
 const VERB_HELP =
   "Verbs over the project's .sova/project.json, each answering one JSON result (ok, changed, state, steps, services, data, error {code, message}). " +
   "create (a worktree's instance: slot, ports, data, setup), up (start and wait until ready; creates first), down (stop; keeps data), apply (build + reload each running service, wait until ready), " +
-  "status, logs, doctor (preflight), reset (fresh data), teardown (the only destructive verb: stops, deletes its data, removes a worktree Sova cut; never the branch), conform (Sova's conformance suite in two scratch copies). " +
+  "status, logs, doctor (preflight), reset (fresh data), teardown (the only destructive verb: stops, deletes its data, removes a worktree Sova cut; never the branch), conform (Sova's conformance suite in two scratch copies), " +
+  "test (runs the project's test command in that instance, starting what it requires; tests {pass, passed, failed, failures…}; error tests-failed when it did not pass, unsupported when the project declares none). " +
   "share, revoke and deploy are reserved (unsupported). A definition runs only once the operator approved its hash (error not-approved). Error busy: another verb is running on that instance; try again later.";
 
 /** The request body the engine takes, from the tool's params. */
 function bodyOf(p: Record<string, unknown>, defaultProject: string | null): Record<string, unknown> {
   const out: Record<string, unknown> = {};
-  for (const k of ["project", "instance", "checkout", "branch", "from", "services", "restart", "lines", "resources", "ref"]) if (p[k] !== undefined && p[k] !== null && p[k] !== "") out[k] = p[k];
+  for (const k of ["project", "instance", "checkout", "branch", "from", "services", "restart", "lines", "resources", "ref", "select"]) if (p[k] !== undefined && p[k] !== null && p[k] !== "") out[k] = p[k];
   if (p.keep_data !== undefined) out.keepData = p.keep_data;
   if (!out.project && !out.instance && !out.checkout && defaultProject) out.project = defaultProject;
   return out;
 }
 
 /** The result as the model reads it: a headline, the JSON, and log lines marked untrusted. */
-export function renderResult(r: VerbResult): string {
-  const head = r.error ? `${r.verb} failed (exit ${exitOf(r)}): ${r.error.code}: ${r.error.message}` : `${r.verb}: ${r.changed ? "changed" : "nothing to change"}, state ${r.state}`;
+export function renderResult(r: VerbResult, note?: string | null): string {
+  const head = r.error
+    ? `${r.verb} failed (exit ${exitOf(r)}): ${r.error.code}: ${r.error.message}`
+    : r.tests
+      ? `test: passed${r.tests.passed !== null ? ` (${r.tests.passed} passed, ${r.tests.skipped ?? 0} skipped)` : ""} in ${(r.tests.ms / 1000).toFixed(1)}s, state ${r.state}`
+      : `${r.verb}: ${r.changed ? "changed" : "nothing to change"}, state ${r.state}`;
   const { lines, ...rest } = r;
   const parts = [head, JSON.stringify(rest, null, 1)];
   if (lines)
@@ -63,6 +70,7 @@ export function renderResult(r: VerbResult): string {
       lines.map((l) => `${l.t ? `${l.t} ` : ""}[${l.service}] ${l.text}`).join("\n"),
       "<<end of untrusted content>>",
     );
+  if (note) parts.push(note);
   return parts.join("\n");
 }
 
@@ -86,11 +94,12 @@ export function projectVerbsTool(o: VerbToolOptions): Tool {
     description: `${o.description} ${VERB_HELP}`,
     promptSnippet: o.promptSnippet,
     parameters: PARAMS as unknown as Tool["parameters"],
-    async execute(_id: string, params: any, _signal?: AbortSignal, _onUpdate?: unknown, ctx?: unknown) {
+    async execute(_id: string, params: any, signal?: AbortSignal, _onUpdate?: unknown, ctx?: unknown) {
       const p = (params ?? {}) as Record<string, unknown>;
       const caller = await o.caller(ctx);
-      const r = await o.engine().run(String(p.verb ?? ""), bodyOf(p, await o.defaultProject(ctx)), caller);
-      return { content: [{ type: "text" as const, text: renderResult(r) }], details: { v: 1, result: r } };
+      const r = await o.engine().run(String(p.verb ?? ""), bodyOf(p, await o.defaultProject(ctx)), caller, signal ? { signal } : {});
+      const note = await resultNote(o.engine(), r, (ctx as SessionCtx | undefined)?.sessionManager?.getBranch() ?? []);
+      return { content: [{ type: "text" as const, text: renderResult(r, note) }], details: { v: 1, result: r } };
     },
   };
   return redactingTool(tool, o.redactor ?? serverRedactor);
@@ -141,7 +150,8 @@ export function projectVerbsExtension(engine: () => ProjectEngine) {
           label: "Project verbs",
           description:
             "Run this project's services for your own worktree through Sova: never start servers by hand (no nohup/setsid loops), use up/apply/logs here. " +
-            "You may create/up/down/apply instances of your own worktrees (never the main checkout), reset or teardown instances you created, and read status/logs/doctor or conform for your project.",
+            "You may create/up/down/apply/test instances of your own worktrees (never the main checkout), reset or teardown instances you created, and read status/logs/doctor or conform for your project. " +
+            "Run tests with test {select: [...]} rather than by hand: it runs in your instance, against its own ports and data.",
           promptSnippet: "run, reload, inspect and tear down your own worktree's running copy of the project (up, apply, logs, status…)",
           engine,
           defaultProject: async (ctx) => {
@@ -156,6 +166,8 @@ export function projectVerbsExtension(engine: () => ProjectEngine) {
           },
         }),
       );
+      // Its own instances' ports, data and tests, as a hidden note (§app.project-services/instance-note).
+      registerInstanceNote(pi, engine, (ctx) => ownCheckouts((ctx ?? {}) as SessionCtx));
     },
   };
 }
@@ -171,7 +183,7 @@ export function overseerVerbsTool(engine: () => ProjectEngine, overseerId: () =>
     name: "sova_project_verbs",
     label: "Project verbs",
     description:
-      "Run any project's instances on this host: status/logs/doctor anywhere; create, up, down, apply and conform in a turn the user started. Reset and teardown of an instance you did not create, and stopping a shared service, are the operator's (needs-confirm): tell them.",
+      "Run any project's instances on this host: status/logs/doctor anywhere; create, up, down, apply, test and conform in a turn the user started. Reset and teardown of an instance you did not create, and stopping a shared service, are the operator's (needs-confirm): tell them.",
     promptSnippet: "status, logs and lifecycle (create/up/down/apply/reset/teardown/conform) of a project's running instances",
     engine,
     defaultProject: async () => null,
@@ -191,7 +203,7 @@ export function projectOverseerVerbsTool(engine: () => ProjectEngine, who: { id:
     name: "sova_project_verbs",
     label: "Project verbs",
     description:
-      "Run this project's instances (one running copy per worktree): status/logs/doctor at any level, down from L0, create/up/apply/reset/teardown/conform at L3 (in a run the operator started, at any level). Reset and teardown only of instances you created; stopping a shared service is the operator's (needs-confirm).",
+      "Run this project's instances (one running copy per worktree): status/logs/doctor at any level, down from L0, create/up/apply/test/reset/teardown/conform at L3 (in a run the operator started, at any level). Reset and teardown only of instances you created; stopping a shared service is the operator's (needs-confirm).",
     promptSnippet: "status, logs and lifecycle of the project's running instances (down from L0; create/up/apply/conform at L3)",
     engine,
     defaultProject: async () => (await projectRootOf(who.root())) ?? who.root(),

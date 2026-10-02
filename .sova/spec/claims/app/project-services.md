@@ -7,7 +7,7 @@ from that declaration as **instances**, one per checkout of the project, each wi
 ports and data. The primary user is a coding agent: each worktree gets its own running copy of the
 project, isolated from the others and from the main checkout, without hand-rolled `nohup` loops. One
 engine in the server implements a closed set of **verbs** (create, up, down, apply, status, logs,
-reset, teardown, doctor, conform) the same way for every project, and every caller gets the same
+reset, teardown, doctor, conform, test) the same way for every project, and every caller gets the same
 JSON from it: the REST routes, the `sova-project` CLI, the coding session's `project_verbs` tool and
 the Overseers' `sova_project_verbs` tool.
 
@@ -43,13 +43,23 @@ shell string is accepted anywhere: every command is an argv array of non-empty s
   argv, inputs?, timeout?}`), `scope` (`checkout`, the default: one per instance; or `shared`: one
   per project, fixed ports only, requiring only shared services) and `container` (`{name, engine?:
   docker|podman}`: the service's `cmd` runs a container in the foreground under that name, and
-  Sova removes the container by name whenever it stops the service). A `cmd` service without
+  Sova removes the container by name whenever it stops the service), `start` (`"up"`, the default,
+  or `"on-demand"`: a checkout service that `up` leaves stopped unless asked for, §app.project-services/up)
+  and `about` (at most 200 characters, a template that may not read `${host.…}`: how a builder uses
+  the service, e.g. the client command with its port, shown in the instance note,
+  §app.project-services/instance-note). A `cmd` service without
   `ready` is ready once its first port listens, or, with no ports, once it has run for a second.
 - **`setup`**: steps `{id, run: argv, inputs?: [checkout files], timeout?}` run at create, in order.
 - **`data`**: resources `{kind: "dir", path?, from?}` (a folder: by default under the instance's
   data dir; `path` places it inside the checkout, where it must be ignored by git; `from` is
   `"empty"`, the default, or a template naming a folder to copy) or `{kind: "hook", provision:
   argv, deprovision: argv, timeout?}`.
+- **`test`** (optional): `{run: argv, requires?: [service], timeout?, smoke: [selector]}`, the
+  project's test command (§app.project-services/test). `run` is a template argv; `requires` names
+  the services a run needs (an on-demand test REPL, say); `timeout` is in seconds (default 600, at
+  most 1800); `smoke` is 1 to 50 selectors naming a small selection that is green on the main
+  checkout, which conformance runs. A selector matches `^[A-Za-z0-9_][A-Za-z0-9_./:*-]{0,199}$`,
+  so none can read as a flag.
 - **`hooks`**: `probe` (`{run: argv, timeout?}`), the optional isolation probe conformance calls as
   `<argv> write <token>` and `<argv> read <token>` (exit 0: the token is there).
 - **`slots`** (`{cap}`, 1–16, default 4: how many instances besides the main checkout's), **`host`**
@@ -60,7 +70,8 @@ shell string is accepted anywhere: every command is an argv array of non-empty s
 `branch`, `data`, `data.<resource>`, `ports.<service>.<port>`, `host.<NAME>`. Every process and hook
 also gets `SOVA_V=1`, `SOVA_PROJECT`, `SOVA_INSTANCE`, `SOVA_SLOT`, `SOVA_CHECKOUT`, `SOVA_MAIN`,
 `SOVA_BRANCH`, `SOVA_DATA`, `SOVA_PORT_<SERVICE>_<PORT>` for every port of the instance and
-`SOVA_PORT_<PORT>` for its own, and a hook also `SOVA_VERB`, `SOVA_STEP` and `SOVA_OUT`.
+`SOVA_PORT_<PORT>` for its own, and a hook also `SOVA_VERB`, `SOVA_STEP` and `SOVA_OUT`; a test
+run also `SOVA_TEST_SELECT`.
 
 A static site is one service: `{"version": 1, "services": {"site": {"static": ".", "ports":
 {"http": {"base": 8731}}}}}`.
@@ -87,17 +98,18 @@ Every verb answers one JSON object with keys in this order: `v` (1), `verb`, `pr
 fingerprint?}`), `services` (`{name, scope, kind: process|static|container, state: stopped|starting|
 ready|degraded|failed|external, unit, pid, ports, ready?}`), `data` (`{name, kind, ref, exists}`),
 `links` (empty until sharing exists), then the verb's own key (`instances` for status of a whole
-project, `lines` for logs, `checks` for doctor and status (status: the supervisor's alone), `conform` for conform), then `error?` (`{code,
+project, `lines` for logs and test, `checks` for doctor and status (status: the supervisor's alone), `conform` for conform,
+`tests` for test), then `error?` (`{code,
 message, step?, service?}`), `defHash`, `approved` and `at`. Arrays follow declaration order.
 Running a verb again with the same inputs gives the same object apart from `at`, `ms`, pids and a
 new generation.
 
 The error codes are a closed list: `not-found`, `invalid-request`, `invalid-definition`,
 `not-approved`, `not-conformant`, `cap-reached`, `port-held`, `not-ready`, `start-failed`,
-`hook-failed`, `dirty-worktree`, `busy`, `unsupported`, `refused-slot0`, `share-denied`,
+`hook-failed`, `tests-failed`, `dirty-worktree`, `busy`, `unsupported`, `refused-slot0`, `share-denied`,
 `forbidden`, `needs-confirm`. Each maps to one exit class, the CLI's exit code and the route's
 status: **0** done, a no-op included (200); **1** failed part-way — `not-ready`, `start-failed`,
-`hook-failed` — with `state` saying what runs, and a re-run converges from there (502); **2**
+`hook-failed`, `tests-failed` — with `state` saying what runs, and a re-run converges from there (502); **2**
 refused, nothing changed — `not-approved`, `not-conformant`, `cap-reached`, `port-held`,
 `dirty-worktree`, `unsupported`, `refused-slot0`, `share-denied`, `forbidden`, `needs-confirm`
 (409); **3** invalid — `invalid-request`, `invalid-definition`, `not-found` (400, 404 for
@@ -163,7 +175,11 @@ same checkout answers the same instance with `changed: false`.
 
 ## §app.project-services/up — up
 
-In: an instance (or create's arguments: the instance is created first), `services` optional. The
+In: an instance (or create's arguments: the instance is created first), `services` optional.
+Without `services` it starts every checkout service but the on-demand ones (`start:
+"on-demand"`), which start only when named, required by a service that starts, or required by a
+test run (§app.project-services/test); once started, an on-demand service is wanted like any other
+(reconcile keeps it running) until down stops it. The
 shared services it requires start first, then its own in `requires` order; each waits for its
 readiness before the next starts. A service already ready is left alone (same pid, `skipped`).
 Before a start, every port of the service is checked: a holder that is not the instance's own
@@ -178,17 +194,23 @@ container. A service
 that exits or does not become ready in time fails the verb (`start-failed`, `not-ready`) with the
 instance `degraded`; the others keep running. A service the instance's record still wants that its
 definition no longer declares (removed from `.sova/project.json`, or no longer a checkout service)
-is stopped and marked stopped first, as a `stop:<name>` step that says so.
+is stopped and marked stopped first, as a `stop:<name>` step that says so; so is a shared service
+that is in no definition any more, by down's rule (§app.project-services/down), when it still runs
+or is still wanted.
 
 ## §app.project-services/down — down
 
-In: an instance, `services` optional. Stops its checkout services in reverse `requires` order,
+In: an instance, `services` optional. Stops its checkout services, the on-demand ones included, in reverse `requires` order,
 and every service the instance's record still names that the definition no longer declares (all of
 them when the definition is unreadable): by its unit's name, and by its container's name, which the
 record keeps (with its engine) from the service's last start. Each is marked stopped, so nothing
 comes back when a later definition declares it again. Data, slot, worktree and branch stay; nothing is deleted. A shared service is never stopped by an
 instance's down; stopping one by name needs a confirm (`needs-confirm`), which only the operator
-gives. Idempotent: a second down answers `changed: false`.
+gives. A shared service the project's record still names that no definition declares any more
+(neither the main checkout's nor any registered instance's checkout's, each readable) is the
+exception: down stops it by its unit's name and marks it stopped, as a `stop:<name>` step that says
+it is shared and in no definition; while any of those definitions is unreadable it is left alone.
+Idempotent: a second down answers `changed: false`.
 
 ## §app.project-services/apply — apply
 
@@ -203,7 +225,10 @@ definition no longer declares is stopped and marked stopped, as up does. `change
 Both are reads. `status` of an instance reports each service as observed now (stopped, starting,
 ready, degraded, failed, or `external` when something else holds its port) with its unit, pid and
 ports, each data resource's existence, the definition's hash and approval, and the supervisor in use
-as the one check `supervisor` (informational: it never makes `ok` false). `status` of a project
+as the one check `supervisor` (informational: it never makes `ok` false). A service the definition
+no longer declares whose unit (or static serve) still runs is listed too, after the declared ones,
+as `degraded` with its unit and pid and the detail "no longer in the definition" (a shared one:
+"shared, no longer in any definition"), so what still runs is never hidden. `status` of a project
 lists every instance as `instances`, with the shared services. `logs` returns at most 500 lines
 (default 100) of one service or all, oldest first, as `{t, service, text}`, from the journal or the
 log file; for a model they are redacted and wrapped as untrusted text.
@@ -215,6 +240,59 @@ names the adapter in use and why it was chosen), every
 command's program is on the PATH, every `host` name is set, every `dir` resource's `from` exists,
 and the instance's ports are free or held by its own (as §app.project-services/up counts them). Each is a check `{id, ok, detail}`;
 `ok` is false when one fails, and the exit is still 0.
+
+## §app.project-services/test — test
+
+In: an instance (or create's arguments: the instance is created first, as up does), `select`
+optional (at most 50 selectors, each as the contract's `smoke` ones; anything else is
+`invalid-request`). A definition with no `test` answers `unsupported` ("This project declares no
+test command") and nothing changes. Otherwise test holds the instance's lock (§app.project-services/lock),
+brings up the services `test.requires` names, with what they require, as up does
+(§app.project-services/up, on-demand ones included) and waits for their readiness, then runs `run`
+with the selectors appended as its last arguments (none: the whole suite), in the instance's
+checkout, as one waited-for unit `sova-hook-<state hash>-<instance>-test` with the instance's env
+plus `SOVA_VERB=test`, `SOVA_TEST_SELECT` (the selectors as a JSON array) and `SOVA_OUT`. At its
+timeout, or when the caller aborts (a cancelled tool call), the unit is killed whole. It runs
+against the instance's own ports and data, never the main checkout's. `changed` is true only when
+it created the instance or started a service; the run itself is a `test` step.
+
+The result's `tests` is `{select, pass, passed, failed, errors, skipped, failures, exit, timedOut,
+ms, peakBytes}`. When the runner wrote `SOVA_OUT` as JSON with numeric `passed` and `failed` (and
+optionally `errors`, `skipped`, and `failures` `[{name, message?, file?, line?}]`), the counts and
+failures come from it, at most 50 failures with each message cut to 2000 characters; otherwise the
+counts are null and `failures` is empty. `pass` is true only when the run neither timed out nor
+exited other than 0 and counted no failure or error. `peakBytes` is the run's memory peak (the
+systemd unit's own summary, or, with the detached driver, the largest sampled resident memory of
+the run's processes), null when unknown. `lines` holds the run's last 100 lines of output (service
+`test`), which a model reads as untrusted, like logs. A run that did not pass fails the verb with
+`tests-failed`: "{failed + errors} of {passed + failed + errors} failed", "timed out after
+{timeout}s", or, with no counts, "the test command exited with {exit}".
+
+## §app.project-services/instance-note — What a builder is told about its instance
+
+Sova tells each coding session about its own running copies in a note rendered from the checkout's
+own `.sova/project.json` and the registry, never from a file in the checkout. It covers every
+checkout that is the session's own (§app.project-services/callers) except the main checkout, whose
+project has a definition. For a checkout with an instance it says: the checkout and branch, the
+instance id and slot, and when the definition is not approved, that the operator approves it; each
+port as "`<service>.<port>`: N (main checkout: M)", with its `http://127.0.0.1:N<path>` URL when
+the service's readiness is http on that port, and "shared" for a shared service's; each service's
+rendered `about` and whether it is on-demand; each data resource's name and where it is; how tests
+run ("project_verbs {verb: "test", select: [...]} runs them in this instance; no select runs the
+whole suite", with the smoke selection) or that the project declares none; "Start, reload and stop
+these through project_verbs, never by hand."; and, when the session's sandbox is on, "Your shell is
+sandboxed and cannot reach these ports: use project_verbs." A checkout with a definition but no
+instance gets one line saying it has no running copy yet and that project_verbs up gives it its own
+ports; one whose definition is invalid, one line naming the problem. A project without a definition
+gets no note.
+
+The note reaches the model as a hidden message (`sova-instance-note`, never shown in the
+transcript) at the start of a turn, only when its text differs from the last such message on the
+branch: the text holds no live state (no pids, no running or stopped), so it changes only when a
+slot, port, data ref, `about`, the test command, the approval or the sandbox does. After a
+compaction the current note is sent again. The system prompt never changes. The same text follows
+the result of `project_verbs` and `sova_project_verbs` for create, up, apply and status of one
+instance, so a turn that just ran up learns its ports at once, and status is the note on demand.
 
 ## §app.project-services/reset — reset
 
@@ -239,9 +317,10 @@ refused (`refused-slot0`). An instance that is absent answers `ok` with state `a
 ## §app.project-services/trust — Approval of a definition
 
 A definition runs only after the operator approved its hash on this host. The hash
-(`sha256:<hex>`) covers the whole parsed definition except timeouts and readiness paths, so a
+(`sha256:<hex>`) covers the whole parsed definition except timeouts, readiness paths and each
+service's `about`, so a
 branch that changes any command, env template, port, hook or data source needs approving again,
-while tuning a timeout does not. Approvals live in `<state root>/project-services/approvals.json`,
+while tuning a timeout or rewording an `about` does not; a `test` or a `start` is covered. Approvals live in `<state root>/project-services/approvals.json`,
 keyed by project root and hash, outside every repo, so no branch can approve itself; only the
 operator's own routes and CLI approve, never a session or an Overseer, and an approval is refused
 when the definition's hash is no longer the one shown. Every verb that runs something answers
@@ -253,7 +332,9 @@ When the server starts, it brings each instance back to its recorded desired sta
 should run but is not active is started again (static folders bound again), and a unit of its own
 whose instance should be stopped is stopped. It never starts a service the instance's current
 definition does not declare, and a unit of one that left the definition is stopped, its container
-removed, and the service marked stopped; then the detached driver's restart watch takes charge
+removed, and the service marked stopped; a project's shared service that no definition declares
+any more (down's rule, §app.project-services/down) is stopped and marked stopped the same way, and
+never started again; then the detached driver's restart watch takes charge
 of the units already running. It never touches a process it did not start.
 
 ## §app.project-services/conform — Conformance
@@ -262,14 +343,19 @@ of the units already running. It never touches a process it did not start.
 versioned suite that no project can change, in two scratch instances A and B on new branches from
 the ref, in slots above the cap so they never clash with real ones: doctor; create A, and again
 (`changed: false`); every setup step run a second time exits 0; up A (ready), and again (same
-pids); every declared port held by A's own (as §app.project-services/up counts them: its
+pids); every declared port of a service up started held by A's own (as §app.project-services/up counts them: its
 processes, or its container publishing the port); status agrees; create and up B in parallel
 (both ready, ports and data refs disjoint); with a `probe`, a token written in A reads in A, not in
 B, and not in the main checkout's instance when it runs; apply A (ready, B's pids unchanged); logs
-of A non-empty; reset A when data is declared (the token is gone); down A (its processes gone, its
-ports free, B still ready), and again (`changed: false`); teardown A and B, and again (`absent`);
+of A answer, at most 50 lines, and at least one when apply A left a process or container service of
+A's own not stopped (a `static` service is served in the server and logs nothing, and an on-demand
+one that has not started has nothing to log yet, so A with only those may answer none); reset A when data is declared (the token is gone); with a `test`, suite version 2
+adds: up A left every on-demand service stopped; test A with the `smoke` selection passes, its
+`requires` are ready afterwards and B's pids are unchanged; a second such test passes with the same
+counts; without a `test`, test A answers `unsupported`; then down A (its processes gone, the
+on-demand ones' included, its ports free, B still ready), and again (`changed: false`); teardown A and B, and again (`absent`);
 then nothing is left of either: no unit or process, no listener on their ports, no data dir, no
-container, no registry entry, no worktree. Beyond A and B, a unit, data dir or registry entry
+container, no registry entry, no worktree. The suite's version is 2, which the report and the stamp carry. Beyond A and B, a unit, data dir or registry entry
 that appeared during the run is a leak only when it belongs to no registered instance (nor the
 project's shared services): another instance's, registered before the run or made meanwhile by
 another caller (a session's `up`, the server's reconcile), is never one. The report and a stamp keyed by project, hash and suite
@@ -284,16 +370,29 @@ a thin client of those routes that prints the result and exits with its class. T
 same engine in-process, never over HTTP:
 
 - **`project_verbs`**, in every ordinary hosted session: reads (status, logs, doctor) on its own
-  project; create, up, down and apply on instances of checkouts that are its own (its tracked
+  project; create, up, down, apply and test on instances of checkouts that are its own (its tracked
   worktrees, and its cwd's checkout unless that is the main checkout); reset and teardown only on
   instances it created; conform of its project. Anything else is `forbidden`.
 - **`sova_project_verbs`** for the Overseers. The global Overseer reads any project and acts in a
   turn the user started; the project overseer is confined to its project: reads at any level,
   and every other verb only once its project statechart took the act (`services/down` at L0,
-  `services/run` at L3 for create, up, apply, reset, teardown and conform; any of them in a run the
+  `services/run` at L3 for create, up, apply, test, reset, teardown and conform; any of them in a run the
   operator started; §app.project-overseer/tools). Above its level the statechart refuses with a
   sentence telling it to file the gap as an idea or raise a confirm card, and the engine never
   runs; the engine itself checks no level. For both, reset and teardown of an instance it did not
   create, and stopping a shared service, answer `needs-confirm`: the operator does it.
 
 `deploy` is `unsupported` for everyone, and nothing but the operator approves a definition.
+
+## §app.project-services/self-host — When the project is Sova itself
+
+A project whose root is the running Sova server's own checkout (the git checkout the server's code
+was loaded from) is Sova hosting itself. On it, a verb that stops or restarts the main checkout's
+instance (slot 0) — `apply`, `down`, `reset` and `teardown` — always needs the operator's confirm,
+whatever the caller and at every autonomy level: the operator passes `confirm` (the CLI's
+`--confirm`); every other caller gets `needs-confirm` ("…stops or restarts the Sova server's own
+checkout: the operator does it…"). Even confirmed, it is refused with `busy` while any session this
+server hosts is busy: its live record (`sessions/live/p<server pid>-*.json`, heartbeat at most 30 s
+old) shows a working subagent or a turn in flight, the asking session's own turn included. The
+refusal names how many are busy, and nothing changes. Instances of the project's other worktrees
+are not affected: their verbs follow the ordinary rules.

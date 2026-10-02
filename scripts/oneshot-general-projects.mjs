@@ -148,7 +148,7 @@ async function main() {
 
   const commit = (dir, message) => {
     git(dir, ["add", "-A"]);
-    if (git(dir, ["--no-optional-locks", "status", "--porcelain"]).length) git(dir, ["-c", "commit.gpgsign=false", "commit", "-q", "--no-verify", "-m", message], SOVA_IDENTITY);
+    if (git(dir, ["--no-optional-locks", "status", "--porcelain"]).length) git(dir, ["-c", "commit.gpgsign=false", "-c", "gc.auto=0", "-c", "maintenance.auto=false", "commit", "-q", "--no-verify", "-m", message], SOVA_IDENTITY);
   };
   for (const o of dirty) commit(o.dir, "Workspace changes before general projects");
   // Edits first, at their old paths, then the renames: a crash in between leaves a state the side-by-side

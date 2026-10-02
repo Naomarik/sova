@@ -1,5 +1,4 @@
 import { createEffect, createMemo, createResource, createSignal, For, type JSX, on, onMount, Show } from "solid-js";
-import { offHoursNote, withOffHours } from "../lib/working-hours";
 import { TODO_TEXT_MAX, type IdeaRecord, type OverseerAction, type OverseerTodosInfo } from "../../shared/protocol";
 import {
   ALLOWANCE_MAX,
@@ -16,8 +15,7 @@ import {
   SOON_CHOICES,
   type ProjectOverseerCaps,
 } from "../../shared/project-overseer";
-import { AUTONOMY_LEVELS, AUTONOMY_MEANING, CONFIRM_KINDS, type ConfirmKind, type Autonomy, type CodingStartResult, type ItemCodeInput, type ItemCodeResult, type ItemSendInput, type ItemSendResult, type CodingWorktree, type ProjectOverseerInfo, type ProjectOverseerPatch } from "../../shared/project-overseer";
-import type { OrgDetail } from "../../shared/orgs";
+import { AUTONOMY_LEVELS, AUTONOMY_MEANING, CONFIRM_KINDS, type ConfirmKind, type Autonomy, type CodingStartResult, type ItemCodeInput, type ItemCodeResult, type ItemSendResult, type CodingWorktree, type ProjectOverseerInfo, type ProjectOverseerPatch } from "../../shared/project-overseer";
 import {
   addProjectOverseerIdea,
   addProjectOverseerTodo,
@@ -35,17 +33,16 @@ import {
   projectOverseerTodos,
   removeCodingWorktree,
   runProjectOverseer,
-  sendProjectItem,
   startProjectCoding,
 } from "../lib/api";
 import { ABILITIES_KEYS, abilitiesKey, abilitiesLabel, abilitiesOfKey, abilitiesWords, type AbilitiesKey } from "../lib/gathering-abilities";
 import { CODING_MODE_KEYS, codingModeKey, codingModeLabel, codingModeOf, folderNote, mergeGate, mergeNote, modeWords, offersMerge, offersRemove, removeGate, startedBy, worktreeOrder, type CodingModeKey } from "../lib/coding-worktrees";
 import { relativeTime, tildePath } from "../lib/format";
-import { hostLabel, orgHostOf } from "../lib/mesh";
+import { hostLabel, projectHostOf } from "../lib/mesh";
 import { unchangedError } from "../lib/unchanged-error";
 import { createPoll, type Poll } from "../lib/poll";
 import { ACTIVITY_SHOWN, confirmSummary, levelWords, LIMIT_COLUMN_LABEL, LIMIT_COLUMNS, LIMIT_ROWS, limitCell, paceLine, type LimitColumn } from "../lib/project-page";
-import { actionLine, allowanceLine, confirmKindDone, confirmKindLabel, gapArea, gapWords, holdHint, holdWords, toggleConfirmKind, isGap, IDEA_TITLE_MAX, itemSendInput, lastRunTail, limitsProblem, openIdeas, operatorIdeaId, pendingLine, soonWords, STARTED_KIND, waitingLines, watchHint } from "../lib/project-overseer-view";
+import { actionLine, allowanceLine, confirmKindDone, confirmKindLabel, gapArea, gapWords, holdHint, holdWords, toggleConfirmKind, isGap, IDEA_TITLE_MAX, lastRunTail, limitsProblem, openIdeas, operatorIdeaId, pendingLine, soonWords, STARTED_KIND, waitingLines, watchHint } from "../lib/project-overseer-view";
 import { adoptSession, announce, home, toast } from "../lib/ui-state";
 import { ActionMenu } from "./ActionMenu";
 import { LinksBanner, type Links } from "./LinksBanner";
@@ -72,9 +69,8 @@ interface Item {
  * chat page — tool cards there are the live view — so the page links to it rather than host it.
  */
 export interface ProjectOverseer {
-  orgId(): string;
   projectId(): string;
-  /** The peer the org is attached on (null: this host): its models, and the host its words name. */
+  /** The peer that holds the project (null: this host): its models, and the host its words name. */
   host(): string | null;
   info: Poll<ProjectOverseerInfo>;
   actions: Poll<OverseerAction[]>;
@@ -89,18 +85,16 @@ export interface ProjectOverseer {
 }
 
 export function createProjectOverseer(props: {
-  orgId: string;
   projectId: string;
   /** Whether the overseer is working now, after every read: its acts (a promotion) change the page around it. */
   onBusy?(busy: boolean): void;
 }): ProjectOverseer {
-  const o = () => props.orgId;
   const p = () => props.projectId;
-  const host = () => orgHostOf(o());
-  const info = createPoll(() => getProjectOverseer(o(), p()), POLL_MS);
-  const actions = createPoll(() => projectOverseerActions(o(), p(), 30), POLL_MS);
-  const ideas = createPoll(() => projectOverseerIdeas(o(), p()), POLL_MS * 3);
-  const todos = createPoll(() => projectOverseerTodos(o(), p()), POLL_MS * 3);
+  const host = () => projectHostOf(p());
+  const info = createPoll(() => getProjectOverseer(p()), POLL_MS);
+  const actions = createPoll(() => projectOverseerActions(p(), 30), POLL_MS);
+  const ideas = createPoll(() => projectOverseerIdeas(p()), POLL_MS * 3);
+  const todos = createPoll(() => projectOverseerTodos(p()), POLL_MS * 3);
   const busyNow = createMemo(() => !!info.data()?.busy);
   createEffect(on(busyNow, (b) => props.onBusy?.(b)));
   const [error, setError] = createSignal<string | null>(null);
@@ -125,22 +119,22 @@ export function createProjectOverseer(props: {
       setBusy(false);
     }
   };
-  return { orgId: o, projectId: p, host, info, actions, ideas, todos, error, links, setLinks, busy, run };
+  return { projectId: p, host, info, actions, ideas, todos, error, links, setLinks, busy, run };
 }
 
-const setAutonomy = (po: ProjectOverseer, autonomy: Autonomy) => void po.run(() => patchProjectOverseer(po.orgId(), po.projectId(), { autonomy }), `Autonomy: ${autonomy}.`);
+const setAutonomy = (po: ProjectOverseer, autonomy: Autonomy) => void po.run(() => patchProjectOverseer(po.projectId(), { autonomy }), `Autonomy: ${autonomy}.`);
 
 /**
  * The summary's overseer line (§app.organizations/project-page): the level in force, watching, the
  * last run in the page's own words and today's runs, with Working, Run Now and Open Overseer
  * beside it; under it, only when true, what it waits to look at, the allowance used and what waits.
  */
-export function OverseerSummary(props: { po: ProjectOverseer; archived?: boolean }) {
+export function OverseerSummary(props: { po: ProjectOverseer; archived?: boolean; /** Who an attach pause names: only a placed project's workspace is ever attached, so the placing layer says it. */ attachedWho?: string }) {
   const po = () => props.po;
   const i = () => po().info.data();
   const openChat = () =>
     void po().run(async () => {
-      const next = await openProjectOverseer(po().orgId(), po().projectId());
+      const next = await openProjectOverseer(po().projectId());
       if (next.path) location.hash = sessionHref(next.path);
       return next;
     });
@@ -164,7 +158,7 @@ export function OverseerSummary(props: { po: ProjectOverseer; archived?: boolean
             class="button button-sm button-ghost"
             aria-disabled={po().busy() || i()?.busy || props.archived ? "true" : undefined}
             title={props.archived ? "Archived" : i()?.busy ? "Working now" : "Look at the project now, as the watch loop would."}
-            onClick={() => !props.archived && !i()?.busy && void po().run(() => runProjectOverseer(po().orgId(), po().projectId()), "The overseer is looking now.")}
+            onClick={() => !props.archived && !i()?.busy && void po().run(() => runProjectOverseer(po().projectId()), "The overseer is looking now.")}
           >
             Run Now
           </button>
@@ -181,13 +175,13 @@ export function OverseerSummary(props: { po: ProjectOverseer; archived?: boolean
         {(x) => (
           <>
             <StatusMore info={x()} />
-            {/* Attached on the org's host from a clone (a restore or a move): nothing runs on its own until the operator says so there. */}
+            {/* Attached on its host from a clone (a restore or a move): nothing runs on its own until the operator says so there. */}
             <Show when={x().paused}>
               {(since) => (
                 <Banner
                   tone="warn"
                   title={`Paused at L0 on ${po().host() ? hostLabel(po().host()!) : "this host"}`}
-                  body={`This organization was attached ${po().host() ? `on ${hostLabel(po().host()!)}` : "here"} ${relativeTime(since())}. Until you set its level, the overseer only proposes and its watch loop waits.`}
+                  body={`${props.attachedWho ?? "It"} was attached ${po().host() ? `on ${hostLabel(po().host()!)}` : "here"} ${relativeTime(since())}. Until you set its level, the overseer only proposes and its watch loop waits.`}
                   action={
                     <button type="button" class="button button-sm" aria-disabled={po().busy() ? "true" : undefined} onClick={() => setAutonomy(po(), x().settings.autonomy)}>
                       Resume at {x().settings.autonomy}
@@ -251,11 +245,10 @@ function StatusMore(props: { info: ProjectOverseerInfo }) {
  * waits for its approval, the sessions it starts, extra instructions and limits. Every control
  * saves as it always has: a pick, tick or switch at once; Extra instructions and Limits on Save.
  */
-export function OverseerSettings(props: { po: ProjectOverseer }) {
+export function OverseerSettings(props: { po: ProjectOverseer; /** An organization places the project: its gathering sessions and limits show. */ placed: boolean }) {
   const po = () => props.po;
-  const o = () => po().orgId();
   const p = () => po().projectId();
-  const patch = (x: ProjectOverseerPatch) => patchProjectOverseer(o(), p(), x);
+  const patch = (x: ProjectOverseerPatch) => patchProjectOverseer(p(), x);
   return (
     <Show when={po().info.data()} fallback={<Show when={po().info.pending()}><p class="orgs-empty">Reading the overseer.</p></Show>}>
       {(i) => (
@@ -291,9 +284,11 @@ export function OverseerSettings(props: { po: ProjectOverseer }) {
               Sessions it starts
             </h2>
             <div class="project-models">
-              <SessionModel info={i()} host={po().host()} kind="gathering" label="Gathering sessions" save={async (x) => po().info.set(await patch(x))}>
-                <GatheringAbilitiesField info={i()} onSave={(key) => po().run(() => patch({ gatheringAbilities: abilitiesOfKey(key) }), `Gathering sessions: ${abilitiesLabel(key)}.`)} />
-              </SessionModel>
+              <Show when={props.placed}>
+                <SessionModel info={i()} host={po().host()} kind="gathering" label="Gathering sessions" save={async (x) => po().info.set(await patch(x))}>
+                  <GatheringAbilitiesField info={i()} onSave={(key) => po().run(() => patch({ gatheringAbilities: abilitiesOfKey(key) }), `Gathering sessions: ${abilitiesLabel(key)}.`)} />
+                </SessionModel>
+              </Show>
               <SessionModel info={i()} host={po().host()} kind="coding" label="Coding sessions" save={async (x) => po().info.set(await patch(x))}>
                 <CodingMode
                   info={i()}
@@ -315,7 +310,7 @@ export function OverseerSettings(props: { po: ProjectOverseer }) {
             />
           </section>
           <section class="card orgs-section" aria-labelledby="project-limits-legend">
-            <Limits info={i()} host={po().host()} save={(x) => po().run(() => patch(x), "Limits saved.")} />
+            <Limits info={i()} host={po().host()} placed={props.placed} save={(x) => po().run(() => patch(x), "Limits saved.")} />
           </section>
         </>
       )}
@@ -599,7 +594,7 @@ const numberOf = (v: string): number => (v.trim() === "" ? Number.NaN : Number(v
  * own, at once, and the pace. Read-only as one table until Edit; then one form, one PATCH.
  * Unlimited is an ∞ toggle beside the field, never a blank field; the at-once limits have none.
  */
-function Limits(props: { info: ProjectOverseerInfo; host: string | null; save(patch: ProjectOverseerPatch): Promise<boolean> }) {
+function Limits(props: { info: ProjectOverseerInfo; host: string | null; placed: boolean; save(patch: ProjectOverseerPatch): Promise<boolean> }) {
   const saved = createMemo(() => JSON.stringify(limitsOf(props.info.settings)));
   const [draft, setDraft] = createSignal<LimitsDraft>(limitsOf(props.info.settings));
   const [editing, setEditing] = createSignal(false);
@@ -711,7 +706,7 @@ function Limits(props: { info: ProjectOverseerInfo; host: string | null; save(pa
             </tr>
           </thead>
           <tbody>
-            <For each={LIMIT_ROWS}>
+            <For each={LIMIT_ROWS.filter((r) => props.placed || !r.placed)}>
               {(r) => (
                 <tr>
                   <th scope="row">{r.label}</th>
@@ -1111,9 +1106,9 @@ export function CodingSessionsCard(props: { po: ProjectOverseer; archived?: bool
             <CodingSessions
               info={i()}
               archived={props.archived}
-              start={() => startProjectCoding(po().orgId(), po().projectId())}
-              merge={(w) => mergeCodingWorktree(po().orgId(), po().projectId(), w.sessionId)}
-              remove={(w) => removeCodingWorktree(po().orgId(), po().projectId(), w.sessionId)}
+              start={() => startProjectCoding(po().projectId())}
+              merge={(w) => mergeCodingWorktree(po().projectId(), w.sessionId)}
+              remove={(w) => removeCodingWorktree(po().projectId(), w.sessionId)}
               onInfo={po().info.set}
               onStarted={() => po().info.refetch()}
             />
@@ -1181,14 +1176,19 @@ export function ActivityCard(props: { po: ProjectOverseer }) {
   );
 }
 
-// ---- ideas and to-do items, each passable to a person or a coding session -----------------------------
+// ---- ideas and to-do items, each passable to a coding session (and to a person, while placed) -----------
+
+/**
+ * Send to Person's form, contributed by the layer that places the project (the org's roster): the
+ * item it passes on, Cancel, and what was sent. Absent on a standalone project: no Send to Person.
+ */
+export type ItemSendForm = (p: { item: { ideaId?: string; todoId?: string }; close(): void; sent(r: ItemSendResult): void }) => JSX.Element;
 
 interface ItemCallbacks {
-  org: OrgDetail;
+  send?: ItemSendForm;
   /** The project is archived: nothing new starts from an item. */
   archived?: boolean;
   onLinks(l: Links): void;
-  send(input: ItemSendInput): Promise<ItemSendResult>;
   code(input: ItemCodeInput): Promise<ItemCodeResult>;
   after(): void;
 }
@@ -1239,19 +1239,18 @@ function AddButton(props: { label: string; open: boolean; onClick(): void }) {
 }
 
 /** The ideas as the project's lists pass them on (§app.project-overseer/ideas-and-todos). */
-function itemCallbacks(po: ProjectOverseer, org: OrgDetail, archived: boolean | undefined, after: () => void): ItemCallbacks {
+function itemCallbacks(po: ProjectOverseer, send: ItemSendForm | undefined, archived: boolean | undefined, after: () => void): ItemCallbacks {
   return {
-    org,
+    send,
     archived,
     onLinks: po.setLinks,
-    send: (input) => sendProjectItem(po.orgId(), po.projectId(), input),
-    code: (input) => codeProjectItem(po.orgId(), po.projectId(), input),
+    code: (input) => codeProjectItem(po.projectId(), input),
     after,
   };
 }
 
-/** Requirements' Gaps and ideas: the open ideas, gaps first; its add form behind +. `adding` opens the form from outside (+ Idea). */
-export function IdeasCard(props: { po: ProjectOverseer; org: OrgDetail; archived?: boolean; adding?: boolean; onAdding?(open: boolean): void }) {
+/** The open ideas, gaps first (Requirements' Gaps and ideas while placed, else on Overview); its add form behind +. `adding` opens the form from outside (+ Idea). */
+export function IdeasCard(props: { po: ProjectOverseer; title: string; empty: string; send?: ItemSendForm; archived?: boolean; adding?: boolean; onAdding?(open: boolean): void }) {
   const po = () => props.po;
   const [err, setErr] = createSignal<string | null>(null);
   const [localAdding, setLocalAdding] = createSignal(false);
@@ -1259,7 +1258,7 @@ export function IdeasCard(props: { po: ProjectOverseer; org: OrgDetail; archived
   const setAdding = (open: boolean) => (props.onAdding ? props.onAdding(open) : setLocalAdding(open));
   const ideas = () => (po().ideas.data() ? openIdeas(po().ideas.data()!.ideas) : undefined);
   const cb = () =>
-    itemCallbacks(po(), props.org, props.archived, () => {
+    itemCallbacks(po(), props.send, props.archived, () => {
       po().ideas.refetch();
       po().info.refetch();
     });
@@ -1267,7 +1266,8 @@ export function IdeasCard(props: { po: ProjectOverseer; org: OrgDetail; archived
     <section class="card orgs-section" aria-labelledby="project-ideas">
       <div class="orgs-head">
         <h2 class="orgs-h2" id="project-ideas">
-          Gaps and ideas{ideas() ? ` · ${ideas()!.length}` : ""}
+          {props.title}
+          {ideas() ? ` · ${ideas()!.length}` : ""}
         </h2>
         <AddButton label="Add an idea" open={adding()} onClick={() => setAdding(!adding())} />
       </div>
@@ -1281,12 +1281,12 @@ export function IdeasCard(props: { po: ProjectOverseer; org: OrgDetail; archived
           onClose={() => setAdding(false)}
           add={async (title) => {
             // Fresh ids: the poll may lag another tab's or the overseer's latest idea.
-            const taken = new Set((await projectOverseerIdeas(po().orgId(), po().projectId())).ideas.map((i) => i.id));
-            po().ideas.set(await addProjectOverseerIdea(po().orgId(), po().projectId(), { id: operatorIdeaId(title, taken), title }));
+            const taken = new Set((await projectOverseerIdeas(po().projectId())).ideas.map((i) => i.id));
+            po().ideas.set(await addProjectOverseerIdea(po().projectId(), { id: operatorIdeaId(title, taken), title }));
           }}
         />
       </Show>
-      <Show when={ideas()?.length} fallback={<p class="orgs-empty">No open ideas. Gaps it finds between the decisions and who decides them land here.</p>}>
+      <Show when={ideas()?.length} fallback={<p class="orgs-empty">{props.empty}</p>}>
         <ul class="project-items">
           <For each={ideas()}>
             {(idea) => (
@@ -1312,14 +1312,14 @@ export function IdeasCard(props: { po: ProjectOverseer; org: OrgDetail; archived
 }
 
 /** Overview's To-do: the open items, each with its tick and actions; its add form behind +. */
-export function TodosCard(props: { po: ProjectOverseer; org: OrgDetail; archived?: boolean }) {
+export function TodosCard(props: { po: ProjectOverseer; send?: ItemSendForm; archived?: boolean }) {
   const po = () => props.po;
   const [err, setErr] = createSignal<string | null>(null);
   const [adding, setAdding] = createSignal(false);
   const info = () => po().todos.data();
   const open = createMemo(() => info()?.todos.filter((t) => !t.done) ?? []);
   const cb = () =>
-    itemCallbacks(po(), props.org, props.archived, () => {
+    itemCallbacks(po(), props.send, props.archived, () => {
       po().todos.refetch();
       po().info.refetch();
     });
@@ -1339,7 +1339,7 @@ export function TodosCard(props: { po: ProjectOverseer; org: OrgDetail; archived
           maxlength={TODO_TEXT_MAX}
           onError={setErr}
           onClose={() => setAdding(false)}
-          add={async (text) => po().todos.set(await addProjectOverseerTodo(po().orgId(), po().projectId(), text))}
+          add={async (text) => po().todos.set(await addProjectOverseerTodo(po().projectId(), text))}
         />
       </Show>
       <Show when={open().length} fallback={<p class="orgs-empty">{info()?.done ? `${info()!.done} done. Nothing open.` : "Nothing to do yet."}</p>}>
@@ -1353,7 +1353,7 @@ export function TodosCard(props: { po: ProjectOverseer; org: OrgDetail; archived
                     checked={t.done}
                     onChange={(e) => {
                       const done = e.currentTarget.checked;
-                      patchProjectOverseerTodo(po().orgId(), po().projectId(), t.id, { done }).then(
+                      patchProjectOverseerTodo(po().projectId(), t.id, { done }).then(
                         (next) => {
                           po().todos.set(next);
                           announce(`Done: ${t.text}`);
@@ -1379,11 +1379,6 @@ function ItemActions(props: ItemCallbacks & { item: Item }) {
   const [sending, setSending] = createSignal(false);
   const [working, setWorking] = createSignal(false);
   const [err, setErr] = createSignal<string | null>(null);
-  const active = () => props.org.roster.filter((x) => x.status === "active");
-  const [to, setTo] = createSignal<string[]>([]);
-  // Empty on purpose: the item's title is the overseer's own wording, never for outsiders (itemSendInput).
-  const [title, setTitle] = createSignal("");
-  const [question, setQuestion] = createSignal("");
   const ref = () => (props.item.ideaId ? { ideaId: props.item.ideaId } : { todoId: props.item.todoId });
   const code = async () => {
     if (working()) return;
@@ -1405,26 +1400,6 @@ function ItemActions(props: ItemCallbacks & { item: Item }) {
       setWorking(false);
     }
   };
-  const send = async (e: Event) => {
-    e.preventDefault();
-    const input = itemSendInput(ref(), { to: to(), publicTitle: title(), question: question() });
-    if (working() || !input) return;
-    setWorking(true);
-    try {
-      const r = await props.send(input);
-      setErr(null);
-      setSending(false);
-      setTo([]);
-      props.onLinks(r.links);
-      const one = r.links.length === 1 ? r.links[0]! : null;
-      toast(r.links.length > 1 ? `Offered to ${r.links.length} people.` : withOffHours("Hand-off session started.", one?.name ?? "Their", r.offHours, Date.now()));
-      props.after();
-    } catch (x) {
-      setErr(unchangedError(errText(x), "Nothing was sent."));
-    } finally {
-      setWorking(false);
-    }
-  };
   return (
     <>
       <div class="button-row project-item-actions">
@@ -1436,16 +1411,18 @@ function ItemActions(props: ItemCallbacks & { item: Item }) {
             </a>
           )}
         </Show>
-        <button
-          type="button"
-          class="button button-sm button-ghost"
-          aria-expanded={sending()}
-          aria-disabled={props.archived ? "true" : undefined}
-          title={props.archived ? "Archived" : undefined}
-          onClick={() => !props.archived && setSending(!sending())}
-        >
-          Send to Person…
-        </button>
+        <Show when={props.send}>
+          <button
+            type="button"
+            class="button button-sm button-ghost"
+            aria-expanded={sending()}
+            aria-disabled={props.archived ? "true" : undefined}
+            title={props.archived ? "Archived" : undefined}
+            onClick={() => !props.archived && setSending(!sending())}
+          >
+            Send to Person…
+          </button>
+        </Show>
         <button
           type="button"
           class="button button-sm button-ghost"
@@ -1457,50 +1434,18 @@ function ItemActions(props: ItemCallbacks & { item: Item }) {
         </button>
       </div>
       <Show when={err()}>{(e) => <p class="field-error">{e()}</p>}</Show>
-      <Show when={sending()}>
-        <form class="orgs-form orgs-subform" onSubmit={send}>
-          <fieldset class="project-people">
-            <legend class="field-label">Send to</legend>
-            <Show when={active().length} fallback={<p class="orgs-empty">Nobody active on the roster yet.</p>}>
-              <For each={active()}>
-                {(person) => (
-                  <label class="toggle">
-                    <input
-                      type="checkbox"
-                      checked={to().includes(person.id)}
-                      onChange={(e) => setTo((cur) => (e.currentTarget.checked ? [...cur, person.id] : cur.filter((x) => x !== person.id)))}
-                    />
-                    <span class="toggle-box" />
-                    <span>{`${person.name}${person.role ? ` — ${person.role}` : ""}`}</span>
-                  </label>
-                )}
-              </For>
-            </Show>
-            <p class="field-hint">Pick 2 or more to offer it: the first to answer takes it.</p>
-            {/* r7: yours goes at once; say so for each ticked person who is off hours now. */}
-            <For each={active().filter((x) => to().includes(x.id))}>
-              {(x) => <Show when={offHoursNote(x, Date.now())}>{(note) => <p class="field-hint person-off-hours">{note()}</p>}</Show>}
-            </For>
-          </fieldset>
-          <label class="field">
-            <span class="field-label">Public title</span>
-            <input class="input" value={title()} onInput={(e) => setTitle(e.currentTarget.value)} maxlength={120} required placeholder="What the person sees as the title" />
-            <span class="field-hint">All they see of the goal. The item's own words stay private: they go to the model as the goal.</span>
-          </label>
-          <label class="field">
-            <span class="field-label">First question</span>
-            <input class="input" value={question()} onInput={(e) => setQuestion(e.currentTarget.value)} maxlength={1000} required placeholder="What you ask them, in your words" />
-            <span class="field-hint">They see it at the top of their page.</span>
-          </label>
-          <div class="button-row">
-            <button type="submit" class="button button-primary" aria-disabled={!to().length || !title().trim() || !question().trim() || working() ? "true" : undefined}>
-              {to().length > 1 ? `Offer to ${to().length}` : "Start Session"}
-            </button>
-            <button type="button" class="button button-ghost" onClick={() => setSending(false)}>
-              Cancel
-            </button>
-          </div>
-        </form>
+      <Show when={sending() && props.send}>
+        {(send) =>
+          send()({
+            item: ref(),
+            close: () => setSending(false),
+            sent: (r) => {
+              setSending(false);
+              props.onLinks(r.links);
+              props.after();
+            },
+          })
+        }
       </Show>
     </>
   );

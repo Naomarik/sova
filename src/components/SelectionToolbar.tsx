@@ -113,6 +113,11 @@ export function TitleField(props: {
  */
 export function SelectionToolbar(props: { sessions: SessionSummary[]; onRefresh(): void }) {
   const chosen = createMemo(() => selectedSessions(props.sessions, selectedPaths()) as SessionSummary[]);
+  /** An organization's or a project's session: it lives in that region, never in a group. */
+  const ownedRow = (path: string): boolean => {
+    const x = props.sessions.find((r) => r.path === path);
+    return !!(x?.org || x?.project);
+  };
   const plan = createMemo(() => selectionPlan(chosen()));
   const [renaming, setRenaming] = createSignal(false);
   /** An action in flight belongs to the TAB, not to this component instance: the toolbar is
@@ -170,7 +175,7 @@ export function SelectionToolbar(props: { sessions: SessionSummary[]; onRefresh(
         }
       }
       const failedPaths = new Set(failed.map((f) => f.path));
-      const org = p.eligible.filter((s) => !failedPaths.has(s.path) && props.sessions.find((x) => x.path === s.path)?.org).length;
+      const org = p.eligible.filter((s) => !failedPaths.has(s.path) && ownedRow(s.path)).length;
       const sentence = archiveSummary({ mode: p.mode, done, blocked: p.blocked, failed, org });
       toast(sentence);
       announce(sentence);
@@ -190,7 +195,7 @@ export function SelectionToolbar(props: { sessions: SessionSummary[]; onRefresh(
     let done = 0;
     // Organization sessions are never put in a group (the server refuses too): skipped, and said
     // once. Taking one out of a group made before that rule is still allowed.
-    const isOrg = (path: string) => groupId !== null && !!props.sessions.find((s) => s.path === path)?.org;
+    const isOrg = (path: string) => groupId !== null && ownedRow(path);
     const skippedOrg = paths.filter(isOrg).length;
     for (const path of paths.filter((p) => !isOrg(p))) {
       try {

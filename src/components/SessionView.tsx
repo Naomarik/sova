@@ -116,8 +116,8 @@ export function SessionView(props: {
    * earlier-conversation head. Decided once, at mount, like the read/write decision below.
    */
   const po = !props.paneId && !props.head ? s().projectOverseer : undefined;
-  const poEarlier = !!po && !!s().org?.finished;
-  const poControl = po ? createProjectOverseerControl({ orgId: po.orgId, projectId: po.projectId, path, summary: s, onRefresh: () => props.onRefresh() }) : null;
+  const poEarlier = !!po && !!(s().project?.finished ?? s().org?.finished);
+  const poControl = po ? createProjectOverseerControl({ projectId: po.projectId, path, summary: s, onRefresh: () => props.onRefresh() }) : null;
 
   /** The model the chat switched to, this view's own: a workspace's panes each run their own. */
   const [chatModel, setChatModel] = createSignal<string | null>(null);

@@ -2,10 +2,8 @@
 // `#/orgs/<id>` shows one on its Sessions tab, `#/orgs/<id>/<tab>` on a tab (sessions, people,
 // projects, workspace; §app.organizations/org-page), `#/orgs/<id>/start/<person id>` on Sessions
 // with the start form open and aimed at that person (spawn-for-person, §app.organizations/referrals),
-// `#/orgs/<id>/projects/<project id>` is one project on its Overview, `…/requirements`, `…/cost` and `…/settings`
-// on its other tabs (§app.organizations/project-page), and `…/overseer` is that project's overseer
-// (§app/project-overseer), and `#/orgs/<id>/people/<person id>` is one person's page
-// (§app.organizations/person-page). Ids are the server's (`org_…`, `p_…`, uuid session ids): plain
+// and `#/orgs/<id>/people/<person id>` is one person's page (§app.organizations/person-page). A
+// project's page is `#/projects/<id>` (lib/projects-route), placed or not. Ids are the server's (`org_…`, `p_…`, uuid session ids): plain
 // characters that never need encoding, so anything else in the hash is not this route.
 
 import { hostOf, orgHostOf, sessionHrefOn } from "./mesh";
@@ -15,19 +13,12 @@ const ID_RE = /^[A-Za-z0-9_-]+$/;
 export const ORG_TABS = ["sessions", "people", "projects", "workspace"] as const;
 export type OrgTab = (typeof ORG_TABS)[number];
 
-/** A project page's tabs (§app.organizations/project-page); Overview is the bare address. */
-export const PROJECT_TABS = ["overview", "requirements", "cost", "settings"] as const;
-export type ProjectTab = (typeof PROJECT_TABS)[number];
-
 /** `host`: the peer the org is attached on (`?host=<id>`, §mesh.remote-sessions/org-pages); absent here. */
 export type OrgsRoute =
   | { kind: "list" }
   /** No tab = Sessions; `start` implies Sessions. */
   | { kind: "org"; id: string; start?: string; tab?: OrgTab; host?: string }
-  /** No tab = Overview. */
-  | { kind: "project"; id: string; projectId: string; tab?: Exclude<ProjectTab, "overview">; host?: string }
-  | { kind: "person"; id: string; personId: string; host?: string }
-  | { kind: "overseer"; id: string; projectId: string; host?: string };
+  | { kind: "person"; id: string; personId: string; host?: string };
 
 export const ORGS_HREF = "#/orgs";
 
@@ -51,20 +42,11 @@ function hashRoute(hash: string): OrgsRoute | null {
   if (t) return ID_RE.test(t[1]!) ? { kind: "org", id: t[1]!, tab: t[2] as OrgTab } : null;
   const pp = /^#\/orgs\/([^/]+)\/people\/([^/]+)\/?$/.exec(hash);
   if (pp) return ID_RE.test(pp[1]!) && ID_RE.test(pp[2]!) ? { kind: "person", id: pp[1]!, personId: pp[2]! } : null;
-  const pt = /^#\/orgs\/([^/]+)\/projects\/([^/]+)\/(requirements|cost|settings)\/?$/.exec(hash);
-  if (pt) return ID_RE.test(pt[1]!) && ID_RE.test(pt[2]!) ? { kind: "project", id: pt[1]!, projectId: pt[2]!, tab: pt[3] as Exclude<ProjectTab, "overview"> } : null;
-  const m = /^#\/orgs\/([^/]+)(?:\/(start|projects)\/([^/]+)(\/overseer)?)?\/?$/.exec(hash);
+  const m = /^#\/orgs\/([^/]+)(?:\/start\/([^/]+))?\/?$/.exec(hash);
   if (!m || !ID_RE.test(m[1]!)) return null;
   const id = m[1]!;
   if (m[2] === undefined) return { kind: "org", id };
-  if (!ID_RE.test(m[3]!)) return null;
-  if (m[4] !== undefined && m[2] !== "projects") return null;
-  switch (m[2]) {
-    case "start":
-      return { kind: "org", id, start: m[3]! };
-    default:
-      return m[4] ? { kind: "overseer", id, projectId: m[3]! } : { kind: "project", id, projectId: m[3]! };
-  }
+  return ID_RE.test(m[2]) ? { kind: "org", id, start: m[2] } : null;
 }
 
 /** An address inside org `id`'s pages; an org on a peer carries its host, so a reload opens it there. */
@@ -77,16 +59,11 @@ export const orgHref = (id: string): string => onHost(id, "");
 export const orgTabHref = (id: string, tab: OrgTab): string => onHost(id, `/${tab}`);
 /** The org page with its start form aimed at one person. */
 export const startForHref = (orgId: string, personId: string): string => onHost(orgId, `/start/${personId}`);
-export const projectHref = (orgId: string, projectId: string): string => onHost(orgId, `/projects/${projectId}`);
-/** One tab of a project's page; Overview is the bare project address. */
-export const projectTabHref = (orgId: string, projectId: string, tab: ProjectTab): string =>
-  onHost(orgId, `/projects/${projectId}${tab === "overview" ? "" : `/${tab}`}`);
 /** One person's page. */
 export const personHref = (orgId: string, personId: string): string => onHost(orgId, `/people/${personId}`);
 /** A session an org's page links to, on the host that holds it: a peer's listed session by its
     path, else the org's own host (a session its page names before any list does). */
 export const orgSessionHref = (orgId: string | undefined, path: string): string => sessionHrefOn(hostOf(path) ?? (orgId ? orgHostOf(orgId) : null), path);
-export const projectOverseerHref = (orgId: string, projectId: string): string => onHost(orgId, `/projects/${projectId}/overseer`);
 
 // "Start a session for Bob" from a baton session: the start form records that session as the new
 // one's parent. The hash carries only the person; the parent rides along here, for the one

@@ -1,5 +1,6 @@
 import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import type { OrgLinkRow, SessionShare, SessionShareVisit, SharesOverview } from "../../shared/session-share";
+import { projectHref } from "../lib/projects-route";
 import { relativeTime } from "../lib/format";
 import { absoluteTime } from "../lib/spend";
 import { hostLabel, meshOn, meshPeers, selfLabel } from "../lib/mesh";
@@ -176,7 +177,7 @@ export function SharesPage(props: { now: number; titleRef(el: HTMLHeadingElement
                   <li class="list-row shares-row">
                     <div class="list-main">
                       <p class="list-title shares-row-title">
-                        <a href={`#/orgs/${encodeURIComponent(v.orgId)}/projects/${encodeURIComponent(v.projectId)}`}>Port {v.port}</a>
+                        <a href={projectHref(v.projectId)}>Port {v.port}</a>
                         <span class={v.running ? "chip chip-success" : "chip"}>
                           <span class="chip-dot" aria-hidden="true" />
                           {runningLine(v)}

@@ -6,7 +6,6 @@ import { activePreviews, parsePort, previewGroups, previewWarning, recipientName
 
 const view = (over: Partial<PreviewView>): PreviewView => ({
   id: "pv_aaaaaaaaaaaaaaaa",
-  orgId: "o",
   projectId: "p",
   port: 5173,
   createdAt: "2026-09-30T00:00:00.000Z",

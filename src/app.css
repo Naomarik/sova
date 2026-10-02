@@ -440,6 +440,19 @@ html, body { overflow: clip; overscroll-behavior: none; }
   font-size: var(--fs-mono);
 }
 .org-project-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The Projects region (§app.projects/list): its head's Add Project and page link are quiet 44px
+   icons like an org head's; a project's name opens its page. */
+.sidebar-projects .sidebar-region-head > .org-link {
+  flex: none;
+  color: var(--color-ink-muted);
+}
+.sidebar-projects .sidebar-region-head > .org-link:first-of-type { margin-left: auto; }
+.sidebar-projects .sidebar-region-head > .org-link:last-child { margin-right: calc(var(--space-4) * -1 + var(--space-1)); }
+.sidebar-projects .sidebar-region-head > .org-link:hover,
+.sidebar-projects .sidebar-region-head > .org-link:focus-visible { color: var(--color-ink); }
+.sidebar-projects .sidebar-region-head > .org-link .icon { width: 16px; height: 16px; }
+.project-region-link { color: inherit; text-decoration: none; }
+.project-region-link:hover { text-decoration: underline; }
 .org-finished { border-top: var(--stroke-thin) solid var(--color-border); }
 
 /* The Recent region: a flat list, so it has no folder

@@ -35,11 +35,11 @@ test("the strip's line names each starter, with when", () => {
 });
 
 test("the overseer part links to that overseer, never to the operator", () => {
-  assert.equal(starterHref(you, "org_1", "prj_1"), null);
-  assert.equal(starterHref(po, "org_1", "prj_1"), "#/orgs/org_1/projects/prj_1/overseer");
-  assert.equal(starterHref(via, "org_1", "prj_1"), "#/overseer/h/o1", "an earlier conversation, read-only");
-  assert.equal(starterHref({ ...via, overseer: { id: "o1", current: true } }, "org_1", "prj_1"), "#/overseer");
-  assert.equal(starterHref({ who: "overseer" }, "org_1", "prj_1"), null, "no conversation recorded: no link, none guessed");
+  assert.equal(starterHref(you, "prj_1"), null);
+  assert.equal(starterHref(po, "prj_1"), "#/projects/prj_1/overseer");
+  assert.equal(starterHref(via, "prj_1"), "#/overseer/h/o1", "an earlier conversation, read-only");
+  assert.equal(starterHref({ ...via, overseer: { id: "o1", current: true } }, "prj_1"), "#/overseer");
+  assert.equal(starterHref({ who: "overseer" }, "prj_1"), null, "no conversation recorded: no link, none guessed");
 });
 
 test("the why as written, else what is known", () => {
@@ -52,7 +52,7 @@ test("What It's Told: who, why, goal, the recorded prompt, tools, model, and the
   const md = toldMarkdown(doc(), NOW);
   const sections = [...md.matchAll(/^## (.+)$/gm)].map((m) => m[1]);
   assert.deepEqual(sections, ["Started by", "Why", "Goal", "Prompt", "Tools", "Model"]);
-  assert.match(md, /Started by \[the Portal overseer\]\(#\/orgs\/org_1\/projects\/prj_1\/overseer\) · .+ \(5m ago\)\./);
+  assert.match(md, /Started by \[the Portal overseer\]\(#\/projects\/prj_1\/overseer\) · .+ \(5m ago\)\./);
   assert.match(md, /^> Nobody said who hosts it\. {2}$/m);
   assert.match(md, /^> Who hosts the portal {2}\n> and where\. {2}$/m, "the goal's line breaks kept");
   assert.match(md, /Last changed .+, sent with every reply since\./);

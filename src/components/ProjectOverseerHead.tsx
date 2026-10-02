@@ -3,7 +3,7 @@ import type { SessionSummary } from "../../shared/protocol";
 import { AUTONOMY_LEVELS, AUTONOMY_MEANING, type Autonomy, type ProjectOverseerInfo } from "../../shared/project-overseer";
 import { ApiError, clearProjectOverseer, getProjectOverseer, patchProjectOverseer, runProjectOverseer } from "../lib/api";
 import { relativeTime } from "../lib/format";
-import { orgSessionHref, projectHref } from "../lib/orgs-route";
+import { projectHref, projectSessionHref } from "../lib/projects-route";
 import { headState, historyTitle, levelName, startedWords, statusLines } from "../lib/project-overseer-view";
 import { announce, localRunning, toast } from "../lib/ui-state";
 import { unchangedError } from "../lib/unchanged-error";
@@ -16,7 +16,6 @@ const errText = (err: unknown) => (err instanceof ApiError || err instanceof Err
 
 /** What the head, the strip and the composer's `/clear` share for one project overseer's page. */
 export interface ProjectOverseerControl {
-  orgId: string;
   projectId: string;
   info(): ProjectOverseerInfo | undefined;
   /** Why the last read failed, while nothing was ever read. */
@@ -39,8 +38,8 @@ export interface ProjectOverseerControl {
  * ends (the list's busy flips: a watch-loop run flips it too) and after each action; never on a
  * timer, because that read runs git on every coding worktree.
  */
-export function createProjectOverseerControl(o: { orgId: string; projectId: string; path: string; summary: () => SessionSummary; onRefresh(): void }): ProjectOverseerControl {
-  const [info, { refetch, mutate }] = createResource(() => getProjectOverseer(o.orgId, o.projectId));
+export function createProjectOverseerControl(o: { projectId: string; path: string; summary: () => SessionSummary; onRefresh(): void }): ProjectOverseerControl {
+  const [info, { refetch, mutate }] = createResource(() => getProjectOverseer(o.projectId));
   const busy = createMemo(() => !!(localRunning()[o.path] ?? o.summary().busy));
   createEffect(on(busy, () => void refetch(), { defer: true }));
   const [acting, setActing] = createSignal(false);
@@ -64,13 +63,13 @@ export function createProjectOverseerControl(o: { orgId: string; projectId: stri
   /** Open the current conversation in this one's place (a clear leaves nothing to go back to). */
   const openCurrent = (next: ProjectOverseerInfo) => {
     o.onRefresh();
-    if (next.path && next.path !== o.path) location.replace(orgSessionHref(o.orgId, next.path));
+    if (next.path && next.path !== o.path) location.replace(projectSessionHref(o.projectId, next.path));
   };
   const clear = async (): Promise<boolean> => {
     if (acting()) return false;
     setActing(true);
     try {
-      const next = await clearProjectOverseer(o.orgId, o.projectId);
+      const next = await clearProjectOverseer(o.projectId);
       mutate(next);
       openCurrent(next);
       return true;
@@ -82,7 +81,6 @@ export function createProjectOverseerControl(o: { orgId: string; projectId: stri
     }
   };
   return {
-    orgId: o.orgId,
     projectId: o.projectId,
     info: () => (info.error ? undefined : info()),
     error: () => (info.error && !info.latest ? errText(info.error) : null),
@@ -91,7 +89,7 @@ export function createProjectOverseerControl(o: { orgId: string; projectId: stri
     acting,
     act,
     clear,
-    onReloaded: () => void getProjectOverseer(o.orgId, o.projectId).then(openCurrent, () => o.onRefresh()),
+    onReloaded: () => void getProjectOverseer(o.projectId).then(openCurrent, () => o.onRefresh()),
   };
 }
 
@@ -114,14 +112,14 @@ export function ProjectOverseerHead(props: {
 }) {
   const c = props.control;
   const s = () => props.summary();
-  const projectName = () => c.info()?.projectName ?? s().org?.projectName ?? "this project";
+  const projectName = () => c.info()?.projectName ?? s().project?.projectName ?? "this project";
   const age = (at: string) => relativeTime(at, props.now);
   const history = () => c.info()?.history ?? [];
 
-  const setLevel = (level: Autonomy) => void c.act(() => patchProjectOverseer(c.orgId, c.projectId, { autonomy: level }), `Level: ${level}.`);
+  const setLevel = (level: Autonomy) => void c.act(() => patchProjectOverseer(c.projectId, { autonomy: level }), `Level: ${level}.`);
   const runNow = () => {
     if (c.busy() || c.acting()) return;
-    void c.act(() => runProjectOverseer(c.orgId, c.projectId), "The overseer is looking now.");
+    void c.act(() => runProjectOverseer(c.projectId), "The overseer is looking now.");
   };
   const runTitle = () => (c.busy() ? "Working now" : "Look at the project now, as the watch loop would.");
   const clearNow = () => void c.clear().then((ok) => ok && announce("Cleared. The previous conversation is in History."));
@@ -158,7 +156,7 @@ export function ProjectOverseerHead(props: {
       <header class="session-head overseer-head po-head">
         <a
           class="button button-icon button-ghost app-back"
-          href={c.info()?.path ? orgSessionHref(c.orgId, c.info()!.path!) : projectHref(c.orgId, c.projectId)}
+          href={c.info()?.path ? projectSessionHref(c.projectId, c.info()!.path!) : projectHref(c.projectId)}
           aria-label="Back to the overseer"
         >
           <Icon name="chevron-left" />
@@ -203,7 +201,7 @@ export function ProjectOverseerHead(props: {
             </span>
           </h1>
           <p class="session-head-meta po-head-meta">
-            <a class="po-head-project" href={projectHref(c.orgId, c.projectId)} title={`Open the ${projectName()} page`}>
+            <a class="po-head-project" href={projectHref(c.projectId)} title={`Open the ${projectName()} page`}>
               {projectName()}
             </a>
             <Show when={s().org?.orgName}>
@@ -238,7 +236,7 @@ export function ProjectOverseerHead(props: {
                                 title={st.title}
                                 aria={`${st.title}, ${startedWords(st)}`}
                                 description={startedWords(st)}
-                                href={st.path ? orgSessionHref(c.orgId, st.path) : undefined}
+                                href={st.path ? projectSessionHref(c.projectId, st.path) : undefined}
                                 disabled={st.path ? undefined : "On another host"}
                               />
                             )}
@@ -289,7 +287,7 @@ export function ProjectOverseerHead(props: {
                         title={historyTitle(h.title)}
                         aria={`${historyTitle(h.title)}, ${age(h.lastActiveAt)}`}
                         description={age(h.lastActiveAt)}
-                        href={orgSessionHref(c.orgId, h.path)}
+                        href={projectSessionHref(c.projectId, h.path)}
                       />
                     )}
                   </For>
@@ -308,7 +306,7 @@ export function ProjectOverseerHead(props: {
                     aria={i().settings.watch ? "Stop watching the project" : "Start watching the project"}
                     onRun={() => {
                       const watch = !i().settings.watch;
-                      void c.act(() => patchProjectOverseer(c.orgId, c.projectId, { watch }), watch ? "Watching." : "Not watching.");
+                      void c.act(() => patchProjectOverseer(c.projectId, { watch }), watch ? "Watching." : "Not watching.");
                     }}
                   />
                 )}
@@ -320,7 +318,7 @@ export function ProjectOverseerHead(props: {
                 description="Start a new conversation. This one moves to History."
                 onRun={clearNow}
               />
-              <menu.Item label="Project Page" aria={`Open the ${projectName()} page`} href={projectHref(c.orgId, c.projectId)} />
+              <menu.Item label="Project Page" aria={`Open the ${projectName()} page`} href={projectHref(c.projectId)} />
             </Show>
           )}
         </ActionMenu>

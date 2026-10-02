@@ -41,6 +41,7 @@ const FIELDS: { [K in keyof Required<SessionSummary>]: "compare" | { exempt: str
   baton: "compare",
   projectOverseer: "compare",
   org: "compare",
+  project: "compare",
   profile: "compare",
   activity: "compare",
   pendingDialogs: "compare",

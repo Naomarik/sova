@@ -9,13 +9,13 @@ import { announce, toast } from "../lib/ui-state";
  * Needs you and in the project page's Pipeline. Done or refused, the digest and the list are read
  * again, so the item goes (or says it went ahead) at once rather than at the next poll.
  */
-export function CancelHeldButton(props: { orgId: string; holdId: string; what: string; class?: string; onDone?(): void }) {
+export function CancelHeldButton(props: { projectId: string; holdId: string; what: string; class?: string; onDone?(): void }) {
   const [busy, setBusy] = createSignal(false);
   const cancel = async () => {
     if (busy()) return;
     setBusy(true);
     try {
-      await cancelHeldAct(props.orgId, props.holdId);
+      await cancelHeldAct(props.projectId, props.holdId);
       const done = cancelledLine(props.what);
       toast(done);
       announce(done);

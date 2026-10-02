@@ -80,6 +80,31 @@ export function openLabel(doc: AlignDocInfo): string {
   return open === 0 ? `All ${live} decided` : `${open} of ${live} open`;
 }
 
+/** One of the card body's sections, as `cardSections` builds it. */
+export interface AlignCardSection {
+  kind: "approach" | "findings" | "rejected";
+  label: string;
+  /** The approach renders open; the others fold. */
+  open: boolean;
+  items: { id: string; body: string }[];
+}
+
+/**
+ * The card body's sections in reading order: the approach first — the plan the user reads before
+ * the questions, open by default, its steps numbered by their stable ids — then, after the
+ * questions, the folded findings and rejected. A section with no items is absent. The card
+ * renders from this order (the approach above the questions, the others below them).
+ */
+export function cardSections(doc: Pick<AlignDocInfo, "approach" | "findings" | "rejected">): AlignCardSection[] {
+  return (
+    [
+      { kind: "approach", label: "Approach", open: true, items: doc.approach.map((a) => ({ id: a.id, body: a.text })) },
+      { kind: "findings", label: "Findings", open: false, items: doc.findings.map((f) => ({ id: f.id, body: f.text })) },
+      { kind: "rejected", label: "Rejected", open: false, items: doc.rejected.map((x) => ({ id: x.id, body: `${x.option} — ${x.why}` })) },
+    ] as AlignCardSection[]
+  ).filter((s) => s.items.length > 0);
+}
+
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 
 /**

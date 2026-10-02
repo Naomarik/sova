@@ -207,12 +207,26 @@
 .align-doc-foot.card-foot { padding: var(--space-3) 0 0; margin-top: var(--space-1); }
 .align-doc-foot-hint { font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-muted); }
 
-/* Findings, approach, rejected: folded, since the questions are what the user answers. */
+/* Approach: the plan the user reads first, open by default between the summary and the
+   questions, still a disclosure. Its heading is a heading — full ink, semibold — with no panel
+   behind it. Findings and rejected stay folded below the questions, since the questions are what
+   the user answers. */
 .align-section { max-width: none; }
+/* No guide rule on any alignment disclosure — the sections, an earlier revision: each keeps the
+   disclosure's indent, without the bar. */
 .align-section > .disclosure-body,
-.align-rev > .disclosure-body { white-space: normal; }
+.align-rev > .disclosure-body { white-space: normal; border-left: none; }
 .align-list { margin: 0; padding-left: var(--space-5); display: grid; gap: var(--space-2); font-size: var(--fs-body); line-height: var(--lh-body); color: var(--color-ink); }
 .align-item-id { color: var(--color-ink-muted); }
+.align-approach-summary { font-size: var(--fs-heading-s); line-height: var(--lh-heading-s); color: var(--color-ink); }
+.align-approach-label { font-weight: var(--fw-semibold); color: var(--color-ink); }
+/* Steps number by their stable ids only (a1, a2…): no list marker, the id in a narrow column of
+   its own, so a wrapped line aligns under the step's text. */
+.align-approach-list { list-style: none; padding-left: 0; }
+.align-approach-list > li { display: grid; grid-template-columns: var(--space-5) 1fr; align-items: baseline; column-gap: var(--space-1); }
+/* The step's whole inline-rich body is one span, so the li's two grid columns are the id and the
+   body — code spans and bold runs stay inside the second column, wrapped text stays aligned. */
+.align-approach-text { min-width: 0; overflow-wrap: anywhere; }
 
 /* An earlier revision: one caption line; open, that revision's body under the disclosure rule. */
 .align-rev-summary { min-width: 0; }

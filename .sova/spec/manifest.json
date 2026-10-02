@@ -6244,6 +6244,8 @@
         "src/components/ChatView.tsx",
         "src/lib/align.ts",
         "src/lib/align.test.ts",
+        "src/lib/align-card.test.ts",
+        "src/lib/align-card-ssr.mjs",
         "src/lib/hidden-rows.ts",
         "src/design/align-viewer.css",
         "server/transcript.ts",
@@ -10459,7 +10461,8 @@
         "server/project-overseer.ts",
         "statecharts/src/sova/statecharts/proj.cljc",
         "server/project-overseer-tools-statecharts.test.ts",
-        "server/project-overseer-tools.test.ts"
+        "server/project-overseer-tools.test.ts",
+        "server/project-services/test-verb.test.ts"
       ]
     },
     "§app.project-services/conform": {
@@ -10481,7 +10484,9 @@
         "server/project-services/engine.ts",
         "server/project-services/engine.test.ts",
         "server/project-services/container-claims.test.ts",
-        "server/project-services/conform-leaks.test.ts"
+        "server/project-services/conform-leaks.test.ts",
+        "server/project-services/test-verb.test.ts",
+        "server/project-services/conform-static-on-demand.test.ts"
       ]
     },
     "§app.project-services/contract": {
@@ -10540,7 +10545,9 @@
         "server/project-services/engine.ts",
         "server/project-services/engine.test.ts",
         "server/project-services/removed-services.test.ts",
-        "server/project-services/store.ts"
+        "server/project-services/store.ts",
+        "server/project-services/shared-removed.test.ts",
+        "server/project-services/test-verb.test.ts"
       ]
     },
     "§app.project-services/instances": {
@@ -10586,7 +10593,8 @@
         "server/project-services/engine.test.ts",
         "server/project-services/routes.ts",
         "server/index.ts",
-        "server/project-services/removed-services.test.ts"
+        "server/project-services/removed-services.test.ts",
+        "server/project-services/shared-removed.test.ts"
       ]
     },
     "§app.project-services/reserved": {
@@ -10626,7 +10634,8 @@
         "shared/project-contract.test.ts",
         "server/project-services/engine.ts",
         "server/project-services/routes.ts",
-        "scripts/sova-project.mjs"
+        "scripts/sova-project.mjs",
+        "server/project-services/tools.ts"
       ]
     },
     "§app.project-services/status-logs": {
@@ -10641,7 +10650,8 @@
         "server/project-services/engine.ts",
         "server/project-services/engine.test.ts",
         "server/project-services/drivers.ts",
-        "server/project-services/adapters.ts"
+        "server/project-services/adapters.ts",
+        "server/project-services/shared-removed.test.ts"
       ]
     },
     "§app.project-services/supervisor": {
@@ -10689,7 +10699,8 @@
         "server/project-services/trust.ts",
         "server/project-services/routes.ts",
         "server/project-services/engine.ts",
-        "server/project-services/engine.test.ts"
+        "server/project-services/engine.test.ts",
+        "server/project-services/note.test.ts"
       ]
     },
     "§app.project-services/up": {
@@ -10708,7 +10719,9 @@
         "server/project-services/container-ports.ts",
         "server/project-services/container-ports.test.ts",
         "server/project-services/container-claims.test.ts",
-        "server/project-services/removed-services.test.ts"
+        "server/project-services/removed-services.test.ts",
+        "server/project-services/shared-removed.test.ts",
+        "server/project-services/test-verb.test.ts"
       ]
     },
     "§app/project-services": {
@@ -11522,6 +11535,59 @@
       "kind": "surface",
       "authority": "accepted",
       "evidence": "unreviewed"
+    },
+    "§app.project-services/instance-note": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.project-services/contract",
+        "§app.project-services/instances",
+        "§app.project-services/callers"
+      ],
+      "code": [
+        "server/project-services/note.ts",
+        "server/project-services/tools.ts",
+        "server/project-services/engine.ts",
+        "server/project-services/note.test.ts"
+      ]
+    },
+    "§app.project-services/self-host": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.project-services/callers",
+        "§app.project-services/instances"
+      ],
+      "code": [
+        "server/project-services/engine.ts",
+        "server/project-services/self-host.ts",
+        "server/project-services/self-host.test.ts"
+      ]
+    },
+    "§app.project-services/test": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.project-services/contract",
+        "§app.project-services/up",
+        "§app.project-services/lock",
+        "§app.project-services/result",
+        "§app.project-services/supervisor"
+      ],
+      "code": [
+        "server/project-services/engine.ts",
+        "shared/project-contract.ts",
+        "server/project-services/drivers.ts",
+        "server/project-services/adapters.ts",
+        "server/project-services/tools.ts",
+        "scripts/sova-project.mjs",
+        "server/project-services/test-verb.test.ts",
+        "server/project-services/note.test.ts",
+        "shared/project-contract.test.ts"
+      ]
     }
   },
   "boundary": {

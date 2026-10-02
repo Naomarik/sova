@@ -1,4 +1,4 @@
-import { execFile, spawn } from "node:child_process";
+import { execFile, execFileSync, spawn } from "node:child_process";
 import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { hostProcTable, procfsTable, unitMembers, type ProcTable } from "./proctable";
@@ -33,7 +33,14 @@ export interface RunOnceResult {
   ms: number;
   /** Processes it left behind (killed with it). */
   leftover?: number;
+  /** Its memory peak in bytes (systemd's summary, or the detached driver's sampled resident memory); null when unknown. */
+  peakBytes?: number | null;
+  /** It was stopped because the caller aborted. */
+  aborted?: boolean;
 }
+
+/** A waited-for run: killed whole at `timeoutSec`, or when `signal` aborts. */
+export type OnceSpec = UnitSpec & { timeoutSec: number; signal?: AbortSignal };
 
 /** The supervisor adapters (adapters.ts): `launchd` is a reserved slot with no driver yet. */
 export type DriverId = "systemd" | "detached" | "launchd";
@@ -49,9 +56,10 @@ export interface Driver {
   owns(unit: string, pid: number): boolean;
   /** Every live pid inside `unit`. */
   pids(unit: string): number[];
-  logs(unit: string, lines: number): Promise<{ t: string; text: string }[]>;
-  /** Run to completion (a hook, setup or build step), killed whole at `timeoutSec`. */
-  runOnce(spec: UnitSpec & { timeoutSec: number }): Promise<RunOnceResult>;
+  /** The unit's last `lines` lines; with `sinceMs`, only those of runs since then (a waited-for run's output starts fresh with the detached driver). */
+  logs(unit: string, lines: number, sinceMs?: number): Promise<{ t: string; text: string }[]>;
+  /** Run to completion (a hook, setup, build step or test run), killed whole at `timeoutSec` or when `signal` aborts. */
+  runOnce(spec: OnceSpec): Promise<RunOnceResult>;
   /** The units (running, or recorded) whose name starts with `prefix`. */
   units(prefix: string): Promise<string[]>;
   /** At a server start, after reconcile: take charge of the units already running (the detached driver's restart watch). */
@@ -78,9 +86,10 @@ export const realExec: Exec = (file, args, opts = {}) =>
 
 export const SLICE = "sova-services.slice";
 
-/** The `systemd-run` argv that starts `spec` as a transient user service (pure, for tests). */
+/** The `systemd-run` argv that starts `spec` as a transient user service (pure, for tests). A waited-for run is
+    not `--quiet`: its summary on exit carries the memory peak. */
 export function systemdRunArgv(spec: UnitSpec, once?: { timeoutSec: number }): string[] {
-  const a = ["--user", `--unit=${spec.unit}`, `--slice=${SLICE}`, "--collect", "--quiet", `--working-directory=${spec.cwd}`, "--property=StandardInput=null"];
+  const a = ["--user", `--unit=${spec.unit}`, `--slice=${SLICE}`, "--collect", ...(once ? [] : ["--quiet"]), `--working-directory=${spec.cwd}`, "--property=StandardInput=null"];
   if (once) a.push("--wait", "--property=KillMode=control-group", `--property=RuntimeMaxSec=${once.timeoutSec}`);
   else a.push("--property=KillMode=mixed", "--property=TimeoutStopSec=15", "--property=Restart=on-failure", "--property=RestartSec=2");
   for (const k of Object.keys(spec.env).sort()) a.push(`--setenv=${k}=${spec.env[k]}`);
@@ -101,6 +110,47 @@ export function parseShow(text: string): UnitStatus {
   const active = kv.ActiveState;
   const state: UnitState = active === "active" ? "active" : active === "activating" || active === "reloading" ? "activating" : active === "failed" ? "failed" : "inactive";
   return { state, pid, exit, ...(kv.SubState ? { detail: `${active}/${kv.SubState}${kv.Result && kv.Result !== "success" ? ` (${kv.Result})` : ""}` } : {}) };
+}
+
+/** `systemd-run --wait`'s "Memory peak: 1.2G" in bytes (base 1024), or null (pure, for tests). */
+export function parseMemoryPeak(text: string): number | null {
+  const m = /Memory peak:\s*([\d.]+)\s*([BKMGTP]?)/.exec(text);
+  if (!m) return null;
+  const n = Number(m[1]);
+  if (!Number.isFinite(n)) return null;
+  return Math.round(n * 1024 ** "BKMGTP".indexOf(m[2] || "B"));
+}
+
+/** The resident memory of `pids` now, in bytes: /proc on Linux, else `ps`; null when none could be read. */
+export function rssOf(pids: number[]): number | null {
+  if (!pids.length) return null;
+  let total = 0;
+  let read = false;
+  if (process.platform === "linux") {
+    for (const pid of pids) {
+      try {
+        const m = /VmRSS:\s*(\d+)\s*kB/.exec(readFileSync(`/proc/${pid}/status`, "utf8"));
+        if (m) {
+          total += Number(m[1]) * 1024;
+          read = true;
+        }
+      } catch {
+        // gone
+      }
+    }
+    return read ? total : null;
+  }
+  try {
+    const out = execFileSync("ps", ["-o", "rss=", "-p", pids.join(",")], { encoding: "utf8", timeout: 5_000, stdio: ["ignore", "pipe", "ignore"] });
+    for (const line of out.split("\n"))
+      if (line.trim()) {
+        total += Number(line.trim()) * 1024;
+        read = true;
+      }
+  } catch {
+    // ps failed
+  }
+  return read ? total : null;
 }
 
 export class SystemdDriver implements Driver {
@@ -140,8 +190,9 @@ export class SystemdDriver implements Driver {
       .map((e) => e.pid)
       .filter((p) => this.owns(unit, p));
   }
-  async logs(unit: string, lines: number) {
-    const r = await this.exec("journalctl", ["--user", "-u", `${unit}.service`, "-n", String(lines), "-o", "json", "--no-pager"]);
+  async logs(unit: string, lines: number, sinceMs?: number) {
+    const since = sinceMs !== undefined ? [`--since=@${Math.floor(sinceMs / 1000)}`] : [];
+    const r = await this.exec("journalctl", ["--user", "-u", `${unit}.service`, ...since, "-n", String(lines), "-o", "json", "--no-pager"]);
     const out: { t: string; text: string }[] = [];
     for (const line of r.stdout.split("\n")) {
       if (!line.trim()) continue;
@@ -156,14 +207,22 @@ export class SystemdDriver implements Driver {
     }
     return out;
   }
-  async runOnce(spec: UnitSpec & { timeoutSec: number }) {
+  async runOnce(spec: OnceSpec) {
     const t0 = Date.now();
     await this.exec("systemctl", ["--user", "reset-failed", `${spec.unit}.service`]);
+    let aborted = false;
+    const onAbort = () => {
+      aborted = true;
+      void this.stop(spec.unit);
+    };
+    if (spec.signal?.aborted) onAbort();
+    else spec.signal?.addEventListener("abort", onAbort, { once: true });
     const r = await this.exec("systemd-run", systemdRunArgv(spec, { timeoutSec: spec.timeoutSec }), { timeoutMs: (spec.timeoutSec + 30) * 1000 });
+    spec.signal?.removeEventListener("abort", onAbort);
     const ms = Date.now() - t0;
-    const timedOut = ms >= spec.timeoutSec * 1000;
+    const timedOut = !aborted && ms >= spec.timeoutSec * 1000;
     if (timedOut) await this.stop(spec.unit);
-    return { code: r.code, timedOut, ms };
+    return { code: r.code, timedOut, ms, peakBytes: parseMemoryPeak(`${r.stderr}\n${r.stdout}`), ...(aborted ? { aborted } : {}) };
   }
   async units(prefix: string) {
     const r = await this.exec("systemctl", ["--user", "list-units", "--all", "--plain", "--no-legend", `${prefix}*`]);
@@ -417,7 +476,7 @@ export class DetachedDriver implements Driver {
     const r = this.rec(unit);
     return r ? this.members(r.pid) : [];
   }
-  async logs(unit: string, lines: number) {
+  async logs(unit: string, lines: number, _sinceMs?: number) {
     try {
       const f = this.logFile(unit);
       const size = statSync(f).size;
@@ -434,10 +493,11 @@ export class DetachedDriver implements Driver {
       return [];
     }
   }
-  async runOnce(spec: UnitSpec & { timeoutSec: number }) {
+  async runOnce(spec: OnceSpec) {
     const t0 = Date.now();
     mkdirSync(logsDir(), { recursive: true });
-    const fd = openSync(this.logFile(spec.unit), "a");
+    // Each waited-for run's output starts fresh: its log is that run's alone.
+    const fd = openSync(this.logFile(spec.unit), "w");
     return await new Promise<RunOnceResult>((done) => {
       let child;
       try {
@@ -447,22 +507,44 @@ export class DetachedDriver implements Driver {
         return done({ code: 127, timedOut: false, ms: Date.now() - t0 });
       }
       let timedOut = false;
+      let aborted = false;
       const timer = setTimeout(() => {
         timedOut = true;
         if (child.pid) void this.killSession(child.pid);
       }, spec.timeoutSec * 1000);
-      child.once("error", () => {
+      const onAbort = () => {
+        aborted = true;
+        if (child.pid) void this.killSession(child.pid);
+      };
+      if (spec.signal?.aborted) onAbort();
+      else spec.signal?.addEventListener("abort", onAbort, { once: true });
+      // The run's memory: the largest resident total of its session's processes, sampled.
+      let peak: number | null = null;
+      const sample = () => {
+        if (!child.pid) return;
+        const now = rssOf(this.members(child.pid));
+        if (now !== null) peak = Math.max(peak ?? 0, now);
+      };
+      const sampler = setInterval(sample, 200);
+      sampler.unref();
+      setImmediate(sample);
+      const stopWatching = () => {
         clearTimeout(timer);
+        clearInterval(sampler);
+        spec.signal?.removeEventListener("abort", onAbort);
+      };
+      child.once("error", () => {
+        stopWatching();
         closeSync(fd);
         done({ code: 127, timedOut: false, ms: Date.now() - t0 });
       });
       child.once("exit", (code, sig) => {
-        clearTimeout(timer);
+        stopWatching();
         closeSync(fd);
         // A hook leaves nothing behind (§app.project-services/supervisor): its session goes with it.
         const pid = child.pid;
         const leftover = pid ? this.members(pid).length : 0;
-        const finish = () => done({ code: code ?? (sig ? 128 : null), timedOut, ms: Date.now() - t0, ...(leftover ? { leftover } : {}) });
+        const finish = () => done({ code: code ?? (sig ? 128 : null), timedOut, ms: Date.now() - t0, peakBytes: peak, ...(leftover ? { leftover } : {}), ...(aborted ? { aborted } : {}) });
         if (pid && leftover) void this.killSession(pid).then(finish);
         else finish();
       });

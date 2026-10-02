@@ -10,14 +10,16 @@ import { approvalsFile, hostVarsFile } from "./store";
  * {<defHash>: {at}}}}`, outside every repo, so no branch or clone can approve itself.
  */
 
-/** Drop what tuning may change without approval: every `timeout`, and readiness paths. */
+/** Drop what tuning may change without approval: every `timeout`, readiness paths and a service's `about`
+    (words for builders); the default `start: "up"` too, so a definition hashes as it did before `start` existed. */
 function hashed(v: unknown, key = ""): unknown {
-  if (Array.isArray(v)) return v.map((x) => hashed(x));
+  if (Array.isArray(v)) return v.map((x) => hashed(x, key));
   if (!v || typeof v !== "object") return v;
   const out: Record<string, unknown> = {};
   for (const k of Object.keys(v as Record<string, unknown>).sort()) {
     if (k === "timeout") continue;
     if (key === "ready" && k === "path") continue;
+    if (key === "services" && (k === "about" || (k === "start" && (v as Record<string, unknown>)[k] === "up"))) continue;
     out[k] = hashed((v as Record<string, unknown>)[k], k);
   }
   return out;

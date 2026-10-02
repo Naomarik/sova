@@ -373,7 +373,10 @@ icons. Under a message of yours it is end-aligned like the message head (`.messa
   draws one (it renders without the actions provider). Decided in `src/lib/message-actions.ts`,
   which is the only place that answers "where does a strip go".
 - **What each role offers.** Your message: `Copy` · `Share` · `Rewind`. A reply: `Copy` · `Share` ·
-  `Regenerate`. The safe actions come first and the one that changes the branch is last.
+  `Regenerate` · `Fork`. Fork (icon `branch`, "Fork from here") creates and opens an independent
+  session through that reply; the original conversation is unchanged (§chat.session-fork/from-reply).
+  Copy and Share come first, followed by Regenerate and Fork. Fork is the fourth reply action and
+  needs no destructive confirmation, because it abandons nothing.
   **Share** (icon `share`, "Share from here") opens the share page with this message as the
   start (`#/share/<id>?from=<entryId>`, §app.session-share/share-page), in chat and watch sessions
   alike; sharing only reads, so it is never refused, except off while the view doesn't know the

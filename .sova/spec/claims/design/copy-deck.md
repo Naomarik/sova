@@ -116,7 +116,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Where | Copy |
 |---|---|
 | Strip `aria-label` | Actions for your message · Actions for this reply · Actions for your queued message |
-| Button `aria-label` (also the `title` when enabled) | `Copy message` · `Share from here` · `Rewind to before this message` · `Regenerate this reply` · `Remove this queued message` |
+| Button `aria-label` (also the `title` when enabled) | `Copy message` · `Share from here` · `Rewind to before this message` · `Regenerate this reply` · `Fork from here` · `Remove this queued message` |
 | Copy landed | icon flips to the check for 1.5s · toast "Copied message." · clipboard failure keeps the existing "Couldn't reach the clipboard. Nothing was copied." |
 | Rewind armed | note "This message and every reply after it leave the branch. The session file keeps them." · buttons `Rewind Here` · `Cancel` |
 | Regenerate armed | note "The message that started this reply, and everything after it, leave the branch. The session file keeps them." — "this REPLY", never "this turn": the server rewinds to the nearest user message, and a MID-TURN STEER is one, and the leaf moves to that message's PARENT: in `u1 → a1 → tool → s1 → a2`, regenerating a2 drops s1 and a2 while u1/a1/the tool call stay, and regenerating a1 drops a1, the tool call, s1 and a2 · buttons `Regenerate Here` · `Cancel` |
@@ -128,6 +128,8 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Remove landed | SR "Removed from the queue." in every tab, including the one that asked. Delete is a DISCARD: the message does NOT come back to the composer (that is Stop's job, §chat/composer "Stop"), so no sentence claims it did |
 | A queued message that will never be sent (`queue_item_gone`) | dropped (an extension handled it instead): SR "That message was handled without being sent. It's back in the composer." · failed (the hand-off was refused): SR "That message couldn't be sent. It's back in the composer." — both only in the tab that sent it, which is the only one with a composer to put it in |
 | Remove refused | Already sent. It can't be removed now. · That message isn't in the queue anymore. · "pi queued work of its own alongside this message, so it can't be taken back on its own. Press Stop to clear the queue." (NOT transient: that row's Remove stays off from then on, so the copy never invites a retry that cannot succeed) · The session is busy right now. Try again in a moment. · unknown code: "Couldn't remove it from the queue. {server message}" |
+| Fork landed | SR "Opened a fork. The original conversation is unchanged."; opens the independent session, with no model prompt |
+| Blocked Fork (`title`) | Open this session as a chat in Sova to fork it. · This session is open in a terminal. Fork it from an idle chat in Sova. · A session action is already in progress. · Stop the current turn first. · Wait for the compaction to finish. · the composer's own reason while paused; server refusals stay on the selected reply |
 
 ## §design.copy-deck/live-watch — Live-watch
 

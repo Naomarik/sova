@@ -11548,6 +11548,48 @@
         "pi-config/extensions/spec/README.md",
         "pi-config/extensions/spec/core/README.md"
       ]
+    },
+    "§chat.session-fork/cache-affinity": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§chat.session-fork/from-reply"
+      ],
+      "code": [
+        "server/session-fork-cache.ts",
+        "server/session-fork-cache.test.ts",
+        "server/session-fork.ts",
+        "server/session-fork.test.ts",
+        "server/chat-manager.ts"
+      ]
+    },
+    "§chat.session-fork/from-reply": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§chat.worktrees/inherit",
+        "§chat.transcript/message-actions"
+      ],
+      "code": [
+        "server/session-fork.ts",
+        "server/session-fork.test.ts",
+        "server/session-fork-routes.ts",
+        "server/session-fork-routes.test.ts",
+        "server/index.ts",
+        "server/merge-routes.test.ts",
+        "src/lib/api.ts",
+        "src/lib/message-actions.ts",
+        "src/lib/message-actions.test.ts",
+        "src/components/MessageActions.tsx",
+        "src/components/ChatView.tsx"
+      ]
+    },
+    "§chat/session-fork": {
+      "kind": "surface",
+      "authority": "accepted",
+      "evidence": "unreviewed"
     }
   },
   "boundary": {

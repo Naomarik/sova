@@ -1,4 +1,5 @@
-import { open, stat } from "node:fs/promises";
+import { statSync } from "node:fs";
+import { open } from "node:fs/promises";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { AttentionItem, AttentionKind, AttentionTier, ReadinessState, SessionReadiness, SessionSummary, WorktreeReadiness } from "../shared/protocol";
@@ -19,8 +20,10 @@ import { execGit, type GitRunner, worktreeInsights, type WorktreeInsights } from
  *
  * Git is read in the background (a listing never waits on it): `readinessOverlay` returns the last
  * answer for a row and queues a fresh read when the file or the row's state moved, or the answer is
- * older than READINESS_TTL_MS. Only files that ever wrote a `worktrees` entry are read past a marker
- * search, and those incrementally.
+ * older than READINESS_TTL_MS — except for an archived session nothing runs in and no TUI holds, whose
+ * answer ages only on an inspection (`treeReadinessOf`, `readinessChecksOf`). Only files that ever
+ * wrote a `worktrees` entry are read past a marker search. Unchanged file scans are retained; changed files are rescanned conservatively so a
+ * rewrite cannot inherit compact entries from an older file generation.
  */
 
 /** An answer stands this long while nothing about the row changes. */
@@ -447,8 +450,8 @@ export async function readReadinessScan(path: string, size: number, prev: Readin
     let checkIds: Set<string>;
     let from: number;
     if (grown && prev.found && prev.entries && prev.checkIds && (await atLineStart(path, prev.size))) {
-      entries = prev.entries;
-      checkIds = prev.checkIds;
+      entries = [...prev.entries];
+      checkIds = new Set(prev.checkIds);
       from = prev.size;
     } else {
       entries = [];
@@ -468,7 +471,7 @@ export async function readReadinessScan(path: string, size: number, prev: Readin
 export const PROCESS_START_MS = Date.now() - process.uptime() * 1000;
 
 export interface ReadinessDeps {
-  insights: Pick<WorktreeInsights, "treeStatus">;
+  insights: Pick<WorktreeInsights, "treeStatus"> & Partial<Pick<WorktreeInsights, "pushed">>;
   git: GitRunner;
   /** The folder this server's code runs from (its checkout). */
   serverDir: string;
@@ -530,6 +533,7 @@ async function mergeNeedsRestart(card: MergeCard): Promise<boolean> {
 
 /** Whether the merge's commit is on the target's origin branch yet; undefined when unknown. */
 async function mergePushed(card: MergeCard, cwd: string): Promise<boolean | undefined> {
+  if (deps.insights.pushed) return deps.insights.pushed(cwd, card.target, card.sha);
   const ref = await deps.git(["rev-parse", "--verify", "-q", `refs/remotes/origin/${card.target}`], { cwd });
   if (ref.code !== 0) return undefined;
   const r = await deps.git(["merge-base", "--is-ancestor", card.sha, ref.stdout.trim()], { cwd });
@@ -559,10 +563,13 @@ async function treeFacts(t: TrackedWorktree): Promise<TreeFacts> {
 }
 
 /** A session's readiness now: git, the file's facts and the row. */
-export async function computeReadiness(s: SessionSummary, facts: FileFacts): Promise<SessionReadiness | undefined> {
+export async function computeReadiness(s: SessionSummary, facts: FileFacts, publishChecks: () => boolean = () => true): Promise<SessionReadiness | undefined> {
   const own = facts.trees.filter((t) => t.status !== "dropped" && t.session === s.id);
-  if (own.length === 0) return undefined;
-  const running = s.busy || s.activity?.state === "working" || (s.workers?.working ?? s.live?.workers?.working ?? 0) > 0;
+  if (own.length === 0) {
+    if (publishChecks()) checksBySession.delete(s.path);
+    return undefined;
+  }
+  const running = runningNow(s);
   const reply = facts.lastReply;
   let asks = false;
   if (reply) {
@@ -597,7 +604,7 @@ export async function computeReadiness(s: SessionSummary, facts: FileFacts): Pro
   }
   const followUp = newest ? followUpFor(s.id, newest.id) : undefined;
   const lastReplyAt = reply?.at ?? (Date.parse(s.lastActiveAt) || 0);
-  checksBySession.set(s.path, { ...(facts.lastCheck ? { lastCheck: facts.lastCheck } : {}), heads });
+  if (publishChecks()) checksBySession.set(s.path, { ...(facts.lastCheck ? { lastCheck: facts.lastCheck } : {}), heads });
   return sessionReadinessOf(trees, { ...(newest ? { lastMerge: { at: newest.at, branch: newest.branch } } : {}), restartPending, pushPending, followUp }, lastReplyAt);
 }
 
@@ -631,44 +638,81 @@ interface Cached {
   value?: SessionReadiness;
   /** What the answer was computed from: the row's state (rowKey). */
   key: string;
+  file: string;
   at: number;
+  /** The row the answer was computed for: an explicit inspection re-reads with it. */
+  row: SessionSummary;
 }
 
+interface RefreshInput { row: SessionSummary; key: string; file: string; size: number }
+const fileInput = (s: SessionSummary): RefreshInput => {
+  try {
+    const st = statSync(s.path);
+    return { row: s, key: rowKey(s), file: JSON.stringify([st.dev, st.ino, st.size, st.mtimeMs, st.ctimeMs]), size: st.size };
+  } catch {
+    return { row: s, key: rowKey(s), file: "missing", size: 0 };
+  }
+};
+const sameInput = (a: RefreshInput, b: RefreshInput) => a.key === b.key && a.file === b.file;
 const cache = new Map<string, Cached>();
-const queued = new Map<string, SessionSummary>();
+const queued = new Map<string, RefreshInput>();
+const active = new Map<string, RefreshInput>();
 let draining: Promise<void> | null = null;
 
 /** The row's state the answer depends on besides git: a change re-reads at once. */
 const rowKey = (s: SessionSummary) =>
-  JSON.stringify([s.lastActiveAt, s.busy, s.activity?.state ?? null, s.workers?.working ?? s.live?.workers?.working ?? 0, s.align?.openQuestions ?? 0, s.signals?.turnId ?? null]);
+  JSON.stringify([s.lastActiveAt, s.busy, s.activity?.state ?? null, s.workers?.working ?? s.live?.workers?.working ?? 0, s.align?.openQuestions ?? 0, s.signals?.turnId ?? null, !!s.archived, !!s.live]);
+
+const runningNow = (s: SessionSummary) => s.busy || s.activity?.state === "working" || (s.workers?.working ?? s.live?.workers?.working ?? 0) > 0;
+
+/** Archived, not open in a TUI and nothing running: its answer stands until the file or row moves,
+    or someone inspects its worktrees. */
+const parked = (s: SessionSummary) => !!s.archived && !s.live && !runningNow(s);
 
 /** Sessions readiness never covers. */
 const excluded = (s: SessionSummary) => !!(s.workerSession || s.overseer || s.projectOverseer || s.baton || s.target);
 
-async function refresh(s: SessionSummary): Promise<void> {
-  const prev = cache.get(s.path);
-  let size: number;
-  try {
-    size = (await stat(s.path)).size;
-  } catch {
-    cache.delete(s.path);
+async function refresh(input: RefreshInput): Promise<void> {
+  const s = input.row;
+  const current = () => {
+    if (active.get(s.path) !== input || queued.has(s.path)) return false;
+    const latest = fileInput(s);
+    if (!sameInput(input, latest)) {
+      queued.set(s.path, latest);
+      return false;
+    }
+    return true;
+  };
+  if (input.file === "missing") {
+    if (current()) { cache.delete(s.path); checksBySession.delete(s.path); }
     return;
   }
-  const { scan, facts } = await readReadinessScan(s.path, size, prev?.scan ?? null);
-  const value = facts ? await computeReadiness(s, facts) : undefined;
-  cache.set(s.path, { scan, facts, ...(value ? { value } : {}), key: rowKey(s), at: deps.now() });
+  const prev = cache.get(s.path);
+  // A rewrite/replacement must not reuse compact entries just because the byte count grew.
+  const previousScan = prev?.file === input.file ? prev.scan : null;
+  const { scan, facts } = await readReadinessScan(s.path, input.size, previousScan);
+  if (!current()) return;
+  const value = facts ? await computeReadiness(s, facts, current) : undefined;
+  if (!current()) return;
+  cache.set(s.path, { scan, facts, ...(value ? { value } : {}), key: input.key, file: input.file, at: deps.now(), row: s });
   if (facts && value && (await checkFollowUps(s, facts, value).catch(() => false))) {
-    const again = await computeReadiness(s, facts);
-    cache.set(s.path, { scan, facts, ...(again ? { value: again } : {}), key: rowKey(s), at: deps.now() });
+    if (!current()) return;
+    const again = await computeReadiness(s, facts, current);
+    if (current()) cache.set(s.path, { scan, facts, ...(again ? { value: again } : {}), key: input.key, file: input.file, at: deps.now(), row: s });
   }
 }
 
 function drain(): Promise<void> {
   draining ??= (async () => {
     while (queued.size) {
-      const [path, s] = queued.entries().next().value as [string, SessionSummary];
+      const [path, input] = queued.entries().next().value as [string, RefreshInput];
       queued.delete(path);
-      await refresh(s).catch((err) => console.warn(`[readiness] ${path}: ${(err as Error).message}`));
+      active.set(path, input);
+      try {
+        await refresh(input).catch((err) => console.warn(`[readiness] ${path}: ${(err as Error).message}`));
+      } finally {
+        if (active.get(path) === input) active.delete(path);
+      }
     }
   })().finally(() => {
     draining = null;
@@ -684,10 +728,17 @@ function drain(): Promise<void> {
 export function readinessOverlay(s: SessionSummary): SessionReadiness | undefined {
   if (excluded(s)) return undefined;
   const hit = cache.get(s.path);
-  const moved = !hit || hit.key !== rowKey(s);
-  const aged = !!hit?.scan?.found && deps.now() - hit.at >= READINESS_TTL_MS;
+  const input = fileInput(s);
+  const flight = active.get(s.path);
+  if (flight) {
+    if (sameInput(flight, input)) queued.delete(s.path);
+    else queued.set(s.path, input);
+    return hit?.value;
+  }
+  const moved = !hit || hit.key !== input.key || hit.file !== input.file;
+  const aged = !parked(s) && !!hit?.scan?.found && deps.now() - hit.at >= READINESS_TTL_MS;
   if (moved || aged) {
-    queued.set(s.path, s);
+    queued.set(s.path, input);
     void drain();
   }
   return hit?.value;
@@ -697,6 +748,8 @@ export function readinessOverlay(s: SessionSummary): SessionReadiness | undefine
 export function pruneReadiness(listed: readonly SessionSummary[]): void {
   const paths = new Set(listed.map((s) => s.path));
   for (const k of cache.keys()) if (!paths.has(k)) cache.delete(k);
+  for (const k of queued.keys()) if (!paths.has(k)) queued.delete(k);
+  for (const k of active.keys()) if (!paths.has(k)) active.delete(k);
   for (const k of checksBySession.keys()) if (!paths.has(k)) checksBySession.delete(k);
   deps.followUps?.prune(new Set(listed.map((s) => s.id)));
 }
@@ -709,11 +762,25 @@ export interface ReadinessChecks {
   heads: Record<string, number>;
 }
 const checksBySession = new Map<string, ReadinessChecks>();
-export const readinessChecksOf = (sessionPath: string): ReadinessChecks | undefined => checksBySession.get(sessionPath);
+export function readinessChecksOf(sessionPath: string): ReadinessChecks | undefined {
+  inspected(sessionPath);
+  return checksBySession.get(sessionPath);
+}
 
 /** A worktree's readiness from the session's cached answer (the Session tab's rows). */
 export function treeReadinessOf(sessionPath: string, treePath: string): WorktreeReadiness | undefined {
+  inspected(sessionPath);
   return cache.get(sessionPath)?.value?.trees.find((t) => t.path === treePath);
+}
+
+/** An explicit look at a parked session: the cached answer stands for this call, and one fresh read
+    is queued when it is older than READINESS_TTL_MS (joining any queued or active one). */
+function inspected(sessionPath: string): void {
+  const hit = cache.get(sessionPath);
+  if (!hit || !parked(hit.row) || !hit.scan?.found || deps.now() - hit.at < READINESS_TTL_MS) return;
+  if (active.has(sessionPath) || queued.has(sessionPath)) return;
+  queued.set(sessionPath, fileInput(hit.row));
+  void drain();
 }
 
 /** Tests: wait for the background reads, and start over. */
@@ -721,6 +788,8 @@ export const readinessIdle = (): Promise<void> => draining ?? Promise.resolve();
 export function resetReadiness(): void {
   cache.clear();
   queued.clear();
+  active.clear();
+  checksBySession.clear();
   restartBySha.clear();
   serverCheckout = null;
   deps = defaultDeps();

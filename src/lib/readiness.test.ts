@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { SessionReadiness } from "../../shared/protocol";
-import { readinessBadge, readinessCount, readinessCountWords, readinessTitle, specObservationSummary } from "./readiness";
+import type { ReadinessState, SessionReadiness, SpecAssessmentObservation, SpecAssessmentObservations } from "../../shared/protocol";
+import { readinessBadge, readinessCount, readinessCountWords, readinessTitle, readinessWord, specObservationSummary } from "./readiness";
 import { readinessChip, readinessReason } from "./worktrees";
 
 const r = (over: Partial<SessionReadiness>): SessionReadiness => ({ trees: [{ path: "/wt/a", branch: "feat/a", state: "merged" }], since: 1, ...over });
@@ -107,4 +107,51 @@ test("structured observations word uncertainty and recorded verification inputs 
   assert.equal(specObservationSummary(old), null);
   const absent = specObservationSummary(r({ specObservations: { state: "absent", items: [], reasons: [] } }));
   assert.match(absent!, /no receipts.*applicability unknown.*verification unrecorded/);
+});
+
+test("adding observation classes preserves every count, accessible word, badge and old title line", () => {
+  const item = (over: Partial<SpecAssessmentObservation>): SpecAssessmentObservation => ({
+    name: "fixture", worktree: "/wt/a", attribution: { ownerSessionId: null, sessionId: null, workerId: null, teamId: null, taskId: null, attemptId: null },
+    applicability: "current", attributionState: "matched", assessmentState: "recorded", unresolved: 0, verification: [], reasons: [], ...over,
+  });
+  const basis = (result: "passed" | "failed", inputApplicability: "matching" | "mismatched") => [{
+    kind: "test" as const, revision: null, result, summary: "A recorder declaration, not a test run.",
+    revisionBinding: { source: "recorder-declaration" as const, revisionCommit: null, inputApplicability },
+  }];
+  const observations: SpecAssessmentObservations[] = [
+    { state: "absent", items: [], reasons: [] },
+    { state: "incomplete", items: [], reasons: ["unread input"] },
+    { state: "observed", items: [item({ verification: basis("passed", "matching") })], reasons: [] },
+    { state: "observed", items: [item({ assessmentState: "outstanding", unresolved: 1, verification: basis("failed", "mismatched") })], reasons: [] },
+    { state: "observed", items: [item({ applicability: "stale", verification: basis("passed", "mismatched") })], reasons: [] },
+    { state: "incomplete", items: [item({ applicability: "unknown", attributionState: "unknown", assessmentState: "unknown", unresolved: null })], reasons: [] },
+    { state: "observed", items: [item({ attributionState: "conflicting", assessmentState: "outstanding", unresolved: 1 })], reasons: [] },
+  ];
+  assert.equal(readinessCount(undefined), null);
+  assert.equal(readinessBadge(undefined), null);
+  assert.equal(readinessTitle(undefined), null);
+  assert.equal(specObservationSummary(undefined), null);
+  const states: ReadinessState[] = ["merged", "stale", "in-progress", "blocked", "ready", "waiting-approval"];
+  const sets = [[], ...states.map(state => [{ path: "/wt/a", branch: "feat/a", state, why: "fixture reason" }]),
+    ...states.map(state => [{ path: "/wt/a", branch: "feat/a", state, why: "fixture reason" }, { path: "/wt/b", branch: "feat/b", state: "merged" as const }])];
+  const flagSets: Partial<SessionReadiness>[] = [{}, { restartPending: true, pushPending: true, cleanup: 2, followUps: 2, followUp: { weight: "significant", cue: "Recorded open work" } }];
+  for (const trees of sets) for (const badge of [undefined, "ready", "waiting", "restart", "merged"] as const) for (const flags of flagSets) {
+    const old = r({ trees, ...(badge ? { badge } : {}), ...flags });
+    const before = structuredClone(old);
+    const oldCount = readinessCount(old), oldBadge = readinessBadge(old), oldTitle = readinessTitle(old);
+    const oldWords = oldCount ? readinessCountWords(oldCount) : null;
+    const stateWords = old.trees.map(t => readinessWord(t.state));
+    for (const specObservations of [undefined, ...observations]) {
+      const observed: SessionReadiness = { ...structuredClone(old), ...(specObservations ? { specObservations: structuredClone(specObservations) } : {}) };
+      const snapshot = structuredClone(observed), count = readinessCount(observed);
+      assert.deepEqual(count, oldCount);
+      assert.equal(count ? readinessCountWords(count) : null, oldWords);
+      assert.equal(readinessBadge(observed), oldBadge);
+      assert.deepEqual(observed.trees.map(t => readinessWord(t.state)), stateWords);
+      const summary = specObservationSummary(observed);
+      assert.equal(readinessTitle(observed), oldTitle === null ? null : summary ? `${oldTitle}\n${summary}` : oldTitle, "only the separate observation suffix may extend the old title");
+      assert.deepEqual(observed, snapshot, "rendering observations must not rewrite readiness inputs");
+    }
+    assert.deepEqual(old, before, "the unobserved reference is not mutated");
+  }
 });

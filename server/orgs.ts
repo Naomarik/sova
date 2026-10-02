@@ -852,6 +852,8 @@ export async function rewindowOrgHours(orgId: string): Promise<number> {
 /** The stamp's people (r13): an act reaching someone carries their current effective hours, so a held act released
     later is checked against the hours in force then (engine: the stamp merges over the held data). */
 export function stampPeople(orgId: string, payload: Record<string, unknown>): Record<string, unknown> {
+  // Called for every engine: a standalone project's has no people.
+  if (!isOrgHostOpen(orgId) || !hostOf(orgId).sessions("org").length) return {};
   const rec = (pid: string) => {
     const s = hostOf(orgId).sessions("person").find((x) => x.id === personSid(orgId, pid));
     if (!s) return null;

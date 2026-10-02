@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -7,7 +7,7 @@ import { test } from "node:test";
 const agentDir = mkdtempSync(join(tmpdir(), "sova-readiness-"));
 process.env.PI_CODING_AGENT_DIR = agentDir; // before the modules below compute their paths
 
-import type { ReadinessState, SessionSummary, SpecAssessmentObservations, WorktreeStatus } from "../shared/protocol";
+import type { ReadinessState, SessionSummary, WorktreeStatus } from "../shared/protocol";
 import type { FileFacts } from "./merge-readiness";
 import type { GitResult } from "./worktrees";
 const r = await import("./merge-readiness");
@@ -405,19 +405,14 @@ test("01a0e63c: an empty leftover worktree (clean, no commits, idle) does not hi
   assert.equal(r.sessionReadinessOf([empty], {}, 4)?.badge, undefined);
 });
 
-test("observation outcomes never change computed readiness, check history or attention", async () => {
-  const observations: SpecAssessmentObservations[] = [
-    { state: "absent", items: [], reasons: [] },
-    { state: "incomplete", items: [], reasons: ["receipt input unavailable"] },
-    ...(["current", "stale", "unknown"] as const).map(applicability => ({
-      state: "observed" as const, reasons: [], items: [{
-        name: "fixture", worktree: "/wt/agents-row-dropdown", attribution: { ownerSessionId: null, sessionId: null, workerId: null, teamId: null, taskId: null, attemptId: null },
-        applicability, attributionState: applicability === "current" ? "conflicting" as const : "unknown" as const,
-        assessmentState: "outstanding" as const, unresolved: 2, reasons: [],
-        verification: [{ kind: "test" as const, revision: null, result: "failed" as const, summary: "A declared failure, not a check run.", revisionBinding: { source: "recorder-declaration" as const, revisionCommit: null, inputApplicability: "mismatched" as const } }],
-      }],
-    })),
-  ];
+test("routine readiness never invokes assessment status and retains ordinary checks and attention", async () => {
+  let statusCalls = 0;
+  // Deliberately supply the retired hook as an extra property: restoring its old call is a failure,
+  // even if readiness catches the error and still returns the correct ordinary state.
+  const retiredHook = { asksUser: () => undefined, specObservations: async () => {
+    statusCalls++;
+    throw new Error("routine readiness must not spawn assessment status");
+  } };
   const cases: { label: string; expected: ReadinessState; status?: Partial<WorktreeStatus & { head?: string; headAt?: number }>; check?: { at: number; ok: boolean }; asks?: boolean; row?: Partial<SessionSummary>; restart?: boolean }[] = [
     { label: "checks passed", expected: "ready", check: { at: 3, ok: true } },
     { label: "no check seen", expected: "ready" },
@@ -445,7 +440,7 @@ test("observation outcomes never change computed readiness, check history or att
       r.configureReadiness({ insights: { treeStatus: async () => status }, git: fakeGit({
         "rev-parse --show-toplevel": { stdout: "/fixture/server\n" }, "symbolic-ref": { stdout: "master\n" },
         "merge-base --is-ancestor": { code: 0 }, "diff --name-only": { stdout: "server/index.ts\n" },
-      }), asksUser: () => undefined, now: () => 0, processStart: 0, specObservations: undefined });
+      }), ...retiredHook, now: () => 0, processStart: 0 });
       const old = await r.computeReadiness(row, facts);
       assert.ok(old, c.label); assert.equal(old.trees[0]?.state, c.expected, c.label);
       const checks = structuredClone(r.readinessChecksOf(path));
@@ -453,21 +448,52 @@ test("observation outcomes never change computed readiness, check history or att
       const oldRow = { ...row, readiness: old }, attention = r.readinessItems(oldRow), restarts = r.restartItems([oldRow]);
       if (c.expected === "ready" || c.expected === "waiting-approval") assert.equal(attention.length, 1, "the attention comparison has a positive baseline");
       if (c.restart) assert.equal(restarts.length, 1, "the restart comparison has a positive baseline");
-      for (const observation of observations) {
-        const snapshot = structuredClone(observation);
-        r.configureReadiness({ specObservations: async () => observation });
-        const observed = await r.computeReadiness(row, facts);
-        assert.ok(observed);
-        const { specObservations, ...priorFields } = observed;
-        assert.deepEqual(priorFields, old, `${c.label}: all existing readiness fields are invariant`);
-        assert.deepEqual(specObservations, observation);
-        assert.deepEqual(r.readinessChecksOf(path), checks, "observations cannot become checks or change lastCheck/head tracking");
-        const observedRow = { ...row, readiness: observed };
-        assert.deepEqual(r.readinessItems(observedRow), attention, "no observation changes decide/needs-you policy");
-        assert.deepEqual(r.restartItems([observedRow]), restarts, "no observation creates or clears restart attention");
-        assert.deepEqual(observation, snapshot, "the injected observation is not rewritten");
-        assert.deepEqual({ row, facts }, inputs, "session facts and original check remain unchanged");
+      for (let refresh = 0; refresh < 3; refresh++) {
+        const refreshed = await r.computeReadiness(row, facts);
+        assert.deepEqual(refreshed, old, `${c.label}: ordinary readiness survives repeated refreshes`);
+        assert.equal(statusCalls, 0, `${c.label}: no assessment status invocation`);
+        assert.ok(!Object.hasOwn(refreshed!, "specObservations"));
+        assert.deepEqual(r.readinessChecksOf(path), checks);
+        const refreshedRow = { ...row, readiness: refreshed };
+        assert.deepEqual(r.readinessItems(refreshedRow), attention);
+        assert.deepEqual(r.restartItems([refreshedRow]), restarts);
+        assert.deepEqual({ row, facts }, inputs);
       }
     }
   } finally { r.resetReadiness(); }
+});
+
+test("session-list TTL refreshes of idle merged spec worktrees cannot spawn assessment status", async () => {
+  const root = mkdtempSync(join(tmpdir(), "readiness-no-status-"));
+  const coreDir = join(agentDir, "extensions/spec/core");
+  const marker = join(root, "status-spawned");
+  mkdirSync(coreDir, { recursive: true });
+  mkdirSync(join(root, ".sova/spec"), { recursive: true });
+  writeFileSync(join(root, ".sova/spec/manifest.json"), "{}\n");
+  const trap = join(coreDir, "sova-spec-assess.mjs");
+  writeFileSync(trap, `import { writeFileSync } from 'node:fs'; writeFileSync(${JSON.stringify(marker)}, JSON.stringify(process.argv)); console.log(JSON.stringify({exit:0,state:'absent',observations:[],reasons:[]}));`);
+  // Prove the trap detects the actual transport, not merely a missing dependency or failed spawn.
+  const { callAssessment } = await import("../pi-config/extensions/mode/spec-assessment.ts");
+  await callAssessment(coreDir, root, ["status", "--owner-session", SID]);
+  assert.ok(existsSync(marker)); rmSync(marker);
+  let now = 0, gitReads = 0;
+  const path = sessionFile(chain([worktrees([tracked({ path: root })], "2026-09-29T15:36:00.000Z")]));
+  const row = summary(path, { cwd: root });
+  try {
+    r.resetReadiness();
+    r.configureReadiness({ now: () => now, insights: { treeStatus: async () => {
+      gitReads++;
+      return { path: root, source: "session", exists: true, branch: "feat/fixture", base: "master", ahead: 1, behind: 0, dirty: false, head: "own-commit", merged: "ancestor" };
+    } } });
+    for (let refresh = 0; refresh < 4; refresh++) {
+      r.readinessOverlay(row); await r.readinessIdle();
+      assert.equal(r.readinessOverlay(row)?.trees[0]?.state, "merged");
+      assert.equal(gitReads, refresh + 1, "ordinary git refresh must actually run after TTL expiry");
+      assert.equal(existsSync(marker), false, "routine listing must never spawn the assessment transport");
+      now += 20_001;
+    }
+  } finally {
+    await r.readinessIdle(); r.resetReadiness();
+    rmSync(root, { recursive: true, force: true }); rmSync(trap, { force: true });
+  }
 });

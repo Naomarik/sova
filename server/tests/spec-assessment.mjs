@@ -1,4 +1,4 @@
-// Actual common team spawn -> scripted RPC child running the pinned SDK/spec-worker -> owner reopen -> readiness.
+// Actual common team spawn -> scripted RPC child running the pinned SDK/spec-worker -> owner reopen -> explicit assessment query.
 // No model/network requests. The spawnImpl replaces only the CLI transport, not the worker's SDK lifecycle.
 import "../../pi-config/extensions/claude-code/tests/hermetic-env.mjs";
 import assert from "node:assert/strict";
@@ -18,6 +18,7 @@ initTheme(); // Match an actual host's theme initialization; never manually enab
 const { registerSubagents } = await jiti.import(path.resolve(here, "../../pi-config/extensions/subagents/index.ts"));
 const { SubagentRunner } = await jiti.import(path.resolve(here, "../../pi-config/extensions/subagents/runner.ts"));
 const { computeReadiness, configureReadiness, resetReadiness, readinessChecksOf } = await jiti.import(path.resolve(here, "../merge-readiness.ts"));
+const { callAssessment } = await jiti.import(path.resolve(here, "../../pi-config/extensions/mode/spec-assessment.ts"));
 
 function provider(script, probe) {
  return pi => pi.registerProvider("scripted", { baseUrl: "http://localhost", apiKey: "unused", api: "openai-completions", models: [{ id: "assessment", name: "Scripted", reasoning: false, input: ["text"], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 100000, maxTokens: 1000 }],
@@ -107,8 +108,11 @@ if (process.argv.includes("--worker")) {
   const facts = { trees: [{ path: cwd, branch: "fixture", base, status: "active", session: row.id, action: "created" }], merges: [], lastCheck: { at: 1, ok: false } };
   const result = await computeReadiness(row, facts);
   assert.equal(result.trees[0].state, "in-progress"); assert.equal(result.trees[0].why, "the last check failed"); assert.deepEqual(readinessChecksOf(ownerFile).lastCheck, facts.lastCheck);
-  assert.equal(result.specObservations.items.length, 1); const observation = result.specObservations.items[0];
-  assert.equal(observation.attributionState, "matched", JSON.stringify(observation)); assert.equal(observation.assessmentState, "outstanding"); assert.equal(observation.verification[0].result, "failed"); assert.equal(observation.verification[0].revisionBinding.inputApplicability, "mismatched");
+  assert.ok(!Object.hasOwn(result, "specObservations"), "routine readiness does not query or carry assessments");
+  const queried = await callAssessment(path.join(agentDir, "extensions/spec/core"), cwd, ["status", "--owner-session", row.id]);
+  assert.equal(queried.observations.length, 1); const observation = queried.observations[0];
+  assert.equal(observation.attribution.workerId, worker.id);
+  assert.equal(observation.assessmentState, "outstanding"); assert.equal(observation.verification.failed[0].result, "failed"); assert.equal(observation.verification.failed[0].revisionBinding.inputApplicability, "mismatched");
   // Actual full-mode command activation, strict snapshot, tool execution, and persisted restore.
   writeFileSync(path.join(cwd, "src/value.ts"), "export const value = 80;\n");
   const proseBefore = readFileSync(path.join(cwd, ".sova/spec/claims/demo/rule.md"), "utf8");
@@ -162,6 +166,6 @@ if (process.argv.includes("--worker")) {
   assert.ok(session.getActiveToolNames().includes("spec_assess"), "reopen restores the active optional tool");
   assert.equal(restored.getBranch().filter(e => e.customType === "spec-assessment-task-v1").length, count, "opening creates no new assessment task");
   await session.prompt("/mode spec off"); assert.ok(!session.getActiveToolNames().includes("spec_assess"));
-  console.log(JSON.stringify({ result: "pass", commonTeamSpawn: true, actualWorkerSdk: true, parentReopened: true, actualModeToolExecution: true, strictAndReopen: true, operationalRefusalsWithDetails: true, unchangedGate: result.trees[0].why, observation: { attributionState: observation.attributionState, assessmentState: observation.assessmentState, verification: observation.verification } }));
+  console.log(JSON.stringify({ result: "pass", commonTeamSpawn: true, actualWorkerSdk: true, parentReopened: true, actualModeToolExecution: true, strictAndReopen: true, operationalRefusalsWithDetails: true, unchangedGate: result.trees[0].why, explicitObservation: { workerId: observation.attribution.workerId, assessmentState: observation.assessmentState, verification: observation.verification } }));
  } finally { if (session) await session.extensionRunner.emit({ type: "session_shutdown", reason: "quit" }); await Promise.all(runners.map(r => r.dispose())); session?.dispose(); rmSync(scratch, { recursive: true, force: true }); }
 }

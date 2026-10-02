@@ -3483,50 +3483,6 @@ export interface WorktreeReadiness {
 /** The row's badge, the first that holds (§chat.worktrees/readiness). */
 export type ReadinessBadge = "waiting" | "ready" | "restart" | "merged";
 
-export interface SpecAssessmentAttribution {
-  ownerSessionId: string | null;
-  sessionId: string | null;
-  workerId: string | null;
-  teamId: string | null;
-  taskId: string | null;
-  attemptId: string | null;
-}
-
-/** Recorder declarations, not commands executed by the readiness reader. */
-export interface SpecVerificationBasis {
-  kind: "test" | "inspection" | "command";
-  revision: string | null;
-  result: "passed" | "failed" | "unknown";
-  summary: string;
-  revisionBinding?: {
-    source: "recorder-declaration";
-    revisionCommit: string | null;
-    inputApplicability: "matching" | "mismatched" | "unknown";
-  };
-}
-
-export interface SpecAssessmentObservation {
-  name: string;
-  worktree: string;
-  fingerprint?: string;
-  capturedGitHead?: string | null;
-  attribution: SpecAssessmentAttribution;
-  recordAttribution?: SpecAssessmentAttribution | null;
-  /** Exact input applicability is separate from task attribution and dispositions. */
-  applicability: "current" | "stale" | "unknown";
-  attributionState: "matched" | "unknown" | "conflicting";
-  assessmentState: "outstanding" | "recorded" | "unknown";
-  unresolved: number | null;
-  verification: SpecVerificationBasis[];
-  reasons: string[];
-}
-
-export interface SpecAssessmentObservations {
-  state: "observed" | "absent" | "incomplete";
-  items: SpecAssessmentObservation[];
-  reasons: string[];
-}
-
 export interface SessionReadiness {
   /** Every own, non-dropped tracked worktree, in recorded order. */
   trees: WorktreeReadiness[];
@@ -3548,8 +3504,6 @@ export interface SessionReadiness {
   /** The follow-up check's answer for the newest merge (§app.decisions/merge-followup), when it
       names work: its weight and the reply's own line naming it. */
   followUp?: { weight: "small" | "significant"; cue: string };
-  /** Observation only; never feeds readiness, lastCheck, badges, or attention policy. */
-  specObservations?: SpecAssessmentObservations;
 }
 
 export type TagsBackfillScope = "recent" | "all";

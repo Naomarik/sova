@@ -55,7 +55,7 @@ import {
 import { announce, hasLocalDraft, home, localRunning, sessionContext, toast } from "../lib/ui-state";
 import { showsDraftMark } from "../lib/draft-mark";
 import { overlaid, rowLeadMark, rowNeedsYou, SIGNAL_CLASS, SIGNAL_ICON, signalTitle, signalWords, stalledPaths, tagSearchText, tagsTitle, turnErrorTitle } from "../lib/signals";
-import { readinessBadge, readinessCount, readinessCountWords, readinessTitle, specObservationSummary } from "../lib/readiness";
+import { readinessBadge, readinessCount, readinessCountWords, readinessTitle } from "../lib/readiness";
 import { requestListRefresh } from "../lib/list-refresh";
 import { orgHref } from "../lib/orgs-route";
 import { marksOverlay, openSessionFeed } from "../lib/session-feed";
@@ -667,9 +667,6 @@ function SessionRow(props: {
             </p>
             <Show when={contextOf(s())}>{(c) => <ContextRing info={c()} />}</Show>
           </div>
-          <Show when={specObservationSummary(s().readiness)}>
-            {(summary) => <p class="list-meta" style={{ "white-space": "normal" }}>{summary()}</p>}
-          </Show>
         </div>
         {/* AT parity with the old chips: the rail is wordless, so the state lives in the link's name. */}
         <Show when={s().live}>

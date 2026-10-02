@@ -70,35 +70,5 @@ export function readinessTitle(r: SessionReadiness | undefined): string | null {
   if (r.pushPending) lines.push("The merge isn't pushed yet.");
   if (r.cleanup) lines.push(`${r.cleanup} merged worktree${r.cleanup === 1 ? " is" : "s are"} still tracked active.`);
   if (r.followUp) lines.push(`Open work (${r.followUp.weight}): ${r.followUp.cue}`);
-  const observations = specObservationSummary(r);
-  if (observations) lines.push(observations);
   return lines.join("\n");
-}
-
-/** Neutral observations, never a derived readiness verdict or a successful-test claim. */
-export function specObservationSummary(r: SessionReadiness | undefined): string | null {
-  const o = r?.specObservations;
-  if (!o) return null;
-  if (!o.items.length) return `Spec observations: ${o.state === "incomplete" ? "incomplete, " : ""}no receipts · applicability unknown · verification unrecorded`;
-  const counts = (key: "applicability" | "attributionState", value: string) => o.items.filter(i => i[key] === value).length;
-  const parts = ["current", "stale", "unknown"].flatMap(v => counts("applicability", v) ? [`${counts("applicability", v)} ${v}`] : []);
-  if (o.state === "incomplete") parts.unshift("incomplete");
-  for (const v of ["unknown", "conflicting"]) if (counts("attributionState", v)) parts.push(`${counts("attributionState", v)} ${v} attribution`);
-  const unresolved = o.items.reduce((n, i) => n + (i.unresolved ?? 0), 0);
-  if (unresolved) parts.push(`${unresolved} unresolved`);
-  if (o.items.some(i => i.unresolved === null || i.assessmentState === "unknown")) parts.push("assessment unknown");
-  const results = o.items.flatMap(i => i.verification);
-  const verification = ["passed", "failed", "unknown"].flatMap(v => {
-    const n = results.filter(b => b.result === v).length;
-    return n ? [`${n} ${v}`] : [];
-  });
-  parts.push(verification.length ? `recorded verification: ${verification.join(", ")}` : "verification unrecorded");
-  if (results.length) {
-    const bindings = ["matching", "mismatched", "unknown"].flatMap(v => {
-      const n = results.filter(b => (b.revisionBinding?.inputApplicability ?? "unknown") === v).length;
-      return n ? [`${n} ${v}`] : [];
-    });
-    parts.push(`verification inputs: ${bindings.join(", ")}`);
-  }
-  return `Spec observations: ${parts.join(" · ")}`;
 }

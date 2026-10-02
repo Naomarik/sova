@@ -117,7 +117,7 @@ export function ProjectSoftwareCard(props: { projectId: string; archived: boolea
             </Show>
             <Show when={approveWhat(v())}>{(w) => <p class="list-meta">{w()}</p>}</Show>
             <Show when={error()}>{(e) => <p class="field-error">{e()}</p>}</Show>
-            <div class="button-row">
+            <div class="button-row project-software-actions">
               <Show when={approveLabel(v())}>
                 {(label) => (
                   <button type="button" class="button button-sm button-primary" aria-disabled={busy() ? "true" : undefined} onClick={() => void approve(v())}>

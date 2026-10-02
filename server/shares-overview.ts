@@ -1,19 +1,24 @@
 import type { OrgLinkRow, SessionShare, SessionShareVisit, SharesOverview } from "../shared/session-share";
+import { listPreviews } from "./preview-links";
+import { readIdentity, withIdentity, type IdentityLine } from "./visitor-identity";
 import { allBatons, namesOf } from "./baton";
 import { linkDead, linksOfOrg } from "./baton-links";
 import { readIndex, readOrg } from "./orgs";
 import { ownerLinksOf, personLinkDead } from "./person-links";
 import { watchedHashes } from "./share/hub";
-import { readVisits, visitSummary, type FoldedVisit } from "./visits";
+import { readPreviewVisits, readSessionVisits, readVisits, visitSummary, type FoldedVisit } from "./visits";
 
 /**
  * The data behind the Shares page (§app.session-share/overview): every live public link this
  * host serves. Session shares come from their store (the caller passes them); org links — every
  * live hand-off (/h/) and owner (/i/) link — are READ from the existing stores and each org's visit
  * log (§app.baton/visits), never changed here. A peer's links are its own answer: the page fans out.
+ * Each visit carries what the host's identity side file holds for it (§mesh.public/visitor-log),
+ * and this answer is the only one that does: never the preview list or the overseer's tools.
  */
 
-const shareVisit = (v: FoldedVisit): SessionShareVisit => ({
+const foldedVisit = (v: FoldedVisit): SessionShareVisit => ({
+  id: v.id,
   kind: v.kind,
   at: v.at,
   ...(v.lastSeenAt ? { lastSeenAt: v.lastSeenAt } : {}),
@@ -23,8 +28,9 @@ const shareVisit = (v: FoldedVisit): SessionShareVisit => ({
 
 /** Every live hand-off and owner link of every attached org, newest first. An org whose workspace
     can't be read is skipped (it serves nothing either). */
-export function orgLinkRows(now = Date.now()): OrgLinkRow[] {
+export function orgLinkRows(now = Date.now(), identity: Map<string, IdentityLine[]> = readIdentity()): OrgLinkRow[] {
   const rows: OrgLinkRow[] = [];
+  const shareVisit = (v: FoldedVisit) => withIdentity(foldedVisit(v), identity);
   const watched = watchedHashes();
   const batons = new Map<string, { publicTitle: string; state: string }>();
   try {
@@ -92,5 +98,13 @@ export function orgLinkRows(now = Date.now()): OrgLinkRow[] {
 /** GET /api/shares-overview: this host's session shares (from the store, with their recipients'
     presence and visits already folded in) and its live org links. */
 export async function sharesOverview(sessionShares: SessionShare[], now = Date.now()): Promise<SharesOverview> {
-  return { sessionShares, orgLinks: orgLinkRows(now) };
+  const identity = readIdentity();
+  const shares = sessionShares.map((s) => ({ ...s, recipients: s.recipients.map((r) => ({ ...r, visits: readSessionVisits(s.id, r.id).map((v) => withIdentity(v, identity)) })) }));
+  const previewVisits: Record<string, SessionShareVisit[]> = {};
+  for (const p of listPreviews({}, now)) {
+    if (p.state !== "active") continue;
+    const visits = readPreviewVisits(p.id).map((v) => withIdentity(v, identity));
+    if (visits.length) previewVisits[p.id] = visits;
+  }
+  return { sessionShares: shares, orgLinks: orgLinkRows(now, identity), previewVisits };
 }

@@ -36,6 +36,7 @@ import { mountOutreachRelay } from "./outreach/relay";
 import { mountOutreach } from "./outreach/routes";
 import { startShareRuntime, stopShareRuntime } from "./share/runtime";
 import { flushOpenVisits } from "./visits";
+import { pruneVisitorLogs } from "./visitor-identity";
 import { acquireChat, disposeAllChats, getModelRuntime, heldChat, heldChats, ModeRefusedError, onAgentSettled, onReceiverIdle, warmClaudeCodeProvider } from "./chat-manager";
 import { receiverSpecial, startTopicDelivery } from "./topic-delivery";
 import { projectOverseerOfPath } from "./project-overseer-store";
@@ -1385,6 +1386,17 @@ startOutreach();
 // Sova itself (§mesh.public/preview-serve): rebound here on its recorded port, stopped when it ends.
 mountPreviewLinks(app);
 startStaticPreviews();
+// Visitor logs (§mesh.public/visitor-log): identity and preview-visit lines older than 120 days
+// are dropped at startup and once a day.
+const pruneVisitors = () => {
+  try {
+    pruneVisitorLogs();
+  } catch (err) {
+    console.warn(`[visits] prune failed: ${err instanceof Error ? err.message : String(err)}`);
+  }
+};
+pruneVisitors();
+setInterval(pruneVisitors, 24 * 60 * 60_000).unref();
 
 app.all("/api/*", (c) => c.json({ error: "Not found" }, 404));
 

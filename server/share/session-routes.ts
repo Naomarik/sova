@@ -8,6 +8,7 @@ import { addViewer } from "../session-share-presence";
 import { sessionShareImage, sessionShareView, sourceReadable, type ShareSource } from "../session-share-view";
 import { findShareLink, shareAccess, type ShareAccess, type ShareLinkRecord, type ShareRecord } from "../session-shares";
 import { classify, recordOpen, recordRefused, recordShellFetch, type SessionVisitLink } from "../visits";
+import { noteShareVisit } from "../visitor-identity";
 import { RateLimiter, type ShareUpgrade } from "./edge";
 
 /**
@@ -127,7 +128,7 @@ export function mountSessionShareRoutes(app: Hono, shareDist: () => string, page
       return c.json(access.why === "expired" ? EXPIRED : GONE, 410);
     }
     if (!got.value) return c.json(GONE, 410);
-    logVisit("open", () => recordOpen(visitLinkOf(got.link), { tab: c.req.query("v"), userAgent: ua }));
+    logVisit("open", () => noteShareVisit(recordOpen(visitLinkOf(got.link), { tab: c.req.query("v"), userAgent: ua }), c.env));
     return c.json(got.value);
   });
 

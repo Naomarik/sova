@@ -9,6 +9,7 @@ import {
   type ShareGatewaySetting,
   type ShareState,
   type VerifyResult,
+  type VisitorLogging,
 } from "../../shared/public-links";
 import { createDraftStore } from "./settings-draft";
 
@@ -231,6 +232,30 @@ export const publicLinksSaving = store.saving;
 export const publicLinksSaveError = store.error;
 export const publicLinksDirty = store.dirty;
 export const resetPublicLinksDraft = store.reset;
+
+// ---- visitor logging (§mesh.public/visitor-log) -------------------------------------------------
+
+export const getVisitorLogging = () => call<VisitorLogging>("/api/visitor-logging");
+const putVisitorLogging = (v: VisitorLogging) =>
+  call<VisitorLogging>("/api/visitor-logging", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(v) });
+
+/** The two switches, staged like the panel's other fields and written by Save Changes. */
+const visitorStore = createDraftStore<VisitorLogging, VisitorLogging>({
+  tab: "public-links",
+  label: "Visitor logging",
+  toDraft: (v) => ({ ...v }),
+  same: (a, b) => a.logVisitors === b.logVisitors && a.forwardIp === b.forwardIp,
+  write: async (d) => {
+    const saved = await putVisitorLogging(d);
+    return { saved, result: saved };
+  },
+});
+
+export const visitorLoggingDraft = visitorStore.draft;
+export const setVisitorLoggingDraft = visitorStore.setDraft;
+export const setVisitorLoggingSaved = visitorStore.setSaved;
+export const visitorLoggingSaving = visitorStore.saving;
+export const visitorLoggingSaveError = visitorStore.error;
 
 // ---- words ----------------------------------------------------------------------------------------
 

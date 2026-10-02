@@ -55,7 +55,7 @@ import {
 import { announce, hasLocalDraft, home, localRunning, sessionContext, toast } from "../lib/ui-state";
 import { showsDraftMark } from "../lib/draft-mark";
 import { overlaid, rowLeadMark, rowNeedsYou, SIGNAL_CLASS, SIGNAL_ICON, signalTitle, signalWords, stalledPaths, tagSearchText, tagsTitle, turnErrorTitle } from "../lib/signals";
-import { readinessBadge, readinessRowChip, readinessTitle, specObservationSummary } from "../lib/readiness";
+import { readinessBadge, readinessCount, readinessCountWords, readinessTitle, specObservationSummary } from "../lib/readiness";
 import { requestListRefresh } from "../lib/list-refresh";
 import { orgHref } from "../lib/orgs-route";
 import { marksOverlay, openSessionFeed } from "../lib/session-feed";
@@ -267,8 +267,8 @@ function SessionRow(props: {
   const leadMark = () => rowLeadMark(s(), props.selected);
   /** Line 3's merge-readiness badge (src/lib/readiness.ts): the server's answer, worded. */
   const badge = () => readinessBadge(s().readiness);
-  /** Line 3's leading chip: ready to merge, or waiting for your OK. */
-  const readyChip = () => readinessRowChip(s().readiness);
+  /** Line 3's worktree count, "2 of 3", after the time: muted, lit while one is ready to merge. */
+  const trees = () => readinessCount(s().readiness);
   const tuiTitle = () => `Open in a TUI · pid ${s().live!.pid} · ${s().live!.status}`;
   const working = () => sessionWorking(s());
   /** The row's context fill: the open session's live value wins over the list's tail value, and a
@@ -597,15 +597,6 @@ function SessionRow(props: {
             </div>
           </Show>
           <div class="list-line list-meta-row">
-            {/* Ready or waiting leads the line, at one left edge down the list; it never truncates. */}
-            <Show when={readyChip()}>
-              {(c) => (
-                <span class={`chip chip-${c().tone} session-readiness-chip`} title={readinessTitle(s().readiness) ?? undefined}>
-                  <span class="chip-dot" aria-hidden="true" />
-                  {c().label}
-                </span>
-              )}
-            </Show>
             <Show when={hostOf(s().path)}>{(h) => <HostMark host={h()} />}</Show>
             <Show when={mark()}>
               {(m) => (
@@ -622,7 +613,28 @@ function SessionRow(props: {
             </Show>
             <p class="list-meta" title={tagsTitle(s().tags) ?? undefined}>
               {relativeTime(s().lastActiveAt, props.now)}
-              {/* The merge-readiness badge, between the time and the model. The topic is search-only. */}
+              {/* The worktrees this session tracks: "2 of 3" merged, after the time, before the
+                  badge and the model. Muted, and lit while one of them is ready to merge. The
+                  digits are aria-hidden: the words after them are what the row's name says. */}
+              <Show when={trees()}>
+                {(c) => (
+                  <>
+                    {" · "}
+                    <span
+                      class="session-worktrees"
+                      classList={{ "session-worktrees-ready": c().ready }}
+                      title={readinessTitle(s().readiness) ?? undefined}
+                    >
+                      <Icon name="branch" small />
+                      <span class="text-num" aria-hidden="true">
+                        {c().merged} of {c().total}
+                      </span>
+                      <span class="visually-hidden">{readinessCountWords(c())}</span>
+                    </span>
+                  </>
+                )}
+              </Show>
+              {/* The merge-readiness badge, between the count and the model. The topic is search-only. */}
               <Show when={badge()}>
                 {(w) => (
                   <>

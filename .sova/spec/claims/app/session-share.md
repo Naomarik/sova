@@ -223,6 +223,10 @@ gateway only routes by hash (§mesh/public). Wire shapes: `shared/session-share.
   its state, "Expires in {n} days", the presence word, the opened line, its visits folded
   underneath, and **Turn Off Link** asked twice (the existing hand-off or owner revoke route). The
   page never changes those stores otherwise.
+- A visit's line adds what §mesh.public/visitor-log recorded for it, when anything: the address,
+  the browser family (the raw user agent on hover), the language and, for a preview, "{n} pages"
+  (the paths on hover). A session share recipient and a preview recipient with visits have their
+  own **Visits** disclosure, and so has a preview row.
 - It reads every host again every 5 seconds while the page is visible, and not while hidden. A
   host that doesn't answer is one line: "{host} can't be reached, so its links aren't listed.".
   None anywhere: "No public links are open. Share a session from its Sharing tab: Session details,
@@ -236,7 +240,9 @@ gateway only routes by hash (§mesh/public). Wire shapes: `shared/session-share.
   user agent, the token or its hash), marks scanners and scripts `bot`, records a known link
   previewer's shell fetch as a preview and a dead link's read as a refusal, caps new lines at 20 a
   link a day, and writes `seen` lines every 5 minutes, when a socket closes and at shutdown. A
-  socket never starts a visit.
+  socket never starts a visit. While the host's **Log visitors** switch is on, each visit's
+  address, raw user agent and language go to the host-local side file of §mesh.public/visitor-log,
+  keyed by the visit's id, never to this log.
 - The log is host-local: `<stateRoot>/session-share-visits.jsonl`, mode 0600, never synced or
   committed. Each line carries `via: "session"`, `shareId` and `recipientId`, and no person.
 - A recipient's row counts its visits by a person (`opened`; previews, scanners and refusals not
@@ -271,6 +277,11 @@ gateway only routes by hash (§mesh/public). Wire shapes: `shared/session-share.
   visits from the org's visit log (§app.baton/visits), with `opened` and `lastAt` counted as for a
   recipient. A hand-off link whose page has an open socket is `viewing` (hand-off pages send no
   visibility); an owner link, which has no socket, carries no presence.
+- Each session share recipient also carries its own `visits`, and the answer carries
+  `previewVisits`, this host's preview visits by preview id (§mesh.public/visitor-log). A visit
+  with lines in the host's identity side file carries them: `ip`, `ua`, `lang`, and for a preview
+  its `pages` (paths) and `referer`. Only this answer carries them; the preview list
+  (`GET /api/previews`) and the project overseer's tools never do.
 - It only reads the hand-off and owner link stores and the visit logs, and never writes them. An
   org whose workspace can't be read is left out. A turned-off or expired link is not listed.
 

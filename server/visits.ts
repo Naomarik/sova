@@ -31,11 +31,15 @@ import { stateRoot } from "./state-root";
  * Each link kind names its own log (§app.session-share/visits): an org's links log to its workspace
  * `visits.jsonl`; session share links (`via: "session"`, no org) to the host-local
  * `<stateRoot>/session-share-visits.jsonl`, never synced or committed, with the share and recipient
- * ids instead of a person. The rules above are the same for both.
+ * ids instead of a person. The rules above are the same for both. Preview links (`via: "preview"`,
+ * §mesh.public/visitor-log) log to the host-local `<stateRoot>/preview-visits.jsonl`, by the same
+ * rules, only while the host logs visitors; the proxy's cookie is the tab. That file (and the
+ * identity side file, server/visitor-identity.ts) is pruned after 120 days; the others never are.
  */
 
 export const VISITS_FILE = "visits.jsonl";
 export const SESSION_VISITS_FILE = "session-share-visits.jsonl";
+export const PREVIEW_VISITS_FILE = "preview-visits.jsonl";
 export const VISIT_WINDOW_MS = 10 * 60_000;
 export const SEEN_EVERY_MS = 5 * 60_000;
 export const VISITS_PER_DAY = 20;
@@ -44,8 +48,9 @@ export const VISITS_PER_DAY = 20;
 export const TAB_RE = /^[A-Za-z0-9_-]{22}$/;
 
 /** handoff: a hand-off link (/h/); owner: the org's Owner page (/i/, §app.owner-page/link);
-    session: a session share link (/s/, §app/session-share). */
-export type Via = "handoff" | "owner" | "session";
+    session: a session share link (/s/, §app/session-share); preview: a preview link
+    (§mesh.public/visitor-log). */
+export type Via = "handoff" | "owner" | "session" | "preview";
 
 /** A hand-off link's key carries its session and hand-off; an owner link's, its generation; a
     session share link's, its share and recipient (and no person). */
@@ -58,6 +63,7 @@ interface LinkKey {
   gen?: number;
   shareId?: string;
   recipientId?: string;
+  previewId?: string;
 }
 
 /** A session share link: its share and recipient. */
@@ -67,11 +73,18 @@ export interface SessionVisitLink {
   recipientId: string;
 }
 
-/** What a visit is recorded against: a hand-off link's record, an owner link's, or a session share link. */
+/** A preview link (a sibling is its own preview). */
+export interface PreviewVisitLink {
+  via: "preview";
+  previewId: string;
+}
+
+/** What a visit is recorded against: a hand-off link's record, an owner link's, a session share link or a preview. */
 export type VisitLink =
   | Pick<LinkRecord, "orgId" | "sessionId" | "n" | "personId" | "offerId">
   | { orgId: string; personId: string; via: "owner"; gen: number }
-  | SessionVisitLink;
+  | SessionVisitLink
+  | PreviewVisitLink;
 
 export type VisitLine =
   | (LinkKey & { kind: "visit"; id: string; at: string; tab?: string; device: string; bot?: true })
@@ -186,14 +199,20 @@ interface OrgLog {
   dayCount: Map<string, { day: string; n: number }>;
 }
 
-/** Folded logs by log key: `org:<id>`, or SESSION_LOG. */
+/** Folded logs by log key: `org:<id>`, SESSION_LOG or PREVIEW_LOG. */
 const logs = new Map<string, OrgLog>();
 const SESSION_LOG = "session";
-const logKeyOf = (link: VisitLink): string => ("orgId" in link ? `org:${link.orgId}` : SESSION_LOG);
-const fileOf = (logKey: string): string => (logKey === SESSION_LOG ? join(stateRoot(), SESSION_VISITS_FILE) : join(orgDir(logKey.slice(4)), VISITS_FILE));
+const PREVIEW_LOG = "preview";
+const logKeyOf = (link: VisitLink): string => ("orgId" in link ? `org:${link.orgId}` : link.via === "preview" ? PREVIEW_LOG : SESSION_LOG);
+const fileOf = (logKey: string): string =>
+  logKey === SESSION_LOG ? join(stateRoot(), SESSION_VISITS_FILE) : logKey === PREVIEW_LOG ? join(stateRoot(), PREVIEW_VISITS_FILE) : join(orgDir(logKey.slice(4)), VISITS_FILE);
 
 const keyOf = (k: LinkKey): string =>
-  k.via === "session" ? `session|${k.shareId ?? ""}|${k.recipientId ?? ""}` : `${k.via}|${k.sessionId ?? ""}|${k.n ?? ""}|${k.personId}|${k.offerId ?? ""}|${k.gen ?? ""}`;
+  k.via === "session"
+    ? `session|${k.shareId ?? ""}|${k.recipientId ?? ""}`
+    : k.via === "preview"
+      ? `preview|${k.previewId ?? ""}`
+      : `${k.via}|${k.sessionId ?? ""}|${k.n ?? ""}|${k.personId}|${k.offerId ?? ""}|${k.gen ?? ""}`;
 const dayOf = (ms: number): string => new Date(ms).toISOString().slice(0, 10);
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 
@@ -273,8 +292,8 @@ function logOf(logKey: string): OrgLog {
 }
 
 function append(logKey: string, log: OrgLog, line: VisitLine): void {
-  // The session log is host-local state: owner-only, like the share store.
-  appendFileSync(log.file, `${JSON.stringify(line)}\n`, logKey === SESSION_LOG ? { mode: 0o600 } : undefined);
+  // The session and preview logs are host-local state: owner-only, like the share store.
+  appendFileSync(log.file, `${JSON.stringify(line)}\n`, logKey.startsWith("org:") ? undefined : { mode: 0o600 });
   log.lines.push(line);
   apply(log, line);
   const s = stat(log.file);
@@ -289,7 +308,9 @@ const linkKeyOf = (link: VisitLink): LinkKey =>
   "via" in link
     ? link.via === "session"
       ? { via: "session", shareId: link.shareId, recipientId: link.recipientId }
-      : { personId: link.personId, via: "owner", gen: link.gen }
+      : link.via === "preview"
+        ? { via: "preview", previewId: link.previewId }
+        : { personId: link.personId, via: "owner", gen: link.gen }
     : {
         personId: link.personId,
         via: "handoff",
@@ -529,16 +550,25 @@ export function openedSessions(orgId: string): ReadonlySet<string> {
  * seen), preview, refusal or cap; newest first. Device families only.
  */
 export function readSessionVisits(shareId: string, recipientId: string): SessionShareVisit[] {
-  const log = logOf(SESSION_LOG);
+  return readHostLog(SESSION_LOG, (l) => l.via === "session" && l.shareId === shareId && l.recipientId === recipientId);
+}
+
+/** One preview's log (§mesh.public/visitor-log), folded like readSessionVisits. */
+export function readPreviewVisits(previewId: string): SessionShareVisit[] {
+  return readHostLog(PREVIEW_LOG, (l) => l.via === "preview" && l.previewId === previewId);
+}
+
+function readHostLog(logKey: string, match: (l: LinkKey) => boolean): SessionShareVisit[] {
+  const log = logOf(logKey);
   const out: SessionShareVisit[] = [];
   for (const l of log.lines) {
-    if (l.kind === "seen" || l.via !== "session" || l.shareId !== shareId || l.recipientId !== recipientId) continue;
+    if (l.kind === "seen" || !match(l)) continue;
     if (l.kind === "visit") {
       const v = log.visits.get(l.id);
       const last = v ? Math.max(v.lastSeen, v.lastWritten) : 0;
-      out.push({ kind: "visit", at: l.at, device: l.device, ...(l.bot ? { bot: true as const } : {}), ...(v && last > v.at ? { lastSeenAt: iso(last) } : {}) });
-    } else if (l.kind === "capped") out.push({ kind: "capped", at: l.at, device: "" });
-    else out.push({ kind: l.kind, at: l.at, device: l.device, ...(l.kind === "refused" && l.bot ? { bot: true as const } : {}) });
+      out.push({ id: l.id, kind: "visit", at: l.at, device: l.device, ...(l.bot ? { bot: true as const } : {}), ...(v && last > v.at ? { lastSeenAt: iso(last) } : {}) });
+    } else if (l.kind === "capped") out.push({ id: l.id, kind: "capped", at: l.at, device: "" });
+    else out.push({ id: l.id, kind: l.kind, at: l.at, device: l.device, ...(l.kind === "refused" && l.bot ? { bot: true as const } : {}) });
   }
   return out.sort((a, b) => b.at.localeCompare(a.at));
 }

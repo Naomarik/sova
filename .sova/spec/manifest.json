@@ -171,7 +171,7 @@
     "§app.session-list/anatomy": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "verified",
       "code": [
         "src/components/Sidebar.tsx",
         "src/design/base.css",
@@ -548,9 +548,14 @@
     "§app/new-session-dialog": {
       "kind": "surface",
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "verified",
       "code": [
         "src/components/NewSessionDialog.tsx",
+        "src/components/FolderPicker.tsx",
+        "src/lib/new-session.ts",
+        "src/lib/new-session.test.ts",
+        "src/lib/hidden-folders.ts",
+        "src/lib/hidden-folders.test.ts",
         "server/targets.ts"
       ]
     },
@@ -1390,7 +1395,7 @@
     "§design.copy-deck/new-session-dialog": {
       "kind": "note",
       "authority": "accepted",
-      "evidence": "unreviewed"
+      "evidence": "verified"
     },
     "§design.copy-deck/settings-modes-delegate": {
       "kind": "note",
@@ -11302,6 +11307,41 @@
       "requires": [],
       "authority": "accepted",
       "evidence": "verified"
+    },
+    "§mesh.public/visitor-log": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.baton/visits",
+        "§mesh.public/preview-proxy",
+        "§mesh.public/forwarded-for",
+        "§app.session-share/shares-page"
+      ],
+      "code": [
+        "server/visitor-logging.ts",
+        "server/visitor-identity.ts",
+        "server/visitor-identity.test.ts",
+        "server/visits.ts",
+        "server/share/preview-proxy.ts",
+        "server/share/edge.ts",
+        "server/share/routes.ts",
+        "server/share/session-routes.ts",
+        "server/share/router.ts",
+        "server/share/ingress.ts",
+        "server/share-preview-router.test.ts",
+        "server/public-links-routes.ts",
+        "server/shares-overview.ts",
+        "server/index.ts",
+        "shared/public-links.ts",
+        "shared/session-share.ts",
+        "src/lib/public-links.ts",
+        "src/components/PublicLinksSettings.tsx",
+        "src/components/SharesPage.tsx",
+        "src/lib/session-shares.ts",
+        "src/shares.css",
+        "src/app.css"
+      ]
     }
   },
   "boundary": {

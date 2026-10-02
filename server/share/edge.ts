@@ -13,6 +13,7 @@ import { sessionShareUpgrade } from "./session-routes";
 import { PREVIEW_LIMITS } from "../../shared/public-links";
 import { previewAnswer, previewUpgradeAnswer } from "./preview-pages";
 import { clientAddress, trustedClient } from "./security";
+import { noteShareClient } from "../visitor-identity";
 import { MB, PHOTO_MB } from "../../shared/baton";
 import { UPLOAD_BODY_SLACK } from "../baton-images";
 
@@ -231,7 +232,9 @@ export interface ShareServerOptions {
 export function inProcessShare(): { dispatch: ShareDispatch; upgrade: ShareUpgrade } {
   const handle = getRequestListener(createShareApp().fetch);
   const wss = new WebSocketServer({ noServer: true, maxPayload: SHARE_WS_MAX_PAYLOAD });
-  const dispatch: ShareDispatch = (req, res) => {
+  const dispatch: ShareDispatch = (req, res, ctx) => {
+    // The share routes read the client off the request (§mesh.public/visitor-log).
+    noteShareClient(req, ctx.client);
     handle(req, res);
   };
   const sessionUpgrade = sessionShareUpgrade();

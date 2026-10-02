@@ -37,7 +37,8 @@ import { orgsRouteFromHash } from "./lib/orgs-route";
 import { onListRefresh } from "./lib/list-refresh";
 import { OrgsView } from "./components/OrgsView";
 import { loadSessionGroups, sessionGroups, sessionGroupsLoaded } from "./lib/session-groups";
-import { createThenArchive, dropArchived, newSessionCwd } from "./lib/new-session";
+import { createThenArchive, dropArchived, newSessionCwd, offersCwd } from "./lib/new-session";
+import { showHiddenFolders } from "./lib/hidden-folders";
 import { cwdLabel } from "./lib/remote-session";
 import { startRecentPreload } from "./lib/recent-preload";
 import { createPoll } from "./lib/poll";
@@ -1212,7 +1213,7 @@ export function App() {
       <Show when={creating()}>
         <Portal>
           <NewSessionDialog
-            prefill={newSessionCwd(summary(), list() ?? []) ?? ""}
+            prefill={newSessionCwd(summary(), list() ?? [], (cwd) => offersCwd(cwd, showHiddenFolders())) ?? ""}
             knownCwds={[...new Set((list() ?? []).filter((s) => !s.overseer && !s.org).map((s) => s.cwd))]}
             onCancel={() => setCreating(false)}
             onCreated={adoptCreated}

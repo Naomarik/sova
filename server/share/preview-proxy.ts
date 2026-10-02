@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { request, type IncomingHttpHeaders, type IncomingMessage, type ServerResponse } from "node:http";
 import { connect, type Socket } from "node:net";
 import type { Duplex } from "node:stream";
@@ -5,7 +6,10 @@ import { PREVIEW_LIMITS } from "../../shared/public-links";
 import { keptPreview } from "../preview-kept";
 import { findPreview, findPreviewByHash, listPreviews, onPreviewEnded, type PreviewRecord, previewState } from "../preview-links";
 import { staticServes } from "../preview-serve";
-import { previewAnswer, previewUpgradeAnswer } from "./preview-pages";
+import { noteVisitor, offSiteReferer } from "../visitor-identity";
+import { readVisitorLogging } from "../visitor-logging";
+import { recordOpen, TAB_RE } from "../visits";
+import { isNavigation, previewAnswer, previewUpgradeAnswer } from "./preview-pages";
 
 /**
  * The minting host's reverse proxy for its own previews (§mesh.public/preview-proxy): the one place
@@ -18,6 +22,11 @@ import { previewAnswer, previewUpgradeAnswer } from "./preview-pages";
  *
  * The record is judged on every request (unknown 404, off or expired 410), and open connections
  * are cut when their preview is turned off (onPreviewEnded) or found expired by the sweep.
+ *
+ * The host's visitor switches (§mesh.public/visitor-log): with Log visitors on, a page load is a
+ * visit in preview-visits.jsonl, its tab the proxy's own `__Host-sova-pv` cookie (set when the load
+ * came without one; never passed to the app, whatever the switch); with Send the visitor's address
+ * on, the app gets one X-Forwarded-For (the edge's client address) and X-Forwarded-Proto.
  */
 
 // ---- the header transforms ------------------------------------------------------------------------
@@ -36,9 +45,23 @@ const connectionNamed = (v: string | string[] | undefined): Set<string> =>
 
 const localOrigin = (port: number) => `http://localhost:${port}`;
 
+/** The proxy's own cookie: a preview visit's tab (§mesh.public/visitor-log). */
+export const VISIT_COOKIE = "__Host-sova-pv";
+
+/** The visit cookie's value in a Cookie header, when it has TAB_RE's shape. */
+export function visitCookie(cookie: string | undefined): string | null {
+  for (const part of (cookie ?? "").split(";")) {
+    const [k, ...v] = part.trim().split("=");
+    if (k === VISIT_COOKIE && TAB_RE.test(v.join("="))) return v.join("=");
+  }
+  return null;
+}
+
 /** The request headers the app gets: a browser on this computer's, with the preview's origin
-    swapped for localhost in Origin and Referer, and nothing forwarded. */
-export function appRequestHeaders(headers: IncomingHttpHeaders, port: number, publicOrigin: string): Record<string, string | string[]> {
+    swapped for localhost in Origin and Referer, the proxy's own cookie removed, and nothing
+    forwarded, unless `client` is given (the host sends the visitor's address): then exactly one
+    X-Forwarded-For and X-Forwarded-Proto. */
+export function appRequestHeaders(headers: IncomingHttpHeaders, port: number, publicOrigin: string, client?: string): Record<string, string | string[]> {
   const named = connectionNamed(headers.connection);
   const out: Record<string, string | string[]> = {};
   for (const [name, value] of Object.entries(headers)) {
@@ -50,6 +73,18 @@ export function appRequestHeaders(headers: IncomingHttpHeaders, port: number, pu
   if (typeof out.origin === "string" && out.origin.toLowerCase() === publicOrigin) out.origin = localOrigin(port);
   if (typeof out.referer === "string" && (out.referer === publicOrigin || out.referer.startsWith(`${publicOrigin}/`) || out.referer.startsWith(`${publicOrigin}?`)))
     out.referer = localOrigin(port) + out.referer.slice(publicOrigin.length);
+  if (typeof out.cookie === "string") {
+    const kept = out.cookie
+      .split(";")
+      .map((p) => p.trim())
+      .filter((p) => p && p.split("=")[0] !== VISIT_COOKIE);
+    if (kept.length) out.cookie = kept.join("; ");
+    else delete out.cookie;
+  }
+  if (client) {
+    out["x-forwarded-for"] = client;
+    out["x-forwarded-proto"] = "https";
+  }
   return out;
 }
 
@@ -76,8 +111,9 @@ export function hostOnlyCookie(value: string): string {
 }
 
 /** The response headers the visitor gets, as a flat [name, value, …] list for writeHead; null
-    when the answer carries an x-sova-* header (a Sova port: never passed on). */
-export function visitorResponseHeaders(raw: string[], port: number, publicOrigin: string): string[] | null {
+    when the answer carries an x-sova-* header (a Sova port: never passed on). `tab`: a new visit
+    cookie to set. */
+export function visitorResponseHeaders(raw: string[], port: number, publicOrigin: string, tab?: string | null): string[] | null {
   const named = new Set<string>();
   for (let i = 0; i < raw.length; i += 2) if (raw[i]!.toLowerCase() === "connection") for (const t of connectionNamed(raw[i + 1])) named.add(t);
   const local = localPrefix(port);
@@ -101,6 +137,7 @@ export function visitorResponseHeaders(raw: string[], port: number, publicOrigin
   }
   out.push("Cache-Control", privateCacheControl(cache));
   if (!referrer) out.push("Referrer-Policy", "same-origin");
+  if (tab) out.push("Set-Cookie", `${VISIT_COOKIE}=${tab}; Path=/; Secure; HttpOnly; SameSite=Lax`);
   return out;
 }
 
@@ -238,8 +275,10 @@ export interface PreviewProxyOptions {
 }
 
 export interface PreviewProxy {
-  dispatch(req: IncomingMessage, res: ServerResponse, label: string): void;
-  upgrade(req: IncomingMessage, socket: Duplex, head: Buffer, label: string): void;
+  /** `client`: the address the share edge computed (§mesh.public/forwarded-for), for the visitor log
+      and X-Forwarded-For. */
+  dispatch(req: IncomingMessage, res: ServerResponse, label: string, client?: string): void;
+  upgrade(req: IncomingMessage, socket: Duplex, head: Buffer, label: string, client?: string): void;
   /** Cut every open connection whose preview is no longer active. */
   sweep(): void;
   /** Open connections of one preview (tests). */
@@ -270,7 +309,24 @@ export function createPreviewProxy(opts: PreviewProxyOptions): PreviewProxy {
     return origin ? { record, origin: origin.toLowerCase() } : "no-origin";
   };
 
-  const dispatch = (req: IncomingMessage, res: ServerResponse, label: string): void => {
+  /** A page load while the host logs visitors: the visit (never fails the request); the new cookie
+      to set, when it came without one. */
+  const logPageLoad = (req: IncomingMessage, record: PreviewRecord, origin: string, client: string | undefined): string | null => {
+    if (!readVisitorLogging().logVisitors || !isNavigation(req)) return null;
+    const had = visitCookie(req.headers.cookie);
+    const tab = had ?? randomBytes(16).toString("base64url");
+    try {
+      const ua = req.headers["user-agent"];
+      const id = recordOpen({ via: "preview", previewId: record.id }, { tab, userAgent: ua });
+      const lang = req.headers["accept-language"];
+      noteVisitor(id, { ip: client ?? req.socket.remoteAddress ?? "", ua, lang, referer: offSiteReferer(req.headers.referer, origin), path: req.url }, true);
+    } catch (err) {
+      console.warn(`[preview] visit log failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    return had ? null : tab;
+  };
+
+  const dispatch = (req: IncomingMessage, res: ServerResponse, label: string, client?: string): void => {
     if (disposed) return previewAnswer(req, res, "busy");
     const j = judge(label);
     if (j === "unknown") return previewAnswer(req, res, "unknown");
@@ -282,6 +338,8 @@ export function createPreviewProxy(opts: PreviewProxyOptions): PreviewProxy {
     if (Number.isFinite(declared) && declared > bodyMax) return previewAnswer(req, res, "tooLarge");
     const release = slots.take(record.hash, "http");
     if (!release) return previewAnswer(req, res, "busy");
+    const tab = logPageLoad(req, record, origin, client);
+    const forward = client && readVisitorLogging().forwardIp ? client : undefined;
     let up: ReturnType<typeof request> | null = null;
     let done = false;
     const finish = () => {
@@ -315,7 +373,7 @@ export function createPreviewProxy(opts: PreviewProxyOptions): PreviewProxy {
         previewAnswer(req, res, "notRunning");
         return finish();
       }
-      const headers = appRequestHeaders(req.headers, record.port, origin);
+      const headers = appRequestHeaders(req.headers, record.port, origin, forward);
       up = request({ method: req.method, path: req.url, headers, createConnection: () => sock });
       up.on("error", () => {
         if (!res.headersSent) previewAnswer(req, res, "notRunning");
@@ -324,7 +382,7 @@ export function createPreviewProxy(opts: PreviewProxyOptions): PreviewProxy {
       });
       up.on("response", (r) => {
         clearTimeout(timer);
-        const out = visitorResponseHeaders(r.rawHeaders, record.port, origin);
+        const out = visitorResponseHeaders(r.rawHeaders, record.port, origin, tab);
         if (!out) {
           r.resume();
           up?.destroy();
@@ -349,7 +407,7 @@ export function createPreviewProxy(opts: PreviewProxyOptions): PreviewProxy {
     });
   };
 
-  const upgrade = (req: IncomingMessage, socket: Duplex, head: Buffer, label: string): void => {
+  const upgrade = (req: IncomingMessage, socket: Duplex, head: Buffer, label: string, client?: string): void => {
     if (disposed) return previewUpgradeAnswer(socket, "busy");
     const j = judge(label);
     if (j === "unknown") return previewUpgradeAnswer(socket, "unknown");
@@ -389,7 +447,7 @@ export function createPreviewProxy(opts: PreviewProxyOptions): PreviewProxy {
       upstream = sock;
       sock.on("error", finish);
       sock.on("close", finish);
-      const headers = appRequestHeaders(req.headers, record.port, origin);
+      const headers = appRequestHeaders(req.headers, record.port, origin, client && readVisitorLogging().forwardIp ? client : undefined);
       // An upgrade keeps its own two hop-by-hop headers.
       const lines = [`${req.method ?? "GET"} ${req.url ?? "/"} HTTP/1.1`, "Connection: Upgrade", `Upgrade: ${String(req.headers.upgrade ?? "websocket")}`];
       for (const [k, v] of Object.entries(headers)) for (const one of Array.isArray(v) ? v : [v]) lines.push(`${k}: ${one}`);

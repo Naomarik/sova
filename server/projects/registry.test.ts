@@ -105,6 +105,26 @@ test("registration refuses a root already registered, reserved roots, and what i
   await assert.rejects(prepareRegistration("", none), /folder path/);
 });
 
+test("a folder inside Sova's state or a reserved folder is refused even when it normalizes to a checkout outside it", async () => {
+  // Sova's state inside a git checkout (a hermetic agent dir in a worktree): the checkout root is fine, the state isn't.
+  const checkout = repo("holds-state");
+  const state = join(checkout, "tmp", "agent", "sova");
+  mkdirSync(state, { recursive: true });
+  const saved = process.env.PI_CODING_AGENT_DIR;
+  process.env.PI_CODING_AGENT_DIR = join(checkout, "tmp", "agent");
+  try {
+    clearProjectCache();
+    await assert.rejects(prepareRegistration(join(checkout, "tmp", "agent"), none), /Sova's own state can't be a project\./);
+    await assert.rejects(prepareRegistration(state, none), /Sova's own state can't be a project\./);
+  } finally {
+    process.env.PI_CODING_AGENT_DIR = saved;
+  }
+  const ws = join(checkout, "workspaces", "acme");
+  mkdirSync(ws, { recursive: true });
+  clearProjectCache();
+  await assert.rejects(prepareRegistration(ws, { ...none, reservedRoots: () => [ws] }), /is inside .*Sova keeps for itself/);
+});
+
 test("folderOfRepo names the clone after the repository", () => {
   assert.equal(folderOfRepo("https://github.com/acme/widget.git"), "widget");
   assert.equal(folderOfRepo("git@github.com:acme/widget.git"), "widget");

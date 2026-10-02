@@ -122,9 +122,12 @@ export interface PreparedRoot {
   normalizedFrom?: string;
 }
 
-/** Why `root` may not be a project root, or null: inside Sova's state, or inside or holding a reserved folder. */
+/**
+ * Why `root` may not be a project root, or null: inside Sova's state (the whole agent dir that holds
+ * `<stateRoot>`: sessions, settings, extensions), or inside or holding a reserved folder.
+ */
 export function reservedRootProblem(root: string, reserved: string[]): string | null {
-  if (within(root, canonical(stateRoot()))) return "Sova's own state can't be a project.";
+  if (within(root, canonical(dirname(stateRoot())))) return "Sova's own state can't be a project.";
   for (const r of reserved) {
     const dir = canonical(r);
     if (within(root, dir) || within(dir, root)) return `${root} ${within(root, dir) ? "is inside" : "holds"} ${dir}, which Sova keeps for itself, so it can't be a project.`;
@@ -142,7 +145,9 @@ export async function prepareRegistration(rawRoot: unknown, deps: RegistrationDe
   const p = await projectOf(asked);
   if (p.state === "none") throw new RegistryError("root must be a folder path");
   if (p.state !== "ok") throw new RegistryError(p.message);
-  const reserved = reservedRootProblem(p.root, deps.reservedRoots?.() ?? []);
+  // The folder asked for first: one inside Sova's state that sits in a checkout must not pass as that checkout.
+  const reservedDirs = deps.reservedRoots?.() ?? [];
+  const reserved = reservedRootProblem(canonical(asked), reservedDirs) ?? reservedRootProblem(p.root, reservedDirs);
   if (reserved) throw new RegistryError(reserved);
   const taken = (await deps.rootsInUse()).find((o) => canonical(o.root) === p.root);
   if (taken) throw new RegistryError(`${p.root} is already the project ${taken.name ?? taken.id}.`, 409);

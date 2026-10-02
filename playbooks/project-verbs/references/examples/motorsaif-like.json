@@ -1,0 +1,87 @@
+{
+  "version": 1,
+  "sources": ["bb.edn", "deps.edn", "shadow-cljs.edn", "package.json", ".mise.toml", "mise.toml"],
+  "setup": [
+    {
+      "id": "locals",
+      "run": [".sova/bin/setup"],
+      "inputs": [".sova/bin/setup"]
+    }
+  ],
+  "data": {
+    "datomic": {"kind": "dir", "from": "${main}/infra/datomic/data"},
+    "redis": {"kind": "dir"}
+  },
+  "services": {
+    "db": {
+      "cmd": [".sova/bin/transactor"],
+      "env": {"DATOMIC_HOME": "${main}/infra/datomic", "DATOMIC_DATA": "${data.datomic}"},
+      "ports": {
+        "port": {"base": 4334, "stride": 10},
+        "h2": {"base": 4335, "stride": 10},
+        "h2web": {"base": 4336, "stride": 10}
+      },
+      "ready": {"tcp": "port", "timeout": 180},
+      "about": "Datomic dev transactor: datomic:dev://localhost:${ports.db.port}/motorsaif",
+      "isolation": {
+        "method": "process",
+        "why": "Holds all app data; each copy runs its own transactor on a copy of main's dev data."
+      }
+    },
+    "redis": {
+      "cmd": ["redis-server", "--port", "${ports.redis.port}", "--dir", "${data.redis}"],
+      "env": {"MISE_TRUSTED_CONFIG_PATHS": "${checkout}"},
+      "ports": {
+        "port": {"base": 6375, "stride": 10}
+      },
+      "about": "Redis: redis-cli -p ${ports.redis.port}",
+      "isolation": {
+        "method": "process",
+        "why": "Sessions and caches; each copy runs its own empty redis."
+      }
+    },
+    "web": {
+      "cmd": ["clojure", "-M:dev:nrepl", "--port", "${ports.web.nrepl}"],
+      "env": {
+        "MISE_TRUSTED_CONFIG_PATHS": "${checkout}",
+        "PORT": "${ports.web.http}",
+        "DATOMIC_URI": "datomic:dev://localhost:${ports.db.port}/motorsaif",
+        "REDIS_PORT": "${ports.redis.port}"
+      },
+      "ports": {
+        "http": {"base": 4000, "stride": 10},
+        "nrepl": {"base": 7850, "stride": 10}
+      },
+      "requires": ["db", "redis"],
+      "ready": {"http": "http", "timeout": 300},
+      "about": "Backend nREPL: clj-nrepl-eval -p ${ports.web.nrepl}; the app: http://127.0.0.1:${ports.web.http}/",
+      "isolation": {
+        "method": "ports",
+        "why": "The app server keeps its state in db and redis; its own ports per copy."
+      }
+    },
+    "test-repl": {
+      "cmd": ["clojure", "-M:test:test-repl", "--port", "${ports.test-repl.nrepl}"],
+      "env": {"MISE_TRUSTED_CONFIG_PATHS": "${checkout}"},
+      "ports": {
+        "nrepl": {"base": 7852, "stride": 10}
+      },
+      "start": "on-demand",
+      "about": "Test nREPL: clj-nrepl-eval -p ${ports.test-repl.nrepl} (started by project_verbs test)",
+      "isolation": {
+        "method": "ports",
+        "why": "Test JVM with no dev system; its own port per copy, started only when tests run."
+      }
+    }
+  },
+  "hooks": {
+    "probe": {
+      "run": [".sova/bin/probe"]
+    }
+  },
+  "test": {
+    "run": [".sova/bin/test"],
+    "requires": ["test-repl"],
+    "smoke": ["naomarik.motorsaif.core-test"]
+  }
+}

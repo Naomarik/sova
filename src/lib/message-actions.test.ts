@@ -88,11 +88,10 @@ test("each role gets its own branch action, never the other's", () => {
   const a = actionsFor("assistant", { copyable: true });
   assert.ok(u.includes("rewind") && !u.includes("regenerate"));
   assert.ok(a.includes("regenerate") && !a.includes("rewind"));
-  // Both offer the same safe two, Copy then Share, and the branch-changing one last — and nothing
-  // else: there is no Fork.
+  // Reply forks are fourth; they never appear on a user message or replace Regenerate.
   assert.deepEqual(u, ["copy", "share", "rewind"]);
-  assert.deepEqual(a, ["copy", "share", "regenerate"]);
-  assert.equal(a[a.length - 1], "regenerate");
+  assert.deepEqual(a, ["copy", "share", "regenerate", "fork"]);
+  assert.equal(a[3], "fork");
 });
 
 test("an images-only message keeps Share and Rewind but offers no Copy", () => {
@@ -114,6 +113,17 @@ test("watch mode says which actions need a chat, in each action's own words", ()
   const watching = state({ chat: false });
   assert.match(actionReason("rewind", watching)!, /Only a chat open in Sova can rewind\./);
   assert.match(actionReason("regenerate", watching)!, /Only a chat open in Sova can regenerate\./);
+});
+
+test("fork keeps a reason in unavailable views and needs no user-message replay", () => {
+  assert.match(actionReason("fork", state({ chat: false }))!, /Open this session as a chat/);
+  assert.match(actionReason("fork", state({ live: true }))!, /terminal/);
+  assert.equal(actionReason("fork", state({ streaming: true })), "Stop the current turn first.");
+  assert.equal(actionReason("fork", state({ compacting: true })), "Wait for the compaction to finish.");
+  assert.match(actionReason("fork", state({ pending: true }))!, /already in progress/);
+  assert.equal(actionReason("fork", state({ paused: "Connecting…" })), "Connecting…");
+  assert.equal(actionReason("fork", state({ wake: true, link: true, topic: true })), null);
+  assert.equal(ACTION_LABEL.fork, "Fork from here");
 });
 
 test("a terminal-owned session refuses every mutation", () => {

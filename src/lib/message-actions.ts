@@ -7,7 +7,7 @@
 import type { TranscriptItem } from "../../shared/protocol";
 import { entryIdOf } from "./jump";
 
-export type MessageActionKind = "copy" | "share" | "rewind" | "regenerate" | "remove";
+export type MessageActionKind = "copy" | "share" | "rewind" | "regenerate" | "fork" | "remove";
 
 /** The actions a LANDED message offers. A queued message offers only `remove`, which is about
     the outgoing queue rather than about an entry, and carries its own reason (queueRemoveReason). */
@@ -98,12 +98,12 @@ export function stripsByRow(rows: readonly TranscriptItem[]): Map<number, Messag
 
 /**
  * What a strip offers, in order: the safe actions first (Share opens the share page with its
- * start on this message), then a gap, then the one that changes the branch. `copyable` is false
+ * start on this message), then the branch action and, for replies, an independent fork. `copyable` is false
  * for an images-only message — a Copy that copies "" would claim to have copied the message.
  */
 export function actionsFor(role: MessageRole, opts: { copyable: boolean }): LandedActionKind[] {
   const safe: LandedActionKind[] = opts.copyable ? ["copy", "share"] : ["share"];
-  return [...safe, role === "user" ? "rewind" : "regenerate"];
+  return role === "user" ? [...safe, "rewind"] : [...safe, "regenerate", "fork"];
 }
 
 /** Each action's accessible name. Icon-only buttons have nothing else to say what they do. */
@@ -112,6 +112,7 @@ export const ACTION_LABEL: Record<MessageActionKind, string> = {
   share: "Share from here",
   rewind: "Rewind to before this message",
   regenerate: "Regenerate this reply",
+  fork: "Fork from here",
   remove: "Remove this queued message",
 };
 
@@ -195,6 +196,14 @@ export function actionReason(kind: LandedActionKind, s: ActionState): string | n
       return null;
     // Share only opens the share page, which reads: a watch or a live terminal can't refuse it.
     case "share":
+      return null;
+    case "fork":
+      if (!s.chat) return "Open this session as a chat in Sova to fork it.";
+      if (s.live) return "This session is open in a terminal. Fork it from an idle chat in Sova.";
+      if (s.pending) return "A session action is already in progress.";
+      if (s.paused) return s.paused;
+      if (s.streaming) return "Stop the current turn first.";
+      if (s.compacting) return "Wait for the compaction to finish.";
       return null;
     case "rewind":
     case "regenerate":

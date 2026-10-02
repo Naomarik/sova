@@ -27,6 +27,7 @@ import { flushWorkspaces } from "./workspace-commits";
 import { registerDecisionRoutes } from "./decisions-routes";
 import { registerVoiceRoutes, stopVoice } from "./voice/service";
 import { registerSessionShareRoutes } from "./session-shares-routes";
+import { registerSessionForkRoutes } from "./session-fork-routes";
 import { mountPreviewLinks } from "./preview-links-routes";
 import { startStaticPreviews } from "./project-previews";
 import { mountPublicLinks } from "./public-links-routes";
@@ -330,6 +331,9 @@ registerVoiceRoutes(app);
 // Session share links: the operator's routes and Follow live (server/session-shares-routes.ts;
 // §app/session-share). The recipients' routes are the share listener's (server/share/session-routes.ts).
 registerSessionShareRoutes(app);
+// Fork a conversation through a delivered reply (server/session-fork-routes.ts): POST /api/sessions/fork
+// makes a new web-owned session from the source's active branch, read-only on the source.
+registerSessionForkRoutes(app);
 
 // The sidebar's user-made groups: Sova's own grouping of
 // sessions, stored in ~/.pi/agent/sova/session-groups.json. Keyed by

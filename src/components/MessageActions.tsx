@@ -9,6 +9,7 @@ const ICON: Record<MessageActionKind, IconName> = {
   share: "share",
   rewind: "undo",
   regenerate: "refresh",
+  fork: "branch",
   remove: "close",
 };
 

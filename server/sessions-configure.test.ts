@@ -36,4 +36,8 @@ test("refusals: special sessions, TUI-live, archived, mid-turn, subagents workin
   assert.match(configureRefusal({ ...s, archived: true }, false, 0)!, /archived/);
   assert.match(configureRefusal(s, true, 0)!, /running a turn/);
   assert.match(configureRefusal(s, false, 2)!, /subagents are working/);
+  // A profile-only switch is allowed while the chat is busy: it reaches later turns and team actions.
+  assert.equal(configureRefusal(s, true, 3, true), null, "profile-only: turn and working subagents do not block");
+  assert.match(configureRefusal({ ...s, live: { pid: 3, status: "x" } }, true, 3, true)!, /terminal/, "profile-only: a TUI-owned session still refuses");
+  assert.match(configureRefusal({ ...s, workerSession: true }, false, 0, true)!, /subagent/);
 });

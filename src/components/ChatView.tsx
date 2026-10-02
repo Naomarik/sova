@@ -124,6 +124,8 @@ import type { ModeControl, ModeState } from "./ModeMenu";
 import type { ModelControl } from "./ModelMenu";
 import { ChangesSession } from "./ChangesViewer";
 import { HistoryItems, LiveEntries, type MessageActionsProvider, ThreadScroller, TranscriptSkeleton, TurnError } from "./Thread";
+import { SubagentLimitRow } from "./SubagentLimitRow";
+import { failureHasRow } from "../lib/subagent-limit";
 import { Banner, Icon } from "./ui";
 import { UiDialog } from "./UiDialog";
 
@@ -361,7 +363,10 @@ export function ChatView(props: {
     else toast("That alignment isn't in the transcript on screen.");
   };
   const [syncing, setSyncing] = createSignal(false);
-  const [errors, setErrors] = createSignal<string[]>([]);
+  /** The thread's turn-error rows: the message, and the FAILED TURN'S own model provider when the
+      server said it (live error event only — a worker's failure in the thread never carries one,
+      so the limit row never guesses it from this chat's model). */
+  const [errors, setErrors] = createSignal<{ message: string; provider?: string }[]>([]);
   /** The pane's turn-error STATE (≠ `errors`, the thread's permanent record): the last turn ended
       in an error and no newer turn has started. Cleared by `agent_start` — a fresh turn supersedes
       the old failure — and by a rewind. Announced when it lands, reported to the workspace's
@@ -476,7 +481,7 @@ export function ChatView(props: {
       });
     } catch (err) {
       // Keep the streamed turn on screen; it's accurate, just not re-normalized.
-      setErrors((e) => [...e, `Couldn't reload the transcript after this run: ${(err as Error).message}`]);
+      setErrors((e) => [...e, { message: `Couldn't reload the transcript after this run: ${(err as Error).message}` }]);
     } finally {
       setSyncing(false);
     }
@@ -566,15 +571,15 @@ export function ChatView(props: {
   /** Items pi has queued work beside: their Remove never comes back (see SHARED_QUEUE_REASON). */
   const [sharedQueue, setSharedQueue] = createSignal<string[]>([]);
 
-  const turnFailed = (message: string) => {
+  const turnFailed = (message: string, provider?: string) => {
     const seen = errors();
     // The same failure re-reported (a reconnect loop) says nothing new: keep one row —
     // and say nothing, because an announcement per retry would read as N new errors.
     // The first landing is announced like every other turn boundary: a member whose turn
     // died reads the same as one that
     // replied, in its own pane's voice, without panning to find the banner.
-    if (seen[seen.length - 1] !== message) {
-      setErrors([...seen, message]);
+    if (seen[seen.length - 1]?.message !== message) {
+      setErrors([...seen, { message, ...(provider ? { provider } : {}) }]);
       setTurnError(message);
       announce(turnWord("stopped with an error.", "The turn stopped with an error."));
     }
@@ -909,7 +914,7 @@ export function ChatView(props: {
                 holdNotFound(msg.message);
                 break;
               }
-              turnFailed(msg.message);
+              turnFailed(msg.message, msg.provider);
             }
           }
           break;
@@ -1461,7 +1466,7 @@ export function ChatView(props: {
     // spending it on a refusal, and never picks another model for you.
     const offModel = offNow();
     if (offModel) {
-      setErrors((e) => (e[e.length - 1] === offModel ? e : [...e, offModel]));
+      setErrors((e) => (e[e.length - 1]?.message === offModel ? e : [...e, { message: offModel }]));
       announce(offModel);
       return false;
     }
@@ -1735,6 +1740,7 @@ export function ChatView(props: {
                 streaming={live.running}
                 hideTools={hideTools(props.path)}
                 hideThinking={hideThinking(props.path)}
+                limitPath={props.path}
                 actions={chatActions}
                 older={olderRows.api}
                 liveAlignIds={liveAlignIds()}
@@ -1747,6 +1753,7 @@ export function ChatView(props: {
                 names={batonNames()}
                 hideTools={hideTools(props.path)}
                 hideThinking={hideThinking(props.path)}
+                limitPath={props.path}
                 queueActions={queueActions}
               />
               <For each={commandRows()}>
@@ -1831,7 +1838,10 @@ export function ChatView(props: {
             </OverseerThreadContext.Provider>
           )}
         </Show>
-        <For each={errors()}>{(m) => <TurnError message={m} />}</For>
+        {/* One failure, one row: a failure with its own errored turn row in the thread carries the
+            limit switch there (with that row's provider); the error feed's mount is for failures
+            that never made a thread row (a refusal before any turn, a host move). */}
+        <For each={errors()}>{(m) => <><TurnError message={m.message} /><Show when={!failureHasRow(live.entries, m.message)}><SubagentLimitRow path={props.path} message={m.message} provider={m.provider} /></Show></>}</For>
       </ThreadScroller>
       <FlyoutSession.Provider value={() => props.path}>
       <Composer

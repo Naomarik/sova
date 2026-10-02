@@ -94,7 +94,8 @@ One file per document, in reading order.
 | [§chat/slash-commands · Slash commands](../chat/slash-commands.md) | Slash command menu and built-in commands. |
 | [§chat/markdown · Markdown and code](../chat/markdown.md) | Markdown rendering and code blocks. |
 | [§chat/context-window · Context window](../chat/context-window.md) | The context readout in the session head: plain text, the sidebar ring, steps toward the limit. |
-| [§chat/mode-menu · Mode menu](../chat/mode-menu.md) | Per-chat mode switching and the mode menu. |
+| [§chat/mode-menu · Mode menu](../chat/mode-menu.md) | Per-chat mode switching and the always-visible Subagents picker. |
+| [§chat/subagent-profiles · Subagent profiles](../chat/subagent-profiles.md) | Named worker setups, device-local defaults, per-chat ID picks and usage-limit recovery. |
 | [§chat/playbooks · Playbooks](../chat/playbooks.md) | Markdown recipes from the composer flyout: the three provenance groups, the two-step modal, and what gets sent into the chat. |
 | [§app/new-session-dialog · New Session dialog](../app/new-session-dialog.md) | Creating a session: the modal, the in-place folder picker, fields, and validation. |
 | [§app/extension-dialogs · Extension dialogs (`ui_request`, optional in MVP)](../app/extension-dialogs.md) | Extension-driven `ui_request` dialogs. |
@@ -103,6 +104,6 @@ One file per document, in reading order.
 | [§design/copy-deck · Copy deck](copy-deck.md) | All user-facing strings. |
 | [§app/insights · Insights](../app/insights.md) | Sidebar foot, Usage and Agents pages, team and subagent cards, insight strip. |
 | [§app/subagents-pane · Session detail pane](../app/subagents-pane.md) | The session side pane. |
-| [§app/settings-dialog · Settings dialog](../app/settings-dialog.md) | The gear in the sidebar foot, the tabbed modal it opens, the model policy screen (what may be used, and what subagents may be given), and Modes → Delegate (which worker each kind of Delegate work goes to). |
+| [§app/settings-dialog · Settings dialog](../app/settings-dialog.md) | The gear in the sidebar foot, the tabbed modal it opens, the model policy screen (what may be used, and what subagents may be given), and Subagents (named bundles of Delegate routing, team defaults and the spec writer). |
 | [§chat/timeline · Timeline tab](../chat/timeline.md) | The session on one time axis: chapters, inputs, density lines, markers, idle gaps — and the Inputs Only filter, whose rows rewind the chat. |
 | [§workspace/groups · Group workspaces](../workspace/groups.md) | A group opened as a place: split or tabbed panes, one composer that writes to every member, and what promoting, eliminating and dissolving do. |

@@ -198,12 +198,17 @@ strip, empty or not: a tab that came and went would move the strip under the rea
   and the selected tab is scrolled into view (to the nearest edge) when the pane opens and whenever
   the tab changes, so a tab a door opened is never off-screen at 375px.
 - **Session** is what the session is, in this order: Path (with Copy Session Path and Copy Resume
-  Command), Context, Repository, Worktrees (§chat.worktrees/pane), Identity (with Move into group
-  and, for web sessions, Archive), Compactions, Changes. Repository and Worktrees
-  load after Identity, which sits below them, so both hold a placeholder while they load, sized
-  to the common case: Repository's is a clean repository's layout (its root, three facts, a
-  two-line last commit and the Read line), and Worktrees' is as tall as its empty line. Then
-  Identity's buttons don't move under a reader about to press one; uncommitted changes, and each
+  Command), Context, Repository, Worktrees (§chat.worktrees/pane), Identity, Compactions, Changes.
+  The session's actions sit at the right end of the Path heading row, so they add no row of their
+  own and the path wraps below them at full width: Move into group (a small square folder icon,
+  named "Move into group", opening the group menu anchored to it) and, for web sessions only, to
+  its right Archive (a small square red trash icon named "Archive Session"; on an archived session
+  the same square, not red, with the undo icon, named "Unarchive Session"). Neither has words; each
+  is named by its `aria-label` and `title`, and each keeps a 44px touch target. Nothing that loads
+  sits above them, so they don't move under a reader about to press one. Repository and Worktrees
+  load after the rest, so both hold a placeholder while they load, sized to the common case:
+  Repository's is a clean repository's layout (its root, three facts, a two-line last commit and
+  the Read line), and Worktrees' is as tall as its empty line; uncommitted changes, and each
   tracked worktree, still add their height when they land.
 - **Usage** is what the session has spent, off the same insight the pane polls. First the
   headline, `{n} tokens in and out · $x` (input + output; cache in its `title`). Then a table with

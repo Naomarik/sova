@@ -6,6 +6,7 @@ import { parseTheme } from "../../shared/theme";
 import { parseDelegate } from "../../pi-config/extensions/mode/delegate.ts";
 import { parseSpec } from "../../pi-config/extensions/mode/spec.ts";
 import { parseProviderLimits } from "../../pi-config/extensions/provider-limits/gate.ts";
+import { parseSubagentProfiles } from "../../pi-config/extensions/subagents/subagent-profiles.ts";
 import { clockSkewed } from "./logins-merge";
 import { writeFileAtomic } from "./logins-stores";
 
@@ -24,10 +25,13 @@ import { writeFileAtomic } from "./logins-stores";
  * Which state is synced (the rest is per host by design):
  * - settings: Sova's settings.json (the claude-code provider switch) and defaults.json (new-session
  *   model and thinking); pi's model-favorites.json and model-policy.json; the mode extension's
- *   mode.json (default mode), mode-delegate.json and mode-spec.json.
+ *   mode.json (default mode), mode-delegate.json and mode-spec.json; the subagent profile library
+ *   subagent-profiles.json (its device default, subagent-profiles-default.json, never syncs:
+ *   which profile new chats start from is each device's own).
  * - themes: every `<state root>/themes/*.json` (the theme CHOICE is the browser's, per origin).
- * Not synced: topic-outline.json (it holds this host's claudeBin path), anything keyed by session
- * (titles, groups, drafts, origin: the session's owner keeps them), extensions.json.
+ * Not synced: subagent-profiles-default.json, topic-outline.json (it holds this host's claudeBin
+ * path), anything keyed by session (titles, groups, drafts, origin: the session's owner keeps
+ * them), extensions.json.
  */
 
 export type DocCategory = Extract<SyncCategory, "settings" | "themes">;
@@ -130,6 +134,7 @@ export function settingsDocs(agentDir: string, stateDir: string): DocSpec[] {
       },
     },
     { key: "settings:mode.json", category: "settings", path: join(agentDir, "mode.json"), valid: (t) => jsonObject(t) !== null },
+    { key: "settings:subagent-profiles.json", category: "settings", path: join(agentDir, "subagent-profiles.json"), valid: (t) => parseSubagentProfiles(t).ok },
     {
       key: "settings:mode-delegate.json",
       category: "settings",

@@ -29,6 +29,7 @@ import { resolve, join, dirname, posix, relative } from "node:path";
 import { realpathSync } from "node:fs";
 import { tmpdir, hostname } from "node:os";
 import { fileURLToPath } from "node:url";
+import { createInspection } from "./sova-spec.mjs";
 
 const CORE = join(dirname(fileURLToPath(import.meta.url)), "sova-spec.mjs");
 const FORMAT = "sova-spec-draft/1";
@@ -161,6 +162,15 @@ async function readOpen(abs) {
     return { state: "present", buf, sha256: sha(buf), bytes: buf.length };
   } finally { await fh.close(); }
 }
+// Capture-local metadata from the exact safe bytes used by read-only assessment triage.
+async function readSource(root, path, inputSources, readPolicy) {
+  const low = path.toLowerCase();
+  const storage = readPolicy === "assessment" && [".sova/spec/assessments", ".sova/spec/reviews", ".sova/spec/.cache"].some(d => low === d || low.startsWith(d + "/"));
+  const r = storage ? { state: "refused", why: "receipt/cache storage is not an input" } : await readFileSafe(root, path);
+  if (inputSources) inputSources.push({ path, state: r.state,
+    ...(r.state === "present" ? { sha256: r.sha256, bytes: r.bytes } : {}), ...(r.why ? { why: r.why } : {}) });
+  return r;
+}
 // Every component of a project-relative directory must be a plain directory; created only if asked.
 async function ownDir(root, rel, create, made) {
   let cur = root;
@@ -192,13 +202,16 @@ async function writeNew(dir, name, data) {
 // ---------------------------------------------------------------- spec trees
 // One spec tree at project-relative `rel`: manifest.json plus every file under its claimsRoot.
 // Files are keyed relative to `rel`. A symlink, special file or unreadable file anywhere is exit 2.
-async function readTree(root, rel, optional) {
+async function readTree(root, rel, optional, inputSources, readPolicy) {
   const where = (p) => `${rel}/${p}`;
   if ((await ownDir(root, rel, false)) === null) {
-    if (optional) return { exists: false, claimsRoot: null, manifest: null, files: new Map(), total: 0 };
+    if (optional) {
+      inputSources?.push({ path: where("manifest.json"), state: "absent" });
+      return { exists: false, claimsRoot: null, manifest: null, files: new Map(), total: 0 };
+    }
     throw new Fail(2, "spec-missing", `${rel} does not exist`);
   }
-  const m = await readFileSafe(root, where("manifest.json"));
+  const m = await readSource(root, where("manifest.json"), inputSources, readPolicy);
   if (m.state === "absent") {
     if (await exists(join(root, rel, "claims")))
       throw new Fail(2, "orphaned-spec", `${rel}/claims exists but ${rel}/manifest.json does not; nothing was changed — restore the manifest (or move the tree aside) before using drafts`);
@@ -222,7 +235,7 @@ async function readTree(root, rel, optional) {
       const p = `${sub}/${n}`, st = await lstat(join(root, rel, p));
       if (st.isSymbolicLink()) throw new Fail(2, "symlink-refused", `${where(p)} is a symlink; drafts never copy or follow links`);
       if (st.isDirectory()) { await walk(p); continue; }
-      const r = st.isFile() ? await readFileSafe(root, where(p)) : { state: "refused", why: "not a regular file" };
+      const r = st.isFile() ? await readSource(root, where(p), inputSources, readPolicy) : { state: "refused", why: "not a regular file" };
       if (r.state !== "present") throw new Fail(2, "file-refused", `${where(p)}: ${r.why ?? r.state}`);
       files.set(p, r); total += r.bytes;
     }
@@ -236,7 +249,22 @@ async function readTree(root, rel, optional) {
 const treePrint = (t) => [...t.files].map(([p, f]) => `${p} ${f.sha256}`).join("\n");
 
 // ---------------------------------------------------------------- core
-function runCore(root, specRel) {
+function coreContract(j, status) {
+  return !j || j.tool !== "sova-spec" ? "tool is not sova-spec"
+    : ![0, 1, 2].includes(j.exit) || j.exit !== status ? "exit missing or differs from process status"
+    : !Array.isArray(j.findings) ? "findings is not an array"
+    : j.exit !== 2 && !(Array.isArray(j.declarations) && j.declarations.every((d) => obj(d) && ID_RE.test(d.id) && typeof d.file === "string" && HEX.test(d.textSha256 ?? ""))) ? "declarations[] with id/file/textSha256 missing (this tool needs a core with --spec and check declarations)"
+    : null;
+}
+function runCore(root, specRel, readPolicy, inputSources) {
+  if (readPolicy !== undefined) {
+    const reader = createInspection(root, { spec: specRel, readPolicy });
+    if (inputSources) inputSources.push(...reader.sourceHashes().files.map(f => ({ ...f, state: "present" })));
+    const j = reader.check();
+    const why = coreContract(j, j.exit);
+    if (why || Buffer.byteLength(JSON.stringify(j, null, 2) + "\n") > MAX_CORE_STDOUT) throw new Fail(2, "core-contract", `core check does not match the expected contract: ${why ?? "output exceeds capture limit"}`);
+    return Promise.resolve(j);
+  }
   return new Promise((ok, bad) => {
     const ch = spawn(process.execPath, [CORE, "check", "--root", root, "--spec", specRel, "--json"], { cwd: root, shell: false, stdio: ["ignore", "pipe", "pipe"] });
     const chunks = []; let n = 0;
@@ -246,19 +274,15 @@ function runCore(root, specRel) {
     ch.on("close", (status) => {
       let j;
       try { j = JSON.parse(Buffer.concat(chunks).toString("utf8")); } catch { return bad(new Fail(2, "core-contract", `core printed no JSON (status ${status})`)); }
-      const why = !j || j.tool !== "sova-spec" ? "tool is not sova-spec"
-        : ![0, 1, 2].includes(j.exit) || j.exit !== status ? "exit missing or differs from process status"
-        : !Array.isArray(j.findings) ? "findings is not an array"
-        : j.exit !== 2 && !(Array.isArray(j.declarations) && j.declarations.every((d) => obj(d) && ID_RE.test(d.id) && typeof d.file === "string" && HEX.test(d.textSha256 ?? ""))) ? "declarations[] with id/file/textSha256 missing (this tool needs a core with --spec and check declarations)"
-        : null;
+      const why = coreContract(j, status);
       if (why) return bad(new Fail(2, "core-contract", `core check does not match the expected contract: ${why}`));
       ok(j);
     });
   });
 }
 // Declarations keyed by id, with files made relative to the spec directory.
-async function declsOf(root, specRel) {
-  const j = await runCore(root, specRel);
+async function declsOf(root, specRel, readPolicy, inputSources) {
+  const j = await runCore(root, specRel, readPolicy, inputSources);
   const decls = new Map();
   for (const d of j.declarations ?? []) decls.set(d.id, { file: d.file.startsWith(`${specRel}/`) ? d.file.slice(specRel.length + 1) : d.file, textSha256: d.textSha256, lines: d.lines });
   return { exit: j.exit, findings: j.findings, decls, counts: j.counts };
@@ -332,17 +356,17 @@ function blobAt(root, g, oid, path) {
 
 // ---------------------------------------------------------------- draft storage
 const draftRel = (name) => `${DRAFTS}/${name}`;
-async function loadDraft(root, name) {
+async function loadDraft(root, name, inputSources, readPolicy) {
   const rel = draftRel(name);
   if (!(await ownDir(root, rel, false))) throw new Fail(2, "draft-missing", `no draft ${rel}`);
-  const raw = await readFileSafe(root, `${rel}/draft.json`);
+  const raw = await readSource(root, `${rel}/draft.json`, inputSources, readPolicy);
   if (raw.state !== "present") throw new Fail(2, "draft-corrupt", `${rel}/draft.json: ${raw.why ?? raw.state}`);
   let d;
   try { d = JSON.parse(raw.buf.toString("utf8")); } catch (e) { throw new Fail(2, "draft-corrupt", `draft.json: ${e.message}`); }
   const why = draftSchema(d, name);
   if (why) throw new Fail(2, "draft-corrupt", `draft.json is not a valid ${FORMAT} draft named ${name}: ${why}`);
   // The baseline is immutable: exactly the recorded files with exactly the recorded bytes.
-  const base = await readTree(root, `${rel}/base`, true);
+  const base = await readTree(root, `${rel}/base`, true, inputSources, readPolicy);
   const want = Object.entries(d.base.files).map(([p, h]) => `${p} ${h}`).sort().join("\n");
   const got = [...base.files].map(([p, f]) => `${p} ${f.sha256}`).sort().join("\n");
   if (want !== got || base.exists !== d.base.specExisted) throw new Fail(2, "base-tampered", `${rel}/base no longer matches the baseline recorded in draft.json; a draft's baseline is never edited — start a new draft`);
@@ -401,15 +425,15 @@ function merge3(b, c, p) {
   return "conflict";                  // both changed it, differently
 }
 const recOf = (t, id) => (t.manifest?.claims ?? {})[id];
-async function analyze(root, name) {
-  const draft = await loadDraft(root, name);
+async function analyze(root, name, readPolicy, inputSources) {
+  const draft = await loadDraft(root, name, inputSources, readPolicy);
   const { d, rel, base } = draft;
-  const prop = await readTree(root, `${rel}/spec`, false);
-  const cur = await readTree(root, SPEC, true);
+  const prop = await readTree(root, `${rel}/spec`, false, inputSources, readPolicy);
+  const cur = await readTree(root, SPEC, true, inputSources, readPolicy);
   const roots = [base, cur, prop].filter((t) => t.exists).map((t) => t.claimsRoot);
   if (new Set(roots).size > 1) throw new Fail(1, "claims-root-changed", `claimsRoot differs between base, current and draft (${uniqSorted(roots).join(", ")}); drafts do not move the claims tree`);
-  const pc = await declsOf(root, `${rel}/spec`);
-  const bc = base.exists ? await declsOf(root, `${rel}/base`) : { exit: 0, findings: [], decls: new Map() };
+  const pc = await declsOf(root, `${rel}/spec`, readPolicy, inputSources);
+  const bc = base.exists ? await declsOf(root, `${rel}/base`, readPolicy, inputSources) : { exit: 0, findings: [], decls: new Map() };
 
   const fileSha = (t, p) => t.files.get(p)?.sha256 ?? null;
   const files = uniqSorted([...base.files.keys(), ...cur.files.keys(), ...prop.files.keys()]).filter((p) => p !== "manifest.json").map((path) => {
@@ -686,11 +710,11 @@ const removedText = (r) => `the draft removed "${r.phrase}" from ${r.id}, but ${
 const citedText = (r, base) => `the draft edited a line of ${r.citedBy.join(", ")} that cites ${r.id}, and ${r.files.join(", ")} changed since ${base.slice(0, 12)}, but ${r.id}'s prose is as it was: read it; if what it says changed, edit it in this draft (it is a foreign §)`;
 
 async function cmdCheck(root, o) {
-  const { rel, d } = await loadDraft(root, o.name), g = await gitInfo(root);
-  const j = await runCore(root, `${rel}/spec`);
+  const { rel, d } = await loadDraft(root, o.name, o.inputSources, o.readPolicy), g = await gitInfo(root);
+  const j = await runCore(root, `${rel}/spec`, o.readPolicy, o.inputSources);
   const findings = [];
   let a = null;
-  try { if (j.exit !== 2) a = await analyze(root, o.name); } catch (e) {
+  try { if (j.exit !== 2) a = await analyze(root, o.name, o.readPolicy, o.inputSources); } catch (e) {
     if (!(e instanceof Fail) || e.exit === 2) throw e;
     findings.push({ severity: "note", code: "drift-skipped", message: `drift checks skipped: ${e.message}` });
   }
@@ -1174,12 +1198,16 @@ function human(out) {
   return L.join("\n") + "\n";
 }
 
-async function main(argv) {
+async function evaluate(argv, readPolicy, inputSources) {
   let out = { tool: "sova-spec-draft", command: null, findings: [] };
-  const json = argv.includes("--json");
   try {
     const o = parseArgs(argv);
     out.command = o.cmd;
+    if (readPolicy !== undefined) {
+      if (o.cmd !== "check" || !["review", "assessment"].includes(readPolicy)) throw new Fail(2, "usage", "read policy applies only to internal draft inspection");
+      o.readPolicy = readPolicy;
+      o.inputSources = inputSources;
+    }
     const root = resolve(o.root);
     if (!(await lstat(root).catch(() => null))?.isDirectory()) throw new Fail(2, "root-missing", `${root} is not a directory`);
     out.root = root;
@@ -1193,8 +1221,27 @@ async function main(argv) {
     out.findings.push({ severity: e.exit === 2 ? "error" : "warn", code: e.code, message: e.code === "usage" ? `${e.message}. ${USAGE}` : e.message });
   }
   out.notice = NOTICE;
-  process.stdout.write(json ? JSON.stringify(out, null, 2) + "\n" : human(out));
-  return out.exit;
+  return out;
 }
 
-process.exitCode = await main(process.argv.slice(2));
+// Read-only internal triage: explicit per-call policy, no environment/global selector or write API.
+export async function inspectDraft(root, name, options = {}) {
+  if (typeof root !== "string" || typeof name !== "string" || !obj(options) || Object.keys(options).some(k => !["base", "readPolicy"].includes(k)) ||
+      (options.base !== undefined && typeof options.base !== "string") || (options.readPolicy !== undefined && typeof options.readPolicy !== "string"))
+    return { tool: "sova-spec-draft", command: "check", findings: [{ severity: "error", code: "usage", message: "invalid internal draft inspection arguments" }], exit: 2, notice: NOTICE };
+  const { base, readPolicy = "default" } = options;
+  const argv = ["check", name, "--root", root, "--json", ...(base === undefined ? [] : ["--base", base])];
+  const inputSources = readPolicy === "assessment" ? [] : undefined;
+  const out = await evaluate(argv, readPolicy === "default" ? undefined : readPolicy, inputSources);
+  return JSON.parse(JSON.stringify({ ...out, ...(inputSources ? { inputSources } : {}) }));
+}
+async function main(argv) {
+  const out = await evaluate(argv);
+  process.stdout.write(argv.includes("--json") ? JSON.stringify(out, null, 2) + "\n" : human(out));
+  return out.exit;
+}
+const direct = (() => {
+  try { return !!process.argv[1] && realpathSync(resolve(process.argv[1])) === realpathSync(fileURLToPath(import.meta.url)); }
+  catch { return false; }
+})();
+if (direct) process.exitCode = await main(process.argv.slice(2));

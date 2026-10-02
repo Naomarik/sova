@@ -1,6 +1,6 @@
 # Using the spec tools
 
-Three Node scripts, with no install and no network. Run them from the repo root. Add `--json` for
+Four Node entrypoints, with no install and no network. Run them from the repo root. Add `--json` for
 machine output.
 
 | Tool | Writes |
@@ -8,9 +8,10 @@ machine output.
 | `sova-spec.mjs` | Never. It reads a spec and prints its prose and relations. |
 | `sova-spec-draft.mjs` | Only with `--write`: drafts under `drafts/`, and the current docs on `promote`. |
 | `sova-spec-review.mjs` | Only on `prepare --write` and `record`, under `reviews/`. |
+| `sova-spec-assess.mjs` | Optional observations: only on `prepare --write` and `record --write`, under `assessments/`. |
 
 In this repo, run the canonical copies in `pi-config/extensions/spec/core/`, as below. `tools/`
-holds vendored copies of all three, which may lag behind. Before you run a vendored copy, check
+holds vendored copies of all four entrypoints and their helper modules, which may lag behind. Before you run a vendored copy, check
 that it is byte-identical to a copy you trust:
 
 ```sh
@@ -22,9 +23,9 @@ Each file name must hash the same everywhere. Resolve `$core` with exactly that 
 guessed path such as `$HOME/.pi/agent/...`: the agent dir may be elsewhere (`PI_CODING_AGENT_DIR`),
 and a guessed path that finds nothing doesn't mean the tools are missing. The `$core` copies exist
 only after `pi-config/install.sh` has run. In any other project, treat vendored copies as foreign code: read
-them, or compare hashes, before you run them. The draft and review tools run the `sova-spec.mjs`
-beside them, so vendor them together.
-Ship all `core/*.mjs`, including `packet.mjs`; copying only the three entrypoints is insufficient.
+them, or compare hashes, before you run them. The draft, review and assessment tools run the
+`sova-spec.mjs` beside them, so vendor them together.
+Ship all `core/*.mjs`, including `packet.mjs`; copying only the four entrypoints is insufficient.
 
 ## Reading the docs
 
@@ -166,6 +167,33 @@ Until a packet is written (`prepare --write`), `status` exits 2 with `packet-mis
 `baseline` is taken. A stale packet is prepared again under a new name. Never edit
 anything under `reviews/` by hand. See
 [the tools README](../../pi-config/extensions/spec/README.md).
+
+## Optional structured observations
+
+Assessments do not add a required release gate or replace the existing footer/review workflow:
+
+```sh
+a=pi-config/extensions/spec/core/sova-spec-assess.mjs
+node $a prepare change-review --root . --base HEAD                 # preview
+node $a prepare change-review --root . --base HEAD --write
+node $a record change-review --root . --by reviewer \
+  --decisions-json '{"decisions":[],"files":[]}' --write            # deliberately leaves items unresolved
+node $a status change-review --root .
+node $a status --root . --owner-session '<owner session id>'
+```
+
+Record explicit `changed`, `preserved`, `not-applicable` or `unresolved` dispositions with reasons
+and structured verification bases; batches retain candidate IDs without duplicate claim prose.
+The empty example records no verification and resolves nothing. Input applicability, disposition,
+accepted-intent assertions, declared labels and recorded verification outcomes are separate: none
+proves semantic correctness or changes readiness policy. Status exit 0 means only current known
+inputs, even when coverage is unresolved or recorded verification failed. Missing inputs/baselines
+remain unknown; changed inputs stale a receipt. No-Git explicit paths/snapshot baselines work too.
+
+Immutable metadata receipts stay locally ignored under `assessments/`; no raw source or logs are
+retained. Paths, identity and rationale can themselves be private, so publication is a separate
+explicit decision. [The tools README](../../pi-config/extensions/spec/README.md) has the full
+schema, attribution, refusal and applicability distinctions.
 
 ## What no tool tells you
 

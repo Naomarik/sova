@@ -35,6 +35,8 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
+import { randomUUID } from "node:crypto";
+import { assessmentAttribution, decodeAssessmentTask, observeAssessment, startAssessmentTask, type AssessmentTask } from "../mode/spec-assessment.ts";
 import {
 	CHECK_TAG, LANDING_REPROMPTS, LEDGER_ENV, appendLedger, callDirs, censusStep, checkAlsoChanges, commandDirs, commandRoot, currentSpecPath, defaultBranch, describeProblem, directWriteNote, evidenceCommits, headAt, judgeOp, rebaseUnderway, rewriteNote, sanctionedSpecWrite, draftForeign, draftStamps, draftsTouched, findSpecRoot, freshCensusState, gitCommits, gitView,
 	localIO, mappedClaims, promoteWrites, repromptText, treeStart, treeTurn, viewChanged, type TreeStart, type CensusState, type GitView, type LedgerEntry, type OpLanding, type SpecIO,
@@ -153,6 +155,10 @@ export interface HookState {
 	/** This session's shell commands, newest last (bounded): the drafts it created. */
 	commands: string[];
 	turn: TurnState;
+	/** Native hook prompt ids are optional; missing identities remain null, not invented. */
+	assessment?: { task: AssessmentTask; attemptId: string; error?: string };
+	assessmentUnavailable?: boolean;
+	assessmentError?: string;
 }
 const MAX_COMMANDS = 200;
 const freshTurn = (): TurnState => ({ wrote: false, landed: false, foreign: [], blocks: 0 });
@@ -169,7 +175,7 @@ export function readState(file: string): HookState {
 			return { ...freshState(), ...value, turn: { ...freshTurn(), ...value.turn } };
 		}
 	} catch { /* missing or corrupt: start over */ }
-	return freshState();
+	return { ...freshState(), ...(fs.existsSync(file) ? { assessmentUnavailable: true } : {}) };
 }
 export function writeState(file: string, state: HookState): void {
 	fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
@@ -605,7 +611,38 @@ export async function runHook(event: string, input: HookInput, o: { core: string
 	if (!file) return undefined;
 	const ledger = o.ledger ?? process.env[LEDGER_ENV];
 	const ctx: HookContext = { core: o.core, state: readState(file), io: o.io ?? localIO, ...(ledger ? { ledger } : {}), session: input.session_id };
-	const out = event === "turn" ? await onTurn(input, ctx) : event === "pre" ? await onPre(input, ctx) : event === "post" ? await onPost(input, ctx) : event === "stop" ? await onStop(input, ctx) : undefined;
+	let out = event === "turn" ? await onTurn(input, ctx) : event === "pre" ? await onPre(input, ctx) : event === "post" ? await onPost(input, ctx) : event === "stop" ? await onStop(input, ctx) : undefined;
+	// Observation is independent of the existing hook decision and its finite footer corrections.
+	try {
+		const taskId = input.prompt_id ?? ctx.state.turn.id ?? null;
+		if (ctx.state.assessmentUnavailable) {
+			if (event === "turn" && input.prompt_id) { ctx.state.assessmentUnavailable = false; ctx.state.assessmentError = undefined; }
+			else throw new Error("native assessment state unavailable; task baseline unknown");
+		}
+		const previous = ctx.state.assessment;
+		const saved = decodeAssessmentTask(previous?.task);
+		if (previous && !saved) throw new Error("persisted native assessment task baseline corrupt");
+		if (!previous && event !== "turn" && event !== "pre") {
+			ctx.state.assessmentUnavailable = true;
+			throw new Error("native pre-tool baseline missing; post-tool bytes are not initial inputs");
+		}
+		if (event === "turn" || !previous) {
+			const same = taskId !== null && saved?.taskId === taskId && saved.sessionId === (input.session_id ?? null);
+			ctx.state.assessment = { task: same ? saved! : await startAssessmentTask(o.core, input.cwd ?? process.cwd(), input.session_id ?? null, taskId), attemptId: randomUUID() };
+		}
+		const assessment = ctx.state.assessment;
+		if (assessment && (event === "post" && !READ_ONLY.has(input.tool_name ?? "") || event === "stop")) {
+			const result = await observeAssessment(o.core, input.cwd ?? process.cwd(), assessment.task, assessmentAttribution(input.session_id, assessment.task.taskId, assessment.attemptId, true));
+			if (result.failure) assessment.error = result.failure;
+		}
+	} catch (error) {
+		ctx.state.assessmentError = error instanceof Error ? error.message : "native assessment observation unavailable";
+		if (ctx.state.assessment) ctx.state.assessment.error = ctx.state.assessmentError;
+	}
+	if (event === "post" && (ctx.state.assessment?.error || ctx.state.assessmentError)) {
+		const old = out?.hookSpecificOutput as { additionalContext?: string } | undefined;
+		out = { ...out, hookSpecificOutput: { ...old, hookEventName: "PostToolUse", additionalContext: [old?.additionalContext, "[spec observation] Native assessment observation unavailable; receipt absence is not a successful assessment."].filter(Boolean).join("\n") } };
+	}
 	writeState(file, ctx.state);
 	if (out) fs.appendFileSync(file.replace(/\.json$/, ".log.jsonl"), `${JSON.stringify({ at: new Date().toISOString(), event, tool: input.tool_name, out })}\n`, { mode: 0o600 });
 	return out;

@@ -74,6 +74,7 @@ import { resolveChoice, singletonHolder, snapshotKey } from "./session-profile";
 import type { ProfilePick } from "./profile-sources";
 import { singletonRunningText } from "../shared/profiles";
 import { cachedClaudeModels, delegateInfo, delegateOptions, saveDelegateSettings, type DelegateSources } from "./delegate";
+import { subagentProfilesInfo, requireSubagentProfile, saveSubagentProfileDefault, saveSubagentProfiles } from "./subagent-profiles";
 import { saveSpecSettings, specInfo, specOptions } from "./spec-settings";
 import { saveTeamDefaults, teamDefaultsInfo, teamOptions } from "./team-defaults";
 import { providerLimitsInfo, providerWaiting, saveProviderLimits } from "./provider-limits";
@@ -218,7 +219,7 @@ registerProfileRoutes(app);
 /** Create a new empty webapp-owned session in `cwd` (an existing absolute directory) → 201 SessionSummary.
     With `start`, it is made with that profile (§app.session-list/profile-shelf) and, given one, its
     first message is sent; a One at a time profile live elsewhere refuses before anything is made. */
-async function createWebSession(c: Context, cwd: string, start?: { profile: ProfilePick; prompt?: string; by?: "overseer" | "start" }) {
+async function createWebSession(c: Context, cwd: string, start?: { profile: ProfilePick; prompt?: string; by?: "overseer" | "start" }, subagentProfile?: string) {
   let pick: ProfilePick | undefined = start?.profile;
   if (start) {
     // Resolved against the new session's own project (§chat.profiles/projects); unapproved refuses.
@@ -232,6 +233,10 @@ async function createWebSession(c: Context, cwd: string, start?: { profile: Prof
   }
   const made = await createWebSessionFile(c, cwd);
   if (made instanceof Response) return made;
+  if (subagentProfile !== undefined) {
+    const sm = SessionManager.open(made.path);
+    sm.appendCustomEntry("subagent-profile", { v: 1, profile: subagentProfile });
+  }
   if (!start || !pick) return c.json(made, 201);
   const applied = await applyProfile(made.path, pick, start.by ?? "start");
   if (!applied.ok) return c.json({ error: `Created the session, but its profile was not set: ${applied.error}`, session: made }, applied.status);
@@ -264,11 +269,16 @@ async function createWebSessionFile(c: Context, cwd: string) {
 // placeholder mirroring the remote path (server/targets.ts), created here; chat-manager passes the
 // `target` flag, so the remote extension runs every tool on the far side.
 app.post("/api/sessions", async (c) => {
-  let body: { cwd?: unknown; target?: unknown; remoteCwd?: unknown; profile?: unknown; prompt?: unknown };
+  let body: { cwd?: unknown; target?: unknown; remoteCwd?: unknown; profile?: unknown; prompt?: unknown; subagent_profile?: unknown };
   try {
     body = await c.req.json();
   } catch {
     return c.json({ error: "Expected JSON body { cwd } or { target, remoteCwd }" }, 400);
+  }
+  let subagentProfile: string | undefined;
+  if (body.subagent_profile !== undefined) {
+    try { subagentProfile = requireSubagentProfile(body.subagent_profile); }
+    catch (err) { return c.json({ error: String(err instanceof Error ? err.message : err) }, 400); }
   }
   if (body.target !== undefined) {
     if (!isTargetName(body.target)) return c.json({ error: "target must be a target name" }, 400);
@@ -278,12 +288,12 @@ app.post("/api/sessions", async (c) => {
     if (!target) return c.json({ error: `Unknown target: ${body.target}` }, 404);
     const dir = targetDir(body.target, remoteCwd);
     mkdirSync(dir, { recursive: true });
-    return createWebSession(c, dir, startOf(body, !!overseerSender(c.req.header(OVERSEER_SENDER_HEADER))));
+    return createWebSession(c, dir, startOf(body, !!overseerSender(c.req.header(OVERSEER_SENDER_HEADER))), subagentProfile);
   }
   const cwd = typeof body.cwd === "string" ? body.cwd.trim() : "";
   const cwdError = await validateNewSessionCwd(cwd);
   if (cwdError) return c.json({ error: cwdError }, 400);
-  return createWebSession(c, cwd, startOf(body, !!overseerSender(c.req.header(OVERSEER_SENDER_HEADER))));
+  return createWebSession(c, cwd, startOf(body, !!overseerSender(c.req.header(OVERSEER_SENDER_HEADER))), subagentProfile);
 });
 
 /** POST /api/sessions's optional `profile` (an id or `{source, id}`) and `prompt`: the shelf's Run and Start, the Overseer. */
@@ -749,6 +759,34 @@ const delegateSources: DelegateSources = {
 };
 app.get("/api/settings/delegate", (c) => c.json(delegateInfo()));
 app.get("/api/settings/delegate/options", async (c) => c.json(await delegateOptions(delegateSources)));
+app.get("/api/settings/subagents", (c) => {
+  const raw = c.req.query("path");
+  if (raw === undefined) return c.json(subagentProfilesInfo());
+  const path = resolveSessionPath(raw);
+  if (!path) return c.json({ error: "Invalid session path" }, 400);
+  const chat = heldChat(path);
+  return chat ? c.json(chat.subagentProfileInfo()) : c.json({ error: "Open the chat first" }, 404);
+});
+app.put("/api/settings/subagents", async (c) => {
+  const result = await saveSubagentProfiles(await c.req.json().catch(() => null), delegateSources);
+  return c.json(result, "error" in result && !('settings' in result) ? 400 : 200);
+});
+// This device's default (Make Default in Settings → Subagents): writes subagent-profiles-default.json only.
+app.put("/api/settings/subagents/default", async (c) => {
+  const body: unknown = await c.req.json().catch(() => null);
+  const id = body && typeof body === "object" && !Array.isArray(body) ? (body as Record<string, unknown>).default : undefined;
+  try { saveSubagentProfileDefault(id); }
+  catch (err) { return c.json({ error: err instanceof Error ? err.message : String(err) }, 400); }
+  return c.json(subagentProfilesInfo());
+});
+app.post("/api/subagents", async (c) => {
+  const path = resolveSessionPath(c.req.query("path"));
+  if (!path) return c.json({ error: "Invalid session path" }, 400);
+  const chat = heldChat(path);
+  if (!chat) return c.json({ error: "Open the chat first" }, 404);
+  try { return c.json(await chat.switchSubagentProfile((await c.req.json()).profile)); }
+  catch (err) { return c.json({ error: err instanceof Error ? err.message : String(err) }, 409); }
+});
 app.put("/api/settings/delegate", async (c) => {
   let body: unknown;
   try {

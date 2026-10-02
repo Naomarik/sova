@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
-import { clearSettingsSection, closeSettings, openSettings, SETTINGS_TABS, settingsOpenAt, settingsSection } from "./settings-nav";
+import { clearSettingsSection, closeSettings, openSettings, SETTINGS_TABS, setSubagentSettingsPath, settingsOpenAt, settingsSection, subagentSettingsPath } from "./settings-nav";
 
 test("Configure Spec opens Modes at the Spec section, and a plain open asks for none", () => {
   openSettings("modes", "spec");
@@ -26,8 +26,8 @@ test("Settings opens at the tab asked for, and closes", () => {
   closeSettings();
 });
 
-test("Accounts sits after Models, Modes after Accounts, Teams after Modes, Profiles after Teams, Overseer after Profiles, Notifications after Overseer and Decisions after Notifications, Public links after Mesh, Outreach after Public links, Voice after Outreach in the rail, and the dialog's rail is this list", () => {
-  assert.deepEqual([...SETTINGS_TABS], ["general", "models", "accounts", "modes", "teams", "profiles", "overseer", "notifications", "decisions", "summaries", "organizations", "themes", "mesh", "public-links", "outreach", "voice", "experimental"]);
+test("Accounts sits after Models, Subagents after Accounts, Modes after Subagents, Teams after Modes, Profiles after Teams, Overseer after Profiles, Notifications after Overseer and Decisions after Notifications, Public links after Mesh, Outreach after Public links, Voice after Outreach in the rail, and the dialog's rail is this list", () => {
+  assert.deepEqual([...SETTINGS_TABS], ["general", "models", "accounts", "subagents", "modes", "teams", "profiles", "overseer", "notifications", "decisions", "summaries", "organizations", "themes", "mesh", "public-links", "outreach", "voice", "experimental"]);
   // The dialog's own TABS must be the same ids in the same order (it is `satisfies`-typed against
   // SettingsTab, which catches an unknown id but not a missing or reordered one).
   const dialog = readFileSync(new URL("../components/SettingsDialog.tsx", import.meta.url), "utf8");
@@ -35,13 +35,22 @@ test("Accounts sits after Models, Modes after Accounts, Teams after Modes, Profi
   assert.deepEqual(ids, [...SETTINGS_TABS]);
 });
 
-test("the mode menu's Configure Delegate opens Settings and switches nothing", () => {
-  // The menu's action path, read from the component: it opens Modes and returns before any
-  // postMode call, so this chat's mode is never touched by it.
+test("the mode menu's gear actions open Settings → Subagents and switch nothing", () => {
+  // The menu's action path, read from the component: it opens Subagents (at the spec writer for
+  // Configure Spec) and returns before any postMode call, so this chat's mode is never touched by it.
   const menu = readFileSync(new URL("../components/ModeMenu.tsx", import.meta.url), "utf8");
   const action = /if \(it\.kind === "action"\) \{([\s\S]*?)\n    \}/.exec(menu)?.[1] ?? "";
-  assert.match(action, /openSettings\("modes", it\.id === CONFIGURE_SPEC\.id \? "spec" : null\)/, "Configure Spec opens Modes at its section; Configure Delegate at the top");
+  assert.match(action, /openSettings\("subagents", it\.id === CONFIGURE_SPEC\.id \? "spec" : null\)/, "Configure Spec opens Subagents at the spec writer; Configure Delegate at the top");
   assert.match(action, /return;/);
   assert.doesNotMatch(action, /postMode|setBusy/);
   assert.ok(menu.indexOf('if (it.kind === "action")') < menu.indexOf("postMode(patch"), "the action returns before the switch");
+});
+
+test("closing Settings forgets the chat it was opened for", () => {
+  // The Subagents tab's save-current is per chat: a reopened dialog must not still act on the old one.
+  setSubagentSettingsPath("/sessions/one.jsonl");
+  assert.equal(subagentSettingsPath(), "/sessions/one.jsonl");
+  openSettings("subagents");
+  closeSettings();
+  assert.equal(subagentSettingsPath(), undefined, "the next open starts with no chat's pick");
 });

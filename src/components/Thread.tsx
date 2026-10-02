@@ -13,7 +13,9 @@ import type { RowTarget } from "../lib/older-rows";
 import type { ScrollSpot } from "../lib/transcript-cache";
 import { carriedStart, chunkStart, fillStops, FIRST_CHUNK, type ImagesAt, initialStart, lineCols, nextChunk, rowEstimate, rowIndexFor, windowId } from "../lib/tail-render";
 import { usePaneId } from "../lib/pane-scope";
-import { isHiddenBlock, liveHiddenCounts, splitHidden, thinkingHiddenLabel, toolsHiddenLabel } from "../lib/hidden-rows";
+import { isHiddenBlock, liveHiddenCounts, splitHidden, thinkingHiddenLabel, toolsHiddenLabel, CARD_TOOLS } from "../lib/hidden-rows";
+import { chainRuns, type ChainRun } from "../lib/chain-rows";
+import { compressWork } from "../lib/work-compression";
 import { isChangeRow } from "../lib/change-rows";
 import { stripSessionHeader } from "../../shared/profiles";
 import { profileIconName } from "../lib/profiles";
@@ -36,6 +38,8 @@ import { WakeCard } from "./WakeCard";
 import { TopicCard } from "./TopicCard";
 import { WorktreeMergeCard } from "./WorktreeMergeCard";
 import { ShowChangesCard } from "./ChangesViewer";
+import { SubagentLimitRow } from "./SubagentLimitRow";
+import { rowProvider } from "../lib/subagent-limit";
 import { normalizeShowChangesDetails, SHOW_CHANGES_TOOL } from "../../pi-config/extensions/show-changes/details";
 import { Banner, Chip, Icon } from "./ui";
 import { BriefRow, CardRevision, ConfirmCard, DeckCard, LinkCard, linkDetails, NavigateGo, OverseerChoiceRow, useOverseerThread } from "./OverseerCards";
@@ -169,6 +173,52 @@ function AssistantText(props: {
       </Show>
       <Markdown text={props.text} streaming={props.streaming} attachments={props.attachments} />
     </article>
+  );
+}
+
+/**
+ * Tools the thread draws as a card rather than as a tool card: they carry the message (a question
+ * with buttons, a link, a profile's session), not the working, so a chain never swallows one
+ * `show_changes` joins them only when its details check out, which
+ * the caller decides.
+ */
+const CARD_RENDER_NAMES: ReadonlySet<string> = new Set([...CARD_TOOLS, "session_send", "sova_create_session"]);
+
+/**
+ * Runs the reader has folded, by the run's own key. Module scope, not component state: the streaming
+ * run (`LiveEntries`) and the settled rows (`HistoryItems`) are two components drawing the same
+ * transcript, and a fold is about the run, not about which one of them drew it.
+ */
+const [foldedRuns, setFoldedRuns] = createSignal<ReadonlySet<string>>(new Set());
+const foldedRun = (run: { key: string } | undefined) => !!run && foldedRuns().has(run.key);
+/** A step of a folded run: it draws nothing at all, so the run is its one line. */
+const foldedStep = (run: { key: string; first: boolean } | undefined) => !!run && !run.first && foldedRun(run);
+/** One fold control per run, including a run containing only one step. */
+const foldable = (run: ChainRun | undefined) => !!run && run.first;
+const toggleRunFold = (key: string) =>
+  setFoldedRuns((prev) => {
+    const next = new Set(prev);
+    if (!next.delete(key)) next.add(key);
+    return next;
+  });
+
+/**
+ * The run's own control in a separate gutter. Folded, the whole summary is the target;
+ * the step's native twist remains independent.
+ */
+function ChainFold(props: { run: ChainRun & { key: string; failed: number; running?: number } }) {
+  const folded = () => foldedRun(props.run);
+  const name = () => `${folded() ? "Expand" : "Collapse"} ${props.run.steps} work ${props.run.steps === 1 ? "step" : "steps"}`;
+  return (
+    <button type="button" class="button button-ghost chain-fold" aria-expanded={!folded()} aria-label={name()} title={name()} onClick={() => toggleRunFold(props.run.key)}>
+      <Icon name={folded() ? "chevron-right" : "chevron-down"} small />
+      <span class="chain-fold-label">
+        Work · {props.run.steps} {props.run.steps === 1 ? "step" : "steps"}
+        <Show when={props.run.failed > 0}> · {props.run.failed} failed</Show>
+        <Show when={(props.run.running ?? 0) > 0}> · {props.run.running} running</Show>
+      </span>
+      <span class="chain-fold-action">{folded() ? "Expand" : "Collapse"}</span>
+    </button>
   );
 }
 
@@ -384,6 +434,18 @@ export function TurnError(props: { message: string }) {
   );
 }
 
+/** A transcript row that ends a turn on an error (the `${entryId}:stop` info row): the error's own
+    words sit in its text, its producer's model on the row. */
+export function isErroredTurnStop(it: TranscriptItem): boolean {
+  return (
+    it.kind === "info" &&
+    it.id.endsWith(":stop") &&
+    isObj(it.raw) &&
+    isObj(it.raw.message) &&
+    (it.raw.message as { stopReason?: unknown }).stopReason === "error"
+  );
+}
+
 /**
  * Stands in for the rows "Hide tool calls" and "Hide thinking" remove: each count, with any
  * failures right after the tool count, and the blocks themselves on demand — so hiding is never a
@@ -436,6 +498,9 @@ export function HistoryItems(props: {
   streaming: boolean;
   hideTools?: boolean;
   hideThinking?: boolean;
+  /** The chat's own path when this transcript is a held chat (ChatView): an errored turn's `:stop`
+      row carries the limit row then. Never on a watched or subagent transcript. */
+  limitPath?: string;
   /** Index from which a call without a result may still be running; after the last user row by default. */
   openFrom?: number;
   /** Per-message actions. Absent: no strips at all (a subagent transcript, the hidden-rows
@@ -507,6 +572,60 @@ export function HistoryItems(props: {
     return { details: d, card: newest ? (cards().cards.get(id) ?? d.card) : d.card, newest };
   };
   const alignNewest = (item: TranscriptItem) => newestAligns().has(item.id) && !(item.align?.doc && props.liveAlignIds?.has(item.align.doc.id));
+
+  /** Whether a call draws a card rather than a tool card, by the render's own rule. */
+  const asCard = (it: TranscriptItem): boolean => {
+    if (it.kind !== "tool-call") return false;
+    if (it.text === SHOW_CHANGES_TOOL) return !!showChangesOf(it.toolCallId);
+    return cardRow(it) !== undefined || CARD_RENDER_NAMES.has(it.text ?? "");
+  };
+
+  /**
+   * Consecutive visible working rows draw one timeline, a line per step instead of a card.
+   * A paired result draws inside its call's row: it is neither a step nor a break.
+   */
+  const chains = createMemo(() => {
+    const list = rows();
+    const callIds = new Set(list.flatMap((it) => (it.kind === "tool-call" && it.toolCallId ? [it.toolCallId] : [])));
+    const working = list.map(
+      (it) =>
+        it.kind === "thinking" ||
+        (it.kind === "tool-call" && !asCard(it)) ||
+        (it.kind === "tool-result" && !(it.toolCallId && callIds.has(it.toolCallId))),
+    );
+    const skip = list.map((it) => it.kind === "tool-result" && !!it.toolCallId && callIds.has(it.toolCallId));
+    const runs = chainRuns(working, skip, compressWork());
+    // What the folded line reports on, counted FIRST and for the run as a whole: the row that draws
+    // that line is the run's first one, and it would otherwise be told the count before its own run
+    // had been walked. One error per failed step, never twice for a call and its stored result.
+    const failedOf = (it: TranscriptItem): boolean => {
+      if (it.kind === "tool-call") {
+        const r = it.toolCallId ? results().get(it.toolCallId) : undefined;
+        return !!r && toolResultView(r.raw, r.text).isError;
+      }
+      if (it.kind === "tool-result") return !(it.toolCallId && callIds.has(it.toolCallId)) && toolResultView(it.raw, it.text).isError;
+      return false;
+    };
+    // A run is folded by ONE key that outlives its rows: the first row's id, which the list keeps
+    // across appends and refetches.
+    const meta = new Map<number, { key: string; failed: number }>();
+    list.forEach((it, i) => {
+      const run = runs[i];
+      if (!run) return;
+      let m = meta.get(run.at);
+      if (!m) {
+        m = { key: list[run.at]!.id, failed: 0 };
+        meta.set(run.at, m);
+      }
+      if (failedOf(it)) m.failed += 1;
+    });
+    return new Map(
+      list.flatMap((it, i) => {
+        const run = runs[i];
+        return run ? [[it.id, { ...run, ...meta.get(run.at)! }] as const] : [];
+      }),
+    );
+  });
 
   /** User rows a baton participant sent: target id → their ref, in any order (§app.baton/attribution). */
   const batonSent = createMemo(() => {
@@ -662,6 +781,8 @@ export function HistoryItems(props: {
       <For each={built()}>
         {(item, local) => {
           const index = indexOf ? () => indexOf().get(item) ?? local() : local;
+          /** The timeline run this row belongs to, when it is the working. */
+          const chain = () => chains().get(item.id);
           // The strip every list change rebuilds, kept while it offers the same thing: rows
           // arriving above (a tail-first hello's history), an append or a turn-end reload would
           // otherwise rebuild the buttons of every message on the page.
@@ -670,9 +791,22 @@ export function HistoryItems(props: {
           // A link message is a partner's, shown only in the Agents tab (§mesh.links/transcript):
           // no row at all here, not even the wrapper. It still counts as a turn start (above).
           item.kind === "link" ? null : (
-          // The row's box: the outline strip finds an entry's row by it (Jump to Message), and the
-          // estimate is its height until it is first drawn (content-visibility, app.css).
-          <div class="entry" data-entry={item.id} style={{ "--entry-est": rowEstimate(item, ...shownImages(item)) }}>
+          /* A step of a folded run draws nothing at all — as a `<Show>`, because a plain early return
+             is read once and would leave the folded run's steps in the page. */
+          <Show when={!foldedStep(chain())}>
+          {/* The row's box: the outline strip finds an entry's row by it (Jump to Message), and the
+              estimate is its height until it is first drawn (content-visibility, app.css). */}
+          <div
+            class="entry"
+            classList={{ "chain-row": !!chain() }}
+            data-chain={chain() ? String(chain()!.at) : undefined}
+            data-chain-first={chain()?.first ? "" : undefined}
+            data-chain-last={chain()?.last ? "" : undefined}
+            data-chain-folded={foldedRun(chain()) ? "" : undefined}
+            data-entry={item.id}
+            style={{ "--entry-est": rowEstimate(item, ...shownImages(item), !!chain(), foldedRun(chain()), !!chain()?.first) }}
+          >
+            <Show when={foldable(chain()) ? chain() : null}>{(run) => <ChainFold run={run()} />}</Show>
             <Switch fallback={<Unknown raw={item.raw} />}>
               <Match when={item.kind === "user" && isBriefText(item.text)}>
                 <BriefRow text={item.text ?? ""} time={timestampOf(item.raw)} />
@@ -755,9 +889,17 @@ export function HistoryItems(props: {
                 {(raw) => <Compaction raw={raw()} />}
               </Match>
               <Match when={item.kind === "info"}>
-                <InfoRow>
-                  <PathText text={item.text ?? ""} attachments={item.attachments} />
-                </InfoRow>
+                <>
+                  <InfoRow>
+                    <PathText text={item.text ?? ""} attachments={item.attachments} />
+                  </InfoRow>
+                  {/* A turn that ended on an error keeps its "Error: …" row (the transcript's
+                      `${entryId}:stop`); the limit row rides beside it with that turn's own
+                      provider (the row's `model` — never the session's current one). */}
+                  <Show when={props.limitPath && isErroredTurnStop(item) ? { path: props.limitPath, item } : null}>
+                    {(x) => <SubagentLimitRow path={x().path} message={x().item.text?.replace(/^Error: /, "") ?? ""} provider={rowProvider(x().item.model)} />}
+                  </Show>
+                </>
               </Match>
               {/* A show_changes result whose details check out reads as a card that opens the
                   changes viewer (§chat.changes/show-changes-card); anything else, a tool card. */}
@@ -869,6 +1011,7 @@ export function HistoryItems(props: {
               )}
             </Show>
           </div>
+          </Show>
           )
           );
         }}
@@ -964,13 +1107,16 @@ export function LiveEntries(props: {
   names?: Record<string, string>;
   hideTools?: boolean;
   hideThinking?: boolean;
+  /** The chat's own path when this thread is a held chat (ChatView): the limit row's switch is a
+      chat pick, so nothing else (a watched or a subagent transcript) ever gets one. */
+  limitPath?: string;
   /** What a message of ours that hasn't been delivered offers — one Remove, from the chat. A row
       the server has already taken (`delivered`) is never asked: nothing can be recalled then, and
       a disabled Remove under every message you ever sent is an affordance that lies. */
   queueActions?: (row: { id?: string; state: LiveUserState; text: string }) => MessageActionItem[];
 }) {
   const hide = () => ({ tools: !!props.hideTools, thinking: !!props.hideThinking });
-  const shows = (b: LiveBlock | undefined) => !!b && !isHiddenBlock(b, hide());
+  const shows = (b: LiveBlock | undefined) => !!b && !isHiddenBlock(b, hide()) && (!compressWork() || b.type !== "text" || !!b.text);
   /** The nearest block before `i` that renders, so a hidden call doesn't repeat the author head. */
   const shownBefore = (blocks: LiveBlock[], i: number) => {
     for (let j = i - 1; j >= 0; j--) if (!isHiddenBlock(blocks[j], hide())) return blocks[j];
@@ -983,6 +1129,53 @@ export function LiveEntries(props: {
     return true;
   };
   const hidden = createMemo(() => (props.hideTools || props.hideThinking ? liveHiddenCounts(props.live, hide()) : null));
+  /**
+   * The chain each streaming block belongs to, by the settled transcript's own rule.
+   * A hidden block is neither a step nor a break.
+   */
+  const liveChains = createMemo(() => {
+    // Entry boundaries draw nothing. Nulls stand for visible user/error/stop rows instead.
+    const blocks: (LiveBlock | null)[] = [];
+    for (const e of props.live.entries) {
+      if (e.kind !== "assistant") blocks.push(null);
+      else {
+        blocks.push(...e.blocks);
+        if (e.stoppedAt || e.error) blocks.push(null);
+      }
+    }
+    const working = blocks.map((b) => {
+      if (b?.type === "thinking") return true;
+      if (b?.type !== "toolCall") return false;
+      if (b.name === SHOW_CHANGES_TOOL) {
+        const tool = props.live.tools[b.id];
+        return !(tool?.status === "done" && normalizeShowChangesDetails(tool.details));
+      }
+      return !CARD_RENDER_NAMES.has(b.name);
+    });
+    const skip = blocks.map((b) => b !== null && !shows(b));
+    // A streaming run folds under its own key: it has no entry id yet, and its block list only
+    // grows at the end, so where it starts is what identifies it. Settling gives it a real id,
+    // which is why a run folded while it streamed comes back open.
+    // The failures are counted before any block is handed a run, as the settled path counts them.
+    const runsList = chainRuns(working, skip, compressWork());
+    const failed = new Map<number, number>();
+    const running = new Map<number, number>();
+    blocks.forEach((b, i) => {
+      const run = runsList[i];
+      if (!run || b === null) return;
+      if (!failed.has(run.at)) failed.set(run.at, 0);
+      if (b.type === "toolCall" && props.live.tools[b.id]?.status === "error") failed.set(run.at, failed.get(run.at)! + 1);
+      if (b.type === "toolCall" && props.live.tools[b.id]?.status === "running") running.set(run.at, (running.get(run.at) ?? 0) + 1);
+    });
+    const runs = new Map<LiveBlock, (ChainRun & { key: string; failed: number; running: number }) | null>();
+    runsList.forEach((run, i) => {
+      const b = blocks[i];
+      if (!b) return;
+      runs.set(b, run ? { ...run, key: `live:${run.at}`, failed: failed.get(run.at) ?? 0, running: running.get(run.at) ?? 0 } : null);
+    });
+    return runs;
+  });
+  const liveChainOf = (block: LiveBlock) => liveChains().get(block) ?? undefined;
   return (
     <>
       <For each={props.live.entries}>
@@ -1028,9 +1221,11 @@ export function LiveEntries(props: {
             <Match when={entry.kind === "assistant" && entry}>
               {(e) => (
                 <>
+                  {/* Streaming blocks group like settled rows, across assistant entries too. */}
                   <For each={e().blocks}>
-                    {(block, i) => (
-                      <Show when={shows(block)}>
+                    {(block, i) => {
+                      const chain = () => liveChainOf(block);
+                      const view = () => (
                         <LiveBlockView
                           block={block}
                           live={props.live}
@@ -1039,8 +1234,24 @@ export function LiveEntries(props: {
                           streaming={blockStreams(e(), i())}
                           showHead={shownBefore(e().blocks, i())?.type !== "text"}
                         />
+                      );
+                      return (
+                      <Show when={shows(block) && !foldedStep(chain())}>
+                        <Show when={compressWork()} fallback={view()}>
+                        <div
+                          classList={{ "chain-live": !!chain() }}
+                          data-chain={chain() ? String(chain()!.at) : undefined}
+                          data-chain-first={chain()?.first ? "" : undefined}
+                          data-chain-last={chain()?.last ? "" : undefined}
+                          data-chain-folded={foldedRun(chain()) ? "" : undefined}
+                        >
+                          <Show when={foldable(chain()) ? chain() : null}>{(run) => <ChainFold run={run()} />}</Show>
+                          <Show when={!foldedRun(chain())}>{view()}</Show>
+                        </div>
+                        </Show>
                       </Show>
-                    )}
+                      );
+                    }}
                   </For>
                   <Show when={e().stoppedAt}>
                     <InfoRow>
@@ -1048,7 +1259,14 @@ export function LiveEntries(props: {
                     </InfoRow>
                   </Show>
                   <Show when={e().error}>
-                    <TurnError message={e().error!} />
+                    {(err) => (
+                      <>
+                        <TurnError message={err()} />
+                        {/* The failure's own row carries its own provider (its producing model) —
+                            never a worker's, never the chat model of right now. */}
+                        <Show when={props.limitPath}>{(p) => <SubagentLimitRow path={p()} message={err()} provider={rowProvider(e().model)} />}</Show>
+                      </>
+                    )}
                   </Show>
                 </>
               )}

@@ -206,7 +206,8 @@ function normalizeMessage(entry: Entry, id: string, state?: { model?: string }):
       });
       if (m.stopReason === "error" || m.stopReason === "aborted") {
         const why = m.errorMessage ? `: ${m.errorMessage}` : "";
-        out.push(item(`${id}:stop`, "info", entry, `${m.stopReason === "error" ? "Error" : "Aborted"}${why}`));
+        // withModel: the turn's own provider rides the row (the limit row keys on it).
+        out.push(withModel(item(`${id}:stop`, "info", entry, `${m.stopReason === "error" ? "Error" : "Aborted"}${why}`), model));
       }
       return out;
     }

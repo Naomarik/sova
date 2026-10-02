@@ -1,10 +1,11 @@
 import { createMemo, createSignal, For, Show, type Accessor } from "solid-js";
 import type { ChatServerMessage, ModeInfo } from "../../shared/protocol";
-import { getMode, postMode, saveModeDefault } from "../lib/api";
-import { FOOT_NOTE, isDefaultMode, modeSummary, saveLabel, saveTitle, type ShownMode } from "../lib/mode-menu";
+import { getMode, getSubagentProfiles, pickSubagentProfile, postMode, putSubagentProfiles, saveModeDefault } from "../lib/api";
+import type { SubagentProfilesInfo } from "../../shared/subagent-profiles";
+import { filterProfiles, FOOT_NOTE, isDefaultAll, isDefaultMode, modeSummary, noProfileMatch, nextSetup, savedAnnounce, saveLabel, saveTitle, type ShownMode } from "../lib/mode-menu";
 import { useHostScope } from "../lib/host-scope";
 import { usePaneId } from "../lib/pane-scope";
-import { openSettings } from "../lib/settings-nav";
+import { openSettings, setSubagentSettingsPath } from "../lib/settings-nav";
 import { announce } from "../lib/ui-state";
 import { Banner, Icon } from "./ui";
 
@@ -18,10 +19,10 @@ export interface ModeControl {
   path: string;
 }
 
-/** radio: the major mode; check: a minor mode; action: opens a settings screen, switches nothing. */
+/** radio: the major mode; check: a minor mode; action: opens a settings screen or the picker, switches nothing. */
 type Item = { kind: "radio" | "check" | "action"; id: string; description: string; label?: string };
 
-/** The actions: a gear on Delegate's row and on spec's, since both settings live in Settings → Modes. */
+/** The gear actions: Delegate's row and spec's, since both settings live in Settings → Subagents. */
 const CONFIGURE_DELEGATE: Item = {
   kind: "action",
   id: "configure-delegate",
@@ -33,6 +34,13 @@ const CONFIGURE_SPEC: Item = {
   id: "configure-spec",
   label: "Configure Spec",
   description: "Which worker writes the spec",
+};
+/** The Subagents group row: opens the profile picker panel. */
+const SUBAGENTS: Item = {
+  kind: "action",
+  id: "subagents",
+  label: "Subagents",
+  description: "Choose this chat's subagent profile",
 };
 
 const itemId = (it: Item) => `mode-${it.kind}-${it.id}`;
@@ -50,16 +58,19 @@ const [defaultMode, setDefaultMode] = createSignal<ShownMode | null>(null);
 const shownOf = (m: Pick<ModeInfo, "mode" | "minorModes" | "strict">): ShownMode => ({ mode: m.mode, minorModes: [...m.minorModes], strict: m.strict });
 
 /**
- * The composer foot's mode switch: a trigger plus a native popover menu. One
- * major mode (menuitemradio, picking closes) and any minor modes (menuitemcheckbox, toggling
- * stays open). The mode is per chat: only this chat follows, from its next message.
+ * The composer foot's mode switch: a trigger plus a native popover menu. One major mode
+ * (menuitemradio, picking closes), any minor modes (menuitemcheckbox, toggling stays open) and the
+ * Subagents group, whose one row swaps the menu for the profile picker panel (the composer
+ * flyout's panel pattern) and back. The mode and the pick are per chat: only this chat follows.
  */
 export function ModeMenu(props: { control: ModeControl }) {
   const paneId = usePaneId();
-  /** A peer session's modes and default are its host's. */
+  /** A peer session's profiles and library are its host's. */
   const host = useHostScope();
   let trigger!: HTMLButtonElement;
   let menu!: HTMLDivElement;
+  let searchInput!: HTMLInputElement;
+  let nameInput!: HTMLInputElement;
   let closedByChoice = false;
   let tabbedAway = false;
 
@@ -69,17 +80,32 @@ export function ModeMenu(props: { control: ModeControl }) {
   const [active, setActive] = createSignal(0);
   /** The save's own request. `busy` is the rows' (a switch): the button says "Saving…" only for this. */
   const [saving, setSaving] = createSignal(false);
+  // The picker panel: the library this chat picks from, its own
+  // roving row, and the inline flow that saves what this chat uses now as a new profile.
+  const [profiles, setProfiles] = createSignal<SubagentProfilesInfo | null>(null);
+  const [picker, setPicker] = createSignal(false);
+  const [search, setSearch] = createSignal("");
+  const [pActive, setPActive] = createSignal(0);
+  const [saveName, setSaveName] = createSignal<string | null>(null);
+
+  const profileName = () => profiles()?.current.name ?? "…";
+  const listed = createMemo(() => profiles()?.profiles ?? []);
+  const matches = createMemo(() => filterProfiles(listed(), search()));
+  /** Save Current is for a chat ON something: Off configures nothing. A legacy or malformed file saves nothing server-side, and the refusal says so in place. */
+  const canSaveCurrent = () => profiles() !== null && profiles()!.current.id !== "off";
 
   // This chat's own state only. Before its WS "mode" message arrives there is nothing to show:
   // the default in `info()` is not this chat's mode, so the label stays "Mode" and nothing is checked.
   const current = () => props.control.state();
   const items = createMemo<Item[]>(() => {
     const i = info();
-    if (!i) return [];
-    // Each gear follows its row in the roving order, as it follows it on the row.
+    if (!i) return [SUBAGENTS];
+    // Each gear follows its row in the roving order, as it follows it on the row. Subagents is the
+    // one row of its own group, last.
     return [
       ...i.modes.flatMap((m) => (m.id === "delegate" ? [{ kind: "radio" as const, ...m }, CONFIGURE_DELEGATE] : [{ kind: "radio" as const, ...m }])),
       ...i.minors.flatMap((m) => (m.id === "spec" ? [{ kind: "check" as const, ...m }, CONFIGURE_SPEC] : [{ kind: "check" as const, ...m }])),
+      SUBAGENTS,
     ];
   });
   const checked = (it: Item) => {
@@ -100,15 +126,33 @@ export function ModeMenu(props: { control: ModeControl }) {
   };
   /**
    * Is what this chat is on already what new sessions start from? Read off the file's own
-   * `mode`/`strict`/`minorModes` (`defaultMode`: GET /api/mode on every open, or the save's answer),
-   * so the answer is the file's, not a guess from the last press or from a switch's reply.
+   * `mode`/`strict`/`minorModes` (`defaultMode`: GET /api/mode on every open, or the save's answer)
+   * and the library's own `default`, so the answer is the file's, not a guess from the last press
+   * or from a switch's reply.
    */
-  const alreadyDefault = () => isDefaultMode(defaultMode(), shown());
+  const alreadyDefault = () => isDefaultAll(defaultMode(), shown(), profiles());
   const saveState = (): "idle" | "saving" | "done" => (saving() ? "saving" : alreadyDefault() ? "done" : "idle");
 
   const focusItem = (i: number) => {
     setActive(i);
     queueMicrotask(() => menu.querySelectorAll<HTMLElement>("[role^=menuitem]")[i]?.focus());
+  };
+  const focusChoice = (i: number) => {
+    setPActive(i);
+    queueMicrotask(() => menu.querySelectorAll<HTMLElement>('[role="menuitemradio"]')[i]?.focus());
+  };
+
+  const openPicker = () => {
+    setPicker(true);
+    setSaveName(null);
+    // The current row first (or Off's: the list's own start), never the input: focusing it would
+    // raise a phone's keyboard. Typing from a row moves into the input (onKeyDown below).
+    const at = Math.max(0, matches().findIndex((p) => p.id === profiles()?.current.id));
+    focusChoice(at);
+  };
+  const closePicker = () => {
+    setPicker(false);
+    focusItem(items().findIndex((it) => it.id === SUBAGENTS.id));
   };
 
   const openMenu = async (keepError = false) => {
@@ -120,7 +164,16 @@ export function ModeMenu(props: { control: ModeControl }) {
     closedByChoice = false;
     tabbedAway = false;
     if (!keepError) setError(null);
+    setPicker(false);
+    setSearch("");
+    setSaveName(null);
     menu.showPopover();
+    try {
+      setProfiles(await getSubagentProfiles(props.control.path, host()));
+    } catch (err) {
+      setProfiles(null);
+      setError({ title: "Couldn't load subagent profiles.", body: String(err) });
+    }
     try {
       const read = await getMode(host());
       setInfo(read);
@@ -137,11 +190,16 @@ export function ModeMenu(props: { control: ModeControl }) {
   };
 
   const activate = async (it: Item) => {
+    if (it.id === SUBAGENTS.id) {
+      openPicker();
+      return;
+    }
     if (it.kind === "action") {
-      // Opens Settings at Modes (→ Delegate, or → Spec). This chat's mode is left exactly as it is.
+      setSubagentSettingsPath(host() ? undefined : props.control.path);
+      // Opens Settings at Subagents (→ the spec writer for spec's gear). This chat's mode is left as it is.
       closedByChoice = true;
       closeMenu();
-      openSettings("modes", it.id === CONFIGURE_SPEC.id ? "spec" : null);
+      openSettings("subagents", it.id === CONFIGURE_SPEC.id ? "spec" : null);
       return;
     }
     const c = current();
@@ -170,17 +228,15 @@ export function ModeMenu(props: { control: ModeControl }) {
   };
 
   /**
-   * `Save as default`: make THIS chat's mode the one new sessions start from. Nothing else
-   * moves — the chat keeps its mode, and no other chat hears about it. The mode extension re-reads
-   * mode.json at each session_start, so the next session starts on it, TUI included.
+   * `Save as default`: make THIS chat's mode and subagent profile the ones new sessions start
+   * from. Nothing else moves — the chat keeps both, and no other chat hears about it. The mode
+   * extension re-reads mode.json at each session_start, so the next session starts on it, TUI
+   * included; the subagent library's default is read again at each turn boundary, the same way.
    *
-   * The press is what the file gets: the request carries no mode of its own (the server takes this
-   * chat's), so a switch that lands between the click and the request cannot make the default
-   * something the user never saw. On success the answer — the file as written — becomes
-   * `defaultMode`, so `alreadyDefault` says so from the server's own copy.
-   *
-   * Pressable in a chat that can't switch (`applies: "new-chats"`) too: it saves the very state the
-   * menu is showing, which is still a mode someone can want new sessions to start from.
+   * The press is what the files get: the request carries no mode of its own (the server takes this
+   * chat's, and this chat's pick), so a switch that lands between the click and the request cannot
+   * make the default something the user never saw. On success the answers — the files as written —
+   * become `defaultMode` and `profiles`, so `alreadyDefault` says so from the server's own copies.
    */
   const saveAsDefault = async () => {
     if (busy() || saving() || alreadyDefault()) return;
@@ -190,17 +246,111 @@ export function ModeMenu(props: { control: ModeControl }) {
       const written = await saveModeDefault(props.control.path); // the file as written, not this chat's copy
       setDefaultMode(shownOf(written));
       setInfo((i) => i ?? written); // the lists, in case the open-time read failed
-      const mode = shown();
-      announce(mode ? `Default mode saved: ${modeSummary(mode)}. New sessions start here.` : "Default mode saved. New sessions start here.");
+      setProfiles(await getSubagentProfiles(props.control.path, host()));
+      announce(savedAnnounce(shown(), profiles()?.current.name ?? null));
     } catch (err) {
       const why = (err instanceof Error ? err.message : String(err)).replace(/\.$/, "");
-      setError({ title: "Couldn't save the default.", body: `${why}. Your mode is unchanged.` });
+      setError({ title: "Couldn't save the default.", body: `${why}.` });
     } finally {
       setSaving(false);
     }
   };
 
+  /** A profile pick: this chat only; the menu closes and the trigger retakes focus. */
+  const chooseProfile = async (id: string) => {
+    if (busy()) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await pickSubagentProfile(props.control.path, id, host());
+      setProfiles(r);
+      closedByChoice = true;
+      closeMenu();
+      trigger.focus();
+      announce(`Subagent profile: ${r.current.name}.${r.applies === "after-turn" ? " Applies from your next message." : ""} Running workers keep their models.`);
+    } catch (err) {
+      const why = (err instanceof Error ? err.message : String(err)).replace(/\.$/, "");
+      setError({ title: "Couldn't switch subagent profiles.", body: `${why}. Your profile is unchanged.` });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /** Save Current as Profile: what this chat uses now, as a new profile in the library. */
+  const saveCurrent = async () => {
+    const i = profiles();
+    const chosen = saveName()?.trim();
+    if (!i || !chosen || busy() || !canSaveCurrent()) return;
+    const source = i.settings.profiles.find((p) => p.id === i.current.id) ?? (i.current.source === "legacy" ? i.template : null);
+    if (!source) return;
+    const next = nextSetup(i.settings.profiles);
+    setBusy(true);
+    setError(null);
+    try {
+      await putSubagentProfiles({ ...i.settings, profiles: [...i.settings.profiles, { ...source, id: next.id, name: chosen }] }, host());
+      // The library answered from its default view; read again for THIS chat, so the current pick
+      // and the footprints come from the same place a fresh open would read them.
+      setProfiles(await getSubagentProfiles(props.control.path, host()));
+      setSaveName(null);
+      announce(`Saved subagent profile "${chosen}".`);
+    } catch (err) {
+      const why = (err instanceof Error ? err.message : String(err)).replace(/\.$/, "");
+      setError({ title: "Couldn't save the subagent profile.", body: `${why}. Nothing was saved.` });
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const onKeyDown = (e: KeyboardEvent) => {
+    if (picker()) {
+      const target = e.target as HTMLElement | null;
+      if (target === nameInput) return; // the name field keeps its own keys
+      const radios = [...menu.querySelectorAll<HTMLElement>('[role="menuitemradio"]')];
+      if (target === searchInput) {
+        // In the field, Home/End and Space are the caret's; only ↓/↑ leave it, and Enter takes the
+        // one match when the list has been narrowed to exactly one.
+        if (e.key === "ArrowDown" && radios.length > 0) {
+          e.preventDefault();
+          focusChoice(0);
+        } else if (e.key === "ArrowUp" && radios.length > 0) {
+          e.preventDefault();
+          focusChoice(radios.length - 1);
+        } else if (e.key === "Enter" && matches().length === 1) {
+          e.preventDefault();
+          void chooseProfile(matches()[0]!.id);
+        }
+        return;
+      }
+      const radio = target?.closest?.("[role=menuitemradio]") as HTMLElement | null;
+      if (!radio) return; // the head's Back and the footer's buttons keep their Enter and Space
+      const i = radios.indexOf(radio);
+      const typeahead = (append: string | null) => {
+        // Typing from a row goes into the search field, which takes focus (the user chose to type).
+        e.preventDefault();
+        setSearch(append === null ? search().slice(0, -1) : search() + append);
+        setPActive(0);
+        searchInput.focus();
+        const end = searchInput.value.length;
+        searchInput.setSelectionRange(end, end);
+      };
+      const keys: Record<string, () => void> = {
+        ArrowDown: () => focusChoice((i + 1) % radios.length),
+        ArrowUp: () => focusChoice((i - 1 + radios.length) % radios.length),
+        Home: () => focusChoice(0),
+        End: () => focusChoice(radios.length - 1),
+        Enter: () => void chooseProfile(radio.dataset.profile!),
+        " ": () => void chooseProfile(radio.dataset.profile!),
+      };
+      const act = radios.length > 0 ? keys[e.key] : undefined;
+      if (act) {
+        e.preventDefault();
+        act();
+        return;
+      }
+      if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) typeahead(e.key);
+      else if (e.key === "Backspace" && search()) typeahead(null);
+      return;
+    }
     // Only the menu's own items take keys here: the footer's button is a button, and Enter or Space
     // on it must press IT, not whichever row was last focused.
     if (!(e.target as HTMLElement | null)?.closest?.("[role^=menuitem]")) return;
@@ -237,7 +387,7 @@ export function ModeMenu(props: { control: ModeControl }) {
       <Icon name="check" small class="mode-option-check" />
       <span class="mode-option-text">
         <span class="mode-option-id">{p.it.label ?? p.it.id}</span>
-        <span class="mode-option-desc">{p.it.description}</span>
+        <span class="mode-option-desc">{p.it.id === "delegate" ? `Profile: ${profileName()}` : p.it.description}</span>
       </span>
     </div>
   );
@@ -262,7 +412,7 @@ export function ModeMenu(props: { control: ModeControl }) {
   );
   /** A row, with its gear beside it when an action follows it in the roving order. */
   const WithGear = (p: { it: Item; index: number }) => {
-    const gear = () => (items()[p.index + 1]?.kind === "action" ? items()[p.index + 1]! : null);
+    const gear = () => (items()[p.index + 1]?.kind === "action" && items()[p.index + 1]?.id !== SUBAGENTS.id ? items()[p.index + 1]! : null);
     return (
       <Show when={gear()} fallback={<Row it={p.it} index={p.index} />}>
         {(g) => (
@@ -334,40 +484,193 @@ export function ModeMenu(props: { control: ModeControl }) {
         </Show>
         <Show when={error()}>{(e) => <Banner tone="error" title={e().title} body={e().body} />}</Show>
 
-        <div class="model-menu-list" role="menu" id={paneId("mode-menu")} aria-label="Mode">
-          <div class="model-menu-group" role="group" aria-labelledby={paneId("mode-group-major")}>
-            <div class="list-group-label" id={paneId("mode-group-major")}>
-              Major mode
-            </div>
-            <For each={group("radio")}>{(x) => <WithGear it={x.it} index={x.index} />}</For>
-          </div>
-          <Show when={group("check").length > 0}>
-            <div class="model-menu-group" role="group" aria-labelledby={paneId("mode-group-minor")}>
-              <div class="list-group-label" id={paneId("mode-group-minor")}>
-                Minor modes
+        <Show
+          when={!picker()}
+          fallback={
+            <>
+              {/* The picker panel: Back, search, the profiles with
+                  their footprints — Off first — then Manage and Save Current. */}
+              <div class="composer-flyout-head">
+                <button type="button" class="button button-sm button-ghost composer-flyout-back" onClick={closePicker}>
+                  <Icon name="chevron-left" small />
+                  Back
+                </button>
+                <span class="model-menu-head-title">Subagent profiles</span>
               </div>
-              <For each={group("check")}>{(x) => <WithGear it={x.it} index={x.index} />}</For>
+              <div class="model-menu-search">
+                <div class="search">
+                  <Icon name="search" />
+                  <input
+                    ref={searchInput}
+                    class="input"
+                    type="search"
+                    aria-label="Find a subagent profile"
+                    placeholder="Search subagent profiles"
+                    autocomplete="off"
+                    spellcheck={false}
+                    value={search()}
+                    onInput={(e) => {
+                      setSearch(e.currentTarget.value);
+                      setPActive(0);
+                    }}
+                  />
+                </div>
+              </div>
+              <div class="model-menu-list" role="menu" aria-label="Subagent profiles">
+                <For
+                  each={matches()}
+                  fallback={<p class="model-menu-empty">{profiles() ? (search() ? noProfileMatch(search()) : "No subagent profiles yet — Save Current as Profile makes one.") : "Couldn't load them."}</p>}
+                >
+                  {(p, i) => (
+                    <div
+                      class="mode-option"
+                      role="menuitemradio"
+                      id={paneId(`subagent-choice-${p.id}`)}
+                      data-profile={p.id}
+                      tabindex={pActive() === i() ? 0 : -1}
+                      aria-checked={profiles()?.current.id === p.id ? "true" : "false"}
+                      aria-disabled={busy() ? "true" : undefined}
+                      onClick={() => void chooseProfile(p.id)}
+                      onFocus={() => setPActive(i())}
+                    >
+                      <Icon name="check" small class="mode-option-check" />
+                      <span class="mode-option-text">
+                        <span class="mode-option-name">{p.name}</span>
+                        <span class="mode-option-desc" classList={{ "text-mono": p.id !== "off" }}>
+                          {p.footprint}
+                        </span>
+                      </span>
+                    </div>
+                  )}
+                </For>
+              </div>
+              <div class="mode-menu-foot">
+                <p class="mode-menu-foot-line">This chat only, from your next message. Running workers keep their models.</p>
+                <div class="button-row">
+                  <button
+                    type="button"
+                    class="button button-ghost button-sm"
+                    onClick={() => {
+                      setSubagentSettingsPath(host() ? undefined : props.control.path);
+                      closedByChoice = true;
+                      closeMenu();
+                      openSettings("subagents");
+                    }}
+                  >
+                    Manage Profiles…
+                  </button>
+                  <Show when={canSaveCurrent()}>
+                    <button
+                      type="button"
+                      class="button button-ghost button-sm"
+                      disabled={busy() || saveName() !== null}
+                      onClick={() => {
+                        setSaveName("");
+                        queueMicrotask(() => nameInput?.focus());
+                      }}
+                    >
+                      Save Current as Profile
+                    </button>
+                  </Show>
+                </div>
+                <Show when={saveName() !== null}>
+                  <form
+                    class="mode-menu-save-as"
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      void saveCurrent();
+                    }}
+                  >
+                    <div class="field">
+                      <label class="field-label" for={paneId("subagent-name")}>
+                        Profile name
+                      </label>
+                      <input
+                        ref={nameInput}
+                        class="input"
+                        id={paneId("subagent-name")}
+                        maxlength={48}
+                        placeholder={(() => {
+                          const i = profiles();
+                          return i ? nextSetup(i.settings.profiles).name : "Setup 1";
+                        })()}
+                        value={saveName() ?? ""}
+                        disabled={busy()}
+                        onInput={(e) => setSaveName(e.currentTarget.value)}
+                      />
+                    </div>
+                    <div class="button-row">
+                      <button type="submit" class="button button-sm" disabled={busy() || !saveName()?.trim()}>
+                        Save Profile
+                      </button>
+                      <button type="button" class="button button-ghost button-sm" disabled={busy()} onClick={() => setSaveName(null)}>
+                        Cancel
+                      </button>
+                    </div>
+                  </form>
+                </Show>
+              </div>
+            </>
+          }
+        >
+          <div class="model-menu-list" role="menu" id={paneId("mode-menu")} aria-label="Mode">
+            <div class="model-menu-group" role="group" aria-labelledby={paneId("mode-group-major")}>
+              <div class="list-group-label" id={paneId("mode-group-major")}>
+                Major mode
+              </div>
+              <For each={group("radio")}>{(x) => <WithGear it={x.it} index={x.index} />}</For>
             </div>
-          </Show>
-        </div>
-
-        <div class="mode-menu-foot">
-          <p class="mode-menu-foot-line">
-            <span class="text-mono">strict: {current()?.strict ? "on" : "off"}</span> · {FOOT_NOTE}
-          </p>
-          <button
-            type="button"
-            class="button button-ghost button-sm mode-menu-save"
-            aria-disabled={busy() || saving() || alreadyDefault() ? "true" : undefined}
-            title={saveTitle(shown(), alreadyDefault())}
-            onClick={() => void saveAsDefault()}
-          >
-            <Show when={alreadyDefault() && !saving()}>
-              <Icon name="check" small />
+            <Show when={group("check").length > 0}>
+              <div class="model-menu-group" role="group" aria-labelledby={paneId("mode-group-minor")}>
+                <div class="list-group-label" id={paneId("mode-group-minor")}>
+                  Minor modes
+                </div>
+                <For each={group("check")}>{(x) => <WithGear it={x.it} index={x.index} />}</For>
+              </div>
             </Show>
-            {saveLabel(saveState())}
-          </button>
-        </div>
+            <div class="model-menu-group" role="group" aria-labelledby={paneId("mode-group-subagents")}>
+              <div class="list-group-label" id={paneId("mode-group-subagents")}>
+                Subagents
+              </div>
+              <div
+                class="mode-option"
+                role="menuitem"
+                id={itemId(SUBAGENTS)}
+                tabindex={active() === items().findIndex((it) => it.id === SUBAGENTS.id) ? 0 : -1}
+                aria-haspopup="true"
+                onClick={() => {
+                  setActive(items().findIndex((it) => it.id === SUBAGENTS.id));
+                  void activate(SUBAGENTS);
+                }}
+                onFocus={() => setActive(items().findIndex((it) => it.id === SUBAGENTS.id))}
+              >
+                <Icon name="worker" small class="mode-option-lead" />
+                <span class="mode-option-text">
+                  <span class="mode-option-name">Subagents · {profileName()}</span>
+                </span>
+                <Icon name="chevron-right" small class="mode-option-caret" />
+              </div>
+            </div>
+          </div>
+
+          <div class="mode-menu-foot">
+            <p class="mode-menu-foot-line">
+              <span class="text-mono">strict: {current()?.strict ? "on" : "off"}</span> · {FOOT_NOTE}
+            </p>
+            <button
+              type="button"
+              class="button button-ghost button-sm mode-menu-save"
+              aria-disabled={busy() || saving() || alreadyDefault() ? "true" : undefined}
+              title={saveTitle(shown(), alreadyDefault())}
+              onClick={() => void saveAsDefault()}
+            >
+              <Show when={alreadyDefault() && !saving()}>
+                <Icon name="check" small />
+              </Show>
+              {saveLabel(saveState())}
+            </button>
+          </div>
+        </Show>
       </div>
     </>
   );

@@ -11,9 +11,13 @@ file is one document; the most recently changed version wins, a deletion travels
 and a received document is written only if the program that reads it accepts it, atomically and
 under that program's own lock where it has one. A file that is a link into a git checkout is never
 written. **Settings** are Sova's and pi's host-wide preferences (the Claude Code switch, new-session
-defaults, model favorites, model policy, request limits, mode defaults and the Delegate and Spec settings), not
+defaults, model favorites, model policy, request limits, mode defaults, the legacy Delegate and
+Spec settings, and the whole `subagent-profiles.json` library), not
 anything a session's own host keeps for it (titles, groups, drafts, archive), and not paths that
-only make sense on one machine. **Themes** are the user theme files; which theme is chosen stays with
+only make sense on one machine. The library contains `{version, profiles}` only and is validated
+with its own strict parser. `subagent-profiles-default.json` never syncs: each device chooses its
+own default; a chat's hidden ID pick stays with its own session (§chat.subagent-profiles/file).
+**Themes** are the user theme files; which theme is chosen stays with
 the browser. **Extensions**: each host shares the entries of its own installed-extensions list, and never
 writes another host's list into it. A host lists its own extensions plus peers' extensions it
 lacks. Its own entry always wins, and removing an extension on the host that shared it removes it

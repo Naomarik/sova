@@ -117,7 +117,7 @@ describe("SessionSummary.turnError, end to end through the list's own read", () 
   test("error at the tail, never stamped: shown with the message; not unread (never stamped)", async () => {
     const { path } = session([user("u1", null, T0), reply("a1", "u1", T0 + 1000, "error", { errorMessage: "429 rate limited" })]);
     const s = await getSessionSummary(path);
-    assert.deepEqual(s?.turnError, { message: "429 rate limited" });
+    assert.deepEqual(s?.turnError, { message: "429 rate limited", provider: "anthropic" }, "message and the producing turn's own provider");
     assert.equal(s?.unread, undefined);
   });
 

@@ -4,6 +4,7 @@
 // saved is the case this exists to rule out.
 
 import type { ModeInfo } from "../../shared/protocol";
+import type { SubagentProfilesInfo } from "../../shared/subagent-profiles";
 
 /** A mode as the footer reads it: this chat's, or the default's. The same three fields
     `/mode default` writes, so "already the default" compares exactly what a save would change. */
@@ -59,4 +60,42 @@ export function saveLabel(state: "idle" | "saving" | "done"): string {
 export function saveTitle(shown: ShownMode | null, already: boolean): string {
   if (!shown) return already ? "New sessions already start from the default mode." : "Make this chat's mode the default for new sessions.";
   return already ? `New sessions already start from ${modeSummary(shown)}.` : `New sessions will start from ${modeSummary(shown)}.`;
+}
+
+// ── The subagent profile in the menu ────────────────────────────────────────
+
+/** The save makes the default the mode AND the profile together, so "already" covers both:
+    this chat's pick against this device's `default` (its own file, never synced). */
+export function isDefaultAll(
+  def: Pick<ModeInfo, "mode" | "minorModes" | "strict"> | null,
+  current: ShownMode | null,
+  profiles: Pick<SubagentProfilesInfo, "current" | "default"> | null,
+): boolean {
+  if (!profiles) return false; // not read yet: unknown is never "already the default"
+  return isDefaultMode(def, current) && profiles.current.id !== null && profiles.current.id === profiles.default;
+}
+
+/** The announce after the save: both halves named, so it never claims less than it wrote. */
+export function savedAnnounce(mode: ShownMode | null, profileName: string | null): string {
+  const modeText = mode ? modeSummary(mode) : null;
+  const saved = [modeText, profileName ? `Subagents: ${profileName}` : null].filter(Boolean).join(" · ");
+  return saved ? `Default saved: ${saved}. New sessions start here.` : "Default saved. New sessions start here.";
+}
+
+/** The picker's search: a case-insensitive name match, in list order (the server puts Off first). */
+export function filterProfiles<T extends { name: string }>(profiles: readonly T[], query: string): T[] {
+  const q = query.trim().toLowerCase();
+  return q ? profiles.filter((p) => p.name.toLowerCase().includes(q)) : [...profiles];
+}
+
+/** The line under an empty search result. A live fact, then the absence — and the way out. */
+export function noProfileMatch(query: string): string {
+  return `No subagent profile matches \u201c${query.trim()}\u201d.`;
+}
+
+/** An id and placeholder name for a new profile, skipping ones already taken. */
+export function nextSetup(profiles: readonly { id: string; name: string }[]): { id: string; name: string } {
+  let n = 1;
+  while (profiles.some((p) => p.id === `setup-${n}` || p.name.toLowerCase() === `setup ${n}`)) n++;
+  return { id: `setup-${n}`, name: `Setup ${n}` };
 }

@@ -322,7 +322,7 @@ user row.
 - **Running the project.** `sova_project_verbs` (§app.project-services/callers) runs the verbs on
   its own project's instances only (one running copy per worktree, §app/project-services). status,
   logs and doctor are reads, at any level. Every other verb is an event of the project's
-  statechart, tried first: `down` is `services/down` (L0), create, up, apply, reset, teardown and
+  statechart, tried first: `down` is `services/down` (L0), create, up, apply, test, reset, teardown and
   conform are `services/run` (L3, refused while the project is archived). Neither is held nor
   counted against an allowance (§app.project-overseer/limits): stopping is never delayed, and an
   instance runs within the project's slots. Above its level the call refuses with the level's
@@ -356,7 +356,7 @@ user row.
   project's coding sessions only, and an ordinary session whose folder is inside the project root,
   which is the project's own act: L3, counted as a prompt, held like one, kind `prompt`; never a
   gathering session; an optional `mode` and `minor_modes` too). Both take the mode within the operator's ceiling (§app.project-overseer/coding-mode).
-  L3 also: `sova_project_verbs` create, up, apply, reset, teardown and conform (L0: its `down`;
+  L3 also: `sova_project_verbs` create, up, apply, test, reset, teardown and conform (L0: its `down`;
   status, logs and doctor are reads; below).
   Operator turns only: `sova_todo`.
 - **Every start names its gap.** `sova_start_gathering` and `sova_offer` take a required `gap`: a
@@ -1092,7 +1092,9 @@ user row.
   each with its time ("14:06" today, "Mar 4 14:06" before, with the year when it isn't this year),
   what happened as a sentence (each statechart event has its own: "The overseer filed this gap.", "A held
   act waits for the overseer's review.", "A person was sent a WhatsApp message.", "The session was retired: the project keeps the 200
-  sessions it started most recently, and this one was finished."; a move with no sentence is
+  sessions it started most recently, and this one was finished."; the project's running copies
+  (§app.project-services/callers) have two, `services/down` "A running copy of the project was
+  stopped." and `services/run` "A running copy of the project was started or changed."; a move with no sentence is
   quiet, never a raw event name), who (You, You via the Overseer, Overseer, Sova, or a person's name), the
   move ("{from} → {to}"), and "Reason: …" for a correction or a cancel, "Refused: …" for a refusal.
   With none: "Nothing has moved yet."

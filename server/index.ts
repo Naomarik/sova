@@ -24,6 +24,7 @@ import { openRegisteredProjects } from "./projects/spaces";
 import { reconcileProjectServices, registerProjectServiceRoutes } from "./project-services/routes";
 import { startProjectOverseerLoop } from "./project-overseer";
 import { attachedWorkspaces, openAttachedOrgs } from "./orgs";
+import { finishImports, rollForwardCopies } from "./project-import";
 import { closeAllOrgHosts } from "./org-engine";
 import { flushWorkspaces } from "./workspace-commits";
 import { registerDecisionRoutes } from "./decisions-routes";
@@ -1542,8 +1543,11 @@ setAuthHosts(() => {
 });
 
 // Every attached org's engine opens before the first request (its pages and share links read it).
+// An import a stop cut off finishes (§app.projects/import): its copy before the orgs open, the rest after.
+rollForwardCopies();
 await openAttachedOrgs();
 await openRegisteredProjects();
+await finishImports();
 
 export const server = serve({ fetch: app.fetch, port: PORT, hostname: HOST }, (info) => {
   setSovaPort(info.port);

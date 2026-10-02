@@ -52,6 +52,8 @@ import { refreshShare } from "./share/hub";
 import { awaitShareLinks } from "./share/links-events";
 import { linkUrl as shareLinkUrl, linkWarning, shareInfo, shareState } from "./share/listener";
 import { nudgeMarks } from "./session-feed";
+import { localRequest } from "./mesh/proxy";
+import { importProject } from "./project-import";
 import { personPage, previewAs } from "./person-page";
 import { findLink, linksOfOrg, revokePersonLinks } from "./baton-links";
 import { lastVisits } from "./visits";
@@ -504,6 +506,19 @@ export function registerOrgRoutes(app: Hono<any>): void {
       const b = await body(c);
       const made = await addProject(id, { name: b.name, root: b.root });
       return c.json({ ...(await orgPage(id)), ...(made.normalizedFrom ? { normalizedFrom: made.normalizedFrom } : {}) }, 201);
+    }),
+  );
+  // Import a standalone project into the org (§app.projects/import): the operator's own, on this host, confirmed.
+  app.post(
+    "/api/orgs/:id/projects/import",
+    handle(async (c) => {
+      if (!localRequest(c)) return c.json({ error: "Projects are imported on their own host." }, 403);
+      if (c.req.header(OVERSEER_SENDER_HEADER)) return c.json({ error: "Only the operator imports a project." }, 403);
+      const id = p(c, "id");
+      const b = await body(c);
+      await importProject(id, b.projectId, b.confirm === true);
+      nudgeMarks();
+      return c.json(await orgPage(id));
     }),
   );
   // The org's part of a placed project: its main stakeholder (a person id, or null for none) and whether the

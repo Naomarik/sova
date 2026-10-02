@@ -337,6 +337,50 @@ export class OrgHost {
     this.sweeper.unref?.();
   }
 
+  /**
+   * Take sessions whose snapshot files were just copied into this engine's places (an import) into the
+   * running engine, as boot would: indexed and loaded, resumed, their pending effects run, timers armed.
+   * Every sid must have a file here and none may be known already, or nothing is taken; one that does
+   * not load unloads the others (the files stay: the next open loads them). Log segments copied with
+   * them are read like the engine's own; `at` stays unique past their rows.
+   */
+  async adopt(sids: string[]): Promise<void> {
+    await this.ready();
+    if (this.closed) throw new Error("The organization's engine is closed.");
+    if (this.journalProblem) throw new OrgWorkspaceError(this.journalProblem.file);
+    const known = sids.filter((sid) => this.index.has(sid) || this.engine.statechartOf(sid) != null);
+    if (known.length) throw new Error(`Already in this engine: ${known.join(", ")}.`);
+    const found = new Map<string, { file: string; statechart: string }>();
+    for (const root of [this.paths.portable, this.paths.local]) for (const s of scanSnapshots(root)) if (sids.includes(s.sid)) found.set(s.sid, { file: s.file, statechart: s.statechart });
+    const missing = sids.filter((sid) => !found.has(sid));
+    if (missing.length) throw new Error(`No snapshot file here for ${missing.join(", ")}.`);
+    const loaded: string[] = [];
+    try {
+      for (const sid of sids) {
+        this.engine.load(sid, readFileSync(found.get(sid)!.file, "utf8"));
+        loaded.push(sid);
+      }
+    } catch (err) {
+      for (const sid of loaded) this.engine.unload(sid);
+      throw new Error(`Not taken in: ${message(err)}`);
+    }
+    for (const sid of sids) this.index.set(sid, found.get(sid)!);
+    this.lastRowAt = Math.max(this.lastRowAt, lastAt([this.paths.portableLog, this.paths.localLog]));
+    this.step(() => this.engine.resume(sids, { now: this.clock() }));
+    for (const sid of sids) {
+      const pending = (this.engine.data(sid)?.["sova/pending"] ?? {}) as Record<string, JsonObject>;
+      for (const [key, e] of Object.entries(pending)) this.runEffect({ ...(e as Record<string, unknown>), key, sessionId: sid } as Effect);
+    }
+    // the resume's listeners named only the sessions that saved: every adopted one is new to them
+    for (const fn of this.listeners)
+      try {
+        fn({ sessions: sids, steps: [] });
+      } catch (err) {
+        console.warn(`[org-host] change listener: ${message(err)}`);
+      }
+    this.arm();
+  }
+
   private ready(): Promise<void> {
     return this.resuming ? new Promise((r) => this.readyWaiters.push(r)) : Promise.resolve();
   }

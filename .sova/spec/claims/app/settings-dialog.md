@@ -7,11 +7,11 @@ each other (§design/ground-rules and §design/deviations record the deviation).
 the session stays behind, closed by the scrim, Esc, or its Close button (Cancel while anything
 is unsaved, §app.settings-dialog/save-bar).
 
-The rail is the structure: each settings screen is one tab — General, Models, Accounts, Modes, Teams,
+The rail is the structure: each settings screen is one tab — General, Models, Accounts, Subagents, Modes, Teams,
 Profiles, Overseer, Notifications, Decisions, Summaries, Organizations, Themes, Mesh, Public links, Outreach, Voice, Experimental.
 Tabs move with the arrow keys as well as the pointer, and the selected tab has focus on open: the
 two have to name the same screen. The gear opens General; the mode menu's **Configure Delegate** gear
-(§chat/mode-menu) opens Modes directly, and nothing else about the chat changes. Which tab is open lives in
+(§chat/mode-menu) opens Subagents directly, and nothing else about the chat changes. Which tab is open lives in
 `src/lib/settings-nav.ts`, so a control deep in a pane can open it without a callback chain. The
 active tab is the only filled thing in the rail — an accent tint, never an accent label, because
 §design/ground-rules spends accent on the primary, live, and focus — and the rail carries no fill of its own, so
@@ -134,9 +134,14 @@ read, an error banner offers Retry and touches nothing.
 
 ## §app.settings-dialog/modes — Modes
 
-The third tab. Today it holds one section, **Delegate**: which worker each kind of Delegate work
-goes to (§chat/mode-menu names the mode; `pi-config/extensions/mode/README.md` owns the behaviour). Normal mode
-has nothing to configure, so it has no section.
+The **Modes** tab explains that Delegate routing and the spec writer now belong to subagent
+profiles, and links to **Subagents** with Manage Subagent Profiles. The **Teams** tab explains
+the same move for coordinator, monitor and ordinary-member choices and offers the same link.
+Neither edits a legacy file. Major and minor modes are still chosen in each chat's mode menu.
+
+The **Subagents** tab edits named setups (§chat.subagent-profiles/settings): Delegate routing,
+team roles and thresholds, members default, and spec writer. The worker-row rules below apply
+there; the chat's profile resolves the routing, not a global editor (§chat.subagent-profiles/resolution).
 
 Delegate routes four kinds of work, in this order: **Planning & specs** (non-editing design,
 including any investigation that feeds one), **Investigation** (focused read-only research or
@@ -154,9 +159,10 @@ side by side when the panel has room and stacked under 640px.
 - **A stored pick is always shown.** When discovery doesn't list it, it stays in the select with
   "— not offered" (the backend answered without it; the row says so in error ink) or "— not
   verified" (the backend couldn't answer, or its answer isn't proof; muted). Couldn't-answer is
-  never read as gone: a backend whose discovery fails gets one warn banner with **Check Again**
-  carrying the reason, its rows say only "Not verified: {backend} couldn't list its models.", and
+  never read as gone: its rows say "Not verified: {backend} couldn't list its models.", and
   saves still go through, with one "not verified" note per backend naming every slot on it.
+  A failed options request has a warning and Check Again; a successful response that cannot list
+  one backend leaves that uncertainty in its rows and save notes.
 - **A Claude Code alias the CLI's list omits is not gone.** The `claude` initialize model list is
   remote and account-gated and has changed shape under us: it once carried the `[1m]` aliases
   (`opus[1m]`, `claude-fable-5-1[1m]`) and now does not, while the CLI accepts a valid alias at
@@ -181,27 +187,28 @@ side by side when the panel has room and stacked under 640px.
   model to use." On: a second row starting blank on the primary's backend. A fallback identical to
   its primary is refused.
 - **Saving** is explicit — the dialog's Save Changes and Discard Changes
-  (§app.settings-dialog/save-bar), and **Reset to Defaults**, a small button in the Delegate
-  heading that fills the built-in routing in and saves nothing — because the routing is one
-  coherent choice across eight rows, not eight switches. Save waits for every row to have a model
-  and an effort, and for no fallback to be its own primary; until then the footer names what's
-  missing ("Delegate needs a fallback model.").
+  (§app.settings-dialog/save-bar) — because a subagent setup is one coherent choice, not a save
+  per worker row. Save waits for every chosen row to have a model and an effort, valid team
+  thresholds and names, and for no fallback to be its own primary; the footer names the profile
+  and missing section. There is no Delegate or Teams Reset to Defaults button.
 - **Unsaved edits are kept, and never dropped silently.** The draft lives outside the tab
-  (`src/lib/delegate-draft.ts`), so switching to Models and back keeps it. Closing the dialog —
-  Cancel, Esc, or the scrim — over unsaved Delegate edits brings you back to Modes and holds the
-  close with a warn banner above the foot: **Your Delegate changes aren't saved.** "Save them, or
-  discard them and close." [Keep Editing] [Discard and Close]. A closed dialog
-  forgets the draft; reopening starts from what's saved. The save replaces the whole file. The server
+  (`src/lib/subagent-profiles-draft.ts`), so switching tabs keeps it. Closing over unsaved edits
+  returns to Subagents and holds with **Your Subagents changes aren't saved.** "Save them, or
+  discard them and close." [Keep Editing] [Discard and Close]. A closed dialog forgets the draft;
+  reopening starts from what's saved. The save replaces the whole library; a changed device
+  default is written separately, and a failure after the library save reports the partial write. The server
   refuses a **changed** row its backend answered it can't run (model not offered — for Claude Code,
   only a shape-invalid id — or effort not taken) and names it; a row that can't be checked, or that
   the policy refuses, saves with a warn banner "Saved, with notes." A row left as it was stored
   never blocks a save.
 
-The file is `~/.pi/agent/mode-delegate.json` (shown in the footnote), global and shared with pi in
-the terminal. Chats already in Delegate — web and TUI — use a save from their next message; chats
-in normal mode never read it, and no chat keeps a copy of it.
+The library is `<agent dir>/subagent-profiles.json`, shared with pi in the terminal. A saved edit
+reaches every chat on that profile from its next turn or team action; running workers and the
+main model keep their models. `<agent dir>/subagent-profiles-default.json` is this device's own
+choice and never syncs. Legacy `mode-delegate.json`, `mode-spec.json` and `team-defaults.json`
+remain for seeding and fallback, not as second editors.
 
-Defaults (Reset to Defaults): Planning & specs Claude Code `claude-fable-5-1[1m]` medium, fallback
+Built-in legacy Delegate values, used when seeding: Planning & specs Claude Code `claude-fable-5-1[1m]` medium, fallback
 `opus[1m]` high; Investigation `opus[1m]` low; Routine `opus[1m]` low; Complex `opus[1m]` medium;
 no fallbacks but Planning's.
 
@@ -553,8 +560,8 @@ Folders box or the tab writes nothing.
 
 ## §app.settings-dialog/save-bar — One Save in the footer, one close-hold
 
-Every Settings tab that writes a file on the server is Save-gated: **Models**, **Modes**
-(Delegate and Spec), **Teams**, **Overseer**, **Notifications** (the **Phone Notifications** form), **Decisions**, **Summaries**, **Organizations**,
+Every Settings tab that writes a file on the server is Save-gated: **Models**, **Subagents**
+(the library and this device's default), **Overseer**, **Notifications** (the **Phone Notifications** form), **Decisions**, **Summaries**, **Organizations**,
 **Mesh** and **Experimental**. A change on them is staged, never written as it is made. No form has a Save or
 Discard button of its own: saving is the dialog's.
 
@@ -570,10 +577,10 @@ Discard button of its own: saving is the dialog's.
   of the dialog. **Discard Changes** puts every form on every tab back to what's saved.
 - **Save waits for every dirty form to be valid.** While any is incomplete or invalid, Save
   Changes is disabled and the status line, in error, names the first such form and what it needs
-  ("Delegate needs a fallback model.", "Mesh: This host needs a name."). The form's own fields
+  ("Subagents: My setup's Delegate rows each need a model and an effort.", "Mesh: This host needs a name."). The form's own fields
   still say it inline. A form with no unsaved changes never holds Save.
 - **The status line** says, first match wins: **Saving…**; why Save waits; a failed save ("Saved
-  Models; Delegate failed.", or "Delegate failed." when nothing else was written); what is unsaved
+  Models; Subagents failed.", or "Subagents failed." when nothing else was written); what is unsaved
   ("Unsaved: Models, Decisions", form names in rail order); what the last save wrote ("Saved
   Models and Decisions."); or nothing. The outcome of a save is announced to screen readers in the
   same words.
@@ -584,7 +591,7 @@ Discard button of its own: saving is the dialog's.
   edited, discarded or saved. After a save lands, the form is what the server answered, and it
   reads clean. A form's "Saved, with notes." banner and its "Stored in …" line stay at the form's
   end.
-- **Reset to Defaults** (Delegate, Teams, Summaries) is a small button in that section's heading.
+- **Reset to Defaults** (Summaries) is a small button in that section's heading.
   It fills the form's draft with the built-in values and saves nothing.
 - **Drafts outlive their tab.** Each form's draft, its save and what its last save said are module
   state, not the panel's, so switching tabs keeps them. A closed dialog forgets every draft;
@@ -636,9 +643,9 @@ defaults, each photo field on its own).
 
 Every switch, checkbox and radio in Settings is a label row: the native input hidden inside it, so
 the label's text and its control are one target, at least 44px tall. A row that leads with its
-control and reads left to right (Teams' **Add a coordinator/monitor to new teams**, **Pause the
-team** and every **Fallback** switch — Teams, Delegate, Spec, Summaries — the Decisions switches and
-radios, the Spec writer and Overseer proactivity radios, and the Typography text sizes) is only as
+control and reads left to right (Subagents' **Add a coordinator/monitor to new teams**, **Pause the
+team**, members-default and spec-writer switches, and every **Fallback** switch — Subagents and
+Summaries — the Decisions switches and radios, Overseer proactivity radios, and the Typography text sizes) is only as
 wide as its text and control: a click on the empty row beside it does nothing. A row that spreads
 its text and switch across the panel (General's **Summary line**, the Claude Code provider, Mesh's
 sync rows, the Models policy switches) keeps the whole row as its target.
@@ -647,7 +654,7 @@ sync rows, the Models policy switches) keeps the whole row as its target.
 
 The Claude Code CLI's model list names an alias such as `opus` but not always its 1M-context form
 `opus[1m]`, which the CLI accepts. So wherever a worker or summarizer row checks a Claude Code
-pick against that list (Settings → Modes → Delegate and Spec, Teams, Overseer, Summaries), a model
+pick against that list (Settings → Subagents, Overseer, Summaries), a model
 `<alias>[1m]` counts as listed when `<alias>` is: no "not verified" note under the row, no
 "— not verified" in the select, and it takes `<alias>`'s efforts and policy marks. When `<alias>`
 is not listed either, the pick reads as before (§app.settings-dialog/modes). Only Claude Code: a pi
@@ -657,7 +664,7 @@ model ending in `[1m]` is never read as its base.
 
 The CLI's list names `opus` and `claude-fable-5-1` but no longer their 1M-context forms, which it
 accepts. So wherever Sova or its extensions list Claude Code models — every Settings row that picks
-a Claude Code model (Modes → Delegate and Spec, Teams, Decisions, Overseer, Summaries), the chat
+a Claude Code model (Subagents, Decisions, Overseer, Summaries), the chat
 model picker's `claude-code-cli/*` models, and `agent_models` — `opus[1m]` and
 `claude-fable-5-1[1m]` are offered right after `opus` and `claude-fable-5-1` whenever the CLI lists
 that base and not already its `[1m]` form: the base's efforts, named "{base name} (1M context)".

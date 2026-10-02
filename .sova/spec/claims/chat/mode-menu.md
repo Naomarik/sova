@@ -3,7 +3,8 @@
 
 pi's mode extension (`pi-config/extensions/mode`) has one **major mode**, `normal` or
 `delegate`, and any set of **minor modes** (today `align`, `spec` and `vis`, which teaches the inline visuals of §chat.markdown/visuals). What Delegate routes where is
-Settings → Modes (§app/settings-dialog), not this menu.
+Settings → Subagents (§app/settings-dialog), through this chat's subagent profile
+(§chat/subagent-profiles). The menu always offers its Subagents picker, in either major mode.
 
 Both are **per session**: each chat keeps its own, persisted in that session's own `mode`
 entries. The menu switches them from the chat's composer, and the switch reaches **that chat
@@ -68,8 +69,9 @@ this slot (§app.overseer/quick-actions).
 It uses the model menu's popover shell (`.model-menu`): a `[popover="auto"]` right-aligned
 **above** the trigger (the composer is pinned to the pane's bottom edge, so it grows upward, like
 the composer flyout), and a bottom sheet under 768px. The list inside is an ARIA **menu**. A listbox
-doesn't fit here: there's nothing to search, and it mixes one exclusive choice with independent
-toggles, which is exactly what `menuitemradio` and `menuitemcheckbox` are for.
+doesn't fit the main panel: it mixes one exclusive choice with independent toggles and a
+Subagents action. The Subagents action opens a searchable profile-picker panel in the same
+popover (§chat.subagent-profiles/menu), with Off first and the current profile checked.
 
 ```html
 <div class="model-menu mode-menu" id="mode-popover" popover="auto">
@@ -94,6 +96,10 @@ toggles, which is exactly what `menuitemradio` and `menuitemcheckbox` are for.
       <div class="list-group-label" id="mode-group-minor">Minor modes</div>
       <div class="mode-option" role="menuitemcheckbox" aria-checked="true" tabindex="-1">…align…</div>
     </div>
+    <div class="model-menu-group" role="group" aria-labelledby="mode-group-subagents">
+      <div class="list-group-label" id="mode-group-subagents">Subagents</div>
+      <div class="mode-option" role="menuitem" aria-haspopup="true" tabindex="-1">Subagents · My setup …chevron-right…</div>
+    </div>
   </div>
   <div class="mode-menu-foot">
     <p class="mode-menu-foot-line"><span class="text-mono">strict: off</span> · A switch here is this
@@ -104,21 +110,21 @@ toggles, which is exactly what `menuitemradio` and `menuitemcheckbox` are for.
 ```
 
 - **`Save as default`** is the menu's one write of the default. Pressing it makes **this chat's**
-  major mode, strict flag and minor modes what new sessions start from (`POST /api/mode?path=…
-  { saveDefault: true }`) — the same three fields `/mode default` writes in a terminal. The request
-  carries no mode of its own — the server takes the chat's — so a switch that lands between the
-  click and the answer can't save something the user never saw. The write re-reads the file first,
+  major mode, strict flag, minor modes and effective subagent profile what new sessions start from
+  (`POST /api/mode?path=… { saveDefault: true }`). `/mode default` in a terminal still saves only
+  the three mode fields; the web button also writes this device's subagent profile default. The request
+  carries no mode or profile of its own — the server takes this chat's current state. The write re-reads the file first,
   so `mode.json`'s shortcuts and anything else in it are kept, and the mode extension reads it at
   each `session_start`: the next session, TUI or Sova, starts on it.
-- **What it moves, and when.** It switches nothing now: this chat keeps what it is on, and no open
-  chat hears about it. But the default is read at each start, so it moves new sessions from their
+- **What it moves, and when.** This chat keeps what it is on; pinned chats keep their own picks.
+  Chats without a subagent pick follow the new device default from their next turn or team action. But the default is read at each start, so it moves new sessions from their
   next start — and, like any write of the default, a session that has never switched (no mode entry
   on its branch) follows it too from its next start or reopen. "Unchanged" is true now, not
   forever. It stays pressable in a chat that can't switch (`This chat can't switch.`): it saves
   the very state the menu is showing.
-- **The button states.** `Save as default` when this chat's mode, strict flag or minors differ from
-  what new sessions start from; `Already the default` with a check, `aria-disabled`, when all three
-  match — a button offering to save what is already saved is the thing this wording exists to rule
+- **The button states.** `Save as default` when this chat's mode, strict flag, minors or subagent
+  profile differ from what new sessions start from; `Already the default` with a check,
+  `aria-disabled`, when all four match — a button offering to save what is already saved is the thing this wording exists to rule
   out. What new sessions start from is the FILE's answer (read on every open, or the save's reply),
   never a switch's reply, which is this chat's own mode. The visible label is the accessible name
   (so a voice-control user can say what they see); the `title` adds what the press makes true and
@@ -135,8 +141,9 @@ toggles, which is exactly what `menuitemradio` and `menuitemcheckbox` are for.
 - **Configure Delegate** is an icon-only gear at the right end of Delegate's row: a real
   `button` with `role="menuitem"`, a sibling of the `menuitemradio` (never nested in it) inside a
   `role="none"` wrapper, with a `--tap-min` target. It comes right after Delegate in the same
-  roving focus. It closes the menu and opens Settings at **Modes** (§app/settings-dialog), where Delegate's routing
-  lives. It switches nothing: this chat's mode stays what it was, and it's there in either mode,
+  roving focus. It closes the menu and opens Settings at **Subagents** (§app/settings-dialog),
+  where this chat's routing is edited. The spec gear opens the same tab at its spec-writer section.
+  Delegate's detail line reads "Profile: <name>". It switches nothing: this chat's mode stays what it was, and it's there in either mode,
   so you can set Delegate up before turning it on. Clicking the rest of the row still picks
   Delegate.
 - **Checked.** A checked row gets `--color-accent-tint` and the check. The words carry the state
@@ -173,7 +180,12 @@ this server holds open (404 otherwise), and `mode.json` is not written. The chat
   session, the chat isn't touched. Its menu shows a warn banner, "This chat can't switch." Only
   the default applies then.
 
-`Save as default` is the same route with `{ saveDefault: true }`, and its refusals are of the
+`Save as default` takes both this chat's mode state and its effective subagent profile. The
+server writes the device's profile default first, then `mode.json`; there is no cross-file
+transaction. A profile-default failure leaves the mode default untouched; a later mode-write
+failure reports that the profile default already changed. An unusable library refuses the save.
+
+It is the same route with `{ saveDefault: true }`, and its refusals are of the
 same kind: no `?path=` is a 400 ("saveDefault needs ?path=: it saves that chat's own mode") — the
 save takes a chat's own mode, so there has to be a chat, never a write of whatever the file
 already says; a body that also names `mode` or `minorModes` (or a `saveDefault` that isn't `true`)

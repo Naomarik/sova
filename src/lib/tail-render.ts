@@ -162,8 +162,15 @@ const isCompaction = (raw: unknown) => typeof raw === "object" && raw !== null &
  * depend on it; a drawn row remembers its real height. A row that draws nothing (a paired tool
  * result) takes no space whatever its estimate (`.entry:empty`).
  */
-export function rowEstimate(item: { kind: string; text?: string; raw?: unknown }, images?: readonly string[], at: ImagesAt = "user"): string {
+export function rowEstimate(item: { kind: string; text?: string; raw?: unknown }, images?: readonly string[], at: ImagesAt = "user", chain = false, folded = false, first = false): string {
   const text = item.text ?? "";
+  // A run head reserves its group line (44), gap (8), and step (24). Middle steps
+  // retain the 32px convention. Folded, only the 44px group line draws, never images.
+  const compact = chain && (item.kind === "thinking" || item.kind === "tool-call" || item.kind === "tool-result");
+  if (compact && folded) return "calc(44px)";
+  const compactEst = first ? "76px" : "32px";
+  const card = compact ? compactEst : "46px";
+  const foldedEst = compact ? compactEst : "36px";
   let est: string;
   if (item.kind === "assistant-text") {
     const s = textShape(text);
@@ -171,8 +178,8 @@ export function rowEstimate(item: { kind: string; text?: string; raw?: unknown }
   } else if (item.kind === "user") est = `97px + ${wrapped(textShape(text, true), 0.7)}`;
   else if (item.kind === "info" && isCompaction(item.raw)) est = "36px";
   else if (item.kind === "info") est = `-4px + ${wrapped(textShape(text, true), 1)}`;
-  else if (item.kind === "tool-call" || item.kind === "tool-result" || item.kind === "wake") est = "46px";
-  else if (item.kind === "thinking" || item.kind === "report") est = "36px";
+  else if (item.kind === "tool-call" || item.kind === "tool-result" || item.kind === "wake") est = card;
+  else if (item.kind === "thinking" || item.kind === "report") est = item.kind === "thinking" ? foldedEst : "36px";
   else if (item.kind === "worktree-merge") est = "110px + var(--entry-narrow, 0) * 70px";
   else est = "70px";
   const [wide, narrow] = imagesEstimate(images, at);

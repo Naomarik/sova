@@ -103,6 +103,8 @@ export interface SessionShareRecipient {
   opened: number;
   /** The newest visit's last activity. */
   lastAt?: string;
+  /** Only on GET /api/shares-overview: the recipient's visits, newest first. */
+  visits?: SessionShareVisit[];
 }
 
 export interface SessionShare {
@@ -279,14 +281,24 @@ export const SESSION_SHARE_IMAGE_TYPES = ["image/png", "image/jpeg", "image/webp
 
 // ---- activity ---------------------------------------------------------------------------------------
 
-/** One visit (folded with its later activity), preview, refused open or cap line. Device family
-    only: no address, user agent or token is kept. */
+/** One visit (folded with its later activity), preview, refused open or cap line. The visit log
+    keeps the device family only, never a token. */
 export interface SessionShareVisit {
+  /** The line's id in its visit log. */
+  id?: string;
   kind: "visit" | "preview" | "refused" | "capped";
   at: string;
   lastSeenAt?: string;
   device: string;
   bot?: true;
+  /** Only on GET /api/shares-overview, from the host's identity side file while it logged visitors
+      (§mesh.public/visitor-log): each address and raw user agent seen, the language, and for a
+      preview the off-site referer and the paths opened, in order. */
+  ip?: string[];
+  ua?: string[];
+  lang?: string;
+  referer?: string;
+  pages?: string[];
 }
 
 export interface SessionShareRecipientActivity {
@@ -334,4 +346,7 @@ export interface OrgLinkRow {
 export interface SharesOverview {
   sessionShares: SessionShare[];
   orgLinks: OrgLinkRow[];
+  /** This host's preview visits by preview id, newest first (§mesh.public/visitor-log); a preview
+      with none is absent. An older host omits it. */
+  previewVisits?: Record<string, SessionShareVisit[]>;
 }

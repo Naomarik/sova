@@ -25,7 +25,7 @@ const FOREIGN_NOTICE = "foreign lists every § whose prose span or manifest reco
   "It is computed from bytes, never meaning: whether a user sees the change is still read in each passage.";
 
 // ---------------------------------------------------------------- findings
-const findings = [];
+let findings = [];
 let packetInputs = null, packetInvocation = false;
 const add = (severity, code, message, where = {}) => findings.push({ severity, code, message, ...where });
 const exitOf = (fs) => (fs.some((f) => f.severity === "error") ? 2 : fs.some((f) => f.severity === "warn") ? 1 : 0);
@@ -130,10 +130,11 @@ function safePath(root, rel) {
 // The review companion's refusal policy must hold in this subprocess too, before contents are read.
 const SECRET_DIRS = new Set([".git", ".hg", ".svn", ".ssh", ".gnupg", ".aws", ".azure", ".kube", ".docker"]);
 const SECRET_FILE = /^(?:\.env(?:\..*)?|\.envrc|auth\.json|credentials(?:\.json)?|\.netrc|\.npmrc|\.pypirc|\.pgpass|\.git-credentials|\.htpasswd|id_(?:rsa|dsa|ecdsa|ed25519)(?:\.pub)?|secrets?(?:(?:[.-][a-z0-9_-]+)*\.(?:json|ya?ml|toml|ini|conf|cfg|env|txt|properties|xml|enc|age|asc))?|.*\.(?:pem|key|p12|pfx|jks|keystore|kdbx|gpg))$/i;
-let reviewPolicy = false;
+let reviewPolicy = false, assessmentPolicy = false;
 function reviewRefusal(rel) {
   if (!reviewPolicy) return null;
   const segs = toPosix(rel).split("/"), low = toPosix(rel).toLowerCase();
+  if (assessmentPolicy && (low === `${DEFAULT_SPEC}/assessments` || low.startsWith(`${DEFAULT_SPEC}/assessments/`))) return "receipt/cache storage is not an input";
   if ([`${DEFAULT_SPEC}/reviews`, `${DEFAULT_SPEC}/.cache`].some((d) => low === d || low.startsWith(d + "/"))) return "review/cache storage is never its own input";
   if (segs.some((s) => SECRET_DIRS.has(s.toLowerCase()))) return "secret, config or runtime-state directory";
   return SECRET_FILE.test(segs.at(-1)) ? "secret or credential file" : null;
@@ -1118,7 +1119,7 @@ function packetMain(opt) {
 function main(argv) {
   const opt = parseArgs(argv);
   packetInvocation = argv[0] === "packet" || opt.pos[0] === "packet";
-  reviewPolicy = opt["read-policy"] === "review";
+  reviewPolicy = opt["read-policy"] === "review"; assessmentPolicy = false;
   if (packetInvocation) return packetMain(opt);
   let out = { tool: "sova-spec", command: opt.cmd ?? null };
   if (opt.help) { process.stdout.write(USAGE + "\n"); return 0; }
@@ -1154,13 +1155,74 @@ function main(argv) {
   return out.exit;
 }
 
-try { process.exitCode = main(process.argv.slice(2)); } catch (e) {
-  if (packetInvocation) {
-    process.stdout.write(serializePacket(packetError("graph-untrusted")));
-    process.exitCode = 2;
-  } else {
-    add("error", "internal-error", String(e?.stack ?? e));
-    process.stdout.write((process.argv.includes("--json") ? JSON.stringify({ tool: "sova-spec", exit: 2, findings }, null, 2) : `error internal-error: ${e?.message ?? e}\nexit 2`) + "\n");
-    process.exitCode = 2;
+// Internal stdlib reader for companions: one graph per capture, existing command semantics.
+// Every synchronous query scopes all module state and JSON-detaches its result, like a CLI child.
+// No reader or source cache is shared across captures or status invocations.
+export function createInspection(root, { spec = DEFAULT_SPEC, readPolicy = "default" } = {}) {
+  root = resolve(root);
+  let ctx = null, loaded = [], selected = spec, sourceFiles = [], sourceConflict = false;
+  const within = (base, fn) => {
+    const saved = { findings, reviewPolicy, assessmentPolicy, packetInputs, packetInvocation };
+    findings = [...base]; reviewPolicy = readPolicy !== "default"; assessmentPolicy = readPolicy === "assessment"; packetInputs = null; packetInvocation = false;
+    try { return fn(); } finally {
+      ({ findings, reviewPolicy, assessmentPolicy, packetInputs, packetInvocation } = saved);
+    }
+  };
+  within([], () => {
+    const choice = specDir(spec);
+    if (choice.why || !["default", "review", "assessment"].includes(readPolicy)) add("error", "usage", "invalid inspection spec or read policy");
+    else {
+      selected = choice.rel;
+      // Reuse raw-byte hashing at the actual read, not re-encoded parsed text or a second open.
+      packetInputs = { files: [], tree: [] };
+      ctx = load(root, selected);
+      const seen = new Map();
+      sourceFiles = packetInputs.files.map(([path, sha256]) => {
+        if (seen.has(path) && seen.get(path) !== sha256) sourceConflict = true;
+        if (!seen.has(path)) seen.set(path, sha256); // never overwrite the first parsed version
+        return { path, sha256 };
+      });
+    }
+    loaded = [...findings];
+  });
+  const query = (command, id, changed) => within(loaded, () => {
+    let out = { tool: "sova-spec", command, spec: selected, root };
+    if (ctx) {
+      const broken = exitOf(findings) === 2;
+      if ((command === "scope" || command === "impact") && !ctx.claims.has(id)) add("error", "unknown-id", `${id} has no manifest record`, { id });
+      else if (broken && command !== "check") add("note", "untrusted", "graph errors prevent a trustworthy result; fix them first");
+      else {
+        const run = { check: () => check(ctx), census: () => census(ctx, changed), scope: () => scope(ctx, id), impact: () => impact(ctx, id) }[command];
+        out = { ...out, ...(id ? { id } : {}), ...run(), notice: NOTICE };
+      }
+    }
+    out.exit = exitOf(findings); out.findings = findings;
+    return JSON.parse(JSON.stringify(out));
+  });
+  return Object.freeze({
+    sourceHashes: () => JSON.parse(JSON.stringify({ files: sourceFiles, conflict: sourceConflict })),
+    check: () => query("check"),
+    scope: (id) => query("scope", id),
+    impact: (id) => query("impact", id),
+    census: ({ base, related = false } = {}) => query("census", undefined, base === undefined ? false : { base, related, ownBase: [] }),
+  });
+}
+
+// The installed agent entrypoint is often reached through directory symlinks. Import is silent;
+// realpath comparison also keeps --preserve-symlinks-main direct CLI launches working.
+const direct = (() => {
+  try { return !!process.argv[1] && realpathSync(resolve(process.argv[1])) === realpathSync(fileURLToPath(import.meta.url)); }
+  catch { return false; }
+})();
+if (direct) {
+  try { process.exitCode = main(process.argv.slice(2)); } catch (e) {
+    if (packetInvocation) {
+      process.stdout.write(serializePacket(packetError("graph-untrusted")));
+      process.exitCode = 2;
+    } else {
+      add("error", "internal-error", String(e?.stack ?? e));
+      process.stdout.write((process.argv.includes("--json") ? JSON.stringify({ tool: "sova-spec", exit: 2, findings }, null, 2) : `error internal-error: ${e?.message ?? e}\nexit 2`) + "\n");
+      process.exitCode = 2;
+    }
   }
 }

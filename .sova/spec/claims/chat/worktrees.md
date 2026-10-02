@@ -245,6 +245,15 @@ routine follow-up in words, one line each.
 The session's `readiness` travels with its row in the session list (`SessionSummary.readiness`),
 so the Overseer reads the same answer.
 
+**Spec observations** are a separate, read-only addition to that answer. For the session's own
+tracked worktrees, the server reads durable structured assessment receipts and checks their
+attribution against the owner's recorded workers and the actual persisted task boundaries.
+Input applicability, outstanding assessments, and recorder-declared verification results are
+reported separately. Missing stores, partial or unreadable receipts, stale inputs, and unknown
+or conflicting attribution remain explicit observations. They neither replace the session's
+newest bash check nor change any readiness state, badge, reason, attention item, or release gate.
+The row shows a neutral "Spec observations" line; a preserved assessment is not a passed test.
+
 **In the attention digest** (§app.overseer/attention-digest), decide tier, never Needs you, a brief
 or a phone notification: "Ready to merge: {branch}" for a ready worktree and "Waiting for your OK:
 {branch}" for one waiting for the go-ahead, while the session is idle; "Merged with open work:

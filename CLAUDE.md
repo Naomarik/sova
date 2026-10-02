@@ -52,7 +52,25 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
   session writes the spec itself), written by Settings → Modes → Spec and re-read the same way by
   every session with spec on, in either major mode), subagents `team-defaults.json` = the standing
   coordinator and monitor every new team gets (absent = off), written by Sova's Settings → Teams and
-  read by the subagents extension at team creation), claude-code's Claude logins
+  read by the subagents extension at team creation), and subagent profiles: `subagent-profiles.json`
+  = the library of named subagent setups (a profile bundles Delegate's four routes, the standing
+  coordinator/monitor, the members default and the spec writer),
+  `subagent-profiles-default.json` = this device's default (never synced; the library syncs whole,
+  newest edit wins), and each chat's hidden `subagent-profile` custom entry `{v: 1, profile}` (an
+  id or "off", newest on the branch wins — an id reference, not a snapshot: editing a profile
+  reaches every chat on it from its next turn or team action). One module,
+  `pi-config/extensions/subagents/subagent-profiles.ts` (builtins only, plus `mode/delegate.ts`,
+  `mode/spec.ts` and `subagents/team-defaults.ts`), owns all three: the shapes, the strict parses,
+  the seeding (absent = seeded from the legacy files, so nothing changes until the user switches; a
+  malformed legacy `team-defaults.json` postpones seeding), atomic writers, pick entries
+  (`restorePick`, `pickEntryFor`) and the one `resolveSubagents` (pick → this device's default →
+  legacy files; a dangling pick falls to the default, a missing/malformed/dangling default reads as
+  Off, an unusable library falls to the legacy files). Written by the mode menu, Settings →
+  Subagents, `/mode subagents <id|off>`, the Overseer and the limit row; read by the mode
+  extension (Delegate routing + spec writer at each turn boundary, either major mode) and the
+  subagents extension (team_create / team_add / team_succeed / roster answers / `/team defaults`),
+  and by `server/subagent-profiles.ts`, `server/sync/docs.ts` (the library's sync registration) and
+  `server/chat-manager.ts` (the pick entry and saveModeDefault), which all import it), claude-code's Claude logins
   (`pi-config/extensions/claude-code/accounts.ts`, builtins only: the registry
   `claude-accounts.json` `{version: 1, logins, devices}`, each login's directory
   `claude-accounts/<id>/` (0700; `projects/`, `settings.json`, `CLAUDE.md`, `agents`, `commands`,
@@ -101,7 +119,12 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
   writer of `model-favorites.json`, with its lock, re-read and atomic rename, for the TUI palette
   and Sova's picker alike), `server/team-defaults.ts` imports
   `pi-config/extensions/subagents/team-defaults.ts` (builtins only: the file's types, defaults,
-  strict parse, reader and atomic writer for Settings → Teams), `server/claude-accounts.ts` imports
+  strict parse, reader and atomic writer for Settings → Teams), and of the same package's
+  `subagent-profiles.ts` (builtins only, see above: `server/subagent-profiles.ts` — Settings →
+  Subagents, the `/api/subagents` pick route and the session-create field, `server/sync/docs.ts` —
+  the library's mesh registration, its default file deliberately absent, `server/chat-manager.ts` —
+  the pick entry helpers, and `server/sessions-configure.ts` / `server/overseer-tools.ts`,
+  validation only), `server/claude-accounts.ts` imports
   `pi-config/extensions/claude-code/accounts.ts` (builtins only, see above: Settings → Accounts, and
   the login the server's own `claude` spawns — model discovery, `--version` — run on),
   `server/provider-limits.ts`, `server/decide-llm.ts`, `server/overseer.ts` and
@@ -191,7 +214,12 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
   `$(scripts/fake-claude-path.sh)` first on `PATH`, point `CLAUDE_CONFIG_DIR` at a fixture directory
   under `.agent/` (the `default` login; the real `~/.claude` stays untouched), and set
   `SOVA_CLAUDE_ACCOUNTS_DEV=1` so `.agent/claude-accounts-dev.json` (`{"forceLimit": [ids],
-  "forceAuth": [ids]}`) can force a login to fail and drive failover end to end. The pool of logins
+  "forceAuth": [ids]}`) can force a login to fail and drive failover end to end. The force reaches
+  only a session ON a registry-known login (`claude-accounts.json`); with no registry a session has
+  no login and the force no-ops — use the login dir's own `FAKE_LIMIT` / `FAKE_AUTH` files (the
+  fake's transport-level failure) instead. The fake's initialize answer lists one model
+  (`fake-opus`), so `claude-code-cli/fake-opus` can be a session's model once `settings.json`
+  gains `{"version":1,"experimental":{"claudeCodeProvider":true}}`. The pool of logins
   across devices has its own multi-host run, `node scripts/claude-pool-e2e/run.mjs` (three Sova
   containers on an `--internal` Docker network in address-identity mode, fake `claude`, no
   Tailscale; `--down` removes it, `--keep` leaves desk on 127.0.0.1:4821): it needs the mesh lab's

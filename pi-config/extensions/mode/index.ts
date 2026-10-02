@@ -66,6 +66,7 @@ import {
 	type LegacyAlignEntryData,
 } from "./align.ts";
 import { registerAlignTool } from "./align-tool.ts";
+import { registerAssessmentTool, ASSESSMENT_TOOL } from "./spec-assessment-tool.ts";
 import { ALIGN_OVERLAY_OPTIONS, alignWidget, createAlignViewer, type AlignViewer } from "./align-ui.ts";
 import { registerVisGuideTool, VIS_GUIDE_TOOL } from "./vis-guide-tool.ts";
 
@@ -73,14 +74,15 @@ import { registerVisGuideTool, VIS_GUIDE_TOOL } from "./vis-guide-tool.ts";
 const REMOTE_SESSION_EVENT = "remote:session";
 const REMOTE_DISCOVER_EVENT = "remote:discover";
 import { policyDenial, readPolicy } from "../subagents/policy.ts";
-import { DELEGATE_FILE_NAME, DELEGATE_PROFILE_INFO, DELEGATE_PROFILES, delegateKey, delegateReader, type DelegateBackend } from "./delegate.ts";
+import { DELEGATE_PROFILE_INFO, DELEGATE_PROFILES, delegateKey, type DelegateBackend } from "./delegate.ts";
 import { WorkerProbe } from "./discovery.ts";
 import { MODE_WORKER_DISCOVER_EVENT, MODE_WORKER_EVENT, WORKER_ROLE_DISCOVER_EVENT, WORKER_ROLE_EVENT, type ModeWorkerEvent } from "./events.ts";
 import { isMinorMode, MINOR_MODES, normalizeMinorModes, parseMinorFlag, workerMinorModes, type MinorMode } from "./minor.ts";
 import { MODE_CATEGORY_ID, modeCategoryItems } from "./palette.ts";
 import { applyModeSection, buildModeNote, buildSpecWriterPrompt, composePrompt, composeWorkerPrompt, DEFAULT_ROUTES, statusLabel } from "./prompt.ts";
 import { backendsOf, describeChoice, routeAll, routeNotice, routeWriter, slotNotice, type Discovery, type ProfileRoute, type SlotRoute } from "./routing.ts";
-import { SPEC_FILE_NAME, SPEC_WRITER_LABEL, specBackends, specKey, specReader } from "./spec.ts";
+import { SPEC_WRITER_LABEL, specBackends, specKey } from "./spec.ts";
+import { OFF_PROFILE_ID, pickEntryFor, profilesReader, resolveSubagents, restorePick, type ResolvedSubagents } from "../subagents/subagent-profiles.ts";
 import {
 	appendLedger,
 	bashCommands,
@@ -137,8 +139,6 @@ import {
 } from "./state.ts";
 
 const STATE_FILE = join(getAgentDir(), "mode.json");
-const DELEGATE_FILE = join(getAgentDir(), DELEGATE_FILE_NAME);
-const SPEC_FILE = join(getAgentDir(), SPEC_FILE_NAME);
 /** The trusted spec tools, where spec-mode.md's `$core` line resolves them (install.sh links them there). */
 const SPEC_CORE = join(getAgentDir(), "extensions", "spec", "core");
 /** The spec check's hidden re-prompt on a merge/promote turn. */
@@ -183,10 +183,32 @@ export default function modeExtension(pi: ExtensionAPI): void {
 	let guides: MinorMode[] = [];
 	/** From a run's first agent_start to agent_settled: its continuations keep the mode it started with. */
 	let running = false;
-	/** The global Delegate routing, re-read (one stat) whenever it is consulted. */
-	const readDelegate = delegateReader(DELEGATE_FILE);
-	/** The global spec writer (mode-spec.json), re-read (one stat) whenever spec is on and it is consulted. */
-	const readSpec = specReader(SPEC_FILE);
+	/**
+	 * This chat's subagent profile pick (its newest `subagent-profile` entry), undefined while it
+	 * follows the default. Re-read from the branch at every turn boundary, since Sova writes the
+	 * entry into a held chat directly.
+	 */
+	let pick: string | undefined;
+	/** The library and this device's default, re-read (one stat each) whenever consulted; seeded on first read. */
+	const readProfiles = profilesReader(getAgentDir());
+	/**
+	 * What this chat's subagents get now: its pick, else this device's default, else the legacy files
+	 * (mode-delegate.json, mode-spec.json). Delegate's routing is null under Off: the agent picks.
+	 */
+	const subagents = (): ResolvedSubagents => {
+		const s = readProfiles();
+		return resolveSubagents(getAgentDir(), pick, s.profiles, s.default);
+	};
+	const readDelegate = () => subagents().delegate;
+	const readSpec = () => subagents().spec;
+	/** Re-read this chat's pick from its branch. */
+	function refreshPick(ctx: ExtensionContext): void {
+		try {
+			pick = restorePick(ctx.sessionManager.getBranch() as never);
+		} catch {
+			// No branch to read (a context without a session): keep the last pick.
+		}
+	}
 	/** Which worker each profile uses now: the routing, assessed against discovery and the policy. */
 	let routes: readonly ProfileRoute[] = DEFAULT_ROUTES;
 	/** Which worker writes the spec now, while spec is on and a writer is set; null otherwise. */
@@ -348,7 +370,11 @@ export default function modeExtension(pi: ExtensionAPI): void {
 	function recomputeRoutes(): void {
 		const policy = readPolicy();
 		const denial = (choice: { backend: DelegateBackend; model: string }) => policyDenial(policy, choice.backend, choice.model);
-		if (active.mode === "delegate") routes = routeAll(readDelegate(), discoveries, denial);
+		if (active.mode === "delegate") {
+			const delegate = readDelegate();
+			// Off: no worker lines at all; the prompt asks the agent to choose (buildDelegatePrompt).
+			routes = delegate ? routeAll(delegate, discoveries, denial) : [];
+		}
 		// The head's spec block carries the writer paragraph too, so spec turned off keeps it there.
 		// A worker spawns nothing, so it is never offered a writer.
 		writerRoute = (hasMinor(active, "spec") || headMinors().includes("spec")) && !workerRole ? routeWriter(readSpec(), discoveries, denial) : null;
@@ -359,7 +385,7 @@ export default function modeExtension(pi: ExtensionAPI): void {
 	 * on and one is set. `key` identifies it; no backends means nothing to probe.
 	 */
 	function probeScope(): { key: string; backends: DelegateBackend[] } {
-		const delegate = active.mode === "delegate" ? readDelegate() : undefined;
+		const delegate = active.mode === "delegate" ? (readDelegate() ?? undefined) : undefined;
 		const spec = hasMinor(active, "spec") && !workerRole ? readSpec() : undefined;
 		const backends = new Set<DelegateBackend>([...(delegate ? backendsOf(delegate) : []), ...(spec ? specBackends(spec) : [])]);
 		return { key: JSON.stringify([delegate ? delegateKey(delegate) : null, spec ? specKey(spec) : null]), backends: [...backends] };
@@ -490,7 +516,10 @@ export default function modeExtension(pi: ExtensionAPI): void {
 		publishActive();
 		appendSwitch({ minor, on });
 		publishWorkerModes();
-		if (minor === "spec") recomputeRoutes();
+		if (minor === "spec") {
+			recomputeRoutes();
+			syncTool(ASSESSMENT_TOOL, on && remoteTarget === undefined);
+		}
 		syncHostSection();
 		renderStatus(ctx);
 		if (minor === "align") {
@@ -595,6 +624,7 @@ export default function modeExtension(pi: ExtensionAPI): void {
 	 */
 	function syncAlignTool(): void {
 		syncTool(ALIGN_TOOL, hasMinor(active, "align"));
+		syncTool(ASSESSMENT_TOOL, hasMinor(active, "spec") && remoteTarget === undefined);
 	}
 
 	/**
@@ -742,6 +772,7 @@ export default function modeExtension(pi: ExtensionAPI): void {
 	/** One line per profile: the configured tuple(s) and, in delegate, what is actually in use. */
 	function routingLines(): string[] {
 		const settings = readDelegate();
+		if (!settings) return ["  none: the subagent profile is Off, so the agent picks each worker"];
 		if (active.mode === "delegate") recomputeRoutes();
 		return DELEGATE_PROFILES.map((profile) => {
 			const { primary, fallback } = settings.profiles[profile];
@@ -762,7 +793,7 @@ export default function modeExtension(pi: ExtensionAPI): void {
 	/** The spec writer: what is configured and, while spec is on, what is actually in use. */
 	function writerLine(): string {
 		const { writer } = readSpec();
-		if (!writer) return `spec writer (${SPEC_FILE}): none — the session writes the spec itself`;
+		if (!writer) return "spec writer: none — the session writes the spec itself";
 		if (hasMinor(active, "spec")) recomputeRoutes();
 		const configured = `${describeChoice(writer.primary)}${writer.fallback ? `, fallback ${describeChoice(writer.fallback)}` : ", no fallback"}`;
 		const route = writerRoute;
@@ -774,7 +805,7 @@ export default function modeExtension(pi: ExtensionAPI): void {
 					: route.via === "fallback"
 						? ` — using FALLBACK (${route.primary.reason})`
 						: " — none available: will ask";
-		return `spec writer (${SPEC_FILE}): ${configured}${using}`;
+		return `spec writer: ${configured}${using}`;
 	}
 
 	function statusLines(): string[] {
@@ -782,7 +813,8 @@ export default function modeExtension(pi: ExtensionAPI): void {
 		return [
 			`mode: ${active.mode}`,
 			`default: ${activeSummary(activeOf(fileDefault))} (new sessions; /mode default sets it)`,
-			`delegate routing (${DELEGATE_FILE}):`,
+			`subagent profile: ${profileLine()}`,
+			"delegate routing:",
 			...routingLines(),
 			writerLine(),
 			`strict: ${active.strict ? "on" : "off"}`,
@@ -793,7 +825,41 @@ export default function modeExtension(pi: ExtensionAPI): void {
 		];
 	}
 
-	const usage = `Usage: /mode [${MODES.join("|")}|status|default|sync|strict on|strict off|${MINOR_MODES.map((minor) => `${minor} [on|off]`).join("|")}]`;
+	/** Which subagent profile this chat uses, and where that came from. */
+	function profileLine(): string {
+		const r = subagents();
+		const from = r.source === "pick" ? "this chat's pick" : r.source === "default" ? "the default" : "the legacy settings files";
+		return `${r.name} (${from})${r.note ? ` — ${r.note}` : ""}`;
+	}
+
+	/**
+	 * `/mode subagents <id|off>`: pin this chat's subagent profile (its hidden `subagent-profile`
+	 * entry, the shape Sova writes too). Takes an id or a name; nothing else moves.
+	 */
+	function setSubagentProfile(arg: string, ctx: ExtensionContext): void {
+		const { profiles: state } = readProfiles();
+		if (state.state !== "ok") {
+			ctx.ui.notify(`Subagent profiles can't be used now: ${state.state === "malformed" ? `${state.file} is malformed` : "no profiles file"}.`, "warning");
+			return;
+		}
+		const wanted = arg.toLowerCase();
+		const id = wanted === OFF_PROFILE_ID ? OFF_PROFILE_ID : state.value.profiles.find((p) => p.id === arg || p.name.toLowerCase() === wanted)?.id;
+		if (!id) {
+			ctx.ui.notify(`No subagent profile "${arg}". Profiles: off, ${state.value.profiles.map((p) => p.id).join(", ")}`, "warning");
+			return;
+		}
+		refreshPick(ctx);
+		const entry = pickEntryFor(ctx.sessionManager.getBranch() as never, id);
+		if (entry) pi.appendEntry(entry.customType, entry.data);
+		pick = id;
+		recomputeRoutes();
+		syncHostSection();
+		renderStatus(ctx);
+		if (probeWanted()) void refreshRouting(ctx, true);
+		ctx.ui.notify(`Subagent profile: ${profileLine()}`, "info");
+	}
+
+	const usage = `Usage: /mode [${MODES.join("|")}|status|default|sync|strict on|strict off|subagents <profile>|${MINOR_MODES.map((minor) => `${minor} [on|off]`).join("|")}]`;
 
 	// The ctrl+p "Mode" category; the palette asks for fresh rows on every open.
 	registerPaletteCategory(pi.events, {
@@ -846,7 +912,7 @@ export default function modeExtension(pi: ExtensionAPI): void {
 		description: "Open the mode selector, or set a mode with an argument",
 		getArgumentCompletions: (argumentPrefix) => {
 			const minorItems = MINOR_MODES.flatMap((minor) => [minor, `${minor} on`, `${minor} off`]);
-			const items = [...MODES, "status", "default", "sync", "strict on", "strict off", ...minorItems]
+			const items = [...MODES, "status", "default", "sync", "strict on", "strict off", "subagents", ...minorItems]
 				.filter((value) => value.startsWith(argumentPrefix.trim()))
 				.map((value) => ({ value, label: value }));
 			return items.length > 0 ? items : null;
@@ -887,6 +953,11 @@ export default function modeExtension(pi: ExtensionAPI): void {
 			}
 			if (arg === "default") {
 				saveDefault(ctx);
+				return;
+			}
+			const subagentsArg = /^subagents\s+(.+)$/.exec(arg);
+			if (subagentsArg) {
+				setSubagentProfile(subagentsArg[1]!.trim(), ctx);
 				return;
 			}
 			const strictToggle = /^strict\s+(on|off)$/.exec(arg);
@@ -1022,6 +1093,7 @@ export default function modeExtension(pi: ExtensionAPI): void {
 
 	// Branch navigation (/tree, /fork) changes which mode and which doc are current.
 	pi.on("session_tree", async (_event, ctx) => {
+		refreshPick(ctx);
 		restoreActiveState("tree", ctx);
 		restoreAlign(ctx);
 	});
@@ -1039,6 +1111,7 @@ export default function modeExtension(pi: ExtensionAPI): void {
 	const specCensus = new CensusHook({ core: () => SPEC_CORE });
 	const specWrites = new SpecWriteGuard();
 	const specOn = () => hasMinor(active, "spec") && remoteTarget === undefined;
+	registerAssessmentTool(pi, { core: () => SPEC_CORE, enabled: specOn, worker: () => workerRole, roots: (ctx) => [ctx.cwd, ...trackedWorktrees] });
 	/** What this run did, for the line check. */
 	let specRun: {
 		/** The session's tree and every worktree it tracks, as the run found them. */
@@ -1331,6 +1404,7 @@ export default function modeExtension(pi: ExtensionAPI): void {
 	pi.on("before_agent_start", async (event, ctx) => {
 		// Only a user prompt reaches here: the run it starts answers a question when it ends in one.
 		runUserAsked = /\?\s*$/.test(event.prompt ?? "");
+		refreshPick(ctx);
 		if (active.mode === "delegate" || hasMinor(active, "spec")) {
 			const { key } = probeScope();
 			recomputeRoutes();
@@ -1372,6 +1446,7 @@ export default function modeExtension(pi: ExtensionAPI): void {
 	// its first request; a continuation of a run (after a compaction or a nudge) keeps the run's mode.
 	pi.on("agent_start", async (_event, ctx) => {
 		if (!running) {
+			refreshPick(ctx);
 			recomputeRoutes();
 			running = true;
 			resetSpecRun();
@@ -1399,6 +1474,7 @@ export default function modeExtension(pi: ExtensionAPI): void {
 		carriedOps = [];
 		settledTrees.clear();
 		toldWriter = undefined;
+		refreshPick(ctx);
 		restoreActiveState(event?.reason, ctx);
 		restoreAlign(ctx);
 		if (viewerShortcutClash && ctx.hasUI) {

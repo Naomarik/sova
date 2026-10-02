@@ -116,7 +116,9 @@
 .previews-sent { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-3); margin-top: var(--space-1); }
 .previews-sent-label { color: var(--color-ink-muted); }
 .previews-recipients { display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-3); margin: 0; padding: 0; list-style: none; }
-.previews-recipient { display: inline-flex; align-items: center; gap: var(--space-2); }
+.previews-recipient { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+/* A recipient's own Visits (§mesh.public/visitor-log) folds out on a line of its own. */
+.shares-recipient > .share-visits, .previews-recipient > .share-visits { flex-basis: 100%; margin-top: 0; }
 .previews-recipient-name { font-weight: var(--fw-medium); color: var(--color-ink); }
 .previews-recipient-off.button-sm { min-height: 24px; padding: 0 var(--space-2); }
 .previews-form-actions { display: flex; gap: var(--space-2); }

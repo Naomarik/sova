@@ -60,6 +60,7 @@ async function gateway(o: { port: number; labels: string[]; local?: string[] }) 
   const links = o.labels.map((l) => ({ h: store.hashLabel(l), exp: Date.now() + 86_400_000, kind: "p" as const }));
   reg.commit("n1", { v: 1, seq: 1, links, assets: [], ingressPort: o.port }, GATEWAY.publicUrl, { now: Date.now(), local: new Set(), live: () => true });
   const localSeen: string[] = [];
+  const localClients: (string | undefined)[] = [];
   const localHashes = new Set((o.local ?? []).map((l) => store.hashLabel(l)));
   const hooks = createGatewayRouter({
     registry: reg,
@@ -71,8 +72,9 @@ async function gateway(o: { port: number; labels: string[]; local?: string[] }) 
     preflight: async () => true,
     isLocalPreview: (h) => localHashes.has(h),
     previewLocal: {
-      dispatch: (_req, res, label) => {
+      dispatch: (_req, res, label, client) => {
         localSeen.push(label);
+        localClients.push(client);
         res.writeHead(200).end("local");
       },
       upgrade: (_req, socket) => socket.destroy(),
@@ -86,7 +88,7 @@ async function gateway(o: { port: number; labels: string[]; local?: string[] }) 
   const server = createShareServer({ ...hooks, client: (req) => req.socket.remoteAddress ?? "unknown" });
   const port = await listen(server);
   after(() => hooks.dispose());
-  return { port, reg, hooks, localSeen };
+  return { port, reg, hooks, localSeen, localClients };
 }
 
 function get(port: number, path: string, headers: Record<string, string>): Promise<{ status: number; headers: IncomingHttpHeaders; body: string }> {
@@ -136,6 +138,8 @@ test("a label minted here is the gateway's own proxy's; an unknown one is 404 an
   const g = await gateway({ port: o.port, labels: [], local: [mine] });
   assert.equal((await get(g.port, "/", { host: `${mine}.preview.test` })).body, "local");
   assert.deepEqual(g.localSeen, [mine]);
+  // The edge's client address reaches the local proxy (§mesh.public/visitor-log).
+  assert.deepEqual(g.localClients, ["127.0.0.1"]);
   const u = await get(g.port, "/", { host: `${store.newPreviewLabel()}.preview.test`, accept: "application/json" });
   assert.equal(u.status, 404);
   assert.equal(JSON.parse(u.body).code, "preview-not-found");

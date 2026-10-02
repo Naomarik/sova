@@ -8,7 +8,64 @@ is not proof that implementation and requirements agree.
 
 Complete graph queries remain available to machine consumers. Task-facing packets deliver exact
 requirements within an explicit whole-response budget, with continuation and unknowns kept visible.
-They change context delivery, not release policy; structured change assessments remain separate work.
+They change context delivery, not release policy. Structured observation-only assessments are separately
+recorded input-bound comparisons, not proof of requirements truth or mandatory release policy.
+
+## §tools.spec/change-assessments — Input-bound structured comparisons
+
+Observation-only structured assessments retain explicitly routed claim candidates and unmapped
+changed files with changed, preserved, not-applicable or unresolved recorder dispositions, reasons
+and verification bases bound to exact claim and implementation inputs. Absent, unreadable,
+uninvestigated or changed inputs remain explicitly unknown or stale. No disposition, declared
+label or applicable receipt establishes semantic correctness or changes release policy. Batch
+exclusions retain candidate identities without duplicate claim prose.
+
+Durable metadata-only receipts keep declared labels, accepted-intent assertions, recorded
+verification outcomes and current input applicability distinct, with nullable task and worker
+attribution. Preparation starts every candidate unresolved; omission never excludes it. Explicit
+paths and caller-declared snapshot baselines support projects without Git; missing baselines remain
+unknown. In Git projects, resolved commit hashes and initial dirty snapshot hashes are separately
+identified. Assessment-specific inspection refuses its own receipt storage before graph, claim-tree
+or lazy incumbent contents are read, including optional draft triage's current-tree reads; ordinary
+inspection CLI policies keep their existing behavior.
+Refused inputs are not read, raw source and logs are not retained, and concurrent
+cooperating writers cannot overwrite immutable receipts. The tools do not authenticate identity or
+infer exhaustive behavioral candidates. Status enumeration preserves unread, corrupt and capped
+receipt inventories as incomplete and keeps unknown owner attribution visible.
+
+Each capture uses a fresh in-memory inspection graph and batches immutable Git blob inspection
+without dropping routed candidates, closure inputs or refusal findings. Separate captures and
+status checks do not share cached source state, and existing inspection CLI output and refusal
+contracts remain unchanged. The raw manifest and claim bytes actually parsed by that graph must
+match their bound present input hashes within the capture; mixed source versions refuse as a race,
+even when the requested claim's own prose is unchanged. Optional draft triage binds the exact
+proposed, baseline and current manifest/claim sources it reads; changes to those inputs stale prior
+assessments even when candidate identities and reasons stay unchanged.
+
+## §tools.spec/assessment-observations — Automatic unresolved observations
+
+With spec enabled, observed task changes automatically create unresolved structured observations
+with a fixed task base and actual nullable parent, worker, task and attempt attribution. Retries
+and reopen preserve task identity and prior immutable receipts. Repeated changes to one path and
+late task-settle changes are observed by input fingerprints, not only new filename detection.
+Observation reports scope changes, not forensic authorship; ownership ambiguities remain unknown.
+Native Claude Code worker hooks collect the same unresolved observations and retain task identity
+only when the backend supplies a known prompt boundary identifier; otherwise task attribution stays
+null and unknown rather than guessing from prompt text or the time. The server cannot verify native
+task boundaries with its pi-session reader, so native task attribution remains unknown; private native
+hook error markers are not themselves parent receipts, and missing receipts mean absent evidence and
+unknown applicability, not a successful comparison or an inferred cause.
+
+An explicit assessment tool records or queries dispositions and structured verification results.
+It flags failed or unavailable CLI operations as SDK tool errors while retaining their structured
+content and details. Successful preparations and records remain normal operations even with
+outstanding claims or failed verification declarations, and stale or unknown status remains a valid
+observation query. These flags never change continuations, release gates or readiness.
+An additive readiness observation consumes parent and team receipts without replacing existing
+readiness checks, footer rules or release gates. A newer unresolved same-task observation is not
+hidden by an older preserved record. Failed verification remains an explicit outcome distinct from
+current input applicability and the recorder's disposition. Legacy labels without receipts remain
+declarations with unknown assessment provenance.
 
 ## §tools.spec/census-note — The `[spec census]` note stays short
 

@@ -297,14 +297,16 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 |---|---|
 | Trigger (composer foot, right end) | {mode} · {minor} …, or "Mode" before this chat's state arrives (`aria-label`/`title`: "Mode: {label}", plus ", applies after this turn" when pending) |
 | Menu `aria-label` | Mode |
-| Group labels | Major mode · Minor modes |
+| Group labels | Major mode · Minor modes · Subagents |
+| Subagents row / Delegate detail | Subagents · {name} / Profile: {name} |
+| Subagent picker | Back · Subagent profiles · Search subagent profiles · Manage Profiles… · Save Current as Profile |
 | Descriptions | from pi-config `MODE_DESCRIPTIONS` (state.ts): normal: Pi as usual · delegate: Orchestrate: route planning, investigation and implementation to workers by profile · minors: from pi-config `MINOR_DESCRIPTIONS` |
-| Delegate gear | icon only; `aria-label`/`title`: Configure Delegate (opens Settings → Modes; switches nothing) |
+| Delegate gear | icon only; `aria-label`/`title`: Configure Delegate (opens Settings → Subagents; switches nothing) |
 | Foot | strict: {on\|off} · A switch here is this chat's own. New sessions start from the default. |
-| Save button | `Save as default` · while the save is in flight: `Saving…` · when this chat's mode, strict flag and minors are the file's: ✓ `Already the default` (`aria-disabled`). The visible label is the accessible name |
+| Save button | `Save as default` · while the save is in flight: `Saving…` · when this chat's mode, strict flag, minors and subagent profile match the saved defaults: ✓ `Already the default` (`aria-disabled`). The visible label is the accessible name |
 | Save button `title` | New sessions will start from {mode · strict · minors}. · already: New sessions already start from {mode · strict · minors}. · this chat's mode not arrived: Make this chat's mode the default for new sessions. (already: New sessions already start from the default mode.) — `strict` named only when on |
-| Save failed | **Couldn't save the default.** {reason}. Your mode is unchanged. |
-| Saved (announcement) | Default mode saved: {mode · strict · minors}. New sessions start here. · this chat's mode not arrived: Default mode saved. New sessions start here. |
+| Save failed | **Couldn't save the default.** {reason}. The server reason states which default was written on a partial failure; no blanket "Nothing was saved" suffix contradicts it |
+| Saved (announcement) | Default saved: {mode · strict · minors} · Subagents: {name}. New sessions start here. — unknown halves omitted |
 | Pending | **Applies after this turn.** This turn keeps the old mode, and so do messages queued during it. Your next message follows the new one. |
 | Can't switch | **This chat can't switch.** This chat can't switch: the mode extension isn't loaded here, or another program wrote this session. |
 | Switch failed | **Couldn't switch the mode.** {reason}. Your mode is unchanged. |
@@ -443,32 +445,33 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Pane's session-insight fetch failed (banner-warn) | **Couldn't load this session's subagents.** {message} Your workers keep running. We'll retry on our own. |
 | Transcript socket and load errors | the §app/subagents-pane state table: Live-watch and Connection copy above, and Main pane's transcript load error |
 
-## §design.copy-deck/settings-modes-delegate — Settings · Modes → Delegate (§app/settings-dialog)
+## §design.copy-deck/settings-modes-delegate — Settings · Subagents worker rows (§app/settings-dialog)
 
 | Where | Copy |
 |---|---|
-| Tab | Modes |
-| Section title | Delegate |
-| Intro | In Delegate the agent hands work to background workers and checks what they bring back. Pick the worker for each kind of work. Chats already in Delegate, here and in the terminal, use a change from their next message. |
-| Profiles (legend · hint) | Planning & specs · Investigation · Routine implementation · Complex implementation; hints from pi-config `DELEGATE_PROFILE_INFO` (delegate.ts) |
+| Tab / section title | Subagents / Subagent profiles |
+| Intro | One bundle of every model your subagents are given: Delegate's routing, teams, and the spec writer. A chat picks one in its mode menu; new chats start on the default. Saving changes the library for every chat on the changed profile, from its next turn or team action — running workers keep their models. |
+| Legacy tabs | Modes and Teams explain the move and offer Manage Subagent Profiles; neither edits legacy files |
+| Editor groups | Delegate routing · Teams · Members default · Spec writer |
+| Work-kind legends | Planning & specs · Investigation · Routine implementation · Complex implementation |
 | Row labels | Primary · Backend · Model · Effort · Fallback (toggle) |
 | Select placeholders | Choose a model (Checking… while asking) · Choose |
 | Model option suffixes | — off for subagents · — not offered · — not verified |
 | No fallback | No fallback: if the primary can't run, the agent asks you which model to use. |
 | Row notes | Choose a model. · Choose an effort. · {backend} doesn't offer {model}. · {model} doesn't take {effort} effort. · {policy reason}. Delegate uses the fallback, or asks. · Not verified: {backend} couldn't list its models. · Not verified: {provider} models exist only in sessions started with that provider on. · Same as the primary. Choose another worker, or no fallback. |
 | Checking | Checking which models each backend offers… |
-| Backend can't list (banner-warn) | **{backend} couldn't list its models.** {reason}. Choices on it stay as saved and read "not verified" — it isn't saying they're gone. [Check Again] |
+| Backend can't list | Stored choices remain in their rows as not verified; a save's notes name the affected slots and reason |
 | Options request failed (banner-warn) | **Couldn't check which models are offered.** Your saved choices stay, marked not verified. [Check Again] |
-| Load failed (banner-error) | **Couldn't load the Delegate settings.** Nothing was changed. [Try Again] |
-| Save failed (banner-error) | **Couldn't save the routing.** {server reason}. Your saved routing is unchanged. |
+| Load failed (banner-error) | **Couldn't load subagent profiles.** {reason}. Your library is unchanged. [Try Again] |
+| Save failed (banner-error) | **Couldn't save subagent profiles.** {server reason}. A library saved before the device-default write failed is reported as partial |
 | Saved with notes (banner-warn) | **Saved, with notes.** {warnings as sentences}: "Not verified, because {backend} couldn't list its models ({reason}): {slot}, {slot}…" once per backend, then one per other slot |
-| Close held (banner-warn, above the dialog foot) | **Your Delegate changes aren't saved.** Save them, or discard them and close. [Keep Editing] [Discard and Close] — every Save-gated tab shares it, naming each form with unsaved changes ("Your Models and Decisions changes aren't saved.", §app.settings-dialog/save-bar) |
-| Section heading button (small, ghost) | Reset to Defaults — Delegate, Teams and Summaries each have one; it fills the draft and saves nothing |
+| Close held (banner-warn, above the dialog foot) | **Your Subagents changes aren't saved.** Save them, or discard them and close. [Keep Editing] [Discard and Close] — every Save-gated tab shares it, naming each form with unsaved changes ("Your Models and Decisions changes aren't saved.", §app.settings-dialog/save-bar) |
+| Section heading button (small, ghost) | Reset to Defaults — Summaries only; it fills the draft and saves nothing |
 | Dialog footer (every tab) | {status line} · Discard Changes · Save Changes (Saving…) · Cancel — with nothing unsaved: {status line} · Close. The one Save and Discard for every Save-gated form on every tab (§app.settings-dialog/save-bar) |
 | Footer status line (first match; the outcome of a save is also announced in the same words) | Saving… · {why Save waits} · Saved {forms}; {forms} failed. · {forms} failed. · Unsaved: {Form}, {Form} · Saved {forms}. · (nothing) — {forms} joined with commas and "and", "Unsaved:" with commas only |
-| Why Save waits (footer status, error; Save Changes disabled) | Delegate needs a primary model. · Delegate needs an effort for a primary model. · Delegate needs a fallback model. · Delegate needs an effort for a fallback model. · Delegate has a fallback that's the same worker as its primary. · Spec needs a model for its writer. · Spec needs an effort for its writer's model. · Spec needs a fallback model. · Spec needs an effort for its fallback model. · Spec has a fallback that's the same worker as its writer. · Teams needs a role name for the {coordinator/monitor}. · Teams needs a model and an effort for the {role}. · Teams needs a model and an effort for the {role}'s fallback. · Teams needs a number for the {field}. · Teams needs a whole number from {min} to {max} for the {field}. · Teams: {conflict}. · Overseer: {issue}. · Decisions needs a fallback model. · Decisions needs an effort for its fallback model. · Decisions: {Folders issue}. · Summaries needs a primary model. · Summaries needs a fallback model. · Summaries has a fallback that's the same model as its primary. · Summaries can't be saved: its file can't be read. · Mesh: This host needs a name. |
+| Why Save waits (footer status, error; Save Changes disabled) | Subagents: {name}'s {section} rows each need a model and an effort. · Subagents: {name}'s {section} fallback is its primary; choose another worker, or none. · Subagents: {name}'s members default needs a model and an effort. · Subagents needs unique, single-line names of at most 48 characters (never "Off"). · Subagents: {name}: {threshold issue}. · Subagents: {name}'s coordinator and monitor need different role names. Other forms retain their own problem sentences (§app.settings-dialog/save-bar) |
 | Discarded (announced only) | Discarded your {forms} changes. |
-| Footnote | Stored in `~/.pi/agent/mode-delegate.json`, shared with pi in the terminal. |
+| Footnote | Stored in `<agent dir>/subagent-profiles.json`, shared with pi in the terminal. |
 
 ## §design.copy-deck/settings-decisions — Settings · Decisions (§app.settings-dialog/decisions)
 
@@ -898,6 +901,7 @@ page never names a host or a person.
 | Share port won't open (error banner under the Address row) | **The share port isn't open.** {reason} Links from this host can't be opened from outside until it is. Fix it, then save a different port or restart Sova. · {reason} (server): Another program is already using {host}:{port}. · This host doesn't let Sova use port {port}. · {host} isn't an address of this host. · SOVA_SHARE_PORT isn't a port number. · Couldn't open {host}:{port} ({code}). |
 | Address row | Address · {url}, or `None` · source `Set by environment ({var})` / `From this setting` / `From {gateway}` / `Bound address` |
 | Route legend and choices | Where links open · `Off` "Links work only on your own devices." · `This host is the gateway` "This host serves every public link, including those from hosts that go through it." · `Through {gateway}` "Links from this host open at {gateway}'s address. {gateway} must be on for them to open." |
+| Visitor logging (§mesh.public/visitor-log) | `Log visitors` "Records each visitor's IP address, browser, language and pages opened on this host's links." · `Send the visitor's address to preview apps` "Preview apps get X-Forwarded-For." · save failure (error banner): **Couldn't save visitor logging.** {reason} Your saved setting is unchanged. |
 | Gateway fields | Public address · Front (`Your web server` · `Caddy on this host` · `Tailscale Funnel` · `Cloudflare Tunnel`) · Local port · Accept links from (`All hosts` · `These hosts`) |
 | Pinned field hint | Set by environment ({var}). Change it there, then restart Sova. |
 | Front steps | heading "Set up the front once" · "Anything that serves {url} and forwards to 127.0.0.1:{port} works. Sova doesn't run this step for you." · chip `Needs root` · `Copy Step`, toast "Copied the step." · before a save: "Save Changes to see the step for this setting." |

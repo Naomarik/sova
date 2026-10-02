@@ -2,17 +2,21 @@
 > Part of the Sova design spec · [overview](../design/overview.md)
 
 A team created with `team_create` (pi-config's subagents extension, in the TUI or in a runtime
-Sova hosts) can get two standing members from one global file instead of from the calling model's
-arguments: a **coordinator** that does no implementation and is the only member that talks to the
+Sova hosts) can get two standing members from its parent chat's effective subagent profile
+(§chat.subagent-profiles/resolution), instead of from the calling model's arguments: a **coordinator** that does no implementation and is the only member that talks to the
 main thread, and a **monitor** that watches the team's context and provider usage on a timer.
-The file is written by Sova's Settings (§app.settings-dialog/teams, a separate draft) and read by
-the extension; nothing here depends on Sova running. Without the file, teams behave exactly as
-they did before this surface existed.
+Settings → Subagents edits these choices together with a members default; Modes and Teams
+only explain the move (§app.settings-dialog/modes). Nothing here depends on Sova running.
+`team-defaults.json` remains the legacy seeding/fallback input. Off configures neither standing
+role nor members default; it does not remove workers already running.
 
 ## §teams.defaults/file — The file, and what absent or malformed means
 
-- **Where.** `<agent dir>/team-defaults.json`, the agent dir being `PI_CODING_AGENT_DIR` when set
-  (a leading `~` expanded), else `~/.pi/agent`. Global: never snapshotted into a session or a team.
+- **Where.** The effective team's section comes from the parent chat's current subagent profile,
+  resolved by `subagent-profiles.ts` (§chat.subagent-profiles/resolution). The legacy input is
+  `<agent dir>/team-defaults.json`, with `PI_CODING_AGENT_DIR` when set (a leading `~` expanded),
+  else `~/.pi/agent`. The session stores an ID pick, not a settings snapshot; profile edits reach
+  later team actions. Explicit member/call tuple choices are stored separately for succession.
 - **Shape (version 1).** `coordinator {enabled, role, primary, fallback, instructions}`,
   `monitor {enabled, role, primary, fallback, contextPct, everyMinutes, usage {enabled, pausePct,
   resumeMarginMinutes}, instructions}`, `handover {retireTimeoutMinutes}`. A worker tuple is
@@ -28,12 +32,15 @@ they did before this surface existed.
   shaped like a worker ID, or equal (case-insensitively) to the other role, a percentage outside
   1–100, `everyMinutes` or `retireTimeoutMinutes` outside 1–1440, `resumeMarginMinutes` outside
   0–1440, or instructions over 4,000 characters. The reader returns every error, not the first.
-- **When it is read.** Fresh at every `team_create` and `team_add`, at every `team_roster` answer
+- **When it is read.** The parent branch's effective profile is resolved fresh at every `team_create` and `team_add`, at every `team_roster` answer
   to a coordinator or monitor (the monitor's thresholds), at `team_succeed` (the retire timeout),
   and for `/team defaults` and `/team <objective>` planning. A change applies to the next of these, never to a member already
   running.
-- **Absent = off.** No file: no coordinator, no monitor, no routing — today's behaviour exactly.
-- **Malformed = off, visibly.** The team is created as if the file were absent, and the
+- **No effective teams section = off.** Off or a profile with `teams: null` adds no coordinator
+  or monitor. Only when resolution uses the legacy files does an absent `team-defaults.json`
+  determine this; an absent library seeds from the legacy values first.
+- **Malformed legacy defaults = off, visibly.** When resolution falls to a malformed legacy
+  file, the team is created as if that file were absent, and the
   `team_create`/`team_add` result carries a warning line naming the file and its errors. The
   extension never writes, repairs or overwrites the file.
 - **One reader.** `pi-config/extensions/subagents/team-defaults.ts` holds the types, the
@@ -42,7 +49,8 @@ they did before this surface existed.
 
 ## §teams.defaults/coordinator — The coordinator is enforced in code
 
-- **When.** At `team_create`, when the file is valid, `coordinator.enabled` is true and the call
+- **When.** At `team_create`, when the chat's effective teams section is valid,
+  `coordinator.enabled` is true and the call
   does not pass `defaults.coordinator: false` (the per-team escape hatch; `defaults.coordinator`
   and `defaults.monitor` must be booleans, anything else is refused before any worker starts).
 - **An orchestrator the caller named is the coordinator.** If exactly one member has
@@ -143,7 +151,7 @@ has the tool; the parent refuses it from anyone else. Each report is a team acti
 
 ## §teams.defaults/monitor — A monitor member on a timer
 
-- **When.** In a coordinated team whose file has `monitor.enabled` and whose `team_create` did not
+- **When.** In a coordinated team whose chat's effective teams section has `monitor.enabled` and whose `team_create` did not
   pass `defaults.monitor: false`. It is synthesized with role `monitor.role` on the first tuple
   that passes the spawn checks (primary, then fallback); if neither passes, the team is not
   created. An uncoordinated team gets no monitor, and the result says why.
@@ -152,7 +160,8 @@ has the tool; the parent refuses it from anyone else. Each report is a team acti
   for a claude-code monitor through the member MCP server. No other member has `wake_nudge`; the
   monitor has no `team_ask`, `team_steer`, `team_report` or built-in tools, and it can never reach
   the parent.
-- **Standing instruction** (its header, with the file's thresholds): at each wake, read
+- **Standing instruction** (its header, with the effective thresholds at spawn; subsequent
+  roster answers and pause/resume checks resolve the chat's current profile): at each wake, read
   `team_roster`; a member whose context is at or above `contextPct` % of its window is told
   (`notice: wrap-up`) to finish its current step, write its handover note, and end its turn, and
   the coordinator is told too so it can start a successor. When usage checking is on and a
@@ -220,7 +229,8 @@ with (a pi model: the session's model registry; claude-code: 1,000,000 for a `[1
 natively 1M such as bare `opus`, else 200,000 — the claude-code extension's rule, the same the
 session pane uses), rounded down to a whole percent. Unknown parts say so: `context —` before the first
 reply, `context 64k/?` without a known window. For a monitor or coordinator, `team_roster` also
-carries the file's current thresholds and, from `<agent dir>/cache/usage-status.json`, each
+carries the parent chat's current effective profile thresholds and, from
+`<agent dir>/cache/usage-status.json`, each
 provider window the team's members use (percent and reset time, and the cache's age); for Claude
 that is every window of every login counted on this host (§teams.defaults/monitor), each line
 naming its login, weekly lines are marked informational below 100 %, only windows that block the
@@ -241,8 +251,12 @@ paused. A coordinator's roster also lists the assignments (§teams.defaults/coor
 - **`team_succeed { role }`** — the routing coordinator only. It starts the successor of that
   member (itself included) through the same spawn path: role `<base>-<n+1>` where an existing
   `-N` suffix is stripped first (`builder` → `builder-2` → `builder-3`; the first free number
-  wins), on the **same** backend, model and effort, with the same tools, system prompt, cwd,
-  backend options, ownership and duty.
+  wins), with the same tools, system prompt, cwd, backend options, ownership and duty.
+  Its backend/model/effort follow the chat's current profile at successor spawn, except that
+  explicit member or per-call choices remain binding. A standing duty uses its current configured
+  tuple; an ordinary successor uses the current members default when applicable. With no usable
+  applicable default it keeps the predecessor's tuple, and a denied default is reported as such
+  (§chat.subagent-profiles/members-default). Running predecessors do not change model.
 - **The note comes first.** For a live worker or coordinator, `team_succeed` starts nothing at
   once: the old member is told — as a redirect, so it lands ahead of anything already queued for
   it (or, when the coordinator succeeds itself, in the tool result) — to finish its step, write or
@@ -306,6 +320,8 @@ paused. A coordinator's roster also lists the assignments (§teams.defaults/coor
 
 ## §teams.defaults/command — `/team defaults`
 
-`/team defaults` prints the effective defaults read from the file now — both roles, their tuples,
-thresholds and the retire timeout — or `off (no file)` with the path, or the malformed reason. It
-writes nothing and starts no turn.
+`/team defaults` prints the parent chat's effective defaults now — both roles, their tuples,
+thresholds and the retire timeout — with profile/file provenance. Off or a profile with no teams
+section says it configures nothing/none, never claims a missing legacy file. Legacy resolution
+still says `off (no file)` with the path, or the malformed reason. It starts no turn and changes
+no pick or default; like other profile readers, its first read may seed an absent library.

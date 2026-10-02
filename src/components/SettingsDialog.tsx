@@ -31,6 +31,7 @@ import {
   setRecentCount,
 } from "../lib/recent";
 import { setShowSummaries, showSummaries } from "../lib/summary-line";
+import { compressWork, setCompressWork } from "../lib/work-compression";
 import { activeThemeId, applyTheme, droppedThemeId, reconcileTheme, typography } from "../lib/theme";
 import type { SettingsTab } from "../lib/settings-nav";
 import {
@@ -60,10 +61,9 @@ import {
 import { effectiveStack } from "../lib/typography";
 import { announce, home } from "../lib/ui-state";
 import { DecisionSettingsSection } from "./DecisionSettings";
-import { DelegateSettingsSection } from "./DelegateSettings";
+import { SubagentProfilesSettings } from "./SubagentProfilesSettings";
 import { MeshSettingsSection } from "./MeshSettings";
 import { AccountsSettingsSection } from "./AccountsSettings";
-import { SpecSettingsSection } from "./SpecSettings";
 import { OverseerSettingsSection } from "./OverseerSettings";
 import { PublicLinksSettingsSection } from "./PublicLinksSettings";
 import { OutreachSettingsSection } from "./OutreachSettings";
@@ -71,7 +71,6 @@ import { PushSettingsSection } from "./PushSettings";
 import { SessionTitleSettingsSection } from "./SessionTitleSettings";
 import { SummarizerSettingsSection } from "./SummarizerSettings";
 import { BatonSettingsSection } from "./BatonSettings";
-import { TeamSettingsSection } from "./TeamSettings";
 import { ProfilesSettingsSection } from "./ProfilesSettings";
 import { TypographySection } from "./TypographySection";
 import { VoiceSettingsSection } from "./VoiceSetup";
@@ -85,6 +84,7 @@ const TABS = [
   { id: "general", label: "General", icon: "settings" as const },
   { id: "models", label: "Models", icon: "sliders" as const },
   { id: "accounts", label: "Accounts", icon: "refresh" as const },
+  { id: "subagents", label: "Subagents", icon: "worker" as const },
   { id: "modes", label: "Modes", icon: "worker" as const },
   { id: "teams", label: "Teams", icon: "command" as const },
   { id: "profiles", label: "Profiles", icon: "wrench" as const },
@@ -242,16 +242,20 @@ export function SettingsDialog(props: { onClose(): void; initialTab?: SettingsTa
           </Show>
           {/* Mounted only while its tab is: the backend discovery (a Claude Code CLI call) runs
               when the tab opens, not with the dialog. */}
+          <Show when={tab() === "subagents"}>
+            <div class="settings-panel" role="tabpanel" id="settings-panel-subagents" aria-labelledby="settings-tab-subagents"><SubagentProfilesSettings /></div>
+          </Show>
           <Show when={tab() === "modes"}>
             <div class="settings-panel" role="tabpanel" id="settings-panel-modes" aria-labelledby="settings-tab-modes">
-              <DelegateSettingsSection />
-              <SpecSettingsSection />
+              <p class="settings-intro">Delegate routing and the spec writer now belong to subagent profiles. Major and minor modes are still chosen in each chat's mode menu.</p>
+              <button class="button button-ghost" onClick={() => setTab("subagents")}>Manage Subagent Profiles</button>
             </div>
           </Show>
           {/* Mounted only while its tab is, like Modes: it asks the same backend discovery. */}
           <Show when={tab() === "teams"}>
             <div class="settings-panel" role="tabpanel" id="settings-panel-teams" aria-labelledby="settings-tab-teams">
-              <TeamSettingsSection />
+              <p class="settings-intro">Coordinator, monitor, and ordinary-member choices now belong to subagent profiles. Running workers keep their models; later additions use their chat's current profile.</p>
+              <button class="button button-ghost" onClick={() => setTab("subagents")}>Manage Subagent Profiles</button>
             </div>
           </Show>
           <Show when={tab() === "profiles"}>
@@ -539,6 +543,21 @@ function GeneralPanel() {
             {problem()}
           </span>
         </Show>
+      </div>
+      <div class="field settings-field">
+        <label class="toggle toggle-switch">
+          <span class="field-label">Compress thinking &amp; tool calls</span>
+          <input
+            type="checkbox"
+            checked={compressWork()}
+            aria-describedby="compress-work-hint"
+            onChange={(e) => setCompressWork(e.currentTarget.checked)}
+          />
+          <span class="toggle-box" />
+        </label>
+        <span class="field-hint" id="compress-work-hint">
+          Show the working as a compact timeline. Off, thinking and tool calls use their original cards.
+        </span>
       </div>
       <div class="field settings-field">
         <label class="toggle toggle-switch">

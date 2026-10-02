@@ -5,6 +5,8 @@
 /pilot/
 # Review packets hold verbatim copies of their inputs, source included.
 /reviews/
+# Assessment receipts contain metadata/identity/rationale, never raw source; still local by default.
+/assessments/
 # Drafts are working proposals; base/ and evidence/ snapshot source bytes.
 /drafts/
 

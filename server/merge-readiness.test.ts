@@ -7,7 +7,8 @@ import { test } from "node:test";
 const agentDir = mkdtempSync(join(tmpdir(), "sova-readiness-"));
 process.env.PI_CODING_AGENT_DIR = agentDir; // before the modules below compute their paths
 
-import type { SessionSummary, WorktreeStatus } from "../shared/protocol";
+import type { ReadinessState, SessionSummary, SpecAssessmentObservations, WorktreeStatus } from "../shared/protocol";
+import type { FileFacts } from "./merge-readiness";
 import type { GitResult } from "./worktrees";
 const r = await import("./merge-readiness");
 const { createFakeProvider } = await import("./decide-fake");
@@ -402,4 +403,71 @@ test("01a0e63c: an empty leftover worktree (clean, no commits, idle) does not hi
   assert.equal(r.sessionReadinessOf([merged("feat/a"), dirty], {}, 4)?.badge, undefined);
   // Only an empty tree: nothing merged, no badge.
   assert.equal(r.sessionReadinessOf([empty], {}, 4)?.badge, undefined);
+});
+
+test("observation outcomes never change computed readiness, check history or attention", async () => {
+  const observations: SpecAssessmentObservations[] = [
+    { state: "absent", items: [], reasons: [] },
+    { state: "incomplete", items: [], reasons: ["receipt input unavailable"] },
+    ...(["current", "stale", "unknown"] as const).map(applicability => ({
+      state: "observed" as const, reasons: [], items: [{
+        name: "fixture", worktree: "/wt/agents-row-dropdown", attribution: { ownerSessionId: null, sessionId: null, workerId: null, teamId: null, taskId: null, attemptId: null },
+        applicability, attributionState: applicability === "current" ? "conflicting" as const : "unknown" as const,
+        assessmentState: "outstanding" as const, unresolved: 2, reasons: [],
+        verification: [{ kind: "test" as const, revision: null, result: "failed" as const, summary: "A declared failure, not a check run.", revisionBinding: { source: "recorder-declaration" as const, revisionCommit: null, inputApplicability: "mismatched" as const } }],
+      }],
+    })),
+  ];
+  const cases: { label: string; expected: ReadinessState; status?: Partial<WorktreeStatus & { head?: string; headAt?: number }>; check?: { at: number; ok: boolean }; asks?: boolean; row?: Partial<SessionSummary>; restart?: boolean }[] = [
+    { label: "checks passed", expected: "ready", check: { at: 3, ok: true } },
+    { label: "no check seen", expected: "ready" },
+    { label: "waiting for OK", expected: "waiting-approval", check: { at: 3, ok: true }, asks: true },
+    { label: "last check failed", expected: "in-progress", check: { at: 3, ok: false } },
+    { label: "three dirty files", expected: "in-progress", status: { dirty: true, dirtyCount: 3, dirtyFiles: ["src/a.ts", "src/b.ts", "src/c.ts"] } },
+    { label: "open alignment", expected: "blocked", row: { align: { openDocs: 1, openQuestions: 1, questionDocs: 1 } } },
+    { label: "stale merged branch", expected: "stale", status: { merged: "ancestor", dirty: true } },
+    { label: "merged branch", expected: "merged", status: { merged: "ancestor" } },
+    { label: "working turn", expected: "in-progress", row: { busy: true } },
+    { label: "server merge restart", expected: "merged", status: { merged: "ancestor" }, restart: true },
+  ];
+  try {
+    for (const c of cases) {
+      r.resetReadiness();
+      const path = sessionFile([]), row = summary(path, c.row);
+      const facts: FileFacts = {
+        trees: [tracked() as FileFacts["trees"][number]],
+        merges: c.restart ? [{ id: "merge-fixture", at: 2, path: "/wt/agents-row-dropdown", branch: "feat/agents-row-dropdown", target: "master", sha: "fixture-merge", commits: 1, added: 1, removed: 0, fastForward: false }] : [],
+        ...(c.check ? { lastCheck: c.check } : {}),
+        ...(c.asks ? { lastReply: { id: "reply-fixture", at: 4, text: "Shall I merge it into master?" } } : {}),
+      };
+      const inputs = structuredClone({ row, facts });
+      const status = { path: "/wt/agents-row-dropdown", source: "session" as const, exists: true, branch: "feat/agents-row-dropdown", base: "master", merged: "no" as const, ahead: 1, behind: 0, dirty: false, head: "fixture-head", headAt: 5, ...c.status };
+      r.configureReadiness({ insights: { treeStatus: async () => status }, git: fakeGit({
+        "rev-parse --show-toplevel": { stdout: "/fixture/server\n" }, "symbolic-ref": { stdout: "master\n" },
+        "merge-base --is-ancestor": { code: 0 }, "diff --name-only": { stdout: "server/index.ts\n" },
+      }), asksUser: () => undefined, now: () => 0, processStart: 0, specObservations: undefined });
+      const old = await r.computeReadiness(row, facts);
+      assert.ok(old, c.label); assert.equal(old.trees[0]?.state, c.expected, c.label);
+      const checks = structuredClone(r.readinessChecksOf(path));
+      assert.deepEqual(checks, { ...(c.check ? { lastCheck: c.check } : {}), heads: { "/wt/agents-row-dropdown": 5 } });
+      const oldRow = { ...row, readiness: old }, attention = r.readinessItems(oldRow), restarts = r.restartItems([oldRow]);
+      if (c.expected === "ready" || c.expected === "waiting-approval") assert.equal(attention.length, 1, "the attention comparison has a positive baseline");
+      if (c.restart) assert.equal(restarts.length, 1, "the restart comparison has a positive baseline");
+      for (const observation of observations) {
+        const snapshot = structuredClone(observation);
+        r.configureReadiness({ specObservations: async () => observation });
+        const observed = await r.computeReadiness(row, facts);
+        assert.ok(observed);
+        const { specObservations, ...priorFields } = observed;
+        assert.deepEqual(priorFields, old, `${c.label}: all existing readiness fields are invariant`);
+        assert.deepEqual(specObservations, observation);
+        assert.deepEqual(r.readinessChecksOf(path), checks, "observations cannot become checks or change lastCheck/head tracking");
+        const observedRow = { ...row, readiness: observed };
+        assert.deepEqual(r.readinessItems(observedRow), attention, "no observation changes decide/needs-you policy");
+        assert.deepEqual(r.restartItems([observedRow]), restarts, "no observation creates or clears restart attention");
+        assert.deepEqual(observation, snapshot, "the injected observation is not rewritten");
+        assert.deepEqual({ row, facts }, inputs, "session facts and original check remain unchanged");
+      }
+    }
+  } finally { r.resetReadiness(); }
 });

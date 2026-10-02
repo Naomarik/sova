@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { SessionReadiness } from "../../shared/protocol";
-import { readinessBadge, readinessRowChip, readinessTitle } from "./readiness";
+import { readinessBadge, readinessRowChip, readinessTitle, specObservationSummary } from "./readiness";
 import { readinessChip, readinessReason } from "./worktrees";
 
 const r = (over: Partial<SessionReadiness>): SessionReadiness => ({ trees: [{ path: "/wt/a", branch: "feat/a", state: "merged" }], since: 1, ...over });
@@ -63,4 +63,21 @@ test("the Session tab's visible reason line: the server's reason, else state and
   assert.equal(readinessReason({ readiness: { path: "/p", branch: "b", state: "merged", why: "still tracked active" } }), "Merged · still tracked active");
   assert.equal(readinessReason({ readiness: { path: "/p", branch: "b", state: "ready" } }), null, "the chip alone already says it");
   assert.equal(readinessReason({}), null);
+});
+
+test("structured observations word uncertainty and recorded verification inputs without changing readiness badges", () => {
+  const old = r({ badge: "ready" });
+  const observed = r({ badge: "ready", specObservations: { state: "incomplete", reasons: ["partial"], items: [{
+    name: "receipt", worktree: "/wt/a", attribution: { ownerSessionId: null, sessionId: null, workerId: null, teamId: null, taskId: null, attemptId: null },
+    applicability: "stale", attributionState: "unknown", assessmentState: "outstanding", unresolved: 1, reasons: [],
+    verification: [{ kind: "test", revision: "old", result: "passed", summary: "recorder declaration", revisionBinding: { source: "recorder-declaration", revisionCommit: null, inputApplicability: "mismatched" } }],
+  }] } });
+  assert.deepEqual(readinessRowChip(observed), readinessRowChip(old));
+  assert.equal(readinessBadge(observed), readinessBadge(old));
+  const summary = specObservationSummary(observed)!;
+  for (const fact of ["incomplete", "1 stale", "unknown attribution", "1 unresolved", "recorded verification: 1 passed", "verification inputs: 1 mismatched"]) assert.ok(summary.includes(fact), fact);
+  assert.ok(readinessTitle(observed)?.endsWith(summary));
+  assert.equal(specObservationSummary(old), null);
+  const absent = specObservationSummary(r({ specObservations: { state: "absent", items: [], reasons: [] } }));
+  assert.match(absent!, /no receipts.*applicability unknown.*verification unrecorded/);
 });

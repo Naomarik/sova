@@ -100,6 +100,7 @@ import { MODE_DISCOVER_EVENT, MODE_STATE_EVENT, type ModeStateEvent } from "../m
 import { MODE_WORKER_DISCOVER_EVENT, MODE_WORKER_EVENT, parseModeWorkerEvent, type ModeWorkerEvent } from "../mode/events.ts";
 import { specHookSettings, withClaudeSettings } from "../claude-code/spec-hooks.ts";
 import { LEDGER_ENV, ledgerPath, workerLedgerPath } from "../mode/spec-guard.ts";
+import { ASSESSMENT_OWNER_ENV, ASSESSMENT_WORKER_ENV, ASSESSMENT_TEAM_ENV } from "../mode/spec-assessment.ts";
 import { DEFAULT_CLAUDE_TOOLS } from "../claude-code/transport.ts";
 import { workerSpecBrief, writesCode } from "./spec-brief.ts";
 import { restoreActive as restoreWorktrees, treeOf, workerCwdRefusal as worktreeCwdRefusal, type WorktreesActive } from "../worktrees/state.ts";
@@ -1377,7 +1378,13 @@ export function registerSubagents(
 					// A worker on its worktree's agent dir: pi resolves everything there (never written to disk).
 					const tooling = teamMember ? memberTooling(spec.backend ?? "pi") : "none";
 					const baseEnv = treeConfig ? { ...memberVars, ...treeConfig.env } : tooling === "pi" ? memberVars : undefined;
-					const env = ledger ? { ...baseEnv, [LEDGER_ENV]: ledger } : baseEnv;
+					const env = specOn && !remote ? {
+						...(backendPrepared?.env as Record<string, string> | undefined), ...baseEnv,
+						...(ledger ? { [LEDGER_ENV]: ledger } : {}),
+						[ASSESSMENT_OWNER_ENV]: ctx.sessionManager.getSessionId?.() ?? "",
+						[ASSESSMENT_WORKER_ENV]: id,
+						[ASSESSMENT_TEAM_ENV]: request.team?.teamId ?? "",
+					} : ledger ? { ...baseEnv, [LEDGER_ENV]: ledger } : baseEnv;
 					const name = (spec.count ?? 1) > 1 ? `${base}-${i + 1}` : base;
 					// Hosted: the runner's spawnImpl starts a detached host instead of the worker itself.
 					const hostedWorker = !resuming && hosting.active();

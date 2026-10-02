@@ -155,14 +155,14 @@ describe("the levels, as the statecharts declare them", () => {
     assert.deepEqual([TOOL_NEEDS.sova_pipeline, TOOL_NEEDS.sova_hold, TOOL_NEEDS.sova_correct, TOOL_NEEDS.sova_set_state], ["read", "L0", "L2", "operator"]);
   });
 
-  test("sova_project_verbs' level is its acts': services/down at L0, services/run at L3, neither held nor counted", () => {
+  test("sova_project_verbs' level is its acts': services/down at L0, services/run at L3, neither held nor counted; onboard at L3, held and counted as a coding session's start", () => {
     const acts = statechartInfo("project")!.acts as Record<string, { needs?: string | null; tool?: string; hold?: boolean; counts?: string | null }>;
     assert.deepEqual(
       Object.entries(acts).filter(([, a]) => a.tool === "sova_project_verbs").map(([id, a]) => [id, a.needs, !!a.hold, a.counts ?? null]).sort(),
-      [["services/down", "L0", false, null], ["services/run", "L3", false, null]],
+      [["services/down", "L0", false, null], ["services/run", "L3", false, null], ["verbs/onboard", "L3", true, "create"]],
     );
     assert.equal(TOOL_NEEDS.sova_project_verbs, "L3", "its highest act");
-    assert.equal(COUNTS.sova_project_verbs, undefined, "it draws on no allowance");
+    assert.equal(COUNTS.sova_project_verbs, "create", "only onboard draws on an allowance: a refusal for it is held until create comes back");
   });
 
   test("sova_project_verbs: the engine's own refusals come before the act, and a read is no act", async () => {
@@ -217,7 +217,7 @@ describe("the wrapper relays a statechart's refusal", () => {
     const g = fake({ attended: true, refuse: new OrgError("Its worktree is busy.", 409, "busy", "Look again later.") });
     await assert.rejects(() => g.run("sova_create_session", create), /Its worktree is busy\. Look again later\./);
     assert.deepEqual(g.limited, [], "only an allowance refusal is held");
-    assert.deepEqual(COUNTS, { sova_start_gathering: "gather", sova_promote: "promote", sova_create_session: "create", sova_send: "prompt" });
+    assert.deepEqual(COUNTS, { sova_start_gathering: "gather", sova_promote: "promote", sova_create_session: "create", sova_send: "prompt", sova_project_verbs: "create" });
   });
 
   test("each tool's allowance is its statechart acts' `counts`, and every allowance tool has an act", () => {

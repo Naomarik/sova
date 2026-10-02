@@ -77,6 +77,7 @@ import type { BatonInfo, BatonSettings, BatonTold, BatonStartInput, BatonStartRe
 import type { ConflictResolveInput, DecisionsInfo, PromoteResult, SpecStatus } from "../../shared/decisions";
 import type { PipelineInfo, PipelineTimeline } from "../../shared/pipeline";
 import type { OrgCosts, ProjectCost } from "../../shared/costs";
+import type { ProjectRuntimeView } from "../../shared/project-runtime";
 import type { ProjectList, ProjectRegistered, ProjectSummary } from "../../shared/projects";
 import type { CodingStartInput, CodingStartResult, ItemCodeInput, ItemCodeResult, ItemSendInput, ItemSendResult, ProjectOverseerInfo, ProjectOverseerPatch } from "../../shared/project-overseer";
 import type { HostBrowserAccessChange, HostBrowserAccessResult, HostRename, HostRenameResult, MeshDetails } from "../../shared/mesh-details";
@@ -1122,6 +1123,14 @@ export const cancelHeldAct = (projectId: string, holdId: string, reason?: string
 
 export const getProjectCost = (projectId: string) => request<ProjectCost>(`${projectPath(projectId)}/costs`);
 export const getOrgCosts = (orgId: string) => request<OrgCosts>(`/api/orgs/${encodeURIComponent(orgId)}/costs`);
+
+// ---- a project's software registry (§app/project-runtime) -------------------------------------------
+export const getProjectRuntime = (projectId: string) => request<ProjectRuntimeView>(`${projectPath(projectId)}/runtime`);
+/** Approve the definition shown (its hash) on this host: the operator's only. */
+export const approveProjectRuntime = (projectId: string, hash: string) => request<ProjectRuntimeView>(`${projectPath(projectId)}/runtime/approve`, jsonInit("POST", { hash }));
+/** Run the Project verbs playbook on the project: a coding session on its own branch. */
+export const runProjectVerbsPlaybook = (projectId: string, why?: string) =>
+  request<{ sessionId: string; path: string; worktree?: { path: string; branch: string }; notPrompted?: string }>(`${projectPath(projectId)}/verbs/onboard`, jsonInit("POST", why ? { why } : {}));
 
 // ---- a project's overseer (§app/project-overseer) ---------------------------------------------------
 

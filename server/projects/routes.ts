@@ -9,6 +9,7 @@ import { archiveBlockers } from "../project-overseer";
 import { nudgeMarks } from "../session-feed";
 import { cloneRepo } from "./clone";
 import { RegistryError } from "./registry";
+import { registerRuntimeRoutes } from "./runtime-routes";
 import { editProject, listProjects, readProject, registerProjectIn, setProjectArchived, type OperatorBy } from "./spaces";
 
 /**
@@ -116,4 +117,6 @@ export function registerProjectRoutes(app: Hono<any>): void {
       return c.json({ ok: true });
     }),
   );
+  // Its software registry and the Project verbs playbook (§app/project-runtime).
+  registerRuntimeRoutes(app);
 }

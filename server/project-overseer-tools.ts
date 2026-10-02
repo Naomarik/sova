@@ -87,6 +87,10 @@ export interface PoToolHost {
   /** sova_project_verbs' act for a verb that is not a read: the project statechart's services/down (L0) or
       services/run (L3), never held, counting nothing; resolves once taken, throws its refusal. */
   servicesAct(verb: string, instance: string | null): Promise<void>;
+  /** sova_project_verbs onboard: the Project verbs playbook, the project statechart's verbs/onboard (L3, held unattended, counts create). */
+  onboard?(why: string): Promise<{ text: string; details: Record<string, unknown> }>;
+  /** sova_project's Software block: the software registry in words (§app/project-runtime), or none. */
+  software?(): Promise<string[]>;
   /** Turn one of the project's previews off: at once, never held. */
   turnOffPreview(id: string): Promise<PreviewView>;
   /** A statechart refused `kind` for its allowance: the watch holds it until it comes back (limit/refused). */
@@ -348,7 +352,7 @@ export function projectOverseerTools(host: PoToolHost, redactor: () => Redactor 
       name: "sova_project",
       label: "Project",
       description:
-        "The project at a glance: your autonomy, its builds (every coding session the project started: who started it, its branch, merged or not), its active previews, your limits (this message's and today's allowances, looks, at once) and what is held for a later look.",
+        "The project at a glance: your autonomy, its builds (every coding session the project started: who started it, its branch, merged or not), its software (registered, stale, failed or awaiting approval; its services and isolation; the Project verbs playbook's run), its active previews, your limits (this message's and today's allowances, looks, at once) and what is held for a later look.",
       promptSnippet: "the project at a glance (builds, previews, limits)",
       parameters: obj({}),
       execute: read(async () => {
@@ -362,6 +366,7 @@ export function projectOverseerTools(host: PoToolHost, redactor: () => Redactor 
         const builds = await host.builds();
         const activePreviews = (await host.previews().catch(() => [])).filter((v) => v.state === "active");
         const extra = await contributedRead(host.engine(), project.id);
+        const software = (await host.software?.().catch(() => [])) ?? [];
         const lines = [
           `# ${project.name}`,
           `Root: ${project.root}`,
@@ -372,6 +377,7 @@ export function projectOverseerTools(host: PoToolHost, redactor: () => Redactor 
           ...(builds.length ? builds.slice(0, 20).map((w) => buildLine(w)) : ["(none yet)"]),
           ...(builds.length > 20 ? [`(${builds.length - 20} more: sova_list_sessions)`] : []),
           "",
+          ...(software.length ? ["## Software (the project's registry on this host)", ...software, ""] : []),
           "## Previews (active preview links; sova_previews lists them all)",
           ...(activePreviews.length ? activePreviews.map((v) => previewLine(v)) : ["(none)"]),
           "",
@@ -827,7 +833,7 @@ export function projectOverseerTools(host: PoToolHost, redactor: () => Redactor 
     // Project instances (§app.project-services/callers): this project only; every verb but the reads is the project
     // statechart's services/down or services/run, sent once the engine's own checks pass, and logged like any act.
     (() => {
-      const t = projectOverseerVerbsTool(projectEngine, { id: () => host.overseerId(), root: () => host.project().root, act: (verb, instance) => host.servicesAct(verb, instance) });
+      const t = projectOverseerVerbsTool(projectEngine, { id: () => host.overseerId(), root: () => host.project().root, act: (verb, instance) => host.servicesAct(verb, instance), ...(host.onboard ? { onboard: (why: string) => host.onboard!(why) } : {}) });
       const exec = (id: string, params: any) => t.execute(id, params, undefined, undefined, undefined as never) as Promise<Out>;
       // The engine's own refusal or failure (not-approved, needs-confirm, a verb that failed) comes back as the result,
       // never thrown: the model reads it whole, and the activity log records it refused with the engine's sentence.

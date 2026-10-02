@@ -210,6 +210,7 @@ async function loadHandlers(): Promise<void> {
   await import("../build-loadout"); // the build statecharts' effects
   await import("../project-overseer-store"); // the settings every act is stamped with
   await import("../project-overseer"); // the look, the preview effect
+  await import("./runtime"); // the software registry's effects and its start for existing projects
 }
 
 /** Open a standalone project's engine (once). */

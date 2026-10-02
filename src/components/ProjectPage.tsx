@@ -11,6 +11,7 @@ import { InsightsPage } from "./InsightsPage";
 import { PreviewsCard } from "./PreviewsCard";
 import { ActionMenu } from "./ActionMenu";
 import { costFigure, createProjectCost, ProjectCostCard } from "./ProjectCostCard";
+import { ProjectSoftwareCard } from "./ProjectSoftwareCard";
 import { ActivityCard, CodingSessionsCard, createProjectOverseer, IdeasCard, type ItemSendForm, OverseerSettings, OverseerSummary, type ProjectOverseer, TodosCard } from "./ProjectOverseerPanel";
 import { Banner, Icon } from "./ui";
 import "../orgs.css";
@@ -280,6 +281,8 @@ export function ProjectPage(props: {
                 </div>
               </div>
               <div class="project-col">
+                {/* Its software registry on this host (§app.project-runtime/software-card). */}
+                <ProjectSoftwareCard projectId={projectId} archived={!!archived()} />
                 <ActivityCard po={po} />
                 <TodosCard po={po} send={org?.send} archived={!!archived()} />
                 {/* A placed project's ideas sit with its requirements; a standalone one's here. */}

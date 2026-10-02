@@ -29,7 +29,7 @@ function has(e: Statecharts, sid: string, ...ids: string[]): boolean {
 describe("statecharts engine (vendored ESM)", () => {
   test("the bundle lists its statecharts, each with a positive integer version", () => {
     const names = statechartVersions().map((c) => c.name);
-    assert.deepEqual(names.sort(), ["baton", "build", "conflict", "decision", "item", "org", "person", "placement", "project", "reconciler", "residence", "watch"], "the refit's twelve statecharts, nothing else");
+    assert.deepEqual(names.sort(), ["baton", "build", "conflict", "decision", "item", "org", "person", "placement", "project", "reconciler", "residence", "runtime", "watch"], "the refit's thirteen statecharts, nothing else");
     assert.ok(!names.includes(PROBE), "the shipped module has no test statechart");
     assert.throws(() => createShipped().start("p", PROBE), /Unknown statechart/, "the probe exists only where it is registered");
     assert.throws(() => createShipped({ statecharts: { project: PROBE_STATECHARTS["engine-probe"] } }), /Statechart project is already registered/);

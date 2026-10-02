@@ -39,6 +39,22 @@ const PARAMS = {
   additionalProperties: false,
 } as const;
 
+/** The Overseers' parameters: the verbs, plus `onboard` (the Project verbs playbook, §app.project-runtime/onboard). */
+const OVERSEER_PARAMS = {
+  ...PARAMS,
+  properties: {
+    ...PARAMS.properties,
+    verb: { type: "string", enum: [...VERBS, ...RESERVED_VERBS, "onboard"], description: "The verb." },
+    why: { type: "string", description: "onboard: why the playbook runs now (one line, for the operator and the playbook)." },
+  },
+} as const;
+
+const ONBOARD_HELP =
+  " onboard {why} starts the Project verbs playbook as a coding session on its own branch (counted and held like a coding session's start): it writes or updates .sova/project.json, proves it with a confined conform and proposes it; the operator approves and merges it, never you.";
+
+/** The playbook's start for a verb tool (the Overseers'): the text the model reads and the details. */
+export type OnboardRun = (why: string, params: Record<string, unknown>) => Promise<{ text: string; details: Record<string, unknown> }>;
+
 const VERB_HELP =
   "Verbs over the project's .sova/project.json, each answering one JSON result (ok, changed, state, steps, services, data, error {code, message}). " +
   "create (a worktree's instance: slot, ports, data, setup), up (start and wait until ready; creates first), down (stop; keeps data), apply (build + reload each running service, wait until ready), " +
@@ -85,17 +101,23 @@ export interface VerbToolOptions {
   /** The project a call without one is about. */
   defaultProject: (ctx: unknown) => Promise<string | null>;
   redactor?: () => Redactor;
+  /** The Overseers' verb `onboard` (absent: the verb is not offered). */
+  onboard?: OnboardRun;
 }
 
 export function projectVerbsTool(o: VerbToolOptions): Tool {
   const tool: Tool = {
     name: o.name,
     label: o.label,
-    description: `${o.description} ${VERB_HELP}`,
+    description: `${o.description} ${VERB_HELP}${o.onboard ? ONBOARD_HELP : ""}`,
     promptSnippet: o.promptSnippet,
-    parameters: PARAMS as unknown as Tool["parameters"],
+    parameters: (o.onboard ? OVERSEER_PARAMS : PARAMS) as unknown as Tool["parameters"],
     async execute(_id: string, params: any, signal?: AbortSignal, _onUpdate?: unknown, ctx?: unknown) {
       const p = (params ?? {}) as Record<string, unknown>;
+      if (o.onboard && p.verb === "onboard") {
+        const out = await o.onboard(typeof p.why === "string" ? p.why.trim() : "", p);
+        return { content: [{ type: "text" as const, text: out.text }], details: { v: 1, ...out.details } };
+      }
       const caller = await o.caller(ctx);
       const r = await o.engine().run(String(p.verb ?? ""), bodyOf(p, await o.defaultProject(ctx)), caller, signal ? { signal } : {});
       const note = await resultNote(o.engine(), r, (ctx as SessionCtx | undefined)?.sessionManager?.getBranch() ?? []);
@@ -178,7 +200,7 @@ export function projectVerbsExtension(engine: () => ProjectEngine) {
 export type LooseExec = (id: string, params: any, signal?: AbortSignal, onUpdate?: unknown, ctx?: unknown) => Promise<any>;
 
 /** The global Overseer's `sova_project_verbs`: any project; its act wrapper keeps acts to turns the user started. */
-export function overseerVerbsTool(engine: () => ProjectEngine, overseerId: () => string, wrap: (exec: LooseExec) => LooseExec): Tool {
+export function overseerVerbsTool(engine: () => ProjectEngine, overseerId: () => string, wrap: (exec: LooseExec) => LooseExec, onboard?: OnboardRun): Tool {
   const t = projectVerbsTool({
     name: "sova_project_verbs",
     label: "Project verbs",
@@ -188,6 +210,7 @@ export function overseerVerbsTool(engine: () => ProjectEngine, overseerId: () =>
     engine,
     defaultProject: async () => null,
     caller: async () => ({ kind: "overseer", id: overseerId() }),
+    ...(onboard ? { onboard } : {}),
   });
   const reads = new Set(["status", "logs", "doctor"]);
   const exec = t.execute as unknown as LooseExec;
@@ -198,7 +221,7 @@ export function overseerVerbsTool(engine: () => ProjectEngine, overseerId: () =>
 
 /** The project overseer's `sova_project_verbs`: its own project only; every verb but the reads is its project
     statechart's act (`act`), which holds the level and throws the statechart's refusal. */
-export function projectOverseerVerbsTool(engine: () => ProjectEngine, who: { id: () => string; root: () => string; act: VerbAct }): Tool {
+export function projectOverseerVerbsTool(engine: () => ProjectEngine, who: { id: () => string; root: () => string; act: VerbAct; onboard?: OnboardRun }): Tool {
   return projectVerbsTool({
     name: "sova_project_verbs",
     label: "Project verbs",
@@ -208,5 +231,6 @@ export function projectOverseerVerbsTool(engine: () => ProjectEngine, who: { id:
     engine,
     defaultProject: async () => (await projectRootOf(who.root())) ?? who.root(),
     caller: async () => ({ kind: "project-overseer", id: who.id(), root: (await projectRootOf(who.root())) ?? who.root(), act: who.act }),
+    ...(who.onboard ? { onboard: who.onboard } : {}),
   });
 }

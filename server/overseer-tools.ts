@@ -35,6 +35,7 @@ import { branchLabels } from "./overseer-run-note";
 import { linkTools, type LinksApi } from "./overseer-link-tools";
 import { projectEngine } from "./project-services/routes";
 import { overseerVerbsTool, type LooseExec } from "./project-services/tools";
+import { operatorEnvelopeOf } from "./projects/spaces";
 import { orgConfirmLookup, orgTools } from "./overseer-org-tools";
 import { resolveAnyProject, resolveOrg, resolvePerson } from "./overseer-org-view";
 import { contactRedactor, loggedArgs } from "./overseer-org-view";
@@ -1433,7 +1434,17 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
     ...todoTools({ act, read, resolve, refusal: (m) => new Refusal(m), obj, str }),
     ...linkTools({ act, read, links: host.links, take: () => limits.take("link", host.caps()), refusal: (m) => new Refusal(m), obj, str }),
     // Project instances (§app.project-services/callers): reads free, acts through `act` (turns the user started).
-    overseerVerbsTool(projectEngine, () => host.overseerId(), (exec) => act("sova_project_verbs", (params, toolCallId, call) => exec(toolCallId, params, call.signal, undefined, call.ctx)) as LooseExec),
+    overseerVerbsTool(
+      projectEngine,
+      () => host.overseerId(),
+      (exec) => act("sova_project_verbs", (params, toolCallId, call) => exec(toolCallId, params, call.signal, undefined, call.ctx)) as LooseExec,
+      // onboard: the Project verbs playbook on a registered project, for the user (§app.project-runtime/onboard)
+      async (why, params) => {
+        const { projectByPath, startOnboard, onboardAnswer } = await import("./projects/runtime");
+        const pid = await projectByPath(typeof params.project === "string" ? params.project : "");
+        return onboardAnswer(await startOnboard(pid, why ? { why } : {}, operatorEnvelopeOf(pid, { kind: "operator", via: "overseer", overseerId: host.overseerId() })));
+      },
+    ),
     ...orgTools({
       act,
       read,

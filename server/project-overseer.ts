@@ -653,6 +653,15 @@ function toolHost(rt: Rt): PoToolHost {
       // in the engine once this is taken, never held, counting nothing.
       await actOrThrow(engine(), projectSessionSid, verb === "down" ? "services/down" : "services/run", { verb, ...(instance ? { instance } : {}) }, envelope(), { settle: true });
     },
+    async software() {
+      const { readRuntime, softwareLines } = await import("./projects/runtime");
+      return softwareLines(await readRuntime(projectId, { observe: false }));
+    },
+    async onboard(why) {
+      // The Project verbs playbook (§app.project-runtime/onboard): its level, checks, limits and hold are the statechart's.
+      const { startOnboard, onboardAnswer } = await import("./projects/runtime");
+      return onboardAnswer(await startOnboard(projectId, why ? { why } : {}, envelope()));
+    },
     async turnOffPreview(id) {
       // Never held, at any level: it only takes something away. Only this project's.
       if (!listPreviews({ projectId }).some((v) => v.id === id)) throw new OrgError(`No preview ${id} in this project: sova_previews lists them.`, 404);
@@ -738,7 +747,22 @@ export const NOT_PROMPTED = "Started, but not prompted: its mode could not be se
  */
 async function startCodingSession(
   projectId: string,
-  input: { cwd?: string; prompt?: string; title?: string; model?: string; thinking?: string; mode?: ProjectCodingMode; kind: "coding" | "operator-coding"; via?: "overseer"; envelope?: Envelope; item?: string; decisions?: string[] },
+  input: {
+    cwd?: string;
+    prompt?: string;
+    title?: string;
+    model?: string;
+    thinking?: string;
+    mode?: ProjectCodingMode;
+    kind: "coding" | "operator-coding" | "onboard";
+    via?: "overseer";
+    envelope?: Envelope;
+    item?: string;
+    decisions?: string[];
+    /** The project act that starts it (default build/start) and what that act's payload adds. */
+    act?: "verbs/onboard";
+    extra?: Record<string, unknown>;
+  },
 ): Promise<StartedCoding> {
   const prompt = input.prompt?.trim() ?? "";
   const project = projectOf(projectId);
@@ -762,8 +786,9 @@ async function startCodingSession(
     out = await actOrThrow(
       engine,
       input.item ?? projectSid(projectId),
-      "build/start",
+      input.act ?? "build/start",
       {
+        ...input.extra,
         sessionId,
         ...(input.decisions?.length ? { decisions: input.decisions } : {}),
         ...(rowTitle ? { title: rowTitle } : {}),
@@ -804,6 +829,18 @@ async function startCodingSession(
   if (row.modeNotSet) return { ...made, notPrompted: NOT_PROMPTED };
   if (row.promptError) throw new OrgError(row.promptError, 409);
   return made;
+}
+
+/**
+ * The Project verbs playbook's run (§app.project-runtime/onboard): a coding session started like any other
+ * (worktree, mode, first prompt) through the project act `verbs/onboard` (its level, checks, caps and hold),
+ * whose build is of kind onboard. `extra` is what the host stamps on the act (`why`, `invalid`, `runtimeStanding`).
+ */
+export function startOnboardSession(
+  projectId: string,
+  input: { prompt: string; title: string; model: string; thinking: string; envelope?: Envelope; extra: Record<string, unknown> },
+): Promise<StartedCoding> {
+  return startCodingSession(projectId, { ...input, kind: "onboard", act: "verbs/onboard" });
 }
 
 /** Where a session runs in its worktree: the folder asked for, inside it, when it exists there. */

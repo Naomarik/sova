@@ -109,8 +109,6 @@ import {
   clearOverseer,
   overseerInfo,
   overseerSettingsInfo,
-  pathOfId,
-  promptSession,
   overseerSender,
   renderPeerRead,
   OVERSEER_SENDER_HEADER,
@@ -122,6 +120,7 @@ import {
   startOverseerLoop,
 } from "./overseer";
 import { readNotes, writeNotes, NOTES_MAX } from "./overseer-store";
+import { pathOfId, promptSession } from "./session-prompt";
 import { checkRename, IdeaConflictError, IdeaError, ideaDetail, ideasInfo, parseIdeaId, updateIdea, type IdeaUpdate } from "./overseer-ideas";
 import { renameIdeaEverywhere } from "./overseer-idea-tools";
 import { addTodo, clearDone, removeTodo, reorderTodos, TodoConflictError, TodoError, TodoNotFoundError, todosInfo, updateTodo } from "./overseer-todos";

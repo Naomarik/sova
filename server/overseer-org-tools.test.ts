@@ -26,6 +26,7 @@ const baton = await import("./baton");
 const po = await import("./project-overseer");
 const store = await import("./project-overseer-store");
 const overseer = await import("./overseer");
+const sessionPrompt = await import("./session-prompt");
 const tools = await import("./overseer-tools");
 const { UserTurns } = await import("./user-turns");
 const view = await import("./overseer-org-view");
@@ -129,7 +130,7 @@ const host = {
   caps: () => caps,
   sessions: async () => [],
   session: async (ref: string) => {
-    const path = ref.includes("/") ? ref : await overseer.pathOfId(ref);
+    const path = ref.includes("/") ? ref : await sessionPrompt.pathOfId(ref);
     return path ? getSessionSummary(path) : null;
   },
   digest: async () => ({ items: [], counts: { act: 0, decide: 0, fyi: 0 } }),
@@ -437,7 +438,7 @@ describe("the organization tools (§app.overseer/org-tools)", async () => {
     assert.equal(slash.status, 400);
     assert.match(((await slash.json()) as { error: string }).error, /Send words; use op clear to clear it\./);
     const { path } = await po.ensureProjectOverseer(org.id, project.id);
-    const viaPrompt = await overseer.promptSession(path, "hello", OVERSEER_ID);
+    const viaPrompt = await sessionPrompt.promptSession(path, "hello", OVERSEER_ID);
     assert.deepEqual(viaPrompt, { ok: false, status: 409, error: "That is a project overseer's own conversation." });
     mkdirSync(join(root, "proj-b"), { recursive: true });
     const other = await orgs.addProject(org.id, { name: "Fresh", root: join(root, "proj-b") });

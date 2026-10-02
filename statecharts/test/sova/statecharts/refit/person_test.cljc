@@ -49,8 +49,8 @@
     (is (= "Ana Ruiz is not waiting for approval." (h/refusal (born ana) sid :person/approve op)))
     (is (= "Ana Ruiz is active, not proposed." (h/refusal (born ana) sid :person/approve {:by "overseer" :attended true})))
     (testing "the overseer needs L2 outside the operator's turns"
-      (is (re-find #"sova_roster needs L2" (h/refusal (born carla) sid :person/approve {:by "overseer" :autonomy "L1" :roster-active true})))
-      (is (nil? (h/refusal (born carla) sid :person/approve {:by "overseer" :autonomy "L2" :roster-active true}))))))
+      (is (re-find #"sova_roster needs L2" (h/refusal (born carla) sid :person/approve {:by "overseer" :autonomy "L1"})))
+      (is (nil? (h/refusal (born carla) sid :person/approve {:by "overseer" :autonomy "L2"}))))))
 
 (deftest field-authority
   (let [x (born ana)]
@@ -98,7 +98,7 @@
     (testing "a revert that sets left needs the card; another revert does not"
       (is (some? (h/refusal x sid :person/revert {:by "operator" :via "overseer" :row {:at 3 :field "status" :from "left" :to "active"}})))
       (is (nil? (h/refusal x sid :person/revert {:by "operator" :via "overseer" :row {:at 3 :field "role" :from "Clerk" :to "CFO"}})))))
-  (is (= "A statechart change may not approve or decline people." (h/refusal (born carla) sid :person/approve {:by "statechart" :autonomy "L3" :roster-active true}))))
+  (is (= "A statechart change may not approve or decline people." (h/refusal (born carla) sid :person/approve {:by "statechart" :autonomy "L3"}))))
 
 (deftest a-person-created-left-starts-left
   (let [x (born {:name "Old Timer" :status "left"})]

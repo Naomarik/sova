@@ -1,5 +1,5 @@
 (ns sova.statecharts.refit.registry-test
-  "Registry-wide lints over the eleven statecharts."
+  "Registry-wide lints over the twelve statecharts."
   (:require
     [cljs.test :refer [deftest is]]
     [sova.statecharts.refit.acts-golden :as ag]
@@ -38,14 +38,14 @@
 
 (deftest the-kind-of-each-act
   (is (= {["baton" :baton/offer] #{"offer"} ["baton" :baton/close] #{"close"}
-          ["project" :baton/start] #{"gather" "offer"} ["item" :gather/start] #{"gather" "offer"}
+          ["placement" :baton/start] #{"gather" "offer"} ["item" :gather/start] #{"gather" "offer"}
           ["project" :build/start] #{"build"} ["item" :build/start] #{"build"} ["build" :build/prompt] #{"prompt"} ["project" :session/prompt] #{"prompt"}
-          ["reconciler" :decision/promote] #{"promote"} ["project" :owner-update/post] #{"owner-update"} ["project" :outreach/send] #{"send"} ["project" :preview/start] #{"preview"}
+          ["reconciler" :decision/promote] #{"promote"} ["placement" :owner-update/post] #{"owner-update"} ["placement" :outreach/send] #{"send"} ["project" :preview/start] #{"preview"}
           ["person" :person/approve] #{"roster-approve"} ["person" :person/decline] #{"roster-decline"}}
          (into {} (for [[statechart ev m] (acts) :when (:confirm-kind m)] [[statechart ev] (kinds m)])))))
 
 (deftest a-start-to-two-or-more-people-is-an-offer
-  (let [k (get-in registry/statecharts ["project" :acts :baton/start :confirm-kind])]
+  (let [k (get-in registry/statecharts ["placement" :acts :baton/start :confirm-kind])]
     (is (= "gather" (k one-person)))
     (is (= "gather" (k {:_event {:data {:to "operator"}}})))
     (is (= "offer" (k two-people)))))
@@ -62,11 +62,11 @@
   (let [now (at/table)
         bad (for [k (sort (into (set (keys now)) (keys ag/golden))) :when (not= (get now k) (get ag/golden k))]
               [k :now (get now k) :golden (get ag/golden k)])]
-    (is (= 81 (count ag/golden)))
+    (is (= 84 (count ag/golden)))
     (is (empty? bad) (str (count bad) " differ: " (pr-str (take 10 bad))))))
 
 (deftest exactly-these-acts-are-held
   (is (= #{["baton" ":baton/close"] ["build" ":build/prompt"] ["item" ":build/start"] ["item" ":gather/start"]
-           ["person" ":person/approve"] ["person" ":person/decline"] ["project" ":baton/start"] ["project" ":build/start"]
-           ["project" ":owner-update/post"] ["project" ":outreach/send"] ["project" ":preview/start"] ["project" ":session/prompt"] ["reconciler" ":decision/promote"]}
+           ["person" ":person/approve"] ["person" ":person/decline"] ["placement" ":baton/start"] ["project" ":build/start"]
+           ["placement" ":owner-update/post"] ["placement" ":outreach/send"] ["project" ":preview/start"] ["project" ":session/prompt"] ["reconciler" ":decision/promote"]}
          (set (for [[k m] (at/table) :when (:hold m)] k)))))

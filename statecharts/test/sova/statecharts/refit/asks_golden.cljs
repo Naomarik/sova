@@ -15,6 +15,7 @@
    ["baton" ":open" [":baton/goal-done"] "[:done]" 0] true
    ["baton" ":open" [":baton/hand-to"] "[:with-operator]" 0] true
    ["build" ":build" [":hold/waiting"] "[]" 0] true
+   ["placement" ":placement" [":hold/waiting"] "[]" 0] true
    ["build" ":merging" [":effect/done"] "[:merge-idle]" 0] true
    ["build" ":merging" [":effect/failed"] "[:merge-idle]" 0] true
    ["build" ":setting-mode" [":effect/failed"] "[:ready]" 0] true

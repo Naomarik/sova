@@ -1,4 +1,4 @@
-# Org statecharts: the refit's eleven statecharts, and every inventory item they stand for
+# Org statecharts: the refit's twelve statecharts, and every inventory item they stand for
 
 ## Fast loop
 
@@ -13,29 +13,40 @@
 - Never cold-compile in a loop; run the matrices only at the end (`node scripts/build-statecharts.mjs --test`
   is the full cold path), and `release lib` (the vendored bundle, `scripts/build-statecharts.mjs`) only for the final bundle.
 
-Eleven statecharts in the fulcrologic/statecharts CLJC DSL (`com.fulcrologic/statecharts 1.4.0-RC18`) under
+Twelve statecharts in the fulcrologic/statecharts CLJC DSL (`com.fulcrologic/statecharts 1.4.0-RC18`) under
 `src/sova/statecharts/`, registered in `registry.cljc` for the engine (`engine/API.md`). Every
 lifecycle state and every link of the organization layer lives here (q1: no state projection files;
 routes read the engine). The event vocabulary is `EVENTS.md`.
 
 | statechart | file | storage | session id | what |
 |---|---|---|---|---|
-| org | `org.cljc` | portable | `org/<org>` | identity, owner ‹none·set·cleared›, holder record (r1), births of people and projects |
+| org | `org.cljc` | portable | `org/<org>` | identity, owner ‹none·set·cleared›, holder record (r1), births of people and of placements (`project/place`) |
 | residence | `residence.cljc` | host-local | `residence/<org>` | tenure ‹checking·held-elsewhere·held-here·detached› × commits ‹clean·dirty·committing› |
 | person | `person.cljc` | portable | `person/<org>/<pid>` | ‹born·proposed·active·left›; field authority; one transition per status pair per event; left cascade |
-| project | `proj.cljc` | portable | `project/<org>/<p>` | shelf, overseer, stakeholder, milestone × cooldown; gap filing; gap-less starts |
-| watch | `watch.cljc` | host-local | `watch/<org>/<p>` | attach, shelf fact, exists, switch, turn, loop (+ `:sova/look`), clock; ledgers and held items |
+| project | `proj.cljc` | portable | `project/<p>` | project layer, no org: shelf, overseer; gap-less builds; builds' started list; `last-merged-at` |
+| placement | `placement.cljc` | portable | `placement/<org>/<p>` | org layer: stakeholder, milestone × cooldown, owner updates, outreach; gap filing; gap-less gatherings; gatherings' started list; the reconciler's spawn |
+| watch | `watch.cljc` | host-local | `watch/<p>` | attach, shelf fact, exists, switch, turn, loop (+ `:sova/look`), clock; ledgers and held items |
 | baton | `baton.cljc` | portable | `baton/<org>/<sid>` | course × reply × budget × wrapup (+ `:sova/wrapup`) |
 | decision | `decision.cljc` | portable | `decision/<org>/<p>/<did>` | ‹pending·conflicted·drafted·promoted{currency·text·built}·superseded› |
 | conflict | `conflict.cljc` | portable | `conflict/<org>/<p>/<cid>` | ‹unrouted·routed-to-person·routed-to-operator·settled›; spawns settle batons |
 | reconciler | `reconciler.cljc` | portable | `reconciler/<org>/<p>` | ‹off·idle·debouncing·running·failed› (+ `:sova/reconcile`); decision index; promotion |
 | item | `item.cljc` | portable | `item/<org>/<p>/<g_id>` | lane × follow-up × attention × drive; sets of gatherings and builds; owned links |
-| build | `build.cljc` | portable | `build/<org>/<p>/<sid>` | setup × turn × tree × branch × merge |
+| build | `build.cljc` | portable | `build/<p>/<sid>` | setup × turn × tree × branch × merge |
 
 Shared: `base.cljc` (event, time, ids, reasons and ledger sends, `relink`, `send-if`/`flush-transition`),
 `reasons.cljc` (typed reasons and today's sentences), `rules/*.cljc` (pure rules: `refusal`, `levels`
 (L0–L3, attended, forced L0, caps, the GO card), `person`, `baton`, `item`). Every rule is a pure
 function over (data, event) returning nil or `{sentence status code? tail?}` with today's sentence.
+
+**The seam (General Projects).** Project layer: `project`, `watch`, `build` (and `runtime`, al_4): ids with no
+org, no `:org-id`, no org key, and nothing they require (transitively) is an org-layer namespace. Org layer:
+`org`, `residence`, `person`, `placement`, `baton`, `item`, `decision`, `conflict`, `reconciler`; it may address
+project-layer sessions (item spawns builds and notes them with the project; org charts send reasons, ledgers
+and hold reviews to the watch; the placement watches the project). The project layer learns nothing of the org
+layer: the placement reads the project's exported keys (`link/moved`). Enforced by `seam_test` (source and
+require graph) and the solo matrix worlds (project, watch, build reach no org session). A standalone project
+runs the same three statecharts in its own engine; a placed one lives in its org's engine beside its
+placement. The temporary `proj_strip_org.cljc` (proj v1 → v2) is the cutover's and is deleted after it.
 
 ## How the rulings land
 
@@ -47,7 +58,7 @@ function over (data, event) returning nil or `{sentence status code? tail?}` wit
   person is open. The L1 `reconcile/request` when a gathering ended with pending decisions is the
   baton's own drive (`baton` `reconcile-when-ended`, F8a), not the item's. All go through `dsl/drive`
   (by statechart) and so through every guard and the hold.
-- **q7**: `project` `build/start` (gap none) refuses an unattended overseer (`gap-none-build-check`);
+- **q7**: `project` `build/start` refuses an unattended overseer at every level (`attended-build-check`);
   `item` `build/start` needs promoted, not-built decisions (`decisions-check`; narrowing only).
 - **q9 / r5 corrections**: `hold/cancel` (L0, every statechart), item `correct/reopen`, `correct/skip-stall`,
   `correct/relink` (L1), reconciler `correct/clear-failed` (L1), build `correct/merged` (L2); each a
@@ -59,7 +70,7 @@ function over (data, event) returning nil or `{sentence status code? tail?}` wit
 - **r7 working hours**: person `tz`/`hours` (operator's fields, history lines, exported);
   `rules/hours` `next-window` (pure; DST both ways, overnight; JVM + Intl), `reach-window` and
   `reach-times` (each invitee's own reach time, for per-invitee delivery); `:hours b/hours-window` on
-  baton `hand-to` `handoff` `offer`, conflict `reroute`, project `baton/start`, item `gather/start` (the
+  baton `hand-to` `handoff` `offer`, conflict `reroute`, placement `baton/start`, item `gather/start` (the
   host stamps tz/hours on `target`/`targets`, an offer's invitees on `target-people`). Tests: `hours_test`,
   `holds_test` r7.
 - **r12 offers (q15 = C)**: the offer opens at its first invitee's window (the act's `:hours` wait, as
@@ -113,7 +124,7 @@ world) run in the shadow `:test` build. The whole CLJS suite (engine + statechar
 `node scripts/build-statecharts.mjs --test` (from the repo root; `pnpm --dir statecharts test` is the same).
 It compiles once, then runs one process per piece, one after another, stopping at the first failure: every
 test namespace except the matrices, then each `matrix-test` deftest alone (`person-matrix` `org-matrix`
-`residence-matrix` `project-matrix` `watch-matrix`, baton per start: `baton-matrix-to-a-person`
+`residence-matrix` `project-matrix` (solo) `placement-matrix` `watch-matrix`, baton per start: `baton-matrix-to-a-person`
 `-to-the-operator` `-an-offer` `-no-link` `-a-settle-session`, `decision-matrix` `reconciler-matrix`
 `conflict-matrix` `item-matrix` `build-matrix`, `every-statechart-has-its-own-world`); all of them in one
 process run out of a 4 GB heap. One piece by hand, after a compile
@@ -147,10 +158,10 @@ the envelope), **data** (plain data, unchanged rules), **del** (deleted, per cov
 | F-016 | Workspace tab and git status | proj | residence exported `last-git-error`, `push-pending`, `head-at` + git status |
 | F-017 | Workspace file problems | host | C15/C19 per q1: snapshot/journal problems (engine `loadCold` errors); plain-data rules unchanged |
 | F-020 | Org list `#/orgs` | proj | org list from `org`, `project.shelf`, `baton.course` exports |
-| F-021 | Org Needs-you count | proj | Needs-you set over `baton` (`needs-you`, links), `person.proposed`, `conflict.routed-to-operator`/`unrouted`, `project.stakeholder-cleared` (C17) |
+| F-021 | Org Needs-you count | proj | Needs-you set over `baton` (`needs-you`, links), `person.proposed`, `conflict.routed-to-operator`/`unrouted`, `placement.stakeholder-cleared` (C17) |
 | F-022 | Last activity | proj | newest log row per org |
 | F-023 | Org page with four tabs | proj | routes → events; reads from statechart data |
-| F-024 | Sessions tab: the start form | statechart | `project` `baton/start` (archived check `not-archived`) |
+| F-024 | Sessions tab: the start form | statechart | `placement` `baton/start` (archived check `not-archived`) |
 | F-025 | Landing-page Organizations card | proj | totals from `org` / `project` exports |
 | F-026 | Host-offline banner | host | mesh UI |
 | F-027 | Peer org pages | host | peers forward to the holder's engine |
@@ -160,7 +171,7 @@ the envelope), **data** (plain data, unchanged rules), **del** (deleted, per cov
 | F-033 | Profile history and revert | statechart | `person/revert` (row from roster-history; creation refused; C6 stale row refused 409); `roster-history` effect lines |
 | F-034 | Referral (`propose_roster_edit`) | statechart | `baton` `baton/propose` (`rules/person referral-refusal`, apply-change as referral) → spawn `person` proposed; `baton-entry proposal`; reason `baton/proposal` |
 | F-035 | Approve or decline a proposed person | statechart | `person` `person/approve`/`person/decline` (op; overseer L2 `sova_roster`, held unattended r4/r6); `not-waiting` sentences |
-| F-036 | Someone leaves (status →left by edit, revert or decline) | statechart | `person` entry of `left`: `revoke-person-links`; watchers: `org` (owner cleared), `project` (stakeholder cleared), `baton` (holder → operator "(left the organization)", pool withdrawn "({name} left…; offer withdrawn)", mid-reply stop first) |
+| F-036 | Someone leaves (status →left by edit, revert or decline) | statechart | `person` entry of `left`: `revoke-person-links`; watchers: `org` (owner cleared), `placement` (stakeholder cleared), `baton` (holder → operator "(left the organization)", pool withdrawn "({name} left…; offer withdrawn)", mid-reply stop first) |
 | F-037 | Privacy of profiles | host | projections/prompts; `:redact {:contact}` in person's registry entry |
 | F-038 | Person page `#/orgs/<id>/people/<pid>` | proj | person page from person/baton/decision/conflict data + host links |
 | F-039 | Wrap-up: profiles learn from each session | statechart | `baton.wrapup`: `wrapup-none` → `due` (a person wrote) | `skipped`; `running` invokes `:sova/wrapup`; 11-min `wrapup/overdue`; `sova/resumed` → failed; `baton/wrapup-retry` (`retry-refusal` order); profile writes = `person/edit {by: wrapup}` |
@@ -189,10 +200,10 @@ the envelope), **data** (plain data, unchanged rules), **del** (deleted, per cov
 | F-062 | Baton session in the session list | proj | session list from baton exports |
 | F-063 | Abilities: Draw and Read links | statechart | baton `abilities` data; `baton/abilities` (refused once ended); ceiling = host `invalid` |
 | F-064 | `read_link {url}` | host | read_link tool (inactive unless abilities.readLinks) |
-| F-070 | Project registry | statechart | `org` `project/add` (name check, root `invalid`) → spawn `project`; `project/edit` |
+| F-070 | Project registry | statechart | the host registers a project and starts `project/<p>` (its own engine, or its org's); `org` `project/place` → spawn `placement`; `project/edit` |
 | F-071 | Archive and unarchive a project | statechart | `project.shelf`: `project/archive` (`blockers-sentence` "Stop these first: …"), `project/unarchive`; archived → `not-archived` on starts; watch `archived-fact` |
 | F-072 | About this organization | data | About: plain data and its route (never a statechart event) |
-| F-073 | Project main stakeholder | statechart | `project.stake` ‹no-stakeholder·stakeholder-set·stakeholder-cleared›: `stakeholder/set` (active only, 400), history ≤50, cleared on the watched person's `:left` |
+| F-073 | Project main stakeholder | statechart | `placement.stake` ‹no-stakeholder·stakeholder-set·stakeholder-cleared›: `stakeholder/set` (active only, 400), history ≤50, cleared on the watched person's `:left` |
 | F-080 | Decision index | statechart | decisions are born by `baton/record-decision` (spawn); the host's resume sync spawns any entry without a session |
 | F-081 | Decision states | statechart | `decision` ‹pending·conflicted·drafted·promoted{currency·text·built}·superseded›; C16 |
 | F-082 | Field ownership in the project spec | host | promotion effect's spec writer |
@@ -214,7 +225,7 @@ the envelope), **data** (plain data, unchanged rules), **del** (deleted, per cov
 | F-098 | Promotion commit | host | promotion commit inside the effect |
 | F-099 | Edited in spec | statechart | `decision.promoted.text` ‹as-promoted·edited-in-spec›; `decision/settle-text` keep/restore |
 | F-100 | Built or not built yet | statechart | `decision.promoted.built` from `spec/facts` |
-| F-101 | Frozen spec | statechart | `project` `spec/freeze`; hash fact host |
+| F-101 | Frozen spec | statechart | `placement` `spec/freeze`; hash fact host |
 | F-102 | Decide seam (the provider under the reconciler) | host | decide seam |
 | F-103 | Reconciler usage log | data | usage log |
 | F-104 | Reconciler events | del | replaced by typed reasons to the watch (C2, C3) |
@@ -230,11 +241,11 @@ the envelope), **data** (plain data, unchanged rules), **del** (deleted, per cov
 | F-119 | Attended vs unattended runs | statechart | envelope `attended`; `watch.turn` ‹idle·look-turn·run-turn·operator-turn› (W20) |
 | F-120 | Tool wrapper and audit | statechart | engine explain/trial with the registry's acts; refused steps = the log's refused rows |
 | F-121 | Read tools | proj | reads + `sova_pipeline` from item exports |
-| F-122 | L0 tools: note, confirm, idea | statechart | `project` `gap/file` (L0) spawns `item`; note/confirm/idea plain data |
-| F-123 | L1 `sova_start_gathering` and `sova_offer` | statechart | `item` `gather/start` (L1, cap, held) / `gather/plan` (L0); `project` `baton/start` with `gap: "none"` (C7) |
+| F-122 | L0 tools: note, confirm, idea | statechart | `placement` `gap/file` (L0) spawns `item`; note/confirm/idea plain data |
+| F-123 | L1 `sova_start_gathering` and `sova_offer` | statechart | `item` `gather/start` (L1, cap, held) / `gather/plan` (L0); `placement` `baton/start` with `gap: "none"` (C7) |
 | F-124 | L1 `sova_close_gathering {session, reason}` | statechart | `baton/close` overseer path (`close-refusal` order), held unattended (r6) |
 | F-125 | L1 `sova_reconcile` | statechart | `reconciler` `reconcile/request {by overseer}` |
-| F-126 | Send to person… (an operator gesture on an item) | statechart | `project` `baton/start` by the operator with `opItem` |
+| F-126 | Send to person… (an operator gesture on an item) | statechart | `placement` `baton/start` by the operator with `opItem` |
 | F-127 | L2 `sova_promote {ids}` | statechart | `reconciler` `decision/promote` by overseer (L2, held) |
 | F-128 | L3 `sova_create_session` and `sova_send` | statechart | `item` `build/start` (L3, decisions ⊆ promoted not built, held); `project` `build/start` gap none (q7 attended only); `build/prompt` (L3 `sova_send`) to a build; `session/prompt` (L3 `sova_send`, held) to a root coding session that is not a build; a gathering session is refused by the tool (r10: no statechart act) |
 | F-129 | Limits: allowances, at-once, looks | statechart | `rules/levels` `cap-check` (at once, then allowance), watch ledgers (`ledger/take`), settings data |
@@ -266,7 +277,7 @@ the envelope), **data** (plain data, unchanged rules), **del** (deleted, per cov
 | F-156 | What the page never shows | host | owner page projection |
 | F-157 | Page mechanics | host | page mechanics |
 | F-158 | Operator controls | proj | operator controls |
-| F-159 | `sova_owner_update({text})` (PO, L1) | statechart | `project` `owner-update/post` (L1, `update-check` order, `milestone` ‹no-milestone·since-post›, `cooldown` ‹ready·cooling› 24 h timer), held unattended |
+| F-159 | `sova_owner_update({text})` (PO, L1) | statechart | `placement` `owner-update/post` (L1, `update-check` order, `milestone` ‹no-milestone·since-post›, `cooldown` ‹ready·cooling› 24 h timer), held unattended |
 | F-160 | Take Down an update | data | withdraw: updates.jsonl route |
 | F-170 | Cost scope | data | costs |
 | F-171 | Pricing and the price table | data | costs |
@@ -278,7 +289,7 @@ the envelope), **data** (plain data, unchanged rules), **del** (deleted, per cov
 | F-182 | Projection and redaction | host | GO redaction |
 | F-183 | Writes | statechart | GO writes = operator events with `via: overseer` |
 | F-184 | Attribution "you, via the Overseer" | statechart | `via` in envelope → history rows (`owner-history`, `stakeholder-history`, `archived.via`, `roster-history by.via`) |
-| F-185 | People-facing acts ask first (`sova_gather`) | statechart | acts' `:people-facing` + `:card` (registry) — the card check (`rules/levels card-check`); `start`: project `baton/start` and item `gather/start` list the project and every person (`base/start-card`, never the operator) |
+| F-185 | People-facing acts ask first (`sova_gather`) | statechart | acts' `:people-facing` + `:card` (registry) — the card check (`rules/levels card-check`); `start`: placement `baton/start` and item `gather/start` list the project and every person (`base/start-card`, never the operator) |
 | F-186 | Running project overseers (`sova_project_overseer`) | statechart | operator events via GO |
 | F-187 | GO prompt rules (E) | host | GO prompt |
 | F-190 | Which sessions are organizational | proj | org sessions = baton/build sessions |

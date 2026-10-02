@@ -7,8 +7,8 @@
     [sova.statecharts.engine.core :as core]))
 
 (def t0 1000000)
-(def psid "project/o1/pr1")
-(def wsid "watch/o1/pr1")
+(def psid "project/pr1")
+(def wsid "watch/pr1")
 (def op {:by "operator"})
 
 (defn- in? [eng sid s] (contains? (set (core/configuration eng sid)) s))
@@ -16,7 +16,7 @@
 (deftest the-watch-sees-its-projects-overseer
   ;; server-3's replay: the watch never watched its project, so has-overseer was never set
   (let [eng (core/new-engine registry/statecharts {:level-check lv/level-check :absorb-unknown true})]
-    (core/start! eng psid "project" {:org-id "o1" :id "pr1" :name "Site" :root "/r"} t0)
+    (core/start! eng psid "project" {:id "pr1" :name "Site" :root "/r"} t0)
     (is (in? eng wsid :no-overseer) "the project spawned its watch, which sees no overseer yet")
     (is (= "Site" (:project-name (core/data eng wsid))) "the first link/moved came at once")
     (core/send! eng psid :overseer/start (assoc op :conversation-id "c1") {:now (+ t0 1)})
@@ -31,13 +31,13 @@
   ;; the project is portable, its watch host-local: a clone carries project/o1/pr1 (with the old
   ;; host's watch as its watcher) and no watch. Attach starts the watch, paused (EVENTS.md, watch).
   (let [a     (core/new-engine registry/statecharts {:level-check lv/level-check :absorb-unknown true})
-        _     (core/start! a psid "project" {:org-id "o1" :id "pr1" :name "Site" :root "/r"} t0)
+        _     (core/start! a psid "project" {:id "pr1" :name "Site" :root "/r"} t0)
         _     (core/send! a psid :overseer/start (assoc op :conversation-id "c1") {:now (+ t0 1)})
         store {psid (core/dump a psid)}
         b     (core/new-engine registry/statecharts {:level-check lv/level-check :load-cold #(get store %)})]
     (testing "before attach, a project step on the fresh host drops the missing watcher, never throws"
       (is (some? (core/send! b psid :project/edit (assoc op :name "Site 2") {:now (+ t0 2)}))))
-    (core/start! b wsid "watch" {:org-id "o1" :project-id "pr1" :paused true} (+ t0 3))
+    (core/start! b wsid "watch" {:project-id "pr1" :paused true} (+ t0 3))
     (is (in? b wsid :has-overseer) "the new watch watches the cloned project at once")
     (is (= "Site 2" (:project-name (core/data b wsid))))
     (is (true? (:paused (core/data b wsid))) "attach leaves it paused")
@@ -63,7 +63,7 @@
   (let [e       (core/new-engine registry/statecharts {:level-check lv/level-check :absorb-unknown true})
         settled {:by "system" :kind "coding/settled" :params {:title "Pay" :session-id "c1"} :key "coding/settled:c1:ok"}
         t       (+ t0 3600000)]
-    (core/start! e psid "project" {:org-id "o1" :id "pr1" :name "Site" :root "/r"} t0)
+    (core/start! e psid "project" {:id "pr1" :name "Site" :root "/r"} t0)
     (core/send! e psid :overseer/start (assoc op :conversation-id "c1") {:now t0})
     ;; it looked a minute before t, so only the soon look can bring the next one inside the gap
     (core/send! e wsid :operator/run-now op {:now (- t 60000)})

@@ -143,9 +143,10 @@
        :created-at (b/now-ms d)})))
 
 (defn- started-noted
-  "r11: the project keeps one list of every session it and its items started."
-  [sid-fn kind-fn]
-  (Send {:event :started/noted :targetexpr (fn [_ d] (b/project-sid (:org-id d) (:project-id d)))
+  "r11: the sessions its items start join a list: builds the project's, gatherings its placement's
+   (`target-fn`)."
+  [target-fn sid-fn kind-fn]
+  (Send {:event :started/noted :targetexpr (fn [_ d] (target-fn d))
          :content (fn [_ d] {:sid (sid-fn d) :kind (kind-fn d)})}))
 
 (defn- gather-content []
@@ -155,21 +156,21 @@
                                (ops/assign :starting-gather (when-not follow? sid))]))})
    (dsl/spawn {:statechart "baton" :link :item :id (fn [d] (b/baton-sid (:org-id d) (:session-id (e d)))) :data baton-start-data})
    (b/ledger :ledger/take "gather" (constantly 1))
-   (started-noted (fn [d] (b/baton-sid (:org-id d) (:session-id (e d)))) (fn [d] (if (>= (count (:targets (e d))) 2) "offer" "gathering")))])
+   (started-noted (fn [d] (b/placement-sid (:org-id d) (:project-id d))) (fn [d] (b/baton-sid (:org-id d) (:session-id (e d)))) (fn [d] (if (>= (count (:targets (e d))) 2) "offer" "gathering")))])
 
 (defn- build-content []
   [(script {:expr (fn [_ d] [(ops/assign :starting-build true) (ops/assign :reopened nil)])})
-   (dsl/spawn {:statechart "build" :link :item :id (fn [d] (b/build-sid (:org-id d) (:project-id d) (:session-id (e d))))
+   (dsl/spawn {:statechart "build" :link :item :id (fn [d] (b/build-sid (:project-id d) (:session-id (e d))))
                :data (fn [d] (let [ev (e d)]
                                (merge (select-keys ev [:title :prompt :model :thinking :mode :folder])
-                                 {:org-id (:org-id d) :project-id (:project-id d) :session-id (:session-id ev)
+                                 {:project-id (:project-id d) :session-id (:session-id ev)
                                   :kind (if (b/operator-act? d) "operator-coding" "coding")
                                   :started-by (if (b/operator-act? d) "operator" "overseer")
                                   :gap (:idea-id d) :item (:id d) :decisions (build-decisions d)
                                   :prompt (or (:prompt ev) (ri/build-prompt d (build-decisions d)))
                                   :created-at (b/now-ms d)})))})
    (b/ledger :ledger/take "create" (constantly 1))
-   (started-noted (fn [d] (b/build-sid (:org-id d) (:project-id d) (:session-id (e d)))) (fn [d] (if (b/operator-act? d) "operator-coding" "coding")))])
+   (started-noted (fn [d] (b/project-sid (:project-id d))) (fn [d] (b/build-sid (:project-id d) (:session-id (e d)))) (fn [d] (if (b/operator-act? d) "operator-coding" "coding")))])
 
 ;; ---- drive (r3): the acts the statechart starts itself, at the level in force -------------------------------
 
@@ -257,7 +258,7 @@
 (def statechart
   (chart/statechart {:initial :item}
     (state {:id :item :initial :live}
-      (on-entry {} (dsl/watch (fn [d] (b/watch-sid (:org-id d) (:project-id d)))))
+      (on-entry {} (dsl/watch (fn [d] (b/watch-sid (:project-id d)))))
       (dsl/hold-cancel-correction)
       (b/hold-review)
       (b/flush-transition)
@@ -273,7 +274,7 @@
                                      (dsl/effect-ops d (dsl/effect-map :idea-status (fn [_] {:idea-id (:idea-id d) :status "dropped"}) d))))}))
         ;; a planned gathering, filed at L0: the statechart starts it once the level reaches L1
         (dsl/act {:sova/feed :feed :event :gather/plan :checks [invalid]}
-          (script {:expr (fn [_ d] [(ops/assign :plans (conj (vec (:plans d)) (dissoc (e d) :at :by :attended :autonomy :paused :roster-active
+          (script {:expr (fn [_ d] [(ops/assign :plans (conj (vec (:plans d)) (dissoc (e d) :at :by :attended :autonomy :paused :ceiling
                                                                                      :archived :allowance :ledger :looks :at-once :card :hold-ms :invalid)))])}))
         ;; q9 corrections
         (dsl/correction {:event :correct/relink

@@ -639,7 +639,7 @@ function row(s: SessionSummary, now = Date.now()): string {
   return `- ${parts.join(" · ")}${gist ? `\n  ${cut(gist, 160)}` : ""}`;
 }
 
-export const SETTINGS_TABS = ["general", "models", "modes", "overseer", "summaries", "themes", "experimental"] as const;
+export const SETTINGS_TABS = ["general", "models", "subagents", "overseer", "summaries", "themes", "experimental"] as const;
 
 // ---- the tools ---------------------------------------------------------------------------------
 

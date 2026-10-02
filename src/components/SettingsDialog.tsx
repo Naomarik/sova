@@ -85,8 +85,6 @@ const TABS = [
   { id: "models", label: "Models", icon: "sliders" as const },
   { id: "accounts", label: "Accounts", icon: "refresh" as const },
   { id: "subagents", label: "Subagents", icon: "worker" as const },
-  { id: "modes", label: "Modes", icon: "worker" as const },
-  { id: "teams", label: "Teams", icon: "command" as const },
   { id: "profiles", label: "Profiles", icon: "wrench" as const },
   { id: "overseer", label: "Overseer", icon: "eye" as const },
   { id: "notifications", label: "Notifications", icon: "bell" as const },
@@ -245,19 +243,6 @@ export function SettingsDialog(props: { onClose(): void; initialTab?: SettingsTa
           <Show when={tab() === "subagents"}>
             <div class="settings-panel" role="tabpanel" id="settings-panel-subagents" aria-labelledby="settings-tab-subagents"><SubagentProfilesSettings /></div>
           </Show>
-          <Show when={tab() === "modes"}>
-            <div class="settings-panel" role="tabpanel" id="settings-panel-modes" aria-labelledby="settings-tab-modes">
-              <p class="settings-intro">Delegate routing and the spec writer now belong to subagent profiles. Major and minor modes are still chosen in each chat's mode menu.</p>
-              <button class="button button-ghost" onClick={() => setTab("subagents")}>Manage Subagent Profiles</button>
-            </div>
-          </Show>
-          {/* Mounted only while its tab is, like Modes: it asks the same backend discovery. */}
-          <Show when={tab() === "teams"}>
-            <div class="settings-panel" role="tabpanel" id="settings-panel-teams" aria-labelledby="settings-tab-teams">
-              <p class="settings-intro">Coordinator, monitor, and ordinary-member choices now belong to subagent profiles. Running workers keep their models; later additions use their chat's current profile.</p>
-              <button class="button button-ghost" onClick={() => setTab("subagents")}>Manage Subagent Profiles</button>
-            </div>
-          </Show>
           <Show when={tab() === "profiles"}>
             <div class="settings-panel" role="tabpanel" id="settings-panel-profiles" aria-labelledby="settings-tab-profiles">
               <ProfilesSettingsSection cwd={props.cwd ?? null} />
@@ -274,13 +259,13 @@ export function SettingsDialog(props: { onClose(): void; initialTab?: SettingsTa
               <PushSettingsSection />
             </div>
           </Show>
-          {/* Mounted only while its tab is, like Modes: it asks the same backend discovery. */}
+          {/* Mounted only while its tab is, like Subagents: it asks the same backend discovery. */}
           <Show when={tab() === "decisions"}>
             <div class="settings-panel" role="tabpanel" id="settings-panel-decisions" aria-labelledby="settings-tab-decisions">
               <DecisionSettingsSection />
             </div>
           </Show>
-          {/* Mounted only while its tab is, like Modes: it asks the same backend discovery. */}
+          {/* Mounted only while its tab is, like Subagents: it asks the same backend discovery. */}
           <Show when={tab() === "summaries"}>
             <div class="settings-panel" role="tabpanel" id="settings-panel-summaries" aria-labelledby="settings-tab-summaries">
               <SummarizerSettingsSection />

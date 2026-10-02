@@ -33,7 +33,7 @@ function gate<T>() {
 }
 
 /** A form whose writes the test records, and fails when told to. */
-function form(label: string, opts: { tab?: "models" | "modes" | "teams" | "mesh"; problem?: (d: Doc) => string | null; fail?: () => Error | null } = {}) {
+function form(label: string, opts: { tab?: "models" | "subagents" | "overseer" | "mesh"; problem?: (d: Doc) => string | null; fail?: () => Error | null } = {}) {
   const writes: Doc[] = [];
   const store = createDraftStore<Doc, Doc>({
     tab: opts.tab ?? "models",
@@ -55,14 +55,14 @@ function form(label: string, opts: { tab?: "models" | "modes" | "teams" | "mesh"
 test("Save writes every dirty form on every tab, and only those; each then reads as saved", async () => {
   resetAllDrafts();
   const models = form("Test Models", { tab: "models" });
-  const delegate = form("Test Delegate", { tab: "modes" });
+  const delegate = form("Test Delegate", { tab: "subagents" });
   const clean = form("Test Clean", { tab: "mesh" });
   models.store.setDraft({ v: 2 });
   delegate.store.setDraft({ v: 99 });
   assert.deepEqual(
     dirtyForms().map((f) => f.label),
     ["Test Models", "Test Delegate"],
-    "rail order: Models before Modes",
+    "rail order: Models before Subagents",
   );
   const { saved, failed } = await saveAllDrafts();
   assert.deepEqual(saved.map((f) => f.label), ["Test Models", "Test Delegate"]);
@@ -81,7 +81,7 @@ test("Save writes every dirty form on every tab, and only those; each then reads
 test("an invalid dirty form holds every save; a clean invalid form holds none", async () => {
   resetAllDrafts();
   const good = form("Test Good");
-  const bad = form("Test Bad", { tab: "teams", problem: (d) => (d.v < 0 ? "Test Bad needs a positive number." : null) });
+  const bad = form("Test Bad", { tab: "overseer", problem: (d) => (d.v < 0 ? "Test Bad needs a positive number." : null) });
   good.store.setDraft({ v: 2 });
   bad.store.setDraft({ v: -1 });
   assert.deepEqual(invalidForms().map((f) => f.label), ["Test Bad"]);
@@ -101,8 +101,8 @@ test("a failed save leaves the others saved; the failure stays with its form unt
   resetAllDrafts();
   let failNext = true;
   const models = form("Test Models");
-  const delegate = form("Test Delegate", { tab: "modes", fail: () => (failNext ? new Error("Server said no.") : null) });
-  const spec = form("Test Spec", { tab: "modes", fail: () => (failNext ? new SaveFailed("Notes conflict", true) : null) });
+  const delegate = form("Test Delegate", { tab: "subagents", fail: () => (failNext ? new Error("Server said no.") : null) });
+  const spec = form("Test Spec", { tab: "subagents", fail: () => (failNext ? new SaveFailed("Notes conflict", true) : null) });
   models.store.setDraft({ v: 2 });
   delegate.store.setDraft({ v: 3 });
   spec.store.setDraft({ v: 4 });

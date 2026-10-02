@@ -103,10 +103,10 @@ test("the editor's worker rows are wired live, never as a mount-time snapshot", 
   // froze the row on the toggle's initial state — Effort stayed disabled and the draft never
   // updated. The factories take thunks, and the callbacks hand over the Show's accessor itself.
   const src = readFileSync(new URL("../components/SubagentProfilesSettings.tsx", import.meta.url), "utf8");
-  assert.match(src, /const tuple = \(role: string, choice: \(\) => WorkerChoice/, "tuple's choice is a thunk");
+  assert.match(src, /const tuple = \(\s*role: string,\s*choice: \(\) => WorkerChoice/, "tuple's choice is a thunk");
   assert.match(src, /const pair = \(role: string, choice: \(\) => \{/, "pair's choice is a thunk");
   assert.match(src, /\(m\) => tuple\("members", m,/, "members hands over the Show's accessor");
-  assert.match(src, /\(w\) => pair\("spec", w,/, "spec writer hands over the Show's accessor");
-  assert.match(src, /\(f\) => tuple\(role, f,/, "pair's fallback row hands over the Show's accessor");
+  assert.match(src, /\(w\) => \([^()]*?<>[\s\S]{0,400}?pair\("spec", w,/, "spec writer hands over the Show's accessor");
+  assert.match(src, /\(f\) => \(\s*<>[\s\S]{0,120}?\{tuple\(role, f,/, "pair's fallback row hands over the Show's accessor");
   assert.doesNotMatch(src, /\((\w)\) => (?:tuple|pair)\([^)]*?\1\(\)/, "no callback reads its accessor at mount time");
 });

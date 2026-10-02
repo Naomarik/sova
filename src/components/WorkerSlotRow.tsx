@@ -4,8 +4,8 @@ import { effortSelectOptions, modelSelectOptions, slotIssue, withBackend, withMo
 
 /**
  * One worker row — backend, model, effort, and what the row has to say about the pick — shared by
- * Settings → Modes' Delegate profiles and its spec writer. The choices come from what each backend
- * actually offers; nothing here is free text. `idPrefix` keeps the rows' element ids unique;
+ * Settings → Subagents (Delegate's routes, the team roles, the spec writer) and the other screens
+ * that pick a worker. The choices come from what each backend actually offers; nothing here is free text. `idPrefix` keeps the rows' element ids unique;
  * `owner` names what reroutes a policy-denied pick ("Delegate").
  */
 export function WorkerSlotRow(props: {
@@ -21,6 +21,8 @@ export function WorkerSlotRow(props: {
   otherwise?: string;
   /** A lone row (no fallback, no "Primary" label): its group's accessible name. */
   alone?: string;
+  /** A primary with no fallback set right now: drop the visible "Primary" label, keep its rules. */
+  unlabelled?: boolean;
   onChange(next: DraftChoice): void;
 }) {
   const id = (part: string) => `${props.idPrefix}-${props.slot}-${part}`;
@@ -30,7 +32,7 @@ export function WorkerSlotRow(props: {
   const slotName = () => (props.slot === "primary" ? "Primary" : "Fallback");
   return (
     <div class="settings-delegate-slot" role="group" aria-label={props.alone ?? slotName()}>
-      <Show when={props.slot === "primary" && !props.alone}>
+      <Show when={props.slot === "primary" && !props.alone && !props.unlabelled}>
         <span class="settings-delegate-slot-label">Primary</span>
       </Show>
       <div class="settings-delegate-fields">

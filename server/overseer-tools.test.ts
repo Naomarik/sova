@@ -183,6 +183,10 @@ describe("the prompt and the tool set stay in step", () => {
     const out = await nav.execute("n1", { page: "settings", settings_tab: "overseer" }, undefined, undefined, {} as never);
     assert.deepEqual(out.details, { href: "settings:overseer", label: "Open Settings → Overseer" });
     await assert.rejects(nav.execute("n2", { page: "settings", settings_tab: "nope" }, undefined, undefined, {} as never));
+    // Subagents is a tab; Modes and Teams are not, and have no alias.
+    const sub = await nav.execute("n4", { page: "settings", settings_tab: "subagents" }, undefined, undefined, {} as never);
+    assert.deepEqual(sub.details, { href: "settings:subagents", label: "Open Settings → Subagents" });
+    for (const gone of ["modes", "teams"]) await assert.rejects(nav.execute("n5", { page: "settings", settings_tab: gone }, undefined, undefined, {} as never), /settings_tab must be one of/);
     await assert.rejects(nav.execute("n3", {}, undefined, undefined, {} as never), /Give a session, a group, a page, an org, or a url/);
   });
 });

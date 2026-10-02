@@ -68,7 +68,8 @@ test("navigate targets: routes and settings only, never an arbitrary URL", () =>
   assert.equal(navigateDetails({ href: "https://evil.example" }), null);
   assert.equal(navigateDetails({ href: "javascript:alert(1)" }), null);
   assert.deepEqual(settingsTarget("settings:overseer"), { tab: "overseer", section: null });
-  assert.deepEqual(settingsTarget("settings:modes/spec"), { tab: "modes", section: "spec" });
+  assert.deepEqual(settingsTarget("settings:subagents/spec"), { tab: "subagents", section: "spec" });
+  assert.equal(settingsTarget("settings:modes/spec"), null, "Modes is no longer a tab, and has no alias");
   assert.equal(settingsTarget("settings:nope"), null);
   assert.equal(settingsTarget("#/usage"), null);
 });

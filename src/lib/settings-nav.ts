@@ -5,7 +5,7 @@ import { createSignal } from "solid-js";
  * App state so a control deep in a pane — the mode menu's "Configure Delegate" — can open Settings
  * straight at the screen it's about, without threading a callback through every pane between.
  */
-export const SETTINGS_TABS = ["general", "models", "accounts", "subagents", "modes", "teams", "profiles", "overseer", "notifications", "decisions", "summaries", "organizations", "themes", "mesh", "public-links", "outreach", "voice", "experimental"] as const;
+export const SETTINGS_TABS = ["general", "models", "accounts", "subagents", "profiles", "overseer", "notifications", "decisions", "summaries", "organizations", "themes", "mesh", "public-links", "outreach", "voice", "experimental"] as const;
 export type SettingsTab = (typeof SETTINGS_TABS)[number];
 
 const [openTab, setOpenTab] = createSignal<SettingsTab | null>(null);
@@ -15,7 +15,7 @@ const [subagentPath, setSubagentPath] = createSignal<string | undefined>();
 export const subagentSettingsPath = subagentPath;
 export const setSubagentSettingsPath = setSubagentPath;
 
-/** A section inside a tab to bring into view once it renders ("spec": Modes → Spec;
+/** A section inside a tab to bring into view once it renders ("spec": Subagents → Spec writer;
     "overseer-limits": Overseer → Limits); null = the tab's top. */
 export type SettingsSection = "spec" | "overseer-limits";
 const [section, setSection] = createSignal<SettingsSection | null>(null);

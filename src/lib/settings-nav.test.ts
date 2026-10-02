@@ -3,14 +3,14 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { clearSettingsSection, closeSettings, openSettings, SETTINGS_TABS, setSubagentSettingsPath, settingsOpenAt, settingsSection, subagentSettingsPath } from "./settings-nav";
 
-test("Configure Spec opens Modes at the Spec section, and a plain open asks for none", () => {
-  openSettings("modes", "spec");
-  assert.equal(settingsOpenAt(), "modes");
+test("Configure Spec opens Subagents at the Spec section, and a plain open asks for none", () => {
+  openSettings("subagents", "spec");
+  assert.equal(settingsOpenAt(), "subagents");
   assert.equal(settingsSection(), "spec");
   clearSettingsSection();
   assert.equal(settingsSection(), null, "the section clears once it has scrolled into view");
-  openSettings("modes", "spec");
-  openSettings("modes");
+  openSettings("subagents", "spec");
+  openSettings("subagents");
   assert.equal(settingsSection(), null, "a later open without a section forgets the earlier one");
   closeSettings();
 });
@@ -21,18 +21,20 @@ test("Settings opens at the tab asked for, and closes", () => {
   assert.equal(settingsOpenAt(), "general", "the gear opens General");
   closeSettings();
   assert.equal(settingsOpenAt(), null);
-  openSettings("modes");
-  assert.equal(settingsOpenAt(), "modes", "Configure Delegate opens Modes directly");
+  openSettings("subagents");
+  assert.equal(settingsOpenAt(), "subagents", "Configure Delegate opens Subagents directly");
   closeSettings();
 });
 
-test("Accounts sits after Models, Subagents after Accounts, Modes after Subagents, Teams after Modes, Profiles after Teams, Overseer after Profiles, Notifications after Overseer and Decisions after Notifications, Public links after Mesh, Outreach after Public links, Voice after Outreach in the rail, and the dialog's rail is this list", () => {
-  assert.deepEqual([...SETTINGS_TABS], ["general", "models", "accounts", "subagents", "modes", "teams", "profiles", "overseer", "notifications", "decisions", "summaries", "organizations", "themes", "mesh", "public-links", "outreach", "voice", "experimental"]);
+test("Accounts sits after Models, Subagents after Accounts, Profiles after Subagents, Overseer after Profiles, Notifications after Overseer and Decisions after Notifications, Public links after Mesh, Outreach after Public links, Voice after Outreach in the rail, and the dialog's rail is this list", () => {
+  assert.deepEqual([...SETTINGS_TABS], ["general", "models", "accounts", "subagents", "profiles", "overseer", "notifications", "decisions", "summaries", "organizations", "themes", "mesh", "public-links", "outreach", "voice", "experimental"]);
   // The dialog's own TABS must be the same ids in the same order (it is `satisfies`-typed against
   // SettingsTab, which catches an unknown id but not a missing or reordered one).
   const dialog = readFileSync(new URL("../components/SettingsDialog.tsx", import.meta.url), "utf8");
   const ids = [...dialog.matchAll(/\{ id: "([a-z-]+)", label: "[^"]+", icon: "[a-z-]+" as const \}/g)].map((m) => m[1]);
   assert.deepEqual(ids, [...SETTINGS_TABS]);
+  // Modes and Teams were stubs that only pointed at Subagents; they are gone, with no alias.
+  for (const gone of ["modes", "teams"]) assert.ok(!(SETTINGS_TABS as readonly string[]).includes(gone), `${gone} is not a tab`);
 });
 
 test("the mode menu's gear actions open Settings → Subagents and switch nothing", () => {

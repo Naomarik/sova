@@ -525,7 +525,7 @@ describe("decisions → conflicts → draft → promotion", async () => {
     const items = conflictAttention().filter((i) => i.org?.projectId === project.id);
     assert.equal(items.length, unroutedConflicts(org.id, project.id), "Needs you and the org card count the same conflicts");
     const it = items.find((i) => i.id === `conflict-to-operator:${c.id}`)!;
-    assert.deepEqual([it.kind, it.tier, it.path, it.href], ["conflict-to-operator", "decide", "", `#/orgs/${org.id}/projects/${project.id}`]);
+    assert.deepEqual([it.kind, it.tier, it.path, it.href], ["conflict-to-operator", "decide", "", `#/projects/${project.id}`]);
     assert.equal(it.detail, `Settle a conflict in ${project.name}: Maria Lopez and Tony Reyes disagree about payroll export.`);
     // Routed again to someone: no longer the operator's.
     const routed = (await reconcile.routeConflictNow(org.id, project.id, c.id, carlos.id)).conflicts.find((k) => k.id === c.id)!;

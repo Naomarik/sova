@@ -916,8 +916,8 @@ contributeProjectPart({
 
 // ---- the placement's effects ---------------------------------------------------------------------------------
 
+// Registered on every engine: only a placement or an item emits these.
 onOrgHostOpened((host, orgId) => {
-  if (!host.sessions("org").length) return; // an org engine only (a standalone project has no placement)
   // An item dropped on its own (gap/drop not from the idea): its idea says so.
   host.effects.register("idea-status", async (e) => {
     const projectId = String(host.data(String(e.sessionId))?.projectId ?? "");

@@ -125,7 +125,7 @@ describe("sova_owner_update, as the project overseer's runtime builds it", async
     assert.match(JSON.stringify(held.content), /Held: the update to Alperen Kaya's owner page waits until .* so the operator can cancel it/);
     assert.equal(updates.readUpdates(org.id, pa.id).length, 0, "nothing posted while it is held");
     const hold = hostOf(org.id).holds().find((h) => h.event === "owner-update/post")!;
-    await hostOf(org.id).act(`project/${org.id}/${pa.id}`, "hold/cancel", { id: hold.id, reason: "test: post it without the hold" }, { by: "operator", attended: true });
+    await hostOf(org.id).act(`placement/${org.id}/${pa.id}`, "hold/cancel", { id: hold.id, reason: "test: post it without the hold" }, { by: "operator", attended: true });
     await po.patchProjectOverseer(pa.id, { holdMin: 0 });
     const out = await run("The opening hours are agreed: 9 to 6, closed Mondays. See https://demo.example.test");
     assert.match(JSON.stringify(out.content), /Posted to Alperen Kaya's owner page/);

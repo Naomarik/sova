@@ -36,6 +36,7 @@ const { applyCardCall, cardLines } = await import("../shared/overseer-card");
 const { DEFAULT_CAPS, overseerActionsFile, writeOverseerState } = await import("./overseer-store");
 const { registerOrgRoutes } = await import("./org-routes");
 const { registerProjectOverseerRoutes } = await import("./project-overseer-routes");
+const { registerProjectRoutes } = await import("./projects/routes");
 const { registerDecisionRoutes } = await import("./decisions-routes");
 const { acquireChat, disposeAllChats } = await import("./chat-manager");
 const { settled } = await import("./workspace-git");
@@ -66,6 +67,7 @@ const app = new Hono();
 registerOrgRoutes(app);
 (await import("./outreach/routes")).mountOutreach(app);
 registerProjectOverseerRoutes(app);
+registerProjectRoutes(app);
 registerDecisionRoutes(app);
 /** New coding sessions: a session file of its own, as POST /api/sessions writes one, on a stub runtime. */
 async function codingSessionFile(cwd: string, id: string): Promise<string> {
@@ -431,7 +433,7 @@ describe("the organization tools (§app.overseer/org-tools)", async () => {
   });
 
   test("the message route: 403 without the secret; /commands, no overseer and prompt-route writes refused", async () => {
-    const url = `/api/orgs/${org.id}/projects/${project.id}/overseer/message`;
+    const url = `/api/projects/${project.id}/overseer/message`;
     const bare = await app.request(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text: "hi" }) });
     assert.equal(bare.status, 403);
     assert.deepEqual(await bare.json(), { error: "Only the Overseer sends here. Write in the overseer's own composer." });
@@ -443,7 +445,7 @@ describe("the organization tools (§app.overseer/org-tools)", async () => {
     assert.deepEqual(viaPrompt, { ok: false, status: 409, error: "That is a project overseer's own conversation." });
     mkdirSync(join(root, "proj-b"), { recursive: true });
     const other = await orgs.addProject(org.id, { name: "Fresh", root: join(root, "proj-b") });
-    const none = await overseer.requestAsOverseerForTest(`/api/orgs/${org.id}/projects/${other.id}/overseer/message`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text: "hi" }) });
+    const none = await overseer.requestAsOverseerForTest(`/api/projects/${other.id}/overseer/message`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text: "hi" }) });
     assert.equal(none.status, 409);
     // The Overseer's own cap bounds repeats: at the limit nothing is sent.
     caps = { ...DEFAULT_CAPS, promptsPerTurn: 0 };
@@ -464,7 +466,7 @@ describe("the organization tools (§app.overseer/org-tools)", async () => {
     const info = await po.projectOverseerInfo(project.id);
     assert.equal(info.worktrees.sessions.find((s) => s.sessionId === row.sessionId)?.via, "overseer");
     // The page's own Start Coding Session still needs an item.
-    const page = await app.request(`/api/orgs/${org.id}/projects/${project.id}/overseer/items/code`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ prompt: "x", title: "y" }) });
+    const page = await app.request(`/api/projects/${project.id}/overseer/items/code`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ prompt: "x", title: "y" }) });
     assert.equal(page.status, 400);
     await (await acquireChat(row.path!)).session.waitForIdle();
   });
@@ -485,7 +487,7 @@ describe("archive a project (§app.organizations/archive)", async () => {
   const kim = await orgs.addPerson(org.id, { name: "Kim Park", role: "Ops" });
   // As the tool sends it: in the turn a confirm card listing the project started (the statechart checks the card first).
   const archive = () =>
-    overseer.requestAsOverseerForTest(`/api/orgs/${org.id}/projects/${project.id}/archive`, { method: "POST", headers: { [tools.OVERSEER_CARD_HEADER]: JSON.stringify({ projects: [project.id] }) } });
+    overseer.requestAsOverseerForTest(`/api/projects/${project.id}/archive`, { method: "POST", headers: { [tools.OVERSEER_CARD_HEADER]: JSON.stringify({ projects: [project.id] }) } });
 
   test("refused while a gathering session is open, naming it; nothing written", async () => {
     const open = await baton.createBaton({ orgId: org.id, projectId: project.id, to: kim.id, publicTitle: "Hosting", goal: "g" }, { mintLink: false });
@@ -520,16 +522,16 @@ describe("archive a project (§app.organizations/archive)", async () => {
     const start = await app.request("/api/baton", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ orgId: org.id, projectId: project.id, to: kim.id, publicTitle: "x", goal: "g" }) });
     assert.equal(start.status, 409);
     assert.deepEqual(await start.json(), { error: "Old Site is archived. Unarchive it first." });
-    const startPo = await app.request(`/api/orgs/${org.id}/projects/${project.id}/overseer`, { method: "POST" });
+    const startPo = await app.request(`/api/projects/${project.id}/overseer`, { method: "POST" });
     assert.equal(startPo.status, 409);
     assert.deepEqual(await startPo.json(), { error: "Old Site is archived. Unarchive it to use its overseer." });
-    const run = await app.request(`/api/orgs/${org.id}/projects/${project.id}/overseer/run`, { method: "POST" });
+    const run = await app.request(`/api/projects/${project.id}/overseer/run`, { method: "POST" });
     assert.equal(run.status, 409);
-    const coding = await app.request(`/api/orgs/${org.id}/projects/${project.id}/overseer/coding`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+    const coding = await app.request(`/api/projects/${project.id}/overseer/coding`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
     assert.equal(coding.status, 409, "New Coding Session too");
     assert.deepEqual(await coding.json(), { error: "Old Site is archived. Unarchive it first." });
     assert.deepEqual(await po.lookNow(project.id, true), { started: false, why: "the project is archived" });
-    const msg = await overseer.requestAsOverseerForTest(`/api/orgs/${org.id}/projects/${project.id}/overseer/message`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text: "hi" }) });
+    const msg = await overseer.requestAsOverseerForTest(`/api/projects/${project.id}/overseer/message`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text: "hi" }) });
     assert.equal(msg.status, 409);
   });
 
@@ -538,7 +540,7 @@ describe("archive a project (§app.organizations/archive)", async () => {
     assert.ok(r.ok, r.text);
     assert.equal(orgs.readProjects(org.id)[0]!.archived, undefined);
     assert.equal(orgs.orgsInfo().orgs.find((o) => o.id === org.id)!.projects, 1);
-    const again = await app.request(`/api/orgs/${org.id}/projects/${project.id}/overseer`, { method: "POST" });
+    const again = await app.request(`/api/projects/${project.id}/overseer`, { method: "POST" });
     assert.equal(again.status, 200);
   });
 

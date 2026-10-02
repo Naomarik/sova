@@ -333,8 +333,8 @@ describe("the About text has one reader in the server", () => {
     assert.deepEqual(using(/about\.md|org-history\.jsonl/), ["orgs.ts"]);
   });
 
-  test("its readers are called only by the org detail, the project overseer's prompt and the global Overseer's one about read", () => {
-    assert.deepEqual(using(/\breadOrgAbout\b/), ["orgs.ts", "overseer-org-view.ts", "project-overseer.ts"]);
+  test("its readers are called only by the org detail, the org's part of a project overseer's prompt and the global Overseer's one about read", () => {
+    assert.deepEqual(using(/\breadOrgAbout\b/), ["orgs.ts", "overseer-org-part.ts", "overseer-org-view.ts"]);
     assert.deepEqual(using(/\breadOrgHistory\b/), ["orgs.ts", "overseer-org-view.ts"]);
     assert.deepEqual(using(/\borgDetail\b/), ["org-routes.ts", "orgs.ts"]);
     assert.deepEqual(using(/\borgPage\b/), ["org-routes.ts"]);
@@ -354,8 +354,8 @@ describe("the About text has one reader in the server", () => {
     assert.match(text, /if \(about\) lines\.push\("", \.\.\.aboutView\(orgId, now\)\)/, "and only for about: true");
   });
 
-  test("in the project overseer, only the prompt's render reads it, and the owner-update guard (to keep it out)", () => {
-    const text = sources.find((s) => s.file === "project-overseer.ts")!.text;
+  test("in the org's part of the project overseer, only the prompt section reads it, and the owner-update guard (to keep it out)", () => {
+    const text = sources.find((s) => s.file === "overseer-org-part.ts")!.text;
     const calls = [...text.matchAll(/\breadOrgAbout\(/g)].map((m) => m.index!);
     assert.equal(calls.length, 2, "two calls");
     const within = (at: number, head: string) => {
@@ -363,9 +363,9 @@ describe("the About text has one reader in the server", () => {
       const end = text.indexOf("\n}\n", start);
       return start >= 0 && at > start && at < end;
     };
-    assert.ok(within(calls[0]!, "export function renderProjectOverseerPrompt(") || within(calls[0]!, "export function ownerUpdateLeak("));
-    assert.ok(within(calls[1]!, "export function ownerUpdateLeak(") || within(calls[1]!, "export function renderProjectOverseerPrompt("));
-    assert.ok(within(calls[0]!, "export function renderProjectOverseerPrompt(") !== within(calls[1]!, "export function renderProjectOverseerPrompt("), "one in each");
+    assert.ok(within(calls[0]!, "function orgPrompt(") || within(calls[0]!, "export function ownerUpdateLeak("));
+    assert.ok(within(calls[1]!, "export function ownerUpdateLeak(") || within(calls[1]!, "function orgPrompt("));
+    assert.ok(within(calls[0]!, "function orgPrompt(") !== within(calls[1]!, "function orgPrompt("), "one in each");
     // The guard only answers which source a text repeats: it returns a label, never the text.
     const guard = text.slice(text.indexOf("export function ownerUpdateLeak("), text.indexOf("\n}\n", text.indexOf("export function ownerUpdateLeak(")));
     assert.match(guard, /: string \| null \{/);

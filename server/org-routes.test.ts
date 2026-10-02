@@ -1,5 +1,5 @@
 // Run: pnpm exec tsx --test server/org-routes.test.ts. The org routes no other test requests: the operator's
-// name, detach and attach, the remote, a referral's decline, a person's history, unarchive, and withdrawing an offer.
+// name, detach and attach, the remote, a referral's decline, a person's history, a placed project's unarchive, and withdrawing an offer.
 // Each answers from the engine host. Throwaway PI_CODING_AGENT_DIR and workspaces; no model is called.
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
@@ -17,6 +17,7 @@ mkdirSync(join(root, "agent", "sessions"), { recursive: true });
 const orgs = await import("./orgs");
 const baton = await import("./baton");
 const { registerOrgRoutes } = await import("./org-routes");
+const { registerProjectRoutes } = await import("./projects/routes");
 const { settled } = await import("./workspace-git");
 
 after(async () => {
@@ -26,6 +27,7 @@ after(async () => {
 
 const app = new Hono();
 registerOrgRoutes(app);
+registerProjectRoutes(app);
 const call = async (method: string, path: string, body?: unknown) => {
   const r = await app.request(path, { method, ...(body === undefined ? {} : { headers: { "content-type": "application/json" }, body: JSON.stringify(body) }) });
   const text = await r.text();
@@ -68,14 +70,15 @@ test("POST …/people/:pid/decline: a referral is declined (left, the referral k
   assert.ok(history.every((h, i) => i === 0 || h.at <= history[i - 1]!.at), "newest first");
 });
 
-test("POST …/projects/:pid/unarchive undoes an archive; again it changes nothing (as today)", async () => {
-  assert.equal((await call("POST", `/api/orgs/${org.id}/projects/${project.id}/archive`)).status, 200);
-  const r = await call("POST", `/api/orgs/${org.id}/projects/${project.id}/unarchive`);
+test("POST /api/projects/:pid/unarchive undoes an archive; again it changes nothing (as today); the org's list says so", async () => {
+  assert.equal((await call("POST", `/api/projects/${project.id}/archive`)).status, 200);
+  assert.ok(orgs.readProjects(org.id).find((p) => p.id === project.id)!.archived, "the org reads the project's own shelf");
+  const r = await call("POST", `/api/projects/${project.id}/unarchive`);
   assert.equal(r.status, 200);
-  assert.equal((r.json as OrgDetail).projectList.find((p) => p.id === project.id)!.archived, undefined);
-  const again = await call("POST", `/api/orgs/${org.id}/projects/${project.id}/unarchive`);
+  assert.equal(orgs.readProjects(org.id).find((p) => p.id === project.id)!.archived, undefined);
+  const again = await call("POST", `/api/projects/${project.id}/unarchive`);
   assert.equal(again.status, 200);
-  assert.equal((again.json as OrgDetail).projectList.find((p) => p.id === project.id)!.archived, undefined);
+  assert.equal(orgs.readProjects(org.id).find((p) => p.id === project.id)!.archived, undefined);
 });
 
 test("POST /api/baton/:sid/offer/withdraw withdraws the open offer; nothing open is refused", async () => {

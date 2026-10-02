@@ -252,7 +252,7 @@ describe("§app.outreach/send: a note, a preview link, the project overseer thro
     assert.equal(count(), 0, "nothing sent while held");
     const hold = hostOf(org.id).holds().find((h) => h.event === "outreach/send")!;
     assert.ok(hold, "held on the project statechart");
-    await hostOf(org.id).act(`project/${org.id}/${project.id}`, "hold/approve", { id: hold.id, reason: "test: send it now" }, { by: "operator", attended: true });
+    await hostOf(org.id).act(`placement/${org.id}/${project.id}`, "hold/approve", { id: hold.id, reason: "test: send it now" }, { by: "operator", attended: true });
     const end = Date.now() + 8000;
     while (count() === 0 && Date.now() < end) await new Promise((r) => setTimeout(r, 100));
     const sent = logOf().filter((l) => l.by === "project-overseer");

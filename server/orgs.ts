@@ -256,6 +256,7 @@ function projectIdsIn(dir: string): string[] {
 async function openHost(orgId: string, dir: string): Promise<OrgHostApi> {
   await migrated(() => migrateOrg(orgId, dir, stateRoot()));
   await import("./org-effects");
+  await import("./overseer-org-part"); // the org's part of its projects: tools, prompt, gaps, the placement's effects
   await import("./org-sessions"); // the org's fields in the session list and the workspace files Clean Up keeps
   await import("./baton-loadout"); // the baton statecharts' effects (the session file, links, entries) and its reply runner
   await import("./build-loadout"); // the build statecharts' effects (worktree, session file, mode, prompts, merge)
@@ -1196,7 +1197,7 @@ export async function addProject(orgId: string, input: { name: unknown; root: un
 
 /** Place a project whose sessions are in this org's engine (`via`: born here, or imported); placing it again is a no-op. */
 export async function placeProject(orgId: string, projectId: string, via: "born" | "import"): Promise<void> {
-  const host = orgHost(orgId);
+  const host = hostOf(orgId);
   const invalid = host.configuration(projectSid(projectId)) ? null : "No such project in this organization.";
   await actOrThrow(orgId, orgSid(orgId), "project/place", { projectId, placedVia: via, ...(invalid ? { invalid } : {}) }, operatorEnvelope(orgId, projectId), SETTLE);
 }
@@ -1206,7 +1207,7 @@ export async function placeProject(orgId: string, projectId: string, via: "born"
  * a crash between a birth and its placement, an import's boot recovery) is placed as imported.
  */
 export async function placeUnplaced(orgId: string): Promise<void> {
-  const host = orgHost(orgId);
+  const host = hostOf(orgId); // mid-attach too: the org is not in the index yet;
   const placed = new Set(host.sessions("placement").map((s) => String(s.data.projectId)));
   for (const s of host.sessions("project")) {
     const pid = typeof s.data.id === "string" ? s.data.id : "";

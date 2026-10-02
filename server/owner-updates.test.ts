@@ -94,7 +94,7 @@ describe("sova_owner_update, as the project overseer's runtime builds it", async
   test("each private source refuses the post, never quoted", async () => {
     await orgs.setOrgOwner(org.id, alp.id);
     await orgs.patchOrg(org.id, { about: "They are selling the academy next spring and must not hear of it." });
-    writeNotes("Kim tends to overpromise on delivery dates, check with Bob.\n", store.projectOverseerPaths(org.id, pa.id).notes);
+    writeNotes("Kim tends to overpromise on delivery dates, check with Bob.\n", store.projectOverseerPaths(pa.id).notes);
     await baton.createBaton({ orgId: org.id, projectId: pa.id, to: kim.id, publicTitle: "Hours", goal: "Find out whether Kim will accept weekend shifts quietly" }, { mintLink: false });
     const PRIVATE = "This update repeats text from About this organization or your notes. Updates are for the client: write it again in your own words.";
     for (const [text, why] of [
@@ -143,7 +143,7 @@ describe("sova_owner_update, as the project overseer's runtime builds it", async
       setOrgClockForTest(null);
     }
     assert.deepEqual(updates.readUpdates(org.id, pa.id).map((u) => u.by), ["overseer", "overseer"]);
-    const actions = readFileSync(store.projectOverseerPaths(org.id, pa.id).actions, "utf8").trim().split("\n").map((l) => JSON.parse(l)).filter((a) => a.tool === "sova_owner_update");
+    const actions = readFileSync(store.projectOverseerPaths(pa.id).actions, "utf8").trim().split("\n").map((l) => JSON.parse(l)).filter((a) => a.tool === "sova_owner_update");
     assert.deepEqual(actions.filter((a) => a.outcome === "ok").map((a) => a.note), [undefined, "Posted an owner update", "Posted an owner update"], "the held call, then the two posts");
     assert.ok(actions.some((a) => a.outcome === "refused" && a.error === NOTHING), "refusals are in the activity list");
   });

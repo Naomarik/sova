@@ -11,6 +11,7 @@ import { areaKeyOf, conflictSid, ownerAreaChoices } from "./decisions";
 import { buildSetupEnded, buildSid, seedBuildEffectsForTest, type BuildKind } from "./build-loadout";
 import { envelopeFor, hostOf, setOrgClockForTest } from "./org-engine";
 import { operatorName, readRoster } from "./orgs";
+import { projectSid, watchSid } from "./projects/sids";
 
 /**
  * Conflicts as today's rows said them: open with a settle session (`batonSessionId`: its baton is
@@ -124,7 +125,7 @@ export async function seedBuild(
     ...(b.removed ? { remove: { branchDeleted: !!b.removed.branchDeleted } } : {}),
   });
   const host = hostOf(orgId);
-  const sid = buildSid(orgId, projectId, b.sessionId);
+  const sid = buildSid(projectId, b.sessionId);
   const createdAt = typeof b.createdAt === "string" ? Date.parse(b.createdAt) : (b.createdAt ?? Date.now());
   setOrgClockForTest(() => createdAt);
   try {
@@ -132,7 +133,6 @@ export async function seedBuild(
       sid,
       "build",
       {
-        orgId,
         projectId,
         sessionId: b.sessionId,
         kind: b.kind,
@@ -146,7 +146,7 @@ export async function seedBuild(
       },
       { by: "system" },
     );
-    await buildSetupEnded(orgId, sid);
+    await buildSetupEnded(projectId, sid);
   } finally {
     setOrgClockForTest(null);
   }
@@ -175,7 +175,7 @@ export async function seedBuild(
  */
 export async function seedPoState(orgId: string, projectId: string, s: { current: string; history: string[] }): Promise<void> {
   const host = hostOf(orgId);
-  const sid = `project/${orgId}/${projectId}`;
+  const sid = projectSid(projectId);
   const ids = [...s.history, s.current];
   for (const [i, conversationId] of ids.entries()) {
     const has = i > 0 || !!host.configuration(sid)?.includes("has-overseer");
@@ -188,7 +188,7 @@ export async function seedPoState(orgId: string, projectId: string, s: { current
 export async function noteWatchReason(orgId: string, projectId: string, reason: { kind: string; params?: Record<string, unknown>; key?: string; by?: string }): Promise<void> {
   const { by = "system", ...rest } = reason;
   // The reason's `by` is the envelope's (a payload may not shadow it).
-  await hostOf(orgId).act(`watch/${orgId}/${projectId}`, "reason/noted", { params: {}, ...rest }, { by }, { settle: true });
+  await hostOf(orgId).act(watchSid(projectId), "reason/noted", { params: {}, ...rest }, { by }, { settle: true });
 }
 
 /**

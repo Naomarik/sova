@@ -167,7 +167,7 @@ describe("the About text reaches the project overseer's prompt and nothing else"
   mkdirSync(join(root, "proj"));
   const project = await orgs.addProject(org.id, { name: "Ledger", root: join(root, "proj") });
   // Its unattended acts go at once (no hold, q10): this test is about what each model sees.
-  const sp = store.projectOverseerPaths(org.id, project.id);
+  const sp = store.projectOverseerPaths(project.id);
   store.writePoSettings(sp, { ...store.readPoSettings(sp), holdMin: 0 });
   const maria = await orgs.addPerson(org.id, { name: "Maria Lopez", role: "Payroll", decides: ["invoicing"] });
   const tony = await orgs.addPerson(org.id, { name: "Tony Reyes", role: "IT" });
@@ -207,7 +207,7 @@ describe("the About text reaches the project overseer's prompt and nothing else"
   });
 
   test("Send to person…: its model never gets it", async () => {
-    const p = store.projectOverseerPaths(org.id, project.id);
+    const p = store.projectOverseerPaths(project.id);
     addTodo({ text: "Ask Tony about backups" }, p.todos, p.ideas);
     const todo = readTodos(p.todos).todos.at(-1)!;
     const made = await po.sendItem(org.id, project.id, { todoId: todo.id, to: tony.id, publicTitle: "Backups", question: "How are backups made?" }, (t) => `/h/${t}`);
@@ -288,7 +288,7 @@ describe("the About text reaches the project overseer's prompt and nothing else"
       return canonicalPath(file);
     });
     t.after(() => setBuildSessionMakerForTest(null));
-    const p = store.projectOverseerPaths(org.id, project.id);
+    const p = store.projectOverseerPaths(project.id);
     addTodo({ text: "Add a CSV export" }, p.todos, p.ideas);
     const todo = readTodos(p.todos).todos.at(-1)!;
     // The overseer's runtime runs the stub model, which a coding session would inherit: close it first.

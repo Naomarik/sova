@@ -60,7 +60,7 @@ const toldOf = async (sessionId: string) => {
   assert.equal(r.status, 200, await r.clone().text());
   return (await r.json()) as BatonTold;
 };
-const overseerId = () => store.readPoState(store.projectOverseerPaths(org.id, project.id))?.current ?? "";
+const overseerId = () => store.readPoState(store.projectOverseerPaths(project.id))?.current ?? "";
 
 /** Append entries to a session file as pi does (each the child of the last). */
 function append(path: string, entries: Record<string, unknown>[]): void {

@@ -18,6 +18,7 @@ mkdirSync(join(agentDir, "sessions", "live"), { recursive: true });
 symlinkSync(resolve(import.meta.dirname, "..", "pi-config", "extensions"), join(agentDir, "extensions"));
 
 const orgs = await import("./orgs");
+const { editProject } = await import("./projects/spaces");
 const baton = await import("./baton");
 await import("./baton-loadout"); // registers the baton kind (its loadout and its cwd), as the server does
 const links = await import("./baton-links");
@@ -47,7 +48,7 @@ describe("the sessions it started are the statecharts' (q1: no started.json; C13
   const org = await orgs.createOrg({ name: "Migrate", dir: join(root, "ws-m") });
   mkdirSync(join(root, "proj-m"));
   const project = await orgs.addProject(org.id, { name: "M", root: join(root, "proj-m") });
-  const p = store.projectOverseerPaths(org.id, project.id);
+  const p = store.projectOverseerPaths(project.id);
   const started = join(p.dir, "started.json");
 
   test("the paths: no turn counters (the watch statechart's ledgers), no started.json, no watch memo", () => {
@@ -104,7 +105,7 @@ describe("clone + attach = the whole organization", async () => {
   }
 
   const b = await orgs.attachOrg({ dir: bDir });
-  await orgs.patchProject(b.id, project.id, { root: join(root, "proj-b") });
+  await editProject(project.id, { root: join(root, "proj-b") });
 
   test("the repo holds every file of the org's state", () => {
     const files = git(bDir, "ls-files").split("\n");

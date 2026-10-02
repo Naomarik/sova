@@ -83,7 +83,7 @@ await seedBuild(org.id, pb.id, { sessionId: "c-removed", kind: "coding", created
 await seedBuild(org.id, pb.id, { sessionId: "c-open", kind: "coding", createdAt: at22, worktree: { path: join(root, "nowhere3"), branch: "sova/c", base: "abc", target: "main" } });
 // Secret move: switched off the owner's page.
 await baton.createBaton({ orgId: org.id, projectId: pc.id, to: kim.id, publicTitle: "OFF-PROJECT-TITLE", goal: "g" });
-await orgs.patchProject(org.id, pc.id, { ownerHidden: true });
+await orgs.patchPlacement(org.id, pc.id, { ownerHidden: true });
 
 const app = new Hono();
 registerOrgRoutes(app);

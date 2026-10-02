@@ -65,7 +65,7 @@ export function startedOf(row: BatonSession, data: Record<string, unknown> | nul
   let current = false;
   if (overseerId) {
     try {
-      current = (s.who === "project-overseer" ? readPoState(projectOverseerPaths(row.orgId, row.projectId))?.current : readOverseerState()?.current) === overseerId;
+      current = (s.who === "project-overseer" ? readPoState(projectOverseerPaths(row.projectId))?.current : readOverseerState()?.current) === overseerId;
     } catch {
       current = false;
     }
@@ -82,7 +82,7 @@ export function batonData(row: Pick<BatonSession, "orgId" | "sessionId">): Recor
 /** What it was started for, as recorded: a conflict, a gap, the session it came from, a to-do or idea Send to person… linked. */
 function startedForOf(row: BatonSession, data: Record<string, unknown>): BatonStartedFor | undefined {
   if (row.conflict) return { kind: "conflict", area: row.conflict.area };
-  const paths = projectOverseerPaths(row.orgId, row.projectId);
+  const paths = projectOverseerPaths(row.projectId);
   const item = str(data["sova/spawnedBy"]);
   if (item.startsWith("item/") && isOrgHostOpen(row.orgId)) {
     const ideaId = str(hostOf(row.orgId).data(item)?.["ideaId"]);

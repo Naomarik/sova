@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { existsSync, readdirSync } from "node:fs";
 import { basename, join } from "node:path";
 import {
+  BATON_WRAPUP_ENTRY,
   LEASE_IDLE_MS,
   MESSAGES_CAP,
   MESSAGES_DEFAULT,
@@ -32,6 +33,7 @@ import { envelopeFor } from "./org-engine";
 import { effectiveHoursOf, isoOf, onOrgAttached, operatorEnvelope, operatorName, orgDir, orgOfSessionPath, OrgError, readHistory, readIndex, placementSid, readProjects, readRoster, setOpenBatonCounter, shortId, type OperatorBy } from "./orgs";
 import { baseAbilities, operatorAbilities } from "./gathering-abilities";
 import { canonicalPath } from "./paths";
+import { contributeProjectPart } from "./projects/contributions";
 import { projectOverseerPaths, readPoSettings } from "./project-overseer-store";
 import { cleanSessionTitle, readSessionTitles, setSessionTitle } from "./session-titles";
 import { addWebSession } from "./web-sessions";
@@ -452,7 +454,7 @@ export function outsiderCut(row: Pick<BatonSession, "offers" | "handoffs">, pers
 
 /** What a gathering session of this project started now gets: its setting, else Automatic. */
 export function projectAbilities(orgId: string, projectId: string): GatheringAbilities {
-  return baseAbilities(readPoSettings(projectOverseerPaths(orgId, projectId)).gatheringAbilities);
+  return baseAbilities(readPoSettings(projectOverseerPaths(projectId)).gatheringAbilities);
 }
 
 /** The lease's idle time: LEASE_IDLE_MS, or SOVA_BATON_LEASE_MS when set (hermetic tests only). */
@@ -981,3 +983,23 @@ export function proposalsOf(row: BatonSession): NonNullable<BatonSummaryField["p
 export function batonSessionsOf(host: Pick<OrgHostApi, "sessions">): SessionInfo[] {
   return host.sessions("baton");
 }
+
+/** A placed project's gatherings, offers and settle sessions are its cost (§app.project-costs/scope), each
+    with its wrap-up turns apart. */
+contributeProjectPart({
+  costSessions(engine, projectId) {
+    if (!readIndex().orgs.some((o) => o.id === engine)) return [];
+    const dir = orgDir(engine);
+    return allBatons()
+      .filter((b) => b.orgId === engine && b.projectId === projectId)
+      .map((b) => ({
+        key: b.sessionId,
+        sessionId: b.sessionId,
+        title: b.publicTitle || "Gathering session",
+        kind: b.conflict ? ("settle" as const) : ("gathering" as const),
+        by: typeof b.owner === "object" && b.owner.overseerOf === projectId ? ("overseer" as const) : ("operator" as const),
+        path: workspaceHasFile(dir, b) ? sessionPathOf(dir, b) : null,
+        wrapupEntry: BATON_WRAPUP_ENTRY,
+      }));
+  },
+});

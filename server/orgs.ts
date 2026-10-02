@@ -32,7 +32,6 @@ import type { Envelope, EnvelopeCard } from "./org-envelope";
 import { hostIdentity } from "./org-holder";
 import { OrgHost, OrgWorkspaceError } from "./org-host";
 import { setExtraSessionRoots } from "./paths";
-import { projectCost } from "./project-costs";
 import { contributeProjectPart, watchFactsChanged } from "./projects/contributions";
 import { RegistryError } from "./projects/registry";
 import { projectSid, watchSid } from "./projects/sids";
@@ -283,6 +282,17 @@ contributeProjectPart({
   },
   // A project root is never an org's workspace (every project's transcripts, the roster's contacts), whichever holds the other.
   reservedRoots: () => readIndex().orgs.map((o) => o.dir),
+  // A preview sent to a roster person: their name.
+  sentToName(engine, _projectId, personId) {
+    if (!isOrgEngine(engine) || !isOrgHostOpen(engine)) return null;
+    return findPerson(engine, personId)?.name ?? null;
+  },
+  // An attach on this host pauses every project overseer of the org (the watch's `paused`) until its level is set.
+  pausedSince(engine, projectId) {
+    const e = readIndex().orgs.find((o) => o.id === engine);
+    if (!e || !isOrgHostOpen(engine) || !hostOf(engine).configuration(watchSid(projectId))?.includes("paused")) return null;
+    return e.attachedAt || new Date(0).toISOString();
+  },
 });
 
 /** A roster status changed: the ceiling of every project of the org may have (the project layer re-pushes what differs). */
@@ -1187,7 +1197,7 @@ export async function addProject(orgId: string, input: { name: unknown; root: un
 export async function placeProject(orgId: string, projectId: string, via: "born" | "import"): Promise<void> {
   const host = orgHost(orgId);
   const invalid = host.configuration(projectSid(projectId)) ? null : "No such project in this organization.";
-  await actOrThrow(orgId, orgSid(orgId), "project/place", { projectId, via, ...(invalid ? { invalid } : {}) }, operatorEnvelope(orgId, projectId), SETTLE);
+  await actOrThrow(orgId, orgSid(orgId), "project/place", { projectId, placedVia: via, ...(invalid ? { invalid } : {}) }, operatorEnvelope(orgId, projectId), SETTLE);
 }
 
 /**
@@ -1252,62 +1262,6 @@ export async function patchPlacement(
   return projectById(orgId, projectId);
 }
 
-/** What must be stopped before a project is archived, as the archive act's `blockers` stamp. */
-export interface ArchiveBlockers {
-  gatherings: string[];
-  coding: string[];
-  overseerWorking: boolean;
-}
-
-/**
- * Archive or unarchive a project (§app.organizations/archive). The project statechart refuses an archive
- * while anything is open ("Stop these first: …", from `blockers`, which the caller reads: the
- * sessions' titles and runtimes are host facts); the same state again writes nothing.
- */
-export async function setProjectArchived(orgId: string, projectId: string, archived: boolean, by: OperatorBy = OPERATOR_BY, blockers?: ArchiveBlockers, extra: Record<string, unknown> = {}): Promise<OrgProject> {
-  projectById(orgId, projectId);
-  await actOrThrow(orgId, projectSid(projectId), archived ? "project/archive" : "project/unarchive", archived ? { blockers: blockers ?? { gatherings: [], coding: [], overseerWorking: false } } : {}, operatorEnvelope(orgId, projectId, by, extra));
-  return projectById(orgId, projectId);
-}
-
-/** Whether the project is archived (false for an unknown one). */
-export function projectArchived(orgId: string, projectId: string): boolean {
-  try {
-    return !!orgHost(orgId).configuration(projectSid(projectId))?.includes("archived");
-  } catch {
-    return false;
-  }
-}
-
-/** "{project} is archived. Unarchive it first.": every new start in an archived project. */
-export const archivedRefusal = (name: string) => `${name} is archived. Unarchive it first.`;
-/** Its overseer's: Run Now, a message to it, its start. */
-export const archivedOverseerRefusal = (name: string) => `${name} is archived. Unarchive it to use its overseer.`;
-
-/** Refuse a new start in an archived project (409). */
-export function assertNotArchived(orgId: string, projectId: string): void {
-  const p = readProjects(orgId).find((x) => x.id === projectId);
-  if (p?.archived) throw new OrgError(archivedRefusal(p.name), 409);
-}
-
-/** When the project's overseer was paused by an attach on this host (ISO), or null: not paused. */
-export function overseerPausedSince(orgId: string, projectId: string): string | null {
-  try {
-    const host = orgHost(orgId);
-    if (!host.configuration(watchSid(projectId))?.includes("paused")) return null;
-    return readIndex().orgs.find((o) => o.id === orgId)?.attachedAt || new Date(0).toISOString();
-  } catch {
-    return null;
-  }
-}
-
-/** The operator set the project overseer's level on this host (`resumeAt`, the level they chose): an attach's pause ends (any level). */
-export async function resumeOverseer(orgId: string, projectId: string, resumeAt?: string): Promise<void> {
-  const host = orgHost(orgId);
-  if (!host.configuration(watchSid(projectId))) return;
-  await host.act(watchSid(projectId), "operator/level-set", resumeAt ? { resumeAt } : {}, operatorEnvelope(orgId, projectId));
-}
-
 // ---- the org's owner (§app.owner-page/owner) ------------------------------------------------------------------
 
 /** The org's owner now: an active roster person, or null. */
@@ -1358,6 +1312,7 @@ export function orgSummaries(): OrgSummary[] {
 
 /** The org's cost rollup (§app.project-costs/org-rollup): every placed project's total at API prices. */
 export async function orgCosts(orgId: string): Promise<OrgCosts> {
+  const { projectCost } = await import("./project-costs"); // loaded on first use: it reaches modules that import this one
   const projects: OrgCosts["projects"] = [];
   for (const p of readProjects(orgId)) {
     const c = await projectCost(p.id);

@@ -15,7 +15,10 @@ import {
   orgFull,
   orgsList,
   personView,
+  placedOrg,
+  projectsList,
   projectView,
+  resolveAnyProject,
   resolveOrg,
   resolvePerson,
   resolveProject,
@@ -85,7 +88,7 @@ export const noLinkNote = (names: string[]) => `No link was made: Needs you asks
 interface Targets {
   sessions?: string[];
   people?: { orgId: string; id: string; name: string }[];
-  projects?: { orgId: string; id: string; name: string }[];
+  projects?: { orgId: string | null; id: string; name: string }[];
 }
 
 export function orgTools(d: OrgToolDeps): Tool[] {
@@ -124,7 +127,7 @@ export function orgTools(d: OrgToolDeps): Tool[] {
     const has = (kind: "session" | "person" | "project", orgId: string | null, id: string) =>
       !!items?.some((i) => i.kind === kind && i.id === id && (orgId === null || (i as { orgId?: string }).orgId === orgId));
     const missing: string[] = [];
-    for (const p of t.projects ?? []) if (!has("project", p.orgId, p.id)) missing.push(`the project ${p.name} (${p.id})`);
+    for (const p of t.projects ?? []) if (!has("project", null, p.id)) missing.push(`the project ${p.name} (${p.id})`);
     for (const p of t.people ?? []) if (!has("person", p.orgId, p.id)) missing.push(`${p.name} (${p.id})`);
     for (const s of t.sessions ?? []) if (!has("session", null, s)) missing.push(`the session ${s}`);
     if (!items || missing.length) {
@@ -145,6 +148,10 @@ export function orgTools(d: OrgToolDeps): Tool[] {
   const orgOf = (ref: unknown) => resolveOrg(ref);
   const base = (orgId: string) => `/api/orgs/${enc(orgId)}`;
   const projectBase = (orgId: string, projectId: string) => `${base(orgId)}/projects/${enc(projectId)}`;
+  /** The project layer's routes for any registered project (its overseer, name, root, shelf). */
+  const projectsBase = (projectId: string) => `/api/projects/${enc(projectId)}`;
+  /** A confirm card's row for a project (its org, when one places it). */
+  const cardProject = (project: { id: string; name: string; orgId: string | null }) => ({ orgId: project.orgId, id: project.id, name: project.name });
   /** A person, or "operator" for the user themselves. */
   const target = (orgId: string, ref: unknown): { id: string; name: string } => {
     if (typeof ref === "string" && (ref.trim() === OPERATOR || ref.trim().toLowerCase() === "the user")) return { id: OPERATOR, name: displayName(orgId, OPERATOR) };
@@ -192,75 +199,83 @@ export function orgTools(d: OrgToolDeps): Tool[] {
     ),
   };
 
+  const projectsRead: Tool = {
+    name: "sova_projects",
+    label: "Projects",
+    description:
+      "Every project registered on this host (never a mesh peer's): its name and id, the organization that places it (or none), its root, the repository it was cloned from, and whether it is archived. sova_org_project {project} reads one in full. Only the user adds a project (Projects: a folder, a session's folder, or a clone).",
+    promptSnippet: "every project registered on this host, in an organization or not",
+    parameters: obj({}),
+    execute: d.read(async () => guard(async () => ({ content: text(projectsList()), details: {} }))),
+  };
+
   // ---- sova_org_project: a read without op, an act with one ------------------------------------------
 
   const projectRead = d.read(async (p) =>
     guard(async () => {
-      const org = orgOf(p.org);
-      const project = resolveProject(org.id, p.project);
-      return { content: text(await projectView(org.id, project.id, p.items === true)), details: { org: org.id, project: project.id } };
+      const project = resolveAnyProject(p.project, p.org);
+      return { content: text(await projectView(project.id, p.items === true)), details: { ...(project.orgId ? { org: project.orgId } : {}), project: project.id } };
     }),
   );
   const projectAct = d.act("sova_org_project", async (p) =>
     guard(async () => {
-      const org = orgOf(p.org);
+      const project = resolveAnyProject(p.project, p.org);
+      const details = { ...(project.orgId ? { org: project.orgId } : {}), project: project.id };
       switch (p.op) {
-        case "add": {
-          const r = await counted("org", async () => ok(await d.call("POST", `${base(org.id)}/projects`, { name: p.name, root: p.root }), "Adding the project"));
-          const made = (r as OrgDetail).projectList.find((x) => x.name === String(p.name ?? "").trim() && x.root === String(p.root ?? "").trim()) ?? (r as OrgDetail).projectList.at(-1);
-          return { content: text(`Added the project ${made?.name} (${made?.id}) to ${org.name}, root ${made?.root}.`), details: { org: org.id, project: made?.id } };
-        }
         case "edit": {
-          const project = resolveProject(org.id, p.project);
-          const body: Record<string, unknown> = {};
-          if (p.name !== undefined) body.name = p.name;
-          if (p.root !== undefined) body.root = p.root;
-          if (p.owner_hidden !== undefined) body.ownerHidden = p.owner_hidden;
-          if (p.stakeholder !== undefined) body.stakeholder = p.stakeholder === null || String(p.stakeholder).trim().toLowerCase() === "none" ? null : resolvePerson(org.id, p.stakeholder).id;
-          if (!Object.keys(body).length) throw refuse("Nothing to change: give name, root, stakeholder or owner_hidden.");
-          await counted("org", async () => ok(await d.call("PATCH", projectBase(org.id, project.id), body), "Changing the project"));
+          const own: Record<string, unknown> = {};
+          if (p.name !== undefined) own.name = p.name;
+          if (p.root !== undefined) own.root = p.root;
+          const placement = p.stakeholder !== undefined || p.owner_hidden !== undefined;
+          if (!Object.keys(own).length && !placement) throw refuse("Nothing to change: give name, root, stakeholder or owner_hidden.");
+          const org = placement ? placedOrg(project, "stakeholder or owner's page") : null;
+          const stakeholder =
+            org && p.stakeholder !== undefined ? (p.stakeholder === null || String(p.stakeholder).trim().toLowerCase() === "none" ? null : resolvePerson(org.id, p.stakeholder)) : undefined;
+          await counted("org", async () => {
+            if (Object.keys(own).length) ok(await d.call("PATCH", projectsBase(project.id), own), "Changing the project");
+            if (org && stakeholder !== undefined) ok(await d.call("PUT", `${projectBase(org.id, project.id)}/stakeholder`, { personId: stakeholder?.id ?? null }), "Changing the stakeholder");
+            if (org && p.owner_hidden !== undefined) ok(await d.call("PUT", `${projectBase(org.id, project.id)}/owner-hidden`, { ownerHidden: p.owner_hidden }), "Changing the owner's page");
+          });
           const done = [
-            ...(body.name !== undefined ? [`renamed to "${body.name}"`] : []),
-            ...(body.root !== undefined ? [`root ${body.root}`] : []),
-            ...(body.stakeholder !== undefined ? [body.stakeholder === null ? "no main stakeholder" : `main stakeholder ${resolvePerson(org.id, body.stakeholder).name}`] : []),
-            ...(body.ownerHidden !== undefined ? [body.ownerHidden ? "hidden from the owner's page" : "shown on the owner's page"] : []),
+            ...(own.name !== undefined ? [`renamed to "${own.name}"`] : []),
+            ...(own.root !== undefined ? [`root ${own.root}`] : []),
+            ...(stakeholder !== undefined ? [stakeholder === null ? "no main stakeholder" : `main stakeholder ${stakeholder.name}`] : []),
+            ...(p.owner_hidden !== undefined ? [p.owner_hidden ? "hidden from the owner's page" : "shown on the owner's page"] : []),
           ];
-          return { content: text(`${project.name}: ${done.join(", ")}.`), details: { org: org.id, project: project.id } };
+          return { content: text(`${project.name}: ${done.join(", ")}.`), details };
         }
         case "archive": {
-          const project = resolveProject(org.id, p.project);
-          requireConfirm({ projects: [{ orgId: org.id, id: project.id, name: project.name }] });
-          await counted("org", async () => ok(await d.call("POST", `${projectBase(org.id, project.id)}/archive`), "Archiving the project"));
-          return { content: text(`${project.name} archived: it left the Projects lists and its overseer is paused. Nothing was deleted; unarchive brings it back.`), details: { org: org.id, project: project.id } };
+          requireConfirm({ projects: [cardProject(project)] });
+          await counted("org", async () => ok(await d.call("POST", `${projectsBase(project.id)}/archive`), "Archiving the project"));
+          return { content: text(`${project.name} archived: it left the Projects lists and its overseer is paused. Nothing was deleted; unarchive brings it back.`), details };
         }
         case "unarchive": {
-          const project = resolveProject(org.id, p.project);
-          await counted("org", async () => ok(await d.call("POST", `${projectBase(org.id, project.id)}/unarchive`), "Unarchiving the project"));
-          return { content: text(`${project.name} is back, as it was set.`), details: { org: org.id, project: project.id } };
+          await counted("org", async () => ok(await d.call("POST", `${projectsBase(project.id)}/unarchive`), "Unarchiving the project"));
+          return { content: text(`${project.name} is back, as it was set.`), details };
         }
         default:
-          throw refuse("op must be add, edit, archive or unarchive (leave op out to read the project).");
+          throw refuse("op must be edit, archive or unarchive (leave op out to read the project). Only the user adds a project, from Projects.");
       }
     }),
   );
   const projectTool: Tool = {
     name: "sova_org_project",
-    label: "Org project",
+    label: "Project",
     description:
-      "Without op: read one project of an organization and its project overseer (level chosen and in force, watching, models, coding mode, extra instructions, allowances, held items, last actions), its gathering sessions, decisions and open conflicts, spec status, coding sessions, ideas and to-dos (items: true lists the open to-dos and ideas with ids), the last owner update and its cost. With op (only in a turn the user started): add {name, root}; edit {project, name?, root?, stakeholder? (a person, or none), owner_hidden?}; archive {project} (only in the turn a confirm card's click opened, listing the project; refused while anything in it is open, naming what); unarchive {project}.",
-    promptSnippet: "read a project and its overseer; or add, edit, archive, unarchive a project",
+      "Without op: read one registered project (in an organization or not) and its project overseer (level chosen and in force, watching, models, coding mode, extra instructions, allowances, held items, last actions), its coding sessions, ideas and to-dos (items: true lists the open to-dos and ideas with ids) and its cost; for a project an organization places, also its gathering sessions, decisions and open conflicts, spec status and the last owner update. With op (only in a turn the user started): edit {project, name?, root?, stakeholder? (a person, or none), owner_hidden?} (stakeholder and owner_hidden only for a project an organization places); archive {project} (only in the turn a confirm card's click opened, listing the project; refused while anything in it is open, naming what); unarchive {project}. Never add: only the user adds a project.",
+    promptSnippet: "read a project and its overseer; or edit, archive, unarchive a project",
     parameters: obj(
       {
-        op: str("Omit to read. add | edit | archive | unarchive", { enum: ["add", "edit", "archive", "unarchive"] }),
-        org: str("Organization id or exact name."),
-        project: str("Project id or exact name (read, edit, archive, unarchive)."),
+        op: str("Omit to read. edit | archive | unarchive", { enum: ["edit", "archive", "unarchive"] }),
+        org: str("Optional: the organization that places it, id or exact name (narrows a name)."),
+        project: str("Project id or exact name."),
         items: bool("Read: also list the open to-dos and ideas with their ids."),
-        name: str("add, edit: the project's name."),
-        root: str("add, edit: its folder, an absolute path on this host."),
+        name: str("edit: the project's name."),
+        root: str("edit: its folder, an absolute path on this host."),
         stakeholder: str("edit: the main stakeholder, a person's id or exact name, or none."),
         owner_hidden: bool("edit: hide the project from the owner's page (true) or show it (false)."),
       },
-      ["org"],
+      ["project"],
     ),
     execute: (toolCallId: string, params: any, signal?: AbortSignal, onUpdate?: any, ctx?: any) =>
       params?.op === undefined || params?.op === null || params?.op === "" ? projectRead(toolCallId, params, signal, onUpdate, ctx) : projectAct(toolCallId, params, signal, onUpdate, ctx),
@@ -425,7 +440,7 @@ export function orgTools(d: OrgToolDeps): Tool[] {
     parameters: obj(
       {
         op: str("reconcile | promote | resolve | route | freeze", { enum: ["reconcile", "promote", "resolve", "route", "freeze"] }),
-        org: str("Organization id or exact name."),
+        org: str("Optional: the organization that places it, id or exact name."),
         project: str("Project id or exact name."),
         ids: { type: "array", items: { type: "string" }, description: "promote: decision ids (sova_org_project lists them)." },
         conflict: str("resolve, route: the conflict id (cf_…)."),
@@ -434,12 +449,12 @@ export function orgTools(d: OrgToolDeps): Tool[] {
         to: str("route: a person's id or exact name, or operator."),
         frozen: bool("freeze: true to freeze the spec, false to unfreeze."),
       },
-      ["op", "org", "project"],
+      ["op", "project"],
     ),
     execute: d.act("sova_project_decisions", async (p) =>
       guard(async () => {
-        const org = orgOf(p.org);
-        const project = resolveProject(org.id, p.project);
+        const project = resolveAnyProject(p.project, p.org);
+        const org = placedOrg(project, "decisions");
         const at = projectBase(org.id, project.id);
         switch (p.op) {
           case "reconcile": {
@@ -521,8 +536,8 @@ export function orgTools(d: OrgToolDeps): Tool[] {
       guard(async () => {
         switch (p.op) {
           case "start": {
-            const org = orgOf(p.org);
-            const project = resolveProject(org.id, p.project);
+            const project = resolveAnyProject(p.project, p.org);
+            const org = placedOrg(project, "roster to gather with");
             const list = Array.isArray(p.to) ? p.to : [p.to];
             if (!list.length || list.some((x: unknown) => typeof x !== "string" || !x.trim())) throw refuse("to is a person, operator, or a list of two or more people.");
             const to = list.map((x: string) => target(org.id, x));
@@ -669,7 +684,7 @@ export function orgTools(d: OrgToolDeps): Tool[] {
     parameters: obj(
       {
         op: str("start | settings | run_now | clear | idea | todo | message | code", { enum: ["start", "settings", "run_now", "clear", "idea", "todo", "message", "code"] }),
-        org: str("Organization id or exact name."),
+        org: str("Optional: the organization that places it, id or exact name."),
         project: str("Project id or exact name."),
         autonomy: str("settings: L0 | L1 | L2 | L3."),
         model: str('settings: its model "provider/model", or "" for the default; code: the coding session\'s model.'),
@@ -693,14 +708,13 @@ export function orgTools(d: OrgToolDeps): Tool[] {
         prompt: str("code: the first prompt (default: the item's text)."),
         item: str("code: a to-do (td_…) or idea (§…) of the project to start from, and link it."),
       },
-      ["op", "org", "project"],
+      ["op", "project"],
     ),
     execute: d.act("sova_project_overseer", async (p) =>
       guard(async () => {
-        const org = orgOf(p.org);
-        const project = resolveProject(org.id, p.project);
-        const at = `${projectBase(org.id, project.id)}/overseer`;
-        const details = { org: org.id, project: project.id };
+        const project = resolveAnyProject(p.project, p.org);
+        const at = `${projectsBase(project.id)}/overseer`;
+        const details = { ...(project.orgId ? { org: project.orgId } : {}), project: project.id };
         switch (p.op) {
           case "start": {
             const r = await counted("org", async () => ok(await d.call("POST", at), "Starting the overseer"));
@@ -719,7 +733,7 @@ export function orgTools(d: OrgToolDeps): Tool[] {
             return { content: text(`${project.name}'s overseer is looking now.`), details };
           }
           case "clear": {
-            requireConfirm({ projects: [{ orgId: org.id, id: project.id, name: project.name }] });
+            requireConfirm({ projects: [cardProject(project)] });
             const r = await counted("org", async () => ok(await d.call("POST", `${at}/clear`), "Clearing"));
             return { content: text(`Cleared ${project.name}'s overseer: a new conversation [${project.name} overseer](sova://s/${r.id}); its settings, notes, ideas and to-dos stay.`), details };
           }
@@ -814,7 +828,7 @@ export function orgTools(d: OrgToolDeps): Tool[] {
     ),
   };
 
-  return [orgsRead, projectTool, personRead, orgTool, rosterTool, ownerTool, decisionsTool, gatherTool, poTool];
+  return [orgsRead, projectsRead, projectTool, personRead, orgTool, rosterTool, ownerTool, decisionsTool, gatherTool, poTool];
 }
 
 /** A confirm card's person and project rows (§app.overseer/confirm): null when nothing on this host matches. */
@@ -828,11 +842,10 @@ export const orgConfirmLookup = {
       return null;
     }
   },
-  project(org: string, ref: string): Extract<SovaConfirmItem, { kind: "project" }> | null {
+  project(org: string | null, ref: string): Extract<SovaConfirmItem, { kind: "project" }> | null {
     try {
-      const o = resolveOrg(org);
-      const p = resolveProject(o.id, ref);
-      return { kind: "project", id: p.id, orgId: o.id, name: p.name, orgName: o.name };
+      const p = resolveAnyProject(ref, org ?? undefined);
+      return { kind: "project", id: p.id, name: p.name, ...(p.orgId ? { orgId: p.orgId, orgName: resolveOrg(p.orgId).name } : {}) };
     } catch {
       return null;
     }

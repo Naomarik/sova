@@ -640,7 +640,7 @@ export interface ReconcileOptions {
  */
 export function settleChoice(orgId: string, projectId: string): { model?: string; thinking?: string } {
   try {
-    const s = readPoSettings(projectOverseerPaths(orgId, projectId));
+    const s = readPoSettings(projectOverseerPaths(projectId));
     const model = s.gatheringModel ?? s.model;
     const thinking = s.gatheringThinking ?? s.thinking;
     return { ...(model ? { model } : {}), ...(thinking ? { thinking } : {}) };
@@ -729,7 +729,7 @@ function recordingUsage(inner: DecisionProvider, orgId: string, projectId: strin
       const u = r.usage;
       if (u && u.inputTokens + u.outputTokens + (u.cacheRead ?? 0) + (u.cacheWrite ?? 0) > 0) {
         try {
-          appendUsage(ledgerPaths(orgId, projectId), {
+          appendUsage(ledgerPaths(projectId), {
             at: now().toISOString(),
             kind: "reconcile",
             by,

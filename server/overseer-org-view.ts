@@ -8,8 +8,9 @@ import { allBatons, batonById, nameOf, sessionPathOf, workspaceHasFile } from ".
 import { personPage } from "./person-page";
 import { projectCost } from "./project-costs";
 import { listDecisions } from "./reconcile";
-import { operatorName, orgCosts, orgDir, readHistory, readIndex, readOrg, readOrgAbout, readOrgHistory, readProjects, readRoster, recentChanges } from "./orgs";
+import { operatorName, orgCosts, orgDir, orgOfProject, readHistory, readIndex, readOrg, readOrgAbout, readOrgHistory, readProjects, readRoster, recentChanges } from "./orgs";
 import { projectOverseerPaths } from "./project-overseer-store";
+import { listProjects, readProject } from "./projects/spaces";
 import { lastUpdate } from "./project-updates";
 import { readTodos } from "./overseer-todos";
 import { readManifest } from "./overseer-ideas";
@@ -78,6 +79,40 @@ export function resolveOrg(ref: unknown): { id: string; name: string } {
 
 export function resolveProject(orgId: string, ref: unknown): OrgProject {
   return pick(readProjects(orgId), ref, "project", `in ${readOrg(orgId).name}`);
+}
+
+/** A registered project on this host, standalone or placed: in `org` when given (id or exact name), else by id or
+    exact name among every project here. */
+export function resolveAnyProject(ref: unknown, org?: unknown): { id: string; name: string; orgId: string | null } {
+  if (org !== undefined && org !== null && org !== "") {
+    const o = resolveOrg(org);
+    const p = resolveProject(o.id, ref);
+    return { id: p.id, name: p.name, orgId: o.id };
+  }
+  const all = listProjects();
+  if (!all.length) throw new ViewRefusal("No project is registered on this host.");
+  const p = pick(all, ref, "project", "on this host");
+  return { id: p.id, name: p.name, orgId: orgOfProject(p.id) };
+}
+
+/** A placed project's org, or the refusal for one that is in none (its org part: roster, gatherings, decisions). */
+export function placedOrg(project: { name: string; orgId: string | null }, what: string): { id: string; name: string } {
+  if (!project.orgId) throw new ViewRefusal(`${project.name} is in no organization, so it has no ${what}.`);
+  return { id: project.orgId, name: readOrg(project.orgId).name };
+}
+
+/** `sova_projects`: every project registered on this host, standalone or in an org. */
+export function projectsList(now = Date.now()): string {
+  const all = listProjects();
+  if (!all.length) return "No project is registered on this host. The user adds one from Projects (a folder, a session's folder, or a clone).";
+  const lines = [...all]
+    .sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id))
+    .map((p) => {
+      const orgId = orgOfProject(p.id);
+      const where = orgId ? `in ${readOrg(orgId).name} (${orgId})` : "in no organization";
+      return `- ${p.name} (${p.id}) · ${where} · root ${p.root}${p.remote ? ` · cloned from ${p.remote}` : ""}${p.archived ? ` · archived ${ago(p.archived.at, now)}` : ""}`;
+    });
+  return untrusted("this host's projects", [`${plural(all.length, "project")}:`, ...lines].join("\n"));
 }
 
 export function resolvePerson(orgId: string, ref: unknown): Person {
@@ -292,7 +327,7 @@ export async function orgFull(orgId: string, about = false, now = Date.now()): P
   const projectLine = async (p: OrgProject): Promise<string> => {
     let overseer = "no overseer yet";
     try {
-      const info = await po.projectOverseerInfo(orgId, p.id);
+      const info = await po.projectOverseerInfo(p.id);
       if (info.exists) overseer = `overseer ${info.busy ? "working" : "idle"}, level in force ${info.effective.autonomy}`;
     } catch {
       overseer = "overseer unavailable";
@@ -349,17 +384,20 @@ export function aboutView(orgId: string, now = Date.now()): string[] {
 
 const DECISION_STATES = ["pending", "drafted", "promoted", "superseded", "conflict"] as const;
 
-/** `sova_org_project {org, project}`: the project and its overseer; `items` adds open to-dos and the ideas' contents. */
-export async function projectView(orgId: string, projectId: string, items = false, now = Date.now()): Promise<string> {
+/** `sova_org_project {project}`: the project and its overseer, and, when an org places it, its org part; `items` adds
+    open to-dos and the ideas' contents. */
+export async function projectView(projectId: string, items = false, now = Date.now()): Promise<string> {
   const po = await poModule();
-  const project = readProjects(orgId).find((p) => p.id === projectId)!;
-  const roster = readRoster(orgId);
+  const project = readProject(projectId);
+  const orgId = orgOfProject(projectId);
+  const placed = orgId ? readProjects(orgId).find((p) => p.id === projectId) : undefined;
+  const roster = orgId ? readRoster(orgId) : [];
   const personName = (id: string | null | undefined) => (id ? (id === OPERATOR ? "you" : (roster.find((p) => p.id === id)?.name ?? id)) : "none");
-  const info: ProjectOverseerInfo = await po.projectOverseerInfo(orgId, projectId);
+  const info: ProjectOverseerInfo = await po.projectOverseerInfo(projectId);
   const s = info.settings;
   const lines: string[] = [
-    `# ${project.name} (${projectId}) in ${readOrg(orgId).name} (${orgId})${project.archived ? ` · ARCHIVED ${ago(project.archived.at, now)}${project.archived.via ? " by you, via the Overseer" : ""}` : ""}`,
-    `Root: ${project.root} · main stakeholder: ${personName(project.stakeholder)}${project.ownerHidden ? " · hidden from the owner's page" : ""}`,
+    `# ${project.name} (${projectId}) ${orgId ? `in ${readOrg(orgId).name} (${orgId})` : "(in no organization)"}${project.archived ? ` · ARCHIVED ${ago(project.archived.at, now)}${project.archived.via ? " by you, via the Overseer" : ""}` : ""}`,
+    `Root: ${project.root}${placed ? ` · main stakeholder: ${personName(placed.stakeholder)}${placed.ownerHidden ? " · hidden from the owner's page" : ""}` : ""}`,
   ];
   // The overseer.
   if (!info.exists) lines.push("", "Overseer: none yet (sova_project_overseer start).");
@@ -380,24 +418,26 @@ export async function projectView(orgId: string, projectId: string, items = fals
       ...(info.usage.held.length ? [`Held: ${info.usage.held.map((h) => `${h.what} (${cut(h.why, 120)})`).join("; ")}`] : []),
       ...(info.lastRun ? [`Last look on its own: ${info.lastRun.outcome} ${ago(info.lastRun.at, now)}${info.lastRun.detail ? ` (${cut(info.lastRun.detail, 160)})` : ""}`] : []),
     );
-    lines.push("", "Its last 10 actions (newest first):", ...actionLines(orgId, projectId, now));
+    lines.push("", "Its last 10 actions (newest first):", ...actionLines(projectId, now));
   }
-  // Gathering sessions and offers.
-  const batons = allBatons().filter((b) => b.orgId === orgId && b.projectId === projectId);
-  const names = new Map([[projectId, project.name]]);
-  lines.push("", `Gathering sessions and offers (${batons.length}):`, ...(batons.length ? [...batons].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 20).map((b) => batonLine(orgId, b, names)) : ["- none"]));
-  // Decisions, conflicts, spec.
-  try {
-    const d = listDecisions(orgId, projectId);
-    const byState = DECISION_STATES.map((st) => `${st} ${d.decisions.filter((x) => x.state === st).length}`).join(", ");
-    const areas = [...new Set(d.decisions.map((x) => x.area))];
-    lines.push("", `Decisions: ${d.decisions.length} (${byState})${areas.length ? `; areas: ${areas.slice(0, 20).join(", ")}` : ""}`);
-    lines.push(...d.decisions.filter((x) => x.state === "drafted" || x.state === "pending").slice(0, 15).map((x) => decisionLine(x, now)));
-    const open = d.conflicts.filter((c) => c.state === "open");
-    lines.push(`Open conflicts (${open.length}):`, ...(open.length ? open.map((c) => conflictLine(c, d.decisions, personName, now)) : ["- none"]));
-    lines.push(`Spec: ${d.spec.exists ? "exists" : "none yet"}${d.spec.frozen ? ", frozen" : ""}${d.spec.editedOutside ? ", edited outside the reconciler" : ""}; ${d.spec.promoted} promoted, ${d.spec.drafted} drafted`);
-  } catch (err) {
-    lines.push("", `Decisions: unavailable (${err instanceof Error ? err.message : String(err)})`);
+  if (orgId) {
+    // Gathering sessions and offers.
+    const batons = allBatons().filter((b) => b.orgId === orgId && b.projectId === projectId);
+    const names = new Map([[projectId, project.name]]);
+    lines.push("", `Gathering sessions and offers (${batons.length}):`, ...(batons.length ? [...batons].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 20).map((b) => batonLine(orgId, b, names)) : ["- none"]));
+    // Decisions, conflicts, spec.
+    try {
+      const d = listDecisions(orgId, projectId);
+      const byState = DECISION_STATES.map((st) => `${st} ${d.decisions.filter((x) => x.state === st).length}`).join(", ");
+      const areas = [...new Set(d.decisions.map((x) => x.area))];
+      lines.push("", `Decisions: ${d.decisions.length} (${byState})${areas.length ? `; areas: ${areas.slice(0, 20).join(", ")}` : ""}`);
+      lines.push(...d.decisions.filter((x) => x.state === "drafted" || x.state === "pending").slice(0, 15).map((x) => decisionLine(x, now)));
+      const open = d.conflicts.filter((c) => c.state === "open");
+      lines.push(`Open conflicts (${open.length}):`, ...(open.length ? open.map((c) => conflictLine(c, d.decisions, personName, now)) : ["- none"]));
+      lines.push(`Spec: ${d.spec.exists ? "exists" : "none yet"}${d.spec.frozen ? ", frozen" : ""}${d.spec.editedOutside ? ", edited outside the reconciler" : ""}; ${d.spec.promoted} promoted, ${d.spec.drafted} drafted`);
+    } catch (err) {
+      lines.push("", `Decisions: unavailable (${err instanceof Error ? err.message : String(err)})`);
+    }
   }
   // Coding sessions.
   const coding = info.worktrees.sessions;
@@ -412,7 +452,7 @@ export async function projectView(orgId: string, projectId: string, items = fals
       : ["- none"]),
   );
   // Ideas and to-dos.
-  const p = projectOverseerPaths(orgId, projectId);
+  const p = projectOverseerPaths(projectId);
   const todos = readTodos(p.todos).todos;
   const ideas = Object.entries(readManifest(p.ideas).ideas);
   lines.push("", `Ideas: ${ideas.length} · to-dos: ${todos.filter((t) => !t.done).length} open, ${todos.filter((t) => t.done).length} done`);
@@ -422,8 +462,9 @@ export async function projectView(orgId: string, projectId: string, items = fals
     lines.push("Ideas:", ...(ideas.length ? ideas.map(([id, m]) => `- ${id} · ${cut(m.title, 120)} · ${m.status}`) : ["- none"]));
   }
   // The owner page and the cost.
-  const update = lastUpdate(orgId, projectId);
-  lines.push("", `Last owner update: ${update ? `${ago(update.at, now)}${update.withdrawnAt ? " (taken down)" : ""}` : "none"}`);
+  const update = orgId ? lastUpdate(orgId, projectId) : null;
+  lines.push("");
+  if (orgId) lines.push(`Last owner update: ${update ? `${ago(update.at, now)}${update.withdrawnAt ? " (taken down)" : ""}` : "none"}`);
   try {
     const cost = await projectCost(projectId);
     lines.push(`Cost: ${usd(cost.totalUsd)} at API prices, ${plural(cost.sessions, "session")} counted${cost.unpriced.length ? `; some tokens unpriced (${cost.unpriced.map((u) => u.model).join(", ")})` : ""}`);
@@ -433,11 +474,11 @@ export async function projectView(orgId: string, projectId: string, items = fals
   return untrusted(`the project ${project.name}`, lines.join("\n"));
 }
 
-function actionLines(orgId: string, projectId: string, now: number): string[] {
+function actionLines(projectId: string, now: number): string[] {
   let raw: string[] = [];
   try {
     // The overseer's own action log, as its page reads it.
-    raw = readFileSync(projectOverseerPaths(orgId, projectId).actions, "utf8").split("\n").filter(Boolean).slice(-10).reverse();
+    raw = readFileSync(projectOverseerPaths(projectId).actions, "utf8").split("\n").filter(Boolean).slice(-10).reverse();
   } catch {
     return ["- none"];
   }

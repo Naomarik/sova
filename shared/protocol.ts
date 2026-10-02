@@ -2738,8 +2738,8 @@ export type SovaConfirmItem =
   | { kind: "session"; id: string; title: string; project?: string; lastActiveAt?: string; summary?: string; workers?: number; note?: string }
   | { kind: "idea"; id: string; title: string; note?: string }
   | { kind: "todo"; id: string; text: string; note?: string }
-  /** A project of an org on this host: its name and the org's (§app.overseer/org-tools). */
-  | { kind: "project"; id: string; orgId: string; name: string; orgName: string; note?: string }
+  /** A project registered on this host: its name, and the org's when one places it (§app.overseer/org-tools). */
+  | { kind: "project"; id: string; orgId?: string; name: string; orgName?: string; note?: string }
   /** A roster person: name, status and org. Never a contact or a link. */
   | { kind: "person"; id: string; orgId: string; name: string; orgName: string; status: "active" | "proposed" | "left"; note?: string };
 

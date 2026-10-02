@@ -410,7 +410,7 @@ describe("the organization tools (§app.overseer/org-tools)", async () => {
     assert.ok((await call("sova_project_overseer", { op: "start", org: org.id, project: project.id })).ok);
     const set = await call("sova_project_overseer", { op: "settings", org: org.id, project: project.id, extra_instructions: "Prefer short answers.", watch: false });
     assert.ok(set.ok, set.text);
-    assert.equal(store.readPoSettings(store.projectOverseerPaths(org.id, project.id)).extraSystemPrompt, "Prefer short answers.");
+    assert.equal(store.readPoSettings(store.projectOverseerPaths(project.id)).extraSystemPrompt, "Prefer short answers.");
     const tooLong = await call("sova_project_overseer", { op: "settings", org: org.id, project: project.id, extra_instructions: "x".repeat(8001) });
     assert.match(tooLong.text, /extraSystemPrompt must be text of at most 8000 characters/);
     assert.ok((await call("sova_project_overseer", { op: "idea", action: "add", org: org.id, project: project.id, id: "§gap/exports", title: "Exports" })).ok);

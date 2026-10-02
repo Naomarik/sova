@@ -55,6 +55,8 @@ export interface BuildRow {
   title?: string;
   /** An `operator-coding` build the global Overseer started for the operator (§app.overseer/org-attribution). */
   via?: "overseer";
+  /** The Project verbs playbook's run (statechart kind `onboard`, §app.project-runtime/onboard), with who started it. */
+  onboard?: { startedBy: "overseer" | "operator" };
   gap?: string;
   item?: string;
   decisions?: string[];
@@ -110,6 +112,7 @@ function rowOf(configuration: string[], d: Record<string, unknown>): BuildRow {
     ...(typeof d.inRoot === "string" && d.inRoot ? { inRoot: d.inRoot } : {}),
     ...(typeof d.title === "string" && d.title ? { title: d.title } : {}),
     ...(d.via === "overseer" ? { via: "overseer" as const } : {}),
+    ...(d.kind === "onboard" ? { onboard: { startedBy: d.startedBy === "overseer" ? ("overseer" as const) : ("operator" as const) } } : {}),
     ...(typeof d.gap === "string" && d.gap ? { gap: d.gap } : {}),
     ...(typeof d.item === "string" && d.item ? { item: d.item } : {}),
     ...(Array.isArray(d.decisions) && d.decisions.length ? { decisions: d.decisions as string[] } : {}),

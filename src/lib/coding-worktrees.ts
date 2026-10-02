@@ -67,8 +67,9 @@ export function folderNote(w: Pick<CodingWorktree, "state" | "path">): string | 
 }
 
 /** The row's meta line before its branch: "Started by you · idle · 2h ago" (time added by the caller). */
-export const startedBy = (w: Pick<CodingWorktree, "startedBy" | "via">): string =>
-  w.startedBy === "overseer" ? "Started by the overseer" : w.via === "overseer" ? "Started by you, via the Overseer" : "Started by you";
+export const startedBy = (w: Pick<CodingWorktree, "startedBy" | "via" | "playbook">): string =>
+  (w.playbook ? "Project verbs playbook run · " : "") +
+  (w.startedBy === "overseer" ? "Started by the overseer" : w.via === "overseer" ? "Started by you, via the Overseer" : "Started by you");
 
 /** Newest first. */
 export const worktreeOrder = (ws: readonly CodingWorktree[]): CodingWorktree[] => [...ws].sort((a, b) => b.createdAt.localeCompare(a.createdAt));

@@ -329,6 +329,8 @@ export interface CodingWorktree {
   startedBy: "overseer" | "operator";
   /** An operator's row the global Overseer started for them: "Started by you, via the Overseer". */
   via?: "overseer";
+  /** The Project verbs playbook's run (§app.project-runtime/onboard): "Project verbs playbook run". */
+  playbook?: true;
   /** `sova/<name>`; null for a session in the project root. */
   branch: string | null;
   /** Why it runs in the project root (a tail: "it isn't a Git repository."). */

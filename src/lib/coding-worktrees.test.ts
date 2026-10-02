@@ -86,6 +86,8 @@ test("row words", () => {
   assert.equal(startedBy(wt()), "Started by the overseer");
   assert.equal(startedBy(wt({ startedBy: "operator" })), "Started by you");
   assert.equal(startedBy(wt({ startedBy: "operator", via: "overseer" })), "Started by you, via the Overseer");
+  assert.equal(startedBy(wt({ playbook: true })), "Project verbs playbook run · Started by the overseer", "a Project verbs run: labelled, by its real starter");
+  assert.equal(startedBy(wt({ startedBy: "operator", playbook: true })), "Project verbs playbook run · Started by you");
   const order = worktreeOrder([wt({ sessionId: "a", createdAt: "2026-09-27T09:00:00Z" }), wt({ sessionId: "b", createdAt: "2026-09-27T11:00:00Z" })]).map((w) => w.sessionId);
   assert.deepEqual(order, ["b", "a"]);
 });

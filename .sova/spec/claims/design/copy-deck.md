@@ -377,7 +377,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 
 | Where | Copy |
 |---|---|
-| Foot row 1 (→ `#/usage`) | Glance: `C {pct}%` `O {pct}%` `OL {pct}%` `Z {pct}%` `DS {amount}` (Claude, OpenAI, Ollama Cloud, Z.ai, DeepSeek — which has no quota, so it shows the money left, rounded to whole units: `DS $4` for a $4.29 balance) · no data: Usage · `title`/`aria-label`: Usage: {Provider} {window} {pct}%, …, DeepSeek balance $4.29 (exact amount) |
+| Foot row 1 (→ `#/usage`) | Glance: `C` `O` `OL` `Z`, each with its pace meter and no number, then `DS {amount}` (DeepSeek has no quota, so it shows the money left, rounded to whole units: `DS $4` for a $4.29 balance) · Claude login with no current reading: `C` with empty tracks (muted) · no data: Usage · `title`: Usage, then a line per provider · `aria-label`: Usage: {lines joined by ". "} · a line: {Provider} {window}: {pct}% used · day {n} of {total} (under a day: {2h 10m} of {5h}) · resets {6:59 PM \| Oct 9 10:00 PM \| declared: Oct 14}, a two-window provider's bars joined by "; " · DeepSeek balance $4.29 (exact amount) · pending Claude: Claude ({login}) reading pending · then each other Claude account: Claude ({email}) {its bars} |
 | Foot row 2 (→ `#/agents`) | `{agents} agents` · `{sessions} sessions` · `{teams} teams`, joined by ` · `, zero segments left out · nothing live: Agents · `title`/`aria-label`: {n} active agents in {m} sessions, {t} teams |
 | Provider names | Claude · OpenAI · Ollama Cloud · Z.ai · DeepSeek |
 | Usage page title / head meta | Usage · Updated {rel} · never read: Not read yet |
@@ -392,7 +392,9 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Meter value | `{pct}%` used |
 | Balance (DeepSeek) | label Balance · value `$4.29` (currency of the balance) · context: the non-zero parts of Granted `$0.00` · Topped up `$4.29`, joined by ` · `, omitted when both are 0 |
 | Out of credit note | This balance can't fund calls. They'll fail until it's topped up. |
-| Meter context | Resets in {2h 17m} (under 24h) · Resets {Sep 25} · reset already passed: Reset at `{HH:MM}`. New reading at the next refresh. |
+| Meter context | Resets in {2h 17m} (under 24h) · Resets {Sep 25} · declared reset: Resets {Oct 14} · with a tick, then ` · day {4} of {7}` (under a day: ` · {2h 43m} of {5h}`) · reset already passed: Reset at `{HH:MM}`. New reading at the next refresh. · a free login's figures: Reset at `{HH:MM}`. Not read while it is free. |
+| Ollama reset day (card) | unset: Reset day unknown · `Set` · field label: Reset day · buttons: Save · Cancel (set: Clear) · invalid: Enter a day from 1 to 31. · set: Resets {Oct 14} · day {18} of {30} · `Change` |
+| `/usage reset-day` | Ollama Cloud resets on day {14} of each month. · Ollama Cloud's reset day is cleared. · Usage: /usage reset-day ollama <1-31\|clear> |
 | Usage chips | Near limit · Rate-limited · Quota used · Out of credit (DeepSeek, `available:false`) |
 | Stale usage (banner-warn; only after a failed Refresh Usage) | **Usage is {42m} old.** Couldn't refresh: {message} · button: `Retry` |
 | Usage file missing (`reason:"missing"`) | **No usage data yet.** Nothing has fetched provider usage on this machine. Refresh Usage fetches it now. · button: `Refresh Usage` |

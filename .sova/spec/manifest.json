@@ -58,7 +58,9 @@
       "evidence": "verified",
       "code": [
         "src/lib/insights.ts",
-        "src/lib/insights.test.ts"
+        "src/lib/insights.test.ts",
+        "src/components/Sidebar.tsx",
+        "src/design/base.css"
       ],
       "requires": [
         "§app.claude-logins/active-login",
@@ -11587,6 +11589,46 @@
         "server/project-services/test-verb.test.ts",
         "server/project-services/note.test.ts",
         "shared/project-contract.test.ts"
+      ]
+    },
+    "§app.insights/pace-tick": {
+      "kind": "behavior",
+      "requires": [
+        "§app.insights/usage-reset-day"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/lib/insights.ts",
+        "src/lib/insights.test.ts",
+        "src/components/Sidebar.tsx",
+        "src/components/UsageView.tsx",
+        "src/design/base.css",
+        "shared/protocol.ts",
+        "server/insights.ts"
+      ]
+    },
+    "§app.insights/usage-reset-day": {
+      "kind": "behavior",
+      "requires": [
+        "§mesh.sync/categories"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/usage-status/windows.ts",
+        "pi-config/extensions/usage-status/windows.test.ts",
+        "pi-config/extensions/usage-status/index.ts",
+        "server/insights.ts",
+        "server/index.ts",
+        "server/insights-usage.test.ts",
+        "shared/protocol.ts",
+        "src/lib/api.ts",
+        "src/components/UsageView.tsx",
+        "src/design/base.css",
+        "server/sync/docs.ts",
+        "server/sync/docs.test.ts",
+        "pi-config/extensions/usage-status/index.test.ts"
       ]
     }
   },

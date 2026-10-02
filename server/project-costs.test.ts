@@ -73,26 +73,28 @@ describe("a project's cost (§app/project-costs)", async () => {
   const org = await orgs.createOrg({ name: "Costs", dir: join(tmp, "ws") });
   const client = join(tmp, "client");
   mkdirSync(client);
+  const otherRoot = join(tmp, "client-other");
+  mkdirSync(otherRoot);
   const project = await orgs.addProject(org.id, { name: "Portal", root: client });
-  const other = await orgs.addProject(org.id, { name: "Other", root: client });
+  const other = await orgs.addProject(org.id, { name: "Other", root: otherRoot });
   const maria = await orgs.addPerson(org.id, { name: "Maria", role: "Payroll" });
   const ws = orgs.orgDir(org.id);
-  const pp = store.projectOverseerPaths(org.id, project.id);
-  const lp = ledger.ledgerPaths(org.id, project.id);
+  const pp = store.projectOverseerPaths(project.id);
+  const lp = ledger.ledgerPaths(project.id);
 
   // The overseer's conversation: its marker, a reply and a cache-warm usage entry.
   const poFile = join(ws, "sessions", `2026-09-20T10-00-00-000Z_0199aaaa-0000-7000-8000-000000000001.jsonl`);
   mkdirSync(join(ws, "sessions"), { recursive: true });
   writeFileSync(poFile, lines([
     header(T0),
-    { type: "custom", id: id(), customType: "sova-project-overseer", data: { v: 1, orgId: org.id, projectId: project.id }, timestamp: iso(T0) },
+    { type: "custom", id: id(), customType: "sova-project-overseer", data: { v: 1, projectId: project.id }, timestamp: iso(T0) },
     reply(T0 + 1000, "zai", "glm-5.3", usage(1_000_000, 100_000)),
     { type: "usage", id: id(), kind: "cache_warm", provider: "zai", model: "glm-5.3", usage: usage(0, 0, 0, 1_000_000), timestamp: iso(T0 + 2000) },
   ]));
   // Another project's overseer: never this project's.
   writeFileSync(join(ws, "sessions", `2026-09-20T10-00-00-000Z_0199aaaa-0000-7000-8000-000000000002.jsonl`), lines([
     header(T0),
-    { type: "custom", id: id(), customType: "sova-project-overseer", data: { v: 1, orgId: org.id, projectId: other.id }, timestamp: iso(T0) },
+    { type: "custom", id: id(), customType: "sova-project-overseer", data: { v: 1, projectId: other.id }, timestamp: iso(T0) },
     reply(T0 + 1000, "zai", "glm-5.3", usage(2_500_000)),
   ]));
 
@@ -165,7 +167,7 @@ describe("a project's cost (§app/project-costs)", async () => {
   const RECONCILE = 1;
 
   test("every source, priced per message: kinds, starters, models, estimates, unpriced", async () => {
-    const c = await costs.projectCost(org.id, project.id);
+    const c = await costs.projectCost(project.id);
     const kind = (k: string) => c.byKind.find((r) => r.kind === k)?.usd ?? 0;
     approx(kind("overseer"), PO, "overseer");
     approx(kind("gathering"), GATHER, "gathering");
@@ -211,10 +213,10 @@ describe("a project's cost (§app/project-costs)", async () => {
     assert.ok(snap.sources["code-a"] && snap.sources["w:claude-code:" + CC] && snap.sources["w:pi:member-1"], Object.keys(snap.sources).join(", "));
     const text = readFileSync(lp.costs, "utf8");
     assert.ok(!text.includes(tmp), "no host path in the repo's ledger");
-    const before = await costs.projectCost(org.id, project.id);
+    const before = await costs.projectCost(project.id);
     unlinkSync(codeB);
     clock += 120_000;
-    const c = await costs.projectCost(org.id, project.id);
+    const c = await costs.projectCost(project.id);
     approx(c.totalUsd, before.totalUsd, "a running cost never shrinks");
     assert.equal(c.notOnHost?.sessions, 1);
     assert.ok(c.top.find((t) => t.sessionId === "code-b")?.countedAt);
@@ -222,7 +224,7 @@ describe("a project's cost (§app/project-costs)", async () => {
 
   test("the org roll-up: each project's total and the org's", async () => {
     clock += 120_000;
-    const r = await costs.orgCosts(org.id);
+    const r = await orgs.orgCosts(org.id);
     const mine = r.projects.find((p) => p.projectId === project.id)!;
     const theirs = r.projects.find((p) => p.projectId === other.id)!;
     approx(theirs.totalUsd, 2.5, "the other overseer's conversation is its own project's");
@@ -231,6 +233,6 @@ describe("a project's cost (§app/project-costs)", async () => {
   });
 
   test("an unknown project is a 404", async () => {
-    await assert.rejects(() => costs.projectCost(org.id, "prj_nope0000"), (e: any) => e.status === 404);
+    await assert.rejects(() => costs.projectCost("prj_nope0000"), (e: any) => e.status === 404);
   });
 });

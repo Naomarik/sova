@@ -77,6 +77,7 @@ import type { BatonInfo, BatonSettings, BatonTold, BatonStartInput, BatonStartRe
 import type { ConflictResolveInput, DecisionsInfo, PromoteResult, SpecStatus } from "../../shared/decisions";
 import type { PipelineInfo, PipelineTimeline } from "../../shared/pipeline";
 import type { OrgCosts, ProjectCost } from "../../shared/costs";
+import type { ProjectList, ProjectRegistered, ProjectSummary } from "../../shared/projects";
 import type { CodingStartInput, CodingStartResult, ItemCodeInput, ItemCodeResult, ItemSendInput, ItemSendResult, ProjectOverseerInfo, ProjectOverseerPatch } from "../../shared/project-overseer";
 import type { HostBrowserAccessChange, HostBrowserAccessResult, HostRename, HostRenameResult, MeshDetails } from "../../shared/mesh-details";
 import type { MeshResync, ResyncJob, ResyncStart } from "../../shared/mesh-resync";
@@ -1006,15 +1007,26 @@ export const revokePersonLinks = (id: string, pid: string, one?: { sessionId: st
 /** A session as their link shows it, read-only ("Preview as {name}"); no token. */
 export const previewAsPerson = (id: string, pid: string, sid: string) =>
   request<PersonPreview>(`/api/orgs/${encodeURIComponent(id)}/people/${encodeURIComponent(pid)}/preview?session=${encodeURIComponent(sid)}`);
-export const addOrgProject = (id: string, name: string, root: string) => request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}/projects`, jsonInit("POST", { name, root }));
+/** A new project born placed in the org (register, then place). */
+export const addOrgProject = (id: string, root: string, name?: string) =>
+  request<OrgDetail & { normalizedFrom?: string }>(`/api/orgs/${encodeURIComponent(id)}/projects`, jsonInit("POST", { root, ...(name ? { name } : {}) }));
 /** Set or clear a project's main stakeholder (a roster person's id, or null for none). */
 export const setProjectStakeholder = (id: string, pid: string, stakeholder: string | null) =>
-  request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}/projects/${encodeURIComponent(pid)}`, jsonInit("PATCH", { stakeholder }));
+  request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}/projects/${encodeURIComponent(pid)}/placement`, jsonInit("PATCH", { stakeholder }));
+
+// ---- projects (§app/projects): every registered project, in an organization or not -----------------
+
+const projectPath = (pid: string) => `/api/projects/${encodeURIComponent(pid)}`;
+export const listProjects = () => request<ProjectList>("/api/projects");
+export const getProject = (pid: string) => request<ProjectSummary>(projectPath(pid));
+/** Register a folder as a project (Add Project, Add as Project); its checkout root, said back when it differs. */
+export const addProject = (root: string) => request<ProjectRegistered>("/api/projects", jsonInit("POST", { root }));
+/** Clone a GitHub repository into a new folder under `parent`, then register it. */
+export const cloneProject = (clone: { repo: string; parent: string; folder?: string }) => request<ProjectRegistered>("/api/projects", jsonInit("POST", { clone }));
+export const patchProject = (pid: string, patch: { name?: string; root?: string }) => request<ProjectSummary>(projectPath(pid), jsonInit("PATCH", patch));
 /** Archive a project (§app.organizations/archive): 409 naming what is open; Unarchive brings it back. */
-export const archiveOrgProject = (id: string, pid: string) =>
-  request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}/projects/${encodeURIComponent(pid)}/archive`, jsonInit("POST", {}));
-export const unarchiveOrgProject = (id: string, pid: string) =>
-  request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}/projects/${encodeURIComponent(pid)}/unarchive`, jsonInit("POST", {}));
+export const archiveProject = (pid: string) => request<ProjectSummary>(`${projectPath(pid)}/archive`, jsonInit("POST", {}));
+export const unarchiveProject = (pid: string) => request<ProjectSummary>(`${projectPath(pid)}/unarchive`, jsonInit("POST", {}));
 
 // ---- the org's owner and the Owner page (§app/owner-page; routes in shared/owner.ts) ----
 /** Set the org's owner (an active roster person's id), or none. */
@@ -1029,7 +1041,7 @@ export const previewOwnerPage = (id: string, at?: { project?: string; c?: string
   );
 /** Show this project on the owner's page, or not. */
 export const setProjectOwnerHidden = (id: string, pid: string, ownerHidden: boolean) =>
-  request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}/projects/${encodeURIComponent(pid)}`, jsonInit("PATCH", { ownerHidden }));
+  request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}/projects/${encodeURIComponent(pid)}/placement`, jsonInit("PATCH", { ownerHidden }));
 /** Hide one conversation from the owner's page, or show it again. */
 export const setBatonHiddenFromOwner = (sid: string, hidden: boolean) => request<BatonInfo>(`/api/baton/${encodeURIComponent(sid)}/owner`, jsonInit("POST", { hidden }));
 /** The project's updates on the owner's page, newest first, withdrawn ones included. */
@@ -1103,46 +1115,47 @@ export const resumeGap = (orgId: string, projectId: string, itemId: string) =>
 export const getGapTimeline = (orgId: string, projectId: string, itemId: string) =>
   request<PipelineTimeline>(`${pipelineBase(orgId, projectId)}/${encodeURIComponent(itemId)}/timeline`);
 /** Stop a held act before it goes ahead (the operator's Cancel). */
-export const cancelHeldAct = (orgId: string, holdId: string, reason?: string) =>
-  request<{ ok: true }>(`/api/orgs/${encodeURIComponent(orgId)}/held/${encodeURIComponent(holdId)}/cancel`, jsonInit("POST", reason ? { reason } : {}));
+export const cancelHeldAct = (projectId: string, holdId: string, reason?: string) =>
+  request<{ ok: true }>(`${projectPath(projectId)}/held/${encodeURIComponent(holdId)}/cancel`, jsonInit("POST", reason ? { reason } : {}));
 
 // ---- a project's cost at API prices (§app/project-costs) ---------------------------------------------
 
-export const getProjectCost = (orgId: string, projectId: string) => request<ProjectCost>(`${projectBase(orgId, projectId)}/costs`);
+export const getProjectCost = (projectId: string) => request<ProjectCost>(`${projectPath(projectId)}/costs`);
 export const getOrgCosts = (orgId: string) => request<OrgCosts>(`/api/orgs/${encodeURIComponent(orgId)}/costs`);
 
 // ---- a project's overseer (§app/project-overseer) ---------------------------------------------------
 
-const overseerBase = (orgId: string, projectId: string) => `${projectBase(orgId, projectId)}/overseer`;
-export const getProjectOverseer = (orgId: string, projectId: string) => request<ProjectOverseerInfo>(overseerBase(orgId, projectId));
-export const openProjectOverseer = (orgId: string, projectId: string) => request<ProjectOverseerInfo>(overseerBase(orgId, projectId), jsonInit("POST"));
-export const patchProjectOverseer = (orgId: string, projectId: string, patch: ProjectOverseerPatch) =>
-  request<ProjectOverseerInfo>(overseerBase(orgId, projectId), jsonInit("PATCH", patch));
-export const runProjectOverseer = (orgId: string, projectId: string) => request<ProjectOverseerInfo>(`${overseerBase(orgId, projectId)}/run`, jsonInit("POST"));
+const overseerBase = (projectId: string) => `${projectPath(projectId)}/overseer`;
+export const getProjectOverseer = (projectId: string) => request<ProjectOverseerInfo>(overseerBase(projectId));
+export const openProjectOverseer = (projectId: string) => request<ProjectOverseerInfo>(overseerBase(projectId), jsonInit("POST"));
+export const patchProjectOverseer = (projectId: string, patch: ProjectOverseerPatch) =>
+  request<ProjectOverseerInfo>(overseerBase(projectId), jsonInit("PATCH", patch));
+export const runProjectOverseer = (projectId: string) => request<ProjectOverseerInfo>(`${overseerBase(projectId)}/run`, jsonInit("POST"));
 /** A new conversation; the current one moves to its read-only history. */
-export const clearProjectOverseer = (orgId: string, projectId: string) => request<ProjectOverseerInfo>(`${overseerBase(orgId, projectId)}/clear`, jsonInit("POST"));
-export const projectOverseerActions = (orgId: string, projectId: string, limit = 30) =>
-  request<OverseerAction[]>(`${overseerBase(orgId, projectId)}/actions?limit=${limit}`);
-export const projectOverseerIdeas = (orgId: string, projectId: string) => request<OverseerIdeasInfo>(`${overseerBase(orgId, projectId)}/ideas`);
-export const addProjectOverseerIdea = (orgId: string, projectId: string, idea: { id: string; title: string }) =>
-  request<OverseerIdeasInfo>(`${overseerBase(orgId, projectId)}/ideas`, jsonInit("POST", idea));
-export const projectOverseerTodos = (orgId: string, projectId: string) => request<OverseerTodosInfo>(`${overseerBase(orgId, projectId)}/todos`);
-export const addProjectOverseerTodo = (orgId: string, projectId: string, text: string) =>
-  request<OverseerTodosInfo>(`${overseerBase(orgId, projectId)}/todos`, jsonInit("POST", { text }));
-export const patchProjectOverseerTodo = (orgId: string, projectId: string, id: string, patch: TodoPatch) =>
-  request<OverseerTodosInfo>(`${overseerBase(orgId, projectId)}/todo?id=${encodeURIComponent(id)}`, jsonInit("PATCH", patch));
+export const clearProjectOverseer = (projectId: string) => request<ProjectOverseerInfo>(`${overseerBase(projectId)}/clear`, jsonInit("POST"));
+export const projectOverseerActions = (projectId: string, limit = 30) =>
+  request<OverseerAction[]>(`${overseerBase(projectId)}/actions?limit=${limit}`);
+export const projectOverseerIdeas = (projectId: string) => request<OverseerIdeasInfo>(`${overseerBase(projectId)}/ideas`);
+export const addProjectOverseerIdea = (projectId: string, idea: { id: string; title: string }) =>
+  request<OverseerIdeasInfo>(`${overseerBase(projectId)}/ideas`, jsonInit("POST", idea));
+export const projectOverseerTodos = (projectId: string) => request<OverseerTodosInfo>(`${overseerBase(projectId)}/todos`);
+export const addProjectOverseerTodo = (projectId: string, text: string) =>
+  request<OverseerTodosInfo>(`${overseerBase(projectId)}/todos`, jsonInit("POST", { text }));
+export const patchProjectOverseerTodo = (projectId: string, id: string, patch: TodoPatch) =>
+  request<OverseerTodosInfo>(`${overseerBase(projectId)}/todo?id=${encodeURIComponent(id)}`, jsonInit("PATCH", patch));
+/** Pass an idea or to-do item to roster people: a gathering, so the org's (§app.project-overseer/ideas-and-todos). */
 export const sendProjectItem = (orgId: string, projectId: string, input: ItemSendInput) =>
-  request<ItemSendResult>(`${overseerBase(orgId, projectId)}/items/send`, jsonInit("POST", input));
-export const codeProjectItem = (orgId: string, projectId: string, input: ItemCodeInput) =>
-  request<ItemCodeResult>(`${overseerBase(orgId, projectId)}/items/code`, jsonInit("POST", input));
+  request<ItemSendResult>(`${projectBase(orgId, projectId)}/items/send`, jsonInit("POST", input));
+export const codeProjectItem = (projectId: string, input: ItemCodeInput) =>
+  request<ItemCodeResult>(`${overseerBase(projectId)}/items/code`, jsonInit("POST", input));
 /** New Coding Session: a coding session in its own worktree, tied to no item, with nothing sent. */
-export const startProjectCoding = (orgId: string, projectId: string, input: CodingStartInput = {}) =>
-  request<CodingStartResult>(`${overseerBase(orgId, projectId)}/coding`, jsonInit("POST", input));
+export const startProjectCoding = (projectId: string, input: CodingStartInput = {}) =>
+  request<CodingStartResult>(`${overseerBase(projectId)}/coding`, jsonInit("POST", input));
 /** The operator's gestures on a coding session's worktree: merge its branch into the root's, or remove it. */
-export const mergeCodingWorktree = (orgId: string, projectId: string, sessionId: string) =>
-  request<ProjectOverseerInfo>(`${overseerBase(orgId, projectId)}/worktrees/merge`, jsonInit("POST", { sessionId }));
-export const removeCodingWorktree = (orgId: string, projectId: string, sessionId: string) =>
-  request<ProjectOverseerInfo>(`${overseerBase(orgId, projectId)}/worktrees/remove`, jsonInit("POST", { sessionId }));
+export const mergeCodingWorktree = (projectId: string, sessionId: string) =>
+  request<ProjectOverseerInfo>(`${overseerBase(projectId)}/worktrees/merge`, jsonInit("POST", { sessionId }));
+export const removeCodingWorktree = (projectId: string, sessionId: string) =>
+  request<ProjectOverseerInfo>(`${overseerBase(projectId)}/worktrees/remove`, jsonInit("POST", { sessionId }));
 
 // ---- voice input (§chat/voice, §app.settings-dialog/voice) ---------------------------------------
 
@@ -1187,8 +1200,9 @@ export const forgetVoiceDevice = (id: string) => request<VoiceStatus>(`/api/voic
 
 // ---- preview links (§mesh.public/preview): this host's own, never a peer's ----------------------------
 
-export const getPreviews = (orgId?: string, projectId?: string) =>
-  request<PreviewList>(`/api/previews${orgId && projectId ? `?orgId=${encodeURIComponent(orgId)}&projectId=${encodeURIComponent(projectId)}` : ""}`, { cache: "no-store" });
+export const getPreviews = () => request<PreviewList>("/api/previews", { cache: "no-store" });
+/** One project's previews on this host. */
+export const getProjectPreviews = (projectId: string) => request<PreviewList>(`${projectPath(projectId)}/previews`, { cache: "no-store" });
 export const mintPreview = (body: PreviewMint) => request<PreviewMinted>("/api/previews", jsonInit("POST", body));
 export const turnOffPreview = (id: string) => request<PreviewView>(`/api/previews/${encodeURIComponent(id)}/off`, jsonInit("POST", {}));
 export const extendPreview = (id: string, days: number) => request<PreviewView>(`/api/previews/${encodeURIComponent(id)}/extend`, jsonInit("POST", { days }));

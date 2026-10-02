@@ -30,7 +30,7 @@ test("refusals: special sessions, TUI-live, archived, mid-turn, subagents workin
   const s = { title: "t", live: null, archived: false } as unknown as SessionSummary;
   assert.equal(configureRefusal(s, false, 0), null);
   assert.match(configureRefusal({ ...s, overseer: true }, false, 0)!, /Overseer/);
-  assert.match(configureRefusal({ ...s, projectOverseer: { orgId: "o", projectId: "p" } }, false, 0)!, /project overseer/);
+  assert.match(configureRefusal({ ...s, projectOverseer: { projectId: "p" } }, false, 0)!, /project overseer/);
   assert.match(configureRefusal({ ...s, workerSession: true }, false, 0)!, /subagent/);
   assert.match(configureRefusal({ ...s, live: { pid: 3, status: "x" } }, false, 0)!, /terminal/);
   assert.match(configureRefusal({ ...s, archived: true }, false, 0)!, /archived/);

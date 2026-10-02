@@ -73,8 +73,10 @@ describe("the prompt and the tool set stay in step", () => {
 
   test("the prompt names every entry of the secret list its read/grep/find/ls enforce", async () => {
     const { secretRules } = await import("./overseer-deny");
+    await import("./outreach/protected-paths"); // adds the sender's credentials, as the server's startup does
     const prompt = renderOverseerPrompt(buildOverseerTools(), readOverseerSettings());
     const r = secretRules("/H", "/A");
+    assert.ok(r.files.some((f) => f.endsWith("/outreach.json")) && r.dirs.some((d) => d.endsWith("/whatsapp")), "the outreach part's secrets are in the list");
     const names = [...r.namesUnder.names, ...r.files, ...r.dirs].map((p) => p.split("/").pop()!);
     for (const n of new Set([...names, ...r.names.map((x) => x.name)])) assert.ok(prompt.includes(`\`${n}\``) || prompt.includes(`/${n}\``), n);
     assert.match(prompt, /\[redacted\]/, "the redaction rule");
@@ -630,7 +632,8 @@ describe("card items", async () => {
 
 describe("the confirm card on the Overseer's route calls (§app.overseer/org-people-facing)", () => {
   test("its items' ids by kind; ideas and to-dos are no target of a people-facing act", async () => {
-    const { cardHeader, OVERSEER_CARD_HEADER } = await import("./overseer-tools");
+    const { cardHeader } = await import("./overseer-tools");
+    const { OVERSEER_CARD_HEADER } = await import("./overseer-sender");
     assert.equal(OVERSEER_CARD_HEADER, "x-sova-overseer-card");
     const header = cardHeader([
       { kind: "person", id: "p_1", orgId: "o", name: "Ana", orgName: "O", status: "active" },

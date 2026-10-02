@@ -71,7 +71,7 @@ async function edge(opts: { bodyMax?: number; headersMs?: number; hosts?: string
 }
 
 function mint(port: number) {
-  const { record, label } = store.mintPreview({ orgId: "o", projectId: "p", port }, none);
+  const { record, label } = store.mintPreview({ projectId: "p", port }, none);
   return { record, label, host: `${label}.preview.test`, origin: `http://${label}.preview.test` };
 }
 

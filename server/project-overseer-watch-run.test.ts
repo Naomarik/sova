@@ -45,18 +45,18 @@ describe("the overseer's last run says how it ended", async () => {
   const org = await orgs.createOrg({ name: "Runs", dir: join(root, "ws") });
   mkdirSync(join(root, "proj"));
   const project = await orgs.addProject(org.id, { name: "Portal", root: join(root, "proj") });
-  const p = store.projectOverseerPaths(org.id, project.id);
+  const p = store.projectOverseerPaths(project.id);
   let path = "";
 
   before(async () => {
-    path = (await po.ensureProjectOverseer(org.id, project.id)).path;
+    path = (await po.ensureProjectOverseer(project.id)).path;
     const chat = await acquireChat(path);
     await chat.setModelRef("stub/runaway");
   });
 
   /** Run Now, then wait until the memo no longer says it is running. */
   async function look(): Promise<LastRun> {
-    const r = await po.lookNow(org.id, project.id, true);
+    const r = await po.lookNow(project.id, true);
     assert.equal(r.started, true, r.why);
     assert.equal(store.readMemo(p).lastRun?.outcome, "started", "running while the turn runs");
     for (let i = 0; i < 400 && store.readMemo(p).lastRun?.outcome === "started"; i++) await new Promise((res) => setTimeout(res, 25));
@@ -82,7 +82,7 @@ describe("the overseer's last run says how it ended", async () => {
 
   test("a run the server's shutdown aborts is recorded cut off by the next start, the same run", async () => {
     stub.reset({ payload: "letters", perDelta: 1 });
-    const r = await po.lookNow(org.id, project.id, true);
+    const r = await po.lookNow(project.id, true);
     assert.equal(r.started, true, r.why);
     const at = store.readMemo(p).lastRun!.at;
     const chat = await acquireChat(path);
@@ -119,10 +119,10 @@ describe("a story that needs 4 gathering sessions goes on by itself", async () =
   async function setUp(name: string) {
     mkdirSync(join(root, name));
     const project = await orgs.addProject(org.id, { name, root: join(root, name) });
-    const p = store.projectOverseerPaths(org.id, project.id);
+    const p = store.projectOverseerPaths(project.id);
     // No hold (q10): its unattended starts go at once; these tests are about the allowances.
     store.patchPoSettings(p, { holdMin: 0 });
-    const { path } = await po.ensureProjectOverseer(org.id, project.id);
+    const { path } = await po.ensureProjectOverseer(project.id);
     const chat = await acquireChat(path);
     await chat.setModelRef("stub/runaway");
     const started = () => allBatons().filter((b) => b.projectId === project.id && typeof b.owner === "object" && b.owner.overseerOf === project.id).length;
@@ -132,7 +132,7 @@ describe("a story that needs 4 gathering sessions goes on by itself", async () =
     /** One look on its own that calls sova_start_gathering once. */
     const look = async () => {
       stub.reset({ payload: "letters", perDelta: 16, tool: "sova_start_gathering", args: gather });
-      const r = await po.lookNow(org.id, project.id, true);
+      const r = await po.lookNow(project.id, true);
       assert.equal(r.started, true, r.why);
       await settle();
       assert.equal(store.readMemo(p).lastRun?.outcome, "finished");
@@ -155,14 +155,14 @@ describe("a story that needs 4 gathering sessions goes on by itself", async () =
     for (let i = 0; i < 3; i++) await s.look();
     assert.equal(s.started(), 4, "the 4th gathering session starts with no operator message");
     assert.deepEqual(s.refusals(), []);
-    const info = await po.projectOverseerInfo(org.id, s.project.id);
+    const info = await po.projectOverseerInfo(s.project.id);
     assert.equal(info.usage.allowance.message.gather.used, 1);
     assert.equal(info.usage.allowance.today.gather.used, 3);
   });
 
   test("with 2 a day on its own: the 3rd is refused and held, and the next day's tick looks again and starts it", async () => {
     const s = await setUp("capped");
-    await po.patchProjectOverseer(org.id, s.project.id, { caps: { gatherPerDay: 2 } });
+    await po.patchProjectOverseer(s.project.id, { caps: { gatherPerDay: 2 } });
     await s.look();
     await s.look();
     await s.look();

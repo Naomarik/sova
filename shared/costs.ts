@@ -1,5 +1,5 @@
 // A project's cost at API prices (§app/project-costs): the wire shape of
-// GET /api/orgs/:id/projects/:pid/costs and GET /api/orgs/:id/costs (main listener only; never the
+// GET /api/projects/:pid/costs and GET /api/orgs/:id/costs (main listener only; never the
 // share listener, the owner page's projection or the overseer's tools). Types only.
 
 /** What a session is to the project. Workers are every worker of a coding session, at any depth. */
@@ -61,7 +61,6 @@ export interface CostEstimate {
 }
 
 export interface ProjectCost {
-  orgId: string;
   projectId: string;
   totalUsd: number;
   /** When this was counted (ISO). */

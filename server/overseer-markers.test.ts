@@ -23,6 +23,7 @@ const { canonicalPath } = await import("./paths");
 const { getSessionSummary } = await import("./sessions-index");
 // Registers the Overseer runtime loadout with chat-manager, as index.ts does.
 const overseer = await import("./overseer");
+const sessionPrompt = await import("./session-prompt");
 const { writeOverseerState } = await import("./overseer-store");
 
 after(async () => {
@@ -315,7 +316,7 @@ describe("POST /api/sessions/prompt's rule (promptSession)", () => {
     const path = make("pl1");
     const before = readFileSync(path, "utf8");
     liveRecord("p-other-pl1.json", process.ppid, path);
-    const r = await overseer.promptSession(path, "do it", "x");
+    const r = await sessionPrompt.promptSession(path, "do it", "x");
     assert.equal(r.ok, false);
     assert.match(!r.ok ? r.error : "", /open in a terminal/);
     assert.equal(readFileSync(path, "utf8"), before);
@@ -326,7 +327,7 @@ describe("POST /api/sessions/prompt's rule (promptSession)", () => {
     liveRecord(`p${process.pid}-pl2.json`, process.pid, path, 1);
     const chat = await acquireChat(path, true);
     stubModel(chat);
-    const r = await overseer.promptSession(path, "check the build", await ov());
+    const r = await sessionPrompt.promptSession(path, "check the build", await ov());
     assert.deepEqual(r, { ok: true, queued: false, kind: "prompt" });
     await until(() => userRows(path).some(([t, m]) => t === "check the build" && m));
     await chat.session.waitForIdle();
@@ -335,7 +336,7 @@ describe("POST /api/sessions/prompt's rule (promptSession)", () => {
 
   test("mid-turn, a follow-up by default: queued behind the turn as the Overseer's, then delivered and marked", async () => {
     const t = await midTurn("pl4");
-    const r = await overseer.promptSession(t.path, "then run the tests", await ov());
+    const r = await sessionPrompt.promptSession(t.path, "then run the tests", await ov());
     assert.deepEqual(r, { ok: true, queued: true, kind: "followUp" });
     const row = t.snaps.at(-1)?.find((i) => i.text === "then run the tests");
     assert.deepEqual(row && [row.kind, row.origin, row.overseer], ["followUp", "server", true]);
@@ -352,7 +353,7 @@ describe("POST /api/sessions/prompt's rule (promptSession)", () => {
 
   test("mid-turn with delivery steer: queued as a steer, and it enters the running turn marked", async () => {
     const t = await midTurn("pl5");
-    const r = await overseer.promptSession(t.path, "stop and use pnpm", await ov(), "steer");
+    const r = await sessionPrompt.promptSession(t.path, "stop and use pnpm", await ov(), "steer");
     assert.deepEqual(r, { ok: true, queued: true, kind: "steer" });
     assert.deepEqual(t.snaps.at(-1)?.map((i) => [i.kind, i.origin, i.overseer]), [["steer", "server", true]]);
     t.release();
@@ -364,7 +365,7 @@ describe("POST /api/sessions/prompt's rule (promptSession)", () => {
 
   test("a queued Overseer message the user removes leaves no marker and no pending mark", async () => {
     const t = await midTurn("pl6");
-    await overseer.promptSession(t.path, "maybe later", await ov());
+    await sessionPrompt.promptSession(t.path, "maybe later", await ov());
     const id = t.snaps.at(-1)![0]!.id;
     // Handed to the SDK already (it holds nothing else), so its mark is pending: the collision
     // check that the removal below is what drops it.
@@ -381,7 +382,7 @@ describe("POST /api/sessions/prompt's rule (promptSession)", () => {
 
   test("an untagged send (no sender secret) queues the same way, without the Overseer flag", async () => {
     const t = await midTurn("pl7");
-    const r = await overseer.promptSession(t.path, "from a script");
+    const r = await sessionPrompt.promptSession(t.path, "from a script");
     assert.deepEqual(r, { ok: true, queued: true, kind: "followUp" });
     assert.deepEqual(t.snaps.at(-1)?.map((i) => [i.kind, i.origin, i.overseer]), [["followUp", "server", undefined]]);
     t.release();
@@ -392,9 +393,9 @@ describe("POST /api/sessions/prompt's rule (promptSession)", () => {
 
   test("refuses the Overseer itself, and blank text", async () => {
     const { path } = await overseer.ensureOverseer();
-    const r = await overseer.promptSession(path, "hello me");
+    const r = await sessionPrompt.promptSession(path, "hello me");
     assert.deepEqual(r.ok ? null : r.status, 409);
-    assert.deepEqual(await overseer.promptSession(make("pl3"), "   "), { ok: false, status: 400, error: "text must not be blank" });
+    assert.deepEqual(await sessionPrompt.promptSession(make("pl3"), "   "), { ok: false, status: 400, error: "text must not be blank" });
   });
 });
 

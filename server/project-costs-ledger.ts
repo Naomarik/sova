@@ -1,12 +1,13 @@
 import { appendFileSync, mkdirSync, readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, isAbsolute, join } from "node:path";
 import type { CostKind, CostStarter } from "../shared/costs";
 import { writeAtomic } from "./overseer-store";
-import { orgDir, OrgError } from "./orgs";
+import { OrgError } from "./org-error";
+import { projectDir } from "./projects/spaces";
 
 /**
- * A project's cost ledger in the org's workspace repo (§app.project-costs/ledger), so it moves with
- * the org. Neither file holds a secret, a path or a host name; a snapshot keeps its session's title,
+ * A project's cost ledger in its engine's directory (§app.project-costs/ledger), so it moves with
+ * the project. Neither file holds a secret, a path or a host name; a snapshot keeps its session's title,
  * as the build statechart does.
  *
  * - `projects/<pid>/usage.jsonl`: append-only usage that has no transcript: one row per reconciler
@@ -23,9 +24,10 @@ export interface LedgerPaths {
   costs: string;
 }
 
-export function ledgerPaths(orgId: string, projectId: string, workspace = orgDir(orgId)): LedgerPaths {
-  if (!SAFE_ID.test(orgId) || !SAFE_ID.test(projectId)) throw new OrgError("Unknown project", 404);
-  const dir = join(workspace, "projects", projectId);
+export function ledgerPaths(projectId: string, workspace?: string): LedgerPaths {
+  if (!SAFE_ID.test(projectId)) throw new OrgError("Unknown project", 404);
+  if (workspace !== undefined && !isAbsolute(workspace)) throw new Error(`ledgerPaths: the engine's directory must be absolute, not ${JSON.stringify(workspace)}`);
+  const dir = join(workspace ?? projectDir(projectId), "projects", projectId);
   return { usage: join(dir, "usage.jsonl"), costs: join(dir, "costs.json") };
 }
 

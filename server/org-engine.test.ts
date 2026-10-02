@@ -101,7 +101,7 @@ describe("org engines: one host per org", () => {
     after(() => rmSync(ws, { recursive: true, force: true }));
     mkdirSync(join(ws, "projects", "prj_q", "overseer"), { recursive: true });
     writeFileSync(join(ws, "projects", "prj_q", "overseer", "overseer.json"), JSON.stringify({ autonomy: "L2", holdMin: 3 }));
-    const config: Record<string, string[]> = { "watch/org_q/prj_q": ["attach", "paused"], "person/org_q/p_1": ["proposed"] };
+    const config: Record<string, string[]> = { "watch/prj_q": ["attach", "paused"], "person/org_q/p_1": ["proposed"] };
     const f = fakeHost();
     const host = { ...f.host, configuration: (sid: string) => config[sid] ?? null, sessions: (statechart?: string) => (statechart === "person" ? [{ id: "person/org_q/p_1", statechart: "person", configuration: ["active"], data: {} }] : []) };
     let stamp: ((sid: string, e: string, p: Record<string, unknown>, who?: { by?: "overseer"; projectId?: string }) => { autonomy: string; holdMs: number; paused: boolean; projectId?: string; by: string }) | null = null;

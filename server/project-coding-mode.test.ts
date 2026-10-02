@@ -36,7 +36,7 @@ test("stored tolerantly: anything unusable (align included) reads as Automatic",
 });
 
 test("patched strictly: a sentence for each problem; null goes back to Automatic", () => {
-  const p = store.projectOverseerPaths("org_aaaaaaaa", "prj_bbbbbbbb", join(tmp, "ws"));
+  const p = store.projectOverseerPaths("prj_bbbbbbbb", join(tmp, "ws"));
   assert.throws(() => store.patchPoSettings(p, { codingMode: "delegate" }), /codingMode must be null \(Automatic\) or/);
   assert.throws(() => store.patchPoSettings(p, { codingMode: { minorModes: [] } }), /codingMode\.mode is required/);
   assert.throws(() => store.patchPoSettings(p, { codingMode: { mode: "turbo" } }), /Unknown mode turbo: use normal or delegate\./);

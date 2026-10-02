@@ -26,12 +26,13 @@ export const isOrgSession = (s: Pick<SessionSummary, "org">): boolean => !!s.org
 
 /**
  * The one check every ordinary surface reads (Recent, Needs you, Groups, Live & web, the Archive and
- * its cleanup, recent folders, the overview): a main thread that no organization owns. It is NOT
+ * its cleanup, recent folders, the overview): a main thread that no organization and no registered
+ * project owns (a standalone project's sessions are the Projects region's). It is NOT
  * folded into `isMainThread`, because the Organizations region, the Overseer page and the Agents
  * board still read org sessions.
  */
-export const isOrdinarySession = (s: Pick<SessionSummary, "workerSession" | "overseer" | "org">): boolean => isMainThread(s) && !isOrgSession(s);
+export const isOrdinarySession = (s: Pick<SessionSummary, "workerSession" | "overseer" | "org" | "project">): boolean => isMainThread(s) && !isOrgSession(s) && !s.project;
 
-/** Which of the pane's three places a main thread lives in: org wins over live, web and archived. */
-export const sidebarRegion = (s: Pick<SessionSummary, "live" | "origin" | "archived" | "org">): "org" | "top" | "archive" =>
-  isOrgSession(s) ? "org" : isTopSession(s) ? "top" : "archive";
+/** Which of the pane's places a main thread lives in: org, then a project's (§app.projects/list), win over live, web and archived. */
+export const sidebarRegion = (s: Pick<SessionSummary, "live" | "origin" | "archived" | "org" | "project">): "org" | "projects" | "top" | "archive" =>
+  isOrgSession(s) ? "org" : s.project ? "projects" : isTopSession(s) ? "top" : "archive";

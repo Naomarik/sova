@@ -31,6 +31,7 @@ const { SessionManager } = await import("@earendil-works/pi-coding-agent");
 const { canonicalPath } = await import("./paths");
 const { markOwned } = await import("./write-guard");
 const overseer = await import("./overseer");
+const sessionPrompt = await import("./session-prompt");
 
 after(async () => {
   await disposeAllChats();
@@ -103,7 +104,7 @@ describe("input source (§app.overseer/input-source)", () => {
     await chat.session.waitForIdle();
     assert.equal(sourceOf("[overseer-brief] a brief"), "rpc");
     // sova_send's route, which auto-resume's prompts take too.
-    const sent = await overseer.promptSession(path, "sent by the overseer");
+    const sent = await sessionPrompt.promptSession(path, "sent by the overseer");
     assert.ok(sent.ok);
     await until(() => sourceOf("sent by the overseer") !== undefined);
     await chat.session.waitForIdle();

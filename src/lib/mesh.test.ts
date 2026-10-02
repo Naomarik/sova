@@ -29,6 +29,8 @@ import {
   notePeerSessions,
   notePeerOrgs,
   orgHostOf,
+  projectHostOf,
+  notePeerProjects,
   pathsNamed,
   peerUnavailable,
   resetHosts,
@@ -86,12 +88,23 @@ test("a peer's organization: its routes, and a hand-off started in it, go to tha
   assert.equal(orgHostOf("org_iad7rvz9"), "vps");
   assert.equal(orgHostOf("org_here"), null);
   assert.equal(routeUrl("/api/orgs/org_iad7rvz9"), "/peer/vps/api/orgs/org_iad7rvz9");
-  assert.equal(routeUrl("/api/orgs/org_iad7rvz9/projects/prj_1/overseer/todos"), "/peer/vps/api/orgs/org_iad7rvz9/projects/prj_1/overseer/todos");
+  assert.equal(routeUrl("/api/orgs/org_iad7rvz9/projects/prj_1/decisions"), "/peer/vps/api/orgs/org_iad7rvz9/projects/prj_1/decisions");
   assert.equal(routeUrl("/api/orgs/org_iad7rvz9/people/p_1/links/revoke", "{}"), "/peer/vps/api/orgs/org_iad7rvz9/people/p_1/links/revoke");
   assert.equal(routeUrl("/api/baton", JSON.stringify({ orgId: "org_iad7rvz9", projectId: "prj_1", to: "p_1" })), "/peer/vps/api/baton");
   // This host's own: the list, attach, the operator's name, a local org, a local start.
   for (const url of ["/api/orgs", "/api/orgs/attach", "/api/orgs/operator", "/api/orgs/org_here", "/api/orgs/org_here/commit"]) assert.equal(routeUrl(url, "{}"), url);
   assert.equal(routeUrl("/api/baton", JSON.stringify({ orgId: "org_here" })), "/api/baton");
+  resetHosts();
+});
+
+test("a peer's project, placed or not: its /api/projects/<id> routes go to that peer; the list and Add Project stay here", () => {
+  resetHosts();
+  notePeerProjects("vps", ["prj_far"]);
+  assert.equal(projectHostOf("prj_far"), "vps");
+  assert.equal(projectHostOf("prj_here"), null);
+  assert.equal(routeUrl("/api/projects/prj_far/overseer/todos"), "/peer/vps/api/projects/prj_far/overseer/todos");
+  assert.equal(routeUrl("/api/projects/prj_far/held/h_1/cancel", "{}"), "/peer/vps/api/projects/prj_far/held/h_1/cancel");
+  for (const url of ["/api/projects", "/api/projects/prj_here", "/api/projects/prj_here/costs"]) assert.equal(routeUrl(url, "{}"), url);
   resetHosts();
 });
 

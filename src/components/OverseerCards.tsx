@@ -19,7 +19,8 @@ import { briefBody, confirmRows, goTo, navigateDetails, settingsTarget } from ".
 import { scrollToCardId } from "../lib/card-refs";
 import { clockTime, relativeTime, stampTime } from "../lib/format";
 import { groupLinkIndex, resolveAppLink, sessionActiveAt, sessionIndex, sessionIndexVersion } from "../lib/session-links";
-import { personHref, projectHref } from "../lib/orgs-route";
+import { personHref } from "../lib/orgs-route";
+import { projectHref } from "../lib/projects-route";
 import { openSettings } from "../lib/settings-nav";
 import { ActionMenu } from "./ActionMenu";
 import { Markdown } from "./Markdown";
@@ -436,7 +437,7 @@ function ConfirmItemRow(props: { item: SovaConfirmItem; since?: string; children
       </li>
     );
   if (it.kind === "project" || it.kind === "person") {
-    const href = it.kind === "project" ? projectHref(it.orgId, it.id) : personHref(it.orgId, it.id);
+    const href = it.kind === "project" ? projectHref(it.id) : personHref(it.orgId, it.id);
     return (
       <li class="overseer-confirm-item">
         <span class="overseer-confirm-item-line">
@@ -444,7 +445,10 @@ function ConfirmItemRow(props: { item: SovaConfirmItem; since?: string; children
           <a class="overseer-confirm-item-name" href={href}>
             {it.name}
           </a>
-          <span class="overseer-confirm-item-meta">{it.orgName}</span>
+          {/* A standalone project has no organization: its name alone. */}
+          <Show when={it.orgName}>
+            <span class="overseer-confirm-item-meta">{it.orgName}</span>
+          </Show>
           <Show when={it.kind === "person" && it.status !== "active" ? it.status : null}>
             {(st) => (
               <span class={`chip ${st() === "proposed" ? "chip-info" : ""}`}>

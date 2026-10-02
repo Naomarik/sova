@@ -5,7 +5,7 @@ import { Dynamic, Portal } from "solid-js/web";
 import type { AgentsInsight, AttentionDigest, ContextInfo, OverseerInfo, SessionGroup, SessionSummary, UsageInsight } from "../../shared/protocol";
 import { OVERSEER_HASH, overseerButtonLabel } from "../lib/overseer";
 import { openOverview } from "../lib/overview-route";
-import { autoTitleSessions, fetchTargets, sessionsDir as fetchSessionsDir, setSessionArchived } from "../lib/api";
+import { autoTitleSessions, fetchTargets, listProjects, sessionsDir as fetchSessionsDir, setSessionArchived } from "../lib/api";
 import { nameableRows, nameLabel, nameSessions, namingIn, setNaming } from "../lib/auto-title";
 import { type ArchiveGroupId, groupByArchiveDate, sessionsWord, startOfDay } from "../lib/archive";
 import { relativeTime, shortModel, tildePath } from "../lib/format";
@@ -58,6 +58,9 @@ import { overlaid, rowLeadMark, rowNeedsYou, SIGNAL_CLASS, SIGNAL_ICON, signalTi
 import { readinessBadge, readinessCount, readinessCountWords, readinessTitle } from "../lib/readiness";
 import { requestListRefresh } from "../lib/list-refresh";
 import { orgHref } from "../lib/orgs-route";
+import { inProjectsRegion, projectBlocks, projectRowCount, PROJECTS_KEY } from "../lib/project-region";
+import { projectHref, PROJECTS_HREF } from "../lib/projects-route";
+import { AddProjectDialog } from "./AddProjectDialog";
 import { marksOverlay, openSessionFeed } from "../lib/session-feed";
 import { reuseUnchanged } from "../lib/summary-diff";
 import { readKey, removeKey, writeKey } from "../lib/storage-keys";
@@ -307,7 +310,7 @@ function SessionRow(props: {
       path: row.path,
       title: row.title,
       groupId: row.groupId ?? null,
-      org: isOrgSession(row),
+      org: isOrgSession(row) || !!row.project,
       orgProject: orgProjectOf(row),
       peer: host ? hostLabel(host) : null,
       // Busy as the row shows it: this tab's own run is newer than the last fetched list.
@@ -1532,6 +1535,50 @@ export function Sidebar(props: {
     if (open === groupDoneOpen(key, rows)) return;
     setOpenDone((m) => ({ ...m, [key]: open }));
   };
+  /**
+   * Projects (lib/project-region, §app.projects/list): every standalone project's sessions, and only
+   * here, right before Organizations — each registered project's heading with its overseer's eye,
+   * then its Builds. Open by default, a collapse remembered for the tab.
+   */
+  // The registered projects, read again with the session list (a project added or archived moves
+  // both), at most every 15 seconds: the list reloads on every live event.
+  const [projectList, { refetch: refetchProjects }] = createResource(() => listProjects().catch(() => null));
+  let projectsReadAt = Date.now();
+  createEffect(
+    on(
+      () => props.sessions,
+      () => {
+        if (Date.now() - projectsReadAt < 15_000) return;
+        projectsReadAt = Date.now();
+        void refetchProjects();
+      },
+      { defer: true },
+    ),
+  );
+  const projectHits = createMemo(() => hits().filter(inProjectsRegion));
+  const projectsFound = createMemo(() => {
+    const q = query().trim().toLowerCase();
+    const list = projectList()?.projects;
+    return list && q ? list.filter((p) => `${p.name} ${p.root}`.toLowerCase().includes(q)) : list;
+  });
+  const projBlocks = createMemo(() => {
+    const blocks = projectBlocks(projectHits(), projectsFound() ?? undefined);
+    // A search keeps a project whose name matched, and any project with a row that did.
+    return searching() ? blocks.filter((b) => projectsFound()?.some((p) => p.id === b.id) || b.builds.active.length + b.builds.done.length > 0 || b.overseer) : blocks;
+  });
+  const projRowCount = () => projectRowCount(projBlocks());
+  const [addingProject, setAddingProject] = createSignal(false);
+  const [projectsStored, setProjectsStored] = createSignal(storedOrgsOpen(readKey(sessionStorage, PROJECTS_KEY)));
+  const projectsOpen = () => orgsRegionOpenRule({ stored: projectsStored(), searching: searching(), holdsSelected: projectHits().some((s) => s.path === props.selected) });
+  const onProjectsToggle = (e: Event & { currentTarget: HTMLDetailsElement }) => {
+    const open = e.currentTarget.open;
+    if (open === projectsOpen()) return; // our own `open` update, not the user's
+    setProjectsStored(open);
+    writeKey(sessionStorage, PROJECTS_KEY, open ? "1" : "0");
+  };
+  /** Shown once the list has loaded, unless a search found nothing in it. */
+  const showProjects = () => !!props.sessions && (!searching() || projBlocks().length > 0);
+
   /** A project row: line 2 names a settle session's conflict, or why a conversation hasn't started. */
   const ProjectRow = (r: { session: SessionSummary }) => {
     const line = () => rowLine(r.session);
@@ -2301,6 +2348,83 @@ export function Sidebar(props: {
             </section>
           </Show>
 
+          {/* Projects, right before Organizations (lib/project-region): the only place a standalone
+              project's sessions are listed, each project's heading with its overseer's eye, then Builds. */}
+          <Show when={showProjects()}>
+            <details class="sidebar-region sidebar-orgs sidebar-projects" aria-labelledby="r-projects" open={projectsOpen()} onToggle={onProjectsToggle}>
+              <summary class="sidebar-orgs-summary">
+                <h2 class="sidebar-region-head" id="r-projects" title="Your projects that no organization places: their overseers and coding sessions.">
+                  <Icon name="chevron-right" small class="icon-twist" />
+                  Projects <span class="sidebar-region-count">· {projRowCount()}</span>
+                  <Show when={!projectsOpen() && folderActive(projectHits(), localRunning())}>
+                    <span class="session-group-active" title="An agent is working in one of these sessions">
+                      <span class="session-rail-dot" />
+                      <span class="visually-hidden">, an agent is working here</span>
+                    </span>
+                  </Show>
+                  <button
+                    type="button"
+                    class="button button-icon button-ghost org-link"
+                    aria-label="Add Project"
+                    title="Add Project"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setAddingProject(true);
+                    }}
+                    onKeyDown={(e) => e.stopPropagation()}
+                  >
+                    <Icon name="plus" small />
+                  </button>
+                  <a
+                    class="button button-icon button-ghost org-link"
+                    href={PROJECTS_HREF}
+                    aria-label="Open the Projects page"
+                    title="Open the Projects page"
+                    onClick={(e) => e.stopPropagation()}
+                    onKeyDown={(e) => e.stopPropagation()}
+                  >
+                    <Icon name="arrow-right" small />
+                  </a>
+                </h2>
+              </summary>
+              <Show when={projBlocks().length} fallback={<p class="sidebar-region-note">No projects yet. Add a folder or a GitHub repository with +.</p>}>
+                <For each={projBlocks()}>
+                  {(p) => (
+                    <div class="org-project">
+                      <div class="org-project-head">
+                        <h4 class="list-group-label org-project-label" title={p.name}>
+                          <a class="org-project-name project-region-link" href={projectHref(p.id)}>
+                            <bdi>{p.name}</bdi>
+                          </a>
+                          <span class="text-num">{p.builds.active.length + p.builds.done.length}</span>
+                        </h4>
+                        <Show when={p.overseer}>{(po) => <OverseerEye session={po()} project={p.name} selected={props.selected} />}</Show>
+                      </div>
+                      <ProjectGroup
+                        key={`projects\n${p.id}\nbuilds`}
+                        label="Builds"
+                        title="Coding sessions this project started."
+                        doneTitle="Merged, and the ones you archived."
+                        states={[{ label: "", rows: p.builds.active }]}
+                        done={p.builds.done}
+                      />
+                    </div>
+                  )}
+                </For>
+              </Show>
+            </details>
+          </Show>
+          <Show when={addingProject()}>
+            <AddProjectDialog
+              onCancel={() => setAddingProject(false)}
+              onAdded={() => {
+                projectsReadAt = Date.now();
+                void refetchProjects();
+              }}
+            />
+          </Show>
+
           {/* Organizations, last before the Archive (lib/org-region): the only place an org's
               sessions are listed. Its own Needs you first, then org → project → rows, each project
               in groups, each with a collapsed Done tail. Open by default; a collapse holds for the tab. */}
@@ -2366,8 +2490,8 @@ export function Sidebar(props: {
                                 <span class="list-meta">{it.where}</span>
                               </span>
                             </a>
-                            <Show when={it.held && it.org ? { held: it.held, orgId: it.org.orgId } : null}>
-                              {(h) => <CancelHeldButton orgId={h().orgId} holdId={h().held.id} what={h().held.what} class="org-needs-cancel" />}
+                            <Show when={it.held && it.org?.projectId ? { held: it.held, projectId: it.org.projectId } : null}>
+                              {(h) => <CancelHeldButton projectId={h().projectId} holdId={h().held.id} what={h().held.what} class="org-needs-cancel" />}
                             </Show>
                           </li>
                         );

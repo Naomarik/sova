@@ -4,7 +4,7 @@
 
 import type { BatonStarted, BatonStartedFor, BatonTold } from "../../shared/baton";
 import { relativeTime, stampTime } from "./format";
-import { projectOverseerHref } from "./orgs-route";
+import { projectOverseerHref } from "./projects-route";
 import { OVERSEER_HASH, overseerHistoryHref } from "./overseer";
 
 /** Who, as the strip names them: "you", "the {project} overseer", "you, via the Overseer". */
@@ -17,8 +17,8 @@ export function starterName(s: Pick<BatonStarted, "who">, projectName: string): 
 /** Where the overseer part links: the project's overseer page, or the Overseer (its current conversation,
     else that one read-only from its History); null for the operator's own start, or an Overseer
     conversation not recorded. */
-export function starterHref(s: Pick<BatonStarted, "who" | "overseer">, orgId: string, projectId: string): string | null {
-  if (s.who === "project-overseer") return projectOverseerHref(orgId, projectId);
+export function starterHref(s: Pick<BatonStarted, "who" | "overseer">, projectId: string): string | null {
+  if (s.who === "project-overseer") return projectOverseerHref(projectId);
   if (s.who === "overseer" && s.overseer) return s.overseer.current ? OVERSEER_HASH : overseerHistoryHref(s.overseer.id);
   return null;
 }
@@ -72,7 +72,7 @@ const when = (iso: string, now: number): string => `${stampTime(iso, now)} (${re
 /** What It's Told, as one markdown document (§app.baton/told). */
 export function toldMarkdown(t: BatonTold, now: number): string {
   const who = starterName(t.started, t.projectName);
-  const href = starterHref(t.started, t.orgId, t.projectId);
+  const href = starterHref(t.started, t.projectId);
   const whoText = href ? `[${linkText(who)}](${href})` : who;
   const out: string[] = ["## Started by", "", `Started by ${whoText} · ${when(t.started.at, now)}.`];
   if (t.startedFor) out.push("", startedForLine(t.startedFor));

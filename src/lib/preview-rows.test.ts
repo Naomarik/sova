@@ -7,7 +7,6 @@ import { makerLine, previewRow, previewTitle, senderLine, stateLine } from "./pr
 const NOW = Date.parse("2026-09-30T00:00:00.000Z");
 const view = (over: Partial<PreviewView>): PreviewView => ({
   id: "pv_aaaaaaaaaaaaaaaa",
-  orgId: "o",
   projectId: "p",
   port: 5173,
   createdAt: "2026-09-29T00:00:00.000Z",

@@ -15,7 +15,7 @@ import { type PeerEntry, peerUrl } from "./peers";
 // no response headers in time, 403 the peer's gate refused us.
 
 const HOP_BY_HOP = ["connection", "keep-alive", "proxy-authenticate", "proxy-authorization", "te", "trailer", "transfer-encoding", "upgrade"];
-/** The Overseer's in-process sender secret (server/overseer.ts OVERSEER_SENDER_HEADER): never
+/** The Overseer's in-process sender secret (server/overseer-sender.ts OVERSEER_SENDER_HEADER): never
     forwarded, so a peer can't replay it against this host (§mesh.links/delivery). */
 const OVERSEER_HEADER = "x-sova-overseer";
 /** This host's own credentials (server/auth.ts): never forwarded, so no peer host ever sees the

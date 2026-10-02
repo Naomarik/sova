@@ -67,7 +67,6 @@ export interface PipelineBuild {
 export interface HeldAct {
   /** `${sessionId}:${holdId}` (F19): the statechart's hold id is unique only within its session. Opaque to the UI. */
   id: string;
-  orgId: string;
   projectId: string;
   itemId?: string;
   gap?: string;

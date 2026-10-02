@@ -83,7 +83,7 @@ await seedBuild(org.id, pb.id, { sessionId: "c-removed", kind: "coding", created
 await seedBuild(org.id, pb.id, { sessionId: "c-open", kind: "coding", createdAt: at22, worktree: { path: join(root, "nowhere3"), branch: "sova/c", base: "abc", target: "main" } });
 // Secret move: switched off the owner's page.
 await baton.createBaton({ orgId: org.id, projectId: pc.id, to: kim.id, publicTitle: "OFF-PROJECT-TITLE", goal: "g" });
-await orgs.patchProject(org.id, pc.id, { ownerHidden: true });
+await orgs.patchPlacement(org.id, pc.id, { ownerHidden: true });
 
 const app = new Hono();
 registerOrgRoutes(app);
@@ -294,10 +294,10 @@ describe("the page's content (§app.owner-page/content)", () => {
     await call("POST", `/api/baton/${s3.sessionId}/owner`, { hidden: true });
     assert.ok(!JSON.stringify(await ownerView(org.id, { project: plinks.handleOf("q", pa.id) })).includes("HIDDEN-TITLE"));
     assert.equal((await call("POST", `/api/baton/${s3.sessionId}/owner`, { hidden: "yes" })).status, 400);
-    const off = await call<OrgDetail>("PATCH", `/api/orgs/${org.id}/projects/${pb.id}`, { ownerHidden: true });
+    const off = await call<OrgDetail>("PATCH", `/api/orgs/${org.id}/projects/${pb.id}/placement`, { ownerHidden: true });
     assert.equal(off.body.projectList.find((x) => x.id === pb.id)!.ownerHidden, true);
     await assert.rejects(() => ownerView(org.id, { project: plinks.handleOf("q", pb.id) }), /Not found/);
-    await call("PATCH", `/api/orgs/${org.id}/projects/${pb.id}`, { ownerHidden: false });
+    await call("PATCH", `/api/orgs/${org.id}/projects/${pb.id}/placement`, { ownerHidden: false });
     assert.equal(orgs.readProjects(org.id).find((x) => x.id === pb.id)!.ownerHidden, undefined);
   });
 });

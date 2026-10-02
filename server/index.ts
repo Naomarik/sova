@@ -19,6 +19,8 @@ import { runLedger } from "./auto-resume";
 import { startBudgetRecount } from "./baton-recount";
 import { registerProjectOverseerRoutes } from "./project-overseer-routes";
 import { registerProjectCostRoutes } from "./project-costs-routes";
+import { registerProjectRoutes } from "./projects/routes";
+import { openRegisteredProjects } from "./projects/spaces";
 import { reconcileProjectServices, registerProjectServiceRoutes } from "./project-services/routes";
 import { startProjectOverseerLoop } from "./project-overseer";
 import { attachedWorkspaces, openAttachedOrgs } from "./orgs";
@@ -109,11 +111,7 @@ import {
   clearOverseer,
   overseerInfo,
   overseerSettingsInfo,
-  pathOfId,
-  promptSession,
-  overseerSender,
   renderPeerRead,
-  OVERSEER_SENDER_HEADER,
   saveOverseerSettings,
   setOverseerDispatch,
   overseerAutonomy,
@@ -122,6 +120,8 @@ import {
   startOverseerLoop,
 } from "./overseer";
 import { readNotes, writeNotes, NOTES_MAX } from "./overseer-store";
+import { pathOfId, promptSession } from "./session-prompt";
+import { OVERSEER_SENDER_HEADER, overseerSender } from "./overseer-sender";
 import { checkRename, IdeaConflictError, IdeaError, ideaDetail, ideasInfo, parseIdeaId, updateIdea, type IdeaUpdate } from "./overseer-ideas";
 import { renameIdeaEverywhere } from "./overseer-idea-tools";
 import { addTodo, clearDone, removeTodo, reorderTodos, TodoConflictError, TodoError, TodoNotFoundError, todosInfo, updateTodo } from "./overseer-todos";
@@ -332,6 +332,7 @@ registerOrgRoutes(app);
 registerWrapupRoutes(app);
 registerProjectOverseerRoutes(app);
 registerProjectCostRoutes(app);
+registerProjectRoutes(app);
 // Project services: the verbs over a project's .sova/project.json (server/project-services/; §app/project-services).
 registerProjectServiceRoutes(app);
 // A project's decisions, conflicts and spec promotion (server/decisions-routes.ts; §app/requirements).
@@ -1542,6 +1543,7 @@ setAuthHosts(() => {
 
 // Every attached org's engine opens before the first request (its pages and share links read it).
 await openAttachedOrgs();
+await openRegisteredProjects();
 
 export const server = serve({ fetch: app.fetch, port: PORT, hostname: HOST }, (info) => {
   setSovaPort(info.port);

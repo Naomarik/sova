@@ -27,12 +27,12 @@ export interface Envelope {
   overseerId?: string;
   /** The operator's turn (their message entered the run, or a confirm-card click started it). */
   attended: boolean;
-  /** The level chosen (overseer.json); the level in force is the statecharts' to derive from paused/rosterActive. */
+  /** The level chosen (overseer.json); the level in force is the statecharts' to derive from paused, ceiling and this. */
   autonomy: Autonomy;
   /** The project's overseer is paused at L0 by an attach on this host. */
   paused: boolean;
-  /** Someone on the roster is active. */
-  rosterActive: boolean;
+  /** A cap on the level another layer contributes (server/projects/contributions.ts), or null: none. */
+  ceiling: Ceiling | null;
   archived: boolean;
   /** The ledger this turn draws on: the operator's message's when attended, else today's on its own. */
   ledger: "message" | "day";
@@ -54,6 +54,12 @@ export interface Envelope {
   [extra: string]: unknown;
 }
 
+/** A contributed cap on a project's level, with the reason the overseer and the page show. */
+export interface Ceiling {
+  autonomy: Autonomy;
+  reason: string;
+}
+
 /** What the watch session's data says has been used (message and day ledgers, looks today). */
 export interface LedgerCounts {
   message: Partial<Record<PoLimitKind, number>>;
@@ -68,7 +74,7 @@ export interface EnvelopeInput {
   attended: boolean;
   settings: Pick<ProjectOverseerSettings, "autonomy" | "caps" | "holdMin" | "confirmKinds">;
   paused: boolean;
-  rosterActive: boolean;
+  ceiling: Ceiling | null;
   archived: boolean;
   used: LedgerCounts;
   gatheringsOpen: number;
@@ -94,7 +100,7 @@ export function buildEnvelope(i: EnvelopeInput): Envelope {
     attended: i.attended,
     autonomy: i.settings.autonomy,
     paused: i.paused,
-    rosterActive: i.rosterActive,
+    ceiling: i.ceiling,
     archived: i.archived,
     ledger,
     allowance,

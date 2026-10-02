@@ -207,7 +207,7 @@ test("an old gateway (kinds h,i,s,x) gets no `p` row and a mint says it needs up
   } as never);
   after(undo);
   gw.resetGatewayClient();
-  const { record } = store.mintPreview({ orgId: "o", projectId: "p", port: 5173 }, new Set());
+  const { record } = store.mintPreview({ projectId: "p", port: 5173 }, new Set());
   await gw.refreshGateway();
   assert.ok(!buildSnapshot(1).links.some((l) => l.kind === "p"), "an old gateway never gets a p row");
   assert.ok(buildSnapshot(1).links.some((l) => l.kind === "h" || l.kind === "i" || l.kind === "s") || true);

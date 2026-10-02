@@ -1,5 +1,6 @@
 import { closeSync, existsSync, openSync, readFileSync, readSync, statSync } from "node:fs";
-import { basename, join } from "node:path";
+import { basename, dirname, join } from "node:path";
+import { canonicalPath } from "./paths";
 import {
   AT_ONCE_MAX,
   AUTONOMY_LEVELS,
@@ -28,11 +29,12 @@ import {
   type ProjectOverseerPatch,
   type ProjectOverseerSettings,
 } from "../shared/project-overseer";
-import type { OrgProject, Person } from "../shared/orgs";
+import type { ProjectSummary } from "../shared/projects";
 import type { OverseerState } from "../shared/protocol";
-import { hostOf, isOrgHostOpen, setProjectSettingsSource } from "./org-engine";
+import { setProjectSettingsSource } from "./org-engine";
 import { EXTRA_PROMPT_MAX, HISTORY_MAX, writeAtomic } from "./overseer-store";
-import { orgDir, OrgError, orgOfSessionPath, readProjects } from "./orgs";
+import { OrgError } from "./org-error";
+import { engineOf, projectDir, projectHost, projectSid, readProject, watchSid } from "./projects/spaces";
 import { checkAbilitiesPatch, parseAbilities } from "./gathering-abilities";
 import { checkCodingModePatch, parseCodingMode } from "./project-coding-mode";
 import { stateRoot } from "./state-root";
@@ -49,7 +51,6 @@ import { stateRoot } from "./state-root";
  */
 
 export interface ProjectOverseerPaths {
-  orgId: string;
   projectId: string;
   /** `<workspace>/projects/<pid>/overseer`. */
   dir: string;
@@ -62,12 +63,12 @@ export interface ProjectOverseerPaths {
 
 const SAFE_ID = /^[a-z0-9_]{1,40}$/;
 
-export function projectOverseerPaths(orgId: string, projectId: string, workspace = orgDir(orgId)): ProjectOverseerPaths {
-  // Both ids become path segments: never anything but the store's own id shape.
-  if (!SAFE_ID.test(orgId) || !SAFE_ID.test(projectId)) throw new OrgError("Unknown project", 404);
-  const dir = join(workspace, "projects", projectId, "overseer");
+/** `workspace`: the engine's directory (default: the open engine that holds the project). */
+export function projectOverseerPaths(projectId: string, workspace?: string): ProjectOverseerPaths {
+  // The id becomes a path segment: never anything but the store's own id shape.
+  if (!SAFE_ID.test(projectId)) throw new OrgError("Unknown project", 404);
+  const dir = join(workspace ?? projectDir(projectId), "projects", projectId, "overseer");
   return {
-    orgId,
     projectId,
     dir,
     settings: join(dir, "overseer.json"),
@@ -79,11 +80,7 @@ export function projectOverseerPaths(orgId: string, projectId: string, workspace
 }
 
 /** The project, or a 404. */
-export function projectOf(orgId: string, projectId: string): OrgProject {
-  const p = readProjects(orgId).find((x) => x.id === projectId);
-  if (!p) throw new OrgError("Unknown project", 404);
-  return p;
-}
+export const projectOf = (projectId: string): ProjectSummary => readProject(projectId);
 
 // ---- settings --------------------------------------------------------------------------------
 
@@ -281,21 +278,19 @@ export function patchPoSettings(p: ProjectOverseerPaths, body: unknown, check?: 
 
 // ---- autonomy in force ------------------------------------------------------------------------
 
-export const EMPTY_ROSTER_REASON = "The roster has no active people yet, so the overseer only proposes (L0).";
 export const PAUSED_REASON = "Paused at L0: this organization was attached on this host. Set its level to resume.";
 
 /**
- * The level in force: the setting, but L0 while the overseer is paused by an attach on this host
- * (`pausedSince`, until the operator sets its level here), and L0 while the org has no active
- * roster person (nobody to gather from).
+ * The level in force: L0 while the overseer is paused by an attach on this host (`pausedSince`, until
+ * the operator sets its level here), then a contributed ceiling below the setting, then the setting.
  */
 export function effectiveAutonomy(
   settings: Pick<ProjectOverseerSettings, "autonomy">,
-  roster: Pick<Person, "status">[],
+  ceiling: { autonomy: Autonomy; reason: string } | null,
   pausedSince: string | null = null,
 ): { autonomy: Autonomy; reason?: string } {
   if (pausedSince) return { autonomy: "L0", reason: PAUSED_REASON };
-  if (!roster.some((p) => p.status === "active")) return { autonomy: "L0", reason: EMPTY_ROSTER_REASON };
+  if (ceiling && !levelAtLeast(ceiling.autonomy, settings.autonomy)) return { autonomy: ceiling.autonomy, reason: ceiling.reason };
   return { autonomy: settings.autonomy };
 }
 
@@ -305,9 +300,9 @@ export const levelAtLeast = (have: Autonomy, need: Autonomy): boolean => AUTONOM
 
 /** Its conversations, current and at most 20 earlier ones, newest first: the project statechart's overseer
     region (q1: no state.json). Null while it has none (or its org's engine is not open here). */
-export function readPoState(p: Pick<ProjectOverseerPaths, "orgId" | "projectId">): OverseerState | null {
-  if (!isOrgHostOpen(p.orgId)) return null;
-  const o = hostOf(p.orgId).data(`project/${p.orgId}/${p.projectId}`)?.overseer as { id?: unknown; history?: unknown } | undefined;
+export function readPoState(p: Pick<ProjectOverseerPaths, "projectId">): OverseerState | null {
+  if (!engineOf(p.projectId)) return null;
+  const o = projectHost(p.projectId).data(projectSid(p.projectId))?.overseer as { id?: unknown; history?: unknown } | undefined;
   if (!o || typeof o.id !== "string" || !o.id) return null;
   return { version: 1, current: o.id, history: Array.isArray(o.history) ? o.history.filter((x): x is string => typeof x === "string") : [] };
 }
@@ -341,10 +336,10 @@ export const HELD_MAX = 10;
 const isoAt = (v: unknown): string | null => (typeof v === "number" && Number.isFinite(v) ? new Date(v).toISOString() : typeof v === "string" && v ? v : null);
 
 /** The project's watch as it stands (an empty loop when its org's engine or watch isn't here). */
-export function readMemo(p: Pick<ProjectOverseerPaths, "orgId" | "projectId">): WatchMemo {
+export function readMemo(p: Pick<ProjectOverseerPaths, "projectId">): WatchMemo {
   const m: WatchMemo = { version: 1, pending: [], lastRunAt: null, lastRun: null, perDay: {}, soonAt: null, held: [] };
-  if (!isOrgHostOpen(p.orgId)) return m;
-  const d = hostOf(p.orgId).data(`watch/${p.orgId}/${p.projectId}`);
+  if (!engineOf(p.projectId)) return m;
+  const d = projectHost(p.projectId).data(watchSid(p.projectId));
   if (!d) return m;
   if (Array.isArray(d.reasons)) m.pending = d.reasons.filter(isObj).map((r) => String(r.text ?? ""));
   m.lastRunAt = isoAt(d.lastRunAt);
@@ -394,8 +389,9 @@ export function readPoMarker(path: string): ProjectOverseerMarkerData | null {
       if (!line.includes(PROJECT_OVERSEER_ENTRY)) continue;
       try {
         const e = JSON.parse(line);
-        if (e?.type === "custom" && e.customType === PROJECT_OVERSEER_ENTRY && typeof e.data?.orgId === "string" && typeof e.data?.projectId === "string") {
-          data = { v: 1, orgId: e.data.orgId, projectId: e.data.projectId };
+        // Any other key is ignored: the project id is the identity.
+        if (e?.type === "custom" && e.customType === PROJECT_OVERSEER_ENTRY && typeof e.data?.projectId === "string") {
+          data = { v: 1, projectId: e.data.projectId };
           break;
         }
       } catch {
@@ -413,18 +409,16 @@ export function readPoMarker(path: string): ProjectOverseerMarkerData | null {
 }
 
 /**
- * The project a session file is the overseer of, or null: it carries the marker, lives in THAT
- * org's workspace sessions dir, and the project's state knows its id (current or history). A copy
- * anywhere else, or a fork, is an ordinary session.
+ * The project a session file is the overseer of, or null: it carries the marker, lives in the sessions
+ * dir of the engine that holds that project, and the project's state knows its id (current or history).
+ * A copy anywhere else, or a fork, is an ordinary session.
  */
-export function projectOverseerOfPath(path: string, id = sessionIdOfFile(path)): { orgId: string; projectId: string } | null {
+export function projectOverseerOfPath(path: string, id = sessionIdOfFile(path)): { projectId: string } | null {
   const m = readPoMarker(path);
   if (!m) return null;
-  const org = orgOfSessionPath(path);
-  if (!org || org.orgId !== m.orgId) return null;
   try {
-    const p = projectOverseerPaths(m.orgId, m.projectId, org.dir);
-    return isPoId(p, id) ? { orgId: m.orgId, projectId: m.projectId } : null;
+    if (dirname(canonicalPath(path)) !== canonicalPath(join(projectDir(m.projectId), "sessions"))) return null;
+    return isPoId(projectOverseerPaths(m.projectId), id) ? { projectId: m.projectId } : null;
   } catch {
     return null;
   }
@@ -437,5 +431,5 @@ export function sessionIdOfFile(path: string): string {
   return i >= 0 ? b.slice(i + 1) : b;
 }
 
-// The org engine stamps every act with its project's settings as read now.
-setProjectSettingsSource({ read: (orgId, projectId, workspace) => readPoSettings(projectOverseerPaths(orgId, projectId, workspace)), defaults: defaultPoSettings });
+// Every engine stamps each act with its project's settings as read now.
+setProjectSettingsSource({ read: (projectId, workspace) => readPoSettings(projectOverseerPaths(projectId, workspace)), defaults: defaultPoSettings });

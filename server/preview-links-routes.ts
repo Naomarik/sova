@@ -4,7 +4,8 @@ import type { PreviewError, PreviewList, PreviewMinted, PreviewView } from "../s
 import { peerPort } from "./mesh/peers";
 import { localRequest } from "./mesh/proxy";
 import { OrgError } from "./org-error";
-import { readRoster } from "./orgs";
+import { sentToNameOf } from "./projects/contributions";
+import { engineOf } from "./projects/spaces";
 import { extendPreview, PreviewRefused, PreviewUnavailable, viewOf } from "./preview-links";
 import { makePreview, previewViews, resolvePreview, staticPorts, turnOffPreview } from "./project-previews";
 import { readPublicLinks } from "./public-links";
@@ -56,11 +57,11 @@ function refused(c: Context, err: unknown) {
 /** Mint (the operator's): checked like the overseer's but for the listener, then made; the answer carries the link. */
 async function mint(c: Context, body: Record<string, unknown>) {
   try {
-    if (typeof body.orgId !== "string" || typeof body.projectId !== "string") throw new PreviewRefused("bad-project", "Name the project this preview belongs to.");
+    if (typeof body.projectId !== "string") throw new PreviewRefused("bad-project", "Name the project this preview belongs to.");
     const ports = sovaPorts();
-    const r = await resolvePreview({ orgId: body.orgId, projectId: body.projectId, port: body.port, folder: body.folder, sessionId: body.sessionId, purpose: body.purpose, days: body.days, createdBy: "operator", requireOwner: false }, { sovaPorts: ports });
+    const r = await resolvePreview({ projectId: body.projectId, port: body.port, folder: body.folder, sessionId: body.sessionId, purpose: body.purpose, days: body.days, createdBy: "operator", requireOwner: false }, { sovaPorts: ports });
     const made = await makePreview(r, ports);
-    const view = (await previewViews({ orgId: r.orgId, projectId: r.projectId })).find((v) => v.id === made.record.id) ?? viewOf(made.record);
+    const view = (await previewViews({ projectId: r.projectId })).find((v) => v.id === made.record.id) ?? viewOf(made.record);
     return c.json({ preview: view, url: made.url, ...(made.linkWarning ? { linkWarning: made.linkWarning } : {}) } satisfies PreviewMinted, 200, NO_STORE);
   } catch (err) {
     return refused(c, err);
@@ -71,7 +72,8 @@ async function mint(c: Context, body: Record<string, unknown>) {
 function withSentToName(v: PreviewView): PreviewView {
   if (!v.sentTo) return v;
   try {
-    const name = readRoster(v.orgId).find((p) => p.id === v.sentTo)?.name;
+    const engine = engineOf(v.projectId);
+    const name = engine ? sentToNameOf(engine, v.projectId, v.sentTo) : null;
     return name ? { ...v, sentToName: name } : v;
   } catch {
     return v;
@@ -81,9 +83,14 @@ function withSentToName(v: PreviewView): PreviewView {
 export function mountPreviewLinks(app: Hono): void {
   app.get("/api/previews", async (c) => {
     if (!local(c)) return notFound(c);
-    const orgId = c.req.query("orgId");
     const projectId = c.req.query("projectId");
-    const previews = (await previewViews({ ...(orgId ? { orgId } : {}), ...(projectId ? { projectId } : {}) })).map(withSentToName);
+    const previews = (await previewViews(projectId ? { projectId } : {})).map(withSentToName);
+    return c.json({ previews, address: previewAddress() } satisfies PreviewList, 200, NO_STORE);
+  });
+
+  app.get("/api/projects/:pid/previews", async (c) => {
+    if (!local(c)) return notFound(c);
+    const previews = (await previewViews({ projectId: c.req.param("pid") })).map(withSentToName);
     return c.json({ previews, address: previewAddress() } satisfies PreviewList, 200, NO_STORE);
   });
 

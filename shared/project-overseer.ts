@@ -15,29 +15,28 @@
  * Host-local (never committed): the counters (each message's and each day's) and the watch loop's memo (held items too), under the state root.
  *
  * Operator routes (main listener only):
- * GET    /api/orgs/:id/projects/:pid/overseer               -> ProjectOverseerInfo (exists: false before the first open)
- * POST   /api/orgs/:id/projects/:pid/overseer               -> ProjectOverseerInfo (open or create; then mount #/s/<path>)
- * PATCH  /api/orgs/:id/projects/:pid/overseer               body ProjectOverseerPatch -> ProjectOverseerInfo
- * POST   /api/orgs/:id/projects/:pid/overseer/clear         -> ProjectOverseerInfo (a new conversation; settings, notes, ideas, todos stay)
- * GET    /api/orgs/:id/projects/:pid/overseer/ideas         -> OverseerIdeasInfo (protocol.ts shape)
- * GET    /api/orgs/:id/projects/:pid/overseer/idea?id=      -> OverseerIdeaDetail
- * PATCH  /api/orgs/:id/projects/:pid/overseer/idea?id=      body IdeaPatch (no newId) -> OverseerIdeaDetail
- * GET    /api/orgs/:id/projects/:pid/overseer/todos         -> OverseerTodosInfo (protocol.ts shape)
- * POST   /api/orgs/:id/projects/:pid/overseer/todos         body { text, ideaId?, sessionId? } -> 201 OverseerTodosInfo
- * PATCH  /api/orgs/:id/projects/:pid/overseer/todo?id=      body TodoPatch -> OverseerTodosInfo
- * DELETE /api/orgs/:id/projects/:pid/overseer/todo?id=      -> OverseerTodosInfo
- * PUT    /api/orgs/:id/projects/:pid/overseer/todos/order   body { ids: string[] } -> OverseerTodosInfo
- * DELETE /api/orgs/:id/projects/:pid/overseer/todos/done    -> OverseerTodosInfo
- * GET    /api/orgs/:id/projects/:pid/overseer/actions?limit= -> OverseerAction[] (newest first, refusals included)
- * POST   /api/orgs/:id/projects/:pid/overseer/run           -> ProjectOverseerInfo (Run Now: one watch-loop turn, now; 409 while busy)
- * POST   /api/orgs/:id/projects/:pid/overseer/items/send    body ItemSendInput -> 201 ItemSendResult (Send to person…)
- * POST   /api/orgs/:id/projects/:pid/overseer/items/code    body ItemCodeInput -> 201 ItemCodeResult (Start coding session; the global
+ * GET    /api/projects/:pid/overseer               -> ProjectOverseerInfo (exists: false before the first open)
+ * POST   /api/projects/:pid/overseer               -> ProjectOverseerInfo (open or create; then mount #/s/<path>)
+ * PATCH  /api/projects/:pid/overseer               body ProjectOverseerPatch -> ProjectOverseerInfo
+ * POST   /api/projects/:pid/overseer/clear         -> ProjectOverseerInfo (a new conversation; settings, notes, ideas, todos stay)
+ * GET    /api/projects/:pid/overseer/ideas         -> OverseerIdeasInfo (protocol.ts shape)
+ * GET    /api/projects/:pid/overseer/idea?id=      -> OverseerIdeaDetail
+ * PATCH  /api/projects/:pid/overseer/idea?id=      body IdeaPatch (no newId) -> OverseerIdeaDetail
+ * GET    /api/projects/:pid/overseer/todos         -> OverseerTodosInfo (protocol.ts shape)
+ * POST   /api/projects/:pid/overseer/todos         body { text, ideaId?, sessionId? } -> 201 OverseerTodosInfo
+ * PATCH  /api/projects/:pid/overseer/todo?id=      body TodoPatch -> OverseerTodosInfo
+ * DELETE /api/projects/:pid/overseer/todo?id=      -> OverseerTodosInfo
+ * PUT    /api/projects/:pid/overseer/todos/order   body { ids: string[] } -> OverseerTodosInfo
+ * DELETE /api/projects/:pid/overseer/todos/done    -> OverseerTodosInfo
+ * GET    /api/projects/:pid/overseer/actions?limit= -> OverseerAction[] (newest first, refusals included)
+ * POST   /api/projects/:pid/overseer/run           -> ProjectOverseerInfo (Run Now: one watch-loop turn, now; 409 while busy)
+ * POST   /api/projects/:pid/overseer/items/code    body ItemCodeInput -> 201 ItemCodeResult (Start coding session; the global
  *                                                               Overseer alone may give { prompt, title } with no item)
- * POST   /api/orgs/:id/projects/:pid/overseer/message       body { text } -> ProjectMessageResult (the global Overseer's one route into
+ * POST   /api/projects/:pid/overseer/message       body { text } -> ProjectMessageResult (the global Overseer's one route into
  *                                                               the overseer's conversation; 403 for any other caller)
- * POST   /api/orgs/:id/projects/:pid/overseer/coding        body CodingStartInput -> 201 CodingStartResult (New Coding Session: no item, no prompt)
- * POST   /api/orgs/:id/projects/:pid/overseer/worktrees/merge  body { sessionId } -> ProjectOverseerInfo (merge a coding session's branch into its target)
- * POST   /api/orgs/:id/projects/:pid/overseer/worktrees/remove body { sessionId } -> ProjectOverseerInfo (remove its worktree; the branch too once merged)
+ * POST   /api/projects/:pid/overseer/coding        body CodingStartInput -> 201 CodingStartResult (New Coding Session: no item, no prompt)
+ * POST   /api/projects/:pid/overseer/worktrees/merge  body { sessionId } -> ProjectOverseerInfo (merge a coding session's branch into its target)
+ * POST   /api/projects/:pid/overseer/worktrees/remove body { sessionId } -> ProjectOverseerInfo (remove its worktree; the branch too once merged)
  */
 
 import type { GatheringAbilities } from "./baton";
@@ -47,7 +46,6 @@ export const PROJECT_OVERSEER_ENTRY = "sova-project-overseer";
 
 export interface ProjectOverseerMarkerData {
   v: 1;
-  orgId: string;
   projectId: string;
 }
 
@@ -252,7 +250,6 @@ export type ProjectOverseerPatch = Partial<Pick<ProjectOverseerSettings, "autono
 export type LastRunOutcome = "started" | "finished" | "stopped" | "cut-off" | "skipped";
 
 export interface ProjectOverseerInfo {
-  orgId: string;
   projectId: string;
   projectName: string;
   /** A conversation exists. False until the first POST. */

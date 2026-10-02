@@ -2,15 +2,14 @@ import { createHash } from "node:crypto";
 import { existsSync, readdirSync } from "node:fs";
 import { readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
-import { BATON_WRAPUP_ENTRY, type BatonSession } from "../shared/baton";
-import type { CostEstimate, CostKind, CostModelRow, CostRow, CostSession, CostStarter, CostTokens, OrgCosts, ProjectCost } from "../shared/costs";
+import type { CostEstimate, CostKind, CostModelRow, CostRow, CostSession, CostStarter, CostTokens, ProjectCost } from "../shared/costs";
 import type { ModelRef, PricedUsage, TokenUsage } from "../shared/model-prices/prices";
 import { claudeSidechainFiles, claudeUsageAccumulator } from "../pi-config/extensions/claude-code/transcript-adapter.ts";
 import { piUsageAccumulator } from "../pi-config/extensions/subagents/adapters/pi.ts";
 import { type CountedMessage, readWorkerManifests, type WorkerManifest, type WorkerTranscriptAdapters, type WorkerUsage } from "../pi-config/extensions/subagents/worker-transcript.ts";
-import { allBatons, sessionPathOf, workspaceHasFile } from "./baton";
 import { modelName, pricesInfo, priceUsage } from "./model-prices";
-import { orgDir, readProjects } from "./orgs";
+import { contributedCostSessions } from "./projects/contributions";
+import { engineOrThrow, projectDir } from "./projects/spaces";
 import { type CostBucket, type CostLedger, type CostSnapshot, type EstimateFlag, ledgerPaths, readCostLedger, readUsageLedger, writeCostLedger, type UsageRow } from "./project-costs-ledger";
 import { readBuilds } from "./build-loadout";
 import { projectOf, projectOverseerPaths, readPoMarker, sessionIdOfFile } from "./project-overseer-store";
@@ -146,11 +145,11 @@ function remember(key: string, st: { mtimeMs: number; size: number }, count: Fil
   return count;
 }
 
-/** The wrap-up turns of a baton file: from each `sova-baton-wrapup` "start" to its "end" (ms). */
-function wrapupSpans(entries: readonly Entry[]): [number, number][] {
+/** The wrap-up turns of a file: from each `entry` "start" to its "end" (ms). */
+function wrapupSpans(entries: readonly Entry[], entry: string): [number, number][] {
   const spans: [number, number][] = [];
   for (const e of entries) {
-    if (e?.type !== "custom" || e.customType !== BATON_WRAPUP_ENTRY) continue;
+    if (e?.type !== "custom" || e.customType !== entry) continue;
     const at = Date.parse(e.timestamp ?? "");
     if (!Number.isFinite(at)) continue;
     if (e.data?.phase === "start") spans.push([at, Infinity]);
@@ -160,16 +159,16 @@ function wrapupSpans(entries: readonly Entry[]): [number, number][] {
 }
 
 /** A pi session file: every counted message under `kind` (or "wrapup" inside a wrap-up turn). */
-async function countPiFile(path: string, kind: CostKind, splitWrapup: boolean): Promise<FileCount | null> {
+async function countPiFile(path: string, kind: CostKind, wrapupEntry?: string): Promise<FileCount | null> {
   const st = await statOf(path);
   if (!st) return null;
-  const key = `pi\0${kind}\0${splitWrapup ? 1 : 0}\0${path}`;
+  const key = `pi\0${kind}\0${wrapupEntry ?? ""}\0${path}`;
   const hit = fileMemo.get(key);
   if (hit && hit.mtimeMs === st.mtimeMs && hit.size === st.size) return hit.count;
   const text = await readFile(path, "utf8").catch(() => null);
   if (text === null) return null;
   const entries = parseLines(text);
-  const spans = splitWrapup ? wrapupSpans(entries) : [];
+  const spans = wrapupEntry ? wrapupSpans(entries, wrapupEntry) : [];
   const buckets = new Buckets(st.mtimeMs);
   const acc = piUsageAccumulator({
     forkBoundary: true,
@@ -279,9 +278,9 @@ async function addWorkers(w: Walk, workers: WorkerManifest[], by: CostStarter, d
   }
 }
 
-async function addSession(w: Walk, s: Omit<Source, "buckets" | "live" | "path">, path: string | null, splitWrapup = false): Promise<void> {
+async function addSession(w: Walk, s: Omit<Source, "buckets" | "live" | "path">, path: string | null, wrapupEntry?: string): Promise<void> {
   if (w.sources.some((x) => x.key === s.key)) return;
-  const count = path && !w.seen.has(path) ? await countPiFile(path, s.kind, splitWrapup) : null;
+  const count = path && !w.seen.has(path) ? await countPiFile(path, s.kind, wrapupEntry) : null;
   if (!count || !path) return;
   w.seen.add(path);
   w.sources.push({ ...s, path, buckets: count.buckets, live: true });
@@ -289,22 +288,19 @@ async function addSession(w: Walk, s: Omit<Source, "buckets" | "live" | "path">,
 }
 
 /** Every source of the project on this host, plus the ledger's for what isn't here. */
-async function walkProject(orgId: string, projectId: string): Promise<{ sources: Source[]; reconcile: UsageRow[]; ledger: CostLedger }> {
-  const dir = orgDir(orgId);
-  const lp = ledgerPaths(orgId, projectId, dir);
+async function walkProject(projectId: string): Promise<{ sources: Source[]; reconcile: UsageRow[]; ledger: CostLedger }> {
+  const dir = projectDir(projectId);
+  const lp = ledgerPaths(projectId, dir);
   const w: Walk = { sources: [], seen: new Set(), ledger: readCostLedger(lp) };
 
-  // Batons (gathering, offers, settling), each with its wrap-up apart.
-  const batons: BatonSession[] = allBatons().filter((b) => b.orgId === orgId && b.projectId === projectId);
-  const batonFiles = new Set<string>();
-  for (const b of batons) {
-    const path = workspaceHasFile(dir, b) ? sessionPathOf(dir, b) : null;
-    if (path) batonFiles.add(path);
-    const by: CostStarter = typeof b.owner === "object" && b.owner.overseerOf === projectId ? "overseer" : "operator";
-    await addSession(w, { key: b.sessionId, sessionId: b.sessionId, title: b.publicTitle || "Gathering session", kind: b.conflict ? "settle" : "gathering", by }, path, true);
+  // Sessions another layer counts as the project's (gathering sessions), each with its wrap-up apart.
+  const contributedFiles = new Set<string>();
+  for (const c of contributedCostSessions(engineOrThrow(projectId), projectId)) {
+    if (c.path) contributedFiles.add(c.path);
+    await addSession(w, { key: c.key, sessionId: c.sessionId, title: c.title, kind: c.kind, by: c.by }, c.path, c.wrapupEntry);
   }
 
-  // Its overseer's conversations: every workspace session carrying this project's marker.
+  // Its overseer's conversations: every session in its engine's sessions dir carrying this project's marker.
   let names: string[] = [];
   try {
     names = readdirSync(join(dir, "sessions")).filter((n) => n.endsWith(".jsonl"));
@@ -313,15 +309,15 @@ async function walkProject(orgId: string, projectId: string): Promise<{ sources:
   }
   for (const name of names) {
     const path = join(dir, "sessions", name);
-    if (batonFiles.has(path)) continue;
+    if (contributedFiles.has(path)) continue;
     const m = readPoMarker(path);
-    if (!m || m.orgId !== orgId || m.projectId !== projectId) continue;
+    if (!m || m.projectId !== projectId) continue;
     const id = sessionIdOfFile(path);
     await addSession(w, { key: id, sessionId: id, title: await titleOf(path, "Overseer conversation"), kind: "overseer", by: "overseer" }, path);
   }
 
   // Coding sessions of both kinds, and their workers.
-  for (const r of readBuilds(orgId, projectId)) {
+  for (const r of readBuilds(projectId)) {
     const kind: CostKind = r.kind === "coding" ? "coding-overseer" : "coding-operator";
     const by: CostStarter = r.kind === "coding" ? "overseer" : "operator";
     if (r.path) await addSession(w, { key: r.sessionId, sessionId: r.sessionId, title: await titleOf(r.path, r.title ?? "Coding session"), kind, by }, r.path);
@@ -403,8 +399,8 @@ const WRITE_GAP_MS = 60_000;
 const lastWrite = new Map<string, number>();
 
 /** Write what changed into costs.json, at most once a minute per project. */
-function keepSnapshots(orgId: string, projectId: string, ledger: CostLedger, sources: Source[], now: number): void {
-  const k = `${orgId}/${projectId}`;
+function keepSnapshots(projectId: string, ledger: CostLedger, sources: Source[], now: number): void {
+  const k = projectId;
   if (now - (lastWrite.get(k) ?? 0) < WRITE_GAP_MS) return;
   let changed = false;
   const next: CostLedger = { version: 1, sources: { ...ledger.sources } };
@@ -420,17 +416,17 @@ function keepSnapshots(orgId: string, projectId: string, ledger: CostLedger, sou
   lastWrite.set(k, now);
   if (!changed) return;
   try {
-    writeCostLedger(ledgerPaths(orgId, projectId), next);
+    writeCostLedger(ledgerPaths(projectId), next);
   } catch (err) {
     console.warn(`[project-costs] ${k}: costs.json not written: ${err instanceof Error ? err.message : String(err)}`);
   }
 }
 
-async function computeProjectCost(orgId: string, projectId: string): Promise<ProjectCost> {
-  projectOf(orgId, projectId);
+async function computeProjectCost(projectId: string): Promise<ProjectCost> {
+  projectOf(projectId);
   const now = deps.now();
-  const { sources: fileSources, reconcile, ledger } = await walkProject(orgId, projectId);
-  keepSnapshots(orgId, projectId, ledger, fileSources, now);
+  const { sources: fileSources, reconcile, ledger } = await walkProject(projectId);
+  keepSnapshots(projectId, ledger, fileSources, now);
   const sources = [...fileSources, ...reconcileSources(reconcile)];
 
   const total = zeroRow();
@@ -488,7 +484,6 @@ async function computeProjectCost(orgId: string, projectId: string): Promise<Pro
   const kindOrder: CostKind[] = ["overseer", "gathering", "settle", "wrapup", "coding-overseer", "coding-operator", "workers", "reconcile"];
   const starterOrder: CostStarter[] = ["overseer", "operator", "sova"];
   return {
-    orgId,
     projectId,
     totalUsd: total.usd,
     asOf: new Date(now).toISOString(),
@@ -510,22 +505,12 @@ const MEMO_MS = 15_000;
 const projectMemo = new Map<string, { at: number; value: Promise<ProjectCost> }>();
 
 /** A project's cost now (memoized 15 s: a poll re-reads only changed files anyway). */
-export function projectCost(orgId: string, projectId: string): Promise<ProjectCost> {
-  const k = `${orgId}/${projectId}`;
+export function projectCost(projectId: string): Promise<ProjectCost> {
+  const k = projectId;
   const hit = projectMemo.get(k);
   if (hit && deps.now() - hit.at < MEMO_MS) return hit.value;
-  const value = computeProjectCost(orgId, projectId);
+  const value = computeProjectCost(projectId);
   projectMemo.set(k, { at: deps.now(), value });
   value.catch(() => projectMemo.delete(k));
   return value;
-}
-
-/** Every project's total and the org's (§app.project-costs/org-rollup). */
-export async function orgCosts(orgId: string): Promise<OrgCosts> {
-  const projects: OrgCosts["projects"] = [];
-  for (const p of readProjects(orgId)) {
-    const c = await projectCost(orgId, p.id);
-    projects.push({ projectId: p.id, totalUsd: c.totalUsd, unpricedTokens: c.unpriced.reduce((n, u) => n + u.tokens, 0) });
-  }
-  return { orgId, totalUsd: projects.reduce((n, p) => n + p.totalUsd, 0), asOf: new Date(deps.now()).toISOString(), projects };
 }

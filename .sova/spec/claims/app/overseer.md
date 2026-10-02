@@ -322,7 +322,11 @@ check a session in one call instead of trusting a brief, a card or a summary lin
   restart pending), and the last check run on the session's branch (a test, typecheck or build the
   session ran): passed or failed, how long ago, and whether it ran after the worktree's newest
   commit or before it; with none, "no check run seen". It is the readiness answer as last read
-  (about 20 seconds old at most); a session that tracks no worktree of its own has no Merge line.
+  (about 20 seconds old at most, except for an archived session that is idle and not open in a
+  TUI: its answer is as last read when it changed or was inspected). An inspection returns that
+  cached answer at once and, when it is at least twenty seconds old, queues one fresh background
+  read, shared with already queued or active work; a later call shows the completed refresh.
+  A session that tracks no worktree of its own has no Merge line.
 - **Summary:** the Purpose and Now lines are labelled as the summary's, with its age, "written
   before the last reply" when it is older than the last reply, and the summarizer's state when it
   is stale or failed and kept its last line: "Now (summary, 2h ago, written before the last reply):

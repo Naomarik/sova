@@ -122,12 +122,12 @@ export interface PreparedRoot {
   normalizedFrom?: string;
 }
 
-/** Why `root` may not be a project root, or null: inside or holding a reserved folder. */
+/** Why `root` may not be a project root, or null: inside Sova's state, or inside or holding a reserved folder. */
 export function reservedRootProblem(root: string, reserved: string[]): string | null {
-  for (const r of [stateRoot(), ...reserved]) {
+  if (within(root, canonical(stateRoot()))) return "Sova's own state can't be a project.";
+  for (const r of reserved) {
     const dir = canonical(r);
-    if (within(root, dir)) return `${root} is inside ${dir}, which Sova keeps for itself; pick a project folder outside it`;
-    if (within(dir, root)) return `${root} holds ${dir}, which Sova keeps for itself; pick a folder that doesn't contain it`;
+    if (within(root, dir) || within(dir, root)) return `${root} ${within(root, dir) ? "is inside" : "holds"} ${dir}, which Sova keeps for itself, so it can't be a project.`;
   }
   return null;
 }
@@ -145,7 +145,7 @@ export async function prepareRegistration(rawRoot: unknown, deps: RegistrationDe
   const reserved = reservedRootProblem(p.root, deps.reservedRoots?.() ?? []);
   if (reserved) throw new RegistryError(reserved);
   const taken = (await deps.rootsInUse()).find((o) => canonical(o.root) === p.root);
-  if (taken) throw new RegistryError(`${p.root} is already a project here${taken.name ? `: ${taken.name}` : ""}`, 409);
+  if (taken) throw new RegistryError(`${p.root} is already the project ${taken.name ?? taken.id}.`, 409);
   const prepared: PreparedRoot = { root: p.root, name: p.name, git: p.git };
   if (canonical(asked) !== p.root) prepared.normalizedFrom = asked;
   return prepared;

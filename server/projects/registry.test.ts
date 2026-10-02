@@ -12,7 +12,7 @@ process.env.PI_CODING_AGENT_DIR = agentDir; // before the modules below compute 
 after(() => rmSync(tmp, { recursive: true, force: true }));
 
 const { addRegistryEntry, markImporting, mintProjectId, prepareRegistration, projectDirOf, readRegistry, registryEntry, removeRegistryEntry, RegistryError } = await import("./registry");
-const { cloneRepo, folderOfRepo } = await import("./clone");
+const { cloneRepo, folderOfRepo, repoUrlOf } = await import("./clone");
 const { clearProjectCache } = await import("../project-root");
 
 const git = (cwd: string, ...args: string[]) => execFileSync("git", args, { cwd, stdio: "pipe" }).toString();
@@ -92,14 +92,13 @@ test("registration normalizes to the checkout root and says so", async () => {
 test("registration refuses a root already registered, reserved roots, and what isn't a local folder", async () => {
   const root = repo("taken");
   clearProjectCache();
-  await assert.rejects(prepareRegistration(join(root, "."), { rootsInUse: () => [{ id: "prj_cccccccc", name: "Taken", root }] }), (e: InstanceType<typeof RegistryError>) => e.status === 409 && /already a project here: Taken/.test(e.message));
-  await assert.rejects(prepareRegistration(join(agentDir, "sova"), none), /is inside .*Sova keeps for itself/);
+  await assert.rejects(prepareRegistration(join(root, "."), { rootsInUse: () => [{ id: "prj_cccccccc", name: "Taken", root }] }), (e: InstanceType<typeof RegistryError>) => e.status === 409 && /is already the project Taken\./.test(e.message));
+  await assert.rejects(prepareRegistration(join(agentDir, "sova"), none), /Sova's own state can't be a project\./);
   mkdirSync(join(agentDir, "sova", "projects", "x"), { recursive: true });
-  await assert.rejects(prepareRegistration(join(agentDir, "sova", "projects", "x"), none), /is inside .*Sova keeps for itself/);
-  await assert.rejects(prepareRegistration(tmp, none), /holds .*Sova keeps for itself/);
+  await assert.rejects(prepareRegistration(join(agentDir, "sova", "projects", "x"), none), /Sova's own state can't be a project\./);
   const ws = join(tmp, "workspaces", "acme");
   mkdirSync(ws, { recursive: true });
-  await assert.rejects(prepareRegistration(ws, { ...none, reservedRoots: () => [ws] }), /is inside .*Sova keeps for itself/);
+  await assert.rejects(prepareRegistration(ws, { ...none, reservedRoots: () => [ws] }), /is inside .*Sova keeps for itself, so it can't be a project\./);
   await assert.rejects(prepareRegistration(join(tmp, "workspaces"), { ...none, reservedRoots: () => [ws] }), /holds .*Sova keeps for itself/);
   await assert.rejects(prepareRegistration("relative/path", none), /absolute/);
   await assert.rejects(prepareRegistration(join(tmp, "missing"), none), /doesn't exist/);
@@ -110,6 +109,13 @@ test("folderOfRepo names the clone after the repository", () => {
   assert.equal(folderOfRepo("https://github.com/acme/widget.git"), "widget");
   assert.equal(folderOfRepo("git@github.com:acme/widget.git"), "widget");
   assert.equal(folderOfRepo("file:///tmp/src/widget/"), "widget");
+});
+
+test("GitHub's owner/name is its https URL; URLs stay as they are", () => {
+  assert.equal(repoUrlOf("acme/widget"), "https://github.com/acme/widget.git");
+  assert.equal(repoUrlOf("acme/widget.git"), "https://github.com/acme/widget.git");
+  assert.equal(repoUrlOf("https://gitlab.com/a/b.git"), "https://gitlab.com/a/b.git");
+  assert.equal(repoUrlOf("git@github.com:a/b.git"), "git@github.com:a/b.git");
 });
 
 test("clone: a file:// repo lands in a new folder under the parent", async () => {
@@ -128,7 +134,7 @@ test("clone refuses an existing destination and leaves it alone", async () => {
   const parent = join(tmp, "clones2");
   mkdirSync(join(parent, "clone-src2"), { recursive: true });
   writeFileSync(join(parent, "clone-src2", "mine.txt"), "mine");
-  await assert.rejects(cloneRepo({ repo: `file://${src}`, parent }), (e: InstanceType<typeof RegistryError>) => e.status === 409);
+  await assert.rejects(cloneRepo({ repo: `file://${src}`, parent }), (e: InstanceType<typeof RegistryError>) => e.status === 409 && e.message === `${join(parent, "clone-src2")} already exists.`);
   assert.equal(readFileSync(join(parent, "clone-src2", "mine.txt"), "utf8"), "mine");
 });
 

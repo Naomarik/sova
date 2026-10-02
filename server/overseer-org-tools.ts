@@ -234,8 +234,11 @@ export function orgTools(d: OrgToolDeps): Tool[] {
             org && p.stakeholder !== undefined ? (p.stakeholder === null || String(p.stakeholder).trim().toLowerCase() === "none" ? null : resolvePerson(org.id, p.stakeholder)) : undefined;
           await counted("org", async () => {
             if (Object.keys(own).length) ok(await d.call("PATCH", projectsBase(project.id), own), "Changing the project");
-            if (org && stakeholder !== undefined) ok(await d.call("PUT", `${projectBase(org.id, project.id)}/stakeholder`, { personId: stakeholder?.id ?? null }), "Changing the stakeholder");
-            if (org && p.owner_hidden !== undefined) ok(await d.call("PUT", `${projectBase(org.id, project.id)}/owner-hidden`, { ownerHidden: p.owner_hidden }), "Changing the owner's page");
+            if (org)
+              ok(
+                await d.call("PATCH", `${projectBase(org.id, project.id)}/placement`, { ...(stakeholder !== undefined ? { stakeholder: stakeholder?.id ?? null } : {}), ...(p.owner_hidden !== undefined ? { ownerHidden: p.owner_hidden } : {}) }),
+                "Changing the project's place in the organization",
+              );
           });
           const done = [
             ...(own.name !== undefined ? [`renamed to "${own.name}"`] : []),

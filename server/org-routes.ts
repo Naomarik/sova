@@ -519,15 +519,14 @@ export function registerOrgRoutes(app: Hono<any>): void {
       return c.json({ ...(await orgPage(id)), ...(made.normalizedFrom ? { normalizedFrom: made.normalizedFrom } : {}) }, 201);
     }),
   );
-  // The org's part of a placed project: its main stakeholder (a person, or null for none) and whether the
-  // owner's page shows it. The project's own name, root and shelf are /api/projects/:pid's.
-  app.put(
-    "/api/orgs/:id/projects/:pid/stakeholder",
+  // The org's part of a placed project: its main stakeholder (a person id, or null for none) and whether the
+  // owner's page shows it, refused whole. The project's own name, root and shelf are /api/projects/:pid's.
+  app.patch(
+    "/api/orgs/:id/projects/:pid/placement",
     handle(async (c) => {
       const id = p(c, "id");
       const b = await body(c);
-      if (!("personId" in b)) throw new OrgError("personId is required (null: none)");
-      await patchPlacement(id, p(c, "pid"), { stakeholder: b.personId }, operatorBy(c));
+      await patchPlacement(id, p(c, "pid"), { ...(b.stakeholder !== undefined ? { stakeholder: b.stakeholder } : {}), ...(b.ownerHidden !== undefined ? { ownerHidden: b.ownerHidden } : {}) }, operatorBy(c));
       return c.json(await orgPage(id));
     }),
   );
@@ -541,14 +540,6 @@ export function registerOrgRoutes(app: Hono<any>): void {
       // A minted link carries its warning when it may not open from outside (§app.baton/links).
       const { result, outcome } = await awaitShareLinks(() => sendItem(p(c, "id"), p(c, "pid"), b, linkUrl));
       return c.json({ ...result, ...(result.links.length ? linkWarning(outcome) : {}) }, 201);
-    }),
-  );
-  app.put(
-    "/api/orgs/:id/projects/:pid/owner-hidden",
-    handle(async (c) => {
-      const id = p(c, "id");
-      await patchPlacement(id, p(c, "pid"), { ownerHidden: (await body(c)).ownerHidden }, operatorBy(c));
-      return c.json(await orgPage(id));
     }),
   );
 

@@ -294,10 +294,10 @@ describe("the page's content (§app.owner-page/content)", () => {
     await call("POST", `/api/baton/${s3.sessionId}/owner`, { hidden: true });
     assert.ok(!JSON.stringify(await ownerView(org.id, { project: plinks.handleOf("q", pa.id) })).includes("HIDDEN-TITLE"));
     assert.equal((await call("POST", `/api/baton/${s3.sessionId}/owner`, { hidden: "yes" })).status, 400);
-    const off = await call<OrgDetail>("PUT", `/api/orgs/${org.id}/projects/${pb.id}/owner-hidden`, { ownerHidden: true });
+    const off = await call<OrgDetail>("PATCH", `/api/orgs/${org.id}/projects/${pb.id}/placement`, { ownerHidden: true });
     assert.equal(off.body.projectList.find((x) => x.id === pb.id)!.ownerHidden, true);
     await assert.rejects(() => ownerView(org.id, { project: plinks.handleOf("q", pb.id) }), /Not found/);
-    await call("PUT", `/api/orgs/${org.id}/projects/${pb.id}/owner-hidden`, { ownerHidden: false });
+    await call("PATCH", `/api/orgs/${org.id}/projects/${pb.id}/placement`, { ownerHidden: false });
     assert.equal(orgs.readProjects(org.id).find((x) => x.id === pb.id)!.ownerHidden, undefined);
   });
 });

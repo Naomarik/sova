@@ -423,9 +423,9 @@ export async function attachOrg(input: { dir: unknown; confirm?: unknown }): Pro
   const id = orgIdIn(dir);
   if (!id) throw new OrgError("No organization in that dir: not a workspace repo.");
   if (readIndex().orgs.some((o) => o.id === id)) throw new OrgError("That organization is already attached here.", 409);
-  const here = new Set(listProjects().map((p) => p.id));
+  const here = new Map(listProjects().map((p) => [p.id, p.name]));
   const clash = projectIdsIn(dir).find((pid) => here.has(pid));
-  if (clash) throw new OrgError(`That workspace holds the project ${clash}, which is already a project here.`, 409);
+  if (clash) throw new OrgError(`${here.get(clash) || clash} is already a project here.`, 409);
   await migrated(() => migrateHostLocal(id, dir, stateRoot()));
   mkdirSync(join(dir, "sessions"), { recursive: true });
   OrgHost.forgetLocal(id, stateRoot());

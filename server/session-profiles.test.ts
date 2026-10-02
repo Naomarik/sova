@@ -405,7 +405,7 @@ describe("the busy check a restart needs (§chat.profiles/session-tools)", () =>
       s("tui"),
       s("ov1", { overseer: true }),
       s("ov2", { overseer: true }),
-      s("po", { projectOverseer: { orgId: "o", projectId: "p" } }),
+      s("po", { projectOverseer: { projectId: "p" } }),
       s("idle-ov", { overseer: true }),
     ];
     const held: Record<string, { streaming: boolean; queued: number }> = {

@@ -1,7 +1,8 @@
 import { basename } from "node:path";
 import type { BatonSession } from "../shared/baton";
 import type { SessionOrg, SessionOrgRef } from "../shared/protocol";
-import { allBatons, isRetiredBaton } from "./baton";
+import { allBatons, batonSummaryField, isRetiredBaton } from "./baton";
+import { contributeSessions } from "./sessions-index";
 import { buildMerged } from "./build-merged";
 import { orgOfSessionPath, readIndex, readOrg, readProjects } from "./orgs";
 import { readEngineBuilds, type BuildKind, type BuildRow } from "./build-loadout";
@@ -146,3 +147,21 @@ function codingSessions(orgs: readonly { id: string; dir: string }[]): Map<strin
 export const isOrgSession = (path: string, id: string): boolean => orgLookup().of(path, id) !== undefined;
 
 export const ORG_NOT_GROUPED = "Organization sessions stay with their project.";
+
+// ---- what the org adds to the session list (server/sessions-index.ts) ---------------------------------------
+
+contributeSessions({
+  lookup() {
+    const orgs = orgLookup();
+    return {
+      of(path, id) {
+        const baton = batonSummaryField(path);
+        const org = orgs.of(path, id);
+        return baton || org ? { ...(baton ? { baton } : {}), ...(org ? { org } : {}) } : undefined;
+      },
+    };
+  },
+  // An attached org's workspace sessions (batons, project-overseer conversations) belong to the org: baton.json
+  // and overseer state name them, so neither Clean Up nor an empty husk's archive ever deletes one.
+  keeps: (path) => (orgOfSessionPath(path) ? "Belongs to an organization's workspace — Clean Up never deletes it." : null),
+});

@@ -256,6 +256,7 @@ function projectIdsIn(dir: string): string[] {
 async function openHost(orgId: string, dir: string): Promise<OrgHostApi> {
   await migrated(() => migrateOrg(orgId, dir, stateRoot()));
   await import("./org-effects");
+  await import("./org-sessions"); // the org's fields in the session list and the workspace files Clean Up keeps
   await import("./baton-loadout"); // the baton statecharts' effects (the session file, links, entries) and its reply runner
   await import("./build-loadout"); // the build statecharts' effects (worktree, session file, mode, prompts, merge)
   await import("./project-overseer-store"); // the settings every act is stamped with

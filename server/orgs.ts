@@ -58,6 +58,7 @@ import { gitStatus, initRepo, isIgnoredBy, isInGitWorkTree } from "./workspace-g
  */
 
 import { OrgError } from "./org-error";
+import { setOrgVisitsDir } from "./visits";
 export { OrgError };
 
 const INDEX_VERSION = 1;
@@ -157,6 +158,7 @@ export function orgDir(orgId: string): string {
   if (!e) throw new OrgError("Unknown organization", 404);
   return e.dir;
 }
+setOrgVisitsDir(orgDir); // an org's visit log is in its workspace (server/visits.ts)
 
 /** The attached org whose workspace sessions dir holds `sessionPath`, or null. */
 export function orgOfSessionPath(sessionPath: string): { orgId: string; dir: string } | null {

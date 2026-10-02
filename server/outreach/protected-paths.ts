@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { homedir, platform } from "node:os";
 import { dirname, join, resolve, sep } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import { keepSecrets } from "../overseer-deny";
 import { stateRoot } from "../state-root";
 import { defaultSenderHome, piDefaultSenderHome, readOutreach } from "./settings";
 
@@ -21,6 +22,9 @@ export function outreachSecretDirs(agentDir = getAgentDir(), home = homedir()): 
 
 /** Files: this host's outreach setting and its receipts. */
 export const outreachSecretFiles = (state = stateRoot()): string[] => [join(state, "outreach.json"), join(state, "outreach-receipts.json")];
+
+// The Overseer's file tools deny them (server/overseer-deny.ts); the project layer never imports outreach.
+keepSecrets({ files: outreachSecretFiles, dirs: outreachSecretDirs });
 
 const within = (p: string, dir: string) => p === dir || p.startsWith(dir.endsWith(sep) ? dir : dir + sep);
 

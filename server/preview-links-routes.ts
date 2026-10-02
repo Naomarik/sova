@@ -1,16 +1,12 @@
 import type { Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import type { PreviewError, PreviewList, PreviewMinted, PreviewView } from "../shared/preview-links";
-import { peerPort } from "./mesh/peers";
 import { localRequest } from "./mesh/proxy";
 import { OrgError } from "./org-error";
 import { sentToNameOf } from "./projects/contributions";
 import { engineOf } from "./projects/spaces";
 import { extendPreview, PreviewRefused, PreviewUnavailable, viewOf } from "./preview-links";
-import { makePreview, previewViews, resolvePreview, staticPorts, turnOffPreview } from "./project-previews";
-import { readPublicLinks } from "./public-links";
-import { ingressInfo } from "./share/ingress";
-import { shareListenerState } from "./share/listener";
+import { makePreview, previewViews, resolvePreview, sovaPorts, turnOffPreview } from "./project-previews";
 import { previewAddress } from "./share/preview-address";
 
 /**
@@ -26,26 +22,6 @@ const notFound = (c: Context) => c.json({ error: "Not found" }, 404);
 const local = localRequest;
 const small = bodyLimit({ maxSize: 4 * 1024, onError: (c) => c.json({ error: "Too large" }, 413) });
 const NO_STORE = { "Cache-Control": "no-store" };
-
-/** Every port this Sova process binds or its settings name: never a preview's. */
-export function sovaPorts(env: NodeJS.ProcessEnv = process.env): Set<number> {
-  const out = new Set<number>();
-  const add = (v: unknown) => {
-    const n = typeof v === "string" ? Number(v) : v;
-    if (typeof n === "number" && Number.isInteger(n) && n > 0) out.add(n);
-  };
-  add(env.PORT ?? 4800);
-  add(env.SOVA_PORT);
-  add(peerPort());
-  add(env.SOVA_SHARE_PORT);
-  add(shareListenerState()?.port);
-  const file = readPublicLinks();
-  add(file.gateway?.sharePort);
-  add(file.ingressPort);
-  add(ingressInfo()?.port);
-  for (const p of staticPorts()) add(p);
-  return out;
-}
 
 function refused(c: Context, err: unknown) {
   if (err instanceof PreviewRefused) return c.json({ error: err.message, code: err.code } satisfies PreviewError, 400);

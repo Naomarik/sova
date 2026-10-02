@@ -3,6 +3,7 @@ import { isAbsolute, relative, resolve, sep } from "node:path";
 import { PREVIEW_PURPOSE_MAX, type PreviewHandoff, type PreviewTarget, type PreviewView } from "../shared/preview-links";
 import { readBuilds, withWorktreePath } from "./build-loadout";
 import { projectOf } from "./project-overseer-store";
+import { peerPort } from "./mesh/peers";
 import { portOwner, type PortOwner } from "./port-owner";
 import { keepPreview, keptPreview, type KeptPreview } from "./preview-kept";
 import { checkDays, checkPort, findPreviewByHash, listPreviews, mintPreview, onPreviewEnded, PreviewRefused, revokePreview, type PreviewRecord } from "./preview-links";
@@ -10,9 +11,9 @@ import { startStaticServe, staticServes, stopStaticServe } from "./preview-serve
 import { readPublicLinks } from "./public-links";
 import { readSessionTitles } from "./session-titles";
 import { awaitShareLinks } from "./share/links-events";
-import { linkWarning } from "./share/listener";
 import { previewAddress, previewOrigin } from "./share/preview-address";
 import { dialLoopback, previewDialable, previewRootId } from "./share/preview-proxy";
+import { ingressInfo, linkWarning, shareListenerState } from "./share/share-state";
 
 /**
  * A project's previews (§mesh.public/preview, /preview-serve; §app.project-overseer/previews): what
@@ -199,6 +200,26 @@ export async function turnOffPreview(id: string): Promise<PreviewRecord | null> 
 
 /** The ports Sova serves folders on: never a port preview's. */
 export const staticPorts = (): number[] => staticServes().map((s) => s.port);
+
+/** Every port this Sova process binds or its settings name: never a preview's. */
+export function sovaPorts(env: NodeJS.ProcessEnv = process.env): Set<number> {
+  const out = new Set<number>();
+  const add = (v: unknown) => {
+    const n = typeof v === "string" ? Number(v) : v;
+    if (typeof n === "number" && Number.isInteger(n) && n > 0) out.add(n);
+  };
+  add(env.PORT ?? 4800);
+  add(env.SOVA_PORT);
+  add(peerPort());
+  add(env.SOVA_SHARE_PORT);
+  add(shareListenerState()?.port);
+  const file = readPublicLinks();
+  add(file.gateway?.sharePort);
+  add(file.ingressPort);
+  add(ingressInfo()?.port);
+  for (const p of staticPorts()) add(p);
+  return out;
+}
 
 /** Bind every active folder preview again on its recorded port (index.ts, at startup). A taken port serves nothing. */
 export async function rebindStaticPreviews(now = Date.now()): Promise<{ bound: string[]; failed: string[] }> {

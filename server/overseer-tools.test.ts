@@ -73,8 +73,10 @@ describe("the prompt and the tool set stay in step", () => {
 
   test("the prompt names every entry of the secret list its read/grep/find/ls enforce", async () => {
     const { secretRules } = await import("./overseer-deny");
+    await import("./outreach/protected-paths"); // adds the sender's credentials, as the server's startup does
     const prompt = renderOverseerPrompt(buildOverseerTools(), readOverseerSettings());
     const r = secretRules("/H", "/A");
+    assert.ok(r.files.some((f) => f.endsWith("/outreach.json")) && r.dirs.some((d) => d.endsWith("/whatsapp")), "the outreach part's secrets are in the list");
     const names = [...r.namesUnder.names, ...r.files, ...r.dirs].map((p) => p.split("/").pop()!);
     for (const n of new Set([...names, ...r.names.map((x) => x.name)])) assert.ok(prompt.includes(`\`${n}\``) || prompt.includes(`/${n}\``), n);
     assert.match(prompt, /\[redacted\]/, "the redaction rule");

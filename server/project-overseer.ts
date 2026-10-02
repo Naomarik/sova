@@ -50,8 +50,7 @@ import { getSessionSummary, indexedSessionPaths, listSessions } from "./sessions
 import { setArchived } from "./archived-sessions";
 import { actOrThrow, heldAt, holdByRef, holdRef, refusalError } from "./org-engine";
 import { listPreviews, PreviewRefused } from "./preview-links";
-import { sovaPorts } from "./preview-links-routes";
-import { makePreview, previewViews, resolvePreview, turnOffPreview as turnOffPreviewLink } from "./project-previews";
+import { makePreview, previewViews, resolvePreview, sovaPorts, turnOffPreview as turnOffPreviewLink } from "./project-previews";
 import { previewAddress } from "./share/preview-address";
 import { heldActs, projectOfHold } from "./project-holds";
 import type { ActResult } from "./org-host";

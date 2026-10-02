@@ -4,7 +4,6 @@ import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import type { PromoteCommit } from "../shared/decisions";
 import { type Git, probeMerge, runGit } from "../pi-config/extensions/worktrees/git.ts";
 import { canonical } from "../pi-config/extensions/worktrees/state.ts";
-import { LOCAL_ONLY_IGNORE } from "./spec-draft-writer";
 
 /**
  * The project's coding sessions each run in their own git worktree and branch of the client
@@ -19,6 +18,10 @@ import { LOCAL_ONLY_IGNORE } from "./spec-draft-writer";
 export const NOT_GIT = "it isn't a Git repository.";
 export const NO_COMMITS = "the repository has no commits yet.";
 export const DETACHED = "its checkout is on a detached HEAD.";
+
+/** Drafts, reviews and pilot data are local only: a client repo gets the same ignore rule Sova's has.
+    The `.sova/spec/.gitignore` Sova adds when a project has none (a promotion commits it as its own). */
+export const LOCAL_ONLY_IGNORE = "# Local only: proposals, review packets and session metrics are never committed.\ndrafts/\nreviews/\npilot/\n";
 
 /** Sova's own identity: always for a promotion commit; for Merge Branch (the operator's gesture) only when the repo has none configured. */
 const SOVA_ID = ["-c", "user.name=Sova", "-c", "user.email=sova@localhost"];

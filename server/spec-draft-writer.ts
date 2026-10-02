@@ -4,6 +4,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node
 import { dirname, join } from "node:path";
 import { REQUIREMENTS_NS, type DecisionRow } from "../shared/decisions";
 import { provenanceOf, specSlug } from "./decisions";
+import { LOCAL_ONLY_IGNORE } from "./project-worktrees";
 
 /**
  * The deterministic spec writer (§app.requirements/drafts-with-provenance, /promotion): decisions
@@ -75,9 +76,6 @@ export const specDirOf = (root: string): string => join(root, ".sova", "spec");
 const draftsDir = (root: string) => join(specDirOf(root), "drafts");
 const draftSpecDir = (root: string, name: string) => join(draftsDir(root), name, "spec");
 
-/** Drafts, reviews and pilot data are local only: a client repo gets the same ignore rule Sova's has. */
-/** The `.sova/spec/.gitignore` Sova adds when a project has none (a promotion commits it as its own). */
-export const LOCAL_ONLY_IGNORE = "# Local only: proposals, review packets and session metrics are never committed.\ndrafts/\nreviews/\npilot/\n";
 
 function ensureLocalOnlyIgnore(root: string): void {
   const file = join(specDirOf(root), ".gitignore");

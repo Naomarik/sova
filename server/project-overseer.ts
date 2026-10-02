@@ -3,7 +3,7 @@ import { homedir } from "node:os";
 import { join, relative } from "node:path";
 import { type AgentSession, getAgentDir, SessionManager } from "@earendil-works/pi-coding-agent";
 import {
-  AUTONOMY_MEANING,
+  autonomyMeaning,
   PER_DAY,
   PER_TURN,
   PO_LIMIT_KINDS,
@@ -71,6 +71,7 @@ import {
   contributedStarted,
   contributedTools,
   gapsOf,
+  spaceOf,
   lookHintOf,
   onWatchFactsChanged,
   releasedNotDoneOf,
@@ -435,13 +436,14 @@ export function renderProjectOverseerPrompt(projectId: string, tools: { name: st
   const project = projectOf(projectId);
   const settings = readPoSettings(p);
   const eff = effectiveOf(projectId, settings);
+  const placed = isPlaced(projectId);
   const r = serverRedactor();
   const notes = readNotes(p.notes).trim();
   const values: Record<string, string> = {
     PROJECT: project.name,
-    AUTONOMY: `${eff.autonomy} — ${AUTONOMY_MEANING[eff.autonomy]}`,
+    AUTONOMY: `${eff.autonomy} — ${autonomyMeaning(eff.autonomy, placed)}`,
     AUTONOMY_REASON: eff.reason ? ` (${eff.reason})` : "",
-    CAPS: limitsText(settings),
+    CAPS: limitsText(settings, placed),
     ROOT: project.root,
     CODING_MODE: `${describeCodingMode(baseCodingMode(settings.codingMode, project.root))}${settings.codingMode ? " (the operator's setting)" : " (Automatic)"}`,
     IDEAS: r.redact(promptToc(readManifest(p.ideas), readPoState(p)?.current ?? "")),
@@ -460,15 +462,20 @@ export function renderProjectOverseerPrompt(projectId: string, tools: { name: st
   );
 }
 
-/** Every limit in force, for the prompt's {{CAPS}}; Unlimited reads "no limit". Pure. */
-export function limitsText(s: Pick<ProjectOverseerSettings, "caps" | "watchGapMin" | "soonLookSec">): string {
+/** An organization places the project (its part adds gathering, promotion and the roster); else it stands alone. */
+export const isPlaced = (projectId: string): boolean => spaceOf(engineOrThrow(projectId), projectId).kind === "org";
+
+/** Every limit in force, for the prompt's {{CAPS}}; Unlimited reads "no limit". A standalone project's
+    (`placed` false) leave out gathering sessions and promotions: nothing there starts or promotes them. Pure. */
+export function limitsText(s: Pick<ProjectOverseerSettings, "caps" | "watchGapMin" | "soonLookSec">, placed = true): string {
   const c = s.caps;
   const n = (v: number | null) => (v === null ? "no limit" : String(v));
+  const org = (text: string) => (placed ? text : "");
   return (
-    `each message the operator sends: gathering sessions ${n(c.gatherPerTurn)}, promotions ${n(c.promotePerTurn)}, coding sessions ${n(c.createPerTurn)}, prompts to them ${n(c.promptsPerTurn)}; ` +
-    `on your own each day: gathering sessions ${n(c.gatherPerDay)}, promotions ${n(c.promotePerDay)}, coding sessions ${n(c.createPerDay)}, prompts to them ${n(c.promptsPerDay)}, looks ${n(c.unattendedPerDay)} (these reset at local midnight); ` +
+    `each message the operator sends: ${org(`gathering sessions ${n(c.gatherPerTurn)}, promotions ${n(c.promotePerTurn)}, `)}coding sessions ${n(c.createPerTurn)}, prompts to them ${n(c.promptsPerTurn)}; ` +
+    `on your own each day: ${org(`gathering sessions ${n(c.gatherPerDay)}, promotions ${n(c.promotePerDay)}, `)}coding sessions ${n(c.createPerDay)}, prompts to them ${n(c.promptsPerDay)}, looks ${n(c.unattendedPerDay)} (these reset at local midnight); ` +
     `looks on your own at most one every ${s.watchGapMin} min${s.soonLookSec === null ? "" : `, or ${s.soonLookSec} s after something that should be seen soon`}; ` +
-    `at once: ${c.gatheringsOpen} open gathering sessions, ${c.codingRunning} coding sessions running`
+    `at once: ${org(`${c.gatheringsOpen} open gathering sessions, `)}${c.codingRunning} coding sessions running`
   );
 }
 
@@ -514,6 +521,7 @@ function toolHost(rt: Rt): PoToolHost {
     overseerId: () => readPoState(paths)?.current ?? "",
     engine,
     gaps: () => gapsOf(engine(), projectId),
+    placed: () => isPlaced(projectId),
     contributed: (wrap) => contributedTools({ ...partCtx(rt, paths), ...wrap }),
     sessions: () => listSessions(),
     transcript: async (path) => normalizeEntries(await readActiveBranch(path)),

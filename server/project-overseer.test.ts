@@ -670,6 +670,22 @@ describe("limits through PATCH, held items and their retry", async () => {
   });
 });
 
+describe("a standalone project's prompt names nothing of an organization", async () => {
+  const { registerProjectIn } = await import("./projects/spaces");
+  mkdirSync(join(root, "proj-alone"));
+  const { project } = await registerProjectIn("standalone", join(root, "proj-alone"), { name: "Alone", origin: "folder" });
+  await po.ensureProjectOverseer(project.id);
+
+  test("its level reads as a standalone project's, and its limits leave out gathering sessions and promotions", async () => {
+    await po.patchProjectOverseer(project.id, { autonomy: "L1" });
+    const prompt = po.renderProjectOverseerPrompt(project.id, po.toolsForTest(project.id));
+    assert.match(prompt, /L1 — Gather: may also publish preview links of its coding sessions' apps\./);
+    assert.match(prompt, /each message the operator sends: coding sessions \S+, prompts to them \S+; on your own each day: coding sessions /);
+    assert.match(prompt, /at once: \d+ coding sessions running/);
+    assert.doesNotMatch(prompt, /gathering session|promotion|roster/i);
+  });
+});
+
 describe("a project with no overseer conversation never looks", async () => {
   const org = await orgs.createOrg({ name: "Quiet", dir: join(root, "ws-quiet") });
   mkdirSync(join(root, "proj-quiet"));

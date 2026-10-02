@@ -76,6 +76,7 @@ function fake(opts: { attended?: boolean; autonomy?: Autonomy; settings?: Partia
     overseerId: () => "po-1",
     engine: () => "prj_bbbbbbbb",
     gaps: () => null,
+    placed: () => true,
     contributed: () => [],
     sessions: async () => sessions,
     transcript: async () => [],
@@ -170,6 +171,16 @@ describe("the levels, as the statecharts declare them", () => {
     assert.equal(up.details.result.error?.code, "not-found", "the fake's root is no project");
     await run("sova_project_verbs", { verb: "status" });
     assert.deepEqual(calls.filter((c) => c.startsWith("services:")), []);
+  });
+
+  test("sova_project_verbs: an act the engine refuses is logged refused with its sentence; the model still reads the result", async () => {
+    const { run, paths } = fake({ autonomy: "L3" });
+    const out = (await run("sova_project_verbs", { verb: "up" })) as { content: { text: string }[] };
+    assert.match(out.content[0]!.text, /^up failed \(exit \d+\): not-found: /);
+    const last = readFileSync(paths.actions, "utf8").trim().split("\n").map((l) => JSON.parse(l)).at(-1);
+    assert.equal(last.tool, "sova_project_verbs");
+    assert.equal(last.outcome, "refused");
+    assert.match(last.error, /^not-found: /);
   });
 
   test("the operator's own to-do list: only in their turn; every other tool is the statecharts' to refuse", () => {
@@ -430,6 +441,16 @@ describe("builds: who started each coding session, its branch and whether it is 
     assert.match(out, /- dup "Untitled coding session" · started by you · idle · sova\/dashboard-v2-3f9a1c · 1 commit, not merged into master · on another host/);
     assert.match(out, /## Other sessions in the project root\n- in-root "Inside"/);
     assert.ok(!/- in-tree "Worktree"/.test(out), "a build is listed once, as a build");
+  });
+
+  test("sova_project's limits: a standalone project's leave out gathering sessions and promotions", async () => {
+    const placed = textOf(await fake().run("sova_project"));
+    assert.match(placed, /gathering sessions started/);
+    const f = fake();
+    f.host.placed = () => false;
+    const alone = textOf(await f.run("sova_project"));
+    assert.match(alone, /## Your limits\nThis operator message: 0 of \d+ coding sessions started, 0 of \d+ prompts to coding sessions\./);
+    assert.doesNotMatch(alone, /gathering|promoted/);
   });
 
   test("sova_project has a Builds section with the same lines", async () => {

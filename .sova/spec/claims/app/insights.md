@@ -100,7 +100,11 @@ Usage glance needs the room.
     chat that has not recorded one yet, a TUI-watched session, a workspace pane that isn't a chat,
     and every page with no session open. Only with neither (an older server without
     `claudeLogins`, or no login ready) does it read `providers`' `claude`, Claude Code's own
-    login. Its reading is that login's account card on the Usage page (the account's freshest
+    login. The sidebar also falls back to that own-login reading when the selected account
+    cannot supply a readable glance (not `ok`, or no eligible window or balance), provided the
+    own-login reading can. Its tooltip and accessible name explicitly say "Claude (Claude Code's
+    own login)" for this fallback, never the unreadable selected account's name. A readable
+    selected account keeps precedence, including at 100%; the Usage page's summary is unchanged. Its reading is that login's account card on the Usage page (the account's freshest
     reading: its logins share one quota), so the number follows a failover in the same poll. The visible segment stays `C 61%`: the glance has no room for a name. With
     more than one login, the row's `title` and `aria-label` name it after "Claude", by its card
     title (its email, else its label): "Usage: Claude (spare@example.com) 7-day 61%, OpenAI

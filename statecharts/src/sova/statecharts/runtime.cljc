@@ -19,6 +19,7 @@
    What runs right now (units, instances) is never stored here: the host joins the engine's status at read
    time. Start data: `{:project-id :root}`."
   (:require
+    [clojure.string]
     [com.fulcrologic.statecharts.chart :as chart]
     [com.fulcrologic.statecharts.elements :refer [state parallel transition on-entry script]]
     [com.fulcrologic.statecharts.data-model.operations :as ops]
@@ -42,7 +43,10 @@
                                                  :data (merge {:by "statechart" :at (b/now-ms d)} r)}])))})
    (com.fulcrologic.statecharts.elements/raise {:event :sova.statecharts/flush})])
 
-(defn- hash12 [h] (let [s (str h)] (subs s 0 (min 12 (count s)))))
+(defn- hash12
+  "The first 12 characters of a hash, as people see it (no `sha256:` prefix)."
+  [h]
+  (let [s (clojure.string/replace (str h) #"^sha256:" "")] (subs s 0 (min 12 (count s)))))
 
 ;; ---- standing -----------------------------------------------------------------------------------
 
@@ -59,9 +63,12 @@
     (transition (cond-> {:sova/feed :feed :cond (fn [_ d] (= s (rr/standing-of d))) :target target}
                   (contains? entry-asks target) (assoc :sova/asks-overseer (entry-asks target))))))
 
-(defn- standing [id & content]
+(defn- standing
+  "A standing's state: it mirrors its name, and main's hash as shown (`hash12`: the log drops hashes, and the
+   registry's feed names the definition by it)."
+  [id & content]
   (apply state {:id id}
-    (on-entry {} (script {:expr (fn [_ d] [(ops/assign :standing (name id))])}))
+    (on-entry {} (script {:expr (fn [_ d] [(ops/assign :standing (name id)) (ops/assign :hash12 (some-> (rr/main-hash d) hash12))])}))
     (concat (moves-from id) content)))
 
 ;; ---- the playbook's run ----------------------------------------------------------------------------
@@ -136,7 +143,7 @@
                                          (not (rr/approves-main? d h)) (assoc :ref (get-in d [:playbook :branch])))))))
       (transition {:sova/feed :feed :event :effect/done :cond (done-kind? "approve")}
         (script {:expr (fn [_ d] (let [h (get-in (e d) [:result :hash])]
-                                   (cond-> [(ops/assign :approved-last {:hash h :at (b/now-ms d)}) (ops/assign :approve-refused nil)]
+                                   (cond-> [(ops/assign :approved-last {:hash h :hash12 (hash12 h) :at (b/now-ms d)}) (ops/assign :approve-refused nil)]
                                      (and (= "failed" (:standing d)) (= h (rr/main-hash d))) (conj (ops/assign :cleared-at (b/now-ms d))))))}))
       (transition {:sova/feed :feed :event :effect/failed :cond (done-kind? "approve")}
         (script {:expr (fn [_ d] [(ops/assign :approve-refused (:detail (e d)))])}))
@@ -208,7 +215,7 @@
    :version    version
    :migrate    {}
    :storage    :host-local
-   :exported   [:project-id :root :standing :playbook-state :commit :def :software :sources :approved :proof :confined-proof :suite
+   :exported   [:project-id :root :standing :hash12 :playbook-state :commit :def :software :sources :approved :proof :confined-proof :suite
                 :registered :drift :playbook :conform-result :approved-last :approve-refused :cleared-at]
    :acts       acts
    :not-here   not-here})

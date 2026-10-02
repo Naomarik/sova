@@ -289,7 +289,7 @@ Entering conforming emits effect `conform {hash}` → `effect/done {result: {has
 {check, detail}, memory?}}` (`conformResult`) \| `effect/failed {detail}` (a failed result, check "run"). Entering
 registered records `registered {hash, suite, fingerprint, files, commit, at}` unless it is already for main's hash and
 suite. Reasons: entering stale `runtime/stale {paths}` (asks), failed `runtime/failed {hash, check?, detail?, error?}`
-(asks, soon), registered `runtime/registered {n, hash}` (asks nothing). Exported: `projectId, root, standing,
+(asks, soon), registered `runtime/registered {n, hash}` (asks nothing). Each standing mirrors `hash12` (main's hash as shown: the log drops hash values). Exported: `projectId, root, standing, hash12,
 playbookState, commit, def, software, sources, approved, proof, confinedProof, suite, registered, drift, playbook,
 conformResult, approvedLast, approveRefused, clearedAt`.
 

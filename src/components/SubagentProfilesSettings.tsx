@@ -23,6 +23,7 @@ import {
 } from "../lib/subagent-editor";
 import { Banner, Chip, Icon } from "./ui";
 import { RetryButton, sentence, WorkerSlotRow } from "./WorkerSlotRow";
+import "./SubagentProfilesSettings.css";
 
 const labels = { planning: "Planning & specs", investigation: "Investigation", routine: "Routine implementation", complex: "Complex implementation" } as const;
 
@@ -218,67 +219,72 @@ export function SubagentProfilesSettings() {
           other={other()}
           disabled={store.saving()}
           unlabelled={unlabelled()}
+          compact
           onChange={onChange}
         />
       )}
     </Show>
   );
-  /** A primary row, then its fallback row with Remove Fallback, or Add Fallback. "Primary" labels the first row only while a fallback is set. */
+  /** A primary row, then its fallback row. "Primary" labels the first row only while a fallback is set. */
   const pair = (role: string, choice: () => { primary: WorkerChoice; fallback: WorkerChoice | null }, update: (c: { primary: WorkerChoice; fallback: WorkerChoice | null }) => void) => (
     <>
       {tuple(role, () => choice().primary, () => choice().fallback, (c) => update({ ...choice(), primary: c }), "primary", () => choice().fallback === null)}
-      <Show
-        when={choice().fallback}
-        fallback={
-          <button type="button" class="button button-sm button-ghost settings-delegate-fallback-toggle" disabled={store.saving()} onClick={() => update({ ...choice(), fallback: fallbackFor(choice().primary, true) })}>
-            <Icon name="plus" small />
-            Add Fallback
-          </button>
-        }
-      >
+      <Show when={choice().fallback}>
         {(f) => (
           <>
-            <span class="settings-delegate-slot-label">Fallback</span>
             {tuple(role, f, () => choice().primary, (c) => update({ ...choice(), fallback: c }), "fallback")}
-            <button type="button" class="button button-sm button-ghost settings-delegate-fallback-toggle" disabled={store.saving()} onClick={() => update({ ...choice(), fallback: null })}>
-              Remove Fallback
-            </button>
           </>
         )}
       </Show>
     </>
   );
+  /** Add Fallback or Remove Fallback, for the route's head line beside its name. One button whose
+      label flips, so keyboard focus stays on it as the fallback row comes and goes. */
+  const fallbackAction = (choice: () => { primary: WorkerChoice; fallback: WorkerChoice | null }, update: (c: { primary: WorkerChoice; fallback: WorkerChoice | null }) => void) => (
+    <button
+      type="button"
+      class="button button-sm button-ghost subagent-editor-route-action"
+      disabled={store.saving()}
+      onClick={() => update({ ...choice(), fallback: choice().fallback ? null : fallbackFor(choice().primary, true) })}
+    >
+      <Show when={choice().fallback} fallback={<><Icon name="plus" small />Add Fallback</>}>
+        Remove Fallback
+      </Show>
+    </button>
+  );
   const number = (field: TeamNumberField, value: () => number, update: (n: number) => void) => {
     const id = `subagents-${editing()}-${field}`;
     const issue = () => numberIssue(field, value());
     return (
-      <div class="field">
+      <div class="field subagent-editor-number">
         <label class="field-label" for={id}>
           {NUMBER_LABELS[field]}
         </label>
-        <input
-          class="input text-num"
-          id={id}
-          type="number"
-          inputmode="numeric"
-          min={TEAM_NUMBER_BOUNDS[field].min}
-          max={TEAM_NUMBER_BOUNDS[field].max}
-          step="1"
-          value={Number.isNaN(value()) ? "" : value()}
-          aria-invalid={issue() ? "true" : undefined}
-          aria-describedby={`${id}-hint`}
-          disabled={store.saving()}
-          onInput={(e) => update(numberOf(e.currentTarget.value))}
-        />
-        <span class={issue() ? "field-error" : "field-hint"} id={`${id}-hint`}>
-          {issue() ?? NUMBER_HINTS[field]}
-        </span>
+        <div class="subagent-editor-number-row">
+          <input
+            class="input text-num"
+            id={id}
+            type="number"
+            inputmode="numeric"
+            min={TEAM_NUMBER_BOUNDS[field].min}
+            max={TEAM_NUMBER_BOUNDS[field].max}
+            step="1"
+            value={Number.isNaN(value()) ? "" : value()}
+            aria-invalid={issue() ? "true" : undefined}
+            aria-describedby={`${id}-hint`}
+            disabled={store.saving()}
+            onInput={(e) => update(numberOf(e.currentTarget.value))}
+          />
+          <span class={issue() ? "field-error" : "field-hint"} id={`${id}-hint`}>
+            {issue() ?? NUMBER_HINTS[field]}
+          </span>
+        </div>
       </div>
     );
   };
   /** One of the editor's three sections: a fold whose closed head says what is inside. */
   const section = (key: EditorSection, label: string, summary: () => string, body: () => JSX.Element, id?: string) => (
-    <details class="overseer-fold overseer-advanced" id={id} open={isOpen(key)} onToggle={(e) => setOpen(key, e.currentTarget.open)}>
+    <details class="overseer-fold overseer-advanced subagent-editor-section" id={id} open={isOpen(key)} onToggle={(e) => setOpen(key, e.currentTarget.open)}>
       <summary class="overseer-fold-summary">
         <Icon name="chevron-right" small class="icon-twist" />
         <span class="overseer-fold-label">{label}</span>
@@ -289,7 +295,7 @@ export function SubagentProfilesSettings() {
   );
 
   return (
-    <section class="settings-delegate" aria-labelledby={inEditor() ? "subagents-editor-title" : "settings-subagents-title"}>
+    <section class="settings-delegate subagent-editor" aria-labelledby={inEditor() ? "subagents-editor-title" : "settings-subagents-title"}>
       <Show
         when={inEditor()}
         fallback={
@@ -304,7 +310,7 @@ export function SubagentProfilesSettings() {
         }
       >
         <div class="settings-type-head" ref={(el) => (editorEl = el)}>
-          <button type="button" class="button button-sm button-ghost" ref={(el) => (backButton = el)} onClick={closeEditor}>
+          <button type="button" class="button button-sm button-ghost subagent-editor-back" ref={(el) => (backButton = el)} onClick={closeEditor}>
             <Icon name="chevron-left" small />
             Subagent profiles
           </button>
@@ -340,14 +346,14 @@ export function SubagentProfilesSettings() {
           when={inEditor() && edit()}
           fallback={
             <>
-              <div class="button-row">
-                <button type="button" class="button button-ghost" disabled={store.dirty() || store.saving()} onClick={() => newProfile()}>
+              <div class="button-row subagent-editor-list-actions">
+                <button type="button" class="button button-sm" disabled={store.dirty() || store.saving()} onClick={() => newProfile()}>
                   <Icon name="plus" small />
                   New Profile
                 </button>
                 <button
                   type="button"
-                  class="button button-ghost"
+                  class="button button-sm button-ghost"
                   disabled={store.dirty() || store.saving() || !shown() || shown()!.current.id === "off"}
                   title={shown()?.current.id === "off" ? "Off configures nothing, so there is nothing to save" : undefined}
                   onClick={() => newProfile()}
@@ -363,7 +369,7 @@ export function SubagentProfilesSettings() {
                   <input class="input" id="subagents-search" type="search" autocomplete="off" value={search()} onInput={(e) => setSearch(e.currentTarget.value)} />
                 </div>
               </Show>
-              <div class="list" aria-label="Subagent profiles">
+              <div class="list subagent-editor-list" aria-label="Subagent profiles">
                 <div class="list-row">
                   <span class="list-main">
                     <span class="list-title">
@@ -398,11 +404,11 @@ export function SubagentProfilesSettings() {
                         </span>
                         <span class="list-meta text-mono">{footprintOf(p.id) ?? "Not saved yet"}</span>
                       </span>
-                      <div class="button-row">
+                      <div class="button-row subagent-editor-row-actions">
                         {/* Unsaved edits are this profile's: its Edit reopens them; every other profile waits. */}
                         <button
                           type="button"
-                          class="button button-sm button-ghost"
+                          class="button button-sm"
                           id={`subagents-edit-${p.id}`}
                           disabled={store.saving() || (store.dirty() && editing() !== p.id)}
                           onClick={() => openEditor(p.id)}
@@ -442,7 +448,7 @@ export function SubagentProfilesSettings() {
               <Show when={safeInfo()?.current.id === "off" && subagentSettingsPath()}>
                 <Banner tone="info" title="This chat is on Off." body="Off configures nothing: the agent picks every model. Editing a profile here doesn't switch the chat." />
               </Show>
-              <div class="field settings-team-role">
+              <div class="field settings-team-role subagent-editor-name">
                 <label class="field-label" for="subagents-name">
                   Profile name
                 </label>
@@ -469,8 +475,9 @@ export function SubagentProfilesSettings() {
                     <p class="field-hint settings-delegate-desc">Without a fallback, the agent asks you which model to use when a route's primary can't run.</p>
                     <For each={Object.keys(labels) as (keyof typeof labels)[]}>
                       {(k) => (
-                        <fieldset class="settings-delegate-profile">
-                          <legend class="settings-delegate-legend">{labels[k]}</legend>
+                        <fieldset class="subagent-editor-route">
+                          <legend class="subagent-editor-route-name">{labels[k]}</legend>
+                          {fallbackAction(() => p().delegate[k], (c) => change((x) => (x.delegate[k] = c)))}
                           {pair(k, () => p().delegate[k], (c) => change((x) => (x.delegate[k] = c)))}
                         </fieldset>
                       )}
@@ -499,9 +506,17 @@ export function SubagentProfilesSettings() {
                           if (p().teams?.[role].role.trim() === "") setInstructionsOpen(true);
                         });
                         const canSwitch = () => (role === "coordinator" ? !!p().teams || teamsSeed(p().id) !== null : coordinatorOn(p()));
+                        /** The role's rows show while it's on, or while its fields hold something Save waits for. */
+                        const shows = () => !!t() && (on() || roleProblem(p(), role));
+                        const choice = () => ({
+                          primary: { ...t()![role].primary, effort: t()![role].primary.effort ?? "" },
+                          fallback: t()![role].fallback ? { ...t()![role].fallback!, effort: t()![role].fallback!.effort ?? "" } : null,
+                        });
+                        const update = (c: { primary: WorkerChoice; fallback: WorkerChoice | null }) => change((x) => Object.assign(x.teams![role], c));
                         return (
-                          <fieldset class="settings-delegate-profile">
-                            <legend class="settings-delegate-legend">{name}</legend>
+                          <fieldset class="subagent-editor-route">
+                            <legend class="subagent-editor-route-name">{name}</legend>
+                            <Show when={shows()}>{fallbackAction(choice, update)}</Show>
                             <label class="toggle toggle-switch settings-team-enable">
                               <span>Add a {role} to new teams</span>
                               <input
@@ -520,33 +535,28 @@ export function SubagentProfilesSettings() {
                                 The monitor reports to the coordinator, so it needs one.
                               </p>
                             </Show>
-                            <Show when={t() && (on() || roleProblem(p(), role))}>
-                              {pair(
-                                role,
-                                () => ({
-                                  primary: { ...t()![role].primary, effort: t()![role].primary.effort ?? "" },
-                                  fallback: t()![role].fallback ? { ...t()![role].fallback!, effort: t()![role].fallback!.effort ?? "" } : null,
-                                }),
-                                (c) => change((x) => Object.assign(x.teams![role], c)),
-                              )}
+                            <Show when={shows()}>
+                              {pair(role, choice, update)}
                               <Show when={role === "monitor"}>
-                                <div class="settings-team-numbers">
-                                  {number("contextPct", () => t()!.monitor.contextPct, (n) => change((x) => (x.teams!.monitor.contextPct = n)))}
-                                  {number("everyMinutes", () => t()!.monitor.everyMinutes, (n) => change((x) => (x.teams!.monitor.everyMinutes = n)))}
-                                </div>
-                                <label class="toggle toggle-switch settings-team-enable">
-                                  <span>Pause the team near a usage limit</span>
-                                  <input type="checkbox" checked={t()!.monitor.usage.enabled} disabled={store.saving()} onChange={(e) => change((x) => (x.teams!.monitor.usage.enabled = e.currentTarget.checked))} />
-                                  <span class="toggle-box" />
-                                </label>
-                                <Show when={t()!.monitor.usage.enabled}>
+                                <div class="subagent-editor-sub">
                                   <div class="settings-team-numbers">
-                                    {number("pausePct", () => t()!.monitor.usage.pausePct, (n) => change((x) => (x.teams!.monitor.usage.pausePct = n)))}
-                                    {number("resumeMarginMinutes", () => t()!.monitor.usage.resumeMarginMinutes, (n) => change((x) => (x.teams!.monitor.usage.resumeMarginMinutes = n)))}
+                                    {number("contextPct", () => t()!.monitor.contextPct, (n) => change((x) => (x.teams!.monitor.contextPct = n)))}
+                                    {number("everyMinutes", () => t()!.monitor.everyMinutes, (n) => change((x) => (x.teams!.monitor.everyMinutes = n)))}
                                   </div>
-                                </Show>
+                                  <label class="toggle toggle-switch settings-team-enable">
+                                    <span>Pause the team near a usage limit</span>
+                                    <input type="checkbox" checked={t()!.monitor.usage.enabled} disabled={store.saving()} onChange={(e) => change((x) => (x.teams!.monitor.usage.enabled = e.currentTarget.checked))} />
+                                    <span class="toggle-box" />
+                                  </label>
+                                  <Show when={t()!.monitor.usage.enabled}>
+                                    <div class="settings-team-numbers">
+                                      {number("pausePct", () => t()!.monitor.usage.pausePct, (n) => change((x) => (x.teams!.monitor.usage.pausePct = n)))}
+                                      {number("resumeMarginMinutes", () => t()!.monitor.usage.resumeMarginMinutes, (n) => change((x) => (x.teams!.monitor.usage.resumeMarginMinutes = n)))}
+                                    </div>
+                                  </Show>
+                                </div>
                               </Show>
-                              <details class="overseer-fold" open={instructionsOpen()} onToggle={(e) => setInstructionsOpen(e.currentTarget.open)}>
+                              <details class="overseer-fold subagent-editor-instructions" open={instructionsOpen()} onToggle={(e) => setInstructionsOpen(e.currentTarget.open)}>
                                 <summary class="overseer-fold-summary">
                                   <Icon name="chevron-right" small class="icon-twist" />
                                   <span class="overseer-fold-label">Instructions</span>
@@ -598,14 +608,14 @@ export function SubagentProfilesSettings() {
                     </For>
                     <Show when={p().teams}>
                       {(t) => (
-                        <fieldset class="settings-delegate-profile">
-                          <legend class="settings-delegate-legend">Handover</legend>
+                        <fieldset class="subagent-editor-route">
+                          <legend class="subagent-editor-route-name">Handover</legend>
                           <div class="settings-team-numbers">{number("retireTimeoutMinutes", () => t().handover.retireTimeoutMinutes, (n) => change((x) => (x.teams!.handover.retireTimeoutMinutes = n)))}</div>
                         </fieldset>
                       )}
                     </Show>
-                    <fieldset class="settings-delegate-profile">
-                      <legend class="settings-delegate-legend">Members default</legend>
+                    <fieldset class="subagent-editor-route subagent-editor-flush">
+                      <legend class="subagent-editor-route-name">Members default</legend>
                       <label class="toggle toggle-switch settings-team-enable">
                         <span>Choose a model for ordinary members</span>
                         <input type="checkbox" checked={p().members !== null} disabled={store.saving()} onChange={(e) => change((x) => (x.members = e.currentTarget.checked ? { backend: "pi", model: "", effort: "" } : null))} />
@@ -625,21 +635,24 @@ export function SubagentProfilesSettings() {
                 () => specSummary(p()),
                 () => (
                   <>
-                    <label class="toggle toggle-switch settings-team-enable">
-                      <span>Use a spec writer while spec is on</span>
-                      <input
-                        type="checkbox"
-                        checked={p().specWriter !== null}
-                        disabled={store.saving()}
-                        onChange={(e) => change((x) => (x.specWriter = e.currentTarget.checked ? { primary: { backend: "pi", model: "", effort: "" }, fallback: null } : null))}
-                      />
-                      <span class="toggle-box" />
-                    </label>
+                    <div class="subagent-editor-switch-line">
+                      <label class="toggle toggle-switch settings-team-enable">
+                        <span>Use a spec writer while spec is on</span>
+                        <input
+                          type="checkbox"
+                          checked={p().specWriter !== null}
+                          disabled={store.saving()}
+                          onChange={(e) => change((x) => (x.specWriter = e.currentTarget.checked ? { primary: { backend: "pi", model: "", effort: "" }, fallback: null } : null))}
+                        />
+                        <span class="toggle-box" />
+                      </label>
+                      <Show when={p().specWriter}>{(w) => fallbackAction(w, (c) => change((x) => (x.specWriter = c)))}</Show>
+                    </div>
                     <Show when={p().specWriter} fallback={<p class="field-hint">The session writes the spec itself.</p>}>
                       {(w) => (
                         <>
                           <p class="field-hint settings-delegate-desc">Without a fallback, the session writes the spec itself when the writer can't run.</p>
-                          {pair("spec", w, (c) => change((x) => (x.specWriter = c)))}
+                          <div class="subagent-editor-flush">{pair("spec", w, (c) => change((x) => (x.specWriter = c)))}</div>
                         </>
                       )}
                     </Show>

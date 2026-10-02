@@ -1,0 +1,113 @@
+/* ---- SETTINGS · SUBAGENTS (list and profile editor). Scoped to this tab, tokens only; the
+   shared settings rules in base.css stay as they are. The editor is scanned, not read: one line
+   per worker, the slot's label leading it, the selects' names kept for screen readers only, and
+   Add/Remove Fallback on the route's head line. Section headers sit a step above the group
+   headings inside them, and those above field labels. Inside the editor, Teams' fieldsets are
+   separated by space, not rules: the rules belong to the three sections. ------------------ */
+
+.subagent-editor { container: subagent-editor / inline-size; }
+
+/* The list: name over footprint, actions after; at narrow widths the actions wrap under. */
+.subagent-editor-list-actions,
+.subagent-editor-row-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.subagent-editor-list .list-row { flex-wrap: wrap; row-gap: var(--space-2); }
+.subagent-editor-list .list-main { flex: 1 1 12rem; }
+.subagent-editor-list .list-title { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.subagent-editor-list .list-meta { display: block; }
+.subagent-editor-list .list-meta.text-mono { font-family: var(--font-mono); font-size: var(--fs-mono); }
+
+/* The editor's head: Back lines its chevron up with the content edge. */
+.subagent-editor-back { margin-left: calc(var(--space-3) * -1); color: var(--color-ink-2); }
+.subagent-editor-name { gap: var(--space-1); }
+.subagent-editor-name .field-label { margin-bottom: var(--space-1); }
+
+/* The three sections: a heading-s header, then their groups a space-5 apart. */
+.subagent-editor-section > .overseer-fold-summary .overseer-fold-label { font-size: var(--fs-heading-s); line-height: var(--lh-heading-s); }
+.subagent-editor-section > .overseer-fold-body { gap: var(--space-5); padding: var(--space-1) 0 var(--space-4); }
+.subagent-editor .settings-delegate-desc { margin-top: calc(var(--space-2) * -1); }
+
+/* A route or a role: its name and Add/Remove Fallback on one head line, everything else under.
+   The float keeps the legend a grid item instead of the fieldset's border legend. */
+.subagent-editor-route {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: var(--space-3);
+  row-gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+.subagent-editor-route > * { grid-column: 1 / -1; }
+.subagent-editor-route > .subagent-editor-route-name {
+  grid-column: 1;
+  float: left;
+  min-height: var(--control-sm);
+  display: flex;
+  align-items: center;
+  padding: 0;
+  font-size: var(--fs-body);
+  font-weight: var(--fw-semibold);
+  color: var(--color-ink);
+}
+.subagent-editor-route > .subagent-editor-route-action { grid-column: 2; grid-row: 1; justify-self: end; color: var(--color-ink-2); }
+
+/* One worker: a narrow label column (Primary, Fallback), then backend · model · effort. A lone
+   row keeps the column empty so every route's selects line up. Backend and Effort are sized to
+   their longest value ("Claude Code", "medium") with a tighter caret gutter; the model id takes
+   the rest, and its select's title holds the whole id. */
+.subagent-editor-slot {
+  display: grid;
+  grid-template-columns: 3.75rem minmax(0, 1fr);
+  align-items: center;
+  column-gap: var(--space-3);
+  row-gap: var(--space-1);
+}
+.subagent-editor-slot > .settings-delegate-slot-label { grid-column: 1; color: var(--color-ink-2); }
+.subagent-editor-slot > .settings-delegate-fields,
+.subagent-editor-slot > .settings-delegate-issue { grid-column: 2; }
+.subagent-editor-slot-fallback > .settings-delegate-slot-label { color: var(--color-ink-muted); font-weight: var(--fw-medium); }
+.subagent-editor-slot .settings-delegate-fields {
+  grid-template-columns: 8.25rem minmax(0, 1fr) 6rem;
+  gap: var(--space-2);
+}
+/* Spec writer and Members default stand alone: an unlabelled row there takes the full width. */
+div.subagent-editor-flush { display: flex; flex-direction: column; gap: var(--space-2); }
+.subagent-editor-flush .subagent-editor-slot:not(:has(> .settings-delegate-slot-label)) { grid-template-columns: minmax(0, 1fr); }
+.subagent-editor-flush .subagent-editor-slot:not(:has(> .settings-delegate-slot-label)) > * { grid-column: 1; }
+.subagent-editor-slot .select { padding-right: var(--space-5); }
+.subagent-editor-slot .select-caret { right: var(--space-2); }
+
+/* Switches inside the editor read as text, not headings; Spec writer's carries its action. */
+.subagent-editor .settings-team-enable { font-weight: var(--fw-regular); }
+.subagent-editor-switch-line { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2) var(--space-3); }
+
+/* The monitor's own settings hang under it, behind one guide rule. */
+.subagent-editor-sub {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding-left: var(--space-4);
+  border-left: var(--stroke-thin) solid var(--color-border);
+}
+/* A 2- to 3-digit value: a short input with its hint beside it, one field per line. */
+.subagent-editor .settings-team-numbers { grid-template-columns: minmax(0, 1fr); gap: var(--space-3); }
+.subagent-editor-number { gap: var(--space-1); }
+.subagent-editor-number-row { display: flex; align-items: center; gap: var(--space-3); }
+.subagent-editor-number-row > .input { flex: none; width: 6rem; }
+.subagent-editor-number-row > .field-hint,
+.subagent-editor-number-row > .field-error { flex: 1; min-width: 0; }
+.subagent-editor-instructions > .overseer-fold-summary .overseer-fold-label { font-weight: var(--fw-medium); }
+
+/* A phone's panel: the slot's label goes above its row; the three selects stay side by side
+   until the panel is narrower still. */
+@container subagent-editor (max-width: 30rem) {
+  .subagent-editor-slot { grid-template-columns: minmax(0, 1fr); }
+  .subagent-editor-slot > .settings-delegate-slot-label,
+  .subagent-editor-slot > .settings-delegate-fields,
+  .subagent-editor-slot > .settings-delegate-issue { grid-column: 1; }
+}
+@container subagent-editor (max-width: 22rem) {
+  .subagent-editor-slot .settings-delegate-fields { grid-template-columns: minmax(0, 1fr); }
+}

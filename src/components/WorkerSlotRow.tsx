@@ -23,6 +23,9 @@ export function WorkerSlotRow(props: {
   alone?: string;
   /** A primary with no fallback set right now: drop the visible "Primary" label, keep its rules. */
   unlabelled?: boolean;
+  /** Subagents' compact row: the slot's label leads the row (Fallback included), Backend/Model/Effort
+      stay the selects' accessible names but aren't shown, and the model select titles its full id. */
+  compact?: boolean;
   onChange(next: DraftChoice): void;
 }) {
   const id = (part: string) => `${props.idPrefix}-${props.slot}-${part}`;
@@ -31,13 +34,13 @@ export function WorkerSlotRow(props: {
   const efforts = () => effortSelectOptions(props.info, props.options, props.choice);
   const slotName = () => (props.slot === "primary" ? "Primary" : "Fallback");
   return (
-    <div class="settings-delegate-slot" role="group" aria-label={props.alone ?? slotName()}>
-      <Show when={props.slot === "primary" && !props.alone && !props.unlabelled}>
-        <span class="settings-delegate-slot-label">Primary</span>
+    <div class={`settings-delegate-slot${props.compact ? ` subagent-editor-slot subagent-editor-slot-${props.slot}` : ""}`} role="group" aria-label={props.alone ?? slotName()}>
+      <Show when={props.slot === "primary" ? !props.alone && !props.unlabelled : props.compact}>
+        <span class="settings-delegate-slot-label">{slotName()}</span>
       </Show>
       <div class="settings-delegate-fields">
         <div class="field">
-          <label class="field-label" for={id("backend")}>
+          <label class={props.compact ? "visually-hidden" : "field-label"} for={id("backend")}>
             Backend
           </label>
           <div class="select-wrap">
@@ -61,13 +64,14 @@ export function WorkerSlotRow(props: {
           </div>
         </div>
         <div class="field">
-          <label class="field-label" for={id("model")}>
+          <label class={props.compact ? "visually-hidden" : "field-label"} for={id("model")}>
             Model
           </label>
           <div class="select-wrap">
             <select
               class="select text-mono"
               id={id("model")}
+              title={props.compact ? props.choice.model || undefined : undefined}
               disabled={props.disabled}
               aria-describedby={issue() ? id("issue") : undefined}
               onChange={(e) => props.onChange(withModel(props.choice, e.currentTarget.value, props.options))}
@@ -91,7 +95,7 @@ export function WorkerSlotRow(props: {
           </div>
         </div>
         <div class="field">
-          <label class="field-label" for={id("effort")}>
+          <label class={props.compact ? "visually-hidden" : "field-label"} for={id("effort")}>
             Effort
           </label>
           <div class="select-wrap">

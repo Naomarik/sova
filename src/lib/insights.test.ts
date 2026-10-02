@@ -485,6 +485,38 @@ test("usageGlance: C reads the chosen login, and only several logins name it in 
   assert.equal(usageGlance(one)[0]!.full, "Claude 7-day 40%");
 });
 
+test("usageGlance: unreadable selected accounts fall back to the own login, including 100%", () => {
+  const own = provider({ id: "claude", windows: [{ label: "7d", pct: 100 }] });
+  for (const missing of [
+    provider({ id: "claude", state: "error", windows: [{ label: "7d", pct: 25 }] }),
+    provider({ id: "claude", windows: [] }),
+    provider({ id: "claude", windows: [{ label: "7d opus", pct: 25 }] }),
+  ]) {
+    const u = twoLogins();
+    u.providers[0] = own;
+    u.claudeLogins![1] = { ...u.claudeLogins![1]!, usage: missing };
+    for (const id of [undefined, "l-0000000a"]) {
+      const c = usageGlance(u, id)[0]!;
+      assert.deepEqual({ id: c.id, pct: c.pct, high: c.high, full: c.full }, {
+        id: "claude", pct: 100, high: true, full: "Claude (Claude Code's own login) 7-day 100%",
+      });
+      assert.equal(usageGlance(u, id)[1]!.full, "OpenAI 7-day 14%");
+    }
+    assert.equal(claudeReading(u)!.usage, missing, "summary selection is unchanged");
+    u.providers[0] = provider({ id: "claude", state: "error", windows: [] });
+    assert.equal(usageGlance(u).some((part) => part.id === "claude"), false, "no fabricated reading");
+  }
+});
+
+test("usageGlance: readable selected accounts take precedence even at 100%", () => {
+  const u = twoLogins();
+  u.claudeLogins![1]!.usage = provider({ id: "claude", windows: [{ label: "7d", pct: 100 }] });
+  const c = usageGlance(u)[0]!;
+  assert.equal(c.pct, 100);
+  assert.equal(c.high, true);
+  assert.equal(c.full, "Claude (spare@example.com) 7-day 100%");
+});
+
 test("usageSummary: Claude's sentence speaks for the login in use, not a limited default no chat is on", () => {
   const u = twoLogins();
   assert.equal(usageSummary(u, NOW), "All providers under limits.");

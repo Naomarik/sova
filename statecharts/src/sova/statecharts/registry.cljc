@@ -14,7 +14,6 @@
     [sova.statecharts.person :as person]
     [sova.statecharts.placement :as placement]
     [sova.statecharts.proj :as proj]
-    [sova.statecharts.proj-strip-org :as proj-strip-org]
     [sova.statecharts.residence :as residence]
     [sova.statecharts.watch :as watch]
     [clojure.string :as str]
@@ -44,7 +43,7 @@
   {"org"       org/entry
    "residence" residence/entry
    "person"    person/entry
-   "project"   (assoc proj/entry :migrate {1 proj-strip-org/strip-org})
+   "project"   proj/entry
    "placement" placement/entry
    "watch"     watch/entry
    "baton"      baton/entry

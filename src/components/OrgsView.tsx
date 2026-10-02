@@ -1123,8 +1123,9 @@ function ProjectsSection(props: { org: OrgDetail; act: Act }) {
   const [name, setName] = createSignal("");
   const [root, setRoot] = createSignal("");
   // Each project's cost at API prices (§app/project-costs/org-rollup); the list stands without it.
-  const orgId = createMemo(() => props.org.id);
-  const [costs] = createResource(orgId, (id) => getOrgCosts(id).catch(() => null));
+  // Read again when the list changes (an added or imported project).
+  const costKey = createMemo(() => `${props.org.id}\n${props.org.projectList.map((p) => p.id).join(",")}`);
+  const [costs] = createResource(costKey, () => getOrgCosts(props.org.id).catch(() => null));
   const costOf = (pid: string) => costs()?.projects.find((c) => c.projectId === pid);
   // Archived projects leave the list for a disclosure under it (§app.organizations/archive).
   const live = () => props.org.projectList.filter((p) => !p.archived);

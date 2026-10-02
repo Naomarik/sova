@@ -36,7 +36,7 @@ import { linkTools, type LinksApi } from "./overseer-link-tools";
 import { projectEngine } from "./project-services/routes";
 import { overseerVerbsTool, type LooseExec } from "./project-services/tools";
 import { orgConfirmLookup, orgTools } from "./overseer-org-tools";
-import { resolveOrg, resolvePerson, resolveProject } from "./overseer-org-view";
+import { resolveAnyProject, resolveOrg, resolvePerson } from "./overseer-org-view";
 import { contactRedactor, loggedArgs } from "./overseer-org-view";
 import type { PeerLinkRead } from "../shared/mesh-links";
 import { cut, Refusal, renderTranscript, sessionRef, text, writableRefusal } from "./session-guards";
@@ -557,14 +557,19 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
       const s = await resolve(p.session);
       return { href: `#/s/${encodeURIComponent(s.path)}`, label: `Open "${cut(s.title, 60)}"` };
     }
+    if (p.project !== undefined) {
+      // A project registered here (in an org when given), as the project tools take it.
+      try {
+        const project = resolveAnyProject(p.project, p.org);
+        return { href: `#/projects/${project.id}`, label: `Open ${project.name}` };
+      } catch (err) {
+        throw new Refusal(err instanceof Error ? err.message : String(err));
+      }
+    }
     if (p.org !== undefined) {
-      // An org attached here, and one of its projects or roster people, as the org tools take them.
+      // An org attached here, and one of its roster people, as the org tools take them.
       try {
         const org = resolveOrg(p.org);
-        if (p.project !== undefined) {
-          const project = resolveProject(org.id, p.project);
-          return { href: `#/orgs/${org.id}/projects/${project.id}`, label: `Open ${project.name} in ${org.name}` };
-        }
         if (p.person !== undefined) {
           const person = resolvePerson(org.id, p.person);
           return { href: `#/orgs/${org.id}/people/${person.id}`, label: `Open ${person.name} in ${org.name}` };
@@ -574,7 +579,7 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
         throw new Refusal(err instanceof Error ? err.message : String(err));
       }
     }
-    if (p.project !== undefined || p.person !== undefined) throw new Refusal("A project or a person needs its org.");
+    if (p.person !== undefined) throw new Refusal("A person needs their org.");
     if (p.page === "usage") return { href: "#/usage", label: "Open Usage" };
     if (p.page === "agents") return { href: p.team ? `#/agents/${encodeURIComponent(p.team)}` : "#/agents", label: "Open Agents" };
     if (p.page === "overseer") return { href: "#/overseer", label: "Open the Overseer" };
@@ -1360,8 +1365,8 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
         page: str("usage | agents | overseer | settings", { enum: ["usage", "agents", "overseer", "settings"] }),
         team: str("With page agents: a team id."),
         settings_tab: str(`With page settings: ${SETTINGS_TABS.join(" | ")}`, { enum: [...SETTINGS_TABS] }),
-        org: str("An organization, by id or exact name: open its page (or, with project or person, theirs)."),
-        project: str("With org: a project, by id or exact name."),
+        org: str("An organization, by id or exact name: open its page (or, with person, theirs; with project, it narrows the name)."),
+        project: str("A registered project, by id or exact name: open its page."),
         person: str("With org: a roster person, by id or exact name."),
       }),
       execute: act("sova_navigate", async (p) => {

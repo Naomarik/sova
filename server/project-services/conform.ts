@@ -181,7 +181,6 @@ async function runSuite(
   const [slotA, slotB] = scratchSlots(def);
   const branchA = `sova/conform-${runId}-a`;
   const branchB = `sova/conform-${runId}-b`;
-  const hasProcess = def.services.some((x) => x.static === undefined && x.scope === "checkout");
   const token = `sova-conform-${runId}`;
   let a: VerbResult | null = null;
   let b: VerbResult | null = null;
@@ -285,8 +284,11 @@ async function runSuite(
     if (!s.check("apply-a", ap.ok && ap.state === "running" && sameJson(bBefore, bAfter), `${describe(ap)}; B pids ${JSON.stringify(bBefore)} → ${JSON.stringify(bAfter)}`, t0, ap.error?.code)) return;
     // 8. logs.
     t0 = Date.now();
+    // Lines are owed only by what runs: a static service logs nothing, an on-demand one not started yet has nothing to log.
+    const logging = ap.services.filter((x) => x.scope === "checkout" && x.kind !== "static" && x.state !== "stopped").map((x) => x.name);
     const lg = await s.verb("logs A", "logs", { instance: a.instance, lines: 50 });
-    if (!s.check("logs-a", lg.ok && (!hasProcess || (lg.lines?.length ?? 0) > 0) && (lg.lines?.length ?? 0) <= 50, hasProcess ? `${lg.lines?.length ?? 0} line(s)` : "no process services: nothing to log", t0)) return;
+    const n = lg.lines?.length ?? 0;
+    if (!s.check("logs-a", lg.ok && (!logging.length || n > 0) && n <= 50, logging.length ? `${n} line(s) from ${logging.join(", ")}` : `${n} line(s); nothing started that logs`, t0)) return;
     // 9. reset A.
     if (def.data.length) {
       t0 = Date.now();

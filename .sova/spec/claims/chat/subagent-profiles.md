@@ -172,6 +172,26 @@ profile in its mode menu; new chats start on the default."
   another profile can't be opened over them, and Discard Changes or Save Changes frees the rest.
 - A save reaches every chat on that profile from its next turn or team action.
 
+## §chat.subagent-profiles/editor-rows — How the editor lays out its rows
+
+The editor is read by scanning, so each route and role is compact:
+
+- **One line per worker.** Backend, Model and Effort sit side by side, down to a phone's panel;
+  they stack only on a narrower one. Their names are the selects' accessible names, not visible
+  labels, because each select shows its value. A model id too long for its select shows whole on
+  hover.
+- **Primary and Fallback** lead their rows in a narrow column while the panel has room, and sit
+  above them when it doesn't. The fallback's label is quieter than the primary's.
+- **Add Fallback and Remove Fallback** sit on the route's head line, beside its name. In Teams that
+  is the role's name; in Spec writer it is the switch's line. They never sit on a line of their own
+  under the rows.
+- **Hierarchy.** A section's header reads a step above the group headings inside it (the work kinds,
+  Coordinator, Monitor, Handover, Members default), and those read above field labels. Switches
+  inside the editor read as ordinary text, not as headings, and the team number fields are sized
+  for a 2- to 3-digit value.
+- **The list.** Each profile shows its name over its footprint, with Edit as the row's outlined
+  action.
+
 ## §chat.subagent-profiles/limit-row — After a usage limit
 
 When a chat's turn ends on a usage limit — "Claude usage limit reached" after login failover, or a

@@ -149,8 +149,8 @@ including any investigation that feeds one), **Investigation** (focused read-onl
 diagnosis), **Routine implementation** (mechanical, low-risk) and **Complex implementation**
 (ambiguous, cross-cutting, high-risk). Each is a `fieldset` named by its work kind with one
 worker row and an optional **Fallback** row; while a fallback is set the first row is labelled
-**Primary**. A row is three native selects — Backend (`pi`, `Claude Code`), Model, Effort —
-side by side when the panel has room and stacked under 640px.
+**Primary**. A row is three native selects: Backend (`pi`, `Claude Code`), Model and Effort.
+Where they sit and how they are labelled is §chat.subagent-profiles/editor-rows.
 
 - **Choices, not free text.** Models come from what each backend offers
   (`GET /api/settings/delegate/options`: pi's credentialed models with the thinking levels each
@@ -185,8 +185,8 @@ side by side when the panel has room and stacked under 640px.
 - **The policy is shown, not enforced here.** A model Settings → Models keeps from subagents reads
   "— off for subagents" and warns under its row; spawn enforces the policy, and Delegate uses that
   profile's fallback, or asks.
-- **Fallback** is added and removed per row: **Add Fallback** under a lone row adds a second row
-  starting blank on the primary's backend; **Remove Fallback** under that row takes it away. What
+- **Fallback** is added and removed per route, on its head line: **Add Fallback** adds a second
+  row, starting blank on the primary's backend; **Remove Fallback** takes it away. What
   happens without one is said once, as the section's lede, never under each row: "Without a
   fallback, the agent asks you which model to use when a route's primary can't run." A fallback
   identical to its primary is refused.

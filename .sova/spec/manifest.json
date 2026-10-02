@@ -11527,6 +11527,20 @@
       "kind": "surface",
       "authority": "accepted",
       "evidence": "unreviewed"
+    },
+    "§chat.subagent-profiles/editor-rows": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.subagent-profiles/settings",
+        "§app.settings-dialog/modes"
+      ],
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "code": [
+        "src/components/SubagentProfilesSettings.tsx",
+        "src/components/SubagentProfilesSettings.css",
+        "src/components/WorkerSlotRow.tsx"
+      ]
     }
   },
   "boundary": {

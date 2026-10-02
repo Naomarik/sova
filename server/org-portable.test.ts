@@ -113,14 +113,14 @@ describe("clone + attach = the whole organization", async () => {
     const want = ["about.md", "org-history.jsonl", "roster-history.jsonl", "visits.jsonl", `sessions/${c1.path.split("/").pop()}`];
     for (const f of want) assert.ok(files.includes(f), f);
     const snapshot = (statechart: string, sid: string) => `statecharts/${statechart}/${encodeURIComponent(sid)}.edn`;
-    for (const f of [snapshot("org", `org/${a.id}`), snapshot("person", `person/${a.id}/${tony.id}`), snapshot("project", `project/${a.id}/${project.id}`)]) assert.ok(files.includes(f), f);
+    for (const f of [snapshot("org", `org/${a.id}`), snapshot("person", `person/${a.id}/${tony.id}`), snapshot("project", `project/${project.id}`), snapshot("placement", `placement/${a.id}/${project.id}`)]) assert.ok(files.includes(f), f);
     assert.ok(files.some((f) => /^statecharts\/log\/\d{4}-\d{2}\.jsonl$/.test(f)), "the transition log");
     for (const f of ["org.json", "roster.json", "projects.json", "holder.json"]) assert.ok(!files.includes(f), `no ${f}`);
     // Host-local statecharts (the residence, the watches) stay on the host.
     assert.ok(!files.some((f) => f.startsWith("statecharts/residence/") || f.startsWith("statecharts/watch/")), "nothing host-local");
     assert.ok(files.includes(`projects/${project.id}/overseer/overseer.json`), "overseer.json");
     for (const f of ["started.json", "state.json"]) assert.ok(!files.includes(`projects/${project.id}/overseer/${f}`), `no ${f}`);
-    assert.ok(files.includes(snapshot("build", `build/${a.id}/${project.id}/code-moved`)), "the build's snapshot");
+    assert.ok(files.includes(snapshot("build", `build/${project.id}/code-moved`)), "the build's snapshot");
     assert.ok(files.some((f) => f.startsWith("sessions/") && f.endsWith(`_${overseer.id}.jsonl`)), "the overseer's transcript");
   });
 

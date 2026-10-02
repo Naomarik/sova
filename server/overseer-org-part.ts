@@ -14,13 +14,13 @@ import { ABILITIES_PARAM, baseAbilities, overseerAbilities } from "./gathering-a
 import { actOrThrow, heldAt, holdRef, hostOf, isOrgHostOpen, onOrgHostOpened } from "./org-engine";
 import type { Envelope } from "./org-envelope";
 import { OrgError } from "./org-error";
-import { decidePersonAct, operatorName, participantLine, placementSid, readIndex, readOrg, readOrgAbout, readProjects, readRoster, stakeholderLine } from "./orgs";
+import { decidePersonAct, onOrgAttached, operatorName, participantLine, placementSid, readIndex, readOrg, readOrgAbout, readProjects, readRoster, stakeholderLine } from "./orgs";
 import { markSendsNoted, projectSends, sendsToNote } from "./outreach/log";
 import { updateIdea } from "./overseer-ideas";
 import { serverRedactor } from "./overseer-redact";
 import { readNotes } from "./overseer-store";
 import { holdsPreviewLink } from "./preview-kept";
-import { gatheringChoice, itemOf, linkItem } from "./project-overseer";
+import { adoptOverseerFiles, gatheringChoice, itemOf, linkItem } from "./project-overseer";
 import { projectOverseerPaths, readPoSettings } from "./project-overseer-store";
 import { cut, link, obj, PREVIEW_IN_GATHERING, Refusal, str, strs, text } from "./project-overseer-tools";
 import { pipelineInfo } from "./project-pipeline";
@@ -913,6 +913,10 @@ contributeProjectPart({
     return orgId ? gapPart(orgId, projectId) : null;
   },
 });
+
+// An attach (a restored clone): its placed projects' overseer conversations get this host's title, web origin and
+// write-guard stat again (the project layer derives them; the org says which projects came with it).
+onOrgAttached((orgId, dir) => adoptOverseerFiles(dir, readProjects(orgId)));
 
 // ---- the placement's effects ---------------------------------------------------------------------------------
 

@@ -8282,6 +8282,8 @@
       "authority": "accepted",
       "evidence": "verified",
       "code": [
+        "server/spec-assessment-observations.ts",
+        "server/spec-assessment-observations.test.ts",
         "server/merge-readiness.ts",
         "server/merge-readiness.test.ts",
         "server/worktrees.ts",
@@ -10407,7 +10409,8 @@
         "pi-config/extensions/claude-code/spec-hooks.ts",
         "pi-config/extensions/spec/core/sova-spec.mjs",
         "pi-config/extensions/spec/core/packet.mjs",
-        "pi-config/extensions/mode/spec-mode.md"
+        "pi-config/extensions/mode/spec-mode.md",
+        "pi-config/extensions/spec/core/sova-spec-assess.mjs"
       ]
     },
     "§chat.worktrees/merged-state": {
@@ -11457,6 +11460,53 @@
       "code": [
         "shared/subagent-profiles.ts",
         "pi-config/extensions/subagents/subagent-profiles.ts"
+      ]
+    },
+    "§tools.spec/assessment-observations": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§tools.spec/change-assessments",
+        "§tools.spec/runtime-accounting"
+      ],
+      "code": [
+        "pi-config/extensions/mode/spec-assessment.ts",
+        "pi-config/extensions/mode/README.md",
+        "pi-config/extensions/mode/spec-assessment-tool.ts",
+        "pi-config/extensions/mode/spec-assessment.test.ts",
+        "pi-config/extensions/claude-code/spec-hooks.ts",
+        "pi-config/extensions/claude-code/spec-assessment.test.ts",
+        "pi-config/extensions/mode/index.ts",
+        "pi-config/extensions/mode/spec-worker.ts",
+        "server/tests/spec-assessment.mjs",
+        "pi-config/extensions/mode/tests/smoke.mjs",
+        "pi-config/extensions/subagents/index.ts",
+        "server/spec-assessment-observations.ts",
+        "server/spec-assessment-observations.test.ts",
+        "server/merge-readiness.ts",
+        "shared/protocol.ts",
+        "src/lib/readiness.ts",
+        "src/lib/readiness.test.ts",
+        "src/components/Sidebar.tsx",
+        "server/merge-readiness.test.ts"
+      ]
+    },
+    "§tools.spec/change-assessments": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§tools.spec/inspection-safety"
+      ],
+      "code": [
+        "pi-config/extensions/spec/core/sova-spec-assess.mjs",
+        "pi-config/extensions/spec/core/sova-spec.mjs",
+        "pi-config/extensions/spec/core/sova-spec-draft.mjs",
+        "pi-config/extensions/spec/tests/assessment.test.mjs",
+        "pi-config/extensions/spec/tests/assessment-efficiency.test.mjs",
+        "pi-config/extensions/spec/README.md",
+        "pi-config/extensions/spec/core/README.md"
       ]
     }
   },

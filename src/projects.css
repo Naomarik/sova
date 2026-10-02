@@ -2,10 +2,6 @@
    overseer line and count chips), the tab strip, then one tab's cards; and the Projects list
    (#/projects, §app.projects/list). Token values only; builds on orgs.css. */
 
-/* ---- The Projects list: a row per project, its organization's chip beside it while placed. */
-.projects-row { display: flex; align-items: center; gap: var(--space-2); }
-.projects-row > .list-row { flex: 1; min-width: 0; }
-.projects-row-org { flex: none; display: inline-flex; align-items: center; min-height: var(--tap-min); margin-right: var(--space-3); text-decoration: none; color: inherit; }
 
 /* ---- The summary: the overseer line, what waits, and the count chips. */
 .project-summary { display: flex; flex-direction: column; gap: var(--space-3); }

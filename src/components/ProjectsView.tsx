@@ -2,14 +2,13 @@ import { createMemo, createResource, createSignal, For, Match, Show, Switch } fr
 import type { ProjectSummary } from "../../shared/projects";
 import { ApiError, getProject, listProjects, openProjectOverseer } from "../lib/api";
 import { relativeTime } from "../lib/format";
-import { orgTabHref } from "../lib/orgs-route";
 import { placementOf, sortProjects } from "../lib/projects";
 import { projectHref, projectSessionHref, type ProjectsRoute, type ProjectTab } from "../lib/projects-route";
 import { AddProjectDialog } from "./AddProjectDialog";
 import { InsightsPage } from "./InsightsPage";
 import { createProjectOrgPart } from "./ProjectOrgPart";
 import { ProjectPage } from "./ProjectPage";
-import { Banner, Chip, Icon } from "./ui";
+import { Banner, Icon } from "./ui";
 import "../orgs.css";
 import "../projects.css";
 
@@ -154,12 +153,11 @@ function ProjectList(props: { titleRef(el: HTMLHeadingElement): void }) {
   );
 }
 
-/** One project: the whole row opens its page; the placing org, when one does, links to its Projects tab. */
+/** One project: the whole row opens its page; it names its organization while one places it. */
 function ProjectRow(props: { project: ProjectSummary }) {
   const p = () => props.project;
-  const placed = () => placementOf(p());
   return (
-    <li class="projects-row">
+    <li>
       <a class="list-row list-row-interactive orgs-row orgs-project-row" href={projectHref(p().id)}>
         <Icon name="folder" />
         <span class="list-main">
@@ -167,6 +165,7 @@ function ProjectRow(props: { project: ProjectSummary }) {
           <span class="list-meta orgs-mono" title={p().root}>
             {p().root}
           </span>
+          <Show when={placementOf(p())}>{(o) => <span class="list-meta">In {o().orgName}</span>}</Show>
           <Show when={p().archived}>
             {(a) => (
               <span class="list-meta">
@@ -177,13 +176,6 @@ function ProjectRow(props: { project: ProjectSummary }) {
         </span>
         <Icon name="chevron-right" class="orgs-row-go" />
       </a>
-      <Show when={placed()}>
-        {(o) => (
-          <a class="projects-row-org" href={orgTabHref(o().orgId, "projects")} title={`Placed in ${o().orgName}`}>
-            <Chip>{o().orgName}</Chip>
-          </a>
-        )}
-      </Show>
     </li>
   );
 }

@@ -446,8 +446,8 @@ html, body { overflow: clip; overscroll-behavior: none; }
   flex: none;
   color: var(--color-ink-muted);
 }
-.sidebar-projects .sidebar-region-head > .org-link:first-of-type { margin-left: auto; }
-.sidebar-projects .sidebar-region-head > .org-link:last-child { margin-right: calc(var(--space-4) * -1 + var(--space-1)); }
+.sidebar-projects .sidebar-region-head > button.org-link { margin-left: auto; }
+.sidebar-projects .sidebar-region-head > a.org-link { margin-right: calc(var(--space-4) * -1 + var(--space-1)); }
 .sidebar-projects .sidebar-region-head > .org-link:hover,
 .sidebar-projects .sidebar-region-head > .org-link:focus-visible { color: var(--color-ink); }
 .sidebar-projects .sidebar-region-head > .org-link .icon { width: 16px; height: 16px; }

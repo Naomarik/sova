@@ -8,7 +8,7 @@ Conventions at the JS boundary: event names are `"ns/name"` strings (keywords in
 envelope keys are camelCase in TS and kebab keywords in the statecharts; values stay strings, numbers and
 booleans. Times inside statecharts are epoch ms (`at` on every delivered event; the host converts to ISO in
 its projections). Session ids (`base.cljc`): the project layer carries no org — `project/<p>`, `watch/<p>`,
-`build/<p>/<sid>` (and `runtime/<p>`, reserved); the org layer is `<statechart>/<org>[/<project>]/<id>`,
+`build/<p>/<sid>`, `runtime/<p>`; the org layer is `<statechart>/<org>[/<project>]/<id>`,
 plus `placement/<org>/<p>`. The org layer may address project-layer sessions; the project layer never
 addresses the org layer (seam-test). Every project-scoped statechart holds `projectId` in its data (the
 host reads a session's project from it, never from its id). New ids (people,

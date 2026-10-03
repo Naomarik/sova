@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { copyMemory, copyName, createdByWord, endpointPort, httpHref, linkLine, notReadyLine, refusalLine, sentence, SHARE_SENSITIVE, shareBlocked } from "./services-view";
+import { copyMemory, copyName, createdByWord, endpointNotRunning, endpointPort, httpHref, linkLine, notReadyLine, refusalLine, sentence, SHARE_SENSITIVE, shareBlocked } from "./services-view";
 
 test("a copy is named main at slot 0, else by its branch, else by its folder", () => {
   assert.equal(copyName({ slot: 0, branch: "master", checkout: "/p" }), "main");
@@ -54,4 +54,11 @@ test("Share: an endpoint's port in the copy, the sensitive reason before the eng
   const now = Date.parse("2026-10-03T12:00:00Z");
   assert.equal(linkLine({ endpoint: "web.http", expiresAt: "2026-10-03T17:30:00Z" }, now), "web.http · expires in 5 hours");
   assert.equal(linkLine({ endpoint: "web.http", expiresAt: "2026-10-08T12:00:00Z" }, now), "web.http · expires in 5 days");
+});
+
+test("Share waits while the endpoint's service isn't ready, saying so", () => {
+  const svc = (state: "ready" | "stopped") => ({ services: [{ name: "web", scope: "checkout" as const, kind: "process" as const, state, unit: null, pid: null, ports: { http: 4110 } }] });
+  assert.equal(endpointNotRunning(svc("ready"), "web.http"), null);
+  assert.equal(endpointNotRunning(svc("stopped"), "web.http"), "This copy isn't running web: start it first. Sharing never starts anything.");
+  assert.match(endpointNotRunning(svc("ready"), "api.http")!, /isn't running api/);
 });

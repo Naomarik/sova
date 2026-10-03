@@ -128,3 +128,10 @@ export function shareBlocked(c: Pick<CopyView, "share">, sensitive: boolean): st
 
 /** A link's chip: its endpoint, then when it ends. */
 export const linkLine = (l: Pick<LinkView, "endpoint" | "expiresAt">, now: number): string => `${l.endpoint} · ${expiresWord(l.expiresAt, now).replace(/^E/, "e")}`;
+
+/** Why the chosen endpoint can't be shared now (its service isn't ready), or null. Sharing never starts anything. */
+export function endpointNotRunning(c: Pick<CopyView, "services">, endpoint: string): string | null {
+  const name = endpoint.slice(0, endpoint.indexOf("."));
+  const s = c.services.find((x) => x.name === name);
+  return s && s.state === "ready" ? null : `This copy isn't running ${name}: start it first. Sharing never starts anything.`;
+}

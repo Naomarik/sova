@@ -19,6 +19,7 @@ import {
   SERVICE_CHIP,
   SHARE_DAY_CHOICES,
   SHARE_SENSITIVE,
+  endpointNotRunning,
   endpointPort,
   linkLine,
   shareBlocked,
@@ -148,7 +149,7 @@ export function ProjectServicesTab(props: { projectId: string; archived: boolean
   const share = async (e: Event, c: CopyView) => {
     e.preventDefault();
     const key = `${c.instance}:share`;
-    if (running() || !endpoint()) return;
+    if (running() || !endpoint() || endpointNotRunning(c, endpoint())) return;
     setRunning(key);
     say(c.instance, null);
     try {
@@ -219,6 +220,7 @@ export function ProjectServicesTab(props: { projectId: string; archived: boolean
     const c = () => p.copy;
     const blocked = () => shareBlocked(c(), !!poll.data()?.sensitive);
     const port = () => (endpoint() ? endpointPort(c(), endpoint()) : null);
+    const stopped = () => (endpoint() ? endpointNotRunning(c(), endpoint()) : null);
     return (
       <>
         <Show when={blocked() && (c().share.endpoints.length || blocked() === SHARE_SENSITIVE)}>
@@ -286,8 +288,9 @@ export function ProjectServicesTab(props: { projectId: string; archived: boolean
               </div>
             </div>
             <p class="field-hint">{previewWarning(port())}</p>
+            <Show when={stopped()}>{(why) => <p class="field-error">{why()}</p>}</Show>
             <div class="button-row">
-              <button type="submit" class="button button-sm button-primary" aria-disabled={running() ? "true" : undefined}>
+              <button type="submit" class="button button-sm button-primary" aria-disabled={running() || stopped() ? "true" : undefined}>
                 {running() === `${c().instance}:share` ? "Sharing…" : "Share Copy"}
               </button>
               <button type="button" class="button button-sm button-ghost" onClick={() => setShareOpen(null)}>

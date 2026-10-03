@@ -4117,7 +4117,9 @@
         "src/share/ShareApp.tsx",
         "server/share/edge.ts",
         "server/public-links.test.ts",
-        "server/share/share-state.ts"
+        "server/share/share-state.ts",
+        "server/ws-max-payload.ts",
+        "server/ws-max-payload.test.ts"
       ],
       "requires": [
         "§app.baton/links",
@@ -7909,7 +7911,9 @@
         "server/share-router.test.ts",
         "server/share-destination.test.ts",
         "server/share-ws-hop.test.ts",
-        "server/share-offline.test.ts"
+        "server/share-offline.test.ts",
+        "server/ws-max-payload.ts",
+        "server/ws-max-payload.test.ts"
       ]
     },
     "§mesh.public/setting": {
@@ -8405,7 +8409,9 @@
       "code": [
         "server/session-share-presence.ts",
         "server/share/session-routes.ts",
-        "server/session-share-activity.test.ts"
+        "server/session-share-activity.test.ts",
+        "server/ws-max-payload.ts",
+        "server/ws-max-payload.test.ts"
       ]
     },
     "§app.session-share/rejected": {

@@ -280,6 +280,15 @@ Rules:
   cut off. If `systemd-run` fails (a sandboxed session can't reach the user bus, by design), never
   work around it: ask the user to restart. Confirm afterwards with `GET /api/health` (`startedAt`,
   `head`).
+- The one verb form (Sova as its own project, `.sova/project.json`: slot 0 adopts
+  `sova-runtime.service`): the operator's Apply on the project's Services tab, or
+  `sova-project apply --project ~/webapps/sova --confirm`. It is refused while any hosted session is
+  busy (your own turn included, so an agent never gets it through), and otherwise schedules
+  `scripts/sova-restart-gate.mjs` 30 s out, which re-reads the live records when it fires and
+  restarts only if nothing is busy then (else exit 75, logged in
+  `<state root>/project-services/logs/restart-gate.log`). up, down, reset and teardown of slot 0 are
+  refused. Never run the gate script against `sova-runtime.service` by hand, and never point a test
+  at it: tests and gates use a stand-in unit.
 - The claude-code bridge is a `globalThis` singleton (`getSessionBridge()`, Symbol.for registry): a
   fresh session that reloads the extension still gets the bridge built from the code loaded first,
   so provider edits also need a restart. Before trusting a live test, check the unit's start time

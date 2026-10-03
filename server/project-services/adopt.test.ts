@@ -168,3 +168,17 @@ test("every other slot runs the service as usual, on its allocated port, with it
   assert.equal((await engine.run("teardown", { instance: wt.instance }, op)).ok, true);
   assert.equal(scheduled.length, 1);
 });
+
+test("Sova's own definition: hermetic copies on 4810 + 10 × slot, slot 0 adopts sova-runtime.service on 4800, never shared", async () => {
+  const { readFileSync } = await import("node:fs");
+  const { fileURLToPath } = await import("node:url");
+  const { portsFor } = await import("../../shared/project-contract");
+  const def = parseDefinition(readFileSync(fileURLToPath(new URL("../../.sova/project.json", import.meta.url)), "utf8"));
+  const server = def.services.find((s) => s.name === "server")!;
+  assert.deepEqual(server.adopt, { unit: "sova-runtime.service", ports: { http: 4800 } });
+  assert.deepEqual(server.cmd, ["pnpm", "run", "dev:hermetic"]);
+  assert.equal(server.env.SOVA_PORT, "${ports.server.http}");
+  assert.deepEqual([0, 1, 2, def.slots.cap + 2].map((s) => portsFor(def, s).server!.http), [4800, 4820, 4830, 4810 + 10 * (def.slots.cap + 2)]);
+  assert.deepEqual(def.setup.map((s) => s.id), ["mise-trust", "node-modules", "agent-dir"]);
+  assert.equal(def.share?.allow, false);
+});

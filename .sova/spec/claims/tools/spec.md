@@ -42,31 +42,29 @@ even when the requested claim's own prose is unchanged. Optional draft triage bi
 proposed, baseline and current manifest/claim sources it reads; changes to those inputs stale prior
 assessments even when candidate identities and reasons stay unchanged.
 
-## §tools.spec/assessment-observations — Automatic unresolved observations
+## §tools.spec/assessment-observations — Assessments run only when asked
 
-With spec enabled, observed task changes automatically create unresolved structured observations
-with a fixed task base and actual nullable parent, worker, task and attempt attribution. Retries
-and reopen preserve task identity and prior immutable receipts. Repeated changes to one path and
-late task-settle changes are observed by input fingerprints, not only new filename detection.
-Observation reports scope changes, not forensic authorship; ownership ambiguities remain unknown.
-Native Claude Code worker hooks collect the same unresolved observations and retain task identity
-only when the backend supplies a known prompt boundary identifier; otherwise task attribution stays
-null and unknown rather than guessing from prompt text or the time. The server cannot verify native
-task boundaries with its pi-session reader, so native task attribution remains unknown; private native
-hook error markers are not themselves parent receipts, and missing receipts mean absent evidence and
-unknown applicability, not a successful comparison or an inferred cause.
+No session, pi worker, worktree-configured worker or Claude Code worker hook runs an assessment
+capture, records a task baseline or writes an assessment receipt by itself: not when a task starts,
+after any tool call, when a run settles or when a session reopens, with spec on or off. Sessions and
+workers have no assessment tool. An assessment is an explicit companion CLI operation that an
+operator or agent asks for: `prepare` against a declared known base revision, then `record` and
+`status`. Its receipt names that declared base, never a claimed task start. Nothing captures a
+snapshot baseline on the caller's behalf, so a late call cannot subtract the task's own earlier edits
+or commits: with a known base and no declared snapshot, every committed and working-tree change since
+that base is included. Attribution is only what the caller passes; absent attribution stays null.
 
-An explicit assessment tool records or queries dispositions and structured verification results.
-It flags failed or unavailable CLI operations as SDK tool errors while retaining their structured
-content and details. Successful preparations and records remain normal operations even with
-outstanding claims or failed verification declarations, and stale or unknown status remains a valid
-observation query. These flags never change continuations, release gates or readiness.
-Session-list and merge-readiness refreshes do not consume assessment receipts or query their
-status. Explicit assessment queries and automatic runtime observations remain available without
-changing ordinary readiness checks, footer rules or release gates. A newer unresolved same-task observation is not
-hidden by an older preserved record. Failed verification remains an explicit outcome distinct from
-current input applicability and the recorder's disposition. Legacy labels without receipts remain
-declarations with unknown assessment provenance.
+Receipts and session task and error entries left by earlier automatic observation stay as they are:
+readable, immutable, and never migrated, rewritten or deleted. A native hook's state from then keeps
+its assessment fields unchanged and ignored: it loads without an error, a failure note or a new
+capture, while its ordinary census and turn fields go on updating. Session-list and
+merge-readiness refreshes do not consume assessment receipts or query their status. Explicit assessments never change continuations, ordinary
+readiness checks, footer rules or release gates. Successful preparations and records remain normal
+operations even with outstanding claims or failed verification declarations, and stale or unknown
+status remains a valid query. A newer unresolved same-task observation is not hidden by an older
+preserved record. Failed verification remains an explicit outcome distinct from current input
+applicability and the recorder's disposition. Legacy labels without receipts remain declarations
+with unknown assessment provenance.
 
 ## §tools.spec/census-note — The `[spec census]` note stays short
 

@@ -4,6 +4,7 @@ import { createStore, reconcile } from "solid-js/store";
 import { Portal } from "solid-js/web";
 import type { ChatClaudeLogin, SessionSummary, WorkerInfo } from "../shared/protocol";
 import { reuseUnchanged } from "./lib/summary-diff";
+import { OptimisticArchive, type ArchiveMutation } from "./lib/optimistic-archive";
 import { setAgentsFeedSource } from "./lib/agents-feed";
 import { setExplanationsFeedSource } from "./lib/explanations-feed";
 import {
@@ -153,9 +154,15 @@ export function App() {
   const [linked, setLinked] = createSignal<Record<string, SessionSummary>>({});
   // The fetcher never rejects: on failure it keeps the previous list and reports the error,
   // so reading the resource never throws.
-  const [sessions, { refetch }] = createResource<SessionSummary[] | undefined>(async (_, { value }) => {
+  const [archiveVersion, setArchiveVersion] = createSignal(0);
+  const archiveChanges = new OptimisticArchive(() => setArchiveVersion((v) => v + 1));
+  const [sessions, { refetch }] = createResource<SessionSummary[] | undefined>(async (_, { value }): Promise<SessionSummary[] | undefined> => {
+    const revision = archiveChanges.revision;
     try {
-      const next = reuseUnchanged(await listSessions(), value);
+      const answer = await listSessions();
+      if (revision !== archiveChanges.revision) return sessions.latest;
+      const next = reuseUnchanged(answer, value);
+      archiveChanges.observe(next, (path) => !hostOf(path));
       setSessionIndex(next);
       // An open never-sent session stays readable when a later list drops it: clearing its draft to
       // empty makes it a hidden husk again, and the view must not vanish with the row. Only then —
@@ -170,11 +177,15 @@ export function App() {
       if (h) setHome(h);
       return next;
     } catch (err) {
+      if (revision !== archiveChanges.revision) return sessions.latest;
       setListError((err as Error).message);
       return value;
     }
   });
-  const list = () => sessions.latest; // keeps the old list on screen while refreshing
+  const list = createMemo<SessionSummary[] | undefined>((previous) => {
+    archiveVersion();
+    return archiveChanges.apply(sessions.latest, previous);
+  }); // keeps the old list on screen while refreshing
 
   // ---- The peer mesh: dormant unless GET /api/mesh names a peer ------------------------------
   /** Why the mesh couldn't be read (a server without the mesh routes, say). The page then reads
@@ -213,9 +224,12 @@ export function App() {
   const [peersSettled, setPeersSettled] = createSignal(false);
   const loadPeerSessions = async () => {
     if (!meshOn()) return;
+    const revision = archiveChanges.revision;
     try {
       const answer = await fetchMeshSessions();
+      if (revision !== archiveChanges.revision) return;
       const next = mergePeerLists(peerLists(), answer, meshPeers());
+      for (const [host, rows] of next) archiveChanges.observe(rows, (path) => hostOf(path) === host);
       for (const p of meshPeers()) {
         const rows = next.get(p.id) ?? [];
         notePeerSessions(p.id, rows.map((s) => s.path));
@@ -227,8 +241,10 @@ export function App() {
       setPeerLists(next);
     } catch {
       // Keep the last lists: the peers' own status (GET /api/mesh) says what is down.
+    } finally {
+      // An answer an archive change made stale still settles: the next poll brings the lists.
+      setPeersSettled(true);
     }
-    setPeersSettled(true);
   };
   // Gated on the boolean, not on the mesh state: the effect read `meshOn()` straight, which reads
   // the whole state, so every mesh poll re-ran it — an extra peer-session fetch and a restarted
@@ -265,13 +281,14 @@ export function App() {
    * (that one carries the draft preview), and clearing a draft to empty leaves the open session
    * readable — through `created` here, or `openKept` for one this tab didn't start.
    */
-  const sidebarSessions = createMemo(() => {
+  const sidebarSessions = createMemo<SessionSummary[] | undefined>((previous) => {
+    archiveVersion();
     createdVersion();
     const l = allSessions();
-    if (!l || created.size === 0) return l;
+    if (!l || created.size === 0) return archiveChanges.apply(l, previous);
     const listed = new Set(l.map((s) => s.path));
     const extra = [...created.values()].filter((s) => !listed.has(s.path));
-    return extra.length ? [...l, ...extra] : l;
+    return archiveChanges.apply(extra.length ? [...l, ...extra] : l, previous);
   });
   // Recent's sessions stay in memory, fetched in the background, so opening one paints at once.
   startRecentPreload(sidebarSessions);
@@ -733,6 +750,37 @@ export function App() {
     if (dropArchived(created, path, archived)) setCreatedVersion((v) => v + 1);
     refresh();
   };
+  /**
+   * A drop on the sidebar's Archive (or its Undo): the row moves now, before the server answers
+   * (lib/optimistic-archive). Settling follows `onArchived`'s order — off the dead session first,
+   * then the row's local changes in one batch, so no reader sees the row gone while its view is up.
+   */
+  const onArchiveStart = (path: string, archived: boolean): ArchiveMutation => {
+    const row = sidebarSessions()?.find((s) => s.path === path);
+    if (!row) return { commit: () => onArchived(path, archived), rollback: () => refresh() };
+    const mutation = archiveChanges.begin(row, archived);
+    const reread = () => {
+      refresh();
+      if (hostOf(path)) void loadPeerSessions();
+    };
+    return {
+      commit: (deleted) => {
+        if ((archived || deleted) && route() === path) {
+          location.hash = "#/";
+          batch(onHash);
+        }
+        batch(() => {
+          mutation.commit(deleted);
+          if (dropArchived(created, path, archived)) setCreatedVersion((v) => v + 1);
+        });
+        reread();
+      },
+      rollback: () => {
+        mutation.rollback();
+        reread();
+      },
+    };
+  };
 
   /**
    * A bare "/new" typed in `source`: a new session in the same folder, then `source` goes to
@@ -979,7 +1027,7 @@ export function App() {
           insightsPage={footPage()}
           sharesOpen={sharesRoute()}
           onRefresh={refresh}
-          onArchiveChanged={onArchived}
+          onArchiveStart={onArchiveStart}
           onNew={() => setCreating(true)}
           onOpenSettings={() => openSettings()}
           overseer={overseer.data()}

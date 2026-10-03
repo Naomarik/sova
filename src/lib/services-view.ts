@@ -152,6 +152,25 @@ export function rowVerbs(c: Pick<CopyView, "slot" | "state" | "adopted">): RowVe
   return out;
 }
 
+/** The verbs that undo work (asked first, and drawn apart from the rest). */
+export const DESTRUCTIVE: ReadonlySet<RowVerb> = new Set(["reset", "teardown"]);
+
+/**
+ * A row's verbs by weight, never by which appear: the one its state calls for (Start, else Stop, else
+ * Apply), the others quieter, and the destructive ones in a group of their own.
+ */
+export function verbGroups(verbs: readonly RowVerb[]): { primary: RowVerb | null; quiet: RowVerb[]; destructive: RowVerb[] } {
+  const primary = (["up", "down", "apply"] as const).find((v) => verbs.includes(v)) ?? null;
+  return {
+    primary,
+    quiet: verbs.filter((v) => v !== primary && !DESTRUCTIVE.has(v)),
+    destructive: verbs.filter((v) => DESTRUCTIVE.has(v)),
+  };
+}
+
+/** One port, compact: its number alone for the generic name `port`, else `name:number`. */
+export const portLabel = (name: string, port: number): string => (name === "port" ? String(port) : `${name}:${port}`);
+
 /** Share is offered only on a running copy (the chosen endpoint's own readiness is checked in the form). */
 export const shareOffered = (c: Pick<CopyView, "state" | "adopted">): boolean => c.state === "running" && !c.adopted;
 

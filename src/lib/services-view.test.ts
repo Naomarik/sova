@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { isStarting } from "../../shared/services-view";
-import { adoptedLine, copyChip, copyMemory, copyName, createdByWord, endpointNotRunning, rowVerbs, shareOffered, endpointPort, httpHref, linkLine, notReadyLine, refusalLine, sentence, SHARE_SENSITIVE, shareBlocked } from "./services-view";
+import { adoptedLine, copyChip, copyMemory, copyName, createdByWord, endpointNotRunning, rowVerbs, shareOffered, endpointPort, httpHref, linkLine, notReadyLine, refusalLine, sentence, SHARE_SENSITIVE, shareBlocked, verbGroups, portLabel } from "./services-view";
 
 test("a copy is named main at slot 0, else by its branch, else by its folder", () => {
   assert.equal(copyName({ slot: 0, branch: "master", checkout: "/p" }), "main");
@@ -84,4 +84,27 @@ test("Share only on a running copy, never an adopted main; Starting reads in pla
   assert.equal(isStarting("degraded", svcs("ready", "starting")), true);
   assert.equal(isStarting("degraded", svcs("failed", "starting")), false);
   assert.equal(isStarting("running", svcs("ready")), false);
+});
+
+test("a row's verbs are grouped by weight, and every verb it offers lands in exactly one group", () => {
+  const states = ["running", "degraded", "stopped", "absent"] as const;
+  for (const slot of [0, 2])
+    for (const state of states)
+      for (const adopted of [undefined, "x.service"]) {
+        const verbs = rowVerbs({ slot, state, adopted });
+        const g = verbGroups(verbs);
+        const all = [...(g.primary ? [g.primary] : []), ...g.quiet, ...g.destructive];
+        assert.deepEqual([...all].sort(), [...verbs].sort(), `${slot} ${state} ${adopted}`);
+        assert.ok(g.destructive.every((v) => v === "reset" || v === "teardown"));
+        assert.ok(!g.quiet.some((v) => v === "reset" || v === "teardown"));
+      }
+  assert.equal(verbGroups(rowVerbs({ slot: 1, state: "stopped" })).primary, "up");
+  assert.equal(verbGroups(rowVerbs({ slot: 1, state: "degraded" })).primary, "up");
+  assert.equal(verbGroups(rowVerbs({ slot: 1, state: "running" })).primary, "down");
+  assert.equal(verbGroups(rowVerbs({ slot: 0, state: "running", adopted: "x.service" })).primary, "apply");
+});
+
+test("a port reads as its number for the generic name, else name:number", () => {
+  assert.equal(portLabel("port", 4344), "4344");
+  assert.equal(portLabel("nrepl", 7860), "nrepl:7860");
 });

@@ -29,7 +29,7 @@
 
 (def version 1)
 
-(def fact-keys [:commit :def :software :sources :approved :proof :confined-proof :suite])
+(def fact-keys [:commit :def :software :data :sources :approved :proof :confined-proof :suite])
 
 (defn- e [d] (b/evt d))
 (defn- done-kind? [k] (fn [_ d] (= k (:kind (e d)))))
@@ -215,7 +215,7 @@
    :version    version
    :migrate    {}
    :storage    :host-local
-   :exported   [:project-id :root :standing :hash12 :playbook-state :commit :def :software :sources :approved :proof :confined-proof :suite
+   :exported   [:project-id :root :standing :hash12 :playbook-state :commit :def :software :data :sources :approved :proof :confined-proof :suite
                 :registered :drift :playbook :conform-result :approved-last :approve-refused :cleared-at]
    :acts       acts
    :not-here   not-here})

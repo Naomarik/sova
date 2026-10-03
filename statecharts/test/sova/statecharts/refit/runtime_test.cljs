@@ -194,3 +194,10 @@
   (is (= ["b" "c"] (rr/changed-paths {:registered {:files [{:path "a" :sha 1} {:path "b" :sha 1} {:path "c" :sha 1}]}
                                       :sources {:files [{:path "a" :sha 1} {:path "b" :sha 2}]}}))
       "changed, then dropped"))
+
+(deftest the-data-resources-and-their-sensitivity
+  (let [eng (eng!)]
+    (observe! eng 2 (assoc (facts :hash "h1") :data [{:name "db" :kind "dir" :sensitive true} {:name "uploads" :kind "dir" :sensitive false}]))
+    (is (= [["db" true] ["uploads" false]] (map (juxt :name :sensitive) (:data (core/data eng rsid)))) "kept as observed, in order")
+    (observe! eng 3 (facts :hash "h1"))
+    (is (= 2 (count (:data (core/data eng rsid)))) "a read that names no data leaves it as it was")))

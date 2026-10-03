@@ -280,7 +280,7 @@ proposed›. Data mirrors: `standing`, `playbookState`.
 
 | event | by | payload | notes |
 |---|---|---|---|
-| `runtime/observed` | system (quiet; sent only when the facts changed) | any of `{commit, def {state absent\|invalid\|present, hash?, error?}, software [{name, kind, scope, ports [{name, port}], requires, isolation?}], sources {paths, files [{path, sha}], fingerprint}, approved {hash, at}\|null, proof\|null, confinedProof\|null, suite, branchFacts {ref, commit, def, approved, proof}}` | keys present are assigned; `branchFacts` only while a run is live; recomputes `drift {paths, fingerprint}`; after a merge adopts main's sources once (`adoptNext`) |
+| `runtime/observed` | system (quiet; sent only when the facts changed) | any of `{commit, def {state absent\|invalid\|present, hash?, error?}, software [{name, kind, scope, ports [{name, port}], requires, isolation?}], data [{name, kind dir\|hook, sensitive}], sources {paths, files [{path, sha}], fingerprint}, approved {hash, at}\|null, proof\|null, confinedProof\|null, suite, branchFacts {ref, commit, def, approved, proof}}` | keys present are assigned; `branchFacts` only while a run is live; recomputes `drift {paths, fingerprint}`; after a merge adopts main's sources once (`adoptNext`) |
 | `runtime/approve` | op only (`:needs nil`; anyone else: 403 "Only the operator approves a definition.") | `{hash}` | main's hash while awaiting approval or failed, or the branch's while proposed; else "There is no definition waiting for approval." / "The definition changed since it was shown: look again."; effect `approve {hash, ref}` (`ref` "HEAD" or the branch) → `effect/done {result: {hash}}` (`approvedLast`; in failed: `clearedAt`, so conformance runs again) \| `effect/failed {detail}` (`approveRefused`) |
 | `playbook/started` | project (`verbs/onboard`) | `{sid, sessionId, startedBy, why?, title?}` | idle → running; watches the build |
 | `link/moved` (its build) | engine | | running → proposed (a turn ended, not running, commits unmerged; reason `runtime/proposed`), proposed → running (running again), → idle on merged / tree removed / not started / a turn ended with no commits (`playbook.result` merged · removed · not-started · no-change; reason `runtime/playbook-done`); no change, or a merge leaving main's hash, adopts main's sources as the registration's |
@@ -290,7 +290,7 @@ Entering conforming emits effect `conform {hash}` → `effect/done {result: {has
 registered records `registered {hash, suite, fingerprint, files, commit, at}` unless it is already for main's hash and
 suite. Reasons: entering stale `runtime/stale {paths}` (asks), failed `runtime/failed {hash, check?, detail?, error?}`
 (asks, soon), registered `runtime/registered {n, hash}` (asks nothing). Each standing mirrors `hash12` (main's hash as shown: the log drops hash values). Exported: `projectId, root, standing, hash12,
-playbookState, commit, def, software, sources, approved, proof, confinedProof, suite, registered, drift, playbook,
+playbookState, commit, def, software, data, sources, approved, proof, confinedProof, suite, registered, drift, playbook,
 conformResult, approvedLast, approveRefused, clearedAt`.
 
 ## Reasons (to the watch)

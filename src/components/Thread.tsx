@@ -1446,9 +1446,9 @@ export function ThreadScroller(props: {
    * new position instead of pulling the bottom back into view. Marked at the summary's click, which
    * comes before the open state changes (the `toggle` event is queued and may come after the frame
    * that lays the growth out), and again at `toggle`, where a lazy body is built; held for two
-   * frames after the later of the two. Only a click starts it (a key on a summary clicks it too):
-   * a disclosure drawn open (an alignment's approach) fires `toggle` as its row is built, and that
-   * is new content, not the user's.
+   * frames after the later of the two. Only a click starts it (a key on a summary clicks it too),
+   * and only the clicked disclosure's `toggle` marks it again: one drawn open (an alignment's
+   * approach) fires `toggle` as its row is built, and that is new content, not the user's.
    */
   let toggled = false;
   let toggleFrame = 0;
@@ -1457,11 +1457,18 @@ export function ThreadScroller(props: {
     cancelAnimationFrame(toggleFrame);
     toggleFrame = requestAnimationFrame(() => (toggleFrame = requestAnimationFrame(() => (toggled = false))));
   };
+  /** The disclosure whose summary was clicked last: its `toggle`, whenever it comes, is the reader's. */
+  let clicked: Element | null = null;
   const onClick = (e: MouseEvent) => {
-    if ((e.target as Element | null)?.closest?.("summary")) markToggle();
+    const summary = (e.target as Element | null)?.closest?.("summary");
+    if (!summary) return;
+    clicked = summary.parentElement;
+    markToggle();
   };
-  const onToggle = () => {
-    if (toggled) markToggle();
+  const onToggle = (e: Event) => {
+    if (e.target !== clicked) return;
+    clicked = null;
+    markToggle();
   };
   onCleanup(() => cancelAnimationFrame(toggleFrame));
   /** Content was added or changed: back to the bottom while following. */

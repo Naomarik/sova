@@ -500,7 +500,9 @@ label a person reads says "sessions pane".
 - **Row line 3.** The worktrees the session tracks **lead the facts after the time**, when the
   server has read at least one (§chat.worktrees/readiness): a 12px `branch` glyph and a bare figure,
   "{merged} of {total}" — "0 of 1", "2 of 3" — over the session's own, non-dropped worktrees, in
-  the meta's own muted voice, `white-space: nowrap`, its `title` each worktree's state and reason.
+  the meta's own muted voice, {merged} counting each one git finds merged into its base, clean or
+  not (a merged tree with uncommitted changes counts though its state reads stale or in progress,
+  §chat.worktrees/readiness "The row's count"), `white-space: nowrap`, its `title` each worktree's state and reason.
   Both the glyph and the figure take `--status-success` while **one or more** of those worktrees is
   ready to merge, which includes one waiting for your OK: the light is the row's whole word for it,
   so the row that can be merged is the row that glows — no check, no phrase. No worktrees, or none

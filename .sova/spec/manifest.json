@@ -4844,7 +4844,7 @@
         "§chat.worktrees/inherit"
       ],
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "verified",
       "code": [
         "server/insights.ts",
         "server/worktrees-state.ts",
@@ -8275,14 +8275,15 @@
     "§chat.worktrees/readiness": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "code": [
         "server/merge-readiness.ts",
         "server/merge-readiness.test.ts",
         "shared/protocol.ts",
         "src/lib/readiness.ts",
         "src/lib/readiness.test.ts",
-        "src/components/Sidebar.tsx"
+        "src/components/Sidebar.tsx",
+        "server/removed-worktrees.ts"
       ],
       "requires": [
         "§chat.worktrees/entry",
@@ -12361,6 +12362,44 @@
         "scripts/perf/load-experiment.mjs",
         "scripts/perf/load-standin.mjs"
       ]
+    },
+    "§chat.transcript/empty-worktrees": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/components/EmptyWorktrees.tsx",
+        "src/components/ChatView.tsx",
+        "src/lib/api.ts",
+        "src/lib/worktree-cleanup.ts",
+        "src/lib/worktree-cleanup.test.ts",
+        "src/app.css"
+      ],
+      "requires": [
+        "§chat.worktrees/cleanup",
+        "§chat.transcript/states"
+      ]
+    },
+    "§chat.worktrees/cleanup": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/worktree-cleanup.ts",
+        "server/worktree-cleanup.test.ts",
+        "server/removed-worktrees.ts",
+        "server/index.ts",
+        "shared/protocol.ts"
+      ],
+      "requires": [
+        "§chat.worktrees/merged-state",
+        "§chat.worktrees/entry"
+      ]
+    },
+    "§design.copy-deck/worktree-cleanup": {
+      "kind": "note",
+      "authority": "accepted",
+      "evidence": "verified"
     }
   },
   "boundary": {

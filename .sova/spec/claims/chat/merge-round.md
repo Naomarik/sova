@@ -4,7 +4,8 @@
 Sova's own repository ships one scheduled playbook, **Merge round** (`.sova/playbooks/merge-round/`),
 run by the project profile **Merge captain** (`.sova/profiles/merge-captain.json`, One at a time)
 every 30 minutes and after a Claude limit resets (§chat/schedules). A round finds finished branches,
-checks each one, lands it on master, pushes it and restarts the live server when that is safe. The
+checks each one, lands it on master, removes its worktree when git allows it, pushes it and
+restarts the live server when that is safe. The
 playbook is instructions to a model: what it promises is what it tells the captain to do, and what
 its scripts in `scripts/` (Node builtins only) do: the driver `round.mjs` (§chat.merge-round/driver),
 `discover-names.mjs` and `leak-scan.mjs`, with their tests in `tests/` (§chat.playbooks/bundles).
@@ -52,6 +53,13 @@ ask, and what to tell the user.
   near their baseline, each touched pi-config extension's suite, build; a failure that also fails
   on master is named as pre-existing), its drafts promoted, then landed with `worktree merge` and
   built in the main checkout.
+- **Clean up.** Once a branch is landed, the captain removes its worktree from the main checkout
+  with exactly the two commands `landed` prints: `git worktree remove -- <path>`, never `--force`,
+  then `git branch -d -- <branch>`. Git's own refusals (uncommitted or untracked files, a lock, a
+  branch git doesn't find merged) are reported as printed and never retried or forced, and the
+  folder then stays. The owner's notice says "Its worktree folder was removed." only when the
+  remove succeeded. No tool or grant does this: it is plain git, and the owner's readiness reads
+  the gone folder as merged from git (§chat.worktrees/readiness).
 - **Push.** Through the driver's `push`: `leak-scan.mjs` runs before every push; any hit means push
   nothing and report the commit, file and line, never the matched value. Never `--force`, `--tags`
   or `--all`.
@@ -126,7 +134,12 @@ shell and under a timeout.
 - **`land <branch>`** never merges. With a landable check at the current head and the current
   master, it prints the `worktree` tool's merge call; a moved head or master means check again.
   **`landed <branch>`** verifies with git that the checked head is in master, builds the main
-  checkout, records whether a restart is needed, and prints the notice for the owner.
+  checkout, records whether a restart is needed, and prints the notice for the owner, with the
+  sentence "Its worktree folder was removed." to add only when the clean-up's remove succeeds.
+  Its `next:` line is the clean-up: `git -C <main checkout> worktree remove -- <path>`, then `git -C
+  <main checkout> branch -d -- <branch>`, then `push`. When git's record of that worktree can't
+  be written from where the driver runs (a sandboxed captain), it prints instead that the clean-up
+  can't run here and leaves the folder, so git never half-removes a tree it can't unregister.
 - **`push`** refuses under the hold, when the main checkout isn't on master, and when master isn't a
   fast-forward of origin/master after a fetch. It runs `leak-scan.mjs` and, only when that exits 0,
   runs exactly `git push origin master`. It has no force, tags or all path.

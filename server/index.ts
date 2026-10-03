@@ -66,6 +66,7 @@ import { checkTmpImage, deleteAttachment, MAX_ATTACHMENT_BYTES, readTmpImage, sa
 import { listFolders } from "./folders";
 import { listProjectFiles } from "./files";
 import { getGitSummary } from "./git-summary";
+import { cleanupPlan, cleanupRemove, configureCleanup, worktreesSummary } from "./worktree-cleanup";
 import { applyLoadout, getSessionSetup } from "./session-setup";
 import { isOrgSession, ORG_NOT_GROUPED } from "./org-sessions";
 import { assignSession, cleanGroupLabel, createGroup, deleteGroup, GROUP_LABEL_MAX, readGroups, updateGroup } from "./session-groups";
@@ -661,6 +662,34 @@ app.get("/api/sessions/git", async (c) => {
   if (!path) return c.json({ error: "Invalid or missing ?path= (must be a .jsonl under the pi sessions dir)" }, 400);
   if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
   return c.json(await getGitSummary(path, { fresh: c.req.query("fresh") === "1" }));
+});
+
+// Merged worktrees of the session's repository (server/worktree-cleanup.ts, §chat.worktrees/cleanup):
+// the count for a new session's empty state, the dry run, and a removal of exactly the confirmed
+// paths that are still removable. Only when asked; never --force.
+configureCleanup({ sessions: listSessions, sessionFiles: listSessionFiles, readBranch: readActiveBranch });
+app.get("/api/worktrees/summary", async (c) => {
+  const path = resolveSessionPath(c.req.query("path"));
+  if (!path) return c.json({ error: "Invalid or missing ?path= (must be a .jsonl under the pi sessions dir)" }, 400);
+  if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
+  return c.json(await worktreesSummary(path), 200, { "Cache-Control": "no-store" });
+});
+app.post("/api/worktrees/cleanup", async (c) => {
+  const body = (await c.req.json().catch(() => null)) as { path?: unknown; dryRun?: unknown; expect?: unknown } | null;
+  const path = resolveSessionPath(typeof body?.path === "string" ? body.path : null);
+  if (!path) return c.json({ error: "Invalid or missing path" }, 400);
+  if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
+  const dryRun = body?.dryRun === true;
+  const expect = body?.expect;
+  if (dryRun === Array.isArray(expect) || (Array.isArray(expect) && !expect.every((p) => typeof p === "string" && p.startsWith("/"))))
+    return c.json({ error: "Send either dryRun: true or expect: [absolute paths]" }, 400);
+  if (dryRun) {
+    const plan = await cleanupPlan(path);
+    return plan ? c.json(plan) : c.json({ error: "This session's folder isn't in a local git repository." }, 409);
+  }
+  const r = await cleanupRemove(path, expect as string[]);
+  if (r === "busy") return c.json({ error: "A cleanup of this repository is already running." }, 409);
+  return r ? c.json(r) : c.json({ error: "This session's folder isn't in a local git repository." }, 409);
 });
 
 // What pi will load for a session's folder (server/session-setup.ts): the context files it writes

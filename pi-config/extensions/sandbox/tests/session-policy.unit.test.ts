@@ -6,6 +6,8 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { backendFor, gitProtectedPaths, shadowSource } from "../backend.ts";
 import { canonicalize, readDenial, resolvePolicy, writeDenial } from "../policy.ts";
+import { mountPlan } from "../backends/linux-bwrap.ts";
+import { spawnSync } from "node:child_process";
 import { ensureSessionTmpDir, resolveSessionPolicy, sessionTmpBase, sessionTmpDir } from "../session-policy.ts";
 
 const TEMPLATE_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "sandbox-policy");
@@ -56,6 +58,23 @@ test("worktrees are writable roots with their .agent read-only; platform secrets
 	const bare = resolveSessionPolicy({ agentDir, cwd: ws, sessionId: "s2", home, platform: "linux" });
 	assert.ok(bare.ok);
 	assert.ok(writeDenial(bare.value, canonicalize(join(wt, "b.txt")), { creating: true }));
+});
+
+test("a tracked worktree whose folder was removed never reaches the mounts: the sandbox still starts", { skip: !existsSync("/usr/bin/bwrap") && "no bwrap" }, async (t) => {
+	const { root, home, agentDir, ws } = rig(t);
+	const gone = join(root, "wt-removed");
+	const backend = backendFor("linux");
+	const tmpDir = join(root, "tmp");
+	mkdirSync(tmpDir);
+	const r = resolveSessionPolicy({ agentDir, cwd: ws, sessionId: "s-gone", tmpDir, worktreeRoots: [gone], home, platform: "linux" });
+	assert.ok(r.ok, r.ok ? "" : r.error);
+	const p = r.value;
+	const policy = { level: p.level, workspaceRoot: p.workspaceRoot, writable: p.writable, readOnlyWithinWritable: p.readOnlyWithinWritable, hidden: p.hidden, tmpDir: p.tmpDir, shadowed: p.shadowed, network: { mode: "none" as const }, env: {}, sessionId: "s-gone" };
+	assert.ok(!mountPlan(policy).ops.some((o) => o.path === gone || o.path.startsWith(`${gone}/`)), "no bind or read-only overlay for the missing folder");
+	const res = await backend.confine({ argv: ["/bin/true"], cwd: ws, policy });
+	assert.ok(res.ok, res.ok ? "" : res.reason);
+	const run = spawnSync(res.confined.argv[0]!, res.confined.argv.slice(1), { env: res.confined.env, encoding: "utf8" });
+	assert.equal(run.status, 0, run.stderr);
 });
 
 test("fails closed without a policy file, and never creates the session tmp", (t) => {

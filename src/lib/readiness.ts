@@ -57,6 +57,7 @@ const STATE_WORD: Record<ReadinessState, string> = {
   blocked: "blocked",
   ready: "ready to merge",
   "waiting-approval": "waiting for your OK",
+  removed: "removed",
 };
 
 /** A worktree's state word (the Session tab's rows and the badge's title). */

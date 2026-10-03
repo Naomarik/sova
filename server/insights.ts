@@ -50,7 +50,7 @@ import { resolveSessionPath } from "./paths";
 import { collectSkills, hasSkills } from "./skills";
 import { activeBranch, parseLines } from "./transcript";
 import { describeWorktrees, worktreesOf } from "./worktrees-state";
-import { treeReadinessOf } from "./merge-readiness";
+import { goneWorkOf, REMOVED_EMPTY, treeReadinessOf } from "./merge-readiness";
 import { LAST_KNOWN_REASON, lastKnownUsage, rememberUsage } from "./usage-last-known";
 import { workerSkills } from "./worker-skills";
 import { defaultAdapters } from "./worker-adapters";
@@ -1269,8 +1269,26 @@ async function worktreeRows(facts: SessionFacts, workers: WorkerInfo[] | null, p
   const cwds = workerCwds(facts.workerRecords.all);
   const rows = await describeWorktrees(facts.worktrees, facts.sessionId, (workers ?? []).map((w) => ({ status: w.status, cwd: cwds.get(w.id) })));
   // Each row's merge readiness, as the session list last read it (§chat.worktrees/readiness).
-  return rows ? { worktrees: rows.map((r) => withReadiness(r, treeReadinessOf(path, r.path))) } : {};
+  if (!rows) return {};
+  const trees = facts.worktrees.trees;
+  return {
+    worktrees: await Promise.all(
+      rows.map(async (r) => {
+        const row = withReadiness(r, treeReadinessOf(path, r.path));
+        if (row.exists || row.status !== "active") return row;
+        // Its folder is gone: the same answer readiness gives, from the row's readiness when it has one.
+        const rd = row.readiness;
+        if (rd && (rd.state === "merged" || rd.state === "removed")) return { ...row, gone: goneOfReadiness(rd) };
+        const t = trees.find((x) => x.path === r.path);
+        const g = t ? await goneWorkOf(t, trees.filter((x) => x !== t).map((x) => x.path)).catch(() => null) : null;
+        return { ...row, gone: g ?? ("unknown" as const) };
+      }),
+    ),
+  };
 }
+
+const goneOfReadiness = (rd: WorktreeReadiness): NonNullable<SessionWorktreeInfo["gone"]> =>
+  rd.state === "merged" ? "merged" : rd.why === "not merged" ? "unmerged" : rd.why === REMOVED_EMPTY ? "empty" : "unknown";
 
 const withReadiness = (row: SessionWorktreeInfo, readiness: WorktreeReadiness | undefined): SessionWorktreeInfo => (readiness ? { ...row, readiness } : row);
 

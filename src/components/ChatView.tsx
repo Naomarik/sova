@@ -119,6 +119,7 @@ import { Composer, type ComposerReason } from "./Composer";
 import { FlyoutSession, type LoginControl, type SandboxControl, type ThinkingControl, type UndoControl } from "./ComposerMenu";
 import { ConnectionBanner } from "./ConnectionBanner";
 import { SessionSetupCard } from "./SessionSetup";
+import { EmptyWorktrees } from "./EmptyWorktrees";
 import { PlaybooksDialog } from "./PlaybooksDialog";
 import type { ModeControl, ModeState } from "./ModeMenu";
 import type { ModelControl } from "./ModelMenu";
@@ -1832,6 +1833,7 @@ export function ChatView(props: {
                       </Show>
                       <SessionSetupCard path={props.path} editable={!!profileInfo()?.pickable && !profileInfo()?.locked} />
                       <p class="empty-body">Your first message becomes its title.</p>
+                      <EmptyWorktrees path={props.path} />
                     </div>
                   }
                 >

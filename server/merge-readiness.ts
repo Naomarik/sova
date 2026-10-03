@@ -1,4 +1,4 @@
-import { statSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 import { open } from "node:fs/promises";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -11,6 +11,7 @@ import { deferredOf, followUpFor, type FollowUpInput, type MergeFollowUps } from
 import { asksUserOf } from "./signals-store";
 import { activeBranch, type Entry } from "./transcript";
 import { execGit, type GitRunner, worktreeInsights, type WorktreeInsights } from "./worktrees";
+import { goneTreeState, type GoneState } from "./removed-worktrees";
 
 /**
  * Merge readiness (§chat.worktrees/readiness): for each worktree a session tracks and owns, whether
@@ -47,6 +48,8 @@ export interface TreeFacts {
   tracked: "active" | "merged";
   /** The folder is there and git could read it. */
   readable: boolean;
+  /** The folder is gone: what its branch came to (server/removed-worktrees.ts); absent while it is there. */
+  gone?: GoneState;
   /** Git finds the branch in its base (ancestry or content) after at least one commit of its own. */
   merged?: boolean;
   dirty?: boolean;
@@ -92,10 +95,14 @@ const STATE_WORDS: Record<ReadinessState, string> = {
   blocked: "Blocked",
   ready: "Ready to merge",
   "waiting-approval": "Waiting for your OK",
+  removed: "Removed",
 };
 
 /** Why a clean branch has no commit of its own: an empty leftover worktree once nothing runs. */
 export const NO_COMMITS = "no commits yet";
+/** A gone folder's whys (§chat.worktrees/readiness, removed). */
+export const CLEANED_UP = "cleaned up";
+export const REMOVED_EMPTY = "no commits";
 
 /**
  * One worktree's state, a few words why, and the line a person reads (§chat.worktrees/readiness):
@@ -112,7 +119,16 @@ export function treeReadiness(t: TreeFacts, s: SessionFacts): { state: Readiness
 
 function treeState(t: TreeFacts, s: SessionFacts): { state: ReadinessState; why?: string } {
   // A folder git can't read: the record is all there is.
-  if (!t.readable) return t.tracked === "merged" ? { state: "merged", why: "worktree folder gone" } : { state: "in-progress", why: "worktree folder gone" };
+  if (!t.readable) {
+    // A gone folder says what its work came to: never in progress. A branch git finds decides first.
+    if (t.gone !== undefined) {
+      if (t.gone === "unmerged") return { state: "removed", why: "not merged" };
+      if (t.gone === "merged" || t.tracked === "merged") return { state: "merged", why: CLEANED_UP };
+      if (t.gone === "empty") return { state: "removed", why: REMOVED_EMPTY };
+      return { state: "removed", why: "no record of a merge" };
+    }
+    return t.tracked === "merged" ? { state: "merged", why: "worktree folder gone" } : { state: "in-progress", why: "worktree folder gone" };
+  }
   if (t.merged) {
     // Uncommitted work vetoes "merged": the tree is being worked on, or was left dirty.
     if (t.dirty) return s.running ? { state: "in-progress", why: "uncommitted changes" } : { state: "stale", why: "merged, with uncommitted changes" };
@@ -181,7 +197,7 @@ export function sessionReadinessOf(trees: WorktreeReadiness[], flags: MergeFlags
   if (waiting) return { ...out, badge: "waiting", branch: waiting.branch };
   if (ready) return { ...out, badge: "ready", branch: ready.branch };
   // An empty leftover worktree (clean, no commit of its own, nothing running) hides no merged badge.
-  const empty = (t: WorktreeReadiness) => t.state === "in-progress" && t.why === NO_COMMITS && !t.dirtyCount;
+  const empty = (t: WorktreeReadiness) => (t.state === "in-progress" && t.why === NO_COMMITS && !t.dirtyCount) || (t.state === "removed" && t.why === REMOVED_EMPTY);
   const merged = trees.filter((t) => t.state === "merged");
   if (!merged.length || trees.some((t) => t.state !== "merged" && !empty(t))) return out;
   const branch = flags.lastMerge?.branch ?? merged[merged.length - 1]!.branch;
@@ -483,6 +499,8 @@ export interface ReadinessDeps {
   terminal?: (s: SessionSummary) => boolean;
   /** The attention answer for the session's last classified reply. */
   asksUser?: (sessionId: string) => { turnId: string; asks: boolean } | undefined;
+  /** A gone folder's branch, read from `dirs` (§chat.worktrees/readiness). */
+  gone: (t: TrackedWorktree, dirs: readonly string[]) => Promise<GoneState>;
 }
 
 const defaultDeps = (): ReadinessDeps => ({
@@ -492,6 +510,7 @@ const defaultDeps = (): ReadinessDeps => ({
   processStart: PROCESS_START_MS,
   now: Date.now,
   asksUser: (id) => asksUserOf(id),
+  gone: (t, dirs) => goneTreeState(t, dirs),
 });
 
 let deps: ReadinessDeps = defaultDeps();
@@ -540,10 +559,14 @@ async function mergePushed(card: MergeCard, cwd: string): Promise<boolean | unde
   return r.code === 0 ? true : r.code === 1 ? false : undefined;
 }
 
-async function treeFacts(t: TrackedWorktree): Promise<TreeFacts> {
+async function treeFacts(t: TrackedWorktree, dirs: readonly string[]): Promise<TreeFacts> {
   const base = { path: t.path, branch: t.branch, tracked: t.status === "merged" ? ("merged" as const) : ("active" as const) };
   const st = await deps.insights.treeStatus(t.path).catch(() => null);
-  if (!st || !st.exists || st.error && st.merged === undefined) return { ...base, readable: false };
+  if (!st || !st.exists || st.error && st.merged === undefined) {
+    // Gone (not merely unreadable): what its branch came to decides (§chat.worktrees/readiness).
+    if (!st?.exists && !existsSync(t.path)) return { ...base, readable: false, gone: await goneWorkOf(t, dirs) };
+    return { ...base, readable: false };
+  }
   // A branch with no commit of its own is never merged: ancestry alone would say it is.
   const own = st.head !== undefined && st.head !== t.base;
   const merged = own && (st.merged === "ancestor" || st.merged === "content");
@@ -560,6 +583,19 @@ async function treeFacts(t: TrackedWorktree): Promise<TreeFacts> {
     ...(st.subjects ? { tempCommit: tempCommitOf(st.subjects) } : {}),
     ...(st.headAt ? { headAt: st.headAt } : {}),
   };
+}
+
+/** Another session's file records this tree merged: the Merge Captain's own record of the merge it
+    made, which outlives the `git branch -d` of its clean-up (as far as readiness has read it). */
+function mergedElsewhere(t: TrackedWorktree): boolean {
+  for (const c of cache.values()) if (c.facts?.trees.some((o) => o.status === "merged" && o.path === t.path && o.branch === t.branch)) return true;
+  return false;
+}
+
+/** What a gone folder's work came to (§chat.worktrees/readiness, removed): git or the ledger
+    first, then another session's record of its merge. The pane asks the same (server/insights.ts). */
+export async function goneWorkOf(t: TrackedWorktree, dirs: readonly string[]): Promise<GoneState> {
+  return (await deps.gone(t, dirs).catch(() => null)) ?? (mergedElsewhere(t) ? "merged" : null);
 }
 
 /** A session's readiness now: git, the file's facts and the row. */
@@ -580,14 +616,14 @@ export async function computeReadiness(s: SessionSummary, facts: FileFacts, publ
   const trees: WorktreeReadiness[] = [];
   const heads: Record<string, number> = {};
   for (const t of own) {
-    const tf = await treeFacts(t);
+    const tf = await treeFacts(t, [s.cwd, ...own.map((o) => o.path).filter((p) => p !== t.path)]);
     if (tf.headAt) heads[t.path] = tf.headAt;
     const r = treeReadiness(tf, sf);
     trees.push({
       path: t.path,
       branch: tf.branch,
       state: r.state,
-      ...((tf.readable ? tf.merged : tf.tracked === "merged") ? { merged: true as const } : {}),
+      ...((tf.readable ? tf.merged : tf.gone !== "unmerged" && (tf.tracked === "merged" || tf.gone === "merged")) ? { merged: true as const } : {}),
       ...(r.why ? { why: r.why } : {}),
       reason: r.reason,
       ...(tf.dirty && tf.dirtyCount ? { dirtyCount: tf.dirtyCount, dirtyFiles: tf.dirtyFiles ?? [] } : {}),

@@ -285,3 +285,28 @@ test('onMerge: "reload" on a checkout cmd service only, kept as written and insi
   assert.equal(refusedAt({ version: 1, services: { site: { static: "public", ports: { http: { base: 5200 } }, onMerge: "reload" } } }), "$.services.site.onMerge");
   assert.equal(refusedAt({ version: 1, services: { db: { cmd: ["db"], scope: "shared", ports: { tcp: { fixed: 5432 } }, onMerge: "reload" } } }), "$.services.db.onMerge");
 });
+
+test("open: a checkout service's declared port and a path from / (default /), kept as written, outside the hash", async () => {
+  const { defHashOf } = await import("../server/project-services/trust");
+  const services = {
+    web: { cmd: ["node", "web.js"], ports: { http: { base: 5100 }, nrepl: { base: 5150 } } },
+    cache: { cmd: ["redis-server"], scope: "shared", ports: { port: { fixed: 6390 } } },
+  };
+  const plain = parse({ version: 1, services });
+  assert.equal(plain.open, undefined);
+  assert.deepEqual(parse({ version: 1, services, open: { endpoint: "web.http" } }).open, { endpoint: "web.http", path: "/" });
+  const deep = parse({ version: 1, services, open: { endpoint: "web.http", path: "/app?tab=home" } });
+  assert.deepEqual(deep.open, { endpoint: "web.http", path: "/app?tab=home" });
+  // It exposes nothing: declaring, moving or removing the entry needs no new approval.
+  assert.equal(defHashOf(deep), defHashOf(plain));
+  assert.equal(refusedAt({ version: 1, services, open: "web.http" }), "$.open");
+  assert.equal(refusedAt({ version: 1, services, open: {} }), "$.open.endpoint");
+  assert.equal(refusedAt({ version: 1, services, open: { endpoint: "web" } }), "$.open.endpoint");
+  assert.equal(refusedAt({ version: 1, services, open: { endpoint: "web.https" } }), "$.open.endpoint");
+  assert.equal(refusedAt({ version: 1, services, open: { endpoint: "api.http" } }), "$.open.endpoint");
+  assert.equal(refusedAt({ version: 1, services, open: { endpoint: "cache.port" } }), "$.open.endpoint", "a shared service is no copy's own");
+  for (const path of ["home", "", "/a b", "/a\\b", "/x\n", 7, `/${"x".repeat(200)}`])
+    assert.equal(refusedAt({ version: 1, services, open: { endpoint: "web.http", path } }), "$.open.path", JSON.stringify(path));
+  assert.equal(refusedAt({ version: 1, services, open: { endpoint: "web.http", url: "/" } }), "$.open.url");
+  assert.ok(DEFINITION_KEYS.top.includes("open"));
+});

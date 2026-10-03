@@ -20,6 +20,7 @@ ports and env in declaration order.
 | `setup` | steps `{id, run, inputs?, timeout?}` run at create, in order; skipped while the rendered argv and the hash of `inputs` (checkout files) are unchanged |
 | `data` | `{name: resource}` in declaration order, below |
 | `services` | `{name: service}` in declaration order, at least one, below |
+| `open` | `{endpoint, path?}`, below: the app's entry point, where a person opens it. Required for every project with a page; absent only for a library or an API-only project. Not hashed |
 | `hooks` | `probe` (`{run, timeout?}`, a step): conformance calls `<run> write <token>` and `<run> read <token>` (exit 0: the token is there) |
 | `test` | `{run, requires?, timeout?, smoke}`, below |
 | `share` | `{endpoints, maxDays?, allow?}`, below: what a running copy may share as a preview link. Absent: never shared. Hashed |
@@ -71,11 +72,16 @@ The runner should write `SOVA_OUT` as JSON: `{"passed": n, "failed": n, "errors"
 - `allow` (`false`): copies are never shared, whatever is listed (Sova itself, a tool with no stakeholder view).
 A project with any `sensitive` data resource is never shared, whatever `share` says. The whole key is inside the approval hash, so the operator approves what is exposed.
 
+## `open`
+- `endpoint`: `"<service>.<port>"`, a declared port of a checkout service (never a shared service's): the port the app's page is served on, in every copy.
+- `path` (default `/`): where on that port a person lands, starting with `/`, at most 200 characters, no spaces or backslashes. The home page, never an API, health or readiness route: `ready.path` is for Sova's probe, `open.path` is for a person.
+Sova's Branches tab offers **Open** on each running copy (`http://<host>:<its port><path>`, in a new tab), and conformance (suite 4) checks in scratch copy A that a `GET` of the entry answers below 500, naming its content type in the `open` check's detail (`web.http (port 41010): GET /home answered 200 (text/html; charset=utf-8)`). It exposes nothing a copy doesn't already listen on, so it is outside the approval hash.
+
 ## Templates
 `${slot}`, `${instance}`, `${project}`, `${checkout}`, `${main}` (the main checkout), `${branch}`, `${data}` (the instance's data dir), `${data.<resource>}`, `${ports.<service>.<port>}`, `${host.<NAME>}`; `$$` is a literal `$`. Every process and hook also gets `SOVA_V=1`, `SOVA_PROJECT`, `SOVA_INSTANCE`, `SOVA_SLOT`, `SOVA_CHECKOUT`, `SOVA_MAIN`, `SOVA_BRANCH`, `SOVA_DATA`, `SOVA_PORT_<SERVICE>_<PORT>` for every port of the instance and `SOVA_PORT_<PORT>` for its own; a hook also `SOVA_VERB`, `SOVA_STEP`, `SOVA_OUT`; a test run also `SOVA_TEST_SELECT`. `<SERVICE>` and `<PORT>` are upper case with anything else `_`.
 
 ## The approval hash
-Approval covers the whole parsed definition (a data resource's `sensitive` and `share` included) except every `timeout`, readiness `path`, `about`, `isolation`, `sources` and the default `start: "up"`. So rewording a `why` or an `about`, or listing another source, needs no new approval; any command, env, port, hook, data source, `test` or `start: "on-demand"` does.
+Approval covers the whole parsed definition (a data resource's `sensitive` and `share` included) except every `timeout`, readiness `path`, `about`, `isolation`, `sources`, `open` and the default `start: "up"`. So rewording a `why` or an `about`, listing another source or moving the entry point needs no new approval; any command, env, port, hook, data source, `test` or `start: "on-demand"` does.
 
 ## Error codes
 | code | exit | meaning for you |

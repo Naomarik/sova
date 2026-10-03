@@ -23,7 +23,7 @@ export const CONTRACT_FILE = ".sova/project.json";
 // ---- canonical key order (references/contract.md; pinned against the parser by tests/) ----------
 
 export const ORDER = {
-  top: ["version", "slots", "host", "sources", "setup", "data", "services", "hooks", "test", "share", "deploy"],
+  top: ["version", "slots", "host", "sources", "setup", "data", "services", "open", "hooks", "test", "share", "deploy"],
   slots: ["cap"],
   step: ["id", "run", "inputs", "timeout"],
   data: ["kind", "path", "from", "provision", "deprovision", "timeout", "sensitive"],
@@ -37,6 +37,7 @@ export const ORDER = {
   isolation: ["method", "why"],
   adopt: ["unit", "ports"],
   share: ["endpoints", "maxDays", "allow"],
+  open: ["endpoint", "path"],
 };
 /** Maps whose keys are names in declaration order, kept as written. */
 const NAMED_MAPS = new Set(["data", "services", "ports", "env"]);
@@ -76,6 +77,7 @@ export function canonical(def) {
   }
   if (isObj(d.test)) d.test = sortKeys(d.test, ORDER.test);
   if (isObj(d.share)) d.share = sortKeys(d.share, ORDER.share);
+  if (isObj(d.open)) d.open = sortKeys(d.open, ORDER.open);
   return d;
 }
 
@@ -156,7 +158,11 @@ async function parserTakes(where) {
   if (!c) return false;
   const base = { version: 1, services: { web: { cmd: ["true"] } } };
   const probe =
-    where === "sources" ? { ...base, sources: ["package.json"] } : { version: 1, services: { web: { cmd: ["true"], isolation: { method: "ports", why: "probe" } } } };
+    where === "sources"
+      ? { ...base, sources: ["package.json"] }
+      : where === "open"
+        ? { version: 1, services: { web: { cmd: ["true"], ports: { http: { base: 40000 } } } }, open: { endpoint: "web.http" } }
+        : { version: 1, services: { web: { cmd: ["true"], isolation: { method: "ports", why: "probe" } } } };
   try {
     c.parseDefinition(JSON.stringify(probe));
     return true;
@@ -684,6 +690,10 @@ export async function check(file, root) {
       }
     }
   }
+  // The entry point is required wherever there is a page; only a library or an API-only project leaves it out.
+  const paged = def.services.some((s) => s.scope === "checkout" && (s.static !== undefined || (s.ready && "http" in s.ready)));
+  if (paged && raw.open === undefined && (await parserTakes("open")))
+    notes.push("$.open: name the app's entry point ({endpoint, path}: where a person opens it); leave it out only for a library or an API-only project, and say why in the report");
   for (const d of def.data)
     if (d.kind === "dir" && d.from !== "empty" && !/^\$\{(main|checkout)\}/.test(d.from)) problems.push(`$.data.${d.name}.from: copy from inside the project (\${main}/… or \${checkout}/…); a path outside it is refused under confinement`);
   return { file, ok: problems.length === 0, problems, notes, services: def.services.map((s) => s.name), fatal: false };

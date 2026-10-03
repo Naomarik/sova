@@ -140,6 +140,8 @@ export interface ProjectDef {
   test?: TestDecl;
   /** What a running copy may share (§app.project-services/share); absent: nothing. Inside the hash. */
   share?: ShareDecl;
+  /** The entry point: where a person opens the app. Exposes nothing, so outside the hash. */
+  open?: OpenDecl;
   /** Reserved (deploy): kept as written, not used yet. */
   reserved: { deploy?: unknown };
   /** The checkout files the definition was written from; their change at HEAD is drift. Outside the hash. */
@@ -154,6 +156,12 @@ export interface ShareDecl {
   /** false: never shared, whatever is listed. */
   allow?: false;
 }
+/** The project's entry point (§app.project-services/contract): a checkout service's declared port (`"<service>.<port>"`) and the page's path there ("/" when absent). */
+export interface OpenDecl {
+  endpoint: string;
+  path: string;
+}
+export const OPEN_PATH_MAX = 200;
 /** An instance link lasts 1 day by default and at most 7 (§app.project-services/share). */
 export const SHARE_DAYS_DEFAULT = 1;
 export const SHARE_DAYS_MAX = 7;
@@ -204,7 +212,7 @@ const isObj = (v: unknown): v is Obj => !!v && typeof v === "object" && !Array.i
 
 /** Every key the declaration accepts, by where it sits (the parse refuses any other; the playbook's reference is pinned to these). */
 export const DEFINITION_KEYS = {
-  top: ["version", "slots", "host", "setup", "data", "services", "hooks", "test", "share", "deploy", "sources"],
+  top: ["version", "slots", "host", "setup", "data", "services", "open", "hooks", "test", "share", "deploy", "sources"],
   slots: ["cap"],
   step: ["id", "run", "inputs", "timeout"],
   service: ["cmd", "static", "cwd", "env", "ports", "requires", "ready", "reload", "build", "scope", "container", "start", "about", "isolation", "adopt", "onMerge"],
@@ -220,6 +228,7 @@ export const DEFINITION_KEYS = {
   probe: ["run", "inputs", "timeout"],
   test: ["run", "requires", "timeout", "smoke"],
   share: ["endpoints", "maxDays", "allow"],
+  open: ["endpoint", "path"],
 } as const;
 const K = DEFINITION_KEYS;
 
@@ -462,6 +471,21 @@ function shareDecl(v: unknown, services: readonly ServiceDecl[]): ShareDecl {
   return out;
 }
 
+/** `open`: a checkout service's declared port and a path from `/` (no space, control character or backslash), "/" when absent. */
+function openDecl(v: unknown, services: readonly ServiceDecl[]): OpenDecl {
+  const o = obj(v, "$.open");
+  keysOnly(o, K.open, "$.open");
+  const m = typeof o.endpoint === "string" ? /^([a-z][a-z0-9-]{0,30})\.([a-z][a-z0-9-]{0,30})$/.exec(o.endpoint) : null;
+  if (!m) throw new DefinitionError("$.open.endpoint", 'must be "<service>.<port>"');
+  const svc = services.find((s) => s.name === m[1]);
+  if (!svc || !(m[2]! in svc.ports)) throw new DefinitionError("$.open.endpoint", `names no declared port (${o.endpoint as string})`);
+  if (svc.scope === "shared") throw new DefinitionError("$.open.endpoint", "a shared service is no copy's own: the entry is a checkout service's port");
+  const path = o.path === undefined ? "/" : o.path;
+  if (typeof path !== "string" || !path.startsWith("/") || path.length > OPEN_PATH_MAX || /[\s\\\u0000-\u001f\u007f]/.test(path))
+    throw new DefinitionError("$.open.path", `must start with / (at most ${OPEN_PATH_MAX} characters, no spaces or backslashes)`);
+  return { endpoint: o.endpoint as string, path };
+}
+
 /** Every `${…}` variable a definition's templates name, with where. */
 function* templates(def: ProjectDef): Generator<[string, string]> {
   for (const s of def.setup) for (const [i, a] of s.run.entries()) yield [a, `setup.${s.id}.run[${i}]`];
@@ -549,6 +573,7 @@ export function parseDefinition(text: string): ProjectDef {
     hooks,
     ...(test ? { test } : {}),
     ...(o.share !== undefined ? { share: shareDecl(o.share, services) } : {}),
+    ...(o.open !== undefined ? { open: openDecl(o.open, services) } : {}),
     reserved: { ...(o.deploy !== undefined ? { deploy: o.deploy } : {}) },
     ...(sources ? { sources } : {}),
   };

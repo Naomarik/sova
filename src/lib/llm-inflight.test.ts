@@ -36,29 +36,30 @@ test("unknown (no snapshot on this connection): no figure, the word Agents, neve
   assert.doesNotMatch(v.figure, /0/);
 });
 
-test("partial: a floor with a plus and the reasons, even at 0", () => {
+test("partial: a floor shown as the bare number, the reasons in the sentence, even at 0", () => {
   const v = llmInflightView({ count: 3, approximate: 0, partial: true, gaps: [{ reason: "claude-internal" }] });
   assert.equal(v.state, "partial");
-  assert.equal(v.figure, "3+");
+  assert.equal(v.figure, "3", "the number only: the floor is the sentence's to say");
   assert.equal(v.rowWord, "agents");
   assert.equal(v.sentence, "At least 3 LLM calls running now. Claude Code's own internal calls aren't visible.");
   assert.equal(v.agentsLabel, "Agents: At least 3 LLM calls running now. Claude Code's own internal calls aren't visible.");
 
   const zero = llmInflightView({ count: 0, approximate: 0, partial: true, gaps: [{ reason: "peer-unreachable", host: "peer-a" }] }, label);
-  assert.equal(zero.figure, "0+", "a partial 0 is a floor, never a proven 0");
+  assert.equal(zero.figure, "0");
+  assert.equal(zero.state, "partial", "a partial 0 is a floor, never a proven 0");
   assert.equal(zero.showTally, true);
   assert.equal(zero.sentence, "At least 0 LLM calls running now. studio can't be reached.");
 
   const one = llmInflightView({ count: 1, approximate: 0, partial: true, gaps: [{ reason: "claude-internal" }] });
-  assert.equal(one.figure, "1+");
+  assert.equal(one.figure, "1");
   assert.match(one.sentence, /^At least 1 LLM call running now\./);
 });
 
-test("approximate one-shots: the same count reads apart from an exact one", () => {
+test("approximate one-shots: the same figure as an exact one, the sentence apart", () => {
   const exact = llmInflightView(complete(1));
   const approx = llmInflightView({ count: 1, approximate: 1, partial: false, gaps: [] });
   assert.equal(exact.figure, "1");
-  assert.equal(approx.figure, "~1");
+  assert.equal(approx.figure, "1");
   assert.equal(approx.approximate, true);
   assert.equal(exact.approximate, false);
   assert.equal(approx.state, "complete", "an estimate is not a gap");
@@ -69,30 +70,32 @@ test("approximate one-shots: the same count reads apart from an exact one", () =
   assert.equal(approx.showTally, true);
 
   const three = llmInflightView({ count: 3, approximate: 1, partial: false, gaps: [] });
-  assert.deepEqual([three.figure, three.rowWord, three.sentence], ["~3", "agents", "2 LLM calls running now, and 1 one-shot that may be calling"]);
+  assert.deepEqual([three.figure, three.rowWord, three.sentence], ["3", "agents", "2 LLM calls running now, and 1 one-shot that may be calling"]);
 
   const two = llmInflightView({ count: 2, approximate: 1, partial: false, gaps: [] });
   assert.equal(two.sentence, "1 LLM call running now, and 1 one-shot that may be calling");
 
   const plural = llmInflightView({ count: 5, approximate: 2, partial: false, gaps: [] });
-  assert.deepEqual([plural.figure, plural.sentence], ["~5", "3 LLM calls running now, and 2 one-shots that may be calling"]);
+  assert.deepEqual([plural.figure, plural.sentence], ["5", "3 LLM calls running now, and 2 one-shots that may be calling"]);
 
   const allOneShots = llmInflightView({ count: 2, approximate: 2, partial: false, gaps: [] });
   assert.equal(allOneShots.sentence, "No exact LLM calls running now, and 2 one-shots that may be calling");
 });
 
-test("partial and approximate together: `~` and `+` both, never \"at least\" over the estimates", () => {
+test("partial and approximate together: the bare number, never \"at least\" over the estimates", () => {
   const v = llmInflightView({ count: 4, approximate: 1, partial: true, gaps: [{ reason: "claude-internal" }] });
   assert.equal(v.state, "partial");
   assert.equal(v.approximate, true);
-  assert.equal(v.figure, "~4+");
+  assert.equal(v.figure, "4");
   assert.equal(v.rowWord, "agents");
   assert.equal(v.sentence, "At least 3 LLM calls running now, and 1 one-shot that may be calling. Claude Code's own internal calls aren't visible.");
   const none = llmInflightView({ count: 2, approximate: 2, partial: true, gaps: [{ reason: "peer-connecting", host: "peer-b" }] }, label);
-  assert.equal(none.figure, "~2+");
+  assert.equal(none.figure, "2");
   assert.equal(none.sentence, "No exact LLM calls seen, and 2 one-shots that may be calling. laptop hasn't reported yet.");
   const exactPartial = llmInflightView({ count: 4, approximate: 0, partial: true, gaps: [{ reason: "claude-internal" }] });
-  assert.equal(exactPartial.figure, "4+", "a `+` alone: no estimate in it");
+  assert.equal(exactPartial.figure, "4");
+  assert.equal(exactPartial.approximate, false, "no estimate in it");
+  assert.notEqual(exactPartial.sentence, v.sentence, "the figures match; the sentences tell them apart");
 });
 
 test("a malformed frame can't claim more one-shots than calls", () => {
@@ -103,7 +106,8 @@ test("a malformed frame can't claim more one-shots than calls", () => {
 test("a gap makes the count a floor even if `partial` disagrees", () => {
   const v = llmInflightView({ count: 2, approximate: 0, partial: false, gaps: [{ reason: "peer-connecting", host: "peer-b" }] }, label);
   assert.equal(v.state, "partial");
-  assert.equal(v.figure, "2+");
+  assert.equal(v.figure, "2");
+  assert.match(v.sentence, /^At least 2 /);
 });
 
 test("each reason in words, once, in the gaps' order; this host and peers by label", () => {
@@ -176,16 +180,16 @@ test("agents row: an unknown count stays unknown beside nonzero local figures", 
 test("agents row: partial and approximate counts keep their marks; one full stop between sentences", () => {
   const p = llmInflightView({ count: 3, approximate: 0, partial: true, gaps: [{ reason: "claude-internal" }] });
   const rp = agentsRow(p, { sessions: 1, teams: 0 });
-  assert.equal(rowText(rp, p), "3+ agents · 1 session");
+  assert.equal(rowText(rp, p), "3 agents · 1 session");
   assert.equal(rp.label, "Agents: At least 3 LLM calls running now. Claude Code's own internal calls aren't visible. Each agent counted is one model call in flight, background work included. On this host, subagents are working in 1 session.");
   assert.doesNotMatch(rp.label, /\.\./);
   const pa = llmInflightView({ count: 4, approximate: 1, partial: true, gaps: [{ reason: "claude-internal" }] });
   const rpa = agentsRow(pa, { sessions: 2, teams: 1 });
-  assert.equal(rowText(rpa, pa), "~4+ agents · 2 sessions · 1 team");
+  assert.equal(rowText(rpa, pa), "4 agents · 2 sessions · 1 team");
   assert.doesNotMatch(rpa.label, /\.\./);
   const a = llmInflightView({ count: 1, approximate: 1, partial: false, gaps: [] });
   const ra = agentsRow(a, { sessions: 0, teams: 3 });
-  assert.equal(rowText(ra, a), "~1 agent · 3 teams");
+  assert.equal(rowText(ra, a), "1 agent · 3 teams");
   assert.equal(ra.label, "Agents: No exact LLM calls running now, and 1 one-shot that may be calling. Each agent counted is one model call in flight, background work included. On this host, subagents are working in 3 teams.");
   const zero = llmInflightView(complete(0));
   const rz = agentsRow(zero, { sessions: 1, teams: 0 });
@@ -236,8 +240,8 @@ test("agents word on the row: 0/1/many, partial, approximate, unknown", () => {
   assert.equal(word(llmInflightView(complete(0))), "0 agents");
   assert.equal(word(llmInflightView(complete(1))), "1 agent");
   assert.equal(word(llmInflightView(complete(6))), "6 agents");
-  assert.equal(word(llmInflightView({ count: 1, approximate: 0, partial: true, gaps: [{ reason: "claude-internal" }] })), "1+ agents");
-  assert.equal(word(llmInflightView({ count: 3, approximate: 1, partial: false, gaps: [] })), "~3 agents");
-  assert.equal(word(llmInflightView({ count: 3, approximate: 1, partial: true, gaps: [{ reason: "claude-internal" }] })), "~3+ agents");
+  assert.equal(word(llmInflightView({ count: 1, approximate: 0, partial: true, gaps: [{ reason: "claude-internal" }] })), "1 agents");
+  assert.equal(word(llmInflightView({ count: 3, approximate: 1, partial: false, gaps: [] })), "3 agents");
+  assert.equal(word(llmInflightView({ count: 3, approximate: 1, partial: true, gaps: [{ reason: "claude-internal" }] })), "3 agents");
   assert.equal(word(llmInflightView(null)), "Agents");
 });

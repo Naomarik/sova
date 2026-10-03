@@ -272,6 +272,16 @@ it belongs, on the Session pane's Changes disclosure and the Timeline's change m
 
 Server `text` is used as-is. Put machine facts (ids, model names, counts) in `<code>`.
 
+**Handoff run rows.** A `/compact-handoff` run's `compact-handoff-run` entries
+(§chat.slash-commands/compact-handoff-row) are info rows, one per run id: on load only the newest
+entry per id renders, and a live append replaces the row carrying the same run id in place
+rather than adding one at the bottom. The text is the server's one line: "Writing a handoff
+note" (with `: {focus}` when given) while running, then "Handoff note saved" (with `: {path}`),
+"Handoff note failed" (with `: {reason}`), "Handoff cancelled" or "Handoff interrupted". While running, the live
+dot sits where the info icon goes; a failed run adds a `.chip-error` "Failed" chip and an
+interrupted one a `.chip-warn` "Interrupted" chip before the text. An entry whose shape this
+version can't read renders no row.
+
 **unknown.** Render the same as info, with the text `Unrecognized entry <code>{raw.type}</code>`,
 followed by a `.disclosure` labelled "Raw entry" that holds `<pre>` JSON. Never drop a row
 silently.

@@ -9,6 +9,8 @@ an accessible name and a branch icon. User-message actions are unchanged.
 Fork from here opens a new ordinary web-owned session containing the conversation through the
 selected assistant response. Later conversation and abandoned branches are excluded. The source
 session is not modified, navigated, prompted or notified; neither model is called by creation.
+Creating a fork of a Claude Code chat only seeds, in memory, the fork's first turn to resume the
+source's live CLI session (§chat.session-fork/claude-resume).
 The new chat can run the existing playbooks independently.
 
 The fork has its own session id and a parent-session reference. It inherits the selected branch's

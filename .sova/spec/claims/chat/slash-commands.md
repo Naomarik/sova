@@ -194,10 +194,13 @@ and again when the count changes, at most once a second. When there are none, an
     start of its run that the thread renders as a live, self-updating row for the run's
     duration, then append the result under the same id when the run settles; the result row
     replaces the running row in place, live and on reload. `/explain` does this (§chat/transcript report,
-    "Explain rows"). Unlike the "Ran" row, it is persisted: a reload mid-run shows it still
-    running. A run the restart or `/reload` stopped stays running until the session's next prompt
-    or `/explain`, which settles it as Interrupted (§chat.transcript/transcript-items, "Explain rows:
-    interrupted").
+    "Explain rows"), and so does `/compact-handoff`, whose `compact-handoff-run` row reads
+    "Writing a handoff note" while its background fork writes and is replaced by the run's result
+    (§chat.slash-commands/compact-handoff-row). Unlike the "Ran" row, it is persisted: a reload
+    mid-run shows it still running. A run the restart or `/reload` stopped stays running until the
+    session's next prompt or its next run of the same command (`/explain`, `/compact-handoff`),
+    which settles it as Interrupted (§chat.transcript/transcript-items, "Explain rows:
+    interrupted"; §chat.slash-commands/compact-handoff-row, "Interrupted").
 - **Reload.** The persisted entries render the same way. The local "Ran" row is local only and
   isn't restored.
 - **Unknown commands.** A `/word` that isn't in the list is sent and rendered as an ordinary

@@ -199,6 +199,7 @@ export function WatchView(props: {
         path={props.path}
         restore={cached?.spot}
         onSpot={(spot) => cacheSpot(cacheKey, spot)}
+        current={lastUpdate() !== null}
         count={visibleCount(newRows(items() ?? [], newFrom()), { tools: hideTools(props.path), thinking: hideThinking(props.path) })}
         busy={!items()}
         banner={

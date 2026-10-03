@@ -631,6 +631,9 @@ runaway reply there is capped: it can't write a line too long to read back or to
   - When the user scrolls up past 80px, following stops and a `.button.jump-latest` appears:
     "Jump to Latest · N new". Clicking it scrolls to the end, resumes following, and removes the
     button.
+  - It also appears, not following, when you switch back to a session left at the end that gained
+    rows while you were away: the view stops at the last row read, and "N new" counts the rows
+    below it (§chat.transcript/rendering).
   - Chat sessions follow the same logic while streaming.
   - Sending a message always resumes following.
 - **When the TUI closes** (`live` goes null on refresh). A `.banner.banner-info` appears in
@@ -747,10 +750,15 @@ virtualized.
   end; rows above them stay unfetched. Open cards, focus and a revealed action strip survive the
   end of a turn, a reconnect and a rewind; only changed and new rows are built.
 - **Switching back.** The last 3 sessions opened in the tab keep their rows and where they were
-  scrolled: at the end while following, else the row at the top of the view and its offset. So
-  do the sessions in Recent, fetched ahead (§chat.transcript/recent-preload).
+  scrolled: at the end while following (and which row was last), else the row at the top of the
+  view and its offset. So do the sessions in Recent, fetched ahead (§chat.transcript/recent-preload).
   Switching back to one shows those rows at once, where they were (with Jump to Latest when not
-  following), while its `hello` or snapshot is on the way, then reconciles them as above. A kept
+  following), while its `hello` or snapshot is on the way, then reconciles them as above. One
+  left at the end that gained rows while away, kept or brought by that `hello` or snapshot, stops
+  at the last row read: that row's bottom at the bottom of the view, not following, with "Jump to
+  Latest · N new" counting the rows below it, unless they're short enough that the view is still
+  within 80px of the end. One that gained none stays at the end, following, as does one whose last
+  row read isn't among its rows, or one the reader has scrolled or touched first. A kept
   spot whose row the `hello` didn't keep is fetched and placed then, unless the view has moved
   from the end meanwhile. Any other open lands at the end. A reload keeps nothing. Rows kept this
   way are never taken as the whole transcript: until this visit's `hello` or snapshot has said

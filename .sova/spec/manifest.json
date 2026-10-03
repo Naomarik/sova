@@ -1171,7 +1171,8 @@
         "src/components/WatchView.tsx",
         "server/watch.ts",
         "src/lib/older-rows-view.ts",
-        "server/transcript-rows.ts"
+        "server/transcript-rows.ts",
+        "src/components/Thread.tsx"
       ]
     },
     "§chat.transcript/message-actions": {
@@ -6023,6 +6024,7 @@
         "shared/row-counts.ts",
         "src/lib/api.ts",
         "scripts/e2e/transcript-drift.mjs",
+        "scripts/e2e/transcript-follow.mjs",
         "src/lib/recent-preload.ts"
       ]
     },

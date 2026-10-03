@@ -45,6 +45,21 @@ them.
   `["postgres", "-D", "${data.pg}", "-p", "${ports.pg.port}", "-k", "${data.pg}"]`.
 - **SQLite**: a dir resource copied from main's file's folder, and the app reads the path from env.
 
+## Silencing outbound sends (any `sensitive` data)
+One small module the app's senders call instead of their transport: `silenced?` reads
+`SOVA_SILENCE_OUTBOUND` (unset, empty or `0`: send as today; anything else: silenced) and, for
+tests, a dynamic override. Each wrapper (`http-post`, `postal-send`, a shell call to a push CLI, a
+bot client's request) returns the transport's success shape with a marker when silenced, so
+callers keep working. Wrap at the lowest call that leaves the host, not at the feature level, and
+grep afterwards that no direct transport call is left outside the module (comments aside). An
+asynchronous sender (an agent, a queue worker) must check the switch when it runs, not only when
+it enqueues: Clojure's `send-off` conveys dynamic bindings, so a test's override reaches it.
+The test: one test asserts `silenced?` whenever `SOVA_SLOT` is set and not 0; another binds the
+override, replaces every transport with one that throws, and calls each send function with
+made-up recipients that pass the app's own validation (a fresh address per run when the app
+rate-limits). Put it first in `smoke`. The definition: `"SOVA_SILENCE_OUTBOUND": "${slot}"` in
+every service's `env`, and the module in `sources`.
+
 ## Local config a fresh worktree lacks
 A gitignored file the tasks read (`.locals.edn`, `.env`) is copied from the main checkout by a
 setup step: `.sova/bin/setup` runs `cp -n "$SOVA_MAIN/.locals.edn" "$SOVA_CHECKOUT/"`. Copy, never

@@ -1644,7 +1644,11 @@
     "§chat.transcript/setup-card-figures": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified"
+      "evidence": "verified",
+      "code": [
+        "src/lib/session-setup.ts",
+        "src/lib/session-setup.test.ts"
+      ]
     },
     "§chat.transcript/setup-card": {
       "kind": "behavior",

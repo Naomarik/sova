@@ -51,6 +51,9 @@ export interface ContextRow {
   file: SessionSetupFile;
   label: string;
   role: string | null;
+  /** A context file, which this session can switch off (§chat.transcript/setup-card-toggles).
+      SYSTEM.md and APPEND_SYSTEM.md rows are always loaded. */
+  switchable: boolean;
 }
 
 type Loaded = Extract<SessionSetup, { state: "ok" }>;
@@ -68,8 +71,25 @@ function layered(s: Loaded): { file: SessionSetupFile; role: string | null }[] {
 }
 
 export function contextRows(s: Loaded, home: string | null): ContextRow[] {
-  return layered(s).map(({ file, role }) => ({ file, label: tildePath(file.path, home), role }));
+  return layered(s).map(({ file, role }) => ({ file, label: tildePath(file.path, home), role, switchable: role === null }));
 }
+
+/** A row this session keeps out: listed, and counted by no total. */
+export const isOff = (f: SessionSetupFile): boolean => f.off === true;
+const onOnly = <F extends SessionSetupFile>(files: readonly F[]): F[] => files.filter((f) => !isOff(f));
+
+/** The session's whole off set after one flip — what the card sends. */
+export function flipped(s: Loaded, kind: "context" | "skill", key: string, on: boolean): { offContext: string[]; offSkills: string[] } {
+  const offContext = s.context.filter(isOff).map((f) => f.path);
+  const offSkills = s.skills.filter(isOff).map((k) => k.name);
+  const list = kind === "context" ? offContext : offSkills;
+  const next = on ? list.filter((x) => x !== key) : list.includes(key) ? list : [...list, key];
+  return kind === "context" ? { offContext: next, offSkills } : { offContext, offSkills: next };
+}
+
+/** The switches' accessible names. */
+export const contextSwitchLabel = (label: string) => `Load ${label}`;
+export const skillSwitchLabel = (name: string) => `Offer ${name}`;
 
 /** What a set of files adds up to on disk, and — when any of them was estimated — what sending
     them would cost. */
@@ -103,20 +123,22 @@ export function isSumEmpty(s: LoadoutSum): boolean {
   return s.bytes === 0 && s.lines === 0;
 }
 
-/** Everything pi loads into the prompt, added up. */
+/** Everything pi loads into the prompt, added up. A row this session switched off is not loaded,
+    so it is not counted (§chat.transcript/setup-card-toggles). */
 export function contextSum(s: Loaded): LoadoutSum {
-  return sumFiles(layered(s).map((l) => l.file));
+  return sumFiles(onOnly(layered(s).map((l) => l.file)));
 }
 
-/** Everything this session is offered, added up — offered, not loaded: see skillsNote. */
+/** Everything this session is offered, added up — offered, not loaded: see skillsNote. Off rows
+    are not offered. */
 export function skillsSum(s: Loaded): LoadoutSum {
-  return sumFiles(s.skills);
+  return sumFiles(onOnly(s.skills));
 }
 
 /** What this session costs at rest: the files pi loads into the prompt, plus the skills it offers.
     The card's one aggregate line, above the two sections that add up to it. */
 export function systemContextSum(s: Loaded): LoadoutSum {
-  return sumFiles([...layered(s).map((l) => l.file), ...s.skills]);
+  return sumFiles(onOnly([...layered(s).map((l) => l.file), ...s.skills]));
 }
 
 export const contextHeading = (n: number) => `Context · ${n}`;
@@ -133,7 +155,7 @@ const NOT_FROM_RUNTIME = "Skills an extension adds aren't listed.";
 
 /** The note under Context. It carries what the token figures mean exactly when there are some. */
 export function contextNote(s: Loaded): string {
-  return sumHasTokens(contextSum(s)) ? `${CONTEXT_NOTE} ${TOKEN_NOTE}` : CONTEXT_NOTE;
+  return layered(s).some((l) => hasTokens(l.file)) ? `${CONTEXT_NOTE} ${TOKEN_NOTE}` : CONTEXT_NOTE;
 }
 
 /** The qualifier under the Skills label. Sova's own loader can't see a path an extension adds, so
@@ -141,7 +163,7 @@ export function contextNote(s: Loaded): string {
     says what they mean. */
 export function skillsNote(s: Loaded): string {
   const base = "Offered to this session. A skill loads when it is used.";
-  return [base, s.fromRuntime ? null : NOT_FROM_RUNTIME, sumHasTokens(skillsSum(s)) ? TOKEN_NOTE : null].filter(Boolean).join(" ");
+  return [base, s.fromRuntime ? null : NOT_FROM_RUNTIME, s.skills.some(hasTokens) ? TOKEN_NOTE : null].filter(Boolean).join(" ");
 }
 
 /** In place of an empty Skills list — with the same caveat, since an empty list Sova built itself

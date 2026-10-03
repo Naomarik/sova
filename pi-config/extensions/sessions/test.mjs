@@ -256,3 +256,32 @@ test('status glyphs, no editor widget and recents-driven back', async () => {
     assert.match(notes.at(-1)[0], /^Sessions: No safe focus target/, 'back cycles recents through the unchanged focus gate');
   } finally { await h.emit('session_shutdown'); }
 });
+
+test('presence.llm: absent until the process counts; then its counts, rewritten on change (coalesced), never per token', async () => {
+  const tracker = await jiti.import(fileURLToPath(new URL('../llm-inflight/tracker.ts', import.meta.url)));
+  const h = harness();
+  try {
+    await h.emit('session_start'); await tick();
+    assert.equal(h.latest().llm, undefined, 'a process without the counter publishes no count (unknown, not 0)');
+    tracker.markCounting();
+    await tick();
+    const first = h.latest().llm;
+    assert.deepEqual({ ...first, producer: typeof first.producer }, { v: 1, producer: 'string', pid: process.pid, active: 0, approximate: 0, claudeTurns: 0, degraded: false, folded: [] });
+    const before = h.sent.length;
+    const end = tracker.beginLlmCall({ source: 'runtime' });
+    const end2 = tracker.beginLlmCall({ source: 'claude-oneshot', approximate: true });
+    await tick();
+    assert.equal(h.sent.length, before + 1, 'two changes inside the coalescing window: one rewrite');
+    assert.deepEqual([h.latest().llm.active, h.latest().llm.approximate], [2, 1]);
+    end(); end2();
+    await tick();
+    assert.equal(h.latest().llm.active, 0);
+    const settled = h.sent.length;
+    await tick();
+    assert.equal(h.sent.length, settled, 'nothing changes, nothing is written');
+  } finally { await h.emit('session_shutdown'); }
+  const after = h.sent.length;
+  tracker.beginLlmCall({ source: 'runtime' })();
+  await tick();
+  assert.equal(h.sent.length, after, 'unsubscribed at shutdown');
+});

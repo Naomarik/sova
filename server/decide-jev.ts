@@ -12,6 +12,7 @@ import {
   type DecisionResult,
   type Question,
 } from "./decide";
+import { beginLlmCall } from "../pi-config/extensions/llm-inflight/tracker.ts";
 
 // Jev (TypeSafe, https://api.typesafe.ai): POST /v1/systemone {state, model, questions}. Plain
 // fetch, no SDK. boolean → noul, choice → choice (criteria = options), score → score (criteria =
@@ -150,6 +151,8 @@ export function createJevProvider(opts: JevProviderOptions): DecisionProvider & 
       if (estimateTokens(req.state) + longest > JEV_MAX_TOKENS) throw new DecisionError("too-large", "the state is too large for Jev", { provider: "jev" });
       const started = Date.now();
       const deadline = BACKGROUND_PURPOSES.has(req.purpose) ? backgroundTimeoutMs : timeoutMs;
+      // In flight from the request until its answer is read.
+      const call = beginLlmCall({ source: "jev" });
       let res: Response;
       try {
         res = await withDeadline(deadline, req.signal, (signal) =>
@@ -161,6 +164,7 @@ export function createJevProvider(opts: JevProviderOptions): DecisionProvider & 
           }),
         );
       } catch (err) {
+        call();
         const aborted = err instanceof Error && (err.name === "AbortError" || err.name === "TimeoutError");
         throw new DecisionError(aborted ? "timeout" : "network", aborted ? `Jev did not answer within ${deadline} ms` : scrub(`Jev unreachable: ${failureMessage(err)}`, key), { provider: "jev" });
       }
@@ -170,6 +174,8 @@ export function createJevProvider(opts: JevProviderOptions): DecisionProvider & 
         body = await res.json();
       } catch {
         body = null;
+      } finally {
+        call();
       }
       if (!res.ok) {
         const { failure, message } = jevFailure(res.status, body);

@@ -58,7 +58,7 @@ import { overlaid, rowLeadMark, rowNeedsYou, SIGNAL_CLASS, SIGNAL_ICON, signalTi
 import { readinessBadge, readinessCount, readinessCountWords, readinessTitle } from "../lib/readiness";
 import { requestListRefresh } from "../lib/list-refresh";
 import { orgHref } from "../lib/orgs-route";
-import { marksOverlay, openSessionFeed } from "../lib/session-feed";
+import { llmInflight, marksOverlay, openSessionFeed } from "../lib/session-feed";
 import { reuseUnchanged } from "../lib/summary-diff";
 import { readKey, removeKey, writeKey } from "../lib/storage-keys";
 import { monogram, setSpine, spine } from "../lib/spine";
@@ -77,6 +77,7 @@ import {
 import { folderActive, folderOpen, folderOpenKey, readFolderOpenRaw, storedFolderOpen, writeFolderOpenRaw } from "../lib/folder-open";
 import { groupOpen as groupOpenRule, groupsRegionOpen as groupsRegionOpenRule } from "../lib/group-open";
 import { activeAgentCounts, activeTeamCount, sessionWorking } from "../lib/workers";
+import { agentsRow, type AgentsRow, llmInflightView, type LlmInflightView } from "../lib/llm-inflight";
 import { providerWait, watchProviderWaits } from "../lib/provider-waiting";
 import { waitingSentence } from "../../shared/provider-limits";
 import { ActionMenu } from "./ActionMenu";
@@ -1016,30 +1017,6 @@ function UsageGlance(props: { parts: GlancePart[] }) {
   );
 }
 
-/** What the Agents foot row counts: live agents, the sessions holding them, then active teams. */
-function agentsParts(agents: AgentsInsight | undefined): { n: number; word: string }[] {
-  const live = activeAgentCounts(agents);
-  const teams = activeTeamCount(agents);
-  const out: { n: number; word: string }[] = [];
-  if (live.agents > 0) out.push({ n: live.agents, word: live.agents === 1 ? "agent" : "agents" });
-  if (live.sessions > 0) out.push({ n: live.sessions, word: live.sessions === 1 ? "session" : "sessions" });
-  if (teams > 0) out.push({ n: teams, word: teams === 1 ? "team" : "teams" });
-  return out;
-}
-
-/** The same counts as one plain sentence, for the row's title and accessible name. */
-function agentsSentence(agents: AgentsInsight | undefined): string | undefined {
-  const live = activeAgentCounts(agents);
-  const teams = activeTeamCount(agents);
-  const clauses: string[] = [];
-  if (live.agents > 0) {
-    const a = `${live.agents} active ${live.agents === 1 ? "agent" : "agents"}`;
-    clauses.push(`${a} in ${live.sessions} ${live.sessions === 1 ? "session" : "sessions"}`);
-  }
-  if (teams > 0) clauses.push(`${teams} ${teams === 1 ? "team" : "teams"}`);
-  return clauses.length > 0 ? clauses.join(", ") : undefined;
-}
-
 /** A spine tile's title and accessible name: "{title} · {folder} · {model}", then the clauses the
     row's own link carries, verbatim, so the two surfaces can't drift. */
 function tileLabel(s: SessionSummary): string {
@@ -1062,20 +1039,27 @@ function tileDot(s: SessionSummary): "live" | "busy" | "working" | null {
   return sessionWorking(s) ? "working" : null;
 }
 
-/** Agents foot row: live agents, their sessions, then active teams; 0s are left out. */
-function AgentsGlance(props: { agents: AgentsInsight | undefined }) {
-  const parts = () => agentsParts(props.agents);
+/** Agents foot row: the LLM calls in flight, `3+` while partial; unknown reads the plain word
+    "Agents", never a 0 it can't vouch for. Then this host's sessions and teams, 0s left out. */
+function AgentsGlance(props: { view: LlmInflightView; row: AgentsRow }) {
   return (
-    <Show when={parts().length > 0} fallback="Agents">
-      <For each={parts()}>
-        {(p, i) => (
+    <>
+      <Show when={props.view.rowWord} fallback="Agents">
+        {(word) => (
           <>
-            {i() > 0 && " · "}
+            <span class="text-num">{props.view.figure}</span> {word()}
+          </>
+        )}
+      </Show>
+      <For each={props.row.secondary}>
+        {(p) => (
+          <>
+            {" · "}
             <span class="text-num">{p.n}</span> {p.word}
           </>
         )}
       </For>
-    </Show>
+    </>
   );
 }
 
@@ -1263,6 +1247,14 @@ export function Sidebar(props: {
   // or a Get Link in another tab clears its row at once, not at the digest's next 10 s read. The list
   // poll stays the fallback.
   openSessionFeed(requestListRefresh);
+  /** The one live figure the foot, the phone bar and the spine all show: the feed's pushed count,
+      independent of the search and the host filter. Peers are named by their label. */
+  const inflight = createMemo(() => llmInflightView(llmInflight(), hostLabel));
+  /** The Agents row and its doorway: that figure, then this host's sessions and teams with
+      subagents working, from the Agents poll. */
+  const agentsRowView = createMemo(() =>
+    agentsRow(inflight(), { sessions: activeAgentCounts(props.agents).sessions, teams: activeTeamCount(props.agents) }),
+  );
   /** Main threads only (src/lib/regions.ts): every region, search hit and count reads this. Each row
       carries the feed's marks over the list's (a peer's row keeps its own); `reuseUnchanged` keeps a
       row's object across feed messages that don't touch it, so rows update in place. */
@@ -1584,7 +1576,6 @@ export function Sidebar(props: {
       else collapseToggle?.focus();
     });
   };
-  const agentsWorking = () => activeAgentCounts(props.agents).agents;
   /** The Organizations door: its sessions, and who is waiting, so nothing waits unseen behind the spine. */
   const orgsDoorLabel = () => {
     const k = orgWaitingCount();
@@ -1650,8 +1641,9 @@ export function Sidebar(props: {
       </Show>
     </div>
   );
-  const SearchCount = (p: { hidden: boolean }) => (
-    <p class="search-count" classList={{ "visually-hidden": p.hidden }} id="session-count" aria-live="polite">
+  /** Never printed: the field's description and the polite live count. */
+  const SearchCount = () => (
+    <p class="search-count visually-hidden" id="session-count" aria-live="polite">
       <Show when={props.sessions}>
         <Show when={query().trim() || hostFilter() !== null} fallback={`${all().length} sessions`}>
           {hits().length} of {all().length} sessions
@@ -1710,12 +1702,12 @@ export function Sidebar(props: {
           class="list-row list-row-interactive insights-row sidebar-foot-link"
           href={agentsHref()}
           aria-current={props.insightsPage === "agents" ? "page" : undefined}
-          title={agentsSentence(props.agents)}
-          aria-label={agentsSentence(props.agents)}
+          title={agentsRowView().label}
+          aria-label={agentsRowView().label}
         >
           <Icon name="worker" />
           <span class="insights-row-text">
-            <AgentsGlance agents={props.agents} />
+            <AgentsGlance view={inflight()} row={agentsRowView()} />
           </span>
         </a>
         <button
@@ -1738,8 +1730,8 @@ export function Sidebar(props: {
 
   /**
    * Folded (<768): the foot as one 44px bar under the list (§app.insights/sidebar-foot-phone) —
-   * the mesh's connected count (while the mesh is on), the agents at work (the worker icon and
-   * the count), and every provider's usage cap as the glance shows it. Tapping the bar opens the
+   * the mesh's connected count (while the mesh is on), the LLM calls in flight (the worker icon and
+   * the Agents row's own figure), and every provider's usage cap as the glance shows it. Tapping the bar opens the
    * rows as a bottom sheet, verbatim. Focus leaves and returns with the sheet (trapFocus).
    */
   const PhoneFoot = () => {
@@ -1752,7 +1744,7 @@ export function Sidebar(props: {
         const c = connectedCount(meshPeers());
         facts.push(`${c.up} of ${c.total} hosts connected`);
       }
-      facts.push(workingNow(agentsWorking()));
+      facts.push(inflight().sentence.replace(/\.$/, ""));
       const caps = glance().map((p) => p.full);
       if (caps.length) facts.push(caps.join(", "));
       return `${facts.join(". ")}. Open hosts, usage, agents and shares.`;
@@ -1774,7 +1766,7 @@ export function Sidebar(props: {
           </Show>
           <span class="sidebar-footbar-seg">
             <Icon name="worker" small />
-            <span class="text-num">{agentsWorking()}</span>
+            <span class="text-num">{inflight().figure}</span>
           </span>
           {/* Every provider the glance would show, in its order (at most the five): never one
               invented number, and the line never wraps — what can't fit clips, like the glance. */}
@@ -1950,18 +1942,18 @@ export function Sidebar(props: {
         </Show>
 
         {/* Status, not navigation: each says its sentence as a toast, and never opens the pane. */}
-        <Show when={agentsWorking() > 0 || liveCount() > 0}>
+        <Show when={inflight().showTally || liveCount() > 0}>
           <div class="spine-stats">
-            <Show when={agentsWorking() > 0}>
+            <Show when={inflight().showTally}>
               <button
                 type="button"
                 class="button button-icon spine-item spine-stat"
-                title={workingNow(agentsWorking())}
-                aria-label={workingNow(agentsWorking())}
-                onClick={() => toast(workingNow(agentsWorking()))}
+                title={inflight().sentence}
+                aria-label={inflight().sentence}
+                onClick={() => toast(inflight().sentence)}
               >
                 <Icon name="worker" />
-                <span class="spine-count text-num">{agentsWorking()}</span>
+                <span class="spine-count text-num">{inflight().figure}</span>
               </button>
             </Show>
             <Show when={liveCount() > 0}>
@@ -1990,8 +1982,8 @@ export function Sidebar(props: {
             class="button button-icon spine-item"
             href={agentsHref()}
             aria-current={props.insightsPage === "agents" ? "page" : undefined}
-            title={agentsSentence(props.agents) ?? "Agents"}
-            aria-label={agentsSentence(props.agents) ?? "Agents"}
+            title={agentsRowView().label}
+            aria-label={agentsRowView().label}
           >
             <Icon name="worker" />
           </a>
@@ -2046,7 +2038,7 @@ export function Sidebar(props: {
               labelled Overseer at the right end. Open: only the field and Close Search — the count
               stays in the DOM, visually hidden, as the field's description and the live count. */}
           <div class="sidebar-toolbar">
-            <SearchCount hidden={toolbarOpen()} />
+            <SearchCount />
             <Show
               when={toolbarOpen()}
               fallback={

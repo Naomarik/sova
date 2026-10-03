@@ -116,6 +116,8 @@ export const files = (dir: string) => ({
 	status: path.join(dir, "status.json"),
 	lock: path.join(dir, "adopt.lock"),
 	log: path.join(dir, "host.log"),
+	/** The worker's latest LLM-call counts as it reported them, written by the host (llm-inflight/hosted.ts). */
+	llm: path.join(dir, "llm.json"),
 });
 
 /**

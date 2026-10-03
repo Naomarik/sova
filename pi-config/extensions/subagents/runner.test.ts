@@ -13,6 +13,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { BUILTIN_TOOLS, getPiInvocation, PI_PACKAGE, type SpawnOptions, SubagentRunner } from "./runner.ts";
+import { LLM_STATUS_KEY, snapshot as llmSnapshot } from "../llm-inflight/tracker.ts";
 
 for (const exitMode of ["natural", "term", "kill"]) test(`detached pipe holder cannot hang Pi closure (${exitMode})`, { skip: process.platform === "win32", timeout: 5000 }, async (t) => {
 	const naturalExit = exitMode === "natural";
@@ -2209,5 +2210,56 @@ test("every other model keeps --model argv and never sends set_model", async () 
 	assert.deepEqual(args, ["--mode", "rpc", "--model", "ollama-cloud/kimi-k3", "--thinking", "low", "--no-extensions"]);
 	assert.deepEqual(h.child.sentLines().map((l) => l.type), ["get_state", "prompt"]);
 	assert.equal(h.runner.status, "running");
+	await fin(h);
+});
+
+test("a worker's LLM-call reports count in this process: latest replaces, garbage and other keys ignored, cleared at exit", async () => {
+	const report = (counts: unknown, key = LLM_STATUS_KEY) =>
+		({ type: "extension_ui_request", id: "x", method: "setStatus", statusKey: key, statusText: typeof counts === "string" ? counts : JSON.stringify(counts) });
+	const active = () => llmSnapshot().active;
+	const before = active();
+	const degradedBefore = llmSnapshot().degraded;
+	const h = makeRunner();
+	await boot(h.child);
+	assert.equal(active(), before, "spawned, no report yet: nothing in flight known…");
+	assert.equal(llmSnapshot().degraded, true, "…and unknown, not 0");
+	h.child.event(report({ v: 1, active: 2, approximate: 0, claudeTurns: 1, degraded: false }));
+	await flush();
+	assert.equal(active(), before + 2);
+	assert.equal(llmSnapshot().claudeTurns >= 1, true);
+	h.child.event(report({ v: 1, active: 2, approximate: 0, claudeTurns: 1, degraded: false }));
+	h.child.event(report({ v: 1, active: 1, approximate: 0, claudeTurns: 0, degraded: false }));
+	await flush();
+	assert.equal(active(), before + 1, "replaced, never added (a replayed log ends at the latest)");
+	assert.equal(llmSnapshot().degraded, degradedBefore, "known again");
+	h.child.event(report({ v: 1, active: 5 }, "other-key"));
+	await flush();
+	assert.equal(active(), before + 1, "another key: not a report");
+	h.child.event(report("not json"));
+	await flush();
+	assert.equal(active(), before + 1, "an unreadable report keeps the last counts…");
+	assert.equal(llmSnapshot().degraded, true, "…now unknown");
+	h.child.event(report({ v: 1, active: 3, approximate: 0, claudeTurns: 0, degraded: false }));
+	await flush();
+	assert.equal(active(), before + 3);
+	await fin(h);
+	assert.equal(active(), before, "the child exited: its counts are gone");
+	assert.equal(llmSnapshot().degraded, degradedBefore);
+});
+
+test("a hosted worker detached for the next manager stops counting here, whatever it reports after", async () => {
+	const before = llmSnapshot().active;
+	const h = makeRunner();
+	await boot(h.child);
+	h.child.event({ type: "extension_ui_request", id: "x", method: "setStatus", statusKey: LLM_STATUS_KEY, statusText: JSON.stringify({ v: 1, producer: "pw", active: 1, approximate: 0, claudeTurns: 0, degraded: false, folded: [] }) });
+	await flush();
+	assert.equal(llmSnapshot().active, before + 1);
+	assert.deepEqual(llmSnapshot().folded.includes("pw"), true, "its producer is folded into this process's count");
+	h.child.emit("detached");
+	assert.equal(llmSnapshot().active, before, "the host's llm.json (or the next manager) counts it now");
+	assert.equal(llmSnapshot().folded.includes("pw"), false);
+	h.child.event({ type: "extension_ui_request", id: "y", method: "setStatus", statusKey: LLM_STATUS_KEY, statusText: JSON.stringify({ v: 1, active: 3 }) });
+	await flush();
+	assert.equal(llmSnapshot().active, before);
 	await fin(h);
 });

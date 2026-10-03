@@ -57,6 +57,8 @@ import { excludedTools, GRANT_TOOLS, keyOf, KNOWN_REMOVABLE_TOOLS, PROFILE_ENTRY
 import { profileOnBranch } from "./session-profile";
 import { RunState, SessionLimits, sessionPowersExtension } from "./session-powers";
 import { queuePushExtension, topicStore } from "./topics";
+import { instrumentModelRuntime } from "../pi-config/extensions/llm-inflight/runtime.ts";
+import { markDegraded } from "../pi-config/extensions/llm-inflight/tracker.ts";
 
 const GUARD_POLL_MS = 3000;
 /** Hosted workers' context fill, read off their transcripts' tails; shared, mtime-gated. */
@@ -354,10 +356,19 @@ function sendHistory(cut: CutHello | null, clients: readonly ChatClient[], still
 
 let modelRuntimePromise: Promise<ModelRuntime> | null = null;
 export function getModelRuntime(): Promise<ModelRuntime> {
-  modelRuntimePromise ??= ModelRuntime.create().catch((err) => {
-    modelRuntimePromise = null;
-    throw err;
-  });
+  modelRuntimePromise ??= ModelRuntime.create().then(
+    (runtime) => {
+      // Every pi call of this process (hosted chats, compaction, warming, one-shots) passes through
+      // this one runtime: count it here, before anything can call it. One that can't be
+      // instrumented leaves this host's count partial, never a silent 0.
+      if (instrumentModelRuntime(runtime) === "unsupported") markDegraded("server-runtime");
+      return runtime;
+    },
+    (err) => {
+      modelRuntimePromise = null;
+      throw err;
+    },
+  );
   return modelRuntimePromise;
 }
 

@@ -8,6 +8,7 @@ import { test } from "node:test";
 import type { ChildProcess } from "node:child_process";
 import { HostTransport } from "../subagents/host-transport.ts";
 import { ClaudeRunner, type ClaudeSpawnOptions } from "./runner.ts";
+import { snapshot as llmSnapshot } from "../llm-inflight/tracker.ts";
 
 const tick = () => new Promise<void>((resolve) => setImmediate(resolve));
 
@@ -132,4 +133,27 @@ test("adopt: a CLI-initiated turn past the consumed offset is announced exactly 
 	assert.equal(f.runner.status, "waiting");
 	assert.deepEqual(f.stdin(), [], "nothing is (re)sent to an adopted worker");
 	assert.deepEqual(f.runner.transcript.filter((i) => i.kind === "assistant").map((i) => i.text), ["running in the background…", "done: 24 ticks"]);
+});
+
+test("adopt: replayed requests never count; until live a running turn is assumed; a request still open counts once live", async (t) => {
+	const requesting = { type: "system", subtype: "status", status: "requesting", session_id: "session-1" };
+	const stop = { type: "stream_event", event: { type: "message_stop" }, parent_tool_use_id: null, session_id: "session-1" };
+	const base = llmSnapshot();
+	const f = adopted([
+		{ type: "system", subtype: "init", session_id: "session-1", model: "claude-x" },
+		user("u1", "FIRST"), requesting, stop, result("u1", "ANSWER1"),
+		user("u2", "STEER"), requesting,
+	], 5);
+	t.after(() => { void f.runner.dispose(); f.transport.finish(null, "SIGTERM"); });
+	await tick();
+	assert.equal(llmSnapshot().claudeTurns, base.claudeTurns + 1, "adopted, not live yet: unknown, so partial");
+	assert.equal(llmSnapshot().active, base.active);
+	await f.replay();
+	assert.equal(llmSnapshot().active, base.active + 1, "the request open at adoption counts from live, once");
+	assert.equal(llmSnapshot().claudeTurns, base.claudeTurns + 1);
+	f.transport.deliver(1e9, JSON.stringify(stop));
+	f.transport.deliver(1e9 + 1, JSON.stringify(result("u2", "ANSWER2")));
+	await tick();
+	assert.equal(llmSnapshot().active, base.active);
+	assert.equal(llmSnapshot().claudeTurns, base.claudeTurns);
 });

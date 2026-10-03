@@ -80,6 +80,21 @@
         "workers": { "$ref": "#/$defs/count", "description": "Lifetime number of workers summed, including evicted ones; may exceed workers[].length and workerCounts.total." }
       }
     },
+    "LlmPresence": {
+      "type": "object",
+      "description": "(v2) The writing PROCESS's logical LLM calls in flight (llm-inflight). Several records of one process carry the same value: count a producer once. Absent = the process doesn't count (unknown, never 0).",
+      "required": ["v", "producer", "pid", "active", "approximate", "claudeTurns", "degraded"],
+      "properties": {
+        "v": { "const": 1 },
+        "producer": { "type": "string", "minLength": 1, "maxLength": 64, "description": "One id per process lifetime." },
+        "pid": { "type": "integer", "minimum": 1 },
+        "active": { "$ref": "#/$defs/count", "description": "Calls in flight now (issue to end; queue waits, cooldowns and tool time excluded), the process's pi workers included." },
+        "approximate": { "$ref": "#/$defs/count", "description": "How many of active have approximate bounds; never more than active." },
+        "claudeTurns": { "$ref": "#/$defs/count", "description": "Claude Code turns running now, whose internal calls can't be seen." },
+        "degraded": { "type": "boolean", "description": "Some calls this process makes can't be seen." },
+        "folded": { "type": "array", "maxItems": 64, "items": { "type": "string", "minLength": 1, "maxLength": 64 }, "description": "Producers whose counts active already includes (the process's pi workers, transitively): count none of them again. Absent reads as []." }
+      }
+    },
     "WorkerCounts": {
       "type": "object",
       "required": ["total", "working", "waiting", "done", "error", "killed"],
@@ -188,7 +203,8 @@
         "workerUsage": { "$ref": "#/$defs/WorkerUsageTotal", "description": "(v2) lifetime token \u03a3 across every worker this session ever ran, surviving the workers[] cap." },
         "focusable": { "type": "boolean" },
         "focusReason": { "type": "string", "maxLength": 120 },
-        "previewAt": { "$ref": "#/$defs/epochMs" }
+        "previewAt": { "$ref": "#/$defs/epochMs" },
+        "llm": { "$ref": "#/$defs/LlmPresence" }
       }
     }
   }

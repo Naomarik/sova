@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import type { IncomingMessage, Server } from "node:http";
 import type { Duplex } from "node:stream";
 import { type WebSocket, WebSocketServer } from "ws";
-import type { ChatClientMessage, ChatServerMessage, SessionFeedMessage, WatchServerMessage } from "../shared/protocol";
+import type { ChatClientMessage, ChatServerMessage, LlmFeedMessage, SessionFeedMessage, WatchServerMessage } from "../shared/protocol";
 import { refuseUpgrade } from "./auth";
 import { isDirectLocal } from "./compression";
 import { acquireChat, BusyError, ConfigError, type ChatClient } from "./chat-manager";
@@ -10,6 +10,7 @@ import { normalizeClaudeText, resolveClaudeSession } from "./claude-transcript";
 import { resolveSessionPath } from "./paths";
 import { trackViewer } from "./seen";
 import { nudgeMarks, sessionFeed } from "./session-feed";
+import { llmInflight } from "./llm-inflight";
 import { idOf } from "./sessions-index";
 import { extensionSocketRoute, upgradeExtensionSocket } from "./extensions";
 import { meshUpgrade } from "./mesh";
@@ -18,7 +19,7 @@ import { type Normalize, SessionTail } from "./watch";
 import { sharedWorkerWindowResolver } from "./models";
 import { contextTally, type Format, type WindowResolver } from "./worker-context";
 
-function sendJson(ws: WebSocket, msg: ChatServerMessage | WatchServerMessage | SessionFeedMessage): void {
+function sendJson(ws: WebSocket, msg: ChatServerMessage | WatchServerMessage | SessionFeedMessage | LlmFeedMessage): void {
   if (ws.readyState !== ws.OPEN) return;
   try {
     ws.send(JSON.stringify(msg));
@@ -135,8 +136,25 @@ function handleFeed(ws: WebSocket): void {
     return;
   }
   const remove = feed.add((msg) => sendJson(ws, msg));
-  ws.on("close", remove);
+  // The LLM calls in flight ride the same socket.
+  const removeLlm = llmInflight()?.addBrowser((msg) => sendJson(ws, msg));
+  ws.on("close", () => {
+    remove();
+    removeLlm?.();
+  });
   ws.on("message", () => {}); // read-only: ignore anything the client sends
+}
+
+/** /ws/watch?feed=llm: this host's OWN LLM calls in flight, for a peer's fan-in (server/llm-inflight.ts). */
+function handleLlmFeed(ws: WebSocket): void {
+  const hub = llmInflight();
+  if (!hub) {
+    sendJson(ws, { type: "error", message: "The LLM count is not running" });
+    ws.close(4500, "no feed");
+    return;
+  }
+  ws.on("close", hub.addLocal((msg) => sendJson(ws, msg)));
+  ws.on("message", () => {}); // read-only
 }
 
 // permessage-deflate, for a browser that offers it: a session's hello is one JSON frame of the
@@ -171,6 +189,10 @@ export function upgradeSovaSocket(req: IncomingMessage, socket: Duplex, head: Bu
     // /ws/watch?feed=sessions: no session at all, the list's pushed overlays.
     if (route === "/ws/watch" && url.searchParams.get("feed") === "sessions") {
       handleFeed(ws);
+      return;
+    }
+    if (route === "/ws/watch" && url.searchParams.get("feed") === "llm") {
+      handleLlmFeed(ws);
       return;
     }
     // ?tail=1: the transcript newest rows first (server/tail-hello.ts); ?tail=rest: newest rows

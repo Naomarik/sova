@@ -6,6 +6,7 @@ import { join } from "node:path";
 // The provider-limits gate (node builtins only, see CLAUDE.md): a one-shot waits for a slot of its
 // provider as background work (§app.provider-limits/queue), within its own timeout.
 import { acquireSlot, defaultAgentDir, whileHolding, type Slot } from "../pi-config/extensions/provider-limits/gate.ts";
+import { beginLlmCall } from "../pi-config/extensions/llm-inflight/tracker.ts";
 import type { ModelPolicy, WorkerChoice } from "../shared/protocol";
 import {
   DecisionError,
@@ -361,19 +362,25 @@ export async function claudeRun(argv: string[], input: string, deps: LlmProvider
     clearTimeout(timer);
     signal?.removeEventListener("abort", onAbort);
   }
+  // In flight from the spawn until the process has exited, once the slot is held: the CLI's own
+  // request isn't visible, so the bounds are approximate. A timeout or an abort kills the
+  // process, and the call ends at its exit, not at the kill.
+  const call = beginLlmCall({ source: "claude-oneshot", approximate: true });
   try {
-    return await claudeSpawn(argv, input, deps, Math.max(1, timeoutMs - (Date.now() - started)), fail, signal);
+    return await claudeSpawn(argv, input, deps, Math.max(1, timeoutMs - (Date.now() - started)), fail, signal, call);
   } finally {
     slot?.release();
   }
 }
 
-function claudeSpawn(argv: string[], input: string, deps: LlmProviderDeps, timeoutMs: number, fail: Fail, signal?: AbortSignal): Promise<string> {
+/** `exited` runs once the process is gone (or never started): the in-flight call's end. */
+function claudeSpawn(argv: string[], input: string, deps: LlmProviderDeps, timeoutMs: number, fail: Fail, signal: AbortSignal | undefined, exited: () => void): Promise<string> {
   return new Promise((resolve, reject) => {
     let cwd: string;
     try {
       cwd = mkdtempSync(join(tmpdir(), "sova-decide-"));
     } catch (err) {
+      exited();
       reject(fail("unavailable", `cannot create a temp dir: ${failureMessage(err)}`));
       return;
     }
@@ -408,9 +415,12 @@ function claudeSpawn(argv: string[], input: string, deps: LlmProviderDeps, timeo
     try {
       child = (deps.spawn ?? nodeSpawn)(deps.claudeBin ?? "claude", argv, { cwd, env: env as NodeJS.ProcessEnv, stdio: ["pipe", "pipe", "pipe"] });
     } catch (err) {
+      exited();
       settle(fail("unavailable", `cannot run claude: ${failureMessage(err)}`));
       return;
     }
+    child.on("exit", exited);
+    child.on("close", exited);
     signal?.addEventListener("abort", onAbort, { once: true });
     let stdout = "";
     let stderr = "";
@@ -423,7 +433,10 @@ function claudeSpawn(argv: string[], input: string, deps: LlmProviderDeps, timeo
     child.stderr.on("data", (chunk) => {
       if (stderr.length < 16_000) stderr += chunk;
     });
-    child.on("error", (err: NodeJS.ErrnoException) => settle(fail(err.code === "ENOENT" ? "unavailable" : "network", `claude: ${err.message}`)));
+    child.on("error", (err: NodeJS.ErrnoException) => {
+      if (child.pid === undefined) exited(); // it never started: no exit will follow
+      settle(fail(err.code === "ENOENT" ? "unavailable" : "network", `claude: ${err.message}`));
+    });
     child.on("close", (code) => {
       if (settled) return;
       // A failed run still prints its envelope on stdout (is_error); fall back to the exit code.

@@ -5954,11 +5954,9 @@ a.subagent-row { text-decoration: none; }
 .sidebar-toolbar { position: relative; display: flex; align-items: center; min-height: var(--tap-min); }
 .sidebar-toolbar > * + * { margin-left: var(--space-2); }
 .sidebar-toolbar > .search { flex: 1; min-width: 0; }
-/* The count keeps its text, and is what shrinks when the line is tight. Clip, never an
-   ellipsis: the deficit that fires it at the 320px pane is sub-pixel (~0.8px of Inter
-   fraction), and an ellipsis drops two whole characters for that. A real deficit (a 4-digit
-   count at the drag floor) clips half a glyph; the aria-live region says the number whole. */
-.sidebar-toolbar > .search-count { flex: 0 1 auto; min-width: 0; white-space: nowrap; overflow: clip; text-overflow: clip; font-size: var(--fs-micro); }
+/* The count is never printed (visually hidden, first in the line), so at rest the control after
+   it starts at the line's edge rather than a gap's width in. The open line keeps its layout. */
+.sidebar-toolbar > .search-count + :not(.search) { margin-left: 0; }
 .sidebar-toolbar > .button-icon { flex: none; }
 .sidebar-toolbar > .overseer-entry { margin-left: auto; }
 .sidebar-toolbar > .sidebar-select-start { padding: 0 var(--space-2); gap: var(--space-1); flex: none; }

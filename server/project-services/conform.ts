@@ -49,6 +49,8 @@ export async function entryAnswers(port: number, path: string, timeoutMs = 10_00
 }
 
 type Git = typeof realGit;
+/** How often ports-owned asks again about a port nothing holds yet. */
+const PORT_POLL_MS = 250;
 
 class Suite {
   checks: Check[] = [];
@@ -374,12 +376,21 @@ async function runSuite(
     t0 = Date.now();
     const own: string[] = [];
     // The services up started: an on-demand one waits for its first test.
-    for (const svc of upA.services.filter((x) => x.scope === "checkout" && x.state !== "stopped"))
-      for (const [k, port] of Object.entries(svc.ports)) {
-        // Its own process, or its own container publishing the port (§app.project-services/up).
-        const c = await engine.portClaim(recA!, def, svc.name, port);
-        if (!c.held || !c.own) own.push(`${svc.name}.${k} (${port}): ${c.held ? c.who : "nothing listens"}`);
-      }
+    for (const svc of upA.services.filter((x) => x.scope === "checkout" && x.state !== "stopped")) {
+      // A port nothing holds yet gets the service's ready timeout (one opened after the probed one); a foreign holder fails at once.
+      const until = Date.now() + (def.services.find((x) => x.name === svc.name)?.ready?.timeout ?? 60) * 1000;
+      for (const [k, port] of Object.entries(svc.ports))
+        for (;;) {
+          // Its own process, or its own container publishing the port (§app.project-services/up).
+          const c = await engine.portClaim(recA!, def, svc.name, port);
+          if (c.held && c.own) break;
+          if (c.held || Date.now() > until) {
+            own.push(`${svc.name}.${k} (${port}): ${c.held ? c.who : "nothing listens"}`);
+            break;
+          }
+          await new Promise((r) => setTimeout(r, PORT_POLL_MS));
+        }
+    }
     if (!s.check("ports-owned", !own.length, own.length ? `not held by A's own processes: ${own.join("; ")}` : "every declared port of what up started is held by A's own processes", t0)) return;
     const onDemand = def.services.filter((x) => x.scope === "checkout" && x.start === "on-demand").map((x) => x.name);
     if (onDemand.length) {

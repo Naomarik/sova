@@ -42,7 +42,8 @@ const DEF = {
 };
 const FILES: Record<string, string> = {
   "db.mjs": `import { createServer } from "node:net"; createServer((s) => s.end()).listen(Number(process.env.SOVA_PORT_TCP), "127.0.0.1");`,
-  "web.mjs": `import { createServer } from "node:http"; createServer((q, r) => r.end("web")).listen(Number(process.env.SOVA_PORT_HTTP), "127.0.0.1");`,
+  // Every declared port listens (§app.project-services/contract): admin too, though it is never shared.
+  "web.mjs": `import { createServer } from "node:http"; createServer((q, r) => r.end("web")).listen(Number(process.env.SOVA_PORT_HTTP), "127.0.0.1"); createServer((q, r) => r.end("admin")).listen(Number(process.env.SOVA_PORT_ADMIN), "127.0.0.1");`,
   "public/index.html": "<h1>site</h1>",
 };
 

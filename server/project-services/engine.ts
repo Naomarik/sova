@@ -323,7 +323,8 @@ interface Run {
 }
 
 /** Who holds a port, as one service sees it: nobody, its own, or someone it must not touch. */
-export type PortClaim = { held: false } | { held: true; own: boolean; who: string };
+/** `unreadable`: held by a listener this user can't read and no container claims (root's docker-proxy reads so): not provably foreign. */
+export type PortClaim = { held: false } | { held: true; own: boolean; who: string; unreadable?: true };
 
 /** The scope a process runs in: an instance, or the project's shared services. */
 interface Scope {
@@ -1132,11 +1133,31 @@ export class ProjectEngine {
           }
         }
         const p = await this.probe(def, scope, s, unit);
-        if (p.ok && (!bare || Date.now() - started >= 1_000)) return { result: "done", detail: p.probe };
-        if (Date.now() > until) throw new VerbFailure("not-ready", `${s.name} was not ready within ${timeoutSec}s (${p.probe})`, { service: s.name });
+        // Ready only once every declared port is its own too: one opened after the probed one (an nREPL after
+        // the HTTP server) is waited for; one a foreign process holds fails at once.
+        const ports = p.ok ? await this.portsUnheld(def, scope, s) : { foreign: null, waiting: [] };
+        if (ports.foreign) throw new VerbFailure("port-held", `${ports.foreign}; Sova never stops it`, { service: s.name });
+        if (p.ok && !ports.waiting.length && (!bare || Date.now() - started >= 1_000)) return { result: "done", detail: p.probe };
+        if (Date.now() > until)
+          throw new VerbFailure("not-ready", `${s.name} was not ready within ${timeoutSec}s (${p.probe}${p.ok ? ` answered, but nothing listens on ${ports.waiting.join(", ")}` : ""})`, { service: s.name });
         await sleep(this.pollMs);
       }
     });
+  }
+
+  /**
+   * `s`'s declared ports nothing listens on yet, and the first one a provably foreign holder has (null: none). A
+   * listener this user can't read that no container claims counts as listening: it may be the service's own
+   * engine's proxy before the engine reports the port, and up's start already refused a foreign holder.
+   */
+  private async portsUnheld(def: ProjectDef, scope: Scope, s: ServiceDecl): Promise<{ foreign: string | null; waiting: string[] }> {
+    const waiting: string[] = [];
+    for (const [k, port] of Object.entries(this.allPorts(def, scope)[s.name] ?? {})) {
+      const c = await this.claimOf(def, scope, s, port);
+      if (!c.held) waiting.push(`${s.name}.${k} (${port})`);
+      else if (!c.own && !c.unreadable) return { foreign: `${s.name}.${k} needs port ${port}, which ${c.who} holds`, waiting };
+    }
+    return { foreign: null, waiting };
   }
 
   /** A holder of one of `s`'s ports that is not the instance's own refuses the start (never stopped). */
@@ -1177,7 +1198,7 @@ export class ProjectEngine {
     }
     if (o === "none") return other ? { held: true, own: false, who: other } : { held: false };
     const pid = o === "unknown" ? "a process this user can't read" : `pid ${o.pid} (${o.cwd})`;
-    return { held: true, own: false, who: other ? `${other} (${o === "unknown" ? "its listener unreadable" : `pid ${o.pid}`})` : pid };
+    return { held: true, own: false, who: other ? `${other} (${o === "unknown" ? "its listener unreadable" : `pid ${o.pid}`})` : pid, ...(o === "unknown" && !other ? { unreadable: true as const } : {}) };
   }
 
   /** `claimOf` for conform: a declared port of `rec`'s checkout service `service`. */

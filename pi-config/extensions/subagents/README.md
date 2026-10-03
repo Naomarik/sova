@@ -379,10 +379,14 @@ follow-up message. With `wake` (the default) that message starts a turn when the
 parent is idle; with `wake: false` it waits for the next turn. The message is
 sent even if the UI notification fails. Print/JSON parents use tool results
 instead of injected notifications. A settle an `agent_wait` returns is not sent
-again as a message: while a wait covers a worker its message is held, dropped if
-the worker is still settled when the wait returns (the result carries it), and
-sent as usual if a queued steer started a new task first (with overlapping waits,
-once the last of them returns).
+again as a message: while the parent's agent run is in progress (or a wait
+collects the worker) its message is held, and dropped if a wait in that run
+returns the worker still settled (the result carries it), whether the worker
+settled before or during the wait. A held message no wait returned, such as one a
+queued steer moved past, is sent where the run would otherwise stop, with its
+wake, so it continues the same run; a `wake: false` one reaches the context at the
+next turn end. If the run is aborted, held messages go into the transcript without
+starting a turn, so a Stop never wakes the parent.
 
 ## Monitor
 

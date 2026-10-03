@@ -14,6 +14,7 @@
       }
     }
   },
+  "open": {"endpoint": "site.http"},
   "share": {
     "endpoints": ["site.http"]
   }

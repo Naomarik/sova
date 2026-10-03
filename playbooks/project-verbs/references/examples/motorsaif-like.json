@@ -74,6 +74,7 @@
       }
     }
   },
+  "open": {"endpoint": "web.http"},
   "hooks": {
     "probe": {
       "run": [".sova/bin/probe"]

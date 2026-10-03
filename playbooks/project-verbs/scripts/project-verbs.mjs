@@ -625,6 +625,8 @@ export async function plan(root) {
       if (changed.length) why.push(`Sources changed since the definition's last commit (${since.slice(0, 12)}): ${changed.join(", ")}.`);
     }
     for (const s of def.def.services) if (Object.keys(s.ports).length && !s.about) why.push(`Service ${s.name} has ports but no \`about\`.`);
+    if (raw?.open === undefined && hasPage(def.def) && (await parserTakes("open")))
+      why.push("The definition names no entry point (`open`): find where a person opens the app, or, for a library or an API-only project, say why there is none.");
   }
   return { root, definition: def.state, ...(def.error ? { error: def.error } : {}), since, sources, changed, unlisted, gone, why, nothing: why.length === 0 };
 }
@@ -640,6 +642,9 @@ function planDigest(p) {
   }
   return out.join("\n");
 }
+
+/** Whether a checkout service may serve a page (a static folder, or HTTP readiness): then the entry point is required, unless the project is API-only. */
+const hasPage = (def) => def.services.some((s) => s.scope === "checkout" && (s.static !== undefined || (s.ready && "http" in s.ready)));
 
 // ---- check: parse as the engine does, then the playbook's lints ----------------------------------
 
@@ -690,9 +695,7 @@ export async function check(file, root) {
       }
     }
   }
-  // The entry point is required wherever there is a page; only a library or an API-only project leaves it out.
-  const paged = def.services.some((s) => s.scope === "checkout" && (s.static !== undefined || (s.ready && "http" in s.ready)));
-  if (paged && raw.open === undefined && (await parserTakes("open")))
+  if (raw.open === undefined && hasPage(def) && (await parserTakes("open")))
     notes.push("$.open: name the app's entry point ({endpoint, path}: where a person opens it); leave it out only for a library or an API-only project, and say why in the report");
   for (const d of def.data)
     if (d.kind === "dir" && d.from !== "empty" && !/^\$\{(main|checkout)\}/.test(d.from)) problems.push(`$.data.${d.name}.from: copy from inside the project (\${main}/… or \${checkout}/…); a path outside it is refused under confinement`);

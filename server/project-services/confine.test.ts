@@ -265,3 +265,28 @@ test("a shadowed ~/.m2 gets a settings file naming the run's proxy (Maven ignore
     process.env.PI_CODING_AGENT_DIR = was;
   }
 });
+
+test("inside a run, listeners on 127.0.0.1, ::1 and ::ffff:127.0.0.1 (a JVM bound to localhost) all have their owner", { skip }, async () => {
+  const c = await openConfinement({ project });
+  assert.ok(!("refused" in c), "refused" in c ? c.refused : "");
+  if ("refused" in c) return;
+  const [p4, p6, pm] = [BASE + 400, BASE + 401, BASE + 402];
+  const scratch = mkdtempSync(join(parent, "listen-"));
+  try {
+    const py = `import socket,time
+a=socket.socket(socket.AF_INET); a.bind(("127.0.0.1",${p4})); a.listen()
+b=socket.socket(socket.AF_INET6); b.bind(("::1",${p6})); b.listen()
+m=socket.socket(socket.AF_INET6); m.bind(("::ffff:127.0.0.1",${pm})); m.listen()
+time.sleep(30)`;
+    const w = await c.wrap({ argv: ["python3", "-c", py], cwd: scratch, env: { PATH: process.env.PATH!, HOME: homedir() }, checkout: scratch, dataDir: scratch, tmpKey: "l" });
+    const child = spawn(w.argv[0]!, w.argv.slice(1), { env: w.env, stdio: "ignore", detached: true });
+    try {
+      for (let i = 0; i < 50 && typeof c.portOwner(pm) !== "object"; i++) await new Promise((r) => setTimeout(r, 100));
+      for (const p of [p4, p6, pm]) assert.equal(typeof c.portOwner(p), "object", `port ${p}: ${JSON.stringify(c.portOwner(p))}`);
+    } finally {
+      process.kill(-child.pid!, "SIGKILL");
+    }
+  } finally {
+    await c.close();
+  }
+});

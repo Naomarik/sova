@@ -237,8 +237,10 @@ writer**).
     assessment is an explicit `sova-spec-assess.mjs prepare <name> --base <known rev>`,
     `record` and `status` (`.sova/spec/USAGE.md`, `../spec/README.md`). A spawned
     worker's `SOVA_SPEC_OWNER_SESSION`/`SOVA_SPEC_WORKER_ID`/`SOVA_SPEC_TEAM_ID` are
-    there for a caller to pass as `--attribution-json`. Receipts, task entries and
-    hook state left by the earlier automatic observer stay as they are.
+    there for a caller to pass as `--attribution-json`. Receipts and task entries
+    left by the earlier automatic observer stay as they are; an old native hook state
+    keeps its assessment fields unchanged and ignored, while its census and turn
+    fields update as usual.
 
   See `../spec/README.md`.
 

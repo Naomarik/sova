@@ -64,7 +64,7 @@
 .project-software-name { font-weight: var(--fw-semibold); color: var(--color-ink); }
 .project-software-failed { color: var(--status-error); }
 .project-software-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
-/* Open Services: a link with a 44px target, its chevron saying it goes somewhere. */
+/* Open Branches: a link with a 44px target, its chevron saying it goes somewhere. */
 .project-software-open { display: inline-flex; align-items: center; gap: var(--space-1); min-height: var(--tap-min); font-weight: var(--fw-medium); }.project-software-feed { border-top: 1px solid var(--color-border); padding-top: var(--space-2); }
 .project-spec-line { font-size: var(--fs-caption); }
 .project-frozen { max-width: 24rem; }
@@ -339,7 +339,7 @@ a.pipeline-link:hover, button.pipeline-link:hover, summary.pipeline-link:hover {
 .project-confirm-row { justify-content: flex-start; min-height: var(--tap-min); }
 .pipeline-meta-warn { color: var(--status-warn); }
 
-/* ---- Services tab and Running copies (§app.project-services/services-ui) ------------------------
+/* ---- Branches tab and Running branches (§app.project-services/services-ui) ------------------------
    Each card is its own container, so a row stacks by the card's width, not the window's. */
 .services-tab,
 .running-copies { container: services / inline-size; }
@@ -386,7 +386,7 @@ a.pipeline-link:hover, button.pipeline-link:hover, summary.pipeline-link:hover {
 .services-main-start { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); margin-top: var(--space-3); }
 .services-main-start .services-said { flex-basis: 100%; }
 .services-shared { margin-top: var(--space-5); }
-/* Running copies: a project's name, then its copies as the tab draws them, tighter. */
+/* Running branches: a project's name, then its copies as the tab draws them, tighter. */
 .running-copies-project { padding: var(--space-3) 0; border-bottom: var(--stroke-thin) solid var(--color-border); }
 .running-copies-project:first-child { padding-top: 0; }
 .running-copies-project:last-child { border-bottom: 0; padding-bottom: 0; }

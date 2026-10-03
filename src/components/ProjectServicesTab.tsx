@@ -13,9 +13,12 @@ import {
   createdByWord,
   DESTRUCTIVE,
   doneLine,
+  entryHref,
+  entryTitle,
   httpHref,
   memoryOf,
   notReadyLine,
+  openEntry,
   portLabel,
   refusalLine,
   rowVerbs,
@@ -35,7 +38,7 @@ import {
 import { previewWarning } from "../lib/previews";
 import { announce, copyText, toast } from "../lib/ui-state";
 import { ServiceLogsDrawer } from "./ServiceLogsDrawer";
-import { Chip } from "./ui";
+import { Chip, Icon } from "./ui";
 
 const POLL_MS = 5_000;
 const errText = (x: unknown) => (x instanceof Error ? x.message : String(x));
@@ -69,9 +72,9 @@ function Ports(props: { service: ServiceRowView; named?: boolean }) {
 }
 
 /**
- * A project's Services tab (§app.project-services/services-ui): one row per copy on this host, the
- * main checkout's first, each with its ports, memory, state and who made it, and Start, Stop, Apply,
- * Reset, Logs and Teardown run as the operator; the shared services in their own block. Reset and
+ * A project's Branches tab (§app.project-services/services-ui): one row per copy on this host, the
+ * main checkout's first, each with its ports, memory, state and who made it, Open (its app's entry, while
+ * it runs and declares one) first, and Start, Stop, Apply, Reset, Logs and Teardown run as the operator; the shared services in their own block. Reset and
  * Teardown (and Stop of a shared service) ask first; a refusal reads as a sentence under its row.
  */
 export function ProjectServicesTab(props: { projectId: string; archived: boolean }) {
@@ -322,7 +325,7 @@ export function ProjectServicesTab(props: { projectId: string; archived: boolean
   return (
     <section class="card orgs-section services-tab" aria-labelledby="project-services">
       <h2 class="orgs-h2" id="project-services">
-        Services
+        Branches
       </h2>
       <Show when={poll.data()} fallback={<p class="orgs-empty">{poll.error() ? `Couldn't read this project's copies. ${poll.error()}` : "Reading this project's copies."}</p>}>
         {(v) => (
@@ -418,8 +421,9 @@ export function ProjectServicesTab(props: { projectId: string; archived: boolean
 
 /**
  * One copy's row: its name, state chip, slot, memory and maker on one line, its ports as tags under
- * it, then its actions by weight (the one its state calls for, the quieter rest, the destructive ones
- * apart); at narrow widths the actions wrap under the facts.
+ * it, then its actions by weight (Open first and primary while it runs with an entry, then the verb its
+ * state calls for, the quieter rest, the destructive ones apart); at narrow widths the actions wrap
+ * under the facts.
  */
 function CopyRow(props: { copy: CopyView; said: string | null; verbs(v: RowVerb, quiet: boolean): JSX.Element; share: JSX.Element; shareButton: JSX.Element; onLogs(): void }) {
   const c = () => props.copy;
@@ -453,6 +457,15 @@ function CopyRow(props: { copy: CopyView; said: string | null; verbs(v: RowVerb,
       </div>
       <div class="services-actions">
         <div class="services-actions-group">
+          {/* The app itself, where a person lands: the row's one primary action. */}
+          <Show when={openEntry(c())}>
+            {(e) => (
+              <a class="button button-sm button-primary" href={entryHref(location.hostname, e())} target="_blank" rel="noopener" title={entryTitle(copyName(c()), e())}>
+                Open
+                <Icon name="external" small />
+              </a>
+            )}
+          </Show>
           <Show when={groups().primary}>{(verb) => props.verbs(verb(), false)}</Show>
           <For each={groups().quiet}>{(verb) => props.verbs(verb, true)}</For>
           {props.shareButton}

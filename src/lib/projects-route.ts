@@ -1,5 +1,5 @@
 // The projects pages (§app/projects): `#/projects` lists the projects registered on this host (and
-// the peers'), `#/projects/<id>` is one project on its Overview, `…/requirements`, `…/services`, `…/cost`
+// the peers'), `#/projects/<id>` is one project on its Overview, `…/requirements`, `…/branches`, `…/cost`
 // and `…/settings` on its other tabs (Requirements only while an organization places it), and
 // `…/overseer` is that project's overseer (§app/project-overseer). `?host=<id>` names the peer that
 // holds the project (§mesh.remote-sessions/org-pages). Ids are the server's (`prj_…`): plain
@@ -10,7 +10,7 @@ import { hostOf, projectHostOf, sessionHrefOn } from "./mesh";
 const ID_RE = /^[A-Za-z0-9_-]+$/;
 
 /** A project page's tabs; Overview is the bare address. Requirements exists only while placed. */
-export const PROJECT_TABS = ["overview", "requirements", "services", "cost", "settings"] as const;
+export const PROJECT_TABS = ["overview", "requirements", "branches", "cost", "settings"] as const;
 export type ProjectTab = (typeof PROJECT_TABS)[number];
 
 export type ProjectsRoute =
@@ -37,7 +37,7 @@ export function projectsRouteFromHash(hash: string): ProjectsRoute | null {
 
 function hashRoute(hash: string): ProjectsRoute | null {
   if (hash === PROJECTS_HREF || hash === `${PROJECTS_HREF}/`) return { kind: "list" };
-  const m = /^#\/projects\/([^/]+)(?:\/(requirements|services|cost|settings|overseer))?\/?$/.exec(hash);
+  const m = /^#\/projects\/([^/]+)(?:\/(requirements|branches|cost|settings|overseer))?\/?$/.exec(hash);
   if (!m || !ID_RE.test(m[1]!)) return null;
   const projectId = m[1]!;
   if (m[2] === undefined) return { kind: "project", projectId };

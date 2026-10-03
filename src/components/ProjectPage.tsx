@@ -63,8 +63,8 @@ export interface ProjectOrgPart {
 /**
  * One project (`#/projects/<pid>[/<tab>]`, §app.organizations/project-page): a summary of its
  * overseer and counts, then its tabs. Overview is the live work — coding sessions, previews,
- * activity, to-dos and ideas — with anything that waits on the operator first; Services is its
- * running copies on this host; Cost is what its
+ * activity, to-dos and ideas — with anything that waits on the operator first; Branches is its
+ * running copies on this host, one per branch; Cost is what its
  * sessions cost; Settings is its overseer's settings (§app/project-overseer) and archiving. While an
  * organization places it, the route adds that org's part (`org`): Requirements and the rest.
  */
@@ -295,7 +295,7 @@ export function ProjectPage(props: {
             </div>
           </Match>
           <Match when={tab() === "requirements" && org}>{(o) => o().requirements()}</Match>
-          <Match when={tab() === "services"}>
+          <Match when={tab() === "branches"}>
             {/* Its copies on this host and their verbs (§app.project-services/services-ui). */}
             <ProjectServicesTab projectId={projectId} archived={!!archived()} />
           </Match>
@@ -336,7 +336,7 @@ export function ProjectPage(props: {
   );
 }
 
-const TAB_LABEL: Record<ProjectTab, string> = { overview: "Overview", requirements: "Requirements", services: "Services", cost: "Cost", settings: "Settings" };
+const TAB_LABEL: Record<ProjectTab, string> = { overview: "Overview", requirements: "Requirements", branches: "Branches", cost: "Cost", settings: "Settings" };
 
 /** The page's tab strip, as the org page's: a tab per view (the tab is in the URL, each pick a history
     entry), Left/Right moving focus along it (wrapping), Home/End jumping; Enter or Space selects.

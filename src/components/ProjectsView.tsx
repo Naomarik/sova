@@ -6,7 +6,7 @@ import { relativeTime } from "../lib/format";
 import { placementOf, sortProjects } from "../lib/projects";
 import { createPoll } from "../lib/poll";
 import { projectHref, projectSessionHref, projectTabHref, type ProjectsRoute, type ProjectTab } from "../lib/projects-route";
-import { adoptedLine, copyChip, copyName, memoryOf, refusalLine, SERVICE_CHIP } from "../lib/services-view";
+import { adoptedLine, copyChip, copyName, entryHref, entryTitle, memoryOf, openEntry, refusalLine, SERVICE_CHIP } from "../lib/services-view";
 import { announce, toast } from "../lib/ui-state";
 import { AddProjectDialog } from "./AddProjectDialog";
 import { InsightsPage } from "./InsightsPage";
@@ -190,9 +190,9 @@ function ProjectRow(props: { project: ProjectSummary }) {
 const RUNNING_POLL_MS = 15_000;
 
 /**
- * Running copies (§app.project-services/services-ui): every copy and shared service that runs on this
+ * Running branches (§app.project-services/services-ui): every copy and shared service that runs on this
  * host now, by project, standalone or placed, each with its memory and a Stop; the project's name opens
- * its Services tab. A shared service's Stop asks first: it stops it for every copy of the project.
+ * its Branches tab, and a running copy's name its app's entry, when it declares one. A shared service's Stop asks first: it stops it for every copy of the project.
  */
 function RunningCopies() {
   const poll = createPoll(getHostServices, RUNNING_POLL_MS);
@@ -245,7 +245,7 @@ function RunningCopies() {
   return (
     <section class="card orgs-section running-copies" aria-labelledby="running-copies">
       <h2 class="orgs-h2" id="running-copies">
-        Running copies
+        Running branches
       </h2>
       <Show when={poll.data()} fallback={<p class="orgs-empty">{poll.error() ? `Couldn't read what runs here. ${poll.error()}` : "Reading what runs on this host."}</p>}>
         {(v) => (
@@ -256,7 +256,7 @@ function RunningCopies() {
                   <li class="running-copies-project">
                     <p class="list-title running-copies-head">
                       <Show when={p.projectId} fallback={<span class="orgs-mono" title={p.root}>{p.root}</span>}>
-                        {(pid) => <a href={projectTabHref(pid(), "services")}>{p.name}</a>}
+                        {(pid) => <a href={projectTabHref(pid(), "branches")}>{p.name}</a>}
                       </Show>
                       <Show when={p.orgName}>{(o) => <span class="list-meta">In {o()}</span>}</Show>
                     </p>
@@ -269,7 +269,15 @@ function RunningCopies() {
                             <li class="list-row services-row">
                               <div class="list-main services-row-main">
                                 <p class="list-title services-row-title">
-                                  <span class="services-name text-mono">{name()}</span>
+                                  <span class="services-name text-mono">
+                                    <Show when={openEntry(c)} fallback={name()}>
+                                      {(e) => (
+                                        <a href={entryHref(location.hostname, e())} target="_blank" rel="noopener" title={entryTitle(name(), e())}>
+                                          {name()}
+                                        </a>
+                                      )}
+                                    </Show>
+                                  </span>
                                   <span class="services-row-chip">
                                     <Chip tone={copyChip(c.state, !!c.starting).tone}>{copyChip(c.state, !!c.starting).word}</Chip>
                                   </span>
@@ -281,7 +289,7 @@ function RunningCopies() {
                                 <Show when={said()[key()]}>{(line) => <p class="field-error services-said">{line()}</p>}</Show>
                               </div>
                               <div class="services-actions">
-                                {/* An adopted main is never Sova's to stop: Apply on its Services tab restarts it. */}
+                                {/* An adopted main is never Sova's to stop: Apply on its Branches tab restarts it. */}
                                 <Show when={!c.adopted} fallback={<p class="list-meta services-actions-note">{adoptedLine(c.adopted!)}</p>}>
                                   <StopButton p={p} id={key()} name={name()} body={{ instance: c.instance }} />
                                 </Show>

@@ -1,7 +1,7 @@
-// The Services tab and Running copies (§app.project-services/services-ui) as words. Pure: no Solid, no DOM.
+// The Branches tab and Running branches (§app.project-services/services-ui) as words. Pure: no Solid, no DOM.
 
 import type { InstanceState, LinkView, ServiceState, VerbResult } from "../../shared/project-contract";
-import type { CopyView, ServiceRowView } from "../../shared/services-view";
+import type { CopyView, EntryView, ServiceRowView } from "../../shared/services-view";
 import { bytesWord, type ChipTone } from "./project-software";
 import { expiresWord } from "./session-shares";
 
@@ -62,6 +62,15 @@ export function notReadyLine(services: readonly ServiceRowView[]): string | null
 
 /** A port with HTTP readiness, on the host this page was opened from. */
 export const httpHref = (host: string, http: { port: number; path: string }): string => `http://${host.includes(":") ? `[${host}]` : host}:${http.port}${http.path.startsWith("/") ? http.path : `/${http.path}`}`;
+
+// ---- the entry point (§app.project-services/services-ui) -------------------------------------------
+
+/** The copy's entry while it is running and declares one (Open, a branch's name on Running branches), else null. */
+export const openEntry = (c: { state: InstanceState; open?: EntryView }): EntryView | null => (c.state === "running" && c.open ? c.open : null);
+/** Where Open takes a person: the entry's port and path on the host this page was opened from. */
+export const entryHref = (host: string, e: Pick<EntryView, "port" | "path">): string => httpHref(host, e);
+/** Open's title: what it opens. */
+export const entryTitle = (name: string, e: Pick<EntryView, "endpoint" | "path">): string => `Open ${name}'s app (${e.endpoint}, ${e.path}) in a new tab`;
 
 /** The verbs a copy's row offers, in order. */
 export type RowVerb = "up" | "down" | "apply" | "reset" | "teardown";

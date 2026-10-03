@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { isStarting } from "../../shared/services-view";
-import { adoptedLine, copyChip, copyMemory, copyName, createdByWord, endpointNotRunning, rowVerbs, shareOffered, endpointPort, httpHref, linkLine, notReadyLine, refusalLine, sentence, SHARE_SENSITIVE, shareBlocked, verbGroups, portLabel } from "./services-view";
+import { adoptedLine, copyChip, copyMemory, copyName, createdByWord, endpointNotRunning, entryHref, openEntry, rowVerbs, shareOffered, endpointPort, httpHref, linkLine, notReadyLine, refusalLine, sentence, SHARE_SENSITIVE, shareBlocked, verbGroups, portLabel } from "./services-view";
 
 test("a copy is named main at slot 0, else by its branch, else by its folder", () => {
   assert.equal(copyName({ slot: 0, branch: "master", checkout: "/p" }), "main");
@@ -107,4 +107,13 @@ test("a row's verbs are grouped by weight, and every verb it offers lands in exa
 test("a port reads as its number for the generic name, else name:number", () => {
   assert.equal(portLabel("port", 4344), "4344");
   assert.equal(portLabel("nrepl", 7860), "nrepl:7860");
+});
+
+test("Open: only a running copy with an entry offers it, to the entry's port and path on this page's host", () => {
+  const open = { endpoint: "web.http", port: 4130, path: "/home?x=1" };
+  assert.deepEqual(openEntry({ state: "running", open }), open);
+  for (const state of ["degraded", "stopped", "absent"] as const) assert.equal(openEntry({ state, open }), null, state);
+  assert.equal(openEntry({ state: "running" }), null, "no entry declared: nothing extra");
+  assert.equal(entryHref("192.0.2.7", open), "http://192.0.2.7:4130/home?x=1");
+  assert.equal(entryHref("::1", { port: 4130, path: "/" }), "http://[::1]:4130/");
 });

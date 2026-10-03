@@ -70,8 +70,11 @@ error).
 Clojure aliases: the last alias's `:main-opts` win (`-M:test:test-repl` runs `:test-repl`'s), and
 `-A:alias` still applies its `:main-opts`.
 
-`templates/nrepl-test.bb` is a ready `.sova/bin/test` for a warm Clojure test nREPL: copy it, set
-its `PORT_ENV` and `TEST_DIRS`, and `chmod +x` it.
+`templates/nrepl-test.bb` is a ready `.sova/bin/test` for a warm Clojure test nREPL: copy it with
+`templates/bb.edn` beside it (an empty config, so bb never resolves the project's own `bb.edn`
+`:deps`, which writes under your home and fails in a confined run), set its `PORT_ENV` and
+`TEST_DIRS`, and `chmod +x` it. A script a hook runs should write only inside the checkout, its
+data dir or /tmp: a confined run sees the rest of your home read-only.
 
 - **Clojure, warm**: an on-demand `test-repl` service (with `reload: "restart"`, so `apply`
   restarts it on source changes) (`clojure -M:test:<repl alias> --port

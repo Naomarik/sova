@@ -9,7 +9,7 @@
     }
   ],
   "data": {
-    "datomic": {"kind": "dir", "from": "${main}/infra/datomic/data"},
+    "datomic": {"kind": "dir", "from": "${main}/infra/datomic/data", "sensitive": true},
     "redis": {"kind": "dir"}
   },
   "services": {

@@ -26,7 +26,7 @@ export const ORDER = {
   top: ["version", "slots", "host", "sources", "setup", "data", "services", "hooks", "test", "share", "deploy"],
   slots: ["cap"],
   step: ["id", "run", "inputs", "timeout"],
-  data: ["kind", "path", "from", "provision", "deprovision", "timeout"],
+  data: ["kind", "path", "from", "provision", "deprovision", "timeout", "sensitive"],
   service: ["cmd", "static", "cwd", "env", "ports", "requires", "ready", "reload", "build", "scope", "container", "start", "about", "isolation"],
   port: ["base", "stride", "fixed"],
   ready: ["tcp", "http", "path", "timeout"],
@@ -197,6 +197,8 @@ export const STACK_FILES = [
 ];
 const DOC_FILES = ["CLAUDE.md", "AGENTS.md", "README.md", "README", "README.org"];
 const TOOLS = ["bb", "clojure", "clj", "java", "node", "npm", "pnpm", "yarn", "bun", "npx", "python3", "ruby", "bundle", "redis-server", "postgres", "psql", "mysqld", "sass", "mailcatcher", "docker", "podman", "mise", "go", "cargo", "deno", "caddy", "nginx"];
+/** A task or script that brings production data here (clone, download, dump, restore, backup of prod). */
+const PROD_DATA = /\b(prod|production)\b.*\b(clone|download|dump|restore|backup|import|copy|sync)|\b(clone|download|dump|restore|backup|import|copy|sync)\b.*\b(prod|production)\b/i;
 const DEPLOY = /\b(deploy|prod(?:uction)?|release|publish|ansible|terraform|kubectl|helm|rsync|scp|ssh)\b/i;
 
 /** Files tracked at HEAD (paths), or null outside git. */
@@ -413,6 +415,7 @@ export async function inspect(root) {
   const details = {};
   const tests = [];
   const deploy = [];
+  const prodData = [];
   const tasksText = [];
   if (has.has("package.json")) {
     const p = packageJson(atHead(root, "package.json") ?? "");
@@ -421,6 +424,7 @@ export async function inspect(root) {
       tasksText.push(String(v));
       if (/test|spec|vitest|jest|mocha|playwright/i.test(k)) tests.push(`package.json script ${k}: ${v}`);
       if (DEPLOY.test(k)) deploy.push(`package.json script ${k}: ${v}`);
+      if (PROD_DATA.test(`${k} ${v}`)) prodData.push(`package.json script ${k}: ${v}`);
     }
   }
   if (has.has("bb.edn")) {
@@ -431,6 +435,7 @@ export async function inspect(root) {
     for (const x of tasks) {
       if (/test/i.test(x.name)) tests.push(`bb ${x.name}${x.doc ? ` — ${x.doc}` : ""}`);
       if (DEPLOY.test(x.name) || (x.doc && /\bdeploy|\bprod\b/i.test(x.doc))) deploy.push(`bb ${x.name}${x.doc ? ` — ${x.doc}` : ""}`);
+      if (PROD_DATA.test(`${x.name.replace(/[:_-]/g, " ")} ${x.doc ?? ""}`)) prodData.push(`bb ${x.name}${x.doc ? ` — ${x.doc}` : ""}`);
     }
     if (/\(slurp\s+"([^"]+)"\)/.test(t)) details["bb.edn"].reads = [...t.matchAll(/\(slurp\s+"([^"]+)"\)/g)].map((m) => m[1]);
   }
@@ -459,6 +464,7 @@ export async function inspect(root) {
     for (const t of targets) {
       if (/test/i.test(t)) tests.push(`make ${t}`);
       if (DEPLOY.test(t)) deploy.push(`make ${t}`);
+      if (PROD_DATA.test(t.replace(/[:_-]/g, " "))) prodData.push(`make ${t}`);
     }
   }
   for (const f of files) if (!SKIP.test(f) && /(^|\/)[^/]*(deploy|release)[^/]*\.(sh|bb|mjs|js|py|rb)$/i.test(f)) deploy.push(f);
@@ -512,6 +518,7 @@ export async function inspect(root) {
     staticSite: staticSite || null,
     tests,
     deploy: [...new Set(deploy)],
+    prodData: [...new Set(prodData)],
     docLines,
     ignored,
     tools,
@@ -545,6 +552,9 @@ function inspectDigest(r) {
   out.push("tests:");
   for (const t of r.tests) out.push(`  ${t}`);
   if (!r.tests.length) out.push("  none found");
+  out.push("production data brought here (a data resource copied from what these fill is sensitive: true):");
+  for (const d of r.prodData) out.push(`  ${d}`);
+  if (!r.prodData.length) out.push("  none found");
   out.push("deploy entrypoints (report them; never run them):");
   for (const d of r.deploy) out.push(`  ${d}`);
   if (!r.deploy.length) out.push("  none found");

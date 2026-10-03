@@ -96,7 +96,7 @@ function repo(name: string): string {
   const r = join(dir, name);
   mkdirSync(r, { recursive: true });
   git(r, "init", "-q");
-  writeFileSync(join(r, "package.json"), JSON.stringify({ scripts: { dev: "node server.js", test: "node --test", deploy: "./deploy.sh" } }));
+  writeFileSync(join(r, "package.json"), JSON.stringify({ scripts: { dev: "node server.js", test: "node --test", deploy: "./deploy.sh", "clone-prod": "./bin/pull-db" } }));
   writeFileSync(join(r, "server.js"), "const port = process.env.PORT ?? 3000;\n");
   writeFileSync(join(r, "CLAUDE.md"), "Run `node server.js`; the app is on http://localhost:3000.\n");
   writeFileSync(join(r, ".gitignore"), ".locals.json\n");
@@ -115,6 +115,7 @@ test("inspect reads the stack at HEAD: scripts, tests, deploy entrypoints, port 
   assert.ok(j.stack.includes("package.json"));
   assert.ok(j.tests.some((t: string) => t.includes("script test")));
   assert.ok(j.deploy.some((d: string) => d.includes("script deploy")));
+  assert.deepEqual(j.prodData, ["package.json script clone-prod: ./bin/pull-db"]);
   assert.ok(j.literals.some((l: { port: number; refs: string[] }) => l.port === 3000 && l.refs.includes("server.js:1")));
   assert.ok(j.ignored.some((i: { path: string }) => i.path === ".locals.json"));
   // An uncommitted edit is not the project: HEAD is read.

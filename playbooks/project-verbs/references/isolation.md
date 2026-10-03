@@ -30,6 +30,9 @@ seeding setup step), and the service started on `${data.db}`.
 - Mind RAM: a JVM datastore costs hundreds of MiB per copy. Conformance measures it; report it.
 - Copy only from inside the project (`${main}/…`). A large copy (hundreds of MiB) is fine; a copy
   of data that holds production secrets is not: seed instead, and say so.
+- Production-derived data (a clone or dump of prod, a restore from a prod backup) is copied per
+  instance only on this host, and the resource says so: `sensitive: true`. Sova then never shares an
+  instance holding it. Seed instead when a seed exists and the builders don't need real records.
 - The copy must be consistent. Files copied while the main checkout's datastore writes them may
   not be (Datomic's H2 file, a Postgres data dir, an SQLite file mid-transaction). Take the
   per-copy data from a store at rest (`inspect`'s "listening now" shows whether main's runs; a

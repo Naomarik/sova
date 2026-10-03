@@ -53,7 +53,7 @@ Exactly one of `cmd` and `static`.
 | `isolation` | `{method, why}`: `method` one of `ports`, `names`, `process`, `container`, `netns`, `shared`; `why` ≤ 200 characters. A record for readers, never applied. Not hashed |
 
 ## A data resource
-Each has a `kind`.
+Each has a `kind`, and may carry `sensitive: true`: its contents derive from production, so no instance holding it is ever shared. `sensitive` is inside the approval hash.
 - `{kind: "dir", path?, from?}` (`path`, `from`): a folder, by default under the instance's data dir (`${data.<name>}`); `path` places it inside the checkout (it must be gitignored). `from` is `"empty"` (default) or a template naming a folder to copy at create and reset, e.g. `"${main}/infra/datomic/data"`. Keep `from` inside the project: a path outside it is refused before approval.
 - `{kind: "hook", provision: argv, deprovision: argv, timeout?}` (`provision`, `deprovision`): your scripts make and remove it; provision prints its ref.
 
@@ -66,7 +66,7 @@ The runner should write `SOVA_OUT` as JSON: `{"passed": n, "failed": n, "errors"
 `${slot}`, `${instance}`, `${project}`, `${checkout}`, `${main}` (the main checkout), `${branch}`, `${data}` (the instance's data dir), `${data.<resource>}`, `${ports.<service>.<port>}`, `${host.<NAME>}`; `$$` is a literal `$`. Every process and hook also gets `SOVA_V=1`, `SOVA_PROJECT`, `SOVA_INSTANCE`, `SOVA_SLOT`, `SOVA_CHECKOUT`, `SOVA_MAIN`, `SOVA_BRANCH`, `SOVA_DATA`, `SOVA_PORT_<SERVICE>_<PORT>` for every port of the instance and `SOVA_PORT_<PORT>` for its own; a hook also `SOVA_VERB`, `SOVA_STEP`, `SOVA_OUT`; a test run also `SOVA_TEST_SELECT`. `<SERVICE>` and `<PORT>` are upper case with anything else `_`.
 
 ## The approval hash
-Approval covers the whole parsed definition except every `timeout`, readiness `path`, `about`, `isolation`, `sources` and the default `start: "up"`. So rewording a `why` or an `about`, or listing another source, needs no new approval; any command, env, port, hook, data source, `test` or `start: "on-demand"` does.
+Approval covers the whole parsed definition (a data resource's `sensitive` included) except every `timeout`, readiness `path`, `about`, `isolation`, `sources` and the default `start: "up"`. So rewording a `why` or an `about`, or listing another source, needs no new approval; any command, env, port, hook, data source, `test` or `start: "on-demand"` does.
 
 ## Error codes
 | code | exit | meaning for you |

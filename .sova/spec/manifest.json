@@ -2681,7 +2681,6 @@
       "code": [
         "server/attention.ts",
         "server/live.ts",
-        "server/live.test.ts",
         "server/overseer.ts",
         "server/signals-store.ts",
         "server/attention.test.ts",
@@ -12243,55 +12242,6 @@
         "§chat.transcript/setup-card-context",
         "§chat.transcript/setup-card-skills",
         "§chat.profiles/applying"
-      ]
-    },
-    "§app.session-list/listing-reuse": {
-      "kind": "behavior",
-      "authority": "accepted",
-      "evidence": "verified",
-      "code": [
-        "server/sessions-index.ts",
-        "server/list-generation.ts",
-        "server/sessions-index.test.ts",
-        "server/index.ts",
-        "server/ws.ts",
-        "server/archived-sessions.ts",
-        "server/session-titles.ts",
-        "server/seen.ts",
-        "server/drafts.ts",
-        "server/session-groups.ts",
-        "server/session-tags.ts",
-        "server/signals-store.ts",
-        "server/web-sessions.ts",
-        "server/decide-settings.ts",
-        "server/chat-manager.ts",
-        "server/write-guard.ts",
-        "server/orgs.ts",
-        "server/overseer-store.ts",
-        "server/preview-kept.ts",
-        "server/sessions-context.test.ts",
-        "server/session-summary-route.test.ts",
-        "server/session-profiles-runtime.test.ts",
-        "server/org-sessions.test.ts"
-      ],
-      "requires": [
-        "§app/session-list",
-        "§app.decisions/push"
-      ]
-    },
-    "§chat.worktrees/dirty-freshness": {
-      "kind": "behavior",
-      "authority": "accepted",
-      "evidence": "verified",
-      "code": [
-        "server/worktrees.ts",
-        "server/worktrees.test.ts",
-        "server/merge-readiness.ts",
-        "server/merge-readiness.test.ts"
-      ],
-      "requires": [
-        "§chat.worktrees/readiness",
-        "§app/idle-git-cache"
       ]
     },
     "§chat.session-fork/background": {

@@ -2287,22 +2287,3 @@ word never does.
 
 ---
 
-
-## §app.session-list/listing-reuse — One listing, shared for a second
-
-The server builds the session list once for every caller that asks while a build is running, and
-hands a finished list to further callers for up to **1 second** after its build started: the
-session feed's comparison, the attention scan, the Overseer, the profile, schedule and share routes
-and `GET /api/sessions` all read the same list then. A change made outside this server (a TUI writing
-a session, another server's stores) therefore reaches a listing up to 1 second later.
-
-A change a caller makes through this server is never missed that way. Any request other than a
-read (a REST call that is not `GET` or `HEAD`, a peer's included, before it runs and again when it
-answers), any message a chat socket sends, every write this server makes to a session file, a
-hosted chat's turn starting or settling and each of its tool calls ending (the Overseer's tools
-write in process), and every write to the stores a row reads (archived, titles, seen and the open
-panes, drafts, groups, tags, attention signals, Sova's own sessions, the Decisions settings, the
-organizations registry, the Overseer's and project overseers' state, kept preview links) start the
-next listing afresh: no caller joins or reuses a list built before them. So a caller that archives,
-renames, creates a session or gives one a One at a time profile sees that change in the very next
-listing it asks for, and so does the One at a time check that follows it.

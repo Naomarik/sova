@@ -525,7 +525,7 @@ describe("decisions → conflicts → draft → promotion", async () => {
     const items = conflictAttention().filter((i) => i.org?.projectId === project.id);
     assert.equal(items.length, unroutedConflicts(org.id, project.id), "Needs you and the org card count the same conflicts");
     const it = items.find((i) => i.id === `conflict-to-operator:${c.id}`)!;
-    assert.deepEqual([it.kind, it.tier, it.path, it.href], ["conflict-to-operator", "decide", "", `#/orgs/${org.id}/projects/${project.id}`]);
+    assert.deepEqual([it.kind, it.tier, it.path, it.href], ["conflict-to-operator", "decide", "", `#/projects/${project.id}`]);
     assert.equal(it.detail, `Settle a conflict in ${project.name}: Maria Lopez and Tony Reyes disagree about payroll export.`);
     // Routed again to someone: no longer the operator's.
     const routed = (await reconcile.routeConflictNow(org.id, project.id, c.id, carlos.id)).conflicts.find((k) => k.id === c.id)!;
@@ -668,13 +668,13 @@ describe("decisions → conflicts → draft → promotion", async () => {
 
   test("the main stakeholder: the overseer promotes their free-form areas; their own contradiction routes to them, on the project's gathering model", async () => {
     const pos = await import("./project-overseer-store");
-    const p = pos.projectOverseerPaths(org.id, project.id);
+    const p = pos.projectOverseerPaths(project.id);
     pos.writePoSettings(p, { ...pos.readPoSettings(p), gatheringModel: "prov/gather", gatheringThinking: "low" });
     try {
       const lunch = `${s1.sessionId}:${(await say(f1, maria.id, "l", { area: "lunch breaks", statement: "Lunch is an hour.", quote: "an hour" })).markerId}`;
       let info = await reconcile.reconcileProject(org.id, project.id);
       assert.equal(info.decisions.find((d) => d.id === lunch)!.authorOwnsArea, false, "no stakeholder yet: out of area");
-      await orgs.patchProject(org.id, project.id, { stakeholder: maria.id });
+      await orgs.patchPlacement(org.id, project.id, { stakeholder: maria.id });
       info = reconcile.listDecisions(org.id, project.id);
       assert.equal(info.decisions.find((d) => d.id === lunch)!.authorOwnsArea, true, "nobody decides lunch breaks by name: Maria does");
       assert.deepEqual((await reconcile.promoteDecisions(org.id, project.id, [lunch], { by: "overseer" })).promoted, [lunch], "the overseer promotes it");
@@ -696,13 +696,13 @@ describe("decisions → conflicts → draft → promotion", async () => {
       const again = baton.batonById(info.conflicts.find((k) => k.id === c.id)!.batonSessionId!)!.row;
       assert.deepEqual([again.model, again.thinking], ["prov/gather", "low"]);
     } finally {
-      await orgs.patchProject(org.id, project.id, { stakeholder: null });
+      await orgs.patchPlacement(org.id, project.id, { stakeholder: null });
     }
   });
 
   test("the run a resolution starts by itself opens its settle sessions on the project's gathering model too", async () => {
     const pos = await import("./project-overseer-store");
-    const p = pos.projectOverseerPaths(org.id, project.id);
+    const p = pos.projectOverseerPaths(project.id);
     pos.writePoSettings(p, { ...pos.readPoSettings(p), gatheringModel: "prov/gather", gatheringThinking: "low" });
     // The settle session's decision asks its reconciler to run 2 s later (the statechart, durable): no Reconcile click.
     const stop = () => {};
@@ -730,7 +730,7 @@ describe("decisions → conflicts → draft → promotion", async () => {
     await say(f1, maria.id, "s", { area: "snow clearing", statement: "Snow is cleared within 2 days.", quote: "2 days" });
     await say(f2, tony.id, "s", { area: "snow clearing", statement: "Snow is cleared within 6 days.", quote: "6 days" });
     const ledger = await import("./project-costs-ledger");
-    const lp = ledger.ledgerPaths(org.id, project.id);
+    const lp = ledger.ledgerPaths(project.id);
     const rowsBefore = ledger.readUsageLedger(lp);
     assert.ok(rowsBefore.length > 0 && rowsBefore.every((r) => r.by !== "overseer" && r.provider === "jev" && r.input === 10), "every answer so far is in usage.jsonl");
     assert.ok(rowsBefore.some((r) => r.by === "operator"), "Reconcile Now is the operator's");

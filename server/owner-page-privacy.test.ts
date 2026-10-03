@@ -163,7 +163,7 @@ said(s3.path, kim.id, M.hiddenText);
 await baton.setHiddenFromOwner(s3.sessionId, true);
 // On a switched-off project.
 const s4 = await baton.createBaton({ orgId: org.id, projectId: pb.id, to: kim.id, publicTitle: M.offTitle, goal: "g" });
-await orgs.patchProject(org.id, pb.id, { ownerHidden: true });
+await orgs.patchPlacement(org.id, pb.id, { ownerHidden: true });
 // Started by the global Overseer, with its conversation and its why on the statechart; shown to the owner.
 const s5 = await baton.createBaton(
   { orgId: org.id, projectId: pa.id, to: kim.id, publicTitle: "Hours again", goal: "g" },
@@ -176,7 +176,7 @@ await seedConflicts(org.id, pa.id, [
   { id: "cf_mkmkmkmk", orgId: org.id, projectId: pa.id, areaKey: "hours", a: ds[0]!.id, b: ds[1]!.id, p: 0.9, routedTo: "operator", routeReason: M.routeReason, selfAsserted: true, state: "open", createdAt: new Date().toISOString() },
 ]);
 // The project overseer's files.
-const paths = store.projectOverseerPaths(org.id, pa.id);
+const paths = store.projectOverseerPaths(pa.id);
 mkdirSync(paths.dir, { recursive: true });
 writeNotes(`${M.notes}\n`, paths.notes);
 addIdea({ id: "§gap/mk", title: M.idea, text: M.idea, tags: [] }, paths.ideas);

@@ -1,5 +1,5 @@
 (ns sova.statecharts.watch
-  "The watch statechart (host-local, `watch/<org>/<p>`): the project overseer's watch loop, its looks,
+  "The watch statechart (host-local, `watch/<p>`): the project overseer's watch loop, its looks,
    its ledgers and held items (§app.project-overseer/watch-loop, /limits, /autonomy-levels;
    §app.organizations/portability's pause). The spike's project statechart, split from the portable
    project and made exact:
@@ -18,7 +18,11 @@
    filter drops a reason only when the overseer made it while it runs (C2); reasons dedupe by typed
    key (C3); a held message allowance is released at the refusal (C12).
 
-   Start data: `{:org-id :project-id :paused? :settings? :tick-origin? :tick-ms?}`."
+   Facts the host sets (`facts/changed`): `ceiling` (`{:autonomy :reason}` or nil: a cap whoever places
+   the project contributes; none for a project nobody places) and `look-hint` (text a look adds after
+   its re-read line; nil for none).
+
+   Start data: `{:project-id :paused? :settings? :tick-origin? :tick-ms?}`."
   (:require
     [clojure.string :as str]
     [com.fulcrologic.statecharts.chart :as chart]
@@ -60,16 +64,17 @@
     (into {} (for [kind kinds] [(keyword kind) {:used (get-in data [:ledgers (keyword ledger) (keyword kind)] 0) :max (get caps (k kind))}]))))
 
 (defn effective [data]
-  (lv/effective-autonomy {:autonomy (:autonomy (settings data)) :paused (:paused data) :roster-active (:roster-active data)}))
+  (lv/effective-autonomy {:autonomy (:autonomy (settings data)) :paused (:paused data) :ceiling (:ceiling data)}))
 
 (defn watch-text
-  "watchText(reasons, autonomy), verbatim; the last 20 reasons."
-  [reasons autonomy]
+  "watchText(reasons, autonomy, hint): the last 20 reasons; the look hint (when set) after \"Re-read the
+   project\"."
+  [reasons autonomy hint]
   (let [lst (if (seq reasons)
               (str/join "\n" (map #(str "- " %) (take-last look-text-max reasons)))
               "- (the operator asked for a look)")]
     (str watch-prefix " Since your last look:\n" lst "\n\n"
-      "Re-read the project (sova_project, and sova_decisions where it matters). Infer gaps against the roster's decision areas and file new ones as ideas (§gap/…). "
+      "Re-read the project (sova_project). " (when-not (str/blank? hint) (str (str/trim hint) " "))
       "Then act within your autonomy (" autonomy "): the tools tell you when something needs a higher level. Keep your reply to a few lines for the operator.")))
 
 ;; ---- reasons -------------------------------------------------------------------------------------
@@ -279,12 +284,13 @@
     (state {:id :watch :initial :regions}
       ;; The watch watches its project (archived, has-overseer, name): the engine sends one
       ;; link/moved at once, so the facts are right from the start.
-      (on-entry {} (dsl/watch (fn [d] (b/project-sid (:org-id d) (:project-id d)))))
-      ;; Facts from the host (the roster's active people, the settings file as read) and the project.
+      (on-entry {} (dsl/watch (fn [d] (b/project-sid (:project-id d)))))
+      ;; Facts from the host (a ceiling and a look hint, contributed by whoever places the project) and the project.
       (transition {:sova/feed :quiet :event :facts/changed}
         (script {:expr (fn [_ d] (let [e (b/evt d)]
                                    (cond-> []
-                                     (contains? e :roster-active) (conj (ops/assign :roster-active (:roster-active e))))))}))
+                                     (contains? e :ceiling) (conj (ops/assign :ceiling (:ceiling e)))
+                                     (contains? e :look-hint) (conj (ops/assign :look-hint (:look-hint e))))))}))
       (transition {:sova/feed :quiet :event :link/moved :cond project-moved?}
         (script {:expr (fn [_ d] (let [m (b/moved d)]
                                    [(ops/assign :archived (b/moved-in? d :archived))
@@ -374,7 +380,7 @@
             (invoke {:id :look :type :sova/look
                      :params (fn [_ d] (let [eff (effective d)]
                                          {:reasons (texts (:run-reasons d)) :autonomy (:autonomy eff)
-                                          :text (watch-text (texts (:run-reasons d)) (:autonomy eff))
+                                          :text (watch-text (texts (:run-reasons d)) (:autonomy eff) (:look-hint d))
                                           :project-id (:project-id d)}))})
             (transition {:sova/feed :quiet :event :look/finished :cond (fn [_ d] (empty? (:reasons d))) :target :quiet}
               (script {:expr (fn [_ d] (end-run-ops d "finished" nil))}))
@@ -408,6 +414,6 @@
    :version  version
    :migrate  {}
    :storage  :host-local
-   :exported [:paused :roster-active :archived :looks-today :last-run :held :reasons :ledgers :settings]
+   :exported [:paused :ceiling :look-hint :archived :looks-today :last-run :held :reasons :ledgers :settings]
    :acts     acts
    :not-here not-here})

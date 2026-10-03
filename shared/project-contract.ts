@@ -6,7 +6,7 @@
 
 // ---- verbs, codes, exit classes (§app.project-services/result) ---------------------------------
 
-export const VERBS = ["create", "up", "down", "apply", "status", "logs", "reset", "teardown", "doctor", "conform"] as const;
+export const VERBS = ["create", "up", "down", "apply", "status", "logs", "reset", "teardown", "doctor", "conform", "test"] as const;
 export type Verb = (typeof VERBS)[number];
 /** Verb names that exist and answer `unsupported` (§app.project-services/reserved). */
 export const RESERVED_VERBS = ["share", "revoke", "deploy", "deploy.plan", "deploy.run", "deploy.status", "deploy.rollback"] as const;
@@ -27,6 +27,7 @@ export const ERROR_CODES = [
   "not-ready",
   "start-failed",
   "hook-failed",
+  "tests-failed",
   "dirty-worktree",
   "busy",
   "unsupported",
@@ -42,6 +43,7 @@ const EXIT: Record<ErrorCode, ExitClass> = {
   "not-ready": 1,
   "start-failed": 1,
   "hook-failed": 1,
+  "tests-failed": 1,
   "not-approved": 2,
   "not-conformant": 2,
   "cap-reached": 2,
@@ -92,6 +94,18 @@ export interface ServiceDecl {
   build?: Omit<StepDecl, "id">;
   scope: "checkout" | "shared";
   container?: { name: string; engine: "docker" | "podman" };
+  /** `on-demand`: `up` leaves it stopped unless named or required (§app.project-services/up). */
+  start: "up" | "on-demand";
+  /** How a builder uses it (a template, no `${host.…}`), for the instance note; outside the hash. */
+  about?: string;
+}
+/** The project's test command (§app.project-services/test). */
+export interface TestDecl {
+  run: Argv;
+  requires: string[];
+  timeout: number;
+  /** A small selection, green on the main checkout, that conformance runs. */
+  smoke: string[];
 }
 export type DataDecl =
   | { name: string; kind: "dir"; path?: string; from: string }
@@ -106,6 +120,7 @@ export interface ProjectDef {
   /** In declaration order. */
   services: ServiceDecl[];
   hooks: { probe?: { run: Argv; timeout: number } };
+  test?: TestDecl;
   /** Reserved (share, deploy): kept as written, not used yet. */
   reserved: { share?: unknown; deploy?: unknown };
 }
@@ -117,12 +132,24 @@ export const READY_TIMEOUT_DEFAULT = 60;
 export const READY_TIMEOUT_MAX = 600;
 export const HOOK_TIMEOUT_DEFAULT = 120;
 export const HOOK_TIMEOUT_MAX = 1800;
+export const TEST_TIMEOUT_DEFAULT = 600;
+export const ABOUT_MAX = 200;
+export const SELECTORS_MAX = 50;
+/** A test selector: never empty, never a flag (§app.project-services/contract). */
+export const SELECTOR = /^[A-Za-z0-9_][A-Za-z0-9_./:*-]{0,199}$/;
+/** Why `v` is not a list of selectors, or null. */
+export function selectorsProblem(v: unknown): string | null {
+  if (!Array.isArray(v)) return "must be a list of selectors";
+  if (v.length > SELECTORS_MAX) return `at most ${SELECTORS_MAX} selectors`;
+  for (const x of v) if (typeof x !== "string" || !SELECTOR.test(x)) return `${JSON.stringify(x)} is not a selector (letters, digits and _ . / : * -, starting with a letter, digit or _, at most 200)`;
+  return null;
+}
 /** Conformance takes the two slots above the cap (§app.project-services/conform). */
 export const scratchSlots = (def: Pick<ProjectDef, "slots">): [number, number] => [def.slots.cap + 1, def.slots.cap + 2];
 
 const NAME = /^[a-z][a-z0-9-]{0,30}$/;
 /** The variables Sova sets itself (§app.project-services/contract): a definition's env never names one. */
-export const SOVA_ENV = ["SOVA_V", "SOVA_PROJECT", "SOVA_INSTANCE", "SOVA_SLOT", "SOVA_CHECKOUT", "SOVA_MAIN", "SOVA_BRANCH", "SOVA_DATA", "SOVA_VERB", "SOVA_STEP", "SOVA_OUT"];
+export const SOVA_ENV = ["SOVA_V", "SOVA_PROJECT", "SOVA_INSTANCE", "SOVA_SLOT", "SOVA_CHECKOUT", "SOVA_MAIN", "SOVA_BRANCH", "SOVA_DATA", "SOVA_VERB", "SOVA_STEP", "SOVA_OUT", "SOVA_TEST_SELECT"];
 const sovaSets = (k: string) => SOVA_ENV.includes(k) || k.startsWith("SOVA_PORT_");
 const ENV_NAME = /^[A-Z_][A-Z0-9_]*$/;
 const SIGNALS = ["HUP", "USR1", "USR2", "INT", "TERM"] as const;
@@ -237,7 +264,7 @@ function reload(v: unknown, path: string): ReloadDecl {
 
 function service(nm: string, v: unknown, path: string): ServiceDecl {
   const o = obj(v, path);
-  keysOnly(o, ["cmd", "static", "cwd", "env", "ports", "requires", "ready", "reload", "build", "scope", "container"], path);
+  keysOnly(o, ["cmd", "static", "cwd", "env", "ports", "requires", "ready", "reload", "build", "scope", "container", "start", "about"], path);
   const hasCmd = o.cmd !== undefined;
   const hasStatic = o.static !== undefined;
   if (hasCmd === hasStatic) throw new DefinitionError(path, "needs exactly one of cmd (an argv) and static (a folder)");
@@ -260,7 +287,18 @@ function service(nm: string, v: unknown, path: string): ServiceDecl {
     requires: strList(o.requires, `${path}.requires`),
     reload: reload(o.reload, `${path}.reload`),
     scope,
+    start: "up",
   };
+  if (o.start !== undefined) {
+    if (o.start !== "up" && o.start !== "on-demand") throw new DefinitionError(`${path}.start`, 'must be "up" or "on-demand"');
+    if (o.start === "on-demand" && scope === "shared") throw new DefinitionError(`${path}.start`, "a shared service starts with up");
+    out.start = o.start;
+  }
+  if (o.about !== undefined) {
+    if (typeof o.about !== "string" || !o.about.trim() || o.about.length > ABOUT_MAX) throw new DefinitionError(`${path}.about`, `must be a sentence of at most ${ABOUT_MAX} characters`);
+    if (/\$\{host\./.test(o.about)) throw new DefinitionError(`${path}.about`, "may not read ${host.…}: the note is shown to sessions");
+    out.about = o.about;
+  }
   if (hasStatic) {
     out.static = relPath(o.static, `${path}.static`);
     if (Object.keys(ports).length !== 1) throw new DefinitionError(`${path}.ports`, "a static service has exactly one port");
@@ -320,7 +358,9 @@ function* templates(def: ProjectDef): Generator<[string, string]> {
     if (typeof s.reload === "object" && "cmd" in s.reload) for (const [i, a] of s.reload.cmd.entries()) yield [a, `${p}.reload.cmd[${i}]`];
     for (const [i, a] of (s.build?.run ?? []).entries()) yield [a, `${p}.build.run[${i}]`];
     if (s.container) yield [s.container.name, `${p}.container.name`];
+    if (s.about !== undefined) yield [s.about, `${p}.about`];
   }
+  for (const [i, a] of (def.test?.run ?? []).entries()) yield [a, `test.run[${i}]`];
   for (const [i, a] of (def.hooks.probe?.run ?? []).entries()) yield [a, `hooks.probe.run[${i}]`];
 }
 
@@ -333,7 +373,7 @@ export function parseDefinition(text: string): ProjectDef {
     throw new DefinitionError("$", `not JSON (${err instanceof Error ? err.message : String(err)})`);
   }
   const o = obj(raw, "$");
-  keysOnly(o, ["version", "slots", "host", "setup", "data", "services", "hooks", "share", "deploy"], "$");
+  keysOnly(o, ["version", "slots", "host", "setup", "data", "services", "hooks", "test", "share", "deploy"], "$");
   if (o.version !== 1) throw new DefinitionError("$.version", "must be 1");
   let cap = SLOT_CAP_DEFAULT;
   if (o.slots !== undefined) {
@@ -359,6 +399,17 @@ export function parseDefinition(text: string): ProjectDef {
       hooks.probe = { run: p.run, timeout: p.timeout };
     }
   }
+  let test: TestDecl | undefined;
+  if (o.test !== undefined) {
+    const t = obj(o.test, "$.test");
+    keysOnly(t, ["run", "requires", "timeout", "smoke"], "$.test");
+    const requires = strList(t.requires, "$.test.requires");
+    for (const r of requires) if (!services.some((x) => x.name === r)) throw new DefinitionError("$.test.requires", `names no service "${r}"`);
+    if (!Array.isArray(t.smoke) || !t.smoke.length) throw new DefinitionError("$.test.smoke", "name the smoke selection: 1 to 50 selectors, green on the main checkout");
+    const bad = selectorsProblem(t.smoke);
+    if (bad) throw new DefinitionError("$.test.smoke", bad);
+    test = { run: argv(t.run, "$.test.run"), requires, timeout: timeout(t.timeout, "$.test.timeout", TEST_TIMEOUT_DEFAULT, HOOK_TIMEOUT_MAX), smoke: t.smoke as string[] };
+  }
   const def: ProjectDef = {
     version: 1,
     slots: { cap },
@@ -367,6 +418,7 @@ export function parseDefinition(text: string): ProjectDef {
     data: dataList,
     services,
     hooks,
+    ...(test ? { test } : {}),
     reserved: { ...(o.share !== undefined ? { share: o.share } : {}), ...(o.deploy !== undefined ? { deploy: o.deploy } : {}) },
   };
   // requires: known, scope-consistent, acyclic.
@@ -488,7 +540,7 @@ export const envPart = (s: string) => s.toUpperCase().replace(/[^A-Z0-9]/g, "_")
 // ---- the result (§app.project-services/result) -------------------------------------------------
 
 export type InstanceState = "absent" | "stopped" | "running" | "degraded";
-export type StepKind = "setup" | "data" | "hook" | "build" | "start" | "ready" | "reload" | "stop" | "check" | "worktree" | "slot";
+export type StepKind = "setup" | "data" | "hook" | "build" | "start" | "ready" | "reload" | "stop" | "check" | "worktree" | "slot" | "test";
 export interface Step {
   id: string;
   kind: StepKind;
@@ -544,6 +596,28 @@ export interface ConformReport {
   checks: Check[];
   leaks: string[];
 }
+export interface TestFailure {
+  name: string;
+  message?: string;
+  file?: string;
+  line?: number;
+}
+/** A test run's result (§app.project-services/test): counts are null when the runner wrote none. */
+export interface TestsReport {
+  select: string[];
+  pass: boolean;
+  passed: number | null;
+  failed: number | null;
+  errors: number | null;
+  skipped: number | null;
+  failures: TestFailure[];
+  exit: number | null;
+  timedOut: boolean;
+  ms: number;
+  peakBytes: number | null;
+}
+export const FAILURES_MAX = 50;
+export const FAILURE_MESSAGE_MAX = 2000;
 export interface VerbError {
   code: ErrorCode;
   message: string;
@@ -570,6 +644,7 @@ export interface VerbResult {
   lines?: LogLine[];
   checks?: Check[];
   conform?: ConformReport;
+  tests?: TestsReport;
   error?: VerbError;
   defHash: string | null;
   approved: boolean;
@@ -598,6 +673,7 @@ export function ordered(r: VerbResult): VerbResult {
     ...(r.lines !== undefined ? { lines: r.lines } : {}),
     ...(r.checks !== undefined ? { checks: r.checks } : {}),
     ...(r.conform !== undefined ? { conform: r.conform } : {}),
+    ...(r.tests !== undefined ? { tests: r.tests } : {}),
     ...(r.error !== undefined ? { error: r.error } : {}),
     defHash: r.defHash,
     approved: r.approved,
@@ -613,7 +689,7 @@ export function isVerbResult(v: unknown): v is VerbResult {
   const want = ["v", "verb", "project", "instance", "slot", "generation", "checkout", "branch", "ok", "changed", "state", "steps", "services", "data", "links"];
   if (keys.slice(0, want.length).join() !== want.join()) return false;
   const tail = keys.slice(want.length);
-  const optional = ["instances", "lines", "checks", "conform", "error"];
+  const optional = ["instances", "lines", "checks", "conform", "tests", "error"];
   const fixedTail = ["defHash", "approved", "at"];
   if (tail.slice(-3).join() !== fixedTail.join()) return false;
   const mid = tail.slice(0, -3);

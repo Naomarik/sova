@@ -8,6 +8,7 @@ import { getIdentity } from "../mesh/localapi";
 import { createShareServer, type PreviewHooks, type ShareDispatch, type ShareUpgrade } from "./edge";
 import { ingressPreviewMatch, localPreviewOrigin } from "./preview-address";
 import { createPreviewProxy } from "./preview-proxy";
+import { setIngressInfo } from "./share-state";
 import { bumpRouteGeneration, routeSetting, viaGatewayIdentity, viaGatewayPeer } from "./gateway-client";
 import { registryRouteChanged, startRegistryPush, stopRegistryPush } from "./registry-push";
 import { trustedClient } from "./security";
@@ -277,3 +278,4 @@ export function stopIngress(): void {
 export function ingressInfo(): IngressInfo | null {
   return running ? running.ingress.info() : null;
 }
+setIngressInfo(ingressInfo); // share-state reads it, for those that never load the servers

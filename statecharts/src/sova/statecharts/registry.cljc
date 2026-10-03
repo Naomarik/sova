@@ -12,6 +12,7 @@
     [sova.statecharts.reconciler :as reconciler]
     [sova.statecharts.org :as org]
     [sova.statecharts.person :as person]
+    [sova.statecharts.placement :as placement]
     [sova.statecharts.proj :as proj]
     [sova.statecharts.residence :as residence]
     [sova.statecharts.watch :as watch]
@@ -43,6 +44,7 @@
    "residence" residence/entry
    "person"    person/entry
    "project"   proj/entry
+   "placement" placement/entry
    "watch"     watch/entry
    "baton"      baton/entry
    "decision"   decision/entry

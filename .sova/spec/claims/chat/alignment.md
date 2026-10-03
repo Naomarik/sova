@@ -189,6 +189,18 @@ an `align` call: it is the message, not its working.
     <p class="align-doc-meta">2 of 7 open · q3 decided · +q11</p>
   </header>
   <p class="align-doc-summary">How far the Overseer may act without asking.</p>
+  <details class="disclosure align-section align-approach" open>
+    <summary class="disclosure-summary align-approach-summary">
+      <svg class="icon icon-sm icon-twist" aria-hidden="true">…chevron-right…</svg>
+      <span class="align-approach-label">Approach</span> · <span class="text-num">2</span>
+    </summary>
+    <div class="disclosure-body">
+      <ul class="align-list align-approach-list">
+        <li><span class="text-mono align-item-id">a1</span><span class="align-approach-text">Measure a week of <strong>runs</strong> first.</span></li>
+        <li><span class="text-mono align-item-id">a7</span><span class="align-approach-text">Then cap the rate per <code>project</code>, not per session.</span></li>
+      </ul>
+    </div>
+  </details>
   <ol class="align-questions">
     <li class="align-q" data-state="open">
       <p class="align-q-head"><span class="text-mono">q3</span> <strong>Pace limit</strong>
@@ -223,7 +235,6 @@ an `align` call: it is the message, not its working.
     </li>
   </ol>
   <details class="align-section"><summary>Findings · 3</summary>…</details>
-  <details class="align-section"><summary>Approach · 4</summary>…</details>
   <details class="align-section"><summary>Rejected · 2</summary>…</details>
   <!-- answerable only (below) -->
   <div class="card-foot align-doc-foot">
@@ -242,11 +253,23 @@ an `align` call: it is the message, not its working.
 - **Card** is capped at `--measure`, `--space-3`/`--space-4` padding; the eyebrow is `micro`
   uppercase muted, the title `heading-s` semibold, the meta a muted caption. Questions are separated
   by a `--color-border` rule. The summary, ask, context, options, recommendation, decision and the
-  folded sections are body text in full ink, for legibility, except a question's context, one
+  sections are body text in full ink, for legibility, except a question's context, one
   level down (ink-2) so it sits below the options' trade-offs; a decided question's ask and
   recommendation, and a dropped question's ask, step down one level too. Inline code spans and bold runs in these fields
   render; no other markdown.
 
+- **The approach reads first.** The approach sits between the summary and the questions, open when
+  the card renders and still a disclosure (it folds, per card render, never remembered, like a
+  question's fold). Its heading is stronger than the other section labels — heading-s, full ink,
+  semibold — without accent colour, a panel or fill behind it. Its steps carry only their stable
+  ids (a1, a2…: the document's own numbering, which edits and removals keep stable), each id in a
+  narrow column of its own with no list marker or additional positional numbering. The entire
+  step body, including inline code and bold runs, occupies one text column, so wrapped lines
+  align under the step's text, never under its id. Findings and Rejected stay closed by default
+  below the questions and can still be opened. The bodies of alignment sections and expanded
+  earlier revisions draw no left guide rule, while keeping their indentation; this is local to
+  these alignment disclosures, not a change to the shared disclosure style. Earlier revisions
+  still collapse to their one-line change summary and open to show that revision in place.
 - **Status chip**, dot and word, only once the document is past aligning: Confirmed (success),
   Implementing (accent), Done (success), Dropped (neutral). An aligning document shows none.
 - **Questions** show their parts distinctly: the ask, the context, the options as a list lettered

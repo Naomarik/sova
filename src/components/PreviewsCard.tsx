@@ -1,6 +1,6 @@
 import { createSignal, For, type JSX, Show } from "solid-js";
 import { PREVIEW_PURPOSE_MAX } from "../../shared/preview-links";
-import { getPreviews, mintPreview, turnOffPreview } from "../lib/api";
+import { getProjectPreviews, mintPreview, turnOffPreview } from "../lib/api";
 import { createPoll } from "../lib/poll";
 import { previewRow, senderLine } from "../lib/preview-rows";
 import {
@@ -46,8 +46,8 @@ function SessionLink(props: { href: string | null; children: JSX.Element }) {
  * it too); the people it was sent to on a Sent to line, each with a Turn Off of their own link;
  * then New Preview, which opens the form with the warning. Read every 5 seconds while the page shows.
  */
-export function PreviewsCard(props: { orgId: string; projectId: string }) {
-  const poll = createPoll(() => getPreviews(props.orgId, props.projectId), POLL_MS);
+export function PreviewsCard(props: { projectId: string }) {
+  const poll = createPoll(() => getProjectPreviews(props.projectId), POLL_MS);
   /** Links minted in this page, by preview id: copyable even when the list keeps none. */
   const [links, setLinks] = createSignal<Record<string, string>>({});
   const [port, setPort] = createSignal("");
@@ -74,7 +74,7 @@ export function PreviewsCard(props: { orgId: string; projectId: string }) {
     setFormError(null);
     try {
       const why = purpose().trim();
-      const made = await mintPreview({ orgId: props.orgId, projectId: props.projectId, port: p.port, days: days(), ...(why ? { purpose: why } : {}) });
+      const made = await mintPreview({ projectId: props.projectId, port: p.port, days: days(), ...(why ? { purpose: why } : {}) });
       setLinks({ ...links(), [made.preview.id]: made.url });
       setPort("");
       setPurpose("");

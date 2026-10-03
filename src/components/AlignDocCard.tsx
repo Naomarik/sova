@@ -1,6 +1,6 @@
 import { createContext, For, Show, useContext } from "solid-js";
 import type { AlignDocInfo, AlignQuestionInfo, AlignRowInfo } from "../../shared/protocol";
-import { ALIGN_STATUS_CHIP, alignStatusOf, isOpenDoc, openCount, openLabel, optionLetter, QUESTION_CHIP, questionStateOf, recommendedOption } from "../lib/align";
+import { ALIGN_STATUS_CHIP, alignStatusOf, cardSections, isOpenDoc, openCount, openLabel, optionLetter, QUESTION_CHIP, questionStateOf, recommendedOption, type AlignCardSection } from "../lib/align";
 import { Chip, Icon } from "./ui";
 import "../design/align-viewer.css";
 
@@ -143,20 +143,22 @@ export function AlignDocCard(props: { doc: AlignDocInfo; line?: string }) {
 }
 
 function AlignDocBody(props: { doc: AlignDocInfo; answer?: AlignAnswer | null }) {
+  const sections = () => cardSections(props.doc);
   return (
     <>
       <p class="align-doc-summary"><Inline text={props.doc.summary} /></p>
       <Show when={props.doc.phase === "dropped" && props.doc.droppedWhy}>
         <p class="align-doc-dropped">Dropped: <Inline text={props.doc.droppedWhy ?? ""} /></p>
       </Show>
+      {/* The reading order is `cardSections`' own: the approach open between the summary and the
+          questions, then the folded sections below the questions. */}
+      <For each={sections().filter((s) => s.kind === "approach")}>{(s) => <AlignApproach section={s} />}</For>
       <Show when={props.doc.questions.length > 0}>
         <ol class="align-questions" aria-label="Questions">
           <For each={props.doc.questions}>{(q) => <AlignQuestion q={q} doc={props.doc.id} answer={props.answer} />}</For>
         </ol>
       </Show>
-      <AlignSection label="Findings" items={props.doc.findings.map((f) => ({ id: f.id, body: f.text }))} />
-      <AlignSection label="Approach" ordered items={props.doc.approach.map((a) => ({ id: a.id, body: a.text }))} />
-      <AlignSection label="Rejected" items={props.doc.rejected.map((x) => ({ id: x.id, body: `${x.option} — ${x.why}` }))} />
+      <For each={sections().filter((s) => s.kind !== "approach")}>{(s) => <AlignSection section={s} />}</For>
     </>
   );
 }
@@ -333,9 +335,37 @@ function AlignQuestion(props: { q: AlignQuestionInfo; doc: string; answer?: Alig
   );
 }
 
-function AlignSection(props: { label: string; items: { id: string; body: string }[]; ordered?: boolean }) {
+/** The approach: the plan the user reads first, between the summary and the questions, open when
+    the card renders and still a disclosure. Steps number by their stable ids only (a1, a2…), each
+    in a narrow column of its own with no list marker, so wrapped text aligns. */
+function AlignApproach(props: { section: AlignCardSection }) {
+  return (
+    <Show when={props.section.items.length > 0}>
+      <details class="disclosure align-section align-approach" open>
+        <summary class="disclosure-summary align-approach-summary">
+          <Icon name="chevron-right" small class="icon-twist" />
+          <span class="align-approach-label">{props.section.label}</span> · <span class="text-num">{props.section.items.length}</span>
+        </summary>
+        <div class="disclosure-body">
+          <ul class="align-list align-approach-list">
+            <For each={props.section.items}>
+              {(item) => (
+                <li>
+                  <span class="text-mono align-item-id">{item.id}</span>
+                  <span class="align-approach-text"><Inline text={item.body} /></span>
+                </li>
+              )}
+            </For>
+          </ul>
+        </div>
+      </details>
+    </Show>
+  );
+}
+
+function AlignSection(props: { section: AlignCardSection }) {
   const list = () => (
-    <For each={props.items}>
+    <For each={props.section.items}>
       {(item) => (
         <li>
           <span class="text-mono align-item-id">{item.id}</span> <Inline text={item.body} />
@@ -344,16 +374,14 @@ function AlignSection(props: { label: string; items: { id: string; body: string 
     </For>
   );
   return (
-    <Show when={props.items.length > 0}>
+    <Show when={props.section.items.length > 0}>
       <details class="disclosure align-section">
         <summary class="disclosure-summary">
           <Icon name="chevron-right" small class="icon-twist" />
-          {props.label} · <span class="text-num">{props.items.length}</span>
+          {props.section.label} · <span class="text-num">{props.section.items.length}</span>
         </summary>
         <div class="disclosure-body">
-          <Show when={props.ordered} fallback={<ul class="align-list">{list()}</ul>}>
-            <ol class="align-list">{list()}</ol>
-          </Show>
+          <ul class="align-list">{list()}</ul>
         </div>
       </details>
     </Show>

@@ -116,7 +116,7 @@ test("templates render every known variable and $$ as a literal $", () => {
 
 test("every error code has one exit class and one status", () => {
   const want: Record<number, string[]> = {
-    1: ["not-ready", "start-failed", "hook-failed"],
+    1: ["not-ready", "start-failed", "hook-failed", "tests-failed"],
     2: ["not-approved", "not-conformant", "cap-reached", "port-held", "dirty-worktree", "unsupported", "refused-slot0", "share-denied", "forbidden", "needs-confirm"],
     3: ["invalid-request", "invalid-definition", "not-found"],
     4: ["busy"],
@@ -164,4 +164,44 @@ test("ordered results keep one key order and isVerbResult checks it", () => {
   assert.ok(isVerbResult(failed));
   assert.ok(!isVerbResult({ ...failed, ok: true }), "an error with ok true is not the shape");
   assert.ok(!isVerbResult(ordered({ ...base, error: { code: "nope" as never, message: "x" }, ok: false })), "codes are a closed list");
+});
+
+test("test, start and about: parsed strictly, selectors can never read as flags", () => {
+  const svc = { cmd: ["node", "s.js"], ports: { nrepl: { base: 7852, stride: 10 } } };
+  const def = parse({
+    version: 1,
+    services: { app: { cmd: ["node", "a.js"] }, repl: { ...svc, start: "on-demand", about: "Test nREPL: clj-nrepl-eval -p ${ports.repl.nrepl}" } },
+    test: { run: [".sova/bin/test", "${ports.repl.nrepl}"], requires: ["repl"], smoke: ["motorsaif.core-test", "src/a.test.ts", "ns/*:fast"] },
+  });
+  assert.equal(def.services.find((s) => s.name === "app")!.start, "up", "start defaults to up");
+  assert.equal(def.services.find((s) => s.name === "repl")!.start, "on-demand");
+  assert.deepEqual(def.test, { run: [".sova/bin/test", "${ports.repl.nrepl}"], requires: ["repl"], timeout: 600, smoke: ["motorsaif.core-test", "src/a.test.ts", "ns/*:fast"] });
+  assert.equal(parse({ version: 1, services: { app: svc }, test: { run: ["t"], smoke: ["a"], timeout: 1800 } }).test!.timeout, 1800);
+  assert.equal(parse({ version: 1, services: { app: svc } }).test, undefined);
+  const base = { version: 1, services: { app: svc } };
+  assert.equal(refusedAt({ ...base, test: { run: ["t"], smoke: ["a"], timeout: 1801 } }), "$.test.timeout");
+  assert.equal(refusedAt({ ...base, test: { run: ["t"], smoke: [] } }), "$.test.smoke");
+  assert.equal(refusedAt({ ...base, test: { run: ["t"], smoke: ["-x"] } }), "$.test.smoke", "a flag is no selector");
+  assert.equal(refusedAt({ ...base, test: { run: ["t"], smoke: ["a b"] } }), "$.test.smoke");
+  assert.equal(refusedAt({ ...base, test: { run: ["t"], smoke: Array.from({ length: 51 }, (_, i) => `t${i}`) } }), "$.test.smoke");
+  assert.equal(refusedAt({ ...base, test: { run: ["t"], smoke: ["a"], requires: ["nope"] } }), "$.test.requires");
+  assert.equal(refusedAt({ ...base, test: { run: "make test", smoke: ["a"] } }), "$.test.run", "never a shell string");
+  assert.equal(refusedAt({ ...base, test: { run: ["t", "${ports.nope.x}"], smoke: ["a"] } }), "$.test.run[1]");
+  assert.equal(refusedAt({ ...base, test: { run: ["t"], smoke: ["a"], extra: 1 } }), "$.test.extra");
+  assert.equal(refusedAt({ version: 1, services: { app: { ...svc, start: "later" } } }), "$.services.app.start");
+  assert.equal(refusedAt({ version: 1, services: { app: { ...svc, scope: "shared", ports: { p: { fixed: 7000 } }, start: "on-demand" } } }), "$.services.app.start");
+  assert.equal(refusedAt({ version: 1, host: ["TOKEN"], services: { app: { ...svc, about: "token ${host.TOKEN}" } } }), "$.services.app.about", "the note is shown to sessions");
+  assert.equal(refusedAt({ version: 1, services: { app: { ...svc, about: "x".repeat(201) } } }), "$.services.app.about");
+  assert.equal(refusedAt({ version: 1, services: { app: { ...svc, about: "port ${ports.app.nope}" } } }), "$.services.app.about");
+});
+
+test("a tests block goes between conform and error", () => {
+  const tests = { select: ["a"], pass: false, passed: 1, failed: 1, errors: 0, skipped: 0, failures: [{ name: "a" }], exit: 1, timedOut: false, ms: 5, peakBytes: null };
+  const r = ordered({ v: 1, verb: "test", project: null, instance: null, slot: null, generation: null, checkout: null, branch: null, ok: false, changed: false, state: "running", steps: [], services: [], data: [], links: [], error: { code: "tests-failed", message: "1 of 2 failed" }, tests, lines: [], defHash: null, approved: true, at: "t" });
+  assert.deepEqual(Object.keys(r).slice(-6), ["lines", "tests", "error", "defHash", "approved", "at"]);
+  assert.ok(isVerbResult(r));
+  const { tests: _t, error, defHash, approved, at, ...head } = r;
+  const swapped = { ...head, error, tests, defHash, approved, at };
+  assert.deepEqual(Object.keys(swapped).slice(-5), ["error", "tests", "defHash", "approved", "at"]);
+  assert.ok(!isVerbResult(swapped), "tests after error is not the shape");
 });

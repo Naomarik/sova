@@ -3,12 +3,15 @@ import { OrgHost, type ActResult, type HostChange } from "./org-host";
 import { OrgError } from "./org-error";
 import type { ActBy, Envelope } from "./org-envelope";
 import { projectOfSession, stampEnvelope, type StampWho } from "./org-stamp";
+import { ceilingOf } from "./projects/contributions";
 import type { ProjectOverseerSettings } from "../shared/project-overseer";
 
 /**
- * The org engines of this host (design §2 "one org, one queue"): one OrgHost (server/org-host/, the
- * engine member's) per attached org, opened at startup and at create/attach, closed at detach. Every
- * org and project route reads from and acts through it; nothing here keeps state of its own.
+ * The engines of this host (design §2 "one queue per engine"): one OrgHost (server/org-host/) per
+ * attached org and per standalone project, each keyed by its engine id (the org's id, or the project's).
+ * Opened at startup and at create/attach/registration, closed at detach. Every org and project route
+ * reads from and acts through one; nothing here keeps state of its own, and nothing here knows which
+ * kind an engine is.
  *
  * The server's handlers for effects and invocations (session files, links, git, promotion, looks,
  * replies, wrap-ups, reconcile runs) are registered on every host as it opens, by the modules that
@@ -22,14 +25,14 @@ export type { ActResult, Effect, EffectOutcome, HostChange, HostProblem, Invocat
     tests may hand in a fake with the same shape. */
 export type OrgHostApi = Pick<
   OrgHost,
-  "paths" | "feed" | "effects" | "invocations" | "log" | "act" | "actNow" | "settle" | "start" | "setState" | "trial" | "explain" | "enabledEvents" | "configuration" | "data" | "sessions" | "holds" | "nextDueAt" | "fireDue" | "statechartOf" | "statechartInfo" | "problems" | "logAct" | "onChange" | "reload" | "close" | "rewindowHours"
+  "paths" | "feed" | "effects" | "invocations" | "log" | "act" | "actNow" | "settle" | "start" | "setState" | "trial" | "explain" | "enabledEvents" | "configuration" | "data" | "sessions" | "holds" | "nextDueAt" | "fireDue" | "statechartOf" | "statechartInfo" | "problems" | "logAct" | "onChange" | "reload" | "close" | "rewindowHours" | "adopt"
 >;
 
 /** Where a project's settings (overseer.json, as read now) come from: server/project-overseer-store.ts
     registers it as it loads. Injected, so this module imports nothing that imports server/orgs.ts
     (orgs registers its change listener here as it loads). */
 type SettingsPart = Pick<ProjectOverseerSettings, "autonomy" | "caps" | "holdMin" | "confirmKinds">;
-let settingsSource: { read(orgId: string, projectId: string, workspaceDir?: string): SettingsPart; defaults(): SettingsPart } | null = null;
+let settingsSource: { read(projectId: string, workspaceDir: string): SettingsPart; defaults(): SettingsPart } | null = null;
 export function setProjectSettingsSource(source: NonNullable<typeof settingsSource>): void {
   settingsSource = source;
 }
@@ -39,9 +42,9 @@ function settingsOf(): NonNullable<typeof settingsSource> {
 }
 
 /** r13: the people an engine-delivered act reaches, as records with their current effective hours (server/orgs.ts
-    registers it as it loads): the stamp carries them, so a held act released later is checked against the hours in
-    force then. */
-let stampPeopleSource: ((orgId: string, payload: Record<string, unknown>) => Record<string, unknown>) | null = null;
+    registers it as it loads; `{}` for an engine that is no org's): the stamp carries them, so a held act released
+    later is checked against the hours in force then. */
+let stampPeopleSource: ((engine: string, payload: Record<string, unknown>) => Record<string, unknown>) | null = null;
 export function setStampPeopleSource(fn: NonNullable<typeof stampPeopleSource>): void {
   stampPeopleSource = fn;
 }
@@ -76,6 +79,8 @@ export function setOrgHostOpener(fn: Opener): void {
 }
 
 const hosts = new Map<string, OrgHostApi>();
+/** Each open engine's workspace-layout directory. */
+const dirs = new Map<string, string>();
 const opening = new Map<string, Promise<OrgHostApi>>();
 const openedHooks: ((host: OrgHostApi, orgId: string) => void)[] = [];
 const changeHooks: ((orgId: string, change: HostChange) => void)[] = [];
@@ -109,7 +114,14 @@ export async function openOrgHost(opts: OpenOptions): Promise<OrgHostApi> {
       if (!self) throw new Error("The org engine stamped before it opened.");
       const pid = stampProject(self, sid, payload, who);
       const settings = settingsOf();
-      const env = stampEnvelope(self, opts.orgId, pid, { by: (who?.by as ActBy | undefined) ?? "statechart", ...(who?.overseerId ? { overseerId: who.overseerId } : {}), attended: false }, (projectId) => settings.read(opts.orgId, projectId, opts.workspaceDir), settings.defaults());
+      const env = stampEnvelope(
+        self,
+        pid,
+        { by: (who?.by as ActBy | undefined) ?? "statechart", ...(who?.overseerId ? { overseerId: who.overseerId } : {}), attended: false },
+        (projectId) => settings.read(projectId, opts.workspaceDir),
+        settings.defaults(),
+        (projectId) => (projectId ? ceilingOf(opts.orgId, projectId) : null),
+      );
       return { ...env, ...(stampPeopleSource?.(opts.orgId, payload) ?? {}) } as Envelope;
     };
     const host = await opener({ ...opts, stamp, clock: () => (testClock ? testClock() : Date.now()) });
@@ -124,6 +136,7 @@ export async function openOrgHost(opts: OpenOptions): Promise<OrgHostApi> {
         }
     });
     hosts.set(opts.orgId, host);
+    dirs.set(opts.orgId, opts.workspaceDir);
     return host;
   })();
   opening.set(opts.orgId, p);
@@ -138,6 +151,7 @@ export async function openOrgHost(opts: OpenOptions): Promise<OrgHostApi> {
 export async function closeOrgHost(orgId: string): Promise<void> {
   const host = hosts.get(orgId) ?? (await opening.get(orgId)?.catch(() => undefined));
   hosts.delete(orgId);
+  dirs.delete(orgId);
   await host?.close();
 }
 
@@ -155,6 +169,16 @@ export function hostOf(orgId: string): OrgHostApi {
 
 export const isOrgHostOpen = (orgId: string): boolean => hosts.has(orgId);
 
+/** The ids of every open engine. */
+export const openEngineIds = (): string[] => [...hosts.keys()];
+
+/** An open engine's workspace-layout directory (its portable statecharts are under `statecharts/`). */
+export function engineDir(engine: string): string {
+  const dir = dirs.get(engine);
+  if (!dir) throw new OrgError("This engine is not open on this host.", 409);
+  return dir;
+}
+
 const STATUSES = new Set([400, 404, 409, 410]);
 
 /** A statechart refusal as the route answers it: its status (409 when the statechart names none) and sentence; `code` passes through. */
@@ -163,11 +187,12 @@ export function refusalError(r: Refusal): OrgError {
   return new OrgError(r.sentence, status, r.code ?? undefined, r.tail ?? undefined);
 }
 
-/** The envelope for an act of `who` on the org's project (null: an org-level act), from the statecharts as they stand now. */
-export function envelopeFor(orgId: string, projectId: string | null, who: StampWho): Envelope {
-  const host = hostOf(orgId);
+/** The envelope for an act of `who` on the engine's project (null: an act on no project), from the statecharts as they stand now. */
+export function envelopeFor(engine: string, projectId: string | null, who: StampWho): Envelope {
+  const host = hostOf(engine);
   const settings = settingsOf();
-  return stampEnvelope(host, orgId, projectId, who, (pid) => settings.read(orgId, pid), settings.defaults());
+  const dir = engineDir(engine);
+  return stampEnvelope(host, projectId, who, (pid) => settings.read(pid, dir), settings.defaults(), (pid) => (pid ? ceilingOf(engine, pid) : null));
 }
 
 /** A hold's id as the server names it (F19): the statechart's hold id is unique only within its session
@@ -197,6 +222,7 @@ export async function actOrThrow(orgId: string, sid: string, event: string, payl
 /** Tests: forget every host without closing it. */
 export function resetOrgHostsForTest(): void {
   hosts.clear();
+  dirs.clear();
   opening.clear();
   openedHooks.length = 0;
   changeHooks.length = 0;

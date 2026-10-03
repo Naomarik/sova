@@ -39,13 +39,22 @@
     (is (= :feed (feed-of (mk) sid :person/leave op)))))
 
 (deftest project
-  (let [sid "project/o1/pr1" mk #(started "project" sid {:org-id "o1" :id "pr1" :name "Site" :root "/r"})]
-    (is (= :quiet (feed-of (mk) sid :milestone/noted {:kind "baton-done" :shown true})))
+  (let [sid "project/pr1" mk #(started "project" sid {:id "pr1" :name "Site" :root "/r"})]
+    (is (= :quiet (feed-of (mk) sid :started/noted {:sid "build/pr1/c1" :kind "coding"})))
     (is (= :feed (feed-of (mk) sid :project/edit (assoc op :name "Site 2"))))))
 
+(deftest placement
+  (let [sid "placement/o1/pr1"
+        mk  #(let [e (eng)]
+               (core/start! e "project/pr1" "project" {:id "pr1" :name "Site" :root "/r"} t0)
+               (core/start! e sid "placement" {:org-id "o1" :project-id "pr1" :via "born"} t0)
+               e)]
+    (is (= :quiet (feed-of (mk) sid :milestone/noted {:kind "baton-done" :shown true})))
+    (is (= :feed (feed-of (mk) sid :placement/edit (assoc op :owner-hidden true))))))
+
 (deftest watch
-  (let [sid "watch/o1/pr1" mk #(started "watch" sid {:org-id "o1" :project-id "pr1"})]
-    (is (= :quiet (feed-of (mk) sid :facts/changed {:roster-active true})))
+  (let [sid "watch/pr1" mk #(started "watch" sid {:project-id "pr1"})]
+    (is (= :quiet (feed-of (mk) sid :facts/changed {:ceiling {:autonomy "L0" :reason "Capped."}})))
     (is (= :quiet (feed-of (mk) sid :turn/started {:look true})))
     (is (= :feed (feed-of (mk) sid :operator/run-now op)) "an act (taken or refused) is feed")))
 
@@ -78,11 +87,11 @@
 
 (deftest item
   (let [sid "item/o1/pr1/g_1" mk #(started "item" sid {:org-id "o1" :project-id "pr1" :id "g_1" :idea-id "§gap/x"})]
-    (is (= :quiet (feed-of (mk) sid :link/moved {:from "watch/o1/pr1" :statechart "watch" :states [:watch] :exported {:settings {:autonomy "L0"}}})))
+    (is (= :quiet (feed-of (mk) sid :link/moved {:from "watch/pr1" :statechart "watch" :states [:watch] :exported {:settings {:autonomy "L0"}}})))
     (is (= :feed (feed-of (mk) sid :gap/drop op)))))
 
 (deftest build
-  (let [sid "build/o1/pr1/c1" mk #(started "build" sid {:org-id "o1" :project-id "pr1" :session-id "c1" :kind "coding" :title "T" :prompt "P"})]
+  (let [sid "build/pr1/c1" mk #(started "build" sid {:project-id "pr1" :session-id "c1" :kind "coding" :title "T" :prompt "P"})]
     (is (= :quiet (feed-of (mk) sid :workers/changed {:n 0})))
     (is (= :feed (feed-of (mk) sid :effect/failed {:kind "make-worktree" :detail "x"})))))
 
@@ -91,5 +100,5 @@
         ks  (into (set (keys now)) (keys fg/golden))
         bad (for [k (sort ks) :when (not= (get now k ::none) (get fg/golden k ::none))]
               [k :now (get now k ::none) :golden (get fg/golden k ::none)])]
-    (is (= 444 (count fg/golden)))
+    (is (= 452 (count fg/golden)))
     (is (empty? bad) (str (count bad) " differ: " (pr-str (take 20 bad))))))

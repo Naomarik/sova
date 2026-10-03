@@ -2,7 +2,7 @@ import { createEffect, For, type JSX, on, Show } from "solid-js";
 import type { CostModelRow, CostTokens, ProjectCost } from "../../shared/costs";
 import { getProjectCost } from "../lib/api";
 import { allModels, costNotes, emptyLine, ESTIMATE_TITLE, hasEstimate, KIND_LABEL, kindRows, moneyWord, modelRows, starterParts, TOKEN_KINDS, topMeta, usd } from "../lib/costs";
-import { orgSessionHref } from "../lib/orgs-route";
+import { projectSessionHref } from "../lib/projects-route";
 import { createPoll, type Poll } from "../lib/poll";
 import { tokens } from "../lib/project-overseer-view";
 
@@ -14,8 +14,8 @@ const TOKEN_HEAD: Record<(typeof TOKEN_KINDS)[number], string> = { input: "Input
  * Refresh Project (`tick`), and every 60 seconds while the tab shows. The page reads it once for
  * its summary chip and its Cost tab.
  */
-export function createProjectCost(props: { orgId: string; projectId: string; tick(): number }): Poll<ProjectCost> {
-  const poll = createPoll(() => getProjectCost(props.orgId, props.projectId), COST_POLL_MS);
+export function createProjectCost(props: { projectId: string; tick(): number }): Poll<ProjectCost> {
+  const poll = createPoll(() => getProjectCost(props.projectId), COST_POLL_MS);
   createEffect(on(props.tick, () => poll.refetch(), { defer: true }));
   return poll;
 }
@@ -28,7 +28,7 @@ export const costFigure = (c: ProjectCost): string => usd(c.totalUsd, hasEstimat
  * the total, who started what, the most expensive sessions, by kind and by model and token kind
  * behind Breakdown, and what isn't priced or counted.
  */
-export function ProjectCostCard(props: { orgId: string; poll: Poll<ProjectCost> }) {
+export function ProjectCostCard(props: { projectId: string; poll: Poll<ProjectCost> }) {
   const poll = props.poll;
   return (
     <section class="card orgs-section" aria-labelledby="project-cost">
@@ -36,13 +36,13 @@ export function ProjectCostCard(props: { orgId: string; poll: Poll<ProjectCost> 
         Cost
       </h2>
       <Show when={poll.data()} fallback={<p class="cost-lede">{poll.error() ? `Couldn't count this project's cost. ${poll.error()}` : "Counting…"}</p>}>
-        {(c) => <CostBody cost={c()} orgId={props.orgId} />}
+        {(c) => <CostBody cost={c()} projectId={props.projectId} />}
       </Show>
     </section>
   );
 }
 
-function CostBody(props: { cost: ProjectCost; orgId: string }) {
+function CostBody(props: { cost: ProjectCost; projectId: string }) {
   const c = () => props.cost;
   const kinds = () => kindRows(c().byKind);
   const models = () => modelRows(c().byModel);
@@ -79,7 +79,7 @@ function CostBody(props: { cost: ProjectCost; orgId: string }) {
               <li class="cost-session">
                 <span class="cost-session-main">
                   <Show when={s.path} fallback={<>{s.title}{s.countedAt ? " (not on this host)" : ""}</>}>
-                    {(p) => <a href={orgSessionHref(props.orgId, p())}>{s.title}</a>}
+                    {(p) => <a href={projectSessionHref(props.projectId, p())}>{s.title}</a>}
                   </Show>
                   <span class="cost-session-meta">{topMeta(s.kind, s.by)}</span>
                 </span>

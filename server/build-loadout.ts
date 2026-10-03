@@ -7,11 +7,11 @@ import { noteBuildMerged } from "./build-merged";
 import { mergeMode } from "./mode-state";
 import { OrgError } from "./org-error";
 import { workingSubagents } from "./live";
-import { hostOf, isOrgHostOpen, onOrgChange, onOrgHostOpened, type Effect, type OrgHostApi } from "./org-engine";
+import { hostOf, isOrgHostOpen, onOrgChange, onOrgHostOpened, openEngineIds, type Effect, type OrgHostApi } from "./org-engine";
 import type { Envelope } from "./org-envelope";
 import { canonicalPath } from "./paths";
-import { readIndex } from "./orgs";
 import { projectOf } from "./project-overseer-store";
+import { buildSid, engineOf, projectHost } from "./projects/spaces";
 import type { ProjectCodingMode } from "../shared/project-overseer";
 import { cutWorktree, gitRootOf, mergeBack, readWorktree, removeWorktree, worktreePathOf, type GitRoot, type WorktreeReading, type WorktreeRecord } from "./project-worktrees";
 import { markSeen } from "./seen";
@@ -22,7 +22,7 @@ import { addWebSession } from "./web-sessions";
 import { markOwned } from "./write-guard";
 
 /**
- * A project's coding sessions (builds) on the build statechart (`build/<org>/<p>/<sid>`, design §3.8;
+ * A project's coding sessions (builds) on the build statechart (`build/<p>/<sid>`, design §3.8;
  * §app.project-overseer/coding-worktrees, /new-coding-session): the statechart owns each one's setup, turn,
  * worktree, branch and merge; this module runs its effects (the worktree and session file, the mode,
  * the first prompt, a prompt, Merge Branch, Remove Worktree), gives it the runtime's and git's facts,
@@ -30,7 +30,7 @@ import { markOwned } from "./write-guard";
  * of its own: the session file and worktree folder are this host's, found by id and by branch.
  */
 
-export const buildSid = (orgId: string, projectId: string, sessionId: string): string => `build/${orgId}/${projectId}/${sessionId}`;
+export { buildSid };
 
 export type BuildKind = "coding" | "operator-coding";
 
@@ -123,29 +123,29 @@ function rowOf(configuration: string[], d: Record<string, unknown>): BuildRow {
 }
 
 /** The project's builds, oldest first; a build whose worktree could not be made is none (nothing started). */
-export function readBuilds(orgId: string, projectId: string): BuildRow[] {
-  if (!isOrgHostOpen(orgId)) return [];
-  return hostOf(orgId)
+export function readBuilds(projectId: string): BuildRow[] {
+  if (!engineOf(projectId)) return [];
+  return projectHost(projectId)
     .sessions("build")
     .filter((s) => s.data.projectId === projectId && !s.configuration.includes("not-started") && s.running)
     .map((s) => rowOf(s.configuration, s.data))
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
 }
 
-/** Every build of the org (a project removed from its list keeps its builds, so they stay organizational). */
-export function readOrgBuilds(orgId: string): (BuildRow & { projectId: string })[] {
-  if (!isOrgHostOpen(orgId)) return [];
-  return hostOf(orgId)
+/** Every build an engine holds, with its project. */
+export function readEngineBuilds(engine: string): (BuildRow & { projectId: string })[] {
+  if (!isOrgHostOpen(engine)) return [];
+  return hostOf(engine)
     .sessions("build")
     .filter((s) => !s.configuration.includes("not-started") && s.running)
     .map((s) => ({ ...rowOf(s.configuration, s.data), projectId: str(s.data.projectId) }));
 }
 
 /** One build of the project, or null. */
-export function readBuild(orgId: string, projectId: string, sessionId: string): BuildRow | null {
-  if (!isOrgHostOpen(orgId)) return null;
-  const host = hostOf(orgId);
-  const sid = buildSid(orgId, projectId, sessionId);
+export function readBuild(projectId: string, sessionId: string): BuildRow | null {
+  if (!engineOf(projectId)) return null;
+  const host = projectHost(projectId);
+  const sid = buildSid(projectId, sessionId);
   const d = host.data(sid);
   return d ? rowOf(host.configuration(sid) ?? [], d) : null;
 }
@@ -164,17 +164,17 @@ export async function withWorktreePath(row: BuildRow, root: string): Promise<(Bu
 /** A fresh session id for a build the host starts (the statechart's own drive names its own). */
 export const newBuildSessionId = (): string => randomUUID();
 
-const waiters = new Set<{ orgId: string; sid: string; done: () => void }>();
+const waiters = new Set<{ engine: string; sid: string; done: () => void }>();
 
 const setupEnded = (host: Pick<OrgHostApi, "configuration">, sid: string): boolean => {
   const c = host.configuration(sid);
   return !c || c.includes("ready") || c.includes("not-started");
 };
 
-onOrgChange((orgId, change) => {
+onOrgChange((engine, change) => {
   for (const w of waiters) {
-    if (w.orgId !== orgId || !change.sessions.includes(w.sid)) continue;
-    if (setupEnded(hostOf(orgId), w.sid)) {
+    if (w.engine !== engine || !change.sessions.includes(w.sid)) continue;
+    if (setupEnded(hostOf(engine), w.sid)) {
       waiters.delete(w);
       w.done();
     }
@@ -182,11 +182,12 @@ onOrgChange((orgId, change) => {
 });
 
 /** Until the build's setup has ended (ready, or not started): its worktree, session file, mode and first prompt. */
-export function buildSetupEnded(orgId: string, sid: string, ms = 120_000): Promise<void> {
-  if (setupEnded(hostOf(orgId), sid)) return Promise.resolve();
+export function buildSetupEnded(projectId: string, sid: string, ms = 120_000): Promise<void> {
+  const engine = engineOf(projectId);
+  if (!engine || setupEnded(hostOf(engine), sid)) return Promise.resolve();
   return new Promise((done, fail) => {
     const w = {
-      orgId,
+      engine,
       sid,
       done: () => {
         clearTimeout(t);
@@ -232,7 +233,7 @@ async function createBuildSession(cwd: string, sessionId: string, d: Record<stri
   let choice = { model: typeof d.model === "string" && d.model ? d.model : null, thinking: typeof d.thinking === "string" && d.thinking ? d.thinking : null };
   // A build the item statechart started itself (L3) names no model: the project's coding model, as Start coding gives it.
   if (!choice.model) {
-    const def = await (await import("./project-overseer")).buildDefaults(str(d.orgId), str(d.projectId));
+    const def = await (await import("./project-overseer")).buildDefaults(str(d.projectId));
     choice = { model: def.model, thinking: choice.thinking ?? def.thinking };
   }
   // Opened on its model and thinking from the start (its file never records the default first);
@@ -267,9 +268,9 @@ export async function applyCodingMode(path: string, mode: ProjectCodingMode): Pr
   return chat.session.isStreaming ? "after-turn" : "now";
 }
 
-function sessionOf(host: OrgHostApi, e: Effect): { d: Record<string, unknown>; orgId: string; projectId: string; sessionId: string } {
+function sessionOf(host: OrgHostApi, e: Effect): { d: Record<string, unknown>; projectId: string; sessionId: string } {
   const d = host.data(e.sessionId) ?? {};
-  return { d, orgId: str(d.orgId), projectId: str(d.projectId), sessionId: str(d.sessionId) };
+  return { d, projectId: str(d.projectId), sessionId: str(d.sessionId) };
 }
 
 function pathOrThrow(sessionId: string): string {
@@ -287,12 +288,12 @@ const slugTitle = (sessionId: string, d: Record<string, unknown>): string => {
   return readSessionTitles()[sessionId] || given || prompt.split(/\s+/).slice(0, 8).join(" ") || str(d.title);
 };
 
-export function registerBuildEffects(host: OrgHostApi, orgId: string): void {
+export function registerBuildEffects(host: OrgHostApi, engine: string): void {
   host.effects.register("make-worktree", async (e) => {
     const { d, projectId, sessionId } = sessionOf(host, e);
     const seed = seeded.get(sessionId);
     if (seed) return seed.made;
-    const project = projectOf(orgId, projectId);
+    const project = projectOf(projectId);
     const folder = typeof d.folder === "string" && d.folder ? d.folder : project.root;
     const repo = await gitRootOf(project.root);
     if ("reason" in repo) {
@@ -311,11 +312,11 @@ export function registerBuildEffects(host: OrgHostApi, orgId: string): void {
   });
 
   host.effects.register("set-mode", async (e) => {
-    const { orgId: oid, projectId, sessionId } = sessionOf(host, e);
+    const { projectId, sessionId } = sessionOf(host, e);
     if (seeded.has(sessionId)) return {};
     try {
-      // F20: a build the item statechart started itself (L3) names no mode: the project's, as Start coding gives it.
-      const mode = (e.mode as ProjectCodingMode | null | undefined) ?? (await (await import("./project-overseer")).buildDefaults(oid, projectId)).mode;
+      // F20: a build started with no mode named (a statechart's own drive): the project's, as Start coding gives it.
+      const mode = (e.mode as ProjectCodingMode | null | undefined) ?? (await (await import("./project-overseer")).buildDefaults(projectId)).mode;
       await applyCodingMode(pathOrThrow(sessionId), mode);
     } catch (err) {
       // The session stays, listed and counted; its first turn never runs in a mode it wasn't given.
@@ -328,7 +329,7 @@ export function registerBuildEffects(host: OrgHostApi, orgId: string): void {
   host.effects.register("first-prompt", async (e) => {
     const { sessionId } = sessionOf(host, e);
     if (seeded.has(sessionId)) return {};
-    const r = await (await import("./overseer")).promptSession(pathOrThrow(sessionId), str(e.prompt));
+    const r = await (await import("./session-prompt")).promptSession(pathOrThrow(sessionId), str(e.prompt));
     if (!r.ok) throw new Error(r.error);
     return {};
   });
@@ -344,7 +345,7 @@ export function registerBuildEffects(host: OrgHostApi, orgId: string): void {
   // sova_send: its mode first when asked (mid-turn, after the running turn), then the text. A build's own
   // session, or (`session`, the project statechart's act) a coding session in the project root that is no build.
   host.effects.register("prompt", async (e) => {
-    const overseer = await import("./overseer");
+    const overseer = await import("./session-prompt");
     const path = typeof e.session === "string" ? await overseer.pathOfId(e.session) : pathOrThrow(sessionOf(host, e).sessionId);
     if (!path) throw new Error("That session is not on this host.");
     let modeApplies: "now" | "after-turn" | undefined;
@@ -358,7 +359,7 @@ export function registerBuildEffects(host: OrgHostApi, orgId: string): void {
     const { d, projectId, sessionId } = sessionOf(host, e);
     const seed = seeded.get(sessionId)?.merge;
     if (seed) return seed;
-    const root = projectOf(orgId, projectId).root;
+    const root = projectOf(projectId).root;
     const row = await withWorktreePath(rowOf(host.configuration(e.sessionId) ?? [], d), root);
     if (!row) throw new Error("It runs in the project root.");
     // Its title as the page shows it: a rename, the one it started with, the listing's (its first message), its branch.
@@ -374,7 +375,7 @@ export function registerBuildEffects(host: OrgHostApi, orgId: string): void {
     const { d, projectId, sessionId } = sessionOf(host, e);
     const seed = seeded.get(sessionId)?.remove;
     if (seed) return seed;
-    const root = projectOf(orgId, projectId).root;
+    const root = projectOf(projectId).root;
     const row = await withWorktreePath(rowOf(host.configuration(e.sessionId) ?? [], d), root);
     if (!row) throw new Error("It runs in the project root.");
     const out = await removeWorktree(row.worktree, root);
@@ -387,7 +388,7 @@ export function registerBuildEffects(host: OrgHostApi, orgId: string): void {
     for (const s of host.sessions("build")) {
       if (s.running && s.data.turn === "working") await host.act(s.id, "turn/ended", {}, SYSTEM);
     }
-  })().catch((err) => console.warn(`[build] ${orgId}: resuming turns: ${err instanceof Error ? err.message : String(err)}`));
+  })().catch((err) => console.warn(`[build] ${engine}: resuming turns: ${err instanceof Error ? err.message : String(err)}`));
 }
 onOrgHostOpened(registerBuildEffects);
 
@@ -395,20 +396,19 @@ const SYSTEM = { by: "system" } as unknown as Envelope;
 
 // ---- facts ---------------------------------------------------------------------------------------------
 
-/** The build a session file is, on any attached org: its org and statechart id. */
-export function buildOfSession(sessionId: string): { orgId: string; projectId: string; sid: string } | null {
-  for (const { id: orgId } of readIndex().orgs) {
-    if (!isOrgHostOpen(orgId)) continue;
-    for (const s of hostOf(orgId).sessions("build")) {
-      if (s.data.sessionId === sessionId) return { orgId, projectId: str(s.data.projectId), sid: s.id };
+/** The build a session file is, in any open engine: its engine, project and statechart id. */
+export function buildOfSession(sessionId: string): { engine: string; projectId: string; sid: string } | null {
+  for (const engine of openEngineIds()) {
+    for (const s of hostOf(engine).sessions("build")) {
+      if (s.data.sessionId === sessionId) return { engine, projectId: str(s.data.projectId), sid: s.id };
     }
   }
   return null;
 }
 
 /** The runtime's facts now (working, its workers) to the build's statechart, before an act that checks them. */
-export async function syncBuildTurn(orgId: string, sid: string, path: string | null): Promise<void> {
-  const host = hostOf(orgId);
+export async function syncBuildTurn(projectId: string, sid: string, path: string | null): Promise<void> {
+  const host = projectHost(projectId);
   const d = host.data(sid);
   if (!d || !path) return;
   const working = isSessionBusy(path);
@@ -418,8 +418,8 @@ export async function syncBuildTurn(orgId: string, sid: string, path: string | n
   if (workers !== (typeof d.workers === "number" ? d.workers : 0)) await host.act(sid, "workers/changed", { n: workers }, SYSTEM);
 }
 
-/** The build a hosted session file is, with its org (fresh ones first, then the index). */
-function buildOfPath(path: string): { orgId: string; projectId: string; sid: string } | null {
+/** The build a hosted session file is, with its engine (fresh ones first, then the index). */
+function buildOfPath(path: string): { engine: string; projectId: string; sid: string } | null {
   const want = canonicalPath(path);
   for (const [id, p] of [...fresh, ...indexedSessionPaths()]) if (canonicalPath(p) === want) return buildOfSession(id);
   return null;
@@ -430,17 +430,17 @@ function buildOfPath(path: string): { orgId: string; projectId: string; sid: str
 export async function noteBuildStarted(path: string): Promise<void> {
   const hit = buildOfPath(path);
   if (!hit) return;
-  const host = hostOf(hit.orgId);
+  const host = hostOf(hit.engine);
   if (host.data(hit.sid)?.turn !== "working") await host.act(hit.sid, "turn/started", {}, SYSTEM);
 }
 
 /** Every build of the project on this host: its runtime's facts now (working, workers) to its statechart, before an act
     that counts them (the at-once coding cap, F21). */
-export async function syncProjectBuilds(orgId: string, projectId: string): Promise<void> {
-  if (!isOrgHostOpen(orgId)) return;
-  for (const s of hostOf(orgId).sessions("build")) {
+export async function syncProjectBuilds(projectId: string): Promise<void> {
+  if (!engineOf(projectId)) return;
+  for (const s of projectHost(projectId).sessions("build")) {
     if (s.data.projectId !== projectId || !s.running) continue;
-    await syncBuildTurn(orgId, s.id, buildSessionPath(str(s.data.sessionId)));
+    await syncBuildTurn(projectId, s.id, buildSessionPath(str(s.data.sessionId)));
   }
 }
 
@@ -451,7 +451,7 @@ export async function noteBuildSettled(path: string, failed: boolean): Promise<v
     if (canonicalPath(p) !== want) continue;
     const hit = buildOfSession(id);
     if (!hit) return;
-    const host = hostOf(hit.orgId);
+    const host = hostOf(hit.engine);
     if (host.data(hit.sid)?.turn !== "working") await host.act(hit.sid, "turn/started", {}, SYSTEM);
     await host.act(hit.sid, "turn/ended", { failed }, SYSTEM);
     return;
@@ -459,11 +459,11 @@ export async function noteBuildSettled(path: string, failed: boolean): Promise<v
 }
 
 /** Git's facts about a build's worktree and branch (the page's read) to its statechart. */
-export async function probeBuild(orgId: string, sid: string, row: BuildRow, w: WorktreeReading): Promise<void> {
+export async function probeBuild(projectId: string, sid: string, row: BuildRow, w: WorktreeReading): Promise<void> {
   const tree = row.removed ? "removed" : w.state === "missing" ? "missing" : "open";
   const branch = !w.branch ? undefined : w.merged ? "merged" : row.merged && w.unmerged > 0 ? "new-since-merge" : w.ahead > 0 ? "unmerged" : "no-commits";
   const payload: Record<string, unknown> = { tree, ahead: w.ahead, dirty: w.dirty, branchGone: !w.branch, ...(branch ? { branch } : {}), ...(w.error ? { error: w.error } : {}) };
-  await hostOf(orgId).act(sid, "git/probe", payload, SYSTEM);
+  await projectHost(projectId).act(sid, "git/probe", payload, SYSTEM);
 }
 
 /** Tests: forget the session files made here. */

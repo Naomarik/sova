@@ -3,7 +3,7 @@ import { LINK_WARNINGS } from "../../shared/public-links";
 import { handoffLine, type LinkKind, type LinkRef, type LinkRefusal, type OutreachLogLine } from "../../shared/outreach";
 import { linksOfKey, mintLink, revokeLinks } from "../baton-links";
 import { batonById, currentOffer, reachedBy } from "../baton";
-import { operatorName, readRoster } from "../orgs";
+import { operatorName, readProjects, readRoster } from "../orgs";
 import { listPreviews, mintSibling, revokePreview } from "../preview-links";
 import { awaitShareLinks } from "../share/links-events";
 import { linkUrl, shareState } from "../share/listener";
@@ -118,8 +118,8 @@ const preview: LinkResolver = {
   sessions: () => [],
   check({ orgId, projectId }, ref) {
     if (ref.kind !== "preview") return no("link", "Not a preview link.");
-    const p = listPreviews({ orgId }).find((v) => v.id === ref.preview);
-    if (!p) return no("preview-unknown", "No such preview in this organization.");
+    const p = listPreviews().find((v) => v.id === ref.preview);
+    if (!p || !readProjects(orgId).some((x) => x.id === p.projectId)) return no("preview-unknown", "No such preview in this organization.");
     if (p.projectId !== projectId) return no("other-project", "That preview belongs to another project.");
     if (p.state !== "active") return p.state === "off" ? no("preview-off", "That preview is turned off.") : no("preview-expired", "That preview is expired.");
     const address = previewAddress();

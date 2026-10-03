@@ -17,6 +17,7 @@ process.env.PI_CODING_AGENT_DIR = agentDir;
 mkdirSync(join(agentDir, "sessions", "live"), { recursive: true });
 
 const orgs = await import("./orgs");
+const { editProject } = await import("./projects/spaces");
 const baton = await import("./baton");
 const store = await import("./project-overseer-store");
 const { isOrgSession, orgLookup } = await import("./org-sessions");
@@ -113,7 +114,7 @@ describe("SessionSummary.org", async () => {
 
   test("names follow renames at the next read; a project gone from projects.json keeps its id, loses its name", async () => {
     await orgs.patchOrg(org.id, { name: "Mamluk" });
-    await orgs.patchProject(org.id, project.id, { name: "Rakiba" });
+    await editProject(project.id, { name: "Rakiba" });
     assert.deepEqual(orgLookup().of(coding.path, coding.id), { orgId: org.id, orgName: "Mamluk", projectId: project.id, projectName: "Rakiba", kind: "coding" });
     const other = orgLookup().of(coding.path, "not-started");
     assert.equal(other, undefined);
@@ -134,7 +135,7 @@ describe("SessionSummary.org", async () => {
   });
 
   test("the overseer's budget and caps read only its own coding rows", () => {
-    const rows = readBuilds(org.id, project.id);
+    const rows = readBuilds(project.id);
     assert.deepEqual(rows.map((r) => r.kind).sort(), ["coding", "operator-coding"]);
     // codingOf (project-overseer.ts) filters `kind === "coding"`: the one row the overseer started.
     assert.deepEqual(rows.filter((r) => r.kind === "coding").map((r) => r.sessionId), [coding.id]);

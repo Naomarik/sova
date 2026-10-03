@@ -101,7 +101,7 @@ export function PipelineCard(props: {
                   <p class="pipeline-held-line" title={h.reviewSince ? undefined : `Goes ahead at ${stampTime(h.goesAt)}.`}>
                     {heldWaitLine(heldWaitOf(h), now())}
                   </p>
-                  <CancelHeldButton orgId={props.orgId} holdId={h.id} what={h.what} onDone={() => poll.refetch()} />
+                  <CancelHeldButton projectId={props.projectId} holdId={h.id} what={h.what} onDone={() => poll.refetch()} />
                 </li>
               )}
             </For>

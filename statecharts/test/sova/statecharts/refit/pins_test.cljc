@@ -6,7 +6,7 @@
     [sova.statecharts.base :as b]
     [sova.statecharts.baton :as bt]
     [sova.statecharts.person :as person]
-    [sova.statecharts.proj :as proj]
+    [sova.statecharts.placement :as pl]
     [sova.statecharts.watch :as w]
     [sova.statecharts.registry :as registry]
     [sova.statecharts.refit.host :as h]
@@ -29,28 +29,30 @@
       "person01: a patch naming the current status moves nowhere")
   (is (= "left" (person/target-status {:status "active" :_event {:name :person/edit :data {:patch {:status "left"}}}}))))
 
-;; ---- project -----------------------------------------------------------------------------------------
+;; ---- placement and project -----------------------------------------------------------------------------------------
 
-(deftest project-pins
-  (is (= "less than an hour ago" (proj/hours-ago t0 (+ t0 (dec hour)))))
-  (is (= "1 hour ago" (proj/hours-ago t0 (+ t0 hour))) "proj09")
-  (is (= "2 hours ago" (proj/hours-ago t0 (+ t0 (* 2 hour)))) "proj04")
-  (is (not (proj/milestone? (assoc (ev {:build-finished-at t0}) :last-post-at t0))) "proj07: a build that finished at the last post is no news")
-  (is (proj/milestone? (assoc (ev {:build-finished-at (inc t0)}) :last-post-at t0)))
-  (let [upd (fn [last-post now] (proj/update-check (assoc (ev {:owner-active true :text "News" :at now :build-finished-at (dec now)}) :last-post-at last-post)))]
-    (is (nil? (upd t0 (+ t0 proj/update-every-ms))) "proj10: a day to the ms is a day")
-    (is (some? (upd t0 (+ t0 proj/update-every-ms -1))))
+(deftest placement-pins
+  (is (= "less than an hour ago" (pl/hours-ago t0 (+ t0 (dec hour)))))
+  (is (= "1 hour ago" (pl/hours-ago t0 (+ t0 hour))) "proj09")
+  (is (= "2 hours ago" (pl/hours-ago t0 (+ t0 (* 2 hour)))) "proj04")
+  (is (not (pl/milestone? (assoc (ev {:build-finished-at t0}) :last-post-at t0))) "proj07: a build that finished at the last post is no news")
+  (is (pl/milestone? (assoc (ev {:build-finished-at (inc t0)}) :last-post-at t0)))
+  (let [upd (fn [last-post now] (pl/update-check (assoc (ev {:owner-active true :text "News" :at now :build-finished-at (dec now)}) :last-post-at last-post)))]
+    (is (nil? (upd t0 (+ t0 pl/update-every-ms))) "proj10: a day to the ms is a day")
+    (is (some? (upd t0 (+ t0 pl/update-every-ms -1))))
     (is (nil? (upd nil t0)) "proj00: never posted: no gate"))
-  (let [left (fn [statechart] (proj/stakeholder-left? nil (assoc (ev {:from (str statechart "/o1/p1") :statechart statechart :states [:left]}) :stakeholder "p1")))]
+  (let [left (fn [statechart] (pl/stakeholder-left? nil (assoc (ev {:from (str statechart "/o1/p1") :statechart statechart :states [:left]}) :stakeholder "p1")))]
     (is (true? (boolean (left "person"))))
     (is (not (left "baton")) "proj01: only the person's own statechart"))
-  (is (= 2 (count (proj/set-stakeholder-ops (assoc (ev {:person-id "p1"}) :stakeholder "p1")))) "proj13: the same stakeholder again adds no line")
-  (is (= 3 (count (proj/set-stakeholder-ops (assoc (ev {:person-id "p2"}) :stakeholder "p1")))))
-  (let [x (h/send! (h/start! (h/new-host) "project" "project/o1/pr1" {:org-id "o1" :id "pr1" :name "Site" :root "/r"})
-                   "project/o1/pr1" :gap/file {:by "overseer" :attended true :autonomy "L3" :gap-id "g_1" :idea-id "§gap/x"})
-        sp (first (filter #(= "item" (:statechart %)) (h/directives x "project/o1/pr1")))]
+  (is (= 2 (count (pl/set-stakeholder-ops (assoc (ev {:person-id "p1"}) :stakeholder "p1")))) "proj13: the same stakeholder again adds no line")
+  (is (= 3 (count (pl/set-stakeholder-ops (assoc (ev {:person-id "p2"}) :stakeholder "p1")))))
+  (let [x (h/send! (h/start! (h/new-host) "placement" "placement/o1/pr1" {:org-id "o1" :project-id "pr1"})
+                   "placement/o1/pr1" :gap/file {:by "overseer" :attended true :autonomy "L3" :gap-id "g_1" :idea-id "§gap/x"})
+        sp (first (filter #(= "item" (:statechart %)) (h/directives x "placement/o1/pr1")))]
     (is (= "item/o1/pr1/g_1" (:id sp)))
-    (is (false? (:watch? sp)) "proj06: the project never watches its items"))
+    (is (false? (:watch? sp)) "proj06: the placement never watches its items")))
+
+(deftest project-pins
   (is (= "A coding session \"Pay\"" (what "project" :build/start {:title "Pay"})) "proj14")
   (is (= "A coding session \"untitled\"" (what "project" :build/start {}))))
 
@@ -90,7 +92,7 @@
   (is (nil? (:person-wrote-at (h/data (msg (baton {:to "p1"}) "operator") bsid))) "baton02: the operator is no person")
   (is (= t0 (:person-wrote-at (h/data (-> (baton {:to "p1"}) (msg "p1") (h/advance! 60000) (msg "p1")) bsid))) "the first time stays")
   (is (= t0 (:closed-at (h/data (h/send! (baton {:to "p1"}) bsid :baton/close op) bsid))) "baton10")
-  (is (some #(= {:event :milestone/noted :target "project/o1/pr1" :data {:kind "baton-done" :shown true}} (select-keys % [:event :target :data]))
+  (is (some #(= {:event :milestone/noted :target "placement/o1/pr1" :data {:kind "baton-done" :shown true}} (select-keys % [:event :target :data]))
             (h/elsewhere (h/send! (baton {:to "p1"}) bsid :baton/goal-done {:by "model" :summary "All set"}))) "baton08")
   (let [p (-> (baton {:to "p1"}) (msg "p1"))]
     (is (= "Not recorded: Cy Lee is already on the roster. Ask Ana Ruiz and try again." (h/refusal p bsid :baton/propose (assoc cy :names-taken ["cy lee"]))) "baton12")
@@ -145,7 +147,7 @@
   (let [y (-> (rec) (index "d1" "drafted"))
         eff #(last (h/outbox (h/send! y rsid :decision/promote (merge {:by "overseer" :ids ["d1"]} %)) rsid))]
     (is (= "message" (:ledger (eff {:attended true}))) "reconc12")
-    (is (= "day" (:ledger (eff {:attended false :autonomy "L2" :roster-active true :allowance {:promote {:used 0 :max 5}}}))))
+    (is (= "day" (:ledger (eff {:attended false :autonomy "L2" :allowance {:promote {:used 0 :max 5}}}))))
     (let [p (h/send! y rsid :decision/promote {:by "overseer" :attended true :ids ["d1"]})
           e (last (h/outbox p rsid))
           reasons #(filter (fn [s] (and (= :reason/noted (:event s)) (= "reconcile/promoted" (get-in s [:data :kind])))) (h/elsewhere %))]
@@ -161,16 +163,16 @@
 
 (deftest item-pins
   (let [x (-> (h/start! (h/new-host) "item" isid {:org-id "o1" :project-id "pr1" :id "g_1" :idea-id "§gap/invoicing"})
-              (h/send! isid :link/moved {:from "watch/o1/pr1" :statechart "watch" :states [:watch]
-                                         :exported {:settings {:autonomy "L0"} :paused false :roster-active true :archived false}}))
+              (h/send! isid :link/moved {:from "watch/pr1" :statechart "watch" :states [:watch]
+                                         :exported {:settings {:autonomy "L0"} :paused false :archived false}}))
         asked (fn [to] (:answered-nothing-to (h/data (-> x (item-baton 1 [:open :with-person] [{:to to}]) (item-baton 1 [:closed] [{:to to}])) isid)))]
     (is (= ["p1"] (asked "p1")) "item19")
     (is (empty? (asked "pool")) "item07: an offer's pool is nobody")))
 
 ;; ---- build -------------------------------------------------------------------------------------------
 
-(def csid* "build/o1/pr1/c1")
-(defn build [& [d]] (h/start! (h/new-host) "build" csid* (merge {:org-id "o1" :project-id "pr1" :session-id "c1" :kind "coding" :title "Pay page" :prompt "Build it"} d)))
+(def csid* "build/pr1/c1")
+(defn build [& [d]] (h/start! (h/new-host) "build" csid* (merge {:project-id "pr1" :session-id "c1" :kind "coding" :title "Pay page" :prompt "Build it"} d)))
 (def made-tree {:kind "make-worktree" :result {:branch "sova/pay-abc123" :target "main" :base "b0"}})
 (defn ready [x] (-> x (h/send! csid* :effect/done made-tree) (h/send! csid* :effect/done {:kind "set-mode"}) (h/send! csid* :effect/done {:kind "first-prompt"})))
 
@@ -192,9 +194,9 @@
     (is (not (some #{"worktree-note"} (h/kinds (h/send! in-root csid* :effect/done {:kind "set-mode"}) csid*))))))
 
 (deftest watch-release-waits-while-archived
-  (let [wsid "watch/o1/pr1"
-        moved (fn [x states] (h/send! x wsid :link/moved {:from "project/o1/pr1" :statechart "project" :states states :exported {:name "Site"}}))
-        x (-> (h/start! (h/new-host) "watch" wsid {:org-id "o1" :project-id "pr1" :tick-ms 0 :roster-active true :last-run-at t0})
+  (let [wsid "watch/pr1"
+        moved (fn [x states] (h/send! x wsid :link/moved {:from "project/pr1" :statechart "project" :states states :exported {:name "Site"}}))
+        x (-> (h/start! (h/new-host) "watch" wsid {:project-id "pr1" :tick-ms 0 :last-run-at t0})
               (moved [:project :has-overseer :active])
               (h/send! wsid :limit/refused {:kind "gather" :ledger "day" :used 6 :max 6}))
         held #(count (:held (h/data % wsid)))]
@@ -203,8 +205,8 @@
     (is (= 1 (held (h/advance! (moved x [:archived :has-overseer]) (* 24 hour)))) "watch01: not while archived")))
 
 (deftest watch-switch-pins
-  (let [wsid "watch/o1/pr1"
-        x (h/start! (h/new-host) "watch" wsid {:org-id "o1" :project-id "pr1" :tick-ms 0 :roster-active true :last-run-at t0})
+  (let [wsid "watch/pr1"
+        x (h/start! (h/new-host) "watch" wsid {:project-id "pr1" :tick-ms 0 :last-run-at t0})
         off (h/send! x wsid :settings/changed {:settings {:watch false}})]
     (is (h/in? off wsid :watch-off))
     (is (h/in? (h/send! off wsid :settings/changed {:settings {:watch true}}) wsid :watch-on) "watch09: turned on again")))
@@ -309,8 +311,8 @@
 
 (deftest item-runf-pins
   (let [x (-> (h/start! (h/new-host) "item" isid {:org-id "o1" :project-id "pr1" :id "g_1" :idea-id "§gap/invoicing"})
-              (h/send! isid :link/moved {:from "watch/o1/pr1" :statechart "watch" :states [:watch]
-                                         :exported {:settings {:autonomy "L1"} :paused false :roster-active true :archived false}})
+              (h/send! isid :link/moved {:from "watch/pr1" :statechart "watch" :states [:watch]
+                                         :exported {:settings {:autonomy "L1"} :paused false :archived false}})
               (h/send! isid :gather/start (assoc op :session-id "b1" :to "p1" :targets ["p1"] :public-title "Pay" :goal "Learn")))]
     (is (h/in? x isid :gather-starting))
     (is (h/in? (item-baton x 1 [:open :with-person] [{:to "p1"}]) isid :asking) "item00 item04: its gathering open is asking, nothing waits on the operator")

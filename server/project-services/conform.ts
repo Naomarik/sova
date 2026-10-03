@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFile
 import { join } from "node:path";
 import { execFile } from "node:child_process";
 import {
+  closureOf,
   CONTRACT_FILE,
   isVerbResult,
   ordered,
@@ -26,7 +27,8 @@ import { defHashOf, isApproved } from "./trust";
  * project's say-so. Whatever fails, both scratch instances are torn down and the leak check runs.
  */
 
-export const SUITE_VERSION = 1;
+/** 2: a declared `test` passes its smoke selection twice alike in A, on-demand services wait for it (§app.project-services/conform). */
+export const SUITE_VERSION = 2;
 
 type Git = typeof realGit;
 
@@ -179,7 +181,6 @@ async function runSuite(
   const [slotA, slotB] = scratchSlots(def);
   const branchA = `sova/conform-${runId}-a`;
   const branchB = `sova/conform-${runId}-b`;
-  const hasProcess = def.services.some((x) => x.static === undefined && x.scope === "checkout");
   const token = `sova-conform-${runId}`;
   let a: VerbResult | null = null;
   let b: VerbResult | null = null;
@@ -219,13 +220,20 @@ async function runSuite(
     if (!s.check("up-a", upA.ok && upA.state === "running", describe(upA), t0, upA.error?.code)) return;
     t0 = Date.now();
     const own: string[] = [];
-    for (const svc of upA.services.filter((x) => x.scope === "checkout"))
+    // The services up started: an on-demand one waits for its first test.
+    for (const svc of upA.services.filter((x) => x.scope === "checkout" && x.state !== "stopped"))
       for (const [k, port] of Object.entries(svc.ports)) {
         // Its own process, or its own container publishing the port (§app.project-services/up).
         const c = await engine.portClaim(recA!, def, svc.name, port);
         if (!c.held || !c.own) own.push(`${svc.name}.${k} (${port}): ${c.held ? c.who : "nothing listens"}`);
       }
-    if (!s.check("ports-owned", !own.length, own.length ? `not held by A's own processes: ${own.join("; ")}` : "every declared port is held by A's own processes", t0)) return;
+    if (!s.check("ports-owned", !own.length, own.length ? `not held by A's own processes: ${own.join("; ")}` : "every declared port of what up started is held by A's own processes", t0)) return;
+    const onDemand = def.services.filter((x) => x.scope === "checkout" && x.start === "on-demand").map((x) => x.name);
+    if (onDemand.length) {
+      t0 = Date.now();
+      const woke = upA.services.filter((x) => onDemand.includes(x.name) && x.state !== "stopped");
+      if (!s.check("on-demand-idle", !woke.length, woke.length ? `up started on-demand ${woke.map((x) => `${x.name} (${x.state})`).join(", ")}` : `up left ${onDemand.join(", ")} stopped`, t0)) return;
+    }
     t0 = Date.now();
     const upA2 = await s.verb("up A again", "up", { instance: a.instance });
     if (!s.check("up-a-again", upA2.ok && !upA2.changed && sameJson(pidsOf(upA2), pidsOf(upA)), `${describe(upA2)}; pids ${JSON.stringify(pidsOf(upA))} → ${JSON.stringify(pidsOf(upA2))}`, t0, upA2.error?.code)) return;
@@ -276,8 +284,11 @@ async function runSuite(
     if (!s.check("apply-a", ap.ok && ap.state === "running" && sameJson(bBefore, bAfter), `${describe(ap)}; B pids ${JSON.stringify(bBefore)} → ${JSON.stringify(bAfter)}`, t0, ap.error?.code)) return;
     // 8. logs.
     t0 = Date.now();
+    // Lines are owed only by what runs: a static service logs nothing, an on-demand one not started yet has nothing to log.
+    const logging = ap.services.filter((x) => x.scope === "checkout" && x.kind !== "static" && x.state !== "stopped").map((x) => x.name);
     const lg = await s.verb("logs A", "logs", { instance: a.instance, lines: 50 });
-    if (!s.check("logs-a", lg.ok && (!hasProcess || (lg.lines?.length ?? 0) > 0) && (lg.lines?.length ?? 0) <= 50, hasProcess ? `${lg.lines?.length ?? 0} line(s)` : "no process services: nothing to log", t0)) return;
+    const n = lg.lines?.length ?? 0;
+    if (!s.check("logs-a", lg.ok && (!logging.length || n > 0) && n <= 50, logging.length ? `${n} line(s) from ${logging.join(", ")}` : `${n} line(s); nothing started that logs`, t0)) return;
     // 9. reset A.
     if (def.data.length) {
       t0 = Date.now();
@@ -291,7 +302,26 @@ async function runSuite(
       }
       if (!s.check("reset-a", ok, `${describe(rs)}; ${gone}`, t0, rs.error?.code)) return;
     } else s.check("reset-a", true, "no data declared", Date.now());
-    // 10. down A, and again; B still up.
+    // 9b. test (suite 2): the smoke selection passes in A, twice, with the same counts; B untouched.
+    if (def.test) {
+      t0 = Date.now();
+      const bPidsT = pidsOf(await s.verb("status B before test A", "status", { instance: b.instance }));
+      const t1 = await s.verb("test A (smoke)", "test", { instance: a.instance, select: def.test.smoke });
+      const needs = closureOf(def, def.test.requires).filter((x) => x.scope === "checkout").map((x) => x.name);
+      const notReady = t1.services.filter((x) => needs.includes(x.name) && x.state !== "ready").map((x) => `${x.name} ${x.state}`);
+      const bAfterT = pidsOf(await s.verb("status B after test A", "status", { instance: b.instance }));
+      const counts = (r: VerbResult) => (r.tests ? [r.tests.passed, r.tests.failed, r.tests.errors, r.tests.skipped] : null);
+      const said = (r: VerbResult) => (r.tests ? `pass ${r.tests.pass}, counts ${JSON.stringify(counts(r))}, exit ${r.tests.exit}, ${r.tests.ms} ms` : describe(r));
+      if (!s.check("test-a", t1.ok && !!t1.tests?.pass && !notReady.length && sameJson(bPidsT, bAfterT), `${t1.error ? `${describe(t1)}; ` : ""}${said(t1)}; requires ${notReady.length ? `not ready: ${notReady.join(", ")}` : `ready (${needs.join(", ") || "none"})`}; B pids ${JSON.stringify(bPidsT)} → ${JSON.stringify(bAfterT)}`, t0, t1.error?.code)) return;
+      t0 = Date.now();
+      const t2 = await s.verb("test A (smoke) again", "test", { instance: a.instance, select: def.test.smoke });
+      if (!s.check("test-a-again", t2.ok && !!t2.tests?.pass && sameJson(counts(t2), counts(t1)), `${said(t1)} → ${said(t2)}`, t0, t2.error?.code)) return;
+    } else {
+      t0 = Date.now();
+      const tu = await s.verb("test A (none declared)", "test", { instance: a.instance });
+      if (!s.check("test-unsupported", tu.error?.code === "unsupported" && !tu.steps.length, describe(tu), t0)) return;
+    }
+    // 10. down A, and again; B still up (on-demand services stop with the rest).
     t0 = Date.now();
     const bPids = pidsOf(await s.verb("status B before down A", "status", { instance: b.instance }));
     const dn = await s.verb("down A", "down", { instance: a.instance });

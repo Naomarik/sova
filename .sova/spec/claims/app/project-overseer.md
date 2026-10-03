@@ -9,18 +9,20 @@ promotes decisions (§app/requirements), and starts ordinary coding sessions in 
 operator talks to it in the normal chat page under a head of its own (§app.project-overseer/page),
 which is also its live view: its tool calls render as tool cards as they happen.
 
-## §app.project-overseer/identity — One per project, in the workspace repo
+## §app.project-overseer/identity — One per project, in its engine's dir
 
-- Created on the operator's first open (`POST /api/orgs/:id/projects/:pid/overseer`); `GET` answers
+- Created on the operator's first open (`POST /api/projects/:pid/overseer`); `GET` answers
   `exists: false` until then. One current conversation per project; **Clear** (`POST …/overseer/clear`:
   its chat head's ⋯ Clear, or `/clear` typed in its composer, §app.project-overseer/page) starts a new
   one and keeps the previous ones (up to 20) as read-only history, opened from its chat head's
   History; older ones are archived (they stay in the workspace repo, like every workspace file).
   Settings, notes, ideas and to-dos stay.
-- Its file lives in the org's workspace repo (`sessions/`), carries an invisible
-  `sova-project-overseer` marker `{v:1, orgId, projectId}`, and its cwd is the **project root**.
-  It is that project's overseer only when the marker is present, the file is in THAT org's
-  workspace, and the project's statechart knows its id; a copy or a fork is an ordinary session.
+- Its file lives in the `sessions/` of the engine that holds the project (the org's workspace repo
+  while placed, `<stateRoot>/projects/<pid>/` while standalone, §app.projects/standalone), carries an
+  invisible `sova-project-overseer` marker `{v:1, projectId}` (an `orgId` in an older marker is
+  ignored), and its cwd is the **project root**. It is that project's overseer only when the marker
+  is present, the file is in THAT engine's `sessions/`, and the project's statechart knows its id; a
+  copy or a fork is an ordinary session.
   The session list marks it (`projectOverseer`, and `org`, §app.organizations/org-sessions).
 - **Two writers, each by its own route.** Only two things write a message into it: the operator's
   own composer, and the global Overseer, through its one message route and only in a turn the
@@ -29,7 +31,7 @@ which is also its live view: its tool calls render as tool cards as they happen.
   /api/sessions/prompt`) still refuses it (409), and the message route refuses any caller without
   the server's sender secret (403). A message from either is the operator's to its model and to its
   limits (§app.project-overseer/autonomy-levels).
-- Its settings and working files are in the workspace repo under `projects/<projectId>/overseer/`:
+- Its settings and working files are in its engine's dir under `projects/<projectId>/overseer/`:
   `overseer.json` (autonomy, model, thinking, the coding sessions' model, thinking and mode, the
   limits, the pace, the hold, watch on/off, extra instructions; §app.project-overseer/limits),
   `notes.md`, `ideas/` and `todos.json`, committed with the org's workspace commits
@@ -52,11 +54,13 @@ which is also its live view: its tool calls render as tool cards as they happen.
   refused with the reason; a listing or search leaves such entries out; a secret file inside the
   root is still refused. No shell, no edit or write tool. Its prompt is Sova's
   (`server/project-overseer-prompt.md`), re-rendered at every run with the project, the level in
-  force, the caps, the roster (name, role, decision areas; never contact details) and the project's main
-  stakeholder ("Main stakeholder: {name}: decides every area of this project that no one else on
-  the roster decides."), its ideas, a line saying the operator's to-dos are the operator's own
+  force (a standalone project's with the standalone level meanings, and only its coding-session, prompt
+  and look limits; gathering sessions and promotions appear only while placed), the caps, while placed
+  the organization's sections (the roster: name, role, decision areas,
+  never contact details; the project's main stakeholder, "Main stakeholder: {name}: decides every
+  area of this project that no one else on the roster decides."; the gap guidance), its ideas, a line saying the operator's to-dos are the operator's own
   list (never their text: it reads them with `sova_todos` when the operator asks,
-  §app.project-overseer/ideas-and-todos), its notes, the organization's About text (§app.organizations/about) and, last, the operator's extra instructions. Model and thinking from `overseer.json`, else the new-session
+  §app.project-overseer/ideas-and-todos), its notes, while placed the organization's About text (§app.organizations/about) and, last, the operator's extra instructions. Model and thinking from `overseer.json`, else the new-session
   defaults; the composer's picks are saved there.
 - **Extra instructions.** The project page's Settings tab has an **Extra instructions** field, after
   the coding sessions' mode and before Limits: the hint "Added last to this overseer's prompt, after
@@ -140,7 +144,7 @@ user row.
      the watch loop has reasons waiting, the reasons in its `title`. **No time for the next look**: the
      loop's timing can't be promised from here. While the level in force is L0 by an attach, this line
      is the reason instead, with **Resume at {level}** (the chosen level; `PATCH {autonomy}`); forced by
-     an empty roster, the reason alone.
+     the organization's ceiling (an empty roster), the reason alone.
   2. **Today's allowance used** (`allowanceLine`, §design.copy-deck/project-limits).
   3. **What waits** (`waitingLines`): the held items' sentences, joined.
   Below 480px only line 1 shows, with a **Details** toggle (`aria-expanded`) for the rest when there is any.
@@ -179,8 +183,9 @@ user row.
   project, within its limits, and create, start, reload, reset, tear down and conform the
   project's running instances).
 - The level in force is **L0 while the overseer is paused by an attach on this host**
-  (§app.organizations/portability), until the operator sets its level here, and **L0 while the
-  org's roster has no active person**, whatever the setting; the project page says why ("In force
+  (§app.organizations/portability), until the operator sets its level here, then under the
+  **ceiling** the organization sets while placed: **L0 while the org's roster has no active
+  person**, whatever the setting. A standalone project has no ceiling and runs at its setting. The project page says why ("In force
   now: L0." and the reason, shown whenever it is paused, even with L0 chosen).
 - The level binds only runs the operator did not start (a watch-loop look, Run Now). A message the
   operator sends from the UI makes that run theirs (decided by identity, as for the Overseer), and
@@ -190,7 +195,7 @@ user row.
 - Enforced by the statecharts' guards at every call, never by the prompt: each tool call is an event
   of the statechart it acts on, tried first; the level is checked first, then the call's own arguments,
   then whether the statechart can take it now, then the limits, each refusal with today's sentence. A
-  tool above the level refuses with a sentence telling the model to file the gap as an idea or
+  tool above the level refuses with a sentence telling the model to file it as an idea or
   raise a confirm card instead, the refusal is logged, and nothing starts. A level change applies
   from the next tool call; the level, the limits and the pause a guard reads can't change between
   the check and the act (§app.project-overseer/statecharts). The same guards bind what the statecharts
@@ -322,11 +327,13 @@ user row.
 - **Running the project.** `sova_project_verbs` (§app.project-services/callers) runs the verbs on
   its own project's instances only (one running copy per worktree, §app/project-services). status,
   logs and doctor are reads, at any level. Every other verb is an event of the project's
-  statechart, tried first: `down` is `services/down` (L0), create, up, apply, reset, teardown and
+  statechart, tried first: `down` is `services/down` (L0), create, up, apply, test, reset, teardown and
   conform are `services/run` (L3, refused while the project is archived). Neither is held nor
   counted against an allowance (§app.project-overseer/limits): stopping is never delayed, and an
   instance runs within the project's slots. Above its level the call refuses with the level's
-  sentence and nothing runs; once taken, the verb's own rules still apply: reset and teardown of an
+  sentence and nothing runs; when the services engine then refuses or fails the verb, its activity
+  row is refused with the engine's code and message, and the tool's result carries the engine's whole
+  answer; once taken, the verb's own rules still apply: reset and teardown of an
   instance it did not create, and stopping a shared service, answer `needs-confirm` (the
   operator's).
 - `sova_promote` asks the reconciler as the overseer (`by: "overseer"`): a decision made outside its
@@ -356,7 +363,7 @@ user row.
   project's coding sessions only, and an ordinary session whose folder is inside the project root,
   which is the project's own act: L3, counted as a prompt, held like one, kind `prompt`; never a
   gathering session; an optional `mode` and `minor_modes` too). Both take the mode within the operator's ceiling (§app.project-overseer/coding-mode).
-  L3 also: `sova_project_verbs` create, up, apply, reset, teardown and conform (L0: its `down`;
+  L3 also: `sova_project_verbs` create, up, apply, test, reset, teardown and conform (L0: its `down`;
   status, logs and doctor are reads; below).
   Operator turns only: `sova_todo`.
 - **Every start names its gap.** `sova_start_gathering` and `sova_offer` take a required `gap`: a
@@ -372,9 +379,10 @@ user row.
   naming another is refused: "{id} is not a promoted, not yet built decision of {gap}: a build
   rests only on its gap's promoted decisions." **Nothing is built that no one agreed on**: in a run
   the operator did not start, a coding session must name a gap with promoted decisions and builds
-  only those; `gap: "none"` (a coding session tied to no gap) is allowed only in a turn the operator
-  started, else: "Without a gap, a coding session starts only in a turn the operator started: name
-  the gap whose promoted decisions it builds (gap), or ask with sova_card." Each refusal
+  only those (gaps exist only while placed); a coding session tied to no gap starts only in a turn
+  the operator started, at every level and in a standalone project too, else: "A coding session
+  starts only in a turn the operator started: ask with sova_card." The gathering tools, `gap` and
+  `decisions` and everything about gaps here are the organization's, offered only while placed. Each refusal
   changes nothing. The operator's own Start Coding Session and New
   Coding Session never need a gap. The operator's Start Coding Session on a `§gap/…` idea whose gap
   has promoted decisions not built yet is the gap's own build (on its Pipeline row; still the
@@ -597,7 +605,7 @@ user row.
   overseer's activity.
 - **One shape for what comes next.** Both tools put each preview in their result's `details` in one
   fixed shape, `PreviewHandoff` (`shared/preview-links.ts`): `{v: 1, id, linkKept, purpose,
-  expiresAt, orgId, projectId, sessionId, branch, target, state, running, createdBy}`, never the
+  expiresAt, projectId, sessionId, branch, target, state, running, createdBy}`, never the
   link: `linkKept` says whether the operator has it (any active preview can still be sent by its
   id); `purpose`, `sessionId` and `branch` null
   when unknown, `target` `{kind: "port", port}` or `{kind: "static", folder}`, `running` null
@@ -652,7 +660,9 @@ user row.
   (§app.organizations/portability), not archived (§app.organizations/archive), an idle overseer, at least its gap since its last unattended
   look (10 minutes unless the project sets another, §app.project-overseer/limits) and under its
   looks per day gets one unattended run, which lists the reasons and asks it to re-read the
-  project, infer gaps and act within its level. Held items whose time has come become reasons
+  project and act within its level; while placed, the organization's look hint (infer gaps against
+  the roster's decision areas) comes right after the ask to re-read the project, so the text reads
+  as before. Held items whose time has come become reasons
   (§app.project-overseer/limits); a look refused for the looks per day is held until midnight. A
   look that stops, fails to start or is cut off by a restart puts the reasons it was given back in
   front of the queue, so none is lost. At most 50 reasons wait (the oldest go first), and a look
@@ -676,7 +686,7 @@ user row.
   case). "Waiting to look at:" then lists the waiting reasons as sentences, each ending in exactly
   one stop (`pendingLine`), never joined with commas under an added period.
 - An unattended run's message never points it at the operator's to-dos or ideas: it lists the
-  reasons and asks it to re-read the project, infer gaps and act within its level.
+  reasons and asks it to re-read the project and act within its level (plus the look hint while placed).
 
 ## §app.project-overseer/gaps — Gaps against the roster
 
@@ -732,7 +742,7 @@ user row.
 - **New Coding Session** (secondary, terminal icon) sits on the project page's "Coding sessions"
   heading, which is always shown, with "None yet. Yours and the overseer's are listed here." while
   the list is empty. It needs no overseer: it works before Start Overseer.
-- `POST /api/orgs/:id/projects/:pid/overseer/coding` `{title?, model?, thinking?}` answers 201
+- `POST /api/projects/:pid/overseer/coding` `{title?, model?, thinking?}` answers 201
   `{path, sessionId, worktree?, note?, modeNotSet?}` (404 for an unknown project). It starts the
   same kind of session Start Coding Session does: in its own worktree and branch
   (§app.project-overseer/coding-worktrees; `sova/coding-<hex>` with no title), on the project's
@@ -745,7 +755,9 @@ user row.
   operator writes the first message in the composer, with no length limit. A worktree session gets
   Sova's commit paragraph as a note first. Until that message, the session is untitled: its row
   reads "Untitled coding session", and, like any new empty session, only the tab that started it
-  lists it; the row's link opens it from any tab.
+  lists it; the row's link opens it from any tab. A body carrying `prompt` is refused with 400
+  "This starts a session with no first prompt. To send one, start it from a to-do or idea
+  (items/code)." and no session is started.
 - A mode that can't be set leaves the session started and listed; the page stays and says, under
   the heading, "Started, but its mode could not be set. Set it from the chat's mode menu before you
   send." A refusal (a worktree git refuses, the session not created) says why under the heading,
@@ -771,7 +783,10 @@ user row.
   conflict, the session it came from and who started it (`started {by, overseerId?, why?}` in its
   start data, §app.baton/goal-and-loadout, kept by a gap's gathering and a planned one too); a decision knows its gathering session and its gap; a
   coding session knows its gap and the decisions it builds. Nothing is matched from words.
-- **One engine per attached org, one queue.** Every event for an org (an operator's act, a tool
+- **One engine per attached org and per standalone project, one queue each** (§app.projects/standalone).
+  The project's statecharts are `project/<p>`, `watch/<p>` and `build/<p>/<s>`, with no org in their
+  ids or data; the org's are its own plus `placement/<o>/<p>` (§app.projects/placement, §app.projects/seam).
+  Every event for an engine (an operator's act, a tool
   call, a person's message, a timer, an effect's result) is taken one at a time, in order, so what
   a guard reads can't change between the check and the act. A move that reaches other statecharts (a
   person leaving clears the owner, the stakeholder, and moves every baton they hold) is one step:
@@ -941,7 +956,7 @@ user row.
   the project page, with **Cancel** beside it; the project page's Pipeline card lists the
   project's held acts first, under "Waiting to start", soonest first, the go-ahead time as each
   one's title ("Goes ahead at {stamp}."), each with **Cancel** ("Cancel: {what}"); the operator's Cancel needs no reason. Once its time is up and until it has
-  gone, a held act's row reads "{what} is starting now." instead. Cancel (`POST /api/orgs/:id/held/:holdId/cancel`)
+  gone, a held act's row reads "{what} is starting now." instead. Cancel (`POST /api/projects/:pid/held/:holdId/cancel`)
   drops it and it never runs; it says "Cancelled. {what} won't happen.", or the server's sentence
   when it can't (404 for an unknown hold; 409 once it already went ahead), and Needs you is read
   again at once. A held act's id is its session's id and the statechart's hold id (`<session>:<hold>`),
@@ -1049,7 +1064,7 @@ user row.
 
 - **A card on the Requirements tab.** The project page has a **Pipeline** card on its
   Requirements tab (§app.organizations/project-page), shown while it has a row or a held act: one row for each gap the overseer filed (§app.project-overseer/gaps), from the
-  gaps' statecharts (`GET /api/orgs/:id/projects/:pid/pipeline`), re-read every 10 seconds while the tab
+  gaps' statecharts (`GET /api/orgs/:id/projects/:pid/pipeline`, while placed), re-read every 10 seconds while the tab
   shows and reconciled in place, so an open timeline and focus survive. The project's held acts
   come first, under "Waiting to start" (§app.project-overseer/holds). A line under the title counts
   the rows: "{n} gap(s) open · {n} stalled · {n} on hold · {n} done.", leaving out parts that are
@@ -1092,7 +1107,9 @@ user row.
   each with its time ("14:06" today, "Mar 4 14:06" before, with the year when it isn't this year),
   what happened as a sentence (each statechart event has its own: "The overseer filed this gap.", "A held
   act waits for the overseer's review.", "A person was sent a WhatsApp message.", "The session was retired: the project keeps the 200
-  sessions it started most recently, and this one was finished."; a move with no sentence is
+  sessions it started most recently, and this one was finished."; the project's running copies
+  (§app.project-services/callers) have two, `services/down` "A running copy of the project was
+  stopped." and `services/run` "A running copy of the project was started or changed."; a move with no sentence is
   quiet, never a raw event name), who (You, You via the Overseer, Overseer, Sova, or a person's name), the
   move ("{from} → {to}"), and "Reason: …" for a correction or a cancel, "Refused: …" for a refusal.
   With none: "Nothing has moved yet."

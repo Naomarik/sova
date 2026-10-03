@@ -69,8 +69,10 @@ An organization attached on a peer has pages on every host's page, as its sessio
 Organizations region heads such an org with a link that carries the org's host
 (`#/orgs/<id>?host=<peer>`, the host of its sessions' rows), and so do the org page's own links: its
 tabs, its projects, the project overseer, its people and their pages
-(`#/orgs/<id>/projects/<pid>?host=<peer>`, `#/orgs/<id>/people/<pid>?host=<peer>`), so a reload
-or a shared link opens it on the right host. Every read and change such a page makes — the org, its
+(`#/projects/<pid>?host=<peer>`, `#/orgs/<id>/people/<pid>?host=<peer>`), so a reload
+or a shared link opens it on the right host. A standalone project on a peer is the same: its
+sidebar heading and its page carry `?host=<peer>`, and its reads and acts (`/api/projects/…`) go
+to that host. Every read and change such a page makes — the org, its
 people, projects, decisions, conflicts, the project overseer and its settings, ideas, to-dos and
 worktrees, the models its session pickers offer, starting a hand-off session, a person's links and
 preview, Commit Now and the remote — goes to that host through `/peer/<id>/api/…`, which answers

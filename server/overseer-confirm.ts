@@ -19,10 +19,10 @@ export interface ConfirmLookup {
   isSelf(s: SessionSummary): boolean;
   idea(ref: string): { id: string; title: string } | null;
   todo(ref: string): { id: string; text: string } | null;
-  /** A roster person / a project of an org on this host, by id or exact name (the global Overseer's
-      cards only; a caller without them takes no `people` or `projects`). */
+  /** A roster person of an org / a project registered on this host (in `org` when given, else any), by id or
+      exact name (the global Overseer's cards only; a caller without them takes no `people` or `projects`). */
   person?(org: string, ref: string): Extract<SovaConfirmItem, { kind: "person" }> | null;
-  project?(org: string, ref: string): Extract<SovaConfirmItem, { kind: "project" }> | null;
+  project?(org: string | null, ref: string): Extract<SovaConfirmItem, { kind: "project" }> | null;
 }
 
 const cut = (s: string, max: number) => {
@@ -32,7 +32,7 @@ const cut = (s: string, max: number) => {
 const ITEM_KINDS = ["sessions", "ideas", "todos"];
 const ORG_KINDS = ["people", "projects"];
 const ITEMS_EXAMPLE = '{"sessions": [{"id": "<session id>", "note": "What it is. Why it fits."}], "todos": [{"id": "td_…", "note": "…"}]}';
-const ORG_EXAMPLE = '"people": [{"org": "<org id or name>", "id": "<person id or name>", "note": "…"}], "projects": [{"org": "…", "id": "<project id or name>", "note": "…"}]';
+const ORG_EXAMPLE = '"people": [{"org": "<org id or name>", "id": "<person id or name>", "note": "…"}], "projects": [{"id": "<project id or name>", "note": "…"}]';
 
 /** One requested item: its id as the model wrote it, its note (whitespace collapsed), the per-item
     choice it starts on and its own choices (a sova_card entry's `default` and `choices`, both
@@ -57,7 +57,7 @@ function wanted(v: unknown): Wanted[] {
   }
   return [...out.values()];
 }
-/** People or projects: each `{org, id, note?}`; an entry without its org matches nothing. */
+/** People or projects: each `{org, id, note?}`; a person without its org matches nothing, a project's org is optional. */
 type OrgWanted = Wanted & { org: string };
 function wantedOrg(v: unknown): OrgWanted[] {
   const out = new Map<string, OrgWanted>();
@@ -95,7 +95,7 @@ export async function resolveConfirmItems(raw: unknown, lookup: ConfirmLookup, r
   const orgs = !!(lookup.person && lookup.project);
   const kinds = orgs ? [...ITEM_KINDS, ...ORG_KINDS] : ITEM_KINDS;
   if (typeof raw !== "object" || Array.isArray(raw))
-    throw refusal(`items is an object: { sessions?: [...], ideas?: [...], todos?: [...]${orgs ? ", people?: [...], projects?: [...]" : ""} }, each entry an id or { id, note }${orgs ? " (a person or project also names its org: { org, id, note })" : ""}.`);
+    throw refusal(`items is an object: { sessions?: [...], ideas?: [...], todos?: [...]${orgs ? ", people?: [...], projects?: [...]" : ""} }, each entry an id or { id, note }${orgs ? " (a person also names its org: { org, id, note }; a project may)" : ""}.`);
   const r = raw as Record<string, unknown>;
   const stray = Object.keys(r).filter((k) => !kinds.includes(k));
   if (stray.length)
@@ -145,10 +145,10 @@ export async function resolveConfirmItems(raw: unknown, lookup: ConfirmLookup, r
   }
   // Projects, then people: the card shows them after ideas and todos, before sessions.
   for (const w of want.projects) {
-    const p = w.org ? lookup.project!(w.org, w.ref) : null;
-    if (!p) unknown.projects.push(w.org ? `${w.ref} in ${w.org}` : `${w.ref} (no org)`);
-    else if (!seen.has(`${p.orgId}/${p.id}`)) {
-      seen.add(`${p.orgId}/${p.id}`);
+    const p = lookup.project!(w.org || null, w.ref);
+    if (!p) unknown.projects.push(w.org ? `${w.ref} in ${w.org}` : w.ref);
+    else if (!seen.has(`project/${p.id}`)) {
+      seen.add(`project/${p.id}`);
       out.push(noted({ ...p, name: cut(p.name, 120) }, w));
     }
   }
@@ -163,7 +163,7 @@ export async function resolveConfirmItems(raw: unknown, lookup: ConfirmLookup, r
   const problems: string[] = [];
   const missing = (Object.entries(unknown) as [string, string[]][]).filter(([, v]) => v.length).map(([k, v]) => `${k}: ${v.join(", ")}`);
   if (missing.length)
-    problems.push(`These ids match nothing (${missing.join("; ")}). List them again (sova_list_sessions, sova_ideas, sova_todos${orgs ? ", sova_orgs" : ""}) and use the ids exactly as printed.`);
+    problems.push(`These ids match nothing (${missing.join("; ")}). List them again (sova_list_sessions, sova_ideas, sova_todos${orgs ? ", sova_orgs, sova_projects" : ""}) and use the ids exactly as printed.`);
   if (self.length) problems.push(`${self.join(", ")} is your own conversation; a card never lists it. Leave it out.`);
   if (problems.length) throw refusal(`No card was shown. ${problems.join(" ")}`);
   cutNotes?.push(...long);

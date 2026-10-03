@@ -43,7 +43,7 @@ import {
 import { heldAt, hostOf, isOrgHostOpen, onOrgHostOpened, refusalError, type ActResult, type Effect, type OrgHostApi } from "./org-engine";
 import type { Envelope } from "./org-envelope";
 import { envelopeFor } from "./org-engine";
-import { operatorEnvelope, operatorName, OrgError, projectSid, readHistory, readProjects, readRoster, shortId } from "./orgs";
+import { operatorEnvelope, operatorName, OrgError, placementSid, readHistory, readProjects, readRoster, shortId } from "./orgs";
 import {
   PROJECT_DRAFT,
   areaId,
@@ -411,10 +411,10 @@ export function specStatusOf(orgId: string, projectId: string): SpecStatus {
   return specStatus(orgId, projectId, readDecisionStore(orgId, projectId));
 }
 
-/** PATCH …/spec {frozen}: the project statechart's spec/freeze, with the spec's hash when it freezes (the frozen check). */
+/** PATCH …/spec {frozen}: the placement statechart's spec/freeze, with the spec's hash when it freezes (the frozen check). */
 export async function setFrozen(orgId: string, projectId: string, frozen: boolean): Promise<SpecStatus> {
   const project = projectOf(orgId, projectId);
-  await act(orgId, projectSid(orgId, projectId), "spec/freeze", { frozen, ...(frozen ? { specHash: specHash(project.root) } : {}) }, operatorEnvelope(orgId, projectId));
+  await act(orgId, placementSid(orgId, projectId), "spec/freeze", { frozen, ...(frozen ? { specHash: specHash(project.root) } : {}) }, operatorEnvelope(orgId, projectId));
   return specStatus(orgId, projectId, readDecisionStore(orgId, projectId));
 }
 
@@ -640,7 +640,7 @@ export interface ReconcileOptions {
  */
 export function settleChoice(orgId: string, projectId: string): { model?: string; thinking?: string } {
   try {
-    const s = readPoSettings(projectOverseerPaths(orgId, projectId));
+    const s = readPoSettings(projectOverseerPaths(projectId));
     const model = s.gatheringModel ?? s.model;
     const thinking = s.gatheringThinking ?? s.thinking;
     return { ...(model ? { model } : {}), ...(thinking ? { thinking } : {}) };
@@ -729,7 +729,7 @@ function recordingUsage(inner: DecisionProvider, orgId: string, projectId: strin
       const u = r.usage;
       if (u && u.inputTokens + u.outputTokens + (u.cacheRead ?? 0) + (u.cacheWrite ?? 0) > 0) {
         try {
-          appendUsage(ledgerPaths(orgId, projectId), {
+          appendUsage(ledgerPaths(projectId), {
             at: now().toISOString(),
             kind: "reconcile",
             by,

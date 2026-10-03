@@ -108,7 +108,12 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
   `{v: 1, pid, sessionId?, kind, at}`, `wants/<pid>-<n>.json` (the same plus `since`),
   `lowered.json` `{v: 1, limit, until}` and the claim `lock` — which every pi process (TUI, hosted
   sessions, pi workers via their `-e` list) and Sova's own one-shots claim through, and which Sova
-  reads by session id for the waiting state.
+  reads by session id for the waiting state; usage-status
+  (`pi-config/extensions/usage-status/windows.ts`, builtins only): `usage-windows.json`
+  `{version: 1, ollama?: {resetDay: 1..31}}` (missing or unreadable = unknown; written by the Usage
+  page's Ollama card and by `/usage reset-day ollama <1-31|clear>`, whose argument is a contract
+  too; synced like the policy), from which the server derives Ollama's monthly window as it reads
+  usage.
   Not covered by Sova's tsconfig, with these exceptions: the server imports
   `pi-config/extensions/mode/state.ts`, `minor.ts`, `delegate.ts` and `spec.ts` (`server/mode-state.ts`,
   `server/delegate.ts`, `server/spec-settings.ts`; hence `allowImportingTsExtensions`),
@@ -148,7 +153,8 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
   check `normalizeAlignDetails` and the one fold `foldAlignments` — the transcript's align row and
   the session list's `SessionSummary.align` read what the extension writes, with its own code),
   `server/insights.ts` imports
-  `pi-config/extensions/usage-status/fetch.ts` (which imports `claude-code/accounts.ts`, builtins
+  `pi-config/extensions/usage-status/fetch.ts` and `windows.ts` (`server/sync/docs.ts` imports
+  `windows.ts` too, for the file's sync registration; fetch.ts imports `claude-code/accounts.ts`, builtins
   only, to fetch each login's usage; `server/auth-status.ts`, `server/claude-login-state.ts` and
   the pool agent `server/claude-pool/` import `accounts.ts` too), `server/worker-context.ts` and `server/delegate.ts`
   import `pi-config/extensions/claude-code/context-window.ts` (imports nothing: the one Claude Code

@@ -41,7 +41,7 @@ test("mint refuses a non-port, Sova's own defaults and every port this process u
   for (const port of [0, 65536, 51.5, "5173", null]) assert.throws(() => store.mintPreview({ ...P, port }, none), (e: unknown) => e instanceof store.PreviewRefused && e.code === "bad-port", String(port));
   for (const port of [4800, 4801, 4802, 4810]) assert.throws(() => store.mintPreview({ ...P, port }, none), (e: unknown) => e instanceof store.PreviewRefused && e.code === "forbidden-port");
   assert.throws(() => store.mintPreview({ ...P, port: 9123 }, new Set([9123])), (e: unknown) => e instanceof store.PreviewRefused && e.code === "forbidden-port");
-  assert.throws(() => store.mintPreview({ orgId: "", projectId: "p", port: 3000 }, none), (e: unknown) => e instanceof store.PreviewRefused && e.code === "bad-project");
+  assert.throws(() => store.mintPreview({ projectId: "", port: 3000 }, none), (e: unknown) => e instanceof store.PreviewRefused && e.code === "bad-project");
 });
 
 test("expiry: 1 day by default, at most 30; an expired one reads expired", () => {
@@ -80,9 +80,9 @@ test("extend moves an active preview's expiry to `days` from now", () => {
 });
 
 test("list filters by project; a file that breaks a rule serves nothing and is never overwritten", () => {
-  store.mintPreview({ orgId: "org2", projectId: "other", port: 3006 }, none);
-  assert.ok(store.listPreviews({ orgId: "org2", projectId: "other" }).every((v) => v.projectId === "other"));
-  assert.ok(store.listPreviews({ orgId: "org1", projectId: "proj1" }).length >= 1);
+  store.mintPreview({ projectId: "other", port: 3006 }, none);
+  assert.ok(store.listPreviews({ projectId: "other" }).every((v) => v.projectId === "other"));
+  assert.ok(store.listPreviews({ projectId: "proj1" }).length >= 1);
   writeFileSync(store.previewLinksFile(), JSON.stringify({ version: 1, links: [{ id: "bad" }] }));
   assert.deepEqual(store.listPreviews(), []);
   assert.throws(() => store.mintPreview({ ...P, port: 3007 }, none), (e: unknown) => e instanceof store.PreviewUnavailable);

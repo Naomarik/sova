@@ -4611,6 +4611,36 @@ a.group-option { color: inherit; text-decoration: none; }
    track reads as zero, and zero is a measurement. */
 .meter-ghost .meter-track { border-style: dashed; background: none; }
 .meter-ghost .meter-fill  { display: none; }
+/* The pace tick (§app.insights/pace-tick): the share of the window gone, a 1px ink line standing
+   2px past the track each way; the track keeps overflow hidden for its fill, so the tick sits on
+   a wrapper. A ghost meter has none. */
+.meter-track-wrap { position: relative; }
+.meter-tick {
+  position: absolute;
+  top: -2px;
+  bottom: -2px;
+  left: min(var(--meter-at, 0%), calc(100% - 1px));
+  width: 1px;
+  background: var(--color-ink);
+}
+/* Ollama's declared reset day (§app.insights/usage-reset-day): a text button in the context
+   line, and the inline day field it opens. */
+/* "Set" / "Change": a quiet text button inside the muted line, underlined so it reads as one. */
+.usage-reset-day-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--color-ink-2);
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.usage-reset-day-link:hover { color: var(--color-ink); }
+.usage-reset-day-link:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); border-radius: var(--r-sm); }
+.usage-reset-day-field { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin: 0; font-size: var(--fs-caption); }
+.usage-reset-day-field .input { width: 7ch; min-height: var(--control-sm); }
+.usage-reset-day-error { margin: 0; font-size: var(--fs-caption); color: var(--status-error); }
 
 
 /* ---- SIDEBAR FOOT. Two rows, the doorways to #/usage and #/agents: always
@@ -4694,18 +4724,56 @@ a.group-option { color: inherit; text-decoration: none; }
    padding and gaps would pull the rows off their own padding. */
 .sidebar-foot-sheet { padding-bottom: env(safe-area-inset-bottom); }
 
-/* Usage glance: "C 47% O 95% OL 80% Z 0% DS $4", one segment per provider.
+/* Usage glance: "C ▬ O ▬ OL ▬ Z ▬ DS $4", a tag and a pace meter per provider.
    Never wraps; clips as a guard. Beside the monitor button the box is 215px in
-   the 320px sidebar, so segments sit space-2 apart (twice the tag-to-number gap,
-   so each still reads as one pair): a real five-provider reading is 210px.
-   High = weight, not hue (no word to pair a color with); stale = muted. */
-.usage-glance { display: flex; align-items: baseline; gap: var(--space-2); flex-wrap: nowrap; }
-.usage-glance-item { display: inline-flex; align-items: baseline; gap: var(--space-1); flex: none; }
+   the 320px sidebar, so segments sit space-2 apart (twice the tag-to-meter gap,
+   so each still reads as one pair); the meters are a fixed 22px, so the row's
+   width no longer depends on the readings.
+   A balance's high = weight, not hue; stale = muted, fills too; pending (a Claude
+   login with no current reading) = muted the same way, its tracks empty. */
+.usage-glance { display: flex; align-items: center; gap: var(--space-2); flex-wrap: nowrap; }
+.usage-glance-item { display: inline-flex; align-items: center; gap: var(--space-1); flex: none; }
 .usage-glance-tag { color: var(--color-ink-muted); }
 .usage-glance-item .text-num { font-family: var(--font-mono); font-size: var(--fs-mono); color: var(--color-ink-2); }
 .usage-glance-item-high .text-num { font-weight: var(--fw-semibold); color: var(--color-ink); }
 .usage-glance-item-stale .text-num,
-.usage-glance-item-stale .usage-glance-tag { color: var(--color-ink-muted); font-weight: var(--fw-regular); }
+.usage-glance-item-stale .usage-glance-tag,
+.usage-glance-item-pending .text-num,
+.usage-glance-item-pending .usage-glance-tag { color: var(--color-ink-muted); font-weight: var(--fw-regular); }
+.usage-glance-item-stale .pace-fill,
+.sidebar-footbar-cap-stale .pace-fill { background: var(--color-ink-muted); }
+.usage-glance-item-stale .pace-tick,
+.sidebar-footbar-cap-stale .pace-tick { background: var(--color-ink-muted); }
+.usage-glance-item-pending .pace-bar,
+.sidebar-footbar-cap-stale .pace-bar-empty { opacity: 0.6; }
+
+/* Pace meter (§app.insights/pace-tick): the fill is the share used, the tick the share of the
+   window gone. One 6px bar, or a 2px short window over a 4px long one, 1px apart, 20px wide.
+   Tracks are muted ink at 35% (no stroke: at 2px a stroke would be all there is), visible on
+   either theme's row and its aria-current tint; the fill is
+   secondary ink, warn/error only when the pace says so; the tick is ink, standing 2px past its
+   bar each way so it reads against any fill. */
+.pace { display: inline-flex; flex-direction: column; justify-content: center; gap: 1px; width: 20px; flex: none; }
+.pace-bar { position: relative; display: block; height: 6px; border-radius: 1px; background: color-mix(in srgb, var(--color-ink-muted) 35%, transparent); }
+.pace-two .pace-bar { height: 4px; }
+.pace-two .pace-bar-thin { height: 2px; }
+.pace-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: var(--pace-pct, 0%);          /* set inline: style="--pace-pct: 42%" */
+  border-radius: inherit;
+  background: var(--color-ink-2);       /* never animates */
+}
+.pace-fill-warn  { background: var(--status-warn); }
+.pace-fill-error { background: var(--status-error); }
+.pace-tick {
+  position: absolute;
+  top: -2px;
+  bottom: -2px;
+  left: min(var(--pace-at, 0%), calc(100% - 1px));
+  width: 1px;
+  background: var(--color-ink);
+}
 
 
 /* ---- USAGE + AGENTS PAGES. A .pane in .app-main, under a .session-head. - */

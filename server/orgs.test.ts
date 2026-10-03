@@ -109,11 +109,11 @@ describe("organizations", async () => {
     const alp = await orgs.addPerson(org.id, { name: "Alperen", role: "Owner", decides: ["website"] });
     const prop = await orgs.addPerson(org.id, { name: "Prop Osed", status: "proposed", role: "x", contact: { email: "p@example.com" }, referral: { why: "w", referredBy: alp.id } }, { kind: "referral" });
     const refusal = { message: "Only an active person on the roster can be a project's main stakeholder." };
-    for (const bad of ["p_nobody00", prop.id, 42]) await assert.rejects(orgs.patchProject(org.id, pr.id, { stakeholder: bad }), refusal, String(bad));
+    for (const bad of ["p_nobody00", prop.id, 42]) await assert.rejects(orgs.patchPlacement(org.id, pr.id, { stakeholder: bad }), refusal, String(bad));
     const project = () => orgs.readProjects(org.id).find((x) => x.id === pr.id)!;
     assert.equal(project().stakeholder, undefined, "a refusal writes nothing");
-    await orgs.patchProject(org.id, pr.id, { stakeholder: alp.id });
-    await orgs.patchProject(org.id, pr.id, { stakeholder: alp.id });
+    await orgs.patchPlacement(org.id, pr.id, { stakeholder: alp.id });
+    await orgs.patchPlacement(org.id, pr.id, { stakeholder: alp.id });
     assert.equal(project().stakeholder, alp.id);
     assert.deepEqual(project().stakeholderHistory?.map((h) => [h.from, h.to, h.why]), [[null, alp.id, "operator"]], "a save that changes nothing adds no line");
     assert.equal(orgs.stakeholderOf(org.id, pr.id), alp.id);
@@ -126,13 +126,13 @@ describe("organizations", async () => {
     const items = orgs.stakeholderAttention().filter((i) => i.id === `project-stakeholder:${pr.id}`);
     assert.deepEqual(
       items.map((i) => [i.tier, i.kind, i.detail, i.href, i.org?.projectId]),
-      [["decide", "project-stakeholder", "Pick a main stakeholder for Website: Alperen left the organization.", `#/orgs/${org.id}/projects/${pr.id}`, pr.id]],
+      [["decide", "project-stakeholder", "Pick a main stakeholder for Website: Alperen left the organization.", `#/projects/${pr.id}`, pr.id]],
     );
     // Choosing None answers it too.
-    await orgs.patchProject(org.id, pr.id, { stakeholder: null });
+    await orgs.patchPlacement(org.id, pr.id, { stakeholder: null });
     assert.equal(project().stakeholderCleared, undefined);
     assert.deepEqual(orgs.stakeholderAttention().filter((i) => i.id === `project-stakeholder:${pr.id}`), []);
-    await assert.rejects(orgs.patchProject(org.id, pr.id, { stakeholder: alp.id }), refusal, "someone who left can't be picked");
+    await assert.rejects(orgs.patchPlacement(org.id, pr.id, { stakeholder: alp.id }), refusal, "someone who left can't be picked");
   });
 
   test("caps are refused (400), never cut", async () => {

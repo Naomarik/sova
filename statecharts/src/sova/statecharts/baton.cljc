@@ -503,7 +503,7 @@
               (script {:expr (fn [_ d] (ended-ops d))})
               (entry-effect "done" (fn [d] {:summary (str/trim (:summary (e d)))}))
               (reason "baton/done" true (fn [d] (when-not (:hidden-from-owner d) {})))
-              (Send {:event :milestone/noted :targetexpr (fn [_ d] (b/project-sid (:org-id d) (:project-id d)))
+              (Send {:event :milestone/noted :targetexpr (fn [_ d] (b/placement-sid (:org-id d) (:project-id d)))
                      :content (fn [_ d] {:kind "baton-done" :shown (not (:hidden-from-owner d))})}))
             (dsl/act {:sova/feed :feed :sova/asks-overseer :unwritten-false :event :baton/close :target :closed :checks [(mk rb/close-refusal)]}
               (script {:expr (fn [_ d] (ended-ops d))})

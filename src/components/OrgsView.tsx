@@ -4,7 +4,9 @@ import { AUTOMATIC_ABILITIES, MESSAGES_CAP, MESSAGES_DEFAULT, MESSAGES_MIN, OPER
 import { ORG_ABOUT_MAX, type NamedChange, type OrgChange, type OrgDetail, type Person, type PersonInput, type ProfileChange } from "../../shared/orgs";
 import {
   addOrgProject,
-  unarchiveOrgProject,
+  importOrgProject,
+  listProjects,
+  unarchiveProject,
   addPerson,
   ApiError,
   approvePerson,
@@ -16,7 +18,6 @@ import {
   getOrg,
   getOrgs,
   getOrgCosts,
-  openProjectOverseer,
   patchOrg,
   patchPerson,
   revertOrgAbout,
@@ -29,7 +30,8 @@ import {
 } from "../lib/api";
 import { commitNowWords, reloadWords } from "../lib/commit-now";
 import { usd } from "../lib/costs";
-import { duration, relativeTime, stampTime } from "../lib/format";
+import { duration, relativeTime, stampTime, tildePath } from "../lib/format";
+import { projectAt } from "../lib/projects";
 import { needsYouCount, needsYouLabel, orgCountsLine } from "../lib/org-cards";
 import { proposedAreasLine } from "../lib/baton-strip";
 import { groupChanges, revertible, STATUS_CHIP, valueText, writerWord } from "../lib/profile-changes";
@@ -37,9 +39,10 @@ import { aboutChangeWord, aboutCount, aboutLength, aboutOverCap, aboutPreview } 
 import { orgPageRoute } from "../lib/org-page-route";
 import { createOrgSource } from "../lib/org-source";
 import { useMinuteNow } from "../lib/minute-clock";
-import { orgHref, orgSessionHref, orgTabHref, personHref, projectHref, startForHref, takeStartParent, type OrgsRoute, type OrgTab, type ProjectTab } from "../lib/orgs-route";
+import { orgHref, orgSessionHref, orgTabHref, personHref, startForHref, takeStartParent, type OrgsRoute, type OrgTab } from "../lib/orgs-route";
+import { projectHref } from "../lib/projects-route";
 import { orgTabsOf } from "../lib/org-tabs";
-import { announce, toast } from "../lib/ui-state";
+import { announce, home, toast } from "../lib/ui-state";
 import { InsightsPage } from "./InsightsPage";
 import { meshPeers, orgHostOf } from "../lib/mesh";
 import { orgHostOffline } from "../lib/org-host-offline";
@@ -48,7 +51,6 @@ import { OwnerCard } from "./OwnerCard";
 import { CompanyHoursCard } from "./CompanyHoursCard";
 import { PersonForm } from "./PersonForm";
 import { PersonPage } from "./PersonPage";
-import { ProjectPage } from "./ProjectPage";
 import { Banner, Chip, Icon } from "./ui";
 import "../orgs.css";
 import "../projects.css";
@@ -63,26 +65,18 @@ const STATE_WORDS: Record<string, { word: string; tone: "info" | "warn" | "succe
   closed: { word: "Closed", tone: undefined },
 };
 
-/** The organizations page: `#/orgs`, `#/orgs/<id>[/<tab>|/start/<person>]`,
-    `#/orgs/<id>/projects/<project>[/overseer]`, `#/orgs/<id>/people/<person>`. */
+/** The organizations page: `#/orgs`, `#/orgs/<id>[/<tab>|/start/<person>]`, `#/orgs/<id>/people/<person>`.
+    A project's page is the projects route's (ProjectsView), placed or not. */
 export function OrgsView(props: { route: OrgsRoute; titleRef(el: HTMLHeadingElement): void }) {
   // Memos, not ternaries in the props below: the start form reads `start` from its Cancel handler.
   const page = orgPageRoute(() => props.route);
-  const projectTab = createMemo((): ProjectTab => (props.route.kind === "project" ? (props.route.tab ?? "overview") : "overview"));
   return (
     <Switch>
       <Match when={props.route.kind === "list"}>
         <OrgList titleRef={props.titleRef} />
       </Match>
-      {/* Keyed on the project alone: a tab change keeps the page and what it fetched. */}
-      <Match when={props.route.kind === "project" && `${props.route.id}/${props.route.projectId}`} keyed>
-        {(key) => <ProjectPage orgId={key.split("/")[0]!} projectId={key.split("/")[1]!} tab={projectTab()} titleRef={props.titleRef} />}
-      </Match>
       <Match when={props.route.kind === "person" && props.route} keyed>
         {(r) => <PersonPage orgId={r.id} personId={r.personId} titleRef={props.titleRef} />}
-      </Match>
-      <Match when={props.route.kind === "overseer" && props.route} keyed>
-        {(r) => <OverseerDoor orgId={r.id} projectId={r.projectId} titleRef={props.titleRef} />}
       </Match>
       {/* Keyed on the id alone: a tab change keeps the page (and its fetched org). */}
       <Match when={props.route.kind === "org" && props.route.id} keyed>
@@ -96,26 +90,6 @@ export function OrgsView(props: { route: OrgsRoute; titleRef(el: HTMLHeadingElem
         )}
       </Match>
     </Switch>
-  );
-}
-
-/** `…/projects/<pid>/overseer`: open (or start) the project's overseer and go to its conversation;
-    on failure, the project page with the reason. */
-function OverseerDoor(props: { orgId: string; projectId: string; titleRef(el: HTMLHeadingElement): void }) {
-  const [failed, setFailed] = createSignal<string | null>(null);
-  openProjectOverseer(props.orgId, props.projectId).then(
-    (info) => (info.path ? location.replace(orgSessionHref(props.orgId, info.path)) : setFailed("It has no conversation yet.")),
-    (err) => setFailed(errText(err)),
-  );
-  return (
-    <Show when={failed()} fallback={<p class="orgs-empty">Opening the overseer.</p>}>
-      {(e) => (
-        <>
-          <Banner tone="error" title="Couldn't open the overseer." body={e()} />
-          <ProjectPage orgId={props.orgId} projectId={props.projectId} tab="overview" titleRef={props.titleRef} />
-        </>
-      )}
-    </Show>
   );
 }
 
@@ -576,8 +550,8 @@ function BatonSection(props: { org: OrgDetail; start?: string; act: Act; onLinks
   const [chosen, setChosen] = createSignal<Partial<GatheringAbilities>>({});
   // Read while the form is open, for the project it names.
   const [projectSet] = createResource(
-    () => (starting() && pid() ? { o: props.org.id, p: pid() } : false),
-    ({ o, p }) => getProjectOverseer(o, p).then((i) => i.gatheringAbilitiesNow).catch(() => null),
+    () => (starting() && pid() ? pid() : false),
+    (p) => getProjectOverseer(p).then((i) => i.gatheringAbilitiesNow).catch(() => null),
   );
   const ability = (k: keyof GatheringAbilities): boolean => chosen()[k] ?? projectSet()?.[k] ?? AUTOMATIC_ABILITIES[k];
   /** Nobody ticked = you start; 1 = a hand-off; 2 or more = an offer. */
@@ -1149,8 +1123,9 @@ function ProjectsSection(props: { org: OrgDetail; act: Act }) {
   const [name, setName] = createSignal("");
   const [root, setRoot] = createSignal("");
   // Each project's cost at API prices (§app/project-costs/org-rollup); the list stands without it.
-  const orgId = createMemo(() => props.org.id);
-  const [costs] = createResource(orgId, (id) => getOrgCosts(id).catch(() => null));
+  // Read again when the list changes (an added or imported project).
+  const costKey = createMemo(() => `${props.org.id}\n${props.org.projectList.map((p) => p.id).join(",")}`);
+  const [costs] = createResource(costKey, () => getOrgCosts(props.org.id).catch(() => null));
   const costOf = (pid: string) => costs()?.projects.find((c) => c.projectId === pid);
   // Archived projects leave the list for a disclosure under it (§app.organizations/archive).
   const live = () => props.org.projectList.filter((p) => !p.archived);
@@ -1182,7 +1157,7 @@ function ProjectsSection(props: { org: OrgDetail; act: Act }) {
             {(p) => (
               <li>
                 {/* The whole row opens the project page: its overseer, requirements and decisions. */}
-                <a class="list-row list-row-interactive orgs-row orgs-project-row" href={projectHref(props.org.id, p.id)}>
+                <a class="list-row list-row-interactive orgs-row orgs-project-row" href={projectHref(p.id)}>
                   <Icon name="folder" />
                   <span class="list-main">
                     <span class="list-title">{p.name}</span>
@@ -1209,7 +1184,7 @@ function ProjectsSection(props: { org: OrgDetail; act: Act }) {
             <For each={archived()}>
               {(p) => (
                 <li class="orgs-archived-row">
-                  <a class="list-row list-row-interactive orgs-row orgs-project-row" href={projectHref(props.org.id, p.id)}>
+                  <a class="list-row list-row-interactive orgs-row orgs-project-row" href={projectHref(p.id)}>
                     <Icon name="folder" />
                     <span class="list-main">
                       <span class="list-title">{p.name}</span>
@@ -1218,7 +1193,7 @@ function ProjectsSection(props: { org: OrgDetail; act: Act }) {
                       </span>
                     </span>
                   </a>
-                  <button type="button" class="button button-sm button-ghost" onClick={() => void props.act(() => unarchiveOrgProject(props.org.id, p.id), `${p.name} is back.`)}>
+                  <button type="button" class="button button-sm button-ghost" onClick={() => void props.act(() => unarchiveProject(p.id), `${p.name} is back.`)}>
                     Unarchive
                   </button>
                 </li>
@@ -1231,7 +1206,12 @@ function ProjectsSection(props: { org: OrgDetail; act: Act }) {
         class="orgs-inline orgs-project-form"
         onSubmit={async (e) => {
           e.preventDefault();
-          if (await props.act(() => addOrgProject(props.org.id, name().trim(), root().trim()), "Project added.")) {
+          const added = (r: unknown): string => {
+            const x = r as OrgDetail & { normalizedFrom?: string };
+            const at = x.normalizedFrom ? projectAt(x.normalizedFrom, x.projectList) : null;
+            return at ? `Added ${tildePath(at.root, home())}, the checkout root of ${tildePath(x.normalizedFrom!, home())}.` : "Project added.";
+          };
+          if (await props.act(() => addOrgProject(props.org.id, root().trim(), name().trim() || undefined), added)) {
             setName("");
             setRoot("");
           }
@@ -1239,7 +1219,7 @@ function ProjectsSection(props: { org: OrgDetail; act: Act }) {
       >
         <label class="field">
           <span class="field-label">Project name</span>
-          <input class="input" value={name()} onInput={(e) => setName(e.currentTarget.value)} maxlength={80} required />
+          <input class="input" value={name()} onInput={(e) => setName(e.currentTarget.value)} maxlength={80} placeholder="The folder's name" />
         </label>
         <label class="field orgs-grow">
           <span class="field-label">Folder</span>
@@ -1249,6 +1229,98 @@ function ProjectsSection(props: { org: OrgDetail; act: Act }) {
           Add Project
         </button>
       </form>
+      <ImportProjectRow org={props.org} act={props.act} />
     </section>
+  );
+}
+
+/**
+ * Import a Project (§app.projects/import): a standalone project of this host moves into the org. The server words
+ * the confirm (what gets committed where); Import sends it confirmed. Shown while any standalone project is here.
+ */
+function ImportProjectRow(props: { org: OrgDetail; act: Act }) {
+  const [projects, { refetch }] = createResource(
+    () => props.org.id,
+    () => listProjects().then((l) => l.projects.filter((p) => p.space.kind === "standalone")).catch(() => []),
+  );
+  const [picked, setPicked] = createSignal("");
+  /** The server's confirm sentence for the picked project, until Import or Cancel. */
+  const [confirming, setConfirming] = createSignal<string | null>(null);
+  const chosen = () => projects()?.find((p) => p.id === picked()) ?? projects()?.[0];
+  const send = async (confirm: boolean) => {
+    const p = chosen();
+    if (!p) return;
+    let asked: string | null = null;
+    const ok = await props.act(async () => {
+      try {
+        return await importOrgProject(props.org.id, p.id, confirm);
+      } catch (err) {
+        if (!confirm && err instanceof ApiError && err.status === 409 && (err.body as { code?: unknown } | undefined)?.code === "confirm") {
+          asked = err.message;
+          return null;
+        }
+        throw err;
+      }
+    }, confirm ? `${p.name} is in ${props.org.name} now.` : undefined);
+    setConfirming(ok ? asked : null);
+    if (ok && confirm) {
+      setPicked("");
+      void refetch();
+    }
+  };
+  return (
+    <Show when={projects()?.length}>
+      <form
+        class="orgs-inline orgs-project-form orgs-import-form"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void send(false);
+        }}
+      >
+        <label class="field orgs-grow">
+          <span class="field-label">Import a Project</span>
+          <span class="select-wrap">
+            <select
+              class="select"
+              disabled={!!confirming()}
+              onChange={(e) => {
+                setPicked(e.currentTarget.value);
+                setConfirming(null);
+              }}
+            >
+              <For each={projects()}>
+                {(p) => (
+                  <option value={p.id} selected={p.id === chosen()?.id}>
+                    {p.name} · {tildePath(p.root, home())}
+                  </option>
+                )}
+              </For>
+            </select>
+          </span>
+        </label>
+        <Show
+          when={confirming()}
+          fallback={
+            <button type="submit" class="button">
+              Import Project
+            </button>
+          }
+        >
+          {(sentence) => (
+            <div class="orgs-import-confirm">
+              <Banner tone="warn" title={sentence()} />
+              <div class="button-row">
+                <button type="button" class="button button-primary" onClick={() => void send(true)}>
+                  Import
+                </button>
+                <button type="button" class="button button-ghost" onClick={() => setConfirming(null)}>
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+        </Show>
+      </form>
+    </Show>
   );
 }

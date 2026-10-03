@@ -18,6 +18,7 @@ mkdirSync(join(agentDir, "sessions", "live"), { recursive: true });
 symlinkSync(resolve(import.meta.dirname, "..", "pi-config", "extensions"), join(agentDir, "extensions"));
 
 const orgs = await import("./orgs");
+const { editProject, overseerPausedSince, watchSid } = await import("./projects/spaces");
 const baton = await import("./baton");
 await import("./baton-loadout"); // registers the baton kind (its loadout and its cwd), as the server does
 const links = await import("./baton-links");
@@ -47,7 +48,7 @@ describe("the sessions it started are the statecharts' (q1: no started.json; C13
   const org = await orgs.createOrg({ name: "Migrate", dir: join(root, "ws-m") });
   mkdirSync(join(root, "proj-m"));
   const project = await orgs.addProject(org.id, { name: "M", root: join(root, "proj-m") });
-  const p = store.projectOverseerPaths(org.id, project.id);
+  const p = store.projectOverseerPaths(project.id);
   const started = join(p.dir, "started.json");
 
   test("the paths: no turn counters (the watch statechart's ledgers), no started.json, no watch memo", () => {
@@ -61,7 +62,7 @@ describe("the sessions it started are the statecharts' (q1: no started.json; C13
     mkdirSync(join(memo, ".."), { recursive: true });
     const legacy = [{ sessionId: "s-code", kind: "coding", createdAt: "2026-09-02T00:00:00.000Z", path: "/nowhere/s-code.jsonl" }];
     writeFileSync(memo, JSON.stringify({ version: 1, pending: ["a reason"], lastRunAt: null, lastRun: null, perDay: { "2026-09-01": 2 }, started: legacy }));
-    assert.deepEqual(readBuilds(org.id, project.id), []);
+    assert.deepEqual(readBuilds(project.id), []);
     assert.deepEqual(store.readMemo(p).pending, [], "nor its reasons: the watch statechart's are the loop's");
     assert.equal(existsSync(started), false, "nothing moved into the repo");
   });
@@ -76,10 +77,10 @@ describe("clone + attach = the whole organization", async () => {
   const project = await orgs.addProject(a.id, { name: "Portal", root: join(root, "proj-a") });
   const c1 = await baton.createBaton({ orgId: a.id, projectId: project.id, to: tony.id, publicTitle: "Payroll day", goal: "Find the payroll day" });
   const again = baton.rotateLink(c1.sessionId);
-  const overseer = await po.ensureProjectOverseer(a.id, project.id);
+  const overseer = await po.ensureProjectOverseer(project.id);
   // A build of the project, merged (its worktree's folder was this host's).
   await seedBuild(a.id, project.id, { sessionId: "code-moved", kind: "coding", title: "Moved build", worktree: { path: join(root, "wt-a"), branch: "sova/moved-abc123", base: "abc", target: "main" }, merged: { commit: "c0ffee" } });
-  await po.patchProjectOverseer(a.id, project.id, { autonomy: "L2" });
+  await po.patchProjectOverseer(project.id, { autonomy: "L2" });
   // A conflict asking Tony in its settle session (the conflict statechart starts it).
   const seeded = await seedConflicts(a.id, project.id, [{ id: "cf_moved", orgId: a.id, projectId: project.id, areaKey: "payroll", a: "x", b: "y", p: 0.9, state: "open", routedTo: tony.id, routeReason: "owner", batonSessionId: randomUUID(), createdAt: "2026-09-27T00:00:00.000Z" }]);
   await orgs.patchOrg(a.id, { about: "Northwind closes its books on the 5th." });
@@ -104,7 +105,7 @@ describe("clone + attach = the whole organization", async () => {
   }
 
   const b = await orgs.attachOrg({ dir: bDir });
-  await orgs.patchProject(b.id, project.id, { root: join(root, "proj-b") });
+  await editProject(project.id, { root: join(root, "proj-b") });
 
   test("the repo holds every file of the org's state", () => {
     const files = git(bDir, "ls-files").split("\n");
@@ -112,19 +113,19 @@ describe("clone + attach = the whole organization", async () => {
     const want = ["about.md", "org-history.jsonl", "roster-history.jsonl", "visits.jsonl", `sessions/${c1.path.split("/").pop()}`];
     for (const f of want) assert.ok(files.includes(f), f);
     const snapshot = (statechart: string, sid: string) => `statecharts/${statechart}/${encodeURIComponent(sid)}.edn`;
-    for (const f of [snapshot("org", `org/${a.id}`), snapshot("person", `person/${a.id}/${tony.id}`), snapshot("project", `project/${a.id}/${project.id}`)]) assert.ok(files.includes(f), f);
+    for (const f of [snapshot("org", `org/${a.id}`), snapshot("person", `person/${a.id}/${tony.id}`), snapshot("project", `project/${project.id}`), snapshot("placement", `placement/${a.id}/${project.id}`)]) assert.ok(files.includes(f), f);
     assert.ok(files.some((f) => /^statecharts\/log\/\d{4}-\d{2}\.jsonl$/.test(f)), "the transition log");
     for (const f of ["org.json", "roster.json", "projects.json", "holder.json"]) assert.ok(!files.includes(f), `no ${f}`);
     // Host-local statecharts (the residence, the watches) stay on the host.
     assert.ok(!files.some((f) => f.startsWith("statecharts/residence/") || f.startsWith("statecharts/watch/")), "nothing host-local");
     assert.ok(files.includes(`projects/${project.id}/overseer/overseer.json`), "overseer.json");
     for (const f of ["started.json", "state.json"]) assert.ok(!files.includes(`projects/${project.id}/overseer/${f}`), `no ${f}`);
-    assert.ok(files.includes(snapshot("build", `build/${a.id}/${project.id}/code-moved`)), "the build's snapshot");
+    assert.ok(files.includes(snapshot("build", `build/${project.id}/code-moved`)), "the build's snapshot");
     assert.ok(files.some((f) => f.startsWith("sessions/") && f.endsWith(`_${overseer.id}.jsonl`)), "the overseer's transcript");
   });
 
   test("each project's watch starts on this host, paused, and sees its project at once (F14)", () => {
-    const sid = orgs.watchSid(b.id, project.id);
+    const sid = watchSid(project.id);
     const conf = hostOf(b.id).configuration(sid) ?? [];
     assert.ok(conf.includes("paused"), `paused since the attach: ${conf.join(",")}`);
     assert.ok(conf.includes("has-overseer"), "it watches the cloned project: its overseer exists");
@@ -140,37 +141,37 @@ describe("clone + attach = the whole organization", async () => {
     assert.equal(baton.batonById(c1.sessionId)?.row.publicTitle, "Payroll day");
     assert.equal(orgs.readOrgAbout(b.id), "Northwind closes its books on the 5th.", "the About text came along");
     assert.deepEqual(orgs.readOrgHistory(b.id).map((c) => c.to), ["Northwind closes its books on the 5th."], "and its history");
-    assert.match(po.renderProjectOverseerPrompt(b.id, project.id, []), /Northwind closes its books on the 5th\./, "its overseer here reads it");
-    const info = await po.projectOverseerInfo(b.id, project.id);
+    assert.match(po.renderProjectOverseerPrompt(project.id, []), /Northwind closes its books on the 5th\./, "its overseer here reads it");
+    const info = await po.projectOverseerInfo(project.id);
     assert.equal(info.exists, true);
     assert.equal(info.id, overseer.id);
     assert.equal(info.settings.autonomy, "L2", "its setting came along");
-    const moved = readBuilds(b.id, project.id).find((r) => r.sessionId === "code-moved");
+    const moved = readBuilds(project.id).find((r) => r.sessionId === "code-moved");
     assert.deepEqual(moved && [moved.kind, moved.title, moved.worktree?.branch, moved.merged?.commit, moved.path], ["coding", "Moved build", "sova/moved-abc123", "c0ffee", undefined], "the builds it started, merged, with no file on this host");
   });
 
   test("its project overseers are paused at L0 until the operator sets a level on this host", async () => {
-    const info = await po.projectOverseerInfo(b.id, project.id);
+    const info = await po.projectOverseerInfo(project.id);
     assert.ok(info.paused, "paused since the attach");
     assert.equal(info.effective.autonomy, "L0");
     assert.match(info.effective.reason ?? "", /attached on this host/);
     // Setting the SAME level resumes it: the gesture is what counts.
-    const resumed = await po.patchProjectOverseer(b.id, project.id, { autonomy: "L2" });
+    const resumed = await po.patchProjectOverseer(project.id, { autonomy: "L2" });
     assert.equal(resumed.paused, null);
     assert.equal(resumed.effective.autonomy, "L2");
     // Another settings change does not count as setting the level: only autonomy resumes.
     await orgs.detachOrg(b.id);
     await orgs.attachOrg({ dir: bDir });
-    await po.patchProjectOverseer(b.id, project.id, { watch: false });
-    assert.ok((await po.projectOverseerInfo(b.id, project.id)).paused, "a watch toggle leaves it paused");
-    await po.patchProjectOverseer(b.id, project.id, { autonomy: "L1", watch: true });
+    await po.patchProjectOverseer(project.id, { watch: false });
+    assert.ok((await po.projectOverseerInfo(project.id)).paused, "a watch toggle leaves it paused");
+    await po.patchProjectOverseer(project.id, { autonomy: "L1", watch: true });
   });
 
   test("an org created on this host is not paused", async () => {
     const fresh = await orgs.createOrg({ name: "Fresh", dir: join(root, "ws-fresh") });
     mkdirSync(join(root, "proj-f"));
     const pr = await orgs.addProject(fresh.id, { name: "F", root: join(root, "proj-f") });
-    assert.equal(orgs.overseerPausedSince(fresh.id, pr.id), null);
+    assert.equal(overseerPausedSince(pr.id), null);
   });
 
   test("the attach derives this host's titles and web origin again from the repo", () => {
@@ -187,7 +188,7 @@ describe("clone + attach = the whole organization", async () => {
     assert.equal(cwdOverride(batonPath), orgs.orgDir(b.id));
     const chat = await acquireChat(batonPath);
     assert.equal(chat.session.sessionManager.getCwd(), orgs.orgDir(b.id));
-    const poPath = (await po.projectOverseerInfo(b.id, project.id)).path!;
+    const poPath = (await po.projectOverseerInfo(project.id)).path!;
     assert.equal(cwdOverride(poPath), join(root, "proj-b"));
     const poChat = await acquireChat(poPath);
     assert.equal(poChat.special, "project-overseer");

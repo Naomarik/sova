@@ -1,6 +1,6 @@
 (ns sova.statecharts.api
   "The narrow JS API (design §6.3). Keywords cross as strings, data as plain JSON: object keys are
-   camelCase in JS and kebab keywords in CLJS (rosterActive ↔ :roster-active); values are untouched,
+   camelCase in JS and kebab keywords in CLJS (lookHint ↔ :look-hint); values are untouched,
    except that keyword values come out as \"ns/name\" strings. Event names become keywords
    (\"gather/start\" → :gather/start). Session ids are strings. Snapshots are EDN text."
   (:require

@@ -133,8 +133,8 @@ copy is §design.copy-deck/owner-page, and its list of words never used there is
   project's status. Its handle answers 404, the same as a handle that never existed. No count of
   hidden things is ever shown.
 - **Switch a project off**: the project page's `Show this project on {first name}'s page`
-  (the project statechart's `ownerHidden`, shown by default; `PATCH /api/orgs/:id/projects/:pid
-  {ownerHidden}`). A project switched off disappears from the page with everything in it, and its
+  (the placement's `ownerHidden`, §app.projects/placement, shown by default; `PATCH
+  /api/orgs/:id/projects/:pid/placement {ownerHidden}`). A project switched off disappears from the page with everything in it, and its
   handle answers 404.
 - **Never shown**: the project overseer's conversations (current and history), coding sessions
   (their titles and topic summaries too), and every other session of the operator's.

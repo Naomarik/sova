@@ -312,7 +312,12 @@ function liveRun(host: OrgHostApi, d: Record<string, unknown>): string | null {
 /** The registry as the page reads it (after a fresh read of main). */
 export async function readRuntime(projectId: string, opts: { observe?: boolean } = {}): Promise<ProjectRuntimeView> {
   engineOrThrow(projectId);
-  if (opts.observe !== false) await observe(projectId);
+  if (opts.observe !== false) {
+    // A read already in flight may have looked before the change this caller expects to see: let it
+    // finish, then join or start one that began after this call.
+    await inflight.get(projectId);
+    await observe(projectId);
+  }
   const at = runtimeOf(projectId);
   if (!at) throw new OrgError("This project's software registry is not open on this host.", 409);
   const d = obj(at.host.data(at.sid));

@@ -1,14 +1,18 @@
 import { createMemo, createResource, createSignal, For, Match, Show, Switch } from "solid-js";
 import type { ProjectSummary } from "../../shared/projects";
-import { ApiError, getProject, listProjects, openProjectOverseer } from "../lib/api";
+import type { RunningProject } from "../../shared/services-view";
+import { ApiError, getHostServices, getProject, listProjects, openProjectOverseer, runProjectVerb, runRootVerb } from "../lib/api";
 import { relativeTime } from "../lib/format";
 import { placementOf, sortProjects } from "../lib/projects";
-import { projectHref, projectSessionHref, type ProjectsRoute, type ProjectTab } from "../lib/projects-route";
+import { createPoll } from "../lib/poll";
+import { projectHref, projectSessionHref, projectTabHref, type ProjectsRoute, type ProjectTab } from "../lib/projects-route";
+import { COPY_CHIP, copyName, memoryOf, refusalLine, SERVICE_CHIP } from "../lib/services-view";
+import { announce, toast } from "../lib/ui-state";
 import { AddProjectDialog } from "./AddProjectDialog";
 import { InsightsPage } from "./InsightsPage";
 import { createProjectOrgPart } from "./ProjectOrgPart";
 import { ProjectPage } from "./ProjectPage";
-import { Banner, Icon } from "./ui";
+import { Banner, Chip, Icon } from "./ui";
 import "../orgs.css";
 import "../projects.css";
 
@@ -146,6 +150,7 @@ function ProjectList(props: { titleRef(el: HTMLHeadingElement): void }) {
           </ul>
         </details>
       </Show>
+      <RunningCopies />
       <Show when={adding()}>
         <AddProjectDialog onCancel={() => setAdding(false)} onAdded={() => void refetch()} />
       </Show>
@@ -177,5 +182,136 @@ function ProjectRow(props: { project: ProjectSummary }) {
         <Icon name="chevron-right" class="orgs-row-go" />
       </a>
     </li>
+  );
+}
+
+// ---- what runs on this host ------------------------------------------------------------------------
+
+const RUNNING_POLL_MS = 15_000;
+
+/**
+ * Running copies (§app.project-services/services-ui): every copy and shared service that runs on this
+ * host now, by project, standalone or placed, each with its memory and a Stop; the project's name opens
+ * its Services tab. A shared service's Stop asks first: it stops it for every copy of the project.
+ */
+function RunningCopies() {
+  const poll = createPoll(getHostServices, RUNNING_POLL_MS);
+  const [running, setRunning] = createSignal<string | null>(null);
+  const [armed, setArmed] = createSignal<string | null>(null);
+  const [said, setSaid] = createSignal<Record<string, string>>({});
+
+  const stop = async (p: RunningProject, key: string, name: string, body: Record<string, unknown>, asksFirst: boolean) => {
+    if (running()) return;
+    const confirmed = armed() === key;
+    if (asksFirst && !confirmed) return setArmed(key);
+    setArmed(null);
+    setRunning(key);
+    const { [key]: _, ...rest } = said();
+    setSaid(rest);
+    try {
+      const b = { ...body, ...(confirmed ? { confirm: true } : {}) };
+      const r = p.projectId ? await runProjectVerb(p.projectId, "down", b) : await runRootVerb(p.root, "down", b);
+      const why = refusalLine(r);
+      if (why) {
+        setSaid({ ...said(), [key]: why });
+        announce(why);
+        if (r.error?.code === "needs-confirm") setArmed(key);
+      } else {
+        const done = `Stopped ${name} of ${p.name}.`;
+        toast(done);
+        announce(done);
+      }
+    } catch (x) {
+      setSaid({ ...said(), [key]: `Couldn't reach the engine. ${errText(x)}` });
+    } finally {
+      setRunning(null);
+      poll.refetch();
+    }
+  };
+
+  const StopButton = (b: { p: RunningProject; id: string; name: string; body: Record<string, unknown>; asksFirst?: boolean }) => (
+    <button
+      type="button"
+      class="button button-sm"
+      aria-disabled={running() ? "true" : undefined}
+      aria-label={`Stop ${b.name} of ${b.p.name}`}
+      onClick={() => void stop(b.p, b.id, b.name, b.body, !!b.asksFirst)}
+      onBlur={() => armed() === b.id && setArmed(null)}
+    >
+      {running() === b.id ? "Stopping…" : armed() === b.id ? "Confirm Stop" : "Stop"}
+    </button>
+  );
+
+  return (
+    <section class="card orgs-section running-copies" aria-labelledby="running-copies">
+      <h2 class="orgs-h2" id="running-copies">
+        Running copies
+      </h2>
+      <Show when={poll.data()} fallback={<p class="orgs-empty">{poll.error() ? `Couldn't read what runs here. ${poll.error()}` : "Reading what runs on this host."}</p>}>
+        {(v) => (
+          <Show when={v().projects.length} fallback={<p class="orgs-empty">Nothing runs on this host now. Copies you start show here.</p>}>
+            <ul class="list running-copies-list">
+              <For each={v().projects}>
+                {(p) => (
+                  <li class="running-copies-project">
+                    <p class="list-title running-copies-head">
+                      <Show when={p.projectId} fallback={<span class="orgs-mono" title={p.root}>{p.root}</span>}>
+                        {(pid) => <a href={projectTabHref(pid(), "services")}>{p.name}</a>}
+                      </Show>
+                      <Show when={p.orgName}>{(o) => <span class="list-meta">In {o()}</span>}</Show>
+                    </p>
+                    <ul class="list">
+                      <For each={p.copies}>
+                        {(c) => {
+                          const name = () => copyName({ slot: c.slot, branch: c.branch, checkout: p.root });
+                          const key = () => `${c.instance}:down`;
+                          return (
+                            <li class="list-row services-row">
+                              <div class="list-main services-row-main">
+                                <p class="services-row-title">
+                                  <span class="services-name text-mono">{name()}</span>
+                                  <span class="list-meta">slot {c.slot}</span>
+                                  <Chip tone={COPY_CHIP[c.state].tone}>{COPY_CHIP[c.state].word}</Chip>
+                                  <span class="list-meta">{memoryOf(c.rssBytes)}</span>
+                                </p>
+                                <Show when={said()[key()]}>{(line) => <p class="field-error services-said">{line()}</p>}</Show>
+                              </div>
+                              <div class="button-row services-actions">
+                                <StopButton p={p} id={key()} name={name()} body={{ instance: c.instance }} />
+                              </div>
+                            </li>
+                          );
+                        }}
+                      </For>
+                      <For each={p.shared}>
+                        {(s) => {
+                          const key = () => `${p.root}:shared:${s.name}:down`;
+                          return (
+                            <li class="list-row services-row">
+                              <div class="list-main services-row-main">
+                                <p class="services-row-title">
+                                  <span class="services-name">{s.name}</span>
+                                  <span class="list-meta">shared</span>
+                                  <Chip tone={SERVICE_CHIP[s.state].tone}>{SERVICE_CHIP[s.state].word}</Chip>
+                                  <span class="list-meta">{memoryOf(s.rssBytes)}</span>
+                                </p>
+                                <Show when={said()[key()]}>{(line) => <p class="field-error services-said">{line()}</p>}</Show>
+                              </div>
+                              <div class="button-row services-actions">
+                                <StopButton p={p} id={key()} name={s.name} body={{ instance: s.via, services: [s.name] }} asksFirst />
+                              </div>
+                            </li>
+                          );
+                        }}
+                      </For>
+                    </ul>
+                  </li>
+                )}
+              </For>
+            </ul>
+          </Show>
+        )}
+      </Show>
+    </section>
   );
 }

@@ -1,4 +1,6 @@
 import type { ProfilesListing } from "../../shared/profiles";
+import type { VerbResult } from "../../shared/project-contract";
+import type { HostServicesView, ProjectServicesView, ServicesUiVerb } from "../../shared/services-view";
 import type { SubagentProfilesFile, SubagentProfilesInfo } from "../../shared/subagent-profiles";
 import type {
   VoiceDeviceInfo,
@@ -1128,6 +1130,31 @@ export const getProjectCost = (projectId: string) => request<ProjectCost>(`${pro
 export const getOrgCosts = (orgId: string) => request<OrgCosts>(`/api/orgs/${encodeURIComponent(orgId)}/costs`);
 
 // ---- a project's software registry (§app/project-runtime) -------------------------------------------
+/** The project's copies on this host, for its Services tab (§app.project-services/services-ui). */
+export const getProjectServices = (projectId: string) => request<ProjectServicesView>(`${projectPath(projectId)}/services`);
+/** Run one verb on the project as the operator. A refusal is a result too (its `error`), never thrown;
+    only an unreachable server or an unknown project throws. */
+export async function runProjectVerb(projectId: string, verb: ServicesUiVerb, body: Record<string, unknown>): Promise<VerbResult> {
+  try {
+    return await request<VerbResult>(`${projectPath(projectId)}/services/${verb}`, jsonInit("POST", body));
+  } catch (err) {
+    const b = err instanceof ApiError ? (err.body as Partial<VerbResult> | undefined) : undefined;
+    if (b && b.v === 1 && typeof b.verb === "string") return b as VerbResult;
+    throw err;
+  }
+}
+/** Run one verb as the operator on a folder no registered project holds (a refusal is a result, as above). */
+export async function runRootVerb(root: string, verb: ServicesUiVerb, body: Record<string, unknown>): Promise<VerbResult> {
+  try {
+    return await request<VerbResult>(`/api/project-services/${verb}`, jsonInit("POST", { ...body, project: root }));
+  } catch (err) {
+    const b = err instanceof ApiError ? (err.body as Partial<VerbResult> | undefined) : undefined;
+    if (b && b.v === 1 && typeof b.verb === "string") return b as VerbResult;
+    throw err;
+  }
+}
+/** What runs on this host now, every project's (Running copies on `#/projects`). */
+export const getHostServices = () => request<HostServicesView>("/api/services");
 export const getProjectRuntime = (projectId: string) => request<ProjectRuntimeView>(`${projectPath(projectId)}/runtime`);
 /** Approve the definition shown (its hash) on this host: the operator's only. */
 export const approveProjectRuntime = (projectId: string, hash: string) => request<ProjectRuntimeView>(`${projectPath(projectId)}/runtime/approve`, jsonInit("POST", { hash }));

@@ -337,3 +337,47 @@ a.pipeline-link:hover, button.pipeline-link:hover, summary.pipeline-link:hover {
 }
 .project-confirm-row { justify-content: flex-start; min-height: var(--tap-min); }
 .pipeline-meta-warn { color: var(--status-warn); }
+
+/* ---- Services tab and Running copies (§app.project-services/services-ui) ------------------------
+   Each card is its own container, so a row stacks by the card's width, not the window's. */
+.services-tab,
+.running-copies { container: services / inline-size; }
+.services-list, .running-copies-list { margin: 0; padding: 0; list-style: none; }
+.services-row { align-items: flex-start; flex-wrap: wrap; padding-left: 0; padding-right: 0; }
+.services-row-main { min-width: 14rem; display: flex; flex-direction: column; gap: var(--space-1); }
+.services-row-title { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-3); margin: 0; }
+.services-name { font-weight: var(--fw-semibold); color: var(--color-ink); overflow-wrap: anywhere; }
+.services-facts { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-4); margin: 0; white-space: normal; }
+.services-service { display: inline-flex; flex-wrap: wrap; gap: var(--space-2); }
+.services-port a { color: var(--color-accent); }
+.services-said { margin: 0; }
+.services-actions { flex-wrap: wrap; gap: var(--space-2); }
+.services-main-start { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); margin-top: var(--space-3); }
+.services-main-start .services-said { flex-basis: 100%; }
+.services-shared { margin-top: var(--space-5); }
+.running-copies-project { padding: var(--space-3) 0; border-bottom: var(--stroke-thin) solid var(--color-border); }
+.running-copies-project:last-child { border-bottom: 0; }
+.running-copies-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-1) var(--space-3); }
+.running-copies-project .services-row { min-height: 0; }
+/* The logs: mono, 24-hour times, the newest at the bottom. */
+.services-logs-lines {
+  margin: 0;
+  max-height: 60dvh;
+  overflow: auto;
+  padding: var(--space-3);
+  border-radius: var(--r-sm);
+  background: var(--color-sunken);
+  color: var(--color-ink);
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono);
+  line-height: var(--lh-mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.services-log-meta { color: var(--color-ink-muted); }
+/* Narrow: a row's facts first, then its actions across the width. */
+@container services (max-width: 479px) {
+  .services-row { flex-direction: column; flex-wrap: nowrap; align-items: stretch; }
+  .services-row-main { min-width: 0; }
+  .services-actions > .button { flex: 1 1 auto; }
+}

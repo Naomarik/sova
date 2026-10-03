@@ -4,7 +4,7 @@ import { ApiError, approveProjectRuntime, getProjectRuntime, runProjectVerbsPlay
 import { relativeTime } from "../lib/format";
 import { createPoll } from "../lib/poll";
 import { approveLabel, approveWhat, failedLine, liveWord, memoryWord, playbookLabel, portsWord, provenTail, runWord, SENSITIVE_TITLE, serviceFacts, STANDING_CHIP } from "../lib/project-software";
-import { projectSessionHref } from "../lib/projects-route";
+import { projectSessionHref, projectTabHref } from "../lib/projects-route";
 import { announce, toast } from "../lib/ui-state";
 import { Chip } from "./ui";
 
@@ -112,6 +112,10 @@ export function ProjectSoftwareCard(props: { projectId: string; archived: boolea
                 </For>
               </ul>
             </Show>
+            {/* Where each copy is started, stopped and read (§app.project-services/services-ui). */}
+            <p class="orgs-line">
+              <a href={projectTabHref(props.projectId, "services")}>Open Services</a>
+            </p>
             <Show when={provenTail(v())}>
               {(tail) => (
                 <p class="list-meta">

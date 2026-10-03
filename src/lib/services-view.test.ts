@@ -1,0 +1,44 @@
+import assert from "node:assert/strict";
+import { test } from "node:test";
+import { copyMemory, copyName, createdByWord, httpHref, notReadyLine, refusalLine, sentence } from "./services-view";
+
+test("a copy is named main at slot 0, else by its branch, else by its folder", () => {
+  assert.equal(copyName({ slot: 0, branch: "master", checkout: "/p" }), "main");
+  assert.equal(copyName({ slot: 2, branch: "feat-x", checkout: "/p/.wt/x" }), "feat-x");
+  assert.equal(copyName({ slot: 3, branch: null, checkout: "/p/.wt/detached/" }), "detached");
+});
+
+test("memory sums what reports, and says — when nothing does", () => {
+  assert.equal(copyMemory([{}, {}]), "—");
+  assert.equal(copyMemory([{ rssBytes: 1024 * 1024 }, {}, { rssBytes: 1024 * 1024 }]), copyMemory([{ rssBytes: 2 * 1024 * 1024 }]));
+});
+
+test("who made a copy reads as a person or a kind; an unknown tag passes through", () => {
+  assert.equal(createdByWord("operator"), "you");
+  assert.equal(createdByWord("session:abc"), "a coding session");
+  assert.equal(createdByWord("project-overseer:prj_1"), "its overseer");
+  assert.equal(createdByWord("overseer:o1"), "the Overseer");
+  assert.equal(createdByWord("weird"), "weird");
+});
+
+test("the services not ready are named; none when all are", () => {
+  const s = (name: string, state: "ready" | "stopped" | "failed") => ({ name, scope: "checkout" as const, kind: "process" as const, state, unit: null, pid: null, ports: {} });
+  assert.equal(notReadyLine([s("web", "ready")]), null);
+  assert.equal(notReadyLine([s("web", "ready"), s("api", "failed"), s("db", "stopped")]), "api failed · db stopped");
+});
+
+test("an HTTP port links on the page's host, an IPv6 host bracketed", () => {
+  assert.equal(httpHref("localhost", { port: 4100, path: "/health" }), "http://localhost:4100/health");
+  assert.equal(httpHref("::1", { port: 4100, path: "x" }), "http://[::1]:4100/x");
+});
+
+test("a refusal is a sentence without the CLI's hint; needs-confirm and busy say what to do", () => {
+  assert.equal(sentence("apply of the main checkout stops it: confirm it (sova-project apply … --confirm)"), "Apply of the main checkout stops it: confirm it.");
+  assert.equal(refusalLine({ ok: true }), null);
+  assert.equal(refusalLine({ ok: false }), "It didn't finish. Read its logs.");
+  const confirm = refusalLine({ ok: false, error: { code: "needs-confirm", message: "x stops the server (sova-project down … --confirm)" } })!;
+  assert.match(confirm, /^X stops the server\. Press it again to confirm\.$/);
+  assert.equal(refusalLine({ ok: false, error: { code: "busy", message: "another verb is running on this instance (pid 4); try again when it ends" } }), "Another verb is running on this instance (pid 4); try again when it ends.");
+  assert.equal(refusalLine({ ok: false, error: { code: "busy", message: "2 sessions are busy" } }), "2 sessions are busy. Try again once they are idle.");
+  assert.equal(refusalLine({ ok: false, error: { code: "start-failed", message: "web stopped (exit 1)" } }), "Web stopped (exit 1).");
+});

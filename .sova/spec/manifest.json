@@ -11540,7 +11540,7 @@
     "§tools.spec/assessment-observations": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "requires": [
         "§tools.spec/change-assessments",
         "§tools.spec/runtime-accounting"
@@ -11552,7 +11552,15 @@
         "src/lib/readiness.ts",
         "src/lib/readiness.test.ts",
         "src/components/Sidebar.tsx",
-        "server/merge-readiness.test.ts"
+        "server/merge-readiness.test.ts",
+        "pi-config/extensions/mode/spec-assessment.ts",
+        "pi-config/extensions/mode/spec-assessment.test.ts",
+        "pi-config/extensions/mode/tests/assessment-absence.mjs",
+        "pi-config/extensions/mode/spec-worker.ts",
+        "pi-config/extensions/mode/index.ts",
+        "pi-config/extensions/claude-code/spec-hooks.ts",
+        "pi-config/extensions/mode/README.md",
+        "pi-config/extensions/mode/tests/smoke.mjs"
       ]
     },
     "§tools.spec/change-assessments": {

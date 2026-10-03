@@ -44,6 +44,7 @@ const DEF = {
     site: { static: "public", ports: { http: { base: PORTS.site } } },
   },
   hooks: { probe: { run: ["node", "probe.mjs"] } },
+  open: { endpoint: "web.http" },
   sources: ["package.json"],
 };
 
@@ -147,6 +148,8 @@ test("an unapproved definition conforms confined: it passes, never touches the h
   assert.equal(r.conform?.confined, true);
   assert.deepEqual(r.conform?.leaks, []);
   assert.match(r.conform!.checks.find((x) => x.id === "isolation")!.detail, /read in main skipped \(confined\)/);
+  // The entry point is asked where the run's web listens: inside its namespace (suite 4).
+  assert.match(r.conform!.checks.find((x) => x.id === "open")!.detail, /^web\.http \(port \d+\): GET \/ inside the run's namespace answered 200 \(no content type\)$/);
   // The host's shared bus was never started: the run's bus was its own.
   assert.equal((await engine.driver.status(engine.unitOf(sharedIdOf(project), "bus"))).state, "missing");
   assert.equal(readRegistry().shared.length, 0, "the registry's shared record is the host's, untouched");

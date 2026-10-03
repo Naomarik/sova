@@ -34,8 +34,19 @@ import { defHashOf, isApproved } from "./trust";
  */
 
 /** 2: a declared `test` passes its smoke selection twice alike in A, on-demand services wait for it; 3: each share endpoint
-    answers through the preview proxy's request path (§app.project-services/conform). */
-export const SUITE_VERSION = 3;
+    answers through the preview proxy's request path; 4: the declared entry point (`open`) answers in A (§app.project-services/conform). */
+export const SUITE_VERSION = 4;
+
+/** A GET of the entry, as a person's browser would ask it: its status and content type (null: no answer). */
+export async function entryAnswers(port: number, path: string, timeoutMs = 10_000): Promise<{ status: number | null; type: string | null }> {
+  try {
+    const r = await fetch(`http://127.0.0.1:${port}${path}`, { signal: AbortSignal.timeout(timeoutMs), redirect: "manual", headers: { accept: "text/html,*/*" } });
+    await r.body?.cancel().catch(() => undefined);
+    return { status: r.status, type: r.headers.get("content-type") };
+  } catch {
+    return { status: null, type: null };
+  }
+}
 
 type Git = typeof realGit;
 
@@ -457,6 +468,24 @@ async function runSuite(
         said.push(`${ep} (port ${at.port}): ${r.detail}${r.ok ? "" : ", not below 500"}`);
       }
       if (!s.check("share-endpoints", ok, said.join("; "), t0)) return;
+    }
+    // 8c. the entry point (suite 4): it answers in A below 500; the detail names its content type, a page's or an API's.
+    t0 = Date.now();
+    if (!def.open) s.check("open", true, "no entry point declared", t0);
+    else {
+      const { endpoint, path } = def.open;
+      const at = endpointOf(def, recOf(a.instance)!, endpoint);
+      const svc = at ? ap.services.find((x) => x.name === at.service.name) : undefined;
+      if (!at || svc?.state !== "ready") {
+        if (!s.check("open", false, `${endpoint}: its service is not ready after up (${svc?.state ?? "absent"})`, t0)) return;
+      } else {
+        // A confined run's process services answer only inside its namespace; a static one is served here.
+        const inside = !!confine && at.service.static === undefined;
+        const r = inside ? await confine!.get(at.port, path) : await entryAnswers(at.port, path);
+        const ok = r.status !== null && r.status < 500;
+        const said = r.status === null ? "no answer" : `answered ${r.status} (${r.type ?? "no content type"})`;
+        if (!s.check("open", ok, `${endpoint} (port ${at.port}): GET ${path}${inside ? " inside the run's namespace" : ""} ${said}${ok ? "" : ", not below 500"}`, t0)) return;
+      }
     }
     // 9. reset A.
     if (def.data.length) {

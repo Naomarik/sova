@@ -987,9 +987,12 @@ main-pane rows.
   keeps the whole card away.
 - **Read once.** It reads when it appears, and again only if it is asked about a different
   session; then it disappears until both new answers are in. An answer that arrives after the
-  card has gone, or for a session it no longer shows, is dropped. Nothing on it polls, refreshes
-  or links: no Refresh button, no timer, no anchors, and a commit's age is worked out when the
-  card draws and doesn't tick. Either answer can be the server's cached read of that folder, up
+  card has gone, or for a session it no longer shows, is dropped. Nothing on it polls or links: no
+  Refresh button, no timer, no anchors, and a commit's age is worked out when the card draws and
+  doesn't tick. The loadout is redrawn in two cases only, both from
+  /setup-card-toggles: a flip of a row's switch draws the server's answer in place, and when the
+  chat says the switch window has opened after the first read, the loadout is read again,
+  skipping the cache. Neither redraw draws over a newer answer. Either answer can be the server's cached read of that folder, up
   to 30s old for the loadout and 10s for the repository, and a repository read already running
   for the same session is joined rather than repeated.
 - **Order.** The loadout comes first and Repository last, every time. For a local folder pi's
@@ -997,11 +1000,12 @@ main-pane rows.
   every other case it is a single line (below). Each group after the first sits under a 1px
   `--color-border` rule.
 - **The one aggregate line.** `System context` leading, its figures trailing in the shape a row
-  uses. It adds up every Context row and every Skills row, which is exactly the two groups under
-  it, so it is the sum of their two totals. Its `title` is the one sentence saying so:
+  uses. It adds up every Context row and every Skills row that is on (a row switched off,
+  /setup-card-toggles, is listed but not counted), which is exactly what the two groups under it
+  total, so it is the sum of their two totals. Its `title` is the one sentence saying so:
   "Everything pi loads into the prompt, plus the skills it offers." It carries no heading, because
   it is a line and not a section. It is left out when it would read `0 B · 0 lines`, that is when
-  there are no files or only empty ones. It is not what the prompt costs before the first
+  there are no files, only empty ones, or every row is off. It is not what the prompt costs before the first
   message: it counts each offered skill's SKILL.md whole, and a skill loads only when it is used
   (/setup-card-skills). The title's "plus the skills it offers" is what says so.
 - **One line in place of Context and Skills.** A `.setup-note` in its own group, with no
@@ -1026,7 +1030,9 @@ main-pane rows.
 - **Accessibility.** The card is a `section` with `aria-label="Session setup"`. Context, Skills
   and Repository are `h2`s (the session head's title is the `h1`). The aggregate line has no
   heading. Icons are `aria-hidden`. Rows aren't focusable, so what a row's `title` carries (a full
-  path, a skill's description) is available on hover only.
+  path, a skill's description) is available on hover only. The one exception: while the switch
+  window is open, each context file and skill row's switch (/setup-card-toggles) is a focusable
+  checkbox. The row itself still isn't focusable.
 
 ## §chat.transcript/setup-card-context — Setup card: Context
 
@@ -1058,8 +1064,11 @@ The files pi puts into the prompt, in the order it loads them.
 
 - **Heading and count.** `Context · {n}`, where n is the rows listed, SYSTEM.md and
   APPEND_SYSTEM.md rows included. With none it reads `Context · 0`.
-- **The total beside the label** (`.setup-total`) is the rows added up, in the rows' own figures
-  (/setup-card-figures). It is left out when the rows add up to `0 B · 0 lines`.
+- **The total beside the label** (`.setup-total`) is the rows that are on added up, in the rows'
+  own figures (/setup-card-figures). It is left out when they add up to `0 B · 0 lines`.
+- **Off rows.** A row this session has switched off (/setup-card-toggles) stays listed and
+  counted in the heading's n, but it is dimmed (`.setup-row-off`: its name and figures at half
+  opacity) and no total counts it, because pi doesn't load it.
 - **Load order, and each row's role.** A `SYSTEM.md` that replaces the default prompt comes
   first, marked "replaces the system prompt", because it is the prompt the rest is added to. The
   context files follow in the order pi layers them (global, then ancestors, then the folder),
@@ -1081,7 +1090,7 @@ The files pi puts into the prompt, in the order it loads them.
   was one Sova couldn't read.
 - **A total never counts a file the list doesn't show.** One list makes the rows, this group's
   total and its share of the `System context` line, and a file left out of the list is left out of
-  all three.
+  all three. The converse doesn't hold for an off row: it is listed, but in neither total.
 
 ## §chat.transcript/setup-card-skills — Setup card: Skills
 
@@ -1104,9 +1113,12 @@ The skills pi offers this session: what it is **offered**, not what is loaded.
 </div>
 ```
 
-- **Heading and count.** `Skills · {n}`, where n is the rows listed. The total beside the label
-  follows Context's rule and is left out at `0 B · 0 lines`.
-- **Offered, not loaded.** The rows are the skills pi lists to the model, in its order. A skill
+- **Heading and count.** `Skills · {n}`, where n is the rows listed, off rows included. The total
+  beside the label follows Context's rule: it adds up only the rows that are on, and it is left
+  out at `0 B · 0 lines`.
+- **Offered, not loaded.** The rows that are on are the skills pi lists to the model, in its
+  order. A row this session has switched off (/setup-card-toggles) stays listed in its place,
+  dimmed like an off Context row, but it is not offered, so the model never sees it. A skill
   loads when it is used, and the note's first two sentences say so. A row's figures are its whole
   SKILL.md file, so they are not something the session carries before it uses that skill.
 - **The row.** The skill's name, in the mono `.setup-path` face, with no path on screen and no
@@ -1222,6 +1234,67 @@ repository around the folder. Two of its figures:
   characters per token." That note appears **exactly when the section shows token figures**, and a
   figure that isn't there is dropped rather than zeroed: a server that sends no estimate gets bytes
   and lines, never `≈0 tokens` for a file nobody counted.
+
+## §chat.transcript/setup-card-toggles — Setup card: switching context files and skills off
+
+On an ordinary session this server hosts, before its first message, every context file row and
+every skill row of the setup card (/setup-card-context, /setup-card-skills) carries an on/off
+switch. A switch that is off keeps that file out of this session's prompt, or that skill out of the
+skills it is offered, for this one session only.
+
+```html
+<li class="setup-row setup-row-off" title="/home/user/.pi/agent/AGENTS.md">
+  <span class="setup-name"><span class="setup-path">~/.pi/agent/AGENTS.md</span></span>
+  <span class="setup-facts">2.1 KB · 48 lines · ≈530 tokens</span>
+  <label class="toggle toggle-switch setup-toggle">
+    <input type="checkbox" aria-label="Load ~/.pi/agent/AGENTS.md" />   <!-- unchecked: off -->
+    <span class="toggle-box" />
+  </label>
+</li>
+```
+
+- **Which rows switch.** Every context file pi lists, the global `~/.pi/agent/AGENTS.md` (or
+  `CLAUDE.md`) included, and every skill. A SYSTEM.md that replaces the prompt and the
+  APPEND_SYSTEM.md sources get no switch: they are always loaded.
+- **When.** Exactly the Profile pick's window (§chat.profiles/picker, /applying): the switches show
+  only while the session is before its first message, the server holds its chat, the session is
+  local, ordinary (not the Overseer, a project overseer, baton, organization or worker session)
+  and not open in a terminal. Otherwise the card is as before, with no switches, though a row
+  this session keeps off still reads off (except while a terminal has it open, since the TUI
+  loads every row).
+- **On by default, every time.** Each new session starts with every row on. Nothing is
+  remembered between sessions, per folder or globally: the choice lives in the session alone.
+- **A flip applies at once.** The card sends the session's whole off set
+  (`POST /api/sessions/loadout {path, offContext, offSkills}`), and while it applies every switch
+  is disabled. The server writes a hidden `custom` entry `customType: "sova-loadout"`, data
+  `{v: 1, offContext: [absolute paths], offSkills: [skill names]}`, newest on the branch wins, then
+  rebuilds the session's runtime the way a profile pick does: open tabs get `reloaded` and
+  reconnect, keeping the draft. The answer is the card's new loadout, which it draws in place. A
+  refusal (409: "Context files and skills are fixed once a message is sent.", mid-turn, open in a
+  terminal, a foreign writer, a special session) changes nothing and is shown as a toast. A set
+  equal to the one the session already has writes nothing and rebuilds nothing.
+- **The entry.** It records exclusions only, never context: no file text, no skill text. It draws
+  no transcript row, so writing it keeps the empty state and the session still counts as before
+  its first message. It is never LLM context and the TUI ignores it.
+- **What it changes.** The runtime is built with pi's loader overrides (`agentsFilesOverride`,
+  `skillsOverride`), so an off file is absent from the system prompt, and an off skill is absent
+  from the skills list in the prompt, from `/skill:` expansion and from the composer's slash list.
+  The skill filter also covers skills an extension adds. A context file or skill named in the entry
+  that no longer exists is ignored. Sova-hosted runtimes honour it for every model, pi's and Claude
+  Code's alike (the Claude Code provider sends pi's own system prompt). Re-opening the session,
+  and restarting the server, rebuild the runtime from the same entry, so the choice holds.
+- **What it does not change.** A TUI that opens the session, and any worker the session spawns,
+  load their own context files and skills: they do not read this entry. A remote session's card
+  has no rows, so it has no switches.
+- **Off rows and the totals.** A row that is off stays listed, dimmed, with its switch off. The
+  Context and Skills headings still count every row listed, but each group's total and the
+  `System context` line add up only the rows that are on, so they say what this session loads and
+  is offered.
+- **The card's read.** Rows come from the runtime's unfiltered lists, so an off row can be switched
+  back on. The folder's cached read is shared as before; whether each row is off, and whether the
+  switches show, is worked out for each session on every read.
+- **Accessibility.** Each switch is a checkbox labelled "Load {path}" (the path as the row shows
+  it) for a file and "Offer {name}" for a skill, checked when on, reachable by keyboard.
 
 ## §chat.transcript/tokens — Tokens
 

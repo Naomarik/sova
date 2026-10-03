@@ -12044,6 +12044,33 @@
       "requires": [
         "§chat.slash-commands/in-the-thread"
       ]
+    },
+    "§chat.transcript/setup-card-toggles": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/session-loadout.ts",
+        "server/session-setup.ts",
+        "server/chat-manager.ts",
+        "server/index.ts",
+        "shared/protocol.ts",
+        "src/components/SessionSetup.tsx",
+        "src/lib/session-setup.ts",
+        "src/lib/api.ts",
+        "src/components/ChatView.tsx",
+        "src/app.css",
+        "server/session-loadout.test.ts",
+        "server/session-loadout-runtime.test.ts",
+        "server/session-setup.test.ts",
+        "src/lib/session-setup.test.ts"
+      ],
+      "requires": [
+        "§chat.transcript/setup-card",
+        "§chat.transcript/setup-card-context",
+        "§chat.transcript/setup-card-skills",
+        "§chat.profiles/applying"
+      ]
     }
   },
   "boundary": {

@@ -561,7 +561,12 @@ user row.
 - **Remove Worktree** removes the worktree folder (git's own `worktree remove`; one with
   uncommitted changes is refused, naming them) and deletes the branch only when it is merged; an
   unmerged branch keeps its commits, and Merge Branch stays on its row. It is refused while the
-  session is working or has workers running. On a missing folder it only clears git's record of
+  session is working or has workers running. When the worktree has a running copy of the project
+  (an instance, §app.project-services/instances), Remove Worktree first tears that copy down
+  (§app.project-services/teardown, as the operator), which also ends its share links; if the teardown
+  fails, nothing is removed and the refusal says why ("Its running copy could not be torn down:
+  …"). Merge Branch never touches the copy: it keeps running, with its links, until it is stopped or
+  torn down, or its worktree is removed. On a missing folder it only clears git's record of
   it (and deletes a merged branch). The
   session and its transcript stay; its row says "Worktree removed", and `sova_send` refuses it:
   "Its worktree was removed, so it has no folder to work in." Nothing is removed on its own, a

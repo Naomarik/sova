@@ -2970,7 +2970,8 @@
         "server/profile-sources.ts",
         "server/archive-worktrees.ts",
         "server/archive-worktrees.test.ts",
-        "server/project-services/tools.ts"
+        "server/project-services/tools.ts",
+        "server/project-services/checkout-teardown.ts"
       ],
       "requires": [
         "§app.overseer/caps",
@@ -5227,7 +5228,9 @@
         "statecharts/src/sova/statecharts/baton.cljc",
         "statecharts/src/sova/statecharts/build.cljc",
         "statecharts/test/sova/statecharts/refit/started_test.cljc",
-        "server/org-started.test.ts"
+        "server/org-started.test.ts",
+        "server/project-services/checkout-teardown.ts",
+        "server/project-services/checkout-teardown.test.ts"
       ]
     },
     "§app.requirements/promotion-commit": {
@@ -9116,7 +9119,10 @@
         "server/share-preview-router.test.ts",
         "server/preview-kept.ts",
         "server/project-previews.ts",
-        "server/project-previews.test.ts"
+        "server/project-previews.test.ts",
+        "server/project-services/sensitive.ts",
+        "server/share/preview-proxy.ts",
+        "server/project-services/share.test.ts"
       ]
     },
     "§mesh.public/preview-address": {
@@ -10475,7 +10481,8 @@
         "statecharts/src/sova/statecharts/proj.cljc",
         "server/project-overseer-tools-statecharts.test.ts",
         "server/project-overseer-tools.test.ts",
-        "server/project-services/test-verb.test.ts"
+        "server/project-services/test-verb.test.ts",
+        "server/project-services/share.test.ts"
       ]
     },
     "§app.project-services/conform": {
@@ -10501,7 +10508,9 @@
         "server/project-services/test-verb.test.ts",
         "server/project-services/conform-static-on-demand.test.ts",
         "server/project-services/confine.test.ts",
-        "server/project-services/conform-logs.test.ts"
+        "server/project-services/conform-logs.test.ts",
+        "server/project-services/share.ts",
+        "server/project-services/share.test.ts"
       ]
     },
     "§app.project-services/contract": {
@@ -10512,7 +10521,8 @@
       "code": [
         "shared/project-contract.ts",
         "shared/project-contract.test.ts",
-        "server/project-services/engine.ts"
+        "server/project-services/engine.ts",
+        "server/project-services/share.test.ts"
       ]
     },
     "§app.project-services/create": {
@@ -10562,7 +10572,8 @@
         "server/project-services/removed-services.test.ts",
         "server/project-services/store.ts",
         "server/project-services/shared-removed.test.ts",
-        "server/project-services/test-verb.test.ts"
+        "server/project-services/test-verb.test.ts",
+        "server/project-services/share.test.ts"
       ]
     },
     "§app.project-services/instances": {
@@ -10650,7 +10661,8 @@
         "server/project-services/engine.ts",
         "server/project-services/routes.ts",
         "scripts/sova-project.mjs",
-        "server/project-services/tools.ts"
+        "server/project-services/tools.ts",
+        "server/project-services/share.test.ts"
       ]
     },
     "§app.project-services/status-logs": {
@@ -10666,7 +10678,8 @@
         "server/project-services/engine.test.ts",
         "server/project-services/drivers.ts",
         "server/project-services/adapters.ts",
-        "server/project-services/shared-removed.test.ts"
+        "server/project-services/shared-removed.test.ts",
+        "server/project-services/share.test.ts"
       ]
     },
     "§app.project-services/supervisor": {
@@ -10686,7 +10699,9 @@
         "server/project-services/adapters.test.ts",
         "server/project-services/proctable.ts",
         "server/project-services/proctable.test.ts",
-        "server/project-services/routes.ts"
+        "server/project-services/routes.ts",
+        "server/project-previews.ts",
+        "server/preview-sweep.test.ts"
       ]
     },
     "§app.project-services/teardown": {
@@ -10700,7 +10715,9 @@
       "code": [
         "server/project-services/engine.ts",
         "server/project-services/engine.test.ts",
-        "server/project-services/removed-services.test.ts"
+        "server/project-services/removed-services.test.ts",
+        "server/project-services/share.ts",
+        "server/project-services/share.test.ts"
       ]
     },
     "§app.project-services/trust": {
@@ -10716,7 +10733,9 @@
         "server/project-services/engine.ts",
         "server/project-services/engine.test.ts",
         "server/project-services/note.test.ts",
-        "server/project-services/observe.test.ts"
+        "server/project-services/observe.test.ts",
+        "shared/project-contract.ts",
+        "server/project-services/share.test.ts"
       ]
     },
     "§app.project-services/up": {
@@ -12043,6 +12062,28 @@
       ],
       "requires": [
         "§chat.slash-commands/in-the-thread"
+      ]
+    },
+    "§app.project-services/share": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.project-services/result",
+        "§app.project-services/teardown",
+        "§mesh.public/preview"
+      ],
+      "code": [
+        "server/project-services/share.ts",
+        "server/project-services/share.test.ts",
+        "server/project-services/sensitive.ts",
+        "server/project-services/engine.ts",
+        "server/project-services/tools.ts",
+        "shared/project-contract.ts",
+        "server/preview-kept.ts",
+        "server/preview-links.ts",
+        "server/share/preview-proxy.ts",
+        "scripts/sova-project.mjs"
       ]
     }
   },

@@ -146,7 +146,11 @@ in the contract's key order), exiting 0 when all is well, 1 when it found someth
    first conformance) and records the method and why in the definition, with the `sources` it read.
    It marks a data resource `sensitive: true` when its contents derive from production (a store
    whose database id or name says prod, a task that clones or downloads production, a restore from
-   a production backup), and its report says which resources it marked and why.
+   a production backup), and its report says which resources it marked and why. It lists in
+   `share.endpoints` only the ports a stakeholder should open (the app's page, a public API), never
+   a REPL, nREPL, shadow-cljs, debugger, metrics, database or admin port nor a shared service, and
+   declares `share: {"allow": false}` when a resource is sensitive or nothing is for a stakeholder to
+   see; its report says which.
 5. On its own branch only, writes `.sova/project.json`, the project's helper scripts under
    `.sova/bin/`, the probe hook, a test command with a green smoke selection, `about` lines, and
    the smallest app change that reads its ports and data from the environment with today's literal

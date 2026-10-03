@@ -7,15 +7,15 @@ from that declaration as **instances**, one per checkout of the project, each wi
 ports and data. The primary user is a coding agent: each worktree gets its own running copy of the
 project, isolated from the others and from the main checkout, without hand-rolled `nohup` loops. One
 engine in the server implements a closed set of **verbs** (create, up, down, apply, status, logs,
-reset, teardown, doctor, conform, test) the same way for every project, and every caller gets the same
+reset, teardown, doctor, conform, test, share, revoke) the same way for every project, and every caller gets the same
 JSON from it: the REST routes, the `sova-project` CLI, the coding session's `project_verbs` tool and
 the Overseers' `sova_project_verbs` tool.
 
 How a project is isolated (ports per slot, per-slot names on shared infrastructure, a container per
 worktree, or a mix per service) is the project's choice, written into its declaration; Sova's verbs
 are the same whichever it picks, and conformance proves the isolation, not the method. The engine
-never calls a model. Share links and the Services page come later; `share`,
-`revoke` and `deploy` are reserved verb names that answer `unsupported`.
+never calls a model. A running copy can be shared with a stakeholder as a preview link
+(§app.project-services/share); `deploy` is a reserved verb name that answers `unsupported`.
 
 Wire shapes are in `shared/project-contract.ts`, never `shared/protocol.ts`. The engine is
 `server/project-services/`.
@@ -67,7 +67,12 @@ shell string is accepted anywhere: every command is an argv array of non-empty s
   `<argv> write <token>` and `<argv> read <token>` (exit 0: the token is there).
 - **`slots`** (`{cap}`, 1–16, default 4: how many instances besides the main checkout's), **`host`**
   (names of host variables the templates may read as `${host.NAME}`, kept in Sova's state, never
-  in the repo), and the reserved **`share`** and **`deploy`** (accepted, not used yet).
+  in the repo), and the reserved **`deploy`** (accepted, not used yet).
+- **`share`** (optional): `{endpoints?, maxDays?, allow?}`, what a running copy may share
+  (§app.project-services/share). `endpoints` lists `"<service>.<port>"`, each a declared port of a
+  checkout service (never a shared service's), each once, at most 20 (none when absent); `maxDays` is
+  1–7; `allow` is `true` (the default) or `false` (never shared, whatever is listed). Without
+  `share`, no copy is shared.
 - **`sources`** (optional): the checkout files the definition was written from (`bb.edn`,
   `package.json`, a compose file, `.mise.toml`: relative, no `..`, dot-files allowed, at most 50),
   whose change at HEAD is the project's drift (§app.project-services/facts). Each service may also
@@ -106,7 +111,9 @@ Every verb answers one JSON object with keys in this order: `v` (1), `verb`, `pr
 `stopped`, `running` or `degraded`), `steps` (`{id, kind, result: done|skipped|failed, ms, detail?,
 fingerprint?}`), `services` (`{name, scope, kind: process|static|container, state: stopped|starting|
 ready|degraded|failed|external, unit, pid, ports, ready?, detail?, rssBytes?}`), `data` (`{name, kind, ref, exists}`),
-`links` (empty until sharing exists), then the verb's own key (`instances` for status of a whole
+`links` (`{id, instance, endpoint, port, createdAt, expiresAt, state: active|expired|revoked,
+createdBy, url?}`, §app.project-services/share: share's link, the links revoke ended, and the active
+links of the instance status reads; empty otherwise), then the verb's own key (`instances` for status of a whole
 project, `lines` for logs and test, `checks` for doctor and status (status: the supervisor's alone), `conform` for conform,
 `tests` for test), then `error?` (`{code,
 message, step?, service?}`), `defHash`, `approved` and `at`. Arrays follow declaration order.
@@ -171,7 +178,8 @@ probe's answer).
 
 Sova stops, restarts and signals only units with its own prefix and state hash, never a process it
 did not start. A `static` service is served inside the server's process (as
-§mesh.public/preview-serve serves folders), and it is bound again when the server starts. A
+§mesh.public/preview-serve serves folders), and it is bound again when the server starts. The
+previews' sweep, which stops the folder serves of ended previews, never stops it. A
 `container` service is also removed by name (`docker rm -f` / `podman rm -f`) after each stop and
 before each start.
 
@@ -223,7 +231,9 @@ gives. A shared service the project's record still names that no definition decl
 (neither the main checkout's nor any registered instance's checkout's, each readable) is the
 exception: down stops it by its unit's name and marks it stopped, as a `stop:<name>` step that says
 it is shared and in no definition; while any of those definitions is unreadable it is left alone.
-Idempotent: a second down answers `changed: false`.
+Idempotent: a second down answers `changed: false`. Down of an instance with an active share link
+(§app.project-services/share) needs a confirm, which only the operator gives (`needs-confirm`
+otherwise, naming how many links); its links stay, and show the not-running page while it is down.
 
 ## §app.project-services/apply — apply
 
@@ -243,7 +253,10 @@ as the one check `supervisor` (informational: it never makes `ok` false). A serv
 no longer declares whose unit (or static serve) still runs is listed too, after the declared ones,
 as `degraded` with its unit and pid and the detail "no longer in the definition" (a shared one:
 "shared, no longer in any definition"), so what still runs is never hidden. `status` of a project
-lists every instance as `instances`, with the shared services. `logs` returns at most 500 lines
+lists every instance as `instances`, with the shared services; each instance also carries its active
+share links (`links`, their `url` only for the operator) and `share` (`{endpoints, refused}`: the
+endpoints its definition lists, and the sentence saying why it can't be shared, null when it can).
+`status` of one instance puts its active links in the result's `links`. `logs` returns at most 500 lines
 (default 100) of one service or all, oldest first, as `{t, service, text}`, from the journal or the
 log file; for a model they are redacted and wrapped as untrusted text.
 
@@ -317,18 +330,63 @@ answers `changed: false`.
 
 ## §app.project-services/teardown — teardown
 
-The only verb that deletes. Down (every service down covers, those that left the definition
-included), then each data resource deprovisioned and the data dir removed
+The only verb that deletes. First every share link of the instance is revoked, each person's
+sibling of one included (§app.project-services/share, a `links` step), then down (every service down
+covers, those that left the definition included), then each data resource deprovisioned and the data dir removed
 (unless `keepData`), then the worktree removed only when Sova cut it and it is clean (a dirty one
 stays, named in a skipped step), then the slot freed. The branch is never deleted. Slot 0 is
 refused (`refused-slot0`). An instance that is absent answers `ok` with state `absent`.
 
 ## §app.project-services/reserved — Reserved verbs
 
-`share`, `revoke` and `deploy` (and `deploy.plan`, `deploy.run`, `deploy.status`,
-`deploy.rollback`) are verb names now and answer `unsupported` (exit 2), changing nothing. When
-`share` exists, it refuses any instance whose definition declares a `sensitive` data resource
-(`share-denied`), whoever asks.
+`deploy` (and `deploy.plan`, `deploy.run`, `deploy.status`, `deploy.rollback`) are verb names now
+and answer `unsupported` (exit 2), changing nothing. `share` refuses any instance whose definition
+declares a `sensitive` data resource (`share-denied`), whoever asks (§app.project-services/share).
+
+## §app.project-services/share — Share links to a running copy
+
+`share` (an instance, `endpoint` `"<service>.<port>"`, `days` optional) gives a running copy of the
+project a preview link (§mesh.public/preview) to one of its declared endpoints, so a stakeholder can
+open it. `revoke` (`link`, or an instance with an optional `endpoint`) ends links. Both are verbs
+like the others: one result shape, every caller.
+
+- **What may be shared.** Only an endpoint the definition lists in `share.endpoints`, a port of a
+  checkout service (never a shared service's). Share is refused with `share-denied`, before anything
+  changes, when: the project is not registered in Sova ("Only a registered project's copies can be
+  shared."); the definition has no `share` key or says `allow: false`; the endpoint is not listed;
+  any data resource of the definition is `sensitive` ("Derived from production: copies are never
+  shared."); the instance is not running that endpoint's service (share never starts anything: up
+  first); or no preview address is set. An unapproved definition is `not-approved`, as for every verb
+  that runs something.
+- **The link.** A port preview of the endpoint's port in the copy's slot, kept in
+  `preview-kept.json` with the target `instance` (the instance id, the endpoint, and for a static
+  service the serve that must hold the port) and the copy's branch; preview-links.json's keys do not
+  change. It is bound to the instance id and the endpoint: the generation is only recorded, so the
+  link survives down and up, and a server restart. It lasts `days`, 1 by default and at most 7, or
+  at most the definition's `share.maxDays` (1–7) when set; more is `invalid-request`. Extending it
+  (`POST /api/previews/<id>/extend`) moves its expiry to `days` from now, refused above 7. A static copy's
+  link dials only while that copy's own serve holds the port; a process copy's dials the port as
+  any port preview does. A visit never starts anything: while the copy is down, the visitor gets the
+  not-running page.
+- **Idempotent.** Sharing the same instance and endpoint again while its link is active answers
+  that same link, its expiry moved to the later of its current one and `days` from now.
+- **Who shares.** The operator, confirmed (`confirm`; the Services tab's confirm, the CLI's
+  `--confirm`), else `needs-confirm`. The project overseer through its statechart's act
+  `services/share` (L1, people-facing, held like a preview; §app.project-services/callers). The
+  global Overseer gets `needs-confirm` ("The operator shares it from the project's Services tab.").
+  A coding session gets `forbidden`. `revoke` is open to any caller with the instance in scope and
+  is never an act or held.
+- **Its end.** A link ends at its expiry, at revoke, or when its copy is torn down: teardown revokes
+  every link of the instance, and every person's sibling of them (§app.outreach/links), before its
+  slot is freed, so a later copy in that slot never answers an old link. Down of a copy with an
+  active link needs a confirm: the operator's `confirm`, else `needs-confirm`.
+- **Where the URL goes.** The result's `links` carry `{id, instance, endpoint, port, createdAt,
+  expiresAt, state, createdBy, url?}`; `createdBy` is `operator` or `session:<id>` (the project
+  overseer's conversation), as preview-links.json keeps it; `url` only for the operator (routes and
+  CLI). No tool result of any model carries a link's URL, and the redaction filter still applies.
+  Status lists each instance's active links. A share or revoke that changed something is a `link`
+  step (`share`, `revoke`, teardown's `links`); a held share is a skipped `share` step whose detail
+  says it is held, with no link.
 
 ## §app.project-services/trust — Approval of a definition
 
@@ -336,7 +394,7 @@ A definition runs only after the operator approved its hash on this host. The ha
 (`sha256:<hex>`) covers the whole parsed definition except timeouts, readiness paths, each
 service's `about` and `isolation`, and the `sources` list, so a
 branch that changes any command, env template, port, hook or data source needs approving again,
-while tuning a timeout, rewording an `about` or an isolation's `why`, or listing another source does not; a `test`, a `start` or a data resource's `sensitive` is covered. Approvals live in `<state root>/project-services/approvals.json`,
+while tuning a timeout, rewording an `about` or an isolation's `why`, or listing another source does not; a `test`, a `start`, a data resource's `sensitive` and `share` are covered (`allow: true`, the default, hashes as if absent). Approvals live in `<state root>/project-services/approvals.json`,
 keyed by project root and hash, outside every repo, so no branch can approve itself; only the
 operator's own routes and CLI approve, never a session or an Overseer, and an approval is refused
 when the definition's hash is no longer the one shown. Every verb that runs something answers
@@ -368,7 +426,11 @@ A's own not stopped (a `static` service is served in the server and logs nothing
 one that has not started has nothing to log yet, so A with only those may answer none); reset A when data is declared (the token is gone); with a `test`, suite version 2
 adds: up A left every on-demand service stopped; test A with the `smoke` selection passes, its
 `requires` are ready afterwards and B's pids are unchanged; a second such test passes with the same
-counts; without a `test`, test A answers `unsupported`; then down A (its processes gone, the
+counts; without a `test`, test A answers `unsupported`; suite version 3 adds, after logs: each
+endpoint the definition's `share` lists answers a `GET /` below 500 through the preview proxy's own
+request path, in the server's process, with no link minted (a confined run's process service is
+asked inside the run's namespace; with no endpoints, `allow: false` or sensitive data the check
+passes saying so); then down A (its processes gone, the
 on-demand ones' included, its ports free, B still ready), and again (`changed: false`); teardown A and B, and again (`absent`);
 then nothing is left of either: no unit or process, no listener on their ports, no data dir, no
 container, no registry entry, no worktree. While the suite runs, Sova samples the resident memory of
@@ -378,7 +440,7 @@ for A once its status agrees with up and for B once it is up. When a check fails
 removes anything, the report's `logs` keeps the last 80 lines of each of A's and B's services that is
 not ready (starting, degraded or failed) or that the failure names, and of a failed setup, data or
 build step (its unit's output, or the supervisor's message when it could not start it), so the
-cause can be read after the run. The suite's version is 2, which the report and the stamp carry. Beyond A and B, a unit, data dir or registry entry
+cause can be read after the run. The suite's version is 3, which the report and the stamp carry. Beyond A and B, a unit, data dir or registry entry
 that appeared during the run is a leak only when it belongs to no registered instance (nor the
 project's shared services): another instance's, registered before the run or made meanwhile by
 another caller (a session's `up`, the server's reconcile), is never one. The report and a stamp keyed by project, hash and suite
@@ -448,9 +510,16 @@ same engine in-process, never over HTTP:
   operator started; §app.project-overseer/tools). Above its level the statechart refuses with a
   sentence telling it to file the gap as an idea or raise a confirm card, and the engine never
   runs; the engine itself checks no level. For both, reset and teardown of an instance it did not
-  create, and stopping a shared service, answer `needs-confirm`: the operator does it.
+  create, stopping a shared service, and down of a copy with an active share link, answer
+  `needs-confirm`: the operator does it.
 
-`deploy` is `unsupported` for everyone, and nothing but the operator approves a definition.
+`share` (§app.project-services/share) is the operator's, confirmed; the project overseer's through
+its statechart's act `services/share` (L1, people-facing, held like a preview), run only after every
+check of the share passed, so a refused share never reaches the statechart; the global Overseer's is
+`needs-confirm` ("The operator shares it from the project's Services tab."); a coding session's is
+`forbidden`. `revoke` is any caller's with the instance in scope (a session: its own checkouts'), with
+no act, never held and taking no lock. `deploy` is `unsupported` for everyone, and nothing but the
+operator approves a definition.
 
 ## §app.project-services/self-host — When the project is Sova itself
 

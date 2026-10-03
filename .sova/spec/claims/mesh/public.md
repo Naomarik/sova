@@ -357,8 +357,11 @@ mesh off. Copy is §design.copy-deck/public-links.
   port, expiring with it; its label is never stored, and the send carries its link once.
 - **What else a preview has** is kept beside it, in `<stateRoot>/preview-kept.json` (0600, written
   atomically, host-local, never synced or committed), per preview id: its link, its target (`port`,
-  or `static` with the folder Sova serves, §mesh.public/preview-serve), the coding session and
-  branch it shows, and its purpose, each only when known. It is read tolerantly: a file that
+  or `static` with the folder Sova serves, §mesh.public/preview-serve, or `instance`: a running
+  copy's endpoint, with the instance id, the endpoint, the generation it was made at and, for a
+  static copy, the serve that must hold the port, §app.project-services/share), the coding session and
+  branch it shows, and its purpose, each only when known. A copy's link dials its port as a port
+  preview does; a static copy's only while that copy's own serve holds the port. It is read tolerantly: a file that
   can't be read keeps no link and serves no folder, and every preview still opens. The link is a
   secret kept for the operator: the project overseer never sees it, and names a preview by its id
   (§app.project-overseer/previews). A preview made before this file existed has no kept link, only
@@ -369,8 +372,10 @@ mesh off. Copy is §design.copy-deck/public-links.
   be an integer 1–65535, not 4800, 4801, 4802 or 4810, and not a port this Sova process binds, its
   settings name (main, peer, share, ingress) or it serves a folder preview on. A `folder` is
   served by Sova itself (§mesh.public/preview-serve) and needs `sessionId`, the coding session of
-  the project whose worktree holds it. `purpose` is one line, at most 200 characters. `days` is 1
-  by default and at most 30. With no preview address it is refused with a named reason, and no
+  the project whose worktree holds it. A port held by a running copy (or a shared service) of a
+  project whose definition declares `sensitive` data is refused (`sensitive`: "…whose data is
+  derived from production: copies are never shared.", §app.project-services/share). `purpose` is one
+  line, at most 200 characters. `days` is 1 by default and at most 30. With no preview address it is refused with a named reason, and no
   link is made: `no-address` (none set here or on the gateway) or `gateway-old` (the via gateway
   doesn't list kind `p`: "{gateway} needs updating before it can carry preview links."). The
   answer carries the link, and the link is kept.
@@ -379,14 +384,15 @@ mesh off. Copy is §design.copy-deck/public-links.
 - **Turn Off** (`POST /api/previews/<id>/off`) revokes it, and every sibling of it: from then on its origin answers 410,
   and every open HTTP connection and websocket through it is closed at once. The same happens
   when it expires. **Extend** (`POST /api/previews/<id>/extend {days}`) moves its expiry to `days`
-  from now (at most 30; a sibling's, never past its original's). `GET /api/previews?projectId`
+  from now (at most 30; a running copy's link at most 7; a sibling's, never past its original's). `GET /api/previews?projectId`
   lists a project's previews (every project's without it) with each one's port, target, expiry,
   state and whether something listens on its port now (`running`; for a folder, whether Sova
   serves it now), its kept link (`url`, null when none is kept), purpose, coding session and branch
   (a recorded one, else the one matched by its worktree, §app.project-overseer/previews), with the
   preview address's state; a sibling carries `siblingOf`, `sentTo` and `sentToName`, and the lists
   name it on its original's **Sent to** line, or as "sent to {name}" on a row of its own when its
-  original isn't listed (§mesh.public/preview-card).
+  original isn't listed (§mesh.public/preview-card); a running copy's link also carries its
+  `instance` and `endpoint`.
 - A routed host sends each live preview's hash as a `p` row (§mesh.public/registry) only to a
   gateway target whose own info listed `p`; its gateway routes the preview host to its ingress
   (§mesh.public/routing).

@@ -56,7 +56,10 @@ shell string is accepted anywhere: every command is an argv array of non-empty s
 - **`setup`**: steps `{id, run: argv, inputs?: [checkout files], timeout?}` run at create, in order.
 - **`data`**: resources `{kind: "dir", path?, from?}` (a folder: by default under the instance's
   data dir; `path` places it inside the checkout, where it must be ignored by git; `from` is
-  `"empty"`, the default, or a template naming a folder to copy) or `{kind: "hook", provision:
+  `"empty"`, the default, or a template naming a folder to copy; when `from` names the resource
+  itself, as `"${main}/<path>"` does on the main checkout, the folder is that checkout's own data:
+  it is kept as it is, never copied onto itself, and refused `not-found` only when it is missing) or
+  `{kind: "hook", provision:
   argv, deprovision: argv, timeout?}`. Either kind may say `sensitive: true` (default false): its
   copies hold data derived from production (a restore of a production backup, a clone of a
   production database), so no copy of an instance holding it is ever shared
@@ -340,8 +343,9 @@ instance, so a turn that just ran up learns its ports at once, and status is the
 
 Destructive to one instance only. Its running services go down, each data resource (or those
 named) is removed and provisioned again from its `from` (a `hook` resource runs deprovision then
-provision), the setup steps run again, and what was running comes back up. With no data declared it
-answers `changed: false`.
+provision), the setup steps run again, and what was running comes back up. A `dir` resource whose
+`from` is itself (the main checkout's own data) is never removed: its step says it was kept. With
+no data declared it answers `changed: false`.
 An adopted slot 0 refuses `reset` (`refused-slot0`); see §app.project-services/adopt.
 
 ## §app.project-services/teardown — teardown
@@ -460,7 +464,10 @@ for A once its status agrees with up and for B once it is up. When a check fails
 removes anything, the report's `logs` keeps the last 80 lines of each of A's and B's services that is
 not ready (starting, degraded or failed) or that the failure names, and of a failed setup, data or
 build step (its unit's output, or the supervisor's message when it could not start it), so the
-cause can be read after the run. The suite's version is 3, which the report and the stamp carry. Beyond A and B, a unit, data dir or registry entry
+cause can be read after the run. Whatever the outcome (a pass, a failed check, a failed setup or
+hook, an error), the run then removes the scratch worktrees and `sova/conform-<run>-a|b` branches it
+cut, by force: a worktree a failed step left files in is removed too, and nothing of the run stays
+in git. The suite's version is 3, which the report and the stamp carry. Beyond A and B, a unit, data dir or registry entry
 that appeared during the run is a leak only when it belongs to no registered instance (nor the
 project's shared services): another instance's, registered before the run or made meanwhile by
 another caller (a session's `up`, the server's reconcile), is never one. The report and a stamp keyed by project, hash and suite

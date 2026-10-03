@@ -10534,7 +10534,8 @@
         "server/project-services/confine.test.ts",
         "server/project-services/conform-logs.test.ts",
         "server/project-services/share.ts",
-        "server/project-services/share.test.ts"
+        "server/project-services/share.test.ts",
+        "server/project-services/conform-cleanup.test.ts"
       ]
     },
     "§app.project-services/contract": {
@@ -10546,7 +10547,8 @@
         "shared/project-contract.ts",
         "shared/project-contract.test.ts",
         "server/project-services/engine.ts",
-        "server/project-services/share.test.ts"
+        "server/project-services/share.test.ts",
+        "server/project-services/data-own-source.test.ts"
       ]
     },
     "§app.project-services/create": {
@@ -10675,7 +10677,8 @@
       "code": [
         "server/project-services/engine.ts",
         "server/project-services/engine.test.ts",
-        "server/project-services/adopt.test.ts"
+        "server/project-services/adopt.test.ts",
+        "server/project-services/data-own-source.test.ts"
       ]
     },
     "§app.project-services/result": {

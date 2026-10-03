@@ -64,7 +64,7 @@ import { checkTmpImage, deleteAttachment, MAX_ATTACHMENT_BYTES, readTmpImage, sa
 import { listFolders } from "./folders";
 import { listProjectFiles } from "./files";
 import { getGitSummary } from "./git-summary";
-import { getSessionSetup } from "./session-setup";
+import { applyLoadout, getSessionSetup } from "./session-setup";
 import { isOrgSession, ORG_NOT_GROUPED } from "./org-sessions";
 import { assignSession, cleanGroupLabel, createGroup, deleteGroup, GROUP_LABEL_MAX, readGroups, updateGroup } from "./session-groups";
 import { promptGroup } from "./group-prompt";
@@ -671,6 +671,18 @@ app.get("/api/sessions/context", async (c) => {
   if (!path) return c.json({ error: "Invalid or missing ?path= (must be a .jsonl under the pi sessions dir)" }, 400);
   if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
   return c.json(await getSessionSetup(path, { fresh: c.req.query("fresh") === "1" }));
+});
+
+// Switch a new session's context files and skills off or on (§chat.transcript/setup-card-toggles):
+// the whole off set, written as the session's hidden `sova-loadout` entry; the runtime is rebuilt
+// and the answer is the card's fresh read. 409 once a message is sent, mid-turn, TUI-live, etc.
+app.post("/api/sessions/loadout", async (c) => {
+  const body = (await c.req.json().catch(() => null)) as { path?: unknown } | null;
+  const path = resolveSessionPath(typeof body?.path === "string" ? body.path : null);
+  if (!path) return c.json({ error: "Invalid or missing path" }, 400);
+  if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
+  const r = await applyLoadout(path, body);
+  return r.ok ? c.json(r.setup) : c.json({ error: r.error }, r.status);
 });
 
 app.get("/api/models", async (c) => c.json(await listModels()));

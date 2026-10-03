@@ -13,7 +13,9 @@ import { canonicalPath } from "./paths";
 import { projectOf } from "./project-overseer-store";
 import { buildSid, engineOf, projectHost } from "./projects/spaces";
 import type { ProjectCodingMode } from "../shared/project-overseer";
-import { cutWorktree, gitRootOf, mergeBack, readWorktree, removeWorktree, worktreePathOf, type GitRoot, type WorktreeReading, type WorktreeRecord } from "./project-worktrees";
+import { cutWorktree, gitRootOf, mergeBack, readWorktree, removeWorktree, uncommitted, worktreePathOf, type GitRoot, type WorktreeReading, type WorktreeRecord } from "./project-worktrees";
+import { teardownCopyOf } from "./project-services/checkout-teardown";
+import { runGit } from "../pi-config/extensions/worktrees/git.ts";
 import { markSeen } from "./seen";
 import { cleanSessionTitle, readSessionTitles } from "./session-titles";
 import { getSessionSummary, indexedSessionPaths } from "./sessions-index";
@@ -381,6 +383,9 @@ export function registerBuildEffects(host: OrgHostApi, engine: string): void {
     const root = projectOf(projectId).root;
     const row = await withWorktreePath(rowOf(host.configuration(e.sessionId) ?? [], d), root);
     if (!row) throw new Error("It runs in the project root.");
+    // Its running copy goes first, with its links (§app.project-overseer/coding-worktrees); a teardown that fails removes
+    // nothing. A worktree with uncommitted changes is refused by removeWorktree before its copy is touched.
+    if (!existsSync(row.worktree.path) || !(await uncommitted(runGit, row.worktree.path)).length) await teardownCopyOf(row.worktree.path);
     const out = await removeWorktree(row.worktree, root);
     return { branchDeleted: out.branchDeleted };
   });

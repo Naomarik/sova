@@ -10915,12 +10915,9 @@
       "authority": "accepted",
       "evidence": "verified",
       "code": [
-        "server/overseer-tools.ts",
-        "server/overseer.ts",
-        "server/align-state.ts",
         "server/merge-readiness.ts",
-        "server/worktrees.ts",
-        "server/overseer-tools.test.ts"
+        "server/merge-readiness.test.ts",
+        "server/worktrees.ts"
       ],
       "requires": [
         "§app.overseer/tools",
@@ -11598,6 +11595,22 @@
         "server/project-services/test-verb.test.ts",
         "server/project-services/note.test.ts",
         "shared/project-contract.test.ts"
+      ]
+    },
+    "§app/idle-git-cache": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/worktrees.ts",
+        "server/worktrees.test.ts",
+        "server/merge-readiness.ts",
+        "server/merge-readiness.test.ts"
+      ],
+      "requires": [
+        "§app.insights/worktrees-endpoint",
+        "§chat.worktrees/readiness",
+        "§app.overseer/session-truth"
       ]
     },
     "§app.insights/pace-tick": {

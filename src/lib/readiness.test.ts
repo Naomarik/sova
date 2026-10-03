@@ -28,6 +28,16 @@ test("worktree counts and accessible words retain all ordinary states", () => {
   assert.equal(readinessCount(r({ trees: [{ path: "/wt/a", branch: "a", state: "stale" }, { path: "/wt/b", branch: "b", state: "ready" }] }))?.ready, true, "a stale sibling cannot hide a ready count");
 });
 
+test("the count counts git-merged trees, clean or not", () => {
+  const trees: SessionReadiness["trees"] = [
+    { path: "/wt/a", branch: "a", state: "merged", merged: true },
+    { path: "/wt/b", branch: "b", state: "stale", merged: true },
+    { path: "/wt/c", branch: "c", state: "in-progress", merged: true },
+    { path: "/wt/d", branch: "d", state: "in-progress" },
+  ];
+  assert.deepEqual(readinessCount(r({ trees })), { merged: 3, total: 4, ready: false });
+});
+
 test("titles retain every ordinary follow-up and ignore legacy spec observations", () => {
   const value = r({ trees: [{ path: "/wt/a", branch: "feat/a", state: "merged", why: "still tracked active" }, { path: "/wt/b", branch: "feat/b", state: "in-progress", why: "uncommitted changes" }], restartPending: true, pushPending: true, cleanup: 1, followUp: { weight: "small", cue: "groups don't nest" } });
   const expected = ["feat/a: merged, still tracked active", "feat/b: in progress, uncommitted changes", "A merge changed the server since it started: restart it to run the new code.", "The merge isn't pushed yet.", "1 merged worktree is still tracked active.", "Open work (small): groups don't nest"].join("\n");

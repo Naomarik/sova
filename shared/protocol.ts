@@ -3491,6 +3491,10 @@ export interface WorktreeReadiness {
   path: string;
   branch: string;
   state: ReadinessState;
+  /** Git finds the branch merged into its base, clean tree or not (or, the folder gone, it is
+      recorded merged). Set even while uncommitted changes keep `state` stale or in progress: the
+      row's count counts it. Absent when not merged. */
+  merged?: true;
   /** Why, in a few words: "uncommitted changes", "TEMP commit", "the last check failed", "checks
       passed", "no check run seen", "still tracked active". */
   why?: string;

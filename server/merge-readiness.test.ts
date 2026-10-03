@@ -275,6 +275,24 @@ test("computeReadiness end to end with git faked: waiting for the OK, then merge
   r.resetReadiness();
 });
 
+test("a merged tree with only untracked files: its state is in progress (running) or stale (idle), and it is still merged for the row's count", async () => {
+  const lines = chain([worktrees([tracked()], "2026-09-29T15:36:00.000Z")]);
+  const path = sessionFile(lines);
+  const fs = await import("node:fs");
+  const { facts } = await r.readReadinessScan(path, fs.statSync(path).size, null);
+  const status: WorktreeStatus & { head?: string } = { path: "/wt/agents-row-dropdown", source: "session", exists: true, branch: "feat/agents-row-dropdown", base: "master", merged: "ancestor", ahead: 0, behind: 0, dirty: true, dirtyCount: 1, dirtyFiles: ["NOTES.txt"], head: "h1" };
+  r.configureReadiness({ insights: { treeStatus: async () => status }, git: fakeGit({}), asksUser: () => undefined, now: () => 0, processStart: 0 });
+  const running = (await r.computeReadiness(summary(path, { busy: true }), facts!))?.trees[0];
+  assert.deepEqual([running?.state, running?.merged], ["in-progress", true]);
+  const idleTree = (await r.computeReadiness(summary(path), facts!))?.trees[0];
+  assert.deepEqual([idleTree?.state, idleTree?.merged], ["stale", true]);
+  // Not merged: no flag at all.
+  status.merged = "no";
+  status.ahead = 1;
+  assert.equal((await r.computeReadiness(summary(path), facts!))?.trees[0]?.merged, undefined);
+  r.resetReadiness();
+});
+
 test("restart pending: a merge into the branch this server runs, touching server files, after it started; src-only never", async () => {
   const card = (sha: string, at: string) => ({ type: "custom_message", customType: "worktree-merge", content: "Merged", display: true, timestamp: at, details: { version: 1, path: "/wt/rm", branch: "feat/resource-monitor", target: "master", sha, commits: 18, added: 10, removed: 2, fastForward: true, how: "tool" } });
   const lines = chain([

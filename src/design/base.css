@@ -2761,7 +2761,6 @@ a.group-option { color: inherit; text-decoration: none; }
 .disclosure-body {
   margin: var(--space-1) 0 0;
   padding: var(--space-2) 0 var(--space-2) var(--space-4);
-  border-left: var(--stroke-icon) solid var(--color-border);
   color: var(--color-ink-2);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -2830,9 +2829,8 @@ a.group-option { color: inherit; text-decoration: none; }
 }
 .chain-fold-action { margin-left: auto; color: var(--color-ink-muted); }
 .chain-fold-label { min-width: 0; white-space: nowrap; }
-/* An open step draws no second rule of its own: the timeline's rail is the only vertical line, and a
-   left rule under the chevron beside it reads as a stray mark. */
-:is(.entry.chain-row, .chain-live) .disclosure-body { border-left: 0; padding-left: 0; }
+/* An open step sits flush beside the timeline's rail, which already gives it its indent. */
+:is(.entry.chain-row, .chain-live) .disclosure-body { padding-left: 0; }
 /* Folded, the button becomes the whole summary line in flow; individual steps draw nothing. */
 :is(.entry.chain-row, .chain-live)[data-chain-folded] > :not(.chain-fold) { display: none; }
 :is(.entry.chain-row, .chain-live)[data-chain-folded]::before { content: none; }
@@ -2890,7 +2888,6 @@ a.group-option { color: inherit; text-decoration: none; }
 .disclosure > .disclosure-body.thinking-body {
   margin: var(--space-1) 20px 0;
   padding: var(--space-3);
-  border: 0;
   border-radius: var(--r-sm);
   background: var(--color-sunken);
   color: var(--color-ink-2);
@@ -2902,7 +2899,7 @@ a.group-option { color: inherit; text-decoration: none; }
 /* Report rows: a subagent report or another long extension
    message. Same disclosure grammar as thinking; collapsed to ONE line (who,
    status chip, first line, ellipsis). Opened, the markdown sits on the left
-   under the disclosure rule, capped at --measure like a message. */
+   in the disclosure's indent, capped at --measure like a message. */
 .report-summary { min-width: 0; }
 .report-from {
   flex: none;
@@ -2921,7 +2918,6 @@ a.group-option { color: inherit; text-decoration: none; }
   gap: var(--space-2);
   margin: var(--space-1) 0 0;
   padding: var(--space-2) 0 var(--space-2) var(--space-4);
-  border-left: var(--stroke-icon) solid var(--color-border);
   min-width: 0;
 }
 .report-meta,
@@ -6022,11 +6018,9 @@ a.subagent-row { text-decoration: none; }
 .sidebar-toolbar { position: relative; display: flex; align-items: center; min-height: var(--tap-min); }
 .sidebar-toolbar > * + * { margin-left: var(--space-2); }
 .sidebar-toolbar > .search { flex: 1; min-width: 0; }
-/* The count keeps its text, and is what shrinks when the line is tight. Clip, never an
-   ellipsis: the deficit that fires it at the 320px pane is sub-pixel (~0.8px of Inter
-   fraction), and an ellipsis drops two whole characters for that. A real deficit (a 4-digit
-   count at the drag floor) clips half a glyph; the aria-live region says the number whole. */
-.sidebar-toolbar > .search-count { flex: 0 1 auto; min-width: 0; white-space: nowrap; overflow: clip; text-overflow: clip; font-size: var(--fs-micro); }
+/* The count is never printed (visually hidden, first in the line), so at rest the control after
+   it starts at the line's edge rather than a gap's width in. The open line keeps its layout. */
+.sidebar-toolbar > .search-count + :not(.search) { margin-left: 0; }
 .sidebar-toolbar > .button-icon { flex: none; }
 .sidebar-toolbar > .overseer-entry { margin-left: auto; }
 .sidebar-toolbar > .sidebar-select-start { padding: 0 var(--space-2); gap: var(--space-1); flex: none; }

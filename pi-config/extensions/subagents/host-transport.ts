@@ -137,6 +137,9 @@ export class HostTransport extends EventEmitter {
 		this.queue = [];
 		try { this.socket?.end(); } catch { /* gone */ }
 		this.socket = undefined;
+		// The worker's calls stop counting here; the next manager (or, until then, its host's
+		// llm.json) counts them.
+		this.emit("detached");
 	}
 
 	/** The owner is done with an exited worker: let the host exit now instead of lingering. */

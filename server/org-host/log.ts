@@ -215,21 +215,23 @@ export function readRows(dirs: string[], filter: RowFilter = {}, problems: LogPr
   return filter.limit != null ? rows.slice(0, filter.limit) : rows;
 }
 
-/** The newest `at` in the newest segment of each dir (to keep `at` unique across restarts). */
+/** The newest `at` in the newest month's segments of each dir (to keep `at` unique across restarts): the
+    month's own `<yyyy-mm>.jsonl` and any imported beside it (`<yyyy-mm>.imported-<pid>.jsonl`). */
 export function lastAt(dirs: string[]): number {
   let last = 0;
   for (const dir of dirs) {
     if (!existsSync(dir)) continue;
-    const newest = readdirSync(dir).filter((n) => n.endsWith(".jsonl")).sort().at(-1);
-    if (!newest) continue;
-    for (const line of readFileSync(join(dir, newest), "utf8").split("\n")) {
-      if (!line.trim()) continue;
-      try {
-        last = Math.max(last, (JSON.parse(line) as LogRow).at ?? 0);
-      } catch {
-        // a broken line blocks nothing here
+    const names = readdirSync(dir).filter((n) => n.endsWith(".jsonl")).sort();
+    const month = names.at(-1)?.slice(0, 7);
+    for (const name of month ? names.filter((n) => n.startsWith(month)) : [])
+      for (const line of readFileSync(join(dir, name), "utf8").split("\n")) {
+        if (!line.trim()) continue;
+        try {
+          last = Math.max(last, (JSON.parse(line) as LogRow).at ?? 0);
+        } catch {
+          // a broken line blocks nothing here
+        }
       }
-    }
   }
   return last;
 }

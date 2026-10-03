@@ -1108,6 +1108,7 @@ function overseerEnvelope(projectId: string, paths: ProjectOverseerPaths, attend
  */
 export async function startCoding(projectId: string, body: CodingStartInput): Promise<CodingStartResult> {
   projectOf(projectId);
+  if (body && typeof body === "object" && "prompt" in body) throw new OrgError("This starts a session with no first prompt. To send one, start it from a to-do or idea (items/code).", 400);
   const str = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : undefined);
   const title = str(body?.title);
   const model = str(body?.model);

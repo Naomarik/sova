@@ -4,6 +4,8 @@ import { AUTOMATIC_ABILITIES, MESSAGES_CAP, MESSAGES_DEFAULT, MESSAGES_MIN, OPER
 import { ORG_ABOUT_MAX, type NamedChange, type OrgChange, type OrgDetail, type Person, type PersonInput, type ProfileChange } from "../../shared/orgs";
 import {
   addOrgProject,
+  importOrgProject,
+  listProjects,
   unarchiveProject,
   addPerson,
   ApiError,
@@ -1121,8 +1123,9 @@ function ProjectsSection(props: { org: OrgDetail; act: Act }) {
   const [name, setName] = createSignal("");
   const [root, setRoot] = createSignal("");
   // Each project's cost at API prices (§app/project-costs/org-rollup); the list stands without it.
-  const orgId = createMemo(() => props.org.id);
-  const [costs] = createResource(orgId, (id) => getOrgCosts(id).catch(() => null));
+  // Read again when the list changes (an added or imported project).
+  const costKey = createMemo(() => `${props.org.id}\n${props.org.projectList.map((p) => p.id).join(",")}`);
+  const [costs] = createResource(costKey, () => getOrgCosts(props.org.id).catch(() => null));
   const costOf = (pid: string) => costs()?.projects.find((c) => c.projectId === pid);
   // Archived projects leave the list for a disclosure under it (§app.organizations/archive).
   const live = () => props.org.projectList.filter((p) => !p.archived);
@@ -1226,6 +1229,98 @@ function ProjectsSection(props: { org: OrgDetail; act: Act }) {
           Add Project
         </button>
       </form>
+      <ImportProjectRow org={props.org} act={props.act} />
     </section>
+  );
+}
+
+/**
+ * Import a Project (§app.projects/import): a standalone project of this host moves into the org. The server words
+ * the confirm (what gets committed where); Import sends it confirmed. Shown while any standalone project is here.
+ */
+function ImportProjectRow(props: { org: OrgDetail; act: Act }) {
+  const [projects, { refetch }] = createResource(
+    () => props.org.id,
+    () => listProjects().then((l) => l.projects.filter((p) => p.space.kind === "standalone")).catch(() => []),
+  );
+  const [picked, setPicked] = createSignal("");
+  /** The server's confirm sentence for the picked project, until Import or Cancel. */
+  const [confirming, setConfirming] = createSignal<string | null>(null);
+  const chosen = () => projects()?.find((p) => p.id === picked()) ?? projects()?.[0];
+  const send = async (confirm: boolean) => {
+    const p = chosen();
+    if (!p) return;
+    let asked: string | null = null;
+    const ok = await props.act(async () => {
+      try {
+        return await importOrgProject(props.org.id, p.id, confirm);
+      } catch (err) {
+        if (!confirm && err instanceof ApiError && err.status === 409 && (err.body as { code?: unknown } | undefined)?.code === "confirm") {
+          asked = err.message;
+          return null;
+        }
+        throw err;
+      }
+    }, confirm ? `${p.name} is in ${props.org.name} now.` : undefined);
+    setConfirming(ok ? asked : null);
+    if (ok && confirm) {
+      setPicked("");
+      void refetch();
+    }
+  };
+  return (
+    <Show when={projects()?.length}>
+      <form
+        class="orgs-inline orgs-project-form orgs-import-form"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void send(false);
+        }}
+      >
+        <label class="field orgs-grow">
+          <span class="field-label">Import a Project</span>
+          <span class="select-wrap">
+            <select
+              class="select"
+              disabled={!!confirming()}
+              onChange={(e) => {
+                setPicked(e.currentTarget.value);
+                setConfirming(null);
+              }}
+            >
+              <For each={projects()}>
+                {(p) => (
+                  <option value={p.id} selected={p.id === chosen()?.id}>
+                    {p.name} · {tildePath(p.root, home())}
+                  </option>
+                )}
+              </For>
+            </select>
+          </span>
+        </label>
+        <Show
+          when={confirming()}
+          fallback={
+            <button type="submit" class="button">
+              Import Project
+            </button>
+          }
+        >
+          {(sentence) => (
+            <div class="orgs-import-confirm">
+              <Banner tone="warn" title={sentence()} />
+              <div class="button-row">
+                <button type="button" class="button button-primary" onClick={() => void send(true)}>
+                  Import
+                </button>
+                <button type="button" class="button button-ghost" onClick={() => setConfirming(null)}>
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+        </Show>
+      </form>
+    </Show>
   );
 }

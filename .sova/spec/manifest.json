@@ -60,13 +60,15 @@
         "src/lib/insights.ts",
         "src/lib/insights.test.ts",
         "src/components/Sidebar.tsx",
-        "src/design/base.css"
+        "src/design/base.css",
+        "src/lib/llm-inflight.ts"
       ],
       "requires": [
         "§app.claude-logins/active-login",
         "§app.insights/usage-cards",
         "§app.resource-monitor/entry-button",
-        "§app/settings-dialog"
+        "§app/settings-dialog",
+        "§app.insights/llm-inflight"
       ]
     },
     "§app.insights/subagent-cards": {
@@ -10915,12 +10917,9 @@
       "authority": "accepted",
       "evidence": "verified",
       "code": [
-        "server/overseer-tools.ts",
-        "server/overseer.ts",
-        "server/align-state.ts",
         "server/merge-readiness.ts",
-        "server/worktrees.ts",
-        "server/overseer-tools.test.ts"
+        "server/merge-readiness.test.ts",
+        "server/worktrees.ts"
       ],
       "requires": [
         "§app.overseer/tools",
@@ -11268,7 +11267,7 @@
     "§app.insights/sidebar-foot-phone": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "verified",
       "code": [
         "src/components/Sidebar.tsx",
         "src/design/base.css"
@@ -11600,6 +11599,22 @@
         "shared/project-contract.test.ts"
       ]
     },
+    "§app/idle-git-cache": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/worktrees.ts",
+        "server/worktrees.test.ts",
+        "server/merge-readiness.ts",
+        "server/merge-readiness.test.ts"
+      ],
+      "requires": [
+        "§app.insights/worktrees-endpoint",
+        "§chat.worktrees/readiness",
+        "§app.overseer/session-truth"
+      ]
+    },
     "§app.insights/pace-tick": {
       "kind": "behavior",
       "requires": [
@@ -11749,6 +11764,91 @@
         "src/components/ProjectsView.tsx",
         "src/App.tsx",
         "src/lib/api.ts"
+      ]
+    },
+    "§app.projects/import": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/project-import.ts",
+        "server/project-import.test.ts",
+        "server/project-import-kill.test.ts",
+        "server/project-import-child.ts",
+        "server/org-host/index.ts",
+        "server/org-host/adopt.test.ts",
+        "server/org-host/log.ts",
+        "server/org-engine.ts",
+        "server/org-routes.ts",
+        "server/index.ts",
+        "src/components/OrgsView.tsx",
+        "src/lib/api.ts",
+        "src/orgs.css"
+      ],
+      "requires": [
+        "§app.projects/placement",
+        "§app.projects/standalone",
+        "§app.organizations/portability"
+      ]
+    },
+    "§app.insights/llm-inflight": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "shared/protocol.ts",
+        "server/llm-inflight.ts",
+        "server/llm-inflight.test.ts",
+        "server/ws.ts",
+        "server/index.ts",
+        "server/chat-manager.ts",
+        "server/decide-llm.ts",
+        "server/decide-jev.ts",
+        "pi-config/extensions/llm-inflight/tracker.ts",
+        "pi-config/extensions/llm-inflight/tracker.test.ts",
+        "pi-config/extensions/llm-inflight/runtime.ts",
+        "pi-config/extensions/llm-inflight/runtime.test.ts",
+        "pi-config/extensions/llm-inflight/claude.ts",
+        "pi-config/extensions/llm-inflight/claude.test.ts",
+        "pi-config/extensions/llm-inflight/index.ts",
+        "pi-config/extensions/llm-inflight/README.md",
+        "pi-config/extensions/llm-inflight/tests/run.mjs",
+        "pi-config/extensions/llm-inflight/tests/pi-e2e.mjs",
+        "pi-config/extensions/sessions/index.ts",
+        "pi-config/extensions/sessions/schema.ts",
+        "pi-config/extensions/sessions/schema.test.ts",
+        "pi-config/extensions/sessions/test.mjs",
+        "pi-config/extensions/sessions/public/SCHEMA.md",
+        "pi-config/extensions/sessions/public/live-record.schema.json",
+        "pi-config/extensions/subagents/index.ts",
+        "pi-config/extensions/subagents/index.test.ts",
+        "pi-config/extensions/subagents/runner.ts",
+        "pi-config/extensions/subagents/runner.test.ts",
+        "pi-config/extensions/claude-code/transport.ts",
+        "pi-config/extensions/claude-code/runner.ts",
+        "pi-config/extensions/claude-code/runner.test.ts",
+        "pi-config/extensions/claude-code/adopt.test.ts",
+        "pi-config/extensions/claude-code/provider/session-bridge.ts",
+        "pi-config/extensions/claude-code/provider/bridge.test.ts",
+        "pi-config/extensions/provider-limits/stream.ts",
+        "pi-config/extensions/topic-outline/summarizers/claude-cli.ts",
+        "pi-config/README.md",
+        "src/lib/llm-inflight.ts",
+        "src/lib/llm-inflight.test.ts",
+        "src/lib/session-feed.ts",
+        "src/lib/session-feed.test.ts",
+        "src/components/Sidebar.tsx",
+        "server/decide-llm-inflight.test.ts",
+        "pi-config/extensions/llm-inflight/hosted.ts",
+        "pi-config/extensions/llm-inflight/hosted.test.ts",
+        "pi-config/extensions/llm-inflight/oneshot.test.ts",
+        "pi-config/extensions/subagents/host.ts",
+        "pi-config/extensions/subagents/host-transport.ts",
+        "pi-config/extensions/subagents/workers-dir.ts"
+      ],
+      "requires": [
+        "§app.provider-limits/in-flight",
+        "§mesh.peers/listener"
       ]
     }
   },

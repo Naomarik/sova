@@ -22,7 +22,9 @@
   <div class="sidebar-search" role="search">
     <label class="visually-hidden" for="session-search">Search sessions</label>
     <div class="sidebar-toolbar">
-      <p class="search-count" id="session-count" aria-live="polite">48 sessions</p>
+      <!-- the count is never printed on the line: kept in the DOM, visually hidden, for the field's
+           description and the live count -->
+      <p class="search-count visually-hidden" id="session-count" aria-live="polite">48 sessions</p>
       <!-- not in selection mode (§app.session-list/selecting-several-sessions) -->
       <button class="button button-sm button-ghost sidebar-select-start" type="button">…check…Select</button>
       <button class="button button-icon button-ghost" type="button" aria-label="Search sessions"
@@ -233,10 +235,10 @@ label a person reads says "sessions pane".
       <button class="button button-icon spine-item spine-region" type="button"
               aria-label="Archive · 40 sessions" title="Archive · 40 sessions">…archive…<span class="spine-count">40</span></button>
     </div>
-    <!-- omitted when both tallies are 0 -->
+    <!-- omitted when both tallies are 0 (the LLM tally: only a complete 0) -->
     <div class="spine-stats">
       <button class="button button-icon spine-item spine-stat" type="button"
-              aria-label="3 subagents working now" title="3 subagents working now">…worker…<span class="spine-count">3</span></button>
+              aria-label="3 LLM calls running now" title="3 LLM calls running now">…worker…<span class="spine-count">3</span></button>
       <button class="button button-icon spine-item spine-stat" type="button"
               aria-label="2 sessions open in a TUI" title="2 sessions open in a TUI">…terminal…<span class="spine-count">2</span></button>
     </div>
@@ -246,7 +248,7 @@ label a person reads says "sessions pane".
       <!-- §app.resource-monitor/entry-button -->
       <button class="button button-icon spine-item" type="button" aria-label="Resource monitor" title="Resource monitor">…activity…</button>
       <a class="button button-icon spine-item" href="#/agents"
-         aria-label="{the agents sentence, else Agents}" title="{the same}">…worker…</a>
+         aria-label="{the Agents row's full sentence}" title="{the same}">…worker…</a>
       <!-- §app.session-share/shares-page -->
       <a class="button button-icon spine-item" href="#/shares" aria-label="Shares" title="Shares">…external…</a>
       <button class="button button-icon spine-item" type="button" aria-label="Settings" title="Settings">…settings…</button>
@@ -323,20 +325,21 @@ label a person reads says "sessions pane".
   `<summary>`. The Archive's, Organizations' and Needs you's open state is **left to the user** — it is their stored choice, and the button never
   forces one open. If the region is gone by the time the pane has expanded, focus goes to the
   head's collapse toggle.
-- **Live tallies.** "{n} subagents working now" — `activeAgentCounts(…).agents`: subagents
-  working right now in fresh host sessions, idle and waiting workers counting 0, the same figure
-  the expanded foot's Agents row shows — and
-  "{n} sessions open in a TUI" (every live session, whatever the search filters), each only at
-  n ≥ 1, with `.spine-stats` omitted when both are 0. They are **facts, not doorways**: nothing
+- **Live tallies.** The LLM calls in flight (§app.insights/llm-inflight) — the expanded foot's
+  Agents row's own figure (`{n}`, `{n}+` while partial, `–` while unknown) and its sentence, "3
+  LLM calls running now" — shown unless the count is a complete 0; and
+  "{n} sessions open in a TUI" (every live session, whatever the search filters), only at
+  n ≥ 1, with `.spine-stats` omitted when both are left out. They are **facts, not doorways**: nothing
   opens. Pointer users get the sentence as the `title`; a tap raises the same sentence as a toast,
   the rail's precedent (§app.session-list/accessibility — there is no hover on touch).
 - **The foot** — Usage (`#/usage`), Resource monitor, Agents (`#/agents`) and Settings, the
   expanded foot's two doorways and two buttons, in that order: the monitor sits right after the
   gauge, as it sits beside the Usage glance. Resource monitor opens the monitor modal, exactly as
   the foot's button does (§app.resource-monitor/entry-button). The glance sentences are not dropped at 64px, only unprinted: Usage's `title` and
-  `aria-label` are the usage glance in full words (`glanceText()`), and Agents' are the agents
-  sentence (`agentsSentence()`, e.g. "3 active agents in 2 sessions, 1 team"). Each falls back to
-  "Usage" / "Agents" only when its sentence is empty — no usage cache to read, no live agents.
+  `aria-label` are the usage glance in full words (`glanceText()`), and Agents' are the Agents
+  row's own sentence (§app.insights/sidebar-foot, e.g. "Agents: 3 LLM calls running now. On this
+  host, subagents are working in 2 sessions and 1 team."). Usage
+  falls back to "Usage" only when its sentence is empty — no usage cache to read.
   What has no room is the printed text, not the fact.
   A doorway to the page on screen carries `aria-current="page"` and the tint.
 - **Layout.** Five groups top to bottom — head, tiles, regions, tallies, foot — each a column
@@ -1644,7 +1647,7 @@ The rule is one predicate on the client, `isOrdinarySession` in `src/lib/regions
 `isMainThread`, which the Organizations region, the Overseer page and the Agents board still read.
 A server or mesh peer that sends no `org` leaves the session ordinary, exactly as it is listed today.
 
-The toolbar's count (`{n} sessions`, `{visible} of {total} sessions`) counts every session the pane
+The toolbar's hidden count (`{n} sessions`, `{visible} of {total} sessions`) counts every session the pane
 draws once — org sessions included, the Overseer's never — so the number always matches the list.
 
 ## §app.session-list/organizations — Organizations
@@ -2078,18 +2081,19 @@ record whose transcript is gone.
   Clearing the query restores the stored open/closed choice. The count row
   (`{visible} of {total} sessions`) covers both regions, and each region head shows its own
   filtered count.
-- **Count.** `.search-count` always shows `{visible} of {total} sessions`, and just
-  `{total} sessions` when the query is empty. It leads the toolbar line, beside the search icon
-  that opens the filter it answers to.
+- **Count.** `.search-count` always says `{visible} of {total} sessions`, and just
+  `{total} sessions` when the query is empty, but it is **never printed**: it stays in the DOM,
+  visually hidden at rest and while searching alike, as the field's `aria-describedby` and the
+  polite live region that speaks the filtered count. The line shows no resting session total.
 - **One toolbar line, every width.** Below the brand row the pane carries exactly one toolbar
   row, unfolded and folded alike — the desktop's separate search row and count row are gone.
-  Left to right it holds: the count, then `Select` (while not in selection mode,
+  Left to right it holds: `Select` (while not in selection mode,
   §app.session-list/selecting-several-sessions), then a wordless **search icon button**, and at
   the right end the Overseer entry button (§app.overseer/entry-button), a labelled button with
   its unread badge. The field is not on screen until that icon is pressed; then it opens **in
   the same line**, focused at once, and the line holds only the field (with its Clear Search `×`
-  while there is a query) and a **Close Search** button — the count, `Select`, the search icon
-  and the Overseer button are gone from it. The count stays in the DOM, visually hidden, so the
+  while there is a query) and a **Close Search** button — `Select`, the search icon
+  and the Overseer button are gone from it. The hidden count stays in the DOM, so the
   field's description and the live count still speak. The line stays open while there is a
   query, and blur never closes it: leaving the field and coming back finds it as it was left.
   **Close Search** clears the query and folds the line back, and focus returns to the search

@@ -1,9 +1,12 @@
 // The live session feed (WS /ws/watch?feed=sessions): the server pushes each session's decision
 // marks — attention signals and tags — as they change, so a row's mark appears or clears at once
 // instead of at the next list poll. This host's feed only; a peer's rows keep their list fields.
+// It also carries the sidebar's one live figure, the LLM calls in flight across this host and every
+// connected host, which the server adds up itself.
 
 import { createEffect, createSignal, onCleanup } from "solid-js";
-import type { SessionFeedMessage, TagsBackfillProgress } from "../../shared/protocol";
+import type { LlmInflight, SessionFeedMessage, TagsBackfillProgress } from "../../shared/protocol";
+import { sameInflight } from "./llm-inflight";
 import { applyMarks, createNudgeThrottle, EMPTY_OVERLAY, type MarksOverlay } from "./signals";
 import { createReconnectingSocket } from "./socket";
 
@@ -14,6 +17,12 @@ export const marksOverlay = overlay;
 const [backfill, setBackfill] = createSignal<TagsBackfillProgress | null>(null);
 /** The tags backfill's progress as last pushed; null until a backfill has reported on this page. */
 export const pushedBackfill = backfill;
+
+const [inflight, setInflight] = createSignal<LlmInflight | null>(null, { equals: sameInflight });
+/** The LLM calls in flight as the current connection last pushed them; null (unknown) until its
+    first `llm_inflight` frame, and again from the moment the socket is down. A previous
+    connection's figure is never kept. An unchanged frame doesn't notify. */
+export const llmInflight = inflight;
 
 export const sessionFeedUrl = () => `${location.protocol === "https:" ? "wss:" : "ws:"}//${location.host}/ws/watch?feed=sessions`;
 
@@ -35,12 +44,15 @@ export function openSessionFeed(refreshList: () => void): void {
   const socket = createReconnectingSocket<SessionFeedMessage>(sessionFeedUrl(), {
     onOpen: (isReconnect) => {
       setOverlay(EMPTY_OVERLAY);
+      setInflight(null);
       if (isReconnect) nudges.nudge();
     },
     onMessage: (msg) => {
       if (msg.type === "marks") setOverlay((o) => applyMarks(o, msg));
       else if (msg.type === "tags_backfill") setBackfill(msg.progress);
       else if (msg.type === "list_changed") nudges.nudge();
+      // Never a reason to re-read the list: the count is its own fact.
+      else if (msg.type === "llm_inflight") setInflight(msg.inflight);
     },
   });
   const onFocus = () => {
@@ -50,9 +62,12 @@ export function openSessionFeed(refreshList: () => void): void {
   onCleanup(() => {
     removeEventListener("focus", onFocus);
     setOverlay(EMPTY_OVERLAY);
+    setInflight(null);
   });
-  // Down is down: stale marks must not outlive the socket that kept them current.
+  // Down is down: stale marks and a stale count must not outlive the socket that kept them current.
   createEffect(() => {
-    if (socket.status() !== "open") setOverlay(EMPTY_OVERLAY);
+    if (socket.status() === "open") return;
+    setOverlay(EMPTY_OVERLAY);
+    setInflight(null);
   });
 }

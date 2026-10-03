@@ -3,8 +3,9 @@
 
 What the user's pi extensions publish, read-only except for one cache: subscription usage
 (usage-status), which this server also keeps fresh itself (§app.insights/usage-refresh), teams and
-subagents (subagents + sessions live records), and per-session summaries (topic-outline,
-compaction). Data shapes are `UsageInsight`, `AgentsInsight`, and `SessionInsight` in
+subagents (subagents + sessions live records), the LLM calls in flight (each process's own count
+in its live record, and each connected host's own count, §app.insights/llm-inflight), and
+per-session summaries (topic-outline, compaction). Data shapes are `UsageInsight`, `AgentsInsight`, and `SessionInsight` in
 `shared/protocol.ts`. **Every status says where it came from**: live-sourced states can pulse,
 while reported states (read from a session file after the fact) never pulse and carry
 "as of `14:06`". A live record lists at most 40 workers, live ones first and then the newest
@@ -64,9 +65,10 @@ working worker is never the one it leaves out.
   </div>
   <!-- aria-current on #/agents and #/agents/* -->
   <a class="list-row list-row-interactive insights-row" href="#/agents"
-     title="6 active agents in 4 sessions, 2 teams" aria-label="6 active agents in 4 sessions, 2 teams">
+     title="Agents: 3 LLM calls running now. Each agent counted is one model call in flight, background work included. On this host, subagents are working in 4 sessions and 2 teams."
+     aria-label="Agents: 3 LLM calls running now. Each agent counted is one model call in flight, background work included. On this host, subagents are working in 4 sessions and 2 teams.">
     <span class="icon" style="--icon: url(/icons/worker.svg)" aria-hidden="true"></span>
-    <span class="insights-row-text"><span class="text-num">6</span> agents · <span class="text-num">4</span> sessions · <span class="text-num">2</span> teams</span>
+    <span class="insights-row-text"><span class="text-num">3</span> agents · <span class="text-num">4</span> sessions · <span class="text-num">2</span> teams</span>
   </a>
 </div>
 ```
@@ -161,25 +163,46 @@ Usage glance needs the room.
     a clip). A number beside each meter was rejected: about 30px more per provider overruns the
     box. `.usage-glance` still clips
     (it never wraps) as a guard; the full reading stays in the row's `title` and `aria-label`.
-- **Agents row, what is live right now:** `{agents} agents · {sessions} sessions · {teams} teams`.
-  Any segment at 0 is dropped, and with nothing live at all the row reads the plain word
-  "Agents". The numbers come from `activeAgentCounts` in `src/lib/workers.ts`, and each one is
-  narrower than it looks:
-  - **An active agent** is a worker in a *fresh* host session that is working:
-    `workerCounts.working` — starting, running or stopping. A **waiting** worker (finished its
-    task, still attached), `done`, `error` and `killed` never count, and a stale heartbeat never counts. The counts are read
-    from `workerCounts`, not the `workers` array, because the array drops evicted workers.
-  - **A host session** is any live record except a headless worker pi (`mode: "rpc"` without
-    `embedded`); Sova's own embedded rpc runtimes *are* sessions, because they host agents.
-  - **sessions** is how many fresh host sessions hold at least one active agent — not how many
-    are running.
-  - **teams** is `activeTeamCount`: a fresh host session's teams with at least one member working.
-- **The row's full sentence** lives in its `title` and `aria-label`: "6 active agents in 4
-  sessions, 2 teams". The row itself has room for figures, not for the word "active".
-- **"Agents" and "working" are the same window.** This row is the first place the
-  app says *agent*, and it counts working only. The Agents page summarises the
-  same machines as "{w} working" — `AgentsInsight.totals.working` — which also excludes the waiting
-  ones, so both answer "how much is moving".
+- **Agents row, what is live right now:** `{n} agents · {sessions} sessions · {teams} teams`.
+  - **The first figure** is the logical LLM calls in flight across this host and every connected
+    host (§app.insights/llm-inflight), printed short as agents: `{n} agents` (`1 agent`). It is
+    not a count of distinct agents or of busy turns: each one counted is a model call in flight —
+    a main thread's, a subagent's, or background work (summaries, titles, decisions, compaction,
+    cache warming) — and time spent running tools is not. While the count is partial it carries
+    a plus, `{n}+ agents`; a count with approximate one-shots in it leads with a tilde,
+    `~{n} agents` (`~{n}+` while also partial); only a complete count with none shows a bare
+    number, `0 agents` included. While it is unknown the segment is the plain word "Agents", with
+    no figure, never a 0.
+  - **The other two are this host's, as before**, from `activeAgentCounts` and `activeTeamCount`
+    in `src/lib/workers.ts` (the Agents poll; nothing new is read for them), each dropped at 0
+    (`1 session`, `1 team`). Each is narrower than it looks:
+    - **An active agent** is a worker in a *fresh* host session that is working:
+      `workerCounts.working` — starting, running or stopping. A **waiting** worker (finished its
+      task, still attached), `done`, `error` and `killed` never count, and a stale heartbeat
+      never counts. The counts are read from `workerCounts`, not the `workers` array, because the
+      array drops evicted workers.
+    - **A host session** is any live record except a headless worker pi (`mode: "rpc"` without
+      `embedded`); Sova's own embedded rpc runtimes *are* sessions, because they host agents.
+    - **sessions** is how many fresh host sessions hold at least one active agent — not how many
+      are running.
+    - **teams** is `activeTeamCount`: a fresh host session's teams with at least one member
+      working.
+  - The two scopes differ on purpose: the first figure is every model call in flight, background
+    ones included, on every host; sessions and teams are where subagents work on this host. A
+    background call adds to the first figure only, never a session or a team.
+- **The row's full sentence** lives in its `title` and `aria-label`: the destination, the count's
+  sentence (which names them as LLM calls), whenever the count has a figure above 0 the
+  definition "Each agent counted is one model call in flight, background work included.", then
+  this host's subagent clause when there is one — "Agents: 3 LLM calls running now. Each agent
+  counted is one model call in flight, background work included. On this host, subagents are
+  working in 4 sessions and 2 teams." ("in 1 session", "in 2
+  sessions.", "in 1 team." — a part at 0 is left out, and so is the whole clause with both at 0);
+  "Agents: At least 3 LLM calls running now. Claude Code's own internal calls aren't visible.
+  Each agent counted is one model call in flight, background work included."; "Agents: LLM calls
+  running now: not known yet". A count sentence that stands alone (unknown, a complete 0, no
+  local clause) keeps its own ending, as above; wherever another sentence follows, each ends in
+  exactly one full stop.
+  The row itself has room for the figures, not for the sentence.
 
 The rows take no chip, because the pages carry the status, and no color but the usage meters'
 fill tone. Each truncates with an ellipsis.
@@ -200,8 +223,9 @@ The bar itself reads the same data as the rows, left to right:
 
 - **Mesh.** The connected count `{up}/{total}`, the host filter row's own figures
   (`connectedCount`) — shown only while the mesh is on, the same rule as the row.
-- **Agents at work.** The `worker` icon and the count (`activeAgentCounts`), no word — the bar is
-  a strip of figures; the accessible name says it. Always shown, `0` included.
+- **LLM calls in flight.** The `worker` icon and the Agents row's own figure
+  (§app.insights/llm-inflight: `{n}`, `{n}+` while partial, `–` while unknown), no word — the bar
+  is a strip of figures; the accessible name says it. Always shown, a complete `0` included.
 - **Usage caps.** Every provider the glance has a part for — `usageGlance()`'s own parts, in its
   order (at most the five) — each as its `{abbr}` and the same pace meter the glance row draws
   (§app.insights/sidebar-foot, **Bars**, **Tone**; §app.insights/pace-tick), a credit provider as
@@ -213,9 +237,91 @@ The bar itself reads the same data as the rows, left to right:
   narrow phone can't hold clips at the edge, exactly like the glance row it stands for.
 
 The bar's accessible name says the facts in words, then what the tap does: "2 of 3 hosts
-connected. 3 subagents working now. Claude 5-hour: 12% used · 1h 5m of 5h · resets 4:59 PM; 7-day:
+connected. 3 LLM calls running now. Claude 5-hour: 12% used · 1h 5m of 5h · resets 4:59 PM; 7-day:
 87% used · day 6 of 7 · resets Oct 4 10:59 AM. Z.ai 5-hour: 41% used; MCP uses: 0% used. Open hosts, usage, agents
-and shares." — every glance part in the glance's own words (agents: "1 subagent working now" at 1).
+and shares." — every glance part in the glance's own words; the LLM clause is the count's
+sentence (§app.insights/llm-inflight): "1 LLM call running now" at 1, "At least 3 LLM calls
+running now" while partial, "LLM calls running now: not known yet" while unknown.
+
+## §app.insights/llm-inflight — LLM calls in flight: what the one count counts
+
+**The sidebar's one live figure is the number of logical LLM calls in flight right now, across this
+host and every connected host.** A logical call is one request a process has sent to a model
+provider and is still waiting on or receiving, from the moment it is issued until its response
+ends, fails or is aborted. Time spent running tools between calls never counts, and neither does
+a request still queued for a provider-limits slot or sitting out a cooldown
+(§app/provider-limits): it counts from the moment the slot is granted. Every caller counts alike —
+a main thread's turn, a subagent's or team member's, and background work: titles, tags,
+decisions, topic outlines, compaction, cache warming.
+
+- **Where it is measured.** Each process counts its own calls, at the boundary every model
+  call of that process passes through, and keeps nothing but begin/end bookkeeping: no payload,
+  no token, no transcript is read or written for it, and nothing is written per token.
+  - **pi** (Sova's own server with its hosted chats and one-shots, a TUI, a pi worker): the
+    process's model runtime, which every session, compaction and background caller of that
+    process shares. A call is counted once however many wrappers it passes through.
+  - **Claude Code.** A chat session on the `claude-code` provider is a pi call like any other: one
+    per model request of its stream, until the reply stops for a tool or ends. A Claude Code worker
+    counts while its CLI reports it is requesting the model, until that reply ends. Calls the CLI
+    makes internally without reporting them (its own subagents, side queries, compaction) can't be
+    seen, so while a Claude Code turn runs, in a session or a worker, the count is **partial**
+    (below), never a guessed number.
+  - **One-shot `claude -p`** (a decision, a title, a topic outline): counted as one call from the
+    spawn to the process's exit — **approximate**: the process's start-up and exit count too, so
+    for part of that time it may not be calling at all, and what it does inside can't be seen.
+  - **Jev** (§app/decisions): from the request to its answer.
+- **How a host adds up.** Sova's server reads its own process directly. A subagent's calls reach
+  the host through the session that runs it: a pi worker reports its count to its parent over the
+  worker's own channel, and a Claude Code worker is observed by its parent, so the parent's count
+  includes its workers' (each worker's report replaces its last one, and goes when the worker
+  does; until a worker's first report, or after one that can't be read, it is unknown, never 0).
+  The parent also names every worker it counts this way, transitively, so a worker that publishes
+  a live record of its own as well is never counted twice; past 64 named workers it sums no more
+  of them (it can't name them), and its count is partial instead. A detached worker that no running
+  session has adopted (after a restart, before it is adopted again) is counted by the server from
+  its host's record of the worker's last report, or, with no such report (a Claude Code worker),
+  makes the count partial; once adopted, only its parent counts it. Every other process on the host publishes its count in its live record (`presence.llm`,
+  `pi-config/extensions/sessions/public/SCHEMA.md`), rewritten only when the count or its coverage
+  changes, never per token. The server counts each process once (by its producer id, so a
+  process with several live records is not counted twice, and the records its own hosted chats
+  write are never added to its own count). A fresh record with no `presence.llm` (a process
+  without the counter), and a record whose heartbeat went stale while its pid lives, make the
+  host's count **partial**; a dead pid's record counts nothing.
+- **Connected hosts.** While the mesh is on (§mesh/peers) and at least one browser is listening,
+  the server holds one socket per peer to that peer's **local** count (`/ws/watch?feed=llm`,
+  through the peer listener's gate) and adds it once per host. A peer only ever publishes its own
+  host's count, never one it was sent, so no count is passed on and summed twice; a peer that
+  turns out to be this host, or a host already counted, is not added again. A peer still
+  connecting, unreachable, refusing, or too old to answer makes the total **partial** and is named
+  in its sentence; it never adds a 0. A peer that answered and then went silent is pinged, and
+  past a minute or so without a word its last count is dropped and it is unreachable. A count
+  past sane bounds, from a process or a peer, is capped or ignored, never added whole. With the mesh off, no browser listening, or a peer removed,
+  no peer socket is open.
+- **Pushed, not polled.** The count rides the session feed (`/ws/watch?feed=sessions`) as an
+  `llm_inflight` frame: a full snapshot on every connect, then a frame each time the total or its
+  coverage changes. No browser timer and no per-tab peer socket reads it, and it never triggers a
+  re-read of the session list or the Agents page's data.
+- **Three states, and only one of them may read 0.**
+  - **Complete** — every process on every counted host reports and nothing is known to be
+    unseen: the bare figure, `0` included ("No LLM calls running now").
+  - **Partial** — the figure is a floor: it reads `{n}+` and its sentence says "At least {n} LLM
+    calls running now", followed by why (Claude Code's own internal calls aren't visible; a
+    process or a host doesn't report).
+  - **Approximate parts.** When `{a}` of the `{n}` are one-shots (approximate, above), they are
+    neither exact calls nor a floor, so the figure takes a leading `~` (`~{n}`, `~{n}+` while also
+    partial) and the sentence counts them apart: "{n−a} LLM calls running now, and {a} one-shot
+    that may be calling" (complete), "At least {n−a} LLM calls running now, and {a} one-shot that
+    may be calling. {why}" (partial); "one-shots" from 2. With no exact call the first clause is
+    "No exact LLM calls running now" when complete, and "No exact LLM calls seen" when partial (a
+    floor of 0 asserts nothing). A `~` never stands for a gap and a `+` never for an
+    estimate.
+  - **Unknown** — the page has no snapshot from the current connection (before the first frame,
+    and from the moment the socket drops until the next snapshot): no figure (`–`), and the
+    sentence "LLM calls running now: not known yet". A previous connection's figure is never
+    shown.
+- **What it is not.** It is not the number of HTTP requests on the wire, nor every model call any
+  program on the machine makes: only processes running the counter report, and the sentence says
+  so whenever something is known to be missing.
 ## §app.insights/aggregate-chips-live-vs-working — Aggregate chips: "Live" vs "Working"
 
 - **Live** is session-level: a TUI has the file open. It keeps the accent everywhere and says
@@ -231,7 +337,7 @@ and shares." — every glance part in the glance's own words (agents: "1 subagen
     Hidden at 0 or when absent. `.session-rail-count-live` pulses the icon only, and only on a
     row with no Busy dot, whose pulse would otherwise be a second moving thing.
   - **Session head:** no chip at all, working or not, team or not. The count is already the
-    sidebar row's rail count and the Agents foot row's, and the head's row goes to the title and
+    sidebar row's rail count, and the head's row goes to the title and
     the context readout (§chat.context-window/width-budget). The Agents page, the composer's
     subagents trigger and the session pane keep their own counts.
   - The count inside a sidebar session row is **never** a link, because an `<a>` can't nest in

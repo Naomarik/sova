@@ -33,6 +33,7 @@ import {
 	whileHolding,
 	type Slot,
 } from "./gate.ts";
+import { currentLlmCall } from "../llm-inflight/tracker.ts";
 
 export type StreamSimple = (model: Model<Api>, context: TranscriptContext, options?: SimpleStreamOptions) => AssistantMessageEventStream;
 
@@ -86,6 +87,8 @@ export function gateStreamSimple(inner: StreamSimple, gateOptions: GateStreamOpt
 		const sleep = gateOptions.sleep ?? abortableSleep;
 		const sessionId = options?.sessionId;
 		const report = waitReporter(sessionId);
+		// The logical call this request belongs to (llm-inflight): a cooldown is not in flight.
+		const llmCall = currentLlmCall();
 		const run = async () => {
 			for (let attempt = 0; ; attempt++) {
 				let slot: Slot | null;
@@ -150,6 +153,8 @@ export function gateStreamSimple(inner: StreamSimple, gateOptions: GateStreamOpt
 					out.end();
 					return;
 				}
+				// Not in flight until the retry is sent again (its onPayload resumes it).
+				llmCall?.waiting(true);
 				await lowerAfterRateLimit(agentDir, provider, slot.limit).catch(() => null);
 				await sleep(cooldownMs(retryAfter), signal);
 				if (signal?.aborted) {

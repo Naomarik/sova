@@ -178,6 +178,29 @@ export interface Presence {
   focusable?: boolean;
   focusReason?: string;
   previewAt?: number;
+  /** (v2) this PROCESS's logical LLM calls in flight (llm-inflight/tracker.ts): the same in
+   *  every record the process writes; absent when the process doesn't count them. */
+  llm?: LlmPresence;
+}
+
+/** presence.llm: one process's counts, rewritten only when they change. */
+export interface LlmPresence {
+  v: 1;
+  /** One per process lifetime; readers count a producer once, however many records carry it. */
+  producer: string;
+  pid: number;
+  /** Calls in flight now (its pi workers' included). */
+  active: number;
+  /** How many of `active` have approximate bounds. */
+  approximate: number;
+  /** Claude Code turns running now, whose internal calls can't be seen. */
+  claudeTurns: number;
+  /** Some calls of this process can't be seen. */
+  degraded: boolean;
+  /** Producers whose counts `active` already includes (its pi workers', transitively): count
+   *  none of them again, whatever record carries them. Sorted; at most 64 written (tracker.ts
+   *  MAX_FOLDED), up to 256 accepted. */
+  folded: string[];
 }
 
 export interface LiveRecord {
@@ -313,6 +336,17 @@ function parseActivity(value: unknown): Activity | undefined {
   });
 }
 
+function parseLlm(value: unknown): LlmPresence | undefined {
+  if (!isObj(value) || value.v !== 1) return;
+  const { producer, pid, active, approximate, claudeTurns, degraded, folded } = value;
+  if (typeof producer !== "string" || !producer || producer.length > 64 || !Number.isSafeInteger(pid) || (pid as number) <= 0
+    || ![active, approximate, claudeTurns].every(count) || typeof degraded !== "boolean") return;
+  if (folded !== undefined && (!Array.isArray(folded) || folded.length > 256
+    || !folded.every(f => typeof f === "string" && f.length > 0 && f.length <= 64))) return;
+  return { v: 1, producer, pid, active, approximate: Math.min(approximate as number, active as number), claudeTurns, degraded,
+    folded: [...new Set((folded ?? []) as string[])].sort() } as LlmPresence;
+}
+
 function parseCounts(value: unknown): WorkerCounts | undefined {
   if (!isObj(value)) return;
   const { total, working, waiting, done, error, killed } = value;
@@ -345,6 +379,7 @@ export function parsePresence(value: unknown): Presence | undefined {
     focusable: typeof p.focusable === "boolean" ? p.focusable : undefined,
     focusReason: str(p.focusReason, 120),
     previewAt: num(p.previewAt) ? p.previewAt : undefined,
+    llm: parseLlm(p.llm),
   } as Presence);
 }
 

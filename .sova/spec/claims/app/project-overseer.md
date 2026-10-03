@@ -755,7 +755,9 @@ user row.
   operator writes the first message in the composer, with no length limit. A worktree session gets
   Sova's commit paragraph as a note first. Until that message, the session is untitled: its row
   reads "Untitled coding session", and, like any new empty session, only the tab that started it
-  lists it; the row's link opens it from any tab.
+  lists it; the row's link opens it from any tab. A body carrying `prompt` is refused with 400
+  "This starts a session with no first prompt. To send one, start it from a to-do or idea
+  (items/code)." and no session is started.
 - A mode that can't be set leaves the session started and listed; the page stays and says, under
   the heading, "Started, but its mode could not be set. Set it from the chat's mode menu before you
   send." A refusal (a worktree git refuses, the session not created) says why under the heading,

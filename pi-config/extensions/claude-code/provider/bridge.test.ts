@@ -23,6 +23,7 @@ import { streamClaudeCode } from "./stream.ts";
 import { STATIC_MODELS } from "./index.ts";
 import type { ClaudeFrame, ClaudeTurnRequest } from "./types.ts";
 import type { ClaudeForkPoint } from "./fork-point.ts";
+import { snapshot as llmSnapshot } from "../../llm-inflight/tracker.ts";
 
 // ---------------------------------------------------------------------------
 // Fake CLI child
@@ -2470,4 +2471,25 @@ test("beside a rejected call, a valid call matches in pi's parse or the CLI's an
 	assert.equal(final.stopReason, "stop", final.errorMessage);
 	assert.equal(children.length, 1);
 	await bridge.disposeAll();
+});
+
+test("a bridge session's CLI reports its running turn (partial) and never counts a call: the pi runtime counts those", { timeout: 8000 }, async () => {
+	const { bridge, children } = harness();
+	const base = llmSnapshot();
+	await collectAfter(bridge.runTurn(request([user("hello")])), async () => {
+		const cli = await child(children, 1);
+		await cli.waitFor((f) => f.request?.subtype === "initialize");
+		await cli.handshake();
+		await cli.waitFor((f) => f.type === "user");
+		cli.emitFrame({ type: "system", subtype: "status", status: "requesting" });
+		cli.emitFrame({ type: "stream_event", event: { type: "message_start", message: { usage: { input_tokens: 1, output_tokens: 0 } } } });
+		await new Promise((r) => setTimeout(r, 10));
+		assert.equal(llmSnapshot().claudeTurns, base.claudeTurns + 1);
+		assert.equal(llmSnapshot().active, base.active, "no second count of the runtime's call");
+		cli.emitFrame({ type: "stream_event", event: { type: "message_stop" } });
+		cli.emitFrame({ type: "result", subtype: "success", is_error: false, result: "ok" });
+	});
+	assert.equal(llmSnapshot().claudeTurns, base.claudeTurns, "the turn ended");
+	await bridge.disposeAll();
+	assert.deepEqual([llmSnapshot().active, llmSnapshot().claudeTurns], [base.active, base.claudeTurns]);
 });

@@ -37,6 +37,7 @@ import {
 } from "../accounts.ts";
 import type { ImageContent, Message, TextContent, Tool } from "@earendil-works/pi-ai";
 import { PiMcpHost, type HeldMcpCall, type McpContent, type McpToolResult } from "./mcp-host.ts";
+import { createClaudeRequestObserver } from "../../llm-inflight/claude.ts";
 import {
 	parseClaudeFrame, parseToolInput, MCP_SERVER_NAME, MCP_TOOL_PREFIX,
 	type ClaudeFrame, type ClaudeSessionBridge, type ClaudeTurnRequest,
@@ -1239,6 +1240,9 @@ class CliSession {
 			spawnImpl: this.options.spawnImpl,
 			signalGroupImpl: this.options.signalGroupImpl,
 			...(this.login && this.options.logins?.forcedFailure?.(this.login.id) ? { simulateFailure: this.options.logins.forcedFailure(this.login.id) } : {}),
+			// The pi runtime counts this provider's calls (llm-inflight); the CLI's running turns, whose
+			// internal calls nothing sees, are reported from here.
+			requestObserver: createClaudeRequestObserver({ countRequests: false }),
 			hooks: {
 				onEvent: (event) => { if (current()) this.onEvent(event as unknown as Record<string, unknown>); },
 				onStderr: (text) => { if (stderr.length < 4096) stderr += text; },

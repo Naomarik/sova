@@ -330,7 +330,7 @@ closed, and the markdown on the left when open.
   "Waiting" with task `success` reads "Success". Waiting is the worker idling after a finished
   task, and the task result is what you're scanning for.
 - **Open.** The body goes through the markdown renderer (§chat/markdown), capped at `--measure` and
-  left-aligned under the disclosure's `--color-border` rule. It's never centered, and never
+  left-aligned in the disclosure's indent, with no left rule. It's never centered, and never
   caption size. Path chips work in it (§chat/images). Error is `--status-error` caption text. Session and
   the truncation note are `--color-ink-muted` captions. The body is parsed only when the row is
   first opened, so a transcript with dozens of reports stays cheap.
@@ -358,7 +358,7 @@ closed, and the markdown on the left when open.
   "Message: ". Keyboard is native.
 - **Tokens.** Summary: the disclosure's (`--fs-caption`, `--color-ink-muted`, `--control-sm`),
   with the sender in `--font-mono` `--color-ink-2`, capped at 40% of the row. Body: the
-  `.disclosure-body` spacing (`--space-2` / `--space-4`, `--stroke-icon` rule) as a flex
+  `.disclosure-body` spacing (`--space-2` / `--space-4`, no left rule) as a flex
   column with a `--space-2` gap.
 
 **Timestamps.** Take them from `raw.timestamp` when present and format as 12-hour `h:mm AM` in mono.
@@ -1233,7 +1233,8 @@ repository around the folder. Two of its figures:
   - Head: `--fs-caption` in `--color-ink-muted`. Author: `--fw-semibold` in `--color-ink`. Time:
     `--font-mono`.
 - **Thinking.** Summary `--fs-caption` in `--color-ink-muted`. Label `--fw-medium` in
-  `--color-ink-2`. Body `--color-ink-2`, left rule `--stroke-icon` in `--color-border`.
+  `--color-ink-2`. Body `--color-ink-2` on its inset `--color-sunken` panel, with no left rule.
+  No open disclosure body or report body draws a left rule; its content keeps its left inset.
 - **Tool card.** `--color-sunken`, `--r-lg`, and `--font-mono` / `--fs-mono`. Name `--fw-semibold`
   in `--color-ink`; arg `--color-ink-muted`. `pre` sits on `--color-surface` with `--r-sm`.
   Section labels use eyebrow styling (`--fs-micro`, `--ls-eyebrow`).

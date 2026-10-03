@@ -24,6 +24,7 @@ import { openRegisteredProjects } from "./projects/spaces";
 import { reconcileProjectServices, registerProjectServiceRoutes } from "./project-services/routes";
 import { startProjectOverseerLoop } from "./project-overseer";
 import { attachedWorkspaces, openAttachedOrgs } from "./orgs";
+import { finishImports, rollForwardCopies } from "./project-import";
 import { closeAllOrgHosts } from "./org-engine";
 import { flushWorkspaces } from "./workspace-commits";
 import { registerDecisionRoutes } from "./decisions-routes";
@@ -131,6 +132,11 @@ import { decisionsInfo, decisionsOptions, deleteKey, probeDecisions, putJevKey, 
 import { AttentionSignals } from "./attention-signals";
 import { initRestartWindow, markServerStop } from "./server-stop";
 import { configureSessionFeed, nudgeMarks, publishFeed } from "./session-feed";
+import { configureLlmInflight } from "./llm-inflight";
+import { snapshot as llmSnapshot, subscribe as onLlmChange } from "../pi-config/extensions/llm-inflight/tracker.ts";
+import { readUnadoptedWorkers } from "../pi-config/extensions/llm-inflight/hosted.ts";
+import { peerUrl } from "./mesh/peers";
+import { WebSocket as PeerWebSocket } from "ws";
 import { onTagsChanged } from "./session-tags";
 import { terminalSession } from "./decide-settings";
 import { MergeFollowUps } from "./merge-followup";
@@ -1542,8 +1548,11 @@ setAuthHosts(() => {
 });
 
 // Every attached org's engine opens before the first request (its pages and share links read it).
+// An import a stop cut off finishes (§app.projects/import): its copy before the orgs open, the rest after.
+rollForwardCopies();
 await openAttachedOrgs();
 await openRegisteredProjects();
+await finishImports();
 
 export const server = serve({ fetch: app.fetch, port: PORT, hostname: HOST }, (info) => {
   setSovaPort(info.port);
@@ -1600,6 +1609,18 @@ onSummaryLineChanged(() => autoTitleSweep.nudge());
 // The list's decision overlays are pushed on /ws/watch?feed=sessions (server/session-feed.ts);
 // attention signals classify finished turns and long-running workers; session tags tag sessions.
 configureSessionFeed({ list: listSessions });
+// The LLM calls in flight, pushed on the same feed (server/llm-inflight.ts): this process's own
+// counter, the other processes' live records, and each peer's own count while a browser listens.
+configureLlmInflight({
+  own: { snapshot: llmSnapshot, subscribe: onLlmChange },
+  liveDir: LIVE_DIR,
+  workers: () => readUnadoptedWorkers(),
+  mesh: {
+    peers: () => (meshApi.enabled() ? meshApi.peers().map((p) => ({ id: p.id, url: peerUrl(p) })) : []),
+    selfId: () => meshApi.self().id,
+    connect: (url) => new PeerWebSocket(`${url.replace(/^http/, "ws")}/ws/watch?feed=llm`, { handshakeTimeout: 10_000, maxPayload: 16 * 1024 }),
+  },
+});
 const attentionSignals = new AttentionSignals({
   settings: decisionSettings,
   provider: () => (decisionsReady() ? decisions() : null),

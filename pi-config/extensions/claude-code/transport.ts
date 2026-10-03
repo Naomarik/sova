@@ -15,6 +15,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { StringDecoder } from "node:string_decoder";
 import { claudeBaseEnv, type ClaudeAccountFailure } from "./accounts.ts";
+import type { ClaudeRequestObserver } from "../llm-inflight/claude.ts";
 
 // ---------------------------------------------------------------------------
 // Event shapes
@@ -603,6 +604,11 @@ export interface ClaudeTransportOptions {
 	 * failure (simulatedFailureEvents) instead of being written to the CLI.
 	 */
 	simulateFailure?: ClaudeAccountFailure;
+	/**
+	 * Counts the model calls this CLI reports (llm-inflight/claude.ts): fed every decoded record
+	 * before the owner's hooks, closed with the process. Simulated failure frames never reach it.
+	 */
+	requestObserver?: ClaudeRequestObserver;
 }
 
 export class ClaudeTransport {
@@ -616,6 +622,7 @@ export class ClaudeTransport {
 	private readonly spawnImpl?: SpawnImpl;
 	private readonly signalGroupImpl?: (pid: number, signal: NodeJS.Signals) => void;
 	private readonly simulateFailure?: ClaudeAccountFailure;
+	private readonly requestObserver?: ClaudeRequestObserver;
 	private readonly closedState = deferred<void>();
 	private proc?: ChildProcess;
 	private closed = false;
@@ -635,6 +642,7 @@ export class ClaudeTransport {
 		this.timings = options.timings; this.limits = options.limits; this.hooks = options.hooks;
 		this.spawnImpl = options.spawnImpl; this.signalGroupImpl = options.signalGroupImpl;
 		this.simulateFailure = options.simulateFailure;
+		this.requestObserver = options.requestObserver;
 		this.whenClosed = this.closedState.promise;
 	}
 
@@ -693,6 +701,8 @@ export class ClaudeTransport {
 			this.schedulePipeDrain(); this.hooks.onActivity?.();
 		});
 		proc.on("close", (code, signal) => this.close(code, signal));
+		// A hosted worker left running for the next manager: its calls are no longer counted here.
+		proc.on("detached", () => this.requestObserver?.close());
 	}
 
 	/** Write one stream-json frame to Claude's stdin. */
@@ -780,7 +790,10 @@ export class ClaudeTransport {
 			if (!line.trim()) continue;
 			let event: unknown;
 			try { event = JSON.parse(line); } catch { this.hooks.onProtocolError("Malformed Claude stream-json record"); return; }
-			if (record(event)) this.event(event);
+			if (record(event)) {
+				this.requestObserver?.frame(event);
+				this.event(event);
+			}
 		}
 	}
 	private event(e: Record<string, any>): void {
@@ -856,6 +869,7 @@ export class ClaudeTransport {
 		this.controls.clear();
 		for (const timer of this.timers) clearTimeout(timer);
 		this.timers.clear();
+		this.requestObserver?.close();
 		this.hooks.onClose(code, signal);
 		this.closedState.resolve();
 	}

@@ -3566,6 +3566,41 @@ export type SessionFeedMessage =
       to live, busy/activity or lastActiveAt). No payload: the client refetches the list
       (coalesced). */
   | { type: "list_changed" }
+  /** The logical LLM calls in flight on this host and every connected host: sent once on every
+      connect, then on each change of the total or its coverage. Never a reason to re-read the
+      list. */
+  | { type: "llm_inflight"; inflight: LlmInflight }
+  | { type: "error"; message: string };
+
+/** Why an LlmInflight count is only a floor. `host` is the peer's id; absent = this host. */
+export type LlmInflightGap =
+  /** A Claude Code turn is running: the calls the CLI makes internally without reporting them
+      can't be seen. */
+  | { reason: "claude-internal"; host?: string }
+  /** Processes that don't report a count (no counter loaded, a degraded counter, or a live record
+      whose heartbeat went stale while its pid lives). */
+  | { reason: "unreported"; host?: string; processes: number }
+  /** A connected host whose count isn't here: still connecting, unreachable or refusing, or
+      running a Sova too old to answer `/ws/watch?feed=llm`. */
+  | { reason: "peer-connecting" | "peer-unreachable" | "peer-unsupported"; host: string };
+
+/** Logical LLM calls in flight (server/llm-inflight.ts). */
+export interface LlmInflight {
+  /** Calls in flight that are seen: issued and not yet ended, failed or aborted. */
+  count: number;
+  /** Of `count`, calls timed by a process's spawn and exit (a one-shot `claude -p`). */
+  approximate: number;
+  /** `gaps.length > 0`: `count` is a floor, never shown as an exact number. */
+  partial: boolean;
+  gaps: LlmInflightGap[];
+}
+
+/** WS /ws/watch?feed=llm — one host's OWN count, for its peers' fan-in (server/llm-inflight.ts).
+    `local` never includes a count this host was sent by another; its gaps carry no `host`.
+    `instance` is per server process, so a host reached twice is counted once. A snapshot on
+    connect, then one per change. */
+export type LlmFeedMessage =
+  | { type: "llm_local"; host: string; instance: string; local: LlmInflight }
   | { type: "error"; message: string };
 
 // --- Git diffs (server/git-diff.ts, §chat.diff) ---------------------------------------------------

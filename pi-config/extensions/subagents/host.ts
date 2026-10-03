@@ -35,6 +35,10 @@ import * as net from "node:net";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { ensurePrivateDir, procStartTime, writeJson, type HostInfo, type WorkerStatus } from "./workers-dir.ts";
+import { LLM_STATUS_KEY, parseCounts } from "../llm-inflight/tracker.ts";
+
+/** A pi worker's RPC report frames start so (JSON.stringify keeps pi's key order); nothing else is parsed. */
+const UI_REQUEST_PREFIX = Buffer.from('{"type":"extension_ui_request"');
 
 export interface HostSpawnSpec {
 	v: 1;
@@ -155,6 +159,28 @@ export async function runHost(spec: HostSpawnSpec): Promise<void> {
 		}
 	};
 
+	// ── the worker's LLM calls in flight ───────────────────────────────────────
+	// A pi worker reports its counts on stdout when they change (llm-inflight). The host keeps the
+	// latest beside status.json so they reach the host's count while no manager is attached
+	// (llm-inflight/hosted.ts); rewritten only on change, never per token.
+	const llmFile = path.join(path.dirname(spec.statusFile), "llm.json");
+	let llmLast = "";
+	const writeLlm = (report: Record<string, unknown>) => {
+		const text = JSON.stringify(report);
+		if (text === llmLast) return;
+		llmLast = text;
+		try { writeJson(llmFile, { ...report, at: Date.now() }); } catch (error) { log(`llm.json: ${String(error)}`); }
+	};
+	const noteLlm = (bytes: Buffer) => {
+		if (bytes.length < UI_REQUEST_PREFIX.length || bytes.compare(UI_REQUEST_PREFIX, 0, UI_REQUEST_PREFIX.length, 0, UI_REQUEST_PREFIX.length) !== 0) return;
+		try {
+			const frame = JSON.parse(bytes.toString("utf8")) as { method?: unknown; statusKey?: unknown; statusText?: unknown };
+			if (frame.method !== "setStatus" || frame.statusKey !== LLM_STATUS_KEY) return;
+			const counts = parseCounts(frame.statusText);
+			if (counts) writeLlm({ v: 1, ...counts, folded: counts.folded ?? [] });
+		} catch { /* not a report */ }
+	};
+
 	// ── worker output ────────────────────────────────────────────────────────
 	let pending = Buffer.alloc(0);
 	const appendLine = (bytes: Buffer) => {
@@ -162,6 +188,7 @@ export async function runHost(spec: HostSpawnSpec): Promise<void> {
 		fs.writeSync(outFd, line);
 		offset += line.length;
 		send(client, { t: "o", o: offset, l: bytes.toString("utf8") });
+		noteLlm(bytes);
 	};
 	worker.stdout?.on("data", (chunk: Buffer) => {
 		pending = pending.length ? Buffer.concat([pending, chunk]) : chunk;
@@ -201,6 +228,11 @@ export async function runHost(spec: HostSpawnSpec): Promise<void> {
 		finished = true;
 		if (pending.length) { appendLine(pending); pending = Buffer.alloc(0); }
 		try { fs.fsyncSync(outFd); } catch { /* best effort */ }
+		// Its calls ended with it.
+		if (llmLast) {
+			const last = JSON.parse(llmLast) as Record<string, unknown>;
+			writeLlm({ ...last, active: 0, approximate: 0, claudeTurns: 0, degraded: false, folded: [] });
+		}
 		try { writeJson(spec.statusFile, status); } catch (error) { log(`status.json: ${String(error)}`); }
 		try { worker?.stdin?.destroy(); worker?.stdout?.destroy(); worker?.stderr?.destroy(); } catch { /* gone */ }
 		exitFrame = { t: "x", code: status.exitCode, signal: status.signal, ...(status.error ? { error: status.error } : {}) };

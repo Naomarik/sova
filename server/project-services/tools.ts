@@ -83,7 +83,11 @@ export function withoutUrls(r: VerbResult): VerbResult {
 
 /** The result as the model reads it: a headline, the JSON, and log lines marked untrusted. */
 export function renderResult(r: VerbResult, note?: string | null): string {
-  const head = r.error
+  // A share held for the operator (§app.project-services/share): its step says so.
+  const held = r.verb === "share" && !r.error && !r.links.length ? r.steps.find((s) => s.id === "share" && s.result === "skipped")?.detail : undefined;
+  const head = held
+    ? `share: ${held}`
+    : r.error
     ? `${r.verb} failed (exit ${exitOf(r)}): ${r.error.code}: ${r.error.message}`
     : r.tests
       ? `test: passed${r.tests.passed !== null ? ` (${r.tests.passed} passed, ${r.tests.skipped ?? 0} skipped)` : ""} in ${(r.tests.ms / 1000).toFixed(1)}s, state ${r.state}`

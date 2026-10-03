@@ -154,6 +154,7 @@ test("who shares: the operator confirmed, the project overseer through its act; 
   assert.deepEqual([...acts], [["share", a.instance, { endpoint: "site.http", days: 2 }]]);
   assert.deepEqual(held.links, []);
   assert.equal(held.steps.at(-1)?.detail, "Held for the operator's approval.");
+  assert.match(renderResult(held), /^share: Held for the operator's approval\.\n/);
   assert.equal(linksOf(a.instance!).filter((l) => l.endpoint === "site.http").length, 0, "nothing minted while held");
   // A refused share never reaches the statechart.
   const refused = shaped(await engine.run("share", { instance: a.instance, endpoint: "web.admin" }, { kind: "project-overseer", id: "po1", root: project, act: async (...args) => void acts.push(args) }));

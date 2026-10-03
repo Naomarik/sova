@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { copyMemory, copyName, createdByWord, endpointNotRunning, endpointPort, httpHref, linkLine, notReadyLine, refusalLine, sentence, SHARE_SENSITIVE, shareBlocked } from "./services-view";
+import { isStarting } from "../../shared/services-view";
+import { adoptedLine, copyChip, copyMemory, copyName, createdByWord, endpointNotRunning, rowVerbs, shareOffered, endpointPort, httpHref, linkLine, notReadyLine, refusalLine, sentence, SHARE_SENSITIVE, shareBlocked } from "./services-view";
 
 test("a copy is named main at slot 0, else by its branch, else by its folder", () => {
   assert.equal(copyName({ slot: 0, branch: "master", checkout: "/p" }), "main");
@@ -61,4 +62,26 @@ test("Share waits while the endpoint's service isn't ready, saying so", () => {
   assert.equal(endpointNotRunning(svc("ready"), "web.http"), null);
   assert.equal(endpointNotRunning(svc("stopped"), "web.http"), "This copy isn't running web: start it first. Sharing never starts anything.");
   assert.match(endpointNotRunning(svc("ready"), "api.http")!, /isn't running api/);
+});
+
+test("a row offers what its state allows: Start when stopped or degraded, Stop when running or degraded, never Teardown on main", () => {
+  assert.deepEqual(rowVerbs({ slot: 1, state: "stopped" }), ["up", "apply", "reset", "teardown"]);
+  assert.deepEqual(rowVerbs({ slot: 1, state: "running" }), ["down", "apply", "reset", "teardown"]);
+  assert.deepEqual(rowVerbs({ slot: 1, state: "degraded" }), ["up", "down", "apply", "reset", "teardown"]);
+  assert.deepEqual(rowVerbs({ slot: 0, state: "running" }), ["down", "apply", "reset"]);
+  assert.deepEqual(rowVerbs({ slot: 0, state: "running", adopted: "sova-runtime.service" }), ["apply"]);
+  assert.equal(adoptedLine("sova-runtime.service"), "Runs as sova-runtime.service; Apply schedules a guarded restart.");
+});
+
+test("Share only on a running copy, never an adopted main; Starting reads in place of Degraded while a service starts", () => {
+  assert.equal(shareOffered({ state: "running" }), true);
+  assert.equal(shareOffered({ state: "degraded" }), false);
+  assert.equal(shareOffered({ state: "stopped" }), false);
+  assert.equal(shareOffered({ state: "running", adopted: "u.service" }), false);
+  assert.equal(copyChip("degraded", true).word, "Starting");
+  assert.equal(copyChip("degraded", false).word, "Degraded");
+  const svcs = (...st: ("ready" | "starting" | "failed")[]) => st.map((state) => ({ state }));
+  assert.equal(isStarting("degraded", svcs("ready", "starting")), true);
+  assert.equal(isStarting("degraded", svcs("failed", "starting")), false);
+  assert.equal(isStarting("running", svcs("ready")), false);
 });

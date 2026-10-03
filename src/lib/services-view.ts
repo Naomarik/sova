@@ -135,3 +135,30 @@ export function endpointNotRunning(c: Pick<CopyView, "services">, endpoint: stri
   const s = c.services.find((x) => x.name === name);
   return s && s.state === "ready" ? null : `This copy isn't running ${name}: start it first. Sharing never starts anything.`;
 }
+
+// ---- what a row offers (§app.project-services/services-ui) -----------------------------------------
+
+/**
+ * The verbs a copy's row offers, by its state: Start while stopped, absent or degraded; Stop while running
+ * or degraded; Apply and Reset always; Teardown never on main (slot 0). An adopted main offers Apply alone.
+ */
+export function rowVerbs(c: Pick<CopyView, "slot" | "state" | "adopted">): RowVerb[] {
+  if (c.adopted) return ["apply"];
+  const out: RowVerb[] = [];
+  if (c.state === "stopped" || c.state === "absent" || c.state === "degraded") out.push("up");
+  if (c.state === "running" || c.state === "degraded") out.push("down");
+  out.push("apply", "reset");
+  if (c.slot !== 0) out.push("teardown");
+  return out;
+}
+
+/** Share is offered only on a running copy (the chosen endpoint's own readiness is checked in the form). */
+export const shareOffered = (c: Pick<CopyView, "state" | "adopted">): boolean => c.state === "running" && !c.adopted;
+
+/** The copy's chip: Starting while it is degraded only because a service is still starting. */
+export function copyChip(state: InstanceState, starting: boolean): { word: string; tone?: ChipTone } {
+  return starting ? { word: "Starting", tone: "info" } : COPY_CHIP[state];
+}
+
+/** The line under an adopted main's row. */
+export const adoptedLine = (unit: string): string => `Runs as ${unit}; Apply schedules a guarded restart.`;

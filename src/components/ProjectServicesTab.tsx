@@ -1,12 +1,13 @@
 import { createSignal, For, type JSX, Show } from "solid-js";
 import type { LinkView, VerbResult } from "../../shared/project-contract";
-import type { CopyView, ServiceRowView } from "../../shared/services-view";
+import { type CopyView, isStarting, type ServiceRowView } from "../../shared/services-view";
 import { getProjectServices, runProjectVerb } from "../lib/api";
 import { createPoll } from "../lib/poll";
 import {
+  adoptedLine,
   ASKS_FIRST,
   confirmLabel,
-  COPY_CHIP,
+  copyChip,
   copyMemory,
   copyName,
   createdByWord,
@@ -15,6 +16,7 @@ import {
   memoryOf,
   notReadyLine,
   refusalLine,
+  rowVerbs,
   type RowVerb,
   SERVICE_CHIP,
   SHARE_DAY_CHOICES,
@@ -23,6 +25,7 @@ import {
   endpointPort,
   linkLine,
   shareBlocked,
+  shareOffered,
   VERB_LABEL,
   VERB_RUNNING,
 } from "../lib/services-view";
@@ -33,7 +36,6 @@ import { Chip } from "./ui";
 
 const POLL_MS = 5_000;
 const errText = (x: unknown) => (x instanceof Error ? x.message : String(x));
-const ROW_VERBS: RowVerb[] = ["up", "down", "apply", "reset", "teardown"];
 
 /** A service's ports, each with HTTP readiness a link on the host this page was opened from. */
 function Ports(props: { service: ServiceRowView }) {
@@ -200,7 +202,7 @@ export function ProjectServicesTab(props: { projectId: string; archived: boolean
   const ShareButton = (p: { copy: CopyView }) => {
     const blocked = () => shareBlocked(p.copy, !!poll.data()?.sensitive);
     return (
-      <Show when={p.copy.share.endpoints.length || blocked() === SHARE_SENSITIVE}>
+      <Show when={shareOffered(p.copy) && (p.copy.share.endpoints.length || blocked() === SHARE_SENSITIVE)}>
         <button
           type="button"
           class="button button-sm"
@@ -223,7 +225,7 @@ export function ProjectServicesTab(props: { projectId: string; archived: boolean
     const stopped = () => (endpoint() ? endpointNotRunning(c(), endpoint()) : null);
     return (
       <>
-        <Show when={blocked() && (c().share.endpoints.length || blocked() === SHARE_SENSITIVE)}>
+        <Show when={shareOffered(c()) && blocked() && (c().share.endpoints.length || blocked() === SHARE_SENSITIVE)}>
           <p class="list-meta">{blocked()}</p>
         </Show>
         <Show when={c().links.length}>
@@ -255,7 +257,7 @@ export function ProjectServicesTab(props: { projectId: string; archived: boolean
             </For>
           </ul>
         </Show>
-        <Show when={shareOpen() === c().instance && !blocked()}>
+        <Show when={shareOpen() === c().instance && shareOffered(c()) && !blocked()}>
           <form class="stack services-share-form" onSubmit={(e) => void share(e, c())}>
             <div class="services-share-fields">
               <div class="field">
@@ -386,7 +388,7 @@ export function ProjectServicesTab(props: { projectId: string; archived: boolean
 /** One copy's row: its facts, then its actions; at narrow widths the actions wrap under the facts. */
 function CopyRow(props: { copy: CopyView; said: string | null; verbs(v: RowVerb): JSX.Element; share: JSX.Element; shareButton: JSX.Element; onLogs(): void }) {
   const c = () => props.copy;
-  const chip = () => COPY_CHIP[c().state];
+  const chip = () => copyChip(c().state, isStarting(c().state, c().services));
   return (
     <li class="list-row services-row">
       <div class="list-main services-row-main">
@@ -411,16 +413,18 @@ function CopyRow(props: { copy: CopyView; said: string | null; verbs(v: RowVerb)
           <span title={c().createdBy}>by {createdByWord(c().createdBy)}</span>
         </p>
         <Show when={c().state !== "stopped" && c().state !== "absent" && notReadyLine(c().services)}>{(line) => <p class="list-meta">{line()}</p>}</Show>
+        <Show when={c().adopted}>{(unit) => <p class="list-meta">{adoptedLine(unit())}</p>}</Show>
         <Show when={props.said}>{(line) => <p class="field-error services-said">{line()}</p>}</Show>
-        {props.share}
       </div>
       <div class="button-row services-actions">
-        <For each={ROW_VERBS}>{(verb) => props.verbs(verb)}</For>
+        <For each={rowVerbs(c())}>{(verb) => props.verbs(verb)}</For>
         {props.shareButton}
         <button type="button" class="button button-sm" onClick={() => props.onLogs()}>
           Logs
         </button>
       </div>
+      {/* Links and the Share form take the row's whole width, under its facts and actions. */}
+      <div class="services-row-share">{props.share}</div>
     </li>
   );
 }

@@ -71,3 +71,29 @@ test("what runs now: running and degraded copies with their memory summed, up sh
   );
   assert.deepEqual(r.shared, [{ name: "cache", state: "ready", rssBytes: 7, via: "a" }]);
 });
+
+const adoptDef = parseDefinition(
+  JSON.stringify({
+    version: 1,
+    services: { server: { cmd: ["node", "s.js"], ports: { http: { base: 4810, stride: 10 } }, ready: { http: "http" }, adopt: { unit: "sova-runtime.service", ports: { http: 4800 } } } },
+  }),
+);
+
+test("an adopted slot 0 names its unit, on the tab and in Running copies; a branch copy of the same definition does not", () => {
+  const v = servicesView("prj_1", "/p", [inst("m", 0, "running", [svc("server", "checkout", "ready", { http: 4800 })]), inst("b", 1, "running", [svc("server", "checkout", "ready", { http: 4820 })])], () => adoptDef);
+  assert.deepEqual(
+    v.copies.map((c) => c.adopted ?? null),
+    ["sova-runtime.service", null],
+  );
+  const r = runningOf({ projectId: "prj_1", name: "P", root: "/p" }, [inst("m", 0, "running", [svc("server", "checkout", "ready", {})])], () => adoptDef)!;
+  assert.equal(r.copies[0]!.adopted, "sova-runtime.service");
+  assert.equal(servicesView("prj_1", "/p", [inst("m", 0, "running", [])], () => def).copies[0]!.adopted, undefined);
+});
+
+test("a degraded copy whose only trouble is a service still starting is marked starting; a failed service keeps it degraded", () => {
+  const base = { projectId: "prj_1", name: "P", root: "/p" };
+  const starting = runningOf(base, [inst("a", 1, "degraded", [svc("web", "checkout", "ready", {}), svc("api", "checkout", "starting", {})])])!;
+  assert.equal(starting.copies[0]!.starting, true);
+  const failed = runningOf(base, [inst("a", 1, "degraded", [svc("web", "checkout", "failed", {}), svc("api", "checkout", "starting", {})])])!;
+  assert.equal(failed.copies[0]!.starting, undefined);
+});

@@ -1,8 +1,8 @@
 import { existsSync, readFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import type { Context, Hono } from "hono";
-import { CONTRACT_FILE, httpStatusOf, parseDefinition, type InstanceSummary, type ProjectDef, type ServiceView } from "../../shared/project-contract";
-import { SERVICES_UI_VERBS, type CopyView, type HostServicesView, type ProjectServicesView, type RunningProject, type ServiceRowView } from "../../shared/services-view";
+import { adoptedService, CONTRACT_FILE, httpStatusOf, parseDefinition, type InstanceSummary, type ProjectDef, type ServiceView } from "../../shared/project-contract";
+import { isStarting, SERVICES_UI_VERBS, type CopyView, type HostServicesView, type ProjectServicesView, type RunningProject, type ServiceRowView } from "../../shared/services-view";
 import { OrgError } from "../org-error";
 import { canonicalPath } from "../paths";
 import { listProjects, readProject } from "../projects/spaces";
@@ -40,6 +40,9 @@ function definitionAt(checkout: string): ProjectDef | null {
   }
 }
 
+/** The unit slot 0 adopts under this definition (§app.project-services/adopt), else null. */
+const adoptedUnit = (slot: number, def: ProjectDef | null): string | null => (slot === 0 && def ? (adoptedService(def)?.adopt?.unit ?? null) : null);
+
 /** Each service with the port its readiness probes over HTTP (a static service's first port, at `/`). */
 export function withHttp(services: ServiceView[], def: ProjectDef | null): ServiceRowView[] {
   return services.map((s) => {
@@ -66,7 +69,8 @@ export function servicesView(projectId: string, root: string, instances: Instanc
     const def = defs(i.checkout);
     const rows = withHttp(i.services, def);
     for (const s of rows) if (s.scope === "shared" && !shared.has(s.name)) shared.set(s.name, s);
-    copies.push({ ...i, services: rows.filter((s) => s.scope === "checkout") });
+    const adopted = adoptedUnit(i.slot, def);
+    copies.push({ ...i, services: rows.filter((s) => s.scope === "checkout"), ...(adopted ? { adopted } : {}) });
   }
   return { projectId, root, sensitive: !!main?.data.some((d) => d.sensitive), copies, shared: [...shared.values()] };
 }
@@ -79,11 +83,24 @@ const RUNNING_COPY = new Set(["running", "degraded"]);
 const RUNNING_SERVICE = new Set(["ready", "starting", "degraded"]);
 
 /** What runs now of one project's status: copies running or degraded, shared services up. */
-export function runningOf(base: Omit<RunningProject, "copies" | "shared">, instances: InstanceSummary[]): RunningProject | null {
+export function runningOf(base: Omit<RunningProject, "copies" | "shared">, instances: InstanceSummary[], defs: (checkout: string) => ProjectDef | null = () => null): RunningProject | null {
   const copies = instances
     .filter((i) => RUNNING_COPY.has(i.state))
     .sort((a, b) => a.slot - b.slot)
-    .map((i) => ({ instance: i.instance, slot: i.slot, branch: i.branch, state: i.state, rssBytes: sumRss(i.services.filter((s) => s.scope === "checkout")), createdBy: i.createdBy }));
+    .map((i) => {
+      const own = i.services.filter((s) => s.scope === "checkout");
+      const adopted = adoptedUnit(i.slot, defs(i.checkout));
+      return {
+        instance: i.instance,
+        slot: i.slot,
+        branch: i.branch,
+        state: i.state,
+        rssBytes: sumRss(own),
+        createdBy: i.createdBy,
+        ...(isStarting(i.state, own) ? { starting: true as const } : {}),
+        ...(adopted ? { adopted } : {}),
+      };
+    });
   const shared = new Map<string, RunningProject["shared"][number]>();
   for (const i of instances)
     for (const s of i.services)
@@ -134,7 +151,7 @@ export function registerServicesViewRoutes(app: Hono<any>): void {
         const st = await statusOf(root).catch(() => null);
         if (!st) continue;
         const base = p ? { projectId: p.id, name: p.name, root, ...(p.space.kind === "org" ? { orgName: p.space.orgName } : {}) } : { projectId: null, name: basename(root) || root, root };
-        const run = runningOf(base, st.instances);
+        const run = runningOf(base, st.instances, definitionAt);
         if (run) out.push(run);
       }
       out.sort((a, b) => a.name.localeCompare(b.name) || a.root.localeCompare(b.root));

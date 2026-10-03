@@ -15,6 +15,8 @@ export interface ServiceRowView extends ServiceView {
 /** One copy (an instance of a checkout) with its checkout services only; its links and share standing as status gives them. */
 export interface CopyView extends Omit<InstanceSummary, "services"> {
   services: ServiceRowView[];
+  /** The systemd unit slot 0 adopts (§app.project-services/adopt): Sova never starts, stops or tears it down. */
+  adopted?: string;
 }
 
 export interface ProjectServicesView {
@@ -41,6 +43,10 @@ export interface RunningCopy {
   /** The sum of its services' resident memory; null when none reports one. */
   rssBytes: number | null;
   createdBy: string;
+  /** Degraded only because a service is still starting (`isStarting`). */
+  starting?: true;
+  /** The unit an adopted slot 0 runs as: no Stop is offered. */
+  adopted?: string;
 }
 
 export interface RunningShared {
@@ -70,3 +76,8 @@ export interface HostServicesView {
 export const SERVICES_UI_VERBS = ["up", "down", "apply", "reset", "teardown", "logs", "share", "revoke"] as const;
 export type ServicesUiVerb = (typeof SERVICES_UI_VERBS)[number];
 export const SERVICES_LOG_LINES = 200;
+
+/** A degraded copy whose only trouble is a service still starting (none failed or degraded): it reads as Starting. */
+export function isStarting(state: InstanceState, services: readonly Pick<ServiceView, "state">[]): boolean {
+  return state === "degraded" && services.some((s) => s.state === "starting") && !services.some((s) => s.state === "failed" || s.state === "degraded");
+}

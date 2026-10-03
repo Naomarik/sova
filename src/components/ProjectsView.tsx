@@ -6,7 +6,7 @@ import { relativeTime } from "../lib/format";
 import { placementOf, sortProjects } from "../lib/projects";
 import { createPoll } from "../lib/poll";
 import { projectHref, projectSessionHref, projectTabHref, type ProjectsRoute, type ProjectTab } from "../lib/projects-route";
-import { COPY_CHIP, copyName, memoryOf, refusalLine, SERVICE_CHIP } from "../lib/services-view";
+import { adoptedLine, copyChip, copyName, memoryOf, refusalLine, SERVICE_CHIP } from "../lib/services-view";
 import { announce, toast } from "../lib/ui-state";
 import { AddProjectDialog } from "./AddProjectDialog";
 import { InsightsPage } from "./InsightsPage";
@@ -271,13 +271,16 @@ function RunningCopies() {
                                 <p class="services-row-title">
                                   <span class="services-name text-mono">{name()}</span>
                                   <span class="list-meta">slot {c.slot}</span>
-                                  <Chip tone={COPY_CHIP[c.state].tone}>{COPY_CHIP[c.state].word}</Chip>
+                                  <Chip tone={copyChip(c.state, !!c.starting).tone}>{copyChip(c.state, !!c.starting).word}</Chip>
                                   <span class="list-meta">{memoryOf(c.rssBytes)}</span>
                                 </p>
                                 <Show when={said()[key()]}>{(line) => <p class="field-error services-said">{line()}</p>}</Show>
                               </div>
                               <div class="button-row services-actions">
-                                <StopButton p={p} id={key()} name={name()} body={{ instance: c.instance }} />
+                                {/* An adopted main is never Sova's to stop: Apply on its Services tab restarts it. */}
+                                <Show when={!c.adopted} fallback={<span class="list-meta">{adoptedLine(c.adopted!)}</span>}>
+                                  <StopButton p={p} id={key()} name={name()} body={{ instance: c.instance }} />
+                                </Show>
                               </div>
                             </li>
                           );

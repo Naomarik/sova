@@ -100,6 +100,13 @@ export interface ServiceDecl {
   about?: string;
   /** How it is isolated and why: a record for the reader, never applied; outside the hash. */
   isolation?: IsolationDecl;
+  /** In slot 0, this systemd unit Sova did not start, on these fixed ports (§app.project-services/adopt); inside the hash. */
+  adopt?: AdoptDecl;
+}
+/** `unit` a whole `.service` name, never Sova's own; `ports` every port of the service, fixed. */
+export interface AdoptDecl {
+  unit: string;
+  ports: Record<string, number>;
 }
 export const ISOLATION_METHODS = ["ports", "names", "process", "container", "netns", "shared"] as const;
 export interface IsolationDecl {
@@ -198,13 +205,14 @@ export const DEFINITION_KEYS = {
   top: ["version", "slots", "host", "setup", "data", "services", "hooks", "test", "share", "deploy", "sources"],
   slots: ["cap"],
   step: ["id", "run", "inputs", "timeout"],
-  service: ["cmd", "static", "cwd", "env", "ports", "requires", "ready", "reload", "build", "scope", "container", "start", "about", "isolation"],
+  service: ["cmd", "static", "cwd", "env", "ports", "requires", "ready", "reload", "build", "scope", "container", "start", "about", "isolation", "adopt"],
   port: [["base", "stride"], ["fixed"]],
   ready: [["tcp", "timeout"], ["http", "path", "timeout"]],
   reload: [["signal"], ["cmd"]],
   build: ["run", "inputs", "timeout"],
   container: ["name", "engine"],
   isolation: ["method", "why"],
+  adopt: ["unit", "ports"],
   data: [["kind", "path", "from", "sensitive"], ["kind", "provision", "deprovision", "timeout", "sensitive"]],
   hooks: ["probe"],
   probe: ["run", "inputs", "timeout"],
@@ -375,7 +383,26 @@ function service(nm: string, v: unknown, path: string): ServiceDecl {
   }
   if (scope === "shared")
     for (const [k, p] of Object.entries(ports)) if (!("fixed" in p)) throw new DefinitionError(`${path}.ports.${k}`, "a shared service's ports are fixed");
+  if (o.adopt !== undefined) out.adopt = adopt(o.adopt, `${path}.adopt`, out);
   return out;
+}
+
+/** An adopted unit: a systemd service name that is not Sova's own, and a fixed port for each of the service's ports. */
+const UNIT_NAME = /^[A-Za-z0-9@._:-]{1,200}\.service$/;
+function adopt(v: unknown, path: string, s: ServiceDecl): AdoptDecl {
+  const o = obj(v, path);
+  keysOnly(o, K.adopt, path);
+  if (s.static !== undefined || s.container || s.scope === "shared") throw new DefinitionError(path, "only a cmd checkout service (no container) adopts a unit");
+  if (typeof o.unit !== "string" || !UNIT_NAME.test(o.unit)) throw new DefinitionError(`${path}.unit`, "must be a systemd user service name (<name>.service)");
+  if (/^sova-(svc|hook|restart)-/.test(o.unit)) throw new DefinitionError(`${path}.unit`, "must be a unit Sova did not start (never sova-svc-…, sova-hook-…)");
+  const p = obj(o.ports, `${path}.ports`);
+  const ports: Record<string, number> = {};
+  for (const k of Object.keys(p)) if (!(k in s.ports)) throw new DefinitionError(`${path}.ports.${k}`, "names no port of the service");
+  for (const k of Object.keys(s.ports)) {
+    if (p[k] === undefined) throw new DefinitionError(`${path}.ports`, `give the unit's port for ${k}`);
+    ports[k] = int(p[k], `${path}.ports.${k}`, 1024, 65535);
+  }
+  return { unit: o.unit, ports };
 }
 
 /** `sensitive: true` kept; false (the default) dropped, so a definition hashes as it did without the key. */
@@ -526,6 +553,8 @@ export function parseDefinition(text: string): ProjectDef {
       if (s.scope === "shared" && t.scope !== "shared") throw new DefinitionError(`$.services.${s.name}.requires`, "a shared service requires only shared services");
     }
   serviceOrder(def);
+  const adopting = services.filter((s) => s.adopt);
+  if (adopting.length > 1) throw new DefinitionError(`$.services.${adopting[1]!.name}.adopt`, "at most one service adopts a unit");
   // Ports: every allocated port, in every slot up to the scratch slots, must fit, and no two ports
   // of one instance may coincide.
   const top = cap + 2;
@@ -544,6 +573,12 @@ export function parseDefinition(text: string): ProjectDef {
         if (other && other.key !== key) throw new DefinitionError(`$.services.${s.name}.ports.${k}`, `slot ${slot} gives it port ${n}, which ${other.key} has in slot ${other.slot}`);
         if (!other) seen.set(n, { key, slot });
       }
+  // An adopted unit's ports are its own in slot 0: no slot's allocation may give one to any service.
+  for (const s of adopting)
+    for (const [k, n] of Object.entries(s.adopt!.ports)) {
+      const other = seen.get(n);
+      if (other && !(other.key === `${s.name}.${k}` && other.slot === 0)) throw new DefinitionError(`$.services.${s.name}.adopt.ports.${k}`, `port ${n} is ${other.key}'s in slot ${other.slot}`);
+    }
   // Templates: every variable must be one Sova knows.
   const vars = templateVars(def);
   for (const [t, where] of templates(def)) {
@@ -586,15 +621,18 @@ export function closureOf(def: Pick<ProjectDef, "services">, names: readonly str
 
 export const portFor = (p: PortDecl, slot: number): number => ("fixed" in p ? p.fixed : p.base + slot * p.stride);
 
-/** Every port of the definition in `slot`: `{service: {port: number}}`, shared services included. */
+/** Every port of the definition in `slot`: `{service: {port: number}}`, shared services included; an adopted service's in slot 0 are its unit's. */
 export function portsFor(def: Pick<ProjectDef, "services">, slot: number): Record<string, Record<string, number>> {
   const out: Record<string, Record<string, number>> = {};
   for (const s of def.services) {
     out[s.name] = {};
-    for (const [k, p] of Object.entries(s.ports)) out[s.name]![k] = portFor(p, slot);
+    for (const [k, p] of Object.entries(s.ports)) out[s.name]![k] = slot === 0 && s.adopt ? s.adopt.ports[k]! : portFor(p, slot);
   }
   return out;
 }
+
+/** The service slot 0 adopts (§app.project-services/adopt), if any. */
+export const adoptedService = (def: Pick<ProjectDef, "services">): ServiceDecl | null => def.services.find((s) => s.adopt) ?? null;
 
 // ---- templates (§app.project-services/contract) ------------------------------------------------
 

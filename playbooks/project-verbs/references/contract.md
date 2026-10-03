@@ -52,6 +52,7 @@ Exactly one of `cmd` and `static`.
 | `start` | `"up"` (default) or `"on-demand"`: up leaves it stopped unless named or required; a test run's `requires` starts it; down stops it. Checkout services only |
 | `about` | ≤ 200 characters, a template without `${host.…}`: how a builder uses it ("Backend nREPL: clj-nrepl-eval -p ${ports.web.nrepl}"). Shown in the instance note. Not hashed |
 | `isolation` | `{method, why}`: `method` one of `ports`, `names`, `process`, `container`, `netns`, `shared`; `why` ≤ 200 characters. A record for readers, never applied. Not hashed |
+| `adopt` | `{unit, ports}`: in slot 0 only, this service is a systemd user unit the operator already runs (`unit`, a whole `<name>.service`, never `sova-svc-…`), on these fixed `ports` (every port of the service; no slot may allocate one). Sova only reads it: up, down, reset and teardown of slot 0 are refused, and apply schedules a gated restart the operator confirms. One cmd checkout service at most, no container. Hashed. Sova's own definition adopts `sova-runtime.service`; a project you onboard almost never needs it |
 
 ## A data resource
 Each has a `kind`, and may carry `sensitive: true`: its contents derive from production, so no instance holding it is ever shared. `sensitive` is inside the approval hash.

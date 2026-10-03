@@ -27,7 +27,7 @@ export const ORDER = {
   slots: ["cap"],
   step: ["id", "run", "inputs", "timeout"],
   data: ["kind", "path", "from", "provision", "deprovision", "timeout", "sensitive"],
-  service: ["cmd", "static", "cwd", "env", "ports", "requires", "ready", "reload", "build", "scope", "container", "start", "about", "isolation"],
+  service: ["cmd", "static", "cwd", "env", "ports", "requires", "ready", "reload", "build", "scope", "container", "start", "about", "isolation", "adopt"],
   port: ["base", "stride", "fixed"],
   ready: ["tcp", "http", "path", "timeout"],
   reload: ["signal", "cmd"],
@@ -35,6 +35,7 @@ export const ORDER = {
   hooks: ["probe"],
   test: ["run", "requires", "timeout", "smoke"],
   isolation: ["method", "why"],
+  adopt: ["unit", "ports"],
   share: ["endpoints", "maxDays", "allow"],
 };
 /** Maps whose keys are names in declaration order, kept as written. */
@@ -66,6 +67,7 @@ export function canonical(def) {
       if (isObj(s.build)) s.build = sortKeys(s.build, ORDER.step);
       if (isObj(s.container)) s.container = sortKeys(s.container, ORDER.container);
       if (isObj(s.isolation)) s.isolation = sortKeys(s.isolation, ORDER.isolation);
+      if (isObj(s.adopt)) s.adopt = sortKeys(s.adopt, ORDER.adopt);
       d.services[k] = s;
     }
   if (isObj(d.hooks)) {

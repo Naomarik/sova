@@ -251,3 +251,23 @@ test("a data resource may be sensitive: true or false, kept only when true", () 
   assert.equal(refusedAt({ version: 1, services: { a: svc }, data: { db: { kind: "dir", sensitive: "yes" } } }), "$.data.db.sensitive");
   assert.ok(DEFINITION_KEYS.data.every((keys) => (keys as readonly string[]).includes("sensitive")));
 });
+
+test("adopt: slot 0 of one cmd checkout service is a systemd unit Sova did not start, on fixed ports no slot allocates", () => {
+  const server = { cmd: ["pnpm", "run", "dev:hermetic"], ports: { http: { base: 4810, stride: 10 } }, adopt: { unit: "sova-runtime.service", ports: { http: 4800 } } };
+  const def = parse({ version: 1, services: { server } });
+  assert.deepEqual(def.services[0]!.adopt, { unit: "sova-runtime.service", ports: { http: 4800 } });
+  assert.deepEqual(portsFor(def, 0), { server: { http: 4800 } }, "slot 0 is the unit's port");
+  assert.deepEqual(portsFor(def, 2), { server: { http: 4830 } }, "every other slot allocates as usual");
+  const at = (adopt: unknown, extra: object = {}) => refusedAt({ version: 1, services: { server: { ...server, ...extra, adopt } } });
+  assert.equal(at({ unit: "sova-runtime", ports: { http: 4800 } }), "$.services.server.adopt.unit");
+  assert.equal(at({ unit: "sova-svc-abc-x.service", ports: { http: 4800 } }), "$.services.server.adopt.unit");
+  assert.equal(at({ unit: "a b.service", ports: { http: 4800 } }), "$.services.server.adopt.unit");
+  assert.equal(at({ unit: "x.service", ports: {} }), "$.services.server.adopt.ports");
+  assert.equal(at({ unit: "x.service", ports: { http: 4800, admin: 1 } }), "$.services.server.adopt.ports.admin");
+  assert.equal(at({ unit: "x.service", ports: { http: 4820 } }), "$.services.server.adopt.ports.http", "slot 1's port");
+  assert.equal(at({ unit: "x.service", ports: { http: 4800 }, group: 1 }), "$.services.server.adopt.group");
+  assert.equal(at({ unit: "x.service", ports: { http: 4800 } }, { scope: "shared", ports: { http: { fixed: 4810 } } }), "$.services.server.adopt");
+  assert.equal(at({ unit: "x.service", ports: { http: 4800 } }, { container: { name: "c" } }), "$.services.server.adopt");
+  assert.equal(refusedAt({ version: 1, services: { server, two: { cmd: ["x"], adopt: { unit: "y.service", ports: {} } } } }), "$.services.two.adopt");
+  assert.equal(refusedAt({ version: 1, services: { site: { static: ".", ports: { http: { base: 9000 } }, adopt: { unit: "y.service", ports: { http: 9100 } } } } }), "$.services.site.adopt");
+});

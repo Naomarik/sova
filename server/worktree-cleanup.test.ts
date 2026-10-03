@@ -3,7 +3,7 @@
 // ledger, and readiness's gone-folder reader (server/removed-worktrees.ts).
 import assert from "node:assert/strict";
 import { execFileSync, spawn, type ChildProcess } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
@@ -29,6 +29,8 @@ const add = (name: string, commits = 1) => {
 };
 
 const sessions: SessionSummary[] = [];
+/** Every session file the service read (bytes, and active branches parsed). */
+const reads = { file: [] as string[], branch: [] as string[] };
 const branches = new Map<string, unknown[]>();
 let ledger: RemovedWorktree[] = [];
 const sleepers: ChildProcess[] = [];
@@ -84,7 +86,14 @@ before(() => {
   sleepers.push(sleeper);
   mkdirSync(join(wt("liverec"), ".agent", "sessions", "live"), { recursive: true });
   writeFileSync(join(wt("liverec"), ".agent", "sessions", "live", `p${process.pid}-x.json`), JSON.stringify({ session: { pid: process.pid } }));
-  c.configureCleanup({ sessions: async () => sessions, sessionFiles: async () => [join(root, "sessions", "01a1026f-c64e-70a4.jsonl"), HOME_SESSION()], readBranch: async (p) => branches.get(p) ?? [], ledger: (e) => { ledger.push(...e); }, now: () => 1000 });
+  c.configureCleanup({
+    summary: async (p) => sessions.find((s) => s.path === p) ?? null,
+    sessionFiles: async () => [...new Set([...sessions.map((s) => s.path), join(root, "sessions", "01a1026f-c64e-70a4.jsonl"), HOME_SESSION()])],
+    readBranch: async (p) => (reads.branch.push(p), branches.get(p) ?? []),
+    readFile: async (p) => (reads.file.push(p), readFileSync(p)),
+    ledger: (e) => { ledger.push(...e); },
+    now: () => 1000,
+  });
 });
 
 after(() => {
@@ -136,6 +145,35 @@ test("the dry run names what goes and why the rest stays", async () => {
   assert.equal(stays.get(wt("liverec")), `A live session under its .agent: ${process.pid}.`);
   // A dry run touches nothing.
   for (const n of ["merged", "squash", "empty", "idle"]) assert.ok(existsSync(wt(n)));
+});
+
+test("a second dry run reads no unchanged session file; a changed one is read again, alone, with the same answer", async () => {
+  c.resetCleanup();
+  reads.file.length = 0;
+  reads.branch.length = 0;
+  const first = await c.cleanupPlan(HOME_SESSION());
+  const onDisk = [...new Set([...sessions.map((s) => s.path), join(root, "sessions", "01a1026f-c64e-70a4.jsonl"), HOME_SESSION()])].filter((p) => existsSync(p));
+  assert.deepEqual([...reads.file].sort(), onDisk.sort(), "a cold run reads every session file on disk once");
+  assert.equal(new Set(reads.file).size, reads.file.length, "each at most once");
+  reads.file.length = 0;
+  reads.branch.length = 0;
+  const second = await c.cleanupPlan(HOME_SESSION());
+  assert.deepEqual(reads.file, [], "no unchanged file is read");
+  assert.deepEqual(reads.branch, [], "no unchanged file is parsed");
+  assert.deepEqual(second, first, "the same refusals and removals");
+  // One file changes: only it is read again, and only it is parsed (it holds a `worktrees` entry).
+  const changed = sessions.find((s) => s.id === "sbx")!.path;
+  appendFileSync(changed, "\n");
+  const third = await c.cleanupPlan(HOME_SESSION());
+  assert.deepEqual(reads.file, [changed]);
+  assert.deepEqual(reads.branch, [changed]);
+  assert.deepEqual(third, first);
+  // A file with no `worktrees` entry that changes is read, never parsed.
+  reads.file.length = 0;
+  reads.branch.length = 0;
+  appendFileSync(HOME_SESSION(), "\n");
+  await c.cleanupPlan(HOME_SESSION());
+  assert.deepEqual([reads.file, reads.branch], [[HOME_SESSION()], []]);
 });
 
 test("a removal acts only on the expected paths still removable, with git's own remove and branch -d", async () => {

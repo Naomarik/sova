@@ -1039,7 +1039,7 @@ head's height, so a width change is no layout shift.
 
 - A **labelled button** — the eye icon, the word "Overseer", and the unread badge (below) —
   closes the session list's one toolbar line at its right end, at every width
-  (§app.session-list/search). It leaves the line, with the count, `Select` and the search icon,
+  (§app.session-list/search). It leaves the line, with `Select` and the search icon,
   for as long as the line's search is open, and comes back when the search closes.
 - The collapsed spine carries the same entry as a bare **eye** icon button.
 - **Alt+O** opens the Overseer from anywhere.

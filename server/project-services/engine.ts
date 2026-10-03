@@ -980,7 +980,9 @@ export class ProjectEngine {
       if (only && !only.includes(d.name)) continue;
       await this.step(run, `data:${d.name}`, "data", async () => {
         if (!force && rec.data[d.name] && this.dataExists(d, rec)) return { result: "skipped", detail: rec.data[d.name] };
+        const own = this.ownSource(def, rec, d);
         const ref = await this.provisionOne(def, rec, d);
+        if (own && rec.data[d.name] === ref) return { result: "skipped", detail: `${ref} (its own folder: nothing copied)` };
         rec.data[d.name] = ref;
         this.save(rec);
         return { result: "done", detail: ref };
@@ -1005,8 +1007,30 @@ export class ProjectEngine {
     return !!p && existsSync(p);
   }
 
+  /**
+   * A `dir` resource whose `from` is the resource itself (the main checkout of `"from": "${main}/<path>"`, `path` the
+   * same folder): it is main's own data, never copied onto itself and never removed (§app.project-services/contract).
+   */
+  private ownSource(def: ProjectDef, rec: InstanceRecord, d: DataDecl | undefined): string | null {
+    if (!d || d.kind !== "dir" || d.from === "empty") return null;
+    const scope = scopeOf(rec);
+    let src: string;
+    try {
+      src = render(d.from, this.vars(def, scope));
+    } catch {
+      return null;
+    }
+    const path = this.dataPath(d, scope);
+    return canonical(src) === canonical(path) ? path : null;
+  }
+
   private async provisionOne(def: ProjectDef, rec: InstanceRecord, d: DataDecl): Promise<string> {
     const scope = scopeOf(rec);
+    const own = this.ownSource(def, rec, d);
+    if (own) {
+      if (!existsSync(own) || !statSync(own).isDirectory()) throw new VerbFailure("not-found", `data.${d.name}.from: ${own} is this checkout's own folder, and it is not there`);
+      return own;
+    }
     if (d.kind === "hook") {
       const out = await this.hook(def, scope, `data-${d.name}-provision`, d.provision, d.timeout, "provision");
       return out.ref ?? `hook:${d.name}`;
@@ -1040,6 +1064,12 @@ export class ProjectEngine {
   private async deprovisionOne(def: ProjectDef | null, rec: InstanceRecord, name: string): Promise<void> {
     const d = def?.data.find((x) => x.name === name);
     const ref = rec.data[name];
+    // The checkout's own data, copied from nowhere else: kept, whatever asks (reset of the main checkout).
+    if (def && this.ownSource(def, rec, d)) {
+      delete rec.data[name];
+      this.save(rec);
+      return;
+    }
     if (d?.kind === "hook") await this.hook(def!, scopeOf(rec), `data-${d.name}-deprovision`, d.deprovision, d.timeout, "deprovision");
     else if (ref && isAbsolute(ref) && (ref.startsWith(dataRootOf(rec.id) + "/") || ref.startsWith(rec.checkout + "/"))) rmSync(ref, { recursive: true, force: true });
     delete rec.data[name];
@@ -1616,6 +1646,8 @@ export class ProjectEngine {
     for (const d of def.data) {
       if (only && !only.includes(d.name)) continue;
       await this.step(run, `deprovision:${d.name}`, "data", async () => {
+        const own = this.ownSource(def, rec, d);
+        if (own) return { result: "skipped", detail: `kept ${own}: its from is the folder itself` };
         await this.deprovisionOne(def, rec, d.name);
         return { result: "done" };
       });

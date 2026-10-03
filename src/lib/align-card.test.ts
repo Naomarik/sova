@@ -134,9 +134,10 @@ test("the view-model the card renders from: approach open first, then the folded
   assert.deepEqual(cardSections(doc({ approach: [], findings: [] })).map((s) => s.kind), ["rejected"], "an empty section is absent");
 });
 
-test("the guide rule leaves the alignment disclosures locally, and the base disclosure keeps it", () => {
-  assert.match(cardCss, /\.align-section > \.disclosure-body,\n\.align-rev > \.disclosure-body \{[^}]*border-left: none;/, "alignment sections and revisions drop the bar");
-  assert.match(baseCss, /\.disclosure-body \{[^}]*border-left:/, "the base disclosure keeps its rule");
+test("no disclosure draws a guide rule, and the alignment disclosures keep their indent", () => {
+  assert.match(cardCss, /\.align-section > \.disclosure-body,\n\.align-rev > \.disclosure-body \{[^}]*white-space: normal;/, "alignment sections and revisions wrap normally");
+  assert.doesNotMatch(baseCss, /\.disclosure-body \{[^}]*border-left:/, "the base disclosure draws no rule");
+  assert.match(baseCss, /\.disclosure-body \{[^}]*padding: var\(--space-2\) 0 var\(--space-2\) var\(--space-4\);/, "the base disclosure keeps its indent");
   assert.match(cardCss, /\.align-approach-list \{[^}]*list-style: none;/, "no list markers on the approach");
   assert.match(cardCss, /\.align-approach-list > li \{[^}]*grid-template-columns: var\(--space-5\) 1fr;/, "the id column, wrapped text aligned");
   assert.match(cardCss, /\.align-approach-text \{[^}]*overflow-wrap: anywhere;/, "the body span wraps inside its column");

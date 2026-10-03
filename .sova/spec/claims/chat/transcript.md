@@ -794,6 +794,35 @@ what it did before.
 - **Not covered.** The built app's static files, extension sockets and routes (`/ext/`), a
   peer's sessions (`/peer/`) and the share listener are sent as before.
 
+## §chat.transcript/slim-rows — Rows carry what they draw
+
+A transcript row carries what its folded form draws and no copy of the entry it came from, so a
+long session's rows weigh about what its text weighs, and opening, switching and reloading never
+wait on megabytes nobody looks at. Nothing on screen changes: every row, its time, its chips, the
+inputs count, the context fill and the spend read exactly as before, and an opened tool card
+shows exactly what it showed before.
+
+- **No entry copy.** A row never carries its source entry. Each entry's first row carries that
+  entry's facts once (its type, role, model, usage, stop reason, error, a tool result's failure,
+  a compaction's figures), every row carries the entry's time, and a reply's other rows read the
+  facts from its first one. An unknown row, whose card shows the entry as JSON, still carries it.
+- **No reasoning signatures.** The encrypted reasoning a provider returns with its thinking (and
+  any signature on a text block or a tool call) never reaches the browser: not on a row, not in a
+  streamed event, not through any route.
+- **Tool calls load on opening.** A tool call's row carries its name, the one line its folded card
+  shows, and the "+n −m" of an edit or write; its result's row carries whether it failed, and its
+  images and named attachments. The arguments, the output and the result's details come from
+  `GET /api/transcript/tool` (read-only, a batch of row ids at a time) when the card is opened or
+  about to be: the thread fetches the cards near the view, or under the pointer or focus, ahead of
+  time, so opening one shows its body at once, with no flash and no jump. A card opened before its
+  content has come says it is loading only after about 0.3 s, and a failed fetch says so with a
+  way to try again. The folded line's tooltip shows the whole line, as before. Cards that draw as cards rather than
+  tool cards (`show_changes`, `sova_card`, `sova_confirm`, `sova_link`, `sova_unlink`, `align`,
+  `session_send`, `sova_create_session`, `sova_navigate`) keep their whole content on the row.
+  While a reply streams, its rows show everything as they always did.
+- **Full content where it's needed.** Copying, the Changes viewer and every server-side reader
+  (the Overseer's session reads) still get every tool's whole arguments and output.
+
 ## §chat.transcript/recent-preload — Recent sessions open at once
 
 The sessions in the sidebar's Recent (§app.session-list/recent) are kept in memory, so opening
@@ -817,7 +846,7 @@ view then reconciles them with its own `hello` or snapshot (§chat.transcript/re
   its newest rows, with any older ones a view fetched kept above them while they're still their
   ancestors. A failed fetch is retried only once the file changes.
 - **A memory budget.** The Recent sessions kept beyond the last 3 opened and those on screen add
-  up to at most 40 MB of transcript JSON (about 50-60 MB of memory). Past it, the largest go
+  up to at most 20 MB of transcript JSON (about 20-32 MB of memory). Past it, the largest go
   first. A session is not downloaded when the size its response announces can't fit, and one
   already found too big is not fetched again while the others are kept. Such a session opens
   the way any unkept one does: it lands at the end once its `hello` arrives.

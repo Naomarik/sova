@@ -12303,6 +12303,34 @@
         "§chat.slash-commands/in-the-thread",
         "§chat.slash-commands/compact-handoff"
       ]
+    },
+    "§chat.transcript/slim-rows": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "shared/protocol.ts",
+        "server/transcript.ts",
+        "server/claude-transcript.ts",
+        "server/transcript-rows.ts",
+        "server/transcript-tool.ts",
+        "server/chat-manager.ts",
+        "server/index.ts",
+        "server/transcript-tool.test.ts",
+        "server/transcript.test.ts",
+        "src/lib/message.ts",
+        "src/lib/tool-content.ts",
+        "src/lib/tool-content.test.ts",
+        "src/lib/legacy-rows.ts",
+        "src/lib/legacy-rows.test.ts",
+        "src/lib/change-rows.test.ts",
+        "src/lib/context.test.ts",
+        "src/lib/message-count.test.ts",
+        "src/components/ToolCard.tsx"
+      ],
+      "requires": [
+        "§chat.transcript/rendering"
+      ]
     }
   },
   "boundary": {

@@ -99,6 +99,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Long tool output | `Show All {n} Lines` |
 | Tool chips | Running · Done · Failed · No result |
 | Tool output label | Output · on error: Error |
+| Tool card opened before its content came (§chat.transcript/slim-rows) | after 0.3 s: "Loading arguments and output…" · a failed fetch: "Couldn't load this call's arguments and output. {error}" · button `Retry` · gone from the branch: "This call is no longer on the session's branch, so its arguments and output can't be shown." |
 | Stopped turn (info row) | Stopped by you at `{HH:MM}`. |
 | Report row, closed | {id} · {name} · chip · {first line} (hidden prefix "Report from ", or "Message: " without an agent) |
 | Report chips | Failed · Stopped · Aborted · Success · Done · Starting · Running · Waiting · Stopping |

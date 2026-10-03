@@ -66,7 +66,8 @@ function runStats(samples) {
   for (const phase of ["idle", "load"]) {
     const of = (kind) => samples.filter((s) => s.phase === phase && s.kind === kind);
     const ms = (kind) => of(kind).filter((s) => s.ok).map((s) => s.ms);
-    const eld = of("eld");
+    // A sample without numbers is a lost read (an inspector error), not a measurement.
+    const eld = of("eld").filter((s) => Number.isFinite(s.max) && Number.isFinite(s.mean));
     const sys = of("sys");
     out[phase] = {
       sessions: { n: of("sessions").length, p50: median(ms("sessions")), p95: pct(ms("sessions"), 95), max: pct(ms("sessions"), 100), fail: of("sessions").filter((s) => !s.ok).length },
@@ -75,6 +76,7 @@ function runStats(samples) {
       reload: { n: of("reload").length, p50: median(ms("reload")), p95: pct(ms("reload"), 95), max: pct(ms("reload"), 100) },
       eldMean: { p50: median(eld.map((s) => s.mean)), p95: pct(eld.map((s) => s.mean), 95) },
       eldMax: { p50: median(eld.map((s) => s.max)), p95: pct(eld.map((s) => s.max), 95), max: pct(eld.map((s) => s.max), 100) },
+      eldLost: of("eld").length - eld.length + of("eld-error").length,
       load1: median(sys.map((s) => s.load1)),
       psi: median(sys.filter((s) => s.psi != null).map((s) => s.psi)),
       mainCpu: median(sys.filter((s) => s.mainCpu != null).map((s) => s.mainCpu)),
@@ -117,7 +119,7 @@ function summarize(dir) {
   lines.push("", "Per run (load phase): variant rep → /api/sessions p50/p95, reload p50/p95, ELD max p95, load1");
   for (const x of runs) {
     const s = x.stats.load;
-    lines.push(`- ${x.meta.variant} #${x.meta.rep}: ${r(s.sessions.p50)}/${r(s.sessions.p95)} ms, reload ${r(s.reload.p50)}/${r(s.reload.p95)} ms, ELD max p95 ${r(s.eldMax.p95)} ms, load1 ${r(s.load1)}, failures ${s.sessions.fail}`);
+    lines.push(`- ${x.meta.variant} #${x.meta.rep}: ${r(s.sessions.p50)}/${r(s.sessions.p95)} ms, reload ${r(s.reload.p50)}/${r(s.reload.p95)} ms, ELD max p95 ${r(s.eldMax.p95)} ms (${s.eldLost} lost reads), load1 ${r(s.load1)}, failures ${s.sessions.fail}`);
   }
   const text = lines.join("\n") + "\n";
   writeFileSync(join(dir, "summary.md"), text);
@@ -232,11 +234,18 @@ async function inspector() {
       pending.delete(d.id);
     }
   };
-  const evaluate = (expression) =>
+  // awaitPromise only where the expression is async: on a plain value V8 still wraps it in a
+  // promise, and when that promise is collected first the call fails ("Promise was collected"),
+  // which lost ~5% of the 2026-10-03 run's event-loop samples.
+  const evaluate = (expression, awaitPromise = false) =>
     new Promise((ok, no) => {
       const i = ++id;
-      pending.set(i, (d) => (d.result?.exceptionDetails ? no(new Error(JSON.stringify(d.result.exceptionDetails))) : ok(d.result?.result?.value)));
-      ws.send(JSON.stringify({ id: i, method: "Runtime.evaluate", params: { expression, returnByValue: true, awaitPromise: true } }));
+      pending.set(i, (d) =>
+        d.error ? no(new Error(`inspector: ${JSON.stringify(d.error)}`))
+        : d.result?.exceptionDetails ? no(new Error(JSON.stringify(d.result.exceptionDetails)))
+        : ok(d.result?.result?.value),
+      );
+      ws.send(JSON.stringify({ id: i, method: "Runtime.evaluate", params: { expression, returnByValue: true, awaitPromise } }));
     });
   return { evaluate, close: () => ws.close() };
 }
@@ -366,7 +375,9 @@ async function oneRun(variant, rep, bigPath) {
           try {
             const e = await cdp.evaluate(`(() => { const h = globalThis.__perfEld; const r = { mean: h.mean / 1e6, max: h.max / 1e6, p99: h.percentile(99) / 1e6 }; h.reset(); return r; })()`);
             if (phase === "idle" || phase === "load") push({ kind: "eld", ...e });
-          } catch {}
+          } catch (e) {
+            if (phase === "idle" || phase === "load") push({ kind: "eld-error", error: String(e).slice(0, 300) });
+          }
           const ticks = threadTicks(mainPid);
           const now = Date.now();
           const mainCpu = ticks != null && lastTicks != null ? ((ticks - lastTicks) / 100 / ((now - lastAt) / 1000)) * 100 : null;
@@ -397,6 +408,11 @@ async function oneRun(variant, rep, bigPath) {
       const fixed = variant === "fixed";
       const started = await cdp.evaluate(`(async () => {
         const cp = process.getBuiltinModule('child_process'); const os = process.getBuiltinModule('os');
+        // Loaded BEFORE the spawn, as the product has it: compiling it after the spawn (31 ms cold)
+        // let the stand-in start its first commands at nice 0 (18 ms), which skewed run fixed #1
+        // of 2026-10-03.
+        const req = process.getBuiltinModule('module').createRequire(${JSON.stringify(join(ROOT, "package.json"))});
+        const priority = ${fixed} ? req(${JSON.stringify(join(ROOT, "pi-config", "extensions", "subagents", "priority.ts"))}) : null;
         const c = cp.spawn(process.execPath, ${JSON.stringify([standin, ...standinArgs])}, { cwd: ${JSON.stringify(ROOT)}, stdio: 'ignore' });
         if (${nice}) os.setPriority(c.pid, ${nice});
         if (${fixed}) {
@@ -410,11 +426,10 @@ async function oneRun(variant, rep, bigPath) {
             try { const n = JSON.parse(process.getBuiltinModule('fs').readFileSync(${JSON.stringify(join(AGENT, "sova", "settings.json"))}, 'utf8')).workerNice; if (Number.isInteger(n) && n >= 0 && n <= 19) return n; } catch {}
             return 10;
           };
-          const req = process.getBuiltinModule('module').createRequire(${JSON.stringify(join(ROOT, "package.json"))});
-          req(${JSON.stringify(join(ROOT, "pi-config", "extensions", "subagents", "priority.ts"))}).lowerPriority(c.pid);
+          priority.lowerPriority(c.pid);
         }
         globalThis.__perfLoad = c; return { pid: c.pid, nice: os.getPriority(c.pid), server: os.getPriority() };
-      })()`);
+      })()`, true);
       log(`${runId}: load started as the server's child pid ${started.pid} at nice ${started.nice} (server at ${started.server})`);
       stopAll.push(() => cdp.evaluate(`(() => { try { globalThis.__perfLoad.kill('SIGTERM'); } catch {} return true; })()`).catch(() => {}));
     }

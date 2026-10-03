@@ -97,3 +97,29 @@ test("a degraded copy whose only trouble is a service still starting is marked s
   const failed = runningOf(base, [inst("a", 1, "degraded", [svc("web", "checkout", "failed", {}), svc("api", "checkout", "starting", {})])])!;
   assert.equal(failed.copies[0]!.starting, undefined);
 });
+
+test("the adopt stand-in as :4930 answered it: its definition's adopt names the unit on the main copy", () => {
+  // tmp/fixture/adopt/.sova/project.json and the status instance the review server returned (paths shortened).
+  const fixture = parseDefinition(
+    JSON.stringify({
+      version: 1,
+      services: { server: { cmd: ["node", "server.js"], env: { PORT: "${ports.server.http}" }, ports: { http: { base: 4941, stride: 1 } }, ready: { http: "http" }, adopt: { unit: "sova-gate-4940.service", ports: { http: 4940 } } } },
+      share: { allow: false },
+    }),
+  );
+  const real = {
+    instance: "adopt-d2449ea9",
+    slot: 0,
+    generation: 0,
+    checkout: "/w/tmp/fixture/adopt",
+    branch: "main",
+    state: "running",
+    services: [{ name: "server", scope: "checkout", kind: "process", unit: "sova-gate-4940.service", pid: 537889, ports: { http: 4940 }, state: "ready", ready: { probe: "http :4940/", ok: true, ms: 2 }, detail: "adopted unit, started 2026-10-03T13:07:11.000Z", rssBytes: 80932864 }],
+    createdBy: "operator",
+    links: [],
+    share: { endpoints: [], refused: "This project's definition says its copies are never shared (share.allow: false)." },
+  } as InstanceSummary;
+  const v = servicesView("prj_hbwzdqmw", "/w/tmp/fixture/adopt", [real], () => fixture);
+  assert.equal(v.copies[0]!.adopted, "sova-gate-4940.service");
+  assert.equal(runningOf({ projectId: "prj_hbwzdqmw", name: "Adopt stand-in", root: "/w/tmp/fixture/adopt" }, [real], () => fixture)!.copies[0]!.adopted, "sova-gate-4940.service");
+});

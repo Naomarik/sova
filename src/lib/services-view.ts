@@ -142,8 +142,8 @@ export function endpointNotRunning(c: Pick<CopyView, "services">, endpoint: stri
  * The verbs a copy's row offers, by its state: Start while stopped, absent or degraded; Stop while running
  * or degraded; Apply and Reset always; Teardown never on main (slot 0). An adopted main offers Apply alone.
  */
-export function rowVerbs(c: Pick<CopyView, "slot" | "state" | "adopted">): RowVerb[] {
-  if (c.adopted) return ["apply"];
+export function rowVerbs(c: Pick<CopyView, "slot" | "state" | "adopted" | "services">): RowVerb[] {
+  if (adoptedOf(c)) return ["apply"];
   const out: RowVerb[] = [];
   if (c.state === "stopped" || c.state === "absent" || c.state === "degraded") out.push("up");
   if (c.state === "running" || c.state === "degraded") out.push("down");
@@ -153,11 +153,21 @@ export function rowVerbs(c: Pick<CopyView, "slot" | "state" | "adopted">): RowVe
 }
 
 /** Share is offered only on a running copy (the chosen endpoint's own readiness is checked in the form). */
-export const shareOffered = (c: Pick<CopyView, "state" | "adopted">): boolean => c.state === "running" && !c.adopted;
+export const shareOffered = (c: Pick<CopyView, "slot" | "state" | "adopted" | "services">): boolean => c.state === "running" && !adoptedOf(c);
 
 /** The copy's chip: Starting while it is degraded only because a service is still starting. */
 export function copyChip(state: InstanceState, starting: boolean): { word: string; tone?: ChipTone } {
   return starting ? { word: "Starting", tone: "info" } : COPY_CHIP[state];
+}
+
+/**
+ * The unit an adopted main runs as: the server's `adopted`, else (a server older than that field, a peer's
+ * included) the slot-0 service whose status detail says it is an adopted unit.
+ */
+export function adoptedOf(c: Pick<CopyView, "slot" | "adopted" | "services">): string | null {
+  if (c.adopted) return c.adopted;
+  if (c.slot !== 0) return null;
+  return c.services.find((s) => s.unit && s.detail?.startsWith("adopted unit"))?.unit ?? null;
 }
 
 /** The line under an adopted main's row. */

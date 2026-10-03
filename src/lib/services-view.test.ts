@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { isStarting } from "../../shared/services-view";
-import { adoptedLine, copyChip, copyMemory, copyName, createdByWord, endpointNotRunning, rowVerbs, shareOffered, endpointPort, httpHref, linkLine, notReadyLine, refusalLine, sentence, SHARE_SENSITIVE, shareBlocked } from "./services-view";
+import { adoptedLine, adoptedOf, copyChip, copyMemory, copyName, createdByWord, endpointNotRunning, rowVerbs, shareOffered, endpointPort, httpHref, linkLine, notReadyLine, refusalLine, sentence, SHARE_SENSITIVE, shareBlocked } from "./services-view";
 
 test("a copy is named main at slot 0, else by its branch, else by its folder", () => {
   assert.equal(copyName({ slot: 0, branch: "master", checkout: "/p" }), "main");
@@ -65,23 +65,61 @@ test("Share waits while the endpoint's service isn't ready, saying so", () => {
 });
 
 test("a row offers what its state allows: Start when stopped or degraded, Stop when running or degraded, never Teardown on main", () => {
-  assert.deepEqual(rowVerbs({ slot: 1, state: "stopped" }), ["up", "apply", "reset", "teardown"]);
-  assert.deepEqual(rowVerbs({ slot: 1, state: "running" }), ["down", "apply", "reset", "teardown"]);
-  assert.deepEqual(rowVerbs({ slot: 1, state: "degraded" }), ["up", "down", "apply", "reset", "teardown"]);
-  assert.deepEqual(rowVerbs({ slot: 0, state: "running" }), ["down", "apply", "reset"]);
-  assert.deepEqual(rowVerbs({ slot: 0, state: "running", adopted: "sova-runtime.service" }), ["apply"]);
+  assert.deepEqual(rowVerbs({ slot: 1, state: "stopped", services: [] }), ["up", "apply", "reset", "teardown"]);
+  assert.deepEqual(rowVerbs({ slot: 1, state: "running", services: [] }), ["down", "apply", "reset", "teardown"]);
+  assert.deepEqual(rowVerbs({ slot: 1, state: "degraded", services: [] }), ["up", "down", "apply", "reset", "teardown"]);
+  assert.deepEqual(rowVerbs({ slot: 0, state: "running", services: [] }), ["down", "apply", "reset"]);
+  assert.deepEqual(rowVerbs({ slot: 0, state: "running", services: [], adopted: "sova-runtime.service" }), ["apply"]);
   assert.equal(adoptedLine("sova-runtime.service"), "Runs as sova-runtime.service; Apply schedules a guarded restart.");
 });
 
 test("Share only on a running copy, never an adopted main; Starting reads in place of Degraded while a service starts", () => {
-  assert.equal(shareOffered({ state: "running" }), true);
-  assert.equal(shareOffered({ state: "degraded" }), false);
-  assert.equal(shareOffered({ state: "stopped" }), false);
-  assert.equal(shareOffered({ state: "running", adopted: "u.service" }), false);
+  assert.equal(shareOffered({ slot: 1, state: "running", services: [] }), true);
+  assert.equal(shareOffered({ slot: 1, state: "degraded", services: [] }), false);
+  assert.equal(shareOffered({ slot: 1, state: "stopped", services: [] }), false);
+  assert.equal(shareOffered({ slot: 0, state: "running", services: [], adopted: "u.service" }), false);
   assert.equal(copyChip("degraded", true).word, "Starting");
   assert.equal(copyChip("degraded", false).word, "Degraded");
   const svcs = (...st: ("ready" | "starting" | "failed")[]) => st.map((state) => ({ state }));
   assert.equal(isStarting("degraded", svcs("ready", "starting")), true);
   assert.equal(isStarting("degraded", svcs("failed", "starting")), false);
   assert.equal(isStarting("running", svcs("ready")), false);
+});
+
+// A main copy as :4930's status answered it for an adopted stand-in unit (only the paths shortened), with
+// no `adopted` key: what a server older than that field, or a peer's, sends.
+const ADOPTED_MAIN = {
+  instance: "adopt-d2449ea9",
+  slot: 0,
+  generation: 0,
+  checkout: "/w/tmp/fixture/adopt",
+  branch: "main",
+  state: "running" as const,
+  services: [
+    {
+      name: "server",
+      scope: "checkout" as const,
+      kind: "process" as const,
+      unit: "sova-gate-4940.service",
+      pid: 537889,
+      ports: { http: 4940 },
+      state: "ready" as const,
+      ready: { probe: "http :4940/", ok: true, ms: 2 },
+      detail: "adopted unit, started 2026-10-03T13:07:11.000Z",
+      rssBytes: 80932864,
+    },
+  ],
+  createdBy: "operator",
+  links: [],
+  share: { endpoints: [], refused: "This project's definition says its copies are never shared (share.allow: false)." },
+};
+
+test("an adopted main is read from its status detail when the server sends no `adopted`: Apply alone, no Share, its unit named", () => {
+  assert.equal(adoptedOf(ADOPTED_MAIN), "sova-gate-4940.service");
+  assert.deepEqual(rowVerbs(ADOPTED_MAIN), ["apply"]);
+  assert.equal(shareOffered(ADOPTED_MAIN), false);
+  assert.equal(adoptedOf({ ...ADOPTED_MAIN, adopted: "x.service" }), "x.service");
+  // The same detail on a branch copy is not an adopted main; an ordinary main is not either.
+  assert.equal(adoptedOf({ ...ADOPTED_MAIN, slot: 1 }), null);
+  assert.equal(adoptedOf({ ...ADOPTED_MAIN, services: [{ ...ADOPTED_MAIN.services[0]!, detail: undefined }] }), null);
 });

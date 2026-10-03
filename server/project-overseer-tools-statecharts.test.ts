@@ -566,3 +566,82 @@ describe("sova_project_verbs goes through the project statechart (§app.project-
     }
   });
 });
+
+describe("sova_project_verbs share is the project's services/share (§app.project-overseer/previews)", () => {
+  test("L0 refused; L1 unattended held, then approved: the link is minted, never in a result; revoke at L0, never held", async () => {
+    const { approve, defHashOf } = await import("./project-services/trust");
+    const { parseDefinition } = await import("../shared/project-contract");
+    const { stopStaticServe, staticServes } = await import("./preview-serve");
+    const { createServer } = await import("node:net");
+    const { writeFileSync } = await import("node:fs");
+    const port = await new Promise<number>((done) => {
+      const s = createServer().listen(0, "127.0.0.1", () => {
+        const p = (s.address() as { port: number }).port;
+        s.close(() => done(p));
+      });
+    });
+    const pin = process.env.SOVA_SHARE_PREVIEW_URL;
+    process.env.SOVA_SHARE_PREVIEW_URL = "https://*.preview.example.invalid";
+    const dir = realpathSync(join(root, "proj"));
+    mkdirSync(join(dir, ".sova"), { recursive: true });
+    mkdirSync(join(dir, "public"), { recursive: true });
+    writeFileSync(join(dir, "public", "index.html"), "portal");
+    const def = { version: 1, services: { site: { static: "public", ports: { http: { base: port } } } }, share: { endpoints: ["site.http"] } };
+    writeFileSync(join(dir, ".sova", "project.json"), JSON.stringify(def));
+    const h = defHashOf(parseDefinition(JSON.stringify(def)));
+    approve(dir, h, h);
+    type Result = { ok: boolean; state: string; instance: string | null; error?: { code: string; message: string }; links: { id: string; endpoint: string; url?: string }[]; steps: { id: string; result: string; detail?: string }[] };
+    const verb = async (params: Record<string, unknown>, attended = false) => {
+      const out = (await run("sova_project_verbs", params, attended)) as { content: { text: string }[]; details: { result: Result } };
+      return { text: out.content[0]!.text, result: out.details.result, json: JSON.stringify(out) };
+    };
+    const acts = () => hostOf(org.id).feed(project.id, { newestFirst: false, limit: 500 }).filter((e) => e.event === "services/share").map((e) => [e.event, e.refused ? "refused" : "taken"]);
+    const seen = acts().length;
+    try {
+      await settings({ autonomy: "L3", holdMin: 10 });
+      const up = (await verb({ verb: "up" }, true)).result;
+      assert.equal(up.ok, true, JSON.stringify(up.error));
+      const instance = up.instance!;
+      await settings({ autonomy: "L0" });
+      await assert.rejects(() => verb({ verb: "share", instance, endpoint: "site.http" }), /your autonomy here is L0; sova_project_verbs needs L1/);
+      assert.equal(holdsOf().length, 0, "refused above its level: nothing held");
+      const notDeclared = (await verb({ verb: "share", instance, endpoint: "site.admin" }, true)).result;
+      assert.equal(notDeclared.error?.code, "share-denied", "the engine's own checks come first: no act, nothing held");
+      await settings({ autonomy: "L1" });
+      const held = await verb({ verb: "share", instance, endpoint: "site.http" });
+      assert.equal(held.result.ok, true, JSON.stringify(held.result.error));
+      assert.deepEqual(held.result.links, [], "nothing minted while held");
+      assert.match(held.result.steps.find((s) => s.id === "share")?.detail ?? "", /^Held: the link to site\.http of a running copy .*waits until /);
+      const holds = holdsOf();
+      assert.equal(holds.length, 1);
+      assert.equal(holds[0]!.what, "A preview link: site.http of a running copy (" + instance + ")");
+      // The overseer approves it (confirm kind preview): the effect mints it.
+      const approved = textOf(await run("sova_hold", { op: "approve", id: holds[0]!.id, reason: "Ana asked to see it" }));
+      assert.doesNotMatch(approved, /not sent|refused/i);
+      const status = await verb({ verb: "status", instance });
+      assert.doesNotMatch(status.json, /preview\.example\.invalid/, "the overseer never sees the link");
+      const listed = textOf(await run("sova_previews", {}));
+      const id = /^- (pv_[A-Za-z0-9_-]{16}) · running copy /m.exec(listed)?.[1];
+      assert.ok(id, listed);
+      assert.doesNotMatch(listed, /preview\.example\.invalid/);
+      // Attended at once: the same link again (idempotent per copy and endpoint), with no URL in the result.
+      const again = await verb({ verb: "share", instance, endpoint: "site.http" }, true);
+      assert.equal(again.result.links[0]?.id, id);
+      assert.doesNotMatch(again.json, /preview\.example\.invalid/);
+      await settings({ autonomy: "L0" });
+      const revoked = await verb({ verb: "revoke", link: id });
+      assert.equal(revoked.result.ok, true, JSON.stringify(revoked.result.error));
+      assert.equal(holdsOf().length, 0, "revoke is never held");
+      assert.match(textOf(await run("sova_previews", {})), new RegExp(`^- ${id} · .* · revoked · `, "m"));
+      // refused at L0; held at L1; released by the approval; at once in the operator's run. Revoke is no act.
+      assert.deepEqual(acts().slice(seen), [["services/share", "refused"], ["services/share", "taken"], ["services/share", "taken"], ["services/share", "taken"]]);
+      assert.equal(LINES["services/share"], "A running copy of the project was shared.");
+      const down = await verb({ verb: "down", instance });
+      assert.equal(down.result.state, "stopped", "the overseer stops any copy from L0");
+    } finally {
+      if (pin === undefined) delete process.env.SOVA_SHARE_PREVIEW_URL;
+      else process.env.SOVA_SHARE_PREVIEW_URL = pin;
+      for (const s of staticServes()) await stopStaticServe(s.id).catch(() => false);
+    }
+  });
+});

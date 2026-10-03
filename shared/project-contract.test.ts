@@ -64,6 +64,8 @@ test("a full definition parses with defaults filled in", () => {
     share: { allow: false },
     deploy: { targets: {} },
   });
+  assert.deepEqual(def.share, { endpoints: [], allow: false });
+  assert.deepEqual(def.reserved, { deploy: { targets: {} } });
   assert.equal(def.slots.cap, 2);
   assert.equal(def.setup[0]!.timeout, 120);
   const server = def.services.find((s) => s.name === "server")!;
@@ -248,4 +250,63 @@ test("a data resource may be sensitive: true or false, kept only when true", () 
   assert.deepEqual(def.data.map((d) => [d.name, d.sensitive]), [["db", true], ["cache", undefined], ["prod", true]]);
   assert.equal(refusedAt({ version: 1, services: { a: svc }, data: { db: { kind: "dir", sensitive: "yes" } } }), "$.data.db.sensitive");
   assert.ok(DEFINITION_KEYS.data.every((keys) => (keys as readonly string[]).includes("sensitive")));
+});
+
+test("adopt: slot 0 of one cmd checkout service is a systemd unit Sova did not start, on fixed ports no slot allocates", () => {
+  const server = { cmd: ["pnpm", "run", "dev:hermetic"], ports: { http: { base: 4810, stride: 10 } }, adopt: { unit: "sova-runtime.service", ports: { http: 4800 } } };
+  const def = parse({ version: 1, services: { server } });
+  assert.deepEqual(def.services[0]!.adopt, { unit: "sova-runtime.service", ports: { http: 4800 } });
+  assert.deepEqual(portsFor(def, 0), { server: { http: 4800 } }, "slot 0 is the unit's port");
+  assert.deepEqual(portsFor(def, 2), { server: { http: 4830 } }, "every other slot allocates as usual");
+  const at = (adopt: unknown, extra: object = {}) => refusedAt({ version: 1, services: { server: { ...server, ...extra, adopt } } });
+  assert.equal(at({ unit: "sova-runtime", ports: { http: 4800 } }), "$.services.server.adopt.unit");
+  assert.equal(at({ unit: "sova-svc-abc-x.service", ports: { http: 4800 } }), "$.services.server.adopt.unit");
+  assert.equal(at({ unit: "a b.service", ports: { http: 4800 } }), "$.services.server.adopt.unit");
+  assert.equal(at({ unit: "x.service", ports: {} }), "$.services.server.adopt.ports");
+  assert.equal(at({ unit: "x.service", ports: { http: 4800, admin: 1 } }), "$.services.server.adopt.ports.admin");
+  assert.equal(at({ unit: "x.service", ports: { http: 4820 } }), "$.services.server.adopt.ports.http", "slot 1's port");
+  assert.equal(at({ unit: "x.service", ports: { http: 4800 }, group: 1 }), "$.services.server.adopt.group");
+  assert.equal(at({ unit: "x.service", ports: { http: 4800 } }, { scope: "shared", ports: { http: { fixed: 4810 } } }), "$.services.server.adopt");
+  assert.equal(at({ unit: "x.service", ports: { http: 4800 } }, { container: { name: "c" } }), "$.services.server.adopt");
+  assert.equal(refusedAt({ version: 1, services: { server, two: { cmd: ["x"], adopt: { unit: "y.service", ports: {} } } } }), "$.services.two.adopt");
+  assert.equal(refusedAt({ version: 1, services: { site: { static: ".", ports: { http: { base: 9000 } }, adopt: { unit: "y.service", ports: { http: 9100 } } } } }), "$.services.site.adopt");
+});
+
+test('onMerge: "reload" on a checkout cmd service only, kept as written and inside the hash; absent hashes as before', async () => {
+  const { defHashOf } = await import("../server/project-services/trust");
+  const web = { cmd: ["node", "web.js"], ports: { http: { base: 5100 } } };
+  const plain = parse({ version: 1, services: { web } });
+  const opted = parse({ version: 1, services: { web: { ...web, onMerge: "reload" } } });
+  assert.equal(plain.services[0]!.onMerge, undefined);
+  assert.equal(opted.services[0]!.onMerge, "reload");
+  assert.notEqual(defHashOf(opted), defHashOf(plain), "opting in needs approval again");
+  assert.equal(refusedAt({ version: 1, services: { web: { ...web, onMerge: "restart" } } }), "$.services.web.onMerge");
+  assert.equal(refusedAt({ version: 1, services: { web: { ...web, onMerge: true } } }), "$.services.web.onMerge");
+  assert.equal(refusedAt({ version: 1, services: { site: { static: "public", ports: { http: { base: 5200 } }, onMerge: "reload" } } }), "$.services.site.onMerge");
+  assert.equal(refusedAt({ version: 1, services: { db: { cmd: ["db"], scope: "shared", ports: { tcp: { fixed: 5432 } }, onMerge: "reload" } } }), "$.services.db.onMerge");
+});
+
+test("open: a checkout service's declared port and a path from / (default /), kept as written, outside the hash", async () => {
+  const { defHashOf } = await import("../server/project-services/trust");
+  const services = {
+    web: { cmd: ["node", "web.js"], ports: { http: { base: 5100 }, nrepl: { base: 5150 } } },
+    cache: { cmd: ["redis-server"], scope: "shared", ports: { port: { fixed: 6390 } } },
+  };
+  const plain = parse({ version: 1, services });
+  assert.equal(plain.open, undefined);
+  assert.deepEqual(parse({ version: 1, services, open: { endpoint: "web.http" } }).open, { endpoint: "web.http", path: "/" });
+  const deep = parse({ version: 1, services, open: { endpoint: "web.http", path: "/app?tab=home" } });
+  assert.deepEqual(deep.open, { endpoint: "web.http", path: "/app?tab=home" });
+  // It exposes nothing: declaring, moving or removing the entry needs no new approval.
+  assert.equal(defHashOf(deep), defHashOf(plain));
+  assert.equal(refusedAt({ version: 1, services, open: "web.http" }), "$.open");
+  assert.equal(refusedAt({ version: 1, services, open: {} }), "$.open.endpoint");
+  assert.equal(refusedAt({ version: 1, services, open: { endpoint: "web" } }), "$.open.endpoint");
+  assert.equal(refusedAt({ version: 1, services, open: { endpoint: "web.https" } }), "$.open.endpoint");
+  assert.equal(refusedAt({ version: 1, services, open: { endpoint: "api.http" } }), "$.open.endpoint");
+  assert.equal(refusedAt({ version: 1, services, open: { endpoint: "cache.port" } }), "$.open.endpoint", "a shared service is no copy's own");
+  for (const path of ["home", "", "/a b", "/a\\b", "/x\n", 7, `/${"x".repeat(200)}`])
+    assert.equal(refusedAt({ version: 1, services, open: { endpoint: "web.http", path } }), "$.open.path", JSON.stringify(path));
+  assert.equal(refusedAt({ version: 1, services, open: { endpoint: "web.http", url: "/" } }), "$.open.url");
+  assert.ok(DEFINITION_KEYS.top.includes("open"));
 });

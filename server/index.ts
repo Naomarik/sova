@@ -22,6 +22,7 @@ import { registerProjectCostRoutes } from "./project-costs-routes";
 import { registerProjectRoutes } from "./projects/routes";
 import { openRegisteredProjects } from "./projects/spaces";
 import { reconcileProjectServices, registerProjectServiceRoutes } from "./project-services/routes";
+import { registerServicesViewRoutes } from "./project-services/view-routes";
 import { startProjectOverseerLoop } from "./project-overseer";
 import { attachedWorkspaces, openAttachedOrgs } from "./orgs";
 import { finishImports, rollForwardCopies } from "./project-import";
@@ -354,6 +355,7 @@ registerProjectCostRoutes(app);
 registerProjectRoutes(app);
 // Project services: the verbs over a project's .sova/project.json (server/project-services/; §app/project-services).
 registerProjectServiceRoutes(app);
+registerServicesViewRoutes(app);
 // A project's decisions, conflicts and spec promotion (server/decisions-routes.ts; §app/requirements).
 registerDecisionRoutes(app);
 // Voice input: setup, status and transcription on this host (server/voice/; §chat/voice).

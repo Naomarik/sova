@@ -199,6 +199,7 @@
               [:session/prompt {:session-id "c9" :title "T" :text "go"}] [:session/prompt {:session-id "c9" :title "T" :text " "}] [:session/prompt {:session-id "c9" :title "T" :text "go" :live true}]
               [:preview/start {:coding-session "c1" :port 5173 :purpose "The shop for Ana"}] [:preview/start {:coding-session "c1" :folder "dist" :purpose " "}]
               [:services/run {:verb "up"}] [:services/down {:verb "down"}]
+              [:services/share {:verb "share" :instance "in_1" :endpoint "web.3000" :branch "sova/b"}]
               [:verbs/onboard {:session-id "o1" :title "Project verbs" :prompt "Run it" :why "w"}]
               [:verbs/onboard {:session-id "o2" :prompt "Run it" :runtime-standing "registered"}]]})))
 

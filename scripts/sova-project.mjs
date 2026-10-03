@@ -6,7 +6,9 @@
 //
 //   node scripts/sova-project.mjs <verb> [--project <path>] [--instance <id>] [--checkout <path>]
 //     [--branch <name>] [--from <ref>] [--slot <n>] [--services a,b] [--restart] [--lines <n>]
-//     [--keep-data] [--resources a,b] [--ref <ref>] [--select a,b] [--confirm] [--url <http://127.0.0.1:4800>]
+//     [--keep-data] [--resources a,b] [--ref <ref>] [--select a,b] [--endpoint <service.port>] [--days <n>]
+//     [--link <pv_…>] [--confirm] [--url <http://127.0.0.1:4800>]
+//   e.g. share --instance <id> --endpoint web.http --days 3 --confirm; revoke --link <pv_…> | --instance <id> [--endpoint …]
 //   node scripts/sova-project.mjs approve --project <path> --def-hash <sha256:…> [--checkout <path>]
 //
 // The server is --url, else $SOVA_URL, else http://127.0.0.1:$SOVA_PORT (default 4800). Its token
@@ -18,7 +20,7 @@ import { resolve } from "node:path";
 import { exitOf } from "../shared/project-contract.ts";
 import { tokenHeaders } from "./sova-token.mjs";
 
-const VALUE = new Set(["project", "instance", "checkout", "branch", "from", "slot", "services", "lines", "resources", "ref", "select", "url", "def-hash"]);
+const VALUE = new Set(["project", "instance", "checkout", "branch", "from", "slot", "services", "lines", "resources", "ref", "select", "endpoint", "days", "link", "url", "def-hash"]);
 const FLAG = new Set(["restart", "keep-data", "confirm"]);
 const PATHS = new Set(["project", "checkout"]);
 
@@ -74,6 +76,9 @@ if (verb === "approve") {
     resources: list(opts.resources),
     ref: opts.ref,
     select: list(opts.select),
+    endpoint: opts.endpoint,
+    days: num("days"),
+    link: opts.link,
     confirm: opts.confirm,
   };
   for (const k of Object.keys(body)) if (body[k] === undefined) delete body[k];

@@ -9,6 +9,9 @@ test("the list, one project, its tabs and its overseer", () => {
   assert.deepEqual(projectsRouteFromHash("#/projects/prj_1/requirements"), { kind: "project", projectId: "prj_1", tab: "requirements" });
   assert.deepEqual(projectsRouteFromHash("#/projects/prj_1/cost/"), { kind: "project", projectId: "prj_1", tab: "cost" });
   assert.deepEqual(projectsRouteFromHash("#/projects/prj_1/settings"), { kind: "project", projectId: "prj_1", tab: "settings" });
+  assert.deepEqual(projectsRouteFromHash("#/projects/prj_1/branches"), { kind: "project", projectId: "prj_1", tab: "branches" });
+  // The tab was Services once: that address is no alias of Branches, and no route.
+  assert.equal(projectsRouteFromHash("#/projects/prj_1/services"), null);
   assert.deepEqual(projectsRouteFromHash("#/projects/prj_1/overseer"), { kind: "overseer", projectId: "prj_1" });
   for (const tab of PROJECT_TABS) {
     const want = tab === "overview" ? { kind: "project", projectId: "j1" } : { kind: "project", projectId: "j1", tab };

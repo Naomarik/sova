@@ -298,6 +298,9 @@ snapshot can be passed as `--baseline-json '{"inputs":[{"path":"lib/file","state
 matches subtract pre-existing dirty paths; refused inputs remain unknown. Snapshot baselines are
 caller declarations, distinguished from Git blob hashes. Without Git, explicit paths and declared
 snapshot inputs work; missing baseline or change inventory is unknown, never complete.
+Nothing passes such a snapshot on a caller's behalf: no session, worker or hook runs the
+companion by itself. With a known `--base` and no snapshot, every committed and working-tree change
+since that base is included, pre-existing dirty paths too, visibly.
 
 `--decisions-json` is `{ "decisions": [ { "ids": ["§app/rule"], "disposition": "preserved",
 "reason": "Compared the refactor", "basis": [{"kind":"inspection", "revision":null,

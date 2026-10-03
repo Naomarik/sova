@@ -12109,13 +12109,14 @@
     "§chat.slash-commands/compact-handoff": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "verified",
       "code": [
         "pi-config/extensions/compact-handoff/index.ts",
         "pi-config/extensions/compact-handoff/handoff.ts",
         "pi-config/extensions/compact-handoff/index.test.ts",
         "pi-config/extensions/compact-handoff/handoff.test.ts",
         "pi-config/extensions/compact-handoff/tests/run.mjs",
+        "pi-config/extensions/compact-handoff/tests/runtime.mjs",
         "pi-config/extensions/compact-handoff/README.md",
         "pi-config/README.md"
       ],
@@ -12281,6 +12282,24 @@
         "pi-config/extensions/claude-code/provider/session-bridge.ts",
         "pi-config/extensions/claude-code/provider/bridge.test.ts",
         "server/session-fork-routes.ts"
+      ]
+    },
+    "§chat.slash-commands/compact-handoff-row": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/compact-handoff/run.ts",
+        "server/transcript.ts",
+        "shared/protocol.ts",
+        "src/components/Thread.tsx",
+        "src/lib/explain.ts",
+        "server/transcript-handoff.test.ts",
+        "src/lib/explain.test.ts"
+      ],
+      "requires": [
+        "§chat.slash-commands/in-the-thread",
+        "§chat.slash-commands/compact-handoff"
       ]
     }
   },

@@ -4,6 +4,7 @@ import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, statSync } f
 import { connect } from "node:net";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import {
+  adoptedService,
   CONTRACT_FILE,
   closureOf,
   DefinitionError,
@@ -42,10 +43,10 @@ import type { PortOwner } from "../port-owner";
 import { startStaticServe, staticServes, StaticServeError, stopStaticServe } from "../preview-serve";
 import { projectOf } from "../project-root";
 import { confinementOf, type Confinement } from "./confine";
-import { DriverError, rssOf, type Driver, type OnceSpec, type UnitSpec } from "./drivers";
+import { adoptedStatus, cgroupPids, DriverError, rssOf, SystemdDriver, type AdoptedStatus, type Driver, type OnceSpec, type UnitSpec } from "./drivers";
 import { hostPortOwner } from "./proctable";
 import type { NoteFacts } from "./note";
-import { hostedBusy, serverCheckout } from "./self-host";
+import { hostedBusy, restartGateLog, RESTART_DELAY_SEC, scheduleRestart, serverCheckout, serverStart } from "./self-host";
 import { checkShare, instanceOfLink, linksOf, OVERSEER_SHARE_REFUSAL, revokeLinks, ShareFailure, shareInstance, shareRefusal } from "./share";
 import { publishedPorts, publisherOf, type ContainerQuery } from "./container-ports";
 import {
@@ -298,6 +299,10 @@ export interface EngineDeps {
   projectIdOf?: (root: string) => Promise<string | null>;
   /** Every port this Sova process binds or names (server/project-previews.ts sovaPorts); tests fake it. */
   sovaPorts?: () => Promise<ReadonlySet<number>>;
+  /** An adopted unit's status, read only (§app.project-services/adopt); tests fake it. */
+  adoptedStatus?: (unit: string) => Promise<AdoptedStatus>;
+  /** Schedule an adopted unit's gated restart: null when scheduled, else why not; tests fake it. */
+  scheduleRestart?: (unit: string, mainPid: number | null) => Promise<string | null>;
 }
 
 /** Everything one verb run knows. */
@@ -364,6 +369,8 @@ export class ProjectEngine {
   private readonly hostBusy: () => string | null;
   private readonly projectIdOf: (root: string) => Promise<string | null>;
   private readonly sovaPorts: () => Promise<ReadonlySet<number>>;
+  private readonly adoptedStatus: (unit: string) => Promise<AdoptedStatus>;
+  private readonly scheduleRestart: (unit: string, mainPid: number | null) => Promise<string | null>;
   private sharedChain = new Map<string, Promise<unknown>>();
   /** The conformance runner (server/project-services/conform.ts), wired at startup. */
   conformer: ((body: unknown, caller: Caller) => Promise<VerbResult>) | null = null;
@@ -396,6 +403,8 @@ export class ProjectEngine {
         return listProjects().find((p) => p.root === root)?.id ?? null;
       });
     this.sovaPorts = deps.sovaPorts ?? (async () => (await import("../project-previews")).sovaPorts());
+    this.adoptedStatus = deps.adoptedStatus ?? ((unit) => adoptedStatus(unit));
+    this.scheduleRestart = deps.scheduleRestart ?? ((unit, pid) => scheduleRestart(unit, pid));
   }
 
   unitOf(scopeId: string, service: string): string {
@@ -620,13 +629,41 @@ export class ProjectEngine {
    * stops or restarts slot 0 is the operator's, confirmed, and never while a hosted session is busy.
    */
   private selfHosted(run: Run): void {
+    this.adoptedSlot0(run);
     const rec = run.rec;
     if (!rec || rec.slot !== 0 || !["apply", "down", "reset", "teardown"].includes(run.verb)) return;
     const self = this.selfCheckout();
-    if (!self || self !== run.project) return;
+    if (!self || self !== run.project || this.adoptedIn(run)) return;
     const what = `${run.verb} of the main checkout stops or restarts the Sova server's own checkout (${self})`;
     if (run.caller.kind !== "operator") throw new VerbFailure("needs-confirm", `${what}: the operator does it, confirmed (sova-project ${run.verb} … --confirm)`);
     if (!run.req.confirm) throw new VerbFailure("needs-confirm", `${what}: confirm it (sova-project ${run.verb} … --confirm)`);
+    const busy = this.hostBusy();
+    if (busy) throw new VerbFailure("busy", `${what}, and ${busy}: try again once they are idle`);
+  }
+
+  /** The service slot 0 adopts when `run` aims at slot 0 (its instance, or the main checkout before one exists), else null (§app.project-services/adopt). */
+  private adoptedIn(run: Run): ServiceDecl | null {
+    const s = run.def ? adoptedService(run.def) : null;
+    if (!s) return null;
+    const slot0 = run.rec ? run.rec.slot === 0 : (run as Run & { target?: string }).target === run.project;
+    return slot0 ? s : null;
+  }
+
+  /**
+   * An adopted slot 0 (§app.project-services/adopt): Sova never starts or stops its unit, so up, down,
+   * reset and teardown are refused; apply, which schedules its restart, keeps the self-host rule for
+   * every caller and project: the operator, confirmed, and never while a hosted session is busy.
+   */
+  private adoptedSlot0(run: Run): void {
+    const s = this.adoptedIn(run);
+    if (!s) return;
+    const unit = s.adopt!.unit;
+    if (["up", "down", "reset", "teardown"].includes(run.verb))
+      throw new VerbFailure("refused-slot0", `slot 0's ${s.name} is the adopted unit ${unit}, which Sova never starts or stops: apply schedules its restart (the operator, confirmed)`);
+    if (run.verb !== "apply") return;
+    const what = `apply of slot 0 restarts the adopted unit ${unit}`;
+    if (run.caller.kind !== "operator") throw new VerbFailure("needs-confirm", `${what}: the operator does it, confirmed (sova-project apply … --confirm, or Apply on the project's Services tab)`);
+    if (!run.req.confirm) throw new VerbFailure("needs-confirm", `${what}: confirm it (sova-project apply … --confirm)`);
     const busy = this.hostBusy();
     if (busy) throw new VerbFailure("busy", `${what}, and ${busy}: try again once they are idle`);
   }
@@ -847,7 +884,7 @@ export class ProjectEngine {
       const def = this.need(run);
       precheck?.(def);
       await this.supervised(def);
-      await this.provision(run, def, run.rec, false);
+      await this.provisionUnlessAdopted(run, def, run.rec);
       return run.rec;
     }
     const target = await this.targetCheckout(run);
@@ -924,8 +961,15 @@ export class ProjectEngine {
       run.rec.checkout = canonical(target.checkout);
       this.save(run.rec);
     }
-    await this.provision(run, def, run.rec, false);
+    await this.provisionUnlessAdopted(run, def, run.rec);
     return run.rec;
+  }
+
+  /** An adopted slot 0 runs no setup and no data step: its unit is set up outside Sova (§app.project-services/adopt). */
+  private async provisionUnlessAdopted(run: Run, def: ProjectDef, rec: InstanceRecord): Promise<void> {
+    const s = rec.slot === 0 ? adoptedService(def) : null;
+    if (!s) return this.provision(run, def, rec, false);
+    if (def.setup.length || def.data.length) run.steps.push({ id: "setup", kind: "setup", result: "skipped", ms: 0, detail: `slot 0 is the adopted unit ${s.adopt!.unit}: nothing is set up here` });
   }
 
   /** Data resources (skipped when they exist) then setup steps (skipped when their fingerprint holds); `force` redoes both. */
@@ -1090,6 +1134,7 @@ export class ProjectEngine {
     const o = this.ownerIn(scope, s)(port);
     const unit = this.unitOf(scope.id, s.name);
     if (typeof o === "object" && (s.static !== undefined ? o.pid === process.pid : this.driver.owns(unit, o.pid))) return { held: true, own: true, who: `its own process (pid ${o.pid})` };
+    if (typeof o === "object" && s.adopt && scope.slot === 0 && cgroupPids(s.adopt.unit).includes(o.pid)) return { held: true, own: true, who: `its adopted unit ${s.adopt.unit} (pid ${o.pid})` };
     const mine = this.containerOf(def, scope, s);
     if (mine && (await publishedPorts(this.containerQuery, mine.engine, mine.name)).has(port)) return { held: true, own: true, who: `its own container ${mine.name}` };
     let other: string | null = null;
@@ -1345,6 +1390,9 @@ export class ProjectEngine {
 
   /** Start `names` and what they require (shared first), each waiting for its readiness; what already runs is left alone. */
   private async bringUp(run: Run, rec: InstanceRecord, def: ProjectDef, names: string[]): Promise<void> {
+    const adopted = rec.slot === 0 ? adoptedService(def) : null;
+    if (adopted && closureOf(def, names).some((s) => s.name === adopted.name))
+      throw new VerbFailure("refused-slot0", `slot 0's ${adopted.name} is the adopted unit ${adopted.adopt!.unit}, which Sova never starts`, { service: adopted.name });
     await this.stopRemovedDue(run, rec, def);
     // The host's shared services are never a confined run's to stop.
     if (!rec.confined) await this.stopSharedRemoved(run, rec.project);
@@ -1468,6 +1516,8 @@ export class ProjectEngine {
   private async apply(run: Run): Promise<void> {
     const rec = run.rec!;
     const def = this.need(run);
+    const adopted = this.adoptedIn(run);
+    if (adopted) return this.applyAdopted(run, def, rec, adopted);
     await this.supervised(def);
     const scope = scopeOf(rec);
     const names = run.req.services?.length ? run.req.services : def.services.filter((s) => s.scope === "checkout").map((s) => s.name);
@@ -1516,6 +1566,37 @@ export class ProjectEngine {
       });
       await this.waitReady(run, def, scope, s, unit);
     }
+  }
+
+  /**
+   * apply on an adopted slot 0 (§app.project-services/adopt): its build when declared and changed, then,
+   * in place of a reload, the unit's gated restart scheduled RESTART_DELAY_SEC from now. Nothing is
+   * waited for: the server can't watch a restart that may be its own.
+   */
+  private async applyAdopted(run: Run, def: ProjectDef, rec: InstanceRecord, s: ServiceDecl): Promise<void> {
+    const unit = s.adopt!.unit;
+    if (run.req.services?.length && !run.req.services.includes(s.name)) throw new VerbFailure("invalid-request", `slot 0 runs only the adopted ${s.name}`);
+    const st = await this.adoptedStatus(unit);
+    if (st.state === "missing") throw new VerbFailure(st.detail ? "unsupported" : "not-found", st.detail ?? `the adopted unit ${unit} is not loaded: install it first`, { service: s.name });
+    if (s.build) {
+      const b = s.build;
+      const scope = scopeOf(rec);
+      await this.step(run, `build:${s.name}`, "build", async () => {
+        const argv = b.run.map((a) => render(a, this.vars(def, scope)));
+        const fp = this.fingerprint(scope, argv, b.inputs);
+        if (rec.prints[`build:${s.name}`] === fp) return { result: "skipped", fingerprint: fp };
+        await this.supervised(def);
+        await this.hook(def, scope, `build-${s.name}`, b.run, b.timeout, "apply", join(scope.checkout, s.cwd));
+        rec.prints[`build:${s.name}`] = fp;
+        this.save(rec);
+        return { result: "done", fingerprint: fp };
+      });
+    }
+    await this.step(run, `restart:${s.name}`, "reload", async () => {
+      const why = await this.scheduleRestart(unit, st.pid);
+      if (why) throw new VerbFailure("unsupported", `the restart of ${unit} could not be scheduled (${why}): nothing restarts; restart it outside Sova once nothing is busy`, { service: s.name });
+      return { result: "done", detail: `restart scheduled: ${unit} restarts in ${RESTART_DELAY_SEC} s unless a session this server hosts is busy then (${restartGateLog()})` };
+    });
   }
 
   private async reset(run: Run): Promise<void> {
@@ -1684,7 +1765,12 @@ export class ProjectEngine {
     const lines = Math.min(Math.max(run.req.lines ?? 100, 1), 500);
     const names = run.req.services?.length ? run.req.services : run.def ? run.def.services.filter((s) => s.scope === "checkout").map((s) => s.name) : Object.keys(rec.desired);
     const out: LogLine[] = [];
-    for (const n of names) for (const l of await this.driver.logs(this.unitOf(rec.id, n), lines)) out.push({ t: l.t, service: n, text: l.text });
+    const adopted = rec.slot === 0 && run.def ? adoptedService(run.def) : null;
+    for (const n of names) {
+      // An adopted unit's journal, read as any systemd unit's (§app.project-services/adopt).
+      const got = adopted?.name === n ? await new SystemdDriver().logs(adopted.adopt!.unit.replace(/\.service$/, ""), lines) : await this.driver.logs(this.unitOf(rec.id, n), lines);
+      for (const l of got) out.push({ t: l.t, service: n, text: l.text });
+    }
     // Oldest first: by time where the driver has it, else each service's own order.
     const stable = out.map((l, i) => ({ l, i }));
     stable.sort((a, b) => (a.l.t && b.l.t ? a.l.t.localeCompare(b.l.t) : 0) || a.i - b.i);
@@ -1749,6 +1835,10 @@ export class ProjectEngine {
     const out: ServiceView[] = [];
     const scope = scopeOf(rec);
     for (const s of def.services) {
+      if (s.adopt && rec.slot === 0) {
+        out.push(await this.observeAdopted(def, rec, s));
+        continue;
+      }
       const sc = s.scope === "shared" ? this.sharedScope(def, rec.project, scope.confine) : scope;
       const unit = this.unitOf(sc.id, s.name);
       const ports = this.allPorts(def, sc)[s.name] ?? {};
@@ -1786,6 +1876,30 @@ export class ProjectEngine {
     return out;
   }
 
+  /** Slot 0's adopted unit as it is now, read only: its readiness on the unit's own ports, and when it started (§app.project-services/adopt). */
+  private async observeAdopted(def: ProjectDef, rec: InstanceRecord, s: ServiceDecl): Promise<ServiceView> {
+    const unit = s.adopt!.unit;
+    const ports = { ...s.adopt!.ports };
+    const st = await this.adoptedStatus(unit);
+    const self = this.selfCheckout() === rec.project;
+    const head = self ? serverStart().head : null;
+    const about = `adopted unit${self ? " (this server)" : ""}${st.startedAt ? `, started ${st.startedAt}` : ""}${head ? ` at ${head.slice(0, 12)}` : ""}`;
+    const base = { name: s.name, scope: s.scope, kind: "process" as const, unit, pid: st.pid, ports };
+    if (st.state !== "active" && st.state !== "activating") return { ...base, state: st.state === "failed" ? "failed" : "stopped", detail: st.detail && st.state !== "inactive" ? `${about}: ${st.detail}` : about };
+    const t0 = Date.now();
+    let probe = "running";
+    let ok = st.state === "active";
+    const tcp = s.ready && "tcp" in s.ready ? s.ready.tcp : Object.keys(ports)[0];
+    if (s.ready && "http" in s.ready) {
+      probe = `http :${ports[s.ready.http]}${s.ready.path}`;
+      ok = await httpOk(ports[s.ready.http]!, s.ready.path);
+    } else if (tcp !== undefined) {
+      probe = `tcp :${ports[tcp]}`;
+      ok = await tcpOpen(ports[tcp]!);
+    }
+    return { ...base, state: ok ? "ready" : st.state === "activating" ? "starting" : "degraded", ready: { probe, ok, ms: Date.now() - t0 }, detail: about, ...(st.rssBytes !== null ? { rssBytes: st.rssBytes } : {}) };
+  }
+
   private heldElsewhere(scope: Scope, s: ServiceDecl, ports: Record<string, number>): boolean {
     const owner = this.ownerIn(scope, s);
     return Object.values(ports).some((p) => owner(p) !== "none");
@@ -1795,7 +1909,9 @@ export class ProjectEngine {
     const rec = run.rec;
     if (!rec) return "absent";
     const own = services.filter((s) => s.scope === "checkout");
-    const desired = own.filter((s) => rec.desired[s.name] === "running");
+    // An adopted slot 0's unit is always wanted: the operator runs it (§app.project-services/adopt).
+    const adopted = rec.slot === 0 && run.def ? adoptedService(run.def)?.name : undefined;
+    const desired = own.filter((s) => rec.desired[s.name] === "running" || s.name === adopted);
     const active = own.filter((s) => s.state === "ready" || s.state === "starting" || s.state === "degraded");
     if (!desired.length) return active.length ? "degraded" : "stopped";
     return desired.every((s) => s.state === "ready") ? "running" : "degraded";
@@ -1946,6 +2062,14 @@ export class ProjectEngine {
   async reconcile(): Promise<string[]> {
     const did: string[] = [];
     const reg = readRegistry();
+    // This server as its own project's adopted slot 0: nothing to start, its start noted (§app.project-services/adopt).
+    for (const rec of reg.instances.filter((i) => i.slot === 0 && i.project === this.selfCheckout())) {
+      const s = this.bare(rec).def;
+      const adopted = s ? adoptedService(s) : null;
+      if (!adopted) continue;
+      const { startedAt, head } = serverStart();
+      did.push(`${rec.id}: ${adopted.adopt!.unit} is this server, started ${startedAt} at ${head ?? "no commit"}`);
+    }
     const touched = new Set<string>();
     for (const rec of reg.instances) {
       const want = Object.entries(rec.desired);

@@ -1,4 +1,4 @@
-// The Services tab's view of a project's status (§app.project-services/services-ui): copies by slot with
+// The Branches tab's view of a project's status (§app.project-services/services-ui): copies by slot with
 // their checkout services, the shared services once each, HTTP readiness ports, and what runs now.
 import assert from "node:assert/strict";
 import { test } from "node:test";
@@ -79,7 +79,7 @@ const adoptDef = parseDefinition(
   }),
 );
 
-test("an adopted slot 0 names its unit, on the tab and in Running copies; a branch copy of the same definition does not", () => {
+test("an adopted slot 0 names its unit, on the tab and in Running branches; a branch copy of the same definition does not", () => {
   const v = servicesView("prj_1", "/p", [inst("m", 0, "running", [svc("server", "checkout", "ready", { http: 4800 })]), inst("b", 1, "running", [svc("server", "checkout", "ready", { http: 4820 })])], () => adoptDef);
   assert.deepEqual(
     v.copies.map((c) => c.adopted ?? null),
@@ -122,4 +122,33 @@ test("the adopt stand-in as :4930 answered it: its definition's adopt names the 
   const v = servicesView("prj_hbwzdqmw", "/w/tmp/fixture/adopt", [real], () => fixture);
   assert.equal(v.copies[0]!.adopted, "sova-gate-4940.service");
   assert.equal(runningOf({ projectId: "prj_hbwzdqmw", name: "Adopt stand-in", root: "/w/tmp/fixture/adopt" }, [real], () => fixture)!.copies[0]!.adopted, "sova-gate-4940.service");
+});
+
+test("each copy carries its entry under its own definition: the open endpoint's port there and the path; none without open or the port", () => {
+  const opened = parseDefinition(JSON.stringify({ version: 1, services: { web: { cmd: ["node", "web.js"], ports: { http: { base: 4100 } }, ready: { http: "http", path: "/health" } } }, open: { endpoint: "web.http", path: "/home" } }));
+  const main = inst("m", 0, "running", [svc("web", "checkout", "ready", { http: 4100 })]);
+  const branch = inst("b", 3, "running", [svc("web", "checkout", "ready", { http: 4130 })]);
+  const old = inst("o", 1, "running", [svc("web", "checkout", "ready", { http: 4110 })]);
+  // Each copy reads its own checkout's definition: a branch without `open` gets no entry, whatever main declares.
+  const defs = (checkout: string) => (checkout.endsWith("/o") ? def : opened);
+  const v = servicesView("prj_1", "/p", [branch, old, main], defs);
+  assert.deepEqual(
+    v.copies.map((c) => [c.slot, c.open ?? null]),
+    [
+      [0, { endpoint: "web.http", port: 4100, path: "/home" }],
+      [1, null],
+      [3, { endpoint: "web.http", port: 4130, path: "/home" }],
+    ],
+  );
+  const run = runningOf({ projectId: "prj_1", name: "p", root: "/p" }, [branch, old, main], defs)!;
+  assert.deepEqual(
+    run.copies.map((c) => [c.slot, c.open ?? null]),
+    [
+      [0, { endpoint: "web.http", port: 4100, path: "/home" }],
+      [1, null],
+      [3, { endpoint: "web.http", port: 4130, path: "/home" }],
+    ],
+  );
+  // A copy whose status lacks the endpoint's port (its record predates the port) has no entry.
+  assert.equal(servicesView("prj_1", "/p", [inst("x", 2, "running", [svc("web", "checkout", "ready", {})])], () => opened).copies[0]!.open, undefined);
 });

@@ -1,7 +1,7 @@
 /**
- * The Services tab and the host-wide Running copies (§app.project-services/services-ui), as the pages
+ * The Branches tab and the host-wide Running branches (§app.project-services/services-ui), as the pages
  * read them: `GET /api/projects/:pid/services` and `GET /api/services`. The engine's status joined with
- * what the definition says about each service's HTTP readiness and the copy's share endpoints. The
+ * what the definition says about each service's HTTP readiness, the copy's share endpoints and its entry point. The
  * verbs answer the engine's own result (`VerbResult`, shared/project-contract.ts).
  */
 
@@ -12,11 +12,20 @@ export interface ServiceRowView extends ServiceView {
   http?: { port: number; path: string };
 }
 
+/** A copy's entry point (the definition's `open`): its endpoint, that endpoint's port in this copy, and the page's path. */
+export interface EntryView {
+  endpoint: string;
+  port: number;
+  path: string;
+}
+
 /** One copy (an instance of a checkout) with its checkout services only; its links and share standing as status gives them. */
 export interface CopyView extends Omit<InstanceSummary, "services"> {
   services: ServiceRowView[];
   /** The systemd unit slot 0 adopts (§app.project-services/adopt): Sova never starts, stops or tears it down. */
   adopted?: string;
+  /** Where a person opens it, when its definition declares `open` and it has that port. */
+  open?: EntryView;
 }
 
 export interface ProjectServicesView {
@@ -47,6 +56,8 @@ export interface RunningCopy {
   starting?: true;
   /** The unit an adopted slot 0 runs as: no Stop is offered. */
   adopted?: string;
+  /** Where a person opens it, as on the tab. */
+  open?: EntryView;
 }
 
 export interface RunningShared {
@@ -72,7 +83,7 @@ export interface HostServicesView {
   projects: RunningProject[];
 }
 
-/** Verbs the Services routes run as the operator. */
+/** Verbs the Branches tab's routes run as the operator. */
 export const SERVICES_UI_VERBS = ["up", "down", "apply", "reset", "teardown", "logs", "share", "revoke"] as const;
 export type ServicesUiVerb = (typeof SERVICES_UI_VERBS)[number];
 export const SERVICES_LOG_LINES = 200;

@@ -375,7 +375,7 @@ export function registerBuildEffects(host: OrgHostApi, engine: string): void {
     const m = await mergeBack(row.worktree, root, title);
     noteBuildMerged(sessionId, true);
     // Main moved: its copy's onMerge services reload now, never holding up the merge (§app.project-services/on-merge).
-    void mainMoved(root).catch((err) => console.warn(`[on-merge] ${root}: ${err instanceof Error ? err.message : String(err)}`));
+    void mainMoved(root, undefined, { merged: true }).catch((err) => console.warn(`[on-merge] ${root}: ${err instanceof Error ? err.message : String(err)}`));
     return { commit: m.sha };
   });
 

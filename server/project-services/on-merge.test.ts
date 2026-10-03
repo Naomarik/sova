@@ -104,6 +104,19 @@ test("main moved: the main checkout's copy reloads only its running onMerge serv
   assert.equal(await mainMoved(project, deps()), null, "the same move never reloads twice");
 });
 
+test("after Merge Branch, a HEAD never seen before counts as moved; the tick's first sight doesn't", async () => {
+  const other = join(parent, "other.json");
+  commit("merged.txt");
+  const web0 = await pidOn(BASE);
+  assert.equal(await mainMoved(project, { ...deps(), file: other }), null, "the tick: first sight");
+  commit("merged-2.txt");
+  rmSync(other);
+  assert.match((await mainMoved(project, { ...deps(), file: other }, { merged: true })) ?? "", /onMerge reloaded web/);
+  assert.notEqual(await pidOn(BASE), web0);
+  // The main file has not seen these moves: it catches up once, then stays quiet.
+  await mainMoved(project, deps());
+});
+
 test("the merge and the tick at once reload once", async () => {
   commit("twice.txt");
   const web0 = await pidOn(BASE);

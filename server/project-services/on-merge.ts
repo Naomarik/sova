@@ -99,19 +99,19 @@ const chains = new Map<string, Promise<unknown>>();
 
 /**
  * Main's HEAD at `root` now: when it moved since last seen, reload its onMerge services. One check per
- * project at a time (Merge Branch and the tick never reload twice for one move). Returns the note
- * written, if any.
+ * project at a time (Merge Branch and the tick never reload twice for one move). `merged`: Sova's Merge
+ * Branch just moved it, so a HEAD never seen before counts as moved too. Returns the note written, if any.
  */
-export function mainMoved(root: string, deps?: Partial<OnMergeDeps>): Promise<string | null> {
+export function mainMoved(root: string, deps?: Partial<OnMergeDeps>, opts: { merged?: boolean } = {}): Promise<string | null> {
   const key = canonical(root);
   const prev = chains.get(key) ?? Promise.resolve();
-  const next = prev.catch(() => {}).then(() => check(key, deps));
+  const next = prev.catch(() => {}).then(() => check(key, deps ?? {}, opts.merged === true));
   chains.set(key, next);
   void next.finally(() => chains.get(key) === next && chains.delete(key)).catch(() => {});
   return next;
 }
 
-async function check(root: string, given: Partial<OnMergeDeps> = {}): Promise<string | null> {
+async function check(root: string, given: Partial<OnMergeDeps>, merged: boolean): Promise<string | null> {
   const d = await depsOf(given);
   const head = await d.head(root);
   if (!head) return null;
@@ -120,8 +120,8 @@ async function check(root: string, given: Partial<OnMergeDeps> = {}): Promise<st
   if (seen === head) return null;
   f.heads[root] = head;
   writeFile(d.file, f);
-  // A first sight only records where main is.
-  if (seen === undefined) return null;
+  // A first sight only records where main is (unless a merge just moved it).
+  if (seen === undefined && !merged) return null;
   const rec = slot0Of(root);
   if (!rec) return null;
   const def = definitionAt(rec.checkout);

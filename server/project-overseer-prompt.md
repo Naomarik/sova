@@ -99,7 +99,7 @@ tool result says when that look comes: say what is waiting and why instead.
   waits in a hold like a preview. The result and `sova_previews` name the link by its id, endpoint,
   branch, expiry and state, never its address.
 - Who gets a running copy's link: in a standalone project it is only for the operator, who sees it in
-  Sova (on the project's Services tab): tell them it is ready, and never send it to anyone else. In an
+  Sova (on the project's Branches tab): tell them it is ready, and never send it to anyone else. In an
   organization's project you may then send it to one of its people with `sova_send_to_person` and its
   `preview` id. Take it away with `sova_project_verbs` revoke (at any level, never held) once it has
   served its purpose.

@@ -662,7 +662,7 @@ export class ProjectEngine {
       throw new VerbFailure("refused-slot0", `slot 0's ${s.name} is the adopted unit ${unit}, which Sova never starts or stops: apply schedules its restart (the operator, confirmed)`);
     if (run.verb !== "apply") return;
     const what = `apply of slot 0 restarts the adopted unit ${unit}`;
-    if (run.caller.kind !== "operator") throw new VerbFailure("needs-confirm", `${what}: the operator does it, confirmed (sova-project apply … --confirm, or Apply on the project's Services tab)`);
+    if (run.caller.kind !== "operator") throw new VerbFailure("needs-confirm", `${what}: the operator does it, confirmed (sova-project apply … --confirm, or Apply on the project's Branches tab)`);
     if (!run.req.confirm) throw new VerbFailure("needs-confirm", `${what}: confirm it (sova-project apply … --confirm)`);
     const busy = this.hostBusy();
     if (busy) throw new VerbFailure("busy", `${what}, and ${busy}: try again once they are idle`);
@@ -680,7 +680,7 @@ export class ProjectEngine {
       if (caller.kind === "operator" && !run.req.confirm)
         throw new VerbFailure("needs-confirm", "a share link lets anyone who has it use this copy as if they were on this computer: confirm it (sova-project share … --confirm)");
       if (caller.kind === "overseer") throw new VerbFailure("needs-confirm", OVERSEER_SHARE_REFUSAL);
-      if (caller.kind === "session") throw new VerbFailure("forbidden", "a coding session never shares a copy: the operator does, from the project's Services tab");
+      if (caller.kind === "session") throw new VerbFailure("forbidden", "a coding session never shares a copy: the operator does, from the project's Branches tab");
       if (caller.kind === "conform") throw new VerbFailure("forbidden", "conformance never shares a copy");
     }
     if (caller.kind === "operator") {

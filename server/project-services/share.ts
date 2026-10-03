@@ -27,7 +27,7 @@ export class ShareFailure extends Error {
 }
 
 export const UNREGISTERED_REFUSAL = "Only a registered project's copies can be shared.";
-export const OVERSEER_SHARE_REFUSAL = "The operator shares it from the project's Services tab.";
+export const OVERSEER_SHARE_REFUSAL = "The operator shares it from the project's Branches tab.";
 
 /** Why no copy of this definition can be shared, or null. */
 export function shareRefusal(def: ProjectDef): string | null {

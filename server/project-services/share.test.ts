@@ -143,7 +143,7 @@ test("sharing again answers the same link, its expiry the later; days beyond the
 test("who shares: the operator confirmed, the project overseer through its act; the global Overseer needs the operator; a session never", async () => {
   const ov = shaped(await engine.run("share", { instance: a.instance, endpoint: "web.http" }, { kind: "overseer", id: "ov1" }));
   assert.equal(ov.error?.code, "needs-confirm");
-  assert.equal(ov.error?.message, "The operator shares it from the project's Services tab.");
+  assert.equal(ov.error?.message, "The operator shares it from the project's Branches tab.");
   const se = shaped(await engine.run("share", { instance: a.instance, endpoint: "web.http" }, { kind: "session", id: "s1", root: project, own: [a.checkout!] }));
   assert.equal(se.error?.code, "forbidden");
   const acts: unknown[][] = [];

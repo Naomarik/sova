@@ -130,7 +130,7 @@ async function check(root: string, given: Partial<OnMergeDeps>, merged: boolean)
   if (!names.length) return null;
   let line: string | null;
   const self = d.selfCheckout();
-  if (self && canonical(self) === root) line = `Main moved to ${head.slice(0, 7)}: onMerge never reloads the checkout this Sova runs from; apply it from the Services tab.`;
+  if (self && canonical(self) === root) line = `Main moved to ${head.slice(0, 7)}: onMerge never reloads the checkout this Sova runs from; apply it from the Branches tab.`;
   else {
     try {
       line = noteLine(head, names, await d.run("apply", { instance: rec.id, services: names }, SYSTEM_ON_MERGE));

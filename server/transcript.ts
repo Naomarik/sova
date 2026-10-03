@@ -7,6 +7,7 @@ import {
   type EntryKind,
   type EntryMeta,
   type ExplanationInfo,
+  type HandoffRunInfo,
   type ToolContent,
   type ToolRowInfo,
   type TranscriptItem,
@@ -569,11 +570,37 @@ function explainRow(id: string, entry: Entry): TranscriptItem[] {
   return [it];
 }
 
-/** The dedupe key of an explain-doc entry (its data.id), or null for anything else. */
-function explainKey(entry: Entry): string | null {
-  if (entry.type !== "custom" || entry.customType !== EXPLAIN_DOC) return null;
+const HANDOFF_RUN = "compact-handoff-run";
+const HANDOFF_STATUSES: readonly HandoffRunInfo["status"][] = ["running", "saved", "failed", "cancelled", "interrupted"];
+
+/** A /compact-handoff run's row (§chat.slash-commands/compact-handoff-row): the extension appends
+    `{v: 1, id, status, at, focus?, path?, error?}` (pi-config/extensions/compact-handoff/run.ts)
+    at the fork's start (`running`) and again, same id, when the run ends; normalizeEntries renders
+    only the newest per id. An entry this version can't read: no row. */
+function handoffRunRow(id: string, entry: Entry): TranscriptItem[] {
   const d: any = entry.data;
-  return d && typeof d === "object" && typeof d.id === "string" ? d.id : null;
+  if (!d || d.v !== 1 || typeof d.id !== "string" || !d.id || !HANDOFF_STATUSES.includes(d.status)) return [];
+  const s = (v: unknown): string => (typeof v === "string" ? v : "");
+  const run: HandoffRunInfo = { id: d.id, status: d.status };
+  if (s(d.focus)) run.focus = s(d.focus);
+  if (s(d.path)) run.path = s(d.path);
+  if (s(d.error)) run.error = s(d.error);
+  const text =
+    run.status === "running" ? `Writing a handoff note${run.focus ? `: ${run.focus}` : ""}`
+    : run.status === "saved" ? `Handoff note saved${run.path ? `: ${run.path}` : ""}`
+    : run.status === "failed" ? `Handoff note failed${run.error ? `: ${run.error}` : ""}`
+    : run.status === "cancelled" ? "Handoff cancelled"
+    : "Handoff interrupted";
+  const it = item(id, "info", entry, text);
+  it.handoffRun = run;
+  return [it];
+}
+
+/** The dedupe key of an entry rendered once per run id (explain-doc, compact-handoff-run), or null. */
+function runKey(entry: Entry): string | null {
+  if (entry.type !== "custom" || (entry.customType !== EXPLAIN_DOC && entry.customType !== HANDOFF_RUN)) return null;
+  const d: any = entry.data;
+  return d && typeof d === "object" && typeof d.id === "string" ? `${entry.customType}:${d.id}` : null;
 }
 
 /** The Overseer sent the user message `targetId`: a row that renders nothing itself — the client
@@ -746,6 +773,7 @@ function entryRows(entry: Entry, fallbackId: string, state?: { model?: string })
       if (entry.customType === "btw-thread-entry") return btwRow(id, entry);
       if (entry.customType === ALIGN_DOC) return alignRow(id, entry);
       if (entry.customType === EXPLAIN_DOC) return explainRow(id, entry);
+      if (entry.customType === HANDOFF_RUN) return handoffRunRow(id, entry);
       if (entry.customType === OVERSEER_SENT_ENTRY) return overseerSentRow(id, entry);
       if (entry.customType === SESSION_SENT_ENTRY) return sessionSentRow(id, entry);
       if (entry.customType === PROFILE_ENTRY) return profileRow(id, entry);
@@ -777,15 +805,15 @@ export function normalizeEntries(entries: Entry[]): TranscriptItem[] {
   // Align-doc entries are revisions of one document: only the newest renders (none if it's cleared).
   let newestAlign = -1;
   entries.forEach((e, i) => { if (isAlignDoc(e)) newestAlign = i; });
-  // Each /explain run appends a running entry at spawn and a final one (same data.id) at settle:
-  // per id, only the newest renders, so a settled run is one row. Entries without a string id
-  // are no key (explainRow drops them anyway).
-  const newestExplain = new Map<string, number>();
-  entries.forEach((e, i) => { const k = explainKey(e); if (k !== null) newestExplain.set(k, i); });
+  // Each /explain and /compact-handoff run appends a running entry at its start and a final one
+  // (same data.id) at settle: per id, only the newest renders, so a settled run is one row.
+  // Entries without a string id are no key (their rows drop them anyway).
+  const newestRun = new Map<string, number>();
+  entries.forEach((e, i) => { const k = runKey(e); if (k !== null) newestRun.set(k, i); });
   entries.forEach((e, i) => {
     if (isAlignDoc(e) && i !== newestAlign) return;
-    const k = explainKey(e);
-    if (k !== null && newestExplain.get(k) !== i) return;
+    const k = runKey(e);
+    if (k !== null && newestRun.get(k) !== i) return;
     out.push(...normalizeEntry(e, `line${i}`, state));
   });
   return out;

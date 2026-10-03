@@ -183,11 +183,22 @@ a safety net. Nothing new is written to the pi
 session for this, and a restarted bridge never resumes a Claude session: pi's transcript remains
 the truth, re-sent by folding as before.
 
-The one resume is a fork. When `/explain` forks a session whose model runs on the claude-code
-provider, the parent's bridge hands the child a fork point (in `PI_CLAUDE_CODE_FORK`): its live
-CLI session id, how many pi messages that session has heard, and their fingerprint. It offers
-one only while its CLI child is running, idle, in step with pi and has heard at least one
-message. The child's bridge tries it once, for its first CLI launch, and resumes the parent's
+The only resumes are forks, by two routes. A fork point names the parent's live CLI session id,
+how many pi messages that session has heard, and their fingerprint; a bridge offers one only
+while its CLI child is running, idle, in step with pi and has heard at least one message.
+
+- **A background fork** (`/explain`'s, and the read-only fork `/compact-handoff` writes its note
+  in) is a child process: when the parent's model runs on the claude-code provider, the parent's
+  bridge hands the child its fork point in `PI_CLAUDE_CODE_FORK`.
+- **A UI fork** ("Fork from here" on a Claude Code chat, §chat.session-fork/claude-resume) runs in
+  the same process as its source: creating it seeds the bridge, in memory, with the source's fork
+  point for the fork's pi session. The fork's first conversation turn takes that seed only if the
+  source's CLI session still offers exactly that point (same CLI session, message count,
+  fingerprint and cwd), so it resumes the source's live CLI session only while that session is
+  still at the forked reply; a source that has moved on, stopped or relaunched since, or a seed a
+  restart dropped, leaves the fork folding.
+
+The fork's bridge tries the point once, for its first CLI launch, and resumes the parent's
 record into a new one (`--resume <parent> --fork-session`), sending only the new user messages,
 so its first request starts from the parent's cached prefix. It folds as before instead when the
 cwd differs, when its transcript doesn't start with exactly that prefix, when what follows holds

@@ -27,13 +27,14 @@
  * strip, gallery), or by opening the file by hand.
  *
  * Source ownership: `store.ts` owns the on-disk contract and the session-entry
- * shape, `prompt.ts` the child's instructions, `worker.ts` the forked process,
- * `explain.ts` the run lifecycle, and this file only the pi wiring.
+ * shape, `prompt.ts` the child's instructions, `explain.ts` the run lifecycle
+ * and the child's policy, and this file only the pi wiring. The forked process
+ * itself — copy, cache identity, request mirror, call gate, runner — is the
+ * shared background fork in `../subagents/fork/`.
  */
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
-import { parentForkPoint } from "../claude-code/provider/fork-point.ts";
-import { rpcScopedModel } from "../subagents/runner.ts";
+import { claudeForkPointFor } from "../subagents/fork/background.ts";
 import { ExplainRuns, MAX_LIVE, wakeMessage, type ExplainHost } from "./explain.ts";
 import { parentIdentity } from "./identity.ts";
 import { EXPLAIN_ENTRY_TYPE, type ExplainEntryData } from "./store.ts";
@@ -129,7 +130,7 @@ export default function explainExtension(pi: ExtensionAPI): void {
 			const parent = parentIdentity(ctx.sessionManager);
 			const model = ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : "";
 			// A Claude CLI parent: its live CLI session is where the child picks up, not a folded replay.
-			const claudeFork = rpcScopedModel(model) ? parentForkPoint(parent.id) : undefined;
+			const claudeFork = claudeForkPointFor(model, parent.id);
 			try {
 				const started = runs.begin({
 					topic,

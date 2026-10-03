@@ -75,11 +75,12 @@ export function reconcileItems(prev: readonly TranscriptItem[] | null | undefine
 }
 
 /**
- * Where a transcript was scrolled: at the end (following), or with a row's top `offset` px below
- * the top of the view. A row, not a pixel position, because rows are added at the end meanwhile
- * and rows not drawn yet have estimated heights.
+ * Where a transcript was scrolled: at the end (following), with the last row read there (`lastRow`:
+ * rows that come after it while away are new), or with a row's top `offset` px below the top of
+ * the view. A row, not a pixel position, because rows are added at the end meanwhile and rows not
+ * drawn yet have estimated heights.
  */
-export type ScrollSpot = { follow: true } | { follow: false; rowId: string; offset: number };
+export type ScrollSpot = { follow: true; lastRow?: string } | { follow: false; rowId: string; offset: number };
 
 export interface CachedTranscript {
   items: TranscriptItem[];

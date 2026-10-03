@@ -27,9 +27,9 @@ spends part of its readiness wait downloading: the first confined run starts wit
 fetch is long, add a `setup` step that only fetches (`clojure -P -M:<aliases>`, `npm ci
 --ignore-scripts`), with `inputs` the dependency files and a long `timeout` (up to 1800): setup
 runs at create, before any service starts, in its own unit with its own log. A service's `build`
-does not help here: it runs only at `apply`, when its inputs change. Git dependencies
-(`:git/sha`) resolve only when the host's `~/.gitlibs` already has them; a confined run can't add
-them.
+does not help here: it runs only at `apply`, when its inputs change. A confined run gives each
+unit private writable copies of `~/.m2`, `~/.npm`, `~/.cache`, `~/.clojure/.cpcache` and
+`~/.gitlibs`; the rest of your home, `~/.deps.clj` included, is read-only there.
 
 ## Datastores as a process per copy
 - **Datomic dev transactor**: a `.sova/bin/transactor` wrapper copies the project's dev
@@ -89,7 +89,8 @@ Clojure aliases: the last alias's `:main-opts` win (`-M:test:test-repl` runs `:t
 `templates/bb.edn` beside it (an empty config, so bb never resolves the project's own `bb.edn`
 `:deps`, which writes under your home and fails in a confined run), set its `PORT_ENV` and
 `TEST_DIRS`, and `chmod +x` it. A script a hook runs should write only inside the checkout, its
-data dir or /tmp: a confined run sees the rest of your home read-only.
+data dir or /tmp (plus the private caches above): a confined run sees the rest of your home
+read-only.
 
 - **Clojure, warm**: an on-demand `test-repl` service (with `reload: "restart"`, so `apply`
   restarts it on source changes) (`clojure -M:test:<repl alias> --port

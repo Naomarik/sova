@@ -612,6 +612,7 @@ describe("sova_project_verbs share is the project's services/share (§app.projec
       assert.equal(held.result.ok, true, JSON.stringify(held.result.error));
       assert.deepEqual(held.result.links, [], "nothing minted while held");
       assert.match(held.result.steps.find((s) => s.id === "share")?.detail ?? "", /^Held: the link to site\.http of a running copy .*waits until /);
+      assert.match(held.text, /^share: Held: the link to site\.http of a running copy .*so the operator can cancel it/, "the model reads the hold first");
       const holds = holdsOf();
       assert.equal(holds.length, 1);
       assert.equal(holds[0]!.what, "A preview link: site.http of a running copy (" + instance + ")");

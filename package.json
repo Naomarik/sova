@@ -18,7 +18,7 @@
     "e2e:settings-footer-save": "node scripts/e2e/settings-footer-save.mjs",
     "e2e:transcript-drift": "node scripts/e2e/transcript-drift.mjs",
     "e2e:transcript-follow": "node scripts/e2e/transcript-follow.mjs",
-    "dev:hermetic": "node scripts/hermetic-agent-dir.mjs --unlock-url && PORT=${SOVA_PORT:-4810} PI_CODING_AGENT_DIR=\"$PWD/.agent\" tsx server/index.ts",
+    "dev:hermetic": "node scripts/hermetic-agent-dir.mjs --unlock-url && PORT=${SOVA_PORT:-4810} PI_CODING_AGENT_DIR=\"$PWD/.agent\" scripts/start-server.sh",
     "prices:update": "tsx scripts/prices-update.mjs",
     "voice:install": "tsx scripts/voice.ts",
     "statecharts": "tsx scripts/statecharts.ts",

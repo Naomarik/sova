@@ -28,6 +28,12 @@ Then run `sova`, and `sova open` to open **http://127.0.0.1:4800** already unloc
 existing pi provider login.
 [First-time login or command not found?](docs/getting-started.md)
 
+The server runs on Node by default. To run it on [Bun](https://bun.sh) (1.4.2, pinned in
+`mise.toml`) instead, write `{"runtime": "bun"}` to `~/.pi/agent/sova/runtime.json` (or set
+`SOVA_RUNTIME=bun`) and start it with `scripts/start-server.sh`; it falls back to Node, and says
+why in `~/.pi/agent/sova/runtime-fallback.json`, when Bun is missing or keeps failing to start.
+`GET /api/health` reports the runtime in use.
+
 ## More work, less window switching
 
 - **Try several approaches at once.** Start parallel sessions with different models, send a shared

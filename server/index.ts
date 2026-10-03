@@ -47,6 +47,7 @@ import { receiverSpecial, startTopicDelivery } from "./topic-delivery";
 import { projectOverseerOfPath } from "./project-overseer-store";
 import { canonicalPath, LIVE_DIR, resolveSessionPath, SESSIONS_DIR } from "./paths";
 import { stateRoot } from "./state-root";
+import { markListening, runtimeInfo } from "./runtime-choice";
 import { claudeCodeModelCount, listModels, listRegistryModels, resolveContext } from "./models";
 import { setFavorite } from "./model-favorites";
 import { markOwned } from "./write-guard";
@@ -168,6 +169,8 @@ const SERVER_HEAD: string | null = (() => {
     return null;
   }
 })();
+/** The runtime this process runs on, the one the setting chose, and a fallback's reason (§app.server-runtime/health). */
+const SERVER_RUNTIME = runtimeInfo(process.env, stateRoot());
 
 // Embedded pi runtimes / extensions must never take the server down.
 process.on("uncaughtException", (err) => console.error("[uncaughtException]", err));
@@ -209,7 +212,7 @@ app.onError((err, c) => {
 });
 
 // What this process runs (§chat.profiles/live-commit): its start and its checkout's commit then.
-app.get("/api/health", (c) => c.json({ ok: true, startedAt: SERVER_STARTED_AT, head: SERVER_HEAD }));
+app.get("/api/health", (c) => c.json({ ok: true, startedAt: SERVER_STARTED_AT, head: SERVER_HEAD, runtime: SERVER_RUNTIME }));
 // A browser's way in (§app.access/unlock): the token it was given sets the install's cookie.
 app.post("/api/auth/unlock", bodyLimit({ maxSize: 4096 }), unlock);
 // Both routes stay behind the gate, and refuse peer-listener and relayed calls as well.
@@ -1573,7 +1576,9 @@ export const server = serve({ fetch: app.fetch, port: PORT, hostname: HOST }, (i
   setAuthPort(info.port);
   // The link extension's tools call this server back here: the real bound port (PORT=0 in tests).
   setLinkOrigin(linkOrigin(info.port));
-  console.log(`sova server on http://${HOST}:${info.port}`);
+  console.log(`sova server on http://${HOST}:${info.port} (${SERVER_RUNTIME.name} ${SERVER_RUNTIME.version})`);
+  // A Bun boot that got this far is healthy: its failed-boot count starts over (§app.server-runtime/fallback).
+  markListening(stateRoot());
   startMesh({ fetch: app.fetch, upgrade: upgradeSovaSocket });
   // Public links: the share listener, a gateway's router, a routed host's ingress (server/share/runtime.ts).
   void startShareRuntime();

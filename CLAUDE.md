@@ -267,7 +267,7 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
 ## Live server restart (worker suicide)
 
 The live server on 127.0.0.1:4800 is the systemd user unit `sova-runtime.service`
-(`~/.config/systemd/user/`, `Restart=always`, ExecStart `node --import tsx server/index.ts`). It has
+(`~/.config/systemd/user/`, `Restart=always`, ExecStart `node --import tsx server/index.ts`, or `scripts/start-server.sh` once switched: see **Server runtime**). It has
 no file watcher: editing `server/**`, `shared/**` or `pi-config/extensions/mode/**` restarts nothing,
 and the process keeps the code it loaded at start. A change goes live only on
 `systemctl --user restart sova-runtime.service`. Workers spawned by a hosted session (pi or
@@ -310,6 +310,46 @@ forces). `dev:server:tsx` is the old plain watch, with no gate. While a watch se
 session, apply server-graph edits from the orchestrator itself, batched, as the last step of a turn.
 Hosted runtimes are never idle-disposed: they live until archived (running subagents die with it),
 a foreign-writer reload, or server shutdown.
+
+## Server runtime (Node or Bun)
+
+The server runs on Node (`node --import tsx server/index.ts`) or Bun (`bun server/index.ts`, Bun
+1.4.2, pinned in `mise.toml`). Spec: `§app/server-runtime`. One module decides,
+`server/runtime-choice.ts` (node builtins only, run as a plain `node` script by the launcher):
+
+- **See what runs:** `GET /api/health` → `runtime: {name, version, chosen, fallback?}`. `name` is
+  this process (`process.versions.bun`), `chosen` what the setting asked for at its start;
+  `fallback` `{at, reason}` appears only when they differ. The start log line names it too
+  (`sova server on http://… (bun 1.4.2)`).
+- **The setting:** `<state root>/runtime.json` `{"runtime": "node" | "bun"}` (the state root is
+  `<agent dir>/sova/`, so a hermetic `.agent` has its own). Missing or malformed = node.
+  `SOVA_RUNTIME=node|bun` in the environment wins. No Settings picker.
+- **Who follows it:** `scripts/start-server.sh` (the launcher; it `exec`s the server, so a unit's
+  MainPID is the server), `pnpm run dev:server` (each watcher restart decides again) and
+  `pnpm run dev:hermetic`. Helper scripts the server spawns follow `process.execPath`, so on Bun
+  they run on Bun. `pnpm start`, `dev:server:tsx` and `pnpm test` stay on Node/tsx.
+- **Bun binary:** `$SOVA_BUN`, else `bun` on PATH, else `mise which bun`. `SOVA_NODE` names the
+  node binary the launcher uses (default `node` on PATH).
+- **Fallback to Node:** when Bun is chosen but not found, or when three Bun boots in a row never
+  reached listening. Counter: `<state root>/runtime-bun-boots` (the launcher adds one per Bun
+  start; a Bun server deletes it once listening; choosing node resets it; delete it by hand to
+  give Bun three fresh tries). The reason lands in `<state root>/runtime-fallback.json` `{at,
+  reason}` and on the launcher's stderr (the unit's journal).
+- **Switch:** edit `runtime.json` (or `SOVA_RUNTIME` in the unit's environment), then restart under
+  the rules of **Live server restart** above (the gate, never `systemctl restart` from a hosted
+  session). The change takes effect only at that restart. Roll back = `{"runtime": "node"}` plus the
+  same restart.
+- **The live unit** still runs node directly. To put it under the switch, its ExecStart becomes the
+  launcher (the operator edits `~/.config/systemd/user/sova-runtime.service`, then
+  `systemctl --user daemon-reload` and a gated restart; an agent never edits the unit):
+  `ExecStart=/path/to/sova/scripts/start-server.sh` (with `WorkingDirectory` unchanged, and `node`
+  — plus `bun` or `SOVA_BUN` — reachable on the unit's PATH).
+- **Testing on Bun:** in a worktree, `SOVA_RUNTIME=bun pnpm run dev:hermetic` (or
+  `SOVA_RUNTIME=bun SOVA_PORT=48xx …`), or write `.agent/sova/runtime.json`; check
+  `curl -s 127.0.0.1:<port>/api/health`. `SOVA_BUN=/nonexistent` drives the fallback.
+- **Known Bun caveats:**
+  - Bun 1.4.2's resolver matches `./x` to `X.tsx` case-insensitively when `x.ts` and `X.tsx` share
+    a folder. Import such a file with its extension (`./parts.ts`).
 
 ## Working rules
 

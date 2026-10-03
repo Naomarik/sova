@@ -56,7 +56,7 @@ function Ports(props: { service: ServiceRowView; named?: boolean }) {
           {([name, port]) => (
             <span class="text-mono services-port">
               <Show when={props.service.http?.port === port} fallback={portLabel(name, port)}>
-                <a href={httpHref(location.hostname, props.service.http!)} target="_blank" rel="noopener" title={`Open ${props.service.name} on port ${port}`}>
+                <a href={httpHref(location.hostname, { port, path: "/" })} target="_blank" rel="noopener" title={`Open ${props.service.name} on port ${port}`}>
                   {portLabel(name, port)}
                 </a>
               </Show>

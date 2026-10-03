@@ -4,7 +4,6 @@ import type { PlaybookInfo } from "../../shared/protocol";
 import { defaultRemoteOf } from "../files";
 import { listModels } from "../models";
 import { listPlaybooks } from "../playbooks";
-import { claudeCodeProviderEnabled } from "../web-settings";
 import { readProject } from "./spaces";
 
 /**
@@ -20,21 +19,23 @@ export interface ModelChoice {
   model: string;
   thinking: string;
 }
-/** The default, then the fallback when this host offers no credentials for the default. */
-export const ONBOARD_MODEL: ModelChoice = { model: "claude-code-cli/opus", thinking: "medium" };
-export const ONBOARD_FALLBACK: ModelChoice = { model: "openai-codex/gpt-6-astra", thinking: "medium" };
+/** The run's models in order of preference, each at medium: Opus 5.5 through Claude Code (plain, or the 1M-window ref a host may list instead), then the fallback. */
+export const ONBOARD_MODELS = ["claude-code-cli/opus", "claude-code-cli/opus[1m]", "openai-codex/gpt-6-astra"] as const;
+export const ONBOARD_THINKING = "medium";
+
+export const NO_ONBOARD_MODEL =
+  "No model for the Project verbs playbook: this host offers neither Claude Code opus nor openai-codex gpt-6-astra. Pick a model to run it with.";
 
 /**
- * The run's model: the one asked for (thinking as asked, else medium), else the default, else the
- * fallback when `offered` (the refs this host offers with credentials) is known and lacks the
- * default but has the fallback. Unknown offers keep the default: the session's open says if it
- * can't take it. Pure.
+ * The run's model: the one asked for (thinking as asked, else medium); else the first of
+ * ONBOARD_MODELS that `offered` (the refs this host's model picker lists) has, at medium. Never a
+ * ref outside `offered`: null when it has none of them or is unknown (null). Pure.
  */
-export function onboardModel(input: { model?: string | null; thinking?: string | null }, offered: readonly string[] | null): ModelChoice {
+export function onboardModel(input: { model?: string | null; thinking?: string | null }, offered: readonly string[] | null): ModelChoice | null {
   const asked = input.model?.trim();
-  if (asked) return { model: asked, thinking: input.thinking?.trim() || "medium" };
-  if (offered && !offered.includes(ONBOARD_MODEL.model) && offered.includes(ONBOARD_FALLBACK.model)) return { ...ONBOARD_FALLBACK };
-  return { ...ONBOARD_MODEL };
+  if (asked) return { model: asked, thinking: input.thinking?.trim() || ONBOARD_THINKING };
+  const pick = offered ? ONBOARD_MODELS.find((m) => offered.includes(m)) : undefined;
+  return pick ? { model: pick, thinking: ONBOARD_THINKING } : null;
 }
 
 /** What the host knows about a project before starting the playbook on it. */
@@ -81,15 +82,10 @@ export async function onboardFacts(projectId: string): Promise<OnboardFacts> {
   };
 }
 
-/**
- * The refs this host offers with credentials. Claude Code's models register per session runtime, so a
- * server that opened none yet lists none: the Claude Code switch (Settings → Experimental) is what
- * offers the default. Null: unknown (the default is kept).
- */
+/** The refs this host's model picker lists (credentials configured); null when they can't be read. */
 async function offeredRefs(): Promise<string[] | null> {
   try {
-    const refs = (await listModels()).map((m) => m.ref);
-    return claudeCodeProviderEnabled() ? [...refs, ONBOARD_MODEL.model] : refs;
+    return (await listModels()).map((m) => m.ref);
   } catch {
     return null;
   }
@@ -99,8 +95,8 @@ async function offeredRefs(): Promise<string[] | null> {
 export function onboardStartFrom(facts: OnboardFacts, input: { why?: string | null; model?: string | null; thinking?: string | null }, offered: readonly string[] | null): OnboardStart {
   const choice = onboardModel(input, offered);
   const title = onboardTitle(facts.name);
-  const invalid = onboardInvalid(facts);
-  if (invalid || !facts.playbook) return { prompt: "", title, ...choice, invalid: invalid ?? "" };
+  const invalid = onboardInvalid(facts) ?? (choice ? null : NO_ONBOARD_MODEL);
+  if (invalid || !facts.playbook || !choice) return { prompt: "", title, model: choice?.model ?? "", thinking: choice?.thinking ?? ONBOARD_THINKING, invalid: invalid ?? "" };
   return { prompt: playbookTurnText(facts.playbook, input.why ?? ""), title, ...choice };
 }
 

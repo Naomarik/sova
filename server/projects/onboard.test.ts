@@ -1,25 +1,34 @@
 // What `verbs/onboard` starts (§app.project-runtime/onboard): the shipped Project verbs playbook as the
-// first prompt with the run's why, its title, the model (asked, else claude-code opus medium, else the
-// openai-codex fallback when only that is offered), and the host's refusals in their order.
+// first prompt with the run's why, its title, the model (asked, else the first of claude-code opus,
+// opus[1m] and openai-codex gpt-6-astra the host lists, at medium; none: refused), and the host's
+// refusals in their order.
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { listPlaybooks } from "../playbooks";
-import { ONBOARD_FALLBACK, ONBOARD_MODEL, ONBOARD_PLAYBOOK_ID, onboardInvalid, onboardModel, onboardStartFrom, type OnboardFacts } from "./onboard";
+import { NO_ONBOARD_MODEL, ONBOARD_MODELS, ONBOARD_PLAYBOOK_ID, onboardInvalid, onboardModel, onboardStartFrom, type OnboardFacts } from "./onboard";
 import { linkedPlaybook } from "../../shared/playbooks";
 
 const PLAYBOOK = { title: "Project verbs", dir: "/x/playbooks/project-verbs", body: "# Project verbs\n" };
 const facts = (over: Partial<OnboardFacts> = {}): OnboardFacts => ({ name: "Motors", root: "/w/motors", remote: null, rootExists: true, playbook: PLAYBOOK, ...over });
 
-test("the model: asked wins (medium unless given); else claude-code opus medium; the fallback only when offers are known and lack opus", () => {
+test("the model: asked wins (medium unless given); else the first of opus, opus[1m], gpt-6-astra the host lists, at medium; never an unlisted ref", () => {
   assert.deepEqual(onboardModel({ model: "zai/glm-5.3" }, null), { model: "zai/glm-5.3", thinking: "medium" });
   assert.deepEqual(onboardModel({ model: "zai/glm-5.3", thinking: "high" }, []), { model: "zai/glm-5.3", thinking: "high" });
-  assert.deepEqual(onboardModel({}, null), ONBOARD_MODEL);
-  assert.deepEqual(ONBOARD_MODEL, { model: "claude-code-cli/opus", thinking: "medium" });
-  assert.deepEqual(onboardModel({}, ["claude-code-cli/opus", ONBOARD_FALLBACK.model]), ONBOARD_MODEL);
-  assert.deepEqual(onboardModel({}, ["anthropic/claude-sonnet-5", ONBOARD_FALLBACK.model]), { model: "openai-codex/gpt-6-astra", thinking: "medium" });
-  // Neither offered: keep the default, so the session's open says what it can't take.
-  assert.deepEqual(onboardModel({ model: "  " }, ["zai/glm-5.3"]), ONBOARD_MODEL);
+  // This host's list (no plain opus): Opus 5.5 through its 1M ref.
+  assert.deepEqual(
+    onboardModel({}, ["claude-code-cli/opus[1m]", "claude-code-cli/sonnet", "claude-code-cli/haiku", "claude-code-cli/claude-fable-5-1[1m]"]),
+    { model: "claude-code-cli/opus[1m]", thinking: "medium" },
+  );
+  assert.deepEqual(onboardModel({}, ["claude-code-cli/opus[1m]", "claude-code-cli/opus", "openai-codex/gpt-6-astra"]), { model: "claude-code-cli/opus", thinking: "medium" });
+  assert.deepEqual(onboardModel({}, ["anthropic/claude-sonnet-5", "openai-codex/gpt-6-astra"]), { model: "openai-codex/gpt-6-astra", thinking: "medium" });
+  // Nothing usable listed, or the list unreadable: no model, never a guess.
+  assert.equal(onboardModel({ model: "  " }, ["zai/glm-5.3", "claude-code-cli/sonnet"]), null);
+  assert.equal(onboardModel({}, null), null);
+  assert.deepEqual([...ONBOARD_MODELS], ["claude-code-cli/opus", "claude-code-cli/opus[1m]", "openai-codex/gpt-6-astra"]);
+  const none = onboardStartFrom(facts(), { why: "x" }, ["zai/glm-5.3"]);
+  assert.equal(none.invalid, NO_ONBOARD_MODEL);
+  assert.equal(none.prompt, "");
 });
 
 test("refusals: a remote folder, then a missing one, then no playbook", () => {
@@ -27,18 +36,19 @@ test("refusals: a remote folder, then a missing one, then no playbook", () => {
   assert.equal(onboardInvalid(facts({ remote: "vps", rootExists: false, playbook: null })), "Motors's folder is on vps: the playbook runs only on a local folder.");
   assert.equal(onboardInvalid(facts({ rootExists: false, playbook: null })), "Motors's folder /w/motors is missing on this host.");
   assert.equal(onboardInvalid(facts({ playbook: null })), 'No playbook "project-verbs" is listed for Motors.');
-  const refused = onboardStartFrom(facts({ playbook: null }), { why: "first time" }, null);
+  const refused = onboardStartFrom(facts({ playbook: null }), { why: "first time" }, ["claude-code-cli/opus[1m]"]);
   assert.equal(refused.prompt, "");
   assert.match(refused.invalid ?? "", /No playbook/);
 });
 
 test("the first prompt is the playbook's turn plus the why; the title names the project", () => {
-  const s = onboardStartFrom(facts(), { why: "  bb.edn gained a worker  " }, null);
+  const s = onboardStartFrom(facts(), { why: "  bb.edn gained a worker  " }, ["claude-code-cli/opus[1m]"]);
   assert.equal(s.invalid, undefined);
   assert.equal(s.title, "Project verbs: Motors");
   assert.ok(s.prompt.startsWith("Playbook: Project verbs — /x/playbooks/project-verbs\n"));
   assert.ok(s.prompt.endsWith("\n---\n\nbb.edn gained a worker\n"));
-  assert.ok(!onboardStartFrom(facts(), { why: " " }, null).prompt.includes("---"));
+  assert.equal(s.model, "claude-code-cli/opus[1m]");
+  assert.ok(!onboardStartFrom(facts(), { why: " " }, ["claude-code-cli/opus[1m]"]).prompt.includes("---"));
 });
 
 test("the shipped catalog lists project-verbs for any folder, with its PLAYBOOK.md body", async () => {

@@ -1,6 +1,6 @@
 import { createSignal, For, type JSX, Show } from "solid-js";
 import { PREVIEW_PURPOSE_MAX } from "../../shared/preview-links";
-import { getProjectPreviews, mintPreview, turnOffPreview } from "../lib/api";
+import { getProjectPreviews, mintPreview, runProjectVerb, turnOffPreview } from "../lib/api";
 import { createPoll } from "../lib/poll";
 import { previewRow, senderLine } from "../lib/preview-rows";
 import {
@@ -44,7 +44,9 @@ function SessionLink(props: { href: string | null; children: JSX.Element }) {
  * for, its coding session, branch and what it serves, whether it serves now, who made it, its
  * expiry, Copy Link (the kept link, or one minted in this page) and Turn Off (every link sent from
  * it too); the people it was sent to on a Sent to line, each with a Turn Off of their own link;
- * then New Preview, which opens the form with the warning. Read every 5 seconds while the page shows.
+ * then New Preview, which opens the form with the warning. A running copy's link shows the copy's
+ * state (Running, Starting, Stopped) and, stopped, Start: the operator's `up`, the only thing that
+ * starts it (a visit never does). Read every 5 seconds while the page shows.
  */
 export function PreviewsCard(props: { projectId: string }) {
   const poll = createPoll(() => getProjectPreviews(props.projectId), POLL_MS);
@@ -57,6 +59,8 @@ export function PreviewsCard(props: { projectId: string }) {
   const [busy, setBusy] = createSignal(false);
   const [armed, setArmed] = createSignal<string | null>(null);
   const [formOpen, setFormOpen] = createSignal(false);
+  /** Copies this page is starting, by instance: Starting until `up` answers. */
+  const [starting, setStarting] = createSignal<ReadonlySet<string>>(new Set());
 
   const list = () => previewGroups(poll.data()?.previews ?? []);
   const address = () => poll.data()?.address;
@@ -102,6 +106,23 @@ export function PreviewsCard(props: { projectId: string }) {
     poll.refetch();
   };
 
+  /** Start a stopped copy (`up` as the operator); a refusal says why. */
+  const start = async (instance: string) => {
+    if (starting().has(instance)) return;
+    setStarting(new Set([...starting(), instance]));
+    try {
+      const r = await runProjectVerb(props.projectId, "up", { instance });
+      toast(r.ok ? "Copy started." : `Couldn't start the copy. ${r.error?.message ?? ""}`.trim());
+    } catch (x) {
+      toast(`Couldn't start the copy. ${errText(x)}`);
+    } finally {
+      const next = new Set(starting());
+      next.delete(instance);
+      setStarting(next);
+      poll.refetch();
+    }
+  };
+
   const closeForm = () => {
     setFormOpen(false);
     setFormError(null);
@@ -124,7 +145,7 @@ export function PreviewsCard(props: { projectId: string }) {
           <For each={list()}>
             {(g) => {
               const v = g.preview;
-              const row = () => previewRow(v, Date.now(), links()[v.id]);
+              const row = () => previewRow(v.instance && starting().has(v.instance) ? { ...v, copy: { state: "starting", slot: v.copy?.slot ?? 0 } } : v, Date.now(), links()[v.id]);
               return (
                 <li class="list-row previews-row">
                   <div class="list-main">
@@ -144,7 +165,7 @@ export function PreviewsCard(props: { projectId: string }) {
                       <Show when={row().matched}>
                         <span>Matched by the app's folder</span>
                       </Show>
-                      <span class={row().state.tone === "ok" ? "chip chip-success" : "chip chip-warn"}>
+                      <span class={row().state.tone === "ok" ? "chip chip-success" : row().state.tone === "info" ? "chip chip-info" : "chip chip-warn"}>
                         <span class="chip-dot" aria-hidden="true" />
                         {row().state.text}
                       </span>
@@ -183,6 +204,13 @@ export function PreviewsCard(props: { projectId: string }) {
                     </Show>
                   </div>
                   <div class="shares-row-actions previews-row-actions">
+                    <Show when={row().start}>
+                      {(s) => (
+                        <button type="button" class="button button-sm" title="Starts this copy. A visit to its link never starts it." onClick={() => void start(s().instance)}>
+                          Start
+                        </button>
+                      )}
+                    </Show>
                     <Show when={row().url}>
                       {(url) => (
                         <button type="button" class="button button-sm" onClick={() => copy(url())}>

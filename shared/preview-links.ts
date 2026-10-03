@@ -60,7 +60,12 @@ export interface PreviewView {
   /** A running copy's share link (§app.project-services/share): the instance and its endpoint (`<service>.<port>`). */
   instance?: string;
   endpoint?: string;
+  /** A copy link's copy as the engine's status reads it now: its endpoint's service `running`, `starting` or `stopped`
+      (§mesh.public/preview-card: the operator may Start a stopped one; a visit never starts anything). Absent when the copy is gone. */
+  copy?: { state: PreviewCopyState; slot: number };
 }
+
+export type PreviewCopyState = "running" | "starting" | "stopped";
 
 export interface PreviewList {
   previews: PreviewView[];

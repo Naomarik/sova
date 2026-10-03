@@ -1,5 +1,5 @@
 import { children, createContext, createEffect, createMemo, createSignal, For, Match, on, onCleanup, Show, Switch, useContext, type JSX } from "solid-js";
-import type { TmpAttachment, TranscriptItem } from "../../shared/protocol";
+import type { HandoffRunInfo, TmpAttachment, TranscriptItem } from "../../shared/protocol";
 import type { BatonMark } from "../../shared/baton";
 import { wrapupRowIds } from "../lib/wrapup-rows";
 import { blockStreams, type LiveBlock, type LiveEntry, type LiveState, type LiveUserState } from "../lib/live";
@@ -362,6 +362,30 @@ export function InfoRow(props: { children: JSX.Element }) {
       <span class="info-row-text">
         <Icon name="info" small />
         <span>{props.children}</span>
+      </span>
+    </div>
+  );
+}
+
+/** A /compact-handoff run (§chat.slash-commands/compact-handoff-row): an info row whose icon is
+    the live dot while the fork writes; the result entry (same id) replaces it in place. */
+function HandoffRunRow(props: { run: HandoffRunInfo; text: string }) {
+  return (
+    <div class="info-row" role="note">
+      <span class="info-row-text">
+        <Show when={props.run.status === "running"} fallback={<Icon name="info" small />}>
+          {/* The explain card's 16px slot, so the dot sits where the icon would. */}
+          <span class="explain-card-live" aria-hidden="true">
+            <span class="live-dot" />
+          </span>
+        </Show>
+        <Show when={props.run.status === "failed"}>
+          <Chip tone="error">Failed</Chip>
+        </Show>
+        <Show when={props.run.status === "interrupted"}>
+          <Chip tone="warn">Interrupted</Chip>
+        </Show>
+        <span>{props.text}</span>
       </span>
     </div>
   );
@@ -884,6 +908,9 @@ export function HistoryItems(props: {
               </Match>
               <Match when={item.kind === "report" && item.report}>
                 {(report) => <ReportRow report={report()} attachments={item.attachments} />}
+              </Match>
+              <Match when={item.kind === "info" && item.handoffRun}>
+                {(run) => <HandoffRunRow run={run()} text={item.text ?? ""} />}
               </Match>
               <Match when={item.kind === "info" && isObj(item.raw) && item.raw.type === "compaction" && item.raw}>
                 {(raw) => <Compaction raw={raw()} />}

@@ -48,20 +48,26 @@ export function explainState(info: { status?: string; error?: string; note?: str
  */
 export const explainInterrupted = (info: { status?: string }): boolean => info.status === "interrupted";
 
-/** The explain id a transcript row carries, when it is an explain-doc row. */
-const explainIdOf = (item: TranscriptItem): string | undefined => item.report?.explain?.id;
+/** The run a transcript row belongs to, when it is one row per run: an explain-doc row or a
+    /compact-handoff run row (§chat.slash-commands/compact-handoff-row). */
+const runKeyOf = (item: TranscriptItem): string | undefined => {
+  const explain = item.report?.explain?.id;
+  if (explain !== undefined) return `explain:${explain}`;
+  const handoff = item.handoffRun?.id;
+  return handoff === undefined ? undefined : `handoff:${handoff}`;
+};
 
 /**
- * Live-appended rows onto a transcript. An /explain run writes two entries with the same id — a
- * running one at spawn, a finished one at settle — and live appends arrive undeduped, so an
- * explain row replaces the row already carrying its id, where that row sits: the card upgrades in
- * place instead of jumping to the bottom. Every other row is appended, as before.
+ * Live-appended rows onto a transcript. An /explain or /compact-handoff run writes two entries
+ * with the same id — a running one at its start, a finished one at settle — and live appends
+ * arrive undeduped, so such a row replaces the row already carrying its run, where that row sits:
+ * the row upgrades in place instead of jumping to the bottom. Every other row is appended, as before.
  */
 export function appendItems(list: readonly TranscriptItem[], incoming: readonly TranscriptItem[]): TranscriptItem[] {
   const next = [...list];
   for (const item of incoming) {
-    const id = explainIdOf(item);
-    const at = id === undefined ? -1 : next.findIndex((row) => explainIdOf(row) === id);
+    const key = runKeyOf(item);
+    const at = key === undefined ? -1 : next.findIndex((row) => runKeyOf(row) === key);
     if (at === -1) next.push(item);
     else next[at] = item;
   }

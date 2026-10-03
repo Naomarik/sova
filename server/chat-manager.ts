@@ -58,6 +58,7 @@ import { RunState, SessionLimits, sessionPowersExtension } from "./session-power
 import { queuePushExtension, topicStore } from "./topics";
 import { instrumentModelRuntime } from "../pi-config/extensions/llm-inflight/runtime.ts";
 import { markDegraded } from "../pi-config/extensions/llm-inflight/tracker.ts";
+import { readWebSettings } from "./web-settings";
 
 const GUARD_POLL_MS = 3000;
 /** Hosted workers' context fill, read off their transcripts' tails; shared, mtime-gated. */
@@ -66,6 +67,8 @@ const workerContextReader = new WorkerContextReader();
 /** The claude-code extension's provider flag (pi-config/extensions/claude-code/provider/index.ts
     CLAUDE_PROVIDER_FLAG). Always on: every hosted runtime that loads extensions sets it. */
 const CLAUDE_CODE_FLAG = "claude-code-provider";
+/** The mode extension's flag behind adversarial review (pi-config/extensions/mode/index.ts REVIEW_FLAG). */
+const REVIEW_FLAG = "adversarial-review";
 
 /** This server's own bound origin, for the `link` extension's `sova-link` flag (setLinkOrigin). */
 let linkOrigin: string | null = null;
@@ -93,12 +96,15 @@ export const currentLinkOrigin = (): string | null => linkOrigin;
  *   until the listener is bound; workers never get it, so the tools are inert there.
  * - `sova-link-token`: beside `sova-link`, this server's per-install token, which the link tools
  *   send back as `x-sova-token` (§app.access/callers). In-process only: never argv, never env.
+ * - `adversarial-review`: only while Settings → Experimental's Adversarial review is saved on
+ *   (§chat.alignment-review/flag); read at each runtime start, so an open chat keeps what it began with.
  */
 function sessionFlags(cwd: string, outline = true): Map<string, boolean | string> {
   const flags = new Map<string, boolean | string>(outline ? [["topic-outline-headless", true]] : []);
   const target = targetOfCwd(cwd);
   if (target) flags.set("target", target);
   flags.set(CLAUDE_CODE_FLAG, true);
+  if (readWebSettings().experimental.adversarialReview) flags.set(REVIEW_FLAG, true);
   if (linkOrigin) {
     flags.set("sova-link", linkOrigin);
     flags.set("sova-link-token", sovaToken());

@@ -1,8 +1,8 @@
 // Run: npx tsx --test server/web-settings.test.ts
 // Uses a throwaway PI_CODING_AGENT_DIR in the OS temp dir; ~/.pi is never read or written.
 //
-// Sova's own settings store (server/web-settings.ts): Settings → Experimental's switches, none
-// known today. The Claude Code provider used to be one and is always on now, so an old file's
+// Sova's own settings store (server/web-settings.ts): Settings → Experimental's switches, today
+// adversarial review alone (and its one-time reviewer seeding). The Claude Code provider used to be one and is always on now, so an old file's
 // `claudeCodeProvider` must be ignored — never required, never written, never dropped. Damage reads
 // as the defaults rather than throwing, and the write path is re-read + merge, like
 // web-sessions.ts, so a key another writer added is not lost.
@@ -24,7 +24,7 @@ const put = (text: string) => {
   writeFileSync(FILE, text);
 };
 const stored = () => JSON.parse(readFileSync(FILE, "utf8"));
-const NOTHING_ON = { experimental: {} };
+const NOTHING_ON = { experimental: { adversarialReview: false } };
 
 test("a missing file reads as nothing switched on", () => {
   rmSync(FILE, { force: true });
@@ -87,4 +87,63 @@ test("a corrupt file is replaced rather than blocking the write", () => {
   put("{ this is not json");
   assert.deepEqual(writeWebSettings({ experimental: {} }), NOTHING_ON);
   assert.deepEqual(stored(), { version: 1, experimental: {} });
+});
+
+// ── Adversarial review (§chat.alignment-review/flag, /route) ─────────────────────────────────
+const { readSubagentProfiles, writeSubagentProfiles, DEFAULT_REVIEWER } = await import("../pi-config/extensions/subagents/subagent-profiles.ts");
+const { delegateDefaults } = await import("../pi-config/extensions/mode/delegate.ts");
+const profile = (id: string, extra: Record<string, unknown> = {}) => ({ id, name: id, delegate: delegateDefaults().profiles, teams: null, members: null, specWriter: null, ...extra });
+const library = () => {
+  const s = readSubagentProfiles(agentDir);
+  assert.equal(s.state, "ok");
+  return s.state === "ok" ? s.value.profiles : [];
+};
+const libraryFile = join(agentDir, "subagent-profiles.json");
+
+test("adversarialReview: a boolean switch, off by default; a non-boolean is refused", () => {
+  rmSync(FILE, { force: true });
+  assert.deepEqual(readWebSettings(), { experimental: { adversarialReview: false } });
+  assert.deepEqual(writeWebSettings({ experimental: { adversarialReview: "yes" } }), { error: "Expected experimental.adversarialReview to be a boolean" });
+});
+
+test("saving it off writes nothing to the profiles", () => {
+  rmSync(FILE, { force: true });
+  writeSubagentProfiles(agentDir, { version: 1, profiles: [profile("a")] });
+  const before = readFileSync(libraryFile, "utf8");
+  assert.deepEqual(writeWebSettings({ experimental: { adversarialReview: false } }), { experimental: { adversarialReview: false } });
+  writeWebSettings({ experimental: {} });
+  assert.equal(readFileSync(libraryFile, "utf8"), before);
+  assert.equal(stored().seeded, undefined);
+});
+
+test("the first save that turns it on seeds keyless profiles once; None and own routes stay; off and on again seeds nothing", () => {
+  rmSync(FILE, { force: true });
+  const own = { primary: { backend: "claude-code", model: "sonnet", effort: "high" }, fallback: null };
+  writeSubagentProfiles(agentDir, { version: 1, profiles: [profile("bare"), profile("none", { reviewer: null }), profile("own", { reviewer: own })] });
+  assert.deepEqual(writeWebSettings({ experimental: { adversarialReview: true } }), { experimental: { adversarialReview: true } });
+  const [bare, none, mine] = library();
+  assert.deepEqual(bare!.reviewer, DEFAULT_REVIEWER);
+  assert.equal(none!.reviewer, null);
+  assert.deepEqual(mine!.reviewer, own);
+  assert.deepEqual(stored().seeded, { adversarialReview: true });
+  // A profile added later without a reviewer, then off and on again: the seeding already ran.
+  writeSubagentProfiles(agentDir, { version: 1, profiles: [...library(), profile("later")] });
+  const before = readFileSync(libraryFile, "utf8");
+  writeWebSettings({ experimental: { adversarialReview: false } });
+  writeWebSettings({ experimental: { adversarialReview: true } });
+  assert.equal(readFileSync(libraryFile, "utf8"), before, "idempotent: nothing written the second time");
+  assert.equal("reviewer" in library().find((p) => p.id === "later")!, false);
+});
+
+test("a malformed library is never overwritten, and the seeding waits for a later save", () => {
+  rmSync(FILE, { force: true });
+  writeFileSync(libraryFile, "{ broken");
+  writeWebSettings({ experimental: { adversarialReview: true } });
+  assert.equal(readFileSync(libraryFile, "utf8"), "{ broken");
+  assert.equal(stored().seeded, undefined, "unmarked: retried later");
+  assert.equal(stored().experimental.adversarialReview, true, "the switch itself saved");
+  writeSubagentProfiles(agentDir, { version: 1, profiles: [profile("fixed")] });
+  writeWebSettings({ experimental: { adversarialReview: true } });
+  assert.deepEqual(library()[0]!.reviewer, DEFAULT_REVIEWER);
+  assert.deepEqual(stored().seeded, { adversarialReview: true });
 });

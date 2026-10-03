@@ -34,7 +34,7 @@ import { setShowSummaries, showSummaries } from "../lib/summary-line";
 import { compressWork, setCompressWork } from "../lib/work-compression";
 import { activeThemeId, applyTheme, droppedThemeId, reconcileTheme, typography } from "../lib/theme";
 import type { SettingsTab } from "../lib/settings-nav";
-import { experimentalSaveError, setExperimentalSaved } from "../lib/experimental-draft";
+import { applySaved, experimentalDraft, experimentalSaveError, experimentalSaving, setExperimentalDraft, setExperimentalSaved } from "../lib/experimental-draft";
 import { policyDraft, policySaveError, policySaving, setPolicyDraft, setPolicySaved } from "../lib/model-policy-draft";
 import { limitsDraft, limitsSaveError, limitsSaveResult, limitsSaving, setLimitsDraft, setLimitsSaved } from "../lib/provider-limits-draft";
 import { LIMIT_MAX, LIMIT_MIN, parseLimitField } from "../lib/provider-limits";
@@ -394,16 +394,18 @@ function ClaudeCliStatusLine() {
 
 /**
  * Experimental: unfinished features, staged like every server-backed form and written by Save
- * Changes. No switch today, so the panel is its intro alone; the settings are still read when the
- * tab opens (the panel is mounted only while its tab is) so a switch added here starts from what's
- * saved — bind it to experimentalDraft / setExperimentalDraft and list it in a `settings-list`.
+ * Changes. The settings are read when the tab opens (the panel is mounted only while its tab is),
+ * so each switch starts from what's saved; each is bound to experimentalDraft / setExperimentalDraft.
  */
 function ExperimentalPanel() {
   const [webSettings] = createResource(() => getWebSettings());
   // setExperimentalSaved is untracked (settings-draft.ts), so this tracks the loaded settings only.
   createEffect(() => {
     const s = webSettings.error ? undefined : webSettings();
-    if (s) setExperimentalSaved(s.experimental);
+    if (s) {
+      setExperimentalSaved(s.experimental);
+      applySaved(s.experimental);
+    }
   });
 
   return (
@@ -412,6 +414,25 @@ function ExperimentalPanel() {
         Unfinished features. They can change or disappear, and they apply to sessions you start
         after switching them on — chats already open keep the setup they began with.
       </p>
+      <div>
+        <label class="toggle toggle-switch settings-team-enable">
+          <span>Adversarial review</span>
+          <input
+            type="checkbox"
+            checked={experimentalDraft()?.adversarialReview ?? false}
+            disabled={experimentalSaving() || experimentalDraft() === null}
+            aria-describedby="experimental-review-hint"
+            onChange={(e) => {
+              const d = experimentalDraft();
+              if (d) setExperimentalDraft({ ...d, adversarialReview: e.currentTarget.checked });
+            }}
+          />
+          <span class="toggle-box" />
+        </label>
+        <p class="field-hint" id="experimental-review-hint">
+          In align sessions, a read-only reviewer checks the plan and the diff of risky work, at most once each per alignment.
+        </p>
+      </div>
       <Show when={webSettings.error}>
         <Banner tone="error" title="Couldn't read the experimental settings." body="Nothing was changed." />
       </Show>

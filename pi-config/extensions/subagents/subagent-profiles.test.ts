@@ -26,6 +26,8 @@ import {
 	shortModel,
 	subagentProfileDefaultPath,
 	subagentProfilesPath,
+	seedReviewer,
+	DEFAULT_REVIEWER,
 	writeProfilesDefault,
 	writeSubagentProfiles,
 	type SubagentProfile,
@@ -293,4 +295,28 @@ test("reviewer (adversarial review): optional — an older profile without it pa
 	// Its slots are validated on save and counted in the providers.
 	assert.deepEqual(profileSlots(profile("r", "R", { reviewer })).slice(-2).map((s) => s.label), ["Reviewer primary", "Reviewer fallback"]);
 	assert.ok(profileProviders(profile("r", "R", { reviewer })).includes("openai-codex"));
+});
+
+test("seedReviewer: the default goes only to profiles without the key; None and routes stay; a second run writes nothing", () => {
+	const dir = tempDir();
+	const mine = { primary: claude("sonnet", "high"), fallback: null };
+	writeSubagentProfiles(dir, file([profile("bare", "Bare"), profile("none", "None", { reviewer: null }), profile("mine", "Mine", { reviewer: mine })]));
+	const first = seedReviewer(dir);
+	assert.deepEqual(first, { ok: true, seeded: ["bare"] });
+	const after = readSubagentProfiles(dir);
+	assert.ok(after.state === "ok");
+	const [bare, none, own] = after.value.profiles;
+	assert.deepEqual(bare!.reviewer, DEFAULT_REVIEWER);
+	assert.deepEqual(DEFAULT_REVIEWER, { primary: { backend: "pi", model: "openai-codex/gpt-6.1-sol", effort: "high" }, fallback: { backend: "claude-code", model: "opus[1m]", effort: "high" } });
+	assert.equal(none!.reviewer, null, "an explicit None is never overwritten");
+	assert.deepEqual(own!.reviewer, mine, "an existing route is never overwritten");
+	const bytes = fs.readFileSync(subagentProfilesPath(dir), "utf8");
+	const mtime = fs.statSync(subagentProfilesPath(dir)).mtimeMs;
+	assert.deepEqual(seedReviewer(dir), { ok: true, seeded: [] }, "idempotent");
+	assert.equal(fs.readFileSync(subagentProfilesPath(dir), "utf8"), bytes);
+	assert.equal(fs.statSync(subagentProfilesPath(dir)).mtimeMs, mtime, "not even rewritten");
+	// A malformed library is never overwritten.
+	fs.writeFileSync(subagentProfilesPath(dir), "{ nope");
+	assert.deepEqual(seedReviewer(dir), { ok: false, seeded: [] });
+	assert.equal(fs.readFileSync(subagentProfilesPath(dir), "utf8"), "{ nope");
 });

@@ -359,6 +359,31 @@ export function writeProfilesDefault(agentDir: string, value: unknown): Subagent
 	return writeJsonAtomic(subagentProfileDefaultPath(agentDir), parsed.value, agentDir);
 }
 
+// ── The reviewer's default (adversarial review) ──────────────────────────────
+
+/** The reviewer the seeding writes: Sol on pi, with Claude Code's Opus as its fallback. */
+export const DEFAULT_REVIEWER: ReviewerRoute = {
+	primary: { backend: "pi", model: "openai-codex/gpt-6.1-sol", effort: "high" },
+	fallback: { backend: "claude-code", model: "opus[1m]", effort: "high" },
+};
+
+/**
+ * Give every library profile WITHOUT a `reviewer` key the default reviewer, once adversarial review
+ * is switched on (Sova's Settings → Experimental). An explicit null (None) or an existing route is
+ * never touched, so a second run writes nothing. Through this module's own atomic writer, so the
+ * mesh's watcher syncs the library like any save. A malformed library is left alone (`ok: false`):
+ * the caller retries at a later save. Returns the ids it gave the default.
+ */
+export function seedReviewer(agentDir: string, reviewer: ReviewerRoute = DEFAULT_REVIEWER): { ok: boolean; seeded: string[] } {
+	const state = loadSubagentProfiles(agentDir);
+	if (state.state !== "ok") return { ok: false, seeded: [] };
+	const seeded = state.value.profiles.filter((p) => !("reviewer" in p)).map((p) => p.id);
+	if (seeded.length === 0) return { ok: true, seeded };
+	const value: SubagentProfilesFile = { version: 1, profiles: state.value.profiles.map((p) => ("reviewer" in p ? p : { ...p, reviewer: clone(reviewer) })) };
+	writeSubagentProfiles(agentDir, value);
+	return { ok: true, seeded };
+}
+
 // ── A chat's pick ────────────────────────────────────────────────────────────
 
 /** The pick a stored entry carries, or undefined for anything this version does not understand. */

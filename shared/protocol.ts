@@ -859,10 +859,14 @@ export interface WebSettings {
   experimental: ExperimentalSettings;
 }
 
-/** Settings → Experimental's switches, each a boolean, off unless stored `true`. None today: the
-    Claude Code provider is always on now, and an old file's `claudeCodeProvider` is ignored. A new
-    switch is a key here and in server/web-settings.ts EXPERIMENTAL_KEYS. */
-export interface ExperimentalSettings {}
+/** Settings → Experimental's switches, each a boolean, off unless stored `true`. The Claude Code
+    provider is always on now, and an old file's `claudeCodeProvider` is ignored. A new switch is a
+    key here and in server/web-settings.ts EXPERIMENTAL_KEYS. */
+export interface ExperimentalSettings {
+  /** Adversarial review of alignments (§chat.alignment-review/flag): new hosted sessions get the
+      mode extension's `adversarial-review` flag, and the web shows the review UI. */
+  adversarialReview: boolean;
+}
 
 /** Whether the Claude Code CLI is usable, for Settings → Accounts' status line. `version` is
     what `claude --version` printed; `models` counts the claude-code-cli models currently

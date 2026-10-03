@@ -1,12 +1,14 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import { seedReviewer } from "../pi-config/extensions/subagents/subagent-profiles.ts";
 import { stateRoot } from "./state-root";
 import type { ExperimentalSettings, WebSettings } from "../shared/protocol";
 
 /**
  * Sova's own settings — the ones that belong to the webapp rather than to pi or to an
- * extension's shared file. Today that is Settings → Experimental's switches, none of them yet
- * (the Claude Code provider used to be one; it is always on now, and an old file's
+ * extension's shared file. Today that is Settings → Experimental's switches: adversarial review
+ * (§chat.alignment-review/flag). The Claude Code provider used to be one; it is always on now, and an old file's
  * `experimental.claudeCodeProvider` is ignored, never written). Unlike server/settings.ts, whose
  * file shape is a contract with the subagents extension, nothing outside Sova reads this one.
  *
@@ -15,6 +17,7 @@ import type { ExperimentalSettings, WebSettings } from "../shared/protocol";
  */
 const FILE = join(stateRoot(), "settings.json");
 
+
 type ExperimentalKey = keyof ExperimentalSettings;
 
 /**
@@ -22,7 +25,7 @@ type ExperimentalKey = keyof ExperimentalSettings;
  * one key here and in ExperimentalSettings (shared/protocol.ts); reading, validating and the
  * merge-write all follow this list. Any other key in the file or in a request is ignored.
  */
-const EXPERIMENTAL_KEYS: readonly ExperimentalKey[] = [];
+const EXPERIMENTAL_KEYS: readonly ExperimentalKey[] = ["adversarialReview"];
 
 const isObject = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === "object" && !Array.isArray(v);
 
@@ -30,7 +33,7 @@ const isObject = (v: unknown): v is Record<string, unknown> => v !== null && typ
 function knownSwitches(experimental: Record<string, unknown>): ExperimentalSettings {
   const out: Record<string, boolean> = {};
   for (const key of EXPERIMENTAL_KEYS) out[key] = experimental[key] === true;
-  return out as ExperimentalSettings;
+  return out as unknown as ExperimentalSettings;
 }
 
 /** Everything off: what a missing, unreadable or foreign-shaped file reads as. */
@@ -80,7 +83,18 @@ export function writeWebSettings(raw: unknown): WebSettings | { error: string } 
   const storedExperimental = isObject(stored.experimental) ? stored.experimental : {};
 
   const experimental = { ...storedExperimental, ...changes };
-  const next = { ...stored, version: 1, experimental };
+  // The first save that turns adversarial review on gives every subagent profile without a
+  // reviewer the default one (§chat.alignment-review/route). `seeded` remembers it ran, so an
+  // off-and-on again seeds nothing; a library that can't be read leaves it unmarked, to retry.
+  const seeded: Record<string, unknown> = isObject(stored.seeded) ? { ...stored.seeded } : {};
+  if (changes.adversarialReview === true && seeded.adversarialReview !== true) {
+    try {
+      if (seedReviewer(getAgentDir()).ok) seeded.adversarialReview = true;
+    } catch (error) {
+      console.warn("[settings] seeding the default reviewer failed:", error instanceof Error ? error.message : error);
+    }
+  }
+  const next = { ...stored, version: 1, experimental, ...(Object.keys(seeded).length > 0 ? { seeded } : {}) };
   mkdirSync(dirname(FILE), { recursive: true });
   const tmp = `${FILE}.${process.pid}.tmp`;
   writeFileSync(tmp, `${JSON.stringify(next, null, "\t")}\n`);

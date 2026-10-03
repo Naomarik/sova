@@ -10,12 +10,22 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-const root = fs.mkdtempSync(path.join(os.tmpdir(), "sova-test-home-"));
+// A launcher that already made the throwaway home and put it in the ENVIRONMENT before the runtime
+// started (`scripts/run-tests.mjs --runtime bun`, for runtimes whose os.homedir() ignores a later HOME change)
+// sets SOVA_TEST_HOME to it, and owns its removal; it is kept as is.
+const inherited = process.env.SOVA_TEST_HOME && process.env.HOME === path.join(process.env.SOVA_TEST_HOME, "home") ? process.env.SOVA_TEST_HOME : null;
+const root = inherited ?? fs.mkdtempSync(path.join(os.tmpdir(), "sova-test-home-"));
 const home = path.join(root, "home");
 fs.mkdirSync(path.join(home, ".claude"), { recursive: true, mode: 0o700 });
 fs.mkdirSync(path.join(home, ".pi", "agent"), { recursive: true, mode: 0o700 });
 process.env.HOME = home;
 process.env.USERPROFILE = home;
+// Everything under test resolves the home through os.homedir(). A runtime where it ignores the HOME
+// just set (Bun 1.4.2) would point every "throwaway" path at the real home: refuse to run at all.
+if (os.homedir() !== home) {
+	if (!inherited) fs.rmSync(root, { recursive: true, force: true });
+	throw new Error(`hermetic-env: os.homedir() is ${os.homedir()}, not the throwaway HOME ${home}. This runtime ignores an in-process HOME change, so the tests would touch the real home. Set HOME in the environment before the runtime starts: use \`pnpm run test:bun\` (scripts/run-tests.mjs) for Bun.`);
+}
 for (const name of [
 	"PI_CODING_AGENT_DIR", "PI_AGENT_DIR", "PI_SESSIONS_DIR", "CLAUDE_CONFIG_DIR", "SOVA_EXTENSIONS_FILE",
 	"XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_STATE_HOME", "XDG_CACHE_HOME",
@@ -23,6 +33,6 @@ for (const name of [
 	"SOVA_DEVICE_ID", "SOVA_MESH_IDENTITY", "SOVA_CLAUDE_ACCOUNTS_DEV",
 ]) delete process.env[name];
 process.env.SOVA_TEST_HOME = root;
-process.on("exit", () => {
+if (!inherited) process.on("exit", () => {
 	try { fs.rmSync(root, { recursive: true, force: true }); } catch { /* best effort */ }
 });

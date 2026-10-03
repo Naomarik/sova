@@ -3,7 +3,7 @@ import { emphasisMap } from "../../core/emphasis";
 import { EmBadge, emClass } from "../../emphasis";
 import type { ViewProps } from "../../types";
 import type { ChartSpec } from "./parse";
-import { partsOf } from "./parts.ts";
+import { partsOf } from "./parts";
 import "./parts.css";
 
 /**

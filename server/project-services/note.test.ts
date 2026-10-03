@@ -43,6 +43,9 @@ let id = "";
 let engine: ProjectEngine;
 
 const define = (d: object, where = project, approveIt = true) => {
+  // Never the real cwd: before `before` has set `project` it is "", and join("", ".sova", ...) is
+  // the repository's own .sova/project.json.
+  assert.ok(where.startsWith(realpathSync(tmpdir()) + "/"), `define() outside the temp dir: "${where}"`);
   writeFileSync(join(where, ".sova", "project.json"), JSON.stringify(d, null, 2));
   if (!approveIt) return;
   const hash = defHashOf(parseDefinition(JSON.stringify(d)));

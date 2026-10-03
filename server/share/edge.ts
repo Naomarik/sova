@@ -1,7 +1,6 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { Duplex } from "node:stream";
 import { getRequestListener } from "@hono/node-server";
-import { WebSocketServer } from "ws";
 import { linkAccess } from "../baton";
 import { TOKEN_RE } from "../baton-links";
 import { refuse } from "../extensions";
@@ -16,7 +15,7 @@ import { clientAddress, trustedClient } from "./security";
 import { noteShareClient } from "../visitor-identity";
 import { MB, PHOTO_MB } from "../../shared/baton";
 import { UPLOAD_BODY_SLACK } from "../baton-images";
-import { enforceMaxPayload } from "../ws-max-payload";
+import { cappedWebSocketServer } from "../runtime-quirks";
 
 // The old client-address rule lives with the other trust helpers; its old import path stays.
 export { clientAddress };
@@ -232,7 +231,7 @@ export interface ShareServerOptions {
     call it once per server, never per request. */
 export function inProcessShare(): { dispatch: ShareDispatch; upgrade: ShareUpgrade } {
   const handle = getRequestListener(createShareApp().fetch);
-  const wss = new WebSocketServer({ noServer: true, maxPayload: SHARE_WS_MAX_PAYLOAD });
+  const wss = cappedWebSocketServer({ noServer: true, maxPayload: SHARE_WS_MAX_PAYLOAD });
   const dispatch: ShareDispatch = (req, res, ctx) => {
     // The share routes read the client off the request (§mesh.public/visitor-log).
     noteShareClient(req, ctx.client);
@@ -249,8 +248,6 @@ export function inProcessShare(): { dispatch: ShareDispatch; upgrade: ShareUpgra
     }
     const sessionId = access.row.sessionId;
     wss.handleUpgrade(req, socket, head, (ws) => {
-      // The 1 KB cap on both runtimes: Bun's ws ignores maxPayload (server/ws-max-payload.ts).
-      enforceMaxPayload(ws, SHARE_WS_MAX_PAYLOAD);
       // Read-only: messages go through POST /api/h/<token>/message. Anything sent here is ignored.
       ws.on("message", () => {});
       // A frame over maxPayload (or any protocol error): ws closes the socket (1009 and the like);

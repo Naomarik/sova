@@ -1,7 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Context, Hono } from "hono";
-import { WebSocketServer } from "ws";
 import { SESSION_SHARE_GONE_CLOSE, SESSION_SHARE_IMAGE_TYPES } from "../../shared/session-share";
 import { refuse } from "../extensions";
 import { addViewer } from "../session-share-presence";
@@ -10,7 +9,7 @@ import { findShareLink, shareAccess, type ShareAccess, type ShareLinkRecord, typ
 import { classify, recordOpen, recordRefused, recordShellFetch, type SessionVisitLink } from "../visits";
 import { noteShareVisit } from "../visitor-identity";
 import { RateLimiter, type ShareUpgrade } from "./edge";
-import { enforceMaxPayload } from "../ws-max-payload";
+import { cappedWebSocketServer } from "../runtime-quirks";
 
 /**
  * The share listener's session share routes (§app/session-share): read-only, no POST.
@@ -149,7 +148,7 @@ export function mountSessionShareRoutes(app: Hono, shareDist: () => string, page
 /** The in-process `/ws/s` upgrade: a live link's page joins its share's viewers (presence, pushes).
     Read-only: the page's only frame is its visibility. Call once per server. */
 export function sessionShareUpgrade(maxPayload = 1024): ShareUpgrade {
-  const wss = new WebSocketServer({ noServer: true, maxPayload });
+  const wss = cappedWebSocketServer({ noServer: true, maxPayload });
   return async (req, socket, head, { url, token }) => {
     // The link opens AND its share still reads (the file parses, the cut is in it): a socket is
     // admitted only where the API would answer the view.
@@ -162,8 +161,6 @@ export function sessionShareUpgrade(maxPayload = 1024): ShareUpgrade {
     const link = got.link;
     const share = { id: link.shareId };
     wss.handleUpgrade(req, socket, head, (ws) => {
-      // The cap on both runtimes: Bun's ws ignores maxPayload (server/ws-max-payload.ts).
-      enforceMaxPayload(ws, maxPayload);
       // A frame over maxPayload (or any protocol error): ws closes the socket; without a listener
       // the error would escape as an uncaughtException.
       ws.on("error", (err) => console.warn(`[session-share] socket error: ${err.message}`));

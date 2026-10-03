@@ -67,6 +67,9 @@ let project = "";
 let engine: ProjectEngine;
 
 const define = (d: object, checkout = project) => {
+  // Never the real cwd: before `before` has set `project` it is "", and join("", ".sova", ...) is
+  // the repository's own .sova/project.json (it once was, under a runner that didn't await `before`).
+  assert.ok(checkout.startsWith(realpathSync(tmpdir()) + "/"), `define() outside the temp dir: "${checkout}"`);
   writeFileSync(join(checkout, ".sova", "project.json"), JSON.stringify(d, null, 2));
   const hash = defHashOf(parseDefinition(JSON.stringify(d)));
   approve(project, hash, hash);

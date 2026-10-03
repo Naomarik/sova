@@ -1,7 +1,8 @@
 import { existsSync } from "node:fs";
 import type { IncomingMessage, Server } from "node:http";
 import type { Duplex } from "node:stream";
-import { type WebSocket, WebSocketServer } from "ws";
+import type { WebSocket } from "ws";
+import { cappedWebSocketServer } from "./runtime-quirks";
 import type { ChatClientMessage, ChatServerMessage, LlmFeedMessage, SessionFeedMessage, WatchServerMessage } from "../shared/protocol";
 import { refuseUpgrade } from "./auth";
 import { isDirectLocal } from "./compression";
@@ -163,7 +164,7 @@ function handleLlmFeed(ws: WebSocket): void {
 // window between messages; ws creates its zlib streams lazily, so a socket that only ever sends
 // small frames holds none at all. Level 1: the ratio on a hello is within a few percent of level 6
 // at a fraction of the CPU (numbers in the commit message).
-const wss = new WebSocketServer({
+const wss = cappedWebSocketServer({
   noServer: true,
   perMessageDeflate: {
     threshold: 1024,

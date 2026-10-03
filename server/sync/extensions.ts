@@ -64,6 +64,8 @@ export class ExtensionSync {
   private lists: Stored | null = null;
   private readonly peerState = new Map<string, { state: "ok" | "error"; at: number; error?: string }>();
   private readonly now: () => number;
+  /** Per peer, the newest pull started: an older pull that answers later never overwrites it. */
+  private readonly pullSeq = new Map<string, number>();
 
   constructor(private readonly opts: ExtensionSyncOptions) {
     this.now = opts.now ?? Date.now;
@@ -109,10 +111,15 @@ export class ExtensionSync {
 
   async syncWith(peer: ExtensionPeer): Promise<void> {
     if (!this.enabled) return;
+    const seq = (this.pullSeq.get(peer.id) ?? 0) + 1;
+    this.pullSeq.set(peer.id, seq);
     try {
-      this.store(peer.id, await peer.extensions());
+      const got = await peer.extensions();
+      if (this.pullSeq.get(peer.id) !== seq) return;
+      this.store(peer.id, got);
       this.peerState.set(peer.id, { state: "ok", at: this.now() });
     } catch (e) {
+      if (this.pullSeq.get(peer.id) !== seq) return;
       this.peerState.set(peer.id, { state: "error", at: this.now(), error: (e as Error).message });
     }
   }

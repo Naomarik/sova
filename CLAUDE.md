@@ -258,7 +258,10 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
   `SOVA_SHARE_DIST=<dir>` names another build, read per request (tests point it at a stub page). With no built page it answers 503.
 - `pnpm test` — unit tests (`server/*.test.ts`, `src/lib/*.test.ts`). They're ESM TypeScript with
   extensionless imports, so they run under `tsx --test`; plain `node --test <file>` fails with
-  ERR_MODULE_NOT_FOUND.
+  ERR_MODULE_NOT_FOUND. One runner, `scripts/run-tests.mjs --runtime node|bun` (`pnpm test`,
+  `pnpm run test:bun`, the project's `test.run`), holds the file list; `*.browser.test.ts` files
+  need Solid's browser build and run in a second pass with `--conditions=browser`;
+  `pnpm test -- <files>` runs only those, each routed to its pass.
 - `pi-config/install.sh` links `pi-config/` into `~/.pi/agent`, except `settings.json`: that is a seed
   deep-merged into a real `~/.pi/agent/settings.json` (seed keys win, runtime keys such as the chosen
   model stay there and never in the repo). `--check` verifies links and seed keys without changing
@@ -347,26 +350,15 @@ The server runs on Node (`node --import tsx server/index.ts`) or Bun (`bun serve
 - **Testing on Bun:** in a worktree, `SOVA_RUNTIME=bun pnpm run dev:hermetic` (or
   `SOVA_RUNTIME=bun SOVA_PORT=48xx …`), or write `.agent/sova/runtime.json`; check
   `curl -s 127.0.0.1:<port>/api/health`. `SOVA_BUN=/nonexistent` drives the fallback.
-- **Known Bun caveats:**
-  - Bun 1.4.2's resolver matches `./x` to `X.tsx` case-insensitively when `x.ts` and `X.tsx` share
-    a folder. Import such a file with its extension (`./parts.ts`).
-  - Bun 1.4.2's `os.homedir()` ignores a later in-process change to `process.env.HOME` (Node
-    follows it). So `pi-config/extensions/claude-code/tests/hermetic-env.mjs` does NOT isolate a run under Bun (`bun test --preload`
-    or any Bun script that sets HOME in-process): paths resolve to the real `~/.pi`. Under Bun, set
-    HOME (and unset `PI_CODING_AGENT_DIR` and friends) in the environment BEFORE bun starts, or use
-    `node scripts/test-sentinel.mjs -- <cmd>`, which sets them in the environment before it spawns.
-  - ws `maxPayload` isn't enforced on Bun (Bun 1.4.2 replaces the `ws` package with its own shim,
-    which ignores it); Sova enforces it with its own check, `enforceMaxPayload`
-    (`server/ws-max-payload.ts`), which closes with 1009 on both runtimes. Every socket that
-    relies on a cap goes through it: the share sockets (`server/share/edge.ts`, `ws-hop.ts` page
-    and upstream, `session-routes.ts`) and the peer llm feed client (`server/index.ts`). A new
-    `maxPayload` anywhere needs the same call, or the cap holds on Node only.
-  - `ws` sockets have no `_socket` under Bun (code or tests reading `_socket.bytesRead` break,
-    e.g. `server/compression.test.ts`).
-  - `perf_hooks.monitorEventLoopDelay` reports a max of 0 under Bun, so the resource monitor's
-    event-loop-delay readings (`server/resource-monitor.ts`) read 0 on a Bun server.
-  - A change to `mise.toml` (such as the bun pin) needs `mise trust <worktree>` again, or anything
-    that shells out to `mise` fails with "not trusted".
+- **Bun quirks:** the registry is `docs/bun-quirks.md` (each quirk's Bun version, upstream issue,
+  workaround, canary and repro). Workarounds live only in `server/runtime-quirks.ts`, probe the
+  behaviour and never name a runtime. Every WebSocket in `server/` is built with its
+  `cappedWebSocketServer` / `cappedWebSocket` (ws `maxPayload` and `handshakeTimeout` aren't
+  enforced on Bun; Sova enforces both itself). Tests on Bun only through `pnpm run test:bun`: it
+  sets HOME before bun starts (Bun's `os.homedir()` ignores an in-process change), puts the real
+  node and `mise bin-paths` first on PATH (shims refuse in a throwaway HOME; tests spawn `node` and
+  `python3`), and sets `SOVA_PRICES_FETCH=off`. `bun test` itself runs with TZ=UTC and
+  NODE_ENV=test, unlike `node --test`. A `mise.toml` change needs `mise trust <worktree>` again.
 
 ## Working rules
 

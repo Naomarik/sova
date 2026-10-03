@@ -48,7 +48,7 @@ import { projectOverseerOfPath } from "./project-overseer-store";
 import { canonicalPath, LIVE_DIR, resolveSessionPath, SESSIONS_DIR } from "./paths";
 import { stateRoot } from "./state-root";
 import { markListening, runtimeInfo } from "./runtime-choice";
-import { enforceMaxPayload } from "./ws-max-payload";
+import { cappedWebSocket } from "./runtime-quirks";
 import { claudeCodeModelCount, listModels, listRegistryModels, resolveContext } from "./models";
 import { setFavorite } from "./model-favorites";
 import { markOwned } from "./write-guard";
@@ -139,7 +139,6 @@ import { configureLlmInflight } from "./llm-inflight";
 import { snapshot as llmSnapshot, subscribe as onLlmChange } from "../pi-config/extensions/llm-inflight/tracker.ts";
 import { readUnadoptedWorkers } from "../pi-config/extensions/llm-inflight/hosted.ts";
 import { peerUrl } from "./mesh/peers";
-import { WebSocket as PeerWebSocket } from "ws";
 import { onTagsChanged } from "./session-tags";
 import { terminalSession } from "./decide-settings";
 import { MergeFollowUps } from "./merge-followup";
@@ -1638,7 +1637,7 @@ configureLlmInflight({
   mesh: {
     peers: () => (meshApi.enabled() ? meshApi.peers().map((p) => ({ id: p.id, url: peerUrl(p) })) : []),
     selfId: () => meshApi.self().id,
-    connect: (url) => enforceMaxPayload(new PeerWebSocket(`${url.replace(/^http/, "ws")}/ws/watch?feed=llm`, { handshakeTimeout: 10_000, maxPayload: 16 * 1024 }), 16 * 1024),
+    connect: (url) => cappedWebSocket(`${url.replace(/^http/, "ws")}/ws/watch?feed=llm`, undefined, { handshakeTimeout: 10_000, maxPayload: 16 * 1024 }),
   },
 });
 const attentionSignals = new AttentionSignals({

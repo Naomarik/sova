@@ -6,7 +6,7 @@ import { fontsLoaded, Lines } from "../../svg";
 import type { ViewProps } from "../../types";
 import { axisTitle as titleOf, chartWidth, FONT, layoutChart, legendBreaks, type Bar } from "./layout";
 import type { ChartSpec } from "./parse";
-import PartsView from "./Parts";
+import PartsView from "./PartsView";
 import "./chart.css";
 
 /**
@@ -14,7 +14,7 @@ import "./chart.css";
  * layout.ts at the width the figure has. Colours are CSS classes (`vis-chart-s<n>` per series, a
  * tone class per row), so a theme switch needs no re-render. Series never rely on hue alone: lines
  * add a dash and a marker shape, and the legend names every series. `type: parts` is its own HTML
- * View (Parts.tsx).
+ * View (PartsView.tsx).
  */
 export default function ChartView(props: ViewProps<ChartSpec>) {
   // A spec never changes type while mounted (a new fence is a new drawing).

@@ -32,8 +32,8 @@ The server runs on Node by default. To run it on [Bun](https://bun.sh) (1.4.2, p
 `mise.toml`) instead, write `{"runtime": "bun"}` to `~/.pi/agent/sova/runtime.json` (or set
 `SOVA_RUNTIME=bun`) and start it with `scripts/start-server.sh`; it falls back to Node, and says
 why in `~/.pi/agent/sova/runtime-fallback.json`, when Bun is missing or keeps failing to start.
-`GET /api/health` reports the runtime in use. Bun support is experimental. ws `maxPayload` isn't
-enforced on Bun; Sova enforces it with its own check, so share links keep their message-size caps.
+`GET /api/health` reports the runtime in use. Bun support is experimental; what differs on Bun, and
+how Sova works around it, is in [docs/bun-quirks.md](docs/bun-quirks.md).
 
 ## More work, less window switching
 

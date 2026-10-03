@@ -39,14 +39,7 @@
     }
   },
   "test": {
-    "run": [
-      "pnpm",
-      "exec",
-      "tsx",
-      "--import",
-      "./pi-config/extensions/claude-code/tests/hermetic-env.mjs",
-      "--test"
-    ],
+    "run": ["node", "scripts/run-tests.mjs", "--runtime", "node"],
     "smoke": ["shared/project-contract.test.ts"]
   },
   "share": {"allow": false}

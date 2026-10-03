@@ -104,8 +104,11 @@ function alignPair(push, k, seed) {
   });
 }
 
+/** Each fixture's file, by session id. */
+const FILES = new Map();
 function writeSession(id, seed, { aligns }) {
   const file = join(dir, `2026-09-28T00-00-0${seed}-000Z_${id}.jsonl`);
+  FILES.set(id, file);
   const t0 = Date.parse("2026-09-28T00:00:00.000Z") + seed * 3_600_000;
   const lines = [{ type: "session", version: 3, id, timestamp: new Date(t0).toISOString(), cwd }];
   let parent = null;
@@ -137,6 +140,8 @@ const SESSIONS = [
   writeSession("01a0e2e0-0000-7000-8000-0000000f0a12", 2, { aligns: 3 }),
   writeSession("01a0e2e0-0000-7000-8000-0000000f0a13", 3, { aligns: 1 }),
   writeSession("01a0e2e0-0000-7000-8000-0000000f0a14", 4, { aligns: 0 }),
+  // Rows are appended to this one while it is away: rewritten every run.
+  writeSession("01a0e2e0-0000-7000-8000-0000000f0a15", 5, { aligns: 0 }),
 ];
 
 // ---- the browser ----
@@ -251,6 +256,54 @@ try {
       assert(bad.length === 0, `left the end or showed Jump to Latest: ${bad.join("; ")}`);
     });
   }
+
+  await check("left at the end, rows added while away: it opens at the last row read with Jump to Latest · N new; with none, at the end", async () => {
+    const { ctx, page } = await newPage();
+    const away = SESSIONS[4];
+    const other = SESSIONS[3];
+    await open(page, away);
+    await filled(page);
+    await toEnd(page);
+    await sleep(300);
+    const lastRead = await page.evaluate(() => [...document.querySelectorAll("#transcript .thread > .entry")].filter((e) => e.getBoundingClientRect().height > 0).at(-1)?.dataset.entry);
+    assert(lastRead, "no last row at the end");
+    await open(page, other);
+    await filled(page);
+    // Four rows, each taller than the view's following margin together.
+    const lines = readFileSync(FILES.get(away), "utf8").trim().split("\n");
+    let parent = JSON.parse(lines.at(-1)).id;
+    const added = [0, 1, 2, 3].map((i) => {
+      const id = `away${Date.now().toString(36)}${i}`;
+      const e = { type: "message", id, parentId: parent, timestamp: new Date().toISOString(), message: i % 2 ? { role: "assistant", content: [{ type: "text", text: words(120, i) }], provider: "e2e", model: "m", api: "anthropic-messages", stopReason: "stop", timestamp: 0 } : { role: "user", content: [{ type: "text", text: `Added while away ${i}: ${words(30, i)}` }], timestamp: 0 } };
+      parent = id;
+      return JSON.stringify(e);
+    });
+    writeFileSync(FILES.get(away), lines.concat(added).join("\n") + "\n");
+    await sleep(1500);
+    await open(page, away);
+    await filled(page);
+    const r = await page.evaluate((id) => {
+      const t = document.getElementById("transcript");
+      const row = t.querySelector(`.thread > .entry[data-entry="${CSS.escape(id)}"]`);
+      const pill = t.parentElement.querySelector(".jump-latest");
+      return { off: row ? Math.round(row.getBoundingClientRect().bottom - t.getBoundingClientRect().bottom) : null, pill: pill.hasAttribute("data-shown") ? pill.textContent : null, gap: Math.round(t.scrollHeight - t.scrollTop - t.clientHeight) };
+    }, lastRead);
+    assert(r.pill === "Jump to Latest · 4 new", `the pill reads ${JSON.stringify(r.pill)}, wanted "Jump to Latest · 4 new" (${JSON.stringify(r)})`);
+    assert(r.off !== null && Math.abs(r.off) <= 2, `the last row read isn't at the bottom of the view: ${JSON.stringify(r)}`);
+    await page.locator(".jump-latest").click();
+    await sleep(400);
+    let s = await now(page);
+    assert(!s.pill && s.gap < 2, `after Jump to Latest: ${JSON.stringify(s)}`);
+    // Away again with nothing added: back at the end, following.
+    await open(page, other);
+    await filled(page);
+    await open(page, away);
+    await filled(page);
+    s = await now(page);
+    const log = await frames(page);
+    assert(!log.some((f) => f.pill) && s.gap < 2, `with no rows added: ${JSON.stringify(s)}`);
+    await ctx.close();
+  });
 
   // ---- regressions: following still stops for the reader, and only for the reader ----
   const { ctx, page } = await newPage();

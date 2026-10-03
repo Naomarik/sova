@@ -271,6 +271,9 @@ export interface TranscriptItem {
   profileMark?: { profile: SessionProfileField | null };
   /** kind "info" only: a subagents-team-event-v1 entry; `text` is `Team: ` + its sentence. */
   teamEvent?: TeamEvent;
+  /** kind "info" only: a /compact-handoff run's `compact-handoff-run` entry
+      (§chat.slash-commands/compact-handoff-row); `text` is its one line. Per `id` the newest renders. */
+  handoffRun?: HandoffRunInfo;
   /** kind "worktree-merge" only: the `worktree-merge` extension message's details (§chat.worktrees/merge-card).
       `text` is the one line the model read ("Merged feat/x into master at abc1234, 5 commits, +120 −30"). */
   worktreeMerge?: WorktreeMergeInfo;
@@ -2207,6 +2210,18 @@ export interface TeamMember {
 }
 export type TeamDuty = "coordinator" | "monitor";
 export type TeamEventKind = "handover" | "retire" | "pause" | "resume" | "wrap-up";
+
+/** One /compact-handoff run's row (pi-config/extensions/compact-handoff/run.ts `RunEntryData`). */
+export interface HandoffRunInfo {
+  id: string;
+  status: "running" | "saved" | "failed" | "cancelled" | "interrupted";
+  focus?: string;
+  /** status "saved": where the note is. */
+  path?: string;
+  /** status "failed": why. */
+  error?: string;
+}
+
 /** One subagents-team-event-v1 entry on the parent's active branch. `workerId`/`role`: the member
     the event is about (handover/retire: the old member; pause/resume: the monitor; wrap-up: the
     member told to wrap up). `text`: the one-sentence form the UI shows (server/reports.ts

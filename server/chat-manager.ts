@@ -50,7 +50,7 @@ import { sovaToken } from "./auth";
 import { claudeCodeProviderEnabled } from "./web-settings";
 import { ForeignWriteGuard, markOwned, markOwnedStat, recentForeignWriteAgeSec } from "./write-guard";
 import { monitorExtension } from "./resource-monitor";
-import { applyForkCacheRouting, forkCacheExtension } from "./session-fork-cache";
+import { applyForkCacheRouting, forkCacheExtension } from "../pi-config/extensions/subagents/fork/cache.ts";
 import { visCheckExtension, type VisCheckHost } from "./vis-check";
 import { projectEngine } from "./project-services/routes";
 import { projectVerbsExtension } from "./project-services/tools";

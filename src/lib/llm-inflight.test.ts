@@ -240,7 +240,12 @@ test("agents word on the row: 0/1/many, partial, approximate, unknown", () => {
   assert.equal(word(llmInflightView(complete(0))), "0 agents");
   assert.equal(word(llmInflightView(complete(1))), "1 agent");
   assert.equal(word(llmInflightView(complete(6))), "6 agents");
-  assert.equal(word(llmInflightView({ count: 1, approximate: 0, partial: true, gaps: [{ reason: "claude-internal" }] })), "1 agents");
+  assert.equal(word(llmInflightView({ count: 1, approximate: 0, partial: true, gaps: [{ reason: "claude-internal" }] })), "1 agent", "the word follows the number shown, partial or not");
+  assert.equal(word(llmInflightView({ count: 1, approximate: 1, partial: false, gaps: [] })), "1 agent");
+  assert.equal(word(llmInflightView({ count: 1, approximate: 1, partial: true, gaps: [{ reason: "claude-internal" }] })), "1 agent");
+  assert.equal(word(llmInflightView({ count: 0, approximate: 0, partial: true, gaps: [{ reason: "claude-internal" }] })), "0 agents");
+  const p1 = llmInflightView({ count: 1, approximate: 0, partial: true, gaps: [{ reason: "claude-internal" }] });
+  assert.deepEqual([p1.state, p1.figure, p1.agentsLabel], ["partial", "1", "Agents: At least 1 LLM call running now. Claude Code's own internal calls aren't visible."]);
   assert.equal(word(llmInflightView({ count: 3, approximate: 1, partial: false, gaps: [] })), "3 agents");
   assert.equal(word(llmInflightView({ count: 3, approximate: 1, partial: true, gaps: [{ reason: "claude-internal" }] })), "3 agents");
   assert.equal(word(llmInflightView(null)), "Agents");

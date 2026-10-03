@@ -76,7 +76,7 @@ export function llmInflightView(inflight: LlmInflight | null, label: (id: string
   if (inflight.partial || inflight.gaps.length > 0) {
     const why = inflightWhy(inflight.gaps, label);
     const sentence = `${callsClause(n, a, true)}.${why ? ` ${why}` : ""}`;
-    return { state: "partial", approximate: a > 0, count: n, figure: `${n}`, rowWord: "agents", sentence, agentsLabel: `Agents: ${sentence}`, showTally: true };
+    return { state: "partial", approximate: a > 0, count: n, figure: `${n}`, rowWord: agents(n), sentence, agentsLabel: `Agents: ${sentence}`, showTally: true };
   }
   const sentence = callsClause(n, a, false);
   return { state: "complete", approximate: a > 0, count: n, figure: `${n}`, rowWord: agents(n), sentence, agentsLabel: `Agents: ${sentence}`, showTally: n > 0 };

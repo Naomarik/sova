@@ -380,10 +380,16 @@ a.pipeline-link:hover, button.pipeline-link:hover, summary.pipeline-link:hover {
   .services-row { flex-direction: column; flex-wrap: nowrap; align-items: stretch; }
   .services-row-main { min-width: 0; }
   .services-actions > .button { flex: 1 1 auto; }
+  /* A phone's width can be under one group's: it wraps inside then, rather than scroll sideways. */
+  .services-link { flex-wrap: wrap; }
 }
 /* A copy's share links: a chip, then its own Copy Link and Turn Off; the form under the row's facts. */
-.services-links { display: flex; flex-direction: column; gap: var(--space-2); margin: var(--space-1) 0 0; padding: 0; list-style: none; }
-.services-link { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+/* The links and the Share form take the row's whole width, under its facts and actions; nothing there, no line. */
+.services-row-share { flex-basis: 100%; min-width: 0; }
+.services-row-share:not(:has(*)) { display: none; }
+/* Each link is one group (chip, Copy Link, Turn Off) that wraps as a whole, never apart. */
+.services-links { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-5); margin: 0; padding: 0; list-style: none; }
+.services-link { display: inline-flex; flex-wrap: nowrap; align-items: center; gap: var(--space-2); }
 .services-share-form { margin-top: var(--space-2); padding: var(--space-3); border-radius: var(--r-md); background: var(--color-sunken); }
 .services-share-fields { display: flex; flex-wrap: wrap; gap: var(--space-3); }
 .services-share-fields .field { min-width: 10rem; }

@@ -54,6 +54,7 @@ import { projectEngine } from "./project-services/routes";
 import { projectVerbsExtension } from "./project-services/tools";
 import { excludedTools, GRANT_TOOLS, keyOf, KNOWN_REMOVABLE_TOOLS, PROFILE_ENTRY, SESSION_SENT_ENTRY, singletonRaceText, type ProfileEntryData, type SessionSentData } from "../shared/profiles";
 import { profileOnBranch } from "./session-profile";
+import { LOADOUT_ENTRY, loadoutOnBranch, loadoutOverrides, type LoadoutEntryData, type LoadoutState } from "./session-loadout";
 import { RunState, SessionLimits, sessionPowersExtension } from "./session-powers";
 import { queuePushExtension, topicStore } from "./topics";
 import { instrumentModelRuntime } from "../pi-config/extensions/llm-inflight/runtime.ts";
@@ -997,6 +998,9 @@ class ChatSession {
   }
   /** This runtime's profile, set by openSession (null for special kinds). */
   profileState: ProfileState | null = null;
+  /** The `sova-loadout` entry this runtime was built with, and the loader's unfiltered lists
+      (§chat.transcript/setup-card-toggles). Null for a special session, which keeps its own loadout. */
+  loadoutState: LoadoutState | null = null;
   /** The One at a time check passed for this runtime's first message. */
   private singletonCleared = false;
   /**
@@ -1806,6 +1810,34 @@ class ChatSession {
     this.flushDeferredAppends(); // open-time entries go first, as in pinMode
     this.session.sessionManager.appendCustomEntry(PROFILE_ENTRY, data);
     markOwned(this.path);
+  }
+
+  /**
+   * Write this session's context and skills entry (§chat.transcript/setup-card-toggles): the same
+   * window and refusals as a profile pick. The caller disposes the runtime afterwards, so the next
+   * open builds it with the entry.
+   */
+  writeLoadout(data: LoadoutEntryData): void {
+    if (this.special) throw new RefusedError("This session's context files and skills can't be switched.");
+    assertNotLive(this.path);
+    this.assertNoForeignWrites();
+    if (!this.isPristine()) throw new RefusedError("Context files and skills are fixed once a message is sent.");
+    if (this.session.isStreaming || this.isCompacting() || this.starting) throw new BusyError("Wait for the reply to finish first.", "busy");
+    this.flushDeferredAppends(); // open-time entries go first, as in writeProfile
+    this.session.sessionManager.appendCustomEntry(LOADOUT_ENTRY, data);
+    markOwned(this.path);
+  }
+
+  /** Whether the setup card may offer its switches now: what writeLoadout would accept, short of
+      a foreign writer (which only a write discovers). */
+  get loadoutToggleable(): boolean {
+    if (this.special || this.disposed || !this.isPristine()) return false;
+    try {
+      assertNotLive(this.path);
+    } catch {
+      return false;
+    }
+    return true;
   }
 
   /** Whether this chat is still before its first message (the picker is live). */
@@ -3328,6 +3360,7 @@ async function openSession(path: string, onDisposed: () => void): Promise<ChatSe
   // The profile the runtime was built with (§chat.profiles/enforcement), read from the branch at
   // every build: a pick disposes the runtime, so a runtime never outlives the profile it has.
   const profile: ProfileState = { data: null, excluded: [] };
+  const loadout: LoadoutState = { data: null };
   const createRuntime: CreateAgentSessionRuntimeFactory = async ({ cwd, sessionManager, sessionStartEvent }) => {
     // The outline opt-in is declined for a session an older build marked as a group member, and
     // the FILE says so (FANOUT_MEMBER_ENTRY), not a flag threaded through acquireChat, so the
@@ -3343,6 +3376,12 @@ async function openSession(path: string, onDisposed: () => void): Promise<ChatSe
     const data = special ? null : profileOnBranch(sessionManager.getBranch() as unknown as Parameters<typeof profileOnBranch>[0]);
     const snap = data?.profile ?? null;
     profile.data = data;
+    // The session's own context files and skills (§chat.transcript/setup-card-toggles), also read at
+    // every build: a flip disposes the runtime like a pick does. Special loadouts keep their own.
+    loadout.data = special ? null : loadoutOnBranch(sessionManager.getBranch() as unknown as Parameters<typeof loadoutOnBranch>[0]);
+    loadout.baseContext = undefined;
+    loadout.baseSkills = undefined;
+    const overrides = special ? undefined : loadoutOverrides(loadout);
     profile.run = undefined;
     profile.limits = undefined;
     if (snap?.grant.length) {
@@ -3365,6 +3404,7 @@ async function openSession(path: string, onDisposed: () => void): Promise<ChatSe
             queuePushExtension({ sessionId: () => sessionManager.getSessionId(), title: () => titleOf(sessionManager) }),
             ...powers,
           ],
+          ...overrides,
         });
     // Removals: the SDK's excludeTools, a filter on the registry itself, so no extension's
     // setActiveTools or re-registration brings a removed tool back.
@@ -3437,6 +3477,7 @@ async function openSession(path: string, onDisposed: () => void): Promise<ChatSe
     visHost.chat = chat;
     chat.deferredAppends = deferred;
     chat.profileState = profile;
+    if (!specialFor(sessionManager, path)) chat.loadoutState = loadout;
     const kind = specialFor(sessionManager, path);
     if (kind && kind.kind !== "overseer") {
       chat.special = kind.kind;

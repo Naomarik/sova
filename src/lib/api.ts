@@ -828,6 +828,10 @@ export const fetchGitSummary = (path: string, fresh = false) =>
     folder. `fresh` skips the server's cache. */
 export const fetchSessionSetup = (path: string, fresh = false) =>
   request<SessionSetup>(`/api/sessions/context?path=${encodeURIComponent(path)}${fresh ? "&fresh=1" : ""}`);
+/** Switch a new session's context files and skills (§chat.transcript/setup-card-toggles): the
+    whole off set; the answer is the card's fresh read of the rebuilt runtime. */
+export const setSessionLoadout = (path: string, offContext: string[], offSkills: string[]) =>
+  request<SessionSetup>("/api/sessions/loadout", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path, offContext, offSkills }) });
 
 /**
  * `force` (chat only) lets the server open a session whose file was written recently by

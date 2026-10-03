@@ -813,6 +813,17 @@ html, body { overflow: clip; overscroll-behavior: none; }
 .profile-board-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-2) var(--space-4); }
 .profile-toggle { justify-content: space-between; min-height: var(--tap-min); }
 .profile-toggle-grant > span:first-child { color: var(--color-accent); }
+/* The setup card's per-row switch (§chat.transcript/setup-card-toggles): the switch alone is the
+   label, so its 44px row is the target; a row with one centres on it. An off row stays listed,
+   dimmed, with its switch at full strength so it reads as the thing to turn back on. */
+.setup-row:has(.setup-toggle) { align-items: center; }
+.setup-toggle { flex: none; min-height: var(--tap-min); }
+.setup-row-off .setup-name,
+.setup-row-off .setup-facts { opacity: .5; }
+@container (max-width: 417.98px) {
+  .setup-row:has(.setup-toggle) { align-items: stretch; }
+  .setup-toggle { align-self: flex-start; }
+}
 .profile-warn { color: var(--status-warn, var(--color-ink-2)); }
 /* After the first message: the thread's muted profile row, the head chip and its popover. */
 .profile-row { display: flex; align-items: center; gap: var(--space-2); margin: 0 0 var(--space-2); font-size: var(--fs-caption); color: var(--color-ink-muted); }

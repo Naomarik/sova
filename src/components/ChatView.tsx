@@ -1842,7 +1842,7 @@ export function ChatView(props: {
                           />
                         )}
                       </Show>
-                      <SessionSetupCard path={props.path} />
+                      <SessionSetupCard path={props.path} editable={!!profileInfo()?.pickable && !profileInfo()?.locked} />
                       <p class="empty-body">Your first message becomes its title.</p>
                     </div>
                   }

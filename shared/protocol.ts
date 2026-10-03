@@ -1196,6 +1196,9 @@ export interface SessionSetupFile {
       reader shows bytes and lines rather than a 0 it would be inventing. A transitional read, not
       a permanent contract. */
   tokens?: number;
+  /** This session keeps this context file or skill out (§chat.transcript/setup-card-toggles): the
+      row is still listed, and no total counts it. Never set on SYSTEM.md / APPEND_SYSTEM.md rows. */
+  off?: true;
 }
 
 /** pi's own estimate of what text costs a model (pi-ai `estimateTextTokens`): the text's length in
@@ -1228,12 +1231,29 @@ export type SessionSetup =
       /** True when the read came from the open chat runtime — the exact set this session prompts
           with. False: pi's loader without extensions, which cannot see a path an extension adds. */
       fromRuntime: boolean;
+      /** The context and skill rows can be switched now (§chat.transcript/setup-card-toggles): this
+          server holds the chat, it is local, ordinary, not TUI-live and before its first message.
+          Worked out per session on every read, never cached with the folder's lists. */
+      toggleable?: boolean;
       checkedAt: number;
     }
   /** A target session: its cwd is a local placeholder, so its loadout can't be read here. */
   | { state: "remote"; where: { kind: "remote"; target: string }; cwd: string; checkedAt: number }
   /** Nothing could be read: `reason` is a sentence for the user. Never cached. */
   | { state: "unavailable"; where: GitWhere; cwd: string; reason: string; checkedAt: number };
+
+// POST /api/sessions/loadout {path, offContext, offSkills} -> SessionSetup
+//                                  (§chat.transcript/setup-card-toggles: the session's whole off set
+//                                  — context files by absolute path, skills by name — written as its
+//                                  hidden `sova-loadout` entry; the runtime is rebuilt, open tabs get
+//                                  `reloaded`, and the answer is the card's fresh read. 400 a bad
+//                                  body, 404 a missing session, 409 refused: a message on the branch,
+//                                  mid-turn, TUI-live, a foreign writer or a special session.)
+export interface SessionLoadoutRequest {
+  path: string;
+  offContext: string[];
+  offSkills: string[];
+}
 
 /** Longest group name, in characters, after trimming (SessionGroup.name; the server trims and
     refuses an empty or longer one with 400). The one place the limit is written down: the create

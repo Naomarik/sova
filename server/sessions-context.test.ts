@@ -15,6 +15,7 @@ mkdirSync(sessionsDir, { recursive: true });
 mkdirSync(liveDir, { recursive: true });
 
 const { getSessionSummary, listSessions } = await import("./sessions-index");
+const { sessionsChanged } = await import("./list-generation");
 const { canonicalPath } = await import("./paths");
 
 /** A live pid that isn't this process: a terminal holding a session, as far as the registry knows. */
@@ -265,6 +266,7 @@ test("a foreign writer's outline is preferred to this server's own", async () =>
   const p = session("outline-both-records", []);
   liveRecord(`p${process.pid}-own00002`, p, process.pid, { now: "ours", overall: "This server's view", topics: [], generatedAt: 5000 });
   liveRecord(`p${sleeper.pid}-tui00002`, p, sleeper.pid!, { now: "theirs", overall: "The terminal's view", topics: [], generatedAt: 5000 });
+  sessionsChanged(); // the records stand for writers outside this server: step past the listing's reuse window
   assert.equal((await getSessionSummary(p))?.outlineGist, "The terminal's view");
   assert.equal((await listSessions()).find((x) => x.path === p)?.outlineGist, "The terminal's view");
 });

@@ -2,6 +2,7 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, statSync, w
 import { dirname, join } from "node:path";
 import { PREVIEW_LABEL_RE } from "../shared/public-links";
 import { stateRoot } from "./state-root";
+import { sessionsChanged } from "./list-generation";
 
 /**
  * What else a preview has (§mesh.public/preview): `<stateRoot>/preview-kept.json`, beside
@@ -115,6 +116,7 @@ function write(file: KeptFile): void {
   writeFileSync(tmp, `${JSON.stringify(file, null, 2)}\n`, { mode: 0o600 });
   chmodSync(tmp, 0o600);
   renameSync(tmp, path);
+  sessionsChanged(); // a kept link changes what rows redact
 }
 
 /** What is kept for one preview, or null (one made before this file, or a broken entry). */

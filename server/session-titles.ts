@@ -2,6 +2,7 @@ import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { stateRoot } from "./state-root";
 import { SESSION_TITLE_MAX, type SessionTitleBy } from "../shared/protocol";
+import { sessionsChanged } from "./list-generation";
 
 /**
  * The user's own titles for sessions (POST /api/sessions/title), keyed by session id like the
@@ -100,6 +101,7 @@ function save(next: Record<string, StoredTitle>): void {
   for (const [id, t] of Object.entries(next)) out[id] = t.legacy ? t.title : { title: t.title, by: t.by, ...(t.at !== undefined ? { at: t.at } : {}) };
   writeFileSync(tmp, JSON.stringify({ version: 2, titles: out }));
   renameSync(tmp, FILE);
+  sessionsChanged();
   records = next;
   titles = plain(next);
 }

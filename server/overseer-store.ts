@@ -12,6 +12,7 @@ import type {
 import { parseChoice } from "../pi-config/extensions/mode/delegate.ts";
 import { type Redactor, serverRedactor } from "./overseer-redact";
 import { stateRoot } from "./state-root";
+import { sessionsChanged } from "./list-generation";
 
 /**
  * The Overseer's Sova-owned files under the state root. Same store rules as web-sessions.ts:
@@ -73,6 +74,7 @@ export function writeAtomic(file: string, text: string): void {
   const tmp = `${file}.${process.pid}.tmp`;
   writeFileSync(tmp, text);
   renameSync(tmp, file);
+  sessionsChanged(); // overseer and project-overseer state decide rows' special fields
 }
 
 function readJson(file: string): unknown {

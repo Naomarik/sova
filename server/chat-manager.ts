@@ -30,6 +30,7 @@ import { parseWakeNudge } from "../shared/wake";
 import { inputSourceOf, type QueueImage, type QueueKind, WebQueue, type WebQueueItem } from "./queue";
 import { decodeUsageTotal, decodeWorkers } from "./insights";
 import { readLive, readOwnLiveRecords, workerCountsOf } from "./live";
+import { sessionsChanged } from "./list-generation";
 import { appliesAfter, defaultPatchOf, mergeMode, MINOR_MODES, modeApplyPlan, modeInfo, pinEntryFor, readMode, resolveChatMode, writeMode, type ModePatch, type ModeState } from "./mode-state";
 import { loadDefaults, saveDefaults } from "./web-defaults";
 import { subagentProfilesInfo, requireSubagentProfile, saveSubagentProfileDefault } from "./subagent-profiles";
@@ -1636,6 +1637,9 @@ class ChatSession {
     });
     this.unsubscribe?.();
     this.unsubscribe = session.subscribe((event) => {
+      // A turn starting or settling, and a tool call ending (the Overseer's tools write stores in
+      // process), start the next session listing afresh (§app.session-list/listing-reuse).
+      if (event.type === "tool_execution_end" || event.type === "agent_start" || event.type === "agent_settled") sessionsChanged();
       // A Claude login picked during the reply goes in now, before the queue wake below can start
       // the next turn: applyLoginPick holds the web queue until it has landed
       // (§app.claude-logins/switch-queue).

@@ -1,6 +1,7 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { stateRoot } from "./state-root";
+import { sessionsChanged } from "./list-generation";
 
 /** Persistent set of session ids spawned via POST /api/sessions (SessionSummary.origin = "web"). */
 const FILE = join(stateRoot(), "web-sessions.json");
@@ -32,6 +33,7 @@ export function addWebSession(id: string): void {
   const tmp = `${FILE}.${process.pid}.tmp`;
   writeFileSync(tmp, JSON.stringify([...next]));
   renameSync(tmp, FILE);
+  sessionsChanged();
   ids = next;
 }
 
@@ -43,5 +45,6 @@ export function removeWebSession(id: string): void {
   const tmp = `${FILE}.${process.pid}.tmp`;
   writeFileSync(tmp, JSON.stringify([...next]));
   renameSync(tmp, FILE);
+  sessionsChanged();
   ids = next;
 }

@@ -6,7 +6,7 @@ import { homedir, tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
-import type { Policy } from "../../pi-config/extensions/sandbox/backend.ts";
+import { shadowSource, type Policy } from "../../pi-config/extensions/sandbox/backend.ts";
 import { LinuxBwrapBackend, RELAY_PORT, findExecutable } from "../../pi-config/extensions/sandbox/backends/linux-bwrap.ts";
 import { proxyEnv } from "../../pi-config/extensions/sandbox/env.ts";
 import { canonicalize, isWithin, readDenial, type ResolvedPolicy } from "../../pi-config/extensions/sandbox/policy.ts";
@@ -200,6 +200,29 @@ function mavenProxy(sh: { path: string; source: string }): void {
   }
 }
 
+/**
+ * Tool caches a confined unit must write besides the policy's own shadows: the Clojure CLI's user classpath cache
+ * (a script with no project of its own, babashka's deps among them, caches there) and its git libraries. Each is a
+ * private copy in the sandbox's shadow store, as the policy's caches are; never the user's config beside them.
+ */
+export const TOOL_SHADOWS = ["~/.clojure/.cpcache", "~/.gitlibs"];
+
+function toolShadows(policy: Pick<ResolvedPolicy, "shadowed" | "hidden">, agentDir: string): { path: string; source: string }[] {
+  const out: { path: string; source: string }[] = [];
+  for (const t of TOOL_SHADOWS) {
+    const path = canonicalize(join(homedir(), t.slice(2)));
+    if (policy.shadowed.some((sh) => isWithin(path, sh.path)) || readDenial(policy, path)) continue;
+    // A shadow needs its host path as a mount point; the tool would make the same empty folder.
+    try {
+      mkdirSync(path, { recursive: true });
+    } catch {
+      // a read-only home: a path that exists is still bound, a missing one is skipped
+    }
+    out.push({ path, source: canonicalize(shadowSource(agentDir, path)) });
+  }
+  return out;
+}
+
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /** JVMs ignore HTTP(S)_PROXY: the same proxy as system properties, loopback excepted. */
@@ -317,7 +340,7 @@ export async function openConfinement(opts: OpenOptions): Promise<Confinement | 
         network: { mode: "host" },
         env,
         sessionId: `conform-${runId}`,
-        shadowed: p.value.shadowed,
+        shadowed: [...p.value.shadowed, ...toolShadows(p.value, agentDir)],
       };
       const r = await backend.confine({ argv: u.argv, cwd: u.cwd, policy: unitPolicy });
       if (!r.ok) throw new Error(`the sandbox: ${r.reason}`);

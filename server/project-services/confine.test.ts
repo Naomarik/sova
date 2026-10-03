@@ -27,7 +27,8 @@ const canConfine = process.platform === "linux" && which("bwrap") && which("nsen
 const skip = canConfine ? false : "needs Linux with bwrap, nsenter, socat and unprivileged user namespaces";
 
 const op: Caller = { kind: "operator" };
-const BASE = 30_000 + Math.floor(Math.random() * 20_000);
+// Below the ephemeral range (32768+), so no probe's own client port can take a port a service is about to bind.
+const BASE = 20_000 + Math.floor(Math.random() * 12_000);
 const PORTS = { web: BASE, bus: BASE + 40, site: BASE + 80 };
 const git = (args: string[], cwd: string) => execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", ...args], { cwd, encoding: "utf8" });
 
@@ -286,6 +287,44 @@ time.sleep(30)`;
     } finally {
       process.kill(-child.pid!, "SIGKILL");
     }
+  } finally {
+    await c.close();
+  }
+});
+
+test("a confined unit writes the Clojure CLI's user cache and git libraries as private copies; the user's ~/.clojure config stays read-only", { skip }, async () => {
+  const c = await openConfinement({ project });
+  assert.ok(!("refused" in c), "refused" in c ? c.refused : "");
+  if ("refused" in c) return;
+  const scratch = mkdtempSync(join(parent, "tools-"));
+  mkdirSync(join(homedir(), ".clojure"), { recursive: true });
+  writeFileSync(join(homedir(), ".clojure", "deps.edn"), "{:aliases {}}");
+  try {
+    const w = await c.wrap({
+      argv: ["sh", "-c", `echo cp > ~/.clojure/.cpcache/x.cp && echo cpcache=ok; mkdir -p ~/.gitlibs/libs && echo gitlibs=ok; cat ~/.clojure/deps.edn; echo x >> ~/.clojure/deps.edn 2>/dev/null || echo config=ro`],
+      cwd: scratch,
+      env: { PATH: process.env.PATH!, HOME: homedir() },
+      checkout: scratch,
+      dataDir: scratch,
+      tmpKey: "tools",
+    });
+    const out = await new Promise<string>((done) => {
+      const p = spawn(w.argv[0]!, w.argv.slice(1), { env: w.env });
+      let o = "";
+      p.stdout.on("data", (d) => (o += d));
+      p.stderr.on("data", (d) => (o += d));
+      p.on("close", () => done(o));
+    });
+    assert.match(out, /cpcache=ok/);
+    assert.match(out, /gitlibs=ok/);
+    // The test home sits under /tmp, which a unit sees as its own tmp: the config is out of its sight there, never writable.
+    if (!homedir().startsWith("/tmp/")) {
+      assert.match(out, /\{:aliases \{\}\}/, "the user's config is still read");
+      assert.match(out, /config=ro/);
+    }
+    assert.equal(readFileSync(join(homedir(), ".clojure", "deps.edn"), "utf8"), "{:aliases {}}");
+    assert.ok(!existsSync(join(homedir(), ".clojure", ".cpcache", "x.cp")), "the cache went to the sandbox's copy, not the host's");
+    assert.ok(existsSync(join(shadowSource(agentDir, join(homedir(), ".clojure", ".cpcache")), "x.cp")));
   } finally {
     await c.close();
   }

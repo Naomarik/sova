@@ -19,7 +19,8 @@ import { approve, defHashOf } from "./trust";
 process.env.PI_CODING_AGENT_DIR = mkdtempSync(join(tmpdir(), "sova-conform-logs-agent-"));
 
 const op: Caller = { kind: "operator" };
-const BASE = 30_000 + Math.floor(Math.random() * 20_000);
+// Below the ephemeral range (32768+), so no probe's own client port can take a port a service is about to bind.
+const BASE = 20_000 + Math.floor(Math.random() * 12_000);
 let parent = "";
 let project = "";
 let engine: ProjectEngine;

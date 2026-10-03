@@ -483,7 +483,9 @@ async function runSuite(
       const step = failed?.result.instance === rec.id ? failed.result.error?.step : undefined;
       // A hook names its unit's step (`setup-<id>`, `build-<service>`, `data-<name>-provision`); a step row names it `setup:<id>`.
       const hook = step?.replace(/^(setup|build):/, "$1-");
-      if (hook && /^(setup|build|data|reload)-/.test(hook)) await tail(label, `step:${hook}`, "failed", engine.hookUnitOf(rec.id, hook));
+      if (hook && (hook === "test" || /^(setup|build|data|reload)-/.test(hook))) await tail(label, `step:${hook}`, "failed", engine.hookUnitOf(rec.id, hook));
+      // The isolation probe's own runs.
+      if (s.firstFailure?.id === "isolation") await tail(label, "step:probe", "failed", engine.hookUnitOf(rec.id, "probe"));
     }
     if (s.firstFailure?.id === "setup-twice" && recA) for (const st of def.setup) await tail("A", `step:setup-${st.id}`, "failed", engine.hookUnitOf(recA.id, `setup-${st.id}`));
   };

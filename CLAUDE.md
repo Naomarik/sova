@@ -355,6 +355,17 @@ The server runs on Node (`node --import tsx server/index.ts`) or Bun (`bun serve
     or any Bun script that sets HOME in-process): paths resolve to the real `~/.pi`. Under Bun, set
     HOME (and unset `PI_CODING_AGENT_DIR` and friends) in the environment BEFORE bun starts, or use
     `node scripts/test-sentinel.mjs -- <cmd>`, which sets them in the environment before it spawns.
+  - **Security: Bun 1.4.2 replaces the `ws` package with its own shim, which IGNORES `maxPayload`.**
+    Node closes a 4 KiB frame to `WebSocketServer({maxPayload: 1024})` with 1009; Bun delivers all
+    of it. Sova relies on that cap on the public share paths (`server/share/edge.ts`,
+    `ws-hop.ts`, `session-routes.ts`: `SHARE_WS_MAX_PAYLOAD`) and on the peer llm feed client
+    (`server/index.ts`, 16 KiB). On Bun a share visitor's oversized frames are not capped, and the
+    share tests that expect the close (share-router, share-message, share-offline, share-ws-hop)
+    hang. Don't serve public links from a Bun server until the size is checked in the handlers.
+  - `ws` sockets have no `_socket` under Bun (code or tests reading `_socket.bytesRead` break,
+    e.g. `server/compression.test.ts`).
+  - `perf_hooks.monitorEventLoopDelay` reports a max of 0 under Bun, so the resource monitor's
+    event-loop-delay readings (`server/resource-monitor.ts`) read 0 on a Bun server.
   - A change to `mise.toml` (such as the bun pin) needs `mise trust <worktree>` again, or anything
     that shells out to `mise` fails with "not trusted".
 

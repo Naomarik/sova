@@ -173,7 +173,15 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
   `claude-code/transcript-adapter.ts` and `claude-code/provider/session-records.ts` (the per-backend
   readers: locating a worker's transcript and counting its usage, for restored workers and for
   every `/ws/watch` usage total; the dev watcher does not watch these, so an edit there reaches a
-  running server only at its next restart). The frontend imports two files, the only runtime
+  running server only at its next restart). The shared fork core (`pi-config/extensions/subagents/fork/`,
+  one owner of every fork's cache logic: Sova's "Fork from here" and the background forks /explain
+  runs) has a server half: `server/chat-manager.ts`, `server/session-fork.ts` and their tests import
+  `fork/cache.ts` (runtime builtins only, pi types: a fork's inherited prompt-cache key and its
+  `sova-fork-cache` entry, the `prompt_cache_key` hook and the Codex `session-id` affinity routing),
+  and `server/session-fork-routes.ts` imports `fork/claude.ts` (builtins only, through
+  `claude-code/provider/fork-point.ts`: seeding a UI fork with its Claude Code source's live CLI
+  session). The rest of `fork/` (copy, mirror, child extension, background runner) needs the pi
+  runtime and stays out of the server. The frontend imports two files, the only runtime
   pi-config imports in `src/`: `src/lib/format.ts` re-exports `pi-config/extensions/stamp/format.ts` (the
   12-hour clock, stamp and relative time, shared with the TUI's `stamp` extension); the server
   imports the same file directly, for the ages on `sova_session`'s topics (`server/overseer-tools.ts`).
@@ -192,7 +200,7 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
   model-discovery argv to the extension's, and `src/lib/show-changes-coverage.test.ts` imports
   `pi-config/extensions/show-changes/coverage.ts` (imports nothing) to pin the tool's hunk matching
   to `src/lib/changes-steps.ts`'s; beyond that, `context-window.ts`, `accounts.ts` and the
-  protocol set above, the server never imports claude-code. `argv.ts` is also the quoting boundary: every path that reaches a far shell is
+  protocol set above and `provider/fork-point.ts` (through `fork/claude.ts`), the server never imports claude-code. `argv.ts` is also the quoting boundary: every path that reaches a far shell is
   single-quote-escaped there, and callers spawn its argv without a local shell. The web mode switch calls that extension's
   `/mode` command handler directly (`ChatSession.applyMode`), so its arguments are a contract too.
   Sova has no sshfs/mount support: a remote session's cwd is always its local placeholder, and

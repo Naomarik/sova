@@ -8,7 +8,8 @@ import { after, before, test } from "node:test";
 import { isVerbResult, parseDefinition, type VerbResult } from "../../shared/project-contract";
 import { staticServes, stopStaticServe } from "../preview-serve";
 import { conformer, readStamp } from "./conform";
-import { openConfinement, whyExited } from "./confine";
+import { shadowSource } from "../../pi-config/extensions/sandbox/backend.ts";
+import { MAVEN_SETTINGS, openConfinement, whyExited } from "./confine";
 import { DetachedDriver } from "./drivers";
 import { ProjectEngine, type Caller } from "./engine";
 import { mutateRegistry, readRegistry, sharedIdOf } from "./store";
@@ -240,4 +241,27 @@ test("a dead anchor is named by its first error line, not Node's stack or versio
   assert.equal(whyExited(stderr).split("; ")[0], "Error: listen EINVAL: invalid argument /very/long/net.sock");
   assert.doesNotMatch(whyExited(stderr), /Node\.js v|^\s*at /);
   assert.equal(whyExited("bwrap: Can't chdir to /x: No such file or directory\n"), "bwrap: Can't chdir to /x: No such file or directory");
+});
+
+test("a shadowed ~/.m2 gets a settings file naming the run's proxy (Maven ignores HTTP(S)_PROXY), never over one that exists", { skip }, async () => {
+  const dir = join(agentDir, "m2-agent");
+  mkdirSync(join(dir, "sandbox-policy", "linux"), { recursive: true });
+  const policy = JSON.parse(readFileSync(join(agentDir, "sandbox-policy", "linux", "policy.json"), "utf8"));
+  writeFileSync(join(dir, "sandbox-policy", "linux", "policy.json"), JSON.stringify({ ...policy, shadowed: ["~/.m2"] }));
+  const settings = join(shadowSource(dir, join(homedir(), ".m2")), "settings.xml");
+  const was = process.env.PI_CODING_AGENT_DIR;
+  process.env.PI_CODING_AGENT_DIR = dir;
+  try {
+    const c = await openConfinement({ project });
+    assert.ok(!("refused" in c), "refused" in c ? c.refused : "");
+    if (!("refused" in c)) await c.close();
+    assert.equal(readFileSync(settings, "utf8"), MAVEN_SETTINGS);
+    assert.match(MAVEN_SETTINGS, /<host>127\.0\.0\.1<\/host><port>3128<\/port>/);
+    writeFileSync(settings, "<settings>mine</settings>");
+    const again = await openConfinement({ project });
+    if (!("refused" in again)) await again.close();
+    assert.equal(readFileSync(settings, "utf8"), "<settings>mine</settings>");
+  } finally {
+    process.env.PI_CODING_AGENT_DIR = was;
+  }
 });

@@ -10,6 +10,8 @@ import {
   parseDefinition,
   scratchSlots,
   type Check,
+  CONFORM_LOG_LINES,
+  type ConformLog,
   type ConformMemory,
   type ConformReport,
   type ErrorCode,
@@ -460,10 +462,37 @@ async function runSuite(
     if (!s.check("down-a-again", dn2.ok && !dn2.changed, describe(dn2), t0, dn2.error?.code)) return;
   };
 
+  // A failed run's evidence, read before teardown removes it: what the fix needs (§app.project-services/conform).
+  const logs: ConformLog[] = [];
+  const tails = async () => {
+    const said = new Set<string>();
+    const tail = async (label: "A" | "B", service: string, state: string, unit: string) => {
+      if (said.has(`${label}\0${service}`)) return;
+      said.add(`${label}\0${service}`);
+      const lines = (await engine.driver.logs(unit, CONFORM_LOG_LINES)).map((l) => l.text.slice(0, 2000));
+      logs.push({ label, service, state, lines });
+    };
+    const failed = [...s.envelopes].reverse().find((e) => e.result.error);
+    for (const [label, rec] of [["A", recA], ["B", recB]] as const) {
+      if (!rec) continue;
+      const st = await engine.run("status", { instance: rec.id }, confCaller).catch(() => null);
+      for (const v of st?.services ?? [])
+        if (v.unit && v.kind !== "static" && (["starting", "degraded", "failed"].includes(v.state) || (failed?.result.instance === rec.id && failed.result.error?.service === v.name)))
+          await tail(label, v.name, v.state, v.unit);
+      // A failed setup, data or build step: its own unit's output.
+      const step = failed?.result.instance === rec.id ? failed.result.error?.step : undefined;
+      // A hook names its unit's step (`setup-<id>`, `build-<service>`, `data-<name>-provision`); a step row names it `setup:<id>`.
+      const hook = step?.replace(/^(setup|build):/, "$1-");
+      if (hook && /^(setup|build|data|reload)-/.test(hook)) await tail(label, `step:${hook}`, "failed", engine.hookUnitOf(rec.id, hook));
+    }
+    if (s.firstFailure?.id === "setup-twice" && recA) for (const st of def.setup) await tail("A", `step:setup-${st.id}`, "failed", engine.hookUnitOf(recA.id, `setup-${st.id}`));
+  };
+
   try {
     await suite();
   } finally {
     memory.stop();
+    if (s.failed) await tails().catch(() => undefined);
     // 11. teardown A and B, and again; then nothing may be left.
     let t0 = Date.now();
     const ids = [a, b].map((r) => (r as VerbResult | null)?.instance ?? null).filter((x): x is string => !!x);
@@ -531,6 +560,7 @@ async function runSuite(
       pass: !s.failed,
       checks: s.checks,
       leaks,
+      ...(logs.length ? { logs } : {}),
       ...(confine ? { confined: true } : {}),
       ...(recA ? { memory: memory.report() } : {}),
     },

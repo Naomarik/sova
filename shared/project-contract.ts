@@ -651,6 +651,14 @@ export interface MemoryReading {
 export interface ConformMemory {
   instances: (MemoryReading & { label: "A" | "B"; services: (MemoryReading & { name: string })[] })[];
 }
+export interface ConformLog {
+  label: "A" | "B";
+  /** A service's name, or `step:<unit step>` (`step:setup-<id>`, `step:build-<service>`, `step:data-<name>-provision`) for a failed step. */
+  service: string;
+  state: string;
+  lines: string[];
+}
+export const CONFORM_LOG_LINES = 80;
 export interface ConformReport {
   suiteVersion: number;
   defHash: string;
@@ -658,6 +666,8 @@ export interface ConformReport {
   pass: boolean;
   checks: Check[];
   leaks: string[];
+  /** On a failed run: the last lines of each service (or step) that was not ready or failed, read before teardown. */
+  logs?: ConformLog[];
   /** Run in a private network namespace under the sandbox policy, before approval (§app.project-services/confined). */
   confined?: boolean;
   memory?: ConformMemory;

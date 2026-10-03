@@ -1,9 +1,9 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, readdirSync, readlinkSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, readlinkSync, rmSync, writeFileSync } from "node:fs";
 import { connect } from "node:net";
 import { homedir, tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import type { Policy } from "../../pi-config/extensions/sandbox/backend.ts";
@@ -173,6 +173,33 @@ export function whyExited(stderr: string): string {
   return [first, last && last !== first ? last : null].filter(Boolean).join("; ").slice(0, 600);
 }
 
+/**
+ * Maven's resolver (the Clojure CLI's tools.deps, Maven, Gradle's Maven repos) ignores HTTP(S)_PROXY and the
+ * JVM's proxy properties: it reads proxies from `~/.m2/settings.xml` only. Inside a sandbox `~/.m2` is the
+ * sandbox's private copy, and the only way out is the relay on 127.0.0.1:3128, so that copy gets a settings
+ * file naming it (written once, never over one that exists).
+ */
+export const MAVEN_SETTINGS = `<?xml version="1.0" encoding="UTF-8"?>
+<!-- Written by Sova for sandboxed processes: their only way out is the sandbox proxy relay. -->
+<settings xmlns="http://maven.apache.org/SETTINGS/1.0.0">
+  <proxies>
+    <proxy><id>sandbox-https</id><active>true</active><protocol>https</protocol><host>127.0.0.1</host><port>${RELAY_PORT}</port><nonProxyHosts>localhost|127.*</nonProxyHosts></proxy>
+    <proxy><id>sandbox-http</id><active>true</active><protocol>http</protocol><host>127.0.0.1</host><port>${RELAY_PORT}</port><nonProxyHosts>localhost|127.*</nonProxyHosts></proxy>
+  </proxies>
+</settings>
+`;
+
+function mavenProxy(sh: { path: string; source: string }): void {
+  if (basename(sh.path) !== ".m2") return;
+  const file = join(sh.source, "settings.xml");
+  try {
+    mkdirSync(sh.source, { recursive: true, mode: 0o700 });
+    if (!existsSync(file)) writeFileSync(file, MAVEN_SETTINGS, { mode: 0o600, flag: "wx" });
+  } catch {
+    // another run wrote it first, or the shadow is not ours to write: the resolver then says why
+  }
+}
+
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /** JVMs ignore HTTP(S)_PROXY: the same proxy as system properties, loopback excepted. */
@@ -208,6 +235,7 @@ export async function openConfinement(opts: OpenOptions): Promise<Confinement | 
     return { refused: `the host can't confine this run (${base.error}): approve this definition to conform it` };
   }
   const policy = base.value;
+  for (const sh of policy.shadowed) mavenProxy(sh);
   let proxy: ProxyHandle | null = null;
   let child: ChildProcess | null = null;
   // The probe agent's socket, in a short dir of its own: a Unix socket path holds at most 107 bytes, and the

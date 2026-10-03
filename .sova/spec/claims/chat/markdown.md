@@ -306,7 +306,7 @@ block's source (§app.baton/outsider-view).
 ## §chat.markdown/vis-parts — `vis chart` `type: parts`: a whole and its parts
 
 One bar split into the chart's rows, in order, for a part-of-whole question (a request against the
-context window, a share of a limit). HTML, drawn by `src/vis/kinds/chart/Parts.tsx`.
+context window, a share of a limit). HTML, drawn by `src/vis/kinds/chart/PartsView.tsx`.
 
 - **Syntax.** `type: parts`, then one row per part: `label value [tone]`. Optional `unit:` and
   `of: <capacity>`. `mark` a part by its label.

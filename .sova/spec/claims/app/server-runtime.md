@@ -48,3 +48,31 @@ alone otherwise.
 runtime the setting asks for, read once at start exactly as the launcher reads it. When `name`
 differs from `chosen`, `fallback` is the `{at, reason}` of `runtime-fallback.json` (absent when
 that file is missing or unreadable).
+
+## §app.server-runtime/quirks — Runtime differences, worked around in one place
+
+Where Bun behaves differently from Node in a way Sova depends on, the workaround lives in
+`server/runtime-quirks.ts`. It detects the broken behaviour, never the runtime's name or version, and
+no call site names a runtime. `docs/bun-quirks.md` lists every quirk with the Bun version, the
+upstream issue, the workaround and a canary test, which runs under Bun only and fails once Bun
+fixes the bug.
+
+- **WebSocket size caps hold on both runtimes.** Every WebSocket the server accepts or dials is built
+  through the capped factories. The first message over a socket's `maxPayload` (ws's 100 MiB when
+  none is named) closes it with 1009, or ends a share hop as lost, and no listener sees that
+  message or any after it.
+- **A WebSocket's handshake timeout holds on both.** A dialed socket whose peer never answers the
+  upgrade errors ("Opening handshake has timed out") and closes once, after its `handshakeTimeout`.
+- **A stopped stream stops as soon on both.** Provider response bodies are read at most 64 KiB at a
+  time, Node's own read size, with every byte unchanged, and no read follows an abort. So the
+  runaway-stream guard's stop (§chat.transcript/runaway-stream) costs about the same on Bun as on
+  Node. Google adapters, which refuse a custom fetch, read as their runtime does.
+- **The event-loop delay reads the same on both.** See §app.resource-monitor/lightness-budget.
+- **A refused connection is named "connection refused" on both.** The error is classified by its
+  code (its own or its cause's), never by its message.
+- **Imports are unambiguous.** No two module files or directories in one folder of `src/`,
+  `server/`, `shared/` or `pi-config/extensions/` differ only by case once the extension is
+  dropped; a repo test enforces it.
+- **The unit suite runs on Bun** through `pnpm run test:bun`. Each test file runs in its own
+  process with a throwaway home set in the environment before Bun starts. The test preload refuses
+  to run where `os.homedir()` doesn't follow the HOME it set.

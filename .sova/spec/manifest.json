@@ -4118,8 +4118,8 @@
         "server/share/edge.ts",
         "server/public-links.test.ts",
         "server/share/share-state.ts",
-        "server/ws-max-payload.ts",
-        "server/ws-max-payload.test.ts"
+        "server/runtime-quirks.ts",
+        "server/runtime-quirks.test.ts"
       ],
       "requires": [
         "§app.baton/links",
@@ -6869,7 +6869,7 @@
       "authority": "accepted",
       "evidence": "verified",
       "code": [
-        "src/vis/kinds/chart/Parts.tsx",
+        "src/vis/kinds/chart/PartsView.tsx",
         "src/vis/kinds/chart/parts.css",
         "src/vis/kinds/chart/parts.ts",
         "src/vis/kinds/chart/parts.test.ts",
@@ -7185,7 +7185,8 @@
       "code": [
         "server/resource-monitor.ts",
         "server/resource-monitor-proc.ts",
-        "server/resource-monitor.test.ts"
+        "server/resource-monitor.test.ts",
+        "server/runtime-quirks.ts"
       ]
     },
     "§app.resource-monitor/platform-fallback": {
@@ -7912,8 +7913,8 @@
         "server/share-destination.test.ts",
         "server/share-ws-hop.test.ts",
         "server/share-offline.test.ts",
-        "server/ws-max-payload.ts",
-        "server/ws-max-payload.test.ts"
+        "server/runtime-quirks.ts",
+        "server/runtime-quirks.test.ts"
       ]
     },
     "§mesh.public/setting": {
@@ -8410,8 +8411,8 @@
         "server/session-share-presence.ts",
         "server/share/session-routes.ts",
         "server/session-share-activity.test.ts",
-        "server/ws-max-payload.ts",
-        "server/ws-max-payload.test.ts"
+        "server/runtime-quirks.ts",
+        "server/runtime-quirks.test.ts"
       ]
     },
     "§app.session-share/rejected": {
@@ -12359,6 +12360,27 @@
         "scripts/start-server.sh",
         "server/runtime-choice.ts",
         "server/runtime-choice.test.ts"
+      ]
+    },
+    "§app.server-runtime/quirks": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/runtime-quirks.ts",
+        "server/runtime-quirks.test.ts",
+        "server/bun-quirks-canary.test.ts",
+        "server/sibling-case.test.ts",
+        "docs/bun-quirks.md",
+        "scripts/run-tests.mjs",
+        "server/chat-manager.ts",
+        "server/extensions.ts",
+        "server/resource-monitor.ts"
+      ],
+      "requires": [
+        "§app.server-runtime/choice",
+        "§chat.transcript/runaway-stream",
+        "§app.resource-monitor/lightness-budget"
       ]
     }
   },

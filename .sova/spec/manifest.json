@@ -12303,6 +12303,57 @@
         "§chat.slash-commands/in-the-thread",
         "§chat.slash-commands/compact-handoff"
       ]
+    },
+    "§app.server-runtime/choice": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "scripts/start-server.sh",
+        "server/runtime-choice.ts",
+        "server/runtime-choice.test.ts",
+        "scripts/dev-server.mjs",
+        "package.json"
+      ],
+      "requires": []
+    },
+    "§app.server-runtime/fallback": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "scripts/start-server.sh",
+        "server/runtime-choice.ts",
+        "server/runtime-choice.test.ts",
+        "server/index.ts"
+      ],
+      "requires": [
+        "§app.server-runtime/choice"
+      ]
+    },
+    "§app.server-runtime/health": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/index.ts",
+        "server/runtime-choice.ts",
+        "server/runtime-choice.test.ts"
+      ],
+      "requires": [
+        "§chat.profiles/live-commit",
+        "§app.server-runtime/choice"
+      ]
+    },
+    "§app/server-runtime": {
+      "kind": "surface",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "scripts/start-server.sh",
+        "server/runtime-choice.ts",
+        "server/runtime-choice.test.ts"
+      ]
     }
   },
   "boundary": {

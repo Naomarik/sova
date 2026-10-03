@@ -12027,6 +12027,23 @@
         "pi-config/extensions/subagents/index.test.ts",
         "pi-config/extensions/subagents/README.md"
       ]
+    },
+    "§chat.slash-commands/compact-handoff": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "code": [
+        "pi-config/extensions/compact-handoff/index.ts",
+        "pi-config/extensions/compact-handoff/handoff.ts",
+        "pi-config/extensions/compact-handoff/index.test.ts",
+        "pi-config/extensions/compact-handoff/handoff.test.ts",
+        "pi-config/extensions/compact-handoff/tests/run.mjs",
+        "pi-config/extensions/compact-handoff/README.md",
+        "pi-config/README.md"
+      ],
+      "requires": [
+        "§chat.slash-commands/in-the-thread"
+      ]
     }
   },
   "boundary": {

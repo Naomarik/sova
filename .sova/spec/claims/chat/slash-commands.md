@@ -225,6 +225,44 @@ and again when the count changes, at most once a second. When there are none, an
   stays unarchived: archiving closes the runtime. The runtime doesn't register it, so it isn't
   in the menu. With arguments or images it's an ordinary message.
 
+## §chat.slash-commands/compact-handoff — /compact-handoff
+
+`/compact-handoff [focus]` compacts a session after the agent writes down what the summary would
+lose, and puts that note back right after the summary. It is an extension command
+(`pi-config/extensions/compact-handoff/`), so it is offered in the menu like any other and runs
+the same in the TUI and in Sova; `/compact` is unchanged.
+
+- **Refused while busy.** While a turn runs, a compaction runs, messages are queued or an earlier
+  `/compact-handoff` is still under way, it does nothing and says why in a notification.
+- **The handoff turn.** Otherwise it starts a turn with a hidden instruction (never a row in the
+  thread): persist anything durable to its usual place (alignments, plans, memory) with the
+  normal tools, then end the reply with a handoff note inside `<handoff>…</handoff>`: what must
+  survive the compaction, the exact files and ids to re-read, and the focus text, if given. The
+  turn itself is visible as usual.
+- **Then it compacts.** When that run settles, the newest `<handoff>` block in the replies after
+  the instruction (a later follow-up reply in the same run can carry it) is the note. It is
+  saved, then the session compacts with the focus as the summary's instructions, plus a line
+  saying a handoff note is saved and comes back after the summary.
+- **No compaction** when the turn is stopped or fails, or no reply carries a block: a notification
+  says so and nothing is saved. A prompt that starts before the compaction (one queued during the
+  turn) wins: the note is saved but the session is not compacted, and a notification says so. A
+  compaction that fails says so in a notification, except one the user stopped; the note stays
+  saved either way.
+- **Where the note lives.** `<agent dir>/compact-handoffs/<session id>.md` (directory 0700, file
+  0600, replaced atomically, the newest run wins), headed with the session id, folder, time,
+  leaf and focus; plus a copy in the session's hidden `compact-handoff` custom entry
+  `{v: 1, path, note, at, leafId}`, which follows the branch, a fork and a clone. The extension
+  writes both itself, on the machine running pi, so a sandboxed session (its agent dir is
+  read-only to tools) and a remote one (its tools run on the far host) save the same way.
+- **The note comes back after every compaction**, its own, a plain `/compact`, a threshold or an
+  overflow one: the newest `compact-handoff` entry on the branch is added as a hidden message right
+  after the summary, saying when it was written and where it is saved, to check it against the
+  summary and to re-read the files it names before acting on the next request. When the reply
+  that wrote it is still in the kept part of the history, only that preamble and the path are
+  added. It starts no turn: idle, it is added at once and the session waits for the user; a
+  compaction during a run adds it at that run's next turn boundary. A branch with no entry adds
+  nothing.
+
 ## §chat.slash-commands/commands-that-need-the-terminal-ui — Commands that need the terminal UI
 
 Some extension commands open TUI-only interfaces, such as custom overlays and pickers. Sova

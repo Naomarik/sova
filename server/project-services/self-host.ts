@@ -62,14 +62,14 @@ export const RESTART_GATE = join(dirname(fileURLToPath(import.meta.url)), "..", 
 export const RESTART_DELAY_SEC = 30;
 export const restartGateLog = () => join(servicesRoot(), "logs", "restart-gate.log");
 
-/** The transient unit that runs an adopted unit's gate: one per unit and state root, so a second schedule meanwhile is refused by name. */
-export const restartGateUnitOf = (unit: string) => `sova-restart-${stateHash()}-${unit.replace(/\.service$/, "").replace(/[^A-Za-z0-9_.-]/g, "_")}`;
+/** The transient unit that runs one schedule of an adopted unit's gate: a name of its own per schedule (an elapsed timer may stay loaded), and a second gate finds the unit restarted already. */
+export const restartGateUnitOf = (unit: string, at = Date.now()) => `sova-restart-${stateHash()}-${unit.replace(/\.service$/, "").replace(/[^A-Za-z0-9_.-]/g, "_")}-${at.toString(36)}`;
 
 /** The `systemd-run` argv that runs the gate for `unit` once, `RESTART_DELAY_SEC` from now (pure, for tests). */
-export function restartGateArgv(o: { unit: string; serverPid: number; liveDir: string; mainPid: number | null; log: string; node?: string; script?: string }): string[] {
+export function restartGateArgv(o: { unit: string; serverPid: number; liveDir: string; mainPid: number | null; log: string; node?: string; script?: string; at?: number }): string[] {
   return [
     "--user",
-    `--unit=${restartGateUnitOf(o.unit)}`,
+    `--unit=${restartGateUnitOf(o.unit, o.at)}`,
     `--on-active=${RESTART_DELAY_SEC}s`,
     "--collect",
     "--quiet",

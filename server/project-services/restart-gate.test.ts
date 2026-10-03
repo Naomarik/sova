@@ -42,10 +42,11 @@ test("an adopted unit's status: state, main pid, start time and memory, by one r
 });
 
 test("the schedule: systemd-run --on-active=30s runs the server's own gate script with its pid, live dir and the unit's main pid", () => {
-  const a = restartGateArgv({ unit: UNIT, serverPid: 777, liveDir: "/live", mainPid: 4242, log: "/l/restart-gate.log", node: "/usr/bin/node" });
-  assert.deepEqual(a.slice(0, 6), ["--user", `--unit=${restartGateUnitOf(UNIT)}`, "--on-active=30s", "--collect", "--quiet", "--"]);
+  const a = restartGateArgv({ unit: UNIT, serverPid: 777, liveDir: "/live", mainPid: 4242, log: "/l/restart-gate.log", node: "/usr/bin/node", at: 1_000 });
+  assert.deepEqual(a.slice(0, 6), ["--user", `--unit=${restartGateUnitOf(UNIT, 1_000)}`, "--on-active=30s", "--collect", "--quiet", "--"]);
   assert.deepEqual(a.slice(6), ["/usr/bin/node", RESTART_GATE, "--unit", UNIT, "--server-pid", "777", "--live-dir", "/live", "--main-pid", "4242", "--log", "/l/restart-gate.log"]);
-  assert.match(restartGateUnitOf(UNIT), /^sova-restart-[0-9a-f]{6}-sova-gate-stand-in$/);
+  assert.match(restartGateUnitOf(UNIT, 1_000), /^sova-restart-[0-9a-f]{6}-sova-gate-stand-in-rs$/);
+  assert.notEqual(restartGateUnitOf(UNIT, 1_000), restartGateUnitOf(UNIT, 2_000), "each schedule its own unit: an elapsed timer never blocks the next");
   assert.ok(!a.includes("--main-pid") || a[a.indexOf("--main-pid") + 1] === "4242");
   assert.ok(!restartGateArgv({ unit: UNIT, serverPid: 1, liveDir: "/x", mainPid: null, log: "/l" }).includes("--main-pid"));
   assert.deepEqual(parseArgs(a.slice(8)), { unit: UNIT, "server-pid": "777", "live-dir": "/live", "main-pid": "4242", log: "/l/restart-gate.log" }, "the script reads what the schedule passes");

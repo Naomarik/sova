@@ -228,6 +228,8 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
 - `pnpm run dev:server` (port **4800**) and `pnpm run dev:web` (Vite, proxies /api + /ws to 4800)
 - Isolated testing: `pnpm run dev:hermetic` builds `<worktree>/.agent` (`scripts/hermetic-agent-dir.mjs`: this tree's
   pi-config, own sessions/state, nothing in `~/.pi`) and serves it on 4810 (`SOVA_PORT=<n>` picks another); it copies no auth — copy `auth.json` in by hand.
+  Once `.agent` holds copies of real sessions (or `--copied-sessions` announces them), the script leaves out the
+  wake-nudge extension and blanks the copied scheduler state, so no copied nudge or schedule fires; the mode is sticky (`.agent/copied-sessions.json`).
 - Feature work never edits `~/webapps/sova`: that is the live tree. Each feature session works in its own
   worktree and branch (`git worktree add ~/webapps/.worktrees/sova-<name> -b feat/<name>`; an agent uses the
   `worktree` tool, whose `create <name>` does exactly that and tracks it in the session, so its workers may start

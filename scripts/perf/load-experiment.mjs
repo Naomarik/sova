@@ -155,7 +155,8 @@ if (has("cleanup")) {
 // ── prepare: the hermetic agent dir with every real session copied in ─────────────────────────
 
 if (has("prepare")) {
-  execFileSync(process.execPath, [join(ROOT, "scripts", "hermetic-agent-dir.mjs"), "--unlock-url"], { stdio: "inherit", env: { ...process.env, HERMETIC_AGENT_DIR: AGENT } });
+  // --copied-sessions: real sessions follow, so no wake nudge and no schedule of theirs ever fires.
+  execFileSync(process.execPath, [join(ROOT, "scripts", "hermetic-agent-dir.mjs"), "--unlock-url", "--copied-sessions"], { stdio: "inherit", env: { ...process.env, HERMETIC_AGENT_DIR: AGENT } });
   const src = resolve(opt("sessions", join(HOME_PI, "agent", "sessions")));
   const dst = join(AGENT, "sessions");
   mkdirSync(dst, { recursive: true });

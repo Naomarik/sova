@@ -56,6 +56,8 @@ test("each example parses, records isolation on every service and sources, and i
     const def = parseDefinition(text);
     assert.ok(def.sources?.length, `${f}: sources`);
     for (const s of def.services) assert.ok(s.isolation?.why, `${f}: ${s.name}.isolation`);
+    // Every example has a page, so each names its entry point (PLAYBOOK.md: required wherever there is a page).
+    assert.ok(def.open, `${f}: open`);
     assert.equal(pv.formatText(text), text, `${f} is canonical`);
   }
 });
@@ -168,4 +170,26 @@ test("ram reads a unit's memory from its cgroup, and a pid tree's from /proc", (
   assert.deepEqual([unit.current, unit.peak, unit.source], [104857600, 209715200, "cgroup"]);
   const self = r.rows.find((x: { unit: string }) => x.unit === `pid ${process.pid}`);
   assert.ok(self.current > 0);
+});
+
+test("the entry point: plan points at a page with no `open` and check notes it; declaring one quiets both", () => {
+  const r = repo("entry");
+  const paged = structuredClone(DEF) as typeof DEF & { open?: unknown; services: { web: Record<string, unknown> } };
+  paged.services.web.ready = { http: "http" };
+  mkdirSync(join(r, ".sova"));
+  const f = join(r, ".sova", "project.json");
+  writeFileSync(f, pv.formatText(JSON.stringify(paged)));
+  git(r, "add", "-A");
+  git(r, "commit", "-qm", "Project verbs");
+  const plan = run("plan", "--root", r, "--json");
+  assert.equal(plan.status, 1, plan.stdout);
+  assert.ok(JSON.parse(plan.stdout).why.some((w: string) => w.includes("no entry point (`open`)")));
+  const c = run("check", f, "--root", r);
+  assert.match(c.stdout, /\$\.open: name the app's entry point/);
+  paged.open = { endpoint: "web.http" };
+  writeFileSync(f, pv.formatText(JSON.stringify(paged)));
+  assert.deepEqual(Object.keys(JSON.parse(readFileSync(f, "utf8"))), ["version", "sources", "services", "open"], "open sits after services");
+  git(r, "commit", "-qam", "entry");
+  assert.equal(run("plan", "--root", r).status, 0);
+  assert.doesNotMatch(run("check", f, "--root", r).stdout, /\$\.open/);
 });

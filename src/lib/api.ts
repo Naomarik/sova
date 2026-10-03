@@ -1,4 +1,6 @@
 import type { ProfilesListing } from "../../shared/profiles";
+import type { VerbResult } from "../../shared/project-contract";
+import type { HostServicesView, ProjectServicesView, ServicesUiVerb } from "../../shared/services-view";
 import type { SubagentProfilesFile, SubagentProfilesInfo } from "../../shared/subagent-profiles";
 import type {
   VoiceDeviceInfo,
@@ -828,6 +830,10 @@ export const fetchGitSummary = (path: string, fresh = false) =>
     folder. `fresh` skips the server's cache. */
 export const fetchSessionSetup = (path: string, fresh = false) =>
   request<SessionSetup>(`/api/sessions/context?path=${encodeURIComponent(path)}${fresh ? "&fresh=1" : ""}`);
+/** Switch a new session's context files and skills (§chat.transcript/setup-card-toggles): the
+    whole off set; the answer is the card's fresh read of the rebuilt runtime. */
+export const setSessionLoadout = (path: string, offContext: string[], offSkills: string[]) =>
+  request<SessionSetup>("/api/sessions/loadout", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path, offContext, offSkills }) });
 
 /**
  * `force` (chat only) lets the server open a session whose file was written recently by
@@ -1128,6 +1134,31 @@ export const getProjectCost = (projectId: string) => request<ProjectCost>(`${pro
 export const getOrgCosts = (orgId: string) => request<OrgCosts>(`/api/orgs/${encodeURIComponent(orgId)}/costs`);
 
 // ---- a project's software registry (§app/project-runtime) -------------------------------------------
+/** The project's copies on this host, for its Branches tab (§app.project-services/services-ui). */
+export const getProjectServices = (projectId: string) => request<ProjectServicesView>(`${projectPath(projectId)}/services`);
+/** Run one verb on the project as the operator. A refusal is a result too (its `error`), never thrown;
+    only an unreachable server or an unknown project throws. */
+export async function runProjectVerb(projectId: string, verb: ServicesUiVerb, body: Record<string, unknown>): Promise<VerbResult> {
+  try {
+    return await request<VerbResult>(`${projectPath(projectId)}/services/${verb}`, jsonInit("POST", body));
+  } catch (err) {
+    const b = err instanceof ApiError ? (err.body as Partial<VerbResult> | undefined) : undefined;
+    if (b && b.v === 1 && typeof b.verb === "string") return b as VerbResult;
+    throw err;
+  }
+}
+/** Run one verb as the operator on a folder no registered project holds (a refusal is a result, as above). */
+export async function runRootVerb(root: string, verb: ServicesUiVerb, body: Record<string, unknown>): Promise<VerbResult> {
+  try {
+    return await request<VerbResult>(`/api/project-services/${verb}`, jsonInit("POST", { ...body, project: root }));
+  } catch (err) {
+    const b = err instanceof ApiError ? (err.body as Partial<VerbResult> | undefined) : undefined;
+    if (b && b.v === 1 && typeof b.verb === "string") return b as VerbResult;
+    throw err;
+  }
+}
+/** What runs on this host now, every project's (Running branches on `#/projects`). */
+export const getHostServices = () => request<HostServicesView>("/api/services");
 export const getProjectRuntime = (projectId: string) => request<ProjectRuntimeView>(`${projectPath(projectId)}/runtime`);
 /** Approve the definition shown (its hash) on this host: the operator's only. */
 export const approveProjectRuntime = (projectId: string, hash: string) => request<ProjectRuntimeView>(`${projectPath(projectId)}/runtime/approve`, jsonInit("POST", { hash }));

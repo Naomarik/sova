@@ -74,6 +74,21 @@
       (some? (:folder e)) (assoc :folder (:folder e))
       (some? (:days e)) (assoc :days (:days e)))))
 
+;; ---- a running copy, shared -----------------------------------------------------------------------
+
+(defn share-effect
+  "What the effect shares (§app.project-overseer/previews): the copy and its endpoint, never a link (the
+   host keeps it; an effect's result is logged)."
+  [data]
+  (let [e (b/evt data)]
+    (cond-> {:instance (:instance e) :endpoint (:endpoint e) :overseer-id (:overseer-id e)}
+      (some? (:days e)) (assoc :days (:days e)))))
+
+(defn share-what [d]
+  (let [e (b/evt d)
+        copy (or (not-empty (:branch e)) (:instance e))]
+    (str "A preview link: " (or (not-empty (:endpoint e)) "an endpoint") " of a running copy" (when copy (str " (" copy ")")))))
+
 ;; ---- starts ----------------------------------------------------------------------------------------
 
 (defn attended-build-check
@@ -189,6 +204,11 @@
       ;; are the engine's. Stopping is never refused for an archived project.
       (dsl/act {:sova/feed :feed :event :services/down :checks [invalid]})
       (dsl/act {:sova/feed :feed :event :services/run :checks [not-archived invalid]})
+      ;; Sharing one of them (§app.project-overseer/previews): L1, held when unattended, as preview/start; the
+      ;; engine checked the share before the act, and the effect mints the link (again checked) once it goes
+      ;; ahead. Revoking one is no act.
+      (dsl/act {:sova/feed :feed :event :services/share :checks [not-archived invalid]}
+        (dsl/effect :services-share share-effect))
       ;; The Project verbs playbook (§app.project-runtime/onboard): a build of kind onboard whose first prompt is
       ;; the playbook's turn (fixed, so q7 does not apply: branch only, the operator merges); L3, held when
       ;; unattended, counted as a coding session's start. The host's `invalid` carries the playbook missing, the
@@ -244,6 +264,7 @@
                        :what (fn [d] (str "A preview link: " (str/trim (or (:purpose (b/evt d)) ""))))}
    :services/down     {:needs "L0" :tool "sova_project_verbs"}
    :services/run      {:needs "L3" :tool "sova_project_verbs"}
+   :services/share    {:needs "L1" :tool "sova_project_verbs" :people-facing true :hold true :confirm-kind "preview" :what share-what}
    :verbs/onboard     {:needs "L3" :tool "sova_project_verbs" :code-facing true :counts "create" :hold true :confirm-kind "build"
                        :what (fn [d] (str "The Project verbs playbook on " (:name d)))}
    :hold/cancel       {:needs "L0" :correction true}

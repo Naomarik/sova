@@ -1,6 +1,6 @@
 import { realpathSync, statSync } from "node:fs";
 import { isAbsolute, relative, resolve, sep } from "node:path";
-import { PREVIEW_PURPOSE_MAX, type PreviewHandoff, type PreviewTarget, type PreviewView } from "../shared/preview-links";
+import { PREVIEW_PURPOSE_MAX, type PreviewCopyState, type PreviewHandoff, type PreviewTarget, type PreviewView } from "../shared/preview-links";
 import { readBuilds, withWorktreePath } from "./build-loadout";
 import { projectOf } from "./project-overseer-store";
 import { peerPort } from "./mesh/peers";
@@ -8,6 +8,7 @@ import { portOwner, type PortOwner } from "./port-owner";
 import { keepPreview, keptPreview, type KeptPreview } from "./preview-kept";
 import { checkDays, checkPort, findPreviewByHash, listPreviews, mintPreview, onPreviewEnded, PreviewRefused, revokePreview, type PreviewRecord } from "./preview-links";
 import { startStaticServe, staticServes, stopStaticServe } from "./preview-serve";
+import { sensitivePortRefusal } from "./project-services/sensitive";
 import { readPublicLinks } from "./public-links";
 import { readSessionTitles } from "./session-titles";
 import { awaitShareLinks } from "./share/links-events";
@@ -20,7 +21,7 @@ import { ingressInfo, linkWarning, shareListenerState } from "./share/share-stat
  * the operator's routes and the overseer's tools share. A preview shows one of the project's coding
  * sessions' apps: a port it already serves, or a folder of its worktree that Sova serves itself.
  * preview-links.json keeps its record (its keys never change); preview-kept.json the rest, its link
- * included. Nothing here ever starts an app.
+ * included. Nothing here ever starts an app: a copy's Start is the operator's `up` (§mesh.public/preview-card).
  *
  * `resolvePreview` checks a request and changes nothing (the overseer's call is checked with it before
  * its statechart act, and again when a hold releases it); `makePreview` mints what it resolved.
@@ -37,13 +38,31 @@ export interface CodingTree {
   sessionPath: string | null;
 }
 
-/** Tests: stand-ins for the project's worktrees and the port's listener (the real ones read the statecharts and /proc). */
-let testDeps: { trees?: (projectId: string) => Promise<CodingTree[]>; owner?: (port: number) => PortOwner } = {};
+/** A copy link's copy now: its endpoint's service state and its slot, or null when the copy is gone. */
+export type CopyRead = (instance: string, endpoint: string) => Promise<{ state: PreviewCopyState; slot: number } | null>;
+
+/** Tests: stand-ins for the project's worktrees, the port's listener and a copy's state (the real ones read the statecharts, /proc and the engine). */
+let testDeps: { trees?: (projectId: string) => Promise<CodingTree[]>; owner?: (port: number) => PortOwner; copy?: CopyRead } = {};
 export function setPreviewDepsForTest(d: typeof testDeps | null): void {
   testDeps = d ?? {};
 }
 const ownerOf = (port: number): PortOwner => (testDeps.owner ?? portOwner)(port);
 const treesFor = (projectId: string): Promise<CodingTree[]> => (testDeps.trees ?? projectTrees)(projectId);
+const copyOf: CopyRead = (instance, endpoint) => (testDeps.copy ?? copyNow)(instance, endpoint);
+
+/**
+ * A copy's endpoint as the Previews card shows it (§mesh.public/preview-card), from the engine's status as the
+ * operator reads it: its service ready or degraded is `running`, starting is `starting`, anything else `stopped`.
+ * Reads only: a status starts nothing.
+ */
+export const copyNow: CopyRead = async (instance, endpoint) => {
+  const { projectEngine } = await import("./project-services/routes");
+  const r = await projectEngine().run("status", { instance }, { kind: "operator" });
+  if (!r.ok || r.slot === null) return null;
+  const sv = r.services.find((s) => s.name === endpoint.split(".")[0]);
+  const state: PreviewCopyState = sv?.state === "ready" || sv?.state === "degraded" ? "running" : sv?.state === "starting" ? "starting" : "stopped";
+  return { state, slot: r.slot };
+};
 
 /** The project's coding sessions with a worktree here, newest first (no git: the statechart's records). */
 export async function projectTrees(projectId: string): Promise<CodingTree[]> {
@@ -138,6 +157,8 @@ export async function resolvePreview(q: PreviewRequest, deps: { owner?: (port: n
   }
 
   const port = checkPort(typeof q.port === "string" && /^\d+$/.test(q.port) ? Number(q.port) : q.port, deps.sovaPorts);
+  const sensitive = sensitivePortRefusal(port);
+  if (sensitive) throw new PreviewRefused("sensitive", sensitive);
   const owner = (deps.owner ?? ownerOf)(port);
   const holder = typeof owner === "object" ? treeHolding(trees, owner.cwd) : null;
   if (q.requireOwner) {
@@ -240,10 +261,14 @@ export async function rebindStaticPreviews(now = Date.now()): Promise<{ bound: s
   return { bound, failed };
 }
 
-/** Stop serving folders of previews that are no longer active (expired, turned off elsewhere, gone). */
+/**
+ * Stop serving folders of previews that are no longer active (expired, turned off elsewhere, gone).
+ * Only a preview's own serve (`pv_…`): a copy's static service (served under its unit name) and a
+ * preview being staged are never its to stop.
+ */
 export async function sweepStaticPreviews(now = Date.now()): Promise<void> {
   for (const s of staticServes()) {
-    if (s.id.startsWith("staging-")) continue;
+    if (!s.id.startsWith("pv_")) continue;
     const v = listPreviews({}, now).find((x) => x.id === s.id);
     if (!v || v.state !== "active") await stopStaticServe(s.id).catch(() => false);
   }
@@ -266,7 +291,7 @@ export function startStaticPreviews(): void {
 // ---- reading them -----------------------------------------------------------------------------------------
 
 async function isRunning(record: PreviewRecord, kept: KeptPreview | null): Promise<boolean> {
-  if (kept?.target.kind === "static") return previewDialable(record);
+  if (kept?.target.kind === "static" || (kept?.target.kind === "instance" && kept.target.serve)) return previewDialable(record);
   const s = await dialLoopback(record.port);
   if (s === "refused") return false;
   s.destroy();
@@ -281,7 +306,7 @@ function shownFolder(folder: string, tree: CodingTree | null): string {
 }
 
 /** The project's previews (every project's without a filter), with the kept facts, the running check and the worktree match. */
-export async function previewViews(filter: { projectId?: string } = {}, deps: { owner?: (port: number) => PortOwner; trees?: (projectId: string) => Promise<CodingTree[]> } = {}): Promise<PreviewView[]> {
+export async function previewViews(filter: { projectId?: string } = {}, deps: { owner?: (port: number) => PortOwner; trees?: (projectId: string) => Promise<CodingTree[]>; copy?: CopyRead } = {}): Promise<PreviewView[]> {
   const treesOf = new Map<string, Promise<CodingTree[]>>();
   const trees = (p: string) => {
     if (!treesOf.has(p)) treesOf.set(p, (deps.trees ?? treesFor)(p).catch(() => []));
@@ -298,7 +323,7 @@ export async function previewViews(filter: { projectId?: string } = {}, deps: { 
     let tree = kept?.sessionId ? all.find((t) => t.sessionId === kept.sessionId) ?? null : null;
     let from: "recorded" | "worktree" | undefined = kept?.sessionId ? "recorded" : undefined;
     // An older preview (or the operator's by port): matched now by its listener's worktree, never written.
-    if (!kept?.sessionId && kept?.target.kind !== "static" && base.state === "active") {
+    if (!kept?.sessionId && (!kept || kept.target.kind === "port") && base.state === "active") {
       const owner = (deps.owner ?? ownerOf)(base.port);
       const holder = typeof owner === "object" ? treeHolding(all, owner.cwd) : null;
       if (holder) {
@@ -306,6 +331,8 @@ export async function previewViews(filter: { projectId?: string } = {}, deps: { 
         from = "worktree";
       }
     }
+    const copyTarget = kept?.target.kind === "instance" ? kept.target : null;
+    const copy = copyTarget && base.state === "active" ? await (deps.copy ?? copyOf)(copyTarget.instance, copyTarget.endpoint).catch(() => null) : null;
     const target: PreviewTarget = kept?.target.kind === "static" ? { kind: "static", folder: shownFolder(kept.target.folder, tree) } : { kind: "port", port: base.port };
     out.push({
       ...base,
@@ -318,6 +345,8 @@ export async function previewViews(filter: { projectId?: string } = {}, deps: { 
       ...(from ? { sessionFrom: from } : {}),
       sessionTitle: tree?.title ?? null,
       sessionPath: tree?.sessionPath ?? null,
+      ...(copyTarget ? { instance: copyTarget.instance, endpoint: copyTarget.endpoint } : {}),
+      ...(copy ? { copy } : {}),
     });
   }
   return out;

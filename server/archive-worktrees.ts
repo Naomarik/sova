@@ -38,7 +38,11 @@ async function repoRootOf(git: Git, dir: string): Promise<string | null> {
   return common && basename(common) === ".git" ? dirname(common) : null;
 }
 
-export function archiveWorktrees(readBranch: (path: string) => Promise<readonly unknown[]>, git: Git = runGit): ArchiveWorktrees {
+/** Tear down the running copy of a worktree, if any (throws with the reason): server/project-services/checkout-teardown.ts. */
+export type CopyTeardown = (path: string) => Promise<unknown>;
+const realTeardown: CopyTeardown = async (path) => (await import("./project-services/checkout-teardown")).teardownCopyOf(path);
+
+export function archiveWorktrees(readBranch: (path: string) => Promise<readonly unknown[]>, git: Git = runGit, teardown: CopyTeardown = realTeardown): ArchiveWorktrees {
   return {
     async plan(session) {
       const trees = (worktreesOf(await readBranch(session.path))?.trees ?? []).filter((t) => t.status !== "dropped");
@@ -61,6 +65,13 @@ export function archiveWorktrees(readBranch: (path: string) => Promise<readonly 
           continue;
         }
         const gone = !existsSync(t.path);
+        // Its running copy goes first (§app.overseer/tools); one that can't be torn down keeps the worktree.
+        try {
+          await teardown(t.path);
+        } catch (err) {
+          lines.push(`  - worktree ${t.path} (${t.branch}): kept, its running copy could not be torn down: ${firstLine((err instanceof Error ? err.message : String(err)).replace(/^Its running copy could not be torn down: /, ""))}`);
+          continue;
+        }
         try {
           const target = t.merge?.target ?? t.baseBranch ?? "";
           const { branchDeleted } = await removeWorktree({ path: t.path, branch: t.branch, base: t.base, target }, root, git);

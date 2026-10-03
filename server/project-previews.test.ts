@@ -375,6 +375,38 @@ describe("an older preview is matched by its worktree when read, never written (
   });
 });
 
+describe("a running copy's link shows its copy's state, read only (§mesh.public/preview-card)", () => {
+  test("running, starting or stopped as the copy's status says; a read starts nothing; a turned-off one isn't read", async () => {
+    const made = links.mintPreview({ projectId: project.id, port: 8741 }, new Set()).record;
+    kept.keepPreview(made.id, { target: { kind: "instance", instance: "in_copy1", endpoint: "web.http" }, branch: "sova/cart-1a2b3c" });
+    const asked: string[] = [];
+    let state: "running" | "starting" | "stopped" = "stopped";
+    const copy = async (instance: string, endpoint: string) => {
+      asked.push(`${instance} ${endpoint}`);
+      return { state, slot: 2 };
+    };
+    const read = async () => (await previews.previewViews({ projectId: project.id }, { copy })).find((x) => x.id === made.id)!;
+    let v = await read();
+    assert.deepEqual([v.instance, v.endpoint, v.branch, v.copy], ["in_copy1", "web.http", "sova/cart-1a2b3c", { state: "stopped", slot: 2 }]);
+    state = "starting";
+    assert.deepEqual((await read()).copy, { state: "starting", slot: 2 });
+    state = "running";
+    assert.deepEqual((await read()).copy, { state: "running", slot: 2 });
+    assert.deepEqual(asked, ["in_copy1 web.http", "in_copy1 web.http", "in_copy1 web.http"]);
+    // A port preview has no copy, and nothing asks about one.
+    const plain = links.mintPreview({ projectId: project.id, port: 8742 }, new Set()).record;
+    asked.length = 0;
+    const p = (await previews.previewViews({ projectId: project.id }, { copy })).find((x) => x.id === plain.id)!;
+    assert.deepEqual([p.instance, p.copy], [undefined, undefined]);
+    assert.deepEqual(asked, ["in_copy1 web.http"], "only the copy link's copy is read");
+    links.revokePreview(made.id);
+    asked.length = 0;
+    v = (await previews.previewViews({}, { copy })).find((x) => x.id === made.id)!;
+    assert.equal(v.copy, undefined);
+    assert.deepEqual(asked, [], "a turned-off link's copy is never read");
+  });
+});
+
 describe("confirm kinds: preview, and lists saved before it (§app.project-overseer/reviews)", () => {
   test("a list saved without confirmKindsKnown gets preview on (send as saved); one saved after keeps it off", () => {
     // Every kind there was before confirmKindsKnown was written, send (outreach's) included.

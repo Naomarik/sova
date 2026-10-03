@@ -51,6 +51,8 @@ export interface Confinement {
   wrap(u: ConfinedUnit): Promise<{ argv: string[]; env: Record<string, string> }>;
   tcp(port: number): Promise<boolean>;
   http(port: number, path: string): Promise<boolean>;
+  /** A GET of `path` inside the namespace: its status and content type (null: no answer, or none sent). */
+  get(port: number, path: string): Promise<{ status: number | null; type: string | null }>;
   /** Who listens on `port` inside the namespace. */
   portOwner(port: number): PortOwner;
   /** Why the run may not copy `src` (a data `from`), or null. */
@@ -356,6 +358,10 @@ export async function openConfinement(opts: OpenOptions): Promise<Confinement | 
     },
     async http(port, path) {
       return (await ask(sock, { op: "http", port, path }))?.ok === true;
+    },
+    async get(port, path) {
+      const r = (await ask(sock, { op: "http", port, path })) as { status?: unknown; type?: unknown } | null;
+      return { status: typeof r?.status === "number" ? r.status : null, type: typeof r?.type === "string" ? r.type : null };
     },
     portOwner(port) {
       return procPortOwner(port, fs);

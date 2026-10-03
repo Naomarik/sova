@@ -74,6 +74,7 @@
       }
     }
   },
+  "open": {"endpoint": "web.http"},
   "hooks": {
     "probe": {
       "run": [".sova/bin/probe"]
@@ -83,5 +84,6 @@
     "run": [".sova/bin/test"],
     "requires": ["test-repl"],
     "smoke": ["naomarik.motorsaif.core-test"]
-  }
+  },
+  "share": {"allow": false}
 }

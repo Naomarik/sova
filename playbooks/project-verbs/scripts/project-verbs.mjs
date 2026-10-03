@@ -27,7 +27,7 @@ export const ORDER = {
   slots: ["cap"],
   step: ["id", "run", "inputs", "timeout"],
   data: ["kind", "path", "from", "provision", "deprovision", "timeout", "sensitive"],
-  service: ["cmd", "static", "cwd", "env", "ports", "requires", "ready", "reload", "build", "scope", "container", "start", "about", "isolation", "adopt"],
+  service: ["cmd", "static", "cwd", "env", "ports", "requires", "ready", "reload", "build", "scope", "container", "start", "about", "isolation", "adopt", "onMerge"],
   port: ["base", "stride", "fixed"],
   ready: ["tcp", "http", "path", "timeout"],
   reload: ["signal", "cmd"],

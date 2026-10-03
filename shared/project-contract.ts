@@ -102,6 +102,8 @@ export interface ServiceDecl {
   isolation?: IsolationDecl;
   /** In slot 0, this systemd unit Sova did not start, on these fixed ports (§app.project-services/adopt); inside the hash. */
   adopt?: AdoptDecl;
+  /** `reload`: apply it on the main checkout's copy whenever main's HEAD moves, while it runs there (§app.project-services/on-merge); inside the hash. */
+  onMerge?: "reload";
 }
 /** `unit` a whole `.service` name, never Sova's own; `ports` every port of the service, fixed. */
 export interface AdoptDecl {
@@ -205,7 +207,7 @@ export const DEFINITION_KEYS = {
   top: ["version", "slots", "host", "setup", "data", "services", "hooks", "test", "share", "deploy", "sources"],
   slots: ["cap"],
   step: ["id", "run", "inputs", "timeout"],
-  service: ["cmd", "static", "cwd", "env", "ports", "requires", "ready", "reload", "build", "scope", "container", "start", "about", "isolation", "adopt"],
+  service: ["cmd", "static", "cwd", "env", "ports", "requires", "ready", "reload", "build", "scope", "container", "start", "about", "isolation", "adopt", "onMerge"],
   port: [["base", "stride"], ["fixed"]],
   ready: [["tcp", "timeout"], ["http", "path", "timeout"]],
   reload: [["signal"], ["cmd"]],
@@ -384,6 +386,12 @@ function service(nm: string, v: unknown, path: string): ServiceDecl {
   if (scope === "shared")
     for (const [k, p] of Object.entries(ports)) if (!("fixed" in p)) throw new DefinitionError(`${path}.ports.${k}`, "a shared service's ports are fixed");
   if (o.adopt !== undefined) out.adopt = adopt(o.adopt, `${path}.adopt`, out);
+  if (o.onMerge !== undefined) {
+    if (o.onMerge !== "reload") throw new DefinitionError(`${path}.onMerge`, 'must be "reload"');
+    if (hasStatic) throw new DefinitionError(`${path}.onMerge`, "a static service's files are live: nothing reloads on merge");
+    if (scope === "shared") throw new DefinitionError(`${path}.onMerge`, "a shared service is no copy's: onMerge reloads the main checkout's own services");
+    out.onMerge = "reload";
+  }
   return out;
 }
 

@@ -271,3 +271,17 @@ test("adopt: slot 0 of one cmd checkout service is a systemd unit Sova did not s
   assert.equal(refusedAt({ version: 1, services: { server, two: { cmd: ["x"], adopt: { unit: "y.service", ports: {} } } } }), "$.services.two.adopt");
   assert.equal(refusedAt({ version: 1, services: { site: { static: ".", ports: { http: { base: 9000 } }, adopt: { unit: "y.service", ports: { http: 9100 } } } } }), "$.services.site.adopt");
 });
+
+test('onMerge: "reload" on a checkout cmd service only, kept as written and inside the hash; absent hashes as before', async () => {
+  const { defHashOf } = await import("../server/project-services/trust");
+  const web = { cmd: ["node", "web.js"], ports: { http: { base: 5100 } } };
+  const plain = parse({ version: 1, services: { web } });
+  const opted = parse({ version: 1, services: { web: { ...web, onMerge: "reload" } } });
+  assert.equal(plain.services[0]!.onMerge, undefined);
+  assert.equal(opted.services[0]!.onMerge, "reload");
+  assert.notEqual(defHashOf(opted), defHashOf(plain), "opting in needs approval again");
+  assert.equal(refusedAt({ version: 1, services: { web: { ...web, onMerge: "restart" } } }), "$.services.web.onMerge");
+  assert.equal(refusedAt({ version: 1, services: { web: { ...web, onMerge: true } } }), "$.services.web.onMerge");
+  assert.equal(refusedAt({ version: 1, services: { site: { static: "public", ports: { http: { base: 5200 } }, onMerge: "reload" } } }), "$.services.site.onMerge");
+  assert.equal(refusedAt({ version: 1, services: { db: { cmd: ["db"], scope: "shared", ports: { tcp: { fixed: 5432 } }, onMerge: "reload" } } }), "$.services.db.onMerge");
+});

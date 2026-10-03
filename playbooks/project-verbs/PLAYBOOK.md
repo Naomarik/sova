@@ -27,6 +27,7 @@ Paths here are relative to this playbook's folder. `scripts/project-verbs.mjs` d
    - `test`: the project's test command, its `smoke` selection (small, fast, green at HEAD), and the on-demand services it requires. When no selection is green at HEAD (the suite is red, or every test needs the network or production data), declare no `test` and say so in the report; never a test that proves nothing.
    - `about` on each service with ports: how a builder uses it, with its real port as a template.
    - `share.endpoints`: only the ports a stakeholder should open in a browser (the app's web page, a public API it calls), as `"<service>.<port>"` of checkout services. Never a REPL, nREPL, shadow-cljs, debugger, metrics, database or admin port, and never a shared service. With any `sensitive` data resource, or when nothing is for a stakeholder to see, declare `share: {"allow": false}` and say why in the report.
+   - `onMerge: "reload"` only on a service the operator asked to follow main (a server people check after each merge, whose reload is cheap and drops nothing): Sova then reloads it on the main checkout's running copy each time main's HEAD moves. Off by default; never on a REPL, a long-running job or a datastore.
    - **Silence outbound sends when any data resource is `sensitive`** (a copy of real users' data must never message them). Find every channel in config and code: push notifications, chat bots (Telegram, Slack…), SMS/WhatsApp, email, webhooks, payment and other third-party calls. Route each send through one switch, `SOVA_SILENCE_OUTBOUND`: set to anything but `0` or empty, the send returns a stand-in answer and nothing leaves the host. Set it to `${slot}` in every service's `env`, so slot 0 (the main checkout) sends as before. Add a test to the `smoke` selection that fails when `SOVA_SLOT` is not 0 and the switch is off, and that calls every send path with each transport replaced by one that throws. `references/recipes.md` has the pattern.
    - One sentence in CLAUDE.md (or AGENTS.md, whichever the project has): "Ports above are the main checkout's; in a Sova worktree use the ports in Sova's instance note, and run tests with project_verbs test."
 6. **Check.** `project-verbs.mjs fmt`, then `project-verbs.mjs check` until it exits 0 (a `note:` is advice, a `problem:` must be fixed). Commit by explicit path: `git add .sova <each adapted file>`, `git commit -m "Project verbs: <what>"`.
@@ -46,7 +47,7 @@ Paths here are relative to this playbook's folder. `scripts/project-verbs.mjs` d
 - **Datastores copied while they run** may be inconsistent: take per-copy data from a store at rest, a dump, or a seed (`references/isolation.md`).
 
 ## Report
-- `Services`: one line each: name · kind · scope · isolation method — why · ports (slot 0 → slot 1).
+- `Services`: one line each: name · kind · scope · isolation method — why · ports (slot 0 → slot 1) · "reloads on merge" when it carries `onMerge`.
 - `Conform`: pass or fail, runs used of 6, confined or not, suite version, the definition's hash (first 12 hex), and for a failure the check, its detail and what you would try next.
 - `RAM`: per service steady / peak, and per instance total, from the report.
 - `Sensitive data`: each data resource marked `sensitive` and the evidence (or "none: no production-derived data found").

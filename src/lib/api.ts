@@ -384,14 +384,14 @@ export const sendPushTest = () => request<PushTestResult>("/api/push/test", { me
     still listed. */
 export const getThemes = () => request<ThemeList>("/api/themes");
 
-/** Sova's own settings (GET /api/settings). Today: the experimental Claude Code switch. */
+/** Sova's own settings (GET /api/settings): Settings → Experimental's switches. */
 export const getWebSettings = () => request<WebSettings>("/api/settings");
 
-/** Replace Sova's settings. Applies to sessions created after the change, not to open ones. */
+/** Save Settings → Experimental's switches; the server keeps every key the body doesn't name. */
 export const putWebSettings = (settings: WebSettings) =>
   request<WebSettings>("/api/settings", { method: "PUT", body: JSON.stringify(settings) });
 
-/** Whether the Claude Code CLI is usable, for the Experimental tab's status line. */
+/** Whether the Claude Code CLI is usable, for Settings → Accounts' status line. */
 export const getClaudeCliStatus = () => request<ClaudeCliStatus>("/api/settings/claude-status");
 
 /** The session cwd's file index for @-mentions: every non-ignored file under it, relative to

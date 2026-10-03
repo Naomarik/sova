@@ -179,10 +179,10 @@ fresh_home() {           # a home with a ~/.pi to guard, and no install in it
 	pi_before=$(pi_files)
 }
 
-# Every regular file under ~/.pi except the one the installer may create (the provider switch).
-# Links are not followed, so the extension links are not in it.
+# Every regular file under ~/.pi, with its path. Links are not followed, so the extension links
+# are not in it.
 pi_files() {
-	(cd "$home/.pi" && find . -type f ! -path ./agent/sova/settings.json -exec cat {} + | sort)
+	(cd "$home/.pi" && find . -type f -print -exec cat {} + | sort)
 }
 
 pi_untouched() {
@@ -331,14 +331,12 @@ for f in models.json keybindings.json vision-delegate.json; do
 	check "$(yes_if [ ! -e "$home/.pi/agent/$f" ])" "extensions: no personal $f"
 done
 check "$(yes_if [ ! -e "$home/.local/bin/pi-sessions" ])" "extensions: no pi-sessions command"
-check "$(yes_if grep -q '"claudeCodeProvider": true' "$home/.pi/agent/sova/settings.json")" \
-	"extensions: the Claude Code provider switch is on"
-check "$(yes_if grep -q '"version": 1' "$home/.pi/agent/sova/settings.json")" \
-	"extensions: the switch file has the version Sova reads"
+check "$(yes_if [ ! -e "$home/.pi/agent/sova/settings.json" ])" \
+	"extensions: no Sova settings file (the Claude Code provider needs no switch)"
 check "$(yes_if said 'claude CLI on PATH')" "extensions: says Claude Code's models need the claude CLI"
 
 # 13. Anything already at an extension's path that is not our link is kept, and that extension
-#     is skipped: a directory, and a link to somewhere else. An existing provider setting is kept.
+#     is skipped: a directory, and a link to somewhere else. An existing Sova settings file is kept.
 fresh_home foreign-extensions
 ext=$home/.pi/agent/extensions
 mkdir -p "$ext/alpha" "$home/elsewhere" "$home/.pi/agent/sova"
@@ -356,9 +354,9 @@ check "$(yes_if said 'skipped the alpha extension')" "foreign extensions: names 
 check "$(yes_if said 'skipped the beta.ts extension')" "foreign extensions: names the skipped link"
 check "$(yes_if [ -L "$ext/gamma" ])" "foreign extensions: the others are still linked"
 check "$(yes_if grep -q '"claudeCodeProvider":false' "$home/.pi/agent/sova/settings.json")" \
-	"foreign extensions: an existing provider setting is kept"
+	"foreign extensions: an existing Sova settings file is kept as it was"
 
-# 14. --no-extensions links nothing and switches nothing.
+# 14. --no-extensions links nothing and writes nothing in the agent dir.
 run_install no-extensions --no-extensions
 check "$([ "$status" -eq 0 ] && echo true || echo false)" "--no-extensions: exits 0"
 check "$(yes_if [ ! -e "$home/.pi/agent/extensions" ] && [ ! -e "$home/.pi/agent/sova" ])" \

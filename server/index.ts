@@ -731,29 +731,18 @@ app.get("/api/themes", (c) => c.json(listThemes()));
 // The playbooks catalog with each schedule's state, and the schedules' routes (server/schedule-routes.ts).
 registerScheduleRoutes(app);
 
-// Sova's own settings (server/web-settings.ts): today one experimental switch. GET reads the
-// stored value, PUT replaces it. The switch drives the `claude-code-provider` extension flag, so
-// it applies to sessions created after the change — an open chat keeps the runtime it started with.
+// Sova's own settings (server/web-settings.ts): Settings → Experimental's switches. GET reads the
+// stored values, PUT replaces the known ones it carries and ignores the rest.
 app.get("/api/settings", (c) => c.json(readWebSettings()));
 app.put("/api/settings", async (c) => {
   let body: unknown;
   try {
     body = await c.req.json();
   } catch {
-    return c.json({ error: "Expected JSON body { experimental: { claudeCodeProvider } }" }, 400);
+    return c.json({ error: "Expected JSON body { experimental: { ... } }" }, 400);
   }
   const result = writeWebSettings(body);
-  if ("error" in result) return c.json({ error: result.error }, 400);
-  // Turning the switch on registers the provider now, so the very next GET /api/models offers the
-  // Claude Code models without a server restart. Best-effort, like the startup warm-up.
-  if (result.experimental.claudeCodeProvider) {
-    try {
-      await warmClaudeCodeProvider(await getModelRuntime(), getAgentDir());
-    } catch (err) {
-      console.warn("[server] claude-code warm-up skipped:", err instanceof Error ? err.message : String(err));
-    }
-  }
-  return c.json(result);
+  return "error" in result ? c.json({ error: result.error }, 400) : c.json(result);
 });
 
 // Settings → Modes → Delegate: which worker each kind of
@@ -888,8 +877,8 @@ app.put("/api/settings/summarizer", async (c) => {
   return "error" in result ? c.json({ error: result.error }, result.status) : c.json(result);
 });
 
-// Is the Claude Code CLI actually usable? `claude --version` plus how many of its models the
-// shared runtime holds. Answering from the runtime rather than a second live probe keeps the
+// Is the Claude Code CLI actually usable (Settings → Accounts' status line)? `claude --version`
+// plus how many of its models the shared runtime holds. Answering from the runtime rather than a second live probe keeps the
 // Settings dialog free of CLI spawns beyond the version check, and reports what the picker will
 // really show.
 app.get("/api/settings/claude-status", async (c) => {
@@ -1657,9 +1646,9 @@ configureReadiness({
   terminal: (s) => terminalSession(s, !!heldChat(s.path)),
 });
 
-// With the experimental switch on, register the Claude Code provider now rather than when the
-// user first opens a session, so its models are in GET /api/models for the picker straight away.
-// A no-op when the switch is off, and never fatal: see warmClaudeCodeProvider.
+// Register the Claude Code provider now rather than when the user first opens a session, so its
+// models are in GET /api/models for the picker straight away (§app.claude-code-provider/always-on).
+// Never fatal, with or without a `claude` CLI: see warmClaudeCodeProvider.
 void (async () => {
   try {
     await warmClaudeCodeProvider(await getModelRuntime(), getAgentDir());

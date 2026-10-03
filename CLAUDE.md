@@ -230,8 +230,8 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
   only a session ON a registry-known login (`claude-accounts.json`); with no registry a session has
   no login and the force no-ops — use the login dir's own `FAKE_LIMIT` / `FAKE_AUTH` files (the
   fake's transport-level failure) instead. The fake's initialize answer lists one model
-  (`fake-opus`), so `claude-code-cli/fake-opus` can be a session's model once `settings.json`
-  gains `{"version":1,"experimental":{"claudeCodeProvider":true}}`. The pool of logins
+  (`fake-opus`), so `claude-code-cli/fake-opus` can be a session's model: the Claude Code provider
+  is always on, and `<agent dir>/sova/settings.json` needs no key for it. The pool of logins
   across devices has its own multi-host run, `node scripts/claude-pool-e2e/run.mjs` (three Sova
   containers on an `--internal` Docker network in address-identity mode, fake `claude`, no
   Tailscale; `--down` removes it, `--keep` leaves desk on 127.0.0.1:4821): it needs the mesh lab's

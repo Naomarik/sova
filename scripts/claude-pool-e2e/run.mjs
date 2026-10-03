@@ -220,7 +220,6 @@ async function main() {
   if (process.argv.includes("--down")) return down();
   up();
   for (const h of Object.keys(HOSTS)) await waitFor(`${h} serving`, async () => (await api(h, "GET", "/api/claude/accounts")).status === 200, 120_000);
-  for (const h of Object.keys(HOSTS)) await api(h, "PUT", "/api/settings", { experimental: { claudeCodeProvider: true } });
 
   log("1. mesh off: desk signs in 3 logins (phase 1); vps and phone have none");
   const existing = (await api("desk", "GET", "/api/claude/accounts")).json.logins.filter((l) => l.id !== "default");

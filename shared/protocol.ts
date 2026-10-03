@@ -827,24 +827,25 @@ export interface PlaybookCatalog {
 }
 
 // GET /api/settings              -> WebSettings
-// PUT /api/settings              -> WebSettings (400 bad body; only the keys below are accepted)
+// PUT /api/settings              -> WebSettings (400 bad body; `experimental` must be an object,
+//                                   a known key a boolean; unknown keys are ignored)
 // GET /api/settings/claude-status -> ClaudeCliStatus
 // ---------------------------------------------------------------------------
 /** Sova's own settings, stored in <agentDir>/sova/settings.json (server/web-settings.ts).
     Nothing outside Sova reads this file, so it is not a cross-process contract the way the
     subagent policy is. */
 export interface WebSettings {
-  experimental: {
-    /** Offer the Claude Code CLI's models as first-class pi models. Default off. Drives the
-        `claude-code-provider` extension flag, so it takes effect for sessions created after the
-        change, not for ones already open. */
-    claudeCodeProvider: boolean;
-  };
+  experimental: ExperimentalSettings;
 }
 
-/** Whether the Claude Code CLI is usable, for the Experimental tab's status line. `version` is
+/** Settings → Experimental's switches, each a boolean, off unless stored `true`. None today: the
+    Claude Code provider is always on now, and an old file's `claudeCodeProvider` is ignored. A new
+    switch is a key here and in server/web-settings.ts EXPERIMENTAL_KEYS. */
+export interface ExperimentalSettings {}
+
+/** Whether the Claude Code CLI is usable, for Settings → Accounts' status line. `version` is
     what `claude --version` printed; `models` counts the claude-code-cli models currently
-    registered with the runtime (0 while the toggle is off). `error` is set when the CLI could not
+    registered with the runtime. `error` is set when the CLI could not
     be run at all — the two fields are then absent. */
 export interface ClaudeCliStatus {
   version?: string;

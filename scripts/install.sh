@@ -18,9 +18,6 @@
 #                          <agent dir> is $PI_CODING_AGENT_DIR, else ~/.pi/agent (--no-extensions
 #                          skips them). Anything already at one of those paths that is not our
 #                          own link is left alone and that extension is skipped.
-#   <agent dir>/sova/settings.json
-#                          written only when it does not exist, with the Claude Code provider
-#                          switched on, so Claude Code's models are offered from the first start
 #   a login service, only if you ask for one (--service, or yes at the prompt): the launchd agent
 #                          ~/Library/LaunchAgents/io.github.naomarik.sova.plist on macOS, the
 #                          systemd user unit ~/.config/systemd/user/sova.service on Linux
@@ -361,20 +358,6 @@ if $extensions; then
 			"$ext_src"/*) [ -e "$dst" ] || { rm -f "$dst"; say "removed $dst (gone from this version)"; } ;;
 		esac
 	done
-
-	# The Claude Code provider switch, on unless the user already has a setting of their own.
-	switch=$agent/sova/settings.json
-	if [ ! -e "$switch" ] && [ ! -L "$switch" ]; then
-		write_file "$switch" 644 <<'JSON'
-{
-	"version": 1,
-	"experimental": {
-		"claudeCodeProvider": true
-	}
-}
-JSON
-		say "switched on the Claude Code provider in $switch"
-	fi
 fi
 
 # ---- the login service ----

@@ -1,23 +1,40 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { stateRoot } from "./state-root";
-import type { WebSettings } from "../shared/protocol";
+import type { ExperimentalSettings, WebSettings } from "../shared/protocol";
 
 /**
  * Sova's own settings — the ones that belong to the webapp rather than to pi or to an
- * extension's shared file. Today that is one experimental switch (Claude Code as first-class
- * models). Unlike server/settings.ts, whose file shape is a contract with the subagents
- * extension, nothing outside Sova reads this one.
+ * extension's shared file. Today that is Settings → Experimental's switches, none of them yet
+ * (the Claude Code provider used to be one; it is always on now, and an old file's
+ * `experimental.claudeCodeProvider` is ignored, never written). Unlike server/settings.ts, whose
+ * file shape is a contract with the subagents extension, nothing outside Sova reads this one.
  *
  * It lives under the agent dir, so PI_CODING_AGENT_DIR (the hermetic .agent) isolates it the
  * same way it isolates sessions and web-sessions.json.
  */
 const FILE = join(stateRoot(), "settings.json");
 
-/** Everything off: what a missing, unreadable or foreign-shaped file reads as. */
-const DEFAULTS: WebSettings = { experimental: { claudeCodeProvider: false } };
+type ExperimentalKey = keyof ExperimentalSettings;
 
-const settings = (claudeCodeProvider: boolean): WebSettings => ({ experimental: { claudeCodeProvider } });
+/**
+ * The experimental switches Sova knows, each a boolean, off unless stored `true`. A new switch is
+ * one key here and in ExperimentalSettings (shared/protocol.ts); reading, validating and the
+ * merge-write all follow this list. Any other key in the file or in a request is ignored.
+ */
+const EXPERIMENTAL_KEYS: readonly ExperimentalKey[] = [];
+
+const isObject = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === "object" && !Array.isArray(v);
+
+/** The known switches out of a stored or requested `experimental` object: `true` is on, anything else off. */
+function knownSwitches(experimental: Record<string, unknown>): ExperimentalSettings {
+  const out: Record<string, boolean> = {};
+  for (const key of EXPERIMENTAL_KEYS) out[key] = experimental[key] === true;
+  return out as ExperimentalSettings;
+}
+
+/** Everything off: what a missing, unreadable or foreign-shaped file reads as. */
+const defaults = (): WebSettings => ({ experimental: knownSwitches({}) });
 
 /**
  * Read the stored settings, tolerantly: anything unexpected reads as the defaults rather than
@@ -26,49 +43,47 @@ const settings = (claudeCodeProvider: boolean): WebSettings => ({ experimental: 
 export function readWebSettings(): WebSettings {
   try {
     const data = JSON.parse(readFileSync(FILE, "utf8")) as Record<string, unknown>;
-    if (data.version !== 1) return DEFAULTS;
-    const experimental = data.experimental;
-    if (experimental === null || typeof experimental !== "object" || Array.isArray(experimental)) return DEFAULTS;
-    const flag = (experimental as Record<string, unknown>).claudeCodeProvider;
-    return settings(flag === true);
+    if (data.version !== 1 || !isObject(data.experimental)) return defaults();
+    return { experimental: knownSwitches(data.experimental) };
   } catch {
-    return DEFAULTS; // missing or corrupt: everything off
+    return defaults(); // missing or corrupt: everything off
   }
 }
 
 /**
- * Validate and persist. Writes are re-read + merge (like web-sessions.ts): the file on disk is
- * the source of truth, and only the keys this request carries are replaced, so a setting another
- * server instance added survives. Atomic via tmp + rename.
+ * Validate and persist. The body is `{ experimental: {...} }`: a known key must be a boolean, an
+ * unknown one (an old `claudeCodeProvider`, a newer build's switch) is ignored, and `{}` writes
+ * nothing new. Writes are re-read + merge (like web-sessions.ts): the file on disk is the source of
+ * truth, and only the known keys this request carries are replaced, so a setting another server
+ * instance added survives. Atomic via tmp + rename.
  */
 export function writeWebSettings(raw: unknown): WebSettings | { error: string } {
-  const bad = { error: "Expected { experimental: { claudeCodeProvider: boolean } }" };
-  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return bad;
-  const experimental = (raw as Record<string, unknown>).experimental;
-  if (experimental === null || typeof experimental !== "object" || Array.isArray(experimental)) return bad;
-  const flag = (experimental as Record<string, unknown>).claudeCodeProvider;
-  if (typeof flag !== "boolean") return bad;
+  const bad = { error: "Expected { experimental: { <switch>: boolean } }" };
+  if (!isObject(raw) || !isObject(raw.experimental)) return bad;
+  const requested = raw.experimental;
+  const changes: Record<string, boolean> = {};
+  for (const key of EXPERIMENTAL_KEYS) {
+    if (!(key in requested)) continue;
+    const value = requested[key];
+    if (typeof value !== "boolean") return { error: `Expected experimental.${key} to be a boolean` };
+    changes[key] = value;
+  }
 
   // Re-read so keys we do not know about, or that another writer just added, are not dropped.
   let stored: Record<string, unknown> = {};
   try {
-    const data = JSON.parse(readFileSync(FILE, "utf8")) as Record<string, unknown>;
-    if (data !== null && typeof data === "object" && !Array.isArray(data)) stored = data;
+    const data: unknown = JSON.parse(readFileSync(FILE, "utf8"));
+    if (isObject(data)) stored = data;
   } catch {
     stored = {}; // missing or corrupt: start from nothing rather than refusing the write
   }
-  const storedExperimental =
-    stored.experimental !== null && typeof stored.experimental === "object" && !Array.isArray(stored.experimental)
-      ? (stored.experimental as Record<string, unknown>)
-      : {};
+  const storedExperimental = isObject(stored.experimental) ? stored.experimental : {};
 
-  const next = { ...stored, version: 1, experimental: { ...storedExperimental, claudeCodeProvider: flag } };
+  const experimental = { ...storedExperimental, ...changes };
+  const next = { ...stored, version: 1, experimental };
   mkdirSync(dirname(FILE), { recursive: true });
   const tmp = `${FILE}.${process.pid}.tmp`;
   writeFileSync(tmp, `${JSON.stringify(next, null, "\t")}\n`);
   renameSync(tmp, FILE);
-  return settings(flag);
+  return { experimental: knownSwitches(experimental) };
 }
-
-/** Shorthand for the one consumer that only cares about the switch (chat-manager, startup). */
-export const claudeCodeProviderEnabled = (): boolean => readWebSettings().experimental.claudeCodeProvider;

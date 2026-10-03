@@ -13,6 +13,9 @@ its own ports. `scope: "checkout"`, every port `{base, stride}`.
 - **stride** ≥ 10 when a service has several ports (base 4000 stride 10 gives 4000, 4010, 4020…),
   and wide enough that no two declared ports' ranges meet over slots 0…cap+2 (the parser refuses
   a meeting).
+- Declare a port only when the service listens on it for as long as it runs: conformance checks
+  each one is held by the service. A port a config names but nothing opens (a disabled console)
+  stays out of `ports`.
 - Check every slot from 1 to cap+2 against `inspect`'s "listening now" and "held by Sova
   instances": `check` reports a collision. Move the base (keep slot 0's literal by choosing the
   stride) rather than hope the port is free later.

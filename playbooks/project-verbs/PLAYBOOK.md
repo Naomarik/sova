@@ -38,6 +38,7 @@ Paths here are relative to this playbook's folder. `scripts/project-verbs.mjs` d
 - **Tests that start the app.** A test fixture that boots the dev system binds the app's ports and opens its datastores: give the test service the copy's own env and require the datastores. A test profile's own fixed port collides between copies too.
 - **Version-manager shims refuse a fresh checkout.** With mise (`.mise.toml`), even `node` or `bb` fails there ("Config files … are not trusted"): run your own commands with `MISE_TRUSTED_CONFIG_PATHS=<checkout>` and give the definition's services and scripts the same (`references/contract.md`, Toolchains).
 - **A page that needs compiled assets.** A server whose `/` fails until a watcher's first compile (an asset bundle it reads) is ready on a path that needs none (an API route, a health check); declare the watcher as a service that starts with `up`, and say so in its `about`.
+- **Declare only ports something listens on while the service runs.** Conformance checks that every declared port of a running service is held by it; a port a config names but nothing opens (a disabled admin console, a port only a test fixture binds for a moment) fails that check. Leave it out, or keep it in the program's env only.
 - **A selection that runs no test proves nothing.** Zero tests ran is a failure, never a green smoke.
 - **Datastores copied while they run** may be inconsistent: take per-copy data from a store at rest, a dump, or a seed (`references/isolation.md`).
 

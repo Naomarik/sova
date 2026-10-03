@@ -44,6 +44,7 @@ import { contextForBranch, normalizeEntries, normalizeEntry } from "./transcript
 import { cutTail, type HistoryPart, pullFields } from "./tail-hello";
 import { isOverseerId } from "./overseer-store";
 import { attachStreamGuard, capsFor, type StreamTrip } from "./stream-guard";
+import { useSlicedProviderReads } from "./runtime-quirks";
 import { targetOfCwd } from "./targets";
 import { sovaToken } from "./auth";
 import { claudeCodeProviderEnabled } from "./web-settings";
@@ -1619,6 +1620,9 @@ class ChatSession {
     this.guardTimer.unref();
     this.workersTimer = setInterval(() => this.pushWorkers(), GUARD_POLL_MS);
     this.workersTimer.unref();
+    // Provider bodies in reads no bigger than Node's, so the guard's abort lands as soon on any
+    // runtime (§app.server-runtime/quirks): the one place it is installed.
+    useSlicedProviderReads(session.agent);
     this.streamGuardOff?.();
     this.streamGuardOff = attachStreamGuard(session, () => capsFor(this.special), {
       onRunStart: () => (this.lastStreamTrip = null),

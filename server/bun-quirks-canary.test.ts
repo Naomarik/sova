@@ -3,6 +3,7 @@
 // canary fails: delete the workaround the registry names, then the canary and the registry row.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { createServer as createHttpServer } from "node:http";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { createServer as createNetServer, type AddressInfo } from "node:net";
 import os from "node:os";
@@ -111,6 +112,19 @@ describe("Bun quirk canaries (docs/bun-quirks.md)", { skip }, () => {
     c.terminate();
     wedged.close();
     assert.equal(ended, false, "fixed: handshakeTimeout fires; the timer in cappedWebSocket (server/runtime-quirks.ts) may go");
+  });
+
+  test("fetch-read-size: a streamed fetch body arrives in reads bigger than Node's 64 KiB", async () => {
+    const http = createHttpServer((_req, res) => {
+      res.writeHead(200, { "content-type": "text/event-stream" });
+      res.end(Buffer.alloc(2 * 1024 * 1024, 0x20));
+    });
+    await new Promise<void>((r) => http.listen(0, "127.0.0.1", () => r()));
+    const res = await fetch(`http://127.0.0.1:${(http.address() as AddressInfo).port}/`);
+    let biggest = 0;
+    for await (const part of res.body as unknown as AsyncIterable<Uint8Array>) biggest = Math.max(biggest, part.length);
+    http.close();
+    assert.ok(biggest > 64 * 1024, `fixed: reads are at most ${biggest} bytes; the slicing fetch (useSlicedProviderReads in server/runtime-quirks.ts) may go`);
   });
 
   test("event-loop-delay: monitorEventLoopDelay samples exclude the resolution interval", async () => {

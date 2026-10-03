@@ -4,7 +4,7 @@ import { after, describe, test } from "node:test";
 import { WebSocket, WebSocketServer } from "ws";
 import { createServer } from "node:http";
 import { createServer as createNetServer } from "node:net";
-import { cappedWebSocket, cappedWebSocketServer, enforceMaxPayload, loopDelaySampler, MESSAGE_TOO_BIG, messageBytes } from "./runtime-quirks";
+import { cappedWebSocket, cappedWebSocketServer, enforceMaxPayload, loopDelaySampler, MESSAGE_TOO_BIG, messageBytes, slicingFetch } from "./runtime-quirks";
 
 // The cap is ours, not ws's: each server here is built WITHOUT maxPayload, so on Node too it is
 // enforceMaxPayload, never ws, that closes (the same position Bun's shim puts every socket in).
@@ -138,5 +138,56 @@ describe("cappedWebSocket handshakeTimeout", () => {
     await new Promise((r) => setTimeout(r, 900));
     assert.deepEqual(errors, ["Opening handshake has timed out"]);
     assert.equal(closes, 1);
+  });
+});
+
+describe("slicingFetch", () => {
+  /** An HTTP server that writes `parts` one per tick, then (unless `hold`) ends. */
+  async function sse(parts: Buffer[], hold = false): Promise<string> {
+    const http = createServer(async (_req, res) => {
+      res.writeHead(200, { "content-type": "text/event-stream" });
+      for (const p of parts) {
+        res.write(p);
+        await new Promise((r) => setTimeout(r, 5));
+      }
+      if (!hold) res.end();
+    });
+    await new Promise<void>((r) => http.listen(0, "127.0.0.1", () => r()));
+    after(() => http.closeAllConnections?.());
+    after(() => http.close());
+    return `http://127.0.0.1:${(http.address() as AddressInfo).port}/`;
+  }
+  const text = Array.from({ length: 200 }, (_, i) => `data: {"i":${i},"s":"é€😀 \\t "}\n\n`).join("");
+  const bytes = Buffer.from(text, "utf8");
+
+  test("passes every byte through, in reads of at most `max`, across UTF-8 sequences split at slice edges", async () => {
+    // Chunks cut at odd offsets so multi-byte characters straddle both the writes and the slices.
+    const parts: Buffer[] = [];
+    for (let at = 0; at < bytes.length; at += 997) parts.push(bytes.subarray(at, at + 997));
+    const url = await sse(parts);
+    const res = await slicingFetch(undefined, 7)(url);
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get("content-type"), "text/event-stream");
+    const reader = res.body!.getReader();
+    const got: Uint8Array[] = [];
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      assert.ok(value.length <= 7, `a read of ${value.length} bytes`);
+      got.push(value);
+    }
+    assert.ok(Buffer.concat(got).equals(bytes), "byte for byte");
+    assert.equal(new TextDecoder().decode(Buffer.concat(got)), text);
+  });
+
+  test("an abort mid-stream stops the next read", async () => {
+    const url = await sse([bytes.subarray(0, 4000), bytes.subarray(4000)], true);
+    const ac = new AbortController();
+    const res = await slicingFetch(undefined, 100)(url, { signal: ac.signal });
+    const reader = res.body!.getReader();
+    const first = await reader.read();
+    assert.equal(first.value!.length, 100);
+    ac.abort();
+    await assert.rejects(reader.read(), (e: Error) => e.name === "AbortError");
   });
 });

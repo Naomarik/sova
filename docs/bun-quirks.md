@@ -30,6 +30,7 @@ The rules:
 | fetch-refused | 1.4.2 | TBD | `connectionRefused` / `errorCode` in `server/runtime-quirks.ts` (classify by code: `ECONNREFUSED` or `ConnectionRefused`, own or cause's), used by `server/extensions.ts` | `fetch-refused` | `repros/fetch-refused-error.mjs` |
 | assert-throws-empty | 1.4.2 | TBD | test-only: `server/mesh/address-identity.test.ts` doesn't pass `""` as the message | `assert-throws-empty` | `repros/assert-throws-empty-message.mjs` |
 | ws-handshake-timeout | 1.4.2 | TBD | `cappedWebSocket` in `server/runtime-quirks.ts`: its own timer, 50 ms after ws's, emits ws's error and terminates the socket | `ws-handshake-timeout` | `repros/ws-handshake-timeout.mjs` |
+| fetch-read-size | 1.4.2 | TBD (and pi-ai upstream) | `useSlicedProviderReads` / `slicingFetch` in `server/runtime-quirks.ts`, installed once in `server/chat-manager.ts` (skips google-* adapters, which refuse a custom fetch) | `fetch-read-size` | `repros/pi-ai-runaway-tool-call.mjs` |
 | event-loop-delay | 1.4.2 | TBD | `loopDelaySampler` in `server/runtime-quirks.ts` (used by `server/resource-monitor.ts`) | `event-loop-delay` | `repros/event-loop-delay.mjs` |
 
 ### resolver-case
@@ -112,6 +113,25 @@ its code, its own or its cause's, never by its message.
 `assert.throws(fn, "")` passes on Node when `fn` throws: the string is the failure message. Bun
 rejects it with `ERR_INVALID_ARG_VALUE` ("may not be an empty object"). This affects tests only.
 The one test that did this (address-identity) is rewritten not to.
+
+### fetch-read-size
+
+Bun's fetch hands a streamed response body over in reads of 128–256 KiB; Node's are 64 KiB. That
+is not a bug in itself. It met two pi-ai behaviours (upstream, not Bun):
+- every SSE event of a read in hand is processed before the abort signal is consulted again;
+- each tool-call delta re-parses the whole accumulated argument string (O(n) per delta).
+
+When the stream guard (§chat.transcript/runaway-stream) stopped a runaway tool call at 8 KiB of
+whitespace, Bun went on parsing ~670 more deltas where Node parsed ~75. The guarded turn took
+~450 ms on Bun against ~95 ms on Node, all of it with the event loop blocked. The workaround is
+`slicingFetch`, installed once per hosted session by `useSlicedProviderReads(session.agent)`
+(`server/chat-manager.ts`). It re-slices every provider response body to reads of at most 64 KiB,
+Node's own size, so nothing changes on Node. It passes every byte through unchanged (a UTF-8
+sequence may be split at a slice edge, as at any read edge) and refuses the next read once the
+request was aborted. A request that already names a fetch goes through unchanged, as does one to
+a google-* adapter (pi-ai's Google adapters throw on a custom fetch). With it, the guarded turn on
+Bun is back under the 250 ms bound. `repros/pi-ai-runaway-tool-call.mjs` is the repro for pi-ai
+upstream, and it shows both behaviours on either runtime.
 
 ### event-loop-delay
 

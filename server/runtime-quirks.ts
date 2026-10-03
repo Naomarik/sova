@@ -251,3 +251,72 @@ export function errorCode(err: unknown): string | undefined {
 
 /** Was this a refused connection (nothing listening), on any runtime? */
 export const connectionRefused = (err: unknown): boolean => REFUSED_CODES.has(errorCode(err) ?? "");
+
+// ─── Provider response reads ────────────────────────────────────────────────────────────────────
+// Bun 1.4.2's fetch hands a streamed body over in reads of 128–256 KiB where Node's are 64 KiB. pi-ai
+// handles every SSE event of a read before it looks at the abort signal again, and re-parses a tool
+// call's whole argument string on each delta (O(n) per delta). So after the stream guard stops a
+// runaway tool call, Bun kept parsing ~670 more deltas where Node parsed ~75: ~4x the stall. This
+// fetch re-slices the body to at most 64 KiB per read (Node's own size, so nothing changes there),
+// passes every byte through unchanged, and refuses the next read once the request was aborted.
+
+/** Node's own streamed-body read size, and the most this fetch hands over at once. */
+export const PROVIDER_READ_MAX = 64 * 1024;
+
+type Fetch = typeof globalThis.fetch;
+
+/** `inner`, with every response body re-sliced to reads of at most `max` bytes that stop at an abort. */
+export function slicingFetch(inner: Fetch = (...a) => globalThis.fetch(...a), max = PROVIDER_READ_MAX): Fetch {
+  return (async (input: Parameters<Fetch>[0], init?: Parameters<Fetch>[1]) => {
+    const res = await inner(input, init);
+    if (!res.body) return res;
+    const signal = init?.signal ?? (input instanceof Request ? input.signal : undefined);
+    const reader = res.body.getReader();
+    let chunk: Uint8Array | null = null;
+    let at = 0;
+    const body = new ReadableStream<Uint8Array>(
+      {
+        async pull(controller) {
+          if (signal?.aborted) {
+            controller.error(signal.reason ?? new DOMException("This operation was aborted", "AbortError"));
+            void reader.cancel().catch(() => {});
+            return;
+          }
+          if (!chunk || at >= chunk.length) {
+            const { value, done } = await reader.read();
+            if (done) return controller.close();
+            chunk = value;
+            at = 0;
+          }
+          const end = Math.min(chunk.length, at + max);
+          controller.enqueue(chunk.subarray(at, end));
+          at = end;
+        },
+        cancel: (reason) => reader.cancel(reason),
+      },
+      { highWaterMark: 0 },
+    );
+    const sliced = new Response(body, { status: res.status, statusText: res.statusText, headers: res.headers });
+    Object.defineProperty(sliced, "url", { value: res.url });
+    return sliced;
+  }) as Fetch;
+}
+
+/** The provider APIs whose pi-ai adapters refuse a custom fetch (they throw). */
+const OWN_FETCH_APIS = /^google/;
+const sliced = Symbol.for("sova.slicedProviderFetch");
+
+/**
+ * Give an agent's provider requests the slicing fetch: wraps `agent.streamFunction` once. A request
+ * that already names a fetch, or whose adapter refuses one (google-*), goes through unchanged.
+ */
+export function useSlicedProviderReads(agent: { streamFunction: (...args: any[]) => unknown }): void {
+  type Stream = ((model: { api?: string }, context: unknown, options?: { fetch?: Fetch }) => unknown) & { [sliced]?: true };
+  const orig = agent.streamFunction as Stream;
+  if (orig[sliced]) return;
+  const fetch = slicingFetch();
+  const wrapped: Stream = (model, context, options) =>
+    options?.fetch || OWN_FETCH_APIS.test(model.api ?? "") ? orig(model, context, options) : orig(model, context, { ...options, fetch });
+  wrapped[sliced] = true;
+  agent.streamFunction = wrapped;
+}

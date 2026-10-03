@@ -80,7 +80,9 @@ export type Caller =
   | { kind: "project-overseer"; id: string; root: string; act: VerbAct }
   | { kind: "session"; id: string; root: string | null; own: string[] }
   /** `confine`: a confined run (§app.project-services/confined): the instances it makes run inside it, unapproved. */
-  | { kind: "conform"; id: string; confine?: Confinement };
+  | { kind: "conform"; id: string; confine?: Confinement }
+  /** Sova itself, on no one's request: `on-merge` reloads the main checkout's copy when main moves (§app.project-services/on-merge). Apply only. */
+  | { kind: "system"; id: string };
 
 /**
  * Resolves once the project statechart took the verb's act; throws its refusal otherwise. `share`'s act
@@ -650,6 +652,10 @@ export class ProjectEngine {
       return;
     }
     if (caller.kind === "conform") return;
+    if (caller.kind === "system") {
+      if (verb !== "apply" && !(READ_VERBS as readonly string[]).includes(verb)) throw new VerbFailure("forbidden", `Sova runs only apply on its own (${caller.id}), never ${verb}`);
+      return;
+    }
     const project = run.project!;
     const read = (READ_VERBS as readonly string[]).includes(verb);
     if (caller.kind === "project-overseer" || caller.kind === "session") {

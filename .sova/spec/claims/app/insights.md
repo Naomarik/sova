@@ -168,10 +168,9 @@ Usage glance needs the room.
     host (§app.insights/llm-inflight), printed short as agents: `{n} agents` (`1 agent`). It is
     not a count of distinct agents or of busy turns: each one counted is a model call in flight —
     a main thread's, a subagent's, or background work (summaries, titles, decisions, compaction,
-    cache warming) — and time spent running tools is not. While the count is partial it carries
-    a plus, `{n}+ agents`; a count with approximate one-shots in it leads with a tilde,
-    `~{n} agents` (`~{n}+` while also partial); only a complete count with none shows a bare
-    number, `0 agents` included. While it is unknown the segment is the plain word "Agents", with
+    cache warming) — and time spent running tools is not. A known count always shows the bare
+    number, `0 agents` included: a partial count or one with approximate one-shots in it is
+    marked by no `+` or `~`, only by its sentence (below). While it is unknown the segment is the plain word "Agents", with
     no figure, never a 0.
   - **The other two are this host's, as before**, from `activeAgentCounts` and `activeTeamCount`
     in `src/lib/workers.ts` (the Agents poll; nothing new is read for them), each dropped at 0
@@ -224,7 +223,7 @@ The bar itself reads the same data as the rows, left to right:
 - **Mesh.** The connected count `{up}/{total}`, the host filter row's own figures
   (`connectedCount`) — shown only while the mesh is on, the same rule as the row.
 - **LLM calls in flight.** The `worker` icon and the Agents row's own figure
-  (§app.insights/llm-inflight: `{n}`, `{n}+` while partial, `–` while unknown), no word — the bar
+  (§app.insights/llm-inflight: the bare `{n}` whenever known, partial too, `–` while unknown), no word — the bar
   is a strip of figures; the accessible name says it. Always shown, a complete `0` included.
 - **Usage caps.** Every provider the glance has a part for — `usageGlance()`'s own parts, in its
   order (at most the five) — each as its `{abbr}` and the same pace meter the glance row draws
@@ -304,17 +303,20 @@ decisions, topic outlines, compaction, cache warming.
 - **Three states, and only one of them may read 0.**
   - **Complete** — every process on every counted host reports and nothing is known to be
     unseen: the bare figure, `0` included ("No LLM calls running now").
-  - **Partial** — the figure is a floor: it reads `{n}+` and its sentence says "At least {n} LLM
+  - **Partial** — the count is a floor: its sentence says "At least {n} LLM
     calls running now", followed by why (Claude Code's own internal calls aren't visible; a
     process or a host doesn't report).
   - **Approximate parts.** When `{a}` of the `{n}` are one-shots (approximate, above), they are
-    neither exact calls nor a floor, so the figure takes a leading `~` (`~{n}`, `~{n}+` while also
-    partial) and the sentence counts them apart: "{n−a} LLM calls running now, and {a} one-shot
+    neither exact calls nor a floor, so the sentence counts them apart: "{n−a} LLM calls running now, and {a} one-shot
     that may be calling" (complete), "At least {n−a} LLM calls running now, and {a} one-shot that
     may be calling. {why}" (partial); "one-shots" from 2. With no exact call the first clause is
     "No exact LLM calls running now" when complete, and "No exact LLM calls seen" when partial (a
-    floor of 0 asserts nothing). A `~` never stands for a gap and a `+` never for an
-    estimate.
+    floor of 0 asserts nothing).
+  - **The figure is the number only.** Whenever the count is known — complete, partial or with
+    one-shots in it — the figure the sidebar shows is the bare `{n}`, with no `+` and no `~`
+    (a mark beside the number was visual noise). That it is a floor, or holds estimates, lives in
+    the sentence (the `title` and `aria-label`), which still says so in full; the snapshot's own
+    `partial`, gaps and one-shot count are kept as they are.
   - **Unknown** — the page has no snapshot from the current connection (before the first frame,
     and from the moment the socket drops until the next snapshot): no figure (`–`), and the
     sentence "LLM calls running now: not known yet". A previous connection's figure is never

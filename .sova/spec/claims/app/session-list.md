@@ -326,7 +326,7 @@ label a person reads says "sessions pane".
   forces one open. If the region is gone by the time the pane has expanded, focus goes to the
   head's collapse toggle.
 - **Live tallies.** The LLM calls in flight (§app.insights/llm-inflight) — the expanded foot's
-  Agents row's own figure (`{n}`, `{n}+` while partial, `–` while unknown) and its sentence, "3
+  Agents row's own figure (the bare `{n}` whenever known, partial too, `–` while unknown) and its sentence, "3
   LLM calls running now" — shown unless the count is a complete 0; and
   "{n} sessions open in a TUI" (every live session, whatever the search filters), only at
   n ≥ 1, with `.spine-stats` omitted when both are left out. They are **facts, not doorways**: nothing

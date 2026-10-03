@@ -70,7 +70,6 @@ import {
 } from "./align.ts";
 import { registerAlignTool, type AlignToolHost } from "./align-tool.ts";
 import { reviewStartText } from "./review-prompt.ts";
-import { registerAssessmentTool, ASSESSMENT_TOOL } from "./spec-assessment-tool.ts";
 import { ALIGN_OVERLAY_OPTIONS, alignWidget, createAlignViewer, type AlignViewer } from "./align-ui.ts";
 import { registerVisGuideTool, VIS_GUIDE_TOOL } from "./vis-guide-tool.ts";
 
@@ -540,10 +539,7 @@ export default function modeExtension(pi: ExtensionAPI): void {
 		publishActive();
 		appendSwitch({ minor, on });
 		publishWorkerModes();
-		if (minor === "spec") {
-			recomputeRoutes();
-			syncTool(ASSESSMENT_TOOL, on && remoteTarget === undefined);
-		}
+		if (minor === "spec") recomputeRoutes();
 		syncHostSection();
 		renderStatus(ctx);
 		if (minor === "align") {
@@ -648,7 +644,6 @@ export default function modeExtension(pi: ExtensionAPI): void {
 	 */
 	function syncAlignTool(): void {
 		syncTool(ALIGN_TOOL, hasMinor(active, "align"));
-		syncTool(ASSESSMENT_TOOL, hasMinor(active, "spec") && remoteTarget === undefined);
 	}
 
 	/**
@@ -1192,7 +1187,6 @@ export default function modeExtension(pi: ExtensionAPI): void {
 	const specCensus = new CensusHook({ core: () => SPEC_CORE });
 	const specWrites = new SpecWriteGuard();
 	const specOn = () => hasMinor(active, "spec") && remoteTarget === undefined;
-	registerAssessmentTool(pi, { core: () => SPEC_CORE, enabled: specOn, worker: () => workerRole, roots: (ctx) => [ctx.cwd, ...trackedWorktrees] });
 	/** What this run did, for the line check. */
 	let specRun: {
 		/** The session's tree and every worktree it tracks, as the run found them. */

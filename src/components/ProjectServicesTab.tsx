@@ -11,10 +11,12 @@ import {
   copyMemory,
   copyName,
   createdByWord,
+  DESTRUCTIVE,
   doneLine,
   httpHref,
   memoryOf,
   notReadyLine,
+  portLabel,
   refusalLine,
   rowVerbs,
   type RowVerb,
@@ -28,6 +30,7 @@ import {
   shareOffered,
   VERB_LABEL,
   VERB_RUNNING,
+  verbGroups,
 } from "../lib/services-view";
 import { previewWarning } from "../lib/previews";
 import { announce, copyText, toast } from "../lib/ui-state";
@@ -37,21 +40,31 @@ import { Chip } from "./ui";
 const POLL_MS = 5_000;
 const errText = (x: unknown) => (x instanceof Error ? x.message : String(x));
 
-/** A service's ports, each with HTTP readiness a link on the host this page was opened from. */
-function Ports(props: { service: ServiceRowView }) {
+/**
+ * A service's ports as one compact tag (its name, then each port), each port with HTTP readiness a
+ * link on the host this page was opened from. `named` leads with the service's name.
+ */
+function Ports(props: { service: ServiceRowView; named?: boolean }) {
   const entries = () => Object.entries(props.service.ports);
   return (
-    <For each={entries()}>
-      {([name, port]) => (
-        <span class="text-mono services-port">
-          <Show when={props.service.http?.port === port} fallback={`${name} ${port}`}>
-            <a href={httpHref(location.hostname, props.service.http!)} target="_blank" rel="noopener" title={`Open ${props.service.name} on port ${port}`}>
-              {name} {port}
-            </a>
-          </Show>
-        </span>
-      )}
-    </For>
+    <Show when={entries().length}>
+      <span class="services-svc">
+        <Show when={props.named}>
+          <span class="services-svc-name">{props.service.name}</span>
+        </Show>
+        <For each={entries()}>
+          {([name, port]) => (
+            <span class="text-mono services-port">
+              <Show when={props.service.http?.port === port} fallback={portLabel(name, port)}>
+                <a href={httpHref(location.hostname, props.service.http!)} target="_blank" rel="noopener" title={`Open ${props.service.name} on port ${port}`}>
+                  {portLabel(name, port)}
+                </a>
+              </Show>
+            </span>
+          )}
+        </For>
+      </span>
+    </Show>
   );
 }
 
@@ -112,14 +125,15 @@ export function ProjectServicesTab(props: { projectId: string; archived: boolean
     poll.refetch();
   };
 
-  const VerbButton = (p: { row: string; verb: RowVerb; name: string; body: Record<string, unknown>; asksFirst?: boolean; label?: string }) => {
+  /** One verb's button: `quiet` draws it as a ghost; a destructive verb is always outlined in error. */
+  const VerbButton = (p: { row: string; verb: RowVerb; name: string; body: Record<string, unknown>; asksFirst?: boolean; label?: string; quiet?: boolean }) => {
     const key = () => `${p.row}:${p.verb}`;
-    const destructive = () => p.verb === "teardown" || p.verb === "reset";
+    const destructive = () => DESTRUCTIVE.has(p.verb);
     return (
       <button
         type="button"
         class="button button-sm"
-        classList={{ "button-destructive": destructive() }}
+        classList={{ "button-destructive": destructive(), "button-ghost": !!p.quiet && !destructive() }}
         aria-disabled={running() ? "true" : undefined}
         onClick={() => void run(p.row, p.verb, p.name, p.body, !!p.asksFirst)}
         onBlur={() => armed() === key() && setArmed(null)}
@@ -205,7 +219,7 @@ export function ProjectServicesTab(props: { projectId: string; archived: boolean
       <Show when={shareOffered(p.copy) && (p.copy.share.endpoints.length || blocked() === SHARE_SENSITIVE)}>
         <button
           type="button"
-          class="button button-sm"
+          class="button button-sm button-ghost"
           aria-disabled={blocked() || running() ? "true" : undefined}
           aria-expanded={shareOpen() === p.copy.instance}
           title={blocked() ?? undefined}
@@ -325,7 +339,7 @@ export function ProjectServicesTab(props: { projectId: string; archived: boolean
                     <CopyRow
                       copy={c}
                       said={said()[c.instance] ?? null}
-                      verbs={(verb) => <VerbButton row={c.instance} verb={verb} name={copyName(c)} body={{ instance: c.instance }} asksFirst={ASKS_FIRST.has(verb)} />}
+                      verbs={(verb, quiet) => <VerbButton row={c.instance} verb={verb} name={copyName(c)} body={{ instance: c.instance }} asksFirst={ASKS_FIRST.has(verb)} quiet={quiet} />}
                       share={<ShareParts copy={c} />}
                       shareButton={<ShareButton copy={c} />}
                       onLogs={() => setLogs({ instance: c.instance, name: copyName(c) })}
@@ -355,17 +369,34 @@ export function ProjectServicesTab(props: { projectId: string; archived: boolean
                             <div class="list-main services-row-main">
                               <p class="list-title services-row-title">
                                 <span class="services-name">{s.name}</span>
-                                <Chip tone={SERVICE_CHIP[s.state].tone}>{SERVICE_CHIP[s.state].word}</Chip>
+                                <span class="services-row-chip">
+                                  <Chip tone={SERVICE_CHIP[s.state].tone}>{SERVICE_CHIP[s.state].word}</Chip>
+                                </span>
+                                <span class="services-row-meta">{memoryOf(s.rssBytes ?? null)}</span>
                               </p>
-                              <p class="list-meta services-facts">
-                                <Ports service={s} />
-                                <span>{memoryOf(s.rssBytes ?? null)}</span>
-                              </p>
+                              <Show when={Object.keys(s.ports).length}>
+                                <p class="list-meta services-facts">
+                                  <Ports service={s} />
+                                </p>
+                              </Show>
                               <Show when={said()[row]}>{(line) => <p class="field-error services-said">{line()}</p>}</Show>
                             </div>
-                            <div class="button-row services-actions">
-                              <VerbButton row={row} verb="up" name={s.name} body={{ instance: via().instance, services: [s.name] }} />
-                              <VerbButton row={row} verb="down" name={s.name} body={{ instance: via().instance, services: [s.name] }} asksFirst />
+                            {/* Both always offered: the one the service's state calls for is drawn first and plain. */}
+                            <div class="services-actions">
+                              <div class="services-actions-group">
+                                <Show
+                                  when={s.state === "ready" || s.state === "starting"}
+                                  fallback={
+                                    <>
+                                      <VerbButton row={row} verb="up" name={s.name} body={{ instance: via().instance, services: [s.name] }} />
+                                      <VerbButton row={row} verb="down" name={s.name} body={{ instance: via().instance, services: [s.name] }} asksFirst quiet />
+                                    </>
+                                  }
+                                >
+                                  <VerbButton row={row} verb="down" name={s.name} body={{ instance: via().instance, services: [s.name] }} asksFirst />
+                                  <VerbButton row={row} verb="up" name={s.name} body={{ instance: via().instance, services: [s.name] }} quiet />
+                                </Show>
+                              </div>
                             </div>
                           </li>
                         );
@@ -385,10 +416,16 @@ export function ProjectServicesTab(props: { projectId: string; archived: boolean
   );
 }
 
-/** One copy's row: its facts, then its actions; at narrow widths the actions wrap under the facts. */
-function CopyRow(props: { copy: CopyView; said: string | null; verbs(v: RowVerb): JSX.Element; share: JSX.Element; shareButton: JSX.Element; onLogs(): void }) {
+/**
+ * One copy's row: its name, state chip, slot, memory and maker on one line, its ports as tags under
+ * it, then its actions by weight (the one its state calls for, the quieter rest, the destructive ones
+ * apart); at narrow widths the actions wrap under the facts.
+ */
+function CopyRow(props: { copy: CopyView; said: string | null; verbs(v: RowVerb, quiet: boolean): JSX.Element; share: JSX.Element; shareButton: JSX.Element; onLogs(): void }) {
   const c = () => props.copy;
   const chip = () => copyChip(c().state, isStarting(c().state, c().services));
+  const groups = () => verbGroups(rowVerbs(c()));
+  const ported = () => c().services.filter((s) => Object.keys(s.ports).length);
   return (
     <li class="list-row services-row">
       <div class="list-main services-row-main">
@@ -396,32 +433,38 @@ function CopyRow(props: { copy: CopyView; said: string | null; verbs(v: RowVerb)
           <span class="services-name text-mono" title={c().checkout}>
             {copyName(c())}
           </span>
-          <span class="list-meta">slot {c().slot}</span>
-          <Chip tone={chip().tone}>{chip().word}</Chip>
+          <span class="services-row-chip">
+            <Chip tone={chip().tone}>{chip().word}</Chip>
+          </span>
+          <span class="services-row-meta">
+            <span>slot {c().slot}</span>
+            <span title="Resident memory of its services now">{copyMemory(c().services)}</span>
+            <span title={c().createdBy}>by {createdByWord(c().createdBy)}</span>
+          </span>
         </p>
-        <p class="list-meta services-facts">
-          <For each={c().services}>
-            {(s) => (
-              <Show when={Object.keys(s.ports).length}>
-                <span class="services-service">
-                  {s.name} <Ports service={s} />
-                </span>
-              </Show>
-            )}
-          </For>
-          <span title="Resident memory of its services now">{copyMemory(c().services)}</span>
-          <span title={c().createdBy}>by {createdByWord(c().createdBy)}</span>
-        </p>
+        <Show when={ported().length}>
+          <p class="list-meta services-facts">
+            <For each={ported()}>{(s) => <Ports service={s} named />}</For>
+          </p>
+        </Show>
         <Show when={c().state !== "stopped" && c().state !== "absent" && notReadyLine(c().services)}>{(line) => <p class="list-meta">{line()}</p>}</Show>
         <Show when={c().adopted}>{(unit) => <p class="list-meta">{adoptedLine(unit())}</p>}</Show>
         <Show when={props.said}>{(line) => <p class="field-error services-said">{line()}</p>}</Show>
       </div>
-      <div class="button-row services-actions">
-        <For each={rowVerbs(c())}>{(verb) => props.verbs(verb)}</For>
-        {props.shareButton}
-        <button type="button" class="button button-sm" onClick={() => props.onLogs()}>
-          Logs
-        </button>
+      <div class="services-actions">
+        <div class="services-actions-group">
+          <Show when={groups().primary}>{(verb) => props.verbs(verb(), false)}</Show>
+          <For each={groups().quiet}>{(verb) => props.verbs(verb, true)}</For>
+          {props.shareButton}
+          <button type="button" class="button button-sm button-ghost" onClick={() => props.onLogs()}>
+            Logs
+          </button>
+        </div>
+        <Show when={groups().destructive.length}>
+          <div class="services-actions-group services-actions-danger">
+            <For each={groups().destructive}>{(verb) => props.verbs(verb, false)}</For>
+          </div>
+        </Show>
       </div>
       {/* Links and the Share form take the row's whole width, under its facts and actions. */}
       <div class="services-row-share">{props.share}</div>

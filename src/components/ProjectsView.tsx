@@ -136,7 +136,7 @@ function ProjectList(props: { titleRef(el: HTMLHeadingElement): void }) {
           </Show>
         }
       >
-        <section class="card orgs-section" aria-label="Projects">
+        <section class="card orgs-section projects-list-card" aria-label="Projects">
           <ul class="list orgs-project-list">
             <For each={lists().live}>{(p) => <ProjectRow project={p} />}</For>
           </ul>
@@ -260,7 +260,7 @@ function RunningCopies() {
                       </Show>
                       <Show when={p.orgName}>{(o) => <span class="list-meta">In {o()}</span>}</Show>
                     </p>
-                    <ul class="list">
+                    <ul class="list running-copies-rows">
                       <For each={p.copies}>
                         {(c) => {
                           const name = () => copyName({ slot: c.slot, branch: c.branch, checkout: p.root });
@@ -268,17 +268,21 @@ function RunningCopies() {
                           return (
                             <li class="list-row services-row">
                               <div class="list-main services-row-main">
-                                <p class="services-row-title">
+                                <p class="list-title services-row-title">
                                   <span class="services-name text-mono">{name()}</span>
-                                  <span class="list-meta">slot {c.slot}</span>
-                                  <Chip tone={copyChip(c.state, !!c.starting).tone}>{copyChip(c.state, !!c.starting).word}</Chip>
-                                  <span class="list-meta">{memoryOf(c.rssBytes)}</span>
+                                  <span class="services-row-chip">
+                                    <Chip tone={copyChip(c.state, !!c.starting).tone}>{copyChip(c.state, !!c.starting).word}</Chip>
+                                  </span>
+                                  <span class="services-row-meta">
+                                    <span>slot {c.slot}</span>
+                                    <span>{memoryOf(c.rssBytes)}</span>
+                                  </span>
                                 </p>
                                 <Show when={said()[key()]}>{(line) => <p class="field-error services-said">{line()}</p>}</Show>
                               </div>
-                              <div class="button-row services-actions">
+                              <div class="services-actions">
                                 {/* An adopted main is never Sova's to stop: Apply on its Services tab restarts it. */}
-                                <Show when={!c.adopted} fallback={<span class="list-meta">{adoptedLine(c.adopted!)}</span>}>
+                                <Show when={!c.adopted} fallback={<p class="list-meta services-actions-note">{adoptedLine(c.adopted!)}</p>}>
                                   <StopButton p={p} id={key()} name={name()} body={{ instance: c.instance }} />
                                 </Show>
                               </div>
@@ -292,15 +296,19 @@ function RunningCopies() {
                           return (
                             <li class="list-row services-row">
                               <div class="list-main services-row-main">
-                                <p class="services-row-title">
+                                <p class="list-title services-row-title">
                                   <span class="services-name">{s.name}</span>
-                                  <span class="list-meta">shared</span>
-                                  <Chip tone={SERVICE_CHIP[s.state].tone}>{SERVICE_CHIP[s.state].word}</Chip>
-                                  <span class="list-meta">{memoryOf(s.rssBytes)}</span>
+                                  <span class="services-row-chip">
+                                    <Chip tone={SERVICE_CHIP[s.state].tone}>{SERVICE_CHIP[s.state].word}</Chip>
+                                  </span>
+                                  <span class="services-row-meta">
+                                    <span>shared</span>
+                                    <span>{memoryOf(s.rssBytes)}</span>
+                                  </span>
                                 </p>
                                 <Show when={said()[key()]}>{(line) => <p class="field-error services-said">{line()}</p>}</Show>
                               </div>
-                              <div class="button-row services-actions">
+                              <div class="services-actions">
                                 <StopButton p={p} id={key()} name={s.name} body={{ instance: s.via, services: [s.name] }} asksFirst />
                               </div>
                             </li>

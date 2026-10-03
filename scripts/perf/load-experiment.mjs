@@ -242,7 +242,7 @@ async function inspector() {
 }
 
 function scopeArgv(unit, weight) {
-  return ["systemd-run", "--user", "--scope", "--quiet", `--unit=${unit}`, ...(weight ? ["-p", `CPUWeight=${weight}`] : []), "--"];
+  return ["systemd-run", "--user", "--scope", "--quiet", "--slice=app.slice", `--unit=${unit}`, ...(weight ? ["-p", `CPUWeight=${weight}`] : []), "--"];
 }
 
 function startServer(variant, runId) {

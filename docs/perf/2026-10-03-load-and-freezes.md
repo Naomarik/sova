@@ -2,7 +2,7 @@
 
 **Status: the method, harness and fix are written; the experiment's numbers are pending.** The
 experiment needs `systemd-run --user`, which the sandboxed worker that wrote this can't reach, so
-the orchestrator runs it (`.sova/spec/drafts/load-priority/RUNBOOK.md`). The Results and
+the orchestrator runs it (`docs/perf/RUNBOOK.md`). The Results and
 Conclusions sections get filled in from `docs/perf/data/`.
 
 ## Symptom
@@ -93,7 +93,7 @@ _Pending the numbers._ What the fix does whatever they show:
 
 ## Re-running
 
-See `.sova/spec/drafts/load-priority/RUNBOOK.md` (it moves here once the draft is promoted):
+See `docs/perf/RUNBOOK.md`:
 
 ```sh
 node scripts/perf/load-experiment.mjs --prepare

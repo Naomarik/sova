@@ -1,5 +1,5 @@
 import { createSignal, For, type JSX, Show } from "solid-js";
-import type { VerbResult } from "../../shared/project-contract";
+import type { LinkView, VerbResult } from "../../shared/project-contract";
 import type { CopyView, ServiceRowView } from "../../shared/services-view";
 import { getProjectServices, runProjectVerb } from "../lib/api";
 import { createPoll } from "../lib/poll";
@@ -17,10 +17,16 @@ import {
   refusalLine,
   type RowVerb,
   SERVICE_CHIP,
+  SHARE_DAY_CHOICES,
+  SHARE_SENSITIVE,
+  endpointPort,
+  linkLine,
+  shareBlocked,
   VERB_LABEL,
   VERB_RUNNING,
 } from "../lib/services-view";
-import { announce, toast } from "../lib/ui-state";
+import { previewWarning } from "../lib/previews";
+import { announce, copyText, toast } from "../lib/ui-state";
 import { ServiceLogsDrawer } from "./ServiceLogsDrawer";
 import { Chip } from "./ui";
 
@@ -123,6 +129,177 @@ export function ProjectServicesTab(props: { projectId: string; archived: boolean
   const copies = () => poll.data()?.copies ?? [];
   const hasMain = () => copies().some((c) => c.slot === 0);
 
+  // ---- Share (§app.project-services/share) --------------------------------------------------------
+  /** The copy whose Share form is open. */
+  const [shareOpen, setShareOpen] = createSignal<string | null>(null);
+  const [endpoint, setEndpoint] = createSignal("");
+  const [days, setDays] = createSignal<number>(SHARE_DAY_CHOICES[0]);
+  /** Links minted in this page, by id: copyable even when the status keeps no URL. */
+  const [minted, setMinted] = createSignal<Record<string, string>>({});
+  const urlOf = (l: LinkView) => l.url ?? minted()[l.id] ?? null;
+  const copyLink = (url: string) => void copyText(url, "Link copied.");
+
+  const openShare = (c: CopyView) => {
+    setShareOpen(shareOpen() === c.instance ? null : c.instance);
+    setEndpoint(c.share.endpoints[0] ?? "");
+    setDays(SHARE_DAY_CHOICES[0]);
+    say(c.instance, null);
+  };
+  const share = async (e: Event, c: CopyView) => {
+    e.preventDefault();
+    const key = `${c.instance}:share`;
+    if (running() || !endpoint()) return;
+    setRunning(key);
+    say(c.instance, null);
+    try {
+      const r = await runProjectVerb(props.projectId, "share", { instance: c.instance, endpoint: endpoint(), days: days(), confirm: true });
+      const why = refusalLine(r);
+      if (why) {
+        say(c.instance, why);
+        announce(why);
+      } else {
+        const link = r.links[0];
+        if (link?.url) {
+          setMinted({ ...minted(), [link.id]: link.url });
+          copyLink(link.url);
+        }
+        setShareOpen(null);
+        const done = `Shared ${endpoint()} of ${copyName(c)}.`;
+        toast(done);
+        announce(done);
+      }
+    } catch (x) {
+      say(c.instance, `Couldn't reach the engine. ${errText(x)}`);
+    } finally {
+      setRunning(null);
+      poll.refetch();
+    }
+  };
+  /** Turn Off one link: a second click confirms. */
+  const revoke = async (c: CopyView, l: LinkView) => {
+    const key = `${l.id}:revoke`;
+    if (running()) return;
+    if (armed() !== key) return setArmed(key);
+    setArmed(null);
+    setRunning(key);
+    try {
+      const r = await runProjectVerb(props.projectId, "revoke", { link: l.id });
+      const why = refusalLine(r);
+      if (why) say(c.instance, why);
+      else toast(`The ${l.endpoint} link of ${copyName(c)} is off.`);
+    } catch (x) {
+      say(c.instance, `Couldn't reach the engine. ${errText(x)}`);
+    } finally {
+      setRunning(null);
+      poll.refetch();
+    }
+  };
+
+  /** Share on a copy's row: disabled with its reason while the copy can't be shared. */
+  const ShareButton = (p: { copy: CopyView }) => {
+    const blocked = () => shareBlocked(p.copy, !!poll.data()?.sensitive);
+    return (
+      <Show when={p.copy.share.endpoints.length || blocked() === SHARE_SENSITIVE}>
+        <button
+          type="button"
+          class="button button-sm"
+          aria-disabled={blocked() || running() ? "true" : undefined}
+          aria-expanded={shareOpen() === p.copy.instance}
+          title={blocked() ?? undefined}
+          onClick={() => !blocked() && openShare(p.copy)}
+        >
+          Share
+        </button>
+      </Show>
+    );
+  };
+
+  /** A copy's links (chips with Copy Link and Turn Off), its Share form, and why Share is off. */
+  const ShareParts = (p: { copy: CopyView }) => {
+    const c = () => p.copy;
+    const blocked = () => shareBlocked(c(), !!poll.data()?.sensitive);
+    const port = () => (endpoint() ? endpointPort(c(), endpoint()) : null);
+    return (
+      <>
+        <Show when={blocked() && (c().share.endpoints.length || blocked() === SHARE_SENSITIVE)}>
+          <p class="list-meta">{blocked()}</p>
+        </Show>
+        <Show when={c().links.length}>
+          <ul class="services-links" aria-label={`Links of ${copyName(c())}`}>
+            <For each={c().links}>
+              {(l) => (
+                <li class="services-link">
+                  <Chip tone="accent" title={l.expiresAt}>
+                    {linkLine(l, Date.now())}
+                  </Chip>
+                  <Show when={urlOf(l)}>
+                    {(url) => (
+                      <button type="button" class="button button-sm" onClick={() => copyLink(url())}>
+                        Copy Link
+                      </button>
+                    )}
+                  </Show>
+                  <button
+                    type="button"
+                    class="button button-sm button-destructive"
+                    aria-disabled={running() ? "true" : undefined}
+                    onClick={() => void revoke(c(), l)}
+                    onBlur={() => armed() === `${l.id}:revoke` && setArmed(null)}
+                  >
+                    {running() === `${l.id}:revoke` ? "Turning off…" : armed() === `${l.id}:revoke` ? "Turn Off Link?" : "Turn Off"}
+                  </button>
+                </li>
+              )}
+            </For>
+          </ul>
+        </Show>
+        <Show when={shareOpen() === c().instance && !blocked()}>
+          <form class="stack services-share-form" onSubmit={(e) => void share(e, c())}>
+            <div class="services-share-fields">
+              <div class="field">
+                <label class="field-label" for={`share-endpoint-${c().instance}`}>
+                  Endpoint
+                </label>
+                <select id={`share-endpoint-${c().instance}`} class="select input-mono" onChange={(e) => setEndpoint(e.currentTarget.value)}>
+                  <For each={c().share.endpoints}>
+                    {(ep) => (
+                      <option value={ep} selected={endpoint() === ep}>
+                        {ep}
+                      </option>
+                    )}
+                  </For>
+                </select>
+              </div>
+              <div class="field">
+                <label class="field-label" for={`share-days-${c().instance}`}>
+                  Expires
+                </label>
+                <select id={`share-days-${c().instance}`} class="select" onChange={(e) => setDays(Number(e.currentTarget.value))}>
+                  <For each={SHARE_DAY_CHOICES}>
+                    {(d) => (
+                      <option value={d} selected={days() === d}>
+                        {d === 1 ? "In 1 day" : `In ${d} days`}
+                      </option>
+                    )}
+                  </For>
+                </select>
+              </div>
+            </div>
+            <p class="field-hint">{previewWarning(port())}</p>
+            <div class="button-row">
+              <button type="submit" class="button button-sm button-primary" aria-disabled={running() ? "true" : undefined}>
+                {running() === `${c().instance}:share` ? "Sharing…" : "Share Copy"}
+              </button>
+              <button type="button" class="button button-sm button-ghost" onClick={() => setShareOpen(null)}>
+                Cancel
+              </button>
+            </div>
+          </form>
+        </Show>
+      </>
+    );
+  };
+
   return (
     <section class="card orgs-section services-tab" aria-labelledby="project-services">
       <h2 class="orgs-h2" id="project-services">
@@ -144,6 +321,8 @@ export function ProjectServicesTab(props: { projectId: string; archived: boolean
                       copy={c}
                       said={said()[c.instance] ?? null}
                       verbs={(verb) => <VerbButton row={c.instance} verb={verb} name={copyName(c)} body={{ instance: c.instance }} asksFirst={ASKS_FIRST.has(verb)} />}
+                      share={<ShareParts copy={c} />}
+                      shareButton={<ShareButton copy={c} />}
                       onLogs={() => setLogs({ instance: c.instance, name: copyName(c) })}
                     />
                   )}
@@ -202,7 +381,7 @@ export function ProjectServicesTab(props: { projectId: string; archived: boolean
 }
 
 /** One copy's row: its facts, then its actions; at narrow widths the actions wrap under the facts. */
-function CopyRow(props: { copy: CopyView; said: string | null; verbs(v: RowVerb): JSX.Element; onLogs(): void }) {
+function CopyRow(props: { copy: CopyView; said: string | null; verbs(v: RowVerb): JSX.Element; share: JSX.Element; shareButton: JSX.Element; onLogs(): void }) {
   const c = () => props.copy;
   const chip = () => COPY_CHIP[c().state];
   return (
@@ -230,9 +409,11 @@ function CopyRow(props: { copy: CopyView; said: string | null; verbs(v: RowVerb)
         </p>
         <Show when={c().state !== "stopped" && c().state !== "absent" && notReadyLine(c().services)}>{(line) => <p class="list-meta">{line()}</p>}</Show>
         <Show when={props.said}>{(line) => <p class="field-error services-said">{line()}</p>}</Show>
+        {props.share}
       </div>
       <div class="button-row services-actions">
         <For each={ROW_VERBS}>{(verb) => props.verbs(verb)}</For>
+        {props.shareButton}
         <button type="button" class="button button-sm" onClick={() => props.onLogs()}>
           Logs
         </button>

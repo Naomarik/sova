@@ -1,8 +1,9 @@
 // The Services tab and Running copies (§app.project-services/services-ui) as words. Pure: no Solid, no DOM.
 
-import type { InstanceState, ServiceState, VerbResult } from "../../shared/project-contract";
+import type { InstanceState, LinkView, ServiceState, VerbResult } from "../../shared/project-contract";
 import type { CopyView, ServiceRowView } from "../../shared/services-view";
 import { bytesWord, type ChipTone } from "./project-software";
+import { expiresWord } from "./session-shares";
 
 /** A copy's name: `main` for the main checkout's (slot 0), else its branch, else its folder. */
 export function copyName(c: Pick<CopyView, "slot" | "branch" | "checkout">): string {
@@ -105,3 +106,25 @@ export function refusalLine(r: Pick<VerbResult, "ok" | "error">): string | null 
   if (r.error.code === "busy") return /try again/i.test(said) ? said : `${said} Try again once they are idle.`;
   return said;
 }
+
+// ---- Share (§app.project-services/share) -----------------------------------------------------------
+
+/** The Share form's expiry choices, in days (the engine caps a definition's lower `share.maxDays`). */
+export const SHARE_DAY_CHOICES = [1, 2, 3, 4, 5, 6, 7] as const;
+export const SHARE_SENSITIVE = "Derived from production: copies are never shared.";
+
+/** The port an endpoint (`<service>.<port>`) names in this copy, or null. */
+export function endpointPort(c: Pick<CopyView, "services">, endpoint: string): number | null {
+  const dot = endpoint.indexOf(".");
+  const s = c.services.find((x) => x.name === endpoint.slice(0, dot));
+  return s?.ports[endpoint.slice(dot + 1)] ?? null;
+}
+
+/** Why Share is unavailable on this copy, or null: sensitive data first, then the engine's own reason. */
+export function shareBlocked(c: Pick<CopyView, "share">, sensitive: boolean): string | null {
+  if (sensitive) return SHARE_SENSITIVE;
+  return c.share?.refused ?? null;
+}
+
+/** A link's chip: its endpoint, then when it ends. */
+export const linkLine = (l: Pick<LinkView, "endpoint" | "expiresAt">, now: number): string => `${l.endpoint} · ${expiresWord(l.expiresAt, now).replace(/^E/, "e")}`;

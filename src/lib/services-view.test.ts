@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { copyMemory, copyName, createdByWord, httpHref, notReadyLine, refusalLine, sentence } from "./services-view";
+import { copyMemory, copyName, createdByWord, endpointPort, httpHref, linkLine, notReadyLine, refusalLine, sentence, SHARE_SENSITIVE, shareBlocked } from "./services-view";
 
 test("a copy is named main at slot 0, else by its branch, else by its folder", () => {
   assert.equal(copyName({ slot: 0, branch: "master", checkout: "/p" }), "main");
@@ -41,4 +41,17 @@ test("a refusal is a sentence without the CLI's hint; needs-confirm and busy say
   assert.equal(refusalLine({ ok: false, error: { code: "busy", message: "another verb is running on this instance (pid 4); try again when it ends" } }), "Another verb is running on this instance (pid 4); try again when it ends.");
   assert.equal(refusalLine({ ok: false, error: { code: "busy", message: "2 sessions are busy" } }), "2 sessions are busy. Try again once they are idle.");
   assert.equal(refusalLine({ ok: false, error: { code: "start-failed", message: "web stopped (exit 1)" } }), "Web stopped (exit 1).");
+});
+
+test("Share: an endpoint's port in the copy, the sensitive reason before the engine's, and a link's chip", () => {
+  const c = { services: [{ name: "web", scope: "checkout" as const, kind: "process" as const, state: "ready" as const, unit: null, pid: null, ports: { http: 4110 } }] };
+  assert.equal(endpointPort(c, "web.http"), 4110);
+  assert.equal(endpointPort(c, "web.admin"), null);
+  assert.equal(endpointPort(c, "api.http"), null);
+  assert.equal(shareBlocked({ share: { endpoints: ["web.http"], refused: null } }, true), SHARE_SENSITIVE);
+  assert.equal(shareBlocked({ share: { endpoints: ["web.http"], refused: "Start it first." } }, false), "Start it first.");
+  assert.equal(shareBlocked({ share: { endpoints: ["web.http"], refused: null } }, false), null);
+  const now = Date.parse("2026-10-03T12:00:00Z");
+  assert.equal(linkLine({ endpoint: "web.http", expiresAt: "2026-10-03T17:30:00Z" }, now), "web.http · expires in 5 hours");
+  assert.equal(linkLine({ endpoint: "web.http", expiresAt: "2026-10-08T12:00:00Z" }, now), "web.http · expires in 5 days");
 });

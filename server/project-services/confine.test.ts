@@ -288,7 +288,11 @@ time.sleep(30)`;
       for (let i = 0; i < 50 && typeof c.portOwner(pm) !== "object"; i++) await new Promise((r) => setTimeout(r, 100));
       for (const p of [p4, p6, pm]) assert.equal(typeof c.portOwner(p), "object", `port ${p}: ${JSON.stringify(c.portOwner(p))}`);
     } finally {
-      process.kill(-child.pid!, "SIGKILL");
+      try {
+        process.kill(-child.pid!, "SIGKILL");
+      } catch {
+        // already gone (it failed to start): the assertion above says why
+      }
     }
   } finally {
     await c.close();

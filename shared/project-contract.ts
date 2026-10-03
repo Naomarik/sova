@@ -114,9 +114,10 @@ export interface TestDecl {
   /** A small selection, green on the main checkout, that conformance runs. */
   smoke: string[];
 }
+/** `sensitive`: its copies hold data derived from production, so no instance holding it is ever shared; inside the hash. */
 export type DataDecl =
-  | { name: string; kind: "dir"; path?: string; from: string }
-  | { name: string; kind: "hook"; provision: Argv; deprovision: Argv; timeout: number };
+  | { name: string; kind: "dir"; path?: string; from: string; sensitive?: true }
+  | { name: string; kind: "hook"; provision: Argv; deprovision: Argv; timeout: number; sensitive?: true };
 export interface ProjectDef {
   version: 1;
   slots: { cap: number };
@@ -189,7 +190,7 @@ export const DEFINITION_KEYS = {
   build: ["run", "inputs", "timeout"],
   container: ["name", "engine"],
   isolation: ["method", "why"],
-  data: [["kind", "path", "from"], ["kind", "provision", "deprovision", "timeout"]],
+  data: [["kind", "path", "from", "sensitive"], ["kind", "provision", "deprovision", "timeout", "sensitive"]],
   hooks: ["probe"],
   probe: ["run", "inputs", "timeout"],
   test: ["run", "requires", "timeout", "smoke"],
@@ -361,17 +362,24 @@ function service(nm: string, v: unknown, path: string): ServiceDecl {
   return out;
 }
 
+/** `sensitive: true` kept; false (the default) dropped, so a definition hashes as it did without the key. */
+function sensitive(o: Obj, path: string): { sensitive?: true } {
+  if (o.sensitive === undefined || o.sensitive === false) return {};
+  if (o.sensitive !== true) throw new DefinitionError(`${path}.sensitive`, "must be true or false");
+  return { sensitive: true };
+}
+
 function data(nm: string, v: unknown, path: string): DataDecl {
   const o = obj(v, path);
   if (o.kind === "dir") {
     keysOnly(o, K.data[0], path);
     const from = o.from === undefined ? "empty" : o.from;
     if (typeof from !== "string" || !from) throw new DefinitionError(`${path}.from`, 'must be "empty" or a folder (a template)');
-    return { name: nm, kind: "dir", ...(o.path !== undefined ? { path: relPath(o.path, `${path}.path`, true) } : {}), from };
+    return { name: nm, kind: "dir", ...(o.path !== undefined ? { path: relPath(o.path, `${path}.path`, true) } : {}), from, ...sensitive(o, path) };
   }
   if (o.kind === "hook") {
     keysOnly(o, K.data[1], path);
-    return { name: nm, kind: "hook", provision: argv(o.provision, `${path}.provision`), deprovision: argv(o.deprovision, `${path}.deprovision`), timeout: timeout(o.timeout, `${path}.timeout`, HOOK_TIMEOUT_DEFAULT, HOOK_TIMEOUT_MAX) };
+    return { name: nm, kind: "hook", provision: argv(o.provision, `${path}.provision`), deprovision: argv(o.deprovision, `${path}.deprovision`), timeout: timeout(o.timeout, `${path}.timeout`, HOOK_TIMEOUT_DEFAULT, HOOK_TIMEOUT_MAX), ...sensitive(o, path) };
   }
   throw new DefinitionError(`${path}.kind`, 'must be "dir" or "hook"');
 }

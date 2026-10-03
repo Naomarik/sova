@@ -20,6 +20,7 @@ const DEF = {
     web: { cmd: ["node", "web.mjs"], ports: { http: { base: 4100, stride: 10 } }, requires: ["redis"], isolation: { method: "ports", why: "Its port is per slot." } },
     redis: { cmd: ["redis-server"], scope: "shared", ports: { main: { fixed: 6375 } }, isolation: { method: "shared", why: "One per project; each instance its own db index." } },
   },
+  data: { db: { kind: "dir", sensitive: true }, scratch: { kind: "dir" } },
   sources: ["bb.edn", "package.json", ".mise.toml"],
 };
 const write = (f: string, body: string) => writeFileSync(join(root, f), body);
@@ -73,6 +74,7 @@ test("present: main's HEAD is read, never the working tree; software, sources an
   assert.equal(f.sources.files[".mise.toml"], null, "missing at HEAD");
   assert.match(f.sources.files["bb.edn"]!, /^[0-9a-f]{40}$/);
   assert.match(f.sources.fingerprint!, /^sha256:/);
+  assert.deepEqual(f.data, [{ name: "db", kind: "dir", sensitive: true }, { name: "scratch", kind: "dir", sensitive: false }]);
   assert.equal(f.approved, null);
   assert.equal(f.proof, null);
   assert.equal(f.suite, SUITE_VERSION);
@@ -83,6 +85,9 @@ test("present: main's HEAD is read, never the working tree; software, sources an
   commit("deps");
   const g = await observeRuntime(root);
   assert.deepEqual(g.def, { state: "present", hash }, "isolation and sources stay outside the hash");
+  // `sensitive` is inside it: dropping it changes the hash (it gates exposure), and so needs approving again.
+  assert.notEqual(defHashOf(parseDefinition(JSON.stringify({ ...DEF, data: { db: { kind: "dir" }, scratch: { kind: "dir" } } }))), hash);
+  assert.equal(defHashOf(parseDefinition(JSON.stringify({ ...DEF, data: { db: { kind: "dir", sensitive: true }, scratch: { kind: "dir", sensitive: false } } }))), hash, "false is the default");
   assert.notEqual(g.sources.fingerprint, f.sources.fingerprint);
   assert.notEqual(g.sources.files["bb.edn"], f.sources.files["bb.edn"]);
   assert.equal(g.sources.files["package.json"], f.sources.files["package.json"]);

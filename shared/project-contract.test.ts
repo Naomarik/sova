@@ -241,3 +241,11 @@ test("sources and isolation: parsed strictly, kept as written, and the key lists
   for (const k of DEFINITION_KEYS.service) known({ version: 1, services: { a: { ...svc, [k]: 12 } } });
   assert.equal(refusedAt({ version: 1, services: { a: svc }, nope: 1 }), "$.nope");
 });
+
+test("a data resource may be sensitive: true or false, kept only when true", () => {
+  const svc = { cmd: ["x"] };
+  const def = parse({ version: 1, services: { a: svc }, data: { db: { kind: "dir", from: "${main}/db", sensitive: true }, cache: { kind: "dir", sensitive: false }, prod: { kind: "hook", provision: ["p"], deprovision: ["d"], sensitive: true } } });
+  assert.deepEqual(def.data.map((d) => [d.name, d.sensitive]), [["db", true], ["cache", undefined], ["prod", true]]);
+  assert.equal(refusedAt({ version: 1, services: { a: svc }, data: { db: { kind: "dir", sensitive: "yes" } } }), "$.data.db.sensitive");
+  assert.ok(DEFINITION_KEYS.data.every((keys) => (keys as readonly string[]).includes("sensitive")));
+});

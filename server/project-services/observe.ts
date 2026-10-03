@@ -26,6 +26,13 @@ export interface SoftwareFact {
   isolation?: IsolationDecl;
 }
 
+/** A data resource main's definition declares; `sensitive`: its copies are never shared. */
+export interface DataFact {
+  name: string;
+  kind: "dir" | "hook";
+  sensitive: boolean;
+}
+
 export interface ProofFact {
   hash: string;
   suite: number;
@@ -53,6 +60,8 @@ export interface RuntimeFacts {
   commit: string | null;
   def: DefFact;
   software: SoftwareFact[];
+  /** In declaration order. */
+  data: DataFact[];
   sources: SourcesFact;
   /** This host's approval of `def.hash`. */
   approved: { hash: string; at: string } | null;
@@ -135,6 +144,7 @@ export async function observeRuntime(root: string, git: Git = realGit): Promise<
     commit,
     def: fact,
     software: def ? softwareOf(def) : [],
+    data: (def?.data ?? []).map((d) => ({ name: d.name, kind: d.kind, sensitive: d.sensitive === true })),
     sources: await sourcesAt(root, commit, def?.sources ?? [], git),
     approved: hash && at ? { hash, at } : null,
     proof: hash ? proofOf(root, hash, false) : null,

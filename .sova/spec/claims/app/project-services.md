@@ -631,7 +631,7 @@ The operator sees and drives every running copy from two places, both on this ho
   probes over HTTP (a static service's first port too, at `/`) and that path; and whether the main
   checkout's definition declares sensitive data. It is read every 5 seconds while the tab shows. One row per copy: the main checkout's (slot 0) first, named
   `main`, then each branch copy by slot. A row shows the branch, `slot {n}`, each checkout service's
-  ports (a port with HTTP readiness is a link to `http://<this page's host>:<port><path>`), the copy's
+  ports (a port with HTTP readiness is a link to the site at `http://<this page's host>:<port>/`, never the readiness check's path), the copy's
   memory (the sum of its services' resident memory, "—" when none reports one), its state as a chip
   (Running, Starting, Degraded, Stopped, Absent; Starting while the copy is degraded only because a
   service is still starting, none failed or degraded; a service that is not ready is named under the

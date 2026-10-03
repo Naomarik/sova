@@ -33,7 +33,7 @@ test("entryAddresses: IP literals from name and url only (no DNS)", () => {
 test("tailnetAddresses: SOVA_PEER_HOST must be tailnet literals", () => {
   assert.deepEqual(tailnetAddresses("100.64.0.3"), ["100.64.0.3"]);
   for (const bad of [undefined, "", "0.0.0.0", "127.0.0.1", "::", "192.168.0.9", "100.64.0.3,0.0.0.0"]) {
-    assert.throws(() => tailnetAddresses(bad), String(bad));
+    assert.throws(() => tailnetAddresses(bad), Error, `${JSON.stringify(bad)} is refused`);
   }
 });
 

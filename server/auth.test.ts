@@ -3,13 +3,12 @@
 // app.fetch with the env a real socket gets ({ incoming }), the peer listener's ({ meshPeer }) or
 // none (app.request). Uses a throwaway PI_CODING_AGENT_DIR; ~/.pi is never read or written.
 import assert from "node:assert/strict";
-import fs, { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import type { IncomingMessage } from "node:http";
-import { syncBuiltinESMExports } from "node:module";
 import { isIP } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { after, afterEach, describe, test, type TestContext } from "node:test";
+import { after, afterEach, describe, test } from "node:test";
 import { Hono } from "hono";
 
 const agentDir = mkdtempSync(join(tmpdir(), "sova-auth-test-"));
@@ -19,7 +18,7 @@ delete process.env.SOVA_AUTH;
 delete process.env.HOST;
 delete process.env.SOVA_ALLOWED_HOSTS;
 
-const { AUTH_COOKIE, SERVER_HEADER, authGate, initAuthToken, serverAuthEnabled, setAuthHosts, setAuthPort, sovaToken, tokenFile, unlock, upgradeAllowed, pair, revealToken } = await import("./auth");
+const { AUTH_COOKIE, SERVER_HEADER, authGate, initAuthToken, serverAuthEnabled, setAuthHosts, setAuthPort, sovaToken, tokenFile, unlock, upgradeAllowed, pair, revealToken, setLinkForTest } = await import("./auth");
 const { mintCode, consumeCode } = await import("./auth-devices");
 setAuthPort(4800);
 
@@ -128,26 +127,26 @@ describe("the token", () => {
   });
 
   // Android (Termux) refuses hard links with EACCES: the mint falls back to an exclusive create.
-  function withLinkRefused(t: TestContext, before: (dest: string) => void, run: (dir: string) => void) {
+  function withLinkRefused(before: (dest: string) => void, run: (dir: string) => void) {
     const dir = mkdtempSync(join(tmpdir(), "sova-auth-eacces-"));
-    const link = t.mock.method(fs, "linkSync", (_src: string, dest: string) => {
+    let calls = 0;
+    setLinkForTest((_src, dest) => {
+      calls++;
       before(dest);
       throw Object.assign(new Error(`EACCES: permission denied, link -> '${dest}'`), { code: "EACCES" });
     });
-    syncBuiltinESMExports();
     try {
       process.env.PI_CODING_AGENT_DIR = dir;
       run(dir);
-      assert.equal(link.mock.callCount(), 1);
+      assert.equal(calls, 1);
     } finally {
-      link.mock.restore();
-      syncBuiltinESMExports();
+      setLinkForTest(null);
       rmSync(dir, { recursive: true, force: true });
     }
   }
 
-  test("where hard links are refused with EACCES, the token is still minted once at 0600 and kept", (t) => {
-    withLinkRefused(t, () => {}, (dir) => {
+  test("where hard links are refused with EACCES, the token is still minted once at 0600 and kept", () => {
+    withLinkRefused(() => {}, (dir) => {
       const file = join(dir, "sova", "auth-token");
       const minted = sovaToken();
       assert.match(minted, /^[A-Za-z0-9_-]{43}$/);
@@ -163,9 +162,9 @@ describe("the token", () => {
     });
   });
 
-  test("where hard links are refused with EACCES, a rival start's token that landed first wins and is never overwritten", (t) => {
+  test("where hard links are refused with EACCES, a rival start's token that landed first wins and is never overwritten", () => {
     const rival = "r".repeat(43);
-    withLinkRefused(t, (dest) => writeFileSync(dest, `${rival}\n`, { mode: 0o600, flag: "wx" }), (dir) => {
+    withLinkRefused((dest) => writeFileSync(dest, `${rival}\n`, { mode: 0o600, flag: "wx" }), (dir) => {
       const file = join(dir, "sova", "auth-token");
       assert.equal(sovaToken(), rival);
       assert.equal(readFileSync(file, "utf8"), `${rival}\n`);

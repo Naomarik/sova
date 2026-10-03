@@ -342,11 +342,11 @@ The server runs on Node (`node --import tsx server/index.ts`) or Bun (`bun serve
   the rules of **Live server restart** above (the gate, never `systemctl restart` from a hosted
   session). The change takes effect only at that restart. Roll back = `{"runtime": "node"}` plus the
   same restart.
-- **The live unit** still runs node directly. To put it under the switch, its ExecStart becomes the
-  launcher (the operator edits `~/.config/systemd/user/sova-runtime.service`, then
-  `systemctl --user daemon-reload` and a gated restart; an agent never edits the unit):
-  `ExecStart=/path/to/sova/scripts/start-server.sh` (with `WorkingDirectory` unchanged, and `node`
-  — plus `bun` or `SOVA_BUN` — reachable on the unit's PATH).
+- **The live unit** (`sova-runtime.service`) still runs node directly, and its ExecStart changes to
+  `scripts/start-server.sh` only when the user decides to switch: the operator edits the unit,
+  `systemctl --user daemon-reload`, then a gated restart. An agent never edits the unit. README's
+  "Run on Node or Bun" has the complete unit example (`%h` paths, the same ExecStartPre, PATH,
+  Restart and TimeoutStopSec as the live unit) and the switch/rollback steps.
 - **Testing on Bun:** in a worktree, `SOVA_RUNTIME=bun pnpm run dev:hermetic` (or
   `SOVA_RUNTIME=bun SOVA_PORT=48xx …`), or write `.agent/sova/runtime.json`; check
   `curl -s 127.0.0.1:<port>/api/health`. `SOVA_BUN=/nonexistent` drives the fallback.

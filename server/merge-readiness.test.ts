@@ -732,3 +732,64 @@ test("an unarchived session's inspection never queues reads of its own", async (
     assert.equal(reads, 1, "the listing's cadence covers it, as before");
   } finally { await r.readinessIdle(); r.resetReadiness(); }
 });
+
+test("a gone folder says what its work came to: merged and cleaned up, or removed and why; never in progress", async () => {
+  r.resetReadiness();
+  const gonePath = "/wt/gone-merged-branch-does-not-exist";
+  assert.equal(existsSync(gonePath), false);
+  const facts = (status: "active" | "merged"): FileFacts => ({ trees: [tracked({ path: gonePath, branch: "feat/gone", status })], merges: [] }) as unknown as FileFacts;
+  const asked: { dirs: readonly string[] }[] = [];
+  let answer: "merged" | "empty" | "unmerged" | null = "merged";
+  r.configureReadiness({ insights: { treeStatus: async () => null }, git: fakeGit({}), asksUser: () => undefined, now: () => 0, processStart: 0, gone: async (_t, dirs) => (asked.push({ dirs }), answer) });
+  try {
+    const s = summary("/sessions/x.jsonl", { cwd: "/home/u/webapps/sova" });
+    const reason = async (status: "active" | "merged" = "active") => (await r.computeReadiness(s, facts(status)))?.trees[0];
+    const merged = await r.computeReadiness(s, facts("active"));
+    assert.deepEqual(merged?.trees, [{ path: gonePath, branch: "feat/gone", state: "merged", merged: true, why: "cleaned up", reason: "Merged · cleaned up" }]);
+    assert.equal(merged?.badge, "merged");
+    assert.equal(merged?.cleanup, undefined, "a removed tree is no leftover to clean up");
+    assert.deepEqual(asked[0]?.dirs, ["/home/u/webapps/sova"], "git is read from the session's folder");
+    answer = "unmerged";
+    const unmerged = await r.computeReadiness(s, facts("active"));
+    assert.deepEqual([unmerged?.trees[0]?.state, unmerged?.trees[0]?.reason, unmerged?.trees[0]?.merged], ["removed", "Removed · not merged", undefined]);
+    assert.equal(unmerged?.badge, undefined, "unmerged work removed is never a merged badge");
+    assert.equal((await reason("merged"))?.reason, "Removed · not merged", "a branch git finds decides over the record");
+    answer = null;
+    assert.equal((await reason())?.reason, "Removed · no record of a merge");
+    assert.equal((await reason("merged"))?.reason, "Merged · cleaned up", "recorded merged, nothing else known: merged");
+    answer = "empty";
+    const empty = await r.computeReadiness(s, facts("active"));
+    assert.equal(empty?.trees[0]?.reason, "Removed · no commits");
+    // Every gone answer is one of these: none reads in progress.
+    for (const a of ["merged", "unmerged", "empty", null] as const) {
+      answer = a;
+      assert.notEqual((await reason())?.state, "in-progress");
+    }
+    // A folder that is there but unreadable is not "removed": the record still decides, as before.
+    r.configureReadiness({ insights: { treeStatus: async () => ({ path: gonePath, source: "session", exists: true, error: "git status: boom" }) } });
+    answer = "merged";
+    assert.equal((await reason())?.reason, "In progress · worktree folder gone");
+  } finally {
+    r.resetReadiness();
+  }
+});
+
+test("a gone folder whose branch the Merge Captain deleted reads merged from the captain's own record of its merge", async () => {
+  r.resetReadiness();
+  const gonePath = "/wt/captain-landed-does-not-exist";
+  const captain = sessionFile(chain([worktrees([tracked({ path: gonePath, branch: "feat/landed", session: "captain", how: "attached", status: "merged", merge: { target: "master", sha: "m1", at: 2, how: "tool" } })], "2026-09-29T15:36:00.000Z")]));
+  r.configureReadiness({ insights: { treeStatus: async () => null }, git: fakeGit({}), asksUser: () => undefined, now: () => 0, processStart: 0, gone: async () => null });
+  try {
+    const owner = { trees: [tracked({ path: gonePath, branch: "feat/landed" })], merges: [] } as unknown as FileFacts;
+    const s = summary("/sessions/owner.jsonl");
+    assert.equal((await r.computeReadiness(s, owner))?.trees[0]?.reason, "Removed · no record of a merge", "nothing has read the captain yet");
+    r.readinessOverlay(summary(captain, { id: "captain" }));
+    await r.readinessIdle();
+    const after = await r.computeReadiness(s, owner);
+    assert.deepEqual([after?.trees[0]?.state, after?.trees[0]?.merged, after?.trees[0]?.reason], ["merged", true, "Merged · cleaned up"]);
+    const other = { trees: [tracked({ path: gonePath, branch: "feat/other-branch" })], merges: [] } as unknown as FileFacts;
+    assert.equal((await r.computeReadiness(s, other))?.trees[0]?.reason, "Removed · no record of a merge", "only the same path and branch count");
+  } finally {
+    r.resetReadiness();
+  }
+});

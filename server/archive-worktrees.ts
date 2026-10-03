@@ -1,20 +1,23 @@
 // Archiving with worktree cleanup (§app.overseer/tools, `sova_archive` with `worktrees: "remove"`):
 // the git worktrees a session tracks (its `worktrees` entry, read by the worktrees extension's own
-// fold, server/worktrees-state.ts) that it created or attached itself are removed after it is
-// archived, by the same rules as a coding session's Remove Worktree (server/project-worktrees.ts
-// `removeWorktree`): git's own `worktree remove`, the branch deleted only when merged. A session
-// with uncommitted changes in any of them is refused before anything changes. Git by argv, never
-// a shell, through the extension's own runner.
+// fold, server/worktrees-state.ts) that it created or attached itself go, after it is archived,
+// through the cleanup service's own check and removal (server/worktree-cleanup.ts `removeTrees`,
+// §chat.worktrees/cleanup), the same code as the Clean Up Merged button: only merged or empty trees
+// are removed, every refusal is the service's, and the archived session itself counts for none of
+// them. A session with uncommitted changes in any of them is refused before anything changes.
 import { existsSync } from "node:fs";
-import { basename, dirname } from "node:path";
 import { type Git, runGit } from "../pi-config/extensions/worktrees/git.ts";
 import type { TrackedWorktree } from "../pi-config/extensions/worktrees/state.ts";
-import { removeWorktree, uncommitted } from "./project-worktrees";
+import { uncommitted } from "./project-worktrees";
+import { besideGone } from "./removed-worktrees";
+import { removeTrees } from "./worktree-cleanup";
 import { worktreesOf } from "./worktrees-state";
 
 /** What a session's cleanup would act on, read before it is archived. */
 export interface WorktreePlan {
-  /** The trees it created or attached itself (not detached): the ones removed. */
+  /** The session archived: left out of the service's session checks. */
+  session: { id: string; path: string };
+  /** The trees it created or attached itself (not detached): the ones offered for removal. */
   own: TrackedWorktree[];
   /** Trees it inherited from another session: left as they are. */
   inherited: TrackedWorktree[];
@@ -24,19 +27,12 @@ export interface WorktreePlan {
 
 export interface ArchiveWorktrees {
   plan(session: { id: string; path: string }): Promise<WorktreePlan>;
-  /** Remove the plan's own trees; one line per tree (and per inherited one), for the tool's result. */
+  /** Check and remove the plan's own trees; one line per tree (and per inherited one), for the tool's result. */
   remove(plan: WorktreePlan, cwd?: string): Promise<string[]>;
 }
 
-const firstLine = (s: string) => s.trim().split("\n")[0]?.trim() || "git failed";
-
-/** The main checkout of the repository `dir` belongs to: the folder holding its common git dir. */
-async function repoRootOf(git: Git, dir: string): Promise<string | null> {
-  if (!dir || !existsSync(dir)) return null;
-  const r = await git(["rev-parse", "--path-format=absolute", "--git-common-dir"], dir);
-  const common = r.code === 0 ? r.stdout.trim() : "";
-  return common && basename(common) === ".git" ? dirname(common) : null;
-}
+/** A service reason as the tool's line words it: "kept, not merged into master". */
+const keptWords = (reason: string): string => `${reason.charAt(0).toLowerCase()}${reason.slice(1)}`.replace(/\.$/, "");
 
 export function archiveWorktrees(readBranch: (path: string) => Promise<readonly unknown[]>, git: Git = runGit): ArchiveWorktrees {
   return {
@@ -50,25 +46,30 @@ export function archiveWorktrees(readBranch: (path: string) => Promise<readonly 
         const files = await uncommitted(git, t.path);
         if (files.length) dirty.push(`${t.path} (${files.length} file${files.length === 1 ? "" : "s"}, e.g. ${files[0]})`);
       }
-      return { own, inherited, dirty };
+      return { session: { id: session.id, path: session.path }, own, inherited, dirty };
     },
     async remove(plan, cwd) {
       const lines: string[] = [];
       for (const t of plan.own) {
-        const root = (await repoRootOf(git, t.path)) ?? (await repoRootOf(git, cwd ?? ""));
-        if (!root) {
-          lines.push(`  - worktree ${t.path} (${t.branch}): kept, its repository wasn't found`);
-          continue;
-        }
+        // Any folder of its repository: the tree itself, the session's, or one beside a gone tree.
+        const dir = [t.path, cwd ?? "", ...besideGone(t.path)].find((d) => d && existsSync(d));
         const gone = !existsSync(t.path);
-        try {
-          const target = t.merge?.target ?? t.baseBranch ?? "";
-          const { branchDeleted } = await removeWorktree({ path: t.path, branch: t.branch, base: t.base, target }, root, git);
-          lines.push(
-            `  - worktree ${t.path}: ${gone ? "already gone, pruned from git's list" : "removed"}; branch ${t.branch} ${branchDeleted ? "deleted (merged)" : "kept (not merged, its commits stay)"}`,
-          );
-        } catch (err) {
-          lines.push(`  - worktree ${t.path} (${t.branch}): kept, ${firstLine(err instanceof Error ? err.message : String(err))}`);
+        const r = dir ? await removeTrees(dir, [t.path], { exclude: plan.session.path }).catch((err: Error) => err) : null;
+        if (r === null) lines.push(`  - worktree ${t.path} (${t.branch}): kept, its repository wasn't found`);
+        else if (r === "busy") lines.push(`  - worktree ${t.path} (${t.branch}): kept, a cleanup of this repository is already running`);
+        else if (r instanceof Error) lines.push(`  - worktree ${t.path} (${t.branch}): kept, ${r.message.split("\n")[0]}`);
+        else {
+          const done = r.removed[0];
+          const why = r.kept[0]?.reason ?? "not removed";
+          if (!done) lines.push(`  - worktree ${t.path} (${t.branch}): kept, ${keptWords(why)}`);
+          else {
+            const branch = !done.branch
+              ? ""
+              : done.branchDeleted
+                ? `; branch ${done.branch} deleted (${done.kind === "empty" ? "no commits of its own" : "merged"})`
+                : `; branch ${done.branch} kept (${done.kind === "content" ? "merged by content" : "git didn't delete it"})`;
+            lines.push(`  - worktree ${t.path}: ${gone ? "already gone, dropped from git's list" : "removed"}${branch}`);
+          }
         }
       }
       for (const t of plan.inherited) lines.push(`  - worktree ${t.path} (${t.branch}): left, it belongs to session ${t.session}`);

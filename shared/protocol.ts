@@ -2007,6 +2007,58 @@ export interface WorktreeStatus {
 export interface SessionWorktrees { sessionPath: string; trees: WorktreeStatus[] }
 export interface WorktreesInsight { sessions: SessionWorktrees[]; generatedAt: number }
 
+/** GET /api/worktrees/summary?path=<session> (§chat.worktrees/cleanup): every linked worktree in
+    git's list for the repository the session's folder is in. "none": a remote session, a folder
+    that isn't in a repository with a main checkout, or one that is gone. */
+export type WorktreesSummary =
+  | { state: "none" }
+  | {
+      state: "ok";
+      /** The main checkout's folder. */
+      repo: string;
+      /** master, else main; absent when the repository has neither (every tree then unmerged). */
+      mainBranch?: string;
+      total: number;
+      merged: number;
+      /** Empty leftovers: a branch with no commit of its own. */
+      empty: number;
+      unmerged: number;
+    };
+/** POST /api/worktrees/cleanup's body: `dryRun` previews; `expect` removes exactly those paths
+    that are still removable (never both). */
+export interface WorktreeCleanupRequest {
+  path: string;
+  dryRun?: boolean;
+  expect?: string[];
+}
+/** A worktree that goes (dry run) or went: how it is merged, and whether its branch is deleted. */
+export interface WorktreeCleanupRemoved {
+  path: string;
+  branch?: string;
+  kind: "ancestor" | "content" | "empty";
+  branchDeleted: boolean;
+}
+/** A worktree that stays, and the one reason why. */
+export interface WorktreeCleanupKept {
+  path: string;
+  branch?: string;
+  reason: string;
+}
+/** The dry run's answer. */
+export interface WorktreeCleanupPlan {
+  repo: string;
+  mainBranch?: string;
+  /** The server's home folder, so the dialog shows paths with `~`. */
+  home?: string;
+  remove: WorktreeCleanupRemoved[];
+  keep: WorktreeCleanupKept[];
+}
+/** A removal's answer, per expected path (other trees are never touched). */
+export interface WorktreeCleanupResult {
+  removed: WorktreeCleanupRemoved[];
+  kept: WorktreeCleanupKept[];
+}
+
 /** POST /api/workers/resume's answer: the worker as the runtime now lists it. */
 export interface WorkerResumeResult { worker: WorkerInfo | null }
 
@@ -2446,6 +2498,9 @@ export interface SessionWorktreeInfo {
   runningWorkers: number;
   /** Its merge readiness (§chat.worktrees/readiness), once the background read has one. */
   readiness?: WorktreeReadiness;
+  /** Tracked active with its folder gone: what its work came to, the same answer readiness gives
+      (§chat.worktrees/pane). "unknown": its branch is gone too and nothing records a merge. */
+  gone?: "merged" | "unmerged" | "empty" | "unknown";
 }
 
 // ---------------------------------------------------------------------------
@@ -3504,7 +3559,8 @@ export interface SessionSummary {
 }
 
 /** One worktree's merge readiness (§chat.worktrees/readiness). */
-export type ReadinessState = "merged" | "stale" | "in-progress" | "blocked" | "ready" | "waiting-approval";
+/** "removed": the worktree's folder is gone and its work isn't known merged (§chat.worktrees/readiness). */
+export type ReadinessState = "merged" | "stale" | "in-progress" | "blocked" | "ready" | "waiting-approval" | "removed";
 
 export interface WorktreeReadiness {
   /** Canonical top level (SessionWorktreeInfo.path). */

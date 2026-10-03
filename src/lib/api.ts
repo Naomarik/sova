@@ -21,6 +21,9 @@ import type {
   FileIndex,
   FolderListing,
   GitSummary,
+  WorktreeCleanupPlan,
+  WorktreeCleanupResult,
+  WorktreesSummary,
   ModeInfo,
   ModelFavoriteResult,
   ModelInfo,
@@ -832,6 +835,15 @@ export const fetchSessionSetup = (path: string, fresh = false) =>
     whole off set; the answer is the card's fresh read of the rebuilt runtime. */
 export const setSessionLoadout = (path: string, offContext: string[], offSkills: string[]) =>
   request<SessionSetup>("/api/sessions/loadout", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path, offContext, offSkills }) });
+
+/** The worktrees of a session's repository, counted (§chat.worktrees/cleanup). */
+export const fetchWorktreesSummary = (path: string) => request<WorktreesSummary>(`/api/worktrees/summary?path=${encodeURIComponent(path)}`);
+/** The cleanup's dry run: what would go and what stays, with reasons. */
+export const previewWorktreeCleanup = (path: string) =>
+  request<WorktreeCleanupPlan>("/api/worktrees/cleanup", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path, dryRun: true }) });
+/** Remove exactly `expect` (the dry run's paths), each only if still removable. */
+export const removeWorktrees = (path: string, expect: string[]) =>
+  request<WorktreeCleanupResult>("/api/worktrees/cleanup", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path, expect }) });
 
 /**
  * `force` (chat only) lets the server open a session whose file was written recently by

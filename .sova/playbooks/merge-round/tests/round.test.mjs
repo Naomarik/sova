@@ -438,8 +438,26 @@ test("land only at the checked head and master; landed records the restart", asy
   const landed = await run(["landed", "feat/clean"]);
   assert.equal(landed.code, 0, landed.out);
   assert.match(landed.out, /a restart is needed/);
-  assert.match(landed.out, new RegExp(`session_send to ${OWNER}:`));
+  assert.match(landed.out, new RegExp(`session_send to ${OWNER}, after the clean up:`));
   assert.equal(state().restart.pending, true);
+  // The clean up is its next line: plain git from the main checkout, never --force.
+  const next = landed.out.split("\n").find((l) => l.startsWith("next: "));
+  assert.ok(next.includes(`git -C '${main}' worktree remove -- '${wt("feat/clean")}' (never --force), then git -C '${main}' branch -d -- 'feat/clean'`), next);
+  assert.ok(!/--force'|remove --force|-D /.test(next), next);
+  assert.ok(next.endsWith("then round.mjs push"), next);
+  assert.match(landed.out, /^Only when the remove succeeded, add: Its worktree folder was removed\.$/m);
+  // Git's record of the worktree read-only (a sandboxed captain): no command, a reason instead.
+  const admin = git(wt("feat/clean"), "rev-parse", "--path-format=absolute", "--git-dir");
+  chmodSync(admin, 0o555);
+  try {
+    const ro = await run(["landed", "feat/clean"]);
+    assert.match(ro.out, /^Clean up: Git's record of this worktree is read-only here/m);
+    assert.doesNotMatch(ro.out, /worktree remove/);
+    assert.doesNotMatch(ro.out, /Its worktree folder was removed/);
+    assert.match(ro.out, /^next: round\.mjs push$/m);
+  } finally {
+    chmodSync(admin, 0o755);
+  }
 });
 
 test("a hanging step is killed with its whole process group", async () => {

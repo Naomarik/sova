@@ -350,6 +350,13 @@ The server runs on Node (`node --import tsx server/index.ts`) or Bun (`bun serve
 - **Known Bun caveats:**
   - Bun 1.4.2's resolver matches `./x` to `X.tsx` case-insensitively when `x.ts` and `X.tsx` share
     a folder. Import such a file with its extension (`./parts.ts`).
+  - Bun 1.4.2's `os.homedir()` ignores a later in-process change to `process.env.HOME` (Node
+    follows it). So `pi-config/extensions/claude-code/tests/hermetic-env.mjs` does NOT isolate a run under Bun (`bun test --preload`
+    or any Bun script that sets HOME in-process): paths resolve to the real `~/.pi`. Under Bun, set
+    HOME (and unset `PI_CODING_AGENT_DIR` and friends) in the environment BEFORE bun starts, or use
+    `node scripts/test-sentinel.mjs -- <cmd>`, which sets them in the environment before it spawns.
+  - A change to `mise.toml` (such as the bun pin) needs `mise trust <worktree>` again, or anything
+    that shells out to `mise` fails with "not trusted".
 
 ## Working rules
 

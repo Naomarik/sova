@@ -3,12 +3,13 @@
 // app.fetch with the env a real socket gets ({ incoming }), the peer listener's ({ meshPeer }) or
 // none (app.request). Uses a throwaway PI_CODING_AGENT_DIR; ~/.pi is never read or written.
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import fs, { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import type { IncomingMessage } from "node:http";
+import { syncBuiltinESMExports } from "node:module";
 import { isIP } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { after, afterEach, describe, test } from "node:test";
+import { after, afterEach, describe, test, type TestContext } from "node:test";
 import { Hono } from "hono";
 
 const agentDir = mkdtempSync(join(tmpdir(), "sova-auth-test-"));
@@ -124,6 +125,53 @@ describe("the token", () => {
 
   test("the cookie name is per install", () => {
     assert.match(AUTH_COOKIE, /^sova_token_[0-9a-f]{8}$/);
+  });
+
+  // Android (Termux) refuses hard links with EACCES: the mint falls back to an exclusive create.
+  function withLinkRefused(t: TestContext, before: (dest: string) => void, run: (dir: string) => void) {
+    const dir = mkdtempSync(join(tmpdir(), "sova-auth-eacces-"));
+    const link = t.mock.method(fs, "linkSync", (_src: string, dest: string) => {
+      before(dest);
+      throw Object.assign(new Error(`EACCES: permission denied, link -> '${dest}'`), { code: "EACCES" });
+    });
+    syncBuiltinESMExports();
+    try {
+      process.env.PI_CODING_AGENT_DIR = dir;
+      run(dir);
+      assert.equal(link.mock.callCount(), 1);
+    } finally {
+      link.mock.restore();
+      syncBuiltinESMExports();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
+
+  test("where hard links are refused with EACCES, the token is still minted once at 0600 and kept", (t) => {
+    withLinkRefused(t, () => {}, (dir) => {
+      const file = join(dir, "sova", "auth-token");
+      const minted = sovaToken();
+      assert.match(minted, /^[A-Za-z0-9_-]{43}$/);
+      assert.equal(readFileSync(file, "utf8"), `${minted}\n`);
+      assert.equal(statSync(file).mode & 0o777, 0o600);
+      assert.deepEqual(readdirSync(join(dir, "sova")), ["auth-token"], "no temp file left behind");
+      assert.equal(sovaToken(), minted);
+      process.env.PI_CODING_AGENT_DIR = agentDir; // another install, then back: a re-read, not a re-mint
+      sovaToken();
+      process.env.PI_CODING_AGENT_DIR = dir;
+      assert.equal(sovaToken(), minted);
+      assert.equal(readFileSync(file, "utf8"), `${minted}\n`);
+    });
+  });
+
+  test("where hard links are refused with EACCES, a rival start's token that landed first wins and is never overwritten", (t) => {
+    const rival = "r".repeat(43);
+    withLinkRefused(t, (dest) => writeFileSync(dest, `${rival}\n`, { mode: 0o600, flag: "wx" }), (dir) => {
+      const file = join(dir, "sova", "auth-token");
+      assert.equal(sovaToken(), rival);
+      assert.equal(readFileSync(file, "utf8"), `${rival}\n`);
+      assert.deepEqual(readdirSync(join(dir, "sova")), ["auth-token"], "no temp file left behind");
+      assert.equal(sovaToken(), rival);
+    });
   });
 });
 

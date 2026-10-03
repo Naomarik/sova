@@ -301,6 +301,25 @@ export interface AlignDocInfo {
   rev: number;
   createdAt: string;
   updatedAt: string;
+  /** The adversarial review record (§chat.alignment-review/record); absent on every document no
+      review op touched, which is all of them with the `adversarial-review` flag off. */
+  review?: AlignReviewInfo;
+}
+
+export type AlignReviewPhaseInfo = "plan" | "diff";
+export type AlignReviewStateInfo = "skipped" | "running" | "clear" | "blocking" | "incomplete";
+export interface AlignReviewEntryInfo {
+  state: AlignReviewStateInfo;
+  /** One line: why reviewed or skipped, or the verdict's summary. */
+  reason: string;
+  /** "backend · model · effort". */
+  model?: string;
+  at: string;
+  blockers?: { id: string; title: string; check: string; closed?: { by: "check" | "evidence" | "waiver"; evidence: string; at: string } }[];
+}
+export interface AlignReviewInfo {
+  plan?: AlignReviewEntryInfo;
+  diff?: AlignReviewEntryInfo;
 }
 
 export interface AlignQuestionInfo {
@@ -320,7 +339,9 @@ export type AlignChangeInfo =
   | { kind: "decided" | "reopened" | "question-dropped"; q: string }
   | { kind: "accepted"; qs: string[] }
   | { kind: "status"; to: "implementing" | "done" | "open" }
-  | { kind: "dropped" };
+  | { kind: "dropped" }
+  | { kind: "review"; phase: AlignReviewPhaseInfo; state: AlignReviewStateInfo }
+  | { kind: "blocker-closed"; phase: AlignReviewPhaseInfo; id: string };
 
 /** An `align` call's details: `doc` (the snapshot after a changing call) or `exempt`; `line` is the
     changes in words ("q3 decided · +q11"). */

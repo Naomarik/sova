@@ -1,5 +1,5 @@
 import { archivedDropToast, orgProjectOf } from "../lib/drag-archive";
-import { batch, createEffect, createMemo, createSignal, For, Match, on, onCleanup, Show, Switch, type JSX } from "solid-js";
+import { batch, createEffect, createMemo, createResource, createSignal, For, Match, on, onCleanup, Show, Switch, type JSX } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import { Portal } from "solid-js/web";
 import type {
@@ -25,7 +25,8 @@ import { CardJumpContext } from "../lib/card-refs";
 import { AlignAnswerContext, type AlignAnswer } from "./AlignDocCard";
 import { acceptAllMessage, choosePick, clearPicks, composeWithPicks, optionPick, pickCount, picksLabel, picksOf, prunePicks, samePicks } from "../lib/align-picks";
 import { BatonStrip } from "./BatonStrip";
-import { approveSchedule, forkSession, getChatClaudeAccounts, getOverseerAutonomy, revokeOverseerPermit, revokeSchedule, setSandbox, setSessionArchived, wsUrl } from "../lib/api";
+import { approveSchedule, forkSession, getChatClaudeAccounts, getOverseerAutonomy, getSubagentProfiles, revokeOverseerPermit, revokeSchedule, setSandbox, setSessionArchived, wsUrl } from "../lib/api";
+import { adversarialReview, NO_REVIEWER, reviewRequestMessage } from "../lib/align-review";
 import type { OverseerAutonomy, ScheduleInfo } from "../../shared/protocol";
 import { LOGIN_UNCHANGED } from "../../shared/protocol";
 import { contextStateFor, messageContextTokens, windowOf } from "../lib/context";
@@ -1237,6 +1238,16 @@ export function ChatView(props: {
   const picks = createMemo(() => (alignAnswerable() ? prunePicks(picksOf(props.path), aligns()) : {}), {}, { equals: samePicks });
   /** Whether the composer holds typed text or an attachment: the card's button then waits. */
   const [hasDraft, setHasDraft] = createSignal(false);
+  /** With adversarial review on: whether this chat's subagent profile names a reviewer (§chat.alignment-review/card).
+      Read only while the feature is on; undefined until it answers (the button then stays usable). */
+  const [reviewerSet] = createResource(
+    () => (adversarialReview() && alignAnswerable() ? props.path : false),
+    async (path) => {
+      const info = await getSubagentProfiles(path);
+      const current = info.settings.profiles.find((p) => p.id === info.current.id);
+      return !!current?.reviewer;
+    },
+  );
   const alignAnswer: AlignAnswer = {
     on: alignAnswerable,
     current: (id) => aligns().find((e) => e.doc.id === id)?.doc,
@@ -1267,6 +1278,12 @@ export function ChatView(props: {
         clearPicks(props.path, doc);
         focusComposer();
       }
+    },
+    review: () => adversarialReview(),
+    reviewBlocked: () => alignAnswer.goBlocked() ?? (!reviewerSet.error && reviewerSet() === false ? NO_REVIEWER : null),
+    requestReview: (doc, phase) => {
+      if (alignAnswer.reviewBlocked?.()) return;
+      if (send(reviewRequestMessage(doc, phase), false, [])) focusComposer();
     },
   };
   const composerPicks = createMemo(() => {

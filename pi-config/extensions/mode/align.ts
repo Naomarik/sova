@@ -67,6 +67,45 @@ export interface AlignQuestion {
 	dropped?: { why: string; at: string };
 }
 
+/** Adversarial review (behind the mode extension's `adversarial-review` flag): its two phases. */
+export type AlignReviewPhase = "plan" | "diff";
+export const ALIGN_REVIEW_PHASES: readonly AlignReviewPhase[] = ["plan", "diff"];
+export type AlignReviewState = "skipped" | "running" | "clear" | "blocking" | "incomplete";
+export const ALIGN_REVIEW_STATES: readonly AlignReviewState[] = ["skipped", "running", "clear", "blocking", "incomplete"];
+/** The verdicts a running review ends in. */
+export const ALIGN_REVIEW_VERDICTS = ["clear", "blocking", "incomplete"] as const;
+export type AlignBlockerClose = "check" | "evidence" | "waiver";
+export const ALIGN_BLOCKER_CLOSES: readonly AlignBlockerClose[] = ["check", "evidence", "waiver"];
+
+/** One blocking finding of a review: `bN` within its entry, never reused. */
+export interface AlignBlocker {
+	id: string;
+	/** One line: what fails. */
+	title: string;
+	/** The discriminating check that fails now and passes once fixed. */
+	check: string;
+	/** How it closed: its check passing, counter-evidence, or the user's waiver in their words. */
+	closed?: { by: AlignBlockerClose; evidence: string; at: string };
+}
+
+/** One phase's entry: its state, a one-line reason, who reviewed, and the blockers it found. */
+export interface AlignReviewEntry {
+	state: AlignReviewState;
+	reason: string;
+	/** "backend · model · effort" of the reviewer, once one was chosen. */
+	model?: string;
+	/** ISO timestamp of the last change. */
+	at: string;
+	/** Present only when the review found any. */
+	blockers?: AlignBlocker[];
+}
+
+/** The per-alignment review record: at most one plan and one diff review. */
+export interface AlignReview {
+	plan?: AlignReviewEntry;
+	diff?: AlignReviewEntry;
+}
+
 /** The stored lifecycle: only the moves no data can show. Status is derived from it and the questions. */
 export type AlignPhase = "open" | "implementing" | "done" | "dropped";
 export type AlignStatus = "aligning" | "confirmed" | "implementing" | "done" | "dropped";
@@ -89,6 +128,8 @@ export interface AlignDocument {
 	next: { f: number; a: number; x: number; q: number };
 	/** 1 at create, +1 per changing call. */
 	rev: number;
+	/** The adversarial review record; absent until a review op ran (and always with the flag off). */
+	review?: AlignReview;
 	createdAt: string;
 	updatedAt: string;
 }
@@ -105,7 +146,9 @@ export type AlignChange =
 	| { kind: "reopened"; q: string }
 	| { kind: "question-dropped"; q: string }
 	| { kind: "status"; to: "implementing" | "done" | "open" }
-	| { kind: "dropped" };
+	| { kind: "dropped" }
+	| { kind: "review"; phase: AlignReviewPhase; state: AlignReviewState }
+	| { kind: "blocker-closed"; phase: AlignReviewPhase; id: string };
 
 /**
  * The tool result's `details`: the authoritative record. `doc` is the touched document's full
@@ -179,6 +222,27 @@ export function alignCounts(docs: readonly AlignDocument[]): { docs: number; ope
 		total: open.reduce((n, doc) => n + liveQuestionsOf(doc).length, 0),
 	};
 }
+
+/** Every blocker of the record not closed yet, with its phase. */
+export function openBlockersOf(doc: Pick<AlignDocument, "review">): { phase: AlignReviewPhase; blocker: AlignBlocker }[] {
+	const out: { phase: AlignReviewPhase; blocker: AlignBlocker }[] = [];
+	for (const phase of ALIGN_REVIEW_PHASES) for (const blocker of doc.review?.[phase]?.blockers ?? []) if (!blocker.closed) out.push({ phase, blocker });
+	return out;
+}
+
+/** The phases whose review is running now. */
+export const runningReviewsOf = (doc: Pick<AlignDocument, "review">): AlignReviewPhase[] => ALIGN_REVIEW_PHASES.filter((phase) => doc.review?.[phase]?.state === "running");
+
+/**
+ * The message the card's Review Plan / Review Diff button and the TUI's `/review` send: an ordinary
+ * user message the session acts on with the review op. Sova's card composes the same text
+ * (src/lib/align-review.ts; both tests pin it).
+ */
+export const reviewRequestMessage = (doc: string, phase: AlignReviewPhase): string =>
+	`${doc}: run the adversarial ${phase} review now (align review, phase ${phase}), whatever the rule says.`;
+
+/** A phase is used once it ran in any way; a skip leaves it usable. */
+export const reviewUsed = (entry: AlignReviewEntry | undefined): boolean => entry !== undefined && entry.state !== "skipped";
 
 // ── Errors and input validation ──────────────────────────────────────────────
 
@@ -340,7 +404,9 @@ export const ALIGN_OPS = [
 	"exempt",
 	"get",
 ] as const;
-export type AlignOpName = (typeof ALIGN_OPS)[number];
+/** The adversarial review's ops: accepted, and in the schema, only with the `adversarial-review` flag on. */
+export const ALIGN_REVIEW_OPS = ["review", "close_blocker"] as const;
+export type AlignOpName = (typeof ALIGN_OPS)[number] | (typeof ALIGN_REVIEW_OPS)[number];
 
 /**
  * Each op's fields: `required` must be present, `optional` may be; nothing else is taken. `atLeast`:
@@ -365,6 +431,8 @@ export const ALIGN_OP_FIELDS: Record<AlignOpName, { required: readonly string[];
 	status: { required: ["to"], optional: [] },
 	exempt: { required: ["reason"], optional: [] },
 	get: { required: [], optional: [] },
+	review: { required: ["phase", "state", "reason"], optional: ["model", "blockers"] },
+	close_blocker: { required: ["phase", "id", "by", "evidence"], optional: [] },
 };
 
 /** Op names models reach for, and what to use instead. */
@@ -406,7 +474,36 @@ export interface AlignEnv {
 	now: string;
 	/** Reads an import's file (an absolute path). */
 	readFile(path: string): string;
+	/** Present only with the `adversarial-review` flag on: the review ops and guards apply. */
+	review?: AlignReviewEnv;
 }
+
+/** A worker tuple as the reviewer route names it. */
+export interface AlignWorker {
+	backend: string;
+	model: string;
+	effort: string;
+}
+
+/** The chat's reviewer as routed now (primary, else its fallback, else nobody). */
+export interface AlignReviewerSlot {
+	/** The worker to spawn, or null: neither can run. */
+	use: AlignWorker | null;
+	via: "primary" | "fallback" | "none";
+	/** While on the primary: the fallback that may be tried once if the spawn fails, else null. */
+	retry: AlignWorker | null;
+	/** Why it is off its primary (fallback or none). */
+	reason?: string;
+}
+
+export interface AlignReviewEnv {
+	/** The chat's reviewer now; null when its subagent profile names none (Reviewer: None). */
+	reviewer(): AlignReviewerSlot | null;
+	/** What a started review's result says beyond the echo: the worker to spawn and the filled prompt. */
+	startText(doc: AlignDocument, phase: AlignReviewPhase, slot: AlignReviewerSlot): string;
+}
+
+export const workerLine = (w: AlignWorker): string => `${w.backend} · ${w.model} · ${w.effort}`;
 
 export interface AlignOutcome {
 	details: AlignDetails;
@@ -494,7 +591,7 @@ function questionIdOf(value: unknown, where: string): string {
 }
 
 /** The call's shape and each op's fields; the first problem throws. */
-function checkedOps(input: unknown): (Record<string, unknown> & { op: AlignOpName })[] {
+function checkedOps(input: unknown, allowed: readonly string[]): (Record<string, unknown> & { op: AlignOpName })[] {
 	// A bare op, or a list of them, without the wrapper: the one mistake the schema's shape invites.
 	if (Array.isArray(input) || (isRecord(input) && typeof input.op === "string" && input.ops === undefined)) {
 		throw new AlignError('wrap ops in {ops: [...]}: align takes {doc?, ops: [{op: ...}, ...]}');
@@ -506,10 +603,10 @@ function checkedOps(input: unknown): (Record<string, unknown> & { op: AlignOpNam
 	return (params.ops as unknown[]).map((op, i) => {
 		need(isRecord(op), `ops[${i}] must be an object with an "op" field`);
 		const o = op as Record<string, unknown>;
-		if (typeof o.op === "string" && !(ALIGN_OPS as readonly string[]).includes(o.op) && OP_MEANT[o.op] !== undefined) {
+		if (typeof o.op === "string" && !allowed.includes(o.op) && OP_MEANT[o.op] !== undefined) {
 			throw new AlignError(`ops[${i}].op "${o.op}" is not an op: ${OP_MEANT[o.op]}`);
 		}
-		need(typeof o.op === "string" && (ALIGN_OPS as readonly string[]).includes(o.op), `ops[${i}].op must be one of ${ALIGN_OPS.join(", ")}`);
+		need(typeof o.op === "string" && allowed.includes(o.op), `ops[${i}].op must be one of ${allowed.join(", ")}`);
 		const where = `ops[${i}] (${o.op})`;
 		const hint = opShapeHint(o);
 		if (hint !== undefined) throw new AlignError(`${where}: ${hint}`);
@@ -528,8 +625,10 @@ function checkedOps(input: unknown): (Record<string, unknown> & { op: AlignOpNam
  * anything is kept, and the first problem throws AlignError. Pure apart from `env.readFile`.
  */
 export function applyAlignCall(docs: readonly AlignDocument[], input: unknown, env: AlignEnv): AlignOutcome {
-	const ops = checkedOps(input);
+	const ops = checkedOps(input, env.review ? [...ALIGN_OPS, ...ALIGN_REVIEW_OPS] : ALIGN_OPS);
 	const params = input as Record<string, unknown>;
+	/** Text a started review adds to the result (the worker and the filled prompt). */
+	const extra: string[] = [];
 
 	// An exemption touches no document and stands alone.
 	if (ops.some((o) => o.op === "exempt")) {
@@ -597,7 +696,9 @@ export function applyAlignCall(docs: readonly AlignDocument[], input: unknown, e
 		const where = `ops[${i}] (${o.op})`;
 		if (o.op === "get") continue;
 		const d = doc!;
-		if (isTerminal(d) && !(o.op === "status" && o.to === "open")) {
+		// A late diff review may run on a done alignment (the card's Review Diff after a skip).
+		const lateReview = o.op === "review" && o.phase === "diff" && d.phase === "done";
+		if (isTerminal(d) && !(o.op === "status" && o.to === "open") && !lateReview) {
 			throw new AlignError(`${where}: ${d.id} is ${d.phase}; move it back with {op: "status", to: "open"} first`);
 		}
 		switch (o.op) {
@@ -722,6 +823,18 @@ export function applyAlignCall(docs: readonly AlignDocument[], input: unknown, e
 						`${where}: ${d.id} still has ${open.length} open question${open.length === 1 ? "" : "s"} (${open.map((q) => q.id).join(", ")}): only once the user has answered ${open.length === 1 ? "it" : "them"} (decide), taken your recommendation (accept) or it no longer applies (drop_question), earlier in the same call`,
 					);
 				}
+				if (env.review && to === "implementing") {
+					need(d.review?.plan?.state !== "running", `${where}: ${d.id}'s plan review is running: record its verdict (review, phase plan) before implementing`);
+				}
+				if (env.review && to === "done") {
+					const running = runningReviewsOf(d);
+					need(running.length === 0, `${where}: ${d.id}'s ${running.join(" and ")} review is running: record its verdict (review) before done`);
+					const open = openBlockersOf(d);
+					need(
+						open.length === 0,
+						`${where}: ${d.id} still has ${open.length} open blocker${open.length === 1 ? "" : "s"} (${open.map((b) => `${b.phase} ${b.blocker.id}`).join(", ")}): close each with close_blocker — its check passing, concrete counter-evidence, or the user's explicit waiver in their words — before done`,
+					);
+				}
 				const phase: AlignPhase = to;
 				need(d.phase !== phase, `${where}: ${d.id} is already ${to === "open" ? "open" : to}`);
 				d.phase = phase;
@@ -729,6 +842,12 @@ export function applyAlignCall(docs: readonly AlignDocument[], input: unknown, e
 				changes.push({ kind: "status", to });
 				break;
 			}
+			case "review":
+				applyReview(d, o, where, env, changes, extra);
+				break;
+			case "close_blocker":
+				closeBlocker(d, o, where, env, changes);
+				break;
 		}
 	}
 	if (ops.some((o) => o.op === "get")) {
@@ -747,7 +866,97 @@ export function applyAlignCall(docs: readonly AlignDocument[], input: unknown, e
 	const lines = doc ? echoLines(after, doc.id, changed ? details.line : "") : [gets.length === 0 ? "No open alignments on this branch." : ""];
 	if (!doc) lines.push(...otherDocsLine(after, undefined));
 	const body = gets.length > 0 ? `\n\n${gets.map(toMarkdown).join("\n\n---\n\n")}` : "";
-	return { details, text: `${lines.filter((l) => l !== "").join("\n")}${body}`.trim() };
+	const more = extra.length > 0 ? `\n\n${extra.join("\n\n")}` : "";
+	return { details, text: `${lines.filter((l) => l !== "").join("\n")}${body}${more}`.trim() };
+}
+
+function reviewPhaseOf(value: unknown, where: string): AlignReviewPhase {
+	need(value === "plan" || value === "diff", `${where}: phase must be plan or diff`);
+	return value as AlignReviewPhase;
+}
+
+function blockerInput(value: unknown, where: string): { title: string; check: string } {
+	need(isRecord(value), `${where} must be an object {title, check}`);
+	const v = value as Record<string, unknown>;
+	onlyKeys(v, ["title", "check"], where);
+	return { title: oneLine(text(v.title, `${where}.title`)), check: oneLine(text(v.check, `${where}.check`)) };
+}
+
+/**
+ * The review op: start a phase (reserving its slot before the reviewer spawns), skip it, or record
+ * a running phase's verdict. A used phase (any state but skipped) never starts again.
+ */
+function applyReview(d: AlignDocument, o: Record<string, unknown>, where: string, env: AlignEnv, changes: AlignChange[], extra: string[]): void {
+	const review = env.review!;
+	const phase = reviewPhaseOf(o.phase, `${where}: phase`);
+	const state = o.state;
+	need(typeof state === "string" && (ALIGN_REVIEW_STATES as readonly string[]).includes(state), `${where}: state must be one of ${ALIGN_REVIEW_STATES.join(", ")}`);
+	const reason = oneLine(text(o.reason, `${where}: reason`));
+	const entry = d.review?.[phase];
+	const record = (next: AlignReviewEntry) => {
+		d.review = { ...(d.review ?? {}), [phase]: next };
+		changes.push({ kind: "review", phase, state: next.state });
+	};
+	const model = o.model === undefined ? undefined : oneLine(text(o.model, `${where}: model`));
+	if (state !== "blocking") need(o.blockers === undefined, `${where}: only a blocking verdict takes blockers`);
+	switch (state as AlignReviewState) {
+		case "running": {
+			need(!reviewUsed(entry), `${where}: ${d.id}'s ${phase} review already ran (${entry?.state}); there is no second round`);
+			need(o.model === undefined, `${where}: model is set from the chat's reviewer route at start; pass it with the verdict if the fallback ran`);
+			if (phase === "plan") need(d.phase === "open", `${where}: the plan phase is over (${d.id} is ${d.phase}); review the diff instead`);
+			else need(d.phase === "implementing" || d.phase === "done", `${where}: the diff is reviewed while implementing (or after done); ${d.id} is ${alignStatus(d)}`);
+			const slot = review.reviewer();
+			need(slot !== null, `${where}: this chat's subagent profile names no reviewer (Reviewer: None); record {op: "review", phase: "${phase}", state: "skipped", reason: "no reviewer configured"} instead`);
+			if (slot!.use === null) {
+				record({ state: "incomplete", reason: `no reviewer can run: ${slot!.reason ?? "primary and fallback unavailable"}`, at: env.now });
+				extra.push(`The ${phase} review is INCOMPLETE: no reviewer can run (${slot!.reason ?? "primary and fallback unavailable"}). Do not ask the user for a model; continue the work and say in your report that the ${phase} review could not run.`);
+				return;
+			}
+			record({ state: "running", reason, model: workerLine(slot!.use!), at: env.now });
+			extra.push(review.startText(d, phase, slot!));
+			return;
+		}
+		case "skipped":
+			need(!reviewUsed(entry), `${where}: ${d.id}'s ${phase} review already ran (${entry?.state}); a skip can't replace it`);
+			need(o.model === undefined, `${where}: a skip names no model`);
+			record({ state: "skipped", reason, at: env.now });
+			return;
+		default: {
+			need(entry?.state === "running", `${where}: ${d.id}'s ${phase} review is ${entry ? entry.state : "not started"}; a verdict is recorded only for a running review (review, state running, first)`);
+			let blockers: AlignBlocker[] | undefined;
+			if (state === "blocking" && o.blockers !== undefined) {
+				const input = list(o.blockers, `${where}: blockers`, blockerInput);
+				if (input.length > 0) blockers = input.map((b, i) => ({ id: `b${i + 1}`, title: b.title, check: b.check }));
+			}
+			if (state === "blocking" && phase === "diff") need(blockers !== undefined, `${where}: a blocking diff verdict needs its blockers [{title, check}], each with the check that fails now`);
+			const next: AlignReviewEntry = { state: state as AlignReviewState, reason, at: env.now };
+			const who = model ?? entry!.model;
+			if (who !== undefined) next.model = who;
+			if (blockers) next.blockers = blockers;
+			record(next);
+			// A late blocker reopens a done alignment: the fixes are implementation work again.
+			if (state === "blocking" && d.phase === "done") {
+				d.phase = "implementing";
+				changes.push({ kind: "status", to: "implementing" });
+			}
+		}
+	}
+}
+
+/** close_blocker: one open blocker, closed by its passing check, counter-evidence, or the user's waiver. */
+function closeBlocker(d: AlignDocument, o: Record<string, unknown>, where: string, env: AlignEnv, changes: AlignChange[]): void {
+	const phase = reviewPhaseOf(o.phase, `${where}: phase`);
+	const id = text(o.id, `${where}: id`);
+	const by = o.by;
+	need(typeof by === "string" && (ALIGN_BLOCKER_CLOSES as readonly string[]).includes(by), `${where}: by must be check (its check passes now), evidence (concrete counter-evidence) or waiver (the user's explicit words)`);
+	const evidence = oneLine(text(o.evidence, `${where}: evidence`));
+	const entry = d.review?.[phase];
+	const blocker = entry?.blockers?.find((b) => b.id === id);
+	need(blocker !== undefined, `${where}: ${d.id}'s ${phase} review has no blocker ${id}${entry?.blockers?.length ? ` (it has ${entry.blockers.map((b) => b.id).join(", ")})` : ""}`);
+	need(!blocker!.closed, `${where}: ${phase} ${id} is already closed (${blocker!.closed?.by})`);
+	const blockers = entry!.blockers!.map((b) => (b.id === id ? { ...b, closed: { by: by as AlignBlockerClose, evidence, at: env.now } } : b));
+	d.review = { ...d.review, [phase]: { ...entry!, blockers, at: env.now } };
+	changes.push({ kind: "blocker-closed", phase, id });
 }
 
 function editQuestion(d: AlignDocument, o: Record<string, unknown>, where: string): string {
@@ -871,6 +1080,46 @@ function normAll<T>(v: unknown, one: (x: unknown) => T | undefined): T[] | undef
 
 const count = (v: unknown): v is number => typeof v === "number" && Number.isInteger(v) && v >= 0;
 
+function normBlocker(v: unknown): AlignBlocker | undefined {
+	if (!isRecord(v) || !str(v.id) || !/^b[1-9]\d*$/.test(v.id) || !nonEmpty(v.title) || !nonEmpty(v.check)) return undefined;
+	const b: AlignBlocker = { id: v.id, title: v.title, check: v.check };
+	if (v.closed !== undefined) {
+		const c = v.closed;
+		if (!isRecord(c) || !(ALIGN_BLOCKER_CLOSES as readonly unknown[]).includes(c.by) || !nonEmpty(c.evidence) || !str(c.at)) return undefined;
+		b.closed = { by: c.by as AlignBlockerClose, evidence: c.evidence, at: c.at };
+	}
+	return b;
+}
+
+function normReviewEntry(v: unknown): AlignReviewEntry | undefined {
+	if (!isRecord(v) || !(ALIGN_REVIEW_STATES as readonly unknown[]).includes(v.state) || !nonEmpty(v.reason) || !str(v.at)) return undefined;
+	const e: AlignReviewEntry = { state: v.state as AlignReviewState, reason: v.reason, at: v.at };
+	if (v.model !== undefined) {
+		if (!nonEmpty(v.model)) return undefined;
+		e.model = v.model;
+	}
+	if (v.blockers !== undefined) {
+		const blockers = normAll(v.blockers, normBlocker);
+		if (!blockers || blockers.length === 0 || new Set(blockers.map((b) => b.id)).size !== blockers.length) return undefined;
+		e.blockers = blockers;
+	}
+	return e;
+}
+
+/** The review record, checked; undefined when anything is off (the whole snapshot then is). */
+function normReview(v: unknown): AlignReview | undefined {
+	if (!isRecord(v)) return undefined;
+	const out: AlignReview = {};
+	for (const key of Object.keys(v)) if (key !== "plan" && key !== "diff") return undefined;
+	for (const phase of ALIGN_REVIEW_PHASES) {
+		if (v[phase] === undefined) continue;
+		const entry = normReviewEntry(v[phase]);
+		if (!entry) return undefined;
+		out[phase] = entry;
+	}
+	return out;
+}
+
 /** A stored document, checked field by field; a fresh object, or undefined when anything is off. */
 export function normalizeAlignDocument(v: unknown): AlignDocument | undefined {
 	try {
@@ -900,6 +1149,11 @@ export function normalizeAlignDocument(v: unknown): AlignDocument | undefined {
 			createdAt: v.createdAt,
 			updatedAt: v.updatedAt,
 		};
+		if (v.review !== undefined) {
+			const review = normReview(v.review);
+			if (!review) return undefined;
+			doc.review = review;
+		}
 		// A dropped document says why, and only a dropped one does (status open clears it).
 		if ((v.phase === "dropped") !== (v.droppedWhy !== undefined)) return undefined;
 		if (v.droppedWhy !== undefined) {
@@ -920,7 +1174,7 @@ export function normalizeAlignDocument(v: unknown): AlignDocument | undefined {
 	}
 }
 
-const CHANGE_KINDS = new Set(["created", "added", "edited", "removed", "decided", "accepted", "reopened", "question-dropped", "status", "dropped"]);
+const CHANGE_KINDS = new Set(["created", "added", "edited", "removed", "decided", "accepted", "reopened", "question-dropped", "status", "dropped", "review", "blocker-closed"]);
 
 function normChange(v: unknown): AlignChange | undefined {
 	if (!isRecord(v) || !str(v.kind) || !CHANGE_KINDS.has(v.kind)) return undefined;
@@ -940,6 +1194,12 @@ function normChange(v: unknown): AlignChange | undefined {
 			return str(v.q) ? { kind: v.kind, q: v.q } : undefined;
 		case "status":
 			return v.to === "implementing" || v.to === "done" || v.to === "open" ? { kind: "status", to: v.to } : undefined;
+		case "review":
+			return (v.phase === "plan" || v.phase === "diff") && (ALIGN_REVIEW_STATES as readonly unknown[]).includes(v.state)
+				? { kind: "review", phase: v.phase, state: v.state as AlignReviewState }
+				: undefined;
+		case "blocker-closed":
+			return (v.phase === "plan" || v.phase === "diff") && str(v.id) ? { kind: "blocker-closed", phase: v.phase, id: v.id } : undefined;
 		default:
 			return { kind: "dropped" };
 	}
@@ -992,6 +1252,39 @@ export function docLine(doc: AlignDocument): string {
 	return `${doc.id} "${doc.title}" · ${alignStatusWord(alignStatus(doc))} · ${openText(doc)}`;
 }
 
+/** "Diff: 2 blocking", "Plan reviewed · 1 constraint added", …: one phase's verdict line, as the card reads it. */
+export function reviewVerdictLine(phase: AlignReviewPhase, entry: AlignReviewEntry): string {
+	const Phase = phase === "plan" ? "Plan" : "Diff";
+	switch (entry.state) {
+		case "skipped":
+			return `${Phase} review skipped: ${entry.reason}`;
+		case "running":
+			return `Reviewing ${phase}`;
+		case "incomplete":
+			return `${Phase} review incomplete: ${entry.reason}`;
+		case "clear":
+			return phase === "plan" ? `Plan reviewed · ${entry.reason}` : "Diff: NO BLOCKING";
+		case "blocking": {
+			const n = entry.blockers?.length ?? 0;
+			if (phase === "plan" && n === 0) return `Plan reviewed · ${entry.reason}`;
+			const open = entry.blockers?.filter((b) => !b.closed).length ?? 0;
+			return `${Phase}: ${n} blocking${open < n ? ` (${open} open)` : ""}`;
+		}
+	}
+}
+
+/** The record as text lines: each phase's verdict (with the model), then each open blocker and its check. Empty without one. */
+export function reviewLines(doc: Pick<AlignDocument, "review">): string[] {
+	const out: string[] = [];
+	for (const phase of ALIGN_REVIEW_PHASES) {
+		const entry = doc.review?.[phase];
+		if (!entry) continue;
+		out.push(`${reviewVerdictLine(phase, entry)}${entry.model ? ` (${entry.model})` : ""}`);
+		for (const b of entry.blockers ?? []) if (!b.closed) out.push(`  ${phase} ${b.id} open: ${b.title} — check: ${b.check}`);
+	}
+	return out;
+}
+
 function questionLine(q: AlignQuestion): string {
 	return `  ${q.id} ${q.topic} — open (rec: ${recommendedText(q)})`;
 }
@@ -1009,6 +1302,7 @@ function echoLines(docs: readonly AlignDocument[], id: string, line: string): st
 	const head = `${docLine(doc)} · v${doc.rev}${line ? ` · ${line}` : ""}`;
 	const out = [head, ...openQuestionsOf(doc).map(questionLine)];
 	if (doc.phase === "dropped" && doc.droppedWhy) out.push(`  dropped: ${doc.droppedWhy}`);
+	out.push(...reviewLines(doc).map((l) => `  ${l}`));
 	return [...out, ...otherDocsLine(docs, id)];
 }
 
@@ -1040,6 +1334,7 @@ export function alignStateNote(docs: readonly AlignDocument[], afterCompaction =
 			else if (afterCompaction) lines.push(`  ${q.id} ${q.topic}: dropped — ${oneLine(q.dropped!.why)}`);
 		}
 		if (alignStatus(doc) === "implementing") lines.push("  (implementing: set status done when the work is finished and verified)");
+		lines.push(...reviewLines(doc).map((l) => `  ${l}`));
 	}
 	return lines.join("\n");
 }
@@ -1086,6 +1381,12 @@ export function changeLine(changes: readonly AlignChange[]): string {
 			case "dropped":
 				parts.push("dropped");
 				break;
+			case "review":
+				parts.push(c.state === "running" ? `${c.phase} review running` : c.state === "skipped" ? `${c.phase} review skipped` : `${c.phase} review: ${c.state === "clear" ? "no blocking" : c.state}`);
+				break;
+			case "blocker-closed":
+				parts.push(`${c.phase} ${c.id} closed`);
+				break;
 		}
 	}
 	flush();
@@ -1113,6 +1414,16 @@ export function toMarkdown(doc: AlignDocument): string {
 	if (doc.findings.length > 0) out.push("", "### Findings", "", ...doc.findings.map((f) => `- ${f.id}: ${f.text}`));
 	if (doc.approach.length > 0) out.push("", "### Approach", "", ...doc.approach.map((a, i) => `${i + 1}. ${a.id}: ${a.text}`));
 	if (doc.rejected.length > 0) out.push("", "### Rejected", "", ...doc.rejected.map((x) => `- ${x.id}: ${x.option} — ${x.why}`));
+	if (doc.review && (doc.review.plan || doc.review.diff)) {
+		out.push("", "### Review");
+		for (const phase of ALIGN_REVIEW_PHASES) {
+			const entry = doc.review[phase];
+			if (!entry) continue;
+			out.push("", `- ${reviewVerdictLine(phase, entry)}${entry.model ? ` (${entry.model})` : ""}`);
+			for (const b of entry.blockers ?? [])
+				out.push(`  - ${b.id}: ${b.title} — check: ${b.check}${b.closed ? ` — closed by ${b.closed.by}: ${b.closed.evidence}` : " — open"}`);
+		}
+	}
 	return out.join("\n");
 }
 

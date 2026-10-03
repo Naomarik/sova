@@ -347,6 +347,24 @@ they are listed, and a recommendation that names an option by its label reads
   transcript keeps its dim `── alignment v2 · questions open · 1/2 settled ──`
   marker, and nothing parses markdown any more.
 
+- **Adversarial review (experimental)** — behind the boolean launch flag
+  `--adversarial-review` (off by default; Sova passes it per hosted session).
+  Off, nothing here exists: the tool, its schema and the prompt are exactly as
+  without the feature (`tests/review-smoke.mjs` pins them to a fixture). On,
+  from `session_start` the tool is re-registered with two more ops — `review
+  {phase: plan | diff, state, reason, model?, blockers?}` and `close_blocker
+  {phase, id, by: check | evidence | waiver, evidence}` — and the rules for when
+  to review in its description and guidelines, and `/review plan|diff [al_N]`
+  asks for one. Each alignment then carries a `review` record (a `plan` and a
+  `diff` entry: state, reason, model, blockers), so it folds, resumes and
+  rewinds with the document. Starting a phase reserves it before the reviewer
+  spawns and never runs twice; `status implementing` waits for a running plan
+  review and `status done` for every review and every open blocker. The
+  reviewer is the chat's subagent profile's `reviewer` route (routed like the
+  spec writer; none = no review), spawned read-only (pi `read, grep, find, ls`;
+  claude-code `Read, Grep, Glob`) with the fixed prompt `review-prompt.ts`
+  writes, which the start's result carries filled in.
+
 The viewer key is `alt+a` by default; set `"viewerShortcut"` in `mode.json`
 to change it. If it collides with the mode toggle or the `align` toggle key,
 it is not registered and a warning says so at session start.
@@ -638,7 +656,9 @@ node --test delegate.test.ts  # the routing file: defaults, parsing, persistence
 node --test routing.test.ts   # primary → fallback → ask, discovery failure, policy
 node --test spec.test.ts      # the spec writer file: parsing, persistence, per-turn re-read
 node --test align.test.ts     # alignments: ops, strict input and import, hints, fold, echo, note, nudge heuristic, legacy entries
+node --test review.test.ts    # adversarial review: the review and close_blocker ops, slots, guards, the record's normalization, the reviewer prompt
 node tests/smoke.mjs          # real index.ts against a fake pi host, no model requests
+node tests/review-smoke.mjs   # the adversarial-review flag through index.ts: off equals master's tool and prompt (fixture); on registers and runs the ops
 node tests/wake-turn.mjs      # real pi session + scripted provider: same prompt whoever starts the turn
 node tests/note-turn.mjs      # real pi session + scripted provider: a minor toggle keeps the head; notes, reopen, compaction
 node tests/align-turn.mjs     # real pi session + scripted provider: the align tool, its hidden notes (per prompt, after a compaction) and the settle nudge

@@ -266,3 +266,31 @@ test("idFor slugs a name and never takes off or a used id", () => {
 	assert.equal(idFor("off", []), "off-profile");
 	assert.equal(idFor("!!!", []), "profile");
 });
+
+test("reviewer (adversarial review): optional — an older profile without it parses and stays without it; null is None", () => {
+	const reviewer = { primary: pi("openai-codex/gpt-6.1-sol", "high"), fallback: claude("opus[1m]", "high") };
+	const parsed = parseSubagentProfiles(file([profile("old", "Old"), profile("none", "None", { reviewer: null }), profile("r", "R", { reviewer })]));
+	assert.ok(parsed.ok);
+	const [old, none, r] = parsed.value.profiles;
+	assert.equal("reviewer" in old!, false, "a parse never adds the key");
+	assert.equal(none!.reviewer, null);
+	assert.deepEqual(r!.reviewer, reviewer);
+	const dir = tempDir();
+	writeSubagentProfiles(dir, file([profile("old", "Old")]));
+	assert.equal(fs.readFileSync(subagentProfilesPath(dir), "utf8").includes("reviewer"), false, "nothing written for a profile without one");
+	// Strict like the spec writer, named in the Settings words.
+	const bad = parseSubagentProfiles(file([profile("r", "R", { reviewer: { primary: pi("no-slash"), fallback: null } })]));
+	assert.ok(!bad.ok);
+	assert.match(bad.errors.join("\n"), /^profiles\[0\]\.reviewer: Reviewer primary: /m);
+	const same = parseSubagentProfiles(file([profile("r", "R", { reviewer: { primary: pi("a/b"), fallback: pi("a/b") } })]));
+	assert.ok(!same.ok && /Reviewer fallback: the same worker/.test(same.errors.join("\n")));
+	// Resolution carries it; Off and an older profile have none.
+	writeSubagentProfiles(dir, file([profile("old", "Old"), profile("r", "R", { reviewer })]));
+	writeProfilesDefault(dir, { version: 1, default: "r" });
+	assert.deepEqual(resolveSubagents(dir, undefined).reviewer, reviewer);
+	assert.equal(resolveSubagents(dir, "old").reviewer, null);
+	assert.equal(resolveSubagents(dir, OFF_PROFILE_ID).reviewer, null);
+	// Its slots are validated on save and counted in the providers.
+	assert.deepEqual(profileSlots(profile("r", "R", { reviewer })).slice(-2).map((s) => s.label), ["Reviewer primary", "Reviewer fallback"]);
+	assert.ok(profileProviders(profile("r", "R", { reviewer })).includes("openai-codex"));
+});

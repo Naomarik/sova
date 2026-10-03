@@ -11,6 +11,7 @@ import { home } from "../lib/ui-state";
 import { clearSettingsSection, settingsSection, subagentSettingsPath } from "../lib/settings-nav";
 import { Banner, Chip, Icon } from "./ui";
 import { RetryButton, sentence, WorkerSlotRow } from "./WorkerSlotRow";
+import { adversarialReview } from "../lib/align-review";
 
 const labels = { planning: "Planning & specs", investigation: "Investigation", routine: "Routine implementation", complex: "Complex implementation" } as const;
 
@@ -435,6 +436,22 @@ export function SubagentProfilesSettings() {
                   {(w) => pair("spec", w, (c) => change((x) => (x.specWriter = c)), "No fallback: if the primary can't run, the session writes the spec itself.")}
                 </Show>
               </fieldset>
+
+              {/* Adversarial review (experimental, §chat.alignment-review/route): only while it is on. */}
+              <Show when={adversarialReview()}>
+                <h5 class="settings-subagents-group">Reviewer</h5>
+                <fieldset class="settings-delegate-profile" id="subagents-reviewer">
+                  <legend class="settings-delegate-legend">Reviewer</legend>
+                  <label class="toggle toggle-switch settings-team-enable">
+                    <span>Review alignments with a reviewer</span>
+                    <input type="checkbox" checked={!!p().reviewer} disabled={store.saving()} onChange={(e) => change((x) => (x.reviewer = e.currentTarget.checked ? { primary: { backend: "pi", model: "", effort: "" }, fallback: null } : null))} />
+                    <span class="toggle-box" />
+                  </label>
+                  <Show when={p().reviewer} fallback={<p class="field-hint">No review.</p>}>
+                    {(w) => pair("reviewer", w, (c) => change((x) => (x.reviewer = c)), "No fallback: if the primary can't run, the review is recorded incomplete.")}
+                  </Show>
+                </fieldset>
+              </Show>
             </section>
           )}
         </Show>

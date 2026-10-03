@@ -207,6 +207,14 @@
 .align-doc-foot.card-foot { padding: var(--space-3) 0 0; margin-top: var(--space-1); }
 .align-doc-foot-hint { font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-muted); }
 
+/* Adversarial review (experimental): one caption line per phase under the summary, its phase as
+   a chip; each open blocker below it with its check. */
+.align-review { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-1); font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-2); }
+.align-review-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-2); }
+.align-review-model { color: var(--color-ink-muted); }
+.align-review-blockers { flex-basis: 100%; margin: 0; padding-left: var(--space-5); display: grid; gap: var(--space-1); color: var(--color-ink); }
+.align-review-check { display: block; color: var(--color-ink-muted); }
+
 /* Approach: the plan the user reads first, open by default between the summary and the
    questions, still a disclosure. Its heading is a heading — full ink, semibold — with no panel
    behind it. Findings and rejected stay folded below the questions, since the questions are what

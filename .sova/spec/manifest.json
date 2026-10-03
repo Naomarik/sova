@@ -12444,11 +12444,13 @@
         "server/worktrees.ts",
         "server/worktrees.test.ts",
         "server/merge-readiness.ts",
-        "server/merge-readiness.test.ts"
+        "server/merge-readiness.test.ts",
+        "server/worktree-cleanup.ts"
       ],
       "requires": [
         "§chat.worktrees/readiness",
-        "§app/idle-git-cache"
+        "§app/idle-git-cache",
+        "§chat.worktrees/cleanup"
       ]
     }
   },

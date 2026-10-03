@@ -347,6 +347,10 @@ and a reading stands for a while before it is read again:
   merged, with uncommitted changes".
 - Whatever the lifetime, a commit, `git add`, a checkout or a branch switch in the tree ends the
   reading at once: the tree's index and HEAD are part of what it was read from.
+- A removal through Sova's cleanup (§chat.worktrees/cleanup: the Clean Up Merged button, its
+  confirm, or `sova_archive`'s removal) ends the reading at once for every session that tracks
+  the removed tree: the cleanup answers only once those sessions are read again, so the very next
+  look, the Session tab's or the session list's, reads the tree as removed ("Merged · cleaned up").
 - A change of the session's file or of its row (its running state, last activity, TUI presence,
   archived flag, open questions or attention answer) reads every tree's changes again at once.
 - An explicit look at the session's worktrees (the Session tab's Worktrees section, or

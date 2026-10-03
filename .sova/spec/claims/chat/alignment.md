@@ -267,8 +267,8 @@ an `align` call: it is the message, not its working.
   step body, including inline code and bold runs, occupies one text column, so wrapped lines
   align under the step's text, never under its id. Findings and Rejected stay closed by default
   below the questions and can still be opened. The bodies of alignment sections and expanded
-  earlier revisions draw no left guide rule, while keeping their indentation; this is local to
-  these alignment disclosures, not a change to the shared disclosure style. Earlier revisions
+  earlier revisions draw no left guide rule, while keeping their indentation, like every disclosure
+  (§chat.transcript/tokens). Earlier revisions
   still collapse to their one-line change summary and open to show that revision in place.
 - **Status chip**, dot and word, only once the document is past aligning: Confirmed (success),
   Implementing (accent), Done (success), Dropped (neutral). An aligning document shows none.

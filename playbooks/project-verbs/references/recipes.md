@@ -20,6 +20,13 @@ project: these are starting points, and conformance is the proof.
 - **Vite**: `["vite", "--port", "${ports.web.http}", "--strictPort"]`.
 - **Redis**: `["redis-server", "--port", "${ports.redis.port}", "--dir", "${data.redis}"]`.
 
+## Dependencies before a service starts
+A JVM or Node service that fetches its dependencies at start (Clojure CLI, `npx`, a cold `~/.m2`)
+can spend its whole readiness wait downloading: the first confined run starts with empty caches.
+Give it a `build` step that only fetches (`clojure -P -M:<aliases>`, `npm ci --ignore-scripts`)
+with `inputs` the dependency files and a long `timeout` (up to 1800): the fetch then fails or
+finishes in its own unit with its own log, and runs again only when those files change.
+
 ## Datastores as a process per copy
 - **Datomic dev transactor**: a `.sova/bin/transactor` wrapper copies the project's dev
   properties file (passwords included, as the project tracks them), overrides `port=`, and

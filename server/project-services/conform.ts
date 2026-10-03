@@ -23,6 +23,7 @@ import { actFor, callerTag, parseRequest, passRefusal, realGit, VerbFailure, typ
 import { rssOf } from "./drivers";
 import { conformDir, dataRootOf, instanceLockFile, readRegistry, servicesRoot, sharedIdOf, slugOf, tryLock, type InstanceRecord } from "./store";
 import { CONTAINER_REFUSAL, openConfinement, type Confinement } from "./confine";
+import { endpointAnswers, endpointOf, shareRefusal } from "./share";
 import { defHashOf, isApproved } from "./trust";
 
 /**
@@ -32,8 +33,9 @@ import { defHashOf, isApproved } from "./trust";
  * project's say-so. Whatever fails, both scratch instances are torn down and the leak check runs.
  */
 
-/** 2: a declared `test` passes its smoke selection twice alike in A, on-demand services wait for it (§app.project-services/conform). */
-export const SUITE_VERSION = 2;
+/** 2: a declared `test` passes its smoke selection twice alike in A, on-demand services wait for it; 3: each share endpoint
+    answers through the preview proxy's request path (§app.project-services/conform). */
+export const SUITE_VERSION = 3;
 
 type Git = typeof realGit;
 
@@ -417,6 +419,28 @@ async function runSuite(
     const lg = await s.verb("logs A", "logs", { instance: a.instance, lines: 50 });
     const n = lg.lines?.length ?? 0;
     if (!s.check("logs-a", lg.ok && (!logging.length || n > 0) && n <= 50, logging.length ? `${n} line(s) from ${logging.join(", ")}` : `${n} line(s); nothing started that logs`, t0)) return;
+    // 8b. share endpoints (suite 3): each answers as a visitor's request would reach it, no link minted.
+    t0 = Date.now();
+    const never = def.share ? shareRefusal(def) : null;
+    if (!def.share?.endpoints.length || never) s.check("share-endpoints", true, never ?? "no share endpoints declared", t0);
+    else {
+      const said: string[] = [];
+      let ok = true;
+      for (const ep of def.share.endpoints) {
+        const at = endpointOf(def, recOf(a.instance)!, ep);
+        const svc = at ? ap.services.find((x) => x.name === at.service.name) : undefined;
+        if (!at || svc?.state !== "ready") {
+          ok = false;
+          said.push(`${ep}: its service is not ready after up (${svc?.state ?? "absent"})`);
+          continue;
+        }
+        // A confined run's process services answer only inside its namespace; a static one is served here.
+        const r = confine && at.service.static === undefined ? { ok: await confine.http(at.port, "/"), detail: "GET / inside the run's namespace" } : await endpointAnswers(at.port);
+        ok &&= r.ok;
+        said.push(`${ep} (port ${at.port}): ${r.detail}${r.ok ? "" : ", not below 500"}`);
+      }
+      if (!s.check("share-endpoints", ok, said.join("; "), t0)) return;
+    }
     // 9. reset A.
     if (def.data.length) {
       t0 = Date.now();

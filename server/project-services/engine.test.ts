@@ -38,6 +38,7 @@ const DEF = {
     site: { static: "public", ports: { http: { base: PORTS.site } } },
   },
   hooks: { probe: { run: ["node", "probe.mjs"] } },
+  share: { endpoints: ["web.http", "site.http"] },
 };
 
 const FILES: Record<string, string> = {
@@ -336,5 +337,7 @@ test("conform passes on the fixture: two copies, every verb twice, isolation, no
   for (const id of ["create-a", "create-a-again", "setup-twice", "doctor", "up-a", "ports-owned", "up-a-again", "status-a", "up-b-parallel", "lock-busy", "disjoint", "isolation", "apply-a", "logs-a", "reset-a", "down-a", "down-a-again", "teardown", "teardown-again", "no-leaks"])
     assert.ok(ids.includes(id), `check ${id} ran`);
   assert.match(r.conform!.checks.find((c) => c.id === "isolation")!.detail, /read in B 1/);
+  // Suite 3: each share endpoint answers through the preview proxy's request path, no link minted.
+  assert.match(r.conform!.checks.find((c) => c.id === "share-endpoints")!.detail, /^web\.http \(port \d+\): GET \/ through the preview proxy answered 200; site\.http \(port \d+\): GET \/ through the preview proxy answered 200$/);
   assert.equal(git(["branch", "--list", "sova/conform-*"]).trim(), "", "scratch branches are gone");
 });

@@ -23,7 +23,7 @@ const links = await import("../preview-links");
 const { keptPreview } = await import("../preview-kept");
 const { previewDialable } = await import("../share/preview-proxy");
 const { sensitivePortRefusal } = await import("./sensitive");
-const { linksOf } = await import("./share");
+const { endpointAnswers, linksOf } = await import("./share");
 const { renderResult } = await import("./tools");
 
 const op: Caller = { kind: "operator" };
@@ -257,4 +257,24 @@ test("refused shares: unregistered, no share key, allow false, sensitive data, a
   assert.equal(sensitivePortRefusal(1), null);
   writeFileSync(join(c.checkout!, ".sova", "project.json"), JSON.stringify(DEF));
   assert.equal(sensitivePortRefusal(c.services.find((s) => s.name === "web")!.ports.http!), null);
+});
+
+test("conform's share-endpoint check: an answer below 500 through the proxy's request path; a 5xx, nothing listening or a Sova port fails", async () => {
+  const { createServer } = await import("node:http");
+  const serve = (handler: (res: import("node:http").ServerResponse) => void) =>
+    new Promise<{ port: number; close: () => Promise<void> }>((ok) => {
+      const srv = createServer((_q, res) => handler(res));
+      srv.listen(0, "127.0.0.1", () => ok({ port: (srv.address() as { port: number }).port, close: () => new Promise((d) => srv.close(() => d())) }));
+    });
+  const good = await serve((res) => res.end("hi"));
+  const bad = await serve((res) => ((res.statusCode = 500), res.end()));
+  const sova = await serve((res) => (res.setHeader("X-Sova-Server", "1"), res.end("sova")));
+  try {
+    assert.deepEqual(await endpointAnswers(good.port), { ok: true, detail: "GET / through the preview proxy answered 200" });
+    assert.equal((await endpointAnswers(bad.port)).ok, false);
+    assert.deepEqual(await endpointAnswers(sova.port), { ok: false, detail: "GET / through the preview proxy answered 502" });
+  } finally {
+    await Promise.all([good.close(), bad.close(), sova.close()]);
+  }
+  assert.equal((await endpointAnswers(good.port)).ok, false, "nothing listens any more");
 });

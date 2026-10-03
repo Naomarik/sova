@@ -190,3 +190,42 @@ export async function shareFromAct(a: { projectId: string; instance: string; end
   if (!id) throw new Error("The link was made, but it can't be read back.");
   return { id };
 }
+
+/**
+ * Whether a share endpoint answers through the preview proxy's own request path, in this process, with no
+ * link minted (§app.project-services/conform, suite 3): a GET of `/` as a visitor's would reach the app,
+ * answered below 500. The proxy's own refusals (nothing listening, a Sova port) are 502s, so they fail it.
+ */
+export async function endpointAnswers(port: number, timeoutMs = 10_000): Promise<{ ok: boolean; detail: string }> {
+  const { createServer, request } = await import("node:http");
+  const { createPreviewProxy } = await import("../share/preview-proxy");
+  const label = "c".repeat(52);
+  const now = Date.now();
+  const record = { id: "pv_conformendpoints", hash: "0".repeat(64), projectId: "conform", port, createdAt: new Date(now).toISOString(), expiresAt: new Date(now + 3_600_000).toISOString(), createdBy: "operator" };
+  const proxy = createPreviewProxy({ find: () => record, findByHash: () => record, origin: (l) => `http://${l}.conform.invalid`, dialable: () => true, sweepMs: 0 });
+  const server = createServer((req, res) => proxy.dispatch(req, res, label));
+  try {
+    await new Promise<void>((ok, fail) => {
+      server.once("error", fail);
+      server.listen(0, "127.0.0.1", () => ok());
+    });
+    const at = (server.address() as { port: number }).port;
+    const status = await new Promise<number>((ok, fail) => {
+      // Not a navigation: the host's visitor log never records it.
+      const q = request({ host: "127.0.0.1", port: at, path: "/", method: "GET", headers: { host: `${label}.conform.invalid`, accept: "*/*" }, timeout: timeoutMs }, (r) => {
+        r.resume();
+        ok(r.statusCode ?? 0);
+      });
+      q.on("timeout", () => q.destroy(new Error(`no answer in ${timeoutMs / 1000}s`)));
+      q.on("error", fail);
+      q.end();
+    });
+    return { ok: status > 0 && status < 500, detail: `GET / through the preview proxy answered ${status}` };
+  } catch (err) {
+    return { ok: false, detail: `GET / through the preview proxy failed: ${err instanceof Error ? err.message : String(err)}` };
+  } finally {
+    proxy.dispose();
+    server.closeAllConnections();
+    await new Promise<void>((done) => server.close(() => done()));
+  }
+}

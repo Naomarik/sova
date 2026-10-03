@@ -1,0 +1,16 @@
+{
+ "runId": "nice0-r3-musqkwla",
+ "variant": "nice0",
+ "rep": 3,
+ "nice": 0,
+ "weight": null,
+ "mix": "test=2,tsc=2,vite=1",
+ "T": {
+  "idle": 30,
+  "ramp": 20,
+  "load": 60,
+  "cool": 20
+ },
+ "systemd": true,
+ "bigPath": ".agent/sessions/--home-naomarik-webapps-sova--/2026-10-01T09-51-43-081Z_01a0f6e0-7fe9-7271-b42d-a82970163772.jsonl"
+}

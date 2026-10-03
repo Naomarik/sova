@@ -27,7 +27,8 @@ import { join, resolve } from "node:path";
 
 const ROOT = resolve(import.meta.dirname, "..");
 const PI_CONFIG = join(ROOT, "pi-config");
-const AGENT = join(ROOT, ".agent");
+// HERMETIC_AGENT_DIR builds another directory the same way (scripts/perf/load-experiment.mjs --agent-dir).
+const AGENT = process.env.HERMETIC_AGENT_DIR ? resolve(process.env.HERMETIC_AGENT_DIR) : join(ROOT, ".agent");
 const HOME_PI = join(homedir(), ".pi");
 
 /** Keys of pi-config/settings.json that are about this machine or the user's installed packages. */

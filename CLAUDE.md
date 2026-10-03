@@ -127,7 +127,13 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
   writer of `model-favorites.json`, with its lock, re-read and atomic rename, for the TUI palette
   and Sova's picker alike), `server/team-defaults.ts` imports
   `pi-config/extensions/subagents/team-defaults.ts` (builtins only: the file's types, defaults,
-  strict parse, reader and atomic writer for Settings → Teams), and of the same package's
+  strict parse, reader and atomic writer for Settings → Teams), `server/process-priority.ts`
+  imports its `priority.ts` (builtins only: the `Symbol.for("sova:worker-nice")` hook through which
+  the server sets the niceness its hosted sessions' workers and tool commands start at, and the
+  lowering the subagents extension does; claude-code and the sandbox, which import nothing outside
+  their own directory, call the server's `Symbol.for("sova:lower-worker")` and
+  `Symbol.for("sova:tool-command-prefix")` instead; unset, as in the TUI, nothing changes;
+  §app.load-priority/workers), and of the same package's
   `subagent-profiles.ts` (builtins only, see above: `server/subagent-profiles.ts` — Settings →
   Subagents, the `/api/subagents` pick route and the session-create field, `server/sync/docs.ts` —
   the library's mesh registration, its default file deliberately absent, `server/chat-manager.ts` —

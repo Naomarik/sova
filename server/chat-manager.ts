@@ -47,6 +47,7 @@ import { attachStreamGuard, capsFor, type StreamTrip } from "./stream-guard";
 import { targetOfCwd } from "./targets";
 import { sovaToken } from "./auth";
 import { claudeCodeProviderEnabled } from "./web-settings";
+import { installWorkerNice, lowerToolCommands } from "./process-priority";
 import { ForeignWriteGuard, markOwned, markOwnedStat, recentForeignWriteAgeSec } from "./write-guard";
 import { monitorExtension } from "./resource-monitor";
 import { applyForkCacheRouting, forkCacheExtension } from "../pi-config/extensions/subagents/fork/cache.ts";
@@ -137,7 +138,9 @@ async function servicesForCwd(
   outline = true,
   resourceLoaderOptions?: CreateAgentSessionServicesOptions["resourceLoaderOptions"],
 ) {
-  return await createAgentSessionServices({
+  // Its workers and tool commands start below the server (§app.load-priority/workers).
+  installWorkerNice();
+  const services = await createAgentSessionServices({
     cwd,
     modelRuntime,
     extensionFlagValues: extensionFlagsFor(cwd, outline, !!resourceLoaderOptions?.noExtensions),
@@ -147,6 +150,8 @@ async function servicesForCwd(
     // and the monitor finds its Claude Code provider through the held sessions instead.
     resourceLoaderOptions: resourceLoaderOptions ?? { extensionFactories: [...DEFAULT_EXTENSION_FACTORIES] },
   });
+  lowerToolCommands(services.settingsManager);
+  return services;
 }
 
 /**

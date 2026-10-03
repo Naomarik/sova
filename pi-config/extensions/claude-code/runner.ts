@@ -18,6 +18,16 @@ import type { AgentStatus, AgentUsage, TaskOutcome, TranscriptItem, TranscriptKi
 import type { Worker, WorkerHandlers, SteerMode, SpawnOptions } from "../subagents/contracts.ts";
 import { createClaudeRequestObserver, type ClaudeRequestObserver } from "../llm-inflight/claude.ts";
 
+/**
+ * Lower a launched worker to the niceness its hosting server asks for (Sova: §app.load-priority/workers,
+ * installed as `Symbol.for("sova:lower-worker")`). No host (the TUI): nothing changes. Never throws.
+ */
+function lowerUnderHost(pid: number | undefined): void {
+	const lower = (globalThis as Record<symbol, unknown>)[Symbol.for("sova:lower-worker")];
+	if (typeof lower !== "function" || pid === undefined) return;
+	try { lower(pid); } catch { /* the worker keeps its priority */ }
+}
+
 export interface ClaudePermissionRequest extends ClaudeToolPermissionRequest {
 	/** Identity of the requesting worker; count>1 batches share one spec name. */
 	workerId: string;
@@ -297,7 +307,9 @@ export class ClaudeRunner implements Worker {
 				onProtocolError: (message) => { if (mine()) this.fail(message); },
 				onStdinError: (message) => { if (mine() && !this.stopping) this.fail(message); },
 				onProcessError: (message) => { if (mine()) this.fail(message); },
-				onSpawned: (pid) => { if (this.transport === transport) { this.processAlive = true; this.pid = pid; } },
+				// Every launch (start, resume, login move, failover) starts below the hosting server
+				// (lowerUnderHost); a host's transport has no pid, the host was lowered at its spawn.
+				onSpawned: (pid) => { lowerUnderHost(pid); if (this.transport === transport) { this.processAlive = true; this.pid = pid; } },
 				onLeaderExit: () => { if (mine()) { this.processAlive = false; this.cancelPermissions(); } },
 				onActivity: () => { if (mine()) this.touch(); },
 				beforeEof: () => mine() ? this.abortActiveWork() : Promise.resolve(),

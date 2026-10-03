@@ -43,3 +43,31 @@ no transcript row, main-model message or extra model call.
 This preserves the opportunity to reuse an identical warm prefix on the first fork request;
 provider eviction, expiry or changed instructions can still cause a cache miss. Cache reuse is
 verified against a warm-parent control rather than inferred from the existence of a cache key.
+
+## §chat.session-fork/background — Background forks keep the parent's cache
+
+A background fork, a hidden child that works in a copy of the conversation and reports back
+without opening a session (/explain's worker today), uses the same cache affinity as a
+UI-created fork, from the same code. The copy it forks records the parent's inherited cache key
+as the same non-context metadata, so a parent that is itself a fork passes its lineage on. The
+child asks OpenAI-style providers for that key, and on Codex also sends it as its request
+affinity on whichever transport the child uses; the child has its own process, so no WebSocket
+or continuation state is shared with the parent. The child declares the parent's tools and
+system prompt exactly as the parent's transcript declared them, and what it may do is decided
+per call by the run's policy, so neither the policy nor the gate changes the request prefix.
+A Claude Code parent with a live, idle CLI session is resumed and forked there instead of
+replayed.
+
+Its first request is expected to read the parent's warm prefix from cache on Zai, Codex,
+Ollama Cloud and Claude Code alike, verified against the parent's last request; provider
+eviction or expiry can still cause a miss.
+
+## §chat.session-fork/claude-resume — A Claude Code fork resumes its source's CLI session
+
+A UI-created fork of a Claude Code chat whose CLI session is live and idle in the same Sova
+picks up from that CLI session for its first turn (resumed and forked, so the source's record
+is never extended), instead of replaying the conversation to a fresh CLI as one message, so
+its first request reads the source's warm prompt cache. It does so only while the source's CLI
+session is still exactly at the forked reply: forking an earlier reply, a source that has moved
+on, been stopped or restarted since, or a fork opened in another folder replays the history as
+before. The fork's own conversation and session id stay independent of the source.

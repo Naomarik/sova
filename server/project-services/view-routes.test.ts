@@ -140,13 +140,16 @@ test("each copy carries its entry under its own definition: the open endpoint's 
       [3, { endpoint: "web.http", port: 4130, path: "/home" }],
     ],
   );
-  const run = runningOf({ projectId: "prj_1", name: "p", root: "/p" }, [branch, old, main], defs)!;
+  // Running branches lists no services, so its entry says whether the entry's own service is ready.
+  const starting = inst("s", 4, "degraded", [svc("web", "checkout", "starting", { http: 4140 })]);
+  const run = runningOf({ projectId: "prj_1", name: "p", root: "/p" }, [branch, old, main, starting], defs)!;
   assert.deepEqual(
     run.copies.map((c) => [c.slot, c.open ?? null]),
     [
-      [0, { endpoint: "web.http", port: 4100, path: "/home" }],
+      [0, { endpoint: "web.http", port: 4100, path: "/home", ready: true }],
       [1, null],
-      [3, { endpoint: "web.http", port: 4130, path: "/home" }],
+      [3, { endpoint: "web.http", port: 4130, path: "/home", ready: true }],
+      [4, { endpoint: "web.http", port: 4140, path: "/home", ready: false }],
     ],
   );
   // A copy whose status lacks the endpoint's port (its record predates the port) has no entry.

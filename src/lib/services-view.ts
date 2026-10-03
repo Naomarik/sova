@@ -65,8 +65,18 @@ export const httpHref = (host: string, http: { port: number; path: string }): st
 
 // ---- the entry point (§app.project-services/services-ui) -------------------------------------------
 
-/** The copy's entry while it is running and declares one (Open, a branch's name on Running branches), else null. */
-export const openEntry = (c: { state: InstanceState; open?: EntryView }): EntryView | null => (c.state === "running" && c.open ? c.open : null);
+/**
+ * The copy's entry while the entry's own service is ready, whatever the copy's state (Open on the tab, a
+ * branch's name on Running branches), else null. The tab reads that service in the copy's services;
+ * Running branches, which lists none, reads the entry's `ready`.
+ */
+export function openEntry(c: { open?: EntryView & { ready?: boolean }; services?: readonly Pick<ServiceRowView, "name" | "state">[] }): EntryView | null {
+  const e = c.open;
+  if (!e) return null;
+  const name = e.endpoint.slice(0, e.endpoint.indexOf("."));
+  const ready = c.services ? c.services.some((s) => s.name === name && s.state === "ready") : e.ready === true;
+  return ready ? e : null;
+}
 /** Where Open takes a person: the entry's port and path on the host this page was opened from. */
 export const entryHref = (host: string, e: Pick<EntryView, "port" | "path">): string => httpHref(host, e);
 /** Open's title: what it opens. */
@@ -166,10 +176,11 @@ export const DESTRUCTIVE: ReadonlySet<RowVerb> = new Set(["reset", "teardown"]);
 
 /**
  * A row's verbs by weight, never by which appear: the one its state calls for (Start, else Stop, else
- * Apply), the others quieter, and the destructive ones in a group of their own.
+ * Apply), the others quieter, and the destructive ones in a group of their own. While the row offers
+ * Open (`opens`), Open takes the one plain weight and every verb but the destructive ones is quiet.
  */
-export function verbGroups(verbs: readonly RowVerb[]): { primary: RowVerb | null; quiet: RowVerb[]; destructive: RowVerb[] } {
-  const primary = (["up", "down", "apply"] as const).find((v) => verbs.includes(v)) ?? null;
+export function verbGroups(verbs: readonly RowVerb[], opens = false): { primary: RowVerb | null; quiet: RowVerb[]; destructive: RowVerb[] } {
+  const primary = opens ? null : ((["up", "down", "apply"] as const).find((v) => verbs.includes(v)) ?? null);
   return {
     primary,
     quiet: verbs.filter((v) => v !== primary && !DESTRUCTIVE.has(v)),

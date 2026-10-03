@@ -109,11 +109,25 @@ test("a port reads as its number for the generic name, else name:number", () => 
   assert.equal(portLabel("nrepl", 7860), "nrepl:7860");
 });
 
-test("Open: only a running copy with an entry offers it, to the entry's port and path on this page's host", () => {
+test("Open follows the entry's own service, never the copy's state: ready offers it, anything else hides it", () => {
   const open = { endpoint: "web.http", port: 4130, path: "/home?x=1" };
-  assert.deepEqual(openEntry({ state: "running", open }), open);
-  for (const state of ["degraded", "stopped", "absent"] as const) assert.equal(openEntry({ state, open }), null, state);
-  assert.equal(openEntry({ state: "running" }), null, "no entry declared: nothing extra");
+  const web = (state: "ready" | "starting" | "degraded" | "failed" | "stopped") => [{ name: "api", state: "failed" as const }, { name: "web", state }];
+  // The tab: a degraded or starting copy whose web is ready still offers Open; a running copy whose web isn't never does.
+  assert.deepEqual(openEntry({ open, services: web("ready") }), open);
+  for (const state of ["starting", "degraded", "failed", "stopped"] as const) assert.equal(openEntry({ open, services: web(state) }), null, state);
+  assert.equal(openEntry({ open, services: [{ name: "api", state: "ready" }] }), null, "another service's readiness is not the entry's");
+  // Running branches lists no services: the entry says.
+  assert.deepEqual(openEntry({ open: { ...open, ready: true } }), { ...open, ready: true });
+  assert.equal(openEntry({ open: { ...open, ready: false } }), null);
+  assert.equal(openEntry({ services: web("ready") }), null, "no entry declared: nothing extra");
   assert.equal(entryHref("192.0.2.7", open), "http://192.0.2.7:4130/home?x=1");
   assert.equal(entryHref("::1", { port: 4130, path: "/" }), "http://[::1]:4130/");
+});
+
+test("with Open on the row, Open is the one plain weight: the state's verb joins the ghost group, the destructive ones stay apart", () => {
+  const running = rowVerbs({ slot: 2, state: "degraded" });
+  assert.deepEqual(verbGroups(running, true), { primary: null, quiet: ["up", "down", "apply"], destructive: ["reset", "teardown"] });
+  // Without Open the row is as it was: the state's verb plain.
+  assert.deepEqual(verbGroups(running), { primary: "up", quiet: ["down", "apply"], destructive: ["reset", "teardown"] });
+  assert.deepEqual(verbGroups(running, false), verbGroups(running));
 });

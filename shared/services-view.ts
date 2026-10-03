@@ -56,8 +56,8 @@ export interface RunningCopy {
   starting?: true;
   /** The unit an adopted slot 0 runs as: no Stop is offered. */
   adopted?: string;
-  /** Where a person opens it, as on the tab. */
-  open?: EntryView;
+  /** Where a person opens it, as on the tab, and whether the entry's own service is ready (this view lists no services). */
+  open?: EntryView & { ready: boolean };
 }
 
 export interface RunningShared {

@@ -111,7 +111,7 @@ export function runningOf(base: Omit<RunningProject, "copies" | "shared">, insta
         createdBy: i.createdBy,
         ...(isStarting(i.state, own) ? { starting: true as const } : {}),
         ...(adopted ? { adopted } : {}),
-        ...(open ? { open } : {}),
+        ...(open ? { open: { ...open, ready: own.some((s) => s.name === open.endpoint.slice(0, open.endpoint.indexOf(".")) && s.state === "ready") } } : {}),
       };
     });
   const shared = new Map<string, RunningProject["shared"][number]>();

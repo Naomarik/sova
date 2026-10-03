@@ -1,19 +1,12 @@
-// Run: pnpm exec tsx --test src/lib/session-feed.test.ts. Solid's reactive (browser) build, a fake
+// Run: pnpm exec tsx --conditions=browser --test src/lib/session-feed.browser.test.ts. Solid's reactive (browser) build, a fake
 // WebSocket and mocked timers: the feed's `llm_inflight` count across connect, unchanged and changed
 // frames, a drop, a reconnect and cleanup — never stale, never a list re-read of its own.
 import assert from "node:assert/strict";
-import { register } from "node:module";
 import { mock, test } from "node:test";
+// The browser condition is this file's whole setup: without it every effect below is inert.
+if (!import.meta.resolve("solid-js").endsWith("/dist/solid.js")) throw new Error("run with --conditions=browser (the *.browser.test.ts invocation)");
 import type { LlmInflight, SessionFeedMessage } from "../../shared/protocol";
 
-register(
-  "data:text/javascript," +
-    encodeURIComponent(
-      `const to = { "solid-js": "solid-js/dist/solid.js", "solid-js/store": "solid-js/store/dist/store.js" };
-       export async function resolve(s, c, next) { return next(to[s] ?? s, c); }`,
-    ),
-  import.meta.url,
-);
 
 class FakeSocket {
   static CONNECTING = 0;

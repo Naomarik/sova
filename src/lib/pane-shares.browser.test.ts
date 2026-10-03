@@ -1,16 +1,10 @@
-// Run: pnpm exec tsx --test src/lib/pane-shares.test.ts. Solid's reactive (browser) build, not
-// the inert server build node resolves by default: the bug lives between re-runs of the graph.
+// Run: pnpm exec tsx --conditions=browser --test src/lib/pane-shares.browser.test.ts. Solid's reactive build (the browser
+// condition), not the inert server build node and bun resolve by default: the bug lives between re-runs of the graph.
 import assert from "node:assert/strict";
-import { register } from "node:module";
 import { test } from "node:test";
+// The browser condition is this file's whole setup: without it every effect below is inert.
+if (!import.meta.resolve("solid-js").endsWith("/dist/solid.js")) throw new Error("run with --conditions=browser (the *.browser.test.ts invocation)");
 
-register(
-  "data:text/javascript," +
-    encodeURIComponent(
-      `export async function resolve(s, c, next) { return next(s === "solid-js" ? "solid-js/dist/solid.js" : s, c); }`,
-    ),
-  import.meta.url,
-);
 const solid = await import("solid-js");
 const { paneShares } = await import("./pane-shares");
 import type { SessionShare } from "../../shared/session-share";

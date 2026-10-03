@@ -1,18 +1,11 @@
-// Run: pnpm exec tsx --test src/lib/org-source.test.ts. Solid's reactive (browser) build and a stub
+// Run: pnpm exec tsx --conditions=browser --test src/lib/org-source.browser.test.ts. Solid's reactive (browser) build and a stub
 // `document`: the row has to change between polls, with nobody touching the page.
 import assert from "node:assert/strict";
-import { register } from "node:module";
 import { mock, test } from "node:test";
+// The browser condition is this file's whole setup: without it every effect below is inert.
+if (!import.meta.resolve("solid-js").endsWith("/dist/solid.js")) throw new Error("run with --conditions=browser (the *.browser.test.ts invocation)");
 import type { OrgDetail } from "../../shared/orgs";
 
-register(
-  "data:text/javascript," +
-    encodeURIComponent(
-      `const to = { "solid-js": "solid-js/dist/solid.js", "solid-js/store": "solid-js/store/dist/store.js" };
-       export async function resolve(s, c, next) { return next(to[s] ?? s, c); }`,
-    ),
-  import.meta.url,
-);
 (globalThis as { document?: unknown }).document = { hidden: false, addEventListener() {}, removeEventListener() {} };
 const solid = await import("solid-js");
 const { createOrgSource, ORG_POLL_MS } = await import("./org-source");

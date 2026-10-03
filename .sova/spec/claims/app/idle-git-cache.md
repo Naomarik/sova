@@ -29,10 +29,12 @@ remote-tracking OID: remote movement invalidates it, a missing ref remains unkno
 fetches. Changes to mutable Git history semantics invalidate reuse or take the conservative
 fallback rather than treating OIDs alone as proof of unchanged meaning.
 
-**Independent dirty lifetime.** Dirty status still stands for only ten seconds per worktree,
-including unstaged and untracked changes that leave HEAD and index unchanged. Longer-lived
-metadata or commit facts never extend that lifetime. The read-only execution protections,
-five-second Git limit, four-at-a-time bound, scratch merge object store and successful partial
+**Independent dirty lifetime.** Dirty status stands for only ten seconds per worktree,
+including unstaged and untracked changes that leave HEAD and index unchanged, except where
+merge readiness asks for longer: an idle session's merged, clean tree, for up to five minutes
+(§chat.worktrees/dirty-freshness). A change of the worktree's index or HEAD ends a dirty reading
+at once. Longer-lived metadata or commit facts never extend that lifetime. The read-only
+execution protections, five-second Git limit, four-at-a-time bound, scratch merge object store and successful partial
 fields on Git errors are preserved.
 
 **Concurrent reads and bounds.** Readers of the same validated resource generation share one
@@ -49,11 +51,20 @@ watchers, background Git timers, model calls or network requests.
 active readiness refresh. Genuinely newer row or session-file inputs coalesce into one necessary
 trailing refresh without losing newer working/open-question state. Listings still return without
 waiting on Git, ordinary unchanged-session refreshes retain their twenty-second cadence except
-for archived-idle sessions below, and only files that ever wrote a `worktrees` entry receive Git
-readiness reads. Ownership, checks,
+for settled and archived-idle sessions below, and only files that ever wrote a `worktrees` entry
+receive Git readiness reads. Ownership, checks,
 questions, follow-up judgments and derived readiness remain per session, never shared merely
 because sessions name the same tree. Routine refreshes still never query spec assessment status
 or recapture its inputs.
+
+**Settled sessions.** A session with nothing running (no turn and no working subagents) whose
+last answer has every tracked worktree merged and clean is re-read every five minutes instead of
+every twenty seconds. Each listing still checks, without Git, each such worktree's index, HEAD
+and branch ref: a commit, checkout, branch switch or `git add` there re-reads it at once, as does
+any change of its file or row (the session starting a turn included) and opening it (an explicit
+look at its worktrees in the Session tab or `sova_session`'s Merge facts, once its answer is ten
+seconds old). Whatever else readiness reports for it, such as whether its merge is pushed yet,
+can therefore be up to five minutes old.
 
 **Archived-idle exception.** An archived session that is not open in a TUI and has nothing
 running (no turn and no working subagents) keeps its last readiness answer without the

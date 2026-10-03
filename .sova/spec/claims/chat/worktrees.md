@@ -265,3 +265,22 @@ or a phone notification: "Ready to merge: {branch}" for a ready worktree and "Wa
 {cue}" for a merge the follow-up check calls significant; and one "Restart pending" item for the
 whole server, however many sessions' merges ask for it, naming how many merges and their
 branches.
+
+## §chat.worktrees/dirty-freshness — How old a tree's uncommitted-changes reading may be
+
+Readiness (§chat.worktrees/readiness) reads each worktree's uncommitted changes with `git status`,
+and a reading stands for a while before it is read again:
+
+- **10 seconds** while the session is running: a turn, or working subagents.
+- **5 minutes** while the session is idle and the tree's last answer was **merged** (merged and
+  clean). A hand edit in an idle merged tree can therefore take up to 5 minutes to read "Stale ·
+  merged, with uncommitted changes".
+- Whatever the lifetime, a commit, `git add`, a checkout or a branch switch in the tree ends the
+  reading at once: the tree's index and HEAD are part of what it was read from.
+- A change of the session's file or of its row (its running state, last activity, TUI presence,
+  archived flag, open questions or attention answer) reads every tree's changes again at once.
+- An explicit look at the session's worktrees (the Session tab's Worktrees section, or
+  `sova_session`'s Merge facts) re-reads every tree's changes when one of its readings may have
+  stood the 5 minutes, or when the session is settled (§app/idle-git-cache) and its answer is 10
+  seconds old: that look returns the answer it has at once, and the re-read shows on the next one. A look at an archived, idle session re-reads them under its own rule
+  (§app/idle-git-cache, "Archived-idle exception").

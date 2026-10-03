@@ -32,7 +32,9 @@ The server runs on Node by default. To run it on [Bun](https://bun.sh) (1.4.2, p
 `mise.toml`) instead, write `{"runtime": "bun"}` to `~/.pi/agent/sova/runtime.json` (or set
 `SOVA_RUNTIME=bun`) and start it with `scripts/start-server.sh`; it falls back to Node, and says
 why in `~/.pi/agent/sova/runtime-fallback.json`, when Bun is missing or keeps failing to start.
-`GET /api/health` reports the runtime in use.
+`GET /api/health` reports the runtime in use. Bun is experimental here: under Bun 1.4.2 the
+WebSocket message-size caps on public share links are not enforced, so don't serve public links
+from a Bun server.
 
 ## More work, less window switching
 

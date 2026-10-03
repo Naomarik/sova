@@ -195,3 +195,16 @@ test("Run Playbook is refused for an archived project, and not offered", async (
   assert.equal((await read()).playbookState, "idle", "nothing started");
   await app.request(`/api/projects/${pid}/unarchive`, json("POST", {}));
 });
+
+test("the registry lists the definition's data resources, a production-derived one as sensitive", async () => {
+  const dataDef = JSON.stringify({
+    version: 1,
+    sources: ["index.html"],
+    data: { db: { kind: "dir", from: "index.html", sensitive: true }, cache: { kind: "dir", from: "index.html" } },
+    services: { site: { static: ".", ports: { http: { base: 18761, stride: 1 } } } },
+  });
+  commit(root, { ".sova/project.json": dataDef }, "declare data");
+  const v = await read();
+  assert.equal(v.def?.state, "present", JSON.stringify(v.def));
+  assert.deepEqual(v.data, [{ name: "db", kind: "dir", sensitive: true }, { name: "cache", kind: "dir", sensitive: false }]);
+});

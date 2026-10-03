@@ -3,7 +3,7 @@ import type { ProjectRuntimeView } from "../../shared/project-runtime";
 import { ApiError, approveProjectRuntime, getProjectRuntime, runProjectVerbsPlaybook } from "../lib/api";
 import { relativeTime } from "../lib/format";
 import { createPoll } from "../lib/poll";
-import { approveLabel, approveWhat, failedLine, liveWord, memoryWord, playbookLabel, portsWord, provenTail, runWord, serviceFacts, STANDING_CHIP } from "../lib/project-software";
+import { approveLabel, approveWhat, failedLine, liveWord, memoryWord, playbookLabel, portsWord, provenTail, runWord, SENSITIVE_TITLE, serviceFacts, STANDING_CHIP } from "../lib/project-software";
 import { projectSessionHref } from "../lib/projects-route";
 import { announce, toast } from "../lib/ui-state";
 import { Chip } from "./ui";
@@ -83,6 +83,20 @@ export function ProjectSoftwareCard(props: { projectId: string; archived: boolea
                         <Show when={liveWord(s)}>{(l) => <span class="project-muted"> · {l()}</span>}</Show>
                         <Show when={memoryWord(s.memory)}>{(m) => <span class="list-meta"> · {m()}</span>}</Show>
                       </span>
+                    </li>
+                  )}
+                </For>
+                <For each={v().data}>
+                  {(r) => (
+                    <li class="orgs-change project-software-row">
+                      <span class="orgs-change-main">
+                        <span class="project-software-name">{r.name}</span> <span class="list-meta">data · {r.kind}</span>
+                      </span>
+                      <Show when={r.sensitive}>
+                        <Chip tone="warn" title={SENSITIVE_TITLE}>
+                          Sensitive
+                        </Chip>
+                      </Show>
                     </li>
                   )}
                 </For>

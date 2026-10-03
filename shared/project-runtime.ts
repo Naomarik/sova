@@ -41,6 +41,13 @@ export interface RuntimeOrphan {
   state: string;
 }
 
+/** A declared data resource; `sensitive`: derived from production, so no copy of it is ever shared. */
+export interface RuntimeData {
+  name: string;
+  kind: "dir" | "hook";
+  sensitive: boolean;
+}
+
 export interface RuntimeProof {
   hash: string;
   suite: number;
@@ -83,6 +90,7 @@ export interface ProjectRuntimeView {
   suite: number | null;
   services: RuntimeService[];
   orphans: RuntimeOrphan[];
+  data: RuntimeData[];
   sources: string[];
   /** The changed source paths while stale. */
   drift: string[] | null;

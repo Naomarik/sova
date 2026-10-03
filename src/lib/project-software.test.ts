@@ -26,6 +26,7 @@ const base: ProjectRuntimeView = {
     },
   ],
   orphans: [],
+  data: [{ name: "db", kind: "dir", sensitive: true }],
   sources: ["bb.edn"],
   drift: null,
   approved: { hash: "sha256:abcdef0123456789", at: "2026-10-03T00:00:00.000Z" },

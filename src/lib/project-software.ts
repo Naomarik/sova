@@ -79,3 +79,6 @@ export function runWord(v: ProjectRuntimeView): string | null {
   const ended: Record<string, string> = { "no-change": "finished with no change", merged: "was merged", removed: "had its worktree removed", "not-started": "could not start" };
   return `The last Project verbs run ${ended[pb.result ?? ""] ?? "ended"}`;
 }
+
+/** A sensitive data resource's chip title. */
+export const SENSITIVE_TITLE = "Derived from production: copies of it are never shared.";

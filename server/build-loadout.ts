@@ -15,6 +15,7 @@ import { buildSid, engineOf, projectHost } from "./projects/spaces";
 import type { ProjectCodingMode } from "../shared/project-overseer";
 import { cutWorktree, gitRootOf, mergeBack, readWorktree, removeWorktree, uncommitted, worktreePathOf, type GitRoot, type WorktreeReading, type WorktreeRecord } from "./project-worktrees";
 import { teardownCopyOf } from "./project-services/checkout-teardown";
+import { mainMoved } from "./project-services/on-merge";
 import { runGit } from "../pi-config/extensions/worktrees/git.ts";
 import { markSeen } from "./seen";
 import { cleanSessionTitle, readSessionTitles } from "./session-titles";
@@ -373,6 +374,8 @@ export function registerBuildEffects(host: OrgHostApi, engine: string): void {
     const title = readSessionTitles()[sessionId] || str(d.title) || (listed && listed !== "Untitled" ? listed : "") || row.worktree.branch;
     const m = await mergeBack(row.worktree, root, title);
     noteBuildMerged(sessionId, true);
+    // Main moved: its copy's onMerge services reload now, never holding up the merge (§app.project-services/on-merge).
+    void mainMoved(root).catch((err) => console.warn(`[on-merge] ${root}: ${err instanceof Error ? err.message : String(err)}`));
     return { commit: m.sha };
   });
 

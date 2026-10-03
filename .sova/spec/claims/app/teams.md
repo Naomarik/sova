@@ -43,3 +43,21 @@ declared advisory ownership, and a roster persisted in the parent session as
   has recorded more than 24 members in all. A malformed eject entry is ignored, never partially
   adopted. An adopted history team keeps its released seats. Sova's insights decode the same
   entry into `TeamMember.ejectedAt` (`shared/protocol.ts`).
+
+## §app.teams/wait-completion — A settle agent_wait returned is not sent again
+
+This holds for every subagent worker, teamed or not. A worker settle that an `agent_wait` returns
+is not also sent to the parent as a `subagent-complete` message; a settle no wait returned still
+is.
+
+- **Returned.** While an `agent_wait` covers a worker, a settle routed to the parent is held
+  rather than sent. If the worker is still settled when a wait on it returns (all settled, timed
+  out or cancelled), that wait's text carries the worker's summary of that settle, so the held
+  message is dropped. The toast, the worker's record and its status are unchanged.
+- **Not returned.** If the worker started a new task before the wait returned (a queued steer),
+  the held settle is sent as before, with its wake, once the last wait covering the worker
+  returns. Overlapping waits on one worker release it only when the last one finishes; a settle
+  that any of them returned is never sent.
+- **Only the parent's copy.** A team member's completion routed to its coordinator
+  (§teams.defaults/routing) still reaches the coordinator; only a `subagent-complete` to the
+  parent is ever held.

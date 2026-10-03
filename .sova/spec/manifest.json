@@ -12014,6 +12014,19 @@
         "server/projects/runtime-routes.ts",
         "shared/project-runtime.ts"
       ]
+    },
+    "§app.teams/wait-completion": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§teams.defaults/routing"
+      ],
+      "code": [
+        "pi-config/extensions/subagents/index.ts",
+        "pi-config/extensions/subagents/index.test.ts",
+        "pi-config/extensions/subagents/README.md"
+      ]
     }
   },
   "boundary": {

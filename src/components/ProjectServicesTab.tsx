@@ -5,7 +5,6 @@ import { getProjectServices, runProjectVerb } from "../lib/api";
 import { createPoll } from "../lib/poll";
 import {
   adoptedLine,
-  adoptedOf,
   ASKS_FIRST,
   confirmLabel,
   copyChip,
@@ -414,7 +413,7 @@ function CopyRow(props: { copy: CopyView; said: string | null; verbs(v: RowVerb)
           <span title={c().createdBy}>by {createdByWord(c().createdBy)}</span>
         </p>
         <Show when={c().state !== "stopped" && c().state !== "absent" && notReadyLine(c().services)}>{(line) => <p class="list-meta">{line()}</p>}</Show>
-        <Show when={adoptedOf(c())}>{(unit) => <p class="list-meta">{adoptedLine(unit())}</p>}</Show>
+        <Show when={c().adopted}>{(unit) => <p class="list-meta">{adoptedLine(unit())}</p>}</Show>
         <Show when={props.said}>{(line) => <p class="field-error services-said">{line()}</p>}</Show>
       </div>
       <div class="button-row services-actions">

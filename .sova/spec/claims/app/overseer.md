@@ -141,7 +141,8 @@ host's sender secret never leaves it. The peer's own routes and refusals apply.
   §app.overseer/org-writes), gathering sessions (`sova_gather`, §app.overseer/org-people-facing) and
   project overseers (`sova_project_overseer`, §app.overseer/org-project-overseers); any project's
   running instances on this host (`sova_project_verbs`, §app.project-services/callers: status,
-  logs and doctor at any time, the other verbs in a turn the user started).
+  logs and doctor at any time, the other verbs, and `onboard`, which starts the Project verbs
+  playbook on a registered project (§app.project-runtime/onboard), in a turn the user started).
 - **Sending (`sova_send`) is typing in that session's composer.** Idle, with subagents working or
   not, the message starts a turn. Mid-turn it is **queued as a follow-up** behind the running turn
   by default: a queued row in that session, "Queued", which the user can remove

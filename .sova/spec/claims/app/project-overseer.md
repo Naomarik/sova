@@ -296,7 +296,9 @@ user row.
 ## §app.project-overseer/tools — Scoped to its project
 
 - Reads: `sova_project` (level, roster, gathering sessions, decisions by state and area, open
-  conflicts, spec status, its builds, its limits), `sova_decisions` (with who, their exact words and each
+  conflicts, spec status, its builds, its limits, and a Software block: the registry's standing in
+  words, each service as name · kind · scope · isolation with its live state, approval, proof, the
+  drifted paths and the playbook run, §app.project-runtime/registry), `sova_decisions` (with who, their exact words and each
   decision's owner area), `sova_list_sessions` / `sova_read_session` (the project's gathering sessions as their
   participants see them; the project's coding sessions, every one its statecharts record, the
   overseer's and the operator's, wherever its worktree is; and ordinary sessions whose folder is
@@ -364,7 +366,11 @@ user row.
   which is the project's own act: L3, counted as a prompt, held like one, kind `prompt`; never a
   gathering session; an optional `mode` and `minor_modes` too). Both take the mode within the operator's ceiling (§app.project-overseer/coding-mode).
   L3 also: `sova_project_verbs` create, up, apply, test, reset, teardown and conform (L0: its `down`;
-  status, logs and doctor are reads; below).
+  status, logs and doctor are reads; below), and its `onboard {why}`, the project's `verbs/onboard`
+  act, which starts the Project verbs playbook (§app.project-runtime/onboard): counted and held like
+  a coding session's start, and refused for an unattended overseer while the project's software is
+  registered and current. The overseer may start it when the Software standing is unregistered,
+  stale or failed; below L3 it raises a card instead; it never approves a definition or merges.
   Operator turns only: `sova_todo`.
 - **Every start names its gap.** `sova_start_gathering` and `sova_offer` take a required `gap`: a
   `§gap/…` idea of the project (the session becomes that gap's, §app.project-overseer/gaps), or
@@ -474,6 +480,9 @@ user row.
   branch is the one it merges back into. The project root's checkout is never switched, and the
   session's cwd is the worktree (or, for a folder inside the root, the same folder inside the
   worktree).
+- **A Project verbs run.** The coding session the Project verbs playbook runs in
+  (§app.project-runtime/onboard) is listed with the others, by who really started it ("Started by
+  the overseer" or "Started by you"), and labelled "Project verbs playbook run".
 - **Told to commit.** Such a session's first prompt ends with a paragraph Sova adds: "You work in
   your own git worktree on the branch {branch}. Commit your work on this branch before you end
   your turn: uncommitted changes can't be merged. Before you end your turn, also merge {target}
@@ -775,8 +784,9 @@ user row.
   owner updates, and every WhatsApp send to its people, `outreach/send`, §app.outreach/send), each gathering session (holder, hand-offs, offers and leases, the message
   budget, the reply running, the wrap-up), each decision, each conflict, each project's
   reconciler, each gap (§app.project-overseer/gaps), and each coding session with its worktree and
-  branch; and, host-local, this host's hold on the org (attach and commits) and each project's
-  watch loop (looks, allowances, held items, the pause). Routes, pages, the overseers' tools and
+  branch; and, host-local, this host's hold on the org (attach and commits), each project's
+  watch loop (looks, allowances, held items, the pause) and each project's software registry
+  (`runtime/<p>`, §app.project-runtime/registry). Routes, pages, the overseers' tools and
   the owner page read the statecharts in memory and answer in the same shapes as before; no route
   reads a state file.
 - **Links are set when they are made, never inferred.** A gathering session knows its gap, its

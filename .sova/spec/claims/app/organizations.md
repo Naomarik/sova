@@ -383,7 +383,8 @@ the URL (§app.organizations/org-page); each roster person has a page of their o
   {n} decision(s) ready to promote." with **Review Requirements**. Then, in two columns when the
   pane is at least 1000px wide (one column below): **Coding sessions** (§app.project-overseer/
   coding-worktrees) and the gathering **Sessions it started**, and **Previews**
-  (§mesh.public/preview-card) in the first; **Activity** and **To-do** in the second. Overview's
+  (§mesh.public/preview-card) in the first; **Software** (§app.project-runtime/software-card),
+  **Activity** and **To-do** in the second. Overview's
   cards use the width they are given (no 880px cap); the page stops at 1280px.
 - **Activity** is a card: its newest 5 acts, then **Show All {n}** (and **Show Fewer**). A done
   act has no chip; `Partly`, `Refused` and `Failed` keep theirs. With none: "Nothing yet. Every act

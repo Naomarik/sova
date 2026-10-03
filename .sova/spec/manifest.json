@@ -10499,7 +10499,9 @@
         "server/project-services/container-claims.test.ts",
         "server/project-services/conform-leaks.test.ts",
         "server/project-services/test-verb.test.ts",
-        "server/project-services/conform-static-on-demand.test.ts"
+        "server/project-services/conform-static-on-demand.test.ts",
+        "server/project-services/confine.test.ts",
+        "server/project-services/conform-logs.test.ts"
       ]
     },
     "§app.project-services/contract": {
@@ -10670,7 +10672,7 @@
     "§app.project-services/supervisor": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "requires": [
         "§app.project-services/contract",
         "§mesh.public/preview-serve"
@@ -10713,7 +10715,8 @@
         "server/project-services/routes.ts",
         "server/project-services/engine.ts",
         "server/project-services/engine.test.ts",
-        "server/project-services/note.test.ts"
+        "server/project-services/note.test.ts",
+        "server/project-services/observe.test.ts"
       ]
     },
     "§app.project-services/up": {
@@ -11849,6 +11852,167 @@
       "requires": [
         "§app.provider-limits/in-flight",
         "§mesh.peers/listener"
+      ]
+    },
+    "§app.project-runtime/approve": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "statecharts/src/sova/statecharts/runtime.cljc",
+        "statecharts/src/sova/statecharts/rules/runtime.cljc",
+        "server/projects/runtime.ts",
+        "server/projects/runtime-routes.ts",
+        "server/projects/runtime.test.ts"
+      ],
+      "requires": [
+        "§app.project-services/trust"
+      ]
+    },
+    "§app.project-runtime/onboard": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "statecharts/src/sova/statecharts/proj.cljc",
+        "statecharts/src/sova/statecharts/runtime.cljc",
+        "server/projects/onboard.ts",
+        "server/projects/onboard.test.ts",
+        "server/projects/runtime.ts",
+        "server/projects/runtime-routes.ts",
+        "server/project-overseer.ts",
+        "server/project-services/tools.ts",
+        "server/projects/runtime.test.ts",
+        "statecharts/test/sova/statecharts/refit/runtime_test.cljs"
+      ],
+      "requires": [
+        "§app.project-overseer/coding-worktrees"
+      ]
+    },
+    "§app.project-runtime/playbook": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "playbooks/project-verbs/PLAYBOOK.md",
+        "playbooks/project-verbs/scripts/project-verbs.mjs",
+        "playbooks/project-verbs/references/contract.md",
+        "playbooks/project-verbs/references/isolation.md",
+        "playbooks/project-verbs/references/recipes.md",
+        "playbooks/project-verbs/references/templates/nrepl-test.bb",
+        "playbooks/project-verbs/references/templates/bb.edn",
+        "playbooks/project-verbs/references/examples/static.json",
+        "playbooks/project-verbs/references/examples/node-app.json",
+        "playbooks/project-verbs/references/examples/motorsaif-like.json",
+        "server/projects/onboard-playbook.test.ts"
+      ],
+      "requires": [
+        "§chat.playbooks/bundles",
+        "§app.project-services/contract",
+        "§app.project-services/conform"
+      ]
+    },
+    "§app.project-runtime/registry": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "statecharts/src/sova/statecharts/runtime.cljc",
+        "statecharts/src/sova/statecharts/rules/runtime.cljc",
+        "statecharts/src/sova/statecharts/registry.cljc",
+        "statecharts/src/sova/statecharts/base.cljc",
+        "statecharts/test/sova/statecharts/refit/runtime_test.cljs",
+        "server/vendor/statecharts.js",
+        "server/projects/runtime.ts",
+        "server/projects/runtime-routes.ts",
+        "server/projects/routes.ts",
+        "server/projects/spaces.ts",
+        "server/projects/runtime.test.ts",
+        "shared/project-runtime.ts"
+      ],
+      "requires": [
+        "§app.project-services/trust",
+        "§app.project-services/status-logs"
+      ]
+    },
+    "§app.project-runtime/software-card": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "code": [
+        "src/components/ProjectSoftwareCard.tsx",
+        "src/components/ProjectPage.tsx",
+        "src/lib/project-software.ts",
+        "src/lib/project-software.test.ts",
+        "src/lib/api.ts",
+        "src/projects.css"
+      ],
+      "requires": [
+        "§app.project-runtime/registry"
+      ]
+    },
+    "§app.project-runtime/standing": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "statecharts/src/sova/statecharts/runtime.cljc",
+        "statecharts/src/sova/statecharts/rules/runtime.cljc",
+        "statecharts/src/sova/statecharts/reasons.cljc",
+        "statecharts/test/sova/statecharts/refit/runtime_test.cljs",
+        "server/projects/runtime.ts",
+        "server/projects/runtime-feed.ts",
+        "server/projects/runtime.test.ts"
+      ],
+      "requires": [
+        "§app.project-services/conform",
+        "§app.project-services/trust"
+      ]
+    },
+    "§app.project-services/confined": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.project-services/conform",
+        "§app.project-services/trust",
+        "§app.project-services/supervisor",
+        "§app.project-services/reconcile"
+      ],
+      "code": [
+        "server/project-services/confine.ts",
+        "server/project-services/netns-agent.mjs",
+        "server/project-services/conform.ts",
+        "server/project-services/engine.ts",
+        "server/project-services/store.ts",
+        "server/project-services/confine.test.ts",
+        "server/port-owner.ts",
+        "server/port-owner.test.ts"
+      ]
+    },
+    "§app.project-services/facts": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.project-services/contract",
+        "§app.project-services/trust",
+        "§app.project-services/conform"
+      ],
+      "code": [
+        "server/project-services/observe.ts",
+        "server/project-services/observe.test.ts",
+        "server/project-services/conform.ts"
+      ]
+    },
+    "§app/project-runtime": {
+      "kind": "surface",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/projects/runtime.ts",
+        "server/projects/runtime-routes.ts",
+        "shared/project-runtime.ts"
       ]
     }
   },

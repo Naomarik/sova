@@ -14,7 +14,7 @@ the Overseers' `sova_project_verbs` tool.
 How a project is isolated (ports per slot, per-slot names on shared infrastructure, a container per
 worktree, or a mix per service) is the project's choice, written into its declaration; Sova's verbs
 are the same whichever it picks, and conformance proves the isolation, not the method. The engine
-never calls a model. Share links, the Services page and drift detection come later; `share`,
+never calls a model. Share links and the Services page come later; `share`,
 `revoke` and `deploy` are reserved verb names that answer `unsupported`.
 
 Wire shapes are in `shared/project-contract.ts`, never `shared/protocol.ts`. The engine is
@@ -53,7 +53,10 @@ shell string is accepted anywhere: every command is an argv array of non-empty s
 - **`data`**: resources `{kind: "dir", path?, from?}` (a folder: by default under the instance's
   data dir; `path` places it inside the checkout, where it must be ignored by git; `from` is
   `"empty"`, the default, or a template naming a folder to copy) or `{kind: "hook", provision:
-  argv, deprovision: argv, timeout?}`.
+  argv, deprovision: argv, timeout?}`. Either kind may say `sensitive: true` (default false): its
+  copies hold data derived from production (a restore of a production backup, a clone of a
+  production database), so no copy of an instance holding it is ever shared
+  (§app.project-services/reserved).
 - **`test`** (optional): `{run: argv, requires?: [service], timeout?, smoke: [selector]}`, the
   project's test command (§app.project-services/test). `run` is a template argv; `requires` names
   the services a run needs (an on-demand test REPL, say); `timeout` is in seconds (default 600, at
@@ -65,6 +68,12 @@ shell string is accepted anywhere: every command is an argv array of non-empty s
 - **`slots`** (`{cap}`, 1–16, default 4: how many instances besides the main checkout's), **`host`**
   (names of host variables the templates may read as `${host.NAME}`, kept in Sova's state, never
   in the repo), and the reserved **`share`** and **`deploy`** (accepted, not used yet).
+- **`sources`** (optional): the checkout files the definition was written from (`bb.edn`,
+  `package.json`, a compose file, `.mise.toml`: relative, no `..`, dot-files allowed, at most 50),
+  whose change at HEAD is the project's drift (§app.project-services/facts). Each service may also
+  say how it is isolated, **`isolation`** (`{method: ports|names|process|container|netns|shared,
+  why}`, `why` a sentence of at most 200 characters): a record of the choice for the reader,
+  never a rule Sova applies.
 
 **Templates** (`${…}`, `$$` for a literal `$`): `slot`, `instance`, `project`, `checkout`, `main`,
 `branch`, `data`, `data.<resource>`, `ports.<service>.<port>`, `host.<NAME>`. Every process and hook
@@ -96,13 +105,13 @@ Every verb answers one JSON object with keys in this order: `v` (1), `verb`, `pr
 `instance`, `slot`, `generation`, `checkout`, `branch`, `ok`, `changed`, `state` (`absent`,
 `stopped`, `running` or `degraded`), `steps` (`{id, kind, result: done|skipped|failed, ms, detail?,
 fingerprint?}`), `services` (`{name, scope, kind: process|static|container, state: stopped|starting|
-ready|degraded|failed|external, unit, pid, ports, ready?}`), `data` (`{name, kind, ref, exists}`),
+ready|degraded|failed|external, unit, pid, ports, ready?, detail?, rssBytes?}`), `data` (`{name, kind, ref, exists}`),
 `links` (empty until sharing exists), then the verb's own key (`instances` for status of a whole
 project, `lines` for logs and test, `checks` for doctor and status (status: the supervisor's alone), `conform` for conform,
 `tests` for test), then `error?` (`{code,
 message, step?, service?}`), `defHash`, `approved` and `at`. Arrays follow declaration order.
-Running a verb again with the same inputs gives the same object apart from `at`, `ms`, pids and a
-new generation.
+Running a verb again with the same inputs gives the same object apart from `at`, `ms`, pids,
+`rssBytes` and a new generation.
 
 The error codes are a closed list: `not-found`, `invalid-request`, `invalid-definition`,
 `not-approved`, `not-conformant`, `cap-reached`, `port-held`, `not-ready`, `start-failed`,
@@ -140,7 +149,11 @@ probe's answer).
   server, and started again 2 s after it fails (`Restart=on-failure`). Its logs are the unit's
   journal. Hooks, setup and build steps run the same way as their own transient units
   (`sova-hook-…`), waited for, killed whole at their timeout (default 120 s, at most 1800 s), with
-  stdin from `/dev/null` and no terminal.
+  stdin from `/dev/null` and no terminal; a unit of the same name still loaded is stopped and
+  cleared first. A command named by a relative path (`.sova/bin/setup`) runs from the unit's
+  working directory, as with the detached driver. When `systemd-run` itself cannot start a hook,
+  nothing ran: the step fails with `systemd-run`'s own message, never as the hook's exit, and that
+  message is the step's log, which the unit's journal lacks.
 - **detached** (any Unix, macOS included): each process is started in a session of its own, so it
   survives a restart of the server; its output is appended to
   `<state root>/project-services/logs/<unit>.log`, and it is recorded by pid and start time, so a
@@ -223,8 +236,9 @@ definition no longer declares is stopped and marked stopped, as up does. `change
 ## §app.project-services/status-logs — status and logs
 
 Both are reads. `status` of an instance reports each service as observed now (stopped, starting,
-ready, degraded, failed, or `external` when something else holds its port) with its unit, pid and
-ports, each data resource's existence, the definition's hash and approval, and the supervisor in use
+ready, degraded, failed, or `external` when something else holds its port) with its unit, pid,
+ports and, while a process service runs, `rssBytes` (the resident memory of its unit's
+processes now), each data resource's existence, the definition's hash and approval, and the supervisor in use
 as the one check `supervisor` (informational: it never makes `ok` false). A service the definition
 no longer declares whose unit (or static serve) still runs is listed too, after the declared ones,
 as `degraded` with its unit and pid and the detail "no longer in the definition" (a shared one:
@@ -312,15 +326,17 @@ refused (`refused-slot0`). An instance that is absent answers `ok` with state `a
 ## §app.project-services/reserved — Reserved verbs
 
 `share`, `revoke` and `deploy` (and `deploy.plan`, `deploy.run`, `deploy.status`,
-`deploy.rollback`) are verb names now and answer `unsupported` (exit 2), changing nothing.
+`deploy.rollback`) are verb names now and answer `unsupported` (exit 2), changing nothing. When
+`share` exists, it refuses any instance whose definition declares a `sensitive` data resource
+(`share-denied`), whoever asks.
 
 ## §app.project-services/trust — Approval of a definition
 
 A definition runs only after the operator approved its hash on this host. The hash
-(`sha256:<hex>`) covers the whole parsed definition except timeouts, readiness paths and each
-service's `about`, so a
+(`sha256:<hex>`) covers the whole parsed definition except timeouts, readiness paths, each
+service's `about` and `isolation`, and the `sources` list, so a
 branch that changes any command, env template, port, hook or data source needs approving again,
-while tuning a timeout or rewording an `about` does not; a `test` or a `start` is covered. Approvals live in `<state root>/project-services/approvals.json`,
+while tuning a timeout, rewording an `about` or an isolation's `why`, or listing another source does not; a `test`, a `start` or a data resource's `sensitive` is covered. Approvals live in `<state root>/project-services/approvals.json`,
 keyed by project root and hash, outside every repo, so no branch can approve itself; only the
 operator's own routes and CLI approve, never a session or an Overseer, and an approval is refused
 when the definition's hash is no longer the one shown. Every verb that runs something answers
@@ -355,12 +371,64 @@ adds: up A left every on-demand service stopped; test A with the `smoke` selecti
 counts; without a `test`, test A answers `unsupported`; then down A (its processes gone, the
 on-demand ones' included, its ports free, B still ready), and again (`changed: false`); teardown A and B, and again (`absent`);
 then nothing is left of either: no unit or process, no listener on their ports, no data dir, no
-container, no registry entry, no worktree. The suite's version is 2, which the report and the stamp carry. Beyond A and B, a unit, data dir or registry entry
+container, no registry entry, no worktree. While the suite runs, Sova samples the resident memory of
+each service of A and B (its unit's processes; a static service, served in the server, has none):
+the report's `memory` gives each instance's and each service's peak, and its steady reading, taken
+for A once its status agrees with up and for B once it is up. When a check fails, before teardown
+removes anything, the report's `logs` keeps the last 80 lines of each of A's and B's services that is
+not ready (starting, degraded or failed) or that the failure names, and of a failed setup, data or
+build step (its unit's output, or the supervisor's message when it could not start it), so the
+cause can be read after the run. The suite's version is 2, which the report and the stamp carry. Beyond A and B, a unit, data dir or registry entry
 that appeared during the run is a leak only when it belongs to no registered instance (nor the
 project's shared services): another instance's, registered before the run or made meanwhile by
 another caller (a session's `up`, the server's reconcile), is never one. The report and a stamp keyed by project, hash and suite
-version are written to Sova's state. A definition that is not approved is refused for now: running
-it confined before approval comes with the onboarding playbook.
+version are written to Sova's state, a failed run's too (with its first failed check), and a
+confined run's stamp is kept apart from an unconfined one's. A definition that is approved on this
+host runs as described; one that is not runs confined (§app.project-services/confined), whoever
+calls, and a confined stamp never stands for approval or registers anything. Once the operator
+approves main's definition, the project's software registry runs this unconfined conformance on main
+by itself (§app.project-runtime/standing).
+
+## §app.project-services/confined — Conformance before approval, confined
+
+A definition that is not approved on this host conforms confined, so the Project verbs playbook
+can prove a definition before the operator approves it. Before anything starts, the run is refused
+with `not-approved` when the definition has a `container` service ("a container service runs only
+after approval: approve this definition to conform it"), when a data `from` names a folder outside
+the project's checkouts or one the host's sandbox policy hides, or when the host can't confine (not
+Linux, no `bwrap` or `nsenter`, no sandbox policy file, or a read-only policy), naming why.
+
+Each confined run gets one private network namespace of its own, held by an anchor that Sova starts
+under the host's sandbox policy (`<agent dir>/sandbox-policy/`) with its proxy: the namespace has
+only loopback, and its one way out is the policy's proxy allowlist (`HTTP(S)_PROXY`, and for a JVM
+`JAVA_TOOL_OPTIONS` with the same proxy; Maven's resolver, which reads proxies only from
+`~/.m2/settings.xml`, finds them in the sandbox's private `~/.m2`, written there once when it has no
+settings file). Every process of the run (setup, hooks, build steps,
+services, test runs, the probe) joins that namespace and runs in the policy's filesystem view: the
+policy's hidden paths read as empty, its caches are the sandbox's private copies (the policy's, and also the Clojure CLI's user classpath cache `~/.clojure/.cpcache` and git libraries `~/.gitlibs`, never the user's config beside them), and it may write
+only its own instance's checkout and data dir and a tmp of its own; the main checkout, every other
+checkout and the rest of the host are read-only. So A's and B's services reach each other's ports
+only inside the run, nothing of the run is reachable from the host, and a fixed port collides with
+nothing on the host. Sova checks readiness, port owners and listeners inside the namespace itself.
+A static service is served by the server as always. The check that the token is absent from the
+main checkout's instance is recorded as skipped (confined). The stamp says `confined`, and the
+report carries `confined: true`. The run's units are stopped when the server starts again, never
+started.
+
+## §app.project-services/facts — What a project's software registry reads
+
+For each project root, Sova reads main's definition at HEAD, never the working tree (which may be
+dirty): whether `.sova/project.json` is absent, invalid (with the parse error) or present (with its
+hash), the commit, the software it declares (each service's name, kind, scope, slot-0 ports,
+requires, start and isolation), its data resources (each one's name, kind and whether it is
+`sensitive`), its `sources` with each file's blob at HEAD (`null` where missing)
+and a fingerprint over them, this host's approval of that hash, and its newest unconfined and newest
+confined conformance stamps with the current suite (pass, time, report, the first failed check, the
+run's memory); a stamp of an older suite proves nothing. A source whose blob changed since the
+software was registered is the project's drift, named by its path. The same read of a branch's tip
+gives a proposed definition's hash, whether it is approved here, and its confined stamp. An approval
+made through this read is refused when the definition at that ref is no longer the hash shown, or
+when there is none.
 
 ## §app.project-services/callers — Who may call which verb
 

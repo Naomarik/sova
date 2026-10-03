@@ -1464,6 +1464,9 @@ export default function modeExtension(pi: ExtensionAPI): void {
 	});
 
 	pi.on("session_shutdown", async () => {
+		// A probe still in flight belongs to this session's ctx, dead from here on: its result is
+		// dropped, never applied (renderStatus on a stale ctx throws, unhandled, in the server's warm-up).
+		dropProbe();
 		alignDocs = [];
 		legacyAlign = null;
 		liveViewer = undefined;

@@ -12044,6 +12044,40 @@
       "requires": [
         "§chat.slash-commands/in-the-thread"
       ]
+    },
+    "§app.claude-code-provider/always-on": {
+      "kind": "behavior",
+      "requires": [
+        "§app/claude-code-provider"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/web-settings.ts",
+        "server/web-settings.test.ts",
+        "server/chat-manager.ts",
+        "server/models.ts",
+        "server/index.ts",
+        "shared/protocol.ts",
+        "src/lib/experimental-draft.ts",
+        "src/lib/api.ts",
+        "server/project-coding-runtime.test.ts"
+      ]
+    },
+    "§app.claude-logins/cli-status": {
+      "kind": "behavior",
+      "requires": [
+        "§app.claude-logins/accounts-tab"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/components/SettingsDialog.tsx",
+        "server/claude-status.ts",
+        "server/index.ts",
+        "server/models.ts",
+        "shared/protocol.ts"
+      ]
     }
   },
   "boundary": {

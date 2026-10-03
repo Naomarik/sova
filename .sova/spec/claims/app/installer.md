@@ -12,7 +12,7 @@ already unlocked (§app.access/callers); its closing message says both. An insta
 is not a clean clone of Sova, or a launcher this script did not write, is refused and left alone.
 
 Beyond that it links Sova's pi extensions into the agent directory (§app.installer/pi-extensions),
-switches on the Claude Code provider (§app.installer/claude-code-provider), and offers a login
+says what Claude Code's models need (§app.installer/claude-code-provider), and offers a login
 service (§app.installer/service). Re-running it with the same inputs changes nothing
 (§app.installer/idempotent). It runs on the bash and the BSD tools a stock macOS ships
 (§app.installer/portable).
@@ -40,13 +40,11 @@ default. The agent dir is `$PI_CODING_AGENT_DIR` when set (a leading `~` expande
 
 ## §app.installer/claude-code-provider — Claude Code models on first start
 
-Sova offers the Claude Code CLI's models (`claude-code-cli/*`) only while its experimental
-Claude Code provider switch is on (Settings, stored in `<agent dir>/sova/settings.json`). When
-extensions are installed and that file does not exist, the installer writes it with the switch
-on (`{"version": 1, "experimental": {"claudeCodeProvider": true}}`), so a fresh install lists
-Claude Code models once the `claude` CLI is installed and logged in. An existing file is the
-user's choice and is never changed. When no `claude` is on `PATH`, the installer says the models
-need it.
+Sova always offers the Claude Code CLI's models (`claude-code-cli/*`); there is no switch to turn
+on (§app.claude-code-provider/always-on), so the installer writes no `<agent dir>/sova/settings.json`
+for it, and an existing one is never changed. A fresh install lists Claude Code models once the
+`claude` CLI is installed and logged in. When extensions are installed and no `claude` is on
+`PATH`, the installer says the models need it.
 
 ## §app.installer/service — An optional login service
 
@@ -79,8 +77,8 @@ Running the installer again with the same inputs leaves the machine as it was.
 - **Same commit, no rebuild.** When the install directory already holds the commit the ref
   resolves to, with its build and dependencies in place, it is not cloned, installed or built
   again. `--reinstall` rebuilds anyway.
-- **Files rewritten only when they differ.** The launcher, the extension links, the provider
-  switch and the service definition are written only when their content would change.
+- **Files rewritten only when they differ.** The launcher, the extension links and the service
+  definition are written only when their content would change.
 - **The service reloads only on a change.** A service whose definition is unchanged and running
   is left running; a changed definition is updated in place and reloaded; a code update restarts
   it. A second instance is never started.

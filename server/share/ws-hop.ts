@@ -5,6 +5,7 @@ import { refuse } from "../extensions";
 import { REFUSED_HEADER } from "../mesh/hello";
 import { SHARE_WS_MAX_PAYLOAD } from "./edge";
 import { hopLost, offlineUpgrade } from "./offline";
+import { enforceMaxPayload } from "../ws-max-payload";
 
 /**
  * A gateway's `/ws/h` hop (§mesh.public/routing, /offline): the page's socket at the gateway, one
@@ -234,6 +235,9 @@ export function createWsHop(opts: WsHopOptions = {}): WsHop {
       return hop.end("offline");
     }
     const u = up;
+    // Bun's ws ignores maxPayload (server/ws-max-payload.ts): over the cap ends the hop as ws's own
+    // 1009 error does on Node.
+    enforceMaxPayload(u, upstreamMaxPayload, () => hop.end("lost"));
 
     u.once("unexpected-response", (_r, res) => {
       const status = res.statusCode ?? 502;
@@ -269,6 +273,7 @@ export function createWsHop(opts: WsHopOptions = {}): WsHop {
       wss.handleUpgrade(req, socket, rest, (ws) => {
         if (ended) return void ws.terminate();
         page = ws;
+        enforceMaxPayload(ws, SHARE_WS_MAX_PAYLOAD);
         socket.off("close", onGone);
         ws.on("error", () => {}); // an oversized frame: ws closes with 1009 by itself
         ws.on("message", (data: RawData, binary: boolean) => {

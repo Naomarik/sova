@@ -10,6 +10,7 @@ import { findShareLink, shareAccess, type ShareAccess, type ShareLinkRecord, typ
 import { classify, recordOpen, recordRefused, recordShellFetch, type SessionVisitLink } from "../visits";
 import { noteShareVisit } from "../visitor-identity";
 import { RateLimiter, type ShareUpgrade } from "./edge";
+import { enforceMaxPayload } from "../ws-max-payload";
 
 /**
  * The share listener's session share routes (§app/session-share): read-only, no POST.
@@ -161,6 +162,8 @@ export function sessionShareUpgrade(maxPayload = 1024): ShareUpgrade {
     const link = got.link;
     const share = { id: link.shareId };
     wss.handleUpgrade(req, socket, head, (ws) => {
+      // The cap on both runtimes: Bun's ws ignores maxPayload (server/ws-max-payload.ts).
+      enforceMaxPayload(ws, maxPayload);
       // A frame over maxPayload (or any protocol error): ws closes the socket; without a listener
       // the error would escape as an uncaughtException.
       ws.on("error", (err) => console.warn(`[session-share] socket error: ${err.message}`));

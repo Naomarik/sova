@@ -48,6 +48,7 @@ import { projectOverseerOfPath } from "./project-overseer-store";
 import { canonicalPath, LIVE_DIR, resolveSessionPath, SESSIONS_DIR } from "./paths";
 import { stateRoot } from "./state-root";
 import { markListening, runtimeInfo } from "./runtime-choice";
+import { enforceMaxPayload } from "./ws-max-payload";
 import { claudeCodeModelCount, listModels, listRegistryModels, resolveContext } from "./models";
 import { setFavorite } from "./model-favorites";
 import { markOwned } from "./write-guard";
@@ -1637,7 +1638,7 @@ configureLlmInflight({
   mesh: {
     peers: () => (meshApi.enabled() ? meshApi.peers().map((p) => ({ id: p.id, url: peerUrl(p) })) : []),
     selfId: () => meshApi.self().id,
-    connect: (url) => new PeerWebSocket(`${url.replace(/^http/, "ws")}/ws/watch?feed=llm`, { handshakeTimeout: 10_000, maxPayload: 16 * 1024 }),
+    connect: (url) => enforceMaxPayload(new PeerWebSocket(`${url.replace(/^http/, "ws")}/ws/watch?feed=llm`, { handshakeTimeout: 10_000, maxPayload: 16 * 1024 }), 16 * 1024),
   },
 });
 const attentionSignals = new AttentionSignals({

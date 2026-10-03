@@ -16,6 +16,7 @@ import { clientAddress, trustedClient } from "./security";
 import { noteShareClient } from "../visitor-identity";
 import { MB, PHOTO_MB } from "../../shared/baton";
 import { UPLOAD_BODY_SLACK } from "../baton-images";
+import { enforceMaxPayload } from "../ws-max-payload";
 
 // The old client-address rule lives with the other trust helpers; its old import path stays.
 export { clientAddress };
@@ -248,6 +249,8 @@ export function inProcessShare(): { dispatch: ShareDispatch; upgrade: ShareUpgra
     }
     const sessionId = access.row.sessionId;
     wss.handleUpgrade(req, socket, head, (ws) => {
+      // The 1 KB cap on both runtimes: Bun's ws ignores maxPayload (server/ws-max-payload.ts).
+      enforceMaxPayload(ws, SHARE_WS_MAX_PAYLOAD);
       // Read-only: messages go through POST /api/h/<token>/message. Anything sent here is ignored.
       ws.on("message", () => {});
       // A frame over maxPayload (or any protocol error): ws closes the socket (1009 and the like);

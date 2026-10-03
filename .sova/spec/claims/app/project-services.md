@@ -633,13 +633,16 @@ The operator sees and drives every running copy from two places, both on this ho
   `main`, then each branch copy by slot. A row shows the branch, `slot {n}`, each checkout service's
   ports (a port with HTTP readiness is a link to `http://<this page's host>:<port><path>`), the copy's
   memory (the sum of its services' resident memory, "—" when none reports one), its state as a chip
-  (Running, Degraded, Stopped, Absent; a service that is not ready is named under the row with its
-  state), and who created it ("by you", "by a coding session", "by its overseer", "by the Overseer",
+  (Running, Starting, Degraded, Stopped, Absent; Starting while the copy is degraded only because a
+  service is still starting, none failed or degraded; a service that is not ready is named under the
+  row with its state), and who created it ("by you", "by a coding session", "by its overseer", "by the Overseer",
   "by conformance"; the caller's tag is its title). While the main checkout has no copy, **Start
   Main** (`up` of the project) sits under the rows. Shared services are listed in their own block
   under the copies, once each, with their ports, state and memory, and Start and Stop of their own.
-- **Actions per copy**: **Start** (`up`), **Stop** (`down`), **Apply** (`apply`), **Reset**
-  (`reset`), **Logs** and **Teardown** (`teardown`). Each runs as the operator through
+- **Actions per copy**, each only where the copy's state allows it: **Start** (`up`) while it is
+  stopped, absent or degraded; **Stop** (`down`) while it is running or degraded; **Apply**
+  (`apply`), **Reset** (`reset`) and **Logs** always; **Teardown** (`teardown`) on every copy but
+  the main checkout's (slot 0), which the engine never tears down. Each runs as the operator through
   `POST /api/projects/:pid/services/:verb` (`{instance, services?, confirm?, lines?}`), which answers
   the verb's result with the status of its exit class. Reset, Teardown, and Stop of a shared service
   ask first: the first click turns the button into its confirm ("Confirm Teardown"), the second runs
@@ -658,27 +661,30 @@ The operator sees and drives every running copy from two places, both on this ho
   under them), and nothing scrolls sideways.
 - **Running copies** on `#/projects` (`GET /api/services`): one section listing, for every project
   on this host with a copy or shared service that runs now, standalone or placed, each running copy
-  (branch or `main`, slot, state, memory) and each running shared service, with a **Stop** that
-  stops it (`down` as the operator; a shared service's asks first, and a refusal reads as on the
+  (branch or `main`, slot, state as on the tab, memory) and each running shared service, with a
+  **Stop** that stops it (`down` as the operator; an adopted main has none, its "Runs as {unit}" line stands there instead; a shared service's asks first, and a refusal reads as on the
   tab). It is read every 15 seconds. The project's name links to its Services tab, with "In {org}"
   while placed. A copy whose root no registered project holds is listed under its folder, without a
   link. A confined conformance run's copies are not listed. With nothing running it says "Nothing runs on this host now. Copies you
   start show here."
-- **Share** (§app.project-services/share): a copy's row offers **Share** while its status lists
-  share endpoints (`share.endpoints`). It opens a form under the row's facts: the endpoint
+- **Share** (§app.project-services/share): a copy's row offers **Share** while the copy is running
+  and its status lists share endpoints (`share.endpoints`). It opens a form under the row's facts: the endpoint
   (`<service>.<port>`) as a select, the expiry as 1 to 7 days (1 by default), the preview warning
   for that endpoint's port, and **Share Copy** / **Cancel**. While the chosen endpoint's service is
   not ready, Share Copy waits and the form says "This copy isn't running {service}: start it
   first. Sharing never starts anything." Otherwise Share Copy runs `share` with
   `{endpoint, days, confirm}`, then copies the link (it is kept in the page, so Copy Link works
   even when status keeps no URL) and toasts "Shared {endpoint} of {copy}." The copy's active links
-  (status's `links`) are chips on its row ("web.http · expires in 5 hours"), each with **Copy Link**
-  (when the page knows its URL) and **Turn Off** (the first click asks "Turn Off Link?", the second
+  (status's `links`) are listed across the row's full width under its facts and actions, each a
+  chip ("web.http · expires in 5 hours") with its **Copy Link** (when the page knows its URL) and
+  **Turn Off** on the same line, the three wrapping together as one group (Turn Off: the first click asks "Turn Off Link?", the second
   runs `revoke` of that link). While the main checkout's definition declares sensitive data, every
   copy's Share is disabled and the row reads "Derived from production: copies are never shared.";
   otherwise, while the engine says a copy can't be shared (`share.refused`), Share is disabled with
   that sentence under the row.
 
-On an adopted slot 0's row (§app.project-services/adopt) only **Apply** works (it asks for the
-confirm, then schedules the unit's restart); Start, Stop, Reset and Teardown, and Start Main, answer
-`refused-slot0`, shown as the engine's sentence.
+On an adopted slot 0's row (§app.project-services/adopt: a service of its definition adopts a unit)
+only **Apply** and **Logs** are offered, under the line "Runs as {unit}; Apply schedules a guarded
+restart." Apply asks for the confirm, then schedules the unit's restart; Start, Stop, Reset and
+Teardown, which the engine refuses there with `refused-slot0`, are not offered, and Start Main
+still answers `refused-slot0`, shown as the engine's sentence.

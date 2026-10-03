@@ -6,6 +6,7 @@ import type { Envelope } from "../org-envelope";
 import { hostOf, isOrgHostOpen, onOrgChange, onOrgHostOpened, type Effect, type OrgHostApi } from "../org-engine";
 import { OrgError } from "../org-error";
 import { approveAtRef, branchFacts, observeRuntime, type BranchFacts, type ProofFact, type RuntimeFacts } from "../project-services/observe";
+import { onMergeNotes, startOnMergeTick, withOnMerge } from "../project-services/on-merge";
 import { projectEngine } from "../project-services/routes";
 import { startOnboardSession, type StartedCoding } from "../project-overseer";
 import { projectRootOf } from "../project-root";
@@ -200,9 +201,10 @@ onOrgChange((engine, change) => {
 });
 
 let tick: ReturnType<typeof setInterval> | null = null;
-/** Every 5 minutes, every project's facts again (main's HEAD may have moved). */
+/** Every 5 minutes, every project's facts again (main's HEAD may have moved), and onMerge's HEAD check (§app.project-services/on-merge). */
 export function startRuntimeTick(): void {
   if (tick) return;
+  startOnMergeTick();
   tick = setInterval(() => {
     for (const p of listProjects()) void observe(p.id);
   }, OBSERVE_EVERY_MS);
@@ -354,7 +356,7 @@ export async function readRuntime(projectId: string, opts: { observe?: boolean }
       onboard: !onboardWhy,
       ...(onboardWhy ? { onboardWhy } : {}),
     },
-    feed: runtimeFeed(rows),
+    feed: withOnMerge(runtimeFeed(rows), onMergeNotes(root)),
   };
 }
 

@@ -233,13 +233,16 @@ export class OpenConnections {
 
 /**
  * Whether a preview's port may be dialed now (§mesh.public/preview-serve): a folder preview only while
- * Sova itself serves that folder on it, so another program that took the port is never shown; any other
+ * Sova itself serves that folder on it, so another program that took the port is never shown; a static
+ * copy's link (§app.project-services/share) only while that copy's own serve holds it; any other
  * preview always.
  */
 export function previewDialable(record: PreviewRecord): boolean {
   // A person's sibling (§app.outreach/links) shows its original's app, on the same port: judged by it.
   const root = previewRootId(record);
-  if (keptPreview(root)?.target.kind !== "static") return true;
+  const target = keptPreview(root)?.target;
+  if (target?.kind === "instance") return !target.serve || staticServes().some((s) => s.id === target.serve && s.port === record.port);
+  if (target?.kind !== "static") return true;
   return staticServes().some((s) => s.id === root && s.port === record.port);
 }
 

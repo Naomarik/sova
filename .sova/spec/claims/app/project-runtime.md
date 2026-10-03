@@ -136,7 +136,8 @@ in the contract's key order), exiting 0 when all is well, 1 when it found someth
 1. Reads the state: the verbs' status and doctor, the definition at HEAD, the last conformance
    report, and why it was started; `plan` says whether anything points at a change (no valid
    definition, a source changed since the definition's last commit, a stack file the `sources`
-   don't list, a source gone, a service with ports but no `about`).
+   don't list, a source gone, a service with ports but no `about`, a checkout service that may serve
+   a page, static or with HTTP readiness, while the definition names no entry point).
 2. Inspects the repository: its tasks, scripts, dependency manifests, compose and Procfiles, port
    and URL literals, gitignored runtime folders, the tools on PATH and the ports in use.
 3. Reconciles, never regenerates: it keeps every service, key and order the sources don't
@@ -146,7 +147,17 @@ in the contract's key order), exiting 0 when all is well, 1 when it found someth
    first conformance) and records the method and why in the definition, with the `sources` it read.
    It marks a data resource `sensitive: true` when its contents derive from production (a store
    whose database id or name says prod, a task that clones or downloads production, a restore from
-   a production backup), and its report says which resources it marked and why.
+   a production backup), and its report says which resources it marked and why. It lists in
+   `share.endpoints` only the ports a stakeholder should open (the app's page, a public API), never
+   a REPL, nREPL, shadow-cljs, debugger, metrics, database or admin port nor a shared service, and
+   declares `share: {"allow": false}` when a resource is sensitive or nothing is for a stakeholder to
+   see; its report says which. Finding the app's entry point is required, as the verbs are: for
+   every project with a page (a web app, a static site) it sets `open` to the endpoint and path
+   where a person opens the app (its home page, never an API or health route) and checks that the
+   page there answers with HTML; it leaves `open` out only for a library or an API-only project, and
+   its report says why. It declares a service's `onMerge: "reload"` only when the main
+   checkout's running copy of it should follow main and loses nothing by reloading, never on a
+   REPL, a long-running job or a datastore; its report's service line says "reloads on merge".
 5. On its own branch only, writes `.sova/project.json`, the project's helper scripts under
    `.sova/bin/`, the probe hook, a test command with a green smoke selection, `about` lines, and
    the smallest app change that reads its ports and data from the environment with today's literal
@@ -170,7 +181,7 @@ in the contract's key order), exiting 0 when all is well, 1 when it found someth
    service without `isolation`, missing `sources`, or a data `from` outside the project), commits
    on its branch, and runs conformance on the branch (confined, before approval), reads what
    failed and fixes it, at most 6 runs.
-7. Reports the services and their isolation, the conformance result (runs used, confined, suite,
+7. Reports the services and their isolation, the entry (`open`, or why there is none), the conformance result (runs used, confined, suite,
    hash) with each service's and instance's measured memory, the test command and smoke counts,
    the app files it adapted, the outbound channels it silenced and how, the deploy entrypoints
    it found (never run), and the next step
@@ -180,6 +191,8 @@ A run that finds nothing to change commits nothing and ends "No change: the cont
 project." A rerun with nothing changed therefore leaves the branch and the definition byte for
 byte as they were. It never approves, merges, pushes, touches the main checkout or its running
 processes, starts anything outside the verbs, or runs deploy or production tasks.
+Its contract reference names every key the parse accepts, `adopt` included (a slot-0 unit the
+operator already runs, §app.project-services/adopt), which a project it onboards almost never needs.
 
 ## §app.project-runtime/software-card — The Software card
 
@@ -191,6 +204,8 @@ declared", with an Orphan chip in warn; one row per data resource (name and kind
 one with a Sensitive chip in warn whose title says "Derived from production: copies of it are never
 shared."; "Proven {time} at {hash12} (suite v{n})";
 "Changed since: {paths}" while stale; "Failed at {check}: {detail}" while failed; the playbook
-run's session as a link; and the registry's latest feed lines, newest first. Its actions are
+run's session as a link; and the registry's latest feed lines, newest first, with
+the project's onMerge notes (§app.project-services/on-merge) among them. Its actions are
 **Run Playbook** (**Run Again** once registered) and **Approve {hash12}**, each shown only while
-the statechart would take it.
+the statechart would take it. Under its service rows, **Open Branches** links to the project's
+Branches tab (§app.project-services/services-ui), where each copy is started, stopped, opened and read.

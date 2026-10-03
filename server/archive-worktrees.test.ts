@@ -141,3 +141,39 @@ describe("sova_archive with worktrees: remove", () => {
     assert.match(await h.call({ sessions: ["s2"], worktrees: "delete" }), /^ERROR: worktrees takes only "remove"/);
   });
 });
+
+describe("a worktree's running copy is torn down first (§app.overseer/tools)", () => {
+  test("its copy goes before the worktree; a copy that can't be torn down keeps the worktree, saying why", async () => {
+    for (const name of ["copy-ok", "copy-fail"]) git(repo, "worktree", "add", "-q", "-b", `feat/${name}`, wt(name), base);
+    const torn: string[] = [];
+    const w = archiveWorktrees(
+      async () => entryOf([tree("copy-ok", "s9", base), tree("copy-fail", "s9", base)]),
+      undefined,
+      async (path) => {
+        if (path === wt("copy-fail")) throw new Error("Its running copy could not be torn down: busy: another verb is running on this instance");
+        assert.ok(existsSync(path), "torn down while its worktree is still there");
+        torn.push(path);
+      },
+    );
+    const lines = await w.remove(await w.plan({ id: "s9", path: "/s/s9.jsonl" }));
+    assert.deepEqual(torn, [wt("copy-ok")]);
+    assert.match(lines[0]!, /wt-copy-ok: removed/);
+    assert.equal(lines[1], `  - worktree ${wt("copy-fail")} (feat/copy-fail): kept, its running copy could not be torn down: busy: another verb is running on this instance`);
+    assert.ok(!existsSync(wt("copy-ok")) && existsSync(wt("copy-fail")));
+  });
+});
+
+describe("the cleanup's checks come before the teardown (§app.overseer/tools)", () => {
+  test("a worktree the service keeps (unmerged) keeps its running copy: nothing is torn down", async () => {
+    git(repo, "worktree", "add", "-q", "-b", "feat/copy-keep", wt("copy-keep"), base);
+    writeFileSync(join(wt("copy-keep"), "k.txt"), "k\n");
+    git(wt("copy-keep"), "add", "k.txt");
+    git(wt("copy-keep"), "commit", "-q", "-m", "keep");
+    const torn: string[] = [];
+    const w = archiveWorktrees(async () => entryOf([tree("copy-keep", "s8", base)]), undefined, async (path) => { torn.push(path); });
+    const lines = await w.remove(await w.plan({ id: "s8", path: "/s/s8.jsonl" }));
+    assert.deepEqual(torn, [], "an unmerged worktree's copy is left running");
+    assert.equal(lines[0], `  - worktree ${wt("copy-keep")} (feat/copy-keep): kept, not merged into master`);
+    assert.ok(existsSync(wt("copy-keep")));
+  });
+});

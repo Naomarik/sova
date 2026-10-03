@@ -23,6 +23,7 @@ import { actFor, callerTag, parseRequest, passRefusal, realGit, VerbFailure, typ
 import { rssOf } from "./drivers";
 import { conformDir, dataRootOf, instanceLockFile, readRegistry, servicesRoot, sharedIdOf, slugOf, tryLock, type InstanceRecord } from "./store";
 import { CONTAINER_REFUSAL, openConfinement, type Confinement } from "./confine";
+import { endpointAnswers, endpointOf, shareRefusal } from "./share";
 import { defHashOf, isApproved } from "./trust";
 
 /**
@@ -32,10 +33,24 @@ import { defHashOf, isApproved } from "./trust";
  * project's say-so. Whatever fails, both scratch instances are torn down and the leak check runs.
  */
 
-/** 2: a declared `test` passes its smoke selection twice alike in A, on-demand services wait for it (§app.project-services/conform). */
-export const SUITE_VERSION = 2;
+/** 2: a declared `test` passes its smoke selection twice alike in A, on-demand services wait for it; 3: each share endpoint
+    answers through the preview proxy's request path; 4: the declared entry point (`open`) answers in A (§app.project-services/conform). */
+export const SUITE_VERSION = 4;
+
+/** A GET of the entry, as a person's browser would ask it: its status and content type (null: no answer). */
+export async function entryAnswers(port: number, path: string, timeoutMs = 10_000): Promise<{ status: number | null; type: string | null }> {
+  try {
+    const r = await fetch(`http://127.0.0.1:${port}${path}`, { signal: AbortSignal.timeout(timeoutMs), redirect: "manual", headers: { accept: "text/html,*/*" } });
+    await r.body?.cancel().catch(() => undefined);
+    return { status: r.status, type: r.headers.get("content-type") };
+  } catch {
+    return { status: null, type: null };
+  }
+}
 
 type Git = typeof realGit;
+/** How often ports-owned asks again about a port nothing holds yet. */
+const PORT_POLL_MS = 250;
 
 class Suite {
   checks: Check[] = [];
@@ -288,6 +303,23 @@ export function conformer(engine: ProjectEngine, git: Git = realGit, opts: Confo
   };
 }
 
+/** Remove every worktree checked out on one of `branches` (by force: they are a conformance run's own scratch), then the branches. */
+export async function removeScratch(git: Git, project: string, branches: readonly string[]): Promise<void> {
+  const list = await git(["worktree", "list", "--porcelain"], project);
+  let path: string | null = null;
+  for (const line of list.stdout.split("\n")) {
+    if (line.startsWith("worktree ")) path = line.slice(9);
+    else if (path && branches.some((br) => line === `branch refs/heads/${br}`) && path !== project) {
+      const r = await git(["worktree", "remove", "--force", "--force", "--", path], project);
+      if (r.code !== 0 || existsSync(path)) {
+        rmSync(path, { recursive: true, force: true });
+        await git(["worktree", "prune"], project);
+      }
+    }
+  }
+  for (const br of branches) if ((await git(["rev-parse", "--verify", "--quiet", `refs/heads/${br}`], project)).code === 0) await git(["branch", "-D", "--", br], project);
+}
+
 async function runSuite(
   engine: ProjectEngine,
   git: Git,
@@ -344,12 +376,21 @@ async function runSuite(
     t0 = Date.now();
     const own: string[] = [];
     // The services up started: an on-demand one waits for its first test.
-    for (const svc of upA.services.filter((x) => x.scope === "checkout" && x.state !== "stopped"))
-      for (const [k, port] of Object.entries(svc.ports)) {
-        // Its own process, or its own container publishing the port (§app.project-services/up).
-        const c = await engine.portClaim(recA!, def, svc.name, port);
-        if (!c.held || !c.own) own.push(`${svc.name}.${k} (${port}): ${c.held ? c.who : "nothing listens"}`);
-      }
+    for (const svc of upA.services.filter((x) => x.scope === "checkout" && x.state !== "stopped")) {
+      // A port nothing holds yet gets the service's ready timeout (one opened after the probed one); a foreign holder fails at once.
+      const until = Date.now() + (def.services.find((x) => x.name === svc.name)?.ready?.timeout ?? 60) * 1000;
+      for (const [k, port] of Object.entries(svc.ports))
+        for (;;) {
+          // Its own process, or its own container publishing the port (§app.project-services/up).
+          const c = await engine.portClaim(recA!, def, svc.name, port);
+          if (c.held && c.own) break;
+          if (c.held || Date.now() > until) {
+            own.push(`${svc.name}.${k} (${port}): ${c.held ? c.who : "nothing listens"}`);
+            break;
+          }
+          await new Promise((r) => setTimeout(r, PORT_POLL_MS));
+        }
+    }
     if (!s.check("ports-owned", !own.length, own.length ? `not held by A's own processes: ${own.join("; ")}` : "every declared port of what up started is held by A's own processes", t0)) return;
     const onDemand = def.services.filter((x) => x.scope === "checkout" && x.start === "on-demand").map((x) => x.name);
     if (onDemand.length) {
@@ -417,6 +458,46 @@ async function runSuite(
     const lg = await s.verb("logs A", "logs", { instance: a.instance, lines: 50 });
     const n = lg.lines?.length ?? 0;
     if (!s.check("logs-a", lg.ok && (!logging.length || n > 0) && n <= 50, logging.length ? `${n} line(s) from ${logging.join(", ")}` : `${n} line(s); nothing started that logs`, t0)) return;
+    // 8b. share endpoints (suite 3): each answers as a visitor's request would reach it, no link minted.
+    t0 = Date.now();
+    const never = def.share ? shareRefusal(def) : null;
+    if (!def.share?.endpoints.length || never) s.check("share-endpoints", true, never ?? "no share endpoints declared", t0);
+    else {
+      const said: string[] = [];
+      let ok = true;
+      for (const ep of def.share.endpoints) {
+        const at = endpointOf(def, recOf(a.instance)!, ep);
+        const svc = at ? ap.services.find((x) => x.name === at.service.name) : undefined;
+        if (!at || svc?.state !== "ready") {
+          ok = false;
+          said.push(`${ep}: its service is not ready after up (${svc?.state ?? "absent"})`);
+          continue;
+        }
+        // A confined run's process services answer only inside its namespace; a static one is served here.
+        const r = confine && at.service.static === undefined ? { ok: await confine.http(at.port, "/"), detail: "GET / inside the run's namespace" } : await endpointAnswers(at.port);
+        ok &&= r.ok;
+        said.push(`${ep} (port ${at.port}): ${r.detail}${r.ok ? "" : ", not below 500"}`);
+      }
+      if (!s.check("share-endpoints", ok, said.join("; "), t0)) return;
+    }
+    // 8c. the entry point (suite 4): it answers in A below 500; the detail names its content type, a page's or an API's.
+    t0 = Date.now();
+    if (!def.open) s.check("open", true, "no entry point declared", t0);
+    else {
+      const { endpoint, path } = def.open;
+      const at = endpointOf(def, recOf(a.instance)!, endpoint);
+      const svc = at ? ap.services.find((x) => x.name === at.service.name) : undefined;
+      if (!at || svc?.state !== "ready") {
+        if (!s.check("open", false, `${endpoint}: its service is not ready after up (${svc?.state ?? "absent"})`, t0)) return;
+      } else {
+        // A confined run's process services answer only inside its namespace; a static one is served here.
+        const inside = !!confine && at.service.static === undefined;
+        const r = inside ? await confine!.get(at.port, path) : await entryAnswers(at.port, path);
+        const ok = r.status !== null && r.status < 500;
+        const said = r.status === null ? "no answer" : `answered ${r.status} (${r.type ?? "no content type"})`;
+        if (!s.check("open", ok, `${endpoint} (port ${at.port}): GET ${path}${inside ? " inside the run's namespace" : ""} ${said}${ok ? "" : ", not below 500"}`, t0)) return;
+      }
+    }
     // 9. reset A.
     if (def.data.length) {
       t0 = Date.now();
@@ -506,11 +587,9 @@ async function runSuite(
     t0 = Date.now();
     const tds2 = await Promise.all(ids.map((id) => s.verb(`teardown ${id} again`, "teardown", { project, instance: id })));
     if (tds2.length) s.check("teardown-again", tds2.every((r) => r.ok && !r.changed && r.state === "absent"), tds2.map(describe).join("; "), t0);
-    // The scratch branches: deleted only while they still point at the ref (nothing was committed there).
-    for (const br of [branchA, branchB]) {
-      const r = await git(["rev-parse", "--verify", "--quiet", `refs/heads/${br}`], project);
-      if (r.code === 0 && r.stdout.trim() === commit) await git(["branch", "-D", br], project);
-    }
+    // The run's own scratch worktrees and branches go on every outcome (§app.project-services/conform): teardown keeps
+    // a worktree a failed step left files in, so whatever is still checked out on a scratch branch is removed by force.
+    await removeScratch(git, project, [branchA, branchB]);
     // A confined run's own shared services end with it (the host's are never touched).
     if (confine) {
       const id = `${sharedIdOf(project)}-${confine.runId}`;

@@ -363,6 +363,7 @@
    ["project" ":project" [":preview/start"] "[]" 0] :feed
    ["project" ":project" [":services/down"] "[]" 0] :feed
    ["project" ":project" [":services/run"] "[]" 0] :feed
+   ["project" ":project" [":services/share"] "[]" 0] :feed
    ["project" ":project" [":project/edit"] "[]" 0] :feed
    ["placement" ":placement" [":spec/freeze"] "[]" 0] :feed
    ["placement" ":ready" [] "[:cooling]" 0] :quiet

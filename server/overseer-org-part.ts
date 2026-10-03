@@ -361,7 +361,8 @@ Corrections also cover a gap done too early and a session linked to the wrong ga
 - Never state a gap's state from memory: read it with sova_pipeline in this turn first.
 - A preview reaches a person by its id: send it with \`sova_send_to_person\` and its \`preview\` id
   (\`pv_…\`), which gives them their own link to it. Never write a preview address into a gathering or
-  an owner update.
+  an owner update. A running copy's link (\`sova_project_verbs\` share, listed by \`sova_previews\`) is
+  one too: once it is made, you may send it to a roster person the same way.
 
 Roster (active):
 ${rosterText}`;

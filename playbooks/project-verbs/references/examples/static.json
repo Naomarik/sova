@@ -13,5 +13,9 @@
         "why": "Static files served from this checkout; each copy serves its own files on its own port."
       }
     }
+  },
+  "open": {"endpoint": "site.http"},
+  "share": {
+    "endpoints": ["site.http"]
   }
 }

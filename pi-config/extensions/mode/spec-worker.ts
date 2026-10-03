@@ -21,7 +21,6 @@
  * them. PI_SPEC_CENSUS_HOOK=0 turns the census off, PI_SPEC_CHECK=0 the line check.
  */
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { registerAssessmentTool } from "./spec-assessment-tool.ts";
 import { homedir } from "node:os";
 import { resolve } from "node:path";
 import {
@@ -54,7 +53,6 @@ const CHECK_MESSAGE = "spec-check";
 
 export default function specWorker(pi: ExtensionAPI): void {
 	const core = () => coreDir(process.env, homedir());
-	registerAssessmentTool(pi, { core, enabled: () => true, worker: true });
 	const census = new CensusHook({ core });
 	const writes = new SpecWriteGuard();
 	let running = false;

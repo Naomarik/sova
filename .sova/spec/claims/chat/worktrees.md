@@ -255,9 +255,9 @@ so the Overseer reads the same answer.
 Routine session-list and merge-readiness refreshes never query spec assessment status or
 recapture assessment inputs, including for idle merged worktrees. Readiness carries no spec
 observations, and the row and its title display none. Ordinary git readiness, bash checks,
-attention items, and routine follow-ups keep the rules above. Explicit `spec_assess` queries
-and runtime assessment collection remain separate and available; their observations are not
-passed tests or release gates.
+attention items, and routine follow-ups keep the rules above. Explicit companion CLI
+assessments remain separate and available; their observations are not passed tests or release
+gates.
 
 **In the attention digest** (§app.overseer/attention-digest), decide tier, never Needs you, a brief
 or a phone notification: "Ready to merge: {branch}" for a ready worktree and "Waiting for your OK:

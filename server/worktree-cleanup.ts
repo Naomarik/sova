@@ -413,6 +413,27 @@ export async function cleanupPlan(sessionPath: string): Promise<WorktreeCleanupP
 }
 
 /**
+ * The same checks without removing anything: for each of `paths`, why it would stay, or null when it
+ * may go. `ignoreProcesses` leaves live processes out, for a caller about to stop its own (archive
+ * tears a worktree's running copy down first); `removeTrees` checks them again. Null: `dir` isn't in
+ * a repository with a main checkout.
+ */
+export async function checkTrees(dir: string, paths: readonly string[], opts: { exclude?: string; ignoreProcesses?: boolean } = {}): Promise<Map<string, string | null> | null> {
+  const d = need();
+  const repo = await classifyRepo(dir, d.git);
+  if (!repo) return null;
+  const byPath = new Map(repo.trees.map((t) => [t.path, t]));
+  const use = await useFacts(paths.filter((p) => byPath.get(p)?.class !== "unmerged" && byPath.has(p)), opts.exclude);
+  const procs = opts.ignoreProcesses ? [] : await d.processes();
+  const out = new Map<string, string | null>();
+  for (const p of paths) {
+    const t = byPath.get(p);
+    out.set(p, t ? await refusal(t, use, procs) : "No longer in git's worktree list.");
+  }
+  return out;
+}
+
+/**
  * The one check-and-remove (§chat.worktrees/cleanup), for the Clean Up Merged button and for
  * `sova_archive {worktrees: "remove"}` (server/archive-worktrees.ts): exactly `paths` of the
  * repository `dir` is in, each checked again right before it goes, never --force; a branch in

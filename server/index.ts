@@ -680,7 +680,7 @@ app.get("/api/sessions/git", async (c) => {
 // Merged worktrees of the session's repository (server/worktree-cleanup.ts, §chat.worktrees/cleanup):
 // the count for a new session's empty state, the dry run, and a removal of exactly the confirmed
 // paths that are still removable. Only when asked; never --force.
-configureCleanup({ sessions: listSessions, sessionFiles: listSessionFiles, readBranch: readActiveBranch });
+configureCleanup({ summary: (path) => getSessionSummary(path), sessionFiles: listSessionFiles, readBranch: readActiveBranch });
 app.get("/api/worktrees/summary", async (c) => {
   const path = resolveSessionPath(c.req.query("path"));
   if (!path) return c.json({ error: "Invalid or missing ?path= (must be a .jsonl under the pi sessions dir)" }, 400);

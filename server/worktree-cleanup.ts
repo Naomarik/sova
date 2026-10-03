@@ -9,7 +9,7 @@
 // `git branch -d` only for a branch in the main branch by ancestry. Each removal is appended to the
 // ledger (server/removed-worktrees.ts) that readiness reads for a removed tree. Git by argv, never
 // a shell; reads under --no-optional-locks (server/worktrees.ts execGit).
-import { readdir, readFile, readlink } from "node:fs/promises";
+import { readdir, readFile, readlink, stat } from "node:fs/promises";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute, join } from "node:path";
@@ -85,11 +85,15 @@ export interface CleanupDeps {
   git: GitRunner;
   /** `git worktree remove` and `git branch -d` (longer timeout). */
   gitWrite: GitRunner;
-  sessions: () => Promise<SessionSummary[]>;
+  /** One session's row (server/sessions-index.ts getSessionSummary), asked only for a session a
+      refusal could name: its folder is inside a candidate, or it tracks one. */
+  summary: (path: string) => Promise<SessionSummary | null>;
   /** Every session file, listed or not (a new session with no message yet isn't listed). */
   sessionFiles: () => Promise<string[]>;
-  /** A session file's active branch entries. */
+  /** A session file's active branch entries (read only for a changed file that holds a `worktrees` entry). */
   readBranch: (path: string) => Promise<readonly unknown[]>;
+  /** A session file's bytes, read only when it changed since the last check (useFacts' cache). */
+  readFile: (path: string) => Promise<Buffer>;
   /** The live processes and what they hold; read once per check. */
   processes: () => Promise<ProcFacts[]>;
   /** Whether a pid is a live process. */
@@ -140,8 +144,8 @@ function pidAlive(pid: number): boolean {
 
 let deps: CleanupDeps | null = null;
 /** index.ts wires the session list and the branch reader; tests swap anything. */
-export function configureCleanup(d: Partial<CleanupDeps> & Pick<CleanupDeps, "sessions" | "sessionFiles" | "readBranch">): void {
-  deps = { git: execGit, gitWrite: writeGit, processes: scanProcesses, alive: pidAlive, ledger: (e) => appendLedger(e), now: Date.now, ...d };
+export function configureCleanup(d: Partial<CleanupDeps> & Pick<CleanupDeps, "summary" | "sessionFiles" | "readBranch">): void {
+  deps = { git: execGit, gitWrite: writeGit, processes: scanProcesses, alive: pidAlive, ledger: (e) => appendLedger(e), now: Date.now, readFile: (p) => readFile(p), ...d };
 }
 const need = (): CleanupDeps => {
   if (!deps) throw new Error("worktree cleanup is not configured");
@@ -277,45 +281,114 @@ export async function worktreesSummary(sessionPath: string): Promise<WorktreesSu
 // --- refusals ----------------------------------------------------------------------------------
 
 const MARKER = `"customType":"${WORKTREES_ENTRY_TYPE}"`;
-const nameOf = (s: SessionSummary): string => (s.title?.trim() ? `“${s.title.trim().slice(0, 60)}”` : s.id.slice(0, 8));
+/** A session as a refusal names it: its title, else (none, or a new session's "Untitled") its short id. */
+const nameOf = (s: SessionSummary | null, path: string): string => {
+  const title = s?.title?.trim();
+  if (title && title !== "Untitled") return `“${title.slice(0, 60)}”`;
+  return s?.id?.slice(0, 8) || (/([0-9a-f]{8})[0-9a-f-]*\.jsonl$/.exec(path)?.[1] ?? "unnamed");
+};
 const runningNow = (s: SessionSummary): boolean => s.busy || s.activity?.state === "working" || (s.workers?.working ?? s.live?.workers?.working ?? 0) > 0;
 
-/** Every session's folder, and who tracks each of `paths` active (read only from files that name one). */
-export async function useFacts(paths: readonly string[], exclude?: string): Promise<UseFacts> {
-  const d = need();
-  const [sessions, files] = await Promise.all([d.sessions(), d.sessionFiles().catch(() => [] as string[])]);
-  const listed = new Map(sessions.map((s) => [s.path, s]));
-  // Every file's folder: a session with no message yet isn't listed, and its folder counts too.
-  const rows = await Promise.all(
-    [...new Set([...listed.keys(), ...files])].map(async (path) => {
-      const s = listed.get(path);
-      const cwd = s?.cwd ?? (await readStoredCwd(path).catch(() => null));
-      return { path, s, cwd, name: s ? nameOf(s) : (/([0-9a-f]{8})[0-9a-f-]*\.jsonl$/.exec(path)?.[1] ?? "unnamed") };
-    }),
-  ).then((all) => all.filter((r) => r.path !== exclude));
-  const sessionCwds = rows.filter((r) => r.cwd && isAbsolute(r.cwd) && !parseTargetCwd(r.cwd)).map((r) => ({ cwd: canonical(r.cwd!), name: r.name }));
-  const trackers = new Map<string, Tracker[]>();
-  if (!paths.length) return { sessionCwds, trackers };
-  const wanted = paths.map((p) => ({ path: p, needle: JSON.stringify(p).slice(1, -1) }));
-  for (const { path, s, name } of rows) {
-    let text: string;
-    try {
-      text = await readFile(path, "utf8");
-    } catch {
-      continue;
-    }
-    if (!text.includes(MARKER)) continue;
-    const named = wanted.filter((w) => text.includes(w.needle));
-    if (!named.length) continue;
+/** What one session file says, as of one version of it: its header's folder, and, when it holds a
+    `worktrees` entry, the active trees of its active branch (canonical) and whether its sandbox is on. */
+interface FileScan {
+  version: string;
+  cwd: string | null;
+  tracks?: { active: Set<string>; sandbox: boolean };
+}
+const scans = new Map<string, FileScan>();
+const MARKER_BYTES = Buffer.from(MARKER);
+/** Changed files read at once: a cold scan of hundreds of MB never sits in memory whole. */
+const READ_CONCURRENCY = 4;
+
+/** The header's folder, read as git-summary's `readStoredCwd` reads it (the first line of the first 64 KB). */
+function headerCwd(buf: Buffer): string | null {
+  try {
+    const first = buf.subarray(0, 64 * 1024).toString("utf8").split("\n", 1)[0] ?? "";
+    const header = JSON.parse(first) as { type?: unknown; cwd?: unknown };
+    return header?.type === "session" && typeof header.cwd === "string" && header.cwd !== "" ? header.cwd : null;
+  } catch {
+    return null;
+  }
+}
+
+/** One file's scan: from the cache while its (inode, size, mtime) hold; else read once, as bytes. Null: unreadable. */
+async function scanFile(path: string, d: CleanupDeps): Promise<FileScan | null> {
+  let st;
+  try {
+    st = await stat(path);
+  } catch {
+    scans.delete(path);
+    return null;
+  }
+  const version = `${st.ino}:${st.size}:${st.mtimeMs}`;
+  const hit = scans.get(path);
+  if (hit?.version === version) return hit;
+  let buf: Buffer;
+  try {
+    buf = await d.readFile(path);
+  } catch {
+    scans.delete(path);
+    return null;
+  }
+  const scan: FileScan = { version, cwd: headerCwd(buf) };
+  // Only a file that ever wrote a `worktrees` entry is parsed: the marker is searched in the raw bytes.
+  if (buf.includes(MARKER_BYTES)) {
     const branch = await d.readBranch(path).catch(() => [] as unknown[]);
     const set = worktreesOf(branch);
-    if (!set) continue;
-    const sandbox = sandboxInfo(branch as Parameters<typeof sandboxInfo>[0]).on;
-    for (const w of named) {
-      const tracked = set.trees.some((t) => t.status === "active" && canonical(t.path) === canonical(w.path));
-      if (!tracked) continue;
+    if (set) {
+      scan.tracks = {
+        active: new Set(set.trees.filter((t) => t.status === "active").map((t) => canonical(t.path))),
+        sandbox: sandboxInfo(branch as Parameters<typeof sandboxInfo>[0]).on,
+      };
+    }
+  }
+  scans.set(path, scan);
+  if (scans.size > 5000) scans.delete(scans.keys().next().value!);
+  return scan;
+}
+
+/** `fn` over `items`, at most `limit` at once, results in order. */
+async function mapLimit<T, R>(items: readonly T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const out = new Array<R>(items.length);
+  let next = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(limit, items.length) }, async () => {
+      for (let i = next++; i < items.length; i = next++) out[i] = await fn(items[i]!);
+    }),
+  );
+  return out;
+}
+
+/** Every session's folder that lies inside one of `paths`, and who tracks each of `paths` active.
+    Each session file is read only when it changed since the last call (per file by inode, size and
+    mtime) and parsed only when it holds a `worktrees` entry; only the few sessions a refusal could
+    name are looked up (their title, TUI, running state): a warm call costs a `stat` per file. */
+export async function useFacts(paths: readonly string[], exclude?: string): Promise<UseFacts> {
+  const d = need();
+  const all = [...new Set(await d.sessionFiles().catch(() => [] as string[]))].filter((p) => p !== exclude);
+  const scanned = await mapLimit(all, READ_CONCURRENCY, (path) => scanFile(path, d));
+  const wanted = paths.map((p) => ({ path: p, canon: canonical(p) }));
+  const sessionCwds: UseFacts["sessionCwds"] = [];
+  const trackers = new Map<string, Tracker[]>();
+  if (!wanted.length) return { sessionCwds, trackers };
+  // Only sessions a refusal could name: a folder inside a candidate (the header's, as the row's), or tracking one.
+  const relevant = all
+    .map((path, i) => {
+      const scan = scanned[i];
+      const cwd = scan?.cwd && isAbsolute(scan.cwd) && !parseTargetCwd(scan.cwd) ? canonical(scan.cwd) : null;
+      const inside = !!cwd && wanted.some((w) => isWithin(cwd, w.canon));
+      const tracks = scan?.tracks ? wanted.filter((w) => scan.tracks!.active.has(w.canon)) : [];
+      return { path, scan, cwd, inside, tracks };
+    })
+    .filter((r) => r.inside || r.tracks.length);
+  const rows = await mapLimit(relevant, READ_CONCURRENCY, async (r) => ({ ...r, s: await d.summary(r.path).catch(() => null) }));
+  for (const r of rows) {
+    const name = nameOf(r.s, r.path);
+    if (r.inside && r.cwd) sessionCwds.push({ cwd: r.cwd, name });
+    for (const w of r.tracks) {
       const list = trackers.get(w.path) ?? [];
-      list.push({ name, live: !!s?.live, running: !!s && runningNow(s), sandbox });
+      list.push({ name, live: !!r.s?.live, running: !!r.s && runningNow(r.s), sandbox: r.scan!.tracks!.sandbox });
       trackers.set(w.path, list);
     }
   }
@@ -404,11 +477,13 @@ export async function cleanupPlan(sessionPath: string): Promise<WorktreeCleanupP
   const [use, procs] = await Promise.all([useFacts(candidates.map((t) => t.path)), candidates.length ? d.processes() : Promise.resolve([])]);
   const remove: WorktreeCleanupRemoved[] = [];
   const keep: WorktreeCleanupKept[] = [];
-  for (const t of repo.trees) {
-    const why = await refusal(t, use, procs);
+  // Each tree's checks (a git status for a candidate) a few at a time; the answer keeps git's order.
+  const whys = await mapLimit(repo.trees, READ_CONCURRENCY, (t) => refusal(t, use, procs));
+  repo.trees.forEach((t, i) => {
+    const why = whys[i]!;
     if (why === null) remove.push(removedRow(t));
     else keep.push({ path: t.path, ...(t.branch ? { branch: t.branch } : {}), reason: why });
-  }
+  });
   return { repo: repo.main, ...(repo.mainBranch ? { mainBranch: repo.mainBranch } : {}), home: homedir(), remove, keep };
 }
 
@@ -508,6 +583,7 @@ export async function cleanupRemove(sessionPath: string, expect: readonly string
 /** Tests: start over. */
 export function resetCleanup(): void {
   summaries.clear();
+  scans.clear();
   resetContentMerges();
   inFlight.clear();
 }

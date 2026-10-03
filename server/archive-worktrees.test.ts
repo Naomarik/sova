@@ -76,7 +76,7 @@ describe("sova_archive with worktrees: remove", () => {
     add("s3", "Three", repo, entryOf([tree("watched", "s3", base)]));
     add("s4", "Four", repo, [...entryOf([tree("watched", "s4", base)]), { type: "custom", customType: "sandbox", data: { version: 1, on: true, level: "workspace-write", backend: "linux-bwrap", enforcement: "full" } }]);
     add("s5", "Five", join(wt("home"), "sub"), entryOf([tree("home", "s5", base)]));
-    configureCleanup({ sessions: async () => Object.values(sessions), sessionFiles: async () => Object.values(sessions).map((x) => x.path), readBranch: async (p) => branches[p] ?? [], processes: async () => [], ledger: () => {} });
+    configureCleanup({ summary: async (p) => Object.values(sessions).find((x) => x.path === p) ?? null, sessionFiles: async () => Object.values(sessions).map((x) => x.path), readBranch: async (p) => branches[p] ?? [], processes: async () => [], ledger: () => {} });
     const archived: string[] = [];
     const host = {
       request: async (_path: string, init?: RequestInit) => {

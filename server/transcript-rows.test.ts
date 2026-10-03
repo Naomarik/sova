@@ -449,7 +449,9 @@ describe("view=light", () => {
   test("light rows carry no reply text, tool output or image bytes", async () => {
     const whole = await get("");
     const light = await get("&view=light");
-    assert.ok(light.text.length * 10 < whole.text.length, `${light.text.length} vs ${whole.text.length}`);
+    // The whole branch's rows are slim too now (§chat.transcript/slim-rows): what's left between
+    // them is the replies, thinking and image bytes.
+    assert.ok(light.text.length * 5 < whole.text.length, `${light.text.length} vs ${whole.text.length}`);
     assert.ok(!light.text.includes("AAAAAAAAAA"), "no image bytes");
     for (const [what, s] of <[string, string][]>[["reply", "aaaaaaaaaa"], ["thinking", "hhhhhhhhhh"], ["output", "ok ok ok"], ["report body", "found found"], ["write content", "wwwwwwwwww"], ["spawn task", "tttttttttt"]])
       assert.ok(!light.text.includes(s), `no ${what}: ${light.body.items.filter((it) => JSON.stringify(it).includes(s)).map((it) => it.id).join(",")}`);

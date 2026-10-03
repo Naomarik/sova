@@ -16,7 +16,7 @@ import { Composer, type ComposerReason } from "./Composer";
 import { FlyoutSession } from "./ComposerMenu";
 import { ConnectionBanner } from "./ConnectionBanner";
 import { ChangesSession } from "./ChangesViewer";
-import { HistoryItems, type MessageActionsProvider, ThreadScroller, TranscriptSkeleton } from "./Thread";
+import { HistoryItems, type MessageActionsProvider, ThreadScroller, ToolSourceContext, TranscriptSkeleton } from "./Thread";
 import type { MessageActionItem } from "./MessageActions";
 import {
   actionReason,
@@ -236,6 +236,7 @@ export function WatchView(props: {
               }
             >
               <ChangesSession.Provider value={{ get path() { return props.path; } }}>
+              <ToolSourceContext.Provider value={{ kind: "pi", path: props.path }}>
               <HistoryItems
                 items={list()}
                 author={props.author}
@@ -245,6 +246,7 @@ export function WatchView(props: {
                 actions={watchActions}
                 older={olderRows.api}
               />
+              </ToolSourceContext.Provider>
               </ChangesSession.Provider>
             </Show>
           )}

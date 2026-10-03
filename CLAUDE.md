@@ -17,7 +17,10 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
   One runtime import runs the other way: `server/vis-check.ts` (the vis retry and the `vis_check` tool) imports
   `src/vis/parse.ts` and `src/vis/kinds/frame/parse.ts`, so the parse side of `src/vis/` (parse.ts, registry.ts,
   core/, kinds/*/parse and height/layout) must stay DOM- and Solid-free at load, and an edit there only reaches
-  the running server at its restart.
+  the running server at its restart. Likewise `server/transcript.ts` imports `src/lib/message.ts`
+  (`argsSummary`, `contentText`, `spawnName`) and `src/lib/tool-diff-stats.ts` (with `src/lib/diff/parse.ts`),
+  so a slim tool row's folded line and "+n −m" are the card's own (§chat.transcript/slim-rows): keep
+  those DOM- and Solid-free too.
 - `src/design/`, `public/`, `.sova/spec/claims/` + `.sova/spec/manifest.json` — design tokens, base CSS,
   fonts/icons, and the product documentation (the UX spec). Owned by **designer**.
 - `.sova/spec/` — the product documentation and its tools; see **Product documentation** below.

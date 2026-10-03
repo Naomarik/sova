@@ -1,5 +1,6 @@
 import { createSignal, onCleanup, type Accessor } from "solid-js";
 import { checkAccess } from "./auth";
+import { isLegacy, upgradeLegacyRows } from "./legacy-rows";
 
 export type SocketStatus = "connecting" | "open" | "reconnecting" | "failed" | "closed";
 
@@ -81,6 +82,9 @@ export function createReconnectingSocket<M>(url: string, handlers: SocketHandler
       } catch {
         return;
       }
+      // Rows from a peer on an older Sova, in the shape this build reads (lib/legacy-rows).
+      const rows = msg && typeof msg === "object" ? (msg as { items?: unknown }).items : undefined;
+      if (Array.isArray(rows) && isLegacy(rows)) (msg as { items: unknown[] }).items = upgradeLegacyRows(rows);
       handlers.onMessage(msg);
     };
     sock.onclose = (ev) => {

@@ -3,7 +3,7 @@
 // assistant message on the branch that reports a context (not an error or aborted reply, not a
 // zero usage); a compaction after it makes that stale → null.
 
-import type { ContextInfo, TranscriptItem } from "../../shared/protocol";
+import type { ContextInfo, EntryMeta, TranscriptItem } from "../../shared/protocol";
 import { isObj } from "./message";
 
 /** Tokens in context for one assistant usage object, or null when there's no usage. */
@@ -26,22 +26,19 @@ export function messageContextTokens(message: unknown): number | null {
   return tokens !== null && tokens > 0 ? tokens : null;
 }
 
-const isCompaction = (raw: Record<string, unknown>) =>
-  raw.type === "compaction" || (raw.type === "message" && isObj(raw.message) && raw.message.role === "compactionSummary");
+const isCompaction = (meta: EntryMeta) => meta.type === "compaction" || (meta.type === "message" && meta.role === "compactionSummary");
 
 /**
- * Fill from normalized transcript items (their `raw` is the JSONL entry; several items can share
- * one entry). `window` comes from the server (the model's contextWindow), unknown → null.
+ * Fill from normalized transcript items: each entry's facts ride its first row (`meta`), so the
+ * other rows of a reply are skipped. `window` comes from the server (the model's contextWindow),
+ * unknown → null.
  */
 export function contextFromItems(items: TranscriptItem[], window: number | null): ContextState {
-  let prev: unknown = undefined;
   for (let i = items.length - 1; i >= 0; i--) {
-    const raw = items[i]!.raw;
-    if (raw === prev || !isObj(raw)) continue;
-    prev = raw;
-    if (isCompaction(raw)) return "compacted";
-    const msg = raw.type === "message" && isObj(raw.message) ? raw.message : null;
-    const tokens = messageContextTokens(msg);
+    const meta = items[i]!.meta;
+    if (!meta) continue;
+    if (isCompaction(meta)) return "compacted";
+    const tokens = meta.type === "message" ? messageContextTokens(meta) : null;
     if (tokens !== null) return { tokens, window };
   }
   return null;

@@ -1,12 +1,22 @@
 // Run: pnpm exec tsx --test src/lib/change-rows.test.ts
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { EntryKind, TranscriptItem } from "../../shared/protocol";
+import type { EntryKind, EntryMeta, TranscriptItem } from "../../shared/protocol";
 import { isChangeRow } from "./change-rows";
 
-/** A real TranscriptItem: id, kind and raw are the required fields; text is the display line. */
-const row = (id: string, kind: EntryKind, raw: unknown, text?: string): TranscriptItem =>
-  text === undefined ? { id, kind, raw } : { id, kind, raw, text };
+/** The facts a row carries of its entry (`meta`), as the server takes them from the entry. */
+const metaOf = (raw: unknown): EntryMeta | undefined => {
+  if (!raw || typeof raw !== "object") return undefined;
+  const { type, customType } = raw as { type?: unknown; customType?: unknown };
+  if (typeof type !== "string") return undefined;
+  return typeof customType === "string" ? { type, customType } : { type };
+};
+
+/** A real TranscriptItem: id and kind are the required fields; text is the display line. */
+const row = (id: string, kind: EntryKind, raw: unknown, text?: string): TranscriptItem => {
+  const meta = metaOf(raw);
+  return { id, kind, ...(meta ? { meta } : {}), ...(text === undefined ? {} : { text }) };
+};
 
 const change = (id: string, raw: unknown, text: string) => row(id, "info", raw, text);
 
@@ -30,13 +40,13 @@ test("change rows: ordinary info items stay", () => {
   assert.equal(isChangeRow(row("i1", "info", { type: "session_info", name: "x" }, "Session name: x")), false);
 });
 
-test("change rows: other kinds that merely carry these raw shapes stay", () => {
+test("change rows: other kinds that merely carry these entry types stay", () => {
   assert.equal(isChangeRow(row("r1", "report", { type: "custom_message", customType: "subagent-complete" }, "…")), false);
   assert.equal(isChangeRow(row("u1", "user", { type: "message", message: { role: "user" } }, "hi")), false);
   assert.equal(isChangeRow(row("th1", "thinking", { type: "model_change", provider: "anthropic", modelId: "claude" }, "hmm")), false);
 });
 
-test("change rows: an unknown or malformed raw is not one", () => {
+test("change rows: an unknown or missing entry type is not one", () => {
   assert.equal(isChangeRow(change("n1", null, "x")), false);
   assert.equal(isChangeRow(change("n2", "model_change", "x")), false);
   assert.equal(isChangeRow(change("n3", { type: "mystery" }, "x")), false);

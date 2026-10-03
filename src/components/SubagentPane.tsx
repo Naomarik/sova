@@ -17,7 +17,7 @@ import { ContextReadout } from "./ContextGauge";
 import { ContextRing } from "./ContextRing";
 import type { PaneInsight } from "./SessionPane";
 import { LinkedAgentMeta, LinkedAgentRow, LinkStateChip, LinkThreadView } from "./LinkedAgents";
-import { HistoryItems, TranscriptSkeleton } from "./Thread";
+import { HistoryItems, ToolSourceContext, TranscriptSkeleton } from "./Thread";
 import { Banner, Chip, Icon } from "./ui";
 import { providerWait, watchProviderWaits } from "../lib/provider-waiting";
 import { waitingSentence } from "../../shared/provider-limits";
@@ -938,7 +938,9 @@ function WorkerTranscript(props: {
                   </div>
                 }
               >
-                <HistoryItems items={list()} author={props.author} streaming={props.streaming} />
+                <ToolSourceContext.Provider value={{ ...props.source, host: props.host }}>
+                  <HistoryItems items={list()} author={props.author} streaming={props.streaming} />
+                </ToolSourceContext.Provider>
               </Show>
             )}
           </Show>

@@ -12,6 +12,8 @@ import { bodyLimit } from "hono/body-limit";
 import { compress } from "hono/compress";
 import { isDirectLocal } from "./compression";
 import { asksForRows, type RowsQuery, transcriptLight, transcriptRows } from "./transcript-rows";
+import { claudeToolContent, parseToolIds, piToolContent } from "./transcript-tool";
+import { resolveClaudeSession } from "./claude-transcript";
 import { registerOrgRoutes } from "./org-routes";
 import { registerWrapupRoutes } from "./wrapup-routes";
 import { markShutdown } from "./wrapup-recovery";
@@ -68,7 +70,7 @@ import { applyLoadout, getSessionSetup } from "./session-setup";
 import { isOrgSession, ORG_NOT_GROUPED } from "./org-sessions";
 import { assignSession, cleanGroupLabel, createGroup, deleteGroup, GROUP_LABEL_MAX, readGroups, updateGroup } from "./session-groups";
 import { promptGroup } from "./group-prompt";
-import { AUTO_TITLE_MAX_PATHS, type SessionsDirInfo, type SessionTitleSource, type WorkerChoice, type WorkerResumeResult } from "../shared/protocol";
+import { AUTO_TITLE_MAX_PATHS, TOOL_CONTENT_MAX_IDS, type SessionsDirInfo, type SessionTitleSource, type ToolContentResponse, type WorkerChoice, type WorkerResumeResult } from "../shared/protocol";
 import { findTarget, isTargetName, listRemoteFolders, listTargets, normalizeRemotePath, targetDir, targetsFile, validateNewSessionCwd } from "./targets";
 import { isExplanationId, listExplanations, readExplanationPage } from "./explanations";
 import { switchMode } from "./mode";
@@ -1016,6 +1018,25 @@ app.get("/api/transcript", async (c) => {
   }
   const branch = await readActiveBranch(path);
   return c.json({ items: normalizeEntries(branch), context: await resolveContext(contextForBranch(branch)) });
+});
+
+// The whole content of tool rows (§chat.transcript/slim-rows): a row carries only what its folded
+// card draws, and the card's arguments, output and details come from here. `claude=` names a Claude
+// Code worker's own file, as /ws/watch does. Read-only.
+app.get("/api/transcript/tool", async (c) => {
+  const ids = parseToolIds(c.req.query("ids"));
+  if (!ids) return c.json({ error: `Missing or too many ?ids= (1 to ${TOOL_CONTENT_MAX_IDS} row ids, comma-separated)` }, 400);
+  const claudeId = c.req.query("claude");
+  if (claudeId) {
+    const file = resolveClaudeSession(claudeId);
+    if (!file || !existsSync(file)) return c.json({ error: file ? "Session file not found" : "Unknown Claude Code session" }, 404);
+    return c.json({ items: await claudeToolContent(file, ids) } satisfies ToolContentResponse);
+  }
+  const path = resolveSessionPath(c.req.query("path"));
+  if (!path) return c.json({ error: "Invalid or missing ?path= (must be a .jsonl under the pi sessions dir)" }, 400);
+  if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
+  const items = await piToolContent(path, ids, () => heldChat(path)?.session.sessionManager.getBranch() as Record<string, any>[] | undefined);
+  return c.json({ items } satisfies ToolContentResponse);
 });
 
 // Bytes of an image a user message names by path (TranscriptItem.attachments). Only image files

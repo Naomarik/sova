@@ -16,7 +16,7 @@ import { sep } from "node:path";
 import { locateClaudeSession } from "../pi-config/extensions/claude-code/transcript-adapter.ts";
 import { claudeProjectsRoot } from "../pi-config/extensions/claude-code/provider/session-records.ts";
 import type { EntryKind, TranscriptItem } from "../shared/protocol";
-import { parseLines } from "./transcript";
+import { parseLines, slimRows, sourced } from "./transcript";
 
 type Entry = Record<string, any>;
 
@@ -146,21 +146,21 @@ function contentImages(content: unknown): string[] | undefined {
 }
 
 /**
- * A pi-shaped `message` entry for TranscriptItem.raw. The frontend reads `raw` for timestamps
- * (src/lib/message.ts timestampOf), tool arguments (toolCallArgs: a "toolCall" block with a
- * matching id) and tool output (toolResultView: the message's content text plus isError), so
- * CC rows carry a synthetic entry in exactly that shape instead of the CC line.
+ * A pi-shaped `message` entry as each CC row's source (server/transcript.ts `sourced`): the slim
+ * row's time, facts and tool line, and the tool-content route's arguments and output, are read from
+ * it exactly as from a pi entry (a "toolCall" block with a matching id; a result's content text plus
+ * isError), so CC rows need no special case. One per row: each row carries its own `meta`.
  */
 function raw(timestamp: string | undefined, message: Record<string, unknown>): unknown {
   return { type: "message", timestamp, message };
 }
 
 function item(id: string, kind: EntryKind, rawEntry: unknown, text?: string, toolCallId?: string, images?: string[]): TranscriptItem {
-  const it: TranscriptItem = { id, kind, raw: rawEntry };
+  const it: TranscriptItem = { id, kind };
   if (text !== undefined) it.text = text;
   if (toolCallId !== undefined) it.toolCallId = toolCallId;
   if (images) it.images = images;
-  return it;
+  return sourced(it, rawEntry);
 }
 
 /** An assistant line: CC writes one content block per line, all sharing one message.id. */
@@ -229,8 +229,12 @@ function userItems(entry: Entry, id: string, time: string | undefined): Transcri
   return [item(id, "user", raw(time, { role: "user", content: [{ type: "text", text }] }), text.trim() ? text : undefined, undefined, images)];
 }
 
-/** Normalize one CC JSONL line into 0..n TranscriptItems. */
+/** Normalize one CC JSONL line into 0..n TranscriptItems, as they go over the wire (slimRows). */
 export function normalizeClaudeEntry(entry: Entry, fallbackId = "?"): TranscriptItem[] {
+  return slimRows(claudeRows(entry, fallbackId));
+}
+
+function claudeRows(entry: Entry, fallbackId: string): TranscriptItem[] {
   if (!entry || typeof entry !== "object") return [];
   if (entry.isSidechain === true) return []; // a nested Task agent: its own transcript, not this one
   if (typeof entry.type === "string" && SKIPPED_TYPES.has(entry.type)) return [];

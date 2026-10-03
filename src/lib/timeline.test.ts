@@ -29,36 +29,40 @@ const user = (id: string, min: number, text = id, images = 0): TranscriptItem =>
   kind: "user",
   text,
   images: images ? Array.from({ length: images }, () => "data:image/png;base64,") : undefined,
-  raw: { type: "message", timestamp: at(min) },
+  at: at(min), meta: { type: "message" },
 });
-const say = (id: string, min: number, text = "ok"): TranscriptItem => ({ id, kind: "assistant-text", text, raw: { type: "message", timestamp: at(min) } });
+const say = (id: string, min: number, text = "ok"): TranscriptItem => ({ id, kind: "assistant-text", text, at: at(min), meta: { type: "message" } });
 const tool = (id: string, min: number, name = "read_file", toolCallId = id): TranscriptItem => ({
   id,
   kind: "tool-call",
   text: name,
   toolCallId,
-  raw: { type: "message", timestamp: at(min), message: { role: "assistant", content: [{ type: "toolCall", id: toolCallId, name, arguments: { name: "scout" } }] } },
+  at: at(min),
+  meta: { type: "message", role: "assistant" },
+  tool: { summary: "scout", ...(name === "agent_spawn" || name === "team_create" ? { spawn: "scout" } : {}), lazy: true, bytes: 17 },
 });
 const compaction = (id: string, min: number, summary = "Read the pane, wrote the tab.\nMore.", tokensBefore = 67401): TranscriptItem => ({
   id,
   kind: "info",
   text: `Compacted (${tokensBefore} tokens): ${summary}`,
-  raw: { type: "compaction", timestamp: at(min), summary, tokensBefore },
+  at: at(min),
+  meta: { type: "compaction", summary, tokensBefore },
 });
 const wake = (id: string, min: number, reason?: string): TranscriptItem => ({
   id,
   kind: "wake",
   text: `[wake_nudge ${id}] Scheduled wakeup fired (set 1m ago).\nReason: ${reason ?? "(none)"}\nContinue.`,
   wake: { id, ...(reason ? { reason } : {}) },
-  raw: { type: "message", timestamp: at(min) },
+  at: at(min), meta: { type: "message" },
 });
-const change = (id: string, min: number, text: string): TranscriptItem => ({ id, kind: "info", text, raw: { type: "model_change", timestamp: at(min) } });
+const change = (id: string, min: number, text: string): TranscriptItem => ({ id, kind: "info", text, at: at(min), meta: { type: "model_change" } });
 const report = (id: string, min: number, name: string, outcome: string): TranscriptItem => ({
   id,
   kind: "report",
   text: "done",
   report: { source: "subagent-complete", agent: { id: "ag_01", name, status: "done", outcome }, body: "done", preview: "shipped it", truncated: false },
-  raw: { type: "custom_message", timestamp: at(min) },
+  at: at(min),
+  meta: { type: "custom_message" },
 });
 
 const outline = (topics: SessionOutline["topics"], over: Partial<SessionOutline> = {}): SessionOutline => ({
@@ -196,7 +200,7 @@ test("a subagent that errored stopped; one that finished, finished", () => {
 });
 
 test("a compaction with no token count still reads as one", () => {
-  const [row] = markerRows([{ id: "c1", kind: "info", text: "Compacted", raw: { type: "compaction", timestamp: at(1) } }]);
+  const [row] = markerRows([{ id: "c1", kind: "info", text: "Compacted", at: at(1), meta: { type: "compaction" } }]);
   assert.equal(row!.title, MARKER_TITLE.compaction);
 });
 
@@ -219,7 +223,7 @@ test("a rewind with no timestamp gets no row: it cannot be placed on an axis", (
 });
 
 test("markerRows skips an entry with no timestamp: it cannot be placed on an axis", () => {
-  assert.deepEqual(markerRows([{ id: "c1", kind: "info", text: "Compacted", raw: { type: "compaction" } }]), []);
+  assert.deepEqual(markerRows([{ id: "c1", kind: "info", text: "Compacted", meta: { type: "compaction" } }]), []);
 });
 
 // ---- Gaps ---------------------------------------------------------------------------------------
@@ -426,7 +430,7 @@ test("timelineState mirrors the outline strip: when it was made, and whether it 
 });
 
 test("inputTurns skips a link-opened turn, and its work never counts toward the input before it", () => {
-  const link: TranscriptItem = { id: "l1", kind: "link", text: "partner", raw: { type: "message", timestamp: at(4) } };
+  const link: TranscriptItem = { id: "l1", kind: "link", text: "partner", at: at(4), meta: { type: "message" } };
   const turns = inputTurns([user("u1", 0), say("a1:0", 1), link, say("a2:0", 5), tool("a2:1", 6), user("u2", 8)]);
   assert.deepEqual(turns.map((t) => t.id), ["u1", "u2"]);
   assert.equal(turns[0]!.replies, 1);

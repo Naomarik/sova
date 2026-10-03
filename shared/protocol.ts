@@ -209,7 +209,101 @@ export type EntryKind =
   | "align" // an `align` tool result that changed an alignment, or an exemption (pi-config mode extension); see `align`
   | "unknown";
 
-/** A normalized transcript row. `raw` carries the full parsed JSONL entry for advanced rendering. */
+/**
+ * What a row's source entry says beyond the row itself (§chat.transcript/slim-rows): on the FIRST
+ * row of each entry only. A row with no `meta` reads its entry's first row's (by entry id,
+ * shared/row-counts `entryOfRow`): an assistant reply's later blocks and its `:stop` row. A row
+ * with its own `meta` reads only that (a Claude Code worker's rows each carry their own, even
+ * several results of one line). Never the entry's content.
+ */
+export interface EntryMeta {
+  /** The JSONL entry's type: "message", "compaction", "custom", "custom_message", "model_change", … */
+  type: string;
+  /** custom and custom_message entries, and a `custom` message's customType. */
+  customType?: string;
+  /** message entries: user | assistant | toolResult | custom | bashExecution | … */
+  role?: string;
+  provider?: string;
+  model?: string;
+  /** An assistant message's usage, as recorded. */
+  usage?: unknown;
+  stopReason?: string;
+  errorMessage?: string;
+  /** toolResult messages. */
+  toolName?: string;
+  toolCallId?: string;
+  isError?: boolean;
+  /** compaction entries. */
+  tokensBefore?: number;
+  summary?: string;
+  details?: unknown;
+}
+
+/** Tools whose rows keep their whole content (`ToolRowInfo.args`, `.output`, `.details`): the
+    thread draws them as cards rather than tool cards, from that content, folded. */
+export const EAGER_TOOLS: ReadonlySet<string> = new Set([
+  "show_changes",
+  "sova_card",
+  "sova_confirm",
+  "sova_link",
+  "sova_unlink",
+  "align",
+  "session_send",
+  "sova_create_session",
+  "sova_navigate",
+]);
+
+/** The tool part of a tool-call or tool-result row (§chat.transcript/slim-rows). */
+export interface ToolRowInfo {
+  /** tool-call: the line the folded card shows, argsSummary of the arguments (src/lib/message.ts),
+      whole (its tooltip shows all of it). */
+  summary?: string;
+  /** tool-call of agent_spawn / team_create: the name it gave its agent or team, when it gave one. */
+  spawn?: string;
+  /** tool-result whose details record a patch: its "+n −m" (src/lib/tool-diff-stats.ts summaryStats,
+      counted as for an edit). The card shows it only when its call is an edit or a write. */
+  stats?: { added: number; removed: number };
+  /** EAGER_TOOLS only: the call's arguments as recorded. */
+  args?: unknown;
+  /** EAGER_TOOLS only: the result's output (its text blocks joined, as the card shows it). */
+  output?: string;
+  /** EAGER_TOOLS only: the result's details. */
+  details?: unknown;
+  /** The content is withheld: fetch it with GET /api/transcript/tool. Absent on EAGER_TOOLS rows. */
+  lazy?: true;
+  /** JSON size of the withheld content (the arguments, or the output and details). */
+  bytes?: number;
+}
+
+/**
+ * GET /api/transcript/tool?path=<session .jsonl>&ids=<row id>[,<row id>…] (or `claude=<uuid>` for a
+ * Claude Code worker's own file instead of `path`): the whole content of tool rows, at most
+ * TOOL_CONTENT_MAX_IDS ids. Ids are tool-call or tool-result row ids; one not on the branch is
+ * absent from `items`. Read-only: a hosted session is read from its runtime, any other from its file.
+ */
+export interface ToolContentResponse {
+  items: Record<string, ToolContent>;
+}
+
+export interface ToolContent {
+  /** tool-call rows: the call's arguments as recorded. */
+  args?: unknown;
+  /** The row's result: a tool-call row's paired result, when the branch holds one, or a
+      tool-result row's own. `output` is the result's text blocks joined with "\n" (empty blocks
+      skipped), or, when it has none, the row's 2,000-character summary text. */
+  result?: {
+    output: string;
+    isError: boolean;
+    details?: unknown;
+    /** The entry's own `toolUseResult` (Claude Code's record of an edit), only when the message
+        has no details object: the Changes viewer reads it in their place. The card never does. */
+    toolUseResult?: unknown;
+  };
+}
+
+export const TOOL_CONTENT_MAX_IDS = 200;
+
+/** A normalized transcript row (§chat.transcript/slim-rows: what it draws, never its entry). */
 export interface TranscriptItem {
   id: string; // entry id
   kind: EntryKind;
@@ -224,8 +318,7 @@ export interface TranscriptItem {
       `/tmp/pi-clipboard-<uuid>.png`; replies, tool output and subagent reports quote it). Set on
       user, assistant-text, info (custom messages) and tool-result rows. Only concrete names outside
       markdown code spans/fences (shared/tmp-paths.ts), first 8 distinct per row. User rows: pi's own
-      clipboard paths are removed from `text`; every other row keeps its text as-is. `raw` is
-      untouched. Bytes: GET /api/attachment?path=. */
+      clipboard paths are removed from `text`; every other row keeps its text as-is. Bytes: GET /api/attachment?path=. */
   attachments?: TmpAttachment[];
   /** kind "report" only: the parsed message. `text` holds the same body. */
   report?: ReportInfo;
@@ -280,7 +373,14 @@ export interface TranscriptItem {
       call, whose tool-call row renders nothing once this row is there. A failed call, a `get`, or
       details that don't check out stay an ordinary tool-result. */
   align?: AlignRowInfo;
-  raw: unknown;
+  /** The entry's timestamp (ISO), on every row whose entry has one. */
+  at?: string;
+  /** The entry's facts, on its first row only (EntryMeta). */
+  meta?: EntryMeta;
+  /** tool-call and tool-result rows. A lazy tool-result row carries no `text`. */
+  tool?: ToolRowInfo;
+  /** kind "unknown" only: the whole entry, for the card that shows it as JSON (signatures removed). */
+  entry?: unknown;
 }
 
 /** An alignment (§chat.alignment/document), as the `align` tool's snapshot carries it. The
@@ -351,8 +451,7 @@ export interface WorktreeMergeInfo {
  * An extension message shown as a collapsed report row instead of a centered info row: every
  * `subagent-complete` (pi-config subagents: "### <id> (<name>) — <status>[ · task <outcome>]",
  * optional "Error: …", "Session: …" and "Model: …" lines, then the worker's final output), and
- * any other custom message longer than 200 characters or spanning lines. Parsed server-side;
- * `raw` is untouched.
+ * any other custom message longer than 200 characters or spanning lines. Parsed server-side.
  */
 export interface ReportInfo {
   /** The message's customType, e.g. "subagent-complete", "intercom_message". */
@@ -1923,8 +2022,8 @@ export interface OlderSummary {
  *   earlier when that row is a tool result (its call comes with it) or inside a baton wrap-up;
  * - `from=…` alone: from that row to the end (a view refreshing the rows it holds).
  * `view=light` instead: the whole branch as `{ items, context }`, each row without what only the
- * thread draws (a reply's text, a tool's output, image bytes, a report's body, the raw entry's
- * content), for the session pane: every row stays, in order, with its kind, time and counts.
+ * thread draws (a reply's text, a tool's output, image bytes, a report's body), for the session
+ * pane: every row stays, in order, with its kind, time and counts.
  * `leaf=<entry id>` is the last entry the client's list renders: an id the file holds that is no
  * longer on the active branch (a rewind) answers 409 `{ code: "moved" }`, as does a `before` row
  * that isn't in the list; the client then starts again from a fresh tail. A `from`/`explain`

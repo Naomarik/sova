@@ -32,7 +32,7 @@ mkdirSync(process.env.SOVA_SHARE_DIST, { recursive: true });
 writeFileSync(join(process.env.SOVA_SHARE_DIST, "index.html"), "<!doctype html><title>Shared</title>");
 
 const { sessionShareView, sessionShareImage, sourceReadable, currentLeaf, resetShareViewCache, SESSION_SHARE_TEXT_MAX, SESSION_SHARE_TEXT_CEILING, cutAtToken, withoutImagePaths } = await import("./session-share-view");
-const { normalizeEntries, parseLines } = await import("./transcript");
+const { normalizeEntries, parseLines, toolContents } = await import("./transcript");
 const { createShare } = await import("./session-shares");
 const { pushView } = await import("./session-share-presence");
 const { pushShareView } = await import("./share/session-live");
@@ -208,12 +208,17 @@ const never = (): string[] => [SVG_B64, SESSION_ID, sessionPath, cwd, home, root
 describe("nothing private reaches a session share (§app.session-share/never)", () => {
   test("positive control: every marker is in the operator's own transcript or the session file", () => {
     const file = readFileSync(sessionPath, "utf8");
-    const transcript = JSON.stringify(normalizeEntries(parseLines(file)));
+    // The operator's transcript: its rows, and every tool card's content as opening it loads it
+    // (§chat.transcript/slim-rows).
+    const rows = normalizeEntries(parseLines(file));
+    const transcript = JSON.stringify([rows, toolContents(rows, rows.map((r) => r.id))]);
     for (const [field, m] of Object.entries(M)) {
       const mark = planted(field, m);
       assert.ok(file.includes(mark) || file.includes(JSON.stringify(mark).slice(1, -1)), `${field} was planted`);
-      // A role:"system" message and extension state (`custom`) render no row of the operator's; the file holds them.
-      if (!["system", "systemPreamble", "systemToolName", "systemToolDescription", "custom"].includes(field)) assert.ok(transcript.includes(mark), `${field} is in the operator's transcript`);
+      // A role:"system" message and extension state (`custom`) render no row of the operator's, and a
+      // reasoning signature never reaches the operator's browser either (§chat.transcript/slim-rows);
+      // the file holds them.
+      if (!["system", "systemPreamble", "systemToolName", "systemToolDescription", "custom", "thinkingSig"].includes(field)) assert.ok(transcript.includes(mark), `${field} is in the operator's transcript`);
     }
     for (const s of [SESSION_ID, cwd, home]) assert.ok(file.includes(s), `${s} is in the session file`);
   });

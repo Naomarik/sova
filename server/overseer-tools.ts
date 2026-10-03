@@ -19,6 +19,7 @@ import { relativeTime } from "../pi-config/extensions/stamp/format.ts";
 import { newestTopics, topicTime } from "../shared/outline-order";
 import { whereOf } from "./attention";
 import { alignmentText, openAlignmentsOf } from "./align-state";
+import { entryOf } from "./transcript";
 import type { ReadinessChecks } from "./merge-readiness";
 import { idOfAlias, sessionName } from "./session-names";
 import { type Redactor, redactingTool, serverRedactor } from "./overseer-redact";
@@ -326,7 +327,7 @@ export function topicsLine(topics: readonly { heading: string; at: number; secti
     reason, its error and its text; undefined when there is none. */
 export function lastReplyIn(items: readonly TranscriptItem[]): { at: number; stopReason?: string; error?: string; text: string } | undefined {
   for (let i = items.length - 1; i >= 0; i--) {
-    const raw = items[i]!.raw as { type?: unknown; timestamp?: unknown; message?: { role?: unknown; content?: unknown; stopReason?: unknown; errorMessage?: unknown; timestamp?: unknown } } | undefined;
+    const raw = entryOf(items[i]!) as { type?: unknown; timestamp?: unknown; message?: { role?: unknown; content?: unknown; stopReason?: unknown; errorMessage?: unknown; timestamp?: unknown } } | undefined;
     const m = raw?.type === "message" ? raw.message : undefined;
     if (m?.role !== "assistant") continue;
     const at = typeof raw!.timestamp === "string" ? Date.parse(raw!.timestamp) : typeof m.timestamp === "number" ? m.timestamp : NaN;
@@ -365,7 +366,7 @@ export function truthLines(
     const message = s.turnError?.message ?? reply?.error;
     out.push(`Turn error: ${message ? cut(message, 300) : "the last turn stopped with an error"}`);
   }
-  const docs = items ? openAlignmentsOf(items.map((i) => i.raw)) : [];
+  const docs = items ? openAlignmentsOf(items.map(entryOf)) : [];
   if (docs.length) {
     const list = docs.map((d) => `${d.id} "${cut(d.title, 80)}": ${d.open} of ${d.total} question${d.total === 1 ? "" : "s"} open`).join("; ");
     const waits = s.align ? "the session waits on the user's answers" : "not waiting on the user (they spoke since, or align is off)";
@@ -883,7 +884,7 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
         const doc = typeof p.doc === "string" && p.doc.trim() ? p.doc.trim() : undefined;
         let body: string;
         try {
-          body = alignmentText(items.map((i) => i.raw), { ...(doc ? { doc } : {}), waits: !!s.align });
+          body = alignmentText(items.map(entryOf), { ...(doc ? { doc } : {}), waits: !!s.align });
         } catch (err) {
           throw new Refusal(err instanceof Error ? err.message : String(err));
         }

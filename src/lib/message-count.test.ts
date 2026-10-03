@@ -4,7 +4,7 @@ import { test } from "node:test";
 import type { TranscriptItem } from "../../shared/protocol";
 import { messageCount } from "./message-count";
 
-const item = (id: string, kind: TranscriptItem["kind"]): TranscriptItem => ({ id, kind, raw: null });
+const item = (id: string, kind: TranscriptItem["kind"]): TranscriptItem => ({ id, kind });
 
 test("a block-rich reply is one message: the count is entries, not rows", () => {
   const list = [

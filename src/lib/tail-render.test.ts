@@ -141,7 +141,7 @@ test("a row without images keeps its text-only estimate; with them, it adds a wi
 });
 
 test("a compaction is estimated as its folded disclosure, not its summary", () => {
-  assert.equal(rowEstimate({ kind: "info", text: "summary ".repeat(5000), raw: { type: "compaction" } }), "calc(36px)");
+  assert.equal(rowEstimate({ kind: "info", text: "summary ".repeat(5000), meta: { type: "compaction" } }), "calc(36px)");
   assert.match(rowEstimate({ kind: "info", text: "Model changed" }), /^calc\(-4px \+ min\(200, 1 \+ 13 \//);
 });
 

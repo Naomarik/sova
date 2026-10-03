@@ -40,7 +40,7 @@ import { claudeSpawnModels, WorkerContextReader, withWorkerContext } from "./wor
 import { resumeCommandOf, resumeWorker, type ResumeOutcome } from "./worker-resume";
 import { applySandbox, onSandboxAppend, sandboxCommandOf, sandboxMessage, type SandboxHost } from "./sandbox-state";
 import { chatClaudeLogin, claudeLoginAfterHello, claudeLoginMessage, isClaudeLoginEntry, LoginPick, loginName } from "./claude-login-state";
-import { contextForBranch, normalizeEntries, normalizeEntry } from "./transcript";
+import { contextForBranch, normalizeEntries, normalizeEntry, withoutSignatures } from "./transcript";
 import { cutTail, type HistoryPart, pullFields } from "./tail-hello";
 import { isOverseerId } from "./overseer-store";
 import { attachStreamGuard, capsFor, type StreamTrip } from "./stream-guard";
@@ -383,8 +383,14 @@ export function assertNotLive(path: string): void {
   }
 }
 
-/** Strip the per-delta `partial` snapshot (same as pi's rpc toJsonEvent) to keep frames small. */
-function toWireEvent(event: any): unknown {
+/** Strip the per-delta `partial` snapshot (same as pi's rpc toJsonEvent) to keep frames small, and
+    every provider signature (§chat.transcript/slim-rows: encrypted reasoning never reaches the
+    browser; message_end, turn_end and agent_end carry whole messages). */
+export function toWireEvent(event: any): unknown {
+  return withoutSignatures(wireEvent(event));
+}
+
+function wireEvent(event: any): unknown {
   if (event?.type !== "message_update") return event;
   const ame = event.assistantMessageEvent ?? {};
   let wire = ame;
@@ -2536,7 +2542,7 @@ class ChatSession {
     if (after !== before)
       this.broadcast({
         type: "append",
-        items: [{ id: `thinking-${Date.now()}`, kind: "info", raw: { type: "thinking_level_change", thinkingLevel: after }, text: `Thinking: ${after}` }],
+        items: [{ id: `thinking-${Date.now()}`, kind: "info", meta: { type: "thinking_level_change" }, text: `Thinking: ${after}` }],
       });
     if (opts.save !== true) return after;
     if (this.overseer) overseerRuntime?.saveChoice({ thinking: after });

@@ -1,11 +1,12 @@
 import { children, createContext, createEffect, createMemo, createSignal, For, Match, on, onCleanup, Show, Switch, useContext, type JSX } from "solid-js";
-import type { TmpAttachment, TranscriptItem } from "../../shared/protocol";
+import type { EntryMeta, TmpAttachment, TranscriptItem } from "../../shared/protocol";
 import type { BatonMark } from "../../shared/baton";
 import { wrapupRowIds } from "../lib/wrapup-rows";
 import { blockStreams, type LiveBlock, type LiveEntry, type LiveState, type LiveUserState } from "../lib/live";
 import { agoTime, prettyJson, shortModel, stampTime, thousands, tildePath } from "../lib/format";
 import { useMinuteNow } from "../lib/minute-clock";
-import { isObj, str, timestampOf, toolCallArgs, toolResultView } from "../lib/message";
+import { isObj, resultDetails as detailsOf, str, toolCallArgs, toolResultView } from "../lib/message";
+import { toolContent, type ToolSource } from "../lib/tool-content";
 import { stripPastedPaths } from "../lib/path-attachments";
 import { home } from "../lib/ui-state";
 import { ensureRendered, entryIdOf, JUMP_EVENT, loadRow, registerRows, registerTranscript } from "../lib/jump";
@@ -43,10 +44,14 @@ import { rowProvider } from "../lib/subagent-limit";
 import { normalizeShowChangesDetails, SHOW_CHANGES_TOOL } from "../../pi-config/extensions/show-changes/details";
 import { Banner, Chip, Icon } from "./ui";
 import { BriefRow, CardRevision, ConfirmCard, DeckCard, LinkCard, linkDetails, NavigateGo, OverseerChoiceRow, useOverseerThread } from "./OverseerCards";
-import { cardFold, confirmAnswer, confirmDetails, detailsOf, isBriefText } from "../lib/overseer";
+import { cardFold, confirmAnswer, confirmDetails, isBriefText } from "../lib/overseer";
 import { CARD_TOOL, LEGACY_CONFIRM_TOOL, normalizeCardDetails } from "../../shared/overseer-card";
 import { MessageActions, type MessageActionItem } from "./MessageActions";
 import { type MessageStrip, sameStrip, stripLabel, stripsByRow } from "../lib/message-actions";
+
+/** Whose transcript the rows inside are (lib/tool-content): a tool card asks it for the content its
+    row doesn't carry. Absent: the rows carry all they draw. */
+export const ToolSourceContext = createContext<ToolSource | null>(null);
 
 /**
  * What a view hangs under each delivered message. The thread decides
@@ -388,9 +393,9 @@ function Unknown(props: { raw: unknown }) {
 const strings = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []);
 
 /** A compaction entry: where it happened in the thread, with its summary on demand. */
-function Compaction(props: { raw: Record<string, unknown> }) {
-  const tokens = () => (typeof props.raw.tokensBefore === "number" ? props.raw.tokensBefore : null);
-  const details = () => (isObj(props.raw.details) ? props.raw.details : {});
+function Compaction(props: { meta: EntryMeta }) {
+  const tokens = () => (typeof props.meta.tokensBefore === "number" ? props.meta.tokensBefore : null);
+  const details = () => (isObj(props.meta.details) ? props.meta.details : {});
   const read = () => strings(details().readFiles);
   const changed = () => strings(details().modifiedFiles);
   return (
@@ -405,7 +410,7 @@ function Compaction(props: { raw: Record<string, unknown> }) {
         </span>
       </summary>
       <div class="disclosure-body">
-        <div class="compaction-summary">{str(props.raw.summary) ?? ""}</div>
+        <div class="compaction-summary">{props.meta.summary ?? ""}</div>
         <Show when={read().length > 0}>
           <p class="toolcard-section-label">Files read</p>
           <ul class="compaction-files">
@@ -435,15 +440,10 @@ export function TurnError(props: { message: string }) {
 }
 
 /** A transcript row that ends a turn on an error (the `${entryId}:stop` info row): the error's own
-    words sit in its text, its producer's model on the row. */
+    words sit in its text, its producer's model on the row. The server words it "Error…" for a
+    stop reason of "error" and "Aborted…" otherwise. */
 export function isErroredTurnStop(it: TranscriptItem): boolean {
-  return (
-    it.kind === "info" &&
-    it.id.endsWith(":stop") &&
-    isObj(it.raw) &&
-    isObj(it.raw.message) &&
-    (it.raw.message as { stopReason?: unknown }).stopReason === "error"
-  );
+  return it.kind === "info" && it.id.endsWith(":stop") && (it.text ?? "").startsWith("Error");
 }
 
 /**
@@ -544,7 +544,7 @@ export function HistoryItems(props: {
   /** A show_changes call's checked details, once it succeeded (§chat.changes/show-changes-card). */
   const showChangesOf = (callId: string | undefined) => {
     const r = callId ? results().get(callId) : undefined;
-    return r && !toolResultView(r.raw, r.text).isError ? normalizeShowChangesDetails(detailsOf(r.raw)) : undefined;
+    return r && !toolResultView(r).isError ? normalizeShowChangesDetails(detailsOf(r)) : undefined;
   };
   const calls = createMemo(() => {
     const ids = new Set<string>();
@@ -601,9 +601,9 @@ export function HistoryItems(props: {
     const failedOf = (it: TranscriptItem): boolean => {
       if (it.kind === "tool-call") {
         const r = it.toolCallId ? results().get(it.toolCallId) : undefined;
-        return !!r && toolResultView(r.raw, r.text).isError;
+        return !!r && toolResultView(r).isError;
       }
-      if (it.kind === "tool-result") return !(it.toolCallId && callIds.has(it.toolCallId)) && toolResultView(it.raw, it.text).isError;
+      if (it.kind === "tool-result") return !(it.toolCallId && callIds.has(it.toolCallId)) && toolResultView(it).isError;
       return false;
     };
     // A run is folded by ONE key that outlives its rows: the first row's id, which the list keeps
@@ -669,6 +669,7 @@ export function HistoryItems(props: {
    * Every index below is the row's index in `rows()`, never in the built slice.
    */
   const scroller = props.whole ? null : useContext(ScrollerContext);
+  const toolSource = useContext(ToolSourceContext);
   const rowAt = createMemo(() => {
     const at = new Map<string, number>();
     rows().forEach((r, i) => at.set(r.id, i));
@@ -807,14 +808,14 @@ export function HistoryItems(props: {
             style={{ "--entry-est": rowEstimate(item, ...shownImages(item), !!chain(), foldedRun(chain()), !!chain()?.first) }}
           >
             <Show when={foldable(chain()) ? chain() : null}>{(run) => <ChainFold run={run()} />}</Show>
-            <Switch fallback={<Unknown raw={item.raw} />}>
+            <Switch fallback={<Unknown raw={item.entry} />}>
               <Match when={item.kind === "user" && isBriefText(item.text)}>
-                <BriefRow text={item.text ?? ""} time={timestampOf(item.raw)} />
+                <BriefRow text={item.text ?? ""} time={item.at} />
               </Match>
               <Match when={item.kind === "user"}>
                 <UserTurn
                   text={item.text ?? ""}
-                  time={timestampOf(item.raw)}
+                  time={item.at}
                   overseer={overseerSent().has(entryIdOf(item.id))}
                   sender={batonSent().has(entryIdOf(item.id)) ? nameOf(batonSent().get(entryIdOf(item.id))!) : undefined}
                   fromSession={sessionSent().get(entryIdOf(item.id))}
@@ -845,20 +846,20 @@ export function HistoryItems(props: {
                 {(mark) => <OverseerChoiceRow title={mark().title} answer={mark().answer} />}
               </Match>
               <Match when={item.kind === "worktree-merge" && item.worktreeMerge}>
-                {(merge) => <WorktreeMergeCard merge={merge()} time={timestampOf(item.raw)} />}
+                {(merge) => <WorktreeMergeCard merge={merge()} time={item.at} />}
               </Match>
               <Match when={item.kind === "wake" && item.wake}>
-                {(wake) => <WakeCard nudge={wake()} text={item.text ?? ""} time={timestampOf(item.raw)} />}
+                {(wake) => <WakeCard nudge={wake()} text={item.text ?? ""} time={item.at} />}
               </Match>
               <Match when={item.kind === "topic" && item.topic}>
-                {(batch) => <TopicCard batch={batch()} time={timestampOf(item.raw)} />}
+                {(batch) => <TopicCard batch={batch()} time={item.at} />}
               </Match>
               <Match when={item.kind === "assistant-text"}>
                 <AssistantText
                   text={item.text ?? ""}
                   author={shortModel(item.model) ?? props.author}
                   model={item.model}
-                  time={timestampOf(item.raw)}
+                  time={item.at}
                   showHead={
                     rows()[index() - 1]?.kind !== "assistant-text" || rows()[index() - 1]?.model !== item.model
                   }
@@ -880,13 +881,13 @@ export function HistoryItems(props: {
                 {(explain) => <ExplainCard explain={explain()} />}
               </Match>
               <Match when={item.kind === "report" && item.report?.team}>
-                {(team) => <TeamMessageCard report={item.report!} team={team()} time={timestampOf(item.raw)} attachments={item.attachments} />}
+                {(team) => <TeamMessageCard report={item.report!} team={team()} time={item.at} attachments={item.attachments} />}
               </Match>
               <Match when={item.kind === "report" && item.report}>
                 {(report) => <ReportRow report={report()} attachments={item.attachments} />}
               </Match>
-              <Match when={item.kind === "info" && isObj(item.raw) && item.raw.type === "compaction" && item.raw}>
-                {(raw) => <Compaction raw={raw()} />}
+              <Match when={item.kind === "info" && item.meta?.type === "compaction" && item.meta}>
+                {(meta) => <Compaction meta={meta()} />}
               </Match>
               <Match when={item.kind === "info"}>
                 <>
@@ -910,7 +911,7 @@ export function HistoryItems(props: {
                 {(() => {
                   const view = () => {
                     const r = item.toolCallId ? results().get(item.toolCallId) : undefined;
-                    return r ? toolResultView(r.raw, r.text) : undefined;
+                    return r ? toolResultView(r) : undefined;
                   };
                   const status = (): ToolStatus => {
                     const v = view();
@@ -919,12 +920,12 @@ export function HistoryItems(props: {
                   };
                   const resultDetails = () => {
                     const r = item.toolCallId ? results().get(item.toolCallId) : undefined;
-                    return r ? detailsOf(r.raw) : undefined;
+                    return r ? detailsOf(r) : undefined;
                   };
                   // A legacy card (from before card ids): read-only, answered by the rule it had then.
                   const confirm = () =>
                     item.text === LEGACY_CONFIRM_TOOL && status() !== "error"
-                      ? (confirmDetails(resultDetails()) ?? confirmDetails(toolCallArgs(item.raw, item.toolCallId)))
+                      ? (confirmDetails(resultDetails()) ?? confirmDetails(toolCallArgs(item)))
                       : null;
                   const card = () => (item.text === CARD_TOOL && status() === "done" ? cardRow(item) : undefined);
                   /** A made or ended link reads as a card naming its members (§app.overseer/links-tools);
@@ -932,7 +933,13 @@ export function HistoryItems(props: {
                   const linked = () =>
                     (item.text === "sova_link" || item.text === "sova_unlink") && status() === "done" ? linkDetails(resultDetails()) : null;
                   /** session_send and a profile's sova_create_session read as cards (§chat.profiles/delivery). */
-                  const profileCard = () => profileToolCard(item.text, status(), toolCallArgs(item.raw, item.toolCallId), resultDetails(), view()?.output);
+                  /** The arguments and output its rows don't carry, asked for by the call's row id. */
+                  const lazy = createMemo(() => {
+                    const r = item.toolCallId ? results().get(item.toolCallId) : undefined;
+                    if (!toolSource || !(item.tool?.lazy || r?.tool?.lazy)) return undefined;
+                    return toolContent.handle(toolSource, item.id, { resultId: r?.id, callId: item.toolCallId, size: (item.tool?.bytes ?? 0) + (r?.tool?.bytes ?? 0) });
+                  });
+                  const profileCard = () => profileToolCard(item.text, status(), toolCallArgs(item), resultDetails(), view()?.output);
                   return (
                     <Show
                       when={!card()}
@@ -953,7 +960,10 @@ export function HistoryItems(props: {
                       fallback={
                     <ToolCard
                       name={item.text ?? "tool"}
-                      args={toolCallArgs(item.raw, item.toolCallId)}
+                      args={toolCallArgs(item)}
+                      summary={item.tool?.summary}
+                      stats={(item.text === "edit" || item.text === "write") && item.toolCallId ? results().get(item.toolCallId)?.tool?.stats : undefined}
+                      lazy={lazy()}
                       details={resultDetails()}
                       status={status()}
                       output={view()?.output}
@@ -984,11 +994,13 @@ export function HistoryItems(props: {
                 {/* Paired results render inside their call's card; orphans get their own. */}
                 <Show when={!item.toolCallId || !calls().has(item.toolCallId)}>
                   {(() => {
-                    const view = toolResultView(item.raw, item.text);
+                    const view = toolResultView(item);
+                    const lazy = toolSource && item.tool?.lazy ? toolContent.handle(toolSource, item.id, { resultId: item.id, size: item.tool.bytes }) : undefined;
                     return (
                       <ToolCard
                         name="result"
                         args={undefined}
+                        lazy={lazy}
                         status={view.isError ? "error" : "done"}
                         output={view.output}
                         images={item.images}
@@ -1060,6 +1072,18 @@ function LiveBlockView(props: { block: LiveBlock; live: LiveState; author: strin
             return newest.rev > own.rev ? null : newest;
           };
           const linked = () => ((b().name === "sova_link" || b().name === "sova_unlink") && status() === "done" ? linkDetails(tool()?.details) : null);
+          // A finished call keeps what it streamed for the settled row that replaces this one, so a
+          // card open now stays drawn while the fetch asks the session file (lib/tool-content).
+          const toolSource = useContext(ToolSourceContext);
+          createEffect(() => {
+            const t = tool();
+            if (!toolSource || !t || (t.status !== "done" && t.status !== "error")) return;
+            const args = b().args ?? t.args;
+            toolContent.seed(toolSource, b().id, {
+              ...(args !== undefined ? { args } : {}),
+              result: { output: t.output, isError: t.status === "error", ...(t.details !== undefined ? { details: t.details } : {}) },
+            });
+          });
           /** An align result that changed an alignment: its card, as soon as the result lands. */
           const aligned = () => (b().name === "align" && status() === "done" ? alignRowFromDetails(tool()?.details) : undefined);
           return (

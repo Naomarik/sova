@@ -543,7 +543,7 @@ describe("preview links (§app.project-overseer/previews)", () => {
     assert.match(prompt, /in a standalone project it is only for the operator/);
     assert.match(prompt, /In an\s+organization's project you may then send it to one of its people with `sova_send_to_person`/);
     assert.match(prompt, /`sova_project_verbs` status lists every running copy of the project/);
-    assert.match(prompt, /stop any copy at will with `sova_project_verbs` down \(from L0, never held\)/);
+    assert.match(prompt, /stop any copy at will with `sova_project_verbs` down \(from L0, never held\)\. A copy with an active\s+share link answers needs-confirm to down: revoke its links first/);
     const previews = fake().tools.find((x) => x.name === "sova_previews")!;
     assert.match(previews.description, /In a standalone project such a link is only for the operator/);
   });

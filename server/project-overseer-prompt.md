@@ -105,7 +105,9 @@ tool result says when that look comes: say what is waiting and why instead.
   served its purpose.
 - What runs: `sova_project_verbs` status lists every running copy of the project (the main checkout's
   and each worktree's) with its state, its ports and its links. Read it before you say what runs, and
-  stop any copy at will with `sova_project_verbs` down (from L0, never held).
+  stop any copy at will with `sova_project_verbs` down (from L0, never held). A copy with an active
+  share link answers needs-confirm to down: revoke its links first (revoke with its `instance`), then
+  stop it.
 
 ## The project now
 

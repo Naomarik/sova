@@ -12239,6 +12239,36 @@
         "§chat.transcript/setup-card-skills",
         "§chat.profiles/applying"
       ]
+    },
+    "§app.load-priority/workers": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "code": [
+        "pi-config/extensions/subagents/priority.ts",
+        "pi-config/extensions/subagents/priority.test.ts",
+        "pi-config/extensions/subagents/runner.ts",
+        "pi-config/extensions/subagents/runner.test.ts",
+        "pi-config/extensions/subagents/host-transport.ts",
+        "pi-config/extensions/claude-code/runner.ts",
+        "pi-config/extensions/sandbox/index.ts",
+        "server/process-priority.ts",
+        "server/process-priority.test.ts",
+        "server/chat-manager.ts"
+      ],
+      "requires": []
+    },
+    "§app/load-priority": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "requires": [],
+      "code": [
+        "docs/perf/2026-10-03-load-and-freezes.md",
+        "docs/perf/RUNBOOK.md",
+        "scripts/perf/load-experiment.mjs",
+        "scripts/perf/load-standin.mjs"
+      ]
     }
   },
   "boundary": {

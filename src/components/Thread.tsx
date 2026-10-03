@@ -1446,7 +1446,9 @@ export function ThreadScroller(props: {
    * new position instead of pulling the bottom back into view. Marked at the summary's click, which
    * comes before the open state changes (the `toggle` event is queued and may come after the frame
    * that lays the growth out), and again at `toggle`, where a lazy body is built; held for two
-   * frames after the later of the two.
+   * frames after the later of the two. Only a click starts it (a key on a summary clicks it too):
+   * a disclosure drawn open (an alignment's approach) fires `toggle` as its row is built, and that
+   * is new content, not the user's.
    */
   let toggled = false;
   let toggleFrame = 0;
@@ -1457,6 +1459,9 @@ export function ThreadScroller(props: {
   };
   const onClick = (e: MouseEvent) => {
     if ((e.target as Element | null)?.closest?.("summary")) markToggle();
+  };
+  const onToggle = () => {
+    if (toggled) markToggle();
   };
   onCleanup(() => cancelAnimationFrame(toggleFrame));
   /** Content was added or changed: back to the bottom while following. */
@@ -1603,7 +1608,7 @@ export function ThreadScroller(props: {
           observer.observe(node, { childList: true, subtree: true, characterData: true });
           // A jump (lib/jump) takes the view away from the bottom: stop following, as a scroll up would.
           node.addEventListener("click", onClick, true);
-          node.addEventListener("toggle", markToggle, true);
+          node.addEventListener("toggle", onToggle, true);
           viewResized?.observe(node);
           node.addEventListener("scrollend", () => (jumpScrolling = false));
           node.addEventListener(JUMP_EVENT, () => {

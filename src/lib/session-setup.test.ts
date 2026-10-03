@@ -77,16 +77,15 @@ test("lines: singular only for exactly 1, thousands separated", () => {
   assert.equal(linesLabel(0), "0 lines");
   assert.equal(linesLabel(2), "2 lines");
   assert.equal(linesLabel(1204), "1,204 lines");
-  assert.equal(fileFacts({ path: "/a", bytes: 1024, lines: 1 }), "1.0 KB · 1 line");
 });
 
 test("tokens: the same formatter the head uses, marked as an estimate, and never invented", () => {
   // The same figures the context gauge shows: 812 · 8.4k · 237k · 1M.
-  assert.equal(fileFacts({ path: "/a", bytes: 1024, lines: 1, tokens: 812 }), "1.0 KB · 1 line · ≈812 tokens");
-  assert.equal(fileFacts({ path: "/a", bytes: 1024, lines: 1, tokens: 8400 }), "1.0 KB · 1 line · ≈8.4k tokens");
-  assert.equal(fileFacts({ path: "/a", bytes: 0, lines: 0, tokens: 0 }), "0 B · 0 lines · ≈0 tokens");
-  // No estimate: the figure is dropped, never drawn as 0 — a 0 would be a claim about the file.
-  assert.equal(fileFacts({ path: "/a", bytes: 1024, lines: 1 }), "1.0 KB · 1 line");
+  assert.equal(fileFacts({ path: "/a", bytes: 1024, lines: 1, tokens: 812 }), "≈812 tokens");
+  assert.equal(fileFacts({ path: "/a", bytes: 1024, lines: 1, tokens: 8400 }), "≈8.4k tokens");
+  assert.equal(fileFacts({ path: "/a", bytes: 0, lines: 0, tokens: 0 }), "≈0 tokens");
+  // A row shows only its estimate; with none it shows nothing — never its size, never a 0.
+  assert.equal(fileFacts({ path: "/a", bytes: 1024, lines: 1 }), "");
   assert.equal(hasTokens({ path: "/a", bytes: 1, lines: 1 }), false);
   assert.equal(hasTokens({ path: "/a", bytes: 1, lines: 1, tokens: 0 }), true);
   assert.equal(sumFacts({ bytes: 2048, lines: 2, tokens: 8400 }), "2.0 KB · 2 lines · ≈8.4k tokens");

@@ -999,8 +999,8 @@ main-pane rows.
   loader could read, the loadout is the `System context` line, then Context, then Skills. In
   every other case it is a single line (below). Each group after the first sits under a 1px
   `--color-border` rule.
-- **The one aggregate line.** `System context` leading, its figures trailing in the shape a row
-  uses. It adds up every Context row and every Skills row that is on (a row switched off,
+- **The one aggregate line.** `System context` leading, its figures trailing in the shape a section
+  total uses (`KB · lines · ≈tokens`). It adds up every Context row and every Skills row that is on (a row switched off,
   /setup-card-toggles, is listed but not counted), which is exactly what the two groups under it
   total, so it is the sum of their two totals. Its `title` is the one sentence saying so:
   "Everything pi loads into the prompt, plus the skills it offers." It carries no heading, because
@@ -1048,7 +1048,7 @@ The files pi puts into the prompt, in the order it loads them.
   <ul class="setup-list">
     <li class="setup-row" title="/home/user/.pi/agent/AGENTS.md">
       <span class="setup-name"><span class="setup-path">~/.pi/agent/AGENTS.md</span></span>
-      <span class="setup-facts">2.1 KB · 48 lines · ≈530 tokens</span>
+      <span class="setup-facts">≈530 tokens</span>
     </li>
     <li class="setup-row" title="/home/user/webapps/sova/CLAUDE.md">…</li>
     <li class="setup-row" title="/home/user/webapps/sova/.pi/APPEND_SYSTEM.md">
@@ -1056,7 +1056,7 @@ The files pi puts into the prompt, in the order it loads them.
         <span class="setup-path">~/webapps/sova/.pi/APPEND_SYSTEM.md</span>
         <span class="setup-role">appended to the system prompt</span>
       </span>
-      <span class="setup-facts">1.9 KB · 17 lines · ≈480 tokens</span>
+      <span class="setup-facts">≈480 tokens</span>
     </li>
   </ul>
 </div>
@@ -1064,8 +1064,8 @@ The files pi puts into the prompt, in the order it loads them.
 
 - **Heading and count.** `Context · {n}`, where n is the rows listed, SYSTEM.md and
   APPEND_SYSTEM.md rows included. With none it reads `Context · 0`.
-- **The total beside the label** (`.setup-total`) is the rows that are on added up, in the rows'
-  own figures (/setup-card-figures). It is left out when they add up to `0 B · 0 lines`.
+- **The total beside the label** (`.setup-total`) is the rows that are on added up, as size ·
+  lines · ≈tokens (/setup-card-figures). It is left out when they add up to `0 B · 0 lines`.
 - **Off rows.** A row this session has switched off (/setup-card-toggles) stays listed and
   counted in the heading's n, but it is dimmed (`.setup-row-off`: its name and figures at half
   opacity) and no total counts it, because pi doesn't load it.
@@ -1077,7 +1077,8 @@ The files pi puts into the prompt, in the order it loads them.
   chip.
 - **The row.** The path with the home folder written `~` (the full path when it isn't under home,
   or before home is known), on one line and cut with an ellipsis when it doesn't fit. The full
-  path is in the row's `title`. Then the role, if any, then the figures.
+  path is in the row's `title`. Then the role, if any, then its token estimate
+  (/setup-card-figures).
 - **Where the list comes from.** The same read as Skills (/setup-card-skills): the session's own
   chat when this server holds it, otherwise pi's loader for the folder. Sizes are measured on disk
   when the server reads, never taken from the loader. A file the loader names but Sova can't read
@@ -1106,7 +1107,7 @@ The skills pi offers this session: what it is **offered**, not what is loaded.
   <ul class="setup-list">
     <li class="setup-row" title="/home/user/.pi/agent/skills/pdf/SKILL.md&#10;Read and fill in PDF forms.">
       <span class="setup-name"><span class="setup-path">pdf</span></span>
-      <span class="setup-facts">4.2 KB · 120 lines · ≈1.1k tokens</span>
+      <span class="setup-facts">≈1.1k tokens</span>
     </li>
     <li class="setup-row" title="…">…</li>
   </ul>
@@ -1119,7 +1120,7 @@ The skills pi offers this session: what it is **offered**, not what is loaded.
 - **Offered, not loaded.** The rows that are on are the skills pi lists to the model, in its
   order. A row this session has switched off (/setup-card-toggles) stays listed in its place,
   dimmed like an off Context row, but it is not offered, so the model never sees it. A skill
-  loads when it is used, and the note's first two sentences say so. A row's figures are its whole
+  loads when it is used, and the note's first two sentences say so. A row's token estimate is its whole
   SKILL.md file, so they are not something the session carries before it uses that skill.
 - **The row.** The skill's name, in the mono `.setup-path` face, with no path on screen and no
   role. The `title` holds the SKILL.md's full path, then on a new line its description, trimmed.
@@ -1224,16 +1225,19 @@ repository around the folder. Two of its figures:
   commits yet". A log the byte cap cut still lists the commits that arrived whole. Only a failed
   read says so in words ("The last commits couldn't be read.") instead of showing an empty list. The
   read is capped at three because this is a glance at where the folder stands, not a log viewer.
-- **Every loadout figure carries an estimated token count**: `31 KB · 475 lines · ≈8.1k tokens`, in
-  the app's one token formatter (§chat/context-window: `812 · 8.4k · 237k · 1M`), the same figure in the same place
-  on a row and on the section total that adds the rows up. The estimate is pi's own —
+- **Every loadout figure carries an estimated token count**, in the app's one token formatter
+  (§chat/context-window: `812 · 8.4k · 237k · 1M`). A Context or Skills row shows only that
+  estimate (`≈530 tokens`), with no size and no lines, neither on screen nor in a tooltip; the
+  section totals and the `System context` line keep `31 KB · 475 lines · ≈8.1k tokens`, the
+  token figure last in both, so it reads as one column. The estimate is pi's own —
   `ceil(characters ÷ CHARS_PER_TOKEN)`, `pi-ai`'s `estimateTextTokens`, never a tokenizer (characters
   are the decoded text's JS string length, UTF-16 code units, the same count pi makes) — so the
   card says what a file costs before it is sent, marked `≈` because a model's real count differs,
   and the note under each section says what the mark means: "Token counts are estimates: 4
   characters per token." That note appears **exactly when the section shows token figures**, and a
-  figure that isn't there is dropped rather than zeroed: a server that sends no estimate gets bytes
-  and lines, never `≈0 tokens` for a file nobody counted.
+  figure that isn't there is dropped rather than zeroed: a row the server sent no estimate for shows
+  no figure at all (never its size, never `≈0 tokens` for a file nobody counted), and a total
+  without estimates keeps bytes and lines.
 
 ## §chat.transcript/setup-card-toggles — Setup card: switching context files and skills off
 
@@ -1245,7 +1249,7 @@ skills it is offered, for this one session only.
 ```html
 <li class="setup-row setup-row-off" title="/home/user/.pi/agent/AGENTS.md">
   <span class="setup-name"><span class="setup-path">~/.pi/agent/AGENTS.md</span></span>
-  <span class="setup-facts">2.1 KB · 48 lines · ≈530 tokens</span>
+  <span class="setup-facts">≈530 tokens</span>
   <label class="toggle toggle-switch setup-toggle">
     <input type="checkbox" aria-label="Load ~/.pi/agent/AGENTS.md" />   <!-- unchecked: off -->
     <span class="toggle-box" />

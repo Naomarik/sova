@@ -33,12 +33,10 @@ export function tokenFacts(tokens: number): string {
     ≈ is never read as a measurement. */
 export const TOKEN_NOTE = `Token counts are estimates: ${CHARS_PER_TOKEN} characters per token.`;
 
-/** The figures a file row carries: "4.2 KB · 120 lines · ≈4.1k tokens". The token estimate is
-    dropped, not zeroed, when there is none to show — the rule the repository's own rows follow. */
+/** The one figure a file row carries: "≈4.1k tokens". Size and lines are the totals' business, not
+    a row's; a row with no estimate shows nothing rather than falling back to its size. */
 export function fileFacts(f: SessionSetupFile): string {
-  const facts = [sizeLabel(f.bytes), linesLabel(f.lines)];
-  if (typeof f.tokens === "number") facts.push(tokenFacts(f.tokens));
-  return facts.join(" · ");
+  return typeof f.tokens === "number" ? tokenFacts(f.tokens) : "";
 }
 
 /** Whether a figure carries a token estimate at all — what decides whether the section says what the
@@ -109,8 +107,8 @@ function sumFiles(files: readonly SessionSetupFile[]): LoadoutSum {
   };
 }
 
-/** The figures an aggregate line carries: "40 KB · 1,940 lines · ≈9.7k tokens" — the same figures,
-    in the same order, as one file row, so the totals and the rows read as one column of numbers. */
+/** The figures an aggregate line carries: "40 KB · 1,940 lines · ≈9.7k tokens" — the token estimate
+    last, where a file row shows its own and only figure, so the two read as one column. */
 export function sumFacts(s: LoadoutSum): string {
   const facts = [sizeLabel(s.bytes), linesLabel(s.lines)];
   if (s.tokens !== null) facts.push(tokenFacts(s.tokens));

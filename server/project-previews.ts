@@ -240,10 +240,14 @@ export async function rebindStaticPreviews(now = Date.now()): Promise<{ bound: s
   return { bound, failed };
 }
 
-/** Stop serving folders of previews that are no longer active (expired, turned off elsewhere, gone). */
+/**
+ * Stop serving folders of previews that are no longer active (expired, turned off elsewhere, gone).
+ * Only a preview's own serve (`pv_…`): a copy's static service (served under its unit name) and a
+ * preview being staged are never its to stop.
+ */
 export async function sweepStaticPreviews(now = Date.now()): Promise<void> {
   for (const s of staticServes()) {
-    if (s.id.startsWith("staging-")) continue;
+    if (!s.id.startsWith("pv_")) continue;
     const v = listPreviews({}, now).find((x) => x.id === s.id);
     if (!v || v.state !== "active") await stopStaticServe(s.id).catch(() => false);
   }

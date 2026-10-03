@@ -13,7 +13,7 @@ process.env.PI_CODING_AGENT_DIR = dir;
 process.env.PORT = "0";
 const { app, server } = await import("./index");
 const { canonicalPath } = await import("./paths");
-const { FORK_CACHE_ENTRY } = await import("./session-fork-cache");
+const { FORK_CACHE_ENTRY } = await import("../pi-config/extensions/subagents/fork/cache.ts");
 const { acquireChat, disposeAllChats } = await import("./chat-manager");
 
 const sessionsDir = join(dir, "sessions", "--tmp-fork-routes--");

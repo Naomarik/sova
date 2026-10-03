@@ -1,19 +1,21 @@
 /**
- * Offline tests for the explain child's cache mirror, the call gate, the fork copy and the
- * interrupted-run reconcile. The prompt mirror is checked against pi's OWN section builder
- * (`dist/core/system-prompt.js` of the pi the harness resolves), so "the diff is empty" is pi's
- * verdict, not ours. Run with `node tests/run.mjs`.
+ * Offline tests for a background fork's request mirror, its call gate and policies, and the fork
+ * copy. The prompt mirror is checked against pi's OWN section builder (`dist/core/system-prompt.js`
+ * of the pi the harness resolves), so "the diff is empty" is pi's verdict, not ours. Run with the
+ * subagents runner (`node tests/run.mjs`).
  */
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
-import { jiti, packageDir } from "./tests/runtime.mjs";
-import { ExplainRuns, FORK_DIR, type ExplainHost } from "./explain.ts";
+import { jiti, packageDir } from "../tests/runtime.mjs";
+import { copyForFork, forkable, sweepStale } from "./copy.ts";
 import {
 	applyMirror,
+	callable,
 	declaredState,
+	decodePolicy,
 	gateToolCall,
 	mirrorPrompt,
 	readOnlyShellCommand,
@@ -21,11 +23,14 @@ import {
 	planTools,
 	sameDeclaration,
 	withoutBtwNotes,
-	withParentCacheKey,
+	type ForkPolicy,
 	type ToolDeclaration,
 } from "./mirror.ts";
-import { EXPLAIN_ENTRY_TYPE, INTERRUPTED_NO_PAGE, INTERRUPTED_WITH_PAGE, runningEntryData, storeDir, writeMeta, type ExplainEntryData, type KnownMeta } from "./store.ts";
-import { copyForFork } from "./worker.ts";
+
+/** /explain's policy: web, and writes into its store only. */
+const storePolicy = (writeDir: string): ForkPolicy => ({ label: "The /explain worker", web: true, writeDir, writeHint: "Write index.html and meta.json there; nothing else on disk." });
+/** A read-only fork (the handoff writer's shape): no web, no writes. */
+const readOnly: ForkPolicy = { label: "The handoff writer" };
 
 const pi = (await jiti.import(join(packageDir, "dist/core/system-prompt.js"))) as {
 	buildSystemPromptSections(input: Record<string, unknown>): Record<string, string>;
@@ -34,7 +39,7 @@ const pi = (await jiti.import(join(packageDir, "dist/core/system-prompt.js"))) a
 };
 
 function tmp(): string {
-	return mkdtempSync(join(tmpdir(), "explain-mirror-"));
+	return mkdtempSync(join(tmpdir(), "fork-mirror-"));
 }
 
 const tool = (name: string, description = `${name} tool`): ToolDeclaration => ({
@@ -101,7 +106,7 @@ test("planTools keeps every declared tool, in order, and only callable ones can 
 		["web_search", tool("web_search")],
 		["ls", tool("ls")],
 	]);
-	const plan = planTools(declared, own, new Set(["read", "grep", "find", "ls", "write", "edit"]));
+	const plan = planTools(declared, own, new Set(["read", "grep", "find", "ls", "write", "edit"]), storePolicy("/s"));
 	assert.deepEqual(
 		plan.map((entry) => [entry.name, entry.action]),
 		[["read", "own"], ["bash", "own"], ["grep", "wrap"], ["agent_spawn", "stub"], ["write", "own"], ["web_search", "own"]],
@@ -110,11 +115,26 @@ test("planTools keeps every declared tool, in order, and only callable ones can 
 	assert.equal(plan.some((entry) => entry.name === "ls"), false, "a tool the parent never declared is not added: it would change the prefix");
 
 	// A parent in strict mode has no write: the child adds it, at the end (additive).
-	const strict = planTools([tool("read"), tool("bash")], own, new Set(["read", "write"]));
+	const strict = planTools([tool("read"), tool("bash")], own, new Set(["read", "write"]), storePolicy("/s"));
 	assert.deepEqual(strict.map((entry) => [entry.name, entry.action]), [["read", "own"], ["bash", "own"], ["write", "own"]]);
 
 	// Unforked: nothing to mirror, the callable tools the child has.
-	assert.deepEqual(planTools(undefined, own, new Set()).map((entry) => entry.name), ["read", "grep", "ls", "write", "web_search"]);
+	assert.deepEqual(planTools(undefined, own, new Set(), storePolicy("/s")).map((entry) => entry.name), ["read", "grep", "ls", "write", "web_search"]);
+});
+
+test("a read-only policy stubs writes and web tools, adds no write, and declares the parent's tools all the same", () => {
+	const declared = [tool("read"), tool("bash"), tool("edit"), tool("write"), tool("web_search"), tool("agent_spawn")];
+	const own = new Map<string, ToolDeclaration>(["read", "bash", "edit", "write", "web_search", "grep", "ls"].map((name) => [name, tool(name)]));
+	const plan = planTools(declared, own, new Set(["read", "edit", "write", "bash"]), readOnly);
+	assert.deepEqual(
+		plan.map((entry) => [entry.name, entry.action]),
+		[["read", "own"], ["bash", "own"], ["edit", "stub"], ["write", "stub"], ["web_search", "stub"], ["agent_spawn", "stub"]],
+		"the declared set and order are the parent's: the prefix is unchanged",
+	);
+	assert.deepEqual(planTools([tool("bash")], own, new Set(), readOnly).map((entry) => entry.name), ["bash", "read"], "only read is required");
+	assert.deepEqual(planTools(undefined, own, new Set(), readOnly).map((entry) => entry.name), ["read", "grep", "ls"], "unforked: reading tools only");
+	for (const name of ["read", "grep", "find", "ls", "bash"]) assert.equal(callable(name, readOnly), true, name);
+	for (const name of ["write", "edit", "web_search", "fetch_content", "agent_spawn"]) assert.equal(callable(name, readOnly), false, name);
 });
 
 test("sameDeclaration is pi-ai's comparison: key order and typebox symbols do not matter, words do", () => {
@@ -126,17 +146,45 @@ test("sameDeclaration is pi-ai's comparison: key order and typebox symbols do no
 
 test("the gate lets the child read, look things up, and write only inside its store", () => {
 	const store = "/agent/explanations/x-1";
+	const policy = storePolicy(store);
 	const at = (...parts: string[]) => resolve("/repo", ...parts);
-	for (const name of ["read", "grep", "find", "ls", "web_search", "fetch_content"]) assert.equal(gateToolCall(name, { path: "/etc/passwd" }, store, at), undefined, name);
-	assert.equal(gateToolCall("write", { path: `${store}/index.html` }, store, at), undefined);
-	assert.equal(gateToolCall("edit", { path: `${store}/meta.json` }, store, at), undefined);
-	assert.match(gateToolCall("write", { path: "src/app.ts" }, store, at) ?? "", /writes only inside/);
-	assert.match(gateToolCall("write", { path: `${store}/../x-2/index.html` }, store, at) ?? "", /writes only inside/, "no escape by ..");
-	assert.match(gateToolCall("write", { path: `${store}-evil/index.html` }, store, at) ?? "", /writes only inside/, "a sibling with the same prefix is outside");
-	assert.match(gateToolCall("write", {}, store, at) ?? "", /writes only inside/);
-	for (const name of ["agent_spawn", "worktree", "powershell"]) assert.match(gateToolCall(name, { command: "ls" }, store, at) ?? "", /read-only/, name);
-	assert.equal(gateToolCall("bash", { command: "rg -n 'forkFrom|fork' pi-config | head -20" }, store, at), undefined);
-	assert.match(gateToolCall("bash", { command: "rm -rf /" }, store, at) ?? "", /read-only command line/);
+	for (const name of ["read", "grep", "find", "ls", "web_search", "fetch_content"]) assert.equal(gateToolCall(name, { path: "/etc/passwd" }, policy, at), undefined, name);
+	assert.equal(gateToolCall("write", { path: `${store}/index.html` }, policy, at), undefined);
+	assert.equal(gateToolCall("edit", { path: `${store}/meta.json` }, policy, at), undefined);
+	assert.equal(
+		gateToolCall("write", { path: "src/app.ts" }, policy, at),
+		`The /explain worker writes only inside ${store}. Write index.html and meta.json there; nothing else on disk.`,
+	);
+	assert.match(gateToolCall("write", { path: `${store}/../x-2/index.html` }, policy, at) ?? "", /writes only inside/, "no escape by ..");
+	assert.match(gateToolCall("write", { path: `${store}-evil/index.html` }, policy, at) ?? "", /writes only inside/, "a sibling with the same prefix is outside");
+	assert.match(gateToolCall("write", {}, policy, at) ?? "", /writes only inside/);
+	for (const name of ["agent_spawn", "worktree", "powershell"]) assert.match(gateToolCall(name, { command: "ls" }, policy, at) ?? "", /read-only/, name);
+	assert.equal(
+		gateToolCall("agent_spawn", {}, policy, at),
+		`The /explain worker is read-only: "agent_spawn" is not available here. Research with read (and grep, find, ls, or read-only bash, whichever you have), and write only inside ${store}.`,
+	);
+	assert.equal(gateToolCall("bash", { command: "rg -n 'forkFrom|fork' pi-config | head -20" }, policy, at), undefined);
+	assert.match(gateToolCall("bash", { command: "rm -rf /" }, policy, at) ?? "", /^The \/explain worker runs bash only for one read-only command line/);
+});
+
+test("a read-only policy reads and runs read-only bash, and writes nothing and reaches no web anywhere", () => {
+	const at = (...parts: string[]) => resolve("/repo", ...parts);
+	for (const name of ["read", "grep", "find", "ls"]) assert.equal(gateToolCall(name, { path: "/etc/passwd" }, readOnly, at), undefined, name);
+	assert.equal(gateToolCall("bash", { command: "git log --oneline -5" }, readOnly, at), undefined);
+	assert.match(gateToolCall("bash", { command: "echo x > notes.md" }, readOnly, at) ?? "", /^The handoff writer runs bash only for one read-only command line/);
+	for (const name of ["write", "edit"]) {
+		const why = gateToolCall(name, { path: "/repo/notes.md" }, readOnly, at);
+		assert.equal(why, `The handoff writer is read-only: "${name}" is not available here. Research with read (and grep, find, ls, or read-only bash, whichever you have); it writes nothing on disk.`);
+	}
+	for (const name of ["web_search", "fetch_content", "get_search_content", "source_check", "agent_spawn"]) assert.match(gateToolCall(name, {}, readOnly, at) ?? "", /is read-only/, name);
+});
+
+test("a policy travels as JSON and anything that is not one is refused", () => {
+	assert.deepEqual(decodePolicy(JSON.stringify(storePolicy("/s"))), storePolicy("/s"));
+	assert.deepEqual(decodePolicy(JSON.stringify(readOnly)), readOnly);
+	assert.deepEqual(decodePolicy(JSON.stringify({ label: "x", web: "yes", writeDir: "/d" })), { label: "x", writeDir: "/d" }, "only a literal true turns the web on");
+	for (const raw of [undefined, "", "  ", "{", "[]", "null", JSON.stringify({}), JSON.stringify({ label: "" }), JSON.stringify({ label: "x", writeDir: "" }), JSON.stringify({ label: "x", writeDir: 1 })])
+		assert.equal(decodePolicy(raw), undefined, String(raw));
 });
 
 test("bash runs only one read-only command line: listed programs, pipes, quotes; nothing that writes or chains", () => {
@@ -181,13 +229,6 @@ test("btw notes are dropped like the parent's btw extension drops them; other me
 	assert.equal(withoutBtwNotes([{ role: "user" }]), undefined, "no change, no replacement");
 });
 
-test("the provider cache key is the parent's, and only when pi set it to the child's own session", () => {
-	assert.deepEqual(withParentCacheKey({ model: "m", prompt_cache_key: "child" }, "child", "parent"), { model: "m", prompt_cache_key: "parent" });
-	assert.equal(withParentCacheKey({ model: "m" }, "child", "parent"), undefined);
-	assert.equal(withParentCacheKey({ prompt_cache_key: "other" }, "child", "parent"), undefined);
-	assert.equal(withParentCacheKey({ prompt_cache_key: "child" }, "child", undefined), undefined);
-});
-
 test("the fork copy is cut after the last complete line: a parent mid-append is never written to", () => {
 	const root = tmp();
 	try {
@@ -206,97 +247,35 @@ test("the fork copy is cut after the last complete line: a parent mid-append is 
 	}
 });
 
-function harness(env: NodeJS.ProcessEnv) {
-	const entries: ExplainEntryData[] = [];
-	const started: { spec: any; settle: (r: any) => void }[] = [];
-	const host: ExplainHost = {
-		env,
-		now: () => Date.parse("2026-09-28T10:00:00.000Z"),
-		appendEntry: (data) => entries.push(data),
-		notify: () => {},
-		wake: () => {},
-		start: (spec, handlers) => {
-			started.push({ spec, settle: handlers.onSettled });
-			return { kill: async () => {} };
-		},
-	};
-	return { runs: new ExplainRuns(host), entries, started };
-}
-
-const known = (id: string): KnownMeta => ({ id, topic: `topic ${id}`, parentSessionId: "sess-1", cwd: "/repo", createdAt: "2026-09-28T09:00:00.000Z", model: "zai/glm-5.3" });
-
-test("reconcile settles leftover running entries as interrupted: linked when the page is there, not otherwise", () => {
+test("a parent is forkable only once it holds a message; anything unreadable is not", () => {
 	const root = tmp();
-	const env = { PI_AGENT_DIR: root } as NodeJS.ProcessEnv;
 	try {
-		const { runs, entries } = harness(env);
-		// "paged": the child finished its page right before the kill. "blank": it never wrote one.
-		const paged = storeDir("paged-1", env);
-		mkdirSync(paged, { recursive: true });
-		writeFileSync(join(paged, "index.html"), "<!doctype html><h1>t</h1><p>Explained by x</p>");
-		writeMeta(paged, { ...known("paged-1"), summary: "What the page says." });
-		mkdirSync(storeDir("blank-1", env), { recursive: true });
-		const branch: ExplainEntryData[] = [
-			runningEntryData(known("paged-1")),
-			runningEntryData(known("blank-1")),
-			runningEntryData(known("done-1")),
-			{ ...runningEntryData(known("done-1")), status: undefined, summary: "finished" },
-			runningEntryData(known("gone-1")),
-		];
-		assert.equal(runs.reconcile(branch), 3);
-		assert.deepEqual(entries.map((e) => [e.id, e.status, e.note ?? null, e.error ?? null]), [
-			["paged-1", "interrupted", INTERRUPTED_WITH_PAGE, null],
-			["blank-1", "interrupted", null, INTERRUPTED_NO_PAGE],
-			["gone-1", "interrupted", null, INTERRUPTED_NO_PAGE],
-		]);
-		assert.equal(entries[0]!.summary, "What the page says.", "the store's summary, for the card");
-		assert.equal(runs.reconcile([...branch, ...entries]), 0, "settled entries stay settled");
+		const file = join(root, "s.jsonl");
+		writeFileSync(file, '{"type":"session"}\n');
+		assert.equal(forkable(file), false, "a header alone forks into an empty child");
+		writeFileSync(file, `{"type":"session"}\n${"x".repeat(70 * 1024 - 3)}{"type":"message","id":"a"}\n`);
+		assert.equal(forkable(file), true, "found across a chunk boundary");
+		assert.equal(forkable(join(root, "missing.jsonl")), false);
+		assert.equal(forkable(root), false);
+		assert.equal(forkable(undefined), false);
 	} finally {
 		rmSync(root, { recursive: true, force: true });
 	}
 });
 
-test("reconcile leaves a run this process is still running alone", () => {
+test("sweepStale removes what a dead parent left, past the age limit, and keeps the live runs", () => {
 	const root = tmp();
-	const env = { PI_AGENT_DIR: root } as NodeJS.ProcessEnv;
 	try {
-		const { runs, entries } = harness(env);
-		runs.begin({ topic: "live one", cwd: "/repo", parentSessionId: "sess-1", model: "m" });
-		const running = entries[0]!;
-		assert.equal(running.status, "running");
-		assert.equal(runs.reconcile([running]), 0);
-		assert.equal(entries.length, 1);
+		for (const name of ["old.jsonl", "live.jsonl", "fresh.jsonl"]) writeFileSync(join(root, name), "x");
+		mkdirSync(join(root, "old-dir"));
+		writeFileSync(join(root, "old-dir", "s.jsonl"), "x");
+		sweepStale(root, 60_000, Date.now(), (name) => name === "live.jsonl");
+		assert.deepEqual(readdirSync(root).sort(), ["fresh.jsonl", "live.jsonl", "old-dir", "old.jsonl"], "nothing is old yet");
+		const now = Date.now() + 120_000;
+		sweepStale(root, 60_000, now, (name) => name === "live.jsonl");
+		assert.deepEqual(readdirSync(root).sort(), ["live.jsonl"], "files and session dirs alike");
+		sweepStale(join(root, "missing"), 0, now);
 	} finally {
 		rmSync(root, { recursive: true, force: true });
 	}
-});
-
-test("a forked run's session copy is deleted when it settles and when it is stopped", async () => {
-	const root = tmp();
-	const env = { PI_AGENT_DIR: root } as NodeJS.ProcessEnv;
-	try {
-		const parent = join(root, "parent.jsonl");
-		writeFileSync(parent, '{"type":"session"}\n{"type":"message","message":{"role":"user"}}\n');
-		const { runs, started } = harness(env);
-		runs.begin({ topic: "a", cwd: "/repo", parentSessionId: "sess-1", parentSessionFile: parent, model: "m" });
-		runs.begin({ topic: "b", cwd: "/repo", parentSessionId: "sess-1", parentSessionFile: parent, model: "m" });
-		const [a, b] = started.map((s) => s.spec.forkSession as string);
-		assert.ok(a!.startsWith(join(root, "explanations", FORK_DIR)) && readFileSync(a!, "utf8").length > 0);
-		started[0]!.settle({ outcome: "error", error: "x", finalOutput: "" });
-		assert.throws(() => readFileSync(a!), /ENOENT/);
-		await runs.stopAll();
-		assert.throws(() => readFileSync(b!), /ENOENT/);
-		assert.equal(EXPLAIN_ENTRY_TYPE, "explain-doc");
-	} finally {
-		rmSync(root, { recursive: true, force: true });
-	}
-});
-
-test("the prompt names the search tools the child actually has", async () => {
-	const { searchTools } = await import("./prompt.ts");
-	assert.equal(searchTools({ forked: false }), "read/grep/find/ls", "unforked: the child's own tools");
-	assert.equal(searchTools({ forked: true, parentTools: ["read", "grep", "find", "ls", "bash"] }), "read/grep/find/ls");
-	const shell = searchTools({ forked: true, parentTools: ["read", "bash", "edit", "write", "agent_spawn"] });
-	assert.ok(shell.startsWith("read, and `bash` for ONE read-only command line"), shell);
-	assert.equal(searchTools({ forked: true, parentTools: ["read", "write"] }), "read");
 });

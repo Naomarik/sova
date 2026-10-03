@@ -1023,7 +1023,7 @@ await commands.get("mode").handler("normal", ctx);
 	const worker = load(true);
 	for (const fn of worker.hooks.get("session_start")) await fn({ reason: "startup" }, worker.ctx);
 	assert.equal(worker.wStore.status.get("mode"), "<accent>normal · spec</accent>", "the copied snapshot is ignored: normal, spec, not strict");
-	assert.deepEqual(worker.getTools(), ["read", "bash", "edit", "write", "grep", "spec_assess"], "strict never strips a worker's edit/write; spec adds its assessment tool");
+	assert.deepEqual(worker.getTools(), ["read", "bash", "edit", "write", "grep"], "strict never strips a worker's edit/write");
 	const block = (await worker.hooks.get("before_agent_start")[0]({ systemPrompt: "base" }, worker.ctx)).systemPrompt;
 	assert.equal(block, `base\n\n${composeWorkerPrompt({ minorModes: ["spec"] })}`, "the worker form, with no writer paragraph although one is set");
 	// The full worktree-config mode extension appends the supplied parent ledger, not just spec-worker.ts.

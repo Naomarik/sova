@@ -7,19 +7,18 @@ import {
 	agentDir,
 	ago,
 	type BranchEntry,
-	captureHandoff,
 	extractHandoff,
+	forkTask,
 	HANDOFF_ENTRY,
 	handoffPath,
 	latestHandoff,
 	noteInKeptTail,
-	REQUEST_MESSAGE,
-	requestInstruction,
 	restoreText,
+	runsRoot,
 	writeNoteFile,
 } from "./handoff.ts";
+import { readRunData, runLine, stillRunning } from "./run.ts";
 
-const request = (id: string, entryId = `req-${id}`): BranchEntry => ({ type: "custom_message", id: entryId, customType: REQUEST_MESSAGE, details: { v: 1, id } });
 const reply = (entryId: string, text: string, stopReason = "stop"): BranchEntry => ({
 	type: "message", id: entryId, message: { role: "assistant", stopReason, content: [{ type: "thinking", thinking: "<handoff>thought</handoff>" }, { type: "text", text }] },
 });
@@ -32,26 +31,6 @@ test("extractHandoff takes the last non-empty block, trimmed", () => {
 	assert.equal(extractHandoff("no block"), undefined);
 	assert.equal(extractHandoff("<handoff>  </handoff>"), undefined);
 	assert.equal(extractHandoff("a <handoff>\nfirst\n</handoff> b <handoff>second</handoff> <handoff> </handoff>"), "second");
-});
-
-test("captureHandoff: the newest block across replies after the request, thinking ignored", () => {
-	const branch = [
-		reply("old", "<handoff>from before the request</handoff>"),
-		request("r1"),
-		reply("a1", "Saved the plan.\n<handoff>first draft</handoff>"),
-		user("u1", "spec check follow-up"),
-		reply("a2", "Also changes: none\n<handoff>final note</handoff>"),
-		reply("a3", "nothing more"),
-	];
-	assert.deepEqual(captureHandoff(branch, "r1"), { kind: "note", note: "final note" });
-	// Only replies after the request count, and the request must be ours.
-	assert.deepEqual(captureHandoff([reply("old", "<handoff>x</handoff>"), request("r1"), reply("a1", "none")], "r1"), { kind: "no-note" });
-	assert.deepEqual(captureHandoff(branch, "other"), { kind: "missing" });
-});
-
-test("captureHandoff: a stopped or failed last reply yields no note, even after an earlier block", () => {
-	assert.deepEqual(captureHandoff([request("r"), reply("a1", "<handoff>n</handoff>"), reply("a2", "partial", "aborted")], "r"), { kind: "stopped" });
-	assert.equal(captureHandoff([request("r"), reply("a1", "<handoff>n</handoff>", "error")], "r").kind, "failed");
 });
 
 test("handoffPath stays under <agent dir>/compact-handoffs and refuses ids that could leave it", () => {
@@ -115,10 +94,37 @@ test("ago", () => {
 	assert.equal(ago(0, 2 * 86_400_000), "2 days ago");
 });
 
-test("the instruction asks for durable writes and a <handoff> block, with the focus when given", () => {
-	const plain = requestInstruction("");
-	assert.match(plain, /Persist anything durable/);
+test("the fork's task: read-only, everything durable in the note, a <handoff> block, the focus when given", () => {
+	const plain = forkTask("");
+	assert.match(plain, /read-only copy of the session/);
+	assert.match(plain, /cannot write anything/);
+	assert.match(plain, /Anything durable .* goes in the note/);
+	assert.doesNotMatch(plain, /Persist anything durable/);
 	assert.match(plain, /<handoff>…<\/handoff>/);
 	assert.doesNotMatch(plain, /focus/);
-	assert.match(requestInstruction("keep the API decisions"), /focus for this handoff and the summary: keep the API decisions/);
+	assert.match(forkTask("keep the API decisions"), /focus for this handoff and the summary: keep the API decisions/);
+});
+
+test("runsRoot sits beside the notes under a dot name no session id can take", () => {
+	assert.equal(runsRoot("/agent"), path.join("/agent", "compact-handoffs", ".runs"));
+	assert.throws(() => handoffPath("/agent", ".runs"), /Unusable session id/);
+});
+
+test("run rows: strict read, the ids still running (newest per id), and their one line", () => {
+	const row = (id: string, data: unknown): BranchEntry => ({ type: "custom", id, customType: "compact-handoff-run", data });
+	const at = "2026-10-03T10:00:00.000Z";
+	assert.equal(readRunData({ v: 1, id: "r", status: "done", at }), undefined);
+	assert.equal(readRunData({ v: 2, id: "r", status: "running", at }), undefined);
+	assert.deepEqual(readRunData({ v: 1, id: "r", status: "saved", at, path: "/p", error: "" }), { v: 1, id: "r", status: "saved", at, path: "/p" });
+	const branch = [
+		row("e1", { v: 1, id: "a", status: "running", at }),
+		row("e2", { v: 1, id: "b", status: "running", at, focus: "f" }),
+		row("e3", { v: 1, id: "a", status: "saved", at, path: "/p" }),
+		row("e4", { v: 1, id: "c", status: "running", at }),
+		row("e5", { v: 1, id: "c", status: "failed", at, error: "x" }),
+	];
+	assert.deepEqual(stillRunning(branch).map((d) => d.id), ["b"]);
+	assert.equal(runLine({ v: 1, id: "b", status: "running", at, focus: "f" }), "Writing a handoff note: f");
+	assert.equal(runLine({ v: 1, id: "a", status: "saved", at, path: "/p" }), "Handoff note saved: /p");
+	assert.equal(runLine({ v: 1, id: "c", status: "failed", at, error: "x" }), "Handoff note failed: x");
 });

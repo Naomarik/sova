@@ -72,6 +72,17 @@
       (is (= "A coding session starts only in a turn the operator started: ask with sova_card."
              (refused (core/send! eng psid :build/start {:by "overseer" :autonomy "L3" :session-id "c9"} {:now (+ t0 3)}) :build/start))
           "an unattended build is refused at every level"))
+    (testing "sharing a running copy: held unattended at L1, at once in the operator's run, never above the level"
+      (let [share {:by "overseer" :verb "share" :instance "in_1" :endpoint "web.3000" :branch "sova/pay-3f9a1c" :overseer-id "po1"}]
+        (is (re-find #"sova_project_verbs needs L1" (refused (core/send! eng psid :services/share (assoc share :autonomy "L0") {:now (+ t0 2)}) :services/share)))
+        (let [r (core/send! eng psid :services/share (assoc share :autonomy "L1" :confirm-kinds ["preview"]) {:now (+ t0 2)})
+              h (first (filter #(= ":services/share" (str (:event %))) (core/holds eng)))]
+          (is (some? (:held (first (filter #(= :services/share (:event %)) (:steps r))))) "held")
+          (is (= "A preview link: web.3000 of a running copy (sova/pay-3f9a1c)" (:what h)))
+          (is (true? (:confirm h)) "confirm kind preview")
+          (core/send! eng psid :hold/cancel {:by "operator" :id (:id h)} {:now (+ t0 2)}))
+        (let [r (core/send! eng psid :services/share (assoc share :autonomy "L0" :attended true) {:now (+ t0 2)})]
+          (is (nil? (:held (first (filter #(= :services/share (:event %)) (:steps r))))) "the operator's run goes at once"))))
     (testing "an attended build: a worktree, a merge, and the project knows it"
       (core/send! eng psid :build/start (assoc att :autonomy "L3" :session-id "c1" :title "Pay" :prompt "Build it") {:now (+ t0 4)})
       (let [bs "build/pr1/c1"]

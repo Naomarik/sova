@@ -3,6 +3,8 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, statSync, w
 import { dirname, join } from "node:path";
 import { FORBIDDEN_PREVIEW_PORTS, PREVIEW_DAYS_DEFAULT, PREVIEW_DAYS_MAX, PREVIEW_LABEL_RE } from "../shared/public-links";
 import type { PreviewErrorCode, PreviewState, PreviewView } from "../shared/preview-links";
+import { SHARE_DAYS_MAX } from "../shared/project-contract";
+import { keptPreview } from "./preview-kept";
 import { shareLinksChanged } from "./share/links-events";
 import { stateRoot } from "./state-root";
 
@@ -293,6 +295,9 @@ export function mintPreview(input: MintInput, sovaPorts: ReadonlySet<number>, no
   const projectId = checkProject(input.projectId);
   const port = checkPort(input.port, sovaPorts);
   const days = checkDays(input.days);
+  const createdBy = input.createdBy ?? "operator";
+  // The file is strict: a record it would refuse is never written (it would serve no preview at all).
+  if (!(createdBy === "operator" || /^session:[A-Za-z0-9_.-]{1,128}$/.test(createdBy))) throw new PreviewRefused("bad-project", "A preview is made by the operator or a session.");
   const store = read();
   const label = newPreviewLabel();
   const record: PreviewRecord = {
@@ -302,7 +307,7 @@ export function mintPreview(input: MintInput, sovaPorts: ReadonlySet<number>, no
     port,
     createdAt: iso(now),
     expiresAt: iso(now + days * DAY_MS),
-    createdBy: input.createdBy ?? "operator",
+    createdBy,
   };
   store.links.push(record);
   write(store);
@@ -326,17 +331,31 @@ export function revokePreview(id: string, now = Date.now()): PreviewRecord | nul
   return r;
 }
 
-/** Move an active one's expiry to `days` from now. */
+/** Move an active one's expiry to `days` from now (a running copy's link, §app.project-services/share: at most 7). */
 export function extendPreview(id: string, days: unknown, now = Date.now()): PreviewRecord | null {
   const d = checkDays(days);
   const store = read();
   const r = store.links.find((l) => l.id === id);
   if (!r) return null;
   if (previewState(r, now) !== "active") throw new PreviewRefused("bad-days", "Only an active preview can be extended.");
+  if (!r.siblingOf && keptPreview(r.id)?.target.kind === "instance" && d > SHARE_DAYS_MAX) throw new PreviewRefused("bad-days", `A running copy's link lasts 1 to ${SHARE_DAYS_MAX} days.`);
   // A sibling never outlives the preview it copies.
   const parent = r.siblingOf ? store.links.find((l) => l.id === r.siblingOf) : undefined;
   const want = now + d * DAY_MS;
   r.expiresAt = iso(parent ? Math.min(want, Date.parse(parent.expiresAt)) : want);
+  write(store);
+  shareLinksChanged({ kind: "p", cause: "renew" });
+  return r;
+}
+
+/** A shared copy's link shared again (§app.project-services/share): its expiry moves to the later of its own and `days` from now. */
+export function renewPreview(id: string, days: number, now = Date.now()): PreviewRecord | null {
+  const store = read();
+  const r = store.links.find((l) => l.id === id);
+  if (!r || previewState(r, now) !== "active") return null;
+  const want = now + days * DAY_MS;
+  if (want <= Date.parse(r.expiresAt)) return r;
+  r.expiresAt = iso(want);
   write(store);
   shareLinksChanged({ kind: "p", cause: "renew" });
   return r;

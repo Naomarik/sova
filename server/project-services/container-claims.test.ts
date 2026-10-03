@@ -117,7 +117,7 @@ test("a port its own container publishes is the instance's own, whoever listens;
   assert.deepEqual(doc.checks?.find((c) => c.id === "port:box.http"), { id: "port:box.http", ok: true, detail: `${port} held by its own container tbox-1` });
   published.delete("tbox-1");
   const lost = await engine.portClaim(recOf(a.instance), def(), "box", port);
-  assert.deepEqual(lost, { held: true, own: false, who: "a process this user can't read" }, "the listener alone proves nothing");
+  assert.deepEqual(lost, { held: true, own: false, who: "a process this user can't read", unreadable: true }, "the listener alone proves nothing");
   assert.equal((await engine.run("doctor", { instance: a.instance }, op)).checks?.find((c) => c.id === "port:box.http")?.ok, false);
 });
 

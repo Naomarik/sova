@@ -79,3 +79,16 @@ test("explainCaption reads '<when> · <model>', dropping the provider and an abs
   assert.equal(explainCaption({ createdAt, model: "" }, now), "2h ago", "an empty model reads as absent");
 });
 
+
+const handoffRow = (rowId: string, runId: string, status: "running" | "saved" = "saved"): TranscriptItem => ({
+  id: rowId,
+  kind: "info",
+  raw: {},
+  handoffRun: { id: runId, status },
+});
+
+test("appendItems: a /compact-handoff result row replaces its running row in place; an explain row with the same id does not", () => {
+  const next = appendItems([handoffRow("h1", "x", "running"), row("a"), explainRow("e1", "x", "running")], [handoffRow("h2", "x")]);
+  assert.deepEqual(ids(next), ["h2", "a", "e1"]);
+  assert.equal(next[0]!.handoffRun!.status, "saved");
+});

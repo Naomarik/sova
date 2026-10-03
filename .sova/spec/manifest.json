@@ -1171,7 +1171,8 @@
         "src/components/WatchView.tsx",
         "server/watch.ts",
         "src/lib/older-rows-view.ts",
-        "server/transcript-rows.ts"
+        "server/transcript-rows.ts",
+        "src/components/Thread.tsx"
       ]
     },
     "§chat.transcript/message-actions": {
@@ -1644,7 +1645,11 @@
     "§chat.transcript/setup-card-figures": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified"
+      "evidence": "verified",
+      "code": [
+        "src/lib/session-setup.ts",
+        "src/lib/session-setup.test.ts"
+      ]
     },
     "§chat.transcript/setup-card": {
       "kind": "behavior",
@@ -2970,7 +2975,8 @@
         "server/profile-sources.ts",
         "server/archive-worktrees.ts",
         "server/archive-worktrees.test.ts",
-        "server/project-services/tools.ts"
+        "server/project-services/tools.ts",
+        "server/project-services/checkout-teardown.ts"
       ],
       "requires": [
         "§app.overseer/caps",
@@ -4423,7 +4429,13 @@
         "server/org-envelope.test.ts",
         "server/org-stamp.ts",
         "server/org-stamp.test.ts",
-        "statecharts/src/sova/statecharts/proj.cljc"
+        "statecharts/src/sova/statecharts/proj.cljc",
+        "server/project-overseer-prompt.md",
+        "server/project-overseer-tools-statecharts.test.ts",
+        "statecharts/test/sova/statecharts/refit/acts_golden.cljs",
+        "statecharts/test/sova/statecharts/refit/registry_test.cljs",
+        "statecharts/test/sova/statecharts/refit/general_projects_test.cljs",
+        "server/vendor/statecharts.js"
       ],
       "requires": [
         "§app.project-overseer/tools"
@@ -4513,7 +4525,8 @@
         "server/outreach/log.ts",
         "server/outreach.test.ts",
         "statecharts/src/sova/statecharts/proj.cljc",
-        "server/project-services/tools.ts"
+        "server/project-services/tools.ts",
+        "server/vendor/statecharts.js"
       ],
       "requires": [
         "§app.baton/goal-and-loadout",
@@ -5227,7 +5240,11 @@
         "statecharts/src/sova/statecharts/baton.cljc",
         "statecharts/src/sova/statecharts/build.cljc",
         "statecharts/test/sova/statecharts/refit/started_test.cljc",
-        "server/org-started.test.ts"
+        "server/org-started.test.ts",
+        "server/project-services/checkout-teardown.ts",
+        "server/project-services/checkout-teardown.test.ts",
+        "server/project-services/on-merge.ts",
+        "server/project-services/on-merge.test.ts"
       ]
     },
     "§app.requirements/promotion-commit": {
@@ -6007,6 +6024,7 @@
         "shared/row-counts.ts",
         "src/lib/api.ts",
         "scripts/e2e/transcript-drift.mjs",
+        "scripts/e2e/transcript-follow.mjs",
         "src/lib/recent-preload.ts"
       ]
     },
@@ -8698,7 +8716,7 @@
     "§app.project-overseer/pipeline": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "code": [
         "src/lib/pipeline-view.ts",
         "shared/pipeline.ts",
@@ -8708,7 +8726,11 @@
         "server/project-pipeline.ts",
         "statecharts/src/sova/statecharts/rules/item.cljc",
         "statecharts/src/sova/statecharts/item.cljc",
-        "server/project-coding-runtime.test.ts"
+        "server/project-coding-runtime.test.ts",
+        "statecharts/src/sova/statecharts/proj.cljc",
+        "statecharts/test/sova/statecharts/refit/feed_golden.cljs",
+        "statecharts/test/sova/statecharts/refit/feed_test.cljs",
+        "server/project-overseer-tools-statecharts.test.ts"
       ],
       "requires": [
         "§app.project-overseer/statecharts",
@@ -9116,7 +9138,10 @@
         "server/share-preview-router.test.ts",
         "server/preview-kept.ts",
         "server/project-previews.ts",
-        "server/project-previews.test.ts"
+        "server/project-previews.test.ts",
+        "server/project-services/sensitive.ts",
+        "server/share/preview-proxy.ts",
+        "server/project-services/share.test.ts"
       ]
     },
     "§mesh.public/preview-address": {
@@ -9161,7 +9186,10 @@
         "src/lib/previews.test.ts",
         "src/shares.css",
         "src/lib/preview-rows.ts",
-        "src/lib/preview-rows.test.ts"
+        "src/lib/preview-rows.test.ts",
+        "server/project-previews.ts",
+        "server/project-previews.test.ts",
+        "shared/preview-links.ts"
       ]
     },
     "§mesh.public/preview-limits": {
@@ -10006,7 +10034,7 @@
     "§app.project-overseer/previews": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "requires": [
         "§mesh.public/preview",
         "§mesh.public/preview-serve",
@@ -10031,7 +10059,10 @@
         "statecharts/src/sova/statecharts/rules/levels.cljc",
         "statecharts/test/sova/statecharts/refit/org_project_test.cljc",
         "statecharts/EVENTS.md",
-        "server/vendor/statecharts.js"
+        "server/vendor/statecharts.js",
+        "server/project-overseer-tools-statecharts.test.ts",
+        "statecharts/test/sova/statecharts/refit/general_projects_test.cljs",
+        "server/overseer-org-part.ts"
       ]
     },
     "§mesh.public/preview-serve": {
@@ -10050,7 +10081,8 @@
         "server/share/preview-proxy.ts",
         "server/index.ts",
         "server/preview-links-routes.ts",
-        "server/project-previews.test.ts"
+        "server/project-previews.test.ts",
+        "src/components/PreviewsCard.tsx"
       ]
     },
     "§app.overseer/project-card-clicks": {
@@ -10394,7 +10426,7 @@
     "§app.organizations/project-page": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "requires": [
         "§app.organizations/org-page",
         "§app.organizations/archive",
@@ -10419,7 +10451,8 @@
         "src/lib/orgs-route.ts",
         "src/lib/project-page.ts",
         "src/lib/project-page.test.ts",
-        "src/projects.css"
+        "src/projects.css",
+        "src/lib/projects-route.ts"
       ]
     },
     "§chat.playbooks/bundles": {
@@ -10447,7 +10480,8 @@
       "code": [
         "server/project-services/engine.ts",
         "server/project-services/engine.test.ts",
-        "server/project-services/removed-services.test.ts"
+        "server/project-services/removed-services.test.ts",
+        "server/project-services/adopt.test.ts"
       ]
     },
     "§app.project-services/callers": {
@@ -10475,7 +10509,10 @@
         "statecharts/src/sova/statecharts/proj.cljc",
         "server/project-overseer-tools-statecharts.test.ts",
         "server/project-overseer-tools.test.ts",
-        "server/project-services/test-verb.test.ts"
+        "server/project-services/test-verb.test.ts",
+        "server/project-services/share.test.ts",
+        "server/project-services/on-merge.ts",
+        "server/project-services/on-merge.test.ts"
       ]
     },
     "§app.project-services/conform": {
@@ -10501,7 +10538,13 @@
         "server/project-services/test-verb.test.ts",
         "server/project-services/conform-static-on-demand.test.ts",
         "server/project-services/confine.test.ts",
-        "server/project-services/conform-logs.test.ts"
+        "server/project-services/conform-logs.test.ts",
+        "server/project-services/share.ts",
+        "server/project-services/share.test.ts",
+        "server/project-services/conform-cleanup.test.ts",
+        "server/project-services/confine.ts",
+        "server/project-services/netns-agent.mjs",
+        "server/project-services/ports-grace.test.ts"
       ]
     },
     "§app.project-services/contract": {
@@ -10512,7 +10555,10 @@
       "code": [
         "shared/project-contract.ts",
         "shared/project-contract.test.ts",
-        "server/project-services/engine.ts"
+        "server/project-services/engine.ts",
+        "server/project-services/share.test.ts",
+        "server/project-services/data-own-source.test.ts",
+        "server/project-services/ports-grace.test.ts"
       ]
     },
     "§app.project-services/create": {
@@ -10529,7 +10575,8 @@
       ],
       "code": [
         "server/project-services/engine.ts",
-        "server/project-services/engine.test.ts"
+        "server/project-services/engine.test.ts",
+        "server/project-services/adopt.test.ts"
       ]
     },
     "§app.project-services/doctor": {
@@ -10562,7 +10609,9 @@
         "server/project-services/removed-services.test.ts",
         "server/project-services/store.ts",
         "server/project-services/shared-removed.test.ts",
-        "server/project-services/test-verb.test.ts"
+        "server/project-services/test-verb.test.ts",
+        "server/project-services/share.test.ts",
+        "server/project-services/adopt.test.ts"
       ]
     },
     "§app.project-services/instances": {
@@ -10609,7 +10658,8 @@
         "server/project-services/routes.ts",
         "server/index.ts",
         "server/project-services/removed-services.test.ts",
-        "server/project-services/shared-removed.test.ts"
+        "server/project-services/shared-removed.test.ts",
+        "server/project-services/self-host.ts"
       ]
     },
     "§app.project-services/reserved": {
@@ -10636,7 +10686,9 @@
       ],
       "code": [
         "server/project-services/engine.ts",
-        "server/project-services/engine.test.ts"
+        "server/project-services/engine.test.ts",
+        "server/project-services/adopt.test.ts",
+        "server/project-services/data-own-source.test.ts"
       ]
     },
     "§app.project-services/result": {
@@ -10650,7 +10702,8 @@
         "server/project-services/engine.ts",
         "server/project-services/routes.ts",
         "scripts/sova-project.mjs",
-        "server/project-services/tools.ts"
+        "server/project-services/tools.ts",
+        "server/project-services/share.test.ts"
       ]
     },
     "§app.project-services/status-logs": {
@@ -10666,7 +10719,10 @@
         "server/project-services/engine.test.ts",
         "server/project-services/drivers.ts",
         "server/project-services/adapters.ts",
-        "server/project-services/shared-removed.test.ts"
+        "server/project-services/shared-removed.test.ts",
+        "server/project-services/share.test.ts",
+        "server/project-services/adopt.test.ts",
+        "server/project-services/restart-gate.test.ts"
       ]
     },
     "§app.project-services/supervisor": {
@@ -10686,7 +10742,10 @@
         "server/project-services/adapters.test.ts",
         "server/project-services/proctable.ts",
         "server/project-services/proctable.test.ts",
-        "server/project-services/routes.ts"
+        "server/project-services/routes.ts",
+        "server/project-previews.ts",
+        "server/preview-sweep.test.ts",
+        "server/project-services/restart-gate.test.ts"
       ]
     },
     "§app.project-services/teardown": {
@@ -10700,7 +10759,10 @@
       "code": [
         "server/project-services/engine.ts",
         "server/project-services/engine.test.ts",
-        "server/project-services/removed-services.test.ts"
+        "server/project-services/removed-services.test.ts",
+        "server/project-services/share.ts",
+        "server/project-services/share.test.ts",
+        "server/project-services/adopt.test.ts"
       ]
     },
     "§app.project-services/trust": {
@@ -10716,7 +10778,10 @@
         "server/project-services/engine.ts",
         "server/project-services/engine.test.ts",
         "server/project-services/note.test.ts",
-        "server/project-services/observe.test.ts"
+        "server/project-services/observe.test.ts",
+        "shared/project-contract.ts",
+        "server/project-services/share.test.ts",
+        "shared/project-contract.test.ts"
       ]
     },
     "§app.project-services/up": {
@@ -10737,7 +10802,9 @@
         "server/project-services/container-claims.test.ts",
         "server/project-services/removed-services.test.ts",
         "server/project-services/shared-removed.test.ts",
-        "server/project-services/test-verb.test.ts"
+        "server/project-services/test-verb.test.ts",
+        "server/project-services/adopt.test.ts",
+        "server/project-services/ports-grace.test.ts"
       ]
     },
     "§app/project-services": {
@@ -11475,7 +11542,7 @@
     "§tools.spec/assessment-observations": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "requires": [
         "§tools.spec/change-assessments",
         "§tools.spec/runtime-accounting"
@@ -11487,7 +11554,15 @@
         "src/lib/readiness.ts",
         "src/lib/readiness.test.ts",
         "src/components/Sidebar.tsx",
-        "server/merge-readiness.test.ts"
+        "server/merge-readiness.test.ts",
+        "pi-config/extensions/mode/spec-assessment.ts",
+        "pi-config/extensions/mode/spec-assessment.test.ts",
+        "pi-config/extensions/mode/tests/assessment-absence.mjs",
+        "pi-config/extensions/mode/spec-worker.ts",
+        "pi-config/extensions/mode/index.ts",
+        "pi-config/extensions/claude-code/spec-hooks.ts",
+        "pi-config/extensions/mode/README.md",
+        "pi-config/extensions/mode/tests/smoke.mjs"
       ]
     },
     "§tools.spec/change-assessments": {
@@ -11515,8 +11590,8 @@
         "§chat.session-fork/from-reply"
       ],
       "code": [
-        "server/session-fork-cache.ts",
-        "server/session-fork-cache.test.ts",
+        "pi-config/extensions/subagents/fork/cache.ts",
+        "pi-config/extensions/subagents/fork/cache.test.ts",
         "server/session-fork.ts",
         "server/session-fork.test.ts",
         "server/chat-manager.ts"
@@ -11576,7 +11651,8 @@
       "code": [
         "server/project-services/engine.ts",
         "server/project-services/self-host.ts",
-        "server/project-services/self-host.test.ts"
+        "server/project-services/self-host.test.ts",
+        "server/project-services/adopt.test.ts"
       ]
     },
     "§app.project-services/test": {
@@ -11599,7 +11675,8 @@
         "scripts/sova-project.mjs",
         "server/project-services/test-verb.test.ts",
         "server/project-services/note.test.ts",
-        "shared/project-contract.test.ts"
+        "shared/project-contract.test.ts",
+        "server/project-services/adopt.test.ts"
       ]
     },
     "§app/idle-git-cache": {
@@ -11675,7 +11752,7 @@
     "§app.projects/list": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "code": [
         "server/projects/routes.ts",
         "shared/projects.ts",
@@ -11758,7 +11835,7 @@
     "§app/projects": {
       "kind": "surface",
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "code": [
         "shared/projects.ts",
         "server/projects/routes.ts",
@@ -11945,7 +12022,10 @@
         "src/lib/project-software.ts",
         "src/lib/project-software.test.ts",
         "src/lib/api.ts",
-        "src/projects.css"
+        "src/projects.css",
+        "server/projects/runtime.ts",
+        "server/project-services/on-merge.ts",
+        "server/project-services/on-merge.test.ts"
       ],
       "requires": [
         "§app.project-runtime/registry"
@@ -12031,18 +12111,197 @@
     "§chat.slash-commands/compact-handoff": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "verified",
       "code": [
         "pi-config/extensions/compact-handoff/index.ts",
         "pi-config/extensions/compact-handoff/handoff.ts",
         "pi-config/extensions/compact-handoff/index.test.ts",
         "pi-config/extensions/compact-handoff/handoff.test.ts",
         "pi-config/extensions/compact-handoff/tests/run.mjs",
+        "pi-config/extensions/compact-handoff/tests/runtime.mjs",
         "pi-config/extensions/compact-handoff/README.md",
         "pi-config/README.md"
       ],
       "requires": [
         "§chat.slash-commands/in-the-thread"
+      ]
+    },
+    "§app.project-services/share": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.project-services/result",
+        "§app.project-services/teardown",
+        "§mesh.public/preview"
+      ],
+      "code": [
+        "server/project-services/share.ts",
+        "server/project-services/share.test.ts",
+        "server/project-services/sensitive.ts",
+        "server/project-services/engine.ts",
+        "server/project-services/tools.ts",
+        "shared/project-contract.ts",
+        "server/preview-kept.ts",
+        "server/preview-links.ts",
+        "server/share/preview-proxy.ts",
+        "scripts/sova-project.mjs"
+      ]
+    },
+    "§app.project-services/services-ui": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "requires": [
+        "§app.project-services/status-logs",
+        "§app.project-services/callers",
+        "§app.organizations/project-page",
+        "§app.project-services/share"
+      ],
+      "code": [
+        "shared/services-view.ts",
+        "server/project-services/view-routes.ts",
+        "server/project-services/view-routes.test.ts",
+        "server/index.ts",
+        "src/components/ProjectServicesTab.tsx",
+        "src/components/ServiceLogsDrawer.tsx",
+        "src/components/ProjectsView.tsx",
+        "src/lib/services-view.ts",
+        "src/lib/services-view.test.ts",
+        "src/lib/api.ts",
+        "src/projects.css",
+        "server/project-services/engine.ts",
+        "server/project-services/adopt.test.ts"
+      ]
+    },
+    "§app.project-services/adopt": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.project-services/contract",
+        "§app.project-services/self-host",
+        "§app.project-services/supervisor",
+        "§app.project-services/instances"
+      ],
+      "code": [
+        "shared/project-contract.ts",
+        "shared/project-contract.test.ts",
+        "server/project-services/engine.ts",
+        "server/project-services/drivers.ts",
+        "server/project-services/self-host.ts",
+        "scripts/sova-restart-gate.mjs",
+        "server/project-services/adopt.test.ts",
+        "server/project-services/restart-gate.test.ts",
+        "CLAUDE.md"
+      ]
+    },
+    "§app.project-services/on-merge": {
+      "kind": "behavior",
+      "requires": [
+        "§app.project-services/contract",
+        "§app.project-services/apply",
+        "§app.project-services/callers",
+        "§app.project-services/self-host",
+        "§app.project-services/trust"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/project-services/on-merge.ts",
+        "server/project-services/on-merge.test.ts",
+        "server/build-loadout.ts",
+        "server/projects/runtime.ts",
+        "server/project-services/engine.ts",
+        "shared/project-contract.ts"
+      ]
+    },
+    "§chat.transcript/setup-card-toggles": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/session-loadout.ts",
+        "server/session-setup.ts",
+        "server/chat-manager.ts",
+        "server/index.ts",
+        "shared/protocol.ts",
+        "src/components/SessionSetup.tsx",
+        "src/lib/session-setup.ts",
+        "src/lib/api.ts",
+        "src/components/ChatView.tsx",
+        "src/app.css",
+        "server/session-loadout.test.ts",
+        "server/session-loadout-runtime.test.ts",
+        "server/session-setup.test.ts",
+        "src/lib/session-setup.test.ts"
+      ],
+      "requires": [
+        "§chat.transcript/setup-card",
+        "§chat.transcript/setup-card-context",
+        "§chat.transcript/setup-card-skills",
+        "§chat.profiles/applying"
+      ]
+    },
+    "§chat.session-fork/background": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§chat.session-fork/cache-affinity"
+      ],
+      "code": [
+        "pi-config/extensions/subagents/fork/cache.ts",
+        "pi-config/extensions/subagents/fork/cache.test.ts",
+        "pi-config/extensions/subagents/fork/copy.ts",
+        "pi-config/extensions/subagents/fork/mirror.ts",
+        "pi-config/extensions/subagents/fork/mirror.test.ts",
+        "pi-config/extensions/subagents/fork/child.ts",
+        "pi-config/extensions/subagents/fork/background.ts",
+        "pi-config/extensions/subagents/fork/background.test.ts",
+        "pi-config/extensions/subagents/tests/run.mjs",
+        "pi-config/extensions/subagents/tests/fork-probe.ts",
+        "pi-config/extensions/subagents/tests/fork-cache-live.mjs",
+        "pi-config/extensions/subagents/README.md",
+        "pi-config/extensions/explain/explain.ts",
+        "pi-config/extensions/explain/index.ts",
+        "pi-config/extensions/explain/index.test.ts",
+        "pi-config/extensions/explain/runs.test.ts",
+        "pi-config/extensions/explain/README.md"
+      ]
+    },
+    "§chat.session-fork/claude-resume": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§chat.session-fork/from-reply",
+        "§chat.session-fork/cache-affinity"
+      ],
+      "code": [
+        "pi-config/extensions/subagents/fork/claude.ts",
+        "pi-config/extensions/claude-code/provider/fork-point.ts",
+        "pi-config/extensions/claude-code/provider/session-bridge.ts",
+        "pi-config/extensions/claude-code/provider/bridge.test.ts",
+        "server/session-fork-routes.ts"
+      ]
+    },
+    "§chat.slash-commands/compact-handoff-row": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/compact-handoff/run.ts",
+        "server/transcript.ts",
+        "shared/protocol.ts",
+        "src/components/Thread.tsx",
+        "src/lib/explain.ts",
+        "server/transcript-handoff.test.ts",
+        "src/lib/explain.test.ts"
+      ],
+      "requires": [
+        "§chat.slash-commands/in-the-thread",
+        "§chat.slash-commands/compact-handoff"
       ]
     }
   },

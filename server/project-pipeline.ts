@@ -201,6 +201,7 @@ export const LINES: Record<string, string> = {
   "gap/drop": "The gap was dropped.",
   "services/down": "A running copy of the project was stopped.",
   "services/run": "A running copy of the project was started or changed.",
+  "services/share": "A running copy of the project was shared.",
   "gather/start": "A gathering started.",
   "gather/plan": "A gathering was planned.",
   "build/start": "A coding session started.",

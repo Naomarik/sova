@@ -257,6 +257,47 @@ export class SystemdDriver implements Driver {
   }
 }
 
+// ---- an adopted unit (§app.project-services/adopt) ----------------------------------------------
+
+/** An adopted unit as systemd shows it, with when its main process started and its resident memory. */
+export interface AdoptedStatus extends UnitStatus {
+  startedAt: string | null;
+  rssBytes: number | null;
+}
+
+/** `ActiveEnterTimestamp` as `--timestamp=unix` writes it (`@1700000000`), as ISO; null when unset (pure, for tests). */
+export function parseEnterTimestamp(v: string | undefined): string | null {
+  const unix = /^@(\d+)$/.exec(v?.trim() ?? "");
+  return unix && Number(unix[1]) > 0 ? new Date(Number(unix[1]) * 1000).toISOString() : null;
+}
+
+/** The pids in `unit`'s cgroup (`unit` with its `.service`). */
+export function cgroupPids(unit: string): number[] {
+  return procfsTable
+    .list()
+    .map((e) => e.pid)
+    .filter((p) => {
+      try {
+        return readFileSync(`/proc/${p}/cgroup`, "utf8").includes(`/${unit}`);
+      } catch {
+        return false;
+      }
+    });
+}
+
+/**
+ * A unit Sova did not start, read only (`systemctl --user show`): never started, stopped or signalled
+ * here, whatever the driver. `unit` is the whole name (`sova-runtime.service`).
+ */
+export async function adoptedStatus(unit: string, exec: Exec = realExec, pidsOf: (unit: string) => number[] = cgroupPids): Promise<AdoptedStatus> {
+  const r = await exec("systemctl", ["--user", "show", unit, "--timestamp=unix", "--property=LoadState,ActiveState,SubState,MainPID,ExecMainStatus,Result,ActiveEnterTimestamp"], { timeoutMs: 5_000 });
+  if (r.code !== 0) return { state: "missing", pid: null, startedAt: null, rssBytes: null, detail: `systemctl could not read ${unit}: ${r.stderr.trim() || `exit ${r.code}`}` };
+  const st = parseShow(r.stdout);
+  const enter = /^ActiveEnterTimestamp=(.*)$/m.exec(r.stdout)?.[1];
+  const live = st.state === "active" || st.state === "activating";
+  return { ...st, startedAt: live ? parseEnterTimestamp(enter) : null, rssBytes: live ? rssOf(pidsOf(unit)) : null };
+}
+
 // ---- detached ----------------------------------------------------------------------------------
 
 interface ProcRecord {

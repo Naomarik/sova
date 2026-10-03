@@ -1,5 +1,5 @@
 import { children, createContext, createEffect, createMemo, createSignal, For, Match, on, onCleanup, Show, Switch, useContext, type JSX } from "solid-js";
-import type { TmpAttachment, TranscriptItem } from "../../shared/protocol";
+import type { HandoffRunInfo, TmpAttachment, TranscriptItem } from "../../shared/protocol";
 import type { BatonMark } from "../../shared/baton";
 import { wrapupRowIds } from "../lib/wrapup-rows";
 import { blockStreams, type LiveBlock, type LiveEntry, type LiveState, type LiveUserState } from "../lib/live";
@@ -362,6 +362,30 @@ export function InfoRow(props: { children: JSX.Element }) {
       <span class="info-row-text">
         <Icon name="info" small />
         <span>{props.children}</span>
+      </span>
+    </div>
+  );
+}
+
+/** A /compact-handoff run (§chat.slash-commands/compact-handoff-row): an info row whose icon is
+    the live dot while the fork writes; the result entry (same id) replaces it in place. */
+function HandoffRunRow(props: { run: HandoffRunInfo; text: string }) {
+  return (
+    <div class="info-row" role="note">
+      <span class="info-row-text">
+        <Show when={props.run.status === "running"} fallback={<Icon name="info" small />}>
+          {/* The explain card's 16px slot, so the dot sits where the icon would. */}
+          <span class="explain-card-live" aria-hidden="true">
+            <span class="live-dot" />
+          </span>
+        </Show>
+        <Show when={props.run.status === "failed"}>
+          <Chip tone="error">Failed</Chip>
+        </Show>
+        <Show when={props.run.status === "interrupted"}>
+          <Chip tone="warn">Interrupted</Chip>
+        </Show>
+        <span>{props.text}</span>
       </span>
     </div>
   );
@@ -885,6 +909,9 @@ export function HistoryItems(props: {
               <Match when={item.kind === "report" && item.report}>
                 {(report) => <ReportRow report={report()} attachments={item.attachments} />}
               </Match>
+              <Match when={item.kind === "info" && item.handoffRun}>
+                {(run) => <HandoffRunRow run={run()} text={item.text ?? ""} />}
+              </Match>
               <Match when={item.kind === "info" && isObj(item.raw) && item.raw.type === "compaction" && item.raw}>
                 {(raw) => <Compaction raw={raw()} />}
               </Match>
@@ -1358,6 +1385,8 @@ export function ThreadScroller(props: {
   restore?: ScrollSpot | null;
   /** Told where the transcript was when it goes away, and whenever a scroll comes to rest. */
   onSpot?(spot: ScrollSpot): void;
+  /** This visit's rows have come (its hello or snapshot): until then, rows kept from the last visit. */
+  current?: boolean;
 }) {
   const paneId = usePaneId();
   let el!: HTMLElement;
@@ -1446,7 +1475,9 @@ export function ThreadScroller(props: {
    * new position instead of pulling the bottom back into view. Marked at the summary's click, which
    * comes before the open state changes (the `toggle` event is queued and may come after the frame
    * that lays the growth out), and again at `toggle`, where a lazy body is built; held for two
-   * frames after the later of the two.
+   * frames after the later of the two. Only a click starts it (a key on a summary clicks it too),
+   * and only the clicked disclosure's `toggle` marks it again: one drawn open (an alignment's
+   * approach) fires `toggle` as its row is built, and that is new content, not the user's.
    */
   let toggled = false;
   let toggleFrame = 0;
@@ -1455,12 +1486,96 @@ export function ThreadScroller(props: {
     cancelAnimationFrame(toggleFrame);
     toggleFrame = requestAnimationFrame(() => (toggleFrame = requestAnimationFrame(() => (toggled = false))));
   };
+  /** The disclosure whose summary was clicked last: its `toggle`, whenever it comes, is the reader's. */
+  let clicked: Element | null = null;
   const onClick = (e: MouseEvent) => {
-    if ((e.target as Element | null)?.closest?.("summary")) markToggle();
+    const summary = (e.target as Element | null)?.closest?.("summary");
+    if (!summary) return;
+    clicked = summary.parentElement;
+    markToggle();
+  };
+  const onToggle = (e: Event) => {
+    if (e.target !== clicked) return;
+    clicked = null;
+    markToggle();
   };
   onCleanup(() => cancelAnimationFrame(toggleFrame));
+  /**
+   * The last row read, for a view left at the end (`props.restore`), until this visit's rows have
+   * come: rows that land after it were added while the reader was away, so the view stops on it
+   * with "N new" instead of following past them. Dropped once the reader scrolls or touches the
+   * transcript, which then goes where they take it.
+   */
+  let readTo = props.restore?.follow ? (props.restore.lastRow ?? null) : null;
+  /** The reader has scrolled or touched the transcript since it opened. */
+  let touched = false;
+  const onTouch = () => {
+    readTo = null;
+    touched = true;
+  };
+  const rowOf = (id: string) => el.querySelector<HTMLElement>(`.thread > .entry[data-entry="${CSS.escape(id)}"]`);
+  /** The rows drawn below `row`: what "N new" counts after the last row read. */
+  const rowsAfter = (row: Element) => {
+    let n = 0;
+    for (let next = row.nextElementSibling; next; next = next.nextElementSibling) if (next.matches(".entry") && next.getBoundingClientRect().height > 0) n++;
+    return n;
+  };
+  /** The row the view stopped on, until this visit's rows have come. Rows kept from the last visit
+      count whole, this visit's from its hello's first row (`props.count`), so "N new" is counted
+      again then. Meanwhile it is still the last row read: a view replaced before then (a chat
+      that turns out to be written elsewhere opens as a watch) stops on it again. */
+  let heldRow: string | null = null;
+  /** The last row read's bottom at the bottom of the view, unless the reader has moved it since. */
+  const placeAtRead = (row: HTMLElement) => {
+    if (touched || !row.isConnected) return;
+    el.scrollTop += row.getBoundingClientRect().bottom - el.getBoundingClientRect().bottom;
+    lastGap = el.scrollHeight - el.scrollTop - el.clientHeight;
+  };
+  /** With rows below the last row read: its bottom at the bottom of the view, not following. Not
+      when they're short enough that the view would still be within FOLLOW_PX of the end. */
+  const holdAtRead = (): boolean => {
+    if (!readTo) return false;
+    const row = rowOf(readTo);
+    if (!row) return false;
+    const added = rowsAfter(row);
+    if (!added) return false;
+    const id = readTo;
+    readTo = null;
+    const top = el.scrollTop + row.getBoundingClientRect().bottom - el.getBoundingClientRect().bottom;
+    if (el.scrollHeight - top - el.clientHeight < FOLLOW_PX) return false;
+    el.scrollTop = top;
+    lastGap = el.scrollHeight - el.scrollTop - el.clientHeight;
+    follow = false;
+    heldRow = id;
+    setAway(Math.max(0, props.count - added));
+    // The rows around it are drawn at their real heights in the next frame: place it again then.
+    requestAnimationFrame(() => requestAnimationFrame(() => placeAtRead(row)));
+    return true;
+  };
+  createEffect(
+    on(
+      () => props.current,
+      (current) => {
+        if (!current || !(readTo || heldRow)) return;
+        requestAnimationFrame(() => {
+          holdAtRead();
+          readTo = null;
+          const row = heldRow && !follow ? rowOf(heldRow) : null;
+          if (row) {
+            setAway(Math.max(0, props.count - rowsAfter(row)));
+            placeAtRead(row);
+          }
+          heldRow = null;
+        });
+      },
+    ),
+  );
+
   /** Content was added or changed: back to the bottom while following. */
   const settle = () => {
+    // Before following: a scroll event between the rows landing and this frame may have read the
+    // view they grew as the reader's own.
+    if (holdAtRead()) return;
     if (!follow) return;
     if (toggled) return onScroll();
     toBottom();
@@ -1533,7 +1648,11 @@ export function ThreadScroller(props: {
    */
   const spot = (): ScrollSpot | null => {
     if (!el?.isConnected) return null;
-    if (follow) return { follow: true };
+    if (follow) {
+      const rows = el.querySelectorAll<HTMLElement>(".thread > .entry");
+      for (let i = rows.length - 1; i >= 0; i--) if (rows[i]!.getBoundingClientRect().height > 0) return { follow: true, lastRow: rows[i]!.dataset.entry };
+      return { follow: true };
+    }
     const top = el.getBoundingClientRect().top;
     for (const entry of el.querySelectorAll<HTMLElement>(".thread > .entry")) {
       const box = entry.getBoundingClientRect();
@@ -1544,7 +1663,7 @@ export function ThreadScroller(props: {
   };
   let spotTimer: ReturnType<typeof setTimeout> | undefined;
   const reportSpot = () => {
-    const s = spot();
+    const s = heldRow && !touched ? { follow: true as const, lastRow: heldRow } : spot();
     if (s) props.onSpot?.(s);
   };
   onCleanup(() => {
@@ -1603,7 +1722,7 @@ export function ThreadScroller(props: {
           observer.observe(node, { childList: true, subtree: true, characterData: true });
           // A jump (lib/jump) takes the view away from the bottom: stop following, as a scroll up would.
           node.addEventListener("click", onClick, true);
-          node.addEventListener("toggle", markToggle, true);
+          node.addEventListener("toggle", onToggle, true);
           viewResized?.observe(node);
           node.addEventListener("scrollend", () => (jumpScrolling = false));
           node.addEventListener(JUMP_EVENT, () => {
@@ -1619,7 +1738,10 @@ export function ThreadScroller(props: {
             registerTranscript(path, node);
             onCleanup(() => registerTranscript(path, null));
           }
-          queueMicrotask(() => restoreSpot() || toBottom());
+          for (const type of ["wheel", "touchstart", "pointerdown", "keydown"]) node.addEventListener(type, onTouch, { passive: true });
+          // Kept rows refetched in the background (lib/recent-preload) may already hold rows added
+          // after the last row read.
+          queueMicrotask(() => restoreSpot() || (toBottom(), holdAtRead()));
         }}
         onScroll={() => {
           onScroll();

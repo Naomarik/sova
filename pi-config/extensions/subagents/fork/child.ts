@@ -1,17 +1,18 @@
 /**
- * The extension the /explain child loads (`-e child.ts`, after every other source; see worker.ts).
- * Inert anywhere else: it acts only when the parent set `EXPLAIN_STORE_ENV`.
+ * The extension every background fork's child loads (`-e child.ts`, after every other source; see
+ * background.ts). Inert anywhere else: it acts only when the parent set `FORK_POLICY_ENV`.
  *
- * It keeps the fork on the parent's prompt cache and makes the child read-only, both without
- * changing a byte of the request prefix; the reasoning is in mirror.ts. In short:
+ * It keeps the fork on the parent's prompt cache and holds the child to its policy, both without
+ * changing a byte of the request prefix; the reasoning is in mirror.ts and cache.ts. In short:
  *
  *  - session_start: activate exactly the tools the parent's transcript declares, with the parent's
- *    declarations (own / wrapped built-in / stub), plus `read` and `write` if the parent lacked them;
+ *    declarations (own / wrapped built-in / stub), plus the tools the policy requires if the
+ *    parent lacked them;
  *  - before_agent_start: rebuild the system prompt from the parent's replayed sections;
- *  - tool_call: block every call except reading, web lookups, one read-only bash command line,
- *    and writes inside the store;
+ *  - tool_call: block every call the policy does not allow (`gateToolCall`);
  *  - context: drop the btw notes the parent's btw extension drops from its requests;
- *  - before_provider_request: ask OpenAI-style providers for the parent's cache key.
+ *  - before_provider_request and the process's Codex transport: ask for the cache key the fork
+ *    copy inherited from the parent (cache.ts), exactly as a UI-created fork does.
  */
 import { resolve } from "node:path";
 import {
@@ -25,16 +26,17 @@ import {
 	type ExtensionAPI,
 	type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
+import { forkCacheExtension, routeProcessForkCache, type ForkProcessState } from "./cache.ts";
 import {
 	applyMirror,
 	declaredState,
-	EXPLAIN_PARENT_SESSION_ENV,
-	EXPLAIN_STORE_ENV,
+	decodePolicy,
+	FORK_POLICY_ENV,
 	gateToolCall,
 	mirrorPrompt,
 	planTools,
 	withoutBtwNotes,
-	withParentCacheKey,
+	type ForkPolicy,
 	type MirrorablePromptOptions,
 	type PromptMirror,
 	type ToolDeclaration,
@@ -70,36 +72,39 @@ function withDeclaration(base: ToolDefinition<any, any, any>, declaration: ToolD
 }
 
 /** A declared tool that never runs; tool_call blocks it first, this is the backstop. */
-function stub(declaration: ToolDeclaration): ToolDefinition<any, any, any> {
+function stub(declaration: ToolDeclaration, policy: ForkPolicy): ToolDefinition<any, any, any> {
 	const tool: ToolDefinition<any, any, any> = {
 		name: declaration.name,
 		label: declaration.name,
 		...declared(declaration),
 		async execute() {
-			throw new Error(`"${declaration.name}" is not available in the /explain worker.`);
+			throw new Error(`${policy.label} cannot run "${declaration.name}".`);
 		},
 	};
 	if (declaration.constrainedSampling === undefined) delete tool.constrainedSampling;
 	return tool;
 }
 
-export default function explainChildExtension(pi: ExtensionAPI): void {
-	const storeDir = process.env[EXPLAIN_STORE_ENV]?.trim();
-	if (!storeDir) return;
-	const parentSessionId = process.env[EXPLAIN_PARENT_SESSION_ENV]?.trim() || undefined;
+export default function forkChildExtension(pi: ExtensionAPI): void {
+	const policy = decodePolicy(process.env[FORK_POLICY_ENV]);
+	if (!policy) return;
 	let mirror: PromptMirror | undefined;
 	let cwd = process.cwd();
-	let sessionId: string | undefined;
+	let session: { getSessionId(): string; getEntries(): ForkProcessState["entries"] } | undefined;
+
+	forkCacheExtension(pi);
+	// This process runs this one fork, so its own fetch and WebSocket carry only the fork's requests.
+	routeProcessForkCache(() => (session ? { ownId: session.getSessionId(), entries: session.getEntries() } : undefined));
 
 	pi.on("session_start", (_event, ctx) => {
 		cwd = ctx.cwd;
-		sessionId = ctx.sessionManager.getSessionId();
+		session = ctx.sessionManager;
 		const state = declaredState(ctx.sessionManager.buildSessionProjection().messages);
 		const own = new Map<string, ToolDeclaration>(pi.getAllTools().map((tool) => [tool.name, { name: tool.name, description: tool.description, parameters: tool.parameters }]));
-		const plan = planTools(state?.tools, own, new Set(Object.keys(BUILTINS)));
+		const plan = planTools(state?.tools, own, new Set(Object.keys(BUILTINS)), policy);
 		for (const entry of plan) {
 			if (entry.action === "wrap") pi.registerTool(withDeclaration(BUILTINS[entry.name]!(cwd), entry.declaration));
-			else if (entry.action === "stub") pi.registerTool(stub(entry.declaration));
+			else if (entry.action === "stub") pi.registerTool(stub(entry.declaration, policy));
 		}
 		pi.setActiveTools(plan.map((entry) => entry.name));
 		mirror = state ? mirrorPrompt(state.sections) : undefined;
@@ -110,7 +115,7 @@ export default function explainChildExtension(pi: ExtensionAPI): void {
 	});
 
 	pi.on("tool_call", (event) => {
-		const reason = gateToolCall(event.toolName, event.input, storeDir, (...parts) => resolve(cwd, ...parts));
+		const reason = gateToolCall(event.toolName, event.input, policy, (...parts) => resolve(cwd, ...parts));
 		return reason ? { block: true, reason } : undefined;
 	});
 
@@ -118,6 +123,4 @@ export default function explainChildExtension(pi: ExtensionAPI): void {
 		const messages = withoutBtwNotes(event.messages as { role: string; customType?: string }[]);
 		return messages ? { messages: messages as typeof event.messages } : undefined;
 	});
-
-	pi.on("before_provider_request", (event) => withParentCacheKey(event.payload, sessionId, parentSessionId));
 }

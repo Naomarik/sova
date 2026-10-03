@@ -46,6 +46,7 @@
       }
     }
   },
+  "open": {"endpoint": "web.http"},
   "hooks": {
     "probe": {
       "run": [".sova/bin/probe"]
@@ -54,5 +55,8 @@
   "test": {
     "run": [".sova/bin/test"],
     "smoke": ["test/health.test.js"]
+  },
+  "share": {
+    "endpoints": ["web.http"]
   }
 }

@@ -24,9 +24,9 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { canonicalPath } from "./paths";
-import { FORK_CACHE_ENTRY, forkCacheData } from "./session-fork-cache";
 import { FANOUT_MEMBER_ENTRY } from "./chat-manager";
 import { LEGACY_REGISTRY_ENTRY_TYPE, WORKER_MANIFEST_ENTRY_TYPE } from "../pi-config/extensions/subagents/worker-transcript.ts";
+import { forkCacheEntry } from "../pi-config/extensions/subagents/fork/cache.ts";
 
 /** The session format this module copies. A newer or older header is refused, never guessed. */
 const SESSION_VERSION = 3;
@@ -304,14 +304,9 @@ export function forkSessionFile(sourcePath: string, entryId: string): ForkOutcom
     const ids = new Set(planned.prefix.map((line) => line.entry.id));
     let cacheEntryId: string;
     do { cacheEntryId = randomBytes(4).toString("hex"); } while (ids.has(cacheEntryId));
-    const cacheEntry = {
-      type: "custom", id: cacheEntryId,
-      parentId: planned.prefix.at(-1)?.entry.id ?? null,
-      timestamp: new Date().toISOString(), customType: FORK_CACHE_ENTRY,
-      // Read lineage from the whole source file: the selected reply can precede this fork's
-      // inherited metadata, and later rewinds do not change the source's cache identity.
-      data: forkCacheData(doc.header.id, doc.lines.map((line) => line.entry)),
-    };
+    // Read lineage from the whole source file: the selected reply can precede this fork's
+    // inherited metadata, and later rewinds do not change the source's cache identity.
+    const cacheEntry = forkCacheEntry(cacheEntryId, planned.prefix.at(-1)?.entry.id ?? null, doc.header.id, doc.lines.map((line) => line.entry));
     writeFileSync(target, `${JSON.stringify(header)}\n${planned.prefix.map((l) => l.raw).join("\n")}\n${JSON.stringify(cacheEntry)}\n`, { flag: "wx" });
     return { ok: true, path: canonicalPath(target), sessionId: header.id, cwd: doc.header.cwd };
   } catch (err) {

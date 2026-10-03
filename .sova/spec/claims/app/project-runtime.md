@@ -197,4 +197,5 @@ shared."; "Proven {time} at {hash12} (suite v{n})";
 "Changed since: {paths}" while stale; "Failed at {check}: {detail}" while failed; the playbook
 run's session as a link; and the registry's latest feed lines, newest first. Its actions are
 **Run Playbook** (**Run Again** once registered) and **Approve {hash12}**, each shown only while
-the statechart would take it.
+the statechart would take it. Under its service rows, **Open Services** links to the project's
+Services tab (§app.project-services/services-ui), where each copy is started, stopped and read.

@@ -9,7 +9,7 @@ organization places it. An organization only **places** a project and adds its o
 layer never knows organizations exist (§app.projects/seam).
 
 Pages: `#/projects` (the list) and `#/projects/<pid>` (one project, §app.organizations/project-page),
-`…/requirements` (only while placed), `…/cost`, `…/settings`, `…/overseer`, each taking `?host=<peer>`
+`…/requirements` (only while placed), `…/services`, `…/cost`, `…/settings`, `…/overseer`, each taking `?host=<peer>`
 for a project held on a peer (§mesh.remote-sessions/org-pages). API: `/api/projects` and
 `/api/projects/:pid/…` for every project-layer read and act; the organization's concerns stay under
 `/api/orgs/:id/projects/:pid/…`. There is no other address for a project and no alias.
@@ -75,7 +75,8 @@ for a project held on a peer (§mesh.remote-sessions/org-pages). API: `/api/proj
   never a copy.
 - `#/projects` lists them as rows linking to `#/projects/<pid>` (name, folder, and "In {org}" when
   placed), archived ones apart, with **Add Project** opening the Add Project dialog (Folder ·
-  Clone from GitHub).
+  Clone from GitHub). Under them, **Running copies** lists what runs on this host now, every
+  project's, each with a Stop (§app.project-services/services-ui).
 - The sidebar has a **Projects** region for standalone projects, shaped as one organization's
   project blocks in the Organizations region (§app.session-list/organizations): the project heading
   with its overseer's eye, then its Builds. Its head carries **+** (Add Project) and an arrow to

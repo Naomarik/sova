@@ -533,3 +533,60 @@ server hosts is busy: its live record (`sessions/live/p<server pid>-*.json`, hea
 old) shows a working subagent or a turn in flight, the asking session's own turn included. The
 refusal names how many are busy, and nothing changes. Instances of the project's other worktrees
 are not affected: their verbs follow the ordinary rules.
+
+## §app.project-services/services-ui — The Services tab and Running copies
+
+The operator sees and drives every running copy from two places, both on this host's engine.
+
+- **The Services tab** (`#/projects/<pid>/services`) reads `GET /api/projects/:pid/services`: the
+  project's status (§app.project-services/status-logs) with, per service, the port its readiness
+  probes over HTTP (a static service's first port too, at `/`) and that path; and whether the main
+  checkout's definition declares sensitive data. It is read every 5 seconds while the tab shows. One row per copy: the main checkout's (slot 0) first, named
+  `main`, then each branch copy by slot. A row shows the branch, `slot {n}`, each checkout service's
+  ports (a port with HTTP readiness is a link to `http://<this page's host>:<port><path>`), the copy's
+  memory (the sum of its services' resident memory, "—" when none reports one), its state as a chip
+  (Running, Degraded, Stopped, Absent; a service that is not ready is named under the row with its
+  state), and who created it ("by you", "by a coding session", "by its overseer", "by the Overseer",
+  "by conformance"; the caller's tag is its title). While the main checkout has no copy, **Start
+  Main** (`up` of the project) sits under the rows. Shared services are listed in their own block
+  under the copies, once each, with their ports, state and memory, and Start and Stop of their own.
+- **Actions per copy**: **Start** (`up`), **Stop** (`down`), **Apply** (`apply`), **Reset**
+  (`reset`), **Logs** and **Teardown** (`teardown`). Each runs as the operator through
+  `POST /api/projects/:pid/services/:verb` (`{instance, services?, confirm?, lines?}`), which answers
+  the verb's result with the status of its exit class. Reset, Teardown, and Stop of a shared service
+  ask first: the first click turns the button into its confirm ("Confirm Teardown"), the second runs
+  it with `confirm`, and leaving the button disarms it. While a verb runs its button says so
+  ("Stopping…") and the other buttons wait. A refusal is a sentence under the row, the engine's
+  message without the CLI's `(sova-project …)` hint: `needs-confirm` adds "Press it again to
+  confirm." and arms that button, so its next click sends `confirm` (Stop of a copy with an active
+  link, Apply or Stop of Sova's own main); `busy` adds "Try again once they are idle." unless the
+  message already says when; any other failure is its message alone. A done verb toasts what it did
+  ("Stopped main.", "Tore down feat-x. Its slot is free.").
+- **Logs** opens the copy's logs over the page (a modal; a sheet at folded width): its last 200
+  lines (`logs`, `lines: 200`), oldest first, each with its 24-hour time and its service, in mono,
+  re-read every 3 seconds while open and kept at the bottom unless the operator scrolled up; Close,
+  Escape or the scrim closes it and focus returns to the Logs button.
+- **Narrow**: below 480px of the tab's width each row stacks (facts, then the actions wrapping
+  under them), and nothing scrolls sideways.
+- **Running copies** on `#/projects` (`GET /api/services`): one section listing, for every project
+  on this host with a copy or shared service that runs now, standalone or placed, each running copy
+  (branch or `main`, slot, state, memory) and each running shared service, with a **Stop** that
+  stops it (`down` as the operator; a shared service's asks first, and a refusal reads as on the
+  tab). It is read every 15 seconds. The project's name links to its Services tab, with "In {org}"
+  while placed. A copy whose root no registered project holds is listed under its folder, without a
+  link. A confined conformance run's copies are not listed. With nothing running it says "Nothing runs on this host now. Copies you
+  start show here."
+- **Share** (§app.project-services/share): a copy's row offers **Share** while its status lists
+  share endpoints (`share.endpoints`). It opens a form under the row's facts: the endpoint
+  (`<service>.<port>`) as a select, the expiry as 1 to 7 days (1 by default), the preview warning
+  for that endpoint's port, and **Share Copy** / **Cancel**. While the chosen endpoint's service is
+  not ready, Share Copy waits and the form says "This copy isn't running {service}: start it
+  first. Sharing never starts anything." Otherwise Share Copy runs `share` with
+  `{endpoint, days, confirm}`, then copies the link (it is kept in the page, so Copy Link works
+  even when status keeps no URL) and toasts "Shared {endpoint} of {copy}." The copy's active links
+  (status's `links`) are chips on its row ("web.http · expires in 5 hours"), each with **Copy Link**
+  (when the page knows its URL) and **Turn Off** (the first click asks "Turn Off Link?", the second
+  runs `revoke` of that link). While the main checkout's definition declares sensitive data, every
+  copy's Share is disabled and the row reads "Derived from production: copies are never shared.";
+  otherwise, while the engine says a copy can't be shared (`share.refused`), Share is disabled with
+  that sentence under the row.

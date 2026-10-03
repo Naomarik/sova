@@ -4424,7 +4424,13 @@
         "server/org-envelope.test.ts",
         "server/org-stamp.ts",
         "server/org-stamp.test.ts",
-        "statecharts/src/sova/statecharts/proj.cljc"
+        "statecharts/src/sova/statecharts/proj.cljc",
+        "server/project-overseer-prompt.md",
+        "server/project-overseer-tools-statecharts.test.ts",
+        "statecharts/test/sova/statecharts/refit/acts_golden.cljs",
+        "statecharts/test/sova/statecharts/refit/registry_test.cljs",
+        "statecharts/test/sova/statecharts/refit/general_projects_test.cljs",
+        "server/vendor/statecharts.js"
       ],
       "requires": [
         "§app.project-overseer/tools"
@@ -4514,7 +4520,8 @@
         "server/outreach/log.ts",
         "server/outreach.test.ts",
         "statecharts/src/sova/statecharts/proj.cljc",
-        "server/project-services/tools.ts"
+        "server/project-services/tools.ts",
+        "server/vendor/statecharts.js"
       ],
       "requires": [
         "§app.baton/goal-and-loadout",
@@ -8701,7 +8708,7 @@
     "§app.project-overseer/pipeline": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "code": [
         "src/lib/pipeline-view.ts",
         "shared/pipeline.ts",
@@ -8711,7 +8718,11 @@
         "server/project-pipeline.ts",
         "statecharts/src/sova/statecharts/rules/item.cljc",
         "statecharts/src/sova/statecharts/item.cljc",
-        "server/project-coding-runtime.test.ts"
+        "server/project-coding-runtime.test.ts",
+        "statecharts/src/sova/statecharts/proj.cljc",
+        "statecharts/test/sova/statecharts/refit/feed_golden.cljs",
+        "statecharts/test/sova/statecharts/refit/feed_test.cljs",
+        "server/project-overseer-tools-statecharts.test.ts"
       ],
       "requires": [
         "§app.project-overseer/statecharts",
@@ -10012,7 +10023,7 @@
     "§app.project-overseer/previews": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "requires": [
         "§mesh.public/preview",
         "§mesh.public/preview-serve",
@@ -10037,7 +10048,10 @@
         "statecharts/src/sova/statecharts/rules/levels.cljc",
         "statecharts/test/sova/statecharts/refit/org_project_test.cljc",
         "statecharts/EVENTS.md",
-        "server/vendor/statecharts.js"
+        "server/vendor/statecharts.js",
+        "server/project-overseer-tools-statecharts.test.ts",
+        "statecharts/test/sova/statecharts/refit/general_projects_test.cljs",
+        "server/overseer-org-part.ts"
       ]
     },
     "§mesh.public/preview-serve": {
@@ -10400,7 +10414,7 @@
     "§app.organizations/project-page": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "requires": [
         "§app.organizations/org-page",
         "§app.organizations/archive",
@@ -10425,7 +10439,8 @@
         "src/lib/orgs-route.ts",
         "src/lib/project-page.ts",
         "src/lib/project-page.test.ts",
-        "src/projects.css"
+        "src/projects.css",
+        "src/lib/projects-route.ts"
       ]
     },
     "§chat.playbooks/bundles": {
@@ -11694,7 +11709,7 @@
     "§app.projects/list": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "code": [
         "server/projects/routes.ts",
         "shared/projects.ts",
@@ -11777,7 +11792,7 @@
     "§app/projects": {
       "kind": "surface",
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "code": [
         "shared/projects.ts",
         "server/projects/routes.ts",
@@ -12084,6 +12099,30 @@
         "server/preview-links.ts",
         "server/share/preview-proxy.ts",
         "scripts/sova-project.mjs"
+      ]
+    },
+    "§app.project-services/services-ui": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "requires": [
+        "§app.project-services/status-logs",
+        "§app.project-services/callers",
+        "§app.organizations/project-page",
+        "§app.project-services/share"
+      ],
+      "code": [
+        "shared/services-view.ts",
+        "server/project-services/view-routes.ts",
+        "server/project-services/view-routes.test.ts",
+        "server/index.ts",
+        "src/components/ProjectServicesTab.tsx",
+        "src/components/ServiceLogsDrawer.tsx",
+        "src/components/ProjectsView.tsx",
+        "src/lib/services-view.ts",
+        "src/lib/services-view.test.ts",
+        "src/lib/api.ts",
+        "src/projects.css"
       ]
     }
   },

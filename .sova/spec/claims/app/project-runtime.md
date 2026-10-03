@@ -184,6 +184,8 @@ A run that finds nothing to change commits nothing and ends "No change: the cont
 project." A rerun with nothing changed therefore leaves the branch and the definition byte for
 byte as they were. It never approves, merges, pushes, touches the main checkout or its running
 processes, starts anything outside the verbs, or runs deploy or production tasks.
+Its contract reference names every key the parse accepts, `adopt` included (a slot-0 unit the
+operator already runs, §app.project-services/adopt), which a project it onboards almost never needs.
 
 ## §app.project-runtime/software-card — The Software card
 

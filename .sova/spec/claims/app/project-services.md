@@ -49,6 +49,8 @@ shell string is accepted anywhere: every command is an argv array of non-empty s
   the service, e.g. the client command with its port, shown in the instance note,
   §app.project-services/instance-note). A `cmd` service without
   `ready` is ready once its first port listens, or, with no ports, once it has run for a second.
+  One `cmd` checkout service (no `container`) may say `adopt: {unit, ports}`: in slot 0 it is that
+  systemd user unit, which Sova did not start, on those fixed ports (§app.project-services/adopt).
 - **`setup`**: steps `{id, run: argv, inputs?: [checkout files], timeout?}` run at create, in order.
 - **`data`**: resources `{kind: "dir", path?, from?}` (a folder: by default under the instance's
   data dir; `path` places it inside the checkout, where it must be ignored by git; `from` is
@@ -177,7 +179,8 @@ probe's answer).
   `/proc` on Linux, else from `lsof`.
 
 Sova stops, restarts and signals only units with its own prefix and state hash, never a process it
-did not start. A `static` service is served inside the server's process (as
+did not start; an adopted unit (§app.project-services/adopt) is only read, and restarted only by the
+restart gate an operator's confirmed `apply` schedules. A `static` service is served inside the server's process (as
 §mesh.public/preview-serve serves folders), and it is bound again when the server starts. The
 previews' sweep, which stops the folder serves of ended previews, never stops it. A
 `container` service is also removed by name (`docker rm -f` / `podman rm -f`) after each stop and
@@ -193,6 +196,8 @@ too, before anything is made. Then the slot is allocated, the worktree cut when 
 resource provisioned (skipped when it exists) and each setup step run (skipped when its
 fingerprint, its rendered argv plus a hash of its `inputs`, is unchanged). A second create of the
 same checkout answers the same instance with `changed: false`.
+On an adopted slot 0 (§app.project-services/adopt) it records the instance and sets nothing up:
+no data resource is provisioned and no setup step runs.
 
 ## §app.project-services/up — up
 
@@ -218,6 +223,7 @@ definition no longer declares (removed from `.sova/project.json`, or no longer a
 is stopped and marked stopped first, as a `stop:<name>` step that says so; so is a shared service
 that is in no definition any more, by down's rule (§app.project-services/down), when it still runs
 or is still wanted.
+An adopted slot 0 refuses `up` (`refused-slot0`); see §app.project-services/adopt.
 
 ## §app.project-services/down — down
 
@@ -234,6 +240,7 @@ it is shared and in no definition; while any of those definitions is unreadable 
 Idempotent: a second down answers `changed: false`. Down of an instance with an active share link
 (§app.project-services/share) needs a confirm, which only the operator gives (`needs-confirm`
 otherwise, naming how many links); its links stay, and show the not-running page while it is down.
+An adopted slot 0 refuses `down` (`refused-slot0`); see §app.project-services/adopt.
 
 ## §app.project-services/apply — apply
 
@@ -242,6 +249,8 @@ order: its `build` runs when the build's fingerprint changed, then its `reload` 
 a command, or nothing), or a restart when `restart` is set, then Sova waits for its readiness
 again. A service that is not running is skipped. A service the record still wants that the
 definition no longer declares is stopped and marked stopped, as up does. `changed` is true only when something reloaded or such a service was stopped.
+On an adopted slot 0 it schedules the unit's gated restart instead of reloading it, and waits for
+nothing (§app.project-services/adopt).
 
 ## §app.project-services/status-logs — status and logs
 
@@ -259,6 +268,8 @@ endpoints its definition lists, and the sentence saying why it can't be shared, 
 `status` of one instance puts its active links in the result's `links`. `logs` returns at most 500 lines
 (default 100) of one service or all, oldest first, as `{t, service, text}`, from the journal or the
 log file; for a model they are redacted and wrapped as untrusted text.
+On an adopted slot 0 (§app.project-services/adopt), status shows the adopted unit's row (its unit
+name, main pid, memory, readiness and when it started) and logs read that unit's journal.
 
 ## §app.project-services/doctor — doctor
 
@@ -294,6 +305,8 @@ the run's processes), null when unknown. `lines` holds the run's last 100 lines 
 `test`), which a model reads as untrusted, like logs. A run that did not pass fails the verb with
 `tests-failed`: "{failed + errors} of {passed + failed + errors} failed", "timed out after
 {timeout}s", or, with no counts, "the test command exited with {exit}".
+On an adopted slot 0, a run whose `requires` needs the adopted service is refused
+(`refused-slot0`); see §app.project-services/adopt.
 
 ## §app.project-services/instance-note — What a builder is told about its instance
 
@@ -327,6 +340,7 @@ Destructive to one instance only. Its running services go down, each data resour
 named) is removed and provisioned again from its `from` (a `hook` resource runs deprovision then
 provision), the setup steps run again, and what was running comes back up. With no data declared it
 answers `changed: false`.
+An adopted slot 0 refuses `reset` (`refused-slot0`); see §app.project-services/adopt.
 
 ## §app.project-services/teardown — teardown
 
@@ -336,6 +350,7 @@ covers, those that left the definition included), then each data resource deprov
 (unless `keepData`), then the worktree removed only when Sova cut it and it is clean (a dirty one
 stays, named in a skipped step), then the slot freed. The branch is never deleted. Slot 0 is
 refused (`refused-slot0`). An instance that is absent answers `ok` with state `absent`.
+An adopted slot 0 is refused the same way, naming its unit; see §app.project-services/adopt.
 
 ## §app.project-services/reserved — Reserved verbs
 
@@ -409,7 +424,10 @@ definition does not declare, and a unit of one that left the definition is stopp
 removed, and the service marked stopped; a project's shared service that no definition declares
 any more (down's rule, §app.project-services/down) is stopped and marked stopped the same way, and
 never started again; then the detached driver's restart watch takes charge
-of the units already running. It never touches a process it did not start.
+of the units already running. It never touches a process it did not start. When the server's own
+checkout's slot 0 adopts a unit (§app.project-services/adopt), that unit is this server: nothing is
+started for it, and the log notes the server's start time and the commit its checkout had then
+(as `GET /api/health` answers them).
 
 ## §app.project-services/conform — Conformance
 
@@ -532,7 +550,40 @@ checkout: the operator does it…"). Even confirmed, it is refused with `busy` w
 server hosts is busy: its live record (`sessions/live/p<server pid>-*.json`, heartbeat at most 30 s
 old) shows a working subagent or a turn in flight, the asking session's own turn included. The
 refusal names how many are busy, and nothing changes. Instances of the project's other worktrees
-are not affected: their verbs follow the ordinary rules.
+are not affected: their verbs follow the ordinary rules. When slot 0 adopts a unit
+(§app.project-services/adopt), of this project or any other, the same rule guards its `apply`, and
+`down`, `reset` and `teardown` of it are refused outright.
+
+## §app.project-services/adopt — Slot 0 adopts a unit Sova did not start
+
+A `cmd` checkout service may say `adopt: {unit, ports}`: in slot 0 (the main checkout) it is not
+started by Sova but is that systemd user unit, installed and run by the operator (Sova's own
+definition adopts `sova-runtime.service` on 4800). `unit` is a whole service name (`<name>.service`),
+never one of Sova's own (`sova-svc-…`, `sova-hook-…`, `sova-restart-…`); `ports` gives each of the
+service's ports the fixed port the unit listens on, which no slot's allocation may give any service.
+At most one service adopts, never a static, container or shared one, and the key is inside the
+hash. Every other slot runs the service as usual, on its allocated ports.
+
+On an adopted slot 0, Sova only reads the unit (`systemctl --user show`), whatever its supervisor:
+status shows the service with the unit's name, its main pid, resident memory and readiness on the
+unit's ports, `ready` once that answers, else from the unit's state, and a detail saying it is the
+adopted unit and when it started (for the server's own unit, "this server" and the commit it
+loaded); the copy is wanted running. Logs read the unit's journal. `create` records the instance and
+runs no setup or data step there; `up`, `down`, `reset` and `teardown` answer `refused-slot0` ("…is
+the adopted unit …, which Sova never starts or stops"), as does a test run that needs the adopted
+service. `apply` is the one verb that changes it, under the self-host rule
+(§app.project-services/self-host) for every caller and project: the operator, confirmed, and never
+while a session this server hosts is busy. Then the service's `build` runs when declared and
+changed, and instead of a reload Sova schedules a gated restart, `systemd-run --user
+--on-active=30s` running `scripts/sova-restart-gate.mjs` from the server's own code, each schedule a
+transient unit of its own; the step says "restart scheduled", and `apply` answers at once without
+waiting for readiness, since the server may be the unit it restarts. When it fires, the gate reads
+the scheduling server's live records again (the same busy rule) and only then restarts the unit
+with `systemctl --user restart`; a busy server makes it exit 75 and restart nothing, and a unit
+whose main pid changed since the schedule was restarted already, so it does nothing. Each outcome
+is a line in `<state root>/project-services/logs/restart-gate.log`. A unit that is not loaded
+answers `not-found`; a host where `systemd-run` can't schedule it answers `unsupported`; nothing
+restarts in either case.
 
 ## §app.project-services/services-ui — The Services tab and Running copies
 
@@ -590,3 +641,7 @@ The operator sees and drives every running copy from two places, both on this ho
   copy's Share is disabled and the row reads "Derived from production: copies are never shared.";
   otherwise, while the engine says a copy can't be shared (`share.refused`), Share is disabled with
   that sentence under the row.
+
+On an adopted slot 0's row (§app.project-services/adopt) only **Apply** works (it asks for the
+confirm, then schedules the unit's restart); Start, Stop, Reset and Teardown, and Start Main, answer
+`refused-slot0`, shown as the engine's sentence.

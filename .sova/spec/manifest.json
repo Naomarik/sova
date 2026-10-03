@@ -10468,7 +10468,8 @@
       "code": [
         "server/project-services/engine.ts",
         "server/project-services/engine.test.ts",
-        "server/project-services/removed-services.test.ts"
+        "server/project-services/removed-services.test.ts",
+        "server/project-services/adopt.test.ts"
       ]
     },
     "§app.project-services/callers": {
@@ -10554,7 +10555,8 @@
       ],
       "code": [
         "server/project-services/engine.ts",
-        "server/project-services/engine.test.ts"
+        "server/project-services/engine.test.ts",
+        "server/project-services/adopt.test.ts"
       ]
     },
     "§app.project-services/doctor": {
@@ -10588,7 +10590,8 @@
         "server/project-services/store.ts",
         "server/project-services/shared-removed.test.ts",
         "server/project-services/test-verb.test.ts",
-        "server/project-services/share.test.ts"
+        "server/project-services/share.test.ts",
+        "server/project-services/adopt.test.ts"
       ]
     },
     "§app.project-services/instances": {
@@ -10635,7 +10638,8 @@
         "server/project-services/routes.ts",
         "server/index.ts",
         "server/project-services/removed-services.test.ts",
-        "server/project-services/shared-removed.test.ts"
+        "server/project-services/shared-removed.test.ts",
+        "server/project-services/self-host.ts"
       ]
     },
     "§app.project-services/reserved": {
@@ -10662,7 +10666,8 @@
       ],
       "code": [
         "server/project-services/engine.ts",
-        "server/project-services/engine.test.ts"
+        "server/project-services/engine.test.ts",
+        "server/project-services/adopt.test.ts"
       ]
     },
     "§app.project-services/result": {
@@ -10694,7 +10699,9 @@
         "server/project-services/drivers.ts",
         "server/project-services/adapters.ts",
         "server/project-services/shared-removed.test.ts",
-        "server/project-services/share.test.ts"
+        "server/project-services/share.test.ts",
+        "server/project-services/adopt.test.ts",
+        "server/project-services/restart-gate.test.ts"
       ]
     },
     "§app.project-services/supervisor": {
@@ -10716,7 +10723,8 @@
         "server/project-services/proctable.test.ts",
         "server/project-services/routes.ts",
         "server/project-previews.ts",
-        "server/preview-sweep.test.ts"
+        "server/preview-sweep.test.ts",
+        "server/project-services/restart-gate.test.ts"
       ]
     },
     "§app.project-services/teardown": {
@@ -10732,7 +10740,8 @@
         "server/project-services/engine.test.ts",
         "server/project-services/removed-services.test.ts",
         "server/project-services/share.ts",
-        "server/project-services/share.test.ts"
+        "server/project-services/share.test.ts",
+        "server/project-services/adopt.test.ts"
       ]
     },
     "§app.project-services/trust": {
@@ -10771,7 +10780,8 @@
         "server/project-services/container-claims.test.ts",
         "server/project-services/removed-services.test.ts",
         "server/project-services/shared-removed.test.ts",
-        "server/project-services/test-verb.test.ts"
+        "server/project-services/test-verb.test.ts",
+        "server/project-services/adopt.test.ts"
       ]
     },
     "§app/project-services": {
@@ -11610,7 +11620,8 @@
       "code": [
         "server/project-services/engine.ts",
         "server/project-services/self-host.ts",
-        "server/project-services/self-host.test.ts"
+        "server/project-services/self-host.test.ts",
+        "server/project-services/adopt.test.ts"
       ]
     },
     "§app.project-services/test": {
@@ -11633,7 +11644,8 @@
         "scripts/sova-project.mjs",
         "server/project-services/test-verb.test.ts",
         "server/project-services/note.test.ts",
-        "shared/project-contract.test.ts"
+        "shared/project-contract.test.ts",
+        "server/project-services/adopt.test.ts"
       ]
     },
     "§app/idle-git-cache": {
@@ -12122,7 +12134,31 @@
         "src/lib/services-view.ts",
         "src/lib/services-view.test.ts",
         "src/lib/api.ts",
-        "src/projects.css"
+        "src/projects.css",
+        "server/project-services/engine.ts",
+        "server/project-services/adopt.test.ts"
+      ]
+    },
+    "§app.project-services/adopt": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.project-services/contract",
+        "§app.project-services/self-host",
+        "§app.project-services/supervisor",
+        "§app.project-services/instances"
+      ],
+      "code": [
+        "shared/project-contract.ts",
+        "shared/project-contract.test.ts",
+        "server/project-services/engine.ts",
+        "server/project-services/drivers.ts",
+        "server/project-services/self-host.ts",
+        "scripts/sova-restart-gate.mjs",
+        "server/project-services/adopt.test.ts",
+        "server/project-services/restart-gate.test.ts",
+        "CLAUDE.md"
       ]
     }
   },

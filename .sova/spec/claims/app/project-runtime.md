@@ -136,7 +136,8 @@ in the contract's key order), exiting 0 when all is well, 1 when it found someth
 1. Reads the state: the verbs' status and doctor, the definition at HEAD, the last conformance
    report, and why it was started; `plan` says whether anything points at a change (no valid
    definition, a source changed since the definition's last commit, a stack file the `sources`
-   don't list, a source gone, a service with ports but no `about`).
+   don't list, a source gone, a service with ports but no `about`, a checkout service that may serve
+   a page, static or with HTTP readiness, while the definition names no entry point).
 2. Inspects the repository: its tasks, scripts, dependency manifests, compose and Procfiles, port
    and URL literals, gitignored runtime folders, the tools on PATH and the ports in use.
 3. Reconciles, never regenerates: it keeps every service, key and order the sources don't
@@ -150,7 +151,11 @@ in the contract's key order), exiting 0 when all is well, 1 when it found someth
    `share.endpoints` only the ports a stakeholder should open (the app's page, a public API), never
    a REPL, nREPL, shadow-cljs, debugger, metrics, database or admin port nor a shared service, and
    declares `share: {"allow": false}` when a resource is sensitive or nothing is for a stakeholder to
-   see; its report says which. It declares a service's `onMerge: "reload"` only when the main
+   see; its report says which. Finding the app's entry point is required, as the verbs are: for
+   every project with a page (a web app, a static site) it sets `open` to the endpoint and path
+   where a person opens the app (its home page, never an API or health route) and checks that the
+   page there answers with HTML; it leaves `open` out only for a library or an API-only project, and
+   its report says why. It declares a service's `onMerge: "reload"` only when the main
    checkout's running copy of it should follow main and loses nothing by reloading, never on a
    REPL, a long-running job or a datastore; its report's service line says "reloads on merge".
 5. On its own branch only, writes `.sova/project.json`, the project's helper scripts under
@@ -176,7 +181,7 @@ in the contract's key order), exiting 0 when all is well, 1 when it found someth
    service without `isolation`, missing `sources`, or a data `from` outside the project), commits
    on its branch, and runs conformance on the branch (confined, before approval), reads what
    failed and fixes it, at most 6 runs.
-7. Reports the services and their isolation, the conformance result (runs used, confined, suite,
+7. Reports the services and their isolation, the entry (`open`, or why there is none), the conformance result (runs used, confined, suite,
    hash) with each service's and instance's measured memory, the test command and smoke counts,
    the app files it adapted, the outbound channels it silenced and how, the deploy entrypoints
    it found (never run), and the next step
@@ -202,5 +207,5 @@ shared."; "Proven {time} at {hash12} (suite v{n})";
 run's session as a link; and the registry's latest feed lines, newest first, with
 the project's onMerge notes (§app.project-services/on-merge) among them. Its actions are
 **Run Playbook** (**Run Again** once registered) and **Approve {hash12}**, each shown only while
-the statechart would take it. Under its service rows, **Open Services** links to the project's
-Services tab (§app.project-services/services-ui), where each copy is started, stopped and read.
+the statechart would take it. Under its service rows, **Open Branches** links to the project's
+Branches tab (§app.project-services/services-ui), where each copy is started, stopped, opened and read.

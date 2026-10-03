@@ -49,6 +49,12 @@ shell string is accepted anywhere: every command is an argv array of non-empty s
   the service, e.g. the client command with its port, shown in the instance note,
   §app.project-services/instance-note). A `cmd` service without
   `ready` is ready once its first port listens, or, with no ports, once it has run for a second.
+  Either way it is ready only once every one of its declared ports is also held by its own (as
+  §app.project-services/up counts them), waited for within the same timeout: a port its process
+  opens a few seconds after the one `ready` asks (an nREPL after the HTTP server) is waited for, one
+  still unheld at the timeout fails `not-ready` naming it, and one a foreign process holds (a
+  readable process not its own, or another container) fails at once (`port-held`); a listener this
+  user can't read that no container claims, as root's docker-proxy reads, counts as listening.
   One `cmd` checkout service (no `container`) may say `adopt: {unit, ports}`: in slot 0 it is that
   systemd user unit, which Sova did not start, on those fixed ports (§app.project-services/adopt).
   A `cmd` checkout service may say `onMerge: "reload"` (the only value; never a static or shared
@@ -80,6 +86,11 @@ shell string is accepted anywhere: every command is an argv array of non-empty s
   checkout service (never a shared service's), each once, at most 20 (none when absent); `maxDays` is
   1–7; `allow` is `true` (the default) or `false` (never shared, whatever is listed). Without
   `share`, no copy is shared.
+- **`open`** (optional): `{endpoint, path?}`, the project's entry point: where a person opens the
+  app. `endpoint` is `"<service>.<port>"`, a declared port of a checkout service (never a shared
+  service's); `path` starts with `/` (default `/`). It exposes nothing (a copy's entry is a port the
+  copy already listens on), so it is outside the approval hash; conformance checks that it answers
+  (§app.project-services/conform), and the Branches tab opens it (§app.project-services/services-ui).
 - **`sources`** (optional): the checkout files the definition was written from (`bb.edn`,
   `package.json`, a compose file, `.mise.toml`: relative, no `..`, dot-files allowed, at most 50),
   whose change at HEAD is the project's drift (§app.project-services/facts). Each service may also
@@ -212,7 +223,8 @@ Without `services` it starts every checkout service but the on-demand ones (`sta
 test run (§app.project-services/test); once started, an on-demand service is wanted like any other
 (reconcile keeps it running) until down stops it. The
 shared services it requires start first, then its own in `requires` order; each waits for its
-readiness before the next starts. A service already ready is left alone (same pid, `skipped`).
+readiness, every declared port held by its own included (§app.project-services/contract), before
+the next starts. A service already ready is left alone (same pid, `skipped`).
 Before a start, every port of the service is checked: a holder that is not the instance's own
 refuses with `port-held`, naming it (its pid and folder, or the container that publishes the port)
 and is never stopped. The instance's own are its unit's processes, the server for a `static`
@@ -391,10 +403,10 @@ like the others: one result shape, every caller.
   not-running page.
 - **Idempotent.** Sharing the same instance and endpoint again while its link is active answers
   that same link, its expiry moved to the later of its current one and `days` from now.
-- **Who shares.** The operator, confirmed (`confirm`; the Services tab's confirm, the CLI's
+- **Who shares.** The operator, confirmed (`confirm`; the Branches tab's confirm, the CLI's
   `--confirm`), else `needs-confirm`. The project overseer through its statechart's act
   `services/share` (L1, people-facing, held like a preview; §app.project-services/callers). The
-  global Overseer gets `needs-confirm` ("The operator shares it from the project's Services tab.").
+  global Overseer gets `needs-confirm` ("The operator shares it from the project's Branches tab.").
   A coding session gets `forbidden`. `revoke` is open to any caller with the instance in scope and
   is never an act or held.
 - **Its end.** A link ends at its expiry, at revoke, or when its copy is torn down: teardown revokes
@@ -413,7 +425,7 @@ like the others: one result shape, every caller.
 
 A definition runs only after the operator approved its hash on this host. The hash
 (`sha256:<hex>`) covers the whole parsed definition except timeouts, readiness paths, each
-service's `about` and `isolation`, and the `sources` list, so a
+service's `about` and `isolation`, the `sources` list and the entry point `open`, so a
 branch that changes any command, env template, port, hook or data source needs approving again,
 while tuning a timeout, rewording an `about` or an isolation's `why`, or listing another source does not; a `test`, a `start`, a data resource's `sensitive`, `share` and a service's `onMerge` are covered (`allow: true`, the default, hashes as if absent). Approvals live in `<state root>/project-services/approvals.json`,
 keyed by project root and hash, outside every repo, so no branch can approve itself; only the
@@ -442,7 +454,8 @@ versioned suite that no project can change, in two scratch instances A and B on 
 the ref, in slots above the cap so they never clash with real ones: doctor; create A, and again
 (`changed: false`); every setup step run a second time exits 0; up A (ready), and again (same
 pids); every declared port of a service up started held by A's own (as §app.project-services/up counts them: its
-processes, or its container publishing the port); status agrees; create and up B in parallel
+processes, or its container publishing the port), a port nothing holds yet waited for within that
+service's ready timeout before the check fails, one a foreign process holds failing at once; status agrees; create and up B in parallel
 (both ready, ports and data refs disjoint); with a `probe`, a token written in A reads in A, not in
 B, and not in the main checkout's instance when it runs; apply A (ready, B's pids unchanged); logs
 of A answer, at most 50 lines, and at least one when apply A left a process or container service of
@@ -454,6 +467,10 @@ counts; without a `test`, test A answers `unsupported`; suite version 3 adds, af
 endpoint the definition's `share` lists answers a `GET /` below 500 through the preview proxy's own
 request path, in the server's process, with no link minted (a confined run's process service is
 asked inside the run's namespace; with no endpoints, `allow: false` or sensitive data the check
+passes saying so); suite version 4 adds, after that: when the definition declares `open`, its entry
+in A (that endpoint's port in A, at its `path`) answers a `GET` below 500, its service ready, and
+the check's detail names the answer's status and content type, so a reader can tell a page from an API (a
+confined run's process service is asked inside the run's namespace; without `open` the check
 passes saying so); then down A (its processes gone, the
 on-demand ones' included, its ports free, B still ready), and again (`changed: false`); teardown A and B, and again (`absent`);
 then nothing is left of either: no unit or process, no listener on their ports, no data dir, no
@@ -467,7 +484,7 @@ build step (its unit's output, or the supervisor's message when it could not sta
 cause can be read after the run. Whatever the outcome (a pass, a failed check, a failed setup or
 hook, an error), the run then removes the scratch worktrees and `sova/conform-<run>-a|b` branches it
 cut, by force: a worktree a failed step left files in is removed too, and nothing of the run stays
-in git. The suite's version is 3, which the report and the stamp carry. Beyond A and B, a unit, data dir or registry entry
+in git. The suite's version is 4, which the report and the stamp carry. Beyond A and B, a unit, data dir or registry entry
 that appeared during the run is a leak only when it belongs to no registered instance (nor the
 project's shared services): another instance's, registered before the run or made meanwhile by
 another caller (a session's `up`, the server's reconcile), is never one. The report and a stamp keyed by project, hash and suite
@@ -543,7 +560,7 @@ same engine in-process, never over HTTP:
 `share` (§app.project-services/share) is the operator's, confirmed; the project overseer's through
 its statechart's act `services/share` (L1, people-facing, held like a preview), run only after every
 check of the share passed, so a refused share never reaches the statechart; the global Overseer's is
-`needs-confirm` ("The operator shares it from the project's Services tab."); a coding session's is
+`needs-confirm` ("The operator shares it from the project's Branches tab."); a coding session's is
 `forbidden`. `revoke` is any caller's with the instance in scope (a session: its own checkouts'), with
 no act, never held and taking no lock. Sova itself, on no one's request (the `system` caller: today
 only onMerge, §app.project-services/on-merge), runs `apply` and the reads, nothing else: any other
@@ -619,16 +636,19 @@ restarts in either case.
   (§app.project-runtime/software-card) and the server's log: "Main moved to {sha7}: onMerge
   reloaded {services} on the main checkout's copy.", "Main moved to {sha7}: onMerge could not
   reload {services}: {reason}." or "Main moved to {sha7}: onMerge never reloads the checkout this
-  Sova runs from; apply it from the Services tab." The newest 10 per project are kept. A move with
+  Sova runs from; apply it from the Branches tab." The newest 10 per project are kept. A move with
   nothing carrying the key running writes no line.
 
-## §app.project-services/services-ui — The Services tab and Running copies
+## §app.project-services/services-ui — The Branches tab and Running branches
 
 The operator sees and drives every running copy from two places, both on this host's engine.
 
-- **The Services tab** (`#/projects/<pid>/services`) reads `GET /api/projects/:pid/services`: the
+- **The Branches tab** (`#/projects/<pid>/branches`; `…/services` is no address of it) reads
+  `GET /api/projects/:pid/services`: the
   project's status (§app.project-services/status-logs) with, per service, the port its readiness
-  probes over HTTP (a static service's first port too, at `/`) and that path; and whether the main
+  probes over HTTP (a static service's first port too, at `/`) and that path; per copy, its entry
+  (`open: {endpoint, port, path}`) when the copy's own definition declares `open`
+  (§app.project-services/contract) and the copy has that port; and whether the main
   checkout's definition declares sensitive data. It is read every 5 seconds while the tab shows. One row per copy: the main checkout's (slot 0) first, named
   `main`, then each branch copy by slot. A row shows the branch, `slot {n}`, each checkout service's
   ports (a port with HTTP readiness is a link to the site at `http://<this page's host>:<port>/`, never the readiness check's path), the copy's
@@ -639,6 +659,12 @@ The operator sees and drives every running copy from two places, both on this ho
   "by conformance"; the caller's tag is its title). While the main checkout has no copy, **Start
   Main** (`up` of the project) sits under the rows. Shared services are listed in their own block
   under the copies, once each, with their ports, state and memory, and Start and Stop of their own.
+- **Open**: while a copy has an entry and the entry's own service is ready, whatever the copy's
+  state (Degraded or Starting included), Open is its row's first action and carries the row's one
+  plain-button weight: a link that opens the copy's entry, `http://<this page's host>:<port><path>`,
+  in a new tab, and the verb the state calls for (Start, Stop) joins the ghost group with Apply,
+  Share and Logs. While that service is not ready, or without an entry, the row offers no Open and
+  is drawn as it is without one; its port links stay as they are.
 - **Actions per copy**, each only where the copy's state allows it: **Start** (`up`) while it is
   stopped, absent or degraded; **Stop** (`down`) while it is running or degraded; **Apply**
   (`apply`), **Reset** (`reset`) and **Logs** always; **Teardown** (`teardown`) on every copy but
@@ -659,11 +685,12 @@ The operator sees and drives every running copy from two places, both on this ho
   Escape or the scrim closes it and focus returns to the Logs button.
 - **Narrow**: below 480px of the tab's width each row stacks (facts, then the actions wrapping
   under them), and nothing scrolls sideways.
-- **Running copies** on `#/projects` (`GET /api/services`): one section listing, for every project
+- **Running branches** on `#/projects` (`GET /api/services`): one section listing, for every project
   on this host with a copy or shared service that runs now, standalone or placed, each running copy
-  (branch or `main`, slot, state as on the tab, memory) and each running shared service, with a
+  (branch or `main`, slot, state as on the tab, memory; while the copy has an entry whose service is ready (`open.ready`),
+  its name is a link to that entry, in a new tab, as Open is on the tab) and each running shared service, with a
   **Stop** that stops it (`down` as the operator; an adopted main has none, its "Runs as {unit}" line stands there instead; a shared service's asks first, and a refusal reads as on the
-  tab). It is read every 15 seconds. The project's name links to its Services tab, with "In {org}"
+  tab). It is read every 15 seconds. The project's name links to its Branches tab, with "In {org}"
   while placed. A copy whose root no registered project holds is listed under its folder, without a
   link. A confined conformance run's copies are not listed. With nothing running it says "Nothing runs on this host now. Copies you
   start show here."

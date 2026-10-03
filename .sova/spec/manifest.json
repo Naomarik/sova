@@ -10535,7 +10535,10 @@
         "server/project-services/conform-logs.test.ts",
         "server/project-services/share.ts",
         "server/project-services/share.test.ts",
-        "server/project-services/conform-cleanup.test.ts"
+        "server/project-services/conform-cleanup.test.ts",
+        "server/project-services/confine.ts",
+        "server/project-services/netns-agent.mjs",
+        "server/project-services/ports-grace.test.ts"
       ]
     },
     "§app.project-services/contract": {
@@ -10548,7 +10551,8 @@
         "shared/project-contract.test.ts",
         "server/project-services/engine.ts",
         "server/project-services/share.test.ts",
-        "server/project-services/data-own-source.test.ts"
+        "server/project-services/data-own-source.test.ts",
+        "server/project-services/ports-grace.test.ts"
       ]
     },
     "§app.project-services/create": {
@@ -10793,7 +10797,8 @@
         "server/project-services/removed-services.test.ts",
         "server/project-services/shared-removed.test.ts",
         "server/project-services/test-verb.test.ts",
-        "server/project-services/adopt.test.ts"
+        "server/project-services/adopt.test.ts",
+        "server/project-services/ports-grace.test.ts"
       ]
     },
     "§app/project-services": {

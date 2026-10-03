@@ -372,10 +372,10 @@ the URL (§app.organizations/org-page); each roster person has a page of their o
     Requirements), `{n} decisions` (Requirements; its `title` says how many are ready to promote),
     `{n} gaps` (open gap ideas, with " · {n} ideas" for the other open ideas, Requirements) and `{n} to-dos` (open, Overview). A count not read yet
     is left out, never shown as 0.
-- **Tabs**: Overview (the default) · Requirements (only while placed) · Services · Cost · Settings, the org page's tab strip
+- **Tabs**: Overview (the default) · Requirements (only while placed) · Branches · Cost · Settings, the org page's tab strip
   (`.tabs`, keyboard as §app.organizations/org-page; Requirements carries the warn dot while a
   conflict is open or a decision is ready to promote). The tab is in the URL:
-  `#/projects/<pid>` is Overview, `…/requirements`, `…/services`, `…/cost`, `…/settings` the others
+  `#/projects/<pid>` is Overview, `…/requirements`, `…/branches`, `…/cost`, `…/settings` the others
   (`…/overseer` stays the overseer's door). Picking a tab or a chip adds a history entry, so Back
   returns to the previous tab and a reload opens the same one; the page is not reloaded and its
   fetched data stays.
@@ -401,7 +401,7 @@ the URL (§app.organizations/org-page); each roster person has a page of their o
   (when an idea is open), each as it is; the empty ones are named in one line instead ("No
   conflicts, decisions, pipeline rows or ideas yet.", listing only the empty ones), with **+ Idea**
   opening the add form.
-- **Services**: the project's running copies on this host (§app.project-services/services-ui).
+- **Branches**: the project's running copies on this host, one per branch, each opening its app where the project declares an entry (§app.project-services/services-ui).
 - **Cost**: the Cost card (§app.project-costs/card).
 - **Settings.** In this order: **Overseer** (the Watch switch and its hint; the level as a
   segmented control `L0 | L1 | L2 | L3` whose selected level's sentence shows under it, the

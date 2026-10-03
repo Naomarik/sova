@@ -290,6 +290,23 @@ export function conformer(engine: ProjectEngine, git: Git = realGit, opts: Confo
   };
 }
 
+/** Remove every worktree checked out on one of `branches` (by force: they are a conformance run's own scratch), then the branches. */
+export async function removeScratch(git: Git, project: string, branches: readonly string[]): Promise<void> {
+  const list = await git(["worktree", "list", "--porcelain"], project);
+  let path: string | null = null;
+  for (const line of list.stdout.split("\n")) {
+    if (line.startsWith("worktree ")) path = line.slice(9);
+    else if (path && branches.some((br) => line === `branch refs/heads/${br}`) && path !== project) {
+      const r = await git(["worktree", "remove", "--force", "--force", "--", path], project);
+      if (r.code !== 0 || existsSync(path)) {
+        rmSync(path, { recursive: true, force: true });
+        await git(["worktree", "prune"], project);
+      }
+    }
+  }
+  for (const br of branches) if ((await git(["rev-parse", "--verify", "--quiet", `refs/heads/${br}`], project)).code === 0) await git(["branch", "-D", "--", br], project);
+}
+
 async function runSuite(
   engine: ProjectEngine,
   git: Git,
@@ -530,11 +547,9 @@ async function runSuite(
     t0 = Date.now();
     const tds2 = await Promise.all(ids.map((id) => s.verb(`teardown ${id} again`, "teardown", { project, instance: id })));
     if (tds2.length) s.check("teardown-again", tds2.every((r) => r.ok && !r.changed && r.state === "absent"), tds2.map(describe).join("; "), t0);
-    // The scratch branches: deleted only while they still point at the ref (nothing was committed there).
-    for (const br of [branchA, branchB]) {
-      const r = await git(["rev-parse", "--verify", "--quiet", `refs/heads/${br}`], project);
-      if (r.code === 0 && r.stdout.trim() === commit) await git(["branch", "-D", br], project);
-    }
+    // The run's own scratch worktrees and branches go on every outcome (§app.project-services/conform): teardown keeps
+    // a worktree a failed step left files in, so whatever is still checked out on a scratch branch is removed by force.
+    await removeScratch(git, project, [branchA, branchB]);
     // A confined run's own shared services end with it (the host's are never touched).
     if (confine) {
       const id = `${sharedIdOf(project)}-${confine.runId}`;

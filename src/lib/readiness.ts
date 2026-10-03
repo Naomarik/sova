@@ -8,7 +8,7 @@ import type { ReadinessState, SessionReadiness } from "../../shared/protocol";
  */
 
 /** The row's worktree count (§chat.worktrees/readiness): merged of the worktrees this session
-    tracks, and whether one of them is ready to merge — the count lights up for that, with no glyph
+    tracks — git-merged, clean or not, so a stale or in-progress merged tree counts — and whether one of them is ready to merge — the count lights up for that, with no glyph
     and no word of its own. Null when the session tracks none, and before the server's background
     git read has a set. */
 export interface ReadinessCount {
@@ -20,7 +20,7 @@ export interface ReadinessCount {
 export function readinessCount(r: SessionReadiness | undefined): ReadinessCount | null {
   if (!r || r.trees.length === 0) return null;
   return {
-    merged: r.trees.filter((t) => t.state === "merged").length,
+    merged: r.trees.filter((t) => t.merged || t.state === "merged").length,
     total: r.trees.length,
     // Ready to merge is either state: a worktree that waits for your OK is still mergeable.
     ready: r.trees.some((t) => t.state === "ready" || t.state === "waiting-approval"),

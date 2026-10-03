@@ -9,11 +9,11 @@ export type LlmInflightState = "complete" | "partial" | "unknown";
 
 export interface LlmInflightView {
   state: LlmInflightState;
-  /** Some of the count are one-shots timed from spawn to exit: estimates, shown with a leading `~`.
-      Independent of `partial`: a `~` never stands for a gap, a `+` never for an estimate. */
+  /** Some of the count are one-shots timed from spawn to exit: estimates, said in the sentence,
+      never marked on the figure. */
   approximate: boolean;
-  /** The bare figure for the phone bar and the spine tally: `3`, `3+` while partial, `~3` / `~3+`
-      with one-shots in it, `–` unknown. */
+  /** The bare figure for the phone bar and the spine tally: the number alone whenever known (a
+      floor or estimates are the sentence's to say, never a `+` or `~`), `–` unknown. */
   figure: string;
   /** The calls in flight, seen ones and one-shots alike; null while unknown. */
   count: number | null;
@@ -72,15 +72,14 @@ export function llmInflightView(inflight: LlmInflight | null, label: (id: string
   const n = inflight.count;
   // One-shots are part of the count; a malformed frame can't claim more of them than calls.
   const a = Math.min(Math.max(inflight.approximate, 0), n);
-  const tilde = a > 0 ? "~" : "";
   // A count with a gap is a floor, whatever `partial` says: never shown as an exact number.
   if (inflight.partial || inflight.gaps.length > 0) {
     const why = inflightWhy(inflight.gaps, label);
     const sentence = `${callsClause(n, a, true)}.${why ? ` ${why}` : ""}`;
-    return { state: "partial", approximate: a > 0, count: n, figure: `${tilde}${n}+`, rowWord: "agents", sentence, agentsLabel: `Agents: ${sentence}`, showTally: true };
+    return { state: "partial", approximate: a > 0, count: n, figure: `${n}`, rowWord: agents(n), sentence, agentsLabel: `Agents: ${sentence}`, showTally: true };
   }
   const sentence = callsClause(n, a, false);
-  return { state: "complete", approximate: a > 0, count: n, figure: `${tilde}${n}`, rowWord: agents(n), sentence, agentsLabel: `Agents: ${sentence}`, showTally: n > 0 };
+  return { state: "complete", approximate: a > 0, count: n, figure: `${n}`, rowWord: agents(n), sentence, agentsLabel: `Agents: ${sentence}`, showTally: n > 0 };
 }
 
 /** This host's figures the Agents row keeps after the call count: fresh host sessions holding a

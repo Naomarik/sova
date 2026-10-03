@@ -229,6 +229,13 @@ Routine follow-ups, also mechanical:
 Git is read in the background, at most every 20 seconds per session while the file doesn't change,
 and only for session files that ever wrote a `worktrees` entry, so a listing never waits on git.
 
+**The row's count** (§app.session-list/content-rules) counts a worktree as merged when git finds
+its branch merged into its base (the merged rule above without the clean tree), clean or not, or,
+its folder gone, when it is recorded merged. A merged tree with uncommitted changes therefore
+counts as merged there while its own state stays stale or in progress, as above: the count's
+`title`, the Session tab's chip, the badge and the attention digest still read that state. Each
+worktree's readiness carries the fact (`merged: true`) beside its state.
+
 **The row's badge** (§app.session-list/anatomy) is one short phrase from the session's worktrees,
 the first that holds: "Waiting for your OK" (a worktree waits for the go-ahead) and "Ready to
 merge" (one is ready) — the two states the row's count already lights for, and the two the

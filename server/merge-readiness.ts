@@ -587,6 +587,7 @@ export async function computeReadiness(s: SessionSummary, facts: FileFacts, publ
       path: t.path,
       branch: tf.branch,
       state: r.state,
+      ...((tf.readable ? tf.merged : tf.tracked === "merged") ? { merged: true as const } : {}),
       ...(r.why ? { why: r.why } : {}),
       reason: r.reason,
       ...(tf.dirty && tf.dirtyCount ? { dirtyCount: tf.dirtyCount, dirtyFiles: tf.dirtyFiles ?? [] } : {}),

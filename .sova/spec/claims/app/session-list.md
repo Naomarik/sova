@@ -326,7 +326,7 @@ label a person reads says "sessions pane".
   forces one open. If the region is gone by the time the pane has expanded, focus goes to the
   head's collapse toggle.
 - **Live tallies.** The LLM calls in flight (§app.insights/llm-inflight) — the expanded foot's
-  Agents row's own figure (`{n}`, `{n}+` while partial, `–` while unknown) and its sentence, "3
+  Agents row's own figure (the bare `{n}` whenever known, partial too, `–` while unknown) and its sentence, "3
   LLM calls running now" — shown unless the count is a complete 0; and
   "{n} sessions open in a TUI" (every live session, whatever the search filters), only at
   n ≥ 1, with `.spine-stats` omitted when both are left out. They are **facts, not doorways**: nothing
@@ -500,7 +500,9 @@ label a person reads says "sessions pane".
 - **Row line 3.** The worktrees the session tracks **lead the facts after the time**, when the
   server has read at least one (§chat.worktrees/readiness): a 12px `branch` glyph and a bare figure,
   "{merged} of {total}" — "0 of 1", "2 of 3" — over the session's own, non-dropped worktrees, in
-  the meta's own muted voice, `white-space: nowrap`, its `title` each worktree's state and reason.
+  the meta's own muted voice, {merged} counting each one git finds merged into its base, clean or
+  not (a merged tree with uncommitted changes counts though its state reads stale or in progress,
+  §chat.worktrees/readiness "The row's count"), `white-space: nowrap`, its `title` each worktree's state and reason.
   Both the glyph and the figure take `--status-success` while **one or more** of those worktrees is
   ready to merge, which includes one waiting for your OK: the light is the row's whole word for it,
   so the row that can be merged is the row that glows — no check, no phrase. No worktrees, or none

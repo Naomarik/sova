@@ -250,6 +250,8 @@ interface Observation { token: string; value: unknown; at: number; seenAt: numbe
 export interface WorktreeDeps {
   run?: GitRunner;
   now?: () => number;
+  /** Where merge-tree's scratch object directories go (default: the OS temp dir). */
+  scratchDir?: string;
 }
 
 export class WorktreeInsights {
@@ -257,6 +259,7 @@ export class WorktreeInsights {
   computeCount = 0;
   private readonly run: GitRunner;
   private readonly now: () => number;
+  private readonly scratchDir: string | undefined;
   private readonly observations = new Map<string, Observation>();
   private readonly flights = new Map<string, Promise<unknown>>();
   private unverifiedRead = 0;
@@ -268,6 +271,7 @@ export class WorktreeInsights {
   constructor(deps: WorktreeDeps = {}) {
     this.run = deps.run ?? execGit;
     this.now = deps.now ?? Date.now;
+    this.scratchDir = deps.scratchDir;
   }
 
   /** A flight is published before work starts, and is separate from bounded settled entries.
@@ -549,7 +553,7 @@ export class WorktreeInsights {
   private async mergesToBase(cwd: string, layout: Layout, base: string, head: string): Promise<boolean | { conflicts: number } | string> {
     let scratch: string | null = null;
     try {
-      scratch = await mkdtemp(join(tmpdir(), "sova-merge-tree-"));
+      scratch = await mkdtemp(join(this.scratchDir ?? tmpdir(), "sova-merge-tree-"));
       const env = { GIT_OBJECT_DIRECTORY: scratch, GIT_ALTERNATE_OBJECT_DIRECTORIES: join(layout.commonDir, "objects") };
       const [merged, baseTree] = await Promise.all([
         this.git(cwd, ["merge-tree", "--write-tree", "--no-messages", base, head], env),

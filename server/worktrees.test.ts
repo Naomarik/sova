@@ -114,10 +114,12 @@ test("merge-tree leaves the repository's object store as it was", async () => {
   git(r, "add", ".");
   git(r, "commit", "-q", "-m", "base adds c");
   const before = git(r, "count-objects", "-v");
-  const t = await treeOf(new WorktreeInsights(), session(wt));
+  // Its own scratch root: the OS temp dir is shared with every other process making these.
+  const scratchDir = mkdtempSync(join(root, "scratch-"));
+  const t = await treeOf(new WorktreeInsights({ scratchDir }), session(wt));
   assert.equal(t.merged, "no"); // merging would add b.txt: a new tree, which must not land in .git
   assert.equal(git(r, "count-objects", "-v"), before);
-  assert.deepEqual(readdirSync(tmpdir()).filter((f) => f.startsWith("sova-merge-tree-")), []);
+  assert.deepEqual(readdirSync(scratchDir), [], "the scratch object directory is removed");
 });
 
 test("a dirty tree, untracked files included", async () => {

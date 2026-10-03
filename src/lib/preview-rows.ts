@@ -18,7 +18,9 @@ export interface PreviewRow {
   matched: boolean;
   /** "Made by you" / "Made by the overseer" (`href`: that conversation), or null when unknown. */
   maker: { text: string; href: string | null } | null;
-  state: { text: string; tone: "ok" | "warn" };
+  state: { text: string; tone: "ok" | "warn" | "info" };
+  /** A copy link whose copy is stopped: the operator may Start it (`up`; a visit never starts anything). */
+  start: { instance: string } | null;
   expires: string;
   /** The link to copy, or null; then `linkNote` says why there is none (null for a sibling: its link went to its person). */
   url: string | null;
@@ -37,14 +39,22 @@ const folderName = (folder: string): string => (folder === "." || folder === "" 
 export function previewTitle(v: PreviewView): string {
   const purpose = v.purpose?.trim();
   if (purpose) return purpose;
+  if (v.endpoint) return `Preview of a copy's ${v.endpoint}`;
   const t = previewTarget(v);
   return t.kind === "port" ? `Preview of port ${t.port}` : `Preview of ${folderName(t.folder)}`;
 }
 
 export const servesLine = (t: PreviewTarget): string => (t.kind === "port" ? `app on port ${t.port}` : "static files");
 
-/** Whether it serves now: an app answers on its port, or Sova serves its folder. */
-export function stateLine(v: PreviewView): { text: string; tone: "ok" | "warn" } {
+/** A copy link's serves part: its endpoint and the copy's slot ("the main checkout's copy" for slot 0). */
+export const copyServesLine = (endpoint: string, slot: number | null): string => `${endpoint} of ${slot === 0 ? "the main checkout's copy" : slot === null ? "a copy" : `the copy in slot ${slot}`}`;
+
+/** Whether it serves now: a copy link's copy running, starting or stopped; else an app answers on its port, or Sova serves its folder. */
+export function stateLine(v: PreviewView): { text: string; tone: "ok" | "warn" | "info" } {
+  if (v.instance) {
+    const s = v.copy?.state ?? "stopped";
+    return s === "running" ? { text: "Running", tone: "ok" } : s === "starting" ? { text: "Starting", tone: "info" } : { text: "Stopped", tone: "warn" };
+  }
   if (v.running) return { text: "Serving", tone: "ok" };
   const t = previewTarget(v);
   return { text: t.kind === "port" ? `Nothing on port ${t.port}` : "Folder not served", tone: "warn" };
@@ -69,10 +79,11 @@ export function previewRow(v: PreviewView, now: number, minted?: string): Previe
     title: previewTitle(v),
     session: sessionTitle || id ? { title: sessionTitle ?? "Coding session", href: id ? sessionHref(id) : null } : null,
     branch: v.branch?.trim() || null,
-    serves: servesLine(previewTarget(v)),
+    serves: v.endpoint ? copyServesLine(v.endpoint, v.copy?.slot ?? null) : servesLine(previewTarget(v)),
     matched: v.sessionFrom === "worktree",
     maker: makerLine(v.createdBy),
     state: stateLine(v),
+    start: v.instance && v.copy?.state === "stopped" && v.state === "active" ? { instance: v.instance } : null,
     expires: expiresWord(v.expiresAt, now),
     url: url || null,
     // A sibling's link went to its person, never to this page: no "not kept" line for it.

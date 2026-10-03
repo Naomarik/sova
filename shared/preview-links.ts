@@ -57,7 +57,15 @@ export interface PreviewView {
   /** The coding session's title as the project page lists it, and its file on this host. */
   sessionTitle?: string | null;
   sessionPath?: string | null;
+  /** A running copy's share link (§app.project-services/share): the instance and its endpoint (`<service>.<port>`). */
+  instance?: string;
+  endpoint?: string;
+  /** A copy link's copy as the engine's status reads it now: its endpoint's service `running`, `starting` or `stopped`
+      (§mesh.public/preview-card: the operator may Start a stopped one; a visit never starts anything). Absent when the copy is gone. */
+  copy?: { state: PreviewCopyState; slot: number };
 }
+
+export type PreviewCopyState = "running" | "starting" | "stopped";
 
 export interface PreviewList {
   previews: PreviewView[];
@@ -98,7 +106,9 @@ export type PreviewErrorCode =
   | "not-in-worktree"
   | "no-address"
   | "gateway-old"
-  | "unavailable";
+  | "unavailable"
+  /** The port belongs to a copy whose project declares production-derived data (§app.project-services/share). */
+  | "sensitive";
 
 export interface PreviewError {
   error: string;

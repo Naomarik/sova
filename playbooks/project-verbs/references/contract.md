@@ -20,9 +20,11 @@ ports and env in declaration order.
 | `setup` | steps `{id, run, inputs?, timeout?}` run at create, in order; skipped while the rendered argv and the hash of `inputs` (checkout files) are unchanged |
 | `data` | `{name: resource}` in declaration order, below |
 | `services` | `{name: service}` in declaration order, at least one, below |
+| `open` | `{endpoint, path?}`, below: the app's entry point, where a person opens it. Required for every project with a page; absent only for a library or an API-only project. Not hashed |
 | `hooks` | `probe` (`{run, timeout?}`, a step): conformance calls `<run> write <token>` and `<run> read <token>` (exit 0: the token is there) |
 | `test` | `{run, requires?, timeout?, smoke}`, below |
-| `share`, `deploy` | reserved: accepted, unused |
+| `share` | `{endpoints, maxDays?, allow?}`, below: what a running copy may share as a preview link. Absent: never shared. Hashed |
+| `deploy` | reserved: accepted, unused |
 
 ## A step (`setup`, a service's `build`, `hooks.probe`)
 | key | value |
@@ -51,6 +53,8 @@ Exactly one of `cmd` and `static`.
 | `start` | `"up"` (default) or `"on-demand"`: up leaves it stopped unless named or required; a test run's `requires` starts it; down stops it. Checkout services only |
 | `about` | ≤ 200 characters, a template without `${host.…}`: how a builder uses it ("Backend nREPL: clj-nrepl-eval -p ${ports.web.nrepl}"). Shown in the instance note. Not hashed |
 | `isolation` | `{method, why}`: `method` one of `ports`, `names`, `process`, `container`, `netns`, `shared`; `why` ≤ 200 characters. A record for readers, never applied. Not hashed |
+| `onMerge` | `"reload"` (`reload`): whenever main's HEAD moves (at once after Sova's Merge Branch, within 5 minutes after any other merge, release or commit on main), Sova runs apply for this service on the main checkout's copy (slot 0), as itself: its `build` when its fingerprint changed, then its `reload`. Only while that copy runs the service: a stopped one stays stopped. Never on the checkout Sova itself runs from. Opt in only for a server that should follow main and loses nothing by reloading; never a REPL, a long job or a datastore. Checkout `cmd` services only. Hashed |
+| `adopt` | `{unit, ports}`: in slot 0 only, this service is a systemd user unit the operator already runs (`unit`, a whole `<name>.service`, never `sova-svc-…`), on these fixed `ports` (every port of the service; no slot may allocate one). Sova only reads it: up, down, reset and teardown of slot 0 are refused, and apply schedules a gated restart the operator confirms. One cmd checkout service at most, no container. Hashed. Sova's own definition adopts `sova-runtime.service`; a project you onboard almost never needs it |
 
 ## A data resource
 Each has a `kind`, and may carry `sensitive: true`: its contents derive from production, so no instance holding it is ever shared. `sensitive` is inside the approval hash.
@@ -62,11 +66,22 @@ Each has a `kind`, and may carry `sensitive: true`: its contents derive from pro
 
 The runner should write `SOVA_OUT` as JSON: `{"passed": n, "failed": n, "errors"?: n, "skipped"?: n, "failures"?: [{"name", "message"?, "file"?, "line"?}]}`. Without it the counts are null and only the exit code counts.
 
+## `share`
+- `endpoints`: `["<service>.<port>", …]`, the ports of the copy's own (checkout) services a stakeholder may open through a share link: the app's web page, its public API. Never a shared service, and never a REPL, nREPL, shadow-cljs, debugger, metrics or admin port: a link gives whoever has it everything that port does. Each at most once, at most 20.
+- `maxDays` (1–7, default 7): the longest a link of a copy lasts. Every link lasts 1 day unless the operator asks for more, at most 7.
+- `allow` (`false`): copies are never shared, whatever is listed (Sova itself, a tool with no stakeholder view).
+A project with any `sensitive` data resource is never shared, whatever `share` says. The whole key is inside the approval hash, so the operator approves what is exposed.
+
+## `open`
+- `endpoint`: `"<service>.<port>"`, a declared port of a checkout service (never a shared service's): the port the app's page is served on, in every copy.
+- `path` (default `/`): where on that port a person lands, starting with `/`, at most 200 characters, no spaces or backslashes. The home page, never an API, health or readiness route: `ready.path` is for Sova's probe, `open.path` is for a person.
+Sova's Branches tab offers **Open** on each running copy (`http://<host>:<its port><path>`, in a new tab), and conformance (suite 4) checks in scratch copy A that a `GET` of the entry answers below 500, naming its content type in the `open` check's detail (`web.http (port 41010): GET /home answered 200 (text/html; charset=utf-8)`; a confined run says `GET /home inside the run's namespace answered …`). It exposes nothing a copy doesn't already listen on, so it is outside the approval hash.
+
 ## Templates
 `${slot}`, `${instance}`, `${project}`, `${checkout}`, `${main}` (the main checkout), `${branch}`, `${data}` (the instance's data dir), `${data.<resource>}`, `${ports.<service>.<port>}`, `${host.<NAME>}`; `$$` is a literal `$`. Every process and hook also gets `SOVA_V=1`, `SOVA_PROJECT`, `SOVA_INSTANCE`, `SOVA_SLOT`, `SOVA_CHECKOUT`, `SOVA_MAIN`, `SOVA_BRANCH`, `SOVA_DATA`, `SOVA_PORT_<SERVICE>_<PORT>` for every port of the instance and `SOVA_PORT_<PORT>` for its own; a hook also `SOVA_VERB`, `SOVA_STEP`, `SOVA_OUT`; a test run also `SOVA_TEST_SELECT`. `<SERVICE>` and `<PORT>` are upper case with anything else `_`.
 
 ## The approval hash
-Approval covers the whole parsed definition (a data resource's `sensitive` included) except every `timeout`, readiness `path`, `about`, `isolation`, `sources` and the default `start: "up"`. So rewording a `why` or an `about`, or listing another source, needs no new approval; any command, env, port, hook, data source, `test` or `start: "on-demand"` does.
+Approval covers the whole parsed definition (a data resource's `sensitive` and `share` included) except every `timeout`, readiness `path`, `about`, `isolation`, `sources`, `open` and the default `start: "up"`. So rewording a `why` or an `about`, listing another source or moving the entry point needs no new approval; any command, env, port, hook, data source, `test` or `start: "on-demand"` does.
 
 ## Error codes
 | code | exit | meaning for you |
@@ -81,7 +96,7 @@ Approval covers the whole parsed definition (a data resource's `sensitive` inclu
 | `dirty-worktree` | 2 | commit first |
 | `unsupported` | 2 | the verb or method isn't available here (no `test` declared, no supervisor) |
 | `refused-slot0` | 2 | teardown of the main checkout |
-| `share-denied` | 2 | reserved |
+| `share-denied` | 2 | a share refused: no `share`, `allow: false`, sensitive data, an endpoint not listed, the copy not running, or an unregistered project |
 | `forbidden` | 2 | not your checkout or instance |
 | `needs-confirm` | 2 | the operator must do it |
 | `not-ready` | 1 | a service didn't pass `ready` in time: read its log lines |

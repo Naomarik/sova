@@ -6,10 +6,10 @@
 
 // ---- verbs, codes, exit classes (§app.project-services/result) ---------------------------------
 
-export const VERBS = ["create", "up", "down", "apply", "status", "logs", "reset", "teardown", "doctor", "conform", "test"] as const;
+export const VERBS = ["create", "up", "down", "apply", "status", "logs", "reset", "teardown", "doctor", "conform", "test", "share", "revoke"] as const;
 export type Verb = (typeof VERBS)[number];
 /** Verb names that exist and answer `unsupported` (§app.project-services/reserved). */
-export const RESERVED_VERBS = ["share", "revoke", "deploy", "deploy.plan", "deploy.run", "deploy.status", "deploy.rollback"] as const;
+export const RESERVED_VERBS = ["deploy", "deploy.plan", "deploy.run", "deploy.status", "deploy.rollback"] as const;
 export type ReservedVerb = (typeof RESERVED_VERBS)[number];
 export type AnyVerb = Verb | ReservedVerb;
 export const isVerb = (v: unknown): v is AnyVerb => (VERBS as readonly unknown[]).includes(v) || (RESERVED_VERBS as readonly unknown[]).includes(v);
@@ -100,6 +100,15 @@ export interface ServiceDecl {
   about?: string;
   /** How it is isolated and why: a record for the reader, never applied; outside the hash. */
   isolation?: IsolationDecl;
+  /** In slot 0, this systemd unit Sova did not start, on these fixed ports (§app.project-services/adopt); inside the hash. */
+  adopt?: AdoptDecl;
+  /** `reload`: apply it on the main checkout's copy whenever main's HEAD moves, while it runs there (§app.project-services/on-merge); inside the hash. */
+  onMerge?: "reload";
+}
+/** `unit` a whole `.service` name, never Sova's own; `ports` every port of the service, fixed. */
+export interface AdoptDecl {
+  unit: string;
+  ports: Record<string, number>;
 }
 export const ISOLATION_METHODS = ["ports", "names", "process", "container", "netns", "shared"] as const;
 export interface IsolationDecl {
@@ -129,11 +138,34 @@ export interface ProjectDef {
   services: ServiceDecl[];
   hooks: { probe?: { run: Argv; timeout: number } };
   test?: TestDecl;
-  /** Reserved (share, deploy): kept as written, not used yet. */
-  reserved: { share?: unknown; deploy?: unknown };
+  /** What a running copy may share (§app.project-services/share); absent: nothing. Inside the hash. */
+  share?: ShareDecl;
+  /** The entry point: where a person opens the app. Exposes nothing, so outside the hash. */
+  open?: OpenDecl;
+  /** Reserved (deploy): kept as written, not used yet. */
+  reserved: { deploy?: unknown };
   /** The checkout files the definition was written from; their change at HEAD is drift. Outside the hash. */
   sources?: string[];
 }
+
+/** The endpoints a copy may share (`"<service>.<port>"`, checkout services only; none when absent), at most `maxDays` per link, and whether at all. */
+export interface ShareDecl {
+  endpoints: string[];
+  /** 1–SHARE_DAYS_MAX; absent: SHARE_DAYS_MAX. */
+  maxDays?: number;
+  /** false: never shared, whatever is listed. */
+  allow?: false;
+}
+/** The project's entry point (§app.project-services/contract): a checkout service's declared port (`"<service>.<port>"`) and the page's path there ("/" when absent). */
+export interface OpenDecl {
+  endpoint: string;
+  path: string;
+}
+export const OPEN_PATH_MAX = 200;
+/** An instance link lasts 1 day by default and at most 7 (§app.project-services/share). */
+export const SHARE_DAYS_DEFAULT = 1;
+export const SHARE_DAYS_MAX = 7;
+export const SHARE_ENDPOINTS_MAX = 20;
 
 export const CONTRACT_FILE = ".sova/project.json";
 export const SLOT_CAP_DEFAULT = 4;
@@ -180,20 +212,23 @@ const isObj = (v: unknown): v is Obj => !!v && typeof v === "object" && !Array.i
 
 /** Every key the declaration accepts, by where it sits (the parse refuses any other; the playbook's reference is pinned to these). */
 export const DEFINITION_KEYS = {
-  top: ["version", "slots", "host", "setup", "data", "services", "hooks", "test", "share", "deploy", "sources"],
+  top: ["version", "slots", "host", "setup", "data", "services", "open", "hooks", "test", "share", "deploy", "sources"],
   slots: ["cap"],
   step: ["id", "run", "inputs", "timeout"],
-  service: ["cmd", "static", "cwd", "env", "ports", "requires", "ready", "reload", "build", "scope", "container", "start", "about", "isolation"],
+  service: ["cmd", "static", "cwd", "env", "ports", "requires", "ready", "reload", "build", "scope", "container", "start", "about", "isolation", "adopt", "onMerge"],
   port: [["base", "stride"], ["fixed"]],
   ready: [["tcp", "timeout"], ["http", "path", "timeout"]],
   reload: [["signal"], ["cmd"]],
   build: ["run", "inputs", "timeout"],
   container: ["name", "engine"],
   isolation: ["method", "why"],
+  adopt: ["unit", "ports"],
   data: [["kind", "path", "from", "sensitive"], ["kind", "provision", "deprovision", "timeout", "sensitive"]],
   hooks: ["probe"],
   probe: ["run", "inputs", "timeout"],
   test: ["run", "requires", "timeout", "smoke"],
+  share: ["endpoints", "maxDays", "allow"],
+  open: ["endpoint", "path"],
 } as const;
 const K = DEFINITION_KEYS;
 
@@ -359,7 +394,32 @@ function service(nm: string, v: unknown, path: string): ServiceDecl {
   }
   if (scope === "shared")
     for (const [k, p] of Object.entries(ports)) if (!("fixed" in p)) throw new DefinitionError(`${path}.ports.${k}`, "a shared service's ports are fixed");
+  if (o.adopt !== undefined) out.adopt = adopt(o.adopt, `${path}.adopt`, out);
+  if (o.onMerge !== undefined) {
+    if (o.onMerge !== "reload") throw new DefinitionError(`${path}.onMerge`, 'must be "reload"');
+    if (hasStatic) throw new DefinitionError(`${path}.onMerge`, "a static service's files are live: nothing reloads on merge");
+    if (scope === "shared") throw new DefinitionError(`${path}.onMerge`, "a shared service is no copy's: onMerge reloads the main checkout's own services");
+    out.onMerge = "reload";
+  }
   return out;
+}
+
+/** An adopted unit: a systemd service name that is not Sova's own, and a fixed port for each of the service's ports. */
+const UNIT_NAME = /^[A-Za-z0-9@._:-]{1,200}\.service$/;
+function adopt(v: unknown, path: string, s: ServiceDecl): AdoptDecl {
+  const o = obj(v, path);
+  keysOnly(o, K.adopt, path);
+  if (s.static !== undefined || s.container || s.scope === "shared") throw new DefinitionError(path, "only a cmd checkout service (no container) adopts a unit");
+  if (typeof o.unit !== "string" || !UNIT_NAME.test(o.unit)) throw new DefinitionError(`${path}.unit`, "must be a systemd user service name (<name>.service)");
+  if (/^sova-(svc|hook|restart)-/.test(o.unit)) throw new DefinitionError(`${path}.unit`, "must be a unit Sova did not start (never sova-svc-…, sova-hook-…)");
+  const p = obj(o.ports, `${path}.ports`);
+  const ports: Record<string, number> = {};
+  for (const k of Object.keys(p)) if (!(k in s.ports)) throw new DefinitionError(`${path}.ports.${k}`, "names no port of the service");
+  for (const k of Object.keys(s.ports)) {
+    if (p[k] === undefined) throw new DefinitionError(`${path}.ports`, `give the unit's port for ${k}`);
+    ports[k] = int(p[k], `${path}.ports.${k}`, 1024, 65535);
+  }
+  return { unit: o.unit, ports };
 }
 
 /** `sensitive: true` kept; false (the default) dropped, so a definition hashes as it did without the key. */
@@ -382,6 +442,48 @@ function data(nm: string, v: unknown, path: string): DataDecl {
     return { name: nm, kind: "hook", provision: argv(o.provision, `${path}.provision`), deprovision: argv(o.deprovision, `${path}.deprovision`), timeout: timeout(o.timeout, `${path}.timeout`, HOOK_TIMEOUT_DEFAULT, HOOK_TIMEOUT_MAX), ...sensitive(o, path) };
   }
   throw new DefinitionError(`${path}.kind`, 'must be "dir" or "hook"');
+}
+
+/** `share`: each endpoint a checkout service's declared port, once; `maxDays` 1–7; `allow: true` (the default) dropped, so it hashes as without. */
+function shareDecl(v: unknown, services: readonly ServiceDecl[]): ShareDecl {
+  const o = obj(v, "$.share");
+  keysOnly(o, K.share, "$.share");
+  if (o.endpoints !== undefined && !Array.isArray(o.endpoints)) throw new DefinitionError("$.share.endpoints", 'must be a list of "<service>.<port>"');
+  const list: unknown[] = (o.endpoints as unknown[] | undefined) ?? [];
+  if (list.length > SHARE_ENDPOINTS_MAX) throw new DefinitionError("$.share.endpoints", `at most ${SHARE_ENDPOINTS_MAX} endpoints`);
+  const endpoints: string[] = [];
+  for (const [i, e] of list.entries()) {
+    const at = `$.share.endpoints[${i}]`;
+    const m = typeof e === "string" ? /^([a-z][a-z0-9-]{0,30})\.([a-z][a-z0-9-]{0,30})$/.exec(e) : null;
+    if (!m) throw new DefinitionError(at, 'must be "<service>.<port>"');
+    const svc = services.find((s) => s.name === m[1]);
+    if (!svc || !(m[2]! in svc.ports)) throw new DefinitionError(at, `names no declared port (${e as string})`);
+    if (svc.scope === "shared") throw new DefinitionError(at, "a shared service is never shared: only a copy's own (checkout) services");
+    if (endpoints.includes(e as string)) throw new DefinitionError(at, "each endpoint once");
+    endpoints.push(e as string);
+  }
+  const out: ShareDecl = { endpoints };
+  if (o.maxDays !== undefined) out.maxDays = int(o.maxDays, "$.share.maxDays", 1, SHARE_DAYS_MAX);
+  if (o.allow !== undefined && o.allow !== true) {
+    if (o.allow !== false) throw new DefinitionError("$.share.allow", "must be true or false");
+    out.allow = false;
+  }
+  return out;
+}
+
+/** `open`: a checkout service's declared port and a path from `/` (no space, control character or backslash), "/" when absent. */
+function openDecl(v: unknown, services: readonly ServiceDecl[]): OpenDecl {
+  const o = obj(v, "$.open");
+  keysOnly(o, K.open, "$.open");
+  const m = typeof o.endpoint === "string" ? /^([a-z][a-z0-9-]{0,30})\.([a-z][a-z0-9-]{0,30})$/.exec(o.endpoint) : null;
+  if (!m) throw new DefinitionError("$.open.endpoint", 'must be "<service>.<port>"');
+  const svc = services.find((s) => s.name === m[1]);
+  if (!svc || !(m[2]! in svc.ports)) throw new DefinitionError("$.open.endpoint", `names no declared port (${o.endpoint as string})`);
+  if (svc.scope === "shared") throw new DefinitionError("$.open.endpoint", "a shared service is no copy's own: the entry is a checkout service's port");
+  const path = o.path === undefined ? "/" : o.path;
+  if (typeof path !== "string" || !path.startsWith("/") || path.length > OPEN_PATH_MAX || /[\s\\\u0000-\u001f\u007f]/.test(path))
+    throw new DefinitionError("$.open.path", `must start with / (at most ${OPEN_PATH_MAX} characters, no spaces or backslashes)`);
+  return { endpoint: o.endpoint as string, path };
 }
 
 /** Every `${…}` variable a definition's templates name, with where. */
@@ -470,7 +572,9 @@ export function parseDefinition(text: string): ProjectDef {
     services,
     hooks,
     ...(test ? { test } : {}),
-    reserved: { ...(o.share !== undefined ? { share: o.share } : {}), ...(o.deploy !== undefined ? { deploy: o.deploy } : {}) },
+    ...(o.share !== undefined ? { share: shareDecl(o.share, services) } : {}),
+    ...(o.open !== undefined ? { open: openDecl(o.open, services) } : {}),
+    reserved: { ...(o.deploy !== undefined ? { deploy: o.deploy } : {}) },
     ...(sources ? { sources } : {}),
   };
   // requires: known, scope-consistent, acyclic.
@@ -482,6 +586,8 @@ export function parseDefinition(text: string): ProjectDef {
       if (s.scope === "shared" && t.scope !== "shared") throw new DefinitionError(`$.services.${s.name}.requires`, "a shared service requires only shared services");
     }
   serviceOrder(def);
+  const adopting = services.filter((s) => s.adopt);
+  if (adopting.length > 1) throw new DefinitionError(`$.services.${adopting[1]!.name}.adopt`, "at most one service adopts a unit");
   // Ports: every allocated port, in every slot up to the scratch slots, must fit, and no two ports
   // of one instance may coincide.
   const top = cap + 2;
@@ -500,6 +606,12 @@ export function parseDefinition(text: string): ProjectDef {
         if (other && other.key !== key) throw new DefinitionError(`$.services.${s.name}.ports.${k}`, `slot ${slot} gives it port ${n}, which ${other.key} has in slot ${other.slot}`);
         if (!other) seen.set(n, { key, slot });
       }
+  // An adopted unit's ports are its own in slot 0: no slot's allocation may give one to any service.
+  for (const s of adopting)
+    for (const [k, n] of Object.entries(s.adopt!.ports)) {
+      const other = seen.get(n);
+      if (other && !(other.key === `${s.name}.${k}` && other.slot === 0)) throw new DefinitionError(`$.services.${s.name}.adopt.ports.${k}`, `port ${n} is ${other.key}'s in slot ${other.slot}`);
+    }
   // Templates: every variable must be one Sova knows.
   const vars = templateVars(def);
   for (const [t, where] of templates(def)) {
@@ -542,15 +654,18 @@ export function closureOf(def: Pick<ProjectDef, "services">, names: readonly str
 
 export const portFor = (p: PortDecl, slot: number): number => ("fixed" in p ? p.fixed : p.base + slot * p.stride);
 
-/** Every port of the definition in `slot`: `{service: {port: number}}`, shared services included. */
+/** Every port of the definition in `slot`: `{service: {port: number}}`, shared services included; an adopted service's in slot 0 are its unit's. */
 export function portsFor(def: Pick<ProjectDef, "services">, slot: number): Record<string, Record<string, number>> {
   const out: Record<string, Record<string, number>> = {};
   for (const s of def.services) {
     out[s.name] = {};
-    for (const [k, p] of Object.entries(s.ports)) out[s.name]![k] = portFor(p, slot);
+    for (const [k, p] of Object.entries(s.ports)) out[s.name]![k] = slot === 0 && s.adopt ? s.adopt.ports[k]! : portFor(p, slot);
   }
   return out;
 }
+
+/** The service slot 0 adopts (§app.project-services/adopt), if any. */
+export const adoptedService = (def: Pick<ProjectDef, "services">): ServiceDecl | null => def.services.find((s) => s.adopt) ?? null;
 
 // ---- templates (§app.project-services/contract) ------------------------------------------------
 
@@ -592,7 +707,7 @@ export const envPart = (s: string) => s.toUpperCase().replace(/[^A-Z0-9]/g, "_")
 // ---- the result (§app.project-services/result) -------------------------------------------------
 
 export type InstanceState = "absent" | "stopped" | "running" | "degraded";
-export type StepKind = "setup" | "data" | "hook" | "build" | "start" | "ready" | "reload" | "stop" | "check" | "worktree" | "slot" | "test";
+export type StepKind = "setup" | "data" | "hook" | "build" | "start" | "ready" | "reload" | "stop" | "check" | "worktree" | "slot" | "test" | "link";
 export interface Step {
   id: string;
   kind: StepKind;
@@ -630,6 +745,22 @@ export interface InstanceSummary {
   state: InstanceState;
   services: ServiceView[];
   createdBy: string;
+  /** Its active share links (§app.project-services/share). */
+  links: LinkView[];
+  /** The endpoints its definition lets it share, and why it can't when it can't (null: it can). */
+  share: { endpoints: string[]; refused: string | null };
+}
+/** One share link of an instance (§app.project-services/share). `url` only for the operator, never in a tool result. */
+export interface LinkView {
+  id: string;
+  instance: string;
+  endpoint: string;
+  port: number;
+  createdAt: string;
+  expiresAt: string;
+  state: "active" | "expired" | "revoked";
+  createdBy: string;
+  url?: string;
 }
 export interface Check {
   id: string;
@@ -715,7 +846,7 @@ export interface VerbResult {
   steps: Step[];
   services: ServiceView[];
   data: DataView[];
-  links: never[];
+  links: LinkView[];
   instances?: InstanceSummary[];
   lines?: LogLine[];
   checks?: Check[];

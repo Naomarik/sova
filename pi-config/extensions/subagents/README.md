@@ -379,10 +379,14 @@ follow-up message. With `wake` (the default) that message starts a turn when the
 parent is idle; with `wake: false` it waits for the next turn. The message is
 sent even if the UI notification fails. Print/JSON parents use tool results
 instead of injected notifications. A settle an `agent_wait` returns is not sent
-again as a message: while a wait covers a worker its message is held, dropped if
-the worker is still settled when the wait returns (the result carries it), and
-sent as usual if a queued steer started a new task first (with overlapping waits,
-once the last of them returns).
+again as a message: while the parent's agent run is in progress (or a wait
+collects the worker) its message is held, and dropped if a wait in that run
+returns the worker still settled (the result carries it), whether the worker
+settled before or during the wait. A held message no wait returned, such as one a
+queued steer moved past, is sent where the run would otherwise stop, with its
+wake, so it continues the same run; a `wake: false` one reaches the context at the
+next turn end. If the run is aborted, held messages go into the transcript without
+starting a turn, so a Stop never wakes the parent.
 
 ## Monitor
 
@@ -785,9 +789,41 @@ alone is never treated as proof of death: an actually unkillable worker remains
 pending. Forced SIGKILL cannot guarantee cleanup of grandchildren or independently
 launched services; this is not process-container isolation.
 
+## The shared fork core (`fork/`)
+
+One owner of every fork's prompt-cache logic, used by Sova's "Fork from here" (a new
+visible session, built by the server) and by background forks (a hidden pi child that
+works in a copy of the conversation and reports back: /explain's worker today). It is a
+library, not an extension: pi loads nothing from `fork/` by itself.
+
+| File | What it owns |
+| --- | --- |
+| `fork/cache.ts` | A fork's cache identity: the inherited key and its `sova-fork-cache` entry, the `prompt_cache_key` hook, Codex `session-id` affinity in a hosted session (`applyForkCacheRouting`, SSE) and in a fork's own process (`routeProcessForkCache`, its own fetch and WebSocket). Runtime builtins only: Sova's server imports it |
+| `fork/claude.ts` | A UI fork of a Claude Code chat: seed it with the source's live CLI session (`seedClaudeFork`). Builtins only: the server imports it |
+| `fork/copy.ts` | `forkable`, `copyForFork` (complete lines only, plus the cache entry), `sweepStale` |
+| `fork/mirror.ts` | The request mirror (replayed sections and tool declarations), the run's `ForkPolicy` and the per-call gate |
+| `fork/child.ts` | The extension loaded last into a background fork's child: wires the mirror, the gate and the cache identity |
+| `fork/background.ts` | `startBackgroundFork(spec, {onSettled})` → `{stop, model, sessionId, sessionFile}`; `claudeForkPointFor` |
+
+A background fork's policy is `{label, web?, writeDir?, writeHint?}`: every child reads
+(`read`, `grep`, `find`, `ls`) and runs one read-only shell command line; web tools and
+`write`/`edit` inside one directory only when named. The child declares the parent's tools
+and prompt exactly as the parent did, whatever the policy, so the policy never costs the
+prefix. `{label}` alone is a read-only fork that writes nothing; its result is
+`onSettled`'s `finalOutput`.
+
+The live proof (`tests/fork-cache-live.mjs`, opt-in, small model calls): a throwaway parent
+whose first message carries a block no other request ever sent (so a hit on it can only be
+the parent's own cache entry), then one background fork; it compares the parent's last
+request with the fork's first, from the two session files.
+
+```sh
+PI_CODING_AGENT_DIR=<hermetic agent dir> node tests/fork-cache-live.mjs --model zai/glm-5.3
+```
+
 ## Verification
 
-Offline regression tests (no model requests):
+Offline regression tests (no model requests; `fork/*.test.ts` included):
 
 ```sh
 cd ~/pi-config/extensions/subagents

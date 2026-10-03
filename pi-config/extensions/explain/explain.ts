@@ -17,14 +17,24 @@
  * written while a session closes. Its running entry is settled later, by
  * `reconcile` at the session's next prompt, as `status: "interrupted"`.
  *
- * The child forks a byte-copy of the parent's session (`copyForFork`), kept in
- * `explanations/.forks/` for the run and deleted when it ends.
+ * The child is a background fork (`../subagents/fork/`): it forks a copy of the parent's session
+ * (`copyForFork`), kept in `explanations/.forks/` for the run and deleted when it ends, on the
+ * parent's prompt cache, and may write only into its own store directory.
  */
-import { mkdirSync, readdirSync, rmSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import type { ClaudeForkPoint } from "../claude-code/provider/fork-point.ts";
+import {
+	startBackgroundFork,
+	type BackgroundForkHandle,
+	type BackgroundForkHandlers,
+	type BackgroundForkSpec,
+} from "../subagents/fork/background.ts";
+import { copyForFork, forkable, sweepStale } from "../subagents/fork/copy.ts";
+import type { ForkPolicy } from "../subagents/fork/mirror.ts";
 import { buildChildPrompt } from "./prompt.ts";
 import {
+	agentDir,
 	ensureStoreDir,
 	entryData,
 	explanationsRoot,
@@ -41,15 +51,24 @@ import {
 	type ExplainMeta,
 	type KnownMeta,
 } from "./store.ts";
-import {
-	copyForFork,
-	forkable,
-	startExplainWorker,
-	webAccessExtension,
-	type ExplainWorkerHandle,
-	type ExplainWorkerHandlers,
-	type ExplainWorkerSpec,
-} from "./worker.ts";
+
+/** Worker name, so a stray child is recognizable in `ps` output and in its own session list. */
+export const WORKER_NAME = "explain";
+
+/** The child's policy: read, look things up on the web, and write only the page and its meta. */
+export function explainPolicy(storeDir: string): ForkPolicy {
+	return { label: "The /explain worker", web: true, writeDir: storeDir, writeHint: "Write index.html and meta.json there; nothing else on disk." };
+}
+
+/**
+ * Web search/fetch for the child, but only if the package pi already installed
+ * for this user is sitting there: the point is "trivially available", never an
+ * install on the critical path of a slash command.
+ */
+export function webAccessExtension(env: NodeJS.ProcessEnv = process.env): string | undefined {
+	const dir = join(agentDir(env), "npm", "node_modules", "pi-web-access");
+	return existsSync(dir) ? dir : undefined;
+}
 
 /** At most this many explanations run at once; each one is a whole pi process. */
 export const MAX_LIVE = 3;
@@ -66,7 +85,7 @@ export interface ExplainHost {
 	/** Deliver the completion message to the parent agent (and wake it when idle). */
 	wake(text: string): void;
 	/** Test seam; defaults to a real forked pi child. */
-	start?(spec: ExplainWorkerSpec, handlers: ExplainWorkerHandlers): ExplainWorkerHandle;
+	start?(spec: BackgroundForkSpec, handlers: BackgroundForkHandlers): BackgroundForkHandle;
 }
 
 export interface BeginRequest {
@@ -95,7 +114,7 @@ export interface BeginResult {
 interface Run {
 	known: KnownMeta;
 	dir: string;
-	handle: ExplainWorkerHandle;
+	handle: BackgroundForkHandle;
 	/** The session copy the child forked; deleted when the run ends. */
 	forkCopy?: string;
 }
@@ -211,17 +230,17 @@ export class ExplainRuns {
 			...(request.parentTools ? { parentTools: request.parentTools } : {}),
 		});
 
-		const start = this.host.start ?? startExplainWorker;
-		let handle: ExplainWorkerHandle;
+		const start = this.host.start ?? startBackgroundFork;
+		let handle: BackgroundForkHandle;
 		try {
 			handle = start(
 				{
 					id,
+					name: WORKER_NAME,
 					task,
 					cwd: request.cwd,
 					model: request.model,
-					storeDir: dir,
-					parentSessionId: request.parentSessionId,
+					policy: explainPolicy(dir),
 					...(request.effort ? { effort: request.effort } : {}),
 					...(forkSession ? { forkSession } : {}),
 					// Only a forked child has the parent's conversation to resume.
@@ -245,7 +264,7 @@ export class ExplainRuns {
 		const run = this.runs.get(id);
 		if (!run) return;
 		this.runs.delete(id);
-		void run.handle.kill().catch(() => {});
+		void run.handle.stop().catch(() => {});
 		removeQuietly(run.forkCopy);
 
 		// The child's own model id wins: it is what actually wrote the page.
@@ -292,7 +311,7 @@ export class ExplainRuns {
 	async stopAll(): Promise<void> {
 		const runs = [...this.runs.values()];
 		this.runs.clear();
-		await Promise.all(runs.map((run) => run.handle.kill().catch(() => {})));
+		await Promise.all(runs.map((run) => run.handle.stop().catch(() => {})));
 		for (const run of runs) removeQuietly(run.forkCopy);
 	}
 
@@ -336,15 +355,7 @@ export class ExplainRuns {
 		const dir = join(explanationsRoot(env), FORK_DIR);
 		try {
 			mkdirSync(dir, { recursive: true, mode: 0o700 });
-			const now = this.host.now();
-			for (const name of readdirSync(dir)) {
-				const path = join(dir, name);
-				try {
-					if (!this.runs.has(name.replace(/\.jsonl$/, "")) && now - statSync(path).mtimeMs > STALE_FORK_MS) rmSync(path, { force: true });
-				} catch {
-					/* Raced with another sweep. */
-				}
-			}
+			sweepStale(dir, STALE_FORK_MS, this.host.now(), (name) => this.runs.has(name.replace(/\.jsonl$/, "")));
 			const target = join(dir, `${id}.jsonl`);
 			return copyForFork(source, target) ? target : undefined;
 		} catch {

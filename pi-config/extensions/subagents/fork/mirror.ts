@@ -1,5 +1,6 @@
 /**
- * The explain child's prompt-cache contract, as pure functions (child.ts wires them into pi).
+ * A background fork's request mirror and call gate, as pure functions (`./child.ts` wires them
+ * into pi).
  *
  * Why a mirror. A provider's prompt cache matches an exact prefix: tools, then the system
  * prompt, then the messages. Since pi 0.86 the system prompt and the tool loadout are part of
@@ -23,14 +24,49 @@
  *    differs (another pi version) is re-registered with the parent's declaration over the child's
  *    own implementation; everything else is a stub that can never run.
  *
- * What the child may DO is decided at call time instead (`gateToolCall`), which leaves the prefix
- * untouched: reading tools, web tools, and writing only inside its own store directory.
+ * What the child may DO is decided at call time instead (`gateToolCall`, by the run's
+ * `ForkPolicy`), which leaves the prefix untouched: reading tools and one read-only shell command
+ * line always; web tools and writes inside one directory only when the policy allows them.
  */
 
-/** The child's store directory: the only place it may write. Set by worker.ts, read by child.ts. */
-export const EXPLAIN_STORE_ENV = "PI_EXPLAIN_STORE_DIR";
-/** The parent's pi session id, for the provider cache key. Set by worker.ts, read by child.ts. */
-export const EXPLAIN_PARENT_SESSION_ENV = "PI_EXPLAIN_PARENT_SESSION";
+/** The run's policy (`ForkPolicy`, JSON). Set by background.ts, read by child.ts; the child is inert without it. */
+export const FORK_POLICY_ENV = "PI_FORK_POLICY";
+
+/**
+ * What one background fork may do, beyond reading. Every fork reads (read, grep, find, ls) and
+ * runs one read-only shell command line at a time; nothing else unless named here.
+ */
+export interface ForkPolicy {
+	/** Who the child is, in refusals: "The /explain worker is read-only…". */
+	label: string;
+	/** pi-web-access's network reads (`WEB_TOOLS`), when that package is loaded at all. */
+	web?: boolean;
+	/** The one directory `write` and `edit` may touch; absent = the child writes nothing. */
+	writeDir?: string;
+	/** Appended to the refusal of a write outside `writeDir`: what belongs there. */
+	writeHint?: string;
+}
+
+/** The policy in `raw` (the env value), or undefined for anything that is not one. */
+export function decodePolicy(raw: string | undefined): ForkPolicy | undefined {
+	if (!raw?.trim()) return undefined;
+	let value: unknown;
+	try {
+		value = JSON.parse(raw);
+	} catch {
+		return undefined;
+	}
+	if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+	const p = value as Record<string, unknown>;
+	if (typeof p.label !== "string" || !p.label.trim()) return undefined;
+	if (p.writeDir !== undefined && (typeof p.writeDir !== "string" || !p.writeDir.trim())) return undefined;
+	return {
+		label: p.label,
+		...(p.web === true ? { web: true } : {}),
+		...(typeof p.writeDir === "string" ? { writeDir: p.writeDir } : {}),
+		...(typeof p.writeHint === "string" && p.writeHint ? { writeHint: p.writeHint } : {}),
+	};
+}
 
 /** A tool as the model sees it: pi-ai's `toToolDeclaration` shape. */
 export interface ToolDeclaration {
@@ -148,8 +184,8 @@ export function sameDeclaration(a: ToolDeclaration, b: ToolDeclaration): boolean
 
 /** Built-ins that only read. */
 export const READ_TOOLS: readonly string[] = ["read", "grep", "find", "ls"];
-/** Built-ins that write, allowed only inside the store directory. */
-export const STORE_WRITE_TOOLS: readonly string[] = ["write", "edit"];
+/** Built-ins that write, allowed only inside the policy's `writeDir`. */
+export const WRITE_TOOLS: readonly string[] = ["write", "edit"];
 /** pi-web-access's default tool names: network reads, loaded only when that package is installed. */
 export const WEB_TOOLS: readonly string[] = ["web_search", "fetch_content", "get_search_content", "source_check"];
 /**
@@ -158,11 +194,20 @@ export const WEB_TOOLS: readonly string[] = ["web_search", "fetch_content", "get
  * would change the prefix, so a mirrored child searches through bash instead.
  */
 export const SHELL_TOOL = "bash";
-/** Tools the child activates even when the parent did not declare them: it must read, and write its page. */
-export const REQUIRED_TOOLS: readonly string[] = ["read", "write"];
 
-export function callable(name: string): boolean {
-	return READ_TOOLS.includes(name) || STORE_WRITE_TOOLS.includes(name) || WEB_TOOLS.includes(name) || name === SHELL_TOOL;
+/** Tools the child activates even when the parent did not declare them: it must read, and write if it writes at all. */
+export function requiredTools(policy: ForkPolicy): string[] {
+	return policy.writeDir ? ["read", "write"] : ["read"];
+}
+
+/** Whether the policy lets `name` run at all (the gate still checks each call's input). */
+export function callable(name: string, policy: ForkPolicy): boolean {
+	return (
+		READ_TOOLS.includes(name) ||
+		name === SHELL_TOOL ||
+		(Boolean(policy.writeDir) && WRITE_TOOLS.includes(name)) ||
+		(Boolean(policy.web) && WEB_TOOLS.includes(name))
+	);
 }
 
 /**
@@ -277,7 +322,7 @@ export interface ToolPlanEntry {
 
 /**
  * One entry per tool the child activates, in order: the parent's declared tools first (their
- * order is the request's), then any `REQUIRED_TOOLS` the parent lacked. Those extra tools are the
+ * order is the request's), then any `requiredTools` the parent lacked. Those extra tools are the
  * one case where the child changes the declared set: additive, so a provider that anchors tool
  * additions keeps the prefix, and the others lose it (a parent in strict mode has no `write`).
  * With no declared state (an unforked child) the child gets its callable tools, and nothing else.
@@ -286,11 +331,12 @@ export function planTools(
 	declared: readonly ToolDeclaration[] | undefined,
 	own: ReadonlyMap<string, ToolDeclaration>,
 	wrappable: ReadonlySet<string>,
+	policy: ForkPolicy,
 ): ToolPlanEntry[] {
 	const plan: ToolPlanEntry[] = [];
 	for (const declaration of declared ?? []) {
 		const mine = own.get(declaration.name);
-		const action: ToolAction = !callable(declaration.name)
+		const action: ToolAction = !callable(declaration.name, policy)
 			? "stub"
 			: mine && sameDeclaration(mine, declaration)
 				? "own"
@@ -301,7 +347,7 @@ export function planTools(
 	}
 	const planned = new Set(plan.map((entry) => entry.name));
 	// Unforked, the child has grep, find and ls of its own and needs no shell.
-	const extra = declared ? REQUIRED_TOOLS : [...READ_TOOLS, ...STORE_WRITE_TOOLS, ...WEB_TOOLS];
+	const extra = declared ? requiredTools(policy) : [...READ_TOOLS, ...WRITE_TOOLS, ...WEB_TOOLS].filter((name) => callable(name, policy));
 	for (const name of extra) {
 		const mine = own.get(name);
 		if (planned.has(name) || !mine) continue;
@@ -321,21 +367,25 @@ export function insideDir(dir: string, target: string, resolve: (...parts: strin
 /**
  * Why a call must not run, or undefined if it may. Pure: `resolve` is `path.resolve` bound to the
  * child's cwd (pi resolves a tool's relative path against it). A path with `..` or a symlink in
- * the store directory is not a concern: the store is created fresh by the parent, and only the
+ * the write directory is not a concern: the directory is created fresh by the parent, and only the
  * child writes into it.
  */
-export function gateToolCall(toolName: string, input: unknown, storeDir: string, resolve: (...parts: string[]) => string): string | undefined {
-	if (READ_TOOLS.includes(toolName) || WEB_TOOLS.includes(toolName)) return undefined;
+export function gateToolCall(toolName: string, input: unknown, policy: ForkPolicy, resolve: (...parts: string[]) => string): string | undefined {
+	const { label, writeDir } = policy;
+	if (READ_TOOLS.includes(toolName) || (policy.web && WEB_TOOLS.includes(toolName))) return undefined;
 	if (toolName === SHELL_TOOL) {
 		const why = readOnlyShellCommand(input && typeof input === "object" ? (input as { command?: unknown }).command : undefined);
-		return why ? `The /explain worker runs bash only for one read-only command line (rg, grep, find, ls, cat, head, git log…, pipes allowed): ${why}.` : undefined;
+		return why ? `${label} runs bash only for one read-only command line (rg, grep, find, ls, cat, head, git log…, pipes allowed): ${why}.` : undefined;
 	}
-	if (STORE_WRITE_TOOLS.includes(toolName)) {
+	if (WRITE_TOOLS.includes(toolName) && writeDir) {
 		const path = input && typeof input === "object" ? (input as { path?: unknown }).path : undefined;
-		if (typeof path === "string" && path && insideDir(storeDir, path, resolve)) return undefined;
-		return `The /explain worker writes only inside ${storeDir}. Write index.html and meta.json there; nothing else on disk.`;
+		if (typeof path === "string" && path && insideDir(writeDir, path, resolve)) return undefined;
+		return `${label} writes only inside ${writeDir}.${policy.writeHint ? ` ${policy.writeHint}` : ""}`;
 	}
-	return `The /explain worker is read-only: "${toolName}" is not available here. Research with read (and grep, find, ls, or read-only bash, whichever you have), and write only inside ${storeDir}.`;
+	const research = "Research with read (and grep, find, ls, or read-only bash, whichever you have)";
+	return writeDir
+		? `${label} is read-only: "${toolName}" is not available here. ${research}, and write only inside ${writeDir}.`
+		: `${label} is read-only: "${toolName}" is not available here. ${research}; it writes nothing on disk.`;
 }
 
 /** The btw extension's visible side-thread notes (`btw/btw.ts` BTW_MESSAGE_TYPE), which its `context` handler drops from every request. */
@@ -345,15 +395,4 @@ export const BTW_MESSAGE_TYPE = "btw-note";
 export function withoutBtwNotes<T extends { role: string; customType?: string }>(messages: readonly T[]): T[] | undefined {
 	const kept = messages.filter((message) => !(message.role === "custom" && message.customType === BTW_MESSAGE_TYPE));
 	return kept.length === messages.length ? undefined : kept;
-}
-
-/**
- * OpenAI-style providers route their cache by `prompt_cache_key`, which pi sets to the session
- * id. The child's session id is new, so it asks for the parent's cache under the parent's key.
- */
-export function withParentCacheKey(payload: unknown, ownSessionId: string | undefined, parentSessionId: string | undefined): unknown {
-	if (!parentSessionId || !ownSessionId || !payload || typeof payload !== "object") return undefined;
-	const body = payload as Record<string, unknown>;
-	if (body.prompt_cache_key !== ownSessionId) return undefined;
-	return { ...body, prompt_cache_key: parentSessionId };
 }

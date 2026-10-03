@@ -1171,7 +1171,8 @@
         "src/components/WatchView.tsx",
         "server/watch.ts",
         "src/lib/older-rows-view.ts",
-        "server/transcript-rows.ts"
+        "server/transcript-rows.ts",
+        "src/components/Thread.tsx"
       ]
     },
     "§chat.transcript/message-actions": {
@@ -6023,6 +6024,7 @@
         "shared/row-counts.ts",
         "src/lib/api.ts",
         "scripts/e2e/transcript-drift.mjs",
+        "scripts/e2e/transcript-follow.mjs",
         "src/lib/recent-preload.ts"
       ]
     },
@@ -11589,8 +11591,8 @@
         "§chat.session-fork/from-reply"
       ],
       "code": [
-        "server/session-fork-cache.ts",
-        "server/session-fork-cache.test.ts",
+        "pi-config/extensions/subagents/fork/cache.ts",
+        "pi-config/extensions/subagents/fork/cache.test.ts",
         "server/session-fork.ts",
         "server/session-fork.test.ts",
         "server/chat-manager.ts"
@@ -12110,13 +12112,14 @@
     "§chat.slash-commands/compact-handoff": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "verified",
       "code": [
         "pi-config/extensions/compact-handoff/index.ts",
         "pi-config/extensions/compact-handoff/handoff.ts",
         "pi-config/extensions/compact-handoff/index.test.ts",
         "pi-config/extensions/compact-handoff/handoff.test.ts",
         "pi-config/extensions/compact-handoff/tests/run.mjs",
+        "pi-config/extensions/compact-handoff/tests/runtime.mjs",
         "pi-config/extensions/compact-handoff/README.md",
         "pi-config/README.md"
       ],
@@ -12278,6 +12281,67 @@
       "kind": "note",
       "authority": "accepted",
       "evidence": "verified"
+    },
+    "§chat.session-fork/background": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§chat.session-fork/cache-affinity"
+      ],
+      "code": [
+        "pi-config/extensions/subagents/fork/cache.ts",
+        "pi-config/extensions/subagents/fork/cache.test.ts",
+        "pi-config/extensions/subagents/fork/copy.ts",
+        "pi-config/extensions/subagents/fork/mirror.ts",
+        "pi-config/extensions/subagents/fork/mirror.test.ts",
+        "pi-config/extensions/subagents/fork/child.ts",
+        "pi-config/extensions/subagents/fork/background.ts",
+        "pi-config/extensions/subagents/fork/background.test.ts",
+        "pi-config/extensions/subagents/tests/run.mjs",
+        "pi-config/extensions/subagents/tests/fork-probe.ts",
+        "pi-config/extensions/subagents/tests/fork-cache-live.mjs",
+        "pi-config/extensions/subagents/README.md",
+        "pi-config/extensions/explain/explain.ts",
+        "pi-config/extensions/explain/index.ts",
+        "pi-config/extensions/explain/index.test.ts",
+        "pi-config/extensions/explain/runs.test.ts",
+        "pi-config/extensions/explain/README.md"
+      ]
+    },
+    "§chat.session-fork/claude-resume": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§chat.session-fork/from-reply",
+        "§chat.session-fork/cache-affinity"
+      ],
+      "code": [
+        "pi-config/extensions/subagents/fork/claude.ts",
+        "pi-config/extensions/claude-code/provider/fork-point.ts",
+        "pi-config/extensions/claude-code/provider/session-bridge.ts",
+        "pi-config/extensions/claude-code/provider/bridge.test.ts",
+        "server/session-fork-routes.ts"
+      ]
+    },
+    "§chat.slash-commands/compact-handoff-row": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/compact-handoff/run.ts",
+        "server/transcript.ts",
+        "shared/protocol.ts",
+        "src/components/Thread.tsx",
+        "src/lib/explain.ts",
+        "server/transcript-handoff.test.ts",
+        "src/lib/explain.test.ts"
+      ],
+      "requires": [
+        "§chat.slash-commands/in-the-thread",
+        "§chat.slash-commands/compact-handoff"
+      ]
     }
   },
   "boundary": {

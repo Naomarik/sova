@@ -1,6 +1,6 @@
 /**
- * The pure half of /compact-handoff: the instruction, finding the note in the handoff reply, the
- * note file and its session entry, and the hidden message that brings it back after a compaction.
+ * The pure half of /compact-handoff: the fork's task, finding the note in its reply, the note file
+ * and its session entry, and the hidden message that brings it back after a compaction.
  * Builtins only; index.ts wires these into pi.
  */
 import { randomBytes } from "node:crypto";
@@ -10,12 +10,12 @@ import path from "node:path";
 
 /** The session's custom entry holding the newest note on its branch (not model context). */
 export const HANDOFF_ENTRY = "compact-handoff";
-/** The hidden custom message that starts the handoff turn. */
-export const REQUEST_MESSAGE = "compact-handoff-request";
 /** The hidden custom message that puts the note back after a compaction. */
 export const NOTE_MESSAGE = "compact-handoff-note";
 /** Directory under the agent dir, one `<session id>.md` per session. */
 export const HANDOFF_DIR = "compact-handoffs";
+/** Under HANDOFF_DIR: one directory per fork run (its session copy and the fork's own session). A dot name is never a session id. */
+export const RUNS_DIR = ".runs";
 
 /** `{v: 1, path, note, at, leafId}`: where the note was saved, its text, when (ISO) and the leaf it was written at. */
 export interface HandoffEntryData {
@@ -40,15 +40,22 @@ export function handoffPath(dir: string, sessionId: string): string {
 	return path.join(dir, HANDOFF_DIR, `${sessionId}.md`);
 }
 
-/** The hidden instruction that starts the handoff turn. */
-export function requestInstruction(focus: string): string {
+/** Where the fork runs keep their files: `<agent dir>/compact-handoffs/.runs`. */
+export function runsRoot(dir: string): string {
+	return path.join(dir, HANDOFF_DIR, RUNS_DIR);
+}
+
+/**
+ * The fork's one prompt. It forks the whole conversation, so it knows everything the session
+ * knows; it may only read, so anything durable has to go into the note itself.
+ */
+export function forkTask(focus: string): string {
 	const lines = [
-		"The user ran /compact-handoff: this session is about to be compacted, and the summary will lose detail. Before it does:",
+		"The user ran /compact-handoff: this session is about to be compacted, and the summary will lose detail. You are a read-only copy of the session, running on the side: you can read files and run read-only commands to check facts, but you cannot write anything, and nothing you do here reaches the session except your note.",
 		"",
-		"1. Persist anything durable to its usual place with your normal tools (alignments, plans, memory, notes). Do not compact or start other work.",
-		"2. End your reply with a handoff note for yourself inside <handoff>…</handoff>: what must survive the compaction that a summary would flatten (decisions and why, the user's preferences and corrections, open questions, exact current state, next steps), and the exact files, ids and commands to re-read before continuing.",
+		"End your reply with a handoff note for yourself inside <handoff>…</handoff>: what must survive the compaction that a summary would flatten (decisions and why, the user's preferences and corrections, open questions, exact current state, next steps), and the exact files, ids and commands to re-read before continuing. Anything durable that has not been written down elsewhere goes in the note: it is the only thing saved.",
 		"",
-		"The note is saved and added back right after the summary. Keep it self-contained and specific; do not repeat what the files already say.",
+		"The note is saved and added back right after the summary. Keep it self-contained and specific; do not repeat what the files already say. Do not start other work.",
 	];
 	if (focus) lines.push("", `The user's focus for this handoff and the summary: ${focus}`, "Include that focus in the note.");
 	return lines.join("\n");
@@ -82,33 +89,6 @@ export interface BranchEntry {
 	details?: unknown;
 	data?: unknown;
 	message?: { role?: string; stopReason?: string; content?: unknown };
-}
-
-export type Capture =
-	| { kind: "missing" }
-	| { kind: "stopped" }
-	| { kind: "failed"; error?: string }
-	| { kind: "no-note" }
-	| { kind: "note"; note: string };
-
-/**
- * What the handoff turn left on this branch: after the request message with this id, the newest
- * `<handoff>` block in an assistant reply (a follow-up reply in the same run may carry it). A run
- * whose last reply was stopped or failed yields no note, even if an earlier reply had one.
- */
-export function captureHandoff(branch: readonly BranchEntry[], requestId: string): Capture {
-	const start = branch.findIndex((e) => e.type === "custom_message" && e.customType === REQUEST_MESSAGE && (e.details as { id?: unknown })?.id === requestId);
-	if (start < 0) return { kind: "missing" };
-	let note: string | undefined;
-	let last: BranchEntry["message"] | undefined;
-	for (const entry of branch.slice(start + 1)) {
-		if (entry.type !== "message" || entry.message?.role !== "assistant") continue;
-		last = entry.message;
-		note = extractHandoff(assistantText(entry.message)) ?? note;
-	}
-	if (last?.stopReason === "aborted") return { kind: "stopped" };
-	if (last?.stopReason === "error") return { kind: "failed", error: (last as { errorMessage?: string }).errorMessage };
-	return note ? { kind: "note", note } : { kind: "no-note" };
 }
 
 /** The note file: a header naming the session, then the note. */
@@ -162,7 +142,8 @@ export function latestHandoff(branch: readonly BranchEntry[]): HandoffEntryData 
 
 /**
  * Whether a reply still in the kept part of the history (from `firstKeptEntryId` up to the
- * compaction) carries this exact note, so the model reads it there already.
+ * compaction) carries this exact note, so the model reads it there already. Only a note from
+ * before the fork, written by a reply in the thread, can be there: the fork's reply never is.
  */
 export function noteInKeptTail(branch: readonly BranchEntry[], firstKeptEntryId: string | null | undefined, compactionId: string, note: string): boolean {
 	if (!firstKeptEntryId) return false;

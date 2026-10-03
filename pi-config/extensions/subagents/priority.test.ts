@@ -42,14 +42,17 @@ test("workerNice is 0 with no host, the host's value with one, and 0 when the ho
 	await withHook(7, () => assert.equal(workerNice(), 0));
 });
 
-test("lowerPriority lowers a spawned process to the host's niceness, once", { skip: !unix }, async () => {
+// Relative to the runner's own niceness, which a child inherits (a Sova-hosted runner is at 10).
+const target = Math.min(19, os.getPriority() + 5);
+
+test("lowerPriority lowers a spawned process to the host's niceness, once", { skip: !unix || os.getPriority() >= 19 }, async () => {
 	const child = sleeper();
 	try {
 		await withHook(undefined, () => assert.equal(lowerPriority(child.pid), false, "no host: untouched"));
 		assert.equal(os.getPriority(child.pid!), os.getPriority());
-		await withHook(() => 10, () => {
+		await withHook(() => target, () => {
 			assert.equal(lowerPriority(child.pid), true);
-			assert.equal(os.getPriority(child.pid!), 10);
+			assert.equal(os.getPriority(child.pid!), target);
 			assert.equal(lowerPriority(child.pid), false, "already there");
 		});
 	} finally {
@@ -60,9 +63,10 @@ test("lowerPriority lowers a spawned process to the host's niceness, once", { sk
 test("lowerPriority never raises a priority, and never throws", { skip: !unix }, () => {
 	const child = sleeper();
 	try {
-		os.setPriority(child.pid!, 15);
-		assert.equal(lowerPriority(child.pid, 10), false);
-		assert.equal(os.getPriority(child.pid!), 15);
+		// Above the runner (only ever lowering is allowed), then asked for less.
+		os.setPriority(child.pid!, target);
+		assert.equal(lowerPriority(child.pid, Math.max(os.getPriority(), target - 2)), false);
+		assert.equal(os.getPriority(child.pid!), target);
 	} finally {
 		child.kill("SIGKILL");
 	}

@@ -22,10 +22,14 @@ project: these are starting points, and conformance is the proof.
 
 ## Dependencies before a service starts
 A JVM or Node service that fetches its dependencies at start (Clojure CLI, `npx`, a cold `~/.m2`)
-can spend its whole readiness wait downloading: the first confined run starts with empty caches.
-Give it a `build` step that only fetches (`clojure -P -M:<aliases>`, `npm ci --ignore-scripts`)
-with `inputs` the dependency files and a long `timeout` (up to 1800): the fetch then fails or
-finishes in its own unit with its own log, and runs again only when those files change.
+spends part of its readiness wait downloading: the first confined run starts with empty caches
+(Sova points Maven at its proxy itself). Usually a generous `ready.timeout` is enough. When the
+fetch is long, add a `setup` step that only fetches (`clojure -P -M:<aliases>`, `npm ci
+--ignore-scripts`), with `inputs` the dependency files and a long `timeout` (up to 1800): setup
+runs at create, before any service starts, in its own unit with its own log. A service's `build`
+does not help here: it runs only at `apply`, when its inputs change. Git dependencies
+(`:git/sha`) resolve only when the host's `~/.gitlibs` already has them; a confined run can't add
+them.
 
 ## Datastores as a process per copy
 - **Datomic dev transactor**: a `.sova/bin/transactor` wrapper copies the project's dev

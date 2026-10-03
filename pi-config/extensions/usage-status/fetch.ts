@@ -32,6 +32,7 @@ const LOCK_FILE = `${CACHE_FILE}.lock`;
 
 export const FRESH_MS = 150_000; // cache younger than this is used without fetching
 export const FAILURE_RETRY_MS = 60_000; // retry floor after a failed fetch
+export const RATE_LIMITED_RETRY_MS = 10 * 60_000; // a Claude login's retry after HTTP 429: the endpoint is refusing
 export const LOCK_STALE_MS = 30_000; // lock older than this is considered abandoned
 export const FETCH_TIMEOUT_MS = 10_000;
 export const FORCE_WAIT_MS = 12_000; // a forced refresh waits this long for another holder
@@ -73,8 +74,12 @@ export type ClaudeData =
 	| { state: "nologin" }
 	| { state: "expired" };
 
+/** An OpenAI window: `seconds` is its own `limit_window_seconds` (additive; absent when the API
+    sends none), which also picks its label. */
+export type OpenAiWindow = Window & { label: string; seconds?: number };
+
 export type OpenAiData =
-	| { state: "ok"; plan?: string; limitReached?: boolean; windows: (Window & { label: string })[] }
+	| { state: "ok"; plan?: string; limitReached?: boolean; windows: OpenAiWindow[] }
 	| { state: "nologin" }
 	| { state: "expired" }
 	| { state: "na" };
@@ -105,7 +110,9 @@ export interface ClaudeAccountUsage {
 	data?: ClaudeData;
 	/** When `data` was fetched. */
 	fetchedAt?: number;
-	/** This login's own next fetch: FRESH_MS after a reading, FAILURE_RETRY_MS after a failure. */
+	/** This login's own next fetch: FRESH_MS after a reading, FAILURE_RETRY_MS after a failure
+	    (RATE_LIMITED_RETRY_MS after an HTTP 429). A window of `data` resetting after `fetchedAt`
+	    makes it due earlier (claudeReadingDue). */
 	nextFetchAt: number;
 	/** Why the last fetch failed; absent after a success. */
 	error?: string;
@@ -121,6 +128,12 @@ export interface CacheFile {
 	openai?: OpenAiData;
 	/** Claude Code's own login (`default`): the one Claude reading every older reader knows. */
 	claude?: ClaudeData;
+	/** When `claude` was fetched, and its own next fetch: `default` keeps its own cadence like any
+	    login, so its failure (`errors.claude`) never shortens the other providers' refresh.
+	    Additive: absent in a file from an older writer, which fetched `claude` with the file
+	    (`fetchedAt`) and leaves it due now. */
+	claudeFetchedAt?: number;
+	claudeNextFetchAt?: number;
 	/** Every other Claude login assigned to this host, by login id (`l-…`). Absent in caches from
 	    before logins, and from a writer that has none; never includes `default`. */
 	claudeAccounts?: Record<string, ClaudeAccountUsage>;
@@ -182,15 +195,18 @@ export async function fetchOpenAi(): Promise<OpenAiData> {
 	const body: any = await res.json();
 	const limits = body?.rate_limit;
 	if (!limits || typeof limits !== "object") return { state: "na" };
-	const windows: (Window & { label: string })[] = [];
-	const add = (w: any, label: string) => {
-		if (w && typeof w.used_percent === "number" && Number.isFinite(w.used_percent))
-			windows.push({ label, pct: w.used_percent, resetsAt: openAiReset(w) });
+	const windows: OpenAiWindow[] = [];
+	// Each window is labelled from its own length; with none sent, the secondary keeps "5h".
+	const add = (w: any, fallback: string) => {
+		if (!w || typeof w.used_percent !== "number" || !Number.isFinite(w.used_percent)) return;
+		const secs = num(w.limit_window_seconds);
+		const seconds = secs !== undefined && secs > 0 ? secs : undefined;
+		const near = (target: number) => seconds !== undefined && Math.abs(seconds - target) <= target * 0.05;
+		const label = near(604_800) ? "7d" : near(18_000) ? "5h" : seconds === undefined ? fallback : "pri";
+		windows.push({ label, pct: w.used_percent, resetsAt: openAiReset(w), ...(seconds !== undefined ? { seconds } : {}) });
 	};
-	const secs = limits.primary_window?.limit_window_seconds;
-	const near = (target: number) => typeof secs === "number" && Math.abs(secs - target) <= target * 0.05;
 	add(limits.secondary_window, "5h");
-	add(limits.primary_window, near(604_800) ? "7d" : near(18_000) ? "5h" : "pri");
+	add(limits.primary_window, "pri");
 	windows.sort((a, b) => (a.label === "5h" ? -1 : b.label === "5h" ? 1 : 0)); // 5h before 7d, like claude
 	if (!windows.length) return { state: "na" };
 	const plan = typeof body.plan_type === "string" && body.plan_type ? body.plan_type : undefined;
@@ -410,8 +426,72 @@ export async function readCache(): Promise<CacheFile | undefined> {
 	// Written without this host's added logins (before they existed, or by an older extension that
 	// dropped them): refetch once. `claudeAccounts` is additive, so CACHE_SCHEMA stays as it is and
 	// an older reader keeps reading this file as it always did.
-	if (!data.claudeAccounts && claudeLoginIds().length) data.nextFetchAt = 0;
+	const logins = new ClaudeLogins();
+	const ids = claudeLoginIds(logins);
+	if (!data.claudeAccounts && ids.length) data.nextFetchAt = 0;
+	// A login held here with no reading yet (just taken or added), or one whose last reading has a
+	// window that reset since: due now, with the whole cache, never at the next ordinary fetch.
+	// The fetch moves the reading past the reset, and a failed one waits out its own retry
+	// (`error` set), so neither loops.
+	if (claudeReadingsDue(data, ids, Date.now(), (id) => needsSignIn(logins, id))) data.nextFetchAt = 0;
 	return data;
+}
+
+/** Every window reset (ms) a Claude reading names. */
+function claudeResets(data: ClaudeData | undefined): number[] {
+	if (data?.state !== "ok") return [];
+	const windows: (Window | undefined)[] = [data.fiveHour, data.sevenDay, data.sevenDayOpus, ...(data.limits ?? [])];
+	return windows.map((w) => (w?.resetsAt ? Date.parse(w.resetsAt) : NaN)).filter((t) => !Number.isNaN(t));
+}
+
+/** A window of `data` (read at `fetchedAt`) has reset since: the reading describes a window that's gone. */
+function resetSinceRead(data: ClaudeData | undefined, fetchedAt: number | undefined, now: number): boolean {
+	return fetchedAt !== undefined && claudeResets(data).some((t) => t > fetchedAt && t <= now);
+}
+
+/**
+ * Whether a Claude login's reading is due: its own `nextFetchAt` has come, or its last fetch
+ * succeeded and a window of that reading has reset since. A failed fetch (`error`) waits out its
+ * retry; a skipped one (needs sign-in) is never due here.
+ */
+export function claudeReadingDue(r: { data?: ClaudeData; fetchedAt?: number; nextFetchAt: number; error?: string; skipped?: "auth" }, now: number): boolean {
+	if (r.skipped) return false;
+	if (now >= r.nextFetchAt) return true;
+	return !r.error && resetSinceRead(r.data, r.fetchedAt, now);
+}
+
+/** `default`'s reading in the cache, in the shape claudeReadingDue reads. */
+function ownReading(c: CacheFile): { data?: ClaudeData; fetchedAt?: number; nextFetchAt: number; error?: string } {
+	return {
+		...(c.claude ? { data: c.claude } : {}),
+		fetchedAt: c.claudeFetchedAt ?? c.fetchedAt,
+		nextFetchAt: c.claudeNextFetchAt ?? 0,
+		...(c.errors.claude ? { error: c.errors.claude } : {}),
+	};
+}
+
+/**
+ * Whether the cache must be fetched now for a Claude login (readCache): a login in `ids` (held
+ * here) with no `claudeAccounts` entry, or a held login's — or `default`'s — last good reading
+ * with a window reset since it was read. A login's own retry never brings the whole cache
+ * forward, and a login that needs sign-in (`skip`) is never fetched, so it never makes it due.
+ */
+export function claudeReadingsDue(c: CacheFile, ids: readonly string[], now: number, skip: (id: string) => boolean = () => false): boolean {
+	if (c.claudeAccounts && ids.some((id) => !c.claudeAccounts![id])) return true;
+	const resetDue = (r: { data?: ClaudeData; fetchedAt?: number; error?: string; skipped?: "auth" }) => !r.skipped && !r.error && resetSinceRead(r.data, r.fetchedAt, now);
+	if (ids.some((id) => !skip(id) && c.claudeAccounts?.[id] && resetDue(c.claudeAccounts[id]!))) return true;
+	return !skip(DEFAULT_LOGIN_ID) && resetDue(ownReading(c));
+}
+
+/** The earliest Claude window reset still ahead of `now` in the cache (`default` or a login), or undefined. */
+export function nextClaudeReset(c: CacheFile, now: number): number | undefined {
+	const all = [c.claude, ...Object.values(c.claudeAccounts ?? {}).map((a) => a.data)].flatMap(claudeResets).filter((t) => t > now);
+	return all.length ? Math.min(...all) : undefined;
+}
+
+/** A failed Claude fetch's retry: longer when the usage endpoint answered HTTP 429. */
+function claudeRetryMs(error: string): number {
+	return /\bHTTP 429\b/.test(error) ? RATE_LIMITED_RETRY_MS : FAILURE_RETRY_MS;
 }
 
 export async function writeCache(data: CacheFile): Promise<void> {
@@ -554,7 +634,9 @@ function needsSignIn(logins: Pick<ClaudeLogins, "readinessOf">, id: string): boo
  * Every added login's reading, starting from `prev` (the cache's last `claudeAccounts`). A login is
  * fetched when its own `nextFetchAt` is due, or with `force`; never while this host marks it as
  * needing sign-in (it keeps its last reading, `skipped: "auth"`). A failed fetch keeps the last
- * reading, says why, and retries after FAILURE_RETRY_MS. Logins no longer on this host drop out.
+ * reading, says why, and retries after FAILURE_RETRY_MS (RATE_LIMITED_RETRY_MS after an HTTP 429).
+ * A window that reset since a good reading makes the login due early. Logins no longer on this
+ * host drop out.
  * Undefined when this host has no added login.
  */
 export async function fetchClaudeAccounts(prev: CacheFile["claudeAccounts"], force: boolean, options: ClaudeFetchOptions = {}): Promise<CacheFile["claudeAccounts"]> {
@@ -568,13 +650,14 @@ export async function fetchClaudeAccounts(prev: CacheFile["claudeAccounts"], for
 			const last = prev?.[id];
 			const kept = { ...(last?.data ? { data: last.data } : {}), ...(last?.fetchedAt !== undefined ? { fetchedAt: last.fetchedAt } : {}) };
 			if (needsSignIn(logins, id)) return [id, { ...kept, nextFetchAt: now() + FRESH_MS, skipped: "auth" }];
-			if (!force && last && !last.skipped && now() < last.nextFetchAt) return [id, last];
+			if (!force && last && !last.skipped && !claudeReadingDue(last, now())) return [id, last];
 			try {
 				const data = await fetchLogin(logins.dirOf(id));
 				const at = now();
 				return [id, { data, fetchedAt: at, nextFetchAt: at + FRESH_MS }];
 			} catch (err) {
-				return [id, { ...kept, nextFetchAt: now() + FAILURE_RETRY_MS, error: errMessage(err) }];
+				const error = errMessage(err);
+				return [id, { ...kept, nextFetchAt: now() + claudeRetryMs(error), error }];
 			}
 		}),
 	);
@@ -583,10 +666,12 @@ export async function fetchClaudeAccounts(prev: CacheFile["claudeAccounts"], for
 
 export async function fetchAll(prev: CacheFile | undefined, force = false, options: ClaudeFetchOptions = {}): Promise<CacheFile> {
 	const logins = options.logins ?? new ClaudeLogins();
-	// Claude Code's own login is skipped like any other while this host marks it as needing sign-in.
-	const claudeDefault = needsSignIn(logins, DEFAULT_LOGIN_ID)
-		? Promise.resolve(prev?.claude)
-		: (options.fetchLogin ?? ((dir: string) => fetchClaude(dir)))(logins.dirOf(DEFAULT_LOGIN_ID));
+	const clock = options.now ?? Date.now;
+	// Claude Code's own login is skipped like any other while this host marks it as needing
+	// sign-in, and keeps its own cadence like any other: not due, it keeps its reading and error.
+	const ownSkipped = needsSignIn(logins, DEFAULT_LOGIN_ID);
+	const ownDue = !ownSkipped && (force || !prev || claudeReadingDue(ownReading(prev), clock()));
+	const claudeDefault = ownDue ? (options.fetchLogin ?? ((dir: string) => fetchClaude(dir)))(logins.dirOf(DEFAULT_LOGIN_ID)) : Promise.resolve(prev?.claude);
 	const [o, x, c, z, d, a] = await Promise.allSettled([
 		fetchOllama(),
 		fetchOpenAi(),
@@ -595,7 +680,7 @@ export async function fetchAll(prev: CacheFile | undefined, force = false, optio
 		fetchDeepSeek(),
 		fetchClaudeAccounts(prev?.claudeAccounts, force, { ...options, logins }),
 	]);
-	const now = Date.now();
+	const now = clock();
 	const errors: CacheFile["errors"] = {};
 	let ollama = prev?.ollama;
 	let openai = prev?.openai;
@@ -606,8 +691,21 @@ export async function fetchAll(prev: CacheFile | undefined, force = false, optio
 	else errors.ollama = errMessage(o.reason);
 	if (x.status === "fulfilled") openai = x.value;
 	else errors.openai = errMessage(x.reason);
-	if (c.status === "fulfilled") claude = c.value;
-	else errors.claude = errMessage(c.reason);
+	let claudeFetchedAt = prev ? (prev.claudeFetchedAt ?? prev.fetchedAt) : undefined;
+	let claudeNextFetchAt = prev?.claudeNextFetchAt;
+	if (!ownDue) {
+		// Not fetched: a skipped login is checked again at the ordinary cadence; one waiting out its
+		// retry keeps its error, so readers still see why its reading is old.
+		if (ownSkipped) claudeNextFetchAt = now + FRESH_MS;
+		else if (prev?.errors.claude) errors.claude = prev.errors.claude;
+	} else if (c.status === "fulfilled") {
+		claude = c.value;
+		claudeFetchedAt = now;
+		claudeNextFetchAt = now + FRESH_MS;
+	} else {
+		errors.claude = errMessage(c.reason);
+		claudeNextFetchAt = now + claudeRetryMs(errors.claude);
+	}
 	// Each login carries its own error and retry: one failing login never shortens everyone's refresh.
 	const claudeAccounts = a.status === "fulfilled" ? a.value : prev?.claudeAccounts;
 	if (z.status === "fulfilled") zai = z.value;
@@ -615,7 +713,8 @@ export async function fetchAll(prev: CacheFile | undefined, force = false, optio
 	if (d.status === "fulfilled") deepseek = d.value;
 	else errors.deepseek = errMessage(d.reason);
 
-	const failed = Boolean(errors.ollama || errors.openai || errors.claude || errors.zai || errors.deepseek);
+	// Claude logins, `default` included, carry their own retry: one failing never shortens everyone's refresh.
+	const failed = Boolean(errors.ollama || errors.openai || errors.zai || errors.deepseek);
 	return {
 		schemaVersion: CACHE_SCHEMA,
 		fetchedAt: now,
@@ -623,6 +722,8 @@ export async function fetchAll(prev: CacheFile | undefined, force = false, optio
 		ollama,
 		openai,
 		claude,
+		...(claudeFetchedAt !== undefined ? { claudeFetchedAt } : {}),
+		...(claudeNextFetchAt !== undefined ? { claudeNextFetchAt } : {}),
 		...(claudeAccounts ? { claudeAccounts } : {}),
 		zai,
 		deepseek,

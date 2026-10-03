@@ -6,7 +6,7 @@
     #?(:clj [clojure.test :refer [deftest is testing]] :cljs [cljs.test :refer-macros [deftest is testing]])
     [sova.statecharts.refit.host :as h]))
 
-(def statechart {:by "statechart" :attended false :roster-active true :hold-ms 0})
+(def statechart {:by "statechart" :attended false :hold-ms 0})
 (defn reasons-to-watch [x]
   (vec (mapcat (fn [s] (let [d (:data s)] (if (contains? d :reasons) (:reasons d) [d])))
                (filter #(= :reason/noted (:event %)) (h/elsewhere x)))))
@@ -14,9 +14,9 @@
 
 ;; ---- the watch: statechart news wakes it only when it asks ------------------------------------------------
 
-(def wsid "watch/o1/pr1")
-(defn watch [] (-> (h/start! (h/new-host) "watch" wsid {:org-id "o1" :project-id "pr1" :tick-ms 0 :roster-active true :last-run-at 1700000000000})
-                   (h/send! wsid :link/moved {:from "project/o1/pr1" :statechart "project" :states [:project :has-overseer :active] :exported {:name "Site"}})))
+(def wsid "watch/pr1")
+(defn watch [] (-> (h/start! (h/new-host) "watch" wsid {:project-id "pr1" :tick-ms 0 :last-run-at 1700000000000})
+                   (h/send! wsid :link/moved {:from "project/pr1" :statechart "project" :states [:project :has-overseer :active] :exported {:name "Site"}})))
 
 (deftest the-watch-wakes-for-statechart-news-that-asks
   (let [r {:kind "baton/closed" :params {:title "T" :session-id "s1"} :key "baton/closed:s1" :by "statechart"}]

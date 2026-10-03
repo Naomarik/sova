@@ -8,7 +8,7 @@ import { whereOf } from "./attention";
 import { redactingTool, serverRedactor } from "./overseer-redact";
 import { auditedAct, cut, hiddenFromProfiles, Refusal, readBounds, renderTranscript, sessionRef, text, writableRefusal, type AuditRecord } from "./session-guards";
 import { stateRoot } from "./state-root";
-import { UserTurns, type TurnEvent, userMessageText } from "./overseer-tools";
+import { UserTurns, type TurnEvent, userMessageText } from "./user-turns";
 import { inviteFromSend, queueOpenTool } from "./topics";
 
 /**

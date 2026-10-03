@@ -3,7 +3,6 @@ import { appendFileSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import type { SessionShareVisit } from "../shared/session-share";
 import type { LinkRecord } from "./baton-links";
-import { orgDir } from "./orgs";
 import { stateRoot } from "./state-root";
 
 /**
@@ -204,6 +203,11 @@ const logs = new Map<string, OrgLog>();
 const SESSION_LOG = "session";
 const PREVIEW_LOG = "preview";
 const logKeyOf = (link: VisitLink): string => ("orgId" in link ? `org:${link.orgId}` : link.via === "preview" ? PREVIEW_LOG : SESSION_LOG);
+/** An org's workspace folder, where its log lives: orgs.ts names it when it loads (a preview's or a session's log needs none). */
+let orgDir: (orgId: string) => string = (orgId) => {
+  throw new Error(`No organization ${orgId} here`);
+};
+export const setOrgVisitsDir = (dirOf: (orgId: string) => string): void => void (orgDir = dirOf);
 const fileOf = (logKey: string): string =>
   logKey === SESSION_LOG ? join(stateRoot(), SESSION_VISITS_FILE) : logKey === PREVIEW_LOG ? join(stateRoot(), PREVIEW_VISITS_FILE) : join(orgDir(logKey.slice(4)), VISITS_FILE);
 

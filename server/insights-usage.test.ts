@@ -300,3 +300,64 @@ test("auth: the sign-in rides on its provider, and only there", async () => {
   writeCache({});
   assert.equal(byId((await getUsageInsight()).providers, "claude").auth, undefined, "signed out: no auth");
 });
+
+test("a cache without claudeAccounts carries over only the readings of logins still held here", async () => {
+  const { carriedClaudeAccounts } = await import("./insights");
+  const reading = (pct: number) => ({ usage: { id: "claude" as const, state: "ok" as const, windows: [{ label: "7d", pct }] }, fetchedAt: 1 });
+  const prev = { "l-0000000a": reading(10), "l-0000000b": reading(100) };
+  assert.deepEqual(carriedClaudeAccounts(prev, ["l-0000000a"]), { "l-0000000a": reading(10) }, "b was handed back: its reading goes with it");
+  assert.equal(carriedClaudeAccounts(prev, []), undefined, "nothing held here: nothing carried");
+  assert.equal(carriedClaudeAccounts(undefined, ["l-0000000a"]), undefined);
+});
+
+test("Claude Code's own login is dated by the cache's claudeFetchedAt, else the file's fetchedAt", async () => {
+  writeCache({ claudeFetchedAt: 12_345, claudeNextFetchAt: 99_999 });
+  const u = await getUsageInsight();
+  const own = u.claudeLogins?.find((l) => l.id === "default");
+  assert.ok(own, "this host lists Claude Code's own login");
+  assert.equal(own.fetchedAt, 12_345);
+  assert.notEqual(u.fetchedAt, 12_345, "the file's own age is unchanged");
+  writeCache({});
+  const older = (await getUsageInsight()).claudeLogins?.find((l) => l.id === "default");
+  assert.equal(older?.fetchedAt, (await getUsageInsight()).fetchedAt);
+});
+
+test("Ollama's month takes its span from the declared reset day as usage is read, never from the cache", async () => {
+  const { setUsageResetDay, withDeclaredReset } = await import("./insights");
+  writeCache({});
+  rmSync(join(agentDir, "usage-windows.json"), { force: true });
+  const unset = await getUsageInsight();
+  assert.equal(unset.ollamaResetDay, null);
+  assert.deepEqual(byId(unset.providers, "ollama").windows, [{ label: "month", pct: 75.6 }], "no day: no reset, no start");
+  const set = await setUsageResetDay({ provider: "ollama", day: 14 });
+  assert.ok(!("error" in set));
+  assert.equal(set.ollamaResetDay, 14);
+  const w = byId(set.providers, "ollama").windows[0]!;
+  assert.equal(w.declared, true);
+  const start = new Date(w.startsAt!);
+  const end = new Date(w.resetsAt!);
+  assert.deepEqual([start.getDate(), start.getHours(), end.getDate(), end.getHours()], [14, 0, 14, 0]);
+  assert.ok(start.getTime() <= Date.now() && Date.now() < end.getTime());
+  // The cache file itself never gains it.
+  assert.equal(JSON.parse(readFileSync(usageFile, "utf8")).ollama.resetsAt, undefined);
+  assert.deepEqual(JSON.parse(readFileSync(join(agentDir, "usage-windows.json"), "utf8")), { version: 1, ollama: { resetDay: 14 } });
+  // A rollover shows without a fetch: the same reading, read a month on.
+  const p = byId(set.providers, "ollama");
+  const later = withDeclaredReset({ ...p, windows: [{ label: "month", pct: 75.6 }] }, 14, end.getTime() + 3_600_000).windows[0]!;
+  assert.equal(later.startsAt, w.resetsAt);
+  // Other providers never gain a declared reset.
+  assert.equal(byId(set.providers, "openai").windows[0]!.declared, undefined);
+  const cleared = await setUsageResetDay({ provider: "ollama", day: null });
+  assert.ok(!("error" in cleared) && cleared.ollamaResetDay === null);
+  for (const bad of [{ provider: "openai", day: 3 }, { provider: "ollama", day: 0 }, { provider: "ollama", day: 32 }, { provider: "ollama", day: 2.5 }, { provider: "ollama" }, null])
+    assert.ok("error" in (await setUsageResetDay(bad)), JSON.stringify(bad));
+});
+
+test("an OpenAI window with its own length sends its start", async () => {
+  writeCache({ openai: { state: "ok", windows: [{ label: "7d", pct: 97, resetsAt: "2026-10-08T17:30:59.000Z", seconds: 604_800 }, { label: "pri", pct: 5, seconds: 3600 }] } });
+  const insight = await getUsageInsight();
+  assert.deepEqual(byId(insight.providers, "openai").windows, [
+    { label: "7d", pct: 97, resetsAt: "2026-10-08T17:30:59.000Z", startsAt: "2026-10-01T17:30:59.000Z" },
+    { label: "pri", pct: 5 },
+  ]);
+});

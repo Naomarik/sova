@@ -1,13 +1,14 @@
-import type { AttentionItem } from "../shared/protocol";
 import type { HeldAct, PipelineBuild, PipelineDecision, PipelineGathering, PipelineInfo, PipelineRow, PipelineTimeline, TimelineRow } from "../shared/pipeline";
 import { OPERATOR } from "../shared/baton";
 import { batonById, namesOf, sessionPathOf } from "./baton";
 import { buildSessionPath, readBuild } from "./build-loadout";
 import type { Hold } from "./statecharts";
-import { actOrThrow, holdByRef, holdRef, hostOf, isOrgHostOpen } from "./org-engine";
+import { actOrThrow, holdRef, hostOf, isOrgHostOpen } from "./org-engine";
 import { OrgError } from "./org-error";
 import type { LogRow } from "./org-host/log";
-import { operatorEnvelope, readIndex, readOrg, readProjects, type OperatorBy } from "./orgs";
+import { operatorEnvelope, readIndex, readProjects, type OperatorBy } from "./orgs";
+import { heldActs, projectOfHold } from "./project-holds";
+import { contributeProjectPart, type HoldDetails } from "./projects/contributions";
 import { readManifest } from "./overseer-ideas";
 import { NOT_PROMPTED } from "./project-overseer";
 import { projectOverseerPaths } from "./project-overseer-store";
@@ -39,11 +40,8 @@ function knownProject(orgId: string, projectId: string): void {
 const laneOf = (states: readonly string[]): string => [...LANE].reverse().find((s) => states.includes(s)) ?? "";
 
 // ---- held acts ----------------------------------------------------------------------------------------
-
-/** A hold's project: the one it was stamped for, else its session's. */
-function projectOfHold(h: Hold): string {
-  return h.projectId ?? h.sessionId.split("/")[2] ?? "";
-}
+//
+// The holds themselves are the project layer's (server/project-holds.ts); the org words the ones it owns.
 
 /** The person an hours wait waits for, by display name (the act's stamped target). */
 function personOf(orgId: string, h: Hold): string | undefined {
@@ -54,9 +52,9 @@ function personOf(orgId: string, h: Hold): string | undefined {
 }
 
 /** A gap's title (its idea's), else its id. */
-function gapTitle(orgId: string, projectId: string, ideaId: string): string {
+function gapTitle(projectId: string, ideaId: string): string {
   try {
-    return readManifest(projectOverseerPaths(orgId, projectId).ideas).ideas[ideaId]?.title || ideaId;
+    return readManifest(projectOverseerPaths(projectId).ideas).ideas[ideaId]?.title || ideaId;
   } catch {
     return ideaId;
   }
@@ -70,9 +68,9 @@ function gapTitle(orgId: string, projectId: string, ideaId: string): string {
 export function heldWhat(orgId: string, h: Hold): string {
   const d = obj(h.data);
   const str = (v: unknown) => (typeof v === "string" ? v.trim() : "");
-  const projectId = projectOfHold(h);
+  const projectId = projectOfHold(orgId, h);
   const ideaId = h.sessionId.startsWith("item/") && isOrgHostOpen(orgId) ? str(hostOf(orgId).data(h.sessionId)?.["ideaId"]) : "";
-  const about = str(d["publicTitle"]) || (ideaId ? gapTitle(orgId, projectId, ideaId) : "");
+  const about = str(d["publicTitle"]) || (ideaId ? gapTitle(projectId, ideaId) : "");
   const tail = about ? `: ${about}` : "";
   if (h.event === "gather/start" || h.event === "baton/start") {
     const targets = Array.isArray(d["targets"]) ? d["targets"] : [];
@@ -82,95 +80,19 @@ export function heldWhat(orgId: string, h: Hold): string {
     const who = personOf(orgId, h);
     return who ? `A gathering with ${who}${tail}` : `A gathering${tail}`;
   }
-  if (h.event === "build/start" && ideaId) return `A coding session for ${gapTitle(orgId, projectId, ideaId)}`;
+  if (h.event === "build/start" && ideaId) return `A coding session for ${gapTitle(projectId, ideaId)}`;
   return h.what || "An act";
 }
 
-function heldActOf(orgId: string, h: Hold): HeldAct {
-  const projectId = projectOfHold(h);
+/** The org's words for a hold in its engine: what it is, the person it waits for, its gap. */
+function holdDetails(orgId: string, h: Hold): HoldDetails | null {
+  if (!readIndex().orgs.some((o) => o.id === orgId)) return null;
   const itemId = h.sessionId.startsWith("item/") ? last(h.sessionId) : undefined;
   const ideaId = itemId && isOrgHostOpen(orgId) ? hostOf(orgId).data(h.sessionId)?.["ideaId"] : undefined;
   const person = h.wait === "hours" ? personOf(orgId, h) : undefined;
-  return {
-    id: holdRef(h),
-    orgId,
-    projectId,
-    ...(itemId ? { itemId } : {}),
-    ...(typeof ideaId === "string" ? { gap: ideaId } : {}),
-    what: heldWhat(orgId, h),
-    kind: h.kind,
-    goesAt: iso(h.until),
-    since: iso(h.since),
-    ...(h.by === "overseer" || h.by === "statechart" ? { by: h.by } : {}),
-    ...(h.wait === "hours" ? { wait: "hours" as const, ...(person ? { person } : {}) } : {}),
-    ...(h.waiting ? { reviewSince: iso(h.until) } : {}),
-  };
+  return { what: heldWhat(orgId, h), ...(person ? { person } : {}), ...(itemId ? { itemId } : {}), ...(typeof ideaId === "string" ? { gap: ideaId } : {}) };
 }
-
-/** The org's acts waiting in a hold (of one project, when given), soonest first. */
-export function heldActs(orgId: string, projectId?: string): HeldAct[] {
-  if (!isOrgHostOpen(orgId)) return [];
-  return hostOf(orgId)
-    .holds()
-    .filter((h) => h.act !== false && (!projectId || projectOfHold(h) === projectId))
-    .sort((a, b) => a.until - b.until)
-    .map((h) => heldActOf(orgId, h));
-}
-
-/**
- * The held acts as Needs-you items (r2): act tier, kind `held-act`, never pushed, linked to the project
- * page; the row recounts "{what} starts in {n} min unless you cancel it." from `held`.
- */
-export function heldAttention(): AttentionItem[] {
-  const out: AttentionItem[] = [];
-  for (const o of readIndex().orgs) {
-    if (!isOrgHostOpen(o.id)) continue;
-    let orgName = "";
-    let projects: { id: string; name: string; archived?: unknown }[] = [];
-    try {
-      orgName = readOrg(o.id).name;
-      projects = readProjects(o.id);
-    } catch {
-      continue;
-    }
-    for (const h of heldActs(o.id)) {
-      const p = projects.find((x) => x.id === h.projectId);
-      const goesAt = Date.parse(h.goesAt);
-      out.push({
-        id: `held-act:${h.id}`,
-        path: "",
-        title: p?.name ?? orgName,
-        where: orgName,
-        tier: "act",
-        kind: "held-act",
-        since: Date.parse(h.since) || 0,
-        detail:
-          h.wait === "hours"
-            ? `${h.what} waits for ${h.person ?? "the person"}'s working hours: it starts in ${Math.max(0, Math.ceil((goesAt - Date.now()) / 60_000))} min unless you cancel it.`
-            : `${h.what} starts in ${Math.max(0, Math.ceil((goesAt - Date.now()) / 60_000))} min unless you cancel it.`,
-        href: p ? `#/orgs/${encodeURIComponent(o.id)}/projects/${encodeURIComponent(p.id)}` : `#/orgs/${encodeURIComponent(o.id)}`,
-        org: { orgId: o.id, orgName, ...(p ? { projectId: p.id, projectName: p.name, ...(p.archived ? { projectArchived: true as const } : {}) } : {}) },
-        held: {
-          id: h.id,
-          goesAt,
-          what: h.what,
-          ...(h.wait ? { wait: h.wait } : {}),
-          ...(h.person ? { person: h.person } : {}),
-          ...(h.reviewSince ? { reviewSince: Date.parse(h.reviewSince) } : {}),
-        },
-      });
-    }
-  }
-  return out;
-}
-
-/** The operator's Cancel: `hold/cancel` on the hold's session (a declared correction). 404 unknown; the statechart's
-    sentence when it already went ahead. */
-export async function cancelHeld(orgId: string, holdId: string, reason: string | undefined, by?: OperatorBy): Promise<void> {
-  const h = isOrgHostOpen(orgId) ? holdByRef(orgId, holdId) : undefined;
-  if (!h) throw new OrgError("That act is no longer held: it went ahead or was cancelled.", 404);
-  await actOrThrow(orgId, h.sessionId, "hold/cancel", { id: h.id, ...(reason ? { reason } : {}) }, operatorEnvelope(orgId, projectOfHold(h) || null, by), { settle: true });
-}
+contributeProjectPart({ holdDetails });
 
 // ---- the Pipeline ---------------------------------------------------------------------------------------
 
@@ -183,9 +105,9 @@ function gatheringOf(sid: string, names: Record<string, string>): PipelineGather
   return { sessionId: r.sessionId, ...(path ? { path } : {}), title: r.publicTitle, state: r.state, holder };
 }
 
-function buildOf(orgId: string, projectId: string, sid: string, fact: Record<string, unknown>): PipelineBuild {
+function buildOf(projectId: string, sid: string, fact: Record<string, unknown>): PipelineBuild {
   const sessionId = last(sid);
-  const row = readBuild(orgId, projectId, sessionId);
+  const row = readBuild(projectId, sessionId);
   const exported = obj(fact["exported"]);
   const branch = exported["branchState"];
   const path = buildSessionPath(sessionId);
@@ -206,7 +128,7 @@ export function pipelineInfo(orgId: string, projectId: string): PipelineInfo {
   const rows: PipelineRow[] = [];
   if (host) {
     const names = namesOf(orgId);
-    const ideas = readManifest(projectOverseerPaths(orgId, projectId).ideas).ideas;
+    const ideas = readManifest(projectOverseerPaths(projectId).ideas).ideas;
     let decisionRows: { id: string; statement: string; state: string }[] = [];
     try {
       decisionRows = listDecisions(orgId, projectId).decisions;
@@ -240,14 +162,14 @@ export function pipelineInfo(orgId: string, projectId: string): PipelineInfo {
           .map((sid) => gatheringOf(sid, names))
           .filter((g): g is PipelineGathering => !!g),
         decisions,
-        builds: Object.entries(obj(d["builds"])).map(([sid, f]) => buildOf(orgId, projectId, sid, obj(f))),
+        builds: Object.entries(obj(d["builds"])).map(([sid, f]) => buildOf(projectId, sid, obj(f))),
         canHold: enabled.has("item/hold"),
         canResume: enabled.has("item/resume"),
       });
     }
   }
   rows.sort((a, b) => a.since.localeCompare(b.since));
-  return { rows, held: heldActs(orgId, projectId) };
+  return { rows, held: heldActs(projectId) };
 }
 
 /** The lane state an on-hold item left (Resume returns to it): the log row that put it on hold. */

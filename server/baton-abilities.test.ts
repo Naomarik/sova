@@ -38,7 +38,7 @@ const dana = await orgs.addPerson(org.id, { name: "Dana Kerr", role: "Finance" }
 const app = new Hono();
 registerOrgRoutes(app);
 const post = (path: string, body?: unknown) => app.request(path, { method: "POST", headers: { "Content-Type": "application/json" }, ...(body ? { body: JSON.stringify(body) } : {}) });
-const poPaths = projectOverseerPaths(org.id, project.id);
+const poPaths = projectOverseerPaths(project.id);
 const setProject = (a: { draw: boolean; readLinks: boolean } | null) => writePoSettings(poPaths, { ...readPoSettings(poPaths), gatheringAbilities: a });
 const start = (abilities?: object) => baton.createBaton({ orgId: org.id, projectId: project.id, to: dana.id, publicTitle: "Dashboard", goal: "What the dashboard shows", ...(abilities ? { abilities } : {}) });
 

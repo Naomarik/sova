@@ -140,7 +140,7 @@ the org page's Projects tab. The owner page and the project overseer never do.
 - **Notes**, one line each, only when true: unpriced tokens, estimates, sessions not on this host,
   what isn't counted, and the date of the prices. Copy: §design.copy-deck/project-costs.
 - Read on open, with Refresh Project, and every 60 seconds while the tab shows (paused while
-  hidden). `GET /api/orgs/:id/projects/:pid/costs`; the cost is never part of `GET …/overseer`.
+  hidden). `GET /api/projects/:pid/costs`; the cost is never part of `GET …/overseer`.
 
 ## §app.project-costs/org-rollup — Totals on the org page
 

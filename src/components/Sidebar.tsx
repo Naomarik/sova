@@ -5,11 +5,11 @@ import { Dynamic, Portal } from "solid-js/web";
 import type { AgentsInsight, AttentionDigest, ContextInfo, OverseerInfo, SessionGroup, SessionSummary, UsageInsight } from "../../shared/protocol";
 import { OVERSEER_HASH, overseerButtonLabel } from "../lib/overseer";
 import { openOverview } from "../lib/overview-route";
-import { autoTitleSessions, fetchTargets, sessionsDir as fetchSessionsDir, setSessionArchived } from "../lib/api";
+import { autoTitleSessions, fetchTargets, listProjects, sessionsDir as fetchSessionsDir, setSessionArchived } from "../lib/api";
 import { nameableRows, nameLabel, nameSessions, namingIn, setNaming } from "../lib/auto-title";
 import { type ArchiveGroupId, groupByArchiveDate, sessionsWord, startOfDay } from "../lib/archive";
 import { relativeTime, shortModel, tildePath } from "../lib/format";
-import { agentsHref, type GlancePart, usageGlance, usageHref } from "../lib/insights";
+import { agentsHref, type GlancePart, glanceLabel, glanceTitle, usageGlance, usageHref } from "../lib/insights";
 import { isMainThread, isOrdinarySession, isOrgSession, isTopSession } from "../lib/regions";
 import {
   eyeLabel,
@@ -58,6 +58,9 @@ import { overlaid, rowLeadMark, rowNeedsYou, SIGNAL_CLASS, SIGNAL_ICON, signalTi
 import { readinessBadge, readinessCount, readinessCountWords, readinessTitle } from "../lib/readiness";
 import { requestListRefresh } from "../lib/list-refresh";
 import { orgHref } from "../lib/orgs-route";
+import { inProjectsRegion, projectBlocks, projectRowCount, PROJECTS_KEY } from "../lib/project-region";
+import { projectHref, PROJECTS_HREF } from "../lib/projects-route";
+import { AddProjectDialog } from "./AddProjectDialog";
 import { marksOverlay, openSessionFeed } from "../lib/session-feed";
 import { reuseUnchanged } from "../lib/summary-diff";
 import { readKey, removeKey, writeKey } from "../lib/storage-keys";
@@ -307,7 +310,7 @@ function SessionRow(props: {
       path: row.path,
       title: row.title,
       groupId: row.groupId ?? null,
-      org: isOrgSession(row),
+      org: isOrgSession(row) || !!row.project,
       orgProject: orgProjectOf(row),
       peer: host ? hostLabel(host) : null,
       // Busy as the row shows it: this tab's own run is newer than the last fetched list.
@@ -998,17 +1001,58 @@ function NameSessionsButton(props: { section: string; rows: readonly SessionSumm
   );
 }
 
-/** Usage foot row: every provider at a glance ("C 47%  O 95%  OL 80%  Z 0%  DS $4.29"), or the page name. */
+/**
+ * A provider's pace meter (§app.insights/pace-tick): each bar's fill is the share used, its tick
+ * the share of the window gone; an empty track is a window with no current reading. Decorative:
+ * the row's words carry the numbers.
+ */
+function PaceMeter(props: { bars: GlancePart["bars"] & {} }) {
+  return (
+    <span class="pace" classList={{ "pace-two": props.bars.length > 1 }} aria-hidden="true">
+      <For each={props.bars}>
+        {(b) => (
+          <span class="pace-bar" classList={{ "pace-bar-thin": b.thin === true, "pace-bar-empty": b.pct === null }}>
+            <Show when={b.pct !== null}>
+              <span
+                class="pace-fill"
+                classList={{ "pace-fill-warn": b.tone === "warn", "pace-fill-error": b.tone === "error" }}
+                style={{ "--pace-pct": `${Math.min(100, Math.max(0, b.pct!))}%` }}
+              />
+            </Show>
+            <Show when={b.elapsed !== null}>
+              <span class="pace-tick" style={{ "--pace-at": `${b.elapsed! * 100}%` }} />
+            </Show>
+          </span>
+        )}
+      </For>
+    </span>
+  );
+}
+
+/** A glance part's figure: its pace meter, or a credit provider's money. */
+function GlanceFigure(props: { p: GlancePart }) {
+  return (
+    <Show when={props.p.bars} fallback={<span class="text-num">{props.p.amount}</span>}>
+      {(bars) => <PaceMeter bars={bars()} />}
+    </Show>
+  );
+}
+
+/** Usage foot row: every provider at a glance (a tag and its pace meter; "DS $4"), or the page name. */
 function UsageGlance(props: { parts: GlancePart[] }) {
   return (
     <Show when={props.parts.length > 0} fallback="Usage">
       <For each={props.parts}>
         {(p) => (
-          // Stale wins over high: an old 95% isn't a current warning.
-          <span class="usage-glance-item" classList={{ "usage-glance-item-high": p.high && !p.stale, "usage-glance-item-stale": p.stale }}>
+          // Stale wins over high: an old reading isn't a current warning.
+          <span
+            class="usage-glance-item"
+            classList={{ "usage-glance-item-high": p.high && !p.stale, "usage-glance-item-stale": p.stale, "usage-glance-item-pending": p.pending === true }}
+          >
             <span class="usage-glance-tag">{p.abbr}</span>
-            {/* A credit provider shows the money left; a window provider its percentage. */}
-            <span class="text-num">{p.amount ?? `${p.pct}%`}</span>
+            {/* A window provider shows its meter; a credit provider the money left; a Claude login
+                with no current reading empty tracks, never another account's reading. */}
+            <GlanceFigure p={p} />
           </span>
         )}
       </For>
@@ -1491,6 +1535,50 @@ export function Sidebar(props: {
     if (open === groupDoneOpen(key, rows)) return;
     setOpenDone((m) => ({ ...m, [key]: open }));
   };
+  /**
+   * Projects (lib/project-region, §app.projects/list): every standalone project's sessions, and only
+   * here, right before Organizations — each registered project's heading with its overseer's eye,
+   * then its Builds. Open by default, a collapse remembered for the tab.
+   */
+  // The registered projects, read again with the session list (a project added or archived moves
+  // both), at most every 15 seconds: the list reloads on every live event.
+  const [projectList, { refetch: refetchProjects }] = createResource(() => listProjects().catch(() => null));
+  let projectsReadAt = Date.now();
+  createEffect(
+    on(
+      () => props.sessions,
+      () => {
+        if (Date.now() - projectsReadAt < 15_000) return;
+        projectsReadAt = Date.now();
+        void refetchProjects();
+      },
+      { defer: true },
+    ),
+  );
+  const projectHits = createMemo(() => hits().filter(inProjectsRegion));
+  const projectsFound = createMemo(() => {
+    const q = query().trim().toLowerCase();
+    const list = projectList()?.projects;
+    return list && q ? list.filter((p) => `${p.name} ${p.root}`.toLowerCase().includes(q)) : list;
+  });
+  const projBlocks = createMemo(() => {
+    const blocks = projectBlocks(projectHits(), projectsFound() ?? undefined);
+    // A search keeps a project whose name matched, and any project with a row that did.
+    return searching() ? blocks.filter((b) => projectsFound()?.some((p) => p.id === b.id) || b.builds.active.length + b.builds.done.length > 0 || b.overseer) : blocks;
+  });
+  const projRowCount = () => projectRowCount(projBlocks());
+  const [addingProject, setAddingProject] = createSignal(false);
+  const [projectsStored, setProjectsStored] = createSignal(storedOrgsOpen(readKey(sessionStorage, PROJECTS_KEY)));
+  const projectsOpen = () => orgsRegionOpenRule({ stored: projectsStored(), searching: searching(), holdsSelected: projectHits().some((s) => s.path === props.selected) });
+  const onProjectsToggle = (e: Event & { currentTarget: HTMLDetailsElement }) => {
+    const open = e.currentTarget.open;
+    if (open === projectsOpen()) return; // our own `open` update, not the user's
+    setProjectsStored(open);
+    writeKey(sessionStorage, PROJECTS_KEY, open ? "1" : "0");
+  };
+  /** Shown once the list has loaded, unless a search found nothing in it. */
+  const showProjects = () => !!props.sessions && (!searching() || projBlocks().length > 0);
+
   /** A project row: line 2 names a settle session's conflict, or why a conversation hasn't started. */
   const ProjectRow = (r: { session: SessionSummary }) => {
     const line = () => rowLine(r.session);
@@ -1549,9 +1637,10 @@ export function Sidebar(props: {
     writeKey(sessionStorage, archiveDateKey(d.id), open ? "1" : "0");
   };
   const liveCount = () => all().filter((s) => s.live).length;
-  const glance = createMemo(() => usageGlance(props.usage, props.claudeLogin));
-  /** The foot's usage glance in full words, for its tooltip and accessible name. */
-  const glanceText = () => (glance().length ? `Usage: ${glance().map((p) => p.full).join(", ")}` : "");
+  const glance = createMemo(() => usageGlance(props.usage, props.now, props.claudeLogin));
+  /** The foot's usage glance in full words: a line per provider for its tooltip, one sentence for its accessible name. */
+  const glanceText = () => glanceTitle(glance());
+  const glanceName = () => glanceLabel(glance());
 
   const clear = () => {
     setQuery("");
@@ -1694,7 +1783,7 @@ export function Sidebar(props: {
           href={usageHref()}
           aria-current={props.insightsPage === "usage" ? "page" : undefined}
           title={glanceText() || undefined}
-          aria-label={glanceText() || undefined}
+          aria-label={glanceName() || undefined}
         >
           <Icon name="gauge" />
           <span class="insights-row-text" classList={{ "usage-glance": glance().length > 0 }}>
@@ -1753,8 +1842,8 @@ export function Sidebar(props: {
         facts.push(`${c.up} of ${c.total} hosts connected`);
       }
       facts.push(workingNow(agentsWorking()));
-      const caps = glance().map((p) => p.full);
-      if (caps.length) facts.push(caps.join(", "));
+      const caps = glance().flatMap((p) => [p.full, ...(p.others ?? [])]);
+      if (caps.length) facts.push(caps.join(". "));
       return `${facts.join(". ")}. Open hosts, usage, agents and shares.`;
     };
     return (
@@ -1782,9 +1871,9 @@ export function Sidebar(props: {
             {(p) => (
               <span
                 class="sidebar-footbar-seg sidebar-footbar-cap"
-                classList={{ "sidebar-footbar-cap-high": p.high && !p.stale, "sidebar-footbar-cap-stale": p.stale }}
+                classList={{ "sidebar-footbar-cap-high": p.high && !p.stale, "sidebar-footbar-cap-stale": p.stale || p.pending === true }}
               >
-                <span class="sidebar-footbar-tag">{p.abbr}</span> <span class="text-num">{p.amount ?? `${p.pct}%`}</span>
+                <span class="sidebar-footbar-tag">{p.abbr}</span> <GlanceFigure p={p} />
               </span>
             )}
           </For>
@@ -1979,7 +2068,7 @@ export function Sidebar(props: {
             href={usageHref()}
             aria-current={props.insightsPage === "usage" ? "page" : undefined}
             title={glanceText() || "Usage"}
-            aria-label={glanceText() || "Usage"}
+            aria-label={glanceName() || "Usage"}
           >
             <Icon name="gauge" />
           </a>
@@ -2259,6 +2348,83 @@ export function Sidebar(props: {
             </section>
           </Show>
 
+          {/* Projects, right before Organizations (lib/project-region): the only place a standalone
+              project's sessions are listed, each project's heading with its overseer's eye, then Builds. */}
+          <Show when={showProjects()}>
+            <details class="sidebar-region sidebar-orgs sidebar-projects" aria-labelledby="r-projects" open={projectsOpen()} onToggle={onProjectsToggle}>
+              <summary class="sidebar-orgs-summary">
+                <h2 class="sidebar-region-head" id="r-projects" title="Your projects that no organization places: their overseers and coding sessions.">
+                  <Icon name="chevron-right" small class="icon-twist" />
+                  Projects <span class="sidebar-region-count">· {projRowCount()}</span>
+                  <Show when={!projectsOpen() && folderActive(projectHits(), localRunning())}>
+                    <span class="session-group-active" title="An agent is working in one of these sessions">
+                      <span class="session-rail-dot" />
+                      <span class="visually-hidden">, an agent is working here</span>
+                    </span>
+                  </Show>
+                  <button
+                    type="button"
+                    class="button button-icon button-ghost org-link"
+                    aria-label="Add Project"
+                    title="Add Project"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setAddingProject(true);
+                    }}
+                    onKeyDown={(e) => e.stopPropagation()}
+                  >
+                    <Icon name="plus" small />
+                  </button>
+                  <a
+                    class="button button-icon button-ghost org-link"
+                    href={PROJECTS_HREF}
+                    aria-label="Open the Projects page"
+                    title="Open the Projects page"
+                    onClick={(e) => e.stopPropagation()}
+                    onKeyDown={(e) => e.stopPropagation()}
+                  >
+                    <Icon name="arrow-right" small />
+                  </a>
+                </h2>
+              </summary>
+              <Show when={projBlocks().length} fallback={<p class="sidebar-region-note">No projects yet. Add a folder or a GitHub repository with +.</p>}>
+                <For each={projBlocks()}>
+                  {(p) => (
+                    <div class="org-project">
+                      <div class="org-project-head">
+                        <h4 class="list-group-label org-project-label" title={p.name}>
+                          <a class="org-project-name project-region-link" href={projectHref(p.id)}>
+                            <bdi>{p.name}</bdi>
+                          </a>
+                          <span class="text-num">{p.builds.active.length + p.builds.done.length}</span>
+                        </h4>
+                        <Show when={p.overseer}>{(po) => <OverseerEye session={po()} project={p.name} selected={props.selected} />}</Show>
+                      </div>
+                      <ProjectGroup
+                        key={`projects\n${p.id}\nbuilds`}
+                        label="Builds"
+                        title="Coding sessions this project started."
+                        doneTitle="Merged, and the ones you archived."
+                        states={[{ label: "", rows: p.builds.active }]}
+                        done={p.builds.done}
+                      />
+                    </div>
+                  )}
+                </For>
+              </Show>
+            </details>
+          </Show>
+          <Show when={addingProject()}>
+            <AddProjectDialog
+              onCancel={() => setAddingProject(false)}
+              onAdded={() => {
+                projectsReadAt = Date.now();
+                void refetchProjects();
+              }}
+            />
+          </Show>
+
           {/* Organizations, last before the Archive (lib/org-region): the only place an org's
               sessions are listed. Its own Needs you first, then org → project → rows, each project
               in groups, each with a collapsed Done tail. Open by default; a collapse holds for the tab. */}
@@ -2324,8 +2490,8 @@ export function Sidebar(props: {
                                 <span class="list-meta">{it.where}</span>
                               </span>
                             </a>
-                            <Show when={it.held && it.org ? { held: it.held, orgId: it.org.orgId } : null}>
-                              {(h) => <CancelHeldButton orgId={h().orgId} holdId={h().held.id} what={h().held.what} class="org-needs-cancel" />}
+                            <Show when={it.held && it.org?.projectId ? { held: it.held, projectId: it.org.projectId } : null}>
+                              {(h) => <CancelHeldButton projectId={h().projectId} holdId={h().held.id} what={h().held.what} class="org-needs-cancel" />}
                             </Show>
                           </li>
                         );

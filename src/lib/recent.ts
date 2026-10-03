@@ -86,7 +86,7 @@ export const recentCountValid = (raw: unknown): boolean => {
  * A server that predates `archived`, `workerSession` or `org` sends none, which counts as not
  * archived and an ordinary main thread (protocol.ts).
  */
-export const recentEligible = (s: Pick<SessionSummary, "archived" | "workerSession" | "overseer" | "org" | "profile">): boolean =>
+export const recentEligible = (s: Pick<SessionSummary, "archived" | "workerSession" | "overseer" | "org" | "project" | "profile">): boolean =>
   s.archived !== true && isOrdinarySession(s) && !s.profile;
 
 /**

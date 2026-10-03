@@ -388,8 +388,10 @@ describe("deliverLinkMessage: the refusals, before any runtime opens", () => {
 
   test("an organization's session: one of a project's coding sessions, by its build", async () => {
     const org = await orgs.createOrg({ name: "Link Org", dir: join(agentDir, "org-ws") });
-    mkdirSync(join(agentDir, "proj"), { recursive: true });
-    const project = await orgs.addProject(org.id, { name: "Proj", root: join(agentDir, "proj") });
+    // A project root is never inside Sova's state: its own temp dir.
+    const projRoot = mkdtempSync(join(tmpdir(), "sova-link-delivery-proj-"));
+    process.on("exit", () => rmSync(projRoot, { recursive: true, force: true }));
+    const project = await orgs.addProject(org.id, { name: "Proj", root: projRoot });
     const path = plainSession();
     const hourAgo = new Date(Date.now() - 3_600_000);
     utimesSync(path, hourAgo, hourAgo);

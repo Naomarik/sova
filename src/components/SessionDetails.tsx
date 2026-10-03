@@ -1,4 +1,4 @@
-import { createEffect, createMemo, createSignal, For, Match, on, onCleanup, Show, Switch, type JSX } from "solid-js";
+import { createEffect, createMemo, createResource, createSignal, For, Match, on, onCleanup, Show, Switch, type JSX } from "solid-js";
 import type { CompactionInfo, ContextInfo, GitFileChange, GitRepoSummary, GitSummary, SessionInsight, SessionSummary, SessionWorktreeInfo, TranscriptItem } from "../../shared/protocol";
 import { contextSentence, contextStateFor } from "../lib/context";
 import { relativeTime, thousands, tildePath } from "../lib/format";
@@ -6,7 +6,11 @@ import { readinessChip, readinessReason, type WorktreeChip, worktreeChips, workt
 import { absoluteTime, firstLine, timelineEntries } from "../lib/spend";
 import { orgProjectOf } from "../lib/drag-archive";
 import { archiveSession } from "../lib/session-actions";
-import { cwdLabel } from "../lib/remote-session";
+import { cwdLabel, remotePlaceOf } from "../lib/remote-session";
+import { addProject, ApiError, listProjects } from "../lib/api";
+import { projectAt } from "../lib/projects";
+import { projectHref } from "../lib/projects-route";
+import { addedLine } from "./AddProjectDialog";
 import { resumeCommand } from "../lib/session-command";
 import { groupNameOf, sessionGroups } from "../lib/session-groups";
 import {
@@ -25,7 +29,7 @@ import {
   upstreamLabel,
   visiblePath,
 } from "../lib/git-summary";
-import { copyText, home } from "../lib/ui-state";
+import { announce, copyText, home, toast } from "../lib/ui-state";
 import { sessionWorking } from "../lib/workers";
 import { Banner, CopyButton, Icon } from "./ui";
 import { sessionHref } from "./Sidebar";
@@ -192,6 +196,10 @@ export function SessionDetails(props: {
                   {cwdLabel(s(), home())}
                 </span>
               </Fact>
+              {/* A folder on this host can become a project (§app.projects/registration); one that is a project's says so. */}
+              <Show when={!remotePlaceOf(s()) && !hostOf(props.path)}>
+                <ProjectFact cwd={s().cwd} />
+              </Show>
               <Fact label="Created">
                 <span title={absoluteTime(s().createdAt, now())}>{relativeTime(s().createdAt, now())}</span>
               </Fact>
@@ -808,6 +816,50 @@ function ArchiveAction(props: { session: SessionSummary; archived: boolean; work
 }
 
 /** One label/value pair in the Identity list. `<dd>` carries its own reset: base.css has none. */
+/**
+ * The session's project: the registered project its folder is in, linked, or Add as Project, which
+ * registers the folder (its checkout root, said when it differs). A refusal is said in the server's words.
+ */
+function ProjectFact(props: { cwd: string }) {
+  const [projects, { refetch }] = createResource(() => listProjects().catch(() => null));
+  const project = () => projectAt(props.cwd, projects()?.projects ?? []);
+  const [adding, setAdding] = createSignal(false);
+  const [err, setErr] = createSignal<string | null>(null);
+  const add = async () => {
+    if (adding()) return;
+    setAdding(true);
+    try {
+      const r = await addProject(props.cwd);
+      setErr(null);
+      const done = addedLine(r, home());
+      toast(done);
+      announce(done);
+      void refetch();
+    } catch (x) {
+      setErr(x instanceof ApiError || x instanceof Error ? x.message : String(x));
+    } finally {
+      setAdding(false);
+    }
+  };
+  return (
+    <Show when={projects()}>
+      <Fact label="Project">
+        <Show
+          when={project()}
+          fallback={
+            <button type="button" class="button button-sm button-ghost" aria-disabled={adding() ? "true" : undefined} onClick={() => void add()}>
+              <Icon name="plus" small /> {adding() ? "Adding…" : "Add as Project"}
+            </button>
+          }
+        >
+          {(p) => <a href={projectHref(p().id)}>{p().name}</a>}
+        </Show>
+      </Fact>
+      <Show when={err()}>{(e) => <p class="field-error">{e()}</p>}</Show>
+    </Show>
+  );
+}
+
 function Fact(props: { label: string; children: JSX.Element }) {
   return (
     <div class="spread">

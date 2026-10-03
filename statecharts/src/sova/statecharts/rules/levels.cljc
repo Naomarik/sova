@@ -6,7 +6,7 @@
 
    The envelope (stamped by the host inside the org's serialized step): `:by` operator | overseer |
    system | model | person | wrapup | statechart, `:via` overseer, `:attended`, `:autonomy` (the setting),
-   `:paused`, `:roster-active`, `:archived`, `:allowance {kind {:used :max}}` (the ledger this turn
+   `:paused`, `:ceiling` (`{:autonomy :reason}` or nil), `:archived`, `:allowance {kind {:used :max}}` (the ledger this turn
    draws on), `:ledger` message | day, `:looks {:used :max}`, `:at-once {:gatherings-open
    :gatherings-cap :coding-running :coding-cap}`, `:card`, `:hold-ms`, `:invalid`."
   (:require
@@ -21,16 +21,19 @@
   [have need]
   (>= (get rank (some-> have name) -1) (get rank (some-> need name) 99)))
 
-(def empty-roster-reason "The roster has no active people yet, so the overseer only proposes (L0).")
 (def paused-reason "Paused at L0: this organization was attached on this host. Set its level to resume.")
 
 (defn effective-autonomy
-  "effectiveAutonomy: paused wins, then an empty roster, else the setting (default L1)."
-  [{:keys [autonomy paused roster-active]}]
-  (cond
-    paused {:autonomy "L0" :reason paused-reason}
-    (not roster-active) {:autonomy "L0" :reason empty-roster-reason}
-    :else {:autonomy (name (or autonomy "L1"))}))
+  "effectiveAutonomy: paused wins, then a ceiling (`{:autonomy :reason}`, contributed by whoever places
+   the project, e.g. an organization with no active people: L0) when it ranks below the setting, else
+   the setting (default L1). A project nobody caps runs at its setting."
+  [{:keys [autonomy paused ceiling]}]
+  (let [setting (name (or autonomy "L1"))]
+    (cond
+      paused {:autonomy "L0" :reason paused-reason}
+      (and (map? ceiling) (some? (:autonomy ceiling)) (not (level-at-least? (:autonomy ceiling) setting)))
+      (cond-> {:autonomy (name (:autonomy ceiling))} (:reason ceiling) (assoc :reason (:reason ceiling)))
+      :else {:autonomy setting})))
 
 (def tool-needs
   "TOOL_NEEDS, verbatim (a test pins it against the registry's acts). `sova_roster` approve/decline
@@ -60,7 +63,7 @@
     :else
     (str "This run was not started by the operator, and your autonomy here is " autonomy
       (when reason (str " (" reason ")")) "; "
-      tool " needs " need ". Do not retry it. File what you would do as an idea (sova_idea, tag gap) or raise a sova_card card that says what and why; "
+      tool " needs " need ". Do not retry it. File what you would do as an idea (sova_idea) or raise a sova_card card that says what and why; "
       "the operator's click starts a turn in which you may act.")))
 
 (defn level-check

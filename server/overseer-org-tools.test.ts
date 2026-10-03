@@ -22,17 +22,21 @@ symlinkSync(resolve(import.meta.dirname, "..", "pi-config", "extensions"), join(
 
 const { Hono } = await import("hono");
 const orgs = await import("./orgs");
+const { setProjectArchived } = await import("./projects/spaces");
 const baton = await import("./baton");
 const po = await import("./project-overseer");
 const store = await import("./project-overseer-store");
 const overseer = await import("./overseer");
+const sessionPrompt = await import("./session-prompt");
 const tools = await import("./overseer-tools");
+const { UserTurns } = await import("./user-turns");
 const view = await import("./overseer-org-view");
 const confirm = await import("./overseer-confirm");
 const { applyCardCall, cardLines } = await import("../shared/overseer-card");
 const { DEFAULT_CAPS, overseerActionsFile, writeOverseerState } = await import("./overseer-store");
 const { registerOrgRoutes } = await import("./org-routes");
 const { registerProjectOverseerRoutes } = await import("./project-overseer-routes");
+const { registerProjectRoutes } = await import("./projects/routes");
 const { registerDecisionRoutes } = await import("./decisions-routes");
 const { acquireChat, disposeAllChats } = await import("./chat-manager");
 const { settled } = await import("./workspace-git");
@@ -63,6 +67,7 @@ const app = new Hono();
 registerOrgRoutes(app);
 (await import("./outreach/routes")).mountOutreach(app);
 registerProjectOverseerRoutes(app);
+registerProjectRoutes(app);
 registerDecisionRoutes(app);
 /** New coding sessions: a session file of its own, as POST /api/sessions writes one, on a stub runtime. */
 async function codingSessionFile(cwd: string, id: string): Promise<string> {
@@ -128,7 +133,7 @@ const host = {
   caps: () => caps,
   sessions: async () => [],
   session: async (ref: string) => {
-    const path = ref.includes("/") ? ref : await overseer.pathOfId(ref);
+    const path = ref.includes("/") ? ref : await sessionPrompt.pathOfId(ref);
     return path ? getSessionSummary(path) : null;
   },
   digest: async () => ({ items: [], counts: { act: 0, decide: 0, fyi: 0 } }),
@@ -408,13 +413,13 @@ describe("the organization tools (§app.overseer/org-tools)", async () => {
     assert.ok((await call("sova_project_overseer", { op: "start", org: org.id, project: project.id })).ok);
     const set = await call("sova_project_overseer", { op: "settings", org: org.id, project: project.id, extra_instructions: "Prefer short answers.", watch: false });
     assert.ok(set.ok, set.text);
-    assert.equal(store.readPoSettings(store.projectOverseerPaths(org.id, project.id)).extraSystemPrompt, "Prefer short answers.");
+    assert.equal(store.readPoSettings(store.projectOverseerPaths(project.id)).extraSystemPrompt, "Prefer short answers.");
     const tooLong = await call("sova_project_overseer", { op: "settings", org: org.id, project: project.id, extra_instructions: "x".repeat(8001) });
     assert.match(tooLong.text, /extraSystemPrompt must be text of at most 8000 characters/);
     assert.ok((await call("sova_project_overseer", { op: "idea", action: "add", org: org.id, project: project.id, id: "§gap/exports", title: "Exports" })).ok);
     const todo = await call("sova_project_overseer", { op: "todo", action: "add", org: org.id, project: project.id, text: "Ask about backups" });
     assert.ok(todo.ok, todo.text);
-    const { path } = await po.ensureProjectOverseer(org.id, project.id);
+    const { path } = await po.ensureProjectOverseer(project.id);
     await stubbed(path);
     const sent = await call("sova_project_overseer", { op: "message", org: org.id, project: project.id, text: "Please check the backups." });
     assert.ok(sent.ok, sent.text);
@@ -424,23 +429,23 @@ describe("the organization tools (§app.overseer/org-tools)", async () => {
     const lines = readFileSync(path, "utf8").trim().split("\n").map((l) => JSON.parse(l));
     const marker = lines.find((l) => l.customType === OVERSEER_SENT_ENTRY);
     assert.equal(marker.data.overseerId, OVERSEER_ID, "marked as the Overseer's");
-    assert.equal(po.attendedForTest(org.id, project.id), true, "the run it opened is the operator's");
+    assert.equal(po.attendedForTest(project.id), true, "the run it opened is the operator's");
   });
 
   test("the message route: 403 without the secret; /commands, no overseer and prompt-route writes refused", async () => {
-    const url = `/api/orgs/${org.id}/projects/${project.id}/overseer/message`;
+    const url = `/api/projects/${project.id}/overseer/message`;
     const bare = await app.request(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text: "hi" }) });
     assert.equal(bare.status, 403);
     assert.deepEqual(await bare.json(), { error: "Only the Overseer sends here. Write in the overseer's own composer." });
     const slash = await overseer.requestAsOverseerForTest(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text: "/clear" }) });
     assert.equal(slash.status, 400);
     assert.match(((await slash.json()) as { error: string }).error, /Send words; use op clear to clear it\./);
-    const { path } = await po.ensureProjectOverseer(org.id, project.id);
-    const viaPrompt = await overseer.promptSession(path, "hello", OVERSEER_ID);
+    const { path } = await po.ensureProjectOverseer(project.id);
+    const viaPrompt = await sessionPrompt.promptSession(path, "hello", OVERSEER_ID);
     assert.deepEqual(viaPrompt, { ok: false, status: 409, error: "That is a project overseer's own conversation." });
     mkdirSync(join(root, "proj-b"), { recursive: true });
     const other = await orgs.addProject(org.id, { name: "Fresh", root: join(root, "proj-b") });
-    const none = await overseer.requestAsOverseerForTest(`/api/orgs/${org.id}/projects/${other.id}/overseer/message`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text: "hi" }) });
+    const none = await overseer.requestAsOverseerForTest(`/api/projects/${other.id}/overseer/message`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text: "hi" }) });
     assert.equal(none.status, 409);
     // The Overseer's own cap bounds repeats: at the limit nothing is sent.
     caps = { ...DEFAULT_CAPS, promptsPerTurn: 0 };
@@ -454,14 +459,14 @@ describe("the organization tools (§app.overseer/org-tools)", async () => {
     const made = await call("sova_project_overseer", { op: "code", org: org.id, project: project.id, prompt: "Add a CSV export", title: "CSV export" });
     assert.ok(made.ok, made.text);
     assert.equal(limits.count("create"), 1);
-    const rows = readBuilds(org.id, project.id);
+    const rows = readBuilds(project.id);
     const row = rows.find((r) => r.sessionId === (made.details as { session: string }).session)!;
     assert.equal(row.kind, "operator-coding");
     assert.equal(row.via, "overseer");
-    const info = await po.projectOverseerInfo(org.id, project.id);
+    const info = await po.projectOverseerInfo(project.id);
     assert.equal(info.worktrees.sessions.find((s) => s.sessionId === row.sessionId)?.via, "overseer");
     // The page's own Start Coding Session still needs an item.
-    const page = await app.request(`/api/orgs/${org.id}/projects/${project.id}/overseer/items/code`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ prompt: "x", title: "y" }) });
+    const page = await app.request(`/api/projects/${project.id}/overseer/items/code`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ prompt: "x", title: "y" }) });
     assert.equal(page.status, 400);
     await (await acquireChat(row.path!)).session.waitForIdle();
   });
@@ -482,7 +487,7 @@ describe("archive a project (§app.organizations/archive)", async () => {
   const kim = await orgs.addPerson(org.id, { name: "Kim Park", role: "Ops" });
   // As the tool sends it: in the turn a confirm card listing the project started (the statechart checks the card first).
   const archive = () =>
-    overseer.requestAsOverseerForTest(`/api/orgs/${org.id}/projects/${project.id}/archive`, { method: "POST", headers: { [tools.OVERSEER_CARD_HEADER]: JSON.stringify({ projects: [project.id] }) } });
+    overseer.requestAsOverseerForTest(`/api/projects/${project.id}/archive`, { method: "POST", headers: { [tools.OVERSEER_CARD_HEADER]: JSON.stringify({ projects: [project.id] }) } });
 
   test("refused while a gathering session is open, naming it; nothing written", async () => {
     const open = await baton.createBaton({ orgId: org.id, projectId: project.id, to: kim.id, publicTitle: "Hosting", goal: "g" }, { mintLink: false });
@@ -517,16 +522,16 @@ describe("archive a project (§app.organizations/archive)", async () => {
     const start = await app.request("/api/baton", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ orgId: org.id, projectId: project.id, to: kim.id, publicTitle: "x", goal: "g" }) });
     assert.equal(start.status, 409);
     assert.deepEqual(await start.json(), { error: "Old Site is archived. Unarchive it first." });
-    const startPo = await app.request(`/api/orgs/${org.id}/projects/${project.id}/overseer`, { method: "POST" });
+    const startPo = await app.request(`/api/projects/${project.id}/overseer`, { method: "POST" });
     assert.equal(startPo.status, 409);
     assert.deepEqual(await startPo.json(), { error: "Old Site is archived. Unarchive it to use its overseer." });
-    const run = await app.request(`/api/orgs/${org.id}/projects/${project.id}/overseer/run`, { method: "POST" });
+    const run = await app.request(`/api/projects/${project.id}/overseer/run`, { method: "POST" });
     assert.equal(run.status, 409);
-    const coding = await app.request(`/api/orgs/${org.id}/projects/${project.id}/overseer/coding`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+    const coding = await app.request(`/api/projects/${project.id}/overseer/coding`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
     assert.equal(coding.status, 409, "New Coding Session too");
     assert.deepEqual(await coding.json(), { error: "Old Site is archived. Unarchive it first." });
-    assert.deepEqual(await po.lookNow(org.id, project.id, true), { started: false, why: "the project is archived" });
-    const msg = await overseer.requestAsOverseerForTest(`/api/orgs/${org.id}/projects/${project.id}/overseer/message`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text: "hi" }) });
+    assert.deepEqual(await po.lookNow(project.id, true), { started: false, why: "the project is archived" });
+    const msg = await overseer.requestAsOverseerForTest(`/api/projects/${project.id}/overseer/message`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text: "hi" }) });
     assert.equal(msg.status, 409);
   });
 
@@ -535,16 +540,16 @@ describe("archive a project (§app.organizations/archive)", async () => {
     assert.ok(r.ok, r.text);
     assert.equal(orgs.readProjects(org.id)[0]!.archived, undefined);
     assert.equal(orgs.orgsInfo().orgs.find((o) => o.id === org.id)!.projects, 1);
-    const again = await app.request(`/api/orgs/${org.id}/projects/${project.id}/overseer`, { method: "POST" });
+    const again = await app.request(`/api/projects/${project.id}/overseer`, { method: "POST" });
     assert.equal(again.status, 200);
   });
 
   test("its composer is closed while archived (the project overseer's own)", async () => {
-    const { path } = await po.ensureProjectOverseer(org.id, project.id);
-    await orgs.setProjectArchived(org.id, project.id, true);
+    const { path } = await po.ensureProjectOverseer(project.id);
+    await setProjectArchived(project.id, true);
     const chat = await acquireChat(path);
     assert.equal(chat.specialEntry?.composerClosed?.(path), "Old Site is archived. Unarchive it to use its overseer.");
-    await orgs.setProjectArchived(org.id, project.id, false);
+    await setProjectArchived(project.id, false);
     assert.equal(chat.specialEntry?.composerClosed?.(path), null);
   });
 });
@@ -616,7 +621,7 @@ describe("the confirm card: people and projects, and the click that opens a conf
   });
 
   test("UserTurns: a click's card lasts for its own run only; a typed message opens none", () => {
-    const turns = new tools.UserTurns();
+    const turns = new UserTurns();
     const agent = { prompt: async (_m: unknown) => {}, steer: (_m: unknown) => {}, followUp: (_m: unknown) => {} };
     turns.watch(agent as never);
     const msg = { role: "user", content: "Start the session with Lee." };
@@ -634,7 +639,7 @@ describe("the confirm card: people and projects, and the click that opens a conf
   });
 
   test("UserTurns: the open-cards note is state, not input; any other extension message still ends the user's part", () => {
-    const turns = new tools.UserTurns();
+    const turns = new UserTurns();
     const agent = { prompt: async (_m: unknown) => {}, steer: (_m: unknown) => {}, followUp: (_m: unknown) => {} };
     turns.watch(agent as never);
     const msg = { role: "user", content: "c_1 a: Start the session with Lee." };
@@ -701,5 +706,31 @@ describe("the Overseer's file tools never open a workspace or a link store (§ap
     assert.equal(guard.isSecret(join(ws, "sessions", "x.jsonl")), true);
     assert.equal(guard.isSecret(join(root, "fws", "outside.txt")), false);
     assert.ok(existsSync(join(root, "fws", "alias")));
+  });
+});
+
+describe("any registered project, org optional (sova_projects, sova_org_project)", async () => {
+  const { registerProjectIn } = await import("./projects/spaces");
+  mkdirSync(join(root, "solo"), { recursive: true });
+  const solo = (await registerProjectIn("standalone", join(root, "solo"), { name: "Solo Tool", origin: "folder" })).project;
+
+  test("sova_projects lists a standalone project with no org; a read needs none", async () => {
+    const list = await call("sova_projects", {});
+    assert.ok(list.ok, list.text);
+    assert.match(list.text, new RegExp(`- Solo Tool \\(${solo.id}\\) · in no organization · root `));
+    const read = await call("sova_org_project", { project: solo.id });
+    assert.ok(read.ok, read.text);
+    assert.match(read.text, /# Solo Tool .*\(in no organization\)/);
+    assert.doesNotMatch(read.text, /Gathering sessions|Decisions:|Last owner update/, "no org part for a standalone project");
+  });
+
+  test("its org part is refused with why; there is no add", async () => {
+    attended = true;
+    const edit = await call("sova_org_project", { op: "edit", project: solo.id, stakeholder: "none" });
+    assert.equal(edit.ok, false);
+    assert.match(edit.text, /Solo Tool is in no organization/);
+    const add = await call("sova_org_project", { op: "add", project: "x", name: "x", root: join(root, "solo") });
+    assert.equal(add.ok, false);
+    assert.match(add.text, /Only the user adds a project/);
   });
 });

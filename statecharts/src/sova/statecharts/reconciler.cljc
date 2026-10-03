@@ -99,7 +99,7 @@
    and the watch hears of it."
   []
   [(script {:expr (fn [_ d] [(ops/assign :last-promote (get-in (e d) [:result]))])})
-   (Send {:event :ledger/take :targetexpr (fn [_ d] (b/watch-sid (:org-id d) (:project-id d)))
+   (Send {:event :ledger/take :targetexpr (fn [_ d] (b/watch-sid (:project-id d)))
           :content (fn [_ d] (let [{:keys [by-actor ledger]} (get-in (e d) [:effect])]
                                {:kind "promote" :n (count (get-in (e d) [:result :promoted])) :by by-actor :ledger ledger}))})
    (b/tell-watch (fn [d] (let [res (get-in (e d) [:result]) ids (vec (:promoted res))]
@@ -153,7 +153,7 @@
                                (ops/assign :reasons-out (reasons-of d))]))})
    (b/send-all result-fanout)
    (raise {:event :spawn/next})
-   (Send {:event :reason/noted :targetexpr (fn [_ d] (b/watch-sid (:org-id d) (:project-id d)))
+   (Send {:event :reason/noted :targetexpr (fn [_ d] (b/watch-sid (:project-id d)))
           :content (fn [_ d] {:reasons (:reasons-out d) :by (:by d)})})])
 
 (defn request-ops [d]

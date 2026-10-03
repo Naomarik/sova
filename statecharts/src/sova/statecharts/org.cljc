@@ -1,7 +1,7 @@
 (ns sova.statecharts.org
   "The org statechart (portable, `org/<org>`): the organization's identity, its owner (§app.owner-page/owner),
    the holder record (r1: the holder lives in this snapshot, so the clone and origin name it), and
-   the births of its people and projects.
+   the births of its people and its projects' placements.
 
    About (`about.md`, `org-history.jsonl`) is plain data with today's rules, written by its route:
    it never enters a statechart (§app.organizations/about's one-reader rule stays structural).
@@ -31,7 +31,7 @@
 ;; ---- checks -------------------------------------------------------------------------------------
 
 (defn name-check
-  "The org's (or a project's) name: 1–80 characters."
+  "The org's name: 1–80 characters."
   [data]
   (let [n (str/trim (or (:name (b/evt data)) ""))]
     (when (or (= "" n) (> (count n) name-max)) (r/refuse 400 (str "name must be 1–" name-max " characters")))))
@@ -128,10 +128,12 @@
 
 ;; ---- births -------------------------------------------------------------------------------------------
 
-(defn project-data [data]
+(defn placement-data
+  "A project placed in the organization (born here, or imported): the placement's start data."
+  [data]
   (let [e (b/evt data)]
-    {:org-id (:id data) :id (:project-id e) :name (str/trim (:name e)) :root (:root e)
-     :created-at (b/now-ms data) :origin "manual"}))
+    {:org-id (:id data) :project-id (:project-id e) :via (or (some-> (:placed-via e) name) "born")
+     :placed-at (b/now-ms data)}))
 
 (def statechart
   (chart/statechart {:initial :org}
@@ -145,10 +147,13 @@
       (dsl/act {:sova/feed :feed :event :org/hours :checks [invalid hours-check]}
         (script {:expr (fn [_ d] (hours-ops d))}))
 
-      ;; A project: the host checked its root (not a workspace, not inside one, not holding one,
-      ;; not in Sova's state; realpath) and stamps the refusal as `invalid`.
-      (dsl/act {:sova/feed :feed :event :project/add :checks [name-check invalid]}
-        (dsl/spawn {:statechart "project" :link :org :id (fn [d] (b/project-sid (:id d) (:project-id (b/evt d)))) :data project-data}))
+      ;; A project placed here: its own sessions (project/<p>, born or imported) live in this engine;
+      ;; the org's concerns for it live in its placement. The host stamps why it can't be placed as
+      ;; `invalid`. Placing a placed project again is a no-op (the org-open invariant places any
+      ;; project session that has no placement).
+      (dsl/act {:sova/feed :feed :event :project/place :checks [invalid]}
+        (dsl/spawn {:statechart "placement" :link :org :watch? false :if-exists :skip
+                    :id (fn [d] (b/placement-sid (:id d) (:project-id (b/evt d)))) :data placement-data}))
 
       ;; A person, added by the operator (or the global Overseer for them): active from the start.
       (dsl/act {:sova/feed :feed :event :person/add :checks [invalid person-add-check]}
@@ -181,7 +186,7 @@
 (def acts
   {:org/rename   {:needs nil}
    :org/hours    {:needs nil}
-   :project/add  {:needs nil}
+   :project/place {:needs nil}
    :person/add   {:needs nil}
    :owner/set    {:needs nil}
    :hold/cancel  {:needs "L0" :correction true}})

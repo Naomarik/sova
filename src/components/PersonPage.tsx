@@ -9,7 +9,8 @@ import { DECISION_STATE } from "../lib/decisions-view";
 import { relativeIn, relativeTime, stampTime } from "../lib/format";
 import { useMinuteNow } from "../lib/minute-clock";
 import { ORG_POLL_MS } from "../lib/org-source";
-import { orgHref, orgSessionHref, orgTabHref, projectHref, startForHref } from "../lib/orgs-route";
+import { orgHref, orgSessionHref, orgTabHref, startForHref } from "../lib/orgs-route";
+import { projectHref } from "../lib/projects-route";
 import {
   canPreview,
   firstName,
@@ -311,7 +312,7 @@ function Head(props: { data: PersonPageData; act: Act; editing: boolean; onEdit(
               {(x, i) => (
                 <>
                   {i() ? ", " : ""}
-                  <a href={projectHref(orgId(), x.projectId)}>{x.name}</a>
+                  <a href={projectHref(x.projectId)}>{x.name}</a>
                 </>
               )}
             </For>
@@ -398,7 +399,7 @@ function Sessions(props: { data: PersonPageData; now: number; onPreview(row: Per
                   <Chip tone={SESSION_STATE[s.state]?.tone}>{SESSION_STATE[s.state]?.word ?? s.state}</Chip>
                 </div>
                 <span class="list-meta person-row-meta">
-                  <a class="orgs-meta-link" href={projectHref(props.data.org.id, s.projectId)}>
+                  <a class="orgs-meta-link" href={projectHref(s.projectId)}>
                     {s.projectName}
                   </a>
                   <Show when={holdLine(s, props.now)}>{(h) => <> · {h()}</>}</Show> · {messagesLine(s, props.now)}
@@ -473,7 +474,7 @@ function Decisions(props: { data: PersonPageData; now: number }) {
                     </Show>
                   </Show>
                   {" · "}
-                  <a href={projectHref(orgId(), d.projectId)}>{d.projectName}</a>
+                  <a href={projectHref(d.projectId)}>{d.projectName}</a>
                   <Show when={!d.authorOwnsArea}> · outside their decision areas</Show>
                 </span>
               </li>
@@ -500,7 +501,7 @@ function Decisions(props: { data: PersonPageData; now: number }) {
                     </Show>
                   </Show>
                   {" · "}
-                  <a href={projectHref(orgId(), c.projectId)}>{c.projectName}</a>
+                  <a href={projectHref(c.projectId)}>{c.projectName}</a>
                   {c.routeReason ? ` · ${c.routeReason}` : ""}
                 </span>
               </li>

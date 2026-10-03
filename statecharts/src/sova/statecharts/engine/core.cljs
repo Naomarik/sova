@@ -1259,17 +1259,20 @@
   (edn/read-string {:readers {'uuid uuid}} text))
 
 (defn- ->shape [{:keys [wmem queue]}]
-  {:config  (set (::sc/configuration wmem))
-   :data    (get wmem data-key)
-   :history (::sc/history-value wmem)
-   :queue   (vec queue)})
+  {:config          (set (::sc/configuration wmem))
+   :data            (get wmem data-key)
+   :history         (::sc/history-value wmem)
+   :invocation-data (::sc/invocation-data wmem)
+   :queue           (vec queue)})
 
-(defn- <-shape [snap {:keys [config data history queue]}]
+(defn- <-shape [snap {:keys [config data history queue] :as shape}]
   (-> snap
-    (update :wmem #(-> %
-                     (assoc ::sc/configuration (set config) data-key data)
-                     (assoc ::sc/history-value (or history {}))
-                     (update ::sc/initialized-states (fn [s] (into (set s) config)))))
+    (update :wmem #(cond-> (-> %
+                             (assoc ::sc/configuration (set config) data-key data)
+                             (assoc ::sc/history-value (or history {}))
+                             (update ::sc/initialized-states (fn [s] (into (set s) config))))
+                     ;; a migration that returns no :invocation-data leaves the start data as it was
+                     (contains? shape :invocation-data) (assoc ::sc/invocation-data (:invocation-data shape))))
     (assoc :queue (vec queue))))
 
 (defn migrate-snapshot

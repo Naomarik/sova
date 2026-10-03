@@ -112,10 +112,10 @@
 ;; ---- the level in force (from the watched watch session) -----------------------------------------------
 
 (defn level-in-force
-  "The project's level in force, from its watch's exported facts (paused, settings, roster-active)."
+  "The project's level in force, from its watch's exported facts (paused, settings, ceiling)."
   [d]
   (let [w (ex (:watch d))]
-    (:autonomy (lv/effective-autonomy {:autonomy (get-in w [:settings :autonomy] "L1") :paused (:paused w) :roster-active (:roster-active w)}))))
+    (:autonomy (lv/effective-autonomy {:autonomy (get-in w [:settings :autonomy] "L1") :paused (:paused w) :ceiling (:ceiling w)}))))
 
 (defn at-least? [d need] (lv/level-at-least? (level-in-force d) need))
 

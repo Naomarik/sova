@@ -9,7 +9,7 @@ const base = (over: Partial<EnvelopeInput> = {}): EnvelopeInput => ({
   attended: false,
   settings: { autonomy: "L2", caps, holdMin: 10, confirmKinds: ["gather", "promote"] },
   paused: false,
-  rosterActive: true,
+  ceiling: null,
   archived: false,
   used: { message: { gather: 1, promote: 4 }, day: { gather: 5, promote: 7 }, looksToday: 3 },
   gatheringsOpen: 2,
@@ -46,8 +46,8 @@ describe("buildEnvelope (design §4.1)", () => {
   });
 
   test("the facts pass through as given; optional fields only when set", () => {
-    const e = buildEnvelope(base({ paused: true, rosterActive: false, archived: true }));
-    assert.deepEqual([e.paused, e.rosterActive, e.archived], [true, false, true]);
+    const e = buildEnvelope(base({ paused: true, ceiling: { autonomy: "L0", reason: "r" }, archived: true }));
+    assert.deepEqual([e.paused, e.ceiling, e.archived], [true, { autonomy: "L0", reason: "r" }, true]);
     assert.ok(!("via" in e) && !("card" in e) && !("overseerId" in e) && !("turnId" in e));
     const card = { people: ["p_a"], projects: [], sessions: ["s1"] };
     const g = buildEnvelope(base({ by: "operator", via: "overseer", overseerId: "ov", card, turnId: "t1" }));

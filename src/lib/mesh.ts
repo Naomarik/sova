@@ -88,10 +88,11 @@ export function notePeerSessions(host: string, paths: readonly string[]): void {
   if (changed) setHostsVersion((v) => v + 1);
 }
 
-/** Test hook: forget every path and every org. */
+/** Test hook: forget every path, every org and every project. */
 export function resetHosts(): void {
   hosts.clear();
   orgHosts.clear();
+  projectHosts.clear();
   setHostsVersion((v) => v + 1);
 }
 
@@ -119,6 +120,33 @@ export function notePeerOrgs(host: string, orgIds: readonly string[]): void {
 export function orgHostOf(orgId: string): string | null {
   hostsVersion();
   const h = orgHosts.get(orgId) ?? null;
+  return h !== null && h === state()?.self.id ? null : h;
+}
+
+// ---- project id → host (§mesh.remote-sessions/org-pages) ------------------------------------------
+
+const projectHosts = new Map<string, string>();
+
+/**
+ * Record that `projectIds` are held on `host` (a peer's list names them on its session rows or its
+ * project list, or an address carries `?host=`). Only ever adds, like `notePeerOrgs`: a project lives
+ * on one host, and its id is random.
+ */
+export function notePeerProjects(host: string, projectIds: readonly string[]): void {
+  let changed = false;
+  for (const id of projectIds) {
+    if (projectHosts.get(id) !== host) {
+      projectHosts.set(id, host);
+      changed = true;
+    }
+  }
+  if (changed) setHostsVersion((v) => v + 1);
+}
+
+/** The peer a project is held on, or null: here (or unknown). Never the host serving this page. */
+export function projectHostOf(projectId: string): string | null {
+  hostsVersion();
+  const h = projectHosts.get(projectId) ?? null;
   return h !== null && h === state()?.self.id ? null : h;
 }
 
@@ -167,7 +195,7 @@ export function pathsNamed(url: string, body?: unknown): string[] {
  * the serving host refuses it the way it refuses any path it doesn't hold.
  */
 export function routeUrl(url: string, body?: unknown): string {
-  if (!url.startsWith("/api/") || (hosts.size === 0 && orgHosts.size === 0)) return url;
+  if (!url.startsWith("/api/") || (hosts.size === 0 && orgHosts.size === 0 && projectHosts.size === 0)) return url;
   const named = pathsNamed(url, body);
   if (named.length === 0) return hostUrl(idHost(url, body), url);
   const first = mappedHost(named[0]!);
@@ -176,13 +204,16 @@ export function routeUrl(url: string, body?: unknown): string {
 }
 
 /** Routes that name no path but an id a peer holds: a hand-off session's `/api/baton/<sid>/…` (its
-    strip's actions), an org's `/api/orgs/<id>…`, and a hand-off started in a peer's org. */
+    strip's actions), an org's `/api/orgs/<id>…`, a project's `/api/projects/<id>…`, and a hand-off
+    started in a peer's org. */
 function idHost(url: string, body?: unknown): string | null {
   const path = url.split("?")[0]!;
   const b = /^\/api\/baton\/([^/]+)\/./.exec(path);
   if (b) return hostOfSessionId(decodeURIComponent(b[1]!));
   const o = /^\/api\/orgs\/([^/]+)/.exec(path);
   if (o) return o[1] === "attach" || o[1] === "operator" ? null : orgHostOf(decodeURIComponent(o[1]!));
+  const p = /^\/api\/projects\/([^/]+)/.exec(path);
+  if (p) return projectHostOf(decodeURIComponent(p[1]!));
   if (path === "/api/baton" && typeof body === "string" && body.startsWith("{")) {
     try {
       const orgId = (JSON.parse(body) as { orgId?: unknown }).orgId;

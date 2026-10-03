@@ -69,9 +69,9 @@ test("the facts projection: each fact set has the phases a statechart may be in"
 });
 
 // The replay drives the refit's statecharts through a real host: every statechart a lane touches must be in the bundle.
-test("the replay's statecharts are the refit's (org, project, watch, item, baton, decision, reconciler, build), never the spike's", () => {
+test("the replay's statecharts are the refit's (org, project, placement, watch, item, baton, decision, reconciler, build), never the spike's", () => {
   const names = statechartVersions().map((c) => c.name as string);
-  for (const c of ["org", "person", "project", "watch", "item", "baton", "decision", "reconciler", "build"]) assert.ok(names.includes(c), `statecharts: ${names.join(", ")}`);
+  for (const c of ["org", "person", "project", "placement", "watch", "item", "baton", "decision", "reconciler", "build"]) assert.ok(names.includes(c), `statecharts: ${names.join(", ")}`);
   const src = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "statecharts-replay.ts"), "utf8");
   assert.doesNotMatch(src, /spike-project|work-item|createStatecharts/, "no spike statechart and no bare engine: the real host");
 });

@@ -142,7 +142,7 @@ export function BatonStrip(props: {
             {/* Who started it, and when (§app.baton/told): always shown; the overseer part links to it. */}
             <span class="baton-strip-meta baton-strip-started">
               Started by{" "}
-              <Show when={starterHref(i().started, i().session.orgId, i().session.projectId)} fallback={starterName(i().started, i().projectName)}>
+              <Show when={starterHref(i().started, i().session.projectId)} fallback={starterName(i().started, i().projectName)}>
                 {(href) => <a href={href()}>{starterName(i().started, i().projectName)}</a>}
               </Show>{" "}
               · {relativeTime(i().started.at, now())}

@@ -163,7 +163,7 @@ describe("eligibility", () => {
     assert.equal(ok({ outlineGist: undefined }), false);
     assert.equal(ok({ workerSession: true }), false);
     assert.equal(ok({ overseer: true }), false);
-    assert.equal(ok({ projectOverseer: { orgId: "o", projectId: "p" } }), false);
+    assert.equal(ok({ projectOverseer: { projectId: "p" } }), false);
     assert.equal(ok({ groupId: "mine" }), true); // an old group's member included (§workspace.groups/legacy-groups)
     assert.equal(ok({}, 11 * 60_000), false); // not quiet long enough
   });

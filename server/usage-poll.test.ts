@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { CacheFile, RefreshResult } from "../pi-config/extensions/usage-status/fetch.ts";
 import { FAILURE_RETRY_MS } from "../pi-config/extensions/usage-status/fetch.ts";
-import { FIRST_TICK_MS, FIRST_TICK_JITTER_MS, JITTER_MS, MAX_TICK_MS, MIN_TICK_MS, startUsagePoller, type UsagePollerOptions } from "./usage-poll";
+import { FIRST_TICK_MS, FIRST_TICK_JITTER_MS, JITTER_MS, MAX_TICK_MS, MIN_TICK_MS, nextDelay, startUsagePoller, type UsagePollerOptions } from "./usage-poll";
 
 /** One pending timer at a time (the poller chains), advanced by hand. */
 function harness(opts: Partial<UsagePollerOptions> & { random?: () => number } = {}) {
@@ -181,4 +181,18 @@ test("SOVA_USAGE_POLL=off (enabled: false) starts nothing", () => {
     else process.env.SOVA_USAGE_POLL = prev;
   }
   assert.equal(timers.length, 0, "the env switch alone turns it off");
+});
+
+test("the next tick also wakes at the earliest Claude reset still ahead, so a passed reset is read soon", () => {
+  const now = 1_000_000_000;
+  const at = (ms: number) => new Date(ms).toISOString();
+  const ok5h = (resetsAt: number) => ({ state: "ok" as const, fiveHour: { pct: 100, resetsAt: at(resetsAt) } });
+  // The cache is next due in 150s, but a login's 5-hour window resets in 70s: wake then.
+  const c = { ...cache(now + 150_000), claudeAccounts: { "l-0000000a": { data: ok5h(now + 70_000), nextFetchAt: now + 150_000 } } } as CacheFile;
+  assert.equal(nextDelay(c, now), 70_000);
+  // Claude Code's own login too; and a reset just ahead still respects the 30s floor.
+  assert.equal(nextDelay({ ...cache(now + 150_000), claude: ok5h(now + 5_000) } as CacheFile, now), MIN_TICK_MS);
+  // A reset already passed, or one after nextFetchAt, changes nothing.
+  assert.equal(nextDelay({ ...cache(now + 150_000), claude: ok5h(now - 5_000) } as CacheFile, now), 150_000);
+  assert.equal(nextDelay({ ...cache(now + 150_000), claude: ok5h(now + 3_600_000) } as CacheFile, now), 150_000);
 });

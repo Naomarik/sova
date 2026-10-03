@@ -1,6 +1,6 @@
 import { createSignal, For, type JSX, Match, Show, Switch } from "solid-js";
 import type { UsageBalance, UsageClaudeLogin, UsageInsight, UsageProvider, UsageWindow } from "../../shared/protocol";
-import { refreshUsage } from "../lib/api";
+import { putUsageResetDay, refreshUsage } from "../lib/api";
 import { duration, relativeIn, relativeTime } from "../lib/format";
 import {
   accountReading,
@@ -12,6 +12,7 @@ import {
   claudeLoginHolder,
   claudeLoginName,
   claudeLoginNote,
+  claudePastNote,
   claudeLoginStanding,
   claudeLoginTitle,
   extraUsageMeter,
@@ -27,29 +28,140 @@ import {
   type UsageLine,
   usesLine,
   windowLabel,
+  windowPace,
 } from "../lib/insights";
 import type { Poll } from "../lib/poll";
 import { InsightsPage, iso, ListSkeleton } from "./InsightsPage";
 import { Banner, Chip, CountChip, Icon } from "./ui";
 
-/** The bar under a meter's number: aria-hidden (the number is the value), never animated. */
-function Track(props: { pct: number }) {
+/**
+ * The bar under a meter's number: aria-hidden (the number is the value), never animated. With
+ * `at` (0..1), the pace tick: the share of the window gone (§app.insights/pace-tick).
+ */
+function Track(props: { pct: number; at?: number | null }) {
   const tone = () => meterTone({ label: "", pct: props.pct });
   return (
-    <div class="meter-track" aria-hidden="true">
-      <span
-        class="meter-fill"
-        classList={{ "meter-fill-warn": tone() === "warn", "meter-fill-error": tone() === "error" }}
-        style={{ "--meter-pct": `${Math.min(100, Math.max(0, props.pct))}%` }}
-      />
+    <div class="meter-track-wrap" aria-hidden="true">
+      <div class="meter-track">
+        <span
+          class="meter-fill"
+          classList={{ "meter-fill-warn": tone() === "warn", "meter-fill-error": tone() === "error" }}
+          style={{ "--meter-pct": `${Math.min(100, Math.max(0, props.pct))}%` }}
+        />
+      </div>
+      <Show when={props.at !== undefined && props.at !== null}>
+        <span class="meter-tick" style={{ "--meter-at": `${props.at! * 100}%` }} />
+      </Show>
     </div>
   );
 }
 
-function Meter(props: { w: UsageWindow; now: number }) {
-  const reset = () => meterReset(props.w, props.now);
+/** Ollama's declared reset day on its card: the day (null: none set) and how to save one. */
+interface ResetDayControl {
+  day: number | null;
+  save(day: number | null): Promise<void>;
+}
+
+/**
+ * "Set" / "Change" and the inline day-of-month field it opens (§app.insights/usage-reset-day):
+ * Enter or Save sends a day of 1–31, Escape or Cancel closes, Clear (once set) removes it.
+ */
+function ResetDay(props: { c: ResetDayControl }) {
+  const [open, setOpen] = createSignal(false);
+  const [value, setValue] = createSignal("");
+  const [error, setError] = createSignal<string | null>(null);
+  const [busy, setBusy] = createSignal(false);
+  let input: HTMLInputElement | undefined;
+  const start = () => {
+    setValue(props.c.day !== null ? String(props.c.day) : "");
+    setError(null);
+    setOpen(true);
+    queueMicrotask(() => input?.focus());
+  };
+  const send = async (day: number | null) => {
+    setBusy(true);
+    try {
+      await props.c.save(day);
+      setOpen(false);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const submit = () => {
+    const v = value().trim();
+    const day = Number(v);
+    if (!/^\d{1,2}$/.test(v) || day < 1 || day > 31) return setError("Enter a day from 1 to 31.");
+    void send(day);
+  };
+  return (
+    <Show
+      when={open()}
+      fallback={
+        <button type="button" class="usage-reset-day-link" onClick={start}>
+          {props.c.day === null ? "Set" : "Change"}
+        </button>
+      }
+    >
+      <form
+        class="usage-reset-day-field"
+        // Our own message, not the browser's bubble: a day outside 1–31 says it in the card.
+        noValidate
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (!busy()) submit();
+        }}
+      >
+        <label for="usage-reset-day-input">Reset day</label>
+        <input
+          ref={input}
+          id="usage-reset-day-input"
+          class="input"
+          type="number"
+          inputmode="numeric"
+          min="1"
+          max="31"
+          value={value()}
+          aria-invalid={error() ? "true" : undefined}
+          aria-describedby={error() ? "usage-reset-day-error" : undefined}
+          onInput={(e) => setValue(e.currentTarget.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") {
+              e.preventDefault();
+              setOpen(false);
+            }
+          }}
+        />
+        <button type="submit" class="button button-sm" aria-disabled={busy() ? "true" : undefined}>
+          Save
+        </button>
+        <Show when={props.c.day !== null}>
+          <button type="button" class="button button-sm button-ghost" aria-disabled={busy() ? "true" : undefined} onClick={() => !busy() && void send(null)}>
+            Clear
+          </button>
+        </Show>
+        <button type="button" class="button button-sm button-ghost" onClick={() => setOpen(false)}>
+          Cancel
+        </button>
+      </form>
+      <Show when={error()}>
+        {(m) => (
+          <p class="usage-reset-day-error" id="usage-reset-day-error" role="alert">
+            {m()}
+          </p>
+        )}
+      </Show>
+    </Show>
+  );
+}
+
+function Meter(props: { w: UsageWindow; now: number; past?: string; resetDay?: ResetDayControl }) {
+  const reset = () => meterReset(props.w, props.now, props.past);
   /** The window already reset: the reading describes a window that's gone. */
   const past = () => Boolean(reset()?.time);
+  /** The pace tick, while the window has a known span and its reset is ahead. */
+  const at = () => (past() ? null : (windowPace(props.w, props.now)?.elapsed ?? null));
   return (
     <div class="meter" classList={{ "meter-ghost": past() }}>
       <p class="meter-head">
@@ -64,16 +176,35 @@ function Meter(props: { w: UsageWindow; now: number }) {
           {pct(props.w)}%<span class="meter-of"> used</span>
         </span>
       </p>
-      <Track pct={props.w.pct} />
-      <Show when={reset()}>
+      <Track pct={props.w.pct} at={at()} />
+      <Show
+        when={reset()}
+        fallback={
+          <Show when={props.resetDay}>
+            {(c) => (
+              <div class="meter-context">
+                Reset day unknown · <ResetDay c={c()} />
+              </div>
+            )}
+          </Show>
+        }
+      >
         {(r) => (
-          <p class="meter-context" title={props.w.resetsAt}>
+          <div class="meter-context" title={props.w.resetsAt}>
             {r().lead}
             <Show when={r().time}>
               <span class="text-mono">{r().time}</span>
               {r().rest}
             </Show>
-          </p>
+            <Show when={props.resetDay}>
+              {(c) => (
+                <>
+                  {" · "}
+                  <ResetDay c={c()} />
+                </>
+              )}
+            </Show>
+          </div>
         )}
       </Show>
       <Show when={usesLine(props.w)}>{(u) => <p class="meter-context">{u()}</p>}</Show>
@@ -158,6 +289,10 @@ function UsageCard(props: {
   foot?: JSX.Element;
   /** No sign-in caption: the reading is one of several logins', each with its own sign-in. */
   noSignIn?: boolean;
+  /** A ghost meter's sentence in place of "New reading at the next refresh." (a free login's figures). */
+  past?: string;
+  /** Ollama's declared reset day, on its monthly meter. */
+  resetDay?: ResetDayControl;
 }) {
   const problem = (): UsageLine | null => (props.note ? { rest: props.note } : providerProblem(props.p, props.now));
   const signIn = () => (props.noSignIn ? null : authCaption(props.p, props.now));
@@ -179,7 +314,7 @@ function UsageCard(props: {
           when={problem()}
           fallback={
             <>
-              <Show when={props.p.balance} fallback={<For each={props.p.windows}>{(w) => <Meter w={w} now={props.now} />}</For>}>
+              <Show when={props.p.balance} fallback={<For each={props.p.windows}>{(w) => <Meter w={w} now={props.now} past={props.past} resetDay={w.label === "month" ? props.resetDay : undefined} />}</For>}>
                 {(b) => <Balance b={b()} />}
               </Show>
               <Show when={extraUsageMeter(props.p)}>{(x) => <ExtraMeter x={x()} />}</Show>
@@ -243,7 +378,7 @@ function LoginChips(props: { l: UsageClaudeLogin; now: number; reading: UsagePro
  * for an account of one login outside the pool, that login's chips above the meters.
  */
 function ClaudeAccountCard(props: { account: UsageClaudeLogin[]; now: number }) {
-  const reading = () => accountReading(props.account);
+  const reading = () => accountReading(props.account, props.now);
   const first = () => props.account[0]!;
   const caption = () => claudeAccountLoginsCaption(props.account);
   const listed = () => caption() !== null;
@@ -255,6 +390,7 @@ function ClaudeAccountCard(props: { account: UsageClaudeLogin[]; now: number }) 
       plan={claudeAccountSubtitle(props.account)}
       headId={`u-claude-${first().id}`}
       note={claudeLoginNote(reading().login)}
+      past={claudePastNote(reading().login)}
       noSignIn={props.account.length > 1}
       lead={
         <Show when={!listed()}>
@@ -304,6 +440,11 @@ function UsageBody(props: {
 }) {
   const u = () => props.usage.data();
   const age = () => props.now - (u()?.fetchedAt ?? props.now);
+  /** Ollama's reset-day control, from a server that sends the day (an older one offers none). */
+  const resetDay = (d: UsageInsight): ResetDayControl | undefined =>
+    d.ollamaResetDay === undefined
+      ? undefined
+      : { day: d.ollamaResetDay, save: async (day) => props.usage.set(await putUsageResetDay(day)) };
   const retry = () => (
     <button type="button" class="button button-sm" aria-disabled={props.refreshing ? "true" : undefined} onClick={() => !props.refreshing && props.onRefresh()}>
       Retry
@@ -353,7 +494,7 @@ function UsageBody(props: {
             <div class="insights-grid">
               <For each={data().providers}>
                 {(p) => (
-                  <Show when={p.id === "claude" && data().claudeLogins?.length ? data().claudeLogins : null} fallback={<UsageCard p={p} now={props.now} />}>
+                  <Show when={p.id === "claude" && data().claudeLogins?.length ? data().claudeLogins : null} fallback={<UsageCard p={p} now={props.now} resetDay={p.id === "ollama" ? resetDay(data()) : undefined} />}>
                     {(logins) => <ClaudeAccountCards logins={logins()} now={props.now} />}
                   </Show>
                 )}

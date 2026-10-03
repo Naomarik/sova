@@ -14,6 +14,12 @@ test("summaryChips: a count not read yet is left out, never shown as 0", () => {
   assert.deepEqual(ids, ["sessions", "todos"]);
 });
 
+test("summaryChips: a standalone project's ideas are on Overview, and a list with no gaps says ideas", () => {
+  const chip = summaryChips({ ideas: { gaps: 0, other: 2 }, ideasTab: "overview" })[0]!;
+  assert.deepEqual([chip.label, chip.tab, chip.section], ["2 ideas", "overview", "project-ideas"]);
+  assert.equal(summaryChips({ ideas: { gaps: 1, other: 1 }, ideasTab: "overview" })[0]!.label, "1 gap · 1 idea");
+});
+
 test("summaryChips: labels, order, tabs and the conflicts' warn", () => {
   const chips = summaryChips({
     sessions: 1,

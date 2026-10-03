@@ -2,7 +2,8 @@ import { realpathSync, statSync } from "node:fs";
 import { isAbsolute, relative, resolve, sep } from "node:path";
 import { PREVIEW_PURPOSE_MAX, type PreviewHandoff, type PreviewTarget, type PreviewView } from "../shared/preview-links";
 import { readBuilds, withWorktreePath } from "./build-loadout";
-import { projectOf } from "./decisions";
+import { projectOf } from "./project-overseer-store";
+import { peerPort } from "./mesh/peers";
 import { portOwner, type PortOwner } from "./port-owner";
 import { keepPreview, keptPreview, type KeptPreview } from "./preview-kept";
 import { checkDays, checkPort, findPreviewByHash, listPreviews, mintPreview, onPreviewEnded, PreviewRefused, revokePreview, type PreviewRecord } from "./preview-links";
@@ -10,9 +11,9 @@ import { startStaticServe, staticServes, stopStaticServe } from "./preview-serve
 import { readPublicLinks } from "./public-links";
 import { readSessionTitles } from "./session-titles";
 import { awaitShareLinks } from "./share/links-events";
-import { linkWarning } from "./share/listener";
 import { previewAddress, previewOrigin } from "./share/preview-address";
 import { dialLoopback, previewDialable, previewRootId } from "./share/preview-proxy";
+import { ingressInfo, linkWarning, shareListenerState } from "./share/share-state";
 
 /**
  * A project's previews (§mesh.public/preview, /preview-serve; §app.project-overseer/previews): what
@@ -37,19 +38,19 @@ export interface CodingTree {
 }
 
 /** Tests: stand-ins for the project's worktrees and the port's listener (the real ones read the statecharts and /proc). */
-let testDeps: { trees?: (orgId: string, projectId: string) => Promise<CodingTree[]>; owner?: (port: number) => PortOwner } = {};
+let testDeps: { trees?: (projectId: string) => Promise<CodingTree[]>; owner?: (port: number) => PortOwner } = {};
 export function setPreviewDepsForTest(d: typeof testDeps | null): void {
   testDeps = d ?? {};
 }
 const ownerOf = (port: number): PortOwner => (testDeps.owner ?? portOwner)(port);
-const treesFor = (orgId: string, projectId: string): Promise<CodingTree[]> => (testDeps.trees ?? projectTrees)(orgId, projectId);
+const treesFor = (projectId: string): Promise<CodingTree[]> => (testDeps.trees ?? projectTrees)(projectId);
 
 /** The project's coding sessions with a worktree here, newest first (no git: the statechart's records). */
-export async function projectTrees(orgId: string, projectId: string): Promise<CodingTree[]> {
-  const root = projectOf(orgId, projectId).root;
+export async function projectTrees(projectId: string): Promise<CodingTree[]> {
+  const root = projectOf(projectId).root;
   const titles = readSessionTitles();
   const out: CodingTree[] = [];
-  for (const row of readBuilds(orgId, projectId).reverse()) {
+  for (const row of readBuilds(projectId).reverse()) {
     if (row.removed || !row.worktree) continue;
     const w = await withWorktreePath(row, root).catch(() => null);
     if (!w) continue;
@@ -85,7 +86,6 @@ export function treeHolding(trees: readonly CodingTree[], dir: string): CodingTr
 // ---- resolving a request ----------------------------------------------------------------------------
 
 export interface PreviewRequest {
-  orgId: string;
   projectId: string;
   port?: unknown;
   folder?: unknown;
@@ -99,7 +99,6 @@ export interface PreviewRequest {
 }
 
 export interface ResolvedPreview {
-  orgId: string;
   projectId: string;
   target: { kind: "port"; port: number } | { kind: "static"; folder: string };
   tree: CodingTree | null;
@@ -118,11 +117,11 @@ export async function resolvePreview(q: PreviewRequest, deps: { owner?: (port: n
   const hasPort = q.port !== undefined && q.port !== null && q.port !== "";
   const hasFolder = typeof q.folder === "string" && q.folder.trim() !== "";
   if (hasPort === hasFolder) throw new PreviewRefused("bad-target", "Give either a port the app listens on or a folder to serve, not both.");
-  const trees = deps.trees ?? (await treesFor(q.orgId, q.projectId));
+  const trees = deps.trees ?? (await treesFor(q.projectId));
   const sid = noteOf(q.sessionId);
   const named = sid ? trees.find((t) => t.sessionId === sid) ?? null : null;
   if (sid && !named) throw new PreviewRefused("bad-session", `No coding session ${sid} of this project has a worktree on this host.`);
-  const base = { orgId: q.orgId, projectId: q.projectId, purpose: purposeRaw || null, days, createdBy: q.createdBy };
+  const base = { projectId: q.projectId, purpose: purposeRaw || null, days, createdBy: q.createdBy };
 
   if (hasFolder) {
     if (!named) throw new PreviewRefused("bad-session", "Name the coding session whose worktree holds the folder.");
@@ -167,7 +166,7 @@ export async function makePreview(r: ResolvedPreview, sovaPorts: ReadonlySet<num
   if (staging && r.target.kind === "static") port = (await startStaticServe({ id: staging, root: r.target.folder })).port;
   try {
     const { result, outcome } = await awaitShareLinks(() =>
-      mintPreview({ orgId: r.orgId, projectId: r.projectId, port, days: r.days, createdBy: r.createdBy }, staging ? new Set([...sovaPorts].filter((p) => p !== port)) : sovaPorts),
+      mintPreview({ projectId: r.projectId, port, days: r.days, createdBy: r.createdBy }, staging ? new Set([...sovaPorts].filter((p) => p !== port)) : sovaPorts),
     );
     const url = `${previewOrigin(address.url, result.label)}/`;
     const kept: KeptPreview = {
@@ -201,6 +200,26 @@ export async function turnOffPreview(id: string): Promise<PreviewRecord | null> 
 
 /** The ports Sova serves folders on: never a port preview's. */
 export const staticPorts = (): number[] => staticServes().map((s) => s.port);
+
+/** Every port this Sova process binds or its settings name: never a preview's. */
+export function sovaPorts(env: NodeJS.ProcessEnv = process.env): Set<number> {
+  const out = new Set<number>();
+  const add = (v: unknown) => {
+    const n = typeof v === "string" ? Number(v) : v;
+    if (typeof n === "number" && Number.isInteger(n) && n > 0) out.add(n);
+  };
+  add(env.PORT ?? 4800);
+  add(env.SOVA_PORT);
+  add(peerPort());
+  add(env.SOVA_SHARE_PORT);
+  add(shareListenerState()?.port);
+  const file = readPublicLinks();
+  add(file.gateway?.sharePort);
+  add(file.ingressPort);
+  add(ingressInfo()?.port);
+  for (const p of staticPorts()) add(p);
+  return out;
+}
 
 /** Bind every active folder preview again on its recorded port (index.ts, at startup). A taken port serves nothing. */
 export async function rebindStaticPreviews(now = Date.now()): Promise<{ bound: string[]; failed: string[] }> {
@@ -262,12 +281,11 @@ function shownFolder(folder: string, tree: CodingTree | null): string {
 }
 
 /** The project's previews (every project's without a filter), with the kept facts, the running check and the worktree match. */
-export async function previewViews(filter: { orgId?: string; projectId?: string } = {}, deps: { owner?: (port: number) => PortOwner; trees?: (orgId: string, projectId: string) => Promise<CodingTree[]> } = {}): Promise<PreviewView[]> {
+export async function previewViews(filter: { projectId?: string } = {}, deps: { owner?: (port: number) => PortOwner; trees?: (projectId: string) => Promise<CodingTree[]> } = {}): Promise<PreviewView[]> {
   const treesOf = new Map<string, Promise<CodingTree[]>>();
-  const trees = (o: string, p: string) => {
-    const k = `${o}/${p}`;
-    if (!treesOf.has(k)) treesOf.set(k, (deps.trees ?? treesFor)(o, p).catch(() => []));
-    return treesOf.get(k)!;
+  const trees = (p: string) => {
+    if (!treesOf.has(p)) treesOf.set(p, (deps.trees ?? treesFor)(p).catch(() => []));
+    return treesOf.get(p)!;
   };
   const now = Date.now();
   const out: PreviewView[] = [];
@@ -276,7 +294,7 @@ export async function previewViews(filter: { orgId?: string; projectId?: string 
     // A person's sibling (§app.outreach/links) shows its original's app: its target, session and purpose, never its link.
     const own = keptPreview(base.id);
     const kept = own ?? (base.siblingOf ? keptPreview(previewRootId(base)) : null);
-    const all = await trees(base.orgId, base.projectId);
+    const all = await trees(base.projectId);
     let tree = kept?.sessionId ? all.find((t) => t.sessionId === kept.sessionId) ?? null : null;
     let from: "recorded" | "worktree" | undefined = kept?.sessionId ? "recorded" : undefined;
     // An older preview (or the operator's by port): matched now by its listener's worktree, never written.
@@ -313,7 +331,6 @@ export function handoffOf(v: PreviewView): PreviewHandoff {
     linkKept: !!v.url,
     purpose: v.purpose ?? null,
     expiresAt: v.expiresAt,
-    orgId: v.orgId,
     projectId: v.projectId,
     sessionId: v.sessionId ?? null,
     branch: v.branch ?? null,

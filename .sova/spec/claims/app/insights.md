@@ -41,14 +41,20 @@ working worker is never the one it leaves out.
 <div class="sidebar-foot">
   <div class="sidebar-foot-row">
     <a class="list-row list-row-interactive insights-row sidebar-foot-link" href="#/usage" aria-current="page"
-       title="Usage: Claude 7-day 47%, OpenAI 7-day 95%, Ollama Cloud Monthly 80%, Z.ai 5-hour 0%"
-       aria-label="Usage: Claude 7-day 47%, OpenAI 7-day 95%, Ollama Cloud Monthly 80%, Z.ai 5-hour 0%">
+       title="Usage&#10;Claude 5-hour: 10% used · 2h 10m of 5h · resets 6:59 PM; 7-day: 47% used · day 4 of 7 · resets Oct 9 10:00 PM&#10;OpenAI 7-day: 95% used · day 2 of 7 · resets Oct 8 9:30 PM&#10;…"
+       aria-label="Usage: Claude 5-hour: 10% used · 2h 10m of 5h · resets 6:59 PM; 7-day: 47% used · day 4 of 7 · resets Oct 9 10:00 PM. OpenAI 7-day: …">
       <span class="icon" style="--icon: url(/icons/gauge.svg)" aria-hidden="true"></span>
       <span class="insights-row-text usage-glance">
-        <span class="usage-glance-item"><span class="usage-glance-tag">C</span><span class="text-num">47%</span></span>
-        <span class="usage-glance-item usage-glance-item-high"><span class="usage-glance-tag">O</span><span class="text-num">95%</span></span>
-        <span class="usage-glance-item usage-glance-item-stale"><span class="usage-glance-tag">OL</span><span class="text-num">80%</span></span>
-        <span class="usage-glance-item"><span class="usage-glance-tag">Z</span><span class="text-num">0%</span></span>
+        <!-- a two-window provider: the short window thin on top, the long one below -->
+        <span class="usage-glance-item"><span class="usage-glance-tag">C</span>
+          <span class="pace pace-two" aria-hidden="true">
+            <span class="pace-bar pace-bar-thin"><span class="pace-fill" style="--pace-pct: 10%"></span><span class="pace-tick" style="--pace-at: 43%"></span></span>
+            <span class="pace-bar"><span class="pace-fill" style="--pace-pct: 47%"></span><span class="pace-tick" style="--pace-at: 50%"></span></span>
+          </span></span>
+        <span class="usage-glance-item"><span class="usage-glance-tag">O</span>
+          <span class="pace" aria-hidden="true"><span class="pace-bar"><span class="pace-fill pace-fill-error" style="--pace-pct: 95%"></span><span class="pace-tick" style="--pace-at: 29%"></span></span></span></span>
+        <span class="usage-glance-item usage-glance-item-stale"><span class="usage-glance-tag">OL</span>…</span>
+        <span class="usage-glance-item"><span class="usage-glance-tag">Z</span>…</span>
         <span class="usage-glance-item"><span class="usage-glance-tag">DS</span><span class="text-num">$4</span></span>
       </span>
     </a>
@@ -81,18 +87,23 @@ Usage glance needs the room.
 
 - **Usage row, a glance at every provider:**
   - One segment per provider, in the fixed order Claude, OpenAI, Ollama Cloud, Z.ai, DeepSeek.
-    The tags are exactly `C`, `O`, `OL`, `Z`, `DS`, followed by a mono number in the same
-    `.text-num`. **A provider that reports a balance instead of windows (DeepSeek) shows the
-    money, not a percentage**: `DS $4`. It has no quota, so there is no percentage to invent;
-    its segment goes last, like its card.
+    The tags are exactly `C`, `O`, `OL`, `Z`, `DS`, each followed by a **pace meter**
+    (§app.insights/pace-tick): a `.pace` box 20px wide holding the provider's bars, with no number
+    beside it (the numbers are in the row's words, below). **A provider that reports a balance
+    instead of windows (DeepSeek) shows the money, not a meter**: `DS $4`, mono, in `.text-num`.
+    It has no quota, so there is no percentage to invent; its segment goes last, like its card.
   - **Two precisions for the one balance.** The foot is a shorthand, so it rounds to **whole
     currency units** ($4.29 → `$4`, $4.99 → `$5`; `moneyCompact()`, both fraction-digit options
     set to 0). The row's `title`/`aria-label` and the Usage card keep the **exact** amount
     ($4.29, "Topped up $4.29"; `money()`) — the cents stay one hover, or one click, away.
-  - **Window.** Each provider shows the window flagged `active` (the first one, if several
-    are flagged). Otherwise it shows its 7-day window, and failing that, its longest. Ollama
-    shows Monthly. Z.ai shows its plan window (5-hour), never MCP uses. An active window gets
-    no marker in the glance ("C 55%"); the tooltip names it: "Claude 7-day Fable 55%".
+  - **Bars.** A two-window provider draws two stacked bars, its short window as a 2px bar on top
+    and its long one as a 4px bar under it, 1px apart: Claude's 5-hour over the window flagged
+    `active` when that is a 7-day one (a 7-day Fable, say), else its 7-day; Z.ai's plan window
+    (5-hour) over MCP uses. A one-window provider draws one 6px bar: OpenAI the window flagged
+    `active` (the first one, if several are), else its 7-day, else its longest; Ollama its Monthly.
+    Never Claude's Opus-only window. A provider sending only one of its two windows draws that one
+    as a one-window provider does. A window of the pair with no current reading (its reset
+    passed) keeps its place as an empty track, so the meter's shape never jumps.
   - **Which Claude login.** A device can hold several Claude logins (§app/claude-logins), and `C`
     reads one of them: **the open chat's recorded login** (its newest `claude-login` entry, as the
     chat's `claude_login` message names it, §app.claude-logins/active-login), else **the login in
@@ -100,37 +111,56 @@ Usage glance needs the room.
     chat that has not recorded one yet, a TUI-watched session, a workspace pane that isn't a chat,
     and every page with no session open. Only with neither (an older server without
     `claudeLogins`, or no login ready) does it read `providers`' `claude`, Claude Code's own
-    login. The sidebar also falls back to that own-login reading when the selected account
-    cannot supply a readable glance (not `ok`, or no eligible window or balance), provided the
-    own-login reading can. Its tooltip and accessible name explicitly say "Claude (Claude Code's
-    own login)" for this fallback, never the unreadable selected account's name. A readable
-    selected account keeps precedence, including at 100%; the Usage page's summary is unchanged. Its reading is that login's account card on the Usage page (the account's freshest
-    reading: its logins share one quota), so the number follows a failover in the same poll. The visible segment stays `C 61%`: the glance has no room for a name. With
+    login. Its reading is that login's account card on the Usage page (the account's freshest
+    reading that still has a current window, else its freshest: its logins share one quota), so the meter follows a failover in the same poll. The visible segment stays `C` and its meter: the glance has no room for a name. With
     more than one login, the row's `title` and `aria-label` name it after "Claude", by its card
-    title (its email, else its label): "Usage: Claude (spare@example.com) 7-day 61%, OpenAI
-    7-day 14%". With one login nothing is named, as before.
+    title (its email, else its label): "Claude (spare@example.com) 7-day: 61% used · …". With
+    one login nothing is named, as before. `C` never pools accounts (a chat runs on one login),
+    but the words then add one line per **other** account usable on this device — its logins on
+    this device, never one another device holds or the pool keeps free; logins sharing an
+    `accountUuid` are one account, never counted twice — each its account card's reading in the
+    same form: "Claude (own@example.com) 5-hour: 0% used; 7-day: 40% used · day 3 of 7 · resets
+    Oct 4 10:59 AM", or "… reading pending".
+  - **Only current windows.** A window whose `resetsAt` is behind now is not a current reading:
+    it is never one of the glance's bars (the choice above is made among the rest), and it never
+    reaches the foot's fill, its tone or its words.
+  - **Pending Claude reading.** `C` never swaps in another account's number. When the chosen
+    login's reading has no current window (it was never read — a login just taken — or every
+    window's reset has passed), the segment is a muted pending `C` meter
+    (`.usage-glance-item-pending`: the stale item's muted ink, its two tracks empty and faded, no
+    fill, no tick, never a tone), and the row's `title` and `aria-label` name the login, even
+    when it is the only one, and say its reading is pending: "Claude (spare@example.com)
+    reading pending".
+    Claude Code's own login is read instead only when no login is chosen (the older server or
+    no-login-ready case above). A chosen login in another not-`ok` state (signed out, sign-in
+    expired) is missing data.
   - **Missing data.** A provider that isn't `ok`, or has neither windows nor a balance, is left
     out. With nothing at all, the row reads "Usage".
-  - **High.** At 80% or more, the item takes `.usage-glance-item-high`: semibold ink, and **no
-    hue**. The foot has no word to pair with a color, and the Usage page's chip carries the
-    status. A balance takes it when the provider says it can't fund calls (`available: false`):
-    out of credit is the only bad state money has, and the semibold is its only emphasis.
+  - **Tone.** Each bar's fill is neutral ink, `warn` when its used share runs more than 10
+    points ahead of its tick, `error` at 90% or more, and, with no tick, `warn` from 80%
+    (§app.insights/pace-tick, **Foot fill tone**). The hue is the meter's own status; the row's
+    words carry the numbers. A balance has no bar: it takes `.usage-glance-item-high`
+    (semibold ink, no hue) when the provider says it can't fund calls (`available: false`), out
+    of credit being the only bad state money has.
   - **Stale.** Only when the whole cache file is old (`usage.stale`) the item takes
-    `.usage-glance-item-stale`: muted, with no added text. A provider's own failed fetch — including
+    `.usage-glance-item-stale`: muted, its fills muted ink with no tone, and no added text. A provider's own failed fetch — including
     the last known reading served while an older pi session rewrites the cache — neither dims nor
     annotates its item.
-  - **Full text.** The row's `title` and `aria-label` spell everything out, e.g. "Usage: Claude
-    7-day 47%, …, DeepSeek balance $4.29" (the exact amount, not the rounded one); nothing is
-    appended for a stale file.
+  - **Full text.** The row's `title` and `aria-label` spell everything out, every bar of every
+    provider, in the meter's words (§app.insights/pace-tick, **Words**): the `title` is "Usage",
+    then one line per provider ("Claude 5-hour: 10% used · 2h 10m of 5h · resets 6:59 PM; 7-day:
+    47% used · day 4 of 7 · resets Oct 9 10:00 PM", "DeepSeek balance $4.29" — the exact amount,
+    not the rounded one), then the other Claude accounts' lines; the `aria-label` is the same
+    after "Usage: ", the lines joined by ". ". Nothing is appended for a stale file.
   - **Width.** The monitor button takes 52px of the row, so the glance is **tightened**:
-    segments sit `--space-2` apart (twice the tag-to-number gap, so each still reads as one
+    segments sit `--space-2` apart (twice the tag-to-meter gap, so each still reads as one
     pair), and the link's right padding drops to `--space-2`, since the button carries its own
     air around its icon. Measured in the 320px sidebar at a 1440px viewport, the glance box is
-    215px: a real five-provider reading (`C 83% O 97% OL 90% Z 8% DS $4`) is 210px and fits, and
-    so does `C 34% O 1% OL 31% Z 3% DS $0` (202px). All four windows at 100% plus `DS $4` is
-    247px, so the worst case overruns and `.usage-glance` clips it (it never wraps); the full
-    reading stays in the row's `title` and `aria-label`. Rounding the balance to whole units is
-    what keeps the common case inside; `DS $4.29` would cost another ~20px.
+    215px, and the meters have a fixed width, so the row no longer grows with its readings: four
+    meter providers plus `DS $4` is 207px whatever the percentages (22px meters made it 215.3px,
+    a clip). A number beside each meter was rejected: about 30px more per provider overruns the
+    box. `.usage-glance` still clips
+    (it never wraps) as a guard; the full reading stays in the row's `title` and `aria-label`.
 - **Agents row, what is live right now:** `{agents} agents · {sessions} sessions · {teams} teams`.
   Any segment at 0 is dropped, and with nothing live at all the row reads the plain word
   "Agents". The numbers come from `activeAgentCounts` in `src/lib/workers.ts`, and each one is
@@ -151,8 +181,8 @@ Usage glance needs the room.
   same machines as "{w} working" — `AgentsInsight.totals.working` — which also excludes the waiting
   ones, so both answer "how much is moving".
 
-The rows take no color and no chip, because the pages carry the status. Each truncates with an
-ellipsis.
+The rows take no chip, because the pages carry the status, and no color but the usage meters'
+fill tone. Each truncates with an ellipsis.
 
 ## §app.insights/sidebar-foot-phone — The foot on a phone: one bar, one sheet
 
@@ -173,16 +203,19 @@ The bar itself reads the same data as the rows, left to right:
 - **Agents at work.** The `worker` icon and the count (`activeAgentCounts`), no word — the bar is
   a strip of figures; the accessible name says it. Always shown, `0` included.
 - **Usage caps.** Every provider the glance has a part for — `usageGlance()`'s own parts, in its
-  order (at most the five) — each as `{abbr} {pct}%` ("C 87%  Z 41%  OL 39%  O 27%"), a credit
-  provider as its `{abbr}` and money (`DS $4`). Each part keeps the glance's own emphasis: at 80%
-  or more **semibold ink, never hue alone**, and a stale whole-file reading muted, both as
-  §app.insights/sidebar-foot states. Always shown while any provider reports; never an invented
-  number. The bar is one line and never wraps: what a narrow phone can't hold clips at the edge,
-  exactly like the glance row it stands for.
+  order (at most the five) — each as its `{abbr}` and the same pace meter the glance row draws
+  (§app.insights/sidebar-foot, **Bars**, **Tone**; §app.insights/pace-tick), a credit provider as
+  its `{abbr}` and money (`DS $4`), and a pending Claude reading as a muted `C` with empty tracks
+  (§app.insights/sidebar-foot, **Pending Claude reading**). Each part keeps the glance's own
+  emphasis: the meters' fill tones, an out-of-credit balance in **semibold ink**, and a stale
+  whole-file reading muted, all as §app.insights/sidebar-foot states. Always shown while any
+  provider reports; never an invented number. The bar is one line and never wraps: what a
+  narrow phone can't hold clips at the edge, exactly like the glance row it stands for.
 
 The bar's accessible name says the facts in words, then what the tap does: "2 of 3 hosts
-connected. 3 subagents working now. Claude 7-day 87%, Z.ai 5-hour 41%. Open hosts, usage, agents
-and shares." (agents: "1 subagent working now" at 1).
+connected. 3 subagents working now. Claude 5-hour: 12% used · 1h 5m of 5h · resets 4:59 PM; 7-day:
+87% used · day 6 of 7 · resets Oct 4 10:59 AM. Z.ai 5-hour: 41% used; MCP uses: 0% used. Open hosts, usage, agents
+and shares." — every glance part in the glance's own words (agents: "1 subagent working now" at 1).
 ## §app.insights/aggregate-chips-live-vs-working — Aggregate chips: "Live" vs "Working"
 
 - **Live** is session-level: a TUI has the file open. It keeps the accent everywhere and says
@@ -278,8 +311,11 @@ Both pages share one shell: a `.session-head` and a `.insights.pane` containing
     <div class="meter">
       <p class="meter-head"><span class="meter-label">5-hour</span>
         <span class="meter-value">96%<span class="meter-of"> used</span></span></p>
-      <div class="meter-track" aria-hidden="true"><span class="meter-fill meter-fill-warn" style="--meter-pct: 96%"></span></div>
-      <p class="meter-context" title="2026-09-19T07:50:00Z">Resets in 2h 17m</p>
+      <div class="meter-track-wrap" aria-hidden="true">
+        <div class="meter-track"><span class="meter-fill meter-fill-warn" style="--meter-pct: 96%"></span></div>
+        <span class="meter-tick" style="--meter-at: 55%"></span>
+      </div>
+      <div class="meter-context" title="2026-09-19T07:50:00Z">Resets in 2h 17m · 2h 43m of 5h</div>
     </div>
     <!-- or, instead of meters: <p class="usage-note">Not signed in. Run <code>claude /login</code> …</p> -->
   </div>
@@ -292,7 +328,8 @@ Both pages share one shell: a `.session-head` and a `.insights.pane` containing
   sentence reads the same login the sidebar foot's `C` does (§app.insights/sidebar-foot, **Which
   Claude login**): with no chat open, the login in use for new chats, never a limited login that
   no chat is on. With more than one login it names it: "Claude (spare@example.com)'s 7-day
-  window is at 90%."
+  window is at 90%." A window whose reset has already passed adds no sentence, as it decides no
+  head chip: a 7-day window at 100% whose reset is gone never reads "quota is used up".
 - **Cards.** There's one card per `providers[]` entry, in the order given: Claude, OpenAI,
   Ollama Cloud, Z.ai, DeepSeek. Z.ai follows the system like every other provider: no brand color, and
   the title is "Z.ai"; so does DeepSeek, titled "DeepSeek".
@@ -309,10 +346,14 @@ Both pages share one shell: a `.session-head` and a `.insights.pane` containing
     for an account of one login, that login's name when it has one worth saying: "Claude Code's
     own login" for `default`, else its label.
   - The account's usage is shown **once**, exactly like any provider card: meters, head chip,
-    notes. Its reading is the freshest one among its logins (an added login's own entry in the
+    notes. Its reading is the freshest one among its logins that still has a window whose reset
+    is ahead, else the freshest at all (an added login's own entry in the
     cache's `claudeAccounts`, `default`'s `providers`' `claude`, or, for a login another device
-    holds, the figures its holder published to the pool: 5-hour and 7-day), since they all read the
-    same quota (§app.insights/usage-refresh). An account of one login keeps that login's sign-in
+    holds or the pool keeps free, the figures its last holder published to the pool: 5-hour and
+    7-day), since they all read the same quota (§app.insights/usage-refresh). A login kept free is
+    never read, so its published figures never renew: when the reading shown is one, a meter whose
+    reset has passed says "Not read while it is free." in place of "New reading at the next
+    refresh.". An account of one login keeps that login's sign-in
     caption (from its own `.credentials.json`). With no reading at all, a login never read yet says
     "Not read yet. Its usage shows at the next refresh."; a login marked as needing sign-in is not
     fetched and, without a kept reading, says it is not fetched until Claude Code has signed it in
@@ -346,7 +387,8 @@ Both pages share one shell: a `.session-head` and a `.insights.pane` containing
     `resetsAt` when one is sent.
   - `mcp` is "MCP uses", the MCP tool-usage quota, shown as a percentage. Its context reads
     "{used} of {limit} uses" (comma thousands) when the window carries both `used` and `limit`
-    (optional fields on `UsageWindow`), and is otherwise left out.
+    (optional fields on `UsageWindow`), and is otherwise left out. Its reset is not read, so it
+    has no reset line and no tick.
 - **DeepSeek: a balance, not meters.** DeepSeek has no usage or quota API — the only account
   data is the prepaid credit — so its card carries `balance` and no windows. The body is one
   `.meter` with no track: a `.meter-head` with `.meter-label` "Balance" and the money left in
@@ -361,15 +403,26 @@ Both pages share one shell: a `.session-head` and a `.insights.pane` containing
   never a bar alone.
   - **Value.** `Math.round(pct)` followed by `%`. No decimals: the sources round, and a decimal
     claims precision we don't have. The fill's width is clamped to 100%.
-  - **Context.** Only when `resetsAt` exists (currently Claude only). Under 24h it's
-    "Resets in 2h 17m", otherwise "Resets Sep 25", with the ISO time in `title`. Never estimate
-    a reset.
-  - **Reset already passed** (`resetsAt < now`, which means the file is stale). Use
+  - **Context.** Only when `resetsAt` exists (Claude, OpenAI, Z.ai's plan window, and Ollama
+    once its reset day is set, §app.insights/usage-reset-day). Under 24h it's "Resets in 2h 17m",
+    otherwise "Resets Sep 25", with the ISO time in `title`; a declared reset (`declared: true`,
+    the user's day) is always its date. While the meter has a tick, the line adds its progress:
+    "Resets Oct 9 · day 4 of 7", "Resets in 2h 17m · 2h 43m of 5h". Never estimate a reset: a
+    reset the user declared is the user's fact, not an estimate.
+  - **Tick.** A meter whose window has a known span and a reset still ahead carries the pace
+    tick (§app.insights/pace-tick) on its track: a `.meter-tick`, a 1px ink line at the elapsed
+    share (`--meter-at`), standing 2px past the track's top and bottom (on `.meter-track-wrap`,
+    since the track clips its fill). A ghost meter has
+    none.
+  - **Reset already passed** (`resetsAt < now`: the reading is older than the reset, its fresh
+    one not fetched yet, or it is a free login's pool figures). Use
     `.meter-ghost`, with no fill. The value keeps the old number, and the context says
-    "Reset at `11:50`. New reading at the next refresh."
+    "Reset at `11:50`. New reading at the next refresh." (for a free login's figures, "Reset at
+    `11:50`. Not read while it is free.").
   - **Fill color.** The fill is neutral. It gets `.meter-fill-warn` at ≥80% and
     `.meter-fill-error` at ≥100%. That matches the extension's own footer threshold, and it
-    always pairs with the head chip.
+    always pairs with the head chip. The foot's pace tones (§app.insights/pace-tick) are not
+    used here: on a card the pace is the tick and the context line.
 - **Head chip.** The worst window decides it. A window whose reset has already passed (the meter
   is a ghost) decides nothing. The words follow the skill's model-availability severities:
 
@@ -418,6 +471,63 @@ Both pages share one shell: a `.session-head` and a `.insights.pane` containing
   - When `available` is false, replace the grid with one `.empty`. `missing` means unavailable,
     not an error. `corrupt` gets the error copy.
 
+## §app.insights/pace-tick — Pace ticks
+
+A usage meter says two things: how much of a window is used, and how much of the window has
+gone. The bar's fill is the used share (`pct`, clamped to 100%); a **tick**, a 1px ink line
+across the bar, stands at the share of the window elapsed, `1 − (resetsAt − now) / length`.
+Fill past the tick means the quota is going faster than the window.
+
+- **Span.** The window's span comes from its own data: its `startsAt` when the payload sends one
+  (OpenAI, from the window's own `limit_window_seconds`; Ollama, from the user's reset day,
+  §app.insights/usage-reset-day), else `resetsAt` minus the length its label states (`5h`,
+  `7d`, `7d scoped`, a Z.ai `{n}m|h|d|w`). Two Claude accounts' 7-day windows end at different
+  times, so each reading has its own span.
+- **No tick when it isn't known.** No `resetsAt` (an idle Claude 5-hour window, Ollama with no
+  reset day, Z.ai's MCP uses), or a label of no stated length (`pri`, `plan`, a `month` without
+  `startsAt`): no tick. A reset that has passed: no tick either. A tick is never estimated.
+- **Words.** A window of a day or more is "day {n} of {total}" (n from 1; a declared monthly
+  window counts calendar days, so a 30-day month reads "day 18 of 30"); a shorter one
+  "{elapsed} of {length}" ("2h 10m of 5h"). One bar in words is "{window}: {pct}% used ·
+  {progress} · resets {when}": `when` is the clock time, with its date when not today ("resets
+  6:59 PM", "resets Oct 9 10:00 PM"), and for a declared reset its date alone ("resets Oct 14").
+  Without a tick the progress is left out, without a reset the reset is: "MCP uses: 0% used".
+- **Foot fill tone.** In the sidebar foot (§app.insights/sidebar-foot) a bar's fill is neutral
+  ink, `warn` when its used share is more than 10 points ahead of its tick (`pct − 100 ×
+  elapsed > 10`), and `error` at 90% or more. A bar with no tick is `warn` from 80%. The Usage
+  cards keep their own fill tones, which pair with the head chip (§app.insights/usage-cards).
+
+## §app.insights/usage-reset-day — Ollama Cloud's reset day
+
+Ollama Cloud reports only the share of its monthly usage used, never when the month resets. The
+user can declare the day of the month the subscription resets; nothing guesses it, and no reset
+is offered from a drop in usage.
+
+- **The file.** `usage-windows.json` in the pi agent dir, `{version: 1, ollama?: {resetDay:
+  1..31}}`, owned by the usage-status extension's `windows.ts` (node builtins only: the strict
+  parse, the reader and an atomic writer). Missing or unreadable reads as unknown. It is not kept
+  in `auth.json` beside the key: pi replaces a provider's whole entry there on a new sign-in.
+- **The window.** With reset day D, the month runs from local midnight on day D, clamped to the
+  month's last day (31 is Feb 28 or 29, and Apr 30), to the same clamped day of the next month.
+  The server derives it each time it reads usage and never stores it in the usage cache, so a
+  changed day or a month rollover shows at once: Ollama's `month` window gains `startsAt` and
+  `resetsAt` and is marked `declared: true`. `UsageInsight.ollamaResetDay` is the day, or `null`
+  while none is set (absent from an older server, which offers no control).
+- **The card.** On an `ok` Ollama card with no day set, the monthly meter's context reads, muted,
+  "Reset day unknown · " and a text button "Set". It opens an inline day-of-month field labelled
+  "Reset day" (1–31): Enter or Save saves it (`PUT /api/insights/usage/reset-day`, `{provider:
+  "ollama", day}`, which answers with the whole usage payload; `day: null` clears), Escape or
+  Cancel closes it, and a day outside 1–31 is not sent: the field says "Enter a day from 1 to
+  31.". Once set, the context reads "Resets Oct 14 · day 18 of 30" and ends with a quiet text
+  button "Change", which opens the same field with a "Clear" beside Save.
+- **The command.** `/usage reset-day ollama <1-31|clear>`, in any pi session (the TUI's and
+  Sova's hosted ones alike), writes the same file and says "Ollama Cloud resets on day 14 of each
+  month." or "Ollama Cloud's reset day is cleared."; any other argument gets "Usage: /usage
+  reset-day ollama <1-31|clear>". Its argument is a contract (CLAUDE.md). Plain `/usage` opens its
+  screen as before, whose Ollama row shows the declared reset, marked "(set)".
+- **Sync.** While the mesh is on, the file syncs as a setting (§mesh.sync/categories): the Ollama
+  key travels with the logins, so every device reads the same subscription.
+
 ## §app.insights/usage-refresh — Who keeps usage fresh
 
 The usage cache (`usage-status.json` in the pi agent dir's `cache/`) is shared by every pi on the
@@ -464,15 +574,31 @@ its own directory's `.credentials.json`, only read, never refreshed or written. 
 `claude` as Claude Code's own login, so every older reader reads what it always did, and adds
 `claudeAccounts`, keyed by login id (never `default`), each `{data?, fetchedAt?, nextFetchAt,
 error?, skipped?}`; `CACHE_SCHEMA` is unchanged, since the field is additive. Each login keeps
-its own cadence: it is fetched when its own `nextFetchAt` is due (150 seconds after a reading, 60
-after a failure) or on Refresh Usage; a failed fetch keeps its last reading and says why, and
-never shortens the other providers' refresh. A login this device marks as needing sign-in
+its own cadence, `default` included: it is fetched when its own `nextFetchAt` is due (150 seconds
+after a reading, 60 after a failure, 10 minutes after an HTTP 429, when the usage endpoint is
+refusing) or on Refresh Usage; a failed fetch keeps its last reading and says why, and never
+shortens the other providers' refresh. `default`'s cadence is in the cache's additive
+`claudeFetchedAt` and `claudeNextFetchAt` (a cache without them reads `claude` as fetched with
+the file and due now), and its failure stays `errors.claude`, carried while it waits. A login is
+also due at once, and with it the whole cache, when it is held here with no entry yet (just
+taken or added), or when a window of its last successful reading has reset since that reading;
+the fetch moves the reading past the reset, and a failed one waits out its own retry, so
+neither loops. The server's poller also wakes at the earliest Claude reset still ahead (within
+its 30-second floor), so a reset is read soon after it passes. A login this device marks as needing sign-in
 (`claude-accounts-state.json`) is never fetched, `default` included: it keeps its last reading,
 marked `skipped: "auth"`, until its credentials change. A login no longer assigned here drops
 out. A cache without `claudeAccounts` on a device that has added logins (an older extension
-rewrote it) is refetched once; meanwhile the server serves the logins' last readings it read.
+rewrote it) is refetched once; meanwhile the server serves its last readings of the logins
+still held here, and none of a login it no longer holds.
 `GET /api/insights/usage` adds each login's sign-in data (`auth`) from its own credentials file,
 in the same numbers-only form.
+
+**Window lengths.** Each OpenAI window in the cache also keeps `seconds`, its own
+`limit_window_seconds`, and takes its label from it: `5h` or `7d` when within 5% of five hours or
+seven days, else `pri`; the secondary window, which reads `5h` when it sends no length, included.
+`CACHE_SCHEMA` is unchanged, since the field is additive. The server sends `resetsAt − seconds` as
+the window's `startsAt` (§app.insights/pace-tick). Ollama's reset is never in the cache: the server
+derives it from `usage-windows.json` as it reads (§app.insights/usage-reset-day).
 
 ## §app.insights/team-cards — Agents board
 

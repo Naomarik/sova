@@ -9,7 +9,8 @@ import type { PreviewAddress } from "./public-links";
  *
  * Operator routes (main listener only; refused like the other local acts when the request carries a
  * peer or X-Forwarded-Host):
- * GET  /api/previews[?orgId&projectId]   -> PreviewList
+ * GET  /api/previews[?projectId]         -> PreviewList
+ * GET  /api/projects/:pid/previews      -> PreviewList
  * POST /api/previews                     body PreviewMint -> PreviewMinted | 400 PreviewError
  * POST /api/previews/<id>/off            -> PreviewView (revoked) | 404
  * POST /api/previews/<id>/extend         body { days } -> PreviewView | 400 | 404
@@ -29,7 +30,6 @@ export type PreviewTarget = { kind: "port"; port: number } | { kind: "static"; f
 export interface PreviewView {
   /** pv_… */
   id: string;
-  orgId: string;
   projectId: string;
   port: number;
   createdAt: string;
@@ -65,7 +65,6 @@ export interface PreviewList {
 }
 
 export interface PreviewMint {
-  orgId: string;
   projectId: string;
   /** Exactly one of `port` and `folder`. */
   port?: number;
@@ -121,7 +120,6 @@ export interface PreviewHandoff {
   linkKept: boolean;
   purpose: string | null;
   expiresAt: string;
-  orgId: string;
   projectId: string;
   sessionId: string | null;
   branch: string | null;

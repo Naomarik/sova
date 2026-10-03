@@ -44,9 +44,9 @@ test("a retired gathering and a retired coding session are no longer the org's; 
   await seedBuild(org.id, project.id, { sessionId: "c-old", kind: "coding", worktree: { branch: "sova/old", base: "main", target: "main" } });
   assert.ok(orgCodingIds().has("c-old"));
   // Unmerged, the statechart refuses: a live build is never retired.
-  assert.equal((await retire(`build/${org.id}/${project.id}/c-old`)).taken, false);
-  await hostOf(org.id).act(`build/${org.id}/${project.id}/c-old`, "git/probe", { branch: "merged" }, { by: "system" }, { settle: true });
-  assert.equal((await retire(`build/${org.id}/${project.id}/c-old`)).taken, true);
-  assert.ok(!readBuilds(org.id, project.id).some((r) => r.sessionId === "c-old"));
+  assert.equal((await retire(`build/${project.id}/c-old`)).taken, false);
+  await hostOf(org.id).act(`build/${project.id}/c-old`, "git/probe", { branch: "merged" }, { by: "system" }, { settle: true });
+  assert.equal((await retire(`build/${project.id}/c-old`)).taken, true);
+  assert.ok(!readBuilds(project.id).some((r) => r.sessionId === "c-old"));
   assert.ok(!orgCodingIds().has("c-old"), "a retired coding session is no longer organizational");
 });

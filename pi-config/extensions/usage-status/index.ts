@@ -17,6 +17,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { ClaudeLogins, DEFAULT_LOGIN_ID, planLabel, recordedLogin } from "../claude-code/accounts.ts";
 import { type CacheFile, type ClaudeData, describeErrors, errMessage, firstReadyLogin, refreshCache, type Window } from "./fetch";
+import { monthlyWindow, readUsageWindows, runResetDay } from "./windows.ts";
 
 const HOME = os.homedir();
 
@@ -201,7 +202,11 @@ function renderUsageScreen(
 
 		const o = cache.ollama;
 		const oRows: string[] = [];
-		if (o?.state === "ok") oRows.push(windowRow("monthly", { pct: o.usedPct }));
+		if (o?.state === "ok") {
+			// The month's reset is the user's declared day (usage-windows.json), never Ollama's answer.
+			const day = readUsageWindows().ollama?.resetDay;
+			oRows.push(windowRow("monthly", { pct: o.usedPct, resetsAt: day ? monthlyWindow(day, now).resetsAt : undefined }) + (day ? dim("  (set)") : ""));
+		}
 		else if (o?.state === "nokey") oRows.push(note("no key"));
 		else if (o?.state === "badkey") oRows.push(note("bad key", "warning"));
 		else if (o?.state === "na") oRows.push(note("n/a"));
@@ -680,9 +685,23 @@ export default function (pi: ExtensionAPI) {
 		},
 	});
 
+	const USAGE_ARGS = ["reset-day ollama ", "reset-day ollama clear"];
 	pi.registerCommand("usage", {
-		description: "Show Ollama Cloud / OpenAI Codex / Claude / Z.ai / DeepSeek usage detail with reset times and balances",
-		handler: async (_args, ctx) => {
+		description: "Show Ollama Cloud / OpenAI Codex / Claude / Z.ai / DeepSeek usage detail with reset times and balances; or: reset-day ollama <1-31|clear>",
+		getArgumentCompletions: (argumentPrefix) => {
+			const items = USAGE_ARGS.filter((value) => value.startsWith(argumentPrefix.trimStart())).map((value) => ({ value, label: value.trim() }));
+			return items.length > 0 ? items : null;
+		},
+		handler: async (args, ctx) => {
+			// Arguments first, before the TUI check: `/usage reset-day` works in any session.
+			const arg = args.trim();
+			if (arg) {
+				const reset = /^reset-day(?:\s+(.*))?$/i.exec(arg);
+				const r = reset ? runResetDay(reset[1] ?? "") : { message: "Usage: /usage [reset-day ollama <1-31|clear>]", level: "warning" as const };
+				ctx.ui.notify(r.message, r.level);
+				if (reset) footerTui?.requestRender();
+				return;
+			}
 			if (ctx.mode !== "tui") {
 				ctx.ui.notify("The /usage screen requires Pi's interactive TUI.", "warning");
 				return;

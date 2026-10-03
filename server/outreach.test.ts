@@ -218,32 +218,32 @@ describe("§app.outreach/send: a note, a preview link, the project overseer thro
   });
 
   test("a preview link: the person gets their own link to the same preview; the one named stays", async () => {
-    const { record } = mintPreview({ orgId: org.id, projectId: project.id, port: 5173, days: 3 }, new Set([4800]));
-    const before = listPreviews({ orgId: org.id }).length;
+    const { record } = mintPreview({ projectId: project.id, port: 5173, days: 3 }, new Set([4800]));
+    const before = listPreviews({ projectId: project.id }).length;
     const r = await json("POST", "/api/outreach/send", { orgId: org.id, projectId: project.id, personId: ann.id, link: { kind: "preview", preview: record.id }, note: "Here is the prototype." });
     assert.equal(r.body.outcome, "sent", JSON.stringify(r.body));
-    const all = listPreviews({ orgId: org.id });
+    const all = listPreviews({ projectId: project.id });
     assert.equal(all.length, before + 1, "a sibling preview was made for her");
     assert.ok(all.every((v) => v.state === "active"), "the original stays on");
     const line = logOf().filter((l) => l.personId === ann.id && l.event === "sent").at(-1)!;
     assert.equal(line.link, "preview");
     assert.ok(line.previewId && line.previewId !== record.id);
-    const sib = listPreviews({ orgId: org.id }).find((v) => v.id === line.previewId)!;
+    const sib = listPreviews({ projectId: project.id }).find((v) => v.id === line.previewId)!;
     assert.equal(sib.siblingOf, record.id);
     assert.equal(sib.sentTo, ann.id);
     assert.equal(sib.expiresAt, record.expiresAt, "never outlives the original");
     assert.equal(sib.port, record.port);
     const { revokePreview } = await import("./preview-links");
     revokePreview(record.id);
-    assert.equal(listPreviews({ orgId: org.id }).find((v) => v.id === sib.id)!.state, "off", "turned off with the original");
+    assert.equal(listPreviews({ projectId: project.id }).find((v) => v.id === sib.id)!.state, "off", "turned off with the original");
     const other = await json("POST", "/api/outreach/send", { orgId: org.id, projectId: project.id, personId: ann.id, link: { kind: "preview", preview: "pv_nope" } });
     assert.equal(other.status, 409);
   });
 
   test("the project overseer: sova_send_to_person waits in the hold, then goes once approved", async () => {
-    await po.ensureProjectOverseer(org.id, project.id);
-    await po.patchProjectOverseer(org.id, project.id, { autonomy: "L1", holdMin: 10 });
-    const tool = po.toolsForTest(org.id, project.id).find((t) => t.name === "sova_send_to_person")!;
+    await po.ensureProjectOverseer(project.id);
+    await po.patchProjectOverseer(project.id, { autonomy: "L1", holdMin: 10 });
+    const tool = po.toolsForTest(project.id).find((t) => t.name === "sova_send_to_person")!;
     const sid = await gathering(ann.id);
     const count = () => logOf().filter((l) => l.by === "project-overseer").length;
     const out = await tool.execute("t1", { person: "Ann", session: sid, note: "Your prototype is ready." } as never, undefined, undefined, undefined as never);
@@ -252,7 +252,7 @@ describe("§app.outreach/send: a note, a preview link, the project overseer thro
     assert.equal(count(), 0, "nothing sent while held");
     const hold = hostOf(org.id).holds().find((h) => h.event === "outreach/send")!;
     assert.ok(hold, "held on the project statechart");
-    await hostOf(org.id).act(`project/${org.id}/${project.id}`, "hold/approve", { id: hold.id, reason: "test: send it now" }, { by: "operator", attended: true });
+    await hostOf(org.id).act(`placement/${org.id}/${project.id}`, "hold/approve", { id: hold.id, reason: "test: send it now" }, { by: "operator", attended: true });
     const end = Date.now() + 8000;
     while (count() === 0 && Date.now() < end) await new Promise((r) => setTimeout(r, 100));
     const sent = logOf().filter((l) => l.by === "project-overseer");
@@ -263,13 +263,13 @@ describe("§app.outreach/send: a note, a preview link, the project overseer thro
 
 describe("§app.outreach/links, /log, /send: a preview send's address, its codes, and a send that did not go after the hold", () => {
   const PIN = process.env.SOVA_SHARE_PREVIEW_URL!;
-  const preview = (port: number) => mintPreview({ orgId: org.id, projectId: project.id, port, days: 3 }, new Set([4800])).record;
+  const preview = (port: number) => mintPreview({ projectId: project.id, port, days: 3 }, new Set([4800])).record;
   const holdOf = () => {
     const h = hostOf(org.id).holds().find((x) => x.event === "outreach/send")!;
     assert.ok(h, "held on the project statechart");
     return `${h.sessionId}:${h.id}`;
   };
-  const tool = (name: string) => po.toolsForTest(org.id, project.id).find((t) => t.name === name)!;
+  const tool = (name: string) => po.toolsForTest(project.id).find((t) => t.name === name)!;
   const run = (name: string, args: Record<string, unknown>) => tool(name).execute("t", args as never, undefined, undefined, undefined as never);
   const lastBy = (by: string) => logOf().filter((l) => l.by === by).at(-1)!;
 
@@ -277,8 +277,8 @@ describe("§app.outreach/links, /log, /send: a preview send's address, its codes
     if (!fake || fake.exitCode !== null) await startFake(); // one fake sender at a time: the previous block's may still run
     await json("PUT", "/api/outreach", { sender: { local: {} }, paused: false });
     for (let i = 0; i < 50 && (await json("GET", "/api/outreach")).body.sender.state !== "open"; i++) await new Promise((r) => setTimeout(r, 200));
-    await po.ensureProjectOverseer(org.id, project.id);
-    await po.patchProjectOverseer(org.id, project.id, { autonomy: "L1", holdMin: 10 });
+    await po.ensureProjectOverseer(project.id);
+    await po.patchProjectOverseer(project.id, { autonomy: "L1", holdMin: 10 });
   });
 
   test("the address is read once, before the mint: it going blank during the mint's wait (a gateway comeback) still sends", async () => {
@@ -299,14 +299,14 @@ describe("§app.outreach/links, /log, /send: a preview send's address, its codes
     assert.equal(r.body.outcome, "sent", JSON.stringify(r.body));
     const line = lastBy("operator");
     assert.equal(line.event, "sent");
-    const sib = listPreviews({ orgId: org.id }).find((v) => v.id === line.previewId)!;
+    const sib = listPreviews({ projectId: project.id }).find((v) => v.id === line.previewId)!;
     assert.equal(sib.state, "active", "the sibling that went stays on");
     assert.equal(sib.createdBy, "operator", "the operator's own send");
   });
 
   test("no preview address: refused before anything is minted or held, code preview-address, naming the setting", async () => {
     const record = preview(5175);
-    const before = listPreviews({ orgId: org.id }).length;
+    const before = listPreviews({ projectId: project.id }).length;
     delete process.env.SOVA_SHARE_PREVIEW_URL;
     try {
       const r = await json("POST", "/api/outreach/send", { orgId: org.id, projectId: project.id, personId: ann.id, link: { kind: "preview", preview: record.id } });
@@ -323,7 +323,7 @@ describe("§app.outreach/links, /log, /send: a preview send's address, its codes
     } finally {
       process.env.SOVA_SHARE_PREVIEW_URL = PIN;
     }
-    assert.equal(listPreviews({ orgId: org.id }).length, before, "no sibling minted");
+    assert.equal(listPreviews({ projectId: project.id }).length, before, "no sibling minted");
     const codes = logOf().filter((l) => l.event === "refused").map((l) => l.code);
     assert.ok(!codes.includes("link"), `no bare link code: ${codes.join(", ")}`);
   });
@@ -362,14 +362,14 @@ describe("§app.outreach/links, /log, /send: a preview send's address, its codes
   });
 
   test("a sibling an overseer's send makes records that overseer, never the operator", async () => {
-    const { id: overseerId } = await po.ensureProjectOverseer(org.id, project.id);
+    const { id: overseerId } = await po.ensureProjectOverseer(project.id);
     const record = preview(5177);
     await run("sova_send_to_person", { person: "Ann", preview: record.id });
     const out = await run("sova_hold", { op: "approve", id: holdOf(), reason: "test: go now" });
     assert.match(JSON.stringify(out.content), /Approved .*: it goes ahead now\./);
     const line = lastBy("project-overseer");
     assert.equal(line.event, "sent", JSON.stringify(line));
-    const sib = listPreviews({ orgId: org.id }).find((v) => v.id === line.previewId)!;
+    const sib = listPreviews({ projectId: project.id }).find((v) => v.id === line.previewId)!;
     assert.equal(sib.siblingOf, record.id);
     assert.equal(sib.createdBy, `session:${overseerId}`);
   });
@@ -388,11 +388,11 @@ describe("§app.outreach/links, /log, /send: a preview send's address, its codes
     assert.match(status, /Ann · a note · by the operator · (sent|delivered|read)/);
     assert.doesNotMatch(status, /5550000100|example\.com|https?:|One more thing|new build/, "never a number, a link or a note");
     // A look names each of its own sends that did not go, with the reason, and the next look doesn't repeat them.
-    const look = po.lookAppendix(org.id, project.id);
+    const look = po.lookAppendix(project.id);
     assert.match(look, /Your WhatsApp message to Ann did not go: the preview was turned off \(preview-off\)\./);
     assert.match(look, /Your WhatsApp message to Ann did not go: no preview address was available \(Settings → Public links\) \(preview-address\)\./);
     markSendsNoted(org.id, project.id, sendsToNote(org.id, project.id)); // what runLook does as it sends the look
-    assert.doesNotMatch(po.lookAppendix(org.id, project.id), /did not go/);
+    assert.doesNotMatch(po.lookAppendix(project.id), /did not go/);
     await run("sova_hold", { op: "cancel", id, reason: "test: done" });
   });
 });

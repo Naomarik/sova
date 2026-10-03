@@ -40,15 +40,15 @@ mkdirSync(join(root, "proj"));
 const project = await orgs.addProject(org.id, { name: "Portal", root: join(root, "proj") });
 await orgs.addPerson(org.id, { name: "Tony Reyes", role: "IT", decides: ["hosting"] });
 const toni = await orgs.addPerson(org.id, { name: "Toni Diaz", role: "Payroll", decides: ["payroll"] });
-await po.ensureProjectOverseer(org.id, project.id);
+await po.ensureProjectOverseer(project.id);
 fakeLooks(org.id);
 const app = new Hono();
 registerOrgRoutes(app);
-await po.patchProjectOverseer(org.id, project.id, { autonomy: "L1", holdMin: 0, caps: { gatherPerDay: null, gatherPerTurn: null, gatheringsOpen: 20 } });
+await po.patchProjectOverseer(project.id, { autonomy: "L1", holdMin: 0, caps: { gatherPerDay: null, gatherPerTurn: null, gatheringsOpen: 20 } });
 
 const WHY = "Nobody has said who hosts the portal, and Tony runs IT.";
 const run = (name: string, params: Record<string, unknown>) => {
-  const t = po.toolsForTest(org.id, project.id, { attended: true }).find((x) => x.name === name);
+  const t = po.toolsForTest(project.id, { attended: true }).find((x) => x.name === name);
   assert.ok(t, name);
   return t.execute("call-1", params as never, undefined, undefined, undefined as never);
 };
@@ -60,7 +60,7 @@ const toldOf = async (sessionId: string) => {
   assert.equal(r.status, 200, await r.clone().text());
   return (await r.json()) as BatonTold;
 };
-const overseerId = () => store.readPoState(store.projectOverseerPaths(org.id, project.id))?.current ?? "";
+const overseerId = () => store.readPoState(store.projectOverseerPaths(project.id))?.current ?? "";
 
 /** Append entries to a session file as pi does (each the child of the last). */
 function append(path: string, entries: Record<string, unknown>[]): void {
@@ -131,11 +131,11 @@ describe("who started it (§app.baton/told)", () => {
     assert.deepEqual(statechartStarted(gap.id), { by: "project-overseer", overseerId: overseerId(), why: WHY });
     assert.equal(hostOf(org.id).data(baton.batonSid(org.id, gap.id))?.["startedVia"], "overseer", "a gap's start no longer drops startedVia");
     assert.deepEqual((await toldOf(gap.id)).startedFor, { kind: "gap", id: "§gap/payday", title: "Nobody decided the pay day" });
-    await po.patchProjectOverseer(org.id, project.id, { autonomy: "L0" });
+    await po.patchProjectOverseer(project.id, { autonomy: "L0" });
     await run("sova_idea", { op: "add", id: "§gap/vat", title: "VAT" });
-    await po.toolsForTest(org.id, project.id, { attended: false }).find((x) => x.name === "sova_start_gathering")!
+    await po.toolsForTest(project.id, { attended: false }).find((x) => x.name === "sova_start_gathering")!
       .execute("c2", { gap: "§gap/vat", plan: true, person: "Toni Diaz", why: "Planned: the VAT rate is open.", public_title: "VAT rate", goal: "Which VAT rate", question: "Which VAT rate?" } as never, undefined, undefined, undefined as never);
-    await po.patchProjectOverseer(org.id, project.id, { autonomy: "L1" });
+    await po.patchProjectOverseer(project.id, { autonomy: "L1" });
     await new Promise((r) => setTimeout(r, 100));
     const planned = baton.allBatons().find((b) => b.publicTitle === "VAT rate");
     assert.ok(planned, "the statechart started the plan");

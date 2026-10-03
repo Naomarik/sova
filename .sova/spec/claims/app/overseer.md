@@ -1334,7 +1334,12 @@ the files: the workspace repos are closed to its file tools (§app.overseer/tool
 - **This host's orgs only.** Only orgs attached here (§app.organizations/registry). No org tool
   takes a `host`: a peer's orgs are never listed, read or changed, and a peer never reaches this
   host's org tools.
-- **Reads:** `sova_orgs` (every org, or one), `sova_org_project` (one project and its overseer),
+- **Projects in no org too.** Its project tools (`sova_org_project`, `sova_project_overseer`,
+  `sova_project_decisions` where the project is placed) address any registered project by id or
+  exact name, `org` optional (§app/projects); `sova_projects` lists them. Adding, cloning and
+  registering a project stay the user's gestures on the page.
+- **Reads:** `sova_projects` (every registered project: id, name, root, archived, its org or
+  "standalone"), `sova_orgs` (every org, or one), `sova_org_project` (one project and its overseer),
   `sova_org_person` (one roster person), §app.overseer/org-reads. What they carry is one
   projection, §app.overseer/org-projection.
 - **Acts:** `sova_org`, `sova_org_project`, `sova_roster`, `sova_owner` and
@@ -1381,7 +1386,7 @@ name is a `[title](sova://s/<id>)` link; every time is relative, as in `sova_ses
   waits: a reply or a link to send, messages used of the limit); the last 10 profile changes
   (person, field, old → new, who, when); and the workspace line above. `about: true` adds the About
   text and its last 10 history lines (§app.organizations/about); nothing else ever carries it.
-- **`sova_org_project {org, project}`**: the project row; its overseer: its conversation (a
+- **`sova_org_project {org?, project}`**: the project row; its overseer: its conversation (a
   session link), working or not, unread, the chosen level and the level in force with the reason,
   watching and the pace, models, the coding sessions' mode and what one started now gets, the
   extra instructions, both allowances used and left and the held items
@@ -1441,10 +1446,10 @@ Every op is an act (§app.overseer/org-tools), attended only, counted as one org
   `rename {org, name}`, `about {org, text}` (a blank text removes it) and `revert_about {org, at}`
   (§app.organizations/about), `commit {org}` (Commit Now, §app.organizations/workspace-repo). The
   result of `about` names the text's length, never the text.
-- **`sova_org_project {op}`**: `add {org, name, root}`, `edit {org, project, name?, root?,
-  stakeholder?, owner_hidden?}` (a stakeholder by id or name, or `none`), `archive {org, project}`
-  and `unarchive {org, project}` (§app.organizations/archive; archive asks first,
-  §app.overseer/org-people-facing).
+- **`sova_org_project {op}`**: `edit {org?, project, name?, root?, stakeholder?, owner_hidden?}`
+  (a stakeholder by id or name, or `none`, only for a placed project), `archive {org?, project}`
+  and `unarchive {org?, project}` (§app.organizations/archive; archive asks first,
+  §app.overseer/org-people-facing). There is no `add`.
 - **`sova_roster {op}`**: `add {org, name, role?, decides?, skills?, language?, voice?, contact?}`
   (an active person), `edit {org, person, …fields}` (never `status`), `approve` and `decline {org,
   person}` for a proposed person, `leave {org, person}` (status `left`: every link of theirs stops
@@ -1529,7 +1534,7 @@ Every op is an act (§app.overseer/org-tools), attended only, counted as one org
 
 ## §app.overseer/org-project-overseers — Running project overseers
 
-`sova_project_overseer {op, org, project, …}`; every op is an act, attended only.
+`sova_project_overseer {op, org?, project, …}` (any registered project, §app/projects); every op is an act, attended only.
 
 - **`start`** creates the project's overseer, as the project page's Start Overseer does
   (§app.project-overseer/identity). **`settings {…}`** changes what the project page's Settings tab sets (level,
@@ -1540,7 +1545,7 @@ Every op is an act (§app.overseer/org-tools), attended only, counted as one org
   remove the project's ideas and to-dos, as the project page does
   (§app.project-overseer/ideas-and-todos). Each counts as one org write.
 - **`message {text}`: the one sanctioned route into a project overseer's conversation**
-  (§app.project-overseer/identity). `POST /api/orgs/:id/projects/:pid/overseer/message {text}`
+  (§app.project-overseer/identity). `POST /api/projects/:pid/overseer/message {text}`
   accepts only a request carrying the sender secret; any other caller gets 403 ("Only the Overseer
   sends here. Write in the overseer's own composer."). `sova_send` and `POST /api/sessions/prompt`
   still refuse the overseer's conversation (409). The text goes into its current conversation:

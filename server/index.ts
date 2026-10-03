@@ -19,9 +19,12 @@ import { runLedger } from "./auto-resume";
 import { startBudgetRecount } from "./baton-recount";
 import { registerProjectOverseerRoutes } from "./project-overseer-routes";
 import { registerProjectCostRoutes } from "./project-costs-routes";
+import { registerProjectRoutes } from "./projects/routes";
+import { openRegisteredProjects } from "./projects/spaces";
 import { reconcileProjectServices, registerProjectServiceRoutes } from "./project-services/routes";
 import { startProjectOverseerLoop } from "./project-overseer";
 import { attachedWorkspaces, openAttachedOrgs } from "./orgs";
+import { finishImports, rollForwardCopies } from "./project-import";
 import { closeAllOrgHosts } from "./org-engine";
 import { flushWorkspaces } from "./workspace-commits";
 import { registerDecisionRoutes } from "./decisions-routes";
@@ -50,7 +53,7 @@ import { addWebSession } from "./web-sessions";
 import { draftForClient, setDraft } from "./drafts";
 import { worktreeInsights } from "./worktrees";
 import { DiffError, gitDiffs, scopeFromQuery } from "./git-diff";
-import { decodeWorkers, teamDuties, getAgentsInsight, getHiddenWorkers, getSessionInsight, setInsightLinks, getUsageInsight, invalidateUsageMemo, refreshUsageInsight, usageRefreshBusy } from "./insights";
+import { decodeWorkers, teamDuties, getAgentsInsight, getHiddenWorkers, getSessionInsight, setInsightLinks, getUsageInsight, invalidateUsageMemo, refreshUsageInsight, setUsageResetDay, usageRefreshBusy } from "./insights";
 import { startUsagePoller } from "./usage-poll";
 import { startPriceRefresh } from "./model-prices";
 import { archiveSession, cachedTitleOf, cleanupSessions, getSessionSummary, idOf, lastReplyOf, listCwds, listSessionFiles, listSessions, onSessionArchived, onSummaryLineChanged } from "./sessions-index";
@@ -109,11 +112,7 @@ import {
   clearOverseer,
   overseerInfo,
   overseerSettingsInfo,
-  pathOfId,
-  promptSession,
-  overseerSender,
   renderPeerRead,
-  OVERSEER_SENDER_HEADER,
   saveOverseerSettings,
   setOverseerDispatch,
   overseerAutonomy,
@@ -122,6 +121,8 @@ import {
   startOverseerLoop,
 } from "./overseer";
 import { readNotes, writeNotes, NOTES_MAX } from "./overseer-store";
+import { pathOfId, promptSession } from "./session-prompt";
+import { OVERSEER_SENDER_HEADER, overseerSender } from "./overseer-sender";
 import { checkRename, IdeaConflictError, IdeaError, ideaDetail, ideasInfo, parseIdeaId, updateIdea, type IdeaUpdate } from "./overseer-ideas";
 import { renameIdeaEverywhere } from "./overseer-idea-tools";
 import { addTodo, clearDone, removeTodo, reorderTodos, TodoConflictError, TodoError, TodoNotFoundError, todosInfo, updateTodo } from "./overseer-todos";
@@ -332,6 +333,7 @@ registerOrgRoutes(app);
 registerWrapupRoutes(app);
 registerProjectOverseerRoutes(app);
 registerProjectCostRoutes(app);
+registerProjectRoutes(app);
 // Project services: the verbs over a project's .sova/project.json (server/project-services/; §app/project-services).
 registerProjectServiceRoutes(app);
 // A project's decisions, conflicts and spec promotion (server/decisions-routes.ts; §app/requirements).
@@ -1064,6 +1066,22 @@ app.post("/api/insights/usage/refresh", async (c) => {
   }
 });
 
+// Ollama Cloud's declared reset day (usage-windows.json); answers with the whole usage payload.
+app.put("/api/insights/usage/reset-day", async (c) => {
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "Invalid JSON" }, 400);
+  }
+  try {
+    const out = await setUsageResetDay(body);
+    return "error" in out ? c.json(out, 400) : c.json(out);
+  } catch (err) {
+    return c.json({ error: (err as Error).message || "couldn't save the reset day" }, 500);
+  }
+});
+
 app.get("/api/insights/agents", async (c) => c.json(await getAgentsInsight()));
 
 app.get("/api/insights/session", async (c) => {
@@ -1525,7 +1543,11 @@ setAuthHosts(() => {
 });
 
 // Every attached org's engine opens before the first request (its pages and share links read it).
+// An import a stop cut off finishes (§app.projects/import): its copy before the orgs open, the rest after.
+rollForwardCopies();
 await openAttachedOrgs();
+await openRegisteredProjects();
+await finishImports();
 
 export const server = serve({ fetch: app.fetch, port: PORT, hostname: HOST }, (info) => {
   setSovaPort(info.port);

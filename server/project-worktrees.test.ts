@@ -7,7 +7,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync,
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, test } from "node:test";
-import { LOCAL_ONLY_IGNORE } from "./spec-draft-writer";
+import { LOCAL_ONLY_IGNORE } from "./project-worktrees";
 import { commitSpec, cutWorktree, DETACHED, gitRootOf, mergeBack, NO_COMMITS, NOT_GIT, readWorktree, removeWorktree, specSnapshot, worktreeSlug, type GitRoot } from "./project-worktrees";
 
 const tmp = realpathSync(mkdtempSync(join(tmpdir(), "sova-pwt-")));

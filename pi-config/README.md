@@ -38,7 +38,7 @@ installs with `install.sh` alone, without the web app.
 | `extensions/codefold/` | Folds long fenced code blocks in assistant messages into one band |
 | `extensions/topic-outline/` | Display-only live topic outline of the conversation, with jump-to-topic |
 | `extensions/vision-delegate/` | Lets a text-only model work with images: a `look_at_image` tool plus automatic descriptions of read results and TUI attachments, routed to a fallback vision model |
-| `extensions/usage-status/` | Subscription usage (Ollama Cloud, OpenAI Codex, Claude, Z.ai, DeepSeek balance) in the footer, plus a `/usage` overlay. Its `fetch.ts` (fetchers, cache, lock) is imported by Sova |
+| `extensions/usage-status/` | Subscription usage (Ollama Cloud, OpenAI Codex, Claude, Z.ai, DeepSeek balance) in the footer, plus a `/usage` overlay; `/usage reset-day ollama <1-31\|clear>` declares Ollama Cloud's monthly reset day. Its `fetch.ts` (fetchers, cache, lock) and `windows.ts` (`usage-windows.json`, the declared reset day) are imported by Sova |
 | `extensions/wake-nudge.ts` | Lets the model schedule one-shot wakeups |
 | `extensions/working-subagent-count.ts` | Busy subagent and team-member counts on the "Working" line and in an idle widget |
 | `sandbox-policy/` | Templates of the sandbox policy (`<platform>/policy.json` + `CLAUDE.md`), copied (never linked) into the agent dir by `install.sh` |
@@ -184,7 +184,7 @@ cd extensions/sessions && node --test test.mjs
 cd extensions/spec && node --test tests/*.test.mjs
 cd extensions/codefold && node tests/run.mjs
 cd extensions/stamp && node --test format.test.ts index.test.ts
-cd extensions/usage-status && node --test fetch.test.ts
+cd extensions/usage-status && node --test fetch.test.ts windows.test.ts index.test.ts
 cd extensions/remote && node --test argv.test.ts
 cd extensions/link && node --test client.test.ts && node tests/run.mjs
 cd extensions/sandbox && node --test tests/*.unit.test.ts tests/unit/*.unit.test.ts && node tests/run.mjs

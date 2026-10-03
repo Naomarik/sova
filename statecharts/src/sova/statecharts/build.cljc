@@ -1,5 +1,5 @@
 (ns sova.statecharts.build
-  "The build statechart (portable, `build/<org>/<p>/<sid>`): one coding session the project started, the
+  "The build statechart (portable, `build/<p>/<sid>`): one coding session the project started, the
    overseer's (`coding`) or the operator's (`operator-coding`), its worktree, branch and merge
    (§app.project-overseer/coding-worktrees, /new-coding-session, /coding-mode).
 
@@ -16,8 +16,10 @@
    merge decides only when the branch is gone or git can't be read. Paths are host-local: the host
    keeps the session file and worktree folder in its own table, never here.
 
-   Start data: started.json's row `{:org-id :project-id :session-id :kind :title :prompt :started-by
-   :via :gap :item :decisions :model :thinking :mode :op-item :folder :created-at}`."
+   Start data: `{:project-id :session-id :kind :title :prompt :started-by :via :gap :item :decisions
+   :model :thinking :mode :op-item :folder :created-at}`. `gap`, `item` and `decisions` are attribution
+   its spawner sets (an item names its gap); the build never reads them. Its project learns a merge
+   from the exported `merged` (it watches every build it lists)."
   (:require
     [clojure.string :as str]
     [com.fulcrologic.statecharts.chart :as chart]
@@ -211,8 +213,7 @@
               (script {:expr (fn [_ d] [(ops/assign :merged {:at (b/now-ms d) :commit (:commit (result d))})
                                         (ops/assign :merge-refused nil)])})
               (b/tell-watch (fn [d] {:kind "build/merged" :params {:title (shown-title d) :branch (:branch d) :target (:target d)} :by "operator"
-                                     :key (str "build/merged:" (:session-id d) "@" (:commit (result d)))}))
-              (b/send-if :milestone/noted (fn [d] (b/project-sid (:org-id d) (:project-id d))) (fn [_] {:kind "build-merged"})))
+                                     :key (str "build/merged:" (:session-id d) "@" (:commit (result d)))})))
             ;; git refused (the reason in today's words): the overseer is told unless it is about the
             ;; root's own checkout (the operator's to fix)
             (transition {:sova/feed :feed :sova/asks-overseer true :event :effect/failed :cond (done-kind? "merge") :target :merge-idle}

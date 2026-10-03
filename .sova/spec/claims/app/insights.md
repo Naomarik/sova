@@ -170,7 +170,8 @@ Usage glance needs the room.
     a main thread's, a subagent's, or background work (summaries, titles, decisions, compaction,
     cache warming) — and time spent running tools is not. A known count always shows the bare
     number, `0 agents` included: a partial count or one with approximate one-shots in it is
-    marked by no `+` or `~`, only by its sentence (below). While it is unknown the segment is the plain word "Agents", with
+    marked by no `+` or `~`, only by its sentence (below). The word follows the number shown,
+    partial or not: `1 agent`, every other figure `agents`. While it is unknown the segment is the plain word "Agents", with
     no figure, never a 0.
   - **The other two are this host's, as before**, from `activeAgentCounts` and `activeTeamCount`
     in `src/lib/workers.ts` (the Agents poll; nothing new is read for them), each dropped at 0
@@ -316,7 +317,8 @@ decisions, topic outlines, compaction, cache warming.
     one-shots in it — the figure the sidebar shows is the bare `{n}`, with no `+` and no `~`
     (a mark beside the number was visual noise). That it is a floor, or holds estimates, lives in
     the sentence (the `title` and `aria-label`), which still says so in full; the snapshot's own
-    `partial`, gaps and one-shot count are kept as they are.
+    `partial`, gaps and one-shot count are kept as they are. The Agents row's word agrees with
+    that shown number even while the count is partial (`1 agent`, never `1 agents`).
   - **Unknown** — the page has no snapshot from the current connection (before the first frame,
     and from the moment the socket drops until the next snapshot): no figure (`–`), and the
     sentence "LLM calls running now: not known yet". A previous connection's figure is never

@@ -1,6 +1,6 @@
 import { execFile, execFileSync, spawn } from "node:child_process";
-import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, rmSync, statSync, writeFileSync, writeSync } from "node:fs";
+import { isAbsolute, join, resolve } from "node:path";
 import { hostProcTable, procfsTable, unitMembers, type ProcTable } from "./proctable";
 import { logsDir, procsDir } from "./store";
 
@@ -37,6 +37,8 @@ export interface RunOnceResult {
   peakBytes?: number | null;
   /** It was stopped because the caller aborted. */
   aborted?: boolean;
+  /** The supervisor could not start it at all (systemd-run's own message, or the spawn error): nothing ran, and `code` is null. */
+  launchError?: string;
 }
 
 /** A waited-for run: killed whole at `timeoutSec`, or when `signal` aborts. */
@@ -87,13 +89,16 @@ export const realExec: Exec = (file, args, opts = {}) =>
 export const SLICE = "sova-services.slice";
 
 /** The `systemd-run` argv that starts `spec` as a transient user service (pure, for tests). A waited-for run is
-    not `--quiet`: its summary on exit carries the memory peak. */
+    not `--quiet`: its summary on exit carries the memory peak. A command named by a relative path
+    (`.sova/bin/setup`) is made absolute against `cwd`: systemd-run resolves it against its own
+    directory, not the unit's, and refuses to start the unit when it is not there. */
 export function systemdRunArgv(spec: UnitSpec, once?: { timeoutSec: number }): string[] {
   const a = ["--user", `--unit=${spec.unit}`, `--slice=${SLICE}`, "--collect", ...(once ? [] : ["--quiet"]), `--working-directory=${spec.cwd}`, "--property=StandardInput=null"];
   if (once) a.push("--wait", "--property=KillMode=control-group", `--property=RuntimeMaxSec=${once.timeoutSec}`);
   else a.push("--property=KillMode=mixed", "--property=TimeoutStopSec=15", "--property=Restart=on-failure", "--property=RestartSec=2");
   for (const k of Object.keys(spec.env).sort()) a.push(`--setenv=${k}=${spec.env[k]}`);
-  a.push("--", ...spec.argv);
+  const [cmd, ...args] = spec.argv;
+  a.push("--", ...(cmd !== undefined && cmd.includes("/") && !isAbsolute(cmd) ? [resolve(spec.cwd, cmd), ...args] : spec.argv));
   return a;
 }
 
@@ -153,8 +158,13 @@ export function rssOf(pids: number[]): number | null {
   return read ? total : null;
 }
 
+/** systemd-run's output when it started the unit (not `--quiet`): a run that lacks it never started. */
+const LAUNCHED = /Running as unit:/;
+
 export class SystemdDriver implements Driver {
   readonly id = "systemd" as const;
+  /** Per unit: the message of the last waited-for run systemd-run could not start, which its journal lacks. */
+  private launchFailures = new Map<string, { at: number; lines: string[] }>();
   constructor(private readonly exec: Exec = realExec) {}
   async available() {
     const r = await this.exec("systemctl", ["--user", "show", "--property=Version"], { timeoutMs: 5_000 });
@@ -205,11 +215,16 @@ export class SystemdDriver implements Driver {
         // not a journal line
       }
     }
-    return out;
+    const f = this.launchFailures.get(unit);
+    if (f && (sinceMs === undefined || f.at >= Math.floor(sinceMs / 1000) * 1000)) out.push(...f.lines.map((text) => ({ t: new Date(f.at).toISOString(), text })));
+    return out.slice(-lines);
   }
   async runOnce(spec: OnceSpec) {
     const t0 = Date.now();
+    // A unit of this name left loaded (a run cut off with its server) would make systemd-run refuse the name.
+    await this.exec("systemctl", ["--user", "stop", `${spec.unit}.service`], { timeoutMs: 60_000 });
     await this.exec("systemctl", ["--user", "reset-failed", `${spec.unit}.service`]);
+    this.launchFailures.delete(spec.unit);
     let aborted = false;
     const onAbort = () => {
       aborted = true;
@@ -222,6 +237,14 @@ export class SystemdDriver implements Driver {
     const ms = Date.now() - t0;
     const timedOut = !aborted && ms >= spec.timeoutSec * 1000;
     if (timedOut) await this.stop(spec.unit);
+    const said = `${r.stderr}\n${r.stdout}`;
+    // systemd-run's own failure (exit 1, the unit never started) is never the run's exit.
+    if (r.code !== 0 && !aborted && !timedOut && !LAUNCHED.test(said)) {
+      const lines = said.split("\n").map((l) => l.trim()).filter(Boolean);
+      const message = lines.join("; ") || `systemd-run exited with ${r.code}`;
+      this.launchFailures.set(spec.unit, { at: Date.now(), lines: lines.length ? lines.map((l) => `systemd-run: ${l}`) : [`systemd-run: ${message}`] });
+      return { code: null, timedOut, ms, peakBytes: null, launchError: `systemd-run could not start ${spec.unit}: ${message}` };
+    }
     return { code: r.code, timedOut, ms, peakBytes: parseMemoryPeak(`${r.stderr}\n${r.stdout}`), ...(aborted ? { aborted } : {}) };
   }
   async units(prefix: string) {
@@ -502,9 +525,11 @@ export class DetachedDriver implements Driver {
       let child;
       try {
         child = spawn(spec.argv[0]!, spec.argv.slice(1), { cwd: spec.cwd, env: spec.env, detached: true, stdio: ["ignore", fd, fd] });
-      } catch {
+      } catch (err) {
+        const message = `cannot start ${spec.argv[0]}: ${(err as Error).message}`;
+        writeSync(fd, `${message}\n`);
         closeSync(fd);
-        return done({ code: 127, timedOut: false, ms: Date.now() - t0 });
+        return done({ code: null, timedOut: false, ms: Date.now() - t0, launchError: message });
       }
       let timedOut = false;
       let aborted = false;
@@ -533,10 +558,12 @@ export class DetachedDriver implements Driver {
         clearInterval(sampler);
         spec.signal?.removeEventListener("abort", onAbort);
       };
-      child.once("error", () => {
+      child.once("error", (err) => {
         stopWatching();
+        const message = `cannot start ${spec.argv[0]}: ${err.message}`;
+        writeSync(fd, `${message}\n`);
         closeSync(fd);
-        done({ code: 127, timedOut: false, ms: Date.now() - t0 });
+        done({ code: null, timedOut: false, ms: Date.now() - t0, launchError: message });
       });
       child.once("exit", (code, sig) => {
         stopWatching();

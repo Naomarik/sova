@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { after, before, test } from "node:test";
 import { CONFORM_LOG_LINES, parseDefinition } from "../../shared/project-contract";
 import { conformer } from "./conform";
-import { DetachedDriver } from "./drivers";
+import { DetachedDriver, SystemdDriver, type Exec } from "./drivers";
 import { ProjectEngine, type Caller } from "./engine";
 import { readRegistry } from "./store";
 import { approve, defHashOf } from "./trust";
@@ -79,4 +79,46 @@ test("a run that passes carries no logs", async () => {
   const r = await engine.run("conform", { project }, op);
   assert.equal(r.ok, true, JSON.stringify(r.conform?.checks.filter((c) => !c.ok)));
   assert.equal(r.conform?.logs, undefined);
+});
+
+/** The engine on a systemd whose `systemd-run` answers `hookRun` for setup steps and whose journal holds `journal` for them. */
+function onSystemd(hookRun: { code: number; stderr: string }, journal: string[]) {
+  const runs: string[][] = [];
+  const exec: Exec = async (file, args) => {
+    if (file === "systemd-run") {
+      runs.push(args);
+      return { stdout: "", ...hookRun };
+    }
+    if (file === "journalctl" && args.some((a) => /^sova-hook-.*-setup-deps\.service$/.test(a)))
+      return { code: 0, stdout: journal.map((m) => JSON.stringify({ __REALTIME_TIMESTAMP: String(Date.now() * 1000), MESSAGE: m })).join("\n"), stderr: "" };
+    if (file === "systemctl" && args[1] === "show") return { code: 0, stdout: "LoadState=not-found\n", stderr: "" };
+    return { code: 0, stdout: "", stderr: "" };
+  };
+  const e = new ProjectEngine({ driver: new SystemdDriver(exec), pollMs: 100 });
+  e.conformer = conformer(e);
+  return { e, runs };
+}
+
+test("systemd: a setup step systemd-run could not start fails with systemd-run's message, which the report's logs keep", async () => {
+  commitDef({ version: 1, slots: { cap: 1 }, setup: [{ id: "deps", run: [".sova/bin/setup"] }], services: { web: { cmd: ["node", "web.mjs"] } } });
+  const { e, runs } = onSystemd({ code: 1, stderr: "Failed to start transient service unit: Unit sova-hook-x.service already exists.\n" }, []);
+  const r = await e.run("conform", { project }, op);
+  assert.equal(r.ok, false);
+  const failed = r.conform?.checks.find((c) => !c.ok);
+  assert.equal(failed?.id, "create-a");
+  assert.match(failed?.detail ?? "", /setup-deps could not be started: systemd-run could not start .*already exists/);
+  assert.doesNotMatch(failed?.detail ?? "", /exited with/, "never read as the hook's exit");
+  const step = r.conform?.logs?.find((l) => l.service === "step:setup-deps");
+  assert.deepEqual(step?.lines, ["systemd-run: Failed to start transient service unit: Unit sova-hook-x.service already exists."], JSON.stringify(r.conform?.logs));
+  const argv = runs[0]!;
+  const cmd = argv.slice(argv.indexOf("--") + 1)[0]!;
+  assert.ok(cmd.startsWith("/") && cmd.endsWith("/.sova/bin/setup"), `the relative command is made absolute against the checkout: ${cmd}`);
+});
+
+test("systemd: a setup step that ran and failed keeps its exit, and the report keeps its journal lines", async () => {
+  commitDef({ version: 1, slots: { cap: 1 }, setup: [{ id: "deps", run: [".sova/bin/setup", "ci"] }], services: { web: { cmd: ["node", "web.mjs"] } } });
+  const { e } = onSystemd({ code: 1, stderr: "Running as unit: sova-hook-x.service; invocation ID: 01\nFinished with result: exit-code\n" }, ["npm ci", "npm ERR! missing package-lock.json"]);
+  const r = await e.run("conform", { project }, op);
+  assert.match(r.conform?.checks.find((c) => !c.ok)?.detail ?? "", /setup-deps exited with 1/);
+  assert.deepEqual(r.conform?.logs?.find((l) => l.service === "step:setup-deps")?.lines, ["npm ci", "npm ERR! missing package-lock.json"], JSON.stringify(r.conform?.logs));
 });

@@ -742,6 +742,8 @@ export class ProjectEngine {
       timeoutSec,
     };
     const r = await this.driver.runOnce(await this.inScope(scope, spec));
+    // The supervisor's own failure: the hook never ran, so it has no exit.
+    if (r.launchError) throw new VerbFailure("hook-failed", `${stepId} could not be started: ${r.launchError}`, { step: stepId });
     if (r.timedOut) throw new VerbFailure("hook-failed", `${stepId} timed out after ${timeoutSec}s`, { step: stepId });
     if (r.code !== 0) throw new VerbFailure("hook-failed", `${stepId} exited with ${r.code}`, { step: stepId });
     try {
@@ -1352,13 +1354,15 @@ export class ProjectEngine {
     run.extra.tests = report;
     run.extra.lines = (await this.driver.logs(unit, 100, t0)).map((l) => ({ t: l.t, service: "test", text: l.text }));
     const bad2 = counts ? counts.failed + counts.errors : 0;
-    const why = r.timedOut
-      ? `timed out after ${t.timeout}s`
-      : r.aborted
-        ? "the test run was stopped: the call was cancelled"
-        : counts && bad2 > 0
-          ? `${bad2} of ${counts.passed + bad2} failed`
-          : `the test command exited with ${exit}`;
+    const why = r.launchError
+      ? `the test command could not be started: ${r.launchError}`
+      : r.timedOut
+        ? `timed out after ${t.timeout}s`
+        : r.aborted
+          ? "the test run was stopped: the call was cancelled"
+          : counts && bad2 > 0
+            ? `${bad2} of ${counts.passed + bad2} failed`
+            : `the test command exited with ${exit}`;
     const shown = select.length ? select.join(" ") : "the whole suite";
     run.steps.push({ id: "test", kind: "test", result: pass ? "done" : "failed", ms: r.ms, detail: pass ? `${shown}: passed${counts ? ` (${counts.passed} passed, ${counts.skipped} skipped)` : ""}` : `${shown}: ${why}` });
     if (!pass) throw new VerbFailure("tests-failed", why, { step: "test" });
@@ -1769,7 +1773,7 @@ export class ProjectEngine {
         timeoutSec: probe.timeout,
       }),
     );
-    return r.timedOut ? -1 : r.code;
+    return r.timedOut || r.launchError ? -1 : r.code;
   }
 
   /** The folders `def`'s dir resources copy, as the main checkout would render them (confined conformance checks them first). */

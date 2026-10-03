@@ -35,6 +35,7 @@ export const ORDER = {
   hooks: ["probe"],
   test: ["run", "requires", "timeout", "smoke"],
   isolation: ["method", "why"],
+  share: ["endpoints", "maxDays", "allow"],
 };
 /** Maps whose keys are names in declaration order, kept as written. */
 const NAMED_MAPS = new Set(["data", "services", "ports", "env"]);
@@ -72,6 +73,7 @@ export function canonical(def) {
     if (isObj(d.hooks.probe)) d.hooks.probe = sortKeys(d.hooks.probe, ORDER.step);
   }
   if (isObj(d.test)) d.test = sortKeys(d.test, ORDER.test);
+  if (isObj(d.share)) d.share = sortKeys(d.share, ORDER.share);
   return d;
 }
 

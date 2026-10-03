@@ -6,10 +6,10 @@
 
 // ---- verbs, codes, exit classes (§app.project-services/result) ---------------------------------
 
-export const VERBS = ["create", "up", "down", "apply", "status", "logs", "reset", "teardown", "doctor", "conform", "test"] as const;
+export const VERBS = ["create", "up", "down", "apply", "status", "logs", "reset", "teardown", "doctor", "conform", "test", "share", "revoke"] as const;
 export type Verb = (typeof VERBS)[number];
 /** Verb names that exist and answer `unsupported` (§app.project-services/reserved). */
-export const RESERVED_VERBS = ["share", "revoke", "deploy", "deploy.plan", "deploy.run", "deploy.status", "deploy.rollback"] as const;
+export const RESERVED_VERBS = ["deploy", "deploy.plan", "deploy.run", "deploy.status", "deploy.rollback"] as const;
 export type ReservedVerb = (typeof RESERVED_VERBS)[number];
 export type AnyVerb = Verb | ReservedVerb;
 export const isVerb = (v: unknown): v is AnyVerb => (VERBS as readonly unknown[]).includes(v) || (RESERVED_VERBS as readonly unknown[]).includes(v);
@@ -129,11 +129,26 @@ export interface ProjectDef {
   services: ServiceDecl[];
   hooks: { probe?: { run: Argv; timeout: number } };
   test?: TestDecl;
-  /** Reserved (share, deploy): kept as written, not used yet. */
-  reserved: { share?: unknown; deploy?: unknown };
+  /** What a running copy may share (§app.project-services/share); absent: nothing. Inside the hash. */
+  share?: ShareDecl;
+  /** Reserved (deploy): kept as written, not used yet. */
+  reserved: { deploy?: unknown };
   /** The checkout files the definition was written from; their change at HEAD is drift. Outside the hash. */
   sources?: string[];
 }
+
+/** The endpoints a copy may share (`"<service>.<port>"`, checkout services only; none when absent), at most `maxDays` per link, and whether at all. */
+export interface ShareDecl {
+  endpoints: string[];
+  /** 1–SHARE_DAYS_MAX; absent: SHARE_DAYS_MAX. */
+  maxDays?: number;
+  /** false: never shared, whatever is listed. */
+  allow?: false;
+}
+/** An instance link lasts 1 day by default and at most 7 (§app.project-services/share). */
+export const SHARE_DAYS_DEFAULT = 1;
+export const SHARE_DAYS_MAX = 7;
+export const SHARE_ENDPOINTS_MAX = 20;
 
 export const CONTRACT_FILE = ".sova/project.json";
 export const SLOT_CAP_DEFAULT = 4;
@@ -194,6 +209,7 @@ export const DEFINITION_KEYS = {
   hooks: ["probe"],
   probe: ["run", "inputs", "timeout"],
   test: ["run", "requires", "timeout", "smoke"],
+  share: ["endpoints", "maxDays", "allow"],
 } as const;
 const K = DEFINITION_KEYS;
 
@@ -384,6 +400,33 @@ function data(nm: string, v: unknown, path: string): DataDecl {
   throw new DefinitionError(`${path}.kind`, 'must be "dir" or "hook"');
 }
 
+/** `share`: each endpoint a checkout service's declared port, once; `maxDays` 1–7; `allow: true` (the default) dropped, so it hashes as without. */
+function shareDecl(v: unknown, services: readonly ServiceDecl[]): ShareDecl {
+  const o = obj(v, "$.share");
+  keysOnly(o, K.share, "$.share");
+  if (o.endpoints !== undefined && !Array.isArray(o.endpoints)) throw new DefinitionError("$.share.endpoints", 'must be a list of "<service>.<port>"');
+  const list: unknown[] = (o.endpoints as unknown[] | undefined) ?? [];
+  if (list.length > SHARE_ENDPOINTS_MAX) throw new DefinitionError("$.share.endpoints", `at most ${SHARE_ENDPOINTS_MAX} endpoints`);
+  const endpoints: string[] = [];
+  for (const [i, e] of list.entries()) {
+    const at = `$.share.endpoints[${i}]`;
+    const m = typeof e === "string" ? /^([a-z][a-z0-9-]{0,30})\.([a-z][a-z0-9-]{0,30})$/.exec(e) : null;
+    if (!m) throw new DefinitionError(at, 'must be "<service>.<port>"');
+    const svc = services.find((s) => s.name === m[1]);
+    if (!svc || !(m[2]! in svc.ports)) throw new DefinitionError(at, `names no declared port (${e as string})`);
+    if (svc.scope === "shared") throw new DefinitionError(at, "a shared service is never shared: only a copy's own (checkout) services");
+    if (endpoints.includes(e as string)) throw new DefinitionError(at, "each endpoint once");
+    endpoints.push(e as string);
+  }
+  const out: ShareDecl = { endpoints };
+  if (o.maxDays !== undefined) out.maxDays = int(o.maxDays, "$.share.maxDays", 1, SHARE_DAYS_MAX);
+  if (o.allow !== undefined && o.allow !== true) {
+    if (o.allow !== false) throw new DefinitionError("$.share.allow", "must be true or false");
+    out.allow = false;
+  }
+  return out;
+}
+
 /** Every `${…}` variable a definition's templates name, with where. */
 function* templates(def: ProjectDef): Generator<[string, string]> {
   for (const s of def.setup) for (const [i, a] of s.run.entries()) yield [a, `setup.${s.id}.run[${i}]`];
@@ -470,7 +513,8 @@ export function parseDefinition(text: string): ProjectDef {
     services,
     hooks,
     ...(test ? { test } : {}),
-    reserved: { ...(o.share !== undefined ? { share: o.share } : {}), ...(o.deploy !== undefined ? { deploy: o.deploy } : {}) },
+    ...(o.share !== undefined ? { share: shareDecl(o.share, services) } : {}),
+    reserved: { ...(o.deploy !== undefined ? { deploy: o.deploy } : {}) },
     ...(sources ? { sources } : {}),
   };
   // requires: known, scope-consistent, acyclic.
@@ -592,7 +636,7 @@ export const envPart = (s: string) => s.toUpperCase().replace(/[^A-Z0-9]/g, "_")
 // ---- the result (§app.project-services/result) -------------------------------------------------
 
 export type InstanceState = "absent" | "stopped" | "running" | "degraded";
-export type StepKind = "setup" | "data" | "hook" | "build" | "start" | "ready" | "reload" | "stop" | "check" | "worktree" | "slot" | "test";
+export type StepKind = "setup" | "data" | "hook" | "build" | "start" | "ready" | "reload" | "stop" | "check" | "worktree" | "slot" | "test" | "link";
 export interface Step {
   id: string;
   kind: StepKind;
@@ -630,6 +674,22 @@ export interface InstanceSummary {
   state: InstanceState;
   services: ServiceView[];
   createdBy: string;
+  /** Its active share links (§app.project-services/share). */
+  links: LinkView[];
+  /** The endpoints its definition lets it share, and why it can't when it can't (null: it can). */
+  share: { endpoints: string[]; refused: string | null };
+}
+/** One share link of an instance (§app.project-services/share). `url` only for the operator, never in a tool result. */
+export interface LinkView {
+  id: string;
+  instance: string;
+  endpoint: string;
+  port: number;
+  createdAt: string;
+  expiresAt: string;
+  state: "active" | "expired" | "revoked";
+  createdBy: string;
+  url?: string;
 }
 export interface Check {
   id: string;
@@ -715,7 +775,7 @@ export interface VerbResult {
   steps: Step[];
   services: ServiceView[];
   data: DataView[];
-  links: never[];
+  links: LinkView[];
   instances?: InstanceSummary[];
   lines?: LogLine[];
   checks?: Check[];

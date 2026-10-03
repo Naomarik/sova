@@ -34,6 +34,9 @@ const PARAMS = {
     resources: { type: "array", items: { type: "string" }, description: "reset: only these data resources." },
     ref: { type: "string", description: "conform: the branch or commit whose definition to prove (default the main checkout's HEAD)." },
     select: { type: "array", items: { type: "string" }, maxItems: 50, description: "test: selectors appended to the project's test command (files, namespaces, test names); none runs the whole suite." },
+    endpoint: { type: "string", description: 'share/revoke: the endpoint, "<service>.<port>", one of the definition\'s share.endpoints.' },
+    days: { type: "integer", minimum: 1, maximum: 7, description: "share: how many days the link lasts (default 1, at most 7 or the definition's share.maxDays)." },
+    link: { type: "string", description: "revoke: one share link, by its id (pv_…)." },
   },
   required: ["verb"],
   additionalProperties: false,
@@ -60,15 +63,22 @@ const VERB_HELP =
   "create (a worktree's instance: slot, ports, data, setup), up (start and wait until ready; creates first), down (stop; keeps data), apply (build + reload each running service, wait until ready), " +
   "status, logs, doctor (preflight), reset (fresh data), teardown (the only destructive verb: stops, deletes its data, removes a worktree Sova cut; never the branch), conform (Sova's conformance suite in two scratch copies), " +
   "test (runs the project's test command in that instance, starting what it requires; tests {pass, passed, failed, failures…}; error tests-failed when it did not pass, unsupported when the project declares none). " +
-  "share, revoke and deploy are reserved (unsupported). A definition runs only once the operator approved its hash (error not-approved). Error busy: another verb is running on that instance; try again later.";
+  "share {instance, endpoint, days?} gives a running copy a preview link to one endpoint the definition lists in share.endpoints (never anything else; never a copy whose data is sensitive); the result names the link by its id, never its URL, which only the operator sees. revoke {link} or {instance, endpoint?} ends links at once (never held). Teardown ends every link of its copy, and down of a copy with an active link is the operator's (needs-confirm). " +
+  "deploy is reserved (unsupported). A definition runs only once the operator approved its hash (error not-approved). Error busy: another verb is running on that instance; try again later.";
 
 /** The request body the engine takes, from the tool's params. */
 function bodyOf(p: Record<string, unknown>, defaultProject: string | null): Record<string, unknown> {
   const out: Record<string, unknown> = {};
-  for (const k of ["project", "instance", "checkout", "branch", "from", "services", "restart", "lines", "resources", "ref", "select"]) if (p[k] !== undefined && p[k] !== null && p[k] !== "") out[k] = p[k];
+  for (const k of ["project", "instance", "checkout", "branch", "from", "services", "restart", "lines", "resources", "ref", "select", "endpoint", "days", "link"]) if (p[k] !== undefined && p[k] !== null && p[k] !== "") out[k] = p[k];
   if (p.keep_data !== undefined) out.keepData = p.keep_data;
   if (!out.project && !out.instance && !out.checkout && defaultProject) out.project = defaultProject;
   return out;
+}
+
+/** The result with no link's `url`, wherever links sit. */
+export function withoutUrls(r: VerbResult): VerbResult {
+  const strip = (ls: VerbResult["links"]) => ls.map(({ url: _url, ...l }) => l);
+  return { ...r, links: strip(r.links), ...(r.instances ? { instances: r.instances.map((i) => ({ ...i, links: strip(i.links) })) } : {}) };
 }
 
 /** The result as the model reads it: a headline, the JSON, and log lines marked untrusted. */
@@ -119,7 +129,8 @@ export function projectVerbsTool(o: VerbToolOptions): Tool {
         return { content: [{ type: "text" as const, text: out.text }], details: { v: 1, ...out.details } };
       }
       const caller = await o.caller(ctx);
-      const r = await o.engine().run(String(p.verb ?? ""), bodyOf(p, await o.defaultProject(ctx)), caller, signal ? { signal } : {});
+      // No tool result ever carries a share link's URL (§app.project-services/share): the engine gives it to the operator only.
+      const r = withoutUrls(await o.engine().run(String(p.verb ?? ""), bodyOf(p, await o.defaultProject(ctx)), caller, signal ? { signal } : {}));
       const note = await resultNote(o.engine(), r, (ctx as SessionCtx | undefined)?.sessionManager?.getBranch() ?? []);
       return { content: [{ type: "text" as const, text: renderResult(r, note) }], details: { v: 1, result: r } };
     },
@@ -205,7 +216,7 @@ export function overseerVerbsTool(engine: () => ProjectEngine, overseerId: () =>
     name: "sova_project_verbs",
     label: "Project verbs",
     description:
-      "Run any project's instances on this host: status/logs/doctor anywhere; create, up, down, apply, test and conform in a turn the user started. Reset and teardown of an instance you did not create, and stopping a shared service, are the operator's (needs-confirm): tell them.",
+      "Run any project's instances on this host: status/logs/doctor anywhere; create, up, down, apply, test and conform in a turn the user started; revoke a copy's share links. Reset and teardown of an instance you did not create, stopping a shared service, stopping a copy with an active share link, and share itself, are the operator's (needs-confirm): tell them.",
     promptSnippet: "status, logs and lifecycle (create/up/down/apply/reset/teardown/conform) of a project's running instances",
     engine,
     defaultProject: async () => null,
@@ -226,7 +237,7 @@ export function projectOverseerVerbsTool(engine: () => ProjectEngine, who: { id:
     name: "sova_project_verbs",
     label: "Project verbs",
     description:
-      "Run this project's instances (one running copy per worktree): status/logs/doctor at any level, down from L0, create/up/apply/test/reset/teardown/conform at L3 (in a run the operator started, at any level). Reset and teardown only of instances you created; stopping a shared service is the operator's (needs-confirm).",
+      "Run this project's instances (one running copy per worktree): status/logs/doctor at any level, down from L0, share from L1 (people-facing: held for the operator like a preview), create/up/apply/test/reset/teardown/conform at L3 (in a run the operator started, at any level); revoke at any level, never held. Reset and teardown only of instances you created; stopping a shared service or a copy with an active share link is the operator's (needs-confirm). You never see a share link's URL: send it to a person with sova_send_to_person and its preview id, or the operator has it.",
     promptSnippet: "status, logs and lifecycle of the project's running instances (down from L0; create/up/apply/conform at L3)",
     engine,
     defaultProject: async () => (await projectRootOf(who.root())) ?? who.root(),

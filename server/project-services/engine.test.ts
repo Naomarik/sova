@@ -270,7 +270,7 @@ test("doctor and status name the supervisor adapter and why; a reserved adapter 
 });
 
 test("reserved and malformed requests", async () => {
-  for (const v of ["share", "revoke", "deploy", "deploy.run"]) {
+  for (const v of ["deploy", "deploy.run"]) {
     const r = shaped(await engine.run(v, { project }, op));
     assert.equal(r.error?.code, "unsupported", v);
     assert.equal(exitOf(r), 2);

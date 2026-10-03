@@ -64,6 +64,8 @@ test("a full definition parses with defaults filled in", () => {
     share: { allow: false },
     deploy: { targets: {} },
   });
+  assert.deepEqual(def.share, { endpoints: [], allow: false });
+  assert.deepEqual(def.reserved, { deploy: { targets: {} } });
   assert.equal(def.slots.cap, 2);
   assert.equal(def.setup[0]!.timeout, 120);
   const server = def.services.find((s) => s.name === "server")!;

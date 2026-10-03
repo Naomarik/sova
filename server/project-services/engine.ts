@@ -27,6 +27,7 @@ import {
   type ErrorCode,
   type InstanceState,
   type InstanceSummary,
+  type LinkView,
   type LogLine,
   type ProjectDef,
   type ServiceDecl,
@@ -45,6 +46,7 @@ import { DriverError, rssOf, type Driver, type OnceSpec, type UnitSpec } from ".
 import { hostPortOwner } from "./proctable";
 import type { NoteFacts } from "./note";
 import { hostedBusy, serverCheckout } from "./self-host";
+import { checkShare, instanceOfLink, linksOf, OVERSEER_SHARE_REFUSAL, revokeLinks, ShareFailure, shareInstance, shareRefusal } from "./share";
 import { publishedPorts, publisherOf, type ContainerQuery } from "./container-ports";
 import {
   dataRootOf,
@@ -80,8 +82,13 @@ export type Caller =
   /** `confine`: a confined run (§app.project-services/confined): the instances it makes run inside it, unapproved. */
   | { kind: "conform"; id: string; confine?: Confinement };
 
-/** Resolves once the project statechart took the verb's act; throws its refusal otherwise. */
-export type VerbAct = (verb: AnyVerb, instance: string | null) => Promise<void>;
+/**
+ * Resolves once the project statechart took the verb's act; throws its refusal otherwise. `share`'s act
+ * (`services/share`, people-facing) may be held, or taken with its effect already minting the link
+ * (§app.project-services/share): it says which.
+ */
+export type VerbAct = (verb: AnyVerb, instance: string | null, detail?: { endpoint: string; days?: number }) => Promise<void | VerbActOutcome>;
+export type VerbActOutcome = { held: string } | { done: { id: string } };
 
 /** A statechart's refusal of the project overseer's act: passed through to the tool as it was thrown, never a result. */
 class ActRefused extends Error {
@@ -91,10 +98,11 @@ class ActRefused extends Error {
 }
 
 /** The project overseer's act for `verb`, after the engine's own checks and before anything changes. */
-export async function actFor(caller: Caller, verb: AnyVerb, instance: string | null): Promise<void> {
-  if (caller.kind !== "project-overseer" || (READ_VERBS as readonly string[]).includes(verb)) return;
+export async function actFor(caller: Caller, verb: AnyVerb, instance: string | null, detail?: { endpoint: string; days?: number }): Promise<void | VerbActOutcome> {
+  // revoke only takes something away: no act, never held (§app.project-services/share).
+  if (caller.kind !== "project-overseer" || (READ_VERBS as readonly string[]).includes(verb) || verb === "revoke") return;
   try {
-    await caller.act(verb, instance);
+    return await caller.act(verb, instance, detail);
   } catch (err) {
     throw new ActRefused(err);
   }
@@ -124,6 +132,12 @@ export interface VerbRequest {
   confirm?: boolean;
   /** test: the selectors appended to the test command (none: the whole suite). */
   select?: string[];
+  /** share/revoke: the endpoint, `<service>.<port>`. */
+  endpoint?: string;
+  /** share: how many days the link lasts. */
+  days?: number;
+  /** revoke: one link, by id. */
+  link?: string;
 }
 
 export class VerbFailure extends Error {
@@ -152,6 +166,9 @@ const REQUEST_KEYS: Record<keyof VerbRequest, "string" | "number" | "boolean" | 
   ref: "string",
   confirm: "boolean",
   select: "strings",
+  endpoint: "string",
+  days: "number",
+  link: "string",
 };
 
 /** A request body, checked strictly: unknown keys and wrong types are `invalid-request`. */
@@ -275,6 +292,10 @@ export interface EngineDeps {
   selfCheckout?: () => string | null;
   /** Why this server's hosted sessions are busy, or null; tests fake it. */
   hostBusy?: () => string | null;
+  /** The registered project whose root this is, or null (§app.project-services/share); tests fake it. */
+  projectIdOf?: (root: string) => Promise<string | null>;
+  /** Every port this Sova process binds or names (server/project-previews.ts sovaPorts); tests fake it. */
+  sovaPorts?: () => Promise<ReadonlySet<number>>;
 }
 
 /** Everything one verb run knows. */
@@ -289,7 +310,7 @@ interface Run {
   defHash: string | null;
   approved: boolean;
   steps: Step[];
-  extra: Partial<Pick<VerbResult, "instances" | "lines" | "checks" | "conform" | "tests">>;
+  extra: Partial<Pick<VerbResult, "instances" | "lines" | "checks" | "conform" | "tests" | "links">>;
   /** The caller's abort (a cancelled tool call): a test run is stopped with it. */
   signal?: AbortSignal;
 }
@@ -339,6 +360,8 @@ export class ProjectEngine {
   private readonly pollMs: number;
   private readonly selfCheckout: () => string | null;
   private readonly hostBusy: () => string | null;
+  private readonly projectIdOf: (root: string) => Promise<string | null>;
+  private readonly sovaPorts: () => Promise<ReadonlySet<number>>;
   private sharedChain = new Map<string, Promise<unknown>>();
   /** The conformance runner (server/project-services/conform.ts), wired at startup. */
   conformer: ((body: unknown, caller: Caller) => Promise<VerbResult>) | null = null;
@@ -364,6 +387,13 @@ export class ProjectEngine {
     this.pollMs = deps.pollMs ?? 250;
     this.selfCheckout = deps.selfCheckout ?? serverCheckout;
     this.hostBusy = deps.hostBusy ?? (() => hostedBusy());
+    this.projectIdOf =
+      deps.projectIdOf ??
+      (async (root) => {
+        const { listProjects } = await import("../projects/spaces");
+        return listProjects().find((p) => p.root === root)?.id ?? null;
+      });
+    this.sovaPorts = deps.sovaPorts ?? (async () => (await import("../project-previews")).sovaPorts());
   }
 
   unitOf(scopeId: string, service: string): string {
@@ -415,8 +445,20 @@ export class ProjectEngine {
       await this.resolveTarget(run);
       if (run.verb === "teardown" && !run.rec) return await this.result(run);
       this.authorize(run);
-      await actFor(caller, run.verb, run.rec?.id ?? null);
-      if (!(READ_VERBS as readonly string[]).includes(verb) && verb !== "conform") {
+      // Every check a share makes runs before its act: a refused share never reaches the statechart.
+      if (run.verb === "share") await this.shareChecks(run);
+      const outcome = await actFor(caller, run.verb, run.rec?.id ?? null, run.verb === "share" ? { endpoint: run.req.endpoint!, ...(run.req.days !== undefined ? { days: run.req.days } : {}) } : undefined);
+      if (outcome && "held" in outcome) {
+        run.steps.push({ id: "share", kind: "link", result: "skipped", ms: 0, detail: outcome.held });
+        return await this.result(run);
+      }
+      if (outcome && "done" in outcome) {
+        // The act's effect made the link (shareFromAct): read back, never made twice.
+        run.extra.links = linksOf(run.rec!.id, { withUrl: false }).filter((l) => l.id === outcome.done.id);
+        run.steps.push({ id: "share", kind: "link", result: "done", ms: 0, detail: `shared ${run.req.endpoint}` });
+        return await this.result(run);
+      }
+      if (!(READ_VERBS as readonly string[]).includes(verb) && verb !== "conform" && verb !== "revoke") {
         const lock = tryLock(instanceLockFile(run.project!, this.targetKey(run)));
         if ("heldBy" in lock) throw new VerbFailure("busy", `another verb is running on this instance (pid ${lock.heldBy}); try again when it ends`);
         release = lock.release;
@@ -445,6 +487,12 @@ export class ProjectEngine {
   private async resolveTarget(run: Run): Promise<void> {
     const { req } = run;
     const reg = readRegistry();
+    if (run.verb === "revoke" && req.link) {
+      const of = instanceOfLink(req.link);
+      if (!of) throw new VerbFailure("not-found", `no share link ${req.link}`);
+      if (req.instance && req.instance !== of) throw new VerbFailure("not-found", `share link ${req.link} is not ${req.instance}'s`);
+      req.instance = of;
+    }
     if (req.instance) {
       const rec = reg.instances.find((i) => i.id === req.instance);
       if (!rec) {
@@ -465,7 +513,7 @@ export class ProjectEngine {
         const target = await this.targetCheckout(run);
         (run as Run & { target?: string }).target = target.checkout;
         run.rec = reg.instances.find((i) => i.project === run.project && i.checkout === target.checkout) ?? null;
-      } else if (["down", "apply", "reset", "teardown", "logs"].includes(run.verb)) {
+      } else if (["down", "apply", "reset", "teardown", "logs", "share", "revoke"].includes(run.verb)) {
         if (!req.checkout) throw new VerbFailure("invalid-request", `${run.verb} needs an instance (or the checkout it runs)`);
         const checkout = canonical(req.checkout);
         run.rec = reg.instances.find((i) => i.project === run.project && i.checkout === checkout) ?? null;
@@ -586,8 +634,19 @@ export class ProjectEngine {
     const { caller, verb } = run;
     const sharedNamed = verb === "down" && !!run.req.services?.length && !!run.def && run.req.services.some((n) => run.def!.services.find((s) => s.name === n)?.scope === "shared");
     const confirmShared = "stopping a shared service stops it for every instance of the project: the operator does it (sova-project down … --confirm)";
+    // A copy with an active share link (§app.project-services/share): its down is confirmed, by the operator only.
+    const linked = verb === "down" && !!run.rec ? linksOf(run.rec.id, { activeOnly: true }).length : 0;
+    const confirmLinked = `this copy has ${linked} active share link${linked === 1 ? "" : "s"}, which will show the not-running page while it is down: the operator confirms it (sova-project down … --confirm), or revoke the link first`;
+    if (verb === "share") {
+      if (caller.kind === "operator" && !run.req.confirm)
+        throw new VerbFailure("needs-confirm", "a share link lets anyone who has it use this copy as if they were on this computer: confirm it (sova-project share … --confirm)");
+      if (caller.kind === "overseer") throw new VerbFailure("needs-confirm", OVERSEER_SHARE_REFUSAL);
+      if (caller.kind === "session") throw new VerbFailure("forbidden", "a coding session never shares a copy: the operator does, from the project's Services tab");
+      if (caller.kind === "conform") throw new VerbFailure("forbidden", "conformance never shares a copy");
+    }
     if (caller.kind === "operator") {
       if (sharedNamed && !run.req.confirm) throw new VerbFailure("needs-confirm", confirmShared);
+      if (linked && !run.req.confirm) throw new VerbFailure("needs-confirm", confirmLinked);
       return;
     }
     if (caller.kind === "conform") return;
@@ -599,6 +658,7 @@ export class ProjectEngine {
     if (read) return;
     const createdByCaller = !!run.rec && run.rec.createdBy === callerTag(caller);
     if (sharedNamed) throw new VerbFailure("needs-confirm", confirmShared);
+    if (linked) throw new VerbFailure("needs-confirm", confirmLinked);
     if (caller.kind === "overseer") {
       if ((verb === "reset" || verb === "teardown") && run.rec && !createdByCaller)
         throw new VerbFailure("needs-confirm", `${verb} of an instance you did not create (${run.rec.createdBy}'s) is the operator's: ask them to run it`);
@@ -642,6 +702,10 @@ export class ProjectEngine {
         return this.teardown(run);
       case "test":
         return this.test(run);
+      case "share":
+        return this.share(run);
+      case "revoke":
+        return this.revoke(run);
       case "conform":
         throw new VerbFailure("unsupported", "conform runs through the conformance runner");
       default:
@@ -1480,6 +1544,12 @@ export class ProjectEngine {
     const rec = run.rec;
     if (!rec) return;
     if (rec.slot === 0) throw new VerbFailure("refused-slot0", "slot 0 is the main checkout: teardown never removes it");
+    // Its links end first, siblings included, so a later copy in this slot never answers one (§app.project-services/share).
+    if (linksOf(rec.id).length)
+      await this.step(run, "links", "link", async () => {
+        const r = revokeLinks({ instance: rec.id });
+        return r.changed ? { result: "done", detail: `revoked ${r.links.length} share link${r.links.length === 1 ? "" : "s"}` } : { result: "skipped", detail: "no active share link" };
+      });
     const def = run.defError ? null : run.def;
     const hookData = def?.data.some((d) => d.kind === "hook" && rec.data[d.name]) ?? false;
     if (hookData && !run.approved && !run.req.keepData) this.need(run);
@@ -1509,6 +1579,66 @@ export class ProjectEngine {
     (run as Run & { tornDown?: InstanceRecord }).tornDown = rec;
   }
 
+  // ---- share and revoke (§app.project-services/share) --------------------------------------------------
+
+  /** The share's input as this run has it. */
+  private async shareInput(run: Run) {
+    const def = this.need(run);
+    const rec = run.rec;
+    if (!rec) throw new VerbFailure("invalid-request", "share needs an instance (or the checkout it runs)");
+    return {
+      rec,
+      def,
+      projectId: await this.projectIdOf(rec.project),
+      endpoint: run.req.endpoint,
+      days: run.req.days,
+      // preview-links.json keeps `operator` or `session:<id>` (the project overseer's conversation), strictly.
+      createdBy: run.caller.kind === "operator" ? "operator" : `session:${run.caller.id}`,
+      serveOf: (s: ServiceDecl) => this.unitOf(rec.id, s.name),
+    };
+  }
+
+  private async shareChecks(run: Run): Promise<void> {
+    try {
+      await checkShare(await this.shareInput(run));
+    } catch (err) {
+      if (err instanceof ShareFailure) throw new VerbFailure(err.code, err.message);
+      throw err;
+    }
+  }
+
+  private async share(run: Run): Promise<void> {
+    try {
+      const { link, changed } = await shareInstance({ ...(await this.shareInput(run)), sovaPorts: await this.sovaPorts() });
+      run.steps.push({ id: "share", kind: "link", result: changed ? "done" : "skipped", ms: 0, detail: `${link.endpoint} until ${link.expiresAt}` });
+      const { url, ...rest } = link;
+      run.extra.links = [run.caller.kind === "operator" && url ? { ...rest, url } : rest];
+    } catch (err) {
+      if (err instanceof ShareFailure) throw new VerbFailure(err.code, err.message);
+      throw err;
+    }
+  }
+
+  private async revoke(run: Run): Promise<void> {
+    const rec = run.rec;
+    if (!rec) throw new VerbFailure("invalid-request", "revoke needs a link, or an instance (or the checkout it runs)");
+    try {
+      const r = revokeLinks(run.req.link ? { link: run.req.link } : { instance: rec.id, ...(run.req.endpoint ? { endpoint: run.req.endpoint } : {}) });
+      run.steps.push({ id: "revoke", kind: "link", result: r.changed ? "done" : "skipped", ms: 0, detail: r.changed ? `revoked ${r.links.length} share link${r.links.length === 1 ? "" : "s"}` : "no active share link" });
+      run.extra.links = r.links;
+    } catch (err) {
+      if (err instanceof ShareFailure) throw new VerbFailure(err.code, err.message);
+      throw err;
+    }
+  }
+
+  /** What status says about sharing a copy: its definition's endpoints, and why it can't be shared (null: it can). */
+  private async shareFacts(run: Run): Promise<InstanceSummary["share"]> {
+    if (!run.def) return { endpoints: [], refused: run.defError ? run.defError.message : "no definition" };
+    const refused = shareRefusal(run.def) ?? ((await this.projectIdOf(run.project!)) ? null : "Only a registered project's copies can be shared.");
+    return { endpoints: run.def.share?.endpoints ?? [], refused };
+  }
+
   /** Which supervisor adapter is in use, why, and whether it serves this definition. */
   private async supervisorCheck(def: ProjectDef | null): Promise<Check> {
     const drv = await this.driver.available();
@@ -1517,6 +1647,7 @@ export class ProjectEngine {
 
   private async status(run: Run): Promise<void> {
     run.extra.checks = [await this.supervisorCheck(run.def)];
+    if (run.rec) run.extra.links = linksOf(run.rec.id, { activeOnly: true, withUrl: run.caller.kind === "operator" });
     if (run.rec || run.req.instance) return;
     // A whole project: every instance.
     const reg = readRegistry();
@@ -1525,7 +1656,18 @@ export class ProjectEngine {
       const sub: Run = { ...run, rec, def: null, defError: null, defHash: null, approved: false, steps: [], extra: {} };
       this.loadDefinition(sub, rec.checkout);
       const services = await this.observe(sub);
-      out.push({ instance: rec.id, slot: rec.slot, generation: rec.generation, checkout: rec.checkout, branch: rec.branch, state: this.stateOf(sub, services), services, createdBy: rec.createdBy });
+      out.push({
+        instance: rec.id,
+        slot: rec.slot,
+        generation: rec.generation,
+        checkout: rec.checkout,
+        branch: rec.branch,
+        state: this.stateOf(sub, services),
+        services,
+        createdBy: rec.createdBy,
+        links: linksOf(rec.id, { activeOnly: true, withUrl: run.caller.kind === "operator" }),
+        share: await this.shareFacts(sub),
+      });
     }
     out.sort((a, b) => a.slot - b.slot);
     run.extra.instances = out;

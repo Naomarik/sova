@@ -54,5 +54,8 @@
   "test": {
     "run": [".sova/bin/test"],
     "smoke": ["test/health.test.js"]
+  },
+  "share": {
+    "endpoints": ["web.http"]
   }
 }

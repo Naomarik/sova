@@ -8,6 +8,7 @@ import { portOwner, type PortOwner } from "./port-owner";
 import { keepPreview, keptPreview, type KeptPreview } from "./preview-kept";
 import { checkDays, checkPort, findPreviewByHash, listPreviews, mintPreview, onPreviewEnded, PreviewRefused, revokePreview, type PreviewRecord } from "./preview-links";
 import { startStaticServe, staticServes, stopStaticServe } from "./preview-serve";
+import { sensitivePortRefusal } from "./project-services/sensitive";
 import { readPublicLinks } from "./public-links";
 import { readSessionTitles } from "./session-titles";
 import { awaitShareLinks } from "./share/links-events";
@@ -138,6 +139,8 @@ export async function resolvePreview(q: PreviewRequest, deps: { owner?: (port: n
   }
 
   const port = checkPort(typeof q.port === "string" && /^\d+$/.test(q.port) ? Number(q.port) : q.port, deps.sovaPorts);
+  const sensitive = sensitivePortRefusal(port);
+  if (sensitive) throw new PreviewRefused("sensitive", sensitive);
   const owner = (deps.owner ?? ownerOf)(port);
   const holder = typeof owner === "object" ? treeHolding(trees, owner.cwd) : null;
   if (q.requireOwner) {
@@ -270,7 +273,7 @@ export function startStaticPreviews(): void {
 // ---- reading them -----------------------------------------------------------------------------------------
 
 async function isRunning(record: PreviewRecord, kept: KeptPreview | null): Promise<boolean> {
-  if (kept?.target.kind === "static") return previewDialable(record);
+  if (kept?.target.kind === "static" || (kept?.target.kind === "instance" && kept.target.serve)) return previewDialable(record);
   const s = await dialLoopback(record.port);
   if (s === "refused") return false;
   s.destroy();
@@ -302,7 +305,7 @@ export async function previewViews(filter: { projectId?: string } = {}, deps: { 
     let tree = kept?.sessionId ? all.find((t) => t.sessionId === kept.sessionId) ?? null : null;
     let from: "recorded" | "worktree" | undefined = kept?.sessionId ? "recorded" : undefined;
     // An older preview (or the operator's by port): matched now by its listener's worktree, never written.
-    if (!kept?.sessionId && kept?.target.kind !== "static" && base.state === "active") {
+    if (!kept?.sessionId && (!kept || kept.target.kind === "port") && base.state === "active") {
       const owner = (deps.owner ?? ownerOf)(base.port);
       const holder = typeof owner === "object" ? treeHolding(all, owner.cwd) : null;
       if (holder) {
@@ -322,6 +325,7 @@ export async function previewViews(filter: { projectId?: string } = {}, deps: { 
       ...(from ? { sessionFrom: from } : {}),
       sessionTitle: tree?.title ?? null,
       sessionPath: tree?.sessionPath ?? null,
+      ...(kept?.target.kind === "instance" ? { instance: kept.target.instance, endpoint: kept.target.endpoint } : {}),
     });
   }
   return out;

@@ -83,5 +83,6 @@
     "run": [".sova/bin/test"],
     "requires": ["test-repl"],
     "smoke": ["naomarik.motorsaif.core-test"]
-  }
+  },
+  "share": {"allow": false}
 }

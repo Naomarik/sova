@@ -51,6 +51,8 @@ shell string is accepted anywhere: every command is an argv array of non-empty s
   `ready` is ready once its first port listens, or, with no ports, once it has run for a second.
   One `cmd` checkout service (no `container`) may say `adopt: {unit, ports}`: in slot 0 it is that
   systemd user unit, which Sova did not start, on those fixed ports (§app.project-services/adopt).
+  A `cmd` checkout service may say `onMerge: "reload"` (the only value; never a static or shared
+  service): the main checkout's copy reloads it whenever main moves (§app.project-services/on-merge).
 - **`setup`**: steps `{id, run: argv, inputs?: [checkout files], timeout?}` run at create, in order.
 - **`data`**: resources `{kind: "dir", path?, from?}` (a folder: by default under the instance's
   data dir; `path` places it inside the checkout, where it must be ignored by git; `from` is
@@ -409,7 +411,7 @@ A definition runs only after the operator approved its hash on this host. The ha
 (`sha256:<hex>`) covers the whole parsed definition except timeouts, readiness paths, each
 service's `about` and `isolation`, and the `sources` list, so a
 branch that changes any command, env template, port, hook or data source needs approving again,
-while tuning a timeout, rewording an `about` or an isolation's `why`, or listing another source does not; a `test`, a `start`, a data resource's `sensitive` and `share` are covered (`allow: true`, the default, hashes as if absent). Approvals live in `<state root>/project-services/approvals.json`,
+while tuning a timeout, rewording an `about` or an isolation's `why`, or listing another source does not; a `test`, a `start`, a data resource's `sensitive`, `share` and a service's `onMerge` are covered (`allow: true`, the default, hashes as if absent). Approvals live in `<state root>/project-services/approvals.json`,
 keyed by project root and hash, outside every repo, so no branch can approve itself; only the
 operator's own routes and CLI approve, never a session or an Overseer, and an approval is refused
 when the definition's hash is no longer the one shown. Every verb that runs something answers
@@ -536,8 +538,10 @@ its statechart's act `services/share` (L1, people-facing, held like a preview), 
 check of the share passed, so a refused share never reaches the statechart; the global Overseer's is
 `needs-confirm` ("The operator shares it from the project's Services tab."); a coding session's is
 `forbidden`. `revoke` is any caller's with the instance in scope (a session: its own checkouts'), with
-no act, never held and taking no lock. `deploy` is `unsupported` for everyone, and nothing but the
-operator approves a definition.
+no act, never held and taking no lock. Sova itself, on no one's request (the `system` caller: today
+only onMerge, §app.project-services/on-merge), runs `apply` and the reads, nothing else: any other
+verb is `forbidden`, and the self-host rule refuses it like any caller but the operator. `deploy` is
+`unsupported` for everyone, and nothing but the operator approves a definition.
 
 ## §app.project-services/self-host — When the project is Sova itself
 
@@ -584,6 +588,32 @@ whose main pid changed since the schedule was restarted already, so it does noth
 is a line in `<state root>/project-services/logs/restart-gate.log`. A unit that is not loaded
 answers `not-found`; a host where `systemd-run` can't schedule it answers `unsupported`; nothing
 restarts in either case.
+
+## §app.project-services/on-merge — The main checkout's copy follows main
+
+- **What reloads.** Whenever main's HEAD moves (the commit the project root's checkout has checked
+  out), Sova runs `apply` (§app.project-services/apply) on the main checkout's copy (slot 0) for its
+  services that declare `onMerge: "reload"` (§app.project-services/contract) and that the copy wants
+  running, as Sova itself (the `system` caller, §app.project-services/callers): each one's `build`
+  when its fingerprint changed, then its `reload`. Other services, other slots and a stopped
+  service are left as they are: onMerge never starts anything. Main's definition is the one read,
+  so an unapproved one is refused (`not-approved`) and nothing reloads.
+- **When.** At once after Sova's Merge Branch (§app.project-overseer/coding-worktrees), never
+  holding the merge up; otherwise within 5 minutes, by a check of the HEAD of every project with a
+  main checkout copy (a hand `git merge`, a release, the operator's own commit or checkout). The
+  HEAD last seen per project is kept in `<state root>/project-services/on-merge.json`, so a move
+  while Sova was stopped is found at its next check. A project's first check only records its HEAD,
+  except right after Merge Branch, which moved it. One check runs per project at a time: a move
+  reloads once.
+- **Never on Sova itself.** On the checkout this Sova server runs from
+  (§app.project-services/self-host) nothing reloads; the note says so. An adopted slot 0
+  (§app.project-services/adopt) is under the self-host rule, which refuses the system caller.
+- **A note for each outcome.** Each outcome is a line in the project's Software card feed
+  (§app.project-runtime/software-card) and the server's log: "Main moved to {sha7}: onMerge
+  reloaded {services} on the main checkout's copy.", "Main moved to {sha7}: onMerge could not
+  reload {services}: {reason}." or "Main moved to {sha7}: onMerge never reloads the checkout this
+  Sova runs from; apply it from the Services tab." The newest 10 per project are kept. A move with
+  nothing carrying the key running writes no line.
 
 ## §app.project-services/services-ui — The Services tab and Running copies
 

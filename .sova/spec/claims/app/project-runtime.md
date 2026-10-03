@@ -150,7 +150,9 @@ in the contract's key order), exiting 0 when all is well, 1 when it found someth
    `share.endpoints` only the ports a stakeholder should open (the app's page, a public API), never
    a REPL, nREPL, shadow-cljs, debugger, metrics, database or admin port nor a shared service, and
    declares `share: {"allow": false}` when a resource is sensitive or nothing is for a stakeholder to
-   see; its report says which.
+   see; its report says which. It declares a service's `onMerge: "reload"` only when the main
+   checkout's running copy of it should follow main and loses nothing by reloading, never on a
+   REPL, a long-running job or a datastore; its report's service line says "reloads on merge".
 5. On its own branch only, writes `.sova/project.json`, the project's helper scripts under
    `.sova/bin/`, the probe hook, a test command with a green smoke selection, `about` lines, and
    the smallest app change that reads its ports and data from the environment with today's literal
@@ -197,7 +199,8 @@ declared", with an Orphan chip in warn; one row per data resource (name and kind
 one with a Sensitive chip in warn whose title says "Derived from production: copies of it are never
 shared."; "Proven {time} at {hash12} (suite v{n})";
 "Changed since: {paths}" while stale; "Failed at {check}: {detail}" while failed; the playbook
-run's session as a link; and the registry's latest feed lines, newest first. Its actions are
+run's session as a link; and the registry's latest feed lines, newest first, with
+the project's onMerge notes (§app.project-services/on-merge) among them. Its actions are
 **Run Playbook** (**Run Again** once registered) and **Approve {hash12}**, each shown only while
 the statechart would take it. Under its service rows, **Open Services** links to the project's
 Services tab (§app.project-services/services-ui), where each copy is started, stopped and read.

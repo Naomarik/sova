@@ -568,7 +568,8 @@ user row.
   (§app.project-services/teardown, as the operator), which also ends its share links; if the teardown
   fails, nothing is removed and the refusal says why ("Its running copy could not be torn down:
   …"). Merge Branch never touches the copy: it keeps running, with its links, until it is stopped or
-  torn down, or its worktree is removed. On a missing folder it only clears git's record of
+  torn down, or its worktree is removed. Merge Branch also reloads the main copy's onMerge services
+  at once (§app.project-services/on-merge). On a missing folder it only clears git's record of
   it (and deletes a merged branch). The
   session and its transcript stay; its row says "Worktree removed", and `sova_send` refuses it:
   "Its worktree was removed, so it has no folder to work in." Nothing is removed on its own, a

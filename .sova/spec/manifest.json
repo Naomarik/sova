@@ -5237,7 +5237,9 @@
         "statecharts/test/sova/statecharts/refit/started_test.cljc",
         "server/org-started.test.ts",
         "server/project-services/checkout-teardown.ts",
-        "server/project-services/checkout-teardown.test.ts"
+        "server/project-services/checkout-teardown.test.ts",
+        "server/project-services/on-merge.ts",
+        "server/project-services/on-merge.test.ts"
       ]
     },
     "§app.requirements/promotion-commit": {
@@ -9178,7 +9180,10 @@
         "src/lib/previews.test.ts",
         "src/shares.css",
         "src/lib/preview-rows.ts",
-        "src/lib/preview-rows.test.ts"
+        "src/lib/preview-rows.test.ts",
+        "server/project-previews.ts",
+        "server/project-previews.test.ts",
+        "shared/preview-links.ts"
       ]
     },
     "§mesh.public/preview-limits": {
@@ -10070,7 +10075,8 @@
         "server/share/preview-proxy.ts",
         "server/index.ts",
         "server/preview-links-routes.ts",
-        "server/project-previews.test.ts"
+        "server/project-previews.test.ts",
+        "src/components/PreviewsCard.tsx"
       ]
     },
     "§app.overseer/project-card-clicks": {
@@ -10498,7 +10504,9 @@
         "server/project-overseer-tools-statecharts.test.ts",
         "server/project-overseer-tools.test.ts",
         "server/project-services/test-verb.test.ts",
-        "server/project-services/share.test.ts"
+        "server/project-services/share.test.ts",
+        "server/project-services/on-merge.ts",
+        "server/project-services/on-merge.test.ts"
       ]
     },
     "§app.project-services/conform": {
@@ -10759,7 +10767,8 @@
         "server/project-services/note.test.ts",
         "server/project-services/observe.test.ts",
         "shared/project-contract.ts",
-        "server/project-services/share.test.ts"
+        "server/project-services/share.test.ts",
+        "shared/project-contract.test.ts"
       ]
     },
     "§app.project-services/up": {
@@ -11991,7 +12000,10 @@
         "src/lib/project-software.ts",
         "src/lib/project-software.test.ts",
         "src/lib/api.ts",
-        "src/projects.css"
+        "src/projects.css",
+        "server/projects/runtime.ts",
+        "server/project-services/on-merge.ts",
+        "server/project-services/on-merge.test.ts"
       ],
       "requires": [
         "§app.project-runtime/registry"
@@ -12159,6 +12171,26 @@
         "server/project-services/adopt.test.ts",
         "server/project-services/restart-gate.test.ts",
         "CLAUDE.md"
+      ]
+    },
+    "§app.project-services/on-merge": {
+      "kind": "behavior",
+      "requires": [
+        "§app.project-services/contract",
+        "§app.project-services/apply",
+        "§app.project-services/callers",
+        "§app.project-services/self-host",
+        "§app.project-services/trust"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/project-services/on-merge.ts",
+        "server/project-services/on-merge.test.ts",
+        "server/build-loadout.ts",
+        "server/projects/runtime.ts",
+        "server/project-services/engine.ts",
+        "shared/project-contract.ts"
       ]
     }
   },

@@ -10,7 +10,7 @@ import { normalizeMergeDetails, restoreActive, type TrackedWorktree, WORKTREE_ME
 import { deferredOf, followUpFor, type FollowUpInput, type MergeFollowUps } from "./merge-followup";
 import { asksUserOf } from "./signals-store";
 import { activeBranch, type Entry } from "./transcript";
-import { execGit, type GitRunner, worktreeInsights, type WorktreeInsights } from "./worktrees";
+import { DIRTY_TTL_MS, execGit, type GitRunner, worktreeInsights, type WorktreeInsights, worktreeStamp } from "./worktrees";
 import { goneTreeState, type GoneState } from "./removed-worktrees";
 
 /**
@@ -29,6 +29,10 @@ import { goneTreeState, type GoneState } from "./removed-worktrees";
 
 /** An answer stands this long while nothing about the row changes. */
 export const READINESS_TTL_MS = 20_000;
+/** An idle session's merged, clean tree: its dirty reading stands this long (§chat.worktrees/dirty-freshness). */
+export const IDLE_DIRTY_TTL_MS = 5 * 60_000;
+/** A settled session (nothing running, every tree merged and clean) is re-read this often (§app/idle-git-cache). */
+export const SETTLED_TTL_MS = 5 * 60_000;
 /** The reply tail the merge-ask fallback reads. */
 export const ASK_TAIL = 600;
 /** The reply tail kept for the follow-up check, after its closing spec lines are cut. */
@@ -487,7 +491,7 @@ export async function readReadinessScan(path: string, size: number, prev: Readin
 export const PROCESS_START_MS = Date.now() - process.uptime() * 1000;
 
 export interface ReadinessDeps {
-  insights: Pick<WorktreeInsights, "treeStatus"> & Partial<Pick<WorktreeInsights, "pushed">>;
+  insights: Pick<WorktreeInsights, "treeStatus"> & Partial<Pick<WorktreeInsights, "pushed" | "dirtyLifetime">>;
   git: GitRunner;
   /** The folder this server's code runs from (its checkout). */
   serverDir: string;
@@ -501,6 +505,8 @@ export interface ReadinessDeps {
   asksUser?: (sessionId: string) => { turnId: string; asks: boolean } | undefined;
   /** A gone folder's branch, read from `dirs` (§chat.worktrees/readiness). */
   gone: (t: TrackedWorktree, dirs: readonly string[]) => Promise<GoneState>;
+  /** A tree's index/HEAD/branch stamp, read without Git; null when it can't be read (worktreeStamp). */
+  treeStamp?: (dir: string) => string | null;
 }
 
 const defaultDeps = (): ReadinessDeps => ({
@@ -511,6 +517,7 @@ const defaultDeps = (): ReadinessDeps => ({
   now: Date.now,
   asksUser: (id) => asksUserOf(id),
   gone: (t, dirs) => goneTreeState(t, dirs),
+  treeStamp: worktreeStamp,
 });
 
 let deps: ReadinessDeps = defaultDeps();
@@ -599,7 +606,7 @@ export async function goneWorkOf(t: TrackedWorktree, dirs: readonly string[]): P
 }
 
 /** A session's readiness now: git, the file's facts and the row. */
-export async function computeReadiness(s: SessionSummary, facts: FileFacts, publishChecks: () => boolean = () => true): Promise<SessionReadiness | undefined> {
+export async function computeReadiness(s: SessionSummary, facts: FileFacts, publishChecks: () => boolean = () => true, fresh = false): Promise<SessionReadiness | undefined> {
   const own = facts.trees.filter((t) => t.status !== "dropped" && t.session === s.id);
   if (own.length === 0) {
     if (publishChecks()) checksBySession.delete(s.path);
@@ -613,6 +620,7 @@ export async function computeReadiness(s: SessionSummary, facts: FileFacts, publ
     asks = signal && signal.turnId === reply.id ? signal.asks : asksToMerge(reply.text);
   }
   const sf: SessionFacts = { running, openQuestions: s.align?.openQuestions ?? 0, asks, ...(facts.lastCheck ? { lastCheck: facts.lastCheck } : {}) };
+  for (const t of own) deps.insights.dirtyLifetime?.(t.path, dirtyTtlFor(s, t.path, fresh));
   const trees: WorktreeReadiness[] = [];
   const heads: Record<string, number> = {};
   for (const t of own) {
@@ -679,6 +687,11 @@ interface Cached {
   at: number;
   /** The row the answer was computed for: an explicit inspection re-reads with it. */
   row: SessionSummary;
+  /** A tree's dirty reading may have stood IDLE_DIRTY_TTL_MS: an inspection re-reads it. */
+  longDirty?: boolean;
+  /** Settled when computed (every tree merged and clean): its trees' stamps, which each listing
+      compares to re-read at once on a commit, checkout or branch switch. */
+  stamps?: string;
 }
 
 interface RefreshInput { row: SessionSummary; key: string; file: string; size: number }
@@ -694,7 +707,29 @@ const sameInput = (a: RefreshInput, b: RefreshInput) => a.key === b.key && a.fil
 const cache = new Map<string, Cached>();
 const queued = new Map<string, RefreshInput>();
 const active = new Map<string, RefreshInput>();
+/** Sessions an explicit inspection asked to re-read every tree's dirty state for. */
+const forced = new Set<string>();
 let draining: Promise<void> | null = null;
+
+/** How long a tree's dirty reading may stand in this refresh (§chat.worktrees/dirty-freshness):
+    0 when the file or row moved or someone looked, 5 minutes for an idle session's merged, clean
+    tree, else DIRTY_TTL_MS. */
+/** Nothing running and every tree merged and clean: re-read every SETTLED_TTL_MS (§app/idle-git-cache). */
+function settled(s: SessionSummary, value: SessionReadiness | undefined): boolean {
+  return !runningNow(s) && !!value?.trees.length && value.trees.every((t) => t.state === "merged");
+}
+
+/** The trees' stamps, or undefined when one can't be read: that session keeps the 20 s cadence. */
+function stampsOf(paths: readonly string[]): string | undefined {
+  const parts = paths.map((p) => deps.treeStamp?.(p) ?? null);
+  return parts.some((p) => p === null) ? undefined : parts.join("\n");
+}
+
+function dirtyTtlFor(s: SessionSummary, treePath: string, fresh: boolean): number {
+  if (fresh) return 0;
+  const before = cache.get(s.path)?.value?.trees.find((t) => t.path === treePath);
+  return !runningNow(s) && before?.state === "merged" ? IDLE_DIRTY_TTL_MS : DIRTY_TTL_MS;
+}
 
 /** The row's state the answer depends on besides git: a change re-reads at once. */
 const rowKey = (s: SessionSummary) =>
@@ -729,13 +764,18 @@ async function refresh(input: RefreshInput): Promise<void> {
   const previousScan = prev?.file === input.file ? prev.scan : null;
   const { scan, facts } = await readReadinessScan(s.path, input.size, previousScan);
   if (!current()) return;
-  const value = facts ? await computeReadiness(s, facts, current) : undefined;
+  const fresh = forced.delete(s.path) || !prev || prev.key !== input.key || prev.file !== input.file;
+  const longDirty = !fresh && !!facts?.trees.some((t) => dirtyTtlFor(s, t.path, false) > DIRTY_TTL_MS);
+  // Taken before Git is read: a commit landing during the read is never certified as seen.
+  const before = facts ? stampsOf(facts.trees.filter((t) => t.status !== "dropped" && t.session === s.id).map((t) => t.path)) : undefined;
+  const value = facts ? await computeReadiness(s, facts, current, fresh) : undefined;
   if (!current()) return;
-  cache.set(s.path, { scan, facts, ...(value ? { value } : {}), key: input.key, file: input.file, at: deps.now(), row: s });
+  const stamps = settled(s, value) ? before : undefined;
+  cache.set(s.path, { scan, facts, ...(value ? { value } : {}), key: input.key, file: input.file, at: deps.now(), row: s, longDirty, ...(stamps ? { stamps } : {}) });
   if (facts && value && (await checkFollowUps(s, facts, value).catch(() => false))) {
     if (!current()) return;
     const again = await computeReadiness(s, facts, current);
-    if (current()) cache.set(s.path, { scan, facts, ...(again ? { value: again } : {}), key: input.key, file: input.file, at: deps.now(), row: s });
+    if (current()) cache.set(s.path, { scan, facts, ...(again ? { value: again } : {}), key: input.key, file: input.file, at: deps.now(), row: s, longDirty, ...(stamps ? { stamps } : {}) });
   }
 }
 
@@ -772,8 +812,12 @@ export function readinessOverlay(s: SessionSummary): SessionReadiness | undefine
     else queued.set(s.path, input);
     return hit?.value;
   }
-  const moved = !hit || hit.key !== input.key || hit.file !== input.file;
-  const aged = !parked(s) && !!hit?.scan?.found && deps.now() - hit.at >= READINESS_TTL_MS;
+  // A settled answer stands SETTLED_TTL_MS while its trees' index, HEAD and branch stay put.
+  const settledHit = !!hit?.stamps && !runningNow(s);
+  const treesMoved = settledHit && stampsOf(hit!.value?.trees.map((t) => t.path) ?? []) !== hit!.stamps;
+  if (treesMoved) forced.add(s.path);
+  const moved = !hit || hit.key !== input.key || hit.file !== input.file || treesMoved;
+  const aged = !parked(s) && !!hit?.scan?.found && deps.now() - hit.at >= (settledHit ? SETTLED_TTL_MS : READINESS_TTL_MS);
   if (moved || aged) {
     queued.set(s.path, input);
     void drain();
@@ -787,6 +831,7 @@ export function pruneReadiness(listed: readonly SessionSummary[]): void {
   for (const k of cache.keys()) if (!paths.has(k)) cache.delete(k);
   for (const k of queued.keys()) if (!paths.has(k)) queued.delete(k);
   for (const k of active.keys()) if (!paths.has(k)) active.delete(k);
+  for (const k of forced) if (!paths.has(k)) forced.delete(k);
   for (const k of checksBySession.keys()) if (!paths.has(k)) checksBySession.delete(k);
   deps.followUps?.prune(new Set(listed.map((s) => s.id)));
 }
@@ -810,12 +855,18 @@ export function treeReadinessOf(sessionPath: string, treePath: string): Worktree
   return cache.get(sessionPath)?.value?.trees.find((t) => t.path === treePath);
 }
 
-/** An explicit look at a parked session: the cached answer stands for this call, and one fresh read
-    is queued when it is older than READINESS_TTL_MS (joining any queued or active one). */
+/** An explicit look: the cached answer stands for this call, and one fresh read of every tree,
+    dirty state included, is queued (joining any queued or active one) for a parked session whose
+    answer is older than READINESS_TTL_MS, a session whose trees' dirty readings may have stood
+    IDLE_DIRTY_TTL_MS (§chat.worktrees/dirty-freshness), or a settled one whose answer is
+    DIRTY_TTL_MS old (§app/idle-git-cache). */
 function inspected(sessionPath: string): void {
   const hit = cache.get(sessionPath);
-  if (!hit || !parked(hit.row) || !hit.scan?.found || deps.now() - hit.at < READINESS_TTL_MS) return;
+  if (!hit || !hit.scan?.found) return;
+  const age = deps.now() - hit.at;
+  if (parked(hit.row) ? age < READINESS_TTL_MS : !hit.longDirty && !(hit.stamps && age >= DIRTY_TTL_MS)) return;
   if (active.has(sessionPath) || queued.has(sessionPath)) return;
+  forced.add(sessionPath);
   queued.set(sessionPath, fileInput(hit.row));
   void drain();
 }
@@ -826,6 +877,7 @@ export function resetReadiness(): void {
   cache.clear();
   queued.clear();
   active.clear();
+  forced.clear();
   checksBySession.clear();
   restartBySha.clear();
   serverCheckout = null;

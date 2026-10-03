@@ -148,6 +148,7 @@ import { configureReadiness } from "./merge-readiness";
 import { startSessionTags, tagRoutes } from "./tags-backfill";
 import { pushRoutes } from "./push-routes";
 import { readLiveRecords } from "./live";
+import { sessionsChanged } from "./list-generation";
 import { resourceMonitor, startResourceMonitor, stopResourceMonitor } from "./resource-monitor";
 import { defaultAdapters } from "./worker-adapters";
 import { serverRedactor } from "./overseer-redact";
@@ -191,6 +192,18 @@ app.use("*", async (c, next) => {
     // a proxied answer's headers are immutable: copy it
     c.res = new Response(c.res.body, c.res);
     c.res.headers.set(SERVER_HEADER, "sova");
+  }
+});
+
+// A request that may change something starts the next session listing afresh, before it runs and
+// again once it answered, so its caller's next listing shows the change (§app.session-list/listing-reuse).
+app.use("*", async (c, next) => {
+  const writes = c.req.method !== "GET" && c.req.method !== "HEAD";
+  if (writes) sessionsChanged();
+  try {
+    await next();
+  } finally {
+    if (writes) sessionsChanged();
   }
 });
 

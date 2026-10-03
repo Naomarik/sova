@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import type { PromoteCommit } from "../shared/decisions";
 import { type Git, probeMerge, runGit } from "../pi-config/extensions/worktrees/git.ts";
@@ -108,7 +108,9 @@ async function mergedInto(git: Git, cwd: string, w: WorktreeRecord): Promise<boo
 
 /** The worktree's uncommitted files (tracked changes and untracked files). Also archive's worktree cleanup's check (server/archive-worktrees.ts). */
 export async function uncommitted(git: Git, dir: string): Promise<string[]> {
-  const st = await git(["status", "--porcelain=v1", "-z", "--untracked-files=all"], dir);
+  // Read-only, like server/worktrees.ts: a page read never refreshes the index (index.lock) of a
+  // worktree a session is working in, nor starts an fsmonitor daemon.
+  const st = await git(["-c", "core.fsmonitor=false", "--no-optional-locks", "status", "--porcelain=v1", "-z", "--untracked-files=all"], dir);
   if (st.code !== 0) throw new WorktreeRefusal(firstLine(st.stderr || st.stdout));
   const out: string[] = [];
   const parts = st.stdout.split("\0");
@@ -135,20 +137,70 @@ export interface WorktreeReading {
   error?: string;
 }
 
+type RefsPart = Pick<WorktreeReading, "branch" | "ahead" | "unmerged" | "merged">;
+/** The refs part of each worktree's last reading, kept while the ref files it was read from stand:
+    the project page re-reads every coding session's worktree on each poll. Dirty is read every time. */
+const refReadings = new Map<string, { token: string; value: RefsPart }>();
+const REF_READINGS_MAX = 512;
+
+/** What the refs part of a reading depends on: the branch and target refs (loose and packed) and the
+    fixed base. null when they can't be named (a reftable store, an unreadable `.git`): Git answers. */
+function refsToken(cwd: string, w: WorktreeRecord): string | null {
+  const stamp = (path: string): string => {
+    try {
+      const st = statSync(path, { bigint: true });
+      return `${st.ino}:${st.size}:${st.mtimeNs}:${st.ctimeNs}`;
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === "ENOENT") return "absent";
+      throw err;
+    }
+  };
+  try {
+    const dotGit = join(cwd, ".git");
+    let common = dotGit;
+    if (!statSync(dotGit).isDirectory()) {
+      const gitDir = /^gitdir: (.+?)\s*$/m.exec(readFileSync(dotGit, "utf8"))?.[1];
+      if (!gitDir) return null;
+      const abs = resolve(cwd, gitDir);
+      common = existsSync(join(abs, "commondir")) ? resolve(abs, readFileSync(join(abs, "commondir"), "utf8").trim()) : abs;
+    }
+    if (existsSync(join(common, "reftable"))) return null;
+    return [cwd, common, w.base, w.branch, w.target, stamp(join(common, "packed-refs")), stamp(join(common, "refs", "heads", w.branch)), stamp(join(common, "refs", "heads", w.target))].join("\0");
+  } catch {
+    return null;
+  }
+}
+
+async function readRefsPart(w: WorktreeRecord, cwd: string, git: Git): Promise<RefsPart> {
+  // Only the real runner reads real refs; an injected one is asked every time.
+  const token = git === runGit ? refsToken(cwd, w) : null;
+  const hit = token ? refReadings.get(w.path) : undefined;
+  if (hit && hit.token === token) return hit.value;
+  const branch = (await branchSha(git, cwd, w.branch)) !== null;
+  const count = async (range: string) => {
+    const n = await git(["rev-list", "--count", range], cwd);
+    return n.code === 0 ? Number(n.stdout.trim()) || 0 : 0;
+  };
+  const ahead = await count(`${w.base}..refs/heads/${w.branch}`);
+  const unmerged = branch ? await count(`refs/heads/${w.target}..refs/heads/${w.branch}`) : 0;
+  const merged = await mergedInto(git, cwd, w);
+  const value = { branch, ahead, unmerged, merged };
+  // A ref that moved during the read leaves nothing behind: the next read asks Git again.
+  if (token && refsToken(cwd, w) === token) {
+    refReadings.delete(w.path);
+    refReadings.set(w.path, { token, value });
+    if (refReadings.size > REF_READINGS_MAX) refReadings.delete(refReadings.keys().next().value!);
+  }
+  return value;
+}
+
 /** What the project page shows of one session's worktree, read from git on this host (from the root when its folder is gone). */
 export async function readWorktree(w: WorktreeRecord, root: string, git: Git = runGit): Promise<WorktreeReading> {
   const here = existsSync(w.path);
   const cwd = here ? w.path : root;
   try {
     if (!existsSync(cwd)) return { state: "missing", merged: false, branch: false, ahead: 0, unmerged: 0, dirty: false, worktree: null };
-    const branch = (await branchSha(git, cwd, w.branch)) !== null;
-    const count = async (range: string) => {
-      const n = await git(["rev-list", "--count", range], cwd);
-      return n.code === 0 ? Number(n.stdout.trim()) || 0 : 0;
-    };
-    const ahead = await count(`${w.base}..refs/heads/${w.branch}`);
-    const unmerged = branch ? await count(`refs/heads/${w.target}..refs/heads/${w.branch}`) : 0;
-    const merged = await mergedInto(git, cwd, w);
+    const { branch, ahead, unmerged, merged } = await readRefsPart(w, cwd, git);
     const dirty = here ? (await uncommitted(git, w.path)).length > 0 : false;
     return { state: !here ? "missing" : merged ? "merged" : "open", merged, branch, ahead, unmerged, dirty, worktree: here ? w.path : null };
   } catch (err) {

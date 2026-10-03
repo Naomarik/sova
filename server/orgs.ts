@@ -59,6 +59,7 @@ import { gitStatus, initRepo, isIgnoredBy, isInGitWorkTree } from "./workspace-g
 
 import { OrgError } from "./org-error";
 import { setOrgVisitsDir } from "./visits";
+import { sessionsChanged } from "./list-generation";
 export { OrgError };
 
 const INDEX_VERSION = 1;
@@ -85,6 +86,7 @@ function writeJson(file: string, value: unknown): void {
   const tmp = `${file}.${process.pid}.tmp`;
   writeFileSync(tmp, `${JSON.stringify(value, null, 2)}\n`);
   renameSync(tmp, file);
+  sessionsChanged(); // the org registry decides rows' org fields and session roots
 }
 
 function readJson(file: string): unknown {

@@ -1,6 +1,7 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { stateRoot } from "./state-root";
+import { sessionsChanged } from "./list-generation";
 
 /** Persistent set of session ids the user archived by hand (SessionSummary.archived). */
 const FILE = join(stateRoot(), "archived-sessions.json");
@@ -33,5 +34,6 @@ export function setArchived(id: string, on: boolean): void {
   const tmp = `${FILE}.${process.pid}.tmp`;
   writeFileSync(tmp, JSON.stringify([...next]));
   renameSync(tmp, FILE);
+  sessionsChanged();
   ids = next;
 }

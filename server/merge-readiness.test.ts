@@ -11,6 +11,7 @@ import type { ReadinessState, SessionSummary, WorktreeStatus } from "../shared/p
 import type { FileFacts } from "./merge-readiness";
 import type { GitResult } from "./worktrees";
 const r = await import("./merge-readiness");
+const { DIRTY_TTL_MS } = await import("./worktrees");
 const { createFakeProvider } = await import("./decide-fake");
 const { MergeFollowUps } = await import("./merge-followup");
 
@@ -792,4 +793,95 @@ test("a gone folder whose branch the Merge Captain deleted reads merged from the
   } finally {
     r.resetReadiness();
   }
+});
+
+test("dirty lifetimes (§chat.worktrees/dirty-freshness): an idle session's merged, clean tree holds 5 minutes; running, unmerged, moved and inspected read sooner", async () => {
+  r.resetReadiness();
+  const path = sessionFile(chain([worktrees([tracked()], "2026-09-29T15:36:00.000Z")]));
+  const row = summary(path);
+  let now = 0, merged = true;
+  const asked: number[] = [];
+  const last = () => asked.at(-1);
+  // Unreadable stamps keep the 20 s cadence (settled sessions have their own test below).
+  r.configureReadiness({ now: () => now, asksUser: () => undefined, treeStamp: () => null, insights: {
+    treeStatus: async () => ({ ...readyStatus(), ...(merged ? { merged: "ancestor" as const, ahead: 0 } : {}) }),
+    dirtyLifetime: (dir, ms) => { assert.equal(dir, tracked().path); asked.push(ms); },
+  } });
+  try {
+    r.readinessOverlay(row); await r.readinessIdle();
+    assert.equal(r.readinessOverlay(row)?.trees[0]?.state, "merged");
+    assert.equal(last(), 0, "first sight reads now");
+    now += r.READINESS_TTL_MS;
+    r.readinessOverlay(row); await r.readinessIdle();
+    assert.equal(last(), r.IDLE_DIRTY_TTL_MS, "idle, merged and clean: the long lifetime");
+    assert.equal(r.treeReadinessOf(path, tracked().path)?.state, "merged", "an inspection answers from cache at once");
+    await r.readinessIdle();
+    assert.equal(last(), 0, "and re-reads the dirty state now");
+    r.treeReadinessOf(path, tracked().path); await r.readinessIdle();
+    assert.equal(asked.length, 3, "a second look right after reads nothing more");
+    now += r.READINESS_TTL_MS;
+    r.readinessOverlay({ ...row, busy: true }); await r.readinessIdle();
+    assert.equal(last(), 0, "a row change reads now");
+    now += r.READINESS_TTL_MS;
+    r.readinessOverlay({ ...row, busy: true }); await r.readinessIdle();
+    assert.equal(last(), DIRTY_TTL_MS, "running: 10 seconds");
+    now += r.READINESS_TTL_MS;
+    writeFileSync(path, `${JSON.stringify({ type: "custom", customType: "note", data: {}, timestamp: "2026-09-29T15:37:00.000Z" })}\n`, { flag: "a" });
+    r.readinessOverlay({ ...row, busy: true }); await r.readinessIdle();
+    assert.equal(last(), 0, "a file change reads now");
+    merged = false;
+    now += r.READINESS_TTL_MS;
+    r.readinessOverlay(row); await r.readinessIdle();
+    now += r.READINESS_TTL_MS;
+    r.readinessOverlay(row); await r.readinessIdle();
+    assert.equal(r.readinessOverlay(row)?.trees[0]?.state, "ready");
+    assert.equal(last(), DIRTY_TTL_MS, "an unmerged tree keeps 10 seconds while idle");
+    const before = asked.length;
+    r.treeReadinessOf(path, tracked().path); await r.readinessIdle();
+    assert.equal(asked.length, before, "no long reading, so an inspection queues nothing");
+  } finally { await r.readinessIdle(); r.resetReadiness(); }
+});
+
+test("settled sessions (§app/idle-git-cache): idle with every tree merged and clean, re-read every 5 minutes; a moved tree, a turn or a look re-read at once", async () => {
+  r.resetReadiness();
+  const path = sessionFile(chain([worktrees([tracked()], "2026-09-29T15:36:00.000Z")]));
+  const row = summary(path);
+  let now = 0, reads = 0, stamp = "s1", merged = true;
+  const asked: number[] = [];
+  r.configureReadiness({ now: () => now, asksUser: () => undefined, treeStamp: () => stamp, insights: {
+    treeStatus: async () => { reads++; return { ...readyStatus(), ...(merged ? { merged: "ancestor" as const, ahead: 0 } : {}) }; },
+    dirtyLifetime: (_dir, ms) => { asked.push(ms); },
+  } });
+  const tick = async (ms: number, over: Partial<SessionSummary> = {}) => { now += ms; r.readinessOverlay({ ...row, ...over }); await r.readinessIdle(); };
+  try {
+    await tick(0);
+    assert.equal(r.readinessOverlay(row)?.trees[0]?.state, "merged");
+    assert.equal(reads, 1);
+    for (let i = 0; i < 10; i++) await tick(r.READINESS_TTL_MS);
+    assert.equal(reads, 1, "settled: no 20 s re-reads");
+    await tick(r.SETTLED_TTL_MS - 10 * r.READINESS_TTL_MS);
+    assert.equal(reads, 2, "re-read once 5 minutes passed");
+    stamp = "s2"; // a commit, checkout or branch switch in the tree
+    await tick(1);
+    assert.equal(reads, 3, "a moved tree re-reads at once");
+    assert.equal(asked.at(-1), 0, "dirty state included");
+    await tick(r.READINESS_TTL_MS);
+    assert.equal(reads, 3);
+    now += DIRTY_TTL_MS;
+    assert.equal(r.treeReadinessOf(path, tracked().path)?.state, "merged", "opening it answers from cache at once");
+    await r.readinessIdle();
+    assert.equal(reads, 4, "and re-reads it");
+    r.treeReadinessOf(path, tracked().path); await r.readinessIdle();
+    assert.equal(reads, 4, "a second look within 10 s reads nothing more");
+    await tick(1, { busy: true });
+    assert.equal(reads, 5, "a turn starting re-reads at once");
+    await tick(r.READINESS_TTL_MS, { busy: true });
+    assert.equal(reads, 6, "running: the 20 s cadence");
+    merged = false;
+    await tick(1);
+    assert.equal(r.readinessOverlay(row)?.trees[0]?.state, "ready");
+    const before = reads;
+    await tick(r.READINESS_TTL_MS);
+    assert.equal(reads, before + 1, "not merged: the 20 s cadence");
+  } finally { await r.readinessIdle(); r.resetReadiness(); }
 });

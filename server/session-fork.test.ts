@@ -15,7 +15,8 @@ mkdirSync(cwd, { recursive: true });
 
 const { forkSessionFile, forkPrefix, parseSourceDoc, reconstructPath, activeBranchLines } = await import("./session-fork");
 const { canonicalPath } = await import("./paths");
-const { FORK_CACHE_ENTRY, inheritedCacheKey } = await import("./session-fork-cache");
+const { FORK_CACHE_ENTRY, inheritedCacheKey } = await import("../pi-config/extensions/subagents/fork/cache.ts");
+const { normalizeEntries } = await import("./transcript");
 const { SessionManager } = await import("@earendil-works/pi-coding-agent");
 const { restoreActive: restoreWorktrees, sharedWith } = await import("../pi-config/extensions/worktrees/state.ts");
 const { restoreActive: restoreMode } = await import("../pi-config/extensions/mode/state.ts");
@@ -392,4 +393,16 @@ test("copied wake schedules cannot re-arm, while their model-visible history is 
   assert.deepEqual(copiedResult.content, wakeMessage.content);
   assert.deepEqual({ ...copiedResult, details: wakeMessage.details }, wakeMessage);
   check();
+});
+
+test("cache metadata creates neither model context nor a transcript notice", () => {
+  const entries: any[] = [
+    { type: "session", version: 3, id: "child", timestamp: new Date(0).toISOString(), cwd: "/tmp/fork" },
+    { type: "message", id: "u1", parentId: null, timestamp: new Date(0).toISOString(), message: { role: "user", content: "hello", timestamp: 0 } },
+    { type: "custom", customType: FORK_CACHE_ENTRY, data: { v: 1, key: "root" }, id: "cache", parentId: "u1", timestamp: new Date(0).toISOString() },
+  ];
+  const manager = SessionManager.inMemory("/tmp/fork", undefined, entries);
+  assert.deepEqual(manager.buildSessionProjection().messages.map((m: any) => m.role), ["user"]);
+  assert.deepEqual(normalizeEntries(entries).map((row) => row.kind), ["user"]);
+  assert.equal(manager.getSessionId(), "child", "cache affinity is not the conversation id");
 });

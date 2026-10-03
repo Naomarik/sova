@@ -1237,7 +1237,9 @@ is the same gesture with a mouse and a thumb: one Pointer Events path. The pure 
   the polite region.
 - **Dropping.** On a group, the row goes into it (`setSessionGroup`) with the group toasts: "Added
   to “{name}”." · "Moved to “{name}”." · "Removed from “{name}”.". On Archive, the row is archived:
-  `POST /api/sessions/archive`, then "Archived. Find it under Archive." with `Undo`, whose toast is
+  the row moves immediately while `POST /api/sessions/archive` is pending, then
+  "Archived. Find it under Archive." with `Undo`. Failure restores its previous archive state;
+  stale polls cannot undo the local change. Undo also moves immediately and rolls back on failure; its toast is
   "Moved back to Live & web.". An organization session goes to its project's Done list instead
   (§app.session-list/organizations), and an empty husk is deleted without an Undo
   (§app.session-list/regions-top-and-archive). On `+ New group`, the overlay closes and the New
@@ -1578,7 +1580,11 @@ the top region doesn't keep every one of them forever.
   right end of the Session tab's Path heading row (§app.subagents-pane/tabs), only on web sessions. Rows are links, so it can't live in them: a button inside `<a>` is invalid and
   splits the row's single target. Dragging a row to the drop overlay's Archive tile
   (§app.session-list/drop-overlay) does the same, with an `Undo` on its toast.
-- **What it does.** `POST /api/sessions/archive { path, archived }`, then a list refresh. The id
+- **What it does.** `POST /api/sessions/archive { path, archived }`, then a list refresh.
+  Dropping on Archive moves the row immediately, before the response; Undo moves it back
+  immediately too. Pending changes and their settled result survive older list polls. A failed
+  request restores the previous archive state without discarding other updated row metadata.
+  A response with `deleted: true` removes the optimistic row entirely. The id
   goes into `~/.pi/agent/sova/archived-sessions.json`; the session file is never written, except
   that an empty husk outside any organization's workspace is deleted instead
   (§app.session-list/archive-org-guard): the server's answer says so (`deleted: true`), and the
@@ -1592,7 +1598,9 @@ the top region doesn't keep every one of them forever.
   pill.
   Archiving one is refused: the button is `aria-disabled`, and its `title` says "Open in a TUI.
   It stays on top while live." Unarchiving a live session works.
-- **Failure.** Toast: "Couldn't archive this session. {server message}". Nothing moves.
+- **Failure.** Toast: "Couldn't archive this session. {server message}". Nothing moves on a
+  failed non-drag archive action. A drag's optimistic move is restored. Failed Undo
+  restores the archived row and says "Couldn't unarchive this session. {server message}".
 - An archived session opens, chats, and searches exactly like any other row.
 
 **Accessibility.**

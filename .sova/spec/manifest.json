@@ -258,7 +258,10 @@
         "src/lib/api.ts",
         "src/lib/drag-archive.ts",
         "server/archive-org-guard.test.ts",
-        "src/components/SessionDetails.tsx"
+        "src/components/SessionDetails.tsx",
+        "src/App.tsx",
+        "src/lib/optimistic-archive.ts",
+        "src/lib/optimistic-archive.test.ts"
       ]
     },
     "§app.session-list/search": {
@@ -9762,7 +9765,7 @@
         "§app.session-list/regions-top-and-archive"
       ],
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "reviewed",
       "code": [
         "src/lib/drag-overlay.ts",
         "src/lib/drag-overlay.test.ts",
@@ -9772,7 +9775,10 @@
         "src/lib/drag-archive.test.ts",
         "src/lib/hold-select.ts",
         "src/lib/hold-select.test.ts",
-        "src/design/base.css"
+        "src/design/base.css",
+        "src/App.tsx",
+        "src/lib/optimistic-archive.ts",
+        "src/lib/optimistic-archive.test.ts"
       ]
     },
     "§chat.markdown/vis-wireframe-items": {

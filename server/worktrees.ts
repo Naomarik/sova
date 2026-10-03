@@ -564,6 +564,17 @@ export class WorktreeInsights {
     this.dirtyLifetimes.set(resolve(dir), { ms, seenAt: this.now() });
   }
 
+  /** A worktree Sova's cleanup removed (§chat.worktrees/cleanup): its folder's layout, HEAD and
+      dirty readings and its dirty lifetime go now, like an index or HEAD change. */
+  forget(dir: string): void {
+    const key = `layout:${resolve(dir)}`;
+    const layout = this.observations.get(key)?.value as Layout | null | undefined;
+    this.observations.delete(key);
+    this.dirtyLifetimes.delete(resolve(dir));
+    if (!layout) return;
+    for (const k of [...this.observations.keys()]) if (k === `dirty:${layout.gitDir}` || k.startsWith(`head:${layout.gitDir}:`)) this.observations.delete(k);
+  }
+
   private async compare(cwd: string, layout: Layout, base: { name: string; oid: string }, head: string): Promise<Comparison> {
     this.computeCount++;
     const out: Comparison = { base: base.name, merged: "no" };

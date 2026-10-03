@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -884,4 +885,63 @@ test("settled sessions (§app/idle-git-cache): idle with every tree merged and c
     await tick(r.READINESS_TTL_MS);
     assert.equal(reads, before + 1, "not merged: the 20 s cadence");
   } finally { await r.readinessIdle(); r.resetReadiness(); }
+});
+
+const gitEnv = { ...process.env, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t", GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_SYSTEM: "/dev/null" };
+const git = (cwd: string, ...args: string[]) => execFileSync("git", args, { cwd, env: gitEnv, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+const commit = (cwd: string, file: string, msg: string) => {
+  writeFileSync(join(cwd, file), `${msg}\n`);
+  git(cwd, "add", file);
+  git(cwd, "commit", "-q", "-m", msg);
+};
+
+// Right after a removal, the first look used to answer from the reading cached before it.
+test("a tree the cleanup service removes (§chat.worktrees/cleanup) reads 'Merged · cleaned up' on the first look after the removal", async () => {
+  const root = realpathSync(mkdtempSync(join(agentDir, "cleanup-")));
+  const main = join(root, "repo");
+  mkdirSync(main);
+  mkdirSync(join(root, "sessions"));
+  git(main, "init", "-q", "-b", "master");
+  commit(main, "init.txt", "init");
+  const base = git(main, "rev-parse", "HEAD");
+  const a = join(root, "wt-a");
+  const b = join(root, "wt-b");
+  git(main, "worktree", "add", "-q", "-b", "feat/a", a);
+  commit(a, "a.txt", "a: 1");
+  git(main, "merge", "-q", "--ff-only", "feat/a");
+  git(main, "worktree", "add", "-q", "-b", "feat/b", b, base);
+  commit(b, "b.txt", "b: 1");
+
+  // The session tracks both active: a merged (a cleanup leftover), b ready. Not settled, so no
+  // stamp check re-reads it on its own.
+  const SID = "01a103ed-a706-7126-a85b-000000000001";
+  const path = join(root, "sessions", `${SID}.jsonl`);
+  const tree = (p: string, branch: string) => ({ path: p, branch, base, baseBranch: "master", status: "active", session: SID, how: "created", at: 1 });
+  const entries = [{ type: "session", version: 3, id: SID, timestamp: "2026-10-04T10:00:00.000Z", cwd: main }, { type: "custom", customType: "worktrees", id: "e1", parentId: null, timestamp: "2026-10-04T10:00:01.000Z", data: { version: 1, trees: [tree(a, "feat/a"), tree(b, "feat/b")] } }];
+  writeFileSync(path, `${entries.map((e) => JSON.stringify(e)).join("\n")}\n`);
+  const row: SessionSummary = { id: SID, path, cwd: main, title: "t", createdAt: "", lastActiveAt: "2026-10-04T10:00:01.000Z", model: null, live: null, busy: false, origin: "web", archived: false };
+
+  const c = await import("./worktree-cleanup");
+  r.resetReadiness();
+  c.resetCleanup();
+  r.configureReadiness({ asksUser: () => undefined });
+  c.configureCleanup({ summary: async () => row, sessionFiles: async () => [path], readBranch: async () => entries.slice(1), processes: async () => [] });
+  try {
+    r.readinessOverlay(row);
+    await r.readinessIdle();
+    assert.equal(r.treeReadinessOf(path, a)?.reason, "Merged · still tracked active", "cached before the removal");
+    assert.equal(r.treeReadinessOf(path, b)?.state, "ready");
+
+    const res = await c.cleanupRemove(path, [a]);
+    assert.ok(res && res !== "busy");
+    assert.deepEqual(res.removed.map((x) => x.path), [a]);
+
+    assert.equal(r.treeReadinessOf(path, a)?.reason, "Merged · cleaned up", "the very first look");
+    assert.equal(r.readinessOverlay(row)?.trees.find((t) => t.path === a)?.reason, "Merged · cleaned up", "the session list too");
+    assert.equal(r.treeReadinessOf(path, b)?.state, "ready", "the other tree is untouched");
+  } finally {
+    await r.readinessIdle();
+    r.resetReadiness();
+    c.resetCleanup();
+  }
 });

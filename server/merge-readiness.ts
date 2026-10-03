@@ -6,7 +6,7 @@ import type { AttentionItem, AttentionKind, AttentionTier, ReadinessState, Sessi
 import { parseWakeNudge } from "../shared/wake";
 import { isLinkMessage } from "../shared/link-message";
 import { isTopicBatch } from "../shared/topic-message";
-import { normalizeMergeDetails, restoreActive, type TrackedWorktree, WORKTREE_MERGE_MESSAGE, WORKTREES_ENTRY_TYPE } from "../pi-config/extensions/worktrees/state.ts";
+import { canonical, normalizeMergeDetails, restoreActive, type TrackedWorktree, WORKTREE_MERGE_MESSAGE, WORKTREES_ENTRY_TYPE } from "../pi-config/extensions/worktrees/state.ts";
 import { deferredOf, followUpFor, type FollowUpInput, type MergeFollowUps } from "./merge-followup";
 import { asksUserOf } from "./signals-store";
 import { activeBranch, type Entry } from "./transcript";
@@ -491,7 +491,7 @@ export async function readReadinessScan(path: string, size: number, prev: Readin
 export const PROCESS_START_MS = Date.now() - process.uptime() * 1000;
 
 export interface ReadinessDeps {
-  insights: Pick<WorktreeInsights, "treeStatus"> & Partial<Pick<WorktreeInsights, "pushed" | "dirtyLifetime">>;
+  insights: Pick<WorktreeInsights, "treeStatus"> & Partial<Pick<WorktreeInsights, "pushed" | "dirtyLifetime" | "forget">>;
   git: GitRunner;
   /** The folder this server's code runs from (its checkout). */
   serverDir: string;
@@ -869,6 +869,23 @@ function inspected(sessionPath: string): void {
   forced.add(sessionPath);
   queued.set(sessionPath, fileInput(hit.row));
   void drain();
+}
+
+/** Sova's cleanup removed these worktrees (§chat.worktrees/cleanup): every session tracking one
+    re-reads now, its dirty readings included, the way an index or HEAD change does, and a read in
+    flight is superseded. Resolves once those reads are in, so the very next look is current. */
+export async function worktreesRemoved(paths: readonly string[]): Promise<void> {
+  if (paths.length === 0) return;
+  for (const p of paths) deps.insights.forget?.(p);
+  const gone = new Set(paths.map(canonical));
+  const reread = (path: string, input: RefreshInput) => {
+    forced.add(path);
+    queued.set(path, { ...input });
+  };
+  for (const [path, hit] of cache) if (hit.facts?.trees.some((t) => gone.has(canonical(t.path)))) reread(path, fileInput(hit.row));
+  // A read in flight may have seen the folder before it went: it never installs.
+  for (const [path, input] of active) if (!queued.has(path)) reread(path, input);
+  if (queued.size) await drain();
 }
 
 /** Tests: wait for the background reads, and start over. */

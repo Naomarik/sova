@@ -17,6 +17,7 @@ import type { SessionSummary, WorktreeCleanupKept, WorktreeCleanupPlan, Worktree
 import { runGit } from "../pi-config/extensions/worktrees/git.ts";
 import { canonical, isWithin, WORKTREES_ENTRY_TYPE } from "../pi-config/extensions/worktrees/state.ts";
 import { readStoredCwd } from "./git-summary";
+import { worktreesRemoved } from "./merge-readiness";
 import { appendLedger, mergedByContent, resetContentMerges, type RemovedWorktree } from "./removed-worktrees";
 import { sandboxInfo } from "./sandbox-state";
 import { parseTargetCwd } from "./targets";
@@ -99,6 +100,8 @@ export interface CleanupDeps {
   /** Whether a pid is a live process. */
   alive: (pid: number) => boolean;
   ledger: (entries: RemovedWorktree[]) => void;
+  /** Ends the cached readiness of every session tracking a removed tree (server/merge-readiness.ts). */
+  removed: (paths: readonly string[]) => Promise<void>;
   now: () => number;
 }
 
@@ -145,7 +148,7 @@ function pidAlive(pid: number): boolean {
 let deps: CleanupDeps | null = null;
 /** index.ts wires the session list and the branch reader; tests swap anything. */
 export function configureCleanup(d: Partial<CleanupDeps> & Pick<CleanupDeps, "summary" | "sessionFiles" | "readBranch">): void {
-  deps = { git: execGit, gitWrite: writeGit, processes: scanProcesses, alive: pidAlive, ledger: (e) => appendLedger(e), now: Date.now, readFile: (p) => readFile(p), ...d };
+  deps = { git: execGit, gitWrite: writeGit, processes: scanProcesses, alive: pidAlive, ledger: (e) => appendLedger(e), removed: worktreesRemoved, now: Date.now, readFile: (p) => readFile(p), ...d };
 }
 const need = (): CleanupDeps => {
   if (!deps) throw new Error("worktree cleanup is not configured");
@@ -565,6 +568,8 @@ export async function removeTrees(dir: string, paths: readonly string[], opts: {
     }
     if (ledger.length) d.ledger(ledger);
     summaries.delete(repo.commonDir);
+    // After the ledger: the re-read finds a deleted branch's merge there.
+    if (removed.length) await d.removed(removed.map((r) => r.path)).catch((err) => console.warn(`[cleanup] readiness: ${(err as Error).message}`));
     return { removed, kept };
   } finally {
     inFlight.delete(repo.commonDir);

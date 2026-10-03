@@ -933,8 +933,8 @@ test("finished retention is bounded, preserves live/idle and wait references, an
 		assert.deepEqual(h.updates.at(-1).details.retention, listed.details.retention);
 		controller.abort();
 		assert.doesNotMatch((await liveWait).content[0].text, /\[Retention:/);
-		assert.equal(h.messages.length, 57); // idle + selected + all 55 completions
-		assert.ok(h.messages.some(m => m[0].content.includes("selected result survives eviction")));
+		assert.equal(h.messages.length, 56); // idle + all 55 completions; the wait returned selected's
+		assert.ok(!h.messages.some(m => m[0].content.includes("selected result survives eviction")));
 		await h.call("agent_spawn", { prompt: "new", name: selected.id, groupLabel: "run_02" });
 		assert.equal(h.workers.at(-1).id, "ag_59");
 		await assert.rejects(h.call("agent_transcript", { id: selected.id }), /unavailable.*6 finished worker/);
@@ -942,6 +942,113 @@ test("finished retention is bounded, preserves live/idle and wait references, an
 		await assert.rejects(h.call("agent_transcript", { id: "missing-name" }), /No such subagent: missing-name.*6 finished worker/);
 		await assert.rejects(h.call("agent_kill", { group: "missing-label" }), /No such run: missing-label.*5 empty run/);
 		assert.equal(h.workers.at(-1).status, "running");
+	} finally { await h.close(); }
+});
+
+const completions = (h: { messages: any[] }) => h.messages.filter(([m]: any[]) => m.customType === "subagent-complete");
+
+test("agent_wait: settles it returns are not also sent as subagent-complete; a later unwaited settle is", async () => {
+	const h = harness();
+	try {
+		await h.call("agent_spawn", { agents: [{ prompt: "a" }, { prompt: "b" }, { prompt: "c" }] });
+		const [w1, w2, w3] = h.workers;
+		const waiting = h.call("agent_wait", { ids: [w1.id, w2.id, w3.id] });
+		for (const [i, w] of [w1, w2, w3].entries()) {
+			w.output = `answer ${i + 1}`;
+			w.settle();
+		}
+		assert.equal(completions(h).length, 0, "nothing is sent while the wait collects");
+		const text = (await waiting).content[0].text;
+		for (const w of [w1, w2, w3]) assert.match(text, new RegExp(`### ${w.id} \\(${w.name}\\) — waiting\\n[\\s\\S]*${w.output}`));
+		assert.equal(completions(h).length, 0, "the wait result is the parent's only copy");
+		assert.equal(h.notices.length, 3, "the toast is unchanged");
+		await h.call("agent_steer", { id: w2.id, message: "again" });
+		w2.output = "answer 2b";
+		w2.settle();
+		assert.equal(completions(h).length, 1);
+		assert.match(completions(h)[0][0].content, /answer 2b/);
+		assert.equal(completions(h)[0][1].triggerTurn, true);
+	} finally { await h.close(); }
+});
+
+for (const end of ["abort", "timeout"] as const) {
+	test(`agent_wait (${end}): a settle the cancelled or timed-out wait returned is not sent; a later one is`, async () => {
+		const h = harness();
+		try {
+			await h.call("agent_spawn", { agents: [{ prompt: "a" }, { prompt: "b" }] });
+			const [w1, w2] = h.workers;
+			const controller = new AbortController();
+			const waiting = h.call("agent_wait", { ids: [w1.id, w2.id], ...(end === "timeout" ? { timeoutSeconds: 0.3 } : {}) }, controller.signal);
+			w1.output = "w1 done";
+			w1.settle();
+			await new Promise((r) => setTimeout(r, 20));
+			assert.equal(completions(h).length, 0, "no message while the wait is pending");
+			if (end === "abort") controller.abort();
+			const result = await waiting;
+			assert.match(result.content[0].text, end === "abort" ? /^Cancelled wait/ : /^Timed out; still working: ag_02/);
+			assert.match(result.content[0].text, /### ag_01 \(.*\) — waiting\n[^#]*w1 done/);
+			await new Promise((r) => setTimeout(r, 20));
+			assert.equal(completions(h).length, 0, "no message follows the returned settle");
+			w2.output = "w2 done";
+			w2.settle();
+			assert.equal(completions(h).length, 1);
+			assert.match(completions(h)[0][0].content, /^### ag_02[\s\S]*w2 done/);
+		} finally { await h.close(); }
+	});
+}
+
+test("agent_wait: a collected settle whose worker re-ran before the wait returned is sent once", async () => {
+	const h = harness();
+	try {
+		await h.call("agent_spawn", { prompt: "a" });
+		const [w1] = h.workers;
+		const waiting = h.call("agent_wait", { ids: [w1.id], timeoutSeconds: 0.3 });
+		w1.output = "first answer";
+		w1.settle();
+		// A queued steer starts the next task before the wait looks again.
+		w1.status = "running";
+		w1.output = undefined;
+		assert.equal(completions(h).length, 0);
+		const text = (await waiting).content[0].text;
+		assert.match(text, /^Timed out; still working: ag_01/);
+		assert.doesNotMatch(text, /first answer/);
+		assert.equal(completions(h).length, 1, "the unreported settle is sent when the wait returns");
+		assert.match(completions(h)[0][0].content, /— waiting\n[^#]*first answer/);
+		assert.equal(completions(h)[0][1].triggerTurn, true);
+		await new Promise((r) => setTimeout(r, 20));
+		assert.equal(completions(h).length, 1, "exactly once");
+	} finally { await h.close(); }
+});
+
+test("agent_wait: overlapping waits release a held settle once, after the last returns, unless one returned it", async () => {
+	const h = harness();
+	try {
+		await h.call("agent_spawn", { agents: [{ prompt: "a" }, { prompt: "b" }] });
+		const [w1, w2] = h.workers;
+		// The first wait returns w1's settle; the second still sees it re-running and must not resend it.
+		const a = h.call("agent_wait", { ids: [w1.id] });
+		const b = h.call("agent_wait", { ids: [w1.id, w2.id], timeoutSeconds: 1 });
+		w1.output = "w1 first";
+		w1.settle();
+		assert.match((await a).content[0].text, /w1 first/);
+		w1.status = "running";
+		w1.output = undefined;
+		w2.output = "w2 done";
+		w2.settle();
+		assert.doesNotMatch((await b).content[0].text, /w1 first/);
+		assert.equal(completions(h).length, 0, "the first wait returned w1's settle");
+		// Neither wait returned it: one message, sent when the last of them returns.
+		const c = h.call("agent_wait", { ids: [w1.id], timeoutSeconds: 0.2 });
+		const d = h.call("agent_wait", { ids: [w1.id], timeoutSeconds: 0.6 });
+		w1.output = "w1 second";
+		w1.settle();
+		w1.status = "running";
+		w1.output = undefined;
+		await c;
+		assert.equal(completions(h).length, 0, "held until the last collector returns");
+		await d;
+		assert.equal(completions(h).length, 1);
+		assert.match(completions(h)[0][0].content, /w1 second/);
 	} finally { await h.close(); }
 });
 
@@ -3089,6 +3196,26 @@ test("routing: members report to the coordinator, the monitor stays silent, and 
 		const orphan = await h.ask("ag_02", { type: "question", message: "Anyone?" });
 		assert.equal(orphan.ok, true);
 		assert.equal(h.parentMessages("team-question").length, 1, "with no live coordinator, questions reach the operator again");
+	} finally { await h.cleanup(); }
+});
+
+test("routing: a parent agent_wait returns the coordinator's completion instead of a subagent-complete; a waited member still reports to the coordinator", async () => {
+	const h = coordinatedHarness(DEFAULTS_FILE);
+	try {
+		await h.call("team_create", { name: "Crew", objective: "Ship", members: [{ role: "dev", prompt: "build" }] });
+		const coordinator = h.worker("ag_01"), dev = h.worker("ag_02");
+		h.messages.length = 0;
+		const onCoordinator = h.call("agent_wait", { ids: ["ag_01"] });
+		coordinator.settle();
+		assert.match((await onCoordinator).content[0].text, /### ag_01 \(coordinator\) — waiting[\s\S]*Claude result/);
+		assert.equal(h.parentMessages("subagent-complete").length, 0, "the wait returned the coordinator's completion");
+		const onDev = h.call("agent_wait", { ids: ["ag_02"] });
+		dev.output = "built it";
+		dev.settle();
+		await h.tick();
+		assert.match(coordinator.lastSteer.message, /^\[Team report from dev \(ag_02\), team_01: finished — routed to you as coordinator\][\s\S]*built it/);
+		assert.match((await onDev).content[0].text, /built it/);
+		assert.equal(h.parentMessages("subagent-complete").length, 0);
 	} finally { await h.cleanup(); }
 });
 

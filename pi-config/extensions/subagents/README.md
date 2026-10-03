@@ -378,7 +378,11 @@ In TUI and RPC parent sessions, completion produces a notification and a short
 follow-up message. With `wake` (the default) that message starts a turn when the
 parent is idle; with `wake: false` it waits for the next turn. The message is
 sent even if the UI notification fails. Print/JSON parents use tool results
-instead of injected notifications.
+instead of injected notifications. A settle an `agent_wait` returns is not sent
+again as a message: while a wait covers a worker its message is held, dropped if
+the worker is still settled when the wait returns (the result carries it), and
+sent as usual if a queued steer started a new task first (with overlapping waits,
+once the last of them returns).
 
 ## Monitor
 

@@ -1060,8 +1060,48 @@ export function registerSubagents(
 		}
 		return `${text.slice(0, WAKE_PREVIEW_CHARS)}\n[${where}]\n[Use agent_transcript for more.]`;
 	};
+	/** agent_wait calls in flight per worker ID: their returned summaries are the parent's copy of a settle. */
+	const collecting = new Map<string, number>();
+	/** Settles per worker ID, so a wait knows which settle its summary reported. */
+	const settleSeq = new Map<string, number>();
+	/** Parent completions held while a wait collects the worker, oldest first. */
+	const heldCompletion = new Map<string, { seq: number; content: string; wake: boolean }[]>();
+	const sendCompletion = (content: string, wake: boolean) => {
+		try {
+			pi.sendMessage(
+				{ customType: "subagent-complete", display: true, content },
+				{ deliverAs: "followUp", triggerTurn: wake },
+			);
+		} catch {
+			/* Session replacement can invalidate the message API. */
+		}
+	};
+	/** A wait returned with the worker settled: its text carried the latest settle, so that one is never sent. */
+	const coverSettle = (a: Worker) => {
+		const held = heldCompletion.get(a.id);
+		if (!held || !a.isSettled()) return;
+		const latest = settleSeq.get(a.id);
+		const rest = held.filter((h) => h.seq !== latest);
+		if (rest.length) heldCompletion.set(a.id, rest);
+		else heldCompletion.delete(a.id);
+	};
+	/** The last wait on the worker returned: settles none of them reported go out as onSettled would have sent them. */
+	const releaseCollect = (a: Worker) => {
+		const left = (collecting.get(a.id) ?? 1) - 1;
+		if (left > 0) {
+			collecting.set(a.id, left);
+			return;
+		}
+		collecting.delete(a.id);
+		const held = heldCompletion.get(a.id);
+		heldCompletion.delete(a.id);
+		if (!held || shuttingDown || !activeCtx) return;
+		for (const h of held) sendCompletion(h.content, h.wake);
+	};
 	const onSettled = (a: Worker) => {
 		if (shuttingDown || !agents.includes(a)) return;
+		const seq = (settleSeq.get(a.id) ?? 0) + 1;
+		settleSeq.set(a.id, seq);
 		// Idle again: status, outcome and a usage snapshot in the durable record.
 		registry.settled(a);
 		successionCheck(a);
@@ -1094,14 +1134,15 @@ export function registerSubagents(
 			const text = summary(a);
 			// A worker the parent stopped itself does not need to wake the parent.
 			const wake = route.wake;
-			pi.sendMessage(
-				{
-					customType: "subagent-complete",
-					display: true,
-					content: text.length > WAKE_PREVIEW_CHARS ? completionPreview(a, text) : text,
-				},
-				{ deliverAs: "followUp", triggerTurn: wake },
-			);
+			const content = text.length > WAKE_PREVIEW_CHARS ? completionPreview(a, text) : text;
+			// An agent_wait collecting this worker returns this settle itself; hold it until the wait shows whether it did.
+			if ((collecting.get(a.id) ?? 0) > 0) {
+				const held = heldCompletion.get(a.id) ?? [];
+				held.push({ seq, content, wake });
+				heldCompletion.set(a.id, held);
+				return;
+			}
+			sendCompletion(content, wake);
 		} catch {
 			/* Session replacement can invalidate the message API. */
 		}
@@ -2814,37 +2855,46 @@ export function registerSubagents(
 			if (!Number.isFinite(timeout) || timeout < 0 || timeout > 3600)
 				throw new Error("timeoutSeconds must be between 0 and 3600.");
 			const deadline = Date.now() + timeout * 1000;
-			while (!signal?.aborted && Date.now() < deadline && targets.some((a) => !a.isSettled())) {
-				update?.(
-					result(
-						`Waiting: ${targets
-							.filter((a) => !a.isSettled())
-							.map((a) => a.id)
-							.join(", ")}`,
-					),
-				);
-				await new Promise<void>((resolve) => {
-					const finish = () => {
-						clearTimeout(timer);
-						signal?.removeEventListener("abort", finish);
-						resolve();
-					};
-					const timer = setTimeout(finish, Math.min(500, Math.max(0, deadline - Date.now())));
-					signal?.addEventListener("abort", finish, { once: true });
-					if (signal?.aborted) finish();
+			// The returned summaries are the parent's copy of these targets' settles (see onSettled).
+			for (const a of targets) collecting.set(a.id, (collecting.get(a.id) ?? 0) + 1);
+			try {
+				while (!signal?.aborted && Date.now() < deadline && targets.some((a) => !a.isSettled())) {
+					update?.(
+						result(
+							`Waiting: ${targets
+								.filter((a) => !a.isSettled())
+								.map((a) => a.id)
+								.join(", ")}`,
+						),
+					);
+					await new Promise<void>((resolve) => {
+						const finish = () => {
+							clearTimeout(timer);
+							signal?.removeEventListener("abort", finish);
+							resolve();
+						};
+						const timer = setTimeout(finish, Math.min(500, Math.max(0, deadline - Date.now())));
+						signal?.addEventListener("abort", finish, { once: true });
+						if (signal?.aborted) finish();
+					});
+				}
+				const outstanding = targets.filter((a) => !a.isSettled());
+				const headline = signal?.aborted
+					? "Cancelled wait; workers were not stopped."
+					: outstanding.length
+						? `Timed out; still working: ${outstanding.map((a) => a.id).join(", ")}`
+						: "All requested tasks settled (not necessarily successfully).";
+				const answer = result([headline, ...targets.map(summary)].join("\n\n"), {
+					cancelled: Boolean(signal?.aborted),
+					timedOut: !signal?.aborted && outstanding.length > 0,
+					waited: targets.map((a) => ({ id: a.id, status: a.status, taskOutcome: a.taskOutcome, error: a.error })),
 				});
+				// A settled target's summary above is its latest settle: that one is reported, never sent again.
+				for (const a of targets) coverSettle(a);
+				return answer;
+			} finally {
+				for (const a of targets) releaseCollect(a);
 			}
-			const outstanding = targets.filter((a) => !a.isSettled());
-			const headline = signal?.aborted
-				? "Cancelled wait; workers were not stopped."
-				: outstanding.length
-					? `Timed out; still working: ${outstanding.map((a) => a.id).join(", ")}`
-					: "All requested tasks settled (not necessarily successfully).";
-			return result([headline, ...targets.map(summary)].join("\n\n"), {
-				cancelled: Boolean(signal?.aborted),
-				timedOut: !signal?.aborted && outstanding.length > 0,
-				waited: targets.map((a) => ({ id: a.id, status: a.status, taskOutcome: a.taskOutcome, error: a.error })),
-			});
 		},
 	});
 

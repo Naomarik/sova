@@ -227,6 +227,16 @@ describe("this host as the relay", () => {
     assert.ok(askClient);
   });
 
+  test("this host goes by lan:<its pin> to the pairing (§mesh.links/host-names)", async () => {
+    const { meshApi } = await import("./index");
+    const { lanNodeId } = await import("./lan-cert");
+    const own = lanNodeId(relayPin);
+    assert.deepEqual(meshApi.selfNodeIds(), [own], "no tailnet name here, only the LAN one");
+    const pairing = meshApi.peers().find((p) => p.id === "laptop")!;
+    assert.equal(meshApi.selfNodeIdFor(pairing), own);
+    assert.equal(meshApi.selfNodeIdFor({ ...pairing, lan: undefined }), undefined, "no tailnet name for a tailnet peer");
+  });
+
   test("the relay asks over the answer channel: sessions, and a proxied page cut down to safe headers", async () => {
     const [, sessions] = await api<MeshSessionsView>("GET", "/api/mesh/sessions");
     const row = sessions.peers.find((p) => p.id === "laptop")!;

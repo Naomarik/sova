@@ -243,9 +243,13 @@ the same in the TUI and in Sova; `/compact` is unchanged.
   session (§chat.session-fork/background): a hidden child with the whole conversation, on the
   session's warm prompt cache, that may only read (files, search, read-only shell; no writes, no
   web). It is told the session is about to be compacted and to end its reply with a handoff note
-  inside `<handoff>…</handoff>`: what must survive the compaction (anything durable goes in the
-  note, since it can't write elsewhere), the exact files and ids to re-read, and the focus text,
-  if given. Nothing of that turn is written into the session: no instruction, reply or tool call
+  inside `<handoff>…</handoff>`, holding only what the summary would flatten: it is told the
+  compaction already keeps a structured summary and the last turns, and not to restate them (no
+  current state, task list, or ids and files the summary names anyway). The note keeps the user's
+  corrections and exact wording where it matters, fine distinctions, why a tempting option was
+  rejected, unverified claims and how to verify each, traps already met, and where an older
+  summary is wrong; plus the focus text, if given. With nothing that qualifies it writes
+  `Nothing beyond the summary.` Nothing of that turn is written into the session: no instruction, reply or tool call
   appears in the thread or in the model's context, only the run's row
   (§chat.slash-commands/compact-handoff-row). The fork runs this way in every host and on every
   provider; a Claude Code session whose CLI session is live and idle is resumed and forked there,
@@ -256,6 +260,11 @@ the same in the TUI and in Sova; `/compact` is unchanged.
   reply is the note. It is saved, then the session compacts with the focus as the summary's
   instructions, plus a line saying a handoff note is saved and comes back after the summary. The
   session ends with the summary and the note after it, and no trace of the handoff turn.
+- **An empty note.** A note that is just `Nothing beyond the summary.` (trimmed, case and a
+  final period ignored) is still saved, file and entry, and the session still compacts, but the
+  compaction's instructions get no line about a note, and no note comes back after that
+  compaction or any later one; being the newest entry on the branch, it also keeps an older
+  note from coming back in its place.
 - **Messages during the fork.** The session stays usable while the fork writes. When a prompt,
   a topic delivery or a scheduled run reaches it meanwhile, the note is still saved the moment the
   fork settles, and the compaction waits for the next idle moment (the session settled, nothing
@@ -279,7 +288,7 @@ the same in the TUI and in Sova; `/compact` is unchanged.
 - **The note comes back after every compaction**, its own, a plain `/compact`, a threshold or an
   overflow one: the newest `compact-handoff` entry on the branch is added in full as a hidden
   message right after the summary, saying when it was written and where it is saved, to check it
-  against the summary and to re-read the files it names before acting on the next request. A note
+  against the summary and to verify what it marks unverified before relying on it. A note
   from before the fork (written by a reply in the thread) whose reply is still in the kept part of
   the history gets only that preamble and the path. It starts no turn: idle, it is added at once
   and the session waits for the user; a compaction during a run adds it at that run's next turn

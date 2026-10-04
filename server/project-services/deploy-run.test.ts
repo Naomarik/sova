@@ -196,9 +196,10 @@ test("run: the operator's only, confirmed; ships the plan's commit to the fake t
   assert.ok(!log.includes(TOKEN), "the secret never reaches the log");
   assert.match(log, /shipping with token \[redacted:DEPLOY_TOKEN\]/);
   assert.match((await deployer.run("deploy.run", { project, plan: plan.planId, confirm: true }, op)).error?.message ?? "", /already ran: plan again|no plan/, "a plan runs once");
-  await new Promise((r) => setTimeout(r, 300));
+  for (let i = 0; i < 100 && readPlan(plan.planId); i++) await new Promise((ok) => setTimeout(ok, 50));
   assert.equal(readPlan(plan.planId), null, "then it is gone, its checkout with it");
   assert.equal((await deployer.run("deploy.run", { project, plan: plan.planId, confirm: true }, op)).error?.code, "not-found");
+  for (let i = 0; i < 100 && !deployNotes(project)[0]!.line.startsWith("Deployed"); i++) await new Promise((ok) => setTimeout(ok, 50));
   assert.match(deployNotes(project)[0]!.line, new RegExp(`^Deployed ${head.slice(0, 7)} to prod; http://127\\.0\\.0\\.1:\\d+/health answered 200\\.$`));
 });
 

@@ -112,6 +112,8 @@ test("status keeps each target's history; logs read the redacted log; redeploy-p
   assert.equal(back.deploy!.record!.commit, v1);
   assert.equal((await deployer.settled(back.deploy!.record!.id, 30_000))!.state, "succeeded");
   assert.equal(readFileSync(join(target, "version"), "utf8"), v1, "the previous verified commit is live again");
+  // The note is the watcher's, a tick after the record ends.
+  for (let i = 0; i < 100 && !deployNotes(project)[0]!.line.startsWith("Rolled back"); i++) await new Promise((ok) => setTimeout(ok, 50));
   assert.match(deployNotes(project)[0]!.line, new RegExp(`^Rolled back ${v1.slice(0, 7)} to prod\\.$`));
 });
 

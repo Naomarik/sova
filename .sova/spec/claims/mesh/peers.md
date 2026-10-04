@@ -46,7 +46,10 @@ host what it must not reach (§mesh.peers/grants).
 
 Each host decides, on its own Mesh page, what each peer may see and do on it, and its peer listener
 enforces that after the identity check. Grants are per direction: what this host can see on a peer
-is that peer's grant to this host, never this host's choice.
+is that peer's grant to this host, never this host's choice. So reading a peer about itself or one
+of its sessions by id (the link identity probe, the peer transcript read) is only ever that peer's
+grant to this host, never held to this host's own grant to that peer; the peer serves the
+transcript read only to a host it grants sessions.
 
 The grants live in `mesh-access.json` in Sova's state directory (mode 0600, written atomically),
 keyed by each peer's node identity, so renaming a peer's id keeps its grant. The file is this host's

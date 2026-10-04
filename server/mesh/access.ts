@@ -210,6 +210,8 @@ const PEER_RULES: Array<[RegExp, Need]> = [
   [/^\/api\/peer\/credentials\/[^/]+$/, "sync.logins"],
   // The Claude login pool goes with the logins grant (§mesh.peers/grants).
   [/^\/api\/peer\/claude-pool\/[^/]+$/, "sync.logins"],
+  // A session's transcript, read by id: it belongs to sessions, not links (§mesh.peers/grants).
+  [/^\/api\/peer\/links\/read$/, "sessions"],
   [/^\/api\/peer\/links(?:\/.*)?$/, "links"],
   [/^\/api\/peer\/outreach\/[^/]+$/, "outreach"],
   [/^\/api\/peer\/share-gateway\/[^/]+$/, "share"],
@@ -325,6 +327,15 @@ export function deniedBy(peerId: string): { denied: MeshCap[]; at: number } | nu
 
 /** Tests: forget what peers denied. */
 export const clearDenied = (): void => theirs.clear();
+
+/** peerFetch's rejection of a call this host's own grant withholds from the peer: never sent, so
+    the peer is not down (§mesh.peers/grants). */
+export class NotShared extends Error {
+  constructor(readonly peerId: string) {
+    super(`not shared with ${peerId}`);
+    this.name = "NotShared";
+  }
+}
 
 // ---- the grant API as server/sync, the pool and the details call it ----------------------------
 // Through these, a mesh surface without the grant methods (an older stub) shares everything, which

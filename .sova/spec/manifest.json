@@ -5458,7 +5458,9 @@
         "server/mesh/links-routes.ts",
         "server/mesh/proxy.ts",
         "server/overseer-runtime.test.ts",
-        "src/lib/hidden-rows.ts"
+        "src/lib/hidden-rows.ts",
+        "server/mesh/links.ts",
+        "server/mesh/links.test.ts"
       ],
       "requires": [
         "§app.overseer/tools",
@@ -13222,7 +13224,9 @@
         "server/mesh/grants.test.ts",
         "server/sync/grants-sync.test.ts",
         "src/lib/mesh-access.test.ts",
-        "scripts/mesh-lab/e2e/m7-grants.test.mjs"
+        "scripts/mesh-lab/e2e/m7-grants.test.mjs",
+        "server/mesh/lan-mesh.test.ts",
+        "server/overseer-link-tools.test.ts"
       ]
     },
     "§mesh.lan/as-a-peer": {

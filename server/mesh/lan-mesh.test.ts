@@ -36,7 +36,7 @@ setIdentity({
 });
 
 const { server } = await import("../index");
-const { stopMesh, listenerInfo } = await import("./index");
+const { stopMesh, listenerInfo, peerFetch } = await import("./index");
 const { AUTH_COOKIE, sovaToken } = await import("../auth");
 const { mintLanIdentity, parsePin } = await import("./lan-cert");
 const { RelayDialer } = await import("./lan-dialer");
@@ -83,6 +83,10 @@ function standInServer(): Server {
     if (url.pathname === "/api/sessions") {
       res.writeHead(200, { "content-type": "application/json" });
       return res.end(JSON.stringify([{ id: "far-1", path: "/far/one.jsonl" }]));
+    }
+    if (url.pathname === "/api/peer/links/read") {
+      res.writeHead(200, { "content-type": "application/json" });
+      return res.end(JSON.stringify({ text: `transcript of ${url.searchParams.get("id")}`, from: 0, total: 1, title: "Far" }));
     }
     if (url.pathname === "/api/page") {
       // Everything a hostile host would try on the browser's origin.
@@ -304,6 +308,22 @@ describe("this host as the relay", () => {
       ),
       /403 denied/,
     );
+  });
+
+  test("grants are per direction: the relay reads the dial-out host's transcript whatever it grants it; that grant only decides the other way", async () => {
+    const [s] = await api("PUT", "/api/mesh/access", { peer: "laptop", grant: { preset: "none" } });
+    assert.equal(s, 200);
+    // This host's read of the dial-out host, over the answer channel: its own grant of none holds nothing back.
+    const read = await peerFetch("laptop", "/api/peer/links/read?id=far-1&items=5");
+    assert.equal(read.status, 200);
+    assert.equal(((await read.json()) as { text: string }).text, "transcript of far-1");
+    assert.ok(seen.some((x) => x.path === "/api/peer/links/read"), "it reached the dial-out host");
+    // The dial-out host's read of this host, over the ask channel: that same grant of none denies it.
+    const back = await agentFetch(askClient!.agent, "/api/peer/links/read?id=nope");
+    assert.equal(back.status, 403);
+    assert.equal(back.headers.get("x-sova-mesh"), "denied");
+    await back.body?.cancel();
+    await api("PUT", "/api/mesh/access", { peer: "laptop", grant: { preset: "presence" } });
   });
 
   test("M1: with no grant entry, or no grants file, the pairing has presence, never full", async () => {

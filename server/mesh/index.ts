@@ -27,7 +27,7 @@ import {
   type MeshSessionsView,
   type PeerStatusView,
 } from "../../shared/mesh-access";
-import { access, allows, capsOf, defaultPreset, deniedBy, loginsOf, mayShareLoginNode, noteDenied, noteGranted, onAccessChange, restricted, updateAccess, validateGrant } from "./access";
+import { access, allows, capsOf, defaultPreset, deniedBy, loginsOf, mayShareLoginNode, NotShared, noteDenied, noteGranted, onAccessChange, restricted, updateAccess, validateGrant } from "./access";
 import { frontDoorConfig, noBrowserIds } from "./front-door";
 import { answered, ownHello, probeHello, probePeer, peerLastSeen, PROBE_TIMEOUT_MS } from "./hello";
 import { type ListenerDeps, PeerListener } from "./listener";
@@ -345,16 +345,19 @@ export function noteAnswer(peerId: string, cap: MeshCap, res: Response): boolean
 }
 
 // What this host sends a peer on its own initiative, by path: never what it doesn't grant that peer.
-// Reads of the peer's own things (its hello, details, sessions, outreach relay, gateway) are the
-// peer's grant to this host, so they are not here.
+// Reads of the peer's own things (its hello, details, sessions, outreach relay, gateway, and the
+// link identity probe and transcript read by id) are the peer's grant to this host, so they pass.
 const OUTBOUND: Array<[RegExp, (peerId: string) => boolean]> = [
   [/^\/api\/peer\/(?:label|browser-access)(?:\?|$)/, (id) => mayShareWith(id, "presence")],
+  [/^\/api\/peer\/links\/(?:whoami|read)(?:\?|$)/, () => true],
   [/^\/api\/peer\/links(?:[/?]|$)/, (id) => mayShareWith(id, "links")],
   [/^\/api\/peer\/sync\/extensions(?:\?|$)/, (id) => mayShareWith(id, "sync.extensions")],
   [/^\/api\/peer\/sync\/(?:manifest|doc|push)(?:\?|$)/, (id) => mayShareWith(id, "sync.settings") || mayShareWith(id, "sync.themes")],
   [/^\/api\/peer\/credentials\//, (id) => mayShareWith(id, "sync.logins")],
   [/^\/api\/peer\/claude-pool\//, (id) => mayShareWith(id, "sync.logins")],
 ];
+
+export { NotShared };
 
 /** Why this host may not send `path` to `peerId` on its own initiative, or null when it may. */
 export function outboundRefusal(peerId: string, path: string): string | null {
@@ -365,15 +368,14 @@ export function outboundRefusal(peerId: string, path: string): string | null {
 
 /**
  * GET/POST/… <peer>/<path> over the peer hop (the peer's gate sees this host's node). Throws when
- * the mesh is off or the peer is unknown, or when `path` sends the peer what this host doesn't grant
- * it (outboundRefusal); otherwise it is fetch: a down peer rejects, a refusal is a 403 with
+ * the mesh is off or the peer is unknown, or with NotShared when `path` sends the peer what this host
+ * doesn't grant it (outboundRefusal); otherwise it is fetch: a down peer rejects, a refusal is a 403 with
  * X-Sova-Mesh: refused, and a grant's refusal a 403 with X-Sova-Mesh: denied. `path` starts with "/api/".
  */
 export function peerFetch(peerId: string, path: string, init?: RequestInit): Promise<Response> {
   const peer = rt.config?.peers.find((p) => p.id === peerId);
   if (!meshEnabled() || !peer) return Promise.reject(new Error(`unknown peer ${peerId}`));
-  const refusal = outboundRefusal(peerId, path);
-  if (refusal) return Promise.reject(new Error(refusal));
+  if (outboundRefusal(peerId, path)) return Promise.reject(new NotShared(peerId));
   const headers = new Headers(init?.headers);
   headers.delete(PROXIED_HEADER); // it would make the peer treat this host's own call as a browser's
   return fetchPeer(peer, path, { ...init, headers });

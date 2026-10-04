@@ -1072,8 +1072,9 @@ main-pane rows.
   line. The two fail independently, so one failure never hides the other group.
 - **Width.** The card is at most 560px wide and left-aligned inside the centred empty state. It is
   its own inline-size container. Under 420px across, every row, the aggregate line and each
-  group's total put their figures on their own line under the name, left-aligned, and the group
-  padding tightens from `--space-4`/`--space-5` to `--space-3`/`--space-4`.
+  group's total put their figures on their own line under the name, left-aligned, except a row
+  with a switch (/setup-card-toggles): it stays one line, its name ellipsised, then ≈tokens, then
+  the switch at the right edge. The group padding tightens from `--space-4`/`--space-5` to `--space-3`/`--space-4`.
 - **Accessibility.** The card is a `section` with `aria-label="Session setup"`. Context, Skills
   and Repository are `h2`s (the session head's title is the `h1`). The aggregate line has no
   heading. Icons are `aria-hidden`. Rows aren't focusable, so what a row's `title` carries (a full

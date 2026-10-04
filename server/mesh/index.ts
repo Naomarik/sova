@@ -27,7 +27,7 @@ import {
   type MeshSessionsView,
   type PeerStatusView,
 } from "../../shared/mesh-access";
-import { access, allows, capsOf, deniedBy, loginsOf, mayShareLoginNode, noteDenied, noteGranted, onAccessChange, restricted, updateAccess, validateGrant } from "./access";
+import { access, allows, capsOf, defaultPreset, deniedBy, loginsOf, mayShareLoginNode, noteDenied, noteGranted, onAccessChange, restricted, updateAccess, validateGrant } from "./access";
 import { frontDoorConfig, noBrowserIds } from "./front-door";
 import { answered, ownHello, probeHello, probePeer, peerLastSeen, PROBE_TIMEOUT_MS } from "./hello";
 import { type ListenerDeps, PeerListener } from "./listener";
@@ -669,16 +669,22 @@ function pairingGrants(raw: unknown, before: PeersConfig, after: PeersConfig): {
   return { set, removed: before.peers.map((p) => p.nodeId).filter((n) => !kept.has(n)) };
 }
 
-function applyPairingGrants(set: Record<string, MeshPreset>, removed: string[]): void {
+function applyPairingGrants(set: Record<string, MeshPreset>, removed: string[]): { ok: true } | { error: string } {
   const now = access();
-  if (!Object.keys(set).length && !(now.kind === "ok" && removed.some((n) => n in now.file.peers))) return;
-  const r = updateAccess((doc) => {
-    for (const n of removed) delete doc.peers[n];
-    for (const [n, preset] of Object.entries(set)) doc.peers[n] = { preset };
-    return doc;
-  });
+  if (!Object.keys(set).length && !(now.kind === "ok" && removed.some((n) => n in now.file.peers))) return { ok: true };
+  let r: { ok: true } | { error: string };
+  try {
+    r = updateAccess((doc) => {
+      for (const n of removed) delete doc.peers[n];
+      for (const [n, preset] of Object.entries(set)) doc.peers[n] = { preset };
+      return doc;
+    });
+  } catch (err) {
+    r = { error: `can't write mesh-access.json (${(err as NodeJS.ErrnoException).code ?? "write failed"})` };
+  }
   // A broken file stays as it is: every peer, the new one included, gets hello only until it is fixed.
   if ("error" in r) console.warn(`[mesh] grants not written: ${r.error}`);
+  return r;
 }
 
 /** The pairings' view for the Mesh page; also while off (this host's key and relay setting). */
@@ -693,7 +699,9 @@ function lanStatus() {
 function accessView(): MeshAccessView {
   const a = access();
   const peers = (rt.config?.peers ?? []).map((p): MeshAccessPeer => {
-    const grant = a.kind === "ok" ? a.file.peers[p.nodeId] : undefined;
+    // A pairing with no entry has presence, not full (§mesh.lan/pairing): show it as such.
+    const preset = defaultPreset(p.nodeId);
+    const grant = (a.kind === "ok" ? a.file.peers[p.nodeId] : undefined) ?? (a.kind !== "error" && preset !== "full" ? { preset } : undefined);
     const caps = capsOf(p.nodeId);
     const effective = caps === "hello-only" ? grantCaps({ preset: "none" }) : caps;
     const theirs = deniedBy(p.id);
@@ -732,6 +740,8 @@ async function putAccess(c: Context): Promise<Response> {
   }
   const r = updateAccess((doc) => {
     if (grant) doc.peers[peer.nodeId] = grant;
+    // Cleared: a tailnet peer goes back to full; a pairing to presence, never more (§mesh.lan/pairing).
+    else if (peer.lan) doc.peers[peer.nodeId] = { preset: "presence" };
     else delete doc.peers[peer.nodeId];
     return doc;
   });

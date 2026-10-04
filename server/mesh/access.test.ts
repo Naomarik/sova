@@ -44,6 +44,28 @@ describe("the file", () => {
     assert.equal(loginsOf("nX"), "all");
   });
 
+  test("a dial-out pairing fails closed (M1): no file or no entry is presence, never full; tailnet peers unchanged", () => {
+    const pairing = "lan:0123456789abcdef0123456789abcdef";
+    const check = (why: string) => {
+      assert.equal(allows(pairing, "hello"), true, why);
+      assert.equal(allows(pairing, "presence"), true, why);
+      for (const need of ["sessions", "admin", "links", "llm", "sync.logins", "sync.docs", "full"] as const) assert.equal(allows(pairing, need), false, `${why}: ${need}`);
+      assert.equal(restricted(pairing), true, why);
+      assert.deepEqual(loginsOf(pairing), [], why);
+      // The zero-regression half: a tailnet peer in the same state still has everything.
+      assert.equal(allows("nTailnet", "full"), true, why);
+      assert.equal(restricted("nTailnet"), false, why);
+    };
+    check("no file");
+    put({ version: 1, peers: { nOther: { preset: "sessions" } } });
+    check("a file that doesn't list it");
+    put({ version: 1, peers: { [pairing]: { preset: "full" } } });
+    assert.equal(allows(pairing, "full"), true, "an explicit grant still says what it says");
+    put("{broken");
+    assert.equal(allows(pairing, "hello"), true);
+    assert.equal(allows(pairing, "presence"), false, "a broken file is hello only, for a pairing as for anyone");
+  });
+
   test("a peer the file doesn't list has everything; a listed one has its grant", () => {
     put({ version: 1, peers: { nA: { preset: "presence" } } });
     assert.equal(allows("nB", "full"), true);

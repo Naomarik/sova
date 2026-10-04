@@ -12,7 +12,7 @@ import type { Context, Hono } from "hono";
 import { MESH_PRESETS, type MeshPreset } from "../../shared/mesh-access";
 import { type LanPairingAdd, type LanRelayPut, type LanStatus, parseIp, relayAddress } from "../../shared/mesh-lan";
 import { lanNodeId, parsePin, samePin } from "./lan-cert";
-import { type PeerEntry, type PeersConfig, PEER_ID_RE } from "./peers";
+import { type PeerEntry, type PeersConfig, PEER_ID_RE, validatePeers } from "./peers";
 import { localRequest } from "./proxy";
 
 export interface LanRouteDeps {
@@ -21,7 +21,7 @@ export interface LanRouteDeps {
   ensureKey: () => { pin: string };
   updatePeers: (change: (config: PeersConfig) => PeersConfig | { error: string }) => { config: PeersConfig } | { error: string; status: 400 | 409 };
   /** Grants to write for newly paired nodes, and nodes whose grant goes (index.ts applyPairingGrants). */
-  applyGrants: (set: Record<string, MeshPreset>, removed: string[]) => void;
+  applyGrants: (set: Record<string, MeshPreset>, removed: string[]) => { ok: true } | { error: string };
   /** Tests: this host's interface addresses (default: os.networkInterfaces()). */
   ownAddresses?: () => string[];
 }
@@ -65,13 +65,35 @@ export function lanRoutes(app: Hono, deps: LanRouteDeps): void {
         pairedAt: Date.now(),
         lan: body.role === "dial" ? { role: "dial", pin, host: typeof body.host === "string" ? body.host.trim() : body.host, port: body.port } : { role: "accept", pin },
       };
-      const r = deps.updatePeers((config) => {
+      const add = (config: PeersConfig): PeersConfig | { error: string } => {
         if (config.peers.some((p) => p.id === id)) return { error: `${id} is already a host here` };
         if (config.peers.some((p) => p.nodeId === nodeId)) return { error: "A host with that fingerprint is already paired" };
         return { ...config, peers: [...config.peers, entry as unknown as PeerEntry] };
+      };
+      // Judged whole before anything is written (returning the same config writes nothing), so a
+      // refused pairing never touches a grant, an existing pairing's included.
+      const judged = deps.updatePeers((config) => {
+        const next = add(config);
+        if ("error" in next) return next;
+        const v = validatePeers(next);
+        return "error" in v ? v : config;
       });
-      if ("error" in r) return c.json({ error: r.error }, r.status);
-      deps.applyGrants({ [nodeId]: grant as MeshPreset }, []);
+      if ("error" in judged) return c.json({ error: judged.error }, judged.status);
+      // Then the grant, before the pairing (§mesh.lan/pairing): a pairing never exists without the
+      // grant it was given. If the grant can't be written, nothing is paired; if the pairing then
+      // can't be saved, the grant goes again. (With no entry at all a pairing has presence: access.ts.)
+      const g = deps.applyGrants({ [nodeId]: grant as MeshPreset }, []);
+      if ("error" in g) return c.json({ error: `Not paired: the grant couldn't be written (${g.error})` }, 409);
+      let r: ReturnType<LanRouteDeps["updatePeers"]>;
+      try {
+        r = deps.updatePeers(add);
+      } catch (err) {
+        r = { error: `peers.json couldn't be written (${(err as NodeJS.ErrnoException).code ?? "write failed"})`, status: 409 };
+      }
+      if ("error" in r) {
+        deps.applyGrants({}, [nodeId]);
+        return c.json({ error: r.error }, r.status);
+      }
       return c.json(deps.status());
     }),
   );

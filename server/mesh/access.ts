@@ -2,6 +2,7 @@ import { chmodSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync
 import { dirname, join } from "node:path";
 import { grantCaps, MESH_CAPS, MESH_PRESETS, type MeshAccessFile, type MeshCap, type MeshGrant } from "../../shared/mesh-access";
 import { stateRoot } from "../state-root";
+import { isLanNodeId } from "./lan-cert";
 import { judgedPath } from "./paths";
 
 // Per-peer grants (§mesh.peers/grants): `<state root>/mesh-access.json`, what each peer may see and
@@ -145,12 +146,17 @@ export function updateAccess(change: (doc: MeshAccessFile) => MeshAccessFile): {
 
 // ---- decisions --------------------------------------------------------------------------------
 
-/** The caps a node has now: every cap with no file or no entry; none (hello only) on a broken file. */
+/** What a node has with no file or no entry: `full` for a tailnet peer (as before grants), but only
+    `presence` for a dial-out pairing (`lan:` node), which fails closed (§mesh.lan/pairing). */
+export const defaultPreset = (nodeId: string): "full" | "presence" => (isLanNodeId(nodeId) ? "presence" : "full");
+
+/** The caps a node has now: its grant's; with no file or no entry, its default preset's; none
+    (hello only) on a broken file. */
 export function capsOf(nodeId: string): Record<MeshCap, boolean> | "hello-only" {
   const a = access();
   if (a.kind === "error") return "hello-only";
   const grant = a.kind === "ok" ? a.file.peers[nodeId] : undefined;
-  return grant ? grantCaps(grant) : grantCaps({ preset: "full" });
+  return grantCaps(grant ?? { preset: defaultPreset(nodeId) });
 }
 
 /** Whether `nodeId` may have what a request needs. */
@@ -166,7 +172,7 @@ export function allows(nodeId: string, need: Need): boolean {
 /** Whether this host's grant to `nodeId` is anything but `full` (a broken file counts as restricted). */
 export function restricted(nodeId: string): boolean {
   const a = access();
-  if (a.kind === "missing") return false;
+  if (a.kind === "missing") return defaultPreset(nodeId) !== "full";
   return !allows(nodeId, "full");
 }
 

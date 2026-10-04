@@ -69,7 +69,8 @@ export interface MeshAccessPeer {
   id: string;
   label: string;
   nodeId: string;
-  /** The stored grant; absent = not listed, which is `full`. */
+  /** The stored grant; absent = not listed, which is `full`. A dial-out pairing is never absent
+      here: unlisted, it reads as `presence`, what it has (§mesh.lan/pairing). */
   grant?: MeshGrant;
   /** What the peer may do now, every cap spelled out (the file's error makes every one false). */
   effective: Record<MeshCap, boolean>;
@@ -91,7 +92,8 @@ export interface MeshAccessView {
   logins: Array<{ key: string; provider: string; kind?: "oauth" | "api_key" }>;
 }
 
-/** PUT /api/mesh/access {peer, grant}: one peer's grant (by peer id); grant null removes it (= full). */
+/** PUT /api/mesh/access {peer, grant}: one peer's grant (by peer id); grant null removes it (= full),
+    or for a dial-out pairing sets presence. */
 export interface MeshAccessPut {
   peer: string;
   grant: MeshGrant | null;

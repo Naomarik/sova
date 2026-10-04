@@ -5,7 +5,7 @@
 // the DIAL-OUT HOST (it dials a stand-in relay). Both directions pass the answering host's peer gate
 // and grants; a removed pairing loses its connections at once.
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -45,6 +45,7 @@ const { LAN_PROFILE } = await import("./lan-admission");
 const { connectReverse, serveReverse } = await import("./lan-reverse");
 const { agentFetch } = await import("./lan-fetch");
 const { streamWebSocketServer } = await import("../runtime-quirks");
+const { accessFile } = await import("./access");
 type ReverseClient = Awaited<ReturnType<typeof connectReverse>>;
 
 const AUTH = { Cookie: `${AUTH_COOKIE}=${sovaToken()}` };
@@ -297,6 +298,46 @@ describe("this host as the relay", () => {
       ),
       /403 denied/,
     );
+  });
+
+  test("M1: with no grant entry, or no grants file, the pairing has presence, never full", async () => {
+    const askSessions = async () => {
+      const r = await agentFetch(askClient!.agent, "/api/sessions");
+      await r.body?.cancel();
+      return `${r.status} ${r.headers.get("x-sova-mesh") ?? ""}`.trim();
+    };
+    const shown = async () => (await api<{ peers: Array<{ id: string; grant?: { preset: string } }> }>("GET", "/api/mesh/access"))[1].peers.find((p) => p.id === "laptop")?.grant?.preset;
+    await api("PUT", "/api/mesh/access", { peer: "laptop", grant: { preset: "full" } });
+    assert.equal(await askSessions(), "200");
+    // Cleared on the page: presence, written as such, and shown as such.
+    const [s] = await api("PUT", "/api/mesh/access", { peer: "laptop", grant: null });
+    assert.equal(s, 200);
+    assert.equal(await shown(), "presence");
+    assert.equal(await askSessions(), "403 denied");
+    // The whole file gone (a user "resetting" grants): still presence, never full.
+    await api("PUT", "/api/mesh/access", { peer: "laptop", grant: { preset: "full" } });
+    rmSync(accessFile(), { force: true });
+    assert.equal(await askSessions(), "403 denied");
+    assert.equal(await shown(), "presence");
+    const hello = await agentFetch(askClient!.agent, "/api/peer/hello");
+    assert.equal(hello.status, 200, "presence still answers hello");
+    await hello.body?.cancel();
+  });
+
+  test("M1: a pairing whose grant can't be written is not made", async () => {
+    const before = readFileSync(join(tmp, "agent", "sova", "peers.json"), "utf8");
+    writeFileSync(accessFile(), "{broken");
+    const [status, r] = await api<{ error: string }>("POST", "/api/mesh/lan/pairings", { id: "second", role: "accept", pin: mintLanIdentity().pin, grant: "presence" });
+    assert.equal(status, 409, JSON.stringify(r));
+    assert.match(r.error, /grant couldn't be written/);
+    assert.equal(readFileSync(join(tmp, "agent", "sova", "peers.json"), "utf8"), before, "peers.json untouched");
+    rmSync(accessFile(), { force: true });
+    // A refused pairing never touches an existing pairing's grant either.
+    await api("PUT", "/api/mesh/access", { peer: "laptop", grant: { preset: "presence" } });
+    const [dup] = await api("POST", "/api/mesh/lan/pairings", { id: "again", role: "accept", pin: other.pin, grant: "full" });
+    assert.equal(dup, 400);
+    const [, view] = await api<{ peers: Array<{ id: string; grant?: { preset: string } }> }>("GET", "/api/mesh/access");
+    assert.equal(view.peers.find((p) => p.id === "laptop")?.grant?.preset, "presence");
   });
 
   test("a host with another key is refused before any stream", async () => {

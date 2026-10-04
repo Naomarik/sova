@@ -13503,6 +13503,23 @@
         "§mesh.lan/pairing",
         "§mesh.peers/address-identity"
       ]
+    },
+    "§mesh.remote-sessions/head-host-state": {
+      "kind": "behavior",
+      "requires": [
+        "§mesh.remote-sessions/head-host",
+        "§mesh.remote-sessions/host-filter"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/components/HostStateMark.tsx",
+        "src/components/SessionView.tsx",
+        "src/lib/mesh-details.ts",
+        "src/lib/mesh-details.test.ts",
+        "src/design/base.css",
+        "src/app.css"
+      ]
     }
   },
   "boundary": {

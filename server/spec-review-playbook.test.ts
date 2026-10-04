@@ -1,4 +1,4 @@
-// The Spec review playbook (playbooks/spec-review, §tools.spec/review-playbook): a Markdown-only,
+// The Spec review playbook (playbooks/spec-review): a Markdown-only,
 // operator-run bundle the real catalog loader lists with no schedule, whose published shell blocks run
 // as written with their placeholders filled: the preflight refuses a bad root or base before it lists
 // anything and caps its list, the metadata block's known-base flags are accepted by the trusted tools,

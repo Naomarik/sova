@@ -1,7 +1,7 @@
 ---
 title: Spec review
 description: Answers one question about a project's spec against a known revision, within limits you set.
-promptHint: Your question; the folder and the revision to compare against; what to look at (§ ids, paths, or everything changed since then); and your limits: minutes, report length, model runs and tokens.
+promptHint: Your question; the folder and the revision to compare against; what to look at (§ ids, paths, or everything changed since then); and your limits: minutes, report length, how much one command's output may show, model runs and tokens.
 ---
 
 # Spec review
@@ -10,7 +10,7 @@ You answer one question the operator asked about a project's spec, then stop. Ei
 
 ## The run is the operator's
 - It runs because the operator sent it, once. Set no schedule, start no team, monitor, loop or timer, and leave nothing running when you report.
-- You write nothing: no files, no assessment receipts, no workers. The chat's own history is the record. Model runs beyond this session only if the brief allows them, one-shot, finished before your report; when your token use so far is unknown, stop and ask before starting one.
+- You write nothing but an assessment receipt the operator approved: no other files, no workers. The chat's own history is the record. Model runs beyond this session only if the brief allows them, one-shot, finished before your report; when your token use so far is unknown, stop and ask before starting one.
 - **The limits are cooperative.** You keep them; nothing here enforces them. Report each one as observed, or as unknown when you couldn't see it (tokens, CPU). A packet's `--budget` bounds the bytes of the page it returns, not the CPU or the reads behind it.
 - The scope is frozen once the operator approves the brief. Never widen it or raise a limit, and never start a second brief to get around one: propose it in the report. Reaching a limit, or evidence that can't settle the question, ends collection; report what stays unknown and the exact read that would settle it.
 
@@ -18,7 +18,7 @@ You answer one question the operator asked about a project's spec, then stop. Ei
 Each shell call is a new shell, and an approval or any other turn may come between two calls. Start every call with the lines its block shows, with the brief's root and base written out in place of `<root>` and `<base>`; never rely on a variable, function or `cd` from an earlier call. Git can run helpers its configuration names: the blocks turn off the ones known to apply here (fsmonitor, external diff, textconv). That is not a sandbox. Read a file's current text with your own file-reading tool, not a shell.
 
 ## 1. Brief
-You need: the question; the kind (`assess` or `retro`); the root (the checkout's top folder, absolute); the base, a revision that is an ancestor of HEAD (the one the work started from if the operator noted it, else `git merge-base master HEAD`; never a guessed task start); the scope (§ ids, paths, every file changed since base, and for a retro the session ids to read); and the limits: minutes, report characters, model runs (0 unless given) and tokens.
+You need: the question; the kind (`assess` or `retro`); the root (the checkout's top folder, absolute); the base, a revision that is an ancestor of HEAD (the one the work started from if the operator noted it, else `git merge-base master HEAD`; never a guessed task start); the scope (§ ids, paths, every file changed since base, and for a retro the session ids to read); and the limits: minutes, report characters, output bytes (the most one command's output may show you), model runs (0 unless given) and tokens.
 
 When the operator's message already gives all of it, that is the approved brief: start collecting. Otherwise, run only this bounded preflight, then send the brief in one message, proposing a value for each gap, and collect nothing more until the operator approves it:
 
@@ -62,7 +62,32 @@ node "$core/sova-spec.mjs" packet '<§id>' --budget 12000 --root "$R" --json
 
 **Retro.** The history in the forms above, the draft folders under `<root>/.sova/spec/drafts/` and, for a draft in scope, `node "$core/sova-spec-draft.mjs" status <name> --root "$R" --json`, and `session_read` of the brief's sessions only, when this session has that tool: bounded slices of visible rows, no more than the question needs. Never session files, transcript exports, hidden thinking, system prompts or credentials; without `session_read`, the sessions are unknown.
 
-**Assessment receipts are not part of this playbook.** The companion `sova-spec-assess.mjs` prints its whole capture, often near a megabyte, and no tool here gives a bounded view of it. When the operator asks for a durable receipt, don't run it: say in the report that it needs a separate opt-in method, and go on with the review.
+## 3. Assessment (assess only, optional)
+The companion `sova-spec-assess.mjs` prints its whole capture as JSON, often near a megabyte, and no tool here gives a bounded view of it. So each call below keeps the output in a shell variable (nothing saved), prints its exit and byte count, and shows the output only when it fits the brief's output bytes. When it doesn't fit, nothing of it is shown: don't cut it to a head or a tail, and don't run it again to look. Stop the assessment there; in the report, its candidates and unknowns are unread, and a bounded view is a method proposal.
+
+Pass `--path` once for each scoped file. Without `--path`, `prepare` reads the change since base live, files changed after the brief included. Preview first; it writes nothing:
+
+```sh
+core="${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}"; case $core in "~"|"~/"*) core="$HOME${core#\~}";; esac; core="$core/extensions/spec/core"
+R='<root>'; B='<base>'; N='<name>'; MAX=<bytes>
+a="$core/sova-spec-assess.mjs"
+show() { out=$("$@"); code=$?; bytes=$(printf '%s' "$out" | wc -c | tr -d ' '); echo "exit $code · $bytes bytes"; if [ "$bytes" -le "$MAX" ]; then printf '%s\n' "$out"; else echo "not shown: over the $MAX-byte allowance"; fi; }
+show node "$a" prepare "$N" --root "$R" --base "$B" --path '<path>' --json
+```
+
+A receipt is permanent: it stays in the project, and nothing in the run removes it. To write one, tell the operator the preview's byte count (about the receipt's size), its candidate and unknown counts, and why a durable record would help, and ask for this receipt. Only once they approve it, in a new call:
+
+```sh
+core="${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}"; case $core in "~"|"~/"*) core="$HOME${core#\~}";; esac; core="$core/extensions/spec/core"
+R='<root>'; B='<base>'; N='<name>'; MAX=<bytes>
+a="$core/sova-spec-assess.mjs"
+show() { out=$("$@"); code=$?; bytes=$(printf '%s' "$out" | wc -c | tr -d ' '); echo "exit $code · $bytes bytes"; if [ "$bytes" -le "$MAX" ]; then printf '%s\n' "$out"; else echo "not shown: over the $MAX-byte allowance"; fi; }
+show node "$a" prepare "$N" --root "$R" --base "$B" --path '<path>' --write --json
+show node "$a" record "$N" --root "$R" --by '<who>' --decisions-json '<decisions>' --write --json
+show node "$a" status "$N" --root "$R" --json
+```
+
+The same `--path` list as the preview. `<decisions>` holds a reasoned decision and a basis for each candidate you actually checked; the rest stay `unresolved`. Never pass a declared snapshot or attribution, and never write a receipt just to have one. List each receipt and its bytes in the report.
 
 ## Evidence rules
 - Name the revision a claim is true at, and link each finding to its source: `path:line`, a § id, or the command that showed it.
@@ -76,9 +101,9 @@ Within the brief's report characters, these sections in this order:
 - `## Findings`: one bullet each, starting `Observed:` (you saw it: its source), `Inferred:` (from which observations) or `Proposed:` (a change: its concrete benefit, and the smallest next unit or the test that would settle it). Or the line `None.`
 - `## Unknown`: what the evidence couldn't settle, files outside the frozen scope, and the exact read that would settle each.
 - `## Coverage`: what you read, and what you skipped, truncated or left unread, with the continuation that would read it.
-- `## Cost`: this run only: minutes, model runs and tokens as the session showed them, else "unknown". Cooperative figures, never a guarantee.
+- `## Cost`: this run only: minutes, model runs and tokens as the session showed them, else "unknown", and each receipt written with its bytes. Cooperative figures, never a guarantee.
 - `## Method proposals`: changes to this playbook that this run showed would help, each as a diff with its evidence and how to verify it. Or `None.` A change is the operator's, on its own branch.
 - `## Stopped because`: the answer was reached, a limit (which), or the evidence ran out.
 
 ## Never
-Run on a schedule, in the background or after the report. Collect beyond the preflight before the brief is approved. Widen the scope, raise a limit, or read a file outside the scope without naming it. Edit claims, drafts, the manifest, code or this playbook during a run. Write a file or an assessment receipt, delete anything, or run any cleanup. Claim a limit was enforced, or a gain from a label or a count.
+Run on a schedule, in the background or after the report. Collect beyond the preflight before the brief is approved. Widen the scope, raise a limit, or read a file outside the scope without naming it. Edit claims, drafts, the manifest, code or this playbook during a run. Write a file, or a receipt the operator didn't approve; show assessment output over the allowance; delete anything, or run any cleanup. Claim a limit was enforced, or a gain from a label or a count.

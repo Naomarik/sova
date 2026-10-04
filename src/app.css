@@ -305,6 +305,8 @@ html, body { overflow: clip; overscroll-behavior: none; }
   font-weight: var(--fw-semibold);
 }
 .workspace-pane-head > .chip { flex-shrink: 1; min-width: 0; overflow: hidden; }
+/* A peer member's host: after its name, which gives way first; the host keeps up to 40% of the row. */
+.workspace-pane-host { flex: 0 1 auto; min-width: 0; max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-caption); }
 .workspace-pane-tools { flex: none; display: flex; align-items: center; gap: var(--space-1); }
 /* A pane is never a 720px head: the context readout keeps its short step
    (ring and "222k", no window) at every width, as under 720px in base.css. */

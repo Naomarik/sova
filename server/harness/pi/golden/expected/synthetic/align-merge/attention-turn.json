@@ -1,0 +1,46 @@
+{
+  "full": {
+    "turnId": "q0000012",
+    "replyAt": 1788256818000,
+    "lastUser": "Yes, build it",
+    "assistantLast": "Merged. Restart the server to pick it up.\n\nAlso changes: none",
+    "tools": [
+      {
+        "name": "align",
+        "args": "{}",
+        "result": "q1 accepted · → done",
+        "ok": true
+      },
+      {
+        "name": "bash",
+        "args": "{\"command\":\"pnpm test\"}",
+        "result": "run-tests (bun): 10 files, 0 fail",
+        "ok": true
+      }
+    ],
+    "stopReason": "stop",
+    "durationMs": 7000
+  },
+  "window4k": {
+    "turnId": "q0000012",
+    "replyAt": 1788256818000,
+    "lastUser": "Yes, build it",
+    "assistantLast": "Merged. Restart the server to pick it up.\n\nAlso changes: none",
+    "tools": [
+      {
+        "name": "align",
+        "args": "{}",
+        "result": "q1 accepted · → done",
+        "ok": true
+      },
+      {
+        "name": "bash",
+        "args": "{\"command\":\"pnpm test\"}",
+        "result": "run-tests (bun): 10 files, 0 fail",
+        "ok": true
+      }
+    ],
+    "stopReason": "stop",
+    "durationMs": 7000
+  }
+}

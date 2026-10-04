@@ -1,0 +1,113 @@
+{
+  "operator": {
+    "view": {
+      "publicTitle": "Golden launch",
+      "state": "active",
+      "holder": "Alice",
+      "items": [
+        {
+          "kind": "message",
+          "id": "00000004",
+          "by": "",
+          "name": "Someone",
+          "text": "First question",
+          "at": "2026-09-03T08:00:00.012Z"
+        },
+        {
+          "kind": "reply",
+          "id": "00000005",
+          "text": "First answer, with some detail to summarize later.",
+          "at": "2026-09-03T08:00:00.013Z"
+        },
+        {
+          "kind": "message",
+          "id": "00000006",
+          "by": "p_alice",
+          "name": "Alice",
+          "text": "Second question",
+          "at": "2026-09-03T08:00:00.016Z"
+        },
+        {
+          "kind": "reply",
+          "id": "00000007",
+          "text": "Second answer.",
+          "at": "2026-09-03T08:00:00.017Z"
+        }
+      ]
+    },
+    "photos": 0
+  },
+  "bob": {
+    "view": {
+      "publicTitle": "Golden launch",
+      "state": "active",
+      "holder": "Alice",
+      "items": [
+        {
+          "kind": "message",
+          "id": "00000004",
+          "by": "",
+          "name": "Someone",
+          "text": "First question",
+          "at": "2026-09-03T08:00:00.012Z"
+        },
+        {
+          "kind": "reply",
+          "id": "00000005",
+          "text": "First answer, with some detail to summarize later.",
+          "at": "2026-09-03T08:00:00.013Z"
+        },
+        {
+          "kind": "message",
+          "id": "00000006",
+          "by": "p_alice",
+          "name": "Alice",
+          "text": "Second question",
+          "at": "2026-09-03T08:00:00.016Z"
+        },
+        {
+          "kind": "reply",
+          "id": "00000007",
+          "text": "Second answer.",
+          "at": "2026-09-03T08:00:00.017Z"
+        }
+      ]
+    },
+    "photos": 0
+  },
+  "untilOffer": {
+    "publicTitle": "Golden launch",
+    "state": "active",
+    "holder": null,
+    "items": [
+      {
+        "kind": "message",
+        "id": "00000004",
+        "by": "",
+        "name": "Someone",
+        "text": "First question",
+        "at": "2026-09-03T08:00:00.012Z"
+      },
+      {
+        "kind": "reply",
+        "id": "00000005",
+        "text": "First answer, with some detail to summarize later.",
+        "at": "2026-09-03T08:00:00.013Z"
+      },
+      {
+        "kind": "message",
+        "id": "00000006",
+        "by": "p_alice",
+        "name": "Alice",
+        "text": "Second question",
+        "at": "2026-09-03T08:00:00.016Z"
+      },
+      {
+        "kind": "reply",
+        "id": "00000007",
+        "text": "Second answer.",
+        "at": "2026-09-03T08:00:00.017Z"
+      }
+    ]
+  }
+}

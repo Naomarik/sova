@@ -1,0 +1,101 @@
+# Golden tests: what today's readers output
+
+The harness-boundary refactor (§app/harness, milestones 2–4) moves every reader of pi session files behind
+`server/harness/pi/`. These goldens record what the readers output **before** anything moves, on a fixed
+set of inputs, so each refactor batch proves its output byte-identical. They run in `pnpm test`
+(`server/harness/**/*.test.ts` is in the runner's GLOBS): a broken or stale expected file fails the suite.
+
+```
+fixtures/synthetic/*.jsonl          hand-written pi sessions, one reason each (make-synthetic.ts wrote them)
+fixtures/faux/<scenario>/           genuine pi 0.87.1 sessions + event streams (faux/record.ts)
+  session.jsonl, events.json
+fixtures/cc/*.jsonl                 Claude Code transcript lines (the ones server/claude-transcript.test.ts pins)
+expected/<set>/<fixture>/<probe>.json   the recorded outputs
+probes/<batch>.ts                   one file per refactor batch: reader (R1), rows (R2), usage (C), list (D),
+                                    baton (E), overseer (F), fork (H)
+golden.ts                           encode, compare (first JSON path), record, stale check
+golden.test.ts                      fixtures × probes vs expected
+CHANGES.md                          the only way an expected file may change
+faux/record.ts                      the faux recorder (scripts/harness-golden/faux-record.mjs runs it)
+```
+
+## Commands
+
+| | |
+|---|---|
+| `pnpm test -- server/harness/pi/golden/golden.test.ts` | compare (also part of every `pnpm test`) |
+| `node scripts/harness-golden.mjs compare [--set synthetic,faux,cc] [--real]` | the same, for some sets |
+| `node scripts/harness-golden.mjs record` | write the expected files that are missing |
+| `node scripts/harness-golden.mjs record --accept <probe>` | rewrite that probe's differing files, after a CHANGES.md line |
+| `node scripts/harness-golden/faux-record.mjs [--check]` | regenerate the faux fixtures (`--check`: record twice, compare) |
+| `bun server/harness/pi/golden/fixtures/make-synthetic.ts [--check]` | regenerate the synthetic fixtures |
+| `node scripts/harness-golden.mjs census` | counts of entry types, roles and customTypes in the local sessions |
+| `node scripts/harness-golden.mjs sample [--out <dir>]` | copy a feature sample of local sessions into the real corpus |
+
+## Compare discipline
+
+- Outputs are JSON. Wire rows (`rows`, `rows-each`, `watch`, `transcript-rows` bodies) are recorded as
+  the strings the server sends, so they compare byte for byte, key order included. Everything else compares
+  by value: key order is ignored, a key whose value is `undefined` is absent (JSON's rule), Maps and Sets
+  are `{"$map": […]}` / `{"$set": […]}`, a thrown error is `{"$throws": "Name: message"}`.
+- A failure names the probe, the fixture and the JSON path of the first difference, with both values for a
+  committed fixture and nothing but the file's hash for the real corpus.
+- A batch edits only **its own probes file**, and only to follow a moved function: the diff changes call
+  paths, never post-processing. `record` never rewrites an existing expected file without `--accept <probe>`,
+  and `--accept` refuses until `CHANGES.md` has a line added since HEAD naming the probe.
+- Path-based probes read a private copy of each fixture inside the test's own `PI_CODING_AGENT_DIR`; any
+  occurrence of that dir in an output becomes `<agent>`.
+
+## Synthetic fixtures
+
+| fixture | covers |
+|---|---|
+| `all-types` | header v3 with parentSession; model and thinking changes; every message role (user text, user with two images and pi 0.87 resize notes and a /tmp attachment, assistant thinking+text+toolCall with usage, toolUse/error/aborted/length stops, an unknown block type, no provider; toolResult ok, isError, align with a doc and an exemption; bashExecution; custom display true/false; subagent-complete; branchSummary; compactionSummary; 0.86 system with sections, toolsAdded/Removed); session_info; label set and cleared; compaction; branch_summary; every rendered custom type (mode major/minor/strict/state-only, btw, align-doc ×2, explain-doc running→final and interrupted, compact-handoff-run running→saved and failed, overseer-sent, session-sent, profile, overseer-dialog-answer, team event valid and invalid, claude-login switch and plain, all 8 baton rows, topic-outline, an unrendered extension state); custom_message (worktree-merge valid and unreadable, display:false, generic, team report); 0.86 `usage` (cache_warm); 0.87 `context_edit` |
+| `unknown` | a top-level `future_entry` mid-branch and as the leaf; message role `future_role` |
+| `unknown-noid` | an id-less entry in a branched file: pins today's flattening (every abandoned branch renders). Pinned as is by decision: fixed later under its own claim |
+| `rewind` | two `sova-rewind` markers abandoning branches, then a marker with no data; the leaf is a marker |
+| `fork` | parentSession; `sova-fork-cache`; the registry types a fork drops (manifest, team, team event, assignment); a wake_nudge result with details |
+| `compaction-end` | the branch ends at a compaction (fill unknown) |
+| `compaction-mid` | messages after a compaction; a model_change before a reply with no provider; an error reply last |
+| `tail-0.86-0.87` | the reply followed by 0.86 usage, 0.87 context_edit and system lines, and a usage of an unknown kind |
+| `legacy-v1` | an id-less linear file with string content |
+| `torn` | blank lines, a malformed middle line, a non-object line, a torn last line |
+| `broken-cycle`, `broken-dangling`, `broken-dup` | a parent cycle; a missing parent; a duplicate id |
+| `user-kinds` | wake nudge, scheduled run, link message, topic batch, a /skill block, read_link results ok and failed, a skill read by bash |
+| `workers` | team create/add, worker manifests (running, done, lost), team events, subagent-complete, a legacy registry entry, a worktrees entry |
+| `baton` | a baton session: marker, sent markers, hand-off, decision, offer and lease, proposal, done, the wrap-up span, a photo |
+| `align-merge` | align results (two docs, a decision, done), worktrees entries before and after a merge card, a check run |
+
+## Faux fixtures (`faux-record.mjs`)
+
+`plain`, `thinking`, `tool-read` (the builtin read tool on a temp file), `error-retry` (a 503, pi's
+auto-retry and the `context_edit` it writes), `abort` (aborted at the first text delta), `compact`
+(`compact()` with a faux summary), `steer-followup` (a steer and a follow-up queued during a tool call),
+`image-resize` (a 2560×1600 PNG, so pi writes its resize note). A real AgentSession on the pinned pi with
+pi-ai's faux provider, in a fixed temp agent dir on a fake clock: two runs are byte-identical
+(`--check`). Entry ids, the session id and the run's paths are renumbered into same-length placeholders;
+pi's package dir in the system prompt reads `/golden-pi`. `events.json` is every event in order, the only
+genuine pi event streams in the repo (milestone 3 reuses them).
+
+## Probes
+
+| file (batch) | probes |
+|---|---|
+| `reader` (R1) | `reader`: header, ids, branch ids and types, leaf |
+| `rows` (R2) | `rows` (pi and CC), `rows-each` (each entry alone, as the live path appends it), `context`, `tool-content` (pi and CC), `transcript-rows` (tail, before, from, a block's entry, missing, explain, a small chunk, an abandoned leaf, the light view; context through `resolveContext`), `watch` (snapshot, then two appends; pi and CC) |
+| `usage` (C) | `insights-facts` (`extractFacts`), `attention-turn` (`turnFacts(readTailBranch)`, whole and a 4 KB window), `skills`, `worker-skills`, `worker-fill` (`readTailFill`, `contextTally`), `unread` (since 0, mid, after; and the incremental path against a fresh count) |
+| `list` (D) | `summary` (the file-derived fields of `getSessionSummary`), `head` (`readHead`), `tail` (`readTailModel`, `readTailContext`, `readTailReply`), `title-input`, `tail-turn` (session-tags), `schedule-last-turn` (`lastTurn`), `project-costs-title` |
+| `baton` (E) | `baton-view` (operator, a person, an invitee before the offer), `baton-facts` (vocabulary, senders, author notes, recount, recorded model, photos), `share-view` (`shownEntries`, `branchTo`) |
+| `overseer` (F) | `overseer-folds` (prompted, briefed, cleared, `lastReplyIn`, open alignments), `align-scan` and `readiness-scan` (whole, a prefix, then grown) |
+| `fork` (H) | `fork` (`parseSourceDoc`, `activeBranchLines`, `forkPrefix` raw lines for every id + an abandoned + a missing one), `regenerate` (every id and its `:0` block), `rewind` (`rewindSession` on a stand-in session), `chat-title` |
+
+Spend is the usage ledger's (feat/usage-ledger): no transcript reader prices anything, so no probe records
+spend from a session file; project-costs reads only the session's title from one.
+
+## The real corpus (local only)
+
+`sample` copies local sessions, read-only, into `.agent/golden-real/sessions/<sha256[:12]>.jsonl` (gitignored;
+it refuses any dir git does not ignore) and writes `report.json` with hashes, sizes, features and JSON field
+paths, never content. `record --real` then writes `.agent/golden-real/expected/` at the batch's branch
+point, and `compare --real` (or any `pnpm test` while the dir exists) reports a difference as the file's
+hash, the probe and a JSON path. The golden test skips the set when the dir is absent.

@@ -1,0 +1,5 @@
+[
+  "{\"type\":\"snapshot\",\"items\":[{\"id\":\"k0000001\",\"kind\":\"user\",\"at\":\"2026-09-01T10:00:01.000Z\",\"text\":\"Root\",\"meta\":{\"type\":\"message\",\"role\":\"user\"}}],\"context\":null}",
+  "{\"type\":\"append\",\"items\":[{\"id\":\"k0000002:0\",\"kind\":\"assistant-text\",\"text\":\"Middle\",\"at\":\"2026-09-01T10:00:02.000Z\",\"model\":\"zai/glm-5.3\",\"meta\":{\"type\":\"message\",\"role\":\"assistant\",\"provider\":\"zai\",\"model\":\"glm-5.3\",\"usage\":{\"input\":1200,\"output\":80,\"cacheRead\":400,\"cacheWrite\":0,\"totalTokens\":1680,\"cost\":{\"input\":0.001,\"output\":0.002,\"cacheRead\":0.0001,\"cacheWrite\":0,\"total\":0.0031}},\"stopReason\":\"stop\"}}],\"context\":{\"tokens\":1600,\"window\":200000}}",
+  "{\"type\":\"append\",\"items\":[{\"id\":\"k0000003\",\"kind\":\"user\",\"at\":\"2026-09-01T10:00:03.000Z\",\"text\":\"Leaf closes the cycle\",\"meta\":{\"type\":\"message\",\"role\":\"user\"}}],\"context\":{\"tokens\":1600,\"window\":200000}}"
+]

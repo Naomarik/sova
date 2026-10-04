@@ -1,0 +1,37 @@
+{
+  "tail": {
+    "status": 200,
+    "body": "{\"items\":[{\"id\":\"k0000001\",\"kind\":\"user\",\"at\":\"2026-09-01T10:00:01.000Z\",\"text\":\"Root\",\"meta\":{\"type\":\"message\",\"role\":\"user\"}},{\"id\":\"k0000002:0\",\"kind\":\"assistant-text\",\"text\":\"Middle\",\"at\":\"2026-09-01T10:00:02.000Z\",\"model\":\"zai/glm-5.3\",\"meta\":{\"type\":\"message\",\"role\":\"assistant\",\"provider\":\"zai\",\"model\":\"glm-5.3\",\"usage\":{\"input\":1200,\"output\":80,\"cacheRead\":400,\"cacheWrite\":0,\"totalTokens\":1680,\"cost\":{\"input\":0.001,\"output\":0.002,\"cacheRead\":0.0001,\"cacheWrite\":0,\"total\":0.0031}},\"stopReason\":\"stop\"}},{\"id\":\"k0000003\",\"kind\":\"user\",\"at\":\"2026-09-01T10:00:03.000Z\",\"text\":\"Leaf closes the cycle\",\"meta\":{\"type\":\"message\",\"role\":\"user\"}}],\"older\":0,\"olderSummary\":{\"inputs\":[],\"messages\":0,\"replies\":false},\"context\":{\"tokens\":1600,\"window\":1000000}}"
+  },
+  "before-mid": {
+    "status": 200,
+    "body": "{\"items\":[{\"id\":\"k0000001\",\"kind\":\"user\",\"at\":\"2026-09-01T10:00:01.000Z\",\"text\":\"Root\",\"meta\":{\"type\":\"message\",\"role\":\"user\"}}],\"older\":0,\"olderSummary\":{\"inputs\":[],\"messages\":0,\"replies\":false}}"
+  },
+  "from-first": {
+    "status": 200,
+    "body": "{\"items\":[{\"id\":\"k0000001\",\"kind\":\"user\",\"at\":\"2026-09-01T10:00:01.000Z\",\"text\":\"Root\",\"meta\":{\"type\":\"message\",\"role\":\"user\"}},{\"id\":\"k0000002:0\",\"kind\":\"assistant-text\",\"text\":\"Middle\",\"at\":\"2026-09-01T10:00:02.000Z\",\"model\":\"zai/glm-5.3\",\"meta\":{\"type\":\"message\",\"role\":\"assistant\",\"provider\":\"zai\",\"model\":\"glm-5.3\",\"usage\":{\"input\":1200,\"output\":80,\"cacheRead\":400,\"cacheWrite\":0,\"totalTokens\":1680,\"cost\":{\"input\":0.001,\"output\":0.002,\"cacheRead\":0.0001,\"cacheWrite\":0,\"total\":0.0031}},\"stopReason\":\"stop\"}},{\"id\":\"k0000003\",\"kind\":\"user\",\"at\":\"2026-09-01T10:00:03.000Z\",\"text\":\"Leaf closes the cycle\",\"meta\":{\"type\":\"message\",\"role\":\"user\"}}],\"older\":0,\"olderSummary\":{\"inputs\":[],\"messages\":0,\"replies\":false},\"context\":{\"tokens\":1600,\"window\":1000000}}"
+  },
+  "from-block-entry": {
+    "status": 200,
+    "body": "{\"items\":[{\"id\":\"k0000002:0\",\"kind\":\"assistant-text\",\"text\":\"Middle\",\"at\":\"2026-09-01T10:00:02.000Z\",\"model\":\"zai/glm-5.3\",\"meta\":{\"type\":\"message\",\"role\":\"assistant\",\"provider\":\"zai\",\"model\":\"glm-5.3\",\"usage\":{\"input\":1200,\"output\":80,\"cacheRead\":400,\"cacheWrite\":0,\"totalTokens\":1680,\"cost\":{\"input\":0.001,\"output\":0.002,\"cacheRead\":0.0001,\"cacheWrite\":0,\"total\":0.0031}},\"stopReason\":\"stop\"}},{\"id\":\"k0000003\",\"kind\":\"user\",\"at\":\"2026-09-01T10:00:03.000Z\",\"text\":\"Leaf closes the cycle\",\"meta\":{\"type\":\"message\",\"role\":\"user\"}}],\"older\":1,\"olderSummary\":{\"inputs\":[\"k0000001\"],\"messages\":1,\"replies\":false},\"context\":{\"tokens\":1600,\"window\":1000000}}"
+  },
+  "from-missing": {
+    "status": 404,
+    "error": "That entry isn't on this branch.",
+    "code": "missing"
+  },
+  "explain": {
+    "status": 404,
+    "error": "That entry isn't on this branch.",
+    "code": "missing"
+  },
+  "chunk": {
+    "status": 200,
+    "body": "{\"items\":[{\"id\":\"k0000001\",\"kind\":\"user\",\"at\":\"2026-09-01T10:00:01.000Z\",\"text\":\"Root\",\"meta\":{\"type\":\"message\",\"role\":\"user\"}},{\"id\":\"k0000002:0\",\"kind\":\"assistant-text\",\"text\":\"Middle\",\"at\":\"2026-09-01T10:00:02.000Z\",\"model\":\"zai/glm-5.3\",\"meta\":{\"type\":\"message\",\"role\":\"assistant\",\"provider\":\"zai\",\"model\":\"glm-5.3\",\"usage\":{\"input\":1200,\"output\":80,\"cacheRead\":400,\"cacheWrite\":0,\"totalTokens\":1680,\"cost\":{\"input\":0.001,\"output\":0.002,\"cacheRead\":0.0001,\"cacheWrite\":0,\"total\":0.0031}},\"stopReason\":\"stop\"}},{\"id\":\"k0000003\",\"kind\":\"user\",\"at\":\"2026-09-01T10:00:03.000Z\",\"text\":\"Leaf closes the cycle\",\"meta\":{\"type\":\"message\",\"role\":\"user\"}}],\"older\":0,\"olderSummary\":{\"inputs\":[],\"messages\":0,\"replies\":false},\"context\":{\"tokens\":1600,\"window\":1000000}}"
+  },
+  "leaf-abandoned": {
+    "status": 200,
+    "body": "{\"items\":[{\"id\":\"k0000001\",\"kind\":\"user\",\"at\":\"2026-09-01T10:00:01.000Z\",\"text\":\"Root\",\"meta\":{\"type\":\"message\",\"role\":\"user\"}},{\"id\":\"k0000002:0\",\"kind\":\"assistant-text\",\"text\":\"Middle\",\"at\":\"2026-09-01T10:00:02.000Z\",\"model\":\"zai/glm-5.3\",\"meta\":{\"type\":\"message\",\"role\":\"assistant\",\"provider\":\"zai\",\"model\":\"glm-5.3\",\"usage\":{\"input\":1200,\"output\":80,\"cacheRead\":400,\"cacheWrite\":0,\"totalTokens\":1680,\"cost\":{\"input\":0.001,\"output\":0.002,\"cacheRead\":0.0001,\"cacheWrite\":0,\"total\":0.0031}},\"stopReason\":\"stop\"}},{\"id\":\"k0000003\",\"kind\":\"user\",\"at\":\"2026-09-01T10:00:03.000Z\",\"text\":\"Leaf closes the cycle\",\"meta\":{\"type\":\"message\",\"role\":\"user\"}}],\"older\":0,\"olderSummary\":{\"inputs\":[],\"messages\":0,\"replies\":false},\"context\":{\"tokens\":1600,\"window\":1000000}}"
+  },
+  "light": "{\"items\":[{\"id\":\"k0000001\",\"kind\":\"user\",\"at\":\"2026-09-01T10:00:01.000Z\",\"text\":\"Root\",\"meta\":{\"type\":\"message\",\"role\":\"user\"}},{\"id\":\"k0000002:0\",\"kind\":\"assistant-text\",\"at\":\"2026-09-01T10:00:02.000Z\",\"model\":\"zai/glm-5.3\",\"meta\":{\"type\":\"message\",\"role\":\"assistant\",\"provider\":\"zai\",\"model\":\"glm-5.3\",\"usage\":{\"input\":1200,\"output\":80,\"cacheRead\":400,\"cacheWrite\":0,\"totalTokens\":1680,\"cost\":{\"input\":0.001,\"output\":0.002,\"cacheRead\":0.0001,\"cacheWrite\":0,\"total\":0.0031}},\"stopReason\":\"stop\"}},{\"id\":\"k0000003\",\"kind\":\"user\",\"at\":\"2026-09-01T10:00:03.000Z\",\"text\":\"Leaf closes the cycle\",\"meta\":{\"type\":\"message\",\"role\":\"user\"}}],\"context\":{\"tokens\":1600,\"window\":1000000}}"
+}

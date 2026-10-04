@@ -1,0 +1,14 @@
+{
+  "prompted": [],
+  "briefed": [],
+  "cleared": {
+    "$set": []
+  },
+  "lastReply": {
+    "at": 1788422400014,
+    "stopReason": "aborted",
+    "error": "Request was aborted",
+    "text": "This reply is long enough to be cut off. More words keep coming. More words keep coming. More words keep coming. More words keep coming. More words keep coming. More words keep"
+  },
+  "openAlignments": []
+}

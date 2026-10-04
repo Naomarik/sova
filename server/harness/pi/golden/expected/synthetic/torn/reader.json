@@ -1,0 +1,31 @@
+{
+  "header": {
+    "type": "session",
+    "version": 3,
+    "id": "0190a000-0000-7000-8000-j00000000000",
+    "timestamp": "2026-09-01T10:00:00.000Z",
+    "cwd": "/home/user/golden"
+  },
+  "lines": 10,
+  "entries": 5,
+  "ids": [
+    "0190a000-0000-7000-8000-j00000000000",
+    "j0000001",
+    "j0000002",
+    null,
+    "j0000003"
+  ],
+  "branch": [
+    "j0000001",
+    "j0000002",
+    null,
+    "j0000003"
+  ],
+  "leaf": "j0000003",
+  "types": [
+    "message",
+    "message",
+    null,
+    "message"
+  ]
+}

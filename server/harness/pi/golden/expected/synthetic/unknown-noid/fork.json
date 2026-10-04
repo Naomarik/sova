@@ -1,0 +1,6 @@
+{
+  "parse": {
+    "ok": false,
+    "why": "an entry on line 6 has no id"
+  }
+}

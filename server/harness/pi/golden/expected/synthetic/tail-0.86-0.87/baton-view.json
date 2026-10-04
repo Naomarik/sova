@@ -1,0 +1,71 @@
+{
+  "operator": {
+    "view": {
+      "publicTitle": "Golden launch",
+      "state": "active",
+      "holder": "Alice",
+      "items": [
+        {
+          "kind": "message",
+          "id": "h0000003",
+          "by": "p_alice",
+          "name": "Alice",
+          "text": "Do the thing",
+          "at": "2026-09-01T10:00:03.000Z"
+        },
+        {
+          "kind": "reply",
+          "id": "h0000006",
+          "text": "The thing is done.",
+          "at": "2026-09-01T10:00:06.000Z"
+        }
+      ]
+    },
+    "photos": 0
+  },
+  "bob": {
+    "view": {
+      "publicTitle": "Golden launch",
+      "state": "active",
+      "holder": "Alice",
+      "items": [
+        {
+          "kind": "message",
+          "id": "h0000003",
+          "by": "p_alice",
+          "name": "Alice",
+          "text": "Do the thing",
+          "at": "2026-09-01T10:00:03.000Z"
+        },
+        {
+          "kind": "reply",
+          "id": "h0000006",
+          "text": "The thing is done.",
+          "at": "2026-09-01T10:00:06.000Z"
+        }
+      ]
+    },
+    "photos": 0
+  },
+  "untilOffer": {
+    "publicTitle": "Golden launch",
+    "state": "active",
+    "holder": null,
+    "items": [
+      {
+        "kind": "message",
+        "id": "h0000003",
+        "by": "p_alice",
+        "name": "Alice",
+        "text": "Do the thing",
+        "at": "2026-09-01T10:00:03.000Z"
+      },
+      {
+        "kind": "reply",
+        "id": "h0000006",
+        "text": "The thing is done.",
+        "at": "2026-09-01T10:00:06.000Z"
+      }
+    ]
+  }
+}

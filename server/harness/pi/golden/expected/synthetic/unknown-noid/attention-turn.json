@@ -1,0 +1,20 @@
+{
+  "full": {
+    "turnId": "c0000004",
+    "replyAt": 1788256804000,
+    "lastUser": "Abandoned follow-up",
+    "assistantLast": "Kept answer",
+    "tools": [],
+    "stopReason": "stop",
+    "durationMs": 1000
+  },
+  "window4k": {
+    "turnId": "c0000004",
+    "replyAt": 1788256804000,
+    "lastUser": "Abandoned follow-up",
+    "assistantLast": "Kept answer",
+    "tools": [],
+    "stopReason": "stop",
+    "durationMs": 1000
+  }
+}

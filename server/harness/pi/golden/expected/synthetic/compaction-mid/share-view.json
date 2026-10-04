@@ -1,0 +1,182 @@
+{
+  "shown": [
+    {
+      "e": {
+        "type": "message",
+        "message": {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "Long work"
+            }
+          ],
+          "timestamp": 1788256802000
+        },
+        "id": "g0000002",
+        "parentId": "g0000001",
+        "timestamp": "2026-09-01T10:00:02.000Z"
+      },
+      "role": "user",
+      "text": "Long work",
+      "blocks": []
+    },
+    {
+      "e": {
+        "type": "message",
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "Done with step one"
+            }
+          ],
+          "api": "openai-completions",
+          "provider": "zai",
+          "model": "glm-5.3",
+          "usage": {
+            "input": 80000,
+            "output": 500,
+            "cacheRead": 20000,
+            "cacheWrite": 1000,
+            "totalTokens": 101500,
+            "cost": {
+              "input": 0.001,
+              "output": 0.002,
+              "cacheRead": 0.0001,
+              "cacheWrite": 0,
+              "total": 0.0031
+            }
+          },
+          "stopReason": "stop",
+          "timestamp": 1788256803000
+        },
+        "id": "g0000003",
+        "parentId": "g0000002",
+        "timestamp": "2026-09-01T10:00:03.000Z"
+      },
+      "role": "assistant",
+      "text": "Done with step one",
+      "blocks": []
+    },
+    {
+      "e": {
+        "type": "message",
+        "message": {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "Continue"
+            }
+          ],
+          "timestamp": 1788256806000
+        },
+        "id": "g0000006",
+        "parentId": "g0000005",
+        "timestamp": "2026-09-01T10:00:06.000Z"
+      },
+      "role": "user",
+      "text": "Continue",
+      "blocks": []
+    },
+    {
+      "e": {
+        "type": "message",
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "Step two"
+            }
+          ],
+          "api": "openai-completions",
+          "usage": {
+            "input": 3000,
+            "output": 100,
+            "cacheRead": 0,
+            "cacheWrite": 2000,
+            "totalTokens": 5100,
+            "cost": {
+              "input": 0.001,
+              "output": 0.002,
+              "cacheRead": 0.0001,
+              "cacheWrite": 0,
+              "total": 0.0031
+            }
+          },
+          "stopReason": "stop",
+          "timestamp": 1788256807000
+        },
+        "id": "g0000007",
+        "parentId": "g0000006",
+        "timestamp": "2026-09-01T10:00:07.000Z"
+      },
+      "role": "assistant",
+      "text": "Step two",
+      "blocks": []
+    },
+    {
+      "e": {
+        "type": "message",
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "errored"
+            }
+          ],
+          "api": "openai-completions",
+          "provider": "zai",
+          "model": "glm-5.3",
+          "usage": {
+            "input": 5000,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 5000,
+            "cost": {
+              "input": 0.001,
+              "output": 0.002,
+              "cacheRead": 0.0001,
+              "cacheWrite": 0,
+              "total": 0.0031
+            }
+          },
+          "stopReason": "error",
+          "errorMessage": "overloaded",
+          "timestamp": 1788256808000
+        },
+        "id": "g0000008",
+        "parentId": "g0000007",
+        "timestamp": "2026-09-01T10:00:08.000Z"
+      },
+      "role": "assistant",
+      "text": "errored",
+      "blocks": []
+    }
+  ],
+  "branchTo": {
+    "leaf": [
+      "g0000001",
+      "g0000002",
+      "g0000003",
+      "g0000004",
+      "g0000005",
+      "g0000006",
+      "g0000007",
+      "g0000008"
+    ],
+    "mid": [
+      "g0000001",
+      "g0000002",
+      "g0000003",
+      "g0000004",
+      "g0000005"
+    ],
+    "missing": null
+  }
+}

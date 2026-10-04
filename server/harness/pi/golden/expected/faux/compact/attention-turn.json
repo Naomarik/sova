@@ -1,0 +1,12 @@
+{
+  "full": {
+    "turnId": "00000007",
+    "replyAt": 1788350402000,
+    "lastUser": "Second question",
+    "assistantLast": "Second answer.",
+    "tools": [],
+    "stopReason": "stop",
+    "durationMs": 0
+  },
+  "window4k": null
+}

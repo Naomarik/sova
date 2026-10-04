@@ -1,0 +1,39 @@
+{
+  "parse": {
+    "ok": true,
+    "lines": 4
+  },
+  "branch": [
+    "m0000001",
+    "m0000002",
+    "m0000003"
+  ],
+  "fanout": false,
+  "prefixes": {
+    "m0000001": {
+      "ok": false,
+      "reason": "not_assistant",
+      "message": "Only an assistant reply can be forked from.",
+      "status": 400
+    },
+    "m0000002": {
+      "ok": true,
+      "prefix": [
+        "{\"type\":\"message\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"Root\"}],\"timestamp\":1788256801000},\"id\":\"m0000001\",\"parentId\":null,\"timestamp\":\"2026-09-01T10:00:01.000Z\"}",
+        "{\"type\":\"message\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"Second copy of m0000002\"}],\"provider\":\"zai\",\"model\":\"glm-5.3\",\"stopReason\":\"stop\",\"timestamp\":1788256809000},\"id\":\"m0000002\",\"parentId\":\"m0000001\",\"timestamp\":\"2026-09-01T10:00:03.000Z\"}"
+      ]
+    },
+    "m0000003": {
+      "ok": false,
+      "reason": "not_assistant",
+      "message": "Only an assistant reply can be forked from.",
+      "status": 400
+    },
+    "no-such-entry": {
+      "ok": false,
+      "reason": "not_on_branch",
+      "message": "That reply is not on this chat's current branch anymore.",
+      "status": 400
+    }
+  }
+}

@@ -1,0 +1,79 @@
+{
+  "shown": [
+    {
+      "e": {
+        "type": "message",
+        "message": {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "First question"
+            }
+          ],
+          "timestamp": 1788256802000
+        },
+        "id": "d0000002",
+        "parentId": "d0000001",
+        "timestamp": "2026-09-01T10:00:02.000Z"
+      },
+      "role": "user",
+      "text": "First question",
+      "blocks": []
+    },
+    {
+      "e": {
+        "type": "message",
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "First answer"
+            }
+          ],
+          "api": "openai-completions",
+          "provider": "zai",
+          "model": "glm-5.3",
+          "usage": {
+            "input": 1200,
+            "output": 80,
+            "cacheRead": 400,
+            "cacheWrite": 0,
+            "totalTokens": 1680,
+            "cost": {
+              "input": 0.001,
+              "output": 0.002,
+              "cacheRead": 0.0001,
+              "cacheWrite": 0,
+              "total": 0.0031
+            }
+          },
+          "stopReason": "stop",
+          "timestamp": 1788256803000
+        },
+        "id": "d0000003",
+        "parentId": "d0000002",
+        "timestamp": "2026-09-01T10:00:03.000Z"
+      },
+      "role": "assistant",
+      "text": "First answer",
+      "blocks": []
+    }
+  ],
+  "branchTo": {
+    "leaf": [
+      "d0000001",
+      "d0000002",
+      "d0000003",
+      "d0000009",
+      "d000000a"
+    ],
+    "mid": [
+      "d0000001",
+      "d0000002",
+      "d0000003"
+    ],
+    "missing": null
+  }
+}

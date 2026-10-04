@@ -1,0 +1,15 @@
+[
+  [],
+  [
+    "{\"id\":\"f0000001\",\"kind\":\"info\",\"text\":\"Model: zai/glm-5.3\",\"at\":\"2026-09-01T10:00:01.000Z\",\"meta\":{\"type\":\"model_change\"}}"
+  ],
+  [
+    "{\"id\":\"f0000002\",\"kind\":\"user\",\"at\":\"2026-09-01T10:00:02.000Z\",\"text\":\"Long work\",\"meta\":{\"type\":\"message\",\"role\":\"user\"}}"
+  ],
+  [
+    "{\"id\":\"f0000003:0\",\"kind\":\"assistant-text\",\"text\":\"Done with step one\",\"at\":\"2026-09-01T10:00:03.000Z\",\"model\":\"zai/glm-5.3\",\"meta\":{\"type\":\"message\",\"role\":\"assistant\",\"provider\":\"zai\",\"model\":\"glm-5.3\",\"usage\":{\"input\":80000,\"output\":500,\"cacheRead\":20000,\"cacheWrite\":1000,\"totalTokens\":101500,\"cost\":{\"input\":0.001,\"output\":0.002,\"cacheRead\":0.0001,\"cacheWrite\":0,\"total\":0.0031}},\"stopReason\":\"stop\"}}"
+  ],
+  [
+    "{\"id\":\"f0000004\",\"kind\":\"info\",\"text\":\"Compacted (101000 tokens): Step one summarized.\",\"at\":\"2026-09-01T10:00:04.000Z\",\"meta\":{\"type\":\"compaction\",\"tokensBefore\":101000,\"summary\":\"Step one summarized.\",\"details\":{\"readFiles\":[],\"modifiedFiles\":[\"a.ts\"]}}}"
+  ]
+]

@@ -1,0 +1,11 @@
+{
+  "id": "0190a000-0000-7000-8000-h00000000000",
+  "cwd": "/home/user/golden",
+  "title": "Do the thing",
+  "createdAt": "2026-09-01T10:00:00.000Z",
+  "model": "anthropic/claude-sonnet-5",
+  "context": {
+    "tokens": 54700,
+    "window": null
+  }
+}

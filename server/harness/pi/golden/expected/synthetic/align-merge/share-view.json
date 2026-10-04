@@ -1,0 +1,159 @@
+{
+  "shown": [
+    {
+      "e": {
+        "type": "message",
+        "message": {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "Align on the export, then build it"
+            }
+          ],
+          "timestamp": 1788256803000
+        },
+        "id": "q0000003",
+        "parentId": "q0000002",
+        "timestamp": "2026-09-01T10:00:03.000Z"
+      },
+      "role": "user",
+      "text": "Align on the export, then build it",
+      "blocks": []
+    },
+    {
+      "e": {
+        "type": "message",
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "Two questions are open on Export. Shall I go on?"
+            }
+          ],
+          "api": "openai-completions",
+          "provider": "zai",
+          "model": "glm-5.3",
+          "usage": {
+            "input": 1200,
+            "output": 80,
+            "cacheRead": 400,
+            "cacheWrite": 0,
+            "totalTokens": 1680,
+            "cost": {
+              "input": 0.001,
+              "output": 0.002,
+              "cacheRead": 0.0001,
+              "cacheWrite": 0,
+              "total": 0.0031
+            }
+          },
+          "stopReason": "stop",
+          "timestamp": 1788256810000
+        },
+        "id": "q000000a",
+        "parentId": "q0000009",
+        "timestamp": "2026-09-01T10:00:10.000Z"
+      },
+      "role": "assistant",
+      "text": "Two questions are open on Export. Shall I go on?",
+      "blocks": []
+    },
+    {
+      "e": {
+        "type": "message",
+        "message": {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "Yes, build it"
+            }
+          ],
+          "timestamp": 1788256811000
+        },
+        "id": "q000000b",
+        "parentId": "q000000a",
+        "timestamp": "2026-09-01T10:00:11.000Z"
+      },
+      "role": "user",
+      "text": "Yes, build it",
+      "blocks": []
+    },
+    {
+      "e": {
+        "type": "message",
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "Merged. Restart the server to pick it up.\n\nAlso changes: none"
+            }
+          ],
+          "api": "openai-completions",
+          "provider": "zai",
+          "model": "glm-5.3",
+          "usage": {
+            "input": 1200,
+            "output": 80,
+            "cacheRead": 400,
+            "cacheWrite": 0,
+            "totalTokens": 1680,
+            "cost": {
+              "input": 0.001,
+              "output": 0.002,
+              "cacheRead": 0.0001,
+              "cacheWrite": 0,
+              "total": 0.0031
+            }
+          },
+          "stopReason": "stop",
+          "timestamp": 1788256818000
+        },
+        "id": "q0000012",
+        "parentId": "q0000011",
+        "timestamp": "2026-09-01T10:00:18.000Z"
+      },
+      "role": "assistant",
+      "text": "Merged. Restart the server to pick it up.\n\nAlso changes: none",
+      "blocks": []
+    }
+  ],
+  "branchTo": {
+    "leaf": [
+      "q0000001",
+      "q0000002",
+      "q0000003",
+      "q0000004",
+      "q0000005",
+      "q0000006",
+      "q0000007",
+      "q0000008",
+      "q0000009",
+      "q000000a",
+      "q000000b",
+      "q000000c",
+      "q000000d",
+      "q000000e",
+      "q000000f",
+      "q0000010",
+      "q0000011",
+      "q0000012"
+    ],
+    "mid": [
+      "q0000001",
+      "q0000002",
+      "q0000003",
+      "q0000004",
+      "q0000005",
+      "q0000006",
+      "q0000007",
+      "q0000008",
+      "q0000009",
+      "q000000a"
+    ],
+    "missing": null
+  }
+}

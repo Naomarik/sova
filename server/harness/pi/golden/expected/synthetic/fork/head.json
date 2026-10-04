@@ -1,0 +1,15 @@
+{
+  "header": {
+    "type": "session",
+    "version": 3,
+    "id": "0190a000-0000-7000-8000-e00000000000",
+    "timestamp": "2026-09-01T10:00:00.000Z",
+    "cwd": "/home/user/golden",
+    "parentSession": "/home/user/.pi/agent/sessions/--home-user-golden--/2026-08-31T09-00-00-000Z_0190a000-0000-7000-8000-source000000.jsonl"
+  },
+  "title": "Fork from here please",
+  "model": "openai/gpt-5.5",
+  "overseer": false,
+  "input": true,
+  "profile": null
+}

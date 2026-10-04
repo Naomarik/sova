@@ -1,0 +1,137 @@
+{
+  "operator": {
+    "view": {
+      "publicTitle": "Golden launch",
+      "state": "active",
+      "holder": "Alice",
+      "items": [
+        {
+          "kind": "message",
+          "id": "00000004",
+          "by": "",
+          "name": "Someone",
+          "text": "Read notes.txt",
+          "at": "2026-09-03T08:00:00.012Z"
+        },
+        {
+          "kind": "message",
+          "id": "00000007",
+          "by": "",
+          "name": "Someone",
+          "text": "and also check the second line",
+          "at": "2026-09-03T08:00:00.019Z"
+        },
+        {
+          "kind": "reply",
+          "id": "00000008",
+          "text": "The second line says line two.",
+          "at": "2026-09-03T08:00:00.020Z"
+        },
+        {
+          "kind": "message",
+          "id": "00000009",
+          "by": "p_alice",
+          "name": "Alice",
+          "text": "then summarize",
+          "at": "2026-09-03T08:00:00.022Z"
+        },
+        {
+          "kind": "reply",
+          "id": "0000000a",
+          "text": "Summary: two lines.",
+          "at": "2026-09-03T08:00:00.023Z"
+        }
+      ]
+    },
+    "photos": 0
+  },
+  "bob": {
+    "view": {
+      "publicTitle": "Golden launch",
+      "state": "active",
+      "holder": "Alice",
+      "items": [
+        {
+          "kind": "message",
+          "id": "00000004",
+          "by": "",
+          "name": "Someone",
+          "text": "Read notes.txt",
+          "at": "2026-09-03T08:00:00.012Z"
+        },
+        {
+          "kind": "message",
+          "id": "00000007",
+          "by": "",
+          "name": "Someone",
+          "text": "and also check the second line",
+          "at": "2026-09-03T08:00:00.019Z"
+        },
+        {
+          "kind": "reply",
+          "id": "00000008",
+          "text": "The second line says line two.",
+          "at": "2026-09-03T08:00:00.020Z"
+        },
+        {
+          "kind": "message",
+          "id": "00000009",
+          "by": "p_alice",
+          "name": "Alice",
+          "text": "then summarize",
+          "at": "2026-09-03T08:00:00.022Z"
+        },
+        {
+          "kind": "reply",
+          "id": "0000000a",
+          "text": "Summary: two lines.",
+          "at": "2026-09-03T08:00:00.023Z"
+        }
+      ]
+    },
+    "photos": 0
+  },
+  "untilOffer": {
+    "publicTitle": "Golden launch",
+    "state": "active",
+    "holder": null,
+    "items": [
+      {
+        "kind": "message",
+        "id": "00000004",
+        "by": "",
+        "name": "Someone",
+        "text": "Read notes.txt",
+        "at": "2026-09-03T08:00:00.012Z"
+      },
+      {
+        "kind": "message",
+        "id": "00000007",
+        "by": "",
+        "name": "Someone",
+        "text": "and also check the second line",
+        "at": "2026-09-03T08:00:00.019Z"
+      },
+      {
+        "kind": "reply",
+        "id": "00000008",
+        "text": "The second line says line two.",
+        "at": "2026-09-03T08:00:00.020Z"
+      },
+      {
+        "kind": "message",
+        "id": "00000009",
+        "by": "p_alice",
+        "name": "Alice",
+        "text": "then summarize",
+        "at": "2026-09-03T08:00:00.022Z"
+      },
+      {
+        "kind": "reply",
+        "id": "0000000a",
+        "text": "Summary: two lines.",
+        "at": "2026-09-03T08:00:00.023Z"
+      }
+    ]
+  }
+}

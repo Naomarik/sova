@@ -1,0 +1,37 @@
+{
+  "tail": {
+    "status": 200,
+    "body": "{\"items\":[{\"id\":\"00000001\",\"kind\":\"info\",\"text\":\"Model: faux/faux-1\",\"at\":\"2026-09-03T08:00:00.006Z\",\"meta\":{\"type\":\"model_change\"}},{\"id\":\"00000002\",\"kind\":\"info\",\"text\":\"Thinking: medium\",\"at\":\"2026-09-03T08:00:00.007Z\",\"meta\":{\"type\":\"thinking_level_change\"}},{\"id\":\"00000004\",\"kind\":\"user\",\"at\":\"2026-09-03T08:00:00.012Z\",\"text\":\"Can you think first?\",\"meta\":{\"type\":\"message\",\"role\":\"user\"}},{\"id\":\"00000005:0\",\"kind\":\"thinking\",\"text\":\"The user wants a short answer.\",\"at\":\"2026-09-03T08:00:00.013Z\",\"model\":\"faux/faux-1\",\"meta\":{\"type\":\"message\",\"role\":\"assistant\",\"provider\":\"faux\",\"model\":\"faux-1\",\"usage\":{\"input\":1373,\"output\":13,\"cacheRead\":0,\"cacheWrite\":1373,\"totalTokens\":2759,\"cost\":{\"input\":0,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"total\":0}},\"stopReason\":\"stop\"}},{\"id\":\"00000005:1\",\"kind\":\"assistant-text\",\"text\":\"Short answer: yes.\",\"at\":\"2026-09-03T08:00:00.013Z\",\"model\":\"faux/faux-1\"}],\"older\":0,\"olderSummary\":{\"inputs\":[],\"messages\":0,\"replies\":false},\"context\":{\"tokens\":2746,\"window\":null}}"
+  },
+  "before-mid": {
+    "status": 200,
+    "body": "{\"items\":[{\"id\":\"00000001\",\"kind\":\"info\",\"text\":\"Model: faux/faux-1\",\"at\":\"2026-09-03T08:00:00.006Z\",\"meta\":{\"type\":\"model_change\"}},{\"id\":\"00000002\",\"kind\":\"info\",\"text\":\"Thinking: medium\",\"at\":\"2026-09-03T08:00:00.007Z\",\"meta\":{\"type\":\"thinking_level_change\"}}],\"older\":0,\"olderSummary\":{\"inputs\":[],\"messages\":0,\"replies\":false}}"
+  },
+  "from-first": {
+    "status": 200,
+    "body": "{\"items\":[{\"id\":\"00000001\",\"kind\":\"info\",\"text\":\"Model: faux/faux-1\",\"at\":\"2026-09-03T08:00:00.006Z\",\"meta\":{\"type\":\"model_change\"}},{\"id\":\"00000002\",\"kind\":\"info\",\"text\":\"Thinking: medium\",\"at\":\"2026-09-03T08:00:00.007Z\",\"meta\":{\"type\":\"thinking_level_change\"}},{\"id\":\"00000004\",\"kind\":\"user\",\"at\":\"2026-09-03T08:00:00.012Z\",\"text\":\"Can you think first?\",\"meta\":{\"type\":\"message\",\"role\":\"user\"}},{\"id\":\"00000005:0\",\"kind\":\"thinking\",\"text\":\"The user wants a short answer.\",\"at\":\"2026-09-03T08:00:00.013Z\",\"model\":\"faux/faux-1\",\"meta\":{\"type\":\"message\",\"role\":\"assistant\",\"provider\":\"faux\",\"model\":\"faux-1\",\"usage\":{\"input\":1373,\"output\":13,\"cacheRead\":0,\"cacheWrite\":1373,\"totalTokens\":2759,\"cost\":{\"input\":0,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"total\":0}},\"stopReason\":\"stop\"}},{\"id\":\"00000005:1\",\"kind\":\"assistant-text\",\"text\":\"Short answer: yes.\",\"at\":\"2026-09-03T08:00:00.013Z\",\"model\":\"faux/faux-1\"}],\"older\":0,\"olderSummary\":{\"inputs\":[],\"messages\":0,\"replies\":false},\"context\":{\"tokens\":2746,\"window\":null}}"
+  },
+  "from-block-entry": {
+    "status": 200,
+    "body": "{\"items\":[{\"id\":\"00000005:0\",\"kind\":\"thinking\",\"text\":\"The user wants a short answer.\",\"at\":\"2026-09-03T08:00:00.013Z\",\"model\":\"faux/faux-1\",\"meta\":{\"type\":\"message\",\"role\":\"assistant\",\"provider\":\"faux\",\"model\":\"faux-1\",\"usage\":{\"input\":1373,\"output\":13,\"cacheRead\":0,\"cacheWrite\":1373,\"totalTokens\":2759,\"cost\":{\"input\":0,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"total\":0}},\"stopReason\":\"stop\"}},{\"id\":\"00000005:1\",\"kind\":\"assistant-text\",\"text\":\"Short answer: yes.\",\"at\":\"2026-09-03T08:00:00.013Z\",\"model\":\"faux/faux-1\"}],\"older\":3,\"olderSummary\":{\"inputs\":[\"00000004\"],\"messages\":1,\"replies\":false},\"context\":{\"tokens\":2746,\"window\":null}}"
+  },
+  "from-missing": {
+    "status": 404,
+    "error": "That entry isn't on this branch.",
+    "code": "missing"
+  },
+  "explain": {
+    "status": 404,
+    "error": "That entry isn't on this branch.",
+    "code": "missing"
+  },
+  "chunk": {
+    "status": 200,
+    "body": "{\"items\":[{\"id\":\"00000001\",\"kind\":\"info\",\"text\":\"Model: faux/faux-1\",\"at\":\"2026-09-03T08:00:00.006Z\",\"meta\":{\"type\":\"model_change\"}},{\"id\":\"00000002\",\"kind\":\"info\",\"text\":\"Thinking: medium\",\"at\":\"2026-09-03T08:00:00.007Z\",\"meta\":{\"type\":\"thinking_level_change\"}},{\"id\":\"00000004\",\"kind\":\"user\",\"at\":\"2026-09-03T08:00:00.012Z\",\"text\":\"Can you think first?\",\"meta\":{\"type\":\"message\",\"role\":\"user\"}},{\"id\":\"00000005:0\",\"kind\":\"thinking\",\"text\":\"The user wants a short answer.\",\"at\":\"2026-09-03T08:00:00.013Z\",\"model\":\"faux/faux-1\",\"meta\":{\"type\":\"message\",\"role\":\"assistant\",\"provider\":\"faux\",\"model\":\"faux-1\",\"usage\":{\"input\":1373,\"output\":13,\"cacheRead\":0,\"cacheWrite\":1373,\"totalTokens\":2759,\"cost\":{\"input\":0,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"total\":0}},\"stopReason\":\"stop\"}},{\"id\":\"00000005:1\",\"kind\":\"assistant-text\",\"text\":\"Short answer: yes.\",\"at\":\"2026-09-03T08:00:00.013Z\",\"model\":\"faux/faux-1\"}],\"older\":0,\"olderSummary\":{\"inputs\":[],\"messages\":0,\"replies\":false},\"context\":{\"tokens\":2746,\"window\":null}}"
+  },
+  "leaf-abandoned": {
+    "status": 200,
+    "body": "{\"items\":[{\"id\":\"00000001\",\"kind\":\"info\",\"text\":\"Model: faux/faux-1\",\"at\":\"2026-09-03T08:00:00.006Z\",\"meta\":{\"type\":\"model_change\"}},{\"id\":\"00000002\",\"kind\":\"info\",\"text\":\"Thinking: medium\",\"at\":\"2026-09-03T08:00:00.007Z\",\"meta\":{\"type\":\"thinking_level_change\"}},{\"id\":\"00000004\",\"kind\":\"user\",\"at\":\"2026-09-03T08:00:00.012Z\",\"text\":\"Can you think first?\",\"meta\":{\"type\":\"message\",\"role\":\"user\"}},{\"id\":\"00000005:0\",\"kind\":\"thinking\",\"text\":\"The user wants a short answer.\",\"at\":\"2026-09-03T08:00:00.013Z\",\"model\":\"faux/faux-1\",\"meta\":{\"type\":\"message\",\"role\":\"assistant\",\"provider\":\"faux\",\"model\":\"faux-1\",\"usage\":{\"input\":1373,\"output\":13,\"cacheRead\":0,\"cacheWrite\":1373,\"totalTokens\":2759,\"cost\":{\"input\":0,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"total\":0}},\"stopReason\":\"stop\"}},{\"id\":\"00000005:1\",\"kind\":\"assistant-text\",\"text\":\"Short answer: yes.\",\"at\":\"2026-09-03T08:00:00.013Z\",\"model\":\"faux/faux-1\"}],\"older\":0,\"olderSummary\":{\"inputs\":[],\"messages\":0,\"replies\":false},\"context\":{\"tokens\":2746,\"window\":null}}"
+  },
+  "light": "{\"items\":[{\"id\":\"00000001\",\"kind\":\"info\",\"text\":\"Model: faux/faux-1\",\"at\":\"2026-09-03T08:00:00.006Z\",\"meta\":{\"type\":\"model_change\"}},{\"id\":\"00000002\",\"kind\":\"info\",\"text\":\"Thinking: medium\",\"at\":\"2026-09-03T08:00:00.007Z\",\"meta\":{\"type\":\"thinking_level_change\"}},{\"id\":\"00000004\",\"kind\":\"user\",\"at\":\"2026-09-03T08:00:00.012Z\",\"text\":\"Can you think first?\",\"meta\":{\"type\":\"message\",\"role\":\"user\"}},{\"id\":\"00000005:0\",\"kind\":\"thinking\",\"at\":\"2026-09-03T08:00:00.013Z\",\"model\":\"faux/faux-1\",\"meta\":{\"type\":\"message\",\"role\":\"assistant\",\"provider\":\"faux\",\"model\":\"faux-1\",\"usage\":{\"input\":1373,\"output\":13,\"cacheRead\":0,\"cacheWrite\":1373,\"totalTokens\":2759,\"cost\":{\"input\":0,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"total\":0}},\"stopReason\":\"stop\"}},{\"id\":\"00000005:1\",\"kind\":\"assistant-text\",\"at\":\"2026-09-03T08:00:00.013Z\",\"model\":\"faux/faux-1\"}],\"context\":{\"tokens\":2746,\"window\":null}}"
+}

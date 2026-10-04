@@ -1,0 +1,14 @@
+# Golden exception log
+
+The only way an expected file under `expected/` may change. One line per intended output change, added in
+the same change as the re-record (`node scripts/harness-golden.mjs record --accept <probe>` refuses until a
+line added since HEAD names the probe):
+
+`- <date> <probe> <fixture(s)>: <why the output changes> — <reviewer>`
+
+A changed fixture (a re-run of `make-synthetic.ts` or `faux-record.mjs`) changes its expected files too, and
+gets a line naming every probe it re-records.
+
+## Log
+
+- 2026-10-05 (all) (all): first record, on feat/harness-integration 51f575e plus test-only exports — G0a/G0b

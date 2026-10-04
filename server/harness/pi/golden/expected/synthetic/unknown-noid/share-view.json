@@ -1,0 +1,157 @@
+{
+  "shown": [
+    {
+      "e": {
+        "type": "message",
+        "message": {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "Root question"
+            }
+          ],
+          "timestamp": 1788256801000
+        },
+        "id": "c0000001",
+        "parentId": null,
+        "timestamp": "2026-09-01T10:00:01.000Z"
+      },
+      "role": "user",
+      "text": "Root question",
+      "blocks": []
+    },
+    {
+      "e": {
+        "type": "message",
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "Abandoned answer"
+            }
+          ],
+          "api": "openai-completions",
+          "provider": "zai",
+          "model": "glm-5.3",
+          "usage": {
+            "input": 1200,
+            "output": 80,
+            "cacheRead": 400,
+            "cacheWrite": 0,
+            "totalTokens": 1680,
+            "cost": {
+              "input": 0.001,
+              "output": 0.002,
+              "cacheRead": 0.0001,
+              "cacheWrite": 0,
+              "total": 0.0031
+            }
+          },
+          "stopReason": "stop",
+          "timestamp": 1788256802000
+        },
+        "id": "c0000002",
+        "parentId": "c0000001",
+        "timestamp": "2026-09-01T10:00:02.000Z"
+      },
+      "role": "assistant",
+      "text": "Abandoned answer",
+      "blocks": []
+    },
+    {
+      "e": {
+        "type": "message",
+        "message": {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "Abandoned follow-up"
+            }
+          ],
+          "timestamp": 1788256803000
+        },
+        "id": "c0000003",
+        "parentId": "c0000002",
+        "timestamp": "2026-09-01T10:00:03.000Z"
+      },
+      "role": "user",
+      "text": "Abandoned follow-up",
+      "blocks": []
+    },
+    {
+      "e": {
+        "type": "message",
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "Kept answer"
+            }
+          ],
+          "api": "openai-completions",
+          "provider": "zai",
+          "model": "glm-5.3",
+          "usage": {
+            "input": 1200,
+            "output": 80,
+            "cacheRead": 400,
+            "cacheWrite": 0,
+            "totalTokens": 1680,
+            "cost": {
+              "input": 0.001,
+              "output": 0.002,
+              "cacheRead": 0.0001,
+              "cacheWrite": 0,
+              "total": 0.0031
+            }
+          },
+          "stopReason": "stop",
+          "timestamp": 1788256804000
+        },
+        "id": "c0000004",
+        "parentId": "c0000001",
+        "timestamp": "2026-09-01T10:00:04.000Z"
+      },
+      "role": "assistant",
+      "text": "Kept answer",
+      "blocks": []
+    },
+    {
+      "e": {
+        "type": "message",
+        "message": {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "After the id-less entry"
+            }
+          ],
+          "timestamp": 1788256805000
+        },
+        "id": "c0000005",
+        "parentId": "c0000004",
+        "timestamp": "2026-09-01T10:00:05.000Z"
+      },
+      "role": "user",
+      "text": "After the id-less entry",
+      "blocks": []
+    }
+  ],
+  "branchTo": {
+    "leaf": [
+      "c0000001",
+      "c0000004",
+      "c0000005"
+    ],
+    "mid": [
+      "c0000001",
+      "c0000004"
+    ],
+    "missing": null
+  }
+}

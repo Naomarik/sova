@@ -1,0 +1,12 @@
+{
+  "no-such-entry": {
+    "ok": false,
+    "reason": "not_on_branch",
+    "message": "That reply is not on this chat's current branch anymore."
+  },
+  "no-such-entry:0": {
+    "ok": false,
+    "reason": "not_on_branch",
+    "message": "That reply is not on this chat's current branch anymore."
+  }
+}

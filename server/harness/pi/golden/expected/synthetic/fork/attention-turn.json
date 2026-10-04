@@ -1,0 +1,34 @@
+{
+  "full": {
+    "turnId": "e000000a",
+    "replyAt": 1788256810000,
+    "lastUser": "Fork from here please",
+    "assistantLast": "I will check back in five minutes.",
+    "tools": [
+      {
+        "name": "wake_nudge",
+        "args": "{\"in\":\"5m\"}",
+        "result": "Wake nudge n3 set for 5m",
+        "ok": true
+      }
+    ],
+    "stopReason": "stop",
+    "durationMs": 3000
+  },
+  "window4k": {
+    "turnId": "e000000a",
+    "replyAt": 1788256810000,
+    "lastUser": "Fork from here please",
+    "assistantLast": "I will check back in five minutes.",
+    "tools": [
+      {
+        "name": "wake_nudge",
+        "args": "{\"in\":\"5m\"}",
+        "result": "Wake nudge n3 set for 5m",
+        "ok": true
+      }
+    ],
+    "stopReason": "stop",
+    "durationMs": 3000
+  }
+}

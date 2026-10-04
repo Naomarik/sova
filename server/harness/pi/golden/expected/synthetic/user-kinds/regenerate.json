@@ -1,0 +1,172 @@
+{
+  "n0000001": {
+    "ok": false,
+    "reason": "not_on_branch",
+    "message": "Nothing on this branch started that reply, so there is nothing to run again."
+  },
+  "n0000001:0": {
+    "ok": false,
+    "reason": "not_on_branch",
+    "message": "Nothing on this branch started that reply, so there is nothing to run again."
+  },
+  "n0000002": {
+    "ok": false,
+    "reason": "not_on_branch",
+    "message": "That is your own message; rewind to it to edit and send it again."
+  },
+  "n0000002:0": {
+    "ok": false,
+    "reason": "not_on_branch",
+    "message": "That is your own message; rewind to it to edit and send it again."
+  },
+  "n0000003": {
+    "ok": false,
+    "reason": "wake",
+    "message": "That reply answered a scheduled wake-up, not a message you sent, so there is nothing to send again."
+  },
+  "n0000003:0": {
+    "ok": false,
+    "reason": "wake",
+    "message": "That reply answered a scheduled wake-up, not a message you sent, so there is nothing to send again."
+  },
+  "n0000004": {
+    "ok": false,
+    "reason": "not_on_branch",
+    "message": "That is your own message; rewind to it to edit and send it again."
+  },
+  "n0000004:0": {
+    "ok": false,
+    "reason": "not_on_branch",
+    "message": "That is your own message; rewind to it to edit and send it again."
+  },
+  "n0000005": {
+    "ok": false,
+    "reason": "wake",
+    "message": "That reply answered a scheduled wake-up, not a message you sent, so there is nothing to send again."
+  },
+  "n0000005:0": {
+    "ok": false,
+    "reason": "wake",
+    "message": "That reply answered a scheduled wake-up, not a message you sent, so there is nothing to send again."
+  },
+  "n0000006": {
+    "ok": false,
+    "reason": "not_on_branch",
+    "message": "That is your own message; rewind to it to edit and send it again."
+  },
+  "n0000006:0": {
+    "ok": false,
+    "reason": "not_on_branch",
+    "message": "That is your own message; rewind to it to edit and send it again."
+  },
+  "n0000007": {
+    "ok": false,
+    "reason": "link",
+    "message": "That reply answered a message from a linked session, not one you sent, so there is nothing to send again."
+  },
+  "n0000007:0": {
+    "ok": false,
+    "reason": "link",
+    "message": "That reply answered a message from a linked session, not one you sent, so there is nothing to send again."
+  },
+  "n0000008": {
+    "ok": false,
+    "reason": "not_on_branch",
+    "message": "That is your own message; rewind to it to edit and send it again."
+  },
+  "n0000008:0": {
+    "ok": false,
+    "reason": "not_on_branch",
+    "message": "That is your own message; rewind to it to edit and send it again."
+  },
+  "n0000009": {
+    "ok": false,
+    "reason": "topic",
+    "message": "That reply answered notes other sessions pushed to a topic, not a message you sent, so there is nothing to send again."
+  },
+  "n0000009:0": {
+    "ok": false,
+    "reason": "topic",
+    "message": "That reply answered notes other sessions pushed to a topic, not a message you sent, so there is nothing to send again."
+  },
+  "n000000a": {
+    "ok": false,
+    "reason": "not_on_branch",
+    "message": "That is your own message; rewind to it to edit and send it again."
+  },
+  "n000000a:0": {
+    "ok": false,
+    "reason": "not_on_branch",
+    "message": "That is your own message; rewind to it to edit and send it again."
+  },
+  "n000000b": {
+    "ok": true,
+    "userId": "n000000a",
+    "text": "<skill name=\"golden-skill\" location=\"/home/user/.pi/skills/golden-skill/SKILL.md\">\nSkill body\n</skill>\n\nUse the golden skill please"
+  },
+  "n000000b:0": {
+    "ok": true,
+    "userId": "n000000a",
+    "text": "<skill name=\"golden-skill\" location=\"/home/user/.pi/skills/golden-skill/SKILL.md\">\nSkill body\n</skill>\n\nUse the golden skill please"
+  },
+  "n000000c": {
+    "ok": true,
+    "userId": "n000000a",
+    "text": "<skill name=\"golden-skill\" location=\"/home/user/.pi/skills/golden-skill/SKILL.md\">\nSkill body\n</skill>\n\nUse the golden skill please"
+  },
+  "n000000c:0": {
+    "ok": true,
+    "userId": "n000000a",
+    "text": "<skill name=\"golden-skill\" location=\"/home/user/.pi/skills/golden-skill/SKILL.md\">\nSkill body\n</skill>\n\nUse the golden skill please"
+  },
+  "n000000d": {
+    "ok": true,
+    "userId": "n000000a",
+    "text": "<skill name=\"golden-skill\" location=\"/home/user/.pi/skills/golden-skill/SKILL.md\">\nSkill body\n</skill>\n\nUse the golden skill please"
+  },
+  "n000000d:0": {
+    "ok": true,
+    "userId": "n000000a",
+    "text": "<skill name=\"golden-skill\" location=\"/home/user/.pi/skills/golden-skill/SKILL.md\">\nSkill body\n</skill>\n\nUse the golden skill please"
+  },
+  "n000000e": {
+    "ok": true,
+    "userId": "n000000a",
+    "text": "<skill name=\"golden-skill\" location=\"/home/user/.pi/skills/golden-skill/SKILL.md\">\nSkill body\n</skill>\n\nUse the golden skill please"
+  },
+  "n000000e:0": {
+    "ok": true,
+    "userId": "n000000a",
+    "text": "<skill name=\"golden-skill\" location=\"/home/user/.pi/skills/golden-skill/SKILL.md\">\nSkill body\n</skill>\n\nUse the golden skill please"
+  },
+  "n000000f": {
+    "ok": true,
+    "userId": "n000000a",
+    "text": "<skill name=\"golden-skill\" location=\"/home/user/.pi/skills/golden-skill/SKILL.md\">\nSkill body\n</skill>\n\nUse the golden skill please"
+  },
+  "n000000f:0": {
+    "ok": true,
+    "userId": "n000000a",
+    "text": "<skill name=\"golden-skill\" location=\"/home/user/.pi/skills/golden-skill/SKILL.md\">\nSkill body\n</skill>\n\nUse the golden skill please"
+  },
+  "n0000010": {
+    "ok": true,
+    "userId": "n000000a",
+    "text": "<skill name=\"golden-skill\" location=\"/home/user/.pi/skills/golden-skill/SKILL.md\">\nSkill body\n</skill>\n\nUse the golden skill please"
+  },
+  "n0000010:0": {
+    "ok": true,
+    "userId": "n000000a",
+    "text": "<skill name=\"golden-skill\" location=\"/home/user/.pi/skills/golden-skill/SKILL.md\">\nSkill body\n</skill>\n\nUse the golden skill please"
+  },
+  "no-such-entry": {
+    "ok": false,
+    "reason": "not_on_branch",
+    "message": "That reply is not on this chat's current branch anymore."
+  },
+  "no-such-entry:0": {
+    "ok": false,
+    "reason": "not_on_branch",
+    "message": "That reply is not on this chat's current branch anymore."
+  }
+}

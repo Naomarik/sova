@@ -20,7 +20,7 @@
 // mise's tool paths first (shims refuse an untrusted config in a throwaway HOME), and
 // SOVA_PRICES_FETCH=off (bun test sets no NODE_TEST_CONTEXT). bun test itself sets TZ=UTC and
 // NODE_ENV=test.
-import { execFileSync, spawn, spawnSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -61,13 +61,24 @@ const sets = [
 ].filter((s) => s.files.length);
 
 if (runtime === "node") {
+  // A pass still running after NODE_PASS_LIMIT_MS is stuck (seen: a file whose tests all reported
+  // but whose process never exits, under heavy load): its whole process group is killed and the run
+  // FAILS, never hangs. Not --test-force-exit: that ends a file before tests it registers after a
+  // top-level await, so the run would pass with tests silently missing.
+  const limitMs = Number(process.env.NODE_PASS_LIMIT_MS) || 15 * 60_000;
   let failed = false;
   for (const s of sets) {
-    // --test-force-exit: a file whose tests all reported but that leaves a handle open (a server,
-    // a timer) ends instead of hanging the whole run; its failures still fail it.
-    const force = flags.includes("--test-force-exit") ? [] : ["--test-force-exit"];
-    const run = spawnSync("pnpm", ["exec", "tsx", ...s.extra, "--import", PRELOAD, ...force, ...flags, "--test", ...s.files], { cwd: ROOT, stdio: "inherit" });
-    if (run.status !== 0) failed = true;
+    const child = spawn("pnpm", ["exec", "tsx", ...s.extra, "--import", PRELOAD, ...flags, "--test", ...s.files], { cwd: ROOT, stdio: "inherit", detached: true });
+    let stuck = false;
+    const timer = setTimeout(() => {
+      stuck = true;
+      try { process.kill(-child.pid, "SIGKILL"); } catch { /* already gone */ }
+    }, limitMs);
+    for (const sig of ["SIGINT", "SIGTERM"]) process.once(sig, () => { try { process.kill(-child.pid, "SIGKILL"); } catch {} process.exit(130); });
+    const code = await new Promise((r) => child.on("close", (c) => r(c)));
+    clearTimeout(timer);
+    if (stuck) console.error(`\nrun-tests (node): still running after ${limitMs / 60_000} min; killed. A test file most likely finished its tests but never exited (an open server, socket or timer): the last file without a summary above is the one.`);
+    if (code !== 0 || stuck) failed = true;
   }
   process.exit(failed ? 1 : 0);
 }

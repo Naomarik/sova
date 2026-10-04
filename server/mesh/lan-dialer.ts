@@ -9,7 +9,7 @@ import type { Duplex } from "node:stream";
 import type { TLSSocket } from "node:tls";
 import type { LanIdentity } from "./lan-cert";
 import { type ChannelTimers, connectReverse, type ReverseClient, serveReverse } from "./lan-reverse";
-import { type Channel, connectPinned, type DialFailure, dialFailure } from "./lan-tls";
+import { type Channel, connectPinned, DIAL_FAILURES, type DialFailure, dialFailure } from "./lan-tls";
 
 export interface RelayTarget {
   id: string;
@@ -18,6 +18,8 @@ export interface RelayTarget {
   port: number;
   /** The relay's pin. */
   pin: string;
+  /** The pairing is marked as on the internet: dialed through the relay's accept process. */
+  internet?: boolean;
 }
 
 export type DialerStatus =
@@ -42,7 +44,7 @@ export class Backoff {
   }
 }
 
-const PHRASES: ReadonlySet<string> = new Set<DialFailure>(["refused", "timed out", "relay's pin didn't match", "rejected by the relay", "TLS version refused", "relay address isn't private", "closed"]);
+const PHRASES: ReadonlySet<string> = new Set<DialFailure>(DIAL_FAILURES);
 const phraseOf = (err: unknown): DialFailure => {
   const msg = (err as { message?: unknown } | null)?.message;
   return typeof msg === "string" && PHRASES.has(msg) ? (msg as DialFailure) : dialFailure(err);
@@ -117,7 +119,7 @@ export class RelayDialer {
     this.set({ state: "connecting" });
     let sock: TLSSocket;
     try {
-      sock = await connectPinned(this.opts.identity, relay.pin, relay.host, relay.port, channel, this.opts.connectTimeoutMs);
+      sock = await connectPinned(this.opts.identity, relay.pin, relay.host, relay.port, channel, this.opts.connectTimeoutMs, relay.internet === true);
     } catch (err) {
       if (!this.stale(my)) this.retry(phraseOf(err));
       return;

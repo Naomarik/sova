@@ -38,6 +38,8 @@ import { defaultSelfId, nextLabelAt, type PeerEntry, type PeersConfig, peerPort,
 import { localRequest, PROXIED_HEADER, peerSocketRoute, proxyTail, proxyPeer, upgradePeerSocket } from "./proxy";
 import { fetchPeer, setLanClients } from "./dial";
 import { ensureLanIdentity, LanRuntime } from "./lan";
+import { bootBuild } from "./build-id";
+import { cleanBuild } from "./lan-handoff-protocol";
 import { lanRoutes } from "./lan-routes";
 import { loginKindsPin } from "../sync/logins-merge";
 
@@ -172,6 +174,9 @@ function apply(): void {
         return rt.config?.peers.find((p) => p.lan && p.nodeId === nodeId) ?? null;
       },
       sawPeer,
+      // An internet relay's handoff socket (§mesh.lan/accept-process); its accept process must be
+      // the build deployed with this one (the deploy stamps both with the commit).
+      ...(process.env.SOVA_RELAY_HANDOFF?.trim() ? { handoff: { path: process.env.SOVA_RELAY_HANDOFF.trim(), build: () => cleanBuild(bootBuild()?.commit) } } : {}),
     });
     setLanClients({ client: (peerId) => rt.lan?.client(peerId) ?? null });
   }
@@ -241,6 +246,8 @@ export function stopMesh(): void {
 
 /** Tests: the listener's bound state. */
 export const listenerInfo = () => rt.listener?.info() ?? null;
+/** Sova's own relay listener's port (a LAN relay's; an internet relay never has one), or null. */
+export const lanListenerPort = (): number | null => rt.lan?.ownListenerPort() ?? null;
 
 // ---- sync status (filled by server/sync) ------------------------------------------------------
 
@@ -844,6 +851,7 @@ export function meshRoutes(app: Hono): void {
     ensureKey: () => ensureLanIdentity(),
     updatePeers,
     applyGrants: applyPairingGrants,
+    acceptorRunning: () => rt.lan?.acceptorRunning() ?? false,
   });
 
   // Peer-only routes: reached through the peer listener alone. On the main listener they are the

@@ -158,13 +158,12 @@ describe("this host as the relay", () => {
     otherServer.close();
   });
 
-  test("the relay setting takes only a local-network address of this host (q9: no internet relay)", async () => {
+  test("a LAN relay setting takes only a local-network address of this host; no internet relay without an accept process", async () => {
     const bad: Array<[unknown, RegExp]> = [
       [{ host: "203.0.113.7", port: 4803 }, /public address/],
       [{ host: "2001:db8::7", port: 4803 }, /public address/],
       [{ host: "0::", port: 4803 }, /every interface/],
       [{ host: "::ffff:0.0.0.0", port: 4803 }, /every interface/],
-      [{ host: "127.0.0.1", port: 4803, exposure: "internet" }, /separate accept process/],
       // Private, but not an address of this host.
       [{ host: "10.255.255.254", port: 4803 }, /not an address of this host/],
     ];
@@ -173,7 +172,13 @@ describe("this host as the relay", () => {
       assert.equal(status, 400, JSON.stringify(relay));
       assert.match(r.error, why, JSON.stringify(relay));
     }
+    // This host has no SOVA_RELAY_HANDOFF, so no accept process can be running.
+    const [status, r] = await api<{ error: string }>("PUT", "/api/mesh/lan/relay", { relay: { host: "127.0.0.1", port: 4803, exposure: "internet" } });
+    assert.equal(status, 409);
+    assert.equal(r.error, "the accept process isn't running (SUDO.md §5)");
+    assert.equal((await lan()).acceptor.state, "not configured");
     assert.equal((await lan()).relay?.host, "127.0.0.1", "the setting is unchanged");
+    assert.equal((await lan()).relay?.exposure, "lan");
   });
 
   test("a bad pairing is refused whole", async () => {

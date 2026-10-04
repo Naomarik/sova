@@ -10,7 +10,7 @@
 import { once } from "node:events";
 import type { AddressInfo, Socket } from "node:net";
 import tls, { type Server, type TLSSocket } from "node:tls";
-import { relayAddress } from "../../shared/mesh-lan";
+import { relayAddress, relayBindAddress } from "../../shared/mesh-lan";
 import type { LanIdentity } from "./lan-cert";
 import { Admission, type AdmissionCounts, type AdmissionProfile, sourceOf } from "./lan-admission";
 import { type Channel, pairedPeerOf, relayServerOptions } from "./lan-tls";
@@ -26,6 +26,10 @@ export type RelayEvent = { kind: "ban"; ip: string } | { kind: "error"; message:
 export interface RelayListenerOptions {
   host: string;
   port: number;
+  /** "internet": bind any one unicast address (relayBindAddress). Only the accept process passes it
+      (relay-accept/main.ts, §mesh.lan/accept-process); Sova's own listener (lan.ts) never does, so it
+      takes local-network addresses only. */
+  scope?: "lan" | "internet";
   identity: LanIdentity;
   profile: AdmissionProfile;
   /** A socket that proved to be `peer`, on `channel`. The caller owns it from here on. */
@@ -53,10 +57,17 @@ export class RelayListener {
 
   constructor(private readonly opts: RelayListenerOptions) {
     // The same rule as the relay setting (peers.ts), for any caller: one loopback, private or
-    // link-local address, never every interface and never a public one (§mesh.lan/pairing).
-    const at = relayAddress(opts.host);
-    if ("error" in at) throw new Error(`a relay binds one local-network address: ${at.error}`);
-    this.host = at.address;
+    // link-local address, never every interface and never a public one (§mesh.lan/pairing). The
+    // accept process alone may bind one public address.
+    if (opts.scope === "internet") {
+      const at = relayBindAddress(opts.host);
+      if ("error" in at) throw new Error(`an internet relay binds one address: ${at.error}`);
+      this.host = at.address;
+    } else {
+      const at = relayAddress(opts.host);
+      if ("error" in at) throw new Error(`a relay binds one local-network address: ${at.error}`);
+      this.host = at.address;
+    }
     this.admission = new Admission(opts.profile);
     this.now = opts.now ?? Date.now;
   }

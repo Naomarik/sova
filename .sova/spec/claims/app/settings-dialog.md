@@ -266,10 +266,11 @@ model Sova names sessions itself (§app.session-list/auto-titles). It is Sova's 
 `topic-outline.json`: nothing outside Sova reads it, each host has its own, and a save applies to
 the sweep's next run.
 
-- **A switch, "Name sessions automatically", off by default.** Its hint says what it does: each
-  session is named once, from its summary line, after it has been quiet for the time below, and a
-  title you or the Overseer set is never changed. Off, no background call is made; the section
-  heads' Name sessions button works either way.
+- **A switch, "Name sessions automatically", on by default** (a file that says `enabled: false`
+  keeps it off). Its hint says what it does: each session is named once, from its summary line,
+  after it has been quiet for the time below, and a title you or the Overseer set is never
+  changed. Off, no background call is made; the section heads' Name sessions button works either
+  way.
 - **Timing, two whole-minute fields**, Teams' number fields: "Check every (minutes)" (default 5,
   1–1440; hint "How often the sweep looks for sessions to name.") and "After quiet for (minutes)"
   (default 5, 0–1440; hint "A session is named once nothing was written in it for this long.").
@@ -296,6 +297,17 @@ the sweep's next run.
   the draft under "Couldn't save the session title settings.", with the reason.
 - **The file.** Read tolerantly (a missing or broken file, or a field in it that doesn't parse,
   reads as that field's default), written whole and atomically on Save.
+- **Shorten long titles**, a one-shot at the end of the section, outside the saved form: a
+  secondary button, "Shorten Long Titles", with a line under it from a dry run of
+  `POST /api/sessions/shorten-titles` (§app.session-list/auto-titles): "{n} titles are longer
+  than 36 characters." ("1 title is", "No title is longer than 36 characters." and the button
+  disabled at 0), then "Renames automatic, Overseer and older titles with the saved models.
+  Titles you typed are never changed." A press runs it with the saved models (not the staged
+  ones; nothing waits for Save); while it runs the button is disabled, `aria-busy`, and reads
+  "Shortening {n} titles…". After it the line says "Shortened {k} of {n} titles." with "{m}
+  couldn't be shortened." when some failed, and the count is read again. A failed call says
+  "Couldn't shorten the titles." with the reason, and nothing was changed by it beyond the titles
+  already written.
 
 ## §app.settings-dialog/themes — Themes
 

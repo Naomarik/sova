@@ -1390,25 +1390,48 @@ A session is named by its first message until someone renames it, and a first me
 question or an instruction, not a name. So Sova can name sessions itself, the way the Overseer does
 when asked: one short title per session from what the session became, written into Sova's own
 title store (§app.session-list/selecting-several-sessions) as an `auto` title. Never into the
-`.jsonl`, and **never over an explicit title**: a title a user or the Overseer set, or any title
-stored before provenance existed, is never replaced, by the sweep or by the button.
+`.jsonl`, and **never over an explicit title** automatically: a title a user or the Overseer set,
+or any title stored before provenance existed, is never replaced by the sweep or by the section
+button. Only two presses go further: **Shorten long titles** may replace a long Overseer or
+pre-provenance title (never a typed one), and an open session's **Regenerate title** may replace
+whatever title that one session has.
 
-**Two ways in.** A background **sweep**, off by default and switched on in Settings → Summaries
+**A title is a short label.** The sidebar row's title line holds about 32 characters, and the
+summary line sits right under it (§app.session-list/content-rules, "Row line 2"). So a title is
+2 to 5 words and at most 36 characters: a noun phrase, not a sentence and not an "X: Y" with a
+tail. It is the label the user scans and searches for, and the summary line already explains, so
+the title **never restates the summary line** (neither its wording nor its first words) and adds
+what it lacks. It names the subject the whole session is about, the thing built, fixed or
+decided, not the opening question when the session moved on and not one late side topic, in the
+user's own nouns, never a status (merged, shipped, restart). Rows that would otherwise look alike
+are told apart: a merge, release or push names the branches or features that landed, never just
+"merging branches"; a rerun names its round or model. A title typed by hand keeps its own cap
+(80, `SESSION_TITLE_MAX`).
+
+**Four ways in.** A background **sweep**, on by default and switched off in Settings → Summaries
 (§app.settings-dialog/summaries), names sessions as they settle. A **Name sessions** button on
-section heads names a section's unnamed rows on demand, whether the sweep is on or not. Both use
-the same title call and the same writer (`server/session-autotitle.ts`).
+section heads names a section's unnamed rows on demand, whether the sweep is on or not. A one-shot
+**Shorten long titles** in the same Settings section renames long titles. A **Regenerate title**
+button in an open session's head renames that one session. All use the same title call and the
+same race-safe writer (`server/session-autotitle.ts`).
 
-**The title call.** One model call per session, with a primary and an optional fallback from
-Settings (one attempt each, in order, no retry loop), each obeying the model policy's global switch
-like the summary line: a model turned off in Settings → Models is skipped. The system prompt is
-the title rules alone (2 to 7 words, at most 60 characters, sentence case, name the work rather
-than the process, never name the app); **no Sova or agent system prompt goes with it**, and the
-user message holds only:
+**The title call.** A primary and an optional fallback from Settings, in order, each obeying the
+model policy's global switch like the summary line: a model turned off in Settings → Models is
+skipped. Each model is asked at most twice, never in a loop: a reply with no usable title (empty,
+no JSON object, or a title the check below refuses) is asked once more with the same input plus
+why it was refused (the refused title's words and characters, or that no title came back); an ask
+that timed out is asked once more as it was; any other failure (quota, rate limit, auth, the model
+unavailable) goes straight to the fallback. A pi ask times out after 20 seconds, so two asks end
+sooner than the shared 45-second deadline a Claude Code ask keeps. The system prompt is the title
+rules alone (the label rules above, sentence case, never name the app, with three examples);
+**no Sova or agent system prompt goes with it**, and the user message holds only, in this order:
 
+- its summary line (the last topic-outline snapshot's `overall`), labelled as already shown under
+  the title and not to be repeated;
+- that snapshot's topic headings in order, each with at most 2 of its bullets;
 - the session's first user message, whitespace collapsed, at most 600 characters (a wake nudge,
-  a partner's link message or a topic batch, §chat.topics/row, is not one, as for the derived title);
-- its summary line (the last topic-outline snapshot's `overall`) and that snapshot's topic
-  headings, each with at most 2 of its bullets;
+  a partner's link message or a topic batch, §chat.topics/row, is not one, as for the derived
+  title), labelled as what the user came for;
 - or, with no summary line (the button only), its first 3 user messages instead.
 
 **The session's current title is never in it**, whatever set it. On pi the call is
@@ -1417,12 +1440,20 @@ unless the row's effort asks for it; on Claude Code it is `claude -p` in an empt
 folder with `--system-prompt`, no tools, no setting sources, no MCP servers, no session
 persistence and no JSON schema, on this host's Claude login. The reply is one JSON object
 `{"title": "…"}`; the title is kept only if, cleaned like a typed title (trimmed, one line), it is
-2 to 9 words and at most 60 characters, with a trailing period or wrapping quotes dropped.
+2 to 5 words and at most 36 characters, with a trailing period or wrapping quotes dropped.
 Anything else leaves the session as it was.
 
 **The write is race-safe.** A title is written as `{title, by: "auto", at}` only if, on a fresh
-read of the store at write time, the session still has no explicit title. A title the user or the
-Overseer set while the call was out wins, and the model's answer is dropped.
+read of the store at write time, the session still has no explicit title (the sweep and the
+section button). Shorten long titles and Regenerate title read the session's stored entry when
+their call starts, and write only if a fresh read at write time finds that entry unchanged (same
+title, same setter, same time; still absent if it was absent). A title the user or the Overseer set
+while the call was out wins, and the model's answer is dropped.
+
+**The Overseer's titles follow the same budget.** `sova_create_session`'s and
+`sova_set_session`'s `title` parameter tells the Overseer: 2 to 5 words, at most 36 characters, a
+short label, not a sentence. The route still stores up to 80 characters, so nothing it sends is
+refused for length.
 
 **The sweep** runs on this host, for this host's sessions, while its switch is on:
 
@@ -1466,6 +1497,30 @@ file), `no-input` (nothing to name it from), `no-model` (no title model can run)
 models failed, or answered with no usable title). The route may name an archived session and one
 with no summary line, and **may redo an `auto` title**, never an explicit one; the button itself
 sends only unnamed rows.
+
+`POST /api/sessions/auto-title {paths: [path], redo: true}` is the **regenerate** form: exactly
+one path (anything else is a 400), and it may replace any stored title, auto, Overseer,
+pre-provenance or typed, since pressing it is an explicit request; it needs no summary line. It
+answers like any other call; `explicit` there means the title changed while the call was out.
+
+**Shorten long titles.** `POST /api/sessions/shorten-titles {dryRun?}` finds this host's listed
+sessions whose stored title is longer than 36 characters and was set by the namer (`auto`), the
+Overseer (`overseer`) or before provenance existed (a bare string), **never one with `by:
+"user"`**, and renames each through the title call, 4 at a time, at most 200 per call; it
+answers `{results}` like the auto-title route, with one more reason, `short` (by the time its turn
+came, the session's title was no longer one it may shorten). A dry run calls no model and lists them as
+`would-name`. Archived sessions are included; subagents' own sessions and Overseer files are not.
+
+**Regenerate title.** An open session's head (the single-session view, on desktop and phone) has
+a quiet ghost icon button (`refresh`), labelled and titled "Regenerate title", at the start of the
+open session's path line, before the path; never between the title and the context gauge. It is
+sized to the path line's small text (a caption-sized icon) and never makes that line taller or
+gives way when the path is truncated, so the title keeps the head's full width. It is not on sidebar rows, in the selection toolbar or
+on a workspace pane's head. A press sends the regenerate form for that session to its own host;
+while it runs the button is disabled, `aria-busy`, and titled "Regenerating title…". When a title
+comes back the list is fetched again and the head shows it; when none does, the title stays as it
+was and a toast says "Couldn't regenerate the title." with the reason. No undo: a title the user
+doesn't like is renamed like any other.
 
 **Mesh.** Each host names its own sessions, with its own settings, models and keys. The button
 splits a section's rows by host and sends each peer's rows to that peer

@@ -3874,7 +3874,9 @@
         "src/components/SettingsDialog.tsx",
         "server/session-titles-settings.ts",
         "server/session-titles-settings.test.ts",
-        "src/lib/session-title-settings-form.test.ts"
+        "src/lib/session-title-settings-form.test.ts",
+        "src/lib/auto-title.ts",
+        "src/lib/api.ts"
       ]
     },
     "§app.baton/attribution": {
@@ -7471,7 +7473,12 @@
         "src/lib/auto-title.test.ts",
         "src/lib/api.ts",
         "src/components/Sidebar.tsx",
-        "src/app.css"
+        "src/app.css",
+        "server/session-titles.ts",
+        "src/components/SessionView.tsx",
+        "src/components/SessionTitleSettings.tsx",
+        "server/overseer-tools.ts",
+        "server/overseer-tools.test.ts"
       ]
     },
     "§chat.markdown/vis-wireframe": {

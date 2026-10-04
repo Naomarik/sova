@@ -241,7 +241,7 @@ export function readRequests(): RequestsFile["requests"] {
   const f = readJson<RequestsFile>(requestsFile());
   return f?.version === 1 && Array.isArray(f.requests) ? f.requests : [];
 }
-function writeRequests(list: RequestsFile["requests"]): void {
+export function writeRequests(list: RequestsFile["requests"]): void {
   writeJson(requestsFile(), { version: 1, requests: list });
 }
 /** Clear `root`'s request for `target` (the operator planned it, or dismissed it). */
@@ -338,6 +338,12 @@ export class Deployer {
         return void (await this.plan(run, "deploy"));
       case "deploy.run":
         return this.runPlan(run);
+      case "deploy.logs":
+        return this.logs(run);
+      case "deploy.rollback":
+        return this.rollback(run);
+      case "deploy.request":
+        return this.request(run);
       default:
         throw new DeployFailure("unsupported", `${run.verb} is not built yet`);
     }
@@ -773,6 +779,82 @@ export class Deployer {
     return out;
   }
 
+  // ---- deploy.logs, deploy.rollback, deploy.request (§app.project-services/deploy-status) -----------------
+
+  /** A deploy's log (redacted when written), its last `lines`: the one named, else the target's latest. */
+  private async logs(run: DRun): Promise<void> {
+    const root = run.root!;
+    const r = run.req.deploy ? readRecord(run.req.deploy) : run.req.target ? (recordsOf(root, run.req.target)[0] ?? null) : null;
+    if (!run.req.deploy && !run.req.target) throw new DeployFailure("invalid-request", "name the target (its latest deploy) or a deploy id");
+    if (!r || r.project !== root) throw new DeployFailure("not-found", run.req.deploy ? `no deploy ${run.req.deploy} of ${root}` : `${run.req.target} has never been deployed from here`);
+    const n = Math.min(run.req.lines ?? 100, 500);
+    let text = "";
+    try {
+      text = readFileSync(deployLogFile(r.id), "utf8");
+    } catch {}
+    const lines: LogLine[] = [];
+    for (const l of text.split("\n")) {
+      if (!l.trim()) continue;
+      try {
+        const e = JSON.parse(l) as { t?: string; step?: string; text?: string };
+        lines.push({ t: e.t ?? "", service: e.step ?? "", text: e.text ?? "" });
+      } catch {}
+    }
+    run.lines = lines.slice(-n);
+    run.report = { deployHash: r.deployHash, approved: !!deployApprovalOf(root, r.deployHash), record: viewOf(r) };
+  }
+
+  /**
+   * Undo the target's last deploy the way it declares (the operator's, confirmed): its rollback steps at the commit
+   * it runs now, or the last verified commit before that deployed again; refused when it declares none. Planned like
+   * a deploy (branch, pushed, host values, credential checks; no tests and no dirty check: it shipped before), then run.
+   */
+  private async rollback(run: DRun): Promise<void> {
+    const root = run.root!;
+    const { target: t } = await this.approvedTarget(run);
+    if (typeof t.rollback === "object" && "none" in t.rollback) throw new DeployFailure("unsupported", `${t.name} can't be rolled back: ${t.rollback.none}`);
+    const ok = recordsOf(root, t.name).filter((r) => r.state === "succeeded");
+    let commit: string | undefined;
+    if (t.rollback === "redeploy-previous") {
+      const now = ok[0]?.commit;
+      commit = ok.find((r) => r.commit !== now)?.commit;
+      if (!commit) throw new DeployFailure("not-found", `no earlier verified deploy of ${t.name} to go back to`);
+    } else commit = ok[0]?.commit;
+    const view = await this.plan(run, "rollback", commit);
+    const p = readPlan(view.planId)!;
+    await this.start(run, p);
+    run.report = { ...run.report!, plan: view };
+  }
+
+  /** An overseer's ask that the operator ship (never a deploy): one per target, replaced by a newer one; the operator's dismiss clears it. */
+  private async request(run: DRun): Promise<void> {
+    const root = run.root!;
+    const m = await this.mainRecipe(run);
+    const t = m.deploy?.targets.find((x) => x.name === run.req.target);
+    if (!run.req.target) throw new DeployFailure("invalid-request", "name the target");
+    if (run.req.dismiss) {
+      if (!clearRequest(root, run.req.target)) throw new DeployFailure("not-found", `no request to deploy ${run.req.target}`);
+      addDeployNote(root, `You dismissed the request to deploy ${run.req.target}.`);
+      run.changed = true;
+      run.report = { deployHash: m.deployHash, approved: m.approved };
+      return;
+    }
+    if (!t) throw new DeployFailure("not-found", `no deploy target ${run.req.target} on main`);
+    if (!run.req.why) throw new DeployFailure("invalid-request", "say why (why: one line for the operator)");
+    let commit: string | null = null;
+    if (run.req.commit) {
+      const c = await this.git(["rev-parse", "--verify", "--quiet", `${run.req.commit}^{commit}`], root);
+      if (c.code !== 0) throw new DeployFailure("not-found", `no commit ${run.req.commit}`);
+      commit = c.stdout.trim();
+    }
+    const req: DeployRequestView & { project: string } = { project: root, id: `rq_${randomBytes(6).toString("hex")}`, target: t.name, commit, why: run.req.why, by: byOf(run.caller), at: new Date(this.now()).toISOString() };
+    writeRequests([...readRequests().filter((r) => !(r.project === root && r.target === t.name)), req]);
+    addDeployNote(root, `${run.caller.kind === "project-overseer" ? "The project overseer" : "The Overseer"} asks you to deploy ${commit ? commit.slice(0, 7) : `the tip of ${t.branch ?? "main"}`} to ${t.name}: ${run.req.why}`);
+    const { project: _p, ...view } = req;
+    run.report = { deployHash: m.deployHash, approved: m.approved, request: view };
+    run.changed = true;
+  }
+
   // ---- deploy.check (§app.project-services/deploy-check) ------------------------------------------------
 
   /**
@@ -951,6 +1033,41 @@ function detachedLaunch(argv: string[], cwd: string, logFile: string): Promise<s
       closeSync(fd);
     }
   });
+}
+
+// ---- attention (§app.project-services/deploy-status) ------------------------------------------------------
+
+/** What needs the operator about deploys, per project root: a target whose latest deploy failed, and each open request. */
+export interface DeployAttention {
+  root: string;
+  kind: "deploy-failed" | "deploy-request";
+  target: string;
+  since: number;
+  detail: string;
+}
+
+/** Every deploy item on this host: the latest record of a target failed, verify failed or was interrupted (until a later one), or an overseer asks. */
+export function deployAttention(): DeployAttention[] {
+  const out: DeployAttention[] = [];
+  let names: string[] = [];
+  try {
+    names = readdirSync(recordsDir()).filter((f) => /^dp_[0-9a-f]{16}\.json$/.test(f));
+  } catch {}
+  const latest = new Map<string, DeployRecord>();
+  for (const n of names) {
+    const r = readJson<DeployRecord>(join(recordsDir(), n));
+    if (r?.v !== 1) continue;
+    const k = `${r.project}\0${r.target}`;
+    const cur = latest.get(k);
+    if (!cur || r.startedAt > cur.startedAt) latest.set(k, r);
+  }
+  for (const r of latest.values()) {
+    if (r.state !== "failed" && r.state !== "verify-failed" && r.state !== "interrupted") continue;
+    const what = `${r.kind === "rollback" ? "Rollback" : "Deploy"} of ${r.commit.slice(0, 7)} to ${r.target}`;
+    out.push({ root: r.project, kind: "deploy-failed", target: r.target, since: Date.parse(r.endedAt ?? r.startedAt) || 0, detail: `${what} ${r.state === "verify-failed" ? "ran, and its verify failed" : r.state === "interrupted" ? "was interrupted" : "failed"}: ${r.detail ?? ""}` });
+  }
+  for (const q of readRequests()) out.push({ root: q.project, kind: "deploy-request", target: q.target, since: Date.parse(q.at) || 0, detail: `Deploy ${q.commit ? q.commit.slice(0, 7) : "the tip"} to ${q.target}? ${q.why}` });
+  return out;
 }
 
 /** The caller tag a record keeps (`operator`, `overseer:<id>` …). */

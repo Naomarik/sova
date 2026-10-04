@@ -5,6 +5,7 @@ import { CONTRACT_FILE, DefinitionError, httpStatusOf, parseDefinition } from ".
 import { projectOf } from "../project-root";
 import { conformer } from "./conform";
 import { SelectedDriver } from "./adapters";
+import { attentionChanged } from "../attention-memo";
 import { approveDeployRecipe, Deployer } from "./deploy";
 import { ProjectEngine } from "./engine";
 import { approve, defHashOf } from "./trust";
@@ -25,7 +26,13 @@ export function projectEngine(): ProjectEngine {
     engine = new ProjectEngine({ driver: new SelectedDriver() });
     engine.conformer = conformer(engine);
     const d = (deployer = new Deployer(engine));
-    engine.deployer = (verb, body, caller, opts) => d.run(verb, body, caller, opts);
+    // A deploy that ended may be the digest's to list (§app.project-services/deploy-status).
+    d.onEnded = () => attentionChanged();
+    engine.deployer = async (verb, body, caller, opts) => {
+      const r = await d.run(verb, body, caller, opts);
+      if (r.changed) attentionChanged();
+      return r;
+    };
   }
   return engine;
 }

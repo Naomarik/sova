@@ -2826,6 +2826,8 @@ export type AttentionKind =
   | "project-stakeholder" // an org project's main stakeholder left: pick a new one (no session: `path` "", `href` the project page)
   | "held-act"            // act tier, never pushed: a statechart act waits in a hold before it reaches a person or the code; Cancel stops it (no session: `path` "", `href` the project page, `held` set)
   | "playbook-review"     // act tier: a verb playbook's run is proposed and waits on Approve & Merge (§app.project-runtime/review; the run's session, `playbook` set)
+  | "deploy-failed"       // act tier, never pushed: a deploy target's latest deploy failed, its verify failed or its runner stopped (§app.project-services/deploy-status; no session: `path` "", `href` the project page)
+  | "deploy-request"      // act tier, never pushed: an overseer asks the operator to deploy (deploy.request; no session: `path` "", `href` the project page)
   | "outreach-not-sent"   // act tier, never pushed: a project overseer's WhatsApp send was refused or failed (no session: `path` "", `href` the person's page)
   | "conflict-to-operator" // decide tier, never pushed: an open conflict routed to the operator (or unrouted) with no settle session (no session: `path` "", `href` the project page)
   | "asks-you"        // decide tier: decisions' guess that the last reply of a turn with no open alignment question asks the user something

@@ -96,6 +96,7 @@ import { readDecisionSettings } from "./decide-settings";
 import { onAttentionChanged } from "./attention-memo";
 import { notifyBlockers, pushWanted, resetPushState } from "./push";
 import { playbookReviews } from "./projects/playbook-review";
+import { deployAttentionItems } from "./project-services/deploy-attention";
 
 /**
  * The Overseer: ONE special Sova session that watches every other session and acts on them
@@ -354,7 +355,9 @@ export function attentionDigest(): Promise<ReturnType<typeof buildDigest>> {
     });
     // Items of no session: an org project's missing stakeholder, its held acts and conflicts routed to the operator
     // (the refit), and the one restart item of the whole server (§chat.worktrees/readiness), never one per session.
-    return buildDigest(rows, Date.now(), homedir(), [...stakeholderAttention(), ...heldAttention(), ...notSentAttention(), ...conflictAttention(), ...restartItems(sessions)]);
+    // A deploy target whose latest deploy failed, and an overseer's request to deploy (§app.project-services/deploy-status).
+    const deploys = await deployAttentionItems().catch(() => []);
+    return buildDigest(rows, Date.now(), homedir(), [...stakeholderAttention(), ...heldAttention(), ...notSentAttention(), ...conflictAttention(), ...restartItems(sessions), ...deploys]);
   })();
   digestMemo = { at: now, value };
   value.catch(() => {

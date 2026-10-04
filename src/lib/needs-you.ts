@@ -64,6 +64,21 @@ export function needsYouRows(digest: Pick<AttentionDigest, "items"> | undefined,
     .sort((a, b) => b.since - a.since || a.session.path.localeCompare(b.session.path));
 }
 
+/** The digest kinds of no session the region lists itself (a project's deploy, §app.project-services/deploy-status). */
+const DEPLOY_KINDS: ReadonlySet<AttentionItem["kind"]> = new Set(["deploy-failed", "deploy-request"]);
+
+/**
+ * The region's items of no session: a deploy target whose latest deploy failed, and an overseer's request to deploy.
+ * Each opens its project page and says the digest's own sentence; a search keeps those whose project, folder or
+ * sentence matches. Newest first.
+ */
+export function needsYouItems(digest: Pick<AttentionDigest, "items"> | undefined, query = ""): AttentionItem[] {
+  const q = query.trim().toLowerCase();
+  return (digest?.items ?? [])
+    .filter((it) => DEPLOY_KINDS.has(it.kind) && it.tier === "act" && (!q || `${it.title} ${it.where} ${it.detail ?? ""}`.toLowerCase().includes(q)))
+    .sort((a, b) => b.since - a.since || a.id.localeCompare(b.id));
+}
+
 /** Whether the digest's 30-item cap dropped act items, so the region may be short. */
 export const needsYouCut = (digest: Pick<AttentionDigest, "items" | "counts"> | undefined): boolean =>
   !!digest && digest.counts.act > digest.items.filter((i) => i.tier === "act").length;
@@ -83,5 +98,9 @@ export const storedNeedsYouOpen = (raw: string | null): boolean => raw !== "0";
 export const needsYouOpen = (input: { stored: boolean; searching: boolean }): boolean => input.searching || input.stored;
 
 /** The head's title: what the region is, with its count. */
-export const needsYouTitle = (n: number): string =>
-  n === 1 ? "The 1 session waiting on you." : `The ${n} sessions waiting on you, newest first.`;
+export const needsYouTitle = (n: number, deploys = 0): string => {
+  const d = `${deploys} deploy item${deploys === 1 ? "" : "s"}`;
+  if (!n) return `${d} waiting on you.`;
+  const sessions = n === 1 ? "The 1 session waiting on you" : `The ${n} sessions waiting on you, newest first`;
+  return deploys ? `${sessions}, and ${d}.` : `${sessions}.`;
+};

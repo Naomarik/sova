@@ -39,7 +39,7 @@ import { summaryLineOf, summaryTitleOf } from "../lib/summary-row";
 import { archiveDragOf, archivedDropToast, blockedDropSentence, orgProjectOf, unarchivedToast } from "../lib/drag-archive";
 import { cwdLabel, remotePlaceOf, type TargetInfo } from "../lib/remote-session";
 import { recentCount, recentSessions } from "../lib/recent";
-import { NEEDS_YOU_KEY, needsYouCut, needsYouOpen as needsYouOpenRule, needsYouRows, needsYouShown, needsYouTitle, storedNeedsYouOpen } from "../lib/needs-you";
+import { NEEDS_YOU_KEY, needsYouCut, needsYouItems, needsYouOpen as needsYouOpenRule, needsYouRows, needsYouShown, needsYouTitle, storedNeedsYouOpen } from "../lib/needs-you";
 import { type CwdGroup, groupByActivity, groupByCreation } from "../lib/session-order";
 import {
   createGroup,
@@ -1381,9 +1381,12 @@ export function Sidebar(props: {
    * too, so the search narrows it and its count is always its rows. The open session stays listed.
    */
   const needsYou = createMemo(() => needsYouRows(props.attention, ordinaryHits()));
+  /** Its items of no session: a project's failed deploy or an overseer's request to deploy (§app.project-services/deploy-status). */
+  const needsYouProject = createMemo(() => needsYouItems(props.attention, query()));
+  const needsYouCount = () => needsYou().length + needsYouProject().length;
   createEffect(() => setStalled(stalledPaths(props.attention)));
   /** ONE rule for the region and its spine door: rows, and proactivity known and not Off. */
-  const showNeedsYou = () => !!props.sessions && needsYouShown(props.overseer?.proactivity, needsYou().length);
+  const showNeedsYou = () => !!props.sessions && needsYouShown(props.overseer?.proactivity, needsYouCount());
   const needsYouCutNote = () => needsYouCut(props.attention);
   const needsYouPlaybook = (path: string) => needsYou().find((row) => row.session.path === path)?.playbook;
   const needsYouDetail = (path: string) => {
@@ -1962,8 +1965,8 @@ export function Sidebar(props: {
               <button
                 type="button"
                 class="button button-icon spine-item spine-region"
-                title={`Needs you · ${sessionsWord(needsYou().length)}`}
-                aria-label={`Needs you · ${sessionsWord(needsYou().length)}`}
+                title={`Needs you · ${sessionsWord(needsYouCount())}`}
+                aria-label={`Needs you · ${sessionsWord(needsYouCount())}`}
                 onClick={() =>
                   expandToRegion(
                     () => aside.querySelector<HTMLElement>(".sidebar-needs-you > summary"),
@@ -1972,7 +1975,7 @@ export function Sidebar(props: {
                 }
               >
                 <Icon name="alert-circle" />
-                <span class="spine-count text-num">{needsYou().length}</span>
+                <span class="spine-count text-num">{needsYouCount()}</span>
               </button>
             </Show>
             <Show when={showTop()}>
@@ -2227,9 +2230,9 @@ export function Sidebar(props: {
             <details class="sidebar-region sidebar-needs-you" aria-labelledby="r-needs-you" open={needsYouRegionOpen()} onToggle={onNeedsYouToggle}>
               {/* The Groups head's pattern: the <summary> toggles, the <h2> is what the outline reads. */}
               <summary class="sidebar-needs-you-summary">
-                <h2 class="sidebar-region-head" id="r-needs-you" title={needsYouTitle(needsYou().length)}>
+                <h2 class="sidebar-region-head" id="r-needs-you" title={needsYouTitle(needsYou().length, needsYouProject().length)}>
                   <Icon name="chevron-right" small class="icon-twist" />
-                  Needs you <span class="sidebar-region-count">· {needsYou().length}</span>
+                  Needs you <span class="sidebar-region-count">· {needsYouCount()}</span>
                 </h2>
               </summary>
               <ul class="list">
@@ -2248,6 +2251,20 @@ export function Sidebar(props: {
                         )}
                       </Show>
                     </>
+                  )}
+                </For>
+                {/* A project's deploy item, of no session: the row opens the project page, where its Deploy panel is. */}
+                <For each={needsYouProject()}>
+                  {(it) => (
+                    <li>
+                      <a class="list-row list-row-interactive org-needs-item" href={it.href} title={it.detail}>
+                        <span class="list-main">
+                          <span class="list-title">{it.title}</span>
+                          <span class="list-meta org-needs-item-detail">{it.detail}</span>
+                          <span class="list-meta">{it.where}</span>
+                        </span>
+                      </a>
+                    </li>
                   )}
                 </For>
               </ul>

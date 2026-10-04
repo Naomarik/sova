@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { LlmInflight, LlmTokens } from "../../shared/protocol";
-import { denseCount, sameInflight, tokenVelocityView, VELOCITY_SCALE_FLOOR, velocityChart } from "./llm-inflight";
+import { denseCount, sameInflight, tokenVelocityView, VELOCITY_SCALE_FLOOR, velocityChart, velocityPitch } from "./llm-inflight";
 
 const complete = (count: number): LlmInflight => ({ count, approximate: 0, partial: false, gaps: [] });
 
@@ -72,7 +72,7 @@ test("unknown: no snapshot, or a server with no ring — a dash, an empty chart,
     assert.equal(v.scale, VELOCITY_SCALE_FLOOR);
     assert.equal(v.sentence, "Output tokens a minute: not known yet.");
     assert.equal(v.active, false);
-    const c = velocityChart(v, 1, 18);
+    const c = velocityChart(v, 2, 18);
     assert.deepEqual([c.columns, c.meanY], [[], null], "the baseline alone: the row keeps its height");
   }
   const bad = withTokens({ bucketMs: 0, end: 1, out: [], partial: false });
@@ -121,35 +121,53 @@ test("scale: the 30 minutes' peak, never under 10k a minute", () => {
   assert.equal(busy.scale, 120_000, "a 120k peak fills the height");
 });
 
-test("chart at 0, light, 100k+: baseline only, short columns, full height at the peak", () => {
+test("chart at 0, light, 100k+: baseline only, low blocks, full height at the peak", () => {
   const zero = tokenVelocityView(withTokens(ring(10, {})), at(10));
   assert.equal(zero.readout, "0");
-  assert.deepEqual(velocityChart(zero, 1, 18), { columns: [], meanY: null, count: 60 });
+  assert.deepEqual(velocityChart(zero, 2, 18), { columns: [], meanY: null, count: 30 });
   // ~2k a minute steady: every slot 1,000 tokens.
   const steady = Object.fromEntries(Array.from({ length: 60 }, (_, i) => [i, 1000]));
   const light = tokenVelocityView(withTokens(ring(10, steady)), at(10));
   assert.equal(light.readout, "2.0k");
-  const lc = velocityChart(light, 1, 18);
-  assert.equal(lc.columns.length, 60);
-  assert.ok(lc.columns.every((c) => c.height === 3), "2k on a 10k floor: 20% of 16px");
+  const lc = velocityChart(light, 2, 18);
+  assert.equal(lc.columns.length, 30, "one-minute columns: two slots each");
+  assert.ok(lc.columns.filter((c) => !c.hollow).every((c) => c.height === 3), "2k on a 10k floor: 20% of 16px");
   assert.equal(lc.meanY, 18 - 1 - 3);
+  // A trickle far under a pixel still draws a low block, never nothing beside tokens.
+  const trickle = tokenVelocityView(withTokens(ring(10, { 30: 10 })), at(10));
+  assert.deepEqual(velocityChart(trickle, 2, 18).columns.map((c) => [c.index, c.height]), [[14, 2]], "10 tokens: the 2px floor");
   const heavy = tokenVelocityView(withTokens(ring(10, { ...steady, 5: 60_000 })), at(10));
-  const hc = velocityChart(heavy, 1, 18);
+  const hc = velocityChart(heavy, 2, 18);
   assert.equal(heavy.readout, "14k", "(9 × 1,000 + 60,000) / 5 minutes");
   assert.equal(heavy.scale, 120_000);
-  assert.deepEqual(hc.columns.map((c) => [c.index, c.height]), [[54, 16]], "the peak column full height; 2k beside it is under a pixel, not drawn");
+  const peak = hc.columns.find((c) => c.index === 27)!;
+  assert.equal(peak.height, 8, "the peak slot's minute: (120k + 2k) / 2 on a 120k scale, half of 16px");
+  assert.ok(hc.columns.filter((c) => c.index !== 27 && !c.hollow).every((c) => c.height === 2), "2k beside a 120k peak: the 2px floor, not dropped");
 });
 
-test("pale newest minute: the last two 30 s columns on the row, the last one-minute column on the phone", () => {
+test("hollow newest minute: the last one-minute column on the row, the last two-minute column on the phone; at least 4px", () => {
   const steady = Object.fromEntries(Array.from({ length: 60 }, (_, i) => [i, 30_000]));
   const v = tokenVelocityView(withTokens(ring(10, steady)), at(10));
-  const row = velocityChart(v, 1, 18);
-  assert.deepEqual(row.columns.filter((c) => c.pale).map((c) => c.index), [58, 59]);
-  const phone = velocityChart(v, 2, 16);
-  assert.equal(phone.count, 30);
-  assert.deepEqual(phone.columns.filter((c) => c.pale).map((c) => c.index), [29]);
-  assert.ok(phone.columns.every((c) => c.height === 14), "pairs average into one-minute columns");
+  const row = velocityChart(v, 2, 18);
+  assert.deepEqual(row.columns.filter((c) => c.hollow).map((c) => c.index), [29]);
+  const phone = velocityChart(v, 4, 16);
+  assert.equal(phone.count, 15);
+  assert.deepEqual(phone.columns.filter((c) => c.hollow).map((c) => c.index), [14]);
+  assert.ok(phone.columns.every((c) => c.height === 14), "four slots average into two-minute columns");
   assert.equal(phone.meanY, 1, "a mean at the peak sits level with the columns' tops");
+  // The newest minute barely in: an outline needs 4px to show its hollow; with nothing in, nothing drawn.
+  const low = tokenVelocityView(withTokens(ring(10, { ...steady, 0: 10, 1: 10 })), at(10));
+  assert.deepEqual(velocityChart(low, 2, 18).columns.filter((c) => c.hollow).map((c) => c.height), [4]);
+  const none = tokenVelocityView(withTokens(ring(10, { ...steady, 0: 0, 1: 0 })), at(10));
+  assert.deepEqual(velocityChart(none, 2, 18).columns.filter((c) => c.hollow), []);
+});
+
+test("row pitch: one whole-pixel pitch for every column, never under 3px, 2px gaps from 5px", () => {
+  assert.deepEqual(velocityPitch(186, 30), { pitch: 6, gap: 2, width: 180 }, "the 320px pane");
+  assert.deepEqual(velocityPitch(154, 30), { pitch: 5, gap: 2, width: 150 }, "the 288px pane");
+  assert.deepEqual(velocityPitch(130, 30), { pitch: 4, gap: 1, width: 120 });
+  assert.deepEqual(velocityPitch(0, 30), { pitch: 3, gap: 1, width: 90 }, "not measured yet");
+  assert.deepEqual(velocityPitch(Number.NaN, 30), { pitch: 3, gap: 1, width: 90 });
 });
 
 test("the clock moves the windows between frames, and an emptied ring stops the tick", () => {
@@ -168,7 +186,7 @@ test("partial: the same readout and chart, \"at least\" and why in words only; t
   assert.equal(p.readout, "48k", "no + or ~ on the figure");
   assert.equal(p.sentence, "Output tokens a minute: at least 48k over the last 5 minutes, 8.0k over 30. Some calls' tokens can't be seen. Replies still being written aren't counted yet.");
   const same = tokenVelocityView(withTokens(ring(10, { 0: 48_000 * 5 })), at(10));
-  assert.deepEqual(velocityChart(p, 1, 18), velocityChart(same, 1, 18));
+  assert.deepEqual(velocityChart(p, 2, 18), velocityChart(same, 2, 18));
   const callsPartial = withTokens(ring(10, {}), { count: 1, approximate: 0, partial: true, gaps: [{ reason: "claude-internal" }] });
   assert.equal(tokenVelocityView(callsPartial, at(10)).state, "complete", "the ring says its own coverage");
 });

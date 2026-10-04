@@ -80,7 +80,7 @@ import {
 import { folderActive, folderOpen, folderOpenKey, readFolderOpenRaw, storedFolderOpen, writeFolderOpenRaw } from "../lib/folder-open";
 import { groupOpen as groupOpenRule, groupsRegionOpen as groupsRegionOpenRule } from "../lib/group-open";
 import { sessionWorking } from "../lib/workers";
-import { tokenVelocityView, type TokenVelocityView, velocityChart } from "../lib/llm-inflight";
+import { tokenVelocityView, type TokenVelocityView, velocityChart, velocityPitch } from "../lib/llm-inflight";
 import { sentences, workNow, workNowView, type WorkNowView, type WorkPeer } from "../lib/work-now";
 import { providerWait, watchProviderWaits } from "../lib/provider-waiting";
 import { waitingSentence } from "../../shared/provider-limits";
@@ -1100,40 +1100,51 @@ function AgentsGlance(props: { view: WorkNowView }) {
 
 /**
  * The token chart (§app.insights/token-velocity): the last 30 minutes as columns on a 1px
- * baseline, the newest minute pale (its replies are still landing), the 30-minute mean dashed.
- * `group` 1: 60 thirty-second columns (the Agents row, stretched to its line); 2: 30 one-minute
- * columns (the phone bar). Never animated, no gradient; its numbers are the row's sentence.
+ * baseline, the newest minute hollow (its replies are still landing), the 30-minute mean a dashed
+ * line behind the columns. `group` 2: 30 one-minute columns (the Agents row, `width` omitted: as
+ * wide as its box allows at one whole-pixel pitch, from its left edge); 4: 15 two-minute columns (the
+ * phone bar, a fixed `width`). Never animated, no gradient; its numbers are the row's sentence.
  */
-function VelocityChart(props: { view: TokenVelocityView; group: 1 | 2; width: number; height: number; stretch?: boolean }) {
+function VelocityChart(props: { view: TokenVelocityView; group: 2 | 4; height: number; width?: number }) {
   const chart = createMemo(() => velocityChart(props.view, props.group, props.height));
-  const pitch = () => props.width / chart().count;
-  return (
-    <svg
-      class="velocity-chart"
-      classList={{ "velocity-chart-stretch": props.stretch }}
-      width={props.stretch ? undefined : props.width}
-      height={props.height}
-      viewBox={`0 0 ${props.width} ${props.height}`}
-      preserveAspectRatio={props.stretch ? "none" : undefined}
-      shape-rendering="crispEdges"
-      aria-hidden="true"
-    >
-      <rect class="velocity-baseline" x="0" y={props.height - 1} width={props.width} height="1" />
-      <For each={chart().columns}>
-        {(c) => (
-          <rect
-            class={c.pale ? "velocity-col velocity-col-pale" : "velocity-col"}
-            x={c.index * pitch()}
-            y={props.height - 1 - c.height}
-            width={pitch() - 1}
-            height={c.height}
-          />
-        )}
-      </For>
+  /** The box's width, for a chart with no fixed one: measured, so every column gets the same pitch. */
+  const [room, setRoom] = createSignal(0);
+  let box: HTMLSpanElement | undefined;
+  onMount(() => {
+    if (props.width !== undefined || !box) return;
+    const ro = new ResizeObserver(() => setRoom(box!.clientWidth));
+    ro.observe(box);
+    onCleanup(() => ro.disconnect());
+  });
+  const geo = createMemo(() => velocityPitch(props.width ?? room(), chart().count));
+  const svg = () => (
+    <svg class="velocity-chart" width={geo().width} height={props.height} viewBox={`0 0 ${geo().width} ${props.height}`} shape-rendering="crispEdges" aria-hidden="true">
+      <rect class="velocity-baseline" x="0" y={props.height - 1} width={geo().width} height="1" />
+      {/* Behind the columns: a reference they stand in front of, never one of their tops. */}
       <Show when={chart().meanY !== null}>
-        <line class="velocity-mean" x1="0" x2={props.width} y1={chart().meanY! + 0.5} y2={chart().meanY! + 0.5} />
+        <line class="velocity-mean" x1="0" x2={geo().width} y1={chart().meanY! + 0.5} y2={chart().meanY! + 0.5} />
       </Show>
+      <For each={chart().columns}>
+        {(c) => {
+          const w = () => geo().pitch - geo().gap;
+          const x = () => c.index * geo().pitch;
+          const y = props.height - 1 - c.height;
+          // The hollow one is a 1px outline inside the same box, its stroke on the pixel centres.
+          return c.hollow ? (
+            <rect class="velocity-col-hollow" x={x() + 0.5} y={y + 0.5} width={w() - 1} height={c.height - 1} />
+          ) : (
+            <rect class="velocity-col" x={x()} y={y} width={w()} height={c.height} />
+          );
+        }}
+      </For>
     </svg>
+  );
+  return props.width !== undefined ? (
+    svg()
+  ) : (
+    <span ref={box} class="velocity-fit">
+      {svg()}
+    </span>
   );
 }
 
@@ -1912,7 +1923,7 @@ export function Sidebar(props: {
               </span>
             </span>
             <span class="agents-chart" aria-hidden="true">
-              <VelocityChart view={velocity()} group={1} width={180} height={18} stretch />
+              <VelocityChart view={velocity()} group={2} height={18} />
               <span>30m</span>
             </span>
           </span>
@@ -1979,7 +1990,7 @@ export function Sidebar(props: {
             <span class="agents-readout">
               <b class="text-num">{velocity().readout}</b> <span>/min</span>
             </span>
-            <VelocityChart view={velocity()} group={2} width={60} height={16} />
+            <VelocityChart view={velocity()} group={4} width={60} height={16} />
           </span>
           {/* Every provider the glance would show, in its order (at most the five): never one
               invented number, and the line never wraps — what can't fit clips, like the glance. */}

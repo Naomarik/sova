@@ -4671,15 +4671,18 @@ a.group-option { color: inherit; text-decoration: none; }
 .agents-readout { flex: none; white-space: nowrap; color: var(--color-ink-muted); font-size: var(--fs-micro); }
 .agents-readout > b { font-size: var(--fs-body); font-weight: var(--fw-semibold); color: var(--color-ink); }
 .agents-chart { display: flex; align-items: flex-end; gap: 6px; min-width: 0; font-size: var(--fs-micro); line-height: 1; color: var(--color-ink-muted); }
-.agents-chart > span { flex: none; }
-/* The chart: columns in ink-2 on a border-strong baseline, the newest minute pale (still landing),
-   the 30-minute mean a dashed ink line. Nothing animates, no gradient, no accent. */
+.agents-chart > :last-child { flex: none; }
+/* The chart: columns in ink-2 on a border-strong baseline, the newest minute a hollow ink-2
+   outline (still landing: a shape, not only a tone), the 30-minute mean a thin dashed line in the
+   info tone, behind the columns — a hue the neutral columns never take, so it never reads as their
+   tops; not the accent, which is the primary action's and the live-run mark's. Nothing animates,
+   no gradient. The row's chart sits in `.velocity-fit`, the box it measures for its pitch. */
 .velocity-chart { display: block; flex: none; }
-.velocity-chart-stretch { flex: 1; min-width: 0; width: 100%; }
+.velocity-fit { flex: 1 1 0; min-width: 0; display: flex; overflow: hidden; }
 .velocity-baseline { fill: var(--color-border-strong); }
 .velocity-col { fill: var(--color-ink-2); }
-.velocity-col-pale { fill: var(--color-border-strong); }
-.velocity-mean { stroke: var(--color-ink); stroke-width: 1; stroke-dasharray: 2 2; vector-effect: non-scaling-stroke; }
+.velocity-col-hollow { fill: none; stroke: var(--color-ink-2); stroke-width: 1; }
+.velocity-mean { stroke: var(--status-info); stroke-width: 1; stroke-dasharray: 2 3; }
 /* The Usage row + Resource monitor button, and the Agents row + Settings gear:
    each link keeps the width, its button sits at the row's right end, and the two
    buttons share one class so they stack in one column. The link's right padding
@@ -4711,7 +4714,9 @@ a.group-option { color: inherit; text-decoration: none; }
   flex: none;
   display: flex;
   align-items: center;
-  justify-content: center;
+  /* `safe`: centred while it fits; past that it starts at its padding and clips at the right
+     edge only, so the agents figure is never the part cut off. */
+  justify-content: safe center;
   gap: var(--space-3);
   min-height: var(--tap-min);
   padding: 0 var(--space-4) env(safe-area-inset-bottom);

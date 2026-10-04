@@ -101,30 +101,48 @@ export function tokenVelocityView(inflight: LlmInflight | null, now: number): To
 export interface VelocityColumn {
   /** Left to right, 0 the oldest. */
   index: number;
-  /** Whole pixels above the baseline, at least 1 (a column under a pixel isn't drawn). */
+  /** Whole pixels above the baseline: at least 2 for any tokens at all, so light load reads as
+      low blocks; a column with none isn't drawn. */
   height: number;
-  /** Its slots include the newest minute's two, whose replies are still landing: drawn pale. */
-  pale: boolean;
+  /** Its slots include the newest minute's two, whose replies are still landing: drawn hollow. */
+  hollow: boolean;
 }
 
+/** The shortest column with tokens in it, in pixels; the hollow one's, the least an outline needs
+    to show its hollow. */
+const MIN_COLUMN = 2;
+const MIN_HOLLOW = 4;
+
 /**
- * The chart's columns at `height` pixels (the baseline's 1px included): `group` slots a column (1
- * on the Agents row, 60 columns; 2 on the phone bar, 30 one-minute columns), each the mean rate of
- * its slots on `scale`, `height − 2` pixels full. `meanY` is the dashed line's y, null with no mean.
+ * The chart's columns at `height` pixels (the baseline's 1px included): `group` slots a column (2
+ * on the Agents row, 30 one-minute columns; 4 on the phone bar, 15 two-minute columns), each the
+ * mean rate of its slots on `scale`, `height − 2` pixels full. `meanY` is the dashed line's y,
+ * null with no mean.
  */
-export function velocityChart(v: Pick<TokenVelocityView, "series" | "scale" | "mean30">, group: 1 | 2, height: number): { columns: VelocityColumn[]; meanY: number | null; count: number } {
+export function velocityChart(v: Pick<TokenVelocityView, "series" | "scale" | "mean30">, group: 2 | 4, height: number): { columns: VelocityColumn[]; meanY: number | null; count: number } {
   const count = Math.floor(v.series.length / group);
   const room = height - 2;
   const columns: VelocityColumn[] = [];
   for (let i = 0; i < count; i++) {
     let sum = 0;
     for (let j = 0; j < group; j++) sum += v.series[i * group + j] ?? 0;
-    const h = Math.round((sum / group / v.scale) * room);
-    if (h < 1) continue;
-    columns.push({ index: i, height: Math.min(h, room), pale: (count - 1 - i) * group < 2 });
+    if (!(sum > 0)) continue;
+    const hollow = (count - 1 - i) * group < 2;
+    const h = Math.max(hollow ? MIN_HOLLOW : MIN_COLUMN, Math.round((sum / group / v.scale) * room));
+    columns.push({ index: i, height: Math.min(h, room), hollow });
   }
   const meanY = v.mean30 > 0 ? height - 1 - Math.min(room, Math.round((v.mean30 / v.scale) * room)) : null;
   return { columns, meanY, count };
+}
+
+/**
+ * The row chart's geometry at its line's `width`: one whole-pixel pitch for every column (the
+ * width ÷ `count` rounded down, never under 3), a 2px gap from a 5px pitch and 1px under it, so
+ * no column is a pixel wider than its neighbour. `width` is the chart's own, `pitch × count`.
+ */
+export function velocityPitch(available: number, count: number): { pitch: number; gap: number; width: number } {
+  const pitch = Math.max(3, Math.floor((Number.isFinite(available) ? available : 0) / count));
+  return { pitch, gap: pitch >= 5 ? 2 : 1, width: pitch * count };
 }
 
 /** Whether two pushed frames read the same, so an unchanged frame doesn't wake the sidebar. */

@@ -10,6 +10,7 @@ fixtures/synthetic/*.jsonl          hand-written pi sessions, one reason each (m
 fixtures/faux/<scenario>/           genuine pi 0.87.1 sessions + event streams (faux/record.ts)
   session.jsonl, events.json
 fixtures/cc/*.jsonl                 Claude Code transcript lines (the ones server/claude-transcript.test.ts pins)
+fixtures/large.ts                   the ~10 MB session of the `large` set, generated at test time
 expected/<set>/<fixture>/<probe>.json   the recorded outputs
 probes/<batch>.ts                   one file per refactor batch: reader (R1), rows (R2), usage (C), list (D),
                                     baton (E), overseer (F), fork (H)
@@ -38,6 +39,15 @@ faux/record.ts                      the faux recorder (scripts/harness-golden/fa
   the strings the server sends, so they compare byte for byte, key order included. Everything else compares
   by value: key order is ignored, a key whose value is `undefined` is absent (JSON's rule), Maps and Sets
   are `{"$map": […]}` / `{"$set": […]}`, a thrown error is `{"$throws": "Name: message"}`.
+- **Large outputs are digests.** An output whose key-sorted compact JSON is over 256 KiB (`DIGEST_ABOVE`) is
+  stored as `{"$digest": {sha256, bytes, head, parts}}`: sha256 over that key-sorted JSON (so it still compares
+  by value), the first 200 characters, and `parts` = a hash per top-level key or per run of up to 1/64 of an
+  array, so a difference still has a path. A fork prefix over the limit is hashed line by line
+  (`linesOrDigest`), never built as one string. Every committed synthetic/faux/cc output is under the limit
+  and stays whole.
+- **Per-entry probes sample.** `fork`, `regenerate` and `rewind` ask about every branch entry on a committed
+  fixture of at most 200; on the real corpus or a larger fixture, the first, the last and up to 8 evenly
+  spaced entries (`targetsOf`), plus one abandoned and one missing id.
 - A failure names the probe, the fixture and the JSON path of the first difference, with both values for a
   committed fixture and nothing but the file's hash for the real corpus.
 - A batch edits only **its own probes file**, and only to follow a moved function: the diff changes call
@@ -65,6 +75,13 @@ faux/record.ts                      the faux recorder (scripts/harness-golden/fa
 | `workers` | team create/add, worker manifests (running, done, lost), team events, subagent-complete, a legacy registry entry, a worktrees entry |
 | `baton` | a baton session: marker, sent markers, hand-off, decision, offer and lease, proposal, done, the wrap-up span, a photo |
 | `align-merge` | align results (two docs, a decision, done), worktrees entries before and after a merge card, a check run |
+
+## The large set
+
+`fixtures/large.ts` generates one ~10 MB session at test time (900 turns with thinking, tool calls, 6–7 KB tool
+results, a 40 KB image every 50 turns, a compaction, topic outlines, 0.86/0.87 lines, and a rewind that leaves
+600 turns abandoned). It is never committed; its expected files are (about 312 KB), so every `pnpm test`
+proves the goldens stay compact on a real-sized session.
 
 ## Faux fixtures (`faux-record.mjs`)
 

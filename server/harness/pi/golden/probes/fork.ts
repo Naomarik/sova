@@ -1,19 +1,20 @@
 // Probes owned by batch H (chat-manager history and the fork copy): the strict fork reader, the fork prefix
-// for every entry on the branch plus an abandoned and a missing id, the regenerate target and the rewind
-// check for every id, and the chat's title. A batch edits only its own probes file, and only to follow a
+// for every entry on the branch (a sample on a large or real session) plus an abandoned and a missing id, the
+// regenerate target and the rewind check for the same ids, and the chat's title. A batch edits only its own probes file, and only to follow a
 // moved function (README.md).
 import { resolveRegenerate, rewindSession, titleOf } from "../../../../chat-manager";
 import { activeBranchLines, forkPrefix, isFanoutSource, parseSourceDoc } from "../../../../session-fork";
 import { activeBranch, parseLines } from "../../../../transcript";
-import type { Fixture, Probe } from "../golden";
+import { linesOrDigest, targetsOf, type Fixture, type Probe } from "../golden";
 
-/** The ids each per-id probe asks about: the branch's, then one abandoned entry's, then one that isn't there. */
+/** The ids each per-id probe asks about: the branch's (all, or a sample on a large or real session: targetsOf),
+    then one abandoned entry's, then one that isn't there. */
 function askedIds(f: Fixture): string[] {
   const entries = parseLines(f.text);
   const branch = activeBranch(entries).map((e) => e.id).filter((id): id is string => typeof id === "string");
   const on = new Set(branch);
   const abandoned = entries.find((e) => typeof e.id === "string" && e.type !== "session" && !on.has(e.id))?.id as string | undefined;
-  return [...branch, ...(abandoned ? [abandoned] : []), "no-such-entry"];
+  return [...targetsOf(f, branch), ...(abandoned ? [abandoned] : []), "no-such-entry"];
 }
 
 export const probes: Probe[] = [
@@ -27,7 +28,8 @@ export const probes: Probe[] = [
       const prefixes: Record<string, unknown> = {};
       for (const id of askedIds(f)) {
         const plan = forkPrefix(parsed.doc, id);
-        prefixes[id] = plan.ok ? { ok: true, prefix: plan.prefix.map((l) => l.raw) } : plan;
+        // The raw lines the fork would write: whole when short, else hashed line by line.
+        prefixes[id] = plan.ok ? { ok: true, prefix: linesOrDigest(plan.prefix.map((l) => l.raw)) } : plan;
       }
       return {
         parse: { ok: true, lines: parsed.doc.lines.length },

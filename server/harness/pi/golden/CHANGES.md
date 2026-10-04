@@ -12,3 +12,4 @@ gets a line naming every probe it re-records.
 ## Log
 
 - 2026-10-05 (all) (all): first record, on feat/harness-integration 51f575e plus test-only exports — G0a/G0b
+- 2026-10-05 (all) large-10mb: outputs over 256 KiB stored as digests, fork prefixes hashed per target, fork/regenerate/rewind sample their targets past 200 entries; new generated `large` set recorded. Synthetic, faux and cc expected files unchanged (all under the limit) — G0 follow-up

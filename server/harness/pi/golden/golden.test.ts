@@ -4,7 +4,7 @@
 // content). Recording runs through here too, so it sees the test's own environment:
 // `node scripts/harness-golden.mjs record [--accept <probe>]` sets SOVA_GOLDEN_MODE=record.
 import assert from "node:assert/strict";
-import { mkdtempSync, realpathSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { after, describe, test } from "node:test";
@@ -32,6 +32,15 @@ test("probe names are unique and every accepted probe exists", () => {
 });
 
 const sets = g.fixtureSets();
+// The large set: a ~10 MB session generated here (fixtures/large.ts), never committed; its expected files are.
+{
+  const { largeSessionText } = await import("./fixtures/large.ts");
+  const dir = join(agentDir, "large-fixture");
+  mkdirSync(dir, { recursive: true });
+  const path = join(dir, "large-10mb.jsonl");
+  writeFileSync(path, largeSessionText());
+  sets.splice(3, 0, { name: "large", private: false, expected: join(g.GOLDEN_DIR, "expected/large"), fixtures: [{ name: "large-10mb", format: "pi", path }] });
+}
 if (!sets.some((s) => s.name === "real")) test.skip(`real corpus: ${relative(g.REPO, g.REAL_DIR)}/sessions is absent (scripts/harness-golden.mjs sample)`, () => {});
 
 for (const set of sets) {
@@ -43,7 +52,8 @@ for (const set of sets) {
       const label = set.private ? `real/${fx.name}` : `${set.name}/${fx.name}`;
       for (const probe of probes.filter((p) => p.formats.includes(fx.format))) {
         test(`${probe.name} ${label}`, async () => {
-          const output = g.encode(await g.runProbe(probe, fixture), scrub);
+          // Large outputs are stored as their digest (g.compact): byte-exact, but never a giant file.
+          const output = g.compact(g.encode(await g.runProbe(probe, fixture), scrub));
           const r = g.settle(set, fx.name, probe.name, output, mode, accept);
           const where = relative(g.REPO, r.path);
           if (r.status === "missing") assert.fail(`${probe.name} ${label}: no expected file ${where}. Record it: node scripts/harness-golden.mjs record`);

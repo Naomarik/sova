@@ -16,6 +16,8 @@ export type Format = "pi" | "cc";
 /** One fixture as a probe sees it. `file()` is a private copy in the test's agent dir; `copy(text)` another. */
 export interface Fixture {
   set: string;
+  /** The real corpus: per-entry probes ask about a sample of targets (`targetsOf`). */
+  private: boolean;
   name: string;
   format: Format;
   text: string;
@@ -90,6 +92,77 @@ export function encode(v: unknown, scrub: ReadonlyMap<string, string> = new Map(
   return walk(v);
 }
 
+/** An output whose key-sorted compact JSON is longer than this is stored as its digest. Every committed
+    synthetic, faux and cc output is below it, so those stay whole; a real session's large outputs don't. */
+export const DIGEST_ABOVE = 256 * 1024;
+/** How much of a digested output's JSON is kept, for a reader (a real fixture's is gitignored). */
+const HEAD_CHARS = 200;
+/** A digested array's parts: hashes of at most this many runs of elements. */
+const ARRAY_PARTS = 64;
+
+const sha = (s: string) => createHash("sha256").update(s).digest("hex");
+
+/** `v` (decoded JSON) with every object's keys sorted: a digest then compares by value, as the whole form does. */
+export function canonical(v: unknown): unknown {
+  if (Array.isArray(v)) return v.map(canonical);
+  if (v === null || typeof v !== "object") return v;
+  const out: Record<string, unknown> = {};
+  for (const k of Object.keys(v).sort()) out[k] = canonical((v as Record<string, unknown>)[k]);
+  return out;
+}
+
+/**
+ * The output as stored: itself, or above DIGEST_ABOVE `{"$digest": {sha256, bytes, head, parts}}`, where `parts`
+ * hashes each top-level key (an object) or each of up to 64 runs of elements (an array), so a difference still
+ * has a path. sha256 is over the key-sorted compact JSON.
+ */
+export function compact(v: unknown): unknown {
+  const c = canonical(v);
+  const s = JSON.stringify(c) ?? "null";
+  if (s.length <= DIGEST_ABOVE) return v;
+  const short = (x: unknown) => sha(JSON.stringify(x) ?? "null").slice(0, 16);
+  let parts: unknown;
+  if (Array.isArray(c)) {
+    const step = Math.max(1, Math.ceil(c.length / ARRAY_PARTS));
+    const runs: string[] = [];
+    for (let i = 0; i < c.length; i += step) runs.push(`${i}-${Math.min(c.length, i + step) - 1}:${short(c.slice(i, i + step))}`);
+    parts = runs;
+  } else if (c && typeof c === "object") {
+    parts = Object.fromEntries(Object.entries(c).map(([k, x]) => [k, short(x)]));
+  }
+  return { $digest: { sha256: sha(s), bytes: Buffer.byteLength(s), head: s.slice(0, HEAD_CHARS), ...(parts !== undefined ? { parts } : {}) } };
+}
+
+/** Lines as one text (joined by "\n"), whole when short, else hashed as they come: never one giant string. */
+export function linesOrDigest(lines: readonly string[]): string[] | { $digest: { sha256: string; bytes: number; lines: number; head: string } } {
+  let bytes = 0;
+  for (const l of lines) bytes += l.length + 1;
+  if (bytes <= DIGEST_ABOVE) return [...lines];
+  const h = createHash("sha256");
+  let n = 0;
+  lines.forEach((l, i) => {
+    if (i) h.update("\n");
+    h.update(l);
+    n += Buffer.byteLength(l) + (i ? 1 : 0);
+  });
+  return { $digest: { sha256: h.digest("hex"), bytes: n, lines: lines.length, head: (lines[0] ?? "").slice(0, HEAD_CHARS) } };
+}
+
+/** How many entries a per-entry probe (fork, regenerate, rewind) asks about before it samples them. */
+export const TARGETS_ALL_UP_TO = 200;
+
+/**
+ * The entry ids a per-entry probe asks about: all of them on a committed fixture with at most TARGETS_ALL_UP_TO;
+ * otherwise (the real corpus, a large fixture) the first, the last and up to 8 evenly spaced between.
+ */
+export function targetsOf(f: Pick<Fixture, "private">, ids: readonly string[]): string[] {
+  if (!f.private && ids.length <= TARGETS_ALL_UP_TO) return [...ids];
+  if (ids.length <= 10) return [...ids];
+  const picked = new Set<number>([0, ids.length - 1]);
+  for (let k = 1; k <= 8; k++) picked.add(Math.round((k * (ids.length - 1)) / 9));
+  return [...picked].sort((a, b) => a - b).map((i) => ids[i]!);
+}
+
 /** Runs a probe: its output, or `{"$throws": message}` (a throw is an output too). */
 export async function runProbe(p: Probe, f: Fixture): Promise<unknown> {
   try {
@@ -146,6 +219,7 @@ export function workspaceFixture(set: FixtureSet, fx: FixtureSet["fixtures"][num
   let main: string | null = null;
   return {
     set: set.name,
+    private: set.private,
     name: fx.name,
     format: fx.format,
     text: readFileSync(fx.path, "utf8"),

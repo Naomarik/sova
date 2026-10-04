@@ -1,6 +1,7 @@
 # Bun quirks
 
-Sova's server runs on Node or Bun (see "Server runtime (Node or Bun)" in `CLAUDE.md`). This page lists
+Sova's server runs on Bun, and on Node only on request (see "Server runtime (Bun; Node on request)"
+in `CLAUDE.md`). This page lists
 every place where Bun behaves differently from Node and Sova depends on the difference.
 
 The rules:
@@ -12,7 +13,7 @@ The rules:
 - **Fixed by design where possible.** When renaming a file or changing a test removes the
   dependency, no runtime code is involved.
 - **Every quirk has a canary** in `server/bun-quirks-canary.test.ts`. It asserts that the bug
-  still exists, runs only under Bun (`pnpm run test:bun`) and is skipped on Node. When a Bun
+  still exists, runs only under Bun (`pnpm test`) and is skipped on Node. When a Bun
   upgrade fixes a bug, its canary fails. Then delete the workaround named below, the canary and
   this row.
 - **Every quirk has a repro** in `bun-quirks/repros/`. It is standalone and ready to file
@@ -23,7 +24,7 @@ The rules:
 | Quirk | Bun | Upstream issue | Workaround | Canary | Repro |
 |---|---|---|---|---|---|
 | resolver-case | 1.4.2 | TBD | by design: no siblings that differ only by case (`src/vis/kinds/chart/Parts.tsx` → `PartsView.tsx`); `server/sibling-case.test.ts` keeps it so | `resolver-case` | `repros/resolver-case/` |
-| homedir | 1.4.2 | TBD | `pnpm run test:bun` (`scripts/run-tests.mjs --runtime bun`) sets the throwaway HOME in the environment before bun starts; `hermetic-env.mjs` refuses to run when `os.homedir()` doesn't follow it | `homedir` | `repros/homedir.mjs` |
+| homedir | 1.4.2 | TBD | `pnpm test` (`scripts/run-tests.mjs`, Bun) sets the throwaway HOME in the environment before bun starts; `hermetic-env.mjs` refuses to run when `os.homedir()` doesn't follow it | `homedir` | `repros/homedir.mjs` |
 | ws-max-payload | 1.4.2 | TBD | `cappedWebSocketServer` / `cappedWebSocket` / `enforceMaxPayload` in `server/runtime-quirks.ts`, used by every WebSocket in `server/` | `ws-max-payload` | `repros/ws-max-payload.mjs` |
 | ws-socket | 1.4.2 | TBD | by design: `server/compression.test.ts` counts bytes through a TCP relay instead of `ws._socket.bytesRead` | `ws-socket` | `repros/ws-socket.mjs` |
 | ws-deflate | 1.4.2 | TBD | none: remote sockets go uncompressed (local browsers never get deflate anyway); `wsNegotiatesDeflate` in `server/runtime-quirks.ts` tells `server/compression.test.ts` which behaviour to assert | `ws-deflate` | `repros/ws-deflate.mjs` |
@@ -48,7 +49,7 @@ assets are exempt, because they are always imported with their extension.
 `os.homedir()` ignores a change to `process.env.HOME` made after the process started; Node
 follows it. The test preload `pi-config/extensions/claude-code/tests/hermetic-env.mjs` points HOME
 at a throwaway directory in-process, so under Bun the tests would resolve the real `~/.pi`.
-`pnpm run test:bun` creates the throwaway home and puts HOME, `USERPROFILE` and `SOVA_TEST_HOME` in
+`pnpm test` (on Bun) creates the throwaway home and puts HOME, `USERPROFILE` and `SOVA_TEST_HOME` in
 bun's environment. It also clears `PI_CODING_AGENT_DIR`, `CLAUDE_CONFIG_DIR`, the XDG dirs and the
 other variables the preload clears. The preload keeps that home. If `os.homedir()` still
 disagrees, it throws before any test runs, on any runtime. Never run a Bun test any other way.
@@ -150,7 +151,7 @@ canary because they are test-harness or tooling facts, not bugs Sova works aroun
 
 - **NODE_TEST_CONTEXT is unset under `bun test`.** `server/model-prices.ts` turns its price
   refresh off when it sees Node's runner. Under `bun test` it would fetch models.dev, and the mesh
-  tests' "no outbound request" checks would fail. `test:bun` sets `SOVA_PRICES_FETCH=off`.
+  tests' "no outbound request" checks would fail. The Bun runner sets `SOVA_PRICES_FETCH=off`.
 - **Loader hooks:** `module.register` and `module.registerHooks` don't apply under Bun. Tests that
   install a loader hook need another seam.
 - **`mock.method` on `fs` with `syncBuiltinESMExports`:** the mock doesn't reach ESM importers of
@@ -162,25 +163,27 @@ canary because they are test-harness or tooling facts, not bugs Sova works aroun
   shim refuses an untrusted config in a throwaway HOME. The runner puts the real node's directory
   and `mise bin-paths` first.
 - **Per-test timeout:** `bun test` defaults to 5 s per test; node:test has no default.
-  `test:bun` passes `--timeout=60000`.
+  The Bun runner passes `--timeout=60000`.
 - **One process per file:** without `--parallel`, `bun test` runs every file in one process with
-  shared globals. `test:bun` runs one `bun test <file>` per file, each with its own throwaway
+  shared globals. The Bun runner runs one `bun test <file>` per file, each with its own throwaway
   home, as `node --test` isolates files.
 - **mise shims in a throwaway HOME:** a shim refuses an untrusted config there, so tests that spawn
-  `node` would fail. `test:bun` puts the real node's directory first on PATH.
+  `node` would fail. The Bun runner puts the real node's directory first on PATH.
 - **Workers and tools stay on Node.** A pi worker a Bun server spawns runs the global `pi`, a Node
   install, which may be a different version from the pinned one (0.87.0 vs 0.87.1 at the time of
   writing). The spec tools, including census, always run on node. Only the server process
   changes runtime.
 
-## Running on Bun
+## Running on Bun (and Node on request)
 
-- `pnpm run test:bun` (`node scripts/run-tests.mjs --runtime bun`) runs the unit suite under Bun.
-  `pnpm test` (`--runtime node`) runs it under Node, and `.sova/project.json`'s `test.run` calls
-  the same runner. Both run the same files in two passes: the main set, then `*.browser.test.ts`
+- `pnpm test` (`node scripts/run-tests.mjs`) runs the unit suite under Bun, and so does
+  `.sova/project.json`'s `test.run`, which calls the same runner (`pnpm run test:bun` is kept as
+  an explicit Bun alias). `pnpm run test:node` (`--runtime node`), or `SOVA_RUNTIME=node` on any
+  of them, runs it under Node; an explicit `--runtime` wins. No Bun found: the runner exits 2 with
+  one line naming `pnpm run test:node`, before any file runs. Both runtimes run the same files in two passes: the main set, then `*.browser.test.ts`
   under `--conditions=browser`. A named file is routed to its pass. On Bun, each file runs in its
   own `bun test` process with its own throwaway home and `--timeout=60000`, half the cores at once
   (`TEST_BUN_JOBS=<n>` sets the width). Arguments that start with `-` go to the runner. Wrap it in
   `node scripts/test-sentinel.mjs -- …` to prove it touched nothing real.
-- To run the server on Bun, see README's "Run on Node or Bun" and the "Server runtime (Node or
-  Bun)" section of `CLAUDE.md`.
+- The server runs on Bun by default; for Node and the launcher's details, see README's "Run on
+  Bun (or Node)" and the "Server runtime (Bun; Node on request)" section of `CLAUDE.md`.

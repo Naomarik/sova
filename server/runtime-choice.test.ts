@@ -1,11 +1,11 @@
 import { strict as assert } from "node:assert";
-import { execFileSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { after, describe, test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { bootsFile, chosenRuntime, decideLaunch, fallbackFile, launch, MAX_FAILED_BUN_BOOTS, parseRuntimeSetting, readBunBoots, resolveBun, runtimeFile, runtimeInfo } from "./runtime-choice";
+import { chosenRuntime, launch, resolveBun, runtimeInfo } from "./runtime-choice";
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), "..");
 const tmp = mkdtempSync(join(tmpdir(), "sova-runtime-"));
@@ -26,25 +26,16 @@ function stub(name: string): string {
   return path;
 }
 
-describe("parseRuntimeSetting", () => {
-  test("only a well-formed node or bun is taken; everything else is node", () => {
-    assert.equal(parseRuntimeSetting('{"runtime":"bun"}'), "bun");
-    assert.equal(parseRuntimeSetting('{"runtime":"node"}'), "node");
-    for (const bad of [null, undefined, "", "{", "[]", '"bun"', '{"runtime":"Bun"}', '{"runtime":"deno"}', '{"runtime":1}', "null", "{}"])
-      assert.equal(parseRuntimeSetting(bad), "node", String(bad));
-  });
-});
-
 describe("chosenRuntime", () => {
-  test("SOVA_RUNTIME wins when it names a runtime; otherwise the file decides", () => {
+  test("node only when SOVA_RUNTIME=node; anything else is bun", () => {
+    assert.equal(chosenRuntime({ SOVA_RUNTIME: "node" }), "node");
+    assert.equal(chosenRuntime({ SOVA_RUNTIME: " node\n" }), "node");
+    for (const v of [undefined, "", "bun", "Node", "deno"]) assert.equal(chosenRuntime({ SOVA_RUNTIME: v }), "bun", String(v));
+  });
+  test("a runtime.json in the agent dir is not read", () => {
     const root = freshRoot();
-    assert.equal(chosenRuntime({}, root), "node");
-    writeFileSync(runtimeFile(root), '{"runtime":"bun"}');
-    assert.equal(chosenRuntime({}, root), "bun");
-    assert.equal(chosenRuntime({ SOVA_RUNTIME: "node" }, root), "node");
-    assert.equal(chosenRuntime({ SOVA_RUNTIME: "deno" }, root), "bun");
-    writeFileSync(runtimeFile(root), '{"runtime":"node"}');
-    assert.equal(chosenRuntime({ SOVA_RUNTIME: "bun" }, root), "bun");
+    writeFileSync(join(root, "runtime.json"), '{"runtime":"node"}');
+    assert.equal(chosenRuntime({ PI_CODING_AGENT_DIR: dirname(root) }), "bun");
   });
 });
 
@@ -72,78 +63,52 @@ describe("resolveBun", () => {
   });
 });
 
-describe("decideLaunch", () => {
-  const bun = { path: "/x/bun" };
-  test("node resets the counter and never falls back", () => {
-    assert.deepEqual(decideLaunch("node", bun, 5), { runtime: "node", resetBoots: true });
-  });
-  test("bun counts its boots", () => {
-    assert.deepEqual(decideLaunch("bun", bun, 0), { runtime: "bun", bun: "/x/bun", boots: 1 });
-    assert.deepEqual(decideLaunch("bun", bun, MAX_FAILED_BUN_BOOTS - 1), { runtime: "bun", bun: "/x/bun", boots: MAX_FAILED_BUN_BOOTS });
-  });
-  test("bun missing, or the third failed boot reached, falls back to node with a reason", () => {
-    const missing = decideLaunch("bun", { missing: "gone" }, 0);
-    assert.equal(missing.runtime, "node");
-    assert.ok(missing.runtime === "node" && missing.fallback?.includes("gone") && !missing.resetBoots);
-    const failing = decideLaunch("bun", bun, MAX_FAILED_BUN_BOOTS);
-    assert.ok(failing.runtime === "node" && failing.fallback?.includes(`${MAX_FAILED_BUN_BOOTS} times`) && !failing.resetBoots);
-  });
-});
-
 describe("launch", () => {
-  test("three bun boots that never listen, then node with a fallback record; choosing node resets", () => {
-    const root = freshRoot();
-    const env = { SOVA_RUNTIME: "bun", SOVA_BUN: stub("bun") };
-    for (let i = 1; i <= MAX_FAILED_BUN_BOOTS; i++) {
-      assert.equal(launch(env, root).runtime, "bun");
-      assert.equal(readBunBoots(root), i);
-    }
-    assert.ok(!existsSync(fallbackFile(root)));
-    const d = launch(env, root);
-    assert.equal(d.runtime, "node");
-    const rec = JSON.parse(readFileSync(fallbackFile(root), "utf8"));
-    assert.equal(typeof rec.at, "string");
-    assert.ok(rec.reason.includes("times in a row"));
-    assert.equal(readBunBoots(root), MAX_FAILED_BUN_BOOTS, "the fallback keeps the count");
-    launch({ SOVA_RUNTIME: "node" }, root);
-    assert.ok(!existsSync(bootsFile(root)));
-    assert.equal(launch(env, root).runtime, "bun");
+  const noMise = () => null;
+  test("bun by default, node when asked, an error (never node) when bun is missing", () => {
+    const bun = stub("bun");
+    assert.deepEqual(launch({ SOVA_BUN: bun }, noMise), { runtime: "bun", bun });
+    assert.deepEqual(launch({ SOVA_RUNTIME: "node", SOVA_BUN: join(tmp, "nope") }, noMise), { runtime: "node" });
+    const d = launch({ SOVA_BUN: join(tmp, "nope") }, noMise);
+    assert.equal(d.runtime, "error");
+    assert.ok(d.runtime === "error" && d.error.includes("SOVA_BUN") && d.error.includes("SOVA_RUNTIME=node"));
+    assert.equal(launch({ PATH: "/nonexistent" }, noMise).runtime, "error");
   });
 });
 
 describe("runtimeInfo", () => {
-  test("reports this process, the choice, and the fallback only when they differ", () => {
-    const root = freshRoot();
-    writeFileSync(fallbackFile(root), JSON.stringify({ at: "2026-01-01T00:00:00.000Z", reason: "why" }));
+  test("reports this process and the choice", () => {
     const here = process.versions.bun ? "bun" : "node";
-    const other = here === "bun" ? "node" : "bun";
-    assert.deepEqual(runtimeInfo({ SOVA_RUNTIME: here }, root), { name: here, version: process.versions.bun ?? process.versions.node, chosen: here });
-    assert.deepEqual(runtimeInfo({ SOVA_RUNTIME: other }, root).fallback, { at: "2026-01-01T00:00:00.000Z", reason: "why" });
+    const version = process.versions.bun ?? process.versions.node;
+    assert.deepEqual(runtimeInfo({ SOVA_RUNTIME: "node" }), { name: here, version, chosen: "node" });
+    assert.deepEqual(runtimeInfo({}), { name: here, version, chosen: "bun" });
   });
 });
 
 describe("scripts/start-server.sh", () => {
   // Stub node and bun binaries: the launcher's decision step still runs on the real node.
   const realNode = process.execPath.endsWith("bun") ? "node" : process.execPath;
-  function run(env: Record<string, string>, root: string): string {
+  function run(env: Record<string, string>, args: string[] = []): { status: number; out: string; err: string } {
     const dir = join(tmp, `nodeshim${n++}`);
     mkdirSync(dir);
     const shim = join(dir, "node");
     // The decision call goes to the real node; the final exec prints instead of starting a server.
-    writeFileSync(shim, `#!/bin/sh\nif [ "$1" = server/runtime-choice.ts ]; then exec "${realNode}" "$@"; fi\necho "node $*"\n`);
+    writeFileSync(shim, `#!/bin/sh\nif [ "$1" = server/runtime-choice.ts ]; then exec "${realNode}" "$@"; fi\necho "node $* SOVA_RUNTIME=$SOVA_RUNTIME"\n`);
     chmodSync(shim, 0o755);
-    return execFileSync(join(REPO, "scripts", "start-server.sh"), [], {
-      env: { PATH: process.env.PATH ?? "", HOME: tmp, PI_CODING_AGENT_DIR: dirname(root), SOVA_NODE: shim, ...env },
+    const r = spawnSync(join(REPO, "scripts", "start-server.sh"), args, {
+      env: { PATH: "/usr/bin:/bin", HOME: tmp, SOVA_NODE: shim, ...env },
       encoding: "utf8",
-      stdio: ["ignore", "pipe", "pipe"],
-    }).trim();
+    });
+    return { status: r.status ?? -1, out: r.stdout.trim(), err: r.stderr.trim() };
   }
-  test("execs node by default, bun when chosen, node again when bun is missing", () => {
-    const root = join(freshRoot(), "sova");
-    assert.equal(run({}, root), "node --import tsx server/index.ts");
+  test("execs bun by default, node on --node or SOVA_RUNTIME=node, and fails when bun is missing", () => {
     const bun = stub("bun");
-    assert.equal(run({ SOVA_RUNTIME: "bun", SOVA_BUN: bun }, root), "bun server/index.ts");
-    assert.equal(run({ SOVA_RUNTIME: "bun", SOVA_BUN: join(tmp, "missing-bun") }, root), "node --import tsx server/index.ts");
-    assert.ok(JSON.parse(readFileSync(fallbackFile(root), "utf8")).reason.includes("missing-bun"));
+    assert.equal(run({ SOVA_BUN: bun }, ["--port", "1"]).out, "bun server/index.ts --port 1");
+    assert.equal(run({ SOVA_BUN: bun }, ["--node", "--port", "1"]).out, "node --import tsx server/index.ts --port 1 SOVA_RUNTIME=node");
+    assert.equal(run({ SOVA_BUN: bun, SOVA_RUNTIME: "node" }).out, "node --import tsx server/index.ts SOVA_RUNTIME=node");
+    const missing = run({ SOVA_BUN: join(tmp, "missing-bun") });
+    assert.equal(missing.status, 1);
+    assert.equal(missing.out, "");
+    assert.ok(missing.err.includes("bun not found") && missing.err.includes("missing-bun"), missing.err);
   });
 });

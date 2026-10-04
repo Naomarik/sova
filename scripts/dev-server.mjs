@@ -14,8 +14,8 @@
 // Watches: server/, shared/, pi-config/extensions/mode/ (the server's import graph).
 // Ignores: *.test.ts, dotfiles. Live-record contract: pi-config/extensions/sessions SCHEMA.md.
 //
-// Runtime: SOVA_RUNTIME or <agent dir>/sova/runtime.json, decided per (re)start exactly as
-// scripts/start-server.sh decides (server/runtime-choice.ts, fallback to Node included).
+// Runtime: Bun, or Node with SOVA_RUNTIME=node, decided per (re)start exactly as
+// scripts/start-server.sh decides (server/runtime-choice.ts). Bun missing: the watcher exits 1.
 
 import { spawn } from "node:child_process";
 import { watch } from "node:fs";
@@ -84,7 +84,10 @@ let shuttingDown = false;
 
 function start() {
   const runtime = launch();
-  if (runtime.runtime === "node" && runtime.fallback) console.log(`[dev-server] falling back to node: ${runtime.fallback}`);
+  if (runtime.runtime === "error") {
+    console.error(`[dev-server] ${runtime.error}`);
+    process.exit(1);
+  }
   // Under Bun this watcher's own execPath is bun, which cannot take node's --import.
   const [cmd, args] = runtime.runtime === "bun"
     ? [runtime.bun, ["server/index.ts"]]

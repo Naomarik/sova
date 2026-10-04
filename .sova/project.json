@@ -39,7 +39,7 @@
     }
   },
   "test": {
-    "run": ["node", "scripts/run-tests.mjs", "--runtime", "node"],
+    "run": ["node", "scripts/run-tests.mjs"],
     "smoke": ["shared/project-contract.test.ts"]
   },
   "share": {"allow": false}

@@ -153,6 +153,9 @@ test("pure rules: temporary subjects, restart files, dirty paths, timeouts, busy
   assert.equal(timeoutFor(1000, [800, 900, 4000]), 1800);
   assert.ok(busyOf({ presence: { workerCounts: { working: 1 } } }) && busyOf({ presence: { activity: { state: "working" } } }) && !busyOf({ presence: { activity: { state: "idle" }, workerCounts: { working: 0 } } }));
   assert.deepEqual(failingTestFiles("✖ server/a.test.ts (3ms)\n  test at file:///r/src/lib/b.test.ts:1:2\n  test at /elsewhere/c.test.ts:1:1", "/r"), ["server/a.test.ts", "src/lib/b.test.ts"]);
+  // scripts/run-tests.mjs on Bun: each failing file's FAIL line, then the summary's list.
+  const bun = "ok   server/ok.test.ts (3 pass)\nFAIL server/sync/logins.test.ts (exit 1, 20 pass, 1 fail)\nerror: FAIL inside output.test.ts\n\nrun-tests (bun): 2 files\n  FAIL server/sync/logins.test.ts\n  FAIL src/lib/x.test.tsx";
+  assert.deepEqual(failingTestFiles(bun, "/r"), ["server/sync/logins.test.ts", "src/lib/x.test.tsx"]);
 });
 
 test("suiteOf reads an extension's line from pi-config/README.md, and globs expand without a shell", () => {
@@ -413,7 +416,8 @@ test("check: a failing test file is pre-existing when it fails on master too; pn
   assert.equal(testCall.cwd, wt("feat/clean"));
   const rerun = calls.find((c) => c.args[0] === "exec");
   assert.equal(rerun.cwd, main);
-  assert.deepEqual(rerun.args.slice(-2), ["--test", "server/pre-fail.test.ts"]);
+  // The same runner and runtime as the branch's pnpm test (Bun unless SOVA_RUNTIME=node).
+  assert.deepEqual(rerun.args, ["exec", "node", "scripts/run-tests.mjs", "--runtime", process.env.SOVA_RUNTIME === "node" ? "node" : "bun", "server/pre-fail.test.ts"]);
 });
 
 test("land only at the checked head and master; landed records the restart", async () => {

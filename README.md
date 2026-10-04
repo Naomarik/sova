@@ -28,33 +28,33 @@ Then run `sova`, and `sova open` to open **http://127.0.0.1:4800** already unloc
 existing pi provider login.
 [First-time login or command not found?](docs/getting-started.md)
 
-## Run on Node or Bun
+## Run on Bun (or Node)
 
-The server runs on Node by default, or on [Bun](https://bun.sh) 1.4.2 (pinned in `mise.toml`
-beside Node). Bun support is experimental. What differs there, and how Sova handles it, is in
+The server runs on [Bun](https://bun.sh) 1.4.2 (pinned in `mise.toml` beside Node). It runs on
+Node only when you ask for it. What differs between the two, and how Sova handles it, is in
 [docs/bun-quirks.md](docs/bun-quirks.md).
 
 From a checkout:
 
 ```sh
-node --import tsx server/index.ts      # Node, directly
+scripts/start-server.sh                # Bun (what `pnpm start` runs)
+scripts/start-server.sh --node         # Node, on request
+SOVA_RUNTIME=node pnpm run dev:server  # the dev watcher (and dev:hermetic) on Node
 bun server/index.ts                    # Bun, directly
-scripts/start-server.sh                # the choice below, with the fallback to Node
-SOVA_RUNTIME=bun pnpm run dev:server   # the dev watcher (and dev:hermetic) follow the choice too
+node --import tsx server/index.ts      # Node, directly
 ```
 
-**The choice.** `scripts/start-server.sh` reads `~/.pi/agent/sova/runtime.json`
-(`{"runtime": "bun"}` or `{"runtime": "node"}`; under `$PI_CODING_AGENT_DIR/sova/` when that is
-set). `SOVA_RUNTIME=node|bun` in the environment wins over the file. A missing or unreadable file
-means Node. The launcher finds Bun as `$SOVA_BUN`, else `bun` on `PATH`, else `mise which bun`.
-If Bun is missing, or three Bun starts in a row never got as far as listening, it starts Node
-instead and writes why to `~/.pi/agent/sova/runtime-fallback.json`. Delete
-`runtime-bun-boots` there to give Bun three fresh tries. The launcher replaces itself with the
-server (`exec`), so a service manager watches the server process itself.
+**Asking for Node.** Only `SOVA_RUNTIME=node` in the environment, or `--node` as the launcher's
+first argument, starts Node; anything else starts Bun. No setting file is read (a
+`~/.pi/agent/sova/runtime.json` from an earlier version is ignored). The launcher finds Bun as
+`$SOVA_BUN`, else `bun` on `PATH`, else `mise which bun`. If there is no Bun, it prints why and
+exits with an error: it never starts Node instead. A Bun server that fails to start fails like
+any other. The launcher replaces itself with the server (`exec`), so a service manager watches the
+server process itself. The unit tests follow the same switch: `pnpm test` runs on Bun, and
+`pnpm run test:node` (or `SOVA_RUNTIME=node pnpm test`) on Node.
 
 **Check what runs:** `curl -s http://127.0.0.1:4800/api/health` answers
-`"runtime": {"name": "bun", "version": "1.4.2", "chosen": "bun"}`. When the server fell back to
-Node, it says `"name": "node"` with `"chosen": "bun"` and the fallback's `{at, reason}`.
+`"runtime": {"name": "bun", "version": "1.4.2", "chosen": "bun"}`.
 
 **As a systemd user service (Linux).** Save this as `~/.config/systemd/user/sova.service`, with
 `%h/path/to/sova` replaced by your checkout's path under your home directory:
@@ -75,8 +75,8 @@ WorkingDirectory=%h/path/to/sova
 # (links only: no settings, config or policy). An unlinked sibling breaks the extension that
 # imports it. The leading `-` means a linking failure never blocks the start.
 ExecStartPre=-%h/path/to/sova/pi-config/install.sh --links
-# Node or Bun, as ~/.pi/agent/sova/runtime.json says (the launcher execs the server, so it is this
-# unit's main process). The Node-only equivalent: ExecStart=<node> --import tsx server/index.ts
+# Bun (the launcher execs the server, so it is this unit's main process). For Node, add --node
+# (or Environment=SOVA_RUNTIME=node).
 ExecStart=%h/path/to/sova/scripts/start-server.sh
 # The server spawns `sh`, `git` and `ssh` by name and resolves the Claude CLI, and the launcher
 # runs `node` (and `bun`) by name, so PATH is set explicitly: at login the user manager has no
@@ -95,10 +95,10 @@ WantedBy=default.target
 
 Then `systemctl --user daemon-reload && systemctl --user enable --now sova.service`.
 
-**Switch runtimes** by writing `{"runtime": "bun"}` to `~/.pi/agent/sova/runtime.json`, then
-`systemctl --user restart sova.service`, then check `/api/health` as above. **Roll back to Node**
-the same way with `{"runtime": "node"}`. If a start fell back to Node, the reason is in
-`~/.pi/agent/sova/runtime-fallback.json` and on the unit's journal
+**Switch to Node** by adding `--node` to `ExecStart` (or `Environment=SOVA_RUNTIME=node`), then
+`systemctl --user daemon-reload && systemctl --user restart sova.service`, then check
+`/api/health` as above. Remove it the same way to go back to Bun. If the server doesn't start (no
+Bun found, or Bun failing at boot), the reason is on the unit's journal
 (`journalctl --user -u sova.service`).
 
 ## More work, less window switching

@@ -4,8 +4,9 @@
 
 ## Run a checkout
 
-Requires Git, Node.js ≥22.19, and pnpm (the version `packageManager` in `package.json` pins;
-`mise install` provides both Node and pnpm from `mise.toml`).
+Requires Git, Node.js ≥22.19, pnpm (the version `packageManager` in `package.json` pins) and
+Bun (the server and the unit tests run on it; the version `mise.toml` pins). `mise install`
+provides Node, pnpm and Bun from `mise.toml`.
 
 ```sh
 git clone https://github.com/Naomarik/sova.git
@@ -15,7 +16,8 @@ pnpm run build
 pnpm start
 ```
 
-Open <http://127.0.0.1:4800>. This runs your checkout; the release installer instead installs its
+`pnpm start` runs the server on Bun; Node only on request (`scripts/start-server.sh --node`, see
+the README's "Run on Bun (or Node)"). Open <http://127.0.0.1:4800>. This runs your checkout; the release installer instead installs its
 pinned tag. Provider login and network access are covered in [Getting started](docs/getting-started.md).
 
 For frontend development, run `pnpm run dev:server` and `pnpm run dev:web` in separate terminals,
@@ -33,8 +35,11 @@ pnpm test
 pnpm run build
 ```
 
-Unit tests use `tsx --test`; plain `node --test` does not resolve their extensionless TypeScript
-imports. Installer tests run with `bash scripts/install.test.sh` in temporary homes with stubbed
+`pnpm test` runs the unit tests on Bun, one `bun test` process per file, through
+`scripts/run-tests.mjs`; verify with it (and `pnpm run dev:hermetic` for a running server), not
+with Node. `pnpm run test:node` runs the same files on Node (`tsx --test`) when Node is what you
+were asked to check; plain `node --test` does not resolve their extensionless TypeScript imports.
+Bun missing makes `pnpm test` exit 2 rather than fall back to Node. Installer tests run with `bash scripts/install.test.sh` in temporary homes with stubbed
 toolchains. Extensions have their own test instructions in [pi-config](pi-config/README.md).
 
 For documentation-only changes, check commands against their implementations, verify relative

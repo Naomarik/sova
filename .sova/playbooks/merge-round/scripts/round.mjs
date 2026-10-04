@@ -178,10 +178,10 @@ export function replyOf(transcript, { branch, head, owner, topic, askedAt, since
   return { answer, read: [] };
 }
 
-/** Test files a node:test run names as failing, relative to `root`. */
+/** Test files a node:test run, or scripts/run-tests.mjs on Bun (`FAIL <file>`), names as failing, relative to `root`. */
 export function failingTestFiles(output, root) {
   const files = new Set();
-  const re = /(?:test at |✖ |not ok \d+ - )(?:file:\/\/)?(\S+?\.test\.[cm]?[jt]sx?)\b/g;
+  const re = /(?:test at |✖ |not ok \d+ - |^\s*FAIL )(?:file:\/\/)?(\S+?\.test\.[cm]?[jt]sx?)\b/gm;
   for (const m of output.matchAll(re)) {
     let f = m[1];
     if (isAbsolute(f)) {
@@ -742,7 +742,8 @@ class Round {
     return { exit: ok ? 0 : 1, lines, data: { head, master, ok, needs, preexisting, logs: logDir }, next: ok ? `round.mjs land ${branch}` : "hand it back to the owner with what it needs (session_send, only when idle)" };
   }
 
-  /** Each failing file run again on master, in the main checkout at master's sha; cached per (master, file). */
+  /** Each failing file run again on master, in the main checkout at master's sha, through the same
+   *  runner on the same runtime as the branch's `pnpm test`; cached per (master, file). */
   async onMaster(files, master, env, st) {
     const { main } = await this.repo();
     const out = {};
@@ -754,8 +755,11 @@ class Round {
       if ((await git(main, ["cat-file", "-e", `${master}:${file}`])).code !== 0) { out[file] = "new"; continue; }
       if (mainHead !== master) { out[file] = "can't tell: the main checkout isn't at master"; continue; }
       if ((await gitOut(main, ["status", "--porcelain", "--", file], "status")) !== "") { out[file] = "can't tell: it's dirty in the main checkout"; continue; }
-      const r = await run(this.pnpm, ["exec", "tsx", "--import", "./pi-config/extensions/claude-code/tests/hermetic-env.mjs", "--test", file], { cwd: main, env, timeoutMs: timeoutFor(this.floor("master"), st.timings.master) });
+      const runtime = env.SOVA_RUNTIME?.trim() === "node" ? "node" : "bun";
+      const r = await run(this.pnpm, ["exec", "node", "scripts/run-tests.mjs", "--runtime", runtime, file], { cwd: main, env, timeoutMs: timeoutFor(this.floor("master"), st.timings.master) });
       if (r.timedOut) { out[file] = "can't tell: it timed out on master"; continue; }
+      // 2 is the runner's own refusal (no bun, bad usage): nothing ran.
+      if (r.code === 2) { out[file] = `can't tell: the test runner couldn't run it on master (${runtime})`; continue; }
       runs[file] = { fails: r.code !== 0, at: this.now };
       out[file] = r.code !== 0 ? "pre-existing" : "new";
     }

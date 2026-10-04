@@ -30,6 +30,8 @@ const SKILL = join(ROOT, ".claude/skills/playwright/scripts");
 
 let passed = 0;
 const failures = [];
+/** With SOVA_E2E_SHOTS, a failed check leaves the page as it was in FAIL-<name>.png there. */
+let failShot = async () => {};
 /** One named check: a failure is recorded and the run goes on, so one report says everything. */
 async function check(name, fn) {
   try {
@@ -38,6 +40,9 @@ async function check(name, fn) {
     console.log(`  ok  ${name}`);
   } catch (err) {
     failures.push(name);
+    try {
+      await failShot(name);
+    } catch {}
     console.log(`  FAIL ${name}\n       ${String(err?.message ?? err).split("\n").join("\n       ")}`);
   }
 }
@@ -125,6 +130,11 @@ try {
     await locator.screenshot({ path: join(SHOTS, `${name}.png`), animations: "disabled" });
   };
 
+  if (SHOTS)
+    failShot = async (name) => {
+      mkdirSync(SHOTS, { recursive: true });
+      await page.screenshot({ path: join(SHOTS, `FAIL-${name.slice(0, 20).replace(/[^a-z0-9]+/gi, "-")}.png`) });
+    };
   await page.getByRole("button", { name: "Settings", exact: true }).first().click();
   await dialog.waitFor({ state: "visible" });
 
@@ -138,7 +148,7 @@ try {
       ["General", dialog.locator("#recent-count")],
       ["Models", dialog.locator(".model-policy-list")],
       ["Subagents", subagentEdit],
-      ["Overseer", dialog.locator("#overseer-extra-prompt")],
+      ["Overseer", dialog.locator(".overseer-advanced")],
       ["Decisions", dialog.locator("#decisions-exclusions")],
       ["Summaries", dialog.locator("#settings-summaries-title")],
       ["Themes", null],
@@ -179,12 +189,16 @@ try {
     await shot("dialog-dirty-mesh");
   });
 
-  await check("Summaries tab: its form ends in the Stored in line, and Reset to Defaults sits in its heading", async () => {
+  await check("Summaries tab: each form ends in its Stored in line, and its Reset to Defaults sits in its heading", async () => {
     await openTab("Summaries", dialog.locator("#settings-summaries-title"));
-    await dialog.locator(".settings-delegate-file").waitFor({ state: "visible", timeout: 20000 });
-    eq(await dialog.getByRole("button", { name: "Reset to Defaults" }).count(), 1, "Reset to Defaults");
-    const inHead = await dialog.locator(".settings-type-head").getByRole("button", { name: "Reset to Defaults" }).count();
-    eq(inHead, 1, "Reset to Defaults sits in the section heading");
+    // Two forms: Summary line and Session titles.
+    for (const name of ["Summary line", "Session titles"]) {
+      const form = dialog.getByLabel(name);
+      await form.locator(".settings-delegate-file").waitFor({ state: "visible", timeout: 20000 });
+      eq(await form.getByRole("button", { name: "Reset to Defaults" }).count(), 1, `${name}: Reset to Defaults`);
+      const inHead = await form.locator(".settings-type-head").getByRole("button", { name: "Reset to Defaults" }).count();
+      eq(inHead, 1, `${name}: Reset to Defaults sits in the section heading`);
+    }
     await shot("dialog-summaries-dirty");
   });
 
@@ -264,10 +278,11 @@ try {
 
   await check("Subagents' profile editor: an edit is a draft until the footer saves it, and Discard brings the saved value back", async () => {
     await openTab("Subagents", subagentEdit);
+    // Read the profile's id first: the editor replaces the list, Edit included.
+    const id = (await subagentEdit.getAttribute("id")).slice("subagents-edit-".length);
     await subagentEdit.click();
     await profileName.waitFor({ state: "visible", timeout: 20000 });
     const info = await api("/api/settings/subagents");
-    const id = (await subagentEdit.getAttribute("id")).slice("subagents-edit-".length);
     const nameOnDisk = () => readJson(info.file).profiles.find((p) => p.id === id)?.name;
     // Not what an earlier run saved: the edit must make the form dirty.
     const custom = `E2E ${Date.now().toString(36)}`;
@@ -303,7 +318,9 @@ try {
   await check("folded (390px): status and Cancel share a line, Discard · Save the next; every button inside the sheet", async () => {
     await page.setViewportSize({ width: 390, height: 844 });
     assert((await page.evaluate(() => innerWidth)) === 390, "viewport width 390");
-    await page.getByRole("button", { name: "Settings", exact: true }).first().click();
+    // Folded, the gear lives in the foot bar's sheet (§app.insights/sidebar-foot-phone).
+    await page.locator(".sidebar-footbar").click();
+    await page.getByRole("dialog", { name: /^Hosts, usage/ }).getByRole("button", { name: "Settings", exact: true }).click();
     await dialog.waitFor({ state: "visible" });
     await openTab("Mesh", hostInput);
     await hostInput.fill(`${label1}-phone`);

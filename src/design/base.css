@@ -1265,7 +1265,7 @@ button.list-row { width: 100%; border: 0; background: none; text-align: left; }
 }
 .settings-subagents-group { margin: 0; font-size: var(--fs-heading-s); line-height: var(--lh-heading-s); font-weight: var(--fw-semibold); color: var(--color-ink); }
 .settings-subagents-editor .banner { margin-top: calc(var(--space-2) * -1); }
-/* Settings → Modes → Spec: who writes the spec, two radio rows sized to their text. */
+/* Settings → Subagents → Spec writer: who writes the spec, two radio rows sized to their text. */
 .settings-spec-writer .toggle { justify-content: flex-start; width: fit-content; }
 .settings-team-numbers { display: grid; grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr)); gap: var(--space-3); }
 .settings-intro code { font-family: var(--font-mono); font-size: var(--fs-mono); color: var(--color-ink); }

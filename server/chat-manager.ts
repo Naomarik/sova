@@ -28,7 +28,7 @@ import { isLinkMessage, parseLinkMessage } from "../shared/link-message";
 import { isTopicBatch } from "../shared/topic-message";
 import { parseWakeNudge } from "../shared/wake";
 import { inputSourceOf, type QueueImage, type QueueKind, WebQueue, type WebQueueItem } from "./queue";
-import { decodeUsageTotal, decodeWorkers } from "./insights";
+import { decodeWorkers } from "./insights";
 import { readLive, readOwnLiveRecords, workerCountsOf } from "./live";
 import { sessionsChanged } from "./list-generation";
 import { appliesAfter, defaultPatchOf, mergeMode, MINOR_MODES, modeApplyPlan, modeInfo, pinEntryFor, readMode, resolveChatMode, writeMode, type ModePatch, type ModeState } from "./mode-state";
@@ -3050,13 +3050,11 @@ class ChatSession {
     const rec = readOwnLiveRecords().get(this.path);
     const counts = rec ? workerCountsOf(rec.rec) : undefined;
     if (!rec || !counts) return null;
-    const usageTotal = decodeUsageTotal(rec.rec?.presence);
-    // Each worker's context fill, off its own transcript's tail (the record carries spend only);
+    // Each worker's context fill, off its own transcript's tail (the record carries no fill);
     // claude-code windows follow the spawn model this session's manifests recorded.
     const workers = withWorkerContext(decodeWorkers(rec.rec?.presence, true), workerContextReader,
       workerWindowResolver(this.runtime.services.modelRuntime), (id) => this.claudeSpawnModel(id));
-    return { type: "workers", working: counts.working, total: counts.total,
-      workers, ...(usageTotal ? { usageTotal } : {}) };
+    return { type: "workers", working: counts.working, total: counts.total, workers };
   }
 
   /** A claude-code worker's spawn model from this session's manifests, folded once per entry count. */

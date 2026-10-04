@@ -8,7 +8,7 @@
 // working (nothing runs it); resuming needs a runtime, so nothing here is `resumable`.
 
 import { stat } from "node:fs/promises";
-import type { TokenUsage, TokenUsageTotal, WorkerInfo, WorkerStatus } from "../shared/protocol";
+import type { TokenUsage, WorkerInfo, WorkerStatus } from "../shared/protocol";
 import {
   type FoldedWorkerManifest,
   manifestModes,
@@ -27,8 +27,6 @@ type Entry = Record<string, any>;
 export interface RestoredWorkers {
   /** Workers with a record on the active branch, newest activity first by the caller's sort. */
   workers: WorkerInfo[];
-  /** Lifetime Σ over every worker on every branch whose usage could be read; absent when none. */
-  usageTotal?: TokenUsageTotal;
 }
 
 /** An ended worker keeps its ending; anything that was alive when its host went away is restored. */
@@ -84,18 +82,12 @@ export class WorkerRestorer {
       }),
     );
     const workers: WorkerInfo[] = [];
-    const counted: WorkerUsage[] = [];
-    let asOf: number | undefined;
     for (const { m, summary, usage } of views) {
-      const snapshotAt = usage.source === "snapshot" ? usage.asOf : usage.costSource === "snapshot" ? usage.costAsOf : undefined;
-      if (usage.source !== "none") {
-        counted.push(usage);
-        if (snapshotAt !== undefined) asOf = Math.min(asOf ?? Infinity, snapshotAt);
-      }
       if (!m.onActiveBranch) continue;
+      const snapshotAt = usage.source === "snapshot" ? usage.asOf : usage.costSource === "snapshot" ? usage.costAsOf : undefined;
       workers.push(workerInfo(m, summary, usage, snapshotAt, resolveWindow));
     }
-    return { workers, ...(counted.length > 0 ? { usageTotal: totalOf(counted, asOf) } : {}) };
+    return { workers };
   }
 }
 
@@ -120,19 +112,6 @@ function tokens(u: WorkerUsage): TokenUsage {
     input: u.input, output: u.output, cacheRead: u.cacheRead, cacheWrite: u.cacheWrite,
     ...(u.cost !== undefined && u.cost > 0 ? { cost: u.cost } : {}),
   };
-}
-
-function totalOf(usages: WorkerUsage[], asOf: number | undefined): TokenUsageTotal {
-  // Nothing publishes these workers, so every one of them was rebuilt from its record: restored.
-  const t: TokenUsageTotal = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, workers: usages.length, restored: usages.length };
-  let cost = 0;
-  for (const u of usages) {
-    t.input += u.input; t.output += u.output; t.cacheRead += u.cacheRead; t.cacheWrite += u.cacheWrite;
-    cost += u.cost ?? 0;
-  }
-  if (cost > 0) t.cost = cost;
-  if (asOf !== undefined) t.asOf = asOf;
-  return t;
 }
 
 function workerInfo(m: FoldedWorkerManifest, summary: WorkerTranscriptSummary | null, usage: WorkerUsage, snapshotAt: number | undefined, resolveWindow: WindowResolver): WorkerInfo {

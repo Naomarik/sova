@@ -1910,10 +1910,7 @@ export type ChatServerMessage =
   /** This chat's subagent workers, from the runtime's own live record (presence.workers/workerCounts).
       Sent after hello when the record has workers, then whenever the snapshot changes (polled ~3s),
       so it keeps coming after the parent turn settles. working 0 = none running. */
-  /** `usageTotal` is the session-lifetime token Σ across every worker this runtime ever spawned
-      (live ones plus the ones its retention cap dropped), so it is NOT the sum of `workers[].usage`.
-      Absent when the live record predates it. */
-  | { type: "workers"; working: number; total: number; workers: WorkerInfo[]; usageTotal?: TokenUsageTotal }
+  | { type: "workers"; working: number; total: number; workers: WorkerInfo[] }
   /** This session's linked members on other hosts (§mesh.links/agents-pane; for the Overseer, every
       member of every link this host knows). Sent after hello when there are any, and again whenever
       a link message lands or a link is made or ended. Links not ended only; [] = none left. */
@@ -2015,10 +2012,7 @@ export type ChatServerMessage =
     Also accepts `?claude=<uuid>` instead of `?path=`: a claude-code worker's own Claude Code
     session (WorkerInfo.sessionId), found under ~/.claude/projects and normalized into the same
     rows. Same `snapshot`/`append`/`error` messages; an unknown id closes with 4404 like a bad path.
-
-    Both `snapshot` and `append` may carry `usage`: the tokens the whole transcript has used so
-    far (always cumulative, never a delta), so an open header can tick while the file grows. It is
-    absent while the transcript reports no usage at all, and carries no cost for a Claude session. */
+    What a transcript spent is never sent here: it is the usage ledger's (shared/usage/wire.ts). */
 /** The open transcript's context fill as of its last reply, on every snapshot/append: a fill,
     "compacted" (a compaction came after that reply), or null (no reply reports one yet). `window`
     is known for pi files (the reply's own model); a Claude Code file doesn't name its variant, so
@@ -2091,9 +2085,9 @@ export interface HistoryMessage {
 /** `snapshot.older`: as `hello.older` — only with `?tail=1`; the rows follow as `history`, before
     any `append`. A snapshot sent again (the file was rewritten) is cut the same way. */
 export type WatchServerMessage =
-  | { type: "snapshot"; items: TranscriptItem[]; usage?: TokenUsage; context?: WatchContext; older?: number; olderSummary?: OlderSummary; prefetch?: boolean }
+  | { type: "snapshot"; items: TranscriptItem[]; context?: WatchContext; older?: number; olderSummary?: OlderSummary; prefetch?: boolean }
   | HistoryMessage
-  | { type: "append"; items: TranscriptItem[]; usage?: TokenUsage; context?: WatchContext } // new JSONL rows since snapshot, as they appear
+  | { type: "append"; items: TranscriptItem[]; context?: WatchContext } // new JSONL rows since snapshot, as they appear
   | { type: "error"; message: string };
 
 // ---------------------------------------------------------------------------
@@ -2314,16 +2308,6 @@ export type WorkerStatus = "starting" | "running" | "waiting" | "stopping" | "do
 /** Cumulative token counts. Non-negative integers; `cost` is USD and only present when the
     backend reports one. */
 export interface TokenUsage { input: number; output: number; cacheRead: number; cacheWrite: number; cost?: number }
-/** A token Σ plus the number of workers it covers — a session-lifetime count that can exceed the
-    workers currently listed, because evicted ones keep counting. */
-export interface TokenUsageTotal extends TokenUsage {
-  workers: number;
-  /** ms: some of it is a restored worker's last snapshot (Claude cost), true as of then. */
-  asOf?: number;
-  /** How many of `workers` were restored after a server restart (their spend rebuilt from their
-      records). Absent or 0 when none were. */
-  restored?: number;
-}
 export interface WorkerInfo {
   id: string; name: string; status: WorkerStatus; working: boolean;
   model?: string; backend?: string; preview?: string;
@@ -2451,9 +2435,6 @@ export interface LiveAgentSession {
   state: "working" | "idle" | "needs-input" | "error";
   workerCounts: { total: number; working: number; waiting: number; done: number; error: number; killed: number };
   workers: WorkerInfo[]; // may be shorter than workerCounts.total
-  /** Lifetime token Σ across every worker this session ever spawned (presence.workerUsage), so
-      it can cover more workers than `workers` lists. Absent from older records and servers. */
-  usageTotal?: TokenUsageTotal;
   teams: TeamInfo[];
 }
 export interface AgentsInsight {
@@ -2506,28 +2487,6 @@ export interface RewindInfo {
   timestamp: string; // its ISO stamp
   targetId: string; // the user entry the chat rewound to ("" if the write carried none)
   fromLeafId: string; // the leaf it was on before ("" when the session had none)
-}
-/** Where a model's tokens were spent: the main thread, plain subagents, or team members. */
-export type SpendOrigin = "main" | "subagents" | "team";
-/** One model's token spend from one origin; cost is USD when reported. */
-export interface ModelSpend extends TokenUsage {
-  model: string; origin: SpendOrigin;
-  /** ms: part of this row is a restored worker's last reported snapshot, true as of then. */
-  asOf?: number;
-}
-/** This session's token spend. `models` holds one row per model × origin — a mid-session model
-    switch adds a row. Main rows tally the active branch's assistant usage (rewinds don't count);
-    worker rows come from the live record's per-worker usage, so they cover listed workers only —
-    `workersTotal` is the session-lifetime Σ across every worker ever spawned and can exceed their
-    sum (evicted workers surface there, not as rows). */
-export interface SessionUsage {
-  total: TokenUsage;
-  main: TokenUsage;
-  models: ModelSpend[];
-  workersTotal?: TokenUsageTotal;
-  /** Ids of listed workers whose usage couldn't be read (no transcript, nothing reported): they
-      are in no row and in no Σ, so every total above is a lower bound while this is non-empty. */
-  unavailable?: string[];
 }
 /** One skill the session's prompt OFFERED. pi records the offered set as a diffed prompt section,
     so a skill appears only in the system entries that introduced or changed it: `from` is the entry
@@ -2590,8 +2549,6 @@ export interface SessionInsight {
       `GET /api/insights/session/workers` (SessionHiddenWorkers). Absent when the session isn't
       live, when `workers` is already every worker, or from an older server. */
   workerTotal?: number;
-  /** The same lifetime token Σ as LiveAgentSession.usageTotal, for the session on screen. */
-  usageTotal?: TokenUsageTotal;
 
   /** Which skills the session's prompt offered, and which were actually loaded: see
       server/skills.ts for the four signals and their reliability. Absent when neither is known. */
@@ -2602,9 +2559,6 @@ export interface SessionInsight {
       except that a Claude Code transcript records no offered set at all. Absent when no worker
       loaded anything, so the payload stays lean. */
   workerSkills?: Record<string, SessionSkills>;
-  /** Token spend for the whole session: per model × origin rows plus the Σs (see SessionUsage).
-      Absent when nothing has been spent yet, or from an older server. */
-  usage?: SessionUsage;
   /** /explain artifacts parented to this session (store ∪ JSONL explain-doc entries, deduped by
       id, newest first). Absent from older servers. */
   explanations?: ExplanationInfo[];

@@ -133,13 +133,6 @@ test("usage comes from each transcript through the protocol; a snapshot says as 
   assert.ok(!("usage" in future), "no number at all, never a 0");
 
   assert.equal(workers.get("ag_04")!.usageSource, "snapshot");
-
-  const usage = insight.usage!;
-  assert.deepEqual(usage.unavailable, ["ag_03"]);
-  const subagentRows = usage.models.filter((m) => m.origin === "subagents");
-  const ccRow = subagentRows.find((m) => m.model === cc.model)!;
-  assert.equal(ccRow.asOf, T0 + 9 * 60_000, "a row holding a snapshot cost says as of when");
-  assert.equal(subagentRows.find((m) => m.model === pi.model)!.asOf, undefined);
 });
 
 test("restored turns come from the transcript or the snapshot; started is the transcript's start, else the first record", async () => {
@@ -167,15 +160,10 @@ test("restored turns come from the transcript or the snapshot; started is the tr
   assert.equal(later.turns, 3, "the snapshot's count");
 });
 
-test("the lifetime Σ covers every branch and every readable worker, and names the snapshot time", async () => {
+test("no lifetime Σ and no spend rows: what the workers spent is the usage ledger's", async () => {
   const insight = await getSessionInsight(owner());
-  const total = insight.usageTotal!;
-  assert.equal(total.workers, 4, "ag_01, ag_02, ag_04 and the off-branch ag_05; not the unreadable ag_03");
-  assert.equal(total.input, 110 + 7 + 5 + 1000);
-  assert.equal(total.output, 20 + 70 + 5 + 1000);
-  assert.equal(total.asOf, T0 + 5 * 60_000, "the oldest snapshot in the Σ bounds it");
-  assert.equal(total.restored, 4, "unhosted: every counted worker was rebuilt from its record");
-  assert.deepEqual(insight.usage!.workersTotal, total);
+  assert.equal("usageTotal" in insight, false);
+  assert.equal("usage" in insight, false);
 });
 
 test("a live record wins: nothing is rebuilt from disk while a process publishes the workers", async () => {
@@ -192,8 +180,6 @@ test("a live record wins: nothing is rebuilt from disk while a process publishes
     const insight = await getSessionInsight(path);
     assert.deepEqual((insight.workers ?? []).map((w) => w.id), ["ag_09"]);
     assert.equal(insight.workers![0]!.resumable, true, "this server's own runtime: it can resume");
-    assert.equal(insight.usageTotal?.asOf, T0);
-    assert.equal(insight.usage?.models.find((m) => m.origin === "subagents")?.asOf, T0);
   } finally {
     rmSync(file, { force: true });
   }
@@ -314,7 +300,7 @@ test("resumeWorker runs only the subagents extension's own agent-resume, and pas
   assert.equal(after, 2, "afterCommand runs whether the handler took it or threw");
 });
 
-test("a team member's spend is a team row, hosted or not, under the model it actually ran", async () => {
+test("a team member is a team worker, hosted or not, under the model it actually ran", async () => {
   const path = canonicalPath(join(sessionsDir, "2026-09-24T11-00-00-000Z_team.jsonl"));
   const team = {
     type: "custom", id: "t1", parentId: "e1", timestamp: iso(1), customType: "subagents-team-v1",
@@ -333,13 +319,12 @@ test("a team member's spend is a team row, hosted or not, under the model it act
     }),
   ));
   const rowsOf = (insight: Awaited<ReturnType<typeof getSessionInsight>>) =>
-    insight.usage!.models.filter((m) => m.origin !== "main").map((m) => `${m.origin}:${m.model}`);
+    (insight.workers ?? []).map((w) => `${w.teamId ? "team" : "subagents"}:${w.model}`);
 
   const unhosted = await getSessionInsight(path);
   // The transcript's resolved id, as the running record names it (no "claude/" prefix), not the
   // spawn alias "haiku": one label running, restored and resumed.
   assert.deepEqual(rowsOf(unhosted), ["team:claude-opus-4-6"]);
-  assert.equal(unhosted.workers![0]!.model, "claude-opus-4-6");
 
   const file = join(liveDir, `p${process.pid}-team.json`);
   writeFileSync(file, JSON.stringify({

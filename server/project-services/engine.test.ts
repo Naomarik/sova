@@ -18,7 +18,8 @@ import { parseDefinition } from "../../shared/project-contract";
 process.env.PI_CODING_AGENT_DIR = mkdtempSync(join(tmpdir(), "sova-engine-agent-"));
 
 const op: Caller = { kind: "operator" };
-const BASE = 30_000 + Math.floor(Math.random() * 20_000);
+// Below the kernel's ephemeral range (32768+), where any outgoing connection on the box can hold a port.
+const BASE = 20_000 + Math.floor(Math.random() * 10_000);
 const PORTS = { site: BASE, web: BASE + 20, bus: BASE + 40 };
 
 let parent = "";

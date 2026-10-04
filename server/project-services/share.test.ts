@@ -27,7 +27,8 @@ const { endpointAnswers, linksOf } = await import("./share");
 const { renderResult } = await import("./tools");
 
 const op: Caller = { kind: "operator" };
-const BASE = 30_000 + Math.floor(Math.random() * 20_000);
+// Below the kernel's ephemeral range (32768+), where any outgoing connection on the box can hold a port.
+const BASE = 20_000 + Math.floor(Math.random() * 10_000);
 const PORTS = { web: BASE, site: BASE + 20, db: BASE + 40 };
 const PID = "prj_sharetst";
 

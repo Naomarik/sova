@@ -23,7 +23,8 @@ import { approve, defHashOf } from "./trust";
 process.env.PI_CODING_AGENT_DIR = mkdtempSync(join(tmpdir(), "sova-container-agent-"));
 
 const op: Caller = { kind: "operator" };
-const BASE = 30_000 + Math.floor(Math.random() * 20_000);
+// Below the kernel's ephemeral range (32768+), where any outgoing connection on the box can hold a port.
+const BASE = 20_000 + Math.floor(Math.random() * 10_000);
 const ENGINE = "podman";
 
 const DEF = {

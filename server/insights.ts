@@ -1,6 +1,6 @@
 import { readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
-import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import { agentRoot } from "./state-root";
 import type {
   AgentsInsight,
   SessionWorktreeInfo,
@@ -75,7 +75,7 @@ const strings = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is
 // ---------------------------------------------------------------------------
 // Usage: ~/.pi/agent/cache/usage-status.json (written by the usage-status extension)
 
-const USAGE_FILE = join(getAgentDir(), "cache", "usage-status.json");
+const USAGE_FILE = join(agentRoot(), "cache", "usage-status.json");
 /** This server's poller (server/usage-poll.ts) and TUI pis refresh the cache every few minutes;
     older than this means none of them is (the poller is failing or off, and no TUI is open). */
 const USAGE_STALE_MS = 10 * 60_000;
@@ -415,7 +415,7 @@ export async function getUsageInsight(): Promise<UsageInsight> {
   const auth = await readAuthStatus();
   // Ollama's month is derived from the declared day now, never cached: a changed day or a month
   // rollover shows at once (§app.insights/usage-reset-day).
-  const ollamaResetDay = readUsageWindows(getAgentDir()).ollama?.resetDay ?? null;
+  const ollamaResetDay = readUsageWindows(agentRoot()).ollama?.resetDay ?? null;
   const providers = read.map((p) => withDeclaredReset(auth[p.id] ? { ...p, auth: auth[p.id] } : p, ollamaResetDay, Date.now()));
   const own = providers.find((p) => p.id === "claude");
   const claudeLogins = own ? await readClaudeLogins(own, ownFetchedAt, claudeAccounts) : undefined;
@@ -432,7 +432,7 @@ export async function setUsageResetDay(body: unknown): Promise<UsageInsight | { 
   if (!isRec(body) || body.provider !== "ollama") return { error: 'provider must be "ollama"' };
   const day = body.day;
   if (day !== null && !(typeof day === "number" && Number.isInteger(day) && day >= 1 && day <= 31)) return { error: "day must be a whole day from 1 to 31, or null" };
-  setOllamaResetDay(day, getAgentDir());
+  setOllamaResetDay(day, agentRoot());
   return getUsageInsight();
 }
 

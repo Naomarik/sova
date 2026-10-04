@@ -29,12 +29,13 @@
 // pi has already done.
 
 import { existsSync, readFileSync } from "node:fs";
-import { DefaultResourceLoader, getAgentDir } from "@earendil-works/pi-coding-agent";
+import { DefaultResourceLoader } from "@earendil-works/pi-coding-agent";
 import { CHARS_PER_TOKEN, type SessionSetup, type SessionSetupFile, type SessionSetupSkill } from "../shared/protocol";
 import { acquireChat, assertNotLive, disposeHeldChat, heldChat } from "./chat-manager";
 import { plan, readStoredCwd, type Plan } from "./git-summary";
 import { leavesOut, loadoutOnBranch, normalizeLoadout, type LoadoutEntryData } from "./session-loadout";
 import { getSessionSummary } from "./sessions-index";
+import { agentRoot } from "./state-root";
 import { readActiveBranch } from "./transcript";
 
 /** How long an answer stays fresh, per folder. The same size as the Git section's TTL. */
@@ -152,7 +153,7 @@ export function withSwitches(setup: Loaded, sw: SessionSwitches): Loaded {
  * is a session nothing is prompting in.
  */
 async function loaderLoadout(cwd: string): Promise<Loadout> {
-  const loader = new DefaultResourceLoader({ cwd, agentDir: getAgentDir(), noExtensions: true });
+  const loader = new DefaultResourceLoader({ cwd, agentDir: agentRoot(), noExtensions: true });
   await loader.reload();
   return loadoutOf(loader);
 }

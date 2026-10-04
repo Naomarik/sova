@@ -1,4 +1,4 @@
-import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
+import type { ToolSpec } from "../../shared/harness";
 import type { CostKind, CostStarter } from "../../shared/costs";
 import type { Autonomy, PoLimitKind, ProjectOverseerSettings, StartedSession } from "../../shared/project-overseer";
 import type { ProjectSpace, ProjectSummary } from "../../shared/projects";
@@ -64,7 +64,7 @@ export interface ProjectPart {
   /** Text appended to the watch's look (the watch fact `lookHint`), or null. */
   lookHint?(engine: string, projectId: string): string | null;
   /** More tools for the project's overseer, wrapped like its own. */
-  overseerTools?(ctx: OverseerToolCtx): ToolDefinition[];
+  overseerTools?(ctx: OverseerToolCtx): ToolSpec[];
   /** Lines sova_project adds after the level (an org's roster, gatherings, decisions, conflicts, spec). */
   overseerRead?(engine: string, projectId: string): Promise<string[]>;
   /** Sessions sova_list_sessions lists and sova_read_session reads besides the project's coding sessions. */
@@ -154,7 +154,7 @@ export function lookHintOf(engine: string, projectId: string): string | null {
   return hints.length ? hints.join("\n\n") : null;
 }
 
-export const contributedTools = (ctx: OverseerToolCtx): ToolDefinition[] => parts.flatMap((p) => p.overseerTools?.(ctx) ?? []);
+export const contributedTools = (ctx: OverseerToolCtx): ToolSpec[] => parts.flatMap((p) => p.overseerTools?.(ctx) ?? []);
 export async function contributedRead(engine: string, projectId: string): Promise<string[]> {
   const out: string[] = [];
   for (const p of parts) if (p.overseerRead) out.push(...(await p.overseerRead(engine, projectId)));

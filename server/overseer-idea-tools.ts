@@ -1,4 +1,4 @@
-import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
+import type { ToolSpec } from "../shared/harness";
 import { IDEA_STATUSES, type IdeaRecord, type IdeaStatus, type OverseerCaps, type SessionSummary, type SovaIdeaDetails, type WorkerChoice } from "../shared/protocol";
 import {
   addIdea,
@@ -54,7 +54,7 @@ export interface ToolCall {
 }
 
 type Out = { content: { type: "text"; text: string }[]; details: unknown };
-type Tool = ToolDefinition<any, any>;
+type Tool = ToolSpec;
 
 export interface IdeaToolDeps {
   host: IdeaToolHost;

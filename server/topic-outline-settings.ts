@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import { agentRoot } from "./state-root";
 import type { SummarizerBackend, SummarizerChoice, SummarizerSettings, SummarizerSettingsInfo } from "../shared/protocol";
 
 /**
@@ -14,7 +14,7 @@ import type { SummarizerBackend, SummarizerChoice, SummarizerSettings, Summarize
  * with a pointer to the original. The extension reads `join(homedir(), ".pi/agent")`; this uses
  * the agent dir, which is the same folder unless PI_CODING_AGENT_DIR isolates a test server.
  */
-export const topicOutlineFile = () => join(getAgentDir(), "topic-outline.json");
+export const topicOutlineFile = () => join(agentRoot(), "topic-outline.json");
 
 const BACKENDS: readonly SummarizerBackend[] = ["claude-code", "pi"];
 

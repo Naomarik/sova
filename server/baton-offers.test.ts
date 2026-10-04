@@ -363,7 +363,7 @@ describe("the wrap-up's writer", async () => {
     { type: "message", id: "u3", message: { role: "user", content: "[Wrap-up] Tony is also a Kubernetes admin" } },
   ];
   const tool = wrap.wrapupTool(c.sessionId);
-  const run = (updates: unknown[]) => tool.execute("id", { updates } as never, undefined, undefined, { sessionManager: { getBranch: () => branch } } as never);
+  const run = (updates: unknown[]) => tool.execute("id", { updates } as never, undefined, undefined, { sessionId: "s", cwd: "/", leafId: () => null, rawBranch: () => branch } as never);
 
   test("pure helpers: a person's own words before the wrap-up; merged values", () => {
     const mine = wrap.messagesByPerson(branch);
@@ -401,7 +401,7 @@ describe("the wrap-up's writer", async () => {
       await tool.execute("id", { updates: [
         { personId: ana.id, field: "language", to: "en", quote: "the invoices go out on Mondays" },
         { personId: ben.id, field: "language", to: "en", quote: "the bank export runs nightly" },
-      ] } as never, undefined, undefined, { sessionManager: { getBranch: () => br } } as never);
+      ] } as never, undefined, undefined, { sessionId: "s", cwd: "/", leafId: () => null, rawBranch: () => br } as never);
     } finally {
       wrap.endWrapupRun(d.sessionId);
     }

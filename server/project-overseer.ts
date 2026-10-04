@@ -1,7 +1,9 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, relative } from "node:path";
-import { type AgentSession, getAgentDir, SessionManager } from "@earendil-works/pi-coding-agent";
+import { type AgentSession, SessionManager } from "@earendil-works/pi-coding-agent";
+import { agentRoot } from "./state-root";
+import { toolCtx, toPiTool } from "./harness/pi/tools";
 import {
   autonomyMeaning,
   PER_DAY,
@@ -959,7 +961,7 @@ export function projectContextFiles<T extends { path: string }>(files: T[], root
 /** What the project overseer's file tools never read, even inside its root: the folders other layers
     reserve (an attached org's workspace: the roster's contacts, every project's transcripts) and pi's
     and Sova's state (the host's link store, every session). */
-const confinedOut = () => [...reservedRoots(), getAgentDir(), join(homedir(), ".pi")];
+const confinedOut = () => [...reservedRoots(), agentRoot(), join(homedir(), ".pi")];
 
 registerSpecialLoadout({
   kind: "project-overseer",
@@ -1010,14 +1012,14 @@ registerSpecialLoadout({
           {
             name: "sova-project-overseer",
             factory: (pi) => {
-              for (const t of tools) pi.registerTool(t);
+              for (const t of tools) pi.registerTool(toPiTool(t));
               pi.on("before_agent_start", (event, ctx) => {
                 event.systemPromptOptions.appendSystemPrompt = renderProjectOverseerPrompt(rt.projectId, tools, template);
                 // The open cards, hidden, as the Overseer's (§app.overseer/confirm).
-                return cardsNoteMessage(ctx.sessionManager.getBranch());
+                return cardsNoteMessage(toolCtx(ctx).rawBranch());
               });
               pi.on("session_compact", (_event, ctx) => {
-                const note = cardsNote(foldCards(ctx.sessionManager.getBranch()), true, sessionActivity());
+                const note = cardsNote(foldCards(toolCtx(ctx).rawBranch()), true, sessionActivity());
                 if (note) pi.sendMessage({ customType: CARDS_NOTE_MESSAGE, content: note, display: false });
               });
               pi.on("context", (event) => {

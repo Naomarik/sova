@@ -1,4 +1,4 @@
-import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
+import type { ToolSpec } from "../shared/harness";
 import type {
   AttentionDigest,
   FolderListing,
@@ -448,7 +448,7 @@ export const SETTINGS_TABS = ["general", "models", "modes", "overseer", "summari
 
 // ---- the tools ---------------------------------------------------------------------------------
 
-type Tool = ToolDefinition<any, any>;
+type Tool = ToolSpec;
 
 /** JSON-Schema object shorthand (pi validates plain JSON Schema as well as TypeBox). */
 function obj(properties: Record<string, unknown>, required: string[] = []): any {
@@ -1555,7 +1555,7 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
  * roster (§app.overseer/org-projection): each becomes `[contact]`. Its arguments are left as the
  * model wrote them, so a write stores what it was given.
  */
-export function contactRedactingTool<T extends ToolDefinition<any, any>>(tool: T): T {
+export function contactRedactingTool<T extends ToolSpec>(tool: T): T {
   const clean = <R>(r: ReturnType<typeof contactRedactor>, result: R): R => {
     if (!result || typeof result !== "object") return result;
     const res = result as { content?: unknown; details?: unknown };

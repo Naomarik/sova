@@ -1,9 +1,8 @@
 import { readFileSync } from "node:fs";
 import { homedir, platform } from "node:os";
 import { dirname, join, resolve, sep } from "node:path";
-import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { keepSecrets } from "../overseer-deny";
-import { stateRoot } from "../state-root";
+import { agentRoot, stateRoot } from "../state-root";
 import { defaultSenderHome, piDefaultSenderHome, readOutreach } from "./settings";
 
 /**
@@ -13,7 +12,7 @@ import { defaultSenderHome, piDefaultSenderHome, readOutreach } from "./settings
  */
 
 /** Directories: the default sender home, pi's default one, the configured auth dir. */
-export function outreachSecretDirs(agentDir = getAgentDir(), home = homedir()): string[] {
+export function outreachSecretDirs(agentDir = agentRoot(), home = homedir()): string[] {
   const dirs = [defaultSenderHome(), join(home, ".pi", "agent", "sova", "whatsapp"), join(agentDir, "sova", "whatsapp"), piDefaultSenderHome()];
   const f = readOutreach();
   for (const d of [f.authDir, f.senderAuthDir]) if (d) dirs.push(d);
@@ -29,7 +28,7 @@ keepSecrets({ files: outreachSecretFiles, dirs: outreachSecretDirs });
 const within = (p: string, dir: string) => p === dir || p.startsWith(dir.endsWith(sep) ? dir : dir + sep);
 
 /** The sandbox policy's hidden paths as they resolve here ($AGENT_DIR and ~ expanded). */
-function sandboxHidden(agentDir = getAgentDir(), home = homedir()): string[] | null {
+function sandboxHidden(agentDir = agentRoot(), home = homedir()): string[] | null {
   const os = platform() === "darwin" ? "darwin" : "linux";
   for (const f of [join(agentDir, "sandbox-policy", os, "policy.json"), join(agentDir, "sandbox-policy", "policy.json")]) {
     try {

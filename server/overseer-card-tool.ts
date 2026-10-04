@@ -1,4 +1,4 @@
-import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
+import type { ToolCtx, ToolSpec } from "../shared/harness";
 import {
   applyCardCall,
   CARD_ANSWERS_MAX,
@@ -30,7 +30,7 @@ import { clickOnlyCard, itemsSchema, resolveConfirmItems, type ConfirmLookup } f
  * answers.
  */
 
-type Tool = ToolDefinition<any, any>;
+type Tool = ToolSpec;
 type Out = { content: { type: "text"; text: string }[]; details: CardDetails };
 
 /** A link option's target, as the model gives it: sova_navigate's fields, the org pages, or a URL. */
@@ -61,7 +61,7 @@ export interface CardToolDeps {
   branch?(): readonly unknown[];
 }
 
-type Ctx = { sessionManager?: { getBranch(): unknown[]; getSessionId?(): string } } | undefined;
+type Ctx = ToolCtx | undefined;
 
 const S = (description?: string, extra: Record<string, unknown> = {}) => ({ type: "string", minLength: 1, ...(description ? { description } : {}), ...extra });
 const obj = (properties: Record<string, unknown>, required: string[] = [], extra: Record<string, unknown> = {}) => ({ type: "object", properties, required, additionalProperties: false, ...extra });
@@ -185,8 +185,8 @@ export function cardTool(d: CardToolDeps): Tool {
   const pending = new Map<string, { session: string; details: CardDetails; at: number }>();
   /** The branch's cards, plus this tool's own results the branch doesn't hold yet. */
   const cardsNow = (ctx: Ctx): OverseerCard[] => {
-    const branch = ctx?.sessionManager?.getBranch() ?? d.branch?.() ?? [];
-    const session = ctx?.sessionManager?.getSessionId?.() ?? "";
+    const branch = ctx?.rawBranch() ?? d.branch?.() ?? [];
+    const session = ctx?.sessionId ?? "";
     const seen = new Set<string>();
     for (const e of branch as { type?: string; message?: { role?: string; toolName?: string; toolCallId?: string } }[]) {
       if (e?.type === "message" && e.message?.role === "toolResult" && e.message.toolName === CARD_TOOL && e.message.toolCallId) seen.add(e.message.toolCallId);
@@ -224,7 +224,7 @@ export function cardTool(d: CardToolDeps): Tool {
         prepared = { items, hrefs, clickOnly: await clickOnlyCard(items, d.lookup) };
       }
       const outcome = applyCardCall(cardsNow(ctx), params, { now: new Date().toISOString(), audience: d.audience, grants: d.grants === true, ...(prepared ? { prepared } : {}) });
-      if (outcome.details.card || outcome.details.closed) pending.set(toolCallId, { session: ctx?.sessionManager?.getSessionId?.() ?? "", details: outcome.details, at: Date.now() });
+      if (outcome.details.card || outcome.details.closed) pending.set(toolCallId, { session: ctx?.sessionId ?? "", details: outcome.details, at: Date.now() });
       const cutLine = cutNotes.length ? `\nNotes over ${CONFIRM_NOTE_MAX} characters were cut with "…" (item, length): ${cutNotes.join(", ")}. Keep notes to 2 short sentences.` : "";
       return { content: [{ type: "text", text: outcome.text + cutLine }], details: outcome.details };
     } catch (err) {

@@ -1,6 +1,8 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { createHash } from "node:crypto";
+import type { HookCtx } from "../../shared/harness";
 import type { VerbResult } from "../../shared/project-contract";
+import { toolCtx } from "../harness/pi/tools";
 import { sandboxInfo } from "../sandbox-state";
 import type { ProjectEngine } from "./engine";
 
@@ -107,29 +109,26 @@ export async function resultNote(engine: ProjectEngine, r: VerbResult, branch: r
   }
 }
 
-interface NoteCtx {
-  sessionManager?: { getBranch(): readonly unknown[] };
-}
-
 /**
  * Deliver the note in a session (projectVerbsExtension): at a turn's start as a hidden message, only when
  * its text differs from the last one on the branch; after a compaction, again. Never in the system prompt.
  */
-export function registerInstanceNote(pi: ExtensionAPI, engine: () => ProjectEngine, own: (ctx: unknown) => Promise<string[]>): void {
-  const render = async (ctx: unknown): Promise<string | null> => {
+export function registerInstanceNote(pi: ExtensionAPI, engine: () => ProjectEngine, own: (ctx: HookCtx) => Promise<string[]>): void {
+  const render = async (ctx: HookCtx): Promise<string | null> => {
     try {
-      return await currentNote(engine(), await own(ctx), (ctx as NoteCtx).sessionManager?.getBranch() ?? []);
+      return await currentNote(engine(), await own(ctx), ctx.rawBranch());
     } catch {
       return null;
     }
   };
   pi.on("before_agent_start", async (_event, ctx) => {
-    const text = await render(ctx);
-    if (!text || lastNoteDigest((ctx as NoteCtx).sessionManager?.getBranch() ?? []) === noteDigest(text)) return undefined;
+    const c = toolCtx(ctx);
+    const text = await render(c);
+    if (!text || lastNoteDigest(c.rawBranch()) === noteDigest(text)) return undefined;
     return { message: noteMessage(text) };
   });
   pi.on("session_compact", async (_event, ctx) => {
-    const text = await render(ctx);
+    const text = await render(toolCtx(ctx));
     if (text) pi.sendMessage(noteMessage(text));
   });
 }

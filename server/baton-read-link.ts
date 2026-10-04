@@ -3,8 +3,8 @@ import http from "node:http";
 import https from "node:https";
 import { BlockList, isIP, type LookupFunction } from "node:net";
 import { createBrotliDecompress, createGunzip, createInflate } from "node:zlib";
-import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { abilitiesOf } from "../shared/baton";
+import type { ToolSpec } from "../shared/harness";
 import { batonById } from "./baton";
 
 /**
@@ -285,7 +285,7 @@ export function pageResult(p: Page): string {
 }
 
 /** The tool, bound to one session. Active only while the session can read links; it checks again. */
-export function readLinkTool(sessionId: string, read = readLink): ToolDefinition<any, any> {
+export function readLinkTool(sessionId: string, read = readLink): ToolSpec {
   return {
     name: READ_LINK_TOOL,
     label: "Read link",
@@ -302,7 +302,7 @@ export function readLinkTool(sessionId: string, read = readLink): ToolDefinition
       const row = batonById(sessionId)?.row;
       if (!row) throw new Error("This conversation is no longer registered.");
       if (!abilitiesOf(row).readLinks) throw new Error("This conversation can't read links.");
-      const branch = (ctx?.sessionManager?.getBranch() ?? []) as unknown[];
+      const branch = (ctx?.rawBranch() ?? []) as unknown[];
       const url = typeof params.url === "string" ? params.url.trim() : "";
       if (!typedInConversation(url, writtenTexts(branch))) throw new Error(NOT_TYPED);
       if (readsSoFar(branch) >= READS_MAX) throw new Error(TOO_MANY);

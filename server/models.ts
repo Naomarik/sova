@@ -1,14 +1,14 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import type { ModelRuntime } from "@earendil-works/pi-coding-agent";
 import type { ContextInfo, ModelInfo } from "../shared/protocol";
 import { getModelRuntime } from "./chat-manager";
 import { readFavorites } from "./model-favorites";
+import { agentRoot } from "./state-root";
 import type { BranchContext } from "./transcript";
 
 /** pi's cached remote catalogs (READ-ONLY): {[provider]: {models: [{id, contextWindow}]}}. */
-const MODELS_STORE_FILE = join(getAgentDir(), "models-store.json");
+const MODELS_STORE_FILE = join(agentRoot(), "models-store.json");
 const windowCache = new Map<string, number | null>();
 
 function storeWindow(provider: string, id: string): number | null {

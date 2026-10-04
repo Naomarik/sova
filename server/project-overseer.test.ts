@@ -348,7 +348,7 @@ describe("its gathering sessions, as the person sees them", async () => {
     const handToOperator = (sid: string) =>
       batonTools(sid, () => {})
         .find((t) => t.name === "hand_to")!
-        .execute("id", { gap: "none", person: "operator", question: "Please build the journal page.", briefing: "Tony asked." } as never, undefined, undefined, { sessionManager: { getBranch: () => [] } } as never);
+        .execute("id", { gap: "none", person: "operator", question: "Please build the journal page.", briefing: "Tony asked." } as never, undefined, undefined, { sessionId: "s", cwd: "/", leafId: () => null, rawBranch: () => [] } as never);
     const theirs = await baton.createBaton({ orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "Operator's", goal: "g" });
     await handToOperator(theirs.sessionId);
     const mine = await baton.createBaton({ orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "Journal", goal: "g" }, { mintLink: false, envelope: envelopeFor(org.id, project.id, { by: "overseer", attended: true }) });

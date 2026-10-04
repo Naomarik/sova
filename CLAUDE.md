@@ -547,6 +547,11 @@ Sova speaks its own harness contract; pi is its one harness, behind one adapter 
   event names. A new Sova agent feature is never a new pi-config extension and never a new call to
   an extension's command handler; existing extensions are grandfathered, and the pi-config files
   the server imports stay pi-free (the import ratchet covers them). (§app.harness/new-work)
+- Paths under the agent directory come from `agentRoot()` (`server/state-root.ts`), never
+  `getAgentDir` (§app.harness/agent-root). A Sova tool is a `ToolSpec` (`shared/harness-tools.ts`);
+  register it with `toPiTool`, read pi's context in a Sova hook only through `toolCtx(ctx)` (a
+  `HookCtx`), and hand a pi tool to Sova code with `fromPiTool` (`server/harness/pi/tools.ts`,
+  §app.harness/tools). `ToolCtx.rawBranch()` is temporary and counts as a raw read.
 - A test that pins pi behaviour lives in `server/harness/pi/` (`contract.test.ts`), imports pi only
   through `server/harness/pi/testing/load-pi.ts`, and runs against another pi with
   `PI_PACKAGE_DIR="$(npm root -g)/@earendil-works/pi-coding-agent" pnpm test --

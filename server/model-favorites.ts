@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import { agentRoot } from "./state-root";
 import type { ModelFavoriteResult } from "../shared/protocol";
 // The command-palette extension's own store (node builtins only), so the TUI's Ctrl+F and the
 // picker's star read and write one file through one implementation: the palette's lock, re-read
@@ -7,7 +7,7 @@ import type { ModelFavoriteResult } from "../shared/protocol";
 import { ModelFavorites } from "../pi-config/extensions/command-palette/favorites.ts";
 
 /** `~/.pi/agent/model-favorites.json`, or under PI_CODING_AGENT_DIR (read per call, for tests). */
-export const favoritesFile = () => join(getAgentDir(), "model-favorites.json");
+export const favoritesFile = () => join(agentRoot(), "model-favorites.json");
 
 /**
  * Whether a model is a favorite, for GET /api/models. A missing file is no favorites. A file the

@@ -1,4 +1,6 @@
-import type { ExtensionAPI, ToolDefinition } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { ToolSpec } from "../shared/harness";
+import { toPiTool } from "./harness/pi/tools";
 import { appendFileSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { SessionInsight, SessionSummary, TranscriptItem } from "../shared/protocol";
@@ -223,7 +225,7 @@ export interface PowersContext {
   path?: () => string;
 }
 
-type Tool = ToolDefinition<any, any>;
+type Tool = ToolSpec;
 const obj = (properties: Record<string, unknown>, required: string[] = []): any => ({ type: "object", properties, required, additionalProperties: false });
 const str = (description: string, extra: Record<string, unknown> = {}) => ({ type: "string", description, ...extra });
 const int = (description: string, extra: Record<string, unknown> = {}) => ({ type: "integer", description, ...extra });
@@ -460,7 +462,7 @@ export function sessionPowersExtension(ctx: PowersContext) {
     name: "sova-session-powers",
     hidden: true,
     factory: (pi: ExtensionAPI) => {
-      for (const t of sessionPowersTools(ctx)) pi.registerTool(t);
+      for (const t of sessionPowersTools(ctx)) pi.registerTool(toPiTool(t));
     },
   };
 }

@@ -3,7 +3,8 @@ import { closeSync, mkdirSync, openSync, readFileSync, readSync, statSync, write
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
-import { type AgentSession, SessionManager } from "@earendil-works/pi-coding-agent";
+import { type AgentSession, getAgentDir, SessionManager } from "@earendil-works/pi-coding-agent";
+import { loadPolicyFile, policyFilePath } from "../pi-config/extensions/sandbox/policy.ts";
 import {
   OVERSEER_BRIEF_PREFIX,
   OVERSEER_ENTRY,
@@ -566,6 +567,12 @@ const host: OverseerToolHost = {
   setThinking: async (path, level) => (await acquireChat(path)).setThinking(level),
   pinMode: async (path) => {
     if (!(await acquireChat(path)).pinMode()) throw new Error("its mode entry could not be written");
+  },
+  sandbox: async (path) => (await acquireChat(path)).sandboxInfo(),
+  // The extension's own default (index.ts defaultOn): an unreadable policy file starts sessions off.
+  sandboxDefault: () => {
+    const f = loadPolicyFile(policyFilePath(getAgentDir()));
+    return f.ok && f.value.defaultOn ? "on" : "subagents";
   },
   started: (path, prompted) => {
     started.add(path);

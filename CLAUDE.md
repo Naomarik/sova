@@ -151,7 +151,11 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
   merge card's details) and `git.ts` (builtins only: the extension's own "is this branch merged"
   probe, git by argv; `server/git-diff.ts` imports it too, for `mergedReviewBase`, the review
   base of an already merged branch, which show-changes' `git.ts` shares), `server/sandbox-state.ts` and `server/link-sandbox.ts` import
-  `pi-config/extensions/sandbox/state.ts` (builtins only: the `sandbox` entry and its restore),
+  `pi-config/extensions/sandbox/state.ts` (builtins only: the `sandbox` entry and its restore; its
+  optional `workers: "off"` field makes the three states, §chat.sandbox/states, and `on` keeps
+  meaning the session's own tools for every reader), `server/overseer.ts` imports `sandbox/policy.ts`
+  (`loadPolicyFile`, `policyFilePath`: the state a new session starts in, for the Overseer's
+  lowering check),
   `server/link-sandbox.ts` also imports `sandbox/session-policy.ts` and `policy.ts` (builtins only,
   with their siblings `backend.ts`, `backends/*` and `env.ts`: `resolveSessionPolicy`, the one
   resolution of a session's sandbox policy from its agent dir, cwd, session id and tracked

@@ -1633,11 +1633,15 @@ export interface ChatModeResult extends ModeInfo {
     workspace-write · full enforcement"); `enforcement` is "none" while off. */
 export interface SandboxInfo {
   on: boolean;
+  /** Which of the three states (§chat.sandbox/states). Absent from a server that predates them:
+      read `on` then (true: On, false: Subagents only). */
+  state?: "off" | "subagents" | "on";
   enforcement: "full" | "partial" | "unavailable" | "none";
   status: string;
 }
 
-/** POST /api/sandbox?path=…: "command" = the extension's /sandbox handler ran (its answer in
+/** POST /api/sandbox?path=… with `{ state }` (or the older `{ on }`; both together must agree):
+    "command" = the extension's /sandbox handler ran (its answer in
     `sandbox`, also sent as a "sandbox" message); "unsupported" = no sandbox extension in this
     runtime, nothing happened; "skip" = a TUI or foreign writer owns the file, nothing written. */
 export interface SandboxApplyResult {

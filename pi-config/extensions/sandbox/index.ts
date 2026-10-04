@@ -1,9 +1,11 @@
 /**
  * sandbox — confine this session's tools to the machine (see README.md and §chat/sandbox).
  *
- * On or off per session, only by the user: `/sandbox on|off` (Sova calls the same command), the
- * `--sandbox on|off` flag for a new runtime (workers get it from their parent), and a `sandbox`
- * custom entry on every change, restored from the branch like mode's `restoreActive`.
+ * Off, Subagents only or On per session (§chat.sandbox/states): `/sandbox off|subagents|on` (Sova
+ * calls the same command), the `--sandbox` flag for a new runtime (workers get `on` from their
+ * parent), and a `sandbox` custom entry on every change, restored from the branch like mode's
+ * `restoreActive`. Off and Subagents only differ only in what `workerLaunch` answers: the
+ * session's own tools are pi's in both, so a change between them touches no tool.
  *
  * Registration is lazy. A session that has never been on registers no tool at all, so its
  * registry and every tool call are pi's own (OFF == today). On registers the seven confined
@@ -30,14 +32,16 @@ import {
 	describeActive,
 	markerText,
 	normalizeActive,
-	parseOnOff,
+	parseState,
 	restoreActive,
 	SANDBOX_DISCOVER_EVENT,
 	SANDBOX_ENTRY_TYPE,
 	SANDBOX_STATE_EVENT,
 	type SandboxActive,
 	type SandboxLevel,
+	type SandboxState,
 	type SandboxStateEvent,
+	stateOf,
 	type WorkerLaunch,
 	type WorkerLaunchRequest,
 } from "./state.ts";
@@ -68,13 +72,14 @@ const SELF_DIR = realpathOr(dirname(fileURLToPath(import.meta.url)));
 /** The confined-launch entry a spawner (or a hosting process) imports by path. */
 const LAUNCH_MODULE = join(SELF_DIR, "launch.ts");
 
-function offState(level: SandboxLevel = "workspace-write"): SandboxActive {
-	return { version: 1, on: false, level, backend: "none", enforcement: "none" };
+/** Subagents only (the default off), or Off with `workersOff`. */
+function offState(level: SandboxLevel = "workspace-write", workersOff = false): SandboxActive {
+	return { version: 1, on: false, level, backend: "none", enforcement: "none", ...(workersOff ? { workers: "off" as const } : {}) };
 }
 
 export default function sandbox(pi: ExtensionAPI) {
 	pi.registerFlag(FLAG, {
-		description: "Start with the sandbox on or off (on|off). Workers get it from their parent; a session started with --sandbox on cannot turn it off",
+		description: "Start with the sandbox on, for subagents only, or off (on|subagents|off). Workers get it from their parent; a session started with --sandbox on cannot lower it",
 		type: "string",
 	});
 
@@ -195,6 +200,8 @@ export default function sandbox(pi: ExtensionAPI) {
 			network,
 			env: policy.writeOnly ? hostEnv(process.env) : scrubEnv(process.env, policy.envAllow),
 			sessionId,
+			// Write-only: the host's /tmp stays visible, read-only (§chat.worktrees/workers).
+			...(policy.writeOnly ? { hostTmp: true } : {}),
 		};
 		const probe = await backend.probe(backendPolicy);
 		if (!probe.ok) return { ok: false, reason: probe.reason };
@@ -217,19 +224,22 @@ export default function sandbox(pi: ExtensionAPI) {
 
 	function emitState(): void {
 		const on = active.on && !remote;
-		const event: SandboxStateEvent = { version: 1, on, extensionPath: SELF_DIR, enforcement: on ? active.enforcement : "none" };
+		const workersOff = !on && active.workers === "off" && !remote;
+		const event: SandboxStateEvent = { version: 1, on, ...(workersOff ? { workers: "off" as const } : {}), extensionPath: SELF_DIR, enforcement: on ? active.enforcement : "none" };
 		// Every worker start asks this (§chat.sandbox/workers, §chat.worktrees/workers); a remote session has none.
-		if (!remote) event.workerLaunch = (req) => workerLaunch(on, req);
+		if (!remote) event.workerLaunch = (req) => workerLaunch(on, workersOff, req);
 		pi.events?.emit(SANDBOX_STATE_EVENT, event);
 	}
 
 	/**
 	 * How one worker starts (§chat.sandbox/workers, §chat.worktrees/workers). On: the parent's scope
-	 * (narrowed to a tracked worktree's `root`), or the refusal; off: a write-only scope in a tracked
-	 * worktree, else nothing. pi workers get the extension's flags; any other backend a scope for
-	 * `confineLaunch` (launch.ts), which runs its whole process under the same policy.
+	 * (narrowed to a tracked worktree's `root`), or the refusal; Subagents only: a write-only scope in
+	 * a tracked worktree, else nothing; Off (§chat.sandbox/states): nothing, ever. pi workers get the
+	 * extension's flags; any other backend a scope for `confineLaunch` (launch.ts), which runs its
+	 * whole process under the same policy.
 	 */
-	function workerLaunch(on: boolean, req: WorkerLaunchRequest): WorkerLaunch {
+	function workerLaunch(on: boolean, workersOff: boolean, req: WorkerLaunchRequest): WorkerLaunch {
+		if (!on && workersOff) return { kind: "none" };
 		const root = req.root ? canonicalize(req.root) : undefined;
 		let scope: ParentScope;
 		if (on) {
@@ -258,6 +268,10 @@ export default function sandbox(pi: ExtensionAPI) {
 				const tail = remote ? ` (${NOT_ON_REMOTE})` : active.enforcement === "full" ? "" : ` (${active.enforcement})`;
 				ui.setStatus(STATUS_KEY, `sandbox on${tail}`);
 				statusShown = true;
+			} else if (active.workers === "off") {
+				// Off is the one state that lifts the workers too: the footer says so.
+				ui.setStatus(STATUS_KEY, "sandbox off");
+				statusShown = true;
 			} else if (statusShown) {
 				ui.setStatus(STATUS_KEY, undefined);
 				statusShown = false;
@@ -275,9 +289,9 @@ export default function sandbox(pi: ExtensionAPI) {
 		}
 	}
 
-	/** Bring the tools and the state to `on`; the result is recorded only when `record`. */
-	async function apply(on: boolean, record: boolean): Promise<void> {
-		if (on) {
+	/** Bring the tools and the state to `state`; the result is recorded only when `record`. */
+	async function apply(state: SandboxState, record: boolean): Promise<void> {
+		if (state === "on") {
 			registerConfined();
 			if (remote) {
 				active = { version: 1, on: true, level: active.level, backend: "none", enforcement: "none", reasons: [NOT_ON_REMOTE] };
@@ -289,8 +303,9 @@ export default function sandbox(pi: ExtensionAPI) {
 					: { version: 1, on: true, level, backend: backend.id, enforcement: "unavailable", reasons: [s.reason] };
 			}
 		} else {
+			// Off and Subagents only: the session's own tools are pi's in both.
 			registerStock();
-			active = offState(active.level);
+			active = offState(active.level, state === "off");
 			// Off needs no proxy; the next on starts a fresh one.
 			const p = proxy;
 			proxy = undefined;
@@ -331,18 +346,20 @@ export default function sandbox(pi: ExtensionAPI) {
 			}
 		}
 		// A worker of a sandboxed parent is on, whatever else it was given.
-		const flag = first ? (parentScope !== undefined ? true : parseOnOff(pi.getFlag(FLAG))) : launchedOn || undefined;
-		if (first) launchedOn = flag === true;
-		const on = launchedOn || (restored ? restored.on : flag ?? defaultOn());
+		const flag: SandboxState | undefined = first ? (parentScope !== undefined ? "on" : parseState(pi.getFlag(FLAG))) : launchedOn ? "on" : undefined;
+		if (first) launchedOn = flag === "on";
+		const state: SandboxState = launchedOn ? "on" : restored ? stateOf(restored) : flag ?? (defaultOn() ? "on" : "subagents");
+		const on = state === "on";
 		// Opening a session writes nothing unless it comes up on without an entry saying so: then the
 		// choice is pinned, so a later default change cannot loosen this session.
 		const record = on && restored?.on !== true;
 		if (!on && registered === "none" && !active.on) {
-			active = offState();
+			active = offState(active.level, state === "off");
+			renderStatus();
 			emitState();
 			return;
 		}
-		await apply(on, record);
+		await apply(state, record);
 		if (on && active.enforcement === "unavailable") notify(describeActive(active), "error");
 	}
 
@@ -397,8 +414,8 @@ export default function sandbox(pi: ExtensionAPI) {
 	});
 
 	pi.registerCommand("sandbox", {
-		description: "Sandbox this session's tools: /sandbox on | /sandbox off (bare: show the state)",
-		getArgumentCompletions: (prefix) => ["on", "off"].filter((c) => c.startsWith(prefix.trim())).map((c) => ({ value: c, label: c })),
+		description: "Sandbox this session: /sandbox on (its tools and subagents) | subagents (subagents only) | off (nothing) (bare: show the state)",
+		getArgumentCompletions: (prefix) => ["on", "subagents", "off"].filter((c) => c.startsWith(prefix.trim())).map((c) => ({ value: c, label: c })),
 		handler: async (args, ctx) => {
 			ui = ctx.hasUI ? ctx.ui : undefined;
 			const arg = args.trim();
@@ -406,24 +423,27 @@ export default function sandbox(pi: ExtensionAPI) {
 				notify(describeActive(active));
 				return;
 			}
-			const want = parseOnOff(arg);
+			const want = parseState(arg);
 			if (want === undefined) {
-				notify("usage: /sandbox on | /sandbox off", "error");
+				notify("usage: /sandbox on | subagents | off", "error");
 				return;
 			}
-			if (!want && launchedOn) {
+			if (want !== "on" && launchedOn) {
 				notify("Sandbox: this session was started with --sandbox on (a worker inherits it from its parent); it cannot be turned off here", "error");
 				return;
 			}
 			// `/sandbox on` while on re-probes (a fixed cause clears `unavailable`); it records only a change.
 			const before = JSON.stringify(active);
-			if (!want && !active.on) {
+			const stateBefore = stateOf(active);
+			if (want !== "on" && stateBefore === want) {
 				notify(describeActive(active));
 				return;
 			}
 			await apply(want, false);
 			if (JSON.stringify(active) !== before) append();
-			notify(describeActive(active), active.on && active.enforcement === "unavailable" ? "error" : "info");
+			// A new state reaches workers only at their start or resume (§chat.sandbox/states): say so.
+			const workersNote = stateOf(active) !== stateBefore ? ". Running subagents keep theirs until resumed." : "";
+			notify(`${describeActive(active)}${workersNote}`, active.on && active.enforcement === "unavailable" ? "error" : "info");
 		},
 	});
 

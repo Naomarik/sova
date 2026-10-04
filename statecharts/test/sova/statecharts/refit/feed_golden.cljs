@@ -477,6 +477,7 @@
    ["runtime" ":idle" [":playbook/started"] "[:running]" 0] :feed
    ["runtime" ":proposed" [":link/moved"] "[:idle]" 0] :feed
    ["runtime" ":proposed" [":link/moved"] "[:running]" 0] :feed
+   ["runtime" ":proposed" [":link/moved"] "[:waiting]" 0] :feed
    ["runtime" ":proposed" [":link/moved"] "[]" 0] :quiet
    ["runtime" ":registered" [] "[:awaiting-approval]" 0] :feed
    ["runtime" ":registered" [] "[:conforming]" 0] :feed
@@ -485,8 +486,13 @@
    ["runtime" ":registered" [] "[:unregistered]" 0] :feed
    ["runtime" ":running" [":link/moved"] "[:idle]" 0] :feed
    ["runtime" ":running" [":link/moved"] "[:proposed]" 0] :feed
+   ["runtime" ":running" [":link/moved"] "[:waiting]" 0] :feed
    ["runtime" ":running" [":link/moved"] "[]" 0] :quiet
    ["runtime" ":runtime" [":effect/done"] "[]" 0] :feed
+   ["runtime" ":waiting" [":link/moved"] "[:idle]" 0] :feed
+   ["runtime" ":waiting" [":link/moved"] "[:proposed]" 0] :feed
+   ["runtime" ":waiting" [":link/moved"] "[:running]" 0] :feed
+   ["runtime" ":waiting" [":link/moved"] "[]" 0] :quiet
    ["runtime" ":runtime" [":effect/done"] "[]" 1] :feed
    ["runtime" ":runtime" [":effect/failed"] "[]" 0] :feed
    ["runtime" ":runtime" [":effect/failed"] "[]" 1] :feed

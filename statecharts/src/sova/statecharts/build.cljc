@@ -6,7 +6,8 @@
    ```
    build ‹compound› → regions ‹parallel›
    ├─ setup   making-worktree · setting-mode · prompting · ready · not-started
-   ├─ turn    idle · working · failed          (the runtime's facts; `workers` beside it)
+   ├─ turn    idle · working · failed          (the runtime's facts; `workers` beside it, and at a turn's end
+   │                                            the open alignment questions it left, `questions`)
    ├─ tree    open · missing · removed · root  (git facts: the worktrees extension's probe)
    ├─ branch  no-commits · unmerged · merged · new-since-merge   (git facts)
    └─ merge   merge-idle · merging              (Merge Branch: the operator's only)
@@ -93,6 +94,13 @@
 
 (defn coding? [d] (= "coding" (:kind d)))
 
+(defn- turn-ended-ops
+  "A turn's end: when, and the open alignment questions its session waits on the operator for (`questions`, the
+   host's count from the session file; 0 when it sent none), so a verb playbook's run can say it waits."
+  [d]
+  [(ops/assign :last-turn-at (b/now-ms d))
+   (ops/assign :questions (let [n (:questions (e d))] (if (and (number? n) (pos? n)) n 0)))])
+
 (defn commit-paragraph
   "codingWorktreeParagraph, verbatim."
   [{:keys [branch target]}]
@@ -172,12 +180,12 @@
             (transition {:sova/feed :quiet :event :turn/started :target :working}))
           (state {:id :working} (region :turn "working")
             (transition {:sova/feed :quiet :sova/asks-overseer true :event :turn/ended :cond (fn [_ d] (true? (:failed (e d)))) :target :turn-failed}
-              (script {:expr (fn [_ d] [(ops/assign :last-turn-at (b/now-ms d))])})
+              (script {:expr (fn [_ d] (turn-ended-ops d))})
               (b/tell-watch (fn [d] (when (coding? d)
                                       {:kind "coding/settled" :params {:title (shown-title d) :failed true :session-id (:session-id d)} :by "system"
                                        :key (str "coding/settled:" (:session-id d) ":failed")}))))
             (transition {:sova/feed :quiet :sova/asks-overseer true :event :turn/ended :target :turn-idle}
-              (script {:expr (fn [_ d] [(ops/assign :last-turn-at (b/now-ms d))])})
+              (script {:expr (fn [_ d] (turn-ended-ops d))})
               (b/tell-watch (fn [d] (when (coding? d)
                                       {:kind "coding/settled" :params {:title (shown-title d) :failed false :session-id (:session-id d)} :by "system"
                                        :key (str "coding/settled:" (:session-id d) ":ok")})))))
@@ -243,6 +251,6 @@
    :migrate  {}
    :storage  :portable
    :exported [:session-id :kind :title :started-by :via :gap :item :decisions :branch :base :target :in-root :merged
-              :turn :workers :running :tree :branch-state :last-turn-at :mode-not-set :not-started :created-at]
+              :turn :workers :running :tree :branch-state :last-turn-at :questions :mode-not-set :not-started :created-at]
    :acts     acts
    :not-here not-here})

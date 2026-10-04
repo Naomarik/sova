@@ -764,13 +764,22 @@ thing it waits on being done.
   doesn't carry is not listed. **The count in the head is the rows**, and the region never lists a
   row the rest of the pane hides.
 - **Order: newest first**, by each session's newest act item (`since`); ties break on path.
+- **A project's deploy items** (`deploy-failed`, `deploy-request`, §app.project-services/deploy-status) belong
+  to no session, so they list under the session rows as rows of their own, newest first, narrowed by the
+  search (project, folder or sentence): the project's name, the digest's sentence and the folder, each
+  opening the project page (its Deploy panel). The head's count and the spine's door count them too, and
+  the head's title says how many are deploy items ("The 2 sessions waiting on you, newest first, and 1
+  deploy item." / "1 deploy item waiting on you.").
 - **Rows** are the same `SessionRow` as everywhere else — rail, marks, meta line, accessible name —
   with one difference: **line 2 is the digest's sentence** for the session's newest act item
   ("3 open questions in al_3 Autonomy settings", "Waiting on a dialog.", "429 rate limited", "1 subagent ended in an error."), in place of the gist
   or the draft preview, and shown even with summaries hidden in Settings › General. Its `title` is
   every act sentence the session has, newest first. An act item with no sentence leaves line 2 as
   the row draws it elsewhere. The rules live in `src/lib/needs-you.ts`.
-- **No row menu, no put-away.** A Needs you row carries no button of its own and no menu: a press
+- **No row menu, no put-away.** A Needs you row carries no button of its own and no menu, except
+  a session whose act item is a proposed playbook run (`playbook-review`,
+  §app.project-runtime/review): under its row, **Approve & Merge** (or **Merge Branch**), which acts
+  at once and says a refusal's reason under it. Otherwise: a press
   held on it and let go selects it (§app.session-list/selecting-several-sessions), one that moves
   opens the drop overlay (§app.session-list/drop-overlay), and a right-click is the browser's, as
   on every other row.

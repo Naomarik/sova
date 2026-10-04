@@ -30,7 +30,7 @@ import { acquireChat, BusyError, disposeHeldChat, drainQueueThenAbort, heldChat,
 import { shuttingDown } from "./wrapup-recovery";
 import { listModels } from "./models";
 import { workingSubagents } from "./live";
-import { baseCodingMode, codingModeChoice, describeCodingMode } from "./project-coding-mode";
+import { baseCodingMode, codingModeChoice, describeCodingMode, PLAYBOOK_RUN_KINDS, playbookRunMode } from "./project-coding-mode";
 import { baseAbilities } from "./gathering-abilities";
 import { gitRootOf, readWorktree } from "./project-worktrees";
 import { hostOf, isOrgHostOpen, onOrgHostOpened, setOrgClockForTest, type InvocationReport } from "./org-engine";
@@ -799,7 +799,9 @@ async function startCodingSession(
   const engine = engineOrThrow(projectId);
   const p = projectOverseerPaths(projectId);
   const settings = readPoSettings(p);
-  const mode = input.mode ?? baseCodingMode(settings.codingMode, project.root);
+  const base = input.mode ?? baseCodingMode(settings.codingMode, project.root);
+  // A verb playbook's run asks the operator through align (§app.project-runtime/verb-playbooks).
+  const mode = PLAYBOOK_RUN_KINDS.includes(input.kind) ? playbookRunMode(base) : base;
   const sessionId = newBuildSessionId();
   const title = input.title?.trim() ? cleanSessionTitle(input.title) : null;
   // The build carries a title: the one given, else the prompt's first line; none with neither (New Coding Session).

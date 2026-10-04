@@ -201,3 +201,48 @@
     (is (= [["db" true] ["uploads" false]] (map (juxt :name :sensitive) (:data (core/data eng rsid)))) "kept as observed, in order")
     (observe! eng 3 (facts :hash "h1"))
     (is (= 2 (count (:data (core/data eng rsid)))) "a read that names no data leaves it as it was")))
+
+(deftest a-run-that-asks-waits-then-resumes
+  ;; §app.project-runtime/onboard: a turn that ends on open alignment questions waits, whatever its branch holds;
+  ;; the operator's answer is its next turn.
+  (let [eng (eng!)
+        bs  "build/pr1/o5"]
+    (observe! eng 2 (facts))
+    (core/send! eng psid :verbs/onboard (assoc op :session-id "o5" :title "Project verbs: Site" :prompt "Run it"
+                                          :playbook-id "project-verbs" :label "Project verbs" :approves "definition") {:now (+ t0 3)})
+    (is (= {:playbook-id "project-verbs" :label "Project verbs" :approves "definition"}
+           (select-keys (:playbook (core/data eng rsid)) [:playbook-id :label :approves])) "keyed by the verb playbook")
+    (core/send! eng bs :effect/done {:kind "make-worktree" :result {:branch "sova/verbs" :target "main" :base "b0"}} {:now (+ t0 4)})
+    (core/send! eng bs :effect/done {:kind "set-mode"} {:now (+ t0 5)})
+    (core/send! eng bs :effect/done {:kind "first-prompt"} {:now (+ t0 6)})
+    (core/send! eng bs :turn/started {} {:now (+ t0 7)})
+    (core/send! eng bs :git/probe {:branch "unmerged" :tree "open"} {:now (+ t0 8)})
+    (core/send! eng bs :turn/ended {:questions 2} {:now (+ t0 9)})
+    (is (in? eng rsid :waiting) "commits, but it asked: it waits, never proposed")
+    (is (= "waiting" (:playbook-state (core/data eng rsid))))
+    (is (= 2 (get-in (core/data eng rsid) [:playbook :questions])))
+    (is (not (contains? (reasons eng) "runtime/proposed")) "the overseer hears no proposal")
+    (core/send! eng bs :turn/started {} {:now (+ t0 10)})
+    (is (in? eng rsid :running) "the answer resumes it")
+    (core/send! eng bs :turn/ended {} {:now (+ t0 11)})
+    (is (in? eng rsid :proposed) "no questions left: proposed")
+    (core/send! eng bs :turn/started {} {:now (+ t0 12)})
+    (core/send! eng bs :turn/ended {:questions 1} {:now (+ t0 13)})
+    (is (in? eng rsid :waiting) "a proposed run sent more work may ask again")
+    (core/send! eng bs :build/remove-worktree op {:now (+ t0 14)})
+    (core/send! eng bs :effect/done {:kind "remove-worktree" :result {:branch-deleted false}} {:now (+ t0 15)})
+    (is (in? eng rsid :idle) "a waiting run still ends with its worktree")
+    (is (= "removed" (get-in (core/data eng rsid) [:playbook :result])))))
+
+(deftest a-plain-onboard-defaults-to-project-verbs
+  (let [eng (eng!)]
+    (observe! eng 2 (facts))
+    (core/send! eng psid :verbs/onboard (assoc op :session-id "o6" :prompt "Run it") {:now (+ t0 3)})
+    (is (= {:playbook-id "project-verbs" :label "Project verbs" :approves "definition"}
+           (select-keys (:playbook (core/data eng rsid)) [:playbook-id :label :approves])))))
+
+(deftest run-moved-says-waiting-before-the-branch
+  (is (= :waiting (rr/run-moved {:states [:unmerged :turn-idle] :exported {:last-turn-at 1 :questions 3 :branch-state "unmerged"}})))
+  (is (= :proposed (rr/run-moved {:states [:unmerged :turn-idle] :exported {:last-turn-at 1 :questions 0 :branch-state "unmerged"}})))
+  (is (= :working (rr/run-moved {:states [:working] :exported {:running true :last-turn-at 1 :questions 3}})) "working wins")
+  (is (= :merged (rr/run-moved {:states [:merged] :exported {:last-turn-at 1 :questions 3}})) "a merge ends it"))

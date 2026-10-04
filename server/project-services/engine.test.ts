@@ -274,12 +274,11 @@ test("doctor and status name the supervisor adapter and why; a reserved adapter 
   assert.match(ls.checks![0]!.detail, /^launchd: no supervisor/);
 });
 
-test("reserved and malformed requests", async () => {
-  for (const v of ["deploy", "deploy.run"]) {
-    const r = shaped(await engine.run(v, { project }, op));
-    assert.equal(r.error?.code, "unsupported", v);
-    assert.equal(exitOf(r), 2);
-  }
+test("deploy verbs without a deployer, and malformed requests", async () => {
+  const r = shaped(await engine.run("deploy.run", { project }, op));
+  assert.equal(r.error?.code, "unsupported");
+  assert.equal(exitOf(r), 2);
+  assert.equal((await engine.run("deploy", { project }, op)).error?.code, "invalid-request", "the bare name is no verb");
   assert.equal((await engine.run("explode", { project }, op)).error?.code, "invalid-request");
   assert.equal((await engine.run("up", { project, bogus: 1 }, op)).error?.code, "invalid-request");
   assert.equal((await engine.run("up", { instance: "nope-00000000" }, op)).error?.code, "not-found");

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { ProjectRuntimeView } from "../../shared/project-runtime";
-import { approveLabel, approveWhat, failedLine, liveWord, memoryWord, playbookLabel, provenTail, runWord, serviceFacts, STANDING_CHIP } from "./project-software";
+import { approveLabel, approveWhat, deployTickBlock, elapsedWord, failedLine, liveWord, memoryWord, openWord, playbookLabel, provenTail, reviewDefProblem, reviewProofWord, runStrip, runWord, serviceFacts, shareWord, STANDING_CHIP } from "./project-software";
 
 const base: ProjectRuntimeView = {
   projectId: "prj_1",
@@ -70,8 +70,45 @@ test("the proof line, the failure, and the actions", () => {
 
 test("the playbook's run in words", () => {
   assert.equal(runWord(base), null);
-  const pb = { sessionId: "s1", startedBy: "operator" as const, startedAt: "" };
+  const pb = { sessionId: "s1", playbookId: "project-verbs", label: "Project verbs", approves: "definition" as const, startedBy: "operator" as const, startedAt: "" };
   assert.equal(runWord({ ...base, playbookState: "running", playbook: pb }), "The Project verbs playbook is running");
   assert.equal(runWord({ ...base, playbookState: "proposed", playbook: { ...pb, branch: "sova/v" } }), "The Project verbs playbook proposes a definition on sova/v");
+  assert.equal(
+    runWord({ ...base, playbookState: "proposed", playbook: { ...pb, playbookId: "project-deploy", label: "Project deploy", approves: "deploy" as const, branch: "sova/d" } }),
+    "The Project deploy playbook proposes a deploy recipe on sova/d",
+  );
   assert.equal(runWord({ ...base, playbook: { ...pb, result: "no-change" } }), "The last Project verbs run finished with no change");
+});
+
+test("a live run's strip: working or idle, its now line, how long; waiting says its questions (§app.project-runtime/run-progress)", () => {
+  const started = "2026-10-04T10:00:00.000Z";
+  const t = Date.parse(started);
+  const pb = { sessionId: "s1", playbookId: "project-verbs", label: "Project verbs", approves: "definition" as const, startedBy: "operator" as const, startedAt: started };
+  assert.equal(runStrip({ ...base, playbook: pb }, t), null, "idle: no strip");
+  assert.deepEqual(runStrip({ ...base, playbookState: "running", playbook: { ...pb, live: { working: true, now: "Conform run 3 of 6" } } }, t + 12 * 60_000), { state: "Working", now: "Conform run 3 of 6", questions: null, elapsed: "12 min" });
+  assert.deepEqual(runStrip({ ...base, playbookState: "waiting", playbook: { ...pb, questions: 2, live: { working: false, questions: 2 } } }, t + 125 * 60_000), { state: "Waiting for your answers", now: null, questions: "2 open questions in its session", elapsed: "2 h 5 min" });
+  assert.equal(runStrip({ ...base, playbookState: "running", playbook: { ...pb, live: { working: false } } }, t + 1000)!.state, "Idle");
+  assert.equal(elapsedWord(30_000), "under 1 min");
+  assert.equal(elapsedWord(120 * 60_000), "2 h");
+});
+
+test("a proposed run's review in words, from the branch's definition and its conformance (§app.project-runtime/run-report)", () => {
+  const r = { def: { state: "present" as const, hash: "sha256:ab" }, services: [], data: [], share: null, open: null, proof: null };
+  assert.equal(shareWord(r), "Shares nothing");
+  assert.equal(shareWord({ ...r, share: { endpoints: ["web.http"], allow: false } }), "Never shared");
+  assert.equal(shareWord({ ...r, share: { endpoints: ["web.http", "api.http"], allow: true } }), "Shares web.http, api.http");
+  assert.equal(openWord(r), "No entry point");
+  assert.equal(openWord({ ...r, open: { endpoint: "web.http", path: "/app" } }), "Opens at web.http/app");
+  assert.equal(reviewProofWord(r), "No conformance of this definition yet");
+  assert.equal(reviewProofWord({ ...r, proof: { hash: "sha256:ab", suite: 4, pass: true, confined: true, at: "" } }), "Conformance passed (confined, suite v4)");
+  assert.equal(reviewProofWord({ ...r, proof: { hash: "sha256:ab", suite: 4, pass: false, confined: true, at: "", failed: { check: "ready", detail: "web never listened" } } }), "Conformance failed at ready: web never listened");
+  assert.equal(reviewDefProblem(r), null);
+  assert.equal(reviewDefProblem({ ...r, def: { state: "absent" } }), "Its branch has no .sova/project.json.");
+  assert.equal(reviewDefProblem({ ...r, def: { state: "invalid", error: "$.services: required" } }), "The definition on its branch is invalid: $.services: required");
+});
+
+test("a deploy-setup run's Approve & Merge waits until every step of its recipe is ticked", () => {
+  const review = { keys: ["prod/sync", "prod/verify", "prod/rollback"] };
+  assert.equal(deployTickBlock(review, new Set(["prod/sync"])), "Tick every step first: 1 of 3 steps ticked.");
+  assert.equal(deployTickBlock(review, new Set(review.keys)), null);
 });

@@ -2702,7 +2702,9 @@
         "server/server-stop.ts",
         "server/server-stop.test.ts",
         "server/index.ts",
-        "server/outreach/log.ts"
+        "server/outreach/log.ts",
+        "server/projects/playbook-review.ts",
+        "server/project-services/deploy-attention.ts"
       ],
       "requires": [
         "§app.overseer/seen"
@@ -3482,7 +3484,7 @@
     "§app.session-list/needs-you": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "code": [
         "src/lib/needs-you.ts",
         "src/lib/needs-you.test.ts",
@@ -3498,7 +3500,8 @@
         "server/attention.ts",
         "src/lib/api.ts",
         "src/design/base.css",
-        "src/lib/org-region.ts"
+        "src/lib/org-region.ts",
+        "src/components/PlaybookReview.tsx"
       ],
       "requires": [
         "§app.overseer/attention-digest",
@@ -12013,7 +12016,14 @@
         "server/project-overseer.ts",
         "server/project-services/tools.ts",
         "server/projects/runtime.test.ts",
-        "statecharts/test/sova/statecharts/refit/runtime_test.cljs"
+        "statecharts/test/sova/statecharts/refit/runtime_test.cljs",
+        "server/build-loadout.ts",
+        "server/projects/runtime-feed.ts",
+        "server/projects/runtime-feed.test.ts",
+        "server/projects/playbook-review.test.ts",
+        "statecharts/src/sova/statecharts/build.cljc",
+        "statecharts/src/sova/statecharts/rules/runtime.cljc",
+        "statecharts/EVENTS.md"
       ],
       "requires": [
         "§app.project-overseer/coding-worktrees"
@@ -12068,7 +12078,7 @@
     "§app.project-runtime/software-card": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "code": [
         "src/components/ProjectSoftwareCard.tsx",
         "src/components/ProjectPage.tsx",
@@ -12078,7 +12088,8 @@
         "src/projects.css",
         "server/projects/runtime.ts",
         "server/project-services/on-merge.ts",
-        "server/project-services/on-merge.test.ts"
+        "server/project-services/on-merge.test.ts",
+        "src/components/PlaybookReview.tsx"
       ],
       "requires": [
         "§app.project-runtime/registry"
@@ -13049,6 +13060,275 @@
         "server/mesh/lan-reverse.ts",
         "server/mesh/lan-dialer.ts",
         "server/mesh/lan-relay.ts"
+      ]
+    },
+    "§app.project-runtime/approve-merge": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/projects/runtime.ts",
+        "server/projects/runtime-routes.ts",
+        "server/projects/playbook-review.test.ts",
+        "src/lib/api.ts",
+        "src/components/PlaybookReview.tsx",
+        "src/components/ProjectSoftwareCard.tsx"
+      ],
+      "requires": [
+        "§app.project-runtime/approve",
+        "§app.project-overseer/coding-worktrees"
+      ]
+    },
+    "§app.project-runtime/review": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/projects/playbook-review.ts",
+        "server/projects/playbook-review.test.ts",
+        "server/attention.ts",
+        "server/overseer.ts",
+        "server/push.ts",
+        "server/push-store.ts",
+        "shared/protocol.ts",
+        "src/components/PlaybookReview.tsx",
+        "src/components/ProjectPage.tsx",
+        "src/components/Sidebar.tsx",
+        "src/components/PushSettings.tsx",
+        "src/lib/needs-you.ts",
+        "shared/playbook-review.ts",
+        "shared/playbook-review.test.ts",
+        "src/lib/needs-you.test.ts",
+        "server/attention.test.ts",
+        "server/push.test.ts",
+        "src/app.css",
+        "src/lib/push-draft.test.ts",
+        "src/components/ProjectSoftwareCard.tsx",
+        "src/lib/project-software.ts",
+        "src/lib/project-software.test.ts"
+      ],
+      "requires": [
+        "§app.project-runtime/onboard",
+        "§app.overseer/attention-digest"
+      ]
+    },
+    "§app.project-runtime/run-progress": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/projects/runtime.ts",
+        "shared/project-runtime.ts",
+        "src/components/ProjectSoftwareCard.tsx",
+        "src/lib/project-software.ts",
+        "src/lib/project-software.test.ts",
+        "server/projects/playbook-review.ts",
+        "server/projects/playbook-review.test.ts"
+      ],
+      "requires": [
+        "§app.project-runtime/onboard"
+      ]
+    },
+    "§app.project-runtime/run-report": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/projects/playbook-review.ts",
+        "server/projects/runtime.ts",
+        "shared/project-runtime.ts",
+        "src/components/ProjectSoftwareCard.tsx",
+        "src/lib/project-software.ts",
+        "src/lib/project-software.test.ts",
+        "src/components/ProjectDeployPanel.tsx",
+        "src/lib/project-deploy.ts"
+      ],
+      "requires": [
+        "§app.project-runtime/registry"
+      ]
+    },
+    "§app.project-runtime/verb-playbooks": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/projects/onboard.ts",
+        "server/projects/onboard.test.ts",
+        "server/project-coding-mode.ts",
+        "server/project-overseer.ts",
+        "playbooks/project-verbs/PLAYBOOK.md",
+        "statecharts/src/sova/statecharts/runtime.cljc",
+        "statecharts/src/sova/statecharts/proj.cljc",
+        "server/build-loadout.ts",
+        "server/project-coding-mode.test.ts",
+        "server/playbooks.ts",
+        "shared/protocol.ts",
+        "server/projects/runtime.ts",
+        "server/projects/runtime-routes.ts",
+        "server/projects/runtime-feed.ts",
+        "server/projects/runtime-feed.test.ts",
+        "statecharts/src/sova/statecharts/build.cljc",
+        "statecharts/src/sova/statecharts/rules/runtime.cljc",
+        "statecharts/test/sova/statecharts/refit/runtime_test.cljs",
+        "statecharts/EVENTS.md"
+      ],
+      "requires": [
+        "§app.project-runtime/onboard"
+      ]
+    },
+    "§app.project-runtime/deploy-panel": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "requires": [
+        "§app.project-runtime/deploy-standing",
+        "§app.project-services/deploy-plan",
+        "§app.project-services/deploy-run"
+      ],
+      "code": [
+        "src/components/ProjectDeployPanel.tsx",
+        "src/lib/project-deploy.ts",
+        "src/lib/project-deploy.test.ts",
+        "src/lib/api.ts",
+        "src/components/ProjectPage.tsx",
+        "src/projects.css"
+      ]
+    },
+    "§app.project-runtime/deploy-playbook": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.project-runtime/verb-playbooks",
+        "§app.project-services/deploy-check"
+      ],
+      "code": [
+        "playbooks/project-deploy/PLAYBOOK.md",
+        "playbooks/project-deploy/references/deploy.md",
+        "playbooks/project-deploy/scripts/project-deploy.mjs",
+        "server/project-services/deploy-playbook.test.ts"
+      ]
+    },
+    "§app.project-runtime/deploy-standing": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.project-services/deploy-trust"
+      ],
+      "code": [
+        "server/project-services/deploy-trust.ts",
+        "server/project-services/deploy.ts",
+        "server/project-services/deploy-trust.test.ts"
+      ]
+    },
+    "§app.project-services/deploy": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.project-services/contract",
+        "§app.project-services/result"
+      ],
+      "code": [
+        "shared/project-contract.ts",
+        "shared/project-contract-deploy.test.ts",
+        "shared/project-contract.test.ts",
+        "server/project-services/deploy.ts",
+        "server/project-services/engine.ts",
+        "server/project-services/engine.test.ts",
+        "playbooks/project-verbs/scripts/project-verbs.mjs",
+        "playbooks/project-verbs/references/contract.md"
+      ]
+    },
+    "§app.project-services/deploy-callers": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.project-services/deploy",
+        "§app.project-services/callers"
+      ],
+      "code": [
+        "server/project-services/deploy.ts",
+        "server/project-services/tools.ts",
+        "server/project-services/deploy-callers.test.ts",
+        "scripts/sova-project.mjs"
+      ]
+    },
+    "§app.project-services/deploy-check": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.project-services/deploy"
+      ],
+      "code": [
+        "server/project-services/deploy.ts",
+        "server/project-services/deploy-check.test.ts"
+      ]
+    },
+    "§app.project-services/deploy-plan": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.project-services/deploy",
+        "§app.project-services/deploy-trust",
+        "§app.project-services/test"
+      ],
+      "code": [
+        "server/project-services/deploy.ts",
+        "server/project-services/deploy-run.test.ts"
+      ]
+    },
+    "§app.project-services/deploy-run": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.project-services/deploy-plan",
+        "§app.project-services/supervisor"
+      ],
+      "code": [
+        "server/project-services/deploy.ts",
+        "server/project-services/deploy-runner.mjs",
+        "server/project-services/deploy-run.test.ts",
+        "server/project-services/routes.ts"
+      ]
+    },
+    "§app.project-services/deploy-status": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.project-services/deploy-run",
+        "§app.overseer/attention-digest"
+      ],
+      "code": [
+        "server/project-services/deploy.ts",
+        "server/project-services/deploy-attention.ts",
+        "server/project-services/deploy-status.test.ts",
+        "server/overseer.ts",
+        "shared/protocol.ts",
+        "server/project-services/routes.ts"
+      ]
+    },
+    "§app.project-services/deploy-trust": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.project-services/deploy",
+        "§app.project-services/trust"
+      ],
+      "code": [
+        "server/project-services/deploy-trust.ts",
+        "server/project-services/deploy-trust.test.ts",
+        "server/project-services/trust.ts",
+        "server/project-services/observe.ts",
+        "server/project-services/routes.ts",
+        "server/project-services/deploy.ts"
       ]
     }
   },

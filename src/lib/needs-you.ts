@@ -27,6 +27,9 @@ export interface NeedsYouRow {
   details: string[];
   /** ms epoch of the session's newest act item; 0 unknown. */
   since: number;
+  /** A proposed verb playbook run's item (`playbook-review`): what the row's Approve & Merge needs
+      (§app.project-runtime/review), the one button a Needs you row carries. */
+  playbook?: NonNullable<AttentionItem["playbook"]>;
 }
 
 /** Whether a digest item lists in the region: every act item, and a roster proposal. */
@@ -41,7 +44,7 @@ export const listsInNeedsYou = (it: Pick<AttentionItem, "tier" | "kind">): boole
 export function needsYouRows(digest: Pick<AttentionDigest, "items"> | undefined, sessions: readonly SessionSummary[]): NeedsYouRow[] {
   if (!digest) return [];
   const byPath = new Map(sessions.map((s) => [s.path, s]));
-  const acc = new Map<string, { session: SessionSummary; since: number; details: { at: number; text: string }[] }>();
+  const acc = new Map<string, { session: SessionSummary; since: number; details: { at: number; text: string }[]; playbook?: NeedsYouRow["playbook"] }>();
   for (const it of digest.items) {
     if (!listsInNeedsYou(it)) continue;
     const session = byPath.get(it.path);
@@ -50,14 +53,30 @@ export function needsYouRows(digest: Pick<AttentionDigest, "items"> | undefined,
     if (!a) acc.set(it.path, (a = { session, since: it.since, details: [] }));
     a.since = Math.max(a.since, it.since);
     if (it.detail) a.details.push({ at: it.since, text: it.detail });
+    if (it.kind === "playbook-review" && it.playbook) a.playbook = it.playbook;
   }
   return [...acc.values()]
     .map((a) => {
       // Newest first; the sort is stable, so one time keeps the digest's own order (most urgent kind first).
       const details = a.details.sort((x, y) => y.at - x.at).map((d) => d.text);
-      return { session: a.session, since: a.since, details, detail: details[0] ?? null };
+      return { session: a.session, since: a.since, details, detail: details[0] ?? null, ...(a.playbook ? { playbook: a.playbook } : {}) };
     })
     .sort((a, b) => b.since - a.since || a.session.path.localeCompare(b.session.path));
+}
+
+/** The digest kinds of no session the region lists itself (a project's deploy, §app.project-services/deploy-status). */
+const DEPLOY_KINDS: ReadonlySet<AttentionItem["kind"]> = new Set(["deploy-failed", "deploy-request"]);
+
+/**
+ * The region's items of no session: a deploy target whose latest deploy failed, and an overseer's request to deploy.
+ * Each opens its project page and says the digest's own sentence; a search keeps those whose project, folder or
+ * sentence matches. Newest first.
+ */
+export function needsYouItems(digest: Pick<AttentionDigest, "items"> | undefined, query = ""): AttentionItem[] {
+  const q = query.trim().toLowerCase();
+  return (digest?.items ?? [])
+    .filter((it) => DEPLOY_KINDS.has(it.kind) && it.tier === "act" && (!q || `${it.title} ${it.where} ${it.detail ?? ""}`.toLowerCase().includes(q)))
+    .sort((a, b) => b.since - a.since || a.id.localeCompare(b.id));
 }
 
 /** Whether the digest's 30-item cap dropped act items, so the region may be short. */
@@ -79,5 +98,9 @@ export const storedNeedsYouOpen = (raw: string | null): boolean => raw !== "0";
 export const needsYouOpen = (input: { stored: boolean; searching: boolean }): boolean => input.searching || input.stored;
 
 /** The head's title: what the region is, with its count. */
-export const needsYouTitle = (n: number): string =>
-  n === 1 ? "The 1 session waiting on you." : `The ${n} sessions waiting on you, newest first.`;
+export const needsYouTitle = (n: number, deploys = 0): string => {
+  const d = `${deploys} deploy item${deploys === 1 ? "" : "s"}`;
+  if (!n) return `${d} waiting on you.`;
+  const sessions = n === 1 ? "The 1 session waiting on you" : `The ${n} sessions waiting on you, newest first`;
+  return deploys ? `${sessions}, and ${d}.` : `${sessions}.`;
+};

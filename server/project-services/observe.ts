@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { CONTRACT_FILE, DefinitionError, parseDefinition, portsFor, type IsolationDecl, type ProjectDef, type ServiceDecl } from "../../shared/project-contract";
 import { readStamp, SUITE_VERSION, type Stamp } from "./conform";
 import { realGit } from "./engine";
+import { deployApprovalOf, deployHashOf } from "./deploy-trust";
 import { approve, defHashOf, readApprovals } from "./trust";
 
 /**
@@ -79,6 +80,8 @@ export interface BranchFacts {
   approved: boolean;
   /** The newest confined conformance of the branch's definition with the current suite. */
   proof: ProofFact | null;
+  /** Its deploy recipe's own hash and this host's approval of it (§app.project-services/deploy-trust); null when it declares none. */
+  deploy: { hash: string; approved: boolean } | null;
 }
 
 const kindOf = (s: ServiceDecl): SoftwareFact["kind"] => (s.static !== undefined ? "static" : s.container ? "container" : "process");
@@ -155,9 +158,17 @@ export async function observeRuntime(root: string, git: Git = realGit): Promise<
 
 /** A branch's definition at its tip (the Project verbs playbook's proposal): its hash, approval and confined proof. */
 export async function branchFacts(root: string, ref: string, git: Git = realGit): Promise<BranchFacts> {
-  const { commit, fact } = await defAt(root, ref, git);
+  const { commit, def, fact } = await defAt(root, ref, git);
   const hash = fact.state === "present" ? fact.hash : null;
-  return { ref, commit, def: fact, approved: !!hash && !!readApprovals()[root]?.[hash], proof: hash ? proofOf(root, hash, true) : null };
+  const dh = def?.deploy ? deployHashOf(def.deploy) : null;
+  return {
+    ref,
+    commit,
+    def: fact,
+    approved: !!hash && !!readApprovals()[root]?.[hash],
+    proof: hash ? proofOf(root, hash, true) : null,
+    deploy: dh ? { hash: dh, approved: !!deployApprovalOf(root, dh) } : null,
+  };
 }
 
 /**

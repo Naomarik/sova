@@ -269,3 +269,14 @@ describe("/api/push", () => {
     assert.equal(store.readPushSettings().kinds["worker-error"], true);
   });
 });
+
+test("a proposed playbook run is a push kind, on by default, worded \"Playbook needs you\" (§app.project-runtime/review)", async () => {
+  const { defaultPushSettings } = await import("./push-store");
+  const { PUSH_KIND_LABEL, pushDecision } = await import("./push");
+  const settings = { ...defaultPushSettings(), contact: "mailto:a@b.c" };
+  assert.equal(settings.kinds["playbook-review"], true);
+  assert.equal(PUSH_KIND_LABEL["playbook-review"], "Playbook needs you");
+  const b = { id: "s1", kind: "playbook-review" as const, title: "Project verbs: site", detail: "Project verbs: approve 0123456789ab and merge into main" };
+  const out = pushDecision({ current: [b], announced: new Set(), settings, devices: 1, now: 100_000, lastSentAt: 0, quiet: false, viewing: () => false });
+  assert.deepEqual(out.send.map((x) => x.kind), ["playbook-review"]);
+});

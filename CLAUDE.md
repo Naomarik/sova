@@ -124,7 +124,11 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
   cacheRead, cacheWrite, cacheWrite1h?, owner, parent, worker?, kind, purpose?, cwd?, project?, starter?,
   stop?}`, written at each call's end by llm-inflight (one writer per file: the process's producer
   id) and by the server's own one-shots, read only by the server's usage helper (its strict parse
-  `parseUsageLine`), which prices every spend figure Sova shows.
+  `parseUsageLine`), which prices every spend figure Sova shows; beside it llm-inflight keeps
+  `<agent dir>/usage/cc-baseline/<claude session id>.json` `{v: 1, at, models}` (`claude-usage.ts`: each
+  Claude session's last cumulative `modelUsage`, so a resume never recounts), and the subagents extension
+  sets `PI_USAGE_PARENT=<parent sid>:<worker id>` in every worker's spawn env (the worker's records name
+  their parent from it).
   Not covered by Sova's tsconfig, with these exceptions: the server imports
   `pi-config/extensions/mode/state.ts`, `minor.ts`, `delegate.ts` and `spec.ts` (`server/mode-state.ts`,
   `server/delegate.ts`, `server/spec-settings.ts`; hence `allowImportingTsExtensions`),
@@ -193,12 +197,12 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
   window rule, `[1m]` or natively 1M else 200k, and the list rule that adds `opus[1m]` and
   `claude-fable-5-1[1m]` after their listed base; the provider, `agent_models` and the subagents
   roster use the same file), and the worker-transcript protocol is imported by
-  `server/insights.ts`, `worker-restore.ts`, `worker-adapters.ts`, `transcript-usage.ts` and
+  `server/insights.ts`, `worker-restore.ts`, `worker-adapters.ts` and
   `claude-transcript.ts`: `pi-config/extensions/subagents/worker-transcript.ts` (types, the one
   manifest fold `readWorkerManifests`, usage helpers), `subagents/adapters/index.ts` and `pi.ts`,
   `claude-code/transcript-adapter.ts` and `claude-code/provider/session-records.ts` (the per-backend
-  readers: locating a worker's transcript and counting its usage, for restored workers and for
-  every `/ws/watch` usage total; the dev watcher does not watch these, so an edit there reaches a
+  readers: locating a worker's transcript and reading its turns, model and context fill for
+  restored workers; the dev watcher does not watch these, so an edit there reaches a
   running server only at its next restart). The shared fork core (`pi-config/extensions/subagents/fork/`,
   one owner of every fork's cache logic: Sova's "Fork from here" and the background forks /explain
   runs) has a server half: `server/chat-manager.ts`, `server/session-fork.ts` and their tests import
@@ -534,9 +538,8 @@ Frontend is SolidJS (NOT React): signals/stores, `<For>/<Show>`, `onCleanup` for
   `SessionManager.appendUsage()`; only caller is `dist/core/cache-warmer.js:249` with
   `kind:"cache_warm"`). Cache warming is ON by default (`getCacheWarmingMode()` →`"streaming"`,
   `dist/core/settings-manager.js:637`), so expect these in webapp-owned sessions. The webapp hides
-  both from the transcript (`server/transcript.ts:175` and `:315`) and counts only the usage ones in
-  session totals (`piUsageTally`, `server/transcript-usage.ts:64`, through the subagents pi adapter
-  `pi-config/extensions/subagents/adapters/pi.ts:109`; deduped by entry id). They never move context
+  both from the transcript (`server/transcript.ts:175` and `:315`) and never counts them: a cache
+  warm's spend is the usage ledger's record, written when the warm call ends (llm-inflight `runtime.ts`). They never move context
   fill: `contextForBranch` reads assistant-message usage only (`messageContextTokens`,
   `server/transcript.ts:397`).
   `compaction` entries also gained a `systemMessage` field (additive; we ignore it).

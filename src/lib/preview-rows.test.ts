@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { PREVIEW_NOT_KEPT, type PreviewView } from "../../shared/preview-links";
-import { makerLine, previewRow, previewTitle, RECIPIENT_OFF_CONFIRM, RECIPIENT_OFF_LABEL, recipientOffName, recipientOffNote, senderLine, stateLine, turnOffConfirmForGood, turnOffLabel, turnOffNote } from "./preview-rows";
+import { makerLine, previewRow, previewTitle, senderLine, stateLine } from "./preview-rows";
 
 const NOW = Date.parse("2026-09-30T00:00:00.000Z");
 const view = (over: Partial<PreviewView>): PreviewView => ({
@@ -118,21 +118,4 @@ test("a running copy's link: its endpoint, its copy's state, and Start only whil
   assert.equal(previewRow(view({ running: false }), NOW).start, null);
   // A turned-off copy link is not startable from its row.
   assert.equal(previewRow(view({ instance: "in_abc", endpoint: "web.http", copy: { state: "stopped", slot: 1 }, state: "off" }), NOW).start, null);
-});
-
-test("each Turn Off names its scope: the preview with its recipients' links, or one person's link", () => {
-  assert.equal(turnOffLabel(0), "Turn Off Preview");
-  assert.equal(turnOffLabel(1), "Turn Off Preview + 1 Link");
-  assert.equal(turnOffLabel(3), "Turn Off Preview + 3 Links");
-  assert.equal(RECIPIENT_OFF_LABEL, "Turn Off Link");
-  assert.equal(recipientOffName("Fatoom Wife"), "Turn Off Fatoom Wife's Link");
-});
-
-test("a Turn Off's second click says the link ends for good, and the app keeps running", () => {
-  assert.equal(turnOffConfirmForGood(0), "Turn Off for Good?");
-  assert.equal(turnOffConfirmForGood(2), "Turn Off All 3 Links for Good?");
-  assert.equal(turnOffNote(0), "The link stops working for good. Your app keeps running; make a New Preview to share it again.");
-  assert.equal(turnOffNote(1), "This link and the 1 sent from it stop working for good. Your app keeps running; make a New Preview to share it again.");
-  assert.equal(RECIPIENT_OFF_CONFIRM, "Turn Off for Good?");
-  assert.equal(recipientOffNote("Fatoom Wife"), "Fatoom Wife's link stops working for good.");
 });

@@ -2,18 +2,27 @@ import { createSignal, For, type JSX, onCleanup, onMount, Show } from "solid-js"
 import { PREVIEW_PURPOSE_MAX } from "../../shared/preview-links";
 import { getProjectPreviews, mintPreview, runProjectVerb, turnOffPreview } from "../lib/api";
 import { createPoll } from "../lib/poll";
-import { previewRow, RECIPIENT_OFF_CONFIRM, RECIPIENT_OFF_LABEL, recipientOffName, recipientOffNote, senderLine, turnOffConfirmForGood, turnOffLabel, turnOffNote } from "../lib/preview-rows";
+import { previewRow, senderLine } from "../lib/preview-rows";
 import {
+  DELETE_ALL_TIP,
+  DELETE_CONFIRM,
+  deleteFailed,
+  deleteLabel,
+  deleteNote,
   type PreviewGroup,
   parsePort,
+  PREVIEW_DELETED,
   PREVIEW_EXPIRY_CHOICES,
   previewGroups,
   previewWarning,
+  RECIPIENT_DELETE_LABEL,
+  recipientDeleteConfirm,
+  recipientDeleted,
+  recipientDeleteName,
+  recipientDeleteNote,
+  recipientDeleteTip,
   recipientName,
-  recipientOffDone,
-  recipientOffTip,
   sentToLine,
-  TURN_OFF_ALL_TIP,
 } from "../lib/previews";
 import { resolveAppLink, sessionIndex, sessionIndexVersion } from "../lib/session-links";
 import { announce, copyText, toast } from "../lib/ui-state";
@@ -41,9 +50,9 @@ function SessionLink(props: { href: string | null; children: JSX.Element }) {
 /**
  * A project's preview links (§mesh.public/preview-card): one row per active preview with what it is
  * for, its coding session, branch and what it serves, whether it serves now, who made it, its
- * expiry, Copy Link and Open (the kept link, or one minted in this page) and Turn Off Preview
- * (every link sent from it too; on New Preview's line when it is the only row); the people it was
- * sent to on a Sent to line, each with a Turn Off Link of their own; then New Preview, which opens
+ * expiry, Copy Link and Open (the kept link, or one minted in this page) and Delete Preview (for
+ * good, every link sent from it too; on New Preview's line when it is the only row); the people it
+ * was sent to on a Sent to line, each with a Delete Link of their own; then New Preview, which opens
  * the form with the warning. A running copy's link shows the copy's
  * state (Running, Starting, Stopped) and, stopped, Start: the operator's `up`, the only thing that
  * starts it (a visit never does). Read every 5 seconds while the page shows.
@@ -117,7 +126,7 @@ export function PreviewsCard(props: { projectId: string }) {
     }
   };
 
-  /** A second click turns it off, for good; `note` says so while it waits (shown, and announced), `done` is the toast. */
+  /** A second click deletes it (turns it off, for good); `note` says so while it waits (shown, and announced), `done` is the toast. */
   const off = async (id: string, done: string, note: string) => {
     if (armed() !== id) {
       armSeq++;
@@ -130,7 +139,7 @@ export function PreviewsCard(props: { projectId: string }) {
       await turnOffPreview(id);
       toast(done);
     } catch (x) {
-      toast(`Couldn't turn it off. ${errText(x)}`);
+      toast(deleteFailed(errText(x)));
     }
     poll.refetch();
   };
@@ -152,14 +161,14 @@ export function PreviewsCard(props: { projectId: string }) {
     }
   };
 
-  /** One preview and New Preview showing: its Turn Off moves to New Preview's line, at its right. */
+  /** One preview and New Preview showing: its Delete moves to New Preview's line, at its right. */
   const solo = () => list().length === 1 && !formOpen() && (!address() || !!address()!.url);
 
-  /** A row's own Turn Off: the preview and every link sent from it, or, for a sibling listed alone, that person's link. */
+  /** A row's own Delete: the preview and every link sent from it, or, for a sibling listed alone, that person's link. */
   const offPerson = (g: PreviewGroup) => (g.preview.siblingOf ? recipientName(g.preview) : null);
   const offNote = (g: PreviewGroup) => {
     const person = offPerson(g);
-    return person ? recipientOffNote(person) : turnOffNote(g.recipients.length);
+    return person ? recipientDeleteNote(person) : deleteNote(g.recipients.length);
   };
   const noteId = (id: string) => `preview-off-note-${id}`;
   const TurnOff = (p: { group: PreviewGroup }) => {
@@ -169,16 +178,16 @@ export function PreviewsCard(props: { projectId: string }) {
       <button
         type="button"
         class="button button-sm button-destructive previews-off"
-        title={person() ? recipientOffTip(person()!) : TURN_OFF_ALL_TIP}
+        title={person() ? recipientDeleteTip(person()!) : DELETE_ALL_TIP}
         aria-describedby={armed() === v().id ? noteId(v().id) : undefined}
-        onClick={() => void off(v().id, person() ? recipientOffDone(person()!) : "Preview turned off.", offNote(p.group))}
+        onClick={() => void off(v().id, person() ? recipientDeleted(person()!) : PREVIEW_DELETED, offNote(p.group))}
         onBlur={() => disarm(v().id)}
       >
-        {armed() === v().id ? (person() ? RECIPIENT_OFF_CONFIRM : turnOffConfirmForGood(p.group.recipients.length)) : person() ? recipientOffName(person()!) : turnOffLabel(p.group.recipients.length)}
+        {armed() === v().id ? (person() ? recipientDeleteConfirm(person()!) : DELETE_CONFIRM) : person() ? recipientDeleteName(person()!) : deleteLabel(p.group.recipients.length)}
       </button>
     );
   };
-  /** While a Turn Off waits for its second click: what goes away for good, and what doesn't. */
+  /** While a Delete waits for its second click: what goes away for good, and what doesn't. */
   const OffNote = (p: { group: PreviewGroup }) => (
     <Show when={armed() === p.group.preview.id}>
       <p class="list-meta previews-off-note" id={noteId(p.group.preview.id)}>
@@ -197,7 +206,7 @@ export function PreviewsCard(props: { projectId: string }) {
       <h2 class="orgs-h2" id="project-previews">
         Previews
       </h2>
-      <p class="orgs-line">Share a web app running on this computer, the whole site at its own address, until you turn it off.</p>
+      <p class="orgs-line">Share a web app running on this computer, the whole site at its own address, until you delete it.</p>
       <Show when={poll.error() && !poll.data()}>
         <p class="field-error">Couldn't read this project's previews. {poll.error()}</p>
       </Show>
@@ -263,17 +272,17 @@ export function PreviewsCard(props: { projectId: string }) {
                                   <button
                                     type="button"
                                     class="button button-sm button-destructive previews-recipient-off"
-                                    title={recipientOffTip(name())}
-                                    aria-label={armed() === r.id ? undefined : recipientOffName(name())}
+                                    title={recipientDeleteTip(name())}
+                                    aria-label={armed() === r.id ? undefined : recipientDeleteName(name())}
                                     aria-describedby={armed() === r.id ? noteId(r.id) : undefined}
-                                    onClick={() => void off(r.id, recipientOffDone(name()), recipientOffNote(name()))}
+                                    onClick={() => void off(r.id, recipientDeleted(name()), recipientDeleteNote(name()))}
                                     onBlur={() => disarm(r.id)}
                                   >
-                                    {armed() === r.id ? RECIPIENT_OFF_CONFIRM : RECIPIENT_OFF_LABEL}
+                                    {armed() === r.id ? recipientDeleteConfirm(name()) : RECIPIENT_DELETE_LABEL}
                                   </button>
                                   <Show when={armed() === r.id}>
                                     <p class="previews-off-note" id={noteId(r.id)}>
-                                      {recipientOffNote(name())}
+                                      {recipientDeleteNote(name())}
                                     </p>
                                   </Show>
                                 </li>

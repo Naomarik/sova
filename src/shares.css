@@ -119,7 +119,7 @@
 .previews-row-branch { min-width: 0; max-width: 32ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0; border: 0; background: none; color: inherit; text-align: left; cursor: pointer; }
 .previews-row-branch:focus-visible { outline: var(--focus-ring); outline-offset: 2px; border-radius: var(--radius-xs); }
 .previews-row-branch-open { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
-/* The people a preview was sent to: a label, then each name with its own small Turn Off Link. */
+/* The people a preview was sent to: a label, then each name with its own small Delete Link. */
 .previews-sent { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-1) var(--space-3); margin-top: var(--space-1); }
 .previews-sent-label { color: var(--color-ink-muted); }
 .previews-recipients { flex: 1 1 12rem; min-width: 0; display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-3); margin: 0; padding: 0; list-style: none; }
@@ -129,12 +129,12 @@
 .previews-recipient-name { font-weight: var(--fw-medium); color: var(--color-ink); }
 .previews-recipient-off.button-sm { min-height: 24px; padding: 0 var(--space-2); }
 /* The row's buttons on a line under it: Start, Copy Link and Open at the left, the preview's own
-   Turn Off at the right, apart from them, each as wide as its label. */
+   Delete at the right, apart from them, each as wide as its label. */
 .previews-row-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
 .previews-row-actions > .previews-off { margin-left: auto; }
-/* New Preview, and the only row's Turn Off at the right of the same line. */
+/* New Preview, and the only row's Delete at the right of the same line. */
 .previews-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2) var(--space-3); }
-/* While a Turn Off waits for its second click: that the link ends for good, under the buttons (a
+/* While a Delete waits for its second click: that the link ends for good, under the buttons (a
    recipient's under their own line). */
 .previews-off-note { margin: 0; font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-2); white-space: normal; overflow-wrap: anywhere; }
 .previews-recipient > .previews-off-note { flex-basis: 100%; }

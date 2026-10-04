@@ -2,7 +2,28 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { PreviewView } from "../../shared/preview-links";
-import { activePreviews, parsePort, previewGroups, previewWarning, recipientName, runningLine, sentToLine, turnOffConfirm } from "./previews";
+import {
+  activePreviews,
+  DELETE_ALL_TIP,
+  DELETE_CONFIRM,
+  deleteFailed,
+  deleteLabel,
+  deleteNote,
+  parsePort,
+  PREVIEW_DELETED,
+  previewGroups,
+  previewWarning,
+  RECIPIENT_DELETE_LABEL,
+  recipientDeleteConfirm,
+  recipientDeleted,
+  recipientDeleteName,
+  recipientDeleteNote,
+  recipientDeleteTip,
+  recipientName,
+  runningLine,
+  sentToLine,
+  turnOffConfirm,
+} from "./previews";
 
 const view = (over: Partial<PreviewView>): PreviewView => ({
   id: "pv_aaaaaaaaaaaaaaaa",
@@ -75,4 +96,28 @@ test("a sibling whose original isn't listed keeps its own row, still saying who 
 test("the original's Turn Off confirm counts every link it ends", () => {
   assert.equal(turnOffConfirm(0), "Turn Off Preview?");
   assert.equal(turnOffConfirm(2), "Turn Off All 3 Links?");
+});
+
+test("the card's Delete names its scope: the preview with its recipients' links, or one person's link", () => {
+  assert.equal(deleteLabel(0), "Delete Preview");
+  assert.equal(deleteLabel(1), "Delete Preview + 1 Link");
+  assert.equal(deleteLabel(3), "Delete Preview + 3 Links");
+  assert.equal(DELETE_ALL_TIP, "Deletes this preview and every link sent from it.");
+  assert.equal(RECIPIENT_DELETE_LABEL, "Delete Link");
+  assert.equal(recipientDeleteName("Fatoom Wife"), "Delete Fatoom Wife's Link");
+  assert.equal(recipientDeleteTip("Fatoom Wife"), "Deletes only Fatoom Wife's link.");
+});
+
+test("a Delete's second click says the link ends for good, and the app keeps running", () => {
+  assert.equal(DELETE_CONFIRM, "Delete for Good?");
+  assert.equal(deleteNote(0), "The link stops working for good. Your app keeps running; make a New Preview to share it again.");
+  assert.equal(deleteNote(1), "This link and the 1 sent from it stop working for good. Your app keeps running; make a New Preview to share it again.");
+  assert.equal(recipientDeleteConfirm("Fatoom Wife"), "Delete Fatoom Wife's Link for Good?");
+  assert.equal(recipientDeleteNote("Fatoom Wife"), "Fatoom Wife's link stops working for good.");
+});
+
+test("a Delete's done and failed toasts", () => {
+  assert.equal(PREVIEW_DELETED, "Preview deleted.");
+  assert.equal(recipientDeleted("Fatoom Wife"), "Fatoom Wife's link deleted.");
+  assert.equal(deleteFailed("Not found."), "Couldn't delete it. Not found.");
 });

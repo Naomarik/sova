@@ -70,20 +70,6 @@ export function makerLine(createdBy: string): { text: string; href: string | nul
   return m ? { text: "Made by the overseer", href: sessionHref(m[1]!) } : null;
 }
 
-/** A preview's own Turn Off, which ends every link sent from it too: the count of its listed recipients' links in the label. */
-export const turnOffLabel = (recipients: number): string => (recipients > 0 ? `Turn Off Preview + ${recipients} ${recipients === 1 ? "Link" : "Links"}` : "Turn Off Preview");
-
-/** A recipient's own Turn Off, on their Sent to line: short to see, their name to hear. */
-export const RECIPIENT_OFF_LABEL = "Turn Off Link";
-export const recipientOffName = (name: string): string => `Turn Off ${name}'s Link`;
-
-/** A turned-off link never comes back (it answers 410 from then on), so a second click confirms that, and the line shown while it waits says so. */
-export const turnOffConfirmForGood = (recipients: number): string => (recipients > 0 ? `Turn Off All ${recipients + 1} Links for Good?` : "Turn Off for Good?");
-export const RECIPIENT_OFF_CONFIRM = "Turn Off for Good?";
-export const turnOffNote = (recipients: number): string =>
-  `${recipients > 0 ? `This link and the ${recipients} sent from it stop` : "The link stops"} working for good. Your app keeps running; make a New Preview to share it again.`;
-export const recipientOffNote = (name: string): string => `${name}'s link stops working for good.`;
-
 /** `minted` is the link this page's own New Preview answered with, if any. */
 export function previewRow(v: PreviewView, now: number, minted?: string): PreviewRow {
   const id = v.sessionId ?? null;

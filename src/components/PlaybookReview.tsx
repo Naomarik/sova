@@ -1,0 +1,127 @@
+import { createSignal, Show } from "solid-js";
+import type { ProjectRuntimeView } from "../../shared/project-runtime";
+import { reviewAction, reviewBanner, type PlaybookReviewWords } from "../../shared/playbook-review";
+import { ApiError, approveMergeProjectRuntime } from "../lib/api";
+import { requestListRefresh } from "../lib/list-refresh";
+import { projectSessionHref } from "../lib/projects-route";
+import { announce, toast } from "../lib/ui-state";
+import { Banner } from "./ui";
+
+const errText = (err: unknown) => (err instanceof ApiError || err instanceof Error ? err.message : String(err));
+
+/** A deploy recipe is ticked step by step where its review is: the Software card. */
+export const TICK_ON_CARD = "Tick every step of the deploy recipe on the Software card first.";
+/** The Needs-you row has no room for the steps. */
+export const REVIEW_ON_PAGE = "Review the deploy recipe on the project page and tick every step first.";
+
+/** A proposed run's words from the registry the page reads, or null while nothing is proposed. */
+export function proposedRun(v: ProjectRuntimeView | undefined): (PlaybookReviewWords & { path?: string }) | null {
+  const pb = v?.playbook;
+  if (!v || v.playbookState !== "proposed" || !pb) return null;
+  return {
+    label: pb.label,
+    branch: pb.branch ?? "its branch",
+    target: pb.target ?? "main",
+    ...(pb.branchHash ? { hash: pb.branchHash } : {}),
+    approved: pb.branchApproved === true,
+    approves: pb.approves,
+    ...(pb.path ? { path: pb.path } : {}),
+  };
+}
+
+/**
+ * Approve & Merge (§app.project-runtime/approve-merge): one gesture that approves the hash the run proposes
+ * (skipped once approved: the label is then Merge Branch) and merges its branch. A refusal is said under the
+ * button; done, the list and digest are read again so the Needs-you item goes at once.
+ */
+export function ApproveMergeButton(props: {
+  projectId: string;
+  run: Pick<PlaybookReviewWords, "hash" | "approved" | "target">;
+  /** A deploy recipe's ticked step keys, sent with the approval. */
+  ticked?: readonly string[];
+  /** Why it can't go yet (a deploy recipe with steps not ticked): disabled, with this as its reason. */
+  blocked?: string | null;
+  class?: string;
+  onDone?(view?: ProjectRuntimeView): void;
+}) {
+  const [busy, setBusy] = createSignal(false);
+  const [error, setError] = createSignal<string | null>(null);
+  const label = () => reviewAction(props.run);
+  const go = async () => {
+    const hash = props.run.hash;
+    if (busy() || !hash) return;
+    if (props.blocked && !props.run.approved) {
+      setError(props.blocked);
+      announce(props.blocked);
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      const view = await approveMergeProjectRuntime(props.projectId, hash, props.ticked);
+      const done = `Merged into ${props.run.target}.`;
+      toast(done);
+      announce(done);
+      props.onDone?.(view);
+    } catch (err) {
+      const why = errText(err);
+      setError(why);
+      announce(why);
+      props.onDone?.();
+    } finally {
+      setBusy(false);
+      requestListRefresh();
+    }
+  };
+  return (
+    <Show when={label()}>
+      {(l) => (
+        <span class="playbook-review-act">
+          <button type="button" class={`button button-sm button-primary${props.class ? ` ${props.class}` : ""}`} aria-disabled={busy() || (props.blocked && !props.run.approved) ? "true" : undefined}
+            title={props.blocked && !props.run.approved ? props.blocked : undefined}
+            onClick={() => void go()}
+          >
+            {l()}
+          </button>
+          <Show when={error()}>{(e) => <span class="field-error" role="status">{e()}</span>}</Show>
+        </span>
+      )}
+    </Show>
+  );
+}
+
+/**
+ * The project page's banner while a verb playbook run is proposed (§app.project-runtime/review): what it
+ * proposes and what to do, Approve & Merge, and the run's session (its last message is the report).
+ */
+export function PlaybookReviewBanner(props: { projectId: string; runtime: ProjectRuntimeView | undefined; onDone(view?: ProjectRuntimeView): void }) {
+  return (
+    <Show when={proposedRun(props.runtime)}>
+      {(run) => {
+        const words = () => reviewBanner(run());
+        return (
+          <div class="project-archive-confirm">
+            <Banner
+              tone="warn"
+              icon="branch"
+              title={words().title}
+              body={words().body}
+              action={
+                <span class="playbook-banner-actions">
+                  <Show when={run().path}>
+                    {(path) => (
+                      <a class="button button-sm" href={projectSessionHref(props.projectId, path())}>
+                        Read Report
+                      </a>
+                    )}
+                  </Show>
+                  <ApproveMergeButton projectId={props.projectId} run={run()} blocked={run().approves === "deploy" ? TICK_ON_CARD : null} onDone={props.onDone} />
+                </span>
+              }
+            />
+          </div>
+        );
+      }}
+    </Show>
+  );
+}

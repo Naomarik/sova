@@ -164,7 +164,7 @@ export function registerProviderIfEnabled(pi: ExtensionAPI, bridge: ClaudeSessio
 	if (typeof pi.registerCommand === "function") pi.registerCommand(CLAUDE_LOGIN_COMMAND, {
 		description: "Move this chat to another Claude login: /claude-login <login id>",
 		handler: async (args, ctx) => {
-			if (pi.getFlag(CLAUDE_PROVIDER_FLAG) !== true) throw new Error("Claude Code models are off (Settings → Experimental).");
+			if (pi.getFlag(CLAUDE_PROVIDER_FLAG) !== true) throw new Error("Claude Code models are off: this pi runs without --claude-code-provider.");
 			let branch: readonly unknown[] = [];
 			try { branch = ctx.sessionManager.getBranch(); } catch { /* no branch yet */ }
 			await pickChatLogin(args, { id: ctx.sessionManager.getSessionId(), branch }, { bridge, logins: hostLogins() });

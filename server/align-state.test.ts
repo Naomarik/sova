@@ -343,3 +343,27 @@ describe("readAlignScan: a file that shrank since its size was read", () => {
     assert.notEqual(out, "hung");
   });
 });
+
+describe("adversarial review: the record rides the align row (§chat.alignment-review/record)", () => {
+  test("a review op's snapshot keeps its record through the server's transcript row; a malformed record is no row", () => {
+    const review = {
+      reviewer: () => ({ use: { backend: "pi", model: "fake/sol", effort: "high" }, via: "primary" as const, retry: null }),
+      startText: () => "start",
+    };
+    let docs: AlignDocument[] = [];
+    const run = (call: unknown) => {
+      const { details } = applyAlignCall(docs, call, { ...env, review });
+      if (details.doc) docs = [...docs.filter((d) => d.id !== details.doc!.id), details.doc];
+      return details;
+    };
+    run({ ops: [{ op: "create", title: "Queue", summary: "Persist it." }] });
+    const started = run({ ops: [{ op: "review", phase: "plan", state: "running", reason: "persistence" }] });
+    const [row] = normalizeEntry(result(started, null));
+    assert.equal(row?.kind, "align");
+    assert.deepEqual(row?.align?.doc?.review, { plan: { state: "running", reason: "persistence", model: "pi · fake/sol · high", at: env.now } });
+    assert.deepEqual(row?.align?.changes, [{ kind: "review", phase: "plan", state: "running" }]);
+    const bad = JSON.parse(JSON.stringify(started));
+    bad.doc.review.plan.state = "maybe";
+    assert.notEqual(normalizeEntry(result(bad, null))[0]?.kind, "align", "a malformed record fails the snapshot, like any field");
+  });
+});

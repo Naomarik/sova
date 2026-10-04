@@ -45,6 +45,7 @@ import {
 	HANDOFF_ENTRY,
 	type HandoffEntryData,
 	handoffPath,
+	isNothingNote,
 	latestHandoff,
 	NOTE_MESSAGE,
 	noteFile,
@@ -196,7 +197,7 @@ export default function compactHandoff(pi: ExtensionAPI, options: CompactHandoff
 		waiting.delete(sessionId);
 		const instructions = [
 			wait.focus,
-			`A handoff note written just before this compaction is saved at ${wait.data.path} and is added back right after this summary.`,
+			isNothingNote(wait.data.note) ? "" : `A handoff note written just before this compaction is saved at ${wait.data.path} and is added back right after this summary.`,
 		].filter(Boolean).join("\n\n");
 		started.set(sessionId, at);
 		ctx.compact({
@@ -370,7 +371,8 @@ export default function compactHandoff(pi: ExtensionAPI, options: CompactHandoff
 		try { waiting.delete(idOf(ctx)); } catch { /* no session */ }
 		const branch = ctx.sessionManager.getBranch() as BranchEntry[];
 		const data = latestHandoff(branch);
-		if (!data) return;
+		// A "nothing" note is the newest word: it adds nothing, and no older note comes back in its place.
+		if (!data || isNothingNote(data.note)) return;
 		const kept = noteInKeptTail(branch, event.compactionEntry.firstKeptEntryId, event.compactionEntry.id, data.note);
 		pi.sendMessage(
 			{ customType: NOTE_MESSAGE, display: false, content: restoreText(data, now(), kept), details: { v: 1, path: data.path, at: data.at } },

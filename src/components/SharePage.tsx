@@ -542,7 +542,7 @@ function CreateFields(props: {
             Add
           </button>
         </div>
-        <p class="field-hint">Each person gets their own link, so you see who opened it and can turn one off alone.</p>
+        <p class="field-hint">Each person gets their own link, so you see who opened it and can delete one alone.</p>
         <Show when={props.labels.length > 0}>
           <ul class="share-people" aria-label="Added people">
             <For each={props.labels}>

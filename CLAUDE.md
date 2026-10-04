@@ -88,12 +88,14 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
   owns the pool's marks every spawn honours — `<login dir>/.sova-leaving` `{v: 1, at, reason}`
   (never chosen), the per-process leases `<login dir>/.sova-leases/<pid>.json` `{v: 1, owner,
   users, busy, children, lastActiveAt, at}` (`LoginUsers`, a `globalThis` singleton that also
-  releases idle users of a leaving login), the borrow requests `<agent dir>/claude-pool/wants/*.json`
+  releases idle users of a leaving login), the chats' hand-picks `<login dir>/.sova-picks/<pi session
+  id>.json` `{v: 1, session, at}` (written by the provider on a pick, dropped when that chat leaves the
+  login; the pool agent never returns a picked login for idleness), the borrow requests `<agent dir>/claude-pool/wants/*.json`
   `{v: 1, at, pid, excludeAccounts?, excludeLogins?, only?}` that `acquire` / `failoverAsync` (and
   `take`, a pick in the composer that names one login) write and wait on, and the agent heartbeat `<agent dir>/claude-pool/agent.json` `{v: 1, pid, at, device}`;
   and the session's hidden `claude-login` custom
   entry `{v: 1, login, label?, from?, fromLabel?, reason?, resetsAt?, text?}` (`reason` `limit` | `auth` |
-  `manual`, the user's pick), written by the provider and read by Sova, which renders one with `from` as
+  `manual`, the user's pick | `moved`, its login stopped being usable here), written by the provider and read by Sova, which renders one with `from` as
   a note row; the web's login switch calls the provider's `/claude-login <login id>` command handler
   directly, like `/mode`, so its argument is a contract too), worktrees: the session's `worktrees` custom
   entry (the tracked set, whole snapshot, newest on the branch wins) and its `worktree-merge`
@@ -151,7 +153,11 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
   merge card's details) and `git.ts` (builtins only: the extension's own "is this branch merged"
   probe, git by argv; `server/git-diff.ts` imports it too, for `mergedReviewBase`, the review
   base of an already merged branch, which show-changes' `git.ts` shares), `server/sandbox-state.ts` and `server/link-sandbox.ts` import
-  `pi-config/extensions/sandbox/state.ts` (builtins only: the `sandbox` entry and its restore),
+  `pi-config/extensions/sandbox/state.ts` (builtins only: the `sandbox` entry and its restore; its
+  optional `workers: "off"` field makes the three states, §chat.sandbox/states, and `on` keeps
+  meaning the session's own tools for every reader), `server/overseer.ts` imports `sandbox/policy.ts`
+  (`loadPolicyFile`, `policyFilePath`: the state a new session starts in, for the Overseer's
+  lowering check),
   `server/link-sandbox.ts` also imports `sandbox/session-policy.ts` and `policy.ts` (builtins only,
   with their siblings `backend.ts`, `backends/*` and `env.ts`: `resolveSessionPolicy`, the one
   resolution of a session's sandbox policy from its agent dir, cwd, session id and tracked
@@ -249,8 +255,8 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
   only a session ON a registry-known login (`claude-accounts.json`); with no registry a session has
   no login and the force no-ops — use the login dir's own `FAKE_LIMIT` / `FAKE_AUTH` files (the
   fake's transport-level failure) instead. The fake's initialize answer lists one model
-  (`fake-opus`), so `claude-code-cli/fake-opus` can be a session's model once `settings.json`
-  gains `{"version":1,"experimental":{"claudeCodeProvider":true}}`. The pool of logins
+  (`fake-opus`), so `claude-code-cli/fake-opus` can be a session's model: the Claude Code provider
+  is always on, and `<agent dir>/sova/settings.json` needs no key for it. The pool of logins
   across devices has its own multi-host run, `node scripts/claude-pool-e2e/run.mjs` (three Sova
   containers on an `--internal` Docker network in address-identity mode, fake `claude`, no
   Tailscale; `--down` removes it, `--keep` leaves desk on 127.0.0.1:4821): it needs the mesh lab's
@@ -267,12 +273,16 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
   `aliases.json` there. Servers refresh their own copy (`<state root>/model-prices.json`) every 3 days; `SOVA_PRICES_FETCH=off` stops that.
 - The share listener serves the share page (`/h/`, `/i/`, `/h/assets/`) from `dist-share/` (`vite build --mode share`);
   `SOVA_SHARE_DIST=<dir>` names another build, read per request (tests point it at a stub page). With no built page it answers 503.
-- `pnpm test` — unit tests (`server/*.test.ts`, `src/lib/*.test.ts`). They're ESM TypeScript with
-  extensionless imports, so they run under `tsx --test`; plain `node --test <file>` fails with
-  ERR_MODULE_NOT_FOUND. One runner, `scripts/run-tests.mjs --runtime node|bun` (`pnpm test`,
-  `pnpm run test:bun`, the project's `test.run`), holds the file list; `*.browser.test.ts` files
-  need Solid's browser build and run in a second pass with `--conditions=browser`;
-  `pnpm test -- <files>` runs only those, each routed to its pass.
+- `pnpm test` — unit tests (`server/*.test.ts`, `src/lib/*.test.ts`), **on Bun** (the summary line
+  reads `run-tests (bun): …`). One runner, `scripts/run-tests.mjs` (`pnpm test`, the project's
+  `test.run`), holds the file list; `*.browser.test.ts` files need Solid's browser build and run in
+  a second pass with `--conditions=browser`; `pnpm test -- <files>` runs only those, each routed to
+  its pass. Verify your work with `pnpm test` and `pnpm run dev:hermetic`, which are Bun, the
+  runtime the user runs; never switch to Node unless the user asks. Node only on request:
+  `pnpm run test:node` (`--runtime node`, `tsx --test`; plain `node --test <file>` fails with
+  ERR_MODULE_NOT_FOUND on the extensionless imports) or `SOVA_RUNTIME=node pnpm test`; an explicit
+  `--runtime` wins. No Bun found: the runner exits 2 naming `pnpm run test:node`, never a quiet
+  Node pass. `pnpm run test:bun` is kept as an explicit Bun alias.
 - `pi-config/install.sh` links `pi-config/` into `~/.pi/agent`, except `settings.json`: that is a seed
   deep-merged into a real `~/.pi/agent/settings.json` (seed keys win, runtime keys such as the chosen
   model stay there and never in the repo). `--check` verifies links and seed keys without changing
@@ -304,13 +314,21 @@ Rules:
   `head`).
 - The one verb form (Sova as its own project, `.sova/project.json`: slot 0 adopts
   `sova-runtime.service`): the operator's Apply on the project's Services tab, or
-  `sova-project apply --project ~/webapps/sova --confirm`. It is refused while any hosted session is
+  `sova-project apply --checkout ~/webapps/sova --confirm` (apply names its instance: the main
+  checkout's is slot 0; `--project` alone is refused, `invalid-request`). It is refused while any hosted session is
   busy (your own turn included, so an agent never gets it through), and otherwise schedules
   `scripts/sova-restart-gate.mjs` 30 s out, which re-reads the live records when it fires and
   restarts only if nothing is busy then (else exit 75, logged in
   `<state root>/project-services/logs/restart-gate.log`). up, down, reset and teardown of slot 0 are
   refused. Never run the gate script against `sova-runtime.service` by hand, and never point a test
   at it: tests and gates use a stand-in unit.
+- On macOS the live server is the launchd agent `sova-runtime` (`~/Library/LaunchAgents/sova-runtime.plist`,
+  README's launchd example), and every rule above holds. Its restart is
+  `launchctl kickstart -k gui/$(id -u)/sova-runtime`, never run by hand from a hosted session: use the
+  verb form (`sova-project apply --checkout ~/webapps/sova --confirm`; its gate runs detached from the server, waits the
+  30 s itself and then kickstarts the agent) or ask the user. Its pid and state:
+  `launchctl print gui/$(id -u)/sova-runtime`; its start time: `ps -o lstart= -p <pid>`; its log:
+  `~/Library/Logs/sova-runtime.log`.
 - The claude-code bridge is a `globalThis` singleton (`getSessionBridge()`, Symbol.for registry): a
   fresh session that reloads the extension still gets the bridge built from the code loaded first,
   so provider edits also need a restart. Before trusting a live test, check the unit's start time
@@ -325,47 +343,45 @@ session, apply server-graph edits from the orchestrator itself, batched, as the 
 Hosted runtimes are never idle-disposed: they live until archived (running subagents die with it),
 a foreign-writer reload, or server shutdown.
 
-## Server runtime (Node or Bun)
+## Server runtime (Bun; Node on request)
 
-The server runs on Node (`node --import tsx server/index.ts`) or Bun (`bun server/index.ts`, Bun
-1.4.2, pinned in `mise.toml`). Spec: `§app/server-runtime`. One module decides,
-`server/runtime-choice.ts` (node builtins only, run as a plain `node` script by the launcher):
+The server runs on Bun (`bun server/index.ts`, Bun 1.4.2, pinned in `mise.toml`), and on Node
+(`node --import tsx server/index.ts`) only when asked for. Spec: `§app/server-runtime`. One module
+decides, `server/runtime-choice.ts` (node builtins only, run as a plain `node` script by the
+launcher):
 
-- **See what runs:** `GET /api/health` → `runtime: {name, version, chosen, fallback?}`. `name` is
-  this process (`process.versions.bun`), `chosen` what the setting asked for at its start;
-  `fallback` `{at, reason}` appears only when they differ. The start log line names it too
-  (`sova server on http://… (bun 1.4.2)`).
-- **The setting:** `<state root>/runtime.json` `{"runtime": "node" | "bun"}` (the state root is
-  `<agent dir>/sova/`, so a hermetic `.agent` has its own). Missing or malformed = node.
-  `SOVA_RUNTIME=node|bun` in the environment wins. No Settings picker.
-- **Who follows it:** `scripts/start-server.sh` (the launcher; it `exec`s the server, so a unit's
-  MainPID is the server), `pnpm run dev:server` (each watcher restart decides again) and
-  `pnpm run dev:hermetic`. Helper scripts the server spawns follow `process.execPath`, so on Bun
-  they run on Bun. `pnpm start`, `dev:server:tsx` and `pnpm test` stay on Node/tsx.
+- **See what runs:** `GET /api/health` → `runtime: {name, version, chosen}`. `name` is this
+  process (`process.versions.bun`), `chosen` what the environment asked for at its start. The
+  start log line names it too (`sova server on http://… (bun 1.4.2)`).
+- **Asking for Node:** `SOVA_RUNTIME=node` in the environment, or `--node` as the launcher's first
+  argument (it then sets `SOVA_RUNTIME=node` for the server). Anything else = Bun. No setting file
+  and no Settings picker: a `runtime.json` in the state root is ignored.
+- **Who follows it:** `scripts/start-server.sh` (the launcher, also `pnpm start`; it `exec`s the
+  server, so a unit's MainPID is the server), `pnpm run dev:server` (each watcher restart decides
+  again), `pnpm run dev:hermetic` (`dev:hermetic:node` = the same on Node), and the unit tests
+  (`pnpm test`, the project's test verb, merge-round's master re-runs). Helper scripts the server
+  spawns follow `process.execPath`, so on Bun they run on Bun. `dev:server:tsx` is Node by name.
 - **Bun binary:** `$SOVA_BUN`, else `bun` on PATH, else `mise which bun`. `SOVA_NODE` names the
-  node binary the launcher uses (default `node` on PATH).
-- **Fallback to Node:** when Bun is chosen but not found, or when three Bun boots in a row never
-  reached listening. Counter: `<state root>/runtime-bun-boots` (the launcher adds one per Bun
-  start; a Bun server deletes it once listening; choosing node resets it; delete it by hand to
-  give Bun three fresh tries). The reason lands in `<state root>/runtime-fallback.json` `{at,
-  reason}` and on the launcher's stderr (the unit's journal).
-- **Switch:** edit `runtime.json` (or `SOVA_RUNTIME` in the unit's environment), then restart under
-  the rules of **Live server restart** above (the gate, never `systemctl restart` from a hosted
-  session). The change takes effect only at that restart. Roll back = `{"runtime": "node"}` plus the
-  same restart.
-- **The live unit** (`sova-runtime.service`) still runs node directly, and its ExecStart changes to
-  `scripts/start-server.sh` only when the user decides to switch: the operator edits the unit,
-  `systemctl --user daemon-reload`, then a gated restart. An agent never edits the unit. README's
-  "Run on Node or Bun" has the complete unit example (`%h` paths, the same ExecStartPre, PATH,
-  Restart and TimeoutStopSec as the live unit) and the switch/rollback steps.
-- **Testing on Bun:** in a worktree, `SOVA_RUNTIME=bun pnpm run dev:hermetic` (or
-  `SOVA_RUNTIME=bun SOVA_PORT=48xx …`), or write `.agent/sova/runtime.json`; check
-  `curl -s 127.0.0.1:<port>/api/health`. `SOVA_BUN=/nonexistent` drives the fallback.
+  node binary the launcher uses (default `node` on PATH). Installed copies (install.sh, mesh-vps,
+  mesh-termux) get Bun from `scripts/fetch-bun.sh`: bumping `bun` in `mise.toml` needs that
+  release's checksum lines in `scripts/bun-release.txt`, or fetch-bun refuses.
+- **No fallback:** Bun not found = the launcher (and the dev watcher) print
+  `[runtime] bun not found: …` and exit 1; nothing starts. A Bun server that crashes at boot just
+  fails (the unit's `Restart=` retries it); nothing switches to Node, nothing counts boots.
+- **Switch the live unit:** set `Environment=SOVA_RUNTIME=node` (or `--node` on its ExecStart),
+  `systemctl --user daemon-reload`, then restart under the rules of **Live server restart** above
+  (the gate, never `systemctl restart` from a hosted session). An agent never edits the unit.
+- **The live unit** (`sova-runtime.service`) runs `scripts/start-server.sh`, so it is on Bun.
+  README's "Run on Bun (or Node)" has the complete unit example (`%h` paths, the same ExecStartPre,
+  PATH, Restart and TimeoutStopSec as the live unit) and the switch steps.
+- **Testing a server:** in a worktree, `pnpm run dev:hermetic` (Bun) or `SOVA_PORT=48xx pnpm run
+  dev:hermetic`; check `curl -s 127.0.0.1:<port>/api/health`. On Node only when asked:
+  `pnpm run dev:hermetic:node`. `SOVA_BUN=/nonexistent` drives the "bun not found" error.
 - **Bun quirks:** the registry is `docs/bun-quirks.md` (each quirk's Bun version, upstream issue,
   workaround, canary and repro). Workarounds live only in `server/runtime-quirks.ts`, probe the
   behaviour and never name a runtime. Every WebSocket in `server/` is built with its
   `cappedWebSocketServer` / `cappedWebSocket` (ws `maxPayload` and `handshakeTimeout` aren't
-  enforced on Bun; Sova enforces both itself). Tests on Bun only through `pnpm run test:bun`: it
+  enforced on Bun; Sova enforces both itself). Tests on Bun only through `pnpm test`: it
   sets HOME before bun starts (Bun's `os.homedir()` ignores an in-process change), puts the real
   node and `mise bin-paths` first on PATH (shims refuse in a throwaway HOME; tests spawn `node` and
   `python3`), and sets `SOVA_PRICES_FETCH=off`. `bun test` itself runs with TZ=UTC and

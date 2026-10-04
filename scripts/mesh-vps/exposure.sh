@@ -2,6 +2,11 @@
 # Exposure proof, from the laptop (read-only on the VPS):
 #   scripts/mesh-vps/exposure.sh probe              public $VPS_PUBLIC_IP:{4800,4801,4802,4890,2089,8443,10443} must TIME OUT; $VPS_CONTROL_PORTS must connect,
 #                                                   and 443 too when SHARE_FRONT is vhost, caddy or funnel (the public share front)
+#                                                   With VPS_RELAY_PORT set (the dial-out relay port, §mesh/lan): VPS_RELAY=off → that port
+#                                                   must TIME OUT too. An internet relay is NOT available yet: Sova refuses a public
+#                                                   relay address until the separate, unprivileged accept process exists, so `off` is
+#                                                   the only state today. VPS_RELAY=on is kept for that process: the port must connect,
+#                                                   and a TLS probe with no client certificate must get no HTTP answer
 #   scripts/mesh-vps/exposure.sh snapshot <file>    the production state: listening sockets + `systemctl is-active` of $PROD_UNITS (skipped if empty)
 #   scripts/mesh-vps/exposure.sh compare <a> <b>    identical, or print the difference and fail
 # A TCP connect that neither connects nor is refused within 6 s counts as a timeout (the firewall drops it on the public interface).
@@ -33,12 +38,24 @@ case "${1:-}" in
       r=$(connect "$VPS_PUBLIC_IP" "$p"); printf 'public   %s:%-5s %s\n' "$VPS_PUBLIC_IP" "$p" "$r"
       [ "$r" = timeout ] || bad=1
     done
+    if [ -n "${VPS_RELAY_PORT:-}" ]; then
+      r=$(connect "$VPS_PUBLIC_IP" "$VPS_RELAY_PORT"); printf 'relay    %s:%-5s %s (VPS_RELAY=%s)\n' "$VPS_PUBLIC_IP" "$VPS_RELAY_PORT" "$r" "${VPS_RELAY:-off}"
+      case "${VPS_RELAY:-off}" in
+        off) [ "$r" = timeout ] || bad=1 ;;
+        on)
+          [ "$r" = open ] || { log "VPS_RELAY=on but the relay port isn't open"; bad=1; }
+          code=$(curl -sk -m 6 -o /dev/null -w '%{http_code}' "https://$VPS_PUBLIC_IP:$VPS_RELAY_PORT/api/peer/hello" || true)
+          printf 'relay    no-cert TLS probe: HTTP %s\n' "$code"
+          [ "$code" = 000 ] || { log "the relay port answered HTTP without a pinned client certificate"; bad=1; } ;;
+        *) die "VPS_RELAY must be off or on (got $VPS_RELAY)" ;;
+      esac
+    fi
     [ $bad = 0 ] && echo "PASS: every Sova port (incl. Caddy admin, the serve ports and the share port) times out from the public IP${SHARE_FRONT:+; the $SHARE_FRONT share front is the only public way in}" || { echo "FAIL"; exit 1; }
     ;;
   snapshot)
     out=${2:?snapshot <file>}
     [ -n "$PROD_UNITS" ] || log "PROD_UNITS is empty: the snapshot has the listening sockets only (no units check)"
-    vps "ss -ltnH | awk '{print \$4}' | grep -vE ':($SOVA_PORT|$SOVA_PEER_PORT|$FRONTDOOR_PORT|$SHARE_PORT|2089)\$' | sort -u; \
+    vps "ss -ltnH | awk '{print \$4}' | grep -vE ':($SOVA_PORT|$SOVA_PEER_PORT|$FRONTDOOR_PORT|$SHARE_PORT|2089${VPS_RELAY_PORT:+|$VPS_RELAY_PORT})\$' | sort -u; \
          for u in $PROD_UNITS; do printf '%s %s\n' \"\$u\" \"\$(systemctl is-active \$u 2>&1)\"; done" > "$out"
     echo "snapshot: $out ($(wc -l < "$out") lines)"
     ;;

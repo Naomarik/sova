@@ -52,12 +52,19 @@ which is also its live view: its tool calls render as tool cards as they happen.
   workspace (the roster's contacts, every project's transcripts) or pi's or Sova's state (the
   host's link store, every session), even when the root holds them. A path argument that fails is
   refused with the reason; a listing or search leaves such entries out; a secret file inside the
-  root is still refused. No shell, no edit or write tool. Its prompt is Sova's
+  root is still refused. One folder outside the root is open to `read` alone: this conversation's
+  own attachments folder (`<stateRoot>/attachments/<its session id>/`, where an image the
+  operator pastes into its composer is saved, §chat/images), so it sees what the operator attaches, an image as
+  an image. A path there must be inside that folder both as written and at its realpath (a symlink
+  in it that leads elsewhere is refused); another conversation's attachments and the rest of Sova's
+  state stay refused, and `grep`, `find` and `ls` never reach it. The prompt says so. No shell, no
+  edit or write tool. Its prompt is Sova's
   (`server/project-overseer-prompt.md`), re-rendered at every run with the project, the level in
   force (a standalone project's with the standalone level meanings, and only its coding-session, prompt
   and look limits; gathering sessions and promotions appear only while placed), the caps, while placed
-  the organization's sections (the roster: name, role, decision areas,
-  never contact details; the project's main stakeholder, "Main stakeholder: {name}: decides every
+  the organization's sections (the roster: each active person's name, id, role, language, decision
+  areas, skills and voice, so it knows how to address and write to each of them (greeting,
+  language, register), never contact details; the project's main stakeholder, "Main stakeholder: {name}: decides every
   area of this project that no one else on the roster decides."; the gap guidance), its ideas, a line saying the operator's to-dos are the operator's own
   list (never their text: it reads them with `sova_todos` when the operator asks,
   §app.project-overseer/ideas-and-todos), its notes, while placed the organization's About text (§app.organizations/about) and, last, the operator's extra instructions. Model and thinking from `overseer.json`, else the new-session
@@ -302,7 +309,7 @@ user row.
   decision's owner area), `sova_list_sessions` / `sova_read_session` (the project's gathering sessions as their
   participants see them; the project's coding sessions, every one its statecharts record, the
   overseer's and the operator's, wherever its worktree is; and ordinary sessions whose folder is
-  inside the project root; never another project's, an overseer's or a subagent's own), `sova_roster` (read; both it and `sova_project` name the main stakeholder, as the prompt
+  inside the project root; never another project's, an overseer's or a subagent's own), `sova_roster` (read: every person as the prompt's roster shows them, plus their status when not active, never contact; both it and `sova_project` name the main stakeholder, as the prompt
   does), `sova_todos` (operator turns only, §app.project-overseer/ideas-and-todos),
   `sova_previews` (the project's preview links, §app.project-overseer/previews; `sova_project`
   lists its active ones too, under "Previews"), `sova_send_status` (below).
@@ -460,7 +467,9 @@ user row.
   - `delegate` only when `codingMode.mode` is `delegate`: "Delegate is off for this project's coding
     sessions; the operator can allow it on the project page." Automatic never allows it.
   - `align` never: "Align needs someone to answer its questions, and nobody answers a coding
-    session's."
+    session's." The one exception is not the overseer's: a verb playbook's run
+    (§app.project-runtime/verb-playbooks) gets align on beside the project's mode, from Sova, when it
+    starts, because the operator answers its questions (§app.project-runtime/onboard).
   - `spec` may be turned on; it may not be turned off while the project's mode (or Automatic)
     has it on: "Spec is on for this project's coding sessions; only the operator can turn it off
     on the project page."
@@ -580,13 +589,13 @@ user row.
 
 - **What they are for.** A preview link (§mesh.public/preview) shows one of the project's coding
   sessions' running apps to a stakeholder, the whole site at its own public address, until it is
-  turned off or expires. The prompt has a **Previews** section, and the two tools' descriptions
+  deleted or expires. The prompt has a **Previews** section, and the two tools' descriptions
   say the same: what previews are for, that a link reaches anyone who has it, to make one only
   for a stakeholder who should see the app now, to check it answers, that the overseer never sees
   a link, that a preview reaches a person with `sova_send_to_person` and its `preview` id (they get
   their own link to it, §app.outreach/links) or through the operator, who has the link on the
-  project page, and to turn it off once it has served its purpose (every link sent from it goes
-  off with it). If the app went down, whoever runs it (the coding session, prompted with
+  project page, and to delete it once it has served its purpose, which is for good (every link
+  sent from it stops working with it, and nothing brings one back). If the app went down, whoever runs it (the coding session, prompted with
   `sova_send`) starts it again: Sova never starts an app for a preview. A running copy's link is the
   one exception: the operator may Start its stopped copy from the Previews card
   (§mesh.public/preview-card); a visit never starts anything.
@@ -637,10 +646,11 @@ user row.
   its state, and `down` stops one at any level from L0, never held; a copy with an active share link
   answers `needs-confirm` to it (§app.project-services/share), so the prompt says to revoke its links
   first (`revoke {instance}`), then stop it.
-- **Turn off.** `sova_preview {op: "off", id}` turns off one of this project's previews at once, at
-  any level and in any run, never held and never waiting for a review: it only takes something
-  away. It is the card's Turn Off (`POST /api/previews/<id>/off`), and it is logged in the
-  overseer's activity.
+- **Delete.** `sova_preview {op: "off", id}` deletes one of this project's previews at once and for
+  good, at any level and in any run, never held and never waiting for a review: it only takes
+  something away. It is the card's Delete (`POST /api/previews/<id>/off`); its result says
+  "Deleted {id}: its link answers "no longer active" for good.", and it is logged in the
+  overseer's activity as "Deleted a preview link" (with its purpose).
 - **One shape for what comes next.** Both tools put each preview in their result's `details` in one
   fixed shape, `PreviewHandoff` (`shared/preview-links.ts`): `{v: 1, id, linkKept, purpose,
   expiresAt, projectId, sessionId, branch, target, state, running, createdBy}`, never the

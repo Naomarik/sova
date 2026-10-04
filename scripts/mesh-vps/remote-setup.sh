@@ -5,7 +5,9 @@
 #                 both for this host's `uname -m`: x86_64, or aarch64/arm64; any other stops before downloading
 #   ~/$R/app      the git archive staged in ~/$R/app.new, built there (pnpm install --frozen-lockfile + vite build,
 #                 both modes; pnpm via this node's corepack), then swapped in (previous kept as app.prev); a failed
-#                 build stops before the swap
+#                 build stops before the swap. Its .bun/bin/bun is the Bun the server runs on: the build its mise.toml
+#                 pins, sha256-checked against its scripts/bun-release.txt (scripts/fetch-bun.sh; the previous app's
+#                 copy when it is that version), so it swaps in and out with the app
 #   ~/$R/agent    the agent dir (PI_CODING_AGENT_DIR); auth.json created EMPTY ({}, 0600) if absent, never overwritten
 #   ~/$R/home     the isolated HOME for every build and run step (the user's own dotfiles are never read)
 #   ~/$R/tmp      TMPDIR for every build and run step (0700): nothing of ours lands in /tmp; holds jiti's extension cache,
@@ -17,7 +19,7 @@
 #                 claude (CLAUDE_BIN, else `command -v claude` in the user's login shell, else common install locations) is
 #                 appended to PATH in sova-mesh.env; not found = a warning, never a failed deploy
 # Env in: R NODE_VERSION NODE_SHA256_X64 NODE_SHA256_ARM64 CADDY_VERSION CADDY_SHA512_AMD64 CADDY_SHA512_ARM64 SOVA_PORT SOVA_PEER_PORT VPS_TAILNET_IP VPS_ID VPS_LABEL
-#         CLAUDE_BIN (optional, the claude executable to use)
+#         CLAUDE_BIN (optional, the claude executable to use), SOVA_RUNTIME (optional: node = run Sova on Node)
 set -euo pipefail
 : "${R:?}" "${NODE_VERSION:?}" "${NODE_SHA256_X64:?}" "${NODE_SHA256_ARM64:?}" "${CADDY_VERSION:?}" "${CADDY_SHA512_AMD64:?}"
 : "${CADDY_SHA512_ARM64:?}" "${SOVA_PORT:?}" "${SOVA_PEER_PORT:?}" "${VPS_TAILNET_IP:?}"
@@ -89,6 +91,9 @@ fi
 [ -f "$BASE/app.new/package.json" ] || { log "no staged app in $BASE/app.new"; exit 1; }
 export HOME="$BASE/home" TMPDIR="$BASE/tmp" PATH="$BASE/node/bin:/usr/bin:/bin" COREPACK_HOME="$BASE/home/.cache/corepack" COREPACK_ENABLE_DOWNLOAD_PROMPT=0 CI=1
 cd "$BASE/app.new"
+[ -x "$BASE/app/.bun/bin/bun" ] && mkdir -p .bun/bin && cp -p "$BASE/app/.bun/bin/bun" .bun/bin/bun
+sh scripts/fetch-bun.sh "$BASE/app.new/.bun" >/dev/null || { log "bun: install failed: the running app is unchanged"; exit 1; }
+log "bun: $(.bun/bin/bun --version) (sha256 verified at install)"
 log "pnpm: $(corepack pnpm --version) install --frozen-lockfile (in app.new)"
 nice -n 10 corepack pnpm install --frozen-lockfile --reporter=append-only > "$BASE/tmp/pnpm-install.log" 2>&1 \
   || { tail -20 "$BASE/tmp/pnpm-install.log" >&2; log "pnpm install failed: the running app is unchanged"; exit 1; }
@@ -137,7 +142,9 @@ HOME=$BASE/home
 SOVA_SYNC_CLAUDE_DIR=$BASE/home/.claude
 TMPDIR=$BASE/tmp
 PATH=$SERVICE_PATH
+SOVA_BUN=$BASE/app/.bun/bin/bun
 EOF
+[ "${SOVA_RUNTIME:-}" != node ] || echo "SOVA_RUNTIME=node" >> "$BASE/sova-mesh.env.tmp"
 mv "$BASE/sova-mesh.env.tmp" "$BASE/sova-mesh.env"
 
 # --- warm the extension cache ---------------------------------------------------------------------

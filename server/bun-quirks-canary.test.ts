@@ -1,9 +1,11 @@
 // Canaries for docs/bun-quirks.md: each asserts that a Bun bug Sova works around STILL EXISTS. They
-// run only under Bun (`pnpm run test:bun`) and skip on Node. When a Bun upgrade fixes a bug, its
+// run only under Bun (`pnpm test`) and skip on Node. When a Bun upgrade fixes a bug, its
 // canary fails: delete the workaround the registry names, then the canary and the registry row.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { createServer as createHttpServer } from "node:http";
+import { createServer as createHttpServer, IncomingMessage } from "node:http";
+import { randomBytes } from "node:crypto";
+import { Duplex } from "node:stream";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { createServer as createNetServer, type AddressInfo } from "node:net";
 import os from "node:os";
@@ -13,7 +15,7 @@ import { after, describe, test } from "node:test";
 import { WebSocket, WebSocketServer } from "ws";
 
 // A canary is about Bun by definition: the one place outside the launcher that names it.
-const skip = typeof (process.versions as Record<string, string | undefined>).bun === "string" ? false : "a Bun canary (pnpm run test:bun)";
+const skip = typeof (process.versions as Record<string, string | undefined>).bun === "string" ? false : "a Bun canary (pnpm test runs Bun)";
 const tmp = mkdtempSync(join(os.tmpdir(), "sova-bun-canary-"));
 after(() => rmSync(tmp, { recursive: true, force: true }));
 
@@ -125,6 +127,23 @@ describe("Bun quirk canaries (docs/bun-quirks.md)", { skip }, () => {
     for await (const part of res.body as unknown as AsyncIterable<Uint8Array>) biggest = Math.max(biggest, part.length);
     http.close();
     assert.ok(biggest > 64 * 1024, `fixed: reads are at most ${biggest} bytes; the slicing fetch (useSlicedProviderReads in server/runtime-quirks.ts) may go`);
+  });
+
+  test("ws-stream: the ws shim can't upgrade a request that arrived on a plain stream", () => {
+    const sock = new Duplex({ read() {}, write(_c, _e, cb) { cb(); } });
+    const req = new IncomingMessage(sock as never);
+    req.method = "GET";
+    req.url = "/";
+    req.headers = { host: "x", upgrade: "websocket", connection: "Upgrade", "sec-websocket-key": randomBytes(16).toString("base64"), "sec-websocket-version": "13" };
+    const wss = new WebSocketServer({ noServer: true });
+    let threw = false;
+    try {
+      wss.handleUpgrade(req, sock, Buffer.alloc(0), () => {});
+    } catch {
+      threw = true;
+    }
+    sock.destroy();
+    assert.equal(threw, true, "fixed: the shim upgrades a plain stream; streamWebSocketServer/streamWebSocket in server/runtime-quirks.ts may use `ws` itself");
   });
 
   test("event-loop-delay: monitorEventLoopDelay samples exclude the resolution interval", async () => {

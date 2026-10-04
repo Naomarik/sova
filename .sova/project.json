@@ -9,8 +9,8 @@
     },
     {
       "id": "node-modules",
-      "run": ["cp", "-a", "--reflink=auto", "-T", "${main}/node_modules", "node_modules"],
-      "inputs": ["pnpm-lock.yaml"],
+      "run": ["node", "scripts/copy-tree.mjs", "${main}/node_modules", "node_modules"],
+      "inputs": ["pnpm-lock.yaml", "scripts/copy-tree.mjs"],
       "timeout": 600
     },
     {
@@ -39,7 +39,7 @@
     }
   },
   "test": {
-    "run": ["node", "scripts/run-tests.mjs", "--runtime", "node"],
+    "run": ["node", "scripts/run-tests.mjs"],
     "smoke": ["shared/project-contract.test.ts"]
   },
   "share": {"allow": false}

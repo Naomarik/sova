@@ -49,7 +49,7 @@ import { receiverSpecial, startTopicDelivery } from "./topic-delivery";
 import { projectOverseerOfPath } from "./project-overseer-store";
 import { canonicalPath, LIVE_DIR, resolveSessionPath, SESSIONS_DIR } from "./paths";
 import { stateRoot } from "./state-root";
-import { markListening, runtimeInfo } from "./runtime-choice";
+import { runtimeInfo } from "./runtime-choice";
 import { cappedWebSocket } from "./runtime-quirks";
 import { claudeCodeModelCount, listModels, listRegistryModels, resolveContext } from "./models";
 import { setFavorite } from "./model-favorites";
@@ -100,7 +100,7 @@ import { claudeLoginEnv, registerClaudeAccountRoutes } from "./claude-accounts";
 import { modeInfo, parseModeRequest, readMode } from "./mode-state";
 import { parseSandboxBody } from "./sandbox-state";
 import { WORKER_ID_RE } from "./worker-resume";
-import { attachWebSockets, upgradeSovaSocket } from "./ws";
+import { attachWebSockets, upgradeSovaSocket, upgradeSovaStreamSocket } from "./ws";
 import { meshApi, meshRoutes, startMesh, stopMesh } from "./mesh";
 import { captureBootBuild } from "./mesh/build-id";
 import { mountDetails } from "./mesh/details";
@@ -112,6 +112,7 @@ import { deliverLinkMessage, heldSessionPath, notifyLinksChanged, setLinkOrigin,
 import { linkSandboxOf } from "./link-sandbox";
 import { mountSync } from "./sync";
 import { mountClaudePool } from "./claude-pool";
+import { clearPicksOf } from "./claude-pool/agent";
 import { markSeen } from "./seen";
 import {
   attentionForWire,
@@ -173,8 +174,8 @@ const SERVER_HEAD: string | null = (() => {
     return null;
   }
 })();
-/** The runtime this process runs on, the one the setting chose, and a fallback's reason (§app.server-runtime/health). */
-const SERVER_RUNTIME = runtimeInfo(process.env, stateRoot());
+/** The runtime this process runs on and the one the choice asks for (§app.server-runtime/health). */
+const SERVER_RUNTIME = runtimeInfo(process.env);
 
 // Embedded pi runtimes / extensions must never take the server down.
 process.on("uncaughtException", (err) => console.error("[uncaughtException]", err));
@@ -792,29 +793,18 @@ app.get("/api/themes", (c) => c.json(listThemes()));
 // The playbooks catalog with each schedule's state, and the schedules' routes (server/schedule-routes.ts).
 registerScheduleRoutes(app);
 
-// Sova's own settings (server/web-settings.ts): today one experimental switch. GET reads the
-// stored value, PUT replaces it. The switch drives the `claude-code-provider` extension flag, so
-// it applies to sessions created after the change — an open chat keeps the runtime it started with.
+// Sova's own settings (server/web-settings.ts): Settings → Experimental's switches. GET reads the
+// stored values, PUT replaces the known ones it carries and ignores the rest.
 app.get("/api/settings", (c) => c.json(readWebSettings()));
 app.put("/api/settings", async (c) => {
   let body: unknown;
   try {
     body = await c.req.json();
   } catch {
-    return c.json({ error: "Expected JSON body { experimental: { claudeCodeProvider } }" }, 400);
+    return c.json({ error: "Expected JSON body { experimental: { ... } }" }, 400);
   }
   const result = writeWebSettings(body);
-  if ("error" in result) return c.json({ error: result.error }, 400);
-  // Turning the switch on registers the provider now, so the very next GET /api/models offers the
-  // Claude Code models without a server restart. Best-effort, like the startup warm-up.
-  if (result.experimental.claudeCodeProvider) {
-    try {
-      await warmClaudeCodeProvider(await getModelRuntime(), getAgentDir());
-    } catch (err) {
-      console.warn("[server] claude-code warm-up skipped:", err instanceof Error ? err.message : String(err));
-    }
-  }
-  return c.json(result);
+  return "error" in result ? c.json({ error: result.error }, 400) : c.json(result);
 });
 
 // Settings → Modes → Delegate: which worker each kind of
@@ -949,8 +939,8 @@ app.put("/api/settings/summarizer", async (c) => {
   return "error" in result ? c.json({ error: result.error }, result.status) : c.json(result);
 });
 
-// Is the Claude Code CLI actually usable? `claude --version` plus how many of its models the
-// shared runtime holds. Answering from the runtime rather than a second live probe keeps the
+// Is the Claude Code CLI actually usable (Settings → Accounts' status line)? `claude --version`
+// plus how many of its models the shared runtime holds. Answering from the runtime rather than a second live probe keeps the
 // Settings dialog free of CLI spawns beyond the version check, and reports what the picker will
 // really show.
 app.get("/api/settings/claude-status", async (c) => {
@@ -1007,7 +997,7 @@ app.post("/api/mode", async (c) => {
   return modeRefusal(c, () => chat.switchMode(request.patch));
 });
 
-// The sandbox extension's on/off for one held chat (§chat/sandbox): its /sandbox handler runs
+// The sandbox extension's state for one held chat (§chat.sandbox/states): its /sandbox handler runs
 // directly (server/sandbox-state.ts). "unsupported" when the runtime has no sandbox extension.
 app.post("/api/sandbox", async (c) => {
   const path = resolveSessionPath(c.req.query("path"));
@@ -1022,7 +1012,7 @@ app.post("/api/sandbox", async (c) => {
   if ("error" in parsed) return c.json({ error: parsed.error }, 400);
   const chat = heldChat(path);
   if (!chat) return c.json({ error: "That session isn't open on this server; open the chat first" }, 404);
-  return c.json(await chat.applySandbox(parsed.on));
+  return c.json(await chat.applySandbox(parsed.state));
 });
 
 // Resume one restored subagent worker of a held chat, idle (server/worker-resume.ts): the subagents
@@ -1503,6 +1493,8 @@ const linkedAgents = async (id: string, path: string) => meshLinks.linkedAgents(
 setLinksSource(linkedAgents);
 setInsightLinks(linkedAgents);
 onSessionArchived((id) => void meshLinks.endFor(id));
+// A chat archived or deleted ends its hand-picks of Claude logins (§app.claude-logins/idle-pin).
+onSessionArchived((id) => clearPicksOf(getAgentDir(), id));
 // Topic queues (§chat.topics/delivery): batches to a topic's receiver when it is idle or settles.
 // An org's ordinary sessions (a project's coding sessions, unregistered workspace files) get their
 // batches; only what the runtime opens as special, and workers, are refused (receiverSpecial).
@@ -1640,9 +1632,7 @@ export const server = serve({ fetch: app.fetch, port: PORT, hostname: HOST }, (i
   // The link extension's tools call this server back here: the real bound port (PORT=0 in tests).
   setLinkOrigin(linkOrigin(info.port));
   console.log(`sova server on http://${HOST}:${info.port} (${SERVER_RUNTIME.name} ${SERVER_RUNTIME.version})`);
-  // A Bun boot that got this far is healthy: its failed-boot count starts over (§app.server-runtime/fallback).
-  markListening(stateRoot());
-  startMesh({ fetch: app.fetch, upgrade: upgradeSovaSocket });
+  startMesh({ fetch: app.fetch, upgrade: upgradeSovaSocket, streamUpgrade: upgradeSovaStreamSocket });
   // Public links: the share listener, a gateway's router, a routed host's ingress (server/share/runtime.ts).
   void startShareRuntime();
   // Project instances back to their desired state (server/project-services/routes.ts).
@@ -1698,7 +1688,8 @@ configureLlmInflight({
   liveDir: LIVE_DIR,
   workers: () => readUnadoptedWorkers(),
   mesh: {
-    peers: () => (meshApi.enabled() ? meshApi.peers().map((p) => ({ id: p.id, url: peerUrl(p) })) : []),
+    // A dial-out pairing has no URL to open a feed to (§mesh/lan): its count isn't shown here.
+    peers: () => (meshApi.enabled() ? meshApi.peers().filter((p) => !p.lan).map((p) => ({ id: p.id, url: peerUrl(p) })) : []),
     selfId: () => meshApi.self().id,
     connect: (url) => cappedWebSocket(`${url.replace(/^http/, "ws")}/ws/watch?feed=llm`, undefined, { handshakeTimeout: 10_000, maxPayload: 16 * 1024 }),
   },
@@ -1739,9 +1730,9 @@ configureReadiness({
   terminal: (s) => terminalSession(s, !!heldChat(s.path)),
 });
 
-// With the experimental switch on, register the Claude Code provider now rather than when the
-// user first opens a session, so its models are in GET /api/models for the picker straight away.
-// A no-op when the switch is off, and never fatal: see warmClaudeCodeProvider.
+// Register the Claude Code provider now rather than when the user first opens a session, so its
+// models are in GET /api/models for the picker straight away (§app.claude-code-provider/always-on).
+// Never fatal, with or without a `claude` CLI: see warmClaudeCodeProvider.
 void (async () => {
   try {
     await warmClaudeCodeProvider(await getModelRuntime(), getAgentDir());

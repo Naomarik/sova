@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { AttentionItem, SessionSummary } from "../../shared/protocol";
-import { needsYouCut, needsYouOpen, needsYouRows, needsYouShown, storedNeedsYouOpen } from "./needs-you";
+import { needsYouCut, needsYouItems, needsYouOpen, needsYouRows, needsYouShown, needsYouTitle, storedNeedsYouOpen } from "./needs-you";
 
 const session = (id: string): SessionSummary =>
   ({
@@ -131,4 +131,20 @@ test("a worktree waiting for your OK and a stalled team list in Needs you; merge
 test("asks you, team stalled and ready to merge are decide items: never a Needs you row", () => {
   const d = digest([item("a", "decide", "asks-you", 100), item("b", "decide", "team-stalled", 100), item("c", "decide", "ready-to-merge", 100)]);
   assert.deepEqual(needsYouRows(d, ["a", "b", "c"].map(session)), []);
+});
+
+test("a proposed playbook run's row carries what its Approve & Merge needs; no other row does (§app.project-runtime/review)", () => {
+  const playbook = { projectId: "p1", label: "Project verbs", hash: "sha256:abc", approved: false, branch: "sova/v", target: "main" };
+  const rows = needsYouRows(digest([{ ...item("a", "act", "playbook-review", 20, "Project verbs: approve abc and merge into main"), playbook }, item("b", "act", "error", 10, "boom")]), [session("a"), session("b")]);
+  assert.deepEqual(rows.map((r) => [r.session.id, r.playbook?.hash ?? null]), [["a", "sha256:abc"], ["b", null]]);
+});
+
+test("a project's deploy items of no session list in the region, newest first, narrowed by a search (§app.project-services/deploy-status)", () => {
+  const item = (kind: AttentionItem["kind"], since: number, title: string, tier: AttentionItem["tier"] = "act") => ({ id: `${kind}:${title}`, path: "", title, where: `/srv/${title}`, tier, kind, since, detail: `${kind} of ${title}`, href: `#/projects/${title}` });
+  const digest = { items: [item("deploy-failed", 1, "site"), item("deploy-request", 3, "shop"), item("held-act", 5, "org"), item("deploy-failed", 2, "other", "decide")] };
+  assert.deepEqual(needsYouItems(digest).map((i) => i.title), ["shop", "site"]);
+  assert.deepEqual(needsYouItems(digest, "SITE").map((i) => i.title), ["site"]);
+  assert.equal(needsYouTitle(0, 1), "1 deploy item waiting on you.");
+  assert.equal(needsYouTitle(2, 1), "The 2 sessions waiting on you, newest first, and 1 deploy item.");
+  assert.equal(needsYouTitle(1), "The 1 session waiting on you.");
 });

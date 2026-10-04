@@ -59,13 +59,17 @@ import {
 	legacyLine,
 	looksLikeUncapturedPlan,
 	openDocsOf,
+	reviewRequestMessage,
 	toMarkdown,
 	widgetText,
 	type AlignDocument,
+	type AlignReviewerSlot,
+	type AlignReviewPhase,
 	type LegacyAlignDoc,
 	type LegacyAlignEntryData,
 } from "./align.ts";
-import { registerAlignTool } from "./align-tool.ts";
+import { registerAlignTool, type AlignToolHost } from "./align-tool.ts";
+import { reviewStartText } from "./review-prompt.ts";
 import { ALIGN_OVERLAY_OPTIONS, alignWidget, createAlignViewer, type AlignViewer } from "./align-ui.ts";
 import { registerVisGuideTool, VIS_GUIDE_TOOL } from "./vis-guide-tool.ts";
 
@@ -79,7 +83,7 @@ import { MODE_WORKER_DISCOVER_EVENT, MODE_WORKER_EVENT, WORKER_ROLE_DISCOVER_EVE
 import { isMinorMode, MINOR_MODES, normalizeMinorModes, parseMinorFlag, workerMinorModes, type MinorMode } from "./minor.ts";
 import { MODE_CATEGORY_ID, modeCategoryItems } from "./palette.ts";
 import { applyModeSection, buildModeNote, buildSpecWriterPrompt, composePrompt, composeWorkerPrompt, DEFAULT_ROUTES, statusLabel } from "./prompt.ts";
-import { backendsOf, describeChoice, routeAll, routeNotice, routeWriter, slotNotice, type Discovery, type ProfileRoute, type SlotRoute } from "./routing.ts";
+import { backendsOf, describeChoice, routeAll, routeNotice, routeWriter, slotNotice, usable, type Discovery, type ProfileRoute, type SlotRoute } from "./routing.ts";
 import { SPEC_WRITER_LABEL, specBackends, specKey } from "./spec.ts";
 import { OFF_PROFILE_ID, pickEntryFor, profilesReader, resolveSubagents, restorePick, type ResolvedSubagents } from "../subagents/subagent-profiles.ts";
 import {
@@ -156,6 +160,8 @@ const discoveryTtl = (discovery: Discovery): number =>
 
 /** Tools removed from the orchestrator while strict delegate is on. */
 const STRICT_REMOVED_TOOLS = new Set(["edit", "write"]);
+/** The launch flag behind adversarial review (§chat.alignment-review/flag); Sova passes it per hosted session. */
+export const REVIEW_FLAG = "adversarial-review";
 
 /**
  * What changed in this switch. Old entries carry only `mode`; `active` is absent before per-session state.
@@ -200,6 +206,15 @@ export default function modeExtension(pi: ExtensionAPI): void {
 	};
 	const readDelegate = () => subagents().delegate;
 	const readSpec = () => subagents().spec;
+	/**
+	 * The `adversarial-review` flag, read once at session_start (the first point a caller's value is
+	 * visible) and kept: a live pi.getFlag throws once this runtime is replaced, and a probe that
+	 * settles after a session replacement still asks what it covers.
+	 */
+	let reviewFlag = false;
+	const reviewOn = (): boolean => reviewFlag;
+	/** The reviewer route a probe should cover: flag on, align on, not a worker, and the profile names one. */
+	const probedReviewer = () => (reviewOn() && hasMinor(active, "align") && !workerRole ? subagents().reviewer : null);
 	/** Re-read this chat's pick from its branch. */
 	function refreshPick(ctx: ExtensionContext): void {
 		try {
@@ -263,6 +278,9 @@ export default function modeExtension(pi: ExtensionAPI): void {
 	pi.events?.emit(WORKER_ROLE_DISCOVER_EVENT, { version: 1 });
 
 	pi.registerFlag("major", { description: "Start in a mode: normal | delegate", type: "string" });
+	// Adversarial review of alignments (§chat.alignment-review/flag). Its value is visible from
+	// session_start on (a caller's flags are applied after every factory ran); off is today, exactly.
+	pi.registerFlag(REVIEW_FLAG, { description: "Adversarial review of alignments (experimental)", type: "boolean", default: false });
 	pi.registerFlag("minor", {
 		description: `Start with minor modes on (comma-separated): ${MINOR_MODES.join(" | ")}, or none`,
 		type: "string",
@@ -386,8 +404,14 @@ export default function modeExtension(pi: ExtensionAPI): void {
 	function probeScope(): { key: string; backends: DelegateBackend[] } {
 		const delegate = active.mode === "delegate" ? (readDelegate() ?? undefined) : undefined;
 		const spec = hasMinor(active, "spec") && !workerRole ? readSpec() : undefined;
-		const backends = new Set<DelegateBackend>([...(delegate ? backendsOf(delegate) : []), ...(spec ? specBackends(spec) : [])]);
-		return { key: JSON.stringify([delegate ? delegateKey(delegate) : null, spec ? specKey(spec) : null]), backends: [...backends] };
+		const reviewer = probedReviewer();
+		const backends = new Set<DelegateBackend>([
+			...(delegate ? backendsOf(delegate) : []),
+			...(spec ? specBackends(spec) : []),
+			...(reviewer ? specBackends({ version: 1, writer: reviewer }) : []),
+		]);
+		const key = [delegate ? delegateKey(delegate) : null, spec ? specKey(spec) : null];
+		return { key: JSON.stringify(reviewer ? [...key, specKey({ version: 1, writer: reviewer })] : key), backends: [...backends] };
 	}
 
 	const probeWanted = (): boolean => probeScope().backends.length > 0;
@@ -754,14 +778,71 @@ export default function modeExtension(pi: ExtensionAPI): void {
 	});
 	pi.events?.emit(REMOTE_DISCOVER_EVENT, { version: 1 });
 
-	registerAlignTool(pi, {
+	/**
+	 * The chat's reviewer now (§chat.alignment-review/route): its profile's reviewer assessed like the
+	 * spec writer against the last discovery and the policy. null when the profile names none.
+	 */
+	function reviewerSlot(): AlignReviewerSlot | null {
+		const reviewer = subagents().reviewer;
+		if (!reviewer) return null;
+		const policy = readPolicy();
+		const route = routeWriter({ version: 1, writer: reviewer }, discoveries, (choice) => policyDenial(policy, choice.backend, choice.model))!;
+		const why = [route.primary.reason, route.fallback?.reason].filter(Boolean).join("; ");
+		return {
+			use: route.use,
+			via: route.via,
+			retry: route.via === "primary" && route.fallback && usable(route.fallback) ? route.fallback.choice : null,
+			...(route.via === "fallback" ? { reason: route.primary.reason ?? "primary unavailable" } : {}),
+			...(route.via === "none" ? { reason: `${why || "primary unavailable"}${route.fallback ? "" : "; no fallback is set"}` } : {}),
+		};
+	}
+	const alignHost: AlignToolHost = {
 		docs: () => alignDocs,
 		changed: (doc) => {
 			alignDocs = [...alignDocs.filter((d) => d.id !== doc.id), doc];
 			if (lastCtx) refreshAlignViews(lastCtx);
 		},
 		remoteTarget: () => remoteTarget,
-	});
+		review: () => (reviewOn() ? { reviewer: reviewerSlot, startText: reviewStartText } : undefined),
+	};
+	registerAlignTool(pi, alignHost);
+	/** Whether the review form of the align tool and /review are registered (once, at the first session_start with the flag on). */
+	let reviewRegistered = false;
+	function registerReview(): void {
+		if (reviewRegistered || !reviewOn()) return;
+		reviewRegistered = true;
+		registerAlignTool(pi, alignHost, true);
+		pi.registerCommand("review", {
+			description: "Ask for an alignment's adversarial review: /review plan|diff [al_N]",
+			getArgumentCompletions: (argumentPrefix) => {
+				const items = ["plan", "diff"].filter((value) => value.startsWith(argumentPrefix.trim())).map((value) => ({ value, label: value }));
+				return items.length > 0 ? items : null;
+			},
+			handler: async (args, ctx) => {
+				const m = /^(plan|diff)(?:\s+(al_[1-9]\d*))?$/.exec(args.trim());
+				if (!m) {
+					ctx.ui.notify("Usage: /review plan|diff [al_N]", "warning");
+					return;
+				}
+				if (!hasMinor(active, "align")) {
+					ctx.ui.notify("Review needs the align minor mode on (/align on)", "warning");
+					return;
+				}
+				const phase = m[1] as AlignReviewPhase;
+				const open = openDocsOf(alignDocs);
+				const id = m[2] ?? (open.length === 1 ? open[0]!.id : undefined);
+				if (!id) {
+					ctx.ui.notify(open.length === 0 ? "No open alignment to review" : `Name the alignment: /review ${phase} ${open.map((d) => d.id).join(" | ")}`, "warning");
+					return;
+				}
+				if (!alignDocs.some((d) => d.id === id)) {
+					ctx.ui.notify(`No alignment ${id} on this branch`, "warning");
+					return;
+				}
+				pi.sendUserMessage(reviewRequestMessage(id, phase), ctx.isIdle() ? undefined : { deliverAs: "followUp" });
+			},
+		});
+	}
 	registerVisGuideTool(pi);
 
 	/** One line per profile: the configured tuple(s) and, in delegate, what is actually in use. */
@@ -1377,6 +1458,9 @@ export default function modeExtension(pi: ExtensionAPI): void {
 	});
 
 	pi.on("session_shutdown", async () => {
+		// A probe still in flight belongs to this session's ctx, dead from here on: its result is
+		// dropped, never applied (renderStatus on a stale ctx throws, unhandled, in the server's warm-up).
+		dropProbe();
 		alignDocs = [];
 		legacyAlign = null;
 		liveViewer = undefined;
@@ -1468,6 +1552,8 @@ export default function modeExtension(pi: ExtensionAPI): void {
 		carriedOps = [];
 		settledTrees.clear();
 		toldWriter = undefined;
+		reviewFlag = pi.getFlag(REVIEW_FLAG) === true;
+		registerReview();
 		refreshPick(ctx);
 		restoreActiveState(event?.reason, ctx);
 		restoreAlign(ctx);

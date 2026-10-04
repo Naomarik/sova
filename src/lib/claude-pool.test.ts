@@ -26,15 +26,18 @@ test("the holder chip: this device, another device, free, stuck — each a diffe
 });
 
 test("actions: Return only for a held login not already leaving; Sign In Again for stuck or signed-out", () => {
-  assert.deepEqual(poolActions(login()), { returnable: true, signIn: false });
-  assert.deepEqual(poolActions(login({ holder: { device: "desk", label: "Desk", free: true, stuck: false, since: 1 } })), { returnable: false, signIn: false });
-  assert.deepEqual(poolActions(login({ holder: { device: "desk", label: "Desk", free: false, stuck: true, since: 1 } })), { returnable: false, signIn: true });
-  assert.deepEqual(poolActions(login({ returnAsked: true })), { returnable: false, signIn: false });
-  assert.deepEqual(poolActions(login({ standing: { state: "auth" } })), { returnable: true, signIn: true });
+  assert.deepEqual(poolActions(login()), { returnable: true, pinnable: true, signIn: false });
+  assert.deepEqual(poolActions(login({ holder: { device: "desk", label: "Desk", free: true, stuck: false, since: 1 } })), { returnable: false, pinnable: true, signIn: false });
+  assert.deepEqual(poolActions(login({ holder: { device: "desk", label: "Desk", free: false, stuck: true, since: 1 } })), { returnable: false, pinnable: true, signIn: true });
+  assert.deepEqual(poolActions(login({ returnAsked: true })), { returnable: false, pinnable: true, signIn: false });
+  assert.deepEqual(poolActions(login({ standing: { state: "auth" } })), { returnable: true, pinnable: true, signIn: true });
+  // A Mac's keychain-only login never leaves it: no Return, no pin (§app.claude-logins/macos-keychain).
+  assert.deepEqual(poolActions(login({ staysHere: true })), { returnable: false, pinnable: false, signIn: false });
 });
 
 test("moving and usage words", () => {
   assert.equal(movingText(login()), undefined);
+  assert.equal(movingText(login({ staysHere: true, moving: { op: "leave", state: "draining", reason: "idle" } })), "Stays on this Mac: its sign-in is in the macOS keychain, which the pool can't move.");
   assert.equal(movingText(login({ returnAsked: true })), "Returning after the current turn");
   assert.match(movingText(login({ moving: { op: "leave", state: "draining", reason: "limit" } }))!, /hit its limit/);
   assert.match(movingText(login({ moving: { op: "leave", state: "sending", reason: "idle" } }))!, /keeper/);

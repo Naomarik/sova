@@ -42,3 +42,23 @@ in order, the text and thinking of the rejected attempt and then everything the 
   later CLI message's usage replaces that of an attempt whose calls were all rejected, the
   attempt's token counts go on its diagnostic (`usage`), never into the message's usage. A
   project's cost therefore does not price that API call.
+
+## §app.claude-code-provider/always-on — The provider is always on
+
+Claude Code's models are first-class in Sova with no setting. Every hosted session that loads
+extensions starts with the claude-code extension's `claude-code-provider` flag set (a special
+loadout that loads no extension gets no flag at all), the server registers the provider once at
+startup so `GET /api/models` offers `claude-code-cli/*` before any session opens, and
+`GET /api/models` never filters them out. With no `claude` CLI on `PATH` (or one that can't run)
+startup and every session carry on and nothing is logged for it; the picker still lists the
+provider's built-in Claude Code models, which the extension registers without asking the CLI, and
+Settings → Accounts' status line says the CLI could not be run (§app.claude-logins/cli-status).
+
+Sova's own `<agent dir>/sova/settings.json` no longer holds a provider switch: a stored
+`experimental.claudeCodeProvider` is ignored, never written and never required. Its `experimental`
+object is a set of named boolean switches Sova knows (`adversarialReview`, §chat.alignment-review/flag),
+each off unless stored `true`.
+`PUT /api/settings` takes `{experimental: {...}}`: a known key must be a boolean (else 400), an
+unknown key is ignored, and a body without an `experimental` object is a 400. The write re-reads the
+file and replaces only the known keys the request carries, so any other key, old or another
+writer's, stays.

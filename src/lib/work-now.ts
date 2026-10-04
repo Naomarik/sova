@@ -3,11 +3,13 @@
 // breakdown line, the foot's Agents row, the phone bar and the spine tally all read `workNowView`,
 // so no two can disagree. Pure: no Solid here, so the tests run it bare.
 
-import type { AgentsInsight, MeshSessions, PeerStatus, SessionSummary } from "../../shared/protocol";
+import type { AgentsInsight, SessionSummary } from "../../shared/protocol";
+import type { MeshSessionsView as MeshSessions, PeerStatusView as PeerStatus } from "../../shared/mesh-access";
 import { isHostSession, sessionWorking } from "./workers";
 
 /** A connected host's part: its session list, or null while it has no current one (down, stale,
-    or not answered yet), which makes the count a floor. */
+    or not answered yet), which makes the count a floor. A host that keeps its sessions from this
+    one (§mesh.peers/grants) has no part at all. */
 export interface WorkPeer {
   label: string;
   rows: readonly Pick<SessionSummary, "path" | "activity" | "live" | "busy" | "workers" | "workerSession">[] | null;
@@ -27,13 +29,18 @@ export function answeredPeers(answer: MeshSessions): Set<string> {
 }
 
 /** Every connected host's part, in the mesh's order: its kept list while its last answer was a
-    current one, else null (down, stale, or no answer yet). */
+    current one, else null (down, stale, or no answer yet). A host that keeps its sessions from this
+    one (`hidden`: its hello or its list said `denied`) is left out: nothing of it is shown, so its
+    work is neither counted nor missing. */
 export function workPeers(
   peers: readonly Pick<PeerStatus, "id" | "label">[],
   lists: ReadonlyMap<string, readonly SessionSummary[]>,
   answered: ReadonlySet<string>,
+  hidden: (id: string) => boolean = () => false,
 ): WorkPeer[] {
-  return peers.map((p) => ({ label: p.label || p.id, rows: answered.has(p.id) ? (lists.get(p.id) ?? null) : null }));
+  return peers
+    .filter((p) => !hidden(p.id))
+    .map((p) => ({ label: p.label || p.id, rows: answered.has(p.id) ? (lists.get(p.id) ?? null) : null }));
 }
 
 export type WorkNowState = "complete" | "partial" | "unknown";

@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { linkSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { after, describe, test } from "node:test";
 import { overseerFileTools } from "./overseer-file-tools";
 import { EXCLUDED_REFUSAL, isEnvFile, outsideRootRefusal, RootConfinement, SECRET_REFUSAL, SecretGuard, secretRules } from "./overseer-deny";
@@ -251,6 +251,51 @@ describe("the project overseer's read/grep/find/ls stay inside the project root"
     const all = await pcall("grep", { pattern: "MARK" });
     assert.match(all, /^README\.md:1: MARK here$/m);
     assert.match(all, /^src\/a\.ts:1:/m);
+  });
+
+  test("read alone opens the conversation's own attachments folder, and nothing beside it", async () => {
+    // <state>/attachments/<own> is this conversation's; <other> another's. Sova's state stays excluded.
+    const atts = join(state, "attachments");
+    const own = join(atts, "019a0000-0000-7000-8000-00000000000a");
+    const other = join(atts, "019a0000-0000-7000-8000-00000000000b");
+    // A 1×1 PNG.
+    const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==", "base64");
+    mkdirSync(own, { recursive: true });
+    writeFileSync(join(own, "sova-shot.png"), png);
+    put(join(own, "note.txt"), "MARK own\n");
+    put(join(other, "sova-theirs.txt"), "MARK theirs\n");
+    symlinkSync(join(box, "outside.txt"), join(own, "sova-link.txt"));
+    symlinkSync(other, join(own, "sova-other"));
+    const atools = Object.fromEntries(
+      overseerFileTools(proot, guard, undefined, () => new RootConfinement(proot, [orgWs, innerWs, state], [own])).map((t) => [t.name, t]),
+    );
+    const acall = async (name: string, params: Record<string, unknown>) => {
+      try {
+        const r = await atools[name]!.execute("tc", params as never, undefined, undefined, undefined as never);
+        return (r.content as { type: string; text?: string; mimeType?: string }[]).map((c) => c.text ?? `[${c.type} ${c.mimeType}]`).join("");
+      } catch (err) {
+        return `ERROR: ${err instanceof Error ? err.message : String(err)}`;
+      }
+    };
+    assert.match(await acall("read", { path: join(own, "note.txt") }), /MARK own/);
+    assert.match(await acall("read", { path: join(own, "sova-shot.png") }), /\[image image\/png\]/, "an image comes back as an image");
+    assert.match(await acall("read", { path: "README.md" }), /MARK/, "the root still reads");
+    for (const p of [join(other, "sova-theirs.txt"), join(state, "baton-links.json"), join(own, "..", "..", "baton-links.json"), join(own, "..", basename(other), "sova-theirs.txt")])
+      assert.equal(await acall("read", { path: p }), outside, p);
+    for (const p of [join(own, "sova-link.txt"), join(own, "sova-other", "sova-theirs.txt")]) assert.match(await acall("read", { path: p }), /^ERROR: /, `symlink ${p}`);
+    for (const p of [join(own, "..", "..", "..", "outside.txt"), join(home, "AGENTS.md"), "/etc/hostname"]) assert.equal(await acall("read", { path: p }), outside, p);
+    // Only read: grep, find and ls stay in the root.
+    assert.equal(await acall("ls", { path: own }), outside);
+    assert.equal(await acall("find", { pattern: "*", path: own }), outside);
+    assert.equal(await acall("grep", { pattern: "MARK", path: own }), outside);
+    // Without the folder (as before), the same file is refused.
+    assert.equal(await pcall("read", { path: join(own, "note.txt") }), outside);
+    // A root that holds Sova's state: the own folder wins over the exclusion, for read and itself alone.
+    const wide = new RootConfinement(box, [state], [own]);
+    assert.equal(wide.readProblem(join(own, "sova-shot.png")), null);
+    assert.equal(wide.problem(join(own, "sova-shot.png")), EXCLUDED_REFUSAL, "grep/find/ls still refused");
+    for (const p of [join(other, "sova-theirs.txt"), join(state, "baton-links.json"), join(own, "..", "x"), join(own, "sova-other", "sova-theirs.txt"), join(own, "sova-link.txt")])
+      assert.equal(wide.readProblem(p), EXCLUDED_REFUSAL, p);
   });
 
   test("the main Overseer, given no root, still reads outside any project", async () => {

@@ -3,7 +3,8 @@ import { closeSync, mkdirSync, openSync, readFileSync, readSync, statSync, write
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
-import { type AgentSession, SessionManager } from "@earendil-works/pi-coding-agent";
+import { type AgentSession, getAgentDir, SessionManager } from "@earendil-works/pi-coding-agent";
+import { loadPolicyFile, policyFilePath } from "../pi-config/extensions/sandbox/policy.ts";
 import {
   OVERSEER_BRIEF_PREFIX,
   OVERSEER_ENTRY,
@@ -95,6 +96,8 @@ import { signalTextOf, teamStallOf } from "./signals-store";
 import { readDecisionSettings } from "./decide-settings";
 import { onAttentionChanged } from "./attention-memo";
 import { notifyBlockers, pushWanted, resetPushState } from "./push";
+import { playbookReviews } from "./projects/playbook-review";
+import { deployAttentionItems } from "./project-services/deploy-attention";
 
 /**
  * The Overseer: ONE special Sova session that watches every other session and acts on them
@@ -331,6 +334,8 @@ export function attentionDigest(): Promise<ReturnType<typeof buildDigest>> {
     const stallsOn = readDecisionSettings().features.attention;
     for (const p of [...failedRise.keys()]) if (!byPath.get(p)?.failed) failedRise.delete(p);
     const aliases = readAliases();
+    // Proposed verb playbook runs (§app.project-runtime/review), by their session file.
+    const reviews = playbookReviews();
     const rows: AttentionRow[] = sessions.map((s) => {
       const chat = heldChat(s.path);
       const live = byPath.get(s.path);
@@ -346,11 +351,14 @@ export function attentionDigest(): Promise<ReturnType<typeof buildDigest>> {
         ...(s.signals || s.workerSignals ? { signalText: signalTextOf(s.id, nowMs) } : {}),
         ...(stallsOn ? teamStallField(s.id) : {}),
         ...(aliases[s.id] ? { alias: aliases[s.id] } : {}),
+        ...(reviews.has(s.path) ? { playbook: reviews.get(s.path)! } : {}),
       };
     });
     // Items of no session: an org project's missing stakeholder, its held acts and conflicts routed to the operator
     // (the refit), and the one restart item of the whole server (§chat.worktrees/readiness), never one per session.
-    return buildDigest(rows, Date.now(), homedir(), [...stakeholderAttention(), ...heldAttention(), ...notSentAttention(), ...conflictAttention(), ...restartItems(sessions)]);
+    // A deploy target whose latest deploy failed, and an overseer's request to deploy (§app.project-services/deploy-status).
+    const deploys = await deployAttentionItems().catch(() => []);
+    return buildDigest(rows, Date.now(), homedir(), [...stakeholderAttention(), ...heldAttention(), ...notSentAttention(), ...conflictAttention(), ...restartItems(sessions), ...deploys]);
   })();
   digestMemo = { at: now, value };
   value.catch(() => {
@@ -566,6 +574,12 @@ const host: OverseerToolHost = {
   setThinking: async (path, level) => (await acquireChat(path)).setThinking(level),
   pinMode: async (path) => {
     if (!(await acquireChat(path)).pinMode()) throw new Error("its mode entry could not be written");
+  },
+  sandbox: async (path) => (await acquireChat(path)).sandboxInfo(),
+  // The extension's own default (index.ts defaultOn): an unreadable policy file starts sessions off.
+  sandboxDefault: () => {
+    const f = loadPolicyFile(policyFilePath(getAgentDir()));
+    return f.ok && f.value.defaultOn ? "on" : "subagents";
   },
   started: (path, prompted) => {
     started.add(path);

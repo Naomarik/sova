@@ -39,3 +39,4 @@ Thumbs.db
 # per-machine settings of the mesh scripts (see local.env.example)
 scripts/mesh-vps/local.env
 scripts/mesh-termux/local.env
+scripts/mesh-dialout/local.env

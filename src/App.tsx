@@ -1,4 +1,5 @@
 import { setProfileStartAdopt } from "./lib/profile-start";
+import { loadExperimental } from "./lib/experimental-draft";
 import { batch, createEffect, createMemo, createResource, createSignal, Match, on, onCleanup, Show, Switch, untrack } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import { Portal } from "solid-js/web";
@@ -26,6 +27,7 @@ import {
 import { socketReconnects } from "./lib/socket";
 import { actSessionCount, setAppBadge } from "./lib/push";
 import { firstBaseline, helloStep, HELLO_POLL_MS, meshReadInit, pathOfViewKey, sessionViewKey, watchMove, HOST_CONFIRM_MS, seedPeerList, setHostCheck, type HelloBaseline, type PendingHost, type HelloChange, sessionHrefOn } from "./lib/mesh";
+import { noteSessionsHidden, sessionsHiddenBy } from "./lib/mesh";
 import { hostLabel, hostOf, isMeshHash, joinHostLists, linkedSessionRow, meshRetryDelay, meshState, meshOn, meshPeers, mergePeerLists, noteHost, notePeerOrgs, notePeerProjects, notePeerSessions, peerInfo, peerUnavailable, sameMeshInfo, sessionRouteFromHash, setMeshState } from "./lib/mesh";
 import { isOverseerHash, isOverseerShortcut, OVERSEER_HASH, OVERSEER_POLL_MS, overseerHistoryId } from "./lib/overseer";
 import { sessionIdFromHash, setGroupLinkIndex, setSessionIndex } from "./lib/session-links";
@@ -134,6 +136,8 @@ function createMediaQuery(query: string) {
 }
 
 export function App() {
+  // Settings → Experimental's saved switches gate parts of the UI (adversarial review): read once.
+  loadExperimental();
   const [listError, setListError] = createSignal<string | null>(null);
   /** Bumped on every successful list load, so views can tell a fresh list from a stale one. */
   const [listVersion, setListVersion] = createSignal(0);
@@ -221,6 +225,7 @@ export function App() {
     if (!meshOn()) return;
     try {
       const answer = await fetchMeshSessions();
+      noteSessionsHidden(answer);
       setPeersAnswered(answeredPeers(answer));
       const next = mergePeerLists(peerLists(), answer, meshPeers());
       for (const p of meshPeers()) {
@@ -261,7 +266,7 @@ export function App() {
     if (!meshOn()) closeMeshDetails();
   });
   /** Every peer's part of the working count: its list while current, else null (a floor). */
-  const peerWork = createMemo(() => workPeers(meshPeers(), peerLists(), peersAnswered()));
+  const peerWork = createMemo(() => workPeers(meshPeers(), peerLists(), peersAnswered(), sessionsHiddenBy));
   /** This host's sessions, then every peer's: the sidebar's list. With no peer it IS `list()`. */
   const allSessions = createMemo(() => {
     const l = list();

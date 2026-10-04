@@ -230,9 +230,10 @@ Everything you do to a session that isn't typing lives behind one ghost `plus` b
 Commands) and took the model trigger and the session's own facts out of the head (§chat/transcript): the
 composer is where the session is acted on, and the head is for reading.
 
-**One popover, up to three triggers and four panels.** The `plus` button opens the **menu** panel — Attach
-images, Commands, Playbooks, Hide tool calls, Hide thinking, Sandbox and Undo
-last turn, each present only where it applies (below). The model indicator in `.composer-foot` (§chat/composer) opens the **model**
+**One popover, up to four triggers and five panels.** The `plus` button opens the **menu** panel — Attach
+images, Commands, Playbooks, Hide tool calls, Hide thinking, the Sandbox group and Undo
+last turn, each present only where it applies (below). The sandbox shield (§chat.composer/sandbox-shield)
+opens the **sandbox** panel: the same Sandbox group alone. The model indicator in `.composer-foot` (§chat/composer) opens the **model**
 panel — the Model row and this model's Thinking ladder, the two things the indicator is the label
 for. The Model row opens the §chat/model-menu **picker** as the third panel, which comes back to the model
 panel it was opened from. Where the Claude login label is shown (§app.claude-logins/active-login),
@@ -260,7 +261,8 @@ it.
     <div class="mode-option composer-flyout-item" role="menuitem" id="composer-flyout-playbooks" tabindex="-1">…Playbooks…</div>
 
     <div class="composer-flyout-sep" role="separator"></div>
-    …Hide tool calls, Hide thinking, Sandbox (menuitemcheckbox)…
+    …Hide tool calls, Hide thinking…
+    <!-- the Sandbox group, after its own separator: three menuitemradio rows, Off, Subagents only, On -->
     …then Undo last turn after its own separator (§chat/timeline)…
   </div>
 </div>
@@ -293,12 +295,13 @@ it.
   the top layer, no `.pane` clips it, and a click outside or `Esc` closes it for free. It's
   **anchored above** whatever opened it, because the composer is pinned to the bottom: on open,
   measure that element and set `--menu-bottom: {innerHeight − rect.top + 4}px` and `--menu-left:
-  {rect.left}px`. A resize re-anchors it; it closes only when the anchor isn't laid out anymore.
+  {rect.left}px`, moved left only as far as keeps the popover 4px inside the window (the sandbox
+  shield sits at the right end). A resize re-anchors it; it closes only when the anchor isn't laid out anymore.
   Under 768px it's the same bottom sheet the model menu is.
 - **Panels.** Up to four, one popover: **menu** (the `plus` button's), **model** (the indicator's), and
   the §chat/model-menu **picker**, which the Model row opens on its Providers step and a `Back` button above its search field returns
   from — to the model panel, which is the only way in (on a provider's step, `Back` first returns to Providers); and **login**, the login label's, where it
-  is shown. Only the panel in front is rendered, so it
+  is shown; and **sandbox**, the shield's, where it is shown. Only the panel in front is rendered, so it
   is also the whole keyboard order. One popover means no nested light-dismiss to reason about, and
   `Esc` always means "close the flyout".
 - **Keyboard.** `↑`/`↓` move and wrap, `Home`/`End` jump, `Enter`/`Space` activate, `Esc` closes
@@ -309,7 +312,8 @@ it.
   closes it if the picker is already in front), with `preventDefault()` so print never fires. It's
   bound in chat sessions only; watch sessions print as usual.
 - **Rows.** The menu panel's, in order: Attach images, Commands, Playbooks, Hide tool calls, Hide
-  thinking, Sandbox and, after its own separator, Undo last turn (§chat/timeline).
+  thinking, the Sandbox group after its own separator and, after its own separator, Undo last
+  turn (§chat/timeline).
   §design.copy-deck/composer-flyout is the inventory. Model and Thinking are the model panel's.
   - **Attach images** opens the composer's hidden file picker (§chat/images). `aria-disabled` and
     `aria-describedby="composer-reason"` while the composer is disabled.
@@ -337,17 +341,21 @@ it.
     open so that echo is visible, including when it lands on a different level than the one
     picked. While the agent is running or the composer is blocked, every row is `aria-disabled`
     with the reason in `title`.
-  - **Sandbox** turns this session's sandbox on or off (§chat/sandbox), effective from its next
-    tool call. A `menuitemcheckbox`, checked while on, in the view group after Hide thinking.
-    Present only when the session's runtime has the sandbox extension's `/sandbox` command;
-    otherwise the row is absent. A click sends `POST /api/sandbox?path=` with `{on}`; the flyout
-    stays open and the row is `aria-busy` with a live dot (and disabled) until the answer arrives. The checked
-    state follows the session's reported sandbox state, never the click. It stays enabled while
-    the agent runs, since a flip only reaches the next tool call, and is `aria-disabled` only
-    while the composer is (then its reason is the composer's reason line and it has no `title`).
-    Otherwise its `title` says what a click does (§design.copy-deck/sandbox). The extension's
-    own status line comes back as a toast and is announced. A refusal leaves the state as it was
-    and toasts why.
+  - **Sandbox** sets this session's sandbox state (§chat.sandbox/states): a group labelled
+    "Sandbox" of three `menuitemradio` rows, **Off**, **Subagents only** and **On**, checked on
+    the state the session reports, never on the click, like the Thinking group. Present only when
+    the session's runtime has the sandbox extension's `/sandbox` command; otherwise the group is
+    absent. A click on an unchecked row sends `POST /api/sandbox?path=` with `{state, on}`
+    (`on` true only for On, so a host whose server predates the three states still understands
+    it); the flyout stays open, the clicked row is `aria-busy` with a live dot and the three rows
+    are disabled until the answer arrives. The group stays enabled while the agent runs, since a
+    change reaches only the next tool call and later workers, and is `aria-disabled` only while
+    the composer is (then its reason line is the composer's reason line and the rows have no
+    `title`). Otherwise each row's `title` says what it confines and from when
+    (§design.copy-deck/sandbox). The extension's own status line comes back as a toast and is
+    announced. A refusal leaves the state as it was and toasts why. A host whose answer carries
+    no state (an older server) reads as On or Subagents only from its `on`; asked for Off, it
+    lands on Subagents only and the toast says that host has no Off.
   - **No Session info row.** The session's facts and spend live in the session pane
     (§app.subagents-pane/tabs), which the head's Session details button opens on Session and the
     pane head's token chip switches to Usage; the flyout has no modal of its own for them.
@@ -361,20 +369,32 @@ it.
 
 ## §chat.composer/sandbox-shield — Sandbox shield
 
-While this chat's sandbox is on (§chat/sandbox), the composer foot shows a shield at its right
-end, just before the mode switch. It is a status, not a control: flipping lives in the flyout's
-Sandbox row.
+While this chat's runtime has the sandbox extension, the composer foot shows a shield at its
+right end, just before the mode switch, in every state (§chat.sandbox/states). It is a control:
+a button that opens the flyout on its **sandbox** panel, anchored above the shield, holding the
+same Sandbox group as the `plus` menu (§chat.composer/composer-flyout); clicking it again, or
+`Esc`, closes it, and focus returns to the shield.
 
 ```html
-<span class="composer-sandbox composer-sandbox-warn" title="Sandbox on · workspace-write · partial enforcement (…)">
-  <span class="icon icon-sm" style="--icon: url(/icons/shield.svg)" aria-hidden="true"></span>
+<button type="button" class="composer-sandbox composer-sandbox-warn" aria-haspopup="menu"
+        aria-controls="composer-flyout" aria-expanded="false"
+        title="Sandbox on · workspace-write · partial enforcement (…)">
+  <span class="icon icon-sm" style="--icon: url(/icons/shield-on.svg)" aria-hidden="true"></span>
   <span aria-hidden="true">Partial</span>
   <span class="visually-hidden">Sandbox on · workspace-write · partial enforcement (…)</span>
-</span>
+</button>
 ```
 
-- **States.** The tone and the word follow the session's enforcement, so the state never rests on
-  hue alone:
+- **Glyph.** Its shape names the state, so the state never rests on hue alone. Each is a mask
+  over `currentColor`, the same footprint as the old shield:
+
+  | State | Icon | Look |
+  |---|---|---|
+  | On | `shield-on` | a heavy rim and a filled core |
+  | Subagents only | `shield-partial` | the same rim, the core filled on its left half |
+  | Off | `shield-off` | a thin dashed outline, no core, in `--color-ink-muted`: a faint ghost, still a button |
+
+- **On's tone and word** follow the session's enforcement:
 
   | Enforcement | Class | Look |
   |---|---|---|
@@ -383,13 +403,18 @@ Sandbox row.
   | `unavailable` | `composer-sandbox-error` | error color, the word "Unavailable" |
   | anything else, e.g. a remote session | `composer-sandbox-warn` | warning color, the word "Not enforced" |
 
+  Subagents only is `composer-sandbox-ok` and Off `composer-sandbox-off`, each with no word.
 - **Name.** `title` and the visually hidden text are the extension's own status line, the one
-  `/sandbox` prints in a terminal ("Sandbox on · workspace-write · full enforcement").
-- **Hidden** while the sandbox is off, when the runtime has no sandbox extension, and when the
-  composer is collapsed.
-- **Source.** The server sends `{type:"sandbox", on, enforcement, status}` after the hello, after
-  a rewind and on every `sandbox` entry, and only when the runtime has the `/sandbox` command. No
-  such message means no shield and no flyout row.
+  `/sandbox` prints in a terminal ("Sandbox on · workspace-write · full enforcement", "Sandbox off
+  · workers unconfined"). `aria-expanded` is true while the flyout is open on its panel.
+- **Target.** At least 44px wide (`--tap-min`), the glyph centred in it, and 44px tall: the
+  button is the caption row's `--control-sm` high and an invisible extension above and below
+  makes up the rest, as on the login indicator. The hover and open background fill the button.
+- **Disabled** (`aria-disabled`, it opens nothing) while the composer is disabled. **Hidden** when
+  the runtime has no sandbox extension, and when the composer is collapsed.
+- **Source.** The server sends `{type:"sandbox", on, state, enforcement, status}` after the hello,
+  after a rewind and on every `sandbox` entry, and only when the runtime has the `/sandbox`
+  command. No such message means no shield and no Sandbox group.
 - **Transcript.** Sova's transcript renders the `sandbox` entry as nothing: the shield and the
   toast are the web's only sandbox signals.
 

@@ -257,7 +257,9 @@ test("doctor and status name the supervisor adapter and why; a reserved adapter 
   const doc = shaped(await sel.run("doctor", { project }, op));
   const sup = doc.checks!.find((c) => c.id === "supervisor")!;
   assert.equal(sup.ok, true);
-  assert.match(sup.detail, /^detached: detached sessions, processes read from \/proc; chosen because systemd treated as absent \(SOVA_PROJECT_NO_SYSTEMD=1\)$/);
+  // Linux reads /proc; macOS's ps has no session column (§app.project-services/supervisor).
+  const reads = process.platform === "linux" ? "\\/proc" : "ps \\(no session ids: process trees and groups\\)";
+  assert.match(sup.detail, new RegExp(`^detached: detached sessions, processes read from ${reads}; chosen because systemd treated as absent \\(SOVA_PROJECT_NO_SYSTEMD=1\\)$`));
   const st = shaped(await sel.run("status", { project }, op));
   assert.deepEqual(st.checks, [sup], "status carries the same check");
   const launchd = new ProjectEngine({ driver: new SelectedDriver({ env: { SOVA_PROJECT_DRIVER: "launchd" } }), pollMs: 100 });
@@ -272,12 +274,11 @@ test("doctor and status name the supervisor adapter and why; a reserved adapter 
   assert.match(ls.checks![0]!.detail, /^launchd: no supervisor/);
 });
 
-test("reserved and malformed requests", async () => {
-  for (const v of ["deploy", "deploy.run"]) {
-    const r = shaped(await engine.run(v, { project }, op));
-    assert.equal(r.error?.code, "unsupported", v);
-    assert.equal(exitOf(r), 2);
-  }
+test("deploy verbs without a deployer, and malformed requests", async () => {
+  const r = shaped(await engine.run("deploy.run", { project }, op));
+  assert.equal(r.error?.code, "unsupported");
+  assert.equal(exitOf(r), 2);
+  assert.equal((await engine.run("deploy", { project }, op)).error?.code, "invalid-request", "the bare name is no verb");
   assert.equal((await engine.run("explode", { project }, op)).error?.code, "invalid-request");
   assert.equal((await engine.run("up", { project, bogus: 1 }, op)).error?.code, "invalid-request");
   assert.equal((await engine.run("up", { instance: "nope-00000000" }, op)).error?.code, "not-found");

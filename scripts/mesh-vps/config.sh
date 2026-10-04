@@ -18,6 +18,11 @@ VPS_LABEL=${VPS_LABEL:-$VPS_ID}
 # location; its directory goes on the sova-mesh unit's PATH (the claude-code extension spawns plain `claude`)
 CLAUDE_BIN=${CLAUDE_BIN:-}
 
+# The runtime Sova runs on: empty = Bun (the build mise.toml pins, installed in app/.bun by scripts/fetch-bun.sh),
+# node = Node (written into sova-mesh.env as SOVA_RUNTIME=node)
+SOVA_RUNTIME=${SOVA_RUNTIME:-}
+case "$SOVA_RUNTIME" in ''|bun|node) ;; *) printf '[mesh-vps] error: SOVA_RUNTIME is %s: want empty (Bun) or node\n' "$SOVA_RUNTIME" >&2; exit 1 ;; esac
+
 # Everything of ours on the VPS lives under this directory (relative to the VPS user's home)
 R=${R:-sova-mesh}
 

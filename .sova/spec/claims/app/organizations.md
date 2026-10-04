@@ -269,19 +269,23 @@ the URL (§app.organizations/org-page); each roster person has a page of their o
     though closing also turned it off), `sent {relative time}`, `expires {relative
     time}` while it can still open, and `{n} visits`: a visit counts on the newest of this host's
     links for its session, hand-off (and offer) and person that was made at or before the visit,
-    so a new link for the same hand-off never takes an older visit. A link that can still open has `Turn Off
-    Link` (that one link; the session and every other link stay as they are). The row for the
-    hand-off they hold now, or an open offer they are invited to, has `Get New Link`: the strip's
-    Get Link (`GET /api/baton/:sid/link`, `?person=` for an offer), shown once with Copy Link.
-    With 2 or more links that can open, the section has `Turn Off All {n} Links` (a destructive
-    button, apart from the others), confirmed with "{name}'s {n} links stop opening at once.
-    Their sessions, messages and visits stay." With no link: "No links for {name} on this host."
+    so a new link for the same hand-off never takes an older visit. A link that can still open has `Delete
+    Link` (that one link; the session and every other link stay as they are), asked twice like the
+    strip's (§app.baton/links: "Delete?", with "The link stops working for good." under it;
+    done: "Link deleted."). The row for the hand-off they hold now, or an open offer they are
+    invited to, has `Get New Link` (tooltip "Makes a new link and deletes the one you sent
+    before"): the strip's Get Link (`GET /api/baton/:sid/link`, `?person=` for an offer), shown
+    once with Copy Link. With 2 or more links that can open, the section has `Delete All {n}
+    Links` (a destructive button, apart from the others), confirmed with "{name}'s {n} links stop
+    working for good. Their sessions, messages and visits stay." and `Delete All {n}
+    Links?` (done: "Deleted {n} links."). With no link: "No links for {name} on this host."
     and, when their visits name links minted elsewhere, "Links sent from another host don't open
     here."
   - **Owner links** (for the org's owner, §app.owner-page/link), newest first, under their own
     heading after their links: `The owner page`, its state (`Can read`, `Turned off`, `Expired`),
     `sent {relative time}`, `expires {relative time}` while it can open, `{n} visits`, and on the
-    live one `Turn Off Owner Link`. `Turn Off All` never touches them.
+    live one `Delete Owner Link`, asked twice like `Delete Link` (done: "Owner link deleted.").
+    `Delete All` never touches them.
   - **Sent on WhatsApp** (§app.outreach/log), after the owner links, when they were sent anything:
     one row per send, newest first: what went (the gathering's public title, "A preview" or "A
     message"), the latest event as a chip (Sent, Delivered, Read, Failed, Unknown, Not sent), when,

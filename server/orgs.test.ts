@@ -208,6 +208,16 @@ describe("organizations", async () => {
     assert.ok(steering.includes("Short answers") && !steering.includes("tina@example.com"));
     assert.deepEqual(orgs.profileRedactTexts(p), ["Short answers, please.", "Windows Server administration"]);
   });
+
+  test("the overseer's person line: language, skills and voice for the operator's agent, never contact", async () => {
+    const p = await orgs.addPerson(org.id, { name: "Mahmoud", role: "Salesperson", decides: ["sales"], language: "ar", skills: ["archery"], voice: "Greet with السلام عليكم; write Islamic phrases in Arabic.", contact: { whatsapp: "+15550000199", email: "m@example.com" } });
+    const line = orgs.overseerPersonLine(p);
+    assert.equal(line, `- Mahmoud (id ${p.id}) — Salesperson; decides: sales\n  language: ar · skills: archery\n  voice: "Greet with السلام عليكم; write Islamic phrases in Arabic."`);
+    assert.ok(!line.includes("example.com") && !line.includes("15550000199"));
+    assert.ok(!orgs.participantLine(p).includes("السلام") && !orgs.participantLine(p).includes("archery"), "a conversation's other people stay name, role and areas");
+    const bare = await orgs.addPerson(org.id, { name: "Bare" });
+    assert.equal(orgs.overseerPersonLine(bare), `- Bare (id ${bare.id})`, "empty fields are left out");
+  });
 });
 
 describe("workspace dirs never inside Sova's own repo", () => {

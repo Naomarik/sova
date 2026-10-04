@@ -579,11 +579,13 @@ describe("preview links (§app.project-overseer/previews)", () => {
     assert.deepEqual(out.details, { v: 1, held: "project/prj_bbbbbbbb:h7" });
   });
 
-  test("off turns one off by id", async () => {
+  test("off deletes one by id, for good", async () => {
     const { run, calls } = fake();
-    await assert.rejects(run("sova_preview", { op: "off" }), /Give the id/);
-    const out = (await run("sova_preview", { op: "off", id: "pv_AAAAAAAAAAAAAAAA" })) as { content: { text: string }[]; details: { preview: { state: string; running: null } } };
+    await assert.rejects(run("sova_preview", { op: "off" }), /Give the id of the preview to delete/);
+    const out = (await run("sova_preview", { op: "off", id: "pv_AAAAAAAAAAAAAAAA" })) as { content: { text: string }[]; details: { preview: { state: string; running: null }; note: string } };
     assert.deepEqual(calls, ["preview-off:pv_AAAAAAAAAAAAAAAA"]);
+    assert.equal(out.content[0]!.text, 'Deleted pv_AAAAAAAAAAAAAAAA: its link answers "no longer active" for good.');
+    assert.match(out.details.note, /^Deleted a preview link/);
     assert.equal(out.details.preview.state, "off");
     assert.equal(out.details.preview.running, null);
   });

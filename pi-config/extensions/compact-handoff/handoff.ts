@@ -45,17 +45,34 @@ export function runsRoot(dir: string): string {
 	return path.join(dir, HANDOFF_DIR, RUNS_DIR);
 }
 
+/** The note a fork writes when nothing qualifies: saved like any note, but never brought back. */
+export const NOTHING_NOTE = "Nothing beyond the summary.";
+
+/** Whether a note is the NOTHING_NOTE (trimmed; case and a final period ignored). */
+export function isNothingNote(note: string): boolean {
+	const plain = (s: string) => s.trim().replace(/\.$/, "").toLowerCase();
+	return plain(note) === plain(NOTHING_NOTE);
+}
+
 /**
  * The fork's one prompt. It forks the whole conversation, so it knows everything the session
- * knows; it may only read, so anything durable has to go into the note itself.
+ * knows; the compaction's summary keeps the state, so the note keeps only what that flattens.
  */
 export function forkTask(focus: string): string {
 	const lines = [
-		"The user ran /compact-handoff: this session is about to be compacted, and the summary will lose detail. You are a read-only copy of the session, running on the side: you can read files and run read-only commands to check facts, but you cannot write anything, and nothing you do here reaches the session except your note.",
+		"The user ran /compact-handoff: this session is about to be compacted. You are a read-only copy running on the side: you can read files and run read-only commands to check facts, but nothing reaches the session except your note.",
 		"",
-		"End your reply with a handoff note for yourself inside <handoff>…</handoff>: what must survive the compaction that a summary would flatten (decisions and why, the user's preferences and corrections, open questions, exact current state, next steps), and the exact files, ids and commands to re-read before continuing. Anything durable that has not been written down elsewhere goes in the note: it is the only thing saved.",
+		"The compaction already keeps a structured summary (goal, constraints, progress, decisions, next steps, key ids and files) and the last turns close to verbatim. Do not restate any of that: no current state, no task list, no ids or files the summary would name anyway.",
 		"",
-		"The note is saved and added back right after the summary. Keep it self-contained and specific; do not repeat what the files already say. Do not start other work.",
+		"Your note holds only what a summary flattens and the session would get wrong without it:",
+		"- the user's corrections and exact wording where the wording matters (quote them);",
+		"- fine distinctions: X is true but not Y, this looks done but isn't, this name means something other than it seems;",
+		"- why an option was rejected, when the rejected option will look tempting again;",
+		"- claims you have not verified, and how to verify each;",
+		"- traps you already fell into or nearly did;",
+		"- where the older summary is wrong or out of date.",
+		"",
+		`If nothing qualifies, write <handoff>${NOTHING_NOTE}</handoff>. Short and specific beats complete. End your reply with the note inside <handoff>…</handoff>. Do not start other work.`,
 	];
 	if (focus) lines.push("", `The user's focus for this handoff and the summary: ${focus}`, "Include that focus in the note.");
 	return lines.join("\n");
@@ -170,7 +187,7 @@ export function restoreText(data: HandoffEntryData, nowMs: number, inKeptTail: b
 	const when = Number.isNaN(written) ? data.at : `${data.at} (${ago(written, nowMs)})`;
 	const lines = [
 		`[compact-handoff] Your own handoff note, written ${when} just before a compaction, saved at ${data.path}.`,
-		"Check it against the summary above: where they disagree, the note is the more exact record of what you knew then, but anything after it is newer. Re-read the files it names before acting on the next request.",
+		"Check it against the summary above: where they disagree, the note is the more exact record of what you knew then, but anything after it is newer. Verify what it marks unverified before relying on it.",
 	];
 	if (inKeptTail) {
 		lines.push("The reply that wrote it is still in the history above, inside <handoff>…</handoff>.");

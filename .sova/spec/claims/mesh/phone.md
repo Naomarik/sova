@@ -4,8 +4,8 @@
 A mesh host on an Android phone runs in native Termux (no proot as Sova's own host). It is installed
 by one pasted command, `scripts/mesh-termux/install.sh`, which is safe to rerun, keeps everything under
 `~/sova-mesh` with an isolated home, and records what it added so `scripts/mesh-termux/uninstall.sh`
-removes exactly that. It also records the `--node-id`, `--dns`, `--tailnet-ip`, `--port` and
-`--peer-port` it was given, and a rerun without one of them uses the recorded value, so a rerun (or
+removes exactly that. It also records the `--node-id`, `--dns`, `--tailnet-ip`, `--port`,
+`--peer-port` and `--node`/`--bun` (§mesh.phone/runtime) it was given, and a rerun without one of them uses the recorded value, so a rerun (or
 `scripts/mesh-termux/deploy.sh`, which pushes a commit of the laptop's checkout over ssh) keeps the
 phone's identity and ports.
 
@@ -42,6 +42,20 @@ The installer builds the share page (`vite build --mode share`, into `dist-share
 app. Without it, a link minted on the phone and sent through a gateway would open to a 503 "The
 share page is not built on this host." A rerun keeps the existing builds only when both are
 present for the same source. If either build is missing, it builds both again.
+
+## §mesh.phone/runtime — The phone runs on Bun's Android build
+
+By default the installer downloads Bun's own Android build of the version the source's `mise.toml`
+pins (`bun-linux-aarch64-android`, or `bun-linux-x64-android` on an x86_64 device) into the app's
+`.bun/bin/bun` (`scripts/fetch-bun.sh`, sha256-checked against the source's
+`scripts/bun-release.txt`; the previous app's copy is reused when it is that version; `unzip` is
+added to its packages), names it in the service's environment (`SOVA_BUN`), and the service starts
+Sova through `scripts/start-server.sh`, so it runs on Bun. Termux has no Bun package. A Bun that
+cannot be installed or does not run (for example on a 32-bit phone, or on Android older than 9)
+stops the installer with "could not install Bun for Android (Android 9 or later); rerun with --node
+to run Sova on Node". `--node` runs Sova on Termux's `nodejs-lts` instead (`SOVA_RUNTIME=node` in
+the service's environment, no Bun downloaded), and `--bun` switches back. Node stays installed
+either way: pnpm, the builds and the installer's helpers run on it.
 
 ## §mesh.phone/awake — The phone keeps Sova awake
 

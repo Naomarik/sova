@@ -24,9 +24,12 @@ symlinkSync("a.txt", join(src, "proj", "link"));
 symlinkSync(join("..", "x".repeat(130)), join(src, "proj", "longlink"));
 writeFileSync(join(src, "other.txt"), "other");
 
+/** bsdtar (macOS's tar) spells GNU's format `gnutar`. */
+const bsdtar = /bsdtar/.test(execFileSync("tar", ["--version"], { encoding: "utf8" }));
+
 function pack(format: string, ...members: string[]): string {
   const out = join(tmp, `${format}-${members.join("_").replace(/\W/g, "")}.tar`);
-  execFileSync("tar", ["-C", src, `--format=${format}`, "-cf", out, ...members], { env: { ...process.env, LC_ALL: "C" } });
+  execFileSync("tar", ["-C", src, `--format=${bsdtar && format === "gnu" ? "gnutar" : format}`, "-cf", out, ...members], { env: { ...process.env, LC_ALL: "C" } });
   return out;
 }
 

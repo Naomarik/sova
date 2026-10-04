@@ -49,13 +49,24 @@ export function previewGroups(list: readonly PreviewView[]): PreviewGroup[] {
 /** A recipient as the Sent to line names them. */
 export const recipientName = (v: Pick<PreviewView, "sentToName">): string => v.sentToName?.trim() || "a person";
 
-/** The original's Turn Off confirm: with recipients listed it ends all of their links too. */
-export const turnOffConfirm = (recipients: number): string => (recipients > 0 ? `Turn Off All ${recipients + 1} Links?` : "Turn Off Preview?");
-export const TURN_OFF_ALL_TIP = "Turns off this preview and every link sent from it.";
-/** A recipient's own Turn Off: its tooltip, confirm and done toast. */
-export const recipientOffTip = (name: string): string => `Turns off only ${name}'s link.`;
-export const recipientOffConfirm = (name: string): string => `Turn Off ${name}'s Link?`;
-export const recipientOffDone = (name: string): string => `${name}'s link turned off.`;
+/* A preview's Delete, on the Previews card and the Shares page alike: a deleted link answers 410
+   from then on and nothing brings it back, while the app on its port keeps running. */
+/** A preview's own Delete, which ends every link sent from it too: its listed recipients' links counted in the label. */
+export const deleteLabel = (recipients: number): string => (recipients > 0 ? `Delete Preview + ${recipients} ${recipients === 1 ? "Link" : "Links"}` : "Delete Preview");
+export const DELETE_CONFIRM = "Delete?";
+export const DELETE_ALL_TIP = "Deletes this preview and every link sent from it.";
+/** The line shown while a Delete waits for its second click. */
+export const deleteNote = (recipients: number): string =>
+  `${recipients > 0 ? `This link and the ${recipients} sent from it stop` : "The link stops"} working for good. Your app keeps running; make a New Preview to share it again.`;
+export const PREVIEW_DELETED = "Preview deleted.";
+export const deleteFailed = (why: string): string => `Couldn't delete it. ${why}`;
+/** A recipient's own Delete, on their Sent to line: short to see, their name to hear. */
+export const RECIPIENT_DELETE_LABEL = "Delete Link";
+export const recipientDeleteName = (name: string): string => `Delete ${name}'s Link`;
+export const recipientDeleteTip = (name: string): string => `Deletes only ${name}'s link.`;
+export const recipientDeleteConfirm = (name: string): string => `Delete ${name}'s Link?`;
+export const recipientDeleteNote = (name: string): string => `${name}'s link stops working for good.`;
+export const recipientDeleted = (name: string): string => `${name}'s link deleted.`;
 
 /** The port field: a number the server would take, or what's wrong with it. Sova's own defaults
     are refused here too; the server also refuses whatever this host binds. */

@@ -1,5 +1,5 @@
 import { archivedDropToast, orgProjectOf } from "../lib/drag-archive";
-import { batch, createEffect, createMemo, createSignal, For, Match, on, onCleanup, Show, Switch, type JSX } from "solid-js";
+import { batch, createEffect, createMemo, createResource, createSignal, For, Match, on, onCleanup, Show, Switch, type JSX } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import { Portal } from "solid-js/web";
 import type {
@@ -25,7 +25,9 @@ import { CardJumpContext } from "../lib/card-refs";
 import { AlignAnswerContext, type AlignAnswer } from "./AlignDocCard";
 import { acceptAllMessage, choosePick, clearPicks, composeWithPicks, optionPick, pickCount, picksLabel, picksOf, prunePicks, samePicks } from "../lib/align-picks";
 import { BatonStrip } from "./BatonStrip";
-import { approveSchedule, forkSession, getChatClaudeAccounts, getOverseerAutonomy, revokeOverseerPermit, revokeSchedule, setSandbox, setSessionArchived, wsUrl } from "../lib/api";
+import { sandboxOffMissing, type SandboxState } from "../lib/sandbox";
+import { approveSchedule, forkSession, getChatClaudeAccounts, getOverseerAutonomy, getSubagentProfiles, revokeOverseerPermit, revokeSchedule, setSandbox, setSessionArchived, wsUrl } from "../lib/api";
+import { adversarialReview, NO_REVIEWER, reviewRequestMessage } from "../lib/align-review";
 import type { OverseerAutonomy, ScheduleInfo } from "../../shared/protocol";
 import { LOGIN_UNCHANGED } from "../../shared/protocol";
 import { contextStateFor, messageContextTokens, windowOf } from "../lib/context";
@@ -416,7 +418,7 @@ export function ChatView(props: {
   const [profileInfo, setProfileInfo] = createSignal<ChatProfileInfo | null>(null);
   /** A One at a time race at Send (§chat.profiles/singleton): the session that has it. */
   const [profileRace, setProfileRace] = createSignal<{ label: string; running: { id: string; path: string; title: string } } | null>(null);
-  const [sandboxPending, setSandboxPending] = createSignal(false);
+  const [sandboxPending, setSandboxPending] = createSignal<SandboxState | null>(null);
   /** This chat's Claude login (WS "claude_login"), null until told or when the host can't name one. */
   const [claudeLogin, setClaudeLogin] = createSignal<ChatClaudeLogin | null>(null);
   /** Local "Ran /name args" rows; `tui` marks one that asked for a UI Sova can't show, `note` one
@@ -827,7 +829,7 @@ export function ChatView(props: {
           setModeState({ mode: msg.mode, minorModes: msg.minorModes, strict: msg.strict, applies: msg.applies });
           break;
         case "sandbox":
-          setSandboxState({ on: msg.on, enforcement: msg.enforcement, status: msg.status });
+          setSandboxState({ on: msg.on, ...(msg.state ? { state: msg.state } : {}), enforcement: msg.enforcement, status: msg.status });
           break;
         case "profile": {
           const { type: _t, ...info } = msg;
@@ -1245,6 +1247,16 @@ export function ChatView(props: {
   const picks = createMemo(() => (alignAnswerable() ? prunePicks(picksOf(props.path), aligns()) : {}), {}, { equals: samePicks });
   /** Whether the composer holds typed text or an attachment: the card's button then waits. */
   const [hasDraft, setHasDraft] = createSignal(false);
+  /** With adversarial review on: whether this chat's subagent profile names a reviewer (§chat.alignment-review/card).
+      Read only while the feature is on; undefined until it answers (the button then stays usable). */
+  const [reviewerSet] = createResource(
+    () => (adversarialReview() && alignAnswerable() ? props.path : false),
+    async (path) => {
+      const info = await getSubagentProfiles(path);
+      const current = info.settings.profiles.find((p) => p.id === info.current.id);
+      return !!current?.reviewer;
+    },
+  );
   const alignAnswer: AlignAnswer = {
     on: alignAnswerable,
     current: (id) => aligns().find((e) => e.doc.id === id)?.doc,
@@ -1275,6 +1287,12 @@ export function ChatView(props: {
         clearPicks(props.path, doc);
         focusComposer();
       }
+    },
+    review: () => adversarialReview(),
+    reviewBlocked: () => alignAnswer.goBlocked() ?? (!reviewerSet.error && reviewerSet() === false ? NO_REVIEWER : null),
+    requestReview: (doc, phase) => {
+      if (alignAnswer.reviewBlocked?.()) return;
+      if (send(reviewRequestMessage(doc, phase), false, [])) focusComposer();
     },
   };
   const composerPicks = createMemo(() => {
@@ -1414,20 +1432,24 @@ export function ChatView(props: {
   };
   /** The composer foot's mode switch: this chat's WS "mode" state and its session file. */
   const modeControl: ModeControl = { state: modeState, path: props.path };
-  /** The flyout's Sandbox row: the extension answers with a toast and a "sandbox" message. */
+  /** The flyout's Sandbox group and the shield's panel: the extension answers with a toast and a
+      "sandbox" message. */
   const sandboxControl: SandboxControl = {
     state: sandbox,
     pending: sandboxPending,
-    set: (on) => {
-      setSandboxPending(true);
-      setSandbox(props.path, on)
+    set: (state) => {
+      setSandboxPending(state);
+      setSandbox(props.path, state)
         .then((r) => {
           if (r.outcome === "skip") toast("Sandbox unchanged: another writer has this session. Nothing was written.");
-          if (r.sandbox) setSandboxState(r.sandbox);
-          if (r.sandbox) announce(r.sandbox.status);
+          if (!r.sandbox) return;
+          setSandboxState(r.sandbox);
+          announce(r.sandbox.status);
+          const missing = sandboxOffMissing(state, r.sandbox);
+          if (missing) toast(missing);
         })
         .catch((err) => toast(`Sandbox unchanged: ${err instanceof Error ? err.message : String(err)}`))
-        .finally(() => setSandboxPending(false));
+        .finally(() => setSandboxPending(null));
     },
   };
 

@@ -23,6 +23,7 @@ const KIND: Record<PushKind, { label: string; hint: string }> = {
   error: { label: "Error", hint: "The last turn stopped with an error." },
   "baton-needs-you": { label: "Baton", hint: "A baton session waits on you." },
   "worker-error": { label: "Subagent error", hint: "A subagent ended in an error." },
+  "playbook-review": { label: "Playbook needs you", hint: "A playbook run proposes a change to approve and merge." },
 };
 
 /**

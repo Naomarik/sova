@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { OwnerPageInfo } from "../../shared/orgs";
-import { ownerChangeLine, ownerLinkLine, rotateLine, turnOffLine, updateMeta } from "./owner-card";
+import { deleteOwnerLine, ownerChangeLine, ownerLinkLine, rotateLine, updateMeta } from "./owner-card";
 
 const NOW = Date.parse("2026-09-27T12:00:00Z");
 const DAY = 86_400_000;
@@ -30,7 +30,7 @@ test("the latest change is said only when the operator made it", () => {
 
 test("confirms use the first name and say what stays", () => {
   assert.equal(rotateLine("Kim Lee"), "Kim's current link stops working at once. The new one works from now.");
-  assert.equal(turnOffLine("Kim Lee"), "Kim's owner page stops opening at once. The conversations and updates stay.");
+  assert.equal(deleteOwnerLine("Kim Lee"), "Kim's owner link stops working for good. The conversations and updates stay.");
 });
 
 test("an update's log line says who posted it", () => {

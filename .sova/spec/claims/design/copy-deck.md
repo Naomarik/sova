@@ -179,7 +179,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 |---|---|
 | Trigger | `aria-label` / `title`: More Actions |
 | Menu panel `aria-label` | More actions |
-| Menu panel rows | Attach images · Commands · Playbooks · Hide tool calls · Hide thinking · Sandbox · Undo last turn (in this order, each only where it applies: Playbooks in chat sessions, §chat/playbooks; Sandbox where the runtime has a `sandbox` command, §chat/sandbox; Undo last turn per §chat/timeline) |
+| Menu panel rows | Attach images · Commands · Playbooks · Hide tool calls · Hide thinking · the Sandbox group (Off · Subagents only · On) · Undo last turn (in this order, each only where it applies: Playbooks in chat sessions, §chat/playbooks; the Sandbox group where the runtime has a `sandbox` command, §chat/sandbox, its copy in §design.copy-deck/sandbox; Undo last turn per §chat/timeline) |
 | Model panel `aria-label` | Model and thinking |
 | Model panel rows | Model · the Thinking group |
 | Model row | {id} · {provider} (`title`: {provider/id}) · no model: Choose model |
@@ -200,15 +200,21 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 
 | Where | Copy |
 |---|---|
-| Flyout row | Sandbox (checked while on) |
-| Flyout row `title`, off | Confine this session's tools, from the next tool call. |
-| Flyout row `title`, on | {status}. Turning it off applies from the next tool call. |
-| Composer shield word | (full: none) · Partial · Unavailable · Not enforced |
+| Flyout group label | Sandbox |
+| Flyout rows (`menuitemradio`, checked on the reported state) | Off · Subagents only · On |
+| Row `title`, Off | Off: nothing is confined, neither this session's tools nor its subagents. Applies from the next tool call, and to subagents started or resumed from now. |
+| Row `title`, Subagents only | Subagents only: this session's tools run unconfined; subagents in its worktrees write only there. Applies from the next tool call, and to subagents started or resumed from now. |
+| Row `title`, On | On: this session and its subagents. Applies from the next tool call, and to subagents started or resumed from now. |
+| Composer shield word | (On with full enforcement, Subagents only, Off: none) · Partial · Unavailable · Not enforced |
 | Composer shield `title` / accessible name | {status}: the extension's status line (below, TUI `/sandbox`) |
-| Toast and announcement on a flip | {status} (the extension's own line) |
+| Toast and announcement on a change | {status}. Running subagents keep theirs until resumed. |
+| Toast when the state did not change | {status} (the extension's own line) |
+| Off asked of a host without it (an older server) | This host's Sova has no Off; its sandbox stays {status}. |
 | Flip refused: another writer | Sandbox unchanged: another writer has this session. Nothing was written. |
 | Flip refused: other | Sandbox unchanged: {server error} |
-| Flip refused: server errors ({server error}) | Invalid or missing ?path= (must be a .jsonl under the pi sessions dir) · Expected JSON body { on: boolean } · That session isn't open on this server; open the chat first |
+| Flip refused: server errors ({server error}) | Invalid or missing ?path= (must be a .jsonl under the pi sessions dir) · Expected JSON body { state: "off" \| "subagents" \| "on" } or { on: boolean } · state and on disagree · That session isn't open on this server; open the chat first |
+| TUI `/sandbox` usage | usage: /sandbox on \| subagents \| off |
+| TUI footer | sandbox on (and its suffixes, §chat.sandbox/toggle) · Off: sandbox off · Subagents only: nothing |
 | Unavailable refusal (tool error) | Sandbox unavailable: {reason}. Nothing ran. Turn the sandbox off to run tools unconfined. |
 | Denial note (end of a tool result) | [sandbox: a write or connection outside the policy was refused] |
 | Hidden results omitted (end of find/grep output) | [sandbox: {n} result line(s) under hidden paths were omitted] |
@@ -217,8 +223,12 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Proxy refusal, port (403 body) | sova sandbox: port {port} is not in the sandbox proxy allowlist |
 | Proxy refusal, local address (403 body) | sova sandbox: {host} resolves to {address}, a local address, which is not in the sandbox proxy allowlist |
 | Per-project loosening ignored | Sandbox: `.sova/sandbox.json` can only tighten; ignored `{key}`. |
-| TUI `/sandbox` (describeActive) | Sandbox off · Sandbox on · {level} · full enforcement · Sandbox on · {level} · partial enforcement ({reasons}) · Sandbox on · {level} · unavailable: {reasons} (tools refuse) · not enforced (a remote session): Sandbox on · {reasons}, e.g. Sandbox on · not enforced on remote; with no reasons, Sandbox on · not enforced |
-| TUI transcript marker (terminal only; Sova's transcript shows none) | Sandbox → on · {level} · {enforcement} enforcement (not full adds: · {reasons}) · not enforced: Sandbox → on · {reasons} (no reasons: not enforced) · Sandbox → off |
+| TUI `/sandbox` (describeActive) | Off: Sandbox off · workers unconfined · Subagents only: Sandbox subagents only · workers in tracked worktrees write only there · Sandbox on · {level} · full enforcement · Sandbox on · {level} · partial enforcement ({reasons}) · Sandbox on · {level} · unavailable: {reasons} (tools refuse) · not enforced (a remote session): Sandbox on · {reasons}, e.g. Sandbox on · not enforced on remote; with no reasons, Sandbox on · not enforced |
+| TUI transcript marker (terminal only; Sova's transcript shows none) | Sandbox → on · {level} · {enforcement} enforcement (not full adds: · {reasons}) · not enforced: Sandbox → on · {reasons} (no reasons: not enforced) · Sandbox → subagents only · Sandbox → off |
+| `agent_list`, per worker | sandbox: on · sandbox: on, narrowed to {path} · sandbox: write-only to {path} · sandbox: none |
+| Overseer, lowering refused (`sova_set_session`) | Lowering a session's sandbox needs the user's approval: ask with sova_card, listing the session, and set it in the turn the user's click starts. Nothing was changed. |
+| Overseer, lowering refused (`sova_create_session`) | Starting a session with its sandbox lowered needs the user's approval: ask with sova_card first (say the session starts with its sandbox lowered, and to what), and create it in the turn the user's click starts. No session was created. |
+| Overseer, results | `sova_set_session`: sandbox {Off \| Subagents only \| On} (from its next tool call; running subagents keep theirs until resumed) · `sova_create_session`: Sandbox: {state} (this session only). |
 
 ## §design.copy-deck/playbooks — Playbooks (§chat/playbooks)
 
@@ -1015,10 +1025,10 @@ merge, commit, repo, session, token, spec, L0–L3, workspace, roster.
 | …latest change | "Set by you {relative time}." |
 | …cleared (warn banner) | "{name} left the organization, so it has no owner now. Their owner link stopped working." |
 | …link line | "Owner link made {relative time} · expires {relative time} · opened {n} times" · none: "No owner link yet." · newest turned off or replaced: "The owner link is turned off." · under 14 days (warn): "Owner link expires {relative time}." · expired: "The owner link expired {relative time}." |
-| …buttons | `Get Owner Link` (secondary) · `Preview Owner Page` (secondary) · `Turn Off Owner Link` (destructive, outlined, apart) |
+| …buttons | `Get Owner Link` (secondary) · `Preview Owner Page` (secondary) · `Delete Owner Link` (destructive, outlined, apart) |
 | Get Owner Link, while one is live (confirm) | "{first}'s current link stops working at once. The new one works from now." · `Get Owner Link` · `Cancel` |
 | Get Owner Link, no owner | "Pick an owner first." |
-| Turn Off, confirm | "{first}'s owner page stops opening at once. The conversations and updates stay." · `Turn Off Owner Link` · `Cancel` |
+| Delete, confirm | "{first}'s owner link stops working for good. The conversations and updates stay." · `Delete Owner Link?` · `Cancel` · done (toast) "Owner link deleted." |
 | Link shown once | the baton strip's Copy Link pattern; `linkWarning` when no share address is known |
 | Preview modal title | "{org}, as {first} sees it" |
 | …line | "Read only. Nothing you do here reaches {first}, and no visit is recorded." |
@@ -1061,7 +1071,7 @@ host, person or recipient.
 | Titles | "Share Session" · "Manage Share" · Preview: "As they see it", line "{title} · Read only. No visit is recorded." |
 | Intro | "People you send a link to can read this conversation: your messages and the replies, with their drawings and images. Never tool steps, thinking, paths or costs." |
 | Title field | "Title they see" · hint "The session's own title may say more than you mean to." |
-| People | "People" · placeholder "A name only you see, like Ana" · `Add` · hint "Each person gets their own link, so you see who opened it and can turn one off alone." · remove "Remove {label}" |
+| People | "People" · placeholder "A name only you see, like Ana" · `Add` · hint "Each person gets their own link, so you see who opened it and can delete one alone." · remove "Remove {label}" |
 | Anyone | "Anyone with the link" · "One more link anyone can open. Its visits show the device type only." |
 | Follow live | "Follow live" · off "Off: they see the conversation as it is now. You can update it to now later." · on "They see new messages as the session goes on, including ones you haven't read yet." · managing, off: "Off: turning it on shows them new messages as the session goes on." · on: "They see new messages as the session goes on." |
 | Expiry | "Links expire after" · `1 day` / `7 days` / `30 days` / `90 days` |
@@ -1073,7 +1083,7 @@ host, person or recipient.
 | Update and stop following | titles "Update to Now" · "Stop Following Live" · "Their pages will show the conversation as it is here, images included." · "Follow live stops here: their pages keep the conversation as it is here, images included." · `Back to Share` · `Update to This` / `Stop Following Here` (`Saving…`) · failed: **Couldn't read the conversation.** Nothing changed. {reason} `Try Again` |
 | Foot | `Cancel` · `Preview` · `Create Link` / `Create Links` (`Creating…`) · Preview: `Back to Sharing` / `Back to Share` · managing: `Stop Sharing` (armed `Stop Every Link?`), `Preview`, `Done` |
 | New links | eyebrow "New link · shown once" / "{n} new links · shown once" · `Copy Link` (toast "Link copied.") · "We keep only a fingerprint of each link. If one is lost, Get New Link makes another." · the `linkWarning` text with `Open Settings` |
-| Managing | "Snapshot up to {date time}." · `Update to Now` (title "Their pages show the conversation as it is now.") · eyebrows "People", "Expiry" · `Get New Link` (title "A new link for them. This one stops working.") · `Turn Off` (armed "Turn Off {label}'s Link?", the anyone row "Turn Off This Link?") · placeholder "Add a person, like Ben" · `Add Person` · `Add Anyone Link` · "{n} days from now" · `Extend` · "Every live link then expires {n} days from now." · `Save Title` |
+| Managing | "Snapshot up to {date time}." · `Update to Now` (title "Their pages show the conversation as it is now.") · eyebrows "People", "Expiry" · `Get New Link` (title "A new link for them. This one stops working.") · `Delete Link` (armed "Delete {label}'s Link?", the anyone row "Delete This Link?", with "The link stops working for good." under it while armed) · placeholder "Add a person, like Ben" · `Add Person` · `Add Anyone Link` · "{n} days from now" · `Extend` · "Every live link then expires {n} days from now." · `Save Title` |
 | Stopped / gone | **Stopped {time}.** Every link is off. The session itself didn't change. · **The session file is gone.** Every link answers that it's no longer active. |
 | Errors | **Couldn't read the conversation to preview it.** Nothing was shared. {reason} `Try Again` · **Couldn't create the links.** Nothing was shared. {reason} · **That didn't go through.** Nothing changed. {reason} · "Couldn't read the preview. {reason}" |
 
@@ -1110,7 +1120,7 @@ host, person or recipient.
 | Sidebar foot | row "Shares" · spine "Shares" |
 | Page | title "Shares" · meta "{n} session shares · {n} organization links" (+ " · {n} viewing now") · `Refresh Shares` |
 | Cards | "Session shares" (row meta adds "session “{session title}”" when it differs) · "No session share has a live link." · disclosure "Ended · {n}" · "Organization links" (row "{hand-off title} · hand-off {n}" or "Owner page" · "{org} · {state} · Expires in {n} days") |
-| Actions | `Manage` · `Stop Sharing` (armed `Stop Every Link?`) · `Turn Off Link` (armed "Turn Off {person}'s Link?") |
+| Actions | `Manage` · `Stop Sharing` (armed `Stop Every Link?`) · `Delete Link` (armed "Delete {person}'s Link?", with "{person}'s link stops working for good." under it while armed) |
 | Empty and hosts | **No public links are open.** Share a session from its Sharing tab: Session details, then Sharing. · "{host} can't be reached, so its links aren't listed." · failed action: **That didn't go through.** Nothing was changed. {reason} |
 
 ## §design.copy-deck/worktree-cleanup — New session · worktrees line and Clean Up Merged (§chat.transcript/empty-worktrees, §chat.worktrees/cleanup)

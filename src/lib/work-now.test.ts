@@ -171,6 +171,20 @@ test("workPeers: every mesh peer in order, its kept list only while answered, la
   );
 });
 
+test("workPeers: a host that keeps its sessions from this one is left out, never a floor", () => {
+  const peers = workPeers(
+    [
+      { id: "a", label: "Desk" },
+      { id: "h", label: "Hidden" },
+    ],
+    new Map<string, SessionSummary[]>([["a", []]]),
+    new Set(["a"]),
+    (id) => id === "h",
+  );
+  assert.deepEqual(peers.map((p) => p.label), ["Desk"]);
+  assert.equal(workNow(insight(), peers).state, "complete");
+});
+
 test("sentences: each ends in exactly one full stop", () => {
   assert.equal(sentences("No agents working now", "Output tokens a minute: not known yet."), "No agents working now. Output tokens a minute: not known yet.");
   assert.equal(sentences("At least 1 agent working now: 1 session. Work on desk isn't counted: it isn't answering.", "x."), "At least 1 agent working now: 1 session. Work on desk isn't counted: it isn't answering. x.");

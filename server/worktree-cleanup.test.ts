@@ -255,3 +255,15 @@ test("a gone tree whose session runs outside its repository is found beside it",
   mkdirSync(join(parent, "my-repo"));
   assert.deepEqual(besideGone(join(parent, ".worktrees", "my-repo-feature-x")), [join(parent, "my-repo")]);
 });
+
+test("off Linux the processes come from lsof: cwd and open files per pid, this process left out; an lsof that fails keeps every tree", async () => {
+  const out = ["p100", "csleep", "fcwd", "n/w/tree", "ftxt", "n/bin/sleep", "p200", "cnode", "f3", "n/w/other/log (deleted)", "f4", "nlocalhost:4800", `p${process.pid}`, "cbun", "fcwd", "n/w/tree", "p300", "cnothing", "f5", "npipe"].join("\n");
+  assert.deepEqual(c.parseLsof(out, process.pid), [
+    { pid: 100, command: "sleep", paths: ["/w/tree", "/bin/sleep"] },
+    { pid: 200, command: "node", paths: ["/w/other/log"] },
+  ]);
+  assert.deepEqual(await c.scanProcesses("darwin", async () => ({ code: 0, stdout: out, stderr: "" })), c.parseLsof(out, process.pid));
+  const failed = await c.scanProcesses("darwin", async () => ({ code: 1, stdout: "", stderr: "lsof: WARNING: can't stat()\nmore\n" }));
+  assert.equal(failed.length, 1);
+  assert.match(failed[0]!.unreadable!, /couldn't be read \(lsof: lsof: WARNING: can't stat\(\)\), so it is kept/);
+});

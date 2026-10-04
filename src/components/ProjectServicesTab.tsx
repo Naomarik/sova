@@ -36,6 +36,9 @@ import {
   verbGroups,
 } from "../lib/services-view";
 import { previewWarning } from "../lib/previews";
+import { COPY_LINK_GONE, copyLinkDeleted, DELETE_ASK, DELETE_LINK, DELETING } from "../lib/link-delete";
+import { createArm } from "../lib/two-step";
+import "../delete-button.css";
 import { announce, copyText, toast } from "../lib/ui-state";
 import { ServiceLogsDrawer } from "./ServiceLogsDrawer";
 import { Chip, Icon } from "./ui";
@@ -82,7 +85,10 @@ export function ProjectServicesTab(props: { projectId: string; archived: boolean
   /** `<instance or service>:<verb>` of the verb in flight. */
   const [running, setRunning] = createSignal<string | null>(null);
   /** The button whose next click confirms. */
-  const [armed, setArmed] = createSignal<string | null>(null);
+  /** A verb's or link's first press arms it; a link's Delete line goes away only after the press that left it lands. */
+  const arming = createArm<string>();
+  const armed = arming.armed;
+  const setArmed = (key: string | null) => (key === null ? arming.reset() : arming.arm(key));
   /** The sentence under each row (by instance, or `shared:<name>`). */
   const [said, setSaid] = createSignal<Record<string, string>>({});
   const [logs, setLogs] = createSignal<{ instance: string; name: string } | null>(null);
@@ -195,18 +201,22 @@ export function ProjectServicesTab(props: { projectId: string; archived: boolean
       poll.refetch();
     }
   };
-  /** Turn Off one link: a second click confirms. */
+  /** Delete one link, for good: a second click confirms. */
   const revoke = async (c: CopyView, l: LinkView) => {
     const key = `${l.id}:revoke`;
     if (running()) return;
-    if (armed() !== key) return setArmed(key);
+    if (armed() !== key) {
+      setArmed(key);
+      announce(COPY_LINK_GONE);
+      return;
+    }
     setArmed(null);
     setRunning(key);
     try {
       const r = await runProjectVerb(props.projectId, "revoke", { link: l.id });
       const why = refusalLine(r);
       if (why) say(c.instance, why);
-      else toast(`The ${l.endpoint} link of ${copyName(c)} is off.`);
+      else toast(copyLinkDeleted(l.endpoint, copyName(c)));
     } catch (x) {
       say(c.instance, `Couldn't reach the engine. ${errText(x)}`);
     } finally {
@@ -234,7 +244,7 @@ export function ProjectServicesTab(props: { projectId: string; archived: boolean
     );
   };
 
-  /** A copy's links (chips with Copy Link and Turn Off), its Share form, and why Share is off. */
+  /** A copy's links (chips with Copy Link and Delete Link), its Share form, and why Share is off. */
   const ShareParts = (p: { copy: CopyView }) => {
     const c = () => p.copy;
     const blocked = () => shareBlocked(c(), !!poll.data()?.sensitive);
@@ -264,11 +274,17 @@ export function ProjectServicesTab(props: { projectId: string; archived: boolean
                     type="button"
                     class="button button-sm button-destructive"
                     aria-disabled={running() ? "true" : undefined}
+                    aria-describedby={armed() === `${l.id}:revoke` ? `link-gone-${l.id}` : undefined}
                     onClick={() => void revoke(c(), l)}
-                    onBlur={() => armed() === `${l.id}:revoke` && setArmed(null)}
+                    onBlur={() => arming.disarm(`${l.id}:revoke`)}
                   >
-                    {running() === `${l.id}:revoke` ? "Turning off…" : armed() === `${l.id}:revoke` ? "Turn Off Link?" : "Turn Off"}
+                    {running() === `${l.id}:revoke` ? DELETING : armed() === `${l.id}:revoke` ? DELETE_ASK : DELETE_LINK}
                   </button>
+                  <Show when={armed() === `${l.id}:revoke`}>
+                    <p class="delete-note" id={`link-gone-${l.id}`}>
+                      {COPY_LINK_GONE}
+                    </p>
+                  </Show>
                 </li>
               )}
             </For>

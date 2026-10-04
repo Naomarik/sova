@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -6,6 +7,20 @@ import { after, test } from "node:test";
 import { DetachedDriver, parseShow, SystemdDriver, systemdRunArgv, type Exec } from "./drivers";
 import { psTable, realSyncExec } from "./proctable";
 import { procsDir } from "./store";
+
+/** A process's group, and whether it is gone (no such process, or a zombie not reaped yet): /proc on Linux, else `ps`. */
+function proc(pid: number): { pgrp: number; gone: boolean } {
+  try {
+    if (process.platform === "linux") {
+      const f = readFileSync(`/proc/${pid}/stat`, "utf8").split(") ")[1]!.split(" ");
+      return { pgrp: Number(f[2]), gone: f[0]!.startsWith("Z") };
+    }
+    const [pgrp, stat] = execFileSync("ps", ["-o", "pgid=,stat=", "-p", String(pid)], { encoding: "utf8" }).trim().split(/\s+/);
+    return { pgrp: Number(pgrp), gone: stat!.startsWith("Z") };
+  } catch {
+    return { pgrp: Number.NaN, gone: true };
+  }
+}
 
 process.env.PI_CODING_AGENT_DIR = mkdtempSync(join(tmpdir(), "sova-drivers-"));
 after(() => rmSync(process.env.PI_CODING_AGENT_DIR!, { recursive: true, force: true }));
@@ -79,15 +94,7 @@ test("the detached driver runs a process group, logs it, and stops the whole gro
   st = await d.status(unit);
   assert.equal(st.state, "missing");
   // Gone, or a zombie its parent (this test process, for the group leader) has not reaped yet.
-  const gone = (pid: number) => {
-    try {
-      const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
-      return stat.slice(stat.lastIndexOf(")") + 2).startsWith("Z");
-    } catch {
-      return true;
-    }
-  };
-  for (const pid of group) assert.ok(gone(pid), `pid ${pid} is gone`);
+  for (const pid of group) assert.ok(proc(pid).gone, `pid ${pid} is gone`);
   assert.deepEqual(await d.units(`sova-svc-test-${process.pid}-`), []);
 });
 
@@ -101,19 +108,10 @@ test("the detached driver's unit is its whole session: a child in a process grou
   for (let i = 0; i < 50 && (pids = d.pids(unit)).length < 2; i++) await sleep(50);
   assert.equal(pids.length, 2, `sh and sleep: ${pids}`);
   const sleeper = pids.find((p) => p !== st.pid)!;
-  const pgrp = (pid: number) => Number(readFileSync(`/proc/${pid}/stat`, "utf8").split(") ")[1]!.split(" ")[2]);
-  assert.notEqual(pgrp(sleeper), pgrp(st.pid!), "the child really is in another process group");
+  assert.notEqual(proc(sleeper).pgrp, proc(st.pid!).pgrp, "the child really is in another process group");
   assert.ok(d.owns(unit, sleeper), "and still the unit's");
   await d.stop(unit);
-  for (const pid of pids) {
-    let gone = false;
-    try {
-      gone = readFileSync(`/proc/${pid}/stat`, "utf8").split(") ")[1]!.startsWith("Z");
-    } catch {
-      gone = true;
-    }
-    assert.ok(gone, `pid ${pid} stopped`);
-  }
+  for (const pid of pids) assert.ok(proc(pid).gone, `pid ${pid} stopped`);
 });
 
 test("the detached driver's runOnce: exit codes, a timeout kills it, leftovers are killed and counted", async () => {

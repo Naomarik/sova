@@ -643,7 +643,8 @@
         "src/components/ComposerMenu.tsx",
         "src/lib/api.ts",
         "src/lib/sandbox.ts",
-        "src/components/Composer.tsx"
+        "src/components/Composer.tsx",
+        "src/lib/sandbox.test.ts"
       ]
     },
     "§chat.composer/disabled-states": {
@@ -1455,7 +1456,10 @@
         "src/components/ui.tsx",
         "src/vis/icons.ts",
         "src/vis/kinds/wireframe/icons.ts",
-        "public/icons/share.svg"
+        "public/icons/share.svg",
+        "public/icons/shield-on.svg",
+        "public/icons/shield-partial.svg",
+        "public/icons/shield-off.svg"
       ]
     },
     "§design.ground-rules/motion": {
@@ -1967,7 +1971,12 @@
         "src/components/Composer.tsx",
         "src/components/ui.tsx",
         "src/design/base.css",
-        "src/lib/sandbox.ts"
+        "src/lib/sandbox.ts",
+        "public/icons/shield-on.svg",
+        "public/icons/shield-partial.svg",
+        "public/icons/shield-off.svg",
+        "src/components/ComposerMenu.tsx",
+        "src/lib/sandbox.test.ts"
       ]
     },
     "§design.copy-deck/sandbox": {
@@ -1985,7 +1994,10 @@
         "pi-config/extensions/sandbox/state.ts",
         "pi-config/extensions/sandbox/tools.ts",
         "src/components/ChatView.tsx",
-        "src/lib/sandbox.ts"
+        "src/lib/sandbox.ts",
+        "server/overseer-tools.ts",
+        "server/sandbox-state.ts",
+        "pi-config/extensions/subagents/index.ts"
       ]
     },
     "§app.sessions-extension/agent-dir": {
@@ -2754,7 +2766,9 @@
         "src/lib/older-rows.ts",
         "src/lib/older-rows.test.ts",
         "src/lib/session-links.ts",
-        "src/lib/card-refs.ts"
+        "src/lib/card-refs.ts",
+        "server/overseer-org-tools.ts",
+        "server/overseer-folders.ts"
       ],
       "requires": [
         "§app.overseer/tools",
@@ -2851,14 +2865,15 @@
     "§app.overseer/navigation": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "code": [
         "server/overseer-tools.ts",
         "src/lib/overseer.ts",
         "src/components/ChatView.tsx",
         "src/components/Thread.tsx",
         "src/components/ToolCard.tsx",
-        "src/lib/live.ts"
+        "src/lib/live.ts",
+        "server/overseer-card-tool.ts"
       ],
       "requires": [
         "§chat.transcript/a-queued-message"
@@ -4916,7 +4931,13 @@
         "pi-config/extensions/sandbox/backend.ts",
         "pi-config/extensions/sandbox/backends/linux-bwrap.ts",
         "pi-config/extensions/sandbox/backends/darwin-seatbelt.ts",
-        "pi-config/extensions/sandbox/tests/unit/linux-bwrap.unit.test.ts"
+        "pi-config/extensions/sandbox/tests/unit/linux-bwrap.unit.test.ts",
+        "pi-config/extensions/sandbox/launch.ts",
+        "pi-config/extensions/sandbox/tools.ts",
+        "pi-config/extensions/claude-code/confined-launch.ts",
+        "pi-config/extensions/sandbox/tests/launch.unit.test.ts",
+        "pi-config/extensions/sandbox/tests/tools.unit.test.ts",
+        "pi-config/extensions/sandbox/README.md"
       ]
     },
     "§chat.worktrees/worktree-config": {
@@ -6706,7 +6727,9 @@
         "src/lib/profile-changes.test.ts",
         "src/lib/owner-card.test.ts",
         "src/lib/stakeholder.test.ts",
-        "src/lib/coding-worktrees.test.ts"
+        "src/lib/coding-worktrees.test.ts",
+        "server/projects/spaces.ts",
+        "server/project-import.ts"
       ],
       "requires": [
         "§app.overseer/sent-marker",
@@ -6733,7 +6756,8 @@
         "src/components/ChatView.tsx",
         "src/components/Thread.tsx",
         "server/org-routes.ts",
-        "server/orgs.ts"
+        "server/orgs.ts",
+        "server/overseer-sender.ts"
       ],
       "requires": [
         "§app.overseer/confirm",
@@ -10576,9 +10600,11 @@
         "shared/project-contract.ts",
         "shared/project-contract.test.ts",
         "server/project-services/engine.ts",
+        "server/project-services/copy-tree.ts",
         "server/project-services/share.test.ts",
         "server/project-services/data-own-source.test.ts",
-        "server/project-services/ports-grace.test.ts"
+        "server/project-services/ports-grace.test.ts",
+        "server/project-services/copy-tree.test.ts"
       ]
     },
     "§app.project-services/create": {
@@ -11763,7 +11789,8 @@
         "server/projects/clone.ts",
         "server/projects/routes.ts",
         "server/projects/routes.test.ts",
-        "src/components/AddProjectDialog.tsx"
+        "src/components/AddProjectDialog.tsx",
+        "server/overseer-folders.ts"
       ],
       "requires": [
         "§app.projects/registration"
@@ -11816,7 +11843,8 @@
         "src/components/AddProjectDialog.tsx",
         "src/components/SessionDetails.tsx",
         "src/lib/projects.ts",
-        "src/lib/projects.test.ts"
+        "src/lib/projects.test.ts",
+        "server/overseer-folders.ts"
       ],
       "requires": [
         "§app.organizations/registry"
@@ -11883,7 +11911,8 @@
         "server/index.ts",
         "src/components/OrgsView.tsx",
         "src/lib/api.ts",
-        "src/orgs.css"
+        "src/orgs.css",
+        "server/overseer-org-tools.test.ts"
       ],
       "requires": [
         "§app.projects/placement",
@@ -12896,6 +12925,65 @@
       ],
       "requires": [
         "§app.project-runtime/onboard"
+      ]
+    },
+    "§chat.sandbox/states": {
+      "kind": "behavior",
+      "requires": [
+        "§chat/sandbox",
+        "§chat.sandbox/toggle",
+        "§chat.sandbox/workers",
+        "§chat.worktrees/workers"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/sandbox/state.ts",
+        "pi-config/extensions/sandbox/index.ts",
+        "pi-config/extensions/subagents/index.ts",
+        "server/sandbox-state.ts",
+        "server/sandbox-state.test.ts",
+        "server/sandbox-route.test.ts",
+        "shared/protocol.ts",
+        "pi-config/extensions/sandbox/README.md",
+        "pi-config/extensions/sandbox/tests/state.unit.test.ts",
+        "pi-config/extensions/sandbox/tests/index.unit.test.ts",
+        "pi-config/extensions/sandbox/tests/cache-invariant.mjs",
+        "pi-config/extensions/sandbox/tests/run.mjs",
+        "pi-config/extensions/subagents/index.test.ts",
+        "pi-config/extensions/claude-code/provider/session-bridge.ts"
+      ]
+    },
+    "§app.overseer/org-project-add": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/overseer-org-tools.ts",
+        "server/overseer-folders.ts",
+        "server/projects/routes.ts",
+        "server/projects/clone.ts",
+        "server/projects/spaces.ts",
+        "server/org-routes.ts",
+        "server/orgs.ts",
+        "server/project-import.ts",
+        "server/overseer-sender.ts",
+        "server/overseer-prompt.md",
+        "server/overseer-org-tools.test.ts",
+        "server/overseer-runtime.test.ts",
+        "server/projects/routes.test.ts"
+      ],
+      "requires": [
+        "§app.overseer/org-writes",
+        "§app.overseer/confirm",
+        "§app.projects/registration",
+        "§app.projects/clone",
+        "§app.projects/placement",
+        "§app.projects/import",
+        "§app.organizations/registry",
+        "§app.overseer/org-attribution",
+        "§app.overseer/caps",
+        "§app.overseer/tools"
       ]
     }
   },

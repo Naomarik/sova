@@ -179,7 +179,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 |---|---|
 | Trigger | `aria-label` / `title`: More Actions |
 | Menu panel `aria-label` | More actions |
-| Menu panel rows | Attach images · Commands · Playbooks · Hide tool calls · Hide thinking · Sandbox · Undo last turn (in this order, each only where it applies: Playbooks in chat sessions, §chat/playbooks; Sandbox where the runtime has a `sandbox` command, §chat/sandbox; Undo last turn per §chat/timeline) |
+| Menu panel rows | Attach images · Commands · Playbooks · Hide tool calls · Hide thinking · the Sandbox group (Off · Subagents only · On) · Undo last turn (in this order, each only where it applies: Playbooks in chat sessions, §chat/playbooks; the Sandbox group where the runtime has a `sandbox` command, §chat/sandbox, its copy in §design.copy-deck/sandbox; Undo last turn per §chat/timeline) |
 | Model panel `aria-label` | Model and thinking |
 | Model panel rows | Model · the Thinking group |
 | Model row | {id} · {provider} (`title`: {provider/id}) · no model: Choose model |
@@ -200,15 +200,21 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 
 | Where | Copy |
 |---|---|
-| Flyout row | Sandbox (checked while on) |
-| Flyout row `title`, off | Confine this session's tools, from the next tool call. |
-| Flyout row `title`, on | {status}. Turning it off applies from the next tool call. |
-| Composer shield word | (full: none) · Partial · Unavailable · Not enforced |
+| Flyout group label | Sandbox |
+| Flyout rows (`menuitemradio`, checked on the reported state) | Off · Subagents only · On |
+| Row `title`, Off | Off: nothing is confined, neither this session's tools nor its subagents. Applies from the next tool call, and to subagents started or resumed from now. |
+| Row `title`, Subagents only | Subagents only: this session's tools run unconfined; subagents in its worktrees write only there. Applies from the next tool call, and to subagents started or resumed from now. |
+| Row `title`, On | On: this session and its subagents. Applies from the next tool call, and to subagents started or resumed from now. |
+| Composer shield word | (On with full enforcement, Subagents only, Off: none) · Partial · Unavailable · Not enforced |
 | Composer shield `title` / accessible name | {status}: the extension's status line (below, TUI `/sandbox`) |
-| Toast and announcement on a flip | {status} (the extension's own line) |
+| Toast and announcement on a change | {status}. Running subagents keep theirs until resumed. |
+| Toast when the state did not change | {status} (the extension's own line) |
+| Off asked of a host without it (an older server) | This host's Sova has no Off; its sandbox stays {status}. |
 | Flip refused: another writer | Sandbox unchanged: another writer has this session. Nothing was written. |
 | Flip refused: other | Sandbox unchanged: {server error} |
-| Flip refused: server errors ({server error}) | Invalid or missing ?path= (must be a .jsonl under the pi sessions dir) · Expected JSON body { on: boolean } · That session isn't open on this server; open the chat first |
+| Flip refused: server errors ({server error}) | Invalid or missing ?path= (must be a .jsonl under the pi sessions dir) · Expected JSON body { state: "off" \| "subagents" \| "on" } or { on: boolean } · state and on disagree · That session isn't open on this server; open the chat first |
+| TUI `/sandbox` usage | usage: /sandbox on \| subagents \| off |
+| TUI footer | sandbox on (and its suffixes, §chat.sandbox/toggle) · Off: sandbox off · Subagents only: nothing |
 | Unavailable refusal (tool error) | Sandbox unavailable: {reason}. Nothing ran. Turn the sandbox off to run tools unconfined. |
 | Denial note (end of a tool result) | [sandbox: a write or connection outside the policy was refused] |
 | Hidden results omitted (end of find/grep output) | [sandbox: {n} result line(s) under hidden paths were omitted] |
@@ -217,8 +223,12 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Proxy refusal, port (403 body) | sova sandbox: port {port} is not in the sandbox proxy allowlist |
 | Proxy refusal, local address (403 body) | sova sandbox: {host} resolves to {address}, a local address, which is not in the sandbox proxy allowlist |
 | Per-project loosening ignored | Sandbox: `.sova/sandbox.json` can only tighten; ignored `{key}`. |
-| TUI `/sandbox` (describeActive) | Sandbox off · Sandbox on · {level} · full enforcement · Sandbox on · {level} · partial enforcement ({reasons}) · Sandbox on · {level} · unavailable: {reasons} (tools refuse) · not enforced (a remote session): Sandbox on · {reasons}, e.g. Sandbox on · not enforced on remote; with no reasons, Sandbox on · not enforced |
-| TUI transcript marker (terminal only; Sova's transcript shows none) | Sandbox → on · {level} · {enforcement} enforcement (not full adds: · {reasons}) · not enforced: Sandbox → on · {reasons} (no reasons: not enforced) · Sandbox → off |
+| TUI `/sandbox` (describeActive) | Off: Sandbox off · workers unconfined · Subagents only: Sandbox subagents only · workers in tracked worktrees write only there · Sandbox on · {level} · full enforcement · Sandbox on · {level} · partial enforcement ({reasons}) · Sandbox on · {level} · unavailable: {reasons} (tools refuse) · not enforced (a remote session): Sandbox on · {reasons}, e.g. Sandbox on · not enforced on remote; with no reasons, Sandbox on · not enforced |
+| TUI transcript marker (terminal only; Sova's transcript shows none) | Sandbox → on · {level} · {enforcement} enforcement (not full adds: · {reasons}) · not enforced: Sandbox → on · {reasons} (no reasons: not enforced) · Sandbox → subagents only · Sandbox → off |
+| `agent_list`, per worker | sandbox: on · sandbox: on, narrowed to {path} · sandbox: write-only to {path} · sandbox: none |
+| Overseer, lowering refused (`sova_set_session`) | Lowering a session's sandbox needs the user's approval: ask with sova_card, listing the session, and set it in the turn the user's click starts. Nothing was changed. |
+| Overseer, lowering refused (`sova_create_session`) | Starting a session with its sandbox lowered needs the user's approval: ask with sova_card first (say the session starts with its sandbox lowered, and to what), and create it in the turn the user's click starts. No session was created. |
+| Overseer, results | `sova_set_session`: sandbox {Off \| Subagents only \| On} (from its next tool call; running subagents keep theirs until resumed) · `sova_create_session`: Sandbox: {state} (this session only). |
 
 ## §design.copy-deck/playbooks — Playbooks (§chat/playbooks)
 

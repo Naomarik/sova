@@ -709,22 +709,44 @@ export interface LoginUse {
 	/** Live `claude` pids on the login (orphans of a dead owner included). */
 	children: number[];
 }
+/** `ps -o etime=` (`[[dd-]hh:]mm:ss`) in seconds, or null (pure, for tests). */
+export function parseEtime(v: string): number | null {
+	const m = /^\s*(?:(?:(\d+)-)?(\d+):)?(\d+):(\d+)\s*$/.exec(v);
+	return m ? ((Number(m[1] ?? 0) * 24 + Number(m[2] ?? 0)) * 60 + Number(m[3])) * 60 + Number(m[4]) : null;
+}
+
+/** A process's age in seconds and command name, from `ps` (null: no such process). */
+export type PsRead = (pid: number) => { ageSec: number; comm: string } | null;
+const psRead: PsRead = (pid) => {
+	const r = spawnSync("ps", ["-o", "etime=,comm=", "-p", String(pid)], { encoding: "utf8", timeout: 5_000, env: { ...process.env, LC_ALL: "C" } });
+	const m = r.status === 0 ? /^\s*(\S+)\s+(.+?)\s*$/m.exec(r.stdout) : null;
+	const age = m ? parseEtime(m[1]!) : null;
+	return m && age !== null ? { ageSec: age, comm: m[2]! } : null;
+};
+
 /**
  * Whether `pid` is still a process on the login directory `dir`: alive, and (Linux) its environment
  * names `dir` as CLAUDE_CONFIG_DIR — a lease's child pid that has been reused by an unrelated
- * process is not, so it neither holds the login nor gets stopped at a drain's cut. Elsewhere,
- * liveness alone.
+ * process is not, so it neither holds the login nor gets stopped at a drain's cut. Elsewhere (macOS
+ * reads no other process's environment): a process named `claude` that started no later than
+ * `since`, when the lease listing it was written (a pid reused after that started later), `now` on
+ * the same clock as `since`.
  */
-export function claudeRunsOn(pid: number, dir: string): boolean {
+export function claudeRunsOn(pid: number, dir: string, since?: number, now = Date.now(), platform: NodeJS.Platform = process.platform, ps: PsRead = psRead): boolean {
 	if (!pidAlive(pid)) return false;
-	if (process.platform !== "linux") return true;
+	if (platform !== "linux") {
+		const p = ps(pid);
+		if (!p || path.basename(p.comm) !== "claude") return false;
+		// ps counts whole seconds: a start up to 2 s past the write is the same process.
+		return since === undefined || now - p.ageSec * 1000 <= since + 2_000;
+	}
 	let env: string;
 	try { env = fs.readFileSync(`/proc/${pid}/environ`, "latin1"); } catch { return false; }
 	return `\0${env}\0`.includes(`\0CLAUDE_CONFIG_DIR=${dir}\0`);
 }
 export function readLoginUse(
 	agentDir: string, id: string, alive: (pid: number) => boolean = pidAlive, now = Date.now(),
-	runsOn: (pid: number, dir: string) => boolean = claudeRunsOn,
+	runsOn: (pid: number, dir: string, since?: number, now?: number) => boolean = claudeRunsOn,
 ): LoginUse {
 	const home = loginDir(agentDir, id);
 	const dir = path.join(home, LEASES_DIR_NAME);
@@ -735,7 +757,7 @@ export function readLoginUse(
 		if (!/^\d+\.json$/.test(name)) continue;
 		let lease: LoginLease;
 		try { lease = JSON.parse(fs.readFileSync(path.join(dir, name), "utf8")); } catch { continue; }
-		const kids = Array.isArray(lease.children) ? [...new Set(lease.children)].filter((pid) => Number.isInteger(pid) && alive(pid) && runsOn(pid, home)) : [];
+		const kids = Array.isArray(lease.children) ? [...new Set(lease.children)].filter((pid) => Number.isInteger(pid) && alive(pid) && runsOn(pid, home, typeof lease.at === "number" ? lease.at : undefined, now)) : [];
 		const ownerAlive = typeof lease.at === "number" && now - lease.at <= LEASE_STALE_MS && alive(lease.owner);
 		if (!ownerAlive && !kids.length) {
 			try { fs.rmSync(path.join(dir, name), { force: true }); } catch { /* best effort */ }

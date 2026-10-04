@@ -43,7 +43,8 @@ import type { PortOwner } from "../port-owner";
 import { startStaticServe, staticServes, StaticServeError, stopStaticServe } from "../preview-serve";
 import { projectOf } from "../project-root";
 import { confinementOf, type Confinement } from "./confine";
-import { adoptedStatus, cgroupPids, DriverError, rssOf, SystemdDriver, type AdoptedStatus, type Driver, type OnceSpec, type UnitSpec } from "./drivers";
+import { copyContentsArgv } from "./copy-tree";
+import { adoptedLogs, adoptedPids, adoptedStatus, DriverError, rssOf, type AdoptedStatus, type Driver, type OnceSpec, type UnitSpec } from "./drivers";
 import { hostPortOwner } from "./proctable";
 import type { NoteFacts } from "./note";
 import { hostedBusy, restartGateLog, RESTART_DELAY_SEC, scheduleRestart, serverCheckout, serverStart } from "./self-host";
@@ -1056,7 +1057,7 @@ export class ProjectEngine {
     if (hidden) throw new VerbFailure("not-approved", `data.${d.name}.from: ${hidden}`);
     if (!existsSync(src) || !statSync(src).isDirectory()) throw new VerbFailure("not-found", `data.${d.name}.from: ${src} is not a folder`);
     mkdirSync(path, { recursive: true });
-    const code = await this.containerExecLike("cp", ["-a", "--reflink=auto", `${src}/.`, path]);
+    const code = await this.containerExecLike("cp", copyContentsArgv(src, path));
     if (code !== 0) throw new VerbFailure("hook-failed", `copying ${src} to ${path} failed (exit ${code})`);
     return path;
   }
@@ -1188,7 +1189,7 @@ export class ProjectEngine {
     const o = this.ownerIn(scope, s)(port);
     const unit = this.unitOf(scope.id, s.name);
     if (typeof o === "object" && (s.static !== undefined ? o.pid === process.pid : this.driver.owns(unit, o.pid))) return { held: true, own: true, who: `its own process (pid ${o.pid})` };
-    if (typeof o === "object" && s.adopt && scope.slot === 0 && cgroupPids(s.adopt.unit).includes(o.pid)) return { held: true, own: true, who: `its adopted unit ${s.adopt.unit} (pid ${o.pid})` };
+    if (typeof o === "object" && s.adopt && scope.slot === 0 && (await adoptedPids(s.adopt.unit)).includes(o.pid)) return { held: true, own: true, who: `its adopted unit ${s.adopt.unit} (pid ${o.pid})` };
     const mine = this.containerOf(def, scope, s);
     if (mine && (await publishedPorts(this.containerQuery, mine.engine, mine.name)).has(port)) return { held: true, own: true, who: `its own container ${mine.name}` };
     let other: string | null = null;
@@ -1823,8 +1824,8 @@ export class ProjectEngine {
     const out: LogLine[] = [];
     const adopted = rec.slot === 0 && run.def ? adoptedService(run.def) : null;
     for (const n of names) {
-      // An adopted unit's journal, read as any systemd unit's (§app.project-services/adopt).
-      const got = adopted?.name === n ? await new SystemdDriver().logs(adopted.adopt!.unit.replace(/\.service$/, ""), lines) : await this.driver.logs(this.unitOf(rec.id, n), lines);
+      // An adopted unit's journal, read as any systemd unit's; on macOS its agent's output file (§app.project-services/adopt).
+      const got = adopted?.name === n ? await adoptedLogs(adopted.adopt!.unit, lines) : await this.driver.logs(this.unitOf(rec.id, n), lines);
       for (const l of got) out.push({ t: l.t, service: n, text: l.text });
     }
     // Oldest first: by time where the driver has it, else each service's own order.

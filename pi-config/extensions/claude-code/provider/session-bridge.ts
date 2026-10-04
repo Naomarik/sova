@@ -351,7 +351,7 @@ export function isPrefix(recorded: readonly string[], next: readonly string[]): 
  * spawn: there is no control request that moves a running CLI, so the only
  * honest response to a session that changed directory is a restart.
  */
-function turnMeta(request: ClaudeTurnRequest, cwd: string): string {
+export function turnMeta(request: ClaudeTurnRequest, cwd: string): string {
 	const tools = request.tools.map((tool) => `${tool.name}\u0001${tool.description}\u0001${JSON.stringify(tool.parameters ?? {})}`).join("\u0002");
 	return sha(request.model, request.effort ?? "", request.systemPrompt ?? "", tools, cwd);
 }

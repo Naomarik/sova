@@ -20,7 +20,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { LOGIN_UNCHANGED, OVERSEER_DIALOG_ANSWER_ENTRY, OVERSEER_ENTRY, OVERSEER_SENT_ENTRY } from "../shared/protocol";
 import { BATON_SENT_ENTRY, type BatonSentData, OPERATOR } from "../shared/baton";
-import type { ChatClientMessage, ChatModeResult, ChatServerMessage, CompactRefusal, ModeApplies, ModeInfo, OverseerDialogAnswerData, OverseerSentMarkerData, QueueItem, RegenerateRefusal, RewindRefusal, SandboxApplyResult, SlashCommand, TranscriptItem, WorkerInfo } from "../shared/protocol";
+import type { ChatClientMessage, ChatModeResult, ChatServerMessage, CompactRefusal, ModeApplies, ModeInfo, OverseerDialogAnswerData, OverseerSentMarkerData, QueueItem, RegenerateRefusal, RewindRefusal, SandboxApplyResult, SandboxInfo, SlashCommand, TranscriptItem, WorkerInfo } from "../shared/protocol";
 import { COMPACT_COMMAND, COMPACT_IMAGES_REFUSAL, compactCommand } from "../shared/compact";
 import type { LinkedAgentInfo } from "../shared/mesh-links";
 import { stripImageNotes } from "../shared/image-note";
@@ -39,7 +39,8 @@ import { modelAllowed, modelDenial, readModelPolicy } from "./model-policy";
 import { toContextInfo, workerWindowResolver } from "./models";
 import { claudeSpawnModels, WorkerContextReader, withWorkerContext } from "./worker-context";
 import { resumeCommandOf, resumeWorker, type ResumeOutcome } from "./worker-resume";
-import { applySandbox, onSandboxAppend, sandboxCommandOf, sandboxMessage, type SandboxHost } from "./sandbox-state";
+import { applySandbox, onSandboxAppend, sandboxCommandOf, sandboxInfo, sandboxMessage, type SandboxHost } from "./sandbox-state";
+import type { SandboxState } from "../pi-config/extensions/sandbox/state.ts";
 import { chatClaudeLogin, claudeLoginAfterHello, claudeLoginMessage, isClaudeLoginEntry, LoginPick, loginName } from "./claude-login-state";
 import { contextForBranch, normalizeEntries, normalizeEntry, withoutSignatures } from "./transcript";
 import { cutTail, type HistoryPart, pullFields } from "./tail-hello";
@@ -2117,6 +2118,11 @@ class ChatSession {
     return sandboxCommandOf(this.session.extensionRunner);
   }
 
+  /** This chat's sandbox now (§chat.sandbox/states), or null when its runtime has no sandbox extension. */
+  sandboxInfo(): SandboxInfo | null {
+    return this.sandboxCommand() ? sandboxInfo(this.session.sessionManager.getBranch()) : null;
+  }
+
   /** This chat's "sandbox" message, only when the extension is loaded: without it, nothing is sent. */
   private sendSandbox(send: (msg: ChatServerMessage) => void): void {
     if (this.sandboxCommand()) send(sandboxMessage(this.session.sessionManager.getBranch()));
@@ -2169,9 +2175,9 @@ class ChatSession {
     return decodeWorkers(rec?.rec?.presence, true).find((w) => w.id === id) ?? null;
   }
 
-  /** POST /api/sandbox?path=: flip this chat's sandbox from its next tool call (applySandbox). */
-  applySandbox(on: boolean): Promise<SandboxApplyResult> {
-    return applySandbox(this.sandboxHost, on);
+  /** POST /api/sandbox?path=: set this chat's sandbox state from its next tool call (applySandbox). */
+  applySandbox(state: SandboxState): Promise<SandboxApplyResult> {
+    return applySandbox(this.sandboxHost, state);
   }
 
   commands(): ChatServerMessage {

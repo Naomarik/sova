@@ -169,7 +169,9 @@ test("ram reads a unit's memory from its cgroup, and a pid tree's from /proc", (
   const unit = r.rows.find((x: { unit: string }) => x.unit === "sova-svc-abc123-proj-1234abcd-web");
   assert.deepEqual([unit.current, unit.peak, unit.source], [104857600, 209715200, "cgroup"]);
   const self = r.rows.find((x: { unit: string }) => x.unit === `pid ${process.pid}`);
-  assert.ok(self.current > 0);
+  // A pid tree's memory is read from /proc: Linux only (null elsewhere, e.g. macOS).
+  if (process.platform === "linux") assert.ok(self.current > 0);
+  else assert.equal(self.current, null);
 });
 
 test("the entry point: plan points at a page with no `open` and check notes it; declaring one quiets both", () => {

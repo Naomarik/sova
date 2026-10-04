@@ -257,7 +257,9 @@ test("doctor and status name the supervisor adapter and why; a reserved adapter 
   const doc = shaped(await sel.run("doctor", { project }, op));
   const sup = doc.checks!.find((c) => c.id === "supervisor")!;
   assert.equal(sup.ok, true);
-  assert.match(sup.detail, /^detached: detached sessions, processes read from \/proc; chosen because systemd treated as absent \(SOVA_PROJECT_NO_SYSTEMD=1\)$/);
+  // Linux reads /proc; macOS's ps has no session column (§app.project-services/supervisor).
+  const reads = process.platform === "linux" ? "\\/proc" : "ps \\(no session ids: process trees and groups\\)";
+  assert.match(sup.detail, new RegExp(`^detached: detached sessions, processes read from ${reads}; chosen because systemd treated as absent \\(SOVA_PROJECT_NO_SYSTEMD=1\\)$`));
   const st = shaped(await sel.run("status", { project }, op));
   assert.deepEqual(st.checks, [sup], "status carries the same check");
   const launchd = new ProjectEngine({ driver: new SelectedDriver({ env: { SOVA_PROJECT_DRIVER: "launchd" } }), pollMs: 100 });

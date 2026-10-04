@@ -8,6 +8,17 @@ import { isLinkMessage } from "../../shared/link-message";
 import { parseTopicBatch } from "../../shared/topic-message";
 import type { TmpAttachment, UploadResult } from "../../shared/protocol";
 import { imagesFromContent } from "./images";
+import {
+  compactionEndEffects,
+  compactionStartEffects,
+  NO_VIEW,
+  replyEndEffects,
+  settleEffects,
+  toolEndEffects,
+  turnStartEffects,
+  type LiveEffect,
+  type LiveEffectsContext,
+} from "./live-effects";
 import { contentText, isObj, str } from "./message";
 
 export type LiveBlock =
@@ -365,16 +376,23 @@ export function takeBackQueued(set: SetStoreFunction<LiveState>, drained: string
 /** The live-only event a baton sender marker becomes (see applyEvent). */
 export const BATON_SENT_EVENT = "sova_baton_sent";
 
-export function applyEvent(set: SetStoreFunction<LiveState>, event: unknown) {
-  if (!isObj(event)) return;
+/**
+ * Applies one live event to the store, and returns what it does besides (live-effects.ts), for the
+ * chat view to run: `view` says whose view it lands in.
+ */
+export function applyEvent(set: SetStoreFunction<LiveState>, event: unknown, view: LiveEffectsContext = NO_VIEW): LiveEffect[] {
+  if (!isObj(event)) return [];
   const type = str(event.type);
+  let effects: LiveEffect[] = [];
   set(
     produce((s) => {
       switch (type) {
         case "agent_start":
+          effects = turnStartEffects();
           s.running = true;
           break;
         case "agent_settled":
+          effects = settleEffects();
           s.running = false;
           s.activity = null;
           s.stopping = false;
@@ -486,6 +504,7 @@ export function applyEvent(set: SetStoreFunction<LiveState>, event: unknown) {
             break;
           }
           if (msg.role !== "assistant") break;
+          effects = replyEndEffects(msg);
           const entry = lastAssistant(s);
           if (entryId) entry.entryId = entryId;
           // message_end is authoritative.
@@ -513,6 +532,7 @@ export function applyEvent(set: SetStoreFunction<LiveState>, event: unknown) {
           break;
         }
         case "tool_execution_end": {
+          effects = toolEndEffects(event, view);
           const id = str(event.toolCallId);
           if (!id) break;
           const prev = s.tools[id];
@@ -530,12 +550,14 @@ export function applyEvent(set: SetStoreFunction<LiveState>, event: unknown) {
           s.activity = "Retrying after a provider error";
           break;
         case "compaction_start":
+          effects = compactionStartEffects();
           s.activity = "Compacting context";
           break;
         case "auto_retry_end":
           s.activity = null;
           break;
         case "compaction_end":
+          effects = compactionEndEffects(event);
           s.activity = null;
           // A /compact runs with no turn, so no agent_settled follows to clear a Stop pressed
           // during it; inside a turn (pi's automatic compaction) the turn's own settle still does.
@@ -544,4 +566,5 @@ export function applyEvent(set: SetStoreFunction<LiveState>, event: unknown) {
       }
     }),
   );
+  return effects;
 }

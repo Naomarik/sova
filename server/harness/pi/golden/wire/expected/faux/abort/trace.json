@@ -1,0 +1,620 @@
+[
+  {
+    "frame": 0,
+    "state": {
+      "entries": [],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": [
+      "clearTurnError",
+      "announceWorking"
+    ]
+  },
+  {
+    "frame": 1,
+    "state": {
+      "entries": [],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 2,
+    "state": {
+      "entries": [],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 3,
+    "state": {
+      "entries": [],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 4,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "Write a lot",
+          "state": "delivered",
+          "started": true,
+          "images": []
+        }
+      ],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 5,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "Write a lot",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000004"
+        }
+      ],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 6,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "Write a lot",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000004"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [],
+          "done": false,
+          "model": "faux/faux-1"
+        }
+      ],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 7,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "Write a lot",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000004"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": ""
+            }
+          ],
+          "done": false,
+          "model": "faux/faux-1"
+        }
+      ],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 8,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "Write a lot",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000004"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "This reply is lo"
+            }
+          ],
+          "done": false,
+          "model": "faux/faux-1"
+        }
+      ],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 9,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "Write a lot",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000004"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "This reply is long enough to be "
+            }
+          ],
+          "done": false,
+          "model": "faux/faux-1"
+        }
+      ],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 10,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "Write a lot",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000004"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "This reply is long enough to be cut off. More wo"
+            }
+          ],
+          "done": false,
+          "model": "faux/faux-1"
+        }
+      ],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 11,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "Write a lot",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000004"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "This reply is long enough to be cut off. More words keep coming."
+            }
+          ],
+          "done": false,
+          "model": "faux/faux-1"
+        }
+      ],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 12,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "Write a lot",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000004"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "This reply is long enough to be cut off. More words keep coming. More words keep"
+            }
+          ],
+          "done": false,
+          "model": "faux/faux-1"
+        }
+      ],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 13,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "Write a lot",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000004"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "This reply is long enough to be cut off. More words keep coming. More words keep coming. More wo"
+            }
+          ],
+          "done": false,
+          "model": "faux/faux-1"
+        }
+      ],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 14,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "Write a lot",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000004"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "This reply is long enough to be cut off. More words keep coming. More words keep coming. More words keep coming."
+            }
+          ],
+          "done": false,
+          "model": "faux/faux-1"
+        }
+      ],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 15,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "Write a lot",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000004"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "This reply is long enough to be cut off. More words keep coming. More words keep coming. More words keep coming. More words keep"
+            }
+          ],
+          "done": false,
+          "model": "faux/faux-1"
+        }
+      ],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 16,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "Write a lot",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000004"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "This reply is long enough to be cut off. More words keep coming. More words keep coming. More words keep coming. More words keep coming. More wo"
+            }
+          ],
+          "done": false,
+          "model": "faux/faux-1"
+        }
+      ],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 17,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "Write a lot",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000004"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "This reply is long enough to be cut off. More words keep coming. More words keep coming. More words keep coming. More words keep coming. More words keep coming."
+            }
+          ],
+          "done": false,
+          "model": "faux/faux-1"
+        }
+      ],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 18,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "Write a lot",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000004"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "This reply is long enough to be cut off. More words keep coming. More words keep coming. More words keep coming. More words keep coming. More words keep coming. More words keep"
+            }
+          ],
+          "done": false,
+          "model": "faux/faux-1"
+        }
+      ],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 19,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "Write a lot",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000004"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "This reply is long enough to be cut off. More words keep coming. More words keep coming. More words keep coming. More words keep coming. More words keep coming. More words keep"
+            }
+          ],
+          "done": true,
+          "model": "faux/faux-1",
+          "entryId": "00000005",
+          "stoppedAt": "2026-01-01T00:00:00.000Z"
+        }
+      ],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 20,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "Write a lot",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000004"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "This reply is long enough to be cut off. More words keep coming. More words keep coming. More words keep coming. More words keep coming. More words keep coming. More words keep"
+            }
+          ],
+          "done": true,
+          "model": "faux/faux-1",
+          "entryId": "00000005",
+          "stoppedAt": "2026-01-01T00:00:00.000Z"
+        }
+      ],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 21,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "Write a lot",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000004"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "This reply is long enough to be cut off. More words keep coming. More words keep coming. More words keep coming. More words keep coming. More words keep coming. More words keep"
+            }
+          ],
+          "done": true,
+          "model": "faux/faux-1",
+          "entryId": "00000005",
+          "stoppedAt": "2026-01-01T00:00:00.000Z"
+        }
+      ],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 22,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "Write a lot",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000004"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "This reply is long enough to be cut off. More words keep coming. More words keep coming. More words keep coming. More words keep coming. More words keep coming. More words keep"
+            }
+          ],
+          "done": true,
+          "model": "faux/faux-1",
+          "entryId": "00000005",
+          "stoppedAt": "2026-01-01T00:00:00.000Z"
+        }
+      ],
+      "tools": {},
+      "running": false,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": [
+      "settled"
+    ]
+  }
+]

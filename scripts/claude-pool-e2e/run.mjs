@@ -11,7 +11,10 @@
 //   node scripts/claude-pool-e2e/run.mjs --down     # remove every container, volume and network
 //   node scripts/claude-pool-e2e/run.mjs --keep     # up and pair only (for a browser: desk on 127.0.0.1:4821)
 //
-// Needs docker and the mesh lab's `sovamesh-plain:lab` image (node 25 + socat; scripts/mesh-lab
+// The hosts run the server on Bun (scripts/start-server.sh); SOVA_RUNTIME=node in this command's
+// environment runs them on Node instead (applies to hosts it creates; --down first to switch).
+//
+// Needs docker and the mesh lab's `sovamesh-plain:lab` image (node 25, bun + socat; scripts/mesh-lab
 // builds it). Names are `sovapool*`. Build the worktree first (pnpm run build) for the browser.
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync } from "node:fs";
@@ -28,6 +31,7 @@ const PORTS = { desk: 4821, phone: 4822 };
 const AGENT = `${WT}/.agent`;
 const IDLE_MS = 25_000;
 const CUT_MS = 60_000;
+const RUNTIME = process.env.SOVA_RUNTIME === "node" ? ["-e", "SOVA_RUNTIME=node"] : [];
 
 const docker = (...args) => execFileSync("docker", args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
 const quiet = (...args) => {
@@ -90,7 +94,7 @@ function up() {
       `printf '%s' '{"hasCompletedOnboarding":true,"oauthAccount":{"accountUuid":"acct-own-${h}","emailAddress":"own-${h}@example.com"}}' > /pool/home/.claude/.claude.json`,
       'export PATH="$(sh scripts/fake-claude-path.sh):$PATH"',
       "socat TCP-LISTEN:4900,fork,reuseaddr TCP:127.0.0.1:4800 &",
-      "exec node --import tsx server/index.ts",
+      "exec scripts/start-server.sh",
     ].join("\n");
     const pub = PORTS[h];
     docker(
@@ -100,7 +104,7 @@ function up() {
       "-e", `PI_CODING_AGENT_DIR=${AGENT}`, "-e", "HOME=/pool/home", "-e", "CLAUDE_CONFIG_DIR=/pool/home/.claude",
       "-e", "PORT=4800", "-e", "SOVA_MESH_IDENTITY=addresses", "-e", `SOVA_PEER_HOST=${ip}`, "-e", `SOVA_SELF_NODE_ID=n-${h}`,
       "-e", "SOVA_USAGE_POLL=off", "-e", "SOVA_PRICES_FETCH=off", "-e", `SOVA_CLAUDE_POOL_IDLE_MS=${IDLE_MS}`,
-      "-e", `SOVA_CLAUDE_POOL_CUT_MS=${CUT_MS}`, "-e", "SOVA_CLAUDE_POOL_TICK_MS=1000", "-e", "TMPDIR=/tmp",
+      "-e", `SOVA_CLAUDE_POOL_CUT_MS=${CUT_MS}`, "-e", "SOVA_CLAUDE_POOL_TICK_MS=1000", "-e", "TMPDIR=/tmp", ...RUNTIME,
       "--entrypoint", "sh", IMAGE, "-c", boot,
     );
     if (pub) docker("network", "connect", "--ip", ip, NET, `sovapool-${h}`);

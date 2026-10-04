@@ -49,7 +49,7 @@ import { receiverSpecial, startTopicDelivery } from "./topic-delivery";
 import { projectOverseerOfPath } from "./project-overseer-store";
 import { canonicalPath, LIVE_DIR, resolveSessionPath, SESSIONS_DIR } from "./paths";
 import { stateRoot } from "./state-root";
-import { markListening, runtimeInfo } from "./runtime-choice";
+import { runtimeInfo } from "./runtime-choice";
 import { cappedWebSocket } from "./runtime-quirks";
 import { claudeCodeModelCount, listModels, listRegistryModels, resolveContext } from "./models";
 import { setFavorite } from "./model-favorites";
@@ -173,8 +173,8 @@ const SERVER_HEAD: string | null = (() => {
     return null;
   }
 })();
-/** The runtime this process runs on, the one the setting chose, and a fallback's reason (§app.server-runtime/health). */
-const SERVER_RUNTIME = runtimeInfo(process.env, stateRoot());
+/** The runtime this process runs on and the one the choice asks for (§app.server-runtime/health). */
+const SERVER_RUNTIME = runtimeInfo(process.env);
 
 // Embedded pi runtimes / extensions must never take the server down.
 process.on("uncaughtException", (err) => console.error("[uncaughtException]", err));
@@ -1629,8 +1629,6 @@ export const server = serve({ fetch: app.fetch, port: PORT, hostname: HOST }, (i
   // The link extension's tools call this server back here: the real bound port (PORT=0 in tests).
   setLinkOrigin(linkOrigin(info.port));
   console.log(`sova server on http://${HOST}:${info.port} (${SERVER_RUNTIME.name} ${SERVER_RUNTIME.version})`);
-  // A Bun boot that got this far is healthy: its failed-boot count starts over (§app.server-runtime/fallback).
-  markListening(stateRoot());
   startMesh({ fetch: app.fetch, upgrade: upgradeSovaSocket });
   // Public links: the share listener, a gateway's router, a routed host's ingress (server/share/runtime.ts).
   void startShareRuntime();

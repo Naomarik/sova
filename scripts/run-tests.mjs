@@ -1,8 +1,12 @@
 #!/usr/bin/env node
-// The unit suite, on Node or Bun: one call for every caller.
+// The unit suite, on Bun or (when asked) Node: one call for every caller.
 //
-//   node scripts/run-tests.mjs --runtime node [<files>] [-- <runner flags>]   # pnpm test
-//   node scripts/run-tests.mjs --runtime bun  [<files>] [-- <runner flags>]   # pnpm run test:bun
+//   node scripts/run-tests.mjs [<files>] [-- <runner flags>]                  # pnpm test: bun
+//   node scripts/run-tests.mjs --runtime node [<files>] [-- <runner flags>]   # pnpm run test:node
+//
+// The runtime: --runtime node|bun, else node when SOVA_RUNTIME=node (the server's switch,
+// §app.server-runtime/choice), else bun. Bun is found as the launcher finds it ($SOVA_BUN, PATH,
+// `mise which bun`); none found exits 2 at once, never a quiet Node pass.
 //
 // The files are GLOBS below, or the ones named (a project's `test.run` appends its
 // selectors, so each named file is routed like any other). Two invocations, and a non-zero exit if
@@ -24,6 +28,7 @@ import { execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { chosenRuntime, resolveBun } from "../server/runtime-choice.ts";
 
 const ROOT = path.join(import.meta.dirname, "..");
 const PRELOAD = "./pi-config/extensions/claude-code/tests/hermetic-env.mjs";
@@ -46,12 +51,12 @@ const isBrowserTest = (f) => f.endsWith(".browser.test.ts");
 
 const argv = process.argv.slice(2);
 const at = argv.indexOf("--runtime");
-const runtime = at >= 0 ? argv[at + 1] : "node";
+const runtime = at >= 0 ? argv[at + 1] : chosenRuntime();
 if (runtime !== "node" && runtime !== "bun") {
-  console.error("usage: node scripts/run-tests.mjs --runtime node|bun [files] [-- flags]");
+  console.error("usage: node scripts/run-tests.mjs [--runtime node|bun] [files] [-- flags]");
   process.exit(2);
 }
-const rest = argv.filter((a, i) => a !== "--" && i !== at && i !== at + 1);
+const rest = argv.filter((a, i) => a !== "--" && (at < 0 || (i !== at && i !== at + 1)));
 const flags = rest.filter((a) => a.startsWith("-"));
 const named = rest.filter((a) => !a.startsWith("-"));
 const files = named.length ? named : [...new Set(GLOBS.flatMap((g) => fs.globSync(g, { cwd: ROOT })))].sort();
@@ -84,7 +89,12 @@ if (runtime === "node") {
 }
 
 // ─── Bun ────────────────────────────────────────────────────────────────────────────────────────
-const bun = process.env.SOVA_BUN || "bun";
+const found = resolveBun();
+if ("missing" in found) {
+  console.error(`run-tests: bun not found (${found.missing}); install it with mise, or run pnpm run test:node`);
+  process.exit(2);
+}
+const bun = found.path;
 const FILE_LIMIT_MS = Number(process.env.TEST_FILE_LIMIT_MS) || 300_000;
 const bunFlags = [...["--timeout=60000"].filter((d) => !flags.some((f) => f.split("=")[0] === d.split("=")[0])), ...flags];
 let misePaths = "";

@@ -1,12 +1,15 @@
 # §app/installer — The one-shot installer
 
 `scripts/install.sh` installs Sova on a Mac or a Linux machine in one run, safe to pipe from curl.
-It needs git and Node.js (>= 22.19) already there, and pnpm or, failing that, npx to run the pnpm
-the repository pins. It installs no toolchain and no system package and never uses sudo. It
+It needs git, Node.js (>= 22.19), curl, and unzip or python3 already there, and pnpm or, failing
+that, npx to run the pnpm the repository pins. Apart from the Bun the server runs on, which it
+downloads into the install directory (§app.installer/bun), it installs no toolchain and no system
+package, and it never uses sudo. It
 clones the requested ref into an install directory of its own (default `~/.local/share/sova`),
 installs its dependencies and builds it in a staging directory beside it, promotes the build only
 after it succeeded (the previous install kept until then, and restored on failure), and writes a
-`sova` launcher (default `~/.local/bin/sova`). The launcher runs the server, except `sova token`,
+`sova` launcher (default `~/.local/bin/sova`). The launcher runs the server on that Bun (`sova
+--node` runs it on Node instead), except `sova token`,
 which prints the install's access token, and `sova open`, which opens the browser at the app
 already unlocked (§app.access/callers); its closing message says both. An install directory that
 is not a clean clone of Sova, or a launcher this script did not write, is refused and left alone.
@@ -88,3 +91,26 @@ Running the installer again with the same inputs leaves the machine as it was.
 The installer and the launcher it writes run on macOS's bash 3.2 and BSD userland as well as on
 Linux: no GNU-only flags (`sed -i`, `readlink -f`, `stat -c`, `date -d`, `setsid`) and no bash 4
 features. It is read whole before it runs, so a curl pipe cut short runs nothing.
+
+## §app.installer/bun — The server's Bun, inside the install directory
+
+The installer downloads the Bun release the cloned ref's `mise.toml` pins (`bun = "x.y.z"`) from
+Bun's GitHub releases into `<install dir>/.bun/bin/bun`, through the clone's `scripts/fetch-bun.sh`,
+and checks it against the sha256 the clone's `scripts/bun-release.txt` records for that build.
+The build is chosen like Bun's own installer chooses it: macOS arm64 (also from an x64 shell under
+Rosetta) or x64, Linux x64 or aarch64, the musl build on a musl libc, the Android build in Termux,
+and the `-baseline` build on an x64 CPU without AVX2. A checksum that does not match, a ref that
+records no checksum for its pinned build, a machine with no such build, or a download that does
+not run there stops the install before anything is promoted, with "could not install Bun; nothing
+was changed". A rebuild keeps the previous install's Bun when it is still the pinned version
+instead of downloading it again, and an install whose Bun is missing or not the pinned version is
+rebuilt even at the same commit.
+
+- **The launcher.** `sova` sets `SOVA_BUN` to that Bun unless the caller set one, and runs the
+  clone's `scripts/start-server.sh` with its arguments, so the server runs on Bun
+  (§app.server-runtime/choice). `sova --node`, or `SOVA_RUNTIME=node` in its environment, runs it
+  on Node instead.
+- **Why a download.** Bun lives and goes with the install directory, at the version Sova is
+  tested on, with no version manager installed and no shell rc file edited.
+- Its closing message names the runtime: "runtime: Bun x.y.z in <install dir>/.bun (sova --node
+  runs it on Node instead)".

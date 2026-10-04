@@ -12494,7 +12494,12 @@
         "server/runtime-choice.ts",
         "server/runtime-choice.test.ts",
         "scripts/dev-server.mjs",
-        "package.json"
+        "package.json",
+        "scripts/run-tests.mjs",
+        ".sova/project.json",
+        "README.md",
+        "CLAUDE.md",
+        "CONTRIBUTING.md"
       ],
       "requires": []
     },
@@ -12506,7 +12511,8 @@
         "scripts/start-server.sh",
         "server/runtime-choice.ts",
         "server/runtime-choice.test.ts",
-        "server/index.ts"
+        "scripts/dev-server.mjs",
+        "scripts/run-tests.mjs"
       ],
       "requires": [
         "§app.server-runtime/choice"
@@ -12549,7 +12555,8 @@
         "scripts/run-tests.mjs",
         "server/chat-manager.ts",
         "server/extensions.ts",
-        "server/resource-monitor.ts"
+        "server/resource-monitor.ts",
+        "pi-config/extensions/claude-code/tests/hermetic-env.mjs"
       ],
       "requires": [
         "§app.server-runtime/choice",
@@ -12715,6 +12722,52 @@
       "code": [
         "playbooks/spec-review/PLAYBOOK.md",
         "server/spec-review-playbook.test.ts"
+      ]
+    },
+    "§app.installer/bun": {
+      "kind": "behavior",
+      "requires": [
+        "§app.server-runtime/choice"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "scripts/install.sh",
+        "scripts/install.test.sh",
+        "scripts/fetch-bun.sh",
+        "scripts/bun-release.txt"
+      ]
+    },
+    "§mesh.vps/runtime": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "requires": [
+        "§app.server-runtime/choice"
+      ],
+      "code": [
+        "scripts/mesh-vps/remote-setup.sh",
+        "scripts/mesh-vps/run-sova.sh",
+        "scripts/mesh-vps/config.sh",
+        "scripts/mesh-vps/deploy.sh",
+        "scripts/mesh-vps/local.env.example",
+        "scripts/mesh-vps/README.md",
+        "scripts/fetch-bun.sh",
+        "scripts/bun-release.txt"
+      ]
+    },
+    "§mesh.phone/runtime": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "requires": [
+        "§app.server-runtime/choice"
+      ],
+      "code": [
+        "scripts/mesh-termux/install.sh",
+        "scripts/mesh-termux/README.md",
+        "scripts/fetch-bun.sh",
+        "scripts/bun-release.txt"
       ]
     }
   },

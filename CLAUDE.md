@@ -17,7 +17,10 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
   One runtime import runs the other way: `server/vis-check.ts` (the vis retry and the `vis_check` tool) imports
   `src/vis/parse.ts` and `src/vis/kinds/frame/parse.ts`, so the parse side of `src/vis/` (parse.ts, registry.ts,
   core/, kinds/*/parse and height/layout) must stay DOM- and Solid-free at load, and an edit there only reaches
-  the running server at its restart.
+  the running server at its restart. Likewise `server/transcript.ts` imports `src/lib/message.ts`
+  (`argsSummary`, `contentText`, `spawnName`) and `src/lib/tool-diff-stats.ts` (with `src/lib/diff/parse.ts`),
+  so a slim tool row's folded line and "+n −m" are the card's own (§chat.transcript/slim-rows): keep
+  those DOM- and Solid-free too.
 - `src/design/`, `public/`, `.sova/spec/claims/` + `.sova/spec/manifest.json` — design tokens, base CSS,
   fonts/icons, and the product documentation (the UX spec). Owned by **designer**.
 - `.sova/spec/` — the product documentation and its tools; see **Product documentation** below.
@@ -124,7 +127,13 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
   writer of `model-favorites.json`, with its lock, re-read and atomic rename, for the TUI palette
   and Sova's picker alike), `server/team-defaults.ts` imports
   `pi-config/extensions/subagents/team-defaults.ts` (builtins only: the file's types, defaults,
-  strict parse, reader and atomic writer for Settings → Teams), and of the same package's
+  strict parse, reader and atomic writer for Settings → Teams), `server/process-priority.ts`
+  imports its `priority.ts` (builtins only: the `Symbol.for("sova:worker-nice")` hook through which
+  the server sets the niceness its hosted sessions' workers and tool commands start at, and the
+  lowering the subagents extension does; claude-code and the sandbox, which import nothing outside
+  their own directory, call the server's `Symbol.for("sova:lower-worker")` and
+  `Symbol.for("sova:tool-command-prefix")` instead; unset, as in the TUI, nothing changes;
+  §app.load-priority/workers), and of the same package's
   `subagent-profiles.ts` (builtins only, see above: `server/subagent-profiles.ts` — Settings →
   Subagents, the `/api/subagents` pick route and the session-create field, `server/sync/docs.ts` —
   the library's mesh registration, its default file deliberately absent, `server/chat-manager.ts` —
@@ -219,6 +228,8 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
 - `pnpm run dev:server` (port **4800**) and `pnpm run dev:web` (Vite, proxies /api + /ws to 4800)
 - Isolated testing: `pnpm run dev:hermetic` builds `<worktree>/.agent` (`scripts/hermetic-agent-dir.mjs`: this tree's
   pi-config, own sessions/state, nothing in `~/.pi`) and serves it on 4810 (`SOVA_PORT=<n>` picks another); it copies no auth — copy `auth.json` in by hand.
+  Once `.agent` holds copies of real sessions (or `--copied-sessions` announces them), the script leaves out the
+  wake-nudge extension and blanks the copied scheduler state, so no copied nudge or schedule fires; the mode is sticky (`.agent/copied-sessions.json`).
 - Feature work never edits `~/webapps/sova`: that is the live tree. Each feature session works in its own
   worktree and branch (`git worktree add ~/webapps/.worktrees/sova-<name> -b feat/<name>`; an agent uses the
   `worktree` tool, whose `create <name>` does exactly that and tracks it in the session, so its workers may start

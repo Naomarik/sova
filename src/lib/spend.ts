@@ -77,9 +77,7 @@ export function timelineEntries(items: readonly TranscriptItem[]): TimelineEntry
     const text = item.text?.trim();
     if (!text || !TIMELINE.test(text)) continue;
     if (out[out.length - 1]?.text === text) continue;
-    const raw = item.raw;
-    const stamp = raw && typeof raw === "object" ? (raw as Record<string, unknown>).timestamp : undefined;
-    out.push({ id: item.id, text, ...(typeof stamp === "string" ? { at: stamp } : {}) });
+    out.push({ id: item.id, text, ...(item.at !== undefined ? { at: item.at } : {}) });
   }
   return out;
 }

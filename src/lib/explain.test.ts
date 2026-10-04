@@ -42,11 +42,10 @@ test("an interrupted run is linked only if its page was written: its state is st
   assert.equal(explainInterrupted(base) || explainInterrupted({ ...base, status: "running" }), false);
 });
 
-const row = (id: string): TranscriptItem => ({ id, kind: "info", text: id, raw: null });
+const row = (id: string): TranscriptItem => ({ id, kind: "info", text: id });
 const explainRow = (entry: string, explainId: string, status?: "running"): TranscriptItem => ({
   id: entry,
   kind: "info",
-  raw: null,
   report: { source: "explain-doc", body: "", preview: "", truncated: false, explain: { ...at(explainId, "2026-09-20T00:00:00Z"), ...(status ? { status } : {}) } },
 });
 const ids = (list: TranscriptItem[]) => list.map((i) => i.id);
@@ -83,7 +82,6 @@ test("explainCaption reads '<when> · <model>', dropping the provider and an abs
 const handoffRow = (rowId: string, runId: string, status: "running" | "saved" = "saved"): TranscriptItem => ({
   id: rowId,
   kind: "info",
-  raw: {},
   handoffRun: { id: runId, status },
 });
 

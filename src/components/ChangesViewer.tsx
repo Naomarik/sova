@@ -1,9 +1,10 @@
 import { batch, createContext, createEffect, createMemo, createSignal, For, Index, Match, on, onCleanup, Show, Switch, useContext, type JSX } from "solid-js";
 import { createStore, produce } from "solid-js/store";
 import { Portal } from "solid-js/web";
-import type { DiffFilePatch, DiffFileSummary, DiffScope, DiffSummary, TranscriptItem } from "../../shared/protocol";
+import type { DiffFilePatch, DiffFileSummary, DiffScope, DiffSummary, ToolContent, TranscriptItem } from "../../shared/protocol";
 import { parseUnifiedPatch, type FileDiff } from "../lib/diff";
 import { fetchTranscriptWithContext } from "../lib/api";
+import { toolContent } from "../lib/tool-content";
 import { allDirs, buildTree, treeOrder, visibleRows, type TreeRow } from "../lib/changes-tree";
 import {
   repoPath,
@@ -11,6 +12,7 @@ import {
   stepsFromAgent,
   stepsFromTurns,
   turnsFromItems,
+  editCallsToLoad,
   type AgentStepInput,
   type Step,
   type StepFile,
@@ -203,8 +205,10 @@ export function ChangesViewer(props: ChangesSource & { titleId?: string; onClose
   // ---- steps ----
   const agentSteps = () => !!props.agent?.steps?.length;
   /** The rows turns come from: given, or read once; [] when there is nothing to read. */
-  const [transcript, setTranscript] = createSignal<TranscriptItem[] | null>(props.items ?? null);
+  const [transcript, setTranscript] = createSignal<TranscriptItem[] | null>(null);
   const [transcriptError, setTranscriptError] = createSignal<string | null>(null);
+  /** The edit and write calls' arguments and details, which their rows don't carry. */
+  const [edits, setEdits] = createSignal<ReadonlyMap<string, ToolContent>>(new Map());
   // A memo, so a new scope object for the same session (a card's details re-read on every new
   // transcript row) never refetches: on() re-fires on any read signal, not on a changed value.
   const sessionPath = createMemo(() => props.scope.sessionPath);
@@ -212,18 +216,26 @@ export function ChangesViewer(props: ChangesSource & { titleId?: string; onClose
     on(
       sessionPath,
       (path) => {
-        if (props.items || agentSteps()) return;
+        if (agentSteps()) return;
         setTranscript(null);
-        fetchTranscriptWithContext(path)
-          .then((r) => path === sessionPath() && setTranscript(r.items))
+        // The rows, then the content of their edits, before any turn is drawn: turns drawn from
+        // rows alone would show none and then all.
+        (props.items ? Promise.resolve(props.items) : fetchTranscriptWithContext(path).then((r) => r.items))
+          .then(async (items) => {
+            const content = await toolContent.load({ kind: "pi", path }, editCallsToLoad(items));
+            if (path !== sessionPath()) return;
+            setEdits(content);
+            setTranscript(items);
+          })
           .catch((err: Error) => {
+            if (path !== sessionPath()) return;
             setTranscriptError(err.message);
             setTranscript([]);
           });
       },
     ),
   );
-  const turns = createMemo(() => (agentSteps() ? [] : turnsFromItems(transcript() ?? [])));
+  const turns = createMemo(() => (agentSteps() ? [] : turnsFromItems(transcript() ?? [], edits())));
   /** Files whose hunks the steps need: the ones a turn edited, or an agent step names. */
   const needed = createMemo(() => {
     const s = summary();

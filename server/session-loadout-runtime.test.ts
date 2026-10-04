@@ -32,7 +32,7 @@ const { acquireChat, disposeAllChats, heldChat } = await import("./chat-manager"
 const { canonicalPath } = await import("./paths");
 const { applyLoadout, clearSetupCache, getSessionSetup } = await import("./session-setup");
 const { LOADOUT_ENTRY } = await import("./session-loadout");
-const { normalizeEntries, readActiveBranch } = await import("./transcript");
+const { entryOf, normalizeEntries, readActiveBranch } = await import("./transcript");
 const { addWebSession } = await import("./web-sessions");
 const { markOwned } = await import("./write-guard");
 
@@ -93,8 +93,8 @@ test("a switch writes the entry, rebuilds the runtime without the off rows, and 
   // The entry draws no row and the session is still before its first message.
   // (The open-time thinking entry is a settings row, which the empty state already ignores.)
   const rows = normalizeEntries(await readActiveBranch(path));
-  assert.deepEqual(rows.filter((r) => (r.raw as { type?: string } | undefined)?.type === "custom"), []);
-  assert.ok(rows.every((r) => (r.raw as { type?: string } | undefined)?.type === "thinking_level_change" || (r.raw as { type?: string } | undefined)?.type === "model_change"));
+  assert.deepEqual(rows.filter((r) => (entryOf(r) as { type?: string } | undefined)?.type === "custom"), []);
+  assert.ok(rows.every((r) => (entryOf(r) as { type?: string } | undefined)?.type === "thinking_level_change" || (entryOf(r) as { type?: string } | undefined)?.type === "model_change"));
   assert.equal(after.pristine, true);
 
   // Every chat gone (a restart): the reopened runtime reads the same entry.

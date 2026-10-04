@@ -3,6 +3,7 @@ import { dirname, join } from "node:path";
 import type { DecisionProviderId, SessionSignals, SignalKind } from "../shared/protocol";
 import type { Answer } from "./decide";
 import { stateRoot } from "./state-root";
+import { sessionsChanged } from "./list-generation";
 
 /**
  * The attention-signals store: `<stateRoot>/signals.json`, the RAW answers of every classified
@@ -147,6 +148,7 @@ export function updateSignals(fn: (data: SignalsFile) => void, file = signalsFil
     const tmp = `${file}.${process.pid}.tmp`;
     writeFileSync(tmp, JSON.stringify(data));
     renameSync(tmp, file);
+    sessionsChanged();
     cache = { file, at: Date.now(), data };
   } catch (err) {
     console.warn("[signals] write failed:", err instanceof Error ? err.message : String(err));

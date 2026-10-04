@@ -20,7 +20,8 @@ const liveDir = join(agentDir, "sessions", "live");
 mkdirSync(sessionsDir, { recursive: true });
 mkdirSync(liveDir, { recursive: true });
 
-const { archiveSession, cleanupSessions, getSessionSummary, idOf, listSessions } = await import("./sessions-index");
+const { archiveSession, cleanupSessions, getSessionSummary, idOf, LIST_REUSE_MS, listSessions } = await import("./sessions-index");
+const { sessionsChanged } = await import("./list-generation");
 const { isArchived, setArchived } = await import("./archived-sessions");
 const { addWebSession, isWebSession } = await import("./web-sessions");
 const { setDraft } = await import("./drafts");
@@ -249,7 +250,34 @@ test("workerSession: a file its owner names as a worker is flagged in the list a
   assert.equal((await getSessionSummary(worker))?.workerSession, true);
   assert.equal((await getSessionSummary(owner))?.workerSession, undefined);
 
-  // The flag is recomputed per listing: once the owner is gone, nothing names the worker.
+  // The flag is recomputed per listing: once the owner is gone, nothing names the worker. The
+  // file goes from outside this server, so a listing reused for LIST_REUSE_MS may not see it yet.
   rmSync(owner);
+  await new Promise((r) => setTimeout(r, LIST_REUSE_MS));
   assert.equal((await listSessions()).find((s) => s.id === ID_W)?.workerSession, undefined);
+});
+
+test("listing reuse (§app.session-list/listing-reuse): callers share a build for a second; this server's own writes are never missed", async () => {
+  const ID_R = "01234567-89ab-7cde-8f01-2345678900b1";
+  const ID_S = "01234567-89ab-7cde-8f01-2345678900b2";
+  const ID_T = "01234567-89ab-7cde-8f01-2345678900b3";
+  session(ID_R, "reuse one");
+  sessionsChanged();
+  const [first, second] = await Promise.all([listSessions(), listSessions()]);
+  assert.notEqual(first, second, "each caller gets its own array");
+  assert.deepEqual(first, second, "built once, the same rows");
+  assert.ok(first.some((s) => s.id === ID_R));
+
+  // A file written from outside this server: within the window, the shared list stands.
+  session(ID_S, "outside write");
+  assert.equal((await listSessions()).some((s) => s.id === ID_S), false, "an outside change can wait out the window");
+  // A write through this server's stores starts the next listing afresh, at once.
+  setArchived(ID_R, true);
+  const after = await listSessions();
+  assert.equal(after.find((s) => s.id === ID_R)?.archived, true, "its own archive is in the very next listing");
+  assert.ok(after.some((s) => s.id === ID_S), "and so is everything else that changed meanwhile");
+
+  session(ID_T, "seen after the window");
+  await new Promise((r) => setTimeout(r, LIST_REUSE_MS));
+  assert.ok((await listSessions()).some((s) => s.id === ID_T), "past the window, a fresh build");
 });

@@ -825,6 +825,16 @@ html, body { overflow: clip; overscroll-behavior: none; }
   .setup-toggle { align-self: flex-start; }
 }
 .profile-warn { color: var(--status-warn, var(--color-ink-2)); }
+/* A new session's worktrees line under the footnote (§chat.transcript/empty-worktrees): one muted
+   caption and the destructive button beside it, wrapping under it when the column is narrow. */
+.empty-worktrees { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: var(--space-2) var(--space-3); margin-top: var(--space-2); }
+.empty-worktrees-line { margin: 0; font-size: var(--fs-caption); color: var(--color-ink-muted); }
+/* Its dialog's lists: each folder in mono on its own line, its branch or reason under it. */
+.worktree-cleanup .modal-body section { display: flex; flex-direction: column; gap: var(--space-2); }
+.worktree-cleanup .modal-body h3 { margin: 0; }
+.worktree-cleanup-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-2); }
+.worktree-cleanup-list li { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.worktree-cleanup-path { font-family: var(--font-mono); font-size: var(--fs-mono); overflow-wrap: anywhere; color: var(--color-ink); }
 /* After the first message: the thread's muted profile row, the head chip and its popover. */
 .profile-row { display: flex; align-items: center; gap: var(--space-2); margin: 0 0 var(--space-2); font-size: var(--fs-caption); color: var(--color-ink-muted); }
 .profile-chip-wrap { position: relative; display: inline-flex; flex: none; }

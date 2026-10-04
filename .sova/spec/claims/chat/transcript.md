@@ -794,6 +794,35 @@ what it did before.
 - **Not covered.** The built app's static files, extension sockets and routes (`/ext/`), a
   peer's sessions (`/peer/`) and the share listener are sent as before.
 
+## §chat.transcript/slim-rows — Rows carry what they draw
+
+A transcript row carries what its folded form draws and no copy of the entry it came from, so a
+long session's rows weigh about what its text weighs, and opening, switching and reloading never
+wait on megabytes nobody looks at. Nothing on screen changes: every row, its time, its chips, the
+inputs count, the context fill and the spend read exactly as before, and an opened tool card
+shows exactly what it showed before.
+
+- **No entry copy.** A row never carries its source entry. Each entry's first row carries that
+  entry's facts once (its type, role, model, usage, stop reason, error, a tool result's failure,
+  a compaction's figures), every row carries the entry's time, and a reply's other rows read the
+  facts from its first one. An unknown row, whose card shows the entry as JSON, still carries it.
+- **No reasoning signatures.** The encrypted reasoning a provider returns with its thinking (and
+  any signature on a text block or a tool call) never reaches the browser: not on a row, not in a
+  streamed event, not through any route.
+- **Tool calls load on opening.** A tool call's row carries its name, the one line its folded card
+  shows, and the "+n −m" of an edit or write; its result's row carries whether it failed, and its
+  images and named attachments. The arguments, the output and the result's details come from
+  `GET /api/transcript/tool` (read-only, a batch of row ids at a time) when the card is opened or
+  about to be: the thread fetches the cards near the view, or under the pointer or focus, ahead of
+  time, so opening one shows its body at once, with no flash and no jump. A card opened before its
+  content has come says it is loading only after about 0.3 s, and a failed fetch says so with a
+  way to try again. The folded line's tooltip shows the whole line, as before. Cards that draw as cards rather than
+  tool cards (`show_changes`, `sova_card`, `sova_confirm`, `sova_link`, `sova_unlink`, `align`,
+  `session_send`, `sova_create_session`, `sova_navigate`) keep their whole content on the row.
+  While a reply streams, its rows show everything as they always did.
+- **Full content where it's needed.** Copying, the Changes viewer and every server-side reader
+  (the Overseer's session reads) still get every tool's whole arguments and output.
+
 ## §chat.transcript/recent-preload — Recent sessions open at once
 
 The sessions in the sidebar's Recent (§app.session-list/recent) are kept in memory, so opening
@@ -817,7 +846,7 @@ view then reconciles them with its own `hello` or snapshot (§chat.transcript/re
   its newest rows, with any older ones a view fetched kept above them while they're still their
   ancestors. A failed fetch is retried only once the file changes.
 - **A memory budget.** The Recent sessions kept beyond the last 3 opened and those on screen add
-  up to at most 40 MB of transcript JSON (about 50-60 MB of memory). Past it, the largest go
+  up to at most 20 MB of transcript JSON (about 20-32 MB of memory). Past it, the largest go
   first. A session is not downloaded when the size its response announces can't fit, and one
   already found too big is not fetched again while the others are kept. Such a session opens
   the way any unkept one does: it lands at the end once its `hello` arrives.
@@ -960,7 +989,7 @@ card). On a phone it is `#/overview`, under the list's head row (§app.shell/ove
 | No session selected (unfolded) | The landing page below, not a bare `.empty`: `.overview` fills `.app-main`: the title "Overview" in `.overview-head`, the Start section's action card (`New Session`), then the Sessions card, Mesh, the Extensions section and the Explained grid when there are any, and last the Organizations card. No composer |
 | Loading transcript (after 300ms) | Three placeholder messages in `.thread`: a right-aligned `.skeleton` 40% × 44px, then a left `.skeleton-title` plus 3 `.skeleton-line` at 92/78/60%, then a `.skeleton-row` at 60% width. Put `aria-busy="true"` on the `section`. The head renders straight away from the `SessionSummary` |
 | Error (a watched TUI session) | `.banner.banner-error` in `.transcript-inner`. Title: "Couldn't load this transcript." Body: "The file at `{path}` wasn't changed. {server message}." Action: `Retry`. A chat the server refuses to open shows §app.shell's open-failure banner instead |
-| Empty (new session) | `.empty` with no icon: the title "New session in `~/webapps/sova`.", then, in an ordinary session, the Profile select and what it changes (§chat.profiles/picker), then the setup card (§chat.transcript/setup-card), then the footnote `.empty-body` "Your first message becomes its title." No action; the composer has focus. Show it only while the thread, holding every row of the branch (a list this short sits at the top, so its older rows, if any, are fetched at once), has no **rendered row**: model, thinking and mode change rows and the profile entry draw nothing and don't count, while local rows such as "Ran `/cmd`" (§chat/slash-commands) still do. Once any rendered row exists, the thread renders normally with no empty state |
+| Empty (new session) | `.empty` with no icon: the title "New session in `~/webapps/sova`.", then, in an ordinary session, the Profile select and what it changes (§chat.profiles/picker), then the setup card (§chat.transcript/setup-card), then the footnote `.empty-body` "Your first message becomes its title.", then, for a local folder in a git repository with linked worktrees, the worktrees line and its `Clean Up Merged` button (§chat.transcript/empty-worktrees). The composer has focus. Show it only while the thread, holding every row of the branch (a list this short sits at the top, so its older rows, if any, are fetched at once), has no **rendered row**: model, thinking and mode change rows and the profile entry draw nothing and don't count, while local rows such as "Ran `/cmd`" (§chat/slash-commands) still do. Once any rendered row exists, the thread renders normally with no empty state |
 | Agent/server error (`type:"error"`, not busy) | `.banner.banner-error` placed as the last item of the thread (in flow, so it stays in the record). Title: "The turn stopped with an error." Body: "{message}. Your messages are kept. Send again to retry." |
 
 ## §chat.transcript/setup-card — Setup card
@@ -1317,6 +1346,36 @@ skills it is offered, for this one session only.
   switches show, is worked out for each session on every read.
 - **Accessibility.** Each switch is a checkbox labelled "Load {path}" (the path as the row shows
   it) for a file and "Offer {name}" for a skill, checked when on, reachable by keyboard.
+
+## §chat.transcript/empty-worktrees — The worktrees line under a new session
+
+A new session's empty state (the "Empty (new session)" row of States, above) ends, below its
+footnote and outside the setup card, with one muted line about the git worktrees of the
+repository its folder is in, and a button that removes the merged ones (§chat.worktrees/cleanup).
+Its words are the [copy deck](../design/copy-deck.md)'s §design.copy-deck/worktree-cleanup rows.
+
+- **When it shows.** For a local folder inside a git repository with at least one linked
+  worktree in git's list. A remote session, a folder outside a repository, a repository with no
+  linked worktree, and a read that fails show nothing. Never in the Overseer's empty state.
+- **The line.** "{total} worktrees · {merged} merged", with " · {empty} empty" when there are
+  empty leftovers (a branch with no commit of its own). The counts are §chat.worktrees/cleanup's:
+  every linked worktree in git's list, wherever its folder is.
+- **Read once.** It reads when the empty state appears (`GET /api/worktrees/summary`), and again
+  only after a removal, or when asked about a different session. Nothing polls: no timer. An
+  answer for a session it no longer shows is dropped. It never holds up the setup card, and the
+  card never waits for it.
+- **The button.** `Clean Up Merged`, outlined and destructive, after the line, only when merged
+  plus empty is above 0. A press first asks for a dry run, and the button says it is checking
+  while that runs. The dry run's answer opens a confirm dialog: what goes (each folder in mono,
+  with its branch, and whether that branch is deleted or kept), then what stays, each with its
+  reason. Its confirm button names the count; with nothing removable the dialog says so and only
+  closes. Focus starts on Cancel.
+- **Confirming** posts exactly the dry run's paths as `expect`, so a tree that changed after the
+  preview is kept with its new reason, never removed. The result is said in a toast and to screen
+  readers: removed {n}, kept {k}, with the kept trees' reasons in the dialog's place until it
+  closes. Then the line reads again.
+- **Accessibility.** The line is a `p` in the empty state; the button is a real `button` with its
+  words as its name; the dialog is an `alertdialog` that traps focus and returns it to the button.
 
 ## §chat.transcript/tokens — Tokens
 

@@ -13,7 +13,7 @@ mkdirSync(sessionsDir, { recursive: true });
 after(() => rmSync(agentDir, { recursive: true, force: true }));
 
 const { applyAlignCall } = await import("../pi-config/extensions/mode/align.ts");
-const { normalizeEntries, normalizeEntry } = await import("./transcript");
+const { entryOf, normalizeEntries, normalizeEntry } = await import("./transcript");
 const { readAlignScan, sessionAlignOf } = await import("./align-state");
 const { getSessionSummary } = await import("./sessions-index");
 const { canonicalPath } = await import("./paths");
@@ -59,7 +59,7 @@ describe("transcript: an align tool result is its own row", () => {
     const [row, ...rest] = normalizeEntry(result(created, null));
     assert.equal(rest.length, 0);
     assert.equal(row!.kind, "align");
-    assert.equal(row!.toolCallId, (row!.raw as any).message.toolCallId);
+    assert.equal(row!.toolCallId, (entryOf(row!) as any).message.toolCallId);
     assert.equal(row!.align?.doc?.id, "al_1");
     assert.equal(row!.align?.line, "created");
     assert.deepEqual(row!.align, created);

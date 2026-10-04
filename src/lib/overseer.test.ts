@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { TranscriptItem } from "../../shared/protocol";
+import { resultDetails } from "./message";
 import { applyCardCall, type CardDetails } from "../../shared/overseer-card";
 import {
   briefBody,
@@ -25,7 +26,7 @@ import {
   settingsTarget,
 } from "./overseer";
 
-const row = (id: string, kind: TranscriptItem["kind"], text?: string): TranscriptItem => ({ id, kind, text, raw: {} });
+const row = (id: string, kind: TranscriptItem["kind"], text?: string): TranscriptItem => ({ id, kind, text });
 const confirm = { title: "Archive 12 sessions?", options: [{ label: "Archive All" }, { label: "Keep Them", reply: "No, keep them." }] };
 
 test("a legacy confirm card is answered by the next user message, clicked or typed (read-only, from before card ids)", () => {
@@ -56,10 +57,10 @@ test("confirm details: bare strings are options, empty options are dropped, no o
   assert.equal(confirmReply({ label: "Yes", reply: "  " }), "Yes", "a blank reply falls back to the label");
 });
 
-test("details come from a live result or a persisted tool-result entry", () => {
+test("details come from a live result or a card tool's row", () => {
   const details = { href: "#/usage", label: "Usage" };
   assert.deepEqual(detailsOf({ content: [], details }), details);
-  assert.deepEqual(detailsOf({ type: "message", message: { role: "toolResult", details } }), details);
+  assert.deepEqual(resultDetails({ id: "r", kind: "tool-result", tool: { output: "", details } }), details);
   assert.equal(detailsOf("text"), undefined);
 });
 
@@ -220,12 +221,13 @@ test("a card's project and person rows keep their org and status; one without it
 // ---- sova_card (§app.overseer/confirm) ----
 
 const NOW = "2026-09-30T10:00:00.000Z";
-const call = (id: string): TranscriptItem => ({ id, kind: "tool-call", text: "sova_card", toolCallId: `t-${id}`, raw: {} });
+const call = (id: string): TranscriptItem => ({ id, kind: "tool-call", text: "sova_card", toolCallId: `t-${id}` });
 const result = (id: string, details: unknown, isError = false): TranscriptItem => ({
   id: `r-${id}`,
   kind: "tool-result",
   toolCallId: `t-${id}`,
-  raw: { type: "message", message: { role: "toolResult", toolName: "sova_card", isError, details, content: [] } },
+  meta: { type: "message", role: "toolResult", toolName: "sova_card", toolCallId: `t-${id}`, isError },
+  tool: { output: "", details },
 });
 const created = applyCardCall([], { ops: [{ op: "create", title: "Archive?", options: [{ label: "Archive" }, { label: "Keep" }] }] }, { now: NOW, prepared: { items: [], hrefs: [] } }).details;
 const answered = applyCardCall([created.card!], { card: "c_1", ops: [{ op: "answer", text: "c_1 a: Archive", option: "a" }] }, { now: NOW }).details;
@@ -248,7 +250,7 @@ test("the row that last touched a card renders it; an answer op moves it there a
 });
 
 test("an error result, bad details and a legacy sova_confirm row are never state; live results fold last", () => {
-  const legacy: TranscriptItem = { id: "L", kind: "tool-call", text: "sova_confirm", toolCallId: "t-L", raw: {} };
+  const legacy: TranscriptItem = { id: "L", kind: "tool-call", text: "sova_confirm", toolCallId: "t-L" };
   const items = [call("k1"), result("k1", created), call("k2"), result("k2", answered, true), call("k3"), result("k3", { v: 1, card: { id: "c_1" }, changes: [], line: "" }), legacy, result("L", { title: "Old", options: [{ label: "Yes" }] })];
   const fold = cardFold(items);
   assert.equal(fold.cards.get("c_1")?.phase, "open");

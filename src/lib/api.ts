@@ -23,6 +23,9 @@ import type {
   FileIndex,
   FolderListing,
   GitSummary,
+  WorktreeCleanupPlan,
+  WorktreeCleanupResult,
+  WorktreesSummary,
   ModeInfo,
   ModelFavoriteResult,
   ModelInfo,
@@ -51,6 +54,7 @@ import type {
   ThemeList,
   TmpAttachment,
   TranscriptItem,
+  ToolContentResponse,
   TranscriptRows,
   UploadResult,
   UsageInsight,
@@ -104,6 +108,7 @@ import type { ProviderLimits, ProviderLimitsInfo, ProviderWaiting } from "../../
 import type { TargetInfo } from "./remote-session";
 import type { DecisionKeyInfo, DecisionProbeResult, DecisionSaveResult, DecisionSettings, DecisionSettingsInfo, TagsBackfillProgress, TagsBackfillScope } from "../../shared/protocol";
 import { hostOf, hostUrl, meshReadInit, noteHost, peerBase, routeUrl } from "./mesh";
+import { upgradeLegacyRows } from "./legacy-rows";
 import { onAuthorized, onUnauthorized } from "./auth";
 import type { PreviewList, PreviewMint, PreviewMinted, PreviewView } from "../../shared/preview-links";
 
@@ -684,11 +689,13 @@ export const cleanupSessions = (req: CleanupRequest | PathsCleanupRequest, dryRu
     body: JSON.stringify({ ...req, dryRun }),
   }).then((raw) => ({ ...parseCleanupResult(raw), refused: refusedEntries(raw) }));
 
-/** A peer session's items name files on that peer (images it attached): their bytes come from it too. */
+/** A peer session's items name files on that peer (images it attached): their bytes come from it
+    too. A peer on an older Sova sends its rows in the old shape (lib/legacy-rows). */
 function noteAttachmentsHost(path: string, items: TranscriptItem[]): TranscriptItem[] {
   const host = hostOf(path);
-  if (host) for (const item of items) for (const a of item.attachments ?? []) noteHost(a.path, host);
-  return items;
+  if (!host) return items;
+  for (const item of items) for (const a of item.attachments ?? []) noteHost(a.path, host);
+  return upgradeLegacyRows(items);
 }
 
 /** The whole branch with each row light (`view=light`): what the session pane reads of every row,
@@ -720,6 +727,18 @@ export async function fetchTranscriptRows(path: string, ask: RowsAsk, leaf?: str
     if (code === "moved" || code === "missing") return { code };
     throw err;
   }
+}
+
+/** Whose rows a tool's content is asked of: a pi session file, or a Claude Code worker's own
+    session; `host` is the peer holding it (a worker's transcript lives on its parent's host). */
+export type ToolSource = { kind: "pi"; path: string; host?: string | null } | { kind: "claude"; sessionId: string; host: string | null };
+
+/** The whole arguments and output of tool rows (GET /api/transcript/tool), by row id; a row the
+    branch doesn't hold is absent. At most TOOL_CONTENT_MAX_IDS ids. */
+export function fetchToolContent(source: ToolSource, ids: readonly string[]): Promise<ToolContentResponse> {
+  const q = new URLSearchParams(source.kind === "pi" ? { path: source.path } : { claude: source.sessionId });
+  q.set("ids", ids.join(","));
+  return request<ToolContentResponse>(hostUrl(source.host ?? null, `/api/transcript/tool?${q}`));
 }
 
 /**
@@ -834,6 +853,15 @@ export const fetchSessionSetup = (path: string, fresh = false) =>
     whole off set; the answer is the card's fresh read of the rebuilt runtime. */
 export const setSessionLoadout = (path: string, offContext: string[], offSkills: string[]) =>
   request<SessionSetup>("/api/sessions/loadout", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path, offContext, offSkills }) });
+
+/** The worktrees of a session's repository, counted (§chat.worktrees/cleanup). */
+export const fetchWorktreesSummary = (path: string) => request<WorktreesSummary>(`/api/worktrees/summary?path=${encodeURIComponent(path)}`);
+/** The cleanup's dry run: what would go and what stays, with reasons. */
+export const previewWorktreeCleanup = (path: string) =>
+  request<WorktreeCleanupPlan>("/api/worktrees/cleanup", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path, dryRun: true }) });
+/** Remove exactly `expect` (the dry run's paths), each only if still removable. */
+export const removeWorktrees = (path: string, expect: string[]) =>
+  request<WorktreeCleanupResult>("/api/worktrees/cleanup", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path, expect }) });
 
 /**
  * `force` (chat only) lets the server open a session whose file was written recently by

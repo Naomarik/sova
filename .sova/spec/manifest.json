@@ -2681,6 +2681,7 @@
       "code": [
         "server/attention.ts",
         "server/live.ts",
+        "server/live.test.ts",
         "server/overseer.ts",
         "server/signals-store.ts",
         "server/attention.test.ts",
@@ -4203,9 +4204,9 @@
         "shared/orgs.ts",
         "server/org-list.test.ts",
         "src/lib/org-page-route.ts",
-        "src/lib/org-page-route.test.ts",
+        "src/lib/org-page-route.browser.test.ts",
         "src/lib/org-source.ts",
-        "src/lib/org-source.test.ts",
+        "src/lib/org-source.browser.test.ts",
         "src/components/PersonForm.tsx",
         "src/lib/profile-changes.ts",
         "src/components/PersonPage.tsx",
@@ -4846,7 +4847,7 @@
         "§chat.worktrees/inherit"
       ],
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "verified",
       "code": [
         "server/insights.ts",
         "server/worktrees-state.ts",
@@ -5023,7 +5024,7 @@
         "src/App.tsx",
         "src/lib/session-shares.ts",
         "src/lib/pane-shares.ts",
-        "src/lib/pane-shares.test.ts"
+        "src/lib/pane-shares.browser.test.ts"
       ]
     },
     "§app.settings-dialog/claude-long-context-offered": {
@@ -8280,14 +8281,15 @@
     "§chat.worktrees/readiness": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "code": [
         "server/merge-readiness.ts",
         "server/merge-readiness.test.ts",
         "shared/protocol.ts",
         "src/lib/readiness.ts",
         "src/lib/readiness.test.ts",
-        "src/components/Sidebar.tsx"
+        "src/components/Sidebar.tsx",
+        "server/removed-worktrees.ts"
       ],
       "requires": [
         "§chat.worktrees/entry",
@@ -11923,7 +11925,7 @@
         "src/lib/llm-inflight.ts",
         "src/lib/llm-inflight.test.ts",
         "src/lib/session-feed.ts",
-        "src/lib/session-feed.test.ts",
+        "src/lib/session-feed.browser.test.ts",
         "src/components/Sidebar.tsx",
         "server/decide-llm-inflight.test.ts",
         "pi-config/extensions/llm-inflight/hosted.ts",
@@ -12381,6 +12383,153 @@
         "§app.server-runtime/choice",
         "§chat.transcript/runaway-stream",
         "§app.resource-monitor/lightness-budget"
+      ]
+    },
+    "§chat.transcript/slim-rows": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "shared/protocol.ts",
+        "server/transcript.ts",
+        "server/claude-transcript.ts",
+        "server/transcript-rows.ts",
+        "server/transcript-tool.ts",
+        "server/chat-manager.ts",
+        "server/index.ts",
+        "server/transcript-tool.test.ts",
+        "server/transcript.test.ts",
+        "src/lib/message.ts",
+        "src/lib/tool-content.ts",
+        "src/lib/tool-content.test.ts",
+        "src/lib/legacy-rows.ts",
+        "src/lib/legacy-rows.test.ts",
+        "src/lib/change-rows.test.ts",
+        "src/lib/context.test.ts",
+        "src/lib/message-count.test.ts",
+        "src/components/ToolCard.tsx"
+      ],
+      "requires": [
+        "§chat.transcript/rendering"
+      ]
+    },
+    "§app.load-priority/workers": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "code": [
+        "pi-config/extensions/subagents/priority.ts",
+        "pi-config/extensions/subagents/priority.test.ts",
+        "pi-config/extensions/subagents/runner.ts",
+        "pi-config/extensions/subagents/runner.test.ts",
+        "pi-config/extensions/subagents/host-transport.ts",
+        "pi-config/extensions/claude-code/runner.ts",
+        "pi-config/extensions/sandbox/index.ts",
+        "server/process-priority.ts",
+        "server/process-priority.test.ts",
+        "server/chat-manager.ts"
+      ],
+      "requires": []
+    },
+    "§app/load-priority": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "requires": [],
+      "code": [
+        "docs/perf/2026-10-03-load-and-freezes.md",
+        "docs/perf/RUNBOOK.md",
+        "scripts/perf/load-experiment.mjs",
+        "scripts/perf/load-standin.mjs"
+      ]
+    },
+    "§chat.transcript/empty-worktrees": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/components/EmptyWorktrees.tsx",
+        "src/components/ChatView.tsx",
+        "src/lib/api.ts",
+        "src/lib/worktree-cleanup.ts",
+        "src/lib/worktree-cleanup.test.ts",
+        "src/app.css"
+      ],
+      "requires": [
+        "§chat.worktrees/cleanup",
+        "§chat.transcript/states"
+      ]
+    },
+    "§chat.worktrees/cleanup": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/worktree-cleanup.ts",
+        "server/worktree-cleanup.test.ts",
+        "server/removed-worktrees.ts",
+        "server/index.ts",
+        "shared/protocol.ts"
+      ],
+      "requires": [
+        "§chat.worktrees/merged-state",
+        "§chat.worktrees/entry"
+      ]
+    },
+    "§design.copy-deck/worktree-cleanup": {
+      "kind": "note",
+      "authority": "accepted",
+      "evidence": "verified"
+    },
+    "§app.session-list/listing-reuse": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/sessions-index.ts",
+        "server/list-generation.ts",
+        "server/sessions-index.test.ts",
+        "server/index.ts",
+        "server/ws.ts",
+        "server/archived-sessions.ts",
+        "server/session-titles.ts",
+        "server/seen.ts",
+        "server/drafts.ts",
+        "server/session-groups.ts",
+        "server/session-tags.ts",
+        "server/signals-store.ts",
+        "server/web-sessions.ts",
+        "server/decide-settings.ts",
+        "server/chat-manager.ts",
+        "server/write-guard.ts",
+        "server/orgs.ts",
+        "server/overseer-store.ts",
+        "server/preview-kept.ts",
+        "server/sessions-context.test.ts",
+        "server/session-summary-route.test.ts",
+        "server/session-profiles-runtime.test.ts",
+        "server/org-sessions.test.ts"
+      ],
+      "requires": [
+        "§app/session-list",
+        "§app.decisions/push"
+      ]
+    },
+    "§chat.worktrees/dirty-freshness": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/worktrees.ts",
+        "server/worktrees.test.ts",
+        "server/merge-readiness.ts",
+        "server/merge-readiness.test.ts",
+        "server/worktree-cleanup.ts"
+      ],
+      "requires": [
+        "§chat.worktrees/readiness",
+        "§app/idle-git-cache",
+        "§chat.worktrees/cleanup"
       ]
     }
   },

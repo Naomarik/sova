@@ -45,7 +45,7 @@ test("metrics: lines always, questions only when there are any", () => {
 });
 
 test("latestAlignId: the newest align-doc row wins, other reports don't count", () => {
-  const row = (id: string, r?: ReportInfo): TranscriptItem => ({ id, kind: r ? "report" : "user", report: r, raw: null });
+  const row = (id: string, r?: ReportInfo): TranscriptItem => ({ id, kind: r ? "report" : "user", report: r });
   assert.equal(latestAlignId([row("u1"), row("r1", report("subagent-complete"))]), undefined);
   const items = [row("d1", report("align-doc", a())), row("u1"), row("d2", report("align-doc", a({ revision: 2 }))), row("r1", report("intercom_message"))];
   assert.equal(latestAlignId(items), "d2");
@@ -57,7 +57,7 @@ const q = (id: string, over: Partial<AlignQuestionInfo> = {}): AlignQuestionInfo
 const doc = (id: string, rev: number, questions: AlignQuestionInfo[], phase: AlignDocInfo["phase"] = "open"): AlignDocInfo => ({
   id, title: `T ${id}`, summary: `S ${id}`, findings: [], approach: [], rejected: [], questions, phase, next: { f: 0, a: 0, x: 0, q: questions.length }, rev, createdAt: "", updatedAt: "",
 });
-const alignItem = (rowId: string, d: AlignDocInfo): TranscriptItem => ({ id: rowId, kind: "align", raw: {}, toolCallId: `c-${rowId}`, align: { v: 1, doc: d, changes: [], line: "" } });
+const alignItem = (rowId: string, d: AlignDocInfo): TranscriptItem => ({ id: rowId, kind: "align", toolCallId: `c-${rowId}`, align: { v: 1, doc: d, changes: [], line: "" } });
 const decided = { text: "no", by: "user" as const, at: "" };
 
 test("derived status, and the card's open line", () => {

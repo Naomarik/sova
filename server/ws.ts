@@ -13,6 +13,7 @@ import { trackViewer } from "./seen";
 import { nudgeMarks, sessionFeed } from "./session-feed";
 import { llmInflight } from "./llm-inflight";
 import { idOf } from "./sessions-index";
+import { sessionsChanged } from "./list-generation";
 import { extensionSocketRoute, upgradeExtensionSocket } from "./extensions";
 import { meshUpgrade } from "./mesh";
 import { claudeUsageTally, type UsageTally } from "./transcript-usage";
@@ -63,6 +64,7 @@ async function handleChat(ws: WebSocket, path: string, force: boolean, ask: Tail
       client.send({ type: "error", code: "internal", message: "Invalid JSON" });
       return;
     }
+    sessionsChanged(); // a prompt, abort or rename: the next listing is built afresh
     if (chat) chat.handle(client, msg);
     else early.push(msg);
   });

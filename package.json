@@ -24,11 +24,11 @@
     "statecharts": "tsx scripts/statecharts.ts",
     "statecharts:watch": "node scripts/statecharts-watch.mjs",
     "statecharts:test": "node scripts/statecharts-test.mjs",
-    "typecheck": "tsc --noEmit",
-    "build": "tsc --noEmit && vite build && vite build --mode share",
+    "typecheck": "node scripts/nice.mjs tsc --noEmit",
+    "build": "node scripts/nice.mjs tsc --noEmit && node scripts/nice.mjs vite build && node scripts/nice.mjs vite build --mode share",
     "start": "tsx server/index.ts",
-    "test:bun": "node scripts/run-tests.mjs --runtime bun",
-    "test": "node scripts/run-tests.mjs --runtime node"
+    "test:bun": "node scripts/nice.mjs node scripts/run-tests.mjs --runtime bun",
+    "test": "node scripts/nice.mjs node scripts/run-tests.mjs --runtime node"
   },
   "dependencies": {
     "@earendil-works/pi-coding-agent": "0.87.1",

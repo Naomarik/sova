@@ -2263,3 +2263,32 @@ test("a hosted worker detached for the next manager stops counting here, whateve
 	assert.equal(llmSnapshot().active, before);
 	await fin(h);
 });
+
+test("a worker starts below the hosting server, and pi on its own leaves it alone", { skip: process.platform === "win32", timeout: 5000 }, async () => {
+	const { getPriority } = await import("node:os");
+	const { WORKER_NICE } = await import("./priority.ts");
+	const g = globalThis as Record<symbol, unknown>;
+	const start = (id: string) => {
+		let child: ChildProcess | undefined;
+		const runner = new SubagentRunner({ id, groupId: "g", name: "fake", task: "wait", cwd: "/tmp",
+			timings: { requestTimeoutMs: 2000, abortGraceMs: 20, termGraceMs: 20, pipeDrainMs: 50 },
+			spawnImpl: (_command, _args, opts) => (child = spawn(process.execPath, ["-e", "process.stdin.resume()"], { ...opts, stdio: ["pipe", "pipe", "pipe"] })),
+		}, { onChange() {}, onSettled() {}, onExit() {} });
+		return { runner, child: child! };
+	};
+	const own = getPriority();
+	const before = g[WORKER_NICE];
+	try {
+		delete g[WORKER_NICE];
+		const plain = start("prio-plain");
+		assert.equal(getPriority(plain.child.pid!), own);
+		await plain.runner.kill(); await plain.runner.whenClosed;
+		g[WORKER_NICE] = () => 10;
+		const hosted = start("prio-hosted");
+		assert.equal(getPriority(hosted.child.pid!), Math.max(own, 10));
+		assert.equal(getPriority(), own, "the host keeps its own priority");
+		await hosted.runner.kill(); await hosted.runner.whenClosed;
+	} finally {
+		if (before === undefined) delete g[WORKER_NICE]; else g[WORKER_NICE] = before;
+	}
+});

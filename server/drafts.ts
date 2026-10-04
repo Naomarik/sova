@@ -2,6 +2,7 @@ import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { stateRoot } from "./state-root";
 import { checkTmpImage } from "./attachments";
+import { sessionsChanged } from "./list-generation";
 
 /**
  * Persistent composer drafts, keyed by session id (GET/PUT /api/sessions/draft). A draft on a
@@ -98,6 +99,7 @@ function save(next: Record<string, Draft>): void {
   const tmp = `${FILE}.${process.pid}.tmp`;
   writeFileSync(tmp, JSON.stringify({ version: 1, drafts: next }));
   renameSync(tmp, FILE);
+  sessionsChanged();
   drafts = next;
 }
 

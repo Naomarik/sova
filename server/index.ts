@@ -12,6 +12,8 @@ import { bodyLimit } from "hono/body-limit";
 import { compress } from "hono/compress";
 import { isDirectLocal } from "./compression";
 import { asksForRows, type RowsQuery, transcriptLight, transcriptRows } from "./transcript-rows";
+import { claudeToolContent, parseToolIds, piToolContent } from "./transcript-tool";
+import { resolveClaudeSession } from "./claude-transcript";
 import { registerOrgRoutes } from "./org-routes";
 import { registerWrapupRoutes } from "./wrapup-routes";
 import { markShutdown } from "./wrapup-recovery";
@@ -66,11 +68,12 @@ import { checkTmpImage, deleteAttachment, MAX_ATTACHMENT_BYTES, readTmpImage, sa
 import { listFolders } from "./folders";
 import { listProjectFiles } from "./files";
 import { getGitSummary } from "./git-summary";
+import { cleanupPlan, cleanupRemove, configureCleanup, worktreesSummary } from "./worktree-cleanup";
 import { applyLoadout, getSessionSetup } from "./session-setup";
 import { isOrgSession, ORG_NOT_GROUPED } from "./org-sessions";
 import { assignSession, cleanGroupLabel, createGroup, deleteGroup, GROUP_LABEL_MAX, readGroups, updateGroup } from "./session-groups";
 import { promptGroup } from "./group-prompt";
-import { AUTO_TITLE_MAX_PATHS, type SessionsDirInfo, type SessionTitleSource, type WorkerChoice, type WorkerResumeResult } from "../shared/protocol";
+import { AUTO_TITLE_MAX_PATHS, TOOL_CONTENT_MAX_IDS, type SessionsDirInfo, type SessionTitleSource, type ToolContentResponse, type WorkerChoice, type WorkerResumeResult } from "../shared/protocol";
 import { findTarget, isTargetName, listRemoteFolders, listTargets, normalizeRemotePath, targetDir, targetsFile, validateNewSessionCwd } from "./targets";
 import { isExplanationId, listExplanations, readExplanationPage } from "./explanations";
 import { switchMode } from "./mode";
@@ -146,6 +149,7 @@ import { configureReadiness } from "./merge-readiness";
 import { startSessionTags, tagRoutes } from "./tags-backfill";
 import { pushRoutes } from "./push-routes";
 import { readLiveRecords } from "./live";
+import { sessionsChanged } from "./list-generation";
 import { resourceMonitor, startResourceMonitor, stopResourceMonitor } from "./resource-monitor";
 import { defaultAdapters } from "./worker-adapters";
 import { serverRedactor } from "./overseer-redact";
@@ -191,6 +195,18 @@ app.use("*", async (c, next) => {
     // a proxied answer's headers are immutable: copy it
     c.res = new Response(c.res.body, c.res);
     c.res.headers.set(SERVER_HEADER, "sova");
+  }
+});
+
+// A request that may change something starts the next session listing afresh, before it runs and
+// again once it answered, so its caller's next listing shows the change (§app.session-list/listing-reuse).
+app.use("*", async (c, next) => {
+  const writes = c.req.method !== "GET" && c.req.method !== "HEAD";
+  if (writes) sessionsChanged();
+  try {
+    await next();
+  } finally {
+    if (writes) sessionsChanged();
   }
 });
 
@@ -664,6 +680,34 @@ app.get("/api/sessions/git", async (c) => {
   return c.json(await getGitSummary(path, { fresh: c.req.query("fresh") === "1" }));
 });
 
+// Merged worktrees of the session's repository (server/worktree-cleanup.ts, §chat.worktrees/cleanup):
+// the count for a new session's empty state, the dry run, and a removal of exactly the confirmed
+// paths that are still removable. Only when asked; never --force.
+configureCleanup({ summary: (path) => getSessionSummary(path), sessionFiles: listSessionFiles, readBranch: readActiveBranch });
+app.get("/api/worktrees/summary", async (c) => {
+  const path = resolveSessionPath(c.req.query("path"));
+  if (!path) return c.json({ error: "Invalid or missing ?path= (must be a .jsonl under the pi sessions dir)" }, 400);
+  if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
+  return c.json(await worktreesSummary(path), 200, { "Cache-Control": "no-store" });
+});
+app.post("/api/worktrees/cleanup", async (c) => {
+  const body = (await c.req.json().catch(() => null)) as { path?: unknown; dryRun?: unknown; expect?: unknown } | null;
+  const path = resolveSessionPath(typeof body?.path === "string" ? body.path : null);
+  if (!path) return c.json({ error: "Invalid or missing path" }, 400);
+  if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
+  const dryRun = body?.dryRun === true;
+  const expect = body?.expect;
+  if (dryRun === Array.isArray(expect) || (Array.isArray(expect) && !expect.every((p) => typeof p === "string" && p.startsWith("/"))))
+    return c.json({ error: "Send either dryRun: true or expect: [absolute paths]" }, 400);
+  if (dryRun) {
+    const plan = await cleanupPlan(path);
+    return plan ? c.json(plan) : c.json({ error: "This session's folder isn't in a local git repository." }, 409);
+  }
+  const r = await cleanupRemove(path, expect as string[]);
+  if (r === "busy") return c.json({ error: "A cleanup of this repository is already running." }, 409);
+  return r ? c.json(r) : c.json({ error: "This session's folder isn't in a local git repository." }, 409);
+});
+
 // What pi will load for a session's folder (server/session-setup.ts): the context files it writes
 // into the prompt and the skills it offers this session, each with its size on disk — the empty
 // state of a session with no messages yet. Same 400/404 as the git route above; a folder that can't
@@ -1019,6 +1063,25 @@ app.get("/api/transcript", async (c) => {
   }
   const branch = await readActiveBranch(path);
   return c.json({ items: normalizeEntries(branch), context: await resolveContext(contextForBranch(branch)) });
+});
+
+// The whole content of tool rows (§chat.transcript/slim-rows): a row carries only what its folded
+// card draws, and the card's arguments, output and details come from here. `claude=` names a Claude
+// Code worker's own file, as /ws/watch does. Read-only.
+app.get("/api/transcript/tool", async (c) => {
+  const ids = parseToolIds(c.req.query("ids"));
+  if (!ids) return c.json({ error: `Missing or too many ?ids= (1 to ${TOOL_CONTENT_MAX_IDS} row ids, comma-separated)` }, 400);
+  const claudeId = c.req.query("claude");
+  if (claudeId) {
+    const file = resolveClaudeSession(claudeId);
+    if (!file || !existsSync(file)) return c.json({ error: file ? "Session file not found" : "Unknown Claude Code session" }, 404);
+    return c.json({ items: await claudeToolContent(file, ids) } satisfies ToolContentResponse);
+  }
+  const path = resolveSessionPath(c.req.query("path"));
+  if (!path) return c.json({ error: "Invalid or missing ?path= (must be a .jsonl under the pi sessions dir)" }, 400);
+  if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
+  const items = await piToolContent(path, ids, () => heldChat(path)?.session.sessionManager.getBranch() as Record<string, any>[] | undefined);
+  return c.json({ items } satisfies ToolContentResponse);
 });
 
 // Bytes of an image a user message names by path (TranscriptItem.attachments). Only image files

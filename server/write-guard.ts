@@ -1,6 +1,7 @@
 import { closeSync, mkdirSync, openSync, readFileSync, readSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { stateRoot } from "./state-root";
+import { sessionsChanged } from "./list-generation";
 
 /**
  * Shared with the frontend (src/): a non-live session whose file changed within this window
@@ -49,6 +50,7 @@ function saveOwned(path: string, entry: Owned[string] | null): void {
   if (entry) next[path] = entry;
   else if (prev) delete next[path];
   else return;
+  sessionsChanged(); // this server wrote the session file: its row may read differently now
   const kept = Object.entries(next).sort((a, b) => b[1].at - a[1].at).slice(0, OWNED_MAX);
   try {
     const file = OWNED_FILE();

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { TranscriptItem } from "../../shared/protocol";
+import type { ToolContent, TranscriptItem } from "../../shared/protocol";
 import {
   editOf,
   OTHER_TITLE,
@@ -11,6 +11,7 @@ import {
   stepsFromTurns,
   stepTitle,
   turnsFromItems,
+  editCallsToLoad,
   type StepFile,
   type StepHunk,
   type Turn,
@@ -70,13 +71,18 @@ test("repoPath maps absolute and cwd-relative tool paths into the diff root, and
 });
 
 function row(kind: TranscriptItem["kind"], id: string, extra: Partial<TranscriptItem> = {}): TranscriptItem {
-  return { id, kind, raw: null, ...extra };
+  return { id, kind, ...extra };
 }
+/** What GET /api/transcript/tool answers for each call row: its arguments and its result's details. */
+const fetched = new Map<string, ToolContent>();
 function call(id: string, name: string, args: unknown): TranscriptItem {
-  return row("tool-call", `${id}:c`, { text: name, toolCallId: id, raw: { message: { role: "assistant", content: [{ type: "toolCall", id, name, arguments: args }] } } });
+  fetched.set(`${id}:c`, { args });
+  return row("tool-call", `${id}:c`, { text: name, toolCallId: id, tool: { summary: "", lazy: true, bytes: 10 } });
 }
 function result(id: string, isError = false, details?: unknown): TranscriptItem {
-  return row("tool-result", `${id}:r`, { toolCallId: id, raw: { message: { role: "toolResult", toolCallId: id, isError, details } } });
+  const had = fetched.get(`${id}:c`);
+  if (had) fetched.set(`${id}:c`, { ...had, result: { output: "", isError, ...(details !== undefined ? { details } : {}) } });
+  return row("tool-result", `${id}:r`, { toolCallId: id, meta: { type: "message", role: "toolResult", toolCallId: id, isError }, tool: { lazy: true, bytes: 5 } });
 }
 
 test("turnsFromItems: a turn per prompt that edited, failed and unanswered calls left out", () => {
@@ -96,9 +102,36 @@ test("turnsFromItems: a turn per prompt that edited, failed and unanswered calls
     result("t5"),
     call("t6", "edit", { path: "src/never.ts", edits: [{ oldText: "a", newText: "b" }] }),
   ];
-  const turns = turnsFromItems(items);
+  // Only the successful, answered edit and write calls are fetched.
+  assert.deepEqual(editCallsToLoad(items), [
+    { rowId: "t1:c", resultId: "t1:r", size: 15 },
+    { rowId: "t5:c", resultId: "t5:r", size: 15 },
+  ]);
+  const turns = turnsFromItems(items, fetched);
   assert.deepEqual(turns.map((t) => t.title), ["Add date helpers", "Use them"]);
   assert.deepEqual(turns[1]!.edits.map((e) => e.added), [["shortDate"]]);
+  // Without the fetched content a lazy row has no arguments to read: no turns, rather than wrong ones.
+  assert.deepEqual(turnsFromItems(items), []);
+});
+
+test("turnsFromItems: a recorded patch in the fetched details wins over the arguments", () => {
+  const items = [
+    row("user", "u1", { text: "Fix" }),
+    call("p1", "edit", { path: "src/a.ts", edits: [{ oldText: "x", newText: "y" }] }),
+    result("p1", false, { patch: "--- a/src/a.ts\n+++ b/src/a.ts\n@@ -3,1 +3,1 @@\n-old line\n+new line\n" }),
+  ];
+  const [turn] = turnsFromItems(items, fetched);
+  assert.deepEqual(turn!.edits[0]!.added, ["new line"]);
+  assert.deepEqual(turn!.edits[0]!.removed, ["old line"]);
+});
+
+test("turnsFromItems: a Claude Code edit's patch beside the message counts when it has no details", () => {
+  const items = [row("user", "u1", { text: "Fix" }), call("k1", "Edit", { file_path: "src/b.ts", old_string: "x", new_string: "y" }), result("k1")];
+  const got = fetched.get("k1:c")!;
+  fetched.set("k1:c", { ...got, result: { ...got.result!, toolUseResult: { structuredPatch: [{ oldStart: 4, oldLines: 1, newStart: 4, newLines: 1, lines: ["-old b", "+new b"] }] } } });
+  const [turn] = turnsFromItems(items, fetched);
+  assert.deepEqual(turn!.edits[0]!.added, ["new b"]);
+  assert.deepEqual(turn!.edits[0]!.ranges, [[4, 4]]);
 });
 
 const files: StepFile[] = [

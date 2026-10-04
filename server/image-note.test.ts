@@ -13,7 +13,7 @@ const agentDir = mkdtempSync(join(tmpdir(), "sova-image-note-"));
 process.env.PI_CODING_AGENT_DIR = agentDir; // before the modules below compute their paths
 after(() => rmSync(agentDir, { recursive: true, force: true }));
 
-const { normalizeEntry } = await import("./transcript");
+const { entryOf, normalizeEntry } = await import("./transcript");
 const { rewindSession } = await import("./chat-manager");
 const { getSessionSummary } = await import("./sessions-index");
 
@@ -85,7 +85,7 @@ describe("where Sova shows a user message's text", () => {
     assert.equal(row?.kind, "user");
     assert.equal(row?.text, "Two images. Reply with just OK.");
     assert.equal(row?.images?.length, 2);
-    assert.equal((row?.raw as any).message.content[0].text, TWO, "the stored text, as the model got it, is unchanged");
+    assert.equal((entryOf(row!) as any).message.content[0].text, TWO, "the stored text, as the model got it, is unchanged");
   });
 
   test("a note-only message renders as an image-only row", () => {

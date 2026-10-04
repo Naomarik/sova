@@ -14,13 +14,28 @@ import type {
   SyncStatus,
 } from "../../shared/protocol";
 import type { MeshLocalSettings } from "../../shared/mesh-local";
+import {
+  DENIED,
+  grantCaps,
+  type MeshAccessPeer,
+  type MeshAccessPut,
+  type MeshAccessView,
+  type MeshCap,
+  type MeshInfoView,
+  type MeshPreset,
+  MESH_PRESETS,
+  type MeshSessionsView,
+  type PeerStatusView,
+} from "../../shared/mesh-access";
+import { access, allows, capsOf, deniedBy, loginsOf, mayShareLoginNode, noteDenied, noteGranted, onAccessChange, restricted, updateAccess, validateGrant } from "./access";
 import { frontDoorConfig, noBrowserIds } from "./front-door";
 import { answered, ownHello, probeHello, probePeer, peerLastSeen, PROBE_TIMEOUT_MS } from "./hello";
 import { type ListenerDeps, PeerListener } from "./listener";
 import { addressIdentity, identityMode } from "./address-identity";
+import { REFUSED_HEADER } from "./hello";
 import { getIdentity, setIdentity, type TailnetStatus } from "./localapi";
 import { defaultSelfId, nextLabelAt, type PeerEntry, type PeersConfig, peerPort, peerUrl, peersFile, readPeers, SYNC_CATEGORIES, validatePeers, writePeers } from "./peers";
-import { PROXIED_HEADER, peerSocketRoute, proxyTail, proxyPeer, upgradePeerSocket } from "./proxy";
+import { localRequest, PROXIED_HEADER, peerSocketRoute, proxyTail, proxyPeer, upgradePeerSocket } from "./proxy";
 import { loginKindsPin } from "../sync/logins-merge";
 
 // The mesh (brief: settled decisions). ON exactly while peers.json lists a peer; OFF, nothing
@@ -122,6 +137,10 @@ function reloadIfChanged(): void {
   if (stampOf(peersFile()) !== peersStamp) reload();
 }
 
+// A lowered grant (a write from the Mesh page, or a hand edit the next question notices) ends what
+// each peer was let through for and no longer has, open sockets included (§mesh.peers/grants).
+onAccessChange(() => rt.listener?.revokeGrants((nodeId, need) => allows(nodeId, need)));
+
 /** Start or stop the peer listener to match the config. */
 function apply(): void {
   if (meshEnabled() && !rt.listener && dispatch) {
@@ -135,6 +154,7 @@ function apply(): void {
         if (hit) sawPeer(hit.id, true); // it just called us, so it is up
         return hit ?? null;
       },
+      allows: (peer, need) => allows(peer.nodeId, need),
       addresses: async () => {
         const status = await getIdentity().status();
         rt.self = { nodeId: status.self.nodeId, dnsName: status.self.name };
@@ -177,6 +197,7 @@ export const listenerInfo = () => rt.listener?.info() ?? null;
 // ---- sync status (filled by server/sync) ------------------------------------------------------
 
 let syncProvider: (() => SyncStatus[]) | null = null;
+let accessLogins: (() => MeshAccessView["logins"]) | null = null;
 /** server/sync registers its per-category status here; GET /api/mesh reports it while ON. */
 export const onSyncStatus = (provider: () => SyncStatus[]): void => {
   syncProvider = provider;
@@ -229,14 +250,74 @@ export const requestPeer = (c: Context): PeerEntry | null => {
   return peer && !c.req.header(PROXIED_HEADER) ? peer : null;
 };
 
+// ---- grants (§mesh.peers/grants) --------------------------------------------------------------
+
+const peerById = (peerId: string): PeerEntry | undefined => rt.config?.peers.find((p) => p.id === peerId);
+
+/**
+ * Whether this host shares `cap` with peer `peerId` (by id, from the current peers.json): what it
+ * lets that peer do here, and so what it sends that peer on its own initiative. Every cap with no
+ * mesh-access.json or no entry for the peer (today's behaviour); false for an unknown peer.
+ */
+export function mayShareWith(peerId: string, cap: MeshCap): boolean {
+  const peer = peerById(peerId);
+  return !!peer && allows(peer.nodeId, cap);
+}
+
+/** Whether login `key` (`<store>:<provider>`) is exchanged with peer `peerId`, logouts included. */
+export function mayShareLogin(peerId: string, key: string): boolean {
+  const peer = peerById(peerId);
+  return !!peer && mayShareLoginNode(peer.nodeId, key);
+}
+
+/** Whether a browser request relayed to `peerId` must carry nothing of this host or the browser:
+    while this host's grant to that peer is anything but `full`. */
+export function scrubFor(peerId: string): boolean {
+  const peer = peerById(peerId);
+  return !!peer && restricted(peer.nodeId);
+}
+
+/** Record a peer's answer to a call that needed `cap`: its `denied` (what it hides from this host,
+    for the Mesh page) or anything else (it grants it). True when the answer was `denied`. */
+export function noteAnswer(peerId: string, cap: MeshCap, res: Response): boolean {
+  if (res.status === 403 && res.headers.get(REFUSED_HEADER) === DENIED) {
+    noteDenied(peerId, cap);
+    return true;
+  }
+  if (res.status !== 403 || res.headers.get(REFUSED_HEADER) !== "refused") noteGranted(peerId, cap);
+  return false;
+}
+
+// What this host sends a peer on its own initiative, by path: never what it doesn't grant that peer.
+// Reads of the peer's own things (its hello, details, sessions, outreach relay, gateway) are the
+// peer's grant to this host, so they are not here.
+const OUTBOUND: Array<[RegExp, (peerId: string) => boolean]> = [
+  [/^\/api\/peer\/(?:label|browser-access)(?:\?|$)/, (id) => mayShareWith(id, "presence")],
+  [/^\/api\/peer\/links(?:[/?]|$)/, (id) => mayShareWith(id, "links")],
+  [/^\/api\/peer\/sync\/extensions(?:\?|$)/, (id) => mayShareWith(id, "sync.extensions")],
+  [/^\/api\/peer\/sync\/(?:manifest|doc|push)(?:\?|$)/, (id) => mayShareWith(id, "sync.settings") || mayShareWith(id, "sync.themes")],
+  [/^\/api\/peer\/credentials\//, (id) => mayShareWith(id, "sync.logins")],
+  [/^\/api\/peer\/claude-pool\//, (id) => mayShareWith(id, "sync.logins")],
+];
+
+/** Why this host may not send `path` to `peerId` on its own initiative, or null when it may. */
+export function outboundRefusal(peerId: string, path: string): string | null {
+  const p = path.toLowerCase();
+  for (const [re, ok] of OUTBOUND) if (re.test(p)) return ok(peerId) ? null : `not shared with ${peerId}`;
+  return null;
+}
+
 /**
  * GET/POST/… <peer>/<path> over the peer hop (the peer's gate sees this host's node). Throws when
- * the mesh is off or the peer is unknown; otherwise it is fetch: a down peer rejects, a refusal
- * is a 403 with X-Sova-Mesh: refused. `path` starts with "/api/".
+ * the mesh is off or the peer is unknown, or when `path` sends the peer what this host doesn't grant
+ * it (outboundRefusal); otherwise it is fetch: a down peer rejects, a refusal is a 403 with
+ * X-Sova-Mesh: refused, and a grant's refusal a 403 with X-Sova-Mesh: denied. `path` starts with "/api/".
  */
 export function peerFetch(peerId: string, path: string, init?: RequestInit): Promise<Response> {
   const peer = rt.config?.peers.find((p) => p.id === peerId);
   if (!meshEnabled() || !peer) return Promise.reject(new Error(`unknown peer ${peerId}`));
+  const refusal = outboundRefusal(peerId, path);
+  if (refusal) return Promise.reject(new Error(refusal));
   const headers = new Headers(init?.headers);
   headers.delete(PROXIED_HEADER); // it would make the peer treat this host's own call as a browser's
   return fetch(`${peerUrl(peer)}${path}`, { ...init, headers });
@@ -304,12 +385,22 @@ export const meshApi = {
     reloadIfChanged();
     return rt.config;
   },
+  /** Whether this host shares `cap` with a peer (§mesh.peers/grants; every cap without mesh-access.json). */
+  mayShareWith,
+  /** Whether one login is exchanged with a peer. */
+  mayShareLogin,
+  /** Record a peer's answer to a call needing `cap`; true when it was `denied`. */
+  noteAnswer,
+  /** server/sync registers the logins the Mesh page's per-login switches list. */
+  onAccessLogins: (provider: () => MeshAccessView["logins"]): void => {
+    accessLogins = provider;
+  },
 };
 export type MeshApi = typeof meshApi;
 
 // ---- state ------------------------------------------------------------------------------------
 
-async function peerStatuses(): Promise<PeerStatus[]> {
+async function peerStatuses(): Promise<PeerStatusView[]> {
   const peers = rt.config?.peers ?? [];
   const probes = await Promise.all(peers.map((p) => probePeer(p)));
   peers.forEach((p, i) => sawPeer(p.id, answered(probes[i]!)));
@@ -327,10 +418,10 @@ async function peerStatuses(): Promise<PeerStatus[]> {
   }));
 }
 
-async function meshInfo(): Promise<MeshInfo> {
+async function meshInfo(): Promise<MeshInfoView> {
   const c = rt.config ?? emptyConfig();
   const on = meshEnabled();
-  const info: MeshInfo = {
+  const info: MeshInfoView = {
     enabled: on,
     self: { id: c.self.id, label: c.self.label, hostname: hostname() },
     peers: on ? await peerStatuses() : [],
@@ -347,13 +438,14 @@ async function meshInfo(): Promise<MeshInfo> {
 
 const lastGood = new Map<string, SessionSummary[]>();
 
-async function meshSessions(): Promise<MeshSessions> {
+async function meshSessions(): Promise<MeshSessionsView> {
   const peers = rt.config?.peers ?? [];
   const rows = await Promise.all(
-    peers.map(async (p): Promise<MeshSessions["peers"][number]> => {
+    peers.map(async (p): Promise<MeshSessionsView["peers"][number]> => {
       const head = { id: p.id, label: p.label };
       try {
         const res = await fetch(`${peerUrl(p)}/api/sessions`, { signal: AbortSignal.timeout(PROBE_TIMEOUT_MS) });
+        const denied = noteAnswer(p.id, "sessions", res);
         if (res.ok) {
           const sessions = (await res.json()) as SessionSummary[];
           if (!Array.isArray(sessions)) throw new Error("not a session list");
@@ -361,6 +453,11 @@ async function meshSessions(): Promise<MeshSessions> {
           return { ...head, state: "up", sessions };
         }
         await res.body?.cancel();
+        // It reached the host, which keeps its sessions from this one: no rows, none kept (§mesh.peers/grants).
+        if (denied) {
+          lastGood.delete(p.id);
+          return { ...head, state: "hidden", error: `hidden by ${p.label}` };
+        }
         if (res.status === 403) return { ...head, state: "refused", error: "this host is not in its peers.json" };
         throw new Error(`answered ${res.status}`);
       } catch (err) {
@@ -371,7 +468,7 @@ async function meshSessions(): Promise<MeshSessions> {
       }
     }),
   );
-  for (const r of rows) sawPeer(r.id, r.state === "up");
+  for (const r of rows) sawPeer(r.id, r.state === "up" || r.state === "hidden");
   return { peers: rows };
 }
 
@@ -397,6 +494,7 @@ async function candidates(): Promise<MeshCandidate[]> {
       if (!n.online || !n.name) return base;
       const probe = await probeHello(peerUrl({ id: "x", label: "x", nodeId: n.nodeId, dnsName: n.name }));
       if (probe.state === "refused") return { ...base, sova: "refused" };
+      if (probe.state === "hidden") return { ...base, sova: "yes" }; // it lists this host and shows it nothing
       if (probe.hello) return { ...base, sova: "yes", hello: probe.hello };
       return base;
     }),
@@ -421,7 +519,7 @@ function resolveNode(status: TailnetStatus, name: string) {
 }
 
 async function putPeers(c: Context): Promise<Response> {
-  let body: { peers?: unknown };
+  let body: { peers?: unknown; grants?: unknown };
   try {
     body = await c.req.json();
   } catch {
@@ -478,9 +576,95 @@ async function putPeers(c: Context): Promise<Response> {
   }
   const v = validatePeers({ ...base.config, peers });
   if ("error" in v) return c.json({ error: v.error }, 400);
+  const grants = pairingGrants(body.grants, base.config, v.config);
+  if ("error" in grants) return c.json({ error: grants.error }, 400);
   writePeers(v.config);
   reload();
+  applyPairingGrants(grants.set, grants.removed);
   return c.json(await meshInfo());
+}
+
+/**
+ * The grants a peers PUT implies (§mesh.peers/grants): each peer it newly pairs that `raw` names
+ * (MeshPeersPut.grants, by peer id) gets that preset; one it doesn't name gets none (= full, as
+ * before grants). Nodes it unpairs lose theirs. Peers already paired keep what they have.
+ */
+function pairingGrants(raw: unknown, before: PeersConfig, after: PeersConfig): { set: Record<string, MeshPreset>; removed: string[] } | { error: string } {
+  if (raw !== undefined && (typeof raw !== "object" || raw === null || Array.isArray(raw))) return { error: "grants must be an object of peer id → preset" };
+  const named = (raw ?? {}) as Record<string, unknown>;
+  const known = new Set(before.peers.map((p) => p.nodeId));
+  const set: Record<string, MeshPreset> = {};
+  for (const [id, preset] of Object.entries(named)) {
+    if (!(MESH_PRESETS as readonly unknown[]).includes(preset)) return { error: `grants.${id} must be one of ${MESH_PRESETS.join(", ")}` };
+    const peer = after.peers.find((p) => p.id === id);
+    if (!peer) return { error: `grants.${id}: not a peer in this list` };
+    if (!known.has(peer.nodeId)) set[peer.nodeId] = preset as MeshPreset;
+  }
+  const kept = new Set(after.peers.map((p) => p.nodeId));
+  return { set, removed: before.peers.map((p) => p.nodeId).filter((n) => !kept.has(n)) };
+}
+
+function applyPairingGrants(set: Record<string, MeshPreset>, removed: string[]): void {
+  const now = access();
+  if (!Object.keys(set).length && !(now.kind === "ok" && removed.some((n) => n in now.file.peers))) return;
+  const r = updateAccess((doc) => {
+    for (const n of removed) delete doc.peers[n];
+    for (const [n, preset] of Object.entries(set)) doc.peers[n] = { preset };
+    return doc;
+  });
+  // A broken file stays as it is: every peer, the new one included, gets hello only until it is fixed.
+  if ("error" in r) console.warn(`[mesh] grants not written: ${r.error}`);
+}
+
+// ---- grants editor (/api/mesh/access: this host's own browser only) -----------------------------
+
+function accessView(): MeshAccessView {
+  const a = access();
+  const peers = (rt.config?.peers ?? []).map((p): MeshAccessPeer => {
+    const grant = a.kind === "ok" ? a.file.peers[p.nodeId] : undefined;
+    const caps = capsOf(p.nodeId);
+    const effective = caps === "hello-only" ? grantCaps({ preset: "none" }) : caps;
+    const theirs = deniedBy(p.id);
+    return {
+      id: p.id,
+      label: p.label,
+      nodeId: p.nodeId,
+      ...(grant ? { grant } : {}),
+      effective,
+      logins: loginsOf(p.nodeId),
+      ...(theirs ? { theirs } : {}),
+    };
+  });
+  return {
+    exists: a.kind !== "missing",
+    ...(a.kind === "error" ? { error: a.error } : {}),
+    peers,
+    logins: meshEnabled() && accessLogins ? accessLogins() : [],
+  };
+}
+
+async function putAccess(c: Context): Promise<Response> {
+  let body: Partial<MeshAccessPut>;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "Expected JSON body { peer, grant }" }, 400);
+  }
+  const peer = typeof body?.peer === "string" ? peerById(body.peer) : undefined;
+  if (!peer) return c.json({ error: "Unknown peer" }, 404);
+  let grant: MeshAccessPut["grant"] = null;
+  if (body.grant !== null) {
+    const v = validateGrant(body.grant);
+    if ("error" in v) return c.json({ error: v.error }, 400);
+    grant = v.grant;
+  }
+  const r = updateAccess((doc) => {
+    if (grant) doc.peers[peer.nodeId] = grant;
+    else delete doc.peers[peer.nodeId];
+    return doc;
+  });
+  if ("error" in r) return c.json({ error: r.error }, 409);
+  return c.json(accessView());
 }
 
 async function putSettings(c: Context): Promise<Response> {
@@ -567,6 +751,11 @@ export function meshRoutes(app: Hono): void {
     return c.json(meshEnabled() ? frontDoorConfig(config, rt.self?.dnsName ?? null, noBrowserIds(config)) : frontDoorConfig(config, null));
   });
   app.get("/api/mesh/hello", (c) => c.json(ownHello(meshSelf(), rt.self?.nodeId)));
+  // The grants (§mesh.peers/grants): this host's own browser only. The peer listener and the /peer
+  // proxy never reach /api/mesh/*, and localRequest also refuses a relayed browser, so a peer can
+  // never raise its own grant. Also while off (a grant may be set before pairing completes).
+  app.get("/api/mesh/access", (c) => (localRequest(c) ? c.json(accessView()) : c.json({ error: "Not found" }, 404)));
+  app.put("/api/mesh/access", (c) => (localRequest(c) ? putAccess(c) : c.json({ error: "Not found" }, 404)));
 
   // Peer-only routes: reached through the peer listener alone. On the main listener they are the
   // same 404 as any unknown /api route.
@@ -583,7 +772,7 @@ export function meshRoutes(app: Hono): void {
     if (!peer) return c.json({ error: "Unknown peer" }, 404);
     const tail = proxyTail(peerTail(c));
     // The same 404 as any unknown /api route: never proxied, never distinguishable.
-    return tail ? proxyPeer(c, peer, tail) : c.json({ error: "Not found" }, 404);
+    return tail ? proxyPeer(c, peer, tail, scrubFor(peer.id)) : c.json({ error: "Not found" }, 404);
   });
   app.all("/peer/:id/ws/*", async (c, next) => {
     if (!meshEnabled()) return next();
@@ -601,6 +790,6 @@ export function meshUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer, 
   const route = peerSocketRoute(url.pathname);
   if (!route) return false;
   const peer = rt.config!.peers.find((p) => p.id === route[0]) ?? null;
-  upgradePeerSocket(req, socket, head, peer, route[1], url.search);
+  upgradePeerSocket(req, socket, head, peer, route[1], url.search, !!peer && scrubFor(peer.id));
   return true;
 }

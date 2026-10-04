@@ -178,3 +178,50 @@
   .mesh-order > .mesh-host > .button-icon { flex: none; }
   .mesh-order > .mesh-host > .mesh-fd-in { margin-left: auto; }
 }
+
+/* What a peer can see here (§mesh.peers/grants): a disclosure under its row on #/mesh. The summary
+   is the 44px target; the body reuses the sync list's switch rows. */
+/* Its own line: the row wraps, and the disclosure takes the full width under the row's text column. */
+.mesh-host:has(> .mesh-access) { flex-wrap: wrap; }
+.mesh-access {
+  flex: 1 0 100%;
+  margin-left: calc(16px + var(--space-3)); /* past the row's .icon-sm */
+  border-top: 1px solid var(--color-border);
+}
+.mesh-access-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  min-height: var(--tap-min);
+  cursor: pointer;
+  list-style: none;
+}
+.mesh-access-summary::-webkit-details-marker { display: none; }
+.mesh-access-summary::before {
+  content: "";
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-right: var(--stroke-icon) solid var(--color-ink-muted);
+  border-bottom: var(--stroke-icon) solid var(--color-ink-muted);
+  transform: rotate(-45deg);
+  transition: transform var(--dur-fast) var(--ease-standard);
+}
+.mesh-access[open] > .mesh-access-summary::before { transform: rotate(45deg); }
+.mesh-access-summary:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); border-radius: var(--r-xs); }
+.mesh-access-title { flex: 1; min-width: 0; font-weight: var(--fw-medium); color: var(--color-ink); }
+.mesh-access-value { font-size: var(--fs-caption); color: var(--color-ink-muted); white-space: nowrap; }
+.mesh-access-body { display: flex; flex-direction: column; gap: var(--space-3); padding-bottom: var(--space-3); }
+.mesh-access-caps { margin: 0; }
+.mesh-access-logins { margin: 0; }
+.mesh-access-note,
+.mesh-access-theirs {
+  margin: 0;
+  font-size: var(--fs-caption);
+  line-height: var(--lh-caption);
+  color: var(--color-ink-2);
+}
+.mesh-access-theirs { display: flex; flex-direction: column; gap: 2px; padding-top: var(--space-2); border-top: 1px solid var(--color-border); }
+.mesh-access-preset,
+.mesh-add-preset { max-width: 360px; }

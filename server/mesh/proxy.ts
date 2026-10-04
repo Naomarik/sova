@@ -4,6 +4,7 @@ import type { Duplex } from "node:stream";
 import type { Context } from "hono";
 import { proxy } from "hono/proxy";
 import { proxySocket, refuse } from "../extensions";
+import { DENIED } from "../../shared/mesh-access";
 import { REFUSED_HEADER } from "./hello";
 import { isMeshOrPeerApi, judgedPath } from "./paths";
 import { type PeerEntry, peerUrl } from "./peers";
@@ -21,6 +22,10 @@ const OVERSEER_HEADER = "x-sova-overseer";
 /** This host's own credentials (server/auth.ts): never forwarded, so no peer host ever sees the
     token, in a log or otherwise; the peer answers by this host's Tailscale identity. */
 const CREDENTIAL_HEADERS = ["cookie", "authorization", "x-sova-token"];
+/** What a relayed request would tell a peer this host restricts (§mesh.peers/grants) about this host
+    or the browser: dropped, and X-Forwarded-Host carries SCRUBBED_HOST instead of this host's name. */
+const IDENTITY_HEADERS = ["origin", "referer", "user-agent", "accept-language", "x-forwarded-for", "x-forwarded-proto", "x-forwarded-port", "x-real-ip", "forwarded", "via"];
+export const SCRUBBED_HOST = "peer";
 
 // Failing fast. A blackholed peer (host asleep, off the tailnet, a killed container) never
 // answers a SYN, and fetch would wait its full ~10 s connect timeout before our 502 (a kept-alive
@@ -152,7 +157,9 @@ function whyDown(err: unknown): string {
   return e.cause?.code ?? e.cause?.message ?? e.message ?? String(err);
 }
 
-export async function proxyPeer(c: Context, peer: PeerEntry, tail: string): Promise<Response> {
+/** `scrub`: this host restricts the peer (§mesh.peers/grants), so the request carries nothing of
+    this host's name or the browser beyond what the route needs. */
+export async function proxyPeer(c: Context, peer: PeerEntry, tail: string, scrub = false): Promise<Response> {
   const incoming = new URL(c.req.url);
   const headers = new Headers(c.req.raw.headers);
   const host = headers.get("host");
@@ -160,7 +167,11 @@ export async function proxyPeer(c: Context, peer: PeerEntry, tail: string): Prom
   for (const h of HOP_BY_HOP) headers.delete(h);
   headers.delete(OVERSEER_HEADER);
   for (const h of CREDENTIAL_HEADERS) headers.delete(h);
-  headers.set(PROXIED_HEADER, host || "unknown");
+  if (scrub) {
+    for (const h of IDENTITY_HEADERS) headers.delete(h);
+    headers.set("user-agent", SCRUBBED_HOST); // else the runtime's fetch names itself
+  }
+  headers.set(PROXIED_HEADER, scrub ? SCRUBBED_HOST : host || "unknown");
   headers.set(RELAYED_HEADER, "1");
   const base = peerUrl(peer);
   const go = await preflight(base);
@@ -198,18 +209,20 @@ export async function proxyPeer(c: Context, peer: PeerEntry, tail: string): Prom
     await res.body?.cancel();
     return c.json({ error: "peer refused", id: peer.id }, 403);
   }
+  // The peer's grant to this host doesn't cover it (§mesh.peers/grants): passed on as the peer sent
+  // it, marker included, so the page can tell "hidden" from "refused".
   // Nor may a peer set or overwrite a cookie on this host's origin.
   res.headers.delete("set-cookie");
   return res;
 }
 
-export function upgradePeerSocket(req: IncomingMessage, socket: Duplex, head: Buffer, peer: PeerEntry | null, tail: string, search: string): void {
+export function upgradePeerSocket(req: IncomingMessage, socket: Duplex, head: Buffer, peer: PeerEntry | null, tail: string, search: string, scrub = false): void {
   if (!peer) {
     refuse(socket, 404, { error: "Unknown peer" });
     return;
   }
   socket.on("error", () => {}); // a reset while we decide; proxySocket takes over from there
-  const headers: Record<string, string> = { [PROXIED_HEADER]: req.headers.host || "unknown", [RELAYED_HEADER]: "1" };
+  const headers: Record<string, string> = { [PROXIED_HEADER]: scrub ? SCRUBBED_HOST : req.headers.host || "unknown", [RELAYED_HEADER]: "1" };
   const base = peerUrl(peer);
   void preflight(base).then((go) => {
     if (socket.destroyed) return; // the browser gave up first
@@ -231,9 +244,11 @@ export function upgradePeerSocket(req: IncomingMessage, socket: Duplex, head: Bu
       },
       onResponse: (res) => {
         answered();
-        return res.statusCode === 403 && res.headers[REFUSED_HEADER.toLowerCase()] === "refused"
-          ? [403, { error: "peer refused", id: peer.id }]
-          : [502, { error: "peer down", id: peer.id }];
+        const marker = res.statusCode === 403 ? res.headers[REFUSED_HEADER.toLowerCase()] : undefined;
+        if (marker === "refused") return [403, { error: "peer refused", id: peer.id }];
+        // The peer's grant to this host doesn't cover the socket (§mesh.peers/grants): not down.
+        if (marker === DENIED) return [403, { error: "peer hidden", id: peer.id }];
+        return [502, { error: "peer down", id: peer.id }];
       },
     });
   });

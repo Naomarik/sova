@@ -109,7 +109,9 @@ import {
   passesHostFilter,
   peerInfo,
   peerUnavailable,
+  SELF_FILTER,
   sessionHrefOn,
+  sessionsHiddenBy,
 } from "../lib/mesh";
 import { MeshHostMenu } from "./MeshHostMenu";
 import { connectedCount, hostFilterAsk } from "../lib/mesh-details";
@@ -1154,6 +1156,11 @@ export function Sidebar(props: {
       when the filter's value moves, not on every mesh poll that rebuilds the peer list. */
   const [storedHostFilter, setStoredHostFilter] = createSignal(readKey(localStorage, HOST_FILTER_KEY));
   const hostFilter = createMemo(() => effectiveHostFilter(storedHostFilter(), meshPeers(), hostFilterShown()));
+  /** The host the filter shows, when it keeps its sessions from this one (§mesh.peers/grants). */
+  const hiddenHost = createMemo(() => {
+    const h = hostFilter();
+    return h && h !== SELF_FILTER && sessionsHiddenBy(h) ? h : null;
+  });
   const chooseHostFilter = (value: string | null) => {
     setStoredHostFilter(value);
     if (value === null) removeKey(localStorage, HOST_FILTER_KEY);
@@ -2161,6 +2168,8 @@ export function Sidebar(props: {
         </Show>
 
         <nav class="sidebar-list pane" aria-label="Session list" aria-busy={props.sessions === undefined && props.loading ? "true" : undefined}>
+          {/* A host that keeps its sessions from this one has no rows here (§mesh.peers/grants). */}
+          <Show when={hiddenHost()}>{(h) => <p class="sidebar-region-note">Hidden by {hostLabel(h())}.</p>}</Show>
           <Show when={props.error}>
             <div class="transcript-banner">
               <Banner

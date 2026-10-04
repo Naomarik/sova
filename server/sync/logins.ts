@@ -124,6 +124,9 @@ export interface CredentialSyncOptions {
   enabled?: () => boolean;
   /** Which logins this host syncs (default "all"). */
   loginKinds?: () => LoginKinds;
+  /** Whether login `key` is exchanged with peer `peerId` at all, its logouts included (this host's
+      grant to that peer, §mesh.peers/grants). Absent: every key with every peer. */
+  shares?: (peerId: string, key: EntryKey) => boolean;
 }
 
 const SIDECAR_VERSION = 1;
@@ -177,6 +180,11 @@ export class CredentialSync {
   syncs(key: EntryKey, remote?: KeyRecord): boolean {
     const kinds = this.kinds;
     return syncsRecord(kinds, key, this.records[key]) && (!remote || syncsRecord(kinds, key, remote));
+  }
+
+  /** Whether `key` is exchanged with `peerId` (this host's grant to it); every key with no peer named. */
+  private sharesWith(peerId: string | undefined, key: EntryKey): boolean {
+    return peerId === undefined || !this.opts.shares || this.opts.shares(peerId, key);
   }
 
   /** The login mode changed: c-lite follows it (the next exchange does the rest). */
@@ -491,12 +499,13 @@ export class CredentialSync {
 
   // ---------------------------------------------------------------- peer-facing (server side)
 
-  manifest(): CredentialManifest {
-    const m: CredentialManifest = { hostId: this.hostId, now: this.now(), entries: this.recordsView(advertisable) };
+  /** The manifest as `forPeer` may see it: only the keys this host shares with that peer. */
+  manifest(forPeer?: string): CredentialManifest {
+    const m: CredentialManifest = { hostId: this.hostId, now: this.now(), entries: this.recordsView(advertisable, forPeer) };
     m.stores = [...this.stores.keys()].filter((id) => this.advertisesStore(id)).sort();
     if (this.kinds === "api-keys" && this.enabled) {
       m.loginKinds = "api-keys";
-      const refuses = Object.keys(this.records).filter((key) => !this.syncs(key) && parseEntryKey(key)?.store === "pi");
+      const refuses = Object.keys(this.records).filter((key) => !this.syncs(key) && parseEntryKey(key)?.store === "pi" && this.sharesWith(forPeer, key));
       if (refuses.length) m.refuses = refuses.sort();
     }
     return m;
@@ -506,13 +515,13 @@ export class CredentialSync {
    * The records a peer may know of (tombstones always; an entry per `include`) in stores this host
    * advertises. The manifest offers live entries only; planning also counts an idle one (rule 2).
    */
-  private recordsView(include: (rec: KeyRecord, now: number) => boolean): Records {
+  private recordsView(include: (rec: KeyRecord, now: number) => boolean, forPeer?: string): Records {
     const entries: Records = {};
     const now = this.now();
     if (!this.enabled) return entries;
     for (const [key, rec] of Object.entries(this.records)) {
       const store = parseEntryKey(key)?.store;
-      if (!store || !this.advertisesStore(store) || !this.syncs(key)) continue;
+      if (!store || !this.advertisesStore(store) || !this.syncs(key) || !this.sharesWith(forPeer, key)) continue;
       const meta = include(rec, now) ? rec.meta : undefined;
       if (meta || rec.tombstone) entries[key] = { ...(meta ? { meta } : {}), ...(rec.tombstone ? { tombstone: rec.tombstone } : {}) };
     }
@@ -524,10 +533,11 @@ export class CredentialSync {
     return this.stores.has(id) && st !== "refused" && st !== "invalid";
   }
 
-  /** The secret for one advertised key, read under the lock; refused if it moved since the manifest. */
-  async entry(key: EntryKey): Promise<CredentialEntryReply | null> {
+  /** The secret for one advertised key, read under the lock; refused if it moved since the manifest,
+      or if this host doesn't share it with `forPeer`. */
+  async entry(key: EntryKey, forPeer?: string): Promise<CredentialEntryReply | null> {
     const parsed = parseEntryKey(key);
-    if (!parsed || !this.stores.has(parsed.store) || !this.enabled) return null;
+    if (!parsed || !this.stores.has(parsed.store) || !this.enabled || !this.sharesWith(forPeer, key)) return null;
     return this.locked(parsed.store, (_store, snap) => {
       const rec = this.records[key];
       const entry = snap.entries.get(parsed.provider);
@@ -560,6 +570,11 @@ export class CredentialSync {
         reply.rejected.push({ key, reason: "api-keys-only" });
         continue;
       }
+      // Never taken from a peer this host doesn't share the login with, logouts included.
+      if (!this.sharesWith(from, key)) {
+        reply.rejected.push({ key, reason: "disabled" });
+        continue;
+      }
       const secret = it.secret && typeof it.secret === "object" && !Array.isArray(it.secret) ? (it.secret as Record<string, unknown>) : undefined;
       const res = await this.applyRemote(key, it.record, secret).catch((e) => {
         this.log(`push ${key} from ${from}: ${errText(e)}`);
@@ -590,12 +605,12 @@ export class CredentialSync {
         const theirs: Records = {};
         for (const [k, rec] of Object.entries(remote.entries ?? {})) {
           const p = parseEntryKey(k);
-          if (p && this.stores.has(p.store) && isKeyRecord(rec) && this.syncs(k, rec)) theirs[k] = rec;
+          if (p && this.stores.has(p.store) && isKeyRecord(rec) && this.syncs(k, rec) && this.sharesWith(peer.id, k)) theirs[k] = rec;
         }
         // What this host holds, an idle (expired, not dead) login included: it is compared, not
         // replaced by any live peer entry, and never re-pulled round after round. A peer that syncs
         // API keys only is offered nothing else, so it never has to refuse a secret.
-        const mine = this.recordsView(held);
+        const mine = this.recordsView(held, peer.id);
         if (remote.loginKinds === "api-keys") {
           const refused = new Set(Array.isArray(remote.refuses) ? remote.refuses : []);
           for (const [k, rec] of Object.entries(mine)) if (refused.has(k) || !syncsRecord("api-keys", k, rec)) delete mine[k];
@@ -634,7 +649,7 @@ export class CredentialSync {
             const rec = this.records[key];
             if (!rec) continue;
             if (todo.push.includes(key)) {
-              const got = await this.entry(key);
+              const got = await this.entry(key, peer.id);
               if (got) body.entries[key] = got;
             } else if (rec.tombstone) {
               body.entries[key] = { record: { tombstone: rec.tombstone } };

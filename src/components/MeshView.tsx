@@ -1,5 +1,7 @@
 import { createEffect, createResource, createSignal, For, onCleanup, onMount, Show } from "solid-js";
-import { ApiError, claimMeshLogin, fetchFrontDoor, fetchMesh, fetchMeshCandidates, fetchMeshLogins, getClaudeAccounts, getMeshSettings, putMeshPeers, putMeshSettings } from "../lib/api";
+import { ApiError, claimMeshLogin, fetchFrontDoor, fetchMesh, fetchMeshAccess, fetchMeshCandidates, fetchMeshLogins, getClaudeAccounts, getMeshSettings, putMeshPeers, putMeshSettings } from "../lib/api";
+import { MESH_PRESETS, PRESET_HINT, PRESET_LABEL, type MeshAccessView, type MeshPreset } from "../lib/mesh-access";
+import { PeerAccess } from "./MeshAccess";
 import { deviceLoginChip } from "../lib/claude-pool";
 import type { ClaudePoolInfo } from "../../shared/protocol";
 import { copyText } from "../lib/ui-state";
@@ -27,6 +29,7 @@ import {
   meshState,
   peerUnavailable,
   selfLabel,
+  sessionsHiddenBy,
   setMeshState,
   STALE_BUILD_NOTE,
   type HelloChange,
@@ -50,8 +53,8 @@ import "../mesh.css";
 /** While #/mesh is open the host list is re-read this often: status is what the page is for. */
 const MESH_PAGE_POLL_MS = 5_000;
 
-const STATE_WORD: Record<PeerState, string> = { up: "Up", down: "Down", skewed: "Other version", refused: "Refused" };
-const STATE_TONE: Record<PeerState, "success" | "error" | "warn"> = { up: "success", down: "error", skewed: "warn", refused: "error" };
+const STATE_WORD: Record<PeerState, string> = { up: "Up", down: "Down", skewed: "Other version", refused: "Refused", hidden: "Hidden" };
+const STATE_TONE: Record<PeerState, "success" | "error" | "warn"> = { up: "success", down: "error", skewed: "warn", refused: "error", hidden: "warn" };
 
 /** A peer's state in a word as well as a colour; the reason rides the title. */
 /**
@@ -197,15 +200,22 @@ export function MeshView(props: { now: number; titleRef(el: HTMLHeadingElement):
     () => getClaudeAccounts().then((i) => i.pool ?? null).catch(() => null),
   );
 
+  // What each peer may see here (§mesh.peers/grants): local reads only, re-read with every poll.
+  const [access, { mutate: setAccess }] = createResource(
+    () => ticks(),
+    () => fetchMeshAccess().catch(() => null as MeshAccessView | null),
+  );
+  const accessOf = (id: string) => access()?.peers.find((a) => a.id === id);
+
   const [saving, setSaving] = createSignal(false);
   const [saveError, setSaveError] = createSignal<string | null>(null);
-  /** Write the whole list; the answer is the mesh as it now stands. */
-  const writePeers = async (peers: MeshPeerEntry[], said: string): Promise<boolean> => {
+  /** Write the whole list; the answer is the mesh as it now stands. `grants` names a new peer's preset. */
+  const writePeers = async (peers: MeshPeerEntry[], said: string, grants?: Record<string, MeshPreset>): Promise<boolean> => {
     if (saving()) return false;
     setSaving(true);
     setSaveError(null);
     try {
-      const next = await putMeshPeers(peers);
+      const next = await putMeshPeers(peers, grants);
       setMeshState(next);
       poll.set(next);
       announce(said);
@@ -224,6 +234,8 @@ export function MeshView(props: { now: number; titleRef(el: HTMLHeadingElement):
     );
 
   const [draft, setDraft] = createSignal<Draft>({ id: "", label: "", name: "" });
+  /** What a peer paired from this form may see here; presence until the user picks more. */
+  const [draftPreset, setDraftPreset] = createSignal<MeshPreset>("presence");
   const [draftTouched, setDraftTouched] = createSignal(false);
   const problem = () => draftProblem(draft(), meshPeers().map((p) => p.id));
   const addPeer = async (e?: Event) => {
@@ -232,9 +244,11 @@ export function MeshView(props: { now: number; titleRef(el: HTMLHeadingElement):
     if (problem()) return;
     const d = draft();
     const entry: MeshPeerEntry = { id: d.id.trim(), label: d.label.trim() || undefined, name: d.name.trim(), nodeId: d.nodeId };
-    if (await writePeers([...meshPeers().map(entryOf), entry], `${entry.label ?? entry.id} added.`)) {
+    if (await writePeers([...meshPeers().map(entryOf), entry], `${entry.label ?? entry.id} added.`, { [entry.id]: draftPreset() })) {
       setDraft({ id: "", label: "", name: "" });
+      setDraftPreset("presence");
       setDraftTouched(false);
+      setTicks((n) => n + 1); // its grant: read again at once
     }
   };
 
@@ -297,6 +311,15 @@ export function MeshView(props: { now: number; titleRef(el: HTMLHeadingElement):
       <Show when={saveError()}>
         {(msg) => <Banner tone="error" title="Couldn't save the peers." body={`The list on this host didn't change. ${msg()}`} />}
       </Show>
+      <Show when={access()?.error}>
+        {(msg) => (
+          <Banner
+            tone="error"
+            title="mesh-access.json can't be read, so every peer gets hello only."
+            body={`Peers see nothing else of this host until it's fixed or removed. ${msg()}`}
+          />
+        )}
+      </Show>
 
       <section class="card mesh-card" aria-labelledby="mesh-hosts-title">
         <div class="mesh-card-head">
@@ -342,7 +365,8 @@ export function MeshView(props: { now: number; titleRef(el: HTMLHeadingElement):
                     </Show>
                     <Show when={p.state !== "up" && !p.lastSeen}> · hasn't answered yet</Show>
                   </p>
-                  <Show when={peerUnavailable(p)}>{(why) => <p class="mesh-host-error">{why()}</p>}</Show>
+                  {/* A host that hides from this one chose to: said calmly, never as a failure. */}
+                  <Show when={peerUnavailable(p)}>{(why) => <p class={sessionsHiddenBy(p.id) ? "mesh-host-warn" : "mesh-host-error"}>{why()}</p>}</Show>
                   <Show when={pool()}>{(pl) => <ClaudeLoginChip pool={pl()} device={p.id} />}</Show>
                 </div>
                 <PeerStateChip peer={p} />
@@ -355,6 +379,18 @@ export function MeshView(props: { now: number; titleRef(el: HTMLHeadingElement):
                 >
                   Remove
                 </button>
+                {/* Its own line under the row, the row's full width (§mesh.peers/grants). */}
+                <Show when={accessOf(p.id)}>
+                  {(a) => (
+                    <PeerAccess
+                      peer={a()}
+                      others={(state()?.peers ?? []).filter((o) => o.id !== p.id).map((o) => o.label || o.id)}
+                      logins={access()?.logins ?? []}
+                      locked={!!access()?.error}
+                      onSaved={(v) => setAccess(v)}
+                    />
+                  )}
+                </Show>
               </li>
             )}
           </For>
@@ -415,6 +451,23 @@ export function MeshView(props: { now: number; titleRef(el: HTMLHeadingElement):
               />
             </div>
           </div>
+          <label class="field mesh-add-preset">
+            <span class="field-label">What it can see here</span>
+            <span class="select-wrap">
+              <select class="select" aria-describedby="mesh-add-preset-hint" onChange={(e) => setDraftPreset(e.currentTarget.value as MeshPreset)}>
+                <For each={MESH_PRESETS}>
+                  {(p) => (
+                    <option value={p} selected={draftPreset() === p}>
+                      {PRESET_LABEL[p]}
+                    </option>
+                  )}
+                </For>
+              </select>
+            </span>
+            <span class="field-hint" id="mesh-add-preset-hint">
+              {PRESET_HINT[draftPreset()]} You can change it any time below.
+            </span>
+          </label>
           <Show when={draftTouched() && problem()}>{(msg) => <p class="field-error">{msg()}</p>}</Show>
           <div class="cluster">
             <button type="submit" class="button button-primary" aria-disabled={saving() ? "true" : undefined}>

@@ -47,7 +47,7 @@ function loginsNow(): LoginNow[] {
 }
 
 /** The session's branch ends in a failed turn: when, and the Claude login it ran on (only a recorded one). */
-async function lastTurn(path: string): Promise<{ failed: boolean; at: number; login?: string } | null> {
+export async function lastTurn(path: string): Promise<{ failed: boolean; at: number; login?: string } | null> {
   const branch = (await readActiveBranch(path)) as { type?: string; timestamp?: string; message?: { role?: string; stopReason?: string } }[];
   for (let i = branch.length - 1; i >= 0; i--) {
     const e = branch[i]!;

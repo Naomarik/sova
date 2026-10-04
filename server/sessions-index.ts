@@ -184,7 +184,7 @@ const NL = 0x0a;
  * Lines cut off by the cap or torn by a writer mid-append are skipped. Not branch-aware (the file
  * end wins), unlike the transcript's per-message resolution. null when the window has none.
  */
-async function readTailModel(path: string, size: number): Promise<string | null> {
+export async function readTailModel(path: string, size: number): Promise<string | null> {
   const fh = await open(path, "r");
   try {
     const floor = Math.max(0, size - MAX_TAIL);
@@ -378,7 +378,7 @@ function contextOf(e: any): TailContext | "stale" | null {
  * message with a usage object gives input + cacheRead + cacheWrite. null when the window has
  * neither. Not branch-aware — on a rewound session the tail can be a reply the head never sees.
  */
-async function readTailContext(path: string, size: number): Promise<TailContext | null> {
+export async function readTailContext(path: string, size: number): Promise<TailContext | null> {
   const fh = await open(path, "r");
   try {
     const floor = Math.max(0, size - MAX_TAIL);
@@ -504,7 +504,7 @@ export async function readTailReply(path: string, size: number): Promise<LastRep
 /** `input`: the head holds a user message of any kind. A wake nudge or a partner's link message
     never titles a session, but it is still something written in it: a session whose only user
     messages are link messages has real turns and is never an empty husk. */
-async function readHead(path: string): Promise<{ header: any; title: string | null; model: string | null; overseer: boolean; input: boolean; profile?: ProfileEntryData | null } | null> {
+export async function readHead(path: string): Promise<{ header: any; title: string | null; model: string | null; overseer: boolean; input: boolean; profile?: ProfileEntryData | null } | null> {
   const fh = await open(path, "r");
   try {
     // The Overseer marker is written right after the header, before any user message, so the

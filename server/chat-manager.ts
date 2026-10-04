@@ -860,7 +860,7 @@ function listCommands(session: AgentSession): SlashCommand[] {
 }
 
 /** A session's title as the list would say it: its name, else its first message, else "Untitled". */
-function titleOf(sm: Pick<SessionManager, "getBranch">): string {
+export function titleOf(sm: Pick<SessionManager, "getBranch">): string {
   const branch = sm.getBranch();
   for (let i = branch.length - 1; i >= 0; i--) {
     const e = branch[i]!;

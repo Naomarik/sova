@@ -745,7 +745,7 @@ function settledStates(records: Rec[]): SessionFacts["settled"] {
   return out;
 }
 
-function extractFacts(text: string): SessionFacts {
+export function extractFacts(text: string): SessionFacts {
   const teams = new Map<string, RosterTeam>();
   const reports: SessionFacts["reports"] = new Map();
   let outlineData: unknown;

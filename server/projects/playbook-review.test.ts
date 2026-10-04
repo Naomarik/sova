@@ -140,3 +140,39 @@ test("Approve & Merge with the approval in place merges: the run is idle, merged
   assert.equal(again.status, 409);
   assert.equal(((await again.json()) as { error: string }).error, "No playbook run is waiting for approval.");
 });
+
+test("a run whose turn ends on open alignment questions waits, never proposed, and its answer resumes it (§app.project-runtime/onboard)", async () => {
+  const { applyAlignCall } = await import("../../pi-config/extensions/mode/align.ts");
+  const { noteBuildSettled } = await import("../build-loadout");
+  const sid2 = "0199a000-0000-7000-8000-00000000pb02";
+  const branch2 = "sova/project-verbs-4d5e6f";
+  const wt2 = join(tmp, ".worktrees", "site-project-verbs-2");
+  git(root, "worktree", "add", "-q", "-b", branch2, wt2, "main");
+  const path2 = join(tmp, "run2.jsonl");
+  const header = { type: "session", version: 3, id: sid2, timestamp: new Date().toISOString(), cwd: wt2 };
+  writeFileSync(path2, `${JSON.stringify(header)}\n${JSON.stringify({ type: "message", id: "u1", parentId: null, message: { role: "user", content: "Run it" } })}\n`);
+  seedBuildEffectsForTest(sid2, { path: path2, worktreePath: wt2, made: { branch: branch2, base: git(root, "rev-parse", "HEAD"), target: "main" } });
+  const out = await host.act(projectSid(pid), "verbs/onboard", { sessionId: sid2, title: "Project verbs: site", prompt: "Run it", mode: { mode: "normal", minorModes: ["align"] } }, operatorEnvelopeOf(pid), { settle: true });
+  assert.equal(out.taken, true, JSON.stringify(out.refusal));
+  const b2 = buildSid(pid, sid2);
+  await buildSetupEnded(pid, b2);
+  await host.act(b2, "turn/started", {}, SYSTEM);
+  commit(wt2, { "index.html": "<p>hi, again</p>\n" }, "Project verbs: a source");
+  await read();
+  // The run asks which port to keep: an align result with 2 open questions, after the user's last prompt.
+  const Q = (topic: string) => ({ topic, ask: `${topic}?`, recommendation: { choice: "a", why: "free" } });
+  const { details } = applyAlignCall([], { ops: [{ op: "create", title: "Ports", summary: "Which held port to use.", questions: [Q("Web port"), Q("REPL port")] }] }, { now: new Date().toISOString(), readFile: () => "" });
+  const align = { type: "message", id: "r1", parentId: "u1", message: { role: "toolResult", toolCallId: "c1", toolName: "align", content: [{ type: "text", text: "ok" }], details, isError: false } };
+  writeFileSync(path2, `${JSON.stringify(header)}\n${JSON.stringify({ type: "message", id: "u1", parentId: null, message: { role: "user", content: "Run it" } })}\n${JSON.stringify(align)}\n`);
+  await noteBuildSettled(path2, false);
+  const v = await until((x) => x.playbookState === "waiting");
+  assert.equal(v.playbook?.questions, 2);
+  assert.equal(playbookReviewOf(pid), null, "waiting is not proposed: no playbook-review item");
+  assert.ok(v.feed.some((f) => f.line === "The Project verbs playbook waits on your answers in its session."), JSON.stringify(v.feed));
+  const again = await app.request(`/api/projects/${pid}/verbs/onboard`, json("POST", {}));
+  assert.equal(again.status, 409, "a waiting run is live: no second run");
+  await host.act(b2, "turn/started", {}, SYSTEM);
+  assert.equal((await until((x) => x.playbookState === "running")).playbookState, "running", "the answer resumes it");
+  await host.act(b2, "turn/ended", {}, SYSTEM);
+  assert.equal((await until((x) => x.playbookState === "proposed")).playbook?.sessionId, sid2, "no questions left: proposed");
+});

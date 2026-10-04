@@ -4,7 +4,7 @@ import { announce } from "../lib/ui-state";
 import "../delete-button.css";
 
 /**
- * A link's Delete: the first press asks (`confirm`, "… for Good?") and shows `note` right after the
+ * A link's Delete: the first press asks (`confirm`, "Delete?") and shows `note` right after the
  * button (that the link stops working for good), also announced; the second press runs it; leaving
  * it disarms. `busy` replaces the label while the delete runs ("Deleting…").
  */

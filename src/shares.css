@@ -82,7 +82,8 @@
 /* ---- #/shares ---- */
 .shares-card { display: flex; flex-direction: column; gap: var(--space-3); padding: var(--space-4); max-width: 880px; }
 .shares-card-title { margin: 0; font-size: var(--fs-heading-s); line-height: var(--lh-heading-s); font-weight: var(--fw-semibold); color: var(--color-ink); }
-.shares-row { gap: var(--space-3); align-items: flex-start; flex-wrap: wrap; }
+/* Buttons that wrap under a row's details keep clear of them (row-gap); beside them, the column gap. */
+.shares-row { gap: var(--space-4) var(--space-3); align-items: flex-start; flex-wrap: wrap; }
 .shares-row .list-main { flex: 1; min-width: 14rem; }
 .shares-row-title { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); white-space: normal; overflow-wrap: anywhere; }
 .shares-row .list-meta { white-space: normal; overflow-wrap: anywhere; }
@@ -130,7 +131,7 @@
 .previews-recipient-off.button-sm { min-height: 24px; padding: 0 var(--space-2); }
 /* The row's buttons on a line under it: Start, Copy Link and Open at the left, the preview's own
    Delete at the right, apart from them, each as wide as its label. */
-.previews-row-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.previews-row-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin-top: var(--space-2); }
 .previews-row-actions > .previews-off { margin-left: auto; }
 /* New Preview, and the only row's Delete at the right of the same line. */
 .previews-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2) var(--space-3); }

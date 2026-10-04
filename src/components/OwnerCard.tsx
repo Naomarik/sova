@@ -4,7 +4,7 @@ import type { OfferLink } from "../../shared/baton";
 import type { OrgDetail } from "../../shared/orgs";
 import { ApiError, ownerLink, previewOwnerPage, revokeOwnerLink, setOrgOwner } from "../lib/api";
 import { useMinuteNow } from "../lib/minute-clock";
-import { DELETE_OWNER_LINK, DELETE_OWNER_LINK_FOR_GOOD, OWNER_LINK_DELETED } from "../lib/link-delete";
+import { DELETE_OWNER_LINK, DELETE_OWNER_LINK_ASK, OWNER_LINK_DELETED } from "../lib/link-delete";
 import { deleteOwnerLine, ownerChangeLine, ownerLinkLine, rotateLine } from "../lib/owner-card";
 import { ownerHash, type OwnerRoute } from "../lib/owner-words";
 import { firstName } from "../lib/person-page";
@@ -156,7 +156,7 @@ export function OwnerCard(props: { org: OrgDetail; act: Act }) {
                 when={kind() === "rotate"}
                 fallback={
                   <button type="button" class="button button-sm button-destructive" onClick={() => void deleteLink()}>
-                    {DELETE_OWNER_LINK_FOR_GOOD}
+                    {DELETE_OWNER_LINK_ASK}
                   </button>
                 }
               >

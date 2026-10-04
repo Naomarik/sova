@@ -103,10 +103,10 @@ test("the card's Delete names its scope: the preview with its recipients' links,
 });
 
 test("a Delete's second click says the link ends for good, and the app keeps running", () => {
-  assert.equal(DELETE_CONFIRM, "Delete for Good?");
+  assert.equal(DELETE_CONFIRM, "Delete?");
   assert.equal(deleteNote(0), "The link stops working for good. Your app keeps running; make a New Preview to share it again.");
   assert.equal(deleteNote(1), "This link and the 1 sent from it stop working for good. Your app keeps running; make a New Preview to share it again.");
-  assert.equal(recipientDeleteConfirm("Fatoom Wife"), "Delete Fatoom Wife's Link for Good?");
+  assert.equal(recipientDeleteConfirm("Fatoom Wife"), "Delete Fatoom Wife's Link?");
   assert.equal(recipientDeleteNote("Fatoom Wife"), "Fatoom Wife's link stops working for good.");
 });
 

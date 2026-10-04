@@ -31,7 +31,7 @@ import { STATUS_CHIP, valueText, writerWord } from "../lib/profile-changes";
 import { announce, toast } from "../lib/ui-state";
 import { InsightsPage } from "./InsightsPage";
 import { LinksBanner } from "./LinksBanner";
-import { allDeleted, DELETE_FOR_GOOD, DELETE_LINK, DELETE_OWNER_LINK, deleteAllConfirm, deleteAllLabel, deleteAllLine, LINK_DELETED, LINK_GONE, NEW_LINK_TIP, OWNER_LINK_DELETED } from "../lib/link-delete";
+import { allDeleted, DELETE_ASK, DELETE_LINK, DELETE_OWNER_LINK, deleteAllConfirm, deleteAllLabel, deleteAllLine, LINK_DELETED, LINK_GONE, NEW_LINK_TIP, OWNER_LINK_DELETED } from "../lib/link-delete";
 import { DeleteButton } from "./DeleteButton";
 import { PersonForm } from "./PersonForm";
 import { Banner, Chip, Icon, trapFocus } from "./ui";
@@ -622,7 +622,7 @@ function LinksAndVisits(props: { data: PersonPageData; now: number; act: Act; on
                       <Show when={linkLive(l.state)}>
                         <DeleteButton
                           label={DELETE_LINK}
-                          confirm={DELETE_FOR_GOOD}
+                          confirm={DELETE_ASK}
                           note={LINK_GONE}
                           onRun={() => void props.act(() => revokePersonLinks(props.data.org.id, p().id, { sessionId: l.sessionId, n: l.n }), LINK_DELETED)}
                         />
@@ -662,7 +662,7 @@ function LinksAndVisits(props: { data: PersonPageData; now: number; act: Act; on
                   </span>
                   <Show when={l.state === "live"}>
                     <div class="button-row person-row-actions">
-                      <DeleteButton label={DELETE_OWNER_LINK} confirm={DELETE_FOR_GOOD} note={LINK_GONE} onRun={() => void props.act(() => revokeOwnerLink(props.data.org.id), OWNER_LINK_DELETED)} />
+                      <DeleteButton label={DELETE_OWNER_LINK} confirm={DELETE_ASK} note={LINK_GONE} onRun={() => void props.act(() => revokeOwnerLink(props.data.org.id), OWNER_LINK_DELETED)} />
                     </div>
                   </Show>
                 </li>

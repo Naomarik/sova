@@ -36,7 +36,7 @@ import {
   verbGroups,
 } from "../lib/services-view";
 import { previewWarning } from "../lib/previews";
-import { COPY_LINK_GONE, copyLinkDeleted, DELETE_FOR_GOOD, DELETE_LINK, DELETING } from "../lib/link-delete";
+import { COPY_LINK_GONE, copyLinkDeleted, DELETE_ASK, DELETE_LINK, DELETING } from "../lib/link-delete";
 import { createArm } from "../lib/two-step";
 import "../delete-button.css";
 import { announce, copyText, toast } from "../lib/ui-state";
@@ -278,7 +278,7 @@ export function ProjectServicesTab(props: { projectId: string; archived: boolean
                     onClick={() => void revoke(c(), l)}
                     onBlur={() => arming.disarm(`${l.id}:revoke`)}
                   >
-                    {running() === `${l.id}:revoke` ? DELETING : armed() === `${l.id}:revoke` ? DELETE_FOR_GOOD : DELETE_LINK}
+                    {running() === `${l.id}:revoke` ? DELETING : armed() === `${l.id}:revoke` ? DELETE_ASK : DELETE_LINK}
                   </button>
                   <Show when={armed() === `${l.id}:revoke`}>
                     <p class="delete-note" id={`link-gone-${l.id}`}>

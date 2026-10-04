@@ -53,7 +53,7 @@ export const recipientName = (v: Pick<PreviewView, "sentToName">): string => v.s
    from then on and nothing brings it back, while the app on its port keeps running. */
 /** A preview's own Delete, which ends every link sent from it too: its listed recipients' links counted in the label. */
 export const deleteLabel = (recipients: number): string => (recipients > 0 ? `Delete Preview + ${recipients} ${recipients === 1 ? "Link" : "Links"}` : "Delete Preview");
-export const DELETE_CONFIRM = "Delete for Good?";
+export const DELETE_CONFIRM = "Delete?";
 export const DELETE_ALL_TIP = "Deletes this preview and every link sent from it.";
 /** The line shown while a Delete waits for its second click. */
 export const deleteNote = (recipients: number): string =>
@@ -64,7 +64,7 @@ export const deleteFailed = (why: string): string => `Couldn't delete it. ${why}
 export const RECIPIENT_DELETE_LABEL = "Delete Link";
 export const recipientDeleteName = (name: string): string => `Delete ${name}'s Link`;
 export const recipientDeleteTip = (name: string): string => `Deletes only ${name}'s link.`;
-export const recipientDeleteConfirm = (name: string): string => `Delete ${name}'s Link for Good?`;
+export const recipientDeleteConfirm = (name: string): string => `Delete ${name}'s Link?`;
 export const recipientDeleteNote = (name: string): string => `${name}'s link stops working for good.`;
 export const recipientDeleted = (name: string): string => `${name}'s link deleted.`;
 

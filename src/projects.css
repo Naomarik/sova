@@ -437,3 +437,8 @@ a.pipeline-link:hover, button.pipeline-link:hover, summary.pipeline-link:hover {
 .services-share-form { margin-top: var(--space-2); padding: var(--space-3); border-radius: var(--r-md); background: var(--color-sunken); }
 .services-share-fields { display: flex; flex-wrap: wrap; gap: var(--space-3); }
 .services-share-fields .field { min-width: 10rem; }
+
+/* A live verb playbook run (§app.project-runtime/run-progress) and a proposed one's review (/run-report). */
+.project-run-strip { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin: var(--space-2) 0; }
+.project-run-now { min-width: 0; overflow-wrap: anywhere; color: var(--color-ink-2); }
+.project-run-review { border-top: var(--stroke-thin) solid var(--color-border); padding-top: var(--space-2); margin-top: var(--space-2); }

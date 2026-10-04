@@ -12,7 +12,7 @@ import { mergeCodingWorktree, startOnboardSession, type StartedCoding } from "..
 import { projectRootOf } from "../project-root";
 import { readWorktree } from "../project-worktrees";
 import { onboardStart } from "./onboard";
-import { DEFAULT_PLAYBOOK_LABEL, playbookReviewOf } from "./playbook-review";
+import { branchReview, DEFAULT_PLAYBOOK_LABEL, memoryIn, playbookReviewOf, runLive } from "./playbook-review";
 import { runtimeFeed, type FeedRow } from "./runtime-feed";
 import { engineOf, engineOrThrow, listProjects, operatorEnvelopeOf, projectArchived, readProject, runtimeSid, type OperatorBy } from "./spaces";
 
@@ -261,15 +261,9 @@ function joinLive(software: Record<string, unknown>[], instances: InstanceSummar
       rows.push({ instance: sv.scope === "shared" ? "shared" : inst.instance, label: sv.scope === "shared" ? "shared" : labelOf(inst), state: sv.state, ...(typeof sv.rssBytes === "number" ? { rssBytes: sv.rssBytes } : {}) });
       live.set(sv.name, rows);
     }
-  const memoryOf = (name: string): RuntimeService["memory"] | undefined => {
-    const rows = (proof?.memory?.instances ?? []).flatMap((i) => i.services.filter((s) => s.name === name));
-    if (!rows.length) return undefined;
-    const max = (k: "peakBytes" | "steadyBytes") => rows.reduce<number | null>((m, r) => (r[k] === null ? m : Math.max(m ?? 0, r[k] as number)), null);
-    return { peakBytes: max("peakBytes"), steadyBytes: max("steadyBytes") };
-  };
   const services = software.map((s): RuntimeService => {
     const name = str(s.name);
-    const mem = memoryOf(name);
+    const mem = memoryIn(proof, name);
     return {
       name,
       kind: (str(s.kind) || "process") as RuntimeService["kind"],
@@ -309,6 +303,14 @@ function playbookView(host: OrgHostApi, d: Record<string, unknown>): RuntimePlay
     ...(str(build.target) ? { target: str(build.target) } : {}),
     ...(bdef.state === "present" ? { branchHash: str(bdef.hash), branchApproved: bf.approved === true, branchProof: proofView(bf.proof) } : {}),
   };
+}
+
+/** A live run's strip (its session now) and, while proposed, what its branch proposes (§app.project-runtime/run-progress, /run-report). */
+async function withRun(pb: RuntimePlaybook | null, state: string, root: string): Promise<RuntimePlaybook | null> {
+  if (!pb || !LIVE_RUN.has(state)) return pb;
+  const live = await runLive(pb.path);
+  const review = state === "proposed" && pb.branch ? await branchReview(root, pb.branch, pb.branchProof ?? null).catch(() => undefined) : undefined;
+  return { ...pb, ...(live ? { live } : {}), ...(review ? { review } : {}) };
 }
 
 /** The live title of a running playbook (the "already running" refusal), or null. */
@@ -363,7 +365,7 @@ export async function readRuntime(projectId: string, opts: { observe?: boolean }
     proof,
     confinedProof: proofView(d.confinedProof),
     registered: reg.hash ? { hash: str(reg.hash), suite: Number(reg.suite) || 0, commit: str(reg.commit) || null, at: iso(reg.at) } : null,
-    playbook: playbookView(at.host, d),
+    playbook: await withRun(playbookView(at.host, d), String(d.playbookState), root),
     can: {
       approve,
       ...(approve && approve !== mainHash ? { approveBranch: str(obj(d.playbook).branch) } : {}),

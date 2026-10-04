@@ -3,7 +3,7 @@ import type { ProjectRuntimeView } from "../../shared/project-runtime";
 import { ApiError, approveProjectRuntime, getProjectRuntime, runProjectVerbsPlaybook } from "../lib/api";
 import { relativeTime } from "../lib/format";
 import { createPoll, type Poll } from "../lib/poll";
-import { approveLabel, approveWhat, failedLine, liveWord, memoryWord, playbookLabel, portsWord, provenTail, runWord, SENSITIVE_TITLE, serviceFacts, STANDING_CHIP } from "../lib/project-software";
+import { approveLabel, approveWhat, failedLine, liveWord, memoryWord, openWord, playbookLabel, portsWord, provenTail, reviewDefProblem, reviewProofWord, runStrip, runWord, SENSITIVE_TITLE, serviceFacts, shareWord, STANDING_CHIP } from "../lib/project-software";
 import { projectSessionHref, projectTabHref } from "../lib/projects-route";
 import { announce, toast } from "../lib/ui-state";
 import { ApproveMergeButton, proposedRun } from "./PlaybookReview";
@@ -15,6 +15,9 @@ const FEED_SHOWN = 5;
 
 /** The page's one read of the registry: the Software card and the proposed run's banner share it. */
 export const createRuntimePoll = (projectId: string): Poll<ProjectRuntimeView> => createPoll(() => getProjectRuntime(projectId), SOFTWARE_POLL_MS);
+
+/** The run strip's state chip: working is the live indicator; waiting on you is warn. */
+const STRIP_TONE: Record<string, "accent" | "warn" | "info" | undefined> = { Working: "accent", "Waiting for your answers": "warn", Proposed: "info", Idle: undefined };
 
 const errText = (err: unknown) => (err instanceof ApiError || err instanceof Error ? err.message : String(err));
 
@@ -138,6 +141,79 @@ export function ProjectSoftwareCard(props: { projectId: string; archived: boolea
                   </Show>
                   .
                 </p>
+              )}
+            </Show>
+            {/* A live run as it goes (§app.project-runtime/run-progress): from its session, no tool of its own. */}
+            <Show when={runStrip(v(), Date.now())}>
+              {(strip) => (
+                <p class="project-run-strip" aria-label={`${v().playbook!.label} run`}>
+                  <Chip tone={STRIP_TONE[strip().state]} live={strip().state === "Working"}>
+                    {strip().state}
+                  </Chip>
+                  <Show when={strip().elapsed}>{(e) => <span class="list-meta">{e()}</span>}</Show>
+                  <Show when={strip().questions ?? strip().now}>{(line) => <span class="project-run-now">{line()}</span>}</Show>
+                  <Show when={v().playbook?.path}>
+                    {(path) => (
+                      <a class="project-software-open" href={projectSessionHref(props.projectId, path())}>
+                        {strip().questions ? "Answer in Its Session" : "Open Session"}
+                        <Icon name="chevron-right" small />
+                      </a>
+                    )}
+                  </Show>
+                </p>
+              )}
+            </Show>
+            {/* What a proposed run's branch proposes, read by Sova (§app.project-runtime/run-report). */}
+            <Show when={v().playbookState === "proposed" ? v().playbook?.review : undefined}>
+              {(r) => (
+                <div class="project-run-review" role="group" aria-label="What the run proposes">
+                  <Show
+                    when={!reviewDefProblem(r())}
+                    fallback={<p class="orgs-line project-software-failed">{reviewDefProblem(r())}</p>}
+                  >
+                    <ul class="orgs-history-list project-software-list">
+                      <For each={r().services}>
+                        {(s) => (
+                          <li class="orgs-change project-software-row">
+                            <span class="orgs-change-main">
+                              <span class="project-software-name">{s.name}</span> <span class="list-meta" title={s.isolation?.why}>{serviceFacts(s)}</span>
+                              <Show when={portsWord(s)}>{(p) => <span class="list-meta text-mono"> · {p()}</span>}</Show>
+                              <Show when={memoryWord(s.memory)}>{(m) => <span class="list-meta"> · {m()}</span>}</Show>
+                            </span>
+                          </li>
+                        )}
+                      </For>
+                      <For each={r().data}>
+                        {(d) => (
+                          <li class="orgs-change project-software-row">
+                            <span class="orgs-change-main">
+                              <span class="project-software-name">{d.name}</span> <span class="list-meta">data · {d.kind}</span>
+                            </span>
+                            <Show when={d.sensitive}>
+                              <Chip tone="warn" title={SENSITIVE_TITLE}>
+                                Sensitive
+                              </Chip>
+                            </Show>
+                          </li>
+                        )}
+                      </For>
+                    </ul>
+                    <p class="list-meta">
+                      {shareWord(r())} · {openWord(r())}
+                    </p>
+                  </Show>
+                  <p class="list-meta">{reviewProofWord(r())}</p>
+                  <Show when={v().playbook?.path}>
+                    {(path) => (
+                      <p class="orgs-line">
+                        <a class="project-software-open" href={projectSessionHref(props.projectId, path())}>
+                          Read Report
+                          <Icon name="chevron-right" small />
+                        </a>
+                      </p>
+                    )}
+                  </Show>
+                </div>
               )}
             </Show>
             <Show when={!proposedRun(v()) && approveWhat(v())}>{(w) => <p class="list-meta">{w()}</p>}</Show>

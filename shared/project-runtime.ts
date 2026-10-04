@@ -84,6 +84,29 @@ export interface RuntimePlaybook {
   branchHash?: string;
   branchApproved?: boolean;
   branchProof?: RuntimeProof | null;
+  /** While the run is live: its session as the session list reads it now (§app.project-runtime/run-progress). */
+  live?: RuntimeRunLive;
+  /** While proposed: what its branch proposes, read by the host (§app.project-runtime/run-report). */
+  review?: RuntimeRunReview;
+}
+
+export interface RuntimeRunLive {
+  working: boolean;
+  /** The session's outline "now" line, when it has one. */
+  now?: string;
+  /** Open alignment questions its session waits on the operator for. */
+  questions?: number;
+}
+
+/** The definition on a proposed run's branch at its tip, and the newest confined conformance of its hash. */
+export interface RuntimeRunReview {
+  def: { state: "absent" | "invalid" | "present"; hash?: string; error?: string };
+  services: (Omit<RuntimeService, "live" | "requires"> & { start: "up" | "on-demand" })[];
+  data: RuntimeData[];
+  /** null: no `share` (nothing is shared). */
+  share: { endpoints: string[]; allow: boolean } | null;
+  open: { endpoint: string; path: string } | null;
+  proof: RuntimeProof | null;
 }
 
 export interface RuntimeFeedLine {

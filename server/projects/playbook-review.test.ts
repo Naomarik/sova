@@ -93,6 +93,12 @@ test("a run that ends with commits is proposed: a playbook-review item on its se
   assert.equal(playbookReviewOf(pid), null, "nothing waits while it works");
   await host.act(bsid, "turn/ended", {}, SYSTEM);
   const v = await until((x) => x.playbookState === "proposed" && !!x.playbook?.branchHash);
+  // The review, read by Sova from the branch's tip (§app.project-runtime/run-report), and the run's strip.
+  const r = v.playbook!.review!;
+  assert.deepEqual(r.def, { state: "present", hash: v.playbook!.branchHash });
+  assert.deepEqual(r.services.map((x) => [x.name, x.kind, x.scope, x.isolation?.method, x.ports]), [["site", "static", "checkout", "ports", [{ name: "http", port: 18931 }]]]);
+  assert.deepEqual([r.share, r.open, r.proof], [null, null, null], "no share, no entry point, no conformance yet");
+  assert.equal(v.playbook!.live?.working, false);
   const fact = playbookReviewOf(pid)!;
   assert.deepEqual({ ...fact, since: 0 }, { projectId: pid, sessionId, path: sessionPath, label: "Project verbs", branch, target: "main", hash: v.playbook!.branchHash, approved: false, approves: "definition", since: 0 });
   assert.ok(fact.since > 0, "dated by its last turn's end");

@@ -1,0 +1,54 @@
+// Reader ratchet fixtures, `reaches` (§app.harness/boundary; the toolctx addendum's F1-F16). Each
+// block is scanned as its own file at `path` (default server/fixture.ts) and must give exactly `expect`.
+// ---- F1 expect={"reaches":1,"calls":1}
+ctx.sessionManager.getBranch();
+// ---- F2 expect={"reaches":2}
+ctx?.sessionManager?.getSessionId?.();
+// ---- F3 expect={"reaches":2}
+ctx["sessionManager"].getCwd();
+// ---- F4 expect={"reaches":3}
+const { sessionManager } = ctx; sessionManager.getLeafId();
+// ---- F5 expect={"reaches":2,"calls":1}
+const sm = chat.session.sessionManager; sm.getHeader(); sm.getEntries();
+// ---- F6 expect={"reaches":1}
+function f(sm: { getSessionFile(): string }) { return sm.getSessionFile(); }
+// ---- F7 expect={"reaches":1}
+interface C { sessionManager?: { getBranch(): unknown[] } }
+// ---- F7b an object key, plain and quoted expect={"reaches":2}
+const a = { sessionManager: sm };
+const b = { "sessionManager": sm };
+// ---- F8 expect={"reaches":1,"imports":"runtime"}
+import { SessionManager } from "@earendil-works/pi-coding-agent"; SessionManager.create(cwd);
+// ---- F8b expect={"imports":"type"}
+import type { SessionManager } from "@earendil-works/pi-coding-agent"; type T = Pick<SessionManager, "getBranch">;
+// ---- F9 expect={"reaches":1,"imports":"runtime"}
+import { SessionManager as SM } from "@earendil-works/pi-coding-agent"; SM.open(p);
+// ---- F10 expect={"reaches":2}
+const append = sm.appendCompaction; sm.appendCompaction = wrap;
+// ---- F11 expect={"reaches":1}
+import { liveRead as lr } from "./harness/pi/reader"; lr(chat.session).branch();
+// ---- F11b expect={"reaches":1}
+import { stateOf } from "./harness/pi/state"; stateOf(session).file();
+// ---- F11c a bridge through a namespace expect={"reaches":1}
+import * as pi from "./harness/pi/reader"; pi.liveRead(chat.session).branch();
+// ---- F12 expect={}
+// sessionManager.getBranch()
+log("sessionManager.getBranch()");
+// ---- F13 expect={}
+appendUsage(ledger, row); host.branch(); chat.leafId(); ctx.cwd;
+// ---- F14 expect={"violations":["reexport"]}
+export { liveRead } from "./harness/pi/reader";
+// ---- F15 path=server/harness/pi/x.ts expect={}
+ctx.sessionManager.getBranch(); ctx?.sessionManager?.getSessionId?.(); ctx["sessionManager"].getCwd();
+const { sessionManager } = ctx; sessionManager.getLeafId();
+const sm = chat.session.sessionManager; sm.getHeader(); sm.getEntries();
+import { SessionManager } from "@earendil-works/pi-coding-agent"; SessionManager.create(cwd);
+const append = sm.appendCompaction; sm.appendCompaction = wrap;
+// ---- F15b path=server/x.test.ts expect={"imports":"runtime"}
+ctx.sessionManager.getBranch(); ctx?.sessionManager?.getSessionId?.(); ctx["sessionManager"].getCwd();
+const { sessionManager } = ctx; sessionManager.getLeafId();
+const sm = chat.session.sessionManager; sm.getHeader(); sm.getEntries();
+import { SessionManager } from "@earendil-works/pi-coding-agent"; SessionManager.create(cwd);
+const append = sm.appendCompaction; sm.appendCompaction = wrap;
+// ---- F16 expect={"calls":1}
+toolCtx(ctx).rawBranch();

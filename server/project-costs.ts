@@ -1,6 +1,5 @@
 import { readdirSync } from "node:fs";
 import { join } from "node:path";
-import type { OrgCosts, ProjectCost } from "../shared/costs";
 import { contributedCostSessions } from "./projects/contributions";
 import { engineOrThrow, projectDir } from "./projects/spaces";
 import { ledgerPaths } from "./project-costs-ledger";
@@ -87,17 +86,25 @@ export async function orgCostsAnswer(orgId: string, projectIds: string[]): Promi
   return askUsage("org", { orgId, scopes });
 }
 
-const parsed = <T>(a: HelperAnswer): T => {
-  if (a.status !== 200) throw new Error(`usage helper: ${a.status} ${a.body.toString()}`);
-  return JSON.parse(a.body.toString()) as T;
+// The Overseer's text views read the helper on the main loop, so they ask for answers that need no
+// parse there (a7): a line the helper formatted, and a list of bare numbers.
+const ok = (a: HelperAnswer): string => {
+  if (a.status !== 200) throw new Error(`usage helper: ${a.status}`);
+  return a.body.toString();
 };
 
-/** A project's cost as an object (the overseer's org view; a figure in a tool's text). */
-export async function projectCost(projectId: string): Promise<ProjectCost> {
-  return parsed<ProjectCost>(await projectCostAnswer(projectId));
+/** A project's cost as the Overseer's org view says it ("Cost: $… at API prices, …"). */
+export async function projectCostLine(projectId: string): Promise<string> {
+  // The helper's line has no quote, backslash or control character: its JSON form is "<line>".
+  return ok(await askUsage("project-line", { scope: await projectScope(projectId) })).slice(1, -1);
 }
 
-/** The org roll-up as an object (the overseer's org view). */
-export async function orgCostsOf(orgId: string, projectIds: string[]): Promise<OrgCosts> {
-  return parsed<OrgCosts>(await orgCostsAnswer(orgId, projectIds));
+/** The org's total and each project's, in `projectIds` order (the Overseer's org view). */
+export async function orgCostFigures(orgId: string, projectIds: string[]): Promise<{ totalUsd: number; projects: { projectId: string; totalUsd: number }[] }> {
+  const scopes: ProjectScope[] = [];
+  for (const pid of projectIds) scopes.push(await projectScope(pid));
+  // A JSON array of numbers: "[12.5,3,9.5]".
+  const n = ok(await askUsage("org-figures", { orgId, scopes })).slice(1, -1).split(",").map(Number);
+  if (n.length !== projectIds.length + 1 || n.some((x) => !Number.isFinite(x))) throw new Error("usage helper: malformed org figures");
+  return { totalUsd: n[0]!, projects: projectIds.map((projectId, i) => ({ projectId, totalUsd: n[i + 1]! })) };
 }

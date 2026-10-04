@@ -1,5 +1,6 @@
 import path from "node:path";
 import { USAGE_RANGES, MAX_USAGE_SESSIONS, type UsageRange } from "../../shared/usage/wire";
+import type { ProjectCost } from "../../shared/costs";
 import { Ledger } from "./ledger";
 import { createPriceBook, type PriceBook, type PriceBookOptions } from "./price-book";
 import { orgCosts, projectCost, type ProjectDeps, type ProjectScope } from "./project";
@@ -40,6 +41,17 @@ function scopeOf(v: unknown): ProjectScope {
     if (!src || typeof src.key !== "string" || typeof src.sessionId !== "string" || typeof src.kind !== "string" || typeof src.by !== "string") throw new BadRequest("a scope source needs key, sessionId, kind and by");
   }
   return { projectId: s.projectId, costsPath: s.costsPath, sources: s.sources };
+}
+
+/**
+ * A project's cost as the Overseer's org view says it: "Cost: $1.23 at API prices, 4 sessions
+ * counted[; some tokens unpriced (a, b)]". Quotes, backslashes and control characters are replaced,
+ * so its JSON form is the text between two quotes (the server reads it without a parse). Pure.
+ */
+export function projectCostLine(c: Pick<ProjectCost, "totalUsd" | "sessions" | "unpriced">): string {
+  const sessions = `${c.sessions} ${c.sessions === 1 ? "session" : "sessions"}`;
+  const unpriced = c.unpriced.length ? `; some tokens unpriced (${c.unpriced.map((u) => u.model).join(", ")})` : "";
+  return `Cost: $${c.totalUsd.toFixed(2)} at API prices, ${sessions} counted${unpriced}`.replace(/[\u0000-\u001f"\\]/g, "?");
 }
 
 const strings = (v: unknown): string[] => (Array.isArray(v) ? v.filter((s): s is string => typeof s === "string") : typeof v === "string" ? [v] : []);
@@ -85,6 +97,15 @@ export function createService(opts: ServiceOptions): Service {
       case "org": {
         if (typeof req.orgId !== "string" || !Array.isArray(req.scopes)) throw new BadRequest("orgId and scopes are required");
         return orgCosts(projectDeps, req.orgId, req.scopes.map(scopeOf));
+      }
+      // The Overseer's text views (server/overseer-org-view.ts) read these on the server's main
+      // loop, which parses nothing helper-sized: a line formatted here, and bare numbers.
+      case "project-line":
+        return projectCostLine(projectCost(projectDeps, scopeOf(req.scope)));
+      case "org-figures": {
+        if (typeof req.orgId !== "string" || !Array.isArray(req.scopes)) throw new BadRequest("orgId and scopes are required");
+        const c = orgCosts(projectDeps, req.orgId, req.scopes.map(scopeOf));
+        return [c.totalUsd, ...c.projects.map((p) => p.totalUsd)];
       }
       case "stats":
         return { ...ledger.stats, owners: ledger.owners.size, days: ledger.dayNames().length };

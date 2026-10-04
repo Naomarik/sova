@@ -1340,9 +1340,9 @@ export function orgSummaries(): OrgSummary[] {
 }
 
 /** The org's cost rollup (§app.project-costs/org-rollup): every placed project's total at API prices, from the usage helper. */
-export async function orgCosts(orgId: string): Promise<OrgCosts> {
-  const { orgCostsOf } = await import("./project-costs"); // loaded on first use: it reaches modules that import this one
-  return orgCostsOf(orgId, readProjects(orgId).map((p) => p.id));
+export async function orgCosts(orgId: string): Promise<Pick<OrgCosts, "totalUsd"> & { projects: Pick<OrgCosts["projects"][number], "projectId" | "totalUsd">[] }> {
+  const { orgCostFigures } = await import("./project-costs"); // loaded on first use: it reaches modules that import this one
+  return orgCostFigures(orgId, readProjects(orgId).map((p) => p.id));
 }
 
 /** The same, as the helper's bytes (the route relays them). */

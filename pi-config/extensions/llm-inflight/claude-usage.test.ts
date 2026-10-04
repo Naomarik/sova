@@ -105,6 +105,32 @@ test("the baseline persists: a resumed session's history is never counted again,
 	assert.deepEqual(other.residuals.map((r) => [r.tokens.i, r.tokens.o]), [[1, 0]]);
 });
 
+test("a turn cut before its result: what the dead process recorded is never counted again as a residual", () => {
+	const dir = tmp();
+	const one = collect(dir, true);
+	one.c.frame({ type: "system", subtype: "init", session_id: S });
+	one.c.frame(result({ [F]: [10, 10, 0, 0] }));
+	one.c.frame(start("msg_x", usage(5, 5)));
+	one.c.close(); // killed (an interrupt, a failover) before the turn's result
+	assert.deepEqual(one.calls.map((u) => u.id), ["msg_x"]);
+	const two = collect(dir, false);
+	two.c.frame(result({ [F]: [15, 15, 0, 0] }));
+	assert.deepEqual(two.residuals, [], "msg_x is already cc:msg_x");
+});
+
+test("the recorded-since lines: one append per message, dropped at the next baseline, and a stale baseline's ignored", () => {
+	const dir = tmp();
+	const store = fileBaselineStore(dir);
+	store.write(S, { [F]: { i: 10, o: 10, cr: 0, cw: 0, cw1h: 0 } });
+	const t = { i: 1, o: 1, cr: 0, cw: 0, cw1h: 0 };
+	store.addSince(S, 20, { id: "msg_a", model: F, tokens: t });
+	store.addSince(S, 7, { id: "msg_old", model: F, tokens: t }); // left by a crash between two baselines
+	assert.deepEqual(store.readSince(S, 20).map((e) => e.id), ["msg_a"]);
+	store.write(S, { [F]: { i: 11, o: 11, cr: 0, cw: 0, cw1h: 0 } });
+	assert.deepEqual(store.readSince(S, 22), []);
+	assert.equal(fs.existsSync(path.join(dir, `${S}.since.jsonl`)), false);
+});
+
 test("a re-adopted worker's replay adds nothing: old results sit at or under the persisted total", () => {
 	const dir = tmp();
 	const frames = [

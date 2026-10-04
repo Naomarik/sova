@@ -20,6 +20,8 @@ const baton = await import("./baton");
 const { seedBuild, seedConflicts } = await import("./org-test-fixtures");
 const store = await import("./project-overseer-store");
 const costs = await import("./project-costs");
+// The route's bytes, as the browser reads them (the server itself never parses them).
+const projectCost = async (id: string): Promise<import("../shared/costs").ProjectCost> => JSON.parse((await costs.projectCostAnswer(id)).body.toString());
 const ledger = await import("./project-costs-ledger");
 const { settled } = await import("./workspace-git");
 const { setUsageAsker } = await import("./usage-helper/client");
@@ -166,7 +168,7 @@ describe("a project's cost (§app/project-costs)", async () => {
   const RECONCILE = 1;
 
   test("every source, priced per call: kinds, starters, models, unpriced, workers at any depth", async () => {
-    const c = await costs.projectCost(project.id);
+    const c = await projectCost(project.id);
     const kind = (k: string) => c.byKind.find((r) => r.kind === k)?.usd ?? 0;
     approx(kind("overseer"), PO, "overseer, its cache warm included");
     approx(kind("gathering"), GATHER, "gathering");
@@ -203,13 +205,13 @@ describe("a project's cost (§app/project-costs)", async () => {
     const snap = ledger.readCostLedger(lp);
     assert.ok(snap.sources["code-a"] && snap.sources[`w:${CC}`] && snap.sources["w:w2"] && snap.sources["reconcile:h_testhost:operator"] && snap.sources["reconcile:h_testhost:sova"], Object.keys(snap.sources).join(", "));
     assert.ok(!readFileSync(lp.costs, "utf8").includes(tmp), "no host path in the repo's ledger");
-    const before = await costs.projectCost(project.id);
+    const before = await projectCost(project.id);
     // Another host counted code-far (its file is there) and an old-style worker key of a worker counted here.
     const far = { sessionId: "code-far", title: "Far", kind: "coding-overseer" as const, by: "overseer" as const, countedAt: "2026-09-27T00:00:00.000Z", buckets: [{ kind: "coding-overseer" as const, provider: "zai", model: "glm-5.3", at: iso(T0), n: 1, input: 1_000_000, output: 0, cacheRead: 0, cacheWrite5m: 0, cacheWrite1h: 0 }] };
     const dup = { ...far, sessionId: "w1", kind: "workers" as const, buckets: [{ ...far.buckets[0]!, kind: "workers" as const }] };
     ledger.writeCostLedger(lp, { version: 1, sources: { ...ledger.readCostLedger(lp).sources, "code-far": far, "w:pi:w1": dup } });
     clock += 120_000;
-    const c = await costs.projectCost(project.id);
+    const c = await projectCost(project.id);
     approx(c.totalUsd, before.totalUsd + 1, "the other host's row adds; the old key of a worker counted here doesn't");
     assert.deepEqual(c.notOnHost, { sessions: 1, countedAt: "2026-09-27T00:00:00.000Z" });
     assert.equal(c.top.find((t) => t.sessionId === "code-far")?.countedAt, "2026-09-27T00:00:00.000Z");
@@ -221,7 +223,16 @@ describe("a project's cost (§app/project-costs)", async () => {
     const theirs = r.projects.find((p) => p.projectId === other.id)!;
     approx(theirs.totalUsd, 2.5 + 9 * 2, "the other overseer's conversation and reconciler are its own project's");
     approx(r.totalUsd, mine.totalUsd + theirs.totalUsd);
-    assert.ok(mine.unpricedTokens >= 123 + 55);
+    const bytes = JSON.parse((await orgs.orgCostsAnswer(org.id)).body.toString()) as import("../shared/costs").OrgCosts;
+    assert.ok(bytes.projects.find((p) => p.projectId === project.id)!.unpricedTokens >= 123 + 55);
+    approx(bytes.totalUsd, r.totalUsd, "the overseer's bare figures are the route's");
+  });
+
+  test("the overseer's cost line is the helper's, read without a parse", async () => {
+    const c = await projectCost(project.id);
+    const line = await costs.projectCostLine(project.id);
+    assert.ok(line.startsWith(`Cost: $${c.totalUsd.toFixed(2)} at API prices, ${c.sessions} session`), line);
+    if (c.unpriced.length) assert.ok(line.includes("; some tokens unpriced ("), line);
   });
 
   test("an unknown project is a 404", async () => {

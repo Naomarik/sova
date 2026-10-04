@@ -9,8 +9,10 @@
  *
  * The residual: the result's `modelUsage` is cumulative over the Claude session (`--resume`
  * history included). The last cumulative total per Claude session is persisted (`BaselineStore`),
- * so at each result, per model, residual = cumulative − baseline − what this collector recorded
- * since; negatives clamp to 0. A result at or under the persisted total is history (a re-adopted
+ * so at each result, per model, residual = cumulative − baseline − what was recorded since, which is
+ * persisted with it as each message is recorded (one append), so a process cut before its turn's
+ * result never has its messages counted again by the next; negatives clamp to 0. A message is in
+ * that sum once, by its id. A result at or under the persisted total is history (a re-adopted
  * worker's replay, a turn that spent nothing): it only resets what was recorded since. A session
  * with no baseline that this process did not start fresh (a resume, a fork, an adoption of a
  * session from before the ledger) has its first result taken as the baseline, never as spend.
@@ -60,10 +62,27 @@ export interface ClaudeUsageSink {
 /** Cumulative tokens per model. */
 export type ClaudeCumulative = Record<string, ClaudeTokens>;
 
-/** The last cumulative total per Claude session, kept across processes. */
+/** One message recorded since the baseline (`id`: its message id, or a stand-in). */
+export interface SinceEntry {
+	id: string;
+	model: string;
+	tokens: ClaudeTokens;
+}
+
+/**
+ * The last cumulative total per Claude session, and what was recorded since it, kept across
+ * processes: a process cut before its turn's result (an interrupt, a failover, a resume) leaves its
+ * recorded messages here, so the next process's residual never counts them again. Each recorded
+ * message is tagged with the baseline total it was counted against: one left from an older
+ * baseline is ignored.
+ */
 export interface BaselineStore {
 	read(claudeSession: string): ClaudeCumulative | undefined;
+	/** A new baseline; what was recorded since the old one is dropped. */
 	write(claudeSession: string, cumulative: ClaudeCumulative): void;
+	readSince(claudeSession: string, baseTotal: number): SinceEntry[];
+	addSince(claudeSession: string, baseTotal: number, entry: SinceEntry): void;
+	clearSince(claudeSession: string): void;
 }
 
 export const zeroTokens = (): ClaudeTokens => ({ i: 0, o: 0, cr: 0, cw: 0, cw1h: 0 });
@@ -102,11 +121,59 @@ const addInto = (into: ClaudeTokens, from: ClaudeTokens) => {
 	for (const f of FIELDS) into[f] += from[f];
 };
 
-/** The baseline files: `<dir>/<claude session id>.json` `{v: 1, at, models}`, rewritten atomically. */
+/**
+ * The baseline files: `<dir>/<claude session id>.json` `{v: 1, at, models}`, rewritten atomically
+ * at each result; beside it `<id>.since.jsonl`, one appended line `{v: 1, base, id, model, tokens}`
+ * per message recorded since (one append per call, never a rewrite), removed at the next baseline.
+ */
 export function fileBaselineStore(dir: string): BaselineStore {
 	const SAFE = /^[A-Za-z0-9._-]{1,128}$/;
 	const file = (sid: string) => (SAFE.test(sid) ? path.join(dir, `${sid}.json`) : undefined);
+	const sinceFile = (sid: string) => (SAFE.test(sid) ? path.join(dir, `${sid}.since.jsonl`) : undefined);
+	const tokensOf = (t: any): ClaudeTokens => ({ i: num(t?.i), o: num(t?.o), cr: num(t?.cr), cw: num(t?.cw), cw1h: num(t?.cw1h) });
 	return {
+		readSince(sid, baseTotal) {
+			const f = sinceFile(sid);
+			if (!f) return [];
+			let text = "";
+			try {
+				text = fs.readFileSync(f, "utf8");
+			} catch {
+				return [];
+			}
+			const out: SinceEntry[] = [];
+			const lines = text.split("\n");
+			lines.pop(); // a torn last line is not a record
+			for (const line of lines) {
+				try {
+					const v = JSON.parse(line) as { v?: unknown; base?: unknown; id?: unknown; model?: unknown; tokens?: unknown };
+					if (v?.v !== 1 || v.base !== baseTotal || typeof v.id !== "string" || typeof v.model !== "string") continue;
+					out.push({ id: v.id, model: v.model, tokens: tokensOf(v.tokens) });
+				} catch {
+					// Skipped.
+				}
+			}
+			return out;
+		},
+		addSince(sid, baseTotal, entry) {
+			const f = sinceFile(sid);
+			if (!f) return;
+			try {
+				fs.mkdirSync(dir, { recursive: true });
+				fs.appendFileSync(f, `${JSON.stringify({ v: 1, base: baseTotal, id: entry.id, model: entry.model, tokens: entry.tokens })}\n`);
+			} catch {
+				// Bookkeeping only.
+			}
+		},
+		clearSince(sid) {
+			const f = sinceFile(sid);
+			if (!f) return;
+			try {
+				fs.rmSync(f, { force: true });
+			} catch {
+				// Stale lines are ignored by their baseline tag.
+			}
+		},
 		read(sid) {
 			const f = file(sid);
 			if (!f) return undefined;
@@ -128,6 +195,9 @@ export function fileBaselineStore(dir: string): BaselineStore {
 				const tmp = `${f}.${process.pid}.tmp`;
 				fs.writeFileSync(tmp, JSON.stringify({ v: 1, at: Date.now(), models: cumulative }));
 				fs.renameSync(tmp, f);
+				// What was recorded since the old baseline is in this one. A crash before this removal
+				// leaves lines tagged with the old baseline, which readSince ignores.
+				fs.rmSync(sinceFile(sid)!, { force: true });
 			} catch {
 				// Bookkeeping only: the next result re-establishes it.
 			}
@@ -165,9 +235,16 @@ interface Pending {
 interface SessionState {
 	/** The cumulative last accounted for; undefined until known. */
 	base?: ClaudeCumulative;
-	/** Tokens recorded per model since `base`. */
-	since: ClaudeCumulative;
+	/** The messages recorded since `base`, by id, this process's and any an earlier one left. */
+	since: Map<string, SinceEntry>;
 }
+
+/** Tokens per model of the messages recorded since the baseline. */
+const sinceSums = (since: Map<string, SinceEntry>): ClaudeCumulative => {
+	const out: ClaudeCumulative = {};
+	for (const e of since.values()) addInto((out[e.model] ??= zeroTokens()), e.tokens);
+	return out;
+};
 
 export function createClaudeUsageCollector(options: ClaudeUsageOptions): ClaudeUsageCollector {
 	const now = options.now ?? Date.now;
@@ -175,14 +252,23 @@ export function createClaudeUsageCollector(options: ClaudeUsageOptions): ClaudeU
 	const sessions = new Map<string, SessionState>();
 	let closed = false;
 	let lastSession: string | undefined;
+	let anonymous = 0;
 
 	const stateOf = (sid: string): SessionState => {
 		let s = sessions.get(sid);
 		if (!s) {
-			s = { base: options.baseline.read(sid), since: {} };
+			const base = options.baseline.read(sid);
+			const since = new Map<string, SinceEntry>();
+			if (base) for (const e of options.baseline.readSince(sid, cumSum(base))) since.set(e.id, e);
+			s = { base, since };
 			sessions.set(sid, s);
 		}
 		return s;
+	};
+	/** Forget what was recorded since the baseline, here and on disk. */
+	const resetSince = (sid: string, s: SessionState) => {
+		s.since = new Map();
+		options.baseline.clearSince(sid);
 	};
 	const flush = (lane: string) => {
 		const p = lanes.get(lane);
@@ -190,7 +276,16 @@ export function createClaudeUsageCollector(options: ClaudeUsageOptions): ClaudeU
 		lanes.delete(lane);
 		if (tokenSum(p.tokens) === 0) return;
 		const sid = p.claudeSession ?? lastSession;
-		if (sid) addInto((stateOf(sid).since[p.model] ??= zeroTokens()), p.tokens);
+		if (sid) {
+			// Persisted as it is recorded: a process cut before the turn's result leaves it for the next.
+			const s = stateOf(sid);
+			const id = p.id ?? `anon:${process.pid}:${++anonymous}`;
+			if (!s.since.has(id)) {
+				const entry: SinceEntry = { id, model: p.model, tokens: { ...p.tokens } };
+				s.since.set(id, entry);
+				if (s.base) options.baseline.addSince(sid, cumSum(s.base), entry);
+			}
+		}
 		try {
 			options.sink.call({ ...(p.id ? { id: p.id } : {}), model: p.model, lane: p.lane, ...(sid ? { claudeSession: sid } : {}), ...(p.stop ? { stop: p.stop } : {}), at: now(), tokens: p.tokens });
 		} catch {
@@ -219,7 +314,7 @@ export function createClaudeUsageCollector(options: ClaudeUsageOptions): ClaudeU
 			if (!options.fresh) {
 				// No baseline for a session this process resumed: its history is not this process's spend.
 				s.base = cum;
-				s.since = {};
+				s.since = new Map();
 				options.baseline.write(sid, cum);
 				return;
 			}
@@ -227,13 +322,14 @@ export function createClaudeUsageCollector(options: ClaudeUsageOptions): ClaudeU
 		}
 		const total = cumSum(cum);
 		if (total <= cumSum(s.base)) {
-			s.since = {};
+			resetSince(sid, s);
 			return;
 		}
 		const at = now();
+		const since = sinceSums(s.since);
 		for (const [model, t] of Object.entries(cum)) {
 			const b = s.base[model] ?? zeroTokens();
-			const r = s.since[model] ?? zeroTokens();
+			const r = since[model] ?? zeroTokens();
 			const tokens = zeroTokens();
 			for (const f of FIELDS) tokens[f] = Math.max(0, t[f] - b[f] - r[f]);
 			if (tokenSum(tokens) > 0) {
@@ -245,7 +341,7 @@ export function createClaudeUsageCollector(options: ClaudeUsageOptions): ClaudeU
 			}
 		}
 		s.base = cum;
-		s.since = {};
+		s.since = new Map();
 		options.baseline.write(sid, cum);
 	};
 

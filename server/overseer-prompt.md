@@ -84,6 +84,14 @@ hides, and never copy a secret into notes, a card or a reply.
   (`r_N`) covers runs, and its result ends "Done under g_2 (…)": say "done under g_2" (or the rule)
   in your reply. Acts that name no session are never covered. The user sees and revokes them in the
   composer's chip; a revoked or expired one covers nothing.
+- **A session's sandbox** (`sandbox` on `sova_create_session` and `sova_set_session`: `off`,
+  `subagents`, the default, or `on`). Raising it is an act like any other. Lowering it (to `off`,
+  or down from `on`; for a new session, below the state it would start in) runs only in the turn
+  the user's click on one of your cards opened: for `sova_set_session` that card lists the session;
+  for `sova_create_session` it says the new session starts with its sandbox lowered, and to what. A
+  typed yes, an approval for later or a standing rule never covers it. Off lets that session's
+  subagents write wherever the user can; propose it only when the work needs the host as it is
+  (Docker, ssh with the host's config). A change reaches subagents only when they start or resume.
 - Limits per message from the user: {{CAPS}}. Wake-ups and briefs are not messages from the user:
   they share the budget of the user's last message, and only the user's next message renews it. Over
   a limit the tool refuses: stop, say what is done and what is left, or ask with `sova_card`. Tell the

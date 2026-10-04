@@ -145,6 +145,7 @@ test("levels: read-only gets only the program's hosts (none: no network); write-
 	const b = await confineLaunch(scopeOf(ro), {}, launch, { backend, platform: "linux" });
 	assert.ok(!("refused" in b));
 	assert.equal(seen.probe!.network.mode, "none");
+	assert.equal(seen.probe!.hostTmp, undefined, "a sandbox that is on keeps its private /tmp");
 	const wo = await confineLaunch(scopeOf(writeOnlyScope(w.ws)), { proxyHosts: ["api.example.com"], env: { X: "1" } }, launch, { backend, platform: "linux" });
 	assert.ok(!("refused" in wo));
 	assert.equal(seen.probe!.network.mode, "host");
@@ -152,6 +153,8 @@ test("levels: read-only gets only the program's hosts (none: no network); write-
 	assert.equal(seen.probe!.env.SSH_AUTH_SOCK, "/run/agent", "write-only: the environment as it is");
 	assert.ok(seen.probe!.readOnlyWithinWritable.includes(join(w.ws, ".agent")));
 	assert.equal((wo as ConfinedLaunch).env.X, "1");
+	assert.equal(seen.probe!.hostTmp, true, "write-only keeps the host's /tmp (§chat.worktrees/workers)");
+	assert.equal((wo as ConfinedLaunch).tmpInside, (wo as ConfinedLaunch).tmpDir, "and its own tmp is where it is on the host");
 	const n = await confineLaunch(scopeOf(narrowScope(w.full, join(w.ws, "sub"))), {}, { ...launch, cwd: w.ws }, { backend, platform: "linux" });
 	assert.ok("refused" in n && /outside the parent's sandbox/.test(n.refused), "a cwd outside the narrowed root refuses");
 });
@@ -185,6 +188,8 @@ test("workerTmpDir: the default per worker, or a hosted worker's own dir", () =>
 	const t = workerTmpDir(scopeOf(w.full, "w9"), undefined, "linux");
 	assert.equal(t.host, join(sessionTmpBase(), sessionId, "w-w9", "tmp"));
 	assert.equal(t.inside, "/tmp");
+	// A write-only scope keeps the host's /tmp: its tmp is seen at its host path, hosted or not.
+	assert.deepEqual(workerTmpDir(scopeOf(writeOnlyScope(w.ws), "w9"), undefined, "linux"), { host: t.host, inside: t.host });
 	const hosted = join(w.base, "hosted-worker");
 	const h = workerTmpDir(scopeOf(w.full, "w9"), { tmpDir: hosted }, "darwin");
 	assert.deepEqual(h, { host: hosted, inside: hosted });

@@ -1,6 +1,7 @@
 /**
  * The Linux backend: bubblewrap (plan v2 §3). Per command, about 5 ms: the host root read-only,
- * the writable roots bound in place, a private /tmp backed by the session tmp dir, /run replaced
+ * the writable roots bound in place, a private /tmp backed by the session tmp dir (a write-only
+ * worker instead keeps the host's /tmp, read-only, with its Unix sockets masked), /run replaced
  * (the user bus, systemd, Docker, ssh-agent, Wayland all live there), every namespace unshared
  * including the network, and the environment cleared to the policy's allowlist.
  *
@@ -11,7 +12,7 @@
  */
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { accessSync, constants, existsSync, mkdirSync, rmSync, statSync } from "node:fs";
+import { accessSync, constants, type Dirent, existsSync, mkdirSync, readdirSync, rmSync, statSync } from "node:fs";
 import { dirname, join, sep } from "node:path";
 import type {
 	Backend,
@@ -166,6 +167,41 @@ function uniq<T>(xs: T[]): T[] {
 	return [...new Set(xs)];
 }
 
+/** How many entries `tmpSockets` reads before it gives up (the caller then keeps /tmp private). */
+export const TMP_SCAN_LIMIT = 10_000;
+
+/**
+ * Every Unix socket under `root` (the host /tmp), for a write-only worker's read-only view of it:
+ * a read-only mount does not stop connect(), so each is masked (a tmux server, an ssh agent, an X
+ * or editor server would otherwise take commands from the worker). Symlinks are not followed, and
+ * nothing under `skip` (the worker's own writable roots) is read. Undefined when `root` holds more
+ * than `limit` entries: the walk would be too slow per command, and an unread socket would stay
+ * reachable. Never throws; an unreadable directory is one the worker cannot list either.
+ */
+export function tmpSockets(root = "/tmp", skip: readonly string[] = [], limit = TMP_SCAN_LIMIT): string[] | undefined {
+	const out: string[] = [];
+	const stack = [root];
+	let seen = 0;
+	while (stack.length) {
+		const dir = stack.pop()!;
+		let entries: Dirent[];
+		try {
+			entries = readdirSync(dir, { withFileTypes: true });
+		} catch {
+			continue;
+		}
+		seen += entries.length;
+		if (seen > limit) return undefined;
+		for (const e of entries) {
+			const p = join(dir, e.name);
+			if (skip.some((s) => isWithin(p, s))) continue;
+			if (e.isSocket()) out.push(p);
+			else if (e.isDirectory()) stack.push(p);
+		}
+	}
+	return out;
+}
+
 const RELAY_SCRIPT = [
 	`"$SOVA_SOCAT" TCP-LISTEN:${RELAY_PORT},bind=127.0.0.1,fork,reuseaddr UNIX-CONNECT:${SANDBOX_PROXY_SOCKET} </dev/null >/dev/null 2>&1 &`,
 	`unset SOVA_SOCAT`,
@@ -258,10 +294,22 @@ export class LinuxBwrapBackend implements Backend {
 		}
 		if (policy.network.localPorts?.length) notes.push("network: localPorts is not implemented; those ports are unreachable");
 
-		const env: Record<string, string> = { ...policy.env, ...(req.env ?? {}), TMPDIR: "/tmp" };
+		// A write-only worker keeps the host's /tmp (read-only, sockets masked) when it can be walked;
+		// its temp files go to its own tmp, bound writable at its own path by the mount plan.
+		const tmp = canonical(policy.tmpDir);
+		const sockets = policy.hostTmp ? tmpSockets("/tmp", [tmp, ...policy.writable.map(canonical)]) : undefined;
+		if (policy.hostTmp && !sockets) notes.push("tmp: the host /tmp is too large to scan for sockets, so /tmp is the private tmp");
+		const env: Record<string, string> = { ...policy.env, ...(req.env ?? {}), TMPDIR: sockets ? tmp : "/tmp" };
 		if (network === "proxy") Object.assign(env, proxyEnv(RELAY_PORT));
 
-		const argv: string[] = [bwrap, "--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc", "--tmpfs", "/dev/shm", "--tmpfs", "/run", "--bind", canonical(policy.tmpDir), "/tmp"];
+		const argv: string[] = [bwrap, "--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc", "--tmpfs", "/dev/shm", "--tmpfs", "/run"];
+		// A socket removed between the walk and bwrap's start fails this one command ("bwrap: …"); the
+		// next walk no longer lists it.
+		if (sockets) {
+			for (const s of sockets) argv.push("--ro-bind", "/dev/null", s);
+			// Its own tmp, writable where TMPDIR names it (a write-only policy also lists it writable).
+			argv.push("--bind", tmp, tmp);
+		} else argv.push("--bind", tmp, "/tmp");
 		// "host": the fresh /run above would hide a resolver config that lives there (systemd-resolved's
 		// /etc/resolv.conf -> /run/systemd/resolve/stub-resolv.conf), leaving the network without DNS.
 		if (network === "host") {

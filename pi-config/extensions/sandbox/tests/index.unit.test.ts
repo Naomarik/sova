@@ -229,6 +229,64 @@ test("workerLaunch off: none outside a tracked worktree; inside one, a write-onl
 	await s.stop();
 });
 
+test("three states (§chat.sandbox/states): Off lifts every worker, Subagents only confines a worktree's, and the entry says which", async () => {
+	const { a } = dirs();
+	const s = await start(a, {});
+	// The default with defaultOn false: Subagents only, nothing written.
+	assert.equal(s.last().on, false);
+	assert.equal(s.last().workers, undefined);
+	assert.equal(s.entries.length, 0);
+	await s.command("off");
+	const off = s.last();
+	assert.equal(off.on, false);
+	assert.equal(off.workers, "off");
+	for (const backend of ["pi", "claude-code"]) {
+		assert.deepEqual(off.workerLaunch!({ cwd: a, root: a, backend, owner: "w1" }), { kind: "none" }, `${backend} in a worktree`);
+		assert.deepEqual(off.workerLaunch!({ cwd: a, backend, owner: "w1" }), { kind: "none" }, `${backend} outside one`);
+	}
+	assert.deepEqual(s.entries.at(-1)!.data, { version: 1, on: false, level: "workspace-write", backend: "none", enforcement: "none", workers: "off" });
+	assert.match(s.notes.at(-1)!, /^Sandbox off · workers unconfined\. Running subagents keep theirs until resumed\.$/);
+	// Off again changes nothing and records nothing.
+	const n = s.entries.length;
+	await s.command("off");
+	assert.equal(s.entries.length, n);
+	await s.command("subagents");
+	assert.equal(s.last().workers, undefined);
+	assert.equal(s.last().workerLaunch!({ cwd: a, root: a, backend: "pi", owner: "w1" }).kind, "pi", "write-only again");
+	assert.deepEqual(s.entries.at(-1)!.data, { version: 1, on: false, level: "workspace-write", backend: "none", enforcement: "none" });
+	assert.match(s.notes.at(-1)!, /^Sandbox subagents only/);
+	// No tool was ever registered: Off and Subagents only both leave the session's own tools pi's.
+	assert.equal(s.tools.size, 0);
+	await s.command("sideways");
+	assert.equal(s.notes.at(-1), "usage: /sandbox on | subagents | off");
+	await s.stop();
+});
+
+test("the --sandbox flag takes the three states", async () => {
+	const { a } = dirs();
+	const off = await start(a, { sandbox: "off" });
+	assert.equal(off.last().workers, "off");
+	assert.deepEqual(off.last().workerLaunch!({ cwd: a, root: a, backend: "pi", owner: "w1" }), { kind: "none" });
+	assert.equal(off.entries.length, 0, "coming up off writes nothing");
+	await off.stop();
+	const sub = await start(a, { sandbox: "subagents" });
+	assert.equal(sub.last().workers, undefined);
+	assert.equal(sub.last().workerLaunch!({ cwd: a, root: a, backend: "pi", owner: "w1" }).kind, "pi");
+	await sub.stop();
+});
+
+test("a worker started with --sandbox on cannot lower it to subagents or off", { skip: !linux }, async () => {
+	const { a } = dirs();
+	const w = await start(a, { sandbox: "on" });
+	assert.equal(w.last().on, true);
+	for (const arg of ["subagents", "off"]) {
+		await w.command(arg);
+		assert.equal(w.last().on, true, arg);
+		assert.match(w.notes.at(-1)!, /cannot be turned off here/, arg);
+	}
+	await w.stop();
+});
+
 test("workerLaunch on: the parent's scope (narrowed in a worktree) for either kind of worker; a cwd outside refused", { skip: !linux }, async () => {
 	const { a, b } = dirs();
 	const s = await start(a, { sandbox: "on" });

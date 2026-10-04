@@ -12,7 +12,7 @@ import { createServer, type Server } from "node:net";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { classifyRun, type Policy } from "../../backend.ts";
-import { findExecutable, LinuxBwrapBackend, mountPlan, runCapture } from "../../backends/linux-bwrap.ts";
+import { findExecutable, LinuxBwrapBackend, mountPlan, runCapture, tmpSockets } from "../../backends/linux-bwrap.ts";
 import { scrubEnv } from "../../env.ts";
 import { startProxy } from "../../proxy.ts";
 
@@ -86,6 +86,61 @@ test("private /tmp is the session tmp dir; host /tmp and /run/user are invisible
 	assert.match(r.output, /tmpdir=\/tmp/);
 	assert.equal(readFileSync(join(tmp, name), "utf8"), "in\n");
 	assert.equal(existsSync(join("/tmp", name)), false);
+});
+
+test("a write-only worker's /tmp (hostTmp): the host's, read-only, sockets masked; TMPDIR is its own tmp", { skip }, async (t) => {
+	// The literal /tmp, whatever TMPDIR the test runs with: that is what the worker sees.
+	const host = mkdtempSync("/tmp/sbx-host-");
+	t.after(() => rmSync(host, { recursive: true, force: true }));
+	writeFileSync(join(host, "brief.md"), "the brief");
+	const sock = join(host, "svc", "s.sock");
+	mkdirSync(dirname(sock));
+	const server = createServer((c) => c.on("error", () => {}).end("hello"));
+	await listen(server, { path: sock });
+	t.after(() => server.close());
+	const ws = scratch(t, "sbx-ws-");
+	const tmp = scratch(t, "sbx-tmp-");
+	const name = `w-${rand()}`;
+	const connect = `require("net").connect(${JSON.stringify(sock)}).on("connect",()=>{console.log("CONNECTED");process.exit(0)}).on("error",(e)=>{console.log("REFUSED",e.code);process.exit(0)})`;
+	const r = await run(
+		new LinuxBwrapBackend(),
+		makePolicy(ws, tmp, { network: { mode: "host" }, hostTmp: true }),
+		`cat ${host}/brief.md; echo; (echo x > ${host}/${name}) 2>/dev/null || echo TMP-RO; echo in > "$TMPDIR/${name}"; echo "tmpdir=$TMPDIR"; ${process.execPath} -e '${connect}'`,
+	);
+	assert.equal(r.code, 0, r.output);
+	assert.match(r.output, /^the brief$/m, "a file another session wrote to /tmp is readable");
+	assert.match(r.output, /TMP-RO/, "the host /tmp is read-only");
+	assert.equal(existsSync(join(host, name)), false);
+	assert.match(r.output, new RegExp(`tmpdir=${tmp}$`, "m"));
+	assert.equal(readFileSync(join(tmp, name), "utf8"), "in\n", "its temp files land in its own tmp");
+	assert.doesNotMatch(r.output, /CONNECTED/, "a socket in /tmp is masked");
+	assert.match(r.output, /REFUSED/);
+	assert.ok(r.confined.argv.join("\0").includes(`--ro-bind\0/dev/null\0${sock}\0`));
+	assert.ok(!r.confined.argv.join("\0").includes(`\0${tmp}\0/tmp\0`), "no private /tmp");
+});
+
+test("tmpSockets: every socket below, none under a skipped root, no symlink followed; too many entries is undefined", { skip }, async (t) => {
+	const root = scratch(t, "sbx-scan-");
+	const servers: Server[] = [];
+	t.after(() => {
+		for (const s of servers) s.close();
+	});
+	const sockAt = async (p: string) => {
+		mkdirSync(dirname(p), { recursive: true });
+		const s = createServer();
+		await listen(s, { path: p });
+		servers.push(s);
+	};
+	await sockAt(join(root, "a.sock"));
+	await sockAt(join(root, "d1", "d2", "d3", "deep.sock"));
+	await sockAt(join(root, "own", "mine.sock"));
+	writeFileSync(join(root, "plain"), "x");
+	const elsewhere = scratch(t, "sbx-scan-else-");
+	await sockAt(join(elsewhere, "far.sock"));
+	execFileSync("ln", ["-s", elsewhere, join(root, "link")]);
+	assert.deepEqual(tmpSockets(root, [join(root, "own")])?.sort(), [join(root, "a.sock"), join(root, "d1", "d2", "d3", "deep.sock")].sort());
+	assert.equal(tmpSockets(root, [], 3), undefined, "past the limit the caller keeps /tmp private");
+	assert.deepEqual(tmpSockets(join(root, "missing")), []);
 });
 
 test("the mount namespace differs from the host's", { skip }, async (t) => {

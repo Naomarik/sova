@@ -1033,6 +1033,8 @@ export interface ClaudeAccountsInfo {
   flow: ClaudeLoginFlowState | null;
   /** The pool of logins across the mesh (§app.claude-logins/pool); absent while the mesh is off. */
   pool?: ClaudePoolInfo;
+  /** macOS only: Claude Code's own login can't be read here (§app.claude-logins/macos-keychain). Absent otherwise. */
+  claudeOwnLoginUnreadable?: true;
 }
 /** A device of the mesh, as the pool shows it. */
 export interface ClaudePoolDevice {
@@ -2258,6 +2260,10 @@ export interface UsageInsight {
   /** Ollama Cloud's declared reset day (usage-windows.json, §app.insights/usage-reset-day): 1..31,
       or null while none is set. Absent from an older server. */
   ollamaResetDay?: number | null;
+  /** macOS only: Claude Code's own login is in neither `.credentials.json` nor a keychain this
+      server can read (§app.claude-logins/macos-keychain); the page says to add it under Settings →
+      Accounts. Absent otherwise. */
+  claudeOwnLoginUnreadable?: true;
 }
 /** `PUT /api/insights/usage/reset-day`: set (1..31) or clear (null) a provider's declared reset
     day; answers with the whole UsageInsight. */

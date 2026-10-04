@@ -317,3 +317,37 @@ test("OpenAI: each window keeps its own length and is labelled from it", async (
 		globalThis.fetch = real;
 	}
 });
+
+test("Claude Code's own login on macOS with no credentials file: the keychain's token, read afresh for each fetch; a file always wins, and elsewhere nothing changes", async () => {
+	setup();
+	const own = path.join(ROOT, ".claude");
+	fs.mkdirSync(own, { recursive: true });
+	let token = "fake-keychain-1";
+	const execs: string[][] = [];
+	const exec = async (_file: string, args: string[]) => (execs.push(args), JSON.stringify({ claudeAiOauth: { accessToken: token, refreshToken: "fake-keychain-refresh" } }));
+	const keychain = { platform: "darwin" as const, env: { USER: "someone" }, home: ROOT, userHome: ROOT, exec };
+	const sent: string[] = [];
+	const answer = async (_url: string, init: { headers: Record<string, string> }) => (sent.push(init.headers.Authorization!), { ok: true, status: 200, json: async () => ({ five_hour: { utilization: 7 } }) });
+
+	assert.equal((await fetchClaude(own, answer, keychain)).state, "ok");
+	token = "fake-keychain-2"; // Claude Code refreshed: it rewrote the item
+	await fetchClaude(own, answer, keychain);
+	assert.deepEqual(sent, ["Bearer fake-keychain-1", "Bearer fake-keychain-2"]);
+	assert.equal(execs.length, 2);
+
+	// A failed keychain read is today's "nologin", with no request.
+	assert.equal((await fetchClaude(own, async () => assert.fail("no token, no request"), { ...keychain, exec: async () => { throw new Error("exit 36"); } })).state, "nologin");
+	// Not macOS: no keychain call at all.
+	assert.equal((await fetchClaude(own, async () => assert.fail("no request"), { ...keychain, platform: "linux" })).state, "nologin");
+	// An added login never reads it.
+	fs.rmSync(path.join(loginDir(AGENT, A), ".credentials.json"));
+	assert.equal((await fetchClaude(loginDir(AGENT, A), async () => assert.fail("no request"), keychain)).state, "nologin");
+	// A file present (even unreadable) decides alone.
+	creds(own, "fake-file");
+	sent.length = 0;
+	await fetchClaude(own, answer, keychain);
+	fs.writeFileSync(path.join(own, ".credentials.json"), "{not json");
+	assert.equal((await fetchClaude(own, answer, keychain)).state, "nologin");
+	assert.deepEqual(sent, ["Bearer fake-file"]);
+	assert.equal(execs.length, 2, "the keychain is not read while the file exists");
+});

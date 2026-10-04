@@ -705,6 +705,10 @@ export function AccountsSettingsSection() {
                       </div>
                     </li>
                   </ol>
+                  {/* macOS: Claude Code's own login is in a keychain this server can't read (§app.claude-logins/macos-keychain). */}
+                  <Show when={i().claudeOwnLoginUnreadable}>
+                    <p class="field-hint">On macOS, add your Claude login under Settings → Accounts.</p>
+                  </Show>
                 </>
               )}
             </Show>

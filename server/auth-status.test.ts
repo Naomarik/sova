@@ -2,11 +2,11 @@
 // Fixture credential files in a throwaway dir (removed after); the real ~/.claude, ~/.pi and
 // ~/.codex are never read.
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, beforeEach, test } from "node:test";
-import { readAuthStatus, resetAuthStatusCache, type AuthStatusPaths } from "./auth-status";
+import { KEYCHAIN_FACTS_TTL_MS, ownClaudeLoginUnreadable, readAuthStatus, resetAuthStatusCache, type AuthStatusPaths } from "./auth-status";
 
 const dir = mkdtempSync(join(tmpdir(), "sova-auth-status-test-"));
 after(() => rmSync(dir, { recursive: true, force: true }));
@@ -165,4 +165,42 @@ test("API-key providers are just { kind: apiKey }, and only with a key", async (
   assert.deepEqual(out.ollama, { kind: "apiKey" });
   assert.deepEqual(out.deepseek, { kind: "apiKey" });
   assert.equal(out.zai, undefined);
+});
+
+test("macOS, no credentials file: Claude's sign-in numbers come from the keychain item (no renewal time), kept 30 s; no string leaves", async () => {
+  const own = join(dir, ".claude");
+  rmSync(own, { recursive: true, force: true });
+  mkdirSync(own, { recursive: true });
+  const ownPaths = { ...paths, claudeCreds: join(own, ".credentials.json") };
+  let reads = 0;
+  let item: string | Error = JSON.stringify(claudeCreds(NOW + 2 * H, NOW + 30 * 24 * H));
+  const keychain = { platform: "darwin" as const, env: { USER: "someone" }, home: dir, userHome: dir, exec: async () => { reads++; if (item instanceof Error) throw item; return item; } };
+
+  const out = await readAuthStatus(ownPaths, NOW, keychain);
+  assert.deepEqual(out.claude, { kind: "oauth", source: "claude-cli", expiresAt: NOW + 2 * H, expired: false, refreshExpiresAt: NOW + 30 * 24 * H, refreshExpired: false });
+  for (const s of Object.values(SECRETS)) assert.ok(!JSON.stringify(out).includes(s), `no ${s}`);
+  assert.equal(await ownClaudeLoginUnreadable(ownPaths, NOW + 1000, keychain), false);
+  assert.equal(reads, 1, "one read serves both within 30 s");
+
+  // Locked (an ssh session) or gone: no auth, and the hint, once the kept answer is old.
+  item = new Error("exit 36");
+  assert.deepEqual(await readAuthStatus(ownPaths, NOW + KEYCHAIN_FACTS_TTL_MS, keychain), {});
+  assert.equal(await ownClaudeLoginUnreadable(ownPaths, NOW + KEYCHAIN_FACTS_TTL_MS, keychain), true);
+  assert.equal(reads, 2);
+
+  // A file present decides alone: no keychain read, no hint.
+  writeFileSync(ownPaths.claudeCreds, "{not json");
+  assert.equal(await ownClaudeLoginUnreadable(ownPaths, NOW + 10 * KEYCHAIN_FACTS_TTL_MS, keychain), false);
+  assert.equal((await readAuthStatus(ownPaths, NOW + 10 * KEYCHAIN_FACTS_TTL_MS, keychain)).claude, undefined);
+  assert.equal(reads, 2);
+  rmSync(own, { recursive: true, force: true });
+});
+
+test("not macOS: no keychain call and never the hint, whatever the file says", async () => {
+  let reads = 0;
+  const keychain = { platform: "linux" as const, env: { USER: "someone" }, home: dir, userHome: dir, exec: async () => (reads++, "{}") };
+  const ownPaths = { ...paths, claudeCreds: join(dir, ".claude", ".credentials.json") };
+  assert.deepEqual(await readAuthStatus(ownPaths, NOW, keychain), {});
+  assert.equal(await ownClaudeLoginUnreadable(ownPaths, NOW, keychain), false);
+  assert.equal(reads, 0);
 });

@@ -29,6 +29,7 @@ import {
 } from "../pi-config/extensions/claude-code/accounts.ts";
 import type { ClaudeLoginIdentity as WireIdentity } from "../shared/protocol";
 import type { ClaudeAccountsInfo, ClaudeLoginFlowState, ClaudeLoginRow } from "../shared/protocol";
+import { ownClaudeLoginUnreadable } from "./auth-status";
 import { readPeers } from "./mesh/peers";
 import { poolAgent } from "./claude-pool";
 import type { PoolAgent } from "./claude-pool/agent";
@@ -487,7 +488,11 @@ async function json(c: { req: { json(): Promise<unknown> } }): Promise<unknown> 
 
 export function registerClaudeAccountRoutes(app: Hono, service = new ClaudeAccountsService()): ClaudeAccountsService {
   const send = (c: any, r: ServiceResult) => c.json(r.body, r.status, { "Cache-Control": "no-store" });
-  app.get("/api/claude/accounts", (c) => c.json(service.info(), 200, { "Cache-Control": "no-store" }));
+  // macOS only: Claude Code's own login in neither its file nor a readable keychain (§app.claude-logins/macos-keychain).
+  app.get("/api/claude/accounts", async (c) => {
+    const info = service.info();
+    return c.json(await ownClaudeLoginUnreadable() ? { ...info, claudeOwnLoginUnreadable: true as const } : info, 200, { "Cache-Control": "no-store" });
+  });
   app.post("/api/claude/accounts/flow", async (c) => send(c, await service.startFlow(await json(c))));
   app.post("/api/claude/accounts/flow/code", async (c) => send(c, await service.submitCode(await json(c))));
   app.delete("/api/claude/accounts/flow", (c) => send(c, service.cancelFlow()));

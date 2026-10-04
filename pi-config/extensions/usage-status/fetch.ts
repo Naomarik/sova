@@ -20,6 +20,7 @@ import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 import { ClaudeLogins, DEFAULT_LOGIN_ID } from "../claude-code/accounts.ts";
+import { readKeychainCredentials, type KeychainOptions } from "../claude-code/keychain.ts";
 
 const HOME = os.homedir();
 const PI_AUTH = path.join(HOME, ".pi/agent/auth.json"); // ollama-cloud key + openai-codex oauth + zai/deepseek keys
@@ -153,6 +154,16 @@ async function readJson(file: string): Promise<any | undefined> {
 	}
 }
 
+/** No such file (not merely unreadable or malformed). */
+async function missing(file: string): Promise<boolean> {
+	try {
+		await fs.stat(file);
+		return false;
+	} catch (err) {
+		return (err as NodeJS.ErrnoException).code === "ENOENT";
+	}
+}
+
 export async function fetchOllama(): Promise<OllamaData> {
 	const auth = await readJson(PI_AUTH);
 	const key = auth?.["ollama-cloud"]?.key;
@@ -241,10 +252,12 @@ export type FetchImpl = (url: string, init: { headers: Record<string, string>; s
 /**
  * One Claude login's usage, read with the access token in `<dir>/.credentials.json` (only read,
  * never written or refreshed: Claude Code refreshes it). `dir` defaults to Claude Code's own
- * directory (`$CLAUDE_CONFIG_DIR`, else `~/.claude`).
+ * directory (`$CLAUDE_CONFIG_DIR`, else `~/.claude`). On macOS, with no file there, Claude Code's
+ * own login is read from the keychain instead, afresh for this one fetch (../claude-code/keychain.ts).
  */
-export async function fetchClaude(dir: string = new ClaudeLogins().dirOf(DEFAULT_LOGIN_ID), fetchImpl: FetchImpl = fetch): Promise<ClaudeData> {
-	const creds = await readJson(path.join(dir, ".credentials.json"));
+export async function fetchClaude(dir: string = new ClaudeLogins().dirOf(DEFAULT_LOGIN_ID), fetchImpl: FetchImpl = fetch, keychain?: KeychainOptions): Promise<ClaudeData> {
+	const file = path.join(dir, ".credentials.json");
+	const creds = (await readJson(file)) ?? (await missing(file) ? ((await readKeychainCredentials(dir, keychain)) as any) : undefined);
 	const token = creds?.claudeAiOauth?.accessToken;
 	if (typeof token !== "string" || !token) return { state: "nologin" };
 

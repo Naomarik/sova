@@ -1,7 +1,8 @@
 import { readFile, stat } from "node:fs/promises";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { defaultClaudeDir } from "../pi-config/extensions/claude-code/accounts.ts";
+import { readKeychainCredentials, type KeychainOptions } from "../pi-config/extensions/claude-code/keychain.ts";
 import type { UsageAuth, UsageProvider } from "../shared/protocol";
 
 // What each usage provider's sign-in says, for the Usage page: expiry times and when it was last
@@ -9,7 +10,8 @@ import type { UsageAuth, UsageProvider } from "../shared/protocol";
 // (pi-config/extensions/usage-status/fetch.ts), and only reads them: Sova never writes a
 // credential file and never refreshes a token. Each file is re-parsed only when its (mtime, size)
 // changes, and a parse keeps numbers and flags only, so no token string outlives the read and
-// none can reach the wire.
+// none can reach the wire. On macOS, with no file in Claude Code's own directory, its login is read
+// from the keychain (§app.claude-logins/macos-keychain) at most every 30 s, keeping the same numbers.
 
 /** The credential files fetch.ts reads: Claude Code's own directory ($CLAUDE_CONFIG_DIR, else ~/.claude), pi's and the Codex CLI's. */
 export interface AuthStatusPaths {
@@ -37,14 +39,39 @@ const num = (v: unknown): number | undefined => (typeof v === "number" && Number
 /** A secret's presence, never its value. */
 const has = (v: unknown): boolean => typeof v === "string" && v.length > 0;
 
-interface ClaudeFacts { expiresAt?: number; refreshExpiresAt?: number; mtimeMs: number }
+/** `mtimeMs` is the file's; a keychain item has none, and so no renewal time. */
+interface ClaudeFacts { expiresAt?: number; refreshExpiresAt?: number; mtimeMs?: number }
 interface PiFacts { openai?: { expiresAt?: number }; apiKeys: UsageProvider["id"][] }
 interface CodexFacts { refreshedAt?: number }
 
-function claudeFacts(v: unknown, mtimeMs: number): ClaudeFacts | undefined {
+function claudeFacts(v: unknown, mtimeMs?: number): ClaudeFacts | undefined {
   const o = isRec(v) ? v.claudeAiOauth : undefined;
   if (!isRec(o) || !has(o.accessToken)) return undefined; // fetch.ts reads this as "nologin"
-  return { expiresAt: num(o.expiresAt), refreshExpiresAt: num(o.refreshTokenExpiresAt), mtimeMs };
+  return { expiresAt: num(o.expiresAt), refreshExpiresAt: num(o.refreshTokenExpiresAt), ...(mtimeMs !== undefined ? { mtimeMs } : {}) };
+}
+
+/** How long the keychain's answer for Claude Code's own login (numbers, or none) is kept. */
+export const KEYCHAIN_FACTS_TTL_MS = 30_000;
+let keychainMemo: { dir: string; at: number; facts: ClaudeFacts | undefined } | null = null;
+
+/**
+ * Claude Code's own login on macOS with no `.credentials.json`: its facts from the keychain item,
+ * kept 30 s. Undefined when the file exists (unreadable or not: the file decides), off macOS, or
+ * when the keychain gives nothing.
+ */
+async function keychainFacts(credsPath: string, now: number, keychain?: KeychainOptions): Promise<ClaudeFacts | undefined> {
+  if ((keychain?.platform ?? process.platform) !== "darwin") return undefined;
+  try {
+    await stat(credsPath);
+    return undefined;
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== "ENOENT") return undefined;
+  }
+  const dir = dirname(credsPath);
+  if (keychainMemo && keychainMemo.dir === dir && now >= keychainMemo.at && now - keychainMemo.at < KEYCHAIN_FACTS_TTL_MS) return keychainMemo.facts;
+  const facts = claudeFacts(await readKeychainCredentials(dir, keychain));
+  keychainMemo = { dir, at: now, facts };
+  return facts;
 }
 
 /** auth.json keys fetch.ts reads an API key from, by usage provider. */
@@ -107,9 +134,9 @@ function oauth(source: NonNullable<UsageAuth["source"]>, t: { expiresAt?: number
  * Each provider's sign-in, keyed by usage provider id; a provider whose credentials say nothing
  * (no file, no token, unreadable) is absent. OpenAI prefers pi's own entry, as fetch.ts does.
  */
-export async function readAuthStatus(paths: AuthStatusPaths = defaultAuthPaths(), now = Date.now()): Promise<Partial<Record<UsageProvider["id"], UsageAuth>>> {
+export async function readAuthStatus(paths: AuthStatusPaths = defaultAuthPaths(), now = Date.now(), keychain?: KeychainOptions): Promise<Partial<Record<UsageProvider["id"], UsageAuth>>> {
   const [claude, pi, codex] = await Promise.all([
-    factsOf(paths.claudeCreds, claudeFacts),
+    factsOf(paths.claudeCreds, claudeFacts).then(async (f) => f ?? (await keychainFacts(paths.claudeCreds, now, keychain))),
     factsOf(paths.piAuth, piFacts),
     factsOf(paths.codexAuth, codexFacts),
   ]);
@@ -124,8 +151,8 @@ export async function readAuthStatus(paths: AuthStatusPaths = defaultAuthPaths()
 function claudeAuth(claude: ClaudeFacts, now: number): UsageAuth {
   // The mtime is the renewal time only while it agrees with an 8h lifetime ending at expiresAt;
   // a CLI that changed the lifetime, or a file touched for another reason, gets no renewal time.
-  const agrees = claude.expiresAt !== undefined && Math.abs(claude.mtimeMs - (claude.expiresAt - CLAUDE_TOKEN_LIFETIME_MS)) <= RENEWAL_AGREEMENT_MS;
-  return oauth("claude-cli", { ...claude, refreshedAt: agrees ? Math.round(claude.mtimeMs) : undefined }, now);
+  const agrees = claude.expiresAt !== undefined && claude.mtimeMs !== undefined && Math.abs(claude.mtimeMs - (claude.expiresAt - CLAUDE_TOKEN_LIFETIME_MS)) <= RENEWAL_AGREEMENT_MS;
+  return oauth("claude-cli", { ...claude, refreshedAt: agrees ? Math.round(claude.mtimeMs!) : undefined }, now);
 }
 
 /** One Claude login's sign-in, from `<dir>/.credentials.json` (an added login's directory), read the same way as Claude Code's own. */
@@ -134,7 +161,24 @@ export async function readClaudeLoginAuth(dir: string, now = Date.now()): Promis
   return facts ? claudeAuth(facts, now) : undefined;
 }
 
-/** Tests: forget every memoized file. */
+/**
+ * On macOS, whether Claude Code's own login can be read neither from its `.credentials.json` (it is
+ * missing) nor from the keychain: the Usage page and Settings → Accounts then say to add the login
+ * under Settings → Accounts. Always false elsewhere, with nothing read.
+ */
+export async function ownClaudeLoginUnreadable(paths: AuthStatusPaths = defaultAuthPaths(), now = Date.now(), keychain?: KeychainOptions): Promise<boolean> {
+  if ((keychain?.platform ?? process.platform) !== "darwin") return false;
+  try {
+    await stat(paths.claudeCreds);
+    return false;
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== "ENOENT") return false;
+  }
+  return (await keychainFacts(paths.claudeCreds, now, keychain)) === undefined;
+}
+
+/** Tests: forget every memoized file and the keychain's kept answer. */
 export function resetAuthStatusCache(): void {
   memo.clear();
+  keychainMemo = null;
 }

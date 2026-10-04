@@ -27,6 +27,7 @@ import {
 import { socketReconnects } from "./lib/socket";
 import { actSessionCount, setAppBadge } from "./lib/push";
 import { firstBaseline, helloStep, HELLO_POLL_MS, meshReadInit, pathOfViewKey, sessionViewKey, watchMove, HOST_CONFIRM_MS, seedPeerList, setHostCheck, type HelloBaseline, type PendingHost, type HelloChange, sessionHrefOn } from "./lib/mesh";
+import { noteSessionsHidden } from "./lib/mesh";
 import { hostLabel, hostOf, isMeshHash, joinHostLists, linkedSessionRow, meshRetryDelay, meshState, meshOn, meshPeers, mergePeerLists, noteHost, notePeerOrgs, notePeerProjects, notePeerSessions, peerInfo, peerUnavailable, sameMeshInfo, sessionRouteFromHash, setMeshState } from "./lib/mesh";
 import { isOverseerHash, isOverseerShortcut, OVERSEER_HASH, OVERSEER_POLL_MS, overseerHistoryId } from "./lib/overseer";
 import { sessionIdFromHash, setGroupLinkIndex, setSessionIndex } from "./lib/session-links";
@@ -218,6 +219,7 @@ export function App() {
     if (!meshOn()) return;
     try {
       const answer = await fetchMeshSessions();
+      noteSessionsHidden(answer);
       const next = mergePeerLists(peerLists(), answer, meshPeers());
       for (const p of meshPeers()) {
         const rows = next.get(p.id) ?? [];

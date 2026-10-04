@@ -5,6 +5,8 @@
 // Rules: workarounds detect the broken BEHAVIOUR (a probe), never the runtime's name or version, so
 // a runtime that fixes a bug stops paying for its workaround; call sites never name a runtime.
 
+import { createRequire } from "node:module";
+import path from "node:path";
 import { createHistogram, monitorEventLoopDelay, type RecordableHistogram } from "node:perf_hooks";
 import type { IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";
@@ -116,6 +118,48 @@ export function cappedWebSocket(url: string, protocols: string | string[] | unde
     const answered = () => clearTimeout(timer);
     for (const ev of ["open", "upgrade", "unexpected-response", "error", "close"]) ws.once(ev, answered);
   }
+  return enforceMaxPayload(ws, max, onOversize);
+}
+
+// ─── WebSockets over a stream ───────────────────────────────────────────────────────────────────
+// A LAN host's sockets run inside HTTP/2 CONNECT streams (§mesh.lan/reverse-channel), not on a
+// socket the runtime accepted or dialed. Bun's ws shim can't do that: its server's handleUpgrade
+// needs Bun's own server socket (it throws on any other stream), and its client ignores
+// `createConnection`. The pure-JS implementation inside the ws package does both, on every runtime,
+// so stream sockets always use it (by design, no probe: on Node it is what `ws` is anyway). It
+// enforces maxPayload and handshakeTimeout itself; the capped checks are kept for uniformity.
+
+type WsClasses = { WebSocket: typeof WebSocket; WebSocketServer: typeof WebSocketServer };
+let pureWs: WsClasses | null = null;
+
+function pureWsClasses(): WsClasses {
+  if (pureWs) return pureWs;
+  const req = createRequire(import.meta.url);
+  // `ws` itself resolves to Bun's builtin shim there; its package.json is exported everywhere.
+  const dir = path.dirname(req.resolve("ws/package.json"));
+  pureWs = { WebSocket: req(path.join(dir, "lib/websocket.js")), WebSocketServer: req(path.join(dir, "lib/websocket-server.js")) };
+  return pureWs;
+}
+
+/** A noServer WebSocketServer that can upgrade a request arriving on any Duplex, capped like the rest. */
+export function streamWebSocketServer(opts: Omit<ServerOptions, "noServer" | "server" | "port" | "host"> = {}): WebSocketServer {
+  const max = opts.maxPayload ?? DEFAULT_MAX_PAYLOAD;
+  const wss = new (pureWsClasses().WebSocketServer)({ ...opts, noServer: true, maxPayload: max });
+  const handleUpgrade = wss.handleUpgrade;
+  wss.handleUpgrade = function (this: WebSocketServer, req: IncomingMessage, socket: Duplex, head: Buffer, cb: (ws: WebSocket, req: IncomingMessage) => void) {
+    return handleUpgrade.call(this, req, socket, head, (ws: WebSocket, r: IncomingMessage) => cb(enforceMaxPayload(ws, max), r));
+  } as WebSocketServer["handleUpgrade"];
+  return wss;
+}
+
+/** A client WebSocket whose connection is `stream` (one that already reaches the server), capped like the rest. */
+export function streamWebSocket(url: string, stream: Duplex, protocols: string | string[] | undefined, opts: CappedClientOptions = {}): WebSocket {
+  const { onOversize, ...rest } = opts;
+  const max = rest.maxPayload ?? DEFAULT_MAX_PAYLOAD;
+  const Pure = pureWsClasses().WebSocket;
+  // createConnection is typed as returning a net.Socket; any Duplex that reaches the server works.
+  const o = { ...rest, maxPayload: max, createConnection: () => stream } as unknown as ClientOptions;
+  const ws = protocols === undefined ? new Pure(url, o) : new Pure(url, protocols, o);
   return enforceMaxPayload(ws, max, onOversize);
 }
 

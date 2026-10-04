@@ -43,7 +43,8 @@ import {
   type PeerLinkOfferResult,
   type PeerOfferReport,
 } from "../../shared/mesh-links";
-import type { PeerState, SessionSummary } from "../../shared/protocol";
+import type { SessionSummary } from "../../shared/protocol";
+import type { PeerStateView } from "../../shared/mesh-access";
 import type { LinkSandbox } from "../link-sandbox";
 import type { MeshApi } from "./index";
 import { LinkTransfers, newOfferId, OFFER_TTL_MS, type OfferListing, TransferError, type TransferEvent } from "./links-offers";
@@ -79,7 +80,7 @@ export interface LinksDeps {
   /** Hand a tagged message to a local member's agent (server/link-delivery.ts). Never throws. */
   deliver(path: string, framed: string): Promise<PeerLinkMessageResult>;
   /** A peer's hello state now (server/mesh/hello.ts probePeer); absent: taken as up. */
-  probe?(peer: PeerEntry): Promise<PeerState>;
+  probe?(peer: PeerEntry): Promise<PeerStateView>;
   /** The listed members of a link changed, or a message landed for them (the `links` frame). */
   notify?(sessionIds: string[]): void;
   now?(): number;

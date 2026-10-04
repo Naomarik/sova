@@ -276,7 +276,7 @@ export function NewSessionDialog(props: {
                     {(p) => (
                       <option value={p.id} selected={host() === p.id} disabled={!!peerUnavailable(p)}>
                         {p.label || p.id}
-                        {p.state === "up" ? "" : p.state === "skewed" ? " · other version" : p.state === "down" ? " · down" : " · refused"}
+                        {p.state === "up" ? (peerUnavailable(p) ? " · hidden" : "") : p.state === "skewed" ? " · other version" : p.state === "down" ? " · down" : p.state === "hidden" ? " · hidden" : " · refused"}
                       </option>
                     )}
                   </For>

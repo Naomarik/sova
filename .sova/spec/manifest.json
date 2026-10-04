@@ -13186,6 +13186,184 @@
         "server/project-services/routes.ts",
         "server/project-services/deploy.ts"
       ]
+    },
+    "§mesh.peers/grants": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "requires": [
+        "§mesh.peers/listener",
+        "§mesh.peers/allowlist",
+        "§mesh.sync/categories",
+        "§mesh.sync/logins",
+        "§app.claude-logins/pool",
+        "§app.access/gate"
+      ],
+      "code": [
+        "shared/mesh-access.ts",
+        "server/mesh/access.ts",
+        "server/mesh/listener.ts",
+        "server/mesh/index.ts",
+        "server/mesh/proxy.ts",
+        "server/sync/index.ts",
+        "server/sync/logins.ts",
+        "server/sync/docs.ts",
+        "server/claude-pool/index.ts",
+        "server/mesh/details.ts",
+        "src/components/MeshAccess.tsx",
+        "src/lib/mesh-access.ts",
+        "src/components/MeshView.tsx",
+        "src/lib/mesh.ts",
+        "server/mesh/access.test.ts",
+        "server/mesh/grants.test.ts",
+        "server/sync/grants-sync.test.ts",
+        "src/lib/mesh-access.test.ts",
+        "scripts/mesh-lab/e2e/m7-grants.test.mjs"
+      ]
+    },
+    "§mesh.lan/as-a-peer": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "code": [
+        "server/mesh/dial.ts",
+        "server/mesh/lan-fetch.ts",
+        "server/mesh/lan-fetch.test.ts",
+        "server/mesh/listener.ts",
+        "server/mesh/index.ts",
+        "server/mesh/proxy.ts",
+        "server/mesh/hello.ts",
+        "server/ws.ts",
+        "server/extensions.ts",
+        "server/mesh/lan.ts",
+        "server/mesh/lan-mesh.test.ts",
+        "server/mesh/proxy-pairing.test.ts"
+      ],
+      "requires": [
+        "§mesh.lan/pairing",
+        "§mesh.lan/reverse-channel",
+        "§mesh.peers/listener"
+      ]
+    },
+    "§mesh.lan/dialer": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "code": [
+        "server/mesh/lan-dialer.ts",
+        "server/mesh/lan-dialer.test.ts",
+        "server/mesh/lan.ts"
+      ],
+      "requires": [
+        "§mesh.lan/handshake",
+        "§mesh.lan/reverse-channel"
+      ]
+    },
+    "§mesh.lan/handshake": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "code": [
+        "server/mesh/lan-tls.ts",
+        "server/mesh/lan-tls.test.ts"
+      ],
+      "requires": [
+        "§mesh.lan/identity"
+      ]
+    },
+    "§mesh.lan/identity": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "code": [
+        "server/mesh/lan-cert.ts",
+        "server/mesh/lan-cert.test.ts"
+      ],
+      "requires": []
+    },
+    "§mesh.lan/pairing": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "code": [
+        "server/mesh/peers.ts",
+        "server/mesh/lan.ts",
+        "server/mesh/index.ts",
+        "server/mesh/lan-routes.ts",
+        "shared/mesh-lan.ts",
+        "server/mesh/gate.ts",
+        "server/mesh/lan-peers.test.ts",
+        "server/mesh/lan-mesh.test.ts",
+        "server/mesh/resync.ts",
+        "server/share/gateway-client.ts",
+        "server/index.ts",
+        "src/components/MeshPairings.tsx",
+        "src/components/MeshView.tsx",
+        "src/lib/mesh-lan.ts",
+        "src/lib/mesh-lan.test.ts",
+        "src/lib/api.ts",
+        "src/mesh.css",
+        "scripts/mesh-lab/e2e/m8-dialout.test.mjs",
+        "scripts/mesh-dialout/README.md",
+        "scripts/mesh-dialout/mac-e2e.mjs",
+        "scripts/mesh-dialout/local.env.example",
+        "scripts/mesh-vps/exposure.sh",
+        "server/mesh/access.ts",
+        "shared/mesh-access.ts",
+        "server/mesh/access.test.ts",
+        "scripts/mesh-vps/local.env.example"
+      ],
+      "requires": [
+        "§mesh.lan/identity",
+        "§mesh.lan/handshake"
+      ]
+    },
+    "§mesh.lan/relay-listener": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "code": [
+        "server/mesh/lan-admission.ts",
+        "server/mesh/lan-admission.test.ts",
+        "server/mesh/lan-relay.ts",
+        "server/mesh/lan-relay.test.ts"
+      ],
+      "requires": [
+        "§mesh.lan/handshake"
+      ]
+    },
+    "§mesh.lan/relay-sessions": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "code": [
+        "server/mesh/lan-relay-sessions.ts",
+        "server/mesh/lan-relay-sessions.test.ts",
+        "server/mesh/lan.ts",
+        "server/mesh/lan-mesh.test.ts"
+      ],
+      "requires": [
+        "§mesh.lan/reverse-channel",
+        "§mesh.lan/relay-listener"
+      ]
+    },
+    "§mesh.lan/reverse-channel": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "code": [
+        "server/mesh/lan-reverse.ts",
+        "server/mesh/lan-reverse.test.ts",
+        "server/runtime-quirks.ts",
+        "server/mesh/lan-mesh.test.ts",
+        "server/mesh/lan-h2-limits.test.ts",
+        "server/mesh/lan.ts"
+      ],
+      "requires": [
+        "§mesh.lan/handshake",
+        "§app.server-runtime/quirks"
+      ]
+    },
+    "§mesh/lan": {
+      "kind": "surface",
+      "authority": "accepted",
+      "code": [
+        "server/mesh/lan-reverse.ts",
+        "server/mesh/lan-dialer.ts",
+        "server/mesh/lan-relay.ts"
+      ]
     }
   },
   "boundary": {

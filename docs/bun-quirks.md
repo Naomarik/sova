@@ -33,6 +33,7 @@ The rules:
 | ws-handshake-timeout | 1.4.2 | TBD | `cappedWebSocket` in `server/runtime-quirks.ts`: its own timer, 50 ms after ws's, emits ws's error and terminates the socket | `ws-handshake-timeout` | `repros/ws-handshake-timeout.mjs` |
 | fetch-read-size | 1.4.2 | TBD (and pi-ai upstream) | `useSlicedProviderReads` / `slicingFetch` in `server/runtime-quirks.ts`, installed once in `server/chat-manager.ts` (skips google-* adapters, which refuse a custom fetch) | `fetch-read-size` | `repros/pi-ai-runaway-tool-call.mjs` |
 | event-loop-delay | 1.4.2 | TBD | `loopDelaySampler` in `server/runtime-quirks.ts` (used by `server/resource-monitor.ts`) | `event-loop-delay` | `repros/event-loop-delay.mjs` |
+| ws-stream | 1.4.2 | TBD | `streamWebSocketServer` / `streamWebSocket` in `server/runtime-quirks.ts` (the pure-JS ws inside the package, on both runtimes), used for WebSockets inside a LAN host's HTTP/2 streams | `ws-stream` | `repros/ws-stream.mjs` |
 
 ### resolver-case
 
@@ -133,6 +134,19 @@ request was aborted. A request that already names a fetch goes through unchanged
 a google-* adapter (pi-ai's Google adapters throw on a custom fetch). With it, the guarded turn on
 Bun is back under the 250 ms bound. `repros/pi-ai-runaway-tool-call.mjs` is the repro for pi-ai
 upstream, and it shows both behaviours on either runtime.
+
+
+### ws-stream
+
+A LAN host's requests reach it inside HTTP/2 CONNECT streams (§mesh.lan/reverse-channel), so a
+WebSocket there runs over a plain stream, not a socket the runtime accepted or dialed. Bun's `ws`
+shim can't do that: its server's `handleUpgrade` reads Bun's own server internals off the socket and
+throws a TypeError on any other stream, and its client ignores `createConnection` and dials the URL's
+host itself. The pure-JS implementation the `ws` package ships (`lib/websocket.js`,
+`lib/websocket-server.js`, loaded by path because `require.resolve("ws")` returns the shim's builtin
+id on Bun) does both on either runtime, and enforces `maxPayload` and `handshakeTimeout` itself.
+`streamWebSocketServer` and `streamWebSocket` use it on both runtimes, with no probe: on Node it is
+what `ws` is anyway. The capped checks still apply.
 
 ### event-loop-delay
 

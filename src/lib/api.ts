@@ -63,11 +63,9 @@ import type {
   WorktreesInsight,
   MeshCandidate,
   MeshHello,
-  MeshInfo,
   MeshLoginClaim,
   MeshLogins,
   MeshPeerEntry,
-  MeshSessions,
   PushDevice,
   PushInfo,
   PushSettings,
@@ -76,6 +74,15 @@ import type {
   PushTestResult,
 } from "../../shared/protocol";
 import type { MeshFrontDoor, MeshLocalSettings } from "../../shared/mesh-local";
+import type { LanPairingAdd, LanRelayPut, LanStatus } from "../../shared/mesh-lan";
+import type {
+  MeshAccessPut,
+  MeshAccessView,
+  MeshInfoView as MeshInfo,
+  MeshPeersPut,
+  MeshPreset,
+  MeshSessionsView as MeshSessions,
+} from "../../shared/mesh-access";
 import type { OwnerConversation, OwnerHome, OwnerLinkResult, OwnerProject, ProjectUpdate } from "../../shared/owner";
 import type { NamedChange, OrgDetail, OrgsInfo, PersonHours, PersonInput, PersonPage, PersonPreview, ProfileChange } from "../../shared/orgs";
 import type { BatonOutreach, SendLinkAnswer } from "../../shared/outreach";
@@ -902,9 +909,32 @@ export const fetchMesh = (init?: RequestInit) => request<MeshInfo>("/api/mesh", 
 export const fetchMeshHello = () => request<MeshHello>("/api/mesh/hello", meshReadInit(true));
 
 /** Replace peers.json's list; the answer is the mesh as it stands after the write. An entry
-    without `nodeId` is resolved by its name on the tailnet. */
-export const putMeshPeers = (peers: MeshPeerEntry[]) =>
-  request<MeshInfo>("/api/mesh/peers", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ peers }) });
+    without `nodeId` is resolved by its name on the tailnet. `grants` names the preset of a peer this
+    write pairs (by id; §mesh.peers/grants). */
+export const putMeshPeers = (peers: MeshPeerEntry[], grants?: Record<string, MeshPreset>) =>
+  request<MeshInfo>("/api/mesh/peers", {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ peers, ...(grants ? { grants } : {}) } satisfies MeshPeersPut),
+  });
+
+/** What each peer may see and do on this host (mesh-access.json); this host's own page only. */
+export const fetchMeshAccess = () => request<MeshAccessView>("/api/mesh/access");
+
+/** One peer's grant; null removes it (= full). The answer is the whole view after the write. */
+export const putMeshAccess = (body: MeshAccessPut) =>
+  request<MeshAccessView>("/api/mesh/access", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+
+// Dial-out pairings (§mesh.lan/pairing): this host's own page only.
+const lanJson = (method: string, body: unknown): RequestInit => ({ method, headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+/** This host's fingerprint (once made), its relay setting, and each pairing's connections. */
+export const fetchMeshLan = () => request<LanStatus>("/api/mesh/lan");
+/** Make this host's key, if it has none yet; the answer shows its fingerprint. */
+export const createMeshLanKey = () => request<LanStatus>("/api/mesh/lan/key", { method: "POST" });
+export const addMeshLanPairing = (body: LanPairingAdd) => request<LanStatus>("/api/mesh/lan/pairings", lanJson("POST", body));
+/** Remove a pairing: its connections end at once, and its grant goes. */
+export const removeMeshLanPairing = (id: string) => request<LanStatus>(`/api/mesh/lan/pairings/${encodeURIComponent(id)}`, { method: "DELETE" });
+export const putMeshLanRelay = (relay: LanRelayPut) => request<LanStatus>("/api/mesh/lan/relay", lanJson("PUT", { relay }));
 
 /** Tailnet nodes the serving host can see, and which of them run Sova. Only asked for on demand. */
 export const fetchMeshCandidates = () => request<MeshCandidate[]>("/api/mesh/candidates");

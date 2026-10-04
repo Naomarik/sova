@@ -4,7 +4,6 @@ import type {
   FolderListing,
   ModelInfo,
   OverseerCaps,
-  PeerState,
   SessionGroup,
   SessionInsight,
   SessionSummary,
@@ -14,6 +13,7 @@ import type {
   TargetInfo,
   TranscriptItem,
 } from "../shared/protocol";
+import type { PeerStateView } from "../shared/mesh-access";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { relativeTime } from "../pi-config/extensions/stamp/format.ts";
@@ -145,7 +145,7 @@ export interface PeerRef {
   id: string;
   label: string;
   nodeId: string;
-  state: PeerState;
+  state: PeerStateView;
   error?: string;
 }
 
@@ -532,7 +532,7 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
     }
     if (peer.state !== "up")
       throw new Refusal(
-        `${peer.label} (${peer.id}) is ${peer.state === "skewed" ? "on another protocol version (skewed)" : peer.state === "refused" ? "refusing this host (it doesn't list it as a peer)" : "down"}${peer.error ? `: ${peer.error}` : ""}, so nothing reaches it from here now.`,
+        `${peer.label} (${peer.id}) is ${peer.state === "skewed" ? "on another protocol version (skewed)" : peer.state === "refused" ? "refusing this host (it doesn't list it as a peer)" : peer.state === "hidden" ? "hiding everything from this host (its grant to this host is none)" : "down"}${peer.error ? `: ${peer.error}` : ""}, so nothing reaches it from here now.`,
       );
     return peer;
   }

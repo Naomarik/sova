@@ -309,7 +309,13 @@ describe("turns the user did not start are read-only", () => {
   /** Every other op of the organization acts: refused as read-only too, a message to a project overseer included. */
   const ACTING_OPS: [string, Record<string, unknown>][] = [
     ...["rename", "about", "revert_about", "commit"].map((op): [string, Record<string, unknown>] => ["sova_org", { op, org: "any", name: "n", text: "t", at: "x" }]),
-    ...["edit", "archive", "unarchive"].map((op): [string, Record<string, unknown>] => ["sova_org_project", { op, org: "any", project: "any" }]),
+    ...["edit", "archive", "unarchive", "import"].map((op): [string, Record<string, unknown>] => ["sova_org_project", { op, org: "any", project: "any" }]),
+    // §app.overseer/org-project-add: a folder, a session's folder and a clone; attach and detach an org.
+    ["sova_org_project", { op: "add", root: agentDir }],
+    ["sova_org_project", { op: "add", session: "some-id" }],
+    ["sova_org_project", { op: "add", clone: { repo: "owner/name", parent: agentDir } }],
+    ["sova_org", { op: "attach", dir: agentDir }],
+    ["sova_org", { op: "detach", org: "any" }],
     ...["edit", "approve", "decline", "leave", "revert"].map((op): [string, Record<string, unknown>] => ["sova_roster", { op, org: "any", person: "any", at: "x" }]),
     ...["promote", "resolve", "route", "freeze"].map((op): [string, Record<string, unknown>] => ["sova_project_decisions", { op, org: "any", project: "any", ids: ["d"], conflict: "cf_x", keep: "a", to: "operator", frozen: true }]),
     ...["offer", "handoff", "take", "close", "extend", "revoke_link"].map((op): [string, Record<string, unknown>] => ["sova_gather", { op, session: "some-id", to: ["a", "b"], by: 1 }]),

@@ -12,6 +12,12 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
 ## Layout & ownership
 
 - `shared/protocol.ts` — the REST/WS wire contract. Change only with team coordination.
+- `shared/harness.ts` — the harness contract: a types-only barrel over `shared/harness-core.ts`,
+  `-tools`, `-history`, `-wire`, `-state`, `-session` (each imports only its siblings, with
+  `import type`, and emits no code), what Sova code outside the adapter speaks instead of pi's
+  shapes. Owned by **backend**; see **Harness boundary**.
+- `server/harness/pi/` — the pi adapter: the only place outside the baseline that may reach
+  `@earendil-works/*`.
 - `server/` — Node backend: Hono (REST) + `ws` (2 WS endpoints), embeds the pi SDK. Owned by **backend**.
 - `src/` — SolidJS + TS frontend (Vite, vite-plugin-solid; HMR = live reload). Owned by **frontend**, except `src/design/`.
   One runtime import runs the other way: `server/vis-check.ts` (the vis retry and the `vis_check` tool) imports
@@ -506,6 +512,46 @@ is a separate install and may be another version — a fact read there is not a 
   (tail the JSONL with fs.watch + parse appended lines).
 - Extension dialog bridge (ExtensionUIContext) pattern: `dist/modes/rpc/rpc-mode.js` —
   `createExtensionUIContext` at line 83, bound via `bindExtensions({uiContext, mode:"rpc", ...})` at line 231.
+
+## Harness boundary
+
+Sova speaks its own harness contract; pi is its one harness, behind one adapter (§app/harness).
+
+- `shared/harness.ts` is the contract. `server/harness/pi/` is the only code that may reach pi:
+  an import of `@earendil-works/*` in any form (static, type, `import()`, `require`,
+  `import.meta.resolve`, or any string naming the package) anywhere else in `server/`, `shared/`,
+  `src/` (tests included), or in a pi-config file the server or the web app imports at runtime,
+  fails `pnpm test`. Only the adapter may import `pi-config/extensions/subagents/adapters/pi.ts`.
+- `server/harness-boundary.test.ts` keeps three ratchets against `server/harness/boundary-baseline.json`,
+  exact per file (tests are not counted for reads and writes):
+  pi imports (runtime or type); raw pi entry reads — `calls` (the transcript's raw API by import
+  binding: `parseLines`, `activeBranch`, `readActiveBranch`, `entryOf`, `normalizeEntries`,
+  `normalizeEntry`, `rawOf`; `getBranch`/`getEntries`/`getEntry`/`rawBranch` by name), `shapes`
+  (`.customType` reads, `.type` compared to a pi entry type, JSON-spelled `"type":"…"`/`"customType":"`/
+  `"role":"` strings, and in `src/`/`shared/` pi event-name comparisons and `.meta` reads), `reaches`
+  (`sessionManager`, members only pi's SessionManager has, the `SessionManager` class, and the
+  `liveRead`/`stateOf` bridges); and custom-entry writes (`appendCustomEntry`, `appendEntry`,
+  `appendSpecialEntry`, every call site whatever its type argument, plus any function that forwards
+  its own parameter as the entry type, listed in `wrappers`). Above the baseline fails, and so does
+  below it — lower the baseline in the change that removes the hit. It also fails when a test file
+  under `server/`, `shared/` or `src/` is matched by no glob in `scripts/run-tests.mjs`.
+- **The baseline only shrinks.** Never add a file, raise a count or list a new wrapper to make the
+  test pass; if a change seems to need it, stop and ask the user. A working-tree baseline that grew
+  past `HEAD`'s fails too. `SOVA_BOUNDARY_OUT=<absolute path> pnpm test --
+  server/harness-boundary.test.ts` writes the computed baseline for the diff; after a merge,
+  regenerate it on the merged tree.
+- New work is harness-neutral: a server feature imports `shared/harness.ts` and `server/harness/`,
+  never pi; new per-session state goes through `SessionState`, never a raw custom entry with a new
+  customType; history is read through the neutral reader, never `parseLines` plus a switch on
+  `entry.type`; wire additions use `SovaEvent`/`RowFacts`, and `src/` never branches on pi entry or
+  event names. A new Sova agent feature is never a new pi-config extension and never a new call to
+  an extension's command handler; existing extensions are grandfathered, and the pi-config files
+  the server imports stay pi-free (the import ratchet covers them). (§app.harness/new-work)
+- A test that pins pi behaviour lives in `server/harness/pi/` (`contract.test.ts`), imports pi only
+  through `server/harness/pi/testing/load-pi.ts`, and runs against another pi with
+  `PI_PACKAGE_DIR="$(npm root -g)/@earendil-works/pi-coding-agent" pnpm test --
+  server/harness/pi/contract.test.ts` (run it on every pin bump and TUI pi upgrade);
+  `server/harness/**/*.test.ts` is in the runner's GLOBS.
 
 ## Conventions
 

@@ -12918,7 +12918,6 @@
         "scripts/mesh-lab/e2e/m7-grants.test.mjs"
       ]
     },
-<<<<<<< HEAD
     "§mesh.lan/as-a-peer": {
       "kind": "behavior",
       "authority": "accepted",
@@ -13063,8 +13062,6 @@
         "server/mesh/lan-relay.ts"
       ]
     },
-=======
->>>>>>> feat/mesh-grants
     "§app.project-runtime/approve-merge": {
       "kind": "behavior",
       "authority": "accepted",

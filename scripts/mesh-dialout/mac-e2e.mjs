@@ -59,7 +59,9 @@ function check(name, ok, detail = "") {
 const SSH_OPTS = ["-F", "/dev/null", "-i", E.MAC_SSH_KEY, "-o", "BatchMode=yes", "-o", "IdentitiesOnly=yes", "-o", "ForwardAgent=no", "-o", "ClearAllForwardings=yes", "-o", "ConnectTimeout=10"];
 /** A command in the Mac user's login zsh (mise, pnpm on PATH). */
 function mac(script, { timeoutMs = 600_000, input } = {}) {
-  const r = spawnSync("ssh", [...SSH_OPTS, E.MAC_SSH, "zsh", "-lc", shq(script)], { encoding: "utf8", timeout: timeoutMs, input, maxBuffer: 64 << 20 });
+  // mise is often activated only in .zshrc (interactive), so put its usual shims first explicitly.
+  const path = 'export PATH="$HOME/.local/bin:$HOME/.local/share/mise/shims:/opt/homebrew/bin:/usr/local/bin:$PATH"; ';
+  const r = spawnSync("ssh", [...SSH_OPTS, E.MAC_SSH, "zsh", "-lc", shq(path + script)], { encoding: "utf8", timeout: timeoutMs, input, maxBuffer: 64 << 20 });
   return { code: r.status, out: (r.stdout ?? "").trim(), err: (r.stderr ?? "").trim() };
 }
 const shq = (s) => `'${s.replace(/'/g, `'\\''`)}'`;

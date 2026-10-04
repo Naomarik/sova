@@ -47,6 +47,14 @@ export function tickProgress(review: Pick<DeployReview, "keys">, ticked: Readonl
   return { left, line: left ? `${review.keys.length - left} of ${review.keys.length} steps ticked` : "Every step ticked." };
 }
 
+/** A plan's checks folded to one line: "6 checks passed" / "5 checks passed · 1 let through"; `open` when any was let through. */
+export function checksLine(checks: readonly { ok: boolean }[]): { line: string; open: boolean } {
+  const let_ = checks.filter((c) => !c.ok).length;
+  const passed = checks.length - let_;
+  const line = `${passed} check${passed === 1 ? "" : "s"} passed${let_ ? ` · ${let_} let through` : ""}`;
+  return { line, open: let_ > 0 };
+}
+
 /** "Expires in 12 min" / "Expired": a plan is good for 15 minutes. */
 export function planDeadline(expiresAt: string, now: number): string {
   const ms = Date.parse(expiresAt) - now;

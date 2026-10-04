@@ -98,7 +98,7 @@ Deploy templates read `${host.<NAME>}`, `${commit}`, `${target}`, `${checkout}` 
 `${slot}`, `${instance}`, `${project}`, `${checkout}`, `${main}` (the main checkout), `${branch}`, `${data}` (the instance's data dir), `${data.<resource>}`, `${ports.<service>.<port>}`, `${host.<NAME>}`; `$$` is a literal `$`. Every process and hook also gets `SOVA_V=1`, `SOVA_PROJECT`, `SOVA_INSTANCE`, `SOVA_SLOT`, `SOVA_CHECKOUT`, `SOVA_MAIN`, `SOVA_BRANCH`, `SOVA_DATA`, `SOVA_PORT_<SERVICE>_<PORT>` for every port of the instance and `SOVA_PORT_<PORT>` for its own; a hook also `SOVA_VERB`, `SOVA_STEP`, `SOVA_OUT`; a test run also `SOVA_TEST_SELECT`. `<SERVICE>` and `<PORT>` are upper case with anything else `_`.
 
 ## The approval hash
-Approval covers the whole parsed definition (a data resource's `sensitive` and `share` included) except every `timeout`, readiness `path`, `about`, `isolation`, `sources`, `open` and the default `start: "up"`. So rewording a `why` or an `about`, listing another source or moving the entry point needs no new approval; any command, env, port, hook, data source, `test` or `start: "on-demand"` does.
+Approval covers the whole parsed definition (a data resource's `sensitive` and `share` included) except every `timeout`, readiness `path`, `about`, `isolation`, `sources`, `open`, `deploy` (approved apart, under its own hash) and the default `start: "up"`. So rewording a `why` or an `about`, listing another source or moving the entry point needs no new approval; any command, env, port, hook, data source, `test` or `start: "on-demand"` does.
 
 ## Error codes
 | code | exit | meaning for you |

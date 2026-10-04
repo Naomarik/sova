@@ -5,6 +5,7 @@ import { CONTRACT_FILE, DefinitionError, httpStatusOf, parseDefinition } from ".
 import { projectOf } from "../project-root";
 import { conformer } from "./conform";
 import { SelectedDriver } from "./adapters";
+import { approveDeployRecipe, Deployer } from "./deploy";
 import { ProjectEngine } from "./engine";
 import { approve, defHashOf } from "./trust";
 
@@ -22,6 +23,8 @@ export function projectEngine(): ProjectEngine {
   if (!engine) {
     engine = new ProjectEngine({ driver: new SelectedDriver() });
     engine.conformer = conformer(engine);
+    const deployer = new Deployer(engine);
+    engine.deployer = (verb, body, caller, opts) => deployer.run(verb, body, caller, opts);
   }
   return engine;
 }
@@ -51,6 +54,24 @@ export function registerProjectServiceRoutes(app: Hono<any>): void {
       return c.json({ error: err instanceof Error ? err.message : String(err) }, 409);
     }
     return c.json({ ok: true, project: p.root, defHash: current });
+  });
+
+  // The operator's approval of a deploy recipe (§app.project-services/deploy-trust): the hash shown, and every step of its review ticked.
+  app.post("/api/project-services/deploy-approve", async (c) => {
+    const body = (await c.req.json().catch(() => null)) as { project?: unknown; deployHash?: unknown; ticked?: unknown; ref?: unknown } | null;
+    const project = typeof body?.project === "string" ? body.project : "";
+    const seen = typeof body?.deployHash === "string" ? body.deployHash : "";
+    const ticked = Array.isArray(body?.ticked) && body.ticked.every((k) => typeof k === "string") ? (body.ticked as string[]) : null;
+    if (!project || !isAbsolute(project) || !seen || !ticked) return c.json({ error: "give project (an absolute path), deployHash (the hash you were shown) and ticked (every step you ticked)" }, 400);
+    const p = await projectOf(project);
+    if (p.state !== "ok") return c.json({ error: p.state === "none" ? `no project at ${project}` : p.message }, 404);
+    const ref = typeof body?.ref === "string" && body.ref ? body.ref : "HEAD";
+    try {
+      await approveDeployRecipe(p.root, seen, ref, ticked);
+    } catch (err) {
+      return c.json({ error: err instanceof Error ? err.message : String(err) }, 409);
+    }
+    return c.json({ ok: true, project: p.root, deployHash: seen });
   });
 
   app.post("/api/project-services/:verb", async (c) => {

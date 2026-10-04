@@ -1043,7 +1043,7 @@ export interface DeployReview {
   keys: string[];
 }
 /** The keys a review needs ticked. Pure. */
-export function reviewKeys(targets: readonly Pick<DeployTargetReview, "name" | "steps" | "verify">[]): string[] {
+export function reviewKeys(targets: readonly { name: string; steps: readonly { key: string }[]; verify: unknown }[]): string[] {
   return targets.flatMap((t) => [...t.steps.map((s) => `${t.name}/${s.key}`), ...(t.verify ? [`${t.name}/verify`] : []), `${t.name}/rollback`]);
 }
 export type DeployKind = "deploy" | "rollback";

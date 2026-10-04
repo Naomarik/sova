@@ -443,7 +443,10 @@ import { OVERSEER_CARD_HEADER } from "./overseer-sender";
 export { OVERSEER_CARD_HEADER };
 export function cardHeader(items: readonly SovaConfirmItem[]): string {
   const ids = (kind: SovaConfirmItem["kind"]) => items.filter((i) => i.kind === kind).map((i) => i.id);
-  return JSON.stringify({ people: ids("person"), projects: ids("project"), sessions: ids("session") });
+  // Folder and org rows (§app.overseer/org-project-add): the project and org routes check these themselves.
+  const folders = items.flatMap((i) => (i.kind === "folder" ? [{ root: i.id, org: i.orgId ?? null, ...(i.name ? { name: i.name } : {}) }] : []));
+  const orgs = ids("org");
+  return JSON.stringify({ people: ids("person"), projects: ids("project"), sessions: ids("session"), ...(folders.length ? { folders } : {}), ...(orgs.length ? { orgs } : {}) });
 }
 
 /**
@@ -586,6 +589,7 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
     if (p.page === "usage") return { href: "#/usage", label: "Open Usage" };
     if (p.page === "agents") return { href: p.team ? `#/agents/${encodeURIComponent(p.team)}` : "#/agents", label: "Open Agents" };
     if (p.page === "overseer") return { href: "#/overseer", label: "Open the Overseer" };
+    if (p.page === "orgs") return { href: "#/orgs", label: "Open Organizations" };
     if (p.page === "settings") {
       const tab = p.settings_tab ?? "general";
       if (!(SETTINGS_TABS as readonly string[]).includes(tab)) throw new Refusal(`settings_tab must be one of ${SETTINGS_TABS.join(", ")}.`);
@@ -1360,12 +1364,12 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
       name: "sova_navigate",
       label: "Navigate",
       description:
-        "Move the user's browser tab (only the tab that sent the current message; never on a brief or wake-up) to a session, a group workspace, the usage or agents page, the Overseer, a Settings tab, or an organization, project or person page. Validates the target and returns its link. Make it the LAST call of a turn: the view changes when it lands.",
+        "Move the user's browser tab (only the tab that sent the current message; never on a brief or wake-up) to a session, a group workspace, the usage or agents page, the Overseer, a Settings tab, the Organizations page, or an organization, project or person page. Validates the target and returns its link. Make it the LAST call of a turn: the view changes when it lands.",
       promptSnippet: "open a session, workspace, page or Settings tab in the user's tab (last call)",
       parameters: obj({
         session: str("Session id to open (alone, or focused inside `group`)."),
         group: str("Group id: open its workspace."),
-        page: str("usage | agents | overseer | settings", { enum: ["usage", "agents", "overseer", "settings"] }),
+        page: str("usage | agents | overseer | settings | orgs", { enum: ["usage", "agents", "overseer", "settings", "orgs"] }),
         team: str("With page agents: a team id."),
         settings_tab: str(`With page settings: ${SETTINGS_TABS.join(" | ")}`, { enum: [...SETTINGS_TABS] }),
         org: str("An organization, by id or exact name: open its page (or, with person, theirs; with project, it narrows the name)."),
@@ -1416,6 +1420,8 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
         todo: (ref) => readTodos().todos.find((t) => t.id === ref) ?? null,
         person: orgConfirmLookup.person,
         project: orgConfirmLookup.project,
+        org: orgConfirmLookup.org,
+        folder: orgConfirmLookup.folder,
       },
       link: async (target) => (await navTarget(target)).href,
       wrap: (run) => act("sova_card", run, { unattended: true }),
@@ -1463,6 +1469,7 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
       confirmed: () => host.confirmed(),
       overseerId: () => host.overseerId(),
       sessionRef,
+      session: (ref) => lookup(ref),
       obj,
       str,
       int,

@@ -25,6 +25,9 @@ test.after(() => {
 
 const linux = process.platform === "linux" && existsSync("/usr/bin/bwrap");
 
+/** The session tmp base as a launch names it: canonical (macOS's tmpdir is under the /var -> /private/var link). Read once it exists. */
+const tmpBase = () => realpathSync(sessionTmpBase());
+
 /** A workspace with a tracked-worktree-like `.agent`, a private state dir, a ledger file and a transcript source. */
 function world(name: string) {
 	const base = join(root, name);
@@ -92,43 +95,50 @@ test("composition: the parent's scope, .agent read-only, binds, env allowlist, p
 	const r = await confineLaunch(scopeOf(w.full), needsFor(w), { command: "/bin/prog", args: ["--x"], cwd: w.ws, env: HOST_ENV }, { backend, platform: "linux" });
 	assert.ok(!("refused" in r), "refused" in r ? r.refused : "");
 	const c = r as ConfinedLaunch;
-	const p = seen.probe!;
-	assert.deepEqual(seen.confine!.policy, p, "the probed policy is the one confined");
-	assert.ok(p.writable.includes(w.ws));
-	assert.ok(p.readOnlyWithinWritable.includes(join(w.ws, ".agent")), "a tracked worktree's .agent stays read-only");
-	assert.ok(p.hidden.includes(w.secretDir), "the parent's hidden list rides along");
-	assert.deepEqual(p.binds, [
-		{ path: w.priv, source: w.priv },
-		{ path: w.ledger, source: w.ledger },
-		{ path: join(w.priv, "projects", "slug"), source: w.projects },
-	]);
-	assert.equal(p.network.mode, "proxy");
-	assert.deepEqual(p.network.proxy!.allow, ["registry.npmjs.org", "api.example.com"], "the policy's hosts plus the program's");
-	assert.ok(existsSync(p.network.proxy!.socket));
-	assert.deepEqual(Object.keys(p.env).sort(), ["HOME", "PATH"], "scrubbed: no agent socket, key or nesting marker");
-	assert.deepEqual(seen.confine!.env, { PROGRAM_CONFIG_DIR: w.priv });
-	assert.deepEqual(seen.confine!.secretEnv, { PROGRAM_TOKEN: "tok-123" });
-	assert.equal(seen.confine!.secretFd, 4, "above every fd the program asked for");
-	assert.equal(seen.confine!.envOnFd, true, "the whole environment on the fd, never argv");
-	assert.deepEqual(c.fds, [{ fd: 3, data: "fd-token" }, { fd: 4, data: "SECRET-PAYLOAD" }]);
-	assert.deepEqual([c.command, ...c.args], ["/sandbox", "/bin/prog", "--x"]);
-	assert.deepEqual(c.spawnEnv, { PROGRAM_CONFIG_DIR: "/login/dir" }, "bwrap's own process carries only the outside variables");
-	assert.equal(c.env.PROGRAM_CONFIG_DIR, w.priv);
-	const flat = JSON.stringify([c.command, c.args, c.env, c.spawnEnv]);
-	assert.ok(!flat.includes("tok-123"), "the secret is in no argv, env or spawn env");
-	assert.equal(c.tmpDir, join(sessionTmpBase(), sessionId, "w-w1", "tmp"));
-	assert.equal(c.tmpInside, "/tmp");
-	assert.equal(p.tmpDir, c.tmpDir);
-	const other = await confineLaunch(scopeOf(w.full, "w2"), {}, { command: "/bin/prog", args: [], cwd: w.ws, env: HOST_ENV }, { backend, platform: "linux" });
-	assert.ok(!("refused" in other));
-	assert.notEqual((other as ConfinedLaunch).tmpDir, c.tmpDir, "each worker its own tmp");
-	assert.notEqual(seen.probe!.network.proxy!.socket, p.network.proxy!.socket, "each launch its own proxy");
-	await c.cleanup();
-	assert.equal(existsSync(p.network.proxy!.socket), false, "cleanup stops the proxy");
-	await (other as ConfinedLaunch).cleanup();
-	releaseWorkerTmp(scopeOf(w.full, "w2"));
-	assert.equal(existsSync((other as ConfinedLaunch).tmpDir), false);
-	assert.ok(existsSync(c.tmpDir), "only that worker's");
+	// A failed assertion must still stop the launches' proxies, or the file never exits.
+	const launches: ConfinedLaunch[] = [c];
+	try {
+		const p = seen.probe!;
+		assert.deepEqual(seen.confine!.policy, p, "the probed policy is the one confined");
+		assert.ok(p.writable.includes(w.ws));
+		assert.ok(p.readOnlyWithinWritable.includes(join(w.ws, ".agent")), "a tracked worktree's .agent stays read-only");
+		assert.ok(p.hidden.includes(w.secretDir), "the parent's hidden list rides along");
+		assert.deepEqual(p.binds, [
+			{ path: w.priv, source: w.priv },
+			{ path: w.ledger, source: w.ledger },
+			{ path: join(w.priv, "projects", "slug"), source: w.projects },
+		]);
+		assert.equal(p.network.mode, "proxy");
+		assert.deepEqual(p.network.proxy!.allow, ["registry.npmjs.org", "api.example.com"], "the policy's hosts plus the program's");
+		assert.ok(existsSync(p.network.proxy!.socket));
+		assert.deepEqual(Object.keys(p.env).sort(), ["HOME", "PATH"], "scrubbed: no agent socket, key or nesting marker");
+		assert.deepEqual(seen.confine!.env, { PROGRAM_CONFIG_DIR: w.priv });
+		assert.deepEqual(seen.confine!.secretEnv, { PROGRAM_TOKEN: "tok-123" });
+		assert.equal(seen.confine!.secretFd, 4, "above every fd the program asked for");
+		assert.equal(seen.confine!.envOnFd, true, "the whole environment on the fd, never argv");
+		assert.deepEqual(c.fds, [{ fd: 3, data: "fd-token" }, { fd: 4, data: "SECRET-PAYLOAD" }]);
+		assert.deepEqual([c.command, ...c.args], ["/sandbox", "/bin/prog", "--x"]);
+		assert.deepEqual(c.spawnEnv, { PROGRAM_CONFIG_DIR: "/login/dir" }, "bwrap's own process carries only the outside variables");
+		assert.equal(c.env.PROGRAM_CONFIG_DIR, w.priv);
+		const flat = JSON.stringify([c.command, c.args, c.env, c.spawnEnv]);
+		assert.ok(!flat.includes("tok-123"), "the secret is in no argv, env or spawn env");
+		assert.equal(c.tmpDir, join(tmpBase(), sessionId, "w-w1", "tmp"));
+		assert.equal(c.tmpInside, "/tmp");
+		assert.equal(p.tmpDir, c.tmpDir);
+		const other = await confineLaunch(scopeOf(w.full, "w2"), {}, { command: "/bin/prog", args: [], cwd: w.ws, env: HOST_ENV }, { backend, platform: "linux" });
+		assert.ok(!("refused" in other));
+		launches.push(other as ConfinedLaunch);
+		assert.notEqual((other as ConfinedLaunch).tmpDir, c.tmpDir, "each worker its own tmp");
+		assert.notEqual(seen.probe!.network.proxy!.socket, p.network.proxy!.socket, "each launch its own proxy");
+		await c.cleanup();
+		assert.equal(existsSync(p.network.proxy!.socket), false, "cleanup stops the proxy");
+		await (other as ConfinedLaunch).cleanup();
+		releaseWorkerTmp(scopeOf(w.full, "w2"));
+		assert.equal(existsSync((other as ConfinedLaunch).tmpDir), false);
+		assert.ok(existsSync(c.tmpDir), "only that worker's");
+	} finally {
+		for (const l of launches) await l.cleanup();
+	}
 });
 
 test("levels: read-only gets only the program's hosts (none: no network); write-only the host network and env", async () => {
@@ -183,7 +193,7 @@ test("refusals: probe failure, partial without acceptPartial, bad scope or needs
 test("workerTmpDir: the default per worker, or a hosted worker's own dir", () => {
 	const w = world("tmp");
 	const t = workerTmpDir(scopeOf(w.full, "w9"), undefined, "linux");
-	assert.equal(t.host, join(sessionTmpBase(), sessionId, "w-w9", "tmp"));
+	assert.equal(t.host, join(tmpBase(), sessionId, "w-w9", "tmp"));
 	assert.equal(t.inside, "/tmp");
 	const hosted = join(w.base, "hosted-worker");
 	const h = workerTmpDir(scopeOf(w.full, "w9"), { tmpDir: hosted }, "darwin");

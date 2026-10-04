@@ -23,6 +23,10 @@ export interface ConfirmLookup {
       exact name (the global Overseer's cards only; a caller without them takes no `people` or `projects`). */
   person?(org: string, ref: string): Extract<SovaConfirmItem, { kind: "person" }> | null;
   project?(org: string | null, ref: string): Extract<SovaConfirmItem, { kind: "project" }> | null;
+  /** An org attached here, by id or exact name, and a folder to add as a project (its checkout root, into `org` or
+      standalone): the global Overseer's cards only (§app.overseer/org-project-add). */
+  org?(ref: string): Extract<SovaConfirmItem, { kind: "org" }> | null;
+  folder?(root: string, org: string | null, name?: string): Promise<Extract<SovaConfirmItem, { kind: "folder" }> | null>;
 }
 
 const cut = (s: string, max: number) => {
@@ -31,6 +35,8 @@ const cut = (s: string, max: number) => {
 };
 const ITEM_KINDS = ["sessions", "ideas", "todos"];
 const ORG_KINDS = ["people", "projects"];
+const ADD_KINDS = ["orgs", "folders"];
+const ADD_EXAMPLE = '"orgs": [{"id": "<org id or name>", "note": "…"}], "folders": [{"root": "/abs/folder or ~/folder", "org": "<org, or leave out: standalone>", "name": "<optional>", "note": "…"}]';
 const ITEMS_EXAMPLE = '{"sessions": [{"id": "<session id>", "note": "What it is. Why it fits."}], "todos": [{"id": "td_…", "note": "…"}]}';
 const ORG_EXAMPLE = '"people": [{"org": "<org id or name>", "id": "<person id or name>", "note": "…"}], "projects": [{"id": "<project id or name>", "note": "…"}]';
 
@@ -57,6 +63,22 @@ function wanted(v: unknown): Wanted[] {
   }
   return [...out.values()];
 }
+/** Folders to add: each `{root, org?, name?, note?}`; the first mention of a root (into the same org) wins. */
+type FolderWanted = Wanted & { org: string; name?: string };
+function wantedFolders(v: unknown): FolderWanted[] {
+  const out = new Map<string, FolderWanted>();
+  for (const x of Array.isArray(v) ? v : []) {
+    const o: { root?: unknown; org?: unknown; name?: unknown; note?: unknown } = x && typeof x === "object" ? x : { root: x };
+    const ref = typeof o.root === "string" ? o.root.trim() : "";
+    const org = typeof o.org === "string" ? o.org.trim() : "";
+    if (!ref || out.has(`${org}\0${ref}`)) continue;
+    const note = typeof o.note === "string" ? o.note.replace(/\s+/g, " ").trim() : "";
+    const name = typeof o.name === "string" ? o.name.trim() : "";
+    out.set(`${org}\0${ref}`, { org, ref, ...(name ? { name } : {}), ...(note ? { note } : {}), ...defaultOf(x) });
+  }
+  return [...out.values()];
+}
+
 /** People or projects: each `{org, id, note?}`; a person without its org matches nothing, a project's org is optional. */
 type OrgWanted = Wanted & { org: string };
 function wantedOrg(v: unknown): OrgWanted[] {
@@ -93,20 +115,31 @@ export function sessionItem(s: SessionSummary): SovaConfirmItem {
 export async function resolveConfirmItems(raw: unknown, lookup: ConfirmLookup, refusal: (m: string) => Error, cutNotes?: string[]): Promise<ResolvedItem[]> {
   if (raw === undefined || raw === null) return [];
   const orgs = !!(lookup.person && lookup.project);
-  const kinds = orgs ? [...ITEM_KINDS, ...ORG_KINDS] : ITEM_KINDS;
+  const adds = orgs && !!(lookup.org && lookup.folder);
+  const kinds = [...ITEM_KINDS, ...(orgs ? ORG_KINDS : []), ...(adds ? ADD_KINDS : [])];
   if (typeof raw !== "object" || Array.isArray(raw))
-    throw refusal(`items is an object: { sessions?: [...], ideas?: [...], todos?: [...]${orgs ? ", people?: [...], projects?: [...]" : ""} }, each entry an id or { id, note }${orgs ? " (a person also names its org: { org, id, note }; a project may)" : ""}.`);
+    throw refusal(
+      `items is an object: { sessions?: [...], ideas?: [...], todos?: [...]${orgs ? ", people?: [...], projects?: [...]" : ""}${adds ? ", orgs?: [...], folders?: [...]" : ""} }, each entry an id or { id, note }${orgs ? " (a person also names its org: { org, id, note }; a project may)" : ""}${adds ? " (a folder is { root, org?, name?, note })" : ""}.`,
+    );
   const r = raw as Record<string, unknown>;
   const stray = Object.keys(r).filter((k) => !kinds.includes(k));
   if (stray.length)
     throw refusal(
-      `No card was shown. items takes only ${orgs ? "sessions, ideas, todos, people and projects" : "sessions, ideas and todos"}, each a list; this one has ${stray.join(", ")}. Put each entry in its list, e.g. ${ITEMS_EXAMPLE}${orgs ? `, and ${ORG_EXAMPLE}` : ""}.`,
+      `No card was shown. items takes only ${adds ? "sessions, ideas, todos, people, projects, orgs and folders" : orgs ? "sessions, ideas, todos, people and projects" : "sessions, ideas and todos"}, each a list; this one has ${stray.join(", ")}. Put each entry in its list, e.g. ${ITEMS_EXAMPLE}${orgs ? `, and ${ORG_EXAMPLE}` : ""}${adds ? `, ${ADD_EXAMPLE}` : ""}.`,
     );
-  const want = { sessions: wanted(r.sessions), ideas: wanted(r.ideas), todos: wanted(r.todos), people: orgs ? wantedOrg(r.people) : [], projects: orgs ? wantedOrg(r.projects) : [] };
-  const total = want.sessions.length + want.ideas.length + want.todos.length + want.people.length + want.projects.length;
+  const want = {
+    sessions: wanted(r.sessions),
+    ideas: wanted(r.ideas),
+    todos: wanted(r.todos),
+    people: orgs ? wantedOrg(r.people) : [],
+    projects: orgs ? wantedOrg(r.projects) : [],
+    orgs: adds ? wanted(r.orgs) : [],
+    folders: adds ? wantedFolders(r.folders) : [],
+  };
+  const total = want.sessions.length + want.ideas.length + want.todos.length + want.people.length + want.projects.length + want.orgs.length + want.folders.length;
   if (total > CONFIRM_ITEMS_MAX) throw refusal(`A card lists at most ${CONFIRM_ITEMS_MAX} items; this one has ${total}. Split it, or ask about the first ${CONFIRM_ITEMS_MAX}.`);
   const out: ResolvedItem[] = [];
-  const unknown = { sessions: [] as string[], ideas: [] as string[], todos: [] as string[], projects: [] as string[], people: [] as string[] };
+  const unknown = { sessions: [] as string[], ideas: [] as string[], todos: [] as string[], projects: [] as string[], people: [] as string[], orgs: [] as string[], folders: [] as string[] };
   const self: string[] = [];
   const long: string[] = [];
   const seen = new Set<string>();
@@ -143,7 +176,23 @@ export async function resolveConfirmItems(raw: unknown, lookup: ConfirmLookup, r
       out.push(noted({ kind: "todo", id: t.id, text: cut(t.text, 200) }, w));
     }
   }
-  // Projects, then people: the card shows them after ideas and todos, before sessions.
+  // Orgs, folders, projects, then people: the card shows them after ideas and todos, before sessions.
+  for (const w of want.orgs) {
+    const o = lookup.org!(w.ref);
+    if (!o) unknown.orgs.push(w.ref);
+    else if (!seen.has(`org/${o.id}`)) {
+      seen.add(`org/${o.id}`);
+      out.push(noted({ ...o, name: cut(o.name, 120) }, w));
+    }
+  }
+  for (const w of want.folders) {
+    const f = await lookup.folder!(w.ref, w.org || null, w.name);
+    if (!f) unknown.folders.push(w.org ? `${w.ref} into ${w.org}` : w.ref);
+    else if (!seen.has(`folder/${f.orgId ?? ""}/${f.id}`)) {
+      seen.add(`folder/${f.orgId ?? ""}/${f.id}`);
+      out.push(noted(f, w));
+    }
+  }
   for (const w of want.projects) {
     const p = lookup.project!(w.org || null, w.ref);
     if (!p) unknown.projects.push(w.org ? `${w.ref} in ${w.org}` : w.ref);
@@ -163,7 +212,9 @@ export async function resolveConfirmItems(raw: unknown, lookup: ConfirmLookup, r
   const problems: string[] = [];
   const missing = (Object.entries(unknown) as [string, string[]][]).filter(([, v]) => v.length).map(([k, v]) => `${k}: ${v.join(", ")}`);
   if (missing.length)
-    problems.push(`These ids match nothing (${missing.join("; ")}). List them again (sova_list_sessions, sova_ideas, sova_todos${orgs ? ", sova_orgs, sova_projects" : ""}) and use the ids exactly as printed.`);
+    problems.push(
+      `These ids match nothing (${missing.join("; ")}). List them again (sova_list_sessions, sova_ideas, sova_todos${orgs ? ", sova_orgs, sova_projects" : ""}) and use the ids exactly as printed.${unknown.folders.length ? " A folder must be an absolute folder of this host (or ~/…) that the Overseer may add, into an org attached here or none." : ""}`,
+    );
   if (self.length) problems.push(`${self.join(", ")} is your own conversation; a card never lists it. Leave it out.`);
   if (problems.length) throw refusal(`No card was shown. ${problems.join(" ")}`);
   cutNotes?.push(...long);
@@ -175,7 +226,7 @@ export async function resolveConfirmItems(raw: unknown, lookup: ConfirmLookup, r
     project or a gathering session. A click on it opens the only turn that act runs in; typed text never does. */
 export async function clickOnlyCard(items: SovaConfirmItem[], lookup: ConfirmLookup): Promise<boolean> {
   if (!lookup.person || !lookup.project) return false;
-  if (items.some((i) => i.kind === "person" || i.kind === "project")) return true;
+  if (items.some((i) => i.kind === "person" || i.kind === "project" || i.kind === "org" || i.kind === "folder")) return true;
   for (const i of items) {
     if (i.kind !== "session") continue;
     const s = await lookup.session(i.id);
@@ -218,7 +269,25 @@ const orgList = (description: string) => ({
   description,
 });
 
-/** The JSON schema of a card's `items`, for a caller with (`orgs`) or without people and projects. */
+const folderList = {
+  type: "array",
+  items: {
+    type: "object",
+    properties: {
+      root: { type: "string", description: "An absolute folder of this host, or ~/…; the card shows its checkout root." },
+      org: { type: "string", description: "The organization it goes into, by id or exact name; leave out for a standalone project." },
+      name: { type: "string", description: "The project's name, when you will give one." },
+      note: { type: "string", description: NOTE_DESC },
+      default: { type: "string", description: DEFAULT_DESC },
+      choices: choicesProp,
+    },
+    required: ["root"],
+    additionalProperties: false,
+  },
+  description: "Folders to add as projects (sova_org_project add): { root, org?, name?, note }.",
+};
+
+/** The JSON schema of a card's `items`, for a caller with (`orgs`) or without people, projects, orgs and folders. */
 export function itemsSchema(orgs: boolean): Record<string, unknown> {
   return {
     type: "object",
@@ -229,9 +298,14 @@ export function itemsSchema(orgs: boolean): Record<string, unknown> {
       ideas: idList("Idea ids (§ns/name)."),
       todos: idList("Todo ids (td_…)."),
       ...(orgs
-        ? { people: orgList("Roster people: { org, id, note }, the org and the person each by id or exact name."), projects: orgList("Projects: { org, id, note }, each by id or exact name.") }
+        ? {
+            people: orgList("Roster people: { org, id, note }, the org and the person each by id or exact name."),
+            projects: orgList("Projects: { org, id, note }, each by id or exact name."),
+            orgs: idList("Organizations attached here, by id or exact name (sova_org detach)."),
+            folders: folderList,
+          }
         : {}),
     },
-    description: `Every ${orgs ? "session, idea, todo, person or project" : "session, idea or todo"} the question is about, at most ${CONFIRM_ITEMS_MAX}. Required when the card acts on specific things (archive, tick, send, …); then give every item a note. The card numbers them 1..N. Shape: ${ITEMS_EXAMPLE}${orgs ? `; people and projects: ${ORG_EXAMPLE}. An act that reaches people or ends something (a gathering session, a person leaving, a project archived, an overseer cleared) runs only in the turn this card's click opens, and only on what it lists` : ""}.`,
+    description: `Every ${orgs ? "session, idea, todo, person, project, org or folder" : "session, idea or todo"} the question is about, at most ${CONFIRM_ITEMS_MAX}. Required when the card acts on specific things (archive, tick, send, …); then give every item a note. The card numbers them 1..N. Shape: ${ITEMS_EXAMPLE}${orgs ? `; people and projects: ${ORG_EXAMPLE}; orgs and folders: ${ADD_EXAMPLE}. An act that reaches people or ends something (a gathering session, a person leaving, a project archived or imported, an overseer cleared, an org detached), and adding a folder as a project, runs only in the turn this card's click opens, and only on what it lists` : ""}.`,
   };
 }

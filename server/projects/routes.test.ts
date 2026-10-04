@@ -90,3 +90,23 @@ test("a clone relayed from a peer is refused: main listener only", async () => {
   assert.equal(res.status, 403);
   assert.ok(!readdirSync(parent).includes("relayed"));
 });
+
+test("a page add records no via, a forged Overseer header (no secret) included; its clone keeps the page's URLs", async () => {
+  const { hostOf } = await import("../org-engine");
+  const folder = join(tmp, "plain-page");
+  mkdirSync(folder);
+  const res = await post({ root: folder }, { "x-sova-overseer": "not-the-secret", "x-sova-overseer-card": JSON.stringify({ folders: [{ root: folder, org: null }] }) });
+  assert.equal(res.status, 201);
+  const { project } = (await res.json()) as { project: { id: string } };
+  assert.equal(hostOf(project.id).data(`project/${project.id}`)?.via, undefined);
+  // Not the Overseer: a file:// clone is still the page's to make.
+  const src = sourceRepo("forged");
+  assert.equal((await post({ clone: { repo: `file://${src}`, parent } }, { "x-sova-overseer": "not-the-secret" })).status, 201);
+});
+
+test("the Overseer's clone rule (§app.overseer/org-project-add): https without credentials, ssh, user@host:path; never file, git, http, ext or this machine", async () => {
+  const { overseerRepoProblem, repoUrlOf } = await import("./clone");
+  for (const ok of ["https://github.com/o/r.git", "ssh://git@github.com/o/r.git", "git@github.com:o/r.git", repoUrlOf("o/r")]) assert.equal(overseerRepoProblem(ok), null, ok);
+  for (const bad of ["file:///tmp/r", "git://github.com/o/r", "http://github.com/o/r", "https://u:p@github.com/o/r", "https://tok@github.com/o/r", "ssh://u:p@github.com/o/r", "ext::sh -c x", "/tmp/r", "git@localhost:/tmp/r", "ssh://127.0.0.1/tmp/r", "https://[::1]/r", "-u"])
+    assert.notEqual(overseerRepoProblem(bad), null, bad);
+});

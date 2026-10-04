@@ -2753,7 +2753,9 @@
         "src/lib/older-rows.ts",
         "src/lib/older-rows.test.ts",
         "src/lib/session-links.ts",
-        "src/lib/card-refs.ts"
+        "src/lib/card-refs.ts",
+        "server/overseer-org-tools.ts",
+        "server/overseer-folders.ts"
       ],
       "requires": [
         "§app.overseer/tools",
@@ -2850,14 +2852,15 @@
     "§app.overseer/navigation": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "code": [
         "server/overseer-tools.ts",
         "src/lib/overseer.ts",
         "src/components/ChatView.tsx",
         "src/components/Thread.tsx",
         "src/components/ToolCard.tsx",
-        "src/lib/live.ts"
+        "src/lib/live.ts",
+        "server/overseer-card-tool.ts"
       ],
       "requires": [
         "§chat.transcript/a-queued-message"
@@ -6704,7 +6707,9 @@
         "src/lib/profile-changes.test.ts",
         "src/lib/owner-card.test.ts",
         "src/lib/stakeholder.test.ts",
-        "src/lib/coding-worktrees.test.ts"
+        "src/lib/coding-worktrees.test.ts",
+        "server/projects/spaces.ts",
+        "server/project-import.ts"
       ],
       "requires": [
         "§app.overseer/sent-marker",
@@ -6731,7 +6736,8 @@
         "src/components/ChatView.tsx",
         "src/components/Thread.tsx",
         "server/org-routes.ts",
-        "server/orgs.ts"
+        "server/orgs.ts",
+        "server/overseer-sender.ts"
       ],
       "requires": [
         "§app.overseer/confirm",
@@ -10574,9 +10580,11 @@
         "shared/project-contract.ts",
         "shared/project-contract.test.ts",
         "server/project-services/engine.ts",
+        "server/project-services/copy-tree.ts",
         "server/project-services/share.test.ts",
         "server/project-services/data-own-source.test.ts",
-        "server/project-services/ports-grace.test.ts"
+        "server/project-services/ports-grace.test.ts",
+        "server/project-services/copy-tree.test.ts"
       ]
     },
     "§app.project-services/create": {
@@ -11761,7 +11769,8 @@
         "server/projects/clone.ts",
         "server/projects/routes.ts",
         "server/projects/routes.test.ts",
-        "src/components/AddProjectDialog.tsx"
+        "src/components/AddProjectDialog.tsx",
+        "server/overseer-folders.ts"
       ],
       "requires": [
         "§app.projects/registration"
@@ -11814,7 +11823,8 @@
         "src/components/AddProjectDialog.tsx",
         "src/components/SessionDetails.tsx",
         "src/lib/projects.ts",
-        "src/lib/projects.test.ts"
+        "src/lib/projects.test.ts",
+        "server/overseer-folders.ts"
       ],
       "requires": [
         "§app.organizations/registry"
@@ -11881,7 +11891,8 @@
         "server/index.ts",
         "src/components/OrgsView.tsx",
         "src/lib/api.ts",
-        "src/orgs.css"
+        "src/orgs.css",
+        "server/overseer-org-tools.test.ts"
       ],
       "requires": [
         "§app.projects/placement",
@@ -12777,6 +12788,38 @@
         "scripts/mesh-termux/README.md",
         "scripts/fetch-bun.sh",
         "scripts/bun-release.txt"
+      ]
+    },
+    "§app.overseer/org-project-add": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/overseer-org-tools.ts",
+        "server/overseer-folders.ts",
+        "server/projects/routes.ts",
+        "server/projects/clone.ts",
+        "server/projects/spaces.ts",
+        "server/org-routes.ts",
+        "server/orgs.ts",
+        "server/project-import.ts",
+        "server/overseer-sender.ts",
+        "server/overseer-prompt.md",
+        "server/overseer-org-tools.test.ts",
+        "server/overseer-runtime.test.ts",
+        "server/projects/routes.test.ts"
+      ],
+      "requires": [
+        "§app.overseer/org-writes",
+        "§app.overseer/confirm",
+        "§app.projects/registration",
+        "§app.projects/clone",
+        "§app.projects/placement",
+        "§app.projects/import",
+        "§app.organizations/registry",
+        "§app.overseer/org-attribution",
+        "§app.overseer/caps",
+        "§app.overseer/tools"
       ]
     }
   },

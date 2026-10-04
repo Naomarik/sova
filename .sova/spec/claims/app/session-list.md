@@ -29,6 +29,12 @@
       <button class="button button-sm button-ghost sidebar-select-start" type="button">…check…Select</button>
       <button class="button button-icon button-ghost" type="button" aria-label="Search sessions"
               title="Search sessions · /">…search…</button>
+      <!-- only while work is running: the working-now line (§app.session-list/working-now) -->
+      <a class="sidebar-working" href="#/agents" aria-label="2 sessions · 5 subagents working"
+         title="2 sessions · 5 subagents working">
+        <span class="sidebar-working-part">…chat…<span class="text-num">2</span></span>
+        <span class="sidebar-working-sep" aria-hidden="true">·</span>
+        <span class="sidebar-working-part">…worker…<span class="text-num">5</span></span></a>
       <!-- the Overseer entry button (§app.overseer/entry-button), with its unread badge -->
       <a class="button button-sm button-ghost overseer-entry" href="#/overseer" aria-label="Overseer"
          title="Overseer · Alt+O">…eye…Overseer</a>
@@ -235,10 +241,11 @@ label a person reads says "sessions pane".
       <button class="button button-icon spine-item spine-region" type="button"
               aria-label="Archive · 40 sessions" title="Archive · 40 sessions">…archive…<span class="spine-count">40</span></button>
     </div>
-    <!-- omitted when both tallies are 0 (the LLM tally: only a complete 0) -->
+    <!-- omitted when both tallies are 0 (the agents tally: only a complete 0) -->
     <div class="spine-stats">
       <button class="button button-icon spine-item spine-stat" type="button"
-              aria-label="3 LLM calls running now" title="3 LLM calls running now">…worker…<span class="spine-count">3</span></button>
+              aria-label="7 agents working now: 2 sessions and 5 subagents. Output tokens a minute: 48k over the last 5 minutes, 12k over 30. Replies still being written aren't counted yet."
+              title="{the same}">…worker…<span class="spine-count">7</span></button>
       <button class="button button-icon spine-item spine-stat" type="button"
               aria-label="2 sessions open in a TUI" title="2 sessions open in a TUI">…terminal…<span class="spine-count">2</span></button>
     </div>
@@ -325,9 +332,12 @@ label a person reads says "sessions pane".
   `<summary>`. The Archive's, Organizations' and Needs you's open state is **left to the user** — it is their stored choice, and the button never
   forces one open. If the region is gone by the time the pane has expanded, focus goes to the
   head's collapse toggle.
-- **Live tallies.** The LLM calls in flight (§app.insights/llm-inflight) — the expanded foot's
-  Agents row's own figure (the bare `{n}` whenever known, partial too, `–` while unknown) and its sentence, "3
-  LLM calls running now" — shown unless the count is a complete 0; and
+- **Live tallies.** The working count (§app.session-list/working-now) — the expanded foot's
+  Agents row's own figure (the bare `{n}` whenever known, a floor too, `–` while unknown), named by
+  the count's sentence, the toolbar line's breakdown, then the load average's sentence
+  (§app.insights/token-velocity): "7 agents working now: 2 sessions and 5 subagents. Output tokens
+  a minute: 48k over the last 5 minutes, 12k over 30. Replies still being written
+  aren't counted yet." — shown unless the count is a complete 0; and
   "{n} sessions open in a TUI" (every live session, whatever the search filters), only at
   n ≥ 1, with `.spine-stats` omitted when both are left out. They are **facts, not doorways**: nothing
   opens. Pointer users get the sentence as the `title`; a tap raises the same sentence as a toast,
@@ -337,8 +347,9 @@ label a person reads says "sessions pane".
   gauge, as it sits beside the Usage glance. Resource monitor opens the monitor modal, exactly as
   the foot's button does (§app.resource-monitor/entry-button). The glance sentences are not dropped at 64px, only unprinted: Usage's `title` and
   `aria-label` are the usage glance in full words (`glanceText()`), and Agents' are the Agents
-  row's own sentence (§app.insights/sidebar-foot, e.g. "Agents: 3 LLM calls running now. On this
-  host, subagents are working in 2 sessions and 1 team."). Usage
+  row's own sentence (§app.insights/sidebar-foot, e.g. "Agents: 7 agents working now: 2 sessions
+  and 5 subagents. Output tokens a minute: 48k over the last 5 minutes, 12k over 30.
+  Replies still being written aren't counted yet."). Usage
   falls back to "Usage" only when its sentence is empty — no usage cache to read.
   What has no room is the printed text, not the fact.
   A doorway to the page on screen carries `aria-current="page"` and the tint.
@@ -2099,12 +2110,13 @@ record whose transcript is gone.
 - **One toolbar line, every width.** Below the brand row the pane carries exactly one toolbar
   row, unfolded and folded alike — the desktop's separate search row and count row are gone.
   Left to right it holds: `Select` (while not in selection mode,
-  §app.session-list/selecting-several-sessions), then a wordless **search icon button**, and at
-  the right end the Overseer entry button (§app.overseer/entry-button), a labelled button with
-  its unread badge. The field is not on screen until that icon is pressed; then it opens **in
-  the same line**, focused at once, and the line holds only the field (with its Clear Search `×`
-  while there is a query) and a **Close Search** button — `Select`, the search icon
-  and the Overseer button are gone from it. The hidden count stays in the DOM, so the
+  §app.session-list/selecting-several-sessions), then a wordless **search icon button**, then,
+  only while work is running, the **working-now line** (§app.session-list/working-now) in the
+  gap, and at the right end the Overseer entry button (§app.overseer/entry-button), a labelled
+  button with its unread badge. The field is not on screen until that icon is pressed; then it
+  opens **in the same line**, focused at once, and the line holds only the field (with its Clear
+  Search `×` while there is a query) and a **Close Search** button — `Select`, the search icon,
+  the working-now line and the Overseer button are gone from it. The hidden count stays in the DOM, so the
   field's description and the live count still speak. The line stays open while there is a
   query, and blur never closes it: leaving the field and coming back finds it as it was left.
   **Close Search** clears the query and folds the line back, and focus returns to the search
@@ -2113,6 +2125,58 @@ record whose transcript is gone.
   it opens the line first, at every width (from the spine, the pane expands first,
   §app.session-list/spine). `Esc` inside search clears the query first; a second press closes
   the line, as Close Search does. Clear Search returns focus to the input.
+
+## §app.session-list/working-now — Working now: the toolbar's breakdown, and the one count
+
+**One count says how much work is running right now: the sessions whose own turn is running,
+plus the subagents working, on this host and every connected host.** It is `workNow()` in
+`src/lib/work-now.ts`, one pure function, and every place that shows it reads it — the toolbar's
+breakdown line (below), the foot's Agents row and its doorway on the spine
+(§app.insights/sidebar-foot), the phone bar (§app.insights/sidebar-foot-phone) and the spine's
+tally (§app.session-list/spine) — so no two can disagree.
+
+- **Sessions** are main threads whose own turn is running. On this host: each fresh host session
+  in the Agents poll (a fresh live record that isn't a headless worker pi, `isHostSession`) whose
+  `state` is `working`. On a connected host: each row of that peer's session
+  list that isn't a worker's own session, with `activity.state` `working`, or not open in a TUI
+  and `busy`. A session's subagents never make its own turn count.
+- **Subagents** are workers working: each such session's `workerCounts.working` (starting,
+  running or stopping; a waiting, done, failed or stopped worker never counts) on this host, and
+  each peer row's `workers.working`. Team members are workers, so they are in it already: a team
+  is never added, and no worker is counted twice.
+- **The open chat** speaks for itself: while a chat is open, its socket's own run state and its
+  socket's working-subagent count replace what the poll or the peer list said of that session
+  (and count it when neither lists it yet), so the count moves with the composer, not 5 s later.
+- **Connected hosts** count from the session lists the page already reads every 15 s
+  (§mesh.remote-sessions/host-filter) — nothing new is polled. A peer that isn't answering, whose
+  list is a stale one, or whose list hasn't come yet adds nothing, and the count is then a
+  **floor**: the figures stay bare, and only the sentence says so — "At least 7 agents working
+  now: 2 sessions and 5 subagents. Work on desk isn't counted: it isn't answering." ("desk and
+  laptop … they aren't answering"; a floor of 0: "No agents seen working now. …"). A host that
+  keeps its sessions from this one (`hidden`, §mesh.peers/grants) is left out altogether: nothing
+  of it is shown, so it neither adds to the count nor makes it a floor.
+- **Unknown** until the first Agents poll answers: no figure anywhere, never a 0, and the
+  sentence "Agents working now: not known yet".
+- **The sentence** — "7 agents working now: 2 sessions and 5 subagents" ("1 agent working now: 1
+  session"; a part at 0 left out, "3 agents working now: 3 subagents"); "No agents working now" at
+  a known 0.
+
+**The breakdown line.** In the toolbar line (§app.session-list/search), between the search icon
+and the Overseer button, a link to `#/agents` (`a.sidebar-working`) shows each part as an icon
+before its figure, no words: the `chat` icon and the sessions, then ` · `, then the `worker` icon
+(the foot's person) and the subagents — `[chat]2 · [worker]5`. A part at 0 is left out, its icon
+with it (`[worker]5` alone). The icons are the toolbar's 16px `.icon-sm`, muted; the figures are
+`.text-num`. Its `title` and `aria-label` carry the words: "2 sessions · 5 subagents working"
+("1 session working", "5 subagents working"), and while the count is a floor, "At least " before
+it and the missing hosts' sentence after it ("At least 2 sessions · 5 subagents working. Work on
+desk isn't counted: it isn't answering."). It is the same at every width, the pane's own on a
+desktop and the whole screen on a phone; the spine has no line, and its tally's name carries the
+count's sentence. It is **omitted** at 0 (a floor of 0 too) and while unknown, and while the
+search field is open, when the line holds only the field. It takes only the gap the line already
+had (about 66px in a 320px pane, with `Select` shown: `[chat]2 · [worker]5` is 64px), and the
+**figures are never cut**: where the parts won't fit beside the line's other items (figures of
+three digits there), the line measures it and drops the icons, `12 · 148`, keeping every figure. It ignores the search and the host filter, so it always adds up to the foot's
+figure.
 
 ## §app.session-list/states — States
 

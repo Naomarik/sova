@@ -18,6 +18,9 @@
  * (its options copied with an `onPayload` that calls the caller's own and returns what it returns),
  * its stream is returned as is, a synchronous throw is rethrown, and the end is read from the
  * stream's own result promise (never a second iterator) or its `end()`.
+ *
+ * The one thing read from a reply is its final message's `usage.output` (output tokens, reasoning
+ * included), handed to the call's end with the time of its first streamed event (tracker.ts's ring).
  */
 import { beginLlmCall, markCounting, markDegraded, withinLlmCall, type LlmCallEnd } from "./tracker.ts";
 
@@ -76,10 +79,16 @@ function around(stream: object, name: string, after: (args: unknown[]) => void):
 	}
 }
 
+/** A final message's output tokens (pi's `usage.output`: reasoning included, never input or cache). */
+function outputOf(message: unknown): number {
+	const n = (message as { usage?: { output?: unknown } } | undefined)?.usage?.output;
+	return typeof n === "number" && Number.isFinite(n) && n > 0 ? n : 0;
+}
+
 /**
- * Watch `stream` until it ends, then end `call`. The call is in flight from its issue: the request's
- * `onPayload` (every pi provider calls it just before sending), else the stream's first event that
- * isn't an error. Never throws.
+ * Watch `stream` until it ends, then end `call` with its reply's output tokens. The call is in
+ * flight from its issue: the request's `onPayload` (every pi provider calls it just before
+ * sending), else the stream's first event that isn't an error. Never throws.
  */
 function finishWith(stream: unknown, call: LlmCallEnd, onResult?: (message: unknown) => void): void {
 	try {
@@ -87,9 +96,16 @@ function finishWith(stream: unknown, call: LlmCallEnd, onResult?: (message: unkn
 			call();
 			return;
 		}
+		let firstAt: number | undefined;
 		Promise.resolve(stream.result()).then(
 			(message) => {
-				call();
+				let output = 0;
+				try {
+					output = outputOf(message);
+				} catch {
+					// Bookkeeping only.
+				}
+				call(output ? { output, since: firstAt } : undefined);
 				try {
 					onResult?.(message);
 				} catch {
@@ -105,11 +121,16 @@ function finishWith(stream: unknown, call: LlmCallEnd, onResult?: (message: unkn
 			const type = (args[0] as { type?: unknown } | undefined)?.type;
 			if (type === "error") return;
 			seen = true;
+			firstAt = Date.now();
 			call.waiting(false);
 			restorePush?.();
 		});
-		// A stream ended without a final message never settles its result: its end() still ends the call.
-		around(stream, "end", () => call());
+		// A stream ended without a final message never settles its result: its end() still ends the
+		// call. One microtask later, so a final message settled just before (pi's push of "done"
+		// resolves the result, then end() runs) ends it first, with its tokens.
+		around(stream, "end", () => {
+			Promise.resolve().then(() => call());
+		});
 	} catch {
 		call();
 	}

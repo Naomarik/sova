@@ -24,6 +24,7 @@ import type {
 } from "../../shared/mesh-links";
 import type { LinkSandbox } from "../link-sandbox";
 import type { SessionSummary } from "../../shared/protocol";
+import { NotShared } from "./access";
 import { MeshLinks, MEMBER_CACHE_MS } from "./links";
 import { mountLinks } from "./links-routes";
 import type { PeerEntry } from "./peers";
@@ -55,12 +56,46 @@ interface Host {
   sandbox: (sessionId: string) => LinkSandbox;
   /** The next tar body served to this host is cut after this many bytes (a dropped connection). */
   cutTarAt?: number;
+  /** Peers this host's grant withholds links from: its peerFetch refuses link sends to them, as the
+      real outbound gate does (reads of the peer by id still go). */
+  withholdLinks: Set<string>;
+  /** Peers this host marked down (sawPeer false). */
+  sawDown: string[];
+  /** Called with every peerFetch, before it goes. */
+  onFetch?: (peerId: string, path: string) => void;
+  /** The call reaches the peer, but its answer is lost on the way back. */
+  loseAnswer?: (peerId: string, path: string) => boolean;
+  /** This host's LAN key pin (lower-case hex): it goes by lan:<pin> to its LAN pairings. */
+  lanPin?: string;
+  /** Peers this host is paired with over LAN: each names the other lan:<pin>. */
+  lanWith: Set<string>;
+  /** The mesh can't say how a peer knows this host (only a whoami answer can). */
+  noSelfFor?: boolean;
+  /** Hosts missing from this host's peers.json. */
+  hidePeers: Set<string>;
+  /** While set, this host's own session lookups (deps.summary) wait for it. */
+  stall?: Promise<void>;
+  /** The call goes and runs on the peer, but this host stops waiting at once (its hop timed out). */
+  detachAnswer?: (peerId: string, path: string) => boolean;  /** The calls detachAnswer let run on. */
+  detached: Array<Promise<void>>;
 }
 
 let hosts: Record<string, Host> = {};
 let n = 0;
 
-const entryOf = (h: Host): PeerEntry => ({ id: h.id, label: h.label, nodeId: h.nodeId, dnsName: `${h.id}.test` });
+/** Host `h` as `viewer` has it in peers.json: by lan:<pin> over a LAN pairing, else its tailnet id. */
+const entryOf = (h: Host, viewer?: Host): PeerEntry =>
+  viewer?.lanWith.has(h.id) && h.lanPin
+    ? { id: h.id, label: h.label, nodeId: `lan:${h.lanPin}`, dnsName: "", lan: { role: "accept", pin: h.lanPin.toUpperCase() } }
+    : { id: h.id, label: h.label, nodeId: h.nodeId, dnsName: `${h.id}.test` };
+
+/** Pair two hosts over LAN (each gets a pin); `knowsSelf: false` too makes one LAN-only. */
+function pairLan(x: Host, y: Host): void {
+  for (const h of [x, y]) h.lanPin ??= randomBytes(16).toString("hex");
+  x.lanWith.add(y.id);
+  y.lanWith.add(x.id);
+}
+const lanId = (h: Host) => `lan:${h.lanPin}`;
 
 function summary(id: string, extra: Partial<SessionSummary> = {}): SessionSummary {
   return {
@@ -79,7 +114,7 @@ function summary(id: string, extra: Partial<SessionSummary> = {}): SessionSummar
   } as SessionSummary;
 }
 
-function makeHost(id: string, label: string, opts: Partial<Pick<Host, "knowsSelf" | "old" | "noById">> = {}): Host {
+function makeHost(id: string, label: string, opts: Partial<Host> = {}): Host {
   const h = {
     id,
     label,
@@ -98,7 +133,13 @@ function makeHost(id: string, label: string, opts: Partial<Pick<Host, "knowsSelf
     peerUp: [],
     clock: 1_000_000,
     sandbox: () => ({ on: false }),
+    withholdLinks: new Set(),
+    sawDown: [],
+    lanWith: new Set(),
+    hidePeers: new Set(),
+    detached: [],
   } as Host;
+  Object.assign(h, opts);
   hosts[id] = h;
   const byId = (c: import("hono").Context, sid: string) => {
     const s = h.sessions.get(sid);
@@ -108,13 +149,29 @@ function makeHost(id: string, label: string, opts: Partial<Pick<Host, "knowsSelf
   if (!h.noById) h.app.get("/api/sessions/by-id/:id", (c) => byId(c, c.req.param("id")));
   const mesh = {
     enabled: () => true,
-    peers: () => Object.values(hosts).filter((o) => o !== h).map(entryOf),
+    peers: () =>
+      Object.values(hosts)
+        .filter((o) => o !== h && !h.hidePeers.has(o.id))
+        .map((o) => entryOf(o, h)),
     self: () => ({ id: h.id, label: h.label }),
     selfNode: () => ({ ...(h.knowsSelf ? { nodeId: h.nodeId } : {}), addresses: [] }),
+    selfNodeIds: () => [...(h.knowsSelf ? [h.nodeId] : []), ...(h.lanPin ? [lanId(h)] : [])],
+    selfNodeIdFor: (peer: PeerEntry) => (h.noSelfFor ? undefined : peer.lan ? (h.lanPin ? lanId(h) : undefined) : h.knowsSelf ? h.nodeId : undefined),
+    mayShareWith: (peerId: string, cap: string) => cap !== "links" || !h.withholdLinks.has(peerId),
     peerFetch: async (peerId: string, path: string, init?: RequestInit) => {
+      h.onFetch?.(peerId, path);
+      if (h.withholdLinks.has(peerId) && /^\/api\/peer\/links(?:[/?]|$)/.test(path) && !/^\/api\/peer\/links\/(?:whoami|read)(?:\?|$)/.test(path)) throw new NotShared(peerId);
       const to = hosts[peerId];
       if (!to?.up) throw new TypeError("fetch failed");
-      const res = await to.app.request(path, init, { meshPeer: entryOf(h) });
+      if (h.detachAnswer?.(peerId, path)) {
+        h.detached.push(Promise.resolve(to.app.request(path, init, { meshPeer: entryOf(h, to) })).then(() => undefined));
+        throw new TypeError("The operation timed out.");
+      }
+      const res = await to.app.request(path, init, { meshPeer: entryOf(h, to) });
+      if (h.loseAnswer?.(peerId, path)) {
+        await res.body?.cancel();
+        throw new TypeError("fetch failed");
+      }
       if (h.cutTarAt === undefined || !path.endsWith("/tar") || (res.status !== 200 && res.status !== 206) || !res.body) return res;
       return cutAfter(res, h, h.cutTarAt);
     },
@@ -122,11 +179,14 @@ function makeHost(id: string, label: string, opts: Partial<Pick<Host, "knowsSelf
     onPeerUp: (fn: (peerId: string) => void) => void h.peerUp.push(fn),
     onMeshStart: () => {},
     onMeshStop: () => {},
-    sawPeer: () => {},
+    sawPeer: (peerId: string, up: boolean) => void (up || h.sawDown.push(peerId)),
   };
   const deps = {
     root: () => h.root,
-    summary: async (sid: string) => h.sessions.get(sid) ?? null,
+    summary: async (sid: string) => {
+      if (h.stall) await h.stall;
+      return h.sessions.get(sid) ?? null;
+    },
     held: (sid: string) => (h.held.has(sid) ? (h.sessions.get(sid)?.path ?? null) : null),
     deliver: async (path: string, framed: string) => {
       h.delivered.push({ path, framed });
@@ -295,6 +355,99 @@ describe("the record (§mesh.links/record)", () => {
     C.sessions.set("sc", summary("sc"));
     r = await act<LinkError>(A, "POST", "/api/mesh/links", { members: [{ session: "sa" }, { host: "c", session: "sc" }] });
     assert.equal(r.json.reason, "old-build");
+  });
+
+  test("a member on a peer this host doesn't share links with is refused as such, never as down", async () => {
+    A.withholdLinks.add("b");
+    const r = await act<LinkError>(A, "POST", "/api/mesh/links", { members: [{ session: "sa" }, { host: "b", session: "sb" }] });
+    assert.equal(r.status, 409);
+    assert.equal(r.json.member, 1);
+    assert.match(r.json.error, /this host doesn't share links with Beta/);
+    assert.match(r.json.error, /Mesh page/);
+    assert.doesNotMatch(r.json.error, /didn't answer|down/);
+    assert.equal(A.links.all().length, 0);
+    assert.equal(B.links.all().length, 0);
+    assert.deepEqual(A.links.pending(), []);
+    assert.deepEqual(A.sawDown, []);
+  });
+
+  test("a grant lowered while the link is being made: refused, no live link left anywhere, nothing held", async () => {
+    // After the check, before the copy goes: the member lookup is the last call before it.
+    A.onFetch = (peerId, path) => {
+      if (path.startsWith("/api/sessions/")) A.withholdLinks.add(peerId);
+    };
+    let r = await act<LinkError>(A, "POST", "/api/mesh/links", { members: [{ session: "sa" }, { host: "b", session: "sb" }] });
+    assert.equal(r.status, 409);
+    assert.equal(r.json.member, 1);
+    assert.match(r.json.error, /this host doesn't share links with Beta/);
+    assert.equal(A.links.all().length, 0, "no local record of a link that never got out");
+    assert.equal(B.links.all().length, 0);
+    assert.deepEqual(A.links.pending(), []);
+    assert.deepEqual(A.sawDown, []);
+    // Three members: Gamma's copy got out, so the link is ended there and here, never left live.
+    A.withholdLinks.clear();
+    const C = makeHost("c", "Gamma");
+    C.sessions.set("sc", summary("sc"));
+    A.onFetch = (peerId, path) => {
+      if (peerId === "b" && path.startsWith("/api/sessions/")) A.withholdLinks.add("b");
+    };
+    r = await act<LinkError>(A, "POST", "/api/mesh/links", { members: [{ session: "sa" }, { host: "c", session: "sc" }, { host: "b", session: "sb" }] });
+    assert.equal(r.status, 409);
+    assert.equal(r.json.member, 2);
+    await settle();
+    assert.ok(A.links.all().every((l) => l.endedAt !== undefined), "no live local link");
+    assert.ok(C.links.all().length === 1 && C.links.all()[0]!.endedAt !== undefined, "Gamma's copy is ended");
+    assert.equal(B.links.all().length, 0);
+    assert.deepEqual(A.links.pending(), []);
+    assert.deepEqual(A.sawDown, []);
+  });
+
+  test("a refused link's copy held for a host that was down never reaches it live, even once that host is back", async () => {
+    const C = makeHost("c", "Gamma");
+    C.sessions.set("sc", summary("sc"));
+    let copyFailed = false;
+    A.onFetch = (peerId, path) => {
+      // B's grant drops after its lookup; C's copy finds it down once, then C is back (for the end).
+      if (peerId === "b" && path.startsWith("/api/sessions/")) A.withholdLinks.add("b");
+      if (peerId === "c") {
+        if (path === "/api/peer/links" && !copyFailed) {
+          copyFailed = true;
+          C.up = false;
+        } else C.up = true;
+      }
+    };
+    const r = await act<LinkError>(A, "POST", "/api/mesh/links", { members: [{ session: "sa" }, { host: "c", session: "sc" }, { host: "b", session: "sb" }] });
+    assert.equal(r.status, 409);
+    assert.equal(r.json.member, 2);
+    assert.ok(copyFailed, "C's copy was held, not sent");
+    await settle();
+    C.up = true;
+    await A.links.flush();
+    await settle();
+    C.links.forgetForTest();
+    assert.deepEqual(
+      C.links.all().filter((l) => l.endedAt === undefined),
+      [],
+      "no live link on C",
+    );
+    assert.deepEqual(
+      A.links.pending().filter((e) => e.kind === "link"),
+      [],
+      "no creation copy still held",
+    );
+    assert.ok(A.links.all().every((l) => l.endedAt !== undefined), "no live local link");
+    assert.equal(B.links.all().length, 0);
+  });
+
+  test("a message to a peer this host stopped sharing links with is refused, never held as if the peer were down", async () => {
+    await link();
+    A.withholdLinks.add("b");
+    const r = await act<LinkSendResult>(A, "POST", "/api/mesh/links/send", { session: "sa", text: "hi" });
+    assert.equal(r.status, 200);
+    assert.equal(r.json.deliveries[0]!.state, "refused");
+    assert.deepEqual(A.links.pending(), []);
+    assert.deepEqual(A.sawDown, []);
+    assert.equal(B.delivered.length, 0);
   });
 
   test("a peer that answers only summary?id= is still resolved", async () => {
@@ -878,5 +1031,312 @@ describe("file offers (§mesh.links/offers, §mesh.links/transfer)", () => {
     assert.equal(bRows[0]!.transfer?.dir, "out");
     await act(B, "POST", `/api/mesh/links/offers/${r.json.offer.id}/decline`, { session: "sb" });
     assert.equal((await A.links.linkedAgents("sa"))[0]!.transfer, undefined);
+  });
+});
+
+// ---- a host's names (§mesh.links/host-names) -------------------------------------------------------
+
+/** A host restarted on the same state: a fresh MeshLinks reading its records from disk. */
+function restart(h: Host, change: Partial<Host> = {}): Host {
+  h.links.stop();
+  return makeHost(h.id, h.label, { root: h.root, sessions: h.sessions, held: h.held, knowsSelf: h.knowsSelf, lanPin: h.lanPin, lanWith: h.lanWith, clock: h.clock, ...change });
+}
+const linkOn = (h: Host, members: Array<{ host?: string; session: string }>) => act<MeshLinkView & LinkError>(h, "POST", "/api/mesh/links", { members });
+const send = (h: Host, session: string, text: string) => act<LinkSendResult & LinkError>(h, "POST", "/api/mesh/links/send", { session, text });
+const lastText = (h: Host) => parseLinkMessage(h.delivered.at(-1)?.framed ?? "")?.text;
+
+describe("a host's names (§mesh.links/host-names)", () => {
+  // Alpha is on a tailnet and LAN-paired with Beta; Beta has no tailnet identity (LAN only).
+  beforeEach(() => {
+    B.knowsSelf = false;
+    pairLan(A, B);
+    for (const h of [A, B]) workIn(h, h === A ? "sa" : "sb");
+    makeTree(A);
+    makeTree(B);
+  });
+
+  test("a tailnet + LAN host links with a LAN-only host: each keeps it in its own terms; messages, offers and the end go both ways", async () => {
+    const v = await link();
+    const id = v.link.id;
+    assert.deepEqual(
+      v.link.members.map((m) => m.nodeId),
+      [A.nodeId, lanId(B)],
+    );
+    const onB = B.links.get(id);
+    assert.ok(onB, "Beta holds the link");
+    assert.equal(onB.createdBy, lanId(A));
+    assert.deepEqual(
+      onB.members.map((m) => m.nodeId),
+      [lanId(A), lanId(B)],
+    );
+    assert.equal(B.links.localMember(onB)?.sessionId, "sb");
+    assert.equal(A.links.localMember(A.links.get(id)!)?.sessionId, "sa");
+    let s = await send(A, "sa", "hello Beta");
+    assert.equal(s.json.deliveries?.[0]?.state, "started", JSON.stringify(s.json));
+    assert.equal(lastText(B), "hello Beta");
+    s = await send(B, "sb", "hello Alpha");
+    assert.equal(s.json.deliveries?.[0]?.state, "started", JSON.stringify(s.json));
+    assert.equal(lastText(A), "hello Alpha");
+    // Alpha → Beta with dest: Beta pulls it at once.
+    let r = await offer({ paths: ["notes.md"], dest: "in" });
+    assert.equal(r.status, 200, JSON.stringify(r.json));
+    const o1 = r.json.offer.id;
+    await until(() => offerOf(A, o1)?.recipients[0]?.state === "done", 15_000, "Alpha's offer done");
+    assert.ok(existsSync(join(B.root, "work", "in", "notes.md")));
+    // Beta → Alpha without dest: Alpha's agent accepts it.
+    r = await offer({ session: "sb", paths: ["notes.md"] }, B);
+    assert.equal(r.status, 200, JSON.stringify(r.json));
+    const o2 = r.json.offer.id;
+    assert.equal(r.json.deliveries[0]!.state, "offered", JSON.stringify(r.json.deliveries));
+    const ok = await act<LinkOffer>(A, "POST", `/api/mesh/links/offers/${o2}/accept`, { session: "sa", dest: "got" });
+    assert.equal(ok.status, 200, JSON.stringify(ok.json));
+    await until(() => offerOf(B, o2)?.recipients[0]?.state === "done", 15_000, "Beta's offer done");
+    assert.ok(existsSync(join(A.root, "work", "got", "notes.md")));
+    for (const [h, sid] of [
+      [A, "sa"],
+      [B, "sb"],
+    ] as const) {
+      const list = await act<LinkOffersList>(h, "GET", `/api/mesh/links/offers?session=${sid}`);
+      assert.deepEqual(list.json.offers.map((o) => o.id).sort(), [o1, o2].sort(), h.label);
+    }
+    await act<MeshLinkView>(B, "POST", `/api/mesh/links/${id}/end`);
+    await settle();
+    assert.notEqual(A.links.get(id)!.endedAt, undefined, "Beta's end reached Alpha");
+  });
+
+  test("a LAN-only host links with a tailnet + LAN host: the copy naming it lan:<pin> is taken as itself", async () => {
+    const r = await linkOn(B, [{ session: "sb" }, { host: "a", session: "sa" }]);
+    assert.equal(r.status, 200, JSON.stringify(r.json));
+    const onA = A.links.get(r.json.link.id);
+    assert.ok(onA, "Alpha holds the link");
+    assert.equal(onA.createdBy, lanId(B));
+    assert.deepEqual(
+      onA.members.map((m) => m.nodeId),
+      [lanId(B), A.nodeId],
+    );
+    let s = await send(B, "sb", "from Beta");
+    assert.equal(s.json.deliveries?.[0]?.state, "started", JSON.stringify(s.json));
+    s = await send(A, "sa", "from Alpha");
+    assert.equal(s.json.deliveries?.[0]?.state, "started", JSON.stringify(s.json));
+    assert.equal(lastText(B), "from Alpha");
+  });
+
+  test("a link with a member on a LAN pairing joins only two hosts: a third one is refused up front", async () => {
+    const C = makeHost("c", "Gamma");
+    C.sessions.set("sc", summary("sc"));
+    let r = await linkOn(A, [{ session: "sa" }, { host: "b", session: "sb" }, { host: "c", session: "sc" }]);
+    assert.equal(r.status, 409, JSON.stringify(r.json));
+    assert.equal(r.json.reason, "lan-pairing");
+    assert.equal(r.json.member, 1);
+    assert.match(r.json.error, /Beta is a LAN pairing/);
+    // The Overseer linking the pairing with another peer makes three hosts too.
+    r = await linkOn(A, [{ host: "c", session: "sc" }, { host: "b", session: "sb" }]);
+    assert.equal(r.status, 409, JSON.stringify(r.json));
+    assert.equal(r.json.reason, "lan-pairing");
+    assert.equal(r.json.member, 1);
+    for (const h of [A, B, C]) assert.equal(h.links.all().length, 0, h.label);
+    assert.deepEqual(A.links.pending(), []);
+    r = await linkOn(A, [{ session: "sa" }, { host: "c", session: "sc" }]);
+    assert.equal(r.status, 200, "a tailnet pair is still linked");
+  });
+
+  test("a copy naming a host this host doesn't know is refused, never stored", async () => {
+    const link = {
+      id: "lk_00000000000000aa",
+      createdAt: 1,
+      createdBy: lanId(A),
+      members: [
+        { nodeId: lanId(A), sessionId: "sa", path: "/x" },
+        { nodeId: lanId(B), sessionId: "sb", path: "/y" },
+        { nodeId: "node-zz", sessionId: "sz", path: "/z" },
+      ],
+    };
+    const res = await B.app.request(
+      "/api/peer/links",
+      { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ link, you: lanId(B) }) },
+      { meshPeer: entryOf(A, B) },
+    );
+    assert.equal(res.status, 403);
+    const j = (await res.json()) as LinkError;
+    assert.equal(j.reason, "not-member");
+    assert.match(j.error, /doesn't know/);
+    assert.equal(B.links.all().length, 0);
+  });
+
+  test("how a peer knows this host is kept from its whoami answer and names a held message after a restart", async () => {
+    await link();
+    const file = JSON.parse(readFileSync(join(A.root, "mesh-links.json"), "utf8")) as { selfAs?: Record<string, string> };
+    assert.equal(file.selfAs?.[lanId(B)], lanId(A));
+    B.up = false;
+    const s = await send(A, "sa", "while you slept");
+    assert.equal(s.json.deliveries?.[0]?.state, "outbox");
+    // After the restart the mesh can't say how Beta knows Alpha: only the kept answer can.
+    A = restart(A, { noSelfFor: true });
+    B.up = true;
+    await A.links.flush();
+    assert.equal(lastText(B), "while you slept");
+    assert.deepEqual(A.links.pending(), []);
+  });
+
+  test("a LAN-only host's link and offer still work after it joins a tailnet: its records take its new name", async () => {
+    A.knowsSelf = false;
+    const v = await link();
+    const id = v.link.id;
+    assert.equal(v.link.createdBy, lanId(A));
+    let r = await offer({ paths: ["proj"] });
+    assert.equal(r.status, 200, JSON.stringify(r.json));
+    const o1 = r.json.offer.id;
+    await until(() => offerOf(A, o1)?.snapshot !== undefined, 15_000, "the first offer packed");
+    A = restart(A, { knowsSelf: true });
+    const onA = A.links.get(id)!;
+    assert.equal(onA.createdBy, A.nodeId);
+    assert.deepEqual(
+      onA.members.map((m) => m.nodeId),
+      [A.nodeId, lanId(B)],
+    );
+    assert.equal(offerOf(A, o1)?.from.nodeId, A.nodeId);
+    const disk = JSON.parse(readFileSync(join(A.root, "mesh-links.json"), "utf8")) as { links: Array<{ id: string; createdBy: string }> };
+    assert.equal(disk.links.find((l) => l.id === id)?.createdBy, A.nodeId, "rewritten on disk");
+    const list = await act<LinksList>(A, "GET", "/api/mesh/links?session=sa");
+    assert.equal(list.json.links[0]?.members.find((m) => m.sessionId === "sa")?.self, true);
+    // A new offer, pulled from the renamed host and reported back to it.
+    r = await offer({ paths: ["notes.md"], dest: "in2" });
+    assert.equal(r.status, 200, JSON.stringify(r.json));
+    const o2 = r.json.offer.id;
+    await until(() => offerOf(A, o2)?.recipients[0]?.state === "done", 15_000, "the new offer done");
+    // The offer made before the restart, accepted now.
+    const ok = await act<LinkOffer>(B, "POST", `/api/mesh/links/offers/${o1}/accept`, { session: "sb", dest: "old" });
+    assert.equal(ok.status, 200, JSON.stringify(ok.json));
+    await until(() => offerOf(A, o1)?.recipients[0]?.state === "done", 15_000, "the old offer done");
+    assert.ok(existsSync(join(B.root, "work", "old", "proj", "b.bin")));
+    const offers = await act<LinkOffersList>(A, "GET", "/api/mesh/links/offers?session=sa");
+    assert.deepEqual(offers.json.offers.map((o) => o.id).sort(), [o1, o2].sort());
+  });
+});
+
+describe("a refused copy (§app.overseer/links-tools, §mesh.links/delivery)", () => {
+  test("a member host that refuses its copy: the link is not made, naming the member and the host's reason", async () => {
+    const C = makeHost("c", "Gamma");
+    C.sessions.set("sc", summary("sc"));
+    A.onFetch = (peerId, path) => {
+      if (peerId === "c" && path === "/api/peer/links") C.sessions.delete("sc");
+    };
+    const r = await linkOn(A, [{ session: "sa" }, { host: "c", session: "sc" }]);
+    assert.equal(r.status, 409, JSON.stringify(r.json));
+    assert.equal(r.json.member, 1);
+    assert.equal(r.json.reason, "no-session");
+    assert.match(r.json.error, /Gamma refused the link/);
+    assert.equal(A.links.all().length, 0, "forgotten: no copy got out");
+    assert.deepEqual(A.links.pending(), []);
+  });
+
+  test("a copy whose answer was lost may have been taken: that host is told the end, so no live link stays", async () => {
+    const C = makeHost("c", "Gamma");
+    C.sessions.set("sc", summary("sc"));
+    let lost = false;
+    A.loseAnswer = (peerId, path) => {
+      if (peerId !== "b" || path !== "/api/peer/links" || lost) return false;
+      lost = true;
+      return true;
+    };
+    A.onFetch = (peerId, path) => {
+      if (peerId === "c" && path === "/api/peer/links") C.sessions.delete("sc");
+    };
+    const r = await linkOn(A, [{ session: "sa" }, { host: "b", session: "sb" }, { host: "c", session: "sc" }]);
+    assert.equal(r.status, 409, JSON.stringify(r.json));
+    assert.equal(r.json.member, 2);
+    assert.equal(r.json.reason, "no-session");
+    assert.ok(lost, "Beta's answer was lost");
+    await settle();
+    await A.links.flush();
+    await settle();
+    B.links.forgetForTest();
+    assert.equal(B.links.all().length, 1, "Beta took the copy");
+    assert.deepEqual(
+      B.links.all().filter((l) => l.endedAt === undefined),
+      [],
+      "no live link on Beta",
+    );
+    assert.ok(A.links.all().every((l) => l.endedAt !== undefined), "no live local link");
+    assert.deepEqual(A.links.pending(), []);
+  });
+
+  test("a held copy refused once its host is back ends the link everywhere, saying why", async () => {
+    const C = makeHost("c", "Gamma");
+    C.sessions.set("sc", summary("sc"));
+    let held = false;
+    A.onFetch = (peerId, path) => {
+      if (peerId === "c" && path === "/api/peer/links" && !held) {
+        held = true;
+        C.up = false;
+      }
+    };
+    const v = await link([{ session: "sa" }, { host: "b", session: "sb" }, { host: "c", session: "sc" }]);
+    assert.ok(held);
+    C.up = true;
+    C.sessions.delete("sc");
+    await A.links.flush();
+    await settle();
+    const onA = A.links.get(v.link.id)!;
+    assert.notEqual(onA.endedAt, undefined);
+    assert.match(onA.endedWhy ?? "", /Gamma refused the link/);
+    const onB = B.links.get(v.link.id)!;
+    assert.notEqual(onB.endedAt, undefined, "ended on Beta too");
+    assert.equal(onB.endedWhy, onA.endedWhy);
+    const s = await send(B, "sb", "still there?");
+    assert.equal(s.status, 409);
+    assert.match(s.json.error, /has ended: Gamma refused the link/);
+  });
+});
+
+describe("follow-up: tailnet strangers and a stalled copy", () => {
+  test("a tailnet-only link naming a host this member doesn't peer is kept there, that host shown as unreachable", async () => {
+    const C = makeHost("c", "Gamma");
+    C.sessions.set("sc", summary("sc"));
+    B.hidePeers.add("c");
+    const v = await link([{ session: "sa" }, { host: "b", session: "sb" }, { host: "c", session: "sc" }]);
+    const onB = B.links.get(v.link.id);
+    assert.ok(onB, "Beta holds the link");
+    const [view] = await B.links.list({ sessionId: "sb" });
+    assert.equal(view?.members.find((m) => m.sessionId === "sc")?.reach, "unknown-host");
+  });
+
+  test("a copy stalled past the hop timeout, then refused elsewhere: the rollback still leaves no live link once it lands", async () => {
+    const C = makeHost("c", "Gamma");
+    C.sessions.set("sc", summary("sc"));
+    let release!: () => void;
+    let detached = false;
+    A.detachAnswer = (peerId, path) => {
+      if (peerId !== "b" || path !== "/api/peer/links" || detached) return false;
+      detached = true;
+      // Beta's lookup of its member session hangs until released.
+      B.stall = new Promise<void>((r) => (release = r));
+      return true;
+    };
+    A.onFetch = (peerId, path) => {
+      if (peerId === "c" && path === "/api/peer/links") C.sessions.delete("sc");
+    };
+    const r = await linkOn(A, [{ session: "sa" }, { host: "b", session: "sb" }, { host: "c", session: "sc" }]);
+    assert.equal(r.status, 409, JSON.stringify(r.json));
+    assert.equal(r.json.member, 2);
+    assert.ok(detached, "Beta's copy timed out on Alpha's side");
+    await settle();
+    // Now Beta's stalled handler finishes and stores what it was given.
+    B.stall = undefined;
+    release();
+    await Promise.all(B.detached.concat(A.detached));
+    await settle();
+    for (let i = 0; i < 3; i++) {
+      await A.links.flush();
+      await settle();
+    }
+    B.links.forgetForTest();
+    assert.deepEqual(
+      B.links.all().filter((l) => l.endedAt === undefined),
+      [],
+      "no live link on Beta",
+    );
+    assert.ok(A.links.all().every((l) => l.endedAt !== undefined), "no live local link");
+    assert.deepEqual(A.links.pending(), []);
   });
 });

@@ -174,8 +174,32 @@ test("counts carry numbers only", () => {
   assert.equal(c.open, 1);
 });
 
-test("there is no internet profile until the separate accept process exists", () => {
-  assert.deepEqual(Object.keys(admission).filter((k) => k.endsWith("_PROFILE")), ["LAN_PROFILE"]);
+test("two profiles: LAN (unchanged) and internet scale for the accept process", () => {
+  assert.deepEqual(Object.keys(admission).filter((k) => k.endsWith("_PROFILE")).sort(), ["INTERNET_PROFILE", "LAN_PROFILE"]);
+  const { LAN_PROFILE: lan, INTERNET_PROFILE: net } = admission;
+  assert.deepEqual([lan.banMs, lan.maxTracked, lan.untrustedPerSecond], [300_000, 4096, undefined], "LAN keeps its limits and has no global cap");
+  assert.deepEqual([net.banMs, net.maxTracked, net.untrustedPerSecond], [900_000, 16_384, 64]);
+  for (const k of ["perIpHandshakes", "perIpPerSecond", "failuresToBan", "failWindowMs", "maxConnections", "reservedConnections", "trustMs", "maxTrusted", "trustedBanMs"] as const) assert.equal(net[k], lan[k], k);
+});
+
+test("internet scale: at most 64 untrusted handshakes start a second, all sources together; paired sources are exempt", () => {
+  const a = new Admission({ ...admission.INTERNET_PROFILE, maxConnections: 1000, reservedConnections: 0 });
+  const src = (i: number) => `198.51.100.${i}`;
+  // A recently paired source.
+  assert.equal(a.admit("203.0.113.9", 0).ok, true);
+  a.handshakeDone("203.0.113.9", true, 0);
+  for (let i = 1; i <= 64; i++) assert.equal(a.admit(src(i), 1000).ok, true, `#${i}`);
+  assert.deepEqual(a.admit(src(65), 1000), { ok: false, why: "busy" });
+  assert.equal(a.admit("203.0.113.9", 1000).ok, true, "the paired source still gets in");
+  assert.equal(a.counts(1000).refused.busy, 1);
+  assert.equal(a.admit(src(65), 2000).ok, true, "a second later there is room again");
+  // A refusal for "busy" isn't a failed handshake: it bans nobody.
+  assert.equal(a.isBanned(src(65), 2000), false);
+});
+
+test("the LAN profile never refuses as busy", () => {
+  const a = new Admission({ ...LAN_PROFILE, maxConnections: 1000, reservedConnections: 0 });
+  for (let i = 1; i <= 200; i++) assert.equal(a.admit(`10.0.${i >> 8}.${i & 255}`, 0).ok, true, `#${i}`);
 });
 
 test("closed and handshakeDone for an unknown address are harmless", () => {

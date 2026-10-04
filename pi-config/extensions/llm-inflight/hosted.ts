@@ -18,7 +18,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { parseCounts, type LlmCounts } from "./tracker.ts";
+import { parseCounts, type LlmCounts, type TokenRing } from "./tracker.ts";
 
 export interface UnadoptedWorker {
 	/** `${owner}/${id}`. */
@@ -29,6 +29,8 @@ export interface UnadoptedWorker {
 	counts: LlmCounts | null;
 	/** Producers its counts already include (its own workers'). */
 	folded?: string[];
+	/** Its output-token ring as last reported; absent when it reported none (its tokens are unknown). */
+	tokens?: TokenRing;
 }
 
 const ADOPTABLE = new Set(["starting", "running", "detached"]);
@@ -146,6 +148,7 @@ export function readUnadoptedWorkers(root: string = defaultWorkersRoot()): Unado
 				...(e.llm?.producer ? { producer: e.llm.producer } : {}),
 				counts,
 				...(e.llm?.folded?.length ? { folded: e.llm.folded } : {}),
+				...(e.llm?.tokens ? { tokens: e.llm.tokens } : {}),
 			});
 		}
 	}

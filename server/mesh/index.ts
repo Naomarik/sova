@@ -27,7 +27,7 @@ import {
   type MeshSessionsView,
   type PeerStatusView,
 } from "../../shared/mesh-access";
-import { access, allows, capsOf, defaultPreset, deniedBy, loginsOf, mayShareLoginNode, noteDenied, noteGranted, onAccessChange, restricted, updateAccess, validateGrant } from "./access";
+import { access, allows, capsOf, defaultPreset, deniedBy, loginsOf, mayShareLoginNode, NotShared, noteDenied, noteGranted, onAccessChange, restricted, updateAccess, validateGrant } from "./access";
 import { frontDoorConfig, noBrowserIds } from "./front-door";
 import { answered, ownHello, probeHello, probePeer, peerLastSeen, PROBE_TIMEOUT_MS } from "./hello";
 import { type ListenerDeps, PeerListener } from "./listener";
@@ -37,7 +37,10 @@ import { getIdentity, setIdentity, type TailnetStatus } from "./localapi";
 import { defaultSelfId, nextLabelAt, type PeerEntry, type PeersConfig, peerPort, peerUrl, peersFile, readPeers, SYNC_CATEGORIES, validatePeers, writePeers } from "./peers";
 import { localRequest, PROXIED_HEADER, peerSocketRoute, proxyTail, proxyPeer, upgradePeerSocket } from "./proxy";
 import { fetchPeer, setLanClients } from "./dial";
-import { ensureLanIdentity, LanRuntime } from "./lan";
+import { ensureLanIdentity, LanRuntime, readLanIdentity } from "./lan";
+import { lanNodeId } from "./lan-cert";
+import { bootBuild } from "./build-id";
+import { cleanBuild } from "./lan-handoff-protocol";
 import { lanRoutes } from "./lan-routes";
 import { loginKindsPin } from "../sync/logins-merge";
 
@@ -172,6 +175,9 @@ function apply(): void {
         return rt.config?.peers.find((p) => p.lan && p.nodeId === nodeId) ?? null;
       },
       sawPeer,
+      // An internet relay's handoff socket (§mesh.lan/accept-process); its accept process must be
+      // the build deployed with this one (the deploy stamps both with the commit).
+      ...(process.env.SOVA_RELAY_HANDOFF?.trim() ? { handoff: { path: process.env.SOVA_RELAY_HANDOFF.trim(), build: () => cleanBuild(bootBuild()?.commit) } } : {}),
     });
     setLanClients({ client: (peerId) => rt.lan?.client(peerId) ?? null });
   }
@@ -241,6 +247,8 @@ export function stopMesh(): void {
 
 /** Tests: the listener's bound state. */
 export const listenerInfo = () => rt.listener?.info() ?? null;
+/** Sova's own relay listener's port (a LAN relay's; an internet relay never has one), or null. */
+export const lanListenerPort = (): number | null => rt.lan?.ownListenerPort() ?? null;
 
 // ---- sync status (filled by server/sync) ------------------------------------------------------
 
@@ -338,16 +346,19 @@ export function noteAnswer(peerId: string, cap: MeshCap, res: Response): boolean
 }
 
 // What this host sends a peer on its own initiative, by path: never what it doesn't grant that peer.
-// Reads of the peer's own things (its hello, details, sessions, outreach relay, gateway) are the
-// peer's grant to this host, so they are not here.
+// Reads of the peer's own things (its hello, details, sessions, outreach relay, gateway, and the
+// link identity probe and transcript read by id) are the peer's grant to this host, so they pass.
 const OUTBOUND: Array<[RegExp, (peerId: string) => boolean]> = [
   [/^\/api\/peer\/(?:label|browser-access)(?:\?|$)/, (id) => mayShareWith(id, "presence")],
+  [/^\/api\/peer\/links\/(?:whoami|read)(?:\?|$)/, () => true],
   [/^\/api\/peer\/links(?:[/?]|$)/, (id) => mayShareWith(id, "links")],
   [/^\/api\/peer\/sync\/extensions(?:\?|$)/, (id) => mayShareWith(id, "sync.extensions")],
   [/^\/api\/peer\/sync\/(?:manifest|doc|push)(?:\?|$)/, (id) => mayShareWith(id, "sync.settings") || mayShareWith(id, "sync.themes")],
   [/^\/api\/peer\/credentials\//, (id) => mayShareWith(id, "sync.logins")],
   [/^\/api\/peer\/claude-pool\//, (id) => mayShareWith(id, "sync.logins")],
 ];
+
+export { NotShared };
 
 /** Why this host may not send `path` to `peerId` on its own initiative, or null when it may. */
 export function outboundRefusal(peerId: string, path: string): string | null {
@@ -358,15 +369,14 @@ export function outboundRefusal(peerId: string, path: string): string | null {
 
 /**
  * GET/POST/… <peer>/<path> over the peer hop (the peer's gate sees this host's node). Throws when
- * the mesh is off or the peer is unknown, or when `path` sends the peer what this host doesn't grant
- * it (outboundRefusal); otherwise it is fetch: a down peer rejects, a refusal is a 403 with
+ * the mesh is off or the peer is unknown, or with NotShared when `path` sends the peer what this host
+ * doesn't grant it (outboundRefusal); otherwise it is fetch: a down peer rejects, a refusal is a 403 with
  * X-Sova-Mesh: refused, and a grant's refusal a 403 with X-Sova-Mesh: denied. `path` starts with "/api/".
  */
 export function peerFetch(peerId: string, path: string, init?: RequestInit): Promise<Response> {
   const peer = rt.config?.peers.find((p) => p.id === peerId);
   if (!meshEnabled() || !peer) return Promise.reject(new Error(`unknown peer ${peerId}`));
-  const refusal = outboundRefusal(peerId, path);
-  if (refusal) return Promise.reject(new Error(refusal));
+  if (outboundRefusal(peerId, path)) return Promise.reject(new NotShared(peerId));
   const headers = new Headers(init?.headers);
   headers.delete(PROXIED_HEADER); // it would make the peer treat this host's own call as a browser's
   return fetchPeer(peer, path, { ...init, headers });
@@ -424,6 +434,18 @@ export const meshApi = {
     ...(rt.self?.dnsName ? { dnsName: rt.self.dnsName } : {}),
     addresses: rt.listener?.info().addresses ?? [],
   }),
+  /** Every node id this host goes by (§mesh.links/host-names): its tailnet identity and, once it
+      has a LAN key, lan:<its pin>, which every LAN pairing knows it by. */
+  selfNodeIds: (): string[] => {
+    const lan = readLanIdentity();
+    return [...(rt.self?.nodeId ? [rt.self.nodeId] : []), ...(lan ? [lanNodeId(lan.pin)] : [])];
+  },
+  /** This host's node id as `peer` knows it: lan:<pin> to a LAN pairing, else its tailnet identity. */
+  selfNodeIdFor: (peer: PeerEntry): string | undefined => {
+    if (!peer.lan) return rt.self?.nodeId;
+    const lan = readLanIdentity();
+    return lan ? lanNodeId(lan.pin) : undefined;
+  },
   /** When a peer's current up/down state began (this server's view), or null. */
   peerSince: (id: string): number | null => upSince.get(id) ?? null,
   /** Record a peer's up/down state learnt elsewhere (the details route's own calls). */
@@ -844,6 +866,7 @@ export function meshRoutes(app: Hono): void {
     ensureKey: () => ensureLanIdentity(),
     updatePeers,
     applyGrants: applyPairingGrants,
+    acceptorRunning: () => rt.lan?.acceptorRunning() ?? false,
   });
 
   // Peer-only routes: reached through the peer listener alone. On the main listener they are the

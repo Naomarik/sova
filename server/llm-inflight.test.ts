@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, test } from "node:test";
 import type { LlmFeedMessage, LlmInflight, SessionFeedMessage } from "../shared/protocol";
-import { hostCount, LlmInflightHub, meshTotal, parseProcessLlm, type LiveEntry, type LlmProcessSnapshot, type OwnCounter, type PeerSocket, type PeerState, type UnadoptedWorker, MAX_CALLS } from "./llm-inflight";
+import { hostCount, LlmInflightHub, meshTotal, parseProcessLlm, type LiveEntry, type LlmProcessSnapshot, type OwnCounter, type PeerSocket, type PeerState, type TokenRing, type UnadoptedWorker, MAX_CALLS, MAX_SLOT_TOKENS } from "./llm-inflight";
 
 const NOW = 1_000_000;
 const OWN_PID = 100;
@@ -483,6 +483,141 @@ describe("the worker registry is read per sweep, never per call", () => {
       await sleep(200);
       assert.equal(reads >= 2, true, "the sweep refreshed it");
       assert.equal(inflights(got).at(-1)!.count, 1);
+    } finally {
+      hub.stop();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+// ---- output tokens ---------------------------------------------------------------------------
+
+const S = Math.floor(NOW / 30_000);
+const ringAt = (end: number, slots: Record<number, number>, partial?: true): TokenRing => ({ bucketMs: 30_000, end, out: Array.from({ length: 60 }, (_, i) => slots[i] ?? 0), ...(partial ? { partial } : {}) });
+const tail = (t: LlmInflight["tokens"], n = 3) => t!.out.slice(60 - n);
+const zeros = () => new Array(60).fill(0);
+
+describe("tokens: one host", () => {
+  test("parsed bounded with presence.llm; a malformed ring is dropped alone", () => {
+    const tokens = ringAt(S, { 59: 5 });
+    assert.deepEqual(parseProcessLlm(snap({ tokens }))!.tokens, tokens);
+    assert.equal(parseProcessLlm(snap({ tokens: ringAt(S, { 59: 1e12 }) }))!.tokens!.out[59], MAX_SLOT_TOKENS, "a slot past the cap is capped");
+    for (const bad of [{ ...tokens, bucketMs: 1000 }, { ...tokens, out: [1, 2] }, { ...tokens, out: [...tokens.out.slice(1), -3] }, { ...tokens, end: 0.5 }, "x"]) {
+      const got = parseProcessLlm({ ...snap(), tokens: bad });
+      assert.ok(got, "the count survives");
+      assert.equal(got.tokens, undefined);
+    }
+  });
+
+  test("own plus each counted process, aligned to now's slot; none absent from an own without a ring", () => {
+    const own = snap({ tokens: ringAt(S - 1, { 59: 10 }) });
+    const got = hostCount(own, [entry(1, { tokens: ringAt(S, { 59: 3 }) }), entry(2, { tokens: ringAt(S - 2, { 59: 7, 58: 1 }) })], NOW, all);
+    assert.deepEqual(tail(got.tokens, 4), [1, 7, 10, 3]);
+    assert.equal(got.tokens!.end, S);
+    assert.equal(got.tokens!.partial, false);
+    assert.equal(hostCount(snap(), [entry(1, { tokens: ringAt(S, { 59: 3 }) })], NOW, all).tokens, undefined);
+  });
+
+  test("folded producers add no tokens; a process, worker or own without a ring, or any gap, is partial", () => {
+    const own = snap({ tokens: ringAt(S, {}) });
+    const parent = entry(1, { active: 1, folded: ["p2", "w9"], tokens: ringAt(S, { 59: 5 }) });
+    const child = entry(2, { active: 1, tokens: ringAt(S, { 59: 100 }) });
+    const worker: UnadoptedWorker = { key: "o/w9", producer: "w9", counts: { active: 0, approximate: 0, claudeTurns: 0, degraded: false }, tokens: ringAt(S, { 59: 1000 }) };
+    const got = hostCount(own, [parent, child], NOW, all, [worker]);
+    assert.deepEqual(tail(got.tokens, 1), [5], "only the parent's ring: it already holds its workers'");
+    assert.equal(got.tokens!.partial, false);
+    assert.equal(hostCount(own, [entry(3, {})], NOW, all).tokens!.partial, true, "an older counter: its tokens unknown");
+    assert.equal(hostCount(own, [entry(3, { tokens: ringAt(S, {}, true) })], NOW, all).tokens!.partial, true, "a process that says its own ring is partial");
+    assert.equal(hostCount(snap({ tokens: ringAt(S, {}, true) }), [], NOW, all).tokens!.partial, true);
+    assert.equal(hostCount(own, [], NOW, all, [{ key: "o/x", producer: "x", counts: { active: 0, approximate: 0, claudeTurns: 0, degraded: false } }]).tokens!.partial, true, "a worker that reported no ring");
+    assert.equal(hostCount(own, [entry(4, null)], NOW, all).tokens!.partial, true, "an unreported process");
+    assert.equal(hostCount(own, [entry(5, { claudeTurns: 1, tokens: ringAt(S, {}) })], NOW, all).tokens!.partial, true, "a Claude Code turn's internal calls");
+  });
+
+  test("a host's slot is bounded", () => {
+    const big = ringAt(S, { 59: MAX_SLOT_TOKENS });
+    const entries = Array.from({ length: 20 }, (_, i) => entry(i + 1, { tokens: big }));
+    assert.equal(hostCount(snap({ tokens: ringAt(S, {}) }), entries, NOW, all).tokens!.out[59], 10 * MAX_SLOT_TOKENS);
+  });
+
+  test("a departed producer's ring stays until it ages out, unless a counted process now folds it", () => {
+    const own = snap({ tokens: ringAt(S, {}) });
+    const retained = new Map<string, TokenRing>();
+    hostCount(own, [entry(1, { tokens: ringAt(S, { 59: 40, 0: 2 }) }), entry(2, { tokens: ringAt(S, { 59: 9 }) })], NOW, all, [], retained);
+    // p1 exits (its record gone); p2's pid dies
+    const gone = hostCount(own, [entry(2, { tokens: ringAt(S, { 59: 9 }) })], NOW, (pid) => pid !== 2, [], retained);
+    assert.deepEqual(tail(gone.tokens, 1), [49], "both still in the window");
+    const later = hostCount(own, [], NOW + 30_000, all, [], retained);
+    assert.deepEqual(tail(later.tokens, 2), [49, 0], "aged by one slot");
+    assert.equal(later.tokens!.out[0], 0, "its oldest slot aged out");
+    assert.equal(hostCount(own, [], NOW + 60 * 30_000, all, [], retained).tokens!.out.every((n) => n === 0), true);
+    assert.equal(retained.size, 0, "forgotten once aged out");
+    // adopted: now folded into another process's count, whose ring holds it
+    hostCount(own, [entry(1, { tokens: ringAt(S, { 59: 40 }) })], NOW, all, [], retained);
+    const adopted = hostCount(own, [entry(3, { folded: ["p1"], tokens: ringAt(S, { 59: 40 }) })], NOW, all, [], retained);
+    assert.deepEqual(tail(adopted.tokens, 1), [40], "never twice");
+    assert.equal(retained.has("p1"), false);
+  });
+});
+
+describe("tokens: the mesh", () => {
+  const local: LlmInflight = { count: 0, approximate: 0, partial: false, gaps: [], tokens: { bucketMs: 30_000, end: S, out: zeros(), partial: false } };
+  const okT = (instance: string, tokens?: LlmInflight["tokens"]): PeerState => ({ state: "ok", instance, local: { count: 0, approximate: 0, partial: false, gaps: [], ...(tokens ? { tokens } : {}) } });
+  const peerRing = (end: number, slots: Record<number, number>, partial = false) => ({ ...ringAt(end, slots), partial });
+
+  test("each host's ring once, aligned to this host's slot; a peer without one, or not heard from, is partial", () => {
+    const peers = new Map<string, PeerState>([["a", okT("i-a", peerRing(S - 1, { 59: 4 }))], ["b", okT("i-a", peerRing(S, { 59: 4 }))], ["c", okT("self", peerRing(S, { 59: 9 }))]]);
+    const got = meshTotal(local, "self", peers);
+    assert.deepEqual(tail(got.tokens, 2), [4, 0]);
+    assert.equal(got.tokens!.partial, false);
+    assert.equal(meshTotal(local, "self", new Map([["a", okT("i-a")]])).tokens!.partial, true, "an older peer: unknown");
+    assert.equal(meshTotal(local, "self", new Map([["a", okT("i-a", peerRing(S, {}, true))]])).tokens!.partial, true);
+    assert.equal(meshTotal(local, "self", new Map<string, PeerState>([["a", { state: "unreachable" }]])).tokens!.partial, true);
+    assert.equal(meshTotal({ ...local, tokens: undefined }, "self", peers).tokens, undefined, "no local ring: unknown");
+  });
+
+  test("a peer that drops keeps its last ring until it ages out", () => {
+    const retained = new Map<string, TokenRing>();
+    meshTotal(local, "self", new Map([["a", okT("i-a", peerRing(S, { 59: 12 }))]]), retained);
+    const dropped = meshTotal(local, "self", new Map<string, PeerState>([["a", { state: "unreachable" }]]), retained);
+    assert.deepEqual(tail(dropped.tokens, 1), [12]);
+    assert.equal(dropped.tokens!.partial, true);
+    const aged = { ...local, tokens: { ...local.tokens!, end: S + 60 } };
+    assert.equal(meshTotal(aged, "self", new Map(), retained).tokens!.out.every((n) => n === 0), true);
+    assert.equal(retained.size, 0);
+  });
+});
+
+describe("tokens: the hub", () => {
+  test("a frame when tokens land; none when only time passes; a peer's ring is bounded, a bad one dropped", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "llm-tok-"));
+    const own = new FakeOwn();
+    let clock = NOW;
+    const sockets: FakeSocket[] = [];
+    own.value = snap({ tokens: ringAt(S, {}) });
+    const hub = new LlmInflightHub({
+      own, liveDir: dir, alive: () => true, debounceMs: 1, sweepMs: 20, now: () => clock, peerPingMs: 1e9, peerDeadMs: 1e9,
+      mesh: { peers: () => [{ id: "a", url: "http://a" }], selfId: () => "here", connect: (url) => { const s = new FakeSocket(url); sockets.push(s); return s as unknown as PeerSocket; } },
+    });
+    const got: SessionFeedMessage[] = [];
+    try {
+      hub.addBrowser((m) => got.push(m));
+      sockets[0]!.send({ type: "llm_local", host: "a", instance: "i-a", local: { count: 0, approximate: 0, partial: false, gaps: [], tokens: { ...ringAt(S, { 59: 1e12 }), partial: false } } });
+      await sleep(10);
+      const before = got.length;
+      assert.equal(inflights(got).at(-1)!.tokens!.out[59], 10 * MAX_SLOT_TOKENS, "a peer's slot is capped at a host's bound");
+      own.set({ tokens: ringAt(S, { 59: 5 }) });
+      await sleep(10);
+      assert.equal(got.length, before + 1, "the tokens: one frame");
+      clock += 3 * 30_000;
+      own.set({ tokens: ringAt(S + 3, { 56: 5 }) });
+      await sleep(80);
+      assert.equal(got.length, before + 1, "time passing, sweeps and an unchanged report: no frame");
+      sockets[0]!.send({ type: "llm_local", host: "a", instance: "i-a", local: { count: 0, approximate: 0, partial: false, gaps: [], tokens: { bucketMs: 30_000, end: S, out: [1], partial: false } as any } });
+      await sleep(10);
+      const last = inflights(got).at(-1)!;
+      assert.equal(last.count, 0, "the count still taken");
+      assert.equal(last.tokens!.partial, true, "its ring unknown");
     } finally {
       hub.stop();
       rmSync(dir, { recursive: true, force: true });

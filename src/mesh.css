@@ -232,4 +232,6 @@
 /* A fingerprint or relay line is read in full, never cut off. */
 .list-meta.mesh-pair-wrap { white-space: normal; overflow: visible; overflow-wrap: anywhere; }
 .mesh-pair-row { flex-wrap: wrap; }
+/* The box sits beside its label, not a card's width away (base.css spreads a .toggle row). */
+.mesh-pair-internet { justify-content: flex-start; }
 .mesh-pair-row > .list-main { flex: 1 1 14rem; }

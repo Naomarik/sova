@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { mergeNumbers, NO_WORKTREES, readinessChip, readinessReason, worktreeChips, worktreesSummary, worktreeStatus } from "./worktrees";
+import { readinessCount } from "./readiness";
 
 const merge = { target: "master", sha: "abc1234def", how: "tool" as const, at: 1 };
 
@@ -46,4 +47,19 @@ test("a worktree tracked active whose folder is gone never reads Active: its chi
   assert.equal(readinessChip({ readiness: { path: "/w", branch: "b", state: "removed", why: "not merged", reason: "Removed · not merged" } }), null);
   assert.equal(readinessReason({ readiness: { path: "/w", branch: "b", state: "removed", why: "not merged", reason: "Removed · not merged" } }), "Removed · not merged");
   assert.equal(worktreesSummary([{ status: "active" }, { status: "active", gone: "merged" }, { status: "active", gone: "unmerged" }, { status: "dropped" }]), "1 active · 1 merged · 1 removed · 1 dropped");
+});
+
+test("readinessChip's tone follows mergeability: success exactly where the row's count lights", () => {
+  const tones = (["ready", "waiting-approval", "in-progress", "blocked", "stale"] as const).map((state) => {
+    const chip = readinessChip({ readiness: { path: "/w", branch: "b", state } });
+    const lit = readinessCount({ trees: [{ path: "/w", branch: "b", state }] } as never)!.ready;
+    return [state, chip?.tone, lit];
+  });
+  assert.deepEqual(tones, [
+    ["ready", "success", true],
+    ["waiting-approval", "success", true],
+    ["in-progress", "neutral", false],
+    ["blocked", "warn", false],
+    ["stale", "warn", false],
+  ]);
 });

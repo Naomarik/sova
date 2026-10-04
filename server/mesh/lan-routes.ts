@@ -10,7 +10,7 @@
 import { networkInterfaces } from "node:os";
 import type { Context, Hono } from "hono";
 import { MESH_PRESETS, type MeshPreset } from "../../shared/mesh-access";
-import { type LanPairingAdd, type LanRelayPut, type LanStatus, parseIp, relayAddress } from "../../shared/mesh-lan";
+import { type LanPairingAdd, type LanRelayPut, type LanStatus, parseIp, relayAddress, relayBindAddress } from "../../shared/mesh-lan";
 import { lanNodeId, parsePin, samePin } from "./lan-cert";
 import { type PeerEntry, type PeersConfig, PEER_ID_RE, validatePeers } from "./peers";
 import { localRequest } from "./proxy";
@@ -24,7 +24,13 @@ export interface LanRouteDeps {
   applyGrants: (set: Record<string, MeshPreset>, removed: string[]) => { ok: true } | { error: string };
   /** Tests: this host's interface addresses (default: os.networkInterfaces()). */
   ownAddresses?: () => string[];
+  /** The accept process runs now (SOVA_RELAY_HANDOFF set, control up, this build, heard from in
+      the last 30 s): only then may an internet relay be saved (§mesh.lan/pairing). */
+  acceptorRunning?: () => boolean;
 }
+
+/** The refusal for an internet relay saved while its accept process doesn't run. */
+export const ACCEPTOR_NOT_RUNNING = "the accept process isn't running (SUDO.md §5)";
 
 const LABEL_MAX = 80;
 
@@ -46,7 +52,9 @@ export function lanRoutes(app: Hono, deps: LanRouteDeps): void {
     "/api/mesh/lan/pairings",
     local(async (c) => {
       const body = await jsonBody<Partial<LanPairingAdd>>(c);
-      if (!body) return c.json({ error: "Expected JSON body { id, role, pin, host?, port?, label?, grant? }" }, 400);
+      if (!body) return c.json({ error: "Expected JSON body { id, role, pin, host?, port?, internet?, label?, grant? }" }, 400);
+      if (body.internet !== undefined && typeof body.internet !== "boolean") return c.json({ error: "internet must be true or false" }, 400);
+      if (body.internet === true && body.role !== "dial") return c.json({ error: "Only a relay this host dials can be on the internet" }, 400);
       const id = typeof body.id === "string" ? body.id.trim() : "";
       if (!PEER_ID_RE.test(id)) return c.json({ error: `id must match ${PEER_ID_RE}` }, 400);
       if (body.role !== "dial" && body.role !== "accept") return c.json({ error: 'role must be "dial" or "accept"' }, 400);
@@ -63,7 +71,10 @@ export function lanRoutes(app: Hono, deps: LanRouteDeps): void {
         label,
         nodeId,
         pairedAt: Date.now(),
-        lan: body.role === "dial" ? { role: "dial", pin, host: typeof body.host === "string" ? body.host.trim() : body.host, port: body.port } : { role: "accept", pin },
+        lan:
+          body.role === "dial"
+            ? { role: "dial", pin, host: typeof body.host === "string" ? body.host.trim() : body.host, port: body.port, ...(body.internet === true ? { internet: true } : {}) }
+            : { role: "accept", pin },
       };
       const add = (config: PeersConfig): PeersConfig | { error: string } => {
         if (config.peers.some((p) => p.id === id)) return { error: `${id} is already a host here` };
@@ -120,14 +131,17 @@ export function lanRoutes(app: Hono, deps: LanRouteDeps): void {
     local(async (c) => {
       const body = await jsonBody<{ relay?: LanRelayPut }>(c);
       if (!body || !("relay" in body)) return c.json({ error: "Expected JSON body { relay: { host, port, exposure? } | null }" }, 400);
-      // peers.json takes only a local-network address (peers.ts checkRelay); saving one also needs
-      // it to be this host's, now. (Not checked on every read: an interface that comes and goes
-      // must not turn the mesh off.)
+      // peers.json takes only a local-network address for a LAN relay, any one unicast address for
+      // an internet one (peers.ts checkRelay); saving one also needs it to be this host's, now, and
+      // an internet relay needs its accept process running, now. (Neither is checked on every read:
+      // an interface that comes and goes, or an accept process that crashes, must not turn the mesh off.)
       if (body.relay && typeof body.relay === "object" && typeof body.relay.host === "string") {
-        const at = relayAddress(body.relay.host); // anything else is refused below, with its reason
+        const internet = body.relay.exposure === "internet";
+        const at = internet ? relayBindAddress(body.relay.host) : relayAddress(body.relay.host); // anything else is refused below, with its reason
         if ("address" in at && !(deps.ownAddresses ?? ownAddresses)().includes(at.address.replace(/%.*$/, ""))) {
           return c.json({ error: `${body.relay.host} is not an address of this host` }, 400);
         }
+        if ("address" in at && internet && !(deps.acceptorRunning?.() ?? false)) return c.json({ error: ACCEPTOR_NOT_RUNNING }, 409);
       }
       const r = deps.updatePeers((config) => {
         const self = { ...config.self };

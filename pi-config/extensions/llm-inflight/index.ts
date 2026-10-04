@@ -15,11 +15,11 @@ import { WORKER_ROLE_DISCOVER_EVENT, WORKER_ROLE_EVENT } from "../mode/events.ts
 import { instrumentModelRuntime, runtimeOf } from "./runtime.ts";
 import { LLM_STATUS_KEY, markDegraded, snapshot, subscribe, type LlmChildReport } from "./tracker.ts";
 
-/** What a worker reports: its counts, who it is, and whose counts it already includes. */
+/** What a worker reports: its counts, who it is, whose counts it already includes, and its output-token ring. */
 export function reportOf(): string {
 	const s = snapshot();
 	const report: LlmChildReport & { v: 1 } = {
-		v: 1, producer: s.producer, active: s.active, approximate: s.approximate, claudeTurns: s.claudeTurns, degraded: s.degraded, folded: s.folded,
+		v: 1, producer: s.producer, active: s.active, approximate: s.approximate, claudeTurns: s.claudeTurns, degraded: s.degraded, folded: s.folded, tokens: s.tokens,
 	};
 	return JSON.stringify(report);
 }

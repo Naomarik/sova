@@ -154,3 +154,36 @@ test("a one-shot is approximate and its end idempotent", () => {
 	end();
 	assert.deepEqual(counts(), idle);
 });
+
+const tokens = () => snapshot().tokens.out.reduce((a, b) => a + b, 0);
+const ev = (event: Record<string, unknown>, parent: string | null = null) => ({ type: "stream_event", event, parent_tool_use_id: parent, session_id: "s" });
+
+test("tokens: a reply's output tokens (thinking included, never input or cache) land at its message_stop", () => {
+	const o = createClaudeRequestObserver();
+	const before = tokens();
+	o.frame(requesting());
+	o.frame(ev({ type: "message_start", message: { usage: { input_tokens: 900, cache_read_input_tokens: 50_000, output_tokens: 1 } } }));
+	o.frame(ev({ type: "message_delta", usage: { output_tokens: 120 } }));
+	o.frame(ev({ type: "message_delta", usage: { input_tokens: 900, cache_creation_input_tokens: 77, output_tokens: 310 } }));
+	assert.equal(tokens(), before, "nothing before the reply ends");
+	o.frame(ev({ type: "message_stop" }));
+	assert.equal(tokens() - before, 310, "the reply's last output_tokens, once");
+	// A reply with no stream (an API error, a non-streamed reply): its assistant usage.
+	o.frame(requesting());
+	o.frame({ type: "assistant", message: { content: [], usage: { input_tokens: 5, output_tokens: 9 } }, parent_tool_use_id: null, session_id: "s" });
+	assert.equal(tokens() - before, 319);
+	o.frame(result);
+	o.close();
+});
+
+test("tokens: the bridge (countRequests: false) counts none: the pi runtime counts that call", () => {
+	const o = createClaudeRequestObserver({ countRequests: false });
+	const before = tokens();
+	o.frame(requesting());
+	o.frame(ev({ type: "message_start", message: { usage: { output_tokens: 1 } } }));
+	o.frame(ev({ type: "message_delta", usage: { output_tokens: 500 } }));
+	o.frame(ev({ type: "message_stop" }));
+	o.frame(result);
+	o.close();
+	assert.equal(tokens(), before);
+});

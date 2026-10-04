@@ -81,7 +81,7 @@ export function costNotes(c: Pick<ProjectCost, "unpriced" | "notOnHost" | "price
     const n = `${off.sessions} ${off.sessions === 1 ? "session isn't" : "sessions aren't"} on this host: `;
     out.push({ text: off.countedAt ? `${n}their cost is as last counted, ${shortDate(Date.parse(off.countedAt), now)}.` : `${n}their cost is as last counted.` });
   }
-  out.push({ text: "Not counted: topic summaries, image descriptions, and Sova's own side calls." });
+  out.push({ text: "Not counted: Sova's own side calls that name no session of the project." });
   if (c.prices.fetchedAt) out.push({ text: `Prices from models.dev, as of ${shortDate(Date.parse(c.prices.fetchedAt), now)}.` });
   return out;
 }

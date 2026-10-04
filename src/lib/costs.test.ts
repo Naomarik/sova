@@ -67,11 +67,11 @@ test("notes: each only when true, in the copy deck's order; the 2 always said la
     { text: "312k tokens on openai-codex/gpt-5.3-codex-spark have no API price, so they aren't in the total.", title: "Codex only." },
     { text: "2.8M tokens counted before costs have no model recorded, so they aren't in the total." },
     { text: "2 sessions aren't on this host: their cost is as last counted, Sep 25." },
-    { text: "Not counted: topic summaries, image descriptions, and Sova's own side calls." },
+    { text: "Not counted: Sova's own side calls that name no session of the project." },
     { text: "Prices from models.dev, as of Sep 28." },
   ]);
   const bare = { unpriced: [], notOnHost: null, prices: { source: "models.dev" as const, fetchedAt: null } };
-  assert.deepEqual(costNotes(bare, now).map((n) => n.text), ["Not counted: topic summaries, image descriptions, and Sova's own side calls."]);
+  assert.deepEqual(costNotes(bare, now).map((n) => n.text), ["Not counted: Sova's own side calls that name no session of the project."]);
   assert.equal(emptyLine(4), "4 sessions in this project. Nothing spent yet.");
   assert.equal(emptyLine(0), "Nothing spent yet.");
 });

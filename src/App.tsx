@@ -68,6 +68,7 @@ import { HomeSessionsCard } from "./components/HomeSessionsCard";
 import { OverviewActions } from "./components/OverviewActions";
 import { AccessPage } from "./components/AccessPage";
 import { OverviewOrgsCard } from "./components/OverviewOrgsCard";
+import { OverviewSharesCard } from "./components/OverviewSharesCard";
 import { MeshCard, MeshView, StaleTabBanner } from "./components/MeshView";
 import { SharesPage } from "./components/SharesPage";
 import { isSharesHash } from "./lib/session-shares";
@@ -994,7 +995,6 @@ export function App() {
           agents={agents.data()}
           peerWork={peerWork()}
           insightsPage={footPage()}
-          sharesOpen={sharesRoute()}
           onRefresh={refresh}
           onArchiveChanged={onArchived}
           onNew={() => setCreating(true)}
@@ -1210,6 +1210,8 @@ export function App() {
                   <MeshCard />
                   <Show when={installed()}>{(list) => <ExtensionCards extensions={list()} />}</Show>
                   <ExplanationsCard explanations={explanations.data()} now={now()} />
+                  {/* Every public link at a glance, and the way into #/shares. */}
+                  <OverviewSharesCard />
                   {/* Last: every organization at a glance, and the way into #/orgs. */}
                   <OverviewOrgsCard now={now()} />
                 </div>

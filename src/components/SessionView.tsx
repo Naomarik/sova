@@ -25,7 +25,8 @@ import { RemoteChip, RemoteHeadChip } from "./RemoteStatus";
 import type { PaneInsight, TabId } from "./SessionPane";
 import { WatchView } from "./WatchView";
 import { Banner, Chip, Icon } from "./ui";
-import { hostLabel, hostOf } from "../lib/mesh";
+import { hostOf } from "../lib/mesh";
+import { HostStateMark } from "./HostStateMark";
 import { HostScopeProvider } from "../lib/host-scope";
 
 /** Why a session is open read-only: a TUI has it, an unknown writer may, or it is a project
@@ -227,9 +228,7 @@ export function SessionView(props: {
           <Show when={hostOf(path)}>
             {(h) => (
               <>
-                <span class="session-head-host" title={`This session lives on ${hostLabel(h())}`}>
-                  on {hostLabel(h())}
-                </span>
+                <HostStateMark host={h()} class="session-head-host" />
                 <span aria-hidden="true">·</span>
               </>
             )}
@@ -306,6 +305,7 @@ export function SessionView(props: {
           <span class="workspace-pane-name" id={`pane-${props.paneId}-name`} title={paneTitle()}>
             {paneName()}
           </span>
+          <Show when={hostOf(path)}>{(h) => <HostStateMark host={h()} class="workspace-pane-host" />}</Show>
           <ContextGauge path={path} />
           <ProfileChip summary={s()} info={profileInfo()} />
           {/* Mid-turn, said at workspace level: split mode has N panes and

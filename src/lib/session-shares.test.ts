@@ -1,8 +1,29 @@
 // The operator app's words for session share links (§app.session-share/sheet, /shares-page).
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { SessionShare, SessionSharePresence } from "../../shared/session-share";
-import { cleanLabels, createBlocked, expiresWord, imagesBlocked, isShareChanged, isStalePreview, modeLine, openedLine, presenceWord, ShareApiError, shareLine, sharingTabLabel, sliceLine, thumbsLine, viewingNow, visitLine } from "./session-shares";
+import type { PreviewView } from "../../shared/preview-links";
+import type { OrgLinkRow, SessionShare, SessionSharePresence, SharesOverview } from "../../shared/session-share";
+import {
+  cleanLabels,
+  createBlocked,
+  expiresWord,
+  imagesBlocked,
+  isShareChanged,
+  isStalePreview,
+  modeLine,
+  openedLine,
+  presenceWord,
+  readShares,
+  ShareApiError,
+  shareLine,
+  sharesCardLine,
+  sharesCounts,
+  sharingTabLabel,
+  sliceLine,
+  thumbsLine,
+  viewingNow,
+  visitLine,
+} from "./session-shares";
 
 test("labels are trimmed, capped, deduplicated case-insensitively, and never the anyone row's label", () => {
   assert.deepEqual(cleanLabels([" Ana ", "ana", "", "Ben", "Anyone with the link", "x".repeat(80)]), ["Ana", "Ben", "x".repeat(60)]);
@@ -103,4 +124,66 @@ test("only a 409 share-changed reads as a share changed meanwhile", () => {
   assert.equal(isShareChanged(new ShareApiError("x", 409, "share-changed")), true);
   assert.equal(isShareChanged(new ShareApiError("x", 409, "stale-preview")), false);
   assert.equal(isShareChanged(new ShareApiError("x", 400, "share-changed")), false);
+});
+
+// ---- the overview's Shares card (§chat.transcript/landing-page) ------------------------------------
+
+const liveShare = (id: string, presences: SessionSharePresence[], extra: Partial<SessionShare> = {}): SessionShare => ({
+  id,
+  sessionId: "s",
+  sessionTitle: "t",
+  title: "t",
+  mode: "snapshot",
+  cutAt: null,
+  createdAt: "2026-09-30T00:00:00Z",
+  recipients: presences.map((presence, i) => ({ id: `r_${i}`, label: `P${i}`, state: "live", createdAt: "", expiresAt: "", presence, opened: 1 })),
+  ...extra,
+});
+const orgLink = (presence?: SessionSharePresence): OrgLinkRow => ({ kind: "owner", orgId: "o", orgName: "O", personId: "p", personName: "P", state: "live", createdAt: "", expiresAt: "", opened: 0, visits: [], ...(presence ? { presence } : {}) });
+const preview = (id: string, state: PreviewView["state"], extra: Partial<PreviewView> = {}): PreviewView => ({ id, projectId: "p", port: 5173, createdAt: "", expiresAt: "", createdBy: "operator", state, ...extra });
+
+test("the Shares card reads every host and this host's previews at once; a host that fails is kept with its error", async () => {
+  const asked: (string | null)[] = [];
+  const read = await readShares([null, "peer-a", "peer-b"], {
+    overview: async (host) => {
+      asked.push(host);
+      if (host === "peer-b") throw new Error("offline");
+      return { sessionShares: [liveShare(`ss_${host ?? "here"}`, ["viewing"])], orgLinks: [] } satisfies SharesOverview;
+    },
+    previews: async () => [preview("pv_a", "active")],
+  });
+  assert.deepEqual(asked, [null, "peer-a", "peer-b"]);
+  assert.deepEqual(
+    read.hosts.map((h) => [h.host, !!h.overview, h.error]),
+    [
+      [null, true, null],
+      ["peer-a", true, null],
+      ["peer-b", false, "offline"],
+    ],
+  );
+  assert.equal(read.previews?.length, 1);
+  // Previews that fail read as null, never as none.
+  const noPreviews = await readShares([null], { overview: async () => ({ sessionShares: [], orgLinks: [] }), previews: () => Promise.reject(new Error("503")) });
+  assert.equal(noPreviews.previews, null);
+});
+
+test("the Shares card counts live links only, leaves out a host that didn't answer, and counts a person's own preview link", () => {
+  const counts = sharesCounts({
+    hosts: [
+      { host: null, overview: { sessionShares: [liveShare("ss_1", ["viewing", "open"]), liveShare("ss_2", ["viewing"], { stoppedAt: "2026-09-30T00:00:00Z" })], orgLinks: [orgLink("viewing"), orgLink()] }, error: null },
+      { host: "peer", overview: null, error: "offline" },
+    ],
+    previews: [preview("pv_a", "active"), preview("pv_b", "active", { siblingOf: "pv_a", sentTo: "ana" }), preview("pv_c", "off"), preview("pv_d", "expired")],
+  });
+  // ss_2 is stopped: neither its link nor its old presence counts.
+  assert.deepEqual(counts, { sessionShares: 1, orgLinks: 2, previewLinks: 2, viewing: 2, total: 5 });
+  assert.equal(sharesCardLine(counts!), "1 session share · 2 organization links · 2 preview links · 2 viewing now");
+  // Nothing answered: no counts at all (the card keeps reading), never a row of zeros.
+  assert.equal(sharesCounts({ hosts: [{ host: null, overview: null, error: "x" }], previews: null }), null);
+});
+
+test("the Shares card's line: singulars, no viewing clause at 0, and the empty line", () => {
+  assert.equal(sharesCardLine({ sessionShares: 0, orgLinks: 0, previewLinks: 0, viewing: 0, total: 0 }), "No public links are open.");
+  assert.equal(sharesCardLine({ sessionShares: 2, orgLinks: 1, previewLinks: 0, viewing: 0, total: 3 }), "2 session shares · 1 organization link · 0 preview links");
+  assert.equal(sharesCardLine({ sessionShares: 0, orgLinks: 0, previewLinks: 1, viewing: 0, total: 1 }), "0 session shares · 0 organization links · 1 preview link");
 });

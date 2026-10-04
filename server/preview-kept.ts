@@ -14,6 +14,11 @@ import { sessionsChanged } from "./list-generation";
  *
  * Read tolerantly: a file that can't be read keeps nothing (no link, no folder served) and every
  * preview still opens; an entry that breaks a rule is left out alone. Never logged.
+ *
+ * A person's own link to a preview (a sibling, §app.outreach/links) is kept from its send on in a map
+ * of its own, `siblingLinks` (sibling id -> link), never as a `previews` entry: a sibling has no target
+ * of its own, and every reader of `previews` relies on each entry having one. It is the operator's,
+ * for the Sent to line only (§mesh.public/preview-card); no tool or model reads it.
  */
 
 export const PREVIEW_KEPT_FILE = "preview-kept.json";
@@ -33,6 +38,8 @@ export interface KeptPreview {
 interface KeptFile {
   version: 1;
   previews: Record<string, KeptPreview>;
+  /** A person's own link by sibling id: absent while none is kept (an older Sova writes none, and ignores it). */
+  siblingLinks?: Record<string, string>;
 }
 
 export const previewKeptFile = (): string => join(stateRoot(), PREVIEW_KEPT_FILE);
@@ -43,6 +50,18 @@ const REF = /^[A-Za-z0-9_.:-]{1,128}$/;
 const ENDPOINT = /^[a-z][a-z0-9-]{0,30}\.[a-z][a-z0-9-]{0,30}$/;
 const SERVE = /^[A-Za-z0-9_.-]{1,200}$/;
 const optStr = (v: unknown, max: number): v is string | undefined => v === undefined || (typeof v === "string" && v.length <= max);
+
+/** A kept link: http(s), its host's first label a preview label. */
+function isLink(v: string): boolean {
+  if (v.length > 512) return false;
+  try {
+    const u = new URL(v);
+    if (u.protocol !== "https:" && u.protocol !== "http:") return false;
+    return PREVIEW_LABEL_RE.test(u.hostname.split(".")[0] ?? "");
+  } catch {
+    return false;
+  }
+}
 
 /** One entry checked, or null. */
 function entryOf(v: unknown): KeptPreview | null {
@@ -64,17 +83,7 @@ function entryOf(v: unknown): KeptPreview | null {
   } else return null;
   if (!optStr(v.url, 512) || !optStr(v.branch, 256) || !optStr(v.purpose, 400)) return null;
   if (v.sessionId !== undefined && (typeof v.sessionId !== "string" || !REF.test(v.sessionId))) return null;
-  if (typeof v.url === "string") {
-    let host = "";
-    try {
-      const u = new URL(v.url);
-      if (u.protocol !== "https:" && u.protocol !== "http:") return null;
-      host = u.hostname;
-    } catch {
-      return null;
-    }
-    if (!PREVIEW_LABEL_RE.test(host.split(".")[0] ?? "")) return null;
-  }
+  if (typeof v.url === "string" && !isLink(v.url)) return null;
   return {
     target,
     ...(typeof v.url === "string" ? { url: v.url } : {}),
@@ -107,6 +116,12 @@ function read(): KeptFile {
       for (const [id, v] of Object.entries(raw.previews)) {
         const e = PREVIEW_ID.test(id) ? entryOf(v) : null;
         if (e) out.previews[id] = e;
+      }
+      // The people's links: a map that breaks its shape keeps none of them, and costs the previews nothing.
+      if (isObj(raw.siblingLinks)) {
+        const links: Record<string, string> = {};
+        for (const [id, v] of Object.entries(raw.siblingLinks)) if (PREVIEW_ID.test(id) && typeof v === "string" && isLink(v)) links[id] = v;
+        if (Object.keys(links).length) out.siblingLinks = links;
       }
     } catch (err) {
       // Never quotes the file: it holds links.
@@ -146,16 +161,41 @@ export function keptPreviews(): Record<string, KeptPreview> {
 export function keepPreview(id: string, kept: KeptPreview): void {
   if (!PREVIEW_ID.test(id)) throw new Error("bad preview id");
   const file = read();
-  write({ version: 1, previews: { ...file.previews, [id]: kept } });
+  write({ ...file, previews: { ...file.previews, [id]: kept } });
+}
+
+/** Keep a person's own link to a preview (sibling `id`), made by its send (§app.outreach/links). */
+export function keepSiblingLink(id: string, url: string): void {
+  if (!PREVIEW_ID.test(id)) throw new Error("bad preview id");
+  if (!isLink(url)) throw new Error("not a preview link");
+  const file = read();
+  write({ ...file, siblingLinks: { ...file.siblingLinks, [id]: url } });
+}
+
+/** A person's kept link (sibling `id`), or null: one sent before links were kept, or one dropped. */
+export function keptSiblingLink(id: string): string | null {
+  return read().siblingLinks?.[id] ?? null;
+}
+
+/** Drop the people's links `keep` refuses (a sibling turned off, expired or gone). Writes only when one goes. */
+export function dropSiblingLinks(keep: (id: string) => boolean): string[] {
+  const file = read();
+  const links = file.siblingLinks ?? {};
+  const gone = Object.keys(links).filter((id) => !keep(id));
+  if (!gone.length) return [];
+  const rest = Object.fromEntries(Object.entries(links).filter(([id]) => !gone.includes(id)));
+  write({ version: 1, previews: file.previews, ...(Object.keys(rest).length ? { siblingLinks: rest } : {}) });
+  return gone;
 }
 
 /** Every kept link's label (the secret part), for the redactions and the leak checks. */
 export function keptLabels(): string[] {
   const out: string[] = [];
-  for (const k of Object.values(read().previews)) {
-    if (!k.url) continue;
+  const file = read();
+  for (const url of [...Object.values(file.previews).map((k) => k.url), ...Object.values(file.siblingLinks ?? {})]) {
+    if (!url) continue;
     try {
-      const label = new URL(k.url).hostname.split(".")[0] ?? "";
+      const label = new URL(url).hostname.split(".")[0] ?? "";
       if (PREVIEW_LABEL_RE.test(label)) out.push(label);
     } catch {
       // not a URL: not kept

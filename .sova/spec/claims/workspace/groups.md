@@ -280,7 +280,8 @@ A pane is a whole `ChatView` for a member Sova can write to, and a whole `WatchV
 composer, the model menu or the mode menu changes inside a pane — §chat/transcript, §chat/composer and their sub-sections
 apply verbatim. What changes is scoping and chrome:
 
-- **Pane head, 40px**, sunken, under the 56px workspace head: the member name, the context gauge
+- **Pane head, 40px**, sunken, under the 56px workspace head: the member name, for a member that lives
+  on a peer its host mark (§mesh.remote-sessions/head-host-state), the context gauge
   (§chat/context-window, the percent-only step — a pane is never a 720px head), its state chips, and the tools.
   The name is `{label} · {model}` when a label exists, else `{title} · {model}` — and for
   members that share a title with no label (three `opus` members of one comparison) the model with its

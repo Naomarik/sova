@@ -1183,7 +1183,10 @@
         "src/components/MeshView.tsx",
         "src/extensions.css",
         "src/components/ExplanationsView.tsx",
-        "src/lib/explanations.ts"
+        "src/lib/explanations.ts",
+        "src/components/OverviewSharesCard.tsx",
+        "src/lib/session-shares.ts",
+        "src/lib/session-shares.test.ts"
       ],
       "requires": [
         "§app.organizations/org-cards",
@@ -4755,7 +4758,7 @@
     "§app.shell/overview": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "reviewed",
       "code": [
         "src/App.tsx",
         "src/lib/overview-route.ts",
@@ -8546,7 +8549,7 @@
     "§app.session-share/shares-page": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "requires": [
         "§app.session-share/sheet",
         "§app.insights/placement"
@@ -8622,7 +8625,7 @@
     "§design.copy-deck/session-share": {
       "kind": "note",
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "reviewed",
       "requires": [
         "§app.session-share/page",
         "§app.session-share/sheet",
@@ -9305,7 +9308,7 @@
         "§mesh.public/preview"
       ],
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "code": [
         "src/components/PreviewsCard.tsx",
         "src/components/ProjectPage.tsx",
@@ -10007,7 +10010,7 @@
     "§app.outreach/links": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "code": [
         "server/outreach/links.ts",
         "shared/outreach.ts",
@@ -10017,7 +10020,9 @@
         "src/lib/previews.ts",
         "src/components/PreviewsCard.tsx",
         "src/components/SharesPage.tsx",
-        "server/outreach.test.ts"
+        "server/outreach.test.ts",
+        "server/preview-kept.ts",
+        "server/project-previews.test.ts"
       ],
       "requires": [
         "§app.baton/links",
@@ -13651,6 +13656,23 @@
       "requires": [
         "§app.insights/llm-inflight",
         "§app.project-costs/pricing"
+      ]
+    },
+    "§mesh.remote-sessions/head-host-state": {
+      "kind": "behavior",
+      "requires": [
+        "§mesh.remote-sessions/head-host",
+        "§mesh.remote-sessions/host-filter"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/components/HostStateMark.tsx",
+        "src/components/SessionView.tsx",
+        "src/lib/mesh-details.ts",
+        "src/lib/mesh-details.test.ts",
+        "src/design/base.css",
+        "src/app.css"
       ]
     }
   },

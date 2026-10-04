@@ -1119,7 +1119,7 @@ host, person or recipient.
 |---|---|
 | Tab | "Sharing" · a count chip while someone is viewing; accessible name "Sharing, {n} viewing now" |
 | Section | eyebrow "Sharing" · `All Shares` · none: "Not shared with anyone." · `Share Session` · `Manage` · an older host: "This host can't share sessions yet. It needs an update." · failed: "Couldn't read this session's shares. {reason}" |
-| Sidebar foot | row "Shares" · spine "Shares" |
+| Overview card | eyebrow "Shares" · title "Shares" · chip `{n}` · "{n} session shares · {n} organization links · {n} preview links" (+ " · {n} viewing now") · none: "No public links are open." · before the first read: "Reading shares…" |
 | Page | title "Shares" · meta "{n} session shares · {n} organization links" (+ " · {n} viewing now") · `Refresh Shares` |
 | Cards | "Session shares" (row meta adds "session “{session title}”" when it differs) · "No session share has a live link." · disclosure "Ended · {n}" · "Organization links" (row "{hand-off title} · hand-off {n}" or "Owner page" · "{org} · {state} · Expires in {n} days") |
 | Actions | `Manage` · `Stop Sharing` (armed `Stop Every Link?`) · `Delete Link` (armed "Delete {person}'s Link?", with "{person}'s link stops working for good." under it while armed) |

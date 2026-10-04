@@ -16,6 +16,9 @@ import {
   previewGroups,
   previewWarning,
   RECIPIENT_DELETE_LABEL,
+  recipientCopied,
+  recipientCopyLabel,
+  recipientCopyTip,
   recipientDeleteConfirm,
   recipientDeleted,
   recipientDeleteName,
@@ -246,6 +249,14 @@ export function PreviewsCard(props: { projectId: string }) {
                                   <span class="previews-recipient-name" title={senderLine(r.createdBy) ?? undefined}>
                                     {name()}
                                   </span>
+                                  {/* Their own link, while it is kept: Copy only, never Open (the row's Open is the original's). */}
+                                  <Show when={r.sentLink}>
+                                    {(link) => (
+                                      <button type="button" class="button button-sm previews-recipient-copy" title={recipientCopyTip(name())} onClick={() => void copyText(link(), recipientCopied(name()))}>
+                                        {recipientCopyLabel(name())}
+                                      </button>
+                                    )}
+                                  </Show>
                                   <button
                                     type="button"
                                     class="button button-sm button-destructive previews-recipient-off"
@@ -270,12 +281,20 @@ export function PreviewsCard(props: { projectId: string }) {
                       </div>
                     </Show>
                   </div>
-                  <Show when={row().start || row().url || !solo()}>
+                  <Show when={row().start || row().url || v.sentLink || !solo()}>
                     <div class="previews-row-actions">
                       <Show when={row().start}>
                         {(s) => (
                           <button type="button" class="button button-sm" title="Starts this copy. A visit to its link never starts it." onClick={() => void start(s().instance)}>
                             Start
+                          </button>
+                        )}
+                      </Show>
+                      {/* A sibling listed alone: its person's own link, while kept; never an Open. */}
+                      <Show when={v.siblingOf && v.sentLink}>
+                        {(link) => (
+                          <button type="button" class="button button-sm" title={recipientCopyTip(recipientName(v))} onClick={() => void copyText(link(), recipientCopied(recipientName(v)))}>
+                            {recipientCopyLabel(recipientName(v))}
                           </button>
                         )}
                       </Show>

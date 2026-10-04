@@ -42,6 +42,9 @@ export interface PreviewView {
   /** The roster person it was sent to, and their name as the list shows it ("sent to {name}"). */
   sentTo?: string;
   sentToName?: string;
+  /** An active sibling's person's own link, when kept (from its send on): in the two GET lists only, for the
+      Sent to line's Copy (§mesh.public/preview-card). Never in `url`, the mint's answer or any tool's output. */
+  sentLink?: string;
   state: PreviewState;
   /** Something accepts connections on the port now (either loopback); for a folder, Sova serves it now. Only on active ones. */
   running?: boolean;

@@ -64,7 +64,7 @@ export function memberRow(m: LinkMemberView, now = Date.now()): string {
 
 /** One link: its id, when made, ended or not, then a line per member. */
 export function linkBlock(v: MeshLinkView, now = Date.now()): string {
-  const head = `- ${v.link.id} · made ${ago(v.link.createdAt, now)}${v.link.endedAt ? ` · ENDED ${ago(v.link.endedAt, now)}` : ""}`;
+  const head = `- ${v.link.id} · made ${ago(v.link.createdAt, now)}${v.link.endedAt ? ` · ENDED ${ago(v.link.endedAt, now)}${v.link.endedWhy ? ` (${v.link.endedWhy})` : ""}` : ""}`;
   return [head, ...v.members.map((m) => `  - ${memberRow(m, now)}`)].join("\n");
 }
 

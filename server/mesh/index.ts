@@ -37,7 +37,8 @@ import { getIdentity, setIdentity, type TailnetStatus } from "./localapi";
 import { defaultSelfId, nextLabelAt, type PeerEntry, type PeersConfig, peerPort, peerUrl, peersFile, readPeers, SYNC_CATEGORIES, validatePeers, writePeers } from "./peers";
 import { localRequest, PROXIED_HEADER, peerSocketRoute, proxyTail, proxyPeer, upgradePeerSocket } from "./proxy";
 import { fetchPeer, setLanClients } from "./dial";
-import { ensureLanIdentity, LanRuntime } from "./lan";
+import { ensureLanIdentity, LanRuntime, readLanIdentity } from "./lan";
+import { lanNodeId } from "./lan-cert";
 import { bootBuild } from "./build-id";
 import { cleanBuild } from "./lan-handoff-protocol";
 import { lanRoutes } from "./lan-routes";
@@ -433,6 +434,18 @@ export const meshApi = {
     ...(rt.self?.dnsName ? { dnsName: rt.self.dnsName } : {}),
     addresses: rt.listener?.info().addresses ?? [],
   }),
+  /** Every node id this host goes by (§mesh.links/host-names): its tailnet identity and, once it
+      has a LAN key, lan:<its pin>, which every LAN pairing knows it by. */
+  selfNodeIds: (): string[] => {
+    const lan = readLanIdentity();
+    return [...(rt.self?.nodeId ? [rt.self.nodeId] : []), ...(lan ? [lanNodeId(lan.pin)] : [])];
+  },
+  /** This host's node id as `peer` knows it: lan:<pin> to a LAN pairing, else its tailnet identity. */
+  selfNodeIdFor: (peer: PeerEntry): string | undefined => {
+    if (!peer.lan) return rt.self?.nodeId;
+    const lan = readLanIdentity();
+    return lan ? lanNodeId(lan.pin) : undefined;
+  },
   /** When a peer's current up/down state began (this server's view), or null. */
   peerSince: (id: string): number | null => upSince.get(id) ?? null,
   /** Record a peer's up/down state learnt elsewhere (the details route's own calls). */

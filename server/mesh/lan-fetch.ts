@@ -12,8 +12,15 @@ export const LAN_HOST = "lan-peer";
 const NULL_BODY = new Set([101, 103, 204, 205, 304]);
 const HOP = new Set(["connection", "keep-alive", "proxy-connection", "transfer-encoding", "upgrade", "host"]);
 
-/** fetch(`http://lan-peer${path}`, init), with every byte going over `agent`'s streams. */
-export async function agentFetch(agent: Agent, input: Request | string, init?: RequestInit): Promise<Response> {
+/** A body past its cap: what the caller's fetch failure looks like, with a fixed reason. */
+const tooLarge = () => new TypeError("terminated", { cause: { code: "too large" } });
+
+/**
+ * fetch(`http://lan-peer${path}`, init), with every byte going over `agent`'s streams. `maxBytes`
+ * caps the response body (a hostile host could stream without end into a poll this host parses):
+ * a declared length past it rejects at once, and a body that grows past it errors and is cut.
+ */
+export async function agentFetch(agent: Agent, input: Request | string, init?: RequestInit, opts: { maxBytes?: number } = {}): Promise<Response> {
   const req = typeof input === "string" ? new Request(new URL(input, `http://${LAN_HOST}`), init) : input;
   const url = new URL(req.url);
   const signal = init?.signal ?? req.signal;
@@ -55,7 +62,16 @@ export async function agentFetch(agent: Agent, input: Request | string, init?: R
       }
       const status = res.statusCode ?? 502;
       const nullBody = NULL_BODY.has(status) || req.method === "HEAD";
+      const max = opts.maxBytes;
+      if (!nullBody && max !== undefined && Number(res.headers["content-length"] ?? 0) > max) {
+        signal?.removeEventListener("abort", onAbort);
+        res.destroy();
+        out.destroy();
+        reject(tooLarge());
+        return;
+      }
       if (nullBody) res.resume();
+      let got = 0;
       const body = nullBody
         ? null
         : new ReadableStream<Uint8Array>({
@@ -68,6 +84,12 @@ export async function agentFetch(agent: Agent, input: Request | string, init?: R
               };
               res.on("data", (c: Buffer) => {
                 if (finished) return;
+                got += c.byteLength;
+                if (max !== undefined && got > max) {
+                  fail(tooLarge());
+                  res.destroy();
+                  return;
+                }
                 controller.enqueue(new Uint8Array(c.buffer, c.byteOffset, c.byteLength));
                 if ((controller.desiredSize ?? 1) <= 0) res.pause();
               });

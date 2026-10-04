@@ -87,7 +87,8 @@ export function addressIdentity(peers: () => PeerEntry[], env: NodeJS.ProcessEnv
       const host = whoisHost(addr);
       const ip = host === null ? null : tailnetIp(host);
       const own = new Set(tailnetAddresses(env.SOVA_PEER_HOST));
-      const hits = ip && !own.has(ip) ? peers().filter((p) => entryAddresses(p).includes(ip)) : [];
+      // A dial-out pairing is never a tailnet caller: its relay address must not match (or shadow) one.
+      const hits = ip && !own.has(ip) ? peers().filter((p) => !p.lan && entryAddresses(p).includes(ip)) : [];
       if (hits.length !== 1) {
         console.warn(`[mesh] refused ${addr}: ${!ip ? "not a tailnet address" : own.has(ip) ? "this host" : hits.length ? "several peers.json entries" : "no peers.json entry"}`);
         return null;

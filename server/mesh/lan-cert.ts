@@ -47,8 +47,9 @@ function oid(dotted: string): Buffer {
 const ECDSA_WITH_SHA256 = seq(oid("1.2.840.10045.4.3.2"));
 const name = (cn: string) => seq(set(seq(oid("2.5.4.3"), tlv(0x0c, Buffer.from(cn)))));
 // Each identity has its own random subject (= issuer). With one shared subject, both TLS stacks
-// look a pinned cert up by name and find only the first of several a relay pins.
-const randomCn = () => `sova-${crypto.randomBytes(8).toString("hex")}`;
+// look a pinned cert up by name and find only the first of several a relay pins. Random hex only:
+// nothing in it names Sova to a scanner reading the certificate.
+const randomCn = () => crypto.randomBytes(8).toString("hex");
 // notBefore 2000-01-01 (UTCTime), notAfter 9999-12-31 (GeneralizedTime, RFC 5280's "no expiry").
 const VALIDITY = seq(tlv(0x17, Buffer.from("000101000000Z")), tlv(0x18, Buffer.from("99991231235959Z")));
 // One critical extension: basicConstraints CA:FALSE (an empty SEQUENCE; DER omits the default).

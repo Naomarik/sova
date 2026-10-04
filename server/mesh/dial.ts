@@ -37,11 +37,30 @@ export function lanClient(peer: PeerEntry): ReverseClient | null {
   return peer.lan ? (lan?.client(peer.id) ?? null) : null;
 }
 
-/** fetch(<peer>/<path>, init). `path` starts with "/". */
+/** What this host reads from a pairing's answer to a probe (hello, details), at most. */
+export const PROBE_MAX_BYTES = 1024 * 1024;
+/** The same for a session list; SOVA_MESH_LIST_MAX_BYTES sets another. */
+export const LIST_MAX_BYTES = 32 * 1024 * 1024;
+
+/** The cap on a pairing's answer to `path` that this host parses itself, or none (a sync or
+    transfer body, which has its own limits). */
+export function responseCap(path: string, env: NodeJS.ProcessEnv = process.env): number | undefined {
+  const p = path.split("?")[0];
+  if (p === "/api/peer/hello" || p === "/api/peer/details") return PROBE_MAX_BYTES;
+  if (p === "/api/sessions") {
+    const n = Number(env.SOVA_MESH_LIST_MAX_BYTES);
+    return Number.isInteger(n) && n > 0 ? n : LIST_MAX_BYTES;
+  }
+  return undefined;
+}
+
+/** fetch(<peer>/<path>, init). `path` starts with "/". A pairing's answers to probes and lists are
+    capped (responseCap): it may roam anywhere, and nothing else bounds a body it streams. */
 export function fetchPeer(peer: PeerEntry, path: string, init?: RequestInit): Promise<Response> {
   if (!peer.lan) return fetch(`${peerUrl(peer)}${path}`, init);
   const agent = lanAgent(peer);
-  return agent ? agentFetch(agent, path, init) : Promise.reject(new NotConnected());
+  const maxBytes = responseCap(path);
+  return agent ? agentFetch(agent, path, init, maxBytes === undefined ? {} : { maxBytes }) : Promise.reject(new NotConnected());
 }
 
 /** A Request the proxy built for `peer`, sent the same way. */

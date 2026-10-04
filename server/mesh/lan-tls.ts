@@ -35,8 +35,12 @@ import tls, { type ConnectionOptions, type TLSSocket, type TlsOptions } from "no
 import { parseIp, relayAddress } from "../../shared/mesh-lan";
 import { type LanIdentity, samePin, spkiPin } from "./lan-cert";
 
-export const ALPN_ANSWER = "sova-answer/1";
-export const ALPN_ASK = "sova-ask/1";
+// Neutral tokens: the ClientHello carries them in the clear, so they name no product. They are still
+// fixed and rare, so a passive observer can tell this traffic from HTTPS; that residual is accepted
+// (§mesh.lan/handshake), as is the client certificate reaching whoever answers at the relay address
+// before this side has checked it (TLS 1.3 sends it encrypted, but to the server it is talking to).
+export const ALPN_ANSWER = "pa/1";
+export const ALPN_ASK = "pq/1";
 export type Channel = "answer" | "ask";
 const ALPN: Record<Channel, string> = { answer: ALPN_ANSWER, ask: ALPN_ASK };
 const CHANNEL_OF = new Map<string, Channel>([

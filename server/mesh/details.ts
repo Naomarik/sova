@@ -43,9 +43,15 @@ const ROOT = fileURLToPath(new URL("../..", import.meta.url));
 const notFound = (c: Context) => c.json({ error: "Not found" }, 404);
 const small = bodyLimit({ maxSize: 4 * 1024, onError: (c) => c.json({ error: "Too large" }, 413) });
 
-/** A host name as peers.json takes it: trimmed, 1–80 characters. */
+// Control characters (a newline could forge a log line) and the bidi overrides that make a name
+// read as another: never part of a host name.
+const UNPRINTABLE = /[\u0000-\u001f\u007f-\u009f\u200e\u200f\u202a-\u202e\u2066-\u2069]/g;
+
+/** A host name as peers.json takes it: without control or bidi-override characters, trimmed, 1–80 characters. */
 export function cleanLabel(v: unknown): string | null {
-  return typeof v === "string" && v.trim() && v.trim().length <= 80 ? v.trim() : null;
+  if (typeof v !== "string") return null;
+  const s = v.replace(UNPRINTABLE, "").trim();
+  return s && s.length <= 80 ? s : null;
 }
 
 /** Sessions with a turn running now and workers working now, from every fresh live record. */
@@ -384,6 +390,9 @@ export function mountDetails(app: Hono, mesh: MeshApi, sources: DetailsSources, 
     const label = cleanLabel(body?.label);
     const labelAt = body?.labelAt;
     if (!label || typeof labelAt !== "number" || !Number.isFinite(labelAt) || labelAt <= 0) return c.json({ error: "Expected {label, labelAt}" }, 400);
+    // A dial-out pairing keeps the name the operator gave it here (§mesh.lan/pairing): at presence
+    // it could otherwise take a trusted host's name, and the wrong one be granted more.
+    if (caller.lan) return c.json({ ok: true as const });
     const err = takeLabel(caller.nodeId, label, labelAt);
     return err ? c.json({ error: err.error }, err.status) : c.json({ ok: true as const });
   });

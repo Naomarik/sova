@@ -6,7 +6,7 @@ import { fingerprint, isLanNodeId, isPin, lanNodeId, mintLanIdentity, parsePin, 
 test("mintLanIdentity: a self-signed P-256 v3 cert with the fixed generic profile", () => {
   const id = mintLanIdentity();
   const x = new X509Certificate(id.certPem);
-  assert.match(x.subject, /^CN=sova-[0-9a-f]{16}$/);
+  assert.match(x.subject, /^CN=[0-9a-f]{16}$/, "random, and naming nothing");
   assert.equal(x.issuer, x.subject);
   assert.notEqual(new X509Certificate(mintLanIdentity().certPem).subject, x.subject, "each identity has its own name");
   assert.equal(x.ca, false);

@@ -6,6 +6,7 @@ import net, { type AddressInfo } from "node:net";
 import { after, before, test } from "node:test";
 import tls, { type TLSSocket } from "node:tls";
 import { mintLanIdentity } from "./lan-cert";
+import { LIST_MAX_BYTES, PROBE_MAX_BYTES, responseCap } from "./dial";
 import { agentFetch, LAN_HOST } from "./lan-fetch";
 import { connectReverse, serveReverse } from "./lan-reverse";
 import { connectPinned, relayServerOptions } from "./lan-tls";
@@ -13,6 +14,7 @@ import { connectPinned, relayServerOptions } from "./lan-tls";
 let server: http.Server;
 let agent: http.Agent;
 let seen: { host?: string; method?: string; len?: number } = {};
+let endlessSent = 0;
 
 before(async () => {
   server = http.createServer((req: IncomingMessage, res: ServerResponse) => {
@@ -38,6 +40,19 @@ before(async () => {
       return; // never ends
     }
     if (url.pathname === "/hang") return;
+    if (url.pathname === "/endless") {
+      res.writeHead(200, { "content-type": "application/json" });
+      const chunk = Buffer.alloc(64 * 1024, 32);
+      const pump = () => {
+        while (!res.destroyed && endlessSent < 64 * 1024 * 1024) {
+          endlessSent += chunk.length;
+          if (!res.write(chunk)) return void res.once("drain", pump);
+        }
+        res.end();
+      };
+      res.on("close", () => {});
+      return pump();
+    }
     res.statusCode = 404;
     res.end();
   });
@@ -94,6 +109,26 @@ test("aborts reject as fetch does: before the answer, and in the middle of a bod
   const pre = new AbortController();
   pre.abort();
   await assert.rejects(agentFetch(agent, "/json", { signal: pre.signal }), (e: Error) => e.name === "AbortError");
+});
+
+test("L5: a capped body: a declared length past the cap rejects, an endless one is cut at the cap", async () => {
+  // /big declares 4 MiB.
+  await assert.rejects(agentFetch(agent, "/big", undefined, { maxBytes: 1024 * 1024 }), (e: TypeError & { cause?: { code?: string } }) => e instanceof TypeError && e.cause?.code === "too large");
+  // /endless streams chunked with no length, without end.
+  const res = await agentFetch(agent, "/endless", undefined, { maxBytes: 256 * 1024 });
+  assert.equal(res.status, 200);
+  await assert.rejects(res.arrayBuffer(), (e: TypeError & { cause?: { code?: string } }) => e.cause?.code === "too large");
+  assert.ok(endlessSent < 64 * 1024 * 1024, "the stream was cut, not read to the end");
+  // Under the cap, whole.
+  assert.equal((await (await agentFetch(agent, "/big", undefined, { maxBytes: 4 * 1024 * 1024 })).arrayBuffer()).byteLength, 4 * 1024 * 1024);
+});
+
+test("L5: a pairing's probes and session lists are capped; other paths aren't", () => {
+  assert.equal(responseCap("/api/peer/hello"), PROBE_MAX_BYTES);
+  assert.equal(responseCap("/api/peer/details?x=1"), PROBE_MAX_BYTES);
+  assert.equal(responseCap("/api/sessions"), LIST_MAX_BYTES);
+  assert.equal(responseCap("/api/sessions", { SOVA_MESH_LIST_MAX_BYTES: "1000" }), 1000);
+  assert.equal(responseCap("/api/peer/sync/doc"), undefined);
 });
 
 test("nobody there: a TypeError, as fetch's", async () => {

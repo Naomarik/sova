@@ -163,10 +163,11 @@ function whyDown(err: unknown): string {
 // A dial-out pairing's answers (§mesh.lan/as-a-peer) reach this host's browser origin from a machine
 // that may roam onto any network, so they are cut down to what a page needs: only the headers below,
 // never a redirect, cache wipe, service worker scope, CORS grant or preload; a sandbox CSP and
-// nosniff on everything; and a type a browser would run or render as a document (HTML, SVG, XML,
-// script) only ever as a download.
+// nosniff on everything; only JSON, plain text and raster images keep their type, and anything else
+// (HTML, SVG, XML, script, PDF, multipart, no type at all) is only ever a download. A 401 or 407
+// becomes 502: the page reads a 401 as "this browser is refused here" and would lock itself out.
 const PAIRING_HEADERS = new Set(["content-type", "content-length", "content-disposition", "content-encoding", "cache-control", "etag", "last-modified", "date", "vary", REFUSED_HEADER.toLowerCase()]);
-const ACTIVE_TYPE = /html|svg|xml|javascript|ecmascript/i;
+const PASSIVE_TYPES = new Set(["application/json", "text/plain", "image/png", "image/jpeg", "image/gif", "image/webp", "image/avif", "image/bmp", "application/octet-stream"]);
 
 /** The answer of a dial-out pairing, as the browser may see it. */
 export function hardenPairingResponse(res: Response): Response {
@@ -174,15 +175,16 @@ export function hardenPairingResponse(res: Response): Response {
   res.headers.forEach((v, k) => {
     if (PAIRING_HEADERS.has(k.toLowerCase())) headers.append(k, v);
   });
-  const type = headers.get("content-type") ?? "";
-  if (ACTIVE_TYPE.test(type)) {
+  const essence = (headers.get("content-type") ?? "").split(";")[0]!.trim().toLowerCase();
+  if (!PASSIVE_TYPES.has(essence) || essence === "application/octet-stream") {
     headers.set("content-type", "application/octet-stream");
     headers.set("content-disposition", "attachment");
   }
   headers.set("content-security-policy", "sandbox; default-src 'none'");
   headers.set("x-content-type-options", "nosniff");
   // 3xx included: a redirect's Location is gone, so it can't send the browser anywhere.
-  return new Response(res.body, { status: res.status, statusText: res.statusText, headers });
+  const status = res.status === 401 || res.status === 407 ? 502 : res.status;
+  return new Response(res.body, { status, statusText: status === res.status ? res.statusText : "Bad Gateway", headers });
 }
 
 /** A hop to a dial-out pairing: over its connection, failing at once while it has none. */

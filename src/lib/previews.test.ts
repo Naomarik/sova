@@ -22,7 +22,6 @@ import {
   recipientName,
   runningLine,
   sentToLine,
-  turnOffConfirm,
 } from "./previews";
 
 const view = (over: Partial<PreviewView>): PreviewView => ({
@@ -91,11 +90,6 @@ test("a sibling whose original isn't listed keeps its own row, still saying who 
   assert.deepEqual(groups.map((g) => [g.preview.id, g.recipients.length]).sort(), [["lost", 0], ["orphan", 0]]);
   assert.equal(sentToLine(groups.find((g) => g.preview.id === "orphan")!.preview), "sent to Karim");
   assert.equal(recipientName({ sentToName: "  " }), "a person");
-});
-
-test("the original's Turn Off confirm counts every link it ends", () => {
-  assert.equal(turnOffConfirm(0), "Turn Off Preview?");
-  assert.equal(turnOffConfirm(2), "Turn Off All 3 Links?");
 });
 
 test("the card's Delete names its scope: the preview with its recipients' links, or one person's link", () => {

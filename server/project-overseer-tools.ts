@@ -572,7 +572,7 @@ export function projectOverseerTools(host: PoToolHost, redactor: () => Redactor 
       name: "sova_previews",
       label: "Previews",
       description:
-        "The project's preview links: each shows one coding session's running app (a port it serves, or a folder of its worktree that Sova serves) to a stakeholder at its own public address, until it is turned off or expires. " +
+        "The project's preview links: each shows one coding session's running app (a port it serves, or a folder of its worktree that Sova serves) to a stakeholder at its own public address, until it is deleted or expires. " +
         "Lists each one's id, whether the operator has its link (previews made before links were kept have none), what it serves, its coding session and branch, its purpose, who made it, its expiry and whether the app answers now. Active ones first. You never see a link: send a preview to a person with sova_send_to_person and its `preview` id (they get their own link to it), or tell the operator, who has it on the project page. " +
         "It also lists the links to the project's running copies (sova_project_verbs share): each one's id, endpoint, the copy's branch, expiry and state. In a standalone project such a link is only for the operator; in an organization's project you may send it to one of its people by its id (sova_send_to_person).",
       promptSnippet: "list the project's preview links and running copies' links (id, what it serves, state; never the link)",
@@ -590,11 +590,11 @@ export function projectOverseerTools(host: PoToolHost, redactor: () => Redactor 
       name: "sova_preview",
       label: "Preview link",
       description:
-        "Start or turn off a preview link: one of the project's coding sessions' running apps at its own public address, for a stakeholder to see now. " +
+        "Start or delete a preview link: one of the project's coding sessions' running apps at its own public address, for a stakeholder to see now. " +
         "start: `session` (a coding session with a worktree), and either `port` (one that session already serves: the program listening must run from its worktree) or `folder` (a folder of its worktree, relative to it, that Sova serves: built static files, never a dot-folder), plus `purpose` (one line: what it shows and to whom). " +
         "Anyone with the link can use the app as if they were on this computer, so make one only when a stakeholder should see it now and check it answers. You never see the link (it would land in your session file): send the preview to a person with sova_send_to_person and its `preview` id (they get their own link to it), or tell the operator, who has the link on the project page. Sova never starts the app: if it stopped, have its coding session start it again (sova_send). " +
-        "Unattended it needs L1 and waits in a hold the operator can cancel. off: `id` turns one off at once, at any level; turn a preview off once it has served its purpose.",
-      promptSnippet: "start (L1, held unattended) or turn off a preview link of a coding session's app",
+        "Unattended it needs L1 and waits in a hold the operator can cancel. off: `id` deletes one at once and for good (its link and every link sent from it stop working, and nothing brings one back), at any level; delete a preview once it has served its purpose.",
+      promptSnippet: "start (L1, held unattended) or delete a preview link of a coding session's app",
       parameters: obj(
         {
           op: str("start | off", { enum: ["start", "off"] }),
@@ -610,9 +610,9 @@ export function projectOverseerTools(host: PoToolHost, redactor: () => Redactor 
       execute: act("sova_preview", async (q) => {
         if (q.op === "off") {
           const id = typeof q.id === "string" ? q.id.trim() : "";
-          if (!id) throw new Refusal("Give the id of the preview to turn off (sova_previews lists them).");
+          if (!id) throw new Refusal("Give the id of the preview to delete (sova_previews lists them).");
           const v = await host.turnOffPreview(id);
-          return { content: text(`Turned off ${v.id}: its link answers "no longer active" from now on.`), details: { v: 1, preview: handoffOf(v), note: `Turned off a preview link${v.purpose ? `: ${cut(v.purpose, 120)}` : ""}` } };
+          return { content: text(`Deleted ${v.id}: its link answers "no longer active" for good.`), details: { v: 1, preview: handoffOf(v), note: `Deleted a preview link${v.purpose ? `: ${cut(v.purpose, 120)}` : ""}` } };
         }
         if (q.op !== "start") throw new Refusal("op is start or off.");
         const session = q.session === undefined || q.session === null || q.session === "" ? "" : sessionRef(q.session);

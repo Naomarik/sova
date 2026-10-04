@@ -49,16 +49,8 @@ export function previewGroups(list: readonly PreviewView[]): PreviewGroup[] {
 /** A recipient as the Sent to line names them. */
 export const recipientName = (v: Pick<PreviewView, "sentToName">): string => v.sentToName?.trim() || "a person";
 
-/** The original's Turn Off confirm: with recipients listed it ends all of their links too. */
-export const turnOffConfirm = (recipients: number): string => (recipients > 0 ? `Turn Off All ${recipients + 1} Links?` : "Turn Off Preview?");
-export const TURN_OFF_ALL_TIP = "Turns off this preview and every link sent from it.";
-/** A recipient's own Turn Off: its tooltip, confirm and done toast. */
-export const recipientOffTip = (name: string): string => `Turns off only ${name}'s link.`;
-export const recipientOffConfirm = (name: string): string => `Turn Off ${name}'s Link?`;
-export const recipientOffDone = (name: string): string => `${name}'s link turned off.`;
-
-/* The project page's Previews card says Delete, the Shares page still Turn Off: a link turned off
-   answers 410 from then on and nothing turns it back on, while the app on its port keeps running. */
+/* A preview's Delete, on the Previews card and the Shares page alike: a deleted link answers 410
+   from then on and nothing brings it back, while the app on its port keeps running. */
 /** A preview's own Delete, which ends every link sent from it too: its listed recipients' links counted in the label. */
 export const deleteLabel = (recipients: number): string => (recipients > 0 ? `Delete Preview + ${recipients} ${recipients === 1 ? "Link" : "Links"}` : "Delete Preview");
 export const DELETE_CONFIRM = "Delete for Good?";

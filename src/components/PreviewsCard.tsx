@@ -1,4 +1,4 @@
-import { createSignal, For, type JSX, onCleanup, onMount, Show } from "solid-js";
+import { createSignal, For, type JSX, Show } from "solid-js";
 import { PREVIEW_PURPOSE_MAX } from "../../shared/preview-links";
 import { getProjectPreviews, mintPreview, runProjectVerb, turnOffPreview } from "../lib/api";
 import { createPoll } from "../lib/poll";
@@ -25,6 +25,7 @@ import {
   sentToLine,
 } from "../lib/previews";
 import { resolveAppLink, sessionIndex, sessionIndexVersion } from "../lib/session-links";
+import { createArm } from "../lib/two-step";
 import { announce, copyText, toast } from "../lib/ui-state";
 import { Banner } from "./ui";
 
@@ -66,31 +67,8 @@ export function PreviewsCard(props: { projectId: string }) {
   const [days, setDays] = createSignal<number>(PREVIEW_EXPIRY_CHOICES[0]);
   const [formError, setFormError] = createSignal<string | null>(null);
   const [busy, setBusy] = createSignal(false);
-  const [armed, setArmed] = createSignal<string | null>(null);
-  /** Each arming's number: a disarm that waits for a click clears only the arming it was for. */
-  let armSeq = 0;
-  /** Whether a pointer is pressed now. A press blurs the armed button before its click lands, and
-      its note going away would move the pressed button out from under the pointer: such a blur
-      disarms after that click instead. */
-  let pressed = false;
-  const press = () => (pressed = true);
-  const release = () => setTimeout(() => (pressed = false));
-  onMount(() => {
-    document.addEventListener("pointerdown", press, true);
-    window.addEventListener("pointerup", release, true);
-    window.addEventListener("pointercancel", release, true);
-  });
-  onCleanup(() => {
-    document.removeEventListener("pointerdown", press, true);
-    window.removeEventListener("pointerup", release, true);
-    window.removeEventListener("pointercancel", release, true);
-  });
-  const disarm = (id: string) => {
-    const seq = armSeq;
-    const clear = () => armed() === id && armSeq === seq && setArmed(null);
-    if (pressed) window.addEventListener("click", clear, { once: true });
-    else clear();
-  };
+  /** The Delete waiting for its second click, by preview id (§mesh.public/preview-card). */
+  const { armed, arm, reset, disarm } = createArm();
   const [formOpen, setFormOpen] = createSignal(false);
   /** Copies this page is starting, by instance: Starting until `up` answers. */
   const [starting, setStarting] = createSignal<ReadonlySet<string>>(new Set());
@@ -129,12 +107,11 @@ export function PreviewsCard(props: { projectId: string }) {
   /** A second click deletes it (turns it off, for good); `note` says so while it waits (shown, and announced), `done` is the toast. */
   const off = async (id: string, done: string, note: string) => {
     if (armed() !== id) {
-      armSeq++;
-      setArmed(id);
+      arm(id);
       announce(note);
       return;
     }
-    setArmed(null);
+    reset();
     try {
       await turnOffPreview(id);
       toast(done);

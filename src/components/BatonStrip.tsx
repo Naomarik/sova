@@ -20,6 +20,8 @@ import { firstName } from "../lib/person-page";
 import { starterHref, starterName, toldMarkdown, whyText } from "../lib/baton-told";
 import { openMarkdown } from "../lib/markdown-viewer";
 import { relativeTime } from "../lib/format";
+import { DELETE_FOR_GOOD, DELETE_LINK, LINK_DELETED, LINK_GONE, NEW_LINK_TIP, newLinkFor } from "../lib/link-delete";
+import { DeleteButton } from "./DeleteButton";
 import { Banner, Chip, Icon } from "./ui";
 import "../orgs.css";
 
@@ -156,7 +158,7 @@ export function BatonStrip(props: {
               <button
                 type="button"
                 class="button button-sm"
-                title={i().liveLinks ? "Makes a new link and turns off the one you sent before" : undefined}
+                title={i().liveLinks ? NEW_LINK_TIP : undefined}
                 onClick={() =>
                   void act(async () => {
                     const r = await batonLink(sid());
@@ -168,9 +170,7 @@ export function BatonStrip(props: {
                 {i().liveLinks ? "New Link" : "Get Link"}
               </button>
               <Show when={i().liveLinks > 0}>
-                <button type="button" class="button button-sm button-ghost" onClick={() => void act(() => revokeBatonLink(sid()), "Link turned off.")}>
-                  Turn Off Link
-                </button>
+                <DeleteButton label={DELETE_LINK} confirm={DELETE_FOR_GOOD} note={LINK_GONE} onRun={() => void act(() => revokeBatonLink(sid()), LINK_DELETED)} />
               </Show>
               <button type="button" class="button button-sm" onClick={() => void act(() => takeBaton(sid()), "You hold the baton now.")}>
                 Take Back
@@ -307,7 +307,7 @@ export function BatonStrip(props: {
                     <button
                       type="button"
                       class="button button-sm button-ghost"
-                      title={`Makes a new link for ${p.name} and turns off their older one`}
+                      title={newLinkFor(p.name)}
                       onClick={() =>
                         void act(async () => {
                           const r = await inviteeLink(sid(), p.id);

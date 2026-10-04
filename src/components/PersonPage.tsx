@@ -31,6 +31,8 @@ import { STATUS_CHIP, valueText, writerWord } from "../lib/profile-changes";
 import { announce, toast } from "../lib/ui-state";
 import { InsightsPage } from "./InsightsPage";
 import { LinksBanner } from "./LinksBanner";
+import { allDeleted, DELETE_FOR_GOOD, DELETE_LINK, DELETE_OWNER_LINK, deleteAllConfirm, deleteAllLabel, deleteAllLine, LINK_DELETED, LINK_GONE, NEW_LINK_TIP, OWNER_LINK_DELETED } from "../lib/link-delete";
+import { DeleteButton } from "./DeleteButton";
 import { PersonForm } from "./PersonForm";
 import { Banner, Chip, Icon, trapFocus } from "./ui";
 import type { OfferLink } from "../../shared/baton";
@@ -537,25 +539,23 @@ function LinksAndVisits(props: { data: PersonPageData; now: number; act: Act; on
         </h2>
         <Show when={live().length >= 2 && !confirmAll()}>
           <button type="button" class="button button-sm button-destructive" onClick={() => setConfirmAll(true)}>
-            Turn Off All {live().length} Links
+            {deleteAllLabel(live().length)}
           </button>
         </Show>
       </div>
       <Show when={confirmAll()}>
-        <div class="person-confirm" role="group" aria-label="Turn off all links">
-          <p class="orgs-line">
-            {p().name}'s {live().length} links stop opening at once. Their sessions, messages and visits stay.
-          </p>
+        <div class="person-confirm" role="group" aria-label="Delete all links">
+          <p class="orgs-line">{deleteAllLine(p().name, live().length)}</p>
           <div class="button-row">
             <button
               type="button"
               class="button button-sm button-destructive"
               onClick={async () => {
                 const n = live().length;
-                if (await props.act(() => revokePersonLinks(props.data.org.id, p().id), `Turned off ${n} links.`)) setConfirmAll(false);
+                if (await props.act(() => revokePersonLinks(props.data.org.id, p().id), allDeleted(n))) setConfirmAll(false);
               }}
             >
-              Turn Off All {live().length} Links
+              {deleteAllConfirm(live().length)}
             </button>
             <button type="button" class="button button-sm button-ghost" onClick={() => setConfirmAll(false)}>
               Cancel
@@ -615,14 +615,17 @@ function LinksAndVisits(props: { data: PersonPageData; now: number; act: Act; on
                   <Show when={linkLive(l.state) || renew()}>
                     <div class="button-row person-row-actions">
                       <Show when={renew()}>
-                        <button type="button" class="button button-sm" title="Makes a new link and turns off the one you sent before" onClick={() => void newLink(l.sessionId, renew() === "offer")}>
+                        <button type="button" class="button button-sm" title={NEW_LINK_TIP} onClick={() => void newLink(l.sessionId, renew() === "offer")}>
                           Get New Link
                         </button>
                       </Show>
                       <Show when={linkLive(l.state)}>
-                        <button type="button" class="button button-sm button-ghost" onClick={() => void props.act(() => revokePersonLinks(props.data.org.id, p().id, { sessionId: l.sessionId, n: l.n }), "Link turned off.")}>
-                          Turn Off Link
-                        </button>
+                        <DeleteButton
+                          label={DELETE_LINK}
+                          confirm={DELETE_FOR_GOOD}
+                          note={LINK_GONE}
+                          onRun={() => void props.act(() => revokePersonLinks(props.data.org.id, p().id, { sessionId: l.sessionId, n: l.n }), LINK_DELETED)}
+                        />
                       </Show>
                     </div>
                   </Show>
@@ -659,9 +662,7 @@ function LinksAndVisits(props: { data: PersonPageData; now: number; act: Act; on
                   </span>
                   <Show when={l.state === "live"}>
                     <div class="button-row person-row-actions">
-                      <button type="button" class="button button-sm button-ghost" onClick={() => void props.act(() => revokeOwnerLink(props.data.org.id), "Owner link turned off.")}>
-                        Turn Off Owner Link
-                      </button>
+                      <DeleteButton label={DELETE_OWNER_LINK} confirm={DELETE_FOR_GOOD} note={LINK_GONE} onRun={() => void props.act(() => revokeOwnerLink(props.data.org.id), OWNER_LINK_DELETED)} />
                     </div>
                   </Show>
                 </li>

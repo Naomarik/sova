@@ -4,7 +4,8 @@ import type { OfferLink } from "../../shared/baton";
 import type { OrgDetail } from "../../shared/orgs";
 import { ApiError, ownerLink, previewOwnerPage, revokeOwnerLink, setOrgOwner } from "../lib/api";
 import { useMinuteNow } from "../lib/minute-clock";
-import { ownerChangeLine, ownerLinkLine, rotateLine, turnOffLine } from "../lib/owner-card";
+import { DELETE_OWNER_LINK, DELETE_OWNER_LINK_FOR_GOOD, OWNER_LINK_DELETED } from "../lib/link-delete";
+import { deleteOwnerLine, ownerChangeLine, ownerLinkLine, rotateLine } from "../lib/owner-card";
 import { ownerHash, type OwnerRoute } from "../lib/owner-words";
 import { firstName } from "../lib/person-page";
 import { announce } from "../lib/ui-state";
@@ -22,7 +23,7 @@ type Act = (fn: () => Promise<OrgDetail | unknown>, done?: string) => Promise<bo
 /**
  * The owner card on the People tab (§app.owner-page/owner, /link, /preview): who the org's owner is
  * (an active roster person, or None), their owner link (minted on demand and shown once: the host
- * keeps only its hash), Turn Off, and the preview of their page.
+ * keeps only its hash), Delete Owner Link, and the preview of their page.
  */
 export function OwnerCard(props: { org: OrgDetail; act: Act }) {
   const now = useMinuteNow();
@@ -31,7 +32,7 @@ export function OwnerCard(props: { org: OrgDetail; act: Act }) {
   const active = createMemo(() => props.org.roster.filter((p) => p.status === "active"));
   const [saving, setSaving] = createSignal(false);
   const [shown, setShown] = createSignal<{ link: OfferLink; warning?: string } | null>(null);
-  /** The confirm open under the buttons: rotate a live link, or turn it off. */
+  /** The confirm open under the buttons: rotate a live link, or delete it. */
   const [confirm, setConfirm] = createSignal<"rotate" | "off" | null>(null);
   const [previewing, setPreviewing] = createSignal(false);
   const [err, setErr] = createSignal<string | null>(null);
@@ -74,9 +75,9 @@ export function OwnerCard(props: { org: OrgDetail; act: Act }) {
     }
   };
 
-  const turnOff = async () => {
+  const deleteLink = async () => {
     setConfirm(null);
-    const ok = await props.act(() => revokeOwnerLink(props.org.id), "Owner link turned off.");
+    const ok = await props.act(() => revokeOwnerLink(props.org.id), OWNER_LINK_DELETED);
     if (ok) setShown(null);
   };
 
@@ -137,7 +138,7 @@ export function OwnerCard(props: { org: OrgDetail; act: Act }) {
         </div>
         <Show when={live()}>
           <button type="button" class="button button-sm button-destructive orgs-owner-off" aria-expanded={confirm() === "off"} onClick={() => setConfirm(confirm() === "off" ? null : "off")}>
-            Turn Off Owner Link
+            {DELETE_OWNER_LINK}
           </button>
         </Show>
       </div>
@@ -148,14 +149,14 @@ export function OwnerCard(props: { org: OrgDetail; act: Act }) {
       </Show>
       <Show when={owner() && confirm()}>
         {(kind) => (
-          <div class="orgs-owner-confirm" role="group" aria-label={kind() === "rotate" ? "Get a new owner link" : "Turn off the owner link"}>
-            <p class="orgs-line">{kind() === "rotate" ? rotateLine(owner()!.name) : turnOffLine(owner()!.name)}</p>
+          <div class="orgs-owner-confirm" role="group" aria-label={kind() === "rotate" ? "Get a new owner link" : "Delete the owner link"}>
+            <p class="orgs-line">{kind() === "rotate" ? rotateLine(owner()!.name) : deleteOwnerLine(owner()!.name)}</p>
             <div class="button-row">
               <Show
                 when={kind() === "rotate"}
                 fallback={
-                  <button type="button" class="button button-sm button-destructive" onClick={() => void turnOff()}>
-                    Turn Off Owner Link
+                  <button type="button" class="button button-sm button-destructive" onClick={() => void deleteLink()}>
+                    {DELETE_OWNER_LINK_FOR_GOOD}
                   </button>
                 }
               >

@@ -5,11 +5,12 @@
 
 import type { Agent } from "node:http";
 import { agentFetch } from "./lan-fetch";
+import type { ReverseClient } from "./lan-reverse";
 import { type PeerEntry, peerUrl } from "./peers";
 
 interface LanClients {
-  /** The agent this host asks pairing `peerId` with, while connected. */
-  agent(peerId: string): Agent | null;
+  /** The client this host asks pairing `peerId` with, while connected. */
+  client(peerId: string): ReverseClient | null;
 }
 
 let lan: LanClients | null = null;
@@ -28,7 +29,12 @@ export class NotConnected extends TypeError {
 
 /** The agent for a pairing, or null when it isn't connected (or `peer` isn't a pairing). */
 export function lanAgent(peer: PeerEntry): Agent | null {
-  return peer.lan ? (lan?.agent(peer.id) ?? null) : null;
+  return lanClient(peer)?.agent ?? null;
+}
+
+/** The client for a pairing (streams, sockets), or null when it isn't connected. */
+export function lanClient(peer: PeerEntry): ReverseClient | null {
+  return peer.lan ? (lan?.client(peer.id) ?? null) : null;
 }
 
 /** fetch(<peer>/<path>, init). `path` starts with "/". */

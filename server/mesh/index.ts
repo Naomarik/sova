@@ -36,25 +36,36 @@ import { REFUSED_HEADER } from "./hello";
 import { getIdentity, setIdentity, type TailnetStatus } from "./localapi";
 import { defaultSelfId, nextLabelAt, type PeerEntry, type PeersConfig, peerPort, peerUrl, peersFile, readPeers, SYNC_CATEGORIES, validatePeers, writePeers } from "./peers";
 import { localRequest, PROXIED_HEADER, peerSocketRoute, proxyTail, proxyPeer, upgradePeerSocket } from "./proxy";
+import { fetchPeer, setLanClients } from "./dial";
+import { ensureLanIdentity, LanRuntime } from "./lan";
+import { lanRoutes } from "./lan-routes";
 import { loginKindsPin } from "../sync/logins-merge";
 
 // The mesh (brief: settled decisions). ON exactly while peers.json lists a peer; OFF, nothing
 // here listens, polls, calls Tailscale or dials a peer, and every pre-existing route and socket
 // is answered by its own unchanged code. See shared/protocol.ts "Mesh" for the routes.
 
-type Dispatch = Pick<ListenerDeps, "fetch" | "upgrade">;
+type Dispatch = Pick<ListenerDeps, "fetch" | "upgrade"> & {
+  /** The upgrade handler for a request that arrived on a stream (a dial-out pairing's); default `upgrade`. */
+  streamUpgrade?: ListenerDeps["upgrade"];
+};
 
 interface MeshRuntime {
   /** The last good read of peers.json; null when missing or unusable. */
   config: PeersConfig | null;
   /** Why peers.json is unusable (missing is not an error). */
   error?: string;
+  /** The tailnet peer listener: while at least one tailnet peer is listed. */
   listener: PeerListener | null;
+  /** Dial-out pairings (§mesh/lan): while the mesh is on. */
+  lan: LanRuntime | null;
+  /** The mesh's start hooks have run (some peer is listed), and its stop hooks haven't since. */
+  on: boolean;
   /** This node, from LocalAPI status, once the listener has asked. */
   self?: { nodeId: string; dnsName: string };
 }
 
-const rt: MeshRuntime = { config: null, listener: null };
+const rt: MeshRuntime = { config: null, listener: null, lan: null, on: false };
 
 // A host without Tailscale LocalAPI (Android) opts into address identity (address-identity.ts).
 // Nothing runs here: whois and status are only called while the mesh is on.
@@ -119,6 +130,7 @@ function reload(): void {
   // A peer that is no longer listed loses every connection it still holds, sockets included.
   const allowed = new Set((rt.config?.peers ?? []).map((p) => p.nodeId));
   rt.listener?.revoke((nodeId) => allowed.has(nodeId));
+  rt.lan?.revoke((nodeId) => allowed.has(nodeId));
 }
 
 // peers.json's identity (inode, size, mtime), so the gate notices a hand edit with a stat, not a read.
@@ -139,11 +151,38 @@ function reloadIfChanged(): void {
 
 // A lowered grant (a write from the Mesh page, or a hand edit the next question notices) ends what
 // each peer was let through for and no longer has, open sockets included (§mesh.peers/grants).
-onAccessChange(() => rt.listener?.revokeGrants((nodeId, need) => allows(nodeId, need)));
+onAccessChange(() => {
+  rt.listener?.revokeGrants((nodeId, need) => allows(nodeId, need));
+  rt.lan?.revokeGrants((nodeId, need) => allows(nodeId, need));
+});
 
-/** Start or stop the peer listener to match the config. */
+/** A peer reached over the tailnet (not a dial-out pairing). */
+const tailnetPeers = (): PeerEntry[] => (rt.config?.peers ?? []).filter((p) => !p.lan);
+
+/** Start or stop the peer listener and the pairings to match the config. */
 function apply(): void {
-  if (meshEnabled() && !rt.listener && dispatch) {
+  if (dispatch && meshEnabled() && !rt.lan) {
+    const d = dispatch;
+    rt.lan = new LanRuntime({
+      fetch: d.fetch,
+      upgrade: d.streamUpgrade ?? d.upgrade,
+      allows: (peer, need) => allows(peer.nodeId, need),
+      pairingByNode: (nodeId) => {
+        reloadIfChanged(); // a hand edit may have removed it since
+        return rt.config?.peers.find((p) => p.lan && p.nodeId === nodeId) ?? null;
+      },
+      sawPeer,
+    });
+    setLanClients({ client: (peerId) => rt.lan?.client(peerId) ?? null });
+  }
+  if (rt.lan) void rt.lan.apply(meshEnabled() ? rt.config : null);
+  if (!meshEnabled() && rt.lan) {
+    rt.lan = null; // apply(null) above stops everything it ran
+    setLanClients(null);
+  }
+  // The tailnet listener: only while a tailnet peer is listed, so a host whose only peers are
+  // dial-out pairings never asks Tailscale for anything.
+  if (tailnetPeers().length && !rt.listener && dispatch) {
     const d = dispatch;
     rt.listener = new PeerListener({
       ...d,
@@ -163,10 +202,15 @@ function apply(): void {
       },
     });
     void rt.listener.start();
-    runHooks(startHooks);
-  } else if (!meshEnabled() && rt.listener) {
+  } else if (!tailnetPeers().length && rt.listener) {
     rt.listener.close();
     rt.listener = null;
+  }
+  if (meshEnabled() && !rt.on) {
+    rt.on = true;
+    runHooks(startHooks);
+  } else if (!meshEnabled() && rt.on) {
+    rt.on = false;
     upNow.clear();
     upSince.clear();
     runHooks(stopHooks);
@@ -183,9 +227,13 @@ export function startMesh(d: Dispatch): void {
 }
 
 export function stopMesh(): void {
-  if (!rt.listener) return;
-  rt.listener.close();
+  void rt.lan?.stop();
+  rt.lan = null;
+  setLanClients(null);
+  rt.listener?.close();
   rt.listener = null;
+  if (!rt.on) return;
+  rt.on = false;
   upNow.clear();
   upSince.clear();
   runHooks(stopHooks);
@@ -320,7 +368,7 @@ export function peerFetch(peerId: string, path: string, init?: RequestInit): Pro
   if (refusal) return Promise.reject(new Error(refusal));
   const headers = new Headers(init?.headers);
   headers.delete(PROXIED_HEADER); // it would make the peer treat this host's own call as a browser's
-  return fetch(`${peerUrl(peer)}${path}`, { ...init, headers });
+  return fetchPeer(peer, path, { ...init, headers });
 }
 
 /**
@@ -352,7 +400,7 @@ export const meshApi = {
   /** Fires when peers.json goes from no peer to some (at startup too); at once if already on. */
   onMeshStart: (fn: () => void): void => {
     startHooks.push(fn);
-    if (rt.listener) runHooks([fn]);
+    if (rt.on) runHooks([fn]);
   },
   /** Fires when the last peer is removed, or at shutdown while on. */
   onMeshStop: (fn: () => void): void => {
@@ -409,7 +457,8 @@ async function peerStatuses(): Promise<PeerStatusView[]> {
     label: p.label,
     nodeId: p.nodeId,
     name: p.dnsName,
-    url: peerUrl(p),
+    // A dial-out pairing has no URL of its own: it is reached over its connection (§mesh/lan).
+    url: p.lan ? `lan:${p.id}` : peerUrl(p),
     ...(p.priority !== undefined ? { priority: p.priority } : {}),
     state: probes[i]!.state,
     ...(probes[i]!.error ? { error: probes[i]!.error } : {}),
@@ -444,7 +493,7 @@ async function meshSessions(): Promise<MeshSessionsView> {
     peers.map(async (p): Promise<MeshSessionsView["peers"][number]> => {
       const head = { id: p.id, label: p.label };
       try {
-        const res = await fetch(`${peerUrl(p)}/api/sessions`, { signal: AbortSignal.timeout(PROBE_TIMEOUT_MS) });
+        const res = await fetchPeer(p, "/api/sessions", { signal: AbortSignal.timeout(PROBE_TIMEOUT_MS) });
         const denied = noteAnswer(p.id, "sessions", res);
         if (res.ok) {
           const sessions = (await res.json()) as SessionSummary[];
@@ -554,6 +603,21 @@ async function putPeers(c: Context): Promise<Response> {
       dnsName = n.name || name;
     }
     const prior = base.config.peers.find((p) => p.id === e.id);
+    // A dial-out pairing (§mesh.lan/pairing) is edited by this PUT only in its id and label; its
+    // link stays as paired, and it has no url, serveUrl or tailnet name.
+    const paired = base.config.peers.find((p) => p.lan && p.nodeId === e.nodeId);
+    if (paired) {
+      peers.push({
+        id: e.id,
+        label: e.label !== undefined ? e.label : paired.label,
+        nodeId: paired.nodeId,
+        lan: paired.lan,
+        ...(e.priority !== undefined ? { priority: e.priority } : paired.priority !== undefined ? { priority: paired.priority } : {}),
+        ...(paired.pairedAt !== undefined ? { pairedAt: paired.pairedAt } : {}),
+        ...(paired.labelAt !== undefined ? { labelAt: paired.labelAt } : {}),
+      });
+      continue;
+    }
     // Stamped when a node is first paired; kept across edits (matched by node, the id may change).
     const known = base.config.peers.find((p) => p.nodeId === nodeId);
     const pairedAt = known ? known.pairedAt : Date.now();
@@ -614,6 +678,13 @@ function applyPairingGrants(set: Record<string, MeshPreset>, removed: string[]):
   });
   // A broken file stays as it is: every peer, the new one included, gets hello only until it is fixed.
   if ("error" in r) console.warn(`[mesh] grants not written: ${r.error}`);
+}
+
+/** The pairings' view for the Mesh page; also while off (this host's key and relay setting). */
+function lanStatus() {
+  reloadIfChanged();
+  if (rt.lan) return rt.lan.status(rt.config);
+  return LanRuntime.idleStatus(rt.config);
 }
 
 // ---- grants editor (/api/mesh/access: this host's own browser only) -----------------------------
@@ -756,6 +827,13 @@ export function meshRoutes(app: Hono): void {
   // never raise its own grant. Also while off (a grant may be set before pairing completes).
   app.get("/api/mesh/access", (c) => (localRequest(c) ? c.json(accessView()) : c.json({ error: "Not found" }, 404)));
   app.put("/api/mesh/access", (c) => (localRequest(c) ? putAccess(c) : c.json({ error: "Not found" }, 404)));
+  // Dial-out pairings (§mesh.lan/pairing): the same local-browser-only rule.
+  lanRoutes(app, {
+    status: () => lanStatus(),
+    ensureKey: () => ensureLanIdentity(),
+    updatePeers,
+    applyGrants: applyPairingGrants,
+  });
 
   // Peer-only routes: reached through the peer listener alone. On the main listener they are the
   // same 404 as any unknown /api route.

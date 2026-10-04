@@ -278,6 +278,27 @@ export class LanRuntime {
     };
   }
 
+  /** The view while nothing runs (the mesh is off): this host's pin and relay setting, no connections. */
+  static idleStatus(config: PeersConfig | null): LanStatus {
+    const id = readLanIdentity();
+    const relay = config?.self.relay;
+    const idle: LanChannelStatus = { state: "not connected" };
+    return {
+      ...(id ? { fingerprint: fingerprint(id.pin) } : {}),
+      ...(relay ? { relay: { host: relay.host, port: relay.port, exposure: relay.exposure ?? "lan", listening: false } } : {}),
+      pairings: (config?.peers ?? [])
+        .filter((p) => p.lan)
+        .map((p) => ({
+          id: p.id,
+          label: p.label,
+          role: p.lan!.role,
+          fingerprint: fingerprint(p.lan!.pin),
+          ...(p.lan!.role === "dial" ? { host: p.lan!.host!, port: p.lan!.port! } : {}),
+          channels: { answer: idle, ask: idle },
+        })),
+    };
+  }
+
   /** Everything off (the mesh turned off, or shutdown). */
   async stop(): Promise<void> {
     await this.apply(null);

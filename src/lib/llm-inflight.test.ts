@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { LlmInflight, LlmTokens } from "../../shared/protocol";
-import { denseCount, sameInflight, tokenVelocityView } from "./llm-inflight";
+import { denseCount, sameInflight, tokenVelocityView, VELOCITY_SCALE_FLOOR, velocityChart } from "./llm-inflight";
 
 const complete = (count: number): LlmInflight => ({ count, approximate: 0, partial: false, gaps: [] });
 
@@ -60,72 +60,115 @@ test("dense format: whole under 1,000, one decimal to 9,999, none from 10,000, o
   assert.equal(denseCount(Number.NaN), "0");
 });
 
-test("unknown: no snapshot, or a server with no ring — one dash, never a 0, no tick", () => {
+test("unknown: no snapshot, or a server with no ring — a dash, an empty chart, never a 0, no tick", () => {
   for (const f of [null, complete(3)]) {
     const v = tokenVelocityView(f, at(100));
     assert.equal(v.state, "unknown");
-    assert.equal(v.figures, "–");
+    assert.equal(v.readout, "–");
     assert.equal(v.perMinute, null);
+    assert.equal(v.series.length, 60);
+    assert.ok(v.series.every((x) => x === 0));
+    assert.equal(v.mean30, 0);
+    assert.equal(v.scale, VELOCITY_SCALE_FLOOR);
     assert.equal(v.sentence, "Output tokens a minute: not known yet.");
     assert.equal(v.active, false);
+    const c = velocityChart(v, 1, 18);
+    assert.deepEqual([c.columns, c.meanY], [[], null], "the baseline alone: the row keeps its height");
   }
   const bad = withTokens({ bucketMs: 0, end: 1, out: [], partial: false });
   assert.equal(tokenVelocityView(bad, at(1)).state, "unknown", "a ring it can't read is unknown");
 });
 
-test("windowed means per minute over 5, 15 and 30 minutes, newest window first", () => {
-  // 10 slots a minute's worth = 2 slots/minute. 3,000 tokens 1 minute ago, 6,000 ten minutes ago,
-  // 12,000 twenty minutes ago.
+test("windowed means per minute over 5 and 30 minutes; the readout is the 5-minute one", () => {
+  // 3,000 tokens 1 minute ago, 6,000 ten minutes ago, 12,000 twenty minutes ago.
   const t = ring(1000, { 2: 3000, 20: 6000, 40: 12_000 });
   const v = tokenVelocityView(withTokens(t), at(1000));
-  assert.deepEqual(v.perMinute, [3000 / 5, (3000 + 6000) / 15, (3000 + 6000 + 12_000) / 30]);
-  assert.equal(v.figures, "600 600 700");
+  assert.deepEqual(v.perMinute, [3000 / 5, (3000 + 6000 + 12_000) / 30]);
+  assert.equal(v.readout, "600");
+  assert.equal(v.mean30, 700);
   assert.equal(v.state, "complete");
-  assert.equal(v.sentence, "Output tokens a minute: 600 over the last 5 minutes, 600 over 15, 700 over 30. Replies still being written aren't counted yet.");
+  assert.equal(v.sentence, "Output tokens a minute: 600 over the last 5 minutes, 700 over 30. Replies still being written aren't counted yet.");
+  assert.doesNotMatch(v.sentence, /15/, "the 15-minute mean is gone from the words too");
   assert.equal(v.active, true);
 });
 
 test("window edges: exactly 2W slots up to and including the current one", () => {
-  // The 5-minute window is slots (cur − 10, cur]: age 9 is in, age 10 is out.
-  const t = ring(500, { 9: 500, 10: 1000 });
-  const v = tokenVelocityView(withTokens(t), at(500));
-  assert.equal(v.perMinute![0], 100);
-  assert.equal(v.perMinute![1], 100, "both in the 15-minute window");
-  // Age 59 is the ring's oldest: in the 30-minute window; nothing older exists.
+  const v = tokenVelocityView(withTokens(ring(500, { 9: 500, 10: 1000 })), at(500));
+  assert.equal(v.perMinute![0], 100, "age 9 in the 5-minute window, age 10 out");
+  assert.equal(v.perMinute![1], 50);
   const old = tokenVelocityView(withTokens(ring(500, { 59: 3000 })), at(500));
-  assert.deepEqual(old.perMinute, [0, 0, 100]);
+  assert.deepEqual(old.perMinute, [0, 100], "the ring's oldest slot is in the 30-minute window");
 });
 
-test("the clock moves the windows between frames: slots after the ring's newest read 0, older ones drop off", () => {
+test("series: 60 per-minute rates, oldest first, the current slot last, aligned to the browser's clock", () => {
+  const t = ring(1000, { 0: 500, 1: 200, 59: 100 });
+  const v = tokenVelocityView(withTokens(t), at(1000));
+  assert.equal(v.series.length, 60);
+  assert.equal(v.series[59], 1000, "the current slot last, as a rate a minute (× 2)");
+  assert.equal(v.series[58], 400);
+  assert.equal(v.series[0], 200, "the ring's oldest slot first");
+  // Two slots later the same ring has moved left; the slots after its newest read 0.
+  const later = tokenVelocityView(withTokens(t), at(1002));
+  assert.equal(later.series[57], 1000);
+  assert.deepEqual(later.series.slice(58), [0, 0]);
+  assert.equal(later.series[0], 0, "the oldest has dropped off");
+});
+
+test("scale: the 30 minutes' peak, never under 10k a minute", () => {
+  const trickle = tokenVelocityView(withTokens(ring(10, { 3: 1000 })), at(10));
+  assert.equal(trickle.scale, 10_000, "a 2k trickle is drawn against the floor");
+  const busy = tokenVelocityView(withTokens(ring(10, { 3: 60_000, 9: 20_000 })), at(10));
+  assert.equal(busy.scale, 120_000, "a 120k peak fills the height");
+});
+
+test("chart at 0, light, 100k+: baseline only, short columns, full height at the peak", () => {
+  const zero = tokenVelocityView(withTokens(ring(10, {})), at(10));
+  assert.equal(zero.readout, "0");
+  assert.deepEqual(velocityChart(zero, 1, 18), { columns: [], meanY: null, count: 60 });
+  // ~2k a minute steady: every slot 1,000 tokens.
+  const steady = Object.fromEntries(Array.from({ length: 60 }, (_, i) => [i, 1000]));
+  const light = tokenVelocityView(withTokens(ring(10, steady)), at(10));
+  assert.equal(light.readout, "2.0k");
+  const lc = velocityChart(light, 1, 18);
+  assert.equal(lc.columns.length, 60);
+  assert.ok(lc.columns.every((c) => c.height === 3), "2k on a 10k floor: 20% of 16px");
+  assert.equal(lc.meanY, 18 - 1 - 3);
+  const heavy = tokenVelocityView(withTokens(ring(10, { ...steady, 5: 60_000 })), at(10));
+  const hc = velocityChart(heavy, 1, 18);
+  assert.equal(heavy.readout, "14k", "(9 × 1,000 + 60,000) / 5 minutes");
+  assert.equal(heavy.scale, 120_000);
+  assert.deepEqual(hc.columns.map((c) => [c.index, c.height]), [[54, 16]], "the peak column full height; 2k beside it is under a pixel, not drawn");
+});
+
+test("pale newest minute: the last two 30 s columns on the row, the last one-minute column on the phone", () => {
+  const steady = Object.fromEntries(Array.from({ length: 60 }, (_, i) => [i, 30_000]));
+  const v = tokenVelocityView(withTokens(ring(10, steady)), at(10));
+  const row = velocityChart(v, 1, 18);
+  assert.deepEqual(row.columns.filter((c) => c.pale).map((c) => c.index), [58, 59]);
+  const phone = velocityChart(v, 2, 16);
+  assert.equal(phone.count, 30);
+  assert.deepEqual(phone.columns.filter((c) => c.pale).map((c) => c.index), [29]);
+  assert.ok(phone.columns.every((c) => c.height === 14), "pairs average into one-minute columns");
+  assert.equal(phone.meanY, 1, "a mean at the peak sits level with the columns' tops");
+});
+
+test("the clock moves the windows between frames, and an emptied ring stops the tick", () => {
   const t = ring(1000, { 0: 6000 });
-  assert.deepEqual(tokenVelocityView(withTokens(t), at(1000)).perMinute, [1200, 400, 200]);
-  // 6 minutes later (12 slots): out of the 5-minute window, still in the others.
-  assert.deepEqual(tokenVelocityView(withTokens(t), at(1012)).perMinute, [0, 400, 200]);
-  // 30 minutes later: gone, and the ring is idle, so the sidebar stops ticking.
+  assert.deepEqual(tokenVelocityView(withTokens(t), at(1000)).perMinute, [1200, 200]);
+  assert.deepEqual(tokenVelocityView(withTokens(t), at(1012)).perMinute, [0, 200]);
   const gone = tokenVelocityView(withTokens(t), at(1060));
-  assert.deepEqual(gone.perMinute, [0, 0, 0]);
-  assert.equal(gone.figures, "0 0 0");
+  assert.deepEqual(gone.perMinute, [0, 0]);
   assert.equal(gone.active, false);
-  // A browser clock behind the server's: the slots ahead of `now` aren't summed yet.
-  assert.deepEqual(tokenVelocityView(withTokens(t), at(999)).perMinute, [0, 0, 0]);
+  assert.deepEqual(tokenVelocityView(withTokens(t), at(999)).perMinute, [0, 0], "a browser clock behind the server's sums nothing ahead");
 });
 
-test("complete at 0 reads 0 0 0 and doesn't tick", () => {
-  const v = tokenVelocityView(withTokens(ring(10, {})), at(10));
-  assert.equal(v.state, "complete");
-  assert.equal(v.figures, "0 0 0");
-  assert.equal(v.active, false);
-  assert.equal(v.sentence, "Output tokens a minute: 0 over the last 5 minutes, 0 over 15, 0 over 30. Replies still being written aren't counted yet.");
-});
-
-test("partial: bare numbers, \"at least\" and why in words only; the calls count's gaps don't decide it", () => {
+test("partial: the same readout and chart, \"at least\" and why in words only; the calls count's gaps don't decide it", () => {
   const p = tokenVelocityView(withTokens(ring(10, { 0: 48_000 * 5 }, true)), at(10));
   assert.equal(p.state, "partial");
-  assert.equal(p.figures, "48k 16k 8.0k", "no + or ~ on the numbers");
-  assert.equal(
-    p.sentence,
-    "Output tokens a minute: at least 48k over the last 5 minutes, 16k over 15, 8.0k over 30. Some calls' tokens can't be seen. Replies still being written aren't counted yet.",
-  );
+  assert.equal(p.readout, "48k", "no + or ~ on the figure");
+  assert.equal(p.sentence, "Output tokens a minute: at least 48k over the last 5 minutes, 8.0k over 30. Some calls' tokens can't be seen. Replies still being written aren't counted yet.");
+  const same = tokenVelocityView(withTokens(ring(10, { 0: 48_000 * 5 })), at(10));
+  assert.deepEqual(velocityChart(p, 1, 18), velocityChart(same, 1, 18));
   const callsPartial = withTokens(ring(10, {}), { count: 1, approximate: 0, partial: true, gaps: [{ reason: "claude-internal" }] });
   assert.equal(tokenVelocityView(callsPartial, at(10)).state, "complete", "the ring says its own coverage");
 });
@@ -135,5 +178,7 @@ test("malformed slots count as nothing", () => {
   t.out[59] = Number.NaN;
   t.out[58] = -40;
   t.out[57] = 100;
-  assert.deepEqual(tokenVelocityView(withTokens(t), at(10)).perMinute, [20, 100 / 15, 100 / 30]);
+  const v = tokenVelocityView(withTokens(t), at(10));
+  assert.deepEqual(v.perMinute, [20, 100 / 30]);
+  assert.deepEqual(v.series.slice(57), [200, 0, 0]);
 });

@@ -80,7 +80,7 @@ import {
 import { folderActive, folderOpen, folderOpenKey, readFolderOpenRaw, storedFolderOpen, writeFolderOpenRaw } from "../lib/folder-open";
 import { groupOpen as groupOpenRule, groupsRegionOpen as groupsRegionOpenRule } from "../lib/group-open";
 import { sessionWorking } from "../lib/workers";
-import { tokenVelocityView } from "../lib/llm-inflight";
+import { tokenVelocityView, type TokenVelocityView, velocityChart } from "../lib/llm-inflight";
 import { sentences, workNow, workNowView, type WorkNowView, type WorkPeer } from "../lib/work-now";
 import { providerWait, watchProviderWaits } from "../lib/provider-waiting";
 import { waitingSentence } from "../../shared/provider-limits";
@@ -1098,6 +1098,45 @@ function AgentsGlance(props: { view: WorkNowView }) {
   );
 }
 
+/**
+ * The token chart (§app.insights/token-velocity): the last 30 minutes as columns on a 1px
+ * baseline, the newest minute pale (its replies are still landing), the 30-minute mean dashed.
+ * `group` 1: 60 thirty-second columns (the Agents row, stretched to its line); 2: 30 one-minute
+ * columns (the phone bar). Never animated, no gradient; its numbers are the row's sentence.
+ */
+function VelocityChart(props: { view: TokenVelocityView; group: 1 | 2; width: number; height: number; stretch?: boolean }) {
+  const chart = createMemo(() => velocityChart(props.view, props.group, props.height));
+  const pitch = () => props.width / chart().count;
+  return (
+    <svg
+      class="velocity-chart"
+      classList={{ "velocity-chart-stretch": props.stretch }}
+      width={props.stretch ? undefined : props.width}
+      height={props.height}
+      viewBox={`0 0 ${props.width} ${props.height}`}
+      preserveAspectRatio={props.stretch ? "none" : undefined}
+      shape-rendering="crispEdges"
+      aria-hidden="true"
+    >
+      <rect class="velocity-baseline" x="0" y={props.height - 1} width={props.width} height="1" />
+      <For each={chart().columns}>
+        {(c) => (
+          <rect
+            class={c.pale ? "velocity-col velocity-col-pale" : "velocity-col"}
+            x={c.index * pitch()}
+            y={props.height - 1 - c.height}
+            width={pitch() - 1}
+            height={c.height}
+          />
+        )}
+      </For>
+      <Show when={chart().meanY !== null}>
+        <line class="velocity-mean" x1="0" x2={props.width} y1={chart().meanY! + 0.5} y2={chart().meanY! + 0.5} />
+      </Show>
+    </svg>
+  );
+}
+
 /** The sova wordmark, a link to the list (`#/`): the list's head, and the overview's head on a
     phone (§app.shell/overview). */
 export function BrandLink() {
@@ -1854,19 +1893,28 @@ export function Sidebar(props: {
       </div>
       <div class="sidebar-foot-row">
         <a
-          class="list-row list-row-interactive insights-row sidebar-foot-link"
+          class="list-row list-row-interactive insights-row sidebar-foot-link sidebar-foot-link-tall"
           href={agentsHref()}
           aria-current={props.insightsPage === "agents" ? "page" : undefined}
           title={agentsLabel()}
           aria-label={agentsLabel()}
         >
           <Icon name="worker" />
-          <span class="insights-row-text">
-            <AgentsGlance view={work()} />
-          </span>
-          {/* The load average, newest window first; its sentence is the row's name. */}
-          <span class="agents-velocity text-num" aria-hidden="true">
-            {velocity().figures}
+          {/* Two lines (§app.insights/token-velocity): who is working and the 5-minute readout, then
+              the 30-minute chart under them. The row's name says it all in words. */}
+          <span class="agents-ticker">
+            <span class="agents-line">
+              <span class="insights-row-text">
+                <AgentsGlance view={work()} />
+              </span>
+              <span class="agents-readout" aria-hidden="true">
+                <b class="text-num">{velocity().readout}</b> <span>tok/min</span>
+              </span>
+            </span>
+            <span class="agents-chart" aria-hidden="true">
+              <VelocityChart view={velocity()} group={1} width={180} height={18} stretch />
+              <span>30m</span>
+            </span>
           </span>
         </a>
         <button
@@ -1927,7 +1975,12 @@ export function Sidebar(props: {
             <Icon name="worker" small />
             <span class="text-num">{work().figure}</span>
           </span>
-          <span class="sidebar-footbar-seg sidebar-footbar-velocity text-num">{velocity().figures}</span>
+          <span class="sidebar-footbar-seg sidebar-footbar-velocity">
+            <span class="agents-readout">
+              <b class="text-num">{velocity().readout}</b> <span>/min</span>
+            </span>
+            <VelocityChart view={velocity()} group={2} width={60} height={16} />
+          </span>
           {/* Every provider the glance would show, in its order (at most the five): never one
               invented number, and the line never wraps — what can't fit clips, like the glance. */}
           <For each={glance()}>

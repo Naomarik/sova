@@ -4661,9 +4661,25 @@ a.group-option { color: inherit; text-decoration: none; }
   font-size: var(--fs-caption);
 }
 .insights-row[aria-current="page"] { background: var(--color-accent-tint); color: var(--color-ink); }
-/* The Agents row's load average (§app.insights/token-velocity): three numbers at the row's right
-   end, before the gear, muted; the working count's words give way before they do. */
-.agents-velocity { flex: none; white-space: nowrap; font-size: var(--fs-caption); color: var(--color-ink-muted); }
+/* The Agents row, two lines in one 64px link (§app.insights/token-velocity): line 1 the working
+   count (it truncates first) and the readout, line 2 the 30-minute chart, full width, and a muted
+   "30m". The gear beside the link stays centred (align-self). */
+.sidebar-foot-link-tall { min-height: 64px; }
+.agents-ticker { flex: 1; min-width: 0; display: grid; gap: 5px; }
+.agents-line { display: flex; align-items: baseline; gap: var(--space-2); min-width: 0; }
+/* The readout: the 5-minute mean in semibold ink at body size, its unit muted micro. Never shrinks. */
+.agents-readout { flex: none; white-space: nowrap; color: var(--color-ink-muted); font-size: var(--fs-micro); }
+.agents-readout > b { font-size: var(--fs-body); font-weight: var(--fw-semibold); color: var(--color-ink); }
+.agents-chart { display: flex; align-items: flex-end; gap: 6px; min-width: 0; font-size: var(--fs-micro); line-height: 1; color: var(--color-ink-muted); }
+.agents-chart > span { flex: none; }
+/* The chart: columns in ink-2 on a border-strong baseline, the newest minute pale (still landing),
+   the 30-minute mean a dashed ink line. Nothing animates, no gradient, no accent. */
+.velocity-chart { display: block; flex: none; }
+.velocity-chart-stretch { flex: 1; min-width: 0; width: 100%; }
+.velocity-baseline { fill: var(--color-border-strong); }
+.velocity-col { fill: var(--color-ink-2); }
+.velocity-col-pale { fill: var(--color-border-strong); }
+.velocity-mean { stroke: var(--color-ink); stroke-width: 1; stroke-dasharray: 2 2; vector-effect: non-scaling-stroke; }
 /* The Usage row + Resource monitor button, and the Agents row + Settings gear:
    each link keeps the width, its button sits at the row's right end, and the two
    buttons share one class so they stack in one column. The link's right padding
@@ -4715,6 +4731,9 @@ a.group-option { color: inherit; text-decoration: none; }
 .sidebar-footbar-seg { display: inline-flex; align-items: center; gap: var(--space-1); flex: none; }
 .sidebar-footbar-seg > .icon { color: var(--color-ink-muted); }
 .sidebar-footbar-seg .text-num { color: var(--color-ink-2); }
+/* The phone bar's velocity: the readout ("48k /min", the row's styles) and a 60×16 chart. */
+.sidebar-footbar-velocity { gap: var(--space-2); }
+.sidebar-footbar-velocity .agents-readout > b.text-num { color: var(--color-ink); }
 /* Each cap keeps the glance's own emphasis: at 80%+ semibold ink, never hue alone; a stale
    whole-file reading is muted, like the glance's. */
 .sidebar-footbar-cap-high { font-weight: var(--fw-semibold); }

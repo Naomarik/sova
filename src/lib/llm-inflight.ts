@@ -1,14 +1,19 @@
 // What the sidebar reads off the session feed's `llm_inflight` frame: no longer the calls in
 // flight (the sidebar's figure is the working count, src/lib/work-now.ts), but the token ring
-// that rides it — the output-token load average (§app.insights/token-velocity).
-// Pure presentation: the foot's Agents row, the phone bar and the spine tally all read
-// `tokenVelocityView`, so the three can't disagree. No Solid here, so the tests run it bare.
+// that rides it — the output-token velocity: a 5-minute figure over a 30-minute chart
+// (§app.insights/token-velocity). Pure presentation: the foot's Agents row, the phone bar and the
+// spine tally all read `tokenVelocityView`, so the three can't disagree. No Solid here, so the
+// tests run it bare.
 
 import type { LlmInflight, LlmTokens } from "../../shared/protocol";
 
-/** The windows, in minutes, newest first: the row prints their means in this order. */
-export const VELOCITY_WINDOWS = [5, 15, 30] as const;
+/** The windows, in minutes: the readout's (5) and the chart's, with its dashed mean (30). */
+export const VELOCITY_WINDOWS = [5, 30] as const;
 const LONGEST = 30;
+/** The chart's floor: a scale never below this many tokens a minute, so a trickle stays low. */
+export const VELOCITY_SCALE_FLOOR = 10_000;
+/** The chart's slots: the ring's whole 30 minutes. */
+export const VELOCITY_SLOTS = 60;
 
 export type TokenVelocityState = "complete" | "partial" | "unknown";
 
@@ -16,9 +21,15 @@ export interface TokenVelocityView {
   state: TokenVelocityState;
   /** Output tokens a minute over each window, in `VELOCITY_WINDOWS`' order; null while unknown. */
   perMinute: number[] | null;
-  /** What the row and the phone bar print: `48k 31k 12k`, the numbers bare whatever the state;
-      `–` while unknown. */
-  figures: string;
+  /** The 5-minute mean, dense (`48k`), bare whatever the state; `–` while unknown. */
+  readout: string;
+  /** Each of the last 60 slots as a per-minute rate (its tokens × slots a minute), oldest first,
+      the current slot last; all 0 while unknown. */
+  series: number[];
+  /** The 30-minute mean, the chart's dashed line; 0 while unknown. */
+  mean30: number;
+  /** The chart's full height in tokens a minute: the larger of the floor and the series' peak. */
+  scale: number;
   /** The title/aria-label sentence, ending in a full stop. */
   sentence: string;
   /** The ring holds a token in its last 30 minutes by `now`: only then does the sidebar tick. */
@@ -56,7 +67,8 @@ const usable = (t: LlmTokens | undefined): t is LlmTokens =>
 export function tokenVelocityView(inflight: LlmInflight | null, now: number): TokenVelocityView {
   const t = inflight?.tokens;
   if (!usable(t)) {
-    return { state: "unknown", perMinute: null, figures: "–", sentence: "Output tokens a minute: not known yet.", active: false };
+    const series = Array.from({ length: VELOCITY_SLOTS }, () => 0);
+    return { state: "unknown", perMinute: null, readout: "–", series, mean30: 0, scale: VELOCITY_SCALE_FLOOR, sentence: "Output tokens a minute: not known yet.", active: false };
   }
   const cur = Math.floor(now / t.bucketMs);
   const perSlotMin = 60_000 / t.bucketMs;
@@ -67,13 +79,52 @@ export function tokenVelocityView(inflight: LlmInflight | null, now: number): To
   };
   const perMinute = VELOCITY_WINDOWS.map((w) => sumBack(Math.round(w * perSlotMin)) / w);
   const active = sumBack(Math.round(LONGEST * perSlotMin)) > 0;
-  const [a, b, c] = perMinute.map(denseCount);
+  const series = Array.from({ length: VELOCITY_SLOTS }, (_, i) => slot(t, cur - (VELOCITY_SLOTS - 1) + i) * perSlotMin);
+  const [a, c] = perMinute.map(denseCount);
   // The ring says its own coverage: the calls count's gaps are about calls, not tokens.
   const floor = t.partial === true;
   const sentence =
-    `Output tokens a minute: ${floor ? "at least " : ""}${a} over the last ${VELOCITY_WINDOWS[0]} minutes, ${b} over ${VELOCITY_WINDOWS[1]}, ${c} over ${VELOCITY_WINDOWS[2]}.` +
+    `Output tokens a minute: ${floor ? "at least " : ""}${a} over the last ${VELOCITY_WINDOWS[0]} minutes, ${c} over ${VELOCITY_WINDOWS[1]}.` +
     `${floor ? " Some calls' tokens can't be seen." : ""} Replies still being written aren't counted yet.`;
-  return { state: floor ? "partial" : "complete", perMinute, figures: `${a} ${b} ${c}`, sentence, active };
+  return {
+    state: floor ? "partial" : "complete",
+    perMinute,
+    readout: a!,
+    series,
+    mean30: perMinute[1]!,
+    scale: Math.max(VELOCITY_SCALE_FLOOR, ...series),
+    sentence,
+    active,
+  };
+}
+
+export interface VelocityColumn {
+  /** Left to right, 0 the oldest. */
+  index: number;
+  /** Whole pixels above the baseline, at least 1 (a column under a pixel isn't drawn). */
+  height: number;
+  /** Its slots include the newest minute's two, whose replies are still landing: drawn pale. */
+  pale: boolean;
+}
+
+/**
+ * The chart's columns at `height` pixels (the baseline's 1px included): `group` slots a column (1
+ * on the Agents row, 60 columns; 2 on the phone bar, 30 one-minute columns), each the mean rate of
+ * its slots on `scale`, `height − 2` pixels full. `meanY` is the dashed line's y, null with no mean.
+ */
+export function velocityChart(v: Pick<TokenVelocityView, "series" | "scale" | "mean30">, group: 1 | 2, height: number): { columns: VelocityColumn[]; meanY: number | null; count: number } {
+  const count = Math.floor(v.series.length / group);
+  const room = height - 2;
+  const columns: VelocityColumn[] = [];
+  for (let i = 0; i < count; i++) {
+    let sum = 0;
+    for (let j = 0; j < group; j++) sum += v.series[i * group + j] ?? 0;
+    const h = Math.round((sum / group / v.scale) * room);
+    if (h < 1) continue;
+    columns.push({ index: i, height: Math.min(h, room), pale: (count - 1 - i) * group < 2 });
+  }
+  const meanY = v.mean30 > 0 ? height - 1 - Math.min(room, Math.round((v.mean30 / v.scale) * room)) : null;
+  return { columns, meanY, count };
 }
 
 /** Whether two pushed frames read the same, so an unchanged frame doesn't wake the sidebar. */

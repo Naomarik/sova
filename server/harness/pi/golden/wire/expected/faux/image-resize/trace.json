@@ -1,0 +1,24 @@
+{
+  "$digest": {
+    "sha256": "81e65ca6646b4eb2306aeca0201452814b0740cd69c462fedfe2d178e980bce6",
+    "bytes": 737056,
+    "head": "[{\"effects\":[\"clearTurnError\",\"announceWorking\"],\"frame\":0,\"state\":{\"activity\":null,\"entries\":[],\"running\":true,\"stopping\":false,\"tools\":{}}},{\"effects\":[],\"frame\":1,\"state\":{\"activity\":null,\"entries\"",
+    "parts": [
+      "0-0:3fd9509f772ea64f",
+      "1-1:88bce0b42ace8c39",
+      "2-2:c764e006d736d0b6",
+      "3-3:2baac1d637d5e202",
+      "4-4:5e4134c99b7686c4",
+      "5-5:afab93e3e159edaf",
+      "6-6:1cb696fd21cb60fa",
+      "7-7:65d1e08fe91e66d2",
+      "8-8:2358385748fd1ecf",
+      "9-9:7789c359ee8b8aac",
+      "10-10:c44ccdec1e3087ff",
+      "11-11:b42519511bf8b105",
+      "12-12:2c0998caf2482230",
+      "13-13:8f405f9031dceb74",
+      "14-14:5b643d8a87f761db"
+    ]
+  }
+}

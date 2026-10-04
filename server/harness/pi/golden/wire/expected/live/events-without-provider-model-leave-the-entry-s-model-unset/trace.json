@@ -1,0 +1,30 @@
+[
+  {
+    "call": {
+      "fn": "applyEvent",
+      "args": [
+        {
+          "type": "message_start",
+          "message": {
+            "role": "assistant",
+            "content": []
+          }
+        }
+      ]
+    },
+    "state": {
+      "entries": [
+        {
+          "kind": "assistant",
+          "blocks": [],
+          "done": false
+        }
+      ],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  }
+]

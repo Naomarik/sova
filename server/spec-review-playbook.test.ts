@@ -2,8 +2,7 @@
 // operator-run bundle the real catalog loader lists with no schedule, whose published shell blocks run
 // as written with their placeholders filled: the preflight refuses a bad root or base before it lists
 // anything and caps its list, the metadata block's known-base flags are accepted by the trusted tools,
-// a packet page stays within its budget, and the assessment calls show their output only within the
-// allowance and, with --path, keep a later file out. Throwaway repositories and agent dir only.
+// and a packet page stays within its budget. Throwaway repositories and agent dir only.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
@@ -17,7 +16,7 @@ const PLAYBOOK = fileURLToPath(new URL("../playbooks/spec-review/", import.meta.
 const TEXT = readFileSync(join(PLAYBOOK, "PLAYBOOK.md"), "utf8");
 const CORE = fileURLToPath(new URL("../pi-config/extensions/spec/core", import.meta.url));
 const SPEC_MODE = fileURLToPath(new URL("../pi-config/extensions/mode/spec-mode.md", import.meta.url));
-/** The playbook's shell blocks, in order: the preflight, the metadata call, the packet call, the assessment preview, the approved write. */
+/** The playbook's shell blocks, in order: the preflight, the metadata call, the packet call. */
 const BLOCKS = [...TEXT.matchAll(/^```sh\n([\s\S]*?)^```$/gm)].map((m) => m[1]!);
 
 const tmp = realpathSync(mkdtempSync(join(tmpdir(), "spec-review-playbook-")));
@@ -75,7 +74,7 @@ test("the real loader lists it as a Sova playbook with no schedule, its frontmat
   assert.equal(p.schedule, undefined, "no schedule");
   assert.deepEqual(Object.keys(parseFrontmatter(TEXT).fields).sort(), ["description", "promptHint", "title"]);
   assert.deepEqual(readdirSync(PLAYBOOK), ["PLAYBOOK.md"], "no script or state of its own");
-  assert.equal(BLOCKS.length, 5, "the preflight, the metadata and packet calls, the assessment preview and the approved write");
+  assert.equal(BLOCKS.length, 3, "the preflight, the metadata call and the packet call");
   const coreLine = readFileSync(SPEC_MODE, "utf8").split("\n").find((l) => l.startsWith('core="${PI_CODING_AGENT_DIR'));
   for (const b of BLOCKS.slice(1)) assert.equal(b.split("\n")[0], coreLine, "each call resolves the tools with spec-mode.md's own line");
 });
@@ -130,39 +129,4 @@ test("the metadata call's known-base flags are accepted by git and the trusted t
     assert.equal(page.budget, Number(budget));
     assert.ok(Buffer.byteLength(p.out.trimEnd()) <= Number(budget), `${Buffer.byteLength(p.out)} bytes over a ${budget} budget`);
   }
-});
-
-test("assessment: output is shown only within the allowance, never cut; --path keeps a later file out where the live change would take it in", () => {
-  const { R, B } = project();
-  write(R, "lib/late.js", "export const late = 1;\n"); // changed after the brief froze lib/rule.js
-  const v = { root: R, base: B, name: "review", path: "lib/rule.js", who: "reviewer", decisions: '{"decisions":[],"files":[]}' };
-
-  let r = sh(fill(BLOCKS[3]!, { ...v, bytes: "100" }));
-  const lines = r.out.trim().split("\n");
-  assert.match(lines[0]!, /^exit 0 · (\d+) bytes$/);
-  assert.ok(Number(/(\d+) bytes/.exec(lines[0]!)![1]) > 100);
-  assert.deepEqual(lines.slice(1), ["not shown: over the 100-byte allowance"], "nothing of the capture, not even a head");
-
-  r = sh(fill(BLOCKS[3]!, { ...v, bytes: "4000000" }));
-  const [head, ...rest] = r.out.split("\n");
-  assert.match(head!, /^exit 0 · \d+ bytes$/);
-  const preview = JSON.parse(rest.join("\n"));
-  assert.equal(preview.written, false);
-  assert.deepEqual(preview.changedFiles, ["lib/rule.js"], "--path: only the scoped file");
-  assert.ok(!existsSync(join(R, ".sova/spec/assessments")), "the preview writes nothing");
-  // The contrast the --path sentence guards against: without it, the live change takes the later file in.
-  const live = sh(fill(BLOCKS[3]!, { ...v, bytes: "4000000" }).replace(" --path 'lib/rule.js'", ""));
-  assert.deepEqual(JSON.parse(live.out.split("\n").slice(1).join("\n")).changedFiles, ["lib/late.js", "lib/new.js", "lib/rule.js"]);
-
-  r = sh(fill(BLOCKS[4]!, { ...v, bytes: "4000000" }));
-  const exits = r.out.split("\n").filter((l) => /^exit \d+ · \d+ bytes$/.test(l)).map((l) => l.split(" ")[1]);
-  assert.deepEqual(exits.slice(0, 2), ["0", "0"], "prepare --write and record succeed");
-  assert.ok(exits[2] === "0" || exits[2] === "1", "status answers (1: unknown or stale inputs, still an answer)");
-  const store = join(R, ".sova/spec/assessments/review");
-  const packet = JSON.parse(readFileSync(join(store, "packet.json"), "utf8"));
-  assert.equal(packet.query.base, B, "the declared base, not a task start");
-  assert.deepEqual(packet.capture.changedFiles, ["lib/rule.js"]);
-  assert.deepEqual(packet.query.baseline, { inputs: [] }, "no declared snapshot");
-  assert.ok(Object.values(packet.attribution).every((x) => x === null), "attribution stays null");
-  assert.equal(JSON.parse(readFileSync(join(store, "record.json"), "utf8")).by, "reviewer");
 });

@@ -33,9 +33,14 @@ async function dial(id: LanIdentity, port: number): Promise<void> {
   s?.destroy();
 }
 
-test("listens only while a host is paired, and never on every interface", async () => {
-  for (const host of ["0.0.0.0", "::", ""]) {
-    assert.throws(() => new RelayListener({ host, port: 0, identity: relayId, profile: LAN_PROFILE, onPeer: () => {} }), /never every interface/);
+test("listens only while a host is paired, and never on every interface or a public address", async () => {
+  // The backstop behind the relay setting's own check (peers.ts): any spelling of every interface,
+  // a public address or a name throws before anything binds.
+  for (const host of ["0.0.0.0", "::", "", "0::", "0::0", "0000::", "::0.0.0.0", "::ffff:0.0.0.0", "[::]"]) {
+    assert.throws(() => new RelayListener({ host, port: 0, identity: relayId, profile: LAN_PROFILE, onPeer: () => {} }), /one local-network address/, host);
+  }
+  for (const host of ["192.0.2.10", "2001:db8::1", "100.64.0.1", "relay.example"]) {
+    assert.throws(() => new RelayListener({ host, port: 0, identity: relayId, profile: LAN_PROFILE, onPeer: () => {} }), /one local-network address/, host);
   }
   const t = listener();
   assert.equal(t.l.listening, false);

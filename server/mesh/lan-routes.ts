@@ -7,9 +7,10 @@
 // its grant is written here at pairing (presence unless the page chose another) and dropped at
 // unpairing, and removing it ends its connections at once (lan.ts follows peers.json).
 
+import { networkInterfaces } from "node:os";
 import type { Context, Hono } from "hono";
 import { MESH_PRESETS, type MeshPreset } from "../../shared/mesh-access";
-import type { LanPairingAdd, LanRelayPut, LanStatus } from "../../shared/mesh-lan";
+import { type LanPairingAdd, type LanRelayPut, type LanStatus, parseIp, relayAddress } from "../../shared/mesh-lan";
 import { lanNodeId, parsePin, samePin } from "./lan-cert";
 import { type PeerEntry, type PeersConfig, PEER_ID_RE } from "./peers";
 import { localRequest } from "./proxy";
@@ -21,6 +22,8 @@ export interface LanRouteDeps {
   updatePeers: (change: (config: PeersConfig) => PeersConfig | { error: string }) => { config: PeersConfig } | { error: string; status: 400 | 409 };
   /** Grants to write for newly paired nodes, and nodes whose grant goes (index.ts applyPairingGrants). */
   applyGrants: (set: Record<string, MeshPreset>, removed: string[]) => void;
+  /** Tests: this host's interface addresses (default: os.networkInterfaces()). */
+  ownAddresses?: () => string[];
 }
 
 const LABEL_MAX = 80;
@@ -95,6 +98,15 @@ export function lanRoutes(app: Hono, deps: LanRouteDeps): void {
     local(async (c) => {
       const body = await jsonBody<{ relay?: LanRelayPut }>(c);
       if (!body || !("relay" in body)) return c.json({ error: "Expected JSON body { relay: { host, port, exposure? } | null }" }, 400);
+      // peers.json takes only a local-network address (peers.ts checkRelay); saving one also needs
+      // it to be this host's, now. (Not checked on every read: an interface that comes and goes
+      // must not turn the mesh off.)
+      if (body.relay && typeof body.relay === "object" && typeof body.relay.host === "string") {
+        const at = relayAddress(body.relay.host); // anything else is refused below, with its reason
+        if ("address" in at && !(deps.ownAddresses ?? ownAddresses)().includes(at.address.replace(/%.*$/, ""))) {
+          return c.json({ error: `${body.relay.host} is not an address of this host` }, 400);
+        }
+      }
       const r = deps.updatePeers((config) => {
         const self = { ...config.self };
         if (body.relay === null) delete self.relay;
@@ -105,6 +117,11 @@ export function lanRoutes(app: Hono, deps: LanRouteDeps): void {
       return c.json(deps.status());
     }),
   );
+}
+
+/** This host's interface addresses, as relayAddress keeps them (IPv4 dotted, IPv6 lower case, no zone). */
+function ownAddresses(): string[] {
+  return Object.values(networkInterfaces()).flatMap((list) => (list ?? []).map((a) => parseIp(a.address)?.text.replace(/%.*$/, "") ?? a.address));
 }
 
 async function jsonBody<T>(c: Context): Promise<T | null> {

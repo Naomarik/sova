@@ -18,7 +18,7 @@ import type { TLSSocket } from "node:tls";
 import type { LanStatus, LanPairingStatus, LanChannelStatus } from "../../shared/mesh-lan";
 import { stateRoot } from "../state-root";
 import { fingerprint, type LanIdentity, mintLanIdentity, spkiPin } from "./lan-cert";
-import { INTERNET_PROFILE, LAN_PROFILE } from "./lan-admission";
+import { LAN_PROFILE } from "./lan-admission";
 import { type DialerStatus, RelayDialer } from "./lan-dialer";
 import { RelayListener, type RelayPeer } from "./lan-relay";
 import { RelaySessions } from "./lan-relay-sessions";
@@ -147,7 +147,7 @@ export class LanRuntime {
     this.askSessions.keepOnly(keep);
     for (const peerId of [...this.clients.keys()]) if (!this.dials.has(peerId) && !keep.includes(peerId)) this.dropClient(peerId);
     const relay = config?.self.relay;
-    const key = relay && this.accepted.length ? `${relay.host}|${relay.port}|${relay.exposure ?? "lan"}` : "";
+    const key = relay && this.accepted.length ? `${relay.host}|${relay.port}` : "";
     if (key !== this.listenerKey) {
       await this.listener?.close();
       this.listener = null;
@@ -167,7 +167,7 @@ export class LanRuntime {
       host: relay.host,
       port: relay.port,
       identity: id,
-      profile: relay.exposure === "internet" ? INTERNET_PROFILE : LAN_PROFILE,
+      profile: LAN_PROFILE, // the only exposure until the separate accept process exists
       onPeer: (sock, peer, channel) => this.accept(sock, peer, channel),
       onEvent: (e) => {
         // Counts and bans only: never an address, a pin or what a connection carried.
@@ -279,7 +279,7 @@ export class LanRuntime {
     const addr = this.listener?.address();
     return {
       ...(id ? { fingerprint: fingerprint(id.pin) } : {}),
-      ...(relay ? { relay: { host: relay.host, port: relay.port, exposure: relay.exposure ?? "lan", listening: !!this.listener?.listening, ...(addr ? { boundPort: addr.port } : {}), ...(this.listener ? { counts: pick(this.listener.counts()) } : {}) } } : {}),
+      ...(relay ? { relay: { host: relay.host, port: relay.port, exposure: "lan" as const, listening: !!this.listener?.listening, ...(addr ? { boundPort: addr.port } : {}), ...(this.listener ? { counts: pick(this.listener.counts()) } : {}) } } : {}),
       pairings,
     };
   }
@@ -291,7 +291,7 @@ export class LanRuntime {
     const idle: LanChannelStatus = { state: "not connected" };
     return {
       ...(id ? { fingerprint: fingerprint(id.pin) } : {}),
-      ...(relay ? { relay: { host: relay.host, port: relay.port, exposure: relay.exposure ?? "lan", listening: false } } : {}),
+      ...(relay ? { relay: { host: relay.host, port: relay.port, exposure: "lan" as const, listening: false } } : {}),
       pairings: (config?.peers ?? [])
         .filter((p) => p.lan)
         .map((p) => ({

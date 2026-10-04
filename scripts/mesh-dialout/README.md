@@ -18,7 +18,7 @@ its Mesh page, never on every interface.
 ## A relay on a local network
 
 1. On the relay's Mesh page, under Dial-out pairings: Make Fingerprint, then set "This host as a
-   relay" to one address of this host on that network and a port, reached from "A local network".
+   relay" to one address of this host on that network and a port.
 2. Open that port for the dial-out host's address only. With ufw, on the relay (fill in the
    interface, the dial-out host's address, the relay address and port):
 
@@ -31,41 +31,29 @@ its Mesh page, never on every interface.
    the dial-out host, "A relay this host dials" with the relay's fingerprint, address and port. Check
    the two fingerprints by eye on both screens.
 
-## A relay on the internet (a VPS): opt-in
+The relay address must be a loopback, private (10/8, 172.16/12, 192.168/16, fc00::/7) or link-local
+(169.254/16, fe80::/10) address of the relay. Sova refuses every public address, and every spelling
+of "every interface", on the page, the API and in a hand-edited `peers.json`. A dial-out host
+likewise never dials a relay at a public address (a relay given by name is dialed only at a
+local-network address the name resolves to).
 
-Off by default, and nothing in Sova opens it for you. Know what it means first: whoever controls
-that VPS's Sova reaches the dial-out host wherever it roams, as far as the dial-out host's grant to
-the VPS allows (presence by default: hello and details only). Keep that grant low.
+What Sova can't see: a private address that your network forwards from the internet (a router port
+forward or DMZ, a cloud NIC with 1:1 NAT). Don't forward the relay port; that is the firewall's job.
 
-1. On the VPS's Mesh page: Make Fingerprint, set "This host as a relay" to the VPS's **public**
-   address and a port, reached from "The internet" (a misbehaving address is then banned for 15
-   minutes instead of 5).
-2. Open the port on the public interface. The dial-out host roams, so this is usually open to any
-   source; the pinned handshake is what refuses strangers, and the relay's admission control limits
-   them (4 handshakes in progress and 10 connections a second per address, 5 failures in a minute =
-   ban; 64 connections overall). With ufw on the VPS:
+## A relay on the internet (a VPS): not available yet
 
-   ```sh
-   sudo ufw allow in on <public-interface> to <vps-public-ip> port <relay-port> proto tcp comment 'sova dial-out relay'
-   ```
+An internet relay waits for **a separate, unprivileged accept process**, which isn't built. The
+security review requires that a public relay run its TLS handshake (which parses a stranger's
+ClientHello and client certificate before any pin is known) in its own process, which hands each
+pinned connection to Sova over a 0600 unix socket, so a TLS-stack bug on the public port doesn't
+land in the process that holds every session, credential and shell. Today the handshake would run
+inside Sova itself, so Sova refuses it: `exposure: "internet"` and every public relay address are
+rejected, and the Mesh page offers no internet option.
 
-   Record it in `scripts/mesh-vps/SUDO.md` next to the other rules.
-3. Prove the exposure from the laptop: in `scripts/mesh-vps/local.env` set `VPS_RELAY_PORT=<relay-port>`
-   and `VPS_RELAY=on`, then `scripts/mesh-vps/exposure.sh probe`. Every other Sova port must still
-   time out; the relay port must connect, and a TLS probe without a client certificate must get no
-   HTTP answer. With the relay off again, set `VPS_RELAY=off`: the port must time out.
-4. Pair as on a LAN.
-
-To turn it off: remove the VPS's dial-out pairings (the listener closes at once), press Stop
-Relaying, and delete the ufw rule.
-
-**Not built yet: a separate accept process.** The security review asks that a public relay run its
-TLS handshake in a separate, unprivileged process that hands each pinned connection to Sova over a
-0600 unix socket, so a TLS-stack bug on the public port doesn't land in the process that holds every
-session. Today the handshake runs inside Sova itself. The pieces are ready for it (the relay
-listener is self-contained, and the reverse channel takes any stream, such as a decrypted one handed
-over a unix socket), but until that process exists, treat an internet relay as the higher-risk
-option it is.
+The pieces are ready for that process (the relay listener is self-contained, and the reverse channel
+takes any stream, such as a decrypted one handed over a unix socket). Until it exists, keep the VPS's
+relay port closed: `scripts/mesh-vps/exposure.sh probe` with `VPS_RELAY_PORT=<port>` and
+`VPS_RELAY=off` checks that it times out from the public address.
 
 ## Testing against a real macOS host
 

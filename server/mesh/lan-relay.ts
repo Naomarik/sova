@@ -10,6 +10,7 @@
 import { once } from "node:events";
 import type { AddressInfo, Socket } from "node:net";
 import tls, { type Server, type TLSSocket } from "node:tls";
+import { relayAddress } from "../../shared/mesh-lan";
 import type { LanIdentity } from "./lan-cert";
 import { Admission, type AdmissionCounts, type AdmissionProfile } from "./lan-admission";
 import { type Channel, pairedPeerOf, relayServerOptions } from "./lan-tls";
@@ -33,8 +34,6 @@ export interface RelayListenerOptions {
   now?: () => number;
 }
 
-const WILDCARD = new Set(["", "0.0.0.0", "::", "[::]", "::0", "0:0:0:0:0:0:0:0"]);
-
 interface Pending {
   ip: string;
   settled: boolean;
@@ -50,8 +49,14 @@ export class RelayListener {
   private chain: Promise<void> = Promise.resolve();
   private boundPort: number | null = null;
 
+  private readonly host: string;
+
   constructor(private readonly opts: RelayListenerOptions) {
-    if (WILDCARD.has(opts.host.trim())) throw new Error("a relay binds one address, never every interface");
+    // The same rule as the relay setting (peers.ts), for any caller: one loopback, private or
+    // link-local address, never every interface and never a public one (§mesh.lan/pairing).
+    const at = relayAddress(opts.host);
+    if ("error" in at) throw new Error(`a relay binds one local-network address: ${at.error}`);
+    this.host = at.address;
     this.admission = new Admission(opts.profile);
     this.now = opts.now ?? Date.now;
   }
@@ -105,7 +110,7 @@ export class RelayListener {
     server.on("secureConnection", (sock: TLSSocket) => this.onSecure(sock));
     server.on("error", (err: Error) => this.opts.onEvent?.({ kind: "error", message: (err as { code?: string }).code ?? "listener error" }));
     // A rebuild keeps the port the first listen bound (port 0 picks one only once).
-    server.listen(this.boundPort ?? this.opts.port, this.opts.host);
+    server.listen(this.boundPort ?? this.opts.port, this.host);
     await once(server, "listening");
     this.boundPort = (server.address() as AddressInfo).port;
     this.server = server;

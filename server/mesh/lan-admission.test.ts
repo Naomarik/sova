@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { Admission, INTERNET_PROFILE, LAN_PROFILE } from "./lan-admission";
+import * as admission from "./lan-admission";
+import { Admission, LAN_PROFILE } from "./lan-admission";
 
 const A = "192.0.2.10";
 const B = "192.0.2.11";
@@ -25,8 +26,8 @@ test("per address: at most 10 new connections in any second, refused ones includ
   assert.equal(a.admit(A, 1000).ok, true, "the window slides");
 });
 
-test("5 failed handshakes within 60 s ban the address: 5 min on a LAN, 15 on the internet", () => {
-  for (const [profile, banMs] of [[LAN_PROFILE, 300_000], [INTERNET_PROFILE, 900_000]] as const) {
+test("5 failed handshakes within 60 s ban the address for 5 min", () => {
+  for (const [profile, banMs] of [[LAN_PROFILE, 300_000]] as const) {
     const a = new Admission(profile);
     for (let i = 0; i < 5; i++) {
       const t = i * 10_000;
@@ -98,6 +99,10 @@ test("counts carry numbers only", () => {
   const c = a.counts(0);
   assert.doesNotMatch(JSON.stringify(c), /192\.0\.2/);
   assert.equal(c.open, 1);
+});
+
+test("there is no internet profile until the separate accept process exists", () => {
+  assert.deepEqual(Object.keys(admission).filter((k) => k.endsWith("_PROFILE")), ["LAN_PROFILE"]);
 });
 
 test("closed and handshakeDone for an unknown address are harmless", () => {

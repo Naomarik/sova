@@ -2,6 +2,7 @@ import { chmodSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "n
 import { isIP } from "node:net";
 import { hostname } from "node:os";
 import { dirname, join } from "node:path";
+import { parseIp, relayAddress } from "../../shared/mesh-lan";
 import type { SyncCategory } from "../../shared/protocol";
 import { stateRoot } from "../state-root";
 import { isLanNodeId, lanNodeId, parsePin } from "./lan-cert";
@@ -60,12 +61,13 @@ export interface LanLink {
 
 /** This host as a relay for dial-out hosts: where it listens while it accepts any (§mesh.lan/pairing). */
 export interface RelaySetting {
-  /** One IP address of this host, never a wildcard. */
+  /** One loopback, private or link-local IP address of this host (shared/mesh-lan.ts relayAddress). */
   host: string;
   /** 1–65535; 0 picks a free port (tests). */
   port: number;
-  /** How long a misbehaving address is banned: "lan" 5 min, "internet" 15 min. Absent: "lan". */
-  exposure?: "lan" | "internet";
+  /** Only "lan" (a misbehaving address is banned for 5 min): "internet" waits for the separate
+      accept process, so it is refused. Absent: "lan". */
+  exposure?: "lan";
 }
 
 export const SYNC_CATEGORIES: readonly SyncCategory[] = ["settings", "themes", "extensions", "logins"];
@@ -165,7 +167,8 @@ export function validatePeers(raw: unknown): { config: PeersConfig } | { error: 
     if (nodes.has(nodeId)) return { error: `peers[${i}].nodeId is listed twice` };
     if (lan && (e.url !== undefined || e.serveUrl !== undefined)) return { error: `peers[${i}]: a dial-out pairing has no url or serveUrl` };
     const dnsName = lan ? (lan.link.host ?? DIAL_OUT_NAME) : text(e.dnsName, 253);
-    if (!dnsName || !NAME_RE.test(dnsName)) return { error: `peers[${i}].dnsName must be a tailnet name or IP` };
+    // A pairing's was judged by checkLan (a link-local relay may carry a zone, which no name has).
+    if (!dnsName || (!lan && !NAME_RE.test(dnsName))) return { error: `peers[${i}].dnsName must be a tailnet name or IP` };
     if (e.label !== undefined && !text(e.label)) return { error: `peers[${i}].label must be a non-empty string (≤ 80)` };
     const url = e.url === undefined ? null : checkUrl(e.url);
     if (url && "error" in url) return { error: `peers[${i}].url ${url.error}` };
@@ -259,7 +262,6 @@ const isTime = (v: unknown): boolean => typeof v === "number" && Number.isFinite
 
 /** What an accepted pairing shows where a tailnet peer shows its name (it has no address here). */
 export const DIAL_OUT_NAME = "dial-out";
-const WILDCARD_HOSTS = new Set(["0.0.0.0", "::", "0:0:0:0:0:0:0:0"]);
 const isPort = (v: unknown, zero = false): v is number => Number.isInteger(v) && (v as number) >= (zero ? 0 : 1) && (v as number) <= 65535;
 
 function checkLan(raw: unknown): { link: LanLink } | { error: string } {
@@ -273,18 +275,29 @@ function checkLan(raw: unknown): { link: LanLink } | { error: string } {
     return { link: { role: "accept", pin } };
   }
   const host = text(r.host, 253);
-  if (!host || !NAME_RE.test(host) || WILDCARD_HOSTS.has(host)) return { error: "host must be the relay's name or IP" };
+  if (!host) return { error: "host must be the relay's name or IP" };
+  // An IP literal must be a relay address (never public, never every interface); a name is judged
+  // by what it resolves to, at each dial (lan-tls.ts).
+  const ip = relayAddress(host);
+  if (parseIp(host) || isIP(host)) {
+    if ("error" in ip) return { error: `host ${JSON.stringify(host)}: ${ip.error}` };
+  } else if (!NAME_RE.test(host) || host.includes(":") || /^[0-9.]+$/.test(host)) return { error: "host must be the relay's name or IP" };
   if (!isPort(r.port)) return { error: "port must be 1–65535" };
-  return { link: { role: "dial", pin, host: host.replace(/\.$/, ""), port: r.port } };
+  return { link: { role: "dial", pin, host: "address" in ip ? ip.address : host.replace(/\.$/, ""), port: r.port } };
 }
 
+/** The relay setting (§mesh.lan/pairing): a loopback, private or link-local IP, never every interface
+    or a public address, and never "internet" until the separate accept process exists. */
 function checkRelay(raw: unknown): { relay: RelaySetting } | { error: string } {
   if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return { error: "must be an object" };
   const r = raw as Record<string, unknown>;
-  if (typeof r.host !== "string" || !isIP(r.host) || WILDCARD_HOSTS.has(r.host)) return { error: "host must be one IP address of this host, not a wildcard" };
+  if (r.exposure === "internet") return { error: 'exposure "internet" is not available: an internet relay needs the separate accept process, which Sova doesn\'t have yet' };
+  if (r.exposure !== undefined && r.exposure !== "lan") return { error: 'exposure must be "lan"' };
+  if (typeof r.host !== "string") return { error: "host must be one IP address of this host" };
+  const host = relayAddress(r.host);
+  if ("error" in host) return { error: `host ${JSON.stringify(r.host)}: ${host.error}` };
   if (!isPort(r.port, true)) return { error: "port must be 0–65535" };
-  if (r.exposure !== undefined && r.exposure !== "lan" && r.exposure !== "internet") return { error: 'exposure must be "lan" or "internet"' };
-  return { relay: { host: r.host, port: r.port, ...(r.exposure === "internet" ? { exposure: "internet" as const } : {}) } };
+  return { relay: { host: host.address, port: r.port } };
 }
 
 /** A list of host ids (absent/null → undefined), or why it isn't one. */

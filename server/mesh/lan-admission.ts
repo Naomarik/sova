@@ -19,7 +19,7 @@ export interface AdmissionProfile {
 
 const BASE = { perIpHandshakes: 4, perIpPerSecond: 10, failuresToBan: 5, failWindowMs: 60_000, maxConnections: 64, maxTracked: 4096 };
 export const LAN_PROFILE: AdmissionProfile = { ...BASE, banMs: 5 * 60_000 };
-export const INTERNET_PROFILE: AdmissionProfile = { ...BASE, banMs: 15 * 60_000 };
+// No internet profile: a relay on the internet waits for the separate accept process (§mesh.lan/pairing).
 
 export type Refusal = "banned" | "too many handshakes" | "too fast" | "full" | "too many addresses";
 

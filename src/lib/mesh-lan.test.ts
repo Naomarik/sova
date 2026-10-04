@@ -50,12 +50,21 @@ test("the pairing form names the first thing missing", () => {
   assert.equal(pairingProblem({ ...d, role: "accept", host: "", port: "" }, []), null, "a dial-out host needs no address");
 });
 
-test("the relay form wants one IP of this host and a port", () => {
-  assert.equal(relayProblem("192.0.2.10", "4803"), null);
-  assert.equal(relayProblem("2001:db8::1", "4803"), null);
-  assert.match(relayProblem("0.0.0.0", "4803")!, /not every/);
+test("the relay form wants one local-network IP of this host and a port, as the server does", () => {
+  assert.equal(relayProblem("10.0.0.10", "4803"), null);
+  assert.equal(relayProblem("fd00::1", "4803"), null);
+  assert.equal(relayProblem("fe80::1%eth0", "4803"), null);
+  for (const every of ["0.0.0.0", "::", "0::", "0::0", "::ffff:0.0.0.0", "::0.0.0.0"]) assert.match(relayProblem(every, "4803")!, /not every/, every);
+  for (const pub of ["192.0.2.10", "2001:db8::1", "100.64.0.1", "::ffff:198.51.100.1"]) assert.match(relayProblem(pub, "4803")!, /internet isn't available/, pub);
   assert.match(relayProblem("relay.example", "4803")!, /IP address/);
-  assert.match(relayProblem("192.0.2.10", "0")!, /port/);
+  assert.match(relayProblem("10.0.0.10", "0")!, /port/);
+});
+
+test("the pairing form refuses a relay at a public IP; a name is the dialer's to judge", () => {
+  const d = { role: "dial" as const, fingerprint: FP, id: "relay", label: "", host: "192.0.2.5", port: "4803" };
+  assert.match(pairingProblem(d, [])!, /local-network address/);
+  assert.equal(pairingProblem({ ...d, host: "10.0.0.5" }, []), null);
+  assert.equal(pairingProblem({ ...d, host: "relay.example" }, []), null);
 });
 
 test("the relay line says where it listens, and for how many", () => {

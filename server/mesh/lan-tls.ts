@@ -11,13 +11,28 @@
 // A certificate chain whose leaf carries another key, even one the pinned key signed, fails the
 // compare: only the leaf's key is ever looked at.
 //
+// INVARIANTS that keep "no application byte before the pin compare" true (reviewed and accepted;
+// break one and that guarantee is gone):
+// 1. The compare stays synchronous inside those two handlers (`connectPinnedAt`'s secureConnect,
+//    RelayListener.onSecure): no await, timer or callback between the event and the decision.
+// 2. Nothing reads the socket before it: no `data` listener, no `resume()`, no pipe, no HTTP/2
+//    session attached until the compare has passed (lan-dialer.ts and lan.ts attach theirs after).
+// 3. The dialer is never given a `session` option (no resumption offered), and a resumed session
+//    yields no pin (`livePeerPin`), so it is refused.
+//
+// No resumption, which is not the same as no tickets: SSL_OP_NO_TICKET stops stateless tickets, but
+// Node's OpenSSL still sends stateful TLS 1.3 tickets (Bun sends none). Nothing on either side keeps
+// a session store, so a presented ticket never resumes, and if one ever did, livePeerPin refuses it.
+//
 // Two channels share the port, told apart by ALPN: on `answer` the dial-out host answers the relay's
 // requests, on `ask` it makes its own (§mesh.lan/reverse-channel).
 //
 // Builtins only. Never log a key or a certificate.
 
 import crypto from "node:crypto";
+import dns from "node:dns/promises";
 import tls, { type ConnectionOptions, type TLSSocket, type TlsOptions } from "node:tls";
+import { parseIp, relayAddress } from "../../shared/mesh-lan";
 import { type LanIdentity, samePin, spkiPin } from "./lan-cert";
 
 export const ALPN_ANSWER = "sova-answer/1";
@@ -90,7 +105,7 @@ export function pairedPeerOf<T extends { pin: string }>(sock: TLSSocket, paired:
   return null;
 }
 
-export type DialFailure = "refused" | "timed out" | "relay's pin didn't match" | "rejected by the relay" | "TLS version refused" | "closed";
+export type DialFailure = "refused" | "timed out" | "relay's pin didn't match" | "rejected by the relay" | "TLS version refused" | "relay address isn't private" | "closed";
 
 /** A fixed phrase for why a dial or session failed: never raw error text, a pin or an address. */
 export function dialFailure(err: unknown): DialFailure {
@@ -109,7 +124,39 @@ export function dialFailure(err: unknown): DialFailure {
  * Dial the relay pinned as `relayPin` on `channel`, and resolve with the socket once its pin
  * checked, before anything is written. Rejects with an Error whose message is a DialFailure phrase.
  */
-export function connectPinned(id: LanIdentity, relayPin: string, host: string, port: number, channel: Channel, timeoutMs = 10_000): Promise<TLSSocket> {
+export async function connectPinned(id: LanIdentity, relayPin: string, host: string, port: number, channel: Channel, timeoutMs = 10_000): Promise<TLSSocket> {
+  const at = await relayTarget(host);
+  if (!at) throw new Error("relay address isn't private" satisfies DialFailure);
+  return connectPinnedAt(id, relayPin, at, port, channel, timeoutMs);
+}
+
+type LookupAll = (host: string) => Promise<Array<{ address: string }>>;
+const lookupAll: LookupAll = (host) => dns.lookup(host, { all: true, verbatim: true });
+
+/**
+ * Where a dial-out host may dial `host` (§mesh.lan/pairing): itself when it is a loopback, private or
+ * link-local IP; for a name, the first such address it resolves to; else null (a public relay is
+ * never dialed). A name that doesn't resolve rejects as a DialFailure.
+ */
+export async function relayTarget(host: string, lookup: LookupAll = lookupAll): Promise<string | null> {
+  if (parseIp(host)) {
+    const ip = relayAddress(host);
+    return "address" in ip ? ip.address : null;
+  }
+  let found: Array<{ address: string }>;
+  try {
+    found = await lookup(host);
+  } catch (err) {
+    throw new Error(dialFailure(err));
+  }
+  for (const a of found) {
+    const ip = relayAddress(a.address);
+    if ("address" in ip) return ip.address;
+  }
+  return null;
+}
+
+function connectPinnedAt(id: LanIdentity, relayPin: string, host: string, port: number, channel: Channel, timeoutMs: number): Promise<TLSSocket> {
   return new Promise((resolve, reject) => {
     let done = false;
     const sock = tls.connect(dialOptions(id, host, port, channel));

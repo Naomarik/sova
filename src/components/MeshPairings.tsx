@@ -43,19 +43,16 @@ export function MeshPairings(props: { now: number; taken: readonly string[]; tic
 
   const [relayHost, setRelayHost] = createSignal<string | null>(null);
   const [relayPort, setRelayPort] = createSignal<string | null>(null);
-  const [exposure, setExposure] = createSignal<"lan" | "internet" | null>(null);
   const host = () => relayHost() ?? status()?.relay?.host ?? "";
   const port = () => relayPort() ?? String(status()?.relay?.port ?? "");
-  const exp = () => exposure() ?? status()?.relay?.exposure ?? "lan";
   const [relayTouched, setRelayTouched] = createSignal(false);
   const saveRelay = async (e: Event) => {
     e.preventDefault();
     setRelayTouched(true);
     if (relayProblem(host(), port())) return;
-    if (await run(() => putMeshLanRelay({ host: host().trim(), port: Number(port()), exposure: exp() }), "Relay address saved.")) {
+    if (await run(() => putMeshLanRelay({ host: host().trim(), port: Number(port()) }), "Relay address saved.")) {
       setRelayHost(null);
       setRelayPort(null);
-      setExposure(null);
       setRelayTouched(false);
     }
   };
@@ -135,8 +132,8 @@ export function MeshPairings(props: { now: number; taken: readonly string[]; tic
             <label class="field-label" for="mesh-relay-host">
               Address
             </label>
-            <input id="mesh-relay-host" class="input input-mono" autocomplete="off" spellcheck={false} placeholder="192.0.2.10" value={host()} onInput={(e) => setRelayHost(e.currentTarget.value)} />
-            <span class="field-hint">One address of this host, never all of them.</span>
+            <input id="mesh-relay-host" class="input input-mono" autocomplete="off" spellcheck={false} placeholder="10.0.0.2" value={host()} onInput={(e) => setRelayHost(e.currentTarget.value)} />
+            <span class="field-hint">One local-network address of this host, never all of them.</span>
           </div>
           <div class="field">
             <label class="field-label" for="mesh-relay-port">
@@ -144,23 +141,8 @@ export function MeshPairings(props: { now: number; taken: readonly string[]; tic
             </label>
             <input id="mesh-relay-port" class="input input-mono" inputmode="numeric" autocomplete="off" value={port()} onInput={(e) => setRelayPort(e.currentTarget.value)} />
           </div>
-          <label class="field">
-            <span class="field-label">Reached from</span>
-            <span class="select-wrap">
-              <select class="select" onChange={(e) => setExposure(e.currentTarget.value as "lan" | "internet")}>
-                <option value="lan" selected={exp() === "lan"}>
-                  A local network
-                </option>
-                <option value="internet" selected={exp() === "internet"}>
-                  The internet
-                </option>
-              </select>
-            </span>
-            <Show when={exp() === "internet"}>
-              <span class="field-hint">Bans a misbehaving address for 15 minutes. Opening the port in the firewall is yours to do.</span>
-            </Show>
-          </label>
         </div>
+        <p class="field-hint">A relay on the internet isn't available yet: it needs a separate accept process that Sova doesn't have.</p>
         <Show when={relayTouched() && relayProblem(host(), port())}>{(msg) => <p class="field-error">{msg()}</p>}</Show>
         <div class="cluster">
           <button type="submit" class="button" aria-disabled={busy() ? "true" : undefined}>

@@ -42,7 +42,7 @@ export class Backoff {
   }
 }
 
-const PHRASES: ReadonlySet<string> = new Set<DialFailure>(["refused", "timed out", "relay's pin didn't match", "rejected by the relay", "TLS version refused", "closed"]);
+const PHRASES: ReadonlySet<string> = new Set<DialFailure>(["refused", "timed out", "relay's pin didn't match", "rejected by the relay", "TLS version refused", "relay address isn't private", "closed"]);
 const phraseOf = (err: unknown): DialFailure => {
   const msg = (err as { message?: unknown } | null)?.message;
   return typeof msg === "string" && PHRASES.has(msg) ? (msg as DialFailure) : dialFailure(err);

@@ -1,7 +1,7 @@
 // The Mesh page's dial-out pairings (§mesh.lan/pairing): what each pairing's state reads as, and
 // whether the pairing form can be sent. Pure; the card is components/MeshPairings.tsx.
 
-import type { LanChannelStatus, LanPairingStatus, LanStatus } from "../../shared/mesh-lan";
+import { type LanChannelStatus, type LanPairingStatus, type LanStatus, parseIp, relayAddress } from "../../shared/mesh-lan";
 
 export type { LanPairingStatus, LanStatus };
 
@@ -68,6 +68,7 @@ export function pairingProblem(d: PairingDraft, taken: readonly string[], own?: 
   if (taken.includes(id)) return `A host named ${id} is already in the list.`;
   if (d.role === "dial") {
     if (!d.host.trim()) return "Enter the relay's address, as this host reaches it.";
+    if (parseIp(d.host) && "error" in relayAddress(d.host)) return "Use the relay's local-network address. A relay on the internet isn't available yet.";
     const port = Number(d.port);
     if (!Number.isInteger(port) || port < 1 || port > 65535) return "Enter the relay's port, 1–65535.";
   }
@@ -78,8 +79,11 @@ export function pairingProblem(d: PairingDraft, taken: readonly string[], own?: 
 export function relayProblem(host: string, port: string): string | null {
   const h = host.trim();
   if (!h) return "Enter one address of this host for dial-out hosts to reach.";
-  if (h === "0.0.0.0" || h === "::") return "Use one address of this host, not every address.";
-  if (!/^[0-9.]+$|^[0-9a-fA-F:]+$/.test(h)) return "Enter an IP address of this host.";
+  // The server's rule (peers.ts checkRelay), judged the same way.
+  const ip = parseIp(h);
+  if (!ip) return "Enter an IP address of this host.";
+  if (ip.bytes.every((b) => b === 0)) return "Use one address of this host, not every address.";
+  if ("error" in relayAddress(h)) return "Use a local-network address (10.x, 172.16–31.x, 192.168.x, 169.254.x, fc00::/7, fe80::/10 or loopback). A relay on the internet isn't available yet.";
   const p = Number(port);
   if (!Number.isInteger(p) || p < 1 || p > 65535) return "Enter a port, 1–65535.";
   return null;

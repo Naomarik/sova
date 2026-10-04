@@ -2,9 +2,11 @@
 # Exposure proof, from the laptop (read-only on the VPS):
 #   scripts/mesh-vps/exposure.sh probe              public $VPS_PUBLIC_IP:{4800,4801,4802,4890,2089,8443,10443} must TIME OUT; $VPS_CONTROL_PORTS must connect,
 #                                                   and 443 too when SHARE_FRONT is vhost, caddy or funnel (the public share front)
-#                                                   With VPS_RELAY_PORT set (the opt-in dial-out relay, §mesh/lan): VPS_RELAY=off → that port
-#                                                   must TIME OUT too; VPS_RELAY=on → it must connect, and a TLS probe with no client
-#                                                   certificate must get no HTTP answer (the pinned handshake refuses it)
+#                                                   With VPS_RELAY_PORT set (the dial-out relay port, §mesh/lan): VPS_RELAY=off → that port
+#                                                   must TIME OUT too. An internet relay is NOT available yet: Sova refuses a public
+#                                                   relay address until the separate, unprivileged accept process exists, so `off` is
+#                                                   the only state today. VPS_RELAY=on is kept for that process: the port must connect,
+#                                                   and a TLS probe with no client certificate must get no HTTP answer
 #   scripts/mesh-vps/exposure.sh snapshot <file>    the production state: listening sockets + `systemctl is-active` of $PROD_UNITS (skipped if empty)
 #   scripts/mesh-vps/exposure.sh compare <a> <b>    identical, or print the difference and fail
 # A TCP connect that neither connects nor is refused within 6 s counts as a timeout (the firewall drops it on the public interface).

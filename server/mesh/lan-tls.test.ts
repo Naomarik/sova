@@ -8,7 +8,7 @@ import net, { type AddressInfo } from "node:net";
 import { test } from "node:test";
 import tls, { type TLSSocket } from "node:tls";
 import { buildCertDer, type LanIdentity, mintLanIdentity, pem, spkiPin } from "./lan-cert";
-import { ALPN_ANSWER, ALPN_ASK, type Channel, connectPinned, dialFailure, dialOptions, livePeerPin, pairedPeerOf, relayServerOptions } from "./lan-tls";
+import { ALPN_ANSWER, ALPN_ASK, type Channel, connectPinned, dialFailure, dialOptions, livePeerPin, pairedPeerOf, relayServerOptions, relayTarget } from "./lan-tls";
 
 type Peer = { pin: string; label: string };
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -137,31 +137,72 @@ test("a client offering neither channel is never paired", async () => {
   r.close();
 });
 
-test("resumption: a connection offering an earlier session is never a resumed, paired one", async () => {
-  const r = await relay(relayId, [macPeer]);
+/** A ticket for a session `id`'s key really issued, from an ordinary server with tickets on (both
+    runtimes issue one there; the relay itself issues none on Bun and stateful ones on Node). */
+async function ticketFrom(server: tls.Server, dialer: LanIdentity): Promise<Buffer> {
+  const port = (server.address() as AddressInfo).port;
   let session: Buffer | undefined;
-  const first = tls.connect(dialOptions(mac, "127.0.0.1", r.port, "answer"));
-  first.on("session", (s: Buffer) => {
-    session = s;
+  const c = tls.connect(dialOptions(dialer, "127.0.0.1", port, "answer"));
+  c.on("session", (s: Buffer) => (session = s));
+  c.on("error", () => {});
+  await once(c, "secureConnect");
+  c.resume();
+  for (let i = 0; i < 20 && !session; i++) await sleep(25);
+  c.destroy();
+  assert.ok(session, "the ticket server issued a ticket");
+  return session;
+}
+
+/** Connect presenting `session`; whether it resumed, and the pin livePeerPin gives on our side. */
+async function present(port: number, session: Buffer): Promise<{ reused: boolean; pin: string | null }> {
+  const c = tls.connect({ ...dialOptions(mac, "127.0.0.1", port, "answer"), session });
+  c.on("error", () => {});
+  const out = await new Promise<{ reused: boolean; pin: string | null }>((resolve) => {
+    c.once("secureConnect", () => resolve({ reused: c.isSessionReused(), pin: livePeerPin(c) }));
+    c.once("close", () => resolve({ reused: false, pin: null }));
   });
+  await sleep(150);
+  c.destroy();
+  return out;
+}
+
+test("no resumption: a presented ticket never yields a resumed, paired session", async () => {
+  // A twin of the relay (same key and certificate) with tickets ON: it resumes, and that is how
+  // we prove livePeerPin refuses a resumed session on both sides.
+  const o = relayServerOptions(relayId);
+  const twin = tls.createServer({ ...o, secureOptions: 0 });
+  const twinPins: Array<string | null> = [];
+  twin.on("secureConnection", (s: TLSSocket) => {
+    s.on("error", () => {});
+    if (s.isSessionReused()) twinPins.push(livePeerPin(s));
+    s.write("x"); // lets the client's ticket arrive
+  });
+  twin.listen(0, "127.0.0.1");
+  await once(twin, "listening");
+  const ticket = await ticketFrom(twin, mac);
+  const atTwin = await present((twin.address() as AddressInfo).port, ticket);
+  assert.equal(atTwin.reused, true, "the twin resumes: the ticket is real");
+  assert.equal(atTwin.pin, null, "a resumed session yields no pin to the dialer");
+  assert.deepEqual(twinPins, [null], "nor to the relay side");
+  twin.close();
+
+  // The relay itself: the twin's ticket (same key, another server) and, where the runtime issues
+  // one, the relay's own ticket. Neither resumes; at most a full handshake pairs, read fresh.
+  const r = await relay(relayId, [macPeer]);
+  const own: Buffer[] = [];
+  const first = tls.connect(dialOptions(mac, "127.0.0.1", r.port, "answer"));
+  first.on("session", (s: Buffer) => own.push(s));
   first.on("error", () => {});
   await once(first, "secureConnect");
   first.resume();
   await sleep(200);
   first.destroy();
-  assert.deepEqual(r.accepted, ["dialer/answer"]);
-  if (session) {
-    const second = tls.connect({ ...dialOptions(mac, "127.0.0.1", r.port, "answer"), session, key: undefined, cert: undefined });
-    second.on("error", () => {});
-    const reused = await new Promise<boolean>((resolve) => {
-      second.once("secureConnect", () => resolve(second.isSessionReused()));
-      second.once("close", () => resolve(false));
-    });
-    if (reused) assert.ok(livePeerPin(second) === null, "a resumed session never yields a pin");
-    await sleep(200);
-    second.destroy();
+  for (const t of [ticket, ...own]) {
+    const got = await present(r.port, t);
+    assert.equal(got.reused, false, "the relay never resumes a session");
+    assert.equal(got.pin, relayId.pin, "the relay's pin was read fresh, from a full handshake");
   }
-  assert.deepEqual(r.accepted, ["dialer/answer"], "the relay paired nothing new");
+  assert.ok(r.accepted.every((a) => a === "dialer/answer"));
   r.close();
 });
 
@@ -187,6 +228,22 @@ test("dial failures are fixed phrases", async () => {
     [{ message: "secret-ish details 192.0.2.1" }, "closed"],
     [null, "closed"],
   ] as const) assert.equal(dialFailure(err), want, JSON.stringify(err));
+});
+
+test("a dial-out host never dials a public relay address, nor a name that resolves only to one", async () => {
+  const names: Record<string, string[]> = { "lan.example": ["198.51.100.4", "10.0.0.4"], "public.example": ["198.51.100.4", "2001:db8::4"], "v6.example": ["fd00::4"] };
+  const lookup = async (h: string) => {
+    if (!names[h]) throw Object.assign(new Error("getaddrinfo ENOTFOUND"), { code: "ENOTFOUND" });
+    return names[h]!.map((address) => ({ address }));
+  };
+  assert.equal(await relayTarget("10.0.0.4", lookup), "10.0.0.4");
+  assert.equal(await relayTarget("::ffff:10.0.0.4", lookup), "10.0.0.4");
+  assert.equal(await relayTarget("lan.example", lookup), "10.0.0.4", "a name's first local-network address");
+  assert.equal(await relayTarget("v6.example", lookup), "fd00::4");
+  for (const h of ["198.51.100.4", "2001:db8::4", "0.0.0.0", "0::", "public.example"]) assert.equal(await relayTarget(h, lookup), null, h);
+  await assert.rejects(relayTarget("missing.example", lookup), /^Error: closed$/, "a fixed phrase, never the resolver's text");
+  // And connectPinned refuses before any socket: nothing listens at that documentation address.
+  await assert.rejects(connectPinned(mac, relayId.pin, "192.0.2.1", 9, "answer", 300), /^Error: relay address isn't private$/);
 });
 
 test("pins come from the certificate's key", () => {

@@ -156,6 +156,24 @@ describe("this host as the relay", () => {
     otherServer.close();
   });
 
+  test("the relay setting takes only a local-network address of this host (q9: no internet relay)", async () => {
+    const bad: Array<[unknown, RegExp]> = [
+      [{ host: "203.0.113.7", port: 4803 }, /public address/],
+      [{ host: "2001:db8::7", port: 4803 }, /public address/],
+      [{ host: "0::", port: 4803 }, /every interface/],
+      [{ host: "::ffff:0.0.0.0", port: 4803 }, /every interface/],
+      [{ host: "127.0.0.1", port: 4803, exposure: "internet" }, /separate accept process/],
+      // Private, but not an address of this host.
+      [{ host: "10.255.255.254", port: 4803 }, /not an address of this host/],
+    ];
+    for (const [relay, why] of bad) {
+      const [status, r] = await api<{ error: string }>("PUT", "/api/mesh/lan/relay", { relay });
+      assert.equal(status, 400, JSON.stringify(relay));
+      assert.match(r.error, why, JSON.stringify(relay));
+    }
+    assert.equal((await lan()).relay?.host, "127.0.0.1", "the setting is unchanged");
+  });
+
   test("a bad pairing is refused whole", async () => {
     const bad: Array<[unknown, RegExp]> = [
       [{ id: "laptop", role: "accept", pin: "1234" }, /32 hex/],
@@ -163,6 +181,7 @@ describe("this host as the relay", () => {
       [{ id: "laptop", role: "both", pin: other.pin }, /role/],
       [{ id: "laptop", role: "accept", pin: relayPin }, /own fingerprint/],
       [{ id: "laptop", role: "dial", pin: other.pin, host: "0.0.0.0", port: 1 }, /host/],
+      [{ id: "laptop", role: "dial", pin: other.pin, host: "198.51.100.7", port: 1 }, /public address/],
       [{ id: "laptop", role: "accept", pin: other.pin, grant: "root" }, /grant/],
     ];
     for (const [body, why] of bad) {

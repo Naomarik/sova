@@ -222,17 +222,30 @@ export const EXCLUDED_REFUSAL = "That folder holds an organization's workspace o
  * `..` is gone) and at its realpath (so a symlink in the root can't lead out), under the root, and
  * under none of `excluded` (either way). The root and each excluded folder are taken both as given
  * and at their realpath.
+ *
+ * `readable`: folders outside the root that `read` alone may open (the conversation's own
+ * attachments folder). A path is in one only if it is, both ways, inside the same folder; that wins
+ * over `excluded` for that folder alone. grep/find/ls never ask (`readProblem` is read's).
  */
 export class RootConfinement {
   private readonly roots: string[];
   private readonly excluded: string[];
+  private readonly readable: string[][];
   constructor(
     readonly root: string,
     excluded: string[] = [],
+    readable: string[] = [],
   ) {
     const both = (p: string) => [...new Set([resolve(p), realpathLoose(p)])];
     this.roots = both(root);
     this.excluded = excluded.flatMap(both);
+    this.readable = readable.map(both);
+  }
+  /** `problem`, for the read tool: null also for a path inside one of the `readable` folders. */
+  readProblem(p: string): string | null {
+    const forms = [resolve(p), realpathLoose(p)];
+    if (this.readable.some((dir) => forms.every((c) => dir.some((d) => within(c, d))))) return null;
+    return this.problem(p);
   }
   /** Why `p` (absolute) may not be read, or null when it may. */
   problem(p: string): string | null {

@@ -184,6 +184,8 @@ export class MeshLinks {
   private file: MeshLinksFile | null = null;
   private timer: ReturnType<typeof setInterval> | null = null;
   private flushing: Promise<void> | null = null;
+  /** Links whose creation was refused while their held copies are taken out: a drain skips them. */
+  private readonly refusedCopies = new Set<string>();
   private readonly memberCache = new Map<string, { at: number; value: Promise<MemberLookup> }>();
   /** The last answer about each member, however old: what a brief view shows. */
   private readonly lastKnown = new Map<string, { at: number; value: MemberLookup }>();
@@ -539,10 +541,16 @@ export class MeshLinks {
     // A grant lowered since the check above: the link is not made, and no copy that got out stays live.
     const withheld = told.find(({ r }) => r.state === "final" && r.withheld);
     if (withheld) {
-      if (told.some(({ r }) => r.state === "sent" || r.state === "queued")) {
+      // A copy held for a host that was down never goes: taken out of the outbox (after any drain
+      // under way), and a drain that already read it skips it. One a drain sent first is ended.
+      this.refusedCopies.add(link.id);
+      const dropped = await this.dropHeldCopies(link.id);
+      this.refusedCopies.delete(link.id);
+      const reached = told.filter(({ m, r }) => r.state === "sent" || (r.state === "queued" && !dropped.has(m.nodeId))).map(({ m }) => m.nodeId);
+      if (reached.length) {
         link.endedAt = this.now();
         this.save();
-        this.spreadEnd(link);
+        for (const n of reached) void this.tell(n, { kind: "end", linkId: link.id, body: { endedAt: link.endedAt } });
       } else this.forget(link.id);
       const i = members.indexOf(withheld.m);
       const label = this.hostLabel(withheld.m.nodeId);
@@ -550,6 +558,38 @@ export class MeshLinks {
     }
     this.notify(this.localSessions(link));
     return this.view(link);
+  }
+
+  /** Take every held copy of link `linkId` out of the outbox, once any drain under way is done;
+      the hosts whose copy was taken out. */
+  private dropHeldCopies(linkId: string): Promise<Set<string>> {
+    const run = async () => {
+      const taken = new Set<string>();
+      const rest = this.outbox().filter((e) => {
+        if (e.kind !== "link" || e.body.link.id !== linkId) return true;
+        taken.add(e.toNodeId);
+        return false;
+      });
+      if (!taken.size) return taken;
+      if (rest.length) writeJsonl(this.outboxFile(), rest);
+      else {
+        rmSync(this.outboxFile(), { force: true });
+        this.disarm();
+      }
+      return taken;
+    };
+    const prior = this.flushing ?? Promise.resolve();
+    const mine = prior.then(run, run);
+    const tail: Promise<void> = mine
+      .then(
+        () => undefined,
+        () => undefined,
+      )
+      .finally(() => {
+        if (this.flushing === tail) this.flushing = null;
+      });
+    this.flushing = tail;
+    return mine;
   }
 
   /** Drop a link this host made that never got out. */
@@ -1317,6 +1357,7 @@ export class MeshLinks {
           keep.push(e);
           continue;
         }
+        if (e.kind === "link" && this.refusedCopies.has(e.body.link.id)) continue; // its creation was refused
         const r = await this.hopWithCopy(e.toNodeId, e);
         if (r.state === "down") {
           down.add(e.toNodeId); // nothing after it goes first: its host sees them in order

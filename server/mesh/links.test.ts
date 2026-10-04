@@ -355,6 +355,43 @@ describe("the record (§mesh.links/record)", () => {
     assert.deepEqual(A.sawDown, []);
   });
 
+  test("a refused link's copy held for a host that was down never reaches it live, even once that host is back", async () => {
+    const C = makeHost("c", "Gamma");
+    C.sessions.set("sc", summary("sc"));
+    let copyFailed = false;
+    A.onFetch = (peerId, path) => {
+      // B's grant drops after its lookup; C's copy finds it down once, then C is back (for the end).
+      if (peerId === "b" && path.startsWith("/api/sessions/")) A.withholdLinks.add("b");
+      if (peerId === "c") {
+        if (path === "/api/peer/links" && !copyFailed) {
+          copyFailed = true;
+          C.up = false;
+        } else C.up = true;
+      }
+    };
+    const r = await act<LinkError>(A, "POST", "/api/mesh/links", { members: [{ session: "sa" }, { host: "c", session: "sc" }, { host: "b", session: "sb" }] });
+    assert.equal(r.status, 409);
+    assert.equal(r.json.member, 2);
+    assert.ok(copyFailed, "C's copy was held, not sent");
+    await settle();
+    C.up = true;
+    await A.links.flush();
+    await settle();
+    C.links.forgetForTest();
+    assert.deepEqual(
+      C.links.all().filter((l) => l.endedAt === undefined),
+      [],
+      "no live link on C",
+    );
+    assert.deepEqual(
+      A.links.pending().filter((e) => e.kind === "link"),
+      [],
+      "no creation copy still held",
+    );
+    assert.ok(A.links.all().every((l) => l.endedAt !== undefined), "no live local link");
+    assert.equal(B.links.all().length, 0);
+  });
+
   test("a message to a peer this host stopped sharing links with is refused, never held as if the peer were down", async () => {
     await link();
     A.withholdLinks.add("b");

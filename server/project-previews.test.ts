@@ -496,3 +496,93 @@ describe("the session list never shows part of a kept link (§app.session-list/c
     assert.ok(!body.includes(label.slice(0, 8)), `part of a kept link in the summary: ${body.slice(0, 300)}`);
   });
 });
+
+describe("a person's own link is kept for the operator's Sent to line alone (§mesh.public/preview, §app.outreach/links)", () => {
+  /** A folder preview, sent to Ana: the original, the person's link and the sibling's id. */
+  const sendOne = async (key: string) => {
+    const { RESOLVERS } = await import("./outreach/links");
+    const person = orgs.readRoster(org.id)[0]!;
+    const r = await app.request("/api/previews", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ projectId: project.id, sessionId: "c-shop", folder: "dist", purpose: "For Ana" }) });
+    assert.equal(r.status, 200, await r.clone().text());
+    const made = (await r.json()) as PreviewMinted;
+    assert.equal(made.preview.sentLink, undefined, "the mint's answer never carries a person's link");
+    const sent = await RESOLVERS.preview.resolve({ orgId: org.id, projectId: project.id, personId: person.id, key }, { kind: "preview", preview: made.preview.id });
+    return { made, url: sent.url, sibling: sent.log.previewId!, sent, RESOLVERS };
+  };
+  const keptFile = () => JSON.parse(readFileSync(kept.previewKeptFile(), "utf8")) as { previews: Record<string, unknown>; siblingLinks?: Record<string, string> };
+  /** Rewrite the file as it is: its stamp moves, so the next read parses it again (as after a restart). */
+  const reread = () => writeFileSync(kept.previewKeptFile(), readFileSync(kept.previewKeptFile()), { mode: 0o600 });
+
+  test("b1: kept in a map of its own, it survives a re-read, and rebindStaticPreviews and previewViews still read every preview", async () => {
+    const { made, url, sibling } = await sendOne("b1");
+    const file = keptFile();
+    assert.equal(file.siblingLinks?.[sibling], url, "kept under the sibling's id, in siblingLinks");
+    assert.equal(file.previews[sibling], undefined, "never a target-less entry among the previews");
+    reread();
+    assert.equal(kept.keptSiblingLink(sibling), url, "read back after a re-read");
+    assert.equal(kept.keptPreview(sibling), null);
+    assert.ok(kept.keptPreview(made.preview.id), "the original's entry is untouched");
+    const bound = await previews.rebindStaticPreviews();
+    assert.ok(bound.bound.includes(made.preview.id), JSON.stringify(bound));
+    const views = await previews.previewViews({ projectId: project.id });
+    const sib = views.find((v) => v.id === sibling)!;
+    assert.deepEqual([sib.siblingOf, sib.target, sib.url], [made.preview.id, { kind: "static", folder: "dist" }, null]);
+    const listed = await list();
+    assert.equal(listed.find((v) => v.id === sibling)?.sentLink, url, "the operator's list carries it, for the Sent to line");
+    assert.equal(listed.find((v) => v.id === made.preview.id)?.url, made.url, "Open stays the original's link");
+    assert.equal(listed.find((v) => v.id === made.preview.id)?.sentLink, undefined);
+
+    // A url-only entry among the previews (the shape this map avoids) is left out alone: no reader throws, nothing else is lost.
+    const withStray = keptFile();
+    withStray.previews[sibling] = { url };
+    writeFileSync(kept.previewKeptFile(), JSON.stringify(withStray), { mode: 0o600 });
+    assert.equal(kept.keptPreview(sibling), null);
+    assert.equal(kept.keptSiblingLink(sibling), url);
+    await previews.rebindStaticPreviews();
+    assert.equal((await previews.previewViews({ projectId: project.id })).find((v) => v.id === sibling)?.url, null);
+    // A map that breaks its shape keeps no person's link, and costs the previews nothing.
+    writeFileSync(kept.previewKeptFile(), JSON.stringify({ ...withStray, siblingLinks: "nope" }), { mode: 0o600 });
+    assert.equal(kept.keptSiblingLink(sibling), null);
+    assert.ok(kept.keptPreview(made.preview.id));
+    writeFileSync(kept.previewKeptFile(), JSON.stringify(file), { mode: 0o600 });
+    await previews.turnOffPreview(made.preview.id);
+  });
+
+  test("b2: a sibling's url is null in every view, and no overseer tool, send log or result carries the person's link", async () => {
+    const { made, url, sibling, sent, RESOLVERS } = await sendOne("b2");
+    const label = labelOf(url);
+    const views = await previews.previewViews({ projectId: project.id });
+    assert.equal(views.find((v) => v.id === sibling)?.url, null);
+    assert.ok(!JSON.stringify(views).includes(label), "previewViews never carries it");
+    assert.ok(!JSON.stringify(views.map(previews.handoffOf)).includes(label));
+    assert.ok(!JSON.stringify([sent.log, sent.minted]).includes(label), "the send log's ids and the minted ids, never the link");
+    const seen: string[] = [];
+    for (const [name, params] of [
+      ["sova_previews", {}],
+      ["sova_project", {}],
+      ["sova_preview", { op: "off", id: "pv_nonexistent00000" }],
+    ] as [string, Record<string, unknown>][]) {
+      try {
+        seen.push(JSON.stringify(await run(name, params, true)));
+      } catch (err) {
+        seen.push(String(err));
+      }
+    }
+    for (const out of seen) assert.ok(!out.includes(label), `a person's link in a tool result: ${out.slice(0, 160)}`);
+    // The backstop every overseer tool passes through knows the person's link too.
+    const leaky = previewLinkFree({ name: "t", label: "t", description: "", parameters: {}, execute: async () => ({ content: [{ type: "text", text: `see ${url}` }], details: { u: url } }) } as never);
+    assert.deepEqual(await leaky.execute("c", {} as never, undefined, undefined, undefined as never), { content: [{ type: "text", text: "see [preview link]" }], details: { u: "[preview link]" } });
+    // Turned off on its own: it leaves the list and the file at once.
+    await previews.turnOffPreview(sibling);
+    assert.equal((await list()).find((v) => v.id === sibling)?.sentLink, undefined);
+    assert.equal(kept.keptSiblingLink(sibling), null);
+    // A failed send's revoke turns it off and drops it too.
+    const again = await RESOLVERS.preview.resolve({ orgId: org.id, projectId: project.id, personId: orgs.readRoster(org.id)[0]!.id, key: "b2-fail" }, { kind: "preview", preview: made.preview.id });
+    const id = again.log.previewId!;
+    assert.equal(kept.keptSiblingLink(id), again.url);
+    RESOLVERS.preview.revoke(again.minted);
+    assert.equal(kept.keptSiblingLink(id), null);
+    assert.equal(links.listPreviews().find((v) => v.id === id)?.state, "off");
+    await previews.turnOffPreview(made.preview.id);
+  });
+});

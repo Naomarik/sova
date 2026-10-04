@@ -67,6 +67,10 @@ export const recipientDeleteTip = (name: string): string => `Deletes only ${name
 export const recipientDeleteConfirm = (name: string): string => `Delete ${name}'s Link?`;
 export const recipientDeleteNote = (name: string): string => `${name}'s link stops working for good.`;
 export const recipientDeleted = (name: string): string => `${name}'s link deleted.`;
+/** A recipient's own Copy, only while their link is kept (`sentLink`): never an Open, so the operator's look never counts as their visit. */
+export const recipientCopyLabel = (name: string): string => `Copy ${name}'s Link`;
+export const recipientCopyTip = (name: string): string => `Copies only ${name}'s link. A visit through it counts as theirs.`;
+export const recipientCopied = (name: string): string => `${name}'s link copied.`;
 
 /** The port field: a number the server would take, or what's wrong with it. Sova's own defaults
     are refused here too; the server also refuses whatever this host binds. */

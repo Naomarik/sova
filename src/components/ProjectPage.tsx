@@ -12,7 +12,8 @@ import { PreviewsCard } from "./PreviewsCard";
 import { ActionMenu } from "./ActionMenu";
 import { costFigure, createProjectCost, ProjectCostCard } from "./ProjectCostCard";
 import { ProjectServicesTab } from "./ProjectServicesTab";
-import { ProjectSoftwareCard } from "./ProjectSoftwareCard";
+import { PlaybookReviewBanner } from "./PlaybookReview";
+import { createRuntimePoll, ProjectSoftwareCard } from "./ProjectSoftwareCard";
 import { ActivityCard, CodingSessionsCard, createProjectOverseer, IdeasCard, type ItemSendForm, OverseerSettings, OverseerSummary, type ProjectOverseer, TodosCard } from "./ProjectOverseerPanel";
 import { Banner, Icon } from "./ui";
 import "../orgs.css";
@@ -85,6 +86,8 @@ export function ProjectPage(props: {
   const po = createProjectOverseer({ projectId, onBusy: setOverseerBusy });
   const cost = createProjectCost({ projectId, tick: costTick });
   const previews = createPoll(() => getProjectPreviews(projectId), PREVIEWS_POLL_MS);
+  // The software registry, read once for the page: the Software card and a proposed run's banner.
+  const runtime = createRuntimePoll(projectId);
   const ideaList = () => (po.ideas.data() ? openIdeas(po.ideas.data()!.ideas) : undefined);
   const archived = () => project().archived ?? null;
   const org = props.org?.({
@@ -224,6 +227,8 @@ export function ProjectPage(props: {
       titleRef={props.titleRef}
     >
       <ArchiveConfirm from="head" />
+      {/* A verb playbook run waits on Approve & Merge (§app.project-runtime/review), on every tab. */}
+      <PlaybookReviewBanner projectId={projectId} runtime={runtime.data()} onDone={(view) => (view ? runtime.set(view) : runtime.refetch())} />
       <Show when={archived()}>
         {(a) => (
           <div class="project-archive-confirm">
@@ -284,7 +289,7 @@ export function ProjectPage(props: {
               </div>
               <div class="project-col">
                 {/* Its software registry on this host (§app.project-runtime/software-card). */}
-                <ProjectSoftwareCard projectId={projectId} archived={!!archived()} />
+                <ProjectSoftwareCard projectId={projectId} archived={!!archived()} runtime={runtime} />
                 <ActivityCard po={po} />
                 <TodosCard po={po} send={org?.send} archived={!!archived()} />
                 {/* A placed project's ideas sit with its requirements; a standalone one's here. */}

@@ -8,10 +8,11 @@ import { OrgError } from "../org-error";
 import { approveAtRef, branchFacts, observeRuntime, type BranchFacts, type ProofFact, type RuntimeFacts } from "../project-services/observe";
 import { onMergeNotes, startOnMergeTick, withOnMerge } from "../project-services/on-merge";
 import { projectEngine } from "../project-services/routes";
-import { startOnboardSession, type StartedCoding } from "../project-overseer";
+import { mergeCodingWorktree, startOnboardSession, type StartedCoding } from "../project-overseer";
 import { projectRootOf } from "../project-root";
 import { readWorktree } from "../project-worktrees";
 import { onboardStart } from "./onboard";
+import { DEFAULT_PLAYBOOK_LABEL, playbookReviewOf } from "./playbook-review";
 import { runtimeFeed, type FeedRow } from "./runtime-feed";
 import { engineOf, engineOrThrow, listProjects, operatorEnvelopeOf, projectArchived, readProject, runtimeSid, type OperatorBy } from "./spaces";
 
@@ -289,8 +290,10 @@ function playbookView(host: OrgHostApi, d: Record<string, unknown>): RuntimePlay
   const bf = obj(pb.branchFacts);
   const bdef = obj(bf.def);
   const path = buildSessionPath(str(pb.sessionId));
+  const build = obj(host.data(str(pb.sid)));
   return {
     sessionId: str(pb.sessionId),
+    label: str(pb.label) || DEFAULT_PLAYBOOK_LABEL,
     ...(path ? { path } : {}),
     ...(str(pb.title) ? { title: str(pb.title) } : str(host.data(str(pb.sid))?.title) ? { title: str(host.data(str(pb.sid))?.title) } : {}),
     ...(str(pb.why) ? { why: str(pb.why) } : {}),
@@ -298,6 +301,7 @@ function playbookView(host: OrgHostApi, d: Record<string, unknown>): RuntimePlay
     startedAt: iso(pb.at),
     ...(str(pb.result) ? { result: str(pb.result) } : {}),
     ...(str(pb.branch) ? { branch: str(pb.branch) } : {}),
+    ...(str(build.target) ? { target: str(build.target) } : {}),
     ...(bdef.state === "present" ? { branchHash: str(bdef.hash), branchApproved: bf.approved === true, branchProof: proofView(bf.proof) } : {}),
   };
 }
@@ -389,6 +393,38 @@ export async function approveRuntime(projectId: string, hash: string, by: Operat
   const refused = str(at.host.data(at.sid)?.approveRefused);
   if (refused) throw new RuntimeRefusal(refused, 409);
   return readRuntime(projectId);
+}
+
+export const NO_RUN_PROPOSED = "No playbook run is waiting for approval.";
+const CHANGED_SINCE = "The definition changed since it was shown: look again.";
+
+/** What Approve & Merge answers: the registry, read again; on a refused merge, the approval stands and `refused` says why. */
+export interface ApproveMergeOutcome {
+  view: ProjectRuntimeView;
+  approved: string;
+  merged: boolean;
+  refused?: string;
+}
+
+/**
+ * Approve & Merge (§app.project-runtime/approve-merge): approve the proposed run's `hash` (skipped when already
+ * approved; refused when it is no longer the one the branch proposes, or for anyone but the operator), then Merge
+ * Branch on its session with every refusal of its own. A refused merge keeps the approval.
+ */
+export async function approveMerge(projectId: string, hash: string, by: OperatorBy = { kind: "operator" }): Promise<ApproveMergeOutcome> {
+  await readRuntime(projectId);
+  const review = playbookReviewOf(projectId);
+  if (!review) throw new RuntimeRefusal(NO_RUN_PROPOSED, 409);
+  // Never main's hash by mistake: only the one the branch proposes now.
+  if (!review.hash || review.hash !== hash) throw new RuntimeRefusal(CHANGED_SINCE, 409);
+  if (!review.approved) await approveRuntime(projectId, hash, by);
+  try {
+    await mergeCodingWorktree(projectId, review.sessionId);
+  } catch (err) {
+    if (!(err instanceof OrgError)) throw err;
+    return { view: await readRuntime(projectId), approved: hash, merged: false, refused: err.message };
+  }
+  return { view: await readRuntime(projectId), approved: hash, merged: true };
 }
 
 /** What starting the playbook needs stamped on `verbs/onboard`: the host's refusal (its own, else a live run) and the standing. */

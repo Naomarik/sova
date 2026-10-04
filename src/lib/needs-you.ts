@@ -27,6 +27,9 @@ export interface NeedsYouRow {
   details: string[];
   /** ms epoch of the session's newest act item; 0 unknown. */
   since: number;
+  /** A proposed verb playbook run's item (`playbook-review`): what the row's Approve & Merge needs
+      (§app.project-runtime/review), the one button a Needs you row carries. */
+  playbook?: NonNullable<AttentionItem["playbook"]>;
 }
 
 /** Whether a digest item lists in the region: every act item, and a roster proposal. */
@@ -41,7 +44,7 @@ export const listsInNeedsYou = (it: Pick<AttentionItem, "tier" | "kind">): boole
 export function needsYouRows(digest: Pick<AttentionDigest, "items"> | undefined, sessions: readonly SessionSummary[]): NeedsYouRow[] {
   if (!digest) return [];
   const byPath = new Map(sessions.map((s) => [s.path, s]));
-  const acc = new Map<string, { session: SessionSummary; since: number; details: { at: number; text: string }[] }>();
+  const acc = new Map<string, { session: SessionSummary; since: number; details: { at: number; text: string }[]; playbook?: NeedsYouRow["playbook"] }>();
   for (const it of digest.items) {
     if (!listsInNeedsYou(it)) continue;
     const session = byPath.get(it.path);
@@ -50,12 +53,13 @@ export function needsYouRows(digest: Pick<AttentionDigest, "items"> | undefined,
     if (!a) acc.set(it.path, (a = { session, since: it.since, details: [] }));
     a.since = Math.max(a.since, it.since);
     if (it.detail) a.details.push({ at: it.since, text: it.detail });
+    if (it.kind === "playbook-review" && it.playbook) a.playbook = it.playbook;
   }
   return [...acc.values()]
     .map((a) => {
       // Newest first; the sort is stable, so one time keeps the digest's own order (most urgent kind first).
       const details = a.details.sort((x, y) => y.at - x.at).map((d) => d.text);
-      return { session: a.session, since: a.since, details, detail: details[0] ?? null };
+      return { session: a.session, since: a.since, details, detail: details[0] ?? null, ...(a.playbook ? { playbook: a.playbook } : {}) };
     })
     .sort((a, b) => b.since - a.since || a.session.path.localeCompare(b.session.path));
 }

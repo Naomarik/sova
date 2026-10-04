@@ -88,6 +88,7 @@ import { ArchiveCleanup } from "./ArchiveCleanup";
 import { SelectionToolbar } from "./SelectionToolbar";
 import { ContextRing } from "./ContextRing";
 import { CancelHeldButton } from "./HeldAct";
+import { ApproveMergeButton } from "./PlaybookReview";
 import { heldWaitLine } from "../lib/pipeline-view";
 import { waitingWords } from "../lib/working-hours";
 import { groupHref } from "../lib/group-route";
@@ -1384,6 +1385,7 @@ export function Sidebar(props: {
   /** ONE rule for the region and its spine door: rows, and proactivity known and not Off. */
   const showNeedsYou = () => !!props.sessions && needsYouShown(props.overseer?.proactivity, needsYou().length);
   const needsYouCutNote = () => needsYouCut(props.attention);
+  const needsYouPlaybook = (path: string) => needsYou().find((row) => row.session.path === path)?.playbook;
   const needsYouDetail = (path: string) => {
     const r = needsYou().find((row) => row.session.path === path);
     return r?.detail ? { text: r.detail, title: r.details.join(" ") } : null;
@@ -2234,7 +2236,19 @@ export function Sidebar(props: {
                 {/* Keyed on the session objects, which `hits()` keeps across polls: a row is updated
                     in place, never remounted, when only the digest changed. */}
                 <For each={needsYou().map((r) => r.session)}>
-                  {(s) => <SessionRow session={s} selected={props.selected} now={props.now} targets={targets()} detail={needsYouDetail(s.path)} />}
+                  {(s) => (
+                    <>
+                      <SessionRow session={s} selected={props.selected} now={props.now} targets={targets()} detail={needsYouDetail(s.path)} />
+                      {/* A proposed playbook run: its one button, under its row (§app.project-runtime/review). */}
+                      <Show when={needsYouPlaybook(s.path)}>
+                        {(pb) => (
+                          <li class="needs-you-playbook">
+                            <ApproveMergeButton projectId={pb().projectId} run={pb()} />
+                          </li>
+                        )}
+                      </Show>
+                    </>
+                  )}
                 </For>
               </ul>
               <Show when={needsYouCutNote()}>

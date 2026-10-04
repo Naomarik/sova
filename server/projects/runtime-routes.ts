@@ -2,12 +2,14 @@ import type { Context, Hono } from "hono";
 import { BusyError } from "../chat-manager";
 import { OrgError } from "../org-error";
 import { OVERSEER_CARD_HEADER, OVERSEER_SENDER_HEADER, overseerCard, overseerSender } from "../overseer-sender";
-import { approveRuntime, readRuntime, RuntimeRefusal, startOnboard, startRuntimeTick } from "./runtime";
+import { approveMerge, approveRuntime, readRuntime, RuntimeRefusal, startOnboard, startRuntimeTick } from "./runtime";
+import { hash12 } from "../../shared/playbook-review";
 import { operatorEnvelopeOf, type OperatorBy } from "./spaces";
 
 /**
  * The software registry's routes (§app/project-runtime): `GET /api/projects/:pid/runtime` (the registry, read
- * fresh), `POST …/runtime/approve {hash}` (the operator's only) and `POST …/verbs/onboard {why?, model?}` (the
+ * fresh), `POST …/runtime/approve {hash}` (the operator's only), `POST …/runtime/approve-merge {hash}` (approve, then
+ * Merge Branch on the proposed run) and `POST …/verbs/onboard {why?, model?}` (the
  * Project verbs playbook).
  */
 
@@ -52,6 +54,19 @@ export function registerRuntimeRoutes(app: Hono<any>): void {
       const hash = opt(b.hash);
       if (!hash) return c.json({ error: "Give the hash you were shown (hash)." }, 400);
       return c.json(await approveRuntime(c.req.param("pid") ?? "", hash, operatorBy(c)), 200, NO_STORE);
+    }),
+  );
+
+  // Approve & Merge (§app.project-runtime/approve-merge): a refused merge keeps the approval and says why (409).
+  app.post(
+    "/api/projects/:pid/runtime/approve-merge",
+    handle(async (c) => {
+      const b = await body(c);
+      const hash = opt(b.hash);
+      if (!hash) return c.json({ error: "Give the hash you were shown (hash)." }, 400);
+      const out = await approveMerge(c.req.param("pid") ?? "", hash, operatorBy(c));
+      if (out.refused) return c.json({ error: `Approved ${hash12(hash)}, but the merge was refused: ${out.refused}`, approved: out.approved, runtime: out.view }, 409, NO_STORE);
+      return c.json(out.view, 200, NO_STORE);
     }),
   );
 

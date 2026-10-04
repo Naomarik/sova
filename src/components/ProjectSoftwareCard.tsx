@@ -2,15 +2,19 @@ import { createSignal, For, Show } from "solid-js";
 import type { ProjectRuntimeView } from "../../shared/project-runtime";
 import { ApiError, approveProjectRuntime, getProjectRuntime, runProjectVerbsPlaybook } from "../lib/api";
 import { relativeTime } from "../lib/format";
-import { createPoll } from "../lib/poll";
+import { createPoll, type Poll } from "../lib/poll";
 import { approveLabel, approveWhat, failedLine, liveWord, memoryWord, playbookLabel, portsWord, provenTail, runWord, SENSITIVE_TITLE, serviceFacts, STANDING_CHIP } from "../lib/project-software";
 import { projectSessionHref, projectTabHref } from "../lib/projects-route";
 import { announce, toast } from "../lib/ui-state";
+import { ApproveMergeButton, proposedRun } from "./PlaybookReview";
 import { Chip, Icon } from "./ui";
 
 /** The registry changes on a merge, a conformance or a run: read it often enough to follow one. */
 const SOFTWARE_POLL_MS = 15_000;
 const FEED_SHOWN = 5;
+
+/** The page's one read of the registry: the Software card and the proposed run's banner share it. */
+export const createRuntimePoll = (projectId: string): Poll<ProjectRuntimeView> => createPoll(() => getProjectRuntime(projectId), SOFTWARE_POLL_MS);
 
 const errText = (err: unknown) => (err instanceof ApiError || err instanceof Error ? err.message : String(err));
 
@@ -20,8 +24,8 @@ const errText = (err: unknown) => (err instanceof ApiError || err instanceof Err
  * changed since registration, the Project verbs playbook's run, and the registry's latest feed. Run Playbook
  * and Approve show only while the statecharts would take them.
  */
-export function ProjectSoftwareCard(props: { projectId: string; archived: boolean }) {
-  const poll = createPoll(() => getProjectRuntime(props.projectId), SOFTWARE_POLL_MS);
+export function ProjectSoftwareCard(props: { projectId: string; archived: boolean; runtime: Poll<ProjectRuntimeView> }) {
+  const poll = props.runtime;
   const [busy, setBusy] = createSignal<"approve" | "run" | null>(null);
   const [error, setError] = createSignal<string | null>(null);
 
@@ -136,10 +140,14 @@ export function ProjectSoftwareCard(props: { projectId: string; archived: boolea
                 </p>
               )}
             </Show>
-            <Show when={approveWhat(v())}>{(w) => <p class="list-meta">{w()}</p>}</Show>
+            <Show when={!proposedRun(v()) && approveWhat(v())}>{(w) => <p class="list-meta">{w()}</p>}</Show>
             <Show when={error()}>{(e) => <p class="field-error">{e()}</p>}</Show>
             <div class="button-row project-software-actions">
-              <Show when={approveLabel(v())}>
+              {/* While a run is proposed: one gesture, Approve & Merge (§app.project-runtime/approve-merge). */}
+              <Show when={proposedRun(v())}>
+                {(run) => <ApproveMergeButton projectId={props.projectId} run={run()} onDone={(view) => (view ? poll.set(view) : poll.refetch())} />}
+              </Show>
+              <Show when={!proposedRun(v()) && approveLabel(v())}>
                 {(label) => (
                   <button type="button" class="button button-sm button-primary" aria-disabled={busy() ? "true" : undefined} onClick={() => void approve(v())}>
                     {label()}

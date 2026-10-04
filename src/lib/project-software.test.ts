@@ -70,7 +70,7 @@ test("the proof line, the failure, and the actions", () => {
 
 test("the playbook's run in words", () => {
   assert.equal(runWord(base), null);
-  const pb = { sessionId: "s1", startedBy: "operator" as const, startedAt: "" };
+  const pb = { sessionId: "s1", label: "Project verbs", startedBy: "operator" as const, startedAt: "" };
   assert.equal(runWord({ ...base, playbookState: "running", playbook: pb }), "The Project verbs playbook is running");
   assert.equal(runWord({ ...base, playbookState: "proposed", playbook: { ...pb, branch: "sova/v" } }), "The Project verbs playbook proposes a definition on sova/v");
   assert.equal(runWord({ ...base, playbook: { ...pb, result: "no-change" } }), "The last Project verbs run finished with no change");

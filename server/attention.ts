@@ -1,6 +1,8 @@
 import { homedir } from "node:os";
 import type { AttentionDigest, AttentionItem, AttentionKind, AttentionTier, SessionSummary } from "../shared/protocol";
 import { readinessItems } from "./merge-readiness";
+import { reviewDetail } from "../shared/playbook-review";
+import type { PlaybookReviewFact } from "./projects/playbook-review";
 import { sessionName } from "./session-names";
 
 /**
@@ -37,6 +39,9 @@ export interface AttentionRow {
   teamStall?: { since: number; names: string[] };
   /** The user's alias for the session (§app.overseer/session-names), when it has one. */
   alias?: string;
+  /** The session is a verb playbook's run that is proposed (server/projects/playbook-review.ts): it waits on the
+      operator's Approve & Merge (§app.project-runtime/review). */
+  playbook?: PlaybookReviewFact;
 }
 
 export const DIGEST_MAX = 30;
@@ -127,6 +132,19 @@ export function sessionItems(row: AttentionRow, now: number, home?: string): Att
   const questions = !!s.align && s.align.openQuestions > 0 && !running && !s.archived;
   if (questions && mergedBranch(s)) add("decide", "open-questions", row.lastReplyAt ?? lastActive, `Merged with ${openQuestionsText(s.align!)}`);
   else if (questions) add("act", "open-questions", row.lastReplyAt ?? lastActive, openQuestionsText(s.align!));
+  // A proposed verb playbook run (§app.project-runtime/review): a blocker until it is merged, its worktree
+  // removed or it works again (the registry's region leaves proposed), never put away by a visit or an approval.
+  const pb = row.playbook;
+  if (pb && !running && !s.archived) {
+    out.push({
+      ...base,
+      tier: "act",
+      kind: "playbook-review",
+      since: pb.since || row.lastReplyAt || lastActive,
+      detail: cap(reviewDetail(pb)),
+      playbook: { projectId: pb.projectId, label: pb.label, ...(pb.hash ? { hash: pb.hash } : {}), approved: pb.approved, branch: pb.branch, target: pb.target },
+    });
+  }
   // Decision signals (server/signals-store.ts): the list carries them only while unseen and idle,
   // with the kinds already derived from the fixed thresholds. They are guesses, so never blockers
   // (§app.overseer/attention-digest): a reply that seems to ask the user something is a decide

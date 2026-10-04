@@ -61,6 +61,8 @@ export interface RuntimeProof {
 
 export interface RuntimePlaybook {
   sessionId: string;
+  /** The playbook's title ("Project verbs"): every sentence about the run names it. */
+  label: string;
   /** Its session file on this host, when known (the card links it). */
   path?: string;
   title?: string;
@@ -70,6 +72,8 @@ export interface RuntimePlaybook {
   /** Set once the run ended: merged, removed, not-started, no-change. */
   result?: string;
   branch?: string;
+  /** The branch its worktree merges into. */
+  target?: string;
   /** The definition its branch proposes, while proposed. */
   branchHash?: string;
   branchApproved?: boolean;

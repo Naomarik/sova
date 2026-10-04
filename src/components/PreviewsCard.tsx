@@ -1,8 +1,8 @@
-import { createSignal, For, type JSX, Show } from "solid-js";
+import { createSignal, For, type JSX, onCleanup, onMount, Show } from "solid-js";
 import { PREVIEW_PURPOSE_MAX } from "../../shared/preview-links";
 import { getProjectPreviews, mintPreview, runProjectVerb, turnOffPreview } from "../lib/api";
 import { createPoll } from "../lib/poll";
-import { previewRow, RECIPIENT_OFF_LABEL, recipientOffName, senderLine, turnOffLabel } from "../lib/preview-rows";
+import { previewRow, RECIPIENT_OFF_CONFIRM, RECIPIENT_OFF_LABEL, recipientOffName, recipientOffNote, senderLine, turnOffConfirmForGood, turnOffLabel, turnOffNote } from "../lib/preview-rows";
 import {
   type PreviewGroup,
   parsePort,
@@ -10,15 +10,13 @@ import {
   previewGroups,
   previewWarning,
   recipientName,
-  recipientOffConfirm,
   recipientOffDone,
   recipientOffTip,
   sentToLine,
   TURN_OFF_ALL_TIP,
-  turnOffConfirm,
 } from "../lib/previews";
 import { resolveAppLink, sessionIndex, sessionIndexVersion } from "../lib/session-links";
-import { copyText, toast } from "../lib/ui-state";
+import { announce, copyText, toast } from "../lib/ui-state";
 import { Banner } from "./ui";
 
 const POLL_MS = 5_000;
@@ -60,6 +58,30 @@ export function PreviewsCard(props: { projectId: string }) {
   const [formError, setFormError] = createSignal<string | null>(null);
   const [busy, setBusy] = createSignal(false);
   const [armed, setArmed] = createSignal<string | null>(null);
+  /** Each arming's number: a disarm that waits for a click clears only the arming it was for. */
+  let armSeq = 0;
+  /** Whether a pointer is pressed now. A press blurs the armed button before its click lands, and
+      its note going away would move the pressed button out from under the pointer: such a blur
+      disarms after that click instead. */
+  let pressed = false;
+  const press = () => (pressed = true);
+  const release = () => setTimeout(() => (pressed = false));
+  onMount(() => {
+    document.addEventListener("pointerdown", press, true);
+    window.addEventListener("pointerup", release, true);
+    window.addEventListener("pointercancel", release, true);
+  });
+  onCleanup(() => {
+    document.removeEventListener("pointerdown", press, true);
+    window.removeEventListener("pointerup", release, true);
+    window.removeEventListener("pointercancel", release, true);
+  });
+  const disarm = (id: string) => {
+    const seq = armSeq;
+    const clear = () => armed() === id && armSeq === seq && setArmed(null);
+    if (pressed) window.addEventListener("click", clear, { once: true });
+    else clear();
+  };
   const [formOpen, setFormOpen] = createSignal(false);
   /** Copies this page is starting, by instance: Starting until `up` answers. */
   const [starting, setStarting] = createSignal<ReadonlySet<string>>(new Set());
@@ -95,9 +117,14 @@ export function PreviewsCard(props: { projectId: string }) {
     }
   };
 
-  /** A second click turns it off; `done` is the toast. */
-  const off = async (id: string, done = "Preview turned off.") => {
-    if (armed() !== id) return setArmed(id);
+  /** A second click turns it off, for good; `note` says so while it waits (shown, and announced), `done` is the toast. */
+  const off = async (id: string, done: string, note: string) => {
+    if (armed() !== id) {
+      armSeq++;
+      setArmed(id);
+      announce(note);
+      return;
+    }
     setArmed(null);
     try {
       await turnOffPreview(id);
@@ -129,21 +156,36 @@ export function PreviewsCard(props: { projectId: string }) {
   const solo = () => list().length === 1 && !formOpen() && (!address() || !!address()!.url);
 
   /** A row's own Turn Off: the preview and every link sent from it, or, for a sibling listed alone, that person's link. */
+  const offPerson = (g: PreviewGroup) => (g.preview.siblingOf ? recipientName(g.preview) : null);
+  const offNote = (g: PreviewGroup) => {
+    const person = offPerson(g);
+    return person ? recipientOffNote(person) : turnOffNote(g.recipients.length);
+  };
+  const noteId = (id: string) => `preview-off-note-${id}`;
   const TurnOff = (p: { group: PreviewGroup }) => {
     const v = () => p.group.preview;
-    const person = () => (v().siblingOf ? recipientName(v()) : null);
+    const person = () => offPerson(p.group);
     return (
       <button
         type="button"
         class="button button-sm button-destructive previews-off"
         title={person() ? recipientOffTip(person()!) : TURN_OFF_ALL_TIP}
-        onClick={() => void off(v().id, person() ? recipientOffDone(person()!) : undefined)}
-        onBlur={() => armed() === v().id && setArmed(null)}
+        aria-describedby={armed() === v().id ? noteId(v().id) : undefined}
+        onClick={() => void off(v().id, person() ? recipientOffDone(person()!) : "Preview turned off.", offNote(p.group))}
+        onBlur={() => disarm(v().id)}
       >
-        {armed() === v().id ? (person() ? recipientOffConfirm(person()!) : turnOffConfirm(p.group.recipients.length)) : person() ? recipientOffName(person()!) : turnOffLabel(p.group.recipients.length)}
+        {armed() === v().id ? (person() ? RECIPIENT_OFF_CONFIRM : turnOffConfirmForGood(p.group.recipients.length)) : person() ? recipientOffName(person()!) : turnOffLabel(p.group.recipients.length)}
       </button>
     );
   };
+  /** While a Turn Off waits for its second click: what goes away for good, and what doesn't. */
+  const OffNote = (p: { group: PreviewGroup }) => (
+    <Show when={armed() === p.group.preview.id}>
+      <p class="list-meta previews-off-note" id={noteId(p.group.preview.id)}>
+        {offNote(p.group)}
+      </p>
+    </Show>
+  );
 
   const closeForm = () => {
     setFormOpen(false);
@@ -223,11 +265,17 @@ export function PreviewsCard(props: { projectId: string }) {
                                     class="button button-sm button-destructive previews-recipient-off"
                                     title={recipientOffTip(name())}
                                     aria-label={armed() === r.id ? undefined : recipientOffName(name())}
-                                    onClick={() => void off(r.id, recipientOffDone(name()))}
-                                    onBlur={() => armed() === r.id && setArmed(null)}
+                                    aria-describedby={armed() === r.id ? noteId(r.id) : undefined}
+                                    onClick={() => void off(r.id, recipientOffDone(name()), recipientOffNote(name()))}
+                                    onBlur={() => disarm(r.id)}
                                   >
-                                    {armed() === r.id ? recipientOffConfirm(name()) : RECIPIENT_OFF_LABEL}
+                                    {armed() === r.id ? RECIPIENT_OFF_CONFIRM : RECIPIENT_OFF_LABEL}
                                   </button>
+                                  <Show when={armed() === r.id}>
+                                    <p class="previews-off-note" id={noteId(r.id)}>
+                                      {recipientOffNote(name())}
+                                    </p>
+                                  </Show>
                                 </li>
                               );
                             }}
@@ -262,6 +310,9 @@ export function PreviewsCard(props: { projectId: string }) {
                       </Show>
                     </div>
                   </Show>
+                  <Show when={!solo()}>
+                    <OffNote group={g} />
+                  </Show>
                 </li>
               );
             }}
@@ -272,14 +323,19 @@ export function PreviewsCard(props: { projectId: string }) {
         <Show
           when={formOpen()}
           fallback={
-            <div class="previews-foot">
-              <button type="button" class="button button-sm" aria-expanded="false" onClick={() => setFormOpen(true)}>
-                New Preview
-              </button>
+            <>
+              <div class="previews-foot">
+                <button type="button" class="button button-sm" aria-expanded="false" onClick={() => setFormOpen(true)}>
+                  New Preview
+                </button>
+                <Show when={solo()}>
+                  <TurnOff group={list()[0]!} />
+                </Show>
+              </div>
               <Show when={solo()}>
-                <TurnOff group={list()[0]!} />
+                <OffNote group={list()[0]!} />
               </Show>
-            </div>
+            </>
           }
         >
           <form id="preview-form" class="stack previews-form" onSubmit={(e) => void create(e)}>

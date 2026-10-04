@@ -120,9 +120,9 @@
 .previews-row-branch:focus-visible { outline: var(--focus-ring); outline-offset: 2px; border-radius: var(--radius-xs); }
 .previews-row-branch-open { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
 /* The people a preview was sent to: a label, then each name with its own small Turn Off Link. */
-.previews-sent { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-3); margin-top: var(--space-1); }
+.previews-sent { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-1) var(--space-3); margin-top: var(--space-1); }
 .previews-sent-label { color: var(--color-ink-muted); }
-.previews-recipients { display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-3); margin: 0; padding: 0; list-style: none; }
+.previews-recipients { flex: 1 1 12rem; min-width: 0; display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-3); margin: 0; padding: 0; list-style: none; }
 .previews-recipient { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
 /* A recipient's own Visits (§mesh.public/visitor-log) folds out on a line of its own. */
 .shares-recipient > .share-visits, .previews-recipient > .share-visits { flex-basis: 100%; margin-top: 0; }
@@ -134,6 +134,10 @@
 .previews-row-actions > .previews-off { margin-left: auto; }
 /* New Preview, and the only row's Turn Off at the right of the same line. */
 .previews-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2) var(--space-3); }
+/* While a Turn Off waits for its second click: that the link ends for good, under the buttons (a
+   recipient's under their own line). */
+.previews-off-note { margin: 0; font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-2); white-space: normal; overflow-wrap: anywhere; }
+.previews-recipient > .previews-off-note { flex-basis: 100%; }
 .previews-form-actions { display: flex; gap: var(--space-2); }
 /* A phone: the row loses its own side padding, so its title lines up with the card's heading, and
    each group of parts takes a line of its own. */

@@ -46,7 +46,7 @@ node "$core/sova-spec.mjs" census --changed --base "$B" --root "$R" --json
 node "$core/sova-spec.mjs" foreign --base "$B" --root "$R" --json
 ```
 
-Census maps changed files to claims, and foreign lists claims whose text changed since base. Neither takes a size limit: their output grows with the change, which the preflight capped. Both cover the whole repository: use them only for your scoped files. A claim that only an out-of-scope file brings in is not a new target.
+Census maps changed files to claims, and foreign lists claims whose text changed since base. Neither takes a size limit, and both cover the whole repository's change since base, whatever paths you scoped, so a narrow scope doesn't make their output small. Run them only when the preflight listed the whole change (200 files or fewer; run the preflight first if it hasn't run). When its list was cut off, leave both lines out of the call and report the claim mapping as unknown; never run them just to see how big they are. Use what they print only for your scoped files: a claim that only an out-of-scope file brings in is not a new target.
 
 **Exact context.** For the brief's ids and the claims mapped to scoped files, with the same first two lines:
 

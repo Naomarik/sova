@@ -43,6 +43,7 @@ import {
 import { heldAt, hostOf, isOrgHostOpen, onOrgHostOpened, refusalError, type ActResult, type Effect, type OrgHostApi } from "./org-engine";
 import type { Envelope } from "./org-envelope";
 import { envelopeFor } from "./org-engine";
+import { withUsageContext } from "../pi-config/extensions/llm-inflight/attribution.ts";
 import { operatorEnvelope, operatorName, OrgError, placementSid, readHistory, readProjects, readRoster, shortId } from "./orgs";
 import {
   PROJECT_DRAFT,
@@ -725,7 +726,8 @@ function recordingUsage(inner: DecisionProvider, orgId: string, projectId: strin
     id: inner.id,
     label: inner.label,
     async decide(req) {
-      const r = await inner.decide(req);
+      // The usage ledger's record of this call (llm-inflight attribution.ts): the project's, no session's.
+      const r = await withUsageContext({ owner: null, project: projectId, purpose: "reconcile", kind: "oneshot", starter: by }, () => inner.decide(req));
       const u = r.usage;
       if (u && u.inputTokens + u.outputTokens + (u.cacheRead ?? 0) + (u.cacheWrite ?? 0) > 0) {
         try {

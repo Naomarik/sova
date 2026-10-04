@@ -12,6 +12,7 @@
  */
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { WORKER_ROLE_DISCOVER_EVENT, WORKER_ROLE_EVENT } from "../mode/events.ts";
+import { registerUsageSession, usageParentFromEnv } from "./attribution.ts";
 import { instrumentModelRuntime, runtimeOf } from "./runtime.ts";
 import { LLM_STATUS_KEY, markDegraded, snapshot, subscribe, type LlmChildReport } from "./tracker.ts";
 
@@ -69,10 +70,27 @@ export default function llmInflightExtension(pi: ExtensionAPI): void {
 		report();
 	};
 
+	// The session this extension instance runs, for the usage ledger: its calls' routing id names it.
+	let unregister: (() => void) | undefined;
+	const register = (ctx: ExtensionContext) => {
+		unregister?.();
+		unregister = undefined;
+		const sid = ctx.sessionManager?.getSessionId?.();
+		if (!sid) return;
+		const parent = worker ? usageParentFromEnv() : undefined;
+		unregister = registerUsageSession(sid, {
+			kind: worker ? "worker" : "main",
+			...(ctx.cwd ? { cwd: ctx.cwd } : {}),
+			parent: parent?.parent ?? null,
+			...(parent?.worker ? { worker: parent.worker } : {}),
+		});
+	};
+
 	pi.on("session_start", (_event, ctx) => {
 		try {
 			instrument(ctx);
 			bindReport(ctx);
+			register(ctx);
 		} catch {
 			// Counting is observation: never fail a session over it.
 		}
@@ -88,5 +106,7 @@ export default function llmInflightExtension(pi: ExtensionAPI): void {
 		unsubscribe?.();
 		unsubscribe = undefined;
 		reportCtx = undefined;
+		unregister?.();
+		unregister = undefined;
 	});
 }

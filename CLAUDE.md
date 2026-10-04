@@ -315,6 +315,13 @@ Rules:
   `<state root>/project-services/logs/restart-gate.log`). up, down, reset and teardown of slot 0 are
   refused. Never run the gate script against `sova-runtime.service` by hand, and never point a test
   at it: tests and gates use a stand-in unit.
+- On macOS the live server is the launchd agent `sova-runtime` (`~/Library/LaunchAgents/sova-runtime.plist`,
+  README's launchd example), and every rule above holds. Its restart is
+  `launchctl kickstart -k gui/$(id -u)/sova-runtime`, never run by hand from a hosted session: use the
+  verb form (`sova-project apply … --confirm`; its gate runs detached from the server, waits the
+  30 s itself and then kickstarts the agent) or ask the user. Its pid and state:
+  `launchctl print gui/$(id -u)/sova-runtime`; its start time: `ps -o lstart= -p <pid>`; its log:
+  `~/Library/Logs/sova-runtime.log`.
 - The claude-code bridge is a `globalThis` singleton (`getSessionBridge()`, Symbol.for registry): a
   fresh session that reloads the extension still gets the bridge built from the code loaded first,
   so provider edits also need a restart. Before trusting a live test, check the unit's start time

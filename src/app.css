@@ -820,9 +820,10 @@ html, body { overflow: clip; overscroll-behavior: none; }
 .setup-toggle { flex: none; min-height: var(--tap-min); }
 .setup-row-off .setup-name,
 .setup-row-off .setup-facts { opacity: .5; }
+/* A narrow card folds its rows (base.css), but not a row with a switch: it stays one line, the
+   name ellipsised, then ≈tokens, then the switch at the right edge. */
 @container (max-width: 417.98px) {
-  .setup-row:has(.setup-toggle) { align-items: stretch; }
-  .setup-toggle { align-self: flex-start; }
+  .setup-row:has(.setup-toggle) { flex-direction: row; align-items: center; gap: var(--space-3); }
 }
 .profile-warn { color: var(--status-warn, var(--color-ink-2)); }
 /* A new session's worktrees line under the footnote (§chat.transcript/empty-worktrees): one muted

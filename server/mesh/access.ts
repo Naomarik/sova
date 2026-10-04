@@ -266,6 +266,7 @@ const READ_PREFIXES = [
   "profiles",
   "playbooks",
   "provider-limits",
+  "usage",
 ];
 // Never below `full`: the operator's credentials and the share pages' own routes.
 const FULL_PREFIXES = ["auth", "h", "i", "s"];

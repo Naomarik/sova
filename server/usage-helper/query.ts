@@ -363,7 +363,7 @@ export class Queries {
       models: q.models,
       facets: {
         providers: [...facetP].sort(),
-        models: [...facetM.values()].sort((a, b) => a.provider.localeCompare(b.provider) || a.model.localeCompare(b.model)),
+        models: [...facetM.values()].sort((a, b) => cmp(a.provider, b.provider) || cmp(a.model, b.model)),
       },
       total: total.spend(),
       main: main.spend(),
@@ -487,6 +487,8 @@ export class Queries {
     return { asOf: this.now(), sessions: out };
   }
 }
+
+const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 
 function get<K, V>(map: Map<K, V>, key: K, make: () => V): V {
   let v = map.get(key);

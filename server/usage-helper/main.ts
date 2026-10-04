@@ -128,9 +128,22 @@ const priceTimer = prices.start();
 // ---- requests ---------------------------------------------------------------------------------
 
 const send = (id: number, status: number, body: unknown) => {
+  if (exiting) return;
   const bytes = Buffer.from(JSON.stringify(body));
-  process.stdout.write(Buffer.concat([Buffer.from(`${id} ${status} ${bytes.length}\n`), bytes]));
+  // Backpressure: while the server isn't reading answers, stop reading requests, so neither side
+  // queues without bound (the requests wait in the kernel's pipe).
+  if (!process.stdout.write(Buffer.concat([Buffer.from(`${id} ${status} ${bytes.length}\n`), bytes])) && !paused) {
+    paused = true;
+    process.stdin.pause();
+    process.stdout.once("drain", () => {
+      paused = false;
+      process.stdin.resume();
+    });
+  }
 };
+let paused = false;
+// Nobody reads the answers any more (the server's end closed): stop, never queue them.
+process.stdout.on("error", () => exit());
 
 const handle = async (line: string) => {
   let req: Record<string, unknown>;
@@ -153,15 +166,30 @@ const handle = async (line: string) => {
   }
 };
 
+// A request is one short line. Input that never ends a line (a wrong stdin, /dev/zero) is never
+// buffered without bound: only the new chunk is searched, and a line over 1 MB means whatever is on
+// stdin isn't the server, so the helper stops.
+const MAX_LINE = 1024 * 1024;
 let buf = "";
+let dropping = false;
 process.stdin.setEncoding("utf8");
 process.stdin.on("data", (chunk: string) => {
-  buf += chunk;
+  let start = 0;
   let nl: number;
-  while ((nl = buf.indexOf("\n")) >= 0) {
-    const line = buf.slice(0, nl);
-    buf = buf.slice(nl + 1);
+  while ((nl = chunk.indexOf("\n", start)) >= 0) {
+    const line = dropping ? "" : buf + chunk.slice(start, nl);
+    buf = "";
+    dropping = false;
+    start = nl + 1;
     if (line) void handle(line);
+  }
+  if (dropping) return;
+  buf += chunk.slice(start);
+  if (buf.length > MAX_LINE) {
+    log("stdin sent a line over 1 MB: not the server; exiting");
+    buf = "";
+    dropping = true;
+    exit();
   }
 });
 

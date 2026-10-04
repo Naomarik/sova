@@ -96,6 +96,8 @@ export class LanRuntime {
   private readonly askSessions = new RelaySessions<{ close(): void }>({ replaced: (_id, l) => console.log(`[mesh] dial-out pairing ${l}: a newer connection replaced the older`), cloneSuspected: (_id, l) => console.warn(`[mesh] dial-out pairing ${l}: connections keep replacing each other; two machines may hold its key`) });
   private listener: RelayListener | null = null;
   private listenerKey = "";
+  /** Every socket the relay listener handed on that is still open. */
+  private readonly relayed = new Set<TLSSocket>();
   private accepted: PeerEntry[] = [];
   private chain: Promise<void> = Promise.resolve();
 
@@ -151,6 +153,10 @@ export class LanRuntime {
     if (key !== this.listenerKey) {
       await this.listener?.close();
       this.listener = null;
+      // Stop Relaying, or another address or port: every connection the old listener let in ends
+      // now, on both channels, with every request and socket inside (§mesh.lan/pairing). A pairing
+      // kept as paired may dial the new listener; nothing of the old one stays up.
+      if (this.listenerKey) this.endRelayed();
       this.listenerKey = key;
       if (key) this.listener = this.startListener(id!, relay!);
     }
@@ -178,6 +184,18 @@ export class LanRuntime {
     return l;
   }
 
+  /** End everything the relay listener let in: both channels of every accepted pairing, their
+      clients, and every request and socket admitted through the gate on them. */
+  private endRelayed(): void {
+    this.answerSessions.closeAll();
+    this.askSessions.closeAll();
+    for (const s of this.relayed) s.destroy(); // handed on, but not admitted yet
+    this.relayed.clear();
+    const accepted = new Set(this.accepted.map((p) => p.nodeId));
+    for (const peerId of [...this.clients.keys()]) if (!this.dials.has(peerId)) this.dropClient(peerId);
+    this.gate.revoke((n) => !accepted.has(n));
+  }
+
   /** A pinned connection from an accepted pairing, on one channel. */
   private accept(sock: TLSSocket, rp: RelayPeer, channel: Channel): void {
     const peer = this.accepted.find((p) => p.id === rp.id);
@@ -185,6 +203,11 @@ export class LanRuntime {
       sock.destroy();
       return;
     }
+    // Every socket the listener hands on is this listener's: a new bind or Stop Relaying ends it.
+    const key = this.listenerKey;
+    const current = () => this.listenerKey === key && this.accepted.some((p) => p.id === peer.id);
+    this.relayed.add(sock);
+    sock.once("close", () => this.relayed.delete(sock));
     if (channel === "ask") {
       const server = serveReverse(sock, (d) => this.feed(peer.nodeId, d));
       const held = { close: () => server.close() };
@@ -192,7 +215,7 @@ export class LanRuntime {
       // on the answer channel: a connection its own dialer drops at once, such as one that pinned
       // another relay, never displaces a working one.
       server.session.once("remoteSettings", () => {
-        if (!this.accepted.some((p) => p.id === peer.id)) return server.close(); // unpaired meanwhile
+        if (!current()) return server.close(); // unpaired, or the listener moved, meanwhile
         this.askSessions.admit(peer.id, peer.label, held, Date.now());
         void server.closed.then(() => this.askSessions.ended(peer.id, held));
         this.deps.sawPeer?.(peer.id, true);
@@ -201,7 +224,7 @@ export class LanRuntime {
     }
     void connectReverse(sock).then(
       (client) => {
-        if (!this.accepted.some((p) => p.id === peer.id)) return client.close(); // unpaired meanwhile
+        if (!current()) return client.close(); // unpaired, or the listener moved, meanwhile
         this.answerSessions.admit(peer.id, peer.label, client, Date.now());
         this.clients.set(peer.id, client);
         this.deps.sawPeer?.(peer.id, true);

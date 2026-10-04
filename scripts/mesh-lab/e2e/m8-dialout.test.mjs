@@ -7,6 +7,8 @@
 //     on the `answer` channel, the dial-out host on the `ask` channel; presence by default;
 //   - the relay's /peer proxy to the dial-out host returns hardened answers, and WebSockets ride a stream;
 //   - a client with no certificate, or TLS 1.2, never gets an answer; a wrong pin is refused;
+//   - the relay takes only a private address of its own (no public one, no "internet" exposure);
+//   - Stop Relaying ends both channels at once while the pairing stays, and relaying again lets it back;
 //   - removing the pairing on either side ends the connections at once, and the relay stops listening.
 //   scripts/mesh-lab/lab e2e m8-dialout      (takes the lab LOCK; leaves no pairing and no relay)
 // No key, pin or fingerprint is printed: assertions compare them.
@@ -75,6 +77,19 @@ describe("pairing", () => {
     assert.notEqual(relayFp, dialerFp);
     // Each key file is 0600 and never named on a page.
     for (const n of [R, DIALER]) assert.equal(sh(n, 'stat -c %a "$PI_CODING_AGENT_DIR/sova/lan-identity.json"').out, "600", `${n}'s key file`);
+  });
+
+  test("the relay takes only a local-network address of its own: no public address, no internet relay", async () => {
+    assert.match(relayIp, /^(10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.)/, "the lab network is private (the relay must take its address)");
+    for (const relay of [{ host: "203.0.113.7", port: RELAY_PORT }, { host: "0::", port: RELAY_PORT }, { host: relayIp, port: RELAY_PORT, exposure: "internet" }]) {
+      const res = await laptopFetch(R, "/api/mesh/lan/relay", send("PUT", { relay }));
+      assert.equal(res.status, 400, JSON.stringify(relay));
+      await res.body?.cancel();
+    }
+    assert.equal((await lanOf(R)).relay, undefined, "nothing saved");
+    const dial = await laptopFetch(DIALER, "/api/mesh/lan/pairings", send("POST", { id: "public", role: "dial", pin: "0000-0000-0000-0000-0000-0000-0000-0001", host: "198.51.100.7", port: RELAY_PORT }));
+    assert.equal(dial.status, 400, "a dial-out host never pairs a public relay address");
+    await dial.body?.cancel();
   });
 
   test("the relay listens only once a dial-out host is paired, and only on its one address", async () => {
@@ -155,6 +170,30 @@ describe("refusal and removal", () => {
     await (await laptopFetch(DIALER, "/api/mesh/lan/pairings/wrong", { method: "DELETE" })).body?.cancel();
     // The real pairing is untouched.
     assert.ok(bothUp(await pairingOf(DIALER, "relay")));
+  });
+
+  test("Stop Relaying ends both channels at once though the pairing stays; relaying again lets plain back in", async () => {
+    assert.ok(bothUp(await pairingOf(DIALER, "relay")), "both channels up before");
+    const t0 = Date.now();
+    const stop = await laptopFetch(R, "/api/mesh/lan/relay", send("PUT", { relay: null }));
+    assert.equal(stop.status, 200);
+    await stop.body?.cancel();
+    const relaySide = await pairingOf(R, "laptop");
+    assert.ok(relaySide, "still paired on the relay");
+    await waitFor(async () => {
+      const p = await pairingOf(R, "laptop");
+      return p?.channels.answer.state === "not connected" && p?.channels.ask.state === "not connected";
+    }, { what: "the relay to drop both channels", timeoutMs: 1000 });
+    await waitFor(async () => {
+      const p = await pairingOf(DIALER, "relay");
+      return p && p.channels.answer.state !== "connected" && p.channels.ask.state !== "connected";
+    }, { what: "plain to see both channels end", timeoutMs: 3000 });
+    console.log(`  both channels ended ${Date.now() - t0} ms after Stop Relaying`);
+    assert.equal(portOpen(DIALER), false, "the port is closed");
+    const back = await laptopFetch(R, "/api/mesh/lan/relay", send("PUT", { relay: { host: relayIp, port: RELAY_PORT } }));
+    assert.equal(back.status, 200);
+    await back.body?.cancel();
+    await waitFor(async () => bothUp(await pairingOf(DIALER, "relay")), { what: "plain back on both channels", timeoutMs: 70000 });
   });
 
   test("the relay removes the pairing: plain's connections end at once and the port closes", async () => {

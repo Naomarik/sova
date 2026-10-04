@@ -370,6 +370,34 @@ describe("this host as the relay", () => {
     assert.equal(p.cloneSuspected, undefined);
   });
 
+  test("M2: Stop Relaying ends both channels of a kept pairing within 1 s; nothing of the old listener stays up", async () => {
+    await api("PUT", "/api/mesh/access", { peer: "laptop", grant: { preset: "sessions" } });
+    const client = askClient!;
+    const ws = await client.webSocket("/ws/watch?feed=sessions");
+    await new Promise<void>((ok, fail) => (ws.readyState === ws.OPEN ? ok() : (ws.once("open", () => ok()), ws.once("error", fail))));
+    const wsClosed = new Promise<void>((r) => ws.once("close", () => r()));
+    const t0 = Date.now();
+    const [s] = await api("PUT", "/api/mesh/lan/relay", { relay: null });
+    assert.equal(s, 200);
+    const within = (p: Promise<unknown>, what: string) => Promise.race([p, new Promise((_, no) => setTimeout(() => no(new Error(`${what} still open after 1 s`)), 1000 - (Date.now() - t0)))]);
+    await within(client.closed, "the ask channel");
+    await within(wsClosed, "a WebSocket on the ask channel");
+    await within(until("the relay's answer channel to close", async () => (await lan()).pairings.find((x) => x.id === "laptop")?.channels.answer.state === "not connected", 1000), "the answer channel");
+    const p = (await lan()).pairings.find((x) => x.id === "laptop")!;
+    assert.deepEqual([p.channels.answer.state, p.channels.ask.state], ["not connected", "not connected"]);
+    assert.equal((await lan()).relay, undefined, "not a relay");
+    const sessions = (await api<MeshSessionsView>("GET", "/api/mesh/sessions"))[1].peers.find((x) => x.id === "laptop")!;
+    assert.equal(sessions.state, "down", "the relay can't reach it either");
+    // The pairing is still paired: relaying again at the same port lets it dial back in.
+    const [s2, r2] = await api<LanStatus>("PUT", "/api/mesh/lan/relay", { relay: { host: "127.0.0.1", port } });
+    assert.equal(s2, 200, JSON.stringify(r2));
+    await until("both channels again", async () => {
+      const q = (await lan()).pairings.find((x) => x.id === "laptop");
+      return q?.channels.answer.state === "connected" && q.channels.ask.state === "connected" && !!askClient && !askClient.destroyed;
+    }, 30_000);
+    await api("PUT", "/api/mesh/access", { peer: "laptop", grant: { preset: "presence" } });
+  });
+
   test("removing the pairing ends its connections at once and stops the listener", async () => {
     const client = askClient!;
     const [status] = await api("DELETE", "/api/mesh/lan/pairings/laptop");

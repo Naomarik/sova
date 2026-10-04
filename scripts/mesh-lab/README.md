@@ -254,13 +254,15 @@ The harnesses:
 
 - **m8-dialout** (takes the LOCK; no LLM turns; leaves no pairing and no relay setting): dial-out
   pairings (§mesh/lan). `plain`, with no Tailscale at all, is the dial-out host; the first host is its
-  relay, listening on its lab-network address only. Each side makes its key from its own page and
+  relay, listening on its lab-network address only; it refuses a public address, every-interface
+  spellings and an "internet" exposure, and plain refuses a relay at a public address. Each side makes its key from its own page and
   pastes the other's fingerprint. The relay listens only while a dial-out host is paired; a client with
   no certificate or offering TLS 1.2 gets no HTTP answer. Both channels come up, each side starts at
   presence, and each direction follows the answering host's grant: sessions shared one way only, a
   hardened `/peer` answer and a WebSocket over a stream on the relay, and a lowered grant hiding the
   relay again. A second pairing pinned to the wrong fingerprint is refused without disturbing the real
-  one. Removing the pairing on the relay drops plain's connections at once and closes the port.
+  one. Stop Relaying drops both channels within a second though the pairing stays, and relaying again
+  lets plain back in. Removing the pairing on the relay drops plain's connections at once and closes the port.
 
 Front-door Caddyfile essentials, the template for the real one: `lb_policy first`,
 `health_uri /api/health` with 1 s interval/timeout, `lb_try_duration 5s`, `flush_interval -1`,

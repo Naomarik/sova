@@ -286,7 +286,10 @@ short-lived access token outside the sandbox (never its refresh token) and hands
 worker over a file descriptor, so it never appears in a command line, in the spawn environment
 or in the worker's own environment. When the token has under 60 minutes left, Sova first
 runs Claude Code unconfined on that login, without a model call, so that it refreshes the token
-when it is due. When a confined worker's request is refused as
+when it is due. On macOS, a login whose directory holds no `.credentials.json` hands over the
+access token from its keychain item instead, read again at every launch, and the refresh run
+starts Claude Code's own login without `CLAUDE_CONFIG_DIR`, so that it renews that same item
+(§app.claude-logins/macos-keychain). When a confined worker's request is refused as
 unauthorized, Sova refreshes that login once and resumes the worker on it; only a second failure
 fails over (§app.claude-logins/failover). Seen from outside, the worker's process still carries
 its login's directory in `CLAUDE_CONFIG_DIR`, so the pool counts it on that login

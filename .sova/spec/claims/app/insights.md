@@ -440,6 +440,10 @@ Both pages share one shell: a `.session-head` and a `.insights.pane` containing
   no chat is on. With more than one login it names it: "Claude (spare@example.com)'s 7-day
   window is at 90%." A window whose reset has already passed adds no sentence, as it decides no
   head chip: a 7-day window at 100% whose reset is gone never reads "quota is used up".
+- **macOS hint.** When the payload carries `claudeOwnLoginUnreadable` (macOS, and Claude Code's own
+  login is neither in its file nor in a keychain this server can read,
+  §app.claude-logins/macos-keychain), one muted `.usage-note` under the lead says "On macOS, add
+  your Claude login under Settings → Accounts."
 - **Cards.** There's one card per `providers[]` entry, in the order given: Claude, OpenAI,
   Ollama Cloud, Z.ai, DeepSeek. Z.ai follows the system like every other provider: no brand color, and
   the title is "Z.ai"; so does DeepSeek, titled "DeepSeek".
@@ -663,7 +667,9 @@ caches and locks, so each fetches on its own; servers on the same agent dir shar
 credentials say something: expiry times, when the sign-in was last renewed, and whether the access
 and refresh tokens have expired by the server's clock. It comes from the same credential files the
 usage fetch reads (Claude Code's `~/.claude/.credentials.json`, pi's `~/.pi/agent/auth.json`, the
-Codex CLI's `~/.codex/auth.json`), re-read only when a file changes. It carries numbers, enums and
+Codex CLI's `~/.codex/auth.json`), re-read only when a file changes; on macOS a Claude login with no
+credentials file is read from its keychain item instead, for the fetch and for these numbers
+(§app.claude-logins/macos-keychain), and then carries no `refreshedAt`. It carries numbers, enums and
 booleans only: no string from a credential file ever leaves the server. Claude's
 `refreshedAt` is the credentials file's modification time, and only while that time agrees (to
 within 10 minutes) with an 8-hour token lifetime ending at `expiresAt`; otherwise it is left out

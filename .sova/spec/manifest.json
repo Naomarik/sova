@@ -12872,6 +12872,40 @@
         "§app.overseer/caps",
         "§app.overseer/tools"
       ]
+    },
+    "§app.claude-logins/macos-keychain": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "requires": [
+        "§app.insights/usage-refresh",
+        "§app.claude-logins/accounts-tab",
+        "§app.insights/usage-cards",
+        "§chat.sandbox/claude-state",
+        "§app.claude-logins/add-remove",
+        "§app.claude-logins/pool"
+      ],
+      "code": [
+        "pi-config/extensions/claude-code/keychain.ts",
+        "pi-config/extensions/claude-code/keychain.test.ts",
+        "pi-config/extensions/usage-status/fetch.ts",
+        "pi-config/extensions/usage-status/fetch.test.ts",
+        "server/auth-status.ts",
+        "server/auth-status.test.ts",
+        "server/insights.ts",
+        "server/claude-accounts.ts",
+        "shared/protocol.ts",
+        "src/components/UsageView.tsx",
+        "src/components/AccountsSettings.tsx",
+        "pi-config/extensions/claude-code/accounts.ts",
+        "pi-config/extensions/claude-code/accounts.test.ts",
+        "server/claude-accounts.test.ts",
+        "scripts/fake-claude.mjs",
+        "server/claude-pool/agent.ts",
+        "server/claude-pool/agent.test.ts",
+        "src/lib/claude-pool.ts",
+        "src/lib/claude-pool.test.ts"
+      ]
     }
   },
   "boundary": {

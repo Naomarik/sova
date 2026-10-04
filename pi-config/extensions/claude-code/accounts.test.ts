@@ -15,6 +15,7 @@ import {
 	loginDir, loginEntryFor, manualSwitchText, parseAccounts, poolAgentPath, readWants, wantsDir, planLabel, readAccounts, readAccountsState, readIdentityFile, recordedLogin, switchText,
 	thisDeviceId, updateAccounts, writeAccounts, type ClaudeAccountsFile, type ClaudeLoginRecord,
 	accessTokenFor, freshAccessToken, refreshLogin, REFRESH_ARGV, TOKEN_REFRESH_MARGIN_MS,
+	PICKS_DIR_NAME, clearLoginPick, markLeaving, movedText, readLoginPicks, writeLoginPick,
 } from "./accounts.ts";
 import { buildDiscoveryArgv, claudeEnv, classifyClaudeFailure, ClaudeFailureDetector } from "./transport.ts";
 
@@ -319,6 +320,57 @@ test("notices and the session entry", () => {
 		{ type: "custom", customType: "claude-login", data: { login: B } },
 	]), B);
 	assert.equal(recordedLogin([{ type: "custom", customType: "other", data: { login: A } }]), undefined);
+	assert.equal(movedText(from, to, "left this device"), "Claude: switched work@example.com → home (work@example.com left this device)");
+	assert.equal(loginEntryFor(to, { from, to, reason: "moved", text: "t" }).reason, "moved");
+	assert.equal(loginEntryFor(to, { from, to, text: "t" }).reason, "manual");
+});
+
+test("pick marks: one file per chat under the login's .sova-picks, atomic, only for a login that exists", (t) => {
+	const s = sandbox(t);
+	writeAccounts(s.agentDir, { version: 1, logins: [login(A, "1"), login(B, "2")], devices: { local: { order: [A, B, "default"] } } });
+	ensureLoginDir(s.agentDir, A, s.claudeDir);
+	assert.deepEqual(readLoginPicks(s.agentDir, A), [], "none yet");
+	writeLoginPick(s.agentDir, A, "chat-1", 111);
+	writeLoginPick(s.agentDir, A, "chat-2", 222);
+	assert.deepEqual(readLoginPicks(s.agentDir, A).sort((x, y) => x.at - y.at), [{ session: "chat-1", at: 111 }, { session: "chat-2", at: 222 }]);
+	assert.deepEqual(JSON.parse(fs.readFileSync(path.join(loginDir(s.agentDir, A), PICKS_DIR_NAME, "chat-1.json"), "utf8")), { v: 1, session: "chat-1", at: 111 });
+	assert.deepEqual(fs.readdirSync(path.join(loginDir(s.agentDir, A), PICKS_DIR_NAME)).sort(), ["chat-1.json", "chat-2.json"], "no temp file left");
+	clearLoginPick(s.agentDir, A, "chat-1");
+	clearLoginPick(s.agentDir, A, "chat-9");
+	assert.deepEqual(readLoginPicks(s.agentDir, A).map((p) => p.session), ["chat-2"]);
+	writeLoginPick(s.agentDir, B, "chat-1");
+	assert.equal(fs.existsSync(loginDir(s.agentDir, B)), false, "a login with no directory gets no mark");
+	writeLoginPick(s.agentDir, A, "../evil");
+	writeLoginPick(s.agentDir, "default", "chat-1");
+	fs.writeFileSync(path.join(loginDir(s.agentDir, A), PICKS_DIR_NAME, "chat-3.json"), "{not json");
+	fs.writeFileSync(path.join(loginDir(s.agentDir, A), PICKS_DIR_NAME, "chat-4.json"), JSON.stringify({ v: 1, session: "other", at: 1 }));
+	assert.deepEqual(readLoginPicks(s.agentDir, A).map((p) => p.session), ["chat-2"], "bad names and unreadable or mismatched files are skipped");
+	s.logins.markPick(A, "chat-5");
+	s.logins.markPick("default", "chat-5");
+	assert.ok(readLoginPicks(s.agentDir, A).some((p) => p.session === "chat-5" && p.at === s.now));
+	s.logins.clearPick(A, "chat-5");
+	assert.ok(!readLoginPicks(s.agentDir, A).some((p) => p.session === "chat-5"));
+});
+
+test("absence: why a chat's login can't run here, and whether the keeper has it free to take back", (t) => {
+	const s = sandbox(t);
+	fs.mkdirSync(path.join(s.agentDir, "sova"), { recursive: true });
+	fs.writeFileSync(path.join(s.agentDir, "sova", "peers.json"), JSON.stringify({ version: 1, self: { id: "desk", label: "Desk" }, peers: [{ id: "vps", label: "Vps" }] }));
+	writeAccounts(s.agentDir, { version: 1, logins: [login(A, "1", { device: "desk" }), login(B, "2", { device: "vps" }), login(C, "3", { device: null })], devices: { desk: { order: [A, "default"] } } });
+	ensureLoginDir(s.agentDir, A, s.claudeDir);
+	assert.equal(s.logins.absence(A), undefined, "usable here");
+	assert.deepEqual(s.logins.absence(B), { label: `${B}@example.com`, cause: "left this device", free: false });
+	assert.deepEqual(s.logins.absence(C), { label: `${C}@example.com`, cause: "returned to the keeper", free: true });
+	assert.deepEqual(s.logins.absence("l-0000dead"), { label: "l-0000dead", cause: "was removed", free: false });
+	markLeaving(s.agentDir, A, "idle");
+	assert.equal(s.logins.absence(A)?.cause, "left this device", "returned for idleness, by Return or for a pin: it left");
+	fs.rmSync(path.join(loginDir(s.agentDir, A), ".sova-leaving"));
+	updateAccounts(s.agentDir, (f) => { f.logins[0]!.enabled = false; f.logins[2]!.enabled = false; });
+	assert.equal(s.logins.absence(A)?.cause, "is off in Settings → Accounts");
+	assert.equal(s.logins.absence(C)?.free, false, "a disabled free login is not taken back");
+	updateAccounts(s.agentDir, (f) => { f.logins[0]!.enabled = true; });
+	s.logins.recordFailure({ id: A, label: "a", env: {}, accountUuid: "1" }, { kind: "limit", resetsAt: s.now + 3_600_000 });
+	assert.match(s.logins.absence(A)!.cause, /^is limited until /);
 });
 
 // ---------------------------------------------------------------------------

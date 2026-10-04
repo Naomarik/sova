@@ -32,7 +32,7 @@ import {
 	type ClaudeTransportLimits, type ClaudeTransportTimings, type SpawnImpl,
 } from "../transport.ts";
 import {
-	loginEntryFor, manualSwitchText, switchText,
+	loginEntryFor, manualSwitchText, movedText, switchText,
 	type ClaudeAccountFailure, type ClaudeLoginChoice, type ClaudeLoginEntry, type ClaudeLoginSwitch, type LoginUser,
 } from "../accounts.ts";
 import type { ImageContent, Message, TextContent, Tool } from "@earendil-works/pi-ai";
@@ -243,6 +243,13 @@ export interface ClaudeLoginSource {
 	leaving?(id: string): boolean;
 	/** Record a child's use of a login (its lease) and how to release it when the login leaves. */
 	track?(id: string, user: LoginUser): { done(): void; active(): void };
+	/** Why the session's login can't run here now (undefined: it can), and whether the keeper has it free. */
+	absence?(id: string): { label: string; cause: string; free: boolean } | undefined;
+	/** Borrow `id` by name from the keeper (the pool only); resolves once it is here or the wait ends. */
+	take?(id: string): Promise<void>;
+	/** Mark (or drop) a session's hand-pick of a login (accounts.ts `.sova-picks/`). */
+	markPick?(id: string, session: string): void;
+	clearPick?(id: string, session: string): void;
 }
 
 /** A pi session's login bookkeeping (setSessionLogin). */
@@ -903,6 +910,8 @@ class CliSession {
 	private login?: ClaudeLoginChoice;
 	/** The login the session last recorded (undefined: none yet); read from the hooks once. */
 	private recordedLogin?: string;
+	/** The last login announced, with its label: what a `moved` note names as left. */
+	private lastLogin?: ClaudeLoginChoice;
 	private recordedRead = false;
 	private readonly detector = new ClaudeFailureDetector();
 	private readonly loginHooks: () => SessionLoginHooks | undefined;
@@ -1421,7 +1430,8 @@ class CliSession {
 	/**
 	 * The login for the next child: the current one while usable, else the session's recorded one,
 	 * else this host's first usable (ClaudeLoginSource.select). A change from what the session
-	 * recorded is reported, so the session records it.
+	 * recorded is reported, so the session records it. A session whose login is no longer usable
+	 * here first takes it back when the keeper has it free; else the change names why (`moved`).
 	 */
 	private async chooseLogin(): Promise<void> {
 		const logins = this.options.logins;
@@ -1431,10 +1441,23 @@ class CliSession {
 		const recorded = this.loginHooks()?.recorded;
 		if (!this.recordedRead) { this.recordedLogin = recorded; this.recordedRead = true; }
 		const current = this.login?.id ?? recorded;
+		let gone: { label: string; cause: string; free: boolean } | undefined;
+		try { gone = current !== undefined ? logins.absence?.(current) : undefined; } catch { gone = undefined; }
+		if (gone?.free && logins.take) {
+			try { await logins.take(current!); } catch { /* selection below falls back */ }
+		}
 		// In the pool, a device with nothing but `default` borrows a login first (accounts.ts acquire).
-		try { this.login = logins.acquire ? await logins.acquire(current) : logins.select(current); }
+		let to: ClaudeLoginChoice;
+		try { to = logins.acquire ? await logins.acquire(current) : logins.select(current); }
 		catch (error) { debugLog({ event: "login-select-failed", session: this.piSessionId, error: String(error) }); return; }
-		this.announce(this.login);
+		this.login = to;
+		if (current === undefined || to.id === current || this.recordedLogin === undefined) { this.announce(to); return; }
+		// Never a silent change: the note names the login the session left and why.
+		try { gone = logins.absence?.(current) ?? gone; } catch { /* the first answer stands */ }
+		const from: ClaudeLoginChoice = this.lastLogin?.id === current ? this.lastLogin : { id: current, label: gone?.label ?? current, env: {} };
+		const cause = gone?.cause ?? "is not usable on this device";
+		debugLog({ event: "login-switch", session: this.piSessionId, from: current, to: to.id, kind: "moved" });
+		this.announce(to, { from, to, reason: "moved", text: movedText(from, to, cause) });
 	}
 
 	/**
@@ -1458,10 +1481,20 @@ class CliSession {
 		void transport.whenClosed.then(() => { lease?.done(); if (this.lease === lease) this.lease = undefined; });
 	}
 
-	/** Report the session's login to the extension (a `claude-login` entry), when it changed. */
+	/**
+	 * Report the session's login to the extension (a `claude-login` entry), when it changed. The
+	 * session's hand-pick mark follows: written on the user's pick, dropped when it leaves that login.
+	 */
 	private announce(to: ClaudeLoginChoice, change?: ClaudeLoginSwitch): void {
+		this.lastLogin = to;
 		if (!change && to.id === this.recordedLogin) return;
+		const was = this.recordedLogin;
 		this.recordedLogin = to.id;
+		const logins = this.options.logins;
+		try {
+			if (was !== undefined && was !== to.id) logins?.clearPick?.(was, this.piSessionId);
+			if (change && !change.failure && !change.reason) logins?.markPick?.(to.id, this.piSessionId);
+		} catch { /* the mark is plumbing */ }
 		const hooks = this.loginHooks();
 		// A child built later for this session (after an idle reap) starts from what was recorded last.
 		if (hooks) hooks.recorded = to.id;
@@ -1937,6 +1970,11 @@ export class SessionBridge implements ClaudeSessionBridge {
 		const hooks = this.logins.get(sessionId);
 		if (!hooks) return "unknown";
 		if (from.id === to.id) return "same";
+		const logins = this.options.logins;
+		try {
+			if (hooks.recorded !== undefined && hooks.recorded !== to.id) logins?.clearPick?.(hooks.recorded, sessionId);
+			logins?.markPick?.(to.id, sessionId);
+		} catch { /* the mark is plumbing */ }
 		hooks.recorded = to.id;
 		try { hooks.onChange?.(loginEntryFor(to, { from, to, text: manualSwitchText(from, to) })); } catch { /* the record is plumbing */ }
 		return "switched";

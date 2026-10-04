@@ -88,12 +88,14 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
   owns the pool's marks every spawn honours — `<login dir>/.sova-leaving` `{v: 1, at, reason}`
   (never chosen), the per-process leases `<login dir>/.sova-leases/<pid>.json` `{v: 1, owner,
   users, busy, children, lastActiveAt, at}` (`LoginUsers`, a `globalThis` singleton that also
-  releases idle users of a leaving login), the borrow requests `<agent dir>/claude-pool/wants/*.json`
+  releases idle users of a leaving login), the chats' hand-picks `<login dir>/.sova-picks/<pi session
+  id>.json` `{v: 1, session, at}` (written by the provider on a pick, dropped when that chat leaves the
+  login; the pool agent never returns a picked login for idleness), the borrow requests `<agent dir>/claude-pool/wants/*.json`
   `{v: 1, at, pid, excludeAccounts?, excludeLogins?, only?}` that `acquire` / `failoverAsync` (and
   `take`, a pick in the composer that names one login) write and wait on, and the agent heartbeat `<agent dir>/claude-pool/agent.json` `{v: 1, pid, at, device}`;
   and the session's hidden `claude-login` custom
   entry `{v: 1, login, label?, from?, fromLabel?, reason?, resetsAt?, text?}` (`reason` `limit` | `auth` |
-  `manual`, the user's pick), written by the provider and read by Sova, which renders one with `from` as
+  `manual`, the user's pick | `moved`, its login stopped being usable here), written by the provider and read by Sova, which renders one with `from` as
   a note row; the web's login switch calls the provider's `/claude-login <login id>` command handler
   directly, like `/mode`, so its argument is a contract too), worktrees: the session's `worktrees` custom
   entry (the tracked set, whole snapshot, newest on the branch wins) and its `worktree-merge`

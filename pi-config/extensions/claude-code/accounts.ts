@@ -23,7 +23,8 @@
  * it (`null` = kept here, free, for lending by this host as the keeper; never run here). Sova's
  * pool agent (server/claude-pool/) moves logins between devices; this file gives it what every
  * `claude` spawn must honour: `.sova-leaving` (a login on its way out is never chosen), the
- * per-process leases under `.sova-leases/` (which processes still run on a login), and the
+ * per-process leases under `.sova-leases/` (which processes still run on a login), the chats'
+ * hand-picks under `.sova-picks/` (a picked login is never returned for idleness), and the
  * borrow requests (`claude-pool/wants/`) a spawn with no usable login writes and waits on.
  */
 import { spawn, spawnSync } from "node:child_process";
@@ -48,6 +49,8 @@ export const DEFAULT_LIMIT_COOLDOWN_MS = 15 * 60_000;
 export const LEAVING_FILE_NAME = ".sova-leaving";
 /** Per-process leases: `<login dir>/.sova-leases/<owner pid>.json`. */
 export const LEASES_DIR_NAME = ".sova-leases";
+/** Chats that picked a login by hand: `<login dir>/.sova-picks/<pi session id>.json` `{v: 1, session, at}`. */
+export const PICKS_DIR_NAME = ".sova-picks";
 /** `<agent dir>/claude-pool/`: the pool agent's heartbeat (`agent.json`) and borrow requests (`wants/`). */
 export const POOL_DIR_NAME = "claude-pool";
 /** A heartbeat older than this means no pool agent runs here: nothing waits for a borrow. */
@@ -148,7 +151,9 @@ export interface ClaudeLoginSwitch {
 	to: ClaudeLoginChoice;
 	/** A failover's failure; absent for a switch the user chose (entry reason `manual`). */
 	failure?: ClaudeAccountFailure;
-	/** "Claude: switched A → B (5h limit, resets 15:00)" · "… (chosen by you)". */
+	/** `moved`: the session's login stopped being usable here without a failure or a pick (it left, was removed…). */
+	reason?: "moved";
+	/** "Claude: switched A → B (5h limit, resets 15:00)" · "… (chosen by you)" · "… (A left this device)". */
 	text: string;
 }
 
@@ -654,6 +659,11 @@ export function readiness(standing: ClaudeLoginStanding | undefined, dir: string
 export type LeavingReason = "limit" | "auth" | "user" | "pin" | "idle" | "keeper" | "removed" | "superseded";
 export interface LoginLeaving { v: 1; at: number; reason: LeavingReason }
 const LEAVING_REASONS: readonly LeavingReason[] = ["limit", "auth", "user", "pin", "idle", "keeper", "removed", "superseded"];
+/** What a `moved` note says of a login leaving for `reason` (limit and auth name the standing instead). */
+const LEAVING_CAUSES: Record<LeavingReason, string> = {
+	limit: "is limited", auth: "needs sign-in", user: "left this device", pin: "left this device",
+	idle: "left this device", keeper: "returned to the keeper", removed: "was removed", superseded: "left this device",
+};
 
 /** The login's `.sova-leaving` mark, or undefined. Unreadable = leaving (fail closed). */
 export function readLeaving(agentDir: string, id: string): LoginLeaving | undefined {
@@ -676,6 +686,47 @@ export function markLeaving(agentDir: string, id: string, reason: LeavingReason,
 }
 export function clearLeaving(agentDir: string, id: string): void {
 	try { fs.rmSync(path.join(loginDir(agentDir, id), LEAVING_FILE_NAME), { force: true }); } catch { /* gone */ }
+}
+
+/** One chat's hand-pick of a login: `<login dir>/.sova-picks/<pi session id>.json`. */
+export interface LoginPick { v: 1; session: string; at: number }
+const PICK_SESSION_RE = /^[A-Za-z0-9_-][A-Za-z0-9._-]{0,199}$/;
+function pickFile(agentDir: string, loginId: string, sessionId: string): string | undefined {
+	if (!PICK_SESSION_RE.test(sessionId)) return undefined;
+	try { return path.join(loginDir(agentDir, loginId), PICKS_DIR_NAME, `${sessionId}.json`); } catch { return undefined; }
+}
+/**
+ * Mark that chat `sessionId` picked login `loginId` by hand, so the pool agent never returns it for
+ * idleness while the mark stands. Only for a login whose directory exists (never `default`).
+ */
+export function writeLoginPick(agentDir: string, loginId: string, sessionId: string, now = Date.now()): void {
+	const file = pickFile(agentDir, loginId, sessionId);
+	if (!file || !fs.existsSync(path.dirname(path.dirname(file)))) return;
+	const mark: LoginPick = { v: 1, session: sessionId, at: now };
+	writeJsonAtomic(file, mark, 0o600);
+}
+/** Drop chat `sessionId`'s pick of login `loginId` (no-op when there is none). */
+export function clearLoginPick(agentDir: string, loginId: string, sessionId: string): void {
+	const file = pickFile(agentDir, loginId, sessionId);
+	if (file) try { fs.rmSync(file, { force: true }); } catch { /* gone */ }
+}
+/** Every chat's pick mark on login `loginId` (unreadable files skipped). */
+export function readLoginPicks(agentDir: string, loginId: string): Array<{ session: string; at: number }> {
+	let dir: string;
+	try { dir = path.join(loginDir(agentDir, loginId), PICKS_DIR_NAME); } catch { return []; }
+	let names: string[];
+	try { names = fs.readdirSync(dir); } catch { return []; }
+	const picks: Array<{ session: string; at: number }> = [];
+	for (const name of names) {
+		if (!name.endsWith(".json")) continue;
+		const session = name.slice(0, -".json".length);
+		if (!PICK_SESSION_RE.test(session)) continue;
+		let json: Partial<LoginPick> | undefined;
+		try { json = JSON.parse(fs.readFileSync(path.join(dir, name), "utf8")); } catch { continue; }
+		if (json?.v !== 1 || json.session !== session) continue;
+		picks.push({ session, at: typeof json.at === "number" ? json.at : 0 });
+	}
+	return picks;
 }
 
 /** Whether a process exists (a zombie counts; EPERM = someone else's, alive). */
@@ -896,6 +947,10 @@ export function switchText(from: ClaudeLoginChoice, to: ClaudeLoginChoice, failu
 export function manualSwitchText(from: ClaudeLoginChoice, to: ClaudeLoginChoice): string {
 	return `Claude: switched ${from.label} → ${to.label} (chosen by you)`;
 }
+/** A move the session's login forced on it (it left, was removed, …): `cause` as ClaudeLogins.absence gives it. */
+export function movedText(from: ClaudeLoginChoice, to: ClaudeLoginChoice, cause: string): string {
+	return `Claude: switched ${from.label} → ${to.label} (${from.label} ${cause})`;
+}
 
 // ---------------------------------------------------------------------------
 // The resolver
@@ -1084,6 +1139,43 @@ export class ClaudeLogins {
 		return choice ? { choice } : { refused: "That Claude login isn't on this device." };
 	}
 	/**
+	 * Why a session's login `id` can't run here now, or undefined while it can: what a `moved` note
+	 * names (`cause` follows the login's name: "left this device", "is limited until 15:00"…), and
+	 * whether the keeper has it free to take back (the pool is on, nobody holds it, and it is ready).
+	 */
+	absence(id: string): { label: string; cause: string; free: boolean } | undefined {
+		const accounts = this.accounts();
+		const record = accounts.logins.find((l) => l.id === id);
+		const label = record?.label ?? this.identityOf(id, accounts)?.email ?? (id === DEFAULT_LOGIN_ID ? "default" : id);
+		const gone = (cause: string, free = false) => ({ label, cause, free });
+		if (id !== DEFAULT_LOGIN_ID) {
+			if (!record) return gone("was removed");
+			const pool = this.pool;
+			if (!heldHere(record.device, this.device, pool)) {
+				if (record.device !== null) return gone("left this device");
+				return gone("returned to the keeper", pool && record.enabled && this.readinessOf(id).state === "ready");
+			}
+			const leaving = readLeaving(this.agentDir, id);
+			if (leaving && leaving.reason !== "limit" && leaving.reason !== "auth") return gone(LEAVING_CAUSES[leaving.reason]);
+		}
+		if (!loginEnabled(accounts, this.device, id)) return gone("is off in Settings → Accounts");
+		const ready = this.readinessOf(id);
+		if (ready.state === "limited") return gone(`is limited until ${clock(ready.until, this.now())}`);
+		if (ready.state === "auth") return gone("needs sign-in");
+		if (this.leaving(id)) return gone("left this device");
+		return undefined;
+	}
+	/** Chat `session` picked login `id` by hand: the pool never returns it for idleness while that stands. */
+	markPick(id: string, session: string): void {
+		if (id === DEFAULT_LOGIN_ID || !isLoginId(id)) return;
+		try { writeLoginPick(this.agentDir, id, session, this.now()); } catch { /* the pick still moves the chat */ }
+	}
+	/** Chat `session` is no longer on login `id` (another pick, a failover, a move). */
+	clearPick(id: string, session: string): void {
+		if (id === DEFAULT_LOGIN_ID || !isLoginId(id)) return;
+		clearLoginPick(this.agentDir, id, session);
+	}
+	/**
 	 * Borrow `id` by name from the keeper (a pick in the composer): only while the pool is on and
 	 * this host's pool agent runs, and only when it isn't held here already. Resolves when it is
 	 * held here or the wait ends; the caller checks `pickable` after.
@@ -1160,8 +1252,8 @@ export interface ClaudeLoginEntry {
 	/** Present on a switch (a failover, or the user's pick): the login it left. */
 	from?: string;
 	fromLabel?: string;
-	/** `manual`: the user picked it in the composer. */
-	reason?: "limit" | "auth" | "manual";
+	/** `manual`: the user picked it in the composer. `moved`: its login stopped being usable here (it left, was removed…). */
+	reason?: "limit" | "auth" | "manual" | "moved";
 	resetsAt?: number;
 	/** The notice, as the chat shows it. */
 	text?: string;
@@ -1170,7 +1262,7 @@ export function loginEntryFor(to: ClaudeLoginChoice, change?: ClaudeLoginSwitch)
 	return {
 		v: 1, login: to.id, label: to.label,
 		...(change ? {
-			from: change.from.id, fromLabel: change.from.label, reason: change.failure?.kind ?? "manual",
+			from: change.from.id, fromLabel: change.from.label, reason: change.failure?.kind ?? change.reason ?? "manual",
 			...(change.failure?.resetsAt ? { resetsAt: change.failure.resetsAt } : {}),
 			text: change.text,
 		} : {}),

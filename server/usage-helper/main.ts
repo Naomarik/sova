@@ -40,6 +40,8 @@ ledger.scanAll();
 ledger.indexAll();
 ledger.closeDays();
 ledger.flush();
+// The catch-up's garbage, returned before following starts.
+(globalThis as { Bun?: { gc(sync: boolean): void } }).Bun?.gc(true);
 log(`caught up in ${Math.round(performance.now() - t0)} ms: ${ledger.stats.records} records, ${ledger.dayNames().length} days`);
 
 // ---- following appends ------------------------------------------------------------------------
@@ -76,10 +78,19 @@ const watchDay = (day: string) => {
     // Not there yet: the root's watcher or the sweep finds it.
   }
 };
-/** Writers only append to today's directory (UTC) and, around midnight, yesterday's. */
+/**
+ * Writers append to today's directory (UTC) and, around midnight, yesterday's: those, and the two
+ * newest directories there are (a host whose clock disagrees with a writer's still follows it live).
+ */
 const recentDays = () => {
   const now = Date.now();
-  return [new Date(now - 86_400_000), new Date(now)].map((d) => d.toISOString().slice(0, 10));
+  const days = new Set([new Date(now - 86_400_000), new Date(now)].map((d) => d.toISOString().slice(0, 10)));
+  try {
+    for (const d of fs.readdirSync(usageRoot).filter(validUsageDay).sort().slice(-2)) days.add(d);
+  } catch {
+    // The root is made at start; gone means nothing to follow.
+  }
+  return [...days];
 };
 const rewatch = () => {
   const keep = new Set(recentDays());

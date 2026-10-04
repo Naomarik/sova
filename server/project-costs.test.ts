@@ -151,7 +151,7 @@ describe("a project's cost (§app/project-costs)", async () => {
   await seedBuild(org.id, project.id, { sessionId: "code-far", kind: "coding", path: "/elsewhere/far.jsonl", title: "Far", createdAt: T0 });
 
   // The reconciler's calls name the project; another project's don't count here.
-  call({ owner: null, kind: "oneshot", purpose: "reconcile", project: project.id, ts: T0, input: 1_000_000 });
+  call({ owner: null, kind: "oneshot", purpose: "reconcile", project: project.id, starter: "operator", ts: T0, input: 1_000_000 });
   call({ owner: null, kind: "oneshot", purpose: "reconcile", project: project.id, ts: T0, provider: "jev", model: "jev-1", input: 50, output: 5 });
   call({ owner: null, kind: "oneshot", purpose: "reconcile", project: other.id, ts: T0, input: 9_000_000 });
 
@@ -172,17 +172,18 @@ describe("a project's cost (§app/project-costs)", async () => {
     approx(kind("gathering"), GATHER, "gathering");
     approx(kind("wrapup"), WRAPUP, "wrap-up apart from its baton");
     assert.ok(c.byKind.some((r) => r.kind === "settle" && r.usd === 0 && r.tokens.input === 5_000_000), "a local model's tokens count at $0");
-    approx(kind("coding-overseer"), CODE_A, "coding by the overseer");
-    approx(kind("coding-operator"), CODE_B, "a call over the tier is priced wholly at its rates; one each side of a new period");
+    approx(kind("coding"), CODE_A + CODE_B, "both coding kinds as one card row; a call over the tier priced wholly at its rates; one each side of a new period");
+    assert.deepEqual(c.byKind.map((r) => r.kind), ["overseer", "gathering", "settle", "wrapup", "coding", "workers", "reconcile"], "the scope's order");
     approx(kind("workers"), PI_WORKERS + MEMBER + CC_WORKER, "workers at any depth, a message seen twice counted once");
     approx(kind("reconcile"), RECONCILE, "reconciler");
     approx(c.totalUsd, PO + GATHER + WRAPUP + CODE_A + CODE_B + PI_WORKERS + MEMBER + CC_WORKER + RECONCILE, "total");
 
     const by = (b: string) => c.byStarter.find((r) => r.by === b)?.usd ?? 0;
     approx(by("overseer"), PO + CODE_A + PI_WORKERS + MEMBER + CC_WORKER, "the overseer's conversation, its coding session and its workers");
-    approx(by("operator"), GATHER + WRAPUP + CODE_B, "the operator's baton, wrap-up and coding session");
-    approx(by("sova"), RECONCILE);
-    assert.deepEqual(c.estimates, []);
+    approx(by("operator"), GATHER + WRAPUP + CODE_B + RECONCILE, "the operator's baton, wrap-up, coding session and Reconcile Now");
+    assert.ok(c.byStarter.some((r) => r.by === "sova" && r.usd === 0 && r.tokens.input === 50), "an automatic run is Sova's own");
+    approx(c.allModels.usd, c.totalUsd, "the All models footer");
+    assert.equal(c.allModels.tokens.input, c.byModel.reduce((n, m) => n + m.tokens.input, 0));
 
     const unpriced = Object.fromEntries(c.unpriced.map((u) => [u.model, u]));
     assert.equal(unpriced["nopr/spark"]?.tokens, 123);
@@ -200,7 +201,7 @@ describe("a project's cost (§app/project-costs)", async () => {
 
   test("this host's counts are kept in costs.json; another host's rows are shown as last counted", async () => {
     const snap = ledger.readCostLedger(lp);
-    assert.ok(snap.sources["code-a"] && snap.sources[`w:${CC}`] && snap.sources["w:w2"] && snap.sources["reconcile:h_testhost"], Object.keys(snap.sources).join(", "));
+    assert.ok(snap.sources["code-a"] && snap.sources[`w:${CC}`] && snap.sources["w:w2"] && snap.sources["reconcile:h_testhost:operator"] && snap.sources["reconcile:h_testhost:sova"], Object.keys(snap.sources).join(", "));
     assert.ok(!readFileSync(lp.costs, "utf8").includes(tmp), "no host path in the repo's ledger");
     const before = await costs.projectCost(project.id);
     // Another host counted code-far (its file is there) and an old-style worker key of a worker counted here.

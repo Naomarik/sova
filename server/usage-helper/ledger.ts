@@ -33,7 +33,7 @@ const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 const FILE_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}\.jsonl$/;
 
 /** The dimensions a row is keyed by, besides its bucket and price band. */
-export const DIMS = ["owner", "parent", "worker", "kind", "purpose", "cwd", "project", "src", "provider", "model", "responseModel"] as const;
+export const DIMS = ["owner", "parent", "worker", "kind", "purpose", "cwd", "project", "src", "provider", "model", "responseModel", "starter"] as const;
 export type Dim = (typeof DIMS)[number];
 
 export interface Row {
@@ -106,6 +106,16 @@ export function hashKey(str: string): number {
   h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
   h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
   return 4294967296 * (2097151 & h2) + (h1 >>> 0);
+}
+
+/** One copy of each dimension value (owners, models, directories repeat across thousands of rows). */
+const interned = new Map<string, string>();
+function intern(v: string | null): string | null {
+  if (v === null) return null;
+  const hit = interned.get(v);
+  if (hit !== undefined) return hit;
+  interned.set(v, v);
+  return v;
 }
 
 const dayEnd = (day: string) => Date.parse(`${day}T00:00:00Z`) + DAY_MS;
@@ -235,7 +245,15 @@ export class Ledger {
     } catch {
       return;
     }
-    for (const name of dirs.sort()) this.scanDay(name);
+    for (const name of dirs.sort()) {
+      this.scanDay(name);
+      // A catch-up over many days keeps one day in memory at a time: an ended day closes at once.
+      const day = this.days.get(name);
+      if (day && !day.closed && this.now() >= dayEnd(name) + CLOSE_GRACE_MS) {
+        this.close(day);
+        this.evict(name);
+      }
+    }
   }
 
   /** One day directory: new files, grown files. `only` limits it to the files an event named. */
@@ -343,7 +361,7 @@ export class Ledger {
     const pf = priced.status === "priced" ? priced.period : null;
     const tier = priced.status === "priced" ? priced.tier : null;
     const b = rec.ts - (rec.ts % BUCKET_MS);
-    const d = [r.owner, r.parent, r.worker ?? null, r.kind, r.purpose ?? null, r.cwd ?? null, r.project ?? null, r.src, r.provider, r.model, r.responseModel ?? null];
+    const d = [r.owner, r.parent, r.worker ?? null, r.kind, r.purpose ?? null, r.cwd ?? null, r.project ?? null, r.src, r.provider, r.model, r.responseModel ?? null, r.starter ?? null].map(intern);
     const id = `${b}\u001f${d.join("\u001f")}\u001f${pk}\u001f${pf}\u001f${tier}`;
     let row = day.rows.get(id);
     if (!row) {
@@ -540,7 +558,8 @@ export class Ledger {
         rows: [number, (string | null)[], string | null, string | null, number | null, Row["t"], number, number, number][];
       };
       const rows = new Map<string, Row>();
-      for (const [b, d, pk, pf, tier, t, n, a0, a1] of head.rows) {
+      for (const [b, raw, pk, pf, tier, t, n, a0, a1] of head.rows) {
+        const d = DIMS.map((_, i) => intern(raw[i] ?? null));
         rows.set(`${b}\u001f${d.join("\u001f")}\u001f${pk}\u001f${pf}\u001f${tier}`, { b, d, pk, pf, tier, t, n, a0, a1 });
       }
       let keys: Set<number> | null = null;

@@ -32,6 +32,7 @@ const zeroTokens = (): CostTokens => ({ input: 0, output: 0, cacheRead: 0, cache
 /** A row's price, cached per table version. */
 interface RowPrice {
   v: number;
+  n: number;
   usd: number;
   /** input, output, cacheRead, cacheWrite5m, cacheWrite1h dollars. */
   by: [number, number, number, number, number];
@@ -129,6 +130,12 @@ class Pricing {
 }
 
 /** One day's rows collapsed by local day and everything but the bucket: what range queries add up. */
+interface Summary {
+  key: string;
+  entries: Entry[];
+  byOwner: Map<string, Entry[]>;
+}
+
 interface Entry {
   ld: string;
   owner: string | null;
@@ -142,6 +149,7 @@ interface Entry {
 }
 
 const KINDS = new Set<string>(USAGE_KIND_ORDER);
+const MAX_ZONES = 3;
 
 /** `yyyy-mm-dd` arithmetic on calendar days. */
 const addDays = (day: string, n: number) => new Date(Date.parse(`${day}T00:00:00Z`) + n * DAY_MS).toISOString().slice(0, 10);
@@ -172,7 +180,10 @@ export class Queries {
   private tv = 1;
   private readonly rowPrices = new WeakMap<Row, RowPrice>();
   private readonly zones = new Map<string, { fmt: Intl.DateTimeFormat; days: Map<number, string> }>();
-  private readonly summaries = new Map<string, { key: string; entries: Entry[] }>();
+  /** Per day, per zone (a few at most: the browsers' zones). */
+  private readonly summaries = new Map<string, Map<string, Summary>>();
+  /** The zone summaries were last built for: session queries (which ignore local days) reuse them. */
+  private lastTz = "UTC";
 
   constructor(opts: QueryOptions) {
     this.ledger = opts.ledger;
@@ -189,12 +200,13 @@ export class Queries {
 
   priceRow(row: Row): RowPrice {
     const hit = this.rowPrices.get(row);
-    if (hit && hit.v === this.tv) return hit;
+    // A row of an open day grows: its price is good for the calls it had.
+    if (hit && hit.v === this.tv && hit.n === row.n) return hit;
     const [, , , , , , , , provider, model, responseModel] = row.d;
     const usage = { input: row.t[0], output: row.t[1], cacheRead: row.t[2], cacheWrite5m: row.t[3], cacheWrite1h: row.t[4] };
     const p = this.prices.priceUsage({ provider: provider!, model: model!, ...(responseModel ? { responseModel } : {}) }, usage, row.a0, { tier: row.tier });
     const by: RowPrice["by"] = p.status === "priced" ? [p.usd.input, p.usd.output, p.usd.cacheRead, p.usd.cacheWrite5m, p.usd.cacheWrite1h] : [0, 0, 0, 0, 0];
-    const out = { v: this.tv, usd: p.status === "priced" ? p.usd.total : 0, by, p };
+    const out = { v: this.tv, n: row.n, usd: p.status === "priced" ? p.usd.total : 0, by, p };
     this.rowPrices.set(row, out);
     return out;
   }
@@ -218,8 +230,14 @@ export class Queries {
   }
 
   private summary(day: string, tz: string): Entry[] {
-    const hit = this.summaries.get(day);
-    if (hit && hit.key === `${tz}|${this.tv}|${this.ledger.versionOf(day)}`) return hit.entries;
+    return this.summaryOf(day, tz).entries;
+  }
+
+  private summaryOf(day: string, tz: string): Summary {
+    this.lastTz = tz;
+    let zones = this.summaries.get(day);
+    const hit = zones?.get(tz);
+    if (hit && hit.key === `${tz}|${this.tv}|${this.ledger.versionOf(day)}`) return hit;
     const { rows, version } = this.ledger.rowsOf(day);
     const key = `${tz}|${this.tv}|${version}`;
     const ld = this.localDay(tz);
@@ -248,9 +266,15 @@ export class Queries {
       e.pricing.add(price.p, row.a1);
     }
     const entries = [...by.values()];
-    this.summaries.set(day, { key, entries });
+    const byOwner = new Map<string, Entry[]>();
+    for (const e of entries) if (e.owner) get(byOwner, e.owner, () => []).push(e);
+    const out = { key, entries, byOwner };
+    if (!zones) this.summaries.set(day, (zones = new Map()));
+    zones.delete(tz);
+    zones.set(tz, out);
+    if (zones.size > MAX_ZONES) zones.delete(zones.keys().next().value!);
     this.ledger.evict(day);
-    return entries;
+    return out;
   }
 
   /** The UTC days whose buckets can fall on local days `from`..`to` (a zone is at most ±14h off). */
@@ -378,13 +402,25 @@ export class Queries {
     return out;
   }
 
-  /** Visit every row owned by one of `owners`, day by day. */
+  /** Visit every row owned by one of `owners`, day by day (project costs: they keep rows' price bands). */
   eachRow(owners: Set<string>, fn: (row: Row) => void): void {
-    const days = new Set<string>();
-    for (const o of owners) for (const d of this.ledger.owners.get(o)?.days ?? []) days.add(d);
-    for (const day of [...days].sort()) {
+    for (const day of this.daysOf(owners)) {
       for (const row of this.ledger.rowsOf(day).rows) if (row.d[0] && owners.has(row.d[0])) fn(row);
       this.ledger.evict(day);
+    }
+  }
+
+  private daysOf(owners: Set<string>): string[] {
+    const days = new Set<string>();
+    for (const o of owners) for (const d of this.ledger.owners.get(o)?.days ?? []) days.add(d);
+    return [...days].sort();
+  }
+
+  /** Visit the summary entries of `owners` (a session's spend never needs a row: entries are per owner and model). */
+  private eachEntry(owners: Set<string>, fn: (e: Entry) => void): void {
+    for (const day of this.daysOf(owners)) {
+      const byOwner = this.summaryOf(day, this.lastTz).byOwner;
+      for (const o of owners) for (const e of byOwner.get(o) ?? []) fn(e);
     }
   }
 
@@ -395,15 +431,14 @@ export class Queries {
     const workers = new Acc();
     const models = new Map<string, { origin: UsageSessionModelRow["origin"]; provider: string; model: string; acc: Acc; pricing: Pricing }>();
     const perWorker = new Map<string, Acc>();
-    this.eachRow(fam, (row) => {
-      const price = this.priceRow(row);
-      const owner = row.d[0]!;
-      const origin = owner !== q.sid ? "worker" : row.d[3] === "oneshot" ? "oneshot" : "main";
-      (origin === "worker" ? workers : origin === "oneshot" ? oneshots : own).add(row, price);
-      if (origin === "worker") get(perWorker, owner, () => new Acc()).add(row, price);
-      const m = get(models, `${origin}\u001f${row.d[8]}\u001f${row.d[9]}`, () => ({ origin, provider: row.d[8]!, model: row.d[9]!, acc: new Acc(), pricing: new Pricing() }));
-      m.acc.add(row, price);
-      m.pricing.add(price.p, row.a1);
+    this.eachEntry(fam, (e) => {
+      const owner = e.owner!;
+      const origin = owner !== q.sid ? "worker" : e.kind === "oneshot" ? "oneshot" : "main";
+      (origin === "worker" ? workers : origin === "oneshot" ? oneshots : own).merge(e.acc);
+      if (origin === "worker") get(perWorker, owner, () => new Acc()).merge(e.acc);
+      const m = get(models, `${origin}${e.provider}${e.model}`, () => ({ origin, provider: e.provider, model: e.model, acc: new Acc(), pricing: new Pricing() }));
+      m.acc.merge(e.acc);
+      m.pricing.merge(e.pricing);
     });
     const total = new Acc();
     total.merge(own);
@@ -441,13 +476,11 @@ export class Queries {
     const out: UsageSessionsTotals["sessions"] = {};
     for (const sid of q.sids) {
       if (!this.ledger.owners.has(sid)) continue;
-      const fam = this.family(sid);
       const total = new Acc();
       const workers = new Acc();
-      this.eachRow(fam, (row) => {
-        const price = this.priceRow(row);
-        total.add(row, price);
-        if (row.d[0] !== sid) workers.add(row, price);
+      this.eachEntry(this.family(sid), (e) => {
+        total.merge(e.acc);
+        if (e.owner !== sid) workers.merge(e.acc);
       });
       out[sid] = { total: total.spend(), workers: workers.spend() };
     }

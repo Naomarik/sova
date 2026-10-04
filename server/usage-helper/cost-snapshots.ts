@@ -13,7 +13,7 @@ const n = (v: unknown): number => (typeof v === "number" && Number.isFinite(v) &
 const s = (v: unknown): string => (typeof v === "string" ? v : "");
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 
-/** Where a bucket's figures are an estimate (shared/costs.ts CostEstimate codes). */
+/** Where an old count's figures were an estimate (kept for reading older files; the ledger writes none). */
 export type EstimateFlag = "1h" | "alias";
 
 /**

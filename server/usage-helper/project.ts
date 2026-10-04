@@ -1,5 +1,5 @@
 import fs from "node:fs";
-import type { CostKind, CostModelRow, CostRow, CostSession, CostStarter, CostTokens, OrgCosts, ProjectCost } from "../../shared/costs";
+import { cardKindOf, COST_CARD_KINDS, type CostCardKind, type CostKind, type CostModelRow, type CostRow, type CostSession, type CostStarter, type CostTokens, type OrgCosts, type ProjectCost } from "../../shared/costs";
 import type { PricedUsage, TokenUsage } from "../../shared/model-prices/prices";
 import { readCostLedger, writeCostLedger, type CostBucket, type CostLedger, type CostSnapshot } from "./cost-snapshots";
 import type { Ledger, Row } from "./ledger";
@@ -51,7 +51,6 @@ interface Source {
 const TOP_MAX = 20;
 const WRITE_GAP_MS = 60_000;
 const NO_MODEL_WHY = "A tool's own model calls, with no model recorded.";
-const KIND_ORDER: CostKind[] = ["overseer", "gathering", "settle", "wrapup", "coding-overseer", "coding-operator", "workers", "reconcile"];
 const STARTER_ORDER: CostStarter[] = ["overseer", "operator", "sova"];
 
 const zeroTokens = (): CostTokens => ({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cacheWrite1h: 0 });
@@ -144,20 +143,26 @@ function liveSources(d: ProjectDeps, scope: ProjectScope, here: Set<string>): So
       }
     }
   }
-  // The project's reconciler calls: records naming the project, owned by no session counted above.
-  const recon = new Buckets();
+  // The project's reconciler calls: records naming the project, owned by no session counted above,
+  // one source per starter (who asked: the record's `starter`, else Sova on its own).
+  const recon = new Map<CostStarter, Buckets>();
   for (const day of [...(d.ledger.projects.get(scope.projectId) ?? [])].sort()) {
     for (const row of d.ledger.rowsOf(day).rows) {
       if (row.d[6] !== scope.projectId || row.d[4] !== "reconcile") continue;
       if (row.d[0] && claimed.has(row.d[0])) continue;
-      recon.add("reconcile", row);
+      const by = (row.d[11] ?? "sova") as CostStarter;
+      let b = recon.get(by);
+      if (!b) recon.set(by, (b = new Buckets()));
+      b.add("reconcile", row);
     }
     d.ledger.evict(day);
   }
-  const reconKey = `reconcile:${d.device() ?? "this-host"}`;
-  here.add(reconKey);
-  const rb = recon.list();
-  if (rb.length) out.push({ key: reconKey, sessionId: reconKey, title: "Reconciler", kind: "reconcile", by: "sova", path: null, buckets: rb, live: true });
+  const device = d.device() ?? "this-host";
+  for (const by of ["overseer", "operator", "sova"] as const) here.add(`reconcile:${device}:${by}`);
+  for (const [by, b] of recon) {
+    const key = `reconcile:${device}:${by}`;
+    out.push({ key, sessionId: key, title: "Reconciler", kind: "reconcile", by, path: null, buckets: b.list(), live: true });
+  }
   for (const o of claimed) here.add(`w:${o}`);
   return out;
 }
@@ -200,7 +205,7 @@ export function projectCost(d: ProjectDeps, scope: ProjectScope): ProjectCost {
   }
 
   const total = zeroRow();
-  const byKind = new Map<CostKind, CostRow>();
+  const byKind = new Map<CostCardKind, CostRow>();
   const byStarter = new Map<CostStarter, CostRow>();
   const byModel = new Map<string, CostModelRow>();
   const unpriced = new Map<string, { model: string; tokens: number; why: string }>();
@@ -235,7 +240,7 @@ export function projectCost(d: ProjectDeps, scope: ProjectScope): ProjectCost {
       const p = priceBucket(d.prices, b);
       add(row, b, p);
       add(total, b, p);
-      add(get(byKind, b.kind, zeroRow), b, p);
+      add(get(byKind, cardKindOf(b.kind), zeroRow), b, p);
       add(get(byStarter, s.by, zeroRow), b, p);
       const ref = `${b.provider}/${b.model}`;
       const model = p.status === "priced" ? p.key : ref;
@@ -262,12 +267,12 @@ export function projectCost(d: ProjectDeps, scope: ProjectScope): ProjectCost {
     since: since === null ? null : new Date(since).toISOString(),
     prices: { source: "models.dev", fetchedAt: d.prices.info().asOf },
     sessions: new Set(sources.map((s) => (s.kind === "reconcile" ? "reconcile" : s.key))).size,
-    byKind: KIND_ORDER.filter((k) => byKind.has(k) && spent(byKind.get(k)!)).map((kind) => ({ kind, ...byKind.get(kind)! })),
+    byKind: COST_CARD_KINDS.filter((k) => byKind.has(k) && spent(byKind.get(k)!)).map((kind) => ({ kind, ...byKind.get(kind)! })),
     byStarter: STARTER_ORDER.filter((k) => byStarter.has(k) && spent(byStarter.get(k)!)).map((by) => ({ by, ...byStarter.get(by)! })),
+    allModels: total,
     byModel: [...byModel.values()].filter(spent).sort((a, b) => b.usd - a.usd || allTokens(b) - allTokens(a) || a.model.localeCompare(b.model)),
     top: top.filter(spent).sort((a, b) => b.usd - a.usd || allTokens(b) - allTokens(a)).slice(0, TOP_MAX),
     unpriced: [...unpriced.values()].sort((a, b) => b.tokens - a.tokens),
-    estimates: [],
     notOnHost: notOnHost ? { sessions: notOnHost, countedAt: oldestCount } : null,
     notCounted: [],
   };

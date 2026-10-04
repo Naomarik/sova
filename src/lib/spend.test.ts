@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { TranscriptItem } from "../../shared/protocol";
 import type { UsageOrigin, UsageSessionModelRow, UsageSessionSpend, UsageSpend, UsageWorkerRow } from "../../shared/usage/wire";
-import { absoluteTime, firstLine, headChipSpend, originLabel, paneTitleCost, spendTitle, spendUsd, spentAnything, timelineEntries, transcriptHeaderSpend, usageTabRows, workerRowSpend, workerSpendOf } from "./spend";
+import { absoluteTime, firstLine, headChipSpend, headChipWords, headerTokenWords, transcriptHeaderSid, originLabel, paneTitleCost, spendTitle, spendUsd, spentAnything, timelineEntries, transcriptHeaderSpend, usageTabRows, workerRowSpend, workerSpendOf } from "./spend";
 
 const zero = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cacheWrite1h: 0 };
 const sum = (input: number, output: number, usd = 0, calls = 1): UsageSpend => ({ usd, tokens: { ...zero, input, output }, usdBy: zero, calls, unpricedTokens: 0 });
@@ -101,6 +101,19 @@ test("transcript header: the worker's own answer's total, once it has a call", (
   assert.equal(transcriptHeaderSpend({ total: t }), t);
   assert.equal(transcriptHeaderSpend({ total: sum(0, 0, 0, 0) }), null);
   assert.equal(transcriptHeaderSpend(undefined), null);
+});
+
+test("head chip words: input + output as the text, the split and cost in the title", () => {
+  const w = headChipWords({ ...sum(53_000, 200, 0.72), tokens: { ...zero, input: 53_000, output: 200, cacheRead: 9_000 } });
+  assert.deepEqual(w, { text: "53k tokens", label: "53k tokens — show usage", title: "53k in · 200 out · 9k cache read · 0 cache write · $0.72" });
+});
+
+test("transcript header: the sid its roster row names, never derived; {n} tok", () => {
+  const spend = answer("s1", sum(0, 0), [worker("claude-uuid", "s1", "ag_02")]);
+  assert.equal(transcriptHeaderSid(spend, "ag_02"), "claude-uuid", "a Claude Code worker's Claude session id, as the ledger records it");
+  assert.equal(transcriptHeaderSid(spend, "ag_05"), null, "not listed yet: no header figure");
+  assert.equal(transcriptHeaderSid(undefined, "ag_02"), null);
+  assert.deepEqual(headerTokenWords(sum(1200, 34, 0.004)), { text: "1.2k tok", title: "1.2k in · 34 out · 0 cache read · 0 cache write · <$0.01" });
 });
 
 test("workspace pane title: the answer's total dollars, left out at zero", () => {

@@ -4,7 +4,7 @@ import type { ContextInfo, TeamInfo, TeamMember, TranscriptItem, WatchServerMess
 import { claudeWatchUrl, fetchHiddenWorkers, wsUrl } from "../lib/api";
 import type { UsageSessionSpend, UsageSpend } from "../../shared/usage/wire";
 import { linkGroupId, linkGroups, linkHostLabel, linkReach, threadHost, type LinkReach } from "../lib/links";
-import { spendTitle, spoken, transcriptHeaderSpend, workerRowSpend, workerSpendOf } from "../lib/spend";
+import { headerTokenWords, spendTitle, spoken, transcriptHeaderSid, transcriptHeaderSpend, workerRowSpend } from "../lib/spend";
 import { chatLinks } from "../lib/links-live";
 import { hostOf, meshState, sessionHrefOn } from "../lib/mesh";
 import { clockTime, compactModel, shortModel } from "../lib/format";
@@ -177,8 +177,6 @@ export function SubagentPane(props: {
   const grouped = () => groups().some((g) => g.team) || links().length > 0;
   /** A session with a team holds more than subagents, listed or not: the pane says so. */
   const noun = () => workersNoun((insight.data()?.teams.length ?? 0) > 0);
-  /** A listed worker's own spend, from the session's ledger answer; null when nothing is recorded. */
-  const spendOf = (w: WorkerInfo) => workerSpendOf(props.spend, w.id);
   /** The open transcript's context fill, which ticks with every append; cleared with the selection.
       undefined: the transcript hasn't said (or an older server), so the row's stands. */
   const [watchedContext, setWatchedContext] = createSignal<ContextInfo | "compacted" | null | undefined>(undefined);
@@ -513,7 +511,7 @@ export function SubagentPane(props: {
                     {/* Its spend from the usage ledger, its own workers' included, read for as
                         long as its transcript is open: by the sid its roster row in the
                         session's answer names, never one derived from the worker. */}
-                    <Show when={spendOf(w())?.sid} keyed>
+                    <Show when={transcriptHeaderSid(props.spend, w().id)} keyed>
                       {(sid) => <WorkerTokens sid={sid} />}
                     </Show>
                     {/* How full its own context is, as the chat head says it — pushed to the
@@ -771,9 +769,9 @@ function WorkerTokens(props: { sid: string }) {
   return (
     <Show when={total()}>
       {(u) => (
-        <span class="text-mono" title={spendTitle(u())}>
+        <span class="text-mono" title={headerTokenWords(u()).title}>
           <MetaSep />
-          {formatTokens(spoken(u()))} tok
+          {headerTokenWords(u()).text}
         </span>
       )}
     </Show>

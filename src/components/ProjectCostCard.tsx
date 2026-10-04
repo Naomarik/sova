@@ -1,7 +1,7 @@
 import { createEffect, For, type JSX, on, Show } from "solid-js";
 import type { CostModelRow, CostTokens, ProjectCost } from "../../shared/costs";
 import { getProjectCost } from "../lib/api";
-import { allModels, costNotes, emptyLine, ESTIMATE_TITLE, hasEstimate, KIND_LABEL, kindRows, moneyWord, modelRows, starterParts, TOKEN_KINDS, topMeta, usd } from "../lib/costs";
+import { costNotes, emptyLine, KIND_LABEL, kindRows, moneyWord, modelRows, starterParts, TOKEN_KINDS, topMeta, usd } from "../lib/costs";
 import { projectSessionHref } from "../lib/projects-route";
 import { createPoll, type Poll } from "../lib/poll";
 import { tokens } from "../lib/project-overseer-view";
@@ -21,7 +21,7 @@ export function createProjectCost(props: { projectId: string; tick(): number }):
 }
 
 /** The total as the card's headline writes it (`$27.21`, `≈$4.10`), for the summary chip. */
-export const costFigure = (c: ProjectCost): string => usd(c.totalUsd, hasEstimate(c));
+export const costFigure = (c: ProjectCost): string => usd(c.totalUsd);
 
 /**
  * What the project's sessions would cost at each provider's API prices (§app.project-costs/card):
@@ -47,14 +47,11 @@ function CostBody(props: { cost: ProjectCost; projectId: string }) {
   const kinds = () => kindRows(c().byKind);
   const models = () => modelRows(c().byModel);
   const spent = () => c().totalUsd > 0 || models().length > 0;
-  const estimate = () => hasEstimate(c());
   return (
     <Show when={spent()} fallback={<p class="orgs-line">{emptyLine(c().sessions)}</p>}>
       <div>
         <p class="cost-headline">
-          <span class="cost-figure" title={estimate() ? ESTIMATE_TITLE : undefined}>
-            {usd(c().totalUsd, estimate())}
-          </span>
+          <span class="cost-figure">{usd(c().totalUsd)}</span>
           <span class="cost-headline-unit">at API prices</span>
         </p>
         <p class="cost-lede">What these sessions would cost at each provider's API prices. Your subscriptions bill differently.</p>
@@ -155,7 +152,7 @@ function CostBody(props: { cost: ProjectCost; projectId: string }) {
                   <tfoot>
                     <tr>
                       <th scope="row">All models</th>
-                      <ModelCells row={{ ...allModels(models()), status: "priced" }} />
+                      <ModelCells row={{ ...c().allModels, status: "priced" }} />
                     </tr>
                   </tfoot>
                 </Show>

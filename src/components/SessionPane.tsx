@@ -1,11 +1,10 @@
 import { createEffect, createMemo, createSignal, For, Match, on, onCleanup, onMount, Show, Switch, untrack } from "solid-js";
 import type { ExplanationInfo, SessionInsight, SessionSkillOffer, SessionSkillUse, SessionSummary, TranscriptItem, WorkerInfo } from "../../shared/protocol";
 import { fetchTranscriptLight } from "../lib/api";
-import { formatTokens } from "../lib/context";
 import { explainCaption, explainHref, explainInterrupted, explainState, newestFirst } from "../lib/explain";
 import { relativeTime } from "../lib/format";
 import { sessionIdOfPath } from "../lib/links";
-import { absoluteTime, headChipSpend, spendTitle, spoken } from "../lib/spend";
+import { absoluteTime, headChipSpend, headChipWords } from "../lib/spend";
 import { activeTab, sessionContext, setActiveTab, toast } from "../lib/ui-state";
 import { capTitle, workerLabel, workerTeam } from "../lib/workers";
 import type { RewindControl } from "../lib/inputs";
@@ -173,11 +172,11 @@ export function SessionPane(props: {
             <button
               type="button"
               class="chip chip-count subagents-usage"
-              aria-label={`${formatTokens(spoken(t()))} tokens — show usage`}
-              title={spendTitle(t())}
+              aria-label={headChipWords(t()).label}
+              title={headChipWords(t()).title}
               onClick={() => setActiveTab(props.path, "usage")}
             >
-              {formatTokens(spoken(t()))} tokens
+              {headChipWords(t()).text}
             </button>
           )}
         </Show>

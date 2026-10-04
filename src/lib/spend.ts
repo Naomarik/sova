@@ -57,6 +57,20 @@ export function headChipSpend(spend: Pick<UsageSessionSpend, "sid" | "total"> | 
   return spend && sid && spend.sid === sid && spentAnything(spend) && spoken(spend.total) > 0 ? spend.total : null;
 }
 
+/** The head chip's words: "53.2k tokens", its accessible name "53.2k tokens — show usage", and the split in its title. */
+export const headChipWords = (s: UsageSpend): { text: string; label: string; title: string } => {
+  const text = `${formatTokens(spoken(s))} tokens`;
+  return { text, label: `${text} — show usage`, title: spendTitle(s) };
+};
+
+/** The open worker transcript's sid: the one its roster row in the session's answer names (worker
+    id, parent this session), never one derived from the worker; null until the ledger lists it. */
+export const transcriptHeaderSid = (spend: Pick<UsageSessionSpend, "sid" | "workerList"> | undefined, workerId: string): string | null =>
+  workerSpendOf(spend, workerId)?.sid ?? null;
+
+/** The transcript header's figure: "{n} tok", the split in its title. */
+export const headerTokenWords = (s: UsageSpend): { text: string; title: string } => ({ text: `${formatTokens(spoken(s))} tok`, title: spendTitle(s) });
+
 /** A worker row's tokens: the worker's own calls and its workers', at any depth (`withWorkers`);
     null for a worker with no recorded call. */
 export function workerRowSpend(spend: Pick<UsageSessionSpend, "sid" | "workerList"> | undefined, workerId: string): UsageSpend | null {

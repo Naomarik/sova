@@ -17,16 +17,23 @@ import { approve, defHashOf } from "./trust";
  */
 
 let engine: ProjectEngine | null = null;
+let deployer: Deployer | null = null;
 
 /** The server's one engine (its supervisor adapter chosen at first use, server/project-services/adapters.ts). */
 export function projectEngine(): ProjectEngine {
   if (!engine) {
     engine = new ProjectEngine({ driver: new SelectedDriver() });
     engine.conformer = conformer(engine);
-    const deployer = new Deployer(engine);
-    engine.deployer = (verb, body, caller, opts) => deployer.run(verb, body, caller, opts);
+    const d = (deployer = new Deployer(engine));
+    engine.deployer = (verb, body, caller, opts) => d.run(verb, body, caller, opts);
   }
   return engine;
+}
+
+/** The server's one deployer (§app.project-services/deploy), beside its engine. */
+export function projectDeployer(): Deployer {
+  projectEngine();
+  return deployer!;
 }
 
 export function registerProjectServiceRoutes(app: Hono<any>): void {
@@ -88,6 +95,7 @@ export async function reconcileProjectServices(): Promise<void> {
     console.log(`[project-services] supervisor: ${sel.id} (${sel.why})`);
     const did = await projectEngine().reconcile();
     for (const d of did) console.log(`[project-services] ${d}`);
+    for (const d of projectDeployer().reconcile()) console.log(`[project-services] ${d}`);
   } catch (err) {
     console.error("[project-services] reconcile failed:", err instanceof Error ? err.message : err);
   }

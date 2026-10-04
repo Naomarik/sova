@@ -6,7 +6,7 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { createReadStream, lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
+import { createReadStream, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, describe, test } from "node:test";
@@ -16,6 +16,7 @@ import {
   excludeMatcher,
   listOffer,
   type OfferListing,
+  packChanged,
   PullCancelled,
   type PullDeps,
   Pulls,
@@ -243,6 +244,15 @@ describe("Spools", () => {
     assert.equal(again.status("of_00000000000000ff"), null);
   });
 
+  test("tar's exit 1 is a warning only with GNU tar's changed-file message; bsdtar's exit 1 is fatal", () => {
+    assert.equal(packChanged(1, "tar: d/a.txt: file changed as we read it\n"), true);
+    assert.equal(packChanged(1, "tar: d/a.txt: File shrank by 3 bytes; padding with zeros\n"), true);
+    assert.equal(packChanged(1, "tar: d/gone.txt: Cannot stat: No such file or directory\ntar: Error exit delayed from previous errors.\n"), false);
+    assert.equal(packChanged(1, ""), false);
+    assert.equal(packChanged(2, "tar: d/a.txt: file changed as we read it\n"), false);
+    assert.equal(packChanged(0, ""), false);
+  });
+
   test("a file that vanished before tar read it: tar-failed, no spool left", async () => {
     makeTree(join(tmp, "vanish"), { d: { "gone.txt": "x" } });
     const l = await listOffer({ cwd: tmp, home, paths: ["vanish"], sandbox: null });
@@ -254,7 +264,7 @@ describe("Spools", () => {
     assert.throws(() => statSync(`${spoolFile(root, "of_0000000000000002")}.part`));
   });
 
-  test("a full disk fails the pack with a sentence (no-space)", async () => {
+  test("a full disk fails the pack with a sentence (no-space)", { skip: !existsSync("/dev/full") && "no /dev/full on this host (macOS)" }, async () => {
     const l = await listOffer({ cwd: work, home, paths: ["proj"], sandbox: null });
     const part = `${spoolFile(root, "of_0000000000000003")}.part`;
     symlinkSync("/dev/full", part);

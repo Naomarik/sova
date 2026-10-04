@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import type { IncomingMessage, Server } from "node:http";
 import type { Duplex } from "node:stream";
 import type { WebSocket } from "ws";
-import { cappedWebSocketServer } from "./runtime-quirks";
+import { cappedWebSocketServer, streamWebSocketServer } from "./runtime-quirks";
 import type { ChatClientMessage, ChatServerMessage, LlmFeedMessage, SessionFeedMessage, WatchServerMessage } from "../shared/protocol";
 import { refuseUpgrade } from "./auth";
 import { isDirectLocal } from "./compression";
@@ -166,19 +166,29 @@ function handleLlmFeed(ws: WebSocket): void {
 // window between messages; ws creates its zlib streams lazily, so a socket that only ever sends
 // small frames holds none at all. Level 1: the ratio on a hello is within a few percent of level 6
 // at a fraction of the CPU (numbers in the commit message).
-const wss = cappedWebSocketServer({
-  noServer: true,
-  perMessageDeflate: {
-    threshold: 1024,
-    serverNoContextTakeover: true,
-    clientNoContextTakeover: true,
-    zlibDeflateOptions: { level: 1 },
-  },
-});
+const DEFLATE = {
+  threshold: 1024,
+  serverNoContextTakeover: true,
+  clientNoContextTakeover: true,
+  zlibDeflateOptions: { level: 1 },
+};
+const wss = cappedWebSocketServer({ noServer: true, perMessageDeflate: DEFLATE });
+// A dial-out pairing's sockets arrive on HTTP/2 streams, which only the pure-JS server can upgrade
+// (runtime-quirks.ts, "WebSockets over a stream").
+const streamWss = streamWebSocketServer({ perMessageDeflate: DEFLATE });
 
 /** Sova's own sockets, /ws/chat and /ws/watch; anything else is dropped. Also the peer
     listener's upgrade handler (server/mesh/listener.ts). */
 export function upgradeSovaSocket(req: IncomingMessage, socket: Duplex, head: Buffer): void {
+  upgradeWith(wss, req, socket, head);
+}
+
+/** The same, for a request that arrived on a stream rather than a socket (server/mesh/lan.ts). */
+export function upgradeSovaStreamSocket(req: IncomingMessage, socket: Duplex, head: Buffer): void {
+  upgradeWith(streamWss, req, socket, head);
+}
+
+function upgradeWith(server: typeof wss, req: IncomingMessage, socket: Duplex, head: Buffer): void {
   const url = new URL(req.url ?? "/", "http://localhost");
   const route = url.pathname;
   if (route !== "/ws/chat" && route !== "/ws/watch") {
@@ -188,7 +198,7 @@ export function upgradeSovaSocket(req: IncomingMessage, socket: Duplex, head: Bu
   // A browser on this machine, not through a proxy: decline permessage-deflate (server/compression.ts).
   const direct = isDirectLocal(req);
   if (direct) delete req.headers["sec-websocket-extensions"];
-  wss.handleUpgrade(req, socket, head, (ws) => {
+  server.handleUpgrade(req, socket, head, (ws) => {
     // /ws/watch?feed=sessions: no session at all, the list's pushed overlays.
     if (route === "/ws/watch" && url.searchParams.get("feed") === "sessions") {
       handleFeed(ws);

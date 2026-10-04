@@ -1,5 +1,5 @@
 import type { ProfilesListing } from "../../shared/profiles";
-import type { VerbResult } from "../../shared/project-contract";
+import type { DeployVerb, VerbResult } from "../../shared/project-contract";
 import type { HostServicesView, ProjectServicesView, ServicesUiVerb } from "../../shared/services-view";
 import type { SubagentProfilesFile, SubagentProfilesInfo } from "../../shared/subagent-profiles";
 import type {
@@ -63,11 +63,9 @@ import type {
   WorktreesInsight,
   MeshCandidate,
   MeshHello,
-  MeshInfo,
   MeshLoginClaim,
   MeshLogins,
   MeshPeerEntry,
-  MeshSessions,
   PushDevice,
   PushInfo,
   PushSettings,
@@ -76,6 +74,15 @@ import type {
   PushTestResult,
 } from "../../shared/protocol";
 import type { MeshFrontDoor, MeshLocalSettings } from "../../shared/mesh-local";
+import type { LanPairingAdd, LanRelayPut, LanStatus } from "../../shared/mesh-lan";
+import type {
+  MeshAccessPut,
+  MeshAccessView,
+  MeshInfoView as MeshInfo,
+  MeshPeersPut,
+  MeshPreset,
+  MeshSessionsView as MeshSessions,
+} from "../../shared/mesh-access";
 import type { OwnerConversation, OwnerHome, OwnerLinkResult, OwnerProject, ProjectUpdate } from "../../shared/owner";
 import type { NamedChange, OrgDetail, OrgsInfo, PersonHours, PersonInput, PersonPage, PersonPreview, ProfileChange } from "../../shared/orgs";
 import type { BatonOutreach, SendLinkAnswer } from "../../shared/outreach";
@@ -463,13 +470,15 @@ export const saveModeDefault = (path: string) =>
     body: JSON.stringify({ saveDefault: true }),
   });
 
-/** POST /api/sandbox?path=… { on }: flip that held chat's sandbox from its next tool call.
-    "unsupported" when its runtime has no sandbox extension (the row isn't shown then). */
-export const setSandbox = (path: string, on: boolean) =>
+/** POST /api/sandbox?path=… { state, on }: set that held chat's sandbox state (§chat.sandbox/states)
+    from its next tool call. `on` rides along for a host whose server predates the three states
+    (it reads only `on`, so Off lands as Subagents only there). "unsupported" when its runtime has
+    no sandbox extension (the group isn't shown then). */
+export const setSandbox = (path: string, state: "off" | "subagents" | "on") =>
   request<SandboxApplyResult>(`/api/sandbox?path=${encodeURIComponent(path)}`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ on }),
+    body: JSON.stringify({ state, on: state === "on" }),
   });
 
 /** A local folder (string), or a folder on a configured target; `host`: on that peer, which then holds it. */
@@ -920,9 +929,32 @@ export const fetchMesh = (init?: RequestInit) => request<MeshInfo>("/api/mesh", 
 export const fetchMeshHello = () => request<MeshHello>("/api/mesh/hello", meshReadInit(true));
 
 /** Replace peers.json's list; the answer is the mesh as it stands after the write. An entry
-    without `nodeId` is resolved by its name on the tailnet. */
-export const putMeshPeers = (peers: MeshPeerEntry[]) =>
-  request<MeshInfo>("/api/mesh/peers", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ peers }) });
+    without `nodeId` is resolved by its name on the tailnet. `grants` names the preset of a peer this
+    write pairs (by id; §mesh.peers/grants). */
+export const putMeshPeers = (peers: MeshPeerEntry[], grants?: Record<string, MeshPreset>) =>
+  request<MeshInfo>("/api/mesh/peers", {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ peers, ...(grants ? { grants } : {}) } satisfies MeshPeersPut),
+  });
+
+/** What each peer may see and do on this host (mesh-access.json); this host's own page only. */
+export const fetchMeshAccess = () => request<MeshAccessView>("/api/mesh/access");
+
+/** One peer's grant; null removes it (= full). The answer is the whole view after the write. */
+export const putMeshAccess = (body: MeshAccessPut) =>
+  request<MeshAccessView>("/api/mesh/access", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+
+// Dial-out pairings (§mesh.lan/pairing): this host's own page only.
+const lanJson = (method: string, body: unknown): RequestInit => ({ method, headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+/** This host's fingerprint (once made), its relay setting, and each pairing's connections. */
+export const fetchMeshLan = () => request<LanStatus>("/api/mesh/lan");
+/** Make this host's key, if it has none yet; the answer shows its fingerprint. */
+export const createMeshLanKey = () => request<LanStatus>("/api/mesh/lan/key", { method: "POST" });
+export const addMeshLanPairing = (body: LanPairingAdd) => request<LanStatus>("/api/mesh/lan/pairings", lanJson("POST", body));
+/** Remove a pairing: its connections end at once, and its grant goes. */
+export const removeMeshLanPairing = (id: string) => request<LanStatus>(`/api/mesh/lan/pairings/${encodeURIComponent(id)}`, { method: "DELETE" });
+export const putMeshLanRelay = (relay: LanRelayPut) => request<LanStatus>("/api/mesh/lan/relay", lanJson("PUT", { relay }));
 
 /** Tailnet nodes the serving host can see, and which of them run Sova. Only asked for on demand. */
 export const fetchMeshCandidates = () => request<MeshCandidate[]>("/api/mesh/candidates");
@@ -1205,11 +1237,31 @@ export async function runRootVerb(root: string, verb: ServicesUiVerb, body: Reco
     throw err;
   }
 }
+/** Run the Project deploy playbook (§app.project-runtime/deploy-playbook): a verb playbook run that proposes a deploy recipe. */
+export const runDeploySetup = (projectId: string) =>
+  request<{ sessionId: string; path: string; worktree?: { path: string; branch: string }; notPrompted?: string }>(`${projectPath(projectId)}/verbs/onboard`, jsonInit("POST", { playbook: "project-deploy" }));
+/** A deploy verb as the operator (§app.project-services/deploy): a refusal is a result too, never thrown. */
+export async function runDeployVerb(root: string, verb: DeployVerb, body: Record<string, unknown>): Promise<VerbResult> {
+  try {
+    return await request<VerbResult>(`/api/project-services/${verb}`, jsonInit("POST", { ...body, project: root }));
+  } catch (err) {
+    const b = err instanceof ApiError ? (err.body as Partial<VerbResult> | undefined) : undefined;
+    if (b && b.v === 1 && typeof b.verb === "string") return b as VerbResult;
+    throw err;
+  }
+}
+/** Approve main's deploy recipe (§app.project-services/deploy-trust): the hash shown, with every step of its review ticked. */
+export const approveDeployRecipe = (root: string, deployHash: string, ticked: readonly string[]) =>
+  request<{ ok: true; deployHash: string }>("/api/project-services/deploy-approve", jsonInit("POST", { project: root, deployHash, ticked }));
 /** What runs on this host now, every project's (Running branches on `#/projects`). */
 export const getHostServices = () => request<HostServicesView>("/api/services");
 export const getProjectRuntime = (projectId: string) => request<ProjectRuntimeView>(`${projectPath(projectId)}/runtime`);
 /** Approve the definition shown (its hash) on this host: the operator's only. */
 export const approveProjectRuntime = (projectId: string, hash: string) => request<ProjectRuntimeView>(`${projectPath(projectId)}/runtime/approve`, jsonInit("POST", { hash }));
+/** Approve & Merge a proposed playbook run (§app.project-runtime/approve-merge): approve its hash, then Merge Branch.
+    A refused merge keeps the approval: the error says why. */
+export const approveMergeProjectRuntime = (projectId: string, hash: string, ticked?: readonly string[]) =>
+  request<ProjectRuntimeView>(`${projectPath(projectId)}/runtime/approve-merge`, jsonInit("POST", ticked ? { hash, ticked } : { hash }));
 /** Run the Project verbs playbook on the project: a coding session on its own branch. */
 export const runProjectVerbsPlaybook = (projectId: string, why?: string) =>
   request<{ sessionId: string; path: string; worktree?: { path: string; branch: string }; notPrompted?: string }>(`${projectPath(projectId)}/verbs/onboard`, jsonInit("POST", why ? { why } : {}));

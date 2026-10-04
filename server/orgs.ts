@@ -346,6 +346,9 @@ export type OperatorBy = { kind: "operator"; via?: ChangeVia; overseerId?: strin
 const OPERATOR_BY: OperatorBy = { kind: "operator" };
 
 /** The envelope of the operator's act (never level-checked: the statecharts pass the operator's acts). */
+/** The global Overseer's mark on an act's row (`via`, its id), or nothing (§app.overseer/org-attribution). */
+const viaOf = (by: OperatorBy): { via?: ChangeVia; overseerId?: string } => ({ ...(by.via ? { via: by.via } : {}), ...(by.overseerId ? { overseerId: by.overseerId } : {}) });
+
 export function operatorEnvelope(orgId: string, projectId: string | null, by: OperatorBy = OPERATOR_BY, extra: Record<string, unknown> = {}): Envelope {
   return { ...envelopeFor(orgId, projectId, { by: "operator", attended: true, ...(by.via ? { via: by.via } : {}), ...(by.overseerId ? { overseerId: by.overseerId } : {}), ...(by.card ? { card: by.card } : {}) }), ...extra };
 }
@@ -418,7 +421,7 @@ export async function createOrg(input: { name: unknown; dir?: unknown }): Promis
  * holds it, committed and pushed at once, and every project's overseer waits at L0 until the
  * operator sets its level here. Host-local state starts fresh (a restore starts it fresh).
  */
-export async function attachOrg(input: { dir: unknown; confirm?: unknown }): Promise<Org> {
+export async function attachOrg(input: { dir: unknown; confirm?: unknown }, by: OperatorBy = OPERATOR_BY): Promise<Org> {
   const dir = typeof input.dir === "string" ? resolve(input.dir.trim()) : "";
   if (!dir) throw new OrgError("dir is required");
   const problem = await workspaceDirProblem(dir);
@@ -440,7 +443,9 @@ export async function attachOrg(input: { dir: unknown; confirm?: unknown }): Pro
     throw new OrgError("No organization in that dir: not a workspace repo.");
   }
   const me = hostIdentity();
-  await host.settle(await host.start(residenceSid(id), "residence", { orgId: id, orgName: String(org.name ?? id), hostId: me.id, hostName: me.name, mode: "attach", commitEveryMs: commitEveryMs() }, { by: "system" }));
+  await host.settle(
+    await host.start(residenceSid(id), "residence", { orgId: id, orgName: String(org.name ?? id), hostId: me.id, hostName: me.name, mode: "attach", commitEveryMs: commitEveryMs() }, { by: "system", ...viaOf(by) }),
+  );
   if (host.configuration(residenceSid(id))?.includes("held-elsewhere")) {
     if (input.confirm !== true) {
       const sentence = String(host.data(residenceSid(id))?.heldSentence ?? "Another host holds this organization.");
@@ -468,14 +473,14 @@ export async function attachOrg(input: { dir: unknown; confirm?: unknown }): Pro
  * Remove the org from this host's index at once; the residence releases it in the repo
  * (§app.organizations/holder), committed and pushed, best effort, and turns the owner link off.
  */
-export async function detachOrg(orgId: string): Promise<void> {
+export async function detachOrg(orgId: string, by: OperatorBy = OPERATOR_BY): Promise<void> {
   const index = readIndex();
   const entry = index.orgs.find((o) => o.id === orgId);
   if (!entry) throw new OrgError("Unknown organization", 404);
   writeIndex({ ...index, orgs: index.orgs.filter((o) => o.id !== orgId) });
   try {
     if (isOrgHostOpen(orgId)) {
-      const out = await hostOf(orgId).act(residenceSid(orgId), "org/detach", {}, { by: "operator" }, { settle: true });
+      const out = await hostOf(orgId).act(residenceSid(orgId), "org/detach", {}, { by: "operator", ...viaOf(by) }, { settle: true });
       for (const e of out.effects ?? []) if (e.error) console.warn(`[orgs] detach ${orgId}: ${e.error}`);
     }
   } catch (err) {
@@ -1145,6 +1150,21 @@ export function participantLine(p: Person): string {
   return `- ${p.name} (id ${p.id})${p.role ? ` — ${p.role}` : ""}${decides}`;
 }
 
+/** A person as the project overseer (operator-facing) knows them: the participant line, their status when not
+    active, and indented language, skills, competence and voice, so it knows how to address and write to them.
+    Never contact. Never in a conversation with a person: there, others are `participantLine` only. */
+export function overseerPersonLine(p: Person): string {
+  const comp = Object.entries(p.competence)
+    .map(([k, c]) => `${k} ${c.level}/5`)
+    .join(", ");
+  const profile = [p.language ? `language: ${p.language}` : "", p.skills.length ? `skills: ${p.skills.join(", ")}` : "", comp ? `competence: ${comp}` : ""].filter(Boolean).join(" · ");
+  return [
+    `${participantLine(p)}${p.status !== "active" ? ` · ${p.status}` : ""}`,
+    ...(profile ? [`  ${profile}`] : []),
+    ...(p.voice ? [`  voice: "${p.voice.replace(/\s+/g, " ").trim()}"`] : []),
+  ].join("\n");
+}
+
 /** The project overseer's line about the project's main stakeholder (while active), or null. */
 export function stakeholderLine(project: Pick<OrgProject, "stakeholder">, roster: Person[]): string | null {
   const p = project.stakeholder ? roster.find((x) => x.id === project.stakeholder && x.status === "active") : undefined;
@@ -1186,26 +1206,27 @@ export function publicTerms(roster: readonly Person[]): string[] {
  * Add Project in an org: register the folder (normalized to its checkout root, one project per root, reserved
  * roots refused: the project layer's) with its `project/<p>` in this org's engine, then place it here.
  */
-export async function addProject(orgId: string, input: { name: unknown; root: unknown }): Promise<OrgProject & { normalizedFrom?: string }> {
+export async function addProject(orgId: string, input: { name: unknown; root: unknown }, by: OperatorBy = OPERATOR_BY): Promise<OrgProject & { normalizedFrom?: string }> {
   readOrg(orgId);
   orgHost(orgId);
   const name = typeof input.name === "string" && input.name.trim() ? checkName(input.name) : undefined;
   let made: Awaited<ReturnType<typeof registerProjectIn>>;
   try {
-    made = await registerProjectIn(orgId, input.root, { ...(name ? { name } : {}), origin: "folder" });
+    made = await registerProjectIn(orgId, input.root, { ...(name ? { name } : {}), origin: "folder" }, by);
   } catch (err) {
     if (err instanceof RegistryError) throw new OrgError(err.message, err.status);
     throw err;
   }
-  await placeProject(orgId, made.project.id, "born");
+  await placeProject(orgId, made.project.id, "born", by);
   return { ...projectById(orgId, made.project.id), ...(made.normalizedFrom ? { normalizedFrom: made.normalizedFrom } : {}) };
 }
 
-/** Place a project whose sessions are in this org's engine (`via`: born here, or imported); placing it again is a no-op. */
-export async function placeProject(orgId: string, projectId: string, via: "born" | "import"): Promise<void> {
+/** Place a project whose sessions are in this org's engine (`via`: born here, or imported); placing it again is a no-op.
+    `by`: the operator, or the global Overseer for them (its row carries the mark, §app.overseer/org-project-add). */
+export async function placeProject(orgId: string, projectId: string, via: "born" | "import", by: OperatorBy = OPERATOR_BY): Promise<void> {
   const host = hostOf(orgId);
   const invalid = host.configuration(projectSid(projectId)) ? null : "No such project in this organization.";
-  await actOrThrow(orgId, orgSid(orgId), "project/place", { projectId, placedVia: via, ...(invalid ? { invalid } : {}) }, operatorEnvelope(orgId, projectId), SETTLE);
+  await actOrThrow(orgId, orgSid(orgId), "project/place", { projectId, placedVia: via, ...(invalid ? { invalid } : {}) }, operatorEnvelope(orgId, projectId, by), SETTLE);
 }
 
 /**

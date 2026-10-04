@@ -9,6 +9,9 @@ is, one refresh chain. Several logins may belong to the same Claude account (the
 program that signs in, refreshes and signs out: Sova runs `claude` in the login's directory and
 never writes a token itself. It reads one only to launch a sandboxed Claude Code worker, and then
 only the login's short-lived access token, never its refresh token (§chat.sandbox/claude-state).
+On macOS, Claude Code keeps a login's credentials in the login keychain rather than in that file;
+there a login is its directory plus its keychain item, and Sova reads the item wherever it would
+read the file (§app.claude-logins/macos-keychain).
 
 Claude Code's own directory (`~/.claude`, or `$CLAUDE_CONFIG_DIR` when the server has one) is
 the implicit login `default`. A `$CLAUDE_CONFIG_DIR` that names an added login's directory (anything
@@ -114,7 +117,10 @@ field with **Save Name** and **Cancel**; Enter or **Save Name** saves it as the 
 open), and an empty name goes back to "Login N". A login's controls are named with its account
 ("Rename Login 1 of a@example.com"), so two accounts' "Login 1" never share a name. A login can be
 switched off or on (**Use**, `enabled`; off = never chosen automatically) and removed. Its standing on this host is a chip: **Ready**, **Off**, **Limited until** a time
-(`resetsAt`), **Sign in again**, or **Not signed in** (its directory holds no credentials). A
+(`resetsAt`), **Sign in again**, or **Not signed in** (its directory holds no credentials; on
+macOS, neither a `.credentials.json` nor a keychain item, so a login whose sign-in Claude Code
+keeps in the keychain reads as signed in, and a **Sign in again** clears once Claude Code rewrites
+that item, §app.claude-logins/macos-keychain). A
 limited or sign-in-again login has **Clear**, which forgets that standing. Under the blocks,
 **This device's own login** lists `default` (always last) with its email, organization and plan,
 its standing, **Use** and **Clear**, and, when its account is also one of the blocks, that it shares
@@ -141,7 +147,8 @@ written when the session's child first starts on a login (`default` included: a 
 entry records the login it starts on) and whenever the login then differs from the session's last
 one. When the session's child
 starts again — after a restart, a model change, a rewind — it keeps its current (or newest
-recorded) login while that login is still usable, else it takes the first usable one. When no
+recorded) login while that login is still usable, else it takes the first usable one, and says so
+(§app.claude-logins/login-moved). When no
 login is usable, it keeps that login, else the order's first: that is how it behaved before, and
 the failure it meets is the one it would have met.
 
@@ -234,6 +241,21 @@ its first usable login in the device's order.
   same login for the chat on screen (§app.insights/sidebar-foot). Its `/usage` screen lists Claude Code's own login and then each added one, each titled
   "Claude · {email}" with its plan.
 
+## §app.claude-logins/login-moved — A chat never changes login silently
+
+When a chat's child starts again and the login the chat is on can no longer be used here — it left
+this device (returned for idleness, by the user's **Return**, or for a pin to another device), was
+removed, was turned off, or is limited or needs sign-in — the chat does not change login without saying so. With
+the mesh on, if that login is free at the keeper and ready, this device first borrows it back by
+name, once (§app.claude-logins/borrow-return); when that works the chat stays on it and nothing is
+shown. Otherwise the child starts on the next usable login (§app.claude-logins/spawn-selection) and
+the session gets a `claude-login` entry with `reason: "moved"`, `from`, `fromLabel` and the text
+`Claude: switched {from} → {to} ({from} {left this device | returned to the keeper | was removed |
+is off in Settings → Accounts | is limited until {time} | needs sign-in})`; the chat shows it as a note row and a TUI as a
+notification, like a failover's. A limit or failed sign-in met in a turn keeps its own note
+(§app.claude-logins/failover); a pick keeps `reason: "manual"` (§app.claude-logins/switch-login).
+The chat does not go back by itself when its old login is free again.
+
 ## §app.claude-logins/switch-login — Switching a chat's login from the composer
 
 In a web chat on a Claude Code model, the composer's login label (§app.claude-logins/active-login)
@@ -256,17 +278,21 @@ chat to another Claude login at any time.
   one message, so that turn has no prompt cache). The session gets a `claude-login` entry with
   `reason: "manual"`, `from`, `fromLabel` and the text `Claude: switched {from} → {to} (chosen by
   you)`; the chat shows it as a note row and the label moves at once. A chat that has no Claude
-  process yet only records the pick, and its first turn starts there. Nothing pins the chat: from
-  then on the usual rules hold. It keeps that login across restarts while the login is usable, and
+  process yet only records the pick, and its first turn starts there. The pick keeps the login on
+  this device for the chat: it is never returned for idleness while the chat is on it
+  (§app.claude-logins/idle-pin); only the user's **Return** or a pin to another device takes it
+  away, and the chat then says why (§app.claude-logins/login-moved). Otherwise the usual rules
+  hold. It keeps that login across restarts while the login is usable, and
   a limit or a failed sign-in moves it on in the device's order (§app.claude-logins/failover); it
-  does not come back by itself. Picking the chat's own login changes nothing, and the flyout closes
+  does not come back by itself. Picking the chat's own login moves nothing and shows no note, but
+  the pick stands from then on (as after a pick of another login), and the flyout closes
   on a pick.
 - **Borrowing.** With the mesh on, picking a free login asks this device's pool agent to borrow
   that login by name (`only` in the borrow request), and the keeper lends that one or none
   (§app.claude-logins/borrow-return). The label shows the pick as waiting until the login is held
   here, up to 30 seconds. If it can't be borrowed, the chat stays where it was and the transcript's
-  banner says why. The login the chat left stays on this device until it is returned as usual
-  (§app.claude-logins/idle-pin).
+  banner says why. The login the chat left loses that chat's pick and stays on this device until
+  it is returned (§app.claude-logins/idle-pin).
 - **Workers.** A switch moves the chat only: its running workers keep their logins, and new ones
   start on the device's order as before.
 - **Where.** The web only; a terminal session has no picker. `/ws/chat` takes `{type:
@@ -312,11 +338,14 @@ plan, whether it shares an account already here, and **Done**); failed (the reas
 added.", **Close** and **Try Again**). Closing Settings cancels a flow still waiting for its code.
 No token or credential is ever shown or sent to the browser.
 Under the logins, one plain line says whether the Claude Code CLI was found
-(§app.claude-logins/cli-status).
+(§app.claude-logins/cli-status). On macOS a login counts as signed in when its keychain item
+exists (§app.claude-logins/macos-keychain), so **Add a login** finishes there too; and when this
+device's own login can be read neither from its file nor from the keychain, a muted line under
+**This device's own login** says "On macOS, add your Claude login under Settings → Accounts."
 
 **While the mesh is on** the section is the pool (§app.claude-logins/pool): an intro that every
 device shares these logins, one at a time, borrowed from the keeper and given back after a limit,
-on request or after 30 minutes idle, with Claude Code's own login as each device's last resort; a
+on request or, away from the keeper, after 30 minutes idle unless a chat there picked it, with Claude Code's own login as each device's last resort; a
 **Keeper** select (every device, this one marked, an offline one marked; a hint that says what the
 keeper does, or that nobody can borrow while it is offline); then every login of the pool in the
 pool's order, as one block per account like the mesh-off list (§app.claude-logins/device-order):
@@ -362,6 +391,9 @@ The pool's order keeps each account's logins together (§app.claude-logins/regis
 follows the document for the logins it holds: their label, **Use** and order (the pool's order)
 are written into its registry when they differ, so a rename, a switch or a move made on any device
 reaches the spawns and the chats of the device that runs the login.
+A device exchanges the pool directly only with peers whose grant includes logins
+(§mesh.peers/grants): one that doesn't neither borrows from nor lends to it, and reads it as away.
+Membership stays per device: the document still reaches every device through the others.
 
 ## §app.claude-logins/keeper — The keeper
 
@@ -383,7 +415,15 @@ listener only, never through a browser. The move is two-phase: the borrower stor
 credentials aside, unused, and only after the keeper confirms, having dropped and deleted its own
 copy, does the borrower start using them. A device **returns** its login with its current
 (possibly refreshed) credentials on a usage limit or a failed sign-in, when the user asks (after
-the current turn), when it is pinned to another device, or when it has been idle for 30 minutes.
+the current turn), when it is pinned to another device, or, when the device is not the keeper,
+when it has been idle for 30 minutes and no chat there picked it (§app.claude-logins/idle-pin).
+When a borrow finds no free login to offer, the keeper lends one it holds itself, the first in the
+pool's order that has been idle for 30 minutes, has no `claude` process on it that is working, no
+chat there picked and that the rules above would offer if it were free (a named borrow included),
+one with no `claude` process on it at all first. Idle `claude` processes on it there let go first;
+if one starts working instead, or they have not let go within seconds, nothing is lent. Otherwise
+the keeper frees that login the way a login is returned and offers it in the same reply. Without a
+borrow asking, the keeper never gives up a login it holds.
 Before a login leaves a device, no new `claude` process there may take it and every running one
 must stop (§app.claude-logins/drain); the device then sends it to the keeper and, once the keeper
 has stored it, deletes its own copy as plain files — never `claude auth logout`. Each device keeps
@@ -400,7 +440,8 @@ is in the middle of a turn. On Linux, a `claude` process that keeps no such reco
 before this version, or by hand with `CLAUDE_CONFIG_DIR` set to the login's directory) is found by
 that variable and counts as busy: its login is not lent, not returned for idleness, and at a cut it
 is stopped too. When a login starts leaving a device, a chat's idle child on it is
-stopped (its next turn starts on the device's next login, as after a model change), an idle worker
+stopped (its next turn starts on the device's next login, as after a model change, and shows
+the move as a note, §app.claude-logins/login-moved), an idle worker
 restarts on the next login with `--resume` of its own session, and a busy one does the same as soon
 as its turn or task ends. A login leaves once none of them runs on it. If some still do after a
 bound (2 minutes after a limit, a failed sign-in or idleness; 15 minutes when the user asked or a
@@ -413,7 +454,16 @@ stopped.
 ## §app.claude-logins/idle-pin — Idle return and pinning
 
 A held login that no `claude` process on its device has used for 30 minutes goes back to the
-keeper. **Pin** ("always give this login to device X") is the only per-device setting: the keeper
+keeper, unless that device is the keeper or a chat there picked it by hand. A login the keeper
+holds never leaves for idleness. A login a chat picked in the composer
+(§app.claude-logins/switch-login) never leaves for idleness while that chat is still on it: the
+pick stands until the chat moves to another login (another pick, a limit or a failed sign-in, any
+other move) or the chat is archived or deleted. The device keeps one mark per picking chat in the
+login's directory (`.sova-picks/<session id>.json`), so the pick outlives the chat's `claude`
+process and a restart, and the marks go with the login when it leaves the device. Idleness counts
+from the last time any `claude` process used the login on its device, one that has since exited
+included, not from when the login arrived. The user's **Return** and a pin to another device still
+move a picked login; the chat then says why (§app.claude-logins/login-moved). **Pin** ("always give this login to device X") is the only per-device setting: the keeper
 lends a pinned login only to its device, that device takes it as soon as it is free and ready, a
 device holding a login pinned elsewhere returns it after the current turn, and a pinned login is
 never returned for idleness (a limit still returns it; its device takes it back after the reset).
@@ -423,7 +473,9 @@ never returned for idleness (a limit still returns it; its device takes it back 
 A login held by a device that is offline is shown **Stuck on** that device. Nobody reclaims it: it
 becomes free again when that device comes back (and returns it), or when the user signs that login
 in again on another device, which then holds it; the offline device, once back, deletes its old copy
-(after stopping every process on it) instead of returning it.
+(after stopping every process on it) instead of returning it. On macOS that sign-in runs in the
+login's own directory, since Claude Code names the keychain item it writes by that directory, so
+a cancelled or failed sign-in leaves the directory as it was (§app.claude-logins/macos-keychain).
 
 ## §app.claude-logins/migration — Forming the pool from existing logins
 
@@ -442,3 +494,58 @@ not be run (not installed, no answer within 5 s, a failed `--version`); "Claude 
 · {n} model(s) in the picker." when models are registered; else "Claude Code CLI {version} found,
 but no models are registered yet — start a session, or restart the server." It is a line, not a
 control: nothing to switch, and nothing else on the tab waits for it.
+
+## §app.claude-logins/macos-keychain — Claude logins in the macOS keychain
+
+On macOS, Claude Code keeps a login's credentials in the login keychain, not in its directory's
+`.credentials.json`: a generic password under the user's name holding the same JSON
+(`claudeAiOauth`). Its service is `Claude Code-credentials` for Claude Code's own `~/.claude` run
+without `$CLAUDE_CONFIG_DIR`, and `Claude Code-credentials-<h>` for a directory Claude Code runs with
+`$CLAUDE_CONFIG_DIR` (an added login's `claude-accounts/<id>/`, or `default`'s own
+`$CLAUDE_CONFIG_DIR`), `<h>` being the first 8 hex digits of the SHA-256 of that exact path. So when
+this host is macOS, `HOME` is the user's own home (a test's throwaway home never reaches the
+user's keychain), `$CLAUDE_SECURESTORAGE_CONFIG_DIR` is unset (it renames every item), and a
+login's directory holds no `.credentials.json`, Sova reads that login's item instead, for every
+login on this device, `default` and added ones alike:
+
+- **Whether it is signed in** — Settings → Accounts' **Not signed in**, the check that finishes
+  **Add a login** or **Sign In Again**, a spawn's refusal of a login that isn't signed in, and
+  whether a login needing sign-in has been signed in again since (its credentials changed) — comes
+  from the item's modification time, read from its attributes only (`security
+  find-generic-password -s <service> -a <user>`, without `-w`): the secret is never read for it,
+  and it works while the keychain is locked. That answer is kept at most 2 seconds. Removing a
+  login signs it out through Claude Code (`claude auth logout`) when either the file or the item exists.
+- **Its usage and sign-in data** (§app.insights/usage-refresh): the usage fetch reads the item
+  (`security find-generic-password … -w`) again for every fetch, so a token Claude Code renewed
+  (it rewrites the item) is sent at once; the Usage page's sign-in numbers (expiry times, never a
+  renewal time, since the item has no file time) come from one read kept at most 30 seconds per login.
+- **A sandboxed worker's token** (§chat.sandbox/claude-state): the access token handed to a
+  confined worker is read from the item at every launch, and the unconfined refresh run before it
+  starts Claude Code's own login without `$CLAUDE_CONFIG_DIR`, so that it renews the same item.
+
+A token read never prompts and gives up after 5 seconds; a failure of any kind (no item, a locked
+keychain, as in an ssh session, a timeout, unparsable JSON) is quiet and leaves what a missing file
+leaves: `nologin`, no `auth`, no token to hand over. The item's text lives only in memory for the
+one read: it is never written to disk, logged or sent to the browser; only the access token is
+used, and the sign-in data keeps only numbers. Sova never writes the item. A file present, even
+unreadable, decides alone, as before. No other platform ever runs `security`: elsewhere everything
+is as before, byte for byte.
+
+When this host is macOS and `default`'s login can be read neither from the file nor from the
+keychain, `GET /api/insights/usage` and `GET /api/claude/accounts` carry `claudeOwnLoginUnreadable:
+true` (absent otherwise), and the Usage page (under its lead line) and Settings → Accounts (under
+**This device's own login**) each show one muted hint: "On macOS, add your Claude login under
+Settings → Accounts." On every other platform neither field nor hint ever appears.
+
+**The pool can't move a keychain login.** The pool (§app.claude-logins/pool) moves a login between
+devices as its credentials file and never reads or writes the keychain for it. So a login this Mac
+holds whose credentials are only in its keychain (no file, an item) **stays on this Mac**: it is
+never returned, lent or kept free — not after a limit or a failed sign-in, not after 30 minutes
+idle, not when **Return** is asked or it is pinned to another device, not for a new keeper — and
+a move already under way for it is called off, leaving it held and used here (its limit or sign-in
+standing still keeps it unused until that clears). It is never deleted for having no file. While
+the mesh is on, Settings → Accounts shows it on this Mac with "Stays on this Mac: its sign-in is in
+the macOS keychain, which the pool can't move." in place of **Return** and the pin select. Other
+devices are not told: the pool still shows it held by this Mac, and a **Return** asked there is
+never carried out. Removing it from the pool, or another device signing it in again, still drops
+it here as before.

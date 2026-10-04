@@ -8,13 +8,16 @@
 
 export const VERBS = ["create", "up", "down", "apply", "status", "logs", "reset", "teardown", "doctor", "conform", "test", "share", "revoke"] as const;
 export type Verb = (typeof VERBS)[number];
-/** Verb names that exist and answer `unsupported` (§app.project-services/reserved). */
-export const RESERVED_VERBS = ["deploy", "deploy.plan", "deploy.run", "deploy.status", "deploy.rollback"] as const;
-export type ReservedVerb = (typeof RESERVED_VERBS)[number];
-export type AnyVerb = Verb | ReservedVerb;
-export const isVerb = (v: unknown): v is AnyVerb => (VERBS as readonly unknown[]).includes(v) || (RESERVED_VERBS as readonly unknown[]).includes(v);
+/** The deploy verbs (§app.project-services/deploy): a target of the definition's `deploy`, never an instance. */
+export const DEPLOY_VERBS = ["deploy.check", "deploy.plan", "deploy.run", "deploy.status", "deploy.logs", "deploy.rollback", "deploy.request"] as const;
+export type DeployVerb = (typeof DEPLOY_VERBS)[number];
+export type AnyVerb = Verb | DeployVerb;
+export const isDeployVerb = (v: unknown): v is DeployVerb => (DEPLOY_VERBS as readonly unknown[]).includes(v);
+export const isVerb = (v: unknown): v is AnyVerb => (VERBS as readonly unknown[]).includes(v) || isDeployVerb(v);
 /** Verbs that change nothing and take no lock. */
 export const READ_VERBS: readonly Verb[] = ["status", "logs", "doctor"];
+/** The deploy verbs anyone with the project in scope may call: they read (§app.project-services/deploy-callers). */
+export const DEPLOY_READ_VERBS: readonly DeployVerb[] = ["deploy.status", "deploy.logs", "deploy.check"];
 
 export const ERROR_CODES = [
   "not-found",
@@ -35,6 +38,10 @@ export const ERROR_CODES = [
   "share-denied",
   "forbidden",
   "needs-confirm",
+  "deploy-refused",
+  "needs-override",
+  "deploy-failed",
+  "verify-failed",
 ] as const;
 export type ErrorCode = (typeof ERROR_CODES)[number];
 
@@ -44,6 +51,8 @@ const EXIT: Record<ErrorCode, ExitClass> = {
   "start-failed": 1,
   "hook-failed": 1,
   "tests-failed": 1,
+  "deploy-failed": 1,
+  "verify-failed": 1,
   "not-approved": 2,
   "not-conformant": 2,
   "cap-reached": 2,
@@ -54,6 +63,8 @@ const EXIT: Record<ErrorCode, ExitClass> = {
   "share-denied": 2,
   forbidden: 2,
   "needs-confirm": 2,
+  "deploy-refused": 2,
+  "needs-override": 2,
   "invalid-request": 3,
   "invalid-definition": 3,
   "not-found": 3,
@@ -142,8 +153,8 @@ export interface ProjectDef {
   share?: ShareDecl;
   /** The entry point: where a person opens the app. Exposes nothing, so outside the hash. */
   open?: OpenDecl;
-  /** Reserved (deploy): kept as written, not used yet. */
-  reserved: { deploy?: unknown };
+  /** How it ships (§app.project-services/deploy): outside the definition's hash, under its own (deployHash). */
+  deploy?: DeployDecl;
   /** The checkout files the definition was written from; their change at HEAD is drift. Outside the hash. */
   sources?: string[];
 }
@@ -161,6 +172,54 @@ export interface OpenDecl {
   endpoint: string;
   path: string;
 }
+/** One deploy step: an argv run in the deploy's fresh checkout, in order (§app.project-services/deploy). */
+export interface DeployStepDecl {
+  id: string;
+  run: Argv;
+  timeout: number;
+}
+/** How a target is undone: its own steps, the last verified commit deployed again, or nothing, with the operator's reason. */
+export type DeployRollbackDecl = { steps: DeployStepDecl[] } | "redeploy-previous" | { none: string };
+export const CREDENTIAL_KINDS = ["env", "ssh", "tool-login"] as const;
+/** A credential by name only: `env` a host variable's value (never in the repo), `ssh` and `tool-login` the tool's own store, which Sova never reads. */
+export interface DeployCredentialDecl {
+  name: string;
+  kind: (typeof CREDENTIAL_KINDS)[number];
+  /** Run at plan: exit 0 means the credential works. */
+  check: Argv;
+}
+export interface DeployVerifyDecl {
+  /** An http(s) URL (a template). */
+  http: string;
+  /** The status a healthy answer has. */
+  expect: number;
+  timeout: number;
+}
+export const DEPLOY_TESTS = ["smoke", "full", "none"] as const;
+export interface DeployTargetDecl {
+  name: string;
+  about: string;
+  /** The branch a commit must be on to ship here; absent: the main checkout's branch. */
+  branch?: string;
+  build: DeployStepDecl[];
+  steps: DeployStepDecl[];
+  /** Read-only steps run at plan (a dry run, a terraform plan). */
+  plan: DeployStepDecl[];
+  verify?: DeployVerifyDecl;
+  rollback: DeployRollbackDecl;
+  credentials: DeployCredentialDecl[];
+  requires: { tests: (typeof DEPLOY_TESTS)[number] };
+}
+export interface DeployDecl {
+  /** In declaration order. */
+  targets: DeployTargetDecl[];
+}
+export const DEPLOY_TIMEOUT_DEFAULT = 600;
+export const DEPLOY_VERIFY_TIMEOUT_DEFAULT = 30;
+export const DEPLOY_TARGETS_MAX = 10;
+export const DEPLOY_STEPS_MAX = 30;
+/** The variables a deploy step reads besides `${host.NAME}`: the commit shipped, the target, the deploy's checkout and the target's branch. */
+export const DEPLOY_VARS = ["commit", "target", "checkout", "branch"] as const;
 export const OPEN_PATH_MAX = 200;
 /** An instance link lasts 1 day by default and at most 7 (§app.project-services/share). */
 export const SHARE_DAYS_DEFAULT = 1;
@@ -229,6 +288,13 @@ export const DEFINITION_KEYS = {
   test: ["run", "requires", "timeout", "smoke"],
   share: ["endpoints", "maxDays", "allow"],
   open: ["endpoint", "path"],
+  deploy: ["targets"],
+  target: ["about", "branch", "build", "steps", "plan", "verify", "rollback", "credentials", "requires"],
+  deployStep: ["id", "run", "timeout"],
+  verify: ["http", "expect", "timeout"],
+  rollback: [["steps"], ["none"]],
+  credential: ["name", "kind", "check"],
+  requires: ["tests"],
 } as const;
 const K = DEFINITION_KEYS;
 
@@ -510,6 +576,122 @@ function* templates(def: ProjectDef): Generator<[string, string]> {
   for (const [i, a] of (def.hooks.probe?.run ?? []).entries()) yield [a, `hooks.probe.run[${i}]`];
 }
 
+// ---- deploy (§app.project-services/deploy) ------------------------------------------------------
+
+const BRANCH = /^[A-Za-z0-9][A-Za-z0-9._/-]{0,100}$/;
+const CREDENTIAL_NAME = /^[A-Za-z0-9][A-Za-z0-9_.@-]{0,63}$/;
+
+function deploySteps(v: unknown, path: string, min: number): DeployStepDecl[] {
+  if (v === undefined && min === 0) return [];
+  if (!Array.isArray(v) || v.length < min) throw new DefinitionError(path, min ? "must be a list of steps {id, run}, at least one" : "must be a list of steps {id, run}");
+  if (v.length > DEPLOY_STEPS_MAX) throw new DefinitionError(path, `at most ${DEPLOY_STEPS_MAX} steps`);
+  const out = v.map((x, i) => {
+    const at = `${path}[${i}]`;
+    const o = obj(x, at);
+    keysOnly(o, K.deployStep, at);
+    return { id: name(typeof o.id === "string" ? o.id : "", `${at}.id`), run: argv(o.run, `${at}.run`), timeout: timeout(o.timeout, `${at}.timeout`, DEPLOY_TIMEOUT_DEFAULT, HOOK_TIMEOUT_MAX) };
+  });
+  if (new Set(out.map((s) => s.id)).size !== out.length) throw new DefinitionError(path, "step ids must be unique");
+  return out;
+}
+
+function deployTarget(nm: string, v: unknown, path: string): DeployTargetDecl {
+  const o = obj(v, path);
+  keysOnly(o, K.target, path);
+  if (typeof o.about !== "string" || !o.about.trim() || o.about.length > ABOUT_MAX || o.about.includes("${")) throw new DefinitionError(`${path}.about`, `must say what the target is, a sentence of at most ${ABOUT_MAX} characters with no template`);
+  const out: DeployTargetDecl = {
+    name: nm,
+    about: o.about,
+    build: deploySteps(o.build, `${path}.build`, 0),
+    steps: deploySteps(o.steps, `${path}.steps`, 1),
+    plan: deploySteps(o.plan, `${path}.plan`, 0),
+    rollback: "redeploy-previous",
+    credentials: [],
+    requires: { tests: "smoke" },
+  };
+  if (o.branch !== undefined) {
+    if (typeof o.branch !== "string" || !BRANCH.test(o.branch) || o.branch.includes("..")) throw new DefinitionError(`${path}.branch`, "must be a plain branch name");
+    out.branch = o.branch;
+  }
+  if (o.verify !== undefined) {
+    const vo = obj(o.verify, `${path}.verify`);
+    keysOnly(vo, K.verify, `${path}.verify`);
+    if (typeof vo.http !== "string" || !/^https?:\/\/\S+$/.test(vo.http)) throw new DefinitionError(`${path}.verify.http`, "must be an http:// or https:// URL (a template)");
+    out.verify = { http: vo.http, expect: vo.expect === undefined ? 200 : int(vo.expect, `${path}.verify.expect`, 100, 599), timeout: timeout(vo.timeout, `${path}.verify.timeout`, DEPLOY_VERIFY_TIMEOUT_DEFAULT, READY_TIMEOUT_MAX) };
+  }
+  if (o.rollback === undefined) throw new DefinitionError(`${path}.rollback`, 'say how it is undone: {steps: [...]}, "redeploy-previous" or {none: "<why>"}');
+  if (o.rollback !== "redeploy-previous") {
+    const r = obj(o.rollback, `${path}.rollback`);
+    if ("none" in r) {
+      keysOnly(r, K.rollback[1], `${path}.rollback`);
+      if (typeof r.none !== "string" || !r.none.trim() || r.none.length > ABOUT_MAX) throw new DefinitionError(`${path}.rollback.none`, `must be the reason it can't be undone, a sentence of at most ${ABOUT_MAX} characters`);
+      out.rollback = { none: r.none };
+    } else {
+      keysOnly(r, K.rollback[0], `${path}.rollback`);
+      out.rollback = { steps: deploySteps(r.steps, `${path}.rollback.steps`, 1) };
+    }
+  }
+  if (o.credentials !== undefined) {
+    if (!Array.isArray(o.credentials)) throw new DefinitionError(`${path}.credentials`, "must be a list of {name, kind, check}");
+    out.credentials = o.credentials.map((x, i) => {
+      const at = `${path}.credentials[${i}]`;
+      const c = obj(x, at);
+      keysOnly(c, K.credential, at);
+      if (!(CREDENTIAL_KINDS as readonly unknown[]).includes(c.kind)) throw new DefinitionError(`${at}.kind`, `must be one of ${CREDENTIAL_KINDS.join(", ")}`);
+      const kind = c.kind as DeployCredentialDecl["kind"];
+      if (typeof c.name !== "string" || !(kind === "env" ? ENV_NAME.test(c.name) && !sovaSets(c.name) : CREDENTIAL_NAME.test(c.name)))
+        throw new DefinitionError(`${at}.name`, kind === "env" ? "an env credential is a variable name (A-Z, 0-9 and _), never one Sova sets" : "must be a name (letters, digits and _ . @ -)");
+      return { name: c.name, kind, check: argv(c.check, `${at}.check`) };
+    });
+    if (new Set(out.credentials.map((c) => c.name)).size !== out.credentials.length) throw new DefinitionError(`${path}.credentials`, "each credential once");
+  }
+  if (o.requires !== undefined) {
+    const r = obj(o.requires, `${path}.requires`);
+    keysOnly(r, K.requires, `${path}.requires`);
+    if (!(DEPLOY_TESTS as readonly unknown[]).includes(r.tests)) throw new DefinitionError(`${path}.requires.tests`, `must be one of ${DEPLOY_TESTS.join(", ")}`);
+    out.requires = { tests: r.tests as DeployTargetDecl["requires"]["tests"] };
+  }
+  return out;
+}
+
+function deployDecl(v: unknown, test: TestDecl | undefined): DeployDecl {
+  const o = obj(v, "$.deploy");
+  keysOnly(o, K.deploy, "$.deploy");
+  const t = obj(o.targets, "$.deploy.targets");
+  const targets = Object.entries(t).map(([k, x]) => deployTarget(name(k, `$.deploy.targets.${k}`), x, `$.deploy.targets.${k}`));
+  if (!targets.length) throw new DefinitionError("$.deploy.targets", "declare at least one target");
+  if (targets.length > DEPLOY_TARGETS_MAX) throw new DefinitionError("$.deploy.targets", `at most ${DEPLOY_TARGETS_MAX} targets`);
+  for (const x of targets) if (x.requires.tests !== "none" && !test) throw new DefinitionError(`$.deploy.targets.${x.name}.requires.tests`, `requires ${x.requires.tests} tests, and the definition declares no test command`);
+  return { targets };
+}
+
+/** Every step of a target, in the order they run, each with its review key (`<list>.<id>`, a credential's `credentials.<name>`). */
+export function deployStepsOf(t: DeployTargetDecl): { key: string; list: "credentials" | "plan" | "build" | "steps" | "rollback"; id: string; run: Argv }[] {
+  return [
+    ...t.credentials.map((c) => ({ key: `credentials.${c.name}`, list: "credentials" as const, id: c.name, run: c.check })),
+    ...t.plan.map((s) => ({ key: `plan.${s.id}`, list: "plan" as const, id: s.id, run: s.run })),
+    ...t.build.map((s) => ({ key: `build.${s.id}`, list: "build" as const, id: s.id, run: s.run })),
+    ...t.steps.map((s) => ({ key: `steps.${s.id}`, list: "steps" as const, id: s.id, run: s.run })),
+    ...(typeof t.rollback === "object" && "steps" in t.rollback ? t.rollback.steps.map((s) => ({ key: `rollback.${s.id}`, list: "rollback" as const, id: s.id, run: s.run })) : []),
+  ];
+}
+
+/** The variables a deploy's templates may read. */
+function deployVars(def: Pick<ProjectDef, "host">): Set<string> {
+  const v = new Set<string>(DEPLOY_VARS);
+  for (const h of def.host) v.add(`host.${h}`);
+  return v;
+}
+
+/** Every template of the deploy section, with where. */
+function* deployTemplates(d: DeployDecl): Generator<[string, string]> {
+  for (const t of d.targets) {
+    const p = `deploy.targets.${t.name}`;
+    for (const s of deployStepsOf(t)) for (const [i, a] of s.run.entries()) yield [a, `${p}.${s.list === "credentials" ? `credentials.${s.id}.check` : `${s.list}.${s.id}.run`}[${i}]`];
+    if (t.verify) yield [t.verify.http, `${p}.verify.http`];
+  }
+}
+
 /** Parse `.sova/project.json`'s text. Throws DefinitionError naming the first problem's path. */
 export function parseDefinition(text: string): ProjectDef {
   let raw: unknown;
@@ -574,7 +756,7 @@ export function parseDefinition(text: string): ProjectDef {
     ...(test ? { test } : {}),
     ...(o.share !== undefined ? { share: shareDecl(o.share, services) } : {}),
     ...(o.open !== undefined ? { open: openDecl(o.open, services) } : {}),
-    reserved: { ...(o.deploy !== undefined ? { deploy: o.deploy } : {}) },
+    ...(o.deploy !== undefined ? { deploy: deployDecl(o.deploy, test) } : {}),
     ...(sources ? { sources } : {}),
   };
   // requires: known, scope-consistent, acyclic.
@@ -617,6 +799,13 @@ export function parseDefinition(text: string): ProjectDef {
   for (const [t, where] of templates(def)) {
     const bad = unknownVars(t, vars);
     if (bad) throw new DefinitionError(`$.${where}`, bad);
+  }
+  if (def.deploy) {
+    const dv = deployVars(def);
+    for (const [t, where] of deployTemplates(def.deploy)) {
+      const bad = unknownVars(t, dv);
+      if (bad) throw new DefinitionError(`$.${where}`, bad);
+    }
   }
   return def;
 }
@@ -825,6 +1014,116 @@ export interface TestsReport {
 }
 export const FAILURES_MAX = 50;
 export const FAILURE_MESSAGE_MAX = 2000;
+/** A target's deploy standing (§app.project-runtime/deploy-standing), derived from main's deploy and this host's approvals. */
+export type DeployStanding = "none" | "awaiting-approval" | "approved" | "stale";
+/** One step as the operator ticks it: its argv with `${host.…}` resolved on this host (`unset`: the names this host lacks), `${commit}` and the like kept. */
+export interface DeployReviewStep {
+  key: string;
+  list: "credentials" | "plan" | "build" | "steps" | "rollback";
+  id: string;
+  argv: string[];
+  unset: string[];
+}
+export interface DeployTargetReview {
+  name: string;
+  about: string;
+  /** The branch a commit must be on (declared, else main's). */
+  branch: string;
+  steps: DeployReviewStep[];
+  credentials: { name: string; kind: DeployCredentialDecl["kind"] }[];
+  verify: { url: string; expect: number; unset: string[] } | null;
+  rollback: "steps" | "redeploy-previous" | { none: string };
+  tests: DeployTargetDecl["requires"]["tests"];
+}
+/** The Sova-rendered review of a deploy section (§app.project-services/deploy-trust): every key must be ticked before it is approved. */
+export interface DeployReview {
+  deployHash: string;
+  targets: DeployTargetReview[];
+  /** Every tick: `<target>/<step key>`, `<target>/verify` when declared, and `<target>/rollback`. */
+  keys: string[];
+}
+/** The keys a review needs ticked. Pure. */
+export function reviewKeys(targets: readonly { name: string; steps: readonly { key: string }[]; verify: unknown }[]): string[] {
+  return targets.flatMap((t) => [...t.steps.map((s) => `${t.name}/${s.key}`), ...(t.verify ? [`${t.name}/verify`] : []), `${t.name}/rollback`]);
+}
+export type DeployKind = "deploy" | "rollback";
+export type DeployState = "running" | "succeeded" | "failed" | "verify-failed" | "interrupted";
+export interface DeployStepRun {
+  key: string;
+  exit: number | null;
+  ms: number;
+  timedOut?: boolean;
+}
+/** One deploy (or rollback) of a target, as deploy.status and deploy.run answer it. */
+export interface DeployRecordView {
+  id: string;
+  target: string;
+  kind: DeployKind;
+  commit: string;
+  planId: string;
+  deployHash: string;
+  by: string;
+  startedAt: string;
+  endedAt: string | null;
+  state: DeployState;
+  steps: DeployStepRun[];
+  verify: { url: string; status: number | null; ok: boolean; detail: string } | null;
+  /** The operator's typed reasons for what the plan let through (§app.project-services/deploy-plan). */
+  overrides: { tests?: string; dirty?: string };
+  /** Why it failed, when it did. */
+  detail?: string;
+}
+/** A plan (§app.project-services/deploy-plan): good for 15 minutes, once. */
+export interface DeployPlanView {
+  planId: string;
+  project: string;
+  target: string;
+  kind: DeployKind;
+  commit: string;
+  deployHash: string;
+  createdAt: string;
+  expiresAt: string;
+  checks: Check[];
+  overrides: { tests?: string; dirty?: string };
+  /** What deploy.run will run, resolved, in order. */
+  steps: { key: string; argv: string[] }[];
+  verify: { url: string; expect: number } | null;
+}
+export interface DeployTargetView {
+  name: string;
+  about: string;
+  standing: DeployStanding;
+  /** When this deploy hash was approved here. */
+  approvedAt: string | null;
+  /** Its deploy now, or the last one. */
+  last: DeployRecordView | null;
+  /** The last verified deploy's commit (redeploy-previous goes back before it). */
+  verifiedCommit: string | null;
+  rollback: "steps" | "redeploy-previous" | { none: string };
+  /** An overseer's open request to deploy (§app.project-services/deploy-callers). */
+  request: DeployRequestView | null;
+}
+export interface DeployRequestView {
+  id: string;
+  target: string;
+  commit: string | null;
+  why: string;
+  by: string;
+  at: string;
+}
+/** The deploy verbs' own key in the result. */
+export interface DeployReport {
+  /** Main's deploy hash (deploy.status, deploy.check: the ref's), null when it declares none. */
+  deployHash: string | null;
+  approved: boolean;
+  targets?: DeployTargetView[];
+  /** While the hash waits for approval (deploy.status). */
+  review?: DeployReview;
+  plan?: DeployPlanView;
+  record?: DeployRecordView;
+  history?: DeployRecordView[];
+  request?: DeployRequestView;
+}
 export interface VerbError {
   code: ErrorCode;
   message: string;
@@ -852,6 +1151,7 @@ export interface VerbResult {
   checks?: Check[];
   conform?: ConformReport;
   tests?: TestsReport;
+  deploy?: DeployReport;
   error?: VerbError;
   defHash: string | null;
   approved: boolean;
@@ -881,6 +1181,7 @@ export function ordered(r: VerbResult): VerbResult {
     ...(r.checks !== undefined ? { checks: r.checks } : {}),
     ...(r.conform !== undefined ? { conform: r.conform } : {}),
     ...(r.tests !== undefined ? { tests: r.tests } : {}),
+    ...(r.deploy !== undefined ? { deploy: r.deploy } : {}),
     ...(r.error !== undefined ? { error: r.error } : {}),
     defHash: r.defHash,
     approved: r.approved,
@@ -896,7 +1197,7 @@ export function isVerbResult(v: unknown): v is VerbResult {
   const want = ["v", "verb", "project", "instance", "slot", "generation", "checkout", "branch", "ok", "changed", "state", "steps", "services", "data", "links"];
   if (keys.slice(0, want.length).join() !== want.join()) return false;
   const tail = keys.slice(want.length);
-  const optional = ["instances", "lines", "checks", "conform", "tests", "error"];
+  const optional = ["instances", "lines", "checks", "conform", "tests", "deploy", "error"];
   const fixedTail = ["defHash", "approved", "at"];
   if (tail.slice(-3).join() !== fixedTail.join()) return false;
   const mid = tail.slice(0, -3);

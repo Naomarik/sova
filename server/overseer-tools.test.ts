@@ -14,7 +14,7 @@ const agentDir = mkdtempSync(join(tmpdir(), "sova-overseer-tools-"));
 process.on("exit", () => rmSync(agentDir, { recursive: true, force: true }));
 process.env.PI_CODING_AGENT_DIR = agentDir;
 
-const { concurrencyRefusal, overseerTools, renderTranscript, TurnLimits, BUILTIN_ALLOWED } = await import("./overseer-tools");
+const { concurrencyRefusal, overseerTools, renderTranscript, TurnLimits, BUILTIN_ALLOWED, SANDBOX_LOWER_REFUSAL, SANDBOX_LOWER_CREATE_REFUSAL } = await import("./overseer-tools");
 const { buildOverseerTools, countRunning, renderOverseerPrompt, briefDecision, BRIEF_MIN_GAP_MS, BRIEF_REPEAT_MS } = await import("./overseer");
 const { DEFAULT_CAPS, readOverseerSettings } = await import("./overseer-store");
 const { disposeAllChats } = await import("./chat-manager");
@@ -772,5 +772,115 @@ describe("sova_list_sessions rows say each worktree's branch (§app.overseer/ses
     const [row1, row2] = text.split("\n").filter((l) => l.startsWith("- "));
     assert.ok(row1!.endsWith(" · branch feat/a (ready) · branch feat/b (blocked)"), row1);
     assert.ok(!row2!.includes("branch"), row2);
+  });
+});
+
+describe("sandbox on sova_set_session and sova_create_session (§app.overseer/tools)", () => {
+  type State = "off" | "subagents" | "on";
+  /** Sessions `a` and `b` with a sandbox each; the route sets it as the extension would. `card`: the
+      items of the card whose click opened this turn (null: none did). */
+  function harness(o: { states?: Record<string, State | null>; card?: { kind: "session"; id: string }[] | null; attended?: boolean; permit?: boolean; defaultState?: State } = {}) {
+    const states = new Map<string, State | null>(Object.entries(o.states ?? { a: "subagents", b: "on" }) as [string, State | null][]);
+    const calls: { path: string; body: any }[] = [];
+    const summary = (id: string) => ({ id, path: `/s/${id}.jsonl`, title: `Session ${id}`, cwd: "/w" }) as SessionSummary;
+    const info = (s: State) => ({ on: s === "on", state: s, enforcement: s === "on" ? "full" : "none", status: `Sandbox ${s}` });
+    const host = {
+      request: async (path: string, init?: RequestInit) => {
+        const body = init?.body ? JSON.parse(String(init.body)) : undefined;
+        calls.push({ path, body });
+        if (path === "/api/sessions") {
+          states.set("new", "subagents");
+          return Response.json(summary("new"), { status: 201 });
+        }
+        const m = /^\/api\/sandbox\?path=%2Fs%2F(\w+)\.jsonl$/.exec(path);
+        if (m) {
+          const st = states.get(m[1]!);
+          if (st === null || st === undefined) return Response.json({ outcome: "unsupported" });
+          states.set(m[1]!, body.state);
+          return Response.json({ outcome: "command", sandbox: info(body.state) });
+        }
+        return Response.json({ ok: true });
+      },
+      overseerId: () => "ov",
+      confirmed: () => o.card ?? null,
+      attended: () => o.attended ?? true,
+      permit: () => (o.permit ? { id: "g_1", label: "any act" } : null),
+      used: () => {},
+      caps: () => DEFAULT_CAPS,
+      session: async (ref: string) => (["a", "b", "new"].includes(ref) ? summary(ref) : null),
+      open: async () => {},
+      sandbox: async (path: string) => {
+        const st = states.get(/\/s\/(\w+)\.jsonl/.exec(path)![1]!);
+        return st ? info(st) : null;
+      },
+      sandboxDefault: () => o.defaultState ?? "subagents",
+      started: () => {},
+      runningStarted: () => 0,
+      counted: () => false,
+    } as unknown as OverseerToolHost;
+    const tools = overseerTools(host, new TurnLimits());
+    const run = (name: string, params: Record<string, unknown>) =>
+      tools.find((t) => t.name === name)!.execute("tc", params, undefined, undefined, undefined as never).then(
+        (r) => r.content.map((c) => (c as { text: string }).text).join("\n"),
+        (e: Error) => `ERROR: ${e.message}`,
+      );
+    const sandboxCalls = () => calls.filter((c) => c.path.startsWith("/api/sandbox"));
+    return { run, calls, sandboxCalls, states };
+  }
+
+  test("raising runs like any act; the result names the state and what running subagents keep", async () => {
+    const h = harness();
+    const r = await h.run("sova_set_session", { session: "a", sandbox: "on" });
+    assert.match(r, /sandbox On \(from its next tool call; running subagents keep theirs until resumed\)/);
+    assert.deepEqual(h.sandboxCalls().map((c) => c.body), [{ state: "on" }]);
+    assert.equal(h.states.get("a"), "on");
+  });
+
+  test("lowering without a click refuses before anything changes, a rename in the same call included", async () => {
+    const h = harness();
+    for (const to of ["subagents", "off"]) {
+      assert.equal(await h.run("sova_set_session", { session: "b", sandbox: to, title: "renamed" }), `ERROR: ${SANDBOX_LOWER_REFUSAL}`);
+    }
+    assert.equal(await h.run("sova_set_session", { session: "a", sandbox: "off" }), `ERROR: ${SANDBOX_LOWER_REFUSAL}`);
+    assert.deepEqual(h.calls, [], "no route was called: no title, no sandbox");
+    assert.deepEqual([h.states.get("a"), h.states.get("b")], ["subagents", "on"]);
+  });
+
+  test("lowering needs a click on a card that lists that session", async () => {
+    const other = harness({ card: [{ kind: "session", id: "a" }] });
+    assert.equal(await other.run("sova_set_session", { session: "b", sandbox: "off" }), `ERROR: ${SANDBOX_LOWER_REFUSAL}`);
+    const listed = harness({ card: [{ kind: "session", id: "b" }] });
+    assert.match(await listed.run("sova_set_session", { session: "b", sandbox: "off" }), /sandbox Off/);
+    assert.equal(listed.states.get("b"), "off");
+  });
+
+  test("an approval for later covers raising, never lowering", async () => {
+    const h = harness({ attended: false, permit: true });
+    assert.match(await h.run("sova_set_session", { session: "a", sandbox: "on" }), /sandbox On.*Done under g_1/s);
+    assert.equal(await h.run("sova_set_session", { session: "a", sandbox: "off" }), `ERROR: ${SANDBOX_LOWER_REFUSAL}`);
+    assert.equal(h.states.get("a"), "on");
+  });
+
+  test("a session without the sandbox extension, and a value that is no state, refuse", async () => {
+    const h = harness({ states: { a: null, b: "on" } });
+    assert.match(await h.run("sova_set_session", { session: "a", sandbox: "on" }), /^ERROR: .* has no sandbox extension, so its sandbox can't be set\. Nothing was changed\.$/);
+    assert.equal(await h.run("sova_set_session", { session: "b", sandbox: "none" }), 'ERROR: sandbox is "off", "subagents" or "on". Nothing was changed.');
+    assert.deepEqual(h.sandboxCalls(), []);
+  });
+
+  test("create: below the state it would start in needs a click, refused before anything is created; it is set before the first prompt", async () => {
+    const h = harness();
+    assert.equal(await h.run("sova_create_session", { cwd: "/w", sandbox: "off", prompt: "go" }), `ERROR: ${SANDBOX_LOWER_CREATE_REFUSAL}`);
+    assert.deepEqual(h.calls, [], "nothing created");
+    const on = harness({ defaultState: "on" });
+    assert.equal(await on.run("sova_create_session", { cwd: "/w", sandbox: "subagents" }), `ERROR: ${SANDBOX_LOWER_CREATE_REFUSAL}`);
+    assert.match(await harness().run("sova_create_session", { cwd: "/w", sandbox: "on" }), /Sandbox: On \(this session only\)\./);
+    const clicked = harness({ card: [] });
+    const r = await clicked.run("sova_create_session", { cwd: "/w", sandbox: "off", prompt: "go" });
+    assert.match(r, /Sandbox: Off \(this session only\)\./);
+    const order = clicked.calls.map((c) => c.path.split("?")[0]);
+    assert.ok(order.indexOf("/api/sandbox") < order.indexOf("/api/sessions/prompt"), `the sandbox before the first prompt: ${order.join(", ")}`);
+    assert.equal(clicked.states.get("new"), "off");
+    assert.match(await harness({ card: [] }).run("sova_create_session", { host: "peer", cwd: "/w", sandbox: "on" }), /^ERROR: A sandbox can't be given with host\. No session was created\.$/);
   });
 });

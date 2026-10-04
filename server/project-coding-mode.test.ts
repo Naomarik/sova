@@ -76,3 +76,14 @@ test("the promotion commit's message names every promoted decision: area — sta
   // A cut last item ends the line with its ellipsis, not "…."
   assert.match(promotionMessage([{ statement: "y".repeat(100), area: "Login" }]), /y…$/);
 });
+
+test("a verb playbook's run gets align beside the project's mode; no other kind does (§app.project-runtime/verb-playbooks)", async () => {
+  const { playbookRunMode, PLAYBOOK_RUN_KINDS } = await import("./project-coding-mode");
+  assert.deepEqual(playbookRunMode({ mode: "normal", minorModes: [] }), { mode: "normal", minorModes: ["align"] });
+  const withSpec = playbookRunMode({ mode: "delegate", minorModes: ["spec"] });
+  assert.equal(withSpec.mode, "delegate");
+  assert.deepEqual([...withSpec.minorModes].sort(), ["align", "spec"]);
+  assert.deepEqual(playbookRunMode({ mode: "normal", minorModes: ["align"] }).minorModes, ["align"], "never twice");
+  assert.deepEqual([...PLAYBOOK_RUN_KINDS], ["onboard", "deploy-setup"]);
+  assert.ok(!PLAYBOOK_RUN_KINDS.includes("coding") && !PLAYBOOK_RUN_KINDS.includes("operator-coding"));
+});

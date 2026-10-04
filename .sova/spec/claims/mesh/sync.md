@@ -26,6 +26,11 @@ everywhere. A peer's extension is only listed here ("not installed on this host"
 ever served, probed or forwarded for it, even if the same files exist on this host. To use it here,
 the user adds it to this host's own list, and that entry wins.
 
+What each peer exchanges is also this host's grant to it (§mesh.peers/grants). A category the peer isn't
+granted is neither offered to it, taken from it, pulled from it nor merged, in either direction, and its
+extensions aren't listed here. Every other host still exchanges with that peer under its own grants, so a
+category this host denies a peer can still reach it through a third host.
+
 ## §mesh.sync/logins — Logins
 
 Logins (pi `auth.json`: OAuth and API keys) merge per provider: the most recent
@@ -48,6 +53,9 @@ the refreshed one) are a conflict, never a silent overwrite: each keeps its own 
 for that provider syncs until the user picks one. The Mesh page lists each login with its state and
 names the hosts in conflict; **Keep this host's login** makes this host's login win everywhere. The
 list never shows a secret, and it and its action exist only while the mesh is on.
+
+Logins move only to and from peers whose grant includes them, and only the logins that grant lists
+(§mesh.peers/grants), with their logouts likewise.
 
 ## §mesh.sync/api-keys-only — A host that syncs API keys only
 

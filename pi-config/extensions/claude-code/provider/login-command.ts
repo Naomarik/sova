@@ -35,6 +35,10 @@ export async function pickChatLogin(
 	if (!session.id) throw new Error("This session has no id yet.");
 	const switchTo = deps.bridge.switchSessionLogin?.bind(deps.bridge);
 	if (!switchTo) throw new Error("This runtime's Claude Code bridge predates switching logins. Restart Sova to switch.");
+	// Where the chat is (or would start) before any borrow: a login borrowed for the pick is never its `from`.
+	const recorded = newestEntry(session.branch);
+	const fromId = recorded?.login ?? deps.logins.selectId();
+	const fromBefore = deps.logins.choice(fromId);
 	let pick = deps.logins.pickable(id);
 	if ("refused" in pick) {
 		// Not here: with the mesh on it may be free at the keeper. take() returns at once otherwise.
@@ -42,9 +46,7 @@ export async function pickChatLogin(
 		pick = deps.logins.pickable(id);
 		if ("refused" in pick) throw new Error(pick.refused);
 	}
-	const recorded = newestEntry(session.branch);
-	const fromId = recorded?.login ?? deps.logins.selectId();
-	const from: ClaudeLoginChoice = deps.logins.choice(fromId) ?? { id: fromId, label: recorded?.label ?? fromId, env: {} };
+	const from: ClaudeLoginChoice = fromBefore ?? deps.logins.choice(fromId) ?? { id: fromId, label: recorded?.label ?? fromId, env: {} };
 	const outcome = switchTo(session.id, pick.choice, from);
 	if (outcome === "busy") throw new Error("Claude is still answering. Switch once the reply ends.");
 	if (outcome === "unknown") throw new Error("Claude Code models are off for this session.");

@@ -38,9 +38,16 @@ export const ORDER = {
   adopt: ["unit", "ports"],
   share: ["endpoints", "maxDays", "allow"],
   open: ["endpoint", "path"],
+  deploy: ["targets"],
+  target: ["about", "branch", "requires", "credentials", "plan", "build", "steps", "verify", "rollback"],
+  deployStep: ["id", "run", "timeout"],
+  verify: ["http", "expect", "timeout"],
+  rollback: ["steps", "none"],
+  credential: ["name", "kind", "check"],
+  requires: ["tests"],
 };
 /** Maps whose keys are names in declaration order, kept as written. */
-const NAMED_MAPS = new Set(["data", "services", "ports", "env"]);
+const NAMED_MAPS = new Set(["data", "services", "ports", "env", "targets"]);
 
 const isObj = (v) => !!v && typeof v === "object" && !Array.isArray(v);
 
@@ -78,6 +85,24 @@ export function canonical(def) {
   if (isObj(d.test)) d.test = sortKeys(d.test, ORDER.test);
   if (isObj(d.share)) d.share = sortKeys(d.share, ORDER.share);
   if (isObj(d.open)) d.open = sortKeys(d.open, ORDER.open);
+  if (isObj(d.deploy)) {
+    d.deploy = sortKeys(d.deploy, ORDER.deploy);
+    const steps = (v) => (Array.isArray(v) ? v.map((x) => (isObj(x) ? sortKeys(x, ORDER.deployStep) : x)) : v);
+    if (isObj(d.deploy.targets))
+      for (const [k, v] of Object.entries(d.deploy.targets)) {
+        if (!isObj(v)) continue;
+        const t = sortKeys(v, ORDER.target);
+        for (const l of ["plan", "build", "steps"]) if (l in t) t[l] = steps(t[l]);
+        if (isObj(t.requires)) t.requires = sortKeys(t.requires, ORDER.requires);
+        if (Array.isArray(t.credentials)) t.credentials = t.credentials.map((c) => (isObj(c) ? sortKeys(c, ORDER.credential) : c));
+        if (isObj(t.verify)) t.verify = sortKeys(t.verify, ORDER.verify);
+        if (isObj(t.rollback)) {
+          t.rollback = sortKeys(t.rollback, ORDER.rollback);
+          if ("steps" in t.rollback) t.rollback.steps = steps(t.rollback.steps);
+        }
+        d.deploy.targets[k] = t;
+      }
+  }
   return d;
 }
 

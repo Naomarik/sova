@@ -2,6 +2,7 @@
 // dir; the `claude` it runs is scripts/fake-claude.mjs, which never contacts Anthropic.
 import assert from "node:assert/strict";
 import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync as readdir, rmSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -134,5 +135,65 @@ describe("claude-login entries in the transcript", () => {
     assert.equal(row?.kind, "info");
     assert.equal(row?.text, text);
     assert.deepEqual(normalizeEntry({ type: "custom", id: "e2", customType: "claude-login", data: { v: 1, login: "l-0000000a" } } as any), []);
+  });
+});
+
+describe("Settings → Accounts on macOS, credentials in the keychain (§app.claude-logins/macos-keychain)", () => {
+  /** A service whose fake `claude` keeps each login's credentials as a keychain item would be named, and whose attribute queries read them. */
+  function macService() {
+    const base = service();
+    const keychainDir = join(root, `keychain-${n}`);
+    mkdirSync(keychainDir, { recursive: true });
+    const env = { PATH: process.env.PATH, HOME: join(root, `case-${n}`), PI_CODING_AGENT_DIR: base.agentDir, CLAUDE_CONFIG_DIR: base.claudeDir, FAKE_CLAUDE_KEYCHAIN: keychainDir, USER: "someone" } as NodeJS.ProcessEnv;
+    const queries: string[][] = [];
+    const execSync = (_file: string, args: string[]) => {
+      queries.push(args);
+      if (args.includes("-w")) throw new Error("the secret is never read here");
+      if (!existsSync(join(keychainDir, args[2]!))) throw new Error("exit 44");
+      return `    "mdat"<timedate>=0x00  "20261004130350Z\\000"\n`;
+    };
+    const keychain = { platform: "darwin" as const, home: "/fixture/home", userHome: "/fixture/home", execSync };
+    const svc = new ClaudeAccountsService({ agentDir: base.agentDir, env, executable: shim, timeouts: { url: 5000, finish: 5000, logout: 5000 }, keychain });
+    return { svc, agentDir: base.agentDir, keychainDir, queries };
+  }
+
+  test("adding a login finishes when Claude Code wrote its keychain item (no file); it is signed in; Remove signs it out through Claude Code", async () => {
+    const { svc, agentDir, keychainDir, queries } = macService();
+    await svc.startFlow();
+    const done = flow(await svc.submitCode({ code: "ok-mac#s" }));
+    assert.equal(done.state, "done", JSON.stringify(done));
+    const login = (done as Extract<ClaudeLoginFlowState, { state: "done" }>).login;
+    const dir = join(agentDir, "claude-accounts", login.id);
+    assert.equal(login.signedIn, true);
+    assert.ok(!existsSync(join(dir, ".credentials.json")), "no file: the credentials are the item");
+    assert.deepEqual(readdir(keychainDir), [`Claude Code-credentials-${createHash("sha256").update(dir).digest("hex").slice(0, 8)}`]);
+    assert.ok(queries.every((q) => !q.includes("-w")));
+    assert.equal(svc.info().logins.find((l) => l.id === login.id)?.signedIn, true);
+    assert.equal((await svc.remove(login.id)).status, 200);
+    assert.deepEqual(readdir(keychainDir), [], "claude auth logout deleted the item");
+  });
+
+  test("Sign In Again runs in the login's own directory (its item's name), and a cancel never removes that directory", async () => {
+    const { svc, agentDir, keychainDir } = macService();
+    await svc.startFlow();
+    const id = ((flow(await svc.submitCode({ code: "ok-mac#s" })) as Extract<ClaudeLoginFlowState, { state: "done" }>).login).id;
+    const dir = join(agentDir, "claude-accounts", id);
+    for (const f of readdir(keychainDir)) rmSync(join(keychainDir, f)); // signed out elsewhere
+    await svc.startFlow({ login: id });
+    svc.cancelFlow();
+    assert.ok(existsSync(dir), "a cancelled sign-in again keeps the login's directory");
+    await svc.startFlow({ login: id });
+    const again = flow(await svc.submitCode({ code: "ok-mac#s" }));
+    assert.equal(again.state, "done", JSON.stringify(again));
+    assert.deepEqual(readdir(join(agentDir, "claude-accounts")), [id], "no second directory");
+    assert.deepEqual(readdir(keychainDir), [`Claude Code-credentials-${createHash("sha256").update(dir).digest("hex").slice(0, 8)}`]);
+    assert.equal(svc.info().logins.find((l) => l.id === id)?.signedIn, true);
+  });
+
+  test("a login with neither file nor item is not signed in, and a refused sign-in adds nothing", async () => {
+    const { svc, agentDir } = macService();
+    await svc.startFlow();
+    assert.equal(flow(await svc.submitCode({ code: "bad#s" })).state, "failed");
+    assert.ok(!existsSync(join(agentDir, "claude-accounts")) || readdir(join(agentDir, "claude-accounts")).length === 0);
   });
 });

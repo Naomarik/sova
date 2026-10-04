@@ -225,6 +225,9 @@ export interface DocSyncOptions {
   sidecarPath: string;
   peers?: () => readonly DocPeer[];
   categoryEnabled?: (c: DocCategory) => boolean;
+  /** Whether category `c` is exchanged with peer `peerId` at all (this host's grant to that peer,
+      §mesh.peers/grants). Absent: every category with every peer. */
+  shares?: (peerId: string, c: DocCategory) => boolean;
   now?: () => number;
   log?: (m: string) => void;
   debounceMs?: number;
@@ -415,18 +418,24 @@ export class DocSync {
 
   // ---------------------------------------------------------------- peer-facing
 
-  manifest(): DocManifest {
+  /** Whether category `c` is exchanged with `peerId` (this host's grant to it); every one with no peer named. */
+  private sharesWith(peerId: string | undefined, c: DocCategory): boolean {
+    return peerId === undefined || !this.opts.shares || this.opts.shares(peerId, c);
+  }
+
+  /** The manifest as `forPeer` may see it: only the categories this host shares with that peer. */
+  manifest(forPeer?: string): DocManifest {
     const docs: Record<string, DocMeta> = {};
     for (const [key, meta] of Object.entries(this.records)) {
       const spec = this.specFor(key);
-      if (spec && this.enabled(spec.category) && readLocal(spec).kind !== "local-only") docs[key] = meta;
+      if (spec && this.enabled(spec.category) && this.sharesWith(forPeer, spec.category) && readLocal(spec).kind !== "local-only") docs[key] = meta;
     }
     return { hostId: this.opts.hostId, now: this.now(), docs };
   }
 
-  doc(key: string): DocReply | null {
+  doc(key: string, forPeer?: string): DocReply | null {
     const spec = this.specFor(key);
-    if (!spec || !this.enabled(spec.category)) return null;
+    if (!spec || !this.enabled(spec.category) || !this.sharesWith(forPeer, spec.category)) return null;
     if (this.observeOne(spec)) this.persist();
     const meta = this.records[key];
     const local = readLocal(spec);
@@ -501,6 +510,12 @@ export class DocSync {
         continue;
       }
       const it = item as Partial<DocReply> | null;
+      // Never taken from a peer this host doesn't share the category with.
+      const spec = this.specFor(key);
+      if (spec && !this.sharesWith(from, spec.category)) {
+        reply.rejected.push({ key, reason: "disabled" });
+        continue;
+      }
       const reason = it && typeof it === "object" ? this.apply(key, { meta: it.meta as DocMeta, content: (it.content ?? null) as string | null }) : "invalid";
       if (reason) reply.rejected.push({ key, reason });
       else reply.accepted.push(key);
@@ -517,9 +532,12 @@ export class DocSync {
         return;
       }
       this.observe();
-      const mine = this.manifest().docs;
+      const mine = this.manifest(peer.id).docs;
       const theirs: Record<string, DocMeta> = {};
-      for (const [k, v] of Object.entries(remote.docs ?? {})) if (this.specFor(k) && isDocMeta(v)) theirs[k] = v;
+      for (const [k, v] of Object.entries(remote.docs ?? {})) {
+        const spec = this.specFor(k);
+        if (spec && isDocMeta(v) && this.sharesWith(peer.id, spec.category)) theirs[k] = v;
+      }
       const push: DocPush = { hostId: this.opts.hostId, now: this.now(), docs: {} };
       for (const key of new Set([...Object.keys(mine), ...Object.keys(theirs)])) {
         const l = mine[key];

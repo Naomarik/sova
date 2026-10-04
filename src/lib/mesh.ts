@@ -1,5 +1,6 @@
 import { createSignal } from "solid-js";
-import type { MeshInfo, MeshLoginEntry, MeshSessions, PeerStatus, SessionSummary, SyncCategory } from "../../shared/protocol";
+import type { MeshLoginEntry, SessionSummary, SyncCategory } from "../../shared/protocol";
+import type { MeshInfoView as MeshInfo, MeshSessionsView as MeshSessions, PeerStatusView as PeerStatus } from "../../shared/mesh-access";
 import { reuseUnchanged } from "./summary-diff";
 
 // The client side of the peer mesh: which host a session lives on, and how a request for it
@@ -10,7 +11,9 @@ import { reuseUnchanged } from "./summary-diff";
 // Everything is dormant until GET /api/mesh names a peer: with none, `hostOf` answers null for
 // every path, no URL changes, and nothing polls.
 
-export type { MeshCandidate, MeshInfo, MeshLoginEntry, MeshLogins, MeshPeerEntry, MeshSessions, MeshSettings, PeerState, PeerStatus, SyncCategory, SyncStatus } from "../../shared/protocol";
+export type { MeshCandidate, MeshLoginEntry, MeshLogins, MeshPeerEntry, MeshSettings, SyncCategory, SyncStatus } from "../../shared/protocol";
+// What this host's own page reads: the protocol's peer states plus `hidden` (§mesh.peers/grants).
+export type { MeshInfoView as MeshInfo, MeshSessionsView as MeshSessions, PeerStateView as PeerState, PeerStatusView as PeerStatus } from "../../shared/mesh-access";
 
 export const SYNC_CATEGORIES: readonly SyncCategory[] = ["settings", "themes", "extensions", "logins"];
 
@@ -30,14 +33,27 @@ export const peerInfo = (id: string): PeerStatus | undefined => meshPeers().find
 export const hostLabel = (id: string): string => peerInfo(id)?.label || id;
 export const selfLabel = (): string => state()?.self.label || state()?.self.hostname || "This host";
 
+/** Peers whose last session list answer was `denied` (§mesh.peers/grants): they answer, and keep
+    their sessions from this host. */
+const [hiddenSessions, setHiddenSessions] = createSignal<ReadonlySet<string>>(new Set());
+/** Record which peers hid their sessions in a GET /api/mesh/sessions answer. */
+export function noteSessionsHidden(answer: MeshSessions): void {
+  const next = new Set(answer.peers.filter((p) => p.state === "hidden").map((p) => p.id));
+  const prev = hiddenSessions();
+  if (next.size !== prev.size || [...next].some((id) => !prev.has(id))) setHiddenSessions(next);
+}
+/** Whether peer `id` keeps its sessions from this host: its hello, or its session list, said `denied`. */
+export const sessionsHiddenBy = (id: string): boolean => hiddenSessions().has(id) || peerInfo(id)?.state === "hidden";
+
 /** A peer that can't be opened or driven right now, with the sentence that says why; null if it can. */
 export function peerUnavailable(p: PeerStatus): string | null {
   const name = p.label || p.id;
   /** The server's reason as the end of our sentence: one full stop, whatever it brought. */
   const reason = p.error ? `: ${p.error.replace(/[.\s]+$/, "")}.` : ".";
-  if (p.state === "up") return null;
+  if (p.state === "up") return hiddenSessions().has(p.id) ? `${name} keeps its sessions from this host.` : null;
   if (p.state === "down") return `${name} isn't answering${reason}`;
   if (p.state === "skewed") return `${name} runs a different Sova version${p.hello ? ` (${p.hello.version})` : ""}. Update one of them.`;
+  if (p.state === "hidden") return `${name} shares nothing with this host.`;
   return p.error ? `${name} refused this host${reason}` : `${name} refused this host. Add this host to its peers.`;
 }
 
@@ -326,12 +342,14 @@ export function mergePeerLists(
 ): ReadonlyMap<string, SessionSummary[]> {
   const next = new Map<string, SessionSummary[]>();
   const listed = new Set(peers.map((p) => p.id));
+  // A host that hides its sessions from this one keeps no rows here (§mesh.peers/grants).
+  const hidden = new Set(answer.peers.filter((p) => p.state === "hidden").map((p) => p.id));
   for (const p of answer.peers) {
-    if (!listed.has(p.id)) continue;
+    if (!listed.has(p.id) || hidden.has(p.id)) continue;
     if (p.sessions) next.set(p.id, reuseUnchanged(peerRows(p.sessions), prev.get(p.id)));
     else if (prev.has(p.id)) next.set(p.id, prev.get(p.id)!);
   }
-  for (const id of listed) if (!next.has(id) && prev.has(id)) next.set(id, prev.get(id)!);
+  for (const id of listed) if (!next.has(id) && !hidden.has(id) && prev.has(id)) next.set(id, prev.get(id)!);
   const same = next.size === prev.size && [...next].every(([id, rows]) => prev.get(id) === rows);
   return same ? prev : next;
 }

@@ -1,15 +1,16 @@
 // The sandbox extension's adapter (pi-config/extensions/sandbox, spec §chat/sandbox). The whole
-// interface is the extension's: its `/sandbox on|off` command (presence = the runtime has it) and
+// interface is the extension's: its `/sandbox on|subagents|off` command (presence = the runtime has it) and
 // the `sandbox` custom entry it appends on every change. We import exactly its pure state.ts (node
 // builtins only), like mode-state.ts imports mode/state.ts, and never learn what a policy, a level
 // or a backend is beyond the status words in that entry. Without the extension nothing here runs.
-import { describeActive, LEVELS, restoreActive, SANDBOX_ENTRY_TYPE, type SandboxActive } from "../pi-config/extensions/sandbox/state.ts";
+import { describeActive, LEVELS, restoreActive, SANDBOX_ENTRY_TYPE, type SandboxActive, type SandboxState, STATES, stateOf } from "../pi-config/extensions/sandbox/state.ts";
 import type { ChatServerMessage, SandboxApplyResult, SandboxInfo } from "../shared/protocol";
 
 type Entry = { type: string; customType?: string; data?: unknown };
 type Command = { handler(args: string, ctx: any): Promise<void> | void; sourceInfo?: { path?: string } };
 
-/** A branch with no `sandbox` entry: the extension writes one whenever a session comes up on. */
+/** A branch with no `sandbox` entry: the extension writes one whenever a session comes up on, so
+    none means Subagents only (§chat.sandbox/states). */
 const OFF: SandboxActive = { version: 1, on: false, level: LEVELS[0]!, backend: "none", enforcement: "none" };
 
 /**
@@ -24,7 +25,7 @@ export function sandboxCommandOf(runner: { getCommand(name: string): Command | u
 /** This branch's sandbox status: the newest `sandbox` entry, restored by the extension's own rule. */
 export function sandboxInfo(branch: readonly Entry[]): SandboxInfo {
   const active = restoreActive(branch) ?? OFF;
-  return { on: active.on, enforcement: active.enforcement, status: describeActive(active) };
+  return { on: active.on, state: stateOf(active), enforcement: active.enforcement, status: describeActive(active) };
 }
 
 export const sandboxMessage = (branch: readonly Entry[]): ChatServerMessage => ({ type: "sandbox", ...sandboxInfo(branch) });
@@ -32,11 +33,19 @@ export const sandboxMessage = (branch: readonly Entry[]): ChatServerMessage => (
 export const isSandboxEntry = (entry: unknown): boolean =>
   !!entry && typeof entry === "object" && (entry as Entry).type === "custom" && (entry as Entry).customType === SANDBOX_ENTRY_TYPE;
 
-/** Validate a POST /api/sandbox body: `{ on: boolean }`, nothing else. */
-export function parseSandboxBody(body: unknown): { on: boolean } | { error: string } {
-  if (body === null || typeof body !== "object" || Array.isArray(body) || typeof (body as { on?: unknown }).on !== "boolean")
-    return { error: "Expected JSON body { on: boolean }" };
-  return { on: (body as { on: boolean }).on };
+const BODY_SHAPE = 'Expected JSON body { state: "off" | "subagents" | "on" } or { on: boolean }';
+
+/** Validate a POST /api/sandbox body: `{ state }`, or the older `{ on }` (true: On, false:
+    Subagents only, what off meant before Off existed). Both may come together (a web client sends
+    `on` for an older host); then they must agree. */
+export function parseSandboxBody(body: unknown): { state: SandboxState } | { error: string } {
+  if (body === null || typeof body !== "object" || Array.isArray(body)) return { error: BODY_SHAPE };
+  const { state, on } = body as { state?: unknown; on?: unknown };
+  if (on !== undefined && typeof on !== "boolean") return { error: BODY_SHAPE };
+  if (state === undefined) return typeof on === "boolean" ? { state: on ? "on" : "subagents" } : { error: BODY_SHAPE };
+  if (typeof state !== "string" || !(STATES as readonly string[]).includes(state)) return { error: BODY_SHAPE };
+  if (typeof on === "boolean" && on !== (state === "on")) return { error: "state and on disagree" };
+  return { state: state as SandboxState };
 }
 
 /** What one held chat gives the adapter (ChatSession.sandboxHost). */
@@ -54,18 +63,18 @@ export interface SandboxHost {
 }
 
 /**
- * POST /api/sandbox: run the extension's `/sandbox on|off` handler directly (never through
+ * POST /api/sandbox: run the extension's `/sandbox on|subagents|off` handler directly (never through
  * prompt(), so no command text reaches the model), as ChatSession.applyMode runs /mode. It reaches
  * the next tool call; the extension appends its entry and notifies with the status line.
  * "unsupported": no sandbox command in this runtime, and nothing happened.
  */
-export async function applySandbox(host: SandboxHost, on: boolean): Promise<SandboxApplyResult> {
+export async function applySandbox(host: SandboxHost, state: SandboxState): Promise<SandboxApplyResult> {
   const cmd = host.command();
   if (!cmd) return { outcome: "unsupported" };
   if (host.foreign()) return { outcome: "skip", sandbox: sandboxInfo(host.branch()) };
   host.beforeCommand();
   try {
-    await cmd.handler(on ? "on" : "off", host.commandContext());
+    await cmd.handler(state, host.commandContext());
   } catch (err) {
     console.error("[chat] /sandbox handler failed", err);
   }

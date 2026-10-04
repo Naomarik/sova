@@ -11,16 +11,16 @@ import { approvalsFile, hostVarsFile } from "./store";
  */
 
 /** Drop what tuning may change without approval: every `timeout`, readiness paths, a service's `about` and
-    `isolation` (words for builders and readers), the top-level `sources` (what drift reads) and `open` (the entry
-    point, which exposes nothing); the default
+    `isolation` (words for builders and readers), the top-level `sources` (what drift reads), `open` (the entry
+    point, which exposes nothing) and `deploy` (approved under its own hash, deploy-trust.ts); the default
     `start: "up"` too, so a definition hashes as it did before `start` existed. */
-function hashed(v: unknown, key = ""): unknown {
+export function hashed(v: unknown, key = ""): unknown {
   if (Array.isArray(v)) return v.map((x) => hashed(x, key));
   if (!v || typeof v !== "object") return v;
   const out: Record<string, unknown> = {};
   for (const k of Object.keys(v as Record<string, unknown>).sort()) {
     if (k === "timeout") continue;
-    if (key === "" && (k === "sources" || k === "open")) continue;
+    if (key === "" && (k === "sources" || k === "open" || k === "deploy")) continue;
     if (key === "ready" && k === "path") continue;
     if (key === "services" && (k === "about" || k === "isolation" || (k === "start" && (v as Record<string, unknown>)[k] === "up"))) continue;
     out[k] = hashed((v as Record<string, unknown>)[k], k);

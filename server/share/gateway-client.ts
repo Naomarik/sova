@@ -70,6 +70,7 @@ export interface GatewayDeps {
 /** A tailnet IP Tailscale lists for this StableID (LocalAPI), or the entry's pinned one (address
     mode), with the peer listener's port and scheme from the entry. */
 async function verifiedEndpoint(peer: PeerEntry): Promise<string | null> {
+  if (peer.lan) return null; // a dial-out pairing is never a share gateway (§mesh/lan)
   let ips: string[];
   if (deps.addressMode()) ips = entryAddresses(peer);
   else {

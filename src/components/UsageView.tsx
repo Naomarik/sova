@@ -491,6 +491,10 @@ function UsageBody(props: {
               )}
             </Show>
             <Show when={usageSummary(data(), props.now, props.claudeLogin)}>{(lead) => <p class="usage-lead">{lead()}</p>}</Show>
+            {/* macOS: Claude Code's own login is in a keychain this server can't read (§app.claude-logins/macos-keychain). */}
+            <Show when={data().claudeOwnLoginUnreadable}>
+              <p class="usage-note">On macOS, add your Claude login under Settings → Accounts.</p>
+            </Show>
             <div class="insights-grid">
               <For each={data().providers}>
                 {(p) => (

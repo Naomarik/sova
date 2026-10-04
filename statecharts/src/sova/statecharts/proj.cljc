@@ -221,7 +221,11 @@
           (fn [d] (let [e (b/evt d) od (onboard-data d)]
                     (cond-> {:sid (b/build-sid (:id d) (:session-id e)) :session-id (:session-id e) :started-by (:started-by od)}
                       (not (lv/blank? (:why e))) (assoc :why (str/trim (:why e)))
-                      (:title e) (assoc :title (:title e)))))))
+                      (:title e) (assoc :title (:title e))
+                      ;; the verb playbook it runs (§app.project-runtime/verb-playbooks), stamped by the host
+                      (:playbook-id e) (assoc :playbook-id (:playbook-id e))
+                      (:label e) (assoc :label (:label e))
+                      (:approves e) (assoc :approves (:approves e)))))))
 
       (parallel {:id :regions}
         (state {:id :shelf :initial :active}

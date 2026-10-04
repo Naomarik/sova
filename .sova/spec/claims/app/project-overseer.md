@@ -52,12 +52,19 @@ which is also its live view: its tool calls render as tool cards as they happen.
   workspace (the roster's contacts, every project's transcripts) or pi's or Sova's state (the
   host's link store, every session), even when the root holds them. A path argument that fails is
   refused with the reason; a listing or search leaves such entries out; a secret file inside the
-  root is still refused. No shell, no edit or write tool. Its prompt is Sova's
+  root is still refused. One folder outside the root is open to `read` alone: this conversation's
+  own attachments folder (`<stateRoot>/attachments/<its session id>/`, where an image the
+  operator pastes into its composer is saved, §chat/images), so it sees what the operator attaches, an image as
+  an image. A path there must be inside that folder both as written and at its realpath (a symlink
+  in it that leads elsewhere is refused); another conversation's attachments and the rest of Sova's
+  state stay refused, and `grep`, `find` and `ls` never reach it. The prompt says so. No shell, no
+  edit or write tool. Its prompt is Sova's
   (`server/project-overseer-prompt.md`), re-rendered at every run with the project, the level in
   force (a standalone project's with the standalone level meanings, and only its coding-session, prompt
   and look limits; gathering sessions and promotions appear only while placed), the caps, while placed
-  the organization's sections (the roster: name, role, decision areas,
-  never contact details; the project's main stakeholder, "Main stakeholder: {name}: decides every
+  the organization's sections (the roster: each active person's name, id, role, language, decision
+  areas, skills and voice, so it knows how to address and write to each of them (greeting,
+  language, register), never contact details; the project's main stakeholder, "Main stakeholder: {name}: decides every
   area of this project that no one else on the roster decides."; the gap guidance), its ideas, a line saying the operator's to-dos are the operator's own
   list (never their text: it reads them with `sova_todos` when the operator asks,
   §app.project-overseer/ideas-and-todos), its notes, while placed the organization's About text (§app.organizations/about) and, last, the operator's extra instructions. Model and thinking from `overseer.json`, else the new-session
@@ -302,7 +309,7 @@ user row.
   decision's owner area), `sova_list_sessions` / `sova_read_session` (the project's gathering sessions as their
   participants see them; the project's coding sessions, every one its statecharts record, the
   overseer's and the operator's, wherever its worktree is; and ordinary sessions whose folder is
-  inside the project root; never another project's, an overseer's or a subagent's own), `sova_roster` (read; both it and `sova_project` name the main stakeholder, as the prompt
+  inside the project root; never another project's, an overseer's or a subagent's own), `sova_roster` (read: every person as the prompt's roster shows them, plus their status when not active, never contact; both it and `sova_project` name the main stakeholder, as the prompt
   does), `sova_todos` (operator turns only, §app.project-overseer/ideas-and-todos),
   `sova_previews` (the project's preview links, §app.project-overseer/previews; `sova_project`
   lists its active ones too, under "Previews"), `sova_send_status` (below).
@@ -460,7 +467,9 @@ user row.
   - `delegate` only when `codingMode.mode` is `delegate`: "Delegate is off for this project's coding
     sessions; the operator can allow it on the project page." Automatic never allows it.
   - `align` never: "Align needs someone to answer its questions, and nobody answers a coding
-    session's."
+    session's." The one exception is not the overseer's: a verb playbook's run
+    (§app.project-runtime/verb-playbooks) gets align on beside the project's mode, from Sova, when it
+    starts, because the operator answers its questions (§app.project-runtime/onboard).
   - `spec` may be turned on; it may not be turned off while the project's mode (or Automatic)
     has it on: "Spec is on for this project's coding sessions; only the operator can turn it off
     on the project page."

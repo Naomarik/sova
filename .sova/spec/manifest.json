@@ -2690,7 +2690,8 @@
         "server/server-stop.ts",
         "server/server-stop.test.ts",
         "server/index.ts",
-        "server/outreach/log.ts"
+        "server/outreach/log.ts",
+        "server/projects/playbook-review.ts"
       ],
       "requires": [
         "§app.overseer/seen"
@@ -3467,7 +3468,7 @@
     "§app.session-list/needs-you": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "code": [
         "src/lib/needs-you.ts",
         "src/lib/needs-you.test.ts",
@@ -3483,7 +3484,8 @@
         "server/attention.ts",
         "src/lib/api.ts",
         "src/design/base.css",
-        "src/lib/org-region.ts"
+        "src/lib/org-region.ts",
+        "src/components/PlaybookReview.tsx"
       ],
       "requires": [
         "§app.overseer/attention-digest",
@@ -11978,7 +11980,14 @@
         "server/project-overseer.ts",
         "server/project-services/tools.ts",
         "server/projects/runtime.test.ts",
-        "statecharts/test/sova/statecharts/refit/runtime_test.cljs"
+        "statecharts/test/sova/statecharts/refit/runtime_test.cljs",
+        "server/build-loadout.ts",
+        "server/projects/runtime-feed.ts",
+        "server/projects/runtime-feed.test.ts",
+        "server/projects/playbook-review.test.ts",
+        "statecharts/src/sova/statecharts/build.cljc",
+        "statecharts/src/sova/statecharts/rules/runtime.cljc",
+        "statecharts/EVENTS.md"
       ],
       "requires": [
         "§app.project-overseer/coding-worktrees"
@@ -12033,7 +12042,7 @@
     "§app.project-runtime/software-card": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "code": [
         "src/components/ProjectSoftwareCard.tsx",
         "src/components/ProjectPage.tsx",
@@ -12043,7 +12052,8 @@
         "src/projects.css",
         "server/projects/runtime.ts",
         "server/project-services/on-merge.ts",
-        "server/project-services/on-merge.test.ts"
+        "server/project-services/on-merge.test.ts",
+        "src/components/PlaybookReview.tsx"
       ],
       "requires": [
         "§app.project-runtime/registry"
@@ -12777,6 +12787,115 @@
         "scripts/mesh-termux/README.md",
         "scripts/fetch-bun.sh",
         "scripts/bun-release.txt"
+      ]
+    },
+    "§app.project-runtime/approve-merge": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/projects/runtime.ts",
+        "server/projects/runtime-routes.ts",
+        "server/projects/playbook-review.test.ts",
+        "src/lib/api.ts",
+        "src/components/PlaybookReview.tsx",
+        "src/components/ProjectSoftwareCard.tsx"
+      ],
+      "requires": [
+        "§app.project-runtime/approve",
+        "§app.project-overseer/coding-worktrees"
+      ]
+    },
+    "§app.project-runtime/review": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/projects/playbook-review.ts",
+        "server/projects/playbook-review.test.ts",
+        "server/attention.ts",
+        "server/overseer.ts",
+        "server/push.ts",
+        "server/push-store.ts",
+        "shared/protocol.ts",
+        "src/components/PlaybookReview.tsx",
+        "src/components/ProjectPage.tsx",
+        "src/components/Sidebar.tsx",
+        "src/components/PushSettings.tsx",
+        "src/lib/needs-you.ts",
+        "shared/playbook-review.ts",
+        "shared/playbook-review.test.ts",
+        "src/lib/needs-you.test.ts",
+        "server/attention.test.ts",
+        "server/push.test.ts",
+        "src/app.css",
+        "src/lib/push-draft.test.ts"
+      ],
+      "requires": [
+        "§app.project-runtime/onboard",
+        "§app.overseer/attention-digest"
+      ]
+    },
+    "§app.project-runtime/run-progress": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/projects/runtime.ts",
+        "shared/project-runtime.ts",
+        "src/components/ProjectSoftwareCard.tsx",
+        "src/lib/project-software.ts",
+        "src/lib/project-software.test.ts",
+        "server/projects/playbook-review.ts",
+        "server/projects/playbook-review.test.ts"
+      ],
+      "requires": [
+        "§app.project-runtime/onboard"
+      ]
+    },
+    "§app.project-runtime/run-report": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/projects/playbook-review.ts",
+        "server/projects/runtime.ts",
+        "shared/project-runtime.ts",
+        "src/components/ProjectSoftwareCard.tsx",
+        "src/lib/project-software.ts",
+        "src/lib/project-software.test.ts"
+      ],
+      "requires": [
+        "§app.project-runtime/registry"
+      ]
+    },
+    "§app.project-runtime/verb-playbooks": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/projects/onboard.ts",
+        "server/projects/onboard.test.ts",
+        "server/project-coding-mode.ts",
+        "server/project-overseer.ts",
+        "playbooks/project-verbs/PLAYBOOK.md",
+        "statecharts/src/sova/statecharts/runtime.cljc",
+        "statecharts/src/sova/statecharts/proj.cljc",
+        "server/build-loadout.ts",
+        "server/project-coding-mode.test.ts",
+        "server/playbooks.ts",
+        "shared/protocol.ts",
+        "server/projects/runtime.ts",
+        "server/projects/runtime-routes.ts",
+        "server/projects/runtime-feed.ts",
+        "server/projects/runtime-feed.test.ts",
+        "statecharts/src/sova/statecharts/build.cljc",
+        "statecharts/src/sova/statecharts/rules/runtime.cljc",
+        "statecharts/test/sova/statecharts/refit/runtime_test.cljs",
+        "statecharts/EVENTS.md"
+      ],
+      "requires": [
+        "§app.project-runtime/onboard"
       ]
     }
   },

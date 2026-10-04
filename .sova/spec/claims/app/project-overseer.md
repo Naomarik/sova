@@ -460,7 +460,9 @@ user row.
   - `delegate` only when `codingMode.mode` is `delegate`: "Delegate is off for this project's coding
     sessions; the operator can allow it on the project page." Automatic never allows it.
   - `align` never: "Align needs someone to answer its questions, and nobody answers a coding
-    session's."
+    session's." The one exception is not the overseer's: a verb playbook's run
+    (§app.project-runtime/verb-playbooks) gets align on beside the project's mode, from Sova, when it
+    starts, because the operator answers its questions (§app.project-runtime/onboard).
   - `spec` may be turned on; it may not be turned off while the project's mode (or Automatic)
     has it on: "Spec is on for this project's coding sessions; only the operator can turn it off
     on the project page."

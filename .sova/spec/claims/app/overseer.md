@@ -852,9 +852,13 @@ itself.
   §chat.worktrees/readiness) has the same item as a decide item instead, "Merged with {n} open
   question(s) in {al_N} {title}" (or "… in {m} alignments"): visible in the digest, never Needs you,
   a brief or a phone notification.
+- **Needs you, a proposed playbook run** (§app.project-runtime/review): `playbook-review` on the
+  run's session while a verb playbook's run is proposed, "{Title}: approve {hash12} and merge into
+  {target}" (or its approved and no-definition forms), dated by its last turn's end, carrying what
+  Approve & Merge needs (`playbook: {projectId, hash?, approved, branch, target}`).
 - **Only real blockers are act.** The act tier — Needs you, the Overseer's "need you" count, its
   briefs and phone notifications — is exactly: open alignment questions on an unmerged branch, open dialogs, errored
-  turns, subagent errors, and the baton and roster hand-offs and held acts below. A guess (a
+  turns, subagent errors, proposed playbook runs, and the baton and roster hand-offs and held acts below. A guess (a
   reply that seems to ask, a team that seems stalled) and a branch ready to merge are decide
   items: a line in the digest and a quiet mark on the session's row, never a brief.
 - **Nothing puts an item away.** The digest lists act items by the rules above and nothing else:

@@ -35,8 +35,9 @@ It holds, all of it read from the main checkout's HEAD, never its working tree:
   confined or not, when, and the memory it measured (each service's and each instance's peak and
   steady resident memory, §app.project-services/conform).
 - **Registered**: the hash, suite, fingerprint and commit it was registered at.
-- **The playbook run**: the coding session, its branch, why it was started, who started it, and
-  its result.
+- **The playbook run**: the verb playbook it runs (its id, title and what its proposal approves,
+  §app.project-runtime/verb-playbooks), the coding session, its branch, why it was started, who
+  started it, while it waits the open questions it asks, and its result.
 
 `GET /api/projects/:pid/runtime` answers this, plus each service's live state per instance from the
 engine's status. A unit still running for a service that left the definition (status reports it
@@ -93,7 +94,7 @@ on this host."
 
 ## §app.project-runtime/onboard — Starting the Project verbs playbook
 
-`POST /api/projects/:pid/verbs/onboard {why?, model?}` (the project act `verbs/onboard`; the
+`POST /api/projects/:pid/verbs/onboard {why?, model?, playbook?}` (the project act `verbs/onboard`; the
 overseer's `sova_project_verbs` verb `onboard`) starts the Project verbs playbook as a coding
 session of kind `onboard` in its own worktree and branch, the way a build starts
 (§app.project-overseer/coding-worktrees), titled "Project verbs: {project}", whose first prompt is
@@ -115,13 +116,20 @@ is already live ("The Project verbs playbook is already running: \"{title}\"."),
 unattended overseer, while the software is registered and current ("The project's software is
 registered and current: the playbook has nothing to do.").
 
+`playbook` (optional, default `project-verbs`) names another verb playbook the project's folder lists
+(§app.project-runtime/verb-playbooks); the run's title is then "{its title}: {project}", and every
+sentence below names it by its title. The session runs in the project's coding mode with align on
+beside it (§app.project-overseer/coding-mode).
+
 The run's region moves idle → running → proposed (its branch has commits and its turn ended) →
 idle (merged, or its worktree removed); a run that ended with no commits returns to idle with the
-result "no change". The registry's feed (the Software card's, §app.project-runtime/standing) says
+result "no change". A turn that ends while the session has open alignment questions waiting on the
+operator (§chat.alignment/session-mark) moves it to waiting instead, whatever its branch holds, and
+the next turn (the operator's answer) moves it back to running. The registry's feed (the Software card's, §app.project-runtime/standing) says
 "The Project verbs playbook was started{: why}.", "The Project verbs playbook could not start.",
 "The Project verbs playbook finished with no change.", "The Project verbs playbook proposes a
-definition on {branch}: approve it, then merge.", "The Project verbs playbook's branch was
-merged." and "The Project verbs playbook's worktree was removed."
+definition on {branch}: approve it, then merge.", "The Project verbs playbook waits on your answers in
+its session.", "The Project verbs playbook's branch was merged." and "The Project verbs playbook's worktree was removed."
 
 ## §app.project-runtime/playbook — The Project verbs playbook
 
@@ -185,7 +193,12 @@ in the contract's key order), exiting 0 when all is well, 1 when it found someth
    hash) with each service's and instance's measured memory, the test command and smoke counts,
    the app files it adapted, the outbound channels it silenced and how, the deploy entrypoints
    it found (never run), and the next step
-   ("Approve {hash12} on the project page's Software card, then Merge Branch.").
+   ("Approve & Merge {hash12} on the project page.").
+
+When it needs a decision the repository can't settle (which of two held ports a service takes,
+whether a store is production data, which service is the entry point when two serve pages), it
+asks the operator with `align` and ends its turn, rather than guessing; the answer comes back as
+the next message. Its frontmatter says `approves: definition` (§app.project-runtime/verb-playbooks).
 
 A run that finds nothing to change commits nothing and ends "No change: the contract matches the
 project." A rerun with nothing changed therefore leaves the branch and the definition byte for
@@ -207,5 +220,92 @@ shared."; "Proven {time} at {hash12} (suite v{n})";
 run's session as a link; and the registry's latest feed lines, newest first, with
 the project's onMerge notes (§app.project-services/on-merge) among them. Its actions are
 **Run Playbook** (**Run Again** once registered) and **Approve {hash12}**, each shown only while
-the statechart would take it. Under its service rows, **Open Branches** links to the project's
+the statechart would take it; while a run is proposed, **Approve & Merge** (or **Merge Branch**)
+replaces Approve (§app.project-runtime/approve-merge). A live run shows as its strip
+(§app.project-runtime/run-progress) and a proposed one as its review
+(§app.project-runtime/run-report). Under its service rows, **Open Branches** links to the project's
 Branches tab (§app.project-services/services-ui), where each copy is started, stopped, opened and read.
+
+## §app.project-runtime/review — A proposed run needs you
+
+A verb playbook run (§app.project-runtime/verb-playbooks) that ends proposed waits on the operator, and
+says so where the operator looks, so a finished turn is never mistaken for a finished run. While the
+run is proposed, its session has an act-tier attention item (§app.overseer/attention-digest) of kind
+`playbook-review`, dated by its last turn's end: "{Title}: approve {hash12} and merge into {target}"
+while the branch's definition waits for approval, "{Title}: {hash12} is approved: merge it into
+{target}" once it is approved, and "{Title}: its branch {branch} has no valid definition: read its
+report" when the branch's definition is absent or invalid ({Title} the playbook's title, `target`
+the branch the run's worktree merges into). So it lists in the sidebar's Needs you as the run's
+session row, counts in the Overseer's "need you", and is a phone-notification kind, "Playbook needs
+you", on by default (§app.notifications/delivery). The item goes only when the run leaves proposed:
+its branch merged, its worktree removed, or the run working again (a new turn); never on a visit or
+on the approval alone.
+
+While the run is proposed, the project page shows a banner above its summary, on every tab: "{Title}
+proposes {hash12} on {branch}." with "Approve it and merge it into {target}." (or "It is approved:
+merge it into {target}."; with no valid definition on the branch, "{Title} proposes changes on
+{branch}." with "Its branch has no valid definition: read its report."), its action
+**Approve & Merge** (§app.project-runtime/approve-merge; **Merge Branch** once approved; none when
+there is nothing valid to approve) and a link to the run's session, **Read Report**. The Needs-you row
+of a `playbook-review` item carries the same button under it, the one exception to that region's
+rows having no button of their own (§app.session-list/needs-you).
+
+## §app.project-runtime/approve-merge — Approve & Merge
+
+`POST /api/projects/:pid/runtime/approve-merge {hash}` finishes a proposed run in one gesture, the
+operator's only, with every rule of the two gestures it joins. It approves `hash` as
+§app.project-runtime/approve does (refused, approving nothing and merging nothing, when it is no
+longer the hash the branch proposes: "The definition changed since it was shown: look again.", or
+for anyone else: 403 "Only the operator approves a definition."), skipping the approval when that
+hash is already approved, then runs Merge Branch on the run's session
+(§app.project-overseer/coding-worktrees) with all of its refusals. A merge that is refused keeps the
+approval (it is keyed by the hash, so it approves nothing else) and answers 409 with "Approved
+{hash12}, but the merge was refused: {its reason}". With no run proposed it is refused 409: "No
+playbook run is waiting for approval." It answers the registry,
+read again. The Software
+card shows **Approve & Merge** in place of **Approve {hash12}** while a run is proposed (or **Merge
+Branch** once its hash is approved), beside the banner's and the Needs-you row's; each says, on a
+refusal, why under the button.
+
+## §app.project-runtime/run-progress — The run as it goes
+
+The Software card shows the live run of a verb playbook as a strip, from what Sova already keeps of
+its session, with no tool of the run's own: a chip, "Working" (the live indicator) or "Idle"
+("Waiting for your answers" while the run's region is waiting, "Proposed" while it is proposed),
+how long since the run started ("under 1 min", "12 min", "2 h 5 min"), the session's outline "now"
+line when it has one (as the session list reads it), and **Open Session**. While the run waits on
+its open alignment questions, the strip says "{n} open questions in its session" in place of the
+"now" line and links there as **Answer in Its Session**, where the alignment card takes the
+answers.
+
+## §app.project-runtime/run-report — The proposal, from what Sova read
+
+While a run is proposed, the Software card shows what its branch proposes, read by the host from
+the branch's `.sova/project.json` at its tip and the newest confined conformance of its hash, never
+from the run's own words: each service (name, kind, scope, isolation method, slot 0's ports), each
+data resource with its Sensitive chip, whether copies can be shared ("Shares {endpoints}",
+"Never shared", or "Shares nothing"), the entry point ("Opens at {endpoint}{path}", or "No entry
+point"), and the conformance ("Conformance passed (confined, suite v{n})" with the measured memory of
+each service, or "Conformance failed at {check}: {detail}", or "No conformance of this definition
+yet"). A branch with no valid definition says why ("Its branch has no .sova/project.json." / "The
+definition on its branch is invalid: {error}"). Under it, **Read Report** links to the run's session,
+whose last message is its report.
+
+## §app.project-runtime/verb-playbooks — Verb playbooks
+
+A verb playbook is a playbook whose `PLAYBOOK.md` frontmatter says what its proposal approves,
+`approves: definition` (the project's `.sova/project.json`, §app.project-services/trust) or
+`approves: deploy`. `project-verbs` approves `definition`. `verbs/onboard`'s `playbook` names one
+by its id (lower case letters, digits and hyphens, else 400 "No playbook "{id}": a playbook id is
+lower case letters, digits and hyphens."). The registry's run is keyed by the
+playbook's id: it records the id, the playbook's title and what it approves, and the run strip, the
+review, the banner, the Needs-you item and Approve & Merge name the playbook by its title and act on
+what it approves. A playbook without `approves:` (or with any other value) is not a verb playbook,
+and `verbs/onboard` refuses it: "{id} is not a verb playbook: its PLAYBOOK.md says no approves:."
+
+A verb playbook's run may ask the operator. Its session runs with align on, beside the project's
+coding mode (§app.project-overseer/coding-mode), so a decision it can't make from the repository
+(which of two held ports to use, whether a resource is production data) is an alignment question,
+not a guess: its open questions are the session's `open-questions` Needs-you item and push
+(§chat.alignment/session-mark), and the run's region waits (§app.project-runtime/onboard). An
+ordinary project coding session never gets align.

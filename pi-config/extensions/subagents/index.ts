@@ -103,6 +103,7 @@ import { specHookSettings, withClaudeSettings } from "../claude-code/spec-hooks.
 import { LEDGER_ENV, ledgerPath, workerLedgerPath } from "../mode/spec-guard.ts";
 import { ASSESSMENT_OWNER_ENV, ASSESSMENT_WORKER_ENV, ASSESSMENT_TEAM_ENV } from "../mode/spec-assessment.ts";
 import { DEFAULT_CLAUDE_TOOLS } from "../claude-code/transport.ts";
+import { USAGE_PARENT_ENV } from "../llm-inflight/attribution.ts";
 import { workerSpecBrief, writesCode } from "./spec-brief.ts";
 import { restoreActive as restoreWorktrees, treeOf, workerCwdRefusal as worktreeCwdRefusal, type WorktreesActive } from "../worktrees/state.ts";
 
@@ -1475,13 +1476,18 @@ export function registerSubagents(
 					// A worker on its worktree's agent dir: pi resolves everything there (never written to disk).
 					const tooling = teamMember ? memberTooling(spec.backend ?? "pi") : "none";
 					const baseEnv = treeConfig ? { ...memberVars, ...treeConfig.env } : tooling === "pi" ? memberVars : undefined;
-					const env = specOn && !remote ? {
+					// The usage ledger's parent (llm-inflight attribution.ts): a pi worker reads it itself, a
+					// Claude Code worker's runner reads it from its options here.
+					const parentSid = ctx.sessionManager.getSessionId?.();
+					const usageEnv = parentSid ? { [USAGE_PARENT_ENV]: `${parentSid}:${id}` } : undefined;
+					const specEnv = specOn && !remote ? {
 						...(backendPrepared?.env as Record<string, string> | undefined), ...baseEnv,
 						...(ledger ? { [LEDGER_ENV]: ledger } : {}),
 						[ASSESSMENT_OWNER_ENV]: ctx.sessionManager.getSessionId?.() ?? "",
 						[ASSESSMENT_WORKER_ENV]: id,
 						[ASSESSMENT_TEAM_ENV]: request.team?.teamId ?? "",
 					} : ledger ? { ...baseEnv, [LEDGER_ENV]: ledger } : baseEnv;
+					const env = usageEnv ? { ...specEnv, ...usageEnv } : specEnv;
 					const name = (spec.count ?? 1) > 1 ? `${base}-${i + 1}` : base;
 					// Hosted: the runner's spawnImpl starts a detached host instead of the worker itself.
 					const hostedWorker = !resuming && hosting.active();

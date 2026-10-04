@@ -28,7 +28,7 @@ import { isLinkMessage, parseLinkMessage } from "../shared/link-message";
 import { isTopicBatch } from "../shared/topic-message";
 import { parseWakeNudge } from "../shared/wake";
 import { inputSourceOf, type QueueImage, type QueueKind, WebQueue, type WebQueueItem } from "./queue";
-import { decodeUsageTotal, decodeWorkers } from "./insights";
+import { decodeWorkers } from "./insights";
 import { readLive, readOwnLiveRecords, workerCountsOf } from "./live";
 import { sessionsChanged } from "./list-generation";
 import { appliesAfter, defaultPatchOf, mergeMode, MINOR_MODES, modeApplyPlan, modeInfo, pinEntryFor, readMode, resolveChatMode, writeMode, type ModePatch, type ModeState } from "./mode-state";
@@ -63,6 +63,7 @@ import { RunState, SessionLimits, sessionPowersExtension } from "./session-power
 import { queuePushExtension, topicStore } from "./topics";
 import { instrumentModelRuntime } from "../pi-config/extensions/llm-inflight/runtime.ts";
 import { markDegraded } from "../pi-config/extensions/llm-inflight/tracker.ts";
+import { noteUsageSession, registerUsageSession, withUsageContext } from "../pi-config/extensions/llm-inflight/attribution.ts";
 import { readWebSettings } from "./web-settings";
 
 const GUARD_POLL_MS = 3000;
@@ -738,7 +739,8 @@ export async function compactSession(
     return entryId;
   };
   try {
-    const result = await session.compact(instructions);
+    // Its summary call is the session's own, recorded with purpose `compaction` (usage ledger).
+    const result = await withUsageContext({ purpose: "compaction" }, () => session.compact(instructions));
     if (!entryId) return refused("internal", "Compaction failed: pi reported success but wrote no compaction entry.");
     return { ok: true, entryId, tokensBefore: result.tokensBefore };
   } catch (err) {
@@ -3048,13 +3050,11 @@ class ChatSession {
     const rec = readOwnLiveRecords().get(this.path);
     const counts = rec ? workerCountsOf(rec.rec) : undefined;
     if (!rec || !counts) return null;
-    const usageTotal = decodeUsageTotal(rec.rec?.presence);
-    // Each worker's context fill, off its own transcript's tail (the record carries spend only);
+    // Each worker's context fill, off its own transcript's tail (the record carries no fill);
     // claude-code windows follow the spawn model this session's manifests recorded.
     const workers = withWorkerContext(decodeWorkers(rec.rec?.presence, true), workerContextReader,
       workerWindowResolver(this.runtime.services.modelRuntime), (id) => this.claudeSpawnModel(id));
-    return { type: "workers", working: counts.working, total: counts.total,
-      workers, ...(usageTotal ? { usageTotal } : {}) };
+    return { type: "workers", working: counts.working, total: counts.total, workers };
   }
 
   /** A claude-code worker's spawn model from this session's manifests, folded once per entry count. */
@@ -3527,7 +3527,11 @@ async function openSession(path: string, onDisposed: () => void): Promise<ChatSe
       agentDir: getAgentDir(),
       sessionManager,
     });
-    const chat = new ChatSession(path, runtime, onDisposed);
+    let unregisterUsage: (() => void) | undefined;
+    const chat = new ChatSession(path, runtime, () => {
+      unregisterUsage?.();
+      onDisposed();
+    });
     // A Stop pressed before a restart still pauses its topic batches (§chat.topics/delivery).
     chat.topicsPaused = topicStore().receiverPaused(path);
     try {
@@ -3541,6 +3545,12 @@ async function openSession(path: string, onDisposed: () => void): Promise<ChatSe
     chat.profileState = profile;
     if (!specialFor(sessionManager, path)) chat.loadoutState = loadout;
     const kind = specialFor(sessionManager, path);
+    // The usage ledger (llm-inflight attribution.ts): this chat's calls are its own, an Overseer's or
+    // a project overseer's as `overseer`. Registered here as well as by the extension at
+    // session_start, since a special loadout may not load it.
+    const usageSid = sessionManager.getSessionId();
+    if (kind?.kind === "overseer" || kind?.kind === "project-overseer") noteUsageSession(usageSid, { kind: "overseer" });
+    unregisterUsage = registerUsageSession(usageSid, { kind: "main", ...(openCwd ? { cwd: openCwd } : {}), parent: null });
     if (kind && kind.kind !== "overseer") {
       chat.special = kind.kind;
       chat.specialEntry = kind.entry;

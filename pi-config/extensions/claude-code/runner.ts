@@ -16,6 +16,7 @@ import { freshAccessToken, refreshLogin, switchText, type RefreshImpl, type Clau
 import { ACCOUNTS_MODULE, CONFINED_DROP_ENV, CONFINED_SETTINGS, TOKEN_FD, claudeNeeds, confinedSourceEnv, confinedVersionProbe, launchModule, loginDirOf, type ClaudeConfine } from "./confined-launch.ts";
 import type { AgentStatus, AgentUsage, TaskOutcome, TranscriptItem, TranscriptKind, SteerResult } from "../subagents/runner.ts";
 import type { Worker, WorkerHandlers, SteerMode, SpawnOptions } from "../subagents/contracts.ts";
+import { usageParentFromEnv } from "../llm-inflight/attribution.ts";
 import { createClaudeRequestObserver, type ClaudeRequestObserver } from "../llm-inflight/claude.ts";
 
 /**
@@ -292,7 +293,24 @@ export class ClaudeRunner implements Worker {
 		const forced = this.login && this.options.logins?.forcedFailure?.(this.login.id);
 		// Its model calls count in this process (llm-inflight). A re-adopted worker's replay is
 		// history: counting starts when the host goes live (adopt()).
-		const requestObserver = createClaudeRequestObserver({ active: !this.options.adopt || this.transport !== undefined });
+		// Its spend is recorded here too (the usage ledger): owned by its Claude session, its parent the
+		// session that spawned it (PI_USAGE_PARENT, set at spawn). Only a first launch starts fresh.
+		const parent = usageParentFromEnv(this.options.env ?? {});
+		const requestObserver = createClaudeRequestObserver({
+			active: !this.options.adopt || this.transport !== undefined,
+			usage: {
+				who: (claudeSession) => ({
+					owner: claudeSession ?? this.sessionId ?? null,
+					parent: parent?.parent ?? null,
+					worker: parent?.worker ?? this.id,
+					kind: "worker",
+					cwd: this.cwd,
+					routed: false,
+				}),
+				...(this.model ? { model: this.model } : {}),
+				fresh: !this.options.adopt && !this.options.resume && this.transport === undefined,
+			},
+		});
 		this.requestObserver = requestObserver;
 		const transport: ClaudeTransport = new ClaudeTransport({
 			timings: this.timings,

@@ -17,29 +17,27 @@ the org page's Projects tab. The owner page and the project overseer never do.
   - **Gathering and offers**: every baton session of the project (`projectId`), the overseer's and
     the operator's.
   - **Settling**: baton sessions that settle a conflict.
-  - **Wrap-ups**: each baton's wrap-up turn (the entries after its wrap-up start marker), counted
+  - **Wrap-ups**: each baton's wrap-up turn (the calls its wrap-up turn made, recorded as such), counted
     apart from the conversation it wraps up.
   - **Coding sessions**: every coding session of the project, kind `coding` or `operator-coding`
     (§app.project-overseer/coding-worktrees).
   - **Their workers**: every worker and team member a coding session started, at any depth, pi or
-    Claude Code (found through the session's worker manifests; a worker's own workers through its
-    file's).
-  - **Reconciler**: every decide call the reconciler made for the project, from its usage log
-    (§app.project-costs/recording).
+    Claude Code (found through the usage ledger: every recorded call whose parent chain reaches
+    the coding session).
+  - **Reconciler**: every decide call the reconciler made for the project, recorded in the usage
+    ledger with the project's id (§app.project-costs/recording).
 - **Who started it**, one of three: *the overseer* (a baton or coding session the overseer, or its
   project's charts on their own, started: §app.project-overseer/drive; its own conversations), *you* (the operator: a baton you started,
   Start Coding Session, New Coding Session, Reconcile Now) or *Sova on its own* (the reconciler's automatic runs). A
   wrap-up follows its baton, and a worker follows the coding session that started it.
-- **Counted once.** Per file, a message is counted once (pi by entry id, Claude Code by
-  `message.id`), with the fork boundary on for every file, so a fork never counts its parent's
-  messages again; across sources, a transcript reached twice (a team member listed by two
-  manifests) counts once.
-- **Priced per message**, at the price in force at that message's own time
-  (§app.project-costs/pricing): assistant replies, pi's `usage` entries (cache warming), and
-  compaction and branch summaries that record usage.
-- **Not counted**, and said on the card so the total isn't read as complete: topic summaries and
-  image descriptions made inside coding sessions, Sova's own side calls (attention signals, session
-  tags, the decide probe), and reconciler attempts that failed or timed out (they report no usage).
+- **Counted from the usage ledger** (§app.insights/usage-ledger): every call those sessions made
+  on this device, once, at the call's end: replies on every branch, retries, compaction, branch
+  summaries and cache warming. A fork counts only its own calls, never its parent's again.
+- **Priced per call**, at the price in force at that call's own time
+  (§app.project-costs/pricing), by the one pricing function every spend figure uses.
+- **Not counted**, and said on the card so the total isn't read as complete: Sova's own side
+  calls that name no session of the project (attention signals, session tags, the decide probe),
+  and reconciler attempts that failed or timed out (they report no usage).
 
 ## §app.project-costs/pricing — How a message is priced
 
@@ -53,10 +51,6 @@ the org page's Projects tab. The owner page and the project overseer never do.
 - **Long context.** Where models.dev lists a context tier for a model, a message whose request
   input (input + cache read + both cache writes) is over the tier's size is priced wholly at the tier's
   rates.
-- **Estimates.** Claude Code messages recorded before the bridge split its cache writes
-  (§app.project-costs/recording) carry one merged cache-write figure: it is priced at the 1-hour
-  rate and marked an **estimate**. When any such part costs something, the project's total is
-  written `≈$4.10` and a note says why; table cells and the org page's totals carry no mark.
 - **Unpriced.** A model with no price (no alias, no models.dev row, or a row without rates) is
   **unpriced**: its tokens are counted and listed with the reason, and it adds nothing to the total.
   It is never priced like a sibling model.
@@ -74,15 +68,16 @@ the org page's Projects tab. The owner page and the project overseer never do.
   (`claude-code-cli/opus[1m]`, `openai-codex/gpt-6-sol`, `ollama-cloud/deepseek-v4-pro:0813`, …) to
   models.dev's `provider/model`, optionally dated, plus the models known to have no price and why.
   `pnpm run prices:update` regenerates the seed from models.dev.
-- **Refreshed on its own, every 3 days.** At server start, and on a timer every 6 hours, the
-  host's price data is fetched in the background when it is missing or older than 3 days (so a
-  host that slept or restarted still refreshes on time). Startup never waits for it. The result is
-  written atomically to the host-local cache `<stateRoot>/model-prices.json`, never to a tracked
-  file. A failed fetch keeps the last good data and logs one line. A cache older than the seed gets
-  the seed's prices folded on top, keeping its own history.
-- **Dated periods.** When a refresh finds a model's rates changed, the old rates' period is closed
-  and a new one opened at the refresh's time, so a message keeps the price in force when it was
-  sent. The
+- **Pulled every 6 hours, and on demand.** The usage helper (§app.insights/usage-ledger) pulls
+  models.dev at its start when the last pull is 6 hours old or more, then every 6 hours, and when
+  the Costs tab's **Refresh prices** asks (§app.insights/cost-history). Startup never waits for
+  it. The host's dated price history is data, `<stateRoot>/model-prices.json`, written
+  atomically, never a tracked file; the checked-in seed is copied there only when the file is
+  missing. A failed pull keeps the last good data and logs one line.
+- **Dated periods.** When a pull finds a model's rates changed, the current period is closed
+  and a new one opened at the pull's time, so a call keeps the price in force when it was made.
+  A pull only adds periods: an older period, or a date entered by hand, is never dropped or
+  rewritten, and a model models.dev stopped listing keeps its history. The
   first period has no start, so messages from before the first fetch use the first price seen.
 - **Switch.** `SOVA_PRICES_FETCH=off` (or `0`, `false`) turns fetching off (hermetic runs): the
   server prices with the cache if present, else the seed; `on` (`1`, `true`) allows it. Unset, a
@@ -91,31 +86,29 @@ the org page's Projects tab. The owner page and the project overseer never do.
 
 ## §app.project-costs/recording — Usage that must be recorded to be priced
 
-- **The reconciler's usage log.** Every decide answer the reconciler gets for a project (pairs,
-  areas, a decision's outcome) appends one row to the workspace repo's
-  `projects/<projectId>/usage.jsonl`: `{at, kind: "reconcile", by, provider, model, input, output,
-  cacheRead, cacheWrite, cacheWrite1h?}`, `by` being who asked (`operator`, `overseer`, `sova`).
-  An answer that reports no tokens writes nothing, and a failed or timed-out attempt reports none.
-  One reconcile runs at a time per project, so an answer is recorded once. Append only.
+- **The reconciler's calls.** Every decide call the reconciler makes for a project writes a usage
+  record (§app.insights/usage-ledger) carrying the project's id and purpose `reconcile`; that is
+  what the cost counts. A call that reports no tokens writes nothing, and a failed or timed-out
+  attempt reports none. The workspace repo's `projects/<projectId>/usage.jsonl` may still be
+  appended as an audit log, but no cost reads it.
 - **The Claude Code bridge** (`pi-config/extensions/claude-code`) records, on each assistant
   message, the model that answered (`responseModel`, from the stream's `message_start`) and the
   1-hour cache writes apart (`usage.cacheWrite1h`, from `cache_creation.ephemeral_1h_input_tokens`;
   `cacheWrite` stays the total). Both are pi-ai's own fields; the message's `cost` stays 0.
-- **Per-message counts** come from the worker-transcript readers' own dedup (pi and Claude Code),
-  which hand each counted message's time, model and token split to the pricing, so a file is never
-  counted two ways.
+- **Per-call counts** come from the usage ledger only: no transcript is read to count a cost.
 
 ## §app.project-costs/ledger — What survives a missing file
 
-- The workspace repo keeps `projects/<projectId>/costs.json`: per session (and per worker source),
-  its title, kind, who started it, when it was last counted, and its token counts by model and by
-  when they were spent (so each is priced at its own period), per token kind. The host that has
-  the file writes it when the counts changed, at most once a minute per project. It holds no path,
-  host name, link token or secret.
-- A session whose file is on this host is recounted; one whose file isn't (a coding session run on
-  another host, a Claude Code transcript deleted by its own cleanup) uses its last counted buckets,
-  and the card says "as last counted". Dollars are always recomputed from the buckets with the
-  current price table, so a corrected price corrects history.
+- The workspace repo keeps `projects/<projectId>/costs.json`: per session (and per worker source,
+  and per host's reconciler calls), its title, kind, who started it, when it was last counted, and
+  its token counts by model and by when they were spent (so each is priced at its own period), per
+  token kind, taken from the usage ledger. A host writes the rows of what its own ledger holds when
+  they changed, at most once a minute per project. It holds no path, host name, link token or
+  secret.
+- What this device's ledger holds is counted from the ledger; a row only another host recorded (a
+  coding session run there, that host's reconciler calls) uses its last counted buckets, and the
+  card says "as last counted". Dollars are always recomputed from the buckets with the current
+  price table, so a corrected price corrects history.
 - A running cost never shrinks because a project retired an old session from its list of 200: the
   ledger has no row cap.
 
@@ -137,7 +130,7 @@ the org page's Projects tab. The owner page and the project overseer never do.
   its column's name.
 - **Top sessions:** up to 20, most expensive first: title (a link when the session is on this
   host), kind · who started it, cost.
-- **Notes**, one line each, only when true: unpriced tokens, estimates, sessions not on this host,
+- **Notes**, one line each, only when true: unpriced tokens, sessions not on this host,
   what isn't counted, and the date of the prices. Copy: §design.copy-deck/project-costs.
 - Read on open, with Refresh Project, and every 60 seconds while the tab shows (paused while
   hidden). `GET /api/projects/:pid/costs`; the cost is never part of `GET …/overseer`.

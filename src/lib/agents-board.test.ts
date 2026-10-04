@@ -18,6 +18,7 @@ import {
   sortRows,
   teamForLink,
   totalsLine,
+  workersChips,
   treeLines,
   treeMerge,
   treeName,
@@ -85,10 +86,9 @@ test("state: a question outranks work, work outranks what the last turn left, th
 
 test("rows: main threads only, matched to their host record by path; headless workers don't match", () => {
   const list = [sess("a"), sess("w", { workerSession: true }), sess("o", { overseer: true }), sess("b")];
-  const rows = boardRows(list, insight([agent("/s/a.jsonl", { usageTotal: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 1.5, workers: 2 } }), agent("/s/b.jsonl", { embedded: false })]), noBusy);
+  const rows = boardRows(list, insight([agent("/s/a.jsonl"), agent("/s/b.jsonl", { embedded: false })]), noBusy);
   assert.deepEqual(rows.map((r) => r.session.id), ["a", "b"]);
   assert.equal(rows[0]!.live, true);
-  assert.equal(rows[0]!.spend, 1.5);
   assert.equal(rows[1]!.agent, null, "an rpc record that isn't embedded is a worker pi, not the session's");
   assert.equal(rows[1]!.live, false);
 });
@@ -150,22 +150,29 @@ test("search: every word, across title, gist, path and branch; a search with no 
   assert.deepEqual(visibleRows(rows, { filter: null, query: "", treesOf: trees, pinned: "/s/b.jsonl" }).map((r) => r.session.id), ["a", "b"], "a team link's session is pinned in");
 });
 
-test("totals: sessions working and live, today's worker spend, unmerged trees counted once", () => {
+test("totals: sessions working and live, the ledger's spend today, unmerged trees counted once", () => {
   const rows = boardRows(
     [sess("a", { lastActiveAt: ago(30) }), sess("b", { lastActiveAt: ago(60 * 24 * 3) }), sess("c", { live: { pid: 2, status: "x" } })],
-    insight([
-      agent("/s/a.jsonl", { state: "working", usageTotal: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 2, workers: 1 } }),
-      agent("/s/b.jsonl", { usageTotal: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 5, workers: 1 } }),
-    ]),
+    insight([agent("/s/a.jsonl", { state: "working" }), agent("/s/b.jsonl")]),
     noBusy,
   );
   const shared = tree("/t/shared", { merged: "no" });
-  const t = boardTotals(rows, [[shared, tree("/t/m", { merged: "content" })], [shared], [tree("/t/own", { merged: "no" })]], NOW);
-  assert.deepEqual(t, { working: 1, live: 3, spendToday: 2, unmerged: 2 });
-  assert.equal(totalsLine(t), "1 working · 3 live · $2.00 today · 2 unmerged");
-  const blank = boardTotals(boardRows([sess("x")], undefined, noBusy), [], NOW);
+  // Today's figure is the ledger's, whatever the rows are: no row's spend is summed into it.
+  const t = boardTotals(rows, [[shared, tree("/t/m", { merged: "content" })], [shared], [tree("/t/own", { merged: "no" })]], { usd: 7.25 });
+  assert.deepEqual(t, { working: 1, live: 3, spendToday: 7.25, unmerged: 2 });
+  assert.equal(totalsLine(t), "1 working · 3 live · $7.25 today · 2 unmerged");
+  const blank = boardTotals(boardRows([sess("x")], undefined, noBusy), [], undefined);
   assert.deepEqual(blank, { working: 0, live: 0, spendToday: null, unmerged: null });
-  assert.equal(totalsLine(blank), "0 working · 0 live", "no spend and no reading: nothing claimed");
+  assert.equal(totalsLine(blank), "0 working · 0 live", "no answer yet and no reading: nothing claimed");
+  assert.equal(boardTotals([], [], { usd: 0 }).spendToday, null, "nothing spent today: left out");
+});
+
+test("board row chip: each session's workers' dollars from the ledger's answer, none at zero or with no record", () => {
+  const spend = (usd: number) => ({ usd, tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cacheWrite1h: 0 }, usdBy: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cacheWrite1h: 0 }, calls: 1, unpricedTokens: 0 });
+  const chips = workersChips({ sessions: { a: { total: spend(9), workers: spend(4.5) }, b: { total: spend(3), workers: spend(0) } } });
+  assert.equal(chips.get("a"), 4.5, "the workers' part, never the session's total");
+  assert.equal(chips.has("b"), false, "nothing spent by its workers: no chip");
+  assert.equal(chips.has("c"), false, "no record: no chip");
 });
 
 test("money: symbol first, two decimals, a sub-cent spend is not $0.00", () => {

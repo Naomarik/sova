@@ -34,7 +34,7 @@ import {
 } from "../lib/session-groups";
 import { announce, home, setGroupSendAll, toast } from "../lib/ui-state";
 import { cwdLabel } from "../lib/remote-session";
-import { sessionWorking, type UsageTotalView } from "../lib/workers";
+import { sessionWorking } from "../lib/workers";
 import type { PaneInsight, TabId } from "./SessionPane";
 import { sessionHref } from "./Sidebar";
 import { SessionView } from "./SessionView";
@@ -81,7 +81,7 @@ export interface PaneWiring {
   onRefresh(): void;
   onArchiveChanged(path: string, archived: boolean): void;
   onInsight(path: string, insight: PaneInsight | null): void;
-  onWorkers(path: string, workers: WorkerInfo[] | null, usage: UsageTotalView | null): void;
+  onWorkers(path: string, workers: WorkerInfo[] | null): void;
   onClaudeLogin(path: string, login: ChatClaudeLogin | null): void;
   onRewindControl(path: string, control: RewindControl | null): void;
   onRewound(info: { path: string; entryId: string }): void;

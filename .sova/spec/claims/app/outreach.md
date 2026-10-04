@@ -132,7 +132,11 @@ pairs or unlinks it.
   as it is. The previews lists (the project's card, the Shares page) name a sibling's person on its
   original's **Sent to** line (as "sent to {name}" on a row of its own when its original isn't
   listed), each with its own Delete, so each person's link can be deleted on its own
-  (§mesh.public/preview-card). A sibling records who sent it (`createdBy`): `operator` for the
+  (§mesh.public/preview-card). The person's link the resolver makes is kept host-local from that
+  step on, beside the previews (`siblingLinks`, §mesh.public/preview), so the operator can copy it
+  again from that Sent to line; a send that fails turns the sibling off and drops its link with it.
+  It is kept for the operator's lists only: never in the send log, a tool's answer or a model's
+  context. A sibling records who sent it (`createdBy`): `operator` for the
   operator's own send, else `session:<id>` of the overseer that sent it (the project's overseer
   conversation for a project overseer's send, the current Overseer for the global Overseer's), so
   the lists say "Sent by the overseer" (the name's tooltip on a Sent to line) or "Made by the

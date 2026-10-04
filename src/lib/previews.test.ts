@@ -4,6 +4,9 @@ import { test } from "node:test";
 import type { PreviewView } from "../../shared/preview-links";
 import {
   activePreviews,
+  recipientCopied,
+  recipientCopyLabel,
+  recipientCopyTip,
   DELETE_ALL_TIP,
   DELETE_CONFIRM,
   deleteFailed,
@@ -114,4 +117,10 @@ test("a Delete's done and failed toasts", () => {
   assert.equal(PREVIEW_DELETED, "Preview deleted.");
   assert.equal(recipientDeleted("Fatoom Wife"), "Fatoom Wife's link deleted.");
   assert.equal(deleteFailed("Not found."), "Couldn't delete it. Not found.");
+});
+
+test("a recipient's Copy names them, says a visit through it counts as theirs, and reports done", () => {
+  assert.equal(recipientCopyLabel("Ana"), "Copy Ana's Link");
+  assert.equal(recipientCopyTip("Ana"), "Copies only Ana's link. A visit through it counts as theirs.");
+  assert.equal(recipientCopied("Ana"), "Ana's link copied.");
 });

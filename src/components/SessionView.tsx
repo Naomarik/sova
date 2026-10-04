@@ -11,7 +11,10 @@ import { PaneScopeProvider, type PaneScope } from "../lib/pane-scope";
 import { cwdLabel } from "../lib/remote-session";
 import type { RewindControl } from "../lib/inputs";
 import { activeTab, home } from "../lib/ui-state";
-import { sessionWorking, formatCost, type UsageTotalView, workingSplit } from "../lib/workers";
+import { sessionWorking, workingSplit } from "../lib/workers";
+import { sessionIdOfPath } from "../lib/links";
+import { paneTitleCost } from "../lib/spend";
+import { createSessionSpend } from "./SessionUsage";
 import { ChatView, type ChatRefusal, type OverseerChat } from "./ChatView";
 import { ContextGauge, contextDescribedBy } from "./ContextGauge";
 import { ProfileChip } from "./ProfileChip";
@@ -22,7 +25,8 @@ import { RemoteChip, RemoteHeadChip } from "./RemoteStatus";
 import type { PaneInsight, TabId } from "./SessionPane";
 import { WatchView } from "./WatchView";
 import { Banner, Chip, Icon } from "./ui";
-import { hostLabel, hostOf } from "../lib/mesh";
+import { hostOf } from "../lib/mesh";
+import { HostStateMark } from "./HostStateMark";
 import { HostScopeProvider } from "../lib/host-scope";
 
 /** Why a session is open read-only: a TUI has it, an unknown writer may, or it is a project
@@ -79,8 +83,8 @@ export function SessionView(props: {
   onArchiveChanged(path: string, archived: boolean): void;
   /** This session's insight store, published for the session pane; null as it goes away. */
   onInsight(path: string, insight: PaneInsight | null): void;
-  /** This chat's live subagents and its Σ; null list as the chat goes away. */
-  onWorkers(path: string, workers: WorkerInfo[] | null, usage: UsageTotalView | null): void;
+  /** This chat's live subagents; null as the chat goes away. */
+  onWorkers(path: string, workers: WorkerInfo[] | null): void;
   /** This chat's Claude login (ChatView's "claude_login"), keyed by path like onWorkers; null as
       the chat reconnects or goes away. */
   onClaudeLogin?(path: string, login: ChatClaudeLogin | null): void;
@@ -199,16 +203,16 @@ export function SessionView(props: {
    * itself instead of a tab deep in each pane. The cwd is the raw path (no tilde folding): a
    * tooltip is where the long form earns its place.
    *
-   * The cost is `SessionInsight.usage.total` — the SAME field the Usage tab's spend
-   * table tallies, not a second computation that could drift — and `total` rather than `main`
-   * on purpose: a member that spawned workers to answer spent them as part of its answer, and a
-   * comparison that hid subagent cost would tilt "which answer won" toward exactly the members
-   * that delegated the most. (`usageTotal` here is the WORKERS' Σ — a member with no worker has
-   * none, and the title would show no spend at all; that was the first cut of this line.)
+   * The cost is the usage ledger's total for the session (`GET /api/usage/session`) — the SAME
+   * answer the Usage tab headlines, not a second computation that could drift — and `total`
+   * rather than `own` on purpose: a member that spawned workers to answer spent them as part of
+   * its answer, and a comparison that hid subagent cost would tilt "which answer won" toward
+   * exactly the members that delegated the most. Asked only for a workspace pane.
    */
+  const memberSpend = props.paneId ? createSessionSpend(() => s()?.id ?? sessionIdOfPath(path)) : null;
   const paneTitle = () => {
-    const cost = formatCost(insight.data?.usage?.total?.cost);
-    return [paneName(), cwdLabel(s(), null), ...(cost ? [`${cost} this session`] : [])].filter(Boolean).join(" · ");
+    const cost = paneTitleCost(memberSpend?.data());
+    return [paneName(), cwdLabel(s(), null), ...(cost ? [cost] : [])].filter(Boolean).join(" · ");
   };
 
   /** The single-session view's head, unchanged: the whole width of the main column. */
@@ -224,9 +228,7 @@ export function SessionView(props: {
           <Show when={hostOf(path)}>
             {(h) => (
               <>
-                <span class="session-head-host" title={`This session lives on ${hostLabel(h())}`}>
-                  on {hostLabel(h())}
-                </span>
+                <HostStateMark host={h()} class="session-head-host" />
                 <span aria-hidden="true">·</span>
               </>
             )}
@@ -303,6 +305,7 @@ export function SessionView(props: {
           <span class="workspace-pane-name" id={`pane-${props.paneId}-name`} title={paneTitle()}>
             {paneName()}
           </span>
+          <Show when={hostOf(path)}>{(h) => <HostStateMark host={h()} class="workspace-pane-host" />}</Show>
           <ContextGauge path={path} />
           <ProfileChip summary={s()} info={profileInfo()} />
           {/* Mid-turn, said at workspace level: split mode has N panes and
@@ -409,7 +412,7 @@ export function SessionView(props: {
               <Match when={d.mode === "chat" && d}>
                 {(c) => {
                   onCleanup(() => {
-                    props.onWorkers(path, null, null);
+                    props.onWorkers(path, null);
                     props.onClaudeLogin?.(path, null);
                   });
                   return (
@@ -437,7 +440,7 @@ export function SessionView(props: {
                         props.onRefresh();
                         reloadInsight();
                       }}
-                      onWorkers={(w, usage) => props.onWorkers(path, w, usage)}
+                      onWorkers={(w) => props.onWorkers(path, w)}
                       onClaudeLogin={props.onClaudeLogin ? (login) => props.onClaudeLogin!(path, login) : undefined}
                       onProfile={setProfileInfo}
                       onTurnError={props.onTurnError ? (m) => props.onTurnError!(path, m) : undefined}

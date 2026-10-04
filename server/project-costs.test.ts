@@ -1,17 +1,17 @@
-// Run: pnpm exec tsx --test server/project-costs.test.ts. A project's cost at API prices
-// (§app/project-costs): every source of a fixture org, priced per message by a fake price table.
-// A throwaway PI_CODING_AGENT_DIR, workspace and CLAUDE_CONFIG_DIR in the OS temp dir, deleted after.
-import { randomUUID } from "node:crypto";
+// A project's cost at API prices (§app/project-costs) from the usage ledger: the server names the
+// project's sessions, the usage helper (in-process here) counts their records and their workers' at
+// any depth, prices them with a fixed price file and keeps costs.json.
+// A throwaway PI_CODING_AGENT_DIR and workspace in the OS temp dir, deleted after.
 import assert from "node:assert/strict";
-import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, test } from "node:test";
-import type { ModelRef, PricedUsage, TokenUsage } from "../shared/model-prices/prices";
+import { formatUsageRecord, type UsageRecord } from "../pi-config/extensions/llm-inflight/usage-record";
+import type { PriceTable } from "../shared/model-prices/prices";
 
 const tmp = realpathSync(mkdtempSync(join(tmpdir(), "sova-costs-")));
 process.env.PI_CODING_AGENT_DIR = join(tmp, "agent");
-process.env.CLAUDE_CONFIG_DIR = join(tmp, "claude");
 process.env.SOVA_PRICES_FETCH = "off";
 mkdirSync(join(tmp, "agent", "sessions"), { recursive: true });
 
@@ -20,52 +20,78 @@ const baton = await import("./baton");
 const { seedBuild, seedConflicts } = await import("./org-test-fixtures");
 const store = await import("./project-overseer-store");
 const costs = await import("./project-costs");
+// The route's bytes, as the browser reads them (the server itself never parses them).
+const projectCost = async (id: string): Promise<import("../shared/costs").ProjectCost> => JSON.parse((await costs.projectCostAnswer(id)).body.toString());
 const ledger = await import("./project-costs-ledger");
 const { settled } = await import("./workspace-git");
+const { setUsageAsker } = await import("./usage-helper/client");
+const { createService } = await import("./usage-helper/service");
 
 after(async () => {
+  setUsageAsker(null);
   for (const o of orgs.readIndex().orgs) await settled(o.dir);
   rmSync(tmp, { recursive: true, force: true });
 });
 
-// ---- a fake price table: $ per 1M tokens -------------------------------------------------------------
-
-const RATES = { input: 1, output: 10, cacheRead: 0.1, cacheWrite5m: 1.25, cacheWrite1h: 2 };
-/** Over 3M request input: every rate doubled (a context tier). `free/*` is local, `nopr/*` and `jev/*` have no price. */
-function fakePrice(ref: ModelRef, u: TokenUsage, _at: number | string): PricedUsage {
-  if (ref.provider === "free") return { status: "free", why: "local" };
-  if (ref.provider === "nopr" || ref.provider === "jev") return { status: "unpriced", ref: `${ref.provider}/${ref.model}`, why: "No price." };
-  // `period/*`: its price doubles at a refresh inside a day (a new period from T0 + 200 s).
-  const later = ref.provider === "period" && (typeof _at === "number" ? _at : Date.parse(_at)) >= Date.parse("2026-09-20T10:03:20Z");
-  const over = u.input + u.cacheRead + u.cacheWrite5m + u.cacheWrite1h > 3_000_000;
-  const f = (over ? 2 : 1) * (later ? 2 : 1);
-  const usd = { input: 0, output: 0, cacheRead: 0, cacheWrite5m: 0, cacheWrite1h: 0, total: 0 };
-  for (const k of ["input", "output", "cacheRead", "cacheWrite5m", "cacheWrite1h"] as const) {
-    usd[k] = (u[k] * RATES[k] * f) / 1e6;
-    usd.total += usd[k];
-  }
-  return { status: "priced", key: `priced/${ref.responseModel ?? ref.model}`, period: later ? "2026-09-20T10:03:20.000Z" : null, tier: over ? 3_000_000 : null, usd };
-}
-let clock = Date.parse("2026-09-28T12:00:00Z");
-costs.setCostDeps({ name: (k) => (k === "priced/claude-opus-5-5" ? "Claude Opus 5.5" : undefined), price: fakePrice, prices: () => ({ fetchedAt: "2026-09-28T00:00:00.000Z" }), now: () => clock });
-
-// ---- transcript fixtures ----------------------------------------------------------------------------------
-
 const T0 = Date.parse("2026-09-20T10:00:00Z");
 const iso = (ms: number) => new Date(ms).toISOString();
+
+// ---- prices: $ per 1M tokens; over 3M request input every rate doubles ----------------------------------
+
+const base = { input: 1, output: 10, cacheRead: 0.1, cacheWrite5m: 1.25 };
+const doubled = { input: 2, output: 20, cacheRead: 0.2, cacheWrite5m: 2.5 };
+const tier = [{ inputAbove: 3_000_000, rates: doubled }];
+const one = (rates: object, tiers?: object) => ({ periods: [{ from: null, until: null, rates, ...(tiers ? { tiers } : {}) }] });
+const PERIOD = iso(T0 + 200_000);
+const table: PriceTable = {
+  version: 1,
+  source: "models.dev",
+  fetchedAt: "2026-09-28T00:00:00.000Z",
+  changedAt: "2026-09-28T00:00:00.000Z",
+  models: {
+    "zai/glm-5.3": one(base, tier) as PriceTable["models"][string],
+    "anthropic/claude-opus-5-5": { name: "Claude Opus 5.5", ...(one({ ...base, cacheWrite1h: 2 }, [{ inputAbove: 3_000_000, rates: { ...doubled, cacheWrite1h: 4 } }]) as PriceTable["models"][string]) },
+    "anthropic/claude-haiku-4-5": one(base) as PriceTable["models"][string],
+    // Its price doubles at a refresh inside a day.
+    "deepseek/deepseek-flash": {
+      periods: [
+        { from: null, until: PERIOD, rates: base },
+        { from: PERIOD, until: null, rates: doubled },
+      ],
+    },
+  },
+};
+mkdirSync(join(tmp, "agent", "sova"), { recursive: true });
+writeFileSync(join(tmp, "agent", "sova", "model-prices.json"), JSON.stringify(table));
+
+let clock = Date.parse("2026-09-28T12:00:00Z");
+const svc = createService({
+  usageRoot: join(tmp, "agent", "usage", "v1"),
+  stateDir: join(tmp, "agent", "sova", "usage-ledger"),
+  pricesPath: join(tmp, "agent", "sova", "model-prices.json"),
+  device: () => "h_testhost",
+  now: () => clock,
+  log: () => {},
+  prices: { enabled: false },
+});
+setUsageAsker(async (op, params) => {
+  svc.ledger.scanAll();
+  try {
+    return { status: 200, body: Buffer.from(JSON.stringify(await svc.answer({ ...params, op }))) };
+  } catch (err) {
+    return { status: 400, body: Buffer.from(JSON.stringify({ error: String(err) })) };
+  }
+});
+
+// ---- ledger records -------------------------------------------------------------------------------------
+
 let seq = 0;
-const id = () => `e${(++seq).toString(16).padStart(7, "0")}`;
-const usage = (input: number, output = 0, cacheRead = 0, cacheWrite = 0, extra: Record<string, unknown> = {}) => ({ input, output, cacheRead, cacheWrite, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, ...extra });
-const reply = (at: number, provider: string, model: string, u: unknown, extra: Record<string, unknown> = {}) => ({ type: "message", id: id(), timestamp: iso(at), message: { role: "assistant", provider, model, content: [], usage: u, stopReason: "stop", timestamp: at, ...extra } });
-const lines = (xs: unknown[]) => xs.map((x) => `${JSON.stringify(x)}\n`).join("");
-const header = (at: number, extra: Record<string, unknown> = {}) => ({ type: "session", version: 3, id: id(), timestamp: iso(at), cwd: "/w", ...extra });
-const manifest = (workerId: string, ref: Record<string, unknown>, name?: string) => ({
-  type: "custom", id: id(), customType: "subagents-worker-manifest", timestamp: iso(T0),
-  data: { v: 1, kind: "worker-manifest", workerId, backend: ref.backend, at: T0, ref: { v: 1, ...ref }, ...(name ? { name } : {}) },
-});
-const ccLine = (msgId: string, at: number, model: string, u: Record<string, unknown>, extra: Record<string, unknown> = {}) => ({
-  type: "assistant", uuid: `${msgId}-${at}`, timestamp: iso(at), isSidechain: false, message: { id: msgId, model, role: "assistant", content: [], usage: u }, ...extra,
-});
+function call(r: Partial<UsageRecord> & { owner: string | null; ts: number }, producer = "p1"): void {
+  const rec: UsageRecord = { v: 1, key: `k${++seq}`, device: null, producer, src: "pi", provider: "zai", model: "glm-5.3", input: 0, output: 0, cacheRead: 0, cacheWrite: 0, parent: null, kind: "main", ...r };
+  const dir = join(tmp, "agent", "usage", "v1", iso(rec.ts).slice(0, 10));
+  mkdirSync(dir, { recursive: true });
+  appendFileSync(join(dir, `${producer}.jsonl`), formatUsageRecord(rec)!);
+}
 
 const approx = (a: number, b: number, what = "") => assert.ok(Math.abs(a - b) < 1e-9, `${what}: ${a} ≠ ${b}`);
 
@@ -79,160 +105,137 @@ describe("a project's cost (§app/project-costs)", async () => {
   const other = await orgs.addProject(org.id, { name: "Other", root: otherRoot });
   const maria = await orgs.addPerson(org.id, { name: "Maria", role: "Payroll" });
   const ws = orgs.orgDir(org.id);
-  const pp = store.projectOverseerPaths(project.id);
   const lp = ledger.ledgerPaths(project.id);
+  const lines = (xs: unknown[]) => xs.map((x) => `${JSON.stringify(x)}\n`).join("");
 
-  // The overseer's conversation: its marker, a reply and a cache-warm usage entry.
-  const poFile = join(ws, "sessions", `2026-09-20T10-00-00-000Z_0199aaaa-0000-7000-8000-000000000001.jsonl`);
+  // The overseer's conversation (its marker), and another project's.
   mkdirSync(join(ws, "sessions"), { recursive: true });
-  writeFileSync(poFile, lines([
-    header(T0),
-    { type: "custom", id: id(), customType: "sova-project-overseer", data: { v: 1, projectId: project.id }, timestamp: iso(T0) },
-    reply(T0 + 1000, "zai", "glm-5.3", usage(1_000_000, 100_000)),
-    { type: "usage", id: id(), kind: "cache_warm", provider: "zai", model: "glm-5.3", usage: usage(0, 0, 0, 1_000_000), timestamp: iso(T0 + 2000) },
-  ]));
-  // Another project's overseer: never this project's.
-  writeFileSync(join(ws, "sessions", `2026-09-20T10-00-00-000Z_0199aaaa-0000-7000-8000-000000000002.jsonl`), lines([
-    header(T0),
-    { type: "custom", id: id(), customType: "sova-project-overseer", data: { v: 1, projectId: other.id }, timestamp: iso(T0) },
-    reply(T0 + 1000, "zai", "glm-5.3", usage(2_500_000)),
-  ]));
+  const poFile = join(ws, "sessions", `2026-09-20T10-00-00-000Z_0199aaaa-0000-7000-8000-000000000001.jsonl`);
+  writeFileSync(poFile, lines([{ type: "session", version: 3, id: "x", timestamp: iso(T0), cwd: "/w" }, { type: "custom", id: "m", customType: "sova-project-overseer", data: { v: 1, projectId: project.id }, timestamp: iso(T0) }]));
+  const otherPo = join(ws, "sessions", `2026-09-20T10-00-00-000Z_0199aaaa-0000-7000-8000-000000000002.jsonl`);
+  writeFileSync(otherPo, lines([{ type: "session", version: 3, id: "y", timestamp: iso(T0), cwd: "/w" }, { type: "custom", id: "m", customType: "sova-project-overseer", data: { v: 1, projectId: other.id }, timestamp: iso(T0) }]));
+  const po = store.sessionIdOfFile(poFile);
+  call({ owner: po, kind: "overseer", ts: T0 + 1000, input: 1_000_000, output: 100_000 });
+  call({ owner: po, kind: "overseer", purpose: "cache-warm", ts: T0 + 2000, cacheWrite: 1_000_000 });
+  call({ owner: store.sessionIdOfFile(otherPo), kind: "overseer", ts: T0 + 1000, input: 2_500_000 });
 
-  // The operator's gathering session with a wrap-up; the overseer's settle session.
+  // The operator's gathering session with a wrap-up turn; the overseer's settle session on a local model.
   const g = await baton.createBaton({ orgId: org.id, projectId: project.id, to: maria.id, publicTitle: "Payroll", goal: "g" });
-  appendFileSync(g.path, lines([
-    reply(T0 + 10_000, "zai", "glm-5.3", usage(2_000_000)),
-    { type: "custom", id: id(), customType: "sova-baton-wrapup", data: { v: 1, phase: "start" }, timestamp: iso(T0 + 20_000) },
-    reply(T0 + 21_000, "zai", "glm-5.3", usage(0, 100_000)),
-    { type: "custom", id: id(), customType: "sova-baton-wrapup", data: { v: 1, phase: "end", applied: [], refused: [] }, timestamp: iso(T0 + 22_000) },
-  ]));
-  const sessions = await seedConflicts(org.id, project.id, [{ id: "cf_1", orgId: org.id, projectId: project.id, areaKey: "pay", a: "d1", b: "d2", p: 0.9, routedTo: maria.id, routeReason: "Maria decides pay.", batonSessionId: randomUUID(), state: "open", createdAt: new Date(T0).toISOString() }], { owner: { overseerOf: project.id } });
-  const settle = baton.batonById(sessions.cf_1!)!;
-  const s = { path: baton.sessionPathOf(settle.dir, settle.row) };
-  appendFileSync(s.path, lines([reply(T0 + 30_000, "free", "llama", usage(5_000_000))]));
+  const gid = store.sessionIdOfFile(g.path);
+  call({ owner: gid, ts: T0 + 10_000, input: 2_000_000 });
+  call({ owner: gid, purpose: "wrapup", ts: T0 + 21_000, output: 100_000 });
+  const sessions = await seedConflicts(org.id, project.id, [{ id: "cf_1", orgId: org.id, projectId: project.id, areaKey: "pay", a: "d1", b: "d2", p: 0.9, routedTo: maria.id, routeReason: "Maria decides pay.", batonSessionId: "0199bbbb-0000-7000-8000-000000000009", state: "open", createdAt: iso(T0) }], { owner: { overseerOf: project.id } });
+  call({ owner: sessions.cf_1!, ts: T0 + 30_000, provider: "ollama", model: "llama", input: 5_000_000 });
 
-  // Coding sessions: the overseer's (bridge messages, before and after the bridge fix) with a forked
-  // pi worker, a Claude Code worker and a team member listed twice; the operator's with an unpriced model.
-  const sess = join(tmp, "agent", "sessions");
-  const piWorker = join(sess, "worker.jsonl");
-  writeFileSync(piWorker, lines([
-    header(T0 + 60_000, { parentSession: "/parent.jsonl" }),
-    reply(T0 + 1000, "zai", "glm-5.3", usage(7_000_000)), // copied from its parent: not counted
-    { type: "custom", id: id(), customType: "subagents-worker-session", data: { v: 1, workerId: "ag_01" }, timestamp: iso(T0 + 60_001) },
-    reply(T0 + 61_000, "zai", "glm-5.3", usage(0, 200_000)),
-    { type: "message", id: id(), timestamp: iso(T0 + 62_000), message: { role: "toolResult", toolName: "delegate", content: [], usage: usage(300_000) } },
-  ]));
-  const member = join(sess, "member.jsonl");
-  writeFileSync(member, lines([header(T0), reply(T0 + 70_000, "zai", "glm-5.3", usage(0, 0, 1_000_000))]));
+  // Coding sessions: the overseer's with a pi worker (and its own worker), a team member and a
+  // Claude Code worker whose message also came through a second process; the operator's with an
+  // unpriced model, a call over the tier and calls either side of a new price period.
+  const codeA = join(tmp, "agent", "sessions", "code-a.jsonl");
+  const codeB = join(tmp, "agent", "sessions", "code-b.jsonl");
+  writeFileSync(codeA, "{}\n");
+  writeFileSync(codeB, "{}\n");
+  call({ owner: "code-a", ts: T0 + 91_000, provider: "claude-code-cli", model: "opus[1m]", responseModel: "claude-opus-5-5", cacheWrite: 1_000_000, cacheWrite1h: 1_000_000 });
+  call({ owner: "w1", parent: "code-a", worker: "ag_01", kind: "worker", ts: T0 + 61_000, output: 200_000 });
+  call({ owner: "w2", parent: "w1", worker: "ag_01", kind: "worker", ts: T0 + 62_000, output: 100_000 });
+  call({ owner: "member-1", parent: "code-a", worker: "ag_03", kind: "worker", ts: T0 + 70_000, cacheRead: 1_000_000 });
   const CC = "0b7a2b8e-6d0e-4a4e-9f55-3f0b6b1e2a11";
-  const ccDir = join(tmp, "claude", "projects", "-w");
-  mkdirSync(join(ccDir, CC, "subagents"), { recursive: true });
-  const ccUsage = { input_tokens: 2_500_000, output_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 1_000_000, cache_creation: { ephemeral_1h_input_tokens: 400_000, ephemeral_5m_input_tokens: 600_000 } };
-  writeFileSync(join(ccDir, `${CC}.jsonl`), lines([ccLine("m1", T0 + 80_000, "claude-opus-5-5", ccUsage), ccLine("m1", T0 + 80_000, "claude-opus-5-5", ccUsage)]));
-  writeFileSync(join(ccDir, CC, "subagents", "agent-a.jsonl"), lines([ccLine("m2", T0 + 81_000, "claude-haiku-4-5", { input_tokens: 0, output_tokens: 100_000 }, { isSidechain: true }), ccLine("m1", T0 + 80_000, "claude-opus-5-5", ccUsage)]));
-
-  const codeA = join(sess, "code-a.jsonl");
-  writeFileSync(codeA, lines([
-    header(T0),
-    manifest("ag_01", { backend: "pi", kind: "pi-session-file", locator: piWorker }, "delegate"),
-    manifest("ag_02", { backend: "claude-code", kind: "claude-session-id", locator: CC, cwd: "/w" }, "cc"),
-    manifest("ag_03", { backend: "pi", kind: "pi-session-file", locator: member, sessionId: "member-1" }, "builder"),
-    manifest("ag_04", { backend: "pi", kind: "pi-session-file", locator: member, sessionId: "member-1" }, "builder again"),
-    // Before the fix: merged cache writes and only the alias.
-    reply(T0 + 90_000, "claude-code-cli", "opus[1m]", usage(0, 0, 0, 1_000_000)),
-    // After: the answering model and the 1-hour part.
-    reply(T0 + 91_000, "claude-code-cli", "opus[1m]", usage(0, 0, 0, 1_000_000, { cacheWrite1h: 1_000_000 }), { responseModel: "claude-opus-5-5" }),
-  ]));
-  const codeB = join(sess, "code-b.jsonl");
-  writeFileSync(codeB, lines([header(T0), reply(T0 + 100_000, "nopr", "spark", usage(123)), reply(T0 + 101_000, "zai", "glm-5.3", usage(400_000)), reply(T0 + 102_000, "zai", "glm-5.3", usage(3_500_000)), reply(T0 + 103_000, "period", "p", usage(1_000_000)), reply(T0 + 300_000, "period", "p", usage(1_000_000))]));
+  const cc = { owner: CC, parent: "code-a", worker: "ag_02", kind: "worker" as const, src: "claude" as const, provider: "claude", model: "claude-opus-5-5", ts: T0 + 80_000, input: 2_500_000, cacheWrite: 1_000_000, cacheWrite1h: 400_000 };
+  call({ ...cc, key: "cc:m1" });
+  call({ ...cc, key: "cc:m1" }, "p2");
+  call({ owner: CC, parent: "code-a", worker: "ag_02", kind: "worker", src: "claude-residual", provider: "claude", model: "claude-haiku-4-5", ts: T0 + 81_000, output: 100_000 });
+  call({ owner: "code-b", ts: T0 + 100_000, provider: "nopr", model: "spark", input: 123 });
+  call({ owner: "code-b", ts: T0 + 101_000, input: 400_000 });
+  call({ owner: "code-b", ts: T0 + 102_000, input: 3_500_000 });
+  call({ owner: "code-b", ts: T0 + 103_000, provider: "deepseek", model: "deepseek-flash", input: 1_000_000 });
+  call({ owner: "code-b", ts: T0 + 300_000, provider: "deepseek", model: "deepseek-flash", input: 1_000_000 });
   await seedBuild(org.id, project.id, { sessionId: "code-a", kind: "coding", path: codeA, title: "Build A", createdAt: T0 });
   await seedBuild(org.id, project.id, { sessionId: "code-b", kind: "operator-coding", path: codeB, title: "Build B", createdAt: T0 });
-  // A build on another host with no count in the ledger: nothing to price (the legacy token count went with started.json).
   await seedBuild(org.id, project.id, { sessionId: "code-far", kind: "coding", path: "/elsewhere/far.jsonl", title: "Far", createdAt: T0 });
 
-  // The reconciler: the operator's Reconcile Now and an automatic run.
-  ledger.appendUsage(lp, { at: iso(T0), kind: "reconcile", by: "operator", provider: "zai", model: "glm-5.3", input: 1_000_000, output: 0, cacheRead: 0, cacheWrite: 0 });
-  ledger.appendUsage(lp, { at: iso(T0), kind: "reconcile", by: "sova", provider: "jev", model: "jev-1", input: 50, output: 5, cacheRead: 0, cacheWrite: 0 });
-  appendFileSync(lp.usage, "{torn\n");
+  // The reconciler's calls name the project; another project's don't count here.
+  call({ owner: null, kind: "oneshot", purpose: "reconcile", project: project.id, starter: "operator", ts: T0, input: 1_000_000 });
+  call({ owner: null, kind: "oneshot", purpose: "reconcile", project: project.id, ts: T0, provider: "jev", model: "jev-1", input: 50, output: 5 });
+  call({ owner: null, kind: "oneshot", purpose: "reconcile", project: other.id, ts: T0, input: 9_000_000 });
 
-  // The expected dollars, by source.
-  const PO = 1 + 1 + 1.25; // input $1, output $1, a 5-minute cache warm $1.25
+  const PO = 1 + 1 + 1.25;
   const GATHER = 2;
   const WRAPUP = 1;
-  const PI_WORKER = 2; // 200k output
+  const PI_WORKERS = 2 + 1;
   const MEMBER = 0.1;
-  const CC_WORKER = 2 * (2.5 + 0.6 * 1.25 + 0.4 * 2) + 1; // over the tier: 2.5M input + 600k 5m + 400k 1h, doubled; haiku 100k output
-  const CODE_A = 2 + 2; // 1M 1-hour writes each (the first assumed)
-  const CODE_B_REAL = 0.4 + 3.5 * 2 + 1 + 2; // one message under the tier, one over it; one each side of a new price period the same day
+  const CC_WORKER = 2 * (2.5 + 0.6 * 1.25 + 0.4 * 2) + 1;
+  const CODE_A = 2;
+  const CODE_B = 0.4 + 3.5 * 2 + 1 + 2;
   const RECONCILE = 1;
 
-  test("every source, priced per message: kinds, starters, models, estimates, unpriced", async () => {
-    const c = await costs.projectCost(project.id);
+  test("every source, priced per call: kinds, starters, models, unpriced, workers at any depth", async () => {
+    const c = await projectCost(project.id);
     const kind = (k: string) => c.byKind.find((r) => r.kind === k)?.usd ?? 0;
-    approx(kind("overseer"), PO, "overseer");
+    approx(kind("overseer"), PO, "overseer, its cache warm included");
     approx(kind("gathering"), GATHER, "gathering");
     approx(kind("wrapup"), WRAPUP, "wrap-up apart from its baton");
-    assert.equal(kind("settle"), 0);
-    assert.ok(c.byKind.some((r) => r.kind === "settle" && r.tokens.input === 5_000_000), "a local model's tokens count at $0");
-    approx(kind("coding-overseer"), CODE_A, "coding by the overseer");
-    approx(kind("coding-operator"), CODE_B_REAL, "a message over the tier is priced wholly at its rates; one under isn't");
-    approx(kind("workers"), PI_WORKER + MEMBER + CC_WORKER, "workers: fork boundary, dedupe by message id and across manifests");
+    assert.ok(c.byKind.some((r) => r.kind === "settle" && r.usd === 0 && r.tokens.input === 5_000_000), "a local model's tokens count at $0");
+    approx(kind("coding"), CODE_A + CODE_B, "both coding kinds as one card row; a call over the tier priced wholly at its rates; one each side of a new period");
+    assert.deepEqual(c.byKind.map((r) => r.kind), ["overseer", "gathering", "settle", "wrapup", "coding", "workers", "reconcile"], "the scope's order");
+    approx(kind("workers"), PI_WORKERS + MEMBER + CC_WORKER, "workers at any depth, a message seen twice counted once");
     approx(kind("reconcile"), RECONCILE, "reconciler");
-    approx(c.totalUsd, PO + GATHER + WRAPUP + CODE_A + CODE_B_REAL + PI_WORKER + MEMBER + CC_WORKER + RECONCILE, "total");
+    approx(c.totalUsd, PO + GATHER + WRAPUP + CODE_A + CODE_B + PI_WORKERS + MEMBER + CC_WORKER + RECONCILE, "total");
 
     const by = (b: string) => c.byStarter.find((r) => r.by === b)?.usd ?? 0;
-    approx(by("overseer"), PO + CODE_A + PI_WORKER + MEMBER + CC_WORKER, "the overseer's conversation, its coding session and its workers");
-    approx(by("operator"), GATHER + WRAPUP + CODE_B_REAL + RECONCILE, "the operator's baton, wrap-up, coding session and Reconcile Now");
-    assert.ok(c.byStarter.some((r) => r.by === "sova" && r.usd === 0 && r.tokens.input === 50), "the automatic run is Sova's own");
-
-    const est = c.estimates.find((e) => e.code === "cache-write-1h-assumed");
-    assert.deepEqual([est?.messages, est?.usd], [1, 2], "the merged write priced at the 1-hour rate, marked");
-    assert.equal(c.estimates.find((e) => e.code === "model-from-alias")?.messages, 1);
+    approx(by("overseer"), PO + CODE_A + PI_WORKERS + MEMBER + CC_WORKER, "the overseer's conversation, its coding session and its workers");
+    approx(by("operator"), GATHER + WRAPUP + CODE_B + RECONCILE, "the operator's baton, wrap-up, coding session and Reconcile Now");
+    assert.ok(c.byStarter.some((r) => r.by === "sova" && r.usd === 0 && r.tokens.input === 50), "an automatic run is Sova's own");
+    approx(c.allModels.usd, c.totalUsd, "the All models footer");
+    assert.equal(c.allModels.tokens.input, c.byModel.reduce((n, m) => n + m.tokens.input, 0));
 
     const unpriced = Object.fromEntries(c.unpriced.map((u) => [u.model, u]));
     assert.equal(unpriced["nopr/spark"]?.tokens, 123);
     assert.equal(unpriced["jev/jev-1"]?.tokens, 55);
-    assert.equal(unpriced["zai/glm-5.3"]?.tokens, 300_000, "a tool result's own usage names no model: unpriced");
-    assert.equal(unpriced["zai/glm-5.3"]?.why, "A tool's own model calls, with no model recorded.");
-    assert.equal(unpriced.unknown, undefined, "no legacy count: a build elsewhere with no ledger row adds nothing");
-
-    const local = c.byModel.find((m) => m.status === "free");
-    assert.equal(local?.why, "local");
-    const opus = c.byModel.find((m) => m.model === "priced/claude-opus-5-5");
-    assert.ok(opus && opus.usdBy.cacheWrite1h > 0, "the answering model names the row");
-    assert.equal(opus?.name, "Claude Opus 5.5", "models.dev's name");
+    assert.equal(c.byModel.find((m) => m.status === "free")?.why, "local");
+    const opus = c.byModel.find((m) => m.model === "anthropic/claude-opus-5-5");
+    assert.equal(opus?.name, "Claude Opus 5.5");
+    assert.ok(opus && opus.usdBy.cacheWrite1h > 0);
     assert.deepEqual([c.top[0]?.sessionId, c.top[1]?.sessionId], ["code-b", CC], "most expensive first");
-    assert.deepEqual([c.top[1]?.kind, c.top[1]?.title], ["workers", "cc"]);
-    assert.ok(c.top.some((t) => t.kind === "reconcile" && t.path === null));
+    assert.deepEqual([c.top[1]?.kind, c.top[1]?.title], ["workers", "ag_02"]);
+    assert.equal(c.top.find((t) => t.sessionId === "code-b")?.path, codeB);
     assert.equal(c.prices.fetchedAt, "2026-09-28T00:00:00.000Z");
     assert.equal(c.notOnHost, null);
   });
 
-  test("the counts are kept in costs.json; a file gone is shown as last counted; the ledger has no row cap", async () => {
+  test("this host's counts are kept in costs.json; another host's rows are shown as last counted", async () => {
     const snap = ledger.readCostLedger(lp);
-    assert.ok(snap.sources["code-a"] && snap.sources["w:claude-code:" + CC] && snap.sources["w:pi:member-1"], Object.keys(snap.sources).join(", "));
-    const text = readFileSync(lp.costs, "utf8");
-    assert.ok(!text.includes(tmp), "no host path in the repo's ledger");
-    const before = await costs.projectCost(project.id);
-    unlinkSync(codeB);
+    assert.ok(snap.sources["code-a"] && snap.sources[`w:${CC}`] && snap.sources["w:w2"] && snap.sources["reconcile:h_testhost:operator"] && snap.sources["reconcile:h_testhost:sova"], Object.keys(snap.sources).join(", "));
+    assert.ok(!readFileSync(lp.costs, "utf8").includes(tmp), "no host path in the repo's ledger");
+    const before = await projectCost(project.id);
+    // Another host counted code-far (its file is there) and an old-style worker key of a worker counted here.
+    const far = { sessionId: "code-far", title: "Far", kind: "coding-overseer" as const, by: "overseer" as const, countedAt: "2026-09-27T00:00:00.000Z", buckets: [{ kind: "coding-overseer" as const, provider: "zai", model: "glm-5.3", at: iso(T0), n: 1, input: 1_000_000, output: 0, cacheRead: 0, cacheWrite5m: 0, cacheWrite1h: 0 }] };
+    const dup = { ...far, sessionId: "w1", kind: "workers" as const, buckets: [{ ...far.buckets[0]!, kind: "workers" as const }] };
+    ledger.writeCostLedger(lp, { version: 1, sources: { ...ledger.readCostLedger(lp).sources, "code-far": far, "w:pi:w1": dup } });
     clock += 120_000;
-    const c = await costs.projectCost(project.id);
-    approx(c.totalUsd, before.totalUsd, "a running cost never shrinks");
-    assert.equal(c.notOnHost?.sessions, 1);
-    assert.ok(c.top.find((t) => t.sessionId === "code-b")?.countedAt);
+    const c = await projectCost(project.id);
+    approx(c.totalUsd, before.totalUsd + 1, "the other host's row adds; the old key of a worker counted here doesn't");
+    assert.deepEqual(c.notOnHost, { sessions: 1, countedAt: "2026-09-27T00:00:00.000Z" });
+    assert.equal(c.top.find((t) => t.sessionId === "code-far")?.countedAt, "2026-09-27T00:00:00.000Z");
   });
 
   test("the org roll-up: each project's total and the org's", async () => {
-    clock += 120_000;
     const r = await orgs.orgCosts(org.id);
     const mine = r.projects.find((p) => p.projectId === project.id)!;
     const theirs = r.projects.find((p) => p.projectId === other.id)!;
-    approx(theirs.totalUsd, 2.5, "the other overseer's conversation is its own project's");
+    approx(theirs.totalUsd, 2.5 + 9 * 2, "the other overseer's conversation and reconciler are its own project's");
     approx(r.totalUsd, mine.totalUsd + theirs.totalUsd);
-    assert.ok(mine.unpricedTokens >= 123 + 55 + 300_000);
+    const bytes = JSON.parse((await orgs.orgCostsAnswer(org.id)).body.toString()) as import("../shared/costs").OrgCosts;
+    assert.ok(bytes.projects.find((p) => p.projectId === project.id)!.unpricedTokens >= 123 + 55);
+    approx(bytes.totalUsd, r.totalUsd, "the overseer's bare figures are the route's");
+  });
+
+  test("the overseer's cost line is the helper's, read without a parse", async () => {
+    const c = await projectCost(project.id);
+    const line = await costs.projectCostLine(project.id);
+    assert.ok(line.startsWith(`Cost: $${c.totalUsd.toFixed(2)} at API prices, ${c.sessions} session`), line);
+    if (c.unpriced.length) assert.ok(line.includes("; some tokens unpriced ("), line);
   });
 
   test("an unknown project is a 404", async () => {
-    await assert.rejects(() => costs.projectCost("prj_nope0000"), (e: any) => e.status === 404);
+    await assert.rejects(() => costs.projectScope("prj_nope0000"), (e: any) => e.status === 404);
   });
 });

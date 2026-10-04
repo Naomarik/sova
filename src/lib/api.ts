@@ -90,6 +90,7 @@ import type { BatonInfo, BatonSettings, BatonTold, BatonStartInput, BatonStartRe
 import type { ConflictResolveInput, DecisionsInfo, PromoteResult, SpecStatus } from "../../shared/decisions";
 import type { PipelineInfo, PipelineTimeline } from "../../shared/pipeline";
 import type { OrgCosts, ProjectCost } from "../../shared/costs";
+import { MAX_USAGE_SESSIONS, type PricesInfo, type UsageCosts, type UsageSessionSpend, type UsageSessionsRequest, type UsageSessionsTotals, type UsageToday } from "../../shared/usage/wire";
 import type { ProjectRuntimeView } from "../../shared/project-runtime";
 import type { ProjectList, ProjectRegistered, ProjectSummary } from "../../shared/projects";
 import type { CodingStartInput, CodingStartResult, ItemCodeInput, ItemCodeResult, ItemSendInput, ItemSendResult, ProjectOverseerInfo, ProjectOverseerPatch } from "../../shared/project-overseer";
@@ -1192,6 +1193,20 @@ export const cancelHeldAct = (projectId: string, holdId: string, reason?: string
 
 export const getProjectCost = (projectId: string) => request<ProjectCost>(`${projectPath(projectId)}/costs`);
 export const getOrgCosts = (orgId: string) => request<OrgCosts>(`/api/orgs/${encodeURIComponent(orgId)}/costs`);
+
+// ---- the usage ledger: the Agents page's Costs tab ------------------------------------------------
+
+/** One query of this device's usage, priced (`costsApiSearch` builds its parameters). */
+export const getUsageCosts = (search: string) => request<UsageCosts>(`/api/usage/costs?${search}`);
+/** This device's spend since local midnight in `tz`: the Agents head's "$ today". */
+export const getUsageToday = (tz: string) => request<UsageToday>(`/api/usage/today?tz=${encodeURIComponent(tz)}`);
+/** One session's spend (a worker's sid: the worker's own and its workers'). */
+export const getUsageSession = (sid: string) => request<UsageSessionSpend>(`/api/usage/session?sid=${encodeURIComponent(sid)}`);
+/** Totals for many sessions at once (the board's rows). */
+export const getUsageSessions = (sids: string[]) =>
+  request<UsageSessionsTotals>("/api/usage/sessions", jsonInit("POST", { sids: sids.slice(0, MAX_USAGE_SESSIONS) } satisfies UsageSessionsRequest));
+/** Pull the price list now; answers when the pull settles, with the list's new standing. */
+export const refreshPrices = () => request<PricesInfo>("/api/usage/prices/refresh", jsonInit("POST", {}));
 
 // ---- a project's software registry (§app/project-runtime) -------------------------------------------
 /** The project's copies on this host, for its Branches tab (§app.project-services/services-ui). */

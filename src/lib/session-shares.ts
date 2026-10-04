@@ -16,6 +16,7 @@ import {
   type SessionShareVisit,
   type SharesOverview,
 } from "../../shared/session-share";
+import type { PreviewView } from "../../shared/preview-links";
 import { hostUrl } from "./mesh";
 import { rangeLabel } from "./share-slice";
 
@@ -227,3 +228,71 @@ export const sharesOverview = (host: string | null) => call<SharesOverview>(host
 /** Delete Link for an org link, through the routes that already exist for it. */
 export const revokeHandoff = (host: string | null, sessionId: string) => send<unknown>(host, "POST", `/api/baton/${encodeURIComponent(sessionId)}/revoke`);
 export const revokeOwnerLink = (host: string | null, orgId: string) => send<unknown>(host, "POST", `/api/orgs/${encodeURIComponent(orgId)}/owner/revoke`);
+
+// ---- every host at once: the Shares page and the overview's Shares card -------------------------
+
+/** One host's answer to GET /api/shares-overview (`host` null: this one), or why it didn't answer. */
+export interface HostShares {
+  host: string | null;
+  overview: SharesOverview | null;
+  error: string | null;
+}
+
+/** One read of every public link: each host's overview, and this host's previews (null: they didn't answer). */
+export interface SharesRead {
+  hosts: HostShares[];
+  previews: PreviewView[] | null;
+}
+
+const errText = (x: unknown) => (x instanceof Error ? x.message : String(x));
+
+/** Read `hosts` (null first: this one) and this host's previews at once; a host that fails is kept with its error. */
+export async function readShares(hosts: readonly (string | null)[], deps: { overview(host: string | null): Promise<SharesOverview>; previews(): Promise<PreviewView[]> }): Promise<SharesRead> {
+  const [answers, previews] = await Promise.all([
+    Promise.all(
+      hosts.map(async (host): Promise<HostShares> => {
+        try {
+          return { host, overview: await deps.overview(host), error: null };
+        } catch (x) {
+          return { host, overview: null, error: errText(x) };
+        }
+      }),
+    ),
+    deps.previews().catch(() => null),
+  ]);
+  return { hosts: answers, previews };
+}
+
+/** Recipients viewing a live share now, plus org links viewed now: the Shares page's "{n} viewing now". */
+export const linksViewingNow = (shares: readonly SessionShare[], orgLinks: readonly { presence?: SessionSharePresence }[]): number =>
+  shares.filter(shareLive).reduce((n, s) => n + s.recipients.filter((r) => r.presence === "viewing").length, 0) + orgLinks.filter((l) => l.presence === "viewing").length;
+
+/** What the overview's Shares card counts (§chat.transcript/landing-page). */
+export interface SharesCounts {
+  sessionShares: number;
+  orgLinks: number;
+  previewLinks: number;
+  viewing: number;
+  /** Every live public link: the chip. */
+  total: number;
+}
+
+/** The card's counts from one read, leaving out every host that didn't answer; null when nothing answered. */
+export function sharesCounts(r: SharesRead): SharesCounts | null {
+  const up = r.hosts.flatMap((h) => (h.overview ? [h.overview] : []));
+  if (!up.length && !r.previews) return null;
+  const shares = up.flatMap((o) => o.sessionShares ?? []);
+  const orgLinks = up.flatMap((o) => o.orgLinks ?? []);
+  const sessionShares = shares.filter(shareLive).length;
+  const previewLinks = (r.previews ?? []).filter((v) => v.state === "active").length;
+  return { sessionShares, orgLinks: orgLinks.length, previewLinks, viewing: linksViewingNow(shares, orgLinks), total: sessionShares + orgLinks.length + previewLinks };
+}
+
+const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+
+/** The card's one line: the three counts and who is viewing, or the empty line. */
+export function sharesCardLine(c: SharesCounts): string {
+  if (c.total === 0) return "No public links are open.";
+  const line = `${count(c.sessionShares, "session share", "session shares")} · ${count(c.orgLinks, "organization link", "organization links")} · ${count(c.previewLinks, "preview link", "preview links")}`;
+  return c.viewing > 0 ? `${line} · ${c.viewing} viewing now` : line;
+}

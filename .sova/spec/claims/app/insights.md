@@ -87,9 +87,10 @@ working worker is never the one it leaves out.
 
 **Unfolded (≥768)** the foot holds **two stacked rows, and both are always present**, so the layout never
 jumps: the Usage row is 44px and the Agents row 64px, the extra 20px holding the token chart
-(§app.insights/token-velocity) on a second line. A third always-present row, **Shares**, sits under them: the whole-row link to `#/shares`
-(§app.session-share/shares-page, `external` icon, text "Shares"), with no button beside it; the
-spine's foot has its Shares icon button after Agents. **Folded (<768) none of this shows**: a
+(§app.insights/token-velocity) on a second line. Those two are the foot's only rows: it has no
+Shares row, and the spine's foot has no Shares button — the Shares page is reached from the
+overview's Shares card (§chat.transcript/landing-page) and from each Sharing section
+(§app.session-share/shares-page). **Folded (<768) none of this shows**: a
 phone's foot is one bar that opens a sheet holding these same rows verbatim
 (§app.insights/sidebar-foot-phone). Each row is a `.sidebar-foot-row`: the whole-row link, then one 44px icon button at its
 right end — the **Resource monitor** button on the Usage row (§app.resource-monitor/entry-button),
@@ -212,10 +213,11 @@ list needs the room. The bar is one plain button; tapping it opens a **bottom sh
 folded-width `.modal`, grip included; the scrim and Escape close it, focus is trapped inside and
 returns to the bar) holding the foot's columns **exactly as §app.insights/sidebar-foot draws
 them** — the host filter row (§mesh.remote-sessions/host-filter, only while the mesh is on), the
-Usage glance row with its monitor button, the Agents row with its Settings gear, and the Shares
-link row. Nothing in them is rewritten, only re-homed. At ≥768 the bar never shows and the foot
+Usage glance row with its monitor button, and the Agents row with its Settings gear; it has no
+Shares row (the Shares page is the overview's Shares card's, §chat.transcript/landing-page).
+Nothing in them is rewritten, only re-homed. At ≥768 the bar never shows and the foot
 is §app.insights/sidebar-foot as drawn there; the spine is untouched by either. The sheet's
-accessible name is "Hosts, usage, agents and shares".
+accessible name is "Hosts, usage and agents".
 
 The bar itself reads the same data as the rows, left to right:
 
@@ -242,7 +244,7 @@ The bar's accessible name says the facts in words, then what the tap does: "2 of
 connected. 7 agents working now: 2 sessions and 5 subagents. Output tokens a minute: 48k over the
 last 5 minutes, 12k over 30. Replies still being written aren't counted yet. Claude
 5-hour: 12% used · 1h 5m of 5h · resets 4:59 PM; 7-day: 87% used · day 6 of 7 · resets Oct 4
-10:59 AM. Z.ai 5-hour: 41% used; MCP uses: 0% used. Open hosts, usage, agents and shares." —
+10:59 AM. Z.ai 5-hour: 41% used; MCP uses: 0% used. Open hosts, usage and agents." —
 every glance part in the glance's own words; the agents clause is the working count's sentence
 (§app.session-list/working-now): "1 agent working now: 1 session" at 1, "At least 3 agents working
 now: …" while a floor, "Agents working now: not known yet" while unknown; the velocity's
@@ -264,7 +266,8 @@ decisions, topic outlines, compaction, cache warming.
   call of that process passes through, and keeps nothing but begin/end bookkeeping and, from each
   call's end, the one number its reply reports as its output tokens (§app.insights/token-velocity):
   no payload, no transcript and no other token count is read or written for it, and nothing is
-  written per token.
+  written per token. The same boundary, at the same call end, appends the call's usage record
+  (§app.insights/usage-ledger); that is the ledger's, not part of this count.
   - **pi** (Sova's own server with its hosted chats and one-shots, a TUI, a pi worker): the
     process's model runtime, which every session, compaction and background caller of that
     process shares. A call is counted once however many wrappers it passes through.
@@ -420,6 +423,75 @@ host and every connected host.**
   re-reads the view every 30 s, only while the ring holds a token in its last 30 minutes and the
   tab is visible. An empty ring, or a hidden tab, runs no timer.
 
+## §app.insights/usage-ledger — The usage ledger: every model call's tokens, recorded once
+
+**Every model call made on this device by Sova or pi (main sessions, the Overseer, org and baton
+sessions, workers at any depth, pi or Claude Code, and one-shots: decisions, titles, topic
+outlines, image descriptions, compaction, branch summaries, cache warming) writes one usage record
+at its end, and every figure of spend Sova shows is read from these records and priced by one
+function.** Standalone `claude` use outside Sova and pi is not recorded.
+
+- **The record.** Token counts only, never a price: input, output, cache read, cache write (with its
+  1-hour part when the provider reports it), the provider, the model asked for and the model that
+  answered, when the call ended, the session that owns it, that session's parent (a worker's
+  session), the kind (`main`, `worker`, `overseer`, `oneshot`), the purpose of a side call
+  (`title`, `decide`, `outline`, `vision`, `branch-summary`, `compaction`, `cache-warm`, …), the
+  working directory and the org project when known, and a key that names the call. A call that
+  reports no tokens writes nothing. Each attempt of a retried call is its own record.
+- **Where.** `<agent dir>/usage/v1/<UTC day>/<producer>.jsonl`, one file per process and day, one
+  writer per file, one appended line per call; the shape and its strict parse are
+  `pi-config/extensions/llm-inflight/usage-record.ts` (builtins only). The server's own main loop
+  does nothing for a call but that one append.
+- **Recorded at the boundary that already counts calls** (§app.insights/llm-inflight): the pi model
+  runtime records each call when its stream ends; a Claude Code CLI (a chat on the `claude-code`
+  provider or a Claude Code worker) is recorded from its stream, once per Anthropic message id,
+  plus what its cumulative per-model totals show beyond those messages (its own subagents, side
+  queries, compaction), measured against the last total recorded for that Claude session so a
+  resume or re-adoption never counts history again; a `claude -p` one-shot and a Jev call are
+  recorded from their answers. A `claude-code` chat's calls are recorded from the CLI's stream
+  only, never again by the pi runtime.
+- **Whose call it is.** A call belongs to the session that registered with the process; a side call
+  made for a session (a title, a summary) carries the session, working directory and purpose its
+  caller names, so two concurrent side calls never take each other's owner. A worker names its
+  parent session.
+- **Counted once.** Records are deduplicated by their key, so a replayed stream or a record read
+  twice adds nothing. Nothing is recounted from transcripts: spend from before the ledger existed
+  is not shown.
+- **Off the main loop.** A helper child process of the server reads the records (at its start it
+  catches up every day and every file past what it already read, then follows appends), keeps a
+  rollup, prices it and answers every query; the server passes its answers to the browser
+  unparsed. The helper stopping or restarting loses nothing and counts nothing twice.
+- **Priced at read time, at the price in force at each call's own time**
+  (§app.project-costs/pricing): a rollup row never spans a price change, and when the price
+  history changes the affected days are priced again from the records. Subscription use (Claude
+  Code, Codex) is priced at API prices like everything else.
+- **Prices are data.** The dated price history lives in `<state root>/model-prices.json`; the
+  checked-in seed is only the starting copy when that file is missing. The server pulls models.dev
+  every 6 hours and on demand, and a pull only adds dated periods: an old period is never dropped
+  or rewritten.
+
+## §app.insights/cost-history — The Costs tab (`#/agents/costs`)
+
+**The Agents page has two tabs, Board (the board as it was, §app.insights/team-cards) and Costs,
+which shows this device's spend at API prices from the usage ledger (§app.insights/usage-ledger).**
+
+- **Route.** `#/agents/costs` opens the Costs tab; it is never read as a team key. The filters live
+  in the URL, so a reload or a shared link keeps them.
+- **Controls.** Range chips `7d` · `30d` · `All` (30d by default), and beside them multi-select **Provider** and
+  **Model** filters; the model choices narrow to the selected providers. The range and both filters
+  apply to every section below.
+- **Sections.** Stats: Total, Main sessions, Workers, One-shots. A daily cost bar chart (local
+  days). Tables by provider, by model (input · cache · output · cost), by kind and by project
+  (the org project, else the working directory). Top sessions, most expensive first; a click opens
+  the session.
+- **Prices.** "Prices as of {date}" with the last change found, and a **Refresh Prices** button that
+  pulls the prices now (§app.insights/usage-ledger); it says so when pulling is off or the prices are
+  still the starter list.
+- **When the helper is down** the tab says the counter isn't running yet and that nothing was lost;
+  it never shows another count.
+- **This device.** The tab says it counts this device only.
+- Works at phone widths: tables stack under 560px of page width.
+
 ## §app.insights/aggregate-chips-live-vs-working — Aggregate chips: "Live" vs "Working"
 
 - **Live** is session-level: a TUI has the file open. It keeps the accent everywhere and says
@@ -488,9 +560,13 @@ Both pages share one shell: a `.session-head` and a `.insights.pane` containing
   it's about, where it stands and its worktrees folded inside the row. When nothing is in view, its whole body under the bar is one `.empty`
   (§design/copy-deck): the live fact first ("{n} sessions live." or "No session is live right
   now."), then the absence for the chip or search in force.
+- **Tabs (Agents).** Under the head the Agents page has two tabs, Board (everything this section
+  and §app.insights/team-cards describe) and Costs (§app.insights/cost-history), at `#/agents` and
+  `#/agents/costs`.
 - **Head meta (Agents).** `{w} working · {l} live · {$} today · {u} unmerged`: sessions in the
-  Working state, live sessions, what the workers of sessions active since local midnight have
-  spent (their lifetime `usageTotal.cost`; left out when none reports a cost), and distinct
+  Working state, live sessions, this device's spend since local midnight at API prices, every
+  call of every kind (§app.insights/usage-ledger, `GET /api/usage/today`; left out before its
+  first answer and while nothing was spent today), and distinct
   unmerged branches among the worktrees read so far (left out before the first reading). The
   line's `title` says what each figure counts.
 - **Grid (Usage).** `.insights-grid` has 1 column. It becomes 2 columns when the `insights`
@@ -878,7 +954,8 @@ Sova that aren't archived.
   (`outlineGist`, else the now line, else the cwd in mono). Activity: the compact
   model, the context ring (the sidebar row's rule: the open view's live fill wins, never without a
   window), last active in relative time, the state chip. Workers:
-  `{working}/{total} working`, a count chip per team, the workers' lifetime spend. A team chip is
+  `{working}/{total} working`, a count chip per team, the workers' spend at API prices, at any
+  depth, from the usage ledger (§app.insights/usage-ledger). A team chip is
   a link to `#/agents/{teamKey}`; a click on it opens that session's Session details pane in place
   on its Agents tab. Worktrees: see §app.insights/subagent-cards. Actions: Open, Session
   details, Archive or Unarchive, Move into group (the session pane's group menu, icon only), and ⋯. The head's totals line (working ·

@@ -111,8 +111,9 @@ restart) and not only after the keyboard has opened once.
   `#/`, the list. Organizations is reached only from the overview's Organizations card, its last
   section (§app/organizations).
   On a phone the overview holds the Start card (New Session), the Sessions card,
-  Mesh, Extensions, the Explanations card (the way to `#/explanations`) and the Organizations card; the list holds New Session in its head
-  and Usage, Agents, Shares and Settings in its foot.
+  Mesh, Extensions, the Explanations card (the way to `#/explanations`), the Shares card (the way
+  to `#/shares`) and the Organizations card; the list holds New Session in its head
+  and Usage, Agents and Settings in its foot, with no Shares.
 
 ## §app.shell/remote-session-chips — Remote session chips
 

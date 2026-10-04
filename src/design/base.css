@@ -2698,6 +2698,9 @@ a.group-option { color: inherit; text-decoration: none; }
 /* A peer session's host keeps its name on a narrow head: the folder after it gives way first. */
 .session-head-meta > .session-head-host { flex: none; max-width: 50%; }
 .session-head-meta > .session-head-host + * { flex: none; }
+/* Its live state (§mesh.remote-sessions/head-host-state): a dot in the host filter's tone, the name in ink. */
+.host-state-mark-known { display: inline-flex; align-items: center; gap: var(--space-1); color: var(--color-ink); font-weight: var(--fw-semibold); }
+.host-state-mark-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* A meta that's plain text (the Usage and Agents pages) is an anonymous flex
    item, which can't ellipsize: render it as a block so the line gets its "…". */
 .session-head-meta:not(:has(> *)) { display: block; text-overflow: ellipsis; }

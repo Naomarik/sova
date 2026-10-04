@@ -49,9 +49,11 @@ async function grant(host, peer, preset) {
   const res = await laptopFetch(host, "/api/mesh/access", send("PUT", { peer, grant: { preset } }));
   assert.equal(res.status, 200, `${host} grants ${peer} ${preset}: ${res.status}`);
 }
+/** One shell word, single-quoted: a multi-line script reaches node byte for byte. */
+const shq = (s) => `'${s.replace(/'/g, `'\\''`)}'`;
 /** Run `node -e` in R as the accept process's uid, with its group; prints what it printed. */
 const asAcceptor = (script, ...args) =>
-  sh(R, `setpriv --reuid=sova-relay --regid=sova-relay --groups=0 --no-new-privs node -e ${JSON.stringify(script)} ${args.map((a) => JSON.stringify(a)).join(" ")}`).out;
+  sh(R, `setpriv --reuid=sova-relay --regid=sova-relay --groups=0 --no-new-privs node -e ${shq(script)} ${args.map((a) => shq(String(a))).join(" ")}`).out;
 /** A bare TCP connect from inside R as the accept process's uid: "open" or "blocked". */
 const reachAsAcceptor = (host, port) =>
   asAcceptor('const s=require("net").connect(+process.argv[2],process.argv[1]);const o=(w)=>{console.log(w);process.exit(0)};s.setTimeout(3000,()=>o("blocked"));s.on("connect",()=>o("open"));s.on("error",()=>o("blocked"))', host, String(port));
@@ -179,8 +181,11 @@ describe("setting up", () => {
     assert.equal(res.status, 200, await res.text());
     await waitFor(async () => (await lanOf(R)).relay?.listening, { what: "listening", timeoutMs: 15000 });
     // The listening socket's process belongs to sova-relay; Sova (root) holds nothing on that port.
-    const owner = sh(R, `pid=$(ss -ltnpH 'sport = :${RELAY_PORT}' | grep -o 'pid=[0-9]*' | head -1 | cut -d= -f2); ps -o user= -p "$pid"`).out;
-    assert.equal(owner, "sova-relay");
+    // Root in a container lacks CAP_SYS_PTRACE, so it can't see another uid's sockets: the port's
+    // owner is the uid whose own `ss -p` finds a pid on it, and root's (Sova's) finds none.
+    const portPid = (who) => sh(R, `${who}ss -ltnpH 'sport = :${RELAY_PORT}' | grep -c 'pid='`).out;
+    assert.equal(portPid("setpriv --reuid=sova-relay --regid=sova-relay --clear-groups "), "1", "the accept process holds the port");
+    assert.equal(portPid(""), "0", "Sova (root) holds nothing on that port");
     assert.equal(sh(R, `ss -ltnH 'sport = :${RELAY_PORT}' | awk '{print $4}'`).out, `${WAN_IPS.relay}:${RELAY_PORT}`, "one address, never every interface");
     assert.equal(publicPortOpen(), true);
   });

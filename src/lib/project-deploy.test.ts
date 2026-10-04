@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { DeployRecordView } from "../../shared/project-contract";
-import { checksLine, overridesAsked, planDeadline, recordLine, rollbackWord, tickProgress } from "./project-deploy";
+import { checksLine, overridesAsked, planDeadline, recordLine, rollbackWord, shipConfirmLine, tickProgress } from "./project-deploy";
 
 // The Deploy panel's words (§app.project-runtime/deploy-panel).
 
@@ -40,6 +40,11 @@ test("ticks, deadline, rollback and the overrides a refusal asks for", () => {
   assert.equal(rollbackWord({ rollback: { none: "x" }, verifiedCommit: null }), null);
   assert.equal(rollbackWord({ rollback: "redeploy-previous", verifiedCommit: "a" }), "Deploys the last verified commit before this one again.");
   assert.deepEqual(overridesAsked("Not planned: the required tests failed (give overrideTests: your reason)."), { tests: true, dirty: false });
+});
+
+test("Deploy Now's confirm ends the about's sentence before the next one, never doubling it", () => {
+  assert.equal(shipConfirmLine("317a3cf2aa0b", "prod", "Fixture target: a local folder"), "This ships 317a3cf to prod: Fixture target: a local folder. Everyone using it gets it.");
+  assert.equal(shipConfirmLine("317a3cf2aa0b", "prod", "The public site."), "This ships 317a3cf to prod: The public site. Everyone using it gets it.");
 });
 
 test("a plan's checks fold to one line, open when any was let through", () => {

@@ -77,7 +77,7 @@ export function runWord(v: ProjectRuntimeView): string | null {
   const pb = v.playbook;
   if (!pb) return null;
   if (v.playbookState === "running") return `The ${pb.label} playbook is running`;
-  if (v.playbookState === "proposed") return `The ${pb.label} playbook proposes a definition on ${pb.branch ?? "its branch"}`;
+  if (v.playbookState === "proposed") return `The ${pb.label} playbook proposes ${pb.approves === "deploy" ? "a deploy recipe" : "a definition"} on ${pb.branch ?? "its branch"}`;
   if (v.playbookState === "waiting") return `The ${pb.label} playbook waits on your answers`;
   const ended: Record<string, string> = { "no-change": "finished with no change", merged: "was merged", removed: "had its worktree removed", "not-started": "could not start" };
   return `The last ${pb.label} run ${ended[pb.result ?? ""] ?? "ended"}`;

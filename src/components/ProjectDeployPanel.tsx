@@ -3,7 +3,7 @@ import type { DeployPlanView, DeployReview, DeployTargetView, LogLine, VerbResul
 import { ApiError, approveDeployRecipe, runDeploySetup, runDeployVerb } from "../lib/api";
 import { relativeTime } from "../lib/format";
 import { createPoll } from "../lib/poll";
-import { checksLine, DEPLOY_STANDING_CHIP, DEPLOY_STATE_CHIP, hash12, overridesAsked, planDeadline, recordLine, rollbackWord, short, tickProgress } from "../lib/project-deploy";
+import { checksLine, DEPLOY_STANDING_CHIP, DEPLOY_STATE_CHIP, hash12, overridesAsked, planDeadline, recordLine, rollbackWord, shipConfirmLine, short, tickProgress } from "../lib/project-deploy";
 import { announce, toast } from "../lib/ui-state";
 import { Chip } from "./ui";
 
@@ -350,7 +350,7 @@ export function ProjectDeployPanel(props: { projectId: string; root: string; arc
                           <div class="deploy-confirm">
                             <p class="orgs-line" role="status">
                               {confirm()!.what === "deploy"
-                                ? `This ships ${short(planned()?.commit ?? "")} to ${t.name}: ${t.about} Everyone using it gets it.`
+                                ? shipConfirmLine(planned()?.commit ?? "", t.name, t.about)
                                 : `${rollbackWord(t) ?? ""} ${t.name} changes for everyone using it.`}
                             </p>
                             <div class="deploy-actions">

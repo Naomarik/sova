@@ -73,6 +73,10 @@ test("the playbook's run in words", () => {
   const pb = { sessionId: "s1", playbookId: "project-verbs", label: "Project verbs", approves: "definition" as const, startedBy: "operator" as const, startedAt: "" };
   assert.equal(runWord({ ...base, playbookState: "running", playbook: pb }), "The Project verbs playbook is running");
   assert.equal(runWord({ ...base, playbookState: "proposed", playbook: { ...pb, branch: "sova/v" } }), "The Project verbs playbook proposes a definition on sova/v");
+  assert.equal(
+    runWord({ ...base, playbookState: "proposed", playbook: { ...pb, playbookId: "project-deploy", label: "Project deploy", approves: "deploy" as const, branch: "sova/d" } }),
+    "The Project deploy playbook proposes a deploy recipe on sova/d",
+  );
   assert.equal(runWord({ ...base, playbook: { ...pb, result: "no-change" } }), "The last Project verbs run finished with no change");
 });
 

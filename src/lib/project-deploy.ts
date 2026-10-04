@@ -47,6 +47,12 @@ export function tickProgress(review: Pick<DeployReview, "keys">, ticked: Readonl
   return { left, line: left ? `${review.keys.length - left} of ${review.keys.length} steps ticked` : "Every step ticked." };
 }
 
+/** Deploy Now's confirm: "This ships 1a2b3c4 to prod: A local folder. Everyone using it gets it." — the about ends its sentence. */
+export function shipConfirmLine(commit: string, target: string, about: string): string {
+  const a = about.trim();
+  return `This ships ${short(commit)} to ${target}: ${a}${/[.!?]$/.test(a) ? "" : "."} Everyone using it gets it.`;
+}
+
 /** A plan's checks folded to one line: "6 checks passed" / "5 checks passed · 1 let through"; `open` when any was let through. */
 export function checksLine(checks: readonly { ok: boolean }[]): { line: string; open: boolean } {
   const let_ = checks.filter((c) => !c.ok).length;

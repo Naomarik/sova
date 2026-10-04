@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { PREVIEW_NOT_KEPT, type PreviewView } from "../../shared/preview-links";
-import { makerLine, previewRow, previewTitle, senderLine, stateLine } from "./preview-rows";
+import { makerLine, previewRow, previewTitle, RECIPIENT_OFF_LABEL, recipientOffName, senderLine, stateLine, turnOffLabel } from "./preview-rows";
 
 const NOW = Date.parse("2026-09-30T00:00:00.000Z");
 const view = (over: Partial<PreviewView>): PreviewView => ({
@@ -118,4 +118,12 @@ test("a running copy's link: its endpoint, its copy's state, and Start only whil
   assert.equal(previewRow(view({ running: false }), NOW).start, null);
   // A turned-off copy link is not startable from its row.
   assert.equal(previewRow(view({ instance: "in_abc", endpoint: "web.http", copy: { state: "stopped", slot: 1 }, state: "off" }), NOW).start, null);
+});
+
+test("each Turn Off names its scope: the preview with its recipients' links, or one person's link", () => {
+  assert.equal(turnOffLabel(0), "Turn Off Preview");
+  assert.equal(turnOffLabel(1), "Turn Off Preview + 1 Link");
+  assert.equal(turnOffLabel(3), "Turn Off Preview + 3 Links");
+  assert.equal(RECIPIENT_OFF_LABEL, "Turn Off Link");
+  assert.equal(recipientOffName("Fatoom Wife"), "Turn Off Fatoom Wife's Link");
 });

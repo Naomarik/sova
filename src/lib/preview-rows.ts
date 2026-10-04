@@ -70,6 +70,13 @@ export function makerLine(createdBy: string): { text: string; href: string | nul
   return m ? { text: "Made by the overseer", href: sessionHref(m[1]!) } : null;
 }
 
+/** A preview's own Turn Off, which ends every link sent from it too: the count of its listed recipients' links in the label. */
+export const turnOffLabel = (recipients: number): string => (recipients > 0 ? `Turn Off Preview + ${recipients} ${recipients === 1 ? "Link" : "Links"}` : "Turn Off Preview");
+
+/** A recipient's own Turn Off, on their Sent to line: short to see, their name to hear. */
+export const RECIPIENT_OFF_LABEL = "Turn Off Link";
+export const recipientOffName = (name: string): string => `Turn Off ${name}'s Link`;
+
 /** `minted` is the link this page's own New Preview answered with, if any. */
 export function previewRow(v: PreviewView, now: number, minted?: string): PreviewRow {
   const id = v.sessionId ?? null;

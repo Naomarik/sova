@@ -71,6 +71,13 @@ interface Host {
   lanWith: Set<string>;
   /** The mesh can't say how a peer knows this host (only a whoami answer can). */
   noSelfFor?: boolean;
+  /** Hosts missing from this host's peers.json. */
+  hidePeers: Set<string>;
+  /** While set, this host's own session lookups (deps.summary) wait for it. */
+  stall?: Promise<void>;
+  /** The call goes and runs on the peer, but this host stops waiting at once (its hop timed out). */
+  detachAnswer?: (peerId: string, path: string) => boolean;  /** The calls detachAnswer let run on. */
+  detached: Array<Promise<void>>;
 }
 
 let hosts: Record<string, Host> = {};
@@ -129,6 +136,8 @@ function makeHost(id: string, label: string, opts: Partial<Host> = {}): Host {
     withholdLinks: new Set(),
     sawDown: [],
     lanWith: new Set(),
+    hidePeers: new Set(),
+    detached: [],
   } as Host;
   Object.assign(h, opts);
   hosts[id] = h;
@@ -142,7 +151,7 @@ function makeHost(id: string, label: string, opts: Partial<Host> = {}): Host {
     enabled: () => true,
     peers: () =>
       Object.values(hosts)
-        .filter((o) => o !== h)
+        .filter((o) => o !== h && !h.hidePeers.has(o.id))
         .map((o) => entryOf(o, h)),
     self: () => ({ id: h.id, label: h.label }),
     selfNode: () => ({ ...(h.knowsSelf ? { nodeId: h.nodeId } : {}), addresses: [] }),
@@ -154,6 +163,10 @@ function makeHost(id: string, label: string, opts: Partial<Host> = {}): Host {
       if (h.withholdLinks.has(peerId) && /^\/api\/peer\/links(?:[/?]|$)/.test(path) && !/^\/api\/peer\/links\/(?:whoami|read)(?:\?|$)/.test(path)) throw new NotShared(peerId);
       const to = hosts[peerId];
       if (!to?.up) throw new TypeError("fetch failed");
+      if (h.detachAnswer?.(peerId, path)) {
+        h.detached.push(Promise.resolve(to.app.request(path, init, { meshPeer: entryOf(h, to) })).then(() => undefined));
+        throw new TypeError("The operation timed out.");
+      }
       const res = await to.app.request(path, init, { meshPeer: entryOf(h, to) });
       if (h.loseAnswer?.(peerId, path)) {
         await res.body?.cancel();
@@ -170,7 +183,10 @@ function makeHost(id: string, label: string, opts: Partial<Host> = {}): Host {
   };
   const deps = {
     root: () => h.root,
-    summary: async (sid: string) => h.sessions.get(sid) ?? null,
+    summary: async (sid: string) => {
+      if (h.stall) await h.stall;
+      return h.sessions.get(sid) ?? null;
+    },
     held: (sid: string) => (h.held.has(sid) ? (h.sessions.get(sid)?.path ?? null) : null),
     deliver: async (path: string, framed: string) => {
       h.delivered.push({ path, framed });
@@ -1270,5 +1286,57 @@ describe("a refused copy (§app.overseer/links-tools, §mesh.links/delivery)", (
     const s = await send(B, "sb", "still there?");
     assert.equal(s.status, 409);
     assert.match(s.json.error, /has ended: Gamma refused the link/);
+  });
+});
+
+describe("follow-up: tailnet strangers and a stalled copy", () => {
+  test("a tailnet-only link naming a host this member doesn't peer is kept there, that host shown as unreachable", async () => {
+    const C = makeHost("c", "Gamma");
+    C.sessions.set("sc", summary("sc"));
+    B.hidePeers.add("c");
+    const v = await link([{ session: "sa" }, { host: "b", session: "sb" }, { host: "c", session: "sc" }]);
+    const onB = B.links.get(v.link.id);
+    assert.ok(onB, "Beta holds the link");
+    const [view] = await B.links.list({ sessionId: "sb" });
+    assert.equal(view?.members.find((m) => m.sessionId === "sc")?.reach, "unknown-host");
+  });
+
+  test("a copy stalled past the hop timeout, then refused elsewhere: the rollback still leaves no live link once it lands", async () => {
+    const C = makeHost("c", "Gamma");
+    C.sessions.set("sc", summary("sc"));
+    let release!: () => void;
+    let detached = false;
+    A.detachAnswer = (peerId, path) => {
+      if (peerId !== "b" || path !== "/api/peer/links" || detached) return false;
+      detached = true;
+      // Beta's lookup of its member session hangs until released.
+      B.stall = new Promise<void>((r) => (release = r));
+      return true;
+    };
+    A.onFetch = (peerId, path) => {
+      if (peerId === "c" && path === "/api/peer/links") C.sessions.delete("sc");
+    };
+    const r = await linkOn(A, [{ session: "sa" }, { host: "b", session: "sb" }, { host: "c", session: "sc" }]);
+    assert.equal(r.status, 409, JSON.stringify(r.json));
+    assert.equal(r.json.member, 2);
+    assert.ok(detached, "Beta's copy timed out on Alpha's side");
+    await settle();
+    // Now Beta's stalled handler finishes and stores what it was given.
+    B.stall = undefined;
+    release();
+    await Promise.all(B.detached.concat(A.detached));
+    await settle();
+    for (let i = 0; i < 3; i++) {
+      await A.links.flush();
+      await settle();
+    }
+    B.links.forgetForTest();
+    assert.deepEqual(
+      B.links.all().filter((l) => l.endedAt === undefined),
+      [],
+      "no live link on Beta",
+    );
+    assert.ok(A.links.all().every((l) => l.endedAt !== undefined), "no live local link");
+    assert.deepEqual(A.links.pending(), []);
   });
 });

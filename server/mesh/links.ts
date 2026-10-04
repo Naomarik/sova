@@ -50,6 +50,7 @@ import { NotShared, sharesWith } from "./access";
 import type { MeshApi } from "./index";
 import { LinkTransfers, newOfferId, OFFER_TTL_MS, type OfferListing, TransferError, type TransferEvent } from "./links-offers";
 import type { PullTimings } from "./links-transfer";
+import { isLanNodeId } from "./lan-cert";
 import type { PeerEntry } from "./peers";
 
 // Linked sessions across mesh peers (§mesh/links; types and routes: shared/mesh-links.ts): the
@@ -659,13 +660,15 @@ export class MeshLinks {
       await this.dropHeldCopies(link.id);
       this.refusedCopies.delete(link.id);
       // A held copy's request may have gone with only its answer lost, so that host may hold the
-      // link: it is told the end like every host the copy reached.
+      // link, or may still be storing it: every host the copy reached gets the link again, ended
+      // (from the outbox while it is down). An end alone would miss a copy not stored yet; an
+      // ended record there can't be revived by the live copy landing after it.
       const reached = told.filter(({ r }) => r.state === "sent" || r.state === "queued").map(({ m }) => m.nodeId);
       if (reached.length) {
         link.endedAt = this.now();
         link.endedWhy = why;
         this.save();
-        for (const n of reached) void this.tell(n, { kind: "end", linkId: link.id, body: { endedAt: link.endedAt, why } });
+        for (const n of reached) void this.tell(n, { kind: "link", body: { link: { ...link, members: link.members.map((m) => ({ ...m })) }, you: n } });
       } else this.forget(link.id);
       throw new LinkActError(409, { error: `Member ${i + 1} (${asked[i]?.host ?? label}/${refusal.m.sessionId}): ${why}.`, ...(reason ? { reason } : {}), member: i });
     }
@@ -778,10 +781,15 @@ export class MeshLinks {
     const mine = ours[0]!;
     if (caller.nodeId !== link.createdBy && !link.members.some((m) => m.nodeId === caller.nodeId))
       return { status: 403, body: { error: "Only a host of that link can send it.", reason: "not-member" } };
-    // A host this one can neither reach nor tell apart: never stored as a member it can't name.
-    const stranger = [link.createdBy, ...link.members.map((m) => m.nodeId)].find((n) => !isMe(n) && n !== caller.nodeId && !this.peerOfNode(n));
+    // A host named in a LAN pairing's terms this host can't resolve: never stored as a member it
+    // can't name. On a tailnet the id is the host's own, so an unpeered one is kept, as unreachable.
+    const stranger = [link.createdBy, ...link.members.map((m) => m.nodeId)].find(
+      (n) => !isMe(n) && n !== caller.nodeId && !this.peerOfNode(n) && (!!caller.lan || isLanNodeId(n)),
+    );
     if (stranger) return { status: 403, body: { error: `That link names a host this host doesn't know (${stranger}).`, reason: "not-member" } };
-    if (!(await this.deps.summary(mine.sessionId))) return { status: 409, body: { error: `No session ${mine.sessionId} on this host.`, reason: "no-session" } };
+    // An ended copy (a rollback's end) is kept whatever became of the session: it only records the end.
+    if (link.endedAt === undefined && !(await this.deps.summary(mine.sessionId)))
+      return { status: 409, body: { error: `No session ${mine.sessionId} on this host.`, reason: "no-session" } };
     if (!known) this.learnSelf(you);
     if (this.isSelf(you)) this.learnAs(caller.nodeId, you);
     const self = this.selfNodeId() ?? you;
@@ -790,7 +798,11 @@ export class MeshLinks {
       createdBy: isMe(link.createdBy) ? self : link.createdBy,
       members: link.members.map((m) => (isMe(m.nodeId) ? { ...m, nodeId: self } : m)),
     };
-    if (this.keep(kept)) this.notify([mine.sessionId]);
+    // keep() never clears an end: a live copy landing after an ended one changes nothing.
+    if (this.keep(kept)) {
+      if (kept.endedAt !== undefined) this.cancelOffers(kept);
+      this.notify([mine.sessionId]);
+    }
     return { status: 200, body: { ok: true } };
   }
 

@@ -114,7 +114,8 @@
         "server/insights-workers.test.ts",
         "server/insights-restored.test.ts",
         "src/lib/title-field.ts",
-        "src/lib/title-field.test.ts"
+        "src/lib/title-field.test.ts",
+        "shared/usage/wire.ts"
       ]
     },
     "§app.insights/tokens-motion-and-accessibility": {
@@ -154,7 +155,11 @@
         "src/lib/agents-board.ts",
         "src/App.tsx",
         "src/components/UsageView.tsx",
-        "src/components/InsightsPage.tsx"
+        "src/components/InsightsPage.tsx",
+        "src/components/CostsTab.tsx",
+        "src/lib/agents-board.test.ts",
+        "src/lib/api.ts",
+        "shared/usage/wire.ts"
       ]
     },
     "§app.session-list/accessibility": {
@@ -430,7 +435,15 @@
         "src/components/SubagentPane.tsx",
         "server/insights.ts",
         "src/components/SessionPane.tsx",
-        "src/design/base.css"
+        "src/design/base.css",
+        "src/lib/spend.ts",
+        "src/lib/spend.test.ts",
+        "src/components/SessionUsage.tsx",
+        "src/components/SessionView.tsx",
+        "src/lib/api.ts",
+        "server/usage-helper/query.ts",
+        "shared/usage/wire.ts",
+        "shared/protocol.ts"
       ]
     },
     "§app.subagents-pane/motion": {
@@ -481,7 +494,14 @@
         "src/design/base.css",
         "src/components/SessionPane.tsx",
         "src/components/ContextGauge.tsx",
-        "src/lib/workers.ts"
+        "src/lib/workers.ts",
+        "src/lib/spend.ts",
+        "src/lib/spend.test.ts",
+        "src/components/SessionUsage.tsx",
+        "src/components/SessionView.tsx",
+        "server/usage-helper/query.ts",
+        "shared/usage/wire.ts",
+        "shared/protocol.ts"
       ]
     },
     "§app.subagents-pane/trigger": {
@@ -518,7 +538,15 @@
         "src/design/base.css",
         "src/components/ContextRing.tsx",
         "src/lib/workers.ts",
-        "src/lib/workers.test.ts"
+        "src/lib/workers.test.ts",
+        "src/lib/spend.ts",
+        "src/lib/spend.test.ts",
+        "src/components/SessionUsage.tsx",
+        "src/components/SessionPane.tsx",
+        "src/components/SessionView.tsx",
+        "src/lib/api.ts",
+        "server/usage-helper/query.ts",
+        "shared/usage/wire.ts"
       ]
     },
     "§app/extension-dialogs": {
@@ -1346,7 +1374,11 @@
     "§design.copy-deck/insights": {
       "kind": "note",
       "authority": "accepted",
-      "evidence": "unreviewed"
+      "evidence": "unreviewed",
+      "code": [
+        "src/components/CostsTab.tsx",
+        "src/lib/cost-history.ts"
+      ]
     },
     "§design.copy-deck/live-watch": {
       "kind": "note",
@@ -1419,7 +1451,8 @@
       "code": [
         "src/components/SessionUsage.tsx",
         "src/components/SessionPane.tsx",
-        "src/components/SubagentPane.tsx"
+        "src/components/SubagentPane.tsx",
+        "src/lib/spend.ts"
       ]
     },
     "§design.copy-deck/timeline-tab": {
@@ -2087,7 +2120,9 @@
         "pi-config/extensions/subagents/README.md",
         "pi-config/extensions/subagents/restored.ts",
         "pi-config/extensions/subagents/teams.ts",
-        "pi-config/extensions/subagents/restore.test.ts"
+        "pi-config/extensions/subagents/restore.test.ts",
+        "server/worker-restore.ts",
+        "shared/protocol.ts"
       ]
     },
     "§app.worker-restore/transcript-protocol": {
@@ -2113,14 +2148,14 @@
       "code": [
         "pi-config/extensions/subagents/worker-transcript.ts",
         "pi-config/extensions/subagents/index.ts",
-        "server/transcript-usage.ts",
         "server/insights.ts",
         "shared/protocol.ts",
         "server/worker-restore.ts",
         "server/claude-transcript.ts",
         "pi-config/extensions/subagents/adapters/pi.ts",
         "pi-config/extensions/claude-code/transcript-adapter.ts",
-        "src/components/SessionDetails.tsx"
+        "src/components/SessionDetails.tsx",
+        "server/usage-helper/query.ts"
       ]
     },
     "§app.worker-restore/worker-record": {
@@ -5063,7 +5098,13 @@
         "src/App.tsx",
         "src/lib/session-shares.ts",
         "src/lib/pane-shares.ts",
-        "src/lib/pane-shares.browser.test.ts"
+        "src/lib/pane-shares.browser.test.ts",
+        "src/components/SubagentPane.tsx",
+        "src/components/SessionView.tsx",
+        "src/lib/api.ts",
+        "server/usage-helper/query.ts",
+        "shared/usage/wire.ts",
+        "shared/protocol.ts"
       ]
     },
     "§app.settings-dialog/claude-long-context-offered": {
@@ -6098,7 +6139,14 @@
         "server/insights-hidden-workers.test.ts",
         "pi-config/extensions/sessions/schema.test.ts",
         "pi-config/extensions/sessions/test.mjs",
-        "pi-config/extensions/sessions/README.md"
+        "pi-config/extensions/sessions/README.md",
+        "src/lib/spend.ts",
+        "src/lib/spend.test.ts",
+        "src/components/SessionUsage.tsx",
+        "src/components/SessionPane.tsx",
+        "src/components/SessionView.tsx",
+        "server/usage-helper/query.ts",
+        "shared/usage/wire.ts"
       ]
     },
     "§app.project-overseer/page": {
@@ -6179,7 +6227,8 @@
         "src/lib/api.ts",
         "src/projects.css",
         "server/project-costs-routes.ts",
-        "server/index.ts"
+        "server/index.ts",
+        "shared/costs.ts"
       ],
       "evidence": "verified"
     },
@@ -6193,7 +6242,11 @@
         "server/project-costs-ledger.ts",
         "server/project-costs.ts",
         "server/project-costs.test.ts",
-        "server/project-overseer-store.ts"
+        "server/project-overseer-store.ts",
+        "server/usage-helper/project.ts",
+        "server/usage-helper/cost-snapshots.ts",
+        "server/usage-helper/ledger.test.ts",
+        "shared/costs.ts"
       ],
       "evidence": "verified"
     },
@@ -6219,9 +6272,10 @@
         "shared/model-prices/prices.ts",
         "shared/model-prices/aliases.json",
         "shared/model-prices/seed.json",
-        "server/model-prices.ts",
         "scripts/prices-update.mjs",
-        "server/model-prices.test.ts"
+        "server/model-prices.test.ts",
+        "server/usage-helper/price-book.ts",
+        "server/usage-helper/price-book.test.ts"
       ],
       "evidence": "verified"
     },
@@ -6233,7 +6287,11 @@
         "shared/model-prices/aliases.json",
         "server/project-costs.ts",
         "server/model-prices.test.ts",
-        "server/project-costs.test.ts"
+        "server/project-costs.test.ts",
+        "server/usage-helper/project.ts",
+        "server/usage-helper/cost-snapshots.ts",
+        "server/usage-helper/ledger.test.ts",
+        "shared/costs.ts"
       ],
       "evidence": "verified"
     },
@@ -6267,7 +6325,14 @@
         "pi-config/extensions/claude-code/transcript-adapter.ts",
         "pi-config/extensions/subagents/adapters/pi.ts",
         "pi-config/extensions/subagents/worker-transcript.ts",
-        "pi-config/extensions/claude-code/provider/stream.test.ts"
+        "pi-config/extensions/claude-code/provider/stream.test.ts",
+        "server/project-costs.ts",
+        "server/project-costs.test.ts",
+        "server/usage-helper/project.ts",
+        "server/usage-helper/cost-snapshots.ts",
+        "server/usage-helper/ledger.test.ts",
+        "shared/costs.ts",
+        "pi-config/extensions/llm-inflight/attribution.ts"
       ],
       "evidence": "verified"
     },
@@ -6280,7 +6345,10 @@
         "shared/costs.ts",
         "pi-config/extensions/subagents/worker-transcript.ts",
         "pi-config/extensions/subagents/adapters/pi.ts",
-        "pi-config/extensions/claude-code/transcript-adapter.ts"
+        "pi-config/extensions/claude-code/transcript-adapter.ts",
+        "server/usage-helper/project.ts",
+        "server/usage-helper/cost-snapshots.ts",
+        "server/usage-helper/ledger.test.ts"
       ],
       "evidence": "verified"
     },
@@ -6293,9 +6361,9 @@
         "server/project-costs-ledger.ts",
         "shared/costs.ts",
         "shared/model-prices/prices.ts",
-        "server/model-prices.ts",
         "src/components/ProjectCostCard.tsx",
-        "src/lib/costs.ts"
+        "src/lib/costs.ts",
+        "server/usage-helper/price-book.ts"
       ],
       "evidence": "verified"
     },
@@ -11993,7 +12061,8 @@
         "pi-config/extensions/llm-inflight/oneshot.test.ts",
         "pi-config/extensions/subagents/host.ts",
         "pi-config/extensions/subagents/host-transport.ts",
-        "pi-config/extensions/subagents/workers-dir.ts"
+        "pi-config/extensions/subagents/workers-dir.ts",
+        "pi-config/extensions/llm-inflight/record.ts"
       ],
       "requires": [
         "§app.provider-limits/in-flight",
@@ -13502,6 +13571,86 @@
         "§mesh.lan/identity",
         "§mesh.lan/pairing",
         "§mesh.peers/address-identity"
+      ]
+    },
+    "§app.insights/cost-history": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/lib/cost-history.ts",
+        "src/lib/cost-history.test.ts",
+        "src/components/CostsTab.tsx",
+        "src/costs-tab.css",
+        "src/components/AgentsView.tsx",
+        "src/lib/insights.ts",
+        "src/App.tsx",
+        "src/lib/api.ts",
+        "server/usage-routes.ts",
+        "server/usage-helper/query.ts",
+        "server/usage-helper/price-book.ts",
+        "shared/usage/wire.ts"
+      ],
+      "requires": [
+        "§app.insights/usage-ledger",
+        "§app.insights/team-cards"
+      ]
+    },
+    "§app.insights/usage-ledger": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/llm-inflight/usage-record.ts",
+        "shared/usage/wire.ts",
+        "pi-config/extensions/llm-inflight/usage-record.test.ts",
+        "pi-config/extensions/llm-inflight/attribution.ts",
+        "pi-config/extensions/llm-inflight/record.ts",
+        "pi-config/extensions/llm-inflight/claude-usage.ts",
+        "pi-config/extensions/llm-inflight/claude-usage.test.ts",
+        "pi-config/extensions/llm-inflight/usage.test.ts",
+        "pi-config/extensions/llm-inflight/runtime.ts",
+        "pi-config/extensions/llm-inflight/claude.ts",
+        "pi-config/extensions/llm-inflight/tracker.ts",
+        "pi-config/extensions/llm-inflight/index.ts",
+        "pi-config/extensions/llm-inflight/README.md",
+        "pi-config/extensions/subagents/index.ts",
+        "pi-config/extensions/claude-code/runner.ts",
+        "pi-config/extensions/claude-code/provider/session-bridge.ts",
+        "pi-config/extensions/topic-outline/index.ts",
+        "pi-config/extensions/topic-outline/summarizers/claude-cli.ts",
+        "server/decide-llm.ts",
+        "server/decide-jev.ts",
+        "server/session-autotitle.ts",
+        "server/chat-manager.ts",
+        "server/reconcile.ts",
+        "server/attention-signals.ts",
+        "server/session-tags.ts",
+        "server/merge-followup.ts",
+        "server/baton-wrapup.ts",
+        "server/usage-recording.test.ts",
+        "server/usage-routes.ts",
+        "server/index.ts",
+        "server/mesh/access.ts",
+        "shared/model-prices/prices.ts",
+        "scripts/run-tests.mjs",
+        "server/usage-helper/client.test.ts",
+        "server/usage-helper/client.ts",
+        "server/usage-helper/cost-snapshots.ts",
+        "server/usage-helper/ledger.test.ts",
+        "server/usage-helper/ledger.ts",
+        "server/usage-helper/main.ts",
+        "server/usage-helper/memory.test.ts",
+        "server/usage-helper/price-book.test.ts",
+        "server/usage-helper/price-book.ts",
+        "server/usage-helper/project.ts",
+        "server/usage-helper/query.ts",
+        "server/usage-helper/records.ts",
+        "server/usage-helper/service.ts"
+      ],
+      "requires": [
+        "§app.insights/llm-inflight",
+        "§app.project-costs/pricing"
       ]
     }
   },

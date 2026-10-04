@@ -3690,7 +3690,7 @@
     "§mesh/phone": {
       "kind": "surface",
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "code": [
         "scripts/mesh-termux/install.sh",
         "scripts/mesh-termux/deploy.sh"
@@ -9121,7 +9121,7 @@
     "§mesh.vps/arch": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "requires": [],
       "code": [
         "scripts/mesh-vps/remote-setup.sh",
@@ -12572,7 +12572,7 @@
     "§mesh.vps/runtime": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "requires": [
         "§app.server-runtime/choice"
       ],
@@ -12590,7 +12590,7 @@
     "§mesh.phone/runtime": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "requires": [
         "§app.server-runtime/choice"
       ],

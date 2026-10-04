@@ -1,4 +1,4 @@
-// Wire 1 → wire 2 (§app.harness/wire): today's live events and row facts in the harness contract's
+// Wire 1 → wire 2: today's live events and row facts in the harness contract's
 // words (shared/harness-wire.ts). The one mapping, used on both sides: the server maps pi's event to
 // its v1 frame and that frame through `fromV1`; a browser that asked for wire 2 and got wire 1 (an
 // older peer) maps the same frame through the same function, so wire 2 equals wire 1 seen through it

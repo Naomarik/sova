@@ -1,4 +1,4 @@
-// Run: pnpm test -- shared/wire-v1.test.ts. Wire 1 → wire 2 (§app.harness/wire): the fromV1 table, one
+// Run: pnpm test -- shared/wire-v1.test.ts. Wire 1 → wire 2: the fromV1 table, one
 // row per v1 event the live view reads and each fallback it keeps, the events it ignores mapping to
 // none; and factsFromMeta, one row per fact a row predicate reads. The corpus checks (faux streams,
 // every fixture row, the neutral reader's entries) are server/harness/pi/wire-v1-corpus.test.ts.

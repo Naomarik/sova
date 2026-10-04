@@ -382,7 +382,7 @@ export interface TranscriptItem {
   /** The entry's facts, on its first row only (EntryMeta). Absent on rows to a consumer that asked
       for wire 2, which gets `facts` instead. */
   meta?: EntryMeta;
-  /** Wire 2 only (WireVersion, §app.harness/wire): the entry's facts in the harness contract's words,
+  /** Wire 2 only (WireVersion): the entry's facts in the harness contract's words,
       on its first row only, in place of `meta`; `{}` when none applies. A row with neither reads
       `rowFacts` (shared/wire-v1.ts), which maps a v1 row's `meta`. */
   facts?: RowFacts;
@@ -1863,7 +1863,7 @@ export interface SlashCommand {
 }
 
 /**
- * Which wire a consumer reads (§app.harness/wire). It asks for 2 with `wire=2` (WIRE_PARAM; `v` is
+ * Which wire a consumer reads. It asks for 2 with `wire=2` (WIRE_PARAM; `v` is
  * taken, the visit's tab) on WS /ws/chat, WS /ws/watch and GET /api/transcript; anything else, the
  * parameter absent included, is 1, today's frames and rows byte for byte. On wire 2 every live event
  * is a V2EventFrame in place of a V1EventFrame, and every row (in `hello`, `snapshot`, `append`,

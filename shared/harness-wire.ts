@@ -1,4 +1,4 @@
-// The harness contract, the wire (§app/harness, §app.harness/wire). Types only: imports nothing but its
+// The harness contract, the wire (§app/harness). Types only: imports nothing but its
 // siblings, emits nothing. What a browser that asked for wire 2 reads instead of pi's events and the
 // rows' EntryMeta: the fields the live reducer (src/lib/live.ts applyEvent) and ChatView's per-event
 // effects read, field by field, and the facts the row predicates read. shared/wire-v1.ts maps today's

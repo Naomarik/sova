@@ -1,4 +1,4 @@
-// Run: pnpm test -- server/harness/pi/wire-v1-corpus.test.ts. Wire 1 → wire 2 (§app.harness/wire) on the
+// Run: pnpm test -- server/harness/pi/wire-v1-corpus.test.ts. Wire 1 → wire 2 on the
 // golden corpus (golden/README.md: synthetic, faux, cc, and the real sample when .agent/golden-real holds
 // one): every event of the genuine pi streams through fromV1, and every row's facts against the row
 // predicates that read meta today. The table itself is shared/wire-v1.test.ts.

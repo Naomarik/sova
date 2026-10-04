@@ -49,6 +49,15 @@ const GLOBS = [
 ];
 const isBrowserTest = (f) => f.endsWith(".browser.test.ts");
 
+// macOS: the default tmpdir (/var/folders/…) is reached through the /var -> /private/var symlink, so
+// a path built from tmpdir() differs from its realpath, and a unix socket under it passes the
+// 104-byte limit. On darwin both runtimes get a short, symlink-free TMPDIR of their own, removed at exit.
+if (process.platform === "darwin") {
+  const tmp = fs.realpathSync(fs.mkdtempSync("/tmp/sova-t-"));
+  process.env.TMPDIR = tmp;
+  process.on("exit", () => fs.rmSync(tmp, { recursive: true, force: true }));
+}
+
 const argv = process.argv.slice(2);
 const at = argv.indexOf("--runtime");
 const runtime = at >= 0 ? argv[at + 1] : chosenRuntime();

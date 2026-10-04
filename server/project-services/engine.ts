@@ -43,6 +43,7 @@ import type { PortOwner } from "../port-owner";
 import { startStaticServe, staticServes, StaticServeError, stopStaticServe } from "../preview-serve";
 import { projectOf } from "../project-root";
 import { confinementOf, type Confinement } from "./confine";
+import { copyContentsArgv } from "./copy-tree";
 import { adoptedStatus, cgroupPids, DriverError, rssOf, SystemdDriver, type AdoptedStatus, type Driver, type OnceSpec, type UnitSpec } from "./drivers";
 import { hostPortOwner } from "./proctable";
 import type { NoteFacts } from "./note";
@@ -1053,7 +1054,7 @@ export class ProjectEngine {
     if (hidden) throw new VerbFailure("not-approved", `data.${d.name}.from: ${hidden}`);
     if (!existsSync(src) || !statSync(src).isDirectory()) throw new VerbFailure("not-found", `data.${d.name}.from: ${src} is not a folder`);
     mkdirSync(path, { recursive: true });
-    const code = await this.containerExecLike("cp", ["-a", "--reflink=auto", `${src}/.`, path]);
+    const code = await this.containerExecLike("cp", copyContentsArgv(src, path));
     if (code !== 0) throw new VerbFailure("hook-failed", `copying ${src} to ${path} failed (exit ${code})`);
     return path;
   }

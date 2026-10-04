@@ -42,6 +42,8 @@ const shown = (m: Mirror): string => str(m.get("hash12")) || hash12(m.get("def",
 
 /** The run's playbook by its title (§app.project-runtime/verb-playbooks); a run recorded before it had one is Project verbs'. */
 const label = (m: Mirror): string => str(m.get("playbook", "label")) || "Project verbs";
+/** What a proposed run's branch holds, by what its playbook approves: a deploy-setup run's recipe, else a definition. */
+const proposal = (m: Mirror): string => (m.get("playbook", "approves") === "deploy" ? "a deploy recipe" : "a definition");
 
 const entered = (r: FeedRow, s: string): boolean => r.after.includes(s) && !r.before.includes(s);
 
@@ -78,7 +80,7 @@ function runLine(s: string, r: FeedRow, m: Mirror): string | null {
     case "waiting":
       return `The ${label(m)} playbook waits on your answers in its session.`;
     case "proposed":
-      return `The ${label(m)} playbook proposes a definition on ${str(m.get("playbook", "branch"))}: approve it, then merge.`;
+      return `The ${label(m)} playbook proposes ${proposal(m)} on ${str(m.get("playbook", "branch"))}: approve it, then merge.`;
     case "idle":
       switch (str(m.get("playbook", "result"))) {
         case "no-change":

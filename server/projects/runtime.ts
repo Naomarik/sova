@@ -520,7 +520,7 @@ export function softwareLines(v: ProjectRuntimeView): string[] {
   if (v.proof) out.push(`Proven: ${v.proof.pass ? "passed" : "failed"} at ${h(v.proof.hash)} (suite v${v.proof.suite}), ${v.proof.at}.`);
   if (v.playbook)
     out.push(
-      `${v.playbook.label} playbook: ${v.playbookState === "idle" ? `last run ${v.playbook.result ?? "ended"}` : v.playbookState === "proposed" ? `proposes a definition on ${v.playbook.branch ?? "its branch"} (the operator approves and merges)` : v.playbookState === "waiting" ? "waits on the operator's answers to its open questions" : "running"} (session ${v.playbook.sessionId}, started by ${v.playbook.startedBy}).`,
+      `${v.playbook.label} playbook: ${v.playbookState === "idle" ? `last run ${v.playbook.result ?? "ended"}` : v.playbookState === "proposed" ? `proposes ${v.playbook.approves === "deploy" ? "a deploy recipe" : "a definition"} on ${v.playbook.branch ?? "its branch"} (the operator approves and merges)` : v.playbookState === "waiting" ? "waits on the operator's answers to its open questions" : "running"} (session ${v.playbook.sessionId}, started by ${v.playbook.startedBy}).`,
     );
   if (["unregistered", "stale", "failed"].includes(v.standing) && v.playbookState === "idle") out.push("At L3 you may start the playbook once: sova_project_verbs onboard {why}. Never approve or merge.");
   return out;

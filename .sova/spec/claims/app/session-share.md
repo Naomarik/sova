@@ -206,8 +206,9 @@ gateway only routes by hash (§mesh/public). Wire shapes: `shared/session-share.
 
 ## §app.session-share/shares-page — The Shares page
 
-- `#/shares` is a main-pane page, entered from a pinned **Shares** row in the sidebar foot (and the
-  spine's Shares button while the pane is collapsed), and from each Sharing section. At folded
+- `#/shares` is a main-pane page, entered from the overview's **Shares** card
+  (§chat.transcript/landing-page) and from each Sharing section; the sidebar foot, its phone sheet
+  and the spine have no entry to it. At folded
   width it uses `data-view="session"` and shows `.app-back`.
 - It lists every live public link this host and each up peer serve: **Session shares** first (the
   shares with a live link, then the stopped and expired ones folded under "Ended"), then

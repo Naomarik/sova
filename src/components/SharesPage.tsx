@@ -6,8 +6,28 @@ import { absoluteTime } from "../lib/spend";
 import { hostLabel, meshOn, meshPeers, selfLabel } from "../lib/mesh";
 import { getPreviews, turnOffPreview } from "../lib/api";
 import { senderLine } from "../lib/preview-rows";
-import { type PreviewGroup, previewGroups, recipientName, recipientOffConfirm, recipientOffTip, runningLine, sentToLine, TURN_OFF_ALL_TIP, turnOffConfirm } from "../lib/previews";
+import {
+  DELETE_ALL_TIP,
+  DELETE_CONFIRM,
+  deleteLabel,
+  deleteNote,
+  type PreviewGroup,
+  PREVIEW_DELETED,
+  previewGroups,
+  RECIPIENT_DELETE_LABEL,
+  recipientDeleteConfirm,
+  recipientDeleted,
+  recipientDeleteName,
+  recipientDeleteNote,
+  recipientDeleteTip,
+  recipientName,
+  runningLine,
+  sentToLine,
+} from "../lib/previews";
+import { DELETE_LINK, deleteLinkConfirm, LINK_DELETED, linkGone } from "../lib/link-delete";
+import { toast } from "../lib/ui-state";
 import { expiresWord, openedLine, presenceWord, revokeHandoff, revokeOwnerLink, sharesOverview, shareLine, shareLive, stopShare, visitLine, visitTitle } from "../lib/session-shares";
+import { DeleteButton } from "./DeleteButton";
 import { InsightsPage } from "./InsightsPage";
 import { RecipientChip, ShareSheet } from "./ShareSheet";
 import { Icon } from "./ui";
@@ -29,7 +49,7 @@ const sessionLink = (sessionId: string) => `#/sid/${encodeURIComponent(sessionId
  * The Shares page (§app.session-share/shares-page): every live public link this host and each up
  * peer serve, session shares first, then organization links, then this host's preview links
  * (§mesh.public/preview-card), each with the people it was sent to. Read-only over the org stores;
- * Turn Off Link uses their own revoke routes, and a preview's Turn Off its own.
+ * Delete Link uses their own revoke routes, and a preview's Delete its own.
  */
 export function SharesPage(props: { now: number; titleRef(el: HTMLHeadingElement): void }) {
   const [hosts, setHosts] = createSignal<HostShares[]>([]);
@@ -82,10 +102,12 @@ export function SharesPage(props: { now: number; titleRef(el: HTMLHeadingElement
   const previewVisits = (id: string) => hosts().find((h) => h.host === null)?.overview?.previewVisits?.[id] ?? [];
   const viewing = () => live().reduce((n, s) => n + s.share.recipients.filter((r) => r.presence === "viewing").length, 0) + orgLinks().filter((l) => l.link.presence === "viewing").length;
 
-  const act = async (run: () => Promise<unknown>) => {
+  /** `done` is the toast once it went through. */
+  const act = async (run: () => Promise<unknown>, done?: string) => {
     setError(null);
     try {
       await run();
+      if (done) toast(done);
     } catch (x) {
       setError(errText(x));
     }
@@ -156,7 +178,7 @@ export function SharesPage(props: { now: number; titleRef(el: HTMLHeadingElement
                   link={l.link}
                   now={props.now}
                   hostName={meshOn() ? hostName(l.host) : null}
-                  onRevoke={() => void act(() => (l.link.kind === "handoff" && l.link.sessionId ? revokeHandoff(l.host, l.link.sessionId) : revokeOwnerLink(l.host, l.link.orgId)))}
+                  onRevoke={() => void act(() => (l.link.kind === "handoff" && l.link.sessionId ? revokeHandoff(l.host, l.link.sessionId) : revokeOwnerLink(l.host, l.link.orgId)), LINK_DELETED)}
                 />
               )}
             </For>
@@ -197,12 +219,14 @@ export function SharesPage(props: { now: number; titleRef(el: HTMLHeadingElement
                                   <span class="previews-recipient-name" title={senderLine(r.createdBy) ?? undefined}>
                                     {recipientName(r)}
                                   </span>
-                                  <TwoStep
-                                    label="Turn Off"
-                                    confirm={recipientOffConfirm(recipientName(r))}
-                                    title={recipientOffTip(recipientName(r))}
+                                  <DeleteButton
+                                    label={RECIPIENT_DELETE_LABEL}
+                                    name={recipientDeleteName(recipientName(r))}
+                                    confirm={recipientDeleteConfirm(recipientName(r))}
+                                    note={recipientDeleteNote(recipientName(r))}
+                                    title={recipientDeleteTip(recipientName(r))}
                                     class="previews-recipient-off"
-                                    onRun={() => void act(() => turnOffPreview(r.id))}
+                                    onRun={() => void act(() => turnOffPreview(r.id), recipientDeleted(recipientName(r)))}
                                   />
                                   <Visits id={`preview:${r.id}`} visits={previewVisits(r.id)} now={props.now} />
                                 </li>
@@ -214,12 +238,26 @@ export function SharesPage(props: { now: number; titleRef(el: HTMLHeadingElement
                       <Visits id={`preview:${v.id}`} visits={previewVisits(v.id)} now={props.now} />
                     </div>
                     <div class="shares-row-actions">
-                      <TwoStep
-                        label="Turn Off"
-                        confirm={turnOffConfirm(g.recipients.length)}
-                        title={v.siblingOf ? undefined : TURN_OFF_ALL_TIP}
-                        onRun={() => void act(() => turnOffPreview(v.id))}
-                      />
+                      <Show
+                        when={v.siblingOf}
+                        fallback={
+                          <DeleteButton
+                            label={deleteLabel(g.recipients.length)}
+                            confirm={DELETE_CONFIRM}
+                            note={deleteNote(g.recipients.length)}
+                            title={DELETE_ALL_TIP}
+                            onRun={() => void act(() => turnOffPreview(v.id), PREVIEW_DELETED)}
+                          />
+                        }
+                      >
+                        <DeleteButton
+                          label={recipientDeleteName(recipientName(v))}
+                          confirm={recipientDeleteConfirm(recipientName(v))}
+                          note={recipientDeleteNote(recipientName(v))}
+                          title={recipientDeleteTip(recipientName(v))}
+                          onRun={() => void act(() => turnOffPreview(v.id), recipientDeleted(recipientName(v)))}
+                        />
+                      </Show>
                     </div>
                   </li>
                 );
@@ -373,7 +411,7 @@ function OrgLinkItem(props: { link: OrgLinkRow; now: number; hostName: string | 
         <Visits id={`org:${l().orgId}:${l().kind}:${l().sessionId ?? ""}:${l().n ?? ""}`} visits={l().visits} now={props.now} />
       </div>
       <div class="shares-row-actions">
-        <TwoStep label="Turn Off Link" confirm={`Turn Off ${l().personName}'s Link?`} onRun={() => props.onRevoke()} />
+        <DeleteButton label={DELETE_LINK} confirm={deleteLinkConfirm(l().personName)} note={linkGone(l().personName)} onRun={() => props.onRevoke()} />
       </div>
     </li>
   );

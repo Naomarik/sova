@@ -580,13 +580,13 @@ user row.
 
 - **What they are for.** A preview link (§mesh.public/preview) shows one of the project's coding
   sessions' running apps to a stakeholder, the whole site at its own public address, until it is
-  turned off or expires. The prompt has a **Previews** section, and the two tools' descriptions
+  deleted or expires. The prompt has a **Previews** section, and the two tools' descriptions
   say the same: what previews are for, that a link reaches anyone who has it, to make one only
   for a stakeholder who should see the app now, to check it answers, that the overseer never sees
   a link, that a preview reaches a person with `sova_send_to_person` and its `preview` id (they get
   their own link to it, §app.outreach/links) or through the operator, who has the link on the
-  project page, and to turn it off once it has served its purpose (every link sent from it goes
-  off with it). If the app went down, whoever runs it (the coding session, prompted with
+  project page, and to delete it once it has served its purpose, which is for good (every link
+  sent from it stops working with it, and nothing brings one back). If the app went down, whoever runs it (the coding session, prompted with
   `sova_send`) starts it again: Sova never starts an app for a preview. A running copy's link is the
   one exception: the operator may Start its stopped copy from the Previews card
   (§mesh.public/preview-card); a visit never starts anything.
@@ -637,10 +637,11 @@ user row.
   its state, and `down` stops one at any level from L0, never held; a copy with an active share link
   answers `needs-confirm` to it (§app.project-services/share), so the prompt says to revoke its links
   first (`revoke {instance}`), then stop it.
-- **Turn off.** `sova_preview {op: "off", id}` turns off one of this project's previews at once, at
-  any level and in any run, never held and never waiting for a review: it only takes something
-  away. It is the card's Turn Off (`POST /api/previews/<id>/off`), and it is logged in the
-  overseer's activity.
+- **Delete.** `sova_preview {op: "off", id}` deletes one of this project's previews at once and for
+  good, at any level and in any run, never held and never waiting for a review: it only takes
+  something away. It is the card's Delete (`POST /api/previews/<id>/off`); its result says
+  "Deleted {id}: its link answers "no longer active" for good.", and it is logged in the
+  overseer's activity as "Deleted a preview link" (with its purpose).
 - **One shape for what comes next.** Both tools put each preview in their result's `details` in one
   fixed shape, `PreviewHandoff` (`shared/preview-links.ts`): `{v: 1, id, linkKept, purpose,
   expiresAt, projectId, sessionId, branch, target, state, running, createdBy}`, never the

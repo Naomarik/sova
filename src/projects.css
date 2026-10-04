@@ -420,13 +420,15 @@ a.pipeline-link:hover, button.pipeline-link:hover, summary.pipeline-link:hover {
   .services-actions-danger { padding-left: 0; border-left: 0; }
   .services-actions-note { text-align: left; max-width: none; }
 }
-/* A copy's share links: a chip, then its own Copy Link and Turn Off; the form under the row's facts. */
+/* A copy's share links: a chip, then its own Copy Link and Delete Link; the form under the row's facts. */
 /* The links and the Share form take the row's whole width, under its facts and actions; nothing there, no line. */
 .services-row-share { flex-basis: 100%; min-width: 0; }
 .services-row-share:not(:has(*)) { display: none; }
-/* Each link is one group (chip, Copy Link, Turn Off) that wraps as a whole, never apart. */
+/* Each link is one group (chip, Copy Link, Delete Link) that wraps as a whole, never apart; an armed
+   Delete's line wraps under it. */
 .services-links { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-5); margin: 0; padding: 0; list-style: none; }
 .services-link { display: inline-flex; flex-wrap: nowrap; align-items: center; gap: var(--space-2); }
+.services-link:has(> .delete-note) { flex-wrap: wrap; }
 /* A phone's width can be under one group's: it wraps inside then, rather than scroll sideways. After
    the rule above, which it overrides. */
 @container services (max-width: 479px) {

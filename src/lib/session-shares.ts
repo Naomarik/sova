@@ -224,6 +224,6 @@ export const stopShare = (host: string | null, id: string) => send<SessionShare>
 export const shareActivity = (host: string | null, id: string) => call<SessionShareActivity>(host, `${one(id)}/activity`);
 /** Every live public link one host serves: its session shares and its org links. */
 export const sharesOverview = (host: string | null) => call<SharesOverview>(host, "/api/shares-overview");
-/** Turn Off Link for an org link, through the routes that already exist for it. */
+/** Delete Link for an org link, through the routes that already exist for it. */
 export const revokeHandoff = (host: string | null, sessionId: string) => send<unknown>(host, "POST", `/api/baton/${encodeURIComponent(sessionId)}/revoke`);
 export const revokeOwnerLink = (host: string | null, orgId: string) => send<unknown>(host, "POST", `/api/orgs/${encodeURIComponent(orgId)}/owner/revoke`);

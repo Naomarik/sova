@@ -348,7 +348,9 @@ launcher):
   (`pnpm test`, the project's test verb, merge-round's master re-runs). Helper scripts the server
   spawns follow `process.execPath`, so on Bun they run on Bun. `dev:server:tsx` is Node by name.
 - **Bun binary:** `$SOVA_BUN`, else `bun` on PATH, else `mise which bun`. `SOVA_NODE` names the
-  node binary the launcher uses (default `node` on PATH).
+  node binary the launcher uses (default `node` on PATH). Installed copies (install.sh, mesh-vps,
+  mesh-termux) get Bun from `scripts/fetch-bun.sh`: bumping `bun` in `mise.toml` needs that
+  release's checksum lines in `scripts/bun-release.txt`, or fetch-bun refuses.
 - **No fallback:** Bun not found = the launcher (and the dev watcher) print
   `[runtime] bun not found: …` and exit 1; nothing starts. A Bun server that crashes at boot just
   fails (the unit's `Restart=` retries it); nothing switches to Node, nothing counts boots.

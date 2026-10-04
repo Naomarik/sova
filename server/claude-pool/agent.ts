@@ -5,7 +5,9 @@ import {
   ACCOUNTS_DIR_NAME,
   LOCAL_DEVICE_ID,
   clearLeaving,
+  credentialsMtime,
   isLoginId,
+  loginDir,
   markLeaving,
   pidAlive,
   planLabel,
@@ -19,6 +21,7 @@ import {
   type ClaudeLoginIdentity,
   type LeavingReason,
 } from "../../pi-config/extensions/claude-code/accounts.ts";
+import type { KeychainOptions } from "../../pi-config/extensions/claude-code/keychain.ts";
 import type { ClaudePoolInfo, ClaudePoolLogin } from "../../shared/protocol";
 import { writeFileAtomic } from "../sync/logins-stores";
 import {
@@ -119,6 +122,8 @@ export interface PoolAgentOptions {
    */
   procScan?: () => Map<string, number[]>;
   log?: (message: string) => void;
+  /** How a login's macOS keychain item is asked (platform, exec); test seam (§app.claude-logins/macos-keychain). */
+  keychain?: KeychainOptions;
 }
 
 const IDLE_MS = 30 * 60_000;
@@ -564,7 +569,7 @@ export class PoolAgent {
       const s = state.logins[l.id];
       if (s?.kind === "limit" && (s.until ?? s.at + 15 * 60_000) > now) return false;
       if (s?.kind === "auth") return false;
-      return hasCredentials(this.o.agentDir, l.id);
+      return hasCredentials(this.o.agentDir, l.id) || this.keychainOnly(l.id);
     });
   }
 
@@ -701,6 +706,11 @@ export class PoolAgent {
         // read) is the truth here; bring the document in line.
         this.updateDoc((d) => { const x = d.logins[id]!; x.holder = { device: this.self, free: kept, seq: x.holder.seq + 1, at: now }; });
       }
+      // Its sign-in is only in this Mac's keychain, which the pool can't move: it stays held here.
+      if (this.keychainOnly(id)) {
+        if (kept || readLeaving(this.o.agentDir, id)) this.stayHere(id, "its sign-in is in the macOS keychain");
+        continue;
+      }
       if (kept) {
         const keeper = doc.keeper.value;
         if (keeper && keeper !== this.self) this.leave(id, "return", "keeper");
@@ -736,6 +746,7 @@ export class PoolAgent {
   }
 
   private async progressLeave(id: string, op: Extract<JournalOp, { op: "leave" }>): Promise<void> {
+    if (op.kind === "return" && op.state !== "deleting" && this.keychainOnly(id)) return this.stayHere(id, "its sign-in is in the macOS keychain");
     if (op.state === "draining") {
       const use = this.use(id);
       if (use.inUse || use.children.length) {
@@ -767,6 +778,27 @@ export class PoolAgent {
     }
     if (op.state === "sending") return this.send(id, op);
     if (op.state === "deleting") return this.finishLeave(id);
+  }
+
+  /**
+   * macOS: a login here whose credentials are only its keychain item (no file). The pool moves
+   * files only, so it can't leave (§app.claude-logins/macos-keychain). Never true elsewhere, where
+   * nothing is asked.
+   */
+  private keychainOnly(id: string): boolean {
+    return !hasCredentials(this.o.agentDir, id) && credentialsMtime(loginDir(this.o.agentDir, id), this.o.keychain) !== undefined;
+  }
+
+  /** Call off any move of a keychain-only login: held and used here again (its standing still counts). */
+  private stayHere(id: string, reason: string): void {
+    updateAccounts(this.o.agentDir, (a) => { const l = a.logins.find((x) => x.id === id); if (l) l.device = this.self; });
+    clearLeaving(this.o.agentDir, id);
+    this.updateDoc((doc) => {
+      const l = doc.logins[id];
+      if (l && (l.holder.device !== this.self || l.holder.free)) l.holder = { device: this.self, free: false, seq: l.holder.seq + 1, at: this.now() };
+    });
+    setOp(this.o.stateDir, id, undefined);
+    this.log(`${id} stays on this device (${reason})`);
   }
 
   /** This device is the keeper: a held login becomes free here, no transfer. */
@@ -1013,6 +1045,7 @@ export class PoolAgent {
       const l = doc.logins[id]!;
       const standing = standingNow(doc, id, now);
       const op = journal.ops[id];
+      const staysHere = l.holder.device === this.self && this.keychainOnly(id);
       return {
         id,
         ...(l.label.value ? { label: l.label.value } : {}),
@@ -1024,7 +1057,7 @@ export class PoolAgent {
         standing: standing?.kind === "limit" ? { state: "limited", until: standing.until ?? now, ...(standing.window ? { window: standing.window } : {}) } : standing?.kind === "auth" ? { state: "auth" } : { state: "ready" },
         ...(l.usage.value ? { usage: { ...l.usage.value, at: l.usage.at } } : {}),
         ...(op ? { moving: { op: op.op, state: op.state, ...(op.op === "leave" ? { reason: op.reason } : {}), ...("peer" in op && op.peer ? { peer: op.peer } : {}) } } : {}),
-        ...(!l.holder.free && l.returnAsk.value !== null && l.returnAsk.value >= l.holder.seq ? { returnAsked: true } : {}),
+        ...(staysHere ? { staysHere: true as const } : !l.holder.free && l.returnAsk.value !== null && l.returnAsk.value >= l.holder.seq ? { returnAsked: true } : {}),
       };
     });
     const devices = [{ id: this.self, label: label(this.self), up: true, self: true }, ...peers.map((p) => ({ ...p, self: false }))].map((d) => ({

@@ -1071,6 +1071,8 @@ export interface ClaudePoolLogin {
   moving?: { op: "lend" | "borrow" | "leave"; state: string; reason?: string; peer?: string };
   /** Return was asked and the holder has not returned it yet. */
   returnAsked?: boolean;
+  /** Held by this Mac with its sign-in only in the macOS keychain, which the pool can't move: it never leaves (§app.claude-logins/macos-keychain). */
+  staysHere?: true;
 }
 export interface ClaudePoolInfo {
   self: string;

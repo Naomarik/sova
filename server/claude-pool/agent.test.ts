@@ -16,6 +16,7 @@ import {
   type ClaudeAccountsFile,
 } from "../../pi-config/extensions/claude-code/accounts.ts";
 import { spawn, spawnSync } from "node:child_process";
+import { keychainService, resetKeychainMtimes, type KeychainOptions } from "../../pi-config/extensions/claude-code/keychain.ts";
 import { PoolAgent, scanClaudeProcs, type PoolPeer } from "./agent";
 import { INCOMING_DIR_NAME } from "./creds";
 import { emptyDoc, mergeDocs, newPoolLogin, poolOrder, reg } from "./doc";
@@ -52,7 +53,7 @@ interface Device {
 }
 
 let world = 0;
-function makeWorld(ids: string[], clock: { now: number }, procScan: () => Map<string, number[]> = () => new Map(), apiKeysOnly: string[] = []) {
+function makeWorld(ids: string[], clock: { now: number }, procScan: () => Map<string, number[]> = () => new Map(), apiKeysOnly: string[] = [], keychains: Record<string, KeychainOptions> = {}) {
   const base = join(root, `w${++world}`);
   const devices = new Map<string, Device>();
   const killed: number[] = [];
@@ -72,6 +73,7 @@ function makeWorld(ids: string[], clock: { now: number }, procScan: () => Map<st
       kill: (pid) => killed.push(pid),
       procScan,
       canHold: () => !apiKeysOnly.includes(d.id),
+      ...(keychains[d.id] ? { keychain: keychains[d.id] } : {}),
       crash: (step) => {
         if (devices.get(d.id)?.crashAt === step) { crashed.add(step); throw new Error(`crash at ${step}`); }
       },
@@ -701,3 +703,84 @@ describe("the keeper, removal, and a device that holds no subscription login", (
     assert.equal(d.agent.view().apiKeysOnly, true);
   });
 });
+
+describe("a Mac's keychain-only login (§app.claude-logins/macos-keychain)", () => {
+  /** Keeper `k`; Mac `m` holds L3, whose sign-in is only a keychain item (its directory has no file). */
+  async function macWorld(platform: NodeJS.Platform = "darwin") {
+    resetKeychainMtimes();
+    const clock = { now: 1_000_000 };
+    const items = new Set<string>();
+    const queries: string[][] = [];
+    const execSync = (_file: string, args: string[]) => {
+      queries.push(args);
+      if (args.includes("-w")) throw new Error("the pool never reads the secret");
+      if (!items.has(args[2]!)) throw new Error("exit 44");
+      return `    "mdat"<timedate>=0x00  "20261004130350Z\\000"\n`;
+    };
+    const w = makeWorld(["k", "m"], clock, undefined, [], { m: { platform, env: { USER: "someone" }, home: "/fixture/home", userHome: "/fixture/home", execSync } });
+    const k = w.dev("k");
+    const m = w.dev("m");
+    k.agent.migrate();
+    k.agent.setKeeper("k");
+    seedLogin(m, L3, "acct-mac", "m");
+    rmSync(credsPath(m, L3));
+    items.add(keychainService(join(m.agentDir, "claude-accounts", L3)));
+    m.agent.migrate();
+    await w.syncAll();
+    const stays = () => {
+      assert.ok(existsSync(join(m.agentDir, "claude-accounts", L3)), "its directory is never deleted");
+      assert.equal(readAccounts(m.agentDir).value.logins.find((l) => l.id === L3)?.device, "m", "held by the Mac in its registry");
+      assert.deepEqual({ device: holder(m, L3)!.device, free: holder(m, L3)!.free }, { device: "m", free: false });
+      assert.ok(!readLeaving(m.agentDir, L3), "not leaving: spawns here still pick it");
+      assert.deepEqual(readJournal(m.stateDir).ops, {});
+    };
+    return { w, k, m, clock, queries, stays };
+  }
+
+  test("it never leaves the Mac: not when idle, limited, pinned elsewhere, asked to return, or mid-move", async () => {
+    const { w, k, m, clock, queries, stays } = await macWorld();
+    clock.now += 31 * MIN;
+    await m.agent.tick();
+    await m.agent.tick();
+    stays();
+    markLeaving(m.agentDir, L3, "limit", clock.now);
+    await m.agent.tick();
+    stays();
+    k.agent.setPin(L3, "k");
+    k.agent.askReturn(L3);
+    await w.syncAll();
+    await m.agent.tick();
+    await m.agent.tick();
+    stays();
+    m.agent.leave(L3, "return", "user"); // a move already under way (an older version, a crash) is called off
+    await m.agent.tick();
+    stays();
+    assert.ok(queries.every((q) => !q.includes("-w")));
+    const row = m.agent.view().logins.find((l) => l.id === L3)!;
+    assert.equal(row.staysHere, true);
+    assert.equal(row.returnAsked, undefined, "a Return asked elsewhere is not shown as pending here");
+    await w.syncAll();
+    assert.equal(k.agent.view().logins.find((l) => l.id === L3)?.staysHere, undefined, "only the Mac knows");
+  });
+
+  test("one kept free here (as the keeper's) is taken back and used here", async () => {
+    const { m, stays } = await macWorld();
+    updateAccountsFor(m.agentDir, L3, null);
+    await m.agent.tick();
+    stays();
+  });
+
+  test("not macOS: nothing is asked of a keychain", async () => {
+    const { m, clock, queries } = await macWorld("linux");
+    clock.now += 31 * MIN;
+    await m.agent.tick();
+    assert.deepEqual(queries, []);
+    assert.equal(m.agent.view().logins.find((l) => l.id === L3)?.staysHere, undefined);
+  });
+});
+
+function updateAccountsFor(agentDir: string, id: string, device: string | null): void {
+  const read = readAccounts(agentDir).value;
+  read.logins.find((l) => l.id === id)!.device = device;
+  writeAccounts(agentDir, read);
+}

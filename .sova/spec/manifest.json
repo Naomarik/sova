@@ -5475,7 +5475,8 @@
         "§mesh.peers/listener",
         "§app/baton",
         "§app/project-overseer",
-        "§app.overseer/sent-marker"
+        "§app.overseer/sent-marker",
+        "§mesh.links/host-names"
       ]
     },
     "§mesh.links/agents-pane": {
@@ -13482,6 +13483,25 @@
       "requires": [
         "§mesh.lan/accept-process",
         "§mesh/vps"
+      ]
+    },
+    "§mesh.links/host-names": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/mesh/links.ts",
+        "server/mesh/links.test.ts",
+        "server/mesh/links-offers.ts",
+        "server/mesh/index.ts",
+        "shared/mesh-links.ts",
+        "server/mesh/lan-mesh.test.ts"
+      ],
+      "requires": [
+        "§mesh.links/record",
+        "§mesh.lan/identity",
+        "§mesh.lan/pairing",
+        "§mesh.peers/address-identity"
       ]
     }
   },

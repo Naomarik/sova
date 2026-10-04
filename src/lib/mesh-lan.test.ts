@@ -1,5 +1,6 @@
 // Run: pnpm test -- src/lib/mesh-lan.test.ts
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { acceptorLine, acceptorReason, type LanPairingStatus, pairingProblem, pairingState, parseFingerprint, portWarning, relayLine, relayProblem, roleWord } from "./mesh-lan";
 
@@ -113,4 +114,12 @@ test("an internet pairing that keeps timing out says the network may block its p
   const { internet: _, ...lanPairing } = p;
   assert.equal(pairingState(lanPairing, 0).detail, "Timed out. Next try in 5 s.");
   assert.equal(pairingState({ ...p, channels: { answer: { ...waiting, reason: "accept process refused" }, ask: waiting } }, 0).detail, "Accept process refused. Next try in 5 s.");
+});
+
+test("the internet checkbox sits beside its label, not a card's width away", () => {
+  // base.css spreads a .toggle row (justify-content: space-between); the pairing form opts out.
+  const tsx = readFileSync(new URL("../components/MeshPairings.tsx", import.meta.url), "utf8");
+  const css = readFileSync(new URL("../mesh.css", import.meta.url), "utf8");
+  assert.match(tsx, /<label class="toggle mesh-pair-internet">/);
+  assert.match(css, /\.mesh-pair-internet \{ justify-content: flex-start; \}/);
 });

@@ -325,7 +325,7 @@ export function MeshPairings(props: { now: number; taken: readonly string[]; tic
               <input id="mesh-pair-port" class="input input-mono" inputmode="numeric" autocomplete="off" value={draft().port} onInput={(e) => setDraft((d) => ({ ...d, port: e.currentTarget.value }))} />
             </div>
           </div>
-          <label class="toggle">
+          <label class="toggle mesh-pair-internet">
             <input type="checkbox" checked={draft().internet} aria-describedby="mesh-pair-internet-hint" onChange={(e) => setDraft((d) => ({ ...d, internet: e.currentTarget.checked }))} />
             <span class="toggle-box" />
             <span>This relay is on the internet</span>

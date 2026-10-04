@@ -11535,7 +11535,7 @@
         "§app.settings-dialog/modes"
       ],
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "verified",
       "code": [
         "src/components/SubagentProfilesSettings.tsx",
         "src/components/SubagentProfilesSettings.css",

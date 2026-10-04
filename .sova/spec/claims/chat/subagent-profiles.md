@@ -176,12 +176,13 @@ profile in its mode menu; new chats start on the default."
 
 The editor is read by scanning, so each route and role is compact:
 
-- **One line per worker.** Backend, Model and Effort sit side by side, down to a phone's panel;
-  they stack only on a narrower one. Their names are the selects' accessible names, not visible
-  labels, because each select shows its value. A model id too long for its select shows whole on
-  hover.
-- **Primary and Fallback** lead their rows in a narrow column while the panel has room, and sit
-  above them when it doesn't. The fallback's label is quieter than the primary's.
+- **One line per worker.** Backend, Model and Effort sit side by side while the panel has room.
+  On a phone's panel a worker takes two lines: Backend, then Model and Effort, so the model id
+  gets most of the width. Their names are the selects' accessible names, not visible labels,
+  because each select shows its value. A model id too long for its select ends in an ellipsis and
+  shows whole on hover.
+- **Primary and Fallback** lead their rows in a narrow column. On a phone's panel they lead the
+  Backend line. The fallback's label is quieter than the primary's.
 - **Add Fallback and Remove Fallback** sit on the route's head line, beside its name. In Teams that
   is the role's name; in Spec writer it is the switch's line. They never sit on a line of their own
   under the rows.
@@ -190,7 +191,11 @@ The editor is read by scanning, so each route and role is compact:
   inside the editor read as ordinary text, not as headings, and the team number fields are sized
   for a 2- to 3-digit value.
 - **The list.** Each profile shows its name over its footprint, with Edit as the row's outlined
-  action.
+  action. A long name or footprint wraps and is never cut short. The actions take their own line
+  under them, with Delete set apart at its end, unless the panel is wide enough to put them beside
+  the name. Either way they never overlap the name, chips or footprint.
+- **Fold summaries.** The summary of a section or an Instructions fold wraps beside its header
+  instead of being cut short, so long model ids and role names stay readable.
 
 ## §chat.subagent-profiles/limit-row — After a usage limit
 

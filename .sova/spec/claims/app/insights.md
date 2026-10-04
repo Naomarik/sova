@@ -87,9 +87,10 @@ working worker is never the one it leaves out.
 
 **Unfolded (≥768)** the foot holds **two stacked rows, and both are always present**, so the layout never
 jumps: the Usage row is 44px and the Agents row 64px, the extra 20px holding the token chart
-(§app.insights/token-velocity) on a second line. A third always-present row, **Shares**, sits under them: the whole-row link to `#/shares`
-(§app.session-share/shares-page, `external` icon, text "Shares"), with no button beside it; the
-spine's foot has its Shares icon button after Agents. **Folded (<768) none of this shows**: a
+(§app.insights/token-velocity) on a second line. Those two are the foot's only rows: it has no
+Shares row, and the spine's foot has no Shares button — the Shares page is reached from the
+overview's Shares card (§chat.transcript/landing-page) and from each Sharing section
+(§app.session-share/shares-page). **Folded (<768) none of this shows**: a
 phone's foot is one bar that opens a sheet holding these same rows verbatim
 (§app.insights/sidebar-foot-phone). Each row is a `.sidebar-foot-row`: the whole-row link, then one 44px icon button at its
 right end — the **Resource monitor** button on the Usage row (§app.resource-monitor/entry-button),
@@ -212,10 +213,11 @@ list needs the room. The bar is one plain button; tapping it opens a **bottom sh
 folded-width `.modal`, grip included; the scrim and Escape close it, focus is trapped inside and
 returns to the bar) holding the foot's columns **exactly as §app.insights/sidebar-foot draws
 them** — the host filter row (§mesh.remote-sessions/host-filter, only while the mesh is on), the
-Usage glance row with its monitor button, the Agents row with its Settings gear, and the Shares
-link row. Nothing in them is rewritten, only re-homed. At ≥768 the bar never shows and the foot
+Usage glance row with its monitor button, and the Agents row with its Settings gear; it has no
+Shares row (the Shares page is the overview's Shares card's, §chat.transcript/landing-page).
+Nothing in them is rewritten, only re-homed. At ≥768 the bar never shows and the foot
 is §app.insights/sidebar-foot as drawn there; the spine is untouched by either. The sheet's
-accessible name is "Hosts, usage, agents and shares".
+accessible name is "Hosts, usage and agents".
 
 The bar itself reads the same data as the rows, left to right:
 
@@ -242,7 +244,7 @@ The bar's accessible name says the facts in words, then what the tap does: "2 of
 connected. 7 agents working now: 2 sessions and 5 subagents. Output tokens a minute: 48k over the
 last 5 minutes, 12k over 30. Replies still being written aren't counted yet. Claude
 5-hour: 12% used · 1h 5m of 5h · resets 4:59 PM; 7-day: 87% used · day 6 of 7 · resets Oct 4
-10:59 AM. Z.ai 5-hour: 41% used; MCP uses: 0% used. Open hosts, usage, agents and shares." —
+10:59 AM. Z.ai 5-hour: 41% used; MCP uses: 0% used. Open hosts, usage and agents." —
 every glance part in the glance's own words; the agents clause is the working count's sentence
 (§app.session-list/working-now): "1 agent working now: 1 session" at 1, "At least 3 agents working
 now: …" while a floor, "Agents working now: not known yet" while unknown; the velocity's

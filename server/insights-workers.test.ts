@@ -70,7 +70,7 @@ test("decodeWorkers carries a worker's turns (model replies): a non-negative int
   ] }) as WorkerInfo[];
   assert.deepEqual(workers.map((w) => w.turns), [12, 0, undefined, undefined, undefined, undefined, 3]);
   for (const w of workers.slice(2, 6)) assert.ok(!("turns" in w), `${w.id}: unknown is absent, never 0`);
-  assert.equal(workers[6]!.usage, undefined);
+  assert.ok(!("usage" in workers[6]!), "a record's usage is the TUI's, never decoded");
 });
 
 test("decodeWorkers names each worker's provider: the ref's, the catalog's, or claude code", () => {

@@ -19,7 +19,6 @@ import type {
   TeamEvent,
   TeamInfo,
   TeamMember,
-  TokenUsage,
   ClaudeLoginRow,
   ClaudePoolInfo,
   ClaudePoolLogin,
@@ -859,16 +858,6 @@ function workerStatus(v: unknown): WorkerStatus {
   return WORKER_ALIASES[s] ?? "running"; // schema: unknown ⇒ running
 }
 
-/** Token counts are advisory: a bad field is 0, a non-object usage is dropped. */
-function decodeUsage(v: unknown): TokenUsage | undefined {
-  if (!isRec(v)) return undefined;
-  const cost = num(v.cost);
-  return {
-    input: count(v.input), output: count(v.output), cacheRead: count(v.cacheRead), cacheWrite: count(v.cacheWrite),
-    ...(cost !== undefined && cost > 0 ? { cost } : {}),
-  };
-}
-
 /** `hosted`: the record is one of this server's own runtimes, the only place Sova can resume a
     restored worker. Anyone else's `resumable` (a TUI's) is dropped. */
 function decodeWorker(w: unknown, hosted: boolean): WorkerInfo | null {
@@ -898,17 +887,9 @@ function decodeWorker(w: unknown, hosted: boolean): WorkerInfo | null {
     if (t !== undefined) out[k] = t;
   }
   if (w.outcome === "success" || w.outcome === "error" || w.outcome === "aborted") out.outcome = w.outcome;
-  const usage = decodeUsage(w.usage);
-  if (usage) out.usage = usage;
-  // Top-level beside usage (the record's size trim drops usage first); absent stays unknown.
+  // The record's own usage fields are the TUI's; what a worker spent is the usage ledger's.
+  // Absent turns stay unknown.
   if (typeof w.turns === "number" && Number.isSafeInteger(w.turns) && w.turns >= 0) out.turns = w.turns;
-  // Restored workers (subagents extension): where their number came from, and since when. The
-  // record's "none" is the wire's "unavailable": no number, and the pane must not read 0.
-  const source = w.usageSource === "none" ? "unavailable" : w.usageSource;
-  if (source === "transcript" || source === "snapshot" || source === "unavailable") out.usageSource = source;
-  if (out.usageSource === "unavailable") delete out.usage;
-  const asOf = num(w.usageAsOf);
-  if (asOf !== undefined && out.usageSource !== "unavailable") out.usageAsOf = asOf;
   const interrupted = num(w.interruptedAt);
   if (interrupted !== undefined) out.interruptedAt = interrupted;
   if (hosted && w.resumable === true) out.resumable = true;

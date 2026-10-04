@@ -112,27 +112,15 @@ test("a restored worker shows the modes its record names; none, or an older reco
   assert.ok(!("modes" in workers.get("ag_04")!), "an older pi-config's record: no field");
 });
 
-test("usage comes from each transcript through the protocol; a snapshot says as of when; unreadable is not 0", async () => {
+test("restored workers name their transcripts and carry no spend (the usage ledger's)", async () => {
   const insight = await getSessionInsight(owner());
   const workers = byId(insight.workers);
   const pi = workers.get("ag_01")!;
-  assert.equal(pi.usageSource, "transcript");
-  assert.deepEqual(pi.usage, { input: 110, output: 20, cacheRead: 0, cacheWrite: 0, cost: 0.6 }, "cache-warm usage counts");
-  assert.equal(pi.usageAsOf, undefined);
   assert.equal(pi.sessionFile, piWorkerFile);
-
   const cc = workers.get("ag_02")!;
-  assert.equal(cc.usageSource, "transcript", "tokens are the transcript's");
-  assert.deepEqual(cc.usage, { input: 7, output: 70, cacheRead: 700, cacheWrite: 0, cost: 0.42 }, "one message, counted once; cost from the snapshot");
-  assert.equal(cc.usageAsOf, T0 + 9 * 60_000, "the cost is only as true as its last report");
   assert.equal(cc.sessionId, claudeId);
   assert.equal(cc.provider, "claude code");
-
-  const future = workers.get("ag_03")!;
-  assert.equal(future.usageSource, "unavailable");
-  assert.ok(!("usage" in future), "no number at all, never a 0");
-
-  assert.equal(workers.get("ag_04")!.usageSource, "snapshot");
+  for (const w of workers.values()) for (const k of ["usage", "usageSource", "usageAsOf"]) assert.ok(!(k in w), `${w.id}: ${k}`);
 });
 
 test("restored turns come from the transcript or the snapshot; started is the transcript's start, else the first record", async () => {
@@ -259,7 +247,7 @@ test("live workers' fill comes off their transcripts' tails; a remote placeholde
   }
 });
 
-test("decodeWorkers: `resumable` only from this server's own runtime; a record's none is unavailable, with no usage", () => {
+test("decodeWorkers: `resumable` only from this server's own runtime; a record's usage fields are not decoded", () => {
   const presence = { workers: [
     { id: "ag_01", name: "a", status: "restored", resumable: true, usageSource: "none", usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } },
     { id: "ag_02", name: "b", status: "done", resumable: true, usageSource: "snapshot", usageAsOf: 5, interruptedAt: 4 },
@@ -267,9 +255,7 @@ test("decodeWorkers: `resumable` only from this server's own runtime; a record's
   const [a, b] = decodeWorkers(presence) as [WorkerInfo, WorkerInfo];
   assert.equal(a.resumable, undefined, "a TUI's ghost is not ours to start");
   assert.equal(a.working, false, "restored is idle");
-  assert.equal(a.usageSource, "unavailable");
-  assert.ok(!("usage" in a));
-  assert.equal(b.usageAsOf, 5);
+  for (const k of ["usage", "usageSource", "usageAsOf"]) assert.ok(!(k in a) && !(k in b), k);
   assert.equal(b.interruptedAt, 4);
   const hosted = decodeWorkers(presence, true);
   assert.equal(hosted[0]!.resumable, true);

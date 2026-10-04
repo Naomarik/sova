@@ -2336,24 +2336,11 @@ export interface WorkerInfo {
   sessionFile?: string;
   /** Backend session id when there is no pi session file (claude-code: its Claude session id). */
   sessionId?: string;
-  /** Tokens this worker has used so far (both backends report them). Absent for a worker that
-      has spent nothing yet, and from live records written by an older pi-config. */
-  usage?: TokenUsage;
   /** Model replies this worker has had so far, across resumes (the TUI's '{n} turns'): the live
       record's `workers[].turns`, or for a restored worker its transcript's or last snapshot's
       count. Absent when unknown (an older writer, a record that never counted) — never 0 for
       unknown. */
   turns?: number;
-  /** Where `usage` comes from. `transcript`: recomputed from its own transcript (exact tokens;
-      cost only when the backend records one). `snapshot`: the last number the worker reported
-      before the restart, true as of `usageAsOf`. `unavailable`: its transcript couldn't be read
-      and nothing was reported, so `usage` is absent — never read that as 0. Absent on a running
-      worker's live number and from older writers. */
-  usageSource?: "transcript" | "snapshot" | "unavailable";
-  /** ms: part of `usage` is the worker's last report before the restart and was true then — all
-      of it for `snapshot`, only the cost for a `transcript` Claude worker (its transcript records
-      tokens, never cost). */
-  usageAsOf?: number;
   /** ms: a restored worker died mid-turn at about this time; the turn's answer never arrived. */
   interruptedAt?: number;
   /** A restored worker can be resumed from here: the session is hosted by this server and the
@@ -2573,9 +2560,8 @@ export interface SessionInsight {
 
 /** `GET /api/insights/session/workers?path=`: the workers recorded on the session's active branch
     that its live record doesn't list, newest first, read from the session file only when asked
-    (§app.subagents-pane/hidden-workers). Each is built from its durable records alone: its usage
-    is the snapshot saved there (`usageSource: "snapshot"`, or "unavailable"), never its
-    transcript's. Nothing is hidden when the session has no live record: the insight then lists
+    (§app.subagents-pane/hidden-workers). Each is built from its durable records alone, never its
+    transcript (what it spent is the usage ledger's). Nothing is hidden when the session has no live record: the insight then lists
     every worker already. */
 export interface SessionHiddenWorkers {
   workers: WorkerInfo[];

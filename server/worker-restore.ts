@@ -8,7 +8,7 @@
 // working (nothing runs it); resuming needs a runtime, so nothing here is `resumable`.
 
 import { stat } from "node:fs/promises";
-import type { TokenUsage, WorkerInfo, WorkerStatus } from "../shared/protocol";
+import type { WorkerInfo, WorkerStatus } from "../shared/protocol";
 import {
   type FoldedWorkerManifest,
   manifestModes,
@@ -83,9 +83,7 @@ export class WorkerRestorer {
     );
     const workers: WorkerInfo[] = [];
     for (const { m, summary, usage } of views) {
-      if (!m.onActiveBranch) continue;
-      const snapshotAt = usage.source === "snapshot" ? usage.asOf : usage.costSource === "snapshot" ? usage.costAsOf : undefined;
-      workers.push(workerInfo(m, summary, usage, snapshotAt, resolveWindow));
+      if (m.onActiveBranch) workers.push(workerInfo(m, summary, usage, resolveWindow));
     }
     return { workers };
   }
@@ -101,20 +99,12 @@ export function workersFromRecords(entries: readonly Entry[], branch: readonly E
   // The fold keeps first-record order, which is spawn order.
   for (const m of [...manifests.values()].reverse()) {
     if (!m.onActiveBranch || skip.has(m.workerId)) continue;
-    const usage = resolveWorkerUsage(undefined, m.usageSnapshot);
-    out.push(workerInfo(m, null, usage, usage.source === "snapshot" ? usage.asOf : undefined, resolveWindow));
+    out.push(workerInfo(m, null, resolveWorkerUsage(undefined, m.usageSnapshot), resolveWindow));
   }
   return out;
 }
 
-function tokens(u: WorkerUsage): TokenUsage {
-  return {
-    input: u.input, output: u.output, cacheRead: u.cacheRead, cacheWrite: u.cacheWrite,
-    ...(u.cost !== undefined && u.cost > 0 ? { cost: u.cost } : {}),
-  };
-}
-
-function workerInfo(m: FoldedWorkerManifest, summary: WorkerTranscriptSummary | null, usage: WorkerUsage, snapshotAt: number | undefined, resolveWindow: WindowResolver): WorkerInfo {
+function workerInfo(m: FoldedWorkerManifest, summary: WorkerTranscriptSummary | null, usage: WorkerUsage, resolveWindow: WindowResolver): WorkerInfo {
   const status = statusOf(m);
   // The model it ran under, as its running record names it (haiku-4.5 in every state): the
   // protocol's one rule, shared with the subagents extension.
@@ -144,14 +134,9 @@ function workerInfo(m: FoldedWorkerManifest, summary: WorkerTranscriptSummary | 
   if (m.team) w.teamId = m.team.teamId;
   const preview = summary?.lastAssistantText ?? m.spec?.taskPreview;
   if (preview) w.preview = preview.length > 200 ? `${preview.slice(0, 200)}…` : preview;
-  if (usage.source === "none") w.usageSource = "unavailable";
-  else {
-    w.usageSource = usage.source;
-    w.usage = tokens(usage);
-    if (snapshotAt !== undefined) w.usageAsOf = snapshotAt;
-    // Model replies, when its transcript or snapshot counted them; an older record says nothing.
-    if (typeof usage.turns === "number") w.turns = usage.turns;
-  }
+  // Model replies, when its transcript or snapshot counted them; an older record says nothing.
+  // (What it spent is the usage ledger's, never counted here.)
+  if (usage.source !== "none" && typeof usage.turns === "number") w.turns = usage.turns;
   // The extension's rule, so a hosted and an unhosted view agree: a worker that was idle when its
   // host went away is merely restored; one that was running (or lost, or never reported a status)
   // was cut off mid-turn.

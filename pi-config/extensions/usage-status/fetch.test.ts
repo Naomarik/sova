@@ -20,6 +20,7 @@ delete process.env.SOVA_DEVICE_ID;
 process.on("exit", () => fs.rmSync(ROOT, { recursive: true, force: true }));
 
 const accounts = await import("../claude-code/accounts.ts");
+const { keychainService } = await import("../claude-code/keychain.ts");
 const fetchMod = await import("./fetch.ts");
 const { ClaudeLogins, loginDir, writeAccounts } = accounts;
 const { CACHE_FILE, FAILURE_RETRY_MS, FRESH_MS, RATE_LIMITED_RETRY_MS, claudeReadingDue, fetchAll, fetchClaude, fetchClaudeAccounts, nextClaudeReset, readCache, writeCache } = fetchMod;
@@ -318,13 +319,13 @@ test("OpenAI: each window keeps its own length and is labelled from it", async (
 	}
 });
 
-test("Claude Code's own login on macOS with no credentials file: the keychain's token, read afresh for each fetch; a file always wins, and elsewhere nothing changes", async () => {
+test("a Claude login on macOS with no credentials file: its keychain item's token, read afresh for each fetch; a file always wins, and elsewhere nothing changes", async () => {
 	setup();
 	const own = path.join(ROOT, ".claude");
 	fs.mkdirSync(own, { recursive: true });
 	let token = "fake-keychain-1";
 	const execs: string[][] = [];
-	const exec = async (_file: string, args: string[]) => (execs.push(args), JSON.stringify({ claudeAiOauth: { accessToken: token, refreshToken: "fake-keychain-refresh" } }));
+	const exec = async (_file: string, args: string[]) => (execs.push(args), JSON.stringify({ claudeAiOauth: { accessToken: args[2] === "Claude Code-credentials" ? token : `added:${args[2]}`, refreshToken: "fake-keychain-refresh" } }));
 	const keychain = { platform: "darwin" as const, env: { USER: "someone" }, home: ROOT, userHome: ROOT, exec };
 	const sent: string[] = [];
 	const answer = async (_url: string, init: { headers: Record<string, string> }) => (sent.push(init.headers.Authorization!), { ok: true, status: 200, json: async () => ({ five_hour: { utilization: 7 } }) });
@@ -339,9 +340,13 @@ test("Claude Code's own login on macOS with no credentials file: the keychain's 
 	assert.equal((await fetchClaude(own, async () => assert.fail("no token, no request"), { ...keychain, exec: async () => { throw new Error("exit 36"); } })).state, "nologin");
 	// Not macOS: no keychain call at all.
 	assert.equal((await fetchClaude(own, async () => assert.fail("no request"), { ...keychain, platform: "linux" })).state, "nologin");
-	// An added login never reads it.
+	// An added login reads its own item, named by its directory.
 	fs.rmSync(path.join(loginDir(AGENT, A), ".credentials.json"));
-	assert.equal((await fetchClaude(loginDir(AGENT, A), async () => assert.fail("no request"), keychain)).state, "nologin");
+	sent.length = 0;
+	await fetchClaude(loginDir(AGENT, A), answer, keychain);
+	assert.deepEqual(sent, [`Bearer added:${keychainService(loginDir(AGENT, A))}`]);
+	assert.equal(execs.length, 3);
+	execs.length = 2; // count Claude Code's own reads again from here
 	// A file present (even unreadable) decides alone.
 	creds(own, "fake-file");
 	sent.length = 0;

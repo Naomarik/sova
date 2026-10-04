@@ -1,15 +1,20 @@
 /**
- * Claude Code's own login read from the macOS keychain — with an injected exec, so it runs on any
- * platform and never touches a real keychain.
+ * Claude logins read from the macOS keychain — with an injected exec, so it runs on any platform
+ * and never touches a real keychain.
  */
 import assert from "node:assert/strict";
-import * as path from "node:path";
+import { createHash } from "node:crypto";
 import { test } from "node:test";
-import { KEYCHAIN_SERVICE, KEYCHAIN_TIMEOUT_MS, keychainAccount, keychainApplies, readKeychainCredentials, type KeychainExec, type KeychainOptions } from "./keychain.ts";
+import {
+	KEYCHAIN_MTIME_TTL_MS, KEYCHAIN_SERVICE, KEYCHAIN_TIMEOUT_MS, keychainAccount, keychainApplies, keychainItemMtime, keychainService, readKeychainCredentials, resetKeychainMtimes,
+	type KeychainExec, type KeychainExecSync, type KeychainOptions,
+} from "./keychain.ts";
 
 const HOME = "/fixture/home";
-const OWN = path.join(HOME, ".claude");
+const LOGIN = "/fixture/agent/claude-accounts/l-0000000a";
 const ITEM = JSON.stringify({ claudeAiOauth: { accessToken: "fixture-access", refreshToken: "fixture-refresh", expiresAt: 5 } });
+/** What `security find-generic-password` (no -w) prints for an item written 2026-10-04 13:03:50 UTC, trimmed. */
+const ATTRS = `keychain: "/fixture/login.keychain-db"\nclass: "genp"\nattributes:\n    "acct"<blob>="someone"\n    "mdat"<timedate>=0x32303236313030343133303335305A00  "20261004130350Z\\000"\n    "svce"<blob>="x"\n`;
 
 function fakeExec(answer: string | Error) {
 	const calls: { file: string; args: string[]; timeout: number }[] = [];
@@ -21,38 +26,63 @@ function fakeExec(answer: string | Error) {
 	return { calls, exec };
 }
 
-const mac = (exec: KeychainExec, over: Partial<KeychainOptions> = {}): KeychainOptions => ({ platform: "darwin", env: { USER: "someone" }, home: HOME, userHome: HOME, exec, ...over });
+const mac = (over: Partial<KeychainOptions> = {}): KeychainOptions => ({ platform: "darwin", env: { USER: "someone" }, home: HOME, userHome: HOME, ...over });
 
-test("on macOS, Claude Code's own directory reads the item by service and user, with a timeout, afresh every call", async () => {
+test("the service: Claude Code-credentials without CLAUDE_CONFIG_DIR, else suffixed with sha256 of that exact path", () => {
+	assert.equal(keychainService(undefined), KEYCHAIN_SERVICE);
+	const h = createHash("sha256").update(LOGIN).digest("hex").slice(0, 8);
+	assert.equal(keychainService(LOGIN), `${KEYCHAIN_SERVICE}-${h}`);
+	assert.notEqual(keychainService(LOGIN + "/"), keychainService(LOGIN), "the exact string: a trailing slash is another item");
+});
+
+test("on macOS a token read asks for the item by service and user, with a timeout, afresh every call", async () => {
 	const f = fakeExec(ITEM);
-	assert.deepEqual(await readKeychainCredentials(OWN, mac(f.exec)), JSON.parse(ITEM));
-	assert.deepEqual(await readKeychainCredentials(OWN, mac(f.exec)), JSON.parse(ITEM));
+	assert.deepEqual(await readKeychainCredentials(undefined, mac({ exec: f.exec })), JSON.parse(ITEM));
+	assert.deepEqual(await readKeychainCredentials(LOGIN, mac({ exec: f.exec })), JSON.parse(ITEM));
 	assert.equal(f.calls.length, 2, "never kept between reads: a refreshed token is seen at once");
 	assert.deepEqual(f.calls[0], { file: "/usr/bin/security", args: ["find-generic-password", "-s", KEYCHAIN_SERVICE, "-a", "someone", "-w"], timeout: KEYCHAIN_TIMEOUT_MS });
+	assert.deepEqual(f.calls[1]!.args, ["find-generic-password", "-s", keychainService(LOGIN), "-a", "someone", "-w"]);
 });
 
-test("no other platform, directory, config dir or home ever runs security", async () => {
+test("no other platform, no CLAUDE_SECURESTORAGE_CONFIG_DIR and no throwaway HOME ever runs security", async () => {
 	const f = fakeExec(ITEM);
-	for (const platform of ["linux", "win32", "freebsd"] as const) assert.equal(await readKeychainCredentials(OWN, mac(f.exec, { platform })), undefined);
-	assert.equal(await readKeychainCredentials("/fixture/agent/claude-accounts/l-0000000a", mac(f.exec)), undefined, "an added login");
-	assert.equal(await readKeychainCredentials(OWN, mac(f.exec, { env: { USER: "someone", CLAUDE_CONFIG_DIR: "/elsewhere" } })), undefined, "its own CLAUDE_CONFIG_DIR renames the item");
-	assert.equal(await readKeychainCredentials(OWN, mac(f.exec, { env: { USER: "someone", CLAUDE_SECURESTORAGE_CONFIG_DIR: "" } })), undefined);
-	assert.equal(await readKeychainCredentials(OWN, mac(f.exec, { userHome: "/real/home" })), undefined, "a throwaway HOME (tests) never reads the user's keychain");
-	assert.equal(f.calls.length, 0);
-	assert.equal(keychainApplies(OWN, mac(f.exec)), true);
-	assert.equal(keychainApplies(OWN + "/", mac(f.exec)), true);
-});
-
-test("a CLAUDE_CONFIG_DIR naming an added login's directory is not Claude Code's own: ~/.claude still reads the keychain", async () => {
-	const f = fakeExec(ITEM);
-	const env = { USER: "someone", CLAUDE_CONFIG_DIR: "/fixture/agent/claude-accounts/l-0000000a" };
-	assert.deepEqual(await readKeychainCredentials(OWN, mac(f.exec, { env, agentDir: "/fixture/agent" })), JSON.parse(ITEM));
-});
-
-test("every failure is quiet: no item, a locked keychain, a timeout, unparsable output", async () => {
-	for (const answer of [new Error("exit 44"), new Error("exit 36"), new Error("timed out"), "not json", ""]) {
-		assert.equal(await readKeychainCredentials(OWN, mac(fakeExec(answer).exec)), undefined);
+	const sync: KeychainExecSync = () => assert.fail("no query");
+	for (const platform of ["linux", "win32", "freebsd"] as const) {
+		assert.equal(await readKeychainCredentials(undefined, mac({ platform, exec: f.exec })), undefined);
+		assert.equal(keychainItemMtime(LOGIN, mac({ platform, execSync: sync })), undefined);
 	}
+	assert.equal(await readKeychainCredentials(undefined, mac({ exec: f.exec, env: { USER: "someone", CLAUDE_SECURESTORAGE_CONFIG_DIR: "" } })), undefined);
+	assert.equal(await readKeychainCredentials(undefined, mac({ exec: f.exec, userHome: "/real/home" })), undefined, "a test's HOME never reads the user's keychain");
+	assert.equal(f.calls.length, 0);
+	assert.equal(keychainApplies(mac()), true);
+});
+
+test("every token-read failure is quiet: no item, a locked keychain, a timeout, unparsable output", async () => {
+	for (const answer of [new Error("exit 44"), new Error("exit 36"), new Error("timed out"), "not json", ""]) {
+		assert.equal(await readKeychainCredentials(undefined, mac({ exec: fakeExec(answer).exec })), undefined);
+	}
+});
+
+test("an item's modification time comes from its attributes only (no -w), kept 2 s unless fresh; none is undefined", () => {
+	resetKeychainMtimes();
+	const calls: string[][] = [];
+	let answer: string | Error = ATTRS;
+	const execSync: KeychainExecSync = (_file, args) => {
+		calls.push(args);
+		if (answer instanceof Error) throw answer;
+		return answer;
+	};
+	const at = Date.UTC(2026, 9, 4, 13, 3, 50);
+	assert.equal(keychainItemMtime(LOGIN, mac({ execSync, now: 1000 })), at);
+	assert.deepEqual(calls[0], ["find-generic-password", "-s", keychainService(LOGIN), "-a", "someone"], "never -w: the secret is not read");
+	answer = new Error("exit 44");
+	assert.equal(keychainItemMtime(LOGIN, mac({ execSync, now: 1000 + KEYCHAIN_MTIME_TTL_MS - 1 })), at, "kept");
+	assert.equal(keychainItemMtime(LOGIN, mac({ execSync, now: 1001, fresh: true })), undefined, "fresh asks again: the item is gone");
+	assert.equal(keychainItemMtime(LOGIN, mac({ execSync, now: 1002 })), undefined);
+	answer = "attributes without a date";
+	assert.equal(keychainItemMtime(undefined, mac({ execSync, now: 1003 })), undefined);
+	assert.equal(calls.length, 3);
+	resetKeychainMtimes();
 });
 
 test("the account is $USER, as Claude Code files it, with its fallback for an unusual name", () => {

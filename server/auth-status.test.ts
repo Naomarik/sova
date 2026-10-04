@@ -6,7 +6,8 @@ import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, beforeEach, test } from "node:test";
-import { KEYCHAIN_FACTS_TTL_MS, ownClaudeLoginUnreadable, readAuthStatus, resetAuthStatusCache, type AuthStatusPaths } from "./auth-status";
+import { KEYCHAIN_FACTS_TTL_MS, ownClaudeLoginUnreadable, readAuthStatus, readClaudeLoginAuth, resetAuthStatusCache, type AuthStatusPaths } from "./auth-status";
+import { keychainService } from "../pi-config/extensions/claude-code/keychain.ts";
 
 const dir = mkdtempSync(join(tmpdir(), "sova-auth-status-test-"));
 after(() => rmSync(dir, { recursive: true, force: true }));
@@ -203,4 +204,16 @@ test("not macOS: no keychain call and never the hint, whatever the file says", a
   assert.deepEqual(await readAuthStatus(ownPaths, NOW, keychain), {});
   assert.equal(await ownClaudeLoginUnreadable(ownPaths, NOW, keychain), false);
   assert.equal(reads, 0);
+});
+
+test("macOS, an added login with no credentials file: its sign-in numbers from its own item, named by its directory", async () => {
+  const login = join(dir, "claude-accounts", "l-0000000a");
+  mkdirSync(login, { recursive: true });
+  const asked: string[] = [];
+  const keychain = { platform: "darwin" as const, env: { USER: "someone" }, home: dir, userHome: dir, exec: async (_f: string, args: string[]) => (asked.push(args[2]!), JSON.stringify(claudeCreds(NOW + H))) };
+  assert.deepEqual(await readClaudeLoginAuth(login, NOW, keychain), { kind: "oauth", source: "claude-cli", expiresAt: NOW + H, expired: false });
+  assert.deepEqual(asked, [keychainService(login)]);
+  assert.equal(await readClaudeLoginAuth(login, NOW, { ...keychain, platform: "linux" }), undefined);
+  assert.equal(asked.length, 1, "not macOS: no keychain call");
+  rmSync(join(dir, "claude-accounts"), { recursive: true, force: true });
 });

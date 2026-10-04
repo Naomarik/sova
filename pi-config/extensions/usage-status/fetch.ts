@@ -19,7 +19,7 @@ import { randomBytes } from "node:crypto";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
-import { ClaudeLogins, DEFAULT_LOGIN_ID } from "../claude-code/accounts.ts";
+import { ClaudeLogins, DEFAULT_LOGIN_ID, claudeConfigDirEnv } from "../claude-code/accounts.ts";
 import { readKeychainCredentials, type KeychainOptions } from "../claude-code/keychain.ts";
 
 const HOME = os.homedir();
@@ -252,12 +252,12 @@ export type FetchImpl = (url: string, init: { headers: Record<string, string>; s
 /**
  * One Claude login's usage, read with the access token in `<dir>/.credentials.json` (only read,
  * never written or refreshed: Claude Code refreshes it). `dir` defaults to Claude Code's own
- * directory (`$CLAUDE_CONFIG_DIR`, else `~/.claude`). On macOS, with no file there, Claude Code's
- * own login is read from the keychain instead, afresh for this one fetch (../claude-code/keychain.ts).
+ * directory (`$CLAUDE_CONFIG_DIR`, else `~/.claude`). On macOS, with no file there, the login's
+ * keychain item is read instead, afresh for this one fetch (../claude-code/keychain.ts).
  */
 export async function fetchClaude(dir: string = new ClaudeLogins().dirOf(DEFAULT_LOGIN_ID), fetchImpl: FetchImpl = fetch, keychain?: KeychainOptions): Promise<ClaudeData> {
 	const file = path.join(dir, ".credentials.json");
-	const creds = (await readJson(file)) ?? (await missing(file) ? ((await readKeychainCredentials(dir, keychain)) as any) : undefined);
+	const creds = (await readJson(file)) ?? (await missing(file) ? ((await readKeychainCredentials(claudeConfigDirEnv(dir, keychain?.env), keychain)) as any) : undefined);
 	const token = creds?.claudeAiOauth?.accessToken;
 	if (typeof token !== "string" || !token) return { state: "nologin" };
 

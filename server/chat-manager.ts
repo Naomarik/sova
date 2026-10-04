@@ -1664,7 +1664,9 @@ class ChatSession {
         this.queue.onSdkEvent();
       }
       try {
-        this.broadcast({ type: "event", event: toWireEvent(event) });
+        const wire: Extract<ChatServerMessage, { type: "event" }> = { type: "event", event: toWireEvent(event) };
+        if (event.type === "message_end") this.holdForEntryId(wire, (event as { message?: unknown }).message);
+        else this.broadcast(wire);
       } catch (err) {
         console.error("[chat] failed to forward event", err);
       }
@@ -2983,7 +2985,42 @@ class ChatSession {
   }
 
   broadcast(msg: ChatServerMessage): void {
+    if (this.held) {
+      this.held.push(msg);
+      return;
+    }
     for (const c of this.clients) c.send(msg);
+  }
+
+  /** Broadcasts waiting behind a `message_end` until its entry id is known (holdForEntryId). */
+  private held: ChatServerMessage[] | null = null;
+  /**
+   * Sends a `message_end` tagged with the entry the SDK writes its message as (§chat.transcript/rendering,
+   * "Switching back": a live row knows its row). Listeners run BEFORE the SDK persists the message
+   * (agent-session.js `_handleAgentEvent`: `_emit`, then `appendMessage`, in the same synchronous
+   * stretch), so the event waits one microtask, as `markSend` does, and every broadcast meanwhile
+   * waits behind it: the order clients see is unchanged. Queued before `markSend`'s, so the leaf
+   * read here is still the message, never its marker.
+   */
+  private holdForEntryId(wire: Extract<ChatServerMessage, { type: "event" }>, message: unknown): void {
+    if (this.held) {
+      this.held.push(wire);
+      return;
+    }
+    this.held = [wire];
+    queueMicrotask(() => {
+      try {
+        const sm = this.session.sessionManager;
+        const leaf = sm.getLeafId();
+        const entry = leaf ? sm.getEntry(leaf) : undefined;
+        if (entry?.type === "message" && entry.message === message) wire.entryId = entry.id;
+      } catch {
+        // untagged: a client falls back to the rows it can see
+      }
+      const out = this.held ?? [];
+      this.held = null;
+      for (const m of out) this.broadcast(m);
+    });
   }
 
   /** Worker snapshot from this runtime's own live record (the sessions extension writes one

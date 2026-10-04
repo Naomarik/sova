@@ -1836,8 +1836,11 @@ export type ChatServerMessage =
   | HistoryMessage
   /** Raw pi SDK agent event passthrough. Shapes documented in pi docs/rpc.md "Events":
       message_update (assistantMessageEvent: text_delta | thinking_delta | toolcall_start/delta/end),
-      tool_execution_start/update/end, turn_start/end, agent_start/end, agent_settled, ... */
-  | { type: "event"; event: unknown }
+      tool_execution_start/update/end, turn_start/end, agent_start/end, agent_settled, ...
+      `entryId` (optional, additive): on a `message_end`, the id of the entry the SDK wrote the
+      message as, so a live row knows the transcript row it becomes (§chat.transcript/rendering,
+      "Switching back"). Absent on every other event, and when the message wasn't written. */
+  | { type: "event"; event: unknown; entryId?: string }
   /** Extension dialog bridge (select/confirm/input). Optional in MVP. */
   | { type: "model"; model: string }    // active model changed (model_change passthrough events also exist)
   /** Active thinking level after a change: sent with hello, after set_thinking, and after a

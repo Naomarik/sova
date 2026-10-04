@@ -10,6 +10,14 @@
 // regressions: a wheel or key scrolling up stops following, opening a disclosure by mouse or key
 // keeps the view, a Timeline jump stops following, the view narrowing or widening keeps it.
 //
+// Live rows count as read: a chat left at the end while a turn ran, or with a message queued,
+// comes back at the end with no Jump to Latest (the running turn's rows and the queued message were
+// drawn when the reader left), while a turn that started and ended while away still stops at the
+// last row read with "· 2 new". These run real turns, on scripts/fake-claude.mjs: start the server
+// with `PATH="$(scripts/fake-claude-path.sh):$PATH" CLAUDE_CONFIG_DIR=<fixture login dir>` and
+// `{"version":1,"experimental":{"claudeCodeProvider":true}}` in the agent dir's sova/settings.json
+// (CLAUDE.md, "Claude logins in a hermetic run"). Without the fake they are skipped, never passed.
+//
 // Writes its fixtures into the hermetic agent dir and drives a hermetic server — `pnpm run
 // dev:hermetic` in THIS worktree, serving the built app (`pnpm run build` first) — through the
 // playwright skill's own browser.
@@ -34,6 +42,12 @@ const SKILL = join(ROOT, ".claude/skills/playwright/scripts");
 
 let passed = 0;
 const failures = [];
+const skipped = [];
+/** A check that can't run here: said, and counted apart, never as passed. */
+function skip(name, why) {
+  skipped.push(name);
+  console.log(`  SKIP ${name}\n       ${why}`);
+}
 async function check(name, fn) {
   try {
     await fn();
@@ -305,6 +319,179 @@ try {
     await ctx.close();
   });
 
+  // ---- live rows: a running turn's and a queued message's rows were read when the reader left ----
+  const fake = await api("/api/settings/claude-status").catch((err) => ({ error: String(err?.message ?? err) }));
+  const LIVE = [
+    "a queued message: six switches back with a turn running and a message queued each open at the end, the queued message in view, no Jump to Latest",
+    "left mid-turn, back after the turn ended: at the end, no Jump to Latest",
+    "a turn started and ended while away: it stops at the last row read with Jump to Latest · 2 new",
+  ];
+  if (!/fake/i.test(fake.version ?? "")) {
+    for (const name of LIVE) skip(name, `the server's claude isn't scripts/fake-claude.mjs (${JSON.stringify(fake)}): start it with PATH="$(scripts/fake-claude-path.sh):$PATH" (see this file's head)`);
+  } else {
+    const liveCwd = join(AGENT, "e2e-follow-live-cwd");
+    mkdirSync(liveCwd, { recursive: true });
+    const liveDir = join(AGENT, "sessions", `--${liveCwd.replace(/^\//, "").replace(/\//g, "-")}--`);
+    mkdirSync(liveDir, { recursive: true });
+    /** A fresh chat on the claude-code provider (the fake answers it), 40 turns long; its path. */
+    let made = 0;
+    const liveSession = async () => {
+      const k = `${Date.now().toString(16)}${made++}`.padStart(12, "0").slice(-12);
+      const id = `01a0e2e1-0000-7000-8000-${k}`;
+      const file = join(liveDir, `2026-09-29T00-00-00-000Z_${id}.jsonl`);
+      const t0 = Date.parse("2026-09-29T00:00:00.000Z");
+      const lines = [{ type: "session", version: 3, id, timestamp: new Date(t0).toISOString(), cwd: liveCwd }];
+      let parent = null;
+      let n = 0;
+      const push = (e) => {
+        lines.push({ ...e, parentId: parent, timestamp: new Date(t0 + n++ * 1000).toISOString() });
+        parent = e.id;
+      };
+      push({ type: "model_change", id: `m${k}`, provider: "claude-code-cli", modelId: "sonnet" });
+      // A reply the provider builds its next request from carries its usage.
+      const usage = { input: 10, output: 10, cacheRead: 0, cacheWrite: 0, totalTokens: 20, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
+      for (let i = 0; i < 40; i++) {
+        push({ type: "message", id: `u${k}_${i}`, message: { role: "user", content: [{ type: "text", text: `Q${i}: ${words(8 + ((i * 31) % 50), i)}` }], timestamp: 0 } });
+        push({ type: "message", id: `a${k}_${i}`, message: { role: "assistant", content: [{ type: "text", text: words(30 + ((i * 41) % 120), i) }], provider: "claude-code-cli", model: "sonnet", api: "anthropic-messages", stopReason: "stop", usage, timestamp: 0 } });
+      }
+      writeFileSync(file, lines.map((l) => JSON.stringify(l)).join("\n") + "\n");
+      utimesSync(file, new Date(t0), new Date(t0));
+      for (let i = 0; i < 50; i++) {
+        const list = await api("/api/sessions");
+        if ((list.sessions ?? list).some((s) => s.path === file)) return file;
+        await sleep(300);
+      }
+      throw new Error(`the server never listed ${file}`);
+    };
+    const openPath = async (page, path) => {
+      const hash = `#/s/${encodeURIComponent(path)}`;
+      if (page.url() === "about:blank") await page.goto(`${BASE}/${hash}`);
+      else {
+        const gen = await page.evaluate(() => window.__follow.gen);
+        await page.evaluate((h) => (location.hash = h), hash);
+        await page.waitForFunction((g) => window.__follow.gen > g, gen, { timeout: 30000 });
+      }
+      await page.waitForFunction(() => window.__follow.log.at(-1)?.rows > 5, null, { timeout: 30000 });
+    };
+    /** Until the view, its rows and the pill have stopped changing. */
+    const still = async (page) => {
+      let last = "";
+      for (let n = 0, k = 0; n < 5 && k < 40; k++) {
+        await sleep(200);
+        const s = await page.evaluate(() => {
+          const t = document.getElementById("transcript");
+          return JSON.stringify([t.scrollHeight, t.scrollTop, t.querySelectorAll(".thread > *").length, window.__follow.log.at(-1)?.pill]);
+        });
+        n = s === last ? n + 1 : 0;
+        last = s;
+      }
+    };
+    const sendText = async (page, text) => {
+      const box = page.locator("textarea").first();
+      await box.click();
+      await box.fill(text);
+      await page.keyboard.press("Enter");
+      await page.locator("textarea").first().blur().catch(() => {});
+    };
+    const lines = (n, tag) => Array.from({ length: n }, (_, i) => `${tag} line ${i}: ${words(9, i)}`).join("\n");
+    /** The view against the end, the pill, and where the row holding `mark` (if any) sits. */
+    const view = (page, mark) =>
+      page.evaluate((mark) => {
+        const t = document.getElementById("transcript");
+        const box = t.getBoundingClientRect();
+        const pill = t.parentElement.querySelector(".jump-latest");
+        const host = mark ? [...t.querySelectorAll(".message-actions-host")].filter((h) => h.textContent.includes(mark)).at(-1) : null;
+        const msg = host ? (host.querySelector(".message") ?? host.firstElementChild)?.getBoundingClientRect() : null;
+        return {
+          gap: Math.round(t.scrollHeight - t.scrollTop - t.clientHeight),
+          pill: pill.hasAttribute("data-shown") ? pill.textContent : null,
+          marked: msg ? { top: Math.round(msg.top - box.top), below: Math.round(msg.bottom - box.bottom), h: Math.round(msg.height) } : null,
+        };
+      }, mark);
+    const stop = (page) => page.locator('button[aria-label="Stop"]').first().click({ timeout: 3000 }).catch(() => {});
+
+    await check(LIVE[0], async () => {
+      const { ctx, page } = await newPage();
+      const [mine, other] = [await liveSession(), await liveSession()];
+      await openPath(page, other);
+      await openPath(page, mine);
+      await still(page);
+      await sendText(page, `[fake-slow 120000] ${lines(8, "running")}`);
+      await sleep(1500);
+      await sendText(page, `QUEUED-MARK ${lines(6, "queued follow-up")}`);
+      await sleep(1500);
+      await toEnd(page);
+      await sleep(400);
+      const before = await view(page, "QUEUED-MARK");
+      assert(before.marked && before.gap < 2 && !before.pill, `before leaving, not at the end with the queued row drawn: ${JSON.stringify(before)}`);
+      const bad = [];
+      for (const [k, dwell] of [50, 400, 1500, 50, 600, 200].entries()) {
+        await openPath(page, other);
+        await sleep(dwell);
+        await openPath(page, mine);
+        await still(page);
+        const r = await view(page, "QUEUED-MARK");
+        if (r.gap >= 2 || r.pill || !r.marked || r.marked.below > 1) bad.push(`#${k} (${dwell} ms away): ${JSON.stringify(r)}`);
+        await toEnd(page);
+        await sleep(200);
+      }
+      await stop(page);
+      await sleep(500);
+      await ctx.close();
+      assert(bad.length === 0, `came back short of the end: ${bad.join("; ")}`);
+    });
+
+    await check(LIVE[1], async () => {
+      const { ctx, page } = await newPage();
+      const [mine, other] = [await liveSession(), await liveSession()];
+      await openPath(page, other);
+      await openPath(page, mine);
+      await still(page);
+      await sendText(page, `[fake-slow 3000] ${lines(10, "mid-turn")}`);
+      await sleep(1200);
+      const before = await view(page);
+      assert(before.gap < 2 && !before.pill, `before leaving: ${JSON.stringify(before)}`);
+      await openPath(page, other);
+      await sleep(4500);
+      await openPath(page, mine);
+      await still(page);
+      const r = await view(page);
+      await ctx.close();
+      assert(r.gap < 2 && !r.pill, `came back short of the end: ${JSON.stringify(r)}`);
+    });
+
+    await check(LIVE[2], async () => {
+      const { ctx, page } = await newPage();
+      const [mine, other] = [await liveSession(), await liveSession()];
+      await openPath(page, other);
+      await openPath(page, mine);
+      await still(page);
+      await toEnd(page);
+      await sleep(300);
+      const lastRead = await page.evaluate(() => [...document.querySelectorAll("#transcript .thread > .entry")].filter((e) => e.getBoundingClientRect().height > 0).at(-1)?.dataset.entry);
+      await openPath(page, other);
+      // The turn, from another tab while this one is away.
+      const second = await newPage();
+      await openPath(second.page, mine);
+      await still(second.page);
+      await sendText(second.page, lines(12, "sent from another tab"));
+      await second.page.waitForFunction(() => document.getElementById("transcript")?.textContent.includes("Fake answer from login"), null, { timeout: 15000 });
+      await sleep(1000);
+      await second.ctx.close();
+      await openPath(page, mine);
+      await still(page);
+      const r = await page.evaluate((id) => {
+        const t = document.getElementById("transcript");
+        const row = t.querySelector(`.thread > .entry[data-entry="${CSS.escape(id)}"]`);
+        const pill = t.parentElement.querySelector(".jump-latest");
+        return { off: row ? Math.round(row.getBoundingClientRect().bottom - t.getBoundingClientRect().bottom) : null, pill: pill.hasAttribute("data-shown") ? pill.textContent : null };
+      }, lastRead);
+      await ctx.close();
+      assert(r.pill === "Jump to Latest · 2 new", `the pill reads ${JSON.stringify(r.pill)}, wanted "Jump to Latest · 2 new" (${JSON.stringify(r)})`);
+      assert(r.off !== null && Math.abs(r.off) <= 2, `the last row read isn't at the bottom of the view: ${JSON.stringify(r)}`);
+    });
+  }
+
   // ---- regressions: following still stops for the reader, and only for the reader ----
   const { ctx, page } = await newPage();
   await open(page, SESSIONS[0]);
@@ -440,6 +627,6 @@ try {
   }
 }
 
-console.log(`\n${passed} passed, ${failures.length} failed`);
+console.log(`\n${passed} passed, ${failures.length} failed${skipped.length ? `, ${skipped.length} skipped (not passed)` : ""}`);
 if (failures.length) process.exit(1);
 process.exit(0);

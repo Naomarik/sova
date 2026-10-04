@@ -838,7 +838,8 @@ export function ChatView(props: {
           props.onClaudeLogin?.(msg.login);
           break;
         case "event":
-          queue.push(msg.event);
+          // A message_end's entry id rides on the event itself, for applyEvent.
+          queue.push(msg.entryId && isObj(msg.event) ? { ...msg.event, entryId: msg.entryId } : msg.event);
           if (!frame) frame = requestAnimationFrame(flush);
           break;
         case "ui_request": {

@@ -16,7 +16,8 @@ for a project held on a peer (§mesh.remote-sessions/org-pages). API: `/api/proj
 
 ## §app.projects/registration — A folder becomes a project only when the operator adds it
 
-- Three ways, each the operator's own (main listener only): **Add Project** on the Projects page
+- Three ways, each the operator's own, or the global Overseer's for them, recorded via the Overseer
+  (§app.overseer/org-project-add) (main listener only): **Add Project** on the Projects page
   (a folder), **Add as Project** on a session's Session tab (that session's folder), and **Clone from
   GitHub** (§app.projects/clone). Each is `POST /api/projects {root}` (clone: `{clone:{…}}`) and
   answers the project (201).
@@ -51,6 +52,10 @@ for a project held on a peer (§mesh.remote-sessions/org-pages). API: `/api/proj
 - A destination that exists is refused before anything runs (409, "{path} already exists."). A clone
   that fails or times out deletes only the folder it created and answers git's reason; nothing is
   registered. Main listener only.
+- **The global Overseer's clone is narrower** (§app.overseer/org-project-add): for a request with its
+  sender mark the route takes only `https://` without a user or password, `ssh://`, `user@host:path`
+  or `owner/name`, never a host that is this machine; it checks the destination against the
+  reserved roots and the Overseer's file guard before git runs, and runs one such clone at a time.
 
 ## §app.projects/standalone — A project in no organization
 
@@ -120,7 +125,9 @@ for a project held on a peer (§mesh.remote-sessions/org-pages). API: `/api/proj
 
 - `POST /api/orgs/:id/projects/import {projectId, confirm?}` moves a standalone project of this host
   into an org attached here, with nothing lost. Main listener only, the operator's own (refused
-  through a peer, 403, and to the global Overseer, which never imports). Without `confirm: true` it
+  through a peer, 403), or the global Overseer's for them only in the turn a click on a confirm card
+  listing the project opened (403 otherwise, and to any other request carrying its header; the
+  placement is recorded via the Overseer, §app.overseer/org-project-add). Without `confirm: true` it
   changes nothing and answers 409 with `code: "confirm"` and the sentence "Importing {project}
   commits its history (overseer conversations, builds, costs) to {org}'s workspace repo. It can't
   be undone."

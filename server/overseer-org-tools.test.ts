@@ -5,9 +5,10 @@
 // in the OS temp dir, deleted after; ~/.pi is never touched. Every model is a stub.
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { execFileSync } from "node:child_process";
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
+import { basename, join, resolve } from "node:path";
 import { after, describe, test } from "node:test";
 import type { SovaConfirmItem } from "../shared/protocol";
 import type { OverseerToolHost } from "./overseer-tools";
@@ -54,7 +55,7 @@ const { readOverseerState } = await import("./overseer-store");
 
 after(async () => {
   await disposeAllChats();
-  for (const ws of ["ws", "ws2", "ws3"]) await settled(join(root, ws)).catch(() => {});
+  for (const ws of ["ws", "ws2", "ws3", "ws4"]) await settled(join(root, ws)).catch(() => {});
   rmSync(root, { recursive: true, force: true });
 });
 
@@ -724,13 +725,342 @@ describe("any registered project, org optional (sova_projects, sova_org_project)
     assert.doesNotMatch(read.text, /Gathering sessions|Decisions:|Last owner update/, "no org part for a standalone project");
   });
 
-  test("its org part is refused with why; there is no add", async () => {
+  test("its org part is refused with why; an add of an existing project's folder is refused as the page refuses", async () => {
     attended = true;
     const edit = await call("sova_org_project", { op: "edit", project: solo.id, stakeholder: "none" });
     assert.equal(edit.ok, false);
     assert.match(edit.text, /Solo Tool is in no organization/);
-    const add = await call("sova_org_project", { op: "add", project: "x", name: "x", root: join(root, "solo") });
+    card = items({ kind: "folder", id: join(root, "solo") });
+    const add = await call("sova_org_project", { op: "add", name: "x", root: join(root, "solo") });
+    card = null;
     assert.equal(add.ok, false);
-    assert.match(add.text, /Only the user adds a project/);
+    assert.match(add.text, /is already the project Solo Tool/);
+  });
+});
+
+// ---- §app.overseer/org-project-add -------------------------------------------------------------------------------
+
+/** The org-engine log rows of `sid` for `event`, wherever they were written (workspace, project dir, host-local). */
+function logRows(sid: string, event: string): Record<string, any>[] {
+  const out: Record<string, any>[] = [];
+  const walk = (dir: string) => {
+    for (const e of readdirSync(dir, { withFileTypes: true })) {
+      const p = join(dir, e.name);
+      if (e.isDirectory()) {
+        if (e.name !== "sessions" && e.name !== ".git") walk(p);
+      } else if (e.isFile() && e.name.endsWith(".jsonl"))
+        for (const line of readFileSync(p, "utf8").split("\n")) {
+          if (!line.trim()) continue;
+          try {
+            const r = JSON.parse(line);
+            if (r?.session === sid && r?.event === event) out.push(r);
+          } catch {
+            // a torn line
+          }
+        }
+    }
+  };
+  walk(root);
+  return out;
+}
+const folderItem = (path: string, orgId?: string, name?: string): SovaConfirmItem => ({ kind: "folder", id: path, ...(orgId ? { orgId, orgName: "" } : {}), ...(name ? { name } : {}) });
+const orgItem = (id: string): SovaConfirmItem => ({ kind: "org", id, name: "" });
+const asOverseer = (path: string, method: string, body: unknown, cardRows?: unknown) =>
+  overseer.requestAsOverseerForTest(path, { method, headers: { "content-type": "application/json", ...(cardRows ? { [tools.OVERSEER_CARD_HEADER]: JSON.stringify(cardRows) } : {}) }, body: JSON.stringify(body) });
+const projectByRoot = (r: string) => listProjects().find((p) => p.root === r);
+const { listProjects, readProject } = await import("./projects/spaces");
+const { orgConfirmLookup: addLookup } = await import("./overseer-org-tools");
+const { GUARDED_FOLDER } = await import("./overseer-folders");
+const { targetsRoot } = await import("./targets");
+const gitIn = (cwd: string, ...args: string[]) => execFileSync("git", ["-c", "user.email=t@example.invalid", "-c", "user.name=T", "-c", "commit.gpgsign=false", ...args], { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+/** A session file of this host whose folder is `cwd`, as the tools find it by id. */
+function sessionIn(cwd: string): string {
+  const id = randomUUID();
+  const dir = join(agentDir, "sessions", "--add--");
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, `2026-10-01T00-00-00-000Z_${id}.jsonl`), `${JSON.stringify({ type: "session", version: 3, id, timestamp: new Date().toISOString(), cwd })}\n`);
+  return id;
+}
+
+describe("adding projects and attaching organizations for the user (§app.overseer/org-project-add)", async () => {
+  const org = await orgs.createOrg({ name: "Addco", dir: join(root, "ws4") });
+  const base = join(root, "adds");
+  for (const f of ["plain", "other", "inorg", "viasession"]) mkdirSync(join(base, f), { recursive: true });
+  // A checkout: a subfolder of it registers as its root.
+  mkdirSync(join(base, "repo", "sub"), { recursive: true });
+  gitIn(join(base, "repo"), "init", "-q", "-b", "main");
+
+  test("a folder without a card, or with a card naming another path or an org, is refused and adds nothing; a refusal takes no org write", async () => {
+    attended = true;
+    limits.reset();
+    card = null;
+    const before = listProjects().length;
+    const bare = await call("sova_org_project", { op: "add", root: join(base, "plain") });
+    assert.equal(bare.ok, false);
+    assert.equal(bare.text, `This adds a project: ask with sova_card, listing the folder ${join(base, "plain")} (standalone) in its items, and act in the turn the user's click starts.`);
+    card = items(folderItem(join(base, "other")));
+    assert.match((await call("sova_org_project", { op: "add", root: join(base, "plain") })).text, /^This adds a project: ask with sova_card/);
+    card = items(folderItem(join(base, "plain"), org.id));
+    assert.match((await call("sova_org_project", { op: "add", root: join(base, "plain") })).text, /^This adds a project/, "a row into an org approves no standalone add");
+    card = items(folderItem(join(base, "plain"), undefined, "Named"));
+    assert.match((await call("sova_org_project", { op: "add", root: join(base, "plain"), name: "Other name" })).text, /^This adds a project/, "the row's name is the one the click approved");
+    card = items(projectItem(org.id, "prj_nothing0"));
+    assert.match((await call("sova_org_project", { op: "add", root: join(base, "plain") })).text, /^This adds a project/, "another kind of row");
+    card = null;
+    assert.equal(listProjects().length, before);
+    assert.equal(limits.count("org"), 0);
+  });
+
+  test("with the card's folder row: added standalone, recorded as the user's via the Overseer, one org write", async () => {
+    limits.reset();
+    card = items(folderItem(join(base, "plain"), undefined, "Plain"));
+    const r = await call("sova_org_project", { op: "add", root: join(base, "plain") });
+    card = null;
+    assert.ok(r.ok, r.text);
+    const made = projectByRoot(join(base, "plain"))!;
+    assert.equal(made.name, "Plain", "the card row's name");
+    assert.equal(r.text, `Added Plain (${made.id}): ${join(base, "plain")}.`);
+    assert.equal(limits.count("org"), 1);
+    assert.equal(orgs.orgOfProject(made.id), null);
+    assert.equal(hostOf(made.id).data(`project/${made.id}`)?.via, "overseer", "its data");
+    const start = logRows(`project/${made.id}`, "sova/started");
+    assert.equal(start.length, 1);
+    assert.deepEqual([start[0]!.envelope.via, start[0]!.envelope.overseerId], ["overseer", OVERSEER_ID], "its start row");
+    const logged = readFileSync(overseerActionsFile(), "utf8").trim().split("\n").map((l) => JSON.parse(l)).filter((l) => l.tool === "sova_org_project" && l.args?.op === "add");
+    assert.equal(logged.at(-1).outcome, "ok");
+  });
+
+  test("into an org: placed there through Add Project, the placement marked via the Overseer", async () => {
+    card = items(folderItem(join(base, "inorg"), org.id));
+    const r = await call("sova_org_project", { op: "add", root: join(base, "inorg"), org: "Addco", name: "Inside" });
+    assert.ok(r.ok, r.text);
+    // The row named no name: any name the call gives is the user's.
+    card = null;
+    const made = projectByRoot(join(base, "inorg"))!;
+    assert.equal(orgs.orgOfProject(made.id), org.id);
+    assert.equal(r.text, `Added Inside (${made.id}) in Addco: ${join(base, "inorg")}.`);
+    assert.equal(hostOf(org.id).data(`project/${made.id}`)?.via, "overseer");
+    const place = logRows(`org/${org.id}`, "project/place").filter((x) => JSON.stringify(x).includes(made.id));
+    assert.ok(place.length && place.every((x) => x.via === "overseer"), JSON.stringify(place));
+  });
+
+  test("a card's folder row: the checkout root (the folder asked for when it differs), ~/ expanded; a guarded or unknown folder matches nothing", async () => {
+    const row = await addLookup.folder(join(base, "repo", "sub"), "Addco", "Repo");
+    assert.deepEqual(row, { kind: "folder", id: join(base, "repo"), asked: join(base, "repo", "sub"), orgId: org.id, orgName: "Addco", name: "Repo" });
+    const home = realpathSync(homedir());
+    const mine = join(home, `oadd-${randomUUID().slice(0, 8)}`);
+    mkdirSync(mine);
+    try {
+      assert.equal((await addLookup.folder(`~/${basename(mine)}`, null))?.id, mine);
+      card = items(folderItem(mine));
+      const r = await call("sova_org_project", { op: "add", root: `~/${basename(mine)}` });
+      assert.ok(r.ok, r.text);
+      assert.ok(projectByRoot(mine));
+    } finally {
+      card = null;
+    }
+    mkdirSync(join(home, ".ssh", "keys"), { recursive: true });
+    assert.equal(await addLookup.folder(join(home, ".ssh", "keys"), null), null, "credentials");
+    assert.equal(await addLookup.folder(join(root, "ws4", "sessions"), null), null, "an org workspace");
+    assert.equal(await addLookup.folder("relative/path", null), null);
+    assert.equal(await addLookup.folder(join(base, "plain"), "No Such Org"), null);
+    const rows = await confirm.resolveConfirmItems({ folders: [{ root: join(base, "repo", "sub"), note: "The repo." }], orgs: [{ id: "Addco" }] }, { session: async () => null, isSelf: () => false, idea: () => null, todo: () => null, ...addLookup }, (m) => new Error(m));
+    assert.deepEqual(rows.map((x) => x.kind), ["org", "folder"], "orgs, then folders");
+    assert.equal(await confirm.clickOnlyCard(rows, { session: async () => null, isSelf: () => false, idea: () => null, todo: () => null, ...addLookup }), true);
+    await assert.rejects(
+      () => confirm.resolveConfirmItems({ folders: [{ root: join(home, ".ssh", "keys") }] }, { session: async () => null, isSelf: () => false, idea: () => null, todo: () => null, ...addLookup }, (m) => new Error(m)),
+      /folders: .*\.ssh\/keys.*A folder must be an absolute folder of this host/,
+    );
+    // Even with a row for it (a forged card), the tool and the route refuse a guarded folder.
+    card = items(folderItem(join(home, ".ssh", "keys")));
+    assert.equal((await call("sova_org_project", { op: "add", root: join(home, ".ssh", "keys") })).text, GUARDED_FOLDER);
+    card = null;
+    const res = await asOverseer("/api/projects", "POST", { root: join(home, ".ssh", "keys") }, { folders: [{ root: join(home, ".ssh", "keys"), org: null }] });
+    assert.equal(res.status, 400);
+    assert.equal(((await res.json()) as { error: string }).error, GUARDED_FOLDER);
+    assert.equal(projectByRoot(join(home, ".ssh", "keys")), undefined);
+  });
+
+  test("a subfolder adds its checkout root and says so", async () => {
+    card = items(folderItem(join(base, "repo")));
+    const r = await call("sova_org_project", { op: "add", root: join(base, "repo", "sub") });
+    card = null;
+    assert.ok(r.ok, r.text);
+    assert.match(r.text, new RegExp(`: ${join(base, "repo")}, the checkout root of ${join(base, "repo", "sub")}\\.$`));
+  });
+
+  test("a session's folder: a local one is added as the session's; a remote one is refused", async () => {
+    const local = sessionIn(join(base, "viasession"));
+    card = items(folderItem(join(base, "viasession")));
+    const r = await call("sova_org_project", { op: "add", session: local });
+    assert.ok(r.ok, r.text);
+    assert.equal(readProject(projectByRoot(join(base, "viasession"))!.id).origin, "session");
+    const remote = sessionIn(join(targetsRoot(), "box", "srv", "app"));
+    const far = await call("sova_org_project", { op: "add", session: remote });
+    card = null;
+    assert.equal(far.text, "That session's folder is on box; only a folder on this host becomes a project here.");
+    assert.match((await call("sova_org_project", { op: "add", root: join(base, "other"), session: local })).text, /exactly one of root/);
+  });
+
+  test("the routes check the card themselves: a sender-marked add without the row is refused (403); a forged header records no via", async () => {
+    const no = await asOverseer("/api/projects", "POST", { root: join(base, "other") });
+    assert.equal(no.status, 403);
+    const wrongOrg = await asOverseer(`/api/orgs/${org.id}/projects`, "POST", { root: join(base, "other") }, { folders: [{ root: join(base, "other"), org: null }] });
+    assert.equal(wrongOrg.status, 403);
+    assert.equal(projectByRoot(join(base, "other")), undefined);
+    // Not the secret: the page's own add, the operator's with no via, whatever the headers say.
+    const forged = await app.request("/api/projects", { method: "POST", headers: { "content-type": "application/json", "x-sova-overseer": "not-the-secret", [tools.OVERSEER_CARD_HEADER]: "{}" }, body: JSON.stringify({ root: join(base, "other") }) });
+    assert.equal(forged.status, 201);
+    const made = projectByRoot(join(base, "other"))!;
+    assert.equal(hostOf(made.id).data(`project/${made.id}`)?.via, undefined);
+    assert.equal(logRows(`project/${made.id}`, "sova/started")[0]!.envelope.via, undefined);
+  });
+
+  test("clone: only https without credentials, ssh, user@host:path or owner/name; checked before git runs; standalone; one at a time; no card", async () => {
+    limits.reset();
+    card = null;
+    const parent = join(base, "clones");
+    mkdirSync(parent);
+    const src = join(base, "src", "widget");
+    mkdirSync(src, { recursive: true });
+    writeFileSync(join(src, "README.md"), "hi\n");
+    gitIn(src, "init", "-q", "-b", "main");
+    gitIn(src, "add", "README.md");
+    gitIn(src, "commit", "-q", "-m", "init");
+    for (const repo of [`file://${src}`, `git://example.invalid/x.git`, `http://example.invalid/x.git`, `https://user:tok@example.invalid/x.git`, `https://tok@example.invalid/x.git`, src, `ext::sh -c touch% /tmp/x`, `git@localhost:${src}`, `ssh://127.0.0.1${src}`]) {
+      const r = await call("sova_org_project", { op: "add", clone: { repo, parent, folder: "nope" } });
+      assert.equal(r.ok, false, repo);
+      assert.equal(existsSync(join(parent, "nope")), false, `nothing made for ${repo}`);
+    }
+    assert.equal(limits.count("org"), 0, "refusals take nothing");
+    assert.match((await call("sova_org_project", { op: "add", clone: { repo: "https://example.invalid/x.git", parent }, org: org.id })).text, /^A clone lands in no organization; import it after\.$/);
+    // A destination inside an org workspace is refused before git runs.
+    const ws = await asOverseer("/api/projects", "POST", { clone: { repo: "https://git.example.test/widget", parent: join(root, "ws4"), folder: "copy" } });
+    assert.equal(ws.status, 400);
+    assert.equal(existsSync(join(root, "ws4", "copy")), false);
+    // An https URL git resolves to the local source (no network in tests), as the Overseer would ask for a hosted repo.
+    const env = { GIT_CONFIG_COUNT: process.env.GIT_CONFIG_COUNT, GIT_CONFIG_KEY_0: process.env.GIT_CONFIG_KEY_0, GIT_CONFIG_VALUE_0: process.env.GIT_CONFIG_VALUE_0 };
+    Object.assign(process.env, { GIT_CONFIG_COUNT: "1", GIT_CONFIG_KEY_0: `url.file://${join(base, "src")}/.insteadOf`, GIT_CONFIG_VALUE_0: "https://git.example.test/" });
+    try {
+      const [one, two] = await Promise.all([
+        asOverseer("/api/projects", "POST", { clone: { repo: "https://git.example.test/widget", parent, folder: "w1" } }),
+        asOverseer("/api/projects", "POST", { clone: { repo: "https://git.example.test/widget", parent, folder: "w2" } }),
+      ]);
+      assert.deepEqual([one.status, two.status], [201, 409]);
+      assert.equal(((await two.json()) as { error: string }).error, "A clone is already running; try again when it ends.");
+      assert.equal(existsSync(join(parent, "w2")), false);
+      const r = await call("sova_org_project", { op: "add", clone: { repo: "https://git.example.test/widget", parent, folder: "w3" }, name: "Widget" });
+      assert.ok(r.ok, r.text);
+      const made = projectByRoot(join(parent, "w3"))!;
+      assert.equal(r.text, `Cloned https://git.example.test/widget and added Widget (${made.id}), in no organization: ${join(parent, "w3")}.`);
+      assert.equal(readProject(made.id).remote, "https://git.example.test/widget");
+      assert.equal(orgs.orgOfProject(made.id), null);
+      assert.equal(hostOf(made.id).data(`project/${made.id}`)?.via, "overseer");
+      assert.equal(limits.count("org"), 1);
+    } finally {
+      for (const [k, v] of Object.entries(env)) if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+  });
+
+  test("import: only on a card listing the project; the route 403s a sender-marked import without it; placed via the Overseer", async () => {
+    const solo = projectByRoot(join(base, "plain"))!;
+    card = null;
+    const none = await call("sova_org_project", { op: "import", project: solo.id, org: org.id });
+    assert.equal(none.text, `This reaches people or ends something: ask with sova_card, listing the project Plain (${solo.id}) in its items, and act in the turn the user's click starts.`);
+    card = items(projectItem(org.id, "prj_other000"));
+    assert.equal((await call("sova_org_project", { op: "import", project: solo.id, org: org.id })).ok, false);
+    card = null;
+    const route = await asOverseer(`/api/orgs/${org.id}/projects/import`, "POST", { projectId: solo.id, confirm: true });
+    assert.equal(route.status, 403);
+    const forged = await app.request(`/api/orgs/${org.id}/projects/import`, { method: "POST", headers: { "content-type": "application/json", "x-sova-overseer": "not-the-secret" }, body: JSON.stringify({ projectId: solo.id, confirm: true }) });
+    assert.equal(forged.status, 403);
+    assert.equal(orgs.orgOfProject(solo.id), null, "nothing moved");
+    card = items({ kind: "project", id: solo.id, name: "Plain" });
+    const done = await call("sova_org_project", { op: "import", project: "Plain", org: "Addco" });
+    card = null;
+    assert.ok(done.ok, done.text);
+    assert.equal(orgs.orgOfProject(solo.id), org.id);
+    const place = logRows(`org/${org.id}`, "project/place").filter((x) => JSON.stringify(x).includes(solo.id));
+    assert.ok(place.length && place.every((x) => x.via === "overseer"), JSON.stringify(place));
+  });
+
+  test("detach: only on a card listing the org (the route 403s without it); attach never takes an org over from another host", async () => {
+    const remote = join(root, "addco.git");
+    gitIn(root, "init", "-q", "--bare", "-b", "main", remote);
+    const dir = orgs.orgDir(org.id);
+    await settled(dir);
+    gitIn(dir, "remote", "add", "origin", remote);
+    card = null;
+    const none = await call("sova_org", { op: "detach", org: org.id });
+    assert.match(none.text, /^This reaches people or ends something: ask with sova_card, listing the organization Addco/);
+    card = items(orgItem("org_other0000"));
+    assert.equal((await call("sova_org", { op: "detach", org: org.id })).ok, false);
+    card = null;
+    assert.equal((await asOverseer(`/api/orgs/${org.id}`, "DELETE", {})).status, 403);
+    assert.ok(orgs.readIndex().orgs.some((o) => o.id === org.id), "still attached");
+    card = items(orgItem(org.id));
+    const off = await call("sova_org", { op: "detach", org: "Addco" });
+    card = null;
+    assert.ok(off.ok, off.text);
+    assert.equal(off.text, "Detached Addco: it left this host, and its owner's link, if it had one, was turned off. Its workspace repo is untouched.");
+    assert.equal(orgs.readIndex().orgs.some((o) => o.id === org.id), false);
+    await settled(dir);
+    const detachRow = logRows(`residence/${org.id}`, "org/detach").at(-1)!;
+    assert.equal(detachRow.via, "overseer");
+    // Attached again from its repo: no card, recorded via the Overseer.
+    const back = await call("sova_org", { op: "attach", dir });
+    assert.ok(back.ok, back.text);
+    assert.match(back.text, /^Attached Addco \(org_[a-z0-9]+\) from /);
+    const start = logRows(`residence/${org.id}`, "sova/started").at(-1)!;
+    assert.deepEqual([start.envelope.via, start.envelope.overseerId], ["overseer", OVERSEER_ID]);
+    await settled(dir);
+    gitIn(dir, "push", "-q", "origin", "main");
+    // Held by another host (a clone whose holder is someone else): refused, nothing attached, never confirmed for it.
+    const { OrgHost } = await import("./org-host");
+    const lapDir = join(root, "lap-held");
+    mkdirSync(join(lapDir, "sessions"), { recursive: true });
+    gitIn(root, "init", "-q", "-b", "main", lapDir);
+    writeFileSync(join(lapDir, "sessions", ".gitkeep"), "");
+    const lap = await OrgHost.open({ orgId: "org_lapheld01", workspaceDir: lapDir, stateDir: join(root, "lap-state"), durable: false });
+    await lap.start("org/org_lapheld01", "org", { id: "org_lapheld01", name: "Harbor", slug: "harbor", createdAt: Date.parse("2026-09-27T10:00:00.000Z") }, { by: "operator" });
+    await lap.act("org/org_lapheld01", "holder/claim", { hostId: "h_laptop00", hostName: "laptop", since: Date.parse("2026-09-27T10:00:00.000Z") }, { by: "system" });
+    gitIn(lapDir, "add", "-A");
+    gitIn(lapDir, "commit", "-q", "-m", "laptop");
+    await lap.close();
+    const held = await call("sova_org", { op: "attach", dir: lapDir });
+    assert.equal(held.ok, false);
+    assert.match(held.text, /^Not attached: laptop holds this organization .* Only the user can attach it anyway, taking it over from that host, on the Organizations page \(sova_navigate \{page: "orgs"\}\)\.$/);
+    assert.equal(orgs.readIndex().orgs.some((o) => o.id === "org_lapheld01"), false);
+    // The route ignores confirm on the Overseer's call.
+    const forcedRes = await asOverseer("/api/orgs/attach", "POST", { dir: lapDir, confirm: true });
+    assert.equal(forcedRes.status, 409);
+    assert.equal(((await forcedRes.json()) as { code?: string }).code, "held");
+    assert.equal(orgs.readIndex().orgs.some((o) => o.id === "org_lapheld01"), false);
+  });
+
+  test("an unattended turn adds, clones, imports, attaches and detaches nothing", async () => {
+    attended = false;
+    try {
+      for (const [name, params] of [
+        ["sova_org_project", { op: "add", root: join(base, "other") }],
+        ["sova_org_project", { op: "add", clone: { repo: "o/r", parent: base } }],
+        ["sova_org_project", { op: "import", project: "x", org: "y" }],
+        ["sova_org", { op: "attach", dir: base }],
+        ["sova_org", { op: "detach", org: "Addco" }],
+      ] as const) {
+        const r = await call(name, params as Record<string, unknown>);
+        assert.match(r.text, /^This turn was not started by the user/, `${name} ${params.op}`);
+      }
+    } finally {
+      attended = true;
+    }
+  });
+
+  test("marker: no contact value, link or About text in any of these results", () => {
+    const mine = outputs.filter((o) => /add|import|attach|detach/.test(o.label));
+    assert.ok(mine.length > 20, `${mine.length}`);
+    for (const o of mine) assert.equal(leaksContact(o.text), null, o.label);
+    for (const o of mine) assert.ok(!o.text.includes("ABOUT-MARKER") && !o.text.includes("/h/") && !o.text.includes("/i/"), o.label);
   });
 });

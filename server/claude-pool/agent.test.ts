@@ -3,13 +3,15 @@
 // Devices are PoolAgents wired to each other in-process; a crash is an agent that throws at a named
 // step and is replaced by a fresh one over the same directories (which replays the journal).
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { isAbsolute, join, relative } from "node:path";
 import { after, describe, test } from "node:test";
 import {
   ClaudeLogins,
+  claudeRunsOn,
   markLeaving,
+  parseEtime,
   readAccounts,
   readLeaving,
   writeAccounts,
@@ -435,7 +437,11 @@ describe("returning", () => {
     const dir = join(d.agentDir, "claude-accounts", L1);
     const leases = join(dir, ".sova-leases");
     mkdirSync(leases, { recursive: true });
-    const claude = spawn(process.execPath, ["-e", "setTimeout(() => {}, 60000)"], { env: { ...process.env, CLAUDE_CONFIG_DIR: dir }, stdio: "ignore" });
+    // A process named claude (macOS reads no other process's environment, only its name and age): sleep, through a link.
+    const bin = join(d.agentDir, "bin");
+    mkdirSync(bin, { recursive: true });
+    symlinkSync(spawnSync("sh", ["-c", "command -v sleep"], { encoding: "utf8" }).stdout.trim(), join(bin, "claude"));
+    const claude = spawn(join(bin, "claude"), ["60"], { env: { ...process.env, CLAUDE_CONFIG_DIR: dir }, stdio: "ignore" });
     const lease = () => writeFileSync(join(leases, `${process.pid}.json`), JSON.stringify({ v: 1, owner: process.pid, users: 1, busy: 1, children: [claude.pid], lastActiveAt: clock.now, at: clock.now }));
     try {
       await new Promise((r) => setTimeout(r, 100));
@@ -784,3 +790,21 @@ function updateAccountsFor(agentDir: string, id: string, device: string | null):
   read.logins.find((l) => l.id === id)!.device = device;
   writeAccounts(agentDir, read);
 }
+
+test("off Linux a lease's child counts only as a `claude` started no later than the lease was written (a reused pid is neither)", () => {
+  assert.equal(parseEtime("05:07"), 307);
+  assert.equal(parseEtime("1:00:00"), 3600);
+  assert.equal(parseEtime("2-03:04:05"), 2 * 86400 + 3 * 3600 + 4 * 60 + 5);
+  assert.equal(parseEtime("bogus"), null);
+  const now = 1_000_000_000;
+  const at = now - 60_000; // the lease, written a minute ago
+  const ps = (comm: string, ageSec: number) => () => ({ ageSec, comm });
+  const me = process.pid; // alive; ps is faked
+  assert.equal(claudeRunsOn(me, "/l", at, now, "darwin", ps("claude", 120)), true, "started before the lease");
+  assert.equal(claudeRunsOn(me, "/l", at, now, "darwin", ps("/opt/tools/bin/claude", 61)), true, "a path names it too; within ps's whole seconds");
+  assert.equal(claudeRunsOn(me, "/l", at, now, "darwin", ps("claude", 30)), false, "started after the lease: a reused pid");
+  assert.equal(claudeRunsOn(me, "/l", at, now, "darwin", ps("bun", 120)), false, "not claude");
+  assert.equal(claudeRunsOn(me, "/l", at, now, "darwin", () => null), false, "ps can't read it");
+  const dead = spawnSync(process.execPath, ["-e", "0"]).pid!;
+  assert.equal(claudeRunsOn(dead, "/l", at, now, "darwin", ps("claude", 120)), false, "not alive");
+});

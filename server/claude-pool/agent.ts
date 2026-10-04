@@ -104,7 +104,7 @@ export interface PoolAgentOptions {
   now?: () => number;
   pidAlive?: (pid: number) => boolean;
   /** Whether a lease's child pid is still a process on that login directory (accounts.ts claudeRunsOn). */
-  runsOn?: (pid: number, dir: string) => boolean;
+  runsOn?: (pid: number, dir: string, since?: number, now?: number) => boolean;
   kill?: (pid: number, signal: NodeJS.Signals) => void;
   idleMs?: number;
   offerTtlMs?: number;

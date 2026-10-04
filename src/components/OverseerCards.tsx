@@ -19,7 +19,7 @@ import { briefBody, confirmRows, goTo, navigateDetails, settingsTarget } from ".
 import { scrollToCardId } from "../lib/card-refs";
 import { clockTime, relativeTime, stampTime } from "../lib/format";
 import { groupLinkIndex, resolveAppLink, sessionActiveAt, sessionIndex, sessionIndexVersion } from "../lib/session-links";
-import { personHref } from "../lib/orgs-route";
+import { orgHref, personHref } from "../lib/orgs-route";
 import { projectHref } from "../lib/projects-route";
 import { openSettings } from "../lib/settings-nav";
 import { ActionMenu } from "./ActionMenu";
@@ -355,8 +355,8 @@ export function CardRevision(props: { card: OverseerCard; line: string }) {
 }
 
 /**
- * What a confirm card is about: the sessions, ideas, todos, projects and people the server resolved
- * when the card was raised, as a snapshot. Ideas, todos, projects and people come first and always
+ * What a confirm card is about: the sessions, ideas, todos, orgs, folders, projects and people the server resolved
+ * when the card was raised, as a snapshot. Ideas, todos, orgs, folders, projects and people come first and always
  * show; only the sessions after them collapse (confirmRows). A session links to its route, named by
  * its summary (else its title); an idea is its id and title as text, never a link; a todo is its
  * text; a project and a person link to their page, with the org after the name (and a person's
@@ -431,6 +431,39 @@ function ConfirmItemRow(props: { item: SovaConfirmItem; since?: string; children
         <span class="overseer-confirm-item-line">
           <ItemNumber item={it} />
           <span class="overseer-confirm-item-name">{it.text}</span>
+        </span>
+        <ItemNote note={it.note} />
+        {props.children}
+      </li>
+    );
+  // An org a detach acts on: its page (§app.overseer/org-project-add).
+  if (it.kind === "org")
+    return (
+      <li class="overseer-confirm-item">
+        <span class="overseer-confirm-item-line">
+          <ItemNumber item={it} />
+          <a class="overseer-confirm-item-name" href={orgHref(it.id)}>
+            {it.name}
+          </a>
+        </span>
+        <ItemNote note={it.note} />
+        {props.children}
+      </li>
+    );
+  // A folder to add as a project: the exact checkout root the click approves, its name, where it goes.
+  if (it.kind === "folder")
+    return (
+      <li class="overseer-confirm-item">
+        <span class="overseer-confirm-item-line">
+          <ItemNumber item={it} />
+          <span class="overseer-confirm-item-name text-mono">{it.id}</span>
+          <Show when={it.name}>
+            <span class="overseer-confirm-item-meta">{it.name}</span>
+          </Show>
+          <span class="overseer-confirm-item-meta">{it.orgName ? `into ${it.orgName}` : "standalone"}</span>
+          <Show when={it.asked}>
+            <span class="overseer-confirm-item-meta">from {it.asked}</span>
+          </Show>
         </span>
         <ItemNote note={it.note} />
         {props.children}

@@ -56,6 +56,10 @@ export interface Policy {
 	 * is writable inside at `path`, whatever the level, deeper than every other rule. Canonical;
 	 * `path === source` binds in place. Never set for a tool call. */
 	binds?: Shadow[];
+	/** A write-only worker (§chat.worktrees/workers): the host's /tmp stays visible, read-only, with
+	 * its Unix sockets masked, and TMPDIR names `tmpDir` (writable at its own path) instead of a
+	 * private /tmp. Linux only: macOS never remaps /tmp. */
+	hostTmp?: boolean;
 }
 
 export interface Shadow {
@@ -197,6 +201,7 @@ export function policyKey(policy: Policy): string {
 		env: Object.keys(policy.env).sort(),
 		shadowed: (policy.shadowed ?? []).map((sh) => `${sh.path}=${sh.source}`).sort(),
 		...(policy.binds?.length ? { binds: policy.binds.map((b) => `${b.path}=${b.source}`).sort() } : {}),
+		...(policy.hostTmp ? { hostTmp: true } : {}),
 	});
 }
 

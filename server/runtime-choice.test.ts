@@ -86,8 +86,9 @@ describe("runtimeInfo", () => {
 });
 
 describe("scripts/start-server.sh", () => {
-  // Stub node and bun binaries: the launcher's decision step still runs on the real node.
-  const realNode = process.execPath.endsWith("bun") ? "node" : process.execPath;
+  // Stub node and bun binaries: the launcher's decision step still runs on the real node, by its
+  // full path (the stub's PATH is /usr/bin:/bin, which has no node on macOS).
+  const realNode = process.execPath.endsWith("bun") ? spawnSync("node", ["-p", "process.execPath"], { encoding: "utf8" }).stdout.trim() : process.execPath;
   function run(env: Record<string, string>, args: string[] = []): { status: number; out: string; err: string } {
     const dir = join(tmp, `nodeshim${n++}`);
     mkdirSync(dir);

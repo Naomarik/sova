@@ -25,6 +25,7 @@ import { CardJumpContext } from "../lib/card-refs";
 import { AlignAnswerContext, type AlignAnswer } from "./AlignDocCard";
 import { acceptAllMessage, choosePick, clearPicks, composeWithPicks, optionPick, pickCount, picksLabel, picksOf, prunePicks, samePicks } from "../lib/align-picks";
 import { BatonStrip } from "./BatonStrip";
+import { sandboxOffMissing, type SandboxState } from "../lib/sandbox";
 import { approveSchedule, forkSession, getChatClaudeAccounts, getOverseerAutonomy, getSubagentProfiles, revokeOverseerPermit, revokeSchedule, setSandbox, setSessionArchived, wsUrl } from "../lib/api";
 import { adversarialReview, NO_REVIEWER, reviewRequestMessage } from "../lib/align-review";
 import type { OverseerAutonomy, ScheduleInfo } from "../../shared/protocol";
@@ -416,7 +417,7 @@ export function ChatView(props: {
   const [profileInfo, setProfileInfo] = createSignal<ChatProfileInfo | null>(null);
   /** A One at a time race at Send (§chat.profiles/singleton): the session that has it. */
   const [profileRace, setProfileRace] = createSignal<{ label: string; running: { id: string; path: string; title: string } } | null>(null);
-  const [sandboxPending, setSandboxPending] = createSignal(false);
+  const [sandboxPending, setSandboxPending] = createSignal<SandboxState | null>(null);
   /** This chat's Claude login (WS "claude_login"), null until told or when the host can't name one. */
   const [claudeLogin, setClaudeLogin] = createSignal<ChatClaudeLogin | null>(null);
   /** Local "Ran /name args" rows; `tui` marks one that asked for a UI Sova can't show, `note` one
@@ -825,7 +826,7 @@ export function ChatView(props: {
           setModeState({ mode: msg.mode, minorModes: msg.minorModes, strict: msg.strict, applies: msg.applies });
           break;
         case "sandbox":
-          setSandboxState({ on: msg.on, enforcement: msg.enforcement, status: msg.status });
+          setSandboxState({ on: msg.on, ...(msg.state ? { state: msg.state } : {}), enforcement: msg.enforcement, status: msg.status });
           break;
         case "profile": {
           const { type: _t, ...info } = msg;
@@ -1428,20 +1429,24 @@ export function ChatView(props: {
   };
   /** The composer foot's mode switch: this chat's WS "mode" state and its session file. */
   const modeControl: ModeControl = { state: modeState, path: props.path };
-  /** The flyout's Sandbox row: the extension answers with a toast and a "sandbox" message. */
+  /** The flyout's Sandbox group and the shield's panel: the extension answers with a toast and a
+      "sandbox" message. */
   const sandboxControl: SandboxControl = {
     state: sandbox,
     pending: sandboxPending,
-    set: (on) => {
-      setSandboxPending(true);
-      setSandbox(props.path, on)
+    set: (state) => {
+      setSandboxPending(state);
+      setSandbox(props.path, state)
         .then((r) => {
           if (r.outcome === "skip") toast("Sandbox unchanged: another writer has this session. Nothing was written.");
-          if (r.sandbox) setSandboxState(r.sandbox);
-          if (r.sandbox) announce(r.sandbox.status);
+          if (!r.sandbox) return;
+          setSandboxState(r.sandbox);
+          announce(r.sandbox.status);
+          const missing = sandboxOffMissing(state, r.sandbox);
+          if (missing) toast(missing);
         })
         .catch((err) => toast(`Sandbox unchanged: ${err instanceof Error ? err.message : String(err)}`))
-        .finally(() => setSandboxPending(false));
+        .finally(() => setSandboxPending(null));
     },
   };
 

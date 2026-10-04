@@ -6,6 +6,11 @@
  * `SandboxActive` is one session's sandbox state, carried in the session's `sandbox` custom
  * entries. The newest entry on the branch wins (`restoreActive`); a session without one follows
  * the policy file's `defaultOn`.
+ *
+ * Three states (§chat.sandbox/states): On (`on: true`), Subagents only (`on: false`, the only
+ * meaning an entry had before the third state) and Off (`on: false, workers: "off"`). `workers`
+ * is optional and additive, so every older entry and reader keeps working, and it is dropped
+ * whenever `on` is true: a worker is never looser than its parent.
  */
 
 /** The custom-entry type the extension appends on every change. */
@@ -30,9 +35,15 @@ export const LEVELS: readonly SandboxLevel[] = ["workspace-write", "read-only"];
 export type Enforcement = "full" | "partial" | "unavailable" | "none";
 export const ENFORCEMENTS: readonly Enforcement[] = ["full", "partial", "unavailable", "none"];
 
+/** The three states (§chat.sandbox/states), loosest first. */
+export type SandboxState = "off" | "subagents" | "on";
+export const STATES: readonly SandboxState[] = ["off", "subagents", "on"];
+
 export interface SandboxActive {
 	version: 1;
 	on: boolean;
+	/** `"off"`: no worker is confined either (the Off state). Only ever with `on: false`. */
+	workers?: "off";
 	level: SandboxLevel;
 	/** The backend id that enforces it (`linux-bwrap`, …), or `none` when off. */
 	backend: string;
@@ -71,14 +82,17 @@ export type WorkerLaunch =
 export interface SandboxStateEvent {
 	version: 1;
 	on: boolean;
+	/** `"off"` (Off): `workerLaunch` answers `none` for every worker, a tracked worktree's included. */
+	workers?: "off";
 	/** Real path of the sandbox extension directory, for a worker's `-e` list. */
 	extensionPath: string;
 	enforcement: Enforcement;
 	/**
 	 * The one call every worker start goes through: on, the parent's scope (narrowed to a tracked
 	 * worktree's `root` when given) or a refusal (cwd outside the parent's writable roots, the
-	 * parent's sandbox unavailable, or partial without `acceptPartial`); off, a write-only scope for
-	 * a worker in a tracked worktree (reads, network and environment untouched), else `none`.
+	 * parent's sandbox unavailable, or partial without `acceptPartial`); Subagents only, a write-only
+	 * scope for a worker in a tracked worktree (reads, network and environment untouched), else
+	 * `none`; Off, `none` always.
 	 * Absent in a remote session.
 	 */
 	workerLaunch?: (req: WorkerLaunchRequest) => WorkerLaunch;
@@ -108,6 +122,23 @@ export function parseOnOff(value: unknown): boolean | undefined {
 	}
 }
 
+/** `on`/`subagents`/`off` as typed in `/sandbox` or passed as `--sandbox`; undefined for anything else. */
+export function parseState(value: unknown): SandboxState | undefined {
+	if (typeof value === "string" && value.trim().toLowerCase() === "subagents") return "subagents";
+	const on = parseOnOff(value);
+	return on === undefined ? undefined : on ? "on" : "off";
+}
+
+/** Which of the three states an entry (or event) is in. */
+export function stateOf(active: Pick<SandboxActive, "on" | "workers">): SandboxState {
+	return active.on ? "on" : active.workers === "off" ? "off" : "subagents";
+}
+
+/** How loose a state is: 0 Off, 1 Subagents only, 2 On. A lower rank loosens. */
+export function stateRank(state: SandboxState): number {
+	return STATES.indexOf(state);
+}
+
 /** A stored entry, or undefined for anything this version does not understand. Never throws. */
 export function normalizeActive(value: unknown): SandboxActive | undefined {
 	if (value === null || typeof value !== "object" || Array.isArray(value)) return undefined;
@@ -127,6 +158,8 @@ export function normalizeActive(value: unknown): SandboxActive | undefined {
 		const reasons = r.reasons.filter((x): x is string => typeof x === "string");
 		if (reasons.length > 0) out.reasons = reasons;
 	}
+	// Fail closed: only an off entry can lift its workers; `on` with `workers: "off"` reads as On.
+	if (!r.on && r.workers === "off") out.workers = "off";
 	return out;
 }
 
@@ -147,8 +180,8 @@ export function restoreActive(entries: readonly { type: string; customType?: str
 }
 
 /** One status line, the same words in the TUI and Sova: "Sandbox on · workspace-write · full enforcement". */
-export function describeActive(active: Pick<SandboxActive, "on" | "level" | "enforcement" | "reasons">): string {
-	if (!active.on) return "Sandbox off";
+export function describeActive(active: Pick<SandboxActive, "on" | "level" | "enforcement" | "reasons" | "workers">): string {
+	if (!active.on) return active.workers === "off" ? "Sandbox off · workers unconfined" : "Sandbox subagents only · workers in tracked worktrees write only there";
 	// On but enforced nowhere (a remote target runs the tools on its host): say why, never "none enforcement".
 	if (active.enforcement === "none") return `Sandbox on · ${active.reasons?.length ? active.reasons.join("; ") : "not enforced"}`;
 	const tail = active.enforcement === "unavailable"
@@ -158,8 +191,8 @@ export function describeActive(active: Pick<SandboxActive, "on" | "level" | "enf
 }
 
 /** The transcript marker for one change (copy deck): "Sandbox → on · workspace-write · full enforcement". */
-export function markerText(active: Pick<SandboxActive, "on" | "level" | "enforcement" | "reasons">): string {
-	if (!active.on) return "Sandbox → off";
+export function markerText(active: Pick<SandboxActive, "on" | "level" | "enforcement" | "reasons" | "workers">): string {
+	if (!active.on) return active.workers === "off" ? "Sandbox → off" : "Sandbox → subagents only";
 	if (active.enforcement === "none") return `Sandbox → on · ${active.reasons?.length ? active.reasons.join("; ") : "not enforced"}`;
 	const reason = active.reasons?.length && active.enforcement !== "full" ? ` · ${active.reasons.join("; ")}` : "";
 	return `Sandbox → on · ${active.level} · ${active.enforcement} enforcement${reason}`;

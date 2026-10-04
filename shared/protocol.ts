@@ -1637,11 +1637,15 @@ export interface ChatModeResult extends ModeInfo {
     workspace-write · full enforcement"); `enforcement` is "none" while off. */
 export interface SandboxInfo {
   on: boolean;
+  /** Which of the three states (§chat.sandbox/states). Absent from a server that predates them:
+      read `on` then (true: On, false: Subagents only). */
+  state?: "off" | "subagents" | "on";
   enforcement: "full" | "partial" | "unavailable" | "none";
   status: string;
 }
 
-/** POST /api/sandbox?path=…: "command" = the extension's /sandbox handler ran (its answer in
+/** POST /api/sandbox?path=… with `{ state }` (or the older `{ on }`; both together must agree):
+    "command" = the extension's /sandbox handler ran (its answer in
     `sandbox`, also sent as a "sandbox" message); "unsupported" = no sandbox extension in this
     runtime, nothing happened; "skip" = a TUI or foreign writer owns the file, nothing written. */
 export interface SandboxApplyResult {
@@ -2991,7 +2995,12 @@ export type SovaConfirmItem =
   /** A project registered on this host: its name, and the org's when one places it (§app.overseer/org-tools). */
   | { kind: "project"; id: string; orgId?: string; name: string; orgName?: string; note?: string }
   /** A roster person: name, status and org. Never a contact or a link. */
-  | { kind: "person"; id: string; orgId: string; name: string; orgName: string; status: "active" | "proposed" | "left"; note?: string };
+  | { kind: "person"; id: string; orgId: string; name: string; orgName: string; status: "active" | "proposed" | "left"; note?: string }
+  /** An organization attached here (§app.overseer/org-project-add: a detach lists it). */
+  | { kind: "org"; id: string; name: string; note?: string }
+  /** A folder to add as a project (§app.overseer/org-project-add): `id` is its checkout root, `asked` the folder as
+      given when that differs, the org it goes into (none: standalone) and the name it gets when the card named one. */
+  | { kind: "folder"; id: string; asked?: string; orgId?: string; orgName?: string; name?: string; note?: string };
 
 /** The longest note one confirm item may carry. */
 export const CONFIRM_NOTE_MAX = 220;

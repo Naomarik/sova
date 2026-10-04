@@ -4,12 +4,12 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
+// The SSR helper stays plain .mjs (node runs it uncompiled), so it has no types; its one export.
 // @ts-expect-error untyped .mjs import
-const { ssrHooks } = await import("./align-card-ssr.mjs");
-ssrHooks();
+const { importSsr } = await import("./align-card-ssr.mjs");
 const solid = await import("solid-js");
 const { renderToString } = await import("solid-js/web");
-const { AlignAnswerContext, AlignDocCard } = await import("../components/AlignDocCard.tsx");
+const { AlignAnswerContext, AlignDocCard } = await importSsr(new URL("../components/AlignDocCard.tsx", import.meta.url), (s: string) => import.meta.resolve(s));
 const { adversarialReview, planReviewRunning, reviewFoot, reviewLinesOf, reviewRequestMessage, reviewVerdictLine, setAdversarialReview, NO_REVIEWER, PLAN_REVIEW_WAIT } = await import("./align-review");
 import type { AlignAnswer } from "../components/AlignDocCard";
 import type { AlignDocInfo, AlignReviewEntryInfo } from "../../shared/protocol";

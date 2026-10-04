@@ -104,7 +104,7 @@ export function placedOrg(project: { name: string; orgId: string | null }, what:
 /** `sova_projects`: every project registered on this host, standalone or in an org. */
 export function projectsList(now = Date.now()): string {
   const all = listProjects();
-  if (!all.length) return "No project is registered on this host. The user adds one from Projects (a folder, a session's folder, or a clone).";
+  if (!all.length) return "No project is registered on this host. The user adds one from Projects (a folder, a session's folder, or a clone), or you do for them with sova_org_project add.";
   const lines = [...all]
     .sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id))
     .map((p) => {

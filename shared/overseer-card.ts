@@ -309,8 +309,8 @@ export interface CardOutcome {
   text: string;
 }
 
-/** The display order: ideas, todos, projects, people, then sessions (the card's row order). */
-const KIND_ORDER: Record<SovaConfirmItem["kind"], number> = { idea: 0, todo: 1, project: 2, person: 3, session: 4 };
+/** The display order: ideas, todos, orgs, folders, projects, people, then sessions (the card's row order). */
+const KIND_ORDER: Record<SovaConfirmItem["kind"], number> = { idea: 0, todo: 1, org: 2, folder: 3, project: 4, person: 5, session: 6 };
 export function displayOrder<T extends SovaConfirmItem>(items: readonly T[]): T[] {
   return items.map((it, i) => ({ it, i })).sort((a, b) => KIND_ORDER[a.it.kind] - KIND_ORDER[b.it.kind] || a.i - b.i).map((x) => x.it);
 }
@@ -740,8 +740,27 @@ export function normalizeCardItem(v: unknown): CardItem | undefined {
       base = { kind: "todo", id: v.id, text: v.text, ...note };
       break;
     case "project":
-      if (!nonEmpty(v.orgId) || !nonEmpty(v.name) || !nonEmpty(v.orgName)) return undefined;
-      base = { kind: "project", id: v.id, orgId: v.orgId, name: v.name, orgName: v.orgName, ...note };
+      // A standalone project has no org: both or neither.
+      if (!nonEmpty(v.name) || (v.orgId === undefined) !== (v.orgName === undefined)) return undefined;
+      if (v.orgId !== undefined && (!nonEmpty(v.orgId) || !nonEmpty(v.orgName))) return undefined;
+      base = { kind: "project", id: v.id, ...(v.orgId !== undefined ? { orgId: v.orgId as string, orgName: v.orgName as string } : {}), name: v.name, ...note };
+      break;
+    case "org":
+      if (!nonEmpty(v.name)) return undefined;
+      base = { kind: "org", id: v.id, name: v.name, ...note };
+      break;
+    case "folder":
+      if ((v.orgId === undefined) !== (v.orgName === undefined)) return undefined;
+      if (v.orgId !== undefined && (!nonEmpty(v.orgId) || !nonEmpty(v.orgName))) return undefined;
+      if ((v.asked !== undefined && !nonEmpty(v.asked)) || (v.name !== undefined && !nonEmpty(v.name))) return undefined;
+      base = {
+        kind: "folder",
+        id: v.id,
+        ...(v.asked !== undefined ? { asked: v.asked as string } : {}),
+        ...(v.orgId !== undefined ? { orgId: v.orgId as string, orgName: v.orgName as string } : {}),
+        ...(v.name !== undefined ? { name: v.name as string } : {}),
+        ...note,
+      };
       break;
     case "person":
       if (!nonEmpty(v.orgId) || !nonEmpty(v.name) || !nonEmpty(v.orgName)) return undefined;
@@ -934,7 +953,11 @@ export function itemText(it: SovaConfirmItem): string {
     case "todo":
       return `${it.id} · ${it.text}`;
     case "project":
-      return `project ${it.name} (${it.id}) in ${it.orgName} (${it.orgId})`;
+      return it.orgId ? `project ${it.name} (${it.id}) in ${it.orgName} (${it.orgId})` : `project ${it.name} (${it.id}), in no organization`;
+    case "org":
+      return `organization ${it.name} (${it.id})`;
+    case "folder":
+      return `folder ${it.id}${it.asked ? ` (the checkout root of ${it.asked})` : ""}${it.name ? `, named ${it.name}` : ""}, ${it.orgId ? `into ${it.orgName} (${it.orgId})` : "standalone"}`;
     case "person":
       return `${it.name} (${it.id}, ${it.status}) in ${it.orgName} (${it.orgId})`;
   }

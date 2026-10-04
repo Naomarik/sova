@@ -63,6 +63,7 @@ LAPTOP_LABEL=${LAPTOP_LABEL:-${LAPTOP_ID:-}}
 VPS_RELAY=${VPS_RELAY:-off}
 case "$VPS_RELAY" in off|on) ;; *) printf '[mesh-vps] error: VPS_RELAY is %s: want off or on\n' "$VPS_RELAY" >&2; exit 1 ;; esac
 VPS_RELAY_PORT=${VPS_RELAY_PORT:-4803}
+case "$VPS_RELAY_PORT" in ''|*[!0-9]*) printf '[mesh-vps] error: VPS_RELAY_PORT is %s: want a port number\n' "$VPS_RELAY_PORT" >&2; exit 1 ;; esac
 
 # Public ports the exposure probe expects OPEN, a control that the probe itself works (e.g. "80 443"); empty = no control
 VPS_CONTROL_PORTS=${VPS_CONTROL_PORTS:-}

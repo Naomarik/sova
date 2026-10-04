@@ -1,11 +1,12 @@
 # systemd SYSTEM unit for an internet relay's accept process (§mesh.lan/accept-process, §mesh.vps/internet-relay).
-# A TEMPLATE: remote-setup.sh renders it (VPS_RELAY=on) into ~/sova-mesh/sova-relay-accept.service with @USER@,
-# @GROUP@ and @BASE@ filled in; an admin installs that file once (SUDO.md §5). It runs as the system user sova-relay,
-# never as the deploy user, and sees only: the bundled Node and the bundle (read-only), the handoff directory, and its own
-# state directory (its outer key). It holds no key of Sova's and can't read the agent directory.
+# A TEMPLATE: remote-setup.sh renders it (VPS_RELAY=on) into ~/sova-mesh/sova-relay-accept.service with @GROUP@ (the
+# deploy user's group) and @BASE@ (~/sova-mesh) filled in; an admin installs that file once (SUDO.md §5). It runs as the
+# system user sova-relay, never as the deploy user, and sees only: the bundled Node and the bundle (read-only), the
+# handoff directory, and its own state directory (its outer key). It holds no key of Sova's and can't read the agent
+# directory.
 #
-# The public port: 4803 (VPS_RELAY_PORT). For 443, uncomment the two capability lines below (and see SUDO.md §5: the
-# public share front may hold 443 already).
+# The public port is Sova's to name (the Mesh page), 4803 by default. With VPS_RELAY_PORT below 1024 (443), the render
+# turns on the two capability lines below, and only then (SUDO.md §5: the public share front may hold 443 already).
 [Unit]
 Description=Sova internet relay accept process
 After=network-online.target

@@ -32,7 +32,7 @@ printf '{"commit":"%s","source":"git archive","deployedAt":"%s"}\n' "$SHA" "$(da
 vps "R=$R NODE_VERSION=$NODE_VERSION NODE_SHA256_X64=$NODE_SHA256_X64 NODE_SHA256_ARM64=$NODE_SHA256_ARM64 \
   CADDY_VERSION=$CADDY_VERSION CADDY_SHA512_AMD64=$CADDY_SHA512_AMD64 CADDY_SHA512_ARM64=$CADDY_SHA512_ARM64 \
   SOVA_PORT=$SOVA_PORT SOVA_PEER_PORT=$SOVA_PEER_PORT VPS_TAILNET_IP=$VPS_TAILNET_IP VPS_ID=$VPS_ID VPS_LABEL='$VPS_LABEL' CLAUDE_BIN='$CLAUDE_BIN' SOVA_RUNTIME='$SOVA_RUNTIME' \
-  VPS_RELAY=$VPS_RELAY bash -s" < "$MESH_VPS_DIR/remote-setup.sh"
+  VPS_RELAY=$VPS_RELAY VPS_RELAY_PORT=$VPS_RELAY_PORT bash -s" < "$MESH_VPS_DIR/remote-setup.sh"
 
 # installed user units follow the deployed copies (daemon-reload only when one changed)
 vps 'd=~/.config/systemd/user; n=0; for u in sova-mesh.service sova-frontdoor.service; do

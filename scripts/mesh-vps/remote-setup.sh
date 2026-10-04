@@ -25,7 +25,7 @@
 #                 admin to install (SUDO.md §5), with a warning when the installed one differs or the group has other members
 # Env in: R NODE_VERSION NODE_SHA256_X64 NODE_SHA256_ARM64 CADDY_VERSION CADDY_SHA512_AMD64 CADDY_SHA512_ARM64 SOVA_PORT SOVA_PEER_PORT VPS_TAILNET_IP VPS_ID VPS_LABEL
 #         CLAUDE_BIN (optional, the claude executable to use), SOVA_RUNTIME (optional: node = run Sova on Node),
-#         VPS_RELAY (optional: on = the internet relay's accept process)
+#         VPS_RELAY (optional: on = the internet relay's accept process), VPS_RELAY_PORT (its public port; below 1024 turns on the capability)
 set -euo pipefail
 : "${R:?}" "${NODE_VERSION:?}" "${NODE_SHA256_X64:?}" "${NODE_SHA256_ARM64:?}" "${CADDY_VERSION:?}" "${CADDY_SHA512_AMD64:?}"
 : "${CADDY_SHA512_ARM64:?}" "${SOVA_PORT:?}" "${SOVA_PEER_PORT:?}" "${VPS_TAILNET_IP:?}"
@@ -165,7 +165,10 @@ if [ "${VPS_RELAY:-off}" = on ]; then
   others=$( { getent group "$grp" | cut -d: -f4 | tr ',' '\n'; getent passwd | awk -F: -v g="$(id -g)" '$4 == g { print $1 }'; } \
     | grep -vx -e "$me" -e '' | sort -u | tr '\n' ' ' || true)
   [ -z "$others" ] || log "WARNING: group $grp has other members (${others% }): they could reach Sova's handoff socket; give $me a group of its own"
-  sed -e "s|@GROUP@|$grp|g" -e "s|@BASE@|$BASE|g" "$BASE/app/scripts/mesh-vps/sova-relay-accept.service.in" > "$BASE/sova-relay-accept.service.tmp"
+  # A port below 1024 (443) is the only case that needs a capability: then, and only then, the two lines are on.
+  cap='s#^\#\(\(Ambient\|CapabilityBounding\)[A-Za-z]*=CAP_NET_BIND_SERVICE\)$#\1#'
+  [ "${VPS_RELAY_PORT:-4803}" -lt 1024 ] || cap='s#^$##'
+  sed -e "s|@GROUP@|$grp|g" -e "s|@BASE@|$BASE|g" -e "$cap" "$BASE/app/scripts/mesh-vps/sova-relay-accept.service.in" > "$BASE/sova-relay-accept.service.tmp"
   mv -f "$BASE/sova-relay-accept.service.tmp" "$BASE/sova-relay-accept.service"
   if [ ! -f /etc/systemd/system/sova-relay-accept.service ]; then
     log "relay accept: the system unit isn't installed: an admin runs SUDO.md §5 once"

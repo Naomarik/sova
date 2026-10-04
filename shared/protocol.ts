@@ -1377,11 +1377,16 @@ export type SessionTitleSource = "user" | "overseer";
 // POST /api/sessions/auto-title AutoTitleRequest -> AutoTitleResponse (§app.session-list/auto-titles).
 // Names each path's session with the title model from Settings → Summaries → Session titles,
 // never over an explicit title. 400 bad body (at most AUTO_TITLE_MAX_PATHS paths).
+// With `redo: true` (an open session's Regenerate title) it takes exactly one path and may replace
+// ANY stored title, typed ones included, written only if that title is unchanged when the answer
+// comes back.
 export const AUTO_TITLE_MAX_PATHS = 200;
 export interface AutoTitleRequest {
   paths: string[];
   /** Say what would happen, call no model and write nothing. */
   dryRun?: boolean;
+  /** Regenerate: exactly one path; whatever its title is, and whoever set it. */
+  redo?: boolean;
 }
 export type AutoTitleSkip =
   /** It has a title a user or the Overseer set (or one stored before provenance existed). */
@@ -1394,7 +1399,9 @@ export type AutoTitleSkip =
   /** Neither title model can run (policy, registry, auth, CLI). */
   | "no-model"
   /** The models failed, or answered with no usable title. */
-  | "failed";
+  | "failed"
+  /** Shorten long titles only: its title is not one it may shorten (no longer than the cap, or none). */
+  | "short";
 export type AutoTitleOutcome =
   | { path: string; outcome: "named"; title: string }
   | { path: string; outcome: "would-name" }
@@ -1402,6 +1409,17 @@ export type AutoTitleOutcome =
 export interface AutoTitleResponse {
   /** One per requested path, in request order. */
   results: AutoTitleOutcome[];
+}
+
+// POST /api/sessions/shorten-titles ShortenTitlesRequest -> AutoTitleResponse (§app.session-list/auto-titles).
+// Settings → Summaries → Shorten long titles: renames this host's sessions whose stored title is
+// longer than SESSION_TITLE_LABEL_MAX and was set by the namer, the Overseer or before provenance
+// existed — never a typed one (`by: "user"`). Most recently active first, at most 200 a call.
+/** What an automatic title may be: the sidebar's title line holds about 32 characters. */
+export const SESSION_TITLE_LABEL_MAX = 36;
+export interface ShortenTitlesRequest {
+  /** List what it would rename (`would-name`), call no model and write nothing. */
+  dryRun?: boolean;
 }
 
 // GET /api/settings/session-titles -> SessionTitleSettingsInfo (<state root>/session-titles-settings.json;

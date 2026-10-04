@@ -317,6 +317,26 @@ export const autoTitleSessions = (paths: string[], dryRun = false) =>
     body: JSON.stringify(dryRun ? { paths, dryRun } : { paths }),
   });
 
+/**
+ * Regenerate one open session's title (§app.session-list/auto-titles): the auto-title route's
+ * `redo` form, which may replace any title, typed ones included. `request` sends it to the
+ * session's own host.
+ */
+export const regenerateSessionTitle = (path: string) =>
+  request<AutoTitleResponse>("/api/sessions/auto-title", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ paths: [path], redo: true }),
+  });
+
+/** Settings → Summaries → Shorten long titles: this host's long auto, Overseer and older titles, never a typed one. */
+export const shortenSessionTitles = (dryRun = false) =>
+  request<AutoTitleResponse>("/api/sessions/shorten-titles", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(dryRun ? { dryRun } : {}),
+  });
+
 /** One session by id, listed or not (the list omits sessions with no user message). 404: no file has that id. */
 export const getSessionSummaryById = (id: string) => request<SessionSummary>(`/api/sessions/summary?id=${encodeURIComponent(id)}`);
 

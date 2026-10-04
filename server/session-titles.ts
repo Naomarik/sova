@@ -179,6 +179,31 @@ export function writeAutoTitle(id: string, title: string, opts: { redo?: boolean
   return true;
 }
 
+const sameEntry = (a: StoredTitle | undefined, b: StoredTitle | undefined): boolean =>
+  a === b || (!!a && !!b && a.title === b.title && a.by === b.by && a.at === b.at && !!a.legacy === !!b.legacy);
+
+/**
+ * The write of Regenerate title and Shorten long titles (§app.session-list/auto-titles): store
+ * `title` as an `auto` title over whatever `seen` was — the entry read when the call started,
+ * undefined for none — only if a fresh read of the file now still finds exactly that entry. A
+ * rename (or clear) while the model call was out wins. True when written (or already that title).
+ */
+export function replaceAutoTitle(id: string, title: string, seen: StoredTitle | undefined, opts: { now?: number } = {}): boolean {
+  const next = load();
+  const cur = next[id];
+  if (!sameEntry(cur, seen)) {
+    remember(next);
+    return false;
+  }
+  if (cur?.title === title && cur.by === "auto") {
+    remember(next);
+    return true;
+  }
+  next[id] = { title, by: "auto", at: opts.now ?? Date.now() };
+  save(next);
+  return true;
+}
+
 /** Drop the titles of deleted sessions; same write rules as setSessionTitle. */
 export function dropSessionTitles(ids: string[]): void {
   const next = load();

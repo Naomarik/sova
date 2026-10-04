@@ -3,7 +3,21 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { SessionSummary } from "../../shared/protocol";
-import { batchesByHost, isNameable, nameableRows, nameLabel, nameSessions, namingIn, setNaming } from "./auto-title";
+import {
+  batchesByHost,
+  isNameable,
+  nameableRows,
+  nameLabel,
+  nameSessions,
+  namingIn,
+  regenerateOutcome,
+  regeneratingTitle,
+  setNaming,
+  setRegeneratingTitle,
+  shortenCountLine,
+  shortenDoneLine,
+  shorteningLabel,
+} from "./auto-title";
 
 const row = (path: string, over: Partial<SessionSummary> = {}): SessionSummary =>
   ({ id: path, path, cwd: "/", title: "first message", createdAt: "", lastActiveAt: "", model: null, live: null, busy: false, origin: "web", archived: false, ...over }) as SessionSummary;
@@ -62,4 +76,36 @@ test("the in-flight mark is per section and survives until cleared", () => {
   assert.equal(namingIn("a"), false);
   setNaming("t", false);
   assert.equal(namingIn("t"), false);
+});
+
+test("regenerate: a named result is the new title; anything else is one toast that says the title stayed and why", () => {
+  assert.deepEqual(regenerateOutcome({ results: [{ path: "/a", outcome: "named", title: "Push subscription bug" }] }), { title: "Push subscription bug" });
+  const raced = regenerateOutcome({ results: [{ path: "/a", outcome: "skipped", reason: "explicit" }] });
+  assert.ok("error" in raced && raced.error.startsWith("Couldn't regenerate the title. The title changed"), JSON.stringify(raced));
+  const none = regenerateOutcome({ results: [{ path: "/a", outcome: "skipped", reason: "no-model" }] });
+  assert.ok("error" in none && /Neither title model can run/.test(none.error));
+  const thrown = regenerateOutcome(new Error("The Sova server isn't reachable"));
+  assert.deepEqual(thrown, { error: "Couldn't regenerate the title. The Sova server isn't reachable." });
+  assert.ok("error" in regenerateOutcome({ results: [] }));
+});
+
+test("regenerating is per open session, and survives a remount", () => {
+  assert.equal(regeneratingTitle("/a"), false);
+  setRegeneratingTitle("/a", true);
+  assert.equal(regeneratingTitle("/a"), true);
+  assert.equal(regeneratingTitle("/b"), false);
+  setRegeneratingTitle("/a", false);
+  assert.equal(regeneratingTitle("/a"), false);
+});
+
+test("Shorten long titles' lines: the count before, the busy label, and what was done after", () => {
+  assert.equal(shortenCountLine(0), "No title is longer than 36 characters.");
+  assert.equal(shortenCountLine(1), "1 title is longer than 36 characters.");
+  assert.equal(shortenCountLine(12), "12 titles are longer than 36 characters.");
+  assert.equal(shorteningLabel(1), "Shortening 1 title…");
+  assert.equal(shorteningLabel(3), "Shortening 3 titles…");
+  const named = { path: "/a", outcome: "named" as const, title: "Short" };
+  const failed = { path: "/b", outcome: "skipped" as const, reason: "failed" as const };
+  assert.equal(shortenDoneLine([named, named]), "Shortened 2 of 2 titles.");
+  assert.equal(shortenDoneLine([named, failed]), "Shortened 1 of 2 titles. 1 couldn't be shortened.");
 });

@@ -302,6 +302,9 @@ function ago(ms: number, now = Date.now()): string {
 /** The aliases the links read (the tools' host sets it; none in a bare call). */
 let aliasesNow: () => Record<string, string> = () => ({});
 /** A session as a link, named summary-first (§app.overseer/session-names). */
+/** A session title's budget, the automatic namer's (§app.session-list/auto-titles): the sidebar's title line holds about 32 characters. */
+export const SESSION_TITLE_HINT = "2–5 words, at most 36 characters, a short label not a sentence (the summary line already shows under it; don't repeat it).";
+
 const link = (s: Pick<SessionSummary, "id" | "title"> & Partial<Pick<SessionSummary, "titleBy" | "outlineGist" | "outlineNow">>) =>
   `[${sessionName(s, aliasesNow()[s.id]).replace(/[[\]]/g, "")}](sova://s/${s.id})`;
 
@@ -1035,7 +1038,7 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
         mode: str("normal | delegate (see the mode extension)."),
         subagent_profile: str("Subagent profile id or off, from sova_list_subagent_profiles. This session only, before its first prompt; never saves a default."),
         minor_modes: { type: "array", items: { type: "string" }, description: 'Minor modes to have on from the first turn, e.g. ["spec"]; [] turns them all off. Omitted: the default.' },
-        title: str("A title for the list, up to 80 characters."),
+        title: str(`A title for the list: ${SESSION_TITLE_HINT}`),
         group: str("Group id to add it to."),
         profile: str('A profile id (§ profiles: what the session can do), this host only, looked up in the new session\'s project, then the user\'s, then built in. Only profiles marked "The Overseer may start it", and a project\'s profile only once the user approved it. Its mode and model apply unless you give your own. A profile that runs a playbook sends that playbook as the first message, with prompt as its text.'),
       }),
@@ -1160,7 +1163,7 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
       parameters: obj(
         {
           session: str("Session id."),
-          title: str("New title (empty string clears it back to the first message)."),
+          title: str(`New title: ${SESSION_TITLE_HINT} An empty string clears it back to the first message.`),
           alias: str('A short name the user gave it, e.g. "overseer fixes" (at most 40 characters, unique; empty string clears it).'),
           model: str('Model ref "provider/model".'),
           thinking: str("off | minimal | low | medium | high | xhigh | max"),

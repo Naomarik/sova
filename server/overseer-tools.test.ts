@@ -518,6 +518,18 @@ describe("sova_session's truth lines (§app.overseer/session-truth)", () => {
   });
 });
 
+describe("session titles", () => {
+  test("sova_create_session and sova_set_session give the title the namer's budget, never the old 80", () => {
+    const tools = overseerTools({} as OverseerToolHost, new TurnLimits());
+    for (const name of ["sova_create_session", "sova_set_session"]) {
+      const tool = tools.find((t) => t.name === name)!;
+      const title = (tool.parameters as { properties: Record<string, { description?: string }> }).properties.title!.description!;
+      assert.match(title, /2–5 words, at most 36 characters, a short label not a sentence/, name);
+      assert.ok(!/80 characters/.test(title), name);
+    }
+  });
+});
+
 describe("card items", async () => {
   const { resolveConfirmItems, CONFIRM_ITEMS_MAX } = await import("./overseer-confirm");
   const { cardLines, displayOrder } = await import("../shared/overseer-card");

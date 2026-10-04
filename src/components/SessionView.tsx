@@ -10,7 +10,9 @@ import { knownExplanations, knownOutline, knownWorkers } from "../lib/known-befo
 import { PaneScopeProvider, type PaneScope } from "../lib/pane-scope";
 import { cwdLabel } from "../lib/remote-session";
 import type { RewindControl } from "../lib/inputs";
-import { activeTab, home } from "../lib/ui-state";
+import { activeTab, home, toast } from "../lib/ui-state";
+import { regenerateOutcome, regeneratingTitle, setRegeneratingTitle } from "../lib/auto-title";
+import { regenerateSessionTitle } from "../lib/api";
 import { sessionWorking, formatCost, type UsageTotalView, workingSplit } from "../lib/workers";
 import { ChatView, type ChatRefusal, type OverseerChat } from "./ChatView";
 import { ContextGauge, contextDescribedBy } from "./ContextGauge";
@@ -24,6 +26,42 @@ import { WatchView } from "./WatchView";
 import { Banner, Chip, Icon } from "./ui";
 import { hostLabel, hostOf } from "../lib/mesh";
 import { HostScopeProvider } from "../lib/host-scope";
+
+/**
+ * An open session's Regenerate title (§app.session-list/auto-titles), in the single-session head
+ * beside the title and path it changes — never on a list row or a workspace pane. It asks the
+ * session's host for a new title, which may replace any title (the press is the request). The
+ * new title arriving is the answer; a title that stays gets a toast saying why.
+ */
+function RegenerateTitleButton(props: { path: string; onDone(): void }) {
+  const busy = () => regeneratingTitle(props.path);
+  const label = () => (busy() ? "Regenerating title…" : "Regenerate title");
+  const press = async () => {
+    const path = props.path;
+    if (regeneratingTitle(path)) return;
+    setRegeneratingTitle(path, true);
+    try {
+      const r = regenerateOutcome(await regenerateSessionTitle(path).catch((e: unknown) => (e instanceof Error ? e : new Error(String(e)))));
+      if ("error" in r) toast(r.error);
+    } finally {
+      setRegeneratingTitle(path, false);
+      props.onDone();
+    }
+  };
+  return (
+    <button
+      type="button"
+      class="button button-icon button-ghost session-title-regenerate"
+      aria-label={label()}
+      title={label()}
+      aria-busy={busy() ? "true" : undefined}
+      disabled={busy()}
+      onClick={() => void press()}
+    >
+      <Icon name="refresh" small />
+    </button>
+  );
+}
 
 /** Why a session is open read-only: a TUI has it, an unknown writer may, or it is a project
     overseer's earlier conversation. */
@@ -243,6 +281,7 @@ export function SessionView(props: {
           </Show>
         </p>
       </div>
+      <RegenerateTitleButton path={path} onDone={props.onRefresh} />
       <ContextGauge path={path} />
       <ProfileChip summary={s()} info={profileInfo()} />
       {/* The remote identity is always present; the connection chip reports liveness separately. */}

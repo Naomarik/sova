@@ -62,7 +62,7 @@ import { decodeWorkers, teamDuties, getAgentsInsight, getHiddenWorkers, getSessi
 import { startUsagePoller } from "./usage-poll";
 import { startPriceRefresh } from "./model-prices";
 import { archiveSession, cachedTitleOf, cleanupSessions, getSessionSummary, idOf, lastReplyOf, listCwds, listSessionFiles, listSessions, onSessionArchived, onSummaryLineChanged } from "./sessions-index";
-import { cleanSessionTitle, SESSION_TITLE_MAX, setSessionTitle } from "./session-titles";
+import { cleanSessionTitle, readSessionTitleRecords, SESSION_TITLE_MAX, setSessionTitle } from "./session-titles";
 import { contextForBranch, normalizeEntries, readActiveBranch } from "./transcript";
 import { checkTmpImage, deleteAttachment, MAX_ATTACHMENT_BYTES, readTmpImage, saveUploadedImage, sessionAttachmentsDir, UploadError } from "./attachments";
 import { listFolders } from "./folders";
@@ -93,7 +93,7 @@ import { registerScheduleRoutes, startScheduleKeeper } from "./schedule-routes";
 import { readWebSettings, writeWebSettings } from "./web-settings";
 import { readSummarizerSettings, writeSummarizerSettings } from "./topic-outline-settings";
 import { claudeCliStatus } from "./claude-status";
-import { AutoTitleSweep, autoTitlePaths, nameSession, traceToFile, type NameDeps } from "./session-autotitle";
+import { AutoTitleSweep, autoTitlePaths, nameSession, shortenPicks, traceToFile, type NameDeps } from "./session-autotitle";
 import { parseSessionTitleSettings, readSessionTitleSettings, sessionTitleSettingsInfo, writeSessionTitleSettings } from "./session-titles-settings";
 import type { LlmRuntime } from "./decide-llm";
 import { claudeLoginEnv, registerClaudeAccountRoutes } from "./claude-accounts";
@@ -550,20 +550,44 @@ const autoTitleSweep = new AutoTitleSweep({
 });
 
 app.post("/api/sessions/auto-title", async (c) => {
-  let body: { paths?: unknown; dryRun?: unknown };
+  let body: { paths?: unknown; dryRun?: unknown; redo?: unknown };
   try {
     const parsed: unknown = await c.req.json();
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("not an object");
-    body = parsed as { paths?: unknown; dryRun?: unknown };
+    body = parsed as { paths?: unknown; dryRun?: unknown; redo?: unknown };
   } catch {
-    return c.json({ error: "Expected JSON body { paths, dryRun? }" }, 400);
+    return c.json({ error: "Expected JSON body { paths, dryRun?, redo? }" }, 400);
   }
   if (!Array.isArray(body.paths) || body.paths.length === 0 || !body.paths.every((p) => typeof p === "string"))
     return c.json({ error: "paths must be a non-empty list of session paths" }, 400);
   if (body.paths.length > AUTO_TITLE_MAX_PATHS) return c.json({ error: `At most ${AUTO_TITLE_MAX_PATHS} paths at a time` }, 400);
   if (body.dryRun !== undefined && typeof body.dryRun !== "boolean") return c.json({ error: "dryRun must be true or false" }, 400);
+  if (body.redo !== undefined && typeof body.redo !== "boolean") return c.json({ error: "redo must be true or false" }, 400);
+  // Regenerate may replace a typed title: one session per press, never a batch.
+  if (body.redo === true && body.paths.length !== 1) return c.json({ error: "redo takes exactly one path" }, 400);
   const raw = body.paths as string[];
-  const results = await autoTitlePaths(raw.map((p) => resolveSessionPath(p)), raw, titleDeps(), body.dryRun === true);
+  const results = await autoTitlePaths(raw.map((p) => resolveSessionPath(p)), raw, titleDeps(), body.dryRun === true, body.redo === true ? "regenerate" : "button");
+  return c.json({ results });
+});
+
+// Settings → Summaries → Shorten long titles: this host's long auto, Overseer and pre-provenance
+// titles, renamed through the same race-safe writer. Never a typed (`by: "user"`) title.
+app.post("/api/sessions/shorten-titles", async (c) => {
+  let body: { dryRun?: unknown } = {};
+  try {
+    const text = await c.req.text();
+    if (text.trim()) {
+      const parsed: unknown = JSON.parse(text);
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("not an object");
+      body = parsed as { dryRun?: unknown };
+    }
+  } catch {
+    return c.json({ error: "Expected JSON body { dryRun? }" }, 400);
+  }
+  if (body.dryRun !== undefined && typeof body.dryRun !== "boolean") return c.json({ error: "dryRun must be true or false" }, 400);
+  const picks = shortenPicks(await listSessions(), readSessionTitleRecords());
+  const paths = picks.map((s) => s.path);
+  const results = await autoTitlePaths(paths, paths, titleDeps(), body.dryRun === true, "shorten");
   return c.json({ results });
 });
 

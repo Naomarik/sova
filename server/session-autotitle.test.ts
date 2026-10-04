@@ -19,7 +19,7 @@ mkdirSync(join(agentDir, "sessions", "live"), { recursive: true });
 mkdirSync(join(agentDir, "sova"), { recursive: true });
 
 const { app, server } = await import("./index");
-const { readSessionTitleRecords, setSessionTitle, writeAutoTitle } = await import("./session-titles");
+const { readSessionTitleRecords, replaceAutoTitle, setSessionTitle, writeAutoTitle } = await import("./session-titles");
 const { getSessionSummary } = await import("./sessions-index");
 const { canonicalPath } = await import("./paths");
 const at = await import("./session-autotitle");
@@ -204,15 +204,36 @@ describe("input, prompt and validation", () => {
     assert.ok(p.includes("\n3. three"));
   });
 
-  test("validateTitle: 2–9 words, ≤60 characters, quotes and a trailing period dropped", () => {
+  test("validateTitle: 2–5 words, ≤36 characters, quotes and a trailing period dropped", () => {
+    assert.equal(at.TITLE_MAX_CHARS, 36);
+    assert.deepEqual(at.TITLE_WORDS, { min: 2, max: 5 });
     assert.equal(at.validateTitle("Inline git diff viewer"), "Inline git diff viewer");
     assert.equal(at.validateTitle('"Session switch layout shift fix."'), "Session switch layout shift fix");
-    assert.equal(at.validateTitle("  Open-questions   count: drop chat icon "), "Open-questions count: drop chat icon");
+    assert.equal(at.validateTitle("  Push   subscription bug "), "Push subscription bug");
     assert.equal(at.validateTitle("Diff"), null);
-    assert.equal(at.validateTitle("one two three four five six seven eight nine ten"), null);
-    assert.equal(at.validateTitle(`Word ${"y".repeat(60)}`), null);
+    assert.equal(at.validateTitle("one two three four five six"), null); // 6 words
+    assert.equal(at.validateTitle("one two three four five"), "one two three four five");
+    // 36 characters is the edge: one more is refused.
+    const edge = `Ab ${"c".repeat(33)}`;
+    assert.equal(edge.length, 36);
+    assert.equal(at.validateTitle(edge), edge);
+    assert.equal(at.validateTitle(`${edge}d`), null);
+    assert.equal(at.validateTitle("Session titles: shorter labels for the sidebar"), null); // the old 60-character style
     assert.equal(at.validateTitle("two\u0007 bells"), null);
     assert.equal(at.validateTitle(7), null);
+  });
+
+  test("the rules ask for a short label that never restates the summary line", () => {
+    const p = at.TITLE_SYSTEM_PROMPT;
+    assert.match(p, /2 to 5 words, at most 36 characters/);
+    assert.match(p, /noun phrase, not a sentence/i);
+    assert.match(p, /No "X: Y"/);
+    assert.match(p, /summary line is shown right under the title[^\n]*Never restate it/);
+    assert.ok(!/60 characters|2 to 7 words/.test(p));
+    // Every example the rules give passes the validator: the rules and the check agree.
+    const examples = [...p.matchAll(/"([^"]+)"/g)].map((m) => m[1]!).filter((e) => /^[A-Z][a-z]/.test(e));
+    assert.ok(examples.length >= 3, examples.join(" | "));
+    for (const e of examples) assert.equal(at.validateTitle(e), e, e);
   });
 
   test("Claude Code's argv: the rules as the whole system prompt, no tools, no settings, no MCP, and no --json-schema", () => {
@@ -308,6 +329,138 @@ describe("naming a session", () => {
     assert.equal(results[3]!.path, "/etc/passwd");
     assert.equal(readSessionTitleRecords()[unnamed.id], undefined);
     for (const body of [{}, { paths: [] }, { paths: [7] }, { paths: [unnamed.path], dryRun: "yes" }, { paths: Array(201).fill(unnamed.path) }]) assert.equal((await post(body)).status, 400, JSON.stringify(body).slice(0, 60));
+  });
+});
+
+describe("regenerate and shorten", () => {
+  const long = "A title the Overseer wrote that is far too long";
+
+  test("regenerate replaces any title of the session, a typed one included, and the current title never reaches the model", async () => {
+    for (const [by, title] of [["user", "Typed by hand title"], ["overseer", long], ["auto", "Old auto title"]] as const) {
+      const s = session([user("the push subscription drops on reload"), outline("Fixing push subscriptions that drop on reload", [])]);
+      if (by === "auto") writeAutoTitle(s.id, title);
+      else setSessionTitle(s.id, title, by);
+      const f = fakeRuntime(() => '{"title": "Push subscription bug"}');
+      assert.deepEqual(await at.nameSession(s.path, "regenerate", deps(f.runtime)), { outcome: "named", title: "Push subscription bug" }, by);
+      assert.equal(readSessionTitleRecords()[s.id]?.by, "auto");
+      assert.ok(!JSON.stringify(f.calls[0]!.context).includes(title), "the current title never reaches the model");
+    }
+    // A legacy (bare string) title too, and a session with no summary line.
+    const bare = session([user("rename me from scratch please")]);
+    writeFileSync(titlesFile, JSON.stringify({ version: 2, titles: { ...JSON.parse(readFileSync(titlesFile, "utf8")).titles, [bare.id]: "An older bare string title" } }));
+    const f = fakeRuntime(() => '{"title": "Scratch rename"}');
+    assert.deepEqual(await at.nameSession(bare.path, "regenerate", deps(f.runtime)), { outcome: "named", title: "Scratch rename" });
+  });
+
+  test("regenerate race: a rename (or clear) while the model was out wins, and the answer is dropped", async () => {
+    const s = session([user("tune the cache warmer"), outline("Cache warmer tuning", [])]);
+    setSessionTitle(s.id, "Before the press", "user", 1);
+    for (const meanwhile of [() => setSessionTitle(s.id, "Typed meanwhile", "user", 2), () => setSessionTitle(s.id, null)]) {
+      const f = fakeRuntime(() => {
+        meanwhile();
+        return '{"title": "Cache warmer tuning"}';
+      });
+      const r = await at.nameSession(s.path, "regenerate", deps(f.runtime));
+      assert.equal(r.outcome === "skipped" && r.reason, "explicit");
+      assert.notEqual(readSessionTitleRecords()[s.id]?.title, "Cache warmer tuning");
+    }
+    assert.equal(readSessionTitleRecords()[s.id], undefined); // the clear stood
+    // Same title, same setter, but set again (a new time): still a change, still wins.
+    setSessionTitle(s.id, "Same words", "overseer", 10);
+    const again = fakeRuntime(() => {
+      setSessionTitle(s.id, null);
+      setSessionTitle(s.id, "Same words", "overseer", 11);
+      return '{"title": "Cache warmer tuning"}';
+    });
+    assert.equal((await at.nameSession(s.path, "regenerate", deps(again.runtime))).outcome, "skipped");
+    assert.equal(readSessionTitleRecords()[s.id]?.at, 11);
+  });
+
+  test("replaceAutoTitle writes only over the entry it was given", () => {
+    setSessionTitle("r1", "Seen title", "overseer", 5);
+    const seen = readSessionTitleRecords().r1;
+    assert.equal(replaceAutoTitle("r1", "New label", { ...seen!, at: 6 }), false);
+    assert.equal(replaceAutoTitle("r1", "New label", undefined), false);
+    assert.equal(replaceAutoTitle("r1", "New label", seen), true);
+    assert.deepEqual({ ...readSessionTitleRecords().r1, at: 0 }, { title: "New label", by: "auto", at: 0 });
+    assert.equal(replaceAutoTitle("r2", "Fresh label", undefined), true); // absent when read, absent now
+    for (const id of ["r1", "r2"]) setSessionTitle(id, null);
+  });
+
+  test("shortenable: long auto, Overseer and legacy titles; never a typed one; never a short one", () => {
+    assert.equal(at.shortenable({ title: long, by: "auto" }), true);
+    assert.equal(at.shortenable({ title: long, by: "overseer" }), true);
+    assert.equal(at.shortenable({ title: long, by: "user", legacy: true }), true);
+    assert.equal(at.shortenable({ title: long, by: "user" }), false);
+    assert.equal(at.shortenable({ title: "x".repeat(36), by: "auto" }), false);
+    assert.equal(at.shortenable({ title: "x".repeat(37), by: "auto" }), true);
+    assert.equal(at.shortenable(undefined), false);
+  });
+
+  test("shorten never touches a typed title, even when it is long; it renames the rest, and loses a race", async () => {
+    const typed = session([user("typed title session"), outline("Typed", [])]);
+    const over = session([user("overseer titled session"), outline("Overseer", [])]);
+    const short = session([user("short titled session"), outline("Short", [])]);
+    setSessionTitle(typed.id, long, "user");
+    setSessionTitle(over.id, long, "overseer");
+    writeAutoTitle(short.id, "Short auto title");
+    const f = fakeRuntime(() => '{"title": "Short label"}');
+    const typedR = await at.nameSession(typed.path, "shorten", deps(f.runtime));
+    assert.deepEqual(typedR, { outcome: "skipped", reason: "explicit", detail: "typed by hand" });
+    assert.deepEqual(await at.nameSession(short.path, "shorten", deps(f.runtime)), { outcome: "skipped", reason: "short" });
+    assert.equal(f.calls.length, 0);
+    assert.equal(readSessionTitleRecords()[typed.id]?.title, long);
+    assert.deepEqual(await at.nameSession(over.path, "shorten", deps(f.runtime)), { outcome: "named", title: "Short label" });
+    // A rename while the call is out wins.
+    const racy = session([user("racy session"), outline("Racy", [])]);
+    writeAutoTitle(racy.id, long);
+    const g = fakeRuntime(() => {
+      setSessionTitle(racy.id, "Renamed by hand");
+      return '{"title": "Short label"}';
+    });
+    assert.equal((await at.nameSession(racy.path, "shorten", deps(g.runtime))).outcome, "skipped");
+    assert.deepEqual({ ...readSessionTitleRecords()[racy.id], at: 0 }, { title: "Renamed by hand", by: "user", at: 0 });
+  });
+
+  test("shortenPicks: listed long titles that aren't typed, newest first, no workers or Overseer files", () => {
+    const row = (id: string, last: string, over: Partial<SessionSummary> = {}) =>
+      ({ id, path: `/p/${id}`, cwd: "/", title: "t", createdAt: "", lastActiveAt: last, model: null, live: null, busy: false, origin: "web", archived: false, ...over }) as SessionSummary;
+    const rows = [row("a", "2026-01-01"), row("b", "2026-03-01", { archived: true }), row("c", "2026-02-01"), row("w", "2026-04-01", { workerSession: true }), row("u", "2026-05-01"), row("s", "2026-06-01")];
+    const records = {
+      a: { title: long, by: "auto" as const },
+      b: { title: long, by: "user" as const, legacy: true as const },
+      c: { title: long, by: "overseer" as const },
+      w: { title: long, by: "auto" as const },
+      u: { title: long, by: "user" as const },
+      s: { title: "Short", by: "auto" as const },
+    };
+    assert.deepEqual(at.shortenPicks(rows, records).map((s) => s.id), ["b", "c", "a"]);
+  });
+
+  test("the routes: redo takes exactly one path and may name a typed title; shorten's dry run lists only what it may touch", async () => {
+    const post = (url: string, body: unknown) => app.request(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+    const typed = session([user("typed route session"), outline("Typed route", [])]);
+    const typedLong = session([user("typed long route session"), outline("Typed long", [])]);
+    const autoLong = session([user("auto long route session"), outline("Auto long", [])]);
+    setSessionTitle(typed.id, "Mine");
+    setSessionTitle(typedLong.id, long);
+    writeAutoTitle(autoLong.id, long);
+    const plain = (await (await post("/api/sessions/auto-title", { paths: [typed.path], dryRun: true })).json()) as { results: { outcome: string; reason?: string }[] };
+    assert.deepEqual(plain.results.map((r) => [r.outcome, r.reason]), [["skipped", "explicit"]]);
+    const redo = (await (await post("/api/sessions/auto-title", { paths: [typed.path], dryRun: true, redo: true })).json()) as { results: { outcome: string }[] };
+    assert.deepEqual(redo.results.map((r) => r.outcome), ["would-name"]);
+    for (const body of [{ paths: [typed.path, autoLong.path], redo: true }, { paths: [typed.path], redo: "yes" }])
+      assert.equal((await post("/api/sessions/auto-title", body)).status, 400, JSON.stringify(body));
+    const res = await post("/api/sessions/shorten-titles", { dryRun: true });
+    assert.equal(res.status, 200);
+    const { results } = (await res.json()) as { results: { path: string; outcome: string }[] };
+    const paths = results.map((r) => r.path);
+    assert.ok(paths.includes(autoLong.path));
+    assert.ok(!paths.includes(typedLong.path), "a typed title is never listed, however long");
+    assert.ok(!paths.includes(typed.path));
+    assert.ok(results.every((r) => r.outcome === "would-name"));
+    assert.equal(readSessionTitleRecords()[autoLong.id]?.title, long); // a dry run writes nothing
+    assert.equal((await post("/api/sessions/shorten-titles", { dryRun: 1 })).status, 400);
   });
 });
 

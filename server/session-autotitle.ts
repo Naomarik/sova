@@ -3,33 +3,39 @@ import { createInterface } from "node:readline";
 import { stripImageNotes } from "../shared/image-note";
 import { isLinkMessage } from "../shared/link-message";
 import { isTopicBatch } from "../shared/topic-message";
-import type { AutoTitleOutcome, AutoTitleSkip, DecisionFailure, SessionSummary, SessionTitleSettings, WorkerChoice } from "../shared/protocol";
+import { SESSION_TITLE_LABEL_MAX, type AutoTitleOutcome, type AutoTitleSkip, type DecisionFailure, type SessionSummary, type SessionTitleSettings, type WorkerChoice } from "../shared/protocol";
 import { parseWakeNudge } from "../shared/wake";
 import { DecisionError, extractJsonObject, failureMessage } from "./decide";
 import { claudeRun, LLM_TIMEOUT_MS, parseClaudeEnvelope, piText, type LlmProviderDeps } from "./decide-llm";
-import { cleanSessionTitle, writeAutoTitle } from "./session-titles";
+import { cleanSessionTitle, readSessionTitleRecords, replaceAutoTitle, type StoredTitle, writeAutoTitle } from "./session-titles";
 
 // Sova names sessions itself (§app.session-list/auto-titles): one short title per session from
 // what it became, stored as an `auto` title in Sova's own title store — never in the .jsonl, and
-// never over an explicit title (a user's, the Overseer's, or any pre-provenance one). Two ways in:
-// the background sweep (off by default, Settings → Summaries → Session titles) and the section
-// heads' button (POST /api/sessions/auto-title). Both go through `nameSession` below.
+// never over an explicit title automatically (a user's, the Overseer's, or any pre-provenance
+// one). Four ways in: the background sweep (on by default, Settings → Summaries → Session titles),
+// the section heads' button (POST /api/sessions/auto-title), Settings' Shorten long titles
+// (POST /api/sessions/shorten-titles: long auto, Overseer and pre-provenance titles, never a
+// typed one) and an open session's Regenerate title (the auto-title route with `redo`: any title
+// of that one session). All go through `nameSession` below.
 
 /**
  * The title rules, and the whole system prompt: no Sova or agent prompt goes with them. Tested
  * against hand-set titles (deepseek-v4.1-flash scored best among the cheap models).
  */
-export const TITLE_SYSTEM_PROMPT = `You title coding-agent chat sessions for a sidebar list. Reply with one JSON object only: {"title": "..."}
+export const TITLE_SYSTEM_PROMPT = `You write the short label for a coding-agent chat session in a narrow sidebar list. Reply with one JSON object only: {"title": "..."}
 Rules:
-- 2 to 7 words, at most 60 characters, sentence case, no quotes, no trailing period.
-- Name the work (the feature, bug or question), not the user's wording and not the process (planning, discussing, testing, rerun, round N).
-- Two things: "X: Y" (subject: aspect) or "X + Y".
-- A question reads as its subject: "How X works (A vs B)". A bug reads "X fix" or "Fix: symptom".
+- 2 to 5 words, at most 36 characters, sentence case, no quotes, no trailing period.
+- A noun phrase, not a sentence. Subject first: the feature, bug, file or question it is about.
+- No "X: Y" or "X - Y" tails, no lists, no parentheses.
+- The summary line is shown right under the title in the list. Never restate it or reword it: the title names what the session is, the summary line says what it is for.
+- Name the work, not the user's wording and not the process (planning, discussing, testing, rerun, round N).
 - Name what the session became (summary line, topics); the first message tells what the user came for.
-- State only what the input says. Never name the app every session belongs to (Sova).`;
+- State only what the input says. Never name the app every session belongs to (Sova).
+Good: "Short session titles", "Push subscription bug", "Mesh peer sync", "Bun test runner".`;
 
-export const TITLE_MAX_CHARS = 60;
-export const TITLE_WORDS = { min: 2, max: 9 } as const;
+/** The sidebar's title line holds about 32 characters; a title is a label that fits it. */
+export const TITLE_MAX_CHARS = SESSION_TITLE_LABEL_MAX;
+export const TITLE_WORDS = { min: 2, max: 5 } as const;
 export const FIRST_MESSAGE_MAX = 600;
 export const MAX_BULLETS = 2;
 export const CLAUDE_TITLE_BUDGET_USD = 0.05;
@@ -135,7 +141,7 @@ export function buildTitlePrompt(input: TitleInput): string {
 
 /**
  * A model's `title` as the store will keep it, or null: a string that, with wrapping quotes and a
- * trailing period dropped and cleaned like a typed title, is 2–9 words and ≤60 characters. Pure.
+ * trailing period dropped and cleaned like a typed title, is 2–5 words and ≤36 characters. Pure.
  */
 export function validateTitle(raw: unknown): string | null {
   if (typeof raw !== "string") return null;
@@ -235,7 +241,22 @@ export interface NameDeps extends TitleDeps {
   settings: () => SessionTitleSettings;
   summary: (path: string) => Promise<SessionSummary | null>;
   input?: (path: string) => Promise<TitleInput>;
+  /** The session's stored title entry right now (a fresh read), for the redo and shorten writes. */
+  stored?: (id: string) => StoredTitle | undefined;
   now?: () => number;
+}
+
+/**
+ * How a session is being named. "sweep": no stored title at all, from its summary line. "button":
+ * no explicit title (may redo an auto one). "shorten": a stored title longer than TITLE_MAX_CHARS
+ * set by the namer, the Overseer or before provenance — never a typed one. "regenerate": an open
+ * session's own button, any title at all (the press is the explicit request).
+ */
+export type NameMode = "button" | "sweep" | "shorten" | "regenerate";
+
+/** May Shorten long titles rename this stored title? Long, and never typed by hand. Pure. */
+export function shortenable(t: StoredTitle | undefined): boolean {
+  return !!t && t.title.length > TITLE_MAX_CHARS && (t.by !== "user" || t.legacy === true);
 }
 
 /** Why the button won't name this session, before any model call, or null. Pure. */
@@ -251,24 +272,40 @@ export function buttonSkip(s: SessionSummary | null): AutoTitleSkip | null {
 export type NameResult = { outcome: "named"; title: string } | { outcome: "would-name" } | { outcome: "skipped"; reason: AutoTitleSkip; detail?: string; backoff?: boolean };
 
 /**
- * Name one session. `mode` "button" may redo an auto title and needs no summary line (then the
- * first 3 user messages are the input); "sweep" names a session that has no stored title at all,
- * from its summary line. The write re-reads the store and is refused when an explicit title
- * appeared meanwhile (writeAutoTitle), which is reported as `explicit`.
+ * Name one session (NameMode). "button", "shorten" and "regenerate" need no summary line (then
+ * the first 3 user messages are the input); "sweep" names from its summary line. The sweep's and
+ * the button's write re-reads the store and is refused when an explicit title appeared meanwhile
+ * (writeAutoTitle); "shorten" and "regenerate" read the stored entry before the call and write
+ * only if it is unchanged at write time (replaceAutoTitle). A refused write reports `explicit`.
  */
-export async function nameSession(path: string, mode: "button" | "sweep", deps: NameDeps, opts: { dryRun?: boolean } = {}): Promise<NameResult> {
+export async function nameSession(path: string, mode: NameMode, deps: NameDeps, opts: { dryRun?: boolean } = {}): Promise<NameResult> {
   if (!existsSync(path)) return { outcome: "skipped", reason: "not-found" };
   const s = await deps.summary(path);
-  const skip = buttonSkip(s);
-  if (skip) return { outcome: "skipped", reason: skip };
-  if (mode === "sweep" && s!.titleBy) return { outcome: "skipped", reason: "explicit", detail: "already named" };
+  if (!s) return { outcome: "skipped", reason: "not-found" };
+  const replacing = mode === "shorten" || mode === "regenerate";
+  // Read when the call starts: the write goes through only over exactly this entry.
+  const seen = replacing ? (deps.stored ?? ((id: string) => readSessionTitleRecords()[id]))(s.id) : undefined;
+  if (mode === "regenerate") {
+    if (s.workerSession || s.overseer || s.projectOverseer) return { outcome: "skipped", reason: "not-listed" };
+  } else if (mode === "shorten") {
+    if (s.workerSession || s.overseer || s.projectOverseer) return { outcome: "skipped", reason: "not-listed" };
+    if (seen?.by === "user" && !seen.legacy) return { outcome: "skipped", reason: "explicit", detail: "typed by hand" };
+    if (!shortenable(seen)) return { outcome: "skipped", reason: "short" };
+  } else {
+    const skip = buttonSkip(s);
+    if (skip) return { outcome: "skipped", reason: skip };
+    if (mode === "sweep" && s.titleBy) return { outcome: "skipped", reason: "explicit", detail: "already named" };
+  }
   const input = await (deps.input ?? readTitleInput)(path);
   if (input.userMessages.length === 0) return { outcome: "skipped", reason: "no-input" };
   if (mode === "sweep" && !input.summaryLine) return { outcome: "skipped", reason: "no-input", detail: "no summary line" };
   if (opts.dryRun) return { outcome: "would-name" };
   const result = await titleFromChain(deps.settings(), buildTitlePrompt(input), deps);
   if ("failure" in result) return { outcome: "skipped", reason: result.failure, detail: result.detail, backoff: result.backoff };
-  if (!writeAutoTitle(s!.id, result.title, { redo: mode === "button", now: deps.now?.() })) return { outcome: "skipped", reason: "explicit" };
+  const written = replacing
+    ? replaceAutoTitle(s.id, result.title, seen, { now: deps.now?.() })
+    : writeAutoTitle(s.id, result.title, { redo: mode === "button", now: deps.now?.() });
+  if (!written) return { outcome: "skipped", reason: "explicit", ...(replacing ? { detail: "the title changed while it was being named" } : {}) };
   return { outcome: "named", title: result.title };
 }
 
@@ -286,15 +323,36 @@ export async function mapLimit<T, R>(items: readonly T[], limit: number, fn: (it
   return out;
 }
 
-/** POST /api/sessions/auto-title: every path, 4 at a time, in request order. */
-export async function autoTitlePaths(paths: readonly (string | null)[], raw: readonly string[], deps: NameDeps, dryRun = false): Promise<AutoTitleOutcome[]> {
+/** POST /api/sessions/auto-title: every path, 4 at a time, in request order. `mode` "regenerate" is its `redo` form. */
+export async function autoTitlePaths(
+  paths: readonly (string | null)[],
+  raw: readonly string[],
+  deps: NameDeps,
+  dryRun = false,
+  mode: "button" | "shorten" | "regenerate" = "button",
+): Promise<AutoTitleOutcome[]> {
   return mapLimit(paths, 4, async (path, i): Promise<AutoTitleOutcome> => {
     const reported = raw[i]!;
     if (!path) return { path: reported, outcome: "skipped", reason: "not-found" };
-    const r = await nameSession(path, "button", deps, { dryRun });
+    const r = await nameSession(path, mode, deps, { dryRun });
     if (r.outcome === "skipped") return { path: reported, outcome: "skipped", reason: r.reason, ...(r.detail ? { detail: r.detail } : {}) };
     return { path: reported, ...r };
   });
+}
+
+/** At most this many sessions per Shorten long titles call; a second press does the rest. */
+export const SHORTEN_MAX_PER_CALL = 200;
+
+/**
+ * Shorten long titles' picks: this host's listed sessions whose stored title is shortenable (long,
+ * and not typed by hand), most recently active first, at most SHORTEN_MAX_PER_CALL. Subagents' own
+ * sessions and Overseer files are left out; archived ones are not. Pure.
+ */
+export function shortenPicks(listed: readonly SessionSummary[], records: Readonly<Record<string, StoredTitle>>): SessionSummary[] {
+  return listed
+    .filter((s) => !s.workerSession && !s.overseer && !s.projectOverseer && shortenable(records[s.id]))
+    .sort((a, b) => b.lastActiveAt.localeCompare(a.lastActiveAt))
+    .slice(0, SHORTEN_MAX_PER_CALL);
 }
 
 // ── The sweep ─────────────────────────────────────────────────────────────────────────────────

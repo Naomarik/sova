@@ -2,7 +2,9 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import type { Duplex } from "node:stream";
 import { getRequestListener } from "@hono/node-server";
 import { refuse } from "../extensions";
+import { DENIED } from "../../shared/mesh-access";
 import { REFUSED_HEADER } from "./hello";
+import { classifyRequest, classifyUpgrade, type Need } from "./access";
 import { judgedPath } from "./paths";
 import { callerNode } from "./gate";
 import type { PeerEntry } from "./peers";
@@ -12,9 +14,12 @@ import type { PeerEntry } from "./peers";
 // StableID (LocalAPI whois of the connection's source address, callerNode in ./gate, which the
 // share ingress's gate uses too) must be a peer in peers.json; membership is re-checked on every
 // request against the current peers.json, so a removed peer loses a kept-alive connection too.
-// Everything else is 403. What passes is dispatched into the same Hono app as the main listener,
-// with the calling peer in `c.env.meshPeer`, so every route answers a peer exactly as it answers
-// the local browser; a peer never reaches /api/mesh/*, /peer/*, /ext/* or the static files.
+// Everything else is 403. What passes is then held to this host's grant to that peer
+// (§mesh.peers/grants, server/mesh/access.ts): a request or upgrade the grant doesn't cover is 403
+// with X-Sova-Mesh: denied ("refused" keeps meaning "not a peer"). What passes both is dispatched
+// into the same Hono app as the main listener, with the calling peer in `c.env.meshPeer`, so every
+// route answers a peer exactly as it answers the local browser; a peer never reaches /api/mesh/*,
+// /peer/*, /ext/* or the static files.
 
 const RETRY_MS = 15_000;
 
@@ -25,6 +30,8 @@ export interface ListenerDeps {
   upgrade: (req: IncomingMessage, socket: Duplex, head: Buffer) => void;
   /** The peer with this StableID, from the current peers.json, or null. */
   peerByNode: (nodeId: string) => PeerEntry | null;
+  /** Whether this peer's grant covers what a request needs (§mesh.peers/grants); absent = always. */
+  allows?: (peer: PeerEntry, need: Need) => boolean;
   /** The addresses to bind: SOVA_PEER_HOST, else this node's tailnet IPs. */
   addresses: () => Promise<string[]>;
   port: number;
@@ -46,6 +53,7 @@ export function peerMayReach(pathname: string): boolean {
 }
 
 const REFUSAL = { error: "not a peer" };
+const DENIAL = { error: "not shared with this host" };
 
 export class PeerListener {
   private servers: Server[] = [];
@@ -55,6 +63,9 @@ export class PeerListener {
   /** Every connection that passed the gate, by the caller's StableID (HTTP keep-alive and
       upgraded sockets alike: an upgrade keeps the same TCP socket). */
   private admitted = new Map<Duplex, string>();
+  /** What each admitted connection was last let through for: its last request's need, or its
+      socket's (an upgrade keeps it for as long as the socket lives). */
+  private admittedFor = new Map<Duplex, Need>();
   private readonly handle: (req: IncomingMessage, res: ServerResponse) => void;
 
   constructor(private readonly deps: ListenerDeps) {
@@ -142,9 +153,19 @@ export class PeerListener {
     const peer = node ? this.deps.peerByNode(node) : null;
     if (peer && !this.admitted.has(req.socket)) {
       this.admitted.set(req.socket, peer.nodeId);
-      req.socket.once("close", () => this.admitted.delete(req.socket));
+      req.socket.once("close", () => {
+        this.admitted.delete(req.socket);
+        this.admittedFor.delete(req.socket);
+      });
     }
     return peer;
+  }
+
+  /** The grant check after identity; records what the connection was let through for. */
+  private granted(req: IncomingMessage, peer: PeerEntry, need: Need): boolean {
+    if (this.deps.allows && !this.deps.allows(peer, need)) return false;
+    this.admittedFor.set(req.socket, need);
+    return true;
   }
 
   /** Drop every admitted connection whose caller is no longer allowed (a peer removed from
@@ -153,6 +174,19 @@ export class PeerListener {
     for (const [socket, nodeId] of this.admitted) {
       if (allowed(nodeId)) continue;
       this.admitted.delete(socket);
+      this.admittedFor.delete(socket);
+      socket.destroy();
+    }
+  }
+
+  /** Drop every admitted connection whose grant no longer covers what it was let through for (a
+      lowered grant): its open sockets and kept-alive connections end now (§mesh.peers/grants). */
+  revokeGrants(allows: (nodeId: string, need: Need) => boolean): void {
+    for (const [socket, need] of this.admittedFor) {
+      const nodeId = this.admitted.get(socket);
+      if (nodeId === undefined || allows(nodeId, need)) continue;
+      this.admitted.delete(socket);
+      this.admittedFor.delete(socket);
       socket.destroy();
     }
   }
@@ -176,6 +210,11 @@ export class PeerListener {
         res.end(JSON.stringify({ error: "Not found" }));
         return;
       }
+      if (!this.granted(req, peer, classifyRequest(req.method ?? "GET", url.pathname).need)) {
+        res.writeHead(403, { "Content-Type": "application/json", [REFUSED_HEADER]: DENIED });
+        res.end(JSON.stringify(DENIAL));
+        return;
+      }
       (req as IncomingMessage & { meshPeer?: PeerEntry }).meshPeer = peer;
       this.handle(req, res);
     });
@@ -193,6 +232,10 @@ export class PeerListener {
       }
       if (url.pathname !== "/ws/chat" && url.pathname !== "/ws/watch") {
         refuse(socket, 404, { error: "Not found" });
+        return;
+      }
+      if (!this.granted(req, peer, classifyUpgrade(url.pathname, url.searchParams).need)) {
+        refuseWith(socket, 403, DENIAL, { [REFUSED_HEADER]: DENIED });
         return;
       }
       this.deps.upgrade(req, socket, head);

@@ -243,6 +243,15 @@ The harnesses:
     shows b's line done with its dest. Screenshots go to
     `~/.cache/mesh-links-transfer-lab-*.png`.
 
+- **m7-grants** (takes the LOCK; no LLM turns; leaves a,b,c paired with no `mesh-access.json`):
+  per-peer grants (§mesh.peers/grants). With no grants file anywhere, a peer reaches everything as
+  before. A grants B `none` from its own page: B's calls to A, hello included, are 403
+  `X-Sova-Mesh: denied` (a stranger stays `refused`), B shows A `hidden` with no session rows, and B's
+  proxy is held to the same grant. C still sees A, and A still sees B. B can't reach
+  `/api/mesh/access`, and a lowered grant cuts B's open socket on A. Per-login sync: A shares only
+  one of two lab API keys with C, so C gets that one alone, and B (which A grants nothing) gets it
+  through C, never the other. Turning the login off keeps C's copy and sends nothing newer.
+
 Front-door Caddyfile essentials, the template for the real one: `lb_policy first`,
 `health_uri /api/health` with 1 s interval/timeout, `lb_try_duration 5s`, `flush_interval -1`,
 `header_up Host {upstream_hostport}` (for `tailscale serve` upstreams), and

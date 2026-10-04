@@ -17,9 +17,11 @@ import { stateRoot } from "../state-root";
 import { bootBuild } from "./build-id";
 import { BatteryReader, buildCommit, ClaudeFinder, cores, deviceType, diskOf, loadAverages, type Machine, machineUptime, memory, modelName, realMachine } from "./details-collect";
 import { DEFAULT_SERVE_PORT, frontDoorOrder, noBrowserIds } from "./front-door";
-import { answered, ownHello, peerLastSeen, PROBE_TIMEOUT_MS, probePeer } from "./hello";
+import { answered, ownHello, peerLastSeen, PROBE_TIMEOUT_MS, probePeer, REFUSED_HEADER } from "./hello";
+import { DENIED } from "../../shared/mesh-access";
 import type { MeshApi } from "./index";
 import { browserAccessSet, nextLabelAt, type PeerEntry, type PeersConfig, selfBrowserAccess } from "./peers";
+import { answerDenied, sharesWith } from "./access";
 
 // Per-host details and rename (types and routes: shared/mesh-details.ts). A host answers for
 // itself on the peer listener; the page's /api/mesh/details gathers every host's answer. While the
@@ -115,6 +117,7 @@ export async function fetchPeerDetails(mesh: Pick<MeshApi, "peerFetch">, p: Peer
     }
     if (!res.ok) {
       await res.body?.cancel();
+      if (res.status === 403 && res.headers.get(REFUSED_HEADER) === DENIED) return { unavailable: "hidden" };
       return res.status === 403 ? { unavailable: "refused" } : { unavailable: "down", error: `answered ${res.status}` };
     }
     const d = (await res.json()) as HostDetails;
@@ -187,7 +190,7 @@ export function mountDetails(app: Hono, mesh: MeshApi, sources: DetailsSources, 
           const probe = await probePeer(p);
           mesh.sawPeer(p.id, answered(probe));
           // Details are outside the protocol hash, so a skewed host is asked too.
-          const got = probe.state === "up" || probe.state === "skewed" ? await peerDetails(p) : { unavailable: probe.state as "down" | "refused" };
+          const got = probe.state === "up" || probe.state === "skewed" ? await peerDetails(p) : { unavailable: probe.state as "down" | "refused" | "hidden" };
           return { probe, got };
         }),
       ),
@@ -254,12 +257,13 @@ export function mountDetails(app: Hono, mesh: MeshApi, sources: DetailsSources, 
     return tell("/api/peer/browser-access", body, to);
   }
 
-  /** POST `body` to `path` on every peer (or just `to`); how each took it. */
+  /** POST `body` to `path` on every peer (or just `to`) this host shares its presence with
+      (§mesh.peers/grants: a peer it doesn't is told nothing); how each took it. */
   function tell(path: string, body: object, to?: string): Promise<HostTold[]> {
     return Promise.all(
       mesh
         .peers()
-        .filter((p) => to === undefined || p.id === to)
+        .filter((p) => (to === undefined || p.id === to) && sharesWith(mesh, p.id, "presence"))
         .map(async (p): Promise<HostTold> => {
           try {
             const res = await mesh.peerFetch(p.id, path, {
@@ -437,6 +441,10 @@ export function mountDetails(app: Hono, mesh: MeshApi, sources: DetailsSources, 
       await res.body?.cancel();
       return c.json({ error: `${peer.label} runs an older build: update it to change this from here` }, 501);
     }
+    if (answerDenied(mesh, peer.id, "admin", res)) {
+      await res.body?.cancel();
+      return c.json({ error: `${peer.label} doesn't let this host change its settings` }, 403);
+    }
     const got = (await res.json().catch(() => null)) as Partial<HostBrowserAccess> | { error?: string } | null;
     if (!res.ok || !got || !("browserAccess" in got) || typeof got.browserAccess !== "boolean") {
       const why = got && "error" in got && typeof got.error === "string" ? got.error : `answered ${res.status}`;
@@ -483,6 +491,10 @@ export function mountDetails(app: Hono, mesh: MeshApi, sources: DetailsSources, 
     if (res.status === 404) {
       await res.body?.cancel();
       return c.json({ error: `${peer.label} runs an older build: update it to rename it from here` }, 501);
+    }
+    if (answerDenied(mesh, peer.id, "admin", res)) {
+      await res.body?.cancel();
+      return c.json({ error: `${peer.label} doesn't let this host rename it` }, 403);
     }
     const got = (await res.json().catch(() => null)) as Partial<HostLabel> | { error?: string } | null;
     if (!res.ok || !got || !("labelAt" in got) || typeof got.labelAt !== "number" || !cleanLabel(got.label)) {

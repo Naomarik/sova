@@ -4,6 +4,7 @@ import { bodyLimit } from "hono/body-limit";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import type { MeshLoginEntry, MeshLogins, SyncCategory, SyncStatus } from "../../shared/protocol";
 import type { MeshApi } from "../mesh";
+import type { MeshCap } from "../../shared/mesh-access";
 import { stateRoot } from "../state-root";
 import { loginKindsPin, parseEntryKey, type EntryKey, type LoginKinds } from "./logins-merge";
 import { ClaudeCredentialStore, PiAuthStore, piRefresher, type CredentialStore } from "./logins-stores";
@@ -11,6 +12,7 @@ import { CredentialSync, type CredentialStatusEntry, type CredentialEntryReply, 
 import { DocSync, type DocManifest, type DocPeer, type DocPushReply, type DocReply } from "./docs";
 import { ExtensionSync, type ExtensionList, type ExtensionPeer } from "./extensions";
 import { extensionsFile, readExtensions, setPeerExtensions, validateExtension } from "../extensions";
+import { answerDenied, sharesLogin, sharesWith } from "../mesh/access";
 
 /**
  * Host-to-host sync, mounted on the mesh. While the mesh is OFF nothing here exists beyond the
@@ -51,12 +53,17 @@ const onPeerListener = (c: Context): boolean => !!(c.env as { meshPeer?: unknown
 const peerCaller = (mesh: MeshApi, c: Context): string | null =>
   c.req.header("x-forwarded-host") ? null : (mesh.requestPeer(c)?.id ?? null);
 
-function peerCall(mesh: MeshApi, id: string) {
+/** The start of a sync error that is a peer's grant, not a failure: that peer keeps the category
+    from this host (§mesh.peers/grants). Status lines count it neither as reached nor as failed. */
+export const DENIED_ERROR = "denied by peer";
+
+function peerCall(mesh: MeshApi, id: string, caps: MeshCap[]) {
   return async <T>(path: string, init?: RequestInit): Promise<T> => {
     const res = await mesh.peerFetch(id, path, { ...init, signal: AbortSignal.timeout(PEER_CALL_TIMEOUT_MS) });
+    const denied = caps.map((cap) => answerDenied(mesh, id, cap, res)).some(Boolean);
     if (!res.ok) {
       await res.body?.cancel();
-      throw new Error(`${path.split("?")[0]}: HTTP ${res.status}`);
+      throw new Error(denied ? `${DENIED_ERROR}: ${path.split("?")[0]}` : `${path.split("?")[0]}: HTTP ${res.status}`);
     }
     return (await res.json()) as T;
   };
@@ -65,7 +72,8 @@ function peerCall(mesh: MeshApi, id: string) {
 const postJson = (body: unknown): RequestInit => ({ method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
 
 function httpDocPeer(mesh: MeshApi, id: string): DocPeer {
-  const call = peerCall(mesh, id);
+  // Settings and themes share one exchange: a peer denies it only when it keeps both from this host.
+  const call = peerCall(mesh, id, ["sync.settings", "sync.themes"]);
   return {
     id,
     manifest: () => call<DocManifest>("/api/peer/sync/manifest"),
@@ -75,7 +83,7 @@ function httpDocPeer(mesh: MeshApi, id: string): DocPeer {
 }
 
 function httpExtensionPeer(mesh: MeshApi, id: string): ExtensionPeer {
-  const call = peerCall(mesh, id);
+  const call = peerCall(mesh, id, ["sync.extensions"]);
   return {
     id,
     extensions: () => call<ExtensionList>("/api/peer/sync/extensions"),
@@ -84,7 +92,7 @@ function httpExtensionPeer(mesh: MeshApi, id: string): ExtensionPeer {
 }
 
 function httpPeer(mesh: MeshApi, id: string): SyncPeer {
-  const call = peerCall(mesh, id);
+  const call = peerCall(mesh, id, ["sync.logins"]);
   return {
     id,
     manifest: () => call<CredentialManifest>("/api/peer/credentials/manifest"),
@@ -113,6 +121,11 @@ export function mountSync(app: Hono, mesh: MeshApi, paths: SyncPaths = defaultPa
   const loginsOn = () => mesh.settings().sync.logins;
   const loginKinds = (): LoginKinds => loginKindsPin() ?? (mesh.settings().loginKinds === "api-keys" ? "api-keys" : "all");
   const categoryOn = (c: SyncCategory) => mesh.settings().sync[c];
+  // This host's grant to each peer (§mesh.peers/grants): who each exchange runs with at all, and
+  // within it, which logins and which document categories. Without mesh-access.json, everyone and everything.
+  const loginPeers = () => mesh.peers().filter((p) => sharesWith(mesh, p.id, "sync.logins"));
+  const docPeers = () => mesh.peers().filter((p) => sharesWith(mesh, p.id, "sync.settings") || sharesWith(mesh, p.id, "sync.themes"));
+  const extensionPeers = () => mesh.peers().filter((p) => sharesWith(mesh, p.id, "sync.extensions"));
   let reconcile: NodeJS.Timeout | undefined;
   const syncEverything = () => {
     void rt.credentials?.syncAll().catch((err) => console.error("[sync] logins:", err));
@@ -130,10 +143,11 @@ export function mountSync(app: Hono, mesh: MeshApi, paths: SyncPaths = defaultPa
       hostId: mesh.self().id,
       stores,
       sidecarPath: join(paths.stateDir(), "login-sync.json"),
-      peers: () => mesh.peers().map((p) => httpPeer(mesh, p.id)),
+      peers: () => loginPeers().map((p) => httpPeer(mesh, p.id)),
       refreshers: { pi: piRefresher(authPath) },
       enabled: loginsOn,
       loginKinds,
+      shares: (peerId, key) => sharesWith(mesh, peerId, "sync.logins") && sharesLogin(mesh, peerId, key),
     });
     rt.credentials = sync;
     void sync
@@ -146,8 +160,9 @@ export function mountSync(app: Hono, mesh: MeshApi, paths: SyncPaths = defaultPa
       agentDir: paths.agentDir(),
       stateDir: paths.stateDir(),
       sidecarPath: join(paths.stateDir(), "doc-sync.json"),
-      peers: () => mesh.peers().map((p) => httpDocPeer(mesh, p.id)),
+      peers: () => docPeers().map((p) => httpDocPeer(mesh, p.id)),
       categoryEnabled: categoryOn,
+      shares: (peerId, c) => sharesWith(mesh, peerId, c === "settings" ? "sync.settings" : "sync.themes"),
     });
     rt.docs = docs;
     void docs
@@ -160,8 +175,9 @@ export function mountSync(app: Hono, mesh: MeshApi, paths: SyncPaths = defaultPa
       file: join(paths.stateDir(), "mesh-extensions.json"),
       local: readExtensions,
       validate: validateExtension,
-      peers: () => mesh.peers().map((p) => httpExtensionPeer(mesh, p.id)),
-      peerIds: () => mesh.peers().map((p) => p.id),
+      peers: () => extensionPeers().map((p) => httpExtensionPeer(mesh, p.id)),
+      // A peer this host doesn't share extensions with has none listed here either.
+      peerIds: () => extensionPeers().map((p) => p.id),
       enabled: () => categoryOn("extensions"),
     });
     rt.extensions = extensions;
@@ -187,10 +203,16 @@ export function mountSync(app: Hono, mesh: MeshApi, paths: SyncPaths = defaultPa
   mesh.onMeshStop(stop);
   mesh.onPeerUp((id) => {
     if (!mesh.peers().some((p) => p.id === id)) return;
-    if (rt.credentials) void rt.credentials.syncWith(httpPeer(mesh, id));
-    if (rt.docs) void rt.docs.syncWith(httpDocPeer(mesh, id));
-    if (rt.extensions) void rt.extensions.syncWith(httpExtensionPeer(mesh, id));
+    if (rt.credentials && loginPeers().some((p) => p.id === id)) void rt.credentials.syncWith(httpPeer(mesh, id));
+    if (rt.docs && docPeers().some((p) => p.id === id)) void rt.docs.syncWith(httpDocPeer(mesh, id));
+    if (rt.extensions && extensionPeers().some((p) => p.id === id)) void rt.extensions.syncWith(httpExtensionPeer(mesh, id));
   });
+  // The logins the Mesh page's per-login switches list: what this host syncs, never a secret.
+  mesh.onAccessLogins?.(() =>
+    (rt.credentials?.status().entries ?? [])
+      .filter((e) => e.store === "pi")
+      .map((e) => ({ key: e.key, provider: e.provider, ...(e.kind ? { kind: e.kind } : {}) })),
+  );
   // A switch turned back on takes effect at once (off is read at every entry point anyway).
   mesh.onSettingsChange(() => {
     rt.docs?.observe();
@@ -206,12 +228,14 @@ export function mountSync(app: Hono, mesh: MeshApi, paths: SyncPaths = defaultPa
 
   const notFound = (c: Context) => c.json({ error: "Not found" }, 404);
   app.get("/api/peer/credentials/manifest", (c) => {
-    if (!peerCaller(mesh, c) || !rt.credentials) return notFound(c);
-    return c.json(rt.credentials.manifest());
+    const from = peerCaller(mesh, c);
+    if (!from || !rt.credentials) return notFound(c);
+    return c.json(rt.credentials.manifest(from));
   });
   app.get("/api/peer/credentials/entry", async (c) => {
-    if (!peerCaller(mesh, c) || !rt.credentials) return notFound(c);
-    const got = await rt.credentials.entry(c.req.query("key") ?? "");
+    const from = peerCaller(mesh, c);
+    if (!from || !rt.credentials) return notFound(c);
+    const got = await rt.credentials.entry(c.req.query("key") ?? "", from);
     return got ? c.json(got) : notFound(c);
   });
   app.post("/api/peer/credentials/push", bodyLimit({ maxSize: 256 * 1024, onError: (c) => c.json({ error: "Too large" }, 413) }), async (c) => {
@@ -247,12 +271,14 @@ export function mountSync(app: Hono, mesh: MeshApi, paths: SyncPaths = defaultPa
     return c.json({ ok: true as const });
   });
   app.get("/api/peer/sync/manifest", (c) => {
-    if (!peerCaller(mesh, c) || !rt.docs) return notFound(c);
-    return c.json(rt.docs.manifest());
+    const from = peerCaller(mesh, c);
+    if (!from || !rt.docs) return notFound(c);
+    return c.json(rt.docs.manifest(from));
   });
   app.get("/api/peer/sync/doc", (c) => {
-    if (!peerCaller(mesh, c) || !rt.docs) return notFound(c);
-    const got = rt.docs.doc(c.req.query("key") ?? "");
+    const from = peerCaller(mesh, c);
+    if (!from || !rt.docs) return notFound(c);
+    const got = rt.docs.doc(c.req.query("key") ?? "", from);
     return got ? c.json(got) : notFound(c);
   });
   app.post("/api/peer/sync/push", bodyLimit({ maxSize: 4 * 1024 * 1024, onError: (c) => c.json({ error: "Too large" }, 413) }), async (c) => {
@@ -272,7 +298,7 @@ export function mountSync(app: Hono, mesh: MeshApi, paths: SyncPaths = defaultPa
   });
   app.post("/api/peer/sync/extensions", bodyLimit({ maxSize: 256 * 1024, onError: (c) => c.json({ error: "Too large" }, 413) }), async (c) => {
     const from = peerCaller(mesh, c);
-    if (!from || !rt.extensions) return notFound(c);
+    if (!from || !rt.extensions || !sharesWith(mesh, from, "sync.extensions")) return notFound(c);
     let body: unknown;
     try {
       body = await c.req.json();
@@ -298,12 +324,13 @@ export function docStatus(category: "settings" | "themes", docs: DocSync | null,
   return peerStatusLine(category, enabled, docs.peers());
 }
 
-function peerStatusLine(category: SyncCategory, enabled: boolean, peerStates: Record<string, { state: string; at: number }>): SyncStatus {
+function peerStatusLine(category: SyncCategory, enabled: boolean, peerStates: Record<string, { state: string; at: number; error?: string }>): SyncStatus {
   const peers = Object.entries(peerStates);
   const ok = peers.filter(([, s]) => s.state === "ok");
   const lastAt = ok.length ? Math.max(...ok.map(([, s]) => s.at)) : null;
   const skewed = peers.filter(([, s]) => s.state === "clock-skew").map(([id]) => id);
-  const failed = peers.filter(([, s]) => s.state === "error").map(([id]) => id);
+  // A peer that keeps this category from this host (§mesh.peers/grants) is not a failure.
+  const failed = peers.filter(([, s]) => s.state === "error" && !(s as { error?: string }).error?.startsWith(DENIED_ERROR)).map(([id]) => id);
   if (skewed.length) return { category, enabled, state: "error", lastAt, error: `clock differs by over 60s from ${skewed.join(", ")}` };
   if (!ok.length && failed.length) return { category, enabled, state: "error", lastAt, error: `no peer reachable (${failed.join(", ")})` };
   return { category, enabled, state: ok.length ? "ok" : "pending", lastAt };

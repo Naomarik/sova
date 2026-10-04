@@ -63,7 +63,10 @@ const sets = [
 if (runtime === "node") {
   let failed = false;
   for (const s of sets) {
-    const run = spawnSync("pnpm", ["exec", "tsx", ...s.extra, "--import", PRELOAD, ...flags, "--test", ...s.files], { cwd: ROOT, stdio: "inherit" });
+    // --test-force-exit: a file whose tests all reported but that leaves a handle open (a server,
+    // a timer) ends instead of hanging the whole run; its failures still fail it.
+    const force = flags.includes("--test-force-exit") ? [] : ["--test-force-exit"];
+    const run = spawnSync("pnpm", ["exec", "tsx", ...s.extra, "--import", PRELOAD, ...force, ...flags, "--test", ...s.files], { cwd: ROOT, stdio: "inherit" });
     if (run.status !== 0) failed = true;
   }
   process.exit(failed ? 1 : 0);
@@ -71,6 +74,7 @@ if (runtime === "node") {
 
 // ─── Bun ────────────────────────────────────────────────────────────────────────────────────────
 const bun = process.env.SOVA_BUN || "bun";
+const FILE_LIMIT_MS = Number(process.env.TEST_FILE_LIMIT_MS) || 300_000;
 const bunFlags = [...["--timeout=60000"].filter((d) => !flags.some((f) => f.split("=")[0] === d.split("=")[0])), ...flags];
 let misePaths = "";
 try {
@@ -108,10 +112,17 @@ function runFile(file, extra) {
   return new Promise((resolve) => {
     const child = spawn(bun, ["test", "--preload", PRELOAD, ...extra, ...bunFlags, target], { cwd: ROOT, env, stdio: ["ignore", "pipe", "pipe"] });
     let out = "";
+    // A file still running after FILE_LIMIT_MS is stuck (a hang, or tests done with a handle left
+    // open): killed and reported as a failure, so one file never stalls the run.
+    const limit = setTimeout(() => {
+      out += `run-tests: ${file} still running after ${FILE_LIMIT_MS / 1000} s; killed\n`;
+      child.kill("SIGKILL");
+    }, FILE_LIMIT_MS);
     child.stdout.on("data", (d) => (out += d));
     child.stderr.on("data", (d) => (out += d));
     child.on("error", (err) => (out += `run-tests: could not start ${bun}: ${err.message}\n`));
     child.on("close", (code) => {
+      clearTimeout(limit);
       fs.rmSync(root, { recursive: true, force: true });
       const count = (what) => Number(out.match(new RegExp(`^\\s*(\\d+) ${what}$`, "m"))?.[1] ?? 0);
       resolve({ file, code: code ?? 1, out, pass: count("pass"), fail: count("fail"), skip: count("skip") });

@@ -9,13 +9,13 @@ import {
   closureOf,
   DefinitionError,
   envPart,
+  isDeployVerb,
   isVerb,
   ordered,
   parseDefinition,
   portsFor,
   READ_VERBS,
   render,
-  RESERVED_VERBS,
   scratchSlots as scratchSlotsOf,
   selectorsProblem,
   serviceOrder,
@@ -375,6 +375,8 @@ export class ProjectEngine {
   private sharedChain = new Map<string, Promise<unknown>>();
   /** The conformance runner (server/project-services/conform.ts), wired at startup. */
   conformer: ((body: unknown, caller: Caller) => Promise<VerbResult>) | null = null;
+  /** The deploy verbs (server/project-services/deploy.ts), wired at startup. */
+  deployer: ((verb: string, body: unknown, caller: Caller, opts: { signal?: AbortSignal }) => Promise<VerbResult>) | null = null;
 
   constructor(deps: EngineDeps) {
     this.driver = deps.driver;
@@ -450,10 +452,11 @@ export class ProjectEngine {
     const run: Run = { verb: (isVerb(verb) ? verb : "status") as AnyVerb, caller, req: {}, project: null, rec: null, def: null, defError: null, defHash: null, approved: false, steps: [], extra: {}, ...(opts.signal ? { signal: opts.signal } : {}) };
     let release: (() => void) | null = null;
     if (verb === "conform" && this.conformer) return this.conformer(body, caller);
+    if (isDeployVerb(verb) && this.deployer) return this.deployer(verb, body, caller, opts);
     try {
       if (!isVerb(verb)) throw new VerbFailure("invalid-request", `unknown verb "${verb}"`);
       run.req = parseRequest(body);
-      if ((RESERVED_VERBS as readonly string[]).includes(verb)) throw new VerbFailure("unsupported", `${verb} is reserved and not supported yet`);
+      if (isDeployVerb(verb)) throw new VerbFailure("unsupported", `${verb} runs through the deployer, which this engine has not got`);
       await this.resolveTarget(run);
       if (run.verb === "teardown" && !run.rec) return await this.result(run);
       this.authorize(run);

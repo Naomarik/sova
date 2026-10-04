@@ -2,7 +2,7 @@ import type { ExtensionAPI, ToolDefinition } from "@earendil-works/pi-coding-age
 import { execFile } from "node:child_process";
 import { realpathSync } from "node:fs";
 import { resolve } from "node:path";
-import { exitOf, RESERVED_VERBS, VERBS, type VerbResult } from "../../shared/project-contract";
+import { DEPLOY_VERBS, exitOf, VERBS, type VerbResult } from "../../shared/project-contract";
 import { redactingTool, serverRedactor, type Redactor } from "../overseer-redact";
 import { projectRootOf } from "../project-root";
 import { worktreesOf } from "../worktrees-state";
@@ -21,7 +21,7 @@ type Tool = ToolDefinition<any, any>;
 const PARAMS = {
   type: "object",
   properties: {
-    verb: { type: "string", enum: [...VERBS, ...RESERVED_VERBS], description: "The verb." },
+    verb: { type: "string", enum: [...VERBS, ...DEPLOY_VERBS], description: "The verb." },
     project: { type: "string", description: "The project: an absolute path inside it (default: this session's project)." },
     instance: { type: "string", description: "An instance id (from status)." },
     checkout: { type: "string", description: "create/up: an existing worktree (absolute path) to run as an instance." },
@@ -47,7 +47,7 @@ const OVERSEER_PARAMS = {
   ...PARAMS,
   properties: {
     ...PARAMS.properties,
-    verb: { type: "string", enum: [...VERBS, ...RESERVED_VERBS, "onboard"], description: "The verb." },
+    verb: { type: "string", enum: [...VERBS, ...DEPLOY_VERBS, "onboard"], description: "The verb." },
     why: { type: "string", description: "onboard: why the playbook runs now (one line, for the operator and the playbook)." },
   },
 } as const;

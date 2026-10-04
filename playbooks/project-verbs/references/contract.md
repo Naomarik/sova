@@ -24,7 +24,7 @@ ports and env in declaration order.
 | `hooks` | `probe` (`{run, timeout?}`, a step): conformance calls `<run> write <token>` and `<run> read <token>` (exit 0: the token is there) |
 | `test` | `{run, requires?, timeout?, smoke}`, below |
 | `share` | `{endpoints, maxDays?, allow?}`, below: what a running copy may share as a preview link. Absent: never shared. Hashed |
-| `deploy` | reserved: accepted, unused |
+| `deploy` | `{targets}`, below: how the project ships. The Project deploy playbook writes it, never this one; keep it byte for byte as you found it. Outside this hash, under its own (`deployHash`) |
 
 ## A step (`setup`, a service's `build`, `hooks.probe`)
 | key | value |
@@ -77,6 +77,23 @@ A project with any `sensitive` data resource is never shared, whatever `share` s
 - `path` (default `/`): where on that port a person lands, starting with `/`, at most 200 characters, no spaces or backslashes. The home page, never an API, health or readiness route: `ready.path` is for Sova's probe, `open.path` is for a person.
 Sova's Branches tab offers **Open** on each running copy (`http://<host>:<its port><path>`, in a new tab), and conformance (suite 4) checks in scratch copy A that a `GET` of the entry answers below 500, naming its content type in the `open` check's detail (`web.http (port 41010): GET /home answered 200 (text/html; charset=utf-8)`; a confined run says `GET /home inside the run's namespace answered …`). It exposes nothing a copy doesn't already listen on, so it is outside the approval hash.
 
+## `deploy`
+Written by the Project deploy playbook (`playbooks/project-deploy`) from the operator's answers; this playbook only keeps it. `targets` is `{name: target}` in declaration order, 1 to 10, each:
+
+| key | value |
+|---|---|
+| `about` | what the target is, a sentence ≤ 200 characters, no template |
+| `branch` | the branch a commit must be on to ship here (default: the main checkout's branch) |
+| `requires` | `{tests}` (`tests`): `smoke`, `full` or `none`, what must pass at plan |
+| `credentials` | `[{name, kind, check}]` (`name`, `kind`, `check`): `kind` `env` (a host variable's value, never in the repo), `ssh` or `tool-login` (the tool's own store); `check` an argv whose exit 0 at plan says the credential works |
+| `plan` | read-only steps run at plan (a dry run) |
+| `build` | steps run before `steps` |
+| `steps` | `[{id, run, timeout?}]` (`id`, `run`, `timeout`, default 600 s): argv run in order in a fresh checkout of the commit, at least one |
+| `verify` | `{http, expect?, timeout?}` (`http`, `expect`, `timeout`): a URL answered with `expect` (default 200) after the steps |
+| `rollback` | `{steps}`, `"redeploy-previous"` or `{none}` (`none`: the reason it can't be undone) |
+
+Deploy templates read `${host.<NAME>}`, `${commit}`, `${target}`, `${checkout}` and `${branch}` only.
+
 ## Templates
 `${slot}`, `${instance}`, `${project}`, `${checkout}`, `${main}` (the main checkout), `${branch}`, `${data}` (the instance's data dir), `${data.<resource>}`, `${ports.<service>.<port>}`, `${host.<NAME>}`; `$$` is a literal `$`. Every process and hook also gets `SOVA_V=1`, `SOVA_PROJECT`, `SOVA_INSTANCE`, `SOVA_SLOT`, `SOVA_CHECKOUT`, `SOVA_MAIN`, `SOVA_BRANCH`, `SOVA_DATA`, `SOVA_PORT_<SERVICE>_<PORT>` for every port of the instance and `SOVA_PORT_<PORT>` for its own; a hook also `SOVA_VERB`, `SOVA_STEP`, `SOVA_OUT`; a test run also `SOVA_TEST_SELECT`. `<SERVICE>` and `<PORT>` are upper case with anything else `_`.
 
@@ -104,6 +121,10 @@ Approval covers the whole parsed definition (a data resource's `sensitive` and `
 | `hook-failed` | 1 | a setup step, build, data hook or probe failed |
 | `tests-failed` | 1 | the test run did not pass |
 | `busy` | 4 | another verb holds the instance's lock: wait and retry |
+| `deploy-refused` | 2 | a deploy plan refused for good: the commit is not on the target's branch, not pushed, or a credential check failed |
+| `needs-override` | 2 | a deploy plan the operator may let through with a typed reason: required tests failed or did not run, or main's tree is dirty |
+| `deploy-failed` | 1 | a deploy step failed |
+| `verify-failed` | 1 | the deploy ran, and its `verify` did not answer as expected |
 
 ## Toolchains
 - mise shims (`mise.toml`, `.mise.toml`, `.tool-versions`) refuse an untrusted checkout: give each service `"MISE_TRUSTED_CONFIG_PATHS": "${checkout}"` in `env`. Setup steps, hooks, builds and the test run take no `env`: run them through a `.sova/bin/` script that exports `MISE_TRUSTED_CONFIG_PATHS="$SOVA_CHECKOUT"` first.

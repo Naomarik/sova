@@ -4530,7 +4530,8 @@
       ],
       "requires": [
         "§app.overseer/hosting",
-        "§app.organizations/workspace-repo"
+        "§app.organizations/workspace-repo",
+        "§chat/images"
       ]
     },
     "§app.project-overseer/tools": {

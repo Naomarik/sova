@@ -3372,9 +3372,11 @@ a.group-option { color: inherit; text-decoration: none; }
   align-items: center;
   gap: var(--space-1);
   flex: none;
+  justify-content: center;
   margin-left: auto;
+  min-width: var(--tap-min);
   min-height: var(--control-sm);
-  padding: 0 var(--space-1);
+  padding: 0 var(--space-2);
   border: 0;
   border-radius: var(--r-md);
   background: transparent;

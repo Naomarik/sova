@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { LlmInflight, LlmTokens } from "../../shared/protocol";
-import { denseCount, sameInflight, tokenVelocityView, VELOCITY_SCALE_FLOOR, velocityChart, velocityPitch } from "./llm-inflight";
+import { columnAtX, denseCount, sameInflight, tokenVelocityView, VELOCITY_SCALE_FLOOR, velocityChart, velocityColumnAt, velocityPitch, velocityScrubCard } from "./llm-inflight";
 
 const complete = (count: number): LlmInflight => ({ count, approximate: 0, partial: false, gaps: [] });
 
@@ -199,4 +199,99 @@ test("malformed slots count as nothing", () => {
   const v = tokenVelocityView(withTokens(t), at(10));
   assert.deepEqual(v.perMinute, [20, 100 / 30]);
   assert.deepEqual(v.series.slice(57), [200, 0, 0]);
+});
+
+// ---------------------------------------------------------------------------
+// The scrub card (§app.insights/velocity-scrub)
+// ---------------------------------------------------------------------------
+
+test("velocityColumnAt: a column's span, rate, tokens and comparison, read from the view the chart draws", () => {
+  // Slot 1001 is the current one: the Agents row's newest column is slots 1000 and 1001.
+  const t = ring(1001, { 0: 400, 1: 600, 2: 3000, 3: 1000, 58: 500, 59: 700 });
+  const v = tokenVelocityView(withTokens(t), at(1001));
+  const newest = velocityColumnAt(v, 2, 29)!;
+  assert.deepEqual([newest.from, newest.to], [1000 * B, 1002 * B], "the current slot and the one before");
+  assert.equal(newest.hollow, true, "the newest minute is the hollow one");
+  assert.equal(newest.perMinute, 1000);
+  assert.equal(newest.tokens, 1000);
+  const prev = velocityColumnAt(v, 2, 28)!;
+  assert.equal(prev.hollow, false);
+  assert.equal(prev.tokens, 4000, "slots 2 and 3 back");
+  assert.equal(prev.perMinute, 4000);
+  assert.equal(prev.vsMean, 4000 / v.mean30);
+  const oldest = velocityColumnAt(v, 2, 0)!;
+  assert.deepEqual([oldest.from, oldest.to], [942 * B, 944 * B], "the ring's oldest two slots");
+  assert.equal(oldest.tokens, 1200);
+  // The chart's own columns come from the same series: the reading agrees with the drawing.
+  const drawn = velocityChart(v, 2, 18).columns.map((c) => c.index);
+  for (let i = 0; i < 30; i++) assert.equal(velocityColumnAt(v, 2, i)!.tokens > 0, drawn.includes(i), `column ${i}`);
+  // The phone's two-minute columns read four slots each.
+  const two = velocityColumnAt(v, 4, 14)!;
+  assert.deepEqual([two.from, two.to], [998 * B, 1002 * B]);
+  assert.equal(two.tokens, 400 + 600 + 3000 + 1000);
+  assert.equal(two.perMinute, 2500);
+});
+
+test("velocityColumnAt: off the chart, unknown and empty", () => {
+  const v = tokenVelocityView(withTokens(ring(10, { 0: 100 })), at(10));
+  for (const i of [-1, 30, 1.5, Number.NaN]) assert.equal(velocityColumnAt(v, 2, i), null, `${i}`);
+  assert.equal(velocityColumnAt(tokenVelocityView(null, at(10)), 2, 5), null, "nothing scrubs while unknown");
+  const empty = tokenVelocityView(withTokens(ring(10, {})), at(10));
+  const c = velocityColumnAt(empty, 2, 3)!;
+  assert.deepEqual([c.tokens, c.perMinute, c.vsMean], [0, 0, null], "no mean to compare with");
+  assert.equal(velocityScrubCard(c).caption, "No output");
+});
+
+test("velocityColumnAt: partial is a floor; the window slides at a slot boundary", () => {
+  const t = ring(1001, { 0: 300, 2: 900 }, true);
+  const v = tokenVelocityView(withTokens(t), at(1001));
+  assert.equal(velocityColumnAt(v, 2, 28)!.partial, true);
+  // One slot later the same ring has slid a slot left: the old newest column straddles 28 and 29.
+  const later = tokenVelocityView(withTokens(t), at(1002));
+  const c29 = velocityColumnAt(later, 2, 29)!;
+  assert.deepEqual([c29.from, c29.to], [1001 * B, 1003 * B]);
+  assert.equal(c29.tokens, 300, "slot 1001 is now the older half of the newest column");
+  const c28 = velocityColumnAt(later, 2, 28)!;
+  assert.deepEqual([c28.from, c28.to], [999 * B, 1001 * B]);
+  assert.equal(c28.tokens, 900);
+  // Just before and just after the boundary, the newest column's span moves by exactly one slot.
+  const before = velocityColumnAt(tokenVelocityView(withTokens(t), 1002 * B - 1), 2, 29)!;
+  const after = velocityColumnAt(tokenVelocityView(withTokens(t), 1002 * B), 2, 29)!;
+  assert.equal(after.from - before.from, B);
+});
+
+test("velocityScrubCard: the span on a 24-hour clock, the figure, at least while partial, and the caption", () => {
+  const minute = (from: number, extra: Partial<Parameters<typeof velocityScrubCard>[0]> = {}) =>
+    velocityScrubCard({ from, to: from + 60_000, perMinute: 38_000, tokens: 38_000, hollow: false, vsMean: 3.14, partial: false, ...extra });
+  const c = minute(Date.UTC(2026, 9, 5, 14, 6));
+  assert.equal(c.figure, "38k");
+  assert.equal(c.atLeast, false);
+  assert.equal(c.caption, "3.1× the 30-min average");
+  assert.match(c.span, /^\d\d:\d\d–\d\d:\d\d$/, "whole minutes: no seconds");
+  const half = minute(Date.UTC(2026, 9, 5, 14, 6, 30));
+  assert.match(half.span, /^\d\d:\d\d:30–\d\d:\d\d:30$/, "a column on the half minute says so");
+  if (new Date(0).getTimezoneOffset() === 0) {
+    // `pnpm test` runs on Bun with TZ=UTC: the exact strings.
+    assert.equal(c.span, "14:06–14:07");
+    assert.equal(minute(Date.UTC(2026, 9, 5, 23, 59)).span, "23:59–00:00", "a 24-hour clock");
+    assert.equal(half.span, "14:06:30–14:07:30");
+  }
+  assert.equal(minute(0, { partial: true }).atLeast, true);
+  assert.equal(minute(0, { hollow: true }).span, "Now");
+  assert.equal(minute(0, { hollow: true }).caption, "Still landing — replies in progress");
+  assert.equal(minute(0, { tokens: 0, perMinute: 0, vsMean: 0 }).caption, "No output");
+  assert.equal(minute(0, { vsMean: 0.04 }).caption, "<0.1× the 30-min average", "never a 0.0×");
+  assert.equal(minute(0, { vsMean: 0.5 }).caption, "0.5× the 30-min average");
+});
+
+test("columnAtX: the pitch's column, clamped to the chart; null with no chart", () => {
+  assert.equal(columnAtX(0, 6, 30), 0);
+  assert.equal(columnAtX(5.9, 6, 30), 0);
+  assert.equal(columnAtX(6, 6, 30), 1);
+  assert.equal(columnAtX(179, 6, 30), 29);
+  assert.equal(columnAtX(200, 6, 30), 29, "the leftover pixels and the 30m label pick the newest");
+  assert.equal(columnAtX(-4, 6, 30), 0);
+  assert.equal(columnAtX(10, 0, 30), null);
+  assert.equal(columnAtX(10, 6, 0), null);
+  assert.equal(columnAtX(Number.NaN, 6, 30), null);
 });

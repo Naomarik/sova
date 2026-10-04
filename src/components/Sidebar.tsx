@@ -80,7 +80,19 @@ import {
 import { folderActive, folderOpen, folderOpenKey, readFolderOpenRaw, storedFolderOpen, writeFolderOpenRaw } from "../lib/folder-open";
 import { groupOpen as groupOpenRule, groupsRegionOpen as groupsRegionOpenRule } from "../lib/group-open";
 import { sessionWorking } from "../lib/workers";
-import { tokenVelocityView, type TokenVelocityView, velocityChart, velocityPitch } from "../lib/llm-inflight";
+import {
+  columnAtX,
+  tokenVelocityView,
+  type TokenVelocityView,
+  VELOCITY_SLOTS,
+  velocityChart,
+  velocityColumnAt,
+  type VelocityColumnReading,
+  velocityPitch,
+  velocityScrubCard,
+} from "../lib/llm-inflight";
+import { FLOAT_GAP_MOUSE, FLOAT_GAP_TOUCH, floatAbove } from "../lib/float-card";
+import { createHoldGesture } from "../lib/hold-select";
 import { sentences, workNow, workNowView, type WorkNowView, type WorkPeer } from "../lib/work-now";
 import { providerWait, watchProviderWaits } from "../lib/provider-waiting";
 import { waitingSentence } from "../../shared/provider-limits";
@@ -1107,8 +1119,10 @@ function AgentsGlance(props: { view: WorkNowView }) {
  * line behind the columns. `group` 2: 30 one-minute columns (the Agents row, `width` omitted: as
  * wide as its box allows at one whole-pixel pitch, from its left edge); 4: 15 two-minute columns (the
  * phone bar, a fixed `width`). Never animated, no gradient; its numbers are the row's sentence.
+ * `scrub`, the column the Agents row's scrub picked (§app.insights/velocity-scrub): drawn in full
+ * ink with the rest dimmed, and a 1px cursor line through its centre; absent or null, no change.
  */
-function VelocityChart(props: { view: TokenVelocityView; group: 2 | 4; height: number; width?: number }) {
+function VelocityChart(props: { view: TokenVelocityView; group: 2 | 4; height: number; width?: number; scrub?: number | null }) {
   const chart = createMemo(() => velocityChart(props.view, props.group, props.height));
   /** The box's width, for a chart with no fixed one: measured, so every column gets the same pitch. */
   const [room, setRoom] = createSignal(0);
@@ -1120,8 +1134,17 @@ function VelocityChart(props: { view: TokenVelocityView; group: 2 | 4; height: n
     onCleanup(() => ro.disconnect());
   });
   const geo = createMemo(() => velocityPitch(props.width ?? room(), chart().count));
+  const picked = () => (props.scrub ?? null) !== null;
   const svg = () => (
-    <svg class="velocity-chart" width={geo().width} height={props.height} viewBox={`0 0 ${geo().width} ${props.height}`} shape-rendering="crispEdges" aria-hidden="true">
+    <svg
+      class="velocity-chart"
+      classList={{ "velocity-chart-picking": picked() }}
+      width={geo().width}
+      height={props.height}
+      viewBox={`0 0 ${geo().width} ${props.height}`}
+      shape-rendering="crispEdges"
+      aria-hidden="true"
+    >
       <rect class="velocity-baseline" x="0" y={props.height - 1} width={geo().width} height="1" />
       {/* Behind the columns: a reference they stand in front of, never one of their tops. */}
       <Show when={chart().meanY !== null}>
@@ -1133,13 +1156,18 @@ function VelocityChart(props: { view: TokenVelocityView; group: 2 | 4; height: n
           const x = () => c.index * geo().pitch;
           const y = props.height - 1 - c.height;
           // The hollow one is a 1px outline inside the same box, its stroke on the pixel centres.
+          const on = () => props.scrub === c.index;
           return c.hollow ? (
-            <rect class="velocity-col-hollow" x={x() + 0.5} y={y + 0.5} width={w() - 1} height={c.height - 1} />
+            <rect class="velocity-col-hollow" classList={{ "velocity-col-picked": on() }} x={x() + 0.5} y={y + 0.5} width={w() - 1} height={c.height - 1} />
           ) : (
-            <rect class="velocity-col" x={x()} y={y} width={w()} height={c.height} />
+            <rect class="velocity-col" classList={{ "velocity-col-picked": on() }} x={x()} y={y} width={w()} height={c.height} />
           );
         }}
       </For>
+      {/* The cursor: 1px on whole pixels through the picked column's centre, above the baseline. */}
+      <Show when={picked()}>
+        <rect class="velocity-cursor" x={props.scrub! * geo().pitch + Math.floor((geo().pitch - geo().gap) / 2)} y="0" width="1" height={props.height - 1} />
+      </Show>
     </svg>
   );
   return props.width !== undefined ? (
@@ -1148,6 +1176,45 @@ function VelocityChart(props: { view: TokenVelocityView; group: 2 | 4; height: n
     <span ref={box} class="velocity-fit">
       {svg()}
     </span>
+  );
+}
+
+/**
+ * The scrub's readout (§app.insights/velocity-scrub): one column's span, rate and comparison in
+ * the drag ghost's floating card with a neutral edge, always above the pointer (`floatAbove`),
+ * never taking it. `aria-hidden`: the row's own name carries the figures in words.
+ */
+function VelocityScrubCard(props: { reading: VelocityColumnReading; x: number; y: number; touch: boolean }) {
+  let el: HTMLDivElement | undefined;
+  const card = createMemo(() => velocityScrubCard(props.reading));
+  /** Its own size, measured once its words are in: offsetWidth ignores the lift's scale. */
+  const [size, setSize] = createSignal({ width: 0, height: 0 });
+  createEffect(() => {
+    card();
+    if (el) setSize({ width: el.offsetWidth, height: el.offsetHeight });
+  });
+  const at = createMemo(() =>
+    floatAbove({ x: props.x, y: props.y }, size(), { width: innerWidth, height: innerHeight }, props.touch ? FLOAT_GAP_TOUCH : FLOAT_GAP_MOUSE),
+  );
+  return (
+    <Portal>
+      <div
+        ref={el}
+        class="velocity-scrub"
+        classList={{ "velocity-scrub-below": at().y > props.y }}
+        style={{ transform: `translate3d(${at().x}px, ${at().y}px, 0)` }}
+        aria-hidden="true"
+      >
+        <div class="float-card float-card-neutral velocity-scrub-card">
+          <span class="velocity-scrub-span">{card().span}</span>
+          <span class="agents-readout">
+            {card().atLeast ? "at least " : ""}
+            <b class="text-num">{card().figure}</b> <span>tok/min</span>
+          </span>
+          <span class="velocity-scrub-caption">{card().caption}</span>
+        </div>
+      </div>
+    </Portal>
   );
 }
 
@@ -1914,13 +1981,125 @@ export function Sidebar(props: {
           <Icon name="activity" small />
         </button>
       </div>
+      <AgentsFootRow />
+      {/* Every public link, and who is looking (§app.session-share/shares-page). */}
+      <a class="list-row list-row-interactive insights-row sidebar-foot-link" href={SHARES_HREF} aria-current={props.sharesOpen ? "page" : undefined}>
+        <Icon name="external" />
+        <span class="insights-row-text">Shares</span>
+      </a>
+    </>
+  );
+
+  /**
+   * The foot's Agents row and its Settings gear (§app.insights/sidebar-foot), and the chart's scrub
+   * (§app.insights/velocity-scrub): a mouse hovering the chart, or a thumb or pen holding the row
+   * 500ms and then dragging, picks one column; the chart marks it and a card above the pointer
+   * reads that minute out. Each mount (the desktop foot, the phone sheet) keeps its own.
+   */
+  const AgentsFootRow = () => {
+    let link: HTMLAnchorElement | undefined;
+    let chartBox: HTMLSpanElement | undefined;
+    const COLUMNS = VELOCITY_SLOTS / 2;
+    /** The picked column and the pointer that picked it. */
+    const [pick, setPick] = createSignal<{ index: number; x: number; y: number; touch: boolean } | null>(null);
+    /** A mouse is over the chart while it can scrub: the row's `title` steps aside for the card. */
+    const [mouseIn, setMouseIn] = createSignal(false);
+    /** Escape hid the mouse's card: it stays hidden until the pointer leaves the chart. */
+    let escaped = false;
+    const pickAt = (x: number, y: number, touch: boolean) => {
+      const svg = chartBox?.querySelector<SVGSVGElement>("svg.velocity-chart");
+      if (!svg || velocity().state === "unknown") return setPick(null);
+      const r = svg.getBoundingClientRect();
+      const index = columnAtX(x - r.left, r.width / COLUMNS, COLUMNS);
+      setPick(index === null ? null : { index, x, y, touch });
+    };
+    /** Re-read on every frame and every 30 s tick: the pointer keeps its column, the minute moves. */
+    const reading = createMemo(() => {
+      const p = pick();
+      return p ? velocityColumnAt(velocity(), 2, p.index) : null;
+    });
+    const onEscape = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      escaped = true;
+      setPick(null);
+    };
+    createEffect(() => {
+      if (!mouseIn()) return;
+      addEventListener("keydown", onEscape);
+      onCleanup(() => removeEventListener("keydown", onEscape));
+    });
+
+    // A thumb or a pen: hold still 500ms, then drag (the session rows' hold). Before the hold a
+    // move is a scroll and a tap a tap; after it the row keeps the pointer, the sheet holds still,
+    // and the click and context menu the hold leaves behind are swallowed.
+    let pointerId = -1;
+    let last = { x: 0, y: 0 };
+    const hold = createHoldGesture({
+      onHold: () => {
+        navigator.vibrate?.(10);
+        try {
+          link?.setPointerCapture(pointerId);
+        } catch {
+          // The pointer is already gone: the release that follows ends it.
+        }
+        pickAt(last.x, last.y, true);
+      },
+    });
+    const endTouch = (cancelled: boolean) => {
+      if (cancelled) hold.cancel();
+      else hold.finish();
+      watchHold(false);
+      if (pick()?.touch) setPick(null);
+    };
+    const moveOwn = (e: PointerEvent) => {
+      if (e.pointerId !== pointerId) return;
+      last = { x: e.clientX, y: e.clientY };
+      if (hold.held()) pickAt(e.clientX, e.clientY, true);
+      else hold.move(last);
+    };
+    const upOwn = (e: PointerEvent) => e.pointerId === pointerId && endTouch(false);
+    const cancelOwn = (e: PointerEvent) => e.pointerId === pointerId && endTouch(true);
+    /** A scroll before the hold means the press was a scroll; after it nothing scrolls. */
+    const onScroll = () => !hold.held() && endTouch(true);
+    const onBlur = () => endTouch(true);
+    const watchHold = (on: boolean) => {
+      const f = on ? addEventListener : removeEventListener;
+      f("pointermove", moveOwn as EventListener, true);
+      f("pointerup", upOwn as EventListener, true);
+      f("pointercancel", cancelOwn as EventListener, true);
+      f("scroll", onScroll, true);
+      f("blur", onBlur);
+    };
+    /** Non-passive, and on the row from the start: a listener added mid-touch may not be asked. */
+    const holdStill = (e: TouchEvent) => {
+      if (e.cancelable && hold.held()) e.preventDefault();
+    };
+    onMount(() => link?.addEventListener("touchmove", holdStill, { passive: false }));
+    onCleanup(() => {
+      link?.removeEventListener("touchmove", holdStill);
+      endTouch(true);
+    });
+
+    return (
       <div class="sidebar-foot-row">
         <a
-          class="list-row list-row-interactive insights-row sidebar-foot-link sidebar-foot-link-tall"
+          ref={link}
+          class="list-row list-row-interactive insights-row sidebar-foot-link sidebar-foot-link-tall agents-link"
           href={agentsHref()}
           aria-current={props.insightsPage === "agents" ? "page" : undefined}
-          title={agentsLabel()}
+          title={mouseIn() ? undefined : agentsLabel()}
           aria-label={agentsLabel()}
+          onPointerDown={(e) => {
+            if (e.pointerType === "mouse") return;
+            pointerId = e.pointerId;
+            last = { x: e.clientX, y: e.clientY };
+            hold.start(last);
+            watchHold(true);
+          }}
+          // Capture moving from the touched child to the row is the hold taking it, not a loss.
+          onLostPointerCapture={(e) => e.target === link && hold.held() && endTouch(true)}
+          onClick={(e) => hold.suppressed() && e.preventDefault()}
+          onContextMenu={(e) => hold.suppressed() && e.preventDefault()}
         >
           <Icon name="worker" />
           {/* Two lines (§app.insights/token-velocity): who is working and the 5-minute readout, then
@@ -1934,8 +2113,23 @@ export function Sidebar(props: {
                 <b class="text-num">{velocity().readout}</b> <span>tok/min</span>
               </span>
             </span>
-            <span class="agents-chart" aria-hidden="true">
-              <VelocityChart view={velocity()} group={2} height={18} />
+            <span
+              ref={chartBox}
+              class="agents-chart"
+              aria-hidden="true"
+              onPointerMove={(e) => {
+                if (e.pointerType !== "mouse") return;
+                setMouseIn(velocity().state !== "unknown");
+                if (!escaped) pickAt(e.clientX, e.clientY, false);
+              }}
+              onPointerLeave={(e) => {
+                if (e.pointerType !== "mouse") return;
+                escaped = false;
+                setMouseIn(false);
+                if (!pick()?.touch) setPick(null);
+              }}
+            >
+              <VelocityChart view={velocity()} group={2} height={18} scrub={reading() ? pick()!.index : null} />
               <span>30m</span>
             </span>
           </span>
@@ -1949,14 +2143,12 @@ export function Sidebar(props: {
         >
           <Icon name="settings" small />
         </button>
+        <Show when={reading()}>
+          {(r) => <VelocityScrubCard reading={r()} x={pick()?.x ?? 0} y={pick()?.y ?? 0} touch={pick()?.touch ?? false} />}
+        </Show>
       </div>
-      {/* Every public link, and who is looking (§app.session-share/shares-page). */}
-      <a class="list-row list-row-interactive insights-row sidebar-foot-link" href={SHARES_HREF} aria-current={props.sharesOpen ? "page" : undefined}>
-        <Icon name="external" />
-        <span class="insights-row-text">Shares</span>
-      </a>
-    </>
-  );
+    );
+  };
 
   /**
    * Folded (<768): the foot as one 44px bar under the list (§app.insights/sidebar-foot-phone) —

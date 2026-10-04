@@ -2177,24 +2177,34 @@ a.group-picker-tile[aria-disabled="true"] { cursor: default; color: var(--color-
   will-change: transform;
 }
 .drop-ghost-touch { width: min(300px, calc(100vw - 2 * var(--space-4))); align-items: center; }
+/* One floating card for the drag ghost and the token chart's scrub readout
+   (§app.insights/velocity-scrub), so the two can't drift: surface fill, the
+   card radius, the modal shadow, and a 120ms lift to its resting scale
+   (`--float-scale`: the ghost sits 2% larger, the readout at 1). The ghost's
+   edge is the accent; the readout's (`.float-card-neutral`) is neutral. */
+.drop-ghost-card,
+.float-card {
+  border: var(--stroke-icon) solid var(--color-accent);
+  border-radius: var(--r-lg);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-3);
+  transform: scale(var(--float-scale, 1));
+  animation: float-card-lift var(--dur-fast) var(--ease-standard);
+}
+.float-card-neutral { border-color: var(--color-border-strong); }
+@keyframes float-card-lift { from { transform: scale(.96); } to { transform: scale(var(--float-scale, 1)); } }
 .drop-ghost-card {
+  --float-scale: 1.02;
   width: 100%;
   margin: 0;
   padding: 0;
   list-style: none;
   overflow: hidden;
-  border: var(--stroke-icon) solid var(--color-accent);
-  border-radius: var(--r-lg);
-  background: var(--color-surface);
-  box-shadow: var(--shadow-3);
-  transform: scale(1.02);
   transform-origin: top left;
-  animation: drop-ghost-lift var(--dur-fast) var(--ease-standard);
 }
 .drop-ghost-touch .drop-ghost-card { transform-origin: bottom center; }
 .drop-ghost-card .session-row-shell,
 .drop-ghost-card .session-row-shell:hover { border-bottom: 0; background: transparent; }
-@keyframes drop-ghost-lift { from { transform: scale(.96); } to { transform: scale(1.02); } }
 /* Where the drop would go, in words, right where the eye already is. */
 .drop-ghost-target {
   display: inline-flex;
@@ -4710,6 +4720,27 @@ a.group-option { color: inherit; text-decoration: none; }
 .velocity-col { fill: var(--color-ink-2); }
 .velocity-col-hollow { fill: none; stroke: var(--color-ink-2); stroke-width: 1; }
 .velocity-mean { stroke: var(--status-info); stroke-width: 1; stroke-dasharray: 2 3; }
+/* The scrub (§app.insights/velocity-scrub): the picked column in full ink, the rest dimmed, and a
+   1px ink cursor line through it — a line and a fill, never a hue alone. The readout card floats
+   above the pointer, over the sheet and the toasts, placed by a transform with no transition. The
+   row holds still under a hold: no long-press callout, no text selection. */
+.velocity-chart-picking .velocity-col,
+.velocity-chart-picking .velocity-col-hollow { opacity: .4; }
+.velocity-chart-picking .velocity-col.velocity-col-picked { opacity: 1; fill: var(--color-ink); }
+.velocity-chart-picking .velocity-col-hollow.velocity-col-picked { opacity: 1; stroke: var(--color-ink); }
+.velocity-cursor { fill: var(--color-ink); }
+.agents-link { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+.velocity-scrub { position: fixed; top: 0; left: 0; z-index: 66; pointer-events: none; will-change: transform; }
+.velocity-scrub-card {
+  display: grid;
+  gap: 2px;
+  padding: var(--space-2) var(--space-3);
+  white-space: nowrap;
+  transform-origin: bottom center;
+}
+.velocity-scrub-below .velocity-scrub-card { transform-origin: top center; }
+.velocity-scrub-span { font-family: var(--font-mono); font-size: var(--fs-mono); line-height: var(--lh-mono); color: var(--color-ink-2); }
+.velocity-scrub-caption { font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-muted); }
 /* The Usage row + Resource monitor button, and the Agents row + Settings gear:
    each link keeps the width, its button sits at the row's right end, and the two
    buttons share one class so they stack in one column. The link's right padding

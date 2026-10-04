@@ -70,12 +70,28 @@ restart is kept even if its cwd is no longer allowed: `agent_list` flags it "out
 session's worktrees", and nothing kills it.
 
 A **pi** worker started inside an active worktree writes only inside that worktree (and its git
-dirs, §chat.sandbox/what-on-enforces): with the parent's sandbox on, its sandbox scope is
-narrowed to the worktree; with it off, the worker starts under the sandbox in **write-only**
-confinement: its writes go only to the worktree, its git dirs and a private tmp (and the
-sandbox's private copies of the host caches), while nothing is hidden, the network is the host's
-(its resolver included) and the environment is passed as it is. No policy file is read for it.
-If the sandbox extension is missing or gives no scope for the worktree, the spawn is refused. A
+dirs, §chat.sandbox/what-on-enforces) unless the session's sandbox is Off
+(§chat.sandbox/states): under On its sandbox scope is narrowed to the worktree; under Subagents
+only it starts under the sandbox in **write-only** confinement: its writes go only to the
+worktree, its git dirs and a private scratch tmp (and the sandbox's private copies of the host
+caches). Its reads are the host's, no secret is hidden, the network is the host's (its resolver
+included) and the environment is passed as it is. No policy file is read for it.
+
+- **`/tmp`.** On Linux it sees the host's `/tmp` read-only, so a file another session wrote
+  there (a brief) is readable, and every Unix socket found there as its command or its process
+  starts reads as an empty file, so it cannot drive a terminal multiplexer, an ssh agent or
+  another service through one. `TMPDIR` points at its private scratch, which is where Claude
+  Code and other tools that honour it keep their temp files; a tool that writes a literal `/tmp`
+  path fails with "Read-only file system". When `/tmp` is too large to scan for sockets, its
+  `/tmp` is the private scratch instead. On macOS Seatbelt never remapped `/tmp`: the host's is
+  readable there, as before.
+- **Still a sandbox.** `/run` is empty, so the Docker socket and the user's D-Bus and systemd are
+  gone, and the worker runs in a user namespace, where root-owned files belong to the overflow
+  user: ssh refuses a root-owned config file ("Bad owner or permissions"; `ssh -F /dev/null`
+  works). A worker that needs Docker or the host's own ssh config needs Off.
+
+Under Off the worker starts unconfined, like one outside a worktree. Under On or Subagents only,
+if the sandbox extension is missing or gives no scope for the worktree, the spawn is refused. A
 Claude Code worker there is confined the same way, narrowed to the worktree or write-only, with
 its own state and token as §chat.sandbox/claude-state says; in write-only its environment is the
 host's less any login or token variable.

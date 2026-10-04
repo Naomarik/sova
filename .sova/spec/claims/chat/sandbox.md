@@ -5,50 +5,99 @@ pi's sandbox extension (`pi-config/extensions/sandbox`) confines what an agent's
 the machine: the `bash` tool runs inside an OS sandbox, and the file tools (`read`, `write`,
 `edit`, `ls`, `find`, `grep`) check every path against the same policy. The agent process itself
 is not confined, except a Claude Code worker's, which runs whole inside the sandbox
-(§chat.sandbox/workers); the server and every worker keep their own state writable. The sandbox is **on
-or off per session**, and only the user turns it either way.
+(§chat.sandbox/workers); the server and every worker keep their own state writable. Each
+session's sandbox is in one of three states, **Off**, **Subagents only** or **On**
+(§chat.sandbox/states), per session. The user sets it; the Overseer may set it on a session it
+creates or acts on only as §app.overseer/tools allows, and the agent in the session itself never
+can.
 
 It is local containment of an agent's mistakes on a single-user machine. It is not a boundary
 for hostile code and has not been security-audited (§chat.sandbox/limits).
 
+## §chat.sandbox/states — Three states: Off, Subagents only, On
+
+A session's sandbox is in one of three states. Each says what is confined: the session's own
+tools (the main thread) and the workers it starts. A worker is never looser than its parent, so
+no state confines the main thread and leaves its workers loose.
+
+| State | The session's own tools | A worker in one of the session's active tracked worktrees | Any other worker |
+|---|---|---|---|
+| **Off** | pi's own, unconfined | unconfined | unconfined |
+| **Subagents only** | pi's own, unconfined | write-only confinement (§chat.worktrees/workers) | unconfined |
+| **On** | confined (§chat.sandbox/what-on-enforces) | the session's sandbox, narrowed to that worktree | the session's sandbox |
+
+- **Default.** A session with no `sandbox` entry and no `--sandbox` flag starts in Subagents only
+  when the policy file's `defaultOn` is `false` (as shipped), which is what the sandbox off meant
+  before Off existed, and On when it is `true`. Nothing remembers a choice across sessions: Off
+  is always picked in the session it applies to.
+- **Entry.** The `sandbox` entry keeps its shape and version and gains one optional field,
+  `workers: "off"`, written only with `on: false`: `{on: false, workers: "off"}` is Off,
+  `{on: false}` Subagents only, `{on: true}` On. An entry written before the field existed has
+  none, so it restores as Subagents only (it was off) or On. An entry with `on: true` and
+  `workers: "off"` reads as On: the field is dropped, never the confinement.
+- **Workers take it at their start.** A change reaches the session's own tools from their next
+  tool call, and its workers only when they start or resume afterwards
+  (§app.worker-restore/resume): a running worker keeps the confinement it started with until it
+  is stopped and resumed. A worker started under On stays confined whatever its parent changes to
+  (§chat.sandbox/workers). `agent_list` names each worker's confinement as it was at its start:
+  "sandbox: on", "sandbox: on, narrowed to {path}", "sandbox: write-only to {path}" or
+  "sandbox: none" (nothing for a worker restored after a restart).
+- **Nothing the model sees changes** between any two states (§chat.sandbox/toggle): Off and
+  Subagents only both leave the session's own tools pi's own, and the state lives only in the
+  plain `sandbox` entry, never in a prompt, a message or a tool description, so a change never
+  busts the prompt cache or restarts a Claude-backed session's CLI.
+- **Off unconfines writes too.** Under Off a worker in a worktree can write wherever the user
+  can: the main checkout, sibling worktrees, the agent dir, other branches' refs. The worktree
+  start gate (§chat.worktrees/workers) still decides where a worker may start, not where it
+  writes. Off is for workers that need the host as it is: Docker, ssh with the host's own config,
+  the user's services, which Subagents only and On keep out of reach by design.
+- **Remote.** A remote session's tools run on the target, so no state is enforced there
+  (§chat.sandbox/backends), and none confines its workers.
+
 ## §chat.sandbox/toggle — The toggle
 
-- **Where.** In pi, `/sandbox on` and `/sandbox off` flip it, and bare `/sandbox` (or
-  `/sandbox status`) reports the current state; anything else answers with the usage line. A
-  runtime started with `--sandbox on|off` starts in that state. How another host (such as Sova's
-  web composer) offers the toggle is that host's own surface; it drives the same command.
+- **Where.** In pi, `/sandbox on`, `/sandbox subagents` and `/sandbox off` set On, Subagents only
+  and Off (§chat.sandbox/states), and bare `/sandbox` (or `/sandbox status`) reports the current
+  state; anything else answers with the usage line. A runtime started with
+  `--sandbox on|subagents|off` starts in that state. How another host (such as Sova's web
+  composer) offers the choice is that host's own surface; it drives the same command.
 - **Status.** While on, the TUI footer shows `sandbox on`, or `sandbox on (partial)`,
   `sandbox on (unavailable)`, or in a remote session `sandbox on (not enforced on remote)`. Off
-  shows nothing. Bare `/sandbox` prints the extension's status line: "Sandbox off", "Sandbox on ·
+  shows `sandbox off`; Subagents only shows nothing. Bare `/sandbox` prints the extension's status
+  line: "Sandbox off · workers unconfined", "Sandbox subagents only · workers in tracked
+  worktrees write only there", "Sandbox on ·
   workspace-write · full enforcement", "Sandbox on · workspace-write · partial enforcement
   ({reasons})", "Sandbox on · workspace-write · unavailable: {reasons} (tools refuse)", or, for a
   session that is on but enforced nowhere (a remote session), "Sandbox on · not enforced on
   remote" ("Sandbox on · not enforced" when no reason is recorded).
-- **Effect.** A flip reaches **this session only**, from its **next tool call**. A tool call
+- **Effect.** A change reaches **this session only**: its own tools from their **next tool
+  call**, its workers when they start or resume (§chat.sandbox/states). A tool call
   already running finishes under the rules it started with; nothing is killed, and no turn is
   interrupted. A batch of parallel calls already started runs under the old state and the next
   batch under the new one. The session never restarts, reconnects or loses its workers.
-- **Nothing the model sees changes on a flip.** Confined tools keep exactly the stock tool
-  names, descriptions and parameters, and the system prompt is the same on or off. The sandbox
+- **Nothing the model sees changes on a change.** Confined tools keep exactly the stock tool
+  names, descriptions and parameters, and the system prompt is the same in every state. The sandbox
   shows only in tool results (a denial note, below) and in the session's own `sandbox` entry.
   A changed tool list or prompt would bust the prompt cache and make a Claude-backed session
   restart its CLI.
 - **Persistence.** Each change appends a `custom` entry `sandbox`
-  `{version: 1, on, level, backend, enforcement, reasons?}`; opening the session restores the
-  newest one on its branch. A session with no entry takes the `--sandbox` flag, else the policy
-  file's `defaultOn`, which ships as `false`. Opening a session writes nothing, except when it
+  `{version: 1, on, level, backend, enforcement, reasons?, workers?}` (`workers` as
+  §chat.sandbox/states says); opening the session restores the newest one on its branch. A
+  session with no entry takes the `--sandbox` flag, else the policy file's `defaultOn`, which
+  ships as `false` (Subagents only). Opening a session writes nothing, except when it
   comes up on with no entry saying so: then one entry pins it on, so a later change to
   `defaultOn` cannot loosen that session.
 - **Marker.** Each change is rendered in the TUI transcript from its `sandbox` entry: "Sandbox → on ·
-  workspace-write · full enforcement", or "Sandbox → off". On, it names the level and the
+  workspace-write · full enforcement", "Sandbox → subagents only" or "Sandbox → off". On, it names the level and the
   enforcement, and `partial` or `unavailable` add " · {reasons}". An entry that is on but
   enforced nowhere (a remote session) reads "Sandbox → on · not enforced on remote" ("Sandbox → on ·
   not enforced" when no reason is recorded), never "none enforcement". `/sandbox on` while already on
   probes again and records an entry only if the state changed.
-- **Only the user flips it.** The agent has no tool that changes the state; `/sandbox` is a
-  command, not a tool. A sandboxed `bash` cannot reach Sova's API (its network is unshared), so it
-  cannot flip the toggle through the server either. A worker started with the sandbox on cannot
-  turn it off (§chat.sandbox/workers).
+- **Only the user changes it from the session.** The agent has no tool that changes the state;
+  `/sandbox` is a command, not a tool. A sandboxed `bash` cannot reach Sova's API (its network is
+  unshared), so it cannot change it through the server either. The Overseer can set it on another
+  session only as §app.overseer/tools says, and lowering it needs the user's click there. A
+  worker started with the sandbox on cannot lower it (§chat.sandbox/workers).
 
 ## §chat.sandbox/off-is-today — Off is Sova as it is today
 
@@ -193,9 +242,11 @@ own cwd is not added. A pi worker started inside one of the session's tracked wo
 only that worktree instead (§chat.worktrees/workers). A worker is also held to its parent's
 hidden list and its proxy and environment allowlists, whatever the policy file of its own agent
 dir says. Any worker, pi or Claude Code, whose cwd is outside those roots is refused
-at spawn with a message naming the sandbox. A worker started with `--sandbox on` cannot turn it
-off: its `/sandbox off` refuses, so the parent's agent cannot switch it off by sending the
-command as a steer.
+at spawn with a message naming the sandbox. A worker started with `--sandbox on` cannot lower
+it: its `/sandbox off` and `/sandbox subagents` refuse, so the parent's agent cannot switch it
+off by sending the command as a steer. A parent that is not on confines a worker only under
+Subagents only and only in a tracked worktree, write-only (§chat.worktrees/workers); under Off no
+worker is confined (§chat.sandbox/states).
 
 A Claude Code worker runs whole inside the same OS sandbox: the `claude` process, its Bash, its
 Write, Edit, Read, Glob and Grep, and every MCP server it starts are confined by the sandbox's own
@@ -291,3 +342,6 @@ enforced on remote", and reads "Sandbox on · not enforced on remote" (§chat.sa
 - **macOS tools that ignore the environment.** A tool that writes a fixed temp or cache path
   instead of honouring `TMPDIR` or the cache variables fails under the sandbox there.
 - **The user's own `!` commands** are not confined.
+- **A write-only worker's view of the host `/tmp`** (Linux, §chat.worktrees/workers) masks the
+  Unix sockets found there when its command or its process starts; a socket created later in
+  `/tmp` is reachable from a worker already running.

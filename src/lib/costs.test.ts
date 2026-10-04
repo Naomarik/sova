@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { CostModelRow } from "../../shared/costs";
-import { costNotes, emptyLine, KIND_LABEL, KIND_ORDER, kindRows, moneyWord, modelRows, starterParts, topMeta, usd } from "./costs";
+import { costNotes, emptyLine, KIND_LABEL, KIND_ORDER, moneyWord, modelRows, starterParts, topMeta, usd } from "./costs";
 
 const t = (input = 0, output = 0, cacheRead = 0, cacheWrite = 0, cacheWrite1h = 0) => ({ input, output, cacheRead, cacheWrite, cacheWrite1h });
 
@@ -14,13 +14,10 @@ test("dollars: symbol first, comma thousands, 2 decimals; under a cent is <$0.01
   assert.equal(usd(1_234_567.891), "$1,234,567.89");
 });
 
-test("kinds read in the scope's order, whatever their size, only those with a cost; the wire's rows untouched, never re-summed", () => {
-  const row = (kind: "workers" | "coding" | "overseer" | "settle", usd: number) => ({ kind, usd, tokens: t(), usdBy: t() });
-  const coding = row("coding", 3);
-  const rows = [row("workers", 9), coding, row("overseer", 1), row("settle", 0)];
-  assert.deepEqual(kindRows(rows).map((r) => [r.kind, r.usd]), [["overseer", 1], ["coding", 3], ["workers", 9]]);
-  assert.equal(kindRows(rows)[1], coding, "the very row the server sent");
+test("every card kind the server sends has its own label, coding one row whoever started it", () => {
   assert.equal(new Set(Object.values(KIND_LABEL)).size, KIND_ORDER.length, "every kind has its own label");
+  assert.deepEqual(Object.keys(KIND_LABEL).sort(), [...KIND_ORDER].sort(), "a label for exactly the wire's card kinds");
+  assert.equal(KIND_LABEL.coding, "Coding sessions");
 });
 
 test("who started it: one line, only starters with a cost, in a fixed order; none at all is no line", () => {

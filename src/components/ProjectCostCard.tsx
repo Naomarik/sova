@@ -1,7 +1,7 @@
 import { createEffect, For, type JSX, on, Show } from "solid-js";
 import type { CostModelRow, CostTokens, ProjectCost } from "../../shared/costs";
 import { getProjectCost } from "../lib/api";
-import { costNotes, emptyLine, KIND_LABEL, kindRows, moneyWord, modelRows, starterParts, TOKEN_KINDS, topMeta, usd } from "../lib/costs";
+import { costNotes, emptyLine, KIND_LABEL, moneyWord, modelRows, starterParts, TOKEN_KINDS, topMeta, usd } from "../lib/costs";
 import { projectSessionHref } from "../lib/projects-route";
 import { createPoll, type Poll } from "../lib/poll";
 import { tokens } from "../lib/project-overseer-view";
@@ -44,7 +44,8 @@ export function ProjectCostCard(props: { projectId: string; poll: Poll<ProjectCo
 
 function CostBody(props: { cost: ProjectCost; projectId: string }) {
   const c = () => props.cost;
-  const kinds = () => kindRows(c().byKind);
+  /** The server's rows as they come: merged card kinds, in the scope's order, only those with a cost. */
+  const kinds = () => c().byKind;
   const models = () => modelRows(c().byModel);
   const spent = () => c().totalUsd > 0 || models().length > 0;
   return (

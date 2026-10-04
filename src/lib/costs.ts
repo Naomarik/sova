@@ -31,12 +31,6 @@ export const KIND_LABEL: Record<CostCardKind, string> = {
   reconcile: "Reconciler",
 };
 
-/** The kinds with a cost, in the scope's order (never by size). The rows arrive merged and summed
-    (both coding kinds as one): this only orders and filters, it adds nothing up. */
-export function kindRows<R extends { kind: CostCardKind; usd: number }>(rows: readonly R[]): R[] {
-  return rows.filter((r) => r.usd > 0).sort((a, b) => KIND_ORDER.indexOf(a.kind) - KIND_ORDER.indexOf(b.kind));
-}
-
 // "sova" is the reconciler's automatic runs.
 const STARTER_ORDER: readonly CostStarter[] = ["overseer", "operator", "sova"];
 const STARTER_WORDS: Record<CostStarter, string> = { overseer: "the overseer", operator: "you", sova: "Sova on its own" };

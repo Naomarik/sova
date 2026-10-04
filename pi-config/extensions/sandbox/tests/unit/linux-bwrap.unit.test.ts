@@ -12,7 +12,7 @@ import { createServer, type Server } from "node:net";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { classifyRun, type Policy } from "../../backend.ts";
-import { findExecutable, LinuxBwrapBackend, mountPlan, runCapture, tmpSockets } from "../../backends/linux-bwrap.ts";
+import { findExecutable, LinuxBwrapBackend, mountPlan, parseProcNetUnix, runCapture, type TmpSocketScan, tmpSockets } from "../../backends/linux-bwrap.ts";
 import { scrubEnv } from "../../env.ts";
 import { startProxy } from "../../proxy.ts";
 
@@ -119,28 +119,101 @@ test("a write-only worker's /tmp (hostTmp): the host's, read-only, sockets maske
 	assert.ok(!r.confined.argv.join("\0").includes(`\0${tmp}\0/tmp\0`), "no private /tmp");
 });
 
-test("tmpSockets: every socket below, none under a skipped root, no symlink followed; too many entries is undefined", { skip }, async (t) => {
-	const root = scratch(t, "sbx-scan-");
+const UNIX_HEADER = "Num       RefCount Protocol Flags    Type St Inode Path";
+let inode = 1000;
+const unixLine = (path?: string) => `0000000000000000: 00000002 00000000 00010000 0001 01 ${inode++}${path === undefined ? "" : ` ${path}`}`;
+const unixList = (...paths: Array<string | undefined>) => [UNIX_HEADER, ...paths.map(unixLine)].join("\n") + "\n";
+
+test("parseProcNetUnix: bound pathnames only; anything not in the kernel's format is undefined", () => {
+	const text = [UNIX_HEADER, unixLine(), unixLine("@/tmp/.X11-unix/X0"), "0000000000000000: 00000003 00000000 00000000 0001 03 12345678 /tmp/a b.sock", unixLine("/run/x.sock"), unixLine("/run/x.sock")].join("\n") + "\n";
+	assert.deepEqual(parseProcNetUnix(text), ["/tmp/a b.sock", "/run/x.sock"]);
+	assert.deepEqual(parseProcNetUnix(`${UNIX_HEADER}\n`), []);
+	assert.equal(parseProcNetUnix(""), undefined, "no header");
+	assert.equal(parseProcNetUnix(unixLine("/tmp/a")), undefined, "no header");
+	// A path with a line break splits its line: the rest is not the kernel's format.
+	assert.equal(parseProcNetUnix(unixList("/tmp/a\nb")), undefined);
+	assert.equal(parseProcNetUnix(`${UNIX_HEADER}\n${unixLine("/tmp/a")}\n\n${unixLine("/tmp/b")}\n`), undefined, "an empty line inside");
+	assert.equal(parseProcNetUnix(`${UNIX_HEADER}\n0000000000000000: 00000002 /tmp/a\n`), undefined);
+});
+
+const linuxOnly = process.platform === "linux" ? false : "Linux only";
+
+async function socketsIn(t: { after(fn: () => void): void }) {
 	const servers: Server[] = [];
 	t.after(() => {
 		for (const s of servers) s.close();
 	});
-	const sockAt = async (p: string) => {
+	return async (p: string) => {
 		mkdirSync(dirname(p), { recursive: true });
 		const s = createServer();
 		await listen(s, { path: p });
 		servers.push(s);
+		return p;
 	};
-	await sockAt(join(root, "a.sock"));
-	await sockAt(join(root, "d1", "d2", "d3", "deep.sock"));
-	await sockAt(join(root, "own", "mine.sock"));
+}
+
+test("tmpSockets: the listed sockets under the root, canonical, plus a shallow walk's", { skip: linuxOnly }, async (t) => {
+	const root = scratch(t, "sbx-scan-");
+	const sockAt = await socketsIn(t);
+	// Only the list finds a deep one; only the walk finds an unlisted one, and only two levels down.
+	const deep = await sockAt(join(root, "d1", "d2", "d3", "deep.sock"));
+	const top = await sockAt(join(root, "top.sock"));
+	const second = await sockAt(join(root, "tmux-1000", "default"));
+	await sockAt(join(root, "w1", "w2", "unlisted-deep.sock"));
+	const mine = await sockAt(join(root, "own", "mine.sock"));
 	writeFileSync(join(root, "plain"), "x");
 	const elsewhere = scratch(t, "sbx-scan-else-");
-	await sockAt(join(elsewhere, "far.sock"));
-	execFileSync("ln", ["-s", elsewhere, join(root, "link")]);
-	assert.deepEqual(tmpSockets(root, [join(root, "own")])?.sort(), [join(root, "a.sock"), join(root, "d1", "d2", "d3", "deep.sock")].sort());
-	assert.equal(tmpSockets(root, [], 3), undefined, "past the limit the caller keeps /tmp private");
-	assert.deepEqual(tmpSockets(join(root, "missing")), []);
+	const far = await sockAt(join(elsewhere, "far.sock"));
+	// The root and a parent reached through symlinks, as a server may have bound them.
+	const rootLink = join(elsewhere, "tmp-link");
+	execFileSync("ln", ["-s", root, rootLink]);
+	execFileSync("ln", ["-s", join(root, "d1", "d2"), join(root, "d2-link")]);
+	const viaLink = await sockAt(join(rootLink, "via", "link.sock"));
+	execFileSync("ln", ["-s", elsewhere, join(root, "out-link")]);
+	const list = unixList(
+		join(rootLink, "d2-link", "d3", "deep.sock"),
+		viaLink,
+		mine,
+		far,
+		join(root, "plain"),
+		join(root, "gone.sock"),
+		join(root, "no-such-dir", "gone.sock"),
+		undefined,
+		"@abstract",
+	);
+	const scan = (over: Partial<TmpSocketScan> = {}) => tmpSockets({ root: rootLink, skip: [join(root, "own")], readUnixList: () => list, ...over });
+	assert.deepEqual(scan(), [deep, top, second, join(root, "via", "link.sock")].sort());
+	assert.deepEqual(scan({ walkBudget: 0 }), [deep, join(root, "via", "link.sock")].sort(), "without the walk, the list alone");
+	assert.deepEqual(scan({ skip: [] })?.includes(mine), true);
+});
+
+test("tmpSockets fails closed: an unreadable or ambiguous list, a relative path, a line break in a name", { skip: linuxOnly }, async (t) => {
+	const root = scratch(t, "sbx-scan-");
+	const sockAt = await socketsIn(t);
+	const s = await sockAt(join(root, "a.sock"));
+	assert.deepEqual(tmpSockets({ root, readUnixList: () => unixList(s) }), [s]);
+	assert.equal(tmpSockets({ root, readUnixList: () => { throw new Error("EACCES"); } }), undefined);
+	assert.equal(tmpSockets({ root, readUnixList: () => unixList(`${s}\nx`) }), undefined);
+	assert.equal(tmpSockets({ root, readUnixList: () => "garbage\n" }), undefined);
+	assert.equal(tmpSockets({ root, readUnixList: () => unixList(s, "relative.sock") }), undefined, "a relative path could be anywhere");
+	assert.equal(tmpSockets({ root: join(root, "missing"), readUnixList: () => unixList(s) }), undefined);
+	writeFileSync(join(root, "odd\nname"), "x");
+	assert.equal(tmpSockets({ root, readUnixList: () => unixList(s) }), undefined, "a name the list would split");
+});
+
+test("tmpSockets: a /tmp of more than 10,000 entries still gives the host view", { skip: linuxOnly }, async (t) => {
+	const root = scratch(t, "sbx-scan-big-");
+	const sockAt = await socketsIn(t);
+	const bulk = join(root, "bulk");
+	mkdirSync(bulk);
+	for (let i = 0; i < 6000; i++) writeFileSync(join(root, `f${i}`), "");
+	for (let i = 0; i < 6000; i++) writeFileSync(join(bulk, `f${i}`), "");
+	const s = await sockAt(join(root, "x", "y", "z", "s.sock"));
+	const started = performance.now();
+	const found = tmpSockets({ root, readUnixList: () => unixList(s) });
+	const ms = performance.now() - started;
+	assert.deepEqual(found, [s]);
+	assert.ok(ms < 500, `took ${ms} ms`);
 });
 
 test("the mount namespace differs from the host's", { skip }, async (t) => {

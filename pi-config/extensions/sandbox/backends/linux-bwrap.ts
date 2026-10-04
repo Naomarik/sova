@@ -12,8 +12,8 @@
  */
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { accessSync, constants, type Dirent, existsSync, mkdirSync, readdirSync, rmSync, statSync } from "node:fs";
-import { dirname, join, sep } from "node:path";
+import { accessSync, constants, type Dir, existsSync, lstatSync, mkdirSync, opendirSync, readFileSync, realpathSync, rmSync, statSync } from "node:fs";
+import { basename, dirname, join, sep } from "node:path";
 import type {
 	Backend,
 	ConfineRequest,
@@ -167,39 +167,117 @@ function uniq<T>(xs: T[]): T[] {
 	return [...new Set(xs)];
 }
 
-/** How many entries `tmpSockets` reads before it gives up (the caller then keeps /tmp private). */
-export const TMP_SCAN_LIMIT = 10_000;
+/** How many entries the shallow walk of /tmp reads at most, per command. */
+export const TMP_WALK_BUDGET = 4096;
+
+/** One line of /proc/net/unix: Num RefCount Protocol Flags Type St Inode, then " Path" when bound. */
+const UNIX_LINE = /^[0-9a-f]+: [0-9A-F]{8} [0-9A-F]{8} [0-9A-F]{8} [0-9A-F]{4} [0-9A-F]{2} +\d+(?: (.*))?$/;
+
+/**
+ * The pathname of every bound Unix socket in `/proc/net/unix` text (abstract `@…` names have no
+ * file and are left out), or undefined when the text cannot be read unambiguously: no header, or a
+ * line that is not the kernel's format (a socket path with a line break in it splits its line).
+ */
+export function parseProcNetUnix(text: string): string[] | undefined {
+	const lines = text.split("\n");
+	if (!/^Num\s+RefCount\s+Protocol\s+Flags\s+Type\s+St\s+Inode\s+Path\s*$/.test(lines[0] ?? "")) return undefined;
+	const out = new Set<string>();
+	for (let i = 1; i < lines.length; i++) {
+		const line = lines[i]!;
+		if (line === "" && i === lines.length - 1) break;
+		const m = UNIX_LINE.exec(line);
+		if (!m) return undefined;
+		const path = m[1];
+		if (path && !path.startsWith("@")) out.add(path);
+	}
+	return [...out];
+}
+
+export interface TmpSocketScan {
+	/** The host /tmp. */
+	root?: string;
+	/** The worker's own writable roots (canonical): nothing under them is masked or read. */
+	skip?: readonly string[];
+	/** The text of /proc/net/unix; throws when it cannot be read. */
+	readUnixList?: () => string;
+	/** Entries the shallow walk reads at most. */
+	walkBudget?: number;
+}
 
 /**
  * Every Unix socket under `root` (the host /tmp), for a write-only worker's read-only view of it:
  * a read-only mount does not stop connect(), so each is masked (a tmux server, an ssh agent, an X
- * or editor server would otherwise take commands from the worker). Symlinks are not followed, and
- * nothing under `skip` (the worker's own writable roots) is read. Undefined when `root` holds more
- * than `limit` entries: the walk would be too slow per command, and an unread socket would stay
- * reachable. Never throws; an unreadable directory is one the worker cannot list either.
+ * or editor server would otherwise take commands from the worker). Canonical paths, each one
+ * `lstat` reports as a socket now.
+ *
+ * Two sources, so the cost follows the number of sockets, never the size of /tmp:
+ * - the kernel's list of bound sockets (/proc/net/unix), each path canonicalised (a symlinked /tmp
+ *   or parent); a listed socket whose file is gone (unlinked while bound) is skipped;
+ * - a shallow walk of `root` and the folders directly in it, at most `walkBudget` entries, for a
+ *   socket the list names elsewhere: one bound from another network or mount namespace.
+ * Undefined, and the caller keeps /tmp private, when the list cannot be read or read
+ * unambiguously: a malformed line, a relative path (where it lives is unknown) or, seen by the
+ * walk, a name with a line break in it. Symlinks are not followed by the walk, and nothing under
+ * `skip` is read or returned. Never throws.
  */
-export function tmpSockets(root = "/tmp", skip: readonly string[] = [], limit = TMP_SCAN_LIMIT): string[] | undefined {
-	const out: string[] = [];
-	const stack = [root];
-	let seen = 0;
-	while (stack.length) {
-		const dir = stack.pop()!;
-		let entries: Dirent[];
+export function tmpSockets(opts: TmpSocketScan = {}): string[] | undefined {
+	const skip = opts.skip ?? [];
+	let root: string;
+	let listed: string[] | undefined;
+	try {
+		root = realpathSync(opts.root ?? "/tmp");
+		listed = parseProcNetUnix((opts.readUnixList ?? (() => readFileSync("/proc/net/unix", "utf8")))());
+	} catch {
+		return undefined;
+	}
+	if (!listed) return undefined;
+	const out = new Set<string>();
+	const keep = (p: string) => p !== root && isWithin(p, root) && !skip.some((s) => isWithin(p, s));
+	const dirs = new Map<string, string | null>();
+	for (const p of listed) {
+		if (!p.startsWith("/")) return undefined;
+		const d = dirname(p);
+		let dir = dirs.get(d);
+		if (dir === undefined) {
+			try {
+				dir = realpathSync(d);
+			} catch {
+				// Gone, or a folder this user cannot enter: then the worker cannot reach it there either.
+				dir = null;
+			}
+			dirs.set(d, dir);
+		}
+		if (dir === null) continue;
+		const c = join(dir, basename(p));
+		if (!keep(c)) continue;
 		try {
-			entries = readdirSync(dir, { withFileTypes: true });
+			if (lstatSync(c).isSocket()) out.add(c);
+		} catch {}
+	}
+	let budget = opts.walkBudget ?? TMP_WALK_BUDGET;
+	const queue: Array<[string, number]> = [[root, 1]];
+	while (queue.length && budget > 0) {
+		const [dir, depth] = queue.shift()!;
+		let handle: Dir;
+		try {
+			handle = opendirSync(dir);
 		} catch {
 			continue;
 		}
-		seen += entries.length;
-		if (seen > limit) return undefined;
-		for (const e of entries) {
-			const p = join(dir, e.name);
-			if (skip.some((s) => isWithin(p, s))) continue;
-			if (e.isSocket()) out.push(p);
-			else if (e.isDirectory()) stack.push(p);
+		try {
+			for (let e = handle.readSync(); e && budget > 0; e = handle.readSync(), budget--) {
+				if (e.name.includes("\n")) return undefined;
+				const p = join(dir, e.name);
+				if (!keep(p)) continue;
+				if (e.isSocket()) out.add(p);
+				else if (e.isDirectory() && depth < 2) queue.push([p, depth + 1]);
+			}
+		} catch {
+		} finally {
+			handle.closeSync();
 		}
 	}
-	return out;
+	return [...out].sort();
 }
 
 const RELAY_SCRIPT = [
@@ -294,17 +372,17 @@ export class LinuxBwrapBackend implements Backend {
 		}
 		if (policy.network.localPorts?.length) notes.push("network: localPorts is not implemented; those ports are unreachable");
 
-		// A write-only worker keeps the host's /tmp (read-only, sockets masked) when it can be walked;
-		// its temp files go to its own tmp, bound writable at its own path by the mount plan.
+		// A write-only worker keeps the host's /tmp (read-only, sockets masked) when its sockets can be
+		// listed; its temp files go to its own tmp, bound writable at its own path by the mount plan.
 		const tmp = canonical(policy.tmpDir);
-		const sockets = policy.hostTmp ? tmpSockets("/tmp", [tmp, ...policy.writable.map(canonical)]) : undefined;
-		if (policy.hostTmp && !sockets) notes.push("tmp: the host /tmp is too large to scan for sockets, so /tmp is the private tmp");
+		const sockets = policy.hostTmp ? tmpSockets({ skip: [tmp, ...policy.writable.map(canonical)] }) : undefined;
+		if (policy.hostTmp && !sockets) notes.push("tmp: the host's Unix sockets could not be listed unambiguously (/proc/net/unix), so /tmp is the private tmp");
 		const env: Record<string, string> = { ...policy.env, ...(req.env ?? {}), TMPDIR: sockets ? tmp : "/tmp" };
 		if (network === "proxy") Object.assign(env, proxyEnv(RELAY_PORT));
 
 		const argv: string[] = [bwrap, "--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc", "--tmpfs", "/dev/shm", "--tmpfs", "/run"];
-		// A socket removed between the walk and bwrap's start fails this one command ("bwrap: …"); the
-		// next walk no longer lists it.
+		// A socket removed between the scan and bwrap's start fails this one command ("bwrap: …"); the
+		// next scan no longer finds it.
 		if (sockets) {
 			for (const s of sockets) argv.push("--ro-bind", "/dev/null", s);
 			// Its own tmp, writable where TMPDIR names it (a write-only policy also lists it writable).

@@ -7,6 +7,7 @@ import { hostOf, isOrgHostOpen, onOrgChange, onOrgHostOpened, type Effect, type 
 import { OrgError } from "../org-error";
 import { approveAtRef, branchFacts, observeRuntime, type BranchFacts, type ProofFact, type RuntimeFacts } from "../project-services/observe";
 import { onMergeNotes, startOnMergeTick, withOnMerge } from "../project-services/on-merge";
+import { approveDeployRecipe, deployNotes } from "../project-services/deploy";
 import { projectEngine } from "../project-services/routes";
 import { mergeCodingWorktree, startOnboardSession, type StartedCoding } from "../project-overseer";
 import { projectRootOf } from "../project-root";
@@ -59,7 +60,7 @@ export function observedPayload(f: RuntimeFacts): Record<string, unknown> {
 }
 
 export function branchPayload(b: BranchFacts): Record<string, unknown> {
-  return { ref: b.ref, commit: b.commit, def: b.def, approved: b.approved, proof: proofFact(b.proof) };
+  return { ref: b.ref, commit: b.commit, def: b.def, approved: b.approved, proof: proofFact(b.proof), deploy: b.deploy };
 }
 
 /** The payload last sent per project (only a change is sent). */
@@ -286,6 +287,8 @@ function playbookView(host: OrgHostApi, d: Record<string, unknown>): RuntimePlay
   const bf = obj(pb.branchFacts);
   const bdef = obj(bf.def);
   const path = buildSessionPath(str(pb.sessionId));
+  // A deploy-setup run proposes its deploy recipe: its own hash and approval (§app.project-runtime/verb-playbooks).
+  const deploy = pb.approves === "deploy" ? obj(bf.deploy) : null;
   const build = obj(host.data(str(pb.sid)));
   return {
     sessionId: str(pb.sessionId),
@@ -301,7 +304,13 @@ function playbookView(host: OrgHostApi, d: Record<string, unknown>): RuntimePlay
     ...(str(pb.result) ? { result: str(pb.result) } : {}),
     ...(str(pb.branch) ? { branch: str(pb.branch) } : {}),
     ...(str(build.target) ? { target: str(build.target) } : {}),
-    ...(bdef.state === "present" ? { branchHash: str(bdef.hash), branchApproved: bf.approved === true, branchProof: proofView(bf.proof) } : {}),
+    ...(deploy
+      ? deploy.hash
+        ? { branchHash: str(deploy.hash), branchApproved: deploy.approved === true }
+        : {}
+      : bdef.state === "present"
+        ? { branchHash: str(bdef.hash), branchApproved: bf.approved === true, branchProof: proofView(bf.proof) }
+        : {}),
   };
 }
 
@@ -309,7 +318,10 @@ function playbookView(host: OrgHostApi, d: Record<string, unknown>): RuntimePlay
 async function withRun(pb: RuntimePlaybook | null, state: string, root: string): Promise<RuntimePlaybook | null> {
   if (!pb || !LIVE_RUN.has(state)) return pb;
   const live = await runLive(pb.path);
-  const review = state === "proposed" && pb.branch ? await branchReview(root, pb.branch, pb.branchProof ?? null).catch(() => undefined) : undefined;
+  const review =
+    state === "proposed" && pb.branch
+      ? await branchReview(root, pb.branch, pb.branchProof ?? null, pb.approves === "deploy").catch(() => undefined)
+      : undefined;
   return { ...pb, ...(live ? { live } : {}), ...(review ? { review } : {}) };
 }
 
@@ -372,7 +384,7 @@ export async function readRuntime(projectId: string, opts: { observe?: boolean }
       onboard: !onboardWhy,
       ...(onboardWhy ? { onboardWhy } : {}),
     },
-    feed: withOnMerge(runtimeFeed(rows), onMergeNotes(root)),
+    feed: withOnMerge(runtimeFeed(rows), [...onMergeNotes(root), ...deployNotes(root)]),
   };
 }
 
@@ -404,6 +416,7 @@ export async function approveRuntime(projectId: string, hash: string, by: Operat
 
 export const NO_RUN_PROPOSED = "No playbook run is waiting for approval.";
 const CHANGED_SINCE = "The definition changed since it was shown: look again.";
+const DEPLOY_CHANGED_SINCE = "The deploy recipe changed since it was shown: look again.";
 
 /** What Approve & Merge answers: the registry, read again; on a refused merge, the approval stands and `refused` says why. */
 export interface ApproveMergeOutcome {
@@ -418,15 +431,24 @@ export interface ApproveMergeOutcome {
  * approved; refused when it is no longer the one the branch proposes, or for anyone but the operator), then Merge
  * Branch on its session with every refusal of its own. A refused merge keeps the approval.
  */
-export async function approveMerge(projectId: string, hash: string, by: OperatorBy = { kind: "operator" }): Promise<ApproveMergeOutcome> {
+export async function approveMerge(projectId: string, hash: string, by: OperatorBy = { kind: "operator" }, ticked: readonly string[] = []): Promise<ApproveMergeOutcome> {
   await readRuntime(projectId);
   const review = playbookReviewOf(projectId);
   if (!review) throw new RuntimeRefusal(NO_RUN_PROPOSED, 409);
-  // What this host approves today is a definition (§app.project-runtime/verb-playbooks).
-  if (review.approves !== "definition") throw new RuntimeRefusal(`${review.label} proposes a ${review.approves}, which can't be approved here yet.`, 409);
   // Never main's hash by mistake: only the one the branch proposes now.
-  if (!review.hash || review.hash !== hash) throw new RuntimeRefusal(CHANGED_SINCE, 409);
-  if (!review.approved) await approveRuntime(projectId, hash, by);
+  if (!review.hash || review.hash !== hash) throw new RuntimeRefusal(review.approves === "deploy" ? DEPLOY_CHANGED_SINCE : CHANGED_SINCE, 409);
+  if (!review.approved) {
+    if (review.approves === "definition") await approveRuntime(projectId, hash, by);
+    else {
+      // The deploy recipe: approved at the branch's tip only with every resolved step ticked (§app.project-services/deploy-trust).
+      if (by.kind !== "operator") throw new RuntimeRefusal("Only the operator approves a deploy recipe.", 403);
+      try {
+        await approveDeployRecipe(readProject(projectId).root, hash, review.branch, ticked);
+      } catch (err) {
+        throw new RuntimeRefusal(err instanceof Error ? err.message : String(err), 409);
+      }
+    }
+  }
   try {
     await mergeCodingWorktree(projectId, review.sessionId);
   } catch (err) {

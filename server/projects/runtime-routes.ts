@@ -64,7 +64,8 @@ export function registerRuntimeRoutes(app: Hono<any>): void {
       const b = await body(c);
       const hash = opt(b.hash);
       if (!hash) return c.json({ error: "Give the hash you were shown (hash)." }, 400);
-      const out = await approveMerge(c.req.param("pid") ?? "", hash, operatorBy(c));
+      const ticked = Array.isArray(b.ticked) ? b.ticked.filter((k): k is string => typeof k === "string") : [];
+      const out = await approveMerge(c.req.param("pid") ?? "", hash, operatorBy(c), ticked);
       if (out.refused) return c.json({ error: `Approved ${hash12(hash)}, but the merge was refused: ${out.refused}`, approved: out.approved, runtime: out.view }, 409, NO_STORE);
       return c.json(out.view, 200, NO_STORE);
     }),

@@ -8,6 +8,7 @@ import { realGit } from "../project-services/engine";
 import { softwareOf } from "../project-services/observe";
 import { defHashOf } from "../project-services/trust";
 import { getSessionSummary } from "../sessions-index";
+import { deployReviewAt } from "../project-services/deploy-trust";
 
 /**
  * A proposed verb playbook run waits on the operator (§app.project-runtime/review): the facts its
@@ -45,7 +46,10 @@ export function playbookReviewOf(projectId: string): PlaybookReviewFact | null {
   const build = obj(host.data(str(pb.sid)));
   const bf = obj(pb.branchFacts);
   const def = obj(bf.def);
-  const hash = def.state === "present" ? str(def.hash) : "";
+  const approves = pb.approves === "deploy" ? "deploy" : "definition";
+  // A deploy-setup run proposes its deploy recipe, with a hash and an approval of its own.
+  const dep = obj(bf.deploy);
+  const hash = approves === "deploy" ? str(dep.hash) : def.state === "present" ? str(def.hash) : "";
   return {
     projectId,
     sessionId,
@@ -54,8 +58,8 @@ export function playbookReviewOf(projectId: string): PlaybookReviewFact | null {
     branch: str(pb.branch) || str(build.branch),
     target: str(build.target) || "main",
     ...(hash ? { hash } : {}),
-    approved: !!hash && bf.approved === true,
-    approves: pb.approves === "deploy" ? "deploy" : "definition",
+    approved: !!hash && (approves === "deploy" ? dep.approved === true : bf.approved === true),
+    approves,
     since: typeof build.lastTurnAt === "number" ? build.lastTurnAt : typeof pb.at === "number" ? pb.at : 0,
   };
 }
@@ -97,15 +101,20 @@ export function reviewOf(def: ProjectDef | null, fact: RuntimeRunReview["def"], 
 }
 
 /** What a proposed run's branch proposes, read at its tip from git (never the worktree's files). */
-export async function branchReview(root: string, branch: string, proof: RuntimeProof | null, git: typeof realGit = realGit): Promise<RuntimeRunReview> {
+export async function branchReview(root: string, branch: string, proof: RuntimeProof | null, deploy = false, git: typeof realGit = realGit): Promise<RuntimeRunReview> {
   const shown = await git(["show", `${branch}:${CONTRACT_FILE}`], root);
   if (shown.code !== 0) return reviewOf(null, { state: "absent" }, proof);
+  let review: RuntimeRunReview;
   try {
     const def = parseDefinition(shown.stdout);
-    return reviewOf(def, { state: "present", hash: defHashOf(def) }, proof);
+    review = reviewOf(def, { state: "present", hash: defHashOf(def) }, proof);
   } catch (err) {
     return reviewOf(null, { state: "invalid", error: err instanceof DefinitionError ? err.message : String(err) }, proof);
   }
+  // A deploy-setup run: the recipe as Sova renders it, every step to tick (§app.project-services/deploy-trust).
+  if (!deploy) return review;
+  const d = await deployReviewAt(root, branch, git);
+  return d ? { ...review, deploy: d } : review;
 }
 
 /** The run's session as the session list reads it now: working or idle, its "now" line, its open questions. */

@@ -1192,7 +1192,8 @@ export const getProjectRuntime = (projectId: string) => request<ProjectRuntimeVi
 export const approveProjectRuntime = (projectId: string, hash: string) => request<ProjectRuntimeView>(`${projectPath(projectId)}/runtime/approve`, jsonInit("POST", { hash }));
 /** Approve & Merge a proposed playbook run (§app.project-runtime/approve-merge): approve its hash, then Merge Branch.
     A refused merge keeps the approval: the error says why. */
-export const approveMergeProjectRuntime = (projectId: string, hash: string) => request<ProjectRuntimeView>(`${projectPath(projectId)}/runtime/approve-merge`, jsonInit("POST", { hash }));
+export const approveMergeProjectRuntime = (projectId: string, hash: string, ticked?: readonly string[]) =>
+  request<ProjectRuntimeView>(`${projectPath(projectId)}/runtime/approve-merge`, jsonInit("POST", ticked ? { hash, ticked } : { hash }));
 /** Run the Project verbs playbook on the project: a coding session on its own branch. */
 export const runProjectVerbsPlaybook = (projectId: string, why?: string) =>
   request<{ sessionId: string; path: string; worktree?: { path: string; branch: string }; notPrompted?: string }>(`${projectPath(projectId)}/verbs/onboard`, jsonInit("POST", why ? { why } : {}));

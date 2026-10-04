@@ -184,3 +184,55 @@ test("a run whose turn ends on open alignment questions waits, never proposed, a
   await host.act(b2, "turn/ended", {}, SYSTEM);
   assert.equal((await until((x) => x.playbookState === "proposed")).playbook?.sessionId, sid2, "no questions left: proposed");
 });
+
+test("a deploy-setup run proposes its deploy recipe: its own hash, every step ticked before Approve & Merge (§app.project-runtime/approve-merge)", async () => {
+  // The waiting run above ended proposed: finish it first (its definition is main's, already approved: a merge).
+  const prev = await read();
+  const done = await app.request(`/api/projects/${pid}/runtime/approve-merge`, json("POST", { hash: prev.playbook!.branchHash }));
+  assert.equal(done.status, 200, await done.clone().text());
+  await until((x) => x.playbookState === "idle");
+
+  const sid3 = "0199a000-0000-7000-8000-00000000pb03";
+  const branch3 = "sova/project-deploy-7a8b9c";
+  const wt3 = join(tmp, ".worktrees", "site-project-deploy");
+  git(root, "worktree", "add", "-q", "-b", branch3, wt3, "main");
+  const path3 = join(tmp, "run3.jsonl");
+  writeFileSync(path3, `${JSON.stringify({ type: "session", version: 3, id: sid3, timestamp: new Date().toISOString(), cwd: wt3 })}\n`);
+  seedBuildEffectsForTest(sid3, { path: path3, worktreePath: wt3, made: { branch: branch3, base: git(root, "rev-parse", "HEAD"), target: "main" } });
+  const out = await host.act(
+    projectSid(pid),
+    "verbs/onboard",
+    { sessionId: sid3, title: "Project deploy: site", prompt: "Run it", mode: { mode: "normal", minorModes: ["align"] }, playbookId: "project-deploy", label: "Project deploy", approves: "deploy" },
+    operatorEnvelopeOf(pid),
+    { settle: true },
+  );
+  assert.equal(out.taken, true, JSON.stringify(out.refusal));
+  const b3 = buildSid(pid, sid3);
+  await buildSetupEnded(pid, b3);
+  await host.act(b3, "turn/started", {}, SYSTEM);
+  const withDeploy = JSON.parse(definition);
+  withDeploy.deploy = { targets: { staging: { about: "The staging copy.", requires: { tests: "none" }, steps: [{ id: "push", run: ["./bin/push", "${commit}"] }], rollback: { none: "Staging is rebuilt every night." } } } };
+  commit(wt3, { ".sova/project.json": JSON.stringify(withDeploy) }, "Project deploy: staging");
+  const { noteBuildSettled } = await import("../build-loadout");
+  await noteBuildSettled(path3, false);
+  const v = await until((x) => x.playbookState === "proposed" && !!x.playbook?.branchHash && !!x.playbook?.review?.deploy);
+  const r = v.playbook!.review!.deploy!;
+  assert.equal(v.playbook!.approves, "deploy");
+  assert.equal(v.playbook!.branchHash, r.deployHash, "the review's hash is the recipe's, not the definition's");
+  assert.ok(r.keys.length >= 2, JSON.stringify(r.keys));
+  const fact = playbookReviewOf(pid)!;
+  assert.deepEqual([fact.label, fact.approves, fact.hash, fact.approved], ["Project deploy", "deploy", r.deployHash, false]);
+
+  const unticked = await app.request(`/api/projects/${pid}/runtime/approve-merge`, json("POST", { hash: r.deployHash, ticked: r.keys.slice(1) }));
+  assert.equal(unticked.status, 409);
+  assert.match(((await unticked.json()) as { error: string }).error, /^Tick every step before approving: 1 not ticked/);
+  const stale = await app.request(`/api/projects/${pid}/runtime/approve-merge`, json("POST", { hash: "sha256:00", ticked: r.keys }));
+  assert.equal(((await stale.json()) as { error: string }).error, "The deploy recipe changed since it was shown: look again.");
+  assert.equal((await read()).playbookState, "proposed", "nothing approved, nothing merged");
+
+  const ok = await app.request(`/api/projects/${pid}/runtime/approve-merge`, json("POST", { hash: r.deployHash, ticked: r.keys }));
+  assert.equal(ok.status, 200, await ok.clone().text());
+  const after = await until((x) => x.playbookState === "idle");
+  assert.equal(after.playbook?.result, "merged");
+  assert.ok(after.feed.some((f) => f.line.startsWith("You approved the deploy recipe ")), JSON.stringify(after.feed.slice(0, 4)));
+});

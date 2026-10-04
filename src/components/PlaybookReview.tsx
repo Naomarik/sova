@@ -19,6 +19,7 @@ export function proposedRun(v: ProjectRuntimeView | undefined): (PlaybookReviewW
     target: pb.target ?? "main",
     ...(pb.branchHash ? { hash: pb.branchHash } : {}),
     approved: pb.branchApproved === true,
+    approves: pb.approves,
     ...(pb.path ? { path: pb.path } : {}),
   };
 }

@@ -1,3 +1,5 @@
+import type { DeployReview } from "./project-contract";
+
 /**
  * The project's software registry as the page reads it (§app/project-runtime): `GET /api/projects/:pid/runtime`.
  * The registry is the host-local statechart `runtime/<p>`; each service's live state per instance is joined
@@ -107,6 +109,8 @@ export interface RuntimeRunReview {
   share: { endpoints: string[]; allow: boolean } | null;
   open: { endpoint: string; path: string } | null;
   proof: RuntimeProof | null;
+  /** A deploy-setup run's recipe at the branch's tip, every step to tick before Approve & Merge (absent for a definition). */
+  deploy?: DeployReview;
 }
 
 export interface RuntimeFeedLine {

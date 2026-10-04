@@ -18,3 +18,9 @@ test("approved: Merge Branch; no valid definition: no button, read the report", 
   assert.equal(reviewAction(none), null);
   assert.deepEqual(reviewBanner(none), { title: "Project verbs proposes changes on sova/v-1a2b3c.", body: "Its branch has no valid definition: read its report." });
 });
+
+test("a deploy-setup run's proposal is its deploy recipe", () => {
+  const dep = { ...run, approves: "deploy" as const, hash: undefined };
+  assert.equal(reviewDetail(dep), "Project verbs: its branch sova/v-1a2b3c has no valid deploy recipe: read its report");
+  assert.equal(reviewBanner(dep).body, "Its branch has no valid deploy recipe: read its report.");
+});

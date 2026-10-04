@@ -19,19 +19,23 @@ import { cleanSessionTitle, readSessionTitleRecords, replaceAutoTitle, type Stor
 // of that one session). All go through `nameSession` below.
 
 /**
- * The title rules, and the whole system prompt: no Sova or agent prompt goes with them. Tested
- * against hand-set titles (deepseek-v4.1-flash scored best among the cheap models).
+ * The title rules, and the whole system prompt: no Sova or agent prompt goes with them. Judged
+ * against hand-written ideal titles for 55 real sessions on deepseek-v4.1-flash: the subject the
+ * whole session is about, never the summary line again, releases told apart by what landed.
  */
-export const TITLE_SYSTEM_PROMPT = `You write the short label for a coding-agent chat session in a narrow sidebar list. Reply with one JSON object only: {"title": "..."}
-Rules:
-- 2 to 5 words, at most 36 characters, sentence case, no quotes, no trailing period.
-- A noun phrase, not a sentence. Subject first: the feature, bug, file or question it is about.
-- No "X: Y" or "X - Y" tails, no lists, no parentheses.
-- The summary line is shown right under the title in the list. Never restate it or reword it: the title names what the session is, the summary line says what it is for.
-- Name the work, not the user's wording and not the process (planning, discussing, testing, rerun, round N).
-- Name what the session became (summary line, topics); the first message tells what the user came for.
-- State only what the input says. Never name the app every session belongs to (Sova).
-Good: "Short session titles", "Push subscription bug", "Mesh peer sync", "Bun test runner".`;
+export const TITLE_SYSTEM_PROMPT = `You name a coding-agent chat session for a narrow sidebar list. Reply with one JSON object only: {"title": "..."}
+Each row shows the title, then the session's summary line under it. The title is the label the user scans and searches for; the summary line already explains it.
+- Name the subject the whole session is about: the thing built, fixed or decided. The first message usually names it in the user's words; topics show where it went. Later topics are often follow-ups: don't title a late side topic or a single step.
+- Add what the summary line lacks. Never reuse its wording or its first words. Use the user's own name for the thing, or the concrete cause, mechanism, model or round.
+- A subject, never a status: no merged, shipped, landed, done, restart; no counts or commit ids.
+- Merges, releases, pushes: name the first one or two branches or features that landed (from the first message or topics). Never only "branches", "merge", "release", "push", "fast-forward" or "restart".
+- A rerun, round or repeat of earlier work: say which one (round 2, the model it ran on).
+- Use the user's nouns (feature, branch, project, tool names). No generic words: feature, work, changes, session, investigation, process.
+- 2 to 5 words, at most 36 characters; count them (a number or hyphenated word counts as one word). Four words is usually enough. Sentence case noun phrase. No "X: Y", lists, parentheses, quotes or trailing period. Never name Sova.
+Examples (summary line → title):
+"Merging two branches into master, then a restart" → "Push badges and voice merge"
+"Fixing usage monitor percentages" → "Claude meter stuck at 100%"
+"Scroll position lost when switching sessions" → "Queued-message scroll jump"`;
 
 /** The sidebar's title line holds about 32 characters; a title is a label that fits it. */
 export const TITLE_MAX_CHARS = SESSION_TITLE_LABEL_MAX;
@@ -118,20 +122,22 @@ export async function readTitleInput(path: string): Promise<TitleInput> {
 }
 
 /**
- * The user message of the title call. With a summary line: the first message (≤600 characters),
- * the summary line, and the topics with their first bullets. Without one: the first 3 user
- * messages. Pure; its argument has no field for the current title, so none can reach the model.
+ * The user message of the title call. With a summary line: the summary line, labelled as what the
+ * row already shows (so the title won't repeat it), the topics in order with their first bullets,
+ * then the first message (≤600 characters). Without one: the first 3 user messages. Pure; its
+ * argument has no field for the current title, so none can reach the model.
  */
 export function buildTitlePrompt(input: TitleInput): string {
   if (input.summaryLine) {
-    const lines = ["FIRST MESSAGE:", cut(input.userMessages[0] ?? "", FIRST_MESSAGE_MAX), "", "SUMMARY LINE:", input.summaryLine];
+    const lines = ["SUMMARY LINE (already shown under the title; do not repeat it):", input.summaryLine];
     if (input.topics.length) {
-      lines.push("", "TOPICS:");
+      lines.push("", "TOPICS (in order):");
       for (const t of input.topics) {
         lines.push(`- ${t.heading}`);
         for (const b of t.bullets) lines.push(`  - ${b}`);
       }
     }
+    lines.push("", "FIRST MESSAGE (what the user came for; the session may have moved on):", cut(input.userMessages[0] ?? "", FIRST_MESSAGE_MAX));
     return lines.join("\n");
   }
   const lines = ["FIRST MESSAGES:"];
@@ -151,8 +157,20 @@ export function validateTitle(raw: unknown): string | null {
   t = t.replace(/\.$/, "").trim();
   const clean = cleanSessionTitle(t);
   if (!clean || clean.length > TITLE_MAX_CHARS) return null;
-  const words = clean.split(" ").filter((w) => /[\p{L}\p{N}]/u.test(w)).length;
+  const words = countWords(clean);
   return words >= TITLE_WORDS.min && words <= TITLE_WORDS.max ? clean : null;
+}
+
+const countWords = (t: string) => t.split(" ").filter((w) => /[\p{L}\p{N}]/u.test(w)).length;
+
+/**
+ * The one corrective ask after a reply with no usable title: the same input, then why the answer
+ * was refused (its length in words and characters, or that no title came back). Pure.
+ */
+export function retryTitlePrompt(prompt: string, raw: unknown): string {
+  const t = typeof raw === "string" ? oneLine(raw) : "";
+  const why = t ? `"${cut(t, 80)}" is ${countWords(t)} words and ${t.length} characters` : "no title came back";
+  return `${prompt}\n\nYOUR LAST ANSWER WAS NOT USABLE: ${why}. Reply again with one JSON object {"title": "..."}: 2 to 5 words, at most 36 characters.`;
 }
 
 // ── The model call ────────────────────────────────────────────────────────────────────────────
@@ -181,9 +199,17 @@ export interface TitleDeps extends LlmProviderDeps {
   trace?: (entry: { model: string; payload: unknown }) => void;
 }
 
-/** One title model, one attempt: the parsed `title` field of its JSON reply (unvalidated). */
+/**
+ * One pi title ask's deadline. A title reply takes about 1–3 s (p99 under 9 s over 440 calls on
+ * deepseek-v4.1-flash); a rare provider stall ran past 45 s, so a stalled ask is cut here and asked
+ * once more (titleFromChain), in less time than the old single 45 s wait. Claude Code keeps
+ * LLM_TIMEOUT_MS: its CLI start-up alone takes seconds.
+ */
+export const TITLE_PI_TIMEOUT_MS = 20_000;
+
+/** One title model, one ask: the parsed `title` field of its JSON reply (unvalidated). */
 export async function callTitleModel(choice: WorkerChoice, prompt: string, deps: TitleDeps): Promise<unknown> {
-  const timeoutMs = deps.timeoutMs ?? LLM_TIMEOUT_MS;
+  const timeoutMs = deps.timeoutMs ?? (choice.backend === "pi" ? TITLE_PI_TIMEOUT_MS : LLM_TIMEOUT_MS);
   const fail = (failure: DecisionFailure, message: string) => new DecisionError(failure, message.slice(0, 300));
   const denied = deps.denial?.(choice);
   if (denied) throw fail("unavailable", denied);
@@ -205,9 +231,10 @@ const BACKOFF: readonly DecisionFailure[] = ["quota", "rate-limit", "auth"];
 export type ChainResult = { title: string } | { failure: "no-model" | "failed"; detail: string; backoff: boolean };
 
 /**
- * The primary, then the fallback: one attempt each, no retry loop. A model that can't run at all
- * (deps.problem) is skipped without a call. `backoff` when every model that was tried failed for
- * quota, a rate limit or auth.
+ * The primary, then the fallback. Each is asked at most twice: a reply with no usable title (empty,
+ * no JSON, or a title the validator refuses) is asked once more with the reason (retryTitlePrompt),
+ * a timed-out ask once more as it was; any other error is not retried. A model that can't run at all (deps.problem) is skipped without a
+ * call. `backoff` when every model that was tried failed for quota, a rate limit or auth.
  */
 export async function titleFromChain(settings: Pick<SessionTitleSettings, "primary" | "fallback">, prompt: string, deps: TitleDeps): Promise<ChainResult> {
   const slots = settings.fallback ? [settings.primary, settings.fallback] : [settings.primary];
@@ -223,7 +250,22 @@ export async function titleFromChain(settings: Pick<SessionTitleSettings, "prima
     }
     tried++;
     try {
-      const title = validateTitle(await callTitleModel(choice, prompt, deps));
+      let title: string | null = null;
+      let ask = prompt;
+      for (let attempt = 0; attempt < 2 && !title; attempt++) {
+        let raw: unknown;
+        try {
+          raw = await callTitleModel(choice, ask, deps);
+        } catch (err) {
+          // An empty or unparsable reply gets the corrective ask, a timed-out one the same ask
+          // again; any other failure (quota, rate limit, auth, unavailable) is not retried.
+          const failure = err instanceof DecisionError ? err.failure : undefined;
+          if (attempt > 0 || (failure !== "malformed-answer" && failure !== "timeout")) throw err;
+          if (failure === "timeout") continue;
+        }
+        title = validateTitle(raw);
+        ask = retryTitlePrompt(prompt, raw);
+      }
       if (title) return { title };
       why.push(`${label}: no usable title in the reply`);
     } catch (err) {

@@ -189,9 +189,11 @@ describe("input, prompt and validation", () => {
       { heading: "Hunk folding", bullets: ["four"] },
     ]);
     const prompt = at.buildTitlePrompt(input);
-    assert.match(prompt, /^FIRST MESSAGE:\nPlease add a diff viewer/);
-    assert.ok(prompt.includes("SUMMARY LINE:\nInline git diff viewer design"));
-    assert.ok(prompt.includes("- Diff viewer layout\n  - one\n  - two\n- Hunk folding"));
+    // The summary line first, labelled as what the row already shows; the first message last.
+    assert.match(prompt, /^SUMMARY LINE \(already shown under the title; do not repeat it\):\nInline git diff viewer design\n/);
+    assert.ok(prompt.includes("TOPICS (in order):\n- Diff viewer layout\n  - one\n  - two\n- Hunk folding"));
+    assert.match(prompt, /\nFIRST MESSAGE \([^)]*\):\nPlease add a diff viewer to the session pane$/);
+    assert.ok(prompt.indexOf("TOPICS") < prompt.indexOf("FIRST MESSAGE"));
     assert.ok(!prompt.includes("three"));
     assert.ok(!prompt.includes("Old gist"));
   });
@@ -226,12 +228,14 @@ describe("input, prompt and validation", () => {
   test("the rules ask for a short label that never restates the summary line", () => {
     const p = at.TITLE_SYSTEM_PROMPT;
     assert.match(p, /2 to 5 words, at most 36 characters/);
-    assert.match(p, /noun phrase, not a sentence/i);
+    assert.match(p, /noun phrase/i);
     assert.match(p, /No "X: Y"/);
-    assert.match(p, /summary line is shown right under the title[^\n]*Never restate it/);
+    assert.match(p, /summary line under it[^\n]*already explains it/);
+    assert.match(p, /Never reuse its wording or its first words/);
+    assert.match(p, /Merges, releases, pushes: name the first one or two branches or features that landed/);
     assert.ok(!/60 characters|2 to 7 words/.test(p));
-    // Every example the rules give passes the validator: the rules and the check agree.
-    const examples = [...p.matchAll(/"([^"]+)"/g)].map((m) => m[1]!).filter((e) => /^[A-Z][a-z]/.test(e));
+    // Every example title the rules give passes the validator: the rules and the check agree.
+    const examples = [...p.matchAll(/→ "([^"]+)"/g)].map((m) => m[1]!);
     assert.ok(examples.length >= 3, examples.join(" | "));
     for (const e of examples) assert.equal(at.validateTitle(e), e, e);
   });
@@ -300,7 +304,8 @@ describe("naming a session", () => {
     const s = session([user("x y z"), outline("Some work", [])]);
     const f = fakeRuntime((model) => (model === "title-a" ? "no json at all" : '{"title": "Fallback wins here"}'));
     assert.deepEqual(await at.nameSession(s.path, "button", deps(f.runtime)), { outcome: "named", title: "Fallback wins here" });
-    assert.deepEqual(f.calls.map((c) => c.model), ["title-a", "title-b"]);
+    // The primary's unusable reply is asked once more, then the fallback.
+    assert.deepEqual(f.calls.map((c) => c.model), ["title-a", "title-a", "title-b"]);
     const g = fakeRuntime(() => '{"title": "Only the fallback"}');
     const problem = async (c: { model: string }) => (c.model === "prov/title-a" ? "turned off in Settings → Models" : null);
     const r = await at.titleFromChain(settings(), "prompt", { runtime: g.runtime, problem });
@@ -311,6 +316,39 @@ describe("naming a session", () => {
     const quota = fakeRuntime(() => new DecisionError("quota", "out of credits"));
     const q = await at.titleFromChain(settings(), "prompt", { runtime: quota.runtime });
     assert.ok("failure" in q && q.failure === "failed" && q.backoff);
+  });
+
+  test("an unusable reply is asked once more with the reason; an error is never retried", async () => {
+    // Too long: the second ask carries the same input plus the refused title's size.
+    const long = fakeRuntime(() => (long.calls.length === 1 ? '{"title": "Virtual scrolling for session loading"}' : '{"title": "Transcript virtual scroll"}'));
+    assert.deepEqual(await at.titleFromChain(settings({ fallback: null }), "THE INPUT", { runtime: long.runtime }), { title: "Transcript virtual scroll" });
+    assert.equal(long.calls.length, 2);
+    const second = long.calls[1]!.context.messages[0]!.content[0]!.text;
+    assert.ok(second.startsWith("THE INPUT\n\nYOUR LAST ANSWER WAS NOT USABLE"), second);
+    assert.match(second, /"Virtual scrolling for session loading" is 5 words and 37 characters/);
+    assert.equal(long.calls[1]!.context.messages.length, 1);
+    // An empty reply: asked again, saying no title came back.
+    const empty = fakeRuntime(() => (empty.calls.length === 1 ? "" : '{"title": "Org e2e round 2"}'));
+    assert.deepEqual(await at.titleFromChain(settings({ fallback: null }), "IN", { runtime: empty.runtime }), { title: "Org e2e round 2" });
+    assert.match(empty.calls[1]!.context.messages[0]!.content[0]!.text, /no title came back/);
+    // Two unusable replies: failed after exactly two asks, no loop.
+    const bad = fakeRuntime(() => '{"title": "one two three four five six"}');
+    const r = await at.titleFromChain(settings({ fallback: null }), "IN", { runtime: bad.runtime });
+    assert.ok("failure" in r && r.failure === "failed" && !r.backoff);
+    assert.equal(bad.calls.length, 2);
+    // A timed-out ask is asked once more, unchanged; two timeouts fail without a third.
+    const stall = fakeRuntime(() => (stall.calls.length === 1 ? new DecisionError("timeout", "did not answer") : '{"title": "Stalled then fine"}'));
+    assert.deepEqual(await at.titleFromChain(settings({ fallback: null }), "IN", { runtime: stall.runtime }), { title: "Stalled then fine" });
+    assert.equal(stall.calls[1]!.context.messages[0]!.content[0]!.text, "IN");
+    const stalls = fakeRuntime(() => new DecisionError("timeout", "did not answer"));
+    assert.ok("failure" in (await at.titleFromChain(settings({ fallback: null }), "IN", { runtime: stalls.runtime })));
+    assert.equal(stalls.calls.length, 2);
+    // A quota error is not retried.
+    const quota = fakeRuntime(() => new DecisionError("quota", "out of credits"));
+    await at.titleFromChain(settings({ fallback: null }), "IN", { runtime: quota.runtime });
+    assert.equal(quota.calls.length, 1);
+    // A pi ask gets 20 s, under the shared 45 s, so two asks still end sooner than one used to.
+    assert.equal(at.TITLE_PI_TIMEOUT_MS, 20_000);
   });
 
   test("POST /api/sessions/auto-title: a dry run says what would happen and calls nothing; bad bodies are 400", async () => {

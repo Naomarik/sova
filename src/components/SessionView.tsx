@@ -28,8 +28,8 @@ import { hostLabel, hostOf } from "../lib/mesh";
 import { HostScopeProvider } from "../lib/host-scope";
 
 /**
- * An open session's Regenerate title (§app.session-list/auto-titles), in the single-session head
- * beside the title and path it changes — never on a list row or a workspace pane. It asks the
+ * An open session's Regenerate title (§app.session-list/auto-titles), at the start of the
+ * single-session head's path line, under the title it changes — never on a list row or a workspace pane. It asks the
  * session's host for a new title, which may replace any title (the press is the request). The
  * new title arriving is the answer; a title that stays gets a toast saying why.
  */
@@ -258,6 +258,8 @@ export function SessionView(props: {
           {s().title}
         </h1>
         <p class="session-head-meta">
+          {/* First on the path line, so the title above keeps the head's whole width. */}
+          <RegenerateTitleButton path={path} onDone={props.onRefresh} />
           {/* A peer's session names its host first: the folder and everything else are that host's. */}
           <Show when={hostOf(path)}>
             {(h) => (
@@ -281,7 +283,6 @@ export function SessionView(props: {
           </Show>
         </p>
       </div>
-      <RegenerateTitleButton path={path} onDone={props.onRefresh} />
       <ContextGauge path={path} />
       <ProfileChip summary={s()} info={profileInfo()} />
       {/* The remote identity is always present; the connection chip reports liveness separately. */}

@@ -404,6 +404,25 @@ export interface AlignDocInfo {
   rev: number;
   createdAt: string;
   updatedAt: string;
+  /** The adversarial review record (§chat.alignment-review/record); absent on every document no
+      review op touched, which is all of them with the `adversarial-review` flag off. */
+  review?: AlignReviewInfo;
+}
+
+export type AlignReviewPhaseInfo = "plan" | "diff";
+export type AlignReviewStateInfo = "skipped" | "running" | "clear" | "blocking" | "incomplete";
+export interface AlignReviewEntryInfo {
+  state: AlignReviewStateInfo;
+  /** One line: why reviewed or skipped, or the verdict's summary. */
+  reason: string;
+  /** "backend · model · effort". */
+  model?: string;
+  at: string;
+  blockers?: { id: string; title: string; check: string; closed?: { by: "check" | "evidence" | "waiver"; evidence: string; at: string } }[];
+}
+export interface AlignReviewInfo {
+  plan?: AlignReviewEntryInfo;
+  diff?: AlignReviewEntryInfo;
 }
 
 export interface AlignQuestionInfo {
@@ -423,7 +442,9 @@ export type AlignChangeInfo =
   | { kind: "decided" | "reopened" | "question-dropped"; q: string }
   | { kind: "accepted"; qs: string[] }
   | { kind: "status"; to: "implementing" | "done" | "open" }
-  | { kind: "dropped" };
+  | { kind: "dropped" }
+  | { kind: "review"; phase: AlignReviewPhaseInfo; state: AlignReviewStateInfo }
+  | { kind: "blocker-closed"; phase: AlignReviewPhaseInfo; id: string };
 
 /** An `align` call's details: `doc` (the snapshot after a changing call) or `exempt`; `line` is the
     changes in words ("q3 decided · +q11"). */
@@ -929,24 +950,29 @@ export interface PlaybookCatalog {
 }
 
 // GET /api/settings              -> WebSettings
-// PUT /api/settings              -> WebSettings (400 bad body; only the keys below are accepted)
+// PUT /api/settings              -> WebSettings (400 bad body; `experimental` must be an object,
+//                                   a known key a boolean; unknown keys are ignored)
 // GET /api/settings/claude-status -> ClaudeCliStatus
 // ---------------------------------------------------------------------------
 /** Sova's own settings, stored in <agentDir>/sova/settings.json (server/web-settings.ts).
     Nothing outside Sova reads this file, so it is not a cross-process contract the way the
     subagent policy is. */
 export interface WebSettings {
-  experimental: {
-    /** Offer the Claude Code CLI's models as first-class pi models. Default off. Drives the
-        `claude-code-provider` extension flag, so it takes effect for sessions created after the
-        change, not for ones already open. */
-    claudeCodeProvider: boolean;
-  };
+  experimental: ExperimentalSettings;
 }
 
-/** Whether the Claude Code CLI is usable, for the Experimental tab's status line. `version` is
+/** Settings → Experimental's switches, each a boolean, off unless stored `true`. The Claude Code
+    provider is always on now, and an old file's `claudeCodeProvider` is ignored. A new switch is a
+    key here and in server/web-settings.ts EXPERIMENTAL_KEYS. */
+export interface ExperimentalSettings {
+  /** Adversarial review of alignments (§chat.alignment-review/flag): new hosted sessions get the
+      mode extension's `adversarial-review` flag, and the web shows the review UI. */
+  adversarialReview: boolean;
+}
+
+/** Whether the Claude Code CLI is usable, for Settings → Accounts' status line. `version` is
     what `claude --version` printed; `models` counts the claude-code-cli models currently
-    registered with the runtime (0 while the toggle is off). `error` is set when the CLI could not
+    registered with the runtime. `error` is set when the CLI could not
     be run at all — the two fields are then absent. */
 export interface ClaudeCliStatus {
   version?: string;
@@ -1836,8 +1862,11 @@ export type ChatServerMessage =
   | HistoryMessage
   /** Raw pi SDK agent event passthrough. Shapes documented in pi docs/rpc.md "Events":
       message_update (assistantMessageEvent: text_delta | thinking_delta | toolcall_start/delta/end),
-      tool_execution_start/update/end, turn_start/end, agent_start/end, agent_settled, ... */
-  | { type: "event"; event: unknown }
+      tool_execution_start/update/end, turn_start/end, agent_start/end, agent_settled, ...
+      `entryId` (optional, additive): on a `message_end`, the id of the entry the SDK wrote the
+      message as, so a live row knows the transcript row it becomes (§chat.transcript/rendering,
+      "Switching back"). Absent on every other event, and when the message wasn't written. */
+  | { type: "event"; event: unknown; entryId?: string }
   /** Extension dialog bridge (select/confirm/input). Optional in MVP. */
   | { type: "model"; model: string }    // active model changed (model_change passthrough events also exist)
   /** Active thinking level after a change: sent with hello, after set_thinking, and after a

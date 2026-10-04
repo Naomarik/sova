@@ -68,6 +68,7 @@ export function profilesProblem(d: LibraryDraft): string | null {
           ] as [string, Tuple, Tuple | null][])
         : []),
       ...(p.specWriter ? ([["Spec writer", p.specWriter.primary, p.specWriter.fallback]] as [string, Tuple, Tuple | null][]) : []),
+      ...(p.reviewer ? ([["Reviewer", p.reviewer.primary, p.reviewer.fallback]] as [string, Tuple, Tuple | null][]) : []),
     ];
     for (const [label, primary, fallback] of rows) {
       if (incomplete(primary) || incomplete(fallback)) return `Subagents: ${p.name}'s ${label} rows each need a model and an effort.`;

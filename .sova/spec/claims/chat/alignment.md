@@ -47,7 +47,9 @@ document.
 The tool's schema has **one branch per op**, each listing exactly the fields that op takes, with the
 ones it needs marked required and nothing else allowed; the checks the tool runs itself use the same
 table, so a call that fails the schema would fail the tool too, and pi's own argument check refuses
-a missing or unknown field before the tool runs. The ops:
+a missing or unknown field before the tool runs. The ops (with the `adversarial-review` flag on,
+also `review` and `close_blocker`, and their refusals of implementing and done,
+§chat.alignment-review/op):
 
 - **create** `{title, summary, findings?, approach?, rejected?, questions?}` — a new document,
   `al_N`. Every question needs a topic, an ask and a recommendation.
@@ -297,6 +299,8 @@ an `align` call: it is the message, not its working.
   Overseer, a project overseer or a baton session. Even there, only the **newest revision** of an
   **open** alignment (not done or dropped) with **at least one open question** answers; every
   earlier revision, an older session's `align-doc` card and a settled document stay read-only.
+  With adversarial review switched on, the same newest card's foot also shows for its review
+  button or verdict, with or without an open question (§chat.alignment-review/card).
 - **Take a recommendation (tick).** Each open question's recommendation becomes the label
   of a checkbox (`label.toggle`, both lines the target; the box sits in the options' letter
   column), named "Take the recommendation for {qN}." for assistive tech.
@@ -326,7 +330,8 @@ an `align` call: it is the message, not its working.
   Send works with picks and no text. A refused send keeps both. The agent reads the first part as
   `accept` of exactly those questions, and each option ("2b": q2's option b) and typed answer as a
   `decide`.
-- **Go With Recommendations.** The card's foot has one button (secondary, `button-sm`), with the
+- **Go With Recommendations.** The card's foot has one button (secondary, `button-sm`; with
+  adversarial review switched on, also Review Plan or Review Diff, §chat.alignment-review/card), with the
   hint "Or pick some answers and type the rest below." beside it. It sends only its own message:
   `{al_N}: go with your recommendations for every open question, and go ahead.` — which the agent
   reads as `accept_all` then status `implementing`. It is `aria-disabled`, with the reason as its

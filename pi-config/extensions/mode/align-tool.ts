@@ -10,15 +10,19 @@ import { Type, type TSchema } from "typebox";
 import { ALIGN_FILE_MAX_BYTES, readAlignFile } from "./align-file.ts";
 import { renderAlignCall, renderAlignResult } from "./align-ui.ts";
 import {
+	ALIGN_BLOCKER_CLOSES,
 	ALIGN_FILE_SCHEMA,
 	ALIGN_OP_FIELDS,
 	ALIGN_OPS,
+	ALIGN_REVIEW_OPS,
+	ALIGN_REVIEW_STATES,
 	ALIGN_TOOL,
 	AlignError,
 	applyAlignCall,
 	type AlignDetails,
 	type AlignDocument,
 	type AlignOpName,
+	type AlignReviewEnv,
 } from "./align.ts";
 
 export interface AlignToolHost {
@@ -28,6 +32,8 @@ export interface AlignToolHost {
 	changed(doc: AlignDocument): void;
 	/** The session's target while its tools run remotely (the remote extension's announcement). */
 	remoteTarget(): string | undefined;
+	/** The review ops' environment, only while the `adversarial-review` flag is on; undefined otherwise. */
+	review?(): AlignReviewEnv | undefined;
 }
 
 export const ALIGN_TOOL_DESCRIPTION = `Record alignments with the user: one document per concern (id al_N) with a title, a one-line summary, findings (f1, f2…), approach steps (a1…), rejected alternatives (x1…) and questions for the user (q1…), each question carrying your recommendation. Ids are assigned in order and never change or get reused.
@@ -148,6 +154,29 @@ const OP_SCHEMAS: Record<AlignOpName, { description: string; fields: Record<stri
 		fields: { reason: S("Why no alignment is needed.") },
 	},
 	get: { description: "Return the alignment as markdown (every open one when there is no doc).", fields: {} },
+	review: {
+		description:
+			'Adversarial review of this alignment, at most once per phase: state "running" reserves the phase before you spawn the reviewer (the result names the worker and carries its prompt); "skipped" records why you are not reviewing (the phase stays usable); "clear", "blocking" or "incomplete" records the running review\'s verdict.',
+		fields: {
+			phase: StringEnum(["plan", "diff"] as const, { description: '"plan" right after create or import; "diff" while implementing, once the build and tests pass, before done.' }),
+			state: StringEnum(ALIGN_REVIEW_STATES as unknown as ["skipped", "running", "clear", "blocking", "incomplete"], { description: "running (start), skipped, or the verdict: clear (NO BLOCKING), blocking, incomplete." }),
+			reason: S("One line: why you review or skip (the rule that hit), or the verdict's summary, e.g. \"1 constraint added\"."),
+			model: S('With a verdict only, when the fallback ran instead: "backend · model · effort".'),
+			blockers: Type.Array(Type.Object({ title: S("One line: what fails."), check: S("The reviewer's discriminating check: fails now, passes once fixed.") }, Strict), {
+				description: "A blocking verdict's blockers (required for the diff phase); each becomes bN.",
+				minItems: 1,
+			}),
+		},
+	},
+	close_blocker: {
+		description: "Close one open blocker of a review. Only with its check passing, concrete counter-evidence, or the user's explicit waiver.",
+		fields: {
+			phase: StringEnum(["plan", "diff"] as const),
+			id: S('The blocker, e.g. "b1".', { pattern: "^b[1-9][0-9]*$" }),
+			by: StringEnum(ALIGN_BLOCKER_CLOSES as unknown as ["check", "evidence", "waiver"], { description: "check: its check passes now; evidence: concrete counter-evidence; waiver: the user waived it." }),
+			evidence: S("One line: the check's passing result, the counter-evidence, or the user's words."),
+		},
+	},
 };
 
 function opSchema(name: AlignOpName) {
@@ -159,32 +188,58 @@ function opSchema(name: AlignOpName) {
 	return Type.Object(properties, { ...Strict, description, ...(atLeast ? { minProperties: 1 + required.length + atLeast } : {}) });
 }
 
-export const ALIGN_PARAMETERS = Type.Object(
-	{
-		doc: Type.Optional(
-			S('The alignment to change, e.g. "al_2". Required while more than one alignment is open; omit for create, import and exempt.', { pattern: "^al_[1-9][0-9]*$" }),
-		),
-		ops: Type.Array(Type.Union(ALIGN_OPS.map(opSchema)), { description: "Operations, applied in order. create or import must come first and appear once.", minItems: 1 }),
-	},
-	Strict,
-);
+const parameters = (ops: readonly AlignOpName[]) =>
+	Type.Object(
+		{
+			doc: Type.Optional(
+				S('The alignment to change, e.g. "al_2". Required while more than one alignment is open; omit for create, import and exempt.', { pattern: "^al_[1-9][0-9]*$" }),
+			),
+			ops: Type.Array(Type.Union(ops.map(opSchema)), { description: "Operations, applied in order. create or import must come first and appear once.", minItems: 1 }),
+		},
+		Strict,
+	);
 
-export function registerAlignTool(pi: ExtensionAPI, host: AlignToolHost): void {
+export const ALIGN_PARAMETERS = parameters(ALIGN_OPS);
+/** With the `adversarial-review` flag on: the same schema plus the review ops. */
+export const ALIGN_REVIEW_PARAMETERS = parameters([...ALIGN_OPS, ...ALIGN_REVIEW_OPS]);
+
+/**
+ * Appended to the description with the `adversarial-review` flag on (§chat.alignment-review/rules):
+ * when to review, how to fold a review, and the guards. Never in the mode prompt.
+ */
+export const ALIGN_REVIEW_DESCRIPTION = `Adversarial review (op review, at most once per phase per alignment). Decide by one rule, at two points: right after create or import (phase plan), and while implementing once the build and tests pass, before done (phase diff). Review when the work is Complex by Delegate's definition — ambiguous, cross-cutting, or high-risk — or touches permissions or trust boundaries, persistence, migrations or data formats, shared or public contracts, concurrency or process lifecycle, or anything hard to roll back. Without Delegate, apply the same definition to your own work. Docs-only, test-only and one-line changes skip. Record every skip: {op: "review", phase, state: "skipped", reason: "<one line>"}.
+The user asking for a phase's review (the card's Review Plan or Review Diff, or /review) starts it, whatever the rule says, unless that phase already ran.
+To review: {op: "review", phase, state: "running", reason} first (it reserves the phase; its result names the read-only reviewer worker and carries the filled prompt), then spawn it with agent_spawn exactly as the result says, never with your transcript. The reviewer only reports; you run its checks. Then record its verdict with review (clear, blocking with its blockers, or incomplete).
+Plan review: fold the findings into the same alignment with ordinary ops (fix findings, adjust approach steps, rejected items marked "(review)", a question only for a real choice, one finding "Review (plan, <model>): …"), then reply once; no extra approval. Status can't move to implementing while it runs.
+Diff review: run each blocker's check to confirm it, send all accepted fixes in ONE batch to whoever implemented (a worker, or yourself), re-run each check, and close each blocker with close_blocker (by check, evidence, or the user's explicit waiver in their words). A blocker that needs a different approach becomes a question, with status back to open. No automatic second review. Status done is refused while a review runs or a blocker is open. If the reviewer can't run, the phase is incomplete: say so in your report and continue.`;
+
+export const ALIGN_REVIEW_GUIDELINE =
+	"Adversarial review (align review op): after each create or import, and before done once the build and tests pass, review Complex or risky work (ambiguous, cross-cutting, high-risk, trust boundaries, persistence/migrations/data formats, shared contracts, concurrency/lifecycle, hard to roll back) with the read-only reviewer the op names; otherwise record a skip with a one-line reason. Never set done while a review runs or a blocker is open.";
+
+/**
+ * Register the tool. `review`: the `adversarial-review` flag's form (the review ops in the schema,
+ * the rules in the description and guidelines); without it, exactly the flag-off tool. The host
+ * re-registers with review at session_start once the flag reads on (pi replaces a tool registered
+ * again under its name).
+ */
+export function registerAlignTool(pi: ExtensionAPI, host: AlignToolHost, review = false): void {
 	pi.registerTool({
 		name: ALIGN_TOOL,
 		label: "Align",
-		description: ALIGN_TOOL_DESCRIPTION,
+		description: review ? `${ALIGN_TOOL_DESCRIPTION}\n\n${ALIGN_REVIEW_DESCRIPTION}` : ALIGN_TOOL_DESCRIPTION,
 		promptSnippet: ALIGN_PROMPT_SNIPPET,
-		promptGuidelines: ALIGN_TOOL_GUIDELINES,
-		parameters: ALIGN_PARAMETERS,
+		promptGuidelines: review ? [...ALIGN_TOOL_GUIDELINES, ALIGN_REVIEW_GUIDELINE] : ALIGN_TOOL_GUIDELINES,
+		parameters: review ? ALIGN_REVIEW_PARAMETERS : ALIGN_PARAMETERS,
 		// The state is shared: calls in one message apply one after another.
 		executionMode: "sequential",
 		async execute(_id, params, signal, _update, ctx) {
 			signal?.throwIfAborted();
 			try {
+				const reviewEnv = review ? host.review?.() : undefined;
 				const outcome = applyAlignCall(host.docs(), params, {
 					now: new Date().toISOString(),
 					readFile: (path) => readAlignFile(ctx.cwd, path, host.remoteTarget()),
+					...(reviewEnv ? { review: reviewEnv } : {}),
 				});
 				if (outcome.details.doc) host.changed(outcome.details.doc);
 				return { content: [{ type: "text" as const, text: outcome.text }], details: outcome.details as AlignDetails };

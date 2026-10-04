@@ -79,8 +79,13 @@ export function reconcileItems(prev: readonly TranscriptItem[] | null | undefine
  * rows that come after it while away are new), or with a row's top `offset` px below the top of
  * the view. A row, not a pixel position, because rows are added at the end meanwhile and rows not
  * drawn yet have estimated heights.
+ * Live rows drawn below `lastRow` were read too (§chat.transcript/rendering, "Switching back"):
+ * `unnamed` live messages with no entry yet (a reply still streaming), which are the entries right
+ * after it, then the `queued` messages' texts, each the next prompt if it was delivered meanwhile.
  */
-export type ScrollSpot = { follow: true; lastRow?: string } | { follow: false; rowId: string; offset: number };
+export type ScrollSpot =
+  | { follow: true; lastRow?: string; unnamed?: number; queued?: string[] }
+  | { follow: false; rowId: string; offset: number };
 
 export interface CachedTranscript {
   items: TranscriptItem[];

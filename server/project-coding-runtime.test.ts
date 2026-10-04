@@ -348,8 +348,8 @@ describe("a project's coding sessions", async () => {
   test("a loadout that loads no extension is handed no extension flag (no \"Unknown option\" line)", async () => {
     const { currentLinkOrigin, extensionFlagsFor } = await import("./chat-manager");
     assert.ok(currentLinkOrigin(), "the listener is bound, so ordinary runtimes get the link flag too");
-    assert.deepEqual([...extensionFlagsFor(plainRoot, false, true, true)], [], "the project overseer and baton sessions: none, even with the Claude Code switch on");
-    assert.deepEqual([...extensionFlagsFor(plainRoot, false, false, true).keys()], ["claude-code-provider", "sova-link", "sova-link-token"], "an ordinary session keeps them");
+    assert.deepEqual([...extensionFlagsFor(plainRoot, false, true)], [], "the project overseer and baton sessions: none, not even the always-on Claude Code provider");
+    assert.deepEqual([...extensionFlagsFor(plainRoot, false, false).keys()], ["claude-code-provider", "sova-link", "sova-link-token"], "an ordinary session keeps them, the provider with no setting at all");
   });
 
   test("F20 (r3): at L3 the item statechart's own build of a gap's promoted decisions gets the project's mode, then its first prompt", async () => {

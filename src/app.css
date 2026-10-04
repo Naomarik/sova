@@ -67,6 +67,9 @@ html, body { overflow: clip; overscroll-behavior: none; }
    (`imagesEstimate`). */
 .thread { --entry-line: calc(var(--fs-body) * var(--lh-body)); --entry-cols: var(--entry-cols-measured, 110); --entry-narrow: 0; }
 @container (width < 600px) { .thread { --entry-cols: var(--entry-cols-measured, 42); --entry-narrow: 1; } }
+/* A live message's rows (Thread `LiveEntries`): marks which entry they are for the last row read,
+   and lays nothing out. */
+.live-entry { display: contents; }
 /* As wide as a message can be: the transcript reads its width for `--entry-cols-measured`. */
 .entry-measure { max-width: min(100%, var(--measure)); height: 0; }
 /* The top of a transcript with older rows still to fetch (Thread `older-edge`): a line's height

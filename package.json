@@ -19,6 +19,7 @@
     "e2e:transcript-drift": "node scripts/e2e/transcript-drift.mjs",
     "e2e:transcript-follow": "node scripts/e2e/transcript-follow.mjs",
     "dev:hermetic": "node scripts/hermetic-agent-dir.mjs --unlock-url && PORT=${SOVA_PORT:-4810} PI_CODING_AGENT_DIR=\"$PWD/.agent\" scripts/start-server.sh",
+    "dev:hermetic:node": "SOVA_RUNTIME=node pnpm run dev:hermetic",
     "prices:update": "tsx scripts/prices-update.mjs",
     "voice:install": "tsx scripts/voice.ts",
     "statecharts": "tsx scripts/statecharts.ts",
@@ -26,9 +27,10 @@
     "statecharts:test": "node scripts/statecharts-test.mjs",
     "typecheck": "node scripts/nice.mjs tsc --noEmit",
     "build": "node scripts/nice.mjs tsc --noEmit && node scripts/nice.mjs vite build && node scripts/nice.mjs vite build --mode share",
-    "start": "tsx server/index.ts",
+    "start": "scripts/start-server.sh",
     "test:bun": "node scripts/nice.mjs node scripts/run-tests.mjs --runtime bun",
-    "test": "node scripts/nice.mjs node scripts/run-tests.mjs --runtime node"
+    "test:node": "node scripts/nice.mjs node scripts/run-tests.mjs --runtime node",
+    "test": "node scripts/nice.mjs node scripts/run-tests.mjs"
   },
   "dependencies": {
     "@earendil-works/pi-coding-agent": "0.87.1",

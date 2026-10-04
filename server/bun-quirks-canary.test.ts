@@ -1,5 +1,5 @@
 // Canaries for docs/bun-quirks.md: each asserts that a Bun bug Sova works around STILL EXISTS. They
-// run only under Bun (`pnpm run test:bun`) and skip on Node. When a Bun upgrade fixes a bug, its
+// run only under Bun (`pnpm test`) and skip on Node. When a Bun upgrade fixes a bug, its
 // canary fails: delete the workaround the registry names, then the canary and the registry row.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -13,7 +13,7 @@ import { after, describe, test } from "node:test";
 import { WebSocket, WebSocketServer } from "ws";
 
 // A canary is about Bun by definition: the one place outside the launcher that names it.
-const skip = typeof (process.versions as Record<string, string | undefined>).bun === "string" ? false : "a Bun canary (pnpm run test:bun)";
+const skip = typeof (process.versions as Record<string, string | undefined>).bun === "string" ? false : "a Bun canary (pnpm test runs Bun)";
 const tmp = mkdtempSync(join(os.tmpdir(), "sova-bun-canary-"));
 after(() => rmSync(tmp, { recursive: true, force: true }));
 

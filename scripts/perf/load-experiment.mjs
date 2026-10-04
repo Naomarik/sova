@@ -255,6 +255,10 @@ function scopeArgv(unit, weight) {
   return ["systemd-run", "--user", "--scope", "--quiet", "--slice=app.slice", `--unit=${unit}`, ...(weight ? ["-p", `CPUWeight=${weight}`] : []), "--"];
 }
 
+// Node on purpose, though Sova's default runtime is Bun: the measurements are driven over V8's
+// inspector protocol (/json/list discovery, Runtime.evaluate with awaitPromise), which Bun's
+// --inspect does not serve (it speaks WebKit's protocol on a random ws path, and /json/list answers
+// empty), and the numbers in docs/perf/2026-10-03-load-and-freezes.md were taken on Node.
 function startServer(variant, runId) {
   const node = [process.execPath, `--inspect=127.0.0.1:${INSPECT}`, "--import", "tsx", "server/index.ts"];
     const weight = variant === "weight" || variant === "weight-ext" ? WEIGHT : undefined;

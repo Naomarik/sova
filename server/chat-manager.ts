@@ -48,7 +48,6 @@ import { attachStreamGuard, capsFor, type StreamTrip } from "./stream-guard";
 import { useSlicedProviderReads } from "./runtime-quirks";
 import { targetOfCwd } from "./targets";
 import { sovaToken } from "./auth";
-import { claudeCodeProviderEnabled } from "./web-settings";
 import { installWorkerNice, lowerToolCommands } from "./process-priority";
 import { ForeignWriteGuard, markOwned, markOwnedStat, recentForeignWriteAgeSec } from "./write-guard";
 import { monitorExtension } from "./resource-monitor";
@@ -63,14 +62,17 @@ import { RunState, SessionLimits, sessionPowersExtension } from "./session-power
 import { queuePushExtension, topicStore } from "./topics";
 import { instrumentModelRuntime } from "../pi-config/extensions/llm-inflight/runtime.ts";
 import { markDegraded } from "../pi-config/extensions/llm-inflight/tracker.ts";
+import { readWebSettings } from "./web-settings";
 
 const GUARD_POLL_MS = 3000;
 /** Hosted workers' context fill, read off their transcripts' tails; shared, mtime-gated. */
 const workerContextReader = new WorkerContextReader();
 
-/** The experimental Settings switch, as the claude-code extension registers it
-    (pi-config/extensions/claude-code/provider/index.ts CLAUDE_PROVIDER_FLAG). */
+/** The claude-code extension's provider flag (pi-config/extensions/claude-code/provider/index.ts
+    CLAUDE_PROVIDER_FLAG). Always on: every hosted runtime that loads extensions sets it. */
 const CLAUDE_CODE_FLAG = "claude-code-provider";
+/** The mode extension's flag behind adversarial review (pi-config/extensions/mode/index.ts REVIEW_FLAG). */
+const REVIEW_FLAG = "adversarial-review";
 
 /** This server's own bound origin, for the `link` extension's `sova-link` flag (setLinkOrigin). */
 let linkOrigin: string | null = null;
@@ -90,20 +92,23 @@ export const currentLinkOrigin = (): string | null => linkOrigin;
  *   marker (`outline: false`, FANOUT_MEMBER_ENTRY).
  * - `target`: a remote session (cwd = a target placeholder, server/targets.ts) switches
  *   pi-config's remote extension on for that target.
- * - `claude-code-provider`: the experimental Settings switch. When on, the claude-code extension
- *   registers the Claude Code CLI's models as first-class pi models. Read per runtime, so the
- *   switch applies to sessions created after it changed and never reaches an open one.
+ * - `claude-code-provider`: always set, so the claude-code extension registers the Claude Code
+ *   CLI's models as first-class pi models (§app.claude-code-provider/always-on). With no `claude`
+ *   CLI the extension registers nothing and the session carries on.
  * - `sova-link`: this server's own bound origin (setLinkOrigin), switching pi-config's `link`
  *   extension on (link_members/link_send/link_inbox call its /api/mesh/links/* routes). Absent
  *   until the listener is bound; workers never get it, so the tools are inert there.
  * - `sova-link-token`: beside `sova-link`, this server's per-install token, which the link tools
  *   send back as `x-sova-token` (§app.access/callers). In-process only: never argv, never env.
+ * - `adversarial-review`: only while Settings → Experimental's Adversarial review is saved on
+ *   (§chat.alignment-review/flag); read at each runtime start, so an open chat keeps what it began with.
  */
-function sessionFlags(cwd: string, outline = true, claudeCode = claudeCodeProviderEnabled()): Map<string, boolean | string> {
+function sessionFlags(cwd: string, outline = true): Map<string, boolean | string> {
   const flags = new Map<string, boolean | string>(outline ? [["topic-outline-headless", true]] : []);
   const target = targetOfCwd(cwd);
   if (target) flags.set("target", target);
-  if (claudeCode) flags.set(CLAUDE_CODE_FLAG, true);
+  flags.set(CLAUDE_CODE_FLAG, true);
+  if (readWebSettings().experimental.adversarialReview) flags.set(REVIEW_FLAG, true);
   if (linkOrigin) {
     flags.set("sova-link", linkOrigin);
     flags.set("sova-link-token", sovaToken());
@@ -113,8 +118,8 @@ function sessionFlags(cwd: string, outline = true, claudeCode = claudeCodeProvid
 
 /** The extension flags a runtime is handed: none for a loadout that loads no extension (a flag
     nobody registered only logs "Unknown option"), else sessionFlags. Exported for the tests. */
-export function extensionFlagsFor(cwd: string, outline: boolean, noExtensions: boolean, claudeCode = claudeCodeProviderEnabled()): Map<string, boolean | string> {
-  return noExtensions ? new Map() : sessionFlags(cwd, outline, claudeCode);
+export function extensionFlagsFor(cwd: string, outline: boolean, noExtensions: boolean): Map<string, boolean | string> {
+  return noExtensions ? new Map() : sessionFlags(cwd, outline);
 }
 
 /** The extensions every ordinary session loads beyond pi-config's: resource monitoring and
@@ -131,7 +136,7 @@ const DEFAULT_EXTENSION_FACTORIES = [
  * A flag no extension registered is NOT fatal: the SDK reports `Unknown option: --<flag>` as a
  * services diagnostic and carries on (verified against 0.86.1 with the switch on and a
  * claude-code extension that does not register it yet — the session still opened and every other
- * model still worked). That is what makes the experimental switch safe to leave on with an older
+ * model still worked). That is what makes the always-on provider flag safe with an older
  * pi-config: the provider is simply absent, and the diagnostic below says why.
  */
 async function servicesForCwd(
@@ -168,9 +173,15 @@ async function servicesForCwd(
  * fail startup. A failure just means the models are absent until a session opens.
  */
 export async function warmClaudeCodeProvider(modelRuntime: ModelRuntime, cwd: string): Promise<void> {
-  if (!claudeCodeProviderEnabled()) return;
   try {
-    const services = await servicesForCwd(cwd, modelRuntime);
+    // The provider flag alone: the throwaway session needs nothing else, and the link flags would
+    // read the access token, which throws (and logs its problem again) when the token file is damaged.
+    const services = await createAgentSessionServices({
+      cwd,
+      modelRuntime,
+      extensionFlagValues: new Map([[CLAUDE_CODE_FLAG, true]]),
+      resourceLoaderOptions: { extensionFactories: [...DEFAULT_EXTENSION_FACTORIES] },
+    });
     for (const d of services.diagnostics) console.warn(`[chat] claude-code warm-up ${d.type}: ${d.message}`);
     // The flag is only visible from session_start, and session_start is emitted by
     // AgentSession.bindExtensions (dist/core/agent-session.js:2029) — NOT by creating the session.
@@ -1664,7 +1675,9 @@ class ChatSession {
         this.queue.onSdkEvent();
       }
       try {
-        this.broadcast({ type: "event", event: toWireEvent(event) });
+        const wire: Extract<ChatServerMessage, { type: "event" }> = { type: "event", event: toWireEvent(event) };
+        if (event.type === "message_end") this.holdForEntryId(wire, (event as { message?: unknown }).message);
+        else this.broadcast(wire);
       } catch (err) {
         console.error("[chat] failed to forward event", err);
       }
@@ -2983,7 +2996,42 @@ class ChatSession {
   }
 
   broadcast(msg: ChatServerMessage): void {
+    if (this.held) {
+      this.held.push(msg);
+      return;
+    }
     for (const c of this.clients) c.send(msg);
+  }
+
+  /** Broadcasts waiting behind a `message_end` until its entry id is known (holdForEntryId). */
+  private held: ChatServerMessage[] | null = null;
+  /**
+   * Sends a `message_end` tagged with the entry the SDK writes its message as (§chat.transcript/rendering,
+   * "Switching back": a live row knows its row). Listeners run BEFORE the SDK persists the message
+   * (agent-session.js `_handleAgentEvent`: `_emit`, then `appendMessage`, in the same synchronous
+   * stretch), so the event waits one microtask, as `markSend` does, and every broadcast meanwhile
+   * waits behind it: the order clients see is unchanged. Queued before `markSend`'s, so the leaf
+   * read here is still the message, never its marker.
+   */
+  private holdForEntryId(wire: Extract<ChatServerMessage, { type: "event" }>, message: unknown): void {
+    if (this.held) {
+      this.held.push(wire);
+      return;
+    }
+    this.held = [wire];
+    queueMicrotask(() => {
+      try {
+        const sm = this.session.sessionManager;
+        const leaf = sm.getLeafId();
+        const entry = leaf ? sm.getEntry(leaf) : undefined;
+        if (entry?.type === "message" && entry.message === message) wire.entryId = entry.id;
+      } catch {
+        // untagged: a client falls back to the rows it can see
+      }
+      const out = this.held ?? [];
+      this.held = null;
+      for (const m of out) this.broadcast(m);
+    });
   }
 
   /** Worker snapshot from this runtime's own live record (the sessions extension writes one

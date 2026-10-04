@@ -11,7 +11,12 @@ source = no rebuild and no restart. Options are listed at the top of `install.sh
 Remote access over ssh is opt-in: `… | sh -s -- --ssh-key "<your public key line>"` adds the key, turns password logins
 off (key-only) and runs sshd as a runit service, so it comes back whenever Termux opens or the phone reboots.
 
-`--node-id`, `--dns`, `--tailnet-ip`, `--port` and `--peer-port` are remembered in `~/sova-mesh/.install/arg-*`: a rerun
+Sova runs on Bun: Bun's own Android build (`bun-linux-aarch64-android`, or `-x64-android` on an x86_64 device; it
+needs Android 9 or later), at the version mise.toml pins, downloaded by `scripts/fetch-bun.sh` into `~/sova-mesh/app/.bun`
+and checked against `scripts/bun-release.txt`. Termux has no Bun package. `--node` runs Sova on Termux's `nodejs-lts`
+instead (no Bun downloaded); `--bun` switches back.
+
+`--node-id`, `--dns`, `--tailnet-ip`, `--port`, `--peer-port` and `--node`/`--bun` are remembered in `~/sova-mesh/.install/arg-*`: a rerun
 without one of them keeps the value given last (a new value replaces it), so a plain rerun never drops the phone's
 StableID or name from its env.
 
@@ -33,7 +38,8 @@ Remove everything it added (default), or keep sshd, its key, the key-only config
 ## What install.sh does
 
 - Packages: `nodejs-lts` (24.x, Sova needs >= 22.19), `ripgrep` and `fd` (pi's grep/find tools, Sova's file tools), `git`,
-  `tmux`, `termux-services` (runit), plus their new dependencies; `--ssh-key` adds `openssh`. Every other command the
+  `tmux`, `termux-services` (runit), `unzip` (Bun's download; not with `--node`), plus their new dependencies;
+  `--ssh-key` adds `openssh`. Node stays installed on Bun too: pnpm, the build and the installer's helpers run on it. Every other command the
   scripts or Sova run comes with Termux's bootstrap; one that is missing from `$PREFIX/bin` anyway (removed, or only
   Android's `/system/bin` copy, e.g. `gzip`) gets its package installed too (install.sh's `TOOLS` table). The tools it
   needs before apt runs (dpkg, apt, coreutils, gawk, grep, sed, termux-tools; net-tools unless `--tailnet-ip`) are

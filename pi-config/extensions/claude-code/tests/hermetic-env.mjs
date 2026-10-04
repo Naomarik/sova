@@ -24,7 +24,7 @@ process.env.USERPROFILE = home;
 // just set (Bun 1.4.2) would point every "throwaway" path at the real home: refuse to run at all.
 if (os.homedir() !== home) {
 	if (!inherited) fs.rmSync(root, { recursive: true, force: true });
-	throw new Error(`hermetic-env: os.homedir() is ${os.homedir()}, not the throwaway HOME ${home}. This runtime ignores an in-process HOME change, so the tests would touch the real home. Set HOME in the environment before the runtime starts: use \`pnpm run test:bun\` (scripts/run-tests.mjs) for Bun.`);
+	throw new Error(`hermetic-env: os.homedir() is ${os.homedir()}, not the throwaway HOME ${home}. This runtime ignores an in-process HOME change, so the tests would touch the real home. Set HOME in the environment before the runtime starts: run Bun through \`pnpm test\` (scripts/run-tests.mjs).`);
 }
 for (const name of [
 	"PI_CODING_AGENT_DIR", "PI_AGENT_DIR", "PI_SESSIONS_DIR", "CLAUDE_CONFIG_DIR", "SOVA_EXTENSIONS_FILE",

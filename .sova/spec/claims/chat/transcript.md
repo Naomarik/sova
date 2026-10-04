@@ -630,7 +630,9 @@ runaway reply there is capped: it can't write a line too long to read back or to
     scroll).
   - When the user scrolls up past 80px, following stops and a `.button.jump-latest` appears:
     "Jump to Latest · N new". Clicking it scrolls to the end, resumes following, and removes the
-    button.
+    button. Only the view moving up stops following: content landing below a following view (a
+    reply, a queued message drawn again after a switch back), or the browser moving the view down
+    to keep a row in place, never does, and the view goes back to the end.
   - It also appears, not following, when you switch back to a session left at the end that gained
     rows while you were away: the view stops at the last row read, and "N new" counts the rows
     below it (§chat.transcript/rendering).
@@ -753,7 +755,13 @@ virtualized.
   scrolled: at the end while following (and which row was last), else the row at the top of the
   view and its offset. So do the sessions in Recent, fetched ahead (§chat.transcript/recent-preload).
   Switching back to one shows those rows at once, where they were (with Jump to Latest when not
-  following), while its `hello` or snapshot is on the way, then reconciles them as above. One
+  following), while its `hello` or snapshot is on the way, then reconciles them as above. The
+  last row read is the last row drawn when the reader left, live rows included: a running turn's
+  prompt, reply and tool rows, and a message still queued, count as read when they come back as
+  the transcript's rows. The server names the entry each message that ends was written as (on
+  its `message_end`), so a live row knows its row; a reply still streaming when the reader left is
+  the entry after the last row named, and a queued message delivered meanwhile is the next prompt
+  with its text. Only rows that arrive after the reader left count as gained. One
   left at the end that gained rows while away, kept or brought by that `hello` or snapshot, stops
   at the last row read: that row's bottom at the bottom of the view, not following, with "Jump to
   Latest · N new" counting the rows below it, unless they're short enough that the view is still

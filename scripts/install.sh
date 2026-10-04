@@ -5,22 +5,25 @@
 #
 #   curl -fsSL https://raw.githubusercontent.com/Naomarik/sova/vNEXT/scripts/install.sh | bash
 #
-# What it needs on the machine already: git, node (>= 22.19) and pnpm. Without pnpm it runs the
-# version the repository pins through npx (npm ships with Node). It installs no toolchain, no
-# version manager and no system package, and it never uses sudo. It runs on macOS's bash 3.2 and
-# BSD tools as well as on Linux.
+# What it needs on the machine already: git, node (>= 22.19), pnpm, curl, and unzip or python3.
+# Without pnpm it runs the version the repository pins through npx (npm ships with Node). The
+# server runs on Bun: the installer downloads the Bun release the repository pins (mise.toml) from
+# Bun's GitHub releases into <install dir>/.bun, checked against the sha256 the repository records
+# (scripts/bun-release.txt, through scripts/fetch-bun.sh). That keeps Bun inside the install
+# directory, at the version Sova is tested on, with no version manager and no edit to a shell rc
+# file (as bun.sh/install would make). Beyond that it installs no toolchain, no version manager and
+# no system package, and it never uses sudo. It runs on macOS's bash 3.2 and BSD tools as well as
+# on Linux.
 #
 # What it touches, and nothing else:
-#   <install dir>          default ~/.local/share/sova — a clone, its node_modules and its dist/
+#   <install dir>          default ~/.local/share/sova — a clone, its node_modules, its dist/ and
+#                          the pinned Bun in .bun/bin/bun
 #   <bin dir>/sova         default ~/.local/bin/sova — a launcher this script wrote
 #   <agent dir>/extensions/<name>
 #                          one symlink per extension in <install dir>/pi-config/extensions, where
 #                          <agent dir> is $PI_CODING_AGENT_DIR, else ~/.pi/agent (--no-extensions
 #                          skips them). Anything already at one of those paths that is not our
 #                          own link is left alone and that extension is skipped.
-#   <agent dir>/sova/settings.json
-#                          written only when it does not exist, with the Claude Code provider
-#                          switched on, so Claude Code's models are offered from the first start
 #   a login service, only if you ask for one (--service, or yes at the prompt): the launchd agent
 #                          ~/Library/LaunchAgents/io.github.naomarik.sova.plist on macOS, the
 #                          systemd user unit ~/.config/systemd/user/sova.service on Linux
@@ -91,6 +94,10 @@ case "$port" in '' | *[!0-9]*) die "--port needs a number, got '$port'" ;; esac
 for cmd in git node; do
 	command -v "$cmd" >/dev/null 2>&1 || die "$cmd is not installed. Install git, Node.js >= $node_min_major.$node_min_minor and pnpm, then run this again."
 done
+# Bun's download (scripts/fetch-bun.sh): curl, and unzip or python3 to unpack it.
+command -v curl >/dev/null 2>&1 || die "curl is not installed; it downloads Bun. Install curl, then run this again."
+command -v unzip >/dev/null 2>&1 || command -v python3 >/dev/null 2>&1 ||
+	die "unzip is not installed (nor python3); it unpacks Bun. Install unzip, then run this again."
 # pnpm on PATH is used as it is; otherwise npx runs pnpm (the version is read from the clone below).
 if command -v pnpm >/dev/null 2>&1; then
 	use_npx=false
@@ -211,7 +218,11 @@ EOF
 			???????*) case "$have" in "$ref"*) same=true ;; esac ;;
 		esac
 	fi
-	if $same && [ -f "$dir/dist/index.html" ] && [ -x "$dir/node_modules/.bin/tsx" ]; then
+	# ... and with the Bun its mise.toml pins in place.
+	bun_pin=$(sed -n 's/^[[:space:]]*bun[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' "$dir/mise.toml" 2>/dev/null | head -n 1)
+	bun_have=$("$dir/.bun/bin/bun" --version 2>/dev/null || true)
+	if $same && [ -f "$dir/dist/index.html" ] && [ -x "$dir/node_modules/.bin/tsx" ] &&
+		[ -n "$bun_pin" ] && [ "$bun_have" = "$bun_pin" ]; then
 		rebuild=false
 	fi
 fi
@@ -255,7 +266,15 @@ if $rebuild; then
 		pnpm=(pnpm)
 	fi
 
-	say "installing dependencies (including dev dependencies: the server runs through tsx)"
+	# The pinned Bun: the previous install's when it is still the pinned one, else downloaded.
+	if [ -x "$dir/.bun/bin/bun" ]; then
+		mkdir -p "$staging/sova/.bun/bin"
+		cp -p "$dir/.bun/bin/bun" "$staging/sova/.bun/bin/bun"
+	fi
+	sh "$staging/sova/scripts/fetch-bun.sh" "$staging/sova/.bun" >/dev/null ||
+		die "could not install Bun; nothing was changed"
+
+	say "installing dependencies (including dev dependencies: tsx runs the server on Node, sova --node)"
 	( cd "$staging/sova" && "${pnpm[@]}" install --frozen-lockfile --prod=false ) ||
 		die "pnpm install failed; nothing was changed"
 
@@ -299,7 +318,9 @@ write_file() {
 write_file "$launcher" 755 <<LAUNCHER
 #!/usr/bin/env bash
 $marker
-# Runs the built Sova server from its install directory. PORT and HOST are read by the server.
+# Runs the built Sova server from its install directory, on the Bun in its .bun/ (SOVA_BUN names
+# another). PORT and HOST are read by the server.
+#   sova --node  run the server on Node instead (SOVA_RUNTIME=node does the same)
 #   sova token   print this install's access token (the server mints it at its first start)
 #   sova open    open the browser at the app, unlocked by the token in the URL's fragment
 set -euo pipefail
@@ -320,7 +341,8 @@ case "\${1:-}" in
 		echo "sova: no browser opener (open, xdg-open); paste the token from 'sova token' into the page" >&2
 		exit 1 ;;
 esac
-exec "\$dir/node_modules/.bin/tsx" "\$dir/server/index.ts" "\$@"
+export SOVA_BUN=\${SOVA_BUN:-\$dir/.bun/bin/bun}
+exec "\$dir/scripts/start-server.sh" "\$@"
 LAUNCHER
 
 # ---- pi extensions: one link per extension, into the installed clone ----
@@ -361,20 +383,6 @@ if $extensions; then
 			"$ext_src"/*) [ -e "$dst" ] || { rm -f "$dst"; say "removed $dst (gone from this version)"; } ;;
 		esac
 	done
-
-	# The Claude Code provider switch, on unless the user already has a setting of their own.
-	switch=$agent/sova/settings.json
-	if [ ! -e "$switch" ] && [ ! -L "$switch" ]; then
-		write_file "$switch" 644 <<'JSON'
-{
-	"version": 1,
-	"experimental": {
-		"claudeCodeProvider": true
-	}
-}
-JSON
-		say "switched on the Claude Code provider in $switch"
-	fi
 fi
 
 # ---- the login service ----
@@ -516,6 +524,7 @@ else
 	say "$dir is already at $ref ($commit); nothing to rebuild"
 fi
 say "launcher: $launcher"
+say "runtime: Bun $("$dir/.bun/bin/bun" --version 2>/dev/null || echo '?') in $dir/.bun (sova --node runs it on Node instead)"
 if $extensions; then
 	say "pi extensions: linked from $dir/pi-config/extensions into $agent/extensions${skipped:+ (skipped:$skipped)}"
 	command -v claude >/dev/null 2>&1 ||

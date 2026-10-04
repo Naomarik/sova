@@ -26,6 +26,7 @@ import {
 	legacyLine,
 	normalizeAlignDetails,
 	openQuestionsOf,
+	reviewLines,
 	openText,
 	recommendedText,
 	toMarkdown,
@@ -302,6 +303,8 @@ export function renderAlignResult(result: { content?: unknown; details?: unknown
 	const lines = [
 		`${theme.fg(tone, theme.bold(`${doc.id} ${doc.title}`))} ${theme.fg("dim", `· ${alignStatusWord(status)} · ${openText(doc)} · v${doc.rev}${details.line ? ` · ${details.line}` : ""}`)}`,
 		...openQuestionsOf(doc).map((q) => `  ${theme.fg("accent", q.id)} ${q.topic}: ${q.ask} ${theme.fg("dim", `(rec: ${recommendedText(q)})`)}`),
+		// The review record (adversarial review): only a document that carries one has these lines.
+		...reviewLines(doc).map((l) => theme.fg("dim", `  ${l}`)),
 	];
 	return new Text(lines.join("\n"), 0, 0);
 }

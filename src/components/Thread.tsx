@@ -1231,6 +1231,13 @@ export function LiveEntries(props: {
     <>
       <For each={props.live.entries}>
         {(entry: LiveEntry) => (
+          /* What the last row read (ThreadScroller `spot`) needs of a live message: the entry it was
+             written as, once its end has named it, or that it is a prompt no start has taken yet. */
+          <div
+            class="live-entry"
+            data-entry-read={entry.entryId}
+            data-queued={entry.kind === "user" && !entry.started && !entry.entryId ? "" : undefined}
+          >
           <Switch>
             <Match when={entry.kind === "user" && entry}>
               {(e) => (
@@ -1323,6 +1330,7 @@ export function LiveEntries(props: {
               )}
             </Match>
           </Switch>
+          </div>
         )}
       </For>
       <Show when={hidden()?.calls || hidden()?.thinking ? hidden() : null}>
@@ -1423,6 +1431,7 @@ export function ThreadScroller(props: {
   let lastGap = 0;
   const toBottom = () => {
     el.scrollTop = el.scrollHeight;
+    scrolledTop = el.scrollTop;
     lastGap = 0;
   };
   const resumeFollowing = () => {
@@ -1470,7 +1479,11 @@ export function ThreadScroller(props: {
   };
   /** The view's width at the last scroll event. */
   let scrolledWidth = 0;
+  /** Where the view was at the last scroll event, or the last scroll to the end. */
+  let scrolledTop = 0;
   const onScroll = () => {
+    const up = el.scrollTop < scrolledTop;
+    scrolledTop = el.scrollTop;
     if (jumpScrolling) jumpScrolled();
     // A scroll that moved the held row is the user's (the browser's anchoring keeps it in place).
     if (held && el.scrollTop !== held.at) {
@@ -1488,6 +1501,12 @@ export function ThreadScroller(props: {
     }
     const near = lastGap < FOLLOW_PX;
     if (near && performance.now() < jumpingUntil) return;
+    // Only the view moving up stops following. Content landing below a following view (a queued
+    // message drawn again after a switch back) lands in a task before the frame that settles it,
+    // and the browser's scroll anchoring can move the view down meanwhile: that event finds the
+    // end far below, and is not the reader leaving it. Back to the end instead. A disclosure the
+    // reader just opened is theirs to look at, so following is re-read from where the view is.
+    if (follow && !near && !up && !toggled) return settleSoon();
     if (near === follow) return;
     follow = near;
     setAway(near ? null : props.count);
@@ -1530,7 +1549,7 @@ export function ThreadScroller(props: {
    * with "N new" instead of following past them. Dropped once the reader scrolls or touches the
    * transcript, which then goes where they take it.
    */
-  let readTo = props.restore?.follow ? (props.restore.lastRow ?? null) : null;
+  let readTo = props.restore?.follow && props.restore.lastRow ? props.restore : null;
   /** The reader has scrolled or touched the transcript since it opened. */
   let touched = false;
   const onTouch = () => {
@@ -1538,6 +1557,42 @@ export function ThreadScroller(props: {
     touched = true;
   };
   const rowOf = (id: string) => el.querySelector<HTMLElement>(`.thread > .entry[data-entry="${CSS.escape(id)}"]`);
+  const drawn = (row: Element) => row.getBoundingClientRect().height > 0;
+  /** The last row read, by its row id or by the entry id a live row knew (an assistant message's
+      rows are `<entry id>:<block>`): its last drawn row. */
+  const lastRowOf = (id: string): HTMLElement | null => {
+    const exact = rowOf(id);
+    if (exact) return exact;
+    const entry = entryIdOf(id);
+    const rows = [...el.querySelectorAll<HTMLElement>(`.thread > .entry:is([data-entry="${CSS.escape(entry)}"], [data-entry^="${CSS.escape(entry)}:"])`)];
+    return rows.filter(drawn).at(-1) ?? rows.at(-1) ?? null;
+  };
+  const textOf = (row: Element) => (row.querySelector(".message-user .message-text")?.textContent ?? "").replace(/\s+/g, " ").trim();
+  /**
+   * The row the reader had read to (`readTo`): its last row read, then the live messages drawn
+   * below it, now rows of the transcript. First the ones with no entry yet when the reader left
+   * (a reply still streaming), the entries right after it; then each queued message, the next
+   * prompt when its text is the same (it was delivered while away; one still queued is a live row
+   * again, below every row).
+   */
+  const readRow = (spot: NonNullable<typeof readTo>): HTMLElement | null => {
+    let row = spot.lastRow ? lastRowOf(spot.lastRow) : null;
+    if (!row) return null;
+    const groups: HTMLElement[][] = [];
+    for (let next = row.nextElementSibling; next; next = next.nextElementSibling) {
+      if (!(next instanceof HTMLElement) || !next.matches(".entry") || !drawn(next)) continue;
+      const last = groups.at(-1);
+      if (last && entryIdOf(last[0]!.dataset.entry ?? "") === entryIdOf(next.dataset.entry ?? "")) last.push(next);
+      else groups.push([next]);
+    }
+    let i = 0;
+    for (let n = spot.unnamed ?? 0; n > 0 && i < groups.length; n--) row = groups[i++]!.at(-1)!;
+    for (const text of spot.queued ?? []) {
+      const group = groups[i];
+      if (group && textOf(group[0]!) === text.replace(/\s+/g, " ").trim()) row = groups[i++]!.at(-1)!;
+    }
+    return row;
+  };
   /** The rows drawn below `row`: what "N new" counts after the last row read. */
   const rowsAfter = (row: Element) => {
     let n = 0;
@@ -1559,11 +1614,11 @@ export function ThreadScroller(props: {
       when they're short enough that the view would still be within FOLLOW_PX of the end. */
   const holdAtRead = (): boolean => {
     if (!readTo) return false;
-    const row = rowOf(readTo);
+    const row = readRow(readTo);
     if (!row) return false;
     const added = rowsAfter(row);
     if (!added) return false;
-    const id = readTo;
+    const id = row.dataset.entry ?? "";
     readTo = null;
     const top = el.scrollTop + row.getBoundingClientRect().bottom - el.getBoundingClientRect().bottom;
     if (el.scrollHeight - top - el.clientHeight < FOLLOW_PX) return false;
@@ -1673,9 +1728,26 @@ export function ThreadScroller(props: {
   const spot = (): ScrollSpot | null => {
     if (!el?.isConnected) return null;
     if (follow) {
-      const rows = el.querySelectorAll<HTMLElement>(".thread > .entry");
-      for (let i = rows.length - 1; i >= 0; i--) if (rows[i]!.getBoundingClientRect().height > 0) return { follow: true, lastRow: rows[i]!.dataset.entry };
-      return { follow: true };
+      // The last row drawn, a live one included (LiveEntries): one whose entry is known by that
+      // entry's id; the live messages below it with none yet are counted, the queued ones by text.
+      const rows = el.querySelectorAll<HTMLElement>(".thread > :is(.entry, .live-entry)");
+      let unnamed = 0;
+      const queued: string[] = [];
+      let lastRow: string | undefined;
+      for (let i = rows.length - 1; i >= 0 && lastRow === undefined; i--) {
+        const row = rows[i]!;
+        if (row.matches(".entry")) {
+          if (drawn(row)) lastRow = row.dataset.entry;
+          continue;
+        }
+        // Laid out as its contents: drawn when anything in it is.
+        if (![...row.querySelectorAll("*")].some(drawn)) continue;
+        if (row.dataset.entryRead) lastRow = row.dataset.entryRead;
+        else if (row.dataset.queued !== undefined) queued.unshift(textOf(row));
+        else unnamed++;
+      }
+      if (lastRow === undefined) return { follow: true };
+      return { follow: true, lastRow, ...(unnamed ? { unnamed } : {}), ...(queued.length ? { queued } : {}) };
     }
     const top = el.getBoundingClientRect().top;
     for (const entry of el.querySelectorAll<HTMLElement>(".thread > .entry")) {

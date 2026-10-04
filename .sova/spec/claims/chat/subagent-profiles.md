@@ -32,7 +32,10 @@ identify the setup as "Subagent profiles" or "Subagents".
 - **Shape (version 1).** The library is `{version: 1, profiles: [{id, name, delegate, teams,
   members, specWriter}]}`. `delegate` is the four work kinds' `{primary, fallback}`; `teams` is
   `{coordinator, monitor, handover}` as in `team-defaults.json`, or `null` (no standing members);
-  `members` is one worker or `null`; `specWriter` is `{primary, fallback}` or `null`. The default
+  `members` is one worker or `null`; `specWriter` is `{primary, fallback}` or `null`. A profile
+  may also carry an optional `reviewer` (`{primary, fallback}` or `null`), the adversarial
+  reviewer's route (§chat.alignment-review/route): a profile without the key parses as before, and
+  a parse never adds it. The default
   file is `{version: 1, default}`: a profile's id or `"off"` (§chat.subagent-profiles/off).
 - **Strict.** An id is lowercase letters, digits and dashes, at most 48 characters, unique, and
   never `off`; a name is one line of at most 48 characters, unique ignoring case, and never "Off";
@@ -146,7 +149,8 @@ editors for one setting.
   default first. A chat whose pick is deleted follows the default.
 - **The editor** (Edit, or a new profile): the name, then **Delegate routing** (the four work
   kinds), **Teams** (coordinator, monitor, their thresholds, and **Members default**: off, or one
-  worker), and **Spec writer** — the same rows, validation and save rules the old screens had
+  worker), and **Spec writer** (and, while adversarial review is switched on, **Reviewer**,
+  §chat.alignment-review/route) — the same rows, validation and save rules the old screens had
   (§app.settings-dialog/modes): choices from discovery, a changed worker its backend can't run is
   refused, one that can't be checked or that the policy denies saves with a note. The dialog's
   Save Changes saves the profile being edited; its unsaved edits hold a close, and another profile

@@ -311,6 +311,8 @@ reason when Claude Code refused a code); done (**Added**, the new login's email,
 plan, whether it shares an account already here, and **Done**); failed (the reason, "Nothing was
 added.", **Close** and **Try Again**). Closing Settings cancels a flow still waiting for its code.
 No token or credential is ever shown or sent to the browser.
+Under the logins, one plain line says whether the Claude Code CLI was found
+(§app.claude-logins/cli-status).
 
 **While the mesh is on** the section is the pool (§app.claude-logins/pool): an intro that every
 device shares these logins, one at a time, borrowed from the keeper and given back after a limit,
@@ -429,3 +431,14 @@ When the mesh is on and the pool first forms, every login already on a device st
 that device, in its order, and that device becomes the keeper if none is chosen. Nothing is signed
 out, moved or deleted by forming the pool. With the mesh off there is no pool: the device is its own
 keeper and holder, and every login on it is used as before (§app.claude-logins/spawn-selection).
+
+## §app.claude-logins/cli-status — Is the Claude Code CLI here
+
+Settings → Accounts ends with one muted status line about the Claude Code CLI, read when the tab
+opens (`GET /api/settings/claude-status`: `claude --version` on this host's first usable login,
+and how many `claude-code-cli` models the server's runtime holds). It says, first match wins:
+"Checking for the Claude Code CLI…" while it asks; "Claude Code CLI: {reason}" when the CLI could
+not be run (not installed, no answer within 5 s, a failed `--version`); "Claude Code CLI {version}
+· {n} model(s) in the picker." when models are registered; else "Claude Code CLI {version} found,
+but no models are registered yet — start a session, or restart the server." It is a line, not a
+control: nothing to switch, and nothing else on the tab waits for it.

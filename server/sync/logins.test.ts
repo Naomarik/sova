@@ -592,6 +592,9 @@ test("idle host: A's newer login, expired while asleep, is not replaced by B's o
   assert.equal(piRefreshSha(a!), latest(older).refreshSha256);
   // B is away while the user logs in to another account on A; A then sleeps past the access token.
   b!.online = false;
+  // A later millisecond: logins stamped in the same one are one lineage (sameLineage), which two
+  // real logins on two hosts never are.
+  await new Promise((r) => setTimeout(r, 5));
   const newer = mock.login({ shape: "pi", account: "newer" });
   await AuthStorage.create(a!.authPath).modify("openai-codex", async () => ({ ...newer.credential, expires: Date.now() - 3_600_000 }));
   await a!.sync.observe("pi");
@@ -790,6 +793,8 @@ test("api-keys mode: OAuth on A never reaches B (never even sent to it); the API
   await converge([a!, b!, c!]);
   assert.equal(c!.auth()["openai-codex"], undefined);
   assert.ok(!pushedKeys(b!).has(CODEX), "the OAuth logout was not sent to B");
+  // A later millisecond: only a login after the logout survives it (admissible).
+  await new Promise((r) => setTimeout(r, 5));
   const relogin = await a!.piLogin();
   await converge([a!, b!, c!]);
   // Switched to "all", B takes the OAuth logins on its next exchange.

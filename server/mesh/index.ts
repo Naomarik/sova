@@ -319,10 +319,11 @@ export function mayShareLogin(peerId: string, key: string): boolean {
 }
 
 /** Whether a browser request relayed to `peerId` must carry nothing of this host or the browser:
-    while this host's grant to that peer is anything but `full`. */
+    while this host's grant to that peer is anything but `full`, and always for a dial-out pairing. */
 export function scrubFor(peerId: string): boolean {
   const peer = peerById(peerId);
-  return !!peer && restricted(peer.nodeId);
+  // A dial-out pairing always (§mesh.lan/as-a-peer): it may roam onto any network, whatever its grant.
+  return !!peer && (!!peer.lan || restricted(peer.nodeId));
 }
 
 /** Record a peer's answer to a call that needed `cap`: its `denied` (what it hides from this host,

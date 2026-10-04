@@ -205,7 +205,15 @@ describe("this host as the relay", () => {
     const hop = seen.find((s) => s.path === "/api/sessions")!;
     assert.equal(hop.headers.host, "lan-peer", "the Host names nothing");
 
-    const res = await fetch(`${base}/peer/laptop/api/page`, { headers: AUTH, redirect: "manual" });
+    // The pairing has the full grant here, and the hop still carries nothing of this host or browser.
+    await api("PUT", "/api/mesh/access", { peer: "laptop", grant: { preset: "full" } });
+    const res = await fetch(`${base}/peer/laptop/api/page`, { headers: { ...AUTH, Origin: base, "User-Agent": "TheBrowser/1", "Accept-Language": "xx" }, redirect: "manual" });
+    await api("PUT", "/api/mesh/access", { peer: "laptop", grant: { preset: "presence" } });
+    const hopped = seen.findLast((s) => s.path === "/api/page")!;
+    assert.equal(hopped.headers["x-forwarded-host"], "peer");
+    assert.equal(hopped.headers.origin, undefined);
+    assert.equal(hopped.headers["accept-language"], undefined);
+    assert.notEqual(hopped.headers["user-agent"], "TheBrowser/1");
     assert.equal(res.status, 302);
     assert.equal(res.headers.get("content-type"), "application/octet-stream");
     assert.equal(res.headers.get("content-disposition"), "attachment");

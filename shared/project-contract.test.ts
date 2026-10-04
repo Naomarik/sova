@@ -62,10 +62,9 @@ test("a full definition parses with defaults filled in", () => {
     },
     hooks: { probe: { run: ["./probe"] } },
     share: { allow: false },
-    deploy: { targets: {} },
   });
   assert.deepEqual(def.share, { endpoints: [], allow: false });
-  assert.deepEqual(def.reserved, { deploy: { targets: {} } });
+  assert.equal(def.deploy, undefined);
   assert.equal(def.slots.cap, 2);
   assert.equal(def.setup[0]!.timeout, 120);
   const server = def.services.find((s) => s.name === "server")!;
@@ -120,8 +119,8 @@ test("templates render every known variable and $$ as a literal $", () => {
 
 test("every error code has one exit class and one status", () => {
   const want: Record<number, string[]> = {
-    1: ["not-ready", "start-failed", "hook-failed", "tests-failed"],
-    2: ["not-approved", "not-conformant", "cap-reached", "port-held", "dirty-worktree", "unsupported", "refused-slot0", "share-denied", "forbidden", "needs-confirm"],
+    1: ["not-ready", "start-failed", "hook-failed", "tests-failed", "deploy-failed", "verify-failed"],
+    2: ["not-approved", "not-conformant", "cap-reached", "port-held", "dirty-worktree", "unsupported", "refused-slot0", "share-denied", "forbidden", "needs-confirm", "deploy-refused", "needs-override"],
     3: ["invalid-request", "invalid-definition", "not-found"],
     4: ["busy"],
   };

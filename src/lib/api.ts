@@ -1,5 +1,5 @@
 import type { ProfilesListing } from "../../shared/profiles";
-import type { VerbResult } from "../../shared/project-contract";
+import type { DeployVerb, VerbResult } from "../../shared/project-contract";
 import type { HostServicesView, ProjectServicesView, ServicesUiVerb } from "../../shared/services-view";
 import type { SubagentProfilesFile, SubagentProfilesInfo } from "../../shared/subagent-profiles";
 import type {
@@ -1187,11 +1187,31 @@ export async function runRootVerb(root: string, verb: ServicesUiVerb, body: Reco
     throw err;
   }
 }
+/** Run the Project deploy playbook (§app.project-runtime/deploy-playbook): a verb playbook run that proposes a deploy recipe. */
+export const runDeploySetup = (projectId: string) =>
+  request<{ sessionId: string; path: string; worktree?: { path: string; branch: string }; notPrompted?: string }>(`${projectPath(projectId)}/verbs/onboard`, jsonInit("POST", { playbook: "project-deploy" }));
+/** A deploy verb as the operator (§app.project-services/deploy): a refusal is a result too, never thrown. */
+export async function runDeployVerb(root: string, verb: DeployVerb, body: Record<string, unknown>): Promise<VerbResult> {
+  try {
+    return await request<VerbResult>(`/api/project-services/${verb}`, jsonInit("POST", { ...body, project: root }));
+  } catch (err) {
+    const b = err instanceof ApiError ? (err.body as Partial<VerbResult> | undefined) : undefined;
+    if (b && b.v === 1 && typeof b.verb === "string") return b as VerbResult;
+    throw err;
+  }
+}
+/** Approve main's deploy recipe (§app.project-services/deploy-trust): the hash shown, with every step of its review ticked. */
+export const approveDeployRecipe = (root: string, deployHash: string, ticked: readonly string[]) =>
+  request<{ ok: true; deployHash: string }>("/api/project-services/deploy-approve", jsonInit("POST", { project: root, deployHash, ticked }));
 /** What runs on this host now, every project's (Running branches on `#/projects`). */
 export const getHostServices = () => request<HostServicesView>("/api/services");
 export const getProjectRuntime = (projectId: string) => request<ProjectRuntimeView>(`${projectPath(projectId)}/runtime`);
 /** Approve the definition shown (its hash) on this host: the operator's only. */
 export const approveProjectRuntime = (projectId: string, hash: string) => request<ProjectRuntimeView>(`${projectPath(projectId)}/runtime/approve`, jsonInit("POST", { hash }));
+/** Approve & Merge a proposed playbook run (§app.project-runtime/approve-merge): approve its hash, then Merge Branch.
+    A refused merge keeps the approval: the error says why. */
+export const approveMergeProjectRuntime = (projectId: string, hash: string, ticked?: readonly string[]) =>
+  request<ProjectRuntimeView>(`${projectPath(projectId)}/runtime/approve-merge`, jsonInit("POST", ticked ? { hash, ticked } : { hash }));
 /** Run the Project verbs playbook on the project: a coding session on its own branch. */
 export const runProjectVerbsPlaybook = (projectId: string, why?: string) =>
   request<{ sessionId: string; path: string; worktree?: { path: string; branch: string }; notPrompted?: string }>(`${projectPath(projectId)}/verbs/onboard`, jsonInit("POST", why ? { why } : {}));

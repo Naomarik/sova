@@ -364,7 +364,7 @@ export class Queries {
   }
 
   /** `sid` and every owner whose parent chain reaches it. */
-  private family(sid: string): Set<string> {
+  family(sid: string): Set<string> {
     const out = new Set<string>([sid]);
     const queue = [sid];
     while (queue.length) {
@@ -379,7 +379,7 @@ export class Queries {
   }
 
   /** Visit every row owned by one of `owners`, day by day. */
-  private eachRow(owners: Set<string>, fn: (row: Row) => void): void {
+  eachRow(owners: Set<string>, fn: (row: Row) => void): void {
     const days = new Set<string>();
     for (const o of owners) for (const d of this.ledger.owners.get(o)?.days ?? []) days.add(d);
     for (const day of [...days].sort()) {
@@ -412,7 +412,12 @@ export class Queries {
     const workerList: UsageWorkerRow[] = [...perWorker.entries()]
       .map(([sid, acc]) => {
         const o = this.ledger.owners.get(sid);
-        return { sid, parent: o?.parent ?? q.sid, ...(o?.worker ? { worker: o.worker } : {}), ...acc.spend() };
+        const withWorkers = new Acc();
+        for (const s of this.family(sid)) {
+          const a = perWorker.get(s);
+          if (a) withWorkers.merge(a);
+        }
+        return { sid, parent: o?.parent ?? q.sid, ...(o?.worker ? { worker: o.worker } : {}), ...acc.spend(), withWorkers: withWorkers.spend() };
       })
       .sort((a, b) => b.usd - a.usd);
     return {

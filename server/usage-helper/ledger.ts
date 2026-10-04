@@ -137,6 +137,8 @@ export class Ledger {
   readonly owners = new Map<string, OwnerInfo>();
   /** parent sid -> the owners naming it as parent. */
   readonly children = new Map<string, Set<string>>();
+  /** org project id -> the days with rows naming it. */
+  readonly projects = new Map<string, Set<string>>();
   /** Counters for the benchmark and diagnostics. */
   readonly stats = { records: 0, duplicates: 0, skipped: 0, bytes: 0, rebuilds: 0, closes: 0 };
 
@@ -199,6 +201,11 @@ export class Ledger {
 
   private note(row: Row, day: string): void {
     const [owner, parent, worker, kind, , cwd, project] = row.d;
+    if (project) {
+      let days = this.projects.get(project);
+      if (!days) this.projects.set(project, (days = new Set()));
+      days.add(day);
+    }
     if (!owner) return;
     let o = this.owners.get(owner);
     if (!o) {

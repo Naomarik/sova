@@ -1,6 +1,8 @@
+import path from "node:path";
 import { USAGE_RANGES, MAX_USAGE_SESSIONS, type UsageRange } from "../../shared/usage/wire";
 import { Ledger } from "./ledger";
 import { createPriceBook, type PriceBook, type PriceBookOptions } from "./price-book";
+import { orgCosts, projectCost, type ProjectDeps, type ProjectScope } from "./project";
 import { Queries } from "./query";
 
 /**
@@ -28,6 +30,18 @@ export interface Service {
 
 export class BadRequest extends Error {}
 
+/** A project scope as the server sends it (server/project-costs.ts). */
+function scopeOf(v: unknown): ProjectScope {
+  const s = v as Partial<ProjectScope> | null;
+  if (!s || typeof s.projectId !== "string" || typeof s.costsPath !== "string" || !path.isAbsolute(s.costsPath) || !Array.isArray(s.sources)) {
+    throw new BadRequest("a project scope needs projectId, an absolute costsPath and sources");
+  }
+  for (const src of s.sources) {
+    if (!src || typeof src.key !== "string" || typeof src.sessionId !== "string" || typeof src.kind !== "string" || typeof src.by !== "string") throw new BadRequest("a scope source needs key, sessionId, kind and by");
+  }
+  return { projectId: s.projectId, costsPath: s.costsPath, sources: s.sources };
+}
+
 const strings = (v: unknown): string[] => (Array.isArray(v) ? v.filter((s): s is string => typeof s === "string") : typeof v === "string" ? [v] : []);
 
 export function createService(opts: ServiceOptions): Service {
@@ -39,6 +53,8 @@ export function createService(opts: ServiceOptions): Service {
     const days = ledger.repriced(prev, next);
     if (days.length) log(`prices changed: folded ${days.length} day(s) again (${days[0]}${days.length > 1 ? ` … ${days[days.length - 1]}` : ""})`);
   });
+
+  const projectDeps: ProjectDeps = { ledger, queries, prices, device: opts.device ?? (() => null), now: opts.now ?? Date.now };
 
   const answer = async (req: Record<string, unknown>): Promise<unknown> => {
     const tz = typeof req.tz === "string" ? req.tz : "UTC";
@@ -64,6 +80,12 @@ export function createService(opts: ServiceOptions): Service {
       case "refresh":
         await prices.refresh(true);
         return prices.info();
+      case "project":
+        return projectCost(projectDeps, scopeOf(req.scope));
+      case "org": {
+        if (typeof req.orgId !== "string" || !Array.isArray(req.scopes)) throw new BadRequest("orgId and scopes are required");
+        return orgCosts(projectDeps, req.orgId, req.scopes.map(scopeOf));
+      }
       case "stats":
         return { ...ledger.stats, owners: ledger.owners.size, days: ledger.dayNames().length };
       default:

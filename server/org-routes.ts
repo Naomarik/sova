@@ -20,7 +20,7 @@ import {
   createOrg,
   declinePerson,
   detachOrg,
-  orgCosts,
+  orgCostsAnswer,
   orgDetail,
   orgDir,
   orgsInfo,
@@ -577,7 +577,10 @@ export function registerOrgRoutes(app: Hono<any>): void {
   // The org's cost rollup: its projects' totals (each project's own card is /api/projects/:pid/costs).
   app.get(
     "/api/orgs/:id/costs",
-    handle(async (c) => c.json(await orgCosts(p(c, "id")), 200, { "Cache-Control": "no-store" })),
+    handle(async (c) => {
+      const a = await orgCostsAnswer(p(c, "id"));
+      return new Response(new Uint8Array(a.body), { status: a.status, headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" } });
+    }),
   );
 
   // ---- the Pipeline and held acts (§app.project-overseer/pipeline, /holds) ---------------------------------

@@ -167,7 +167,16 @@ export async function stopSharedUsageHelper(): Promise<void> {
   await h?.stop();
 }
 
+type Asker = (op: string, params: Record<string, unknown>) => Promise<HelperAnswer>;
+let asker: Asker | null = null;
+
+/** Tests answer in-process (server/usage-helper/service.ts) instead of through a child. */
+export function setUsageAsker(fn: Asker | null): void {
+  asker = fn;
+}
+
 /** Ask the shared helper; 503 when it isn't running. */
-export function askUsage(op: string, params?: Record<string, unknown>): Promise<HelperAnswer> {
+export function askUsage(op: string, params: Record<string, unknown> = {}): Promise<HelperAnswer> {
+  if (asker) return asker(op, params);
   return shared ? shared.request(op, params) : Promise.resolve(UNAVAILABLE);
 }

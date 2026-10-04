@@ -107,7 +107,7 @@ export function PlaybookReviewBanner(props: { projectId: string; runtime: Projec
               title={words().title}
               body={words().body}
               action={
-                <span class="button-row">
+                <span class="playbook-banner-actions">
                   <Show when={run().path}>
                     {(path) => (
                       <a class="button button-sm" href={projectSessionHref(props.projectId, path())}>

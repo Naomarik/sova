@@ -77,7 +77,7 @@ export function ProjectSoftwareCard(props: { projectId: string; archived: boolea
     });
 
   return (
-    <section class="card orgs-section" aria-labelledby="project-software">
+    <section class="card orgs-section project-card" aria-labelledby="project-software">
       <div class="orgs-head">
         <h2 class="orgs-h2" id="project-software">
           Software
@@ -244,7 +244,7 @@ export function ProjectSoftwareCard(props: { projectId: string; archived: boolea
                 </div>
               )}
             </Show>
-            <Show when={!proposedRun(v()) && approveWhat(v())}>{(w) => <p class="list-meta">{w()}</p>}</Show>
+            <Show when={!proposedRun(v()) && approveWhat(v())}>{(w) => <p class="project-card-note">{w()}</p>}</Show>
             <Show when={error()}>{(e) => <p class="field-error">{e()}</p>}</Show>
             <div class="button-row project-software-actions">
               {/* While a run is proposed: one gesture, Approve & Merge (§app.project-runtime/approve-merge). */}
@@ -271,18 +271,24 @@ export function ProjectSoftwareCard(props: { projectId: string; archived: boolea
                 </button>
               </Show>
             </div>
+            {/* History, not standing: definition and deploy notes alike, under their own label. */}
             <Show when={v().feed.length}>
-              <ul class="orgs-history-list project-software-feed" aria-label="Software registry feed">
-                <For each={v().feed.slice(0, FEED_SHOWN)}>
-                  {(f) => (
-                    <li class="orgs-change">
-                      <span class="orgs-change-main">
-                        {f.line} <span class="list-meta">· <time title={f.at}>{relativeTime(f.at)}</time></span>
-                      </span>
-                    </li>
-                  )}
-                </For>
-              </ul>
+              <div class="project-software-feed-block">
+                <h3 class="text-eyebrow">
+                  Feed
+                </h3>
+                <ul class="orgs-history-list project-software-feed" aria-label="Software registry feed">
+                  <For each={v().feed.slice(0, FEED_SHOWN)}>
+                    {(f) => (
+                      <li class="orgs-change">
+                        <span class="orgs-change-main">
+                          {f.line} <span class="list-meta">· <time title={f.at}>{relativeTime(f.at)}</time></span>
+                        </span>
+                      </li>
+                    )}
+                  </For>
+                </ul>
+              </div>
             </Show>
           </>
         )}

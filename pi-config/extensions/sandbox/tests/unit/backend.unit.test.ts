@@ -1,11 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync } from "node:fs";
+import { lstatSync, mkdirSync, mkdtempSync, readlinkSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { backendFor, canonicalizePath, classifyRun, isWithin, policyKey, type Confined, type Policy } from "../../backend.ts";
 import { DarwinSeatbeltBackend } from "../../backends/darwin-seatbelt.ts";
 import { UnsupportedBackend } from "../../backends/unsupported.ts";
+import { type RealpathIo, tolerantRealpath } from "../../realpath.ts";
 
 const policy = (over: Partial<Policy> = {}): Policy => ({
 	level: "workspace-write",
@@ -45,6 +46,87 @@ test("canonicalizePath resolves symlinks of the deepest existing ancestor", (t) 
 	// A link inside the workspace pointing out is seen at its real place, outside the root.
 	symlinkSync("/etc", join(root, "real", "out"));
 	assert.equal(isWithin(canonicalizePath(join(root, "real", "out", "passwd")), root), false);
+});
+
+/** Real fs, except realpath throws `code` for the paths `denied` matches (as Bun does on macOS TCC dirs). */
+function failingIo(denied: (p: string) => boolean, code = "EPERM"): RealpathIo & { calls: string[] } {
+	const calls: string[] = [];
+	return {
+		calls,
+		realpath: (p) => {
+			calls.push(p);
+			if (denied(p)) throw Object.assign(new Error(`${code}: operation not permitted, lstat '${p}'`), { code });
+			return realpathSync(p);
+		},
+		lstat: (p) => lstatSync(p),
+		readlink: (p) => readlinkSync(p),
+	};
+}
+
+/** root/real/{Cookies,Mail -> root/target}, root/lib -> root/real, root/target/file. */
+function tccTree(t: { after: (fn: () => void) => void }) {
+	const root = realpathSync(mkdtempSync(join(tmpdir(), "sbx-canon-eperm-")));
+	t.after(() => rmSync(root, { recursive: true, force: true }));
+	mkdirSync(join(root, "real", "Cookies"), { recursive: true });
+	mkdirSync(join(root, "target"));
+	writeFileSync(join(root, "target", "file"), "");
+	symlinkSync(join(root, "real"), join(root, "lib"));
+	symlinkSync(join(root, "target"), join(root, "real", "Mail"));
+	return root;
+}
+
+test("darwin, EPERM/EACCES from realpath on a leaf (Bun on TCC dirs): the canonical path, symlinked ancestors and leaves resolved", (t) => {
+	const root = tccTree(t);
+	for (const code of ["EPERM", "EACCES"]) {
+		const cookies = failingIo((p) => p.endsWith("/Cookies"), code);
+		// The refused leaf: its parent's realpath (through the `lib` link) plus the basename.
+		assert.equal(canonicalizePath(join(root, "lib", "Cookies"), undefined, cookies, "darwin"), join(root, "real", "Cookies"));
+		// Below it, missing: the not-found walk reaches the refused dir and appends the rest.
+		assert.equal(canonicalizePath(join(root, "lib", "Cookies", "missing", "x"), undefined, cookies, "darwin"), join(root, "real", "Cookies", "missing", "x"));
+		// A refused leaf that is itself a symlink is followed, so a deny rule names its target.
+		const mail = failingIo((p) => p.endsWith("/Mail"), code);
+		assert.equal(canonicalizePath(join(root, "lib", "Mail"), undefined, mail, "darwin"), join(root, "target"));
+		// Every component under the temp root refused: still resolved component-wise.
+		const all = failingIo((p) => p.startsWith(root), code);
+		assert.equal(tolerantRealpath(join(root, "lib", "Mail"), all, "darwin"), join(root, "target"));
+		assert.equal(tolerantRealpath(join(root, "lib", "Cookies"), all, "darwin"), join(root, "real", "Cookies"));
+	}
+	// A symlink loop under EPERM ends (bounded) with the original error, never a hang.
+	symlinkSync(join(root, "loopB"), join(root, "loopA"));
+	symlinkSync(join(root, "loopA"), join(root, "loopB"));
+	assert.throws(() => tolerantRealpath(join(root, "loopA"), failingIo((p) => p.includes("/loop")), "darwin"), { code: "EPERM" });
+});
+
+test("unchanged: ENOENT/ENOTDIR walk, symlinked ancestors, missing paths, other errors, and non-darwin never falls back", (t) => {
+	const root = tccTree(t);
+	for (const platform of ["darwin", "linux"] as const) {
+		const io = failingIo(() => false);
+		assert.equal(canonicalizePath(join(root, "lib", "Cookies"), undefined, io, platform), join(root, "real", "Cookies"));
+		assert.equal(canonicalizePath(join(root, "lib", "nope", "deeper"), undefined, io, platform), join(root, "real", "nope", "deeper"));
+		assert.equal(canonicalizePath("/definitely-not-here-sbx/a/b", undefined, io, platform), "/definitely-not-here-sbx/a/b");
+		// ENOTDIR: a path through a file walks up the same way.
+		assert.throws(() => realpathSync(join(root, "lib", "Mail", "file", "x")), { code: "ENOTDIR" });
+		assert.equal(canonicalizePath(join(root, "lib", "Mail", "file", "x"), undefined, io, platform), join(root, "target", "file", "x"));
+		// The default io is the real realpathSync: same answers.
+		assert.equal(canonicalizePath(join(root, "lib", "Cookies"), undefined, undefined, platform), join(root, "real", "Cookies"));
+		// Errors other than ENOENT/ENOTDIR/EPERM/EACCES propagate, on every platform.
+		const eio = failingIo(() => true, "EIO");
+		assert.throws(() => canonicalizePath(join(root, "lib"), undefined, eio, platform), { code: "EIO" });
+		assert.deepEqual(eio.calls, [join(root, "lib")]);
+	}
+	// Off darwin, EPERM/EACCES propagate exactly as before: one realpath call, no lstat/readlink fallback.
+	for (const platform of ["linux", "win32", "freebsd"] as const) {
+		for (const code of ["EPERM", "EACCES"]) {
+			const io = failingIo((p) => p.endsWith("/Cookies"), code);
+			let touched = false;
+			io.lstat = () => ((touched = true), lstatSync(root));
+			io.readlink = () => ((touched = true), "");
+			assert.throws(() => canonicalizePath(join(root, "lib", "Cookies"), undefined, io, platform), { code });
+			assert.throws(() => tolerantRealpath(join(root, "lib", "Cookies"), io, platform), { code });
+			assert.equal(touched, false);
+			assert.deepEqual(io.calls, [join(root, "lib", "Cookies"), join(root, "lib", "Cookies")]);
+		}
+	}
 });
 
 test("isWithin is component-wise", () => {

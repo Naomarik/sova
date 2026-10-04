@@ -61,14 +61,16 @@
         "src/lib/insights.test.ts",
         "src/components/Sidebar.tsx",
         "src/design/base.css",
-        "src/lib/llm-inflight.ts"
+        "src/lib/llm-inflight.ts",
+        "src/lib/work-now.ts"
       ],
       "requires": [
         "§app.claude-logins/active-login",
         "§app.insights/usage-cards",
         "§app.resource-monitor/entry-button",
         "§app/settings-dialog",
-        "§app.insights/llm-inflight"
+        "§app.session-list/working-now",
+        "§app.insights/token-velocity"
       ]
     },
     "§app.insights/subagent-cards": {
@@ -1695,7 +1697,9 @@
       "requires": [
         "§app.session-list/recent",
         "§app.session-list/accessibility",
-        "§app.shell/spine-column"
+        "§app.shell/spine-column",
+        "§app.session-list/working-now",
+        "§app.insights/token-velocity"
       ]
     },
     "§app.shell/spine-column": {
@@ -11403,7 +11407,9 @@
       ],
       "requires": [
         "§app.insights/sidebar-foot",
-        "§mesh.remote-sessions/host-filter"
+        "§mesh.remote-sessions/host-filter",
+        "§app.session-list/working-now",
+        "§app.insights/token-velocity"
       ]
     },
     "§design.ground-rules/text-fit": {
@@ -13387,6 +13393,58 @@
         "pi-config/extensions/claude-code/accounts.ts",
         "pi-config/extensions/claude-code/provider/login-failover.test.ts",
         "pi-config/extensions/claude-code/accounts.test.ts"
+      ]
+    },
+    "§app.insights/token-velocity": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/lib/llm-inflight.ts",
+        "src/lib/llm-inflight.test.ts",
+        "src/components/Sidebar.tsx",
+        "src/design/base.css",
+        "shared/protocol.ts",
+        "server/llm-inflight.ts",
+        "pi-config/extensions/llm-inflight/tracker.ts",
+        "pi-config/extensions/llm-inflight/runtime.ts",
+        "pi-config/extensions/llm-inflight/claude.ts",
+        "pi-config/extensions/llm-inflight/index.ts",
+        "pi-config/extensions/llm-inflight/hosted.ts",
+        "pi-config/extensions/llm-inflight/README.md",
+        "pi-config/extensions/sessions/index.ts",
+        "pi-config/extensions/sessions/schema.ts",
+        "pi-config/extensions/sessions/public/SCHEMA.md",
+        "pi-config/extensions/subagents/runner.ts",
+        "server/llm-inflight.test.ts",
+        "pi-config/extensions/llm-inflight/tracker.test.ts",
+        "pi-config/extensions/llm-inflight/runtime.test.ts",
+        "pi-config/extensions/llm-inflight/claude.test.ts",
+        "pi-config/extensions/llm-inflight/hosted.test.ts",
+        "pi-config/extensions/llm-inflight/tests/pi-e2e.mjs",
+        "pi-config/extensions/sessions/schema.test.ts",
+        "pi-config/extensions/sessions/test.mjs"
+      ],
+      "requires": [
+        "§app.insights/llm-inflight"
+      ]
+    },
+    "§app.session-list/working-now": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/lib/work-now.ts",
+        "src/lib/work-now.test.ts",
+        "src/components/Sidebar.tsx",
+        "src/App.tsx",
+        "src/lib/ui-state.ts",
+        "src/components/ChatView.tsx",
+        "src/design/base.css"
+      ],
+      "requires": [
+        "§app.session-list/search",
+        "§mesh.remote-sessions/host-filter"
       ]
     },
     "§mesh.lan/accept-process": {

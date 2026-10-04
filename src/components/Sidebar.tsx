@@ -52,7 +52,7 @@ import {
   sessionGroups,
   setSessionGroup,
 } from "../lib/session-groups";
-import { announce, hasLocalDraft, home, localRunning, sessionContext, toast } from "../lib/ui-state";
+import { announce, hasLocalDraft, home, localRunning, localWorking, sessionContext, toast } from "../lib/ui-state";
 import { showsDraftMark } from "../lib/draft-mark";
 import { overlaid, rowLeadMark, rowNeedsYou, SIGNAL_CLASS, SIGNAL_ICON, signalTitle, signalWords, stalledPaths, tagSearchText, tagsTitle, turnErrorTitle } from "../lib/signals";
 import { readinessBadge, readinessCount, readinessCountWords, readinessTitle } from "../lib/readiness";
@@ -79,8 +79,9 @@ import {
 } from "../lib/session-selection";
 import { folderActive, folderOpen, folderOpenKey, readFolderOpenRaw, storedFolderOpen, writeFolderOpenRaw } from "../lib/folder-open";
 import { groupOpen as groupOpenRule, groupsRegionOpen as groupsRegionOpenRule } from "../lib/group-open";
-import { activeAgentCounts, activeTeamCount, sessionWorking } from "../lib/workers";
-import { agentsRow, type AgentsRow, llmInflightView, type LlmInflightView } from "../lib/llm-inflight";
+import { sessionWorking } from "../lib/workers";
+import { tokenVelocityView, type TokenVelocityView, velocityChart, velocityPitch } from "../lib/llm-inflight";
+import { sentences, workNow, workNowView, type WorkNowView, type WorkPeer } from "../lib/work-now";
 import { providerWait, watchProviderWaits } from "../lib/provider-waiting";
 import { waitingSentence } from "../../shared/provider-limits";
 import { ActionMenu } from "./ActionMenu";
@@ -1086,27 +1087,67 @@ function tileDot(s: SessionSummary): "live" | "busy" | "working" | null {
   return sessionWorking(s) ? "working" : null;
 }
 
-/** Agents foot row: the LLM calls in flight, `3+` while partial; unknown reads the plain word
-    "Agents", never a 0 it can't vouch for. Then this host's sessions and teams, 0s left out. */
-function AgentsGlance(props: { view: LlmInflightView; row: AgentsRow }) {
+/** Agents foot row: the working count, a bare figure even as a floor; unknown reads the plain word
+    "Agents", never a 0 it can't vouch for. */
+function AgentsGlance(props: { view: WorkNowView }) {
   return (
-    <>
-      <Show when={props.view.rowWord} fallback="Agents">
-        {(word) => (
-          <>
-            <span class="text-num">{props.view.figure}</span> {word()}
-          </>
-        )}
+    <Show when={props.view.rowWord} fallback="Agents">
+      {(word) => (
+        <>
+          <span class="text-num">{props.view.figure}</span> {word()}
+        </>
+      )}
+    </Show>
+  );
+}
+
+/**
+ * The token chart (§app.insights/token-velocity): the last 30 minutes as columns on a 1px
+ * baseline, the newest minute hollow (its replies are still landing), the 30-minute mean a dashed
+ * line behind the columns. `group` 2: 30 one-minute columns (the Agents row, `width` omitted: as
+ * wide as its box allows at one whole-pixel pitch, from its left edge); 4: 15 two-minute columns (the
+ * phone bar, a fixed `width`). Never animated, no gradient; its numbers are the row's sentence.
+ */
+function VelocityChart(props: { view: TokenVelocityView; group: 2 | 4; height: number; width?: number }) {
+  const chart = createMemo(() => velocityChart(props.view, props.group, props.height));
+  /** The box's width, for a chart with no fixed one: measured, so every column gets the same pitch. */
+  const [room, setRoom] = createSignal(0);
+  let box: HTMLSpanElement | undefined;
+  onMount(() => {
+    if (props.width !== undefined || !box) return;
+    const ro = new ResizeObserver(() => setRoom(box!.clientWidth));
+    ro.observe(box);
+    onCleanup(() => ro.disconnect());
+  });
+  const geo = createMemo(() => velocityPitch(props.width ?? room(), chart().count));
+  const svg = () => (
+    <svg class="velocity-chart" width={geo().width} height={props.height} viewBox={`0 0 ${geo().width} ${props.height}`} shape-rendering="crispEdges" aria-hidden="true">
+      <rect class="velocity-baseline" x="0" y={props.height - 1} width={geo().width} height="1" />
+      {/* Behind the columns: a reference they stand in front of, never one of their tops. */}
+      <Show when={chart().meanY !== null}>
+        <line class="velocity-mean" x1="0" x2={geo().width} y1={chart().meanY! + 0.5} y2={chart().meanY! + 0.5} />
       </Show>
-      <For each={props.row.secondary}>
-        {(p) => (
-          <>
-            {" · "}
-            <span class="text-num">{p.n}</span> {p.word}
-          </>
-        )}
+      <For each={chart().columns}>
+        {(c) => {
+          const w = () => geo().pitch - geo().gap;
+          const x = () => c.index * geo().pitch;
+          const y = props.height - 1 - c.height;
+          // The hollow one is a 1px outline inside the same box, its stroke on the pixel centres.
+          return c.hollow ? (
+            <rect class="velocity-col-hollow" x={x() + 0.5} y={y + 0.5} width={w() - 1} height={c.height - 1} />
+          ) : (
+            <rect class="velocity-col" x={x()} y={y} width={w()} height={c.height} />
+          );
+        }}
       </For>
-    </>
+    </svg>
+  );
+  return props.width !== undefined ? (
+    svg()
+  ) : (
+    <span ref={box} class="velocity-fit">
+      {svg()}
+    </span>
   );
 }
 
@@ -1136,6 +1177,8 @@ export function Sidebar(props: {
       in use for new chats. */
   claudeLogin?: string | null;
   agents: AgentsInsight | undefined;
+  /** Each connected host's part of the working count (lib/work-now.ts); absent or empty: no mesh. */
+  peerWork?: WorkPeer[];
   /** The insights page that's open (`#/usage` or `#/agents`), for aria-current on its foot row. */
   insightsPage: "usage" | "agents" | null;
   /** `#/shares` is open, for aria-current on its foot row (§app.session-share/shares-page). */
@@ -1299,14 +1342,35 @@ export function Sidebar(props: {
   // or a Get Link in another tab clears its row at once, not at the digest's next 10 s read. The list
   // poll stays the fallback.
   openSessionFeed(requestListRefresh);
-  /** The one live figure the foot, the phone bar and the spine all show: the feed's pushed count,
-      independent of the search and the host filter. Peers are named by their label. */
-  const inflight = createMemo(() => llmInflightView(llmInflight(), hostLabel));
-  /** The Agents row and its doorway: that figure, then this host's sessions and teams with
-      subagents working, from the Agents poll. */
-  const agentsRowView = createMemo(() =>
-    agentsRow(inflight(), { sessions: activeAgentCounts(props.agents).sessions, teams: activeTeamCount(props.agents) }),
-  );
+  /** The one live figure the toolbar line, the foot, the phone bar and the spine all show: the
+      sessions whose turn runs plus the subagents working, this host's from the Agents poll, the
+      peers' from their lists, the open chat's from its socket — independent of the search and the
+      host filter (§app.session-list/working-now). */
+  const work = createMemo(() => workNowView(workNow(props.agents, props.peerWork ?? [], { running: localRunning(), working: localWorking() })));
+  /** The windows slide with the clock between frames: a 30 s tick, only while the ring holds a
+      token and the tab is visible (§app.insights/token-velocity). */
+  const [clock, setClock] = createSignal(0);
+  const [tabVisible, setTabVisible] = createSignal(!document.hidden);
+  const onVisibility = () => {
+    setTabVisible(!document.hidden);
+    if (!document.hidden) setClock((n) => n + 1);
+  };
+  document.addEventListener("visibilitychange", onVisibility);
+  onCleanup(() => document.removeEventListener("visibilitychange", onVisibility));
+  /** The output-token load average, read at the moment it re-runs (a frame, or the tick). */
+  const velocity = createMemo(() => {
+    clock();
+    return tokenVelocityView(llmInflight(), Date.now());
+  });
+  const ticking = createMemo(() => velocity().active && tabVisible());
+  createEffect(() => {
+    if (!ticking()) return;
+    const t = setInterval(() => setClock((n) => n + 1), 30_000);
+    onCleanup(() => clearInterval(t));
+  });
+  /** The Agents row's, its spine doorway's and the tally's full sentence. */
+  const workSentence = () => sentences(work().sentence, velocity().sentence);
+  const agentsLabel = () => `Agents: ${workSentence()}`;
   /** Main threads only (src/lib/regions.ts): every region, search hit and count reads this. Each row
       carries the feed's marks over the list's (a peer's row keeps its own); `reuseUnchanged` keeps a
       row's object across feed messages that don't touch it, so rows update in place. */
@@ -1685,6 +1749,58 @@ export function Sidebar(props: {
   const tuiSentence = () => `${liveCount()} ${liveCount() === 1 ? "session" : "sessions"} open in a TUI`;
 
   /**
+   * The toolbar's working-now line (§app.session-list/working-now): the breakdown the foot's figure
+   * sums, a link to the Agents page. No words on the line — a chat icon before the sessions, the
+   * foot's person before the subagents — the words are its name. Where even that won't fit the gap
+   * (figures of three digits beside `Select` in a 320px pane), the icons go and the figures stay.
+   */
+  const WorkingLine = () => {
+    let link!: HTMLAnchorElement;
+    const fit = () => {
+      const bar = link?.parentElement;
+      if (!bar) return;
+      delete link.dataset.fit;
+      if (bar.scrollWidth > bar.clientWidth) link.dataset.fit = "bare";
+    };
+    onMount(() => {
+      // The toolbar, not the link: the link's own size moves with the fit, the line's doesn't.
+      const ro = new ResizeObserver(fit);
+      ro.observe(link.parentElement!);
+      onCleanup(() => ro.disconnect());
+    });
+    createEffect(() => {
+      work().parts.forEach((p) => p.n);
+      fit();
+    });
+    return (
+      <a
+        ref={link}
+        class="sidebar-working"
+        href={agentsHref()}
+        aria-current={props.insightsPage === "agents" ? "page" : undefined}
+        title={work().lineLabel}
+        aria-label={work().lineLabel}
+      >
+        <For each={work().parts}>
+          {(p, i) => (
+            <>
+              <Show when={i() > 0}>
+                <span class="sidebar-working-sep" aria-hidden="true">
+                  ·
+                </span>
+              </Show>
+              <span class="sidebar-working-part">
+                <Icon name={p.kind === "sessions" ? "chat" : "worker"} small />
+                <span class="text-num">{p.n}</span>
+              </span>
+            </>
+          )}
+        </For>
+      </a>
+    );
+  };
+
+  /**
    * The Overseer's door, with the count of Overseer messages you haven't read. In the toolbar it
    * is a labelled button (`labelled`): the eye, the word, then the count as an inline pill; on the
    * spine it is the bare eye with the corner pill. Who needs you is the Needs you region's to say,
@@ -1800,15 +1916,28 @@ export function Sidebar(props: {
       </div>
       <div class="sidebar-foot-row">
         <a
-          class="list-row list-row-interactive insights-row sidebar-foot-link"
+          class="list-row list-row-interactive insights-row sidebar-foot-link sidebar-foot-link-tall"
           href={agentsHref()}
           aria-current={props.insightsPage === "agents" ? "page" : undefined}
-          title={agentsRowView().label}
-          aria-label={agentsRowView().label}
+          title={agentsLabel()}
+          aria-label={agentsLabel()}
         >
           <Icon name="worker" />
-          <span class="insights-row-text">
-            <AgentsGlance view={inflight()} row={agentsRowView()} />
+          {/* Two lines (§app.insights/token-velocity): who is working and the 5-minute readout, then
+              the 30-minute chart under them. The row's name says it all in words. */}
+          <span class="agents-ticker">
+            <span class="agents-line">
+              <span class="insights-row-text">
+                <AgentsGlance view={work()} />
+              </span>
+              <span class="agents-readout" aria-hidden="true">
+                <b class="text-num">{velocity().readout}</b> <span>tok/min</span>
+              </span>
+            </span>
+            <span class="agents-chart" aria-hidden="true">
+              <VelocityChart view={velocity()} group={2} height={18} />
+              <span>30m</span>
+            </span>
           </span>
         </a>
         <button
@@ -1831,8 +1960,8 @@ export function Sidebar(props: {
 
   /**
    * Folded (<768): the foot as one 44px bar under the list (§app.insights/sidebar-foot-phone) —
-   * the mesh's connected count (while the mesh is on), the LLM calls in flight (the worker icon and
-   * the Agents row's own figure), and every provider's usage cap as the glance shows it. Tapping the bar opens the
+   * the mesh's connected count (while the mesh is on), the working count (the worker icon and the
+   * Agents row's own figure), the load average, and every provider's usage cap as the glance shows it. Tapping the bar opens the
    * rows as a bottom sheet, verbatim. Focus leaves and returns with the sheet (trapFocus).
    */
   const PhoneFoot = () => {
@@ -1845,7 +1974,7 @@ export function Sidebar(props: {
         const c = connectedCount(meshPeers());
         facts.push(`${c.up} of ${c.total} hosts connected`);
       }
-      facts.push(inflight().sentence.replace(/\.$/, ""));
+      facts.push(workSentence().replace(/\.$/, ""));
       const caps = glance().flatMap((p) => [p.full, ...(p.others ?? [])]);
       if (caps.length) facts.push(caps.join(". "));
       return `${facts.join(". ")}. Open hosts, usage, agents and shares.`;
@@ -1867,7 +1996,13 @@ export function Sidebar(props: {
           </Show>
           <span class="sidebar-footbar-seg">
             <Icon name="worker" small />
-            <span class="text-num">{inflight().figure}</span>
+            <span class="text-num">{work().figure}</span>
+          </span>
+          <span class="sidebar-footbar-seg sidebar-footbar-velocity">
+            <span class="agents-readout">
+              <b class="text-num">{velocity().readout}</b> <span>/min</span>
+            </span>
+            <VelocityChart view={velocity()} group={4} width={60} height={16} />
           </span>
           {/* Every provider the glance would show, in its order (at most the five): never one
               invented number, and the line never wraps — what can't fit clips, like the glance. */}
@@ -2043,18 +2178,18 @@ export function Sidebar(props: {
         </Show>
 
         {/* Status, not navigation: each says its sentence as a toast, and never opens the pane. */}
-        <Show when={inflight().showTally || liveCount() > 0}>
+        <Show when={work().showTally || liveCount() > 0}>
           <div class="spine-stats">
-            <Show when={inflight().showTally}>
+            <Show when={work().showTally}>
               <button
                 type="button"
                 class="button button-icon spine-item spine-stat"
-                title={inflight().sentence}
-                aria-label={inflight().sentence}
-                onClick={() => toast(inflight().sentence)}
+                title={workSentence()}
+                aria-label={workSentence()}
+                onClick={() => toast(workSentence())}
               >
                 <Icon name="worker" />
-                <span class="spine-count text-num">{inflight().figure}</span>
+                <span class="spine-count text-num">{work().figure}</span>
               </button>
             </Show>
             <Show when={liveCount() > 0}>
@@ -2083,8 +2218,8 @@ export function Sidebar(props: {
             class="button button-icon spine-item"
             href={agentsHref()}
             aria-current={props.insightsPage === "agents" ? "page" : undefined}
-            title={agentsRowView().label}
-            aria-label={agentsRowView().label}
+            title={agentsLabel()}
+            aria-label={agentsLabel()}
           >
             <Icon name="worker" />
           </a>
@@ -2155,6 +2290,11 @@ export function Sidebar(props: {
                   >
                     <Icon name="search" small />
                   </button>
+                  {/* Only while work runs: the breakdown the foot's figure sums, in the gap the
+                      line already has — its words give way, its figures never do. */}
+                  <Show when={work().parts.length > 0}>
+                    <WorkingLine />
+                  </Show>
                   <OverseerButton class="button-ghost" labelled />
                 </>
               }

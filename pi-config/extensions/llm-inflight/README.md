@@ -3,19 +3,26 @@
 How many **logical LLM calls** this process has in flight right now. A call counts from its issue
 until its response ends, fails or is aborted. Auth and request setup, a provider-limits queue, a
 rate-limit cooldown and the tools run between calls never count. Only begin/end bookkeeping is
-kept: no payload, token, prompt, reply or credential is read or stored, and nothing is written per
-token.
+kept, plus one number per call: at its end, its reply's **output tokens** (reasoning included;
+never input or cache reads) go into a ring of 60 epoch-aligned 30 s slots (30 minutes), spread
+evenly back over the time the reply streamed. No payload, prompt, reply or credential is read or
+stored, and nothing is written per token: the tokens change with the call's end, as one change.
 
 ## The pieces
 
 - `tracker.ts` (Node builtins only; Sova imports it): the per-process table, a `globalThis`
   singleton (`Symbol.for("sova.llm-inflight.v1")`) so every copy loaded in one process shares it.
   `beginLlmCall({source, approximate?, pending?})` returns an idempotent end with `.waiting(on)`;
-  `snapshot()` is `{v: 1, producer, pid, active, approximate, claudeTurns, degraded}`;
-  `subscribe(fn)` is called only when those change. `withinLlmCall`/`currentLlmCall` scope one call
+  `snapshot(now?)` is `{v: 1, producer, pid, active, approximate, claudeTurns, degraded, folded,
+  tokens}`, `tokens` = `{bucketMs: 30000, end, out[60], partial?}` (`out[59]` is slot `end` =
+  `floor(ms / 30000)`); `subscribe(fn)` is called only when those change (the ring moving with
+  time is no change). The end takes the call's tokens: `end({output, since?, at?})`. `withinLlmCall`/`currentLlmCall` scope one call
   to the code below it (the provider-limits gate marks that very call waiting in a cooldown; a call
   begun inside is a new call, never suppressed). `setChildCounts` holds a worker's reported counts
-  (replaced, never added). `markDegraded` and `beginClaudeTurn` report what can't be seen.
+  (replaced, never added), their rings summed with the process's own; a child forgotten while
+  summed leaves its ring in a retired ring until it ages out (`{retire: false}`, a detached
+  worker that goes on reporting it itself, drops it). A child that reported no ring makes
+  `tokens.partial`. `markDegraded` and `beginClaudeTurn` report what can't be seen.
 - `runtime.ts` (builtins only; Sova imports it): `instrumentModelRuntime(runtime)` wraps
   `stream`, `streamSimple`, `streamDeferred` and `cancelDeferred` on one pi `ModelRuntime`
   **instance** (marked, so a second call is a no-op). Every pi request of a process goes through
@@ -25,19 +32,23 @@ token.
   sends; composed with the caller's own, whose return value is kept) or, for a provider that never
   calls it, the stream's first event. It ends when the stream's own `result()` settles or its
   `end()` runs; no second iterator is ever taken, and the original's stream, return value and
-  throws pass through unchanged. A request that returns a deferred handle leaves remote work
+  throws pass through unchanged. The final message's `usage.output` is the call's tokens, spread
+  back to the stream's first event. A request that returns a deferred handle leaves remote work
   nobody local sees: the process is degraded until the handle's final reply or cancel. Fetching a
   handle is never a counted call.
 - `claude.ts`: `createClaudeRequestObserver()` reads a Claude Code CLI's stream-json frames (fed
   by `claude-code/transport.ts` before its owner's hooks). Claude Code 2.x writes
   `system/status "requesting"` when its query loop starts a request, before sending it; a call
   counts from there to the reply's `message_stop`, the next `requesting`, the turn's `result` or the
-  process closing. A tool_use reply ends at its `message_stop`. A reply with no `requesting` before
+  process closing. A tool_use reply ends at its `message_stop`; its tokens are the stream's last
+  `usage.output_tokens`, spread back to its `message_start` (a bridge, `countRequests: false`,
+  counts none: the pi runtime counts that call). A reply with no `requesting` before
   it is counted from `message_start` and marks the process degraded. Its own subagents, side
   queries and compaction are not streamed, so a running turn is reported in `claudeTurns` (the
   count is partial) rather than guessed; the CLI's internal retries of one request are one call. A
   re-adopted worker's replay only rebuilds state: counting starts when its host goes live.
-  `beginClaudeOneShot()` counts a `claude -p --output-format json` spawn to exit, as approximate.
+  `beginClaudeOneShot()` counts a `claude -p --output-format json` spawn to exit, as approximate
+  (with no tokens).
 - `index.ts` (the extension): instruments `ctx.modelRegistry`'s runtime at `session_start` and
   before each turn; with no runtime to instrument the process is degraded. In a pi worker (the
   `subagents:worker` role, RPC mode) it reports its counts to the session that runs it with a

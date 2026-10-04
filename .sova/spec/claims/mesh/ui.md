@@ -21,6 +21,15 @@ the Claude login it holds from the pool (§app.claude-logins/pool): "Claude: {em
 holds more than one), or "No Claude login"; it opens Settings → Accounts, and its tooltip lists
 what the host holds or says that it borrows a login when it needs Claude.
 
+While the mesh is on, each peer's line also carries "What {peer} can see here" (§mesh.peers/grants): its
+preset, and a list of every capability, each with its switch and what it means in plain words. Sessions
+says it can run commands on this machine. Each sync category warns that it can still reach the peer
+through another host that shares it. Logins lists each login with its own switch, and says that turning
+one off cannot recall a copy already sent. A change is saved at once. Beside it, "What this host can see
+on {peer}" is read-only, learned from that peer's answers. The add-peer form has the preset choice too,
+`presence` unless the user picks more. When `mesh-access.json` can't be read, the page says so, and that
+every peer gets hello only until it is fixed.
+
 ## §mesh.ui/settings — Settings → Mesh
 
 Settings has a Mesh section: this host's name, a toggle per sync category (settings, themes,

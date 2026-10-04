@@ -153,7 +153,11 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
   merge card's details) and `git.ts` (builtins only: the extension's own "is this branch merged"
   probe, git by argv; `server/git-diff.ts` imports it too, for `mergedReviewBase`, the review
   base of an already merged branch, which show-changes' `git.ts` shares), `server/sandbox-state.ts` and `server/link-sandbox.ts` import
-  `pi-config/extensions/sandbox/state.ts` (builtins only: the `sandbox` entry and its restore),
+  `pi-config/extensions/sandbox/state.ts` (builtins only: the `sandbox` entry and its restore; its
+  optional `workers: "off"` field makes the three states, §chat.sandbox/states, and `on` keeps
+  meaning the session's own tools for every reader), `server/overseer.ts` imports `sandbox/policy.ts`
+  (`loadPolicyFile`, `policyFilePath`: the state a new session starts in, for the Overseer's
+  lowering check),
   `server/link-sandbox.ts` also imports `sandbox/session-policy.ts` and `policy.ts` (builtins only,
   with their siblings `backend.ts`, `backends/*` and `env.ts`: `resolveSessionPolicy`, the one
   resolution of a session's sandbox policy from its agent dir, cwd, session id and tracked
@@ -310,13 +314,21 @@ Rules:
   `head`).
 - The one verb form (Sova as its own project, `.sova/project.json`: slot 0 adopts
   `sova-runtime.service`): the operator's Apply on the project's Services tab, or
-  `sova-project apply --project ~/webapps/sova --confirm`. It is refused while any hosted session is
+  `sova-project apply --checkout ~/webapps/sova --confirm` (apply names its instance: the main
+  checkout's is slot 0; `--project` alone is refused, `invalid-request`). It is refused while any hosted session is
   busy (your own turn included, so an agent never gets it through), and otherwise schedules
   `scripts/sova-restart-gate.mjs` 30 s out, which re-reads the live records when it fires and
   restarts only if nothing is busy then (else exit 75, logged in
   `<state root>/project-services/logs/restart-gate.log`). up, down, reset and teardown of slot 0 are
   refused. Never run the gate script against `sova-runtime.service` by hand, and never point a test
   at it: tests and gates use a stand-in unit.
+- On macOS the live server is the launchd agent `sova-runtime` (`~/Library/LaunchAgents/sova-runtime.plist`,
+  README's launchd example), and every rule above holds. Its restart is
+  `launchctl kickstart -k gui/$(id -u)/sova-runtime`, never run by hand from a hosted session: use the
+  verb form (`sova-project apply --checkout ~/webapps/sova --confirm`; its gate runs detached from the server, waits the
+  30 s itself and then kickstarts the agent) or ask the user. Its pid and state:
+  `launchctl print gui/$(id -u)/sova-runtime`; its start time: `ps -o lstart= -p <pid>`; its log:
+  `~/Library/Logs/sova-runtime.log`.
 - The claude-code bridge is a `globalThis` singleton (`getSessionBridge()`, Symbol.for registry): a
   fresh session that reloads the extension still gets the bridge built from the code loaded first,
   so provider edits also need a restart. Before trusting a live test, check the unit's start time

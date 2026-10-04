@@ -9,6 +9,9 @@ is, one refresh chain. Several logins may belong to the same Claude account (the
 program that signs in, refreshes and signs out: Sova runs `claude` in the login's directory and
 never writes a token itself. It reads one only to launch a sandboxed Claude Code worker, and then
 only the login's short-lived access token, never its refresh token (§chat.sandbox/claude-state).
+On macOS, Claude Code keeps a login's credentials in the login keychain rather than in that file;
+there a login is its directory plus its keychain item, and Sova reads the item wherever it would
+read the file (§app.claude-logins/macos-keychain).
 
 Claude Code's own directory (`~/.claude`, or `$CLAUDE_CONFIG_DIR` when the server has one) is
 the implicit login `default`. A `$CLAUDE_CONFIG_DIR` that names an added login's directory (anything
@@ -114,7 +117,10 @@ field with **Save Name** and **Cancel**; Enter or **Save Name** saves it as the 
 open), and an empty name goes back to "Login N". A login's controls are named with its account
 ("Rename Login 1 of a@example.com"), so two accounts' "Login 1" never share a name. A login can be
 switched off or on (**Use**, `enabled`; off = never chosen automatically) and removed. Its standing on this host is a chip: **Ready**, **Off**, **Limited until** a time
-(`resetsAt`), **Sign in again**, or **Not signed in** (its directory holds no credentials). A
+(`resetsAt`), **Sign in again**, or **Not signed in** (its directory holds no credentials; on
+macOS, neither a `.credentials.json` nor a keychain item, so a login whose sign-in Claude Code
+keeps in the keychain reads as signed in, and a **Sign in again** clears once Claude Code rewrites
+that item, §app.claude-logins/macos-keychain). A
 limited or sign-in-again login has **Clear**, which forgets that standing. Under the blocks,
 **This device's own login** lists `default` (always last) with its email, organization and plan,
 its standing, **Use** and **Clear**, and, when its account is also one of the blocks, that it shares
@@ -312,7 +318,10 @@ plan, whether it shares an account already here, and **Done**); failed (the reas
 added.", **Close** and **Try Again**). Closing Settings cancels a flow still waiting for its code.
 No token or credential is ever shown or sent to the browser.
 Under the logins, one plain line says whether the Claude Code CLI was found
-(§app.claude-logins/cli-status).
+(§app.claude-logins/cli-status). On macOS a login counts as signed in when its keychain item
+exists (§app.claude-logins/macos-keychain), so **Add a login** finishes there too; and when this
+device's own login can be read neither from its file nor from the keychain, a muted line under
+**This device's own login** says "On macOS, add your Claude login under Settings → Accounts."
 
 **While the mesh is on** the section is the pool (§app.claude-logins/pool): an intro that every
 device shares these logins, one at a time, borrowed from the keeper and given back after a limit,
@@ -362,6 +371,9 @@ The pool's order keeps each account's logins together (§app.claude-logins/regis
 follows the document for the logins it holds: their label, **Use** and order (the pool's order)
 are written into its registry when they differ, so a rename, a switch or a move made on any device
 reaches the spawns and the chats of the device that runs the login.
+A device exchanges the pool directly only with peers whose grant includes logins
+(§mesh.peers/grants): one that doesn't neither borrows from nor lends to it, and reads it as away.
+Membership stays per device: the document still reaches every device through the others.
 
 ## §app.claude-logins/keeper — The keeper
 
@@ -423,7 +435,9 @@ never returned for idleness (a limit still returns it; its device takes it back 
 A login held by a device that is offline is shown **Stuck on** that device. Nobody reclaims it: it
 becomes free again when that device comes back (and returns it), or when the user signs that login
 in again on another device, which then holds it; the offline device, once back, deletes its old copy
-(after stopping every process on it) instead of returning it.
+(after stopping every process on it) instead of returning it. On macOS that sign-in runs in the
+login's own directory, since Claude Code names the keychain item it writes by that directory, so
+a cancelled or failed sign-in leaves the directory as it was (§app.claude-logins/macos-keychain).
 
 ## §app.claude-logins/migration — Forming the pool from existing logins
 
@@ -442,3 +456,58 @@ not be run (not installed, no answer within 5 s, a failed `--version`); "Claude 
 · {n} model(s) in the picker." when models are registered; else "Claude Code CLI {version} found,
 but no models are registered yet — start a session, or restart the server." It is a line, not a
 control: nothing to switch, and nothing else on the tab waits for it.
+
+## §app.claude-logins/macos-keychain — Claude logins in the macOS keychain
+
+On macOS, Claude Code keeps a login's credentials in the login keychain, not in its directory's
+`.credentials.json`: a generic password under the user's name holding the same JSON
+(`claudeAiOauth`). Its service is `Claude Code-credentials` for Claude Code's own `~/.claude` run
+without `$CLAUDE_CONFIG_DIR`, and `Claude Code-credentials-<h>` for a directory Claude Code runs with
+`$CLAUDE_CONFIG_DIR` (an added login's `claude-accounts/<id>/`, or `default`'s own
+`$CLAUDE_CONFIG_DIR`), `<h>` being the first 8 hex digits of the SHA-256 of that exact path. So when
+this host is macOS, `HOME` is the user's own home (a test's throwaway home never reaches the
+user's keychain), `$CLAUDE_SECURESTORAGE_CONFIG_DIR` is unset (it renames every item), and a
+login's directory holds no `.credentials.json`, Sova reads that login's item instead, for every
+login on this device, `default` and added ones alike:
+
+- **Whether it is signed in** — Settings → Accounts' **Not signed in**, the check that finishes
+  **Add a login** or **Sign In Again**, a spawn's refusal of a login that isn't signed in, and
+  whether a login needing sign-in has been signed in again since (its credentials changed) — comes
+  from the item's modification time, read from its attributes only (`security
+  find-generic-password -s <service> -a <user>`, without `-w`): the secret is never read for it,
+  and it works while the keychain is locked. That answer is kept at most 2 seconds. Removing a
+  login signs it out through Claude Code (`claude auth logout`) when either the file or the item exists.
+- **Its usage and sign-in data** (§app.insights/usage-refresh): the usage fetch reads the item
+  (`security find-generic-password … -w`) again for every fetch, so a token Claude Code renewed
+  (it rewrites the item) is sent at once; the Usage page's sign-in numbers (expiry times, never a
+  renewal time, since the item has no file time) come from one read kept at most 30 seconds per login.
+- **A sandboxed worker's token** (§chat.sandbox/claude-state): the access token handed to a
+  confined worker is read from the item at every launch, and the unconfined refresh run before it
+  starts Claude Code's own login without `$CLAUDE_CONFIG_DIR`, so that it renews the same item.
+
+A token read never prompts and gives up after 5 seconds; a failure of any kind (no item, a locked
+keychain, as in an ssh session, a timeout, unparsable JSON) is quiet and leaves what a missing file
+leaves: `nologin`, no `auth`, no token to hand over. The item's text lives only in memory for the
+one read: it is never written to disk, logged or sent to the browser; only the access token is
+used, and the sign-in data keeps only numbers. Sova never writes the item. A file present, even
+unreadable, decides alone, as before. No other platform ever runs `security`: elsewhere everything
+is as before, byte for byte.
+
+When this host is macOS and `default`'s login can be read neither from the file nor from the
+keychain, `GET /api/insights/usage` and `GET /api/claude/accounts` carry `claudeOwnLoginUnreadable:
+true` (absent otherwise), and the Usage page (under its lead line) and Settings → Accounts (under
+**This device's own login**) each show one muted hint: "On macOS, add your Claude login under
+Settings → Accounts." On every other platform neither field nor hint ever appears.
+
+**The pool can't move a keychain login.** The pool (§app.claude-logins/pool) moves a login between
+devices as its credentials file and never reads or writes the keychain for it. So a login this Mac
+holds whose credentials are only in its keychain (no file, an item) **stays on this Mac**: it is
+never returned, lent or kept free — not after a limit or a failed sign-in, not after 30 minutes
+idle, not when **Return** is asked or it is pinned to another device, not for a new keeper — and
+a move already under way for it is called off, leaving it held and used here (its limit or sign-in
+standing still keeps it unused until that clears). It is never deleted for having no file. While
+the mesh is on, Settings → Accounts shows it on this Mac with "Stays on this Mac: its sign-in is in
+the macOS keychain, which the pool can't move." in place of **Return** and the pin select. Other
+devices are not told: the pool still shows it held by this Mac, and a **Return** asked there is
+never carried out. Removing it from the pool, or another device signing it in again, still drops
+it here as before.

@@ -643,7 +643,8 @@
         "src/components/ComposerMenu.tsx",
         "src/lib/api.ts",
         "src/lib/sandbox.ts",
-        "src/components/Composer.tsx"
+        "src/components/Composer.tsx",
+        "src/lib/sandbox.test.ts"
       ]
     },
     "§chat.composer/disabled-states": {
@@ -1455,7 +1456,10 @@
         "src/components/ui.tsx",
         "src/vis/icons.ts",
         "src/vis/kinds/wireframe/icons.ts",
-        "public/icons/share.svg"
+        "public/icons/share.svg",
+        "public/icons/shield-on.svg",
+        "public/icons/shield-partial.svg",
+        "public/icons/shield-off.svg"
       ]
     },
     "§design.ground-rules/motion": {
@@ -1967,7 +1971,12 @@
         "src/components/Composer.tsx",
         "src/components/ui.tsx",
         "src/design/base.css",
-        "src/lib/sandbox.ts"
+        "src/lib/sandbox.ts",
+        "public/icons/shield-on.svg",
+        "public/icons/shield-partial.svg",
+        "public/icons/shield-off.svg",
+        "src/components/ComposerMenu.tsx",
+        "src/lib/sandbox.test.ts"
       ]
     },
     "§design.copy-deck/sandbox": {
@@ -1985,7 +1994,10 @@
         "pi-config/extensions/sandbox/state.ts",
         "pi-config/extensions/sandbox/tools.ts",
         "src/components/ChatView.tsx",
-        "src/lib/sandbox.ts"
+        "src/lib/sandbox.ts",
+        "server/overseer-tools.ts",
+        "server/sandbox-state.ts",
+        "pi-config/extensions/subagents/index.ts"
       ]
     },
     "§app.sessions-extension/agent-dir": {
@@ -2690,7 +2702,9 @@
         "server/server-stop.ts",
         "server/server-stop.test.ts",
         "server/index.ts",
-        "server/outreach/log.ts"
+        "server/outreach/log.ts",
+        "server/projects/playbook-review.ts",
+        "server/project-services/deploy-attention.ts"
       ],
       "requires": [
         "§app.overseer/seen"
@@ -2753,7 +2767,9 @@
         "src/lib/older-rows.ts",
         "src/lib/older-rows.test.ts",
         "src/lib/session-links.ts",
-        "src/lib/card-refs.ts"
+        "src/lib/card-refs.ts",
+        "server/overseer-org-tools.ts",
+        "server/overseer-folders.ts"
       ],
       "requires": [
         "§app.overseer/tools",
@@ -2850,14 +2866,15 @@
     "§app.overseer/navigation": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "code": [
         "server/overseer-tools.ts",
         "src/lib/overseer.ts",
         "src/components/ChatView.tsx",
         "src/components/Thread.tsx",
         "src/components/ToolCard.tsx",
-        "src/lib/live.ts"
+        "src/lib/live.ts",
+        "server/overseer-card-tool.ts"
       ],
       "requires": [
         "§chat.transcript/a-queued-message"
@@ -3467,7 +3484,7 @@
     "§app.session-list/needs-you": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "code": [
         "src/lib/needs-you.ts",
         "src/lib/needs-you.test.ts",
@@ -3483,7 +3500,8 @@
         "server/attention.ts",
         "src/lib/api.ts",
         "src/design/base.css",
-        "src/lib/org-region.ts"
+        "src/lib/org-region.ts",
+        "src/components/PlaybookReview.tsx"
       ],
       "requires": [
         "§app.overseer/attention-digest",
@@ -4509,11 +4527,14 @@
         "src/components/ProjectOverseerHead.tsx",
         "src/components/ChatView.tsx",
         "server/project-overseer-routes.ts",
-        "src/projects.css"
+        "src/projects.css",
+        "server/overseer-org-part.ts",
+        "server/overseer-org-part.test.ts"
       ],
       "requires": [
         "§app.overseer/hosting",
-        "§app.organizations/workspace-repo"
+        "§app.organizations/workspace-repo",
+        "§chat/images"
       ]
     },
     "§app.project-overseer/tools": {
@@ -4534,7 +4555,10 @@
         "server/outreach.test.ts",
         "statecharts/src/sova/statecharts/proj.cljc",
         "server/project-services/tools.ts",
-        "server/vendor/statecharts.js"
+        "server/vendor/statecharts.js",
+        "server/overseer-org-part.ts",
+        "server/orgs.ts",
+        "server/overseer-org-part.test.ts"
       ],
       "requires": [
         "§app.baton/goal-and-loadout",
@@ -4914,7 +4938,13 @@
         "pi-config/extensions/sandbox/backend.ts",
         "pi-config/extensions/sandbox/backends/linux-bwrap.ts",
         "pi-config/extensions/sandbox/backends/darwin-seatbelt.ts",
-        "pi-config/extensions/sandbox/tests/unit/linux-bwrap.unit.test.ts"
+        "pi-config/extensions/sandbox/tests/unit/linux-bwrap.unit.test.ts",
+        "pi-config/extensions/sandbox/launch.ts",
+        "pi-config/extensions/sandbox/tools.ts",
+        "pi-config/extensions/claude-code/confined-launch.ts",
+        "pi-config/extensions/sandbox/tests/launch.unit.test.ts",
+        "pi-config/extensions/sandbox/tests/tools.unit.test.ts",
+        "pi-config/extensions/sandbox/README.md"
       ]
     },
     "§chat.worktrees/worktree-config": {
@@ -6704,7 +6734,9 @@
         "src/lib/profile-changes.test.ts",
         "src/lib/owner-card.test.ts",
         "src/lib/stakeholder.test.ts",
-        "src/lib/coding-worktrees.test.ts"
+        "src/lib/coding-worktrees.test.ts",
+        "server/projects/spaces.ts",
+        "server/project-import.ts"
       ],
       "requires": [
         "§app.overseer/sent-marker",
@@ -6731,7 +6763,8 @@
         "src/components/ChatView.tsx",
         "src/components/Thread.tsx",
         "server/org-routes.ts",
-        "server/orgs.ts"
+        "server/orgs.ts",
+        "server/overseer-sender.ts"
       ],
       "requires": [
         "§app.overseer/confirm",
@@ -10574,9 +10607,11 @@
         "shared/project-contract.ts",
         "shared/project-contract.test.ts",
         "server/project-services/engine.ts",
+        "server/project-services/copy-tree.ts",
         "server/project-services/share.test.ts",
         "server/project-services/data-own-source.test.ts",
-        "server/project-services/ports-grace.test.ts"
+        "server/project-services/ports-grace.test.ts",
+        "server/project-services/copy-tree.test.ts"
       ]
     },
     "§app.project-services/create": {
@@ -11761,7 +11796,8 @@
         "server/projects/clone.ts",
         "server/projects/routes.ts",
         "server/projects/routes.test.ts",
-        "src/components/AddProjectDialog.tsx"
+        "src/components/AddProjectDialog.tsx",
+        "server/overseer-folders.ts"
       ],
       "requires": [
         "§app.projects/registration"
@@ -11814,7 +11850,8 @@
         "src/components/AddProjectDialog.tsx",
         "src/components/SessionDetails.tsx",
         "src/lib/projects.ts",
-        "src/lib/projects.test.ts"
+        "src/lib/projects.test.ts",
+        "server/overseer-folders.ts"
       ],
       "requires": [
         "§app.organizations/registry"
@@ -11881,7 +11918,8 @@
         "server/index.ts",
         "src/components/OrgsView.tsx",
         "src/lib/api.ts",
-        "src/orgs.css"
+        "src/orgs.css",
+        "server/overseer-org-tools.test.ts"
       ],
       "requires": [
         "§app.projects/placement",
@@ -11978,7 +12016,14 @@
         "server/project-overseer.ts",
         "server/project-services/tools.ts",
         "server/projects/runtime.test.ts",
-        "statecharts/test/sova/statecharts/refit/runtime_test.cljs"
+        "statecharts/test/sova/statecharts/refit/runtime_test.cljs",
+        "server/build-loadout.ts",
+        "server/projects/runtime-feed.ts",
+        "server/projects/runtime-feed.test.ts",
+        "server/projects/playbook-review.test.ts",
+        "statecharts/src/sova/statecharts/build.cljc",
+        "statecharts/src/sova/statecharts/rules/runtime.cljc",
+        "statecharts/EVENTS.md"
       ],
       "requires": [
         "§app.project-overseer/coding-worktrees"
@@ -12033,7 +12078,7 @@
     "§app.project-runtime/software-card": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "code": [
         "src/components/ProjectSoftwareCard.tsx",
         "src/components/ProjectPage.tsx",
@@ -12043,7 +12088,8 @@
         "src/projects.css",
         "server/projects/runtime.ts",
         "server/project-services/on-merge.ts",
-        "server/project-services/on-merge.test.ts"
+        "server/project-services/on-merge.test.ts",
+        "src/components/PlaybookReview.tsx"
       ],
       "requires": [
         "§app.project-runtime/registry"
@@ -12777,6 +12823,546 @@
         "scripts/mesh-termux/README.md",
         "scripts/fetch-bun.sh",
         "scripts/bun-release.txt"
+      ]
+    },
+    "§chat.sandbox/states": {
+      "kind": "behavior",
+      "requires": [
+        "§chat/sandbox",
+        "§chat.sandbox/toggle",
+        "§chat.sandbox/workers",
+        "§chat.worktrees/workers"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/sandbox/state.ts",
+        "pi-config/extensions/sandbox/index.ts",
+        "pi-config/extensions/subagents/index.ts",
+        "server/sandbox-state.ts",
+        "server/sandbox-state.test.ts",
+        "server/sandbox-route.test.ts",
+        "shared/protocol.ts",
+        "pi-config/extensions/sandbox/README.md",
+        "pi-config/extensions/sandbox/tests/state.unit.test.ts",
+        "pi-config/extensions/sandbox/tests/index.unit.test.ts",
+        "pi-config/extensions/sandbox/tests/cache-invariant.mjs",
+        "pi-config/extensions/sandbox/tests/run.mjs",
+        "pi-config/extensions/subagents/index.test.ts",
+        "pi-config/extensions/claude-code/provider/session-bridge.ts"
+      ]
+    },
+    "§app.overseer/org-project-add": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/overseer-org-tools.ts",
+        "server/overseer-folders.ts",
+        "server/projects/routes.ts",
+        "server/projects/clone.ts",
+        "server/projects/spaces.ts",
+        "server/org-routes.ts",
+        "server/orgs.ts",
+        "server/project-import.ts",
+        "server/overseer-sender.ts",
+        "server/overseer-prompt.md",
+        "server/overseer-org-tools.test.ts",
+        "server/overseer-runtime.test.ts",
+        "server/projects/routes.test.ts"
+      ],
+      "requires": [
+        "§app.overseer/org-writes",
+        "§app.overseer/confirm",
+        "§app.projects/registration",
+        "§app.projects/clone",
+        "§app.projects/placement",
+        "§app.projects/import",
+        "§app.organizations/registry",
+        "§app.overseer/org-attribution",
+        "§app.overseer/caps",
+        "§app.overseer/tools"
+      ]
+    },
+    "§app.claude-logins/macos-keychain": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "requires": [
+        "§app.insights/usage-refresh",
+        "§app.claude-logins/accounts-tab",
+        "§app.insights/usage-cards",
+        "§chat.sandbox/claude-state",
+        "§app.claude-logins/add-remove",
+        "§app.claude-logins/pool"
+      ],
+      "code": [
+        "pi-config/extensions/claude-code/keychain.ts",
+        "pi-config/extensions/claude-code/keychain.test.ts",
+        "pi-config/extensions/usage-status/fetch.ts",
+        "pi-config/extensions/usage-status/fetch.test.ts",
+        "server/auth-status.ts",
+        "server/auth-status.test.ts",
+        "server/insights.ts",
+        "server/claude-accounts.ts",
+        "shared/protocol.ts",
+        "src/components/UsageView.tsx",
+        "src/components/AccountsSettings.tsx",
+        "pi-config/extensions/claude-code/accounts.ts",
+        "pi-config/extensions/claude-code/accounts.test.ts",
+        "server/claude-accounts.test.ts",
+        "scripts/fake-claude.mjs",
+        "server/claude-pool/agent.ts",
+        "server/claude-pool/agent.test.ts",
+        "src/lib/claude-pool.ts",
+        "src/lib/claude-pool.test.ts"
+      ]
+    },
+    "§app.project-runtime/approve-merge": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/projects/runtime.ts",
+        "server/projects/runtime-routes.ts",
+        "server/projects/playbook-review.test.ts",
+        "src/lib/api.ts",
+        "src/components/PlaybookReview.tsx",
+        "src/components/ProjectSoftwareCard.tsx"
+      ],
+      "requires": [
+        "§app.project-runtime/approve",
+        "§app.project-overseer/coding-worktrees"
+      ]
+    },
+    "§app.project-runtime/review": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/projects/playbook-review.ts",
+        "server/projects/playbook-review.test.ts",
+        "server/attention.ts",
+        "server/overseer.ts",
+        "server/push.ts",
+        "server/push-store.ts",
+        "shared/protocol.ts",
+        "src/components/PlaybookReview.tsx",
+        "src/components/ProjectPage.tsx",
+        "src/components/Sidebar.tsx",
+        "src/components/PushSettings.tsx",
+        "src/lib/needs-you.ts",
+        "shared/playbook-review.ts",
+        "shared/playbook-review.test.ts",
+        "src/lib/needs-you.test.ts",
+        "server/attention.test.ts",
+        "server/push.test.ts",
+        "src/app.css",
+        "src/lib/push-draft.test.ts",
+        "src/components/ProjectSoftwareCard.tsx",
+        "src/lib/project-software.ts",
+        "src/lib/project-software.test.ts"
+      ],
+      "requires": [
+        "§app.project-runtime/onboard",
+        "§app.overseer/attention-digest"
+      ]
+    },
+    "§app.project-runtime/run-progress": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/projects/runtime.ts",
+        "shared/project-runtime.ts",
+        "src/components/ProjectSoftwareCard.tsx",
+        "src/lib/project-software.ts",
+        "src/lib/project-software.test.ts",
+        "server/projects/playbook-review.ts",
+        "server/projects/playbook-review.test.ts"
+      ],
+      "requires": [
+        "§app.project-runtime/onboard"
+      ]
+    },
+    "§app.project-runtime/run-report": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/projects/playbook-review.ts",
+        "server/projects/runtime.ts",
+        "shared/project-runtime.ts",
+        "src/components/ProjectSoftwareCard.tsx",
+        "src/lib/project-software.ts",
+        "src/lib/project-software.test.ts",
+        "src/components/ProjectDeployPanel.tsx",
+        "src/lib/project-deploy.ts"
+      ],
+      "requires": [
+        "§app.project-runtime/registry"
+      ]
+    },
+    "§app.project-runtime/verb-playbooks": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/projects/onboard.ts",
+        "server/projects/onboard.test.ts",
+        "server/project-coding-mode.ts",
+        "server/project-overseer.ts",
+        "playbooks/project-verbs/PLAYBOOK.md",
+        "statecharts/src/sova/statecharts/runtime.cljc",
+        "statecharts/src/sova/statecharts/proj.cljc",
+        "server/build-loadout.ts",
+        "server/project-coding-mode.test.ts",
+        "server/playbooks.ts",
+        "shared/protocol.ts",
+        "server/projects/runtime.ts",
+        "server/projects/runtime-routes.ts",
+        "server/projects/runtime-feed.ts",
+        "server/projects/runtime-feed.test.ts",
+        "statecharts/src/sova/statecharts/build.cljc",
+        "statecharts/src/sova/statecharts/rules/runtime.cljc",
+        "statecharts/test/sova/statecharts/refit/runtime_test.cljs",
+        "statecharts/EVENTS.md"
+      ],
+      "requires": [
+        "§app.project-runtime/onboard"
+      ]
+    },
+    "§app.project-runtime/deploy-panel": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "requires": [
+        "§app.project-runtime/deploy-standing",
+        "§app.project-services/deploy-plan",
+        "§app.project-services/deploy-run"
+      ],
+      "code": [
+        "src/components/ProjectDeployPanel.tsx",
+        "src/lib/project-deploy.ts",
+        "src/lib/project-deploy.test.ts",
+        "src/lib/api.ts",
+        "src/components/ProjectPage.tsx",
+        "src/projects.css"
+      ]
+    },
+    "§app.project-runtime/deploy-playbook": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.project-runtime/verb-playbooks",
+        "§app.project-services/deploy-check"
+      ],
+      "code": [
+        "playbooks/project-deploy/PLAYBOOK.md",
+        "playbooks/project-deploy/references/deploy.md",
+        "playbooks/project-deploy/scripts/project-deploy.mjs",
+        "server/project-services/deploy-playbook.test.ts"
+      ]
+    },
+    "§app.project-runtime/deploy-standing": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.project-services/deploy-trust"
+      ],
+      "code": [
+        "server/project-services/deploy-trust.ts",
+        "server/project-services/deploy.ts",
+        "server/project-services/deploy-trust.test.ts"
+      ]
+    },
+    "§app.project-services/deploy": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.project-services/contract",
+        "§app.project-services/result"
+      ],
+      "code": [
+        "shared/project-contract.ts",
+        "shared/project-contract-deploy.test.ts",
+        "shared/project-contract.test.ts",
+        "server/project-services/deploy.ts",
+        "server/project-services/engine.ts",
+        "server/project-services/engine.test.ts",
+        "playbooks/project-verbs/scripts/project-verbs.mjs",
+        "playbooks/project-verbs/references/contract.md"
+      ]
+    },
+    "§app.project-services/deploy-callers": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.project-services/deploy",
+        "§app.project-services/callers"
+      ],
+      "code": [
+        "server/project-services/deploy.ts",
+        "server/project-services/tools.ts",
+        "server/project-services/deploy-callers.test.ts",
+        "scripts/sova-project.mjs"
+      ]
+    },
+    "§app.project-services/deploy-check": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.project-services/deploy"
+      ],
+      "code": [
+        "server/project-services/deploy.ts",
+        "server/project-services/deploy-check.test.ts"
+      ]
+    },
+    "§app.project-services/deploy-plan": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.project-services/deploy",
+        "§app.project-services/deploy-trust",
+        "§app.project-services/test"
+      ],
+      "code": [
+        "server/project-services/deploy.ts",
+        "server/project-services/deploy-run.test.ts"
+      ]
+    },
+    "§app.project-services/deploy-run": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.project-services/deploy-plan",
+        "§app.project-services/supervisor"
+      ],
+      "code": [
+        "server/project-services/deploy.ts",
+        "server/project-services/deploy-runner.mjs",
+        "server/project-services/deploy-run.test.ts",
+        "server/project-services/routes.ts"
+      ]
+    },
+    "§app.project-services/deploy-status": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.project-services/deploy-run",
+        "§app.overseer/attention-digest"
+      ],
+      "code": [
+        "server/project-services/deploy.ts",
+        "server/project-services/deploy-attention.ts",
+        "server/project-services/deploy-status.test.ts",
+        "server/overseer.ts",
+        "shared/protocol.ts",
+        "server/project-services/routes.ts"
+      ]
+    },
+    "§app.project-services/deploy-trust": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.project-services/deploy",
+        "§app.project-services/trust"
+      ],
+      "code": [
+        "server/project-services/deploy-trust.ts",
+        "server/project-services/deploy-trust.test.ts",
+        "server/project-services/trust.ts",
+        "server/project-services/observe.ts",
+        "server/project-services/routes.ts",
+        "server/project-services/deploy.ts"
+      ]
+    },
+    "§mesh.peers/grants": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "requires": [
+        "§mesh.peers/listener",
+        "§mesh.peers/allowlist",
+        "§mesh.sync/categories",
+        "§mesh.sync/logins",
+        "§app.claude-logins/pool",
+        "§app.access/gate"
+      ],
+      "code": [
+        "shared/mesh-access.ts",
+        "server/mesh/access.ts",
+        "server/mesh/listener.ts",
+        "server/mesh/index.ts",
+        "server/mesh/proxy.ts",
+        "server/sync/index.ts",
+        "server/sync/logins.ts",
+        "server/sync/docs.ts",
+        "server/claude-pool/index.ts",
+        "server/mesh/details.ts",
+        "src/components/MeshAccess.tsx",
+        "src/lib/mesh-access.ts",
+        "src/components/MeshView.tsx",
+        "src/lib/mesh.ts",
+        "server/mesh/access.test.ts",
+        "server/mesh/grants.test.ts",
+        "server/sync/grants-sync.test.ts",
+        "src/lib/mesh-access.test.ts",
+        "scripts/mesh-lab/e2e/m7-grants.test.mjs"
+      ]
+    },
+    "§mesh.lan/as-a-peer": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "code": [
+        "server/mesh/dial.ts",
+        "server/mesh/lan-fetch.ts",
+        "server/mesh/lan-fetch.test.ts",
+        "server/mesh/listener.ts",
+        "server/mesh/index.ts",
+        "server/mesh/proxy.ts",
+        "server/mesh/hello.ts",
+        "server/ws.ts",
+        "server/extensions.ts",
+        "server/mesh/lan.ts",
+        "server/mesh/lan-mesh.test.ts",
+        "server/mesh/proxy-pairing.test.ts"
+      ],
+      "requires": [
+        "§mesh.lan/pairing",
+        "§mesh.lan/reverse-channel",
+        "§mesh.peers/listener"
+      ]
+    },
+    "§mesh.lan/dialer": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "code": [
+        "server/mesh/lan-dialer.ts",
+        "server/mesh/lan-dialer.test.ts",
+        "server/mesh/lan.ts"
+      ],
+      "requires": [
+        "§mesh.lan/handshake",
+        "§mesh.lan/reverse-channel"
+      ]
+    },
+    "§mesh.lan/handshake": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "code": [
+        "server/mesh/lan-tls.ts",
+        "server/mesh/lan-tls.test.ts"
+      ],
+      "requires": [
+        "§mesh.lan/identity"
+      ]
+    },
+    "§mesh.lan/identity": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "code": [
+        "server/mesh/lan-cert.ts",
+        "server/mesh/lan-cert.test.ts"
+      ],
+      "requires": []
+    },
+    "§mesh.lan/pairing": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "code": [
+        "server/mesh/peers.ts",
+        "server/mesh/lan.ts",
+        "server/mesh/index.ts",
+        "server/mesh/lan-routes.ts",
+        "shared/mesh-lan.ts",
+        "server/mesh/gate.ts",
+        "server/mesh/lan-peers.test.ts",
+        "server/mesh/lan-mesh.test.ts",
+        "server/mesh/resync.ts",
+        "server/share/gateway-client.ts",
+        "server/index.ts",
+        "src/components/MeshPairings.tsx",
+        "src/components/MeshView.tsx",
+        "src/lib/mesh-lan.ts",
+        "src/lib/mesh-lan.test.ts",
+        "src/lib/api.ts",
+        "src/mesh.css",
+        "scripts/mesh-lab/e2e/m8-dialout.test.mjs",
+        "scripts/mesh-dialout/README.md",
+        "scripts/mesh-dialout/mac-e2e.mjs",
+        "scripts/mesh-dialout/local.env.example",
+        "scripts/mesh-vps/exposure.sh",
+        "server/mesh/access.ts",
+        "shared/mesh-access.ts",
+        "server/mesh/access.test.ts",
+        "scripts/mesh-vps/local.env.example"
+      ],
+      "requires": [
+        "§mesh.lan/identity",
+        "§mesh.lan/handshake"
+      ]
+    },
+    "§mesh.lan/relay-listener": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "code": [
+        "server/mesh/lan-admission.ts",
+        "server/mesh/lan-admission.test.ts",
+        "server/mesh/lan-relay.ts",
+        "server/mesh/lan-relay.test.ts"
+      ],
+      "requires": [
+        "§mesh.lan/handshake"
+      ]
+    },
+    "§mesh.lan/relay-sessions": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "code": [
+        "server/mesh/lan-relay-sessions.ts",
+        "server/mesh/lan-relay-sessions.test.ts",
+        "server/mesh/lan.ts",
+        "server/mesh/lan-mesh.test.ts"
+      ],
+      "requires": [
+        "§mesh.lan/reverse-channel",
+        "§mesh.lan/relay-listener"
+      ]
+    },
+    "§mesh.lan/reverse-channel": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "code": [
+        "server/mesh/lan-reverse.ts",
+        "server/mesh/lan-reverse.test.ts",
+        "server/runtime-quirks.ts",
+        "server/mesh/lan-mesh.test.ts",
+        "server/mesh/lan-h2-limits.test.ts",
+        "server/mesh/lan.ts"
+      ],
+      "requires": [
+        "§mesh.lan/handshake",
+        "§app.server-runtime/quirks"
+      ]
+    },
+    "§mesh/lan": {
+      "kind": "surface",
+      "authority": "accepted",
+      "code": [
+        "server/mesh/lan-reverse.ts",
+        "server/mesh/lan-dialer.ts",
+        "server/mesh/lan-relay.ts"
       ]
     }
   },

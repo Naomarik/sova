@@ -5,7 +5,7 @@ import { workingSubagents } from "./live";
 import { closeOrgHost, hostOf, isOrgHostOpen, type OrgHostApi } from "./org-engine";
 import { OrgError } from "./org-error";
 import { replayJournals, scanSnapshots } from "./org-host/store";
-import { orgDir, orgOfProject, placeProject, readIndex, readOrg } from "./orgs";
+import { type OperatorBy, orgDir, orgOfProject, placeProject, readIndex, readOrg } from "./orgs";
 import { canonicalPath } from "./paths";
 import { readBuilds } from "./build-loadout";
 import { adoptOverseerFiles, syncWatchSettings } from "./project-overseer";
@@ -163,7 +163,7 @@ export const confirmSentence = (project: string, org: string) =>
  * Import `projectId` (standalone here) into `orgId` (attached here). Without `confirm` nothing changes: the
  * confirm sentence comes back as a 409 with `code: "confirm"`. Every refusal before the mark changes nothing.
  */
-export async function importProject(orgId: string, projectId: unknown, confirm: boolean): Promise<void> {
+export async function importProject(orgId: string, projectId: unknown, confirm: boolean, by: OperatorBy = { kind: "operator" }): Promise<void> {
   const org = readOrg(orgId);
   orgDir(orgId);
   const orgHost = hostOf(orgId);
@@ -212,7 +212,7 @@ export async function importProject(orgId: string, projectId: unknown, confirm: 
     throw new OrgError(`The import of ${name} stopped: ${err instanceof Error ? err.message : String(err)} It finishes at the next server start.`, 409);
   }
   hooks.beforePlace?.();
-  await placeProject(orgId, projectId, "import");
+  await placeProject(orgId, projectId, "import", by);
   await finishOne({ ...entry, importing: { org: orgId, at } }, name);
 }
 

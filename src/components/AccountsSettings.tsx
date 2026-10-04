@@ -382,27 +382,29 @@ function PoolLogins(props: LoginActions & {
                         facts={<Show when={movingText(l)}>{(m) => <span class="accounts-login-fact">{m()}</span>}</Show>}
                         before={
                           <>
-                            <label class="accounts-pin">
-                              <span class="select-wrap">
-                                <select
-                                  class="select"
-                                  aria-label={`Always give ${name()}${l.identity?.email ? ` of ${l.identity.email}` : ""} to`}
-                                  disabled={props.busy}
-                                  onChange={(e) => props.act(`pin-${l.id}`, () => pinClaudePoolLogin(l.id, e.currentTarget.value || null))}
-                                >
-                                  <option value="" selected={!l.pin}>
-                                    No pin
-                                  </option>
-                                  <For each={props.pool.devices}>
-                                    {(d) => (
-                                      <option value={d.id} selected={d.id === l.pin}>
-                                        Pin to {d.label}
-                                      </option>
-                                    )}
-                                  </For>
-                                </select>
-                              </span>
-                            </label>
+                            <Show when={acts().pinnable}>
+                              <label class="accounts-pin">
+                                <span class="select-wrap">
+                                  <select
+                                    class="select"
+                                    aria-label={`Always give ${name()}${l.identity?.email ? ` of ${l.identity.email}` : ""} to`}
+                                    disabled={props.busy}
+                                    onChange={(e) => props.act(`pin-${l.id}`, () => pinClaudePoolLogin(l.id, e.currentTarget.value || null))}
+                                  >
+                                    <option value="" selected={!l.pin}>
+                                      No pin
+                                    </option>
+                                    <For each={props.pool.devices}>
+                                      {(d) => (
+                                        <option value={d.id} selected={d.id === l.pin}>
+                                          Pin to {d.label}
+                                        </option>
+                                      )}
+                                    </For>
+                                  </select>
+                                </span>
+                              </label>
+                            </Show>
                             <Show when={acts().returnable}>
                               <button
                                 type="button"
@@ -705,6 +707,10 @@ export function AccountsSettingsSection() {
                       </div>
                     </li>
                   </ol>
+                  {/* macOS: Claude Code's own login is in a keychain this server can't read (§app.claude-logins/macos-keychain). */}
+                  <Show when={i().claudeOwnLoginUnreadable}>
+                    <p class="field-hint">On macOS, add your Claude login under Settings → Accounts.</p>
+                  </Show>
                 </>
               )}
             </Show>

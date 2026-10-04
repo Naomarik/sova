@@ -4,7 +4,7 @@
 
 import { OFFER_FINAL } from "../../shared/mesh-links";
 import type { LinkInboxRecord, LinkMemberRef, LinkOffer, LinkOfferRecipient, LinkThread, LinkedAgentInfo, LinkedTransfer, OfferRowState } from "../../shared/mesh-links";
-import type { MeshInfo } from "../../shared/protocol";
+import type { MeshInfoView as MeshInfo } from "../../shared/mesh-access";
 import type { Tone } from "../components/ui";
 import { duration, thousands } from "./format";
 import { bytes } from "./mesh-details";

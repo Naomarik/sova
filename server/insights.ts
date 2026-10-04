@@ -41,7 +41,7 @@ import type { LinkedAgentInfo } from "../shared/mesh-links";
 import { claudeLoginIds, forceRefresh } from "../pi-config/extensions/usage-status/fetch.ts";
 // Ollama's declared reset day (usage-windows.json), the same sanctioned surface (builtins only).
 import { monthlyWindow, readUsageWindows, setOllamaResetDay } from "../pi-config/extensions/usage-status/windows.ts";
-import { readAuthStatus, readClaudeLoginAuth } from "./auth-status";
+import { ownClaudeLoginUnreadable, readAuthStatus, readClaudeLoginAuth } from "./auth-status";
 import { ClaudeAccountsService } from "./claude-accounts";
 import { hasPage, listExplanations, sortExplanations } from "./explanations";
 import { readLiveRecords, type RawLiveRecord, workerCountsOf } from "./live";
@@ -424,7 +424,9 @@ export async function getUsageInsight(): Promise<UsageInsight> {
   const providers = read.map((p) => withDeclaredReset(auth[p.id] ? { ...p, auth: auth[p.id] } : p, ollamaResetDay, Date.now()));
   const own = providers.find((p) => p.id === "claude");
   const claudeLogins = own ? await readClaudeLogins(own, ownFetchedAt, claudeAccounts) : undefined;
-  return { ...d, providers, ...(claudeLogins ? { claudeLogins } : {}), ollamaResetDay, stale: d.fetchedAt !== null && Date.now() - d.fetchedAt > USAGE_STALE_MS };
+  // macOS only: Claude Code's own login in neither its file nor a readable keychain (§app.claude-logins/macos-keychain).
+  const ownUnreadable = await ownClaudeLoginUnreadable();
+  return { ...d, providers, ...(claudeLogins ? { claudeLogins } : {}), ollamaResetDay, ...(ownUnreadable ? { claudeOwnLoginUnreadable: true as const } : {}), stale: d.fetchedAt !== null && Date.now() - d.fetchedAt > USAGE_STALE_MS };
 }
 
 /**

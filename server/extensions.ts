@@ -374,6 +374,8 @@ export interface ProxySocketOptions {
   signal?: AbortSignal;
   /** The upstream accepted. */
   onOpen?: () => void;
+  /** How the upstream socket is made, when not by dialing `url` (a dial-out pairing's stream). */
+  dial?: (url: string, protocols: string[], opts: { headers: Record<string, string>; handshakeTimeout: number }) => WebSocket;
 }
 
 /**
@@ -388,7 +390,8 @@ export function proxySocket(req: IncomingMessage, socket: Duplex, head: Buffer, 
     .split(",")
     .map((p) => p.trim())
     .filter(Boolean);
-  const upstream = cappedWebSocket(url, protocols, { headers, handshakeTimeout: opts.handshakeTimeout ?? 10_000 });
+  const dialOpts = { headers, handshakeTimeout: opts.handshakeTimeout ?? 10_000 };
+  const upstream = opts.dial ? opts.dial(url, protocols, dialOpts) : cappedWebSocket(url, protocols, dialOpts);
   let upgraded = false;
   let refused = false;
   const refuseOnce = ([status, body]: [number, object]) => {

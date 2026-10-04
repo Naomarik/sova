@@ -5,6 +5,8 @@ import { CONTRACT_FILE, DefinitionError, httpStatusOf, parseDefinition } from ".
 import { projectOf } from "../project-root";
 import { conformer } from "./conform";
 import { SelectedDriver } from "./adapters";
+import { attentionChanged } from "../attention-memo";
+import { approveDeployRecipe, Deployer } from "./deploy";
 import { ProjectEngine } from "./engine";
 import { approve, defHashOf } from "./trust";
 
@@ -16,14 +18,29 @@ import { approve, defHashOf } from "./trust";
  */
 
 let engine: ProjectEngine | null = null;
+let deployer: Deployer | null = null;
 
 /** The server's one engine (its supervisor adapter chosen at first use, server/project-services/adapters.ts). */
 export function projectEngine(): ProjectEngine {
   if (!engine) {
     engine = new ProjectEngine({ driver: new SelectedDriver() });
     engine.conformer = conformer(engine);
+    const d = (deployer = new Deployer(engine));
+    // A deploy that ended may be the digest's to list (§app.project-services/deploy-status).
+    d.onEnded = () => attentionChanged();
+    engine.deployer = async (verb, body, caller, opts) => {
+      const r = await d.run(verb, body, caller, opts);
+      if (r.changed) attentionChanged();
+      return r;
+    };
   }
   return engine;
+}
+
+/** The server's one deployer (§app.project-services/deploy), beside its engine. */
+export function projectDeployer(): Deployer {
+  projectEngine();
+  return deployer!;
 }
 
 export function registerProjectServiceRoutes(app: Hono<any>): void {
@@ -53,6 +70,24 @@ export function registerProjectServiceRoutes(app: Hono<any>): void {
     return c.json({ ok: true, project: p.root, defHash: current });
   });
 
+  // The operator's approval of a deploy recipe (§app.project-services/deploy-trust): the hash shown, and every step of its review ticked.
+  app.post("/api/project-services/deploy-approve", async (c) => {
+    const body = (await c.req.json().catch(() => null)) as { project?: unknown; deployHash?: unknown; ticked?: unknown; ref?: unknown } | null;
+    const project = typeof body?.project === "string" ? body.project : "";
+    const seen = typeof body?.deployHash === "string" ? body.deployHash : "";
+    const ticked = Array.isArray(body?.ticked) && body.ticked.every((k) => typeof k === "string") ? (body.ticked as string[]) : null;
+    if (!project || !isAbsolute(project) || !seen || !ticked) return c.json({ error: "give project (an absolute path), deployHash (the hash you were shown) and ticked (every step you ticked)" }, 400);
+    const p = await projectOf(project);
+    if (p.state !== "ok") return c.json({ error: p.state === "none" ? `no project at ${project}` : p.message }, 404);
+    const ref = typeof body?.ref === "string" && body.ref ? body.ref : "HEAD";
+    try {
+      await approveDeployRecipe(p.root, seen, ref, ticked);
+    } catch (err) {
+      return c.json({ error: err instanceof Error ? err.message : String(err) }, 409);
+    }
+    return c.json({ ok: true, project: p.root, deployHash: seen });
+  });
+
   app.post("/api/project-services/:verb", async (c) => {
     const body = await c.req.json().catch(() => undefined);
     const r = await projectEngine().run(c.req.param("verb"), body, { kind: "operator" });
@@ -67,6 +102,7 @@ export async function reconcileProjectServices(): Promise<void> {
     console.log(`[project-services] supervisor: ${sel.id} (${sel.why})`);
     const did = await projectEngine().reconcile();
     for (const d of did) console.log(`[project-services] ${d}`);
+    for (const d of projectDeployer().reconcile()) console.log(`[project-services] ${d}`);
   } catch (err) {
     console.error("[project-services] reconcile failed:", err instanceof Error ? err.message : err);
   }

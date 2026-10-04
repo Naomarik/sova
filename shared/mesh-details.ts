@@ -103,15 +103,16 @@ export interface HostDetails {
   claudeCode?: "found" | "not-found";
 }
 
-/** Why a host has no details: down, refused, another protocol, or an older build without the route. */
-export type HostUnavailable = "down" | "refused" | "skewed" | "update";
+/** Why a host has no details: down, refused, another protocol, an older build without the route,
+    or hidden: it grants this host nothing (§mesh.peers/grants). */
+export type HostUnavailable = "down" | "refused" | "skewed" | "update" | "hidden";
 
 export interface MeshHostDetails {
   id: string;
   label: string;
   /** The host serving this page. */
   self: boolean;
-  state: PeerState | "self";
+  state: PeerState | "hidden" | "self";
   details?: HostDetails;
   unavailable?: HostUnavailable;
   error?: string;

@@ -9,7 +9,7 @@ import { listPlaybooks } from "../playbooks";
 import { NO_ONBOARD_MODEL, ONBOARD_MODELS, ONBOARD_PLAYBOOK_ID, onboardInvalid, onboardModel, onboardStartFrom, type OnboardFacts } from "./onboard";
 import { linkedPlaybook } from "../../shared/playbooks";
 
-const PLAYBOOK = { title: "Project verbs", dir: "/x/playbooks/project-verbs", body: "# Project verbs\n" };
+const PLAYBOOK = { title: "Project verbs", dir: "/x/playbooks/project-verbs", body: "# Project verbs\n", approves: "definition" as const };
 const facts = (over: Partial<OnboardFacts> = {}): OnboardFacts => ({ name: "Motors", root: "/w/motors", remote: null, rootExists: true, playbook: PLAYBOOK, ...over });
 
 test("the model: asked wins (medium unless given); else the first of opus, opus[1m], gpt-6-astra the host lists, at medium; never an unlisted ref", () => {
@@ -58,4 +58,14 @@ test("the shipped catalog lists project-verbs for any folder, with its PLAYBOOK.
   assert.equal(p.source, "sova");
   assert.equal(p.title, "Project verbs");
   assert.match(p.body, /At most 6 conform runs/);
+  assert.equal(p.approves, "definition", "a verb playbook: its frontmatter says what its proposal approves");
+});
+
+test("a run is keyed by its verb playbook: id, title, what it approves; a playbook without approves: is refused (§app.project-runtime/verb-playbooks)", () => {
+  const s = onboardStartFrom(facts(), {}, ["claude-code-cli/opus"]);
+  assert.deepEqual([s.playbookId, s.label, s.approves], ["project-verbs", "Project verbs", "definition"]);
+  const deploy = onboardStartFrom(facts({ playbookId: "project-deploy", playbook: { title: "Project deploy", dir: "/x/playbooks/project-deploy", body: "# d\n", approves: "deploy" } }), {}, ["claude-code-cli/opus"]);
+  assert.deepEqual([deploy.playbookId, deploy.label, deploy.approves, deploy.title, deploy.invalid], ["project-deploy", "Project deploy", "deploy", "Project deploy: Motors", undefined]);
+  const plain = facts({ playbookId: "tidy", playbook: { title: "Tidy", dir: "/x/playbooks/tidy", body: "# t\n" } });
+  assert.equal(onboardInvalid(plain), "tidy is not a verb playbook: its PLAYBOOK.md says no approves:.");
 });

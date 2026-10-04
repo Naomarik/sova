@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { realpathSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -88,8 +88,49 @@ export function restartGateArgv(o: { unit: string; serverPid: number; liveDir: s
   ];
 }
 
-/** Schedule `unit`'s gated restart: null when scheduled, else `systemd-run`'s own message (nothing was scheduled). */
-export async function scheduleRestart(unit: string, mainPid: number | null, exec: Exec = realExec): Promise<string | null> {
+/** macOS: the gate's own argv, run as a process in a session of its own that waits `RESTART_DELAY_SEC` itself (no systemd-run there) (pure, for tests). */
+export function restartGateDetachedArgv(o: { unit: string; serverPid: number; liveDir: string; mainPid: number | null; log: string; script?: string }): string[] {
+  return [
+    o.script ?? RESTART_GATE,
+    "--delay",
+    String(RESTART_DELAY_SEC),
+    "--unit",
+    o.unit,
+    "--server-pid",
+    String(o.serverPid),
+    "--live-dir",
+    o.liveDir,
+    ...(o.mainPid ? ["--main-pid", String(o.mainPid)] : []),
+    "--log",
+    o.log,
+  ];
+}
+
+/** Start `file args` in a session of its own, not waited for: null once it runs, else why it couldn't start. */
+export function spawnDetached(file: string, args: string[]): Promise<string | null> {
+  return new Promise((done) => {
+    let child: ReturnType<typeof spawn>;
+    try {
+      child = spawn(file, args, { detached: true, stdio: "ignore" });
+    } catch (err) {
+      return done(`cannot start ${file}: ${(err as Error).message}`);
+    }
+    child.once("error", (err) => done(`cannot start ${file}: ${err.message}`));
+    // A pid means it runs (a missing program has none, and reports through "error").
+    if (child.pid !== undefined) {
+      child.unref();
+      done(null);
+    }
+  });
+}
+
+/**
+ * Schedule `unit`'s gated restart: null when scheduled, else `systemd-run`'s own message (nothing
+ * was scheduled). On macOS the gate runs detached from this server (a session of its own survives
+ * the `launchctl kickstart -k` it issues) and waits the delay itself.
+ */
+export async function scheduleRestart(unit: string, mainPid: number | null, exec: Exec = realExec, platform: NodeJS.Platform = process.platform, detached: (file: string, args: string[]) => Promise<string | null> = spawnDetached): Promise<string | null> {
+  if (platform === "darwin") return detached(process.execPath, restartGateDetachedArgv({ unit, serverPid: process.pid, liveDir: LIVE_DIR, mainPid, log: restartGateLog() }));
   const r = await exec("systemd-run", restartGateArgv({ unit, serverPid: process.pid, liveDir: LIVE_DIR, mainPid, log: restartGateLog() }), { timeoutMs: 15_000 });
   return r.code === 0 ? null : (r.stderr || r.stdout).trim() || `systemd-run exited with ${r.code}`;
 }

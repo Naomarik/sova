@@ -208,3 +208,15 @@ test("the registry lists the definition's data resources, a production-derived o
   assert.equal(v.def?.state, "present", JSON.stringify(v.def));
   assert.deepEqual(v.data, [{ name: "db", kind: "dir", sensitive: true }, { name: "cache", kind: "dir", sensitive: false }]);
 });
+
+test("sova_project's Software block says what a proposed run's branch holds, by what its playbook approves", async () => {
+  const { softwareLines } = await import("./runtime");
+  const view = (approves: "definition" | "deploy", label: string, branch: string) =>
+    ({
+      standing: "registered", playbookState: "proposed", def: null, services: [], orphans: [], drift: null, approved: null, proof: null,
+      playbook: { sessionId: "s1", playbookId: "p", label, approves, startedBy: "operator", startedAt: "", branch },
+    }) as unknown as ProjectRuntimeView;
+  const run = (v: ProjectRuntimeView) => softwareLines(v).find((l) => l.includes("playbook:"));
+  assert.match(run(view("deploy", "Project deploy", "sova/d"))!, /^Project deploy playbook: proposes a deploy recipe on sova\/d \(/);
+  assert.match(run(view("definition", "Project verbs", "sova/v"))!, /^Project verbs playbook: proposes a definition on sova\/v \(/);
+});

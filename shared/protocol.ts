@@ -889,6 +889,9 @@ export interface PlaybookInfo {
   title: string;              // frontmatter title, else name, else the id
   description: string;        // frontmatter description, else ""
   promptHint?: string;        // frontmatter promptHint: what the reader may want to specify for the first turn
+  /** Frontmatter `approves: definition | deploy`: a verb playbook, whose proposal the operator approves and merges
+      (§app.project-runtime/verb-playbooks). Absent (or any other value): not a verb playbook. */
+  approves?: "definition" | "deploy";
   source: "sova" | "user" | "project";
   dir: string;                // ABSOLUTE directory holding the playbook: its entry file, scripts/, references/…; every relative path in it resolves here
   entry: PlaybookEntry;       // the file read as the playbook: PLAYBOOK.md when the folder has one, else SKILL.md
@@ -1033,6 +1036,8 @@ export interface ClaudeAccountsInfo {
   flow: ClaudeLoginFlowState | null;
   /** The pool of logins across the mesh (§app.claude-logins/pool); absent while the mesh is off. */
   pool?: ClaudePoolInfo;
+  /** macOS only: Claude Code's own login can't be read here (§app.claude-logins/macos-keychain). Absent otherwise. */
+  claudeOwnLoginUnreadable?: true;
 }
 /** A device of the mesh, as the pool shows it. */
 export interface ClaudePoolDevice {
@@ -1069,6 +1074,8 @@ export interface ClaudePoolLogin {
   moving?: { op: "lend" | "borrow" | "leave"; state: string; reason?: string; peer?: string };
   /** Return was asked and the holder has not returned it yet. */
   returnAsked?: boolean;
+  /** Held by this Mac with its sign-in only in the macOS keychain, which the pool can't move: it never leaves (§app.claude-logins/macos-keychain). */
+  staysHere?: true;
 }
 export interface ClaudePoolInfo {
   self: string;
@@ -1633,11 +1640,15 @@ export interface ChatModeResult extends ModeInfo {
     workspace-write · full enforcement"); `enforcement` is "none" while off. */
 export interface SandboxInfo {
   on: boolean;
+  /** Which of the three states (§chat.sandbox/states). Absent from a server that predates them:
+      read `on` then (true: On, false: Subagents only). */
+  state?: "off" | "subagents" | "on";
   enforcement: "full" | "partial" | "unavailable" | "none";
   status: string;
 }
 
-/** POST /api/sandbox?path=…: "command" = the extension's /sandbox handler ran (its answer in
+/** POST /api/sandbox?path=… with `{ state }` (or the older `{ on }`; both together must agree):
+    "command" = the extension's /sandbox handler ran (its answer in
     `sandbox`, also sent as a "sandbox" message); "unsupported" = no sandbox extension in this
     runtime, nothing happened; "skip" = a TUI or foreign writer owns the file, nothing written. */
 export interface SandboxApplyResult {
@@ -2258,6 +2269,10 @@ export interface UsageInsight {
   /** Ollama Cloud's declared reset day (usage-windows.json, §app.insights/usage-reset-day): 1..31,
       or null while none is set. Absent from an older server. */
   ollamaResetDay?: number | null;
+  /** macOS only: Claude Code's own login is in neither `.credentials.json` nor a keychain this
+      server can read (§app.claude-logins/macos-keychain); the page says to add it under Settings →
+      Accounts. Absent otherwise. */
+  claudeOwnLoginUnreadable?: true;
 }
 /** `PUT /api/insights/usage/reset-day`: set (1..31) or clear (null) a provider's declared reset
     day; answers with the whole UsageInsight. */
@@ -2822,6 +2837,9 @@ export type AttentionKind =
   | "roster-proposal"  // a baton session proposed a new roster person (referral): approve or decline
   | "project-stakeholder" // an org project's main stakeholder left: pick a new one (no session: `path` "", `href` the project page)
   | "held-act"            // act tier, never pushed: a statechart act waits in a hold before it reaches a person or the code; Cancel stops it (no session: `path` "", `href` the project page, `held` set)
+  | "playbook-review"     // act tier: a verb playbook's run is proposed and waits on Approve & Merge (§app.project-runtime/review; the run's session, `playbook` set)
+  | "deploy-failed"       // act tier, never pushed: a deploy target's latest deploy failed, its verify failed or its runner stopped (§app.project-services/deploy-status; no session: `path` "", `href` the project page)
+  | "deploy-request"      // act tier, never pushed: an overseer asks the operator to deploy (deploy.request; no session: `path` "", `href` the project page)
   | "outreach-not-sent"   // act tier, never pushed: a project overseer's WhatsApp send was refused or failed (no session: `path` "", `href` the person's page)
   | "conflict-to-operator" // decide tier, never pushed: an open conflict routed to the operator (or unrouted) with no settle session (no session: `path` "", `href` the project page)
   | "asks-you"        // decide tier: decisions' guess that the last reply of a turn with no open alignment question asks the user something
@@ -2871,6 +2889,9 @@ export interface AttentionItem {
     /** ms epoch: the hold ended and it waits for the overseer to approve it (r8: an act on the project's confirm list); the row's stall clock runs from here. */
     reviewSince?: number;
   };
+  /** kind `playbook-review` only: what Approve & Merge needs (§app.project-runtime/approve-merge). `hash`
+      absent: the branch has no valid definition, so there is nothing to approve. */
+  playbook?: { projectId: string; label: string; hash?: string; approved: boolean; branch: string; target: string; approves?: "definition" | "deploy" };
 }
 
 /** Which org (and project) an organizational session belongs to; names as they read now. `projectId`
@@ -2983,7 +3004,12 @@ export type SovaConfirmItem =
   /** A project registered on this host: its name, and the org's when one places it (§app.overseer/org-tools). */
   | { kind: "project"; id: string; orgId?: string; name: string; orgName?: string; note?: string }
   /** A roster person: name, status and org. Never a contact or a link. */
-  | { kind: "person"; id: string; orgId: string; name: string; orgName: string; status: "active" | "proposed" | "left"; note?: string };
+  | { kind: "person"; id: string; orgId: string; name: string; orgName: string; status: "active" | "proposed" | "left"; note?: string }
+  /** An organization attached here (§app.overseer/org-project-add: a detach lists it). */
+  | { kind: "org"; id: string; name: string; note?: string }
+  /** A folder to add as a project (§app.overseer/org-project-add): `id` is its checkout root, `asked` the folder as
+      given when that differs, the org it goes into (none: standalone) and the name it gets when the card named one. */
+  | { kind: "folder"; id: string; asked?: string; orgId?: string; orgName?: string; name?: string; note?: string };
 
 /** The longest note one confirm item may carry. */
 export const CONFIRM_NOTE_MAX = 220;
@@ -3175,8 +3201,8 @@ export const OVERSEER_BRIEF_PREFIX = "[overseer-brief]";
 
 /** The act-tier kinds a phone notification can be about (server/attention.ts). */
 /** "looping" (Subagent stuck) is retired: a stuck subagent is a decide item, never a blocker. */
-export type PushKind = "needs-input" | "open-questions" | "error" | "baton-needs-you" | "worker-error";
-export const PUSH_KINDS: readonly PushKind[] = ["needs-input", "open-questions", "error", "baton-needs-you", "worker-error"];
+export type PushKind = "needs-input" | "open-questions" | "error" | "baton-needs-you" | "worker-error" | "playbook-review";
+export const PUSH_KINDS: readonly PushKind[] = ["needs-input", "open-questions", "error", "baton-needs-you", "worker-error", "playbook-review"];
 
 /** `<stateRoot>/push.json`. */
 export interface PushSettings {

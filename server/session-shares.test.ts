@@ -316,13 +316,18 @@ test("B3 two rebuilds finishing out of order: only the newest is sent", async ()
 
 test("B3 a view read in flight when its link is revoked answers the dead link, not the view", async () => {
   const { share, tokens } = await mint("live");
-  // A large entry of ordinary words, so the read takes a while.
-  append("assistant", "word ".repeat(4 * 1024 * 1024));
-  const reading = view(tokens[0]!);
-  await new Promise((r) => setTimeout(r, 5));
-  store.revokeRecipient(share.id, share.recipients[0]!.id);
-  const r = await reading;
-  assert.equal(r.status, 410, "revoked while the view was built: nothing is sent");
+  // The build itself revokes the link before it answers, so the revoke always lands mid-read
+  // (a timed revoke raced the build on a fast host).
+  const { whileGranted } = await import("./share/session-routes");
+  let built = false;
+  const got = await whileGranted(tokens[0]!, async () => {
+    store.revokeRecipient(share.id, share.recipients[0]!.id);
+    built = true;
+    return "the view";
+  });
+  assert.ok(built, "the build ran: the link opened when the read started");
+  assert.deepEqual(got.ok ? got : got.access.status, 410, "revoked while the view was built: nothing is sent");
+  assert.equal((await view(tokens[0]!)).status, 410, "and the route answers the dead link");
 });
 
 // ---- re-review R2: the recipient limits hold on every write path -------------------------------
@@ -575,12 +580,11 @@ test("B1 a stored live share with an end is refused by the strict parse", () => 
 
 test("B1 a new end validated while another write switched the share live is refused: nothing publishes past it", async () => {
   const { share, preview } = await mint("snapshot");
-  // A large entry, so the PATCH's validation read takes a while.
-  append("assistant", "slow ".repeat(4 * 1024 * 1024));
-  const patching = op(`/api/session-shares/${share.id}`, { method: "PATCH", body: { cut: preview.cut } });
-  await new Promise((r) => setTimeout(r, 5));
-  store.patchShare(share.id, { mode: "live" });
-  const r = await patching;
+  // The other write lands after the PATCH's validation reads, right before its write (a timed
+  // write raced the read on a fast host).
+  const { patchHooks } = await import("./session-shares-routes");
+  patchHooks.validated = () => void store.patchShare(share.id, { mode: "live" });
+  const r = await op(`/api/session-shares/${share.id}`, { method: "PATCH", body: { cut: preview.cut } }).finally(() => delete patchHooks.validated);
   assert.deepEqual([r.status, (r.body as { code: string }).code], [409, "share-changed"]);
   assert.deepEqual(storedBounds(share.id), { mode: "live", cut: null }, "the other write stands; the end was not applied, nor acknowledged");
 });

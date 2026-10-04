@@ -100,7 +100,7 @@ import { claudeLoginEnv, registerClaudeAccountRoutes } from "./claude-accounts";
 import { modeInfo, parseModeRequest, readMode } from "./mode-state";
 import { parseSandboxBody } from "./sandbox-state";
 import { WORKER_ID_RE } from "./worker-resume";
-import { attachWebSockets, upgradeSovaSocket } from "./ws";
+import { attachWebSockets, upgradeSovaSocket, upgradeSovaStreamSocket } from "./ws";
 import { meshApi, meshRoutes, startMesh, stopMesh } from "./mesh";
 import { captureBootBuild } from "./mesh/build-id";
 import { mountDetails } from "./mesh/details";
@@ -997,7 +997,7 @@ app.post("/api/mode", async (c) => {
   return modeRefusal(c, () => chat.switchMode(request.patch));
 });
 
-// The sandbox extension's on/off for one held chat (§chat/sandbox): its /sandbox handler runs
+// The sandbox extension's state for one held chat (§chat.sandbox/states): its /sandbox handler runs
 // directly (server/sandbox-state.ts). "unsupported" when the runtime has no sandbox extension.
 app.post("/api/sandbox", async (c) => {
   const path = resolveSessionPath(c.req.query("path"));
@@ -1012,7 +1012,7 @@ app.post("/api/sandbox", async (c) => {
   if ("error" in parsed) return c.json({ error: parsed.error }, 400);
   const chat = heldChat(path);
   if (!chat) return c.json({ error: "That session isn't open on this server; open the chat first" }, 404);
-  return c.json(await chat.applySandbox(parsed.on));
+  return c.json(await chat.applySandbox(parsed.state));
 });
 
 // Resume one restored subagent worker of a held chat, idle (server/worker-resume.ts): the subagents
@@ -1632,7 +1632,7 @@ export const server = serve({ fetch: app.fetch, port: PORT, hostname: HOST }, (i
   // The link extension's tools call this server back here: the real bound port (PORT=0 in tests).
   setLinkOrigin(linkOrigin(info.port));
   console.log(`sova server on http://${HOST}:${info.port} (${SERVER_RUNTIME.name} ${SERVER_RUNTIME.version})`);
-  startMesh({ fetch: app.fetch, upgrade: upgradeSovaSocket });
+  startMesh({ fetch: app.fetch, upgrade: upgradeSovaSocket, streamUpgrade: upgradeSovaStreamSocket });
   // Public links: the share listener, a gateway's router, a routed host's ingress (server/share/runtime.ts).
   void startShareRuntime();
   // Project instances back to their desired state (server/project-services/routes.ts).
@@ -1688,7 +1688,8 @@ configureLlmInflight({
   liveDir: LIVE_DIR,
   workers: () => readUnadoptedWorkers(),
   mesh: {
-    peers: () => (meshApi.enabled() ? meshApi.peers().map((p) => ({ id: p.id, url: peerUrl(p) })) : []),
+    // A dial-out pairing has no URL to open a feed to (§mesh/lan): its count isn't shown here.
+    peers: () => (meshApi.enabled() ? meshApi.peers().filter((p) => !p.lan).map((p) => ({ id: p.id, url: peerUrl(p) })) : []),
     selfId: () => meshApi.self().id,
     connect: (url) => cappedWebSocket(`${url.replace(/^http/, "ws")}/ws/watch?feed=llm`, undefined, { handshakeTimeout: 10_000, maxPayload: 16 * 1024 }),
   },

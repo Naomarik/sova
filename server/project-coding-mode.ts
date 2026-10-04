@@ -14,6 +14,8 @@ import { parseModePatch } from "./mode-state";
  * - The overseer may ask for another mode per session (sova_create_session, sova_send), under the
  *   operator's ceiling: delegate only when the setting is delegate, align never, spec never off
  *   when the base has it on. Normal and spec on are always allowed.
+ * - A verb playbook's run is the one exception to "align never": Sova itself starts it with align on
+ *   beside the base (playbookRunMode), because the operator answers its questions.
  * Pure, apart from the manifest's existence check.
  */
 
@@ -91,6 +93,17 @@ export function codingModeChoice(req: ModeRequest, base: ProjectCodingMode, sett
   if (mode === "delegate" && setting?.mode !== "delegate") return { error: DELEGATE_REFUSED };
   if (base.minorModes.includes("spec") && !minorModes.includes("spec")) return { error: SPEC_OFF_REFUSED };
   return { mode: { mode, minorModes } };
+}
+
+/** The session kinds a verb playbook runs in (§app.project-runtime/verb-playbooks): the operator answers their
+    questions, so they get align, which every other project coding session is refused. */
+export const PLAYBOOK_RUN_KINDS: readonly string[] = ["onboard", "deploy-setup"];
+
+/** A verb playbook run's mode: the project's, with align on beside it (normalized order, never twice). */
+export function playbookRunMode(base: ProjectCodingMode): ProjectCodingMode {
+  if (base.minorModes.includes("align")) return { mode: base.mode, minorModes: [...base.minorModes] };
+  const p = parseModePatch({ minorModes: [...base.minorModes, "align"] });
+  return { mode: base.mode, minorModes: "error" in p ? [...base.minorModes, "align"] : (p.minorModes ?? []) };
 }
 
 export const sameCodingMode = (a: ProjectCodingMode, b: ProjectCodingMode): boolean =>

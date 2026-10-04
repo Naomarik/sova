@@ -155,6 +155,19 @@ test("apply of an adopted slot 0: the operator, confirmed, nothing busy; then 'r
   assert.equal(scheduled.length, 1);
 });
 
+test("apply names its instance: the main checkout (CLAUDE.md's `sova-project apply --checkout <main> --confirm`) is slot 0; the project alone is refused, nothing scheduled", async () => {
+  const bare = await engine.run("apply", { project, confirm: true }, op);
+  assert.equal(bare.error?.code, "invalid-request", "a project names no instance: apply never guesses one");
+  assert.match(bare.error!.message, /apply needs an instance \(or the checkout it runs\)/);
+  assert.equal(scheduled.length, 1, "nothing scheduled by the refusal");
+  const r = await engine.run("apply", { checkout: project, confirm: true }, op);
+  assert.equal(r.ok, true, r.error?.message);
+  assert.equal(r.instance, main, "the main checkout's instance: the adopted slot 0");
+  assert.match(r.steps.find((s) => s.id === "restart:server")!.detail!, /^restart scheduled: sova-gate-standin\.service/);
+  assert.deepEqual(scheduled.at(-1), [UNIT, process.pid]);
+  scheduled.pop();
+});
+
 test("every other slot runs the service as usual, on its allocated port, with its setup", async () => {
   const wt = await engine.run("up", { project, branch: "feat-adopt" }, op);
   assert.equal(wt.state, "running", wt.error?.message);

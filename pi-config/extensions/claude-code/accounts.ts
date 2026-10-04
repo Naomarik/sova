@@ -11,10 +11,13 @@
  * never moved, never written here. Claude Code stays the only program that signs in, refreshes
  * and signs out. The one token this file reads is a login's short-lived ACCESS token, for a worker
  * confined by the sandbox (confined-launch.ts), which cannot read the login's hidden credentials
- * itself (`accessTokenFor`): never the refresh token, and nowhere else.
+ * itself (`accessTokenFor`): never the refresh token, and nowhere else. On macOS a login's
+ * credentials may live in the keychain instead of the file (./keychain.ts): its signed-in time and
+ * a confined worker's token are read there when the file is missing.
  *
  * Node built-ins only: Sova's server imports this file directly (server/claude-accounts.ts), so
- * it must never import the pi runtime or another pi-config module.
+ * it must never import the pi runtime or another pi-config module (./keychain.ts, built-ins only
+ * and importing nothing of this one, is part of it).
  *
  * Absent registry = only `default`. Malformed registry = only `default`, plus the error, and the
  * file is never overwritten by a reader.
@@ -32,6 +35,7 @@ import { randomBytes } from "node:crypto";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { keychainItemMtime, readKeychainCredentials, type KeychainOptions } from "./keychain.ts";
 
 export const ACCOUNTS_FILE_NAME = "claude-accounts.json";
 export const ACCOUNTS_STATE_FILE_NAME = "claude-accounts-state.json";
@@ -508,8 +512,24 @@ export function planLabel(identity: ClaudeLoginIdentity | null | undefined): str
 	const plan = identity?.plan?.toLowerCase().replace(/^claude_/, "");
 	return plan ? PLAN_NAMES[plan] : undefined;
 }
-export function credentialsMtime(dir: string): number | undefined {
-	try { return fs.statSync(path.join(dir, ".credentials.json")).mtimeMs; } catch { return undefined; }
+/**
+ * When the login directory `dir`'s credentials were last written: its `.credentials.json`'s mtime;
+ * on macOS, with no file, its keychain item's (attributes only, ./keychain.ts). Undefined: not
+ * signed in. `fresh` skips the item's 2 s memo (the check that finishes a sign-in).
+ */
+export function credentialsMtime(dir: string, options: KeychainOptions & { fresh?: boolean } = {}): number | undefined {
+	try { return fs.statSync(path.join(dir, ".credentials.json")).mtimeMs; } catch { /* below */ }
+	if ((options.platform ?? process.platform) !== "darwin") return undefined;
+	return keychainItemMtime(claudeConfigDirEnv(dir, options.env), options);
+}
+/**
+ * The CLAUDE_CONFIG_DIR Claude Code runs the login directory `dir` with: unset (undefined) for
+ * Claude Code's own `~/.claude` when the host has no CLAUDE_CONFIG_DIR of its own, else `dir`
+ * itself (an added login's directory, or `default`'s own CLAUDE_CONFIG_DIR). It names the login's
+ * macOS keychain item.
+ */
+export function claudeConfigDirEnv(dir: string, env: NodeJS.ProcessEnv = process.env, agentDir?: string): string | undefined {
+	return ownClaudeConfigDir(env, agentDir) === undefined && path.resolve(dir) === path.join(os.homedir(), ".claude") ? undefined : dir;
 }
 
 /** A login's access token as a confined worker is handed it: never the refresh token. */
@@ -525,6 +545,9 @@ export const TOKEN_REFRESH_MARGIN_MS = 60 * 60_000;
 export function accessTokenFor(dir: string): ClaudeAccessToken | undefined {
 	let oauth: any;
 	try { oauth = JSON.parse(fs.readFileSync(path.join(dir, ".credentials.json"), "utf8"))?.claudeAiOauth; } catch { return undefined; }
+	return accessTokenOf(oauth);
+}
+function accessTokenOf(oauth: any): ClaudeAccessToken | undefined {
 	const token = oauth?.accessToken;
 	if (typeof token !== "string" || !token || /[\s\x00-\x1f\x7f]/.test(token)) return undefined;
 	return { token, ...(typeof oauth.expiresAt === "number" && Number.isFinite(oauth.expiresAt) ? { expiresAt: oauth.expiresAt } : {}) };
@@ -546,9 +569,11 @@ export type RefreshImpl = (dir: string) => Promise<boolean>;
  * Resolves true once `initialize` was answered, false on a failure or after `timeoutMs`; the process
  * is always ended. Leased like model discovery, so the login never leaves under it.
  */
-export function refreshLogin(dir: string, options: { executable?: string; timeoutMs?: number; env?: NodeJS.ProcessEnv; logins?: ClaudeLogins } = {}): Promise<boolean> {
+export function refreshLogin(dir: string, options: { executable?: string; timeoutMs?: number; env?: NodeJS.ProcessEnv; logins?: ClaudeLogins; platform?: NodeJS.Platform } = {}): Promise<boolean> {
 	return new Promise((resolve) => {
 		const env: NodeJS.ProcessEnv = { ...claudeBaseEnv(options.env ?? process.env), CLAUDE_CONFIG_DIR: dir };
+		// On macOS CLAUDE_CONFIG_DIR names the keychain item: Claude Code's own login is renewed without it (./keychain.ts).
+		if ((options.platform ?? process.platform) === "darwin" && claudeConfigDirEnv(dir, options.env ?? process.env) === undefined) delete env.CLAUDE_CONFIG_DIR;
 		delete env.CLAUDECODE; delete env.CLAUDE_CODE_ENTRYPOINT;
 		let child: ReturnType<typeof spawn>;
 		try {
@@ -592,13 +617,20 @@ export function refreshLogin(dir: string, options: { executable?: string; timeou
  * unconfined run (`refresh`, default refreshLogin), then read again. Undefined when the login has no
  * readable access token.
  */
-export async function freshAccessToken(dir: string, options: { force?: boolean; now?: () => number; refresh?: RefreshImpl } = {}): Promise<ClaudeAccessToken | undefined> {
+export async function freshAccessToken(dir: string, options: { force?: boolean; now?: () => number; refresh?: RefreshImpl; keychain?: KeychainOptions } = {}): Promise<ClaudeAccessToken | undefined> {
 	const now = options.now ?? Date.now;
-	const before = accessTokenFor(dir);
+	const before = await currentAccessToken(dir, options.keychain);
 	const due = !before || before.expiresAt === undefined || before.expiresAt - now() < TOKEN_REFRESH_MARGIN_MS;
 	if (!options.force && !due) return before;
 	try { await (options.refresh ?? refreshLogin)(dir); } catch { /* read what is there */ }
-	return accessTokenFor(dir) ?? before;
+	return (await currentAccessToken(dir, options.keychain)) ?? before;
+}
+/** accessTokenFor; on macOS, with no file, the access token in the login's keychain item, read afresh (nothing else of it is kept). */
+async function currentAccessToken(dir: string, keychain: KeychainOptions = {}): Promise<ClaudeAccessToken | undefined> {
+	const fromFile = accessTokenFor(dir);
+	if (fromFile || (keychain.platform ?? process.platform) !== "darwin" || fs.existsSync(path.join(dir, ".credentials.json"))) return fromFile;
+	const item = await readKeychainCredentials(claudeConfigDirEnv(dir, keychain.env), keychain);
+	return accessTokenOf((item as { claudeAiOauth?: unknown } | undefined)?.claudeAiOauth);
 }
 
 // ---------------------------------------------------------------------------
@@ -760,22 +792,44 @@ export interface LoginUse {
 	/** Live `claude` pids on the login (orphans of a dead owner included). */
 	children: number[];
 }
+/** `ps -o etime=` (`[[dd-]hh:]mm:ss`) in seconds, or null (pure, for tests). */
+export function parseEtime(v: string): number | null {
+	const m = /^\s*(?:(?:(\d+)-)?(\d+):)?(\d+):(\d+)\s*$/.exec(v);
+	return m ? ((Number(m[1] ?? 0) * 24 + Number(m[2] ?? 0)) * 60 + Number(m[3])) * 60 + Number(m[4]) : null;
+}
+
+/** A process's age in seconds and command name, from `ps` (null: no such process). */
+export type PsRead = (pid: number) => { ageSec: number; comm: string } | null;
+const psRead: PsRead = (pid) => {
+	const r = spawnSync("ps", ["-o", "etime=,comm=", "-p", String(pid)], { encoding: "utf8", timeout: 5_000, env: { ...process.env, LC_ALL: "C" } });
+	const m = r.status === 0 ? /^\s*(\S+)\s+(.+?)\s*$/m.exec(r.stdout) : null;
+	const age = m ? parseEtime(m[1]!) : null;
+	return m && age !== null ? { ageSec: age, comm: m[2]! } : null;
+};
+
 /**
  * Whether `pid` is still a process on the login directory `dir`: alive, and (Linux) its environment
  * names `dir` as CLAUDE_CONFIG_DIR — a lease's child pid that has been reused by an unrelated
- * process is not, so it neither holds the login nor gets stopped at a drain's cut. Elsewhere,
- * liveness alone.
+ * process is not, so it neither holds the login nor gets stopped at a drain's cut. Elsewhere (macOS
+ * reads no other process's environment): a process named `claude` that started no later than
+ * `since`, when the lease listing it was written (a pid reused after that started later), `now` on
+ * the same clock as `since`.
  */
-export function claudeRunsOn(pid: number, dir: string): boolean {
+export function claudeRunsOn(pid: number, dir: string, since?: number, now = Date.now(), platform: NodeJS.Platform = process.platform, ps: PsRead = psRead): boolean {
 	if (!pidAlive(pid)) return false;
-	if (process.platform !== "linux") return true;
+	if (platform !== "linux") {
+		const p = ps(pid);
+		if (!p || path.basename(p.comm) !== "claude") return false;
+		// ps counts whole seconds: a start up to 2 s past the write is the same process.
+		return since === undefined || now - p.ageSec * 1000 <= since + 2_000;
+	}
 	let env: string;
 	try { env = fs.readFileSync(`/proc/${pid}/environ`, "latin1"); } catch { return false; }
 	return `\0${env}\0`.includes(`\0CLAUDE_CONFIG_DIR=${dir}\0`);
 }
 export function readLoginUse(
 	agentDir: string, id: string, alive: (pid: number) => boolean = pidAlive, now = Date.now(),
-	runsOn: (pid: number, dir: string) => boolean = claudeRunsOn,
+	runsOn: (pid: number, dir: string, since?: number, now?: number) => boolean = claudeRunsOn,
 ): LoginUse {
 	const home = loginDir(agentDir, id);
 	const dir = path.join(home, LEASES_DIR_NAME);
@@ -786,7 +840,7 @@ export function readLoginUse(
 		if (!/^\d+\.json$/.test(name)) continue;
 		let lease: LoginLease;
 		try { lease = JSON.parse(fs.readFileSync(path.join(dir, name), "utf8")); } catch { continue; }
-		const kids = Array.isArray(lease.children) ? [...new Set(lease.children)].filter((pid) => Number.isInteger(pid) && alive(pid) && runsOn(pid, home)) : [];
+		const kids = Array.isArray(lease.children) ? [...new Set(lease.children)].filter((pid) => Number.isInteger(pid) && alive(pid) && runsOn(pid, home, typeof lease.at === "number" ? lease.at : undefined, now)) : [];
 		const ownerAlive = typeof lease.at === "number" && now - lease.at <= LEASE_STALE_MS && alive(lease.owner);
 		if (!ownerAlive && !kids.length) {
 			try { fs.rmSync(path.join(dir, name), { force: true }); } catch { /* best effort */ }

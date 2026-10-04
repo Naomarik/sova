@@ -1,5 +1,6 @@
 import type { Socket } from "node:net";
 import { canonicalIp } from "../share/security";
+import { isLanNodeId } from "./lan-cert";
 import { getIdentity, localApiIdentity, whoisAddr } from "./localapi";
 
 /**
@@ -40,7 +41,9 @@ export function callerNode(socket: Socket): Promise<string | null> {
       addr && port
         ? getIdentity()
             .whois(whoisAddr(addr, port))
-            .then((w) => w?.nodeId ?? null)
+            // A "lan:" id names a dial-out pairing (§mesh.lan/pairing), never a tailnet node: an
+            // identity provider that answers one is refused, so it can't pose as a pairing.
+            .then((w) => (w?.nodeId && !isLanNodeId(w.nodeId) ? w.nodeId : null))
             .catch((err) => {
               console.warn(`[mesh] whois ${addr}:${port} failed: ${(err as Error).message}`);
               return null;

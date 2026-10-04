@@ -281,6 +281,15 @@ export interface SpoolStatus {
   error?: string;
 }
 
+/**
+ * Whether tar's exit is GNU tar's "a file changed while it was read" (exit 1 with that message): the
+ * archive is still whole. Any other non-zero exit failed, bsdtar's exit 1 included (macOS's
+ * /usr/bin/tar: exit 1 is fatal there, e.g. "Cannot stat") (pure, for tests).
+ */
+export function packChanged(code: number | null, stderr: string): boolean {
+  return code === 1 && /changed as we read it|removed before we read it|shrank by \d+ bytes?/i.test(stderr);
+}
+
 export interface PackResult {
   sha256: string;
   size: number;
@@ -387,7 +396,7 @@ export class Spools {
         c.stdout!.unpipe(z);
         if (sinkError) break;
         if (this.removed.has(offerId)) break;
-        if (code === 1) changed = tail(stderr, 512) || "a file changed while it was packed";
+        if (packChanged(code, stderr)) changed = tail(stderr, 512) || "a file changed while it was packed";
         else if (code !== 0) fail("tar-failed", `tar couldn't pack ${root.members[0]} (exit ${code}): ${tail(stderr) || "no message"}`);
       }
       z.end();

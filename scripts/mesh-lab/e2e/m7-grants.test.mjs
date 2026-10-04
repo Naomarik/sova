@@ -5,7 +5,8 @@
 //     direction), a stranger is still `refused`, B can't change A's grants, and lowering the grant
 //     cuts B's open socket on A;
 //   - per-login sync: A shares only one of two API keys with C, so C gets that one alone. B, which A
-//     grants nothing, still gets it through C (sync replicates host to host), and never the other.
+//     grants nothing, still gets it through C on C's next exchange (sync replicates host to host, at
+//     its 5-minute reconcile, a peer-up or a settings save; here a settings save), never the other.
 //   scripts/mesh-lab/lab e2e m7-grants      (takes the lab LOCK; leaves a,b,c paired with no grants)
 // Keys are lab-only values compared by sha256; no secret is ever printed.
 import assert from "node:assert/strict";
@@ -179,8 +180,12 @@ describe("per-login sync", () => {
     authOp(A, "set", "lab-m7-held", `lab-m7-held-${Date.now()}-not-a-secret`);
     const keep = entrySha(A, "lab-m7-keep");
     await waitFor(() => entrySha(C, "lab-m7-keep") === keep, { timeoutMs: 90000, what: "the chosen key on C" });
-    // Sync replicates host to host: C shares everything with B, so B gets the chosen key from C.
-    await waitFor(() => entrySha(B, "lab-m7-keep") === keep, { timeoutMs: 90000, what: "the chosen key reaches B through C" });
+    // Sync replicates host to host, on each host's next exchange: taking a key schedules no onward
+    // push (server/sync/grants-sync.test.ts), so C passes it to B at its 5-minute reconcile, a
+    // peer-up, or a settings save. A save on C's own page, rather than waiting out the timer:
+    const saved = await laptopFetch(C, "/api/mesh/settings", json({ sync: { logins: true } }));
+    assert.equal(saved.status, 200);
+    await waitFor(() => entrySha(B, "lab-m7-keep") === keep, { timeoutMs: 60000, what: "the chosen key reaches B through C" });
     // The other key never leaves A: give the exchanges another round to prove it.
     await new Promise((r) => setTimeout(r, 15000));
     for (const h of [B, C]) assert.equal(entrySha(h, "lab-m7-held"), "absent", `${h} never gets the key A keeps`);

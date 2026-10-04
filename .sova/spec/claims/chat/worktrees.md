@@ -80,11 +80,14 @@ included) and the environment is passed as it is. No policy file is read for it.
 - **`/tmp`.** On Linux it sees the host's `/tmp` read-only, so a file another session wrote
   there (a brief) is readable, and every Unix socket found there as its command or its process
   starts reads as an empty file, so it cannot drive a terminal multiplexer, an ssh agent or
-  another service through one. `TMPDIR` points at its private scratch, which is where Claude
-  Code and other tools that honour it keep their temp files; a tool that writes a literal `/tmp`
-  path fails with "Read-only file system". When `/tmp` is too large to scan for sockets, its
-  `/tmp` is the private scratch instead. On macOS Seatbelt never remapped `/tmp`: the host's is
-  readable there, as before.
+  another service through one. The sockets are found in the kernel's list of bound sockets
+  (`/proc/net/unix`), so how many files `/tmp` holds does not matter, and in a shallow scan of
+  `/tmp` and the folders directly in it. `TMPDIR` points at its private scratch, which is where
+  Claude Code and other tools that honour it keep their temp files; a tool that writes a literal
+  `/tmp` path fails with "Read-only file system". When that list cannot be read, or cannot be
+  read unambiguously (a socket path with a line break in it, or one bound by a relative path),
+  its `/tmp` is the private scratch instead. On macOS Seatbelt never remapped `/tmp`: the host's
+  is readable there, as before.
 - **Still a sandbox.** `/run` is empty, so the Docker socket and the user's D-Bus and systemd are
   gone, and the worker runs in a user namespace, where root-owned files belong to the overflow
   user: ssh refuses a root-owned config file ("Bad owner or permissions"; `ssh -F /dev/null`

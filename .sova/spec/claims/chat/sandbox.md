@@ -344,4 +344,8 @@ enforced on remote", and reads "Sandbox on · not enforced on remote" (§chat.sa
 - **The user's own `!` commands** are not confined.
 - **A write-only worker's view of the host `/tmp`** (Linux, §chat.worktrees/workers) masks the
   Unix sockets found there when its command or its process starts; a socket created later in
-  `/tmp` is reachable from a worker already running.
+  `/tmp` is reachable from a worker already running. The kernel's list names a socket by the
+  path its server bound, in the server's own namespaces, so a socket in the host `/tmp` that
+  was bound from another network or mount namespace (a container, another sandbox's private
+  `/tmp`) is masked only if the shallow scan finds it: directly in `/tmp` or one folder down,
+  within the scan's first 4,096 entries.

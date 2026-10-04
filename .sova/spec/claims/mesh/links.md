@@ -89,7 +89,9 @@ does, never part of making or keeping a link.
   answer) goes to this host's `<stateRoot>/mesh-links/outbox.jsonl` and is retried when that peer
   comes up, and on a 60-second timer only while the outbox holds something. A refusal from the
   peer is final and is not retried. A host on a build without links answers not-found; that is
-  final too, and never retried. The outbox survives restarts.
+  final too, and never retried. The outbox survives restarts. A delivery (a link copy, an end, a
+  message or an offer) to a peer this host's own grant withholds links from (§mesh.peers/grants)
+  is refused at once, never held in the outbox, and that peer is not marked down.
 - **Outside the protocol fingerprint.** The link routes' bodies are not part of the protocol hash
   hosts compare (§mesh.peers/hello), so a later change to them never shows a host as `skewed`.
 

@@ -12,7 +12,9 @@ Paths here are relative to this playbook's folder. `scripts/spec-review.mjs` is 
 
 ## The run is the operator's
 - It runs because the operator sent it, once. You set no schedule, start no team, monitor, loop or timer, and leave nothing running when you report. Model runs beyond this session (`--model-runs`, 0 unless the operator gave more) are one-shot workers that finish before your report, given only their part.
+- The driver enforces the time, CPU, report-size and write ceilings. It can't see model use: `--model-runs` and `--tokens` are advisory, and you report them as what the session showed you, else unknown, never as enforced. Before any model run beyond this session, check both; when your token use so far is unknown, stop and ask the operator first.
 - The brief is frozen before you collect anything. You never widen its scope or raise a ceiling, and never plan a second brief to get around one. A wider scope or a higher ceiling is a proposal in your report; the operator decides, and a new run starts from a new brief.
+- The scope is what the operator approved when the brief was frozen. With `--changed`, that is the files changed since base at that moment: a file that changes later is outside it, even though it changed since base. The driver passes the frozen list to every whole-change form and prints `drift:` when other files changed; list them under Unknown, never read them, and never present the frozen brief as covering them. Covering them is a new brief the operator approves.
 - Reaching a ceiling, or evidence that can't settle the question, ends collection. Report what stays unknown and what would settle it. Never keep collecting until something turns up.
 
 ## Steps
@@ -40,7 +42,7 @@ Within `--report-chars`, these sections in this order (the driver checks them):
 - `## Findings`: one bullet each, starting `Observed:` (you saw it: source link), `Inferred:` (follows from observations: which) or `Proposed:` (a change: its concrete benefit to the operator, and the smallest next unit or the test that would settle it). Or the line `None.`
 - `## Unknown`: what the evidence couldn't settle, and the exact read that would.
 - `## Coverage`: what was read (ledger numbers), and counts of refused, truncated, stale, unknown and unread items, with the continuation that would read them.
-- `## Cost`: this run only: minutes, driver CPU seconds, bytes written into the project and each receipt name, model runs, tokens as the session shows them (else "not metered").
+- `## Cost`: this run only: minutes, driver CPU seconds, bytes written into the project and each receipt name; model runs and tokens as the session showed them, marked advisory, else "unknown".
 - `## Method proposals`: changes to this playbook, its driver or the brief's defaults that this run showed would help, each as a diff with the evidence and how it would be verified. Or `None.` Never applied by the run; a change is the operator's, on its own branch, with its own tests.
 - `## Stopped because`: the answer was reached, a ceiling (which), or the evidence ran out.
 

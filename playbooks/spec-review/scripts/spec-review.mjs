@@ -50,8 +50,8 @@ export const LIMITS = {
   "report-chars": { min: 500, max: 20000, what: "the report's length" },
   "cpu-seconds": { min: 1, max: 3600, what: "CPU of the tools run through this driver" },
   "write-bytes": { min: 0, max: 64 * 1024 * 1024, what: "assessment receipt bytes written into the project (0: previews only)" },
-  "model-runs": { min: 0, max: 10, what: "model sessions beyond this one" },
-  tokens: { min: 1, max: 50_000_000, what: "model tokens for the whole run (not metered by this driver)" },
+  "model-runs": { min: 0, max: 10, what: "model sessions beyond this one (advisory: not metered by this driver)" },
+  tokens: { min: 1, max: 50_000_000, what: "model tokens for the whole run (advisory: not metered by this driver)" },
   "retain-days": { min: 0, max: 30, what: "days the run folder is kept after its deadline" },
 };
 export const SCOPE_CAPS = { id: 20, path: 50, changed: 200, session: 10 };
@@ -77,6 +77,27 @@ const GIT_C = ["-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null"];
 function git(root, args, opts = {}) {
   const r = spawnSync("git", ["-C", root, ...GIT_C, ...args], { encoding: "utf8", env: GIT_ENV, maxBuffer: 64 * 1024 * 1024, ...opts });
   return { ok: r.status === 0, out: r.stdout ?? "", err: (r.stderr ?? "").trim(), r };
+}
+
+/** Every file changed since base, committed, uncommitted or untracked (not ignored), sorted; null when git can't say. */
+export function changedSince(root, base) {
+  const tracked = git(root, ["diff", "--name-only", "-z", "--no-renames", base]);
+  const untracked = git(root, ["ls-files", "--others", "--exclude-standard", "-z"]);
+  if (!tracked.ok || !untracked.ok) return null;
+  return [...new Set([...tracked.out.split("\0"), ...untracked.out.split("\0")].filter(Boolean))].sort();
+}
+
+/**
+ * Files changed since base that the frozen scope doesn't cover: changed after the plan, outside its
+ * paths. They are reported, never read: covering them is a new brief the operator approves. Null
+ * when the brief has no --changed scope or git can't say.
+ */
+export function drift(brief) {
+  if (!brief.scope.changed) return null;
+  const now = changedSince(brief.root, brief.base);
+  if (!now) return null;
+  const out = now.filter((p) => !pathInScope(brief, p));
+  return { count: out.length, sample: out.slice(0, 5) };
 }
 
 /** Flags: repeated ones collect, booleans take no value. Positionals are returned in order. */
@@ -154,13 +175,9 @@ export function checkBrief(flags) {
     }
   }
   if (root && base && flags.changed) {
-    const tracked = git(root, ["diff", "--name-only", "-z", "--no-renames", base]);
-    const untracked = git(root, ["ls-files", "--others", "--exclude-standard", "-z"]);
-    if (!tracked.ok || !untracked.ok) fatal = "--changed: git couldn't list the changes since base";
-    else {
-      changed = [...new Set([...tracked.out.split("\0"), ...untracked.out.split("\0")].filter(Boolean))].sort();
-      if (changed.length > SCOPE_CAPS.changed) problems.push(`--changed: ${changed.length} files changed since base, over ${SCOPE_CAPS.changed}; narrow the scope with --path`);
-    }
+    changed = changedSince(root, base);
+    if (!changed) fatal = "--changed: git couldn't list the changes since base";
+    else if (changed.length > SCOPE_CAPS.changed) problems.push(`--changed: ${changed.length} files changed since base, over ${SCOPE_CAPS.changed}; narrow the scope with --path`);
   }
   const brief = {
     question: flags.question,
@@ -183,7 +200,8 @@ function briefLines(b) {
     `question: ${b.question}`,
     `kind: ${b.kind} · root: ${b.root} · base: ${b.base?.slice(0, 12)} (${b.baseRev}) · head: ${b.head?.slice(0, 12)}`,
     `scope: ${s.ids.length} ids${s.ids.length ? ` (${s.ids.join(", ")})` : ""} · ${s.paths.length} paths${s.paths.length ? ` (${s.paths.join(", ")})` : ""} · changed since base: ${s.changed ? s.changed.length : "not in scope"}${s.sessions.length ? ` · ${s.sessions.length} sessions` : ""}`,
-    `ceilings: ${L.minutes} min · report ${L["report-chars"]} chars · ${L["cpu-seconds"]} CPU s · writes ${L["write-bytes"]} B${L["write-bytes"] === 0 ? " (previews only)" : ""} · ${L["model-runs"]} model runs · ${L.tokens} tokens · kept ${L["retain-days"]} days`,
+    `enforced by the driver: ${L.minutes} min · report ${L["report-chars"]} chars · ${L["cpu-seconds"]} CPU s (Linux) · writes ${L["write-bytes"]} B${L["write-bytes"] === 0 ? " (previews only)" : ""} · run folder kept ${L["retain-days"]} days`,
+    `advisory, not metered: ${L["model-runs"]} model runs · ${L.tokens} tokens (the session reports what it can see, else unknown; with use unknown, ask before any model run)`,
   ];
 }
 
@@ -349,7 +367,13 @@ export function formArgv(run, form) {
       const ids = [...new Set(flags.id ?? [])].sort(), paths = [...new Set((flags.path ?? []).map((p) => { const r = relPath(p); if (!r || !pathInScope(brief, r)) throw new Refused(`--path ${p} is outside this run's scope`); return r; }))].sort();
       const allowed = allowedIds(run);
       for (const id of ids) if (!ID.test(id) || !idAllowed(allowed, id)) throw new Refused(`--id ${id} is outside this run's scope`);
-      if (!ids.length && !paths.length && !brief.scope.changed) throw new Refused("assess prepare with no --id or --path reads every change since base; this brief's scope doesn't include --changed");
+      if (!ids.length && !paths.length) {
+        // The whole change is the one frozen at plan, passed path by path: a file changed after the
+        // plan never joins it (the CLI's own census would take it in).
+        if (!brief.scope.changed) throw new Refused("assess prepare with no --id or --path means the whole change; this brief's scope doesn't include --changed");
+        if (!brief.scope.changed.length) throw new Refused("nothing had changed since base when the brief was frozen; there is no change to assess");
+        paths.push(...brief.scope.changed);
+      }
       const queryKey = JSON.stringify({ ids, paths });
       const args = [assess, "prepare", name, "--root", brief.root, "--base", brief.base, ...ids.flatMap((i) => ["--id", i]), ...paths.flatMap((p) => ["--path", p]), "--json"];
       if (!flags.write) return { bin: process.execPath, args, surfaces: "prepare", preview: { queryKey } };
@@ -390,7 +414,14 @@ export function surfacedIds(brief, kind, stdout) {
   if (kind === "census") for (const list of [j.census?.claimed, j.census?.mappedOutside]) for (const e of Array.isArray(list) ? list : []) {
     if (typeof e?.path === "string" && pathInScope(brief, e.path)) for (const id of e.claims ?? []) if (ID.test(id)) out.add(id);
   }
-  if (kind === "foreign" && brief.scope.changed) for (const id of j.foreign ?? []) if (ID.test(id)) out.add(id);
+  // A changed claim counts only when its file (Sova's claims/<ns>/<name>.md) or the manifest was in
+  // the frozen scope; a claim file that changed after the plan surfaces nothing.
+  if (kind === "foreign" && brief.scope.changed) for (const id of j.foreign ?? []) {
+    const m = /^§([a-z][a-z-]*)(?:\.([a-z][a-z-]*))?\/([a-z][a-z-]*)$/.exec(id);
+    if (!m) continue;
+    const file = `.sova/spec/claims/${m[1]}/${m[2] ?? m[3]}.md`;
+    if (pathInScope(brief, file) || pathInScope(brief, ".sova/spec/manifest.json")) out.add(id);
+  }
   if (kind === "prepare") for (const c of j.candidates ?? []) if (ID.test(c?.id ?? "")) out.add(c.id);
   return [...out].sort();
 }
@@ -456,18 +487,21 @@ function cmdRun(argv) {
     }
   }
   if (r.stderr && exit === 2) entry.stderr = r.stderr.slice(0, 500);
+  const d = drift(run.brief);
+  if (d) entry.drift = d;
   log(entry);
   const after = spent({ ...run, ledger: [...run.ledger, entry] });
   const L = run.brief.limits;
   const lines = [stdout.length > show ? `${stdout.slice(0, show)}\n… ${stdout.length - show} more characters in the saved output` : stdout.replace(/\n$/, "")];
   if (timedOut) lines.push("stop: ceiling time reached while this ran; it was stopped and its output is partial.");
   if (entry.note) lines.push(`note: ${entry.note}`);
+  if (entry.drift?.count) lines.push(`drift: ${entry.drift.count} files changed since base are outside the frozen scope (${entry.drift.sample.join(", ")}${entry.drift.count > 5 ? ", …" : ""}). They are not part of this run: list them under Unknown, never read them; covering them is a new brief the operator approves.`);
   if (entry.written) lines.push(`wrote: ${entry.written.name} ${entry.written.kind} · ${entry.written.bytes} bytes (receipts are immutable and stay after the run)`);
   if (entry.stderr) lines.push(`stderr: ${entry.stderr}`);
   lines.push(`ledger #${n} · exit ${exit} · ${(wallMs / 1000).toFixed(1)} s · CPU ${cpuMs === null ? "unknown" : `${(cpuMs / 1000).toFixed(1)} s`} · ${outBytes} bytes · saved ${outFile}`);
   lines.push(`left: ${Math.floor(after.msLeft / 60_000)} min · CPU ${Math.max(0, L["cpu-seconds"] - after.cpuMs / 1000).toFixed(1)} s · writes ${after.writeLeft} B${after.reached.length ? ` · reached: ${after.reached.join(", ")}` : ""}`);
   console.log(lines.join("\n"));
-  return after.reached.length && exit === 0 ? 1 : exit;
+  return (after.reached.length || entry.drift?.count) && exit === 0 ? 1 : exit;
 }
 
 // ---- status, report, expire ----------------------------------------------------------------------
@@ -487,6 +521,7 @@ export function summary(run, now = Date.now()) {
     refused: run.ledger.filter((e) => e.refused).length,
     truncated: ran.filter((e) => e.shownTruncated || e.savedTruncated).length,
     timedOut: ran.filter((e) => e.timedOut).length,
+    drift: ran.findLast((e) => "drift" in e)?.drift ?? null,
     receipts: run.ledger.filter((e) => e.written).map((e) => ({ name: e.written.name, kind: e.written.kind, bytes: e.written.bytes })),
     limits: L,
     deadline: run.brief.deadline,
@@ -506,7 +541,8 @@ function cmdStatus(argv) {
     `time: ${s.minutesUsed} of ${L.minutes} min${s.reached.includes("time") ? " · reached" : ""}`,
     `CPU: ${s.cpuSeconds === null ? "unknown on this host" : `${s.cpuSeconds} of ${L["cpu-seconds"]} s`}${s.reached.includes("cpu") ? " · reached" : ""}`,
     `writes: ${s.wroteBytes} of ${L["write-bytes"]} bytes · receipts: ${s.receipts.length ? s.receipts.map((r) => `${r.name} ${r.kind} ${r.bytes} B`).join(", ") : "none"}`,
-    `model runs ≤ ${L["model-runs"]} · tokens ≤ ${L.tokens}: not metered by this driver; report what the session shows, else unknown`,
+    `model runs ≤ ${L["model-runs"]} · tokens ≤ ${L.tokens}: advisory; this driver can't meter them. Report what the session shows, else unknown`,
+    ...(s.drift?.count ? [`drift: ${s.drift.count} files changed since base are outside the frozen scope (${s.drift.sample.join(", ")}${s.drift.count > 5 ? ", …" : ""}); not part of this run`] : []),
     `calls: ${s.calls} (exit 0: ${s.exits[0]}, 1: ${s.exits[1]}, 2: ${s.exits[2]}) · refused ${s.refused} · truncated ${s.truncated} · stopped at the deadline ${s.timedOut}`,
     `run folder kept until ${s.expiresAt}`,
   ].join("\n"));

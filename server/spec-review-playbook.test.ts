@@ -154,6 +154,8 @@ test("plan previews without writing; --write freezes the brief with its deadline
   const pre = runCli(a, ["plan", ...brief(root, base, ["--changed"])]);
   assert.equal(pre.code, 0, pre.out);
   assert.match(pre.out, /preview: nothing written/);
+  assert.match(pre.out, /^enforced by the driver: 20 min · report 4000 chars · 120 CPU s/m);
+  assert.match(pre.out, /^advisory, not metered: 0 model runs · 200000 tokens/m, "model and token ceilings are never presented as enforced");
   assert.ok(!existsSync(runsDir(a)));
   const id = freeze(a, brief(root, base, ["--changed"]));
   const b = JSON.parse(readFileSync(join(runsDir(a), id, "brief.json"), "utf8"));
@@ -213,6 +215,7 @@ test("assess: a write needs a preview of the same query, fits the byte ceiling, 
   const packet = JSON.parse(readFileSync(join(root, ".sova/spec/assessments", name, "packet.json"), "utf8"));
   assert.equal(packet.query.base, base, "the brief's base");
   assert.deepEqual(packet.query.baseline, { inputs: [] }, "no declared snapshot");
+  assert.deepEqual(packet.query.paths, ["lib/rule.js"], "the whole change is the list frozen at plan, passed path by path");
   assert.ok(Object.values(packet.attribution).every((v) => v === null), "attribution stays null");
   r = runCli(a, ["run", id, "assess", "prepare", "two", "--write"]);
   assert.equal(r.code, 2);
@@ -223,6 +226,31 @@ test("assess: a write needs a preview of the same query, fits the byte ceiling, 
   const s = JSON.parse(runCli(a, ["status", id, "--json"]).out);
   assert.equal(s.wroteBytes, bytes);
   assert.deepEqual(s.receipts.map((x: { name: string }) => x.name), [name]);
+});
+
+test("--changed is frozen at plan: files changed later are drift, reported on every call and never read, surfaced or assessed", () => {
+  const { root, base } = project();
+  const a = agent();
+  write(root, "lib/rule.js", "export const threshold = 90;\n");
+  const id = freeze(a, brief(root, base, ["--changed"], { "write-bytes": "200000" }));
+  write(root, "lib/other.js", "export const other = 2;\n");
+  write(root, "lib/later.js", "export const later = 1;\n");
+  let r = runCli(a, ["run", id, "git", "stat"]);
+  assert.equal(r.code, 1, r.out);
+  assert.match(r.out, /^drift: 2 files changed since base are outside the frozen scope \(lib\/later\.js, lib\/other\.js\)/m);
+  assert.doesNotMatch(r.out.split("\ndrift:")[0], /other\.js|later\.js/, "git forms carry only the frozen list");
+  runCli(a, ["run", id, "spec", "census"]);
+  assert.deepEqual(ledger(a, id).at(-1).surfaced, ["§app/rule"], "a later file's claims never surface");
+  assert.match(runCli(a, ["run", id, "spec", "packet", "§other/rule"]).out, /refused: §other\/rule is outside/);
+  assert.match(runCli(a, ["run", id, "git", "diff", "lib/later.js"]).out, /refused: lib\/later\.js is outside/);
+  r = runCli(a, ["run", id, "assess", "prepare", "whole"]);
+  assert.equal(r.code, 1, r.out);
+  const last = ledger(a, id).at(-1);
+  const preview = JSON.parse(readFileSync(join(runsDir(a), id, "out", `${String(last.n).padStart(3, "0")}.txt`), "utf8"));
+  assert.deepEqual(preview.query.paths, ["lib/rule.js"]);
+  assert.deepEqual(preview.changedFiles, ["lib/rule.js"]);
+  const s = JSON.parse(runCli(a, ["status", id, "--json"]).out);
+  assert.deepEqual(s.drift, { count: 2, sample: ["lib/later.js", "lib/other.js"] });
 });
 
 test("assess: a preview bigger than the bytes left is refused as a ceiling, and nothing is written", () => {

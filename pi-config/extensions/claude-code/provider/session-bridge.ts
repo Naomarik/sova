@@ -1511,7 +1511,11 @@ class CliSession {
 		if (this.isBusy()) return "busy";
 		if (!this.recordedRead) { this.recordedLogin = this.loginHooks()?.recorded; this.recordedRead = true; }
 		const was = this.login ?? from;
-		if (was.id === to.id) return "same";
+		if (was.id === to.id) {
+			// No note, but the pick stands: its mark is (re)written (it left with the login if the login left).
+			try { this.options.logins?.markPick?.(to.id, this.piSessionId); } catch { /* the mark is plumbing */ }
+			return "same";
+		}
 		this.login = to;
 		this.announce(to, { from: was, to, text: manualSwitchText(was, to) });
 		debugLog({ event: "login-switch", session: this.piSessionId, from: was.id, to: to.id, kind: "manual" });
@@ -1969,8 +1973,11 @@ export class SessionBridge implements ClaudeSessionBridge {
 		if (session) return session.pickLogin(to, from);
 		const hooks = this.logins.get(sessionId);
 		if (!hooks) return "unknown";
-		if (from.id === to.id) return "same";
 		const logins = this.options.logins;
+		if (from.id === to.id) {
+			try { logins?.markPick?.(to.id, sessionId); } catch { /* the mark is plumbing */ }
+			return "same";
+		}
 		try {
 			if (hooks.recorded !== undefined && hooks.recorded !== to.id) logins?.clearPick?.(hooks.recorded, sessionId);
 			logins?.markPick?.(to.id, sessionId);

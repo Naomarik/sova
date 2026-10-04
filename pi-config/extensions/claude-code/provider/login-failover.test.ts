@@ -324,6 +324,20 @@ test("a pick before the chat's first Claude turn only records it, and the first 
 	assert.deepEqual([readLoginPicks(s.agentDir, A).length, readLoginPicks(s.agentDir, B).length], [0, 1]);
 });
 
+test("the pool: a fresh chat's pick that borrows the login by name records the pick and marks it (from: where it would have started)", { timeout: 8000 }, async (t) => {
+	const s = setup(t, () => ANSWER("ok"), {}, true);
+	signIn(s.agentDir);
+	// A is on another device, B is free at the keeper: the chat would start on default.
+	updateAccounts(s.agentDir, (a) => { a.logins.find((l) => l.id === A)!.device = "vps"; a.logins.find((l) => l.id === B)!.device = null; });
+	s.logins.take = async (id: string) => { updateAccounts(s.agentDir, (a) => { a.logins.find((l) => l.id === id)!.device = "local"; }); };
+	assert.equal(await pickChatLogin(B, { id: "pi-session-1", branch: [] }, { bridge: s.bridge, logins: s.logins }), "switched");
+	assert.deepEqual(s.entries.map((e) => [e.login, e.from, e.reason]), [[B, "default", "manual"]]);
+	assert.deepEqual(readLoginPicks(s.agentDir, B).map((p) => p.session), ["pi-session-1"]);
+	await collect(s.bridge.runTurn(request([user("hi")])));
+	assert.equal(s.loginOf(s.children[0]!), B);
+	assert.equal(readLoginPicks(s.agentDir, B).length, 1, "the first turn keeps the mark");
+});
+
 test("a pick of the chat's own login changes nothing; an unusable one, or one mid-turn, is refused", { timeout: 8000 }, async (t) => {
 	let hold = true;
 	const s = setup(t, () => (hold ? [] : ANSWER("ok")));
@@ -339,7 +353,7 @@ test("a pick of the chat's own login changes nothing; an unusable one, or one mi
 	hold = false;
 	assert.equal(await pick(A), "same");
 	assert.ok(!s.entries.some((e) => e.reason === "manual"), "no entry for either");
-	assert.equal(readLoginPicks(s.agentDir, A).length, 0, "picking the login it is on marks nothing either");
+	assert.equal(readLoginPicks(s.agentDir, A).length, 1, "picking the login it is on records no note, but its pick stands");
 	s.logins.recordFailure({ id: B, label: "b@example.com", env: {}, accountUuid: "acct-b" }, { kind: "limit", resetsAt: Date.now() + 3_600_000 });
 	await assert.rejects(pick(B), /limited until/);
 	await assert.rejects(pick("l-0000dead"), /no such Claude login/);

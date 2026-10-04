@@ -12821,6 +12821,40 @@
         "§app.overseer/caps",
         "§app.overseer/tools"
       ]
+    },
+    "§mesh.peers/grants": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "requires": [
+        "§mesh.peers/listener",
+        "§mesh.peers/allowlist",
+        "§mesh.sync/categories",
+        "§mesh.sync/logins",
+        "§app.claude-logins/pool",
+        "§app.access/gate"
+      ],
+      "code": [
+        "shared/mesh-access.ts",
+        "server/mesh/access.ts",
+        "server/mesh/listener.ts",
+        "server/mesh/index.ts",
+        "server/mesh/proxy.ts",
+        "server/sync/index.ts",
+        "server/sync/logins.ts",
+        "server/sync/docs.ts",
+        "server/claude-pool/index.ts",
+        "server/mesh/details.ts",
+        "src/components/MeshAccess.tsx",
+        "src/lib/mesh-access.ts",
+        "src/components/MeshView.tsx",
+        "src/lib/mesh.ts",
+        "server/mesh/access.test.ts",
+        "server/mesh/grants.test.ts",
+        "server/sync/grants-sync.test.ts",
+        "src/lib/mesh-access.test.ts",
+        "scripts/mesh-lab/e2e/m7-grants.test.mjs"
+      ]
     }
   },
   "boundary": {

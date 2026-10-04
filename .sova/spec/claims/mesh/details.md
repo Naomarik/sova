@@ -12,7 +12,8 @@ open (less often after failed refreshes, and not while the tab is hidden) and ma
 closed; a failed refresh keeps the last answer on screen under an error. A host that isn't answering
 keeps what this host knows of it (connection, front door, joined) and says it isn't answering; a
 host whose details came too late says it didn't answer in time; a host on an older build says
-"Update this host to see its details." Each other host offers Open Directly (its own https address:
+"Update this host to see its details."; a host that grants this host nothing (§mesh.peers/grants)
+says it shares nothing with this host, and offers no rename or Browser access switch. Each other host offers Open Directly (its own https address:
 the one it serves on, else its MagicDNS name on the default serve port) or, for a host with no
 browser address, Open Through This Host, which narrows the session list to that host. Each host's
 section shows its browser address as a link that opens it in a new tab, with a copy button beside

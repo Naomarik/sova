@@ -135,8 +135,9 @@ the label and the file `sova-runtime`.
   <!-- Restart=always: `launchctl bootout` is the stop you ask for. -->
   <key>KeepAlive</key><true/>
   <key>ThrottleInterval</key><integer>2</integer>
-  <!-- TimeoutStopSec=90: a stop drains hosted runtimes and workers (launchd's default is 20 s). -->
-  <key>ExitTimeOut</key><integer>90</integer>
+  <!-- TimeoutStopSec: a stop drains hosted runtimes and workers (launchd's default is 20 s, and it
+       caps an agent's at 60 s). -->
+  <key>ExitTimeOut</key><integer>60</integer>
   <!-- No App Nap timer throttling for a server. -->
   <key>ProcessType</key><string>Interactive</string>
   <key>StandardOutPath</key><string>/path/to/your-home/Library/Logs/sova.log</string>

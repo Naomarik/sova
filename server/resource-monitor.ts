@@ -16,7 +16,8 @@ import { closeSync, openSync, readdirSync, readFileSync, readSync as readFd } fr
 import { readFile, readlink } from "node:fs/promises";
 import { availableParallelism, freemem, loadavg, platform, totalmem } from "node:os";
 import { join } from "node:path";
-import { monitorEventLoopDelay, performance, type IntervalHistogram } from "node:perf_hooks";
+import { performance } from "node:perf_hooks";
+import { loopDelaySampler, type LoopDelaySampler } from "./runtime-quirks";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { claudeSessionId } from "../pi-config/extensions/claude-code/provider/session-records.ts";
 import type {
@@ -253,7 +254,7 @@ export class ResourceMonitor {
   private listed = new Set<number>();
   private sids!: SidMemory;
   private prevUnitUsec?: number;
-  private loop: IntervalHistogram | null = null;
+  private loop: LoopDelaySampler | null = null;
   private timer: NodeJS.Timeout | null = null;
   private running = false;
   private tickCount = 0;
@@ -299,8 +300,8 @@ export class ResourceMonitor {
     if (opts.eventLoop !== false) {
       // 200ms: 5 wakeups a second (20ms cost ~0.12% of a core alone). A stall still shows in
       // `max`, which is exact; each sample includes the resolution, subtracted when reported.
-      this.loop = monitorEventLoopDelay({ resolution: LOOP_RESOLUTION_MS });
-      this.loop.enable();
+      // The runtime's histogram where it measures whole intervals, else a timer-drift sampler.
+      this.loop = loopDelaySampler(LOOP_RESOLUTION_MS);
     }
     this.init();
   }

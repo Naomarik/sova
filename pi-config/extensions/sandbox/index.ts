@@ -106,7 +106,21 @@ export default function sandbox(pi: ExtensionAPI) {
 
 	function stockOptions(): StockOptions {
 		const sm = SettingsManager.create(cwd, agentDir());
-		return { autoResizeImages: sm.getImageAutoResize(), commandPrefix: sm.getShellCommandPrefix(), shellPath: sm.getShellPath() };
+		return { autoResizeImages: sm.getImageAutoResize(), commandPrefix: hostedPrefix(sm.getShellCommandPrefix()), shellPath: sm.getShellPath() };
+	}
+
+	/**
+	 * A hosting server's tool-command prefix (Sova: the line that lowers the command's priority,
+	 * §app.load-priority/workers) in front of the configured one, as the session's own bash has it.
+	 * No host (the TUI): the configured prefix as it is.
+	 */
+	function hostedPrefix(prefix: string | undefined): string | undefined {
+		const wrap = (globalThis as Record<symbol, unknown>)[Symbol.for("sova:tool-command-prefix")];
+		try {
+			return typeof wrap === "function" ? (wrap(prefix) as string | undefined) : prefix;
+		} catch {
+			return prefix;
+		}
 	}
 
 	function notify(text: string, level: "info" | "warning" | "error" = "info"): void {

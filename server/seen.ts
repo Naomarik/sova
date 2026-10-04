@@ -1,6 +1,7 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { stateRoot } from "./state-root";
+import { sessionsChanged } from "./list-generation";
 
 /**
  * When the user last had each session in front of them: `<stateRoot>/seen.json`, `{[id]: ms}`.
@@ -51,6 +52,7 @@ export function markSeen(id: string, at = Date.now(), file = seenFile()): void {
     const tmp = `${file}.${process.pid}.tmp`;
     writeFileSync(tmp, JSON.stringify(next));
     renameSync(tmp, file);
+    sessionsChanged();
     cache = { file, at: Date.now(), map: next };
   } catch (err) {
     console.warn("[seen] write failed:", err instanceof Error ? err.message : String(err));
@@ -66,6 +68,7 @@ export function trackViewer(id: string, delta: 1 | -1): void {
   const n = Math.max(0, (viewing.get(id) ?? 0) + delta);
   if (n === 0) viewing.delete(id);
   else viewing.set(id, n);
+  sessionsChanged();
   markSeen(id);
 }
 

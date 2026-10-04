@@ -12,8 +12,8 @@
  * length and last fingerprint; the child's bridge resumes only if its own transcript starts with
  * exactly that prefix. The point travels to the child process in `CLAUDE_FORK_ENV`.
  *
- * Builtins only, no import of the bridge: the explain extension reads a fork point through the
- * process-global registry without loading the provider.
+ * Builtins only, no import of the bridge: background forks (`subagents/fork/`) and Sova's web fork
+ * read and seed fork points through the process-global registry without loading the provider.
  */
 
 /** Environment variable carrying an encoded fork point into a forked pi child. */
@@ -61,6 +61,7 @@ export function decodeForkPoint(raw: string | undefined): ClaudeForkPoint | unde
 
 interface ForkPointSource {
 	forkPoint?(piSessionId: string): ClaudeForkPoint | undefined;
+	seedFork?(piSessionId: string, point: ClaudeForkPoint, fromPiSessionId: string): void;
 }
 
 /**
@@ -73,5 +74,24 @@ export function parentForkPoint(piSessionId: string): ClaudeForkPoint | undefine
 		return host[BRIDGE_REGISTRY]?.bridge?.forkPoint?.(piSessionId);
 	} catch {
 		return undefined;
+	}
+}
+
+/**
+ * Seed a pi session in THIS process (a fork Sova just created beside its source) with its
+ * source's fork point: that session's first conversation turn resumes the source's CLI session
+ * instead of folding. The bridge takes the seed only while the source's CLI is still exactly at
+ * `point` (`fromPiSessionId` names the source), so a fork prompted after the source moved on
+ * folds as before. False when the provider never ran here.
+ */
+export function seedForkPoint(piSessionId: string, point: ClaudeForkPoint, fromPiSessionId: string): boolean {
+	const host = globalThis as unknown as Record<symbol, { bridge?: ForkPointSource } | undefined>;
+	try {
+		const bridge = host[BRIDGE_REGISTRY]?.bridge;
+		if (!bridge?.seedFork) return false;
+		bridge.seedFork(piSessionId, point, fromPiSessionId);
+		return true;
+	} catch {
+		return false;
 	}
 }

@@ -18,7 +18,8 @@
 //
 // Bounds: every git is execFile (no shell) under a 5 s timeout, at most MAX_CONCURRENT at once.
 // Cost: validated discovery/HEAD/refs are shared between readers; comparisons and logs use
-// immutable OIDs. Dirty stays independent and is read at most every DIRTY_TTL_MS.
+// immutable OIDs. Dirty stays independent and is read at most every DIRTY_TTL_MS, or the lifetime
+// merge readiness sets for a tree (`dirtyLifetime`); an index or HEAD change ends it at once.
 // Git failures become the tree's `error`, never a throw.
 
 import { execFile } from "node:child_process";
@@ -234,6 +235,47 @@ function refsToken(layout: Layout, head: boolean): string | null {
   return history && refs ? `${history}:${refs}` : null;
 }
 
+/** What a dirty reading depends on besides its folders: the index, HEAD and the branch HEAD names,
+ * so a commit, add, checkout or branch switch ends the reading at once (§chat.worktrees/dirty-freshness). */
+function dirtyStamp(layout: Layout): string {
+  const stamp = (path: string): string => {
+    try {
+      const st = statSync(path, { bigint: true });
+      return `${st.ino}:${st.size}:${st.mtimeNs}:${st.ctimeNs}`;
+    } catch { return "absent"; }
+  };
+  let head = "";
+  try { head = readFileSync(join(layout.gitDir, "HEAD"), "utf8"); } catch {}
+  const ref = /^ref: (refs\/[^\r\n]+)/.exec(head)?.[1];
+  return [stamp(join(layout.gitDir, "index")), head, ref ? stamp(join(layout.commonDir, ref)) : "", ref ? stamp(join(layout.commonDir, "packed-refs")) : ""].join("\0");
+}
+
+/** A worktree's index, HEAD and branch ref as stat stamps, read without Git: any commit, add,
+ * checkout or branch switch there changes it (merge readiness's settled sessions,
+ * §app/idle-git-cache). "gone" for a missing folder; null when its Git layout can't be named. */
+export function worktreeStamp(dir: string): string | null {
+  try {
+    const dotGit = join(dir, ".git");
+    let st;
+    try {
+      st = statSync(dotGit);
+    } catch {
+      return existsSync(dir) ? null : "gone";
+    }
+    let gitDir = dotGit;
+    let commonDir = dotGit;
+    if (!st.isDirectory()) {
+      const m = /^gitdir: (.+?)\s*$/m.exec(readFileSync(dotGit, "utf8"));
+      if (!m) return null;
+      gitDir = resolve(dir, m[1]!);
+      commonDir = existsSync(join(gitDir, "commondir")) ? resolve(gitDir, readFileSync(join(gitDir, "commondir"), "utf8").trim()) : gitDir;
+    }
+    return `${dir}\0${dirtyStamp({ top: dir, linked: gitDir !== commonDir, gitDir, commonDir })}`;
+  } catch {
+    return null;
+  }
+}
+
 const CONTEXT_MOVED = Symbol("Git configuration context moved");
 
 function contextScope(layout: Layout): string {
@@ -250,6 +292,8 @@ interface Observation { token: string; value: unknown; at: number; seenAt: numbe
 export interface WorktreeDeps {
   run?: GitRunner;
   now?: () => number;
+  /** Where merge-tree's scratch object directories go (default: the OS temp dir). */
+  scratchDir?: string;
 }
 
 export class WorktreeInsights {
@@ -257,10 +301,12 @@ export class WorktreeInsights {
   computeCount = 0;
   private readonly run: GitRunner;
   private readonly now: () => number;
+  private readonly scratchDir: string | undefined;
   private readonly observations = new Map<string, Observation>();
   private readonly flights = new Map<string, Promise<unknown>>();
   private unverifiedRead = 0;
   private readonly sessions = new Map<string, { mtimeMs: number; size: number; value: SessionCandidates; seenAt: number }>();
+  private readonly dirtyLifetimes = new Map<string, { ms: number; seenAt: number }>();
   private mergeTreeOk: Promise<boolean> | null = null;
   private running = 0;
   private readonly waiting: (() => void)[] = [];
@@ -268,6 +314,7 @@ export class WorktreeInsights {
   constructor(deps: WorktreeDeps = {}) {
     this.run = deps.run ?? execGit;
     this.now = deps.now ?? Date.now;
+    this.scratchDir = deps.scratchDir;
   }
 
   /** A flight is published before work starts, and is separate from bounded settled entries.
@@ -366,7 +413,7 @@ export class WorktreeInsights {
     const layout = await this.layout(dir);
     if (!layout || layout === "gone" || !layout.linked) return null;
     const metadata = await this.metadata(layout);
-    const st = await this.status({ path: layout.top, source: "session", exists: true }, layout, metadata);
+    const st = await this.status({ path: layout.top, source: "session", exists: true }, layout, metadata, this.dirtyLifetimes.get(resolve(dir))?.ms);
     this.prune();
     // HEAD and its committer time (ms) in one call: the time says whether a check ran after the newest commit.
     const head = metadata.head ? await this.observedGit(layout, ["log", "-1", "--format=%H %ct", metadata.head.oid], () => historyToken(layout)) : { code: 1, stdout: "", stderr: "" };
@@ -483,9 +530,9 @@ export class WorktreeInsights {
     return { head, refs };
   }
 
-  private async status(tree: WorktreeStatus, layout: Layout, metadata?: Awaited<ReturnType<WorktreeInsights["metadata"]>>): Promise<WorktreeStatus> {
+  private async status(tree: WorktreeStatus, layout: Layout, metadata?: Awaited<ReturnType<WorktreeInsights["metadata"]>>, dirtyTtl?: number): Promise<WorktreeStatus> {
     const cwd = layout.top;
-    const [{ head, refs }, dirty] = await Promise.all([metadata ?? this.metadata(layout), this.dirtyOf(cwd, layout)]);
+    const [{ head, refs }, dirty] = await Promise.all([metadata ?? this.metadata(layout), this.dirtyOf(cwd, layout, dirtyTtl)]);
     const out: WorktreeStatus = { ...tree };
     const errors: string[] = [];
     if (dirty.dirty !== null) out.dirty = dirty.dirty;
@@ -505,11 +552,31 @@ export class WorktreeInsights {
     return out;
   }
 
-  private dirtyOf(cwd: string, layout: Layout): Promise<{ dirty: boolean | null; files?: { count: number; first: string[] }; error?: string }> {
-    return this.observe(`dirty:${layout.gitDir}`, () => dependencies([cwd, layout.gitDir, layout.commonDir]), async () => {
+  private dirtyOf(cwd: string, layout: Layout, ttl = DIRTY_TTL_MS): Promise<{ dirty: boolean | null; files?: { count: number; first: string[] }; error?: string }> {
+    return this.observe(`dirty:${layout.gitDir}`, () => {
+      const folders = dependencies([cwd, layout.gitDir, layout.commonDir]);
+      return folders && `${folders}:${dirtyStamp(layout)}`;
+    }, async () => {
       const r = await this.git(cwd, ["status", "--porcelain"]);
       return r.code === 0 ? { dirty: r.stdout.trim() !== "", files: porcelainFiles(r.stdout) } : { dirty: null, error: gitError("git status", r) };
-    }, (v) => v.dirty !== null, DIRTY_TTL_MS);
+    }, (v) => v.dirty !== null, ttl);
+  }
+
+  /** Merge readiness's lifetime for a tree's next dirty readings (§chat.worktrees/dirty-freshness):
+      `treeStatus` reuses a reading this young; 0 reads now. Unset, DIRTY_TTL_MS. */
+  dirtyLifetime(dir: string, ms: number): void {
+    this.dirtyLifetimes.set(resolve(dir), { ms, seenAt: this.now() });
+  }
+
+  /** A worktree Sova's cleanup removed (§chat.worktrees/cleanup): its folder's layout, HEAD and
+      dirty readings and its dirty lifetime go now, like an index or HEAD change. */
+  forget(dir: string): void {
+    const key = `layout:${resolve(dir)}`;
+    const layout = this.observations.get(key)?.value as Layout | null | undefined;
+    this.observations.delete(key);
+    this.dirtyLifetimes.delete(resolve(dir));
+    if (!layout) return;
+    for (const k of [...this.observations.keys()]) if (k === `dirty:${layout.gitDir}` || k.startsWith(`head:${layout.gitDir}:`)) this.observations.delete(k);
   }
 
   private async compare(cwd: string, layout: Layout, base: { name: string; oid: string }, head: string): Promise<Comparison> {
@@ -549,7 +616,7 @@ export class WorktreeInsights {
   private async mergesToBase(cwd: string, layout: Layout, base: string, head: string): Promise<boolean | { conflicts: number } | string> {
     let scratch: string | null = null;
     try {
-      scratch = await mkdtemp(join(tmpdir(), "sova-merge-tree-"));
+      scratch = await mkdtemp(join(this.scratchDir ?? tmpdir(), "sova-merge-tree-"));
       const env = { GIT_OBJECT_DIRECTORY: scratch, GIT_ALTERNATE_OBJECT_DIRECTORIES: join(layout.commonDir, "objects") };
       const [merged, baseTree] = await Promise.all([
         this.git(cwd, ["merge-tree", "--write-tree", "--no-messages", base, head], env),
@@ -569,7 +636,7 @@ export class WorktreeInsights {
   /** Drop what hasn't been asked for in an hour, then the oldest past MAX_CACHED. */
   private prune(): void {
     const cutoff = this.now() - UNSEEN_MS;
-    for (const m of [this.sessions, this.observations] as Map<string, { seenAt: number }>[]) {
+    for (const m of [this.sessions, this.observations, this.dirtyLifetimes] as Map<string, { seenAt: number }>[]) {
       for (const [k, v] of m) if (v.seenAt < cutoff) m.delete(k);
       while (m.size > MAX_CACHED) {
         const oldest = [...m].reduce<[string, { seenAt: number }] | undefined>((a, b) => !a || b[1].seenAt < a[1].seenAt ? b : a, undefined)?.[0];

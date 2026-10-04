@@ -67,6 +67,9 @@ html, body { overflow: clip; overscroll-behavior: none; }
    (`imagesEstimate`). */
 .thread { --entry-line: calc(var(--fs-body) * var(--lh-body)); --entry-cols: var(--entry-cols-measured, 110); --entry-narrow: 0; }
 @container (width < 600px) { .thread { --entry-cols: var(--entry-cols-measured, 42); --entry-narrow: 1; } }
+/* A live message's rows (Thread `LiveEntries`): marks which entry they are for the last row read,
+   and lays nothing out. */
+.live-entry { display: contents; }
 /* As wide as a message can be: the transcript reads its width for `--entry-cols-measured`. */
 .entry-measure { max-width: min(100%, var(--measure)); height: 0; }
 /* The top of a transcript with older rows still to fetch (Thread `older-edge`): a line's height
@@ -820,11 +823,22 @@ html, body { overflow: clip; overscroll-behavior: none; }
 .setup-toggle { flex: none; min-height: var(--tap-min); }
 .setup-row-off .setup-name,
 .setup-row-off .setup-facts { opacity: .5; }
+/* A narrow card folds its rows (base.css), but not a row with a switch: it stays one line, the
+   name ellipsised, then ≈tokens, then the switch at the right edge. */
 @container (max-width: 417.98px) {
-  .setup-row:has(.setup-toggle) { align-items: stretch; }
-  .setup-toggle { align-self: flex-start; }
+  .setup-row:has(.setup-toggle) { flex-direction: row; align-items: center; gap: var(--space-3); }
 }
 .profile-warn { color: var(--status-warn, var(--color-ink-2)); }
+/* A new session's worktrees line under the footnote (§chat.transcript/empty-worktrees): one muted
+   caption and the destructive button beside it, wrapping under it when the column is narrow. */
+.empty-worktrees { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: var(--space-2) var(--space-3); margin-top: var(--space-2); }
+.empty-worktrees-line { margin: 0; font-size: var(--fs-caption); color: var(--color-ink-muted); }
+/* Its dialog's lists: each folder in mono on its own line, its branch or reason under it. */
+.worktree-cleanup .modal-body section { display: flex; flex-direction: column; gap: var(--space-2); }
+.worktree-cleanup .modal-body h3 { margin: 0; }
+.worktree-cleanup-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-2); }
+.worktree-cleanup-list li { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.worktree-cleanup-path { font-family: var(--font-mono); font-size: var(--fs-mono); overflow-wrap: anywhere; color: var(--color-ink); }
 /* After the first message: the thread's muted profile row, the head chip and its popover. */
 .profile-row { display: flex; align-items: center; gap: var(--space-2); margin: 0 0 var(--space-2); font-size: var(--fs-caption); color: var(--color-ink-muted); }
 .profile-chip-wrap { position: relative; display: inline-flex; flex: none; }

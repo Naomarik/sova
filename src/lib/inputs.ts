@@ -2,7 +2,6 @@
 // branch, each able to rewind the chat to just before it. Pure decisions only — which rows, when a
 // row may act, the two-step confirm — so the component just renders them.
 import type { RewindRefusal, TranscriptItem } from "../../shared/protocol";
-import { timestampOf } from "./message";
 import { isInput } from "./turn";
 import { wakeTitle } from "../../shared/wake";
 
@@ -49,7 +48,7 @@ export function inputRows(items: readonly TranscriptItem[]): InputRow[] {
         it.kind === "wake" && it.wake
           ? (it.wake.reason ?? wakeTitle(it.wake))
           : (text.trim().split("\n", 1)[0] ?? "").replace(/\s+/g, " ").trim();
-      return { id: it.id, preview, text, images: it.images?.length ?? 0, at: timestampOf(it.raw) };
+      return { id: it.id, preview, text, images: it.images?.length ?? 0, at: it.at };
     });
 }
 

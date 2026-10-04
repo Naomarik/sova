@@ -35,7 +35,7 @@ after(async () => {
   rmSync(agentDir, { recursive: true, force: true });
 });
 
-const row = (id: string, kind: TranscriptItem["kind"] = "user", text = "x", extra: Partial<TranscriptItem> = {}): TranscriptItem => ({ id, kind, text, raw: null, ...extra });
+const row = (id: string, kind: TranscriptItem["kind"] = "user", text = "x", extra: Partial<TranscriptItem> = {}): TranscriptItem => ({ id, kind, text, ...extra });
 const sizesOf = (items: TranscriptItem[]) => items.map((it) => JSON.stringify(it).length);
 /** The whole list back from a cut: history chunks arrive newest first, each prepended. */
 const reassemble = (cut: ReturnType<typeof cutTail>) => cut.history.reduce<TranscriptItem[]>((list, part) => [...part.msg.items, ...list], cut.items);

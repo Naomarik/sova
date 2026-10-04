@@ -141,7 +141,8 @@ host's sender secret never leaves it. The peer's own routes and refusals apply.
   §app.overseer/org-writes), gathering sessions (`sova_gather`, §app.overseer/org-people-facing) and
   project overseers (`sova_project_overseer`, §app.overseer/org-project-overseers); any project's
   running instances on this host (`sova_project_verbs`, §app.project-services/callers: status,
-  logs and doctor at any time, the other verbs, and `onboard`, which starts the Project verbs
+  logs and doctor at any time, the other verbs (`share` is the operator's: `needs-confirm`; `revoke`
+  is its own), and `onboard`, which starts the Project verbs
   playbook on a registered project (§app.project-runtime/onboard), in a turn the user started).
 - **Sending (`sova_send`) is typing in that session's composer.** Idle, with subagents working or
   not, the message starts a turn. Mid-turn it is **queued as a follow-up** behind the running turn
@@ -297,11 +298,22 @@ host's sender secret never leaves it. The peer's own routes and refusals apply.
   created or attached itself; one it inherited from another session is left, and the result says so.
   Before anything changes, a session any of whose worktrees has uncommitted changes (tracked or
   untracked files) is refused whole, naming the worktree and a file: nothing of it is archived or
-  removed. Otherwise the session is archived first (its own refusals unchanged), then each worktree
-  is removed with git's own `worktree remove` (a folder already gone is pruned from git's list), and
-  its branch is deleted only when it is merged; an unmerged branch keeps its commits. The result
-  says per session what was archived, each worktree removed or kept and why, and each branch deleted
-  or kept. Without `worktrees`, archiving never touches a worktree.
+  removed. Otherwise the session is archived first (its own refusals unchanged), then each of its
+  worktrees goes through §chat.worktrees/cleanup's own check and removal, the same code the Clean
+  Up Merged button runs: only a merged or empty worktree is removed, and one is kept, with the
+  service's reason, when it is unmerged, locked, has uncommitted or untracked files, holds another
+  session's folder, is tracked active by another session that is open in a TUI, running or has its
+  sandbox on, or holds a live process or a live record. The archived session itself counts for
+  none of these. Those checks come first, a live process aside; then a worktree that may go has
+  its running copy of the project, if it has one, torn down (§app.project-services/teardown, as the
+  operator; a copy that can't be torn down keeps its worktree, and the result says "kept, its
+  running copy could not be torn down: …"), so a worktree that stays keeps its copy too; then the
+  checks run again, processes included, and it is removed. Removal is git's own `worktree remove`,
+  never `--force` (for a folder already gone it only drops that one from git's list); the branch is
+  deleted with `git branch -d` only when it is in the main branch by ancestry, so an unmerged or
+  content-merged branch keeps its ref; and each removal goes into the cleanup's ledger. The result
+  says per session what was archived, each worktree removed or kept and why, and each branch
+  deleted or kept. Without `worktrees`, archiving never touches a worktree.
 
 ## §app.overseer/session-truth — What `sova_session` says is true now
 

@@ -42,6 +42,9 @@ export type LiveEntry =
           delivery by id (`queue_item_gone`, a `consumed` refusal) BEFORE the start, so a delivered
           row can still be waiting for its start. */
       started?: boolean;
+      /** The transcript entry the message was written as: its `message_end`'s `entryId`
+          (§chat.transcript/rendering, "Switching back": the row this one becomes). */
+      entryId?: string;
       /** Who put it in the queue: "server" is a prompt this session made for itself (a group
           message, a remote status check), which we render but never claim you typed. */
       origin?: "client" | "server";
@@ -68,6 +71,8 @@ export type LiveEntry =
       error?: string;
       /** ISO time the message ended as aborted. */
       stoppedAt?: string;
+      /** The transcript entry the message was written as (its `message_end`'s `entryId`). */
+      entryId?: string;
     };
 
 export interface LiveTool {
@@ -472,8 +477,17 @@ export function applyEvent(set: SetStoreFunction<LiveState>, event: unknown) {
         }
         case "message_end": {
           const msg = isObj(event.message) ? event.message : {};
+          // The entry it was written as (ChatView puts the `event` message's `entryId` here).
+          const entryId = str(event.entryId);
+          if (msg.role === "user") {
+            // The row its start claimed: the newest started one no end has named yet.
+            const row = [...s.entries].reverse().find((e): e is Extract<LiveEntry, { kind: "user" }> => e.kind === "user" && !!e.started && !e.entryId);
+            if (row && entryId) row.entryId = entryId;
+            break;
+          }
           if (msg.role !== "assistant") break;
           const entry = lastAssistant(s);
+          if (entryId) entry.entryId = entryId;
           // message_end is authoritative.
           const model = liveModelOf(msg);
           if (model) entry.model = model;

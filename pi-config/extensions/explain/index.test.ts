@@ -6,14 +6,11 @@
  *   node --test index.test.ts
  */
 import assert from "node:assert/strict";
-import { EventEmitter } from "node:events";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { fileURLToPath } from "node:url";
-import type { ChildProcess } from "node:child_process";
-import { ExplainRuns, MAX_LIVE, failureWakeText, oneLineError, wakeMessage, wakeText, type ExplainHost } from "./explain.ts";
+import { ExplainRuns, MAX_LIVE, WORKER_NAME, explainPolicy, failureWakeText, oneLineError, wakeMessage, wakeText, webAccessExtension, type ExplainHost } from "./explain.ts";
 import { parentIdentity } from "./identity.ts";
 import { buildChildPrompt, bylineText } from "./prompt.ts";
 import {
@@ -36,9 +33,7 @@ import {
 	type ExplainEntryData,
 	type KnownMeta,
 } from "./store.ts";
-import { CHILD_EXTENSION, WORKER_MARK_EXTENSION, copyForFork, forkable, startExplainWorker, webAccessExtension } from "./worker.ts";
-import { EXPLAIN_PARENT_SESSION_ENV, EXPLAIN_STORE_ENV } from "./mirror.ts";
-import { CLAUDE_FORK_ENV, decodeForkPoint } from "../claude-code/provider/fork-point.ts";
+import { forkable } from "../subagents/fork/copy.ts";
 
 function tmp(prefix = "explain-test-"): string {
 	return mkdtempSync(join(tmpdir(), prefix));
@@ -256,7 +251,7 @@ function harness(env: NodeJS.ProcessEnv): { runs: ExplainRuns; rec: Recorded } {
 		start: (spec, handlers) => {
 			const entry = { spec, settle: handlers.onSettled, killed: false };
 			rec.started.push(entry);
-			return { kill: async () => { entry.killed = true; } };
+			return { stop: async () => { entry.killed = true; } };
 		},
 	};
 	return { runs: new ExplainRuns(host), rec };
@@ -279,9 +274,12 @@ test("begin creates the store, forks a persisted parent, and rejects an empty to
 		const copy = rec.started[0].spec.forkSession;
 		assert.notEqual(copy, sessionFile);
 		assert.equal(copy, join(root, "explanations", ".forks", `${started.id}.jsonl`));
-		assert.equal(readFileSync(copy, "utf8"), readFileSync(sessionFile, "utf8"));
-		assert.equal(rec.started[0].spec.storeDir, started.dir);
-		assert.equal(rec.started[0].spec.parentSessionId, "sess-1");
+		assert.ok(readFileSync(copy, "utf8").startsWith(readFileSync(sessionFile, "utf8")), "the parent's lines, verbatim");
+		// The child is a background fork that may write only into its store, and look things up.
+		assert.deepEqual(rec.started[0].spec.policy, explainPolicy(started.dir));
+		assert.deepEqual(explainPolicy(started.dir), { label: "The /explain worker", web: true, writeDir: started.dir, writeHint: "Write index.html and meta.json there; nothing else on disk." });
+		assert.equal(rec.started[0].spec.name, WORKER_NAME);
+		assert.equal(rec.started[0].spec.id, started.id);
 		assert.equal(rec.started[0].spec.cwd, "/repo");
 		assert.ok(rec.started[0].spec.task.includes(started.dir));
 		assert.ok(rec.started[0].spec.task.includes("vector clocks"), "whitespace in the topic is collapsed");
@@ -510,178 +508,6 @@ test("the parent identity prefers the session manager and falls back to the envi
 	assert.deepEqual(parentIdentity(undefined, env), { id: "env-id", file: "/env/file.jsonl" });
 	assert.deepEqual(parentIdentity(undefined, {} as NodeJS.ProcessEnv), { id: "unknown" });
 	assert.deepEqual(parentIdentity({ getSessionId: () => { throw new Error("replaced"); }, getSessionFile: () => undefined }, {} as NodeJS.ProcessEnv), { id: "unknown" });
-});
-
-// ── the real worker, with a fake pi process ────────────────────────────────
-
-class FakeStream extends EventEmitter {
-	push(chunk: string): void {
-		this.emit("data", Buffer.from(chunk));
-	}
-}
-
-class FakeChild extends EventEmitter {
-	pid = 4242;
-	stdin = Object.assign(new EventEmitter(), {
-		writes: [] as string[],
-		destroyed: false,
-		writableEnded: false,
-		writable: true,
-		write(chunk: string) {
-			this.writes.push(String(chunk));
-			return true;
-		},
-		end() {
-			this.writableEnded = true;
-		},
-		destroy() {
-			this.destroyed = true;
-		},
-	});
-	stdout = new FakeStream();
-	stderr = new FakeStream();
-	kill(): boolean {
-		queueMicrotask(() => this.emit("close", 0, null));
-		return true;
-	}
-	lines(): any[] {
-		return this.stdin.writes.map((line) => JSON.parse(line.replace(/\n$/, "")));
-	}
-	reply(id: string, data?: any): void {
-		this.stdout.push(`${JSON.stringify({ id, type: "response", command: "reply", success: true, data })}\n`);
-	}
-}
-
-/** The `-e` sources in argv order. */
-function extensionArgs(args: string[]): string[] {
-	return args.flatMap((arg, i) => (arg === "-e" ? [args[i + 1]] : []));
-}
-
-const flush = (ms = 5) => new Promise<void>((resolve) => setTimeout(resolve, ms));
-
-test("the worker forks the parent with the parent's tools, loads the marker first and child.ts last, and reports its outcome", async () => {
-	const child = new FakeChild();
-	const calls: { command: string; args: string[] }[] = [];
-	const envs: (NodeJS.ProcessEnv | undefined)[] = [];
-	const settles: any[] = [];
-	const handle = startExplainWorker(
-		{
-			id: "vector-clocks-1",
-			task: "write the page",
-			cwd: process.cwd(),
-			model: "zai/glm-5.3",
-			effort: "high",
-			forkSession: "/tmp/parent.jsonl",
-			storeDir: "/agent/explanations/vector-clocks-1",
-			parentSessionId: "sess-1",
-			spawnImpl: (command, args, options) => {
-				calls.push({ command, args });
-				envs.push(options.env);
-				return child as unknown as ChildProcess;
-			},
-			timings: { requestTimeoutMs: 400, abortGraceMs: 20, termGraceMs: 20 },
-		},
-		{ onSettled: (result) => settles.push(result) },
-	);
-
-	const args = calls[0].args;
-	assert.deepEqual(args.slice(args.indexOf("--mode"), args.indexOf("--mode") + 2), ["--mode", "rpc"]);
-	// No tool flag of any kind: a changed tool set would cost the parent's prompt cache. child.ts
-	// declares the parent's tools and restricts what runs at call time (mirror.ts).
-	for (const flag of ["--tools", "--exclude-tools", "--no-tools", "--no-builtin-tools"]) assert.equal(args.includes(flag), false, flag);
-	assert.ok(args.includes("--no-extensions"), "the child cannot spawn children of its own");
-	assert.deepEqual(extensionArgs(args), [WORKER_MARK_EXTENSION, CHILD_EXTENSION], "the marker first, child.ts last");
-	assert.equal(envs[0]?.[EXPLAIN_STORE_ENV], "/agent/explanations/vector-clocks-1");
-	assert.equal(envs[0]?.[EXPLAIN_PARENT_SESSION_ENV], "sess-1");
-	assert.equal(envs[0]?.[CLAUDE_FORK_ENV], undefined, "no Claude fork point for a pi model");
-	assert.deepEqual(args.slice(args.indexOf("--fork"), args.indexOf("--fork") + 2), ["--fork", "/tmp/parent.jsonl"]);
-	assert.deepEqual(args.slice(args.indexOf("--model"), args.indexOf("--model") + 2), ["--model", "zai/glm-5.3"]);
-	assert.deepEqual(args.slice(args.indexOf("--thinking"), args.indexOf("--thinking") + 2), ["--thinking", "high"]);
-
-	await flush();
-	for (const line of child.lines()) {
-		if (line.type === "get_state") child.reply(line.id, { sessionId: "child-1", sessionFile: "/tmp/child.jsonl", model: { provider: "zai", id: "glm-5.4" } });
-	}
-	await flush();
-	for (const line of child.lines()) if (line.type === "prompt") child.reply(line.id);
-	await flush();
-	assert.ok(child.lines().some((line) => line.type === "prompt" && line.message === "write the page"));
-
-	child.stdout.push(`${JSON.stringify({ type: "message_end", message: { role: "assistant", content: "wrote the page" } })}\n`);
-	child.stdout.push(`${JSON.stringify({ type: "agent_settled" })}\n`);
-	await flush();
-
-	assert.equal(settles.length, 1);
-	assert.equal(settles[0].outcome, "success");
-	assert.equal(settles[0].model, "zai/glm-5.4");
-	assert.equal(settles[0].finalOutput.includes("wrote the page"), true);
-	assert.equal(handle.sessionId, "child-1");
-	await handle.kill();
-	await flush();
-	assert.equal(settles.length, 1, "teardown after a recorded run does not settle twice");
-});
-
-test("the worker marker is loaded first, before web search", () => {
-	assert.ok(WORKER_MARK_EXTENSION.endsWith(join("subagents", "worker-mark.ts")));
-	assert.ok(existsSync(WORKER_MARK_EXTENSION), "resolved from worker.ts's own location");
-	const calls: string[][] = [];
-	const child = new FakeChild();
-	const handle = startExplainWorker(
-		{
-			id: "x-1",
-			task: "t",
-			cwd: process.cwd(),
-			storeDir: "/s",
-			parentSessionId: "p",
-			extensions: ["/agent/npm/node_modules/pi-web-access"],
-			spawnImpl: (_command, args) => {
-				calls.push(args);
-				return child as unknown as ChildProcess;
-			},
-			timings: { requestTimeoutMs: 400, abortGraceMs: 20, termGraceMs: 20 },
-		},
-		{ onSettled: () => {} },
-	);
-	assert.deepEqual(extensionArgs(calls[0]), [WORKER_MARK_EXTENSION, "/agent/npm/node_modules/pi-web-access", CHILD_EXTENSION], "mark first, like every subagents pi worker");
-	void handle.kill();
-});
-
-test("a claude-code-cli model loads the claude-code extension last, with its provider flag; other models load neither", () => {
-	const fork = { v: 1 as const, claudeSessionId: "3708bfa3-4e74-5f1f-a32e-cd209e9231e1", messages: 4, prefix: "abc", cwd: "/repo" };
-	const envs: (NodeJS.ProcessEnv | undefined)[] = [];
-	const argvFor = (model: string): string[] => {
-		const calls: string[][] = [];
-		const handle = startExplainWorker(
-			{
-				id: "cc-1",
-				task: "t",
-				cwd: process.cwd(),
-				model,
-				storeDir: "/s",
-				parentSessionId: "p",
-				claudeFork: fork,
-				extensions: ["/agent/npm/node_modules/pi-web-access"],
-				spawnImpl: (_command, args, options) => {
-					calls.push(args);
-					envs.push(options.env);
-					return new FakeChild() as unknown as ChildProcess;
-				},
-				timings: { requestTimeoutMs: 400, abortGraceMs: 20, termGraceMs: 20 },
-			},
-			{ onSettled: () => {} },
-		);
-		void handle.kill();
-		return calls[0];
-	};
-	const claudeCode = join(realpathSync(fileURLToPath(new URL("../claude-code", import.meta.url))), "index.ts");
-	const scoped = argvFor("claude-code-cli/opus[1m]");
-	assert.deepEqual(extensionArgs(scoped), [WORKER_MARK_EXTENSION, "/agent/npm/node_modules/pi-web-access", claudeCode, CHILD_EXTENSION], "the claude-code extension by real path, then child.ts");
-	assert.ok(scoped.includes("--claude-code-provider"));
-	assert.deepEqual(decodeForkPoint(envs[0]?.[CLAUDE_FORK_ENV]), fork, "the fork point travels in the environment");
-	const plain = argvFor("zai/glm-5.3");
-	assert.deepEqual(extensionArgs(plain), [WORKER_MARK_EXTENSION, "/agent/npm/node_modules/pi-web-access", CHILD_EXTENSION]);
-	assert.equal(plain.includes("--claude-code-provider"), false);
-	assert.equal(plain.some((arg) => arg.endsWith(join("claude-code", "index.ts"))), false);
 });
 
 test("web search is offered only when pi already installed it", () => {

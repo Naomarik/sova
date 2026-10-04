@@ -11,7 +11,7 @@
 import type { OutlineSnapshot, RewindInfo, SessionOutline, TranscriptItem } from "../../shared/protocol";
 import { duration, relativeTime, thousands } from "./format";
 import { inputPreview, type RowState, type ViewRow } from "./inputs";
-import { isObj, timestampOf, toolCallArgs } from "./message";
+import { SPAWN_TOOLS } from "./message";
 import { absoluteTime, firstLine, timelineEntries } from "./spend";
 import { isInput, isTurnStart } from "./turn";
 import { wakeTitle } from "../../shared/wake";
@@ -82,10 +82,10 @@ function anchorIndex(items: readonly TranscriptItem[], entryId: string | null | 
   return items.findIndex((it) => it.id.startsWith(prefix));
 }
 
-/** When an entry id happened, off the raw JSONL entry, or null when the transcript doesn't hold it. */
+/** When an entry id happened, off its row's time, or null when the transcript doesn't hold it. */
 export function anchorTime(items: readonly TranscriptItem[], entryId: string | null | undefined): string | null {
   const i = anchorIndex(items, entryId);
-  return i < 0 ? null : timestampOf(items[i]!.raw) ?? null;
+  return i < 0 ? null : items[i]!.at ?? null;
 }
 
 // ---- Inputs -------------------------------------------------------------------------------------
@@ -113,7 +113,7 @@ export function inputTurns(items: readonly TranscriptItem[]): InputTurn[] {
   items.forEach((it, index) => {
     if (!isInput(it)) return;
     const text = it.text ?? "";
-    const at = timestampOf(it.raw);
+    const at = it.at;
     const preview =
       it.kind === "wake" && it.wake
         ? (it.wake.reason ?? wakeTitle(it.wake))
@@ -137,7 +137,7 @@ export function inputTurns(items: readonly TranscriptItem[]): InputTurn[] {
       if (isTurnStart(next)) break;
       if (next.kind === "assistant-text") turn.replies++;
       else if (next.kind === "tool-call") turn.tools++;
-      const stamp = timestampOf(next.raw);
+      const stamp = next.at;
       const t = stamp ? Date.parse(stamp) : NaN;
       if (!Number.isNaN(t)) last = t;
     }
@@ -230,18 +230,6 @@ export function chapterRows(outline: SessionOutline | null | undefined, items: r
 const STOPPED = new Set(["error", "aborted", "killed"]);
 
 /** The tools that put a new agent on the board. */
-const SPAWN_TOOLS = new Set(["agent_spawn", "team_create"]);
-
-/** The name a spawn call gave its agent or team, when the arguments carried one. */
-function spawnName(args: unknown): string {
-  if (!isObj(args)) return "";
-  for (const key of ["name", "team", "agent", "id"]) {
-    const v = args[key];
-    if (typeof v === "string" && v.trim()) return v.trim();
-  }
-  return "";
-}
-
 /** "Model: anthropic/claude-opus-5" → "Model → anthropic/claude-opus-5"; "Mode → plan" is already
     written that way, and "Strict mode on" is a sentence, not a change of value. */
 function changeTitle(text: string): string {
@@ -258,10 +246,10 @@ function changeTitle(text: string): string {
 export function markerRows(items: readonly TranscriptItem[], rewinds: readonly RewindInfo[] = []): TimelineRow[] {
   const out: TimelineRow[] = [];
   for (const it of items) {
-    const at = timestampOf(it.raw);
+    const at = it.at;
     if (!at) continue;
-    if (it.kind === "info" && isObj(it.raw) && it.raw.type === "compaction") {
-      const tokens = typeof it.raw.tokensBefore === "number" ? it.raw.tokensBefore : null;
+    if (it.kind === "info" && it.meta?.type === "compaction") {
+      const tokens = typeof it.meta.tokensBefore === "number" ? it.meta.tokensBefore : null;
       const row: TimelineRow = {
         key: `marker:compaction:${it.id}`,
         kind: "marker",
@@ -271,12 +259,12 @@ export function markerRows(items: readonly TranscriptItem[], rewinds: readonly R
         title: tokens ? `Compacted · ${thousands(tokens)} tokens summarized` : MARKER_TITLE.compaction,
       };
       // The summary itself stays in the tooltip: a marker reports, the transcript tells.
-      const summary = firstLine(typeof it.raw.summary === "string" ? it.raw.summary : "", 200);
+      const summary = firstLine(it.meta.summary ?? "", 200);
       if (summary) row.full = summary;
       out.push(row);
     } else if (it.kind === "tool-call" && SPAWN_TOOLS.has(it.text ?? "")) {
       const team = it.text === "team_create";
-      const name = spawnName(toolCallArgs(it.raw, it.toolCallId));
+      const name = it.tool?.spawn ?? "";
       out.push({
         key: `marker:spawn:${it.id}`,
         kind: "marker",

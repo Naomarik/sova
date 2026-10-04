@@ -1060,12 +1060,18 @@ export function registerSubagents(
 		}
 		return `${text.slice(0, WAKE_PREVIEW_CHARS)}\n[${where}]\n[Use agent_transcript for more.]`;
 	};
-	/** agent_wait calls in flight per worker ID: their returned summaries are the parent's copy of a settle. */
+	/** agent_wait calls in flight per worker ID: their returned summaries are the parent's copy of a settle.
+	 *  A hold reason of its own for paths that have no run events. */
 	const collecting = new Map<string, number>();
 	/** Settles per worker ID, so a wait knows which settle its summary reported. */
 	const settleSeq = new Map<string, number>();
-	/** Parent completions held while a wait collects the worker, oldest first. */
-	const heldCompletion = new Map<string, { seq: number; content: string; wake: boolean }[]>();
+	/** The parent's agent runs in progress (agent_start to agent_end). */
+	let parentLoops = 0;
+	/** The newest turn's outcome in the parent's current run. */
+	let lastOutcome: string | undefined;
+	/** Parent completions held while a run or a wait is in progress, oldest first per worker. */
+	const held = new Map<string, { seq: number; order: number; content: string; wake: boolean }[]>();
+	let heldOrder = 0;
 	const sendCompletion = (content: string, wake: boolean) => {
 		try {
 			pi.sendMessage(
@@ -1076,16 +1082,30 @@ export function registerSubagents(
 			/* Session replacement can invalidate the message API. */
 		}
 	};
+	/** Sends the held completions `pick` selects, oldest first, each with `wake` or its own; a worker a wait still collects keeps its own. */
+	const releaseHeld = (pick: (h: { wake: boolean }) => boolean, wake?: boolean) => {
+		if (shuttingDown || !activeCtx) return;
+		const out: { order: number; content: string; wake: boolean }[] = [];
+		for (const [id, list] of held) {
+			if ((collecting.get(id) ?? 0) > 0) continue;
+			const rest = list.filter((h) => !pick(h));
+			out.push(...list.filter(pick));
+			if (rest.length) held.set(id, rest);
+			else held.delete(id);
+		}
+		out.sort((x, y) => x.order - y.order);
+		for (const h of out) sendCompletion(h.content, wake ?? h.wake);
+	};
 	/** A wait returned with the worker settled: its text carried the latest settle, so that one is never sent. */
 	const coverSettle = (a: Worker) => {
-		const held = heldCompletion.get(a.id);
-		if (!held || !a.isSettled()) return;
+		const list = held.get(a.id);
+		if (!list || !a.isSettled()) return;
 		const latest = settleSeq.get(a.id);
-		const rest = held.filter((h) => h.seq !== latest);
-		if (rest.length) heldCompletion.set(a.id, rest);
-		else heldCompletion.delete(a.id);
+		const rest = list.filter((h) => h.seq !== latest);
+		if (rest.length) held.set(a.id, rest);
+		else held.delete(a.id);
 	};
-	/** The last wait on the worker returned: settles none of them reported go out as onSettled would have sent them. */
+	/** The last wait on the worker returned: with no run in progress, settles none of them reported go out as onSettled would have sent them. */
 	const releaseCollect = (a: Worker) => {
 		const left = (collecting.get(a.id) ?? 1) - 1;
 		if (left > 0) {
@@ -1093,10 +1113,12 @@ export function registerSubagents(
 			return;
 		}
 		collecting.delete(a.id);
-		const held = heldCompletion.get(a.id);
-		heldCompletion.delete(a.id);
-		if (!held || shuttingDown || !activeCtx) return;
-		for (const h of held) sendCompletion(h.content, h.wake);
+		// During a run they wait for its release point (turn_end / agent_end).
+		if (parentLoops > 0) return;
+		const list = held.get(a.id);
+		held.delete(a.id);
+		if (!list || shuttingDown || !activeCtx) return;
+		for (const h of list) sendCompletion(h.content, h.wake);
 	};
 	const onSettled = (a: Worker) => {
 		if (shuttingDown || !agents.includes(a)) return;
@@ -1135,11 +1157,12 @@ export function registerSubagents(
 			// A worker the parent stopped itself does not need to wake the parent.
 			const wake = route.wake;
 			const content = text.length > WAKE_PREVIEW_CHARS ? completionPreview(a, text) : text;
-			// An agent_wait collecting this worker returns this settle itself; hold it until the wait shows whether it did.
-			if ((collecting.get(a.id) ?? 0) > 0) {
-				const held = heldCompletion.get(a.id) ?? [];
-				held.push({ seq, content, wake });
-				heldCompletion.set(a.id, held);
+			// An agent_wait in this run (or one collecting this worker) may return this settle itself; hold it
+			// until the run's release point (or the wait) shows whether it did.
+			if (parentLoops > 0 || (collecting.get(a.id) ?? 0) > 0) {
+				const list = held.get(a.id) ?? [];
+				list.push({ seq, order: ++heldOrder, content, wake });
+				held.set(a.id, list);
 				return;
 			}
 			sendCompletion(content, wake);
@@ -3690,6 +3713,7 @@ export function registerSubagents(
 	});
 	pi.on("session_start", (_event, ctx) => {
 		activeCtx = ctx;
+		parentLoops = 0;
 		discoverBackends();
 		for (const entry of ctx.sessionManager.getEntries()) {
 			if (entry.type === "custom" && entry.customType === "subagents-counters-v2") {
@@ -3750,9 +3774,39 @@ export function registerSubagents(
 		// Restored workers follow the branch like history does; the Σ does not.
 		applyBranch(ctx);
 	});
+	// Held completions (see onSettled) are released at the parent run's own boundaries.
+	pi.on("agent_start", () => {
+		parentLoops++;
+		lastOutcome = undefined;
+	});
+	pi.on("turn_end", (event) => {
+		lastOutcome = event.outcome;
+		// Context-only settles reach the context after every turn, as a follow-up sent mid-run did.
+		releaseHeld((h) => !h.wake, false);
+		// Waking settles go out where the run would otherwise stop: these handlers run inside finishTurn,
+		// before pi polls its follow-ups, so they continue this run. A queued user message speaks first.
+		const content = (event.message as { content?: unknown }).content;
+		const toolCalls = Array.isArray(content) && content.some((c) => (c as { type?: unknown } | null)?.type === "toolCall");
+		const userPending = event.context?.pendingMessages?.some((m) => m.role === "user");
+		if (!toolCalls && event.outcome === "completed" && !userPending) releaseHeld((h) => h.wake);
+	});
+	pi.on("agent_end", (_event, ctx) => {
+		parentLoops = Math.max(0, parentLoops - 1);
+		// A stopped run never wakes the parent, and leaves nothing queued in pi: context only.
+		const aborted = lastOutcome === "aborted" || Boolean(ctx?.signal?.aborted);
+		releaseHeld(() => true, aborted ? false : undefined);
+	});
 	pi.on("session_shutdown", async () => {
 		// Read at dispose time: the embedding process sets it only when it is going away.
 		const detach = detachRequested();
+		// Best effort: leftovers reach the transcript without starting a turn.
+		collecting.clear();
+		try {
+			releaseHeld(() => true, false);
+		} catch {
+			/* The session may already be gone. */
+		}
+		held.clear();
 		shuttingDown = true;
 		unregisterWorkersListener?.();
 		unregisterAdoptListener?.();

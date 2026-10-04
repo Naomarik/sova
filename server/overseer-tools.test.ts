@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { after, describe, test } from "node:test";
 import type { SessionSummary, TranscriptItem } from "../shared/protocol";
 import type { OverseerToolHost } from "./overseer-tools";
+import { sourced } from "./transcript";
 
 const agentDir = mkdtempSync(join(tmpdir(), "sova-overseer-tools-"));
 // A hosted runtime can still write here after after() ran (pi's catalogs, usage cache): exit is last.
@@ -192,9 +193,9 @@ describe("the prompt and the tool set stay in step", () => {
 describe("bounded, untrusted transcript reads", () => {
   const items: TranscriptItem[] = [];
   for (let i = 0; i < 30; i++) {
-    items.push({ id: `u${i}`, kind: "user", text: `ask ${i}`, raw: {} });
-    items.push({ id: `a${i}`, kind: "assistant-text", text: `answer ${i} ${"z".repeat(2000)}`, raw: {} });
-    items.push({ id: `t${i}`, kind: "thinking", text: "secret thoughts", raw: {} });
+    items.push({ id: `u${i}`, kind: "user", text: `ask ${i}` });
+    items.push({ id: `a${i}`, kind: "assistant-text", text: `answer ${i} ${"z".repeat(2000)}` });
+    items.push({ id: `t${i}`, kind: "thinking", text: "secret thoughts" });
   }
 
   test("wrapped as data, thinking dropped, each row ≤1000 chars, total within the budget", () => {
@@ -413,7 +414,7 @@ describe("sova_session's truth lines (§app.overseer/session-truth)", () => {
   const now = Date.parse("2026-10-01T10:00:00Z");
   const min = 60_000;
   const iso = (ms: number) => new Date(ms).toISOString();
-  const item = (raw: unknown): TranscriptItem => ({ id: "x", kind: "unknown", raw });
+  const item = (raw: unknown): TranscriptItem => sourced({ id: "x", kind: "unknown" }, raw);
   const question = (n: number, decided = false) => ({
     id: `q${n}`,
     topic: `Topic ${n}`,

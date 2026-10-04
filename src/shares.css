@@ -87,6 +87,8 @@
 .shares-row-title { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); white-space: normal; overflow-wrap: anywhere; }
 .shares-row .list-meta { white-space: normal; overflow-wrap: anywhere; }
 .shares-row-actions { display: flex; gap: var(--space-2); flex-wrap: wrap; }
+/* A copy's Turn Off stands apart from Start and Copy Link, as the Branches tab's destructive group does. */
+.previews-row-actions > .button-destructive:not(:first-child) { margin-left: var(--space-3); }
 .shares-recipients { display: flex; flex-direction: column; gap: var(--space-1); margin: var(--space-2) 0 0; padding: 0; list-style: none; }
 .shares-recipient { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
 .shares-recipient-name { font-weight: var(--fw-medium); color: var(--color-ink); }

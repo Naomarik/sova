@@ -30,6 +30,7 @@ import { parseWakeNudge } from "../shared/wake";
 import { inputSourceOf, type QueueImage, type QueueKind, WebQueue, type WebQueueItem } from "./queue";
 import { decodeUsageTotal, decodeWorkers } from "./insights";
 import { readLive, readOwnLiveRecords, workerCountsOf } from "./live";
+import { sessionsChanged } from "./list-generation";
 import { appliesAfter, defaultPatchOf, mergeMode, MINOR_MODES, modeApplyPlan, modeInfo, pinEntryFor, readMode, resolveChatMode, writeMode, type ModePatch, type ModeState } from "./mode-state";
 import { loadDefaults, saveDefaults } from "./web-defaults";
 import { subagentProfilesInfo, requireSubagentProfile, saveSubagentProfileDefault } from "./subagent-profiles";
@@ -40,15 +41,17 @@ import { claudeSpawnModels, WorkerContextReader, withWorkerContext } from "./wor
 import { resumeCommandOf, resumeWorker, type ResumeOutcome } from "./worker-resume";
 import { applySandbox, onSandboxAppend, sandboxCommandOf, sandboxMessage, type SandboxHost } from "./sandbox-state";
 import { chatClaudeLogin, claudeLoginAfterHello, claudeLoginMessage, isClaudeLoginEntry, LoginPick, loginName } from "./claude-login-state";
-import { contextForBranch, normalizeEntries, normalizeEntry } from "./transcript";
+import { contextForBranch, normalizeEntries, normalizeEntry, withoutSignatures } from "./transcript";
 import { cutTail, type HistoryPart, pullFields } from "./tail-hello";
 import { isOverseerId } from "./overseer-store";
 import { attachStreamGuard, capsFor, type StreamTrip } from "./stream-guard";
+import { useSlicedProviderReads } from "./runtime-quirks";
 import { targetOfCwd } from "./targets";
 import { sovaToken } from "./auth";
+import { installWorkerNice, lowerToolCommands } from "./process-priority";
 import { ForeignWriteGuard, markOwned, markOwnedStat, recentForeignWriteAgeSec } from "./write-guard";
 import { monitorExtension } from "./resource-monitor";
-import { applyForkCacheRouting, forkCacheExtension } from "./session-fork-cache";
+import { applyForkCacheRouting, forkCacheExtension } from "../pi-config/extensions/subagents/fork/cache.ts";
 import { visCheckExtension, type VisCheckHost } from "./vis-check";
 import { projectEngine } from "./project-services/routes";
 import { projectVerbsExtension } from "./project-services/tools";
@@ -142,7 +145,9 @@ async function servicesForCwd(
   outline = true,
   resourceLoaderOptions?: CreateAgentSessionServicesOptions["resourceLoaderOptions"],
 ) {
-  return await createAgentSessionServices({
+  // Its workers and tool commands start below the server (§app.load-priority/workers).
+  installWorkerNice();
+  const services = await createAgentSessionServices({
     cwd,
     modelRuntime,
     extensionFlagValues: extensionFlagsFor(cwd, outline, !!resourceLoaderOptions?.noExtensions),
@@ -152,6 +157,8 @@ async function servicesForCwd(
     // and the monitor finds its Claude Code provider through the held sessions instead.
     resourceLoaderOptions: resourceLoaderOptions ?? { extensionFactories: [...DEFAULT_EXTENSION_FACTORIES] },
   });
+  lowerToolCommands(services.settingsManager);
+  return services;
 }
 
 /**
@@ -394,8 +401,14 @@ export function assertNotLive(path: string): void {
   }
 }
 
-/** Strip the per-delta `partial` snapshot (same as pi's rpc toJsonEvent) to keep frames small. */
-function toWireEvent(event: any): unknown {
+/** Strip the per-delta `partial` snapshot (same as pi's rpc toJsonEvent) to keep frames small, and
+    every provider signature (§chat.transcript/slim-rows: encrypted reasoning never reaches the
+    browser; message_end, turn_end and agent_end carry whole messages). */
+export function toWireEvent(event: any): unknown {
+  return withoutSignatures(wireEvent(event));
+}
+
+function wireEvent(event: any): unknown {
   if (event?.type !== "message_update") return event;
   const ame = event.assistantMessageEvent ?? {};
   let wire = ame;
@@ -1630,6 +1643,9 @@ class ChatSession {
     this.guardTimer.unref();
     this.workersTimer = setInterval(() => this.pushWorkers(), GUARD_POLL_MS);
     this.workersTimer.unref();
+    // Provider bodies in reads no bigger than Node's, so the guard's abort lands as soon on any
+    // runtime (§app.server-runtime/quirks): the one place it is installed.
+    useSlicedProviderReads(session.agent);
     this.streamGuardOff?.();
     this.streamGuardOff = attachStreamGuard(session, () => capsFor(this.special), {
       onRunStart: () => (this.lastStreamTrip = null),
@@ -1647,6 +1663,9 @@ class ChatSession {
     });
     this.unsubscribe?.();
     this.unsubscribe = session.subscribe((event) => {
+      // A turn starting or settling, and a tool call ending (the Overseer's tools write stores in
+      // process), start the next session listing afresh (§app.session-list/listing-reuse).
+      if (event.type === "tool_execution_end" || event.type === "agent_start" || event.type === "agent_settled") sessionsChanged();
       // A Claude login picked during the reply goes in now, before the queue wake below can start
       // the next turn: applyLoginPick holds the web queue until it has landed
       // (§app.claude-logins/switch-queue).
@@ -1656,7 +1675,9 @@ class ChatSession {
         this.queue.onSdkEvent();
       }
       try {
-        this.broadcast({ type: "event", event: toWireEvent(event) });
+        const wire: Extract<ChatServerMessage, { type: "event" }> = { type: "event", event: toWireEvent(event) };
+        if (event.type === "message_end") this.holdForEntryId(wire, (event as { message?: unknown }).message);
+        else this.broadcast(wire);
       } catch (err) {
         console.error("[chat] failed to forward event", err);
       }
@@ -2547,7 +2568,7 @@ class ChatSession {
     if (after !== before)
       this.broadcast({
         type: "append",
-        items: [{ id: `thinking-${Date.now()}`, kind: "info", raw: { type: "thinking_level_change", thinkingLevel: after }, text: `Thinking: ${after}` }],
+        items: [{ id: `thinking-${Date.now()}`, kind: "info", meta: { type: "thinking_level_change" }, text: `Thinking: ${after}` }],
       });
     if (opts.save !== true) return after;
     if (this.overseer) overseerRuntime?.saveChoice({ thinking: after });
@@ -2975,7 +2996,42 @@ class ChatSession {
   }
 
   broadcast(msg: ChatServerMessage): void {
+    if (this.held) {
+      this.held.push(msg);
+      return;
+    }
     for (const c of this.clients) c.send(msg);
+  }
+
+  /** Broadcasts waiting behind a `message_end` until its entry id is known (holdForEntryId). */
+  private held: ChatServerMessage[] | null = null;
+  /**
+   * Sends a `message_end` tagged with the entry the SDK writes its message as (§chat.transcript/rendering,
+   * "Switching back": a live row knows its row). Listeners run BEFORE the SDK persists the message
+   * (agent-session.js `_handleAgentEvent`: `_emit`, then `appendMessage`, in the same synchronous
+   * stretch), so the event waits one microtask, as `markSend` does, and every broadcast meanwhile
+   * waits behind it: the order clients see is unchanged. Queued before `markSend`'s, so the leaf
+   * read here is still the message, never its marker.
+   */
+  private holdForEntryId(wire: Extract<ChatServerMessage, { type: "event" }>, message: unknown): void {
+    if (this.held) {
+      this.held.push(wire);
+      return;
+    }
+    this.held = [wire];
+    queueMicrotask(() => {
+      try {
+        const sm = this.session.sessionManager;
+        const leaf = sm.getLeafId();
+        const entry = leaf ? sm.getEntry(leaf) : undefined;
+        if (entry?.type === "message" && entry.message === message) wire.entryId = entry.id;
+      } catch {
+        // untagged: a client falls back to the rows it can see
+      }
+      const out = this.held ?? [];
+      this.held = null;
+      for (const m of out) this.broadcast(m);
+    });
   }
 
   /** Worker snapshot from this runtime's own live record (the sessions extension writes one

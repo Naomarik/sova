@@ -10,6 +10,8 @@ Complete graph queries remain available to machine consumers. Task-facing packet
 requirements within an explicit whole-response budget, with continuation and unknowns kept visible.
 They change context delivery, not release policy. Structured observation-only assessments are separately
 recorded input-bound comparisons, not proof of requirements truth or mandatory release policy.
+A shipped playbook runs these tools for a review the operator starts, inside limits the operator
+sets, and only then.
 
 ## §tools.spec/change-assessments — Input-bound structured comparisons
 
@@ -65,6 +67,34 @@ status remains a valid query. A newer unresolved same-task observation is not hi
 preserved record. Failed verification remains an explicit outcome distinct from current input
 applicability and the recorder's disposition. Legacy labels without receipts remain declarations
 with unknown assessment provenance.
+
+## §tools.spec/review-playbook — A spec review runs only when the operator starts it
+
+Sova ships a Spec review playbook (`playbooks/spec-review/`, §chat.playbooks): one Markdown entry
+with no script and no state of its own. It answers one question about a project's spec, either
+comparing code and docs against a known base revision or looking back at how the spec workflow went,
+never both in one run, and only when the operator sends it. It declares no schedule, and leaves no
+worker, monitor or timer running after its report.
+
+Its brief names the question, the kind, the root, a base that is an ancestor of HEAD, the scope and
+the limits: minutes, report length, model runs and tokens. A brief the operator's message gives in
+full is approved as sent; otherwise only a bounded preflight runs before the operator approves one.
+That preflight refuses a root that isn't the checkout's top folder, or a base that isn't a commit
+and an ancestor of HEAD, before it lists anything; otherwise it prints the full base and at most 201
+lines of the files changed since it. The approved scope is frozen: a file changed later is reported
+as outside it and never read, and a supporting read stays inside the root, scope and limits and is
+named in the report. The limits are cooperative: nothing enforces them, the report gives each as
+observed or unknown, a packet budget bounds only the bytes of the page it returns, and while token
+use is unknown the run asks before any further model run.
+
+A run writes nothing beyond its chat: no files, no assessment receipts, no workers, no cleanup. It
+reads with git, with the helpers known to apply turned off (fsmonitor, external diff, textconv;
+not a sandbox), with the trusted spec tools at the declared base, and with the agent's own file
+reading. Each published command re-establishes the tools' location, root and base itself, never
+relying on an earlier call. A request for a durable assessment receipt is reported as needing a
+separate opt-in method, since the companion has no bounded view of its capture. The report has
+fixed sections within the report length and keeps observed, inferred and proposed apart; changes to
+the playbook's own method appear there only as proposed diffs, never applied by the run.
 
 ## §tools.spec/census-note — The `[spec census]` note stays short
 

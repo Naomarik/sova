@@ -151,10 +151,11 @@ export default function sessions(pi: ExtensionAPI, deps: SessionsDeps = {}) {
       : "Local presence starting…";
   }
   function render() {
-    if (!live || !ctx) return;
+    // Only a TUI shows anything (the overlay opens only there): elsewhere, e.g. a runtime Sova
+    // hosts, the views would be built for nobody on every peer heartbeat.
+    if (!live || !ctx || ctx.mode !== "tui") return;
     const views = store.views();
     overlay?.update(views, connectionLabel());
-    if (ctx.mode !== "tui") return;
     if (!store.connected) { ctx.ui.setStatus("sessions", "Sessions: disconnected"); return; }
     const count = (group: string) => views.filter(v => v.group === group).length;
     const parts: Array<[string, number]> = [

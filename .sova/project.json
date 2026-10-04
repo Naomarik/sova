@@ -1,0 +1,46 @@
+{
+  "version": 1,
+  "sources": ["package.json", "mise.toml", "pnpm-lock.yaml", "scripts/hermetic-agent-dir.mjs"],
+  "setup": [
+    {
+      "id": "mise-trust",
+      "run": ["mise", "trust"],
+      "inputs": ["mise.toml"]
+    },
+    {
+      "id": "node-modules",
+      "run": ["cp", "-a", "--reflink=auto", "-T", "${main}/node_modules", "node_modules"],
+      "inputs": ["pnpm-lock.yaml"],
+      "timeout": 600
+    },
+    {
+      "id": "agent-dir",
+      "run": ["node", "scripts/hermetic-agent-dir.mjs"],
+      "inputs": ["scripts/hermetic-agent-dir.mjs", "pi-config/settings.json"]
+    }
+  ],
+  "services": {
+    "server": {
+      "cmd": ["pnpm", "run", "dev:hermetic"],
+      "env": {"SOVA_PORT": "${ports.server.http}"},
+      "ports": {
+        "http": {"base": 4810, "stride": 10}
+      },
+      "ready": {"http": "http", "path": "/api/health", "timeout": 120},
+      "about": "This copy's Sova on http://127.0.0.1:${ports.server.http}/ with its own .agent (sessions, state, settings); GET /api/health gives startedAt and head.",
+      "isolation": {
+        "method": "ports",
+        "why": "Each slot's server runs on its own port with the checkout's own .agent dir; slot 0 is the live sova-runtime.service, which Sova only reads."
+      },
+      "adopt": {
+        "unit": "sova-runtime.service",
+        "ports": {"http": 4800}
+      }
+    }
+  },
+  "test": {
+    "run": ["node", "scripts/run-tests.mjs", "--runtime", "node"],
+    "smoke": ["shared/project-contract.test.ts"]
+  },
+  "share": {"allow": false}
+}

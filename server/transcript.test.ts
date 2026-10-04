@@ -11,7 +11,7 @@ import { attachmentsRoot, checkTmpImage, inlineTmpImages, MAX_ATTACHMENTS_PER_RO
 import { findTmpImagePaths } from "../shared/tmp-paths";
 import { parseReport, previewLine } from "./reports";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
-import { normalizeEntries, normalizeEntry } from "./transcript";
+import { entryOf, normalizeEntries, normalizeEntry } from "./transcript";
 
 const created: string[] = [];
 function tmpFile(name: string, bytes = "png-bytes"): string {
@@ -180,7 +180,7 @@ describe("normalizeEntry (user rows)", () => {
     assert.equal(it?.kind, "user");
     assert.equal(it?.text, "fix this");
     assert.equal(it?.attachments?.[0]?.path, clip);
-    assert.equal(JSON.stringify(it?.raw), before);
+    assert.equal(JSON.stringify(entryOf(it!)), before);
   });
 
   test("a Sova upload path on its own line after the text becomes an attachment", () => {
@@ -211,7 +211,7 @@ describe("normalizeEntry (user rows)", () => {
     assert.equal(it?.kind, "wake");
     assert.equal(it?.text, text);
     assert.deepEqual(it?.wake, { id: "n4", late: "3m17s", reason: "check the deploy" });
-    assert.equal(JSON.stringify(it?.raw), before);
+    assert.equal(JSON.stringify(entryOf(it!)), before);
   });
 
   test("an ordinary user message stays kind user, even one that mentions wake_nudge later on", () => {

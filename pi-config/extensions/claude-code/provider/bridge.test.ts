@@ -2064,6 +2064,47 @@ test("a forked session resumes the parent's CLI session and sends only the new u
 	await bridge.disposeAll();
 });
 
+test("a fork seeded in the same process resumes its source only while the source's CLI is still at the seed", { timeout: 12000 }, async () => {
+	const { bridge, children } = harness();
+	await collectAfter(bridge.runTurn(request([user("one")])), async () => {
+		const cli = await child(children, 1);
+		await cli.handshake();
+		await cli.waitFor((f) => f.type === "user");
+		cli.emitFrame({ type: "result", subtype: "success", is_error: false, result: "ok" });
+	});
+	const point = bridge.forkPoint("pi-session-1")!;
+	assert.ok(point);
+	bridge.seedFork("pi-fork", point, "pi-session-1");
+	bridge.seedFork("pi-late", point, "pi-session-1");
+	// A one-shot request (compaction) never takes a seed, and another session never takes this one.
+	const forkMessages = [user("one"), assistantText("ok"), user("explain")];
+	await collectAfter(bridge.runTurn(request(forkMessages, { sessionId: "pi-fork" })), async () => {
+		const cli = await child(children, 2);
+		assert.deepEqual(cli.argv.slice(cli.argv.indexOf("--resume"), cli.argv.indexOf("--resume") + 3), ["--resume", claudeSessionId("pi-session-1"), "--fork-session"]);
+		assert.equal(cli.argv[cli.argv.indexOf("--session-id") + 1], claudeSessionId("pi-fork"));
+		await cli.handshake();
+		const sent = await cli.waitFor((f) => f.type === "user");
+		assert.deepEqual(sent.message.content, [{ type: "text", text: "explain" }], "only what is new to the resumed record");
+		cli.emitFrame({ type: "result", subtype: "success", is_error: false, result: "ok" });
+	});
+	// The source moves on before the second fork's first turn: its record now holds a later turn,
+	// so resuming it would hand the fork the source's future. The seed is refused: a fold.
+	await collectAfter(bridge.runTurn(request([user("one"), assistantText("ok"), user("two")])), async () => {
+		const cli = children[0]!;
+		await cli.waitFor((f) => f.type === "user" && f.message.content[0].text === "two");
+		cli.emitFrame({ type: "result", subtype: "success", is_error: false, result: "ok" });
+	});
+	await collectAfter(bridge.runTurn(request(forkMessages, { sessionId: "pi-late" })), async () => {
+		const cli = await child(children, 3);
+		assert.equal(cli.argv.includes("--resume"), false);
+		await cli.handshake();
+		const sent = await cli.waitFor((f) => f.type === "user");
+		assert.ok(sent.message.content[0].text.startsWith(`<conversation-history>\n${JOINED_HEADER}`));
+		cli.emitFrame({ type: "result", subtype: "success", is_error: false, result: "ok" });
+	});
+	await bridge.disposeAll();
+});
+
 test("a fork whose transcript does not start with the parent's heard prefix folds, as without a seed", { timeout: 8000 }, async () => {
 	const forkFrom: ClaudeForkPoint = { v: 1, claudeSessionId: claudeSessionId("pi-parent"), messages: 1, prefix: transcriptFingerprint([user("something else")])[0]!, cwd: "/tmp/pi-bridge-test" };
 	for (const seed of [forkFrom, { ...forkFrom, prefix: transcriptFingerprint([user("one")])[0]!, cwd: "/elsewhere" }]) {

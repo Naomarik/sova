@@ -13,6 +13,9 @@
 //
 // Watches: server/, shared/, pi-config/extensions/mode/ (the server's import graph).
 // Ignores: *.test.ts, dotfiles. Live-record contract: pi-config/extensions/sessions SCHEMA.md.
+//
+// Runtime: SOVA_RUNTIME or <agent dir>/sova/runtime.json, decided per (re)start exactly as
+// scripts/start-server.sh decides (server/runtime-choice.ts, fallback to Node included).
 
 import { spawn } from "node:child_process";
 import { watch } from "node:fs";
@@ -20,6 +23,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, relative } from "node:path";
 import { createInterface } from "node:readline";
+import { launch } from "../server/runtime-choice.ts";
 
 const ROOT = join(import.meta.dirname, "..");
 const WATCH_DIRS = ["server", "shared", join("pi-config", "extensions", "mode")];
@@ -79,7 +83,13 @@ let announced = false;
 let shuttingDown = false;
 
 function start() {
-  child = spawn(process.execPath, ["--import", "tsx", "server/index.ts"], {
+  const runtime = launch();
+  if (runtime.runtime === "node" && runtime.fallback) console.log(`[dev-server] falling back to node: ${runtime.fallback}`);
+  // Under Bun this watcher's own execPath is bun, which cannot take node's --import.
+  const [cmd, args] = runtime.runtime === "bun"
+    ? [runtime.bun, ["server/index.ts"]]
+    : [process.versions.bun ? "node" : process.execPath, ["--import", "tsx", "server/index.ts"]];
+  child = spawn(cmd, args, {
     cwd: ROOT,
     stdio: "inherit",
     env: process.env,

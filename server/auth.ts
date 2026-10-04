@@ -66,13 +66,19 @@ function readToken(file: string): string | null {
     reader never sees a half-written file. Where links aren't supported or are refused (EPERM,
     ENOTSUP, EXDEV, or EACCES as on Android), an O_EXCL create instead: still exclusive, and a
     directory that truly denies writes fails it too, so the mint still fails closed. */
+let link: (src: string, dest: string) => void = linkSync;
+/** Tests stand in for the hard link (a refusing filesystem); null restores linkSync. */
+export function setLinkForTest(fn: ((src: string, dest: string) => void) | null): void {
+  link = fn ?? linkSync;
+}
+
 function mint(file: string): string {
   mkdirSync(dirname(file), { recursive: true });
   const token = randomBytes(32).toString("base64url");
   const tmp = `${file}.${process.pid}.${randomBytes(4).toString("hex")}.tmp`;
   try {
     writeFileSync(tmp, `${token}\n`, { mode: 0o600, flag: "wx" });
-    linkSync(tmp, file);
+    link(tmp, file);
   } catch (err) {
     const code = (err as NodeJS.ErrnoException).code;
     if (code !== "EEXIST" && code !== "EPERM" && code !== "EACCES" && code !== "ENOTSUP" && code !== "EXDEV") throw err;

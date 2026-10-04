@@ -26,6 +26,7 @@ import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { HostConfine, HostSpawnSpec } from "./host.ts";
 import { files, readStatus, type WorkerStatus } from "./workers-dir.ts";
+import { lowerPriority } from "./priority.ts";
 
 export const HOST_SCRIPT = path.join(path.dirname(fileURLToPath(import.meta.url)), "host.ts");
 type SpawnImpl = (command: string, args: string[], options: { cwd?: string; stdio: any[]; env?: NodeJS.ProcessEnv; hosted?: unknown }) => ChildProcess;
@@ -310,6 +311,8 @@ export function hostedSpawnImpl(launch: HostLaunch): SpawnImpl {
 		} finally {
 			fs.closeSync(logFd);
 		}
+		// The host's niceness is its worker's: it starts the worker only after booting.
+		lowerPriority(host.pid);
 		host.once("error", (error) => transport.hostFailed(`worker host failed to start: ${error.message}`));
 		host.once("exit", (code, signal) => transport.hostFailed(`worker host exited (${signal ?? code})`));
 		host.unref();

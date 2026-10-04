@@ -120,11 +120,12 @@ import { Composer, type ComposerReason } from "./Composer";
 import { FlyoutSession, type LoginControl, type SandboxControl, type ThinkingControl, type UndoControl } from "./ComposerMenu";
 import { ConnectionBanner } from "./ConnectionBanner";
 import { SessionSetupCard } from "./SessionSetup";
+import { EmptyWorktrees } from "./EmptyWorktrees";
 import { PlaybooksDialog } from "./PlaybooksDialog";
 import type { ModeControl, ModeState } from "./ModeMenu";
 import type { ModelControl } from "./ModelMenu";
 import { ChangesSession } from "./ChangesViewer";
-import { HistoryItems, LiveEntries, type MessageActionsProvider, ThreadScroller, TranscriptSkeleton, TurnError } from "./Thread";
+import { HistoryItems, LiveEntries, type MessageActionsProvider, ThreadScroller, ToolSourceContext, TranscriptSkeleton, TurnError } from "./Thread";
 import { SubagentLimitRow } from "./SubagentLimitRow";
 import { failureHasRow } from "../lib/subagent-limit";
 import { Banner, Icon } from "./ui";
@@ -264,6 +265,8 @@ export function ChatView(props: {
   };
   /** The last hello's first row: rows that arrive above it are history, never "N new". */
   const [newFrom, setNewFrom] = createSignal<string | null>(null);
+  /** This connection's hello has come: the rows shown are no longer only the ones kept. */
+  const [helloed, setHelloed] = createSignal(false);
   // "Open in Session" from an Explanations card: once the transcript is here (hello), land on that
   // explanation's row. Only a jump waiting for this session is claimed, and only once; one whose
   // row isn't here is fetched, down to it.
@@ -625,6 +628,7 @@ export function ChatView(props: {
             // so a rewind or a reconnect doesn't make a whole list partial or its counts blink.
             olderRows.hello(msg);
             setNewFrom(msg.items[0]?.id ?? null);
+            setHelloed(true);
             // A client that connects mid-compaction shows it, as the compaction_start it missed would.
             setLive(reconcile({ ...emptyLive(), running: msg.isStreaming, activity: msg.isCompacting ? "Compacting context" : null }));
             setCompacting(!!msg.isCompacting);
@@ -835,7 +839,8 @@ export function ChatView(props: {
           props.onClaudeLogin?.(msg.login);
           break;
         case "event":
-          queue.push(msg.event);
+          // A message_end's entry id rides on the event itself, for applyEvent.
+          queue.push(msg.entryId && isObj(msg.event) ? { ...msg.event, entryId: msg.entryId } : msg.event);
           if (!frame) frame = requestAnimationFrame(flush);
           break;
         case "ui_request": {
@@ -1599,10 +1604,12 @@ export function ChatView(props: {
       <Show when={props.summary?.()?.baton}>
         <BatonStrip path={props.path} summary={() => props.summary?.()} onNames={setBatonNames} onOperatorHolds={setBatonMine} />
       </Show>
+      <ToolSourceContext.Provider value={{ kind: "pi", path: props.path }}>
       <ThreadScroller
         path={props.path}
         restore={cached?.spot}
         onSpot={(spot) => cacheSpot(cacheKey, spot)}
+        current={helloed()}
         count={visibleCount(newRows(items() ?? [], newFrom()), { tools: hideTools(props.path), thinking: hideThinking(props.path) }) + live.entries.length}
         resume={resume()}
         busy={!items()}
@@ -1844,6 +1851,7 @@ export function ChatView(props: {
                       </Show>
                       <SessionSetupCard path={props.path} editable={!!profileInfo()?.pickable && !profileInfo()?.locked} />
                       <p class="empty-body">Your first message becomes its title.</p>
+                      <EmptyWorktrees path={props.path} />
                     </div>
                   }
                 >
@@ -1860,6 +1868,7 @@ export function ChatView(props: {
             that never made a thread row (a refusal before any turn, a host move). */}
         <For each={errors()}>{(m) => <><TurnError message={m.message} /><Show when={!failureHasRow(live.entries, m.message)}><SubagentLimitRow path={props.path} message={m.message} provider={m.provider} /></Show></>}</For>
       </ThreadScroller>
+      </ToolSourceContext.Provider>
       <FlyoutSession.Provider value={() => props.path}>
       <Composer
         path={props.path}

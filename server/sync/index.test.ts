@@ -159,6 +159,11 @@ test("two hosts over the real routes: start pulls, a change propagates, a logout
   writeAuth(a, { zai: { type: "api_key", key: "sk-a" }, local: { type: "api_key", key: "!pass show x" } });
   a.fire.start();
   b.fire.start();
+  // Each start calls the other host at once, so which of their sync stacks is mounted when the
+  // other's first call lands depends on how the runtime orders the in-process requests: A's
+  // extensions pull can reach B before B mounted it (a 404). The mesh announces a peer again once
+  // both are up; so does this test, before it asserts any status.
+  a.fire.peerUp("b");
   try {
     assert.equal(await until(() => existsSync(join(b.agentDir, "auth.json")) && !!auth(b).zai), true, "B pulled at start");
     assert.deepEqual(auth(b), { zai: { type: "api_key", key: "sk-a" } }, "the !command key stayed on A");
@@ -168,6 +173,7 @@ test("two hosts over the real routes: start pulls, a change propagates, a logout
     // Logout from A reaches B.
     await a.rt.credentials!.logout("pi:deepseek");
     assert.equal(await until(() => !auth(b).deepseek), true, "the logout reached B");
+    await until(() => a.status().every((r) => r.state === "ok"));
     const st = a.status();
     assert.deepEqual(st.map((r) => [r.category, r.state]), [["logins", "ok"], ["settings", "ok"], ["themes", "ok"], ["extensions", "ok"]]);
     assert.ok(!JSON.stringify(st).includes("sk-"), "no secret in status");

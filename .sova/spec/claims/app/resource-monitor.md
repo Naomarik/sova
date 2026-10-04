@@ -186,7 +186,8 @@ button, focus returning to the opener. Under 768px the same markup is a sheet wi
   every 30s per process.
 - **The event loop never waits long:** `stat` and `status` reads are synchronous into one reused
   buffer, in batches of 48 that yield between them. Reads that can hang on a stuck process (argv,
-  environment, `cwd`) are asynchronous. The event-loop histogram runs at 200 ms resolution.
+  environment, `cwd`) are asynchronous. The event-loop delay is sampled at 200 ms resolution: by the runtime's histogram where it measures
+  whole timer intervals, else by a timer-drift sampler (§app.server-runtime/quirks).
 - **Measured cost:** at 131 processes, an average tick of **3.6–4.0 ms**, and the whole server
   at **~0.12% ± 0.03 of one core** over an idle baseline, across 6 runs. The tick stays at 5s; if
   the cost ever has to fall, a 10s tick is the lever, before anything else is cut. The snapshot

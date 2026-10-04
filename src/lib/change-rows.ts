@@ -7,12 +7,10 @@
 // persisted `model_change` came back.
 import type { TranscriptItem } from "../../shared/protocol";
 
-const isObj = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null;
-
 /** Whether an item is one of the three settings-change families the thread leaves out. */
 export function isChangeRow(item: TranscriptItem): boolean {
-  if (item.kind !== "info" || !isObj(item.raw)) return false;
-  const { type, customType } = item.raw;
+  if (item.kind !== "info" || !item.meta) return false;
+  const { type, customType } = item.meta;
   return type === "model_change" || type === "thinking_level_change" || (type === "custom" && customType === "mode");
 }
 

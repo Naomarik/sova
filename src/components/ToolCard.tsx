@@ -1,4 +1,4 @@
-import { createMemo, createSignal, For, Match, Show, Switch, type JSX } from "solid-js";
+import { createMemo, createSignal, For, Match, onCleanup, onMount, Show, Switch, type JSX } from "solid-js";
 import { argsSummary, isObj, str } from "../lib/message";
 import { prettyJson } from "../lib/format";
 import { highlightByPath } from "../lib/markdown";
@@ -12,6 +12,7 @@ import {
 } from "../lib/diff";
 import { summaryStats } from "../lib/tool-diff-stats";
 import { copyText } from "../lib/ui-state";
+import type { ToolBody } from "../lib/tool-content";
 import type { TmpAttachment } from "../../shared/protocol";
 import { ImageStrip } from "./ImageStrip";
 import { PathAttachment } from "./PathAttachment";
@@ -106,6 +107,71 @@ interface ToolCardProps {
   attachments?: TmpAttachment[];
   /** A control on the collapsed line, before the status chip (a navigate result's "Go"). */
   action?: JSX.Element;
+  /** The folded line as the row carries it, when the arguments aren't on the row. */
+  summary?: string;
+  /** "+n −m" as the row carries it (with `lazy`, in place of counting `details`). */
+  stats?: { added: number; removed: number } | null;
+  /** The arguments, output and details aren't on the row: they come from here, asked for before
+      the card is opened (lib/tool-content). */
+  lazy?: LazyContent;
+}
+
+/** A card's content that its row doesn't carry (ToolContentStore.handle). */
+export interface LazyContent {
+  body(): ToolBody;
+  want(): void;
+  hold(): () => void;
+  retry(): void;
+}
+
+/** How far outside the view a card's content is fetched ahead of an opening. */
+const NEAR_VIEW = "1200px 0px";
+
+const observers = new WeakMap<Element, IntersectionObserver>();
+const nearCallbacks = new WeakMap<Element, () => void>();
+const VIEWPORT = {};
+
+/** The element `el` scrolls in: the transcript's, else the nearest scrolling ancestor, else none
+    (the viewport). */
+function scrollRoot(el: Element): Element | null {
+  const transcript = el.closest(".transcript");
+  if (transcript) return transcript;
+  for (let p = el.parentElement; p; p = p.parentElement) {
+    const o = getComputedStyle(p).overflowY;
+    if (o === "auto" || o === "scroll") return p;
+  }
+  return null;
+}
+
+/** Calls `fn` once, when `el` comes within NEAR_VIEW of its scroll view. Returns the stop. */
+function whenNear(el: Element, fn: () => void): () => void {
+  if (typeof IntersectionObserver !== "function") {
+    fn();
+    return () => {};
+  }
+  const root = scrollRoot(el);
+  const key = (root ?? VIEWPORT) as Element;
+  let io = observers.get(key);
+  if (!io) {
+    io = new IntersectionObserver(
+      (entries) => {
+        for (const e of entries) {
+          if (!e.isIntersecting) continue;
+          io!.unobserve(e.target);
+          nearCallbacks.get(e.target)?.();
+          nearCallbacks.delete(e.target);
+        }
+      },
+      { root, rootMargin: NEAR_VIEW },
+    );
+    observers.set(key, io);
+  }
+  nearCallbacks.set(el, fn);
+  io.observe(el);
+  return () => {
+    io!.unobserve(el);
+    nearCallbacks.delete(el);
+  };
 }
 
 /**
@@ -122,14 +188,27 @@ export function ToolCard(props: ToolCardProps) {
   const failed = () => props.status === "error";
   // Images the tool returned itself show under the summary row, open or closed.
   const hasImages = () => (props.images?.length ?? 0) > 0;
-  const summary = () => argsSummary(props.args);
+  const summary = () => props.summary ?? argsSummary(props.args);
   // Counted off the recorded patch only, never a diff of the arguments (a closed card runs none).
-  const stats = createMemo(() => (props.args === undefined || props.status === "running" ? null : summaryStats(props.name, props.details)));
+  // A lazy row brings its count with it.
+  const stats = createMemo(() =>
+    props.lazy ? (props.stats ?? null) : props.args === undefined || props.status === "running" ? null : summaryStats(props.name, props.details),
+  );
+  // A lazy card's content is asked for before it is opened: as it nears the view, or as the pointer
+  // or focus reaches it, so opening it draws the body at once.
+  let wrap!: HTMLDivElement;
+  const want = () => props.lazy?.want();
+  onMount(() => {
+    if (!props.lazy) return;
+    onCleanup(whenNear(wrap.closest(".entry") ?? wrap, want));
+  });
+  /** The user reaching for it asks again after a failed ahead-of-time fetch. */
+  const reach = () => props.lazy && wantAgain(props.lazy);
 
   // The wrapper stays the same element whether or not images have arrived, so a live card that
   // gains its first image mid-stream keeps its open state.
   return (
-    <div class="toolcard">
+    <div class="toolcard" ref={wrap}>
       <details
         class="toolcard-details"
         onToggle={(e) => {
@@ -138,7 +217,7 @@ export function ToolCard(props: ToolCardProps) {
           if (now) setOpened(true);
         }}
       >
-        <summary class="toolcard-summary">
+        <summary class="toolcard-summary" onPointerEnter={reach} onFocus={reach}>
           <Icon name="chevron-right" small class="icon-twist" />
           <Icon name={toolIcon(props.name)} small />
           <span class="toolcard-name">{props.name}</span>
@@ -165,7 +244,9 @@ export function ToolCard(props: ToolCardProps) {
           </Switch>
         </summary>
         <Show when={opened()}>
-          <ToolCardBody {...props} live={isOpen()} />
+          <Show when={props.lazy} fallback={<ToolCardBody {...props} live={isOpen()} />}>
+            {(lazy) => <LazyBody card={props} lazy={lazy()} live={isOpen()} />}
+          </Show>
         </Show>
       </details>
       <Show when={hasImages()}>
@@ -174,6 +255,60 @@ export function ToolCard(props: ToolCardProps) {
         </div>
       </Show>
     </div>
+  );
+}
+
+/** Asks for a card's content, again if the last ask failed. */
+const wantAgain = (lazy: LazyContent) => (lazy.body().state === "error" ? lazy.retry() : lazy.want());
+
+/** How long a card opened before its content landed stays quiet before saying it's loading. */
+const LOADING_QUIET_MS = 300;
+
+/** A lazy card's body: its content once fetched (held while the card is drawn), else what's
+    keeping it. */
+function LazyBody(props: { card: ToolCardProps; lazy: LazyContent; live: boolean }) {
+  onCleanup(props.lazy.hold());
+  wantAgain(props.lazy);
+  const [slow, setSlow] = createSignal(false);
+  const t = setTimeout(() => setSlow(true), LOADING_QUIET_MS);
+  onCleanup(() => clearTimeout(t));
+  const body = () => props.lazy.body();
+  return (
+    <Switch>
+      <Match when={(() => { const b = body(); return b.state === "ready" ? b.content : undefined; })()}>
+        {(c) => (
+          <ToolCardBody
+            {...props.card}
+            args={c().args !== undefined ? c().args : props.card.args}
+            output={c().result ? c().result!.output : props.card.output}
+            details={c().result ? c().result!.details : props.card.details}
+            live={props.live}
+          />
+        )}
+      </Match>
+      <Match when={body().state === "error"}>
+        <div class="toolcard-body">
+          <div class="toolcard-section">
+            <p class="toolcard-note">
+              Couldn't load this call's arguments and output. {(body() as { message?: string }).message ?? ""}
+            </p>
+            <button type="button" class="button button-sm" onClick={() => props.lazy.retry()}>
+              Retry
+            </button>
+          </div>
+        </div>
+      </Match>
+      <Match when={body().state === "missing"}>
+        <div class="toolcard-body">
+          <p class="toolcard-note">This call is no longer on the session's branch, so its arguments and output can't be shown.</p>
+        </div>
+      </Match>
+      <Match when={slow()}>
+        <div class="toolcard-body" role="status">
+          <p class="toolcard-note">Loading arguments and output…</p>
+        </div>
+      </Match>
+    </Switch>
   );
 }
 

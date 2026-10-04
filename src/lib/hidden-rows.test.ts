@@ -5,13 +5,13 @@ import type { EntryKind, TranscriptItem } from "../../shared/protocol";
 import { emptyLive } from "./live";
 import { isHiddenBlock, liveHiddenCounts, splitHidden, thinkingHiddenLabel, toolsHiddenLabel, visibleCount, type HideKinds } from "./hidden-rows";
 
-const row = (id: string, kind: EntryKind, extra: Partial<TranscriptItem> = {}): TranscriptItem => ({ id, kind, raw: {}, ...extra });
+const row = (id: string, kind: EntryKind, extra: Partial<TranscriptItem> = {}): TranscriptItem => ({ id, kind, ...extra });
 const call = (id: string, callId?: string) => row(id, "tool-call", { text: "bash", toolCallId: callId });
 const TOOLS: HideKinds = { tools: true, thinking: false };
 const THINKING: HideKinds = { tools: false, thinking: true };
 const BOTH: HideKinds = { tools: true, thinking: true };
 const result = (id: string, callId: string | undefined, isError = false) =>
-  row(id, "tool-result", { toolCallId: callId, raw: { type: "message", message: { role: "toolResult", isError, content: "out" } } });
+  row(id, "tool-result", { toolCallId: callId, meta: { type: "message", role: "toolResult", isError }, tool: { lazy: true, bytes: 3 } });
 
 test("splitHidden: a call and its result leave together, everything else stays in order", () => {
   const items = [
@@ -100,7 +100,7 @@ test("labels: digits, singular and plural", () => {
 });
 
 test("visibleCount: a change row is not new", () => {
-  const change = row("m1", "info", { text: "Model: anthropic/claude-opus-5", raw: { type: "model_change" } });
+  const change = row("m1", "info", { text: "Model: anthropic/claude-opus-5", meta: { type: "model_change" } });
   const items = [row("u1", "user"), change, row("x1", "assistant-text")];
   assert.equal(visibleCount(items, { tools: false, thinking: false }), 2);
   assert.equal(visibleCount([change], { tools: false, thinking: false }), 0);

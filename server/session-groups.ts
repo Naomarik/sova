@@ -3,6 +3,7 @@ import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { stateRoot } from "./state-root";
 import { GROUP_LABEL_MAX, GROUP_NAME_MAX, type GroupMember, type GroupSeed, type SessionGroup } from "../shared/protocol";
+import { sessionsChanged } from "./list-generation";
 
 /** The user's sidebar groups, and which session belongs to which.
     Sova's own data, beside the archive and web-session id lists: the session files are never touched. */
@@ -161,6 +162,7 @@ function save({ groups, assignments, extra, version }: Store): void {
   const tmp = `${FILE}.${process.pid}.tmp`;
   writeFileSync(tmp, JSON.stringify({ ...extra, version, groups, assignments }));
   renameSync(tmp, FILE);
+  sessionsChanged();
 }
 
 /**

@@ -4,7 +4,7 @@ import type { TranscriptItem } from "../../shared/protocol";
 import { nextPreload, PAINT_WAIT_MS, preloadBlocked, type PreloadTarget } from "./recent-preload";
 import { TranscriptStore } from "./transcript-cache";
 
-const rows = (id: string): TranscriptItem[] => [{ id, kind: "assistant-text", text: id, raw: { id, timestamp: "t", type: "message" } }];
+const rows = (id: string): TranscriptItem[] => [{ id, kind: "assistant-text", text: id, at: "t", meta: { type: "message" } }];
 const T0 = "2026-09-28T10:00:00.000Z";
 const T1 = "2026-09-28T10:01:00.000Z";
 const target = (key: string, stamp = T0, working = false): PreloadTarget => ({ key, path: `/s/${key}.jsonl`, stamp, working });

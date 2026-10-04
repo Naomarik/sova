@@ -8,6 +8,7 @@ import { existsSync } from "node:fs";
 import { assertNotLive, BusyError, heldChat } from "./chat-manager";
 import { resolveSessionPath } from "./paths";
 import { forkSessionFile } from "./session-fork";
+import { seedClaudeFork } from "../pi-config/extensions/subagents/fork/claude.ts";
 import { markSeen } from "./seen";
 import { getSessionSummary } from "./sessions-index";
 import { validateNewSessionCwd } from "./targets";
@@ -104,6 +105,9 @@ export function registerSessionForkRoutes(app: Hono): void {
     markOwned(fork.path); // the fresh fork file is this server's write, never a foreign one's
     addWebSession(fork.sessionId); // origin "web" in every list, this server's and restarts' alike
     markSeen(fork.sessionId); // seen at birth: whoever forked it is about to look at it
+    // A Claude Code source whose CLI session is live and idle here: the fork's first turn resumes
+    // it rather than replaying the history (§chat.session-fork/claude-resume). No model call now.
+    seedClaudeFork(summary.id, fork.sessionId);
     const made = await getSessionSummary(fork.path);
     if (!made) return c.json({ error: "Failed to read back the forked session." }, 500);
     return c.json(made, 201);

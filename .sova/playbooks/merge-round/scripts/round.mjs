@@ -12,7 +12,7 @@
 //   reply <branch>        stdin = the delivered topic batch (or the owner's session_read output): READY at this head, NOT READY, stale, no answer
 //   check <branch>        merge master in (in the branch's worktree), typecheck, tests, suites, build, spec
 //   land <branch>         a green check at this head and master: the `worktree` merge call to make
-//   landed <branch>       verify it is in master, build the main checkout, record a restart
+//   landed <branch>       verify it is in master, build the main checkout, record a restart; next: the clean up
 //   push                  leak-scan, then `git push origin master`, refused under the hold or if not a fast-forward
 //   restart-check         are this server's hosted sessions idle? prints the systemd-run line only when they are
 //   report                the round report's skeleton
@@ -22,7 +22,7 @@
 // restarts anything, never force-pushes, and masks every private name in what it prints or stores.
 // Every child runs by argv with no shell, in its own process group, under a timeout.
 import { spawn } from "node:child_process";
-import { chmodSync, createWriteStream, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { accessSync, chmodSync, constants, createWriteStream, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -811,8 +811,26 @@ class Round {
     return { exit: 0, lines: [`landable at ${head.slice(0, 7)} on master ${master.slice(0, 7)} (checked ${ago(this.now - c.at)} ago).`, owner, `call: ${call}`], data: { call: { action: "merge", path: tree } }, next: `after the merge card, round.mjs landed ${branch}` };
   }
 
+  /** The clean up's two commands for a landed branch's worktree, or why it can't run from here. */
+  async cleanUp(main, branch, tree) {
+    if (!tree) return { why: `${branch} has no worktree to remove.` };
+    if (this.mask(tree) !== tree || this.mask(main) !== main) return { why: "The worktree's path holds a private name: leave it, and ask the user to remove it." };
+    // A sandboxed captain sees git's worktree records read-only: git would delete the folder's
+    // files and then fail to unregister it, so it isn't started at all.
+    const admin = await git(tree, ["rev-parse", "--path-format=absolute", "--git-dir"]);
+    try {
+      if (admin.code !== 0) throw new Error(firstLine(admin));
+      accessSync(dirname(admin.stdout.trim()), constants.W_OK);
+      accessSync(admin.stdout.trim(), constants.W_OK);
+    } catch {
+      return { why: "Git's record of this worktree is read-only here (a sandboxed session), so it can't be removed from this session: leave it, and say so in the report." };
+    }
+    const q = (s) => `'${s.replace(/'/g, `'\\''`)}'`;
+    return { commands: [`git -C ${q(main)} worktree remove -- ${q(tree)}`, `git -C ${q(main)} branch -d -- ${q(branch)}`] };
+  }
+
   async landed() {
-    const { branch } = await this.branchArg();
+    const { branch, tree } = await this.branchArg();
     const st = this.loadState();
     const rec = st.branches[branch];
     if (!rec?.check?.ok) stop(1, `${branch} has no green check on record.`);
@@ -840,8 +858,16 @@ class Round {
       `Main checkout build: ${b.code === 0 ? "ok" : b.timedOut ? "TIMED OUT" : `FAILED (exit ${b.code})`} (log ${logFile}).`,
       restart ? "It changes server-side code: a restart is needed (round.mjs restart-check)." : "No restart needed: only the build.",
     ];
-    if (rec.owner) lines.push(`session_send to ${rec.owner}:`, `${branch} is merged into master at ${master.slice(0, 7)}. Don't touch master; start any new work on a fresh branch.`);
-    return { exit: b.code === 0 ? 0 : 1, lines, data: { sha: master, restart }, next: "round.mjs push" };
+    const clean = await this.cleanUp(main, branch, tree);
+    if (clean.why) lines.push(`Clean up: ${clean.why}`);
+    if (rec.owner) {
+      lines.push(`session_send to ${rec.owner}, after the clean up:`, `${branch} is merged into master at ${master.slice(0, 7)}. Don't touch master; start any new work on a fresh branch.`);
+      if (clean.commands) lines.push(`Only when the remove succeeded, add: Its worktree folder was removed.`);
+    }
+    const next = clean.commands
+      ? `clean up from the main checkout, exactly: ${clean.commands[0]} (never --force), then ${clean.commands[1]}; report git's refusal as printed, never retry or force it; then round.mjs push`
+      : "round.mjs push";
+    return { exit: b.code === 0 ? 0 : 1, lines, data: { sha: master, restart, ...(clean.commands ? { cleanUp: clean.commands } : {}) }, next };
   }
 
   async push() {

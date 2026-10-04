@@ -304,5 +304,6 @@ test("fetchEnabled: the env switch, and a test process never fetches unless told
   for (const v of ["off", "0", "false", "OFF"]) assert.equal(fetchEnabled({ SOVA_PRICES_FETCH: v }), false);
   assert.equal(fetchEnabled({ NODE_TEST_CONTEXT: "child-v8" }), false);
   assert.equal(fetchEnabled({ NODE_TEST_CONTEXT: "child-v8", SOVA_PRICES_FETCH: "on" }), true);
-  assert.equal(process.env.NODE_TEST_CONTEXT !== undefined, true, "this runner sets it");
+  assert.equal(fetchEnabled({ NODE_ENV: "test" }), false, "bun test sets NODE_ENV=test");
+  assert.equal(fetchEnabled(process.env), false, "this test run never fetches, under node --test or bun test");
 });

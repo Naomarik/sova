@@ -4,7 +4,7 @@
 // (a socket path crosses network namespaces; a TCP port of the namespace can't be reached from
 // the host). One JSON request per connection, one JSON line back:
 //   {"op":"tcp","port":4000}                → {"ok":true}
-//   {"op":"http","port":4000,"path":"/"}    → {"ok":true,"status":200}
+//   {"op":"http","port":4000,"path":"/"}    → {"ok":true,"status":200,"type":"text/html"}
 //   {"op":"ping"}                           → {"ok":true}
 // Node builtins only; it never runs anything.
 
@@ -35,7 +35,7 @@ async function http(port, path, timeoutMs = 2_000) {
     // Loopback inside the namespace: never through the run's proxy.
     const r = await fetch(`http://127.0.0.1:${port}${path}`, { signal: AbortSignal.timeout(timeoutMs), redirect: "manual" });
     await r.body?.cancel().catch(() => undefined);
-    return { ok: r.status < 500, status: r.status };
+    return { ok: r.status < 500, status: r.status, type: r.headers.get("content-type") };
   } catch {
     return { ok: false };
   }

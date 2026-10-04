@@ -6028,7 +6028,10 @@
         "src/lib/api.ts",
         "scripts/e2e/transcript-drift.mjs",
         "scripts/e2e/transcript-follow.mjs",
-        "src/lib/recent-preload.ts"
+        "src/lib/recent-preload.ts",
+        "src/lib/live.ts",
+        "src/lib/live.test.ts",
+        "server/chat-entry-id.test.ts"
       ]
     },
     "§app.subagents-pane/hidden-workers": {

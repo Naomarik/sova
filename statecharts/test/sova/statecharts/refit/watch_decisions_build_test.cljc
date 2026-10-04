@@ -10,9 +10,9 @@
 
 ;; ---- watch ----------------------------------------------------------------------------------------
 
-(def wsid "watch/o1/pr1")
-(defn watch [] (-> (h/start! (h/new-host) "watch" wsid {:org-id "o1" :project-id "pr1" :tick-ms 0 :roster-active true :last-run-at 1700000000000})
-                   (h/send! wsid :link/moved {:from "project/o1/pr1" :statechart "project" :states [:project :has-overseer :active] :exported {:name "Site"}})))
+(def wsid "watch/pr1")
+(defn watch [] (-> (h/start! (h/new-host) "watch" wsid {:project-id "pr1" :tick-ms 0 :last-run-at 1700000000000})
+                   (h/send! wsid :link/moved {:from "project/pr1" :statechart "project" :states [:project :has-overseer :active] :exported {:name "Site"}})))
 (def done-reason {:kind "baton/done" :params {:title "Invoicing" :session-id "s1"} :key "baton/done:s1" :by "system"})
 
 (deftest watch-loop
@@ -50,7 +50,7 @@
         (is (= {:used 1 :max 6} (:gather (w/allowance (h/data y wsid) "day"))))
         (is (= 0 (get-in (h/data (h/send! y wsid :day/rollover {}) wsid) [:ledgers :day :gather] 0)))))
     (is (= "Site is archived. Unarchive it to use its overseer."
-           (h/refusal (h/send! x wsid :link/moved {:from "project/o1/pr1" :statechart "project" :states [:archived :has-overseer] :exported {:name "Site"}}) wsid :operator/run-now op)))))
+           (h/refusal (h/send! x wsid :link/moved {:from "project/pr1" :statechart "project" :states [:archived :has-overseer] :exported {:name "Site"}}) wsid :operator/run-now op)))))
 
 ;; ---- decision -------------------------------------------------------------------------------------
 
@@ -115,7 +115,7 @@
         (is (nil? (h/refusal y rsid :decision/promote (assoc op :ids ["d3"]))) "the operator names it by id")
         (is (= "Give the ids to promote." (h/refusal y rsid :decision/promote (assoc op :ids []))))
         (is (re-find #"^Today's allowance is used: 5 of 5 decisions promoted"
-                     (h/refusal y rsid :decision/promote {:by "overseer" :autonomy "L2" :roster-active true :ids ["d1"] :ledger "day" :allowance {:promote {:used 5 :max 5}}})))
+                     (h/refusal y rsid :decision/promote {:by "overseer" :autonomy "L2" :ids ["d1"] :ledger "day" :allowance {:promote {:used 5 :max 5}}})))
         (let [p (h/send! y rsid :decision/promote {:by "overseer" :attended true :ids ["d1" "d2"] :ledger "message"})
               eff (last (h/outbox p rsid))]
           (is (= ["d1"] (:ids eff)))
@@ -154,8 +154,8 @@
 
 ;; ---- build ----------------------------------------------------------------------------------------------
 
-(def bsid "build/o1/pr1/c1")
-(defn build [& [d]] (h/start! (h/new-host) "build" bsid (merge {:org-id "o1" :project-id "pr1" :session-id "c1" :kind "coding" :title "Pay page" :prompt "Build it"} d)))
+(def bsid "build/pr1/c1")
+(defn build [& [d]] (h/start! (h/new-host) "build" bsid (merge {:project-id "pr1" :session-id "c1" :kind "coding" :title "Pay page" :prompt "Build it"} d)))
 (defn made [x] (-> x (h/send! bsid :effect/done {:kind "make-worktree" :result {:branch "sova/pay-abc123" :target "main" :base "b0"}})
                    (h/send! bsid :effect/done {:kind "set-mode"}) (h/send! bsid :effect/done {:kind "first-prompt"})))
 
@@ -175,7 +175,7 @@
           (let [done (h/send! m bsid :effect/done {:kind "merge" :result {:commit "c0ffee"}})]
             (is (= "c0ffee" (get-in (h/data done bsid) [:merged :commit])))
             (is (some #(= "build/merged" (get-in % [:data :kind])) (h/elsewhere done)) "master's reason for the operator's merge")
-            (is (some #(= {:kind "build-merged"} (:data %)) (h/elsewhere done)) "still a milestone for the owner page"))
+            (is (not-any? #(= :milestone/noted (:event %)) (h/elsewhere done)) "no milestone send: its project reads the exported merge"))
           (testing "a refusal about the root's checkout is not the overseer's news"
             (is (not (some #(= "build/merge-refused" (get-in % [:data :kind])) (h/elsewhere (h/send! m bsid :effect/failed {:kind "merge" :detail "The project root has main checked out, not dev."})))))))))
     (is (= "It runs in the project root: it isn't a Git repository."
@@ -213,7 +213,7 @@
   (testing "a statechart-driven act's reason says by statechart; the same act by the operator says system"
     (let [r   (fn [by] (-> (h/start! (h/new-host) "baton" "baton/o1/s1" {:org-id "o1" :project-id "pr1" :session-id "s1" :public-title "T" :goal "G"
                                                                         :owner {:overseer-of "pr1"} :to "p1" :names {"p1" "Ana"} :operator-name "Omar"})
-                           (h/send! "baton/o1/s1" :baton/close {:by by :reason "A newer gathering covers it." :owner-project "pr1" :autonomy "L1" :roster-active true :hold-ms 0})))
+                           (h/send! "baton/o1/s1" :baton/close {:by by :reason "A newer gathering covers it." :owner-project "pr1" :autonomy "L1" :hold-ms 0})))
           by-of (fn [x] (some #(when (= :reason/noted (:event %)) (get-in % [:data :by])) (h/elsewhere x)))]
       (is (= "statechart" (by-of (r "statechart"))))
       (is (= "system" (by-of (r "operator")))))))

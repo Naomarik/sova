@@ -1,5 +1,6 @@
 import type { SessionSummary, TranscriptItem } from "../shared/protocol";
 import { alignRowText } from "./align-state";
+import { entryOf } from "./transcript";
 
 /**
  * Guards every in-process session tool shares: the Overseer's sova_* tools (server/overseer-tools.ts),
@@ -82,7 +83,7 @@ export function renderTranscript(
         line = `ASSISTANT: ${it.text ?? ""}`;
         break;
       case "tool-call":
-        line = `→ ${it.text ?? "tool"} ${argSummary(it.raw, it.toolCallId)}`.trimEnd();
+        line = `→ ${it.text ?? "tool"} ${argSummary(entryOf(it), it.toolCallId)}`.trimEnd();
         break;
       case "report":
         line = `REPORT (${it.report?.source ?? "extension"}): ${it.text ?? ""}`;

@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { clean, countWorkers, deriveState, fit, isFinishedWorker, isRestoredWorker, parseLiveRecord, parsePresence, presenceWorkers, workerState } from "./schema.ts";
+import { clean, countWorkers, deriveState, fit, isFinishedWorker, isRestoredWorker, parseLiveRecord, parsePresence, presenceWorkers, RECORD_BUDGET, workerState } from "./schema.ts";
 import type { LiveRecord, SessionMeta, WorkerEntry } from "./schema.ts";
 
 const NOW = 1789804800000;
@@ -422,4 +422,65 @@ test("fit() drops every settled row before a live worker's usage", () => {
   r = fit(clone(record), size(liveOnly) - 1);
   assert.equal(r.presence!.workers.length, 5, "then live counts go, before any live row");
   assert.ok(r.presence!.workers.every(w => !w.usage));
+});
+
+test("presence.llm: the process's counts kept whole; a malformed one is dropped, the presence kept", () => {
+  const base = clone(example("v2"));
+  const llm = { v: 1, producer: "8c1f0d6e-5b7c-4f7e-9c34-0b7a1e2d3c4f", pid: 4242, active: 3, approximate: 1, claudeTurns: 1, degraded: false, folded: ["a", "b"] };
+  base.presence.llm = { ...llm, folded: ["b", "a", "b"] };
+  assert.deepEqual(parsePresence(base.presence)?.llm, llm, "folded sorted, deduplicated");
+  const { folded: _f, ...older } = llm;
+  base.presence.llm = older;
+  assert.deepEqual(parsePresence(base.presence)?.llm?.folded, [], "absent folded reads as []");
+  for (const bad of [
+    { ...llm, v: 2 }, { ...llm, producer: "" }, { ...llm, pid: 0 }, { ...llm, active: -1 }, { ...llm, claudeTurns: 1.5 },
+    { ...llm, degraded: "no" }, { ...llm, producer: "x".repeat(65) }, { ...llm, folded: "a" }, { ...llm, folded: [""] },
+    { ...llm, folded: Array.from({ length: 257 }, (_, i) => `p${i}`) }, "3",
+  ]) {
+    base.presence.llm = bad;
+    const p = parsePresence(base.presence);
+    assert.ok(p, "the presence survives");
+    assert.equal(p.llm, undefined);
+  }
+  base.presence.llm = { ...llm, approximate: 9 };
+  assert.equal(parsePresence(base.presence)?.llm?.approximate, 3, "never more approximate than active");
+});
+
+test("presence.llm.tokens: additive; kept whole when valid, dropped alone (the counts stay) when not", () => {
+  const base = clone(example("v2"));
+  const llm = { v: 1, producer: "p1", pid: 4242, active: 0, approximate: 0, claudeTurns: 0, degraded: false, folded: [] };
+  const tokens = { bucketMs: 30000, end: 59_000_000, out: Array.from({ length: 60 }, (_, i) => i * 1000) };
+  base.presence.llm = { ...llm, tokens };
+  assert.deepEqual(parsePresence(base.presence)?.llm, { ...llm, tokens });
+  base.presence.llm = { ...llm, tokens: { ...tokens, partial: true } };
+  assert.equal(parsePresence(base.presence)?.llm?.tokens?.partial, true);
+  assert.equal("tokens" in parsePresence({ ...base.presence, llm })!.llm!, false, "absent: an older counter");
+  for (const bad of [
+    { ...tokens, bucketMs: 60000 }, { ...tokens, end: -1 }, { ...tokens, end: 1.5 }, { ...tokens, out: tokens.out.slice(1) },
+    { ...tokens, out: [...tokens.out.slice(1), -1] }, { ...tokens, out: [...tokens.out.slice(1), 10_000_001] }, "x",
+  ]) {
+    base.presence.llm = { ...llm, tokens: bad };
+    const got = parsePresence(base.presence)?.llm;
+    assert.deepEqual(got, llm, "the counts survive a bad ring");
+  }
+});
+
+test("presence.llm at its largest survives fit() whole, inside the budget, beside the largest presence", () => {
+  const record = example("v2") as LiveRecord;
+  const p = record.presence!;
+  p.preview = "文".repeat(4000);
+  p.workers = Array.from({ length: 40 }, (_, i): WorkerEntry => ({ id: `w${i}`, name: "文".repeat(40),
+    status: i % 2 ? "done" : "running", preview: "文".repeat(180) }));
+  // 64 folded ids of 64 characters each: the most the tracker ever writes (MAX_FOLDED)
+  const folded = Array.from({ length: 64 }, (_, i) => `${"f".repeat(60)}${String(i).padStart(4, "0")}`).sort();
+  const tokens = { bucketMs: 30000 as const, end: 99_999_999, out: new Array<number>(60).fill(10_000_000), partial: true as const };
+  const llm = { v: 1 as const, producer: "p".repeat(64), pid: 2_147_483_647, active: 9999, approximate: 9999, claudeTurns: 9999, degraded: true, folded, tokens };
+  p.llm = structuredClone(llm);
+  const size = (r: LiveRecord) => Buffer.byteLength(JSON.stringify(r));
+  assert.ok(size(record) > RECORD_BUDGET, "the fixture starts over the budget");
+  const fitted = fit(structuredClone(record));
+  assert.ok(size(fitted) <= RECORD_BUDGET, `fitted ${size(fitted)} ≤ ${RECORD_BUDGET}`);
+  assert.deepEqual(fitted.presence!.llm, llm, "fit never trims the count");
+  assert.deepEqual(parsePresence(fitted.presence)?.llm, llm, "and it reads back whole");
+  assert.ok(fitted.presence!.workers.some((w) => w.status === "running"), "room is left for live workers too");
 });

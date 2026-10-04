@@ -1,6 +1,6 @@
-import { execFile, spawn } from "node:child_process";
-import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { execFile, execFileSync, spawn } from "node:child_process";
+import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, rmSync, statSync, writeFileSync, writeSync } from "node:fs";
+import { isAbsolute, join, resolve } from "node:path";
 import { hostProcTable, procfsTable, unitMembers, type ProcTable } from "./proctable";
 import { logsDir, procsDir } from "./store";
 
@@ -33,7 +33,16 @@ export interface RunOnceResult {
   ms: number;
   /** Processes it left behind (killed with it). */
   leftover?: number;
+  /** Its memory peak in bytes (systemd's summary, or the detached driver's sampled resident memory); null when unknown. */
+  peakBytes?: number | null;
+  /** It was stopped because the caller aborted. */
+  aborted?: boolean;
+  /** The supervisor could not start it at all (systemd-run's own message, or the spawn error): nothing ran, and `code` is null. */
+  launchError?: string;
 }
+
+/** A waited-for run: killed whole at `timeoutSec`, or when `signal` aborts. */
+export type OnceSpec = UnitSpec & { timeoutSec: number; signal?: AbortSignal };
 
 /** The supervisor adapters (adapters.ts): `launchd` is a reserved slot with no driver yet. */
 export type DriverId = "systemd" | "detached" | "launchd";
@@ -49,9 +58,10 @@ export interface Driver {
   owns(unit: string, pid: number): boolean;
   /** Every live pid inside `unit`. */
   pids(unit: string): number[];
-  logs(unit: string, lines: number): Promise<{ t: string; text: string }[]>;
-  /** Run to completion (a hook, setup or build step), killed whole at `timeoutSec`. */
-  runOnce(spec: UnitSpec & { timeoutSec: number }): Promise<RunOnceResult>;
+  /** The unit's last `lines` lines; with `sinceMs`, only those of runs since then (a waited-for run's output starts fresh with the detached driver). */
+  logs(unit: string, lines: number, sinceMs?: number): Promise<{ t: string; text: string }[]>;
+  /** Run to completion (a hook, setup, build step or test run), killed whole at `timeoutSec` or when `signal` aborts. */
+  runOnce(spec: OnceSpec): Promise<RunOnceResult>;
   /** The units (running, or recorded) whose name starts with `prefix`. */
   units(prefix: string): Promise<string[]>;
   /** At a server start, after reconcile: take charge of the units already running (the detached driver's restart watch). */
@@ -78,13 +88,17 @@ export const realExec: Exec = (file, args, opts = {}) =>
 
 export const SLICE = "sova-services.slice";
 
-/** The `systemd-run` argv that starts `spec` as a transient user service (pure, for tests). */
+/** The `systemd-run` argv that starts `spec` as a transient user service (pure, for tests). A waited-for run is
+    not `--quiet`: its summary on exit carries the memory peak. A command named by a relative path
+    (`.sova/bin/setup`) is made absolute against `cwd`: systemd-run resolves it against its own
+    directory, not the unit's, and refuses to start the unit when it is not there. */
 export function systemdRunArgv(spec: UnitSpec, once?: { timeoutSec: number }): string[] {
-  const a = ["--user", `--unit=${spec.unit}`, `--slice=${SLICE}`, "--collect", "--quiet", `--working-directory=${spec.cwd}`, "--property=StandardInput=null"];
+  const a = ["--user", `--unit=${spec.unit}`, `--slice=${SLICE}`, "--collect", ...(once ? [] : ["--quiet"]), `--working-directory=${spec.cwd}`, "--property=StandardInput=null"];
   if (once) a.push("--wait", "--property=KillMode=control-group", `--property=RuntimeMaxSec=${once.timeoutSec}`);
   else a.push("--property=KillMode=mixed", "--property=TimeoutStopSec=15", "--property=Restart=on-failure", "--property=RestartSec=2");
   for (const k of Object.keys(spec.env).sort()) a.push(`--setenv=${k}=${spec.env[k]}`);
-  a.push("--", ...spec.argv);
+  const [cmd, ...args] = spec.argv;
+  a.push("--", ...(cmd !== undefined && cmd.includes("/") && !isAbsolute(cmd) ? [resolve(spec.cwd, cmd), ...args] : spec.argv));
   return a;
 }
 
@@ -103,8 +117,54 @@ export function parseShow(text: string): UnitStatus {
   return { state, pid, exit, ...(kv.SubState ? { detail: `${active}/${kv.SubState}${kv.Result && kv.Result !== "success" ? ` (${kv.Result})` : ""}` } : {}) };
 }
 
+/** `systemd-run --wait`'s "Memory peak: 1.2G" in bytes (base 1024), or null (pure, for tests). */
+export function parseMemoryPeak(text: string): number | null {
+  const m = /Memory peak:\s*([\d.]+)\s*([BKMGTP]?)/.exec(text);
+  if (!m) return null;
+  const n = Number(m[1]);
+  if (!Number.isFinite(n)) return null;
+  return Math.round(n * 1024 ** "BKMGTP".indexOf(m[2] || "B"));
+}
+
+/** The resident memory of `pids` now, in bytes: /proc on Linux, else `ps`; null when none could be read. */
+export function rssOf(pids: number[]): number | null {
+  if (!pids.length) return null;
+  let total = 0;
+  let read = false;
+  if (process.platform === "linux") {
+    for (const pid of pids) {
+      try {
+        const m = /VmRSS:\s*(\d+)\s*kB/.exec(readFileSync(`/proc/${pid}/status`, "utf8"));
+        if (m) {
+          total += Number(m[1]) * 1024;
+          read = true;
+        }
+      } catch {
+        // gone
+      }
+    }
+    return read ? total : null;
+  }
+  try {
+    const out = execFileSync("ps", ["-o", "rss=", "-p", pids.join(",")], { encoding: "utf8", timeout: 5_000, stdio: ["ignore", "pipe", "ignore"] });
+    for (const line of out.split("\n"))
+      if (line.trim()) {
+        total += Number(line.trim()) * 1024;
+        read = true;
+      }
+  } catch {
+    // ps failed
+  }
+  return read ? total : null;
+}
+
+/** systemd-run's output when it started the unit (not `--quiet`): a run that lacks it never started. */
+const LAUNCHED = /Running as unit:/;
+
 export class SystemdDriver implements Driver {
   readonly id = "systemd" as const;
+  /** Per unit: the message of the last waited-for run systemd-run could not start, which its journal lacks. */
+  private launchFailures = new Map<string, { at: number; lines: string[] }>();
   constructor(private readonly exec: Exec = realExec) {}
   async available() {
     const r = await this.exec("systemctl", ["--user", "show", "--property=Version"], { timeoutMs: 5_000 });
@@ -140,8 +200,9 @@ export class SystemdDriver implements Driver {
       .map((e) => e.pid)
       .filter((p) => this.owns(unit, p));
   }
-  async logs(unit: string, lines: number) {
-    const r = await this.exec("journalctl", ["--user", "-u", `${unit}.service`, "-n", String(lines), "-o", "json", "--no-pager"]);
+  async logs(unit: string, lines: number, sinceMs?: number) {
+    const since = sinceMs !== undefined ? [`--since=@${Math.floor(sinceMs / 1000)}`] : [];
+    const r = await this.exec("journalctl", ["--user", "-u", `${unit}.service`, ...since, "-n", String(lines), "-o", "json", "--no-pager"]);
     const out: { t: string; text: string }[] = [];
     for (const line of r.stdout.split("\n")) {
       if (!line.trim()) continue;
@@ -154,16 +215,37 @@ export class SystemdDriver implements Driver {
         // not a journal line
       }
     }
-    return out;
+    const f = this.launchFailures.get(unit);
+    if (f && (sinceMs === undefined || f.at >= Math.floor(sinceMs / 1000) * 1000)) out.push(...f.lines.map((text) => ({ t: new Date(f.at).toISOString(), text })));
+    return out.slice(-lines);
   }
-  async runOnce(spec: UnitSpec & { timeoutSec: number }) {
+  async runOnce(spec: OnceSpec) {
     const t0 = Date.now();
+    // A unit of this name left loaded (a run cut off with its server) would make systemd-run refuse the name.
+    await this.exec("systemctl", ["--user", "stop", `${spec.unit}.service`], { timeoutMs: 60_000 });
     await this.exec("systemctl", ["--user", "reset-failed", `${spec.unit}.service`]);
+    this.launchFailures.delete(spec.unit);
+    let aborted = false;
+    const onAbort = () => {
+      aborted = true;
+      void this.stop(spec.unit);
+    };
+    if (spec.signal?.aborted) onAbort();
+    else spec.signal?.addEventListener("abort", onAbort, { once: true });
     const r = await this.exec("systemd-run", systemdRunArgv(spec, { timeoutSec: spec.timeoutSec }), { timeoutMs: (spec.timeoutSec + 30) * 1000 });
+    spec.signal?.removeEventListener("abort", onAbort);
     const ms = Date.now() - t0;
-    const timedOut = ms >= spec.timeoutSec * 1000;
+    const timedOut = !aborted && ms >= spec.timeoutSec * 1000;
     if (timedOut) await this.stop(spec.unit);
-    return { code: r.code, timedOut, ms };
+    const said = `${r.stderr}\n${r.stdout}`;
+    // systemd-run's own failure (exit 1, the unit never started) is never the run's exit.
+    if (r.code !== 0 && !aborted && !timedOut && !LAUNCHED.test(said)) {
+      const lines = said.split("\n").map((l) => l.trim()).filter(Boolean);
+      const message = lines.join("; ") || `systemd-run exited with ${r.code}`;
+      this.launchFailures.set(spec.unit, { at: Date.now(), lines: lines.length ? lines.map((l) => `systemd-run: ${l}`) : [`systemd-run: ${message}`] });
+      return { code: null, timedOut, ms, peakBytes: null, launchError: `systemd-run could not start ${spec.unit}: ${message}` };
+    }
+    return { code: r.code, timedOut, ms, peakBytes: parseMemoryPeak(`${r.stderr}\n${r.stdout}`), ...(aborted ? { aborted } : {}) };
   }
   async units(prefix: string) {
     const r = await this.exec("systemctl", ["--user", "list-units", "--all", "--plain", "--no-legend", `${prefix}*`]);
@@ -173,6 +255,138 @@ export class SystemdDriver implements Driver {
       .filter((u) => u.startsWith(prefix))
       .map((u) => u.replace(/\.service$/, ""));
   }
+}
+
+// ---- an adopted unit (§app.project-services/adopt) ----------------------------------------------
+
+/** An adopted unit as systemd shows it, with when its main process started and its resident memory. */
+export interface AdoptedStatus extends UnitStatus {
+  startedAt: string | null;
+  rssBytes: number | null;
+}
+
+/** `ActiveEnterTimestamp` as `--timestamp=unix` writes it (`@1700000000`), as ISO; null when unset (pure, for tests). */
+export function parseEnterTimestamp(v: string | undefined): string | null {
+  const unix = /^@(\d+)$/.exec(v?.trim() ?? "");
+  return unix && Number(unix[1]) > 0 ? new Date(Number(unix[1]) * 1000).toISOString() : null;
+}
+
+/** The pids in `unit`'s cgroup (`unit` with its `.service`). */
+export function cgroupPids(unit: string): number[] {
+  return procfsTable
+    .list()
+    .map((e) => e.pid)
+    .filter((p) => {
+      try {
+        return readFileSync(`/proc/${p}/cgroup`, "utf8").includes(`/${unit}`);
+      } catch {
+        return false;
+      }
+    });
+}
+
+/**
+ * A unit Sova did not start, read only (`systemctl --user show`; on macOS its launchd agent, as
+ * launchdAdoptedStatus reads it): never started, stopped or signalled here, whatever the driver.
+ * `unit` is the whole name (`sova-runtime.service`).
+ */
+export async function adoptedStatus(unit: string, exec: Exec = realExec, pidsOf: (unit: string) => number[] = cgroupPids, platform: NodeJS.Platform = process.platform): Promise<AdoptedStatus> {
+  if (platform === "darwin") return launchdAdoptedStatus(unit, exec);
+  const r = await exec("systemctl", ["--user", "show", unit, "--timestamp=unix", "--property=LoadState,ActiveState,SubState,MainPID,ExecMainStatus,Result,ActiveEnterTimestamp"], { timeoutMs: 5_000 });
+  if (r.code !== 0) return { state: "missing", pid: null, startedAt: null, rssBytes: null, detail: `systemctl could not read ${unit}: ${r.stderr.trim() || `exit ${r.code}`}` };
+  const st = parseShow(r.stdout);
+  const enter = /^ActiveEnterTimestamp=(.*)$/m.exec(r.stdout)?.[1];
+  const live = st.state === "active" || st.state === "activating";
+  return { ...st, startedAt: live ? parseEnterTimestamp(enter) : null, rssBytes: live ? rssOf(pidsOf(unit)) : null };
+}
+
+// ---- an adopted unit under launchd (macOS) -----------------------------------------------------
+
+/** The launchd label an adopted unit is on macOS: its name without `.service` (§app.project-services/adopt). */
+export const launchdLabelOf = (unit: string) => unit.replace(/\.service$/, "");
+/** The agent's service target in this user's GUI domain. */
+export const launchdTarget = (unit: string, uid = process.getuid?.() ?? 0) => `gui/${uid}/${launchdLabelOf(unit)}`;
+
+/** `launchctl print`'s own `key = value` lines (one tab in; nested blocks are deeper) (pure, for tests). */
+export function parseLaunchctlPrint(text: string): Record<string, string> {
+  const kv: Record<string, string> = {};
+  for (const line of text.split("\n")) {
+    const m = /^\t([^\t=][^=]*?) = (.*)$/.exec(line);
+    if (m && !(m[1]! in kv)) kv[m[1]!] = m[2]!.trim();
+  }
+  return kv;
+}
+
+/** An agent's `launchctl print` reading → its status: running is active, a scheduled spawn activating, else inactive, or failed after a failing exit (pure, for tests). */
+export function launchdStatusOf(kv: Record<string, string>): UnitStatus {
+  const exit = /^-?\d+$/.test(kv["last exit code"] ?? "") ? Number(kv["last exit code"]) : null;
+  const st = kv.state ?? "unknown";
+  const state: UnitState = st === "running" ? "active" : st === "spawn scheduled" || st === "spawning" ? "activating" : exit ? "failed" : "inactive";
+  const pid = state === "active" && Number(kv.pid) > 0 ? Number(kv.pid) : null;
+  return { state, pid, exit, detail: `${st}${exit !== null ? ` (last exit ${exit})` : ""}` };
+}
+
+/** `ps -o etime=` (`[[dd-]hh:]mm:ss`) in seconds, or null (pure, for tests). */
+export function parseEtime(v: string): number | null {
+  const m = /^\s*(?:(?:(\d+)-)?(\d+):)?(\d+):(\d+)\s*$/.exec(v);
+  return m ? ((Number(m[1] ?? 0) * 24 + Number(m[2] ?? 0)) * 60 + Number(m[3])) * 60 + Number(m[4]) : null;
+}
+
+/** The live pids of `pid`'s process tree (and the groups its members made), from `ps`. */
+export function processTree(pid: number, table: ProcTable = hostProcTable()): number[] {
+  return unitMembers(table.list(), pid, false);
+}
+
+/**
+ * An adopted agent on macOS, read only (`launchctl print gui/<uid>/<label>`): its state and main
+ * pid, when that process started (`ps -o etime=`), and its tree's resident memory. Not loaded is
+ * `missing` with no detail (not-found); launchctl failing otherwise carries its message (unsupported).
+ */
+export async function launchdAdoptedStatus(unit: string, exec: Exec = realExec, treeOf: (pid: number) => number[] = (pid) => processTree(pid), now = Date.now()): Promise<AdoptedStatus> {
+  const target = launchdTarget(unit);
+  const r = await exec("launchctl", ["print", target], { timeoutMs: 5_000 });
+  if (r.code !== 0) {
+    if (r.code === 113 || /Could not find service/i.test(r.stderr + r.stdout)) return { state: "missing", pid: null, startedAt: null, rssBytes: null };
+    return { state: "missing", pid: null, startedAt: null, rssBytes: null, detail: `launchctl could not read ${target}: ${(r.stderr || r.stdout).trim() || `exit ${r.code}`}` };
+  }
+  const st = launchdStatusOf(parseLaunchctlPrint(r.stdout));
+  if (st.pid === null) return { ...st, startedAt: null, rssBytes: null };
+  const ps = await exec("ps", ["-o", "etime=", "-p", String(st.pid)], { timeoutMs: 5_000 });
+  const age = ps.code === 0 ? parseEtime(ps.stdout) : null;
+  return { ...st, startedAt: age !== null ? new Date(Math.floor(now / 1000) * 1000 - age * 1000).toISOString() : null, rssBytes: rssOf(treeOf(st.pid)) };
+}
+
+/** The pids of an adopted unit: its cgroup on Linux, the agent's process tree on macOS. */
+export async function adoptedPids(unit: string, platform: NodeJS.Platform = process.platform): Promise<number[]> {
+  if (platform !== "darwin") return cgroupPids(unit);
+  const st = await launchdAdoptedStatus(unit, realExec, () => []);
+  return st.pid === null ? [] : processTree(st.pid);
+}
+
+/** The last `lines` lines of a log file, oldest first, with no times; [] when it can't be read. */
+export function tailLines(file: string, lines: number): { t: string; text: string }[] {
+  try {
+    const size = statSync(file).size;
+    const fd = openSync(file, "r");
+    const want = Math.min(size, 256 * 1024);
+    const buf = Buffer.alloc(want);
+    readSync(fd, buf, 0, want, size - want);
+    closeSync(fd);
+    const all = buf.toString("utf8").split("\n");
+    if (all.at(-1) === "") all.pop();
+    if (want < size) all.shift(); // a cut first line
+    return all.slice(-lines).map((text) => ({ t: "", text }));
+  } catch {
+    return [];
+  }
+}
+
+/** An adopted unit's logs: its journal on Linux; on macOS the tail of the file launchd writes the agent's stdout to. */
+export async function adoptedLogs(unit: string, lines: number, platform: NodeJS.Platform = process.platform, exec: Exec = realExec): Promise<{ t: string; text: string }[]> {
+  if (platform !== "darwin") return new SystemdDriver(exec).logs(unit.replace(/\.service$/, ""), lines);
+  const r = await exec("launchctl", ["print", launchdTarget(unit)], { timeoutMs: 5_000 });
+  const file = r.code === 0 ? parseLaunchctlPrint(r.stdout)["stdout path"] : undefined;
+  return file ? tailLines(file, lines) : [];
 }
 
 // ---- detached ----------------------------------------------------------------------------------
@@ -417,52 +631,65 @@ export class DetachedDriver implements Driver {
     const r = this.rec(unit);
     return r ? this.members(r.pid) : [];
   }
-  async logs(unit: string, lines: number) {
-    try {
-      const f = this.logFile(unit);
-      const size = statSync(f).size;
-      const fd = openSync(f, "r");
-      const want = Math.min(size, 256 * 1024);
-      const buf = Buffer.alloc(want);
-      readSync(fd, buf, 0, want, size - want);
-      closeSync(fd);
-      const all = buf.toString("utf8").split("\n");
-      if (all.at(-1) === "") all.pop();
-      if (want < size) all.shift(); // a cut first line
-      return all.slice(-lines).map((text) => ({ t: "", text }));
-    } catch {
-      return [];
-    }
+  async logs(unit: string, lines: number, _sinceMs?: number) {
+    return tailLines(this.logFile(unit), lines);
   }
-  async runOnce(spec: UnitSpec & { timeoutSec: number }) {
+  async runOnce(spec: OnceSpec) {
     const t0 = Date.now();
     mkdirSync(logsDir(), { recursive: true });
-    const fd = openSync(this.logFile(spec.unit), "a");
+    // Each waited-for run's output starts fresh: its log is that run's alone.
+    const fd = openSync(this.logFile(spec.unit), "w");
     return await new Promise<RunOnceResult>((done) => {
       let child;
       try {
         child = spawn(spec.argv[0]!, spec.argv.slice(1), { cwd: spec.cwd, env: spec.env, detached: true, stdio: ["ignore", fd, fd] });
-      } catch {
+      } catch (err) {
+        const message = `cannot start ${spec.argv[0]}: ${(err as Error).message}`;
+        writeSync(fd, `${message}\n`);
         closeSync(fd);
-        return done({ code: 127, timedOut: false, ms: Date.now() - t0 });
+        return done({ code: null, timedOut: false, ms: Date.now() - t0, launchError: message });
       }
       let timedOut = false;
+      let aborted = false;
       const timer = setTimeout(() => {
         timedOut = true;
         if (child.pid) void this.killSession(child.pid);
       }, spec.timeoutSec * 1000);
-      child.once("error", () => {
+      const onAbort = () => {
+        aborted = true;
+        if (child.pid) void this.killSession(child.pid);
+      };
+      if (spec.signal?.aborted) onAbort();
+      else spec.signal?.addEventListener("abort", onAbort, { once: true });
+      // The run's memory: the largest resident total of its session's processes, sampled.
+      let peak: number | null = null;
+      const sample = () => {
+        if (!child.pid) return;
+        const now = rssOf(this.members(child.pid));
+        if (now !== null) peak = Math.max(peak ?? 0, now);
+      };
+      const sampler = setInterval(sample, 200);
+      sampler.unref();
+      setImmediate(sample);
+      const stopWatching = () => {
         clearTimeout(timer);
+        clearInterval(sampler);
+        spec.signal?.removeEventListener("abort", onAbort);
+      };
+      child.once("error", (err) => {
+        stopWatching();
+        const message = `cannot start ${spec.argv[0]}: ${err.message}`;
+        writeSync(fd, `${message}\n`);
         closeSync(fd);
-        done({ code: 127, timedOut: false, ms: Date.now() - t0 });
+        done({ code: null, timedOut: false, ms: Date.now() - t0, launchError: message });
       });
       child.once("exit", (code, sig) => {
-        clearTimeout(timer);
+        stopWatching();
         closeSync(fd);
         // A hook leaves nothing behind (§app.project-services/supervisor): its session goes with it.
         const pid = child.pid;
         const leftover = pid ? this.members(pid).length : 0;
-        const finish = () => done({ code: code ?? (sig ? 128 : null), timedOut, ms: Date.now() - t0, ...(leftover ? { leftover } : {}) });
+        const finish = () => done({ code: code ?? (sig ? 128 : null), timedOut, ms: Date.now() - t0, peakBytes: peak, ...(leftover ? { leftover } : {}), ...(aborted ? { aborted } : {}) });
         if (pid && leftover) void this.killSession(pid).then(finish);
         else finish();
       });

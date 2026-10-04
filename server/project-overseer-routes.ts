@@ -1,15 +1,15 @@
 import type { Context, Hono } from "hono";
-import type { CodingStartInput, ItemCodeInput, ItemSendInput } from "../shared/project-overseer";
+import type { CodingStartInput, ItemCodeInput } from "../shared/project-overseer";
 import type { IdeaUpdate } from "./overseer-ideas";
 import { BusyError } from "./chat-manager";
-import { archivedOverseerRefusal, OrgError, operatorEnvelope } from "./orgs";
-import { OVERSEER_SENDER_HEADER, overseerSender } from "./overseer";
+import { OrgError } from "./org-error";
+import { archivedOverseerRefusal, engineOrThrow, operatorEnvelopeOf } from "./projects/spaces";
+import { gapsOf } from "./projects/contributions";
+import { OVERSEER_SENDER_HEADER, overseerSender } from "./overseer-sender";
 import { addIdea, IdeaConflictError, IdeaError, ideaDetail, ideasInfo, parseIdeaId, updateIdea } from "./overseer-ideas";
 import { addTodo, clearDone, removeTodo, reorderTodos, TodoConflictError, TodoError, TodoNotFoundError, todosInfo, updateTodo } from "./overseer-todos";
-import { clearProjectOverseer, codeItem, dropGap, ensureProjectOverseer, lookNow, mergeCodingWorktree, messageProjectOverseer, patchProjectOverseer, projectOverseerInfo, removeCodingWorktree, sendItem, startCoding } from "./project-overseer";
+import { clearProjectOverseer, codeItem, ensureProjectOverseer, lookNow, mergeCodingWorktree, messageProjectOverseer, patchProjectOverseer, projectOverseerInfo, removeCodingWorktree, startCoding } from "./project-overseer";
 import { projectOf, projectOverseerPaths, type ProjectOverseerPaths } from "./project-overseer-store";
-import { awaitShareLinks } from "./share/links-events";
-import { linkUrl as shareLinkUrl, linkWarning } from "./share/listener";
 
 /**
  * The operator's routes for project overseers (§app/project-overseer; the list is in
@@ -18,8 +18,6 @@ import { linkUrl as shareLinkUrl, linkWarning } from "./share/listener";
  */
 
 const NO_STORE = { "Cache-Control": "no-store" };
-/** A hand-off link as the operator copies it (the one helper, server/share/listener.ts). */
-const linkUrl = (token: string): string => shareLinkUrl("h", token);
 
 async function body(c: Context): Promise<Record<string, unknown>> {
   try {
@@ -34,16 +32,15 @@ const overseerOf = (c: Context): string | undefined => overseerSender(c.req.head
 
 /** Its overseer refuses while the project is archived (§app.organizations/archive). */
 function refuseArchived(c: Context): void {
-  const project = projectOf(c.req.param("id") ?? "", c.req.param("pid") ?? "");
+  const project = projectOf(c.req.param("pid") ?? "");
   if (project.archived) throw new OrgError(archivedOverseerRefusal(project.name), 409);
 }
 
-/** The project's paths (404 for an unknown org or project). */
+/** The project's paths (404 for an unknown project). */
 function pathsOf(c: Context): ProjectOverseerPaths {
-  const orgId = c.req.param("id") ?? "";
   const pid = c.req.param("pid") ?? "";
-  projectOf(orgId, pid);
-  return projectOverseerPaths(orgId, pid);
+  projectOf(pid);
+  return projectOverseerPaths(pid);
 }
 
 const handle =
@@ -64,31 +61,31 @@ const handle =
   };
 
 export function registerProjectOverseerRoutes(app: Hono<any>): void {
-  const base = "/api/orgs/:id/projects/:pid/overseer";
+  const base = "/api/projects/:pid/overseer";
   app.get(base, handle(async (c) => {
     const p = pathsOf(c);
-    return c.json(await projectOverseerInfo(p.orgId, p.projectId), 200, NO_STORE);
+    return c.json(await projectOverseerInfo(p.projectId), 200, NO_STORE);
   }));
   app.post(base, handle(async (c) => {
     const p = pathsOf(c);
     refuseArchived(c);
-    await ensureProjectOverseer(p.orgId, p.projectId);
-    return c.json(await projectOverseerInfo(p.orgId, p.projectId), 200, NO_STORE);
+    await ensureProjectOverseer(p.projectId);
+    return c.json(await projectOverseerInfo(p.projectId), 200, NO_STORE);
   }));
   app.patch(base, handle(async (c) => {
     const p = pathsOf(c);
-    return c.json(await patchProjectOverseer(p.orgId, p.projectId, await body(c)), 200, NO_STORE);
+    return c.json(await patchProjectOverseer(p.projectId, await body(c)), 200, NO_STORE);
   }));
   app.post(`${base}/clear`, handle(async (c) => {
     const p = pathsOf(c);
-    return c.json(await clearProjectOverseer(p.orgId, p.projectId), 200, NO_STORE);
+    return c.json(await clearProjectOverseer(p.projectId), 200, NO_STORE);
   }));
   app.post(`${base}/run`, handle(async (c) => {
     const p = pathsOf(c);
     refuseArchived(c);
-    const r = await lookNow(p.orgId, p.projectId, true);
+    const r = await lookNow(p.projectId, true);
     if (!r.started) return c.json({ error: `Not started: ${r.why ?? "unknown"}.` }, 409);
-    return c.json(await projectOverseerInfo(p.orgId, p.projectId), 200, NO_STORE);
+    return c.json(await projectOverseerInfo(p.projectId), 200, NO_STORE);
   }));
   app.get(`${base}/actions`, handle(async (c) => {
     const p = pathsOf(c);
@@ -144,7 +141,7 @@ export function registerProjectOverseerRoutes(app: Hono<any>): void {
     if (!ideaDetail(id, p.ideas)) return c.json({ error: `No idea ${id}` }, 404);
     const out = updateIdea(id, patch, p.ideas);
     // Dropping a gap the overseer filed ends its item: the idea and the item agree.
-    if (out.idea.status === "dropped") await dropGap(p.orgId, p.projectId, out.idea.id, operatorEnvelope(p.orgId, p.projectId));
+    if (out.idea.status === "dropped") await gapsOf(engineOrThrow(p.projectId), p.projectId)?.dropped(out.idea.id, operatorEnvelopeOf(p.projectId));
     return c.json(out, 200, NO_STORE);
   }));
 
@@ -199,19 +196,10 @@ export function registerProjectOverseerRoutes(app: Hono<any>): void {
   }));
 
   // ---- items → people and sessions ------------------------------------------------------------------
-  app.post(`${base}/items/send`, handle(async (c) => {
-    const p = pathsOf(c);
-    const b = (await body(c)) as unknown as ItemSendInput;
-    const to = b.to;
-    if (!(typeof to === "string" && to) && !(Array.isArray(to) && to.length && to.every((x) => typeof x === "string"))) return c.json({ error: "to must be a person id or a list of them" }, 400);
-    // A minted link carries its warning when it may not open from outside (§app.baton/links).
-    const { result, outcome } = await awaitShareLinks(() => sendItem(p.orgId, p.projectId, b, linkUrl));
-    return c.json({ ...result, ...(result.links.length ? linkWarning(outcome) : {}) }, 201);
-  }));
   app.post(`${base}/items/code`, handle(async (c) => {
     const p = pathsOf(c);
     // The global Overseer's call starts it for the operator, marked so (and may give no item).
-    return c.json(await codeItem(p.orgId, p.projectId, (await body(c)) as unknown as ItemCodeInput, overseerOf(c) ? "overseer" : undefined), 201);
+    return c.json(await codeItem(p.projectId, (await body(c)) as unknown as ItemCodeInput, overseerOf(c) ? "overseer" : undefined), 201);
   }));
   // The global Overseer's one route into the overseer's conversation (§app.overseer/org-project-overseers):
   // nothing else writes there but the operator's own composer.
@@ -219,20 +207,20 @@ export function registerProjectOverseerRoutes(app: Hono<any>): void {
     const p = pathsOf(c);
     const overseerId = overseerOf(c);
     if (!overseerId) return c.json({ error: "Only the Overseer sends here. Write in the overseer's own composer." }, 403);
-    return c.json(await messageProjectOverseer(p.orgId, p.projectId, (await body(c)).text, overseerId), 200, NO_STORE);
+    return c.json(await messageProjectOverseer(p.projectId, (await body(c)).text, overseerId), 200, NO_STORE);
   }));
   // New Coding Session: tied to no item, nothing sent.
   app.post(`${base}/coding`, handle(async (c) => {
     const p = pathsOf(c);
-    return c.json(await startCoding(p.orgId, p.projectId, (await body(c)) as CodingStartInput), 201);
+    return c.json(await startCoding(p.projectId, (await body(c)) as CodingStartInput), 201);
   }));
   // A coding session's own worktree: merge its branch back into its target, or remove it once merged (or empty).
   app.post(`${base}/worktrees/merge`, handle(async (c) => {
     const p = pathsOf(c);
-    return c.json(await mergeCodingWorktree(p.orgId, p.projectId, (await body(c)).sessionId), 200, NO_STORE);
+    return c.json(await mergeCodingWorktree(p.projectId, (await body(c)).sessionId), 200, NO_STORE);
   }));
   app.post(`${base}/worktrees/remove`, handle(async (c) => {
     const p = pathsOf(c);
-    return c.json(await removeCodingWorktree(p.orgId, p.projectId, (await body(c)).sessionId), 200, NO_STORE);
+    return c.json(await removeCodingWorktree(p.projectId, (await body(c)).sessionId), 200, NO_STORE);
   }));
 }

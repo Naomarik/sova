@@ -11,10 +11,13 @@
  * never moved, never written here. Claude Code stays the only program that signs in, refreshes
  * and signs out. The one token this file reads is a login's short-lived ACCESS token, for a worker
  * confined by the sandbox (confined-launch.ts), which cannot read the login's hidden credentials
- * itself (`accessTokenFor`): never the refresh token, and nowhere else.
+ * itself (`accessTokenFor`): never the refresh token, and nowhere else. On macOS a login's
+ * credentials may live in the keychain instead of the file (./keychain.ts): its signed-in time and
+ * a confined worker's token are read there when the file is missing.
  *
  * Node built-ins only: Sova's server imports this file directly (server/claude-accounts.ts), so
- * it must never import the pi runtime or another pi-config module.
+ * it must never import the pi runtime or another pi-config module (./keychain.ts, built-ins only
+ * and importing nothing of this one, is part of it).
  *
  * Absent registry = only `default`. Malformed registry = only `default`, plus the error, and the
  * file is never overwritten by a reader.
@@ -23,7 +26,8 @@
  * it (`null` = kept here, free, for lending by this host as the keeper; never run here). Sova's
  * pool agent (server/claude-pool/) moves logins between devices; this file gives it what every
  * `claude` spawn must honour: `.sova-leaving` (a login on its way out is never chosen), the
- * per-process leases under `.sova-leases/` (which processes still run on a login), and the
+ * per-process leases under `.sova-leases/` (which processes still run on a login), the chats'
+ * hand-picks under `.sova-picks/` (a picked login is never returned for idleness), and the
  * borrow requests (`claude-pool/wants/`) a spawn with no usable login writes and waits on.
  */
 import { spawn, spawnSync } from "node:child_process";
@@ -31,6 +35,7 @@ import { randomBytes } from "node:crypto";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { keychainItemMtime, readKeychainCredentials, type KeychainOptions } from "./keychain.ts";
 
 export const ACCOUNTS_FILE_NAME = "claude-accounts.json";
 export const ACCOUNTS_STATE_FILE_NAME = "claude-accounts-state.json";
@@ -48,6 +53,8 @@ export const DEFAULT_LIMIT_COOLDOWN_MS = 15 * 60_000;
 export const LEAVING_FILE_NAME = ".sova-leaving";
 /** Per-process leases: `<login dir>/.sova-leases/<owner pid>.json`. */
 export const LEASES_DIR_NAME = ".sova-leases";
+/** Chats that picked a login by hand: `<login dir>/.sova-picks/<pi session id>.json` `{v: 1, session, at}`. */
+export const PICKS_DIR_NAME = ".sova-picks";
 /** `<agent dir>/claude-pool/`: the pool agent's heartbeat (`agent.json`) and borrow requests (`wants/`). */
 export const POOL_DIR_NAME = "claude-pool";
 /** A heartbeat older than this means no pool agent runs here: nothing waits for a borrow. */
@@ -148,7 +155,9 @@ export interface ClaudeLoginSwitch {
 	to: ClaudeLoginChoice;
 	/** A failover's failure; absent for a switch the user chose (entry reason `manual`). */
 	failure?: ClaudeAccountFailure;
-	/** "Claude: switched A → B (5h limit, resets 15:00)" · "… (chosen by you)". */
+	/** `moved`: the session's login stopped being usable here without a failure or a pick (it left, was removed…). */
+	reason?: "moved";
+	/** "Claude: switched A → B (5h limit, resets 15:00)" · "… (chosen by you)" · "… (A left this device)". */
 	text: string;
 }
 
@@ -503,8 +512,24 @@ export function planLabel(identity: ClaudeLoginIdentity | null | undefined): str
 	const plan = identity?.plan?.toLowerCase().replace(/^claude_/, "");
 	return plan ? PLAN_NAMES[plan] : undefined;
 }
-export function credentialsMtime(dir: string): number | undefined {
-	try { return fs.statSync(path.join(dir, ".credentials.json")).mtimeMs; } catch { return undefined; }
+/**
+ * When the login directory `dir`'s credentials were last written: its `.credentials.json`'s mtime;
+ * on macOS, with no file, its keychain item's (attributes only, ./keychain.ts). Undefined: not
+ * signed in. `fresh` skips the item's 2 s memo (the check that finishes a sign-in).
+ */
+export function credentialsMtime(dir: string, options: KeychainOptions & { fresh?: boolean } = {}): number | undefined {
+	try { return fs.statSync(path.join(dir, ".credentials.json")).mtimeMs; } catch { /* below */ }
+	if ((options.platform ?? process.platform) !== "darwin") return undefined;
+	return keychainItemMtime(claudeConfigDirEnv(dir, options.env), options);
+}
+/**
+ * The CLAUDE_CONFIG_DIR Claude Code runs the login directory `dir` with: unset (undefined) for
+ * Claude Code's own `~/.claude` when the host has no CLAUDE_CONFIG_DIR of its own, else `dir`
+ * itself (an added login's directory, or `default`'s own CLAUDE_CONFIG_DIR). It names the login's
+ * macOS keychain item.
+ */
+export function claudeConfigDirEnv(dir: string, env: NodeJS.ProcessEnv = process.env, agentDir?: string): string | undefined {
+	return ownClaudeConfigDir(env, agentDir) === undefined && path.resolve(dir) === path.join(os.homedir(), ".claude") ? undefined : dir;
 }
 
 /** A login's access token as a confined worker is handed it: never the refresh token. */
@@ -520,6 +545,9 @@ export const TOKEN_REFRESH_MARGIN_MS = 60 * 60_000;
 export function accessTokenFor(dir: string): ClaudeAccessToken | undefined {
 	let oauth: any;
 	try { oauth = JSON.parse(fs.readFileSync(path.join(dir, ".credentials.json"), "utf8"))?.claudeAiOauth; } catch { return undefined; }
+	return accessTokenOf(oauth);
+}
+function accessTokenOf(oauth: any): ClaudeAccessToken | undefined {
 	const token = oauth?.accessToken;
 	if (typeof token !== "string" || !token || /[\s\x00-\x1f\x7f]/.test(token)) return undefined;
 	return { token, ...(typeof oauth.expiresAt === "number" && Number.isFinite(oauth.expiresAt) ? { expiresAt: oauth.expiresAt } : {}) };
@@ -541,9 +569,11 @@ export type RefreshImpl = (dir: string) => Promise<boolean>;
  * Resolves true once `initialize` was answered, false on a failure or after `timeoutMs`; the process
  * is always ended. Leased like model discovery, so the login never leaves under it.
  */
-export function refreshLogin(dir: string, options: { executable?: string; timeoutMs?: number; env?: NodeJS.ProcessEnv; logins?: ClaudeLogins } = {}): Promise<boolean> {
+export function refreshLogin(dir: string, options: { executable?: string; timeoutMs?: number; env?: NodeJS.ProcessEnv; logins?: ClaudeLogins; platform?: NodeJS.Platform } = {}): Promise<boolean> {
 	return new Promise((resolve) => {
 		const env: NodeJS.ProcessEnv = { ...claudeBaseEnv(options.env ?? process.env), CLAUDE_CONFIG_DIR: dir };
+		// On macOS CLAUDE_CONFIG_DIR names the keychain item: Claude Code's own login is renewed without it (./keychain.ts).
+		if ((options.platform ?? process.platform) === "darwin" && claudeConfigDirEnv(dir, options.env ?? process.env) === undefined) delete env.CLAUDE_CONFIG_DIR;
 		delete env.CLAUDECODE; delete env.CLAUDE_CODE_ENTRYPOINT;
 		let child: ReturnType<typeof spawn>;
 		try {
@@ -587,13 +617,20 @@ export function refreshLogin(dir: string, options: { executable?: string; timeou
  * unconfined run (`refresh`, default refreshLogin), then read again. Undefined when the login has no
  * readable access token.
  */
-export async function freshAccessToken(dir: string, options: { force?: boolean; now?: () => number; refresh?: RefreshImpl } = {}): Promise<ClaudeAccessToken | undefined> {
+export async function freshAccessToken(dir: string, options: { force?: boolean; now?: () => number; refresh?: RefreshImpl; keychain?: KeychainOptions } = {}): Promise<ClaudeAccessToken | undefined> {
 	const now = options.now ?? Date.now;
-	const before = accessTokenFor(dir);
+	const before = await currentAccessToken(dir, options.keychain);
 	const due = !before || before.expiresAt === undefined || before.expiresAt - now() < TOKEN_REFRESH_MARGIN_MS;
 	if (!options.force && !due) return before;
 	try { await (options.refresh ?? refreshLogin)(dir); } catch { /* read what is there */ }
-	return accessTokenFor(dir) ?? before;
+	return (await currentAccessToken(dir, options.keychain)) ?? before;
+}
+/** accessTokenFor; on macOS, with no file, the access token in the login's keychain item, read afresh (nothing else of it is kept). */
+async function currentAccessToken(dir: string, keychain: KeychainOptions = {}): Promise<ClaudeAccessToken | undefined> {
+	const fromFile = accessTokenFor(dir);
+	if (fromFile || (keychain.platform ?? process.platform) !== "darwin" || fs.existsSync(path.join(dir, ".credentials.json"))) return fromFile;
+	const item = await readKeychainCredentials(claudeConfigDirEnv(dir, keychain.env), keychain);
+	return accessTokenOf((item as { claudeAiOauth?: unknown } | undefined)?.claudeAiOauth);
 }
 
 // ---------------------------------------------------------------------------
@@ -654,6 +691,11 @@ export function readiness(standing: ClaudeLoginStanding | undefined, dir: string
 export type LeavingReason = "limit" | "auth" | "user" | "pin" | "idle" | "keeper" | "removed" | "superseded";
 export interface LoginLeaving { v: 1; at: number; reason: LeavingReason }
 const LEAVING_REASONS: readonly LeavingReason[] = ["limit", "auth", "user", "pin", "idle", "keeper", "removed", "superseded"];
+/** What a `moved` note says of a login leaving for `reason` (limit and auth name the standing instead). */
+const LEAVING_CAUSES: Record<LeavingReason, string> = {
+	limit: "is limited", auth: "needs sign-in", user: "left this device", pin: "left this device",
+	idle: "left this device", keeper: "returned to the keeper", removed: "was removed", superseded: "left this device",
+};
 
 /** The login's `.sova-leaving` mark, or undefined. Unreadable = leaving (fail closed). */
 export function readLeaving(agentDir: string, id: string): LoginLeaving | undefined {
@@ -676,6 +718,47 @@ export function markLeaving(agentDir: string, id: string, reason: LeavingReason,
 }
 export function clearLeaving(agentDir: string, id: string): void {
 	try { fs.rmSync(path.join(loginDir(agentDir, id), LEAVING_FILE_NAME), { force: true }); } catch { /* gone */ }
+}
+
+/** One chat's hand-pick of a login: `<login dir>/.sova-picks/<pi session id>.json`. */
+export interface LoginPick { v: 1; session: string; at: number }
+const PICK_SESSION_RE = /^[A-Za-z0-9_-][A-Za-z0-9._-]{0,199}$/;
+function pickFile(agentDir: string, loginId: string, sessionId: string): string | undefined {
+	if (!PICK_SESSION_RE.test(sessionId)) return undefined;
+	try { return path.join(loginDir(agentDir, loginId), PICKS_DIR_NAME, `${sessionId}.json`); } catch { return undefined; }
+}
+/**
+ * Mark that chat `sessionId` picked login `loginId` by hand, so the pool agent never returns it for
+ * idleness while the mark stands. Only for a login whose directory exists (never `default`).
+ */
+export function writeLoginPick(agentDir: string, loginId: string, sessionId: string, now = Date.now()): void {
+	const file = pickFile(agentDir, loginId, sessionId);
+	if (!file || !fs.existsSync(path.dirname(path.dirname(file)))) return;
+	const mark: LoginPick = { v: 1, session: sessionId, at: now };
+	writeJsonAtomic(file, mark, 0o600);
+}
+/** Drop chat `sessionId`'s pick of login `loginId` (no-op when there is none). */
+export function clearLoginPick(agentDir: string, loginId: string, sessionId: string): void {
+	const file = pickFile(agentDir, loginId, sessionId);
+	if (file) try { fs.rmSync(file, { force: true }); } catch { /* gone */ }
+}
+/** Every chat's pick mark on login `loginId` (unreadable files skipped). */
+export function readLoginPicks(agentDir: string, loginId: string): Array<{ session: string; at: number }> {
+	let dir: string;
+	try { dir = path.join(loginDir(agentDir, loginId), PICKS_DIR_NAME); } catch { return []; }
+	let names: string[];
+	try { names = fs.readdirSync(dir); } catch { return []; }
+	const picks: Array<{ session: string; at: number }> = [];
+	for (const name of names) {
+		if (!name.endsWith(".json")) continue;
+		const session = name.slice(0, -".json".length);
+		if (!PICK_SESSION_RE.test(session)) continue;
+		let json: Partial<LoginPick> | undefined;
+		try { json = JSON.parse(fs.readFileSync(path.join(dir, name), "utf8")); } catch { continue; }
+		if (json?.v !== 1 || json.session !== session) continue;
+		picks.push({ session, at: typeof json.at === "number" ? json.at : 0 });
+	}
+	return picks;
 }
 
 /** Whether a process exists (a zombie counts; EPERM = someone else's, alive). */
@@ -709,22 +792,44 @@ export interface LoginUse {
 	/** Live `claude` pids on the login (orphans of a dead owner included). */
 	children: number[];
 }
+/** `ps -o etime=` (`[[dd-]hh:]mm:ss`) in seconds, or null (pure, for tests). */
+export function parseEtime(v: string): number | null {
+	const m = /^\s*(?:(?:(\d+)-)?(\d+):)?(\d+):(\d+)\s*$/.exec(v);
+	return m ? ((Number(m[1] ?? 0) * 24 + Number(m[2] ?? 0)) * 60 + Number(m[3])) * 60 + Number(m[4]) : null;
+}
+
+/** A process's age in seconds and command name, from `ps` (null: no such process). */
+export type PsRead = (pid: number) => { ageSec: number; comm: string } | null;
+const psRead: PsRead = (pid) => {
+	const r = spawnSync("ps", ["-o", "etime=,comm=", "-p", String(pid)], { encoding: "utf8", timeout: 5_000, env: { ...process.env, LC_ALL: "C" } });
+	const m = r.status === 0 ? /^\s*(\S+)\s+(.+?)\s*$/m.exec(r.stdout) : null;
+	const age = m ? parseEtime(m[1]!) : null;
+	return m && age !== null ? { ageSec: age, comm: m[2]! } : null;
+};
+
 /**
  * Whether `pid` is still a process on the login directory `dir`: alive, and (Linux) its environment
  * names `dir` as CLAUDE_CONFIG_DIR — a lease's child pid that has been reused by an unrelated
- * process is not, so it neither holds the login nor gets stopped at a drain's cut. Elsewhere,
- * liveness alone.
+ * process is not, so it neither holds the login nor gets stopped at a drain's cut. Elsewhere (macOS
+ * reads no other process's environment): a process named `claude` that started no later than
+ * `since`, when the lease listing it was written (a pid reused after that started later), `now` on
+ * the same clock as `since`.
  */
-export function claudeRunsOn(pid: number, dir: string): boolean {
+export function claudeRunsOn(pid: number, dir: string, since?: number, now = Date.now(), platform: NodeJS.Platform = process.platform, ps: PsRead = psRead): boolean {
 	if (!pidAlive(pid)) return false;
-	if (process.platform !== "linux") return true;
+	if (platform !== "linux") {
+		const p = ps(pid);
+		if (!p || path.basename(p.comm) !== "claude") return false;
+		// ps counts whole seconds: a start up to 2 s past the write is the same process.
+		return since === undefined || now - p.ageSec * 1000 <= since + 2_000;
+	}
 	let env: string;
 	try { env = fs.readFileSync(`/proc/${pid}/environ`, "latin1"); } catch { return false; }
 	return `\0${env}\0`.includes(`\0CLAUDE_CONFIG_DIR=${dir}\0`);
 }
 export function readLoginUse(
 	agentDir: string, id: string, alive: (pid: number) => boolean = pidAlive, now = Date.now(),
-	runsOn: (pid: number, dir: string) => boolean = claudeRunsOn,
+	runsOn: (pid: number, dir: string, since?: number, now?: number) => boolean = claudeRunsOn,
 ): LoginUse {
 	const home = loginDir(agentDir, id);
 	const dir = path.join(home, LEASES_DIR_NAME);
@@ -735,7 +840,7 @@ export function readLoginUse(
 		if (!/^\d+\.json$/.test(name)) continue;
 		let lease: LoginLease;
 		try { lease = JSON.parse(fs.readFileSync(path.join(dir, name), "utf8")); } catch { continue; }
-		const kids = Array.isArray(lease.children) ? [...new Set(lease.children)].filter((pid) => Number.isInteger(pid) && alive(pid) && runsOn(pid, home)) : [];
+		const kids = Array.isArray(lease.children) ? [...new Set(lease.children)].filter((pid) => Number.isInteger(pid) && alive(pid) && runsOn(pid, home, typeof lease.at === "number" ? lease.at : undefined, now)) : [];
 		const ownerAlive = typeof lease.at === "number" && now - lease.at <= LEASE_STALE_MS && alive(lease.owner);
 		if (!ownerAlive && !kids.length) {
 			try { fs.rmSync(path.join(dir, name), { force: true }); } catch { /* best effort */ }
@@ -895,6 +1000,10 @@ export function switchText(from: ClaudeLoginChoice, to: ClaudeLoginChoice, failu
 /** A switch the user picked in the composer. */
 export function manualSwitchText(from: ClaudeLoginChoice, to: ClaudeLoginChoice): string {
 	return `Claude: switched ${from.label} → ${to.label} (chosen by you)`;
+}
+/** A move the session's login forced on it (it left, was removed, …): `cause` as ClaudeLogins.absence gives it. */
+export function movedText(from: ClaudeLoginChoice, to: ClaudeLoginChoice, cause: string): string {
+	return `Claude: switched ${from.label} → ${to.label} (${from.label} ${cause})`;
 }
 
 // ---------------------------------------------------------------------------
@@ -1084,6 +1193,43 @@ export class ClaudeLogins {
 		return choice ? { choice } : { refused: "That Claude login isn't on this device." };
 	}
 	/**
+	 * Why a session's login `id` can't run here now, or undefined while it can: what a `moved` note
+	 * names (`cause` follows the login's name: "left this device", "is limited until 15:00"…), and
+	 * whether the keeper has it free to take back (the pool is on, nobody holds it, and it is ready).
+	 */
+	absence(id: string): { label: string; cause: string; free: boolean } | undefined {
+		const accounts = this.accounts();
+		const record = accounts.logins.find((l) => l.id === id);
+		const label = record?.label ?? this.identityOf(id, accounts)?.email ?? (id === DEFAULT_LOGIN_ID ? "default" : id);
+		const gone = (cause: string, free = false) => ({ label, cause, free });
+		if (id !== DEFAULT_LOGIN_ID) {
+			if (!record) return gone("was removed");
+			const pool = this.pool;
+			if (!heldHere(record.device, this.device, pool)) {
+				if (record.device !== null) return gone("left this device");
+				return gone("returned to the keeper", pool && record.enabled && this.readinessOf(id).state === "ready");
+			}
+			const leaving = readLeaving(this.agentDir, id);
+			if (leaving && leaving.reason !== "limit" && leaving.reason !== "auth") return gone(LEAVING_CAUSES[leaving.reason]);
+		}
+		if (!loginEnabled(accounts, this.device, id)) return gone("is off in Settings → Accounts");
+		const ready = this.readinessOf(id);
+		if (ready.state === "limited") return gone(`is limited until ${clock(ready.until, this.now())}`);
+		if (ready.state === "auth") return gone("needs sign-in");
+		if (this.leaving(id)) return gone("left this device");
+		return undefined;
+	}
+	/** Chat `session` picked login `id` by hand: the pool never returns it for idleness while that stands. */
+	markPick(id: string, session: string): void {
+		if (id === DEFAULT_LOGIN_ID || !isLoginId(id)) return;
+		try { writeLoginPick(this.agentDir, id, session, this.now()); } catch { /* the pick still moves the chat */ }
+	}
+	/** Chat `session` is no longer on login `id` (another pick, a failover, a move). */
+	clearPick(id: string, session: string): void {
+		if (id === DEFAULT_LOGIN_ID || !isLoginId(id)) return;
+		clearLoginPick(this.agentDir, id, session);
+	}
+	/**
 	 * Borrow `id` by name from the keeper (a pick in the composer): only while the pool is on and
 	 * this host's pool agent runs, and only when it isn't held here already. Resolves when it is
 	 * held here or the wait ends; the caller checks `pickable` after.
@@ -1160,8 +1306,8 @@ export interface ClaudeLoginEntry {
 	/** Present on a switch (a failover, or the user's pick): the login it left. */
 	from?: string;
 	fromLabel?: string;
-	/** `manual`: the user picked it in the composer. */
-	reason?: "limit" | "auth" | "manual";
+	/** `manual`: the user picked it in the composer. `moved`: its login stopped being usable here (it left, was removed…). */
+	reason?: "limit" | "auth" | "manual" | "moved";
 	resetsAt?: number;
 	/** The notice, as the chat shows it. */
 	text?: string;
@@ -1170,7 +1316,7 @@ export function loginEntryFor(to: ClaudeLoginChoice, change?: ClaudeLoginSwitch)
 	return {
 		v: 1, login: to.id, label: to.label,
 		...(change ? {
-			from: change.from.id, fromLabel: change.from.label, reason: change.failure?.kind ?? "manual",
+			from: change.from.id, fromLabel: change.from.label, reason: change.failure?.kind ?? change.reason ?? "manual",
 			...(change.failure?.resetsAt ? { resetsAt: change.failure.resetsAt } : {}),
 			text: change.text,
 		} : {}),

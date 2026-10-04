@@ -1,6 +1,6 @@
 import { OVERSEER_BRIEF_PREFIX, type SovaConfirmDetails, type SovaConfirmItem, type SovaNavigateDetails, type TranscriptItem } from "../../shared/protocol";
 import { CARD_TOOL, normalizeCard, normalizeCardDetails, openCardsOf, type CardDetails, type OverseerCard } from "../../shared/overseer-card";
-import { isObj, str, toolResultView } from "./message";
+import { isObj, resultDetails, str, toolResultView } from "./message";
 import { openSettings, SETTINGS_TABS, type SettingsSection, type SettingsTab } from "./settings-nav";
 
 /** The route the Overseer lives at. Its identity is this route, never a session id. */
@@ -25,7 +25,7 @@ export const briefBody = (text: string): string => text.trimStart().slice(OVERSE
 
 // ---- Tool details -------------------------------------------------------------------------
 
-/** The `details` of a tool result: a live `tool_execution_end` result, or a persisted row's raw message. */
+/** The `details` of a live `tool_execution_end` result (a row's: `resultDetails` in lib/message). */
 export function detailsOf(resultOrRaw: unknown): unknown {
   if (!isObj(resultOrRaw)) return undefined;
   if ("details" in resultOrRaw) return resultOrRaw.details;
@@ -179,8 +179,8 @@ export function cardFold(items: readonly TranscriptItem[], live: readonly unknow
   for (const it of items) {
     if (it.kind !== "tool-call" || it.text !== CARD_TOOL || !it.toolCallId) continue;
     const r = results.get(it.toolCallId);
-    if (!r || toolResultView(r.raw, r.text).isError) continue;
-    take(normalizeCardDetails(detailsOf(r.raw)), it.id);
+    if (!r || toolResultView(r).isError) continue;
+    take(normalizeCardDetails(resultDetails(r)), it.id);
   }
   for (const d of live) take(normalizeCardDetails(d));
   return fold;

@@ -4,6 +4,7 @@ import { EventEmitter, getEventListeners } from "node:events";
 import { PassThrough, Writable } from "node:stream";
 import { spawn, type ChildProcess } from "node:child_process";
 import { ClaudeRunner, type ClaudeSpawnOptions, type ClaudePermissionDecision } from "./runner.ts";
+import { snapshot as llmSnapshot } from "../llm-inflight/tracker.ts";
 
 const tick = () => new Promise<void>((resolve) => setImmediate(resolve));
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
@@ -1042,4 +1043,25 @@ test("nested and post-stop output never owns the idle session's answer", async (
 	await tick();
 	assert.equal(f.settled.length, 1);
 	assert.ok(!f.runner.transcript.some((i) => i.text === "done: 24 ticks"));
+});
+
+test("a Claude Code worker's model calls count in this process: requesting to message_stop, none while its tool runs, none after close", async (t) => {
+	const f = fixture(); cleanup(t, f);
+	const base = llmSnapshot();
+	await ready(f);
+	f.child.out({ type: "system", subtype: "status", status: "requesting", session_id: "session-1" });
+	await tick();
+	assert.equal(llmSnapshot().active, base.active + 1, "in flight before any response frame");
+	assert.equal(llmSnapshot().claudeTurns, base.claudeTurns + 1, "its turn runs: the count is partial");
+	f.child.out({ type: "stream_event", event: { type: "message_start" }, parent_tool_use_id: null, session_id: "session-1" });
+	f.child.out({ type: "stream_event", event: { type: "message_stop" }, parent_tool_use_id: null, session_id: "session-1" });
+	await tick();
+	assert.equal(llmSnapshot().active, base.active, "the reply ended: running its tool is no call");
+	f.child.out({ type: "system", subtype: "status", status: "requesting", session_id: "session-1" });
+	await tick();
+	assert.equal(llmSnapshot().active, base.active + 1);
+	f.child.close();
+	await tick();
+	assert.equal(llmSnapshot().active, base.active, "the process closed mid-request: nothing left");
+	assert.equal(llmSnapshot().claudeTurns, base.claudeTurns);
 });

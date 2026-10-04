@@ -7,7 +7,7 @@
  *   gathering started, a message, hand_to, goal_done, a decision recorded, a reconciler run's results,
  *   a promotion, a build's turns and merge), so every link is the statecharts' own;
  * - every sova_* tool call the real overseer made is routed to the act it is now (design §7.1: the
- *   gap's item, a session, the reconciler, the project) and trialled under the same envelope (who,
+ *   gap's item, a session, the reconciler, the project, its placement) and trialled under the same envelope (who,
  *   attended, level, allowances), and today's rule (`autonomyRefusal` + `TOOL_NEEDS`) is the oracle
  *   both must agree with;
  * - after every step, each item's configuration is checked against a projection of the stores' facts
@@ -30,7 +30,7 @@ import { fileURLToPath } from "node:url";
 import { DEFAULT_PO_CAPS, LIMIT_WHAT, type Autonomy, type PoLimitKind, type ProjectOverseerSettings } from "../shared/project-overseer";
 import { OrgHost, type ActResult, type Effect as HostEffect, type InvocationReport, type InvocationRunner } from "./org-host";
 import { stampEnvelope } from "./org-stamp";
-import type { ActBy, Envelope } from "./org-envelope";
+import type { ActBy, Ceiling, Envelope } from "./org-envelope";
 
 // ---- the trace (the fixture format) ----------------------------------------------------------------
 
@@ -401,14 +401,16 @@ const ORG = "org_replay";
 const PROJECT = "prj_replay";
 const S = {
   org: `org/${ORG}`,
-  project: `project/${ORG}/${PROJECT}`,
-  watch: `watch/${ORG}/${PROJECT}`,
+  // the project layer names no organization; the org's concerns for the project are its placement's
+  project: `project/${PROJECT}`,
+  watch: `watch/${PROJECT}`,
+  placement: `placement/${ORG}/${PROJECT}`,
   reconciler: `reconciler/${ORG}/${PROJECT}`,
   person: (p: string) => `person/${ORG}/${p}`,
   item: (g: string) => `item/${ORG}/${PROJECT}/${gapIdOf(g)}`,
   baton: (b: string) => `baton/${ORG}/${b}`,
   decision: (d: string) => `decision/${ORG}/${PROJECT}/${d}`,
-  build: (c: string) => `build/${ORG}/${PROJECT}/${c}`,
+  build: (c: string) => `build/${PROJECT}/${c}`,
   conflict: (k: string) => `conflict/${ORG}/${PROJECT}/${k}`,
 };
 /** A fixture's gap (`§gap/g1`) as the item statechart's id (`g_g1`). */
@@ -431,6 +433,12 @@ interface Settings {
   watchGapMin: number;
   soonLookSec: number | null;
 }
+
+/** The org's ceiling on its project's level: an empty roster caps it at L0 (the org layer's contribution). */
+const rosterCeiling = (rosterActive: boolean): Ceiling | null =>
+  rosterActive ? null : { autonomy: "L0", reason: "The roster has no active people yet, so the overseer only proposes (L0)." };
+/** The org's look hint (its decision areas), as the org layer contributes it to a placed project's watch. */
+const LOOK_HINT = "Read sova_decisions where it matters. Infer gaps against the roster's decision areas and file new ones as ideas (§gap/…).";
 
 /** Effect results the statecharts need to go on: the host's side, in the shape it answers (nothing leaves the world). */
 function stubEffect(e: HostEffect, now: number): Record<string, unknown> {
@@ -479,8 +487,9 @@ class World {
   envelope(who: { by: ActBy; attended: boolean; extra?: Record<string, unknown> }): Envelope {
     const f = this.facts();
     const settings = { autonomy: f.settings.autonomy, caps: capsOf(f.settings.caps), holdMin: 0, confirmKinds: [] };
-    const e = stampEnvelope(this.host, ORG, PROJECT, { by: who.by, attended: who.attended }, () => settings, settings);
-    return { ...e, paused: f.paused, rosterActive: f.rosterActive, archived: f.archived, ...(who.extra ?? {}) };
+    const ceiling = rosterCeiling(f.rosterActive);
+    const e = stampEnvelope(this.host, PROJECT, { by: who.by, attended: who.attended }, () => settings, settings, () => ceiling);
+    return { ...e, paused: f.paused, ceiling, archived: f.archived, ...(who.extra ?? {}) };
   }
 
   async open(): Promise<void> {
@@ -683,9 +692,10 @@ export async function replay(trace: Trace, opts: { horizon?: number } = {}): Pro
   };
 
   await start("start org", S.org, "org", { id: ORG, name: "Replay", slug: "replay", createdAt: now });
-  await send("project/add", S.org, "project/add", { projectId: PROJECT, name: "Replay", root: "/nowhere" }, env("operator"));
+  await start("start project", S.project, "project", { id: PROJECT, name: "Replay", root: "/nowhere", origin: "folder", createdAt: now });
+  await send("project/place", S.org, "project/place", { projectId: PROJECT, placedVia: "born" }, env("operator"));
   await fact("settings", S.watch, "settings/changed", { settings: { ...settings(), caps: capsOf(caps), holdMin: 0 } });
-  await fact("roster", S.watch, "facts/changed", { rosterActive: rosterActive() });
+  await fact("roster", S.watch, "facts/changed", { ceiling: rosterCeiling(rosterActive()), lookHint: LOOK_HINT });
   let overseerOn = false;
   const startOverseer = async () => {
     if (overseerOn) return;
@@ -811,7 +821,7 @@ export async function replay(trace: Trace, opts: { horizon?: number } = {}): Pro
       else if (prev === "proposed" && status === "left") await send("person/decline", S.person(id), "person/decline", {}, env("operator"));
       else await send("person/edit", S.person(id), "person/edit", { patch: { status } }, env("operator"));
     }
-    await fact("roster", S.watch, "facts/changed", { rosterActive: rosterActive() });
+    await fact("roster", S.watch, "facts/changed", { ceiling: rosterCeiling(rosterActive()) });
   };
   /** The first holder of a gathering the stores show: the operator when nobody on the roster is active. */
   const firstHolder = (offer: boolean): Record<string, unknown> => {
@@ -826,7 +836,7 @@ export async function replay(trace: Trace, opts: { horizon?: number } = {}): Pro
   const ensureItem = async (g: string, by: ActBy = "overseer") => {
     if (gaps.has(g)) return;
     gaps.set(g, { status: "open", baton: null, decisions: [], build: null });
-    if (!world.exists(S.item(g))) await send("gap/file", S.project, "gap/file", { gapId: gapIdOf(g), ideaId: g }, env(by, true));
+    if (!world.exists(S.item(g))) await send("gap/file", S.placement, "gap/file", { gapId: gapIdOf(g), ideaId: g }, env(by, true));
   };
   const batonFact = async (s: Step) => {
     const id = s.id!;
@@ -835,7 +845,7 @@ export async function replay(trace: Trace, opts: { horizon?: number } = {}): Pro
     batons.set(id, b);
     const sid = S.baton(id);
     // The overseer's start is its turn's: an unattended look's draws on the day's ledger, not the operator's message's.
-    if (!world.exists(sid)) await send("baton/start", S.project, "baton/start", batonStart(id, (s as { offer?: boolean }).offer === true), env(b.own ? "overseer" : "operator", b.own ? !!turn?.attended : true));
+    if (!world.exists(sid)) await send("baton/start", S.placement, "baton/start", batonStart(id, (s as { offer?: boolean }).offer === true), env(b.own ? "overseer" : "operator", b.own ? !!turn?.attended : true));
     if (!world.exists(sid)) return;
     const d = world.data(sid);
     const holder = typeof d.holder === "string" ? d.holder : null;
@@ -997,6 +1007,9 @@ export async function replay(trace: Trace, opts: { horizon?: number } = {}): Pro
     }
     if (want === null) return;
     if (said.startsWith(want)) return pass();
+    // General Projects: the refusal no longer says "tag gap" (gaps are the organization's, offered only while placed)
+    if (said.startsWith(want.replace("(sova_idea, tag gap)", "(sova_idea)")))
+      return diverge("refusal-sentence", want, said, "ruling", "General Projects (al_7): the autonomy refusal drops \"tag gap\"; the organization's prompt keeps the gap guidance", { ruling: "al_7" });
     diverge("refusal-sentence", want, said, driftWhy ? "drift" : null, driftWhy ?? "the statechart refuses with a sentence other than today's", driftWhy ? { commits: ["80a785ca"] } : undefined);
   };
   const checkTool = (s: Step, vs: Verdict[]): void => {
@@ -1079,7 +1092,7 @@ export async function replay(trace: Trace, opts: { horizon?: number } = {}): Pro
       return [{ sid: S.item(s.args.id), event: "gap/drop", payload: { fromIdea: true }, item: s.args.id }];
     if (name === "sova_start_gathering" || name === "sova_offer") {
       const payload = batonStart(s.args?.baton ?? `b_${s.dt}`, name === "sova_offer");
-      return [item ? { sid: S.item(item), event: "gather/start", payload, item } : { sid: S.project, event: "baton/start", payload: { ...payload, gap: "none" }, item: null }];
+      return [item ? { sid: S.item(item), event: "gather/start", payload, item } : { sid: S.placement, event: "baton/start", payload: { ...payload, gap: "none" }, item: null }];
     }
     if (name === "sova_close_gathering" && s.args?.session) return [{ sid: S.baton(s.args.session), event: "baton/close", payload: { reason: "stale", ownerProject: PROJECT }, item: batonGap.get(s.args.session) ?? null }];
     if (name === "sova_create_session") {
@@ -1124,7 +1137,7 @@ export async function replay(trace: Trace, opts: { horizon?: number } = {}): Pro
         diverge("org-owner", "an owner", "none", "mining", "no store the miner reads names the org's owner; an owner update that ran shows it had one: the first active person, synced");
         await send("sync owner", S.org, "owner/set", { personId: active, target: { id: active, name: `Person ${active}`, status: "active" } }, env("operator"));
       }
-      return [{ sid: S.project, event: "owner-update/post", payload: { text: "An update.", ownerActive: !!world.data(S.org).owner }, item: null }];
+      return [{ sid: S.placement, event: "owner-update/post", payload: { text: "An update.", ownerActive: !!world.data(S.org).owner }, item: null }];
     }
     return [];
   };
@@ -1425,7 +1438,7 @@ export async function replay(trace: Trace, opts: { horizon?: number } = {}): Pro
         await fact("attach", S.watch, "org/attached-here");
       } else if (s.act === "archive" || s.act === "unarchive") {
         archived = s.act === "archive";
-        await send(s.act, S.project, `project/${s.act}`, {}, env("operator", true, { blockers: { gatherings: [], coding: [], overseerWorking: false } }));
+        await send(s.act, S.project, `project/${s.act}`, {}, env("operator", true, { blockers: { phrases: [], coding: [], overseerWorking: false } }));
       } else if (s.act === "watch-off" || s.act === "watch-on") {
         watchOn = s.act === "watch-on";
         await fact(s.act, S.watch, "settings/changed", { settings: { ...settings(), caps: capsOf(caps), holdMin: 0 } });

@@ -170,8 +170,9 @@ Returns `{:configs n :cells n :failures [...]}`; `(matrix/assert-clean! report)`
 
 ## 6. Migrations
 
-`(fn [{:keys [config data history queue]}] {...same keys...})`: `config` a set of state ids,
-`data` the data model, `history` {history-id #{state-ids}}, `queue` pending
+`(fn [{:keys [config data history invocation-data queue]}] {...same keys...})`: `config` a set of state ids,
+`data` the data model, `history` {history-id #{state-ids}}, `invocation-data` the start data the library
+keeps (left as it was when the result has no such key), `queue` pending
 `[{:event {:name :data} :delivery-time :ordinal}]`. `(core/migrate-text registry text)` returns the
 current-version EDN; tests load a fixture of every shipped version.
 

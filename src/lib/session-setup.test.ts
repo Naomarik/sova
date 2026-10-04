@@ -9,6 +9,7 @@ import {
   contextRows,
   contextSum,
   fileFacts,
+  flipped,
   gitView,
   hasTokens,
   isSumEmpty,
@@ -76,16 +77,15 @@ test("lines: singular only for exactly 1, thousands separated", () => {
   assert.equal(linesLabel(0), "0 lines");
   assert.equal(linesLabel(2), "2 lines");
   assert.equal(linesLabel(1204), "1,204 lines");
-  assert.equal(fileFacts({ path: "/a", bytes: 1024, lines: 1 }), "1.0 KB · 1 line");
 });
 
 test("tokens: the same formatter the head uses, marked as an estimate, and never invented", () => {
   // The same figures the context gauge shows: 812 · 8.4k · 237k · 1M.
-  assert.equal(fileFacts({ path: "/a", bytes: 1024, lines: 1, tokens: 812 }), "1.0 KB · 1 line · ≈812 tokens");
-  assert.equal(fileFacts({ path: "/a", bytes: 1024, lines: 1, tokens: 8400 }), "1.0 KB · 1 line · ≈8.4k tokens");
-  assert.equal(fileFacts({ path: "/a", bytes: 0, lines: 0, tokens: 0 }), "0 B · 0 lines · ≈0 tokens");
-  // No estimate: the figure is dropped, never drawn as 0 — a 0 would be a claim about the file.
-  assert.equal(fileFacts({ path: "/a", bytes: 1024, lines: 1 }), "1.0 KB · 1 line");
+  assert.equal(fileFacts({ path: "/a", bytes: 1024, lines: 1, tokens: 812 }), "≈812 tokens");
+  assert.equal(fileFacts({ path: "/a", bytes: 1024, lines: 1, tokens: 8400 }), "≈8.4k tokens");
+  assert.equal(fileFacts({ path: "/a", bytes: 0, lines: 0, tokens: 0 }), "≈0 tokens");
+  // A row shows only its estimate; with none it shows nothing — never its size, never a 0.
+  assert.equal(fileFacts({ path: "/a", bytes: 1024, lines: 1 }), "");
   assert.equal(hasTokens({ path: "/a", bytes: 1, lines: 1 }), false);
   assert.equal(hasTokens({ path: "/a", bytes: 1, lines: 1, tokens: 0 }), true);
   assert.equal(sumFacts({ bytes: 2048, lines: 2, tokens: 8400 }), "2.0 KB · 2 lines · ≈8.4k tokens");
@@ -270,4 +270,36 @@ test("ago: a ms epoch reads like relativeTime, and a bad number reads as nothing
   assert.equal(agoLabel(NOW - 10_000, NOW), "just now");
   assert.equal(agoLabel(NOW - 3 * 86_400_000, NOW), "3d ago");
   assert.equal(agoLabel(Number.NaN, NOW), "");
+});
+
+test("off rows stay listed, and no total counts them (§chat.transcript/setup-card-toggles)", () => {
+  const f = (path: string, bytes: number, off?: true) => ({ path, bytes, lines: 1, tokens: bytes / 4, ...(off ? { off } : {}) });
+  const s = setup({
+    systemPrompt: f("/p/.pi/SYSTEM.md", 400),
+    context: [f("/home/u/.pi/agent/AGENTS.md", 800, true), f("/p/AGENTS.md", 1200)],
+    skills: [{ name: "pdf", ...f("/s/pdf/SKILL.md", 2000, true) }, { name: "web", ...f("/s/web/SKILL.md", 4000) }],
+  });
+  assert.equal(contextRows(s, "/home/u").length, 3, "listed, off row included");
+  assert.equal(contextHeading(contextRows(s, "/home/u").length), "Context · 3");
+  assert.deepEqual(contextSum(s), { bytes: 1600, lines: 2, tokens: 400 });
+  assert.deepEqual(skillsSum(s), { bytes: 4000, lines: 1, tokens: 1000 });
+  assert.deepEqual(systemContextSum(s), { bytes: 5600, lines: 3, tokens: 1400 });
+  // SYSTEM.md / APPEND_SYSTEM.md rows never switch; context files do.
+  assert.deepEqual(contextRows(s, "/home/u").map((r) => r.switchable), [false, true, true]);
+  // Every row off: the totals are empty, but the notes still say what the listed figures mean.
+  const allOff = setup({ context: [f("/a.md", 100, true)], skills: [{ name: "x", ...f("/x/SKILL.md", 100, true) }] });
+  assert.equal(isSumEmpty(contextSum(allOff)), true);
+  assert.equal(isSumEmpty(systemContextSum(allOff)), true);
+  assert.equal(contextNote(allOff), `Loaded into the prompt. ${TOKEN_NOTE}`);
+  assert.equal(skillsNote(allOff), `Offered to this session. A skill loads when it is used. ${TOKEN_NOTE}`);
+});
+
+test("flipped sends the whole off set after one flip, and only that flip changes", () => {
+  const f = (path: string, off?: true) => ({ path, bytes: 1, lines: 1, ...(off ? { off } : {}) });
+  const s = setup({ context: [f("/g.md", true), f("/l.md")], skills: [{ name: "a", ...f("/a", true) }, { name: "b", ...f("/b") }] });
+  assert.deepEqual(flipped(s, "context", "/l.md", false), { offContext: ["/g.md", "/l.md"], offSkills: ["a"] });
+  assert.deepEqual(flipped(s, "context", "/g.md", true), { offContext: [], offSkills: ["a"] });
+  assert.deepEqual(flipped(s, "skill", "b", false), { offContext: ["/g.md"], offSkills: ["a", "b"] });
+  assert.deepEqual(flipped(s, "skill", "a", true), { offContext: ["/g.md"], offSkills: [] });
+  assert.deepEqual(flipped(s, "skill", "a", false), { offContext: ["/g.md"], offSkills: ["a"] }, "already off: not doubled");
 });

@@ -3,6 +3,7 @@ import { randomBytes } from "node:crypto";
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { AttentionItem } from "../shared/protocol";
+import type { OrgCosts } from "../shared/costs";
 import { OPERATOR } from "../shared/baton";
 import {
   ORG_ABOUT_MAX,
@@ -31,6 +32,10 @@ import type { Envelope, EnvelopeCard } from "./org-envelope";
 import { hostIdentity } from "./org-holder";
 import { OrgHost, OrgWorkspaceError } from "./org-host";
 import { setExtraSessionRoots } from "./paths";
+import { contributeProjectPart, watchFactsChanged } from "./projects/contributions";
+import { RegistryError } from "./projects/registry";
+import { projectSid, watchSid } from "./projects/sids";
+import { engineOf, listProjects, registerProjectIn } from "./projects/spaces";
 import { stateRoot } from "./state-root";
 import { migrateHostLocal, migrateOrg, migrateWorkspace, StatechartMigrationError } from "./statechart-migration";
 import { commitEveryMs } from "./workspace-commits";
@@ -53,6 +58,8 @@ import { gitStatus, initRepo, isIgnoredBy, isInGitWorkTree } from "./workspace-g
  */
 
 import { OrgError } from "./org-error";
+import { setOrgVisitsDir } from "./visits";
+import { sessionsChanged } from "./list-generation";
 export { OrgError };
 
 const INDEX_VERSION = 1;
@@ -79,6 +86,7 @@ function writeJson(file: string, value: unknown): void {
   const tmp = `${file}.${process.pid}.tmp`;
   writeFileSync(tmp, `${JSON.stringify(value, null, 2)}\n`);
   renameSync(tmp, file);
+  sessionsChanged(); // the org registry decides rows' org fields and session roots
 }
 
 function readJson(file: string): unknown {
@@ -152,6 +160,7 @@ export function orgDir(orgId: string): string {
   if (!e) throw new OrgError("Unknown organization", 404);
   return e.dir;
 }
+setOrgVisitsDir(orgDir); // an org's visit log is in its workspace (server/visits.ts)
 
 /** The attached org whose workspace sessions dir holds `sessionPath`, or null. */
 export function orgOfSessionPath(sessionPath: string): { orgId: string; dir: string } | null {
@@ -215,8 +224,8 @@ export async function workspaceDirProblem(dir: string, sovaRoot = SOVA_ROOT, wor
 export const orgSid = (orgId: string) => `org/${orgId}`;
 export const residenceSid = (orgId: string) => `residence/${orgId}`;
 export const personSid = (orgId: string, pid: string) => `person/${orgId}/${pid}`;
-export const projectSid = (orgId: string, pid: string) => `project/${orgId}/${pid}`;
-export const watchSid = (orgId: string, pid: string) => `watch/${orgId}/${pid}`;
+/** A project placed in the org: the org's concerns about it (the project's own sessions are the project layer's). */
+export const placementSid = (orgId: string, pid: string) => `placement/${orgId}/${pid}`;
 
 /** The org id a workspace's org snapshot names (`statecharts/org/<org%2F<id>>.edn`), or null: not a workspace repo. */
 export function orgIdIn(dir: string): string | null {
@@ -234,17 +243,69 @@ export function orgIdIn(dir: string): string | null {
   return null;
 }
 
+/** The project ids a workspace's project snapshots name (`statecharts/project/<project%2F<pid>>.edn`). */
+function projectIdsIn(dir: string): string[] {
+  let files: string[];
+  try {
+    files = readdirSync(join(dir, "statecharts", "project"));
+  } catch {
+    return [];
+  }
+  return files.filter((f) => f.endsWith(".edn")).map((f) => decodeURIComponent(f.slice(0, -4))).filter((sid) => sid.startsWith("project/")).map((sid) => sid.slice("project/".length));
+}
+
 /** Open an org's engine; the org statecharts' effect handlers (history lines, links, commits) are registered
     on it first (loaded here, not imported above: that module imports this one). Its data still under the
     old names moves first (§app.organizations/statechart-migration). */
 async function openHost(orgId: string, dir: string): Promise<OrgHostApi> {
   await migrated(() => migrateOrg(orgId, dir, stateRoot()));
   await import("./org-effects");
+  await import("./overseer-org-part"); // the org's part of its projects: tools, prompt, gaps, the placement's effects
+  await import("./org-sessions"); // the org's fields in the session list and the workspace files Clean Up keeps
   await import("./baton-loadout"); // the baton statecharts' effects (the session file, links, entries) and its reply runner
   await import("./build-loadout"); // the build statecharts' effects (worktree, session file, mode, prompts, merge)
   await import("./project-overseer-store"); // the settings every act is stamped with
-  return openOrgHost({ orgId, workspaceDir: dir, stateDir: stateRoot() });
+  const host = await openOrgHost({ orgId, workspaceDir: dir, stateDir: stateRoot() });
+  await placeUnplaced(orgId);
+  return host;
 }
+
+// ---- what the org contributes to its projects (server/projects/contributions.ts) ------------------------------
+
+/** An empty roster caps a placed project at L0: nobody to ask, so its overseer only proposes. */
+export const EMPTY_ROSTER_REASON = "The roster has no active people yet, so the overseer only proposes (L0).";
+
+const isOrgEngine = (engine: string): boolean => readIndex().orgs.some((o) => o.id === engine);
+
+contributeProjectPart({
+  space(engine) {
+    if (!isOrgEngine(engine)) return null;
+    return { kind: "org", orgId: engine, orgName: readOrgOrPlaceholder(engine).name };
+  },
+  ceiling(engine) {
+    if (!isOrgEngine(engine) || !isOrgHostOpen(engine)) return null;
+    return hostOf(engine).sessions("person").some((p) => p.configuration.includes("active")) ? null : { autonomy: "L0", reason: EMPTY_ROSTER_REASON };
+  },
+  // A project root is never an org's workspace (every project's transcripts, the roster's contacts), whichever holds the other.
+  reservedRoots: () => readIndex().orgs.map((o) => o.dir),
+  // A preview sent to a roster person: their name.
+  sentToName(engine, _projectId, personId) {
+    if (!isOrgEngine(engine) || !isOrgHostOpen(engine)) return null;
+    return findPerson(engine, personId)?.name ?? null;
+  },
+  // An attach on this host pauses every project overseer of the org (the watch's `paused`) until its level is set.
+  pausedSince(engine, projectId) {
+    const e = readIndex().orgs.find((o) => o.id === engine);
+    if (!e || !isOrgHostOpen(engine) || !hostOf(engine).configuration(watchSid(projectId))?.includes("paused")) return null;
+    return e.attachedAt || new Date(0).toISOString();
+  },
+});
+
+/** A roster status changed: the ceiling of every project of the org may have (the project layer re-pushes what differs). */
+onOrgChange((orgId, change) => {
+  if (!change.sessions.some((sid) => sid.startsWith("person/")) || !isOrgEngine(orgId)) return;
+  void watchFactsChanged(orgId).catch((err) => console.warn(`[orgs] ${orgId}: ceiling not updated: ${err instanceof Error ? err.message : String(err)}`));
+});
 
 /** A migration step; its refusal as the OrgError callers show. */
 async function migrated<T>(step: () => T | Promise<T>): Promise<T> {
@@ -285,6 +346,9 @@ export type OperatorBy = { kind: "operator"; via?: ChangeVia; overseerId?: strin
 const OPERATOR_BY: OperatorBy = { kind: "operator" };
 
 /** The envelope of the operator's act (never level-checked: the statecharts pass the operator's acts). */
+/** The global Overseer's mark on an act's row (`via`, its id), or nothing (§app.overseer/org-attribution). */
+const viaOf = (by: OperatorBy): { via?: ChangeVia; overseerId?: string } => ({ ...(by.via ? { via: by.via } : {}), ...(by.overseerId ? { overseerId: by.overseerId } : {}) });
+
 export function operatorEnvelope(orgId: string, projectId: string | null, by: OperatorBy = OPERATOR_BY, extra: Record<string, unknown> = {}): Envelope {
   return { ...envelopeFor(orgId, projectId, { by: "operator", attended: true, ...(by.via ? { via: by.via } : {}), ...(by.overseerId ? { overseerId: by.overseerId } : {}), ...(by.card ? { card: by.card } : {}) }), ...extra };
 }
@@ -357,7 +421,7 @@ export async function createOrg(input: { name: unknown; dir?: unknown }): Promis
  * holds it, committed and pushed at once, and every project's overseer waits at L0 until the
  * operator sets its level here. Host-local state starts fresh (a restore starts it fresh).
  */
-export async function attachOrg(input: { dir: unknown; confirm?: unknown }): Promise<Org> {
+export async function attachOrg(input: { dir: unknown; confirm?: unknown }, by: OperatorBy = OPERATOR_BY): Promise<Org> {
   const dir = typeof input.dir === "string" ? resolve(input.dir.trim()) : "";
   if (!dir) throw new OrgError("dir is required");
   const problem = await workspaceDirProblem(dir);
@@ -366,6 +430,9 @@ export async function attachOrg(input: { dir: unknown; confirm?: unknown }): Pro
   const id = orgIdIn(dir);
   if (!id) throw new OrgError("No organization in that dir: not a workspace repo.");
   if (readIndex().orgs.some((o) => o.id === id)) throw new OrgError("That organization is already attached here.", 409);
+  const here = new Map(listProjects().map((p) => [p.id, p.name]));
+  const clash = projectIdsIn(dir).find((pid) => here.has(pid));
+  if (clash) throw new OrgError(`${here.get(clash) || clash} is already a project here.`, 409);
   await migrated(() => migrateHostLocal(id, dir, stateRoot()));
   mkdirSync(join(dir, "sessions"), { recursive: true });
   OrgHost.forgetLocal(id, stateRoot());
@@ -376,7 +443,9 @@ export async function attachOrg(input: { dir: unknown; confirm?: unknown }): Pro
     throw new OrgError("No organization in that dir: not a workspace repo.");
   }
   const me = hostIdentity();
-  await host.settle(await host.start(residenceSid(id), "residence", { orgId: id, orgName: String(org.name ?? id), hostId: me.id, hostName: me.name, mode: "attach", commitEveryMs: commitEveryMs() }, { by: "system" }));
+  await host.settle(
+    await host.start(residenceSid(id), "residence", { orgId: id, orgName: String(org.name ?? id), hostId: me.id, hostName: me.name, mode: "attach", commitEveryMs: commitEveryMs() }, { by: "system", ...viaOf(by) }),
+  );
   if (host.configuration(residenceSid(id))?.includes("held-elsewhere")) {
     if (input.confirm !== true) {
       const sentence = String(host.data(residenceSid(id))?.heldSentence ?? "Another host holds this organization.");
@@ -404,14 +473,14 @@ export async function attachOrg(input: { dir: unknown; confirm?: unknown }): Pro
  * Remove the org from this host's index at once; the residence releases it in the repo
  * (§app.organizations/holder), committed and pushed, best effort, and turns the owner link off.
  */
-export async function detachOrg(orgId: string): Promise<void> {
+export async function detachOrg(orgId: string, by: OperatorBy = OPERATOR_BY): Promise<void> {
   const index = readIndex();
   const entry = index.orgs.find((o) => o.id === orgId);
   if (!entry) throw new OrgError("Unknown organization", 404);
   writeIndex({ ...index, orgs: index.orgs.filter((o) => o.id !== orgId) });
   try {
     if (isOrgHostOpen(orgId)) {
-      const out = await hostOf(orgId).act(residenceSid(orgId), "org/detach", {}, { by: "operator" }, { settle: true });
+      const out = await hostOf(orgId).act(residenceSid(orgId), "org/detach", {}, { by: "operator", ...viaOf(by) }, { settle: true });
       for (const e of out.effects ?? []) if (e.error) console.warn(`[orgs] detach ${orgId}: ${e.error}`);
     }
   } catch (err) {
@@ -545,18 +614,24 @@ export function findPerson(orgId: string, personId: string): Person | undefined 
   return s ? personOf(orgId, s) : undefined;
 }
 
-function projectOf(orgId: string, d: Record<string, unknown>, configuration: readonly string[]): OrgProject {
-  const archived = d.archived as Record<string, unknown> | undefined;
+/** A placed project as the org reads it: the project's own identity and shelf (its `project/<p>` session, in
+    this engine), and the placement's org concerns. */
+function projectOf(orgId: string, d: Record<string, unknown>): OrgProject {
+  const host = orgHost(orgId);
+  const pid = String(d.projectId);
+  const p = host.data(projectSid(pid)) ?? {};
+  const shelf = host.configuration(projectSid(pid)) ?? [];
+  const archived = p.archived as Record<string, unknown> | undefined;
   const cleared = d.stakeholderCleared as Record<string, unknown> | undefined;
   const history = Array.isArray(d.stakeholderHistory) ? (d.stakeholderHistory as Record<string, unknown>[]) : [];
   const spec = d.spec as { frozen?: unknown } | undefined;
   return {
-    id: String(d.id),
+    id: pid,
     orgId,
-    name: String(d.name ?? ""),
-    root: String(d.root ?? ""),
-    origin: "manual",
-    createdAt: isoOf(d.createdAt),
+    name: String(p.name ?? d.projectName ?? ""),
+    root: String(p.root ?? ""),
+    origin: String(p.origin ?? ""),
+    createdAt: isoOf(p.createdAt ?? d.placedAt),
     ...(isObj(spec) && typeof spec.frozen === "boolean" ? { spec: { frozen: spec.frozen } } : {}),
     ...(typeof d.stakeholder === "string" && d.stakeholder ? { stakeholder: d.stakeholder } : {}),
     ...(history.length
@@ -564,15 +639,15 @@ function projectOf(orgId: string, d: Record<string, unknown>, configuration: rea
       : {}),
     ...(isObj(cleared) && typeof cleared.personId === "string" ? { stakeholderCleared: { personId: cleared.personId, name: String(cleared.name ?? ""), at: isoOf(cleared.at) } } : {}),
     ...(d.ownerHidden === true ? { ownerHidden: true } : {}),
-    ...(configuration.includes("archived") && isObj(archived) ? { archived: { at: isoOf(archived.at), ...(archived.via === "overseer" ? { via: "overseer" as const } : {}) } } : {}),
+    ...(shelf.includes("archived") && isObj(archived) ? { archived: { at: isoOf(archived.at), ...(archived.via === "overseer" ? { via: "overseer" as const } : {}) } } : {}),
   };
 }
 
-/** The org's projects, oldest first. */
+/** The org's projects (its placements), oldest first. */
 export function readProjects(orgId: string): OrgProject[] {
   return orgHost(orgId)
-    .sessions("project")
-    .map((s) => projectOf(orgId, s.data, s.configuration))
+    .sessions("placement")
+    .map((s) => projectOf(orgId, s.data))
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
 }
 
@@ -786,6 +861,8 @@ export async function rewindowOrgHours(orgId: string): Promise<number> {
 /** The stamp's people (r13): an act reaching someone carries their current effective hours, so a held act released
     later is checked against the hours in force then (engine: the stamp merges over the held data). */
 export function stampPeople(orgId: string, payload: Record<string, unknown>): Record<string, unknown> {
+  // Called for every engine: a standalone project's has no people.
+  if (!isOrgHostOpen(orgId) || !hostOf(orgId).sessions("org").length) return {};
   const rec = (pid: string) => {
     const s = hostOf(orgId).sessions("person").find((x) => x.id === personSid(orgId, pid));
     if (!s) return null;
@@ -1050,7 +1127,7 @@ export function stakeholderAttention(): AttentionItem[] {
         kind: "project-stakeholder",
         since: Date.parse(c.at) || 0,
         detail: `Pick a main stakeholder for ${p.name}: ${c.name} left the organization.`,
-        href: `#/orgs/${encodeURIComponent(o.id)}/projects/${encodeURIComponent(p.id)}`,
+        href: `#/projects/${encodeURIComponent(p.id)}`,
         org: { orgId: o.id, orgName, projectId: p.id, projectName: p.name },
       });
     }
@@ -1071,6 +1148,21 @@ export function stakeholderOf(orgId: string, projectId: string): string | null {
 export function participantLine(p: Person): string {
   const decides = p.decides.length ? `; decides: ${p.decides.join(", ")}` : "";
   return `- ${p.name} (id ${p.id})${p.role ? ` — ${p.role}` : ""}${decides}`;
+}
+
+/** A person as the project overseer (operator-facing) knows them: the participant line, their status when not
+    active, and indented language, skills, competence and voice, so it knows how to address and write to them.
+    Never contact. Never in a conversation with a person: there, others are `participantLine` only. */
+export function overseerPersonLine(p: Person): string {
+  const comp = Object.entries(p.competence)
+    .map(([k, c]) => `${k} ${c.level}/5`)
+    .join(", ");
+  const profile = [p.language ? `language: ${p.language}` : "", p.skills.length ? `skills: ${p.skills.join(", ")}` : "", comp ? `competence: ${comp}` : ""].filter(Boolean).join(" · ");
+  return [
+    `${participantLine(p)}${p.status !== "active" ? ` · ${p.status}` : ""}`,
+    ...(profile ? [`  ${profile}`] : []),
+    ...(p.voice ? [`  voice: "${p.voice.replace(/\s+/g, " ").trim()}"`] : []),
+  ].join("\n");
 }
 
 /** The project overseer's line about the project's main stakeholder (while active), or null. */
@@ -1110,35 +1202,55 @@ export function publicTerms(roster: readonly Person[]): string[] {
 
 // ---- projects (§app.organizations/projects, /archive, /stakeholder) ------------------------------------------
 
-/** Why a project root can't be used, or null (the act's `invalid` stamp: the statecharts can't read the disk). */
-export function rootProblem(v: unknown): string | null {
-  const root = typeof v === "string" ? v.trim() : "";
-  if (!root || !isAbsolute(root)) return "root must be an absolute path";
-  let st;
+/**
+ * Add Project in an org: register the folder (normalized to its checkout root, one project per root, reserved
+ * roots refused: the project layer's) with its `project/<p>` in this org's engine, then place it here.
+ */
+export async function addProject(orgId: string, input: { name: unknown; root: unknown }, by: OperatorBy = OPERATOR_BY): Promise<OrgProject & { normalizedFrom?: string }> {
+  readOrg(orgId);
+  orgHost(orgId);
+  const name = typeof input.name === "string" && input.name.trim() ? checkName(input.name) : undefined;
+  let made: Awaited<ReturnType<typeof registerProjectIn>>;
   try {
-    st = statSync(root);
-  } catch {
-    return `No such directory: ${root}`;
+    made = await registerProjectIn(orgId, input.root, { ...(name ? { name } : {}), origin: "folder" }, by);
+  } catch (err) {
+    if (err instanceof RegistryError) throw new OrgError(err.message, err.status);
+    throw err;
   }
-  if (!st.isDirectory()) return `Not a directory: ${root}`;
-  // The project overseer reads its root: never an org's workspace (every project's transcripts, the
-  // roster's contacts), whichever holds the other, nor a folder of Sova's own state. (A root that
-  // holds Sova's state, a hermetic worktree's `.agent`, is allowed: the tools exclude it.)
-  const real = canonicalDir(root);
-  const under = (a: string, b: string) => a === b || a.startsWith(b.endsWith(sep) ? b : b + sep);
-  const state = canonicalDir(stateRoot());
-  if (under(real, state) || readIndex().orgs.map((o) => canonicalDir(o.dir)).some((w) => under(real, w) || under(w, real)))
-    return "A project root must not be, hold or sit inside an organization's workspace, nor sit inside Sova's own state folder.";
-  return null;
+  await placeProject(orgId, made.project.id, "born", by);
+  return { ...projectById(orgId, made.project.id), ...(made.normalizedFrom ? { normalizedFrom: made.normalizedFrom } : {}) };
 }
 
-export async function addProject(orgId: string, input: { name: unknown; root: unknown }): Promise<OrgProject> {
-  readOrg(orgId);
-  const projectId = shortId("prj_");
-  const invalid = rootProblem(input.root);
-  const root = typeof input.root === "string" ? resolve(input.root.trim() || "/") : "";
-  await actOrThrow(orgId, orgSid(orgId), "project/add", { projectId, name: typeof input.name === "string" ? input.name : "", root, ...(invalid ? { invalid } : {}) }, operatorEnvelope(orgId, null));
-  return readProjects(orgId).find((p) => p.id === projectId)!;
+/** Place a project whose sessions are in this org's engine (`via`: born here, or imported); placing it again is a no-op.
+    `by`: the operator, or the global Overseer for them (its row carries the mark, §app.overseer/org-project-add). */
+export async function placeProject(orgId: string, projectId: string, via: "born" | "import", by: OperatorBy = OPERATOR_BY): Promise<void> {
+  const host = hostOf(orgId);
+  const invalid = host.configuration(projectSid(projectId)) ? null : "No such project in this organization.";
+  await actOrThrow(orgId, orgSid(orgId), "project/place", { projectId, placedVia: via, ...(invalid ? { invalid } : {}) }, operatorEnvelope(orgId, projectId, by), SETTLE);
+}
+
+/**
+ * The org-open invariant: every project session in an org's engine has a placement. One without (a conversion,
+ * a crash between a birth and its placement, an import's boot recovery) is placed as imported.
+ */
+export async function placeUnplaced(orgId: string): Promise<void> {
+  const host = hostOf(orgId); // mid-attach too: the org is not in the index yet;
+  const placed = new Set(host.sessions("placement").map((s) => String(s.data.projectId)));
+  for (const s of host.sessions("project")) {
+    const pid = typeof s.data.id === "string" ? s.data.id : "";
+    if (!pid || placed.has(pid)) continue;
+    try {
+      await placeProject(orgId, pid, "import");
+    } catch (err) {
+      console.warn(`[orgs] ${orgId}: ${pid} not placed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+}
+
+/** The org a project is placed in on this host, or null: standalone, or unknown. */
+export function orgOfProject(projectId: string): string | null {
+  const engine = engineOf(projectId);
+  return engine && isOrgEngine(engine) && orgHost(engine).data(placementSid(engine, projectId)) ? engine : null;
 }
 
 /** The project, or a 404. */
@@ -1148,21 +1260,16 @@ export function projectById(orgId: string, projectId: string): OrgProject {
   return p;
 }
 
-export async function patchProject(
+/** The org's part of a placed project: hidden from the owner's page, its spec frozen (the spec route), and its main
+    stakeholder (the stakeholder route). The project's own name and root are the project layer's. */
+export async function patchPlacement(
   orgId: string,
   projectId: string,
-  patch: { name?: unknown; root?: unknown; spec?: unknown; stakeholder?: unknown; ownerHidden?: unknown },
+  patch: { spec?: unknown; stakeholder?: unknown; ownerHidden?: unknown },
   by: OperatorBy = OPERATOR_BY,
 ): Promise<OrgProject> {
   projectById(orgId, projectId);
   // Every part is checked before anything is written: a PATCH is refused whole, in today's order.
-  const edit: Record<string, unknown> = {};
-  if (patch.name !== undefined) edit.name = checkName(patch.name);
-  if (patch.root !== undefined) {
-    const why = rootProblem(patch.root);
-    if (why) throw new OrgError(why);
-    edit.root = resolve(String(patch.root).trim());
-  }
   let frozen: boolean | undefined;
   if (patch.spec !== undefined) {
     const f = (patch.spec as { frozen?: unknown } | null)?.frozen;
@@ -1173,74 +1280,15 @@ export async function patchProject(
     const p = typeof patch.stakeholder === "string" ? findPerson(orgId, patch.stakeholder) : undefined;
     if (!p || p.status !== "active") throw new OrgError("Only an active person on the roster can be a project's main stakeholder.");
   }
-  if (patch.ownerHidden !== undefined) {
-    if (typeof patch.ownerHidden !== "boolean") throw new OrgError("ownerHidden must be true or false");
-    edit.ownerHidden = patch.ownerHidden;
-  }
-  const sid = projectSid(orgId, projectId);
-  if (Object.keys(edit).length) await actOrThrow(orgId, sid, "project/edit", edit, operatorEnvelope(orgId, projectId, by));
+  if (patch.ownerHidden !== undefined && typeof patch.ownerHidden !== "boolean") throw new OrgError("ownerHidden must be true or false");
+  const sid = placementSid(orgId, projectId);
+  if (patch.ownerHidden !== undefined) await actOrThrow(orgId, sid, "placement/edit", { ownerHidden: patch.ownerHidden }, operatorEnvelope(orgId, projectId, by));
   if (frozen !== undefined) await actOrThrow(orgId, sid, "spec/freeze", { frozen }, operatorEnvelope(orgId, projectId, by));
   if (patch.stakeholder !== undefined) {
     const personId = (patch.stakeholder as string | null) ?? null;
     await actOrThrow(orgId, sid, "stakeholder/set", { personId, target: targetOf(orgId, personId) }, operatorEnvelope(orgId, projectId, by));
   }
   return projectById(orgId, projectId);
-}
-
-/** What must be stopped before a project is archived, as the archive act's `blockers` stamp. */
-export interface ArchiveBlockers {
-  gatherings: string[];
-  coding: string[];
-  overseerWorking: boolean;
-}
-
-/**
- * Archive or unarchive a project (§app.organizations/archive). The project statechart refuses an archive
- * while anything is open ("Stop these first: …", from `blockers`, which the caller reads: the
- * sessions' titles and runtimes are host facts); the same state again writes nothing.
- */
-export async function setProjectArchived(orgId: string, projectId: string, archived: boolean, by: OperatorBy = OPERATOR_BY, blockers?: ArchiveBlockers, extra: Record<string, unknown> = {}): Promise<OrgProject> {
-  projectById(orgId, projectId);
-  await actOrThrow(orgId, projectSid(orgId, projectId), archived ? "project/archive" : "project/unarchive", archived ? { blockers: blockers ?? { gatherings: [], coding: [], overseerWorking: false } } : {}, operatorEnvelope(orgId, projectId, by, extra));
-  return projectById(orgId, projectId);
-}
-
-/** Whether the project is archived (false for an unknown one). */
-export function projectArchived(orgId: string, projectId: string): boolean {
-  try {
-    return !!orgHost(orgId).configuration(projectSid(orgId, projectId))?.includes("archived");
-  } catch {
-    return false;
-  }
-}
-
-/** "{project} is archived. Unarchive it first.": every new start in an archived project. */
-export const archivedRefusal = (name: string) => `${name} is archived. Unarchive it first.`;
-/** Its overseer's: Run Now, a message to it, its start. */
-export const archivedOverseerRefusal = (name: string) => `${name} is archived. Unarchive it to use its overseer.`;
-
-/** Refuse a new start in an archived project (409). */
-export function assertNotArchived(orgId: string, projectId: string): void {
-  const p = readProjects(orgId).find((x) => x.id === projectId);
-  if (p?.archived) throw new OrgError(archivedRefusal(p.name), 409);
-}
-
-/** When the project's overseer was paused by an attach on this host (ISO), or null: not paused. */
-export function overseerPausedSince(orgId: string, projectId: string): string | null {
-  try {
-    const host = orgHost(orgId);
-    if (!host.configuration(watchSid(orgId, projectId))?.includes("paused")) return null;
-    return readIndex().orgs.find((o) => o.id === orgId)?.attachedAt || new Date(0).toISOString();
-  } catch {
-    return null;
-  }
-}
-
-/** The operator set the project overseer's level on this host (`resumeAt`, the level they chose): an attach's pause ends (any level). */
-export async function resumeOverseer(orgId: string, projectId: string, resumeAt?: string): Promise<void> {
-  const host = orgHost(orgId);
-  if (!host.configuration(watchSid(orgId, projectId))) return;
-  await host.act(watchSid(orgId, projectId), "operator/level-set", resumeAt ? { resumeAt } : {}, operatorEnvelope(orgId, projectId));
 }
 
 // ---- the org's owner (§app.owner-page/owner) ------------------------------------------------------------------
@@ -1289,6 +1337,17 @@ export function orgSummaries(): OrgSummary[] {
     out.push({ ...org, id: e.id, dir: e.dir, people, projects: projects.length - archived, ...(archived ? { archivedProjects: archived } : {}), openBatons: openBatonCount(e.id) });
   }
   return out;
+}
+
+/** The org's cost rollup (§app.project-costs/org-rollup): every placed project's total at API prices. */
+export async function orgCosts(orgId: string): Promise<OrgCosts> {
+  const { projectCost } = await import("./project-costs"); // loaded on first use: it reaches modules that import this one
+  const projects: OrgCosts["projects"] = [];
+  for (const p of readProjects(orgId)) {
+    const c = await projectCost(p.id);
+    projects.push({ projectId: p.id, totalUsd: c.totalUsd, unpricedTokens: c.unpriced.reduce((n, u) => n + u.tokens, 0) });
+  }
+  return { orgId, totalUsd: projects.reduce((n, p) => n + p.totalUsd, 0), asOf: new Date().toISOString(), projects };
 }
 
 export function orgsInfo(): OrgsInfo {

@@ -52,7 +52,9 @@ export const CONFINED_SETTINGS = { sandbox: { enabled: false } } as const;
 /** Credentials a confined worker never inherits: its login's token comes on the fd only. */
 const SECRET_VARS = ["CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CODE_OAUTH_REFRESH_TOKEN", "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", TOKEN_FD_ENV];
 /** What a confined launch's source environment drops: the credentials and the login's directory (confinedSourceEnv). */
-export const CONFINED_DROP_ENV: readonly string[] = [...SECRET_VARS, "CLAUDE_CONFIG_DIR"];
+// CLAUDE_CODE_TMPDIR would win over the sandbox's TMPDIR (the worker's own tmp): an inherited one names
+// a host path that is read-only inside (a write-only worker sees the host's /tmp read-only).
+export const CONFINED_DROP_ENV: readonly string[] = [...SECRET_VARS, "CLAUDE_CONFIG_DIR", "CLAUDE_CODE_TMPDIR"];
 /** Entries of the login's directory the private one links to, read-only through their targets (user memory, agents, commands, skills). */
 const LINKED = ["CLAUDE.md", "agents", "commands", "skills", "plugins"];
 /** The CLI keeps a project slug whole up to this length; a longer one gets a hash suffix only it can compute. */

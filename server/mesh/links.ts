@@ -43,11 +43,14 @@ import {
   type PeerLinkOfferResult,
   type PeerOfferReport,
 } from "../../shared/mesh-links";
-import type { PeerState, SessionSummary } from "../../shared/protocol";
+import type { SessionSummary } from "../../shared/protocol";
+import type { PeerStateView } from "../../shared/mesh-access";
 import type { LinkSandbox } from "../link-sandbox";
+import { NotShared, sharesWith } from "./access";
 import type { MeshApi } from "./index";
 import { LinkTransfers, newOfferId, OFFER_TTL_MS, type OfferListing, TransferError, type TransferEvent } from "./links-offers";
 import type { PullTimings } from "./links-transfer";
+import { isLanNodeId } from "./lan-cert";
 import type { PeerEntry } from "./peers";
 
 // Linked sessions across mesh peers (§mesh/links; types and routes: shared/mesh-links.ts): the
@@ -69,7 +72,8 @@ export const PUSH_EVERY_MS = 2_000;
 
 /** What this module needs from the rest of the server; server/index.ts wires it, tests fake it. */
 export interface LinksDeps {
-  mesh: Pick<MeshApi, "enabled" | "peers" | "self" | "peerFetch" | "onPeerUp" | "onMeshStart" | "onMeshStop" | "selfNode" | "sawPeer">;
+  mesh: Pick<MeshApi, "enabled" | "peers" | "self" | "peerFetch" | "onPeerUp" | "onMeshStart" | "onMeshStop" | "selfNode" | "sawPeer"> &
+    Partial<Pick<MeshApi, "mayShareWith" | "selfNodeIds" | "selfNodeIdFor">>;
   /** `<stateRoot>`, read per call. */
   root(): string;
   /** A session on this host's disk, by id. */
@@ -79,7 +83,7 @@ export interface LinksDeps {
   /** Hand a tagged message to a local member's agent (server/link-delivery.ts). Never throws. */
   deliver(path: string, framed: string): Promise<PeerLinkMessageResult>;
   /** A peer's hello state now (server/mesh/hello.ts probePeer); absent: taken as up. */
-  probe?(peer: PeerEntry): Promise<PeerState>;
+  probe?(peer: PeerEntry): Promise<PeerStateView>;
   /** The listed members of a link changed, or a message landed for them (the `links` frame). */
   notify?(sessionIds: string[]): void;
   now?(): number;
@@ -140,7 +144,14 @@ export function parseLink(v: unknown): MeshLink | null {
     members.push({ nodeId: m.nodeId, sessionId: m.sessionId, path: m.path });
   }
   if (new Set(members.map((m) => m.nodeId)).size !== members.length) return null;
-  return { id: l.id, createdAt: l.createdAt, createdBy: l.createdBy, members, ...(typeof l.endedAt === "number" ? { endedAt: l.endedAt } : {}) };
+  return {
+    id: l.id,
+    createdAt: l.createdAt,
+    createdBy: l.createdBy,
+    members,
+    ...(typeof l.endedAt === "number" ? { endedAt: l.endedAt } : {}),
+    ...(typeof l.endedAt === "number" && typeof l.endedWhy === "string" && l.endedWhy ? { endedWhy: l.endedWhy.slice(0, 500) } : {}),
+  };
 }
 
 /** Validates a received message; null when it isn't one. */
@@ -168,13 +179,22 @@ interface MemberLookup {
 }
 
 /** What a hop to a member host came to. */
-type HopResult = { state: "sent"; answer: unknown } | { state: "down"; why: string } | { state: "final"; status: number; body: { error?: unknown; reason?: unknown } | null; why: string };
+// `withheld`: this host's own grant kept it from going (NotShared), so the peer is not down.
+type HopResult =
+  | { state: "sent"; answer: unknown }
+  | { state: "down"; why: string }
+  | { state: "final"; status: number; body: { error?: unknown; reason?: unknown } | null; why: string; withheld?: true };
+
+/** A member on a peer this host doesn't share links with (§app.overseer/links-tools). */
+const linksWithheld = (label: string) => `this host doesn't share links with ${label}; raise ${label}'s grant on this host's Mesh page to include links`;
 
 export class MeshLinks {
   private d: LinksDeps | null = null;
   private file: MeshLinksFile | null = null;
   private timer: ReturnType<typeof setInterval> | null = null;
   private flushing: Promise<void> | null = null;
+  /** Links whose creation was refused while their held copies are taken out: a drain skips them. */
+  private readonly refusedCopies = new Set<string>();
   private readonly memberCache = new Map<string, { at: number; value: Promise<MemberLookup> }>();
   /** The last answer about each member, however old: what a brief view shows. */
   private readonly lastKnown = new Map<string, { at: number; value: MemberLookup }>();
@@ -198,6 +218,7 @@ export class MeshLinks {
       protectedRoots: () => deps.protectedRoots?.() ?? [],
       sandboxOf: async (id) => (await deps.sandboxOf?.(id)) ?? { on: false },
       selfNodeId: () => this.selfNodeId(),
+      isSelf: (nodeId) => this.isSelf(nodeId),
       linkLive: (id) => {
         const l = this.get(id);
         return !!l && l.endedAt === undefined;
@@ -263,12 +284,38 @@ export class MeshLinks {
     try {
       const raw = JSON.parse(readFileSync(this.fileName(), "utf8")) as Partial<MeshLinksFile>;
       const links = Array.isArray(raw.links) ? raw.links.map(parseLink).filter((l): l is MeshLink => !!l) : [];
-      parsed = { version: 1, ...(typeof raw.selfNodeId === "string" && raw.selfNodeId ? { selfNodeId: raw.selfNodeId } : {}), links };
+      const selfAs =
+        raw.selfAs && typeof raw.selfAs === "object" ? Object.fromEntries(Object.entries(raw.selfAs).filter(([k, v]) => k && typeof v === "string" && v)) : {};
+      parsed = {
+        version: 1,
+        ...(typeof raw.selfNodeId === "string" && raw.selfNodeId ? { selfNodeId: raw.selfNodeId } : {}),
+        ...(Object.keys(selfAs).length ? { selfAs } : {}),
+        links,
+      };
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code !== "ENOENT") console.warn(`[links] mesh-links.json unreadable, starting empty: ${(err as Error).message}`);
     }
     this.file = parsed;
+    if (this.normaliseSelf(parsed.links)) this.save();
     return parsed;
+  }
+
+  /** Records naming this host by another of its names (a link made before it joined a tailnet)
+      take the name it keeps for itself (§mesh.links/host-names). True when any changed. */
+  private normaliseSelf(links: MeshLink[]): boolean {
+    const self = this.selfNodeId();
+    if (!self) return false;
+    let changed = false;
+    const fix = (id: string) => {
+      if (id === self || !this.isSelf(id)) return id;
+      changed = true;
+      return self;
+    };
+    for (const l of links) {
+      l.createdBy = fix(l.createdBy);
+      for (const m of l.members) m.nodeId = fix(m.nodeId);
+    }
+    return changed;
   }
 
   /** Written atomically at 0600 (tmp + rename), like peers.json. */
@@ -289,6 +336,55 @@ export class MeshLinks {
   /** This host's node identity: the listener's, else what a peer told it. */
   selfNodeId(): string | null {
     return this.deps.mesh.selfNode().nodeId ?? this.load().selfNodeId ?? null;
+  }
+
+  /**
+   * Whether `nodeId` is one of this host's names (§mesh.links/host-names): the one it keeps, its
+   * tailnet and LAN ids, or one a peer's whoami gave it. An id naming one of its peers never is.
+   */
+  isSelf(nodeId: string): boolean {
+    if (!nodeId) return false;
+    if (nodeId === this.selfNodeId()) return true;
+    if (this.peerOfNode(nodeId)) return false;
+    const f = this.load();
+    return nodeId === f.selfNodeId || (this.deps.mesh.selfNodeIds?.() ?? []).includes(nodeId) || Object.values(f.selfAs ?? {}).includes(nodeId);
+  }
+
+  /** This host's name as the host `nodeId` knows it: its whoami answer, else by how it is peered. */
+  private selfFor(nodeId: string): string | null {
+    const learnt = this.load().selfAs?.[nodeId];
+    if (learnt) return learnt;
+    const peer = this.peerOfNode(nodeId);
+    return (peer && this.deps.mesh.selfNodeIdFor?.(peer)) || this.selfNodeId();
+  }
+
+  /** Keep how the peer `peerNodeId` names this host (its whoami answer). */
+  private learnAs(peerNodeId: string, nodeId: string): void {
+    if (!nodeId || this.peerOfNode(nodeId)) return;
+    const f = this.load();
+    if (f.selfAs?.[peerNodeId] === nodeId) return;
+    f.selfAs = { ...f.selfAs, [peerNodeId]: nodeId };
+    this.save();
+  }
+
+  /** What goes to the host `to`, naming this host the way that host knows it. */
+  private named(to: string, kind: LinkOutboxEntry["kind"], body: unknown): unknown {
+    const me = this.selfFor(to);
+    if (!me) return body;
+    const name = (id: string) => (this.isSelf(id) ? me : id);
+    if (kind === "link") {
+      const b = body as PeerLinkCopy;
+      return { ...b, link: { ...b.link, createdBy: name(b.link.createdBy), members: b.link.members.map((m) => ({ ...m, nodeId: name(m.nodeId) })) } } satisfies PeerLinkCopy;
+    }
+    if (kind === "message") {
+      const b = body as PeerLinkMessage;
+      return { ...b, message: { ...b.message, from: { ...b.message.from, nodeId: name(b.message.from.nodeId) } } } satisfies PeerLinkMessage;
+    }
+    if (kind === "offer") {
+      const b = body as PeerLinkOffer;
+      return { ...b, offer: { ...b.offer, from: { ...b.offer.from, nodeId: name(b.offer.from.nodeId) } } } satisfies PeerLinkOffer;
+    }
+    return body;
   }
 
   /** Learn this host's node identity as a peer names it (a copy's `you`, a whoami answer). */
@@ -312,7 +408,10 @@ export class MeshLinks {
         return res.status === 404 ? "old-build" : "down";
       }
       const got = (await res.json().catch(() => null)) as { nodeId?: unknown } | null;
-      if (typeof got?.nodeId === "string" && got.nodeId) this.learnSelf(got.nodeId);
+      if (typeof got?.nodeId === "string" && got.nodeId) {
+        this.learnSelf(got.nodeId);
+        this.learnAs(peer.nodeId, got.nodeId);
+      }
       return "ok";
     } catch {
       return "down";
@@ -335,7 +434,7 @@ export class MeshLinks {
 
   /** A host's label as this host knows it: its own, a peer's from peers.json, else the node id. */
   hostLabel(nodeId: string): string {
-    if (nodeId === this.selfNodeId()) return this.deps.mesh.self().label;
+    if (this.isSelf(nodeId)) return this.deps.mesh.self().label;
     return this.peerOfNode(nodeId)?.label ?? nodeId;
   }
 
@@ -350,8 +449,7 @@ export class MeshLinks {
   }
   /** This host's member of a link, or null (the host that made it need not be one). */
   localMember(link: MeshLink): LinkMember | null {
-    const self = this.selfNodeId();
-    return self ? (link.members.find((m) => m.nodeId === self) ?? null) : null;
+    return link.members.find((m) => this.isSelf(m.nodeId)) ?? null;
   }
   /** The links a local session is a member of, ended ones included. */
   linksOf(sessionId: string): MeshLink[] {
@@ -378,7 +476,7 @@ export class MeshLinks {
   }
 
   private async memberView(m: LinkMember, brief = false): Promise<LinkMemberView> {
-    const self = m.nodeId === this.selfNodeId();
+    const self = this.isSelf(m.nodeId);
     const key = `${m.nodeId}/${m.sessionId}`;
     const known = this.lastKnown.get(key);
     const fresh = !!known && this.now() - known.at < MEMBER_CACHE_MS;
@@ -425,7 +523,7 @@ export class MeshLinks {
   }
 
   private async fetchMember(nodeId: string, sessionId: string): Promise<MemberLookup> {
-    if (nodeId === this.selfNodeId()) return { reach: "self", summary: await this.deps.summary(sessionId) };
+    if (this.isSelf(nodeId)) return { reach: "self", summary: await this.deps.summary(sessionId) };
     const peer = this.peerOfNode(nodeId);
     if (!peer) return { reach: "unknown-host" };
     try {
@@ -463,6 +561,12 @@ export class MeshLinks {
     }
     if (link.endedAt !== undefined && (had.endedAt === undefined || link.endedAt < had.endedAt)) {
       had.endedAt = link.endedAt;
+      if (link.endedWhy) had.endedWhy = link.endedWhy;
+      this.save();
+      return true;
+    }
+    if (link.endedWhy && had.endedAt !== undefined && !had.endedWhy) {
+      had.endedWhy = link.endedWhy;
       this.save();
       return true;
     }
@@ -480,6 +584,8 @@ export class MeshLinks {
     if (asked.length < 2) throw new LinkActError(400, { error: "A link needs at least two members.", reason: "too-few" });
     const selfId = this.deps.mesh.self().id;
     const members: LinkMember[] = [];
+    /** A member on a LAN pairing of this host: its index and label. */
+    let pairing: { i: number; label: string } | null = null;
     for (const [i, a] of asked.entries()) {
       const fail = (status: 400 | 404 | 409, reason: LinkError["reason"], why: string): never => {
         throw new LinkActError(status, { error: `Member ${i + 1} (${a?.host ?? "this host"}/${a?.session}): ${why}.`, ...(reason ? { reason } : {}), member: i });
@@ -501,6 +607,7 @@ export class MeshLinks {
       const probe = this.deps.probe ? await this.deps.probe(peer!) : "up";
       if (probe === "skewed") fail(409, "skewed", `${peer!.label} runs a different protocol; update it first`);
       if (probe !== "up") fail(409, "unreachable", `${peer!.label} is ${probe}`);
+      if (!sharesWith(this.deps.mesh, peer!.id, "links")) fail(409, undefined, linksWithheld(peer!.label));
       const has = await this.whoami(peer!);
       if (has === "old-build") fail(409, "old-build", `${peer!.label} runs a build without links`);
       if (has === "down") fail(409, "unreachable", `${peer!.label} didn't answer`);
@@ -511,6 +618,7 @@ export class MeshLinks {
       const no = memberRefusal(got.summary!);
       if (no) fail(409, no.reason, no.why);
       members.push({ nodeId: peer!.nodeId, sessionId: a.session, path: got.summary!.path });
+      if (peer!.lan && !pairing) pairing = { i, label: peer!.label };
     }
     const seen = new Map<string, number>();
     for (const [i, m] of members.entries()) {
@@ -519,13 +627,92 @@ export class MeshLinks {
         throw new LinkActError(400, { error: `Members ${j + 1} and ${i + 1} are on the same host: a link joins one session per host.`, reason: "same-host", member: i });
       seen.set(m.nodeId, i);
     }
+    // A LAN pairing names only the hosts it pairs with: its link joins only it and this host
+    // (§mesh.links/host-names), counting this host when only its Overseer makes the link.
+    const hosts = members.length + (members.some((m) => this.isSelf(m.nodeId)) ? 0 : 1);
+    if (pairing && hosts > 2) {
+      const { i, label } = pairing;
+      throw new LinkActError(409, {
+        error: `Member ${i + 1} (${asked[i]?.host}/${asked[i]?.session}): ${label} is a LAN pairing, which can't name a third host; a link with it may join only this host and ${label}.`,
+        reason: "lan-pairing",
+        member: i,
+      });
+    }
     const self = await this.ensureSelfNodeId();
     if (!self) throw new LinkActError(409, { error: "This host doesn't know its own node identity yet, and no peer answered to tell it.", reason: "internal" });
     const link: MeshLink = { id: newLinkId(), createdAt: this.now(), createdBy: self, members };
     this.keep(link);
-    await Promise.all(members.filter((m) => m.nodeId !== self).map((m) => this.tell(m.nodeId, { kind: "link", body: { link, you: m.nodeId } })));
+    const told = await Promise.all(
+      members.filter((m) => !this.isSelf(m.nodeId)).map(async (m) => ({ m, r: await this.tell(m.nodeId, { kind: "link", body: { link, you: m.nodeId } }) })),
+    );
+    // A member host refused its copy (or a grant was lowered since the check above): the link is
+    // not made, and no copy that got out stays live.
+    const refusal = told.find(({ r }) => r.state === "final");
+    if (refusal) {
+      const r = refusal.r as Extract<HopResult, { state: "final" }>;
+      const i = members.indexOf(refusal.m);
+      const label = this.hostLabel(refusal.m.nodeId);
+      const reason = !r.withheld && typeof r.body?.reason === "string" ? (r.body.reason as NonNullable<LinkError["reason"]>) : undefined;
+      const why = r.withheld ? linksWithheld(label) : `${label} refused the link${reason ? ` (${reason})` : ""}: ${r.why.replace(/\.$/, "")}`;
+      // A copy held for a host that was down never goes: taken out of the outbox (after any drain
+      // under way), and a drain that already read it skips it.
+      this.refusedCopies.add(link.id);
+      await this.dropHeldCopies(link.id);
+      this.refusedCopies.delete(link.id);
+      // A held copy's request may have gone with only its answer lost, so that host may hold the
+      // link, or may still be storing it: every host the copy reached gets the link again, ended
+      // (from the outbox while it is down). An end alone would miss a copy not stored yet; an
+      // ended record there can't be revived by the live copy landing after it.
+      const reached = told.filter(({ r }) => r.state === "sent" || r.state === "queued").map(({ m }) => m.nodeId);
+      if (reached.length) {
+        link.endedAt = this.now();
+        link.endedWhy = why;
+        this.save();
+        for (const n of reached) void this.tell(n, { kind: "link", body: { link: { ...link, members: link.members.map((m) => ({ ...m })) }, you: n } });
+      } else this.forget(link.id);
+      throw new LinkActError(409, { error: `Member ${i + 1} (${asked[i]?.host ?? label}/${refusal.m.sessionId}): ${why}.`, ...(reason ? { reason } : {}), member: i });
+    }
     this.notify(this.localSessions(link));
     return this.view(link);
+  }
+
+  /** Take every held copy of link `linkId` out of the outbox, once any drain under way is done;
+      the hosts whose copy was taken out. */
+  private dropHeldCopies(linkId: string): Promise<Set<string>> {
+    const run = async () => {
+      const taken = new Set<string>();
+      const rest = this.outbox().filter((e) => {
+        if (e.kind !== "link" || e.body.link.id !== linkId) return true;
+        taken.add(e.toNodeId);
+        return false;
+      });
+      if (!taken.size) return taken;
+      if (rest.length) writeJsonl(this.outboxFile(), rest);
+      else {
+        rmSync(this.outboxFile(), { force: true });
+        this.disarm();
+      }
+      return taken;
+    };
+    const prior = this.flushing ?? Promise.resolve();
+    const mine = prior.then(run, run);
+    const tail: Promise<void> = mine
+      .then(
+        () => undefined,
+        () => undefined,
+      )
+      .finally(() => {
+        if (this.flushing === tail) this.flushing = null;
+      });
+    this.flushing = tail;
+    return mine;
+  }
+
+  /** Drop a link this host made that never got out. */
+  private forget(linkId: string): void {
+    const f = this.load();
+    f.links = f.links.filter((l) => l.id !== linkId);
+    this.save();
   }
 
   /** sova_unlink: end a link on every host that holds it; the earliest end wins. */
@@ -545,9 +732,22 @@ export class MeshLinks {
 
   /** Tell every other host of the link that it ended (the outbox holds it for one that is down). */
   private spreadEnd(link: MeshLink): void {
-    const self = this.selfNodeId();
     const hosts = new Set([...link.members.map((m) => m.nodeId), link.createdBy]);
-    for (const n of hosts) if (n !== self) void this.tell(n, { kind: "end", linkId: link.id, body: { endedAt: link.endedAt! } });
+    const body = { endedAt: link.endedAt!, ...(link.endedWhy ? { why: link.endedWhy } : {}) };
+    for (const n of hosts) if (!this.isSelf(n)) void this.tell(n, { kind: "end", linkId: link.id, body });
+  }
+
+  /** A held copy of a link this host made was refused once its host was back (§mesh.links/delivery):
+      that host will never hold it, so the link ends on every host, saying why. */
+  private copyRefused(linkId: string, nodeId: string, why: string): void {
+    const link = this.get(linkId);
+    if (!link || link.endedAt !== undefined) return;
+    link.endedAt = this.now();
+    link.endedWhy = `${this.hostLabel(nodeId)} refused the link: ${why.replace(/\.$/, "")}`;
+    this.save();
+    this.spreadEnd(link);
+    this.cancelOffers(link);
+    this.notify(this.localSessions(link));
   }
 
   /** Archiving a session ends every link it is in (§mesh.links/record). Works while the mesh is
@@ -571,27 +771,51 @@ export class MeshLinks {
     const b = body as Partial<PeerLinkCopy> | null;
     const link = parseLink(b?.link);
     if (!link || typeof b?.you !== "string" || !b.you) return { status: 400, body: { error: "Expected {link, you}" } };
-    const mine = link.members.find((m) => m.nodeId === b.you);
-    if (!mine) return { status: 403, body: { error: "This host is not a member of that link.", reason: "not-member" } };
+    const you = b.you;
+    // Any of this host's names is this host; one that doesn't know its own yet is `you` (§mesh.links/host-names).
+    const known = this.selfNodeId();
+    const isMe = (id: string) => this.isSelf(id) || (!known && id === you);
+    const ours = link.members.filter((m) => isMe(m.nodeId));
+    if (!ours.length) return { status: 403, body: { error: "This host is not a member of that link.", reason: "not-member" } };
+    if (ours.length > 1) return { status: 403, body: { error: "That link names this host twice.", reason: "not-member" } };
+    const mine = ours[0]!;
     if (caller.nodeId !== link.createdBy && !link.members.some((m) => m.nodeId === caller.nodeId))
       return { status: 403, body: { error: "Only a host of that link can send it.", reason: "not-member" } };
-    const self = this.selfNodeId();
-    if (self && self !== b.you) return { status: 403, body: { error: "That link names another host as this one.", reason: "not-member" } };
-    if (!(await this.deps.summary(mine.sessionId))) return { status: 409, body: { error: `No session ${mine.sessionId} on this host.`, reason: "no-session" } };
-    this.learnSelf(b.you);
-    if (this.keep(link)) this.notify([mine.sessionId]);
+    // A host named in a LAN pairing's terms this host can't resolve: never stored as a member it
+    // can't name. On a tailnet the id is the host's own, so an unpeered one is kept, as unreachable.
+    const stranger = [link.createdBy, ...link.members.map((m) => m.nodeId)].find(
+      (n) => !isMe(n) && n !== caller.nodeId && !this.peerOfNode(n) && (!!caller.lan || isLanNodeId(n)),
+    );
+    if (stranger) return { status: 403, body: { error: `That link names a host this host doesn't know (${stranger}).`, reason: "not-member" } };
+    // An ended copy (a rollback's end) is kept whatever became of the session: it only records the end.
+    if (link.endedAt === undefined && !(await this.deps.summary(mine.sessionId)))
+      return { status: 409, body: { error: `No session ${mine.sessionId} on this host.`, reason: "no-session" } };
+    if (!known) this.learnSelf(you);
+    if (this.isSelf(you)) this.learnAs(caller.nodeId, you);
+    const self = this.selfNodeId() ?? you;
+    const kept: MeshLink = {
+      ...link,
+      createdBy: isMe(link.createdBy) ? self : link.createdBy,
+      members: link.members.map((m) => (isMe(m.nodeId) ? { ...m, nodeId: self } : m)),
+    };
+    // keep() never clears an end: a live copy landing after an ended one changes nothing.
+    if (this.keep(kept)) {
+      if (kept.endedAt !== undefined) this.cancelOffers(kept);
+      this.notify([mine.sessionId]);
+    }
     return { status: 200, body: { ok: true } };
   }
 
   /** POST /api/peer/links/:id/end. */
   takeEnd(caller: PeerEntry, id: string, body: unknown): { status: 200 | 400 | 403 | 404; body: PeerLinkEndResult | LinkError } {
     const endedAt = (body as Partial<PeerLinkEnd> | null)?.endedAt;
+    const why = (body as Partial<PeerLinkEnd> | null)?.why;
     if (typeof endedAt !== "number" || !Number.isFinite(endedAt) || endedAt <= 0) return { status: 400, body: { error: "Expected {endedAt}" } };
     const link = this.get(id);
     if (!link) return { status: 404, body: { error: "No such link on this host.", reason: "unknown-link" } };
     if (caller.nodeId !== link.createdBy && !link.members.some((m) => m.nodeId === caller.nodeId)) return { status: 403, body: { error: "Not a host of that link.", reason: "not-member" } };
     // Never later than this host's clock: a peer's clock can't end a link in the future.
-    if (this.keep({ ...link, endedAt: Math.min(endedAt, this.now()) })) {
+    if (this.keep({ ...link, endedAt: Math.min(endedAt, this.now()), ...(typeof why === "string" && why ? { endedWhy: why.slice(0, 500) } : {}) })) {
       this.cancelOffers(link);
       this.notify(this.localSessions(link));
     }
@@ -609,9 +833,11 @@ export class MeshLinks {
     const sender = link.members.find((m) => m.nodeId === caller.nodeId && m.sessionId === msg.from.sessionId);
     if (!sender || msg.from.nodeId !== caller.nodeId) return { status: 403, body: { error: "The sender is not a member of that link.", reason: "not-member" } };
     const me = this.localMember(link);
-    if (!me || !msg.to.some((t) => t.nodeId === me.nodeId && t.sessionId === me.sessionId))
+    if (!me || !msg.to.some((t) => this.isSelf(t.nodeId) && t.sessionId === me.sessionId))
       return { status: 403, body: { error: "The message names no member on this host.", reason: "not-member" } };
     const toMe = refOf(me);
+    // Kept naming this host as it names itself.
+    msg.to = msg.to.map((t) => (this.isSelf(t.nodeId) ? { ...t, nodeId: me.nodeId } : t));
     if (link.endedAt !== undefined) return { status: 200, body: { state: "refused", reason: "ended", message: "The link has ended." } };
     // Taken already (a retry after a lost answer): never delivered twice.
     const had = this.readInbox(link.id, me.sessionId).find((r) => r.dir === "in" && r.id === msg.id);
@@ -669,12 +895,19 @@ export class MeshLinks {
     if (linkId !== undefined) {
       const link = this.linksOf(session).find((l) => l.id === linkId);
       if (!link) throw new LinkActError(404, { error: `This session is not in link ${linkId}.`, reason: "not-member" });
-      if (link.endedAt !== undefined) throw new LinkActError(409, { error: `Link ${link.id} has ended.`, reason: "ended" });
+      if (link.endedAt !== undefined) throw new LinkActError(409, { error: `Link ${link.id} has ended${link.endedWhy ? `: ${link.endedWhy}` : ""}.`, reason: "ended" });
       return link;
     }
     const live = this.linksOf(session).filter((l) => l.endedAt === undefined);
     if (live.length === 1) return live[0]!;
-    if (!live.length) throw new LinkActError(409, { error: "This session is in no link.", reason: "not-member" });
+    if (!live.length) {
+      // A link ended for a reason of its own says why (§mesh.links/delivery).
+      const last = this.linksOf(session)
+        .filter((l) => l.endedWhy)
+        .sort((x, y) => y.endedAt! - x.endedAt!)[0];
+      if (last) throw new LinkActError(409, { error: `This session is in no live link: link ${last.id} has ended: ${last.endedWhy}.`, reason: "ended" });
+      throw new LinkActError(409, { error: "This session is in no link.", reason: "not-member" });
+    }
     throw new LinkActError(400, { error: `This session is in ${live.length} links; name one with \`link\` (${live.map((l) => l.id).join(", ")}).` });
   }
 
@@ -857,7 +1090,9 @@ export class MeshLinks {
     const sender = link.members.find((m) => m.nodeId === caller.nodeId && m.sessionId === got.from.sessionId);
     if (!sender || got.from.nodeId !== caller.nodeId) return { status: 403, body: { error: "The sender is not a member of that link.", reason: "not-member" } };
     const me = this.localMember(link);
-    const row = got.recipients[0]!;
+    const asked = got.recipients[0]!;
+    // This host's row, naming it as it names itself.
+    const row = me && this.isSelf(asked.to.nodeId) ? { ...asked, to: { ...asked.to, nodeId: me.nodeId } } : asked;
     if (!me || !sameRef(row.to, me)) return { status: 403, body: { error: "The offer names no member on this host.", reason: "not-member" } };
     const answer = (o: LinkOffer): PeerLinkOfferResult => {
       const r = o.recipients[0]!;
@@ -926,10 +1161,9 @@ export class MeshLinks {
     this.assertOn();
     if (typeof session !== "string" || !SESSION_ID_RE.test(session)) throw new LinkActError(400, { error: "session must be the answering session's id" });
     if (!this.deps.held(session)) throw new LinkActError(403, { error: "That session isn't running on this host, so it can't answer.", reason: "not-member" });
-    const self = this.selfNodeId();
     const offer = OFFER_ID_RE.test(offerId) ? this.transfers.get(offerId) : null;
-    const row = offer?.recipients.find((r) => r.to.sessionId === session && r.to.nodeId === self);
-    if (!offer || !row || offer.from.nodeId === self) throw new LinkActError(404, { error: `No file offer ${offerId} for this session.`, reason: "not-member" });
+    const row = offer?.recipients.find((r) => r.to.sessionId === session && this.isSelf(r.to.nodeId));
+    if (!offer || !row || this.isSelf(offer.from.nodeId)) throw new LinkActError(404, { error: `No file offer ${offerId} for this session.`, reason: "not-member" });
     const link = this.get(offer.linkId);
     if (!link || link.endedAt !== undefined) throw new LinkActError(409, { error: `Link ${offer.linkId} has ended.`, reason: "ended" });
     if (row.state !== "offered") throw new LinkActError(409, { error: `Offer ${offerId} is ${row.state} already; nothing to answer.` });
@@ -992,7 +1226,7 @@ export class MeshLinks {
   /** GET /api/peer/links/:id/offers/:offer/tar: the spool, to a recipient's host only. */
   serveTar(caller: PeerEntry, linkId: string, offerId: string, h: { range?: string; ifRange?: string }): Promise<Response> | { status: 404; body: LinkError } {
     const offer = OFFER_ID_RE.test(offerId) ? this.transfers.get(offerId) : null;
-    if (!offer || offer.linkId !== linkId || offer.from.nodeId !== this.selfNodeId()) return { status: 404, body: { error: "No such offer on this host.", reason: "unknown-link" } };
+    if (!offer || offer.linkId !== linkId || !this.isSelf(offer.from.nodeId)) return { status: 404, body: { error: "No such offer on this host.", reason: "unknown-link" } };
     return this.transfers.serve(offerId, caller.nodeId, h);
   }
 
@@ -1002,7 +1236,7 @@ export class MeshLinks {
     const states: PeerOfferReport["state"][] = ["accepted", "extracting", "declined", "done", "failed", "refused"];
     if (!b || typeof b.session !== "string" || !states.includes(b.state as PeerOfferReport["state"])) return { status: 400, body: { error: "Expected {session, state}" } };
     const offer = OFFER_ID_RE.test(offerId) ? this.transfers.get(offerId) : null;
-    if (!offer || offer.linkId !== linkId || offer.from.nodeId !== this.selfNodeId()) return { status: 404, body: { error: "No such offer on this host.", reason: "unknown-link" } };
+    if (!offer || offer.linkId !== linkId || !this.isSelf(offer.from.nodeId)) return { status: 404, body: { error: "No such offer on this host.", reason: "unknown-link" } };
     const to = { nodeId: caller.nodeId, sessionId: b.session };
     const was = rowOf(offer, to);
     if (!was) return { status: 403, body: { error: "The caller is not a recipient of that offer.", reason: "not-member" } };
@@ -1032,7 +1266,7 @@ export class MeshLinks {
    * in the tool's result and doesn't). `wokeSender` makes it exactly once.
    */
   private maybeWake(offer: LinkOffer, trigger: LinkMemberRef, afterAccept: boolean): void {
-    if (offer.wokeSender || offer.from.nodeId !== this.selfNodeId()) return;
+    if (offer.wokeSender || !this.isSelf(offer.from.nodeId)) return;
     // An ended link's offers are cancelled, and nobody is woken for that.
     if (this.get(offer.linkId)?.endedAt !== undefined) return;
     const row = rowOf(offer, trigger);
@@ -1093,7 +1327,7 @@ export class MeshLinks {
   /** What links-transfer.ts did to an offer copy (already saved). */
   private onTransfer(offer: LinkOffer, ev: TransferEvent): void {
     try {
-      const mine = offer.from.nodeId === this.selfNodeId();
+      const mine = this.isSelf(offer.from.nodeId);
       const sessions = mine ? [offer.from.sessionId] : offer.recipients.map((r) => r.to.sessionId);
       switch (ev.kind) {
         case "packed":
@@ -1196,13 +1430,15 @@ export class MeshLinks {
   }
 
   private async hopWithCopy(nodeId: string, item: { kind: LinkOutboxEntry["kind"]; body: unknown; linkId?: string; offerId?: string }, link?: MeshLink): Promise<HopResult> {
-    const r = await this.hop(nodeId, pathOf(item), item.body);
+    // Named at the hop, never when held: a held entry carries the newest whoami answer.
+    const body = this.named(nodeId, item.kind, item.body);
+    const r = await this.hop(nodeId, pathOf(item), body);
     if ((item.kind !== "message" && item.kind !== "offer") || r.state !== "final" || r.status !== 404 || r.body?.reason !== "unknown-link") return r;
     const l = link ?? this.get(item.linkId!);
     if (!l) return r;
-    const copied = await this.hop(nodeId, "/api/peer/links", { link: l, you: nodeId } satisfies PeerLinkCopy);
+    const copied = await this.hop(nodeId, "/api/peer/links", this.named(nodeId, "link", { link: l, you: nodeId } satisfies PeerLinkCopy));
     if (copied.state !== "sent") return copied;
-    return this.hop(nodeId, pathOf(item), item.body);
+    return this.hop(nodeId, pathOf(item), body);
   }
 
   /** POST `body` to `path` on the host `nodeId`. */
@@ -1218,6 +1454,8 @@ export class MeshLinks {
         signal: AbortSignal.timeout(HOP_TIMEOUT_MS),
       });
     } catch (err) {
+      // This host's own grant withheld it: final, never held, and the peer is not down.
+      if (err instanceof NotShared) return { state: "final", status: 403, body: null, why: linksWithheld(peer.label), withheld: true };
       this.deps.mesh.sawPeer(peer.id, false); // its next answer is a comeback: onPeerUp drains the outbox
       return { state: "down", why: `${peer.label} is down (${whyDown(err)})` };
     }
@@ -1284,6 +1522,7 @@ export class MeshLinks {
           keep.push(e);
           continue;
         }
+        if (e.kind === "link" && this.refusedCopies.has(e.body.link.id)) continue; // its creation was refused
         const r = await this.hopWithCopy(e.toNodeId, e);
         if (r.state === "down") {
           down.add(e.toNodeId); // nothing after it goes first: its host sees them in order
@@ -1293,7 +1532,10 @@ export class MeshLinks {
         sent++;
         if (e.kind === "message") this.settleMessage(e, toDelivery({ nodeId: e.toNodeId, sessionId: recipientOf(e) }, r));
         else if (e.kind === "offer") this.settleOffer(e.body.offer.id, e.body.offer.recipients[0]!.to, toOfferAnswer(r));
-        else if (r.state !== "sent") console.warn(`[links] ${e.kind} for ${e.toNodeId} dropped: ${r.why}`);
+        else if (e.kind === "link" && r.state === "final") {
+          console.warn(`[links] link ${e.body.link.id}: its copy for ${e.toNodeId} was refused (${r.why}); ending it`);
+          this.copyRefused(e.body.link.id, e.toNodeId, r.why);
+        } else if (r.state !== "sent") console.warn(`[links] ${e.kind} for ${e.toNodeId} dropped: ${r.why}`);
       }
       if (sent) console.log(`[links] outbox: ${sent} settled (${peerId === undefined ? "timer" : `peer-up ${peerId}`}), ${keep.length} still held`);
       // Anything queued while this ran was appended to the file after what was read: kept too.

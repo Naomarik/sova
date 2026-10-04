@@ -3,7 +3,8 @@ import { closeSync, mkdirSync, openSync, readFileSync, readSync, statSync, write
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
-import { type AgentSession, SessionManager } from "@earendil-works/pi-coding-agent";
+import { type AgentSession, getAgentDir, SessionManager } from "@earendil-works/pi-coding-agent";
+import { loadPolicyFile, policyFilePath } from "../pi-config/extensions/sandbox/policy.ts";
 import {
   OVERSEER_BRIEF_PREFIX,
   OVERSEER_ENTRY,
@@ -20,7 +21,7 @@ import {
 import { setArchived } from "./archived-sessions";
 import { type AttentionRow, blockerCount, blockerKey, buildDigest, mergedBranch, workerErrorTime } from "./attention";
 import { readIndex, stakeholderAttention } from "./orgs";
-import { heldAttention } from "./project-pipeline";
+import { heldAttention } from "./project-holds";
 import { conflictAttention } from "./decisions";
 import { notSentAttention } from "./outreach/log";
 import { readinessChecksOf, restartItems } from "./merge-readiness";
@@ -62,7 +63,11 @@ import { promptToc, readManifest } from "./overseer-ideas";
 import { promptTodos, readTodos } from "./overseer-todos";
 import type { SubagentTool } from "./overseer-idea-tools";
 import { workerDenial } from "./delegate";
-import { BUILTIN_ALLOWED, overseerTools, type OverseerToolHost, renderTranscript, TurnLimits, userMessageText, UserTurns } from "./overseer-tools";
+import { BUILTIN_ALLOWED, overseerTools, type OverseerToolHost, renderTranscript, TurnLimits } from "./overseer-tools";
+import { userMessageText, UserTurns } from "./user-turns";
+import { OVERSEER_SENDER_HEADER, overseerSender, senderSecret } from "./overseer-sender";
+
+import { cardsNoteMessage, onSessionPrompted, pathOfId, promptSession, sessionActivity, toolCatalogue, type PromptDelivery, type PromptResult } from "./session-prompt";
 import { contactRedactor } from "./overseer-org-view";
 import { CARDS_NOTE_MESSAGE, cardsNote, clickItems, foldCards, matchCardClick } from "../shared/overseer-card";
 import { actsText, carriedRules, clickWrote, coveringPermit, foldPermits, type Permit, permitFromClick, REVOKE_ENTRY, RULE_ENTRY, type RuleEntry, sessionsText, USE_ENTRY } from "../shared/overseer-grants";
@@ -91,6 +96,8 @@ import { signalTextOf, teamStallOf } from "./signals-store";
 import { readDecisionSettings } from "./decide-settings";
 import { onAttentionChanged } from "./attention-memo";
 import { notifyBlockers, pushWanted, resetPushState } from "./push";
+import { playbookReviews } from "./projects/playbook-review";
+import { deployAttentionItems } from "./project-services/deploy-attention";
 
 /**
  * The Overseer: ONE special Sova session that watches every other session and acts on them
@@ -106,20 +113,6 @@ const PROMPT_FILE = fileURLToPath(new URL("./overseer-prompt.md", import.meta.ur
 
 let dispatch: ((path: string, init?: RequestInit) => Promise<Response>) | null = null;
 
-/** The header the Overseer's in-process tool calls carry, and its value: a secret made at server
-    start, held only in memory, never written or sent to a client. A prompt carrying it is tagged
-    as the Overseer's; any HTTP client can send the header, but not the value. */
-export const OVERSEER_SENDER_HEADER = "x-sova-overseer";
-const SENDER_SECRET = randomBytes(32).toString("hex");
-
-/** The current Overseer's id when `header` is the sender secret (a tool call of its own), else undefined. */
-export function overseerSender(header: string | undefined): string | undefined {
-  if (!header) return undefined;
-  const got = Buffer.from(header);
-  const want = Buffer.from(SENDER_SECRET);
-  if (got.length !== want.length || !timingSafeEqual(got, want)) return undefined;
-  return readOverseerState()?.current || undefined;
-}
 
 /** An in-process request to the app, as the browser makes it (no Overseer sender mark): the
     project overseer's session creation goes through the same route and guards. */
@@ -160,13 +153,6 @@ export function hasOverseerMarker(path: string): boolean {
   }
 }
 
-/** Session id → path: the listing cache first, else one walk of the sessions dir. */
-export async function pathOfId(id: string): Promise<string | null> {
-  const known = indexedSessionPaths().get(id);
-  if (known) return known;
-  for (const p of await listSessionFiles()) if (idOf(p) === id) return p;
-  return null;
-}
 
 /** A new Overseer file: header + marker (and the rules a /clear carries, §app.overseer/approvals),
     written now (like every web session), ours. */
@@ -317,6 +303,7 @@ function noteFailedRise(path: string, failed: number, now: number): number {
 }
 let digestMemo: { at: number; value: Promise<ReturnType<typeof buildDigest>> } | null = null;
 onAttentionChanged(() => (digestMemo = null));
+onSessionPrompted(() => (digestMemo = null));
 
 /** The digest, memoised ~3s (the badge rides a poll). */
 export function attentionDigest(): Promise<ReturnType<typeof buildDigest>> {
@@ -347,6 +334,8 @@ export function attentionDigest(): Promise<ReturnType<typeof buildDigest>> {
     const stallsOn = readDecisionSettings().features.attention;
     for (const p of [...failedRise.keys()]) if (!byPath.get(p)?.failed) failedRise.delete(p);
     const aliases = readAliases();
+    // Proposed verb playbook runs (§app.project-runtime/review), by their session file.
+    const reviews = playbookReviews();
     const rows: AttentionRow[] = sessions.map((s) => {
       const chat = heldChat(s.path);
       const live = byPath.get(s.path);
@@ -362,11 +351,14 @@ export function attentionDigest(): Promise<ReturnType<typeof buildDigest>> {
         ...(s.signals || s.workerSignals ? { signalText: signalTextOf(s.id, nowMs) } : {}),
         ...(stallsOn ? teamStallField(s.id) : {}),
         ...(aliases[s.id] ? { alias: aliases[s.id] } : {}),
+        ...(reviews.has(s.path) ? { playbook: reviews.get(s.path)! } : {}),
       };
     });
     // Items of no session: an org project's missing stakeholder, its held acts and conflicts routed to the operator
     // (the refit), and the one restart item of the whole server (§chat.worktrees/readiness), never one per session.
-    return buildDigest(rows, Date.now(), homedir(), [...stakeholderAttention(), ...heldAttention(), ...notSentAttention(), ...conflictAttention(), ...restartItems(sessions)]);
+    // A deploy target whose latest deploy failed, and an overseer's request to deploy (§app.project-services/deploy-status).
+    const deploys = await deployAttentionItems().catch(() => []);
+    return buildDigest(rows, Date.now(), homedir(), [...stakeholderAttention(), ...heldAttention(), ...notSentAttention(), ...conflictAttention(), ...restartItems(sessions), ...deploys]);
   })();
   digestMemo = { at: now, value };
   value.catch(() => {
@@ -546,7 +538,7 @@ const host: OverseerToolHost = {
   request: (path, init) => {
     if (!dispatch) throw new Error("The Overseer's tools are not wired to the server yet.");
     const headers = new Headers(init?.headers);
-    headers.set(OVERSEER_SENDER_HEADER, SENDER_SECRET);
+    headers.set(OVERSEER_SENDER_HEADER, senderSecret());
     return dispatch(path, { ...init, headers });
   },
   overseerId: () => readOverseerState()?.current ?? "",
@@ -582,6 +574,12 @@ const host: OverseerToolHost = {
   setThinking: async (path, level) => (await acquireChat(path)).setThinking(level),
   pinMode: async (path) => {
     if (!(await acquireChat(path)).pinMode()) throw new Error("its mode entry could not be written");
+  },
+  sandbox: async (path) => (await acquireChat(path)).sandboxInfo(),
+  // The extension's own default (index.ts defaultOn): an unreadable policy file starts sessions off.
+  sandboxDefault: () => {
+    const f = loadPolicyFile(policyFilePath(getAgentDir()));
+    return f.ok && f.value.defaultOn ? "on" : "subagents";
   },
   started: (path, prompted) => {
     started.add(path);
@@ -746,12 +744,6 @@ export async function revokePermit(id: string): Promise<{ ok: true } | { ok: fal
   return { ok: true };
 }
 
-/** before_agent_start's hidden open-cards note for a branch (§app.overseer/confirm), or nothing when
-    no card is open. Shared with the project overseer. */
-export function cardsNoteMessage(branch: readonly unknown[]): { message: { customType: string; content: string; display: false } } | undefined {
-  const note = cardsNote(foldCards(branch), false, sessionActivity());
-  return note ? { message: { customType: CARDS_NOTE_MESSAGE, content: note, display: false } } : undefined;
-}
 
 /**
  * before_agent_start's hidden message in the global Overseer: the run note (§app.overseer/run-note:
@@ -850,21 +842,6 @@ export async function idNoteMessage(messages: readonly unknown[]): Promise<{ cus
   return note ? { customType: ID_NOTE_MESSAGE, content: serverRedactor().redact(note.content), display: false, details: note.details } : null;
 }
 
-/** When a session was last active (its file's mtime, as the session list says), by id, for the
-    cards note's "may be stale" lines; paths come from the listing cache, so an id it doesn't hold
-    reads as unknown. Shared with the project overseer. */
-export function sessionActivity(): (sessionId: string) => string | undefined {
-  const paths = indexedSessionPaths();
-  return (id) => {
-    const path = paths.get(id);
-    if (!path) return undefined;
-    try {
-      return new Date(statSync(path).mtimeMs).toISOString();
-    } catch {
-      return undefined;
-    }
-  };
-}
 
 /** An in-process call exactly as the Overseer's tools make it. Exported for the tests. */
 export const requestAsOverseerForTest = (path: string, init?: RequestInit) => host.request(path, init);
@@ -884,10 +861,6 @@ export function countRunning(paths: Iterable<string>, isRunning: (path: string) 
   return n;
 }
 
-/** The tool catalogue for the prompt: one line per tool, from the same definitions the runtime registers. */
-export function toolCatalogue(tools: { name: string; promptSnippet?: string; description: string }[]): string {
-  return tools.map((t) => `- \`${t.name}\`: ${t.promptSnippet ?? t.description.split(". ")[0]}`).join("\n");
-}
 
 /** The Overseer's prompt, rendered from the repo's .md (the runtime reads the .md once, so an edit
     to it applies at the next open; notes and caps are whatever the files say now). */
@@ -1072,51 +1045,6 @@ setOverseerRuntime({
 
 // ---- the one-session prompt route (sova_send) -----------------------------------------------------------
 
-export type PromptDelivery = "followUp" | "steer";
-/** `kind`: "prompt" = it started a turn now; otherwise it was queued behind the running turn (or a
-    compaction) as that kind. */
-export type PromptResult =
-  | { ok: true; queued: boolean; kind: "prompt" | PromptDelivery; compacting?: true }
-  | { ok: false; status: 400 | 404 | 409; error: string };
-
-/**
- * POST /api/sessions/prompt: one message to one session, as its composer would send it. Idle (even
- * with subagents working) it starts a turn; mid-turn, or while a compaction runs, it joins the
- * session's queue as `delivery` (default a follow-up behind the turn; "steer" goes into the turn at
- * its next step), visible and removable there. With `sentBy` (the current Overseer's id, vouched
- * for by `overseerSender`) the message is marked as the Overseer's in the target's file once it
- * enters the context.
- */
-export async function promptSession(path: string, text: string, sentBy?: string, delivery: PromptDelivery = "followUp"): Promise<PromptResult> {
-  if (!text.trim()) return { ok: false, status: 400, error: "text must not be blank" };
-  const s = await getSessionSummary(path);
-  if (!s) return { ok: false, status: 404, error: "Session file not found" };
-  const overseerId = sentBy && sentBy === readOverseerState()?.current ? sentBy : undefined;
-  if (s.overseer) return { ok: false, status: 409, error: "That is the Overseer's own conversation." };
-  if (projectOverseerOfPath(path)) return { ok: false, status: 409, error: "That is a project overseer's own conversation." };
-  // Only a baton session's participants write in it, each through their own channel (§app.baton/attribution).
-  if (s.baton) return { ok: false, status: 409, error: "That is a baton session: only its participants write in it." };
-  if (s.live) return { ok: false, status: 409, error: `It is open in a terminal (pid ${s.live.pid}), so this server must not write to it.` };
-  let chat;
-  try {
-    chat = await acquireChat(path);
-  } catch (err) {
-    return { ok: false, status: 409, error: err instanceof Error ? err.message : String(err) };
-  }
-  // Queue or start is decided by acceptPrompt from the runtime's own state, in one synchronous step.
-  let queued: boolean;
-  const compacting = !chat.session.isStreaming && chat.isCompacting();
-  try {
-    chat.assertModelAllowed();
-    const r = chat.acceptPrompt(text, undefined, "server", undefined, { delivery, ...(overseerId ? { sentByOverseer: { overseerId } } : {}) });
-    queued = r.queued;
-    void r.turn.catch((err) => chat.reportTurnFailure(err));
-  } catch (err) {
-    return { ok: false, status: 409, error: err instanceof Error ? err.message : String(err) };
-  }
-  digestMemo = null;
-  return queued ? { ok: true, queued, kind: delivery, ...(compacting ? { compacting: true as const } : {}) } : { ok: true, queued, kind: "prompt" };
-}
 
 // ---- proactivity: "Brief me" -----------------------------------------------------------------------
 

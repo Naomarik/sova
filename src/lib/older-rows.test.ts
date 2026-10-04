@@ -8,9 +8,9 @@ import type { RowsAsk } from "./api";
 // A branch of 100 rows: an input, then a two-block reply, repeated (r0 user, r1:0/r1:1 reply, ...).
 const whole: TranscriptItem[] = [];
 for (let i = 0; whole.length < 100; i += 3) {
-  whole.push({ id: `r${i}`, kind: "user", text: "q", raw: null });
-  whole.push({ id: `r${i + 1}:0`, kind: "assistant-text", text: "a", raw: null });
-  whole.push({ id: `r${i + 1}:1`, kind: "assistant-text", text: "b", raw: null });
+  whole.push({ id: `r${i}`, kind: "user", text: "q" });
+  whole.push({ id: `r${i + 1}:0`, kind: "assistant-text", text: "a" });
+  whole.push({ id: `r${i + 1}:1`, kind: "assistant-text", text: "b" });
 }
 whole.length = 99; // ends on a whole reply
 const ids = (items: readonly TranscriptItem[]) => items.map((it) => it.id);
@@ -36,7 +36,7 @@ test("helloRows: rows kept above the hello's first row stay, and the summary dro
 });
 
 test("helloRows: kept rows whose inputs don't match the summary, or more of them than the branch has, are dropped", () => {
-  const foreign = [{ id: "zz", kind: "user", text: "other branch", raw: null } as TranscriptItem, ...whole.slice(60)];
+  const foreign = [{ id: "zz", kind: "user", text: "other branch" } as TranscriptItem, ...whole.slice(60)];
   const h = helloRows(foreign, whole.slice(60), 60, summarize(whole.slice(0, 60)));
   assert.deepEqual(ids(h.items), ids(whole.slice(60)));
   assert.equal(h.older.left, 60);
@@ -49,7 +49,7 @@ test("the alignments open above the list: a hello keeps them, kept rows take the
     id, title: id, summary: "", findings: [], approach: [], rejected: [], questions: [], phase: "open",
     next: { f: 1, a: 1, x: 1, q: 1 }, rev, createdAt: "", updatedAt: "",
   });
-  const align = (id: string, d: AlignDocInfo): TranscriptItem => ({ id, kind: "align", raw: null, toolCallId: `c-${id}`, align: { v: 1, doc: d, changes: [], line: "" } });
+  const align = (id: string, d: AlignDocInfo): TranscriptItem => ({ id, kind: "align", toolCallId: `c-${id}`, align: { v: 1, doc: d, changes: [], line: "" } });
   // al_1 at row 10, al_2 at row 40: both above a hello cut at 60.
   const branch = whole.map((it, i) => (i === 10 ? align("a10", doc("al_1", 1)) : i === 40 ? align("a40", doc("al_2", 1)) : it));
   const s = summarize(branch.slice(0, 60));
@@ -242,8 +242,8 @@ test("the cards open above the list: a hello keeps them, and kept rows take thei
   const created = (title: string, from: never[] = []) => applyCardCall(from, { ops: [{ op: "create", title, options: [{ label: "Go" }] }] }, { now: "2026-09-30T10:00:00.000Z", prepared: { items: [], hrefs: [] } }).details;
   const c1 = created("One");
   const c2 = created("Two", [c1.card!] as never[]);
-  const callRow = (id: string): TranscriptItem => ({ id, kind: "tool-call", text: "sova_card", toolCallId: `t-${id}`, raw: null });
-  const resultRow = (id: string, details: unknown): TranscriptItem => ({ id: `${id}r`, kind: "tool-result", toolCallId: `t-${id}`, raw: { type: "message", message: { role: "toolResult", toolName: "sova_card", details } } });
+  const callRow = (id: string): TranscriptItem => ({ id, kind: "tool-call", text: "sova_card", toolCallId: `t-${id}` });
+  const resultRow = (id: string, details: unknown): TranscriptItem => ({ id: `${id}r`, kind: "tool-result", toolCallId: `t-${id}`, meta: { type: "message", role: "toolResult", toolName: "sova_card" }, tool: { output: "", details } });
   // c_1's call and result at rows 10/11, c_2's at 40/41: both above a hello cut at 60.
   const branch = whole.map((it, i) => (i === 10 ? callRow("k10") : i === 11 ? resultRow("k10", c1) : i === 40 ? callRow("k40") : i === 41 ? resultRow("k40", c2) : it));
   const s = summarize(branch.slice(0, 60));

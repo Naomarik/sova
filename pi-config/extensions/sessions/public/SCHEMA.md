@@ -108,6 +108,7 @@ enforce them, and the reference reader enforces them again.
 | `focusable` | | boolean | | (v2) |
 | `focusReason` | | string | 120 | (v2) why focusing is or isn't possible |
 | `previewAt` | | ms epoch | | (v2) time `preview` was produced |
+| `llm` | | LlmPresence | | (v2) this **process's** LLM calls in flight; see below |
 
 **WorkerEntry**: `id` ✔ (150), `name` ✔ (120), `status` ✔ (80, free text),
 `model` (100), `preview` (180), `backend` (32, v2), `sessionFile` (1024, v2, optional),
@@ -164,6 +165,28 @@ by `fit()`. So `workerUsage.workers` may exceed both `workers.length` and
 `workerCounts.total`, and the Σ is generally larger than the sum of the rows present.
 Do not recompute it from `workers[]`; a consumer wanting "the rows I can see" should
 sum `workers[].usage` itself.
+
+**LlmPresence** (v2, `presence.llm`, written by `../llm-inflight/`): the counts of the
+**process** that writes the record, not of the session: `v` ✔ (`1`), `producer` ✔ (string, 64:
+one id per process lifetime), `pid` ✔, `active` ✔ (logical LLM calls in flight now, from issue to
+end; queue waits, cooldowns and tool time never count; the process's pi workers included, which
+report to it over their RPC stdout), `approximate` ✔ (how many of `active` have approximate
+bounds, ≤ `active`), `claudeTurns` ✔ (Claude Code turns running now, whose internal calls can't
+be seen), `degraded` ✔ (boolean: some calls this process makes can't be seen), `folded`
+(string[], sorted, ≤ 64 ids of ≤ 64: the producers whose counts `active` already includes —
+the process's pi workers, transitively — so a reader counts none of them again, whichever record
+or worker file carries them; a worker whose ids would not fit is left out of `active` as well,
+never summed unnamed, and `degraded` is true; readers accept up to 256; absent reads as `[]`),
+`tokens` (additive: the output tokens of the process's ended calls, its summed pi workers'
+included, as `{bucketMs: 30000, end, out, partial?}`: `out` is 60 integers 0–10,000,000, oldest
+first, `out[59]` the slot `end` = floor(epoch ms / 30000) as of the write; each call's output
+tokens, reasoning included and never input or cache reads, are added once at its end, spread
+evenly over the time its reply streamed; `partial: true` = some of its calls' tokens are known
+missing, such as a worker that reported none. Absent = an older counter: its tokens are unknown;
+a malformed one is dropped alone). All counts are non-negative integers. Several records written by one process carry the
+same `llm`: count a `producer` once. Absent means the process doesn't count (no counter loaded) — unknown, never 0;
+a malformed value is dropped. Rewritten only when the counts change (a call's tokens land with
+its end: one change; coalesced with every other change), never per token.
 
 **Outline**: `now` (160), `overall` (300), `topics` (12 × 60), `lastHeading` (80),
 `state` (`none|drafting|fresh|updating|stale|failed-keeping-last`), `generatedAt`,

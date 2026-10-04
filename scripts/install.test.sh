@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Tests for scripts/install.sh. Every case runs in its own temporary HOME with a sandboxed PATH:
-# git is the real one (the installer clones a local seed repository); node, pnpm, npx, uname,
-# systemctl and launchctl are stubs, so nothing is downloaded, no real service manager is asked
+# git is the real one (the installer clones a local seed repository); node, pnpm, npx, curl, unzip,
+# uname, systemctl and launchctl are stubs, and so are the seed's scripts/fetch-bun.sh (the Bun
+# download) and scripts/start-server.sh (what the launcher execs), so nothing is downloaded, no real service manager is asked
 # anything, and nothing outside the temporary directory is touched. No case can see a terminal
 # unless it hands the installer one (SOVA_TTY).
 #
@@ -30,7 +31,7 @@ nopnpm=$tmp/sandbox-nopnpm       # npx but no pnpm: the installer runs pnpm thro
 nopm=$tmp/sandbox-nopm           # neither pnpm nor npx
 stubs=$tmp/stubs                 # not on any PATH; the pnpm stub lives here so npx can reach it
 mkdir -p "$sandbox" "$nogit" "$nopnpm" "$nopm" "$stubs"
-for c in basename bash cat chmod cmp cp dirname env grep head id ln mkdir mktemp mv printf readlink rm sed sleep sort touch wc; do
+for c in basename bash cat chmod cmp cp dirname env grep head id ln mkdir mktemp mv printf readlink rm sed sh sleep sort touch wc; do
 	for d in "$sandbox" "$nogit" "$nopnpm" "$nopm"; do ln -sf "$(command -v "$c")" "$d/$c"; done
 done
 for d in "$sandbox" "$nopnpm" "$nopm"; do ln -sf "$(command -v git)" "$d/git"; done  # $nogit has no git
@@ -42,6 +43,11 @@ cat > "$sandbox/node" <<'STUB'
 [ "${1:-}" = "-e" ] && { [ "${NODE_FAKE_PORT_BUSY:-}" = 1 ]; exit; }
 printf 'node stub: %s\n' "$*"
 STUB
+# curl and unzip only have to exist (Bun's download is the seed's fetch-bun.sh stub): never called.
+for c in curl unzip; do
+	printf '#!/usr/bin/env bash\nprintf "%s stub: must not be called\\n" >&2\nexit 1\n' "$c" > "$sandbox/$c"
+	chmod 755 "$sandbox/$c"
+done
 # uname -s answers FAKE_UNAME (default Linux), which picks the service manager.
 cat > "$sandbox/uname" <<'STUB'
 #!/usr/bin/env bash
@@ -111,7 +117,10 @@ case "\${1:-}" in
 esac
 STUB
 chmod 755 "$sandbox/node" "$sandbox/uname" "$sandbox/systemctl" "$sandbox/launchctl" "$stubs/pnpm" "$stubs/npx"
-for d in "$nogit" "$nopnpm" "$nopm"; do cp "$sandbox/node" "$sandbox/uname" "$d/"; done
+for d in "$nogit" "$nopnpm" "$nopm"; do cp "$sandbox/node" "$sandbox/uname" "$sandbox/curl" "$sandbox/unzip" "$d/"; done
+nocurl=$tmp/sandbox-nocurl       # everything but curl
+cp -P "$sandbox"/* "$nocurl/" 2>/dev/null || { mkdir -p "$nocurl" && cp -P "$sandbox"/* "$nocurl/"; }
+rm -f "$nocurl/curl"
 ln -sf "$stubs/pnpm" "$sandbox/pnpm"
 ln -sf "$stubs/pnpm" "$nogit/pnpm"
 ln -sf "$stubs/npx" "$nopnpm/npx"
@@ -131,6 +140,27 @@ cat > "$seed/package.json" <<'JSON'
 }
 JSON
 printf 'export const server = null;\n' > "$seed/server/index.ts"
+printf '[tools]\nnode = "25.2.1"\nbun = "1.4.2"\n' > "$seed/mise.toml"
+# fetch-bun.sh <dir>: a <dir>/bin/bun that reports the pinned version, kept when it already does;
+# every call logged to $BUN_LOG, and BUN_FAIL=1 fails it.
+cat > "$seed/scripts/fetch-bun.sh" <<'STUB'
+#!/bin/sh
+[ -z "${BUN_LOG:-}" ] || printf 'fetch %s\n' "$1" >> "$BUN_LOG"
+[ "${BUN_FAIL:-}" != 1 ] || { printf 'fetch-bun stub: failed on purpose\n' >&2; exit 1; }
+if [ "$("$1/bin/bun" --version 2>/dev/null)" != 1.4.2 ]; then
+	[ -z "${BUN_LOG:-}" ] || printf 'download\n' >> "$BUN_LOG"
+	mkdir -p "$1/bin"
+	printf '#!/bin/sh\n[ "$1" = --version ] && { echo 1.4.2; exit 0; }\necho "bun stub: $*"\n' > "$1/bin/bun"
+	chmod 755 "$1/bin/bun"
+fi
+printf '%s\n' "$1/bin/bun"
+STUB
+# start-server.sh: says how it was asked to start the server.
+cat > "$seed/scripts/start-server.sh" <<'STUB'
+#!/bin/sh
+printf 'start-server stub ran: SOVA_BUN=%s args=%s\n' "${SOVA_BUN:-}" "$*"
+STUB
+chmod 755 "$seed/scripts/fetch-bun.sh" "$seed/scripts/start-server.sh"
 # pi-config: two extensions (a directory and a single file), a non-extension file, and the
 # personal config the installer must not install.
 mkdir -p "$seed/pi-config/extensions/alpha" "$seed/pi-config/extensions/gamma"
@@ -161,7 +191,7 @@ inst() {                 # inst [args...] in the current $home; sets `status` an
 	out=$(env -u PI_CODING_AGENT_DIR ${CASE_AGENT_DIR:+PI_CODING_AGENT_DIR="$CASE_AGENT_DIR"} \
 		HOME="$home" PATH="${CASE_PATH:-$sandbox}" SOVA_REPO="file://$seed" SOVA_REF="${CASE_REF:-v0.1.0}" \
 		SOVA_TTY="${CASE_TTY:-$tmp/.no-tty}" SVC_LOG="$case_dir/svc.log" SVC_STATE="$case_dir/svc" \
-		PNPM_LOG="$case_dir/pnpm.log" "$test_bash" "$installer" "$@" 2>&1)
+		PNPM_LOG="$case_dir/pnpm.log" BUN_LOG="$case_dir/bun.log" "$test_bash" "$installer" "$@" 2>&1)
 	status=$?
 	set -e
 }
@@ -179,10 +209,10 @@ fresh_home() {           # a home with a ~/.pi to guard, and no install in it
 	pi_before=$(pi_files)
 }
 
-# Every regular file under ~/.pi except the one the installer may create (the provider switch).
-# Links are not followed, so the extension links are not in it.
+# Every regular file under ~/.pi, with its path. Links are not followed, so the extension links
+# are not in it.
 pi_files() {
-	(cd "$home/.pi" && find . -type f ! -path ./agent/sova/settings.json -exec cat {} + | sort)
+	(cd "$home/.pi" && find . -type f -print -exec cat {} + | sort)
 }
 
 pi_untouched() {
@@ -224,8 +254,14 @@ check "$([ ! -e "$home/.local/share/sova/.pi" ] && echo true || echo false)" "su
 check "$([ -z "$(ls -d "$home/.local/share/.sova-staging."* 2>/dev/null)" ] && echo true || echo false)" \
 	"success: cleaned up its staging dir"
 launch=$(PATH="$sandbox" "$home/.local/bin/sova" --check 2>&1 || true)
-check "$(printf '%s' "$launch" | grep -q 'tsx stub ran' && echo true || echo false)" \
-	"success: the launcher runs the server from the install dir, with a spaced path"
+check "$(printf '%s' "$launch" | grep -qF "start-server stub ran: SOVA_BUN=$home/.local/share/sova/.bun/bin/bun args=--check" && echo true || echo false)" \
+	"success: the launcher runs the server from the install dir on its own Bun, with a spaced path"
+check "$(yes_if [ "$("$home/.local/share/sova/.bun/bin/bun" --version)" = 1.4.2 ])" "success: the pinned Bun is in the install dir"
+check "$(yes_if said 'runtime: Bun 1.4.2')" "success: names the runtime"
+launch=$(PATH="$sandbox" "$home/.local/bin/sova" --node 2>&1 || true)
+check "$(printf '%s' "$launch" | grep -qF 'args=--node' && echo true || echo false)" "success: sova --node reaches the launcher"
+launch=$(PATH="$sandbox" SOVA_BUN=/elsewhere/bun "$home/.local/bin/sova" 2>&1 || true)
+check "$(printf '%s' "$launch" | grep -qF 'SOVA_BUN=/elsewhere/bun ' && echo true || echo false)" "success: a SOVA_BUN of the caller's wins"
 
 # 4. A failed build leaves the previous install and the launcher exactly as they were.
 good_home=$home
@@ -243,6 +279,20 @@ check "$([ "$before_launcher" = "$(cat "$good_home/.local/bin/sova")" ] && echo 
 	"failed build: the launcher is untouched"
 check "$([ -z "$(ls -d "$good_home/.local/share/sova.sova-previous."* 2>/dev/null)" ] && echo true || echo false)" \
 	"failed build: left no backup directory behind"
+
+# 3b. No curl to download Bun with: exits nonzero, says so, changes nothing.
+CASE_PATH=$nocurl run_install missing-curl
+unset CASE_PATH
+check "$(yes_if [ "$status" -ne 0 ])" "missing curl: exits nonzero"
+check "$(yes_if said 'curl is not installed')" "missing curl: says which command"
+check "$(yes_if [ ! -e "$home/.local/share/sova" ] && [ ! -e "$home/.local/bin/sova" ])" "missing curl: no install dir, no launcher"
+
+# 3c. A failed Bun download changes nothing.
+BUN_FAIL=1 run_install bun-fails
+unset BUN_FAIL
+check "$(yes_if [ "$status" -ne 0 ])" "bun fails: exits nonzero"
+check "$(yes_if said 'could not install Bun; nothing was changed')" "bun fails: says nothing was changed"
+check "$(yes_if [ ! -e "$home/.local/share/sova" ] && [ ! -e "$home/.local/bin/sova" ])" "bun fails: no install dir, no launcher"
 
 # 5. Re-running on our own clean clone with --reinstall rebuilds it and keeps working.
 home=$good_home
@@ -331,14 +381,12 @@ for f in models.json keybindings.json vision-delegate.json; do
 	check "$(yes_if [ ! -e "$home/.pi/agent/$f" ])" "extensions: no personal $f"
 done
 check "$(yes_if [ ! -e "$home/.local/bin/pi-sessions" ])" "extensions: no pi-sessions command"
-check "$(yes_if grep -q '"claudeCodeProvider": true' "$home/.pi/agent/sova/settings.json")" \
-	"extensions: the Claude Code provider switch is on"
-check "$(yes_if grep -q '"version": 1' "$home/.pi/agent/sova/settings.json")" \
-	"extensions: the switch file has the version Sova reads"
+check "$(yes_if [ ! -e "$home/.pi/agent/sova/settings.json" ])" \
+	"extensions: no Sova settings file (the Claude Code provider needs no switch)"
 check "$(yes_if said 'claude CLI on PATH')" "extensions: says Claude Code's models need the claude CLI"
 
 # 13. Anything already at an extension's path that is not our link is kept, and that extension
-#     is skipped: a directory, and a link to somewhere else. An existing provider setting is kept.
+#     is skipped: a directory, and a link to somewhere else. An existing Sova settings file is kept.
 fresh_home foreign-extensions
 ext=$home/.pi/agent/extensions
 mkdir -p "$ext/alpha" "$home/elsewhere" "$home/.pi/agent/sova"
@@ -356,9 +404,9 @@ check "$(yes_if said 'skipped the alpha extension')" "foreign extensions: names 
 check "$(yes_if said 'skipped the beta.ts extension')" "foreign extensions: names the skipped link"
 check "$(yes_if [ -L "$ext/gamma" ])" "foreign extensions: the others are still linked"
 check "$(yes_if grep -q '"claudeCodeProvider":false' "$home/.pi/agent/sova/settings.json")" \
-	"foreign extensions: an existing provider setting is kept"
+	"foreign extensions: an existing Sova settings file is kept as it was"
 
-# 14. --no-extensions links nothing and switches nothing.
+# 14. --no-extensions links nothing and writes nothing in the agent dir.
 run_install no-extensions --no-extensions
 check "$([ "$status" -eq 0 ] && echo true || echo false)" "--no-extensions: exits 0"
 check "$(yes_if [ ! -e "$home/.pi/agent/extensions" ] && [ ! -e "$home/.pi/agent/sova" ])" \
@@ -375,6 +423,7 @@ check "$(yes_if [ ! -e "$home/.pi/agent/extensions" ])" "agent dir: nothing in ~
 run_install idempotent --service
 case_dir=$(dirname "$home")
 : > "$case_dir/pnpm.log"
+: > "$case_dir/bun.log"
 : > "$case_dir/svc.log"
 touch "$case_dir/stamp"
 sleep 1
@@ -382,6 +431,7 @@ inst
 check "$([ "$status" -eq 0 ] && echo true || echo false)" "rerun, same inputs: exits 0"
 check "$(yes_if said 'nothing to rebuild')" "rerun, same inputs: says there is nothing to rebuild"
 check "$(yes_if [ ! -s "$case_dir/pnpm.log" ])" "rerun, same inputs: installed and built nothing"
+check "$(yes_if [ ! -s "$case_dir/bun.log" ])" "rerun, same inputs: fetched no Bun"
 check "$(yes_if [ -z "$(find "$home" -newer "$case_dir/stamp" -print)" ])" \
 	"rerun, same inputs: no file or link under HOME changed"
 check "$(yes_if [ -z "$(grep -E 'daemon-reload|restart|start|enable' "$case_dir/svc.log" | grep -v 'is-enabled\|is-active')" ])" \
@@ -489,7 +539,7 @@ sova_cmd() { set +e; launch=$(PATH="$opener:$sandbox" "$@" 2>&1); lstatus=$?; se
 sova_cmd env -u PI_CODING_AGENT_DIR "$home/.local/bin/sova" token
 check "$(yes_if [ "$lstatus" -ne 0 ])" "launcher token, none minted: exits nonzero"
 check "$(printf '%s' "$launch" | grep -q 'start sova once' && echo true || echo false)" "launcher token, none minted: says to start sova once"
-check "$(printf '%s' "$launch" | grep -q 'tsx stub ran' && echo false || echo true)" "launcher token: never starts the server"
+check "$(printf '%s' "$launch" | grep -q 'start-server stub ran' && echo false || echo true)" "launcher token: never starts the server"
 mkdir -p "$home/.pi/agent/sova"
 printf 'tok-of-the-install\n' > "$home/.pi/agent/sova/auth-token"
 sova_cmd env -u PI_CODING_AGENT_DIR "$home/.local/bin/sova" token

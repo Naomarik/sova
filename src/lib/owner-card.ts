@@ -34,7 +34,7 @@ export function ownerChangeLine(history: OwnerChange[] | undefined, now = Date.n
 
 /** The confirm under Get Owner Link while a link is live: minting turns that one off. */
 export const rotateLine = (name: string) => `${firstName(name)}'s current link stops working at once. The new one works from now.`;
-export const turnOffLine = (name: string) => `${firstName(name)}'s owner page stops opening at once. The conversations and updates stay.`;
+export const deleteOwnerLine = (name: string) => `${firstName(name)}'s owner link stops working for good. The conversations and updates stay.`;
 
 /** An update's line in the project page's log: who posted it and when. */
 export const updateMeta = (u: Pick<ProjectUpdate, "by" | "at">, now = Date.now()): string =>

@@ -1,4 +1,4 @@
-import { DetachedDriver, DriverError, realExec, SystemdDriver, type Driver, type DriverId, type Exec, type RunOnceResult, type UnitSpec, type UnitStatus } from "./drivers";
+import { DetachedDriver, DriverError, realExec, SystemdDriver, type Driver, type DriverId, type Exec, type OnceSpec, type RunOnceResult, type UnitSpec, type UnitStatus } from "./drivers";
 
 /**
  * The supervisor is an adapter (§app.project-services/supervisor): one Driver interface, one
@@ -106,11 +106,11 @@ export class SelectedDriver implements Driver {
   pids(unit: string) {
     return this.choice?.driver?.pids(unit) ?? [];
   }
-  async logs(unit: string, lines: number) {
+  async logs(unit: string, lines: number, sinceMs?: number) {
     const s = await this.pending;
-    return s.driver ? s.driver.logs(unit, lines) : [];
+    return s.driver ? s.driver.logs(unit, lines, sinceMs) : [];
   }
-  async runOnce(spec: UnitSpec & { timeoutSec: number }): Promise<RunOnceResult> {
+  async runOnce(spec: OnceSpec): Promise<RunOnceResult> {
     return (await this.d()).runOnce(spec);
   }
   async units(prefix: string) {

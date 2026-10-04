@@ -44,8 +44,11 @@ last request, byte for byte, with the explain instruction appended as one new us
 message. Since pi 0.86 the system prompt and the tool loadout are part of the
 transcript (role `system` messages with named sections and declared tools), so the
 fork already starts with the parent's; it would lose them only by declaring
-something different. `child.ts`, loaded last into the child, declares exactly what
-the parent declared (`mirror.ts` has the reasoning):
+something different. The child is a **background fork** from the shared fork core
+(`../subagents/fork/`, also behind Sova's "Fork from here" cache identity): its
+`child.ts`, loaded last into the child, declares exactly what the parent declared
+(`fork/mirror.ts` has the reasoning), under /explain's policy
+(`explainPolicy` in `explain.ts`: web on, writes only into the store):
 
 - **tools:** every tool the parent's transcript declares stays active, with the
   parent's declaration. A tool the child may use and has itself is used as is; a
@@ -62,12 +65,18 @@ the parent declared (`mirror.ts` has the reasoning):
   no). A parent's default tools have no grep/find/ls, and adding them would change
   the prefix, so a mirrored child searches through that bash. The prompt tells the
   child which of these it has.
-- Also mirrored: the btw extension's request filter, and, for OpenAI-style
-  providers, the parent's `prompt_cache_key`.
+- Also mirrored: the btw extension's request filter.
+- **cache identity:** the session copy the child forks records the parent's
+  inherited cache key (`sova-fork-cache`, the same entry a UI fork records), so the
+  child asks OpenAI-style providers for the parent's `prompt_cache_key`, and on Codex
+  also sends it as its `session-id` affinity header (`fork/cache.ts`). Without the
+  header, a Codex fork read only the shared system prompt from cache in 2 of 3
+  measured runs, never the parent's own conversation.
 
 Under the claude-code backend the parent's live, idle Claude CLI session is the
 prefix: the child's provider resumes it with `--resume <parent> --fork-session`
-(`../claude-code/provider/fork-point.ts`) and sends only the new user message,
+(`../claude-code/provider/fork-point.ts`, chosen by `claudeForkPointFor` in
+`../subagents/fork/background.ts`) and sends only the new user message,
 instead of folding the history into one text message. If the parent's CLI child
 is busy or gone, or the transcripts don't line up, it folds as before (no cache).
 
@@ -233,19 +242,18 @@ and the user still sees the `explain-doc` entry and the answer.
 | --- | --- |
 | `store.ts` | The on-disk contract: ids, paths, `meta.json`, validation and repair, the session-entry shape |
 | `prompt.ts` | The child's instructions |
-| `worker.ts` | The forked child, hosted through `../subagents/runner.ts`, and the session byte-copy it forks |
-| `child.ts` | Loaded into the child: mirrors the parent's tools and prompt, gates every tool call |
-| `mirror.ts` | The pure half of `child.ts`: replay, prompt mirror, tool plan, call gate |
-| `explain.ts` | Run lifecycle: start, record running, settle, validate, record final, wake |
+| `explain.ts` | Run lifecycle: start, record running, settle, validate, record final, wake; the child's policy; web search detection |
 | `identity.ts` | Which session is the parent, and which file the child forks |
 | `index.ts` | Pi wiring only: the command, the entry renderer, shutdown |
 
-`worker.ts` imports the subagents extension's `SubagentRunner` **as a class**: it
-already owns the exact argv this needs (`--fork`, `--no-extensions`,
-`-e <worker marker>`, `-e <installed package>`, then `-e child.ts`), the RPC handshake, the settle/outcome
-distinction, and the abort → SIGTERM → SIGKILL teardown. No manager, no registry,
-no `agent_*` tools: these children never appear in `/agents`, and this extension
-stops its own.
+The forked child itself — the session copy, cache identity, request mirror, call
+gate and the runner — is the shared background fork in `../subagents/fork/`
+(`copy.ts`, `cache.ts`, `mirror.ts`, `child.ts`, `background.ts`; tested by the
+subagents runner, live-proved by its `tests/fork-cache-live.mjs`). Its runner uses
+the subagents extension's `SubagentRunner` **as a class** (`--fork`,
+`--no-extensions`, `-e <worker marker>`, `-e <installed package>`, then
+`-e child.ts`). No manager, no registry, no `agent_*` tools: these children never
+appear in `/agents`, and this extension stops its own.
 
 ## Verification
 

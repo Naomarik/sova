@@ -1,4 +1,4 @@
-// Run: pnpm exec tsx --test src/lib/align-card.test.ts (or npm test). The align card's reading
+// Run: pnpm exec tsx --test src/lib/align-card.test.ts (or pnpm test / pnpm run test:bun). The align card's reading
 // order and DOM, rendered: the approach between the summary and the questions and open by
 // default, its steps numbered by their stable ids only with the whole inline-rich body in the
 // second column, findings and rejected folded below the questions — plus the view-model the card
@@ -10,12 +10,11 @@ import { test } from "node:test";
 
 // The SSR helper stays plain .mjs (node runs it uncompiled), so it has no types; its one export.
 // @ts-expect-error untyped .mjs import
-const { ssrHooks } = await import("./align-card-ssr.mjs");
-ssrHooks();
+const { importSsr } = await import("./align-card-ssr.mjs");
 const solid = await import("solid-js");
 const { renderToString } = await import("solid-js/web");
 const { cardSections } = await import("./align");
-const { AlignAnswerContext, AlignDocCard, AlignRow } = await import("../components/AlignDocCard.tsx");
+const { AlignAnswerContext, AlignDocCard, AlignRow } = await importSsr(new URL("../components/AlignDocCard.tsx", import.meta.url), (s: string) => import.meta.resolve(s));
 import type { AlignDocInfo, AlignRowInfo } from "../../shared/protocol";
 
 const cardCss = readFileSync(new URL("../design/align-viewer.css", import.meta.url), "utf8").replaceAll(/\/\*[\s\S]*?\*\//g, "");
@@ -134,9 +133,10 @@ test("the view-model the card renders from: approach open first, then the folded
   assert.deepEqual(cardSections(doc({ approach: [], findings: [] })).map((s) => s.kind), ["rejected"], "an empty section is absent");
 });
 
-test("the guide rule leaves the alignment disclosures locally, and the base disclosure keeps it", () => {
-  assert.match(cardCss, /\.align-section > \.disclosure-body,\n\.align-rev > \.disclosure-body \{[^}]*border-left: none;/, "alignment sections and revisions drop the bar");
-  assert.match(baseCss, /\.disclosure-body \{[^}]*border-left:/, "the base disclosure keeps its rule");
+test("no disclosure draws a guide rule, and the alignment disclosures keep their indent", () => {
+  assert.match(cardCss, /\.align-section > \.disclosure-body,\n\.align-rev > \.disclosure-body \{[^}]*white-space: normal;/, "alignment sections and revisions wrap normally");
+  assert.doesNotMatch(baseCss, /\.disclosure-body \{[^}]*border-left:/, "the base disclosure draws no rule");
+  assert.match(baseCss, /\.disclosure-body \{[^}]*padding: var\(--space-2\) 0 var\(--space-2\) var\(--space-4\);/, "the base disclosure keeps its indent");
   assert.match(cardCss, /\.align-approach-list \{[^}]*list-style: none;/, "no list markers on the approach");
   assert.match(cardCss, /\.align-approach-list > li \{[^}]*grid-template-columns: var\(--space-5\) 1fr;/, "the id column, wrapped text aligned");
   assert.match(cardCss, /\.align-approach-text \{[^}]*overflow-wrap: anywhere;/, "the body span wraps inside its column");

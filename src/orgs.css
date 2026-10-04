@@ -44,6 +44,9 @@
    once they no longer fit side by side, so the name never sits alone at a stub width. */
 .orgs-project-form > .field { flex: 1 1 12rem; }
 .orgs-project-form > .field.orgs-grow { flex: 2 1 16rem; }
+/* Import a Project, under Add Project: its confirm takes the whole row under the select. */
+.orgs-import-form { margin-top: var(--space-3); }
+.orgs-import-confirm { flex: 1 1 100%; display: grid; gap: var(--space-2); }
 
 .orgs-people { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
 .orgs-person { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-3) 0; }
@@ -239,7 +242,7 @@
 }
 
 /* The owner card (People tab, §app.owner-page/owner): the select, the link line, the buttons with
-   Turn Off apart from them, and the inline confirm. */
+   Delete apart from them, and the inline confirm. */
 .orgs-owner-field { max-width: 28rem; }
 .orgs-owner-warn { color: var(--status-warn); }
 .orgs-owner-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2) var(--space-5); }

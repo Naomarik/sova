@@ -1,4 +1,5 @@
 import { setProfileStartAdopt } from "./lib/profile-start";
+import { loadExperimental } from "./lib/experimental-draft";
 import { batch, createEffect, createMemo, createResource, createSignal, Match, on, onCleanup, Show, Switch, untrack } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import { Portal } from "solid-js/web";
@@ -26,7 +27,8 @@ import {
 import { socketReconnects } from "./lib/socket";
 import { actSessionCount, setAppBadge } from "./lib/push";
 import { firstBaseline, helloStep, HELLO_POLL_MS, meshReadInit, pathOfViewKey, sessionViewKey, watchMove, HOST_CONFIRM_MS, seedPeerList, setHostCheck, type HelloBaseline, type PendingHost, type HelloChange, sessionHrefOn } from "./lib/mesh";
-import { hostLabel, hostOf, isMeshHash, joinHostLists, linkedSessionRow, meshRetryDelay, meshState, meshOn, meshPeers, mergePeerLists, noteHost, notePeerOrgs, notePeerSessions, peerInfo, peerUnavailable, sameMeshInfo, sessionRouteFromHash, setMeshState } from "./lib/mesh";
+import { noteSessionsHidden, sessionsHiddenBy } from "./lib/mesh";
+import { hostLabel, hostOf, isMeshHash, joinHostLists, linkedSessionRow, meshRetryDelay, meshState, meshOn, meshPeers, mergePeerLists, noteHost, notePeerOrgs, notePeerProjects, notePeerSessions, peerInfo, peerUnavailable, sameMeshInfo, sessionRouteFromHash, setMeshState } from "./lib/mesh";
 import { isOverseerHash, isOverseerShortcut, OVERSEER_HASH, OVERSEER_POLL_MS, overseerHistoryId } from "./lib/overseer";
 import { sessionIdFromHash, setGroupLinkIndex, setSessionIndex } from "./lib/session-links";
 import { agentsHref, insightsRouteFromHash, legacyInsightsTarget } from "./lib/insights";
@@ -34,8 +36,10 @@ import { transcriptRoot } from "./lib/jump";
 import { groupRouteFromHash } from "./lib/group-route";
 import { extHref, extRouteFromHash } from "./lib/ext-route";
 import { orgsRouteFromHash } from "./lib/orgs-route";
+import { projectsRouteFromHash } from "./lib/projects-route";
 import { onListRefresh } from "./lib/list-refresh";
 import { OrgsView } from "./components/OrgsView";
+import { ProjectsView } from "./components/ProjectsView";
 import { loadSessionGroups, sessionGroups, sessionGroupsLoaded } from "./lib/session-groups";
 import { createThenArchive, dropArchived, newSessionCwd, offersCwd } from "./lib/new-session";
 import { showHiddenFolders } from "./lib/hidden-folders";
@@ -53,6 +57,7 @@ import type { RewindControl } from "./lib/inputs";
 import { activeTab, groupSendAll, home, setActiveTab, setAdopter, setHome, toast } from "./lib/ui-state";
 import { createPaneInsight } from "./lib/pane-insight";
 import { sessionWorking, type UsageTotalView } from "./lib/workers";
+import { answeredPeers, workPeers } from "./lib/work-now";
 import { AgentsView } from "./components/AgentsView";
 import { NewSessionDialog } from "./components/NewSessionDialog";
 import { SettingsDialog } from "./components/SettingsDialog";
@@ -131,6 +136,8 @@ function createMediaQuery(query: string) {
 }
 
 export function App() {
+  // Settings → Experimental's saved switches gate parts of the UI (adversarial review): read once.
+  loadExperimental();
   const [listError, setListError] = createSignal<string | null>(null);
   /** Bumped on every successful list load, so views can tell a fresh list from a stale one. */
   const [listVersion, setListVersion] = createSignal(0);
@@ -209,20 +216,31 @@ export function App() {
   const [peerLists, setPeerLists] = createSignal<ReadonlyMap<string, SessionSummary[]>>(new Map());
   /** The first GET /api/mesh/sessions has answered or failed: a peer's session a link names is known by now. */
   const [peersSettled, setPeersSettled] = createSignal(false);
+  /** The peers whose list in the last answer was a current one: the working count adds only
+      those, and any other makes it a floor (lib/work-now.ts). */
+  const [peersAnswered, setPeersAnswered] = createSignal<ReadonlySet<string>>(new Set(), {
+    equals: (a, b) => a.size === b.size && [...a].every((id) => b.has(id)),
+  });
   const loadPeerSessions = async () => {
     if (!meshOn()) return;
     try {
       const answer = await fetchMeshSessions();
+      noteSessionsHidden(answer);
+      setPeersAnswered(answeredPeers(answer));
       const next = mergePeerLists(peerLists(), answer, meshPeers());
       for (const p of meshPeers()) {
         const rows = next.get(p.id) ?? [];
         notePeerSessions(p.id, rows.map((s) => s.path));
         // Its organizations' pages route there too (§mesh.remote-sessions/org-pages).
         notePeerOrgs(p.id, [...new Set(rows.flatMap((s) => (s.org ? [s.org.orgId] : [])))]);
+        // And its projects' (placed or not).
+        notePeerProjects(p.id, [...new Set(rows.flatMap((s) => (s.project ? [s.project.projectId] : s.org?.projectId ? [s.org.projectId] : [])))]);
       }
       setPeerLists(next);
     } catch {
-      // Keep the last lists: the peers' own status (GET /api/mesh) says what is down.
+      // Keep the last lists: the peers' own status (GET /api/mesh) says what is down. None of them
+      // is current now, so the working count leaves them out.
+      setPeersAnswered(new Set<string>());
     }
     setPeersSettled(true);
   };
@@ -247,6 +265,8 @@ export function App() {
   createEffect(() => {
     if (!meshOn()) closeMeshDetails();
   });
+  /** Every peer's part of the working count: its list while current, else null (a floor). */
+  const peerWork = createMemo(() => workPeers(meshPeers(), peerLists(), peersAnswered(), sessionsHiddenBy));
   /** This host's sessions, then every peer's: the sidebar's list. With no peer it IS `list()`. */
   const allSessions = createMemo(() => {
     const l = list();
@@ -302,6 +322,13 @@ export function App() {
     return r;
   };
   const [orgsRoute, setOrgsRoute] = createSignal(orgsRouteOf(location.hash));
+  /** A project page's address names its host when the project is a peer's: noted before the page reads it. */
+  const projectsRouteOf = (hash: string) => {
+    const r = projectsRouteFromHash(hash);
+    if (r && r.kind !== "list" && r.host) notePeerProjects(r.host, [r.projectId]);
+    return r;
+  };
+  const [projectsRoute, setProjectsRoute] = createSignal(projectsRouteOf(location.hash));
   /** The extension on screen: the view is keyed by this, so a sub-route change never remounts it
       (which would reload the extension's iframe). */
   const extId = createMemo(() => extRoute()?.id ?? null);
@@ -438,6 +465,7 @@ export function App() {
     setSharesRoute(isSharesHash(location.hash));
     setShareRoute(shareRouteFromHash(location.hash));
     setOrgsRoute(orgsRouteOf(location.hash));
+    setProjectsRoute(projectsRouteOf(location.hash));
     setOverviewRoute(isOverviewHash(location.hash));
     setAccessRoute(location.hash === "#/access");
   };
@@ -664,9 +692,16 @@ export function App() {
   const orgsPage = createMemo(() => {
     const r = orgsRoute();
     if (!r) return null;
-    return r.kind === "list" ? "list" : r.kind === "org" ? `org:${r.id}` : r.kind === "person" ? `person:${r.id}:${r.personId}` : `${r.kind}:${r.id}:${r.projectId}`;
+    return r.kind === "list" ? "list" : r.kind === "org" ? `org:${r.id}` : `person:${r.id}:${r.personId}`;
   });
   createEffect(on(orgsPage, (page) => page && folded() && queueMicrotask(() => orgsTitleEl?.focus()), { defer: true }));
+  let projectsTitleEl: HTMLHeadingElement | undefined;
+  /** Which projects page is showing: a project's tabs are one page, so a tab change keeps focus on the tab. */
+  const projectsPage = createMemo(() => {
+    const r = projectsRoute();
+    return r ? (r.kind === "list" ? "list" : `${r.kind}:${r.projectId}`) : null;
+  });
+  createEffect(on(projectsPage, (page) => page && folded() && queueMicrotask(() => projectsTitleEl?.focus()), { defer: true }));
   createEffect(on(extId, (id) => id && folded() && queueMicrotask(() => extTitleEl?.focus()), { defer: true }));
   // A team deep link focuses its card instead (AgentsView), at every width. A memo, so a change
   // within a page (a team link, the Explanations session filter) doesn't take focus back.
@@ -944,7 +979,7 @@ export function App() {
       <div
         class="app"
         data-spine={collapsed() ? "on" : undefined}
-        data-view={groupRoute() ? "workspace" : route() || accessRoute() || insightsRoute() || overseerRoute() || extRoute() || meshRoute() || sharesRoute() || shareRoute() || orgsRoute() || overviewRoute() ? "session" : "list"}
+        data-view={groupRoute() ? "workspace" : route() || accessRoute() || insightsRoute() || overseerRoute() || extRoute() || meshRoute() || sharesRoute() || shareRoute() || orgsRoute() || projectsRoute() || overviewRoute() ? "session" : "list"}
         data-ext-maximized={extMaximized() ? "1" : undefined}
       >
         <Sidebar
@@ -957,6 +992,7 @@ export function App() {
           usage={usage.data()}
           claudeLogin={usageLogin()}
           agents={agents.data()}
+          peerWork={peerWork()}
           insightsPage={footPage()}
           sharesOpen={sharesRoute()}
           onRefresh={refresh}
@@ -1106,7 +1142,11 @@ export function App() {
                   </div>
                 </div>
               </Match>
-              {/* Organizations, their rosters and hand-off sessions (#/orgs[/<id>[/<tab>|/projects/<project>]]). */}
+              {/* Projects, placed or not (#/projects[/<project>[/<tab>|/overseer]]). Not keyed: ProjectsView keys each page. */}
+              <Match when={projectsRoute()}>
+                {(r) => <ProjectsView route={r()} titleRef={(el) => (projectsTitleEl = el)} />}
+              </Match>
+              {/* Organizations, their rosters and hand-off sessions (#/orgs[/<id>[/<tab>|/people/<person>]]). */}
               {/* Not keyed: a tab change on an org's page (#/orgs/<id>/<tab>) is a new route object,
                   and OrgsView keys each page itself, so the page stays and only the tab moves. */}
               <Match when={orgsRoute()}>
@@ -1145,7 +1185,7 @@ export function App() {
                   />
                 )}
               </Match>
-              <Match when={!route() && !groupRoute() && !meshRoute() && !sharesRoute() && !shareRoute() && !orgsRoute()}>
+              <Match when={!route() && !groupRoute() && !meshRoute() && !sharesRoute() && !shareRoute() && !orgsRoute() && !projectsRoute()}>
                 {/* A phone keeps the list's head over its overview (§app.shell/overview): the
                     brand back to the list, and New Session. */}
                 <Show when={!unfolded()}>

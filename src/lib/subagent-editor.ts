@@ -7,7 +7,7 @@ import { profilesProblem } from "./subagent-profiles-draft";
  * coordinator and monitor switches map onto the stored `teams` shape.
  */
 
-export type EditorSection = "delegate" | "teams" | "spec";
+export type EditorSection = "delegate" | "teams" | "spec" | "reviewer";
 
 /**
  * A model's shortest readable form, the footprint's own rule (`shortModel` in
@@ -54,6 +54,13 @@ export function specSummary(p: SubagentProfile): string {
   return p.specWriter.fallback ? `${m} · 1 fallback` : m;
 }
 
+/** Reviewer, closed: the reviewer's model, or that nothing reviews. */
+export function reviewerSummary(p: SubagentProfile): string {
+  if (!p.reviewer) return "Off · no review";
+  const m = model(p.reviewer.primary.model) ?? "No model chosen";
+  return p.reviewer.fallback ? `${m} · 1 fallback` : m;
+}
+
 /**
  * The coordinator's switch. Off stores no standing roles (`teams: null`, what the old master switch
  * stored). On restores `seed` — the profile's saved roles, else the legacy team defaults — with
@@ -87,6 +94,7 @@ function only(p: SubagentProfile, section: EditorSection): SubagentProfile {
     x.members = null;
   }
   if (section !== "spec") x.specWriter = null;
+  if (section !== "reviewer") delete x.reviewer;
   x.name = "x";
   return x;
 }
@@ -97,7 +105,7 @@ function only(p: SubagentProfile, section: EditorSection): SubagentProfile {
  */
 export function sectionProblems(p: SubagentProfile): Set<EditorSection> {
   const out = new Set<EditorSection>();
-  for (const s of ["delegate", "teams", "spec"] as const) if (profilesProblem({ version: 1, default: "off", profiles: [only(p, s)] })) out.add(s);
+  for (const s of ["delegate", "teams", "spec", "reviewer"] as const) if (profilesProblem({ version: 1, default: "off", profiles: [only(p, s)] })) out.add(s);
   return out;
 }
 

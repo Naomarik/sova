@@ -7,8 +7,8 @@
 // else nobody claims it. Content survives later edits shifting line numbers; ranges catch hunks
 // whose lines are too short to say anything ("}", "") on their own.
 
-import type { TranscriptItem } from "../../shared/protocol";
-import { entryMessage, isObj, str, toolCallArgs } from "./message";
+import type { ToolContent, TranscriptItem } from "../../shared/protocol";
+import { isObj, resultDetails as rowDetails, str, toolCallArgs, toolResultView } from "./message";
 
 /** One hunk of the diff, as the renderer's parser gives it (structural, so either parser fits). */
 export interface StepHunk {
@@ -163,11 +163,25 @@ function editPairs(args: Record<string, unknown>): { oldText: string; newText: s
 }
 
 /** The result's details: pi's `{patch}` or Claude Code's `{structuredPatch}`, if recorded. */
-function resultDetails(raw: unknown): Record<string, unknown> | undefined {
-  const msg = entryMessage(raw);
-  if (!msg) return undefined;
-  if (isObj(msg.details)) return msg.details;
-  return isObj(raw) && isObj(raw.toolUseResult) ? raw.toolUseResult : undefined;
+function resultDetails(details: unknown): Record<string, unknown> | undefined {
+  return isObj(details) ? details : undefined;
+}
+
+const isEditCall = (it: TranscriptItem): boolean => it.kind === "tool-call" && !!it.text && (EDIT_TOOLS.has(it.text) || WRITE_TOOLS.has(it.text));
+
+/**
+ * The edit and write calls whose arguments and details their rows don't carry (lib/tool-content):
+ * the ones `turnsFromItems` reads, each with its result's row. Failed and unanswered calls are left
+ * out, as turnsFromItems leaves them.
+ */
+export function editCallsToLoad(items: readonly TranscriptItem[]): { rowId: string; resultId: string; size: number }[] {
+  const results = new Map<string, TranscriptItem>();
+  for (const it of items) if (it.kind === "tool-result" && it.toolCallId) results.set(it.toolCallId, it);
+  return items.flatMap((it) => {
+    const r = it.toolCallId ? results.get(it.toolCallId) : undefined;
+    if (!isEditCall(it) || !r || toolResultView(r).isError || !(it.tool?.lazy || r.tool?.lazy)) return [];
+    return [{ rowId: it.id, resultId: r.id, size: (it.tool?.bytes ?? 0) + (r.tool?.bytes ?? 0) }];
+  });
 }
 
 /** One successful edit/write call as a TurnEdit, or null when it isn't one. */
@@ -202,7 +216,7 @@ export function editOf(name: string, args: unknown, details?: Record<string, unk
  * holds the successful edit/write calls until the next one. Failed calls and calls with no result
  * yet change nothing on disk that we can vouch for, so they are left out.
  */
-export function turnsFromItems(items: TranscriptItem[]): Turn[] {
+export function turnsFromItems(items: TranscriptItem[], content: ReadonlyMap<string, ToolContent> = new Map()): Turn[] {
   const results = new Map<string, TranscriptItem>();
   for (const it of items) if (it.kind === "tool-result" && it.toolCallId) results.set(it.toolCallId, it);
   const turns: Turn[] = [];
@@ -215,8 +229,11 @@ export function turnsFromItems(items: TranscriptItem[]): Turn[] {
     }
     if (it.kind !== "tool-call" || !it.toolCallId || !it.text) continue;
     const result = results.get(it.toolCallId);
-    if (!result || entryMessage(result.raw)?.isError === true) continue;
-    const edit = editOf(it.text, toolCallArgs(it.raw, it.toolCallId), resultDetails(result.raw));
+    if (!result || toolResultView(result).isError) continue;
+    const got = content.get(it.id);
+    // Claude Code records an edit's patch beside the message (`toolUseResult`), not in its details.
+    const details = got?.result ? (resultDetails(got.result.details) ?? resultDetails(got.result.toolUseResult)) : resultDetails(rowDetails(result));
+    const edit = editOf(it.text, got?.args ?? toolCallArgs(it), details);
     if (!edit) continue;
     if (!cur) {
       cur = { id: it.id, title: "Before the first prompt", edits: [] };

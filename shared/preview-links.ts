@@ -9,7 +9,8 @@ import type { PreviewAddress } from "./public-links";
  *
  * Operator routes (main listener only; refused like the other local acts when the request carries a
  * peer or X-Forwarded-Host):
- * GET  /api/previews[?orgId&projectId]   -> PreviewList
+ * GET  /api/previews[?projectId]         -> PreviewList
+ * GET  /api/projects/:pid/previews      -> PreviewList
  * POST /api/previews                     body PreviewMint -> PreviewMinted | 400 PreviewError
  * POST /api/previews/<id>/off            -> PreviewView (revoked) | 404
  * POST /api/previews/<id>/extend         body { days } -> PreviewView | 400 | 404
@@ -29,7 +30,6 @@ export type PreviewTarget = { kind: "port"; port: number } | { kind: "static"; f
 export interface PreviewView {
   /** pv_… */
   id: string;
-  orgId: string;
   projectId: string;
   port: number;
   createdAt: string;
@@ -57,7 +57,15 @@ export interface PreviewView {
   /** The coding session's title as the project page lists it, and its file on this host. */
   sessionTitle?: string | null;
   sessionPath?: string | null;
+  /** A running copy's share link (§app.project-services/share): the instance and its endpoint (`<service>.<port>`). */
+  instance?: string;
+  endpoint?: string;
+  /** A copy link's copy as the engine's status reads it now: its endpoint's service `running`, `starting` or `stopped`
+      (§mesh.public/preview-card: the operator may Start a stopped one; a visit never starts anything). Absent when the copy is gone. */
+  copy?: { state: PreviewCopyState; slot: number };
 }
+
+export type PreviewCopyState = "running" | "starting" | "stopped";
 
 export interface PreviewList {
   previews: PreviewView[];
@@ -65,7 +73,6 @@ export interface PreviewList {
 }
 
 export interface PreviewMint {
-  orgId: string;
   projectId: string;
   /** Exactly one of `port` and `folder`. */
   port?: number;
@@ -99,7 +106,9 @@ export type PreviewErrorCode =
   | "not-in-worktree"
   | "no-address"
   | "gateway-old"
-  | "unavailable";
+  | "unavailable"
+  /** The port belongs to a copy whose project declares production-derived data (§app.project-services/share). */
+  | "sensitive";
 
 export interface PreviewError {
   error: string;
@@ -121,7 +130,6 @@ export interface PreviewHandoff {
   linkKept: boolean;
   purpose: string | null;
   expiresAt: string;
-  orgId: string;
   projectId: string;
   sessionId: string | null;
   branch: string | null;

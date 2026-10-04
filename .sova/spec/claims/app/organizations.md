@@ -25,8 +25,9 @@ the URL (§app.organizations/org-page); each roster person has a page of their o
   `<stateRoot>/workspaces/<slug>` by default, starts the org's statechart with an empty roster
   (§app.project-overseer/statecharts), and makes the first commit. **Attach** (`POST /api/orgs/attach {dir}`) adds an existing workspace repo (a
   restored clone) to this host's index (§app.organizations/portability); a dir with no org's statechart
-  in it is refused (400, "No organization in that dir: not a workspace repo."). **Detach** removes it from
-  the index and deletes nothing.
+  in it is refused (400, "No organization in that dir: not a workspace repo."), and so is one that
+  brings a project id already known here (409, "{project} is already a project here."). **Detach**
+  removes it from the index and deletes nothing.
 - A workspace dir must be absolute and must not lie inside Sova's own checkout unless that
   checkout git-ignores it (Sova's repo is public; the hermetic `.agent/` is ignored). An install
   that is not a git checkout (a copied or unpacked tree) has no ignore rules to ask: inside it only
@@ -133,9 +134,12 @@ the URL (§app.organizations/org-page); each roster person has a page of their o
     link was ever minted for them on this host and no visit exists; no line otherwise. The card has
     no History disclosure: a person's history and its Revert buttons are on their page. A
     person's name in Recent Profile Changes links to their page too.
-  - **Projects**: the About this organization card (§app.organizations/about), then the org's projects, each row one link to its project page (folder icon, name,
+  - **Projects**: the About this organization card (§app.organizations/about), then the org's projects, each row one link to its project page `#/projects/<pid>` (folder icon, name,
     folder path, the project's cost at API prices, a trailing chevron) under the org's total
-    (§app.project-costs/org-rollup), and the Add Project form (`Project name`, `Folder`); with none,
+    (§app.project-costs/org-rollup), and the Add Project form (`Project name`, optional: the
+    folder's name; `Folder`), which
+    registers the folder and places it in this org (§app.projects/placement), then, while any
+    standalone project is on this host, the Import a Project row (§app.projects/import); with none,
     "No projects yet. A project is a folder that hand-off sessions and its overseer work in."
     Archived projects are not in that list: a collapsed **Archived Projects ({n})** disclosure
     under it (absent with none) lists them, each row the same link with the archive's age and
@@ -169,8 +173,8 @@ the URL (§app.organizations/org-page); each roster person has a page of their o
   Closing the form (Cancel, or a session started) replaces the hash with `#/orgs/<id>/sessions`,
   so a reload doesn't reopen it, and every link afterwards (a session row, the sidebar) still
   opens its page. Picking a tab replaces the hash (no history entry per tab), and the page
-  is not reloaded: the fetched org stays. `#/orgs/<id>/projects/<project>` stays the project page,
-  and its back link opens the Projects tab; `#/orgs/<id>/people/<pid>` is a person's page, and its
+  is not reloaded: the fetched org stays. A project's page is `#/projects/<pid>` (§app/projects);
+  `#/orgs/<id>/projects/…` is no address. `#/orgs/<id>/people/<pid>` is a person's page, and its
   back link opens the People tab; the project page has its own tabs (§app.organizations/project-page),
   and its overseer and a person's page are untabbed.
 - **Keyboard.** The selected tab is the strip's one tab stop; Left/Right move focus along the
@@ -265,19 +269,23 @@ the URL (§app.organizations/org-page); each roster person has a page of their o
     though closing also turned it off), `sent {relative time}`, `expires {relative
     time}` while it can still open, and `{n} visits`: a visit counts on the newest of this host's
     links for its session, hand-off (and offer) and person that was made at or before the visit,
-    so a new link for the same hand-off never takes an older visit. A link that can still open has `Turn Off
-    Link` (that one link; the session and every other link stay as they are). The row for the
-    hand-off they hold now, or an open offer they are invited to, has `Get New Link`: the strip's
-    Get Link (`GET /api/baton/:sid/link`, `?person=` for an offer), shown once with Copy Link.
-    With 2 or more links that can open, the section has `Turn Off All {n} Links` (a destructive
-    button, apart from the others), confirmed with "{name}'s {n} links stop opening at once.
-    Their sessions, messages and visits stay." With no link: "No links for {name} on this host."
+    so a new link for the same hand-off never takes an older visit. A link that can still open has `Delete
+    Link` (that one link; the session and every other link stay as they are), asked twice like the
+    strip's (§app.baton/links: "Delete?", with "The link stops working for good." under it;
+    done: "Link deleted."). The row for the hand-off they hold now, or an open offer they are
+    invited to, has `Get New Link` (tooltip "Makes a new link and deletes the one you sent
+    before"): the strip's Get Link (`GET /api/baton/:sid/link`, `?person=` for an offer), shown
+    once with Copy Link. With 2 or more links that can open, the section has `Delete All {n}
+    Links` (a destructive button, apart from the others), confirmed with "{name}'s {n} links stop
+    working for good. Their sessions, messages and visits stay." and `Delete All {n}
+    Links?` (done: "Deleted {n} links."). With no link: "No links for {name} on this host."
     and, when their visits name links minted elsewhere, "Links sent from another host don't open
     here."
   - **Owner links** (for the org's owner, §app.owner-page/link), newest first, under their own
     heading after their links: `The owner page`, its state (`Can read`, `Turned off`, `Expired`),
     `sent {relative time}`, `expires {relative time}` while it can open, `{n} visits`, and on the
-    live one `Turn Off Owner Link`. `Turn Off All` never touches them.
+    live one `Delete Owner Link`, asked twice like `Delete Link` (done: "Owner link deleted.").
+    `Delete All` never touches them.
   - **Sent on WhatsApp** (§app.outreach/log), after the owner links, when they were sent anything:
     one row per send, newest first: what went (the gathering's public title, "A preview" or "A
     message"), the latest event as a chip (Sent, Delivered, Read, Failed, Unknown, Not sent), when,
@@ -327,10 +335,29 @@ the URL (§app.organizations/org-page); each roster person has a page of their o
   "links don't open this session now" line reads); its viewer can never write. None
   of them is reachable on the share listener.
 
-## §app.organizations/project-page — One project's page: a summary and four tabs
+## §app.organizations/project-page — One project's page: a summary and its tabs
 
+- **Every registered project has it** (§app/projects), placed in an organization or not. It reads
+  the project from `GET /api/projects/:pid`; the organization's parts (the Requirements tab and its
+  chips, the main stakeholder, the gathering **Sessions it started**, Send to person…, the Owner
+  Page card) are composed in by the page's route only while the project is placed, and a
+  standalone project's page has none of them and never reads an org. Its back link opens
+  `#/projects` for a standalone project ("Back to Projects") and the org's Projects tab for a placed one.
+- **Standalone differences.** A standalone project's Overview shows its overseer's open ideas as an
+  **Ideas** card (its **+** adds one), where a placed project keeps them on Requirements as Gaps and
+  ideas; its ideas chip opens the card's tab. Its Settings omit the gathering sessions' model and
+  abilities and the Limits rows for gatherings and promotion (Gathering sessions started, Decisions
+  promoted, Gathering sessions open), and its level sentences and approval list name nothing of an
+  organization (no roster, gathering, outreach or promotion kinds). Its level sentences: L0 "Propose:
+  reads, files ideas, asks you before anything else.", L1 "Gather: may also publish preview links of
+  its coding sessions' apps.", L2 "Reconcile: nothing more than L1 here; promoting decisions needs an
+  organization.", L3 "Build: may also run the project's instances; a coding session starts only in a
+  turn you started." Its approval list holds only starting and prompting a coding session and
+  publishing a preview link ("All 3 wait for its approval."); kinds it hides keep their saved state. An idea or to-do offers **Send to person…** only while placed;
+  **Start Coding Session** always.
 - **Head.** The page head is the project's name (§app.organizations/org-page: cut with an
-  ellipsis, the whole name as its `title`), the org · folder meta line, **Refresh Project**, and a
+  ellipsis, the whole name as its `title`), the meta line (the org · folder while placed, the folder
+  alone otherwise), **Refresh Project**, and a
   **⋯** menu ("Project actions · {project}") holding **Settings** (a link to the Settings tab) and
   **Archive Project…** (or **Unarchive Project** while archived, §app.organizations/archive). No
   destructive button sits in the head itself.
@@ -349,10 +376,10 @@ the URL (§app.organizations/org-page); each roster person has a page of their o
     Requirements), `{n} decisions` (Requirements; its `title` says how many are ready to promote),
     `{n} gaps` (open gap ideas, with " · {n} ideas" for the other open ideas, Requirements) and `{n} to-dos` (open, Overview). A count not read yet
     is left out, never shown as 0.
-- **Tabs**: Overview (the default) · Requirements · Cost · Settings, the org page's tab strip
+- **Tabs**: Overview (the default) · Requirements (only while placed) · Branches · Cost · Settings, the org page's tab strip
   (`.tabs`, keyboard as §app.organizations/org-page; Requirements carries the warn dot while a
   conflict is open or a decision is ready to promote). The tab is in the URL:
-  `#/orgs/<id>/projects/<pid>` is Overview, `…/requirements`, `…/cost`, `…/settings` the others
+  `#/projects/<pid>` is Overview, `…/requirements`, `…/branches`, `…/cost`, `…/settings` the others
   (`…/overseer` stays the overseer's door). Picking a tab or a chip adds a history entry, so Back
   returns to the previous tab and a reload opens the same one; the page is not reloaded and its
   fetched data stays.
@@ -360,7 +387,8 @@ the URL (§app.organizations/org-page); each roster person has a page of their o
   {n} decision(s) ready to promote." with **Review Requirements**. Then, in two columns when the
   pane is at least 1000px wide (one column below): **Coding sessions** (§app.project-overseer/
   coding-worktrees) and the gathering **Sessions it started**, and **Previews**
-  (§mesh.public/preview-card) in the first; **Activity** and **To-do** in the second. Overview's
+  (§mesh.public/preview-card) in the first; **Software** (§app.project-runtime/software-card),
+  **Activity** and **To-do** in the second. Overview's
   cards use the width they are given (no 880px cap); the page stops at 1280px.
 - **Activity** is a card: its newest 5 acts, then **Show All {n}** (and **Show Fewer**). A done
   act has no chip; `Partly`, `Refused` and `Failed` keep theirs. With none: "Nothing yet. Every act
@@ -377,6 +405,7 @@ the URL (§app.organizations/org-page); each roster person has a page of their o
   (when an idea is open), each as it is; the empty ones are named in one line instead ("No
   conflicts, decisions, pipeline rows or ideas yet.", listing only the empty ones), with **+ Idea**
   opening the add form.
+- **Branches**: the project's running copies on this host, one per branch, each opening its app where the project declares an entry (§app.project-services/services-ui).
 - **Cost**: the Cost card (§app.project-costs/card).
 - **Settings.** In this order: **Overseer** (the Watch switch and its hint; the level as a
   segmented control `L0 | L1 | L2 | L3` whose selected level's sentence shows under it, the
@@ -533,8 +562,8 @@ apply the same rule, as the Overseer's flag does (§app.overseer/identity-and-cl
   overseer's `sova_create_session`, or one its statechart started, §app.project-overseer/drive) or
   `operator-coding` (**Start Coding Session** or **New Coding Session** on the project page).
   The overseer's concurrency caps still count `coding` rows only.
-- **`kind`**: a baton that has had an offer is an `offer`, any other baton a `gathering`; a file with
-  THAT org's project-overseer marker is an `overseer` conversation, even one the project's statechart no
+- **`kind`**: a baton that has had an offer is an `offer`, any other baton a `gathering`; a file whose
+  project-overseer marker names one of THAT org's projects is an `overseer` conversation, even one the project's statechart no
   longer lists (pushed past the history cap); anything else in the workspace is `other`, with no project.
 - **`finished`**: a hand-off `done` or `closed`; an overseer conversation that isn't the current one
   (the sidebar lists such a conversation nowhere: its overseer's History opens it,
@@ -850,31 +879,30 @@ Organizations region's own Needs you, never the global one.
 
 ## §app.organizations/projects — The org's projects
 
-- Each org has projects, each its own statechart (§app.project-overseer/statecharts): `{id, orgId, name,
-  root, createdAt, origin: "manual", archived?}` (`archived`: §app.organizations/archive). `root` is an absolute directory on the home host; it need not be a
-  git repo. Added and renamed from the org page (`POST /api/orgs/:id/projects`,
-  `PATCH /api/orgs/:id/projects/:pid`). A root (at its realpath) may not be an attached org's
-  workspace, sit inside one or hold one, nor sit inside Sova's state folder (400): the project
-  overseer reads its root (§app.project-overseer/identity).
-- A project may name its **main stakeholder**, `stakeholder` (a person id, or absent or `null`:
+- An org's projects are the projects it places (§app.projects/placement): each is a registered
+  project (§app/projects) whose statecharts live in the org's engine, `{id, name, root, createdAt,
+  origin, archived?}` (`archived`: §app.organizations/archive), with no org in its own data. `root` is
+  an absolute directory on the home host; it need not be a git repo. Added from the org page
+  (`POST /api/orgs/:id/projects`, which registers and places), renamed and moved like any project
+  (`PATCH /api/projects/:pid`). The roots refused are §app.projects/registration's.
+- Its placement may name its **main stakeholder**, `stakeholder` (a person id, or absent or `null`:
   none), §app.organizations/stakeholder.
-- A project may be switched off the org owner's page, `ownerHidden: true` (absent: shown),
+- Its placement may switch it off the org owner's page, `ownerHidden: true` (absent: shown),
   §app.owner-page/conversations.
-- This is the minimal registry baton sessions need; a host-wide Projects registry may absorb it
-  later, keyed by the same ids and `orgId`.
 
 ## §app.organizations/archive — Archive a project
 
 - **What it does.** Archiving puts a project away without deleting anything: its files, sessions,
   decisions, costs and overseer state stay in the workspace repo as they are, and **Unarchive**
-  brings it back as it was. `POST /api/orgs/:id/projects/:pid/archive` and `…/unarchive` (main
+  brings it back as it was. `POST /api/projects/:pid/archive` and `…/unarchive` (main
   listener only) set the project's `archived: {at, via?}` in its statechart (`via: "overseer"`
   when the global Overseer did it for the operator, §app.overseer/org-attribution) and remove it;
   archiving an archived project, or unarchiving one that isn't, changes nothing. It travels with the
   repo (§app.organizations/portability).
 - **Refused while anything is open** (409), naming each thing, so the operator stops them first:
   "Stop these first: {list}." with, only those that apply, "{n} gathering session(s) open
-  ({titles})" (a baton session or offer of the project not done or closed), "{n} coding session(s)
+  ({titles})" (while placed: a baton session or offer of the project not done or closed, the
+  phrase the org contributes), "{n} coding session(s)
   running ({titles})" (a coding session of the project that is mid-turn or has workers
   running) and "its overseer is working" (a turn of its overseer is running). Nothing is written.
 - **While archived:**
@@ -914,10 +942,11 @@ Organizations region's own Needs you, never the global one.
   no active roster person decides by name, and every decision whose owner area is `none`
   (§app.requirements/routing, /owner-area): promotion (their decisions
   there are in their area, §app.requirements/promotion) and conflicts there go to them. An area
-  someone decides by name stays theirs. It is stored on the project's statechart (`stakeholder`), so a person can be the main stakeholder of one project and not another, and it
+  someone decides by name stays theirs. It is stored on the project's placement (`stakeholder`,
+  §app.projects/placement), so a person can be the main stakeholder of one project and not another, and it
   travels with the workspace repo.
 - **Setting it.** The project page's **Main stakeholder** select (None, then the org's active
-  people by name) sends `PATCH /api/orgs/:id/projects/:pid {stakeholder}` (a person id, or `null`).
+  people by name) sends `PATCH /api/orgs/:id/projects/:pid/placement {stakeholder}` (a person id, or `null`).
   Only an active person of the org is accepted; a proposed, left or unknown one is refused (400,
   "Only an active person on the roster can be a project's main stakeholder."). It can be changed at
   any time; a change applies from the next promotion or conflict, and never re-routes a conflict
@@ -927,7 +956,7 @@ Organizations region's own Needs you, never the global one.
   project page says why, and the attention digest has a decide-tier item for the project
   (`project-stakeholder`, listed in the Organizations region's Needs you): "Pick a main
   stakeholder for {project}: {name} left the organization." A save of the select clears it.
-- **History.** Each change is kept on the project's statechart, `stakeholderHistory`
+- **History.** Each change is kept on the placement, `stakeholderHistory`
   (`{at, from, to, why, via?}`, oldest first, the last 50; `why` `operator`, or `left` when Sova
   cleared it because the person left; `via: "overseer"` when the global Overseer set it for the
   operator, §app.overseer/org-attribution), and a clearing also leaves `stakeholderCleared`

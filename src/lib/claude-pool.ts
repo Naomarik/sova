@@ -27,6 +27,7 @@ const REASONS: Record<string, string> = {
 
 /** A move this device has under way for the login, in words; undefined when none. */
 export function movingText(l: ClaudePoolLogin): string | undefined {
+  if (l.staysHere) return "Stays on this Mac: its sign-in is in the macOS keychain, which the pool can't move.";
   const m = l.moving;
   if (!m) return l.returnAsked ? "Returning after the current turn" : undefined;
   if (m.op === "leave") {
@@ -50,9 +51,11 @@ export function usageText(l: ClaudePoolLogin): string | undefined {
 }
 
 /** Which actions a row offers. */
-export function poolActions(l: ClaudePoolLogin): { returnable: boolean; signIn: boolean } {
+export function poolActions(l: ClaudePoolLogin): { returnable: boolean; pinnable: boolean; signIn: boolean } {
   return {
-    returnable: !l.holder.free && !l.holder.stuck && !l.returnAsked && l.moving?.op !== "leave",
+    // A login kept in this Mac's keychain never leaves it: no Return, no pin (§app.claude-logins/macos-keychain).
+    returnable: !l.staysHere && !l.holder.free && !l.holder.stuck && !l.returnAsked && l.moving?.op !== "leave",
+    pinnable: !l.staysHere,
     signIn: l.holder.stuck || l.standing.state === "auth",
   };
 }

@@ -7,7 +7,6 @@ import { makerLine, previewRow, previewTitle, senderLine, stateLine } from "./pr
 const NOW = Date.parse("2026-09-30T00:00:00.000Z");
 const view = (over: Partial<PreviewView>): PreviewView => ({
   id: "pv_aaaaaaaaaaaaaaaa",
-  orgId: "o",
   projectId: "p",
   port: 5173,
   createdAt: "2026-09-29T00:00:00.000Z",
@@ -40,6 +39,7 @@ test("a port preview the overseer made for a recorded session reads in full", ()
     matched: false,
     maker: { text: "Made by the overseer", href: "sova://s/01a0-over" },
     state: { text: "Serving", tone: "ok" },
+    start: null,
     expires: "Expires in 7 days",
     url: "https://abc.preview.example.com/",
     linkNote: null,
@@ -98,4 +98,24 @@ test("a recipient's sender: you, the overseer, or unknown", () => {
   assert.equal(senderLine("operator"), "Sent by you");
   assert.equal(senderLine("session:abc"), "Sent by the overseer");
   assert.equal(senderLine("x"), null);
+});
+
+test("a running copy's link: its endpoint, its copy's state, and Start only while the copy is stopped (§mesh.public/preview-card)", () => {
+  const copy = (state: "running" | "starting" | "stopped", slot = 2) =>
+    previewRow(view({ target: { kind: "port", port: 4123 }, port: 4123, instance: "in_abc", endpoint: "web.http", branch: "sova/cart-1a2b3c", copy: { state, slot }, running: state === "running" }), NOW);
+  const stopped = copy("stopped");
+  assert.equal(stopped.title, "Preview of a copy's web.http");
+  assert.equal(stopped.serves, "web.http of the copy in slot 2");
+  assert.equal(stopped.branch, "sova/cart-1a2b3c");
+  assert.deepEqual(stopped.state, { text: "Stopped", tone: "warn" });
+  assert.deepEqual(stopped.start, { instance: "in_abc" });
+  assert.deepEqual(copy("running").state, { text: "Running", tone: "ok" });
+  assert.equal(copy("running").start, null);
+  assert.deepEqual(copy("starting").state, { text: "Starting", tone: "info" });
+  assert.equal(copy("starting").start, null);
+  assert.equal(copy("running", 0).serves, "web.http of the main checkout's copy");
+  // A port preview never offers Start, whatever its port shows.
+  assert.equal(previewRow(view({ running: false }), NOW).start, null);
+  // A turned-off copy link is not startable from its row.
+  assert.equal(previewRow(view({ instance: "in_abc", endpoint: "web.http", copy: { state: "stopped", slot: 1 }, state: "off" }), NOW).start, null);
 });

@@ -16,6 +16,17 @@ import { freshAccessToken, refreshLogin, switchText, type RefreshImpl, type Clau
 import { ACCOUNTS_MODULE, CONFINED_DROP_ENV, CONFINED_SETTINGS, TOKEN_FD, claudeNeeds, confinedSourceEnv, confinedVersionProbe, launchModule, loginDirOf, type ClaudeConfine } from "./confined-launch.ts";
 import type { AgentStatus, AgentUsage, TaskOutcome, TranscriptItem, TranscriptKind, SteerResult } from "../subagents/runner.ts";
 import type { Worker, WorkerHandlers, SteerMode, SpawnOptions } from "../subagents/contracts.ts";
+import { createClaudeRequestObserver, type ClaudeRequestObserver } from "../llm-inflight/claude.ts";
+
+/**
+ * Lower a launched worker to the niceness its hosting server asks for (Sova: §app.load-priority/workers,
+ * installed as `Symbol.for("sova:lower-worker")`). No host (the TUI): nothing changes. Never throws.
+ */
+function lowerUnderHost(pid: number | undefined): void {
+	const lower = (globalThis as Record<symbol, unknown>)[Symbol.for("sova:lower-worker")];
+	if (typeof lower !== "function" || pid === undefined) return;
+	try { lower(pid); } catch { /* the worker keeps its priority */ }
+}
 
 export interface ClaudePermissionRequest extends ClaudeToolPermissionRequest {
 	/** Identity of the requesting worker; count>1 batches share one spec name. */
@@ -239,6 +250,8 @@ export class ClaudeRunner implements Worker {
 	private lastStderr?: string;
 	/** The current transport's process is started by the hosting process (a confined launch is then the host's). */
 	private viaHost = false;
+	/** The current transport's call counter (llm-inflight/claude.ts). */
+	private requestObserver?: ClaudeRequestObserver;
 	/** Confined: a launch of this worker used the sandbox's default tmp (released when the worker closes). */
 	private defaultTmp = false;
 	/** Confined: the transcript already says how the worker is confined. */
@@ -277,11 +290,16 @@ export class ClaudeRunner implements Worker {
 	private makeTransport(spawnImpl: ClaudeSpawnOptions["spawnImpl"], viaHost = false): ClaudeTransport {
 		this.viaHost = viaHost;
 		const forced = this.login && this.options.logins?.forcedFailure?.(this.login.id);
+		// Its model calls count in this process (llm-inflight). A re-adopted worker's replay is
+		// history: counting starts when the host goes live (adopt()).
+		const requestObserver = createClaudeRequestObserver({ active: !this.options.adopt || this.transport !== undefined });
+		this.requestObserver = requestObserver;
 		const transport: ClaudeTransport = new ClaudeTransport({
 			timings: this.timings,
 			limits: this.limits,
 			spawnImpl,
 			signalGroupImpl: this.options.signalGroupImpl,
+			requestObserver,
 			...(forced ? { simulateFailure: forced } : {}),
 			hooks: {
 				onEvent: (event) => { if (mine()) this.event(event as Record<string, any>); },
@@ -289,7 +307,9 @@ export class ClaudeRunner implements Worker {
 				onProtocolError: (message) => { if (mine()) this.fail(message); },
 				onStdinError: (message) => { if (mine() && !this.stopping) this.fail(message); },
 				onProcessError: (message) => { if (mine()) this.fail(message); },
-				onSpawned: (pid) => { if (this.transport === transport) { this.processAlive = true; this.pid = pid; } },
+				// Every launch (start, resume, login move, failover) starts below the hosting server
+				// (lowerUnderHost); a host's transport has no pid, the host was lowered at its spawn.
+				onSpawned: (pid) => { lowerUnderHost(pid); if (this.transport === transport) { this.processAlive = true; this.pid = pid; } },
 				onLeaderExit: () => { if (mine()) { this.processAlive = false; this.cancelPermissions(); } },
 				onActivity: () => { if (mine()) this.touch(); },
 				beforeEof: () => mine() ? this.abortActiveWork() : Promise.resolve(),
@@ -330,6 +350,7 @@ export class ClaudeRunner implements Worker {
 		this.initialized = true; this.initialOwed = false; this.notificationPending = false;
 		this.status = "running";
 		this.transport.child?.on("live", () => {
+			this.requestObserver?.activate();
 			// Claude still waits on requests the earlier manager never answered.
 			const pending = [...this.replayedPermissions.values()];
 			this.replayedPermissions.clear();

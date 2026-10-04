@@ -25,10 +25,13 @@ const orgs = await import("./orgs");
 const po = await import("./project-overseer");
 const store = await import("./project-overseer-store");
 const { registerOrgRoutes } = await import("./org-routes");
+const { registerProjectRoutes } = await import("./projects/routes");
+const { projectHost } = await import("./projects/spaces");
+const orgPart = await import("./overseer-org-part");
 const { mountPreviewLinks } = await import("./preview-links-routes");
 const { disposeAllChats } = await import("./chat-manager");
 const { settled } = await import("./workspace-git");
-const { holdRef, hostOf, setOrgClockForTest } = await import("./org-engine");
+const { holdRef, setOrgClockForTest } = await import("./org-engine");
 const { fakeLooks } = await import("./org-test-fixtures");
 const previews = await import("./project-previews");
 const kept = await import("./preview-kept");
@@ -48,10 +51,11 @@ const org = await orgs.createOrg({ name: "Shopfront", dir: join(root, "ws") });
 mkdirSync(join(root, "proj"));
 const project = await orgs.addProject(org.id, { name: "Shop", root: join(root, "proj") });
 await orgs.addPerson(org.id, { name: "Ana Ruiz", role: "Owner", decides: ["shop"] });
-await po.ensureProjectOverseer(org.id, project.id);
+await po.ensureProjectOverseer(project.id);
 fakeLooks(org.id);
 const app = new Hono();
 registerOrgRoutes(app);
+registerProjectRoutes(app);
 mountPreviewLinks(app);
 
 // A coding session's worktree: built files, and what must never be served.
@@ -70,17 +74,17 @@ const tree = { sessionId: "c-shop", branch: "sova/shop-abc123", path: wt, title:
 let owner: PortOwner = "none";
 previews.setPreviewDepsForTest({ trees: async () => [tree], owner: () => owner });
 
-const tools = (attended: boolean) => po.toolsForTest(org.id, project.id, { attended });
+const tools = (attended: boolean) => po.toolsForTest(project.id, { attended });
 const run = (name: string, params: Record<string, unknown>, attended = false) => {
   const t = tools(attended).find((x) => x.name === name);
   assert.ok(t, name);
   return t.execute("call-1", params as never, undefined, undefined, undefined as never) as Promise<{ content: { text: string }[]; details: Record<string, unknown> }>;
 };
-const settings = (patch: Parameters<typeof po.patchProjectOverseer>[2]) => po.patchProjectOverseer(org.id, project.id, patch);
-const holdsOf = () => hostOf(org.id).holds().filter((h) => (h.projectId ?? h.sessionId.split("/")[2]) === project.id).map((h) => ({ ...h, id: holdRef(h) }));
-const cancel = (id: string) => app.request(`/api/orgs/${org.id}/held/${encodeURIComponent(id)}/cancel`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
-const mine = () => links.listPreviews({ orgId: org.id, projectId: project.id });
-const list = async () => ((await (await app.request(`/api/previews?orgId=${org.id}&projectId=${project.id}`)).json()) as PreviewList).previews;
+const settings = (patch: Record<string, unknown>) => po.patchProjectOverseer(project.id, patch);
+const holdsOf = () => projectHost(project.id).holds().filter((h) => h.projectId === project.id).map((h) => ({ ...h, id: holdRef(h) }));
+const cancel = (id: string) => app.request(`/api/projects/${project.id}/held/${encodeURIComponent(id)}/cancel`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+const mine = () => links.listPreviews({ projectId: project.id });
+const list = async () => ((await (await app.request(`/api/previews?projectId=${project.id}`)).json()) as PreviewList).previews;
 const labelOf = (url: string) => new URL(url).hostname.split(".")[0]!;
 const folderStart = { op: "start", session: "c-shop", folder: "dist", purpose: "The shop for Ana" };
 
@@ -139,7 +143,7 @@ describe("the overseer's guard: L1, the hold, the operator's turn (§app.project
       await run("sova_preview", folderStart);
       assert.equal(mine().length, 0);
       setOrgClockForTest(() => t0 + 10 * 60_000);
-      hostOf(org.id).fireDue();
+      projectHost(project.id).fireDue();
       for (let i = 0; i < 50 && !mine().length; i++) await new Promise((r) => setTimeout(r, 20));
       assert.equal(mine().length, 1, "the hold ended: minted");
       const [v] = await list();
@@ -154,14 +158,14 @@ describe("the overseer's guard: L1, the hold, the operator's turn (§app.project
 
   test("with preview on the confirm list, its hold waits for the overseer's approval past its end", async () => {
     await settings({ autonomy: "L1", holdMin: 10 });
-    assert.ok(store.readPoSettings(store.projectOverseerPaths(org.id, project.id)).confirmKinds.includes("preview"));
+    assert.ok(store.readPoSettings(store.projectOverseerPaths(project.id)).confirmKinds.includes("preview"));
     const before = mine().length;
     const t0 = Date.now() + 4 * 86_400_000;
     setOrgClockForTest(() => t0);
     try {
       await run("sova_preview", folderStart);
       setOrgClockForTest(() => t0 + 11 * 60_000);
-      hostOf(org.id).fireDue();
+      projectHost(project.id).fireDue();
       await new Promise((r) => setTimeout(r, 100));
       assert.equal(mine().length, before, "unapproved: still waiting");
       assert.equal(holdsOf().length, 1);
@@ -176,7 +180,7 @@ describe("the overseer's guard: L1, the hold, the operator's turn (§app.project
     const out = await run("sova_preview", folderStart, true);
     assert.equal(holdsOf().length, 0, "never held in the operator's turn");
     const p = out.details.preview as Record<string, unknown>;
-    assert.deepEqual(Object.keys(p).sort(), ["branch", "createdBy", "expiresAt", "id", "linkKept", "orgId", "projectId", "purpose", "running", "sessionId", "state", "target", "v"]);
+    assert.deepEqual(Object.keys(p).sort(), ["branch", "createdBy", "expiresAt", "id", "linkKept", "projectId", "purpose", "running", "sessionId", "state", "target", "v"]);
     assert.deepEqual([p.v, p.sessionId, p.branch, p.state, p.running, p.purpose], [1, "c-shop", "sova/shop-abc123", "active", true, "The shop for Ana"]);
     assert.deepEqual(p.target, { kind: "static", folder: "dist" });
     assert.equal(p.linkKept, true);
@@ -191,7 +195,7 @@ describe("the overseer's guard: L1, the hold, the operator's turn (§app.project
     const out = await run("sova_preview", { op: "off", id });
     assert.equal(holdsOf().length, 0);
     assert.equal((out.details.preview as { state: string }).state, "off");
-    assert.equal(links.listPreviews({ orgId: org.id, projectId: project.id }).find((v) => v.id === id)!.state, "off");
+    assert.equal(links.listPreviews({ projectId: project.id }).find((v) => v.id === id)!.state, "off");
     assert.ok(!staticServes().some((s) => s.id === id), "its folder is no longer served");
     await assert.rejects(() => run("sova_preview", { op: "off", id: "pv_ZZZZZZZZZZZZZZZZ" }), /No preview pv_ZZZZZZZZZZZZZZZZ in this project/);
   });
@@ -260,7 +264,7 @@ describe("what it may show (§mesh.public/preview-serve)", () => {
   test("a port preview's port is refused when Sova serves a folder on it", async () => {
     const out = await run("sova_preview", folderStart, true);
     const port = links.listPreviews({}).find((v) => v.id === (out.details.preview as { id: string }).id)!.port;
-    const r = await app.request("/api/previews", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ orgId: org.id, projectId: project.id, port }) });
+    const r = await app.request("/api/previews", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ projectId: project.id, port }) });
     assert.equal(r.status, 400);
     assert.equal(((await r.json()) as { code: string }).code, "forbidden-port");
     await previews.turnOffPreview((out.details.preview as { id: string }).id);
@@ -269,7 +273,7 @@ describe("what it may show (§mesh.public/preview-serve)", () => {
 
 describe("the kept link is a secret (§mesh.public/preview, §app.project-overseer/previews)", () => {
   test("kept 0600 beside preview-links.json, whose keys never change; only its hash there", async () => {
-    const r = await app.request("/api/previews", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ orgId: org.id, projectId: project.id, sessionId: "c-shop", folder: "dist", purpose: "For Ana" }) });
+    const r = await app.request("/api/previews", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ projectId: project.id, sessionId: "c-shop", folder: "dist", purpose: "For Ana" }) });
     assert.equal(r.status, 200, await r.clone().text());
     const made = (await r.json()) as PreviewMinted;
     const label = labelOf(made.url);
@@ -277,11 +281,11 @@ describe("the kept link is a secret (§mesh.public/preview, §app.project-overse
     assert.ok(readFileSync(kept.previewKeptFile(), "utf8").includes(made.url));
     const linksText = readFileSync(links.previewLinksFile(), "utf8");
     assert.ok(!linksText.includes(label), "preview-links.json never holds the label");
-    for (const l of (JSON.parse(linksText) as { links: Record<string, unknown>[] }).links) assert.deepEqual(Object.keys(l).filter((k) => !["id", "hash", "orgId", "projectId", "port", "createdAt", "expiresAt", "revokedAt", "createdBy"].includes(k)), []);
+    for (const l of (JSON.parse(linksText) as { links: Record<string, unknown>[] }).links) assert.deepEqual(Object.keys(l).filter((k) => !["id", "hash", "projectId", "port", "createdAt", "expiresAt", "revokedAt", "createdBy"].includes(k)), []);
     assert.ok(links.validatePreviewFile(JSON.parse(linksText)) && !("why" in links.validatePreviewFile(JSON.parse(linksText))), "an older Sova still reads it");
     assert.equal((await list()).find((v) => v.id === made.preview.id)?.url, made.url, "the operator's list carries it");
     // Never through the peer listener or a peer's relay; a reverse proxy in front of this host is served.
-    const listPath = `/api/previews?orgId=${org.id}&projectId=${project.id}`;
+    const listPath = `/api/previews?projectId=${project.id}`;
     assert.equal((await app.request(listPath, { headers: { "x-sova-relayed": "1", "x-forwarded-host": "x" } })).status, 404);
     assert.equal((await app.request(listPath, {}, { meshPeer: { id: "p" } })).status, 404);
     assert.equal((await app.request(listPath, { headers: { "x-forwarded-host": "host.example.ts.net:8443" } })).status, 200);
@@ -290,8 +294,8 @@ describe("the kept link is a secret (§mesh.public/preview, §app.project-overse
   test("never in an owner update or a gathering's texts; the session list shows [preview link] in its place", async () => {
     const [v] = (await list()).filter((x) => x.url);
     const url = v!.url!;
-    assert.equal(po.ownerUpdateLeak(org.id, project.id, `See it at ${url}`), po.PREVIEW_IN_OWNER_UPDATE);
-    assert.equal(po.ownerUpdateLeak(org.id, project.id, `See it at ${labelOf(url)}`), po.PREVIEW_IN_OWNER_UPDATE);
+    assert.equal(orgPart.ownerUpdateLeak(org.id, project.id, `See it at ${url}`), orgPart.PREVIEW_IN_OWNER_UPDATE);
+    assert.equal(orgPart.ownerUpdateLeak(org.id, project.id, `See it at ${labelOf(url)}`), orgPart.PREVIEW_IN_OWNER_UPDATE);
     await assert.rejects(() => run("sova_start_gathering", { gap: "none", person: "Ana Ruiz", why: "She should see it.", public_title: "The shop", goal: "Ana's view", question: `Does ${url} look right?` }, true), new RegExp(PREVIEW_IN_GATHERING.replace(/[.?]/g, "\\$&")));
     const row = { id: "s1", title: `Preview at ${url}`, outline: { now: `made ${url} for Ana` }, cwd: "/x" };
     const shown = kept.redactPreviewLinksDeep(row);
@@ -350,7 +354,7 @@ describe("an older preview is matched by its worktree when read, never written (
   test("no recorded session: the listener's cwd names it; nothing is written", async () => {
     owner = { pid: 7, cwd: join(root, "outside") };
     // An operator's port preview made with nothing to match (as an older one reads: no session).
-    const r = await app.request("/api/previews", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ orgId: org.id, projectId: project.id, port: 8732 }) });
+    const r = await app.request("/api/previews", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ projectId: project.id, port: 8732 }) });
     assert.equal(r.status, 200, await r.clone().text());
     const id = ((await r.json()) as PreviewMinted).preview.id;
     assert.equal(kept.keptPreview(id)?.sessionId, undefined);
@@ -364,10 +368,42 @@ describe("an older preview is matched by its worktree when read, never written (
     assert.equal(readFileSync(links.previewLinksFile(), "utf8"), linksBefore);
     assert.equal(readFileSync(kept.previewKeptFile(), "utf8"), keptBefore, "never written");
     // One with no kept entry at all (made before preview-kept.json): no link, matched the same way.
-    const old = links.mintPreview({ orgId: org.id, projectId: project.id, port: 8733 }, new Set()).record;
+    const old = links.mintPreview({ projectId: project.id, port: 8733 }, new Set()).record;
     const ov = (await list()).find((x) => x.id === old.id)!;
     assert.deepEqual([ov.url, ov.sessionId, ov.sessionFrom], [null, "c-shop", "worktree"]);
     assert.deepEqual(ov.target, { kind: "port", port: 8733 });
+  });
+});
+
+describe("a running copy's link shows its copy's state, read only (§mesh.public/preview-card)", () => {
+  test("running, starting or stopped as the copy's status says; a read starts nothing; a turned-off one isn't read", async () => {
+    const made = links.mintPreview({ projectId: project.id, port: 8741 }, new Set()).record;
+    kept.keepPreview(made.id, { target: { kind: "instance", instance: "in_copy1", endpoint: "web.http" }, branch: "sova/cart-1a2b3c" });
+    const asked: string[] = [];
+    let state: "running" | "starting" | "stopped" = "stopped";
+    const copy = async (instance: string, endpoint: string) => {
+      asked.push(`${instance} ${endpoint}`);
+      return { state, slot: 2 };
+    };
+    const read = async () => (await previews.previewViews({ projectId: project.id }, { copy })).find((x) => x.id === made.id)!;
+    let v = await read();
+    assert.deepEqual([v.instance, v.endpoint, v.branch, v.copy], ["in_copy1", "web.http", "sova/cart-1a2b3c", { state: "stopped", slot: 2 }]);
+    state = "starting";
+    assert.deepEqual((await read()).copy, { state: "starting", slot: 2 });
+    state = "running";
+    assert.deepEqual((await read()).copy, { state: "running", slot: 2 });
+    assert.deepEqual(asked, ["in_copy1 web.http", "in_copy1 web.http", "in_copy1 web.http"]);
+    // A port preview has no copy, and nothing asks about one.
+    const plain = links.mintPreview({ projectId: project.id, port: 8742 }, new Set()).record;
+    asked.length = 0;
+    const p = (await previews.previewViews({ projectId: project.id }, { copy })).find((x) => x.id === plain.id)!;
+    assert.deepEqual([p.instance, p.copy], [undefined, undefined]);
+    assert.deepEqual(asked, ["in_copy1 web.http"], "only the copy link's copy is read");
+    links.revokePreview(made.id);
+    asked.length = 0;
+    v = (await previews.previewViews({}, { copy })).find((x) => x.id === made.id)!;
+    assert.equal(v.copy, undefined);
+    assert.deepEqual(asked, [], "a turned-off link's copy is never read");
   });
 });
 
@@ -378,7 +414,7 @@ describe("confirm kinds: preview, and lists saved before it (§app.project-overs
     assert.ok(store.parsePoSettings({ confirmKinds: old }).confirmKinds.includes("preview"));
     assert.deepEqual(store.parsePoSettings({ confirmKinds: ["gather"] }).confirmKinds, ["gather", "preview"], "send stays as saved: off");
     assert.deepEqual(store.parsePoSettings({ confirmKinds: ["gather"], confirmKindsKnown: [...old, "preview"] }).confirmKinds, ["gather"]);
-    const p = store.projectOverseerPaths(org.id, project.id);
+    const p = store.projectOverseerPaths(project.id);
     store.patchPoSettings(p, { confirmKinds: ["build"] });
     assert.deepEqual(JSON.parse(readFileSync(p.settings, "utf8")).confirmKindsKnown, [...old, "preview"]);
     assert.deepEqual(store.readPoSettings(p).confirmKinds, ["build"], "unticked after it existed: stays off");
@@ -397,7 +433,7 @@ describe("outreach sends a folder preview by its id (§app.outreach/links, §mes
   test("the resolver finds it, the person's sibling serves the folder, never another program on its port, and goes off with it", async () => {
     const { RESOLVERS } = await import("./outreach/links");
     const person = orgs.readRoster(org.id)[0]!;
-    const r = await app.request("/api/previews", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ orgId: org.id, projectId: project.id, sessionId: "c-shop", folder: "dist", purpose: "For Ana" }) });
+    const r = await app.request("/api/previews", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ projectId: project.id, sessionId: "c-shop", folder: "dist", purpose: "For Ana" }) });
     assert.equal(r.status, 200, await r.clone().text());
     const made = (await r.json()) as PreviewMinted;
     const ref = { kind: "preview" as const, preview: made.preview.id };

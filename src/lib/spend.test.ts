@@ -24,7 +24,8 @@ const info = (id: string, text: string, timestamp?: string): TranscriptItem => (
   id,
   kind: "info",
   text,
-  raw: timestamp ? { type: "model_change", timestamp } : {},
+  meta: { type: "model_change" },
+  ...(timestamp ? { at: timestamp } : {}),
 });
 
 test("originLabel names the three origins", () => {
@@ -99,7 +100,7 @@ test("absoluteTime is the 12-hour clock, dated", () => {
 
 test("timelineEntries keeps model, thinking and mode rows in order", () => {
   const entries = timelineEntries([
-    { id: "u1", kind: "user", text: "hi", raw: {} },
+    { id: "u1", kind: "user", text: "hi" },
     info("i1", "Model: anthropic/claude-opus-5", "2026-09-20T10:00:00.000Z"),
     info("i2", "Thinking: high"),
     info("i3", "Mode → delegate"),

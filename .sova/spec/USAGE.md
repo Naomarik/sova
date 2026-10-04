@@ -170,12 +170,16 @@ anything under `reviews/` by hand. See
 
 ## Optional structured observations
 
-Assessments do not add a required release gate or replace the existing footer/review workflow:
+Assessments run only when someone asks: no session, worker or hook runs one by itself. They do not
+add a required release gate or replace the existing footer/review workflow. Prepare against a known
+base, the revision the work started from (noted before it began, or `git merge-base master HEAD`);
+every change since it is included, a file already dirty then too:
 
 ```sh
 a=pi-config/extensions/spec/core/sova-spec-assess.mjs
-node $a prepare change-review --root . --base HEAD                 # preview
-node $a prepare change-review --root . --base HEAD --write
+base=$(git merge-base master HEAD)
+node $a prepare change-review --root . --base $base                # preview
+node $a prepare change-review --root . --base $base --write
 node $a record change-review --root . --by reviewer \
   --decisions-json '{"decisions":[],"files":[]}' --write            # deliberately leaves items unresolved
 node $a status change-review --root .

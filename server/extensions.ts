@@ -6,7 +6,8 @@ import type { Duplex } from "node:stream";
 import type { Context } from "hono";
 import { proxy } from "hono/proxy";
 import { getMimeType } from "hono/utils/mime";
-import { WebSocket, WebSocketServer } from "ws";
+import { WebSocket } from "ws";
+import { cappedWebSocket, cappedWebSocketServer, connectionRefused, errorCode } from "./runtime-quirks";
 import type { ExtensionInfo } from "../shared/protocol";
 import { stateRoot } from "./state-root";
 import { sovaToken } from "./auth";
@@ -157,9 +158,8 @@ const healthCache = new Map<string, { at: number; health: Promise<Health> }>();
 function whyDown(err: unknown): string {
   const e = err as { name?: string; code?: string; cause?: { code?: string; message?: string }; message?: string };
   if (e.name === "TimeoutError" || e.name === "AbortError") return `no answer in ${HEALTH_TIMEOUT_MS / 1000} s`;
-  const code = e.cause?.code ?? e.code; // fetch wraps the socket error; ws hands it over as is
-  if (code === "ECONNREFUSED") return "connection refused";
-  return code ?? e.cause?.message ?? e.message ?? String(err);
+  if (connectionRefused(err)) return "connection refused";
+  return errorCode(err) ?? e.cause?.message ?? e.message ?? String(err);
 }
 
 async function probe(entry: ExtensionEntry): Promise<Health> {
@@ -326,7 +326,7 @@ export function refuse(socket: Duplex, status: number, body: object): void {
 
 // The subprotocol the backend picked, handed to the client-side handshake.
 const chosenProtocol = new WeakMap<IncomingMessage, string>();
-const extWss = new WebSocketServer({
+const extWss = cappedWebSocketServer({
   noServer: true,
   handleProtocols: (_protocols, req) => chosenProtocol.get(req) || false,
 });
@@ -374,6 +374,8 @@ export interface ProxySocketOptions {
   signal?: AbortSignal;
   /** The upstream accepted. */
   onOpen?: () => void;
+  /** How the upstream socket is made, when not by dialing `url` (a dial-out pairing's stream). */
+  dial?: (url: string, protocols: string[], opts: { headers: Record<string, string>; handshakeTimeout: number }) => WebSocket;
 }
 
 /**
@@ -388,7 +390,8 @@ export function proxySocket(req: IncomingMessage, socket: Duplex, head: Buffer, 
     .split(",")
     .map((p) => p.trim())
     .filter(Boolean);
-  const upstream = new WebSocket(url, protocols, { headers, handshakeTimeout: opts.handshakeTimeout ?? 10_000 });
+  const dialOpts = { headers, handshakeTimeout: opts.handshakeTimeout ?? 10_000 };
+  const upstream = opts.dial ? opts.dial(url, protocols, dialOpts) : cappedWebSocket(url, protocols, dialOpts);
   let upgraded = false;
   let refused = false;
   const refuseOnce = ([status, body]: [number, object]) => {

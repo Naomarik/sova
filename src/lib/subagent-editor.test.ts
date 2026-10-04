@@ -3,7 +3,7 @@ import { test } from "node:test";
 import type { SubagentProfile, TeamsSetting } from "../../shared/subagent-profiles";
 import type { WorkerChoice } from "../../shared/protocol";
 import { readFileSync } from "node:fs";
-import { coordinatorOn, delegateSummary, footprintModel, monitorOn, roleProblem, sectionProblems, specSummary, teamsSummary, withCoordinator, withMonitor } from "./subagent-editor";
+import { coordinatorOn, delegateSummary, footprintModel, monitorOn, reviewerSummary, roleProblem, sectionProblems, specSummary, teamsSummary, withCoordinator, withMonitor } from "./subagent-editor";
 
 const claude = (model: string, effort = "medium"): WorkerChoice => ({ backend: "claude-code", model, effort });
 
@@ -58,6 +58,11 @@ test("each closed section's summary says what is inside", () => {
   assert.equal(specSummary(profile()), "Off · the session writes it");
   assert.equal(specSummary(profile({ specWriter: { primary: claude("sonnet"), fallback: null } })), "sonnet");
   assert.equal(specSummary(profile({ specWriter: { primary: claude("sonnet"), fallback: claude("opus[1m]") } })), "sonnet · 1 fallback");
+
+  // A profile without the key and one with None read alike: nothing reviews.
+  assert.equal(reviewerSummary(profile()), "Off · no review");
+  assert.equal(reviewerSummary(profile({ reviewer: null })), "Off · no review");
+  assert.equal(reviewerSummary(profile({ reviewer: { primary: { backend: "pi", model: "openai-codex/gpt-6.1-sol", effort: "high" }, fallback: claude("opus[1m]", "high") } })), "gpt-6.1-sol · 1 fallback");
 });
 
 test("a summary names a model the way the list's footprint does", () => {
@@ -102,6 +107,8 @@ test("a section opens itself only for what Save waits for, and only that section
   assert.deepEqual([...sectionProblems(profile({ teams: t }))], ["teams"]);
   assert.deepEqual([...sectionProblems(profile({ members: { backend: "pi", model: "", effort: "" } }))], ["teams"]);
   assert.deepEqual([...sectionProblems(profile({ specWriter: { primary: claude("sonnet"), fallback: claude("sonnet") } }))], ["spec"]);
+  assert.deepEqual([...sectionProblems(profile({ reviewer: { primary: { backend: "pi", model: "", effort: "" }, fallback: null } }))], ["reviewer"]);
+  assert.deepEqual([...sectionProblems(profile({ reviewer: null }))], [], "None waits for nothing");
   assert.deepEqual([...sectionProblems(profile({ name: "" }))], [], "the name sits above the sections");
 });
 

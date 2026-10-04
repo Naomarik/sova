@@ -286,9 +286,16 @@ export const SPEC_WORKER_EXTENSION = realpathOr(path.join(SELF_DIR, "..", "mode"
  * like any session's, as background work (the marker's role event says so).
  */
 export const PROVIDER_LIMITS_EXTENSION = realpathOr(path.join(SELF_DIR, "..", "provider-limits", "index.ts"));
-/** The spawn summary names the extensions a worker was given; the marker, the limits and the spec hook are plumbing, not among them. */
+/**
+ * The LLM-call counter (llm-inflight/, a sibling extension), loaded after the limits into every pi
+ * worker: the worker reports its calls in flight to this process's runner, which counts them here.
+ */
+export const LLM_INFLIGHT_EXTENSION = realpathOr(path.join(SELF_DIR, "..", "llm-inflight", "index.ts"));
+/** The spawn summary names the extensions a worker was given; the marker, the limits, the counter and the spec hook are plumbing, not among them. */
 const listedExtensions = (worker: Worker): string[] =>
-	worker.extensions.filter((source) => source !== MARKER_EXTENSION && source !== PROVIDER_LIMITS_EXTENSION && source !== SPEC_WORKER_EXTENSION);
+	worker.extensions.filter(
+		(source) => source !== MARKER_EXTENSION && source !== PROVIDER_LIMITS_EXTENSION && source !== LLM_INFLIGHT_EXTENSION && source !== SPEC_WORKER_EXTENSION,
+	);
 /**
  * The same member tools as a stdio MCP server for claude-code members (the CLI
  * launches it from a per-worker mcp.json; Claude sees mcp__team__<tool>). It is
@@ -689,6 +696,9 @@ export function registerSubagents(
 	// The minor modes each worker of this process was given at its start (§chat.mode-menu/workers),
 	// published with it and written to its record; empty when none.
 	const workerModes = new WeakMap<Worker, string[]>();
+	// How each worker of this process was confined at its start (§chat.sandbox/states), for agent_list:
+	// "on", "on, narrowed to {path}", "write-only to {path}" or "none". Unknown for a restored worker.
+	const workerSandbox = new WeakMap<Worker, string>();
 	/** What a worker was given: its start's, else (restored) its record's; undefined when unknown. */
 	const modesOf = (a: Worker): string[] | undefined => workerModes.get(a) ?? (isRestored(a) ? manifestModes(a.manifest) : undefined);
 	// Hosted workers re-adopted with a cwd this session no longer allows (§chat.worktrees/workers):
@@ -1053,8 +1063,70 @@ export function registerSubagents(
 		}
 		return `${text.slice(0, WAKE_PREVIEW_CHARS)}\n[${where}]\n[Use agent_transcript for more.]`;
 	};
+	/** agent_wait calls in flight per worker ID: their returned summaries are the parent's copy of a settle.
+	 *  A hold reason of its own for paths that have no run events. */
+	const collecting = new Map<string, number>();
+	/** Settles per worker ID, so a wait knows which settle its summary reported. */
+	const settleSeq = new Map<string, number>();
+	/** The parent's agent runs in progress (agent_start to agent_end). */
+	let parentLoops = 0;
+	/** The newest turn's outcome in the parent's current run. */
+	let lastOutcome: string | undefined;
+	/** Parent completions held while a run or a wait is in progress, oldest first per worker. */
+	const held = new Map<string, { seq: number; order: number; content: string; wake: boolean }[]>();
+	let heldOrder = 0;
+	const sendCompletion = (content: string, wake: boolean) => {
+		try {
+			pi.sendMessage(
+				{ customType: "subagent-complete", display: true, content },
+				{ deliverAs: "followUp", triggerTurn: wake },
+			);
+		} catch {
+			/* Session replacement can invalidate the message API. */
+		}
+	};
+	/** Sends the held completions `pick` selects, oldest first, each with `wake` or its own; a worker a wait still collects keeps its own. */
+	const releaseHeld = (pick: (h: { wake: boolean }) => boolean, wake?: boolean) => {
+		if (shuttingDown || !activeCtx) return;
+		const out: { order: number; content: string; wake: boolean }[] = [];
+		for (const [id, list] of held) {
+			if ((collecting.get(id) ?? 0) > 0) continue;
+			const rest = list.filter((h) => !pick(h));
+			out.push(...list.filter(pick));
+			if (rest.length) held.set(id, rest);
+			else held.delete(id);
+		}
+		out.sort((x, y) => x.order - y.order);
+		for (const h of out) sendCompletion(h.content, wake ?? h.wake);
+	};
+	/** A wait returned with the worker settled: its text carried the latest settle, so that one is never sent. */
+	const coverSettle = (a: Worker) => {
+		const list = held.get(a.id);
+		if (!list || !a.isSettled()) return;
+		const latest = settleSeq.get(a.id);
+		const rest = list.filter((h) => h.seq !== latest);
+		if (rest.length) held.set(a.id, rest);
+		else held.delete(a.id);
+	};
+	/** The last wait on the worker returned: with no run in progress, settles none of them reported go out as onSettled would have sent them. */
+	const releaseCollect = (a: Worker) => {
+		const left = (collecting.get(a.id) ?? 1) - 1;
+		if (left > 0) {
+			collecting.set(a.id, left);
+			return;
+		}
+		collecting.delete(a.id);
+		// During a run they wait for its release point (turn_end / agent_end).
+		if (parentLoops > 0) return;
+		const list = held.get(a.id);
+		held.delete(a.id);
+		if (!list || shuttingDown || !activeCtx) return;
+		for (const h of list) sendCompletion(h.content, h.wake);
+	};
 	const onSettled = (a: Worker) => {
 		if (shuttingDown || !agents.includes(a)) return;
+		const seq = (settleSeq.get(a.id) ?? 0) + 1;
+		settleSeq.set(a.id, seq);
 		// Idle again: status, outcome and a usage snapshot in the durable record.
 		registry.settled(a);
 		successionCheck(a);
@@ -1087,14 +1159,16 @@ export function registerSubagents(
 			const text = summary(a);
 			// A worker the parent stopped itself does not need to wake the parent.
 			const wake = route.wake;
-			pi.sendMessage(
-				{
-					customType: "subagent-complete",
-					display: true,
-					content: text.length > WAKE_PREVIEW_CHARS ? completionPreview(a, text) : text,
-				},
-				{ deliverAs: "followUp", triggerTurn: wake },
-			);
+			const content = text.length > WAKE_PREVIEW_CHARS ? completionPreview(a, text) : text;
+			// An agent_wait in this run (or one collecting this worker) may return this settle itself; hold it
+			// until the run's release point (or the wait) shows whether it did.
+			if (parentLoops > 0 || (collecting.get(a.id) ?? 0) > 0) {
+				const list = held.get(a.id) ?? [];
+				list.push({ seq, order: ++heldOrder, content, wake });
+				held.set(a.id, list);
+				return;
+			}
+			sendCompletion(content, wake);
 		} catch {
 			/* Session replacement can invalidate the message API. */
 		}
@@ -1192,6 +1266,8 @@ export function registerSubagents(
 		// The parent's worker modes as they are now: a snapshot for this batch, which a later switch never
 		// reaches. A resume takes them afresh too (the spec's raw systemPrompt never carries them).
 		const modesNow = modeWorker;
+		// Each spec's confinement, as agent_list names it (workerSandbox); none in a remote session.
+		const sandboxNotes: (string | undefined)[] = [];
 		const prepared = specs.map((spec, index) => {
 			if (!spec.prompt.trim()) throw new Error("Task must not be blank.");
 			// A team's monitor has no tools to follow them with; a worker on its worktree's own agent dir
@@ -1227,7 +1303,10 @@ export function registerSubagents(
 				}
 				launch = sandboxState.workerLaunch({ cwd, ...(tree ? { root: tree.path } : {}), backend: backendId, owner: workerKey("check") });
 				if (launch.kind === "refused") throw new Error(launch.reason);
-				if (launch.kind === "none") {
+				// Off (§chat.sandbox/states) is the one answer that leaves a worktree's worker unconfined; it
+				// counts only from a parent that is not on and says so (an older sandbox never does).
+				const unconfinedByOff = launch.kind === "none" && !sandbox && sandboxState.workers === "off";
+				if (launch.kind === "none" && !unconfinedByOff) {
 					throw new Error(tree
 						? `Cannot confine a worker to the worktree ${tree.path}: this session's sandbox gave no scope for it.`
 						: "This session's sandbox is on but gave no worker launch; a worker cannot start sandboxed.");
@@ -1235,6 +1314,7 @@ export function registerSubagents(
 				if (launch.kind === "confine" && backendId === "pi") throw new Error("This session's sandbox gave a pi worker no extension flags; it cannot start sandboxed.");
 				if (launch.kind === "pi" && backendId !== "pi") throw new Error(`This session's sandbox gave the ${backendId} worker no confinement; it cannot start sandboxed.`);
 			}
+			if (!remote) sandboxNotes[index] = launch.kind === "none" ? "none" : sandbox ? `on${tree ? `, narrowed to ${tree.path}` : ""}` : `write-only to ${tree?.path ?? cwd}`;
 			// Where a worker may start: the session's cwd or an active tracked worktree. Remote cwds are far paths, not checked.
 			if (!remote) {
 				const outside = worktreeCwdRefusal({ sessionCwd: ctx.cwd, cwd, set: worktreeSet });
@@ -1333,7 +1413,7 @@ export function registerSubagents(
 			// Spec on: a code-writing worker gets the brief (below) and the census hook; a worktree-config worker
 			// already loads the whole mode extension, and a remote one runs its tools elsewhere.
 			const specWorker = specOn && !remote && !treeConfig && writesCode(tools);
-			const sources = [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, ...(remote ? [REMOTE_EXTENSION] : []), ...(treeConfig ? [treeConfig.modeExtension] : []), ...(specWorker ? [SPEC_WORKER_EXTENSION] : []), ...(own ?? [])];
+			const sources = [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, LLM_INFLIGHT_EXTENSION, ...(remote ? [REMOTE_EXTENSION] : []), ...(treeConfig ? [treeConfig.modeExtension] : []), ...(specWorker ? [SPEC_WORKER_EXTENSION] : []), ...(own ?? [])];
 			const modeFlags = treeConfig ? { major: "normal", minor: "spec" } : undefined;
 			// The sandbox's answer for a pi worker: its extension and flags (the parent's scope while on; in a
 			// tracked worktree, narrowed to it, or write-only while off).
@@ -1467,6 +1547,7 @@ export function registerSubagents(
 					group.agents.push(runner);
 					hosting.bind(id, runner);
 					workerModes.set(runner, givenModes);
+					if (sandboxNotes[index] !== undefined) workerSandbox.set(runner, sandboxNotes[index]!);
 					// What resume needs to start it again: the raw spec (resolved again against the
 					// session's state at resume time, like a spawn), with pi's inherited model written out.
 					launches.set(runner, {
@@ -2665,7 +2746,7 @@ export function registerSubagents(
 									`${g.id} — ${g.label}`,
 									...g.agents.map(
 										(a) =>
-											`  ${a.id} ${a.name} [${a.backend ?? "pi"}] ${a.status}${a.taskOutcome ? `/${a.taskOutcome}` : ""} ${a.model ?? "child default"} · ${listUsage(a)}${a.error ? ` · error: ${a.error}` : ""}${restoredNote(a)}${outsideWorktrees.has(a.id) ? " · outside this session's worktrees (adopted after a restart; kept running)" : ""}`,
+											`  ${a.id} ${a.name} [${a.backend ?? "pi"}] ${a.status}${a.taskOutcome ? `/${a.taskOutcome}` : ""} ${a.model ?? "child default"} · ${listUsage(a)}${a.error ? ` · error: ${a.error}` : ""}${workerSandbox.has(a) ? ` · sandbox: ${workerSandbox.get(a)}` : ""}${restoredNote(a)}${outsideWorktrees.has(a.id) ? " · outside this session's worktrees (adopted after a restart; kept running)" : ""}`,
 									),
 								].join("\n"),
 							)
@@ -2807,37 +2888,46 @@ export function registerSubagents(
 			if (!Number.isFinite(timeout) || timeout < 0 || timeout > 3600)
 				throw new Error("timeoutSeconds must be between 0 and 3600.");
 			const deadline = Date.now() + timeout * 1000;
-			while (!signal?.aborted && Date.now() < deadline && targets.some((a) => !a.isSettled())) {
-				update?.(
-					result(
-						`Waiting: ${targets
-							.filter((a) => !a.isSettled())
-							.map((a) => a.id)
-							.join(", ")}`,
-					),
-				);
-				await new Promise<void>((resolve) => {
-					const finish = () => {
-						clearTimeout(timer);
-						signal?.removeEventListener("abort", finish);
-						resolve();
-					};
-					const timer = setTimeout(finish, Math.min(500, Math.max(0, deadline - Date.now())));
-					signal?.addEventListener("abort", finish, { once: true });
-					if (signal?.aborted) finish();
+			// The returned summaries are the parent's copy of these targets' settles (see onSettled).
+			for (const a of targets) collecting.set(a.id, (collecting.get(a.id) ?? 0) + 1);
+			try {
+				while (!signal?.aborted && Date.now() < deadline && targets.some((a) => !a.isSettled())) {
+					update?.(
+						result(
+							`Waiting: ${targets
+								.filter((a) => !a.isSettled())
+								.map((a) => a.id)
+								.join(", ")}`,
+						),
+					);
+					await new Promise<void>((resolve) => {
+						const finish = () => {
+							clearTimeout(timer);
+							signal?.removeEventListener("abort", finish);
+							resolve();
+						};
+						const timer = setTimeout(finish, Math.min(500, Math.max(0, deadline - Date.now())));
+						signal?.addEventListener("abort", finish, { once: true });
+						if (signal?.aborted) finish();
+					});
+				}
+				const outstanding = targets.filter((a) => !a.isSettled());
+				const headline = signal?.aborted
+					? "Cancelled wait; workers were not stopped."
+					: outstanding.length
+						? `Timed out; still working: ${outstanding.map((a) => a.id).join(", ")}`
+						: "All requested tasks settled (not necessarily successfully).";
+				const answer = result([headline, ...targets.map(summary)].join("\n\n"), {
+					cancelled: Boolean(signal?.aborted),
+					timedOut: !signal?.aborted && outstanding.length > 0,
+					waited: targets.map((a) => ({ id: a.id, status: a.status, taskOutcome: a.taskOutcome, error: a.error })),
 				});
+				// A settled target's summary above is its latest settle: that one is reported, never sent again.
+				for (const a of targets) coverSettle(a);
+				return answer;
+			} finally {
+				for (const a of targets) releaseCollect(a);
 			}
-			const outstanding = targets.filter((a) => !a.isSettled());
-			const headline = signal?.aborted
-				? "Cancelled wait; workers were not stopped."
-				: outstanding.length
-					? `Timed out; still working: ${outstanding.map((a) => a.id).join(", ")}`
-					: "All requested tasks settled (not necessarily successfully).";
-			return result([headline, ...targets.map(summary)].join("\n\n"), {
-				cancelled: Boolean(signal?.aborted),
-				timedOut: !signal?.aborted && outstanding.length > 0,
-				waited: targets.map((a) => ({ id: a.id, status: a.status, taskOutcome: a.taskOutcome, error: a.error })),
-			});
 		},
 	});
 
@@ -3633,6 +3723,7 @@ export function registerSubagents(
 	});
 	pi.on("session_start", (_event, ctx) => {
 		activeCtx = ctx;
+		parentLoops = 0;
 		discoverBackends();
 		for (const entry of ctx.sessionManager.getEntries()) {
 			if (entry.type === "custom" && entry.customType === "subagents-counters-v2") {
@@ -3693,9 +3784,39 @@ export function registerSubagents(
 		// Restored workers follow the branch like history does; the Σ does not.
 		applyBranch(ctx);
 	});
+	// Held completions (see onSettled) are released at the parent run's own boundaries.
+	pi.on("agent_start", () => {
+		parentLoops++;
+		lastOutcome = undefined;
+	});
+	pi.on("turn_end", (event) => {
+		lastOutcome = event.outcome;
+		// Context-only settles reach the context after every turn, as a follow-up sent mid-run did.
+		releaseHeld((h) => !h.wake, false);
+		// Waking settles go out where the run would otherwise stop: these handlers run inside finishTurn,
+		// before pi polls its follow-ups, so they continue this run. A queued user message speaks first.
+		const content = (event.message as { content?: unknown }).content;
+		const toolCalls = Array.isArray(content) && content.some((c) => (c as { type?: unknown } | null)?.type === "toolCall");
+		const userPending = event.context?.pendingMessages?.some((m) => m.role === "user");
+		if (!toolCalls && event.outcome === "completed" && !userPending) releaseHeld((h) => h.wake);
+	});
+	pi.on("agent_end", (_event, ctx) => {
+		parentLoops = Math.max(0, parentLoops - 1);
+		// A stopped run never wakes the parent, and leaves nothing queued in pi: context only.
+		const aborted = lastOutcome === "aborted" || Boolean(ctx?.signal?.aborted);
+		releaseHeld(() => true, aborted ? false : undefined);
+	});
 	pi.on("session_shutdown", async () => {
 		// Read at dispose time: the embedding process sets it only when it is going away.
 		const detach = detachRequested();
+		// Best effort: leftovers reach the transcript without starting a turn.
+		collecting.clear();
+		try {
+			releaseHeld(() => true, false);
+		} catch {
+			/* The session may already be gone. */
+		}
+		held.clear();
 		shuttingDown = true;
 		unregisterWorkersListener?.();
 		unregisterAdoptListener?.();

@@ -7,11 +7,13 @@
 // Peer listener (whois-gated like every /api/peer/* route; the caller is `requestPeer(c).nodeId`,
 // never a body field; mounted after mountDetails, small bodyLimit):
 // POST /api/peer/links                PeerLinkCopy -> {ok:true}   (the creating host's copy of a link
-//                                     this host is a member of; `you` names this host's own nodeId
-//                                     as the caller knows it: stored as selfNodeId when unknown here.
-//                                     409 when `you`'s member session isn't here)
-// POST /api/peer/links/:id/end        PeerLinkEnd -> PeerLinkEndResult   (earliest endedAt wins;
-//                                     404 unknown link)
+//                                     this host is a member of, in the receiver's terms: the sender
+//                                     names itself as this host knows it (§mesh.links/host-names);
+//                                     `you` names this host's own nodeId as the caller knows it:
+//                                     stored as selfNodeId when unknown here. 403 when it names a
+//                                     host this host doesn't know, 409 when its session isn't here)
+// POST /api/peer/links/:id/end        PeerLinkEnd -> PeerLinkEndResult   (earliest endedAt wins,
+//                                     with its `why`; 404 unknown link)
 // POST /api/peer/links/:id/message    PeerLinkMessage -> PeerLinkMessageResult   (served only when
 //                                     {caller, fromSession} is a member of the link and `to` is this
 //                                     host's member; records it in the inbox, then delivers.
@@ -72,9 +74,10 @@
 
 import type { SessionSummary } from "./protocol";
 
-/** A member session of a link: the host by its Tailscale node identity, the session by id, and
-    its path on its own host (resolved when the link was made). A host's peer id and label are
-    never stored: look them up in this host's peers.json by nodeId at every use. */
+/** A member session of a link: the host by its node identity as the host holding the record knows
+    it (§mesh.links/host-names: a Tailscale node identity, or lan:<pin> for a LAN pairing), the
+    session by id, and its path on its own host (resolved when the link was made). A host's peer id
+    and label are never stored: look them up in this host's peers.json by nodeId at every use. */
 export interface LinkMember {
   nodeId: string;
   sessionId: string;
@@ -96,6 +99,8 @@ export interface MeshLink {
   /** Two or more, at most one per nodeId. */
   members: LinkMember[];
   endedAt?: number;
+  /** Why it ended, when a host ended it for a reason of its own (a member host refused its copy). */
+  endedWhy?: string;
 }
 
 /** `<stateRoot>/mesh-links.json`, mode 0600, written atomically like peers.json. */
@@ -104,6 +109,9 @@ export interface MeshLinksFile {
   /** This host's own nodeId when the mesh doesn't say (an address-identity host): learnt from a
       PeerLinkCopy's `you` or a whoami answer. */
   selfNodeId?: string;
+  /** Peer nodeId -> this host's nodeId as that peer knows it (its whoami answer): how this host
+      names itself to that peer (§mesh.links/host-names). */
+  selfAs?: Record<string, string>;
   /** Ended links included (history). */
   links: MeshLink[];
 }
@@ -179,6 +187,8 @@ export interface PeerLinkCopy {
 }
 export interface PeerLinkEnd {
   endedAt: number;
+  /** Why, when the host ending it has a reason of its own (MeshLink.endedWhy). */
+  why?: string;
 }
 export interface PeerLinkEndResult {
   ok: true;
@@ -186,7 +196,8 @@ export interface PeerLinkEndResult {
   endedAt: number;
 }
 export interface PeerLinkMessage {
-  /** The message; `from.nodeId` must equal the verified caller, `to` must include this host's member. */
+  /** The message, in the receiver's terms; `from.nodeId` must equal the verified caller, `to` must
+      include this host's member (by any of this host's names). */
   message: LinkMessage;
   /** The sender session's title, for the tag line. Display only. */
   fromTitle?: string;
@@ -240,7 +251,7 @@ export interface LinkCreate {
 /** A 4xx body from a local act. `member` is the index into LinkCreate.members it names. */
 export interface LinkError {
   error: string;
-  reason?: OfferRefusal | "same-host" | "too-few" | "worker" | "skewed";
+  reason?: OfferRefusal | "same-host" | "too-few" | "worker" | "skewed" | "lan-pairing";
   member?: number;
 }
 export interface LinkSend {

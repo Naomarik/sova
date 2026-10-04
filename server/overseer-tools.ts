@@ -4,24 +4,24 @@ import type {
   FolderListing,
   ModelInfo,
   OverseerCaps,
-  PeerState,
   SessionGroup,
   SessionInsight,
   SessionSummary,
+  SandboxInfo,
   SovaConfirmItem,
   SovaNavigateDetails,
   TargetInfo,
   TranscriptItem,
 } from "../shared/protocol";
-import { AsyncLocalStorage } from "node:async_hooks";
+import type { PeerStateView } from "../shared/mesh-access";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { relativeTime } from "../pi-config/extensions/stamp/format.ts";
 import { newestTopics, topicTime } from "../shared/outline-order";
-import { OVERSEER_BRIEF_PREFIX } from "../shared/protocol";
-import { parseWakeNudge } from "../shared/wake";
 import { whereOf } from "./attention";
+import { NotShared } from "./mesh/access";
 import { alignmentText, openAlignmentsOf } from "./align-state";
+import { entryOf } from "./transcript";
 import type { ReadinessChecks } from "./merge-readiness";
 import { idOfAlias, sessionName } from "./session-names";
 import { type Redactor, redactingTool, serverRedactor } from "./overseer-redact";
@@ -33,14 +33,14 @@ import { readTodos } from "./overseer-todos";
 import { readManifest, resolveIdeaId } from "./overseer-ideas";
 import { cardTool, type CardLinkInput } from "./overseer-card-tool";
 import type { ArchiveWorktrees, WorktreePlan } from "./archive-worktrees";
-import { CARDS_NOTE_MESSAGE, safeHttpsUrl } from "../shared/overseer-card";
-import { ID_NOTE_MESSAGE } from "./overseer-id-check";
+import { safeHttpsUrl } from "../shared/overseer-card";
 import { branchLabels } from "./overseer-run-note";
 import { linkTools, type LinksApi } from "./overseer-link-tools";
 import { projectEngine } from "./project-services/routes";
 import { overseerVerbsTool, type LooseExec } from "./project-services/tools";
+import { operatorEnvelopeOf } from "./projects/spaces";
 import { orgConfirmLookup, orgTools } from "./overseer-org-tools";
-import { resolveOrg, resolvePerson, resolveProject } from "./overseer-org-view";
+import { resolveAnyProject, resolveOrg, resolvePerson } from "./overseer-org-view";
 import { contactRedactor, loggedArgs } from "./overseer-org-view";
 import type { PeerLinkRead } from "../shared/mesh-links";
 import { cut, Refusal, renderTranscript, sessionRef, text, writableRefusal } from "./session-guards";
@@ -94,6 +94,11 @@ export interface OverseerToolHost extends IdeaToolHost {
   /** Pin a held chat to the mode it is on now (ChatSession.pinMode): write its `mode` entry even when
       that mode equals the default, so a later mode.json change never moves it. Throws when it can't. */
   pinMode(path: string): Promise<void>;
+  /** A chat's sandbox now (opened here as `open` does), or null when its runtime has no sandbox
+      extension (§chat.sandbox/states). Absent: no session's sandbox can be set. */
+  sandbox?(path: string): Promise<SandboxInfo | null>;
+  /** The state a new session starts in: On when the policy's `defaultOn` is true, else Subagents only. */
+  sandboxDefault?(): SandboxState;
   /** Record that the Overseer started work in this session (the concurrency cap). `prompted`: a
       prompt was just accepted there, so it counts as running from now on, even in the moment
       before its run reports streaming. */
@@ -141,223 +146,8 @@ export interface PeerRef {
   id: string;
   label: string;
   nodeId: string;
-  state: PeerState;
+  state: PeerStateView;
   error?: string;
-}
-
-// ---- who started the turn ----------------------------------------------------------------------
-
-/** The part of the SDK's `Agent` every user-role message passes through on its way into the
-    context: a turn started with messages, a steer, a follow-up. */
-export interface UserMessageSink {
-  prompt(...args: never[]): Promise<void>;
-  steer(message: never): void;
-  followUp(message: never): void;
-}
-
-/** The text of a user-role message as the SDK holds it (a string, or text and image parts); null
-    for any other role. */
-export function userMessageText(message: unknown): string | null {
-  const m = message as { role?: unknown; content?: unknown } | undefined;
-  if (m?.role !== "user") return null;
-  if (typeof m.content === "string") return m.content;
-  if (!Array.isArray(m.content)) return "";
-  return m.content
-    .filter((c): c is { type: "text"; text: string } => (c as { type?: unknown })?.type === "text" && typeof (c as { text?: unknown }).text === "string")
-    .map((c) => c.text)
-    .join("\n");
-}
-
-/** The session events `UserTurns.observe` reads: the AgentSession's own stream (`session.subscribe`),
-    which carries every message entering the context, including the context-only custom messages
-    the SDK appends between turns without telling extensions. */
-export interface TurnEvent {
-  type: string;
-  message?: unknown;
-  willRetry?: boolean;
-}
-
-/** Roles that bring nothing from outside into the context: the model's own output, tool results,
-    the SDK's loadout declarations and summaries. Every other role (a user message, an extension's
-    custom message, anything new) is input, and input decides who the run belongs to. */
-const NEUTRAL_ROLES = new Set(["assistant", "toolResult", "system", "compactionSummary", "branchSummary", "bashExecution"]);
-/** Custom messages only the server writes: the hidden open-cards note (with the run note) and the
-    id check's note (§app.overseer/id-check). */
-const STATE_NOTES = new Set<unknown>([CARDS_NOTE_MESSAGE, ID_NOTE_MESSAGE]);
-const isCardsNote = (m: unknown): boolean => (m as { role?: unknown; customType?: unknown } | undefined)?.role === "custom" && STATE_NOTES.has((m as { customType?: unknown }).customType);
-
-/**
- * Whether the Overseer is answering the user: the one source of truth for both the per-turn caps
- * (a user message renews them) and the read-only rule for runs the user did not start (a brief,
- * a wake-up, an extension's message such as an /explain result or a worker's report: every acting
- * tool refuses).
- *
- * Per run. Every run starts unattended (`agent_start`), whatever the run before it was, and only a
- * message the user sent from the UI makes it attended. Which messages those are is decided by
- * identity, not by text: the chat runtime hands each one (a typed message, a quick action, a
- * confirm-card click, a steer, a regenerate) to the SDK inside `send`, and the first user-role
- * message the SDK builds from that call, after every extension `input` transform, template
- * expansion and image note, is marked when it reaches the Agent (`watch`). When it enters the
- * context the run becomes the user's. Nothing else is ever marked, so a wake-up, a brief or an
- * extension's message is never attended, whatever its text. Fails closed: anything unmarked (an
- * unknown sender, a fresh runtime after a restart) is unattended.
- *
- * Within a run, input the user did not send ends the user's part of it: once the model has replied
- * to the user's message, any other input entering the context (a wake-up or worker report queued
- * into the run, a context-only custom message appended after a turn) makes the rest of the run
- * read-only, so foreign input never acts on the user's authority, not even for the rest of the run
- * it joined. Custom messages that ride in with the user's own message, before the model's first
- * reply to it (an extension's `before_agent_start` context), are part of that message. A user
- * message queued into a run makes the rest of it the user's.
- *
- * One exception keeps the user's run whole: when the SDK re-runs a request that just failed (an
- * automatic retry, the compact-and-retry of a context overflow), the new run continues the old
- * one's attendance, but only if the model's reply is the first thing in it. Any input that arrives
- * first decides the run instead.
- *
- * The mark is carried by the async context of the `send` call, so it reaches the Agent across the
- * SDK's awaits (an `input` handler describing an image) and no other caller's message can take it.
- * Each `send` marks at most one message: the run that message starts inherits the spent context,
- * so a message queued later from inside that run (a wake-up's timer, an extension's follow-up) is
- * not marked. A user message the SDK defers to after the previous run settles runs outside its
- * `send` and is unattended: that turn is read-only, never the reverse.
- */
-export class UserTurns {
-  private readonly sending = new AsyncLocalStorage<{ open: boolean; confirm?: string }>();
-  private readonly fromUser = new WeakSet<object>();
-  /** A marked message that is a click on a card: that card's id (`c_N`). */
-  private readonly confirmOf = new WeakMap<object, string>();
-  /** The card whose click opened the user's part of this run, while it lasts. */
-  private card: string | null = null;
-  private retryCard: string | null = null;
-  private rerunCard: string | null = null;
-  private readonly watched = new WeakSet<object>();
-  private now = false;
-  /** The user's message entered and the model has not replied to it yet: other input now is part of it. */
-  private batch = false;
-  /** A failed request is about to be re-run: the attendance it failed with. */
-  private retry: boolean | null = null;
-  /** The run started as a re-run, and nothing has entered it yet. */
-  private rerun: boolean | null = null;
-  /** Run the SDK call that hands a message the user sent to the runtime. `confirm`: the message is a
-      click on the card with that id, `c_N` (the chat runtime says so; typed text never is). */
-  send<T>(send: () => T, confirm?: string): T {
-    return this.sending.run({ open: true, ...(confirm ? { confirm } : {}) }, send);
-  }
-  /** Mark, from now on, the user message each `send` produces as it reaches this Agent. */
-  watch(agent: UserMessageSink): void {
-    if (this.watched.has(agent)) return;
-    this.watched.add(agent);
-    const sink = agent as unknown as Record<"prompt" | "steer" | "followUp", (...args: unknown[]) => unknown>;
-    for (const name of ["prompt", "steer", "followUp"] as const) {
-      const inner = sink[name]!;
-      sink[name] = (...args: unknown[]) => {
-        this.claim(args[0]);
-        return inner.apply(agent, args);
-      };
-    }
-  }
-  private claim(input: unknown): void {
-    const ctx = this.sending.getStore();
-    if (!ctx?.open) return;
-    const message = (Array.isArray(input) ? input : [input]).find((m) => userMessageText(m) !== null);
-    if (!message) return;
-    ctx.open = false;
-    this.fromUser.add(message as object);
-    if (ctx.confirm) this.confirmOf.set(message as object, ctx.confirm);
-  }
-  /** One event from the Overseer session's stream; returns true when a message the user sent
-      entered the context (the per-turn caps renew). */
-  observe(event: TurnEvent): boolean {
-    switch (event.type) {
-      case "agent_start":
-        this.now = false;
-        this.batch = false;
-        this.rerun = this.retry;
-        this.rerunCard = this.retryCard;
-        this.retry = null;
-        this.retryCard = null;
-        this.card = null;
-        return false;
-      case "auto_retry_start":
-        this.retry = this.now;
-        this.retryCard = this.card;
-        return false;
-      case "compaction_end":
-        if (event.willRetry) {
-          this.retry = this.now;
-          this.retryCard = this.card;
-        }
-        return false;
-      case "auto_retry_end":
-      case "agent_settled":
-        this.retry = null;
-        this.retryCard = null;
-        return false;
-      case "message_start":
-        return this.entered(event.message);
-      default:
-        return false;
-    }
-  }
-  private entered(message: unknown): boolean {
-    const role = (message as { role?: unknown } | undefined)?.role;
-    const rerun = this.rerun;
-    const rerunCard = this.rerunCard;
-    this.rerun = null;
-    this.rerunCard = null;
-    if (role === "assistant") {
-      // A re-run the model answers straight away is the failed request again.
-      if (rerun !== null) {
-        this.now = rerun;
-        this.card = rerun ? rerunCard : null;
-      }
-      this.batch = false;
-      return false;
-    }
-    // The Overseer's own open-cards note is state, not input (§app.overseer/confirm), and so is the
-    // id check's note (§app.overseer/id-check): neither changes who the run belongs to, wherever it lands.
-    if ((typeof role === "string" && NEUTRAL_ROLES.has(role)) || isCardsNote(message)) {
-      this.rerun = rerun;
-      this.rerunCard = rerunCard;
-      return false;
-    }
-    const text = userMessageText(message)?.trim();
-    if (text === undefined) {
-      // Input no one marked (an extension's custom message). With the user's own message it is
-      // context for that message; anywhere else it ends the user's part of the run.
-      if (!this.batch) {
-        this.now = false;
-        this.card = null;
-      }
-      return false;
-    }
-    const mine = this.fromUser.delete(message as object);
-    const card = this.confirmOf.get(message as object) ?? null;
-    this.confirmOf.delete(message as object);
-    this.now = mine && !parseWakeNudge(text) && !text.startsWith(OVERSEER_BRIEF_PREFIX);
-    // Only the click itself opens a confirmed run: a later message, typed or not, is a new run of its own.
-    this.card = this.now ? card : null;
-    this.batch = this.now;
-    return this.now;
-  }
-  attended(): boolean {
-    return this.now;
-  }
-  /** The confirm card whose click opened the user's part of this run, or null (§app.overseer/org-people-facing). */
-  confirmedCard(): string | null {
-    return this.now ? this.card : null;
-  }
-  /** /clear: nothing carries over. */
-  reset(): void {
-    this.now = false;
-    this.batch = false;
-    this.retry = null;
-    this.rerun = null;
-    this.card = null;
-    this.retryCard = null;
-    this.rerunCard = null;
-  }
 }
 
 /** The acting tools' refusal in a turn the user did not start. */
@@ -366,6 +156,21 @@ export const UNATTENDED_REFUSAL =
   "you may read, keep notes and ask, but nothing that changes a session runs here, and no approval for later or standing rule " +
   "the user adopted covers this act. Stop, and raise a sova_card card that says what you would do and why; the user's click " +
   "starts a turn in which you may act.";
+
+/** The sandbox states, loosest first (§chat.sandbox/states), and how the tools name them. */
+export type SandboxState = "off" | "subagents" | "on";
+const SANDBOX_STATES: readonly SandboxState[] = ["off", "subagents", "on"];
+const SANDBOX_LABEL: Record<SandboxState, string> = { off: "Off", subagents: "Subagents only", on: "On" };
+/** Lowering a session's sandbox runs only in a turn the user's card click opened (§app.overseer/tools). */
+export const SANDBOX_LOWER_REFUSAL =
+  "Lowering a session's sandbox needs the user's approval: ask with sova_card, listing the session, and set it in the turn the user's click starts. Nothing was changed.";
+export const SANDBOX_LOWER_CREATE_REFUSAL =
+  "Starting a session with its sandbox lowered needs the user's approval: ask with sova_card first (say the session starts with its sandbox lowered, and to what), and create it in the turn the user's click starts. No session was created.";
+function sandboxParam(v: unknown): SandboxState {
+  if (typeof v === "string" && (SANDBOX_STATES as readonly string[]).includes(v)) return v as SandboxState;
+  throw new Refusal('sandbox is "off", "subagents" or "on". Nothing was changed.');
+}
+const lowers = (to: SandboxState, from: SandboxState) => SANDBOX_STATES.indexOf(to) < SANDBOX_STATES.indexOf(from);
 
 /** The sessions an act names, for the approvals check: null for an act that names none. */
 export function actTargets(tool: string, params: any): string[] | null {
@@ -544,7 +349,7 @@ export function topicsLine(topics: readonly { heading: string; at: number; secti
     reason, its error and its text; undefined when there is none. */
 export function lastReplyIn(items: readonly TranscriptItem[]): { at: number; stopReason?: string; error?: string; text: string } | undefined {
   for (let i = items.length - 1; i >= 0; i--) {
-    const raw = items[i]!.raw as { type?: unknown; timestamp?: unknown; message?: { role?: unknown; content?: unknown; stopReason?: unknown; errorMessage?: unknown; timestamp?: unknown } } | undefined;
+    const raw = entryOf(items[i]!) as { type?: unknown; timestamp?: unknown; message?: { role?: unknown; content?: unknown; stopReason?: unknown; errorMessage?: unknown; timestamp?: unknown } } | undefined;
     const m = raw?.type === "message" ? raw.message : undefined;
     if (m?.role !== "assistant") continue;
     const at = typeof raw!.timestamp === "string" ? Date.parse(raw!.timestamp) : typeof m.timestamp === "number" ? m.timestamp : NaN;
@@ -583,7 +388,7 @@ export function truthLines(
     const message = s.turnError?.message ?? reply?.error;
     out.push(`Turn error: ${message ? cut(message, 300) : "the last turn stopped with an error"}`);
   }
-  const docs = items ? openAlignmentsOf(items.map((i) => i.raw)) : [];
+  const docs = items ? openAlignmentsOf(items.map(entryOf)) : [];
   if (docs.length) {
     const list = docs.map((d) => `${d.id} "${cut(d.title, 80)}": ${d.open} of ${d.total} question${d.total === 1 ? "" : "s"} open`).join("; ");
     const waits = s.align ? "the session waits on the user's answers" : "not waiting on the user (they spoke since, or align is off)";
@@ -656,10 +461,14 @@ const bool = (description: string) => ({ type: "boolean", description });
 /** The confirm card whose click opened this turn, on every route call the tools make: the org statecharts
     check that a people-facing act's targets are on it (§app.overseer/org-people-facing). Read by a
     route only next to the sender mark (org-routes operatorBy). */
-export const OVERSEER_CARD_HEADER = "x-sova-overseer-card";
+import { OVERSEER_CARD_HEADER } from "./overseer-sender";
+export { OVERSEER_CARD_HEADER };
 export function cardHeader(items: readonly SovaConfirmItem[]): string {
   const ids = (kind: SovaConfirmItem["kind"]) => items.filter((i) => i.kind === kind).map((i) => i.id);
-  return JSON.stringify({ people: ids("person"), projects: ids("project"), sessions: ids("session") });
+  // Folder and org rows (§app.overseer/org-project-add): the project and org routes check these themselves.
+  const folders = items.flatMap((i) => (i.kind === "folder" ? [{ root: i.id, org: i.orgId ?? null, ...(i.name ? { name: i.name } : {}) }] : []));
+  const orgs = ids("org");
+  return JSON.stringify({ people: ids("person"), projects: ids("project"), sessions: ids("session"), ...(folders.length ? { folders } : {}), ...(orgs.length ? { orgs } : {}) });
 }
 
 /**
@@ -724,11 +533,12 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
     }
     if (peer.state !== "up")
       throw new Refusal(
-        `${peer.label} (${peer.id}) is ${peer.state === "skewed" ? "on another protocol version (skewed)" : peer.state === "refused" ? "refusing this host (it doesn't list it as a peer)" : "down"}${peer.error ? `: ${peer.error}` : ""}, so nothing reaches it from here now.`,
+        `${peer.label} (${peer.id}) is ${peer.state === "skewed" ? "on another protocol version (skewed)" : peer.state === "refused" ? "refusing this host (it doesn't list it as a peer)" : peer.state === "hidden" ? "hiding everything from this host (its grant to this host is none)" : "down"}${peer.error ? `: ${peer.error}` : ""}, so nothing reaches it from here now.`,
       );
     return peer;
   }
-  /** `call` over the peer hop. A peer that doesn't answer is a refusal naming it, never an empty result. */
+  /** `call` over the peer hop. A peer that doesn't answer is a refusal naming it, never an empty result;
+      a call this host's own grant to the peer withholds is a refusal saying so, never "didn't answer". */
   async function peerCall(peer: PeerRef, method: string, path: string, body?: unknown): Promise<{ status: number; json: any }> {
     let res: Response;
     try {
@@ -738,6 +548,8 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
         ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
       });
     } catch (err) {
+      if (err instanceof NotShared)
+        throw new Refusal(`This host doesn't share that with ${peer.label} (${peer.id}): its grant to ${peer.label} on this host's Mesh page withholds it, so nothing was sent.`);
       throw new Refusal(`${peer.label} (${peer.id}) didn't answer (${err instanceof Error ? err.message : String(err)}).`);
     }
     let json: any = null;
@@ -776,14 +588,19 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
       const s = await resolve(p.session);
       return { href: `#/s/${encodeURIComponent(s.path)}`, label: `Open "${cut(s.title, 60)}"` };
     }
+    if (p.project !== undefined) {
+      // A project registered here (in an org when given), as the project tools take it.
+      try {
+        const project = resolveAnyProject(p.project, p.org);
+        return { href: `#/projects/${project.id}`, label: `Open ${project.name}` };
+      } catch (err) {
+        throw new Refusal(err instanceof Error ? err.message : String(err));
+      }
+    }
     if (p.org !== undefined) {
-      // An org attached here, and one of its projects or roster people, as the org tools take them.
+      // An org attached here, and one of its roster people, as the org tools take them.
       try {
         const org = resolveOrg(p.org);
-        if (p.project !== undefined) {
-          const project = resolveProject(org.id, p.project);
-          return { href: `#/orgs/${org.id}/projects/${project.id}`, label: `Open ${project.name} in ${org.name}` };
-        }
         if (p.person !== undefined) {
           const person = resolvePerson(org.id, p.person);
           return { href: `#/orgs/${org.id}/people/${person.id}`, label: `Open ${person.name} in ${org.name}` };
@@ -793,10 +610,11 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
         throw new Refusal(err instanceof Error ? err.message : String(err));
       }
     }
-    if (p.project !== undefined || p.person !== undefined) throw new Refusal("A project or a person needs its org.");
+    if (p.person !== undefined) throw new Refusal("A person needs their org.");
     if (p.page === "usage") return { href: "#/usage", label: "Open Usage" };
     if (p.page === "agents") return { href: p.team ? `#/agents/${encodeURIComponent(p.team)}` : "#/agents", label: "Open Agents" };
     if (p.page === "overseer") return { href: "#/overseer", label: "Open the Overseer" };
+    if (p.page === "orgs") return { href: "#/orgs", label: "Open Organizations" };
     if (p.page === "settings") {
       const tab = p.settings_tab ?? "general";
       if (!(SETTINGS_TABS as readonly string[]).includes(tab)) throw new Refusal(`settings_tab must be one of ${SETTINGS_TABS.join(", ")}.`);
@@ -874,6 +692,17 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
     return { queued: r.json?.queued === true, kind: String(r.json?.kind ?? "prompt"), ...(r.json?.compacting ? { compacting: true } : {}) };
   }
 
+  /** Set a held chat's sandbox state through the route the composer uses; throws why it didn't take. */
+  async function setSandbox(s: SessionSummary, state: SandboxState): Promise<void> {
+    await host.open(s.path);
+    const r = await call("POST", `/api/sandbox?path=${encodeURIComponent(s.path)}`, { state });
+    if (r.status !== 200) throw failed(r, "Setting the sandbox");
+    if (r.json?.outcome === "unsupported") throw new Error("its runtime has no sandbox extension");
+    if (r.json?.outcome === "skip") throw new Error("another writer has that session");
+    const now = (r.json?.sandbox as SandboxInfo | undefined)?.state;
+    if (now !== state) throw new Error(`it reads ${now ? SANDBOX_LABEL[now] : "unknown"} after the change: ${r.json?.sandbox?.status ?? "no status"}`);
+  }
+
   async function checkSubagentProfile(id: unknown, peer: PeerRef | null = null) {
     const r = peer ? await peerCall(peer, "GET", "/api/settings/subagents") : await call("GET", "/api/settings/subagents");
     if (r.status !== 200 || r.json?.error || !Array.isArray(r.json?.profiles)) throw new Refusal("Subagent profiles couldn't be read. Nothing was changed.");
@@ -926,6 +755,13 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
         throw new Refusal(
           `Created ${link(s)} in ${whereOf(s)}, but its mode was not set (${r.json?.error ?? `HTTP ${r.status}`}), so ${hasPrompt ? "its first prompt was not sent" : "it is in its default mode"}. Set the mode with sova_set_session${hasPrompt ? ", then send the prompt with sova_send" : ""}.`,
         );
+    }
+    if (p.sandbox !== undefined) {
+      // Before its first prompt, like the mode: its first turn's tools and workers already run under it.
+      const want = p.sandbox as SandboxState;
+      const why = await setSandbox(s, want).then(() => null, (err) => (err instanceof Error ? err.message : String(err)));
+      if (why) throw new Refusal(`Created ${link(s)}, but its sandbox was not set (${why}), so ${hasPrompt ? "its first prompt was not sent" : "it has the default sandbox"}. Set it with sova_set_session${hasPrompt ? ", then send the prompt with sova_send" : ""}.`);
+      notes.push(`Sandbox: ${SANDBOX_LABEL[want]} (this session only).`);
     }
     if (p.subagent_profile !== undefined) {
       await host.open(s.path);
@@ -1095,7 +931,7 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
         const doc = typeof p.doc === "string" && p.doc.trim() ? p.doc.trim() : undefined;
         let body: string;
         try {
-          body = alignmentText(items.map((i) => i.raw), { ...(doc ? { doc } : {}), waits: !!s.align });
+          body = alignmentText(items.map(entryOf), { ...(doc ? { doc } : {}), waits: !!s.align });
         } catch (err) {
           throw new Refusal(err instanceof Error ? err.message : String(err));
         }
@@ -1245,6 +1081,7 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
         thinking: str("off | minimal | low | medium | high | xhigh | max"),
         mode: str("normal | delegate (see the mode extension)."),
         subagent_profile: str("Subagent profile id or off, from sova_list_subagent_profiles. This session only, before its first prompt; never saves a default."),
+        sandbox: str('Its sandbox, before its first prompt: "on" (its tools and its subagents confined), "subagents" (the default: only its subagents in its worktrees, write-only) or "off" (nothing confined). Below the default only in the turn the user\'s click on a card that said so opened. Not with host.', { enum: ["off", "subagents", "on"] }),
         minor_modes: { type: "array", items: { type: "string" }, description: 'Minor modes to have on from the first turn, e.g. ["spec"]; [] turns them all off. Omitted: the default.' },
         title: str("A title for the list, up to 80 characters."),
         group: str("Group id to add it to."),
@@ -1261,6 +1098,14 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
         }
         const onPeer = typeof p.host === "string" && p.host.trim() !== "";
         if (onPeer && typeof p.group === "string" && p.group) throw new Refusal("A group can't be given with host: groups belong to one host. No session was created.");
+        // A sandbox below the one it would start in needs the user's click (§app.overseer/tools); it
+        // refuses before anything is created or capped.
+        if (p.sandbox !== undefined) {
+          if (onPeer) throw new Refusal("A sandbox can't be given with host. No session was created.");
+          if (!host.sandbox) throw new Refusal("Sessions' sandboxes can't be set here. No session was created.");
+          const want = sandboxParam(p.sandbox);
+          if (lowers(want, host.sandboxDefault?.() ?? "subagents") && !host.confirmed()) throw new Refusal(SANDBOX_LOWER_CREATE_REFUSAL);
+        }
         // A profile (§chat/profiles): this host's, one the user let the Overseer start, and a One at
         // a time one only while it isn't live; each refuses before anything is created or capped.
         if (typeof p.profile === "string" && p.profile) {
@@ -1366,8 +1211,8 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
       name: "sova_set_session",
       label: "Set session",
       description:
-        "Rename a session, give it an alias (a short name the user chose, which every tool then takes in place of its id), or set its model, thinking level or mode (normal/delegate; minor modes such as spec). Model, thinking and mode need the session idle. Terminal-owned sessions are read-only.",
-      promptSnippet: "rename a session, alias it, or set its model, thinking or mode",
+        "Rename a session, give it an alias (a short name the user chose, which every tool then takes in place of its id), or set its model, thinking level, mode (normal/delegate; minor modes such as spec) or sandbox. Model, thinking and mode need the session idle; the sandbox does not. Lowering the sandbox (to off, or from on) runs only in the turn the user's click on a card listing the session opened. Terminal-owned sessions are read-only.",
+      promptSnippet: "rename a session, alias it, or set its model, thinking, mode or sandbox",
       parameters: obj(
         {
           session: str("Session id."),
@@ -1377,6 +1222,7 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
           thinking: str("off | minimal | low | medium | high | xhigh | max"),
           mode: str("normal | delegate"),
           subagent_profile: str("Subagent profile id or off. Changes only this chat's later work, not running workers or the default."),
+          sandbox: str('"on" (its tools and its subagents confined), "subagents" (only its subagents in its worktrees, write-only) or "off" (nothing confined). From its next tool call, and for subagents started or resumed afterwards. Lowering it needs the user\'s click on a card listing the session, in the turn that click opened.', { enum: ["off", "subagents", "on"] }),
           minor_modes: { type: "array", items: { type: "string" }, description: 'Minor modes to have on, e.g. ["spec"]; [] turns them all off.' },
         },
         ["session"],
@@ -1384,6 +1230,18 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
       execute: act("sova_set_session", async (p) => {
         const s = await resolveWritable(p.session);
         if (p.subagent_profile !== undefined) await checkSubagentProfile(p.subagent_profile);
+        // The sandbox is checked before anything changes: lowering it needs this turn to be the user's
+        // click on a card that lists this session (§app.overseer/tools), never an approval for later.
+        let sandbox: SandboxState | undefined;
+        if (p.sandbox !== undefined) {
+          sandbox = sandboxParam(p.sandbox);
+          if (!host.sandbox) throw new Refusal("Sessions' sandboxes can't be set here. Nothing was changed.");
+          await host.open(s.path);
+          const info = await host.sandbox(s.path);
+          if (!info) throw new Refusal(`${link(s)} has no sandbox extension, so its sandbox can't be set. Nothing was changed.`);
+          const now: SandboxState = info.state ?? (info.on ? "on" : "subagents");
+          if (lowers(sandbox, now) && !host.confirmed()?.some((i) => i.kind === "session" && i.id === s.id)) throw new Refusal(SANDBOX_LOWER_REFUSAL);
+        }
         const done: string[] = [];
         if (p.title !== undefined) {
           const t = typeof p.title === "string" && p.title.trim() ? p.title.trim() : null;
@@ -1422,7 +1280,11 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
           if (r.status !== 200) throw failed(r, "Switching subagent profile");
           done.push(`subagent profile ${p.subagent_profile} (running workers unchanged)`);
         }
-        if (!done.length) throw new Refusal("Nothing to change: give title, alias, model, thinking, mode, minor_modes or subagent_profile.");
+        if (sandbox !== undefined) {
+          await setSandbox(s, sandbox);
+          done.push(`sandbox ${SANDBOX_LABEL[sandbox]} (from its next tool call; running subagents keep theirs until resumed)`);
+        }
+        if (!done.length) throw new Refusal("Nothing to change: give title, alias, model, thinking, mode, minor_modes, subagent_profile or sandbox.");
         return { content: text(`${link(s)}: ${done.join(", ")}.`), details: { id: s.id, path: s.path } };
       }),
     },
@@ -1571,16 +1433,16 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
       name: "sova_navigate",
       label: "Navigate",
       description:
-        "Move the user's browser tab (only the tab that sent the current message; never on a brief or wake-up) to a session, a group workspace, the usage or agents page, the Overseer, a Settings tab, or an organization, project or person page. Validates the target and returns its link. Make it the LAST call of a turn: the view changes when it lands.",
+        "Move the user's browser tab (only the tab that sent the current message; never on a brief or wake-up) to a session, a group workspace, the usage or agents page, the Overseer, a Settings tab, the Organizations page, or an organization, project or person page. Validates the target and returns its link. Make it the LAST call of a turn: the view changes when it lands.",
       promptSnippet: "open a session, workspace, page or Settings tab in the user's tab (last call)",
       parameters: obj({
         session: str("Session id to open (alone, or focused inside `group`)."),
         group: str("Group id: open its workspace."),
-        page: str("usage | agents | overseer | settings", { enum: ["usage", "agents", "overseer", "settings"] }),
+        page: str("usage | agents | overseer | settings | orgs", { enum: ["usage", "agents", "overseer", "settings", "orgs"] }),
         team: str("With page agents: a team id."),
         settings_tab: str(`With page settings: ${SETTINGS_TABS.join(" | ")}`, { enum: [...SETTINGS_TABS] }),
-        org: str("An organization, by id or exact name: open its page (or, with project or person, theirs)."),
-        project: str("With org: a project, by id or exact name."),
+        org: str("An organization, by id or exact name: open its page (or, with person, theirs; with project, it narrows the name)."),
+        project: str("A registered project, by id or exact name: open its page."),
         person: str("With org: a roster person, by id or exact name."),
       }),
       execute: act("sova_navigate", async (p) => {
@@ -1627,6 +1489,8 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
         todo: (ref) => readTodos().todos.find((t) => t.id === ref) ?? null,
         person: orgConfirmLookup.person,
         project: orgConfirmLookup.project,
+        org: orgConfirmLookup.org,
+        folder: orgConfirmLookup.folder,
       },
       link: async (target) => (await navTarget(target)).href,
       wrap: (run) => act("sova_card", run, { unattended: true }),
@@ -1646,7 +1510,17 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
     ...todoTools({ act, read, resolve, refusal: (m) => new Refusal(m), obj, str }),
     ...linkTools({ act, read, links: host.links, take: () => limits.take("link", host.caps()), refusal: (m) => new Refusal(m), obj, str }),
     // Project instances (§app.project-services/callers): reads free, acts through `act` (turns the user started).
-    overseerVerbsTool(projectEngine, () => host.overseerId(), (exec) => act("sova_project_verbs", (params, toolCallId, call) => exec(toolCallId, params, call.signal, undefined, call.ctx)) as LooseExec),
+    overseerVerbsTool(
+      projectEngine,
+      () => host.overseerId(),
+      (exec) => act("sova_project_verbs", (params, toolCallId, call) => exec(toolCallId, params, call.signal, undefined, call.ctx)) as LooseExec,
+      // onboard: the Project verbs playbook on a registered project, for the user (§app.project-runtime/onboard)
+      async (why, params) => {
+        const { projectByPath, startOnboard, onboardAnswer } = await import("./projects/runtime");
+        const pid = await projectByPath(typeof params.project === "string" ? params.project : "");
+        return onboardAnswer(await startOnboard(pid, why ? { why } : {}, operatorEnvelopeOf(pid, { kind: "operator", via: "overseer", overseerId: host.overseerId() })));
+      },
+    ),
     ...orgTools({
       act,
       read,
@@ -1664,6 +1538,7 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
       confirmed: () => host.confirmed(),
       overseerId: () => host.overseerId(),
       sessionRef,
+      session: (ref) => lookup(ref),
       obj,
       str,
       int,

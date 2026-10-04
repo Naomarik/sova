@@ -2,10 +2,12 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   closureOf,
+  DEFINITION_KEYS,
   DefinitionError,
   ERROR_CODES,
   exitOf,
   httpStatusOf,
+  ISOLATION_METHODS,
   isVerbResult,
   ordered,
   parseDefinition,
@@ -60,8 +62,9 @@ test("a full definition parses with defaults filled in", () => {
     },
     hooks: { probe: { run: ["./probe"] } },
     share: { allow: false },
-    deploy: { targets: {} },
   });
+  assert.deepEqual(def.share, { endpoints: [], allow: false });
+  assert.equal(def.deploy, undefined);
   assert.equal(def.slots.cap, 2);
   assert.equal(def.setup[0]!.timeout, 120);
   const server = def.services.find((s) => s.name === "server")!;
@@ -116,8 +119,8 @@ test("templates render every known variable and $$ as a literal $", () => {
 
 test("every error code has one exit class and one status", () => {
   const want: Record<number, string[]> = {
-    1: ["not-ready", "start-failed", "hook-failed"],
-    2: ["not-approved", "not-conformant", "cap-reached", "port-held", "dirty-worktree", "unsupported", "refused-slot0", "share-denied", "forbidden", "needs-confirm"],
+    1: ["not-ready", "start-failed", "hook-failed", "tests-failed", "deploy-failed", "verify-failed"],
+    2: ["not-approved", "not-conformant", "cap-reached", "port-held", "dirty-worktree", "unsupported", "refused-slot0", "share-denied", "forbidden", "needs-confirm", "deploy-refused", "needs-override"],
     3: ["invalid-request", "invalid-definition", "not-found"],
     4: ["busy"],
   };
@@ -164,4 +167,145 @@ test("ordered results keep one key order and isVerbResult checks it", () => {
   assert.ok(isVerbResult(failed));
   assert.ok(!isVerbResult({ ...failed, ok: true }), "an error with ok true is not the shape");
   assert.ok(!isVerbResult(ordered({ ...base, error: { code: "nope" as never, message: "x" }, ok: false })), "codes are a closed list");
+});
+
+test("test, start and about: parsed strictly, selectors can never read as flags", () => {
+  const svc = { cmd: ["node", "s.js"], ports: { nrepl: { base: 7852, stride: 10 } } };
+  const def = parse({
+    version: 1,
+    services: { app: { cmd: ["node", "a.js"] }, repl: { ...svc, start: "on-demand", about: "Test nREPL: clj-nrepl-eval -p ${ports.repl.nrepl}" } },
+    test: { run: [".sova/bin/test", "${ports.repl.nrepl}"], requires: ["repl"], smoke: ["motorsaif.core-test", "src/a.test.ts", "ns/*:fast"] },
+  });
+  assert.equal(def.services.find((s) => s.name === "app")!.start, "up", "start defaults to up");
+  assert.equal(def.services.find((s) => s.name === "repl")!.start, "on-demand");
+  assert.deepEqual(def.test, { run: [".sova/bin/test", "${ports.repl.nrepl}"], requires: ["repl"], timeout: 600, smoke: ["motorsaif.core-test", "src/a.test.ts", "ns/*:fast"] });
+  assert.equal(parse({ version: 1, services: { app: svc }, test: { run: ["t"], smoke: ["a"], timeout: 1800 } }).test!.timeout, 1800);
+  assert.equal(parse({ version: 1, services: { app: svc } }).test, undefined);
+  const base = { version: 1, services: { app: svc } };
+  assert.equal(refusedAt({ ...base, test: { run: ["t"], smoke: ["a"], timeout: 1801 } }), "$.test.timeout");
+  assert.equal(refusedAt({ ...base, test: { run: ["t"], smoke: [] } }), "$.test.smoke");
+  assert.equal(refusedAt({ ...base, test: { run: ["t"], smoke: ["-x"] } }), "$.test.smoke", "a flag is no selector");
+  assert.equal(refusedAt({ ...base, test: { run: ["t"], smoke: ["a b"] } }), "$.test.smoke");
+  assert.equal(refusedAt({ ...base, test: { run: ["t"], smoke: Array.from({ length: 51 }, (_, i) => `t${i}`) } }), "$.test.smoke");
+  assert.equal(refusedAt({ ...base, test: { run: ["t"], smoke: ["a"], requires: ["nope"] } }), "$.test.requires");
+  assert.equal(refusedAt({ ...base, test: { run: "make test", smoke: ["a"] } }), "$.test.run", "never a shell string");
+  assert.equal(refusedAt({ ...base, test: { run: ["t", "${ports.nope.x}"], smoke: ["a"] } }), "$.test.run[1]");
+  assert.equal(refusedAt({ ...base, test: { run: ["t"], smoke: ["a"], extra: 1 } }), "$.test.extra");
+  assert.equal(refusedAt({ version: 1, services: { app: { ...svc, start: "later" } } }), "$.services.app.start");
+  assert.equal(refusedAt({ version: 1, services: { app: { ...svc, scope: "shared", ports: { p: { fixed: 7000 } }, start: "on-demand" } } }), "$.services.app.start");
+  assert.equal(refusedAt({ version: 1, host: ["TOKEN"], services: { app: { ...svc, about: "token ${host.TOKEN}" } } }), "$.services.app.about", "the note is shown to sessions");
+  assert.equal(refusedAt({ version: 1, services: { app: { ...svc, about: "x".repeat(201) } } }), "$.services.app.about");
+  assert.equal(refusedAt({ version: 1, services: { app: { ...svc, about: "port ${ports.app.nope}" } } }), "$.services.app.about");
+});
+
+test("a tests block goes between conform and error", () => {
+  const tests = { select: ["a"], pass: false, passed: 1, failed: 1, errors: 0, skipped: 0, failures: [{ name: "a" }], exit: 1, timedOut: false, ms: 5, peakBytes: null };
+  const r = ordered({ v: 1, verb: "test", project: null, instance: null, slot: null, generation: null, checkout: null, branch: null, ok: false, changed: false, state: "running", steps: [], services: [], data: [], links: [], error: { code: "tests-failed", message: "1 of 2 failed" }, tests, lines: [], defHash: null, approved: true, at: "t" });
+  assert.deepEqual(Object.keys(r).slice(-6), ["lines", "tests", "error", "defHash", "approved", "at"]);
+  assert.ok(isVerbResult(r));
+  const { tests: _t, error, defHash, approved, at, ...head } = r;
+  const swapped = { ...head, error, tests, defHash, approved, at };
+  assert.deepEqual(Object.keys(swapped).slice(-5), ["error", "tests", "defHash", "approved", "at"]);
+  assert.ok(!isVerbResult(swapped), "tests after error is not the shape");
+});
+
+test("sources and isolation: parsed strictly, kept as written, and the key lists name every accepted key", () => {
+  const def = parse({
+    version: 1,
+    sources: ["bb.edn", ".mise.toml", "infra/compose.yml"],
+    services: { web: { cmd: ["bb", "clj"], ports: { http: { base: 4000, stride: 10 } }, isolation: { method: "ports", why: "Its own port per slot; its data is cloned from main." } } },
+  });
+  assert.deepEqual(def.sources, ["bb.edn", ".mise.toml", "infra/compose.yml"], "dot-files allowed");
+  assert.deepEqual(def.services[0]!.isolation, { method: "ports", why: "Its own port per slot; its data is cloned from main." });
+  assert.equal(parse({ version: 1, services: { a: { cmd: ["x"] } } }).sources, undefined);
+  const svc = { cmd: ["x"] };
+  assert.equal(refusedAt({ version: 1, sources: ["../up"], services: { a: svc } }), "$.sources[0]");
+  assert.equal(refusedAt({ version: 1, sources: ["/etc/passwd"], services: { a: svc } }), "$.sources[0]");
+  assert.equal(refusedAt({ version: 1, sources: ["a", "a"], services: { a: svc } }), "$.sources");
+  assert.equal(refusedAt({ version: 1, sources: Array.from({ length: 51 }, (_, i) => `f${i}`), services: { a: svc } }), "$.sources");
+  assert.equal(refusedAt({ version: 1, sources: "bb.edn", services: { a: svc } }), "$.sources");
+  assert.equal(refusedAt({ version: 1, services: { a: { ...svc, isolation: { method: "vm", why: "x" } } } }), "$.services.a.isolation.method");
+  assert.equal(refusedAt({ version: 1, services: { a: { ...svc, isolation: { method: "ports" } } } }), "$.services.a.isolation.why");
+  assert.equal(refusedAt({ version: 1, services: { a: { ...svc, isolation: { method: "ports", why: "x".repeat(201) } } } }), "$.services.a.isolation.why");
+  assert.equal(refusedAt({ version: 1, services: { a: { ...svc, isolation: { method: "ports", why: "x", how: 1 } } } }), "$.services.a.isolation.how");
+  for (const m of ISOLATION_METHODS) assert.equal(parse({ version: 1, services: { a: { ...svc, isolation: { method: m, why: "x" } } } }).services[0]!.isolation!.method, m);
+  // The lists the playbook's reference is pinned to are the ones the parse enforces.
+  assert.ok(DEFINITION_KEYS.top.includes("sources") && DEFINITION_KEYS.service.includes("isolation"));
+  const known = (o: object) => {
+    try {
+      parse(o);
+    } catch (err) {
+      assert.doesNotMatch(String(err), /unknown key/, JSON.stringify(o));
+    }
+  };
+  for (const k of DEFINITION_KEYS.top) known({ version: 1, services: { a: svc }, [k]: 12 });
+  for (const k of DEFINITION_KEYS.service) known({ version: 1, services: { a: { ...svc, [k]: 12 } } });
+  assert.equal(refusedAt({ version: 1, services: { a: svc }, nope: 1 }), "$.nope");
+});
+
+test("a data resource may be sensitive: true or false, kept only when true", () => {
+  const svc = { cmd: ["x"] };
+  const def = parse({ version: 1, services: { a: svc }, data: { db: { kind: "dir", from: "${main}/db", sensitive: true }, cache: { kind: "dir", sensitive: false }, prod: { kind: "hook", provision: ["p"], deprovision: ["d"], sensitive: true } } });
+  assert.deepEqual(def.data.map((d) => [d.name, d.sensitive]), [["db", true], ["cache", undefined], ["prod", true]]);
+  assert.equal(refusedAt({ version: 1, services: { a: svc }, data: { db: { kind: "dir", sensitive: "yes" } } }), "$.data.db.sensitive");
+  assert.ok(DEFINITION_KEYS.data.every((keys) => (keys as readonly string[]).includes("sensitive")));
+});
+
+test("adopt: slot 0 of one cmd checkout service is a systemd unit Sova did not start, on fixed ports no slot allocates", () => {
+  const server = { cmd: ["pnpm", "run", "dev:hermetic"], ports: { http: { base: 4810, stride: 10 } }, adopt: { unit: "sova-runtime.service", ports: { http: 4800 } } };
+  const def = parse({ version: 1, services: { server } });
+  assert.deepEqual(def.services[0]!.adopt, { unit: "sova-runtime.service", ports: { http: 4800 } });
+  assert.deepEqual(portsFor(def, 0), { server: { http: 4800 } }, "slot 0 is the unit's port");
+  assert.deepEqual(portsFor(def, 2), { server: { http: 4830 } }, "every other slot allocates as usual");
+  const at = (adopt: unknown, extra: object = {}) => refusedAt({ version: 1, services: { server: { ...server, ...extra, adopt } } });
+  assert.equal(at({ unit: "sova-runtime", ports: { http: 4800 } }), "$.services.server.adopt.unit");
+  assert.equal(at({ unit: "sova-svc-abc-x.service", ports: { http: 4800 } }), "$.services.server.adopt.unit");
+  assert.equal(at({ unit: "a b.service", ports: { http: 4800 } }), "$.services.server.adopt.unit");
+  assert.equal(at({ unit: "x.service", ports: {} }), "$.services.server.adopt.ports");
+  assert.equal(at({ unit: "x.service", ports: { http: 4800, admin: 1 } }), "$.services.server.adopt.ports.admin");
+  assert.equal(at({ unit: "x.service", ports: { http: 4820 } }), "$.services.server.adopt.ports.http", "slot 1's port");
+  assert.equal(at({ unit: "x.service", ports: { http: 4800 }, group: 1 }), "$.services.server.adopt.group");
+  assert.equal(at({ unit: "x.service", ports: { http: 4800 } }, { scope: "shared", ports: { http: { fixed: 4810 } } }), "$.services.server.adopt");
+  assert.equal(at({ unit: "x.service", ports: { http: 4800 } }, { container: { name: "c" } }), "$.services.server.adopt");
+  assert.equal(refusedAt({ version: 1, services: { server, two: { cmd: ["x"], adopt: { unit: "y.service", ports: {} } } } }), "$.services.two.adopt");
+  assert.equal(refusedAt({ version: 1, services: { site: { static: ".", ports: { http: { base: 9000 } }, adopt: { unit: "y.service", ports: { http: 9100 } } } } }), "$.services.site.adopt");
+});
+
+test('onMerge: "reload" on a checkout cmd service only, kept as written and inside the hash; absent hashes as before', async () => {
+  const { defHashOf } = await import("../server/project-services/trust");
+  const web = { cmd: ["node", "web.js"], ports: { http: { base: 5100 } } };
+  const plain = parse({ version: 1, services: { web } });
+  const opted = parse({ version: 1, services: { web: { ...web, onMerge: "reload" } } });
+  assert.equal(plain.services[0]!.onMerge, undefined);
+  assert.equal(opted.services[0]!.onMerge, "reload");
+  assert.notEqual(defHashOf(opted), defHashOf(plain), "opting in needs approval again");
+  assert.equal(refusedAt({ version: 1, services: { web: { ...web, onMerge: "restart" } } }), "$.services.web.onMerge");
+  assert.equal(refusedAt({ version: 1, services: { web: { ...web, onMerge: true } } }), "$.services.web.onMerge");
+  assert.equal(refusedAt({ version: 1, services: { site: { static: "public", ports: { http: { base: 5200 } }, onMerge: "reload" } } }), "$.services.site.onMerge");
+  assert.equal(refusedAt({ version: 1, services: { db: { cmd: ["db"], scope: "shared", ports: { tcp: { fixed: 5432 } }, onMerge: "reload" } } }), "$.services.db.onMerge");
+});
+
+test("open: a checkout service's declared port and a path from / (default /), kept as written, outside the hash", async () => {
+  const { defHashOf } = await import("../server/project-services/trust");
+  const services = {
+    web: { cmd: ["node", "web.js"], ports: { http: { base: 5100 }, nrepl: { base: 5150 } } },
+    cache: { cmd: ["redis-server"], scope: "shared", ports: { port: { fixed: 6390 } } },
+  };
+  const plain = parse({ version: 1, services });
+  assert.equal(plain.open, undefined);
+  assert.deepEqual(parse({ version: 1, services, open: { endpoint: "web.http" } }).open, { endpoint: "web.http", path: "/" });
+  const deep = parse({ version: 1, services, open: { endpoint: "web.http", path: "/app?tab=home" } });
+  assert.deepEqual(deep.open, { endpoint: "web.http", path: "/app?tab=home" });
+  // It exposes nothing: declaring, moving or removing the entry needs no new approval.
+  assert.equal(defHashOf(deep), defHashOf(plain));
+  assert.equal(refusedAt({ version: 1, services, open: "web.http" }), "$.open");
+  assert.equal(refusedAt({ version: 1, services, open: {} }), "$.open.endpoint");
+  assert.equal(refusedAt({ version: 1, services, open: { endpoint: "web" } }), "$.open.endpoint");
+  assert.equal(refusedAt({ version: 1, services, open: { endpoint: "web.https" } }), "$.open.endpoint");
+  assert.equal(refusedAt({ version: 1, services, open: { endpoint: "api.http" } }), "$.open.endpoint");
+  assert.equal(refusedAt({ version: 1, services, open: { endpoint: "cache.port" } }), "$.open.endpoint", "a shared service is no copy's own");
+  for (const path of ["home", "", "/a b", "/a\\b", "/x\n", 7, `/${"x".repeat(200)}`])
+    assert.equal(refusedAt({ version: 1, services, open: { endpoint: "web.http", path } }), "$.open.path", JSON.stringify(path));
+  assert.equal(refusedAt({ version: 1, services, open: { endpoint: "web.http", url: "/" } }), "$.open.url");
+  assert.ok(DEFINITION_KEYS.top.includes("open"));
 });

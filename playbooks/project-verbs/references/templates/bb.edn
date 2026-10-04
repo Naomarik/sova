@@ -1,0 +1,2 @@
+;; test.bb needs no dependencies: this keeps bb from resolving the project's bb.edn :deps.
+{}

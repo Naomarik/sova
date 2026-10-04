@@ -4,11 +4,15 @@
 //
 // Usage: node scripts/perf-load/run.mjs --tree <checkout> --port <n> [--rate 1] [--window 30]
 //                                       [--sessions 480] [--live 360] [--open 6] [--big 2] [--overseer-big 0]
-//                                       [--skip-build] [--keep]
+//                                       [--runtime bun|node] [--skip-build] [--keep]
 //
 // The harness lives in THIS worktree; --tree may be any checkout (this worktree, or a baseline
 // archive). Frontend assets come from <tree>/dist (built on demand with `pnpm run build`); the
 // server is <tree>'s own. Everything is written under <tree>/.agent and ports 4840-4859 only.
+// The server runs on Bun (`bun server/index.ts` in <tree>; $SOVA_BUN, else bun on PATH), or on
+// Node with --runtime node or SOVA_RUNTIME=node (`node --import tsx server/index.ts`). The harness
+// starts it itself rather than through <tree>'s launcher, so a baseline tree runs on the same
+// runtime whatever its own launcher defaulted to.
 //
 // Exit code: 1 when the probe FAILs, else 0.
 
@@ -38,6 +42,11 @@ const bigCount = args.get("big") ?? "2";
 const overseerBig = args.get("overseer-big") ?? "0";
 const skipBuild = has("skip-build");
 const keep = has("keep");
+const runtime = args.get("runtime") ?? (process.env.SOVA_RUNTIME === "node" ? "node" : "bun");
+if (runtime !== "bun" && runtime !== "node") {
+  console.error("[run] --runtime must be bun or node");
+  process.exit(2);
+}
 const log = (msg) => console.error(`[run] ${msg}`);
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -141,8 +150,9 @@ try {
     if (built !== 0) throw new Error("pnpm run build failed");
   }
 
-  log("starting server");
-  server = spawnLogged(process.execPath, ["--import", "tsx", "server/index.ts"], {
+  log(`starting server (${runtime})`);
+  const [serverCmd, ...serverArgs] = runtime === "node" ? [process.execPath, "--import", "tsx", "server/index.ts"] : [process.env.SOVA_BUN || "bun", "server/index.ts"];
+  server = spawnLogged(serverCmd, serverArgs, {
     cwd: tree,
     env: { ...process.env, PORT: String(port), PI_CODING_AGENT_DIR: agentDir, SOVA_PRICES_FETCH: "off", SOVA_USAGE_POLL: "off" },
   }, serverLog);

@@ -26,6 +26,7 @@
  */
 
 import { type ChildProcess, spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -34,6 +35,8 @@ import { fileURLToPath } from "node:url";
 import type { Worker, SteerMode } from "./contracts.ts";
 import { summarizeFileChange } from "./codefold.ts";
 import { WORKER_TOOLS_ENV } from "./worker-mark.ts";
+import { lowerPriority } from "./priority.ts";
+import { LLM_STATUS_KEY, parseCounts, setChildCounts, type LlmChildReport } from "../llm-inflight/tracker.ts";
 
 /** Pi's built-in tool names. `--tools` and `--exclude-tools` also govern extension tools, so restriction must be phrased per case. */
 export const BUILTIN_TOOLS: readonly string[] = ["read", "bash", "powershell", "edit", "write", "grep", "find", "ls"];
@@ -391,6 +394,12 @@ export class SubagentRunner implements Worker {
 	private killInitiated = false;
 	private abortSent = false;
 	private closed = false;
+	/** This child's key among the counts this process sums (llm-inflight tracker). */
+	private readonly llmKey = `pi-worker:${randomUUID()}`;
+	/** Detached from its host: what it reports is no longer counted here. */
+	private llmDetached = false;
+	/** The worker's last counts as reported (unknown, so degraded, until its first report). */
+	private llmLast: LlmChildReport = { active: 0, approximate: 0, claudeTurns: 0, degraded: true };
 	private leaderExited = false;
 	private pipeDrainTimer: ReturnType<typeof setTimeout> | null = null;
 	private closedResolve!: () => void;
@@ -529,6 +538,8 @@ export class SubagentRunner implements Worker {
 		this.proc = proc;
 		this.pid = typeof proc.pid === "number" ? proc.pid : undefined;
 		this.processAlive = true;
+		// Below the hosting server (priority.ts). A host's transport has no pid: the host was lowered at its spawn.
+		lowerPriority(this.pid);
 
 		// An async stdin write error while the child is still expected to be
 		// healthy means we can never command it again — fail closed and tear it
@@ -562,6 +573,14 @@ export class SubagentRunner implements Worker {
 			this.touch();
 		});
 		proc.on("close", (code, signal) => this.finalizeExit(code ?? null, signal ?? null));
+		// Until its first report the worker's calls are unknown, not 0.
+		setChildCounts(this.llmKey, this.llmLast);
+		// A hosted worker left running for the next manager: its calls are no longer this process's,
+		// nor its tokens (it goes on reporting them itself), so they are not kept here either.
+		proc.on("detached", () => {
+			this.llmDetached = true;
+			setChildCounts(this.llmKey, undefined, { retire: false });
+		});
 
 		if (this.adopted) {
 			// The earlier manager already submitted the task and got it accepted;
@@ -734,6 +753,7 @@ export class SubagentRunner implements Worker {
 	private finalizeExit(code: number | null, signal: string | null): void {
 		if (this.closed) return;
 		this.closed = true;
+		setChildCounts(this.llmKey, undefined);
 		if (this.pipeDrainTimer) clearTimeout(this.pipeDrainTimer);
 		this.pipeDrainTimer = null;
 		this.exitCode = code;
@@ -865,6 +885,17 @@ export class SubagentRunner implements Worker {
 				clearTimeout(entry.timer);
 				entry.resolve(event);
 			}
+			return;
+		}
+
+		// The worker's own LLM calls in flight (llm-inflight): its latest report replaces the last,
+		// so a replayed log ends at its current count. Counted in this process until the child exits.
+		if (event?.type === "extension_ui_request" && event.method === "setStatus" && event.statusKey === LLM_STATUS_KEY) {
+			if (this.closed || this.llmDetached) return;
+			// An unreadable report says nothing new: keep the last counts, now unknown.
+			const counts = parseCounts(event.statusText);
+			this.llmLast = counts ?? { ...this.llmLast, degraded: true };
+			setChildCounts(this.llmKey, this.llmLast);
 			return;
 		}
 

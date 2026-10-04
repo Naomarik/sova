@@ -14,7 +14,6 @@ const root = mkdtempSync(join(tmpdir(), "po-settings-"));
 after(() => rmSync(root, { recursive: true, force: true }));
 
 const pathsIn = (dir: string): ProjectOverseerPaths => ({
-  orgId: "org_x",
   projectId: "prj_x",
   dir,
   settings: join(dir, "overseer.json"),

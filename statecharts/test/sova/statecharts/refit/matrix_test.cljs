@@ -12,14 +12,14 @@
     [sova.statecharts.rules.levels :as lv]
     [sova.statecharts.engine.matrix :as matrix]))
 
-;; ---- envelopes (design §10: operator, attended, L0–L3, paused, empty roster, archived, capped at
+;; ---- envelopes (design §10: operator, attended, L0–L3, paused, a ceiling (an empty roster), archived, capped at
 ;; once, capped day, capped message, via-overseer with and without a card) ---------------------------
 
 (def plenty {:gather {:used 0 :max 6} :promote {:used 0 :max 60} :create {:used 0 :max 4} :prompt {:used 0 :max 12}})
 (def spent {:gather {:used 6 :max 6} :promote {:used 60 :max 60} :create {:used 4 :max 4} :prompt {:used 12 :max 12}})
 (def room {:gatherings-open 0 :gatherings-cap 5 :coding-running 0 :coding-cap 2})
 (def full {:gatherings-open 5 :gatherings-cap 5 :coding-running 2 :coding-cap 2})
-(def base {:roster-active true :paused false :archived false :allowance plenty :at-once room :ledger "day" :hold-ms 0})
+(def base {:paused false :archived false :allowance plenty :at-once room :ledger "day" :hold-ms 0})
 
 (def envelopes
   {"operator"      {:by "operator"}
@@ -30,7 +30,8 @@
    "L3"            (merge base {:by "overseer" :autonomy "L3"})
    "L3-held"       (merge base {:by "overseer" :autonomy "L3" :hold-ms 600000})
    "paused"        (merge base {:by "overseer" :autonomy "L3" :paused true})
-   "empty-roster"  (merge base {:by "overseer" :autonomy "L3" :roster-active false})
+   "ceiling-L0"    (merge base {:by "overseer" :autonomy "L3" :ceiling {:autonomy "L0" :reason "The roster has no active people yet, so the overseer only proposes (L0)."}})
+   "ceiling-L2"    (merge base {:by "overseer" :autonomy "L3" :ceiling {:autonomy "L2" :reason "Capped."}})
    "archived"      (merge base {:by "overseer" :autonomy "L3" :archived true :project-name "Site"})
    "capped-once"   (merge base {:by "overseer" :autonomy "L3" :at-once full})
    "capped-day"    (merge base {:by "overseer" :autonomy "L3" :allowance spent})
@@ -68,8 +69,10 @@
      "^Only an active person on the roster can be a project's main stakeholder\\.$"
      "^This organization has no owner, so there is no page to post to\\.$" "^Write the update first\\.$"
      "^An update is at most 2,000 characters\\.$" "^An update was posted .*: at most one a day\\.$"
-     "^Nothing new since the last update: .*" "^Without a gap, a coding session starts only in a turn the operator started: .*"
+     "^Nothing new since the last update: .*" "^A coding session starts only in a turn the operator started: ask with sova_card\\.$"
      "^Not started: .*\\.$"
+     ;; placement (outreach)
+     "^Send a link, a note, or both\\.$" "^A note is at most 500 characters\\.$" "^person must be a roster person's id$"
      ;; baton
      "^This (session|conversation) is (already )?(open|done|closed)\\.$" "^They already hold the baton\\.$"
      "^This conversation has reached its message limit\\. .*" "^Not handed over: .*" "^Give the question you need them to answer\\.$"
@@ -99,6 +102,9 @@
      "^It runs in the project root.*" "^The session is working\\.$" "^Its workers are running\\.$" "^On another host: its worktree is there\\.$"
      "^Its worktree was (already )?removed.*" "^\".*\" is open in a terminal, so it is read-only\\.$" "^text must not be blank\\.$"
      "^A merge is running\\.$" "^Name the commit it was merged by\\.$"
+     "^Only the operator approves a definition\\.$" "^There is no definition waiting for approval\\.$"
+     "^The definition changed since it was shown: look again\\.$"
+     "^The project's software is registered and current: the playbook has nothing to do\\.$"
      "^Say what it shows and to whom \\(purpose\\): one line\\.$" "^The purpose is one line of at most 200 characters\\.$"]))
 
 (defn in-catalogue? [s] (boolean (some #(re-matches % s) catalogue)))
@@ -107,19 +113,23 @@
 
 ;; The world (engine matrix `:world`): per statechart, exactly the existing sessions of its fixture it sends
 ;; to, watches or drives (what it spawns is real, not absorbed). Anything else, a malformed id
-;; included, fails its cell.
+;; included, fails its cell. The project-layer worlds (project, watch, build) are solo: no organization,
+;; no person, nothing of the org layer (the seam: they never address it); the project's holds one build
+;; an item started.
 (def worlds
   {"person"     #{"org/o1"}
-   "org"        #{"person/o1/p1"}
+   "org"        #{"person/o1/p1" "project/pr9"}
    "residence"  #{"org/o1"}
-   "project"    #{"person/o1/p1"}
-   "watch"      #{"project/o1/pr1"}
-   "baton"      #{"person/o1/p1" "person/o1/p2" "project/o1/pr1" "reconciler/o1/pr1" "watch/o1/pr1"}
-   "decision"   #{"project/o1/pr1" "reconciler/o1/pr1"}
-   "reconciler" #{"watch/o1/pr1"}
-   "conflict"   #{"baton/o1/s9" "person/o1/p1" "watch/o1/pr1"}
-   "item"       #{"baton/o1/b1" "decision/o1/pr1/d1" "item/o1/pr1/g_2" "person/o1/p1" "project/o1/pr1" "watch/o1/pr1"}
-   "build"      #{"project/o1/pr1" "watch/o1/pr1"}})
+   "project"    #{"build/pr1/c7"}
+   "placement"  #{"person/o1/p1" "project/pr1" "watch/pr1"}
+   "watch"      #{"project/pr1"}
+   "baton"      #{"person/o1/p1" "person/o1/p2" "placement/o1/pr1" "reconciler/o1/pr1" "watch/pr1"}
+   "decision"   #{"placement/o1/pr1" "reconciler/o1/pr1"}
+   "reconciler" #{"watch/pr1"}
+   "conflict"   #{"baton/o1/s9" "person/o1/p1" "watch/pr1"}
+   "item"       #{"baton/o1/b1" "decision/o1/pr1/d1" "item/o1/pr1/g_2" "person/o1/p1" "placement/o1/pr1" "project/pr1" "watch/pr1"}
+   "build"      #{"watch/pr1"}
+   "runtime"    #{"watch/pr1" "build/pr1/o1"}})
 
 (defn run [statechart sid spec]
   (matrix/run (merge {:statecharts registry/statecharts :statechart statechart :sid sid :level-check lv/level-check
@@ -163,7 +173,7 @@
        :drive [(moved "person" "person/o1/p1" [:person :left] {:name "Ana"})]
        :acts [[:owner/set {:person-id "p1" :target {:status "active"}}] [:owner/set {:person-id nil}] [:owner/set {:person-id "p2" :target {:status "left"}}]
               [:org/rename {:name "New"}] [:org/rename {:name ""}]
-              [:org/hours {:tz "UTC" :hours {:days [1 2 3 4 5] :from "09:00" :to "17:00"}}] [:org/hours {:tz "" :hours nil}] [:org/hours {:tz "Mars/Olympus"}] [:project/add {:project-id "pr9" :name "P" :root "/r"}]
+              [:org/hours {:tz "UTC" :hours {:days [1 2 3 4 5] :from "09:00" :to "17:00"}}] [:org/hours {:tz "" :hours nil}] [:org/hours {:tz "Mars/Olympus"}] [:project/place {:project-id "pr9" :placed-via "born"}]
               [:person/add {:person-id "p9" :person {:name "Cy"} :names-taken []}] [:person/add {:person-id "p9" :person {:name "Ana"} :names-taken ["ana"]}]]})))
 
 (deftest residence-matrix
@@ -176,27 +186,45 @@
        :acts [[:attach/confirm {}] [:org/detach {}] [:commit/now {}]]})))
 
 (deftest project-matrix
+  ;; a solo world: a project in no organization (its world holds no session at all)
   (clean! "project"
-    (run "project" "project/o1/pr1"
-      {:starts [{:org-id "o1" :id "pr1" :name "Site"}]
-       :drive [[:milestone/noted {:kind "baton-done"}] [:fire (* 24 3600000)]
-               (moved "person" "person/o1/p1" [:person :left] {:name "Ana"})]
-       :acts [[:project/archive {}] [:project/archive {:blockers {:gatherings ["A"]}}] [:project/unarchive {}]
+    (run "project" "project/pr1"
+      {:starts [{:id "pr1" :name "Site" :root "/r" :origin "folder"}]
+       :drive [[:started/noted {:sid "build/pr1/c7" :kind "coding"}]
+               (moved "build" "build/pr1/c7" [:build :merged :turn-idle] {:merged {:at 5 :commit "c"}})]
+       :acts [[:project/archive {}] [:project/archive {:blockers {:phrases ["1 gathering session open (A)"] :coding ["B"]}}] [:project/unarchive {}]
+              [:project/edit {:name "Shop" :root "/s"}]
               [:overseer/start {:conversation-id "c1"}] [:overseer/clear {:conversation-id "c2"}]
-              [:stakeholder/set {:person-id "p1" :target {:status "active"}}] [:stakeholder/set {:person-id nil}]
+              [:build/start {:session-id "c1" :title "T" :prompt "P"}]
+              [:session/prompt {:session-id "c9" :title "T" :text "go"}] [:session/prompt {:session-id "c9" :title "T" :text " "}] [:session/prompt {:session-id "c9" :title "T" :text "go" :live true}]
+              [:preview/start {:coding-session "c1" :port 5173 :purpose "The shop for Ana"}] [:preview/start {:coding-session "c1" :folder "dist" :purpose " "}]
+              [:services/run {:verb "up"}] [:services/down {:verb "down"}]
+              [:services/share {:verb "share" :instance "in_1" :endpoint "web.3000" :branch "sova/b"}]
+              [:verbs/onboard {:session-id "o1" :title "Project verbs" :prompt "Run it" :why "w"}]
+              [:verbs/onboard {:session-id "o2" :prompt "Run it" :runtime-standing "registered"}]]})))
+
+(deftest placement-matrix
+  (clean! "placement"
+    (run "placement" "placement/o1/pr1"
+      {:starts [{:org-id "o1" :project-id "pr1" :via "born" :placed-at 1}]
+       :drive [[:milestone/noted {:kind "baton-done"}] [:fire (* 24 3600000)]
+               (moved "person" "person/o1/p1" [:person :left] {:name "Ana"})
+               (moved "project" "project/pr1" [:project :active] {:name "Site" :last-merged-at 7})
+               (moved "project" "project/pr1" [:project :archived] {:name "Site"})]
+       :acts [[:stakeholder/set {:person-id "p1" :target {:status "active"}}] [:stakeholder/set {:person-id nil}]
               [:owner-update/post {:text "Shipped." :owner-active true}] [:owner-update/post {:text "" :owner-active true}]
+              [:outreach/send {:target {:id "p1" :name "Ana" :status "active"} :note "Hi"}] [:outreach/send {:target {:id "p1" :name "Ana" :status "active"}}]
               [:gap/file {:gap-id "g_1" :idea-id "§gap/x"}]
               [:baton/start {:session-id "s1" :to "p1" :public-title "T" :goal "G"}]
-              [:build/start {:session-id "c1" :title "T" :prompt "P"}] [:spec/freeze {:frozen true}]
-              [:session/prompt {:session-id "c9" :title "T" :text "go"}] [:session/prompt {:session-id "c9" :title "T" :text " "}] [:session/prompt {:session-id "c9" :title "T" :text "go" :live true}]
-              [:preview/start {:coding-session "c1" :port 5173 :purpose "The shop for Ana"}] [:preview/start {:coding-session "c1" :folder "dist" :purpose " "}]]})))
+              [:spec/freeze {:frozen true}] [:placement/edit {:owner-hidden true}]]})))
 
 (deftest watch-matrix
   (clean! "watch"
-    (run "watch" "watch/o1/pr1"
-      {:starts [{:org-id "o1" :project-id "pr1" :tick-ms 0 :roster-active true}]
-       :drive [(moved "project" "project/o1/pr1" [:project :has-overseer :active] {:name "Site"})
-               (moved "project" "project/o1/pr1" [:project :has-overseer :archived] {:name "Site"})
+    (run "watch" "watch/pr1"
+      {:starts [{:project-id "pr1" :tick-ms 0}]
+       :drive [(moved "project" "project/pr1" [:project :has-overseer :active] {:name "Site"})
+               (moved "project" "project/pr1" [:project :has-overseer :archived] {:name "Site"})
+               [:facts/changed {:ceiling {:autonomy "L0" :reason "Capped."} :look-hint "Read the decisions."}] [:facts/changed {:ceiling nil :look-hint nil}]
                [:reason/noted {:kind "baton/done" :params {:title "T"} :key "k1" :by "system"}]
                [:turn/started {:look false}] [:turn/ended {}] [:org/attached-here {}] [:fire 60000] [:look/finished {}]
                [:look/stopped {:detail "x"}] [:settings/changed {:settings {:caps {:unattended-per-day 0}}}] [:day/rollover {}]]
@@ -271,11 +299,11 @@
                 [:conflict/settle {:keep "a"}] [:conflict/settle {:statement ""}] [:conflict/settle {}]]}))))
 
 (deftest item-matrix
-  (let [ex (fn [lvl] {:settings {:autonomy lvl} :roster-active true})]
+  (let [ex (fn [lvl] {:settings {:autonomy lvl}})]
     (clean! "item"
       (run "item" "item/o1/pr1/g_1"
         {:starts [{:org-id "o1" :project-id "pr1" :id "g_1" :idea-id "§gap/x" :stall-after-ms {:open 1000}}]
-         :drive [(moved "watch" "watch/o1/pr1" [:watch] (ex "L0"))
+         :drive [(moved "watch" "watch/pr1" [:watch] (ex "L0"))
                  (moved "baton" "baton/o1/b1" [:baton :open :with-person] {:decisions []})
                  ;; with the operator: waiting on them, then answered by them (coordinator-38)
                  (moved "baton" "baton/o1/b1" [:baton :open :with-operator] {:decisions [] :needs-you true})
@@ -283,8 +311,8 @@
                  (moved "baton" "baton/o1/b1" [:baton :done] {:decisions ["d1"]})
                  (moved "decision" "decision/o1/pr1/d1" [:decision :pending] {:state "pending"})
                  (moved "decision" "decision/o1/pr1/d1" [:decision :promoted] {:state "promoted"})
-                 (moved "build" "build/o1/pr1/c1" [:build :working] {:decisions ["d1"]})
-                 (moved "build" "build/o1/pr1/c1" [:build :merged] {:decisions ["d1"]})
+                 (moved "build" "build/pr1/c1" [:build :working] {:decisions ["d1"]})
+                 (moved "build" "build/pr1/c1" [:build :merged] {:decisions ["d1"]})
                  [:fire 1000]]
          :acts [[:gather/start (fn [d] {:session-id (str "n" (count (:batons d))) :to "p1" :public-title "T" :goal "G" :question "Q"})]
                 [:gather/plan {:to "p1" :public-title "T" :goal "G" :question "Q"}]
@@ -295,8 +323,8 @@
 
 (deftest build-matrix
   (clean! "build"
-    (run "build" "build/o1/pr1/c1"
-      {:starts [{:org-id "o1" :project-id "pr1" :session-id "c1" :kind "coding" :title "T" :prompt "P"}]
+    (run "build" "build/pr1/c1"
+      {:starts [{:project-id "pr1" :session-id "c1" :kind "coding" :title "T" :prompt "P"}]
        :drive [[:effect/done {:kind "make-worktree" :result {:branch "sova/t" :target "main"}}]
                [:effect/done {:kind "make-worktree" :result {:in-root "x"}}] [:effect/failed {:kind "make-worktree" :detail "x"}]
                [:effect/done {:kind "set-mode"}] [:effect/done {:kind "first-prompt"}] [:turn/started {}] [:turn/ended {}]
@@ -307,6 +335,35 @@
               [:correct/merged {:commit "c" :reason "r"}]]
        :max-configs 6000})))
 
+(deftest runtime-matrix
+  ;; a solo world: the registry of a project in no organization; its reasons go to the watch, its run is a build
+  (let [files [{:path "bb.edn" :sha "a1"}]
+        obs   (fn [m] [:runtime/observed (merge {:commit "c1" :suite 2 :sources {:paths ["bb.edn"] :files files :fingerprint "f1"}} m)])
+        h1    {:state "present" :hash "h1"}
+        bm    (fn [states ex] (moved "build" "build/pr1/o1" states ex))]
+    (clean! "runtime"
+      (run "runtime" "runtime/pr1"
+        {:starts [{:project-id "pr1" :root "/r"}]
+         :drive [(obs {:def {:state "absent"}}) (obs {:def h1 :approved nil :proof nil}) (obs {:def h1 :approved {:hash "h1"} :proof nil})
+                 (obs {:def h1 :approved {:hash "h1"} :proof {:hash "h1" :suite 2 :pass true :confined false :at 1}})
+                 (obs {:def h1 :approved {:hash "h1"} :proof {:hash "h1" :suite 2 :pass true :confined false :at 1}
+                       :sources {:paths ["bb.edn"] :files [{:path "bb.edn" :sha "a2"}] :fingerprint "f2"}})
+                 (obs {:def {:state "invalid" :error "bad"}})
+                 [:effect/done {:kind "approve" :result {:hash "h1"}}] [:effect/failed {:kind "approve" :detail "The definition changed since it was shown: look again."}]
+                 [:effect/done {:kind "conform" :result {:hash "h1" :suite 2 :pass false :confined false :at 2 :failed {:check "ready" :detail "x"}}}]
+                 [:effect/failed {:kind "conform" :detail "x"}]
+                 [:playbook/started {:sid "build/pr1/o1" :session-id "o1" :started-by "overseer" :why "w"}]
+                 [:runtime/observed {:branch-facts {:ref "sova/v" :def {:state "present" :hash "hb"} :approved false}}]
+                 (bm [:build :turn-idle :no-commits] {:last-turn-at 5 :running false :branch-state "no-commits"})
+                 (bm [:build :turn-idle :unmerged] {:last-turn-at 5 :running false :branch-state "unmerged" :branch "sova/v"})
+                 (bm [:build :working :unmerged] {:last-turn-at 5 :running true :branch-state "unmerged"})
+                 (bm [:build :merged] {:branch-state "merged"})
+                 (bm [:build :tree-removed] {})]
+         :acts [[:runtime/approve {:hash "h1"}] [:runtime/approve {:hash "hb"}] [:runtime/approve {:hash "h0"}]]
+         :key (fn [d] [(:standing d) (some? (:registered d)) (some? (:drift d)) (some? (:conform-result d)) (some? (:cleared-at d))
+                       (some? (get-in d [:playbook :branch-facts])) (get-in d [:playbook :result])])
+         :max-configs 6000}))))
+
 (deftest every-statechart-has-its-own-world
   (is (= (set (keys registry/statecharts)) (set (keys worlds))))
-  (is (not-any? #(contains? % "watch/o1/") (vals worlds)) "a blank project (the ledger bug) is in no world"))
+  (is (not-any? #(contains? % "watch/") (vals worlds)) "a blank project (the ledger bug) is in no world"))

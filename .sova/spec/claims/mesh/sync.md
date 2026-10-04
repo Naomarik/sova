@@ -10,8 +10,9 @@ A change to a synced category on one host reaches every up peer that has that ca
 file is one document; the most recently changed version wins, a deletion travels like a change,
 and a received document is written only if the program that reads it accepts it, atomically and
 under that program's own lock where it has one. A file that is a link into a git checkout is never
-written. **Settings** are Sova's and pi's host-wide preferences (the Claude Code switch, new-session
-defaults, model favorites, model policy, request limits, mode defaults, the legacy Delegate and
+written. **Settings** are Sova's and pi's host-wide preferences (Sova's experimental switches, new-session
+defaults, model favorites, model policy, request limits, Ollama Cloud's usage reset day
+(`usage-windows.json`, validated with its own strict parser), mode defaults, the legacy Delegate and
 Spec settings, and the whole `subagent-profiles.json` library), not
 anything a session's own host keeps for it (titles, groups, drafts, archive), and not paths that
 only make sense on one machine. The library contains `{version, profiles}` only and is validated
@@ -24,6 +25,11 @@ lacks. Its own entry always wins, and removing an extension on the host that sha
 everywhere. A peer's extension is only listed here ("not installed on this host"): nothing is
 ever served, probed or forwarded for it, even if the same files exist on this host. To use it here,
 the user adds it to this host's own list, and that entry wins.
+
+What each peer exchanges is also this host's grant to it (§mesh.peers/grants). A category the peer isn't
+granted is neither offered to it, taken from it, pulled from it nor merged, in either direction, and its
+extensions aren't listed here. Every other host still exchanges with that peer under its own grants, so a
+category this host denies a peer can still reach it through a third host.
 
 ## §mesh.sync/logins — Logins
 
@@ -47,6 +53,9 @@ the refreshed one) are a conflict, never a silent overwrite: each keeps its own 
 for that provider syncs until the user picks one. The Mesh page lists each login with its state and
 names the hosts in conflict; **Keep this host's login** makes this host's login win everywhere. The
 list never shows a secret, and it and its action exist only while the mesh is on.
+
+Logins move only to and from peers whose grant includes them, and only the logins that grant lists
+(§mesh.peers/grants), with their logouts likewise.
 
 ## §mesh.sync/api-keys-only — A host that syncs API keys only
 

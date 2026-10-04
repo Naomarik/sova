@@ -8,6 +8,7 @@
     [com.fulcrologic.statecharts.data-model.operations :as ops]
     [com.fulcrologic.statecharts.environment :as sc-env]
     [sova.statecharts.rules.hours :as hours]
+    [sova.statecharts.rules.started :as st]
     [sova.statecharts.engine.dsl :as dsl]))
 
 ;; ---- the event --------------------------------------------------------------------------------
@@ -40,7 +41,9 @@
     (contains? (set cfg) id)))
 
 ;; ---- session ids --------------------------------------------------------------------------------
-;; `<statechart>/<org>[/<project>]/<id>`: one engine per org, so the org id is in every id.
+;; The project layer (project, watch, build, runtime) carries no org: `<statechart>/<project>[/<id>]`.
+;; The org layer keeps its org-scoped grammar `<statechart>/<org>[/<project>]/<id>` and may address
+;; project-layer sessions; the project layer never builds an org-layer id.
 
 (defn start-card
   "A gathering start's confirm-card targets (sova_gather start): its project and every person it goes
@@ -75,14 +78,16 @@
 (defn org-sid [org] (sid-of "org" org))
 (defn residence-sid [org] (sid-of "residence" org))
 (defn person-sid [org pid] (sid-of "person" org pid))
-(defn project-sid [org p] (sid-of "project" org p))
-(defn watch-sid [org p] (sid-of "watch" org p))
+(defn project-sid [p] (sid-of "project" p))
+(defn watch-sid [p] (sid-of "watch" p))
+(defn build-sid [p sid] (sid-of "build" p sid))
+(defn runtime-sid [p] (sid-of "runtime" p))
+(defn placement-sid [org p] (sid-of "placement" org p))
 (defn baton-sid [org sid] (sid-of "baton" org sid))
 (defn decision-sid [org p did] (sid-of "decision" org p did))
 (defn conflict-sid [org p cid] (sid-of "conflict" org p cid))
 (defn reconciler-sid [org p] (sid-of "reconciler" org p))
 (defn item-sid [org p gid] (sid-of "item" org p gid))
-(defn build-sid [org p sid] (sid-of "build" org p sid))
 
 (defn statechart-of-sid [sid] (first (str/split (str sid) #"/")))
 (defn last-part [sid] (last (str/split (str sid) #"/")))
@@ -109,7 +114,7 @@
    `by` statechart, r3) says so: the watch never looks for it (R3)."
   [f]
   (Send {:event      :reason/noted
-         :targetexpr (fn [_ data] (watch-sid (:org-id data) (:project-id data)))
+         :targetexpr (fn [_ data] (watch-sid (:project-id data)))
          :content    (fn [_ data] (let [r (f data)
                                         by (if (= "statechart" (some-> (:by (evt data)) name)) "statechart" "system")]
                                     (if r (merge {:by by :at (now-ms data)} r) {:reasons []})))}))
@@ -119,7 +124,7 @@
    allowance a counted act took (design §3.5; r5)."
   [event kind n-fn]
   (Send {:event      event
-         :targetexpr (fn [_ data] (watch-sid (:org-id data) (:project-id data)))
+         :targetexpr (fn [_ data] (watch-sid (:project-id data)))
          :content    (fn [_ data] (let [e (evt data)]
                                     {:kind kind :n (n-fn data) :by (by data)
                                      :ledger (or (some-> (:ledger e) name) (if (true? (:attended e)) "message" "day"))}))}))
@@ -212,7 +217,7 @@
                       (when-let [p (or (:project-id (evt d)) (:project-id d))]
                         (let [e    (evt d)
                               hold (str (sc-env/session-id env) ":" (:id e))]
-                          (queue-sends d [{:target (watch-sid (:org-id d) p) :event :reason/noted
+                          (queue-sends d [{:target (watch-sid p) :event :reason/noted
                                            :data {:kind "hold/review" :by "system" :at (now-ms d) :key (str "hold/review:" hold)
                                                   :asks true :params {:id (:id e) :hold hold :what (:what e) :act (some-> (:event e) name)}}}]))))})
      (com.fulcrologic.statecharts.elements/raise {:event :sova.statecharts/flush}))])
@@ -227,3 +232,26 @@
            :content (fn [_ d] (:data (first (:sova.statecharts/sends d))))})
     (script {:expr (fn [_ d] [(ops/assign :sova.statecharts/sends (vec (rest (:sova.statecharts/sends d))))])})
     (com.fulcrologic.statecharts.elements/raise {:event :sova.statecharts/flush})))
+
+;; ---- the sessions it started (r11: one list, 200, the oldest settled retired) ---------------------------
+;; A project lists its builds, a placement its gatherings; each watches what it lists.
+
+(defn started-ops
+  "Note a row (`:row`, and `:watch` it when an item started it) or mark one settled from its link
+   (`:mark [sid settled?]`), then trim past the cap: the oldest settled rows leave, each sent
+   `session/retire` and unwatched."
+  [d {:keys [row watch mark]}]
+  (let [rows (cond-> (vec (:started d)) row (st/note row) mark (st/mark (first mark) (second mark)))
+        {:keys [rows retire]} (st/trim rows)
+        dirs (concat (when watch [{:op :watch :target watch}]) (for [s retire] {:op :unwatch :target s}))]
+    (cond-> [(ops/assign :started rows)]
+      (seq dirs)   (conj (ops/assign :sova/directives (into (vec (:sova/directives d)) dirs)))
+      (seq retire) (into (queue-sends d (for [s retire] {:target s :event :session/retire :data {}}))))))
+
+(defn started-content [f]
+  [(script {:expr (fn [_ d] (started-ops d (f d)))})
+   (com.fulcrologic.statecharts.elements/raise {:event :sova.statecharts/flush})])
+
+(defn started-row [d kind sid] {:sid sid :kind kind :at (now-ms d)})
+
+(defn from-started? [_ d] (let [m (moved d)] (some #(= (:from m) (:sid %)) (:started d))))

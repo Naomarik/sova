@@ -14,6 +14,7 @@ mkdirSync(join(root, "agent", "sessions"), { recursive: true });
 const orgs = await import("./orgs");
 const { closeOrgHost, hostOf } = await import("./org-engine");
 const { seedBuild } = await import("./org-test-fixtures");
+const { buildSid } = await import("./projects/sids");
 const { settled } = await import("./workspace-git");
 
 after(async () => {
@@ -34,7 +35,7 @@ test("a crash mid-turn: after the restart the build's turn is over", async () =>
   mkdirSync(join(root, "proj"));
   const project = await orgs.addProject(org.id, { name: "Portal", root: join(root, "proj") });
   await seedBuild(org.id, project.id, { sessionId: "c-crash", kind: "coding", worktree: { branch: "sova/crash", base: "main", target: "main" } });
-  const sid = `build/${org.id}/${project.id}/c-crash`;
+  const sid = buildSid(project.id, "c-crash");
   await hostOf(org.id).act(sid, "turn/started", {}, { by: "system" } as never, { settle: true });
   assert.equal(hostOf(org.id).data(sid)!.turn, "working");
   // The process dies mid-turn: nothing ends it. The org opens again.

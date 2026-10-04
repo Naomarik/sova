@@ -124,8 +124,9 @@ export const nodeId = (node) => tsStatus(node)?.Self?.ID ?? null;
 export const magicName = (node) => `${node}.${DOMAIN}`;
 
 /** The node's IP on the lab docker network (a non-tailnet address). */
-export function dockerIp(node) {
-  const r = spawnSync("docker", ["inspect", "-f", "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}", container(node)], { encoding: "utf8" });
+export function dockerIp(node, network = "sovamesh_lab") {
+  // One network's address: with `lab up --wan` the first host and plain sit on two.
+  const r = spawnSync("docker", ["inspect", "-f", `{{with index .NetworkSettings.Networks "${network}"}}{{.IPAddress}}{{end}}`, container(node)], { encoding: "utf8" });
   return r.stdout.trim();
 }
 

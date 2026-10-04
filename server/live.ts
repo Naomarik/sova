@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync } from "node:fs";
+import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { canonicalPath, LIVE_DIR } from "./paths";
 
@@ -82,10 +82,16 @@ function pidAlive(pid: number): boolean {
 
 const count = (v: unknown) => (typeof v === "number" && Number.isInteger(v) && v >= 0 ? v : null);
 
+/** Each live file's parse, by name, kept while its stat stamp holds: writers replace a record by
+    rename (a new inode) on every heartbeat, so an unchanged stamp is an unchanged record. */
+const parsed = new Map<string, { stamp: string; record: RawLiveRecord | null }>();
+
 /**
- * All live files (~/.pi/agent/sessions/live/*.json) with an alive pid, read fresh from disk.
+ * All live files (~/.pi/agent/sessions/live/*.json) with an alive pid. The folder is listed and
+ * each file stat'ed on every call; a file is read and parsed again only when its stamp moved.
  * Contract: pi-config/extensions/sessions/public/SCHEMA.md. Read-only: never delete or
- * rewrite anything there, not even dead records (pi writers clean those up).
+ * rewrite anything there, not even dead records (pi writers clean those up). `rec` is shared
+ * between calls: consumers never mutate it.
  */
 export function readLiveRecords(opts: { includeOwn?: boolean } = {}): RawLiveRecord[] {
   const out: RawLiveRecord[] = [];
@@ -93,20 +99,39 @@ export function readLiveRecords(opts: { includeOwn?: boolean } = {}): RawLiveRec
   try {
     names = readdirSync(LIVE_DIR);
   } catch {
+    parsed.clear();
     return out;
   }
+  const seen = new Set<string>();
   for (const name of names) {
     if (!name.endsWith(".json") || name.startsWith(".")) continue; // dotfiles = writers' temp files
+    seen.add(name);
+    const path = join(LIVE_DIR, name);
+    let stamp: string;
     try {
-      const rec = JSON.parse(readFileSync(join(LIVE_DIR, name), "utf8"));
-      const s = rec?.session;
-      if (!s || typeof s.pid !== "number") continue;
-      if ((s.pid === process.pid && !opts.includeOwn) || !pidAlive(s.pid)) continue;
-      out.push({ sessionFile: typeof s.sessionFile === "string" ? canonicalPath(s.sessionFile) : null, pid: s.pid, rec });
+      const st = statSync(path, { bigint: true });
+      stamp = `${st.ino}:${st.size}:${st.mtimeNs}:${st.ctimeNs}`;
     } catch {
-      // partially written or malformed presence file: skip
+      continue; // removed since the listing
     }
+    let hit = parsed.get(name);
+    if (hit?.stamp !== stamp) {
+      let record: RawLiveRecord | null = null;
+      try {
+        const rec = JSON.parse(readFileSync(path, "utf8"));
+        const s = rec?.session;
+        if (s && typeof s.pid === "number") record = { sessionFile: typeof s.sessionFile === "string" ? canonicalPath(s.sessionFile) : null, pid: s.pid, rec };
+      } catch {
+        // partially written or malformed presence file: skip until it changes
+      }
+      hit = { stamp, record };
+      parsed.set(name, hit);
+    }
+    const r = hit.record;
+    if (!r || (r.pid === process.pid && !opts.includeOwn) || !pidAlive(r.pid)) continue;
+    out.push({ sessionFile: r.sessionFile, pid: r.pid, rec: r.rec });
   }
+  for (const name of parsed.keys()) if (!seen.has(name)) parsed.delete(name);
   return out;
 }
 

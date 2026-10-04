@@ -5,7 +5,7 @@
 // TUI would. Never forced, never a credential write (fetch.ts only reads them).
 
 // Part of the sanctioned pi-config import surface, like server/insights.ts — see CLAUDE.md.
-import { describeErrors, FAILURE_RETRY_MS, refreshCache, type CacheFile, type RefreshResult } from "../pi-config/extensions/usage-status/fetch.ts";
+import { describeErrors, FAILURE_RETRY_MS, nextClaudeReset, refreshCache, type CacheFile, type RefreshResult } from "../pi-config/extensions/usage-status/fetch.ts";
 
 /** Tick bounds: the next tick follows the cache's nextFetchAt, clamped to [MIN, MAX]. */
 export const MIN_TICK_MS = 30_000;
@@ -41,10 +41,16 @@ export interface UsagePoller {
   stop(): void;
 }
 
-/** The delay after a tick that returned `cache` (undefined: nothing to go on), before jitter. */
+/**
+ * The delay after a tick that returned `cache` (undefined: nothing to go on), before jitter: the
+ * cache's nextFetchAt, or the earliest Claude window reset still ahead when that is sooner (the
+ * cache is due once a reading's reset has passed), clamped to [MIN, MAX].
+ */
 export function nextDelay(cache: CacheFile | undefined, now: number): number {
   if (!cache) return MIN_TICK_MS;
-  return Math.min(MAX_TICK_MS, Math.max(MIN_TICK_MS, cache.nextFetchAt - now));
+  const reset = nextClaudeReset(cache, now);
+  const at = reset !== undefined ? Math.min(cache.nextFetchAt, reset) : cache.nextFetchAt;
+  return Math.min(MAX_TICK_MS, Math.max(MIN_TICK_MS, at - now));
 }
 
 export function startUsagePoller(opts: UsagePollerOptions = {}): UsagePoller {

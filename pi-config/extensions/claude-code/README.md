@@ -384,12 +384,12 @@ A hook that fails prints nothing and exits 0.
 The same extension can also expose the installed Claude Code CLI as ordinary pi
 models — provider `claude-code-cli`, the CLI's discovered models (offline:
 `claude-fable-5-1[1m]`, `opus[1m]`, `sonnet` and `haiku`) — selectable in `/model` and in Sova's picker, streaming,
-and running **pi's own tools**. It is opt-in and off by default:
+and running **pi's own tools**. It is behind the `--claude-code-provider` flag,
+off by default:
 
 - TUI: `pi --claude-code-provider`.
-- Sova: Settings → Experimental → "Claude Code models" (stored in the agent
-  dir's `sova/settings.json`; the server passes the extension flag to every
-  session opened after the change). Off means nothing is registered anywhere.
+- Sova: always on. The server passes the flag to every hosted session that
+  loads extensions, with no setting. Without the flag nothing is registered.
 
 The flag is read at `session_start` (pi applies caller-supplied flag values
 after extension factories run), so no CLI process starts at load, and a

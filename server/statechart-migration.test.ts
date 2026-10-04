@@ -120,12 +120,10 @@ describe("an org a master build wrote", async () => {
     assert.equal(orgs.readOrg(ORG).name, "Old Layout");
     const before = hostOf(ORG).statechartOf(`project/${ORG}/${PROJECT}`);
     assert.equal(before, "project");
-    const p = await orgs.patchProject(ORG, PROJECT, { name: "Renamed" });
-    assert.equal(p.name, "Renamed");
     await orgs.addPerson(ORG, { name: "Bo New", role: "Engineer" } as never);
     assert.deepEqual(orgs.readRoster(ORG).map((x) => x.name).sort(), ["Ana Journal", "Bo New"]);
-    const last = readFileSync(join(ws, "statecharts", "log", "2026-09.jsonl"), "utf8").trim().split("\n").map((l) => JSON.parse(l) as Record<string, unknown>).filter((r) => r.session === `project/${ORG}/${PROJECT}`).at(-1)!;
-    assert.equal(last.statechart, "project");
+    const last = readFileSync(join(ws, "statecharts", "log", "2026-09.jsonl"), "utf8").trim().split("\n").map((l) => JSON.parse(l) as Record<string, unknown>).at(-1)!;
+    assert.equal(last.statechart, "person", "Bo New's");
     assert.ok(!("chart" in last));
   });
 

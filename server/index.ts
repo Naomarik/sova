@@ -12,6 +12,8 @@ import { bodyLimit } from "hono/body-limit";
 import { compress } from "hono/compress";
 import { isDirectLocal } from "./compression";
 import { asksForRows, type RowsQuery, transcriptLight, transcriptRows } from "./transcript-rows";
+import { claudeToolContent, parseToolIds, piToolContent } from "./transcript-tool";
+import { resolveClaudeSession } from "./claude-transcript";
 import { registerOrgRoutes } from "./org-routes";
 import { registerWrapupRoutes } from "./wrapup-routes";
 import { markShutdown } from "./wrapup-recovery";
@@ -19,9 +21,13 @@ import { runLedger } from "./auto-resume";
 import { startBudgetRecount } from "./baton-recount";
 import { registerProjectOverseerRoutes } from "./project-overseer-routes";
 import { registerProjectCostRoutes } from "./project-costs-routes";
+import { registerProjectRoutes } from "./projects/routes";
+import { openRegisteredProjects } from "./projects/spaces";
 import { reconcileProjectServices, registerProjectServiceRoutes } from "./project-services/routes";
+import { registerServicesViewRoutes } from "./project-services/view-routes";
 import { startProjectOverseerLoop } from "./project-overseer";
 import { attachedWorkspaces, openAttachedOrgs } from "./orgs";
+import { finishImports, rollForwardCopies } from "./project-import";
 import { closeAllOrgHosts } from "./org-engine";
 import { flushWorkspaces } from "./workspace-commits";
 import { registerDecisionRoutes } from "./decisions-routes";
@@ -43,6 +49,8 @@ import { receiverSpecial, startTopicDelivery } from "./topic-delivery";
 import { projectOverseerOfPath } from "./project-overseer-store";
 import { canonicalPath, LIVE_DIR, resolveSessionPath, SESSIONS_DIR } from "./paths";
 import { stateRoot } from "./state-root";
+import { runtimeInfo } from "./runtime-choice";
+import { cappedWebSocket } from "./runtime-quirks";
 import { claudeCodeModelCount, listModels, listRegistryModels, resolveContext } from "./models";
 import { setFavorite } from "./model-favorites";
 import { markOwned } from "./write-guard";
@@ -50,7 +58,7 @@ import { addWebSession } from "./web-sessions";
 import { draftForClient, setDraft } from "./drafts";
 import { worktreeInsights } from "./worktrees";
 import { DiffError, gitDiffs, scopeFromQuery } from "./git-diff";
-import { decodeWorkers, teamDuties, getAgentsInsight, getHiddenWorkers, getSessionInsight, setInsightLinks, getUsageInsight, invalidateUsageMemo, refreshUsageInsight, usageRefreshBusy } from "./insights";
+import { decodeWorkers, teamDuties, getAgentsInsight, getHiddenWorkers, getSessionInsight, setInsightLinks, getUsageInsight, invalidateUsageMemo, refreshUsageInsight, setUsageResetDay, usageRefreshBusy } from "./insights";
 import { startUsagePoller } from "./usage-poll";
 import { startPriceRefresh } from "./model-prices";
 import { archiveSession, cachedTitleOf, cleanupSessions, getSessionSummary, idOf, lastReplyOf, listCwds, listSessionFiles, listSessions, onSessionArchived, onSummaryLineChanged } from "./sessions-index";
@@ -60,11 +68,12 @@ import { checkTmpImage, deleteAttachment, MAX_ATTACHMENT_BYTES, readTmpImage, sa
 import { listFolders } from "./folders";
 import { listProjectFiles } from "./files";
 import { getGitSummary } from "./git-summary";
-import { getSessionSetup } from "./session-setup";
+import { cleanupPlan, cleanupRemove, configureCleanup, worktreesSummary } from "./worktree-cleanup";
+import { applyLoadout, getSessionSetup } from "./session-setup";
 import { isOrgSession, ORG_NOT_GROUPED } from "./org-sessions";
 import { assignSession, cleanGroupLabel, createGroup, deleteGroup, GROUP_LABEL_MAX, readGroups, updateGroup } from "./session-groups";
 import { promptGroup } from "./group-prompt";
-import { AUTO_TITLE_MAX_PATHS, type SessionsDirInfo, type SessionTitleSource, type WorkerChoice, type WorkerResumeResult } from "../shared/protocol";
+import { AUTO_TITLE_MAX_PATHS, TOOL_CONTENT_MAX_IDS, type SessionsDirInfo, type SessionTitleSource, type ToolContentResponse, type WorkerChoice, type WorkerResumeResult } from "../shared/protocol";
 import { findTarget, isTargetName, listRemoteFolders, listTargets, normalizeRemotePath, targetDir, targetsFile, validateNewSessionCwd } from "./targets";
 import { isExplanationId, listExplanations, readExplanationPage } from "./explanations";
 import { switchMode } from "./mode";
@@ -91,7 +100,7 @@ import { claudeLoginEnv, registerClaudeAccountRoutes } from "./claude-accounts";
 import { modeInfo, parseModeRequest, readMode } from "./mode-state";
 import { parseSandboxBody } from "./sandbox-state";
 import { WORKER_ID_RE } from "./worker-resume";
-import { attachWebSockets, upgradeSovaSocket } from "./ws";
+import { attachWebSockets, upgradeSovaSocket, upgradeSovaStreamSocket } from "./ws";
 import { meshApi, meshRoutes, startMesh, stopMesh } from "./mesh";
 import { captureBootBuild } from "./mesh/build-id";
 import { mountDetails } from "./mesh/details";
@@ -103,17 +112,14 @@ import { deliverLinkMessage, heldSessionPath, notifyLinksChanged, setLinkOrigin,
 import { linkSandboxOf } from "./link-sandbox";
 import { mountSync } from "./sync";
 import { mountClaudePool } from "./claude-pool";
+import { clearPicksOf } from "./claude-pool/agent";
 import { markSeen } from "./seen";
 import {
   attentionForWire,
   clearOverseer,
   overseerInfo,
   overseerSettingsInfo,
-  pathOfId,
-  promptSession,
-  overseerSender,
   renderPeerRead,
-  OVERSEER_SENDER_HEADER,
   saveOverseerSettings,
   setOverseerDispatch,
   overseerAutonomy,
@@ -122,6 +128,8 @@ import {
   startOverseerLoop,
 } from "./overseer";
 import { readNotes, writeNotes, NOTES_MAX } from "./overseer-store";
+import { pathOfId, promptSession } from "./session-prompt";
+import { OVERSEER_SENDER_HEADER, overseerSender } from "./overseer-sender";
 import { checkRename, IdeaConflictError, IdeaError, ideaDetail, ideasInfo, parseIdeaId, updateIdea, type IdeaUpdate } from "./overseer-ideas";
 import { renameIdeaEverywhere } from "./overseer-idea-tools";
 import { addTodo, clearDone, removeTodo, reorderTodos, TodoConflictError, TodoError, TodoNotFoundError, todosInfo, updateTodo } from "./overseer-todos";
@@ -131,6 +139,10 @@ import { decisionsInfo, decisionsOptions, deleteKey, probeDecisions, putJevKey, 
 import { AttentionSignals } from "./attention-signals";
 import { initRestartWindow, markServerStop } from "./server-stop";
 import { configureSessionFeed, nudgeMarks, publishFeed } from "./session-feed";
+import { configureLlmInflight } from "./llm-inflight";
+import { snapshot as llmSnapshot, subscribe as onLlmChange } from "../pi-config/extensions/llm-inflight/tracker.ts";
+import { readUnadoptedWorkers } from "../pi-config/extensions/llm-inflight/hosted.ts";
+import { peerUrl } from "./mesh/peers";
 import { onTagsChanged } from "./session-tags";
 import { terminalSession } from "./decide-settings";
 import { MergeFollowUps } from "./merge-followup";
@@ -138,6 +150,7 @@ import { configureReadiness } from "./merge-readiness";
 import { startSessionTags, tagRoutes } from "./tags-backfill";
 import { pushRoutes } from "./push-routes";
 import { readLiveRecords } from "./live";
+import { sessionsChanged } from "./list-generation";
 import { resourceMonitor, startResourceMonitor, stopResourceMonitor } from "./resource-monitor";
 import { defaultAdapters } from "./worker-adapters";
 import { serverRedactor } from "./overseer-redact";
@@ -161,6 +174,8 @@ const SERVER_HEAD: string | null = (() => {
     return null;
   }
 })();
+/** The runtime this process runs on and the one the choice asks for (§app.server-runtime/health). */
+const SERVER_RUNTIME = runtimeInfo(process.env);
 
 // Embedded pi runtimes / extensions must never take the server down.
 process.on("uncaughtException", (err) => console.error("[uncaughtException]", err));
@@ -184,6 +199,18 @@ app.use("*", async (c, next) => {
   }
 });
 
+// A request that may change something starts the next session listing afresh, before it runs and
+// again once it answered, so its caller's next listing shows the change (§app.session-list/listing-reuse).
+app.use("*", async (c, next) => {
+  const writes = c.req.method !== "GET" && c.req.method !== "HEAD";
+  if (writes) sessionsChanged();
+  try {
+    await next();
+  } finally {
+    if (writes) sessionsChanged();
+  }
+});
+
 // gzip/deflate for the JSON API (a transcript is MBs), when the client asks for it. Registered
 // first so it wraps every /api route. hono/compress skips what must pass as is: responses that
 // already carry a Content-Encoding, 206s, HEAD, Cache-Control: no-transform, and types it doesn't
@@ -202,7 +229,7 @@ app.onError((err, c) => {
 });
 
 // What this process runs (§chat.profiles/live-commit): its start and its checkout's commit then.
-app.get("/api/health", (c) => c.json({ ok: true, startedAt: SERVER_STARTED_AT, head: SERVER_HEAD }));
+app.get("/api/health", (c) => c.json({ ok: true, startedAt: SERVER_STARTED_AT, head: SERVER_HEAD, runtime: SERVER_RUNTIME }));
 // A browser's way in (§app.access/unlock): the token it was given sets the install's cookie.
 app.post("/api/auth/unlock", bodyLimit({ maxSize: 4096 }), unlock);
 // Both routes stay behind the gate, and refuse peer-listener and relayed calls as well.
@@ -332,8 +359,10 @@ registerOrgRoutes(app);
 registerWrapupRoutes(app);
 registerProjectOverseerRoutes(app);
 registerProjectCostRoutes(app);
+registerProjectRoutes(app);
 // Project services: the verbs over a project's .sova/project.json (server/project-services/; §app/project-services).
 registerProjectServiceRoutes(app);
+registerServicesViewRoutes(app);
 // A project's decisions, conflicts and spec promotion (server/decisions-routes.ts; §app/requirements).
 registerDecisionRoutes(app);
 // Voice input: setup, status and transcription on this host (server/voice/; §chat/voice).
@@ -652,6 +681,34 @@ app.get("/api/sessions/git", async (c) => {
   return c.json(await getGitSummary(path, { fresh: c.req.query("fresh") === "1" }));
 });
 
+// Merged worktrees of the session's repository (server/worktree-cleanup.ts, §chat.worktrees/cleanup):
+// the count for a new session's empty state, the dry run, and a removal of exactly the confirmed
+// paths that are still removable. Only when asked; never --force.
+configureCleanup({ summary: (path) => getSessionSummary(path), sessionFiles: listSessionFiles, readBranch: readActiveBranch });
+app.get("/api/worktrees/summary", async (c) => {
+  const path = resolveSessionPath(c.req.query("path"));
+  if (!path) return c.json({ error: "Invalid or missing ?path= (must be a .jsonl under the pi sessions dir)" }, 400);
+  if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
+  return c.json(await worktreesSummary(path), 200, { "Cache-Control": "no-store" });
+});
+app.post("/api/worktrees/cleanup", async (c) => {
+  const body = (await c.req.json().catch(() => null)) as { path?: unknown; dryRun?: unknown; expect?: unknown } | null;
+  const path = resolveSessionPath(typeof body?.path === "string" ? body.path : null);
+  if (!path) return c.json({ error: "Invalid or missing path" }, 400);
+  if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
+  const dryRun = body?.dryRun === true;
+  const expect = body?.expect;
+  if (dryRun === Array.isArray(expect) || (Array.isArray(expect) && !expect.every((p) => typeof p === "string" && p.startsWith("/"))))
+    return c.json({ error: "Send either dryRun: true or expect: [absolute paths]" }, 400);
+  if (dryRun) {
+    const plan = await cleanupPlan(path);
+    return plan ? c.json(plan) : c.json({ error: "This session's folder isn't in a local git repository." }, 409);
+  }
+  const r = await cleanupRemove(path, expect as string[]);
+  if (r === "busy") return c.json({ error: "A cleanup of this repository is already running." }, 409);
+  return r ? c.json(r) : c.json({ error: "This session's folder isn't in a local git repository." }, 409);
+});
+
 // What pi will load for a session's folder (server/session-setup.ts): the context files it writes
 // into the prompt and the skills it offers this session, each with its size on disk — the empty
 // state of a session with no messages yet. Same 400/404 as the git route above; a folder that can't
@@ -662,6 +719,18 @@ app.get("/api/sessions/context", async (c) => {
   if (!path) return c.json({ error: "Invalid or missing ?path= (must be a .jsonl under the pi sessions dir)" }, 400);
   if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
   return c.json(await getSessionSetup(path, { fresh: c.req.query("fresh") === "1" }));
+});
+
+// Switch a new session's context files and skills off or on (§chat.transcript/setup-card-toggles):
+// the whole off set, written as the session's hidden `sova-loadout` entry; the runtime is rebuilt
+// and the answer is the card's fresh read. 409 once a message is sent, mid-turn, TUI-live, etc.
+app.post("/api/sessions/loadout", async (c) => {
+  const body = (await c.req.json().catch(() => null)) as { path?: unknown } | null;
+  const path = resolveSessionPath(typeof body?.path === "string" ? body.path : null);
+  if (!path) return c.json({ error: "Invalid or missing path" }, 400);
+  if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
+  const r = await applyLoadout(path, body);
+  return r.ok ? c.json(r.setup) : c.json({ error: r.error }, r.status);
 });
 
 app.get("/api/models", async (c) => c.json(await listModels()));
@@ -724,29 +793,18 @@ app.get("/api/themes", (c) => c.json(listThemes()));
 // The playbooks catalog with each schedule's state, and the schedules' routes (server/schedule-routes.ts).
 registerScheduleRoutes(app);
 
-// Sova's own settings (server/web-settings.ts): today one experimental switch. GET reads the
-// stored value, PUT replaces it. The switch drives the `claude-code-provider` extension flag, so
-// it applies to sessions created after the change — an open chat keeps the runtime it started with.
+// Sova's own settings (server/web-settings.ts): Settings → Experimental's switches. GET reads the
+// stored values, PUT replaces the known ones it carries and ignores the rest.
 app.get("/api/settings", (c) => c.json(readWebSettings()));
 app.put("/api/settings", async (c) => {
   let body: unknown;
   try {
     body = await c.req.json();
   } catch {
-    return c.json({ error: "Expected JSON body { experimental: { claudeCodeProvider } }" }, 400);
+    return c.json({ error: "Expected JSON body { experimental: { ... } }" }, 400);
   }
   const result = writeWebSettings(body);
-  if ("error" in result) return c.json({ error: result.error }, 400);
-  // Turning the switch on registers the provider now, so the very next GET /api/models offers the
-  // Claude Code models without a server restart. Best-effort, like the startup warm-up.
-  if (result.experimental.claudeCodeProvider) {
-    try {
-      await warmClaudeCodeProvider(await getModelRuntime(), getAgentDir());
-    } catch (err) {
-      console.warn("[server] claude-code warm-up skipped:", err instanceof Error ? err.message : String(err));
-    }
-  }
-  return c.json(result);
+  return "error" in result ? c.json({ error: result.error }, 400) : c.json(result);
 });
 
 // Settings → Modes → Delegate: which worker each kind of
@@ -881,8 +939,8 @@ app.put("/api/settings/summarizer", async (c) => {
   return "error" in result ? c.json({ error: result.error }, result.status) : c.json(result);
 });
 
-// Is the Claude Code CLI actually usable? `claude --version` plus how many of its models the
-// shared runtime holds. Answering from the runtime rather than a second live probe keeps the
+// Is the Claude Code CLI actually usable (Settings → Accounts' status line)? `claude --version`
+// plus how many of its models the shared runtime holds. Answering from the runtime rather than a second live probe keeps the
 // Settings dialog free of CLI spawns beyond the version check, and reports what the picker will
 // really show.
 app.get("/api/settings/claude-status", async (c) => {
@@ -939,7 +997,7 @@ app.post("/api/mode", async (c) => {
   return modeRefusal(c, () => chat.switchMode(request.patch));
 });
 
-// The sandbox extension's on/off for one held chat (§chat/sandbox): its /sandbox handler runs
+// The sandbox extension's state for one held chat (§chat.sandbox/states): its /sandbox handler runs
 // directly (server/sandbox-state.ts). "unsupported" when the runtime has no sandbox extension.
 app.post("/api/sandbox", async (c) => {
   const path = resolveSessionPath(c.req.query("path"));
@@ -954,7 +1012,7 @@ app.post("/api/sandbox", async (c) => {
   if ("error" in parsed) return c.json({ error: parsed.error }, 400);
   const chat = heldChat(path);
   if (!chat) return c.json({ error: "That session isn't open on this server; open the chat first" }, 404);
-  return c.json(await chat.applySandbox(parsed.on));
+  return c.json(await chat.applySandbox(parsed.state));
 });
 
 // Resume one restored subagent worker of a held chat, idle (server/worker-resume.ts): the subagents
@@ -995,6 +1053,25 @@ app.get("/api/transcript", async (c) => {
   }
   const branch = await readActiveBranch(path);
   return c.json({ items: normalizeEntries(branch), context: await resolveContext(contextForBranch(branch)) });
+});
+
+// The whole content of tool rows (§chat.transcript/slim-rows): a row carries only what its folded
+// card draws, and the card's arguments, output and details come from here. `claude=` names a Claude
+// Code worker's own file, as /ws/watch does. Read-only.
+app.get("/api/transcript/tool", async (c) => {
+  const ids = parseToolIds(c.req.query("ids"));
+  if (!ids) return c.json({ error: `Missing or too many ?ids= (1 to ${TOOL_CONTENT_MAX_IDS} row ids, comma-separated)` }, 400);
+  const claudeId = c.req.query("claude");
+  if (claudeId) {
+    const file = resolveClaudeSession(claudeId);
+    if (!file || !existsSync(file)) return c.json({ error: file ? "Session file not found" : "Unknown Claude Code session" }, 404);
+    return c.json({ items: await claudeToolContent(file, ids) } satisfies ToolContentResponse);
+  }
+  const path = resolveSessionPath(c.req.query("path"));
+  if (!path) return c.json({ error: "Invalid or missing ?path= (must be a .jsonl under the pi sessions dir)" }, 400);
+  if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
+  const items = await piToolContent(path, ids, () => heldChat(path)?.session.sessionManager.getBranch() as Record<string, any>[] | undefined);
+  return c.json({ items } satisfies ToolContentResponse);
 });
 
 // Bytes of an image a user message names by path (TranscriptItem.attachments). Only image files
@@ -1061,6 +1138,22 @@ app.post("/api/insights/usage/refresh", async (c) => {
     return c.json(await refreshUsageInsight());
   } catch (err) {
     return c.json({ error: (err as Error).message || "usage refresh failed" }, 502);
+  }
+});
+
+// Ollama Cloud's declared reset day (usage-windows.json); answers with the whole usage payload.
+app.put("/api/insights/usage/reset-day", async (c) => {
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "Invalid JSON" }, 400);
+  }
+  try {
+    const out = await setUsageResetDay(body);
+    return "error" in out ? c.json(out, 400) : c.json(out);
+  } catch (err) {
+    return c.json({ error: (err as Error).message || "couldn't save the reset day" }, 500);
   }
 });
 
@@ -1400,6 +1493,8 @@ const linkedAgents = async (id: string, path: string) => meshLinks.linkedAgents(
 setLinksSource(linkedAgents);
 setInsightLinks(linkedAgents);
 onSessionArchived((id) => void meshLinks.endFor(id));
+// A chat archived or deleted ends its hand-picks of Claude logins (§app.claude-logins/idle-pin).
+onSessionArchived((id) => clearPicksOf(getAgentDir(), id));
 // Topic queues (§chat.topics/delivery): batches to a topic's receiver when it is idle or settles.
 // An org's ordinary sessions (a project's coding sessions, unregistered workspace files) get their
 // batches; only what the runtime opens as special, and workers, are refused (receiverSpecial).
@@ -1525,15 +1620,19 @@ setAuthHosts(() => {
 });
 
 // Every attached org's engine opens before the first request (its pages and share links read it).
+// An import a stop cut off finishes (§app.projects/import): its copy before the orgs open, the rest after.
+rollForwardCopies();
 await openAttachedOrgs();
+await openRegisteredProjects();
+await finishImports();
 
 export const server = serve({ fetch: app.fetch, port: PORT, hostname: HOST }, (info) => {
   setSovaPort(info.port);
   setAuthPort(info.port);
   // The link extension's tools call this server back here: the real bound port (PORT=0 in tests).
   setLinkOrigin(linkOrigin(info.port));
-  console.log(`sova server on http://${HOST}:${info.port}`);
-  startMesh({ fetch: app.fetch, upgrade: upgradeSovaSocket });
+  console.log(`sova server on http://${HOST}:${info.port} (${SERVER_RUNTIME.name} ${SERVER_RUNTIME.version})`);
+  startMesh({ fetch: app.fetch, upgrade: upgradeSovaSocket, streamUpgrade: upgradeSovaStreamSocket });
   // Public links: the share listener, a gateway's router, a routed host's ingress (server/share/runtime.ts).
   void startShareRuntime();
   // Project instances back to their desired state (server/project-services/routes.ts).
@@ -1582,6 +1681,19 @@ onSummaryLineChanged(() => autoTitleSweep.nudge());
 // The list's decision overlays are pushed on /ws/watch?feed=sessions (server/session-feed.ts);
 // attention signals classify finished turns and long-running workers; session tags tag sessions.
 configureSessionFeed({ list: listSessions });
+// The LLM calls in flight, pushed on the same feed (server/llm-inflight.ts): this process's own
+// counter, the other processes' live records, and each peer's own count while a browser listens.
+configureLlmInflight({
+  own: { snapshot: llmSnapshot, subscribe: onLlmChange },
+  liveDir: LIVE_DIR,
+  workers: () => readUnadoptedWorkers(),
+  mesh: {
+    // A dial-out pairing has no URL to open a feed to (§mesh/lan): its count isn't shown here.
+    peers: () => (meshApi.enabled() ? meshApi.peers().filter((p) => !p.lan).map((p) => ({ id: p.id, url: peerUrl(p) })) : []),
+    selfId: () => meshApi.self().id,
+    connect: (url) => cappedWebSocket(`${url.replace(/^http/, "ws")}/ws/watch?feed=llm`, undefined, { handshakeTimeout: 10_000, maxPayload: 16 * 1024 }),
+  },
+});
 const attentionSignals = new AttentionSignals({
   settings: decisionSettings,
   provider: () => (decisionsReady() ? decisions() : null),
@@ -1618,9 +1730,9 @@ configureReadiness({
   terminal: (s) => terminalSession(s, !!heldChat(s.path)),
 });
 
-// With the experimental switch on, register the Claude Code provider now rather than when the
-// user first opens a session, so its models are in GET /api/models for the picker straight away.
-// A no-op when the switch is off, and never fatal: see warmClaudeCodeProvider.
+// Register the Claude Code provider now rather than when the user first opens a session, so its
+// models are in GET /api/models for the picker straight away (§app.claude-code-provider/always-on).
+// Never fatal, with or without a `claude` CLI: see warmClaudeCodeProvider.
 void (async () => {
   try {
     await warmClaudeCodeProvider(await getModelRuntime(), getAgentDir());

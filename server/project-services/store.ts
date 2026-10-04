@@ -48,6 +48,8 @@ export interface InstanceRecord {
   ports: Record<string, Record<string, number>>;
   /** Container service → the container its last start ran as, so a down can remove it after the service left the definition. */
   containers?: Record<string, { engine: string; name: string }>;
+  /** The confined conformance run it belongs to (§app.project-services/confined): its processes run only inside that run. */
+  confined?: string;
 }
 
 /** A project's shared services (§app.project-services/contract `scope: shared`): one per project. */

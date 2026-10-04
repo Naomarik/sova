@@ -131,7 +131,7 @@ pairs or unlinks it.
   expiry), and turned off whenever the original is (§mesh.public/preview). The preview named stays
   as it is. The previews lists (the project's card, the Shares page) name a sibling's person on its
   original's **Sent to** line (as "sent to {name}" on a row of its own when its original isn't
-  listed), each with its own Turn Off, so each person's link can be turned off on its own
+  listed), each with its own Delete, so each person's link can be deleted on its own
   (§mesh.public/preview-card). A sibling records who sent it (`createdBy`): `operator` for the
   operator's own send, else `session:<id>` of the overseer that sent it (the project's overseer
   conversation for a project overseer's send, the current Overseer for the global Overseer's), so

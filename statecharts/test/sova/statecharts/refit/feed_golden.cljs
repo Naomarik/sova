@@ -1,6 +1,6 @@
 (ns sova.statecharts.refit.feed-golden
   "r8a golden table (generated from feed-table, reviewed against r8a's lists): every authored transition
-   of the eleven statecharts → its feed class. A class flip, a new or a removed transition fails feed-test;
+   of the twelve statecharts → its feed class. A class flip, a new or a removed transition fails feed-test;
    regenerate only with a reviewed change.")
 
 (def golden
@@ -8,6 +8,14 @@
    ["baton" ":baton" [":session/retire"] "[:retired]" 0] :feed
    ["build" ":build" [":session/retire"] "[:retired]" 0] :feed
    ["project" ":project" [":link/moved"] "[]" 0] :quiet
+   ["placement" ":placement" [":link/moved"] "[]" 0] :quiet
+   ["placement" ":placement" [":link/moved"] "[]" 1] :quiet
+   ["placement" ":placement" [":sova.statecharts/flush"] "[]" 0] :quiet
+   ["placement" ":placement" [":started/noted"] "[]" 0] :quiet
+   ["placement" ":placement" [":hold/approve"] "[]" 0] :correction
+   ["placement" ":placement" [":hold/cancel"] "[]" 0] :correction
+   ["placement" ":placement" [":hold/waiting"] "[]" 0] :feed
+   ["placement" ":placement" [":placement/edit"] "[]" 0] :feed
    ["project" ":project" [":sova.statecharts/flush"] "[]" 0] :quiet
    ["project" ":project" [":started/noted"] "[]" 0] :quiet
    ["project" ":project" [":session/prompt"] "[]" 0] :feed
@@ -27,7 +35,7 @@
    ["baton" ":at-limit" [] "[:under]" 0] :quiet
    ["baton" ":baton" [":baton/abilities"] "[]" 0] :feed
    ["baton" ":baton" [":baton/extend"] "[]" 0] :feed
-   ["project" ":project" [":outreach/send"] "[]" 0] :feed
+   ["placement" ":placement" [":outreach/send"] "[]" 0] :feed
    ["baton" ":baton" [":baton/hide"] "[]" 0] :feed
    ["baton" ":baton" [":baton/propose"] "[]" 0] :feed
    ["baton" ":baton" [":baton/record-decision"] "[]" 0] :feed
@@ -286,7 +294,7 @@
    ["org" ":org" [":org/hours"] "[]" 0] :feed
    ["org" ":org" [":org/rename"] "[]" 0] :feed
    ["org" ":org" [":person/add"] "[]" 0] :feed
-   ["org" ":org" [":project/add"] "[]" 0] :feed
+   ["org" ":org" [":project/place"] "[]" 0] :feed
    ["org" ":owner-cleared" [":owner/set"] "[:owner-none]" 0] :feed
    ["org" ":owner-cleared" [":owner/set"] "[:owner-none]" 1] :feed
    ["org" ":owner-cleared" [":owner/set"] "[:owner-set]" 0] :feed
@@ -336,34 +344,35 @@
    ["project" ":active" [":project/unarchive"] "[]" 0] :feed
    ["project" ":archived" [":project/archive"] "[]" 0] :feed
    ["project" ":archived" [":project/unarchive"] "[:active]" 0] :feed
-   ["project" ":cooling" [":cooldown/over"] "[:ready]" 0] :quiet
-   ["project" ":cooling" [":cooldown/restart"] "[:cooling]" 0] :quiet
+   ["placement" ":cooling" [":cooldown/over"] "[:ready]" 0] :quiet
+   ["placement" ":cooling" [":cooldown/restart"] "[:cooling]" 0] :quiet
    ["project" ":has-overseer" [":overseer/clear"] "[]" 0] :feed
    ["project" ":has-overseer" [":overseer/start"] "[]" 0] :feed
-   ["project" ":no-milestone" [] "[:since-post]" 0] :quiet
+   ["placement" ":no-milestone" [] "[:since-post]" 0] :quiet
    ["project" ":no-overseer" [] "[:has-overseer]" 0] :feed
    ["project" ":no-overseer" [":overseer/start"] "[:has-overseer]" 0] :feed
-   ["project" ":no-stakeholder" [] "[:stakeholder-set]" 0] :feed
-   ["project" ":no-stakeholder" [":stakeholder/set"] "[:no-stakeholder]" 0] :feed
-   ["project" ":no-stakeholder" [":stakeholder/set"] "[:stakeholder-set]" 0] :feed
-   ["project" ":project" [":baton/start"] "[]" 0] :feed
+   ["placement" ":no-stakeholder" [] "[:stakeholder-set]" 0] :feed
+   ["placement" ":no-stakeholder" [":stakeholder/set"] "[:no-stakeholder]" 0] :feed
+   ["placement" ":no-stakeholder" [":stakeholder/set"] "[:stakeholder-set]" 0] :feed
+   ["placement" ":placement" [":baton/start"] "[]" 0] :feed
    ["project" ":project" [":build/start"] "[]" 0] :feed
-   ["project" ":project" [":gap/file"] "[]" 0] :feed
+   ["placement" ":placement" [":gap/file"] "[]" 0] :feed
    ["project" ":project" [":hold/cancel"] "[]" 0] :correction
-   ["project" ":project" [":milestone/noted"] "[]" 0] :quiet
-   ["project" ":project" [":owner-update/post"] "[]" 0] :feed
+   ["placement" ":placement" [":milestone/noted"] "[]" 0] :quiet
+   ["placement" ":placement" [":owner-update/post"] "[]" 0] :feed
    ["project" ":project" [":preview/start"] "[]" 0] :feed
    ["project" ":project" [":services/down"] "[]" 0] :feed
    ["project" ":project" [":services/run"] "[]" 0] :feed
+   ["project" ":project" [":services/share"] "[]" 0] :feed
    ["project" ":project" [":project/edit"] "[]" 0] :feed
-   ["project" ":project" [":spec/freeze"] "[]" 0] :feed
-   ["project" ":ready" [] "[:cooling]" 0] :quiet
-   ["project" ":since-post" [] "[:no-milestone]" 0] :quiet
-   ["project" ":stakeholder-cleared" [":stakeholder/set"] "[:no-stakeholder]" 0] :feed
-   ["project" ":stakeholder-cleared" [":stakeholder/set"] "[:stakeholder-set]" 0] :feed
-   ["project" ":stakeholder-set" [":link/moved"] "[:stakeholder-cleared]" 0] :feed
-   ["project" ":stakeholder-set" [":stakeholder/set"] "[:no-stakeholder]" 0] :feed
-   ["project" ":stakeholder-set" [":stakeholder/set"] "[:stakeholder-set]" 0] :feed
+   ["placement" ":placement" [":spec/freeze"] "[]" 0] :feed
+   ["placement" ":ready" [] "[:cooling]" 0] :quiet
+   ["placement" ":since-post" [] "[:no-milestone]" 0] :quiet
+   ["placement" ":stakeholder-cleared" [":stakeholder/set"] "[:no-stakeholder]" 0] :feed
+   ["placement" ":stakeholder-cleared" [":stakeholder/set"] "[:stakeholder-set]" 0] :feed
+   ["placement" ":stakeholder-set" [":link/moved"] "[:stakeholder-cleared]" 0] :feed
+   ["placement" ":stakeholder-set" [":stakeholder/set"] "[:no-stakeholder]" 0] :feed
+   ["placement" ":stakeholder-set" [":stakeholder/set"] "[:stakeholder-set]" 0] :feed
    ["reconciler" ":born" [] "[:idle]" 0] :quiet
    ["reconciler" ":born" [] "[:off]" 0] :quiet
    ["reconciler" ":debouncing" [":debounce/over"] "[:running]" 0] :quiet
@@ -448,4 +457,55 @@
    ["watch" ":watch" [":org/attached-here"] "[]" 0] :feed
    ["watch" ":watch" [":settings/changed"] "[]" 0] :quiet
    ["watch" ":watch-off" [] "[:watch-on]" 0] :quiet
-   ["watch" ":watch-on" [] "[:watch-off]" 0] :quiet})
+   ["watch" ":watch-on" [] "[:watch-off]" 0] :quiet
+   ["project" ":project" [":verbs/onboard"] "[]" 0] :feed
+   ["runtime" ":awaiting-approval" [] "[:conforming]" 0] :feed
+   ["runtime" ":awaiting-approval" [] "[:failed]" 0] :feed
+   ["runtime" ":awaiting-approval" [] "[:registered]" 0] :feed
+   ["runtime" ":awaiting-approval" [] "[:stale]" 0] :feed
+   ["runtime" ":awaiting-approval" [] "[:unregistered]" 0] :feed
+   ["runtime" ":conforming" [] "[:awaiting-approval]" 0] :feed
+   ["runtime" ":conforming" [] "[:failed]" 0] :feed
+   ["runtime" ":conforming" [] "[:registered]" 0] :feed
+   ["runtime" ":conforming" [] "[:stale]" 0] :feed
+   ["runtime" ":conforming" [] "[:unregistered]" 0] :feed
+   ["runtime" ":failed" [] "[:awaiting-approval]" 0] :feed
+   ["runtime" ":failed" [] "[:conforming]" 0] :feed
+   ["runtime" ":failed" [] "[:registered]" 0] :feed
+   ["runtime" ":failed" [] "[:stale]" 0] :feed
+   ["runtime" ":failed" [] "[:unregistered]" 0] :feed
+   ["runtime" ":idle" [":playbook/started"] "[:running]" 0] :feed
+   ["runtime" ":proposed" [":link/moved"] "[:idle]" 0] :feed
+   ["runtime" ":proposed" [":link/moved"] "[:running]" 0] :feed
+   ["runtime" ":proposed" [":link/moved"] "[:waiting]" 0] :feed
+   ["runtime" ":proposed" [":link/moved"] "[]" 0] :quiet
+   ["runtime" ":registered" [] "[:awaiting-approval]" 0] :feed
+   ["runtime" ":registered" [] "[:conforming]" 0] :feed
+   ["runtime" ":registered" [] "[:failed]" 0] :feed
+   ["runtime" ":registered" [] "[:stale]" 0] :feed
+   ["runtime" ":registered" [] "[:unregistered]" 0] :feed
+   ["runtime" ":running" [":link/moved"] "[:idle]" 0] :feed
+   ["runtime" ":running" [":link/moved"] "[:proposed]" 0] :feed
+   ["runtime" ":running" [":link/moved"] "[:waiting]" 0] :feed
+   ["runtime" ":running" [":link/moved"] "[]" 0] :quiet
+   ["runtime" ":runtime" [":effect/done"] "[]" 0] :feed
+   ["runtime" ":waiting" [":link/moved"] "[:idle]" 0] :feed
+   ["runtime" ":waiting" [":link/moved"] "[:proposed]" 0] :feed
+   ["runtime" ":waiting" [":link/moved"] "[:running]" 0] :feed
+   ["runtime" ":waiting" [":link/moved"] "[]" 0] :quiet
+   ["runtime" ":runtime" [":effect/done"] "[]" 1] :feed
+   ["runtime" ":runtime" [":effect/failed"] "[]" 0] :feed
+   ["runtime" ":runtime" [":effect/failed"] "[]" 1] :feed
+   ["runtime" ":runtime" [":runtime/approve"] "[]" 0] :feed
+   ["runtime" ":runtime" [":runtime/observed"] "[]" 0] :quiet
+   ["runtime" ":runtime" [":sova.statecharts/flush"] "[]" 0] :quiet
+   ["runtime" ":stale" [] "[:awaiting-approval]" 0] :feed
+   ["runtime" ":stale" [] "[:conforming]" 0] :feed
+   ["runtime" ":stale" [] "[:failed]" 0] :feed
+   ["runtime" ":stale" [] "[:registered]" 0] :feed
+   ["runtime" ":stale" [] "[:unregistered]" 0] :feed
+   ["runtime" ":unregistered" [] "[:awaiting-approval]" 0] :feed
+   ["runtime" ":unregistered" [] "[:conforming]" 0] :feed
+   ["runtime" ":unregistered" [] "[:failed]" 0] :feed
+   ["runtime" ":unregistered" [] "[:registered]" 0] :feed
+   ["runtime" ":unregistered" [] "[:stale]" 0] :feed})

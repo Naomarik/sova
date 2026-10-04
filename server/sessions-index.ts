@@ -30,18 +30,51 @@ import { readDecisionSettings } from "./decide-settings";
 import { readSignals, signalsOverlay, workerSignalsOverlay } from "./signals-store";
 import { dropSessionTags, tagsFor } from "./session-tags";
 import { pruneReadiness, readinessOverlay } from "./merge-readiness";
-import { batonSummaryField } from "./baton";
+import { listGeneration } from "./list-generation";
 import { projectOverseerOfPath } from "./project-overseer-store";
-import { orgCodingIds, orgLookup } from "./org-sessions";
-import { orgOfSessionPath, readIndex } from "./orgs";
+import { projectCodingIds, projectKeeps, projectSessionLookup } from "./project-sessions";
+import { reservedRoots } from "./projects/contributions";
 
-/** `baton` for a baton session's file (§app/baton), `projectOverseer` for a project overseer's
-    (§app/project-overseer), else nothing. */
-function batonFields(path: string): Pick<SessionSummary, "baton" | "projectOverseer"> {
-  const baton = batonSummaryField(path);
-  if (baton) return { baton };
-  const po = projectOverseerOfPath(path);
-  return po ? { projectOverseer: po } : {};
+/**
+ * What another layer adds to the list (organizations: a baton session's `baton`, an org session's `org`), and
+ * the files it keeps (never deleted by Clean Up or an empty husk's archive). Registered as that layer loads, so
+ * this module imports none of it.
+ */
+export interface SessionsPart {
+  /** Once per listing pass: the fields of one file, or undefined. */
+  lookup(): { of(path: string, id: string): Pick<SessionSummary, "baton" | "org"> | undefined };
+  /** Why the file may never be deleted here, or null. */
+  keeps?(path: string): string | null;
+}
+const sessionParts: SessionsPart[] = [];
+export function contributeSessions(part: SessionsPart): void {
+  sessionParts.push(part);
+}
+
+/** One listing pass's lookups: every contributed part's, then the project layer's. */
+function fieldLookup(): (path: string, id: string) => Pick<SessionSummary, "baton" | "org" | "project" | "projectOverseer"> {
+  const parts = sessionParts.map((p) => p.lookup());
+  const projects = projectSessionLookup();
+  return (path, id) => {
+    const out: Pick<SessionSummary, "baton" | "org" | "project" | "projectOverseer"> = {};
+    for (const l of parts) Object.assign(out, l.of(path, id) ?? {});
+    const project = projects.of(path, id);
+    if (project) out.project = project;
+    if (!out.baton) {
+      const po = projectOverseerOfPath(path);
+      if (po) out.projectOverseer = po;
+    }
+    return out;
+  };
+}
+
+/** Why a file may never be deleted here (another layer's, or a standalone project's), or null. */
+function keptBy(path: string): string | null {
+  for (const p of sessionParts) {
+    const why = p.keeps?.(path);
+    if (why) return why;
+  }
+  return projectKeeps(path);
 }
 
 type BaseSummary = Omit<SessionSummary, "live" | "workers" | "origin" | "archived" | "busy">;
@@ -821,8 +854,29 @@ function decisionFields(
   };
 }
 
-/** All sessions, newest activity first, with fresh live presence merged in. */
-export async function listSessions(): Promise<SessionSummary[]> {
+/** How long a finished listing serves further callers, from its build's start (§app.session-list/listing-reuse). */
+export const LIST_REUSE_MS = 1_000;
+let listing: { generation: number; startedAt: number; rows: Promise<SessionSummary[]> } | null = null;
+
+/** All sessions, newest activity first, with fresh live presence merged in. Callers share a build
+    that is running or started less than LIST_REUSE_MS ago, unless something in this process changed
+    since it started (server/list-generation.ts). Each caller gets its own array; rows are shared
+    and never mutated. */
+export function listSessions(): Promise<SessionSummary[]> {
+  const now = Date.now();
+  const generation = listGeneration();
+  let l = listing;
+  if (!l || l.generation !== generation || now - l.startedAt >= LIST_REUSE_MS || now < l.startedAt) {
+    const mine: { generation: number; startedAt: number; rows: Promise<SessionSummary[]> } = { generation, startedAt: now, rows: buildSessions() };
+    listing = l = mine;
+    mine.rows.catch(() => {
+      if (listing === mine) listing = null;
+    });
+  }
+  return l.rows.then((rows) => [...rows]);
+}
+
+async function buildSessions(): Promise<SessionSummary[]> {
   const files = await listSessionFiles();
   const live = readLive();
   const own = readOwnLiveRecords();
@@ -832,7 +886,7 @@ export async function listSessions(): Promise<SessionSummary[]> {
   const groups = readAssignments();
   const seen = readSeen();
   const attention = readDecisionSettings().features.attention;
-  const orgs = orgLookup();
+  const fields = fieldLookup();
   // A kept preview link never reaches the list (§app.project-overseer/previews): a title or summary line
   // that holds one (the overseer saw it in its tool result) shows "[preview link]" in its place.
   const previewLabels = keptLabels();
@@ -862,7 +916,7 @@ export async function listSessions(): Promise<SessionSummary[]> {
     let preview: string | undefined;
     // A baton or project overseer file is never a husk: a fresh baton held by the operator (or
     // waiting for its first link) needs them before anyone has written in it.
-    const special = batonFields(s.path);
+    const special = fields(s.path, s.id);
     if (s.title === "Untitled") {
       const st2 = await stat(s.path).catch(() => null);
       if (st2 && (await isZeroInput(s.path, st2.size))) {
@@ -875,7 +929,6 @@ export async function listSessions(): Promise<SessionSummary[]> {
     }
     const l = live.get(s.path);
     const ownRec = own.get(s.path);
-    const org = orgs.of(s.path, s.id);
     // The husk check above reads the DERIVED title on purpose: what keeps an empty session out of
     // the list is that nobody has written in it, which renaming it doesn't change.
     const row: SessionSummary = {
@@ -893,7 +946,6 @@ export async function listSessions(): Promise<SessionSummary[]> {
       ...(preview !== undefined ? { draftPreview: preview } : {}),
       ...(hasDraft ? { hasDraft: true as const } : {}),
       ...special,
-      ...(org ? { org } : {}),
     };
     // Merge readiness (§chat.worktrees/readiness): the last background answer; git is never awaited here.
     const readiness = readinessOverlay(row);
@@ -939,8 +991,7 @@ export async function getSessionSummary(path: string, resolveWindow?: WindowReso
     busy: isSessionBusy(s.path),
     ...attentionFields(s, l, ownRec, readSeen()),
     ...decisionFields(s, l, ownRec, readSeen(), readDecisionSettings().features.attention),
-    ...batonFields(s.path),
-    ...orgField(s.path, s.id),
+    ...fieldLookup()(s.path, s.id),
   };
   const readiness = readinessOverlay(row);
   return redactPreviewLinksDeep(readiness ? { ...row, readiness } : row);
@@ -961,11 +1012,6 @@ function sessionArchived(id: string): void {
       console.error("[sessions] archive listener failed", err);
     }
   }
-}
-
-function orgField(path: string, id: string): Pick<SessionSummary, "org"> {
-  const org = orgLookup().of(path, id);
-  return org ? { org } : {};
 }
 
 export const SUBAGENTS_WORKING = "Subagents are working in this session. Stop them or wait for them to finish before archiving.";
@@ -1007,7 +1053,7 @@ export async function archiveSession(path: string, archived: boolean): Promise<A
   // draft is a new session the user is writing in, not an abandoned stub — it archives normally.
   // So does an attached org's workspace session: a fresh baton waiting on its first link is a
   // husk by shape, and baton.json and overseer state name the file, so it is never deleted here.
-  if (archived && !orgOfSessionPath(s.path)) {
+  if (archived && !keptBy(s.path)) {
     const st = await stat(s.path).catch(() => null);
     if (st && (await isZeroInput(s.path, st.size))) {
       if (!draftCounts(readDrafts()[s.id])) {
@@ -1115,8 +1161,9 @@ export async function cleanupSessions(req: CleanupRequest): Promise<CleanupResul
     // An attached org's workspace sessions (batons, project-overseer conversations) belong to the
     // org: baton.json and overseer state name them, so no mode ever deletes one. Silent in the
     // bulk modes, like the Overseer's files, so the dry run's count is what the real run deletes.
-    if (orgOfSessionPath(path)) {
-      if (req.mode === "paths") refusals.push({ path, reason: "Belongs to an organization's workspace — Clean Up never deletes it." });
+    const kept = keptBy(path);
+    if (kept) {
+      if (req.mode === "paths") refusals.push({ path, reason: kept });
       continue;
     }
     let st;
@@ -1130,7 +1177,7 @@ export async function cleanupSessions(req: CleanupRequest): Promise<CleanupResul
     if (!matches) continue;
     // A project's coding session is empty until the operator's first message (New Coding Session):
     // its build statechart names it, so it is never swept as a husk.
-    if (req.mode === "husks" && (codingIds ??= orgCodingIds()).has(idOf(path))) continue;
+    if (req.mode === "husks" && (codingIds ??= projectCodingIds()).has(idOf(path))) continue;
     // Overseer files (current and history) are never swept by age or as husks: a fresh Overseer
     // is a husk by definition, and its history is pruned by /clear itself (paths mode).
     if (req.mode !== "paths" && (await summarize(path))?.overseer) continue;
@@ -1200,7 +1247,7 @@ function isDir(p: string): boolean {
 
 /** Distinct existing cwds from the index, most recently used first. */
 export async function listCwds(): Promise<string[]> {
-  return recentCwds(await listSessions(), overseerDir(), isDir, readIndex().orgs.map((o) => o.dir));
+  return recentCwds(await listSessions(), overseerDir(), isDir, reservedRoots());
 }
 
 /** listCwds over a given list, for the tests. The Overseer's own folder is its state, not a

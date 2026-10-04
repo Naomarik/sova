@@ -5,7 +5,9 @@
 #                 both for this host's `uname -m`: x86_64, or aarch64/arm64; any other stops before downloading
 #   ~/$R/app      the git archive staged in ~/$R/app.new, built there (pnpm install --frozen-lockfile + vite build,
 #                 both modes; pnpm via this node's corepack), then swapped in (previous kept as app.prev); a failed
-#                 build stops before the swap
+#                 build stops before the swap. Its .bun/bin/bun is the Bun the server runs on: the build its mise.toml
+#                 pins, sha256-checked against its scripts/bun-release.txt (scripts/fetch-bun.sh; the previous app's
+#                 copy when it is that version), so it swaps in and out with the app
 #   ~/$R/agent    the agent dir (PI_CODING_AGENT_DIR); auth.json created EMPTY ({}, 0600) if absent, never overwritten
 #   ~/$R/home     the isolated HOME for every build and run step (the user's own dotfiles are never read)
 #   ~/$R/tmp      TMPDIR for every build and run step (0700): nothing of ours lands in /tmp; holds jiti's extension cache,
@@ -16,8 +18,14 @@
 #   Claude Code   not installed here: the claude-code extension spawns plain `claude`, so the directory of the user's own
 #                 claude (CLAUDE_BIN, else `command -v claude` in the user's login shell, else common install locations) is
 #                 appended to PATH in sova-mesh.env; not found = a warning, never a failed deploy
+#   VPS_RELAY=on  the internet relay (§mesh.vps/internet-relay): the accept process bundled in app.new (stamped with the
+#                 deployed commit; a failed bundle stops before the swap), then installed atomically as
+#                 ~/$R/accept/relay-accept.mjs; ~/$R/relay (0750, the user's group) for Sova's handoff socket, named in
+#                 sova-mesh.env as SOVA_RELAY_HANDOFF; ~/$R/sova-relay-accept.service rendered from the template for the
+#                 admin to install (SUDO.md §5), with a warning when the installed one differs or the group has other members
 # Env in: R NODE_VERSION NODE_SHA256_X64 NODE_SHA256_ARM64 CADDY_VERSION CADDY_SHA512_AMD64 CADDY_SHA512_ARM64 SOVA_PORT SOVA_PEER_PORT VPS_TAILNET_IP VPS_ID VPS_LABEL
-#         CLAUDE_BIN (optional, the claude executable to use)
+#         CLAUDE_BIN (optional, the claude executable to use), SOVA_RUNTIME (optional: node = run Sova on Node),
+#         VPS_RELAY (optional: on = the internet relay's accept process), VPS_RELAY_PORT (its public port; below 1024 turns on the capability)
 set -euo pipefail
 : "${R:?}" "${NODE_VERSION:?}" "${NODE_SHA256_X64:?}" "${NODE_SHA256_ARM64:?}" "${CADDY_VERSION:?}" "${CADDY_SHA512_AMD64:?}"
 : "${CADDY_SHA512_ARM64:?}" "${SOVA_PORT:?}" "${SOVA_PEER_PORT:?}" "${VPS_TAILNET_IP:?}"
@@ -89,6 +97,9 @@ fi
 [ -f "$BASE/app.new/package.json" ] || { log "no staged app in $BASE/app.new"; exit 1; }
 export HOME="$BASE/home" TMPDIR="$BASE/tmp" PATH="$BASE/node/bin:/usr/bin:/bin" COREPACK_HOME="$BASE/home/.cache/corepack" COREPACK_ENABLE_DOWNLOAD_PROMPT=0 CI=1
 cd "$BASE/app.new"
+[ -x "$BASE/app/.bun/bin/bun" ] && mkdir -p .bun/bin && cp -p "$BASE/app/.bun/bin/bun" .bun/bin/bun
+sh scripts/fetch-bun.sh "$BASE/app.new/.bun" >/dev/null || { log "bun: install failed: the running app is unchanged"; exit 1; }
+log "bun: $(.bun/bin/bun --version) (sha256 verified at install)"
 log "pnpm: $(corepack pnpm --version) install --frozen-lockfile (in app.new)"
 nice -n 10 corepack pnpm install --frozen-lockfile --reporter=append-only > "$BASE/tmp/pnpm-install.log" 2>&1 \
   || { tail -20 "$BASE/tmp/pnpm-install.log" >&2; log "pnpm install failed: the running app is unchanged"; exit 1; }
@@ -98,6 +109,19 @@ nice -n 10 corepack pnpm exec vite build --logLevel warn >&2 || { log "vite buil
 # the share page's own build (dist-share/): the share listener serves /h/ and /i/ from it
 nice -n 10 corepack pnpm exec vite build --mode share --logLevel warn >&2 || { log "share build failed: the running app is unchanged"; exit 1; }
 [ -f dist/index.html ] || { log "vite build produced no dist/index.html: the running app is unchanged"; exit 1; }
+# the internet relay's accept process: one file, Node builtins only, stamped with the commit Sova reads from BUILD_COMMIT
+# (an accept process of another build is told to exit by Sova, and its unit starts this one)
+if [ "${VPS_RELAY:-off}" = on ]; then
+  commit=$(node -e 'try{const c=JSON.parse(require("fs").readFileSync("BUILD_COMMIT","utf8")).commit;process.stdout.write(/^[0-9a-f]{40}$/.test(c)?c:"dev")}catch{process.stdout.write("dev")}')
+  rm -rf .accept && mkdir -p .accept
+  { .bun/bin/bun build server/mesh/relay-accept/main.ts --target=node --format=esm --outfile .accept/relay-accept.mjs \
+      --define "__SOVA_ACCEPT_BUILD__=\"$commit\"" >&2 \
+    && node --check .accept/relay-accept.mjs \
+    && ! grep -oE '(from|import\() *"[^"]+"' .accept/relay-accept.mjs | grep -vqE '"node:[a-z_/]+"$'; } \
+    || { log "relay accept: bundle failed: the running app is unchanged"; exit 1; }
+  printf '%s\n' "$commit" > .accept/BUILD
+  log "relay accept: bundled (build ${commit:0:12})"
+fi
 cd "$BASE"
 rm -rf "$BASE/app.prev"
 [ -d "$BASE/app" ] && mv "$BASE/app" "$BASE/app.prev"
@@ -126,6 +150,34 @@ fi
 log "agent: peers.json self.id = $(node -e 'console.log(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).self?.id ?? "(default)")' "$BASE/agent/sova/peers.json")"
 log "agent: auth.json holds $(node -e 'console.log(Object.keys(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"))).length)' "$BASE/agent/auth.json") entr(y/ies)"
 
+# --- the internet relay (VPS_RELAY=on) ------------------------------------------------------------
+# The bundle swaps in atomically (a running accept process keeps the file it loaded); the handoff directory is Sova's own
+# (Sova refuses it otherwise); the unit file is rendered for the admin, never installed from here (no sudo, ever).
+RELAY_ENV=
+if [ "${VPS_RELAY:-off}" = on ]; then
+  mkdir -p "$BASE/accept" && chmod 755 "$BASE/accept"
+  for f in relay-accept.mjs BUILD; do
+    install -m 0644 "$BASE/app/.accept/$f" "$BASE/accept/$f.new" && mv -f "$BASE/accept/$f.new" "$BASE/accept/$f"
+  done
+  me=$(id -un); grp=$(id -gn)
+  mkdir -p "$BASE/relay" && chgrp "$grp" "$BASE/relay" && chmod 750 "$BASE/relay"
+  RELAY_ENV="SOVA_RELAY_HANDOFF=$BASE/relay/h.sock"
+  others=$( { getent group "$grp" | cut -d: -f4 | tr ',' '\n'; getent passwd | awk -F: -v g="$(id -g)" '$4 == g { print $1 }'; } \
+    | grep -vx -e "$me" -e '' | sort -u | tr '\n' ' ' || true)
+  [ -z "$others" ] || log "WARNING: group $grp has other members (${others% }): they could reach Sova's handoff socket; give $me a group of its own"
+  # A port below 1024 (443) is the only case that needs a capability: then, and only then, the two lines are on.
+  cap='s#^\#\(\(Ambient\|CapabilityBounding\)[A-Za-z]*=CAP_NET_BIND_SERVICE\)$#\1#'
+  [ "${VPS_RELAY_PORT:-4803}" -lt 1024 ] || cap='s#^$##'
+  sed -e "s|@GROUP@|$grp|g" -e "s|@BASE@|$BASE|g" -e "$cap" "$BASE/app/scripts/mesh-vps/sova-relay-accept.service.in" > "$BASE/sova-relay-accept.service.tmp"
+  mv -f "$BASE/sova-relay-accept.service.tmp" "$BASE/sova-relay-accept.service"
+  if [ ! -f /etc/systemd/system/sova-relay-accept.service ]; then
+    log "relay accept: the system unit isn't installed: an admin runs SUDO.md §5 once"
+  elif ! cmp -s "$BASE/sova-relay-accept.service" /etc/systemd/system/sova-relay-accept.service; then
+    log "WARNING: the installed sova-relay-accept.service differs from this build's: run SUDO.md §5 step 2 again"
+  fi
+  log "relay accept: installed (build $(cut -c1-12 "$BASE/accept/BUILD")); handoff socket $BASE/relay/h.sock"
+fi
+
 # --- the environment ------------------------------------------------------------------------------
 cat > "$BASE/sova-mesh.env.tmp" <<EOF
 PORT=$SOVA_PORT
@@ -137,7 +189,11 @@ HOME=$BASE/home
 SOVA_SYNC_CLAUDE_DIR=$BASE/home/.claude
 TMPDIR=$BASE/tmp
 PATH=$SERVICE_PATH
+SOVA_BUN=$BASE/app/.bun/bin/bun
 EOF
+[ "${SOVA_RUNTIME:-}" != node ] || echo "SOVA_RUNTIME=node" >> "$BASE/sova-mesh.env.tmp"
+# Only with VPS_RELAY=on: unset, Sova has no internet relay, and an accept process left installed never listens.
+[ -z "$RELAY_ENV" ] || echo "$RELAY_ENV" >> "$BASE/sova-mesh.env.tmp"
 mv "$BASE/sova-mesh.env.tmp" "$BASE/sova-mesh.env"
 
 # --- warm the extension cache ---------------------------------------------------------------------

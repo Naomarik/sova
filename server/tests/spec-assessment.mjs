@@ -1,9 +1,11 @@
-// Actual common team spawn -> scripted RPC child running the pinned SDK/spec-worker -> owner reopen -> explicit assessment query.
+// Actual common team spawn -> scripted RPC child running the pinned SDK/spec-worker -> owner reopen -> explicit companion CLI.
 // No model/network requests. The spawnImpl replaces only the CLI transport, not the worker's SDK lifecycle.
+// The spec core's sova-spec-assess.mjs is a trap that records each call, then runs the real companion: neither the
+// worker, the owner nor a spec-on mode session calls it by itself; only the operator's explicit CLI calls reach it.
 import "../../pi-config/extensions/claude-code/tests/hermetic-env.mjs";
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync, symlinkSync, readdirSync, rmSync, realpathSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync, symlinkSync, readdirSync, rmSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -19,6 +21,7 @@ const { registerSubagents } = await jiti.import(path.resolve(here, "../../pi-con
 const { SubagentRunner } = await jiti.import(path.resolve(here, "../../pi-config/extensions/subagents/runner.ts"));
 const { computeReadiness, configureReadiness, resetReadiness, readinessChecksOf } = await jiti.import(path.resolve(here, "../merge-readiness.ts"));
 const { callAssessment } = await jiti.import(path.resolve(here, "../../pi-config/extensions/mode/spec-assessment.ts"));
+const realCore = path.resolve(here, "../../pi-config/extensions/spec/core");
 
 function provider(script, probe) {
  return pi => pi.registerProvider("scripted", { baseUrl: "http://localhost", apiKey: "unused", api: "openai-completions", models: [{ id: "assessment", name: "Scripted", reasoning: false, input: ["text"], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 100000, maxTokens: 1000 }],
@@ -38,20 +41,13 @@ function provider(script, probe) {
 
 if (process.argv.includes("--worker")) {
  const cwd = process.env.SOVA_ASSESS_TEST_CWD, agentDir = process.env.SOVA_ASSESS_TEST_AGENT;
- const script = [{ tool: "write", args: { path: "src/value.ts", content: "export const value = 90;\n" } }, { tool: "spec_assess", args: { action: "record", by: "scripted fixture", self: true, decisions: { decisions: [{ ids: ["§demo/rule"], disposition: "unresolved", reason: "Implementation changed while the old requirement says 80; comparison remains outstanding.", basis: [{ kind: "test", revision: process.env.SOVA_ASSESS_TEST_BASE, result: "failed", summary: "A declared fixture verification result, not semantic proof." }] }], files: [] } } }, { text: "Done.\nAlso changes: none" }];
- const loader = new DefaultResourceLoader({ cwd, agentDir, noExtensions: true, additionalExtensionPaths: [path.resolve(here, "../../pi-config/extensions/mode/spec-worker.ts")], extensionFactories: [provider(script, step => {
-  if (step.tool === "spec_assess") {
-   const store = path.join(cwd, ".sova/spec/assessments");
-   const names = readdirSync(store).filter(n => !n.startsWith("."));
-   const packet = JSON.parse(readFileSync(path.join(store, names[0], "packet.json"), "utf8"));
-   assert.equal(packet.capture.candidates[0].disposition, "unresolved");
-   writeFileSync(process.env.SOVA_ASSESS_TEST_PROBE, JSON.stringify({ packet, recordAbsentBeforeRecording: !readdirSync(path.join(store, names[0])).includes("record.json"), spawnEnvironment: { owner: process.env.SOVA_SPEC_OWNER_SESSION, worker: process.env.SOVA_SPEC_WORKER_ID, team: process.env.SOVA_SPEC_TEAM_ID } }));
-  }
- })] });
+ const script = [{ tool: "read", args: { path: "src/value.ts" } }, { tool: "bash", args: { command: "git status --short" } }, { tool: "write", args: { path: "src/value.ts", content: "export const value = 90;\n" } }, { text: "Done.\nAlso changes: §demo/rule — value is now 90" }];
+ const loader = new DefaultResourceLoader({ cwd, agentDir, noExtensions: true, additionalExtensionPaths: [path.resolve(here, "../../pi-config/extensions/mode/spec-worker.ts")], extensionFactories: [provider(script)] });
  await loader.reload();
  const manager = SessionManager.create(cwd, path.join(agentDir, "sessions/worker"));
  const { session } = await createAgentSession({ cwd, agentDir, resourceLoader: loader, settingsManager: SettingsManager.inMemory(), sessionManager: manager });
  await session.setModel(session.modelRuntime.getModel("scripted", "assessment"));
+ writeFileSync(process.env.SOVA_ASSESS_TEST_PROBE, JSON.stringify({ tools: session.getAllTools().map(t => t.name), spawnEnvironment: { owner: process.env.SOVA_SPEC_OWNER_SESSION, worker: process.env.SOVA_SPEC_WORKER_ID, team: process.env.SOVA_SPEC_TEAM_ID } }));
  const send = value => process.stdout.write(`${JSON.stringify(value)}\n`);
  session.subscribe(send);
  createInterface({ input: process.stdin }).on("line", async line => {
@@ -64,108 +60,107 @@ if (process.argv.includes("--worker")) {
   } catch (error) { process.stderr.write(String(error.stack ?? error)); process.exitCode = 1; }
  });
 } else {
- const scratch = mkdtempSync(path.join(tmpdir(), "assessment-spawn-sdk-")), cwd = path.join(scratch, "project"), agentDir = path.join(scratch, "agent"), probe = path.join(scratch, "worker-probe.json");
+ const scratch = mkdtempSync(path.join(tmpdir(), "assessment-spawn-sdk-")), cwd = path.join(scratch, "project"), agentDir = path.join(scratch, "agent"), probe = path.join(scratch, "worker-probe.json"), marker = path.join(scratch, "assess-calls.jsonl");
+ const calls = () => existsSync(marker) ? readFileSync(marker, "utf8").trim().split("\n").filter(Boolean).map(l => JSON.parse(l)) : [];
+ const store = path.join(cwd, ".sova/spec/assessments");
+ const receipts = () => existsSync(store) ? readdirSync(store).filter(n => !n.startsWith(".")) : [];
+ const taskEntries = manager => manager.getEntries().filter(e => e.type === "custom" && /^spec-assessment/.test(e.customType));
  let session, runners = [];
  try {
-  mkdirSync(path.join(cwd, ".sova/spec/claims/demo"), { recursive: true }); mkdirSync(path.join(cwd, "src")); mkdirSync(path.join(agentDir, "extensions"), { recursive: true }); symlinkSync(path.resolve(here, "../../pi-config/extensions/spec"), path.join(agentDir, "extensions/spec")); process.env.PI_CODING_AGENT_DIR = agentDir;
+  mkdirSync(path.join(cwd, ".sova/spec/claims/demo"), { recursive: true }); mkdirSync(path.join(cwd, "src"));
+  const core = path.join(agentDir, "extensions/spec/core"); mkdirSync(core, { recursive: true });
+  for (const name of readdirSync(realCore)) if (name !== "sova-spec-assess.mjs") symlinkSync(path.join(realCore, name), path.join(core, name));
+  writeFileSync(path.join(core, "sova-spec-assess.mjs"), `import { appendFileSync } from "node:fs";\nappendFileSync(${JSON.stringify(marker)}, JSON.stringify(process.argv.slice(2)) + "\\n");\nawait import(${JSON.stringify(path.join(realCore, "sova-spec-assess.mjs"))});\n`);
+  process.env.PI_CODING_AGENT_DIR = agentDir;
   writeFileSync(path.join(cwd, ".sova/spec/manifest.json"), JSON.stringify({ formatVersion: 1, grammar: { claimsRoot: "claims/", directoryKinds: ["section"] }, boundary: { include: ["src"], exclude: [] }, claims: { "§demo/rule": { kind: "behavior", code: ["src/value.ts"], requires: [], authority: "accepted", evidence: "verified" } } }));
-  writeFileSync(path.join(cwd, ".sova/spec/claims/demo/rule.md"), "# §demo/rule\n\nValue is 80.\n"); writeFileSync(path.join(cwd, ".sova/spec/.gitignore"), "/assessments/\n/drafts/\n"); writeFileSync(path.join(cwd, "src/value.ts"), "export const value = 80;\n");
+  writeFileSync(path.join(cwd, ".sova/spec/claims/demo/rule.md"), "# §demo/rule\n\nValue is 80.\n"); writeFileSync(path.join(cwd, ".sova/spec/.gitignore"), "/assessments/\n/drafts/\n"); writeFileSync(path.join(cwd, "src/value.ts"), "export const value = 80;\n"); writeFileSync(path.join(cwd, "src/other.ts"), "export const other = 1;\n");
   const git = (...args) => { const r = spawnSync("git", ["-c", "user.name=fixture", "-c", "user.email=fixture@example.invalid", "-c", "commit.gpgsign=false", "-C", cwd, ...args], { encoding: "utf8" }); assert.equal(r.status, 0, r.stderr); return r.stdout.trim(); };
   git("init", "-q", "-b", "master"); git("add", "."); git("commit", "-qm", "initial"); const base = git("rev-parse", "HEAD");
-  const parentScript = [{ tool: "team_create", args: { name: "assessment fixture", objective: "Observe the unchanged requirement", members: [{ role: "author", prompt: "Change value to 90 and record an outstanding observation.", tools: ["read", "write", "bash"], wake: false }] } }, { text: "Team started." }];
+  // Prove the trap sees the actual transport, then start clean.
+  await callAssessment(core, cwd, ["status", "--owner-session", "nobody"]); assert.equal(calls().length, 1, "the trap records a real transport call"); rmSync(marker);
+  // Dirty before the task starts: a late baseline would have subtracted it, a known base keeps it visible.
+  writeFileSync(path.join(cwd, "src/other.ts"), "export const other = 2;\n");
+  const parentScript = [{ tool: "team_create", args: { name: "assessment fixture", objective: "Change the value", members: [{ role: "author", prompt: "Change value to 90.", tools: ["read", "write", "bash"], wake: false }] } }, { text: "Team started." }];
   const manager = SessionManager.create(cwd, path.join(agentDir, "sessions/owner"));
   const loader = new DefaultResourceLoader({ cwd, agentDir, noExtensions: true, extensionFactories: [provider(parentScript), pi => {
    pi.events.on("mode:discover", () => pi.events.emit("mode:state", { version: 1, minorModes: ["spec"] }));
    registerSubagents(pi, (options, handlers) => {
     const runner = new SubagentRunner({ ...options, spawnImpl: (_command, args, spawnOptions) => {
-     assert.ok(args.includes(path.resolve(here, "../../pi-config/extensions/mode/spec-worker.ts")), "actual common code-writing worker path injected the worker observer");
-     return spawn(process.execPath, [fileURLToPath(import.meta.url), "--worker"], { ...spawnOptions, env: { ...spawnOptions.env, SOVA_ASSESS_TEST_CWD: cwd, SOVA_ASSESS_TEST_AGENT: agentDir, SOVA_ASSESS_TEST_BASE: base, SOVA_ASSESS_TEST_PROBE: probe } });
+     assert.ok(args.includes(path.resolve(here, "../../pi-config/extensions/mode/spec-worker.ts")), "actual common code-writing worker path injected the worker's spec checks");
+     return spawn(process.execPath, [fileURLToPath(import.meta.url), "--worker"], { ...spawnOptions, env: { ...spawnOptions.env, SOVA_ASSESS_TEST_CWD: cwd, SOVA_ASSESS_TEST_AGENT: agentDir, SOVA_ASSESS_TEST_PROBE: probe } });
     } }, handlers); runners.push(runner); return runner;
    }, { agentDir, policyFile: path.join(agentDir, "absent-policy.json"), hosting: { enabled: false } });
   }] });
   await loader.reload();
   ({ session } = await createAgentSession({ cwd, agentDir, resourceLoader: loader, settingsManager: SettingsManager.inMemory(), sessionManager: manager }));
   await session.setModel(session.modelRuntime.getModel("scripted", "assessment"));
-  await session.prompt("Start the assessment team");
+  await session.prompt("Start the team");
   assert.equal(runners.length, 1, "actual team_create launched a real runner");
   const worker = runners[0], until = Date.now() + 30_000;
   while (!worker.isSettled() && Date.now() < until) await new Promise(r => setTimeout(r, 25));
   assert.equal(worker.taskOutcome, "success", worker.error ?? worker.finalOutput());
-  const workerRecord = readFileSync(worker.sessionFile, "utf8").trim().split("\n").map(line => JSON.parse(line)).find(e => e.type === "message" && e.message.role === "toolResult" && e.message.toolName === "spec_assess");
-  assert.equal(workerRecord.message.details.written, true);
-  assert.equal(workerRecord.message.isError, false, "recording a failed verification declaration is still a normal operation, not a semantic gate");
+  const workerEntries = readFileSync(worker.sessionFile, "utf8").trim().split("\n").map(line => JSON.parse(line));
+  assert.ok(workerEntries.some(e => e.type === "message" && e.message.role === "toolResult" && e.message.toolName === "write" && !e.message.isError), "the worker wrote");
+  assert.deepEqual(workerEntries.filter(e => e.type === "custom" && /^spec-assessment/.test(e.customType)), [], "the worker wrote no assessment task or error entry");
   const captured = JSON.parse(readFileSync(probe, "utf8"));
-  assert.equal(captured.recordAbsentBeforeRecording, true); assert.equal(captured.spawnEnvironment.owner, manager.getSessionId()); assert.equal(captured.spawnEnvironment.worker, worker.id); assert.ok(captured.spawnEnvironment.team);
-  assert.equal(captured.packet.attribution.sessionId, worker.sessionId); assert.equal(captured.packet.query.base, base);
+  assert.ok(!captured.tools.includes("spec_assess"), "a spec-on worker has no assessment tool");
+  assert.equal(captured.spawnEnvironment.owner, manager.getSessionId()); assert.equal(captured.spawnEnvironment.worker, worker.id); assert.ok(captured.spawnEnvironment.team, "spawn attribution env is still set");
+  assert.deepEqual(calls(), [], "neither the owner nor the worker ran an assessment by itself"); assert.deepEqual(receipts(), []);
   const ownerFile = manager.getSessionFile();
   await session.extensionRunner.emit({ type: "session_shutdown", reason: "quit" });
   session.dispose(); session = undefined;
-  const reopened = SessionManager.open(ownerFile); const entries = reopened.getEntries();
-  const manifests = entries.filter(e => e.type === "custom" && e.customType === "subagents-worker-manifest");
-  assert.ok(manifests.some(e => e.data.ref?.sessionId === worker.sessionId), "production recorder persisted worker identity");
+  const reopened = SessionManager.open(ownerFile);
+  assert.ok(reopened.getEntries().some(e => e.type === "custom" && e.customType === "subagents-worker-manifest" && e.data.ref?.sessionId === worker.sessionId), "production recorder persisted worker identity");
+  assert.deepEqual(taskEntries(reopened), []);
+  // The work lands as a commit after the task began: a later HEAD as base would hide it.
+  git("add", "src/value.ts"); git("commit", "-qm", "value 90");
   resetReadiness(); configureReadiness({ insights: { treeStatus: async () => ({ exists: true, readable: true, branch: "fixture", base: "master", ahead: 1, dirty: false, merged: false, subjects: [], headAt: 2 }) }, git: async () => "" });
   const row = { id: reopened.getSessionId(), path: ownerFile, cwd, busy: false, archived: false, lastActiveAt: new Date().toISOString() };
   const facts = { trees: [{ path: cwd, branch: "fixture", base, status: "active", session: row.id, action: "created" }], merges: [], lastCheck: { at: 1, ok: false } };
   const result = await computeReadiness(row, facts);
   assert.equal(result.trees[0].state, "in-progress"); assert.equal(result.trees[0].why, "the last check failed"); assert.deepEqual(readinessChecksOf(ownerFile).lastCheck, facts.lastCheck);
   assert.ok(!Object.hasOwn(result, "specObservations"), "routine readiness does not query or carry assessments");
-  const queried = await callAssessment(path.join(agentDir, "extensions/spec/core"), cwd, ["status", "--owner-session", row.id]);
+  assert.deepEqual(calls(), [], "readiness ran no assessment");
+
+  // The operator's explicit companion CLI against the known start revision: the only calls that reach the trap.
+  const attribution = { ownerSessionId: row.id, sessionId: worker.sessionId, workerId: worker.id, teamId: captured.spawnEnvironment.team, taskId: null, attemptId: null };
+  const prepared = await callAssessment(core, cwd, ["prepare", "operator-review", "--base", base, "--attribution-json", JSON.stringify(attribution), "--write"]);
+  assert.equal(prepared.written, true, JSON.stringify(prepared)); assert.equal(prepared.query.base, base, "the receipt names the declared base");
+  assert.ok(prepared.changedFiles.includes("src/value.ts"), "the task's committed change is included");
+  assert.ok(prepared.changedFiles.includes("src/other.ts"), "a change already there at the start is over-included and visible, never subtracted");
+  const recorded = await callAssessment(core, cwd, ["record", "operator-review", "--by", "operator", "--decisions-json", JSON.stringify({ decisions: [{ ids: ["§demo/rule"], disposition: "unresolved", reason: "Implementation changed while the requirement says 80; the comparison remains outstanding.", basis: [{ kind: "test", revision: base, result: "failed", summary: "A declared fixture verification result, not semantic proof." }] }], files: [] }), "--attribution-json", JSON.stringify(attribution), "--write"]);
+  assert.equal(recorded.written, true, JSON.stringify(recorded));
+  const status = await callAssessment(core, cwd, ["status", "operator-review"]);
+  assert.equal(status.assessmentState, "outstanding"); assert.equal(status.decisions.decisions[0].disposition, "unresolved");
+  const queried = await callAssessment(core, cwd, ["status", "--owner-session", row.id]);
   assert.equal(queried.observations.length, 1); const observation = queried.observations[0];
-  assert.equal(observation.attribution.workerId, worker.id);
-  assert.equal(observation.assessmentState, "outstanding"); assert.equal(observation.verification.failed[0].result, "failed"); assert.equal(observation.verification.failed[0].revisionBinding.inputApplicability, "mismatched");
-  // Actual full-mode command activation, strict snapshot, tool execution, and persisted restore.
-  writeFileSync(path.join(cwd, "src/value.ts"), "export const value = 80;\n");
-  const proseBefore = readFileSync(path.join(cwd, ".sova/spec/claims/demo/rule.md"), "utf8");
-  mkdirSync(path.join(cwd, ".sova/spec/drafts/unknown-local/attachments"), { recursive: true });
-  let immutableRecord;
-  const modeScript = [{ tool: "write", args: { path: "src/value.ts", content: "const base = 80; export const value = base;\n" } }, { tool: "spec_assess", args: { action: "record", by: "scripted inspection", self: true, decisions: { decisions: [{ ids: ["§demo/rule"], disposition: "preserved", reason: "The literal 80 moved into a named constant; the value is unchanged.", basis: [{ kind: "inspection", revision: null, result: "passed", summary: "Compared the literal and constant reference in this fixture." }] }], files: [] } } }, { tool: "spec_assess", args: { action: "status" } }, { tool: "spec_assess", args: { action: "record", name: "absent-receipt", by: "scripted inspection", decisions: { decisions: [], files: [] } } }, { tool: "spec_assess", staleRecord: true, args: { action: "record", by: "scripted inspection", decisions: { decisions: [], files: [] } } }, { text: "Done.\nAlso changes: none" }];
+  assert.equal(observation.attribution.workerId, worker.id); assert.equal(observation.attribution.taskId, null, "an attribution the caller did not pass stays null");
+  assert.equal(observation.verification.failed[0].result, "failed"); assert.equal(observation.verification.failed[0].revisionBinding.inputApplicability, "mismatched");
+  assert.deepEqual(calls().map(a => a[0]), ["prepare", "record", "status", "status"], "exactly the explicit calls");
+  assert.deepEqual(receipts(), ["operator-review"]);
+
+  // A full mode session with spec on: no assessment tool, no capture, across a write, the settle and a reopen.
+  rmSync(marker);
+  const modeScript = [{ tool: "read", args: { path: "src/value.ts" } }, { tool: "write", args: { path: "src/value.ts", content: "const base = 80; export const value = base;\n" } }, { text: "Done.\nAlso changes: §demo/rule — value back to 80" }];
   const makeModeSession = async manager => {
-   const resources = new DefaultResourceLoader({ cwd, agentDir, noExtensions: true, additionalExtensionPaths: [path.resolve(here, "../../pi-config/extensions/mode/index.ts")], extensionFactories: [provider(modeScript, step => {
-    if (!step.staleRecord) return;
-    const store = path.join(cwd, ".sova/spec/assessments");
-    const names = readdirSync(store).filter(n => !n.startsWith(".")).filter(n => JSON.parse(readFileSync(path.join(store, n, "packet.json"), "utf8")).attribution.ownerSessionId === modeManager.getSessionId());
-    assert.equal(names.length, 1, "the original comparison is retained before stale refusal");
-    step.args.name = names[0];
-    const file = path.join(store, names[0], "record.json"); immutableRecord = { file, bytes: readFileSync(file, "utf8") };
-    writeFileSync(path.join(cwd, "src/value.ts"), "const base = 80; export const value = base + 0;\n");
-   })] });
+   const resources = new DefaultResourceLoader({ cwd, agentDir, noExtensions: true, additionalExtensionPaths: [path.resolve(here, "../../pi-config/extensions/mode/index.ts")], extensionFactories: [provider(modeScript)] });
    await resources.reload();
    const created = await createAgentSession({ cwd, agentDir, resourceLoader: resources, settingsManager: SettingsManager.inMemory(), sessionManager: manager });
-   if (process.env.SOVA_ASSESS_TRACE) {
-    created.session.subscribe(event => { if (event.type === "extension_error") process.stderr.write(`extension-error ${JSON.stringify(event)}\n`); });
-    const set = created.session.setActiveToolsByName.bind(created.session);
-    created.session.setActiveToolsByName = names => { process.stderr.write(`tool-set ${JSON.stringify(names)}\n`); const result = set(names); process.stderr.write(`tool-active ${JSON.stringify(created.session.getActiveToolNames())}\n`); return result; };
-   }
-   await created.session.bindExtensions({ ...(process.env.SOVA_ASSESS_TRACE ? { onError: error => process.stderr.write(`binding-error ${JSON.stringify(error)}\n`) } : {}) });
+   await created.session.bindExtensions({});
    await created.session.setModel(created.session.modelRuntime.getModel("scripted", "assessment")); return created.session;
   };
   const modeManager = SessionManager.create(cwd, path.join(agentDir, "sessions/full-mode")); session = await makeModeSession(modeManager);
-  assert.ok(!session.getActiveToolNames().includes("spec_assess"));
-  await session.prompt("/mode spec on"); assert.ok(session.getActiveToolNames().includes("spec_assess"), "command activates, not only registers");
-  await session.prompt("/mode delegate"); await session.prompt("/mode strict on");
-  await session.prompt("/mode spec off"); assert.ok(!session.getActiveToolNames().includes("spec_assess"));
-  await session.prompt("/mode strict off"); assert.ok(!session.getActiveToolNames().includes("spec_assess"), "strict restore cannot resurrect the disabled tool");
-  await session.prompt("/mode normal"); await session.prompt("/mode spec on");
-  await session.prompt("Refactor without changing the value and explicitly record the comparison");
-  const results = modeManager.getBranch().filter(e => e.type === "message" && e.message.role === "toolResult" && e.message.toolName === "spec_assess");
-  assert.equal(results.length, 4); assert.ok(results.slice(0, 2).every(e => !e.message.isError), JSON.stringify(results));
-  assert.equal(results[1].message.details.assessmentState, "recorded");
-  assert.equal(results[1].message.details.exit, 1, "unknown applicability is still a normal status query");
-  assert.equal(results[1].message.details.applicability, "unknown");
-  assert.equal(results[1].message.details.decisions.decisions[0].disposition, "preserved");
-  assert.equal(results[2].message.details.exit, 2, "a missing receipt is an explicit operational refusal");
-  assert.equal(results[2].message.isError, true, "SDK refusal must not be flagged as a successful tool operation, even though structured details remain");
-  assert.equal(results[3].message.details.exit, 1, "stale record refusal retains structured status");
-  assert.equal(results[3].message.isError, true);
-  assert.notEqual(results[3].message.details.written, true);
-  for (const refused of results.slice(2)) assert.deepEqual(JSON.parse(refused.message.content[0].text), refused.message.details, "operative error flag preserves the full structured content and details");
-  assert.equal(readFileSync(immutableRecord.file, "utf8"), immutableRecord.bytes, "refusal does not overwrite a record or clear candidates"); assert.equal(readFileSync(path.join(cwd, ".sova/spec/claims/demo/rule.md"), "utf8"), proseBefore);
-  const modeFile = modeManager.getSessionFile(), count = modeManager.getBranch().filter(e => e.customType === "spec-assessment-task-v1").length;
+  await session.prompt("/mode spec on");
+  assert.ok(!session.getAllTools().some(t => t.name === "spec_assess"), "spec on registers no assessment tool");
+  await session.prompt("Refactor without changing the value");
+  assert.ok(modeManager.getBranch().some(e => e.type === "message" && e.message.role === "toolResult" && e.message.toolName === "write" && !e.message.isError));
+  assert.deepEqual(taskEntries(modeManager), []);
+  const modeFile = modeManager.getSessionFile();
   await session.extensionRunner.emit({ type: "session_shutdown", reason: "quit" }); session.dispose(); session = undefined;
   const restored = SessionManager.open(modeFile); session = await makeModeSession(restored);
-  assert.ok(session.getActiveToolNames().includes("spec_assess"), "reopen restores the active optional tool");
-  assert.equal(restored.getBranch().filter(e => e.customType === "spec-assessment-task-v1").length, count, "opening creates no new assessment task");
-  await session.prompt("/mode spec off"); assert.ok(!session.getActiveToolNames().includes("spec_assess"));
-  console.log(JSON.stringify({ result: "pass", commonTeamSpawn: true, actualWorkerSdk: true, parentReopened: true, actualModeToolExecution: true, strictAndReopen: true, operationalRefusalsWithDetails: true, unchangedGate: result.trees[0].why, explicitObservation: { workerId: observation.attribution.workerId, assessmentState: observation.assessmentState, verification: observation.verification } }));
+  assert.ok(!session.getActiveToolNames().includes("spec_assess"), "reopen restores no assessment tool");
+  assert.deepEqual(taskEntries(restored), [], "opening creates no assessment task");
+  assert.deepEqual(calls(), [], "the mode session ran no assessment"); assert.deepEqual(receipts(), ["operator-review"], "the explicit receipt is untouched");
+  console.log(JSON.stringify({ result: "pass", commonTeamSpawn: true, actualWorkerSdk: true, parentReopened: true, automaticCalls: 0, explicitCli: { base: prepared.query.base, changedFiles: prepared.changedFiles, assessmentState: status.assessmentState }, unchangedGate: result.trees[0].why }));
  } finally { if (session) await session.extensionRunner.emit({ type: "session_shutdown", reason: "quit" }); await Promise.all(runners.map(r => r.dispose())); session?.dispose(); rmSync(scratch, { recursive: true, force: true }); }
 }

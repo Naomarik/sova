@@ -3,9 +3,10 @@ import type { ProfileChange } from "../shared/orgs";
 import { revokeLinks } from "./baton-links";
 import { onOrgHostOpened, type Effect, type OrgHostApi } from "./org-engine";
 import { hostIdentity, named, parseHolder, remoteHolder } from "./org-holder";
-import { appendHistory, orgSid, readIndex, watchSid } from "./orgs";
+import { appendHistory, orgSid, readIndex } from "./orgs";
 import { revokeOwnerLinks } from "./owner";
 import { revokePersonLinks } from "./person-links";
+import { watchSid } from "./projects/sids";
 import { refreshShare } from "./share/hub";
 import { changeSummary } from "./workspace-commits";
 import { changedPaths, commitAll, headCommitMs, retryPush } from "./workspace-git";
@@ -62,9 +63,9 @@ export function registerOrgEffects(host: OrgHostApi, orgId: string): void {
     for (const p of host.sessions("project")) {
       const pid = String(p.data.id ?? "");
       if (!pid) continue;
-      const sid = watchSid(orgId, pid);
+      const sid = watchSid(pid);
       if (host.configuration(sid)) await host.act(sid, "org/attached-here", {}, { by: "system" });
-      else await host.start(sid, "watch", { orgId, projectId: pid, paused: true }, { by: "system" });
+      else await host.start(sid, "watch", { projectId: pid, paused: true }, { by: "system" });
     }
     return {};
   });

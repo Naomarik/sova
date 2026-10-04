@@ -1,5 +1,17 @@
 import { readFile } from "node:fs/promises";
-import { OVERSEER_DIALOG_ANSWER_ENTRY, OVERSEER_SENT_ENTRY, type AlignReportInfo, type EntryKind, type ExplanationInfo, type TranscriptItem } from "../shared/protocol";
+import {
+  EAGER_TOOLS,
+  OVERSEER_DIALOG_ANSWER_ENTRY,
+  OVERSEER_SENT_ENTRY,
+  type AlignReportInfo,
+  type EntryKind,
+  type EntryMeta,
+  type ExplanationInfo,
+  type HandoffRunInfo,
+  type ToolContent,
+  type ToolRowInfo,
+  type TranscriptItem,
+} from "../shared/protocol";
 import { PROFILE_ENTRY, SESSION_SENT_ENTRY } from "../shared/profiles";
 import { profileField, profileOnBranch } from "./session-profile";
 import {
@@ -31,6 +43,10 @@ import { inlineTmpImages } from "./attachments";
 import { isReport, parseReport, parseTeamMessage, previewLine, TEAM_EVENT_TYPE, teamEventOf } from "./reports";
 import { mergeInfoOf, WORKTREE_MERGE_MESSAGE } from "./worktrees-state";
 import { alignResultOf } from "../pi-config/extensions/mode/align.ts";
+// The folded tool card's own readers (src/lib/message.ts, src/lib/tool-diff-stats.ts, both DOM- and
+// import-free): a slim row's line and "+n −m" are what the card would compute from the whole entry.
+import { argsSummary, contentText as cardText, isObj, SPAWN_TOOLS, spawnName } from "../src/lib/message";
+import { summaryStats } from "../src/lib/tool-diff-stats";
 
 // We parse JSONL ourselves instead of using SessionManager.open(): open() is not
 // read-only (it appends "\n" to a trailing partial line and rewrites the file when
@@ -105,19 +121,212 @@ function truncate(s: string, max: number): string {
   return s.length > max ? `${s.slice(0, max)}…` : s;
 }
 
+// ---- What a row carries (§chat.transcript/slim-rows) ---------------------------------------------
+// A row never carries its source entry over the wire. The server keeps it beside the row, in a
+// WeakMap that JSON never sees, for its own readers of whole content (the Overseer's session reads,
+// the tool-content route): `entryOf(row)`.
+
+const sources = new WeakMap<TranscriptItem, Entry>();
+
+/** The entry a row was made from (server-side only; never serialized). */
+export const entryOf = (it: TranscriptItem): Entry | undefined => sources.get(it);
+
+/** Keep `entry` as `it`'s source; `at` is the entry's timestamp. */
+export function sourced(it: TranscriptItem, entry: unknown): TranscriptItem {
+  if (entry && typeof entry === "object") {
+    sources.set(it, entry as Entry);
+    const at = (entry as Entry).timestamp;
+    if (typeof at === "string") it.at = at;
+  }
+  return it;
+}
+
+const SIGNATURE_KEYS = new Set(["thinkingSignature", "textSignature", "thoughtSignature"]);
+
+/** `v` without any provider signature (encrypted reasoning) at any depth; `v` itself when it holds
+    none, so the common case copies nothing. */
+export function withoutSignatures<T>(v: T): T {
+  if (Array.isArray(v)) {
+    let out: unknown[] | null = null;
+    v.forEach((x, i) => {
+      const y = withoutSignatures(x);
+      if (y !== x) (out ??= v.slice())[i] = y;
+    });
+    return (out ?? v) as T;
+  }
+  if (!v || typeof v !== "object") return v;
+  let out: Record<string, unknown> | null = null;
+  for (const [k, x] of Object.entries(v as Record<string, unknown>)) {
+    if (SIGNATURE_KEYS.has(k)) {
+      out ??= { ...(v as Record<string, unknown>) };
+      delete out[k];
+      continue;
+    }
+    const y = withoutSignatures(x);
+    if (y !== x) (out ??= { ...(v as Record<string, unknown>) })[k] = y;
+  }
+  return (out ?? v) as T;
+}
+
+/** An entry's facts, as its first row carries them (EntryMeta). */
+export function metaOf(entry: Entry): EntryMeta {
+  const meta: EntryMeta = { type: typeof entry.type === "string" ? entry.type : "unknown" };
+  if (typeof entry.customType === "string") meta.customType = entry.customType;
+  if (entry.type === "compaction") {
+    if (typeof entry.tokensBefore === "number") meta.tokensBefore = entry.tokensBefore;
+    if (typeof entry.summary === "string") meta.summary = entry.summary;
+    if (entry.details !== undefined) meta.details = entry.details;
+  }
+  const m = entry.message;
+  if (isObj(m)) {
+    const s = (k: string) => (typeof m[k] === "string" ? (m[k] as string) : undefined);
+    const put = <K extends keyof EntryMeta>(k: K, v: EntryMeta[K] | undefined) => {
+      if (v !== undefined) meta[k] = v;
+    };
+    put("role", s("role"));
+    put("provider", s("provider"));
+    put("model", s("model"));
+    if (m.usage !== undefined) meta.usage = m.usage;
+    put("stopReason", s("stopReason"));
+    put("errorMessage", s("errorMessage"));
+    put("toolName", s("toolName"));
+    put("toolCallId", s("toolCallId"));
+    if (typeof m.isError === "boolean") meta.isError = m.isError;
+    if (meta.customType === undefined) put("customType", s("customType"));
+  }
+  return meta;
+}
+
+/** The call block a tool-call row stands for: the first `toolCall` with its id, as the card finds it. */
+function callBlock(entry: Entry | undefined, toolCallId: string | undefined): Record<string, unknown> | undefined {
+  const content = entry?.message?.content;
+  if (!Array.isArray(content)) return undefined;
+  const b = content.find((c) => isObj(c) && c.type === "toolCall" && c.id === toolCallId);
+  return isObj(b) ? b : undefined;
+}
+
+/** A result row's output as the card shows it: its text blocks joined, else the row's own text. */
+function resultOutput(entry: Entry | undefined, text: string | undefined): string {
+  return cardText(entry?.message?.content) || text || "";
+}
+
+const sizeOf = (v: unknown): number => (v === undefined ? 0 : (JSON.stringify(v)?.length ?? 0));
+
+/** A tool row's `tool`, from its source entry: the folded card's facts, and the whole content only
+    for EAGER_TOOLS. A lazy result row loses its `text` (the content's 2,000-character cut). */
+function slimTool(it: TranscriptItem, entry: Entry | undefined): void {
+  if (it.kind === "tool-call") {
+    const name = it.text ?? "tool";
+    const args = callBlock(entry, it.toolCallId)?.arguments;
+    const tool: ToolRowInfo = {};
+    const summary = argsSummary(args);
+    // Whole: the folded line's tooltip shows all of it (a heredoc's, at times, many KB).
+    if (summary) tool.summary = summary;
+    if (SPAWN_TOOLS.has(name)) {
+      const spawn = spawnName(args);
+      if (spawn) tool.spawn = spawn;
+    }
+    if (EAGER_TOOLS.has(name)) {
+      if (args !== undefined) tool.args = args;
+    } else {
+      tool.lazy = true;
+      tool.bytes = sizeOf(args);
+    }
+    it.tool = tool;
+    return;
+  }
+  if (it.kind !== "tool-result") return;
+  const m = entry?.message;
+  const name = isObj(m) && typeof m.toolName === "string" ? m.toolName : "";
+  const details = isObj(m) ? m.details : undefined;
+  const output = resultOutput(entry, it.text);
+  const tool: ToolRowInfo = {};
+  // Counted whatever the result's own name (a Claude Code worker's result names no tool): the card
+  // shows it only on an edit or write call, as it would have counted it.
+  const stats = summaryStats("edit", details);
+  if (stats) tool.stats = stats;
+  if (EAGER_TOOLS.has(name)) {
+    tool.output = output;
+    if (details !== undefined) tool.details = details;
+  } else {
+    tool.lazy = true;
+    tool.bytes = output.length + sizeOf(details);
+    delete it.text;
+  }
+  it.tool = tool;
+}
+
+/**
+ * Rows as they go over the wire: each source entry's first row gets the entry's facts (`meta`),
+ * tool rows their `tool`, an unknown row its entry without signatures. Rows made from one entry
+ * share it, so a reply's later blocks carry no meta of their own.
+ */
+export function slimRows(rows: TranscriptItem[]): TranscriptItem[] {
+  let prev: Entry | undefined;
+  for (const it of rows) {
+    const entry = sources.get(it);
+    if (entry && entry !== prev) it.meta = metaOf(entry);
+    prev = entry;
+    if (it.kind === "tool-call" || it.kind === "tool-result") slimTool(it, entry);
+    else if (it.kind === "unknown" && entry) it.entry = withoutSignatures(entry);
+  }
+  return rows;
+}
+
+/**
+ * The whole content of tool rows (GET /api/transcript/tool), from rows made by normalizeEntries or
+ * normalizeClaudeEntries (their sources kept): for each asked id that is a tool-call or tool-result
+ * row, its arguments and its result, as the opened card shows them.
+ */
+export function toolContents(rows: readonly TranscriptItem[], ids: readonly string[]): Record<string, ToolContent> {
+  const want = new Set(ids);
+  const results = new Map<string, TranscriptItem>();
+  for (const it of rows) if (it.kind === "tool-result" && it.toolCallId) results.set(it.toolCallId, it);
+  const resultOf = (r: TranscriptItem): ToolContent["result"] => {
+    const entry = sources.get(r);
+    const m = entry?.message;
+    const out: NonNullable<ToolContent["result"]> = { output: resultOutput(entry, r.text ?? fullCut(entry)), isError: isObj(m) && m.isError === true };
+    if (isObj(m) && m.details !== undefined) out.details = m.details;
+    // An entry that recorded its edit as Claude Code's own `toolUseResult` beside the message (the
+    // Changes viewer's fallback when the message has no details object).
+    if (!(isObj(m) && isObj(m.details)) && isObj(entry?.toolUseResult)) out.toolUseResult = entry!.toolUseResult;
+    return out;
+  };
+  const out: Record<string, ToolContent> = {};
+  for (const it of rows) {
+    if (!want.has(it.id)) continue;
+    if (it.kind === "tool-call") {
+      const c: ToolContent = {};
+      const args = callBlock(sources.get(it), it.toolCallId)?.arguments;
+      if (args !== undefined) c.args = args;
+      const r = it.toolCallId ? results.get(it.toolCallId) : undefined;
+      if (r) c.result = resultOf(r);
+      out[it.id] = c;
+    } else if (it.kind === "tool-result") {
+      out[it.id] = { result: resultOf(it) };
+    }
+  }
+  return out;
+}
+
+/** The 2,000-character cut a result row's text was, for a row that no longer carries it. */
+function fullCut(entry: Entry | undefined): string {
+  return truncate(contentText(entry?.message?.content, false), RESULT_TEXT_MAX);
+}
+
 function item(
   id: string,
   kind: EntryKind,
-  raw: unknown,
+  entry: unknown,
   text?: string,
   toolCallId?: string,
   images?: string[],
 ): TranscriptItem {
-  const it: TranscriptItem = { id, kind, raw };
+  const it: TranscriptItem = { id, kind };
   if (text !== undefined) it.text = text;
   if (toolCallId !== undefined) it.toolCallId = toolCallId;
   if (images) it.images = images;
-  return it;
+  return sourced(it, entry);
 }
 
 /** Set `model` (the producing "provider/model") on an assistant-derived row, when known. */
@@ -361,11 +570,37 @@ function explainRow(id: string, entry: Entry): TranscriptItem[] {
   return [it];
 }
 
-/** The dedupe key of an explain-doc entry (its data.id), or null for anything else. */
-function explainKey(entry: Entry): string | null {
-  if (entry.type !== "custom" || entry.customType !== EXPLAIN_DOC) return null;
+const HANDOFF_RUN = "compact-handoff-run";
+const HANDOFF_STATUSES: readonly HandoffRunInfo["status"][] = ["running", "saved", "failed", "cancelled", "interrupted"];
+
+/** A /compact-handoff run's row (§chat.slash-commands/compact-handoff-row): the extension appends
+    `{v: 1, id, status, at, focus?, path?, error?}` (pi-config/extensions/compact-handoff/run.ts)
+    at the fork's start (`running`) and again, same id, when the run ends; normalizeEntries renders
+    only the newest per id. An entry this version can't read: no row. */
+function handoffRunRow(id: string, entry: Entry): TranscriptItem[] {
   const d: any = entry.data;
-  return d && typeof d === "object" && typeof d.id === "string" ? d.id : null;
+  if (!d || d.v !== 1 || typeof d.id !== "string" || !d.id || !HANDOFF_STATUSES.includes(d.status)) return [];
+  const s = (v: unknown): string => (typeof v === "string" ? v : "");
+  const run: HandoffRunInfo = { id: d.id, status: d.status };
+  if (s(d.focus)) run.focus = s(d.focus);
+  if (s(d.path)) run.path = s(d.path);
+  if (s(d.error)) run.error = s(d.error);
+  const text =
+    run.status === "running" ? `Writing a handoff note${run.focus ? `: ${run.focus}` : ""}`
+    : run.status === "saved" ? `Handoff note saved${run.path ? `: ${run.path}` : ""}`
+    : run.status === "failed" ? `Handoff note failed${run.error ? `: ${run.error}` : ""}`
+    : run.status === "cancelled" ? "Handoff cancelled"
+    : "Handoff interrupted";
+  const it = item(id, "info", entry, text);
+  it.handoffRun = run;
+  return [it];
+}
+
+/** The dedupe key of an entry rendered once per run id (explain-doc, compact-handoff-run), or null. */
+function runKey(entry: Entry): string | null {
+  if (entry.type !== "custom" || (entry.customType !== EXPLAIN_DOC && entry.customType !== HANDOFF_RUN)) return null;
+  const d: any = entry.data;
+  return d && typeof d === "object" && typeof d.id === "string" ? `${entry.customType}:${d.id}` : null;
 }
 
 /** The Overseer sent the user message `targetId`: a row that renders nothing itself — the client
@@ -490,8 +725,13 @@ function teamEventRow(id: string, entry: Entry): TranscriptItem[] {
   return [it];
 }
 
-/** Normalize one parsed JSONL entry into 0..n TranscriptItems. The header line yields none. */
+/** Normalize one parsed JSONL entry into 0..n TranscriptItems, as they go over the wire
+    (slimRows). The header line yields none. */
 export function normalizeEntry(entry: Entry, fallbackId = "?", state?: { model?: string }): TranscriptItem[] {
+  return slimRows(entryRows(entry, fallbackId, state));
+}
+
+function entryRows(entry: Entry, fallbackId: string, state?: { model?: string }): TranscriptItem[] {
   const id = typeof entry.id === "string" ? entry.id : fallbackId;
   switch (entry.type) {
     case "session":
@@ -533,6 +773,7 @@ export function normalizeEntry(entry: Entry, fallbackId = "?", state?: { model?:
       if (entry.customType === "btw-thread-entry") return btwRow(id, entry);
       if (entry.customType === ALIGN_DOC) return alignRow(id, entry);
       if (entry.customType === EXPLAIN_DOC) return explainRow(id, entry);
+      if (entry.customType === HANDOFF_RUN) return handoffRunRow(id, entry);
       if (entry.customType === OVERSEER_SENT_ENTRY) return overseerSentRow(id, entry);
       if (entry.customType === SESSION_SENT_ENTRY) return sessionSentRow(id, entry);
       if (entry.customType === PROFILE_ENTRY) return profileRow(id, entry);
@@ -564,15 +805,15 @@ export function normalizeEntries(entries: Entry[]): TranscriptItem[] {
   // Align-doc entries are revisions of one document: only the newest renders (none if it's cleared).
   let newestAlign = -1;
   entries.forEach((e, i) => { if (isAlignDoc(e)) newestAlign = i; });
-  // Each /explain run appends a running entry at spawn and a final one (same data.id) at settle:
-  // per id, only the newest renders, so a settled run is one row. Entries without a string id
-  // are no key (explainRow drops them anyway).
-  const newestExplain = new Map<string, number>();
-  entries.forEach((e, i) => { const k = explainKey(e); if (k !== null) newestExplain.set(k, i); });
+  // Each /explain and /compact-handoff run appends a running entry at its start and a final one
+  // (same data.id) at settle: per id, only the newest renders, so a settled run is one row.
+  // Entries without a string id are no key (their rows drop them anyway).
+  const newestRun = new Map<string, number>();
+  entries.forEach((e, i) => { const k = runKey(e); if (k !== null) newestRun.set(k, i); });
   entries.forEach((e, i) => {
     if (isAlignDoc(e) && i !== newestAlign) return;
-    const k = explainKey(e);
-    if (k !== null && newestExplain.get(k) !== i) return;
+    const k = runKey(e);
+    if (k !== null && newestRun.get(k) !== i) return;
     out.push(...normalizeEntry(e, `line${i}`, state));
   });
   return out;

@@ -38,8 +38,10 @@ import type {
 import type { LinkedAgentInfo } from "../shared/mesh-links";
 // The usage-status extension's fetch/cache core. Part of the sanctioned pi-config import
 // surface (node builtins only, like extensions/mode/state.ts) — see CLAUDE.md.
-import { forceRefresh } from "../pi-config/extensions/usage-status/fetch.ts";
-import { readAuthStatus, readClaudeLoginAuth } from "./auth-status";
+import { claudeLoginIds, forceRefresh } from "../pi-config/extensions/usage-status/fetch.ts";
+// Ollama's declared reset day (usage-windows.json), the same sanctioned surface (builtins only).
+import { monthlyWindow, readUsageWindows, setOllamaResetDay } from "../pi-config/extensions/usage-status/windows.ts";
+import { ownClaudeLoginUnreadable, readAuthStatus, readClaudeLoginAuth } from "./auth-status";
 import { ClaudeAccountsService } from "./claude-accounts";
 import { hasPage, listExplanations, sortExplanations } from "./explanations";
 import { readLiveRecords, type RawLiveRecord, workerCountsOf } from "./live";
@@ -48,7 +50,7 @@ import { resolveSessionPath } from "./paths";
 import { collectSkills, hasSkills } from "./skills";
 import { activeBranch, parseLines } from "./transcript";
 import { describeWorktrees, worktreesOf } from "./worktrees-state";
-import { treeReadinessOf } from "./merge-readiness";
+import { goneWorkOf, REMOVED_EMPTY, treeReadinessOf } from "./merge-readiness";
 import { LAST_KNOWN_REASON, lastKnownUsage, rememberUsage } from "./usage-last-known";
 import { workerSkills } from "./worker-skills";
 import { defaultAdapters } from "./worker-adapters";
@@ -89,12 +91,14 @@ interface ClaudeAccountReading {
   fetchedAt?: number;
   skipped?: "auth";
 }
-type ParsedUsage = { data: Omit<UsageInsight, "stale">; absent: UsageProvider["id"][]; claudeAccounts?: Record<string, ClaudeAccountReading> };
+/** `ownFetchedAt`: when `claude` (Claude Code's own login) was read — the cache's `claudeFetchedAt`,
+    else the file's `fetchedAt` (an older writer fetched it with the file). */
+type ParsedUsage = { data: Omit<UsageInsight, "stale">; absent: UsageProvider["id"][]; ownFetchedAt: number; claudeAccounts?: Record<string, ClaudeAccountReading> };
 
 let usageCache: ({ mtimeMs: number; size: number } & ParsedUsage) | null = null;
 
 const USAGE_PROVIDERS = ["claude", "openai", "ollama", "zai", "deepseek"] as const satisfies readonly UsageProvider["id"][];
-const USAGE_META_KEYS = new Set(["schemaVersion", "fetchedAt", "nextFetchAt", "errors", "claudeAccounts"]);
+const USAGE_META_KEYS = new Set(["schemaVersion", "fetchedAt", "nextFetchAt", "errors", "claudeAccounts", "claudeFetchedAt", "claudeNextFetchAt"]);
 const LOGIN_ID = /^l-[0-9a-f]{8}$/;
 
 /** Cache shapes we don't recognize are logged once per process, not on every poll. */
@@ -111,6 +115,15 @@ function usageWindow(label: string, w: unknown): UsageWindow | null {
   if (pct === undefined) return null;
   const resetsAt = str(w.resetsAt);
   return resetsAt ? { label, pct, resetsAt } : { label, pct };
+}
+
+/** An OpenAI window: its own length (`seconds`, additive in the cache) gives its start. */
+function openAiWindow(w: unknown): UsageWindow | null {
+  const out = usageWindow(isRec(w) && typeof w.label === "string" ? w.label : "?", w);
+  const seconds = isRec(w) ? num(w.seconds) : undefined;
+  const end = out?.resetsAt ? Date.parse(out.resetsAt) : NaN;
+  if (!out || seconds === undefined || seconds <= 0 || Number.isNaN(end)) return out;
+  return { ...out, startsAt: new Date(end - seconds * 1000).toISOString() };
 }
 
 function mcpWindow(m: unknown): UsageWindow | null {
@@ -202,8 +215,7 @@ function usageProvider(id: UsageProvider["id"], data: unknown, error: unknown): 
       id === "claude"
         ? claudeWindows(data)
         : id === "openai"
-          ? (Array.isArray(data.windows) ? data.windows : []).map((w: unknown) =>
-              usageWindow(isRec(w) && typeof w.label === "string" ? w.label : "?", w))
+          ? (Array.isArray(data.windows) ? data.windows : []).map(openAiWindow)
           : id === "zai"
             ? [
                 // coding-plan window, labelled by its length ("5h", "1d", "1w", "45m")
@@ -268,6 +280,7 @@ function parseUsage(text: string): ParsedUsage | null {
       providers: USAGE_PROVIDERS.map((id) => usageProvider(id, v[id], errors[id])),
     },
     absent: USAGE_PROVIDERS.filter((id) => v[id] === undefined),
+    ownFetchedAt: num(v.claudeFetchedAt) ?? v.fetchedAt,
     ...(v.claudeAccounts !== undefined ? { claudeAccounts: parseClaudeAccounts(v.claudeAccounts) } : {}),
   };
 }
@@ -394,20 +407,57 @@ export async function getUsageInsight(): Promise<UsageInsight> {
     if (!parsed) return unavailable("corrupt");
     // Once per new cache file, not per poll: the store skips the write when nothing changed.
     rememberUsage(parsed.data.providers);
-    // A file without `claudeAccounts` (an older pi rewrote it) keeps the logins' last readings.
-    const claudeAccounts = parsed.claudeAccounts ?? usageCache?.claudeAccounts;
-    usageCache = { mtimeMs: st.mtimeMs, size: st.size, data: parsed.data, absent: parsed.absent, ...(claudeAccounts ? { claudeAccounts } : {}) };
+    // A file without `claudeAccounts` (an older pi rewrote it) keeps the last readings of the
+    // logins still held here, never one handed back (its pre-reset reading would outlive it).
+    const claudeAccounts = parsed.claudeAccounts ?? carriedClaudeAccounts(usageCache?.claudeAccounts, claudeLoginIds());
+    usageCache = { mtimeMs: st.mtimeMs, size: st.size, data: parsed.data, absent: parsed.absent, ownFetchedAt: parsed.ownFetchedAt, ...(claudeAccounts ? { claudeAccounts } : {}) };
   }
-  const { data: d, absent, claudeAccounts } = usageCache;
+  const { data: d, absent, ownFetchedAt, claudeAccounts } = usageCache;
   // A key the cache doesn't carry: serve what we last read for it, said plainly. A key that IS
   // there always wins, error and "na" included — that is the extension's own answer.
   const read = absent.length === 0 ? d.providers : d.providers.map((p) => (absent.includes(p.id) ? lastKnown(p) : p));
   // Sign-in facts come from the credential files, per request (memoized there), never from the cache.
   const auth = await readAuthStatus();
-  const providers = read.map((p) => (auth[p.id] ? { ...p, auth: auth[p.id] } : p));
+  // Ollama's month is derived from the declared day now, never cached: a changed day or a month
+  // rollover shows at once (§app.insights/usage-reset-day).
+  const ollamaResetDay = readUsageWindows(getAgentDir()).ollama?.resetDay ?? null;
+  const providers = read.map((p) => withDeclaredReset(auth[p.id] ? { ...p, auth: auth[p.id] } : p, ollamaResetDay, Date.now()));
   const own = providers.find((p) => p.id === "claude");
-  const claudeLogins = own ? await readClaudeLogins(own, d.fetchedAt, claudeAccounts) : undefined;
-  return { ...d, providers, ...(claudeLogins ? { claudeLogins } : {}), stale: d.fetchedAt !== null && Date.now() - d.fetchedAt > USAGE_STALE_MS };
+  const claudeLogins = own ? await readClaudeLogins(own, ownFetchedAt, claudeAccounts) : undefined;
+  // macOS only: Claude Code's own login in neither its file nor a readable keychain (§app.claude-logins/macos-keychain).
+  const ownUnreadable = await ownClaudeLoginUnreadable();
+  return { ...d, providers, ...(claudeLogins ? { claudeLogins } : {}), ollamaResetDay, ...(ownUnreadable ? { claudeOwnLoginUnreadable: true as const } : {}), stale: d.fetchedAt !== null && Date.now() - d.fetchedAt > USAGE_STALE_MS };
+}
+
+/**
+ * `PUT /api/insights/usage/reset-day` `{provider: "ollama", day: 1..31 | null}`: writes the declared
+ * day through the extension's writer, then serves usage with it. `error` for a body it refuses.
+ */
+export async function setUsageResetDay(body: unknown): Promise<UsageInsight | { error: string }> {
+  if (!isRec(body) || body.provider !== "ollama") return { error: 'provider must be "ollama"' };
+  const day = body.day;
+  if (day !== null && !(typeof day === "number" && Number.isInteger(day) && day >= 1 && day <= 31)) return { error: "day must be a whole day from 1 to 31, or null" };
+  setOllamaResetDay(day, getAgentDir());
+  return getUsageInsight();
+}
+
+/**
+ * Ollama's `month` window with the span the declared reset day gives it at `now` (`startsAt`,
+ * `resetsAt`, `declared: true`); any other provider, or no day, as it is.
+ */
+export function withDeclaredReset(p: UsageProvider, resetDay: number | null, now: number): UsageProvider {
+  if (p.id !== "ollama" || resetDay === null) return p;
+  const span = monthlyWindow(resetDay, now);
+  return { ...p, windows: p.windows.map((w) => (w.label === "month" ? { ...w, ...span, declared: true as const } : w)) };
+}
+
+/**
+ * The logins' readings a cache without `claudeAccounts` carries over from the last one read: only
+ * those of logins in `held` (this host's added logins now); undefined when none is left.
+ */
+export function carriedClaudeAccounts(prev: Record<string, ClaudeAccountReading> | undefined, held: readonly string[]): Record<string, ClaudeAccountReading> | undefined {
+  const kept = Object.entries(prev ?? {}).filter(([id]) => held.includes(id));
+  return kept.length ? Object.fromEntries(kept) : undefined;
 }
 
 /** Single-flight: concurrent Refresh clicks share one force-fetch. */
@@ -1221,8 +1271,26 @@ async function worktreeRows(facts: SessionFacts, workers: WorkerInfo[] | null, p
   const cwds = workerCwds(facts.workerRecords.all);
   const rows = await describeWorktrees(facts.worktrees, facts.sessionId, (workers ?? []).map((w) => ({ status: w.status, cwd: cwds.get(w.id) })));
   // Each row's merge readiness, as the session list last read it (§chat.worktrees/readiness).
-  return rows ? { worktrees: rows.map((r) => withReadiness(r, treeReadinessOf(path, r.path))) } : {};
+  if (!rows) return {};
+  const trees = facts.worktrees.trees;
+  return {
+    worktrees: await Promise.all(
+      rows.map(async (r) => {
+        const row = withReadiness(r, treeReadinessOf(path, r.path));
+        if (row.exists || row.status !== "active") return row;
+        // Its folder is gone: the same answer readiness gives, from the row's readiness when it has one.
+        const rd = row.readiness;
+        if (rd && (rd.state === "merged" || rd.state === "removed")) return { ...row, gone: goneOfReadiness(rd) };
+        const t = trees.find((x) => x.path === r.path);
+        const g = t ? await goneWorkOf(t, trees.filter((x) => x !== t).map((x) => x.path)).catch(() => null) : null;
+        return { ...row, gone: g ?? ("unknown" as const) };
+      }),
+    ),
+  };
 }
+
+const goneOfReadiness = (rd: WorktreeReadiness): NonNullable<SessionWorktreeInfo["gone"]> =>
+  rd.state === "merged" ? "merged" : rd.why === "not merged" ? "unmerged" : rd.why === REMOVED_EMPTY ? "empty" : "unknown";
 
 const withReadiness = (row: SessionWorktreeInfo, readiness: WorktreeReadiness | undefined): SessionWorktreeInfo => (readiness ? { ...row, readiness } : row);
 

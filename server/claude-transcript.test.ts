@@ -9,7 +9,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, test } from "node:test";
 import { clearClaudeSessionCache, editDetailsOf, normalizeClaudeEntries, piToolArgs, resolveClaudeSession } from "./claude-transcript";
-import { normalizeEntry } from "./transcript";
+import { entryOf, normalizeEntry, toolContents } from "./transcript";
+import type { TranscriptItem } from "../shared/protocol";
 
 // --- real CC 2.1.278 lines -------------------------------------------------
 /** A typed prompt: content is a one-block array. */
@@ -99,7 +100,7 @@ describe("normalizeClaudeEntries", () => {
     assert.equal(it?.kind, "user");
     assert.equal(it?.text, "[Request interrupted by user for tool use]");
     assert.equal(it?.id, "57333ea3-0a32-4543-9b85-c7e2c9626e22");
-    const raw = it?.raw as any;
+    const raw = entryOf(it!) as any;
     assert.equal(raw.type, "message");
     assert.equal(raw.timestamp, "2026-09-19T04:34:33.452Z");
     assert.deepEqual(raw.message, { role: "user", content: [{ type: "text", text: "[Request interrupted by user for tool use]" }] });
@@ -112,7 +113,7 @@ describe("normalizeClaudeEntries", () => {
     assert.equal(it?.toolCallId, "toolu_0184tMDWQRMxvrbn75sQuRTC");
     assert.equal(it?.id, "79673a4a-e3a0-4b65-9e09-9777cc5b8d6b:0");
     assert.equal(it?.model, "claude/claude-opus-5");
-    const block = (it?.raw as any).message.content[0];
+    const block = (entryOf(it!) as any).message.content[0];
     assert.equal(block.type, "toolCall");
     assert.equal(block.id, "toolu_0184tMDWQRMxvrbn75sQuRTC");
     assert.deepEqual(block.arguments, {});
@@ -121,8 +122,8 @@ describe("normalizeClaudeEntries", () => {
   test("CC tool names map to pi's", () => {
     const [it] = normalizeClaudeEntries(parse([BASH_LINE]));
     assert.equal(it?.text, "bash");
-    assert.equal((it?.raw as any).message.content[0].name, "bash");
-    assert.equal((it?.raw as any).message.content[0].arguments.command, "cd ~/pi-config/extensions/sessions && cat ui.ts");
+    assert.equal((entryOf(it!) as any).message.content[0].name, "bash");
+    assert.equal((entryOf(it!) as any).message.content[0].arguments.command, "cd ~/pi-config/extensions/sessions && cat ui.ts");
   });
 
   test("a tool_result pairs with its call and reads as a pi toolResult", () => {
@@ -131,8 +132,10 @@ describe("normalizeClaudeEntries", () => {
     const result = items[1]!;
     assert.equal(result.kind, "tool-result");
     assert.equal(result.toolCallId, items[0]!.toolCallId);
-    assert.equal(result.text, "No messages delivered to you yet.");
-    const msg = (result.raw as any).message;
+    assert.equal(result.text, undefined, "a result row carries no output: it is fetched on opening");
+    assert.equal(result.tool?.lazy, true);
+    assert.deepEqual(toolContents(items, [items[0]!.id])[items[0]!.id]?.result, { output: "No messages delivered to you yet.", isError: false });
+    const msg = (entryOf(result) as any).message;
     assert.equal(msg.role, "toolResult");
     assert.equal(msg.isError, false);
     assert.deepEqual(msg.content, [{ type: "text", text: "No messages delivered to you yet." }]);
@@ -142,15 +145,16 @@ describe("normalizeClaudeEntries", () => {
     const line = JSON.parse(TOOL_RESULT_LINE) as any;
     line.message.content[0].is_error = true;
     const [it] = normalizeClaudeEntries([line]);
-    assert.equal((it?.raw as any).message.isError, true);
+    assert.equal((entryOf(it!) as any).message.isError, true);
   });
 
-  test("a long result is truncated for the row text but not in raw", () => {
+  test("a long result comes whole from the tool-content read, never on the row", () => {
     const line = JSON.parse(TOOL_RESULT_LINE) as any;
     line.message.content[0].content = [{ type: "text", text: "x".repeat(5000) }];
-    const [it] = normalizeClaudeEntries([line]);
-    assert.equal(it?.text?.length, 2001); // 2000 + the ellipsis
-    assert.equal((it?.raw as any).message.content[0].text.length, 5000);
+    const rows = normalizeClaudeEntries([line]);
+    assert.equal(rows[0]?.text, undefined);
+    assert.equal(rows[0]?.tool?.bytes, 5000);
+    assert.equal(toolContents(rows, [rows[0]!.id])[rows[0]!.id]?.result?.output.length, 5000);
   });
 
   test("an image result carries the image as a data URL, the same one a pi toolResult gets", () => {
@@ -159,7 +163,8 @@ describe("normalizeClaudeEntries", () => {
     assert.equal(it?.kind, "tool-result");
     assert.equal(it?.toolCallId, "toolu_01LY52i57JGAZyyeKTM9kUr4");
     assert.deepEqual(it?.images, [`data:${block.source.media_type};base64,${block.source.data}`]);
-    assert.equal(it?.text, ""); // no "[image]" placeholder: the image is in `images`
+    assert.equal(it?.text, undefined); // the output is fetched on opening; the image stays on the row
+    assert.equal(toolContents([it!], [it!.id])[it!.id]?.result?.output, ""); // no "[image]" placeholder: the image is in `images`
     const [pi] = normalizeEntry({
       type: "message",
       id: "p1",
@@ -174,9 +179,9 @@ describe("normalizeClaudeEntries", () => {
     const jpeg = { type: "image", source: { type: "base64", media_type: "image/jpeg", data: "AAAA" } };
     line.message.content[0].content = [{ type: "text", text: "two shots" }, img, jpeg];
     const [it] = normalizeClaudeEntries([line]);
-    assert.equal(it?.text, "two shots");
+    assert.equal(toolContents([it!], [it!.id])[it!.id]?.result?.output, "two shots");
     assert.deepEqual(it?.images, [`data:image/png;base64,${img.source.data}`, "data:image/jpeg;base64,AAAA"]);
-    assert.deepEqual((it?.raw as any).message.content, [{ type: "text", text: "two shots" }]);
+    assert.deepEqual((entryOf(it!) as any).message.content, [{ type: "text", text: "two shots" }]);
   });
 
   test("a result with no base64 image has no images field", () => {
@@ -271,8 +276,8 @@ describe("Edit / MultiEdit / Write", () => {
     message: { role: "user", content: [{ tool_use_id: `t-${name}`, type: "tool_result", content: isError ? "<tool_use_error>no match</tool_use_error>" : "The file has been updated.", ...(isError ? { is_error: true } : {}) }] },
     toolUseResult,
   });
-  const argsOf = (it: { raw: unknown }) => (it.raw as any).message.content[0];
-  const detailsOf = (it: { raw: unknown }) => (it.raw as any).message.details;
+  const argsOf = (it: TranscriptItem) => (entryOf(it) as any).message.content[0];
+  const detailsOf = (it: TranscriptItem) => (entryOf(it) as any).message.details;
 
   test("Edit maps onto pi's edit arguments and carries structuredPatch, not originalFile", () => {
     const [call, res] = normalizeClaudeEntries([
@@ -282,7 +287,7 @@ describe("Edit / MultiEdit / Write", () => {
     assert.equal(call!.text, "edit");
     assert.deepEqual(argsOf(call!), { type: "toolCall", id: "t-Edit", name: "edit", arguments: { path: "/home/user/p/a.ts", edits: [{ oldText: "b", newText: "B" }], replaceAll: true } });
     assert.deepEqual(detailsOf(res!), { structuredPatch: [HUNK] });
-    assert.equal(JSON.stringify(res!.raw).includes("originalFile"), false);
+    assert.equal(JSON.stringify(entryOf(res!)).includes("originalFile"), false);
   });
 
   test("MultiEdit is an edit with every entry; Write keeps path and content", () => {

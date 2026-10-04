@@ -24,7 +24,8 @@ const { registerOrgRoutes } = await import("./org-routes");
 const { disposeAllChats } = await import("./chat-manager");
 const { settled } = await import("./workspace-git");
 const { hostOf } = await import("./org-engine");
-const { heldAttention, pipelineInfo } = await import("./project-pipeline");
+const { pipelineInfo } = await import("./project-pipeline");
+const { heldAttention } = await import("./project-holds");
 const { fakeLooks } = await import("./org-test-fixtures");
 
 after(async () => {
@@ -36,7 +37,7 @@ const org = await orgs.createOrg({ name: "Hours", dir: join(root, "ws") });
 mkdirSync(join(root, "proj"));
 const project = await orgs.addProject(org.id, { name: "Portal", root: join(root, "proj") });
 const sam = await orgs.addPerson(org.id, { name: "Sam Okafor", role: "Pricing", decides: ["pricing"] });
-await po.ensureProjectOverseer(org.id, project.id);
+await po.ensureProjectOverseer(project.id);
 fakeLooks(org.id);
 const app = new Hono();
 registerOrgRoutes(app);
@@ -111,8 +112,8 @@ test("reverting an hours or zone line works both ways: set from nothing → clea
 describe("an act that reaches them outside their hours (r7)", () => {
   test("the overseer's unattended gathering waits for their window, in the Pipeline and Needs you; the operator's own goes at once", async () => {
     await patch({ tz: "UTC", hours: { days: ALL, from: hm(2), to: hm(3) } });
-    await po.patchProjectOverseer(org.id, project.id, { autonomy: "L1", holdMin: 0 });
-    const tool = po.toolsForTest(org.id, project.id, { attended: false }).find((t) => t.name === "sova_start_gathering")!;
+    await po.patchProjectOverseer(project.id, { autonomy: "L1", holdMin: 0 });
+    const tool = po.toolsForTest(project.id, { attended: false }).find((t) => t.name === "sova_start_gathering")!;
     const out = await tool.execute("t1", { gap: "none", person: "Sam Okafor", why: "Nobody has said this yet.", public_title: "Prices", goal: "Which prices apply", question: "Which prices apply?" } as never, undefined, undefined, undefined as never);
     assert.match((out.content[0] as { text: string }).text, /^Held: starting "Prices" with Sam Okafor waits until /);
     const held = pipelineInfo(org.id, project.id).held.find((h) => h.what === "A gathering with Sam Okafor: Prices")!;
@@ -139,8 +140,8 @@ describe("an act that reaches them outside their hours (r7)", () => {
     const setHours = (pid: string, from: number, to: number) => app.request(`/api/orgs/${org.id}/people/${pid}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ tz: "UTC", hours: { days: ALL, from: hm(from), to: hm(to) } }) });
     await setHours(sam.id, 3, 4);
     await setHours(ada.id, 2, 3);
-    await po.patchProjectOverseer(org.id, project.id, { autonomy: "L1", holdMin: 0 });
-    const tool = po.toolsForTest(org.id, project.id, { attended: false }).find((t) => t.name === "sova_offer")!;
+    await po.patchProjectOverseer(project.id, { autonomy: "L1", holdMin: 0 });
+    const tool = po.toolsForTest(project.id, { attended: false }).find((t) => t.name === "sova_offer")!;
     await tool.execute("t2", { gap: "none", people: ["Sam Okafor", "Ada Lind"], why: "Nobody has said this yet.", public_title: "Invoices", goal: "g", question: "Who sends invoices?" } as never, undefined, undefined, undefined as never);
     const held = pipelineInfo(org.id, project.id).held.find((h) => h.what === "An offer to 2 people: Invoices")!;
     assert.equal(held?.wait, "hours");
@@ -154,8 +155,8 @@ describe("an act that reaches them outside their hours (r7)", () => {
 
   test("r13: an hours edit moves every act waiting for them: a later window moves it, their hours now release it (checked against the hours in force)", async () => {
     await patch({ tz: "UTC", hours: { days: ALL, from: hm(2), to: hm(3) } });
-    await po.patchProjectOverseer(org.id, project.id, { autonomy: "L1", holdMin: 0 });
-    const tool = po.toolsForTest(org.id, project.id, { attended: false }).find((t) => t.name === "sova_start_gathering")!;
+    await po.patchProjectOverseer(project.id, { autonomy: "L1", holdMin: 0 });
+    const tool = po.toolsForTest(project.id, { attended: false }).find((t) => t.name === "sova_start_gathering")!;
     await tool.execute("t4", { gap: "none", person: "Sam Okafor", why: "Nobody has said this yet.", public_title: "Moves", goal: "g", question: "Does it move?" } as never, undefined, undefined, undefined as never);
     const heldOf = () => pipelineInfo(org.id, project.id).held.find((h) => h.what === "A gathering with Sam Okafor: Moves");
     assert.equal(heldOf()?.goesAt, orgs.findPerson(org.id, sam.id)!.hoursNow!.nextOpen);
@@ -248,8 +249,8 @@ describe("company working hours, the default (r13)", () => {
   test("a company-hours change moves an act waiting for someone who has no hours of their own", async () => {
     const di = await orgs.addPerson(org.id, { name: "Di Park", role: "Legal" });
     await put({ tz: "UTC", hours: { days: ALL, from: hm(2), to: hm(3) } });
-    await po.patchProjectOverseer(org.id, project.id, { autonomy: "L1", holdMin: 0 });
-    const tool = po.toolsForTest(org.id, project.id, { attended: false }).find((t) => t.name === "sova_start_gathering")!;
+    await po.patchProjectOverseer(project.id, { autonomy: "L1", holdMin: 0 });
+    const tool = po.toolsForTest(project.id, { attended: false }).find((t) => t.name === "sova_start_gathering")!;
     await tool.execute("t9", { gap: "none", person: "Di Park", why: "Nobody has said this yet.", public_title: "Terms", goal: "g", question: "Which terms?" } as never, undefined, undefined, undefined as never);
     const heldOf = () => pipelineInfo(org.id, project.id).held.find((h) => h.what === "A gathering with Di Park: Terms");
     assert.equal(heldOf()?.goesAt, orgs.findPerson(org.id, di.id)!.hoursNow!.nextOpen, "it waits for the company's window");
@@ -270,8 +271,8 @@ describe("an offer reaches each invitee in their own hours (r12)", () => {
     const setHours = (pid: string, from: number, to: number) => app.request(`/api/orgs/${org.id}/people/${pid}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ tz: "UTC", hours: { days: ALL, from: hm(from), to: hm(to) } }) });
     await setHours(eve.id, -1, 1);
     await setHours(fay.id, 2, 3);
-    await po.patchProjectOverseer(org.id, project.id, { autonomy: "L1", holdMin: 0, caps: { gatheringsOpen: 20, gatherPerTurn: null, gatherPerDay: null } });
-    const tool = po.toolsForTest(org.id, project.id, { attended: false }).find((t) => t.name === "sova_offer")!;
+    await po.patchProjectOverseer(project.id, { autonomy: "L1", holdMin: 0, caps: { gatheringsOpen: 20, gatherPerTurn: null, gatherPerDay: null } });
+    const tool = po.toolsForTest(project.id, { attended: false }).find((t) => t.name === "sova_offer")!;
     await tool.execute("r12", { gap: "none", people: ["Eve Lund", "Fay Roth"], why: "Nobody has said this yet.", public_title: "Quotes", goal: "g", question: "Who sends quotes?" } as never, undefined, undefined, undefined as never);
     const row = () => baton.allBatons().find((b) => b.publicTitle === "Quotes")!;
     assert.ok(row(), "someone was in hours: it went now");
@@ -293,7 +294,7 @@ describe("an offer reaches each invitee in their own hours (r12)", () => {
     const page = (await (await app.request(`/api/orgs/${org.id}/people/${fay.id}`)).json()) as { sessions: { sessionId: string; offer?: { reach?: { state: string } } }[] };
     assert.equal(page.sessions.find((s) => s.sessionId === row().sessionId)?.offer?.reach?.state, "waiting");
     // The look names her and when.
-    assert.match(po.lookAppendix(org.id, project.id), new RegExp(`Offers still reaching people[^]*- Offer 1 in "Quotes" · reaches Fay Roth at ${fayOpens.replace(/[.]/g, "\\.")} \\(their working hours\\)`));
+    assert.match(po.lookAppendix(project.id), new RegExp(`Offers still reaching people[^]*- Offer 1 in "Quotes" · reaches Fay Roth at ${fayOpens.replace(/[.]/g, "\\.")} \\(their working hours\\)`));
     // Her window opens: the statechart's timer reaches her; no link is made by itself (nobody could take its token), so
     // Needs you now asks for hers too, and the operator's send makes it, once.
     setOrgClockForTest(() => Date.parse(fayOpens) + 60_000);

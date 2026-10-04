@@ -151,7 +151,7 @@ const wrapped = (s: TextShape, perLine: number) =>
   `min(${MAX_EST_LINES}, ${+(perLine * s.lines).toFixed(2)} + ${s.chars} / var(--entry-cols, 110)) * var(--entry-line, 22.5px)`;
 
 /** A compaction draws as a folded disclosure, not as its summary's text (Thread `Compaction`). */
-const isCompaction = (raw: unknown) => typeof raw === "object" && raw !== null && (raw as { type?: unknown }).type === "compaction";
+const isCompaction = (item: { meta?: { type?: string } }) => item.meta?.type === "compaction";
 
 /**
  * A row's height until it is first drawn (`content-visibility: auto` skips rows off screen, and a
@@ -162,7 +162,7 @@ const isCompaction = (raw: unknown) => typeof raw === "object" && raw !== null &
  * depend on it; a drawn row remembers its real height. A row that draws nothing (a paired tool
  * result) takes no space whatever its estimate (`.entry:empty`).
  */
-export function rowEstimate(item: { kind: string; text?: string; raw?: unknown }, images?: readonly string[], at: ImagesAt = "user", chain = false, folded = false, first = false): string {
+export function rowEstimate(item: { kind: string; text?: string; meta?: { type?: string } }, images?: readonly string[], at: ImagesAt = "user", chain = false, folded = false, first = false): string {
   const text = item.text ?? "";
   // A run head reserves its group line (44), gap (8), and step (24). Middle steps
   // retain the 32px convention. Folded, only the 44px group line draws, never images.
@@ -176,7 +176,7 @@ export function rowEstimate(item: { kind: string; text?: string; raw?: unknown }
     const s = textShape(text);
     est = `${99 + 19 * s.code + 93 * s.fences + 67 * s.table}px + ${wrapped(s, 0.8)}`;
   } else if (item.kind === "user") est = `97px + ${wrapped(textShape(text, true), 0.7)}`;
-  else if (item.kind === "info" && isCompaction(item.raw)) est = "36px";
+  else if (item.kind === "info" && isCompaction(item)) est = "36px";
   else if (item.kind === "info") est = `-4px + ${wrapped(textShape(text, true), 1)}`;
   else if (item.kind === "tool-call" || item.kind === "tool-result" || item.kind === "wake") est = card;
   else if (item.kind === "thinking" || item.kind === "report") est = item.kind === "thinking" ? foldedEst : "36px";

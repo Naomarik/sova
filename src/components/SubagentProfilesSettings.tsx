@@ -15,6 +15,7 @@ import {
   monitorOn,
   roleProblem,
   sectionProblems,
+  reviewerSummary,
   specSummary,
   teamsSummary,
   withCoordinator,
@@ -23,6 +24,7 @@ import {
 } from "../lib/subagent-editor";
 import { Banner, Chip, Icon } from "./ui";
 import { RetryButton, sentence, WorkerSlotRow } from "./WorkerSlotRow";
+import { adversarialReview } from "../lib/align-review";
 import "./SubagentProfilesSettings.css";
 
 const labels = { planning: "Planning & specs", investigation: "Investigation", routine: "Routine implementation", complex: "Complex implementation" } as const;
@@ -49,8 +51,9 @@ const NUMBER_LABELS: Record<TeamNumberField, string> = {
  * had. The dialog's Save Changes writes the whole file, so a save reaches every chat on a changed
  * profile from its next turn or team action.
  *
- * Edit (or a new profile) replaces the list with the editor: a back control, the name, then three
- * folds — Delegate routing, Teams, Spec writer — each saying what is inside while closed. Back
+ * Edit (or a new profile) replaces the list with the editor: a back control, the name, then the
+ * folds — Delegate routing, Teams, Spec writer, and Reviewer while adversarial review is on — each
+ * saying what is inside while closed. Back
  * keeps unsaved edits (the draft is module state); the list then opens only the profile holding
  * them, so another can't be opened over them.
  *
@@ -282,7 +285,7 @@ export function SubagentProfilesSettings() {
       </div>
     );
   };
-  /** One of the editor's three sections: a fold whose closed head says what is inside. */
+  /** One of the editor's sections: a fold whose closed head says what is inside. */
   const section = (key: EditorSection, label: string, summary: () => string, body: () => JSX.Element, id?: string) => (
     <details class="overseer-fold overseer-advanced subagent-editor-section" id={id} open={isOpen(key)} onToggle={(e) => setOpen(key, e.currentTarget.open)}>
       <summary class="overseer-fold-summary">
@@ -660,6 +663,41 @@ export function SubagentProfilesSettings() {
                 ),
                 "subagents-spec",
               )}
+
+              {/* Adversarial review (experimental): its section shows only while the switch is saved on. */}
+              <Show when={adversarialReview()}>
+                {section(
+                  "reviewer",
+                  "Reviewer",
+                  () => reviewerSummary(p()),
+                  () => (
+                    <>
+                      <div class="subagent-editor-switch-line">
+                        <label class="toggle toggle-switch settings-team-enable">
+                          <span>Review alignments with a reviewer</span>
+                          <input
+                            type="checkbox"
+                            checked={!!p().reviewer}
+                            disabled={store.saving()}
+                            onChange={(e) => change((x) => (x.reviewer = e.currentTarget.checked ? { primary: { backend: "pi", model: "", effort: "" }, fallback: null } : null))}
+                          />
+                          <span class="toggle-box" />
+                        </label>
+                        <Show when={p().reviewer}>{(w) => fallbackAction(w, (c) => change((x) => (x.reviewer = c)))}</Show>
+                      </div>
+                      <Show when={p().reviewer} fallback={<p class="field-hint">No review.</p>}>
+                        {(w) => (
+                          <>
+                            <p class="field-hint settings-delegate-desc">Without a fallback, the review is recorded incomplete when the reviewer can't run.</p>
+                            <div class="subagent-editor-flush">{pair("reviewer", w, (c) => change((x) => (x.reviewer = c)))}</div>
+                          </>
+                        )}
+                      </Show>
+                    </>
+                  ),
+                  "subagents-reviewer",
+                )}
+              </Show>
             </>
           )}
         </Show>

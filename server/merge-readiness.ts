@@ -1,15 +1,17 @@
-import { open, stat } from "node:fs/promises";
+import { existsSync, statSync } from "node:fs";
+import { open } from "node:fs/promises";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { AttentionItem, AttentionKind, AttentionTier, ReadinessState, SessionReadiness, SessionSummary, WorktreeReadiness } from "../shared/protocol";
 import { parseWakeNudge } from "../shared/wake";
 import { isLinkMessage } from "../shared/link-message";
 import { isTopicBatch } from "../shared/topic-message";
-import { normalizeMergeDetails, restoreActive, type TrackedWorktree, WORKTREE_MERGE_MESSAGE, WORKTREES_ENTRY_TYPE } from "../pi-config/extensions/worktrees/state.ts";
+import { canonical, normalizeMergeDetails, restoreActive, type TrackedWorktree, WORKTREE_MERGE_MESSAGE, WORKTREES_ENTRY_TYPE } from "../pi-config/extensions/worktrees/state.ts";
 import { deferredOf, followUpFor, type FollowUpInput, type MergeFollowUps } from "./merge-followup";
 import { asksUserOf } from "./signals-store";
 import { activeBranch, type Entry } from "./transcript";
-import { execGit, type GitRunner, worktreeInsights, type WorktreeInsights } from "./worktrees";
+import { DIRTY_TTL_MS, execGit, type GitRunner, worktreeInsights, type WorktreeInsights, worktreeStamp } from "./worktrees";
+import { goneTreeState, type GoneState } from "./removed-worktrees";
 
 /**
  * Merge readiness (§chat.worktrees/readiness): for each worktree a session tracks and owns, whether
@@ -19,12 +21,18 @@ import { execGit, type GitRunner, worktreeInsights, type WorktreeInsights } from
  *
  * Git is read in the background (a listing never waits on it): `readinessOverlay` returns the last
  * answer for a row and queues a fresh read when the file or the row's state moved, or the answer is
- * older than READINESS_TTL_MS. Only files that ever wrote a `worktrees` entry are read past a marker
- * search, and those incrementally.
+ * older than READINESS_TTL_MS — except for an archived session nothing runs in and no TUI holds, whose
+ * answer ages only on an inspection (`treeReadinessOf`, `readinessChecksOf`). Only files that ever
+ * wrote a `worktrees` entry are read past a marker search. Unchanged file scans are retained; changed files are rescanned conservatively so a
+ * rewrite cannot inherit compact entries from an older file generation.
  */
 
 /** An answer stands this long while nothing about the row changes. */
 export const READINESS_TTL_MS = 20_000;
+/** An idle session's merged, clean tree: its dirty reading stands this long (§chat.worktrees/dirty-freshness). */
+export const IDLE_DIRTY_TTL_MS = 5 * 60_000;
+/** A settled session (nothing running, every tree merged and clean) is re-read this often (§app/idle-git-cache). */
+export const SETTLED_TTL_MS = 5 * 60_000;
 /** The reply tail the merge-ask fallback reads. */
 export const ASK_TAIL = 600;
 /** The reply tail kept for the follow-up check, after its closing spec lines are cut. */
@@ -44,6 +52,8 @@ export interface TreeFacts {
   tracked: "active" | "merged";
   /** The folder is there and git could read it. */
   readable: boolean;
+  /** The folder is gone: what its branch came to (server/removed-worktrees.ts); absent while it is there. */
+  gone?: GoneState;
   /** Git finds the branch in its base (ancestry or content) after at least one commit of its own. */
   merged?: boolean;
   dirty?: boolean;
@@ -89,10 +99,14 @@ const STATE_WORDS: Record<ReadinessState, string> = {
   blocked: "Blocked",
   ready: "Ready to merge",
   "waiting-approval": "Waiting for your OK",
+  removed: "Removed",
 };
 
 /** Why a clean branch has no commit of its own: an empty leftover worktree once nothing runs. */
 export const NO_COMMITS = "no commits yet";
+/** A gone folder's whys (§chat.worktrees/readiness, removed). */
+export const CLEANED_UP = "cleaned up";
+export const REMOVED_EMPTY = "no commits";
 
 /**
  * One worktree's state, a few words why, and the line a person reads (§chat.worktrees/readiness):
@@ -109,7 +123,16 @@ export function treeReadiness(t: TreeFacts, s: SessionFacts): { state: Readiness
 
 function treeState(t: TreeFacts, s: SessionFacts): { state: ReadinessState; why?: string } {
   // A folder git can't read: the record is all there is.
-  if (!t.readable) return t.tracked === "merged" ? { state: "merged", why: "worktree folder gone" } : { state: "in-progress", why: "worktree folder gone" };
+  if (!t.readable) {
+    // A gone folder says what its work came to: never in progress. A branch git finds decides first.
+    if (t.gone !== undefined) {
+      if (t.gone === "unmerged") return { state: "removed", why: "not merged" };
+      if (t.gone === "merged" || t.tracked === "merged") return { state: "merged", why: CLEANED_UP };
+      if (t.gone === "empty") return { state: "removed", why: REMOVED_EMPTY };
+      return { state: "removed", why: "no record of a merge" };
+    }
+    return t.tracked === "merged" ? { state: "merged", why: "worktree folder gone" } : { state: "in-progress", why: "worktree folder gone" };
+  }
   if (t.merged) {
     // Uncommitted work vetoes "merged": the tree is being worked on, or was left dirty.
     if (t.dirty) return s.running ? { state: "in-progress", why: "uncommitted changes" } : { state: "stale", why: "merged, with uncommitted changes" };
@@ -178,7 +201,7 @@ export function sessionReadinessOf(trees: WorktreeReadiness[], flags: MergeFlags
   if (waiting) return { ...out, badge: "waiting", branch: waiting.branch };
   if (ready) return { ...out, badge: "ready", branch: ready.branch };
   // An empty leftover worktree (clean, no commit of its own, nothing running) hides no merged badge.
-  const empty = (t: WorktreeReadiness) => t.state === "in-progress" && t.why === NO_COMMITS && !t.dirtyCount;
+  const empty = (t: WorktreeReadiness) => (t.state === "in-progress" && t.why === NO_COMMITS && !t.dirtyCount) || (t.state === "removed" && t.why === REMOVED_EMPTY);
   const merged = trees.filter((t) => t.state === "merged");
   if (!merged.length || trees.some((t) => t.state !== "merged" && !empty(t))) return out;
   const branch = flags.lastMerge?.branch ?? merged[merged.length - 1]!.branch;
@@ -447,8 +470,8 @@ export async function readReadinessScan(path: string, size: number, prev: Readin
     let checkIds: Set<string>;
     let from: number;
     if (grown && prev.found && prev.entries && prev.checkIds && (await atLineStart(path, prev.size))) {
-      entries = prev.entries;
-      checkIds = prev.checkIds;
+      entries = [...prev.entries];
+      checkIds = new Set(prev.checkIds);
       from = prev.size;
     } else {
       entries = [];
@@ -468,7 +491,7 @@ export async function readReadinessScan(path: string, size: number, prev: Readin
 export const PROCESS_START_MS = Date.now() - process.uptime() * 1000;
 
 export interface ReadinessDeps {
-  insights: Pick<WorktreeInsights, "treeStatus">;
+  insights: Pick<WorktreeInsights, "treeStatus"> & Partial<Pick<WorktreeInsights, "pushed" | "dirtyLifetime" | "forget">>;
   git: GitRunner;
   /** The folder this server's code runs from (its checkout). */
   serverDir: string;
@@ -480,6 +503,10 @@ export interface ReadinessDeps {
   terminal?: (s: SessionSummary) => boolean;
   /** The attention answer for the session's last classified reply. */
   asksUser?: (sessionId: string) => { turnId: string; asks: boolean } | undefined;
+  /** A gone folder's branch, read from `dirs` (§chat.worktrees/readiness). */
+  gone: (t: TrackedWorktree, dirs: readonly string[]) => Promise<GoneState>;
+  /** A tree's index/HEAD/branch stamp, read without Git; null when it can't be read (worktreeStamp). */
+  treeStamp?: (dir: string) => string | null;
 }
 
 const defaultDeps = (): ReadinessDeps => ({
@@ -489,6 +516,8 @@ const defaultDeps = (): ReadinessDeps => ({
   processStart: PROCESS_START_MS,
   now: Date.now,
   asksUser: (id) => asksUserOf(id),
+  gone: (t, dirs) => goneTreeState(t, dirs),
+  treeStamp: worktreeStamp,
 });
 
 let deps: ReadinessDeps = defaultDeps();
@@ -530,16 +559,21 @@ async function mergeNeedsRestart(card: MergeCard): Promise<boolean> {
 
 /** Whether the merge's commit is on the target's origin branch yet; undefined when unknown. */
 async function mergePushed(card: MergeCard, cwd: string): Promise<boolean | undefined> {
+  if (deps.insights.pushed) return deps.insights.pushed(cwd, card.target, card.sha);
   const ref = await deps.git(["rev-parse", "--verify", "-q", `refs/remotes/origin/${card.target}`], { cwd });
   if (ref.code !== 0) return undefined;
   const r = await deps.git(["merge-base", "--is-ancestor", card.sha, ref.stdout.trim()], { cwd });
   return r.code === 0 ? true : r.code === 1 ? false : undefined;
 }
 
-async function treeFacts(t: TrackedWorktree): Promise<TreeFacts> {
+async function treeFacts(t: TrackedWorktree, dirs: readonly string[]): Promise<TreeFacts> {
   const base = { path: t.path, branch: t.branch, tracked: t.status === "merged" ? ("merged" as const) : ("active" as const) };
   const st = await deps.insights.treeStatus(t.path).catch(() => null);
-  if (!st || !st.exists || st.error && st.merged === undefined) return { ...base, readable: false };
+  if (!st || !st.exists || st.error && st.merged === undefined) {
+    // Gone (not merely unreadable): what its branch came to decides (§chat.worktrees/readiness).
+    if (!st?.exists && !existsSync(t.path)) return { ...base, readable: false, gone: await goneWorkOf(t, dirs) };
+    return { ...base, readable: false };
+  }
   // A branch with no commit of its own is never merged: ancestry alone would say it is.
   const own = st.head !== undefined && st.head !== t.base;
   const merged = own && (st.merged === "ancestor" || st.merged === "content");
@@ -558,11 +592,27 @@ async function treeFacts(t: TrackedWorktree): Promise<TreeFacts> {
   };
 }
 
+/** Another session's file records this tree merged: the Merge Captain's own record of the merge it
+    made, which outlives the `git branch -d` of its clean-up (as far as readiness has read it). */
+function mergedElsewhere(t: TrackedWorktree): boolean {
+  for (const c of cache.values()) if (c.facts?.trees.some((o) => o.status === "merged" && o.path === t.path && o.branch === t.branch)) return true;
+  return false;
+}
+
+/** What a gone folder's work came to (§chat.worktrees/readiness, removed): git or the ledger
+    first, then another session's record of its merge. The pane asks the same (server/insights.ts). */
+export async function goneWorkOf(t: TrackedWorktree, dirs: readonly string[]): Promise<GoneState> {
+  return (await deps.gone(t, dirs).catch(() => null)) ?? (mergedElsewhere(t) ? "merged" : null);
+}
+
 /** A session's readiness now: git, the file's facts and the row. */
-export async function computeReadiness(s: SessionSummary, facts: FileFacts): Promise<SessionReadiness | undefined> {
+export async function computeReadiness(s: SessionSummary, facts: FileFacts, publishChecks: () => boolean = () => true, fresh = false): Promise<SessionReadiness | undefined> {
   const own = facts.trees.filter((t) => t.status !== "dropped" && t.session === s.id);
-  if (own.length === 0) return undefined;
-  const running = s.busy || s.activity?.state === "working" || (s.workers?.working ?? s.live?.workers?.working ?? 0) > 0;
+  if (own.length === 0) {
+    if (publishChecks()) checksBySession.delete(s.path);
+    return undefined;
+  }
+  const running = runningNow(s);
   const reply = facts.lastReply;
   let asks = false;
   if (reply) {
@@ -570,16 +620,18 @@ export async function computeReadiness(s: SessionSummary, facts: FileFacts): Pro
     asks = signal && signal.turnId === reply.id ? signal.asks : asksToMerge(reply.text);
   }
   const sf: SessionFacts = { running, openQuestions: s.align?.openQuestions ?? 0, asks, ...(facts.lastCheck ? { lastCheck: facts.lastCheck } : {}) };
+  for (const t of own) deps.insights.dirtyLifetime?.(t.path, dirtyTtlFor(s, t.path, fresh));
   const trees: WorktreeReadiness[] = [];
   const heads: Record<string, number> = {};
   for (const t of own) {
-    const tf = await treeFacts(t);
+    const tf = await treeFacts(t, [s.cwd, ...own.map((o) => o.path).filter((p) => p !== t.path)]);
     if (tf.headAt) heads[t.path] = tf.headAt;
     const r = treeReadiness(tf, sf);
     trees.push({
       path: t.path,
       branch: tf.branch,
       state: r.state,
+      ...((tf.readable ? tf.merged : tf.gone !== "unmerged" && (tf.tracked === "merged" || tf.gone === "merged")) ? { merged: true as const } : {}),
       ...(r.why ? { why: r.why } : {}),
       reason: r.reason,
       ...(tf.dirty && tf.dirtyCount ? { dirtyCount: tf.dirtyCount, dirtyFiles: tf.dirtyFiles ?? [] } : {}),
@@ -597,7 +649,7 @@ export async function computeReadiness(s: SessionSummary, facts: FileFacts): Pro
   }
   const followUp = newest ? followUpFor(s.id, newest.id) : undefined;
   const lastReplyAt = reply?.at ?? (Date.parse(s.lastActiveAt) || 0);
-  checksBySession.set(s.path, { ...(facts.lastCheck ? { lastCheck: facts.lastCheck } : {}), heads });
+  if (publishChecks()) checksBySession.set(s.path, { ...(facts.lastCheck ? { lastCheck: facts.lastCheck } : {}), heads });
   return sessionReadinessOf(trees, { ...(newest ? { lastMerge: { at: newest.at, branch: newest.branch } } : {}), restartPending, pushPending, followUp }, lastReplyAt);
 }
 
@@ -631,44 +683,113 @@ interface Cached {
   value?: SessionReadiness;
   /** What the answer was computed from: the row's state (rowKey). */
   key: string;
+  file: string;
   at: number;
+  /** The row the answer was computed for: an explicit inspection re-reads with it. */
+  row: SessionSummary;
+  /** A tree's dirty reading may have stood IDLE_DIRTY_TTL_MS: an inspection re-reads it. */
+  longDirty?: boolean;
+  /** Settled when computed (every tree merged and clean): its trees' stamps, which each listing
+      compares to re-read at once on a commit, checkout or branch switch. */
+  stamps?: string;
 }
 
+interface RefreshInput { row: SessionSummary; key: string; file: string; size: number }
+const fileInput = (s: SessionSummary): RefreshInput => {
+  try {
+    const st = statSync(s.path);
+    return { row: s, key: rowKey(s), file: JSON.stringify([st.dev, st.ino, st.size, st.mtimeMs, st.ctimeMs]), size: st.size };
+  } catch {
+    return { row: s, key: rowKey(s), file: "missing", size: 0 };
+  }
+};
+const sameInput = (a: RefreshInput, b: RefreshInput) => a.key === b.key && a.file === b.file;
 const cache = new Map<string, Cached>();
-const queued = new Map<string, SessionSummary>();
+const queued = new Map<string, RefreshInput>();
+const active = new Map<string, RefreshInput>();
+/** Sessions an explicit inspection asked to re-read every tree's dirty state for. */
+const forced = new Set<string>();
 let draining: Promise<void> | null = null;
+
+/** How long a tree's dirty reading may stand in this refresh (§chat.worktrees/dirty-freshness):
+    0 when the file or row moved or someone looked, 5 minutes for an idle session's merged, clean
+    tree, else DIRTY_TTL_MS. */
+/** Nothing running and every tree merged and clean: re-read every SETTLED_TTL_MS (§app/idle-git-cache). */
+function settled(s: SessionSummary, value: SessionReadiness | undefined): boolean {
+  return !runningNow(s) && !!value?.trees.length && value.trees.every((t) => t.state === "merged");
+}
+
+/** The trees' stamps, or undefined when one can't be read: that session keeps the 20 s cadence. */
+function stampsOf(paths: readonly string[]): string | undefined {
+  const parts = paths.map((p) => deps.treeStamp?.(p) ?? null);
+  return parts.some((p) => p === null) ? undefined : parts.join("\n");
+}
+
+function dirtyTtlFor(s: SessionSummary, treePath: string, fresh: boolean): number {
+  if (fresh) return 0;
+  const before = cache.get(s.path)?.value?.trees.find((t) => t.path === treePath);
+  return !runningNow(s) && before?.state === "merged" ? IDLE_DIRTY_TTL_MS : DIRTY_TTL_MS;
+}
 
 /** The row's state the answer depends on besides git: a change re-reads at once. */
 const rowKey = (s: SessionSummary) =>
-  JSON.stringify([s.lastActiveAt, s.busy, s.activity?.state ?? null, s.workers?.working ?? s.live?.workers?.working ?? 0, s.align?.openQuestions ?? 0, s.signals?.turnId ?? null]);
+  JSON.stringify([s.lastActiveAt, s.busy, s.activity?.state ?? null, s.workers?.working ?? s.live?.workers?.working ?? 0, s.align?.openQuestions ?? 0, s.signals?.turnId ?? null, !!s.archived, !!s.live]);
+
+const runningNow = (s: SessionSummary) => s.busy || s.activity?.state === "working" || (s.workers?.working ?? s.live?.workers?.working ?? 0) > 0;
+
+/** Archived, not open in a TUI and nothing running: its answer stands until the file or row moves,
+    or someone inspects its worktrees. */
+const parked = (s: SessionSummary) => !!s.archived && !s.live && !runningNow(s);
 
 /** Sessions readiness never covers. */
 const excluded = (s: SessionSummary) => !!(s.workerSession || s.overseer || s.projectOverseer || s.baton || s.target);
 
-async function refresh(s: SessionSummary): Promise<void> {
-  const prev = cache.get(s.path);
-  let size: number;
-  try {
-    size = (await stat(s.path)).size;
-  } catch {
-    cache.delete(s.path);
+async function refresh(input: RefreshInput): Promise<void> {
+  const s = input.row;
+  const current = () => {
+    if (active.get(s.path) !== input || queued.has(s.path)) return false;
+    const latest = fileInput(s);
+    if (!sameInput(input, latest)) {
+      queued.set(s.path, latest);
+      return false;
+    }
+    return true;
+  };
+  if (input.file === "missing") {
+    if (current()) { cache.delete(s.path); checksBySession.delete(s.path); }
     return;
   }
-  const { scan, facts } = await readReadinessScan(s.path, size, prev?.scan ?? null);
-  const value = facts ? await computeReadiness(s, facts) : undefined;
-  cache.set(s.path, { scan, facts, ...(value ? { value } : {}), key: rowKey(s), at: deps.now() });
+  const prev = cache.get(s.path);
+  // A rewrite/replacement must not reuse compact entries just because the byte count grew.
+  const previousScan = prev?.file === input.file ? prev.scan : null;
+  const { scan, facts } = await readReadinessScan(s.path, input.size, previousScan);
+  if (!current()) return;
+  const fresh = forced.delete(s.path) || !prev || prev.key !== input.key || prev.file !== input.file;
+  const longDirty = !fresh && !!facts?.trees.some((t) => dirtyTtlFor(s, t.path, false) > DIRTY_TTL_MS);
+  // Taken before Git is read: a commit landing during the read is never certified as seen.
+  const before = facts ? stampsOf(facts.trees.filter((t) => t.status !== "dropped" && t.session === s.id).map((t) => t.path)) : undefined;
+  const value = facts ? await computeReadiness(s, facts, current, fresh) : undefined;
+  if (!current()) return;
+  const stamps = settled(s, value) ? before : undefined;
+  cache.set(s.path, { scan, facts, ...(value ? { value } : {}), key: input.key, file: input.file, at: deps.now(), row: s, longDirty, ...(stamps ? { stamps } : {}) });
   if (facts && value && (await checkFollowUps(s, facts, value).catch(() => false))) {
-    const again = await computeReadiness(s, facts);
-    cache.set(s.path, { scan, facts, ...(again ? { value: again } : {}), key: rowKey(s), at: deps.now() });
+    if (!current()) return;
+    const again = await computeReadiness(s, facts, current);
+    if (current()) cache.set(s.path, { scan, facts, ...(again ? { value: again } : {}), key: input.key, file: input.file, at: deps.now(), row: s, longDirty, ...(stamps ? { stamps } : {}) });
   }
 }
 
 function drain(): Promise<void> {
   draining ??= (async () => {
     while (queued.size) {
-      const [path, s] = queued.entries().next().value as [string, SessionSummary];
+      const [path, input] = queued.entries().next().value as [string, RefreshInput];
       queued.delete(path);
-      await refresh(s).catch((err) => console.warn(`[readiness] ${path}: ${(err as Error).message}`));
+      active.set(path, input);
+      try {
+        await refresh(input).catch((err) => console.warn(`[readiness] ${path}: ${(err as Error).message}`));
+      } finally {
+        if (active.get(path) === input) active.delete(path);
+      }
     }
   })().finally(() => {
     draining = null;
@@ -684,10 +805,21 @@ function drain(): Promise<void> {
 export function readinessOverlay(s: SessionSummary): SessionReadiness | undefined {
   if (excluded(s)) return undefined;
   const hit = cache.get(s.path);
-  const moved = !hit || hit.key !== rowKey(s);
-  const aged = !!hit?.scan?.found && deps.now() - hit.at >= READINESS_TTL_MS;
+  const input = fileInput(s);
+  const flight = active.get(s.path);
+  if (flight) {
+    if (sameInput(flight, input)) queued.delete(s.path);
+    else queued.set(s.path, input);
+    return hit?.value;
+  }
+  // A settled answer stands SETTLED_TTL_MS while its trees' index, HEAD and branch stay put.
+  const settledHit = !!hit?.stamps && !runningNow(s);
+  const treesMoved = settledHit && stampsOf(hit!.value?.trees.map((t) => t.path) ?? []) !== hit!.stamps;
+  if (treesMoved) forced.add(s.path);
+  const moved = !hit || hit.key !== input.key || hit.file !== input.file || treesMoved;
+  const aged = !parked(s) && !!hit?.scan?.found && deps.now() - hit.at >= (settledHit ? SETTLED_TTL_MS : READINESS_TTL_MS);
   if (moved || aged) {
-    queued.set(s.path, s);
+    queued.set(s.path, input);
     void drain();
   }
   return hit?.value;
@@ -697,6 +829,9 @@ export function readinessOverlay(s: SessionSummary): SessionReadiness | undefine
 export function pruneReadiness(listed: readonly SessionSummary[]): void {
   const paths = new Set(listed.map((s) => s.path));
   for (const k of cache.keys()) if (!paths.has(k)) cache.delete(k);
+  for (const k of queued.keys()) if (!paths.has(k)) queued.delete(k);
+  for (const k of active.keys()) if (!paths.has(k)) active.delete(k);
+  for (const k of forced) if (!paths.has(k)) forced.delete(k);
   for (const k of checksBySession.keys()) if (!paths.has(k)) checksBySession.delete(k);
   deps.followUps?.prune(new Set(listed.map((s) => s.id)));
 }
@@ -709,11 +844,48 @@ export interface ReadinessChecks {
   heads: Record<string, number>;
 }
 const checksBySession = new Map<string, ReadinessChecks>();
-export const readinessChecksOf = (sessionPath: string): ReadinessChecks | undefined => checksBySession.get(sessionPath);
+export function readinessChecksOf(sessionPath: string): ReadinessChecks | undefined {
+  inspected(sessionPath);
+  return checksBySession.get(sessionPath);
+}
 
 /** A worktree's readiness from the session's cached answer (the Session tab's rows). */
 export function treeReadinessOf(sessionPath: string, treePath: string): WorktreeReadiness | undefined {
+  inspected(sessionPath);
   return cache.get(sessionPath)?.value?.trees.find((t) => t.path === treePath);
+}
+
+/** An explicit look: the cached answer stands for this call, and one fresh read of every tree,
+    dirty state included, is queued (joining any queued or active one) for a parked session whose
+    answer is older than READINESS_TTL_MS, a session whose trees' dirty readings may have stood
+    IDLE_DIRTY_TTL_MS (§chat.worktrees/dirty-freshness), or a settled one whose answer is
+    DIRTY_TTL_MS old (§app/idle-git-cache). */
+function inspected(sessionPath: string): void {
+  const hit = cache.get(sessionPath);
+  if (!hit || !hit.scan?.found) return;
+  const age = deps.now() - hit.at;
+  if (parked(hit.row) ? age < READINESS_TTL_MS : !hit.longDirty && !(hit.stamps && age >= DIRTY_TTL_MS)) return;
+  if (active.has(sessionPath) || queued.has(sessionPath)) return;
+  forced.add(sessionPath);
+  queued.set(sessionPath, fileInput(hit.row));
+  void drain();
+}
+
+/** Sova's cleanup removed these worktrees (§chat.worktrees/cleanup): every session tracking one
+    re-reads now, its dirty readings included, the way an index or HEAD change does, and a read in
+    flight is superseded. Resolves once those reads are in, so the very next look is current. */
+export async function worktreesRemoved(paths: readonly string[]): Promise<void> {
+  if (paths.length === 0) return;
+  for (const p of paths) deps.insights.forget?.(p);
+  const gone = new Set(paths.map(canonical));
+  const reread = (path: string, input: RefreshInput) => {
+    forced.add(path);
+    queued.set(path, { ...input });
+  };
+  for (const [path, hit] of cache) if (hit.facts?.trees.some((t) => gone.has(canonical(t.path)))) reread(path, fileInput(hit.row));
+  // A read in flight may have seen the folder before it went: it never installs.
+  for (const [path, input] of active) if (!queued.has(path)) reread(path, input);
+  if (queued.size) await drain();
 }
 
 /** Tests: wait for the background reads, and start over. */
@@ -721,6 +893,9 @@ export const readinessIdle = (): Promise<void> => draining ?? Promise.resolve();
 export function resetReadiness(): void {
   cache.clear();
   queued.clear();
+  active.clear();
+  forced.clear();
+  checksBySession.clear();
   restartBySha.clear();
   serverCheckout = null;
   deps = defaultDeps();

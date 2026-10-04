@@ -23,9 +23,11 @@ installs with `install.sh` alone, without the web app.
 | `extensions/claude-code/` | `claude-code` worker backend for the subagent tools, driving the installed Claude Code CLI |
 | `extensions/command-palette/` | `Ctrl+P` palette over models, sessions, settings, extension commands and skills |
 | `extensions/extension-toggle/` | `/extensions` to switch extensions on and off in-session |
+| `extensions/compact-handoff/` | `/compact-handoff [focus \| cancel]`: a read-only background fork of the session writes a handoff note, which is saved to `~/.pi/agent/compact-handoffs/<session id>.md` and the session's `compact-handoff` entry, then the session compacts; after this and every later compaction the newest note on the branch is added back, hidden, right after the summary |
 | `extensions/explain/` | `/explain <topic>`: one forked subagent writes a self-contained HTML explanation into `~/.pi/agent/explanations/`, kept forever and read in Sova |
 | `extensions/model-policy/` | The shared model policy (`model-policy.json`): which providers and models may be used at all, and which of them subagents may be given. Written by Sova's Settings → Models tab; this extension enforces the global half in the TUI |
 | `extensions/provider-limits/` | How many model requests each provider runs at once on this device (`provider-limits.json`, written by Sova's Settings → Models); requests over the limit wait instead of failing. Every pi worker loads it. Its `gate.ts` (builtins only) is imported by Sova |
+| `extensions/llm-inflight/` | Counts this process's logical LLM calls in flight (issue to end; queue waits, cooldowns and tool time never count) at its model runtime and from the Claude Code CLI's stream; the session's live record carries the count (`presence.llm`), and a pi worker reports its count to the session running it. Every pi worker loads it. Its `tracker.ts` and `runtime.ts` (builtins only) are imported by Sova |
 | `extensions/mode/` | Per-session normal ↔ delegate mode switcher plus minor modes (`alt+m`, `ctrl+p` → Mode, `/mode`). Delegate orchestrates workers by four profiles — planning, investigation, routine and complex implementation — each a configurable backend/model/effort with an optional fallback (`mode-delegate.json`); the `spec` minor mode can hand its spec writing to one such worker (`mode-spec.json`) |
 | `extensions/spec/` | Not a pi extension (no `index.ts`; pi skips it): standalone `.sova/spec` tools that the `spec` minor mode in `extensions/mode/` tells the agent to run. `core/sova-spec.mjs` is read-only; `core/sova-spec-draft.mjs` keeps proposed documentation in full-copy drafts and promotes the implemented, verified part, writing only with `--write`; `core/sova-spec-review.mjs` records review evidence, and writes only under `.sova/spec/reviews/` and only with `--write` or `record` |
 | `extensions/sessions/` | Live pi sessions on this machine find each other through a filesystem presence registry; ships the `pi-sessions` CLI (`bin/pi-sessions.ts`) and the record schema (`public/SCHEMA.md`) |
@@ -38,7 +40,7 @@ installs with `install.sh` alone, without the web app.
 | `extensions/codefold/` | Folds long fenced code blocks in assistant messages into one band |
 | `extensions/topic-outline/` | Display-only live topic outline of the conversation, with jump-to-topic |
 | `extensions/vision-delegate/` | Lets a text-only model work with images: a `look_at_image` tool plus automatic descriptions of read results and TUI attachments, routed to a fallback vision model |
-| `extensions/usage-status/` | Subscription usage (Ollama Cloud, OpenAI Codex, Claude, Z.ai, DeepSeek balance) in the footer, plus a `/usage` overlay. Its `fetch.ts` (fetchers, cache, lock) is imported by Sova |
+| `extensions/usage-status/` | Subscription usage (Ollama Cloud, OpenAI Codex, Claude, Z.ai, DeepSeek balance) in the footer, plus a `/usage` overlay; `/usage reset-day ollama <1-31\|clear>` declares Ollama Cloud's monthly reset day. Its `fetch.ts` (fetchers, cache, lock) and `windows.ts` (`usage-windows.json`, the declared reset day) are imported by Sova |
 | `extensions/wake-nudge.ts` | Lets the model schedule one-shot wakeups |
 | `extensions/working-subagent-count.ts` | Busy subagent and team-member counts on the "Working" line and in an idle widget |
 | `sandbox-policy/` | Templates of the sandbox policy (`<platform>/policy.json` + `CLAUDE.md`), copied (never linked) into the agent dir by `install.sh` |
@@ -176,15 +178,17 @@ node --test install.test.mjs
 cd extensions/subagents && node tests/run.mjs && node tests/smoke.mjs && node tests/team-smoke.mjs
 cd extensions/claude-code && node tests/run.mjs && node tests/smoke.mjs && node tests/ui-permissions.mjs
 cd extensions/extension-toggle && node --test index.test.ts
-cd extensions/mode && node --test index.test.ts delegate.test.ts routing.test.ts align.test.ts spec.test.ts spec-guard.test.ts also-changes.test.ts && node tests/smoke.mjs && node tests/wake-turn.mjs && node tests/align-turn.mjs && node tests/note-turn.mjs && node tests/spec-turn.mjs && node tests/spec-worker.mjs
+cd extensions/compact-handoff && node tests/run.mjs
+cd extensions/mode && node --test index.test.ts delegate.test.ts routing.test.ts align.test.ts review.test.ts spec.test.ts spec-guard.test.ts also-changes.test.ts && node tests/smoke.mjs && node tests/review-smoke.mjs && node tests/wake-turn.mjs && node tests/align-turn.mjs && node tests/note-turn.mjs && node tests/spec-turn.mjs && node tests/spec-worker.mjs
 cd extensions/model-policy && node --test policy.test.ts index.test.ts
 cd extensions/provider-limits && node tests/run.mjs
+cd extensions/llm-inflight && node tests/run.mjs
 cd extensions/command-palette && node --test test.mjs
 cd extensions/sessions && node --test test.mjs
 cd extensions/spec && node --test tests/*.test.mjs
 cd extensions/codefold && node tests/run.mjs
 cd extensions/stamp && node --test format.test.ts index.test.ts
-cd extensions/usage-status && node --test fetch.test.ts
+cd extensions/usage-status && node --test fetch.test.ts windows.test.ts index.test.ts
 cd extensions/remote && node --test argv.test.ts
 cd extensions/link && node --test client.test.ts && node tests/run.mjs
 cd extensions/sandbox && node --test tests/*.unit.test.ts tests/unit/*.unit.test.ts && node tests/run.mjs

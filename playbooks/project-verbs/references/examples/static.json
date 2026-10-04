@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "sources": ["index.html"],
+  "services": {
+    "site": {
+      "static": ".",
+      "ports": {
+        "http": {"base": 8731, "stride": 1}
+      },
+      "about": "The site: http://127.0.0.1:${ports.site.http}/",
+      "isolation": {
+        "method": "ports",
+        "why": "Static files served from this checkout; each copy serves its own files on its own port."
+      }
+    }
+  },
+  "open": {"endpoint": "site.http"},
+  "share": {
+    "endpoints": ["site.http"]
+  }
+}

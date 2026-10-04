@@ -46,7 +46,9 @@ import {
 import { openSettings } from "../lib/settings-nav";
 import { shareHref } from "../lib/share-slice";
 import { copyText } from "../lib/ui-state";
+import { DELETE_LINK, DELETE_THIS_LINK, deleteLinkConfirm, LINK_GONE } from "../lib/link-delete";
 import { SessionThread } from "../share/SessionShareApp";
+import { DeleteButton } from "./DeleteButton";
 import { Banner, CopyButton, Icon, trapFocus } from "./ui";
 import "../shares.css";
 
@@ -666,7 +668,7 @@ function RecipientRow(props: {
   activity?: SessionShareRecipientActivity;
   now: number;
   busy: boolean;
-  /** Why this row's last Get New Link or Turn Off didn't go through: the server's own sentence. */
+  /** Why this row's last Get New Link or Delete Link didn't go through: the server's own sentence. */
   error?: string;
   onRelink(): void;
   onRevoke(): void;
@@ -676,7 +678,6 @@ function RecipientRow(props: {
   const opened = () => props.activity?.opened ?? r().opened;
   const lastAt = () => props.activity?.lastAt ?? r().lastAt;
   const visits = createMemo(() => props.activity?.visits ?? []);
-  const [armed, setArmed] = createSignal(false);
   return (
     <li class="list-row share-recipient" classList={{ "share-recipient-off": r().state !== "live" }}>
       <div class="list-main">
@@ -712,19 +713,13 @@ function RecipientRow(props: {
           <button type="button" class="button button-sm" aria-disabled={props.busy ? "true" : undefined} title="A new link for them. This one stops working." onClick={() => props.onRelink()}>
             Get New Link
           </button>
-          <button
-            type="button"
-            class="button button-sm button-destructive"
-            aria-disabled={props.busy ? "true" : undefined}
-            onClick={() => {
-              if (!armed()) return setArmed(true);
-              setArmed(false);
-              props.onRevoke();
-            }}
-            onBlur={() => setArmed(false)}
-          >
-            {armed() ? `Turn Off ${r().anyone ? "This" : `${r().label}'s`} Link?` : "Turn Off"}
-          </button>
+          <DeleteButton
+            label={DELETE_LINK}
+            confirm={r().anyone ? DELETE_THIS_LINK : deleteLinkConfirm(r().label)}
+            note={LINK_GONE}
+            disabled={props.busy}
+            onRun={() => props.onRevoke()}
+          />
         </div>
       </Show>
       <Show when={props.error}>

@@ -1,12 +1,13 @@
 (ns sova.statecharts.build
-  "The build statechart (portable, `build/<org>/<p>/<sid>`): one coding session the project started, the
+  "The build statechart (portable, `build/<p>/<sid>`): one coding session the project started, the
    overseer's (`coding`) or the operator's (`operator-coding`), its worktree, branch and merge
    (§app.project-overseer/coding-worktrees, /new-coding-session, /coding-mode).
 
    ```
    build ‹compound› → regions ‹parallel›
    ├─ setup   making-worktree · setting-mode · prompting · ready · not-started
-   ├─ turn    idle · working · failed          (the runtime's facts; `workers` beside it)
+   ├─ turn    idle · working · failed          (the runtime's facts; `workers` beside it, and at a turn's end
+   │                                            the open alignment questions it left, `questions`)
    ├─ tree    open · missing · removed · root  (git facts: the worktrees extension's probe)
    ├─ branch  no-commits · unmerged · merged · new-since-merge   (git facts)
    └─ merge   merge-idle · merging              (Merge Branch: the operator's only)
@@ -16,8 +17,10 @@
    merge decides only when the branch is gone or git can't be read. Paths are host-local: the host
    keeps the session file and worktree folder in its own table, never here.
 
-   Start data: started.json's row `{:org-id :project-id :session-id :kind :title :prompt :started-by
-   :via :gap :item :decisions :model :thinking :mode :op-item :folder :created-at}`."
+   Start data: `{:project-id :session-id :kind :title :prompt :started-by :via :gap :item :decisions
+   :model :thinking :mode :op-item :folder :created-at}`. `gap`, `item` and `decisions` are attribution
+   its spawner sets (an item names its gap); the build never reads them. Its project learns a merge
+   from the exported `merged` (it watches every build it lists)."
   (:require
     [clojure.string :as str]
     [com.fulcrologic.statecharts.chart :as chart]
@@ -90,6 +93,13 @@
     (transition {:sova/feed :feed :event :git/probe :cond (fn [_ d] (= s (probe-state d :branch))) :target target})))
 
 (defn coding? [d] (= "coding" (:kind d)))
+
+(defn- turn-ended-ops
+  "A turn's end: when, and the open alignment questions its session waits on the operator for (`questions`, the
+   host's count from the session file; 0 when it sent none), so a verb playbook's run can say it waits."
+  [d]
+  [(ops/assign :last-turn-at (b/now-ms d))
+   (ops/assign :questions (let [n (:questions (e d))] (if (and (number? n) (pos? n)) n 0)))])
 
 (defn commit-paragraph
   "codingWorktreeParagraph, verbatim."
@@ -170,12 +180,12 @@
             (transition {:sova/feed :quiet :event :turn/started :target :working}))
           (state {:id :working} (region :turn "working")
             (transition {:sova/feed :quiet :sova/asks-overseer true :event :turn/ended :cond (fn [_ d] (true? (:failed (e d)))) :target :turn-failed}
-              (script {:expr (fn [_ d] [(ops/assign :last-turn-at (b/now-ms d))])})
+              (script {:expr (fn [_ d] (turn-ended-ops d))})
               (b/tell-watch (fn [d] (when (coding? d)
                                       {:kind "coding/settled" :params {:title (shown-title d) :failed true :session-id (:session-id d)} :by "system"
                                        :key (str "coding/settled:" (:session-id d) ":failed")}))))
             (transition {:sova/feed :quiet :sova/asks-overseer true :event :turn/ended :target :turn-idle}
-              (script {:expr (fn [_ d] [(ops/assign :last-turn-at (b/now-ms d))])})
+              (script {:expr (fn [_ d] (turn-ended-ops d))})
               (b/tell-watch (fn [d] (when (coding? d)
                                       {:kind "coding/settled" :params {:title (shown-title d) :failed false :session-id (:session-id d)} :by "system"
                                        :key (str "coding/settled:" (:session-id d) ":ok")})))))
@@ -211,8 +221,7 @@
               (script {:expr (fn [_ d] [(ops/assign :merged {:at (b/now-ms d) :commit (:commit (result d))})
                                         (ops/assign :merge-refused nil)])})
               (b/tell-watch (fn [d] {:kind "build/merged" :params {:title (shown-title d) :branch (:branch d) :target (:target d)} :by "operator"
-                                     :key (str "build/merged:" (:session-id d) "@" (:commit (result d)))}))
-              (b/send-if :milestone/noted (fn [d] (b/project-sid (:org-id d) (:project-id d))) (fn [_] {:kind "build-merged"})))
+                                     :key (str "build/merged:" (:session-id d) "@" (:commit (result d)))})))
             ;; git refused (the reason in today's words): the overseer is told unless it is about the
             ;; root's own checkout (the operator's to fix)
             (transition {:sova/feed :feed :sova/asks-overseer true :event :effect/failed :cond (done-kind? "merge") :target :merge-idle}
@@ -242,6 +251,6 @@
    :migrate  {}
    :storage  :portable
    :exported [:session-id :kind :title :started-by :via :gap :item :decisions :branch :base :target :in-root :merged
-              :turn :workers :running :tree :branch-state :last-turn-at :mode-not-set :not-started :created-at]
+              :turn :workers :running :tree :branch-state :last-turn-at :questions :mode-not-set :not-started :created-at]
    :acts     acts
    :not-here not-here})

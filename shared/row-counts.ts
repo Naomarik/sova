@@ -4,7 +4,7 @@
 // `olderSummary`), so the two add up to the count of the whole branch. Imports only the card model
 // (shared/overseer-card.ts, pure) at runtime, for the open cards above the rows a client holds.
 
-import { CARD_TOOL, cardResultOf, isOpenCard, type OverseerCard } from "./overseer-card";
+import { CARD_TOOL, isOpenCard, normalizeCardDetails, type CardDetails, type OverseerCard } from "./overseer-card";
 import type { AlignDocInfo, OlderSummary, TranscriptItem } from "./protocol";
 
 /** The user's inputs: a user row or a wake nudge (src/lib/turn.ts says why a link message isn't). */
@@ -39,6 +39,13 @@ export function summarize(rows: readonly TranscriptItem[]): OlderSummary {
   };
 }
 
+/** The sova_card result a row is, when it is one (cardResultOf, read off the slim row: sova_card
+    keeps its details on the row, EAGER_TOOLS): its details, normalized, else undefined. */
+export function cardResultOfRow(it: TranscriptItem): CardDetails | undefined {
+  if (it.kind !== "tool-result" || it.meta?.role !== "toolResult" || it.meta.toolName !== CARD_TOOL || it.meta.isError === true) return undefined;
+  return normalizeCardDetails(it.tool?.details);
+}
+
 /** The Overseer's cards still open in `rows`: each card's newest snapshot (the fold of
     src/lib/overseer.ts `cardFold`: a failed call and details that don't check out are never state)
     and the row of the sova_card call that shows it (its result's row when the call isn't in `rows`),
@@ -53,7 +60,7 @@ export function openCardRows(rows: readonly TranscriptItem[]): NonNullable<Older
   };
   for (const it of rows) {
     if (it.kind !== "tool-result") continue;
-    const d = cardResultOf(it.raw);
+    const d = cardResultOfRow(it);
     if (!d) continue;
     const rowId = (it.toolCallId && calls.get(it.toolCallId)) || it.id;
     if (d.closed) put(d.closed, rowId);

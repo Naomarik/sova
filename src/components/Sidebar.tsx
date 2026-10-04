@@ -5,11 +5,11 @@ import { Dynamic, Portal } from "solid-js/web";
 import type { AgentsInsight, AttentionDigest, ContextInfo, OverseerInfo, SessionGroup, SessionSummary, UsageInsight } from "../../shared/protocol";
 import { OVERSEER_HASH, overseerButtonLabel } from "../lib/overseer";
 import { openOverview } from "../lib/overview-route";
-import { autoTitleSessions, fetchTargets, sessionsDir as fetchSessionsDir, setSessionArchived } from "../lib/api";
+import { autoTitleSessions, fetchTargets, listProjects, sessionsDir as fetchSessionsDir, setSessionArchived } from "../lib/api";
 import { nameableRows, nameLabel, nameSessions, namingIn, setNaming } from "../lib/auto-title";
 import { type ArchiveGroupId, groupByArchiveDate, sessionsWord, startOfDay } from "../lib/archive";
 import { relativeTime, shortModel, tildePath } from "../lib/format";
-import { agentsHref, type GlancePart, usageGlance, usageHref } from "../lib/insights";
+import { agentsHref, type GlancePart, glanceLabel, glanceTitle, usageGlance, usageHref } from "../lib/insights";
 import { isMainThread, isOrdinarySession, isOrgSession, isTopSession } from "../lib/regions";
 import {
   eyeLabel,
@@ -39,7 +39,7 @@ import { summaryLineOf, summaryTitleOf } from "../lib/summary-row";
 import { archiveDragOf, archivedDropToast, blockedDropSentence, orgProjectOf, unarchivedToast } from "../lib/drag-archive";
 import { cwdLabel, remotePlaceOf, type TargetInfo } from "../lib/remote-session";
 import { recentCount, recentSessions } from "../lib/recent";
-import { NEEDS_YOU_KEY, needsYouCut, needsYouOpen as needsYouOpenRule, needsYouRows, needsYouShown, needsYouTitle, storedNeedsYouOpen } from "../lib/needs-you";
+import { NEEDS_YOU_KEY, needsYouCut, needsYouItems, needsYouOpen as needsYouOpenRule, needsYouRows, needsYouShown, needsYouTitle, storedNeedsYouOpen } from "../lib/needs-you";
 import { type CwdGroup, groupByActivity, groupByCreation } from "../lib/session-order";
 import {
   createGroup,
@@ -52,13 +52,16 @@ import {
   sessionGroups,
   setSessionGroup,
 } from "../lib/session-groups";
-import { announce, hasLocalDraft, home, localRunning, sessionContext, toast } from "../lib/ui-state";
+import { announce, hasLocalDraft, home, localRunning, localWorking, sessionContext, toast } from "../lib/ui-state";
 import { showsDraftMark } from "../lib/draft-mark";
 import { overlaid, rowLeadMark, rowNeedsYou, SIGNAL_CLASS, SIGNAL_ICON, signalTitle, signalWords, stalledPaths, tagSearchText, tagsTitle, turnErrorTitle } from "../lib/signals";
 import { readinessBadge, readinessCount, readinessCountWords, readinessTitle } from "../lib/readiness";
 import { requestListRefresh } from "../lib/list-refresh";
 import { orgHref } from "../lib/orgs-route";
-import { marksOverlay, openSessionFeed } from "../lib/session-feed";
+import { inProjectsRegion, projectBlocks, projectRowCount, PROJECTS_KEY } from "../lib/project-region";
+import { projectHref, PROJECTS_HREF } from "../lib/projects-route";
+import { AddProjectDialog } from "./AddProjectDialog";
+import { llmInflight, marksOverlay, openSessionFeed } from "../lib/session-feed";
 import { reuseUnchanged } from "../lib/summary-diff";
 import { readKey, removeKey, writeKey } from "../lib/storage-keys";
 import { monogram, setSpine, spine } from "../lib/spine";
@@ -76,7 +79,9 @@ import {
 } from "../lib/session-selection";
 import { folderActive, folderOpen, folderOpenKey, readFolderOpenRaw, storedFolderOpen, writeFolderOpenRaw } from "../lib/folder-open";
 import { groupOpen as groupOpenRule, groupsRegionOpen as groupsRegionOpenRule } from "../lib/group-open";
-import { activeAgentCounts, activeTeamCount, sessionWorking } from "../lib/workers";
+import { sessionWorking } from "../lib/workers";
+import { tokenVelocityView, type TokenVelocityView, velocityChart, velocityPitch } from "../lib/llm-inflight";
+import { sentences, workNow, workNowView, type WorkNowView, type WorkPeer } from "../lib/work-now";
 import { providerWait, watchProviderWaits } from "../lib/provider-waiting";
 import { waitingSentence } from "../../shared/provider-limits";
 import { ActionMenu } from "./ActionMenu";
@@ -84,6 +89,7 @@ import { ArchiveCleanup } from "./ArchiveCleanup";
 import { SelectionToolbar } from "./SelectionToolbar";
 import { ContextRing } from "./ContextRing";
 import { CancelHeldButton } from "./HeldAct";
+import { ApproveMergeButton, REVIEW_ON_PAGE } from "./PlaybookReview";
 import { heldWaitLine } from "../lib/pipeline-view";
 import { waitingWords } from "../lib/working-hours";
 import { groupHref } from "../lib/group-route";
@@ -105,7 +111,9 @@ import {
   passesHostFilter,
   peerInfo,
   peerUnavailable,
+  SELF_FILTER,
   sessionHrefOn,
+  sessionsHiddenBy,
 } from "../lib/mesh";
 import { MeshHostMenu } from "./MeshHostMenu";
 import { connectedCount, hostFilterAsk } from "../lib/mesh-details";
@@ -307,7 +315,7 @@ function SessionRow(props: {
       path: row.path,
       title: row.title,
       groupId: row.groupId ?? null,
-      org: isOrgSession(row),
+      org: isOrgSession(row) || !!row.project,
       orgProject: orgProjectOf(row),
       peer: host ? hostLabel(host) : null,
       // Busy as the row shows it: this tab's own run is newer than the last fetched list.
@@ -998,46 +1006,63 @@ function NameSessionsButton(props: { section: string; rows: readonly SessionSumm
   );
 }
 
-/** Usage foot row: every provider at a glance ("C 47%  O 95%  OL 80%  Z 0%  DS $4.29"), or the page name. */
+/**
+ * A provider's pace meter (§app.insights/pace-tick): each bar's fill is the share used, its tick
+ * the share of the window gone; an empty track is a window with no current reading. Decorative:
+ * the row's words carry the numbers.
+ */
+function PaceMeter(props: { bars: GlancePart["bars"] & {} }) {
+  return (
+    <span class="pace" classList={{ "pace-two": props.bars.length > 1 }} aria-hidden="true">
+      <For each={props.bars}>
+        {(b) => (
+          <span class="pace-bar" classList={{ "pace-bar-thin": b.thin === true, "pace-bar-empty": b.pct === null }}>
+            <Show when={b.pct !== null}>
+              <span
+                class="pace-fill"
+                classList={{ "pace-fill-warn": b.tone === "warn", "pace-fill-error": b.tone === "error" }}
+                style={{ "--pace-pct": `${Math.min(100, Math.max(0, b.pct!))}%` }}
+              />
+            </Show>
+            <Show when={b.elapsed !== null}>
+              <span class="pace-tick" style={{ "--pace-at": `${b.elapsed! * 100}%` }} />
+            </Show>
+          </span>
+        )}
+      </For>
+    </span>
+  );
+}
+
+/** A glance part's figure: its pace meter, or a credit provider's money. */
+function GlanceFigure(props: { p: GlancePart }) {
+  return (
+    <Show when={props.p.bars} fallback={<span class="text-num">{props.p.amount}</span>}>
+      {(bars) => <PaceMeter bars={bars()} />}
+    </Show>
+  );
+}
+
+/** Usage foot row: every provider at a glance (a tag and its pace meter; "DS $4"), or the page name. */
 function UsageGlance(props: { parts: GlancePart[] }) {
   return (
     <Show when={props.parts.length > 0} fallback="Usage">
       <For each={props.parts}>
         {(p) => (
-          // Stale wins over high: an old 95% isn't a current warning.
-          <span class="usage-glance-item" classList={{ "usage-glance-item-high": p.high && !p.stale, "usage-glance-item-stale": p.stale }}>
+          // Stale wins over high: an old reading isn't a current warning.
+          <span
+            class="usage-glance-item"
+            classList={{ "usage-glance-item-high": p.high && !p.stale, "usage-glance-item-stale": p.stale, "usage-glance-item-pending": p.pending === true }}
+          >
             <span class="usage-glance-tag">{p.abbr}</span>
-            {/* A credit provider shows the money left; a window provider its percentage. */}
-            <span class="text-num">{p.amount ?? `${p.pct}%`}</span>
+            {/* A window provider shows its meter; a credit provider the money left; a Claude login
+                with no current reading empty tracks, never another account's reading. */}
+            <GlanceFigure p={p} />
           </span>
         )}
       </For>
     </Show>
   );
-}
-
-/** What the Agents foot row counts: live agents, the sessions holding them, then active teams. */
-function agentsParts(agents: AgentsInsight | undefined): { n: number; word: string }[] {
-  const live = activeAgentCounts(agents);
-  const teams = activeTeamCount(agents);
-  const out: { n: number; word: string }[] = [];
-  if (live.agents > 0) out.push({ n: live.agents, word: live.agents === 1 ? "agent" : "agents" });
-  if (live.sessions > 0) out.push({ n: live.sessions, word: live.sessions === 1 ? "session" : "sessions" });
-  if (teams > 0) out.push({ n: teams, word: teams === 1 ? "team" : "teams" });
-  return out;
-}
-
-/** The same counts as one plain sentence, for the row's title and accessible name. */
-function agentsSentence(agents: AgentsInsight | undefined): string | undefined {
-  const live = activeAgentCounts(agents);
-  const teams = activeTeamCount(agents);
-  const clauses: string[] = [];
-  if (live.agents > 0) {
-    const a = `${live.agents} active ${live.agents === 1 ? "agent" : "agents"}`;
-    clauses.push(`${a} in ${live.sessions} ${live.sessions === 1 ? "session" : "sessions"}`);
-  }
-  if (teams > 0) clauses.push(`${teams} ${teams === 1 ? "team" : "teams"}`);
-  return clauses.length > 0 ? clauses.join(", ") : undefined;
 }
 
 /** A spine tile's title and accessible name: "{title} · {folder} · {model}", then the clauses the
@@ -1062,20 +1087,67 @@ function tileDot(s: SessionSummary): "live" | "busy" | "working" | null {
   return sessionWorking(s) ? "working" : null;
 }
 
-/** Agents foot row: live agents, their sessions, then active teams; 0s are left out. */
-function AgentsGlance(props: { agents: AgentsInsight | undefined }) {
-  const parts = () => agentsParts(props.agents);
+/** Agents foot row: the working count, a bare figure even as a floor; unknown reads the plain word
+    "Agents", never a 0 it can't vouch for. */
+function AgentsGlance(props: { view: WorkNowView }) {
   return (
-    <Show when={parts().length > 0} fallback="Agents">
-      <For each={parts()}>
-        {(p, i) => (
-          <>
-            {i() > 0 && " · "}
-            <span class="text-num">{p.n}</span> {p.word}
-          </>
-        )}
-      </For>
+    <Show when={props.view.rowWord} fallback="Agents">
+      {(word) => (
+        <>
+          <span class="text-num">{props.view.figure}</span> {word()}
+        </>
+      )}
     </Show>
+  );
+}
+
+/**
+ * The token chart (§app.insights/token-velocity): the last 30 minutes as columns on a 1px
+ * baseline, the newest minute hollow (its replies are still landing), the 30-minute mean a dashed
+ * line behind the columns. `group` 2: 30 one-minute columns (the Agents row, `width` omitted: as
+ * wide as its box allows at one whole-pixel pitch, from its left edge); 4: 15 two-minute columns (the
+ * phone bar, a fixed `width`). Never animated, no gradient; its numbers are the row's sentence.
+ */
+function VelocityChart(props: { view: TokenVelocityView; group: 2 | 4; height: number; width?: number }) {
+  const chart = createMemo(() => velocityChart(props.view, props.group, props.height));
+  /** The box's width, for a chart with no fixed one: measured, so every column gets the same pitch. */
+  const [room, setRoom] = createSignal(0);
+  let box: HTMLSpanElement | undefined;
+  onMount(() => {
+    if (props.width !== undefined || !box) return;
+    const ro = new ResizeObserver(() => setRoom(box!.clientWidth));
+    ro.observe(box);
+    onCleanup(() => ro.disconnect());
+  });
+  const geo = createMemo(() => velocityPitch(props.width ?? room(), chart().count));
+  const svg = () => (
+    <svg class="velocity-chart" width={geo().width} height={props.height} viewBox={`0 0 ${geo().width} ${props.height}`} shape-rendering="crispEdges" aria-hidden="true">
+      <rect class="velocity-baseline" x="0" y={props.height - 1} width={geo().width} height="1" />
+      {/* Behind the columns: a reference they stand in front of, never one of their tops. */}
+      <Show when={chart().meanY !== null}>
+        <line class="velocity-mean" x1="0" x2={geo().width} y1={chart().meanY! + 0.5} y2={chart().meanY! + 0.5} />
+      </Show>
+      <For each={chart().columns}>
+        {(c) => {
+          const w = () => geo().pitch - geo().gap;
+          const x = () => c.index * geo().pitch;
+          const y = props.height - 1 - c.height;
+          // The hollow one is a 1px outline inside the same box, its stroke on the pixel centres.
+          return c.hollow ? (
+            <rect class="velocity-col-hollow" x={x() + 0.5} y={y + 0.5} width={w() - 1} height={c.height - 1} />
+          ) : (
+            <rect class="velocity-col" x={x()} y={y} width={w()} height={c.height} />
+          );
+        }}
+      </For>
+    </svg>
+  );
+  return props.width !== undefined ? (
+    svg()
+  ) : (
+    <span ref={box} class="velocity-fit">
+      {svg()}
+    </span>
   );
 }
 
@@ -1105,6 +1177,8 @@ export function Sidebar(props: {
       in use for new chats. */
   claudeLogin?: string | null;
   agents: AgentsInsight | undefined;
+  /** Each connected host's part of the working count (lib/work-now.ts); absent or empty: no mesh. */
+  peerWork?: WorkPeer[];
   /** The insights page that's open (`#/usage` or `#/agents`), for aria-current on its foot row. */
   insightsPage: "usage" | "agents" | null;
   /** `#/shares` is open, for aria-current on its foot row (§app.session-share/shares-page). */
@@ -1126,6 +1200,11 @@ export function Sidebar(props: {
       when the filter's value moves, not on every mesh poll that rebuilds the peer list. */
   const [storedHostFilter, setStoredHostFilter] = createSignal(readKey(localStorage, HOST_FILTER_KEY));
   const hostFilter = createMemo(() => effectiveHostFilter(storedHostFilter(), meshPeers(), hostFilterShown()));
+  /** The host the filter shows, when it keeps its sessions from this one (§mesh.peers/grants). */
+  const hiddenHost = createMemo(() => {
+    const h = hostFilter();
+    return h && h !== SELF_FILTER && sessionsHiddenBy(h) ? h : null;
+  });
   const chooseHostFilter = (value: string | null) => {
     setStoredHostFilter(value);
     if (value === null) removeKey(localStorage, HOST_FILTER_KEY);
@@ -1263,6 +1342,35 @@ export function Sidebar(props: {
   // or a Get Link in another tab clears its row at once, not at the digest's next 10 s read. The list
   // poll stays the fallback.
   openSessionFeed(requestListRefresh);
+  /** The one live figure the toolbar line, the foot, the phone bar and the spine all show: the
+      sessions whose turn runs plus the subagents working, this host's from the Agents poll, the
+      peers' from their lists, the open chat's from its socket — independent of the search and the
+      host filter (§app.session-list/working-now). */
+  const work = createMemo(() => workNowView(workNow(props.agents, props.peerWork ?? [], { running: localRunning(), working: localWorking() })));
+  /** The windows slide with the clock between frames: a 30 s tick, only while the ring holds a
+      token and the tab is visible (§app.insights/token-velocity). */
+  const [clock, setClock] = createSignal(0);
+  const [tabVisible, setTabVisible] = createSignal(!document.hidden);
+  const onVisibility = () => {
+    setTabVisible(!document.hidden);
+    if (!document.hidden) setClock((n) => n + 1);
+  };
+  document.addEventListener("visibilitychange", onVisibility);
+  onCleanup(() => document.removeEventListener("visibilitychange", onVisibility));
+  /** The output-token load average, read at the moment it re-runs (a frame, or the tick). */
+  const velocity = createMemo(() => {
+    clock();
+    return tokenVelocityView(llmInflight(), Date.now());
+  });
+  const ticking = createMemo(() => velocity().active && tabVisible());
+  createEffect(() => {
+    if (!ticking()) return;
+    const t = setInterval(() => setClock((n) => n + 1), 30_000);
+    onCleanup(() => clearInterval(t));
+  });
+  /** The Agents row's, its spine doorway's and the tally's full sentence. */
+  const workSentence = () => sentences(work().sentence, velocity().sentence);
+  const agentsLabel = () => `Agents: ${workSentence()}`;
   /** Main threads only (src/lib/regions.ts): every region, search hit and count reads this. Each row
       carries the feed's marks over the list's (a peer's row keeps its own); `reuseUnchanged` keeps a
       row's object across feed messages that don't touch it, so rows update in place. */
@@ -1344,10 +1452,14 @@ export function Sidebar(props: {
    * too, so the search narrows it and its count is always its rows. The open session stays listed.
    */
   const needsYou = createMemo(() => needsYouRows(props.attention, ordinaryHits()));
+  /** Its items of no session: a project's failed deploy or an overseer's request to deploy (§app.project-services/deploy-status). */
+  const needsYouProject = createMemo(() => needsYouItems(props.attention, query()));
+  const needsYouCount = () => needsYou().length + needsYouProject().length;
   createEffect(() => setStalled(stalledPaths(props.attention)));
   /** ONE rule for the region and its spine door: rows, and proactivity known and not Off. */
-  const showNeedsYou = () => !!props.sessions && needsYouShown(props.overseer?.proactivity, needsYou().length);
+  const showNeedsYou = () => !!props.sessions && needsYouShown(props.overseer?.proactivity, needsYouCount());
   const needsYouCutNote = () => needsYouCut(props.attention);
+  const needsYouPlaybook = (path: string) => needsYou().find((row) => row.session.path === path)?.playbook;
   const needsYouDetail = (path: string) => {
     const r = needsYou().find((row) => row.session.path === path);
     return r?.detail ? { text: r.detail, title: r.details.join(" ") } : null;
@@ -1491,6 +1603,50 @@ export function Sidebar(props: {
     if (open === groupDoneOpen(key, rows)) return;
     setOpenDone((m) => ({ ...m, [key]: open }));
   };
+  /**
+   * Projects (lib/project-region, §app.projects/list): every standalone project's sessions, and only
+   * here, right before Organizations — each registered project's heading with its overseer's eye,
+   * then its Builds. Open by default, a collapse remembered for the tab.
+   */
+  // The registered projects, read again with the session list (a project added or archived moves
+  // both), at most every 15 seconds: the list reloads on every live event.
+  const [projectList, { refetch: refetchProjects }] = createResource(() => listProjects().catch(() => null));
+  let projectsReadAt = Date.now();
+  createEffect(
+    on(
+      () => props.sessions,
+      () => {
+        if (Date.now() - projectsReadAt < 15_000) return;
+        projectsReadAt = Date.now();
+        void refetchProjects();
+      },
+      { defer: true },
+    ),
+  );
+  const projectHits = createMemo(() => hits().filter(inProjectsRegion));
+  const projectsFound = createMemo(() => {
+    const q = query().trim().toLowerCase();
+    const list = projectList()?.projects;
+    return list && q ? list.filter((p) => `${p.name} ${p.root}`.toLowerCase().includes(q)) : list;
+  });
+  const projBlocks = createMemo(() => {
+    const blocks = projectBlocks(projectHits(), projectsFound() ?? undefined);
+    // A search keeps a project whose name matched, and any project with a row that did.
+    return searching() ? blocks.filter((b) => projectsFound()?.some((p) => p.id === b.id) || b.builds.active.length + b.builds.done.length > 0 || b.overseer) : blocks;
+  });
+  const projRowCount = () => projectRowCount(projBlocks());
+  const [addingProject, setAddingProject] = createSignal(false);
+  const [projectsStored, setProjectsStored] = createSignal(storedOrgsOpen(readKey(sessionStorage, PROJECTS_KEY)));
+  const projectsOpen = () => orgsRegionOpenRule({ stored: projectsStored(), searching: searching(), holdsSelected: projectHits().some((s) => s.path === props.selected) });
+  const onProjectsToggle = (e: Event & { currentTarget: HTMLDetailsElement }) => {
+    const open = e.currentTarget.open;
+    if (open === projectsOpen()) return; // our own `open` update, not the user's
+    setProjectsStored(open);
+    writeKey(sessionStorage, PROJECTS_KEY, open ? "1" : "0");
+  };
+  /** Shown once the list has loaded, unless a search found nothing in it. */
+  const showProjects = () => !!props.sessions && (!searching() || projBlocks().length > 0);
+
   /** A project row: line 2 names a settle session's conflict, or why a conversation hasn't started. */
   const ProjectRow = (r: { session: SessionSummary }) => {
     const line = () => rowLine(r.session);
@@ -1549,9 +1705,10 @@ export function Sidebar(props: {
     writeKey(sessionStorage, archiveDateKey(d.id), open ? "1" : "0");
   };
   const liveCount = () => all().filter((s) => s.live).length;
-  const glance = createMemo(() => usageGlance(props.usage, props.claudeLogin));
-  /** The foot's usage glance in full words, for its tooltip and accessible name. */
-  const glanceText = () => (glance().length ? `Usage: ${glance().map((p) => p.full).join(", ")}` : "");
+  const glance = createMemo(() => usageGlance(props.usage, props.now, props.claudeLogin));
+  /** The foot's usage glance in full words: a line per provider for its tooltip, one sentence for its accessible name. */
+  const glanceText = () => glanceTitle(glance());
+  const glanceName = () => glanceLabel(glance());
 
   const clear = () => {
     setQuery("");
@@ -1584,13 +1741,64 @@ export function Sidebar(props: {
       else collapseToggle?.focus();
     });
   };
-  const agentsWorking = () => activeAgentCounts(props.agents).agents;
   /** The Organizations door: its sessions, and who is waiting, so nothing waits unseen behind the spine. */
   const orgsDoorLabel = () => {
     const k = orgWaitingCount();
     return `Organizations · ${sessionsWord(orgRowCount())}${k > 0 ? ` · ${k} waiting on you` : ""}`;
   };
   const tuiSentence = () => `${liveCount()} ${liveCount() === 1 ? "session" : "sessions"} open in a TUI`;
+
+  /**
+   * The toolbar's working-now line (§app.session-list/working-now): the breakdown the foot's figure
+   * sums, a link to the Agents page. No words on the line — a chat icon before the sessions, the
+   * foot's person before the subagents — the words are its name. Where even that won't fit the gap
+   * (figures of three digits beside `Select` in a 320px pane), the icons go and the figures stay.
+   */
+  const WorkingLine = () => {
+    let link!: HTMLAnchorElement;
+    const fit = () => {
+      const bar = link?.parentElement;
+      if (!bar) return;
+      delete link.dataset.fit;
+      if (bar.scrollWidth > bar.clientWidth) link.dataset.fit = "bare";
+    };
+    onMount(() => {
+      // The toolbar, not the link: the link's own size moves with the fit, the line's doesn't.
+      const ro = new ResizeObserver(fit);
+      ro.observe(link.parentElement!);
+      onCleanup(() => ro.disconnect());
+    });
+    createEffect(() => {
+      work().parts.forEach((p) => p.n);
+      fit();
+    });
+    return (
+      <a
+        ref={link}
+        class="sidebar-working"
+        href={agentsHref()}
+        aria-current={props.insightsPage === "agents" ? "page" : undefined}
+        title={work().lineLabel}
+        aria-label={work().lineLabel}
+      >
+        <For each={work().parts}>
+          {(p, i) => (
+            <>
+              <Show when={i() > 0}>
+                <span class="sidebar-working-sep" aria-hidden="true">
+                  ·
+                </span>
+              </Show>
+              <span class="sidebar-working-part">
+                <Icon name={p.kind === "sessions" ? "chat" : "worker"} small />
+                <span class="text-num">{p.n}</span>
+              </span>
+            </>
+          )}
+        </For>
+      </a>
+    );
+  };
 
   /**
    * The Overseer's door, with the count of Overseer messages you haven't read. In the toolbar it
@@ -1650,8 +1858,9 @@ export function Sidebar(props: {
       </Show>
     </div>
   );
-  const SearchCount = (p: { hidden: boolean }) => (
-    <p class="search-count" classList={{ "visually-hidden": p.hidden }} id="session-count" aria-live="polite">
+  /** Never printed: the field's description and the polite live count. */
+  const SearchCount = () => (
+    <p class="search-count visually-hidden" id="session-count" aria-live="polite">
       <Show when={props.sessions}>
         <Show when={query().trim() || hostFilter() !== null} fallback={`${all().length} sessions`}>
           {hits().length} of {all().length} sessions
@@ -1694,7 +1903,7 @@ export function Sidebar(props: {
           href={usageHref()}
           aria-current={props.insightsPage === "usage" ? "page" : undefined}
           title={glanceText() || undefined}
-          aria-label={glanceText() || undefined}
+          aria-label={glanceName() || undefined}
         >
           <Icon name="gauge" />
           <span class="insights-row-text" classList={{ "usage-glance": glance().length > 0 }}>
@@ -1707,15 +1916,28 @@ export function Sidebar(props: {
       </div>
       <div class="sidebar-foot-row">
         <a
-          class="list-row list-row-interactive insights-row sidebar-foot-link"
+          class="list-row list-row-interactive insights-row sidebar-foot-link sidebar-foot-link-tall"
           href={agentsHref()}
           aria-current={props.insightsPage === "agents" ? "page" : undefined}
-          title={agentsSentence(props.agents)}
-          aria-label={agentsSentence(props.agents)}
+          title={agentsLabel()}
+          aria-label={agentsLabel()}
         >
           <Icon name="worker" />
-          <span class="insights-row-text">
-            <AgentsGlance agents={props.agents} />
+          {/* Two lines (§app.insights/token-velocity): who is working and the 5-minute readout, then
+              the 30-minute chart under them. The row's name says it all in words. */}
+          <span class="agents-ticker">
+            <span class="agents-line">
+              <span class="insights-row-text">
+                <AgentsGlance view={work()} />
+              </span>
+              <span class="agents-readout" aria-hidden="true">
+                <b class="text-num">{velocity().readout}</b> <span>tok/min</span>
+              </span>
+            </span>
+            <span class="agents-chart" aria-hidden="true">
+              <VelocityChart view={velocity()} group={2} height={18} />
+              <span>30m</span>
+            </span>
           </span>
         </a>
         <button
@@ -1738,8 +1960,8 @@ export function Sidebar(props: {
 
   /**
    * Folded (<768): the foot as one 44px bar under the list (§app.insights/sidebar-foot-phone) —
-   * the mesh's connected count (while the mesh is on), the agents at work (the worker icon and
-   * the count), and every provider's usage cap as the glance shows it. Tapping the bar opens the
+   * the mesh's connected count (while the mesh is on), the working count (the worker icon and the
+   * Agents row's own figure), the load average, and every provider's usage cap as the glance shows it. Tapping the bar opens the
    * rows as a bottom sheet, verbatim. Focus leaves and returns with the sheet (trapFocus).
    */
   const PhoneFoot = () => {
@@ -1752,9 +1974,9 @@ export function Sidebar(props: {
         const c = connectedCount(meshPeers());
         facts.push(`${c.up} of ${c.total} hosts connected`);
       }
-      facts.push(workingNow(agentsWorking()));
-      const caps = glance().map((p) => p.full);
-      if (caps.length) facts.push(caps.join(", "));
+      facts.push(workSentence().replace(/\.$/, ""));
+      const caps = glance().flatMap((p) => [p.full, ...(p.others ?? [])]);
+      if (caps.length) facts.push(caps.join(". "));
       return `${facts.join(". ")}. Open hosts, usage, agents and shares.`;
     };
     return (
@@ -1774,7 +1996,13 @@ export function Sidebar(props: {
           </Show>
           <span class="sidebar-footbar-seg">
             <Icon name="worker" small />
-            <span class="text-num">{agentsWorking()}</span>
+            <span class="text-num">{work().figure}</span>
+          </span>
+          <span class="sidebar-footbar-seg sidebar-footbar-velocity">
+            <span class="agents-readout">
+              <b class="text-num">{velocity().readout}</b> <span>/min</span>
+            </span>
+            <VelocityChart view={velocity()} group={4} width={60} height={16} />
           </span>
           {/* Every provider the glance would show, in its order (at most the five): never one
               invented number, and the line never wraps — what can't fit clips, like the glance. */}
@@ -1782,9 +2010,9 @@ export function Sidebar(props: {
             {(p) => (
               <span
                 class="sidebar-footbar-seg sidebar-footbar-cap"
-                classList={{ "sidebar-footbar-cap-high": p.high && !p.stale, "sidebar-footbar-cap-stale": p.stale }}
+                classList={{ "sidebar-footbar-cap-high": p.high && !p.stale, "sidebar-footbar-cap-stale": p.stale || p.pending === true }}
               >
-                <span class="sidebar-footbar-tag">{p.abbr}</span> <span class="text-num">{p.amount ?? `${p.pct}%`}</span>
+                <span class="sidebar-footbar-tag">{p.abbr}</span> <GlanceFigure p={p} />
               </span>
             )}
           </For>
@@ -1879,8 +2107,8 @@ export function Sidebar(props: {
               <button
                 type="button"
                 class="button button-icon spine-item spine-region"
-                title={`Needs you · ${sessionsWord(needsYou().length)}`}
-                aria-label={`Needs you · ${sessionsWord(needsYou().length)}`}
+                title={`Needs you · ${sessionsWord(needsYouCount())}`}
+                aria-label={`Needs you · ${sessionsWord(needsYouCount())}`}
                 onClick={() =>
                   expandToRegion(
                     () => aside.querySelector<HTMLElement>(".sidebar-needs-you > summary"),
@@ -1889,7 +2117,7 @@ export function Sidebar(props: {
                 }
               >
                 <Icon name="alert-circle" />
-                <span class="spine-count text-num">{needsYou().length}</span>
+                <span class="spine-count text-num">{needsYouCount()}</span>
               </button>
             </Show>
             <Show when={showTop()}>
@@ -1950,18 +2178,18 @@ export function Sidebar(props: {
         </Show>
 
         {/* Status, not navigation: each says its sentence as a toast, and never opens the pane. */}
-        <Show when={agentsWorking() > 0 || liveCount() > 0}>
+        <Show when={work().showTally || liveCount() > 0}>
           <div class="spine-stats">
-            <Show when={agentsWorking() > 0}>
+            <Show when={work().showTally}>
               <button
                 type="button"
                 class="button button-icon spine-item spine-stat"
-                title={workingNow(agentsWorking())}
-                aria-label={workingNow(agentsWorking())}
-                onClick={() => toast(workingNow(agentsWorking()))}
+                title={workSentence()}
+                aria-label={workSentence()}
+                onClick={() => toast(workSentence())}
               >
                 <Icon name="worker" />
-                <span class="spine-count text-num">{agentsWorking()}</span>
+                <span class="spine-count text-num">{work().figure}</span>
               </button>
             </Show>
             <Show when={liveCount() > 0}>
@@ -1979,7 +2207,7 @@ export function Sidebar(props: {
             href={usageHref()}
             aria-current={props.insightsPage === "usage" ? "page" : undefined}
             title={glanceText() || "Usage"}
-            aria-label={glanceText() || "Usage"}
+            aria-label={glanceName() || "Usage"}
           >
             <Icon name="gauge" />
           </a>
@@ -1990,8 +2218,8 @@ export function Sidebar(props: {
             class="button button-icon spine-item"
             href={agentsHref()}
             aria-current={props.insightsPage === "agents" ? "page" : undefined}
-            title={agentsSentence(props.agents) ?? "Agents"}
-            aria-label={agentsSentence(props.agents) ?? "Agents"}
+            title={agentsLabel()}
+            aria-label={agentsLabel()}
           >
             <Icon name="worker" />
           </a>
@@ -2046,7 +2274,7 @@ export function Sidebar(props: {
               labelled Overseer at the right end. Open: only the field and Close Search — the count
               stays in the DOM, visually hidden, as the field's description and the live count. */}
           <div class="sidebar-toolbar">
-            <SearchCount hidden={toolbarOpen()} />
+            <SearchCount />
             <Show
               when={toolbarOpen()}
               fallback={
@@ -2062,6 +2290,11 @@ export function Sidebar(props: {
                   >
                     <Icon name="search" small />
                   </button>
+                  {/* Only while work runs: the breakdown the foot's figure sums, in the gap the
+                      line already has — its words give way, its figures never do. */}
+                  <Show when={work().parts.length > 0}>
+                    <WorkingLine />
+                  </Show>
                   <OverseerButton class="button-ghost" labelled />
                 </>
               }
@@ -2080,6 +2313,8 @@ export function Sidebar(props: {
         </Show>
 
         <nav class="sidebar-list pane" aria-label="Session list" aria-busy={props.sessions === undefined && props.loading ? "true" : undefined}>
+          {/* A host that keeps its sessions from this one has no rows here (§mesh.peers/grants). */}
+          <Show when={hiddenHost()}>{(h) => <p class="sidebar-region-note">Hidden by {hostLabel(h())}.</p>}</Show>
           <Show when={props.error}>
             <div class="transcript-banner">
               <Banner
@@ -2144,16 +2379,42 @@ export function Sidebar(props: {
             <details class="sidebar-region sidebar-needs-you" aria-labelledby="r-needs-you" open={needsYouRegionOpen()} onToggle={onNeedsYouToggle}>
               {/* The Groups head's pattern: the <summary> toggles, the <h2> is what the outline reads. */}
               <summary class="sidebar-needs-you-summary">
-                <h2 class="sidebar-region-head" id="r-needs-you" title={needsYouTitle(needsYou().length)}>
+                <h2 class="sidebar-region-head" id="r-needs-you" title={needsYouTitle(needsYou().length, needsYouProject().length)}>
                   <Icon name="chevron-right" small class="icon-twist" />
-                  Needs you <span class="sidebar-region-count">· {needsYou().length}</span>
+                  Needs you <span class="sidebar-region-count">· {needsYouCount()}</span>
                 </h2>
               </summary>
               <ul class="list">
                 {/* Keyed on the session objects, which `hits()` keeps across polls: a row is updated
                     in place, never remounted, when only the digest changed. */}
                 <For each={needsYou().map((r) => r.session)}>
-                  {(s) => <SessionRow session={s} selected={props.selected} now={props.now} targets={targets()} detail={needsYouDetail(s.path)} />}
+                  {(s) => (
+                    <>
+                      <SessionRow session={s} selected={props.selected} now={props.now} targets={targets()} detail={needsYouDetail(s.path)} />
+                      {/* A proposed playbook run: its one button, under its row (§app.project-runtime/review). */}
+                      <Show when={needsYouPlaybook(s.path)}>
+                        {(pb) => (
+                          <li class="needs-you-playbook">
+                            <ApproveMergeButton projectId={pb().projectId} run={pb()} blocked={pb().approves === "deploy" ? REVIEW_ON_PAGE : null} />
+                          </li>
+                        )}
+                      </Show>
+                    </>
+                  )}
+                </For>
+                {/* A project's deploy item, of no session: the row opens the project page, where its Deploy panel is. */}
+                <For each={needsYouProject()}>
+                  {(it) => (
+                    <li>
+                      <a class="list-row list-row-interactive org-needs-item" href={it.href} title={it.detail}>
+                        <span class="list-main">
+                          <span class="list-title">{it.title}</span>
+                          <span class="list-meta org-needs-item-detail">{it.detail}</span>
+                          <span class="list-meta">{it.where}</span>
+                        </span>
+                      </a>
+                    </li>
+                  )}
                 </For>
               </ul>
               <Show when={needsYouCutNote()}>
@@ -2259,6 +2520,83 @@ export function Sidebar(props: {
             </section>
           </Show>
 
+          {/* Projects, right before Organizations (lib/project-region): the only place a standalone
+              project's sessions are listed, each project's heading with its overseer's eye, then Builds. */}
+          <Show when={showProjects()}>
+            <details class="sidebar-region sidebar-orgs sidebar-projects" aria-labelledby="r-projects" open={projectsOpen()} onToggle={onProjectsToggle}>
+              <summary class="sidebar-orgs-summary">
+                <h2 class="sidebar-region-head" id="r-projects" title="Your projects that no organization places: their overseers and coding sessions.">
+                  <Icon name="chevron-right" small class="icon-twist" />
+                  Projects <span class="sidebar-region-count">· {projRowCount()}</span>
+                  <Show when={!projectsOpen() && folderActive(projectHits(), localRunning())}>
+                    <span class="session-group-active" title="An agent is working in one of these sessions">
+                      <span class="session-rail-dot" />
+                      <span class="visually-hidden">, an agent is working here</span>
+                    </span>
+                  </Show>
+                  <button
+                    type="button"
+                    class="button button-icon button-ghost org-link"
+                    aria-label="Add Project"
+                    title="Add Project"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setAddingProject(true);
+                    }}
+                    onKeyDown={(e) => e.stopPropagation()}
+                  >
+                    <Icon name="plus" small />
+                  </button>
+                  <a
+                    class="button button-icon button-ghost org-link"
+                    href={PROJECTS_HREF}
+                    aria-label="Open the Projects page"
+                    title="Open the Projects page"
+                    onClick={(e) => e.stopPropagation()}
+                    onKeyDown={(e) => e.stopPropagation()}
+                  >
+                    <Icon name="arrow-right" small />
+                  </a>
+                </h2>
+              </summary>
+              <Show when={projBlocks().length} fallback={<p class="sidebar-region-note">No projects yet. Add a folder or a GitHub repository with +.</p>}>
+                <For each={projBlocks()}>
+                  {(p) => (
+                    <div class="org-project">
+                      <div class="org-project-head">
+                        <h4 class="list-group-label org-project-label" title={p.name}>
+                          <a class="org-project-name project-region-link" href={projectHref(p.id)}>
+                            <bdi>{p.name}</bdi>
+                          </a>
+                          <span class="text-num">{p.builds.active.length + p.builds.done.length}</span>
+                        </h4>
+                        <Show when={p.overseer}>{(po) => <OverseerEye session={po()} project={p.name} selected={props.selected} />}</Show>
+                      </div>
+                      <ProjectGroup
+                        key={`projects\n${p.id}\nbuilds`}
+                        label="Builds"
+                        title="Coding sessions this project started."
+                        doneTitle="Merged, and the ones you archived."
+                        states={[{ label: "", rows: p.builds.active }]}
+                        done={p.builds.done}
+                      />
+                    </div>
+                  )}
+                </For>
+              </Show>
+            </details>
+          </Show>
+          <Show when={addingProject()}>
+            <AddProjectDialog
+              onCancel={() => setAddingProject(false)}
+              onAdded={() => {
+                projectsReadAt = Date.now();
+                void refetchProjects();
+              }}
+            />
+          </Show>
+
           {/* Organizations, last before the Archive (lib/org-region): the only place an org's
               sessions are listed. Its own Needs you first, then org → project → rows, each project
               in groups, each with a collapsed Done tail. Open by default; a collapse holds for the tab. */}
@@ -2324,8 +2662,8 @@ export function Sidebar(props: {
                                 <span class="list-meta">{it.where}</span>
                               </span>
                             </a>
-                            <Show when={it.held && it.org ? { held: it.held, orgId: it.org.orgId } : null}>
-                              {(h) => <CancelHeldButton orgId={h().orgId} holdId={h().held.id} what={h().held.what} class="org-needs-cancel" />}
+                            <Show when={it.held && it.org?.projectId ? { held: it.held, projectId: it.org.projectId } : null}>
+                              {(h) => <CancelHeldButton projectId={h().projectId} holdId={h().held.id} what={h().held.what} class="org-needs-cancel" />}
                             </Show>
                           </li>
                         );

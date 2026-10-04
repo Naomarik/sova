@@ -8,9 +8,10 @@ const user = (id: string, text?: string, images = 0): TranscriptItem => ({
   kind: "user",
   text,
   images: images ? Array.from({ length: images }, () => "data:image/png;base64,") : undefined,
-  raw: { type: "message", id, timestamp: `2026-09-21T10:0${id.length}:00Z` },
+  at: `2026-09-21T10:0${id.length}:00Z`,
+  meta: { type: "message", role: "user" },
 });
-const other = (id: string, kind: TranscriptItem["kind"]): TranscriptItem => ({ id, kind, text: "x", raw: {} });
+const other = (id: string, kind: TranscriptItem["kind"]): TranscriptItem => ({ id, kind, text: "x" });
 const rows = (...ids: string[]): InputRow[] => inputRows(ids.map((id) => user(id, id)));
 
 test("inputRows keeps user rows only, in order, with the entry id and timestamp", () => {
@@ -144,6 +145,6 @@ test("newest first puts the rewind's abandoned rows ABOVE the boundary row", () 
 });
 
 test("inputRows never lists a link message: a partner's words are no rewind target", () => {
-  const link: TranscriptItem = { id: "l", kind: "link", text: "[link_msg …] from x (h/s)\nhi", raw: {} };
+  const link: TranscriptItem = { id: "l", kind: "link", text: "[link_msg …] from x (h/s)\nhi" };
   assert.deepEqual(inputRows([user("a", "mine"), link, other("r:0", "assistant-text")]).map((r) => r.id), ["a"]);
 });

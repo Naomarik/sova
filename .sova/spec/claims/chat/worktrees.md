@@ -6,6 +6,8 @@ A session records the git worktrees it works in. pi's `worktrees` extension
 extension lets workers start only in the session's cwd or in one of those worktrees, and Sova
 shows the set in the session pane and each merge the session made as a card in the transcript.
 It works the same in the TUI and in Sova, for sessions Sova holds and sessions it only watches.
+Only when the user asks does Sova remove the merged worktrees of a repository
+(§chat.worktrees/cleanup).
 
 ## §chat.worktrees/entry — The set lives in the session
 
@@ -68,12 +70,31 @@ restart is kept even if its cwd is no longer allowed: `agent_list` flags it "out
 session's worktrees", and nothing kills it.
 
 A **pi** worker started inside an active worktree writes only inside that worktree (and its git
-dirs, §chat.sandbox/what-on-enforces): with the parent's sandbox on, its sandbox scope is
-narrowed to the worktree; with it off, the worker starts under the sandbox in **write-only**
-confinement: its writes go only to the worktree, its git dirs and a private tmp (and the
-sandbox's private copies of the host caches), while nothing is hidden, the network is the host's
-(its resolver included) and the environment is passed as it is. No policy file is read for it.
-If the sandbox extension is missing or gives no scope for the worktree, the spawn is refused. A
+dirs, §chat.sandbox/what-on-enforces) unless the session's sandbox is Off
+(§chat.sandbox/states): under On its sandbox scope is narrowed to the worktree; under Subagents
+only it starts under the sandbox in **write-only** confinement: its writes go only to the
+worktree, its git dirs and a private scratch tmp (and the sandbox's private copies of the host
+caches). Its reads are the host's, no secret is hidden, the network is the host's (its resolver
+included) and the environment is passed as it is. No policy file is read for it.
+
+- **`/tmp`.** On Linux it sees the host's `/tmp` read-only, so a file another session wrote
+  there (a brief) is readable, and every Unix socket found there as its command or its process
+  starts reads as an empty file, so it cannot drive a terminal multiplexer, an ssh agent or
+  another service through one. The sockets are found in the kernel's list of bound sockets
+  (`/proc/net/unix`), so how many files `/tmp` holds does not matter, and in a shallow scan of
+  `/tmp` and the folders directly in it. `TMPDIR` points at its private scratch, which is where
+  Claude Code and other tools that honour it keep their temp files; a tool that writes a literal
+  `/tmp` path fails with "Read-only file system". When that list cannot be read, or cannot be
+  read unambiguously (a socket path with a line break in it, or one bound by a relative path),
+  its `/tmp` is the private scratch instead. On macOS Seatbelt never remapped `/tmp`: the host's
+  is readable there, as before.
+- **Still a sandbox.** `/run` is empty, so the Docker socket and the user's D-Bus and systemd are
+  gone, and the worker runs in a user namespace, where root-owned files belong to the overflow
+  user: ssh refuses a root-owned config file ("Bad owner or permissions"; `ssh -F /dev/null`
+  works). A worker that needs Docker or the host's own ssh config needs Off.
+
+Under Off the worker starts unconfined, like one outside a worktree. Under On or Subagents only,
+if the sandbox extension is missing or gives no scope for the worktree, the spawn is refused. A
 Claude Code worker there is confined the same way, narrowed to the worktree or write-only, with
 its own state and token as §chat.sandbox/claude-state says; in write-only its environment is the
 host's less any login or token variable.
@@ -157,19 +178,28 @@ a turn against the target seen at the turn's start, looks at that target only.
 ## §chat.worktrees/pane — The Worktrees section
 
 The session pane's Session tab (§app.subagents-pane/tabs) shows a read-only **Worktrees**
-section right after Repository: a count line ("2 active · 1 merged · 1 dropped"), then one row per
+section right after Repository: a count line ("2 active · 1 merged · 1 removed · 1 dropped", a
+worktree tracked active whose folder is gone counted as its status chip reads), then one row per
 worktree in recorded order, dropped and merged ones included. When the branch tracks none the
 section stays, with one line: "This session tracks no worktrees." While the insight's first load
 is out the section shows its heading over a placeholder line as tall as that sentence (most
 sessions track none), never the sentence itself. A row
 names the branch and the path, and carries a status chip — Active, Dropped, or Merged with "into
-<target> at <sha>" — plus, when true, Missing (the directory is gone), `.agent`, the number of
+<target> at <sha>" — plus, when true, `.agent`, the number of
 this session's workers with a live process inside it, and "Shared with session <id>" linking the
 session it was inherited from. An active worktree whose branch git finds already in its target
-reads Merged too, with a title saying this session didn't record it. A row with a readiness
+reads Merged too, with a title saying this session didn't record it. A worktree whose folder is
+gone never reads Active: its status chip says what its work came to, by the same answer readiness
+gives (§chat.worktrees/readiness, removed), the row's readiness when it has one: Merged when that
+work is merged, then a neutral Cleaned up chip; else Removed (warn; neutral for one with no commits
+of its own), with the reason line "Removed · not merged", "Removed · no record of a merge" or
+"Removed · no commits". A dropped or merged-recorded worktree whose folder is gone keeps its status
+chip and adds Removed or Cleaned up. A row with a readiness
 (§chat.worktrees/readiness) adds a chip after the status chip — Ready to merge (the row's and
 the digest's words), Waiting for your OK, In progress, Blocked or Stale, with the reason as its
-`title` — and none while merged, which the status chip already says. Under the facts, one visible
+`title` — and none while merged or removed, which the status chip already says. Its tone follows
+mergeability, as the list row's lit worktree count does (§app.session-list/content-rules): Ready
+to merge and Waiting for your OK are success, In progress neutral, Blocked and Stale warn. Under the facts, one visible
 muted line gives the reason, so a phone gets it without hover: the readiness's `reason` ("Ready to
 merge · checks passed · 19 commits ahead", "Conflicts with master · 17 files"), else the chip's
 word and the why joined by " · ", and no line when there is neither. It wraps; it never truncates. The section follows the
@@ -183,8 +213,7 @@ no model call (`server/merge-readiness.ts`):
 
 - **merged** — git finds the branch in its base branch, by ancestry or by content (a squash or a
   rebased merge train), after at least one commit of its own, **and** the tree is clean. A
-  worktree whose folder is gone reads as its record says: merged when recorded merged, else in
-  progress. Git is the
+  worktree whose folder is gone reads as what its work came to (below, **removed**). Git is the
   source, never the merge card: a branch merged by someone else reads merged, and a card whose
   branch git no longer finds merged does not. A worktree still tracked active once git finds it
   merged is merged with a **cleanup** follow-up.
@@ -195,6 +224,21 @@ no model call (`server/merge-readiness.ts`):
   its base** (the trial merge git already runs for an unmerged branch reports conflicts), a
   commit subject on the branch starts with `TEMP`, `WIP`, `fixup!`, `squash!` or `amend!`, or the
   session's newest check run (a `bash` call running a test, typecheck or build) failed.
+- **removed** — the worktree's folder is gone, and what its work came to is said plainly, never
+  "in progress" or "active". It is **merged** instead, with the reason "Merged · cleaned up", when
+  git still finds its branch in the repository's main branch (master, else main), by ancestry or
+  by content as above, after at least one commit of its own past the recorded base; when Sova's
+  own cleanup removed it (§chat.worktrees/cleanup's ledger); when another session's file records
+  the same path and branch merged (the Merge Captain's own record of the merge it made, which
+  outlives the `git branch -d` of its clean-up step, §chat.merge-round/round), as far as readiness
+  has read that session; or when it is recorded merged. Otherwise it is removed: "Removed · not
+  merged" when git finds its branch with commits of its own that are in neither, "Removed · no
+  commits" when the branch never moved past its base (an empty leftover, which changes no count
+  or badge), and "Removed · no record of a merge" when the branch is gone too and nothing records
+  a merge. Git is read from the session's folder, another of its trees still there, or a folder
+  beside the gone one (a sibling worktree, or the main checkout the `worktree` tool's layout
+  names), only in a repository that has the recorded base and where the branch descends from it;
+  a branch git finds there decides over every record.
 - **blocked** — the session waits on open alignment questions (§chat.alignment/session-mark).
 - **ready** — at least one commit ahead, and none of the above. One or two uncommitted files do
   not stop it: it is ready with a caveat that names them (a regenerated report file is the usual
@@ -213,8 +257,8 @@ shows it under the worktree, §chat.worktrees/pane): its state and why, joined b
 merge · checks passed · 19 commits ahead", "Ready to merge · 1 uncommitted file:
 NAIVE-RUN.txt", "Waiting for your OK · checks passed", "Conflicts with master · 17 files",
 "Blocked · 2 open questions", "In progress · 3 uncommitted files: a.ts and 2 more", "In progress ·
-working now", "Merged", "Merged · still tracked active", "Stale · merged, with uncommitted
-changes". Uncommitted files are named by the first one and how many more.
+working now", "Merged", "Merged · still tracked active", "Merged · cleaned up", "Removed · not merged", "Stale
+· merged, with uncommitted changes". Uncommitted files are named by the first one and how many more.
 
 Routine follow-ups, also mechanical:
 
@@ -228,6 +272,13 @@ Routine follow-ups, also mechanical:
 
 Git is read in the background, at most every 20 seconds per session while the file doesn't change,
 and only for session files that ever wrote a `worktrees` entry, so a listing never waits on git.
+
+**The row's count** (§app.session-list/content-rules) counts a worktree as merged when git finds
+its branch merged into its base (the merged rule above without the clean tree), clean or not, or,
+its folder gone, when it reads merged by the removed rule above. A merged tree with uncommitted changes therefore
+counts as merged there while its own state stays stale or in progress, as above: the count's
+`title`, the Session tab's chip, the badge and the attention digest still read that state. Each
+worktree's readiness carries the fact (`merged: true`) beside its state.
 
 **The row's badge** (§app.session-list/anatomy) is one short phrase from the session's worktrees,
 the first that holds: "Waiting for your OK" (a worktree waits for the go-ahead) and "Ready to
@@ -248,9 +299,9 @@ so the Overseer reads the same answer.
 Routine session-list and merge-readiness refreshes never query spec assessment status or
 recapture assessment inputs, including for idle merged worktrees. Readiness carries no spec
 observations, and the row and its title display none. Ordinary git readiness, bash checks,
-attention items, and routine follow-ups keep the rules above. Explicit `spec_assess` queries
-and runtime assessment collection remain separate and available; their observations are not
-passed tests or release gates.
+attention items, and routine follow-ups keep the rules above. Explicit companion CLI
+assessments remain separate and available; their observations are not passed tests or release
+gates.
 
 **In the attention digest** (§app.overseer/attention-digest), decide tier, never Needs you, a brief
 or a phone notification: "Ready to merge: {branch}" for a ready worktree and "Waiting for your OK:
@@ -258,3 +309,73 @@ or a phone notification: "Ready to merge: {branch}" for a ready worktree and "Wa
 {cue}" for a merge the follow-up check calls significant; and one "Restart pending" item for the
 whole server, however many sessions' merges ask for it, naming how many merges and their
 branches.
+
+## §chat.worktrees/cleanup — Removing merged worktrees
+
+Sova removes merged worktrees only when asked: by the user from a new session's empty state
+(§chat.transcript/empty-worktrees), or by `sova_archive` with `worktrees: "remove"` for the
+archived session's own worktrees (§app.overseer/tools), both through one service on the server
+(`server/worktree-cleanup.ts`). Nothing removes a worktree on its own, and the `worktree` tool's
+merge stays non-destructive.
+
+- **Which trees.** Git's own list (`git worktree list`) for the repository the session's folder is
+  in: every linked worktree in it, wherever its folder is; the main checkout is never one. A remote
+  session's folder has none. Each is **merged** (§chat.worktrees/merged-state, against the
+  repository's main branch, master else main: its branch's tip is in it by ancestry, or by content
+  — a trial merge that leaves the main branch's tree unchanged — after at least one commit of its
+  own), **empty** (its branch has no commit of its own: its tip is still the commit git's reflog
+  says the branch was created at; with no reflog, a branch in the main branch counts as merged), or
+  **unmerged** (anything else, a tree on no branch included).
+- **The count.** `GET /api/worktrees/summary?path=<session>` answers the repository's linked
+  total and its merged, empty and unmerged counts, from git alone. It is cached per repository for
+  about 30 seconds, and a change to git's list of worktrees or a removal drops it.
+- **What is kept, and why.** A merged or empty tree is removed only when none of these holds, each
+  checked again right before its removal: it is locked; it has any uncommitted change or untracked
+  file (ignored files don't count, as with git's own remove); a session's folder (its header cwd),
+  archived or not, is inside it; a session tracking it as active (§chat.worktrees/entry) is open in
+  a TUI, running (a turn in flight or workers working), or has its sandbox on; a live process's
+  working directory or an open file is inside it; a live record under its own
+  `.agent/sessions/live` names a process that is still alive. A tree tracked active only by idle,
+  sandbox-off sessions whose folders are elsewhere is removed: git says its work is in the main
+  branch. Each kept tree carries one reason. An unmerged tree is always kept.
+- **Dry run first, then only what was confirmed.** `POST /api/worktrees/cleanup {path, dryRun:
+  true}` answers what would go (path, branch, merged or empty, and whether its branch would be
+  deleted) and what stays, each with its reason. A removal posts `{path, expect: [paths]}` and acts
+  only on those paths, each only if it is still removable at that moment; every other tree is left
+  alone. The answer says, per path, removed or kept and why.
+- **Removal.** From the main checkout, `git worktree remove -- <path>`, never `--force`, so git
+  refuses a tree that changed under it; for a folder already gone the same command only drops it
+  from git's list. The branch is deleted with `git branch -d` only when it is an ancestor of the
+  main branch (merged by ancestry, or empty); a content-merged branch is kept, so its commits keep
+  a ref. Git's refusals are reported, never forced. Nothing else on disk is touched, and no
+  session file is written.
+- **The ledger.** Each removal appends `{v: 1, path, branch, commonDir, tip, merged: "ancestor" |
+  "content" | "empty", branchDeleted, at}` to `<state root>/removed-worktrees.json`, written by
+  atomic rename, the newest 2,000 kept. Readiness reads it for a removed tree whose branch was
+  deleted (§chat.worktrees/readiness).
+- **The Merge Captain** removes the worktree of a branch it has landed with plain git in its own
+  playbook step (§chat.merge-round/round), not through this service: git's own checks, and no
+  ledger entry.
+
+## §chat.worktrees/dirty-freshness — How old a tree's uncommitted-changes reading may be
+
+Readiness (§chat.worktrees/readiness) reads each worktree's uncommitted changes with `git status`,
+and a reading stands for a while before it is read again:
+
+- **10 seconds** while the session is running: a turn, or working subagents.
+- **5 minutes** while the session is idle and the tree's last answer was **merged** (merged and
+  clean). A hand edit in an idle merged tree can therefore take up to 5 minutes to read "Stale ·
+  merged, with uncommitted changes".
+- Whatever the lifetime, a commit, `git add`, a checkout or a branch switch in the tree ends the
+  reading at once: the tree's index and HEAD are part of what it was read from.
+- A removal through Sova's cleanup (§chat.worktrees/cleanup: the Clean Up Merged button, its
+  confirm, or `sova_archive`'s removal) ends the reading at once for every session that tracks
+  the removed tree: the cleanup answers only once those sessions are read again, so the very next
+  look, the Session tab's or the session list's, reads the tree as removed ("Merged · cleaned up").
+- A change of the session's file or of its row (its running state, last activity, TUI presence,
+  archived flag, open questions or attention answer) reads every tree's changes again at once.
+- An explicit look at the session's worktrees (the Session tab's Worktrees section, or
+  `sova_session`'s Merge facts) re-reads every tree's changes when one of its readings may have
+  stood the 5 minutes, or when the session is settled (§app/idle-git-cache) and its answer is 10
+  seconds old: that look returns the answer it has at once, and the re-read shows on the next one. A look at an archived, idle session re-reads them under its own rule
+  (§app/idle-git-cache, "Archived-idle exception").

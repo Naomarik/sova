@@ -42,11 +42,10 @@ test("an interrupted run is linked only if its page was written: its state is st
   assert.equal(explainInterrupted(base) || explainInterrupted({ ...base, status: "running" }), false);
 });
 
-const row = (id: string): TranscriptItem => ({ id, kind: "info", text: id, raw: null });
+const row = (id: string): TranscriptItem => ({ id, kind: "info", text: id });
 const explainRow = (entry: string, explainId: string, status?: "running"): TranscriptItem => ({
   id: entry,
   kind: "info",
-  raw: null,
   report: { source: "explain-doc", body: "", preview: "", truncated: false, explain: { ...at(explainId, "2026-09-20T00:00:00Z"), ...(status ? { status } : {}) } },
 });
 const ids = (list: TranscriptItem[]) => list.map((i) => i.id);
@@ -79,3 +78,15 @@ test("explainCaption reads '<when> · <model>', dropping the provider and an abs
   assert.equal(explainCaption({ createdAt, model: "" }, now), "2h ago", "an empty model reads as absent");
 });
 
+
+const handoffRow = (rowId: string, runId: string, status: "running" | "saved" = "saved"): TranscriptItem => ({
+  id: rowId,
+  kind: "info",
+  handoffRun: { id: runId, status },
+});
+
+test("appendItems: a /compact-handoff result row replaces its running row in place; an explain row with the same id does not", () => {
+  const next = appendItems([handoffRow("h1", "x", "running"), row("a"), explainRow("e1", "x", "running")], [handoffRow("h2", "x")]);
+  assert.deepEqual(ids(next), ["h2", "a", "e1"]);
+  assert.equal(next[0]!.handoffRun!.status, "saved");
+});

@@ -26,6 +26,7 @@ import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { HostConfine, HostSpawnSpec } from "./host.ts";
 import { files, readStatus, type WorkerStatus } from "./workers-dir.ts";
+import { lowerPriority } from "./priority.ts";
 
 export const HOST_SCRIPT = path.join(path.dirname(fileURLToPath(import.meta.url)), "host.ts");
 type SpawnImpl = (command: string, args: string[], options: { cwd?: string; stdio: any[]; env?: NodeJS.ProcessEnv; hosted?: unknown }) => ChildProcess;
@@ -137,6 +138,9 @@ export class HostTransport extends EventEmitter {
 		this.queue = [];
 		try { this.socket?.end(); } catch { /* gone */ }
 		this.socket = undefined;
+		// The worker's calls stop counting here; the next manager (or, until then, its host's
+		// llm.json) counts them.
+		this.emit("detached");
 	}
 
 	/** The owner is done with an exited worker: let the host exit now instead of lingering. */
@@ -307,6 +311,8 @@ export function hostedSpawnImpl(launch: HostLaunch): SpawnImpl {
 		} finally {
 			fs.closeSync(logFd);
 		}
+		// The host's niceness is its worker's: it starts the worker only after booting.
+		lowerPriority(host.pid);
 		host.once("error", (error) => transport.hostFailed(`worker host failed to start: ${error.message}`));
 		host.once("exit", (code, signal) => transport.hostFailed(`worker host exited (${signal ?? code})`));
 		host.unref();

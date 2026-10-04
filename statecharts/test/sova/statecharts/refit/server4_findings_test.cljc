@@ -27,8 +27,8 @@
 
 ;; ---- build: reasons fold per session and outcome; a title even without one (server-4 #5, #6) ---------
 
-(def bsid "build/o1/pr1/c1")
-(defn build [& [d]] (h/start! (h/new-host) "build" bsid (merge {:org-id "o1" :project-id "pr1" :session-id "c1" :kind "coding" :title "Pay page" :prompt "Build it"} d)))
+(def bsid "build/pr1/c1")
+(defn build [& [d]] (h/start! (h/new-host) "build" bsid (merge {:project-id "pr1" :session-id "c1" :kind "coding" :title "Pay page" :prompt "Build it"} d)))
 (defn made [x] (-> x (h/send! bsid :effect/done {:kind "make-worktree" :result {:branch "sova/pay-abc123" :target "main" :base "b0"}})
                    (h/send! bsid :effect/done {:kind "set-mode"}) (h/send! bsid :effect/done {:kind "first-prompt"})))
 (defn reasons [x] (filter #(= :reason/noted (:event %)) (h/elsewhere x)))

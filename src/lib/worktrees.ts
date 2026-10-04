@@ -16,7 +16,7 @@ export interface WorktreeChip {
  * master at abc1234", kept out of the chip so the sha isn't uppercased). An active worktree the
  * server found already merged reads merged too, and its title says this session didn't record it.
  */
-export function worktreeStatus(w: Pick<SessionWorktreeInfo, "status" | "merge" | "mergedInto">): WorktreeChip & { detail?: string } {
+export function worktreeStatus(w: Pick<SessionWorktreeInfo, "status" | "merge" | "mergedInto"> & Partial<Pick<SessionWorktreeInfo, "gone">>): WorktreeChip & { detail?: string } {
   if (w.status === "merged" && w.merge)
     return {
       label: "Merged",
@@ -32,13 +32,31 @@ export function worktreeStatus(w: Pick<SessionWorktreeInfo, "status" | "merge" |
       tone: "success",
       title: "Its branch is in the target, but this session didn't record the merge. Workers may still start here.",
     };
+  // Tracked active, folder gone: what its work came to (§chat.worktrees/pane), never "Active".
+  switch (w.gone) {
+    case "merged":
+      return { label: "Merged", tone: "success", title: "Its branch is in the main branch and its folder was cleaned up. This session still lists it." };
+    case "unmerged":
+      return { label: "Removed", tone: "warn", title: "The folder is gone and its branch has commits the main branch doesn't." };
+    case "unknown":
+      return { label: "Removed", tone: "warn", title: "The folder and its branch are gone, and nothing records a merge." };
+    case "empty":
+      return { label: "Removed", tone: "neutral", title: "The folder is gone. Its branch had no commits of its own." };
+  }
   return { label: "Active", tone: "info", title: "Workers of this session may start here." };
 }
 
-/** The other chips, in reading order: missing, .agent, running workers. */
-export function worktreeChips(w: Pick<SessionWorktreeInfo, "exists" | "hasAgentDir" | "runningWorkers">): WorktreeChip[] {
+/** The other chips, in reading order: cleaned up or removed (a gone folder the status chip doesn't
+    already call Removed), .agent, running workers. */
+export function worktreeChips(
+  w: Pick<SessionWorktreeInfo, "exists" | "hasAgentDir" | "runningWorkers"> & Partial<Pick<SessionWorktreeInfo, "status" | "merge" | "mergedInto" | "gone">>,
+): WorktreeChip[] {
   const out: WorktreeChip[] = [];
-  if (!w.exists) out.push({ label: "Missing", tone: "warn", title: "The directory is gone. The session still lists it." });
+  if (!w.exists) {
+    const label = w.status ? worktreeStatus({ status: w.status, merge: w.merge, mergedInto: w.mergedInto, gone: w.gone }).label : "";
+    if (label === "Merged") out.push({ label: "Cleaned up", tone: "neutral", title: "The folder was removed after its work was merged." });
+    else if (label !== "Removed") out.push({ label: "Removed", tone: "neutral", title: "The directory is gone. The session still lists it." });
+  }
   if (w.hasAgentDir) out.push({ label: ".agent", tone: "neutral", title: "Has its own agent dir: a worker can run on it with useWorktreeConfig." });
   if (w.runningWorkers > 0)
     out.push({
@@ -59,13 +77,16 @@ export function readinessChip(w: Pick<SessionWorktreeInfo, "readiness">): Worktr
     case "ready":
       return { label: "Ready to merge", tone: "success", title: why || "Nothing stands in the way of a merge." };
     case "waiting-approval":
-      return { label: "Waiting for your OK", tone: "info", title: `Ready to merge, and the last reply asks you. ${why}`.trim() };
+      // Mergeable like Ready to merge, so the same tone the list row's lit count takes for both.
+      return { label: "Waiting for your OK", tone: "success", title: `Ready to merge, and the last reply asks you. ${why}`.trim() };
     case "in-progress":
       return { label: "In progress", tone: "neutral", title: why || "Work is still going on here." };
     case "blocked":
       return { label: "Blocked", tone: "warn", title: why || "Waiting on your answers." };
     case "stale":
       return { label: "Stale", tone: "warn", title: why || "Merged, but not clean." };
+    case "removed":
+      return null; // the status chip already says Removed
   }
 }
 
@@ -83,12 +104,14 @@ export function readinessReason(w: Pick<SessionWorktreeInfo, "readiness">): stri
 /** The Session tab's line for a branch that tracks none: the section stays, and says so. */
 export const NO_WORKTREES = "This session tracks no worktrees.";
 
-/** The pane's one-line summary under the heading: "2 active · 1 merged · 1 dropped", or
-    NO_WORKTREES for an empty set. */
-export function worktreesSummary(rows: Pick<SessionWorktreeInfo, "status">[]): string {
+/** The pane's one-line summary under the heading: "2 active · 1 merged · 1 removed · 1 dropped", or
+    NO_WORKTREES for an empty set. A worktree tracked active whose folder is gone counts as its
+    status chip reads: merged or removed (§chat.worktrees/pane). */
+export function worktreesSummary(rows: (Pick<SessionWorktreeInfo, "status"> & Partial<Pick<SessionWorktreeInfo, "gone">>)[]): string {
   if (rows.length === 0) return NO_WORKTREES;
-  const count = (s: SessionWorktreeInfo["status"]) => rows.filter((r) => r.status === s).length;
-  return (["active", "merged", "dropped"] as const)
+  const shown = (r: (typeof rows)[number]) => (r.status === "active" && r.gone ? (r.gone === "merged" ? "merged" : "removed") : r.status);
+  const count = (s: string) => rows.filter((r) => shown(r) === s).length;
+  return (["active", "merged", "removed", "dropped"] as const)
     .map((s) => [count(s), s] as const)
     .filter(([n]) => n > 0)
     .map(([n, s]) => `${n} ${s}`)

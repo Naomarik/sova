@@ -1,12 +1,9 @@
 import type { Server } from "node:http";
-import { LINK_WARNINGS, type LinkWarningCode, type PublicLinksFile, type ShareListenerFailure, type ShareState } from "../../shared/public-links";
-import { readPeers } from "../mesh/peers";
+import type { PublicLinksFile, ShareListenerFailure } from "../../shared/public-links";
 import { readPublicLinks, sharePin } from "../public-links";
 import { createShareServer } from "./edge";
-import { SESSION_SHARE_GATEWAY_OLD, type SessionShareWarningCode } from "../../shared/session-share";
-import { viaGatewayStatus } from "./gateway-client";
-import type { ShareLinksOutcome } from "./links-events";
 import { gatewayHooks, type GatewayRouter } from "./router";
+import { hostPort, listenerFailure, setListenerBound, setListenerFailure, type ShareListenerState } from "./share-state";
 import { onPublicLinksChanged } from "./setting-events";
 
 /**
@@ -20,16 +17,15 @@ import { onPublicLinksChanged } from "./setting-events";
  * pin the address; with neither the setting nor both variables, nothing is bound. A PUT of the
  * setting rebinds without a restart (setting-events), releasing the old port first. A bind that is
  * wanted and fails (the port taken, a SOVA_SHARE_PORT that isn't a port) is kept as the share
- * state's `listener` until one works or none is wanted (§mesh.public/listener-failure).
+ * state's `listener` until one works or none is wanted (§mesh.public/listener-failure). What it
+ * bound and where links point are server/share/share-state.ts's, re-exported here.
  */
 
 // The edge's names, where the tests and callers have always imported them.
 export { BODY_MAX, clientAddress, createShareServer, HEADERS_TIMEOUT_MS, RateLimiter, REQUEST_TIMEOUT_MS, REQUESTS_PER_MINUTE, shareMayReach } from "./edge";
 
-export interface ShareListenerState {
-  host: string;
-  port: number;
-}
+// Where links point, where the callers have always imported it.
+export { linkUrl, linkWarning, noteVerify, sessionLinkWarning, shareInfo, shareListenerState, shareState, type ShareListenerState } from "./share-state";
 
 /** What to bind: `port` as asked (0 = any), so a rebind to the same ask keeps the socket. */
 interface BindTarget {
@@ -45,8 +41,6 @@ let unsubscribe: (() => void) | null = null;
 let chain: Promise<unknown> = Promise.resolve();
 /** Bumped by stop: a rebind queued before it binds nothing. */
 let generation = 0;
-/** The last wanted bind that failed, until one works or none is wanted. */
-let failure: ShareListenerFailure | null = null;
 
 /** What the setting and the environment ask for: an address to bind, a failure (a bind is wanted
     but SOVA_SHARE_PORT isn't a port; only the variable can be one, the setting is parsed
@@ -65,8 +59,6 @@ export function bindTarget(file: PublicLinksFile, env: NodeJS.ProcessEnv = proce
   const ask = bindAsk(file, env);
   return ask && "want" in ask ? ask.want : null;
 }
-
-const hostPort = (host: string, port: number) => `${host.includes(":") ? `[${host}]` : host}:${port}`;
 
 /** A failed listen in one sentence (§design.copy-deck/public-links). */
 function failureReason(err: NodeJS.ErrnoException, want: BindTarget): string {
@@ -102,7 +94,7 @@ function bind(want: BindTarget, gen: number): Promise<ShareListenerState | null>
   return new Promise((resolve) => {
     server.once("error", (err: NodeJS.ErrnoException) => {
       console.warn(`[share] listener not up on ${want.host}:${want.port}: ${err.message}`);
-      if (gen === generation) failure = { host: want.host, port: want.port, reason: failureReason(err, want) };
+      if (gen === generation) setListenerFailure({ host: want.host, port: want.port, reason: failureReason(err, want) });
       void close(server, router);
       resolve(null);
     });
@@ -115,7 +107,8 @@ function bind(want: BindTarget, gen: number): Promise<ShareListenerState | null>
       }
       const actual = (server.address() as { port: number }).port;
       bound = { server, router, state: { host: want.host, port: actual }, want };
-      failure = null;
+      setListenerBound(bound.state);
+      setListenerFailure(null);
       console.log(`[share] share listener on http://${want.host.includes(":") ? `[${want.host}]` : want.host}:${actual}`);
       resolve(bound.state);
     });
@@ -133,15 +126,16 @@ function rebind(ask: ReturnType<typeof bindAsk>): Promise<ShareListenerState | n
     if (bound) {
       const old = bound;
       bound = null;
+      setListenerBound(null);
       await close(old.server, old.router);
     }
     if (gen !== generation) return null;
     if (ask && "failure" in ask) {
-      if (failure?.reason !== ask.failure.reason) console.warn(`[share] listener not up: ${ask.failure.reason}`);
-      failure = ask.failure;
+      if (listenerFailure()?.reason !== ask.failure.reason) console.warn(`[share] listener not up: ${ask.failure.reason}`);
+      setListenerFailure(ask.failure);
     }
     if (!want) {
-      if (!ask) failure = null;
+      if (!ask) setListenerFailure(null);
       return null;
     }
     return bind(want, gen);
@@ -166,117 +160,11 @@ export const shareListenerSettled = (): Promise<void> => chain.then(() => undefi
 
 export function stopShareListener(): void {
   generation++;
-  failure = null;
+  setListenerFailure(null);
   unsubscribe?.();
   unsubscribe = null;
   if (!bound) return;
   void close(bound.server, bound.router);
   bound = null;
-}
-
-/** The bound address, when one is. */
-export const shareListenerState = (): ShareListenerState | null => bound?.state ?? null;
-
-// ---- where links point -----------------------------------------------------------------------
-
-/** The last Verify of this process: an address that failed reads `unreachable` until one passes. */
-let lastCheck: { url: string; ok: boolean } | null = null;
-export function noteVerify(url: string, ok: boolean): void {
-  lastCheck = { url, ok };
-}
-
-const boundUrl = (): string | null => (bound ? `http://${hostPort(bound.state.host, bound.state.port)}` : null);
-/** A warning's text with the gateway named; a sentence that starts with the name starts with a capital. */
-function fill(code: LinkWarningCode, gateway: string): string {
-  const text = LINK_WARNINGS[code].replaceAll("{gateway}", gateway);
-  return text.charAt(0).toUpperCase() + text.slice(1);
-}
-const GATEWAY_FALLBACK = "the gateway";
-
-/** The via gateway's peer entry, looked up by its StableID when read (so a rename shows). */
-function viaPeer(nodeId: string): { id: string; label: string } | null {
-  const r = readPeers();
-  const p = r.ok ? r.config.peers.find((x) => x.nodeId === nodeId) : undefined;
-  return p ? { id: p.id, label: p.label } : null;
-}
-
-/** An address of this host's own (the env pin, its gateway setting, the bound one): verified by a
-    Verify that passed, unreachable after one that failed, else only configured. */
-function ownState(source: ShareState["source"], publicUrl: string, file: PublicLinksFile): ShareState {
-  const checked = lastCheck?.url === publicUrl ? lastCheck.ok : null;
-  if (checked === true || (checked === null && file.verifiedAt !== undefined && source !== "bound")) return { state: "verified", source, publicUrl };
-  return { state: checked === false ? "unreachable" : "configured", source, publicUrl, warning: LINK_WARNINGS.unverified, warningCode: "unverified" };
-}
-
-/** Where links minted here point, and whether they open from outside (ShareState). First match:
-    SOVA_SHARE_PUBLIC_URL (a pin), this host's own gateway setting, the via gateway (live, else
-    lastKnownUrl), the bound address, off; with `listener` while a wanted bind failed. */
-export function shareState(env: NodeJS.ProcessEnv = process.env, file: PublicLinksFile = readPublicLinks()): ShareState {
-  const s = effectiveState(env, file);
-  return failure ? { ...s, listener: { ...failure } } : s;
-}
-
-function effectiveState(env: NodeJS.ProcessEnv, file: PublicLinksFile): ShareState {
-  const pin = sharePin(env);
-  if (pin) return ownState("env", pin, file);
-  if (file.route === "self" && file.gateway) return ownState("setting", file.gateway.publicUrl, file);
-  if (typeof file.route === "object") {
-    const status = viaGatewayStatus();
-    const url = status?.publicUrl ?? file.lastKnownUrl ?? null;
-    if (url) {
-      const peer = viaPeer(file.route.via.nodeId);
-      const name = status?.label || peer?.label || GATEWAY_FALLBACK;
-      const base: ShareState = { state: "configured", source: "gateway", publicUrl: url, ...(peer ? { via: peer.id } : {}) };
-      if (status && !status.reachable) return { ...base, state: "unreachable", warning: fill("unreachable", name), warningCode: "unreachable" };
-      if (status?.accepting === false) return { ...base, warning: fill("not-accepted", name), warningCode: "not-accepted" };
-      if (status?.reachable && status.accepting === true) return { ...base, state: "verified" };
-      return { ...base, warning: fill("unconfirmed", name), warningCode: "unconfirmed" };
-    }
-  }
-  const at = boundUrl();
-  if (at) return ownState("bound", at, file);
-  return { state: "off", source: "setting", publicUrl: null, warning: LINK_WARNINGS.off, warningCode: "off" };
-}
-
-/** Where the operator app builds full links: the effective address (shareState). Its shape is on
-    the wire (shared/baton.ts BatonInfo.share); shareState() is the full answer. */
-export function shareInfo(env: NodeJS.ProcessEnv = process.env): { bound: boolean; publicUrl: string | null } {
-  return { bound: !!bound, publicUrl: shareState(env).publicUrl };
-}
-
-/** Every link as the operator copies it, `/h/` (hand-off), `/i/` (owner page) and `/s/` (session
-    share) alike: the effective address, else just the path. */
-export function linkUrl(kind: "h" | "i" | "s", token: string, env: NodeJS.ProcessEnv = process.env): string {
-  return `${shareState(env).publicUrl ?? ""}/${kind}/${token}`;
-}
-
-/** What a response carrying a just-minted link says about it (§app.baton/links): the address's own
-    warning first; else the mint's (awaitShareLinks): a listener's warning, or `unconfirmed` when
-    one timed out or failed; else nothing. */
-export function linkWarning(outcome?: ShareLinksOutcome, env: NodeJS.ProcessEnv = process.env): { linkWarning?: string; linkWarningCode?: LinkWarningCode } {
-  const s = shareState(env);
-  if (s.warning) return { linkWarning: s.warning, ...(s.warningCode ? { linkWarningCode: s.warningCode } : {}) };
-  if (!outcome) return {};
-  const file = readPublicLinks();
-  const name = (typeof file.route === "object" && (viaGatewayStatus()?.label || viaPeer(file.route.via.nodeId)?.label)) || GATEWAY_FALLBACK;
-  if (outcome.warning) {
-    const code = (Object.keys(LINK_WARNINGS) as LinkWarningCode[]).find((k) => fill(k, name) === outcome.warning);
-    return { linkWarning: outcome.warning, ...(code ? { linkWarningCode: code } : {}) };
-  }
-  if (outcome.timedOut || outcome.failed) return { linkWarning: fill("unconfirmed", name), linkWarningCode: "unconfirmed" };
-  return {};
-}
-
-/** linkWarning for session links (§app.session-share/link): the address's own warning first; then,
-    on a host routed through a gateway that doesn't list kind `s` (an older gateway, or one not
-    asked yet), `gateway-old`, since its snapshot carries no session row; else the mint's. */
-export function sessionLinkWarning(outcome?: ShareLinksOutcome, env: NodeJS.ProcessEnv = process.env): { linkWarning?: string; linkWarningCode?: SessionShareWarningCode } {
-  const s = shareState(env);
-  if (s.warning) return linkWarning(outcome, env);
-  const file = readPublicLinks();
-  if (typeof file.route === "object" && !viaGatewayStatus()?.kinds?.includes("s")) {
-    const name = viaGatewayStatus()?.label || viaPeer(file.route.via.nodeId)?.label || GATEWAY_FALLBACK;
-    return { linkWarning: SESSION_SHARE_GATEWAY_OLD.replaceAll("{gateway}", name), linkWarningCode: "gateway-old" };
-  }
-  return linkWarning(outcome, env);
+  setListenerBound(null);
 }

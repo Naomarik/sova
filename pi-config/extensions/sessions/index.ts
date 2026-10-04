@@ -9,6 +9,7 @@ import { checkFocusable, discoverFocusTarget, focusTarget, type FocusTarget } fr
 import { subscribeWorkers, type WorkerSummary, type WorkerUsageTotal } from "./workers.ts";
 import { SessionsOverlay } from "./ui.ts";
 import { clean, SessionStore, parseOutline, type Presence, type PresenceOutline } from "./state.ts";
+import { isCounting, snapshot as llmSnapshot, subscribe as subscribeLlm } from "../llm-inflight/tracker.ts";
 import { countWorkers, fit, presenceWorkers, RECORD_BUDGET, SCHEMA_VERSION, SESSION_MODES, workerModes, WORKER_EFFORT_MAX, WORKER_SESSION_FILE_MAX, WORKER_SESSION_ID_MAX, type Activity, type SessionMeta, type SessionState } from "./schema.ts";
 
 const OUTLINE_SNAPSHOT = "topic-outline:snapshot";
@@ -67,6 +68,7 @@ export default function sessions(pi: ExtensionAPI, deps: SessionsDeps = {}) {
   /** Lifetime Σ published by the subagent manager; undefined until one arrives. */
   let workerUsage: WorkerUsageTotal | undefined;
   let stopWorkers: (() => void) | undefined;
+  let stopLlm: (() => void) | undefined;
   let heartbeat: ReturnType<typeof setInterval> | undefined;
   let pendingPublish: ReturnType<typeof setTimeout> | undefined;
   let overlay: SessionsOverlay | undefined;
@@ -149,10 +151,11 @@ export default function sessions(pi: ExtensionAPI, deps: SessionsDeps = {}) {
       : "Local presence starting…";
   }
   function render() {
-    if (!live || !ctx) return;
+    // Only a TUI shows anything (the overlay opens only there): elsewhere, e.g. a runtime Sova
+    // hosts, the views would be built for nobody on every peer heartbeat.
+    if (!live || !ctx || ctx.mode !== "tui") return;
     const views = store.views();
     overlay?.update(views, connectionLabel());
-    if (ctx.mode !== "tui") return;
     if (!store.connected) { ctx.ui.setStatus("sessions", "Sessions: disconnected"); return; }
     const count = (group: string) => views.filter(v => v.group === group).length;
     const parts: Array<[string, number]> = [
@@ -214,13 +217,23 @@ export default function sessions(pi: ExtensionAPI, deps: SessionsDeps = {}) {
       activity, workerCounts: countWorkers(workers),
       // The Σ covers workers the 40-row cap (and retention) dropped, so it is never recomputed here.
       workerUsage: workerUsage ? { ...workerUsage } : undefined,
-      previewAt, focusable, focusReason };
+      previewAt, focusable, focusReason, llm: llmPresence() };
     // Presence files are re-read by every peer every couple of seconds, so keep
     // the whole record bounded in UTF-8 bytes. The channel re-fits the exact
     // record it writes; fitting here too keeps the local view identical.
     if (ctx) fit({ v: 1, schemaVersion: SCHEMA_VERSION, heartbeat: now, presence: value,
       session: { ...meta(), id: selfId() ?? `p${process.pid}-00000000`, endpointEpoch: EPOCH_PLACEHOLDER } }, config.budgetBytes);
     return value;
+  }
+  /** This process's LLM calls in flight and its output-token ring (llm-inflight): absent only when
+   *  nothing here counts them (no counter loaded); a counter that can't see its runtime publishes degraded. */
+  function llmPresence(): Presence["llm"] {
+    try {
+      const s = llmSnapshot();
+      if (!isCounting() && !s.degraded) return undefined;
+      return { v: 1, producer: s.producer, pid: s.pid, active: s.active, approximate: s.approximate, claudeTurns: s.claudeTurns, degraded: s.degraded, folded: s.folded,
+        tokens: { ...s.tokens, bucketMs: 30000 } };
+    } catch { return undefined; }
   }
   function publish() {
     if (!live) return;
@@ -366,6 +379,8 @@ export default function sessions(pi: ExtensionAPI, deps: SessionsDeps = {}) {
       if (next.some(w => active.has(w.id) && !/^(running|starting|busy|working)$/i.test(w.status))) completed = Date.now();
       workers = next; workerUsage = usage; schedule();
     });
+    // Rewritten when the process's count changes (coalesced like every change), never per token.
+    stopLlm?.(); stopLlm = subscribeLlm(() => schedule());
     register();
     heartbeat = setInterval(() => {
       if (!channel) return;
@@ -382,7 +397,7 @@ export default function sessions(pi: ExtensionAPI, deps: SessionsDeps = {}) {
     if (heartbeat) clearInterval(heartbeat);
     if (discoveryTimer) clearTimeout(discoveryTimer);
     if (pendingPublish) clearTimeout(pendingPublish);
-    stopWorkers?.(); unsubscribeOutline(); closeOverlay?.();
+    stopWorkers?.(); stopLlm?.(); stopLlm = undefined; unsubscribeOutline(); closeOverlay?.();
     channel?.close();
     outlineCache = undefined;
     ctx?.ui.setStatus("sessions", undefined);

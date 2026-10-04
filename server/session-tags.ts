@@ -14,6 +14,7 @@ import { type Answer, DecisionError, type DecisionProvider, type Question } from
 import { maySend, terminalSession } from "./decide-settings";
 import { serverRedactor } from "./overseer-redact";
 import { stateRoot } from "./state-root";
+import { sessionsChanged } from "./list-generation";
 
 /**
  * Session tags (plan §5): a topic and a "throwaway" probability per session, answered
@@ -189,6 +190,7 @@ function update(fn: (s: Store) => boolean, file = tagsFile()): Store {
     const tmp = `${file}.${process.pid}.tmp`;
     writeFileSync(tmp, JSON.stringify({ version: 1, ...(next.liveSince !== undefined ? { liveSince: next.liveSince } : {}), sessions: next.sessions }));
     renameSync(tmp, file);
+    sessionsChanged();
   }
   cache = { file, at: Date.now(), store: next };
   return next;

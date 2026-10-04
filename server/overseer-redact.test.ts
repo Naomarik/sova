@@ -1,19 +1,21 @@
-// Run: npx tsx --test server/overseer-redact.test.ts (or npm test). HOME and PI_CODING_AGENT_DIR
-// point at a throwaway dir in the OS temp dir (removed after), so the credential files the server
-// reads are fakes; the real home is never read. Values are fake too, and never printed: `leaked`
+// Run: pnpm test / pnpm run test:bun. The home is the runner's throwaway one (hermetic-env.mjs, or
+// test:bun's environment) and PI_CODING_AGENT_DIR a throwaway dir in the OS temp dir (removed after),
+// so the credential files the server reads are fakes; the real home is never read. Values are fake too, and never printed: `leaked`
 // names which fake leaked, not its value.
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { after, describe, test } from "node:test";
 
 const root = realpathSync(mkdtempSync(join(tmpdir(), "sova-overseer-redact-")));
 // A hosted runtime can still write here after after() ran (pi's catalogs, usage cache): exit is last.
 process.on("exit", () => rmSync(root, { recursive: true, force: true }));
-const home = join(root, "home");
+// The server reads os.homedir(), which a test can't move in-process on every runtime (Bun keeps the
+// home it started with): use the runner's throwaway home, and refuse any other.
+const home = homedir();
+assert.ok(process.env.SOVA_TEST_HOME && home.startsWith(process.env.SOVA_TEST_HOME), `${home} is not the runner's throwaway home`);
 const agentDir = join(root, "agent");
-process.env.HOME = home;
 process.env.PI_CODING_AGENT_DIR = agentDir;
 const put = (p: string, text: string) => {
   mkdirSync(dirname(p), { recursive: true });

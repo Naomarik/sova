@@ -3,20 +3,25 @@
 // Devices are PoolAgents wired to each other in-process; a crash is an agent that throws at a named
 // step and is replaced by a fresh one over the same directories (which replays the journal).
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { isAbsolute, join, relative } from "node:path";
 import { after, describe, test } from "node:test";
 import {
   ClaudeLogins,
+  claudeRunsOn,
   markLeaving,
+  parseEtime,
   readAccounts,
   readLeaving,
+  readLoginPicks,
   writeAccounts,
+  writeLoginPick,
   type ClaudeAccountsFile,
 } from "../../pi-config/extensions/claude-code/accounts.ts";
 import { spawn, spawnSync } from "node:child_process";
-import { PoolAgent, scanClaudeProcs, type PoolPeer } from "./agent";
+import { keychainService, resetKeychainMtimes, type KeychainOptions } from "../../pi-config/extensions/claude-code/keychain.ts";
+import { clearPicksOf, PoolAgent, scanClaudeProcs, type PoolPeer } from "./agent";
 import { INCOMING_DIR_NAME } from "./creds";
 import { emptyDoc, mergeDocs, newPoolLogin, poolOrder, reg } from "./doc";
 import { readJournal } from "./journal";
@@ -52,7 +57,7 @@ interface Device {
 }
 
 let world = 0;
-function makeWorld(ids: string[], clock: { now: number }, procScan: () => Map<string, number[]> = () => new Map(), apiKeysOnly: string[] = []) {
+function makeWorld(ids: string[], clock: { now: number }, procScan: () => Map<string, number[]> = () => new Map(), apiKeysOnly: string[] = [], keychains: Record<string, KeychainOptions> = {}) {
   const base = join(root, `w${++world}`);
   const devices = new Map<string, Device>();
   const killed: number[] = [];
@@ -72,6 +77,7 @@ function makeWorld(ids: string[], clock: { now: number }, procScan: () => Map<st
       kill: (pid) => killed.push(pid),
       procScan,
       canHold: () => !apiKeysOnly.includes(d.id),
+      ...(keychains[d.id] ? { keychain: keychains[d.id] } : {}),
       crash: (step) => {
         if (devices.get(d.id)?.crashAt === step) { crashed.add(step); throw new Error(`crash at ${step}`); }
       },
@@ -433,7 +439,11 @@ describe("returning", () => {
     const dir = join(d.agentDir, "claude-accounts", L1);
     const leases = join(dir, ".sova-leases");
     mkdirSync(leases, { recursive: true });
-    const claude = spawn(process.execPath, ["-e", "setTimeout(() => {}, 60000)"], { env: { ...process.env, CLAUDE_CONFIG_DIR: dir }, stdio: "ignore" });
+    // A process named claude (macOS reads no other process's environment, only its name and age): sleep, through a link.
+    const bin = join(d.agentDir, "bin");
+    mkdirSync(bin, { recursive: true });
+    symlinkSync(spawnSync("sh", ["-c", "command -v sleep"], { encoding: "utf8" }).stdout.trim(), join(bin, "claude"));
+    const claude = spawn(join(bin, "claude"), ["60"], { env: { ...process.env, CLAUDE_CONFIG_DIR: dir }, stdio: "ignore" });
     const lease = () => writeFileSync(join(leases, `${process.pid}.json`), JSON.stringify({ v: 1, owner: process.pid, users: 1, busy: 1, children: [claude.pid], lastActiveAt: clock.now, at: clock.now }));
     try {
       await new Promise((r) => setTimeout(r, 100));
@@ -501,6 +511,59 @@ describe("returning", () => {
     clock.now += 120 * MIN;
     await d.agent.tick();
     assert.deepEqual(usableOn(w, L1), ["d"], "pinned: never returned for idleness");
+  });
+
+  test("a child's exit does not reset idleness: the last activity seen on a login is remembered", async () => {
+    const { w, d, k, clock } = await borrowed();
+    const leases = join(d.agentDir, "claude-accounts", L1, ".sova-leases");
+    mkdirSync(leases, { recursive: true });
+    clock.now += 20 * MIN;
+    writeFileSync(join(leases, `${process.pid}.json`), JSON.stringify({ v: 1, owner: process.pid, users: 1, busy: 0, children: [], lastActiveAt: clock.now, at: clock.now }));
+    await d.agent.tick();
+    // The child is reaped: its lease goes, and with it the only record of the turn at +20 min.
+    rmSync(leases, { recursive: true });
+    clock.now += 11 * MIN;
+    await d.agent.tick();
+    await d.agent.tick();
+    assert.deepEqual(usableOn(w, L1), ["d"], "31 minutes after the borrow but 11 after its last use: kept");
+    clock.now += 20 * MIN;
+    await d.agent.tick();
+    await d.agent.tick();
+    assert.equal(holder(k, L1)!.free, true, "31 minutes after its last use: returned");
+  });
+
+  test("a login a chat here picked by hand is never returned for idleness; Return still moves it", async () => {
+    const { w, d, k, clock } = await borrowed();
+    want(d, { excludeLogins: [L1] });
+    await d.agent.tick();
+    assert.deepEqual(usableOn(w, L2), ["d"]);
+    writeLoginPick(d.agentDir, L2, "chat-picked", clock.now);
+    clock.now += 61 * MIN;
+    await d.agent.tick();
+    await d.agent.tick();
+    assert.equal(holder(k, L1)!.free, true, "L1, unpicked, went back");
+    assert.deepEqual(usableOn(w, L2), ["d"], "L2, picked, stays past twice the idle time");
+    clearPicksOf(d.agentDir, "another-chat");
+    assert.equal(readLoginPicks(d.agentDir, L2).length, 1, "another chat's archive leaves the pick");
+    k.agent.askReturn(L2);
+    await w.syncAll();
+    await d.agent.tick();
+    await d.agent.tick();
+    assert.equal(existsSync(credsPath(d, L2)), false, "the user's Return moves it all the same");
+    assert.equal(holder(k, L2)!.free, true);
+  });
+
+  test("archiving or deleting the chat ends its pick: the login goes back once idle", async () => {
+    const { w, d, k, clock } = await borrowed();
+    writeLoginPick(d.agentDir, L1, "chat-picked", clock.now);
+    clock.now += 61 * MIN;
+    await d.agent.tick();
+    assert.deepEqual(usableOn(w, L1), ["d"]);
+    clearPicksOf(d.agentDir, "chat-picked");
+    assert.deepEqual(readLoginPicks(d.agentDir, L1), []);
+    await d.agent.tick();
+    await d.agent.tick();
+    assert.equal(holder(k, L1)!.free, true);
   });
 
   test("pinned to another device: the holder returns it and that device takes it", async () => {
@@ -652,6 +715,56 @@ describe("processes without a lease (started before this version, or by hand)", 
 });
 
 describe("the keeper, removal, and a device that holds no subscription login", () => {
+  test("the keeper never returns a login it holds for idleness", async () => {
+    const { w, k, clock } = await pool();
+    want(k);
+    await k.agent.tick();
+    assert.deepEqual(usableOn(w, L1), ["k"], "the keeper took L1 for itself");
+    clock.now += 120 * MIN;
+    await k.agent.tick();
+    await k.agent.tick();
+    assert.deepEqual({ device: holder(k, L1)!.device, free: holder(k, L1)!.free }, { device: "k", free: false });
+    assert.equal(readAccounts(k.agentDir).value.logins.find((l) => l.id === L1)!.device, "k");
+    assert.equal(readLeaving(k.agentDir, L1), undefined);
+    assert.deepEqual(usableOn(w, L1), ["k"]);
+  });
+
+  test("nothing free: a peer's borrow gets an idle login the keeper holds, never a picked one, and only on a borrow", async () => {
+    const { w, k, clock } = await pool();
+    const d = w.dev("d");
+    const e = w.dev("e");
+    want(k);
+    await k.agent.tick();
+    want(k, { excludeLogins: [L1] });
+    await k.agent.tick();
+    assert.deepEqual([usableOn(w, L1), usableOn(w, L2)], [["k"], ["k"]], "the keeper holds both");
+    writeLoginPick(k.agentDir, L2, "chat-on-k", clock.now);
+    await w.syncAll();
+    want(d);
+    await d.agent.tick();
+    assert.deepEqual([usableOn(w, L1), usableOn(w, L2)], [["k"], ["k"]], "used moments ago: not lent");
+    clock.now += 60 * MIN;
+    await w.tickAll(2);
+    assert.deepEqual([usableOn(w, L1), usableOn(w, L2)], [["k"], ["k"]], "no borrow: nothing moves");
+    // L1 has an idle chat child at the keeper; it lets go once the login is marked leaving.
+    const leases = join(k.agentDir, "claude-accounts", L1, ".sova-leases");
+    mkdirSync(leases, { recursive: true });
+    writeFileSync(join(leases, `${process.pid}.json`), JSON.stringify({ v: 1, owner: process.pid, users: 1, busy: 0, children: [], lastActiveAt: clock.now - 45 * MIN, at: clock.now }));
+    let markedFirst = false;
+    const release = setTimeout(() => { markedFirst = readLeaving(k.agentDir, L1)?.reason === "idle"; rmSync(leases, { recursive: true, force: true }); }, 300);
+    want(d);
+    await d.agent.tick();
+    clearTimeout(release);
+    assert.ok(markedFirst, "its idle children were asked to let go first");
+    assert.deepEqual(usableOn(w, L1), ["d"], "d borrowed L1, the keeper's idle login");
+    assert.equal(existsSync(credsPath(k, L1)), false);
+    await w.syncAll();
+    want(e);
+    await e.agent.tick();
+    assert.deepEqual(usableOn(w, L2), ["k"], "L2, picked by a chat on the keeper, is never lent");
+    assert.deepEqual(readAccounts(e.agentDir).value.logins.filter((l) => l.device === "e"), []);
+  });
+
   test("a new keeper: the old one hands every free login over; borrowing then goes to the new one", async () => {
     const { w, k, clock } = await pool();
     const d = w.dev("d");
@@ -700,4 +813,103 @@ describe("the keeper, removal, and a device that holds no subscription login", (
     assert.deepEqual(usableOn(w, L1), []);
     assert.equal(d.agent.view().apiKeysOnly, true);
   });
+});
+
+describe("a Mac's keychain-only login (§app.claude-logins/macos-keychain)", () => {
+  /** Keeper `k`; Mac `m` holds L3, whose sign-in is only a keychain item (its directory has no file). */
+  async function macWorld(platform: NodeJS.Platform = "darwin") {
+    resetKeychainMtimes();
+    const clock = { now: 1_000_000 };
+    const items = new Set<string>();
+    const queries: string[][] = [];
+    const execSync = (_file: string, args: string[]) => {
+      queries.push(args);
+      if (args.includes("-w")) throw new Error("the pool never reads the secret");
+      if (!items.has(args[2]!)) throw new Error("exit 44");
+      return `    "mdat"<timedate>=0x00  "20261004130350Z\\000"\n`;
+    };
+    const w = makeWorld(["k", "m"], clock, undefined, [], { m: { platform, env: { USER: "someone" }, home: "/fixture/home", userHome: "/fixture/home", execSync } });
+    const k = w.dev("k");
+    const m = w.dev("m");
+    k.agent.migrate();
+    k.agent.setKeeper("k");
+    seedLogin(m, L3, "acct-mac", "m");
+    rmSync(credsPath(m, L3));
+    items.add(keychainService(join(m.agentDir, "claude-accounts", L3)));
+    m.agent.migrate();
+    await w.syncAll();
+    const stays = () => {
+      assert.ok(existsSync(join(m.agentDir, "claude-accounts", L3)), "its directory is never deleted");
+      assert.equal(readAccounts(m.agentDir).value.logins.find((l) => l.id === L3)?.device, "m", "held by the Mac in its registry");
+      assert.deepEqual({ device: holder(m, L3)!.device, free: holder(m, L3)!.free }, { device: "m", free: false });
+      assert.ok(!readLeaving(m.agentDir, L3), "not leaving: spawns here still pick it");
+      assert.deepEqual(readJournal(m.stateDir).ops, {});
+    };
+    return { w, k, m, clock, queries, stays };
+  }
+
+  test("it never leaves the Mac: not when idle, limited, pinned elsewhere, asked to return, or mid-move", async () => {
+    const { w, k, m, clock, queries, stays } = await macWorld();
+    clock.now += 31 * MIN;
+    await m.agent.tick();
+    await m.agent.tick();
+    stays();
+    markLeaving(m.agentDir, L3, "limit", clock.now);
+    await m.agent.tick();
+    stays();
+    k.agent.setPin(L3, "k");
+    k.agent.askReturn(L3);
+    await w.syncAll();
+    await m.agent.tick();
+    await m.agent.tick();
+    stays();
+    m.agent.leave(L3, "return", "user"); // a move already under way (an older version, a crash) is called off
+    await m.agent.tick();
+    stays();
+    assert.ok(queries.every((q) => !q.includes("-w")));
+    const row = m.agent.view().logins.find((l) => l.id === L3)!;
+    assert.equal(row.staysHere, true);
+    assert.equal(row.returnAsked, undefined, "a Return asked elsewhere is not shown as pending here");
+    await w.syncAll();
+    assert.equal(k.agent.view().logins.find((l) => l.id === L3)?.staysHere, undefined, "only the Mac knows");
+  });
+
+  test("one kept free here (as the keeper's) is taken back and used here", async () => {
+    const { m, stays } = await macWorld();
+    updateAccountsFor(m.agentDir, L3, null);
+    await m.agent.tick();
+    stays();
+  });
+
+  test("not macOS: nothing is asked of a keychain", async () => {
+    const { m, clock, queries } = await macWorld("linux");
+    clock.now += 31 * MIN;
+    await m.agent.tick();
+    assert.deepEqual(queries, []);
+    assert.equal(m.agent.view().logins.find((l) => l.id === L3)?.staysHere, undefined);
+  });
+});
+
+function updateAccountsFor(agentDir: string, id: string, device: string | null): void {
+  const read = readAccounts(agentDir).value;
+  read.logins.find((l) => l.id === id)!.device = device;
+  writeAccounts(agentDir, read);
+}
+
+test("off Linux a lease's child counts only as a `claude` started no later than the lease was written (a reused pid is neither)", () => {
+  assert.equal(parseEtime("05:07"), 307);
+  assert.equal(parseEtime("1:00:00"), 3600);
+  assert.equal(parseEtime("2-03:04:05"), 2 * 86400 + 3 * 3600 + 4 * 60 + 5);
+  assert.equal(parseEtime("bogus"), null);
+  const now = 1_000_000_000;
+  const at = now - 60_000; // the lease, written a minute ago
+  const ps = (comm: string, ageSec: number) => () => ({ ageSec, comm });
+  const me = process.pid; // alive; ps is faked
+  assert.equal(claudeRunsOn(me, "/l", at, now, "darwin", ps("claude", 120)), true, "started before the lease");
+  assert.equal(claudeRunsOn(me, "/l", at, now, "darwin", ps("/opt/tools/bin/claude", 61)), true, "a path names it too; within ps's whole seconds");
+  assert.equal(claudeRunsOn(me, "/l", at, now, "darwin", ps("claude", 30)), false, "started after the lease: a reused pid");
+  assert.equal(claudeRunsOn(me, "/l", at, now, "darwin", ps("bun", 120)), false, "not claude");
+  assert.equal(claudeRunsOn(me, "/l", at, now, "darwin", () => null), false, "ps can't read it");
+  const dead = spawnSync(process.execPath, ["-e", "0"]).pid!;
+  assert.equal(claudeRunsOn(dead, "/l", at, now, "darwin", ps("claude", 120)), false, "not alive");
 });

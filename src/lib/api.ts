@@ -1,4 +1,6 @@
 import type { ProfilesListing } from "../../shared/profiles";
+import type { DeployVerb, VerbResult } from "../../shared/project-contract";
+import type { HostServicesView, ProjectServicesView, ServicesUiVerb } from "../../shared/services-view";
 import type { SubagentProfilesFile, SubagentProfilesInfo } from "../../shared/subagent-profiles";
 import type {
   VoiceDeviceInfo,
@@ -21,6 +23,9 @@ import type {
   FileIndex,
   FolderListing,
   GitSummary,
+  WorktreeCleanupPlan,
+  WorktreeCleanupResult,
+  WorktreesSummary,
   ModeInfo,
   ModelFavoriteResult,
   ModelInfo,
@@ -49,18 +54,18 @@ import type {
   ThemeList,
   TmpAttachment,
   TranscriptItem,
+  ToolContentResponse,
   TranscriptRows,
   UploadResult,
   UsageInsight,
+  UsageResetDayRequest,
   WebSettings,
   WorktreesInsight,
   MeshCandidate,
   MeshHello,
-  MeshInfo,
   MeshLoginClaim,
   MeshLogins,
   MeshPeerEntry,
-  MeshSessions,
   PushDevice,
   PushInfo,
   PushSettings,
@@ -69,6 +74,15 @@ import type {
   PushTestResult,
 } from "../../shared/protocol";
 import type { MeshFrontDoor, MeshLocalSettings } from "../../shared/mesh-local";
+import type { LanPairingAdd, LanRelayPut, LanStatus } from "../../shared/mesh-lan";
+import type {
+  MeshAccessPut,
+  MeshAccessView,
+  MeshInfoView as MeshInfo,
+  MeshPeersPut,
+  MeshPreset,
+  MeshSessionsView as MeshSessions,
+} from "../../shared/mesh-access";
 import type { OwnerConversation, OwnerHome, OwnerLinkResult, OwnerProject, ProjectUpdate } from "../../shared/owner";
 import type { NamedChange, OrgDetail, OrgsInfo, PersonHours, PersonInput, PersonPage, PersonPreview, ProfileChange } from "../../shared/orgs";
 import type { BatonOutreach, SendLinkAnswer } from "../../shared/outreach";
@@ -76,6 +90,8 @@ import type { BatonInfo, BatonSettings, BatonTold, BatonStartInput, BatonStartRe
 import type { ConflictResolveInput, DecisionsInfo, PromoteResult, SpecStatus } from "../../shared/decisions";
 import type { PipelineInfo, PipelineTimeline } from "../../shared/pipeline";
 import type { OrgCosts, ProjectCost } from "../../shared/costs";
+import type { ProjectRuntimeView } from "../../shared/project-runtime";
+import type { ProjectList, ProjectRegistered, ProjectSummary } from "../../shared/projects";
 import type { CodingStartInput, CodingStartResult, ItemCodeInput, ItemCodeResult, ItemSendInput, ItemSendResult, ProjectOverseerInfo, ProjectOverseerPatch } from "../../shared/project-overseer";
 import type { HostBrowserAccessChange, HostBrowserAccessResult, HostRename, HostRenameResult, MeshDetails } from "../../shared/mesh-details";
 import type { MeshResync, ResyncJob, ResyncStart } from "../../shared/mesh-resync";
@@ -99,6 +115,7 @@ import type { ProviderLimits, ProviderLimitsInfo, ProviderWaiting } from "../../
 import type { TargetInfo } from "./remote-session";
 import type { DecisionKeyInfo, DecisionProbeResult, DecisionSaveResult, DecisionSettings, DecisionSettingsInfo, TagsBackfillProgress, TagsBackfillScope } from "../../shared/protocol";
 import { hostOf, hostUrl, meshReadInit, noteHost, peerBase, routeUrl } from "./mesh";
+import { upgradeLegacyRows } from "./legacy-rows";
 import { onAuthorized, onUnauthorized } from "./auth";
 import type { PreviewList, PreviewMint, PreviewMinted, PreviewView } from "../../shared/preview-links";
 
@@ -381,14 +398,14 @@ export const sendPushTest = () => request<PushTestResult>("/api/push/test", { me
     still listed. */
 export const getThemes = () => request<ThemeList>("/api/themes");
 
-/** Sova's own settings (GET /api/settings). Today: the experimental Claude Code switch. */
+/** Sova's own settings (GET /api/settings): Settings → Experimental's switches. */
 export const getWebSettings = () => request<WebSettings>("/api/settings");
 
-/** Replace Sova's settings. Applies to sessions created after the change, not to open ones. */
+/** Save Settings → Experimental's switches; the server keeps every key the body doesn't name. */
 export const putWebSettings = (settings: WebSettings) =>
   request<WebSettings>("/api/settings", { method: "PUT", body: JSON.stringify(settings) });
 
-/** Whether the Claude Code CLI is usable, for the Experimental tab's status line. */
+/** Whether the Claude Code CLI is usable, for Settings → Accounts' status line. */
 export const getClaudeCliStatus = () => request<ClaudeCliStatus>("/api/settings/claude-status");
 
 /** The session cwd's file index for @-mentions: every non-ignored file under it, relative to
@@ -433,13 +450,15 @@ export const saveModeDefault = (path: string) =>
     body: JSON.stringify({ saveDefault: true }),
   });
 
-/** POST /api/sandbox?path=… { on }: flip that held chat's sandbox from its next tool call.
-    "unsupported" when its runtime has no sandbox extension (the row isn't shown then). */
-export const setSandbox = (path: string, on: boolean) =>
+/** POST /api/sandbox?path=… { state, on }: set that held chat's sandbox state (§chat.sandbox/states)
+    from its next tool call. `on` rides along for a host whose server predates the three states
+    (it reads only `on`, so Off lands as Subagents only there). "unsupported" when its runtime has
+    no sandbox extension (the group isn't shown then). */
+export const setSandbox = (path: string, state: "off" | "subagents" | "on") =>
   request<SandboxApplyResult>(`/api/sandbox?path=${encodeURIComponent(path)}`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ on }),
+    body: JSON.stringify({ state, on: state === "on" }),
   });
 
 /** A local folder (string), or a folder on a configured target; `host`: on that peer, which then holds it. */
@@ -679,11 +698,13 @@ export const cleanupSessions = (req: CleanupRequest | PathsCleanupRequest, dryRu
     body: JSON.stringify({ ...req, dryRun }),
   }).then((raw) => ({ ...parseCleanupResult(raw), refused: refusedEntries(raw) }));
 
-/** A peer session's items name files on that peer (images it attached): their bytes come from it too. */
+/** A peer session's items name files on that peer (images it attached): their bytes come from it
+    too. A peer on an older Sova sends its rows in the old shape (lib/legacy-rows). */
 function noteAttachmentsHost(path: string, items: TranscriptItem[]): TranscriptItem[] {
   const host = hostOf(path);
-  if (host) for (const item of items) for (const a of item.attachments ?? []) noteHost(a.path, host);
-  return items;
+  if (!host) return items;
+  for (const item of items) for (const a of item.attachments ?? []) noteHost(a.path, host);
+  return upgradeLegacyRows(items);
 }
 
 /** The whole branch with each row light (`view=light`): what the session pane reads of every row,
@@ -715,6 +736,18 @@ export async function fetchTranscriptRows(path: string, ask: RowsAsk, leaf?: str
     if (code === "moved" || code === "missing") return { code };
     throw err;
   }
+}
+
+/** Whose rows a tool's content is asked of: a pi session file, or a Claude Code worker's own
+    session; `host` is the peer holding it (a worker's transcript lives on its parent's host). */
+export type ToolSource = { kind: "pi"; path: string; host?: string | null } | { kind: "claude"; sessionId: string; host: string | null };
+
+/** The whole arguments and output of tool rows (GET /api/transcript/tool), by row id; a row the
+    branch doesn't hold is absent. At most TOOL_CONTENT_MAX_IDS ids. */
+export function fetchToolContent(source: ToolSource, ids: readonly string[]): Promise<ToolContentResponse> {
+  const q = new URLSearchParams(source.kind === "pi" ? { path: source.path } : { claude: source.sessionId });
+  q.set("ids", ids.join(","));
+  return request<ToolContentResponse>(hostUrl(source.host ?? null, `/api/transcript/tool?${q}`));
 }
 
 /**
@@ -793,6 +826,9 @@ export const fetchUsage =() => request<UsageInsight>("/api/insights/usage");
 
 /** Fetch every provider's usage now and rewrite the shared cache; resolves to the new insight. */
 export const refreshUsage = () => request<UsageInsight>("/api/insights/usage/refresh", { method: "POST" });
+/** Ollama Cloud's declared reset day (1..31, or null to clear; §app.insights/usage-reset-day): answers with the whole usage payload. */
+export const putUsageResetDay = (day: number | null) =>
+  request<UsageInsight>("/api/insights/usage/reset-day", { method: "PUT", body: JSON.stringify({ provider: "ollama", day } satisfies UsageResetDayRequest) });
 
 export const fetchAgents = () => request<AgentsInsight>("/api/insights/agents");
 
@@ -822,6 +858,19 @@ export const fetchGitSummary = (path: string, fresh = false) =>
     folder. `fresh` skips the server's cache. */
 export const fetchSessionSetup = (path: string, fresh = false) =>
   request<SessionSetup>(`/api/sessions/context?path=${encodeURIComponent(path)}${fresh ? "&fresh=1" : ""}`);
+/** Switch a new session's context files and skills (§chat.transcript/setup-card-toggles): the
+    whole off set; the answer is the card's fresh read of the rebuilt runtime. */
+export const setSessionLoadout = (path: string, offContext: string[], offSkills: string[]) =>
+  request<SessionSetup>("/api/sessions/loadout", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path, offContext, offSkills }) });
+
+/** The worktrees of a session's repository, counted (§chat.worktrees/cleanup). */
+export const fetchWorktreesSummary = (path: string) => request<WorktreesSummary>(`/api/worktrees/summary?path=${encodeURIComponent(path)}`);
+/** The cleanup's dry run: what would go and what stays, with reasons. */
+export const previewWorktreeCleanup = (path: string) =>
+  request<WorktreeCleanupPlan>("/api/worktrees/cleanup", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path, dryRun: true }) });
+/** Remove exactly `expect` (the dry run's paths), each only if still removable. */
+export const removeWorktrees = (path: string, expect: string[]) =>
+  request<WorktreeCleanupResult>("/api/worktrees/cleanup", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path, expect }) });
 
 /**
  * `force` (chat only) lets the server open a session whose file was written recently by
@@ -860,9 +909,32 @@ export const fetchMesh = (init?: RequestInit) => request<MeshInfo>("/api/mesh", 
 export const fetchMeshHello = () => request<MeshHello>("/api/mesh/hello", meshReadInit(true));
 
 /** Replace peers.json's list; the answer is the mesh as it stands after the write. An entry
-    without `nodeId` is resolved by its name on the tailnet. */
-export const putMeshPeers = (peers: MeshPeerEntry[]) =>
-  request<MeshInfo>("/api/mesh/peers", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ peers }) });
+    without `nodeId` is resolved by its name on the tailnet. `grants` names the preset of a peer this
+    write pairs (by id; §mesh.peers/grants). */
+export const putMeshPeers = (peers: MeshPeerEntry[], grants?: Record<string, MeshPreset>) =>
+  request<MeshInfo>("/api/mesh/peers", {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ peers, ...(grants ? { grants } : {}) } satisfies MeshPeersPut),
+  });
+
+/** What each peer may see and do on this host (mesh-access.json); this host's own page only. */
+export const fetchMeshAccess = () => request<MeshAccessView>("/api/mesh/access");
+
+/** One peer's grant; null removes it (= full). The answer is the whole view after the write. */
+export const putMeshAccess = (body: MeshAccessPut) =>
+  request<MeshAccessView>("/api/mesh/access", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+
+// Dial-out pairings (§mesh.lan/pairing): this host's own page only.
+const lanJson = (method: string, body: unknown): RequestInit => ({ method, headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+/** This host's fingerprint (once made), its relay setting, and each pairing's connections. */
+export const fetchMeshLan = () => request<LanStatus>("/api/mesh/lan");
+/** Make this host's key, if it has none yet; the answer shows its fingerprint. */
+export const createMeshLanKey = () => request<LanStatus>("/api/mesh/lan/key", { method: "POST" });
+export const addMeshLanPairing = (body: LanPairingAdd) => request<LanStatus>("/api/mesh/lan/pairings", lanJson("POST", body));
+/** Remove a pairing: its connections end at once, and its grant goes. */
+export const removeMeshLanPairing = (id: string) => request<LanStatus>(`/api/mesh/lan/pairings/${encodeURIComponent(id)}`, { method: "DELETE" });
+export const putMeshLanRelay = (relay: LanRelayPut) => request<LanStatus>("/api/mesh/lan/relay", lanJson("PUT", { relay }));
 
 /** Tailnet nodes the serving host can see, and which of them run Sova. Only asked for on demand. */
 export const fetchMeshCandidates = () => request<MeshCandidate[]>("/api/mesh/candidates");
@@ -1002,15 +1074,29 @@ export const revokePersonLinks = (id: string, pid: string, one?: { sessionId: st
 /** A session as their link shows it, read-only ("Preview as {name}"); no token. */
 export const previewAsPerson = (id: string, pid: string, sid: string) =>
   request<PersonPreview>(`/api/orgs/${encodeURIComponent(id)}/people/${encodeURIComponent(pid)}/preview?session=${encodeURIComponent(sid)}`);
-export const addOrgProject = (id: string, name: string, root: string) => request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}/projects`, jsonInit("POST", { name, root }));
+/** A new project born placed in the org (register, then place). */
+export const addOrgProject = (id: string, root: string, name?: string) =>
+  request<OrgDetail & { normalizedFrom?: string }>(`/api/orgs/${encodeURIComponent(id)}/projects`, jsonInit("POST", { root, ...(name ? { name } : {}) }));
+/** Import a standalone project into the org (§app.projects/import); without `confirm` the server answers its confirm sentence (409, code "confirm"). */
+export const importOrgProject = (id: string, projectId: string, confirm = false) =>
+  request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}/projects/import`, jsonInit("POST", { projectId, ...(confirm ? { confirm: true } : {}) }));
 /** Set or clear a project's main stakeholder (a roster person's id, or null for none). */
 export const setProjectStakeholder = (id: string, pid: string, stakeholder: string | null) =>
-  request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}/projects/${encodeURIComponent(pid)}`, jsonInit("PATCH", { stakeholder }));
+  request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}/projects/${encodeURIComponent(pid)}/placement`, jsonInit("PATCH", { stakeholder }));
+
+// ---- projects (§app/projects): every registered project, in an organization or not -----------------
+
+const projectPath = (pid: string) => `/api/projects/${encodeURIComponent(pid)}`;
+export const listProjects = () => request<ProjectList>("/api/projects");
+export const getProject = (pid: string) => request<ProjectSummary>(projectPath(pid));
+/** Register a folder as a project (Add Project, Add as Project); its checkout root, said back when it differs. */
+export const addProject = (root: string) => request<ProjectRegistered>("/api/projects", jsonInit("POST", { root }));
+/** Clone a GitHub repository into a new folder under `parent`, then register it. */
+export const cloneProject = (clone: { repo: string; parent: string; folder?: string }) => request<ProjectRegistered>("/api/projects", jsonInit("POST", { clone }));
+export const patchProject = (pid: string, patch: { name?: string; root?: string }) => request<ProjectSummary>(projectPath(pid), jsonInit("PATCH", patch));
 /** Archive a project (§app.organizations/archive): 409 naming what is open; Unarchive brings it back. */
-export const archiveOrgProject = (id: string, pid: string) =>
-  request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}/projects/${encodeURIComponent(pid)}/archive`, jsonInit("POST", {}));
-export const unarchiveOrgProject = (id: string, pid: string) =>
-  request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}/projects/${encodeURIComponent(pid)}/unarchive`, jsonInit("POST", {}));
+export const archiveProject = (pid: string) => request<ProjectSummary>(`${projectPath(pid)}/archive`, jsonInit("POST", {}));
+export const unarchiveProject = (pid: string) => request<ProjectSummary>(`${projectPath(pid)}/unarchive`, jsonInit("POST", {}));
 
 // ---- the org's owner and the Owner page (§app/owner-page; routes in shared/owner.ts) ----
 /** Set the org's owner (an active roster person's id), or none. */
@@ -1025,7 +1111,7 @@ export const previewOwnerPage = (id: string, at?: { project?: string; c?: string
   );
 /** Show this project on the owner's page, or not. */
 export const setProjectOwnerHidden = (id: string, pid: string, ownerHidden: boolean) =>
-  request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}/projects/${encodeURIComponent(pid)}`, jsonInit("PATCH", { ownerHidden }));
+  request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}/projects/${encodeURIComponent(pid)}/placement`, jsonInit("PATCH", { ownerHidden }));
 /** Hide one conversation from the owner's page, or show it again. */
 export const setBatonHiddenFromOwner = (sid: string, hidden: boolean) => request<BatonInfo>(`/api/baton/${encodeURIComponent(sid)}/owner`, jsonInit("POST", { hidden }));
 /** The project's updates on the owner's page, newest first, withdrawn ones included. */
@@ -1099,46 +1185,100 @@ export const resumeGap = (orgId: string, projectId: string, itemId: string) =>
 export const getGapTimeline = (orgId: string, projectId: string, itemId: string) =>
   request<PipelineTimeline>(`${pipelineBase(orgId, projectId)}/${encodeURIComponent(itemId)}/timeline`);
 /** Stop a held act before it goes ahead (the operator's Cancel). */
-export const cancelHeldAct = (orgId: string, holdId: string, reason?: string) =>
-  request<{ ok: true }>(`/api/orgs/${encodeURIComponent(orgId)}/held/${encodeURIComponent(holdId)}/cancel`, jsonInit("POST", reason ? { reason } : {}));
+export const cancelHeldAct = (projectId: string, holdId: string, reason?: string) =>
+  request<{ ok: true }>(`${projectPath(projectId)}/held/${encodeURIComponent(holdId)}/cancel`, jsonInit("POST", reason ? { reason } : {}));
 
 // ---- a project's cost at API prices (§app/project-costs) ---------------------------------------------
 
-export const getProjectCost = (orgId: string, projectId: string) => request<ProjectCost>(`${projectBase(orgId, projectId)}/costs`);
+export const getProjectCost = (projectId: string) => request<ProjectCost>(`${projectPath(projectId)}/costs`);
 export const getOrgCosts = (orgId: string) => request<OrgCosts>(`/api/orgs/${encodeURIComponent(orgId)}/costs`);
+
+// ---- a project's software registry (§app/project-runtime) -------------------------------------------
+/** The project's copies on this host, for its Branches tab (§app.project-services/services-ui). */
+export const getProjectServices = (projectId: string) => request<ProjectServicesView>(`${projectPath(projectId)}/services`);
+/** Run one verb on the project as the operator. A refusal is a result too (its `error`), never thrown;
+    only an unreachable server or an unknown project throws. */
+export async function runProjectVerb(projectId: string, verb: ServicesUiVerb, body: Record<string, unknown>): Promise<VerbResult> {
+  try {
+    return await request<VerbResult>(`${projectPath(projectId)}/services/${verb}`, jsonInit("POST", body));
+  } catch (err) {
+    const b = err instanceof ApiError ? (err.body as Partial<VerbResult> | undefined) : undefined;
+    if (b && b.v === 1 && typeof b.verb === "string") return b as VerbResult;
+    throw err;
+  }
+}
+/** Run one verb as the operator on a folder no registered project holds (a refusal is a result, as above). */
+export async function runRootVerb(root: string, verb: ServicesUiVerb, body: Record<string, unknown>): Promise<VerbResult> {
+  try {
+    return await request<VerbResult>(`/api/project-services/${verb}`, jsonInit("POST", { ...body, project: root }));
+  } catch (err) {
+    const b = err instanceof ApiError ? (err.body as Partial<VerbResult> | undefined) : undefined;
+    if (b && b.v === 1 && typeof b.verb === "string") return b as VerbResult;
+    throw err;
+  }
+}
+/** Run the Project deploy playbook (§app.project-runtime/deploy-playbook): a verb playbook run that proposes a deploy recipe. */
+export const runDeploySetup = (projectId: string) =>
+  request<{ sessionId: string; path: string; worktree?: { path: string; branch: string }; notPrompted?: string }>(`${projectPath(projectId)}/verbs/onboard`, jsonInit("POST", { playbook: "project-deploy" }));
+/** A deploy verb as the operator (§app.project-services/deploy): a refusal is a result too, never thrown. */
+export async function runDeployVerb(root: string, verb: DeployVerb, body: Record<string, unknown>): Promise<VerbResult> {
+  try {
+    return await request<VerbResult>(`/api/project-services/${verb}`, jsonInit("POST", { ...body, project: root }));
+  } catch (err) {
+    const b = err instanceof ApiError ? (err.body as Partial<VerbResult> | undefined) : undefined;
+    if (b && b.v === 1 && typeof b.verb === "string") return b as VerbResult;
+    throw err;
+  }
+}
+/** Approve main's deploy recipe (§app.project-services/deploy-trust): the hash shown, with every step of its review ticked. */
+export const approveDeployRecipe = (root: string, deployHash: string, ticked: readonly string[]) =>
+  request<{ ok: true; deployHash: string }>("/api/project-services/deploy-approve", jsonInit("POST", { project: root, deployHash, ticked }));
+/** What runs on this host now, every project's (Running branches on `#/projects`). */
+export const getHostServices = () => request<HostServicesView>("/api/services");
+export const getProjectRuntime = (projectId: string) => request<ProjectRuntimeView>(`${projectPath(projectId)}/runtime`);
+/** Approve the definition shown (its hash) on this host: the operator's only. */
+export const approveProjectRuntime = (projectId: string, hash: string) => request<ProjectRuntimeView>(`${projectPath(projectId)}/runtime/approve`, jsonInit("POST", { hash }));
+/** Approve & Merge a proposed playbook run (§app.project-runtime/approve-merge): approve its hash, then Merge Branch.
+    A refused merge keeps the approval: the error says why. */
+export const approveMergeProjectRuntime = (projectId: string, hash: string, ticked?: readonly string[]) =>
+  request<ProjectRuntimeView>(`${projectPath(projectId)}/runtime/approve-merge`, jsonInit("POST", ticked ? { hash, ticked } : { hash }));
+/** Run the Project verbs playbook on the project: a coding session on its own branch. */
+export const runProjectVerbsPlaybook = (projectId: string, why?: string) =>
+  request<{ sessionId: string; path: string; worktree?: { path: string; branch: string }; notPrompted?: string }>(`${projectPath(projectId)}/verbs/onboard`, jsonInit("POST", why ? { why } : {}));
 
 // ---- a project's overseer (§app/project-overseer) ---------------------------------------------------
 
-const overseerBase = (orgId: string, projectId: string) => `${projectBase(orgId, projectId)}/overseer`;
-export const getProjectOverseer = (orgId: string, projectId: string) => request<ProjectOverseerInfo>(overseerBase(orgId, projectId));
-export const openProjectOverseer = (orgId: string, projectId: string) => request<ProjectOverseerInfo>(overseerBase(orgId, projectId), jsonInit("POST"));
-export const patchProjectOverseer = (orgId: string, projectId: string, patch: ProjectOverseerPatch) =>
-  request<ProjectOverseerInfo>(overseerBase(orgId, projectId), jsonInit("PATCH", patch));
-export const runProjectOverseer = (orgId: string, projectId: string) => request<ProjectOverseerInfo>(`${overseerBase(orgId, projectId)}/run`, jsonInit("POST"));
+const overseerBase = (projectId: string) => `${projectPath(projectId)}/overseer`;
+export const getProjectOverseer = (projectId: string) => request<ProjectOverseerInfo>(overseerBase(projectId));
+export const openProjectOverseer = (projectId: string) => request<ProjectOverseerInfo>(overseerBase(projectId), jsonInit("POST"));
+export const patchProjectOverseer = (projectId: string, patch: ProjectOverseerPatch) =>
+  request<ProjectOverseerInfo>(overseerBase(projectId), jsonInit("PATCH", patch));
+export const runProjectOverseer = (projectId: string) => request<ProjectOverseerInfo>(`${overseerBase(projectId)}/run`, jsonInit("POST"));
 /** A new conversation; the current one moves to its read-only history. */
-export const clearProjectOverseer = (orgId: string, projectId: string) => request<ProjectOverseerInfo>(`${overseerBase(orgId, projectId)}/clear`, jsonInit("POST"));
-export const projectOverseerActions = (orgId: string, projectId: string, limit = 30) =>
-  request<OverseerAction[]>(`${overseerBase(orgId, projectId)}/actions?limit=${limit}`);
-export const projectOverseerIdeas = (orgId: string, projectId: string) => request<OverseerIdeasInfo>(`${overseerBase(orgId, projectId)}/ideas`);
-export const addProjectOverseerIdea = (orgId: string, projectId: string, idea: { id: string; title: string }) =>
-  request<OverseerIdeasInfo>(`${overseerBase(orgId, projectId)}/ideas`, jsonInit("POST", idea));
-export const projectOverseerTodos = (orgId: string, projectId: string) => request<OverseerTodosInfo>(`${overseerBase(orgId, projectId)}/todos`);
-export const addProjectOverseerTodo = (orgId: string, projectId: string, text: string) =>
-  request<OverseerTodosInfo>(`${overseerBase(orgId, projectId)}/todos`, jsonInit("POST", { text }));
-export const patchProjectOverseerTodo = (orgId: string, projectId: string, id: string, patch: TodoPatch) =>
-  request<OverseerTodosInfo>(`${overseerBase(orgId, projectId)}/todo?id=${encodeURIComponent(id)}`, jsonInit("PATCH", patch));
+export const clearProjectOverseer = (projectId: string) => request<ProjectOverseerInfo>(`${overseerBase(projectId)}/clear`, jsonInit("POST"));
+export const projectOverseerActions = (projectId: string, limit = 30) =>
+  request<OverseerAction[]>(`${overseerBase(projectId)}/actions?limit=${limit}`);
+export const projectOverseerIdeas = (projectId: string) => request<OverseerIdeasInfo>(`${overseerBase(projectId)}/ideas`);
+export const addProjectOverseerIdea = (projectId: string, idea: { id: string; title: string }) =>
+  request<OverseerIdeasInfo>(`${overseerBase(projectId)}/ideas`, jsonInit("POST", idea));
+export const projectOverseerTodos = (projectId: string) => request<OverseerTodosInfo>(`${overseerBase(projectId)}/todos`);
+export const addProjectOverseerTodo = (projectId: string, text: string) =>
+  request<OverseerTodosInfo>(`${overseerBase(projectId)}/todos`, jsonInit("POST", { text }));
+export const patchProjectOverseerTodo = (projectId: string, id: string, patch: TodoPatch) =>
+  request<OverseerTodosInfo>(`${overseerBase(projectId)}/todo?id=${encodeURIComponent(id)}`, jsonInit("PATCH", patch));
+/** Pass an idea or to-do item to roster people: a gathering, so the org's (§app.project-overseer/ideas-and-todos). */
 export const sendProjectItem = (orgId: string, projectId: string, input: ItemSendInput) =>
-  request<ItemSendResult>(`${overseerBase(orgId, projectId)}/items/send`, jsonInit("POST", input));
-export const codeProjectItem = (orgId: string, projectId: string, input: ItemCodeInput) =>
-  request<ItemCodeResult>(`${overseerBase(orgId, projectId)}/items/code`, jsonInit("POST", input));
+  request<ItemSendResult>(`${projectBase(orgId, projectId)}/items/send`, jsonInit("POST", input));
+export const codeProjectItem = (projectId: string, input: ItemCodeInput) =>
+  request<ItemCodeResult>(`${overseerBase(projectId)}/items/code`, jsonInit("POST", input));
 /** New Coding Session: a coding session in its own worktree, tied to no item, with nothing sent. */
-export const startProjectCoding = (orgId: string, projectId: string, input: CodingStartInput = {}) =>
-  request<CodingStartResult>(`${overseerBase(orgId, projectId)}/coding`, jsonInit("POST", input));
+export const startProjectCoding = (projectId: string, input: CodingStartInput = {}) =>
+  request<CodingStartResult>(`${overseerBase(projectId)}/coding`, jsonInit("POST", input));
 /** The operator's gestures on a coding session's worktree: merge its branch into the root's, or remove it. */
-export const mergeCodingWorktree = (orgId: string, projectId: string, sessionId: string) =>
-  request<ProjectOverseerInfo>(`${overseerBase(orgId, projectId)}/worktrees/merge`, jsonInit("POST", { sessionId }));
-export const removeCodingWorktree = (orgId: string, projectId: string, sessionId: string) =>
-  request<ProjectOverseerInfo>(`${overseerBase(orgId, projectId)}/worktrees/remove`, jsonInit("POST", { sessionId }));
+export const mergeCodingWorktree = (projectId: string, sessionId: string) =>
+  request<ProjectOverseerInfo>(`${overseerBase(projectId)}/worktrees/merge`, jsonInit("POST", { sessionId }));
+export const removeCodingWorktree = (projectId: string, sessionId: string) =>
+  request<ProjectOverseerInfo>(`${overseerBase(projectId)}/worktrees/remove`, jsonInit("POST", { sessionId }));
 
 // ---- voice input (§chat/voice, §app.settings-dialog/voice) ---------------------------------------
 
@@ -1183,8 +1323,9 @@ export const forgetVoiceDevice = (id: string) => request<VoiceStatus>(`/api/voic
 
 // ---- preview links (§mesh.public/preview): this host's own, never a peer's ----------------------------
 
-export const getPreviews = (orgId?: string, projectId?: string) =>
-  request<PreviewList>(`/api/previews${orgId && projectId ? `?orgId=${encodeURIComponent(orgId)}&projectId=${encodeURIComponent(projectId)}` : ""}`, { cache: "no-store" });
+export const getPreviews = () => request<PreviewList>("/api/previews", { cache: "no-store" });
+/** One project's previews on this host. */
+export const getProjectPreviews = (projectId: string) => request<PreviewList>(`${projectPath(projectId)}/previews`, { cache: "no-store" });
 export const mintPreview = (body: PreviewMint) => request<PreviewMinted>("/api/previews", jsonInit("POST", body));
 export const turnOffPreview = (id: string) => request<PreviewView>(`/api/previews/${encodeURIComponent(id)}/off`, jsonInit("POST", {}));
 export const extendPreview = (id: string, days: number) => request<PreviewView>(`/api/previews/${encodeURIComponent(id)}/extend`, jsonInit("POST", { days }));

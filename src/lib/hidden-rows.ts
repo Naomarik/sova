@@ -46,7 +46,7 @@ export function splitHidden(items: TranscriptItem[], hide: HideKinds): HiddenSpl
     if (it.kind === "tool-result" && it.toolCallId) results.set(it.toolCallId, it);
     if (it.kind === "tool-call" && it.toolCallId) callIds.add(it.toolCallId);
   }
-  const failedResult = (r: TranscriptItem | undefined) => !!r && toolResultView(r.raw, r.text).isError;
+  const failedResult = (r: TranscriptItem | undefined) => !!r && toolResultView(r).isError;
   const cards = cardCallIds(items);
 
   const shown: TranscriptItem[] = [];

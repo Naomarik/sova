@@ -33,7 +33,7 @@ test("entryAddresses: IP literals from name and url only (no DNS)", () => {
 test("tailnetAddresses: SOVA_PEER_HOST must be tailnet literals", () => {
   assert.deepEqual(tailnetAddresses("100.64.0.3"), ["100.64.0.3"]);
   for (const bad of [undefined, "", "0.0.0.0", "127.0.0.1", "::", "192.168.0.9", "100.64.0.3,0.0.0.0"]) {
-    assert.throws(() => tailnetAddresses(bad), String(bad));
+    assert.throws(() => tailnetAddresses(bad), Error, `${JSON.stringify(bad)} is refused`);
   }
 });
 
@@ -52,6 +52,19 @@ test("whois: exactly one matching entry is the caller; its StableID comes from p
     assert.equal(await addressIdentity(() => [mislisted], env).whois("100.64.0.3:5"), null, "this host, even if listed");
     assert.equal(await addressIdentity(() => [vps, { ...laptop, dnsName: "100.64.0.2" }], env).whois("100.64.0.2:5"), null, "ambiguous");
     assert.equal(await addressIdentity(() => [vps], {}).whois("100.64.0.2:5").catch(() => "threw"), "threw", "no SOVA_PEER_HOST");
+  } finally {
+    restore();
+  }
+});
+
+test("whois: a dial-out pairing at a tailnet address is never a match (L7)", async () => {
+  const restore = quiet();
+  try {
+    // A relay reached at the same tailnet ULA as a listed tailnet peer: the pairing neither shadows
+    // the peer (two hits) nor answers for it.
+    const pairing: PeerEntry = { id: "relay", label: "Relay", nodeId: "lan:0123456789abcdef0123456789abcdef", dnsName: "fd7a:115c:a1e0::5", lan: { role: "dial", pin: "0123456789ABCDEF0123456789ABCDEF", host: "fd7a:115c:a1e0::5", port: 4803 } };
+    assert.equal((await addressIdentity(() => [pairing, v6], env).whois("[fd7a:115c:a1e0::5]:5"))?.nodeId, "nSIX");
+    assert.equal(await addressIdentity(() => [pairing], env).whois("[fd7a:115c:a1e0::5]:5"), null);
   } finally {
     restore();
   }

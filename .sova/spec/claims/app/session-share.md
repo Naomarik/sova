@@ -194,10 +194,11 @@ gateway only routes by hash (§mesh/public). Wire shapes: `shared/session-share.
   conversation as it is now, images loaded as above, and then stop at that preview's cut:
   **Update to This** / **Stop Following Here**, with the same stale-preview handling; Back
   changes nothing), each recipient's
-  row (presence, opened line, expiry, its visits folded underneath, **Get New Link**, and **Turn
-  Off** asked twice), **Add Person**, **Add Anyone Link** while it has no live anyone row, **Extend**
+  row (presence, opened line, expiry, its visits folded underneath, **Get New Link**, and **Delete
+  Link** asked twice, its confirm and the line under it saying the link stops working for good,
+  §design.copy-deck/session-share), **Add Person**, **Add Anyone Link** while it has no live anyone row, **Extend**
   with the four expiry choices, **Preview**, and **Stop Sharing** asked twice. A new link from Get
-  New Link or Add shows once, like Create. A Get New Link or Turn Off that fails says the server's
+  New Link or Add shows once, like Create. A Get New Link or Delete Link that fails says the server's
   reason on that recipient's own row, brought into view; a share-level action's failure is the
   sheet's banner. A turned-off row has no Get New Link: the person is added again instead. While
   open it reads the share's activity every 5 seconds while the page is visible.
@@ -221,7 +222,8 @@ gateway only routes by hash (§mesh/public). Wire shapes: `shared/session-share.
   asked twice.
 - An org link row: the person, the organization, the hand-off's title and number or "Owner page",
   its state, "Expires in {n} days", the presence word, the opened line, its visits folded
-  underneath, and **Turn Off Link** asked twice (the existing hand-off or owner revoke route). The
+  underneath, and **Delete Link** asked twice, its confirm and the line under it saying the link
+  stops working for good (the existing hand-off or owner revoke route). The
   page never changes those stores otherwise.
 - A visit's line adds what §mesh.public/visitor-log recorded for it, when anything: the address,
   the browser family (the raw user agent on hover), the language and, for a preview, "{n} pages"

@@ -18,7 +18,8 @@ import { parseDefinition } from "../../shared/project-contract";
 process.env.PI_CODING_AGENT_DIR = mkdtempSync(join(tmpdir(), "sova-engine-agent-"));
 
 const op: Caller = { kind: "operator" };
-const BASE = 30_000 + Math.floor(Math.random() * 20_000);
+// Below the kernel's ephemeral range (32768+), where any outgoing connection on the box can hold a port.
+const BASE = 20_000 + Math.floor(Math.random() * 10_000);
 const PORTS = { site: BASE, web: BASE + 20, bus: BASE + 40 };
 
 let parent = "";
@@ -38,12 +39,14 @@ const DEF = {
     site: { static: "public", ports: { http: { base: PORTS.site } } },
   },
   hooks: { probe: { run: ["node", "probe.mjs"] } },
+  share: { endpoints: ["web.http", "site.http"] },
+  open: { endpoint: "web.http", path: "/home" },
 };
 
 const FILES: Record<string, string> = {
   "setup.mjs": `import { mkdirSync, writeFileSync } from "node:fs"; mkdirSync(process.env.SOVA_DATA, { recursive: true }); writeFileSync(process.env.SOVA_DATA + "/setup-ran", "yes");`,
   "bus.mjs": `import { createServer } from "node:net"; createServer((s) => s.end()).listen(Number(process.env.SOVA_PORT_TCP), "127.0.0.1"); console.log("bus up");`,
-  "web.mjs": `import { createServer } from "node:http"; process.on("SIGHUP", () => console.log("reloaded")); createServer((q, r) => { r.end(q.url === "/health" ? "ok" : "web " + process.env.SOVA_INSTANCE); }).listen(Number(process.env.SOVA_PORT_HTTP), "127.0.0.1", () => console.log("web up on", process.env.SOVA_PORT_HTTP));`,
+  "web.mjs": `import { createServer } from "node:http"; process.on("SIGHUP", () => console.log("reloaded")); createServer((q, r) => { if (q.url === "/home") { r.setHeader("content-type", "text/html"); return r.end("<h1>home</h1>"); } r.end(q.url === "/health" ? "ok" : "web " + process.env.SOVA_INSTANCE); }).listen(Number(process.env.SOVA_PORT_HTTP), "127.0.0.1", () => console.log("web up on", process.env.SOVA_PORT_HTTP));`,
   "probe.mjs": `import { existsSync, writeFileSync } from "node:fs"; const [op, token] = process.argv.slice(2); const f = process.env.SOVA_DATA + "/store/" + token; if (op === "write") writeFileSync(f, "1"); else process.exit(existsSync(f) ? 0 : 1);`,
   "public/index.html": "<h1>site</h1>",
   ".gitignore": ".agent/\n",
@@ -128,6 +131,9 @@ test("up starts shared services first, waits for readiness; again leaves the sam
   assert.deepEqual(again.services.map((s) => s.pid), up.services.map((s) => s.pid));
   const st = shaped(await engine.run("status", { instance: a.instance }, op));
   assert.deepEqual(st.services.map((s) => [s.name, s.state]), [["bus", "ready"], ["web", "ready"], ["site", "ready"]]);
+  // A running process service's resident memory; a static one, served in the server, has none of its own.
+  assert.ok((st.services.find((s) => s.name === "web")!.rssBytes ?? 0) > 1024 * 1024, JSON.stringify(st.services));
+  assert.equal(st.services.find((s) => s.name === "site")!.rssBytes, undefined);
   const all = shaped(await engine.run("status", { project }, op));
   assert.deepEqual(all.instances?.map((i) => [i.instance, i.state]), [[a.instance, "running"]]);
 });
@@ -251,7 +257,9 @@ test("doctor and status name the supervisor adapter and why; a reserved adapter 
   const doc = shaped(await sel.run("doctor", { project }, op));
   const sup = doc.checks!.find((c) => c.id === "supervisor")!;
   assert.equal(sup.ok, true);
-  assert.match(sup.detail, /^detached: detached sessions, processes read from \/proc; chosen because systemd treated as absent \(SOVA_PROJECT_NO_SYSTEMD=1\)$/);
+  // Linux reads /proc; macOS's ps has no session column (§app.project-services/supervisor).
+  const reads = process.platform === "linux" ? "\\/proc" : "ps \\(no session ids: process trees and groups\\)";
+  assert.match(sup.detail, new RegExp(`^detached: detached sessions, processes read from ${reads}; chosen because systemd treated as absent \\(SOVA_PROJECT_NO_SYSTEMD=1\\)$`));
   const st = shaped(await sel.run("status", { project }, op));
   assert.deepEqual(st.checks, [sup], "status carries the same check");
   const launchd = new ProjectEngine({ driver: new SelectedDriver({ env: { SOVA_PROJECT_DRIVER: "launchd" } }), pollMs: 100 });
@@ -266,12 +274,11 @@ test("doctor and status name the supervisor adapter and why; a reserved adapter 
   assert.match(ls.checks![0]!.detail, /^launchd: no supervisor/);
 });
 
-test("reserved and malformed requests", async () => {
-  for (const v of ["share", "revoke", "deploy", "deploy.run"]) {
-    const r = shaped(await engine.run(v, { project }, op));
-    assert.equal(r.error?.code, "unsupported", v);
-    assert.equal(exitOf(r), 2);
-  }
+test("deploy verbs without a deployer, and malformed requests", async () => {
+  const r = shaped(await engine.run("deploy.run", { project }, op));
+  assert.equal(r.error?.code, "unsupported");
+  assert.equal(exitOf(r), 2);
+  assert.equal((await engine.run("deploy", { project }, op)).error?.code, "invalid-request", "the bare name is no verb");
   assert.equal((await engine.run("explode", { project }, op)).error?.code, "invalid-request");
   assert.equal((await engine.run("up", { project, bogus: 1 }, op)).error?.code, "invalid-request");
   assert.equal((await engine.run("up", { instance: "nope-00000000" }, op)).error?.code, "not-found");
@@ -333,5 +340,10 @@ test("conform passes on the fixture: two copies, every verb twice, isolation, no
   for (const id of ["create-a", "create-a-again", "setup-twice", "doctor", "up-a", "ports-owned", "up-a-again", "status-a", "up-b-parallel", "lock-busy", "disjoint", "isolation", "apply-a", "logs-a", "reset-a", "down-a", "down-a-again", "teardown", "teardown-again", "no-leaks"])
     assert.ok(ids.includes(id), `check ${id} ran`);
   assert.match(r.conform!.checks.find((c) => c.id === "isolation")!.detail, /read in B 1/);
+  // Suite 3: each share endpoint answers through the preview proxy's request path, no link minted.
+  assert.match(r.conform!.checks.find((c) => c.id === "share-endpoints")!.detail, /^web\.http \(port \d+\): GET \/ through the preview proxy answered 200; site\.http \(port \d+\): GET \/ through the preview proxy answered 200$/);
+  // Suite 4: the entry point answers in A, its content type named (a page, not the web's plain-text root).
+  assert.equal(r.conform!.suiteVersion, 4);
+  assert.match(r.conform!.checks.find((c) => c.id === "open")!.detail, /^web\.http \(port \d+\): GET \/home answered 200 \(text\/html\)$/);
   assert.equal(git(["branch", "--list", "sova/conform-*"]).trim(), "", "scratch branches are gone");
 });

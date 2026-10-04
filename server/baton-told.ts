@@ -8,7 +8,7 @@ import { photosFor } from "./baton-images";
 import { READ_LINK_TOOL, readLinkTool } from "./baton-read-link";
 import { WRAPUP_TOOL } from "./baton-wrapup";
 import { hostOf, isOrgHostOpen } from "./org-engine";
-import { readProjects } from "./orgs";
+import { placementSid, readProjects } from "./orgs";
 import { readManifest } from "./overseer-ideas";
 import { readOverseerState } from "./overseer-store";
 import { readTodos } from "./overseer-todos";
@@ -45,7 +45,7 @@ export function starterOf(data: Record<string, unknown>): { who: BatonStarter; o
 
 /** The overseer conversation that started it, from its start row in the transition log (a session from before `started`). */
 function overseerIdFromLog(orgId: string, projectId: string, sessionId: string, data: Record<string, unknown>): string | undefined {
-  const spawner = str(data["sova/spawnedBy"]) || `project/${orgId}/${projectId}`;
+  const spawner = str(data["sova/spawnedBy"]) || placementSid(orgId, projectId);
   try {
     const row = hostOf(orgId)
       .log.rows({ session: spawner })
@@ -65,7 +65,7 @@ export function startedOf(row: BatonSession, data: Record<string, unknown> | nul
   let current = false;
   if (overseerId) {
     try {
-      current = (s.who === "project-overseer" ? readPoState(projectOverseerPaths(row.orgId, row.projectId))?.current : readOverseerState()?.current) === overseerId;
+      current = (s.who === "project-overseer" ? readPoState(projectOverseerPaths(row.projectId))?.current : readOverseerState()?.current) === overseerId;
     } catch {
       current = false;
     }
@@ -82,7 +82,7 @@ export function batonData(row: Pick<BatonSession, "orgId" | "sessionId">): Recor
 /** What it was started for, as recorded: a conflict, a gap, the session it came from, a to-do or idea Send to person… linked. */
 function startedForOf(row: BatonSession, data: Record<string, unknown>): BatonStartedFor | undefined {
   if (row.conflict) return { kind: "conflict", area: row.conflict.area };
-  const paths = projectOverseerPaths(row.orgId, row.projectId);
+  const paths = projectOverseerPaths(row.projectId);
   const item = str(data["sova/spawnedBy"]);
   if (item.startsWith("item/") && isOrgHostOpen(row.orgId)) {
     const ideaId = str(hostOf(row.orgId).data(item)?.["ideaId"]);

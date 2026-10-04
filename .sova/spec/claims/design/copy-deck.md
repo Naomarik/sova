@@ -11,7 +11,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Pane resizer (§app/shell) | `aria-label` "Resize the sessions pane" · `title` "Drag to resize · Double-click to reset" — the title is the only place the two gestures are named, and it is pointer-only copy for a pointer-only control |
 | Search label (visually hidden) | Search sessions |
 | Search placeholder | Title, folder, or tag (model still matches; the placeholder must fit the 320px field) |
-| Count | `{n} sessions` · filtered: `{visible} of {total} sessions` |
+| Count (visually hidden: the search field's description and live region, never printed) | `{n} sessions` · filtered: `{visible} of {total} sessions` |
 | Search icon button (toolbar line, §app.session-list/search) | wordless `search` · `aria-label` "Search sessions" · `title` "Search sessions · /" |
 | Close Search (toolbar line, while the search is open) | wordless `close` · `aria-label` and `title`: Close Search |
 | Row TUI chip (rail) | `TUI`, static, no dot · `aria-label` (replaces the visible word in the accessible name): "Open in a TUI. Pid {pid}, status {status}." · `title`: "Open in a TUI · pid {pid} · {status}" · tap: the `title` as a toast |
@@ -99,6 +99,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Long tool output | `Show All {n} Lines` |
 | Tool chips | Running · Done · Failed · No result |
 | Tool output label | Output · on error: Error |
+| Tool card opened before its content came (§chat.transcript/slim-rows) | after 0.3 s: "Loading arguments and output…" · a failed fetch: "Couldn't load this call's arguments and output. {error}" · button `Retry` · gone from the branch: "This call is no longer on the session's branch, so its arguments and output can't be shown." |
 | Stopped turn (info row) | Stopped by you at `{HH:MM}`. |
 | Report row, closed | {id} · {name} · chip · {first line} (hidden prefix "Report from ", or "Message: " without an agent) |
 | Report chips | Failed · Stopped · Aborted · Success · Done · Starting · Running · Waiting · Stopping |
@@ -178,7 +179,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 |---|---|
 | Trigger | `aria-label` / `title`: More Actions |
 | Menu panel `aria-label` | More actions |
-| Menu panel rows | Attach images · Commands · Playbooks · Hide tool calls · Hide thinking · Sandbox · Undo last turn (in this order, each only where it applies: Playbooks in chat sessions, §chat/playbooks; Sandbox where the runtime has a `sandbox` command, §chat/sandbox; Undo last turn per §chat/timeline) |
+| Menu panel rows | Attach images · Commands · Playbooks · Hide tool calls · Hide thinking · the Sandbox group (Off · Subagents only · On) · Undo last turn (in this order, each only where it applies: Playbooks in chat sessions, §chat/playbooks; the Sandbox group where the runtime has a `sandbox` command, §chat/sandbox, its copy in §design.copy-deck/sandbox; Undo last turn per §chat/timeline) |
 | Model panel `aria-label` | Model and thinking |
 | Model panel rows | Model · the Thinking group |
 | Model row | {id} · {provider} (`title`: {provider/id}) · no model: Choose model |
@@ -199,15 +200,21 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 
 | Where | Copy |
 |---|---|
-| Flyout row | Sandbox (checked while on) |
-| Flyout row `title`, off | Confine this session's tools, from the next tool call. |
-| Flyout row `title`, on | {status}. Turning it off applies from the next tool call. |
-| Composer shield word | (full: none) · Partial · Unavailable · Not enforced |
+| Flyout group label | Sandbox |
+| Flyout rows (`menuitemradio`, checked on the reported state) | Off · Subagents only · On |
+| Row `title`, Off | Off: nothing is confined, neither this session's tools nor its subagents. Applies from the next tool call, and to subagents started or resumed from now. |
+| Row `title`, Subagents only | Subagents only: this session's tools run unconfined; subagents in its worktrees write only there. Applies from the next tool call, and to subagents started or resumed from now. |
+| Row `title`, On | On: this session and its subagents. Applies from the next tool call, and to subagents started or resumed from now. |
+| Composer shield word | (On with full enforcement, Subagents only, Off: none) · Partial · Unavailable · Not enforced |
 | Composer shield `title` / accessible name | {status}: the extension's status line (below, TUI `/sandbox`) |
-| Toast and announcement on a flip | {status} (the extension's own line) |
+| Toast and announcement on a change | {status}. Running subagents keep theirs until resumed. |
+| Toast when the state did not change | {status} (the extension's own line) |
+| Off asked of a host without it (an older server) | This host's Sova has no Off; its sandbox stays {status}. |
 | Flip refused: another writer | Sandbox unchanged: another writer has this session. Nothing was written. |
 | Flip refused: other | Sandbox unchanged: {server error} |
-| Flip refused: server errors ({server error}) | Invalid or missing ?path= (must be a .jsonl under the pi sessions dir) · Expected JSON body { on: boolean } · That session isn't open on this server; open the chat first |
+| Flip refused: server errors ({server error}) | Invalid or missing ?path= (must be a .jsonl under the pi sessions dir) · Expected JSON body { state: "off" \| "subagents" \| "on" } or { on: boolean } · state and on disagree · That session isn't open on this server; open the chat first |
+| TUI `/sandbox` usage | usage: /sandbox on \| subagents \| off |
+| TUI footer | sandbox on (and its suffixes, §chat.sandbox/toggle) · Off: sandbox off · Subagents only: nothing |
 | Unavailable refusal (tool error) | Sandbox unavailable: {reason}. Nothing ran. Turn the sandbox off to run tools unconfined. |
 | Denial note (end of a tool result) | [sandbox: a write or connection outside the policy was refused] |
 | Hidden results omitted (end of find/grep output) | [sandbox: {n} result line(s) under hidden paths were omitted] |
@@ -216,8 +223,12 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Proxy refusal, port (403 body) | sova sandbox: port {port} is not in the sandbox proxy allowlist |
 | Proxy refusal, local address (403 body) | sova sandbox: {host} resolves to {address}, a local address, which is not in the sandbox proxy allowlist |
 | Per-project loosening ignored | Sandbox: `.sova/sandbox.json` can only tighten; ignored `{key}`. |
-| TUI `/sandbox` (describeActive) | Sandbox off · Sandbox on · {level} · full enforcement · Sandbox on · {level} · partial enforcement ({reasons}) · Sandbox on · {level} · unavailable: {reasons} (tools refuse) · not enforced (a remote session): Sandbox on · {reasons}, e.g. Sandbox on · not enforced on remote; with no reasons, Sandbox on · not enforced |
-| TUI transcript marker (terminal only; Sova's transcript shows none) | Sandbox → on · {level} · {enforcement} enforcement (not full adds: · {reasons}) · not enforced: Sandbox → on · {reasons} (no reasons: not enforced) · Sandbox → off |
+| TUI `/sandbox` (describeActive) | Off: Sandbox off · workers unconfined · Subagents only: Sandbox subagents only · workers in tracked worktrees write only there · Sandbox on · {level} · full enforcement · Sandbox on · {level} · partial enforcement ({reasons}) · Sandbox on · {level} · unavailable: {reasons} (tools refuse) · not enforced (a remote session): Sandbox on · {reasons}, e.g. Sandbox on · not enforced on remote; with no reasons, Sandbox on · not enforced |
+| TUI transcript marker (terminal only; Sova's transcript shows none) | Sandbox → on · {level} · {enforcement} enforcement (not full adds: · {reasons}) · not enforced: Sandbox → on · {reasons} (no reasons: not enforced) · Sandbox → subagents only · Sandbox → off |
+| `agent_list`, per worker | sandbox: on · sandbox: on, narrowed to {path} · sandbox: write-only to {path} · sandbox: none |
+| Overseer, lowering refused (`sova_set_session`) | Lowering a session's sandbox needs the user's approval: ask with sova_card, listing the session, and set it in the turn the user's click starts. Nothing was changed. |
+| Overseer, lowering refused (`sova_create_session`) | Starting a session with its sandbox lowered needs the user's approval: ask with sova_card first (say the session starts with its sandbox lowered, and to what), and create it in the turn the user's click starts. No session was created. |
+| Overseer, results | `sova_set_session`: sandbox {Off \| Subagents only \| On} (from its next tool call; running subagents keep theirs until resumed) · `sova_create_session`: Sandbox: {state} (this session only). |
 
 ## §design.copy-deck/playbooks — Playbooks (§chat/playbooks)
 
@@ -377,8 +388,10 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 
 | Where | Copy |
 |---|---|
-| Foot row 1 (→ `#/usage`) | Glance: `C {pct}%` `O {pct}%` `OL {pct}%` `Z {pct}%` `DS {amount}` (Claude, OpenAI, Ollama Cloud, Z.ai, DeepSeek — which has no quota, so it shows the money left, rounded to whole units: `DS $4` for a $4.29 balance) · no data: Usage · `title`/`aria-label`: Usage: {Provider} {window} {pct}%, …, DeepSeek balance $4.29 (exact amount) |
-| Foot row 2 (→ `#/agents`) | `{agents} agents` · `{sessions} sessions` · `{teams} teams`, joined by ` · `, zero segments left out · nothing live: Agents · `title`/`aria-label`: {n} active agents in {m} sessions, {t} teams |
+| Foot row 1 (→ `#/usage`) | Glance: `C` `O` `OL` `Z`, each with its pace meter and no number, then `DS {amount}` (DeepSeek has no quota, so it shows the money left, rounded to whole units: `DS $4` for a $4.29 balance) · Claude login with no current reading: `C` with empty tracks (muted) · no data: Usage · `title`: Usage, then a line per provider · `aria-label`: Usage: {lines joined by ". "} · a line: {Provider} {window}: {pct}% used · day {n} of {total} (under a day: {2h 10m} of {5h}) · resets {6:59 PM \| Oct 9 10:00 PM \| declared: Oct 14}, a two-window provider's bars joined by "; " · DeepSeek balance $4.29 (exact amount) · pending Claude: Claude ({login}) reading pending · then each other Claude account: Claude ({email}) {its bars} |
+| Foot row 2 (→ `#/agents`, §app.session-list/working-now) | `{n} agents` (1: `1 agent`), the bare number whenever known (a floor too: no `+`, no `~`) · unknown: Agents — then the readout `{5m} tok/min` (§app.insights/token-velocity; unknown: `–`), and under them the chart's muted `30m` · `title`/`aria-label`: Agents: {working sentence}. {velocity sentence} (each ending in one full stop) — working sentence: {n} agents working now: {s} sessions and {m} subagents (1: 1 agent working now: 1 session; a part at 0 left out) · known 0: No agents working now · floor: At least {n} agents working now: … . Work on {host} isn't counted: it isn't answering. (2+: Work on {host} and {host} isn't counted: they aren't answering.; floor of 0: No agents seen working now. …) · unknown: Agents working now: not known yet |
+| Working-now line (toolbar, → `#/agents`, §app.session-list/working-now) | no words on the line: `chat` icon + `{s}` · `worker` icon + `{m}`, a part at 0 left out · `title`/`aria-label`: {s} sessions · {m} subagents working (1: `1 session`, `1 subagent`; a part at 0 left out: `1 session working`, `5 subagents working`) · floor: At least {…} working. Work on {host} isn't counted: it isn't answering. · omitted at 0 and while unknown |
+| Token velocity (§app.insights/token-velocity) | readout `48k tok/min` (phone bar: `48k /min`), the figure the 5-minute mean — under 1,000 whole (`840`), 1,000–9,999 one decimal (`8.4k`), 10,000 up no decimal (`48k`), a million up one decimal (`1.2M`) · chart label: `30m` · unknown: `–` · sentence: Output tokens a minute: {5m} over the last 5 minutes, {30m} over 30. Replies still being written aren't counted yet. · partial: Output tokens a minute: at least {5m} over the last 5 minutes, {30m} over 30. Some calls' tokens can't be seen. Replies still being written aren't counted yet. · unknown: Output tokens a minute: not known yet. |
 | Provider names | Claude · OpenAI · Ollama Cloud · Z.ai · DeepSeek |
 | Usage page title / head meta | Usage · Updated {rel} · never read: Not read yet |
 | Agents page title / head meta | Agents · `{w} working · {n} pi sessions running` ("{w} working · " dropped at 0; "1 pi session running") · 0 live: No pi sessions running |
@@ -392,7 +405,9 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Meter value | `{pct}%` used |
 | Balance (DeepSeek) | label Balance · value `$4.29` (currency of the balance) · context: the non-zero parts of Granted `$0.00` · Topped up `$4.29`, joined by ` · `, omitted when both are 0 |
 | Out of credit note | This balance can't fund calls. They'll fail until it's topped up. |
-| Meter context | Resets in {2h 17m} (under 24h) · Resets {Sep 25} · reset already passed: Reset at `{HH:MM}`. New reading at the next refresh. |
+| Meter context | Resets in {2h 17m} (under 24h) · Resets {Sep 25} · declared reset: Resets {Oct 14} · with a tick, then ` · day {4} of {7}` (under a day: ` · {2h 43m} of {5h}`) · reset already passed: Reset at `{HH:MM}`. New reading at the next refresh. · a free login's figures: Reset at `{HH:MM}`. Not read while it is free. |
+| Ollama reset day (card) | unset: Reset day unknown · `Set` · field label: Reset day · buttons: Save · Cancel (set: Clear) · invalid: Enter a day from 1 to 31. · set: Resets {Oct 14} · day {18} of {30} · `Change` |
+| `/usage reset-day` | Ollama Cloud resets on day {14} of each month. · Ollama Cloud's reset day is cleared. · Usage: /usage reset-day ollama <1-31\|clear> |
 | Usage chips | Near limit · Rate-limited · Quota used · Out of credit (DeepSeek, `available:false`) |
 | Stale usage (banner-warn; only after a failed Refresh Usage) | **Usage is {42m} old.** Couldn't refresh: {message} · button: `Retry` |
 | Usage file missing (`reason:"missing"`) | **No usage data yet.** Nothing has fetched provider usage on this machine. Refresh Usage fetches it now. · button: `Refresh Usage` |
@@ -1014,10 +1029,10 @@ merge, commit, repo, session, token, spec, L0–L3, workspace, roster.
 | …latest change | "Set by you {relative time}." |
 | …cleared (warn banner) | "{name} left the organization, so it has no owner now. Their owner link stopped working." |
 | …link line | "Owner link made {relative time} · expires {relative time} · opened {n} times" · none: "No owner link yet." · newest turned off or replaced: "The owner link is turned off." · under 14 days (warn): "Owner link expires {relative time}." · expired: "The owner link expired {relative time}." |
-| …buttons | `Get Owner Link` (secondary) · `Preview Owner Page` (secondary) · `Turn Off Owner Link` (destructive, outlined, apart) |
+| …buttons | `Get Owner Link` (secondary) · `Preview Owner Page` (secondary) · `Delete Owner Link` (destructive, outlined, apart) |
 | Get Owner Link, while one is live (confirm) | "{first}'s current link stops working at once. The new one works from now." · `Get Owner Link` · `Cancel` |
 | Get Owner Link, no owner | "Pick an owner first." |
-| Turn Off, confirm | "{first}'s owner page stops opening at once. The conversations and updates stay." · `Turn Off Owner Link` · `Cancel` |
+| Delete, confirm | "{first}'s owner link stops working for good. The conversations and updates stay." · `Delete Owner Link?` · `Cancel` · done (toast) "Owner link deleted." |
 | Link shown once | the baton strip's Copy Link pattern; `linkWarning` when no share address is known |
 | Preview modal title | "{org}, as {first} sees it" |
 | …line | "Read only. Nothing you do here reaches {first}, and no visit is recorded." |
@@ -1060,7 +1075,7 @@ host, person or recipient.
 | Titles | "Share Session" · "Manage Share" · Preview: "As they see it", line "{title} · Read only. No visit is recorded." |
 | Intro | "People you send a link to can read this conversation: your messages and the replies, with their drawings and images. Never tool steps, thinking, paths or costs." |
 | Title field | "Title they see" · hint "The session's own title may say more than you mean to." |
-| People | "People" · placeholder "A name only you see, like Ana" · `Add` · hint "Each person gets their own link, so you see who opened it and can turn one off alone." · remove "Remove {label}" |
+| People | "People" · placeholder "A name only you see, like Ana" · `Add` · hint "Each person gets their own link, so you see who opened it and can delete one alone." · remove "Remove {label}" |
 | Anyone | "Anyone with the link" · "One more link anyone can open. Its visits show the device type only." |
 | Follow live | "Follow live" · off "Off: they see the conversation as it is now. You can update it to now later." · on "They see new messages as the session goes on, including ones you haven't read yet." · managing, off: "Off: turning it on shows them new messages as the session goes on." · on: "They see new messages as the session goes on." |
 | Expiry | "Links expire after" · `1 day` / `7 days` / `30 days` / `90 days` |
@@ -1072,7 +1087,7 @@ host, person or recipient.
 | Update and stop following | titles "Update to Now" · "Stop Following Live" · "Their pages will show the conversation as it is here, images included." · "Follow live stops here: their pages keep the conversation as it is here, images included." · `Back to Share` · `Update to This` / `Stop Following Here` (`Saving…`) · failed: **Couldn't read the conversation.** Nothing changed. {reason} `Try Again` |
 | Foot | `Cancel` · `Preview` · `Create Link` / `Create Links` (`Creating…`) · Preview: `Back to Sharing` / `Back to Share` · managing: `Stop Sharing` (armed `Stop Every Link?`), `Preview`, `Done` |
 | New links | eyebrow "New link · shown once" / "{n} new links · shown once" · `Copy Link` (toast "Link copied.") · "We keep only a fingerprint of each link. If one is lost, Get New Link makes another." · the `linkWarning` text with `Open Settings` |
-| Managing | "Snapshot up to {date time}." · `Update to Now` (title "Their pages show the conversation as it is now.") · eyebrows "People", "Expiry" · `Get New Link` (title "A new link for them. This one stops working.") · `Turn Off` (armed "Turn Off {label}'s Link?", the anyone row "Turn Off This Link?") · placeholder "Add a person, like Ben" · `Add Person` · `Add Anyone Link` · "{n} days from now" · `Extend` · "Every live link then expires {n} days from now." · `Save Title` |
+| Managing | "Snapshot up to {date time}." · `Update to Now` (title "Their pages show the conversation as it is now.") · eyebrows "People", "Expiry" · `Get New Link` (title "A new link for them. This one stops working.") · `Delete Link` (armed "Delete {label}'s Link?", the anyone row "Delete This Link?", with "The link stops working for good." under it while armed) · placeholder "Add a person, like Ben" · `Add Person` · `Add Anyone Link` · "{n} days from now" · `Extend` · "Every live link then expires {n} days from now." · `Save Title` |
 | Stopped / gone | **Stopped {time}.** Every link is off. The session itself didn't change. · **The session file is gone.** Every link answers that it's no longer active. |
 | Errors | **Couldn't read the conversation to preview it.** Nothing was shared. {reason} `Try Again` · **Couldn't create the links.** Nothing was shared. {reason} · **That didn't go through.** Nothing changed. {reason} · "Couldn't read the preview. {reason}" |
 
@@ -1109,5 +1124,23 @@ host, person or recipient.
 | Sidebar foot | row "Shares" · spine "Shares" |
 | Page | title "Shares" · meta "{n} session shares · {n} organization links" (+ " · {n} viewing now") · `Refresh Shares` |
 | Cards | "Session shares" (row meta adds "session “{session title}”" when it differs) · "No session share has a live link." · disclosure "Ended · {n}" · "Organization links" (row "{hand-off title} · hand-off {n}" or "Owner page" · "{org} · {state} · Expires in {n} days") |
-| Actions | `Manage` · `Stop Sharing` (armed `Stop Every Link?`) · `Turn Off Link` (armed "Turn Off {person}'s Link?") |
+| Actions | `Manage` · `Stop Sharing` (armed `Stop Every Link?`) · `Delete Link` (armed "Delete {person}'s Link?", with "{person}'s link stops working for good." under it while armed) |
 | Empty and hosts | **No public links are open.** Share a session from its Sharing tab: Session details, then Sharing. · "{host} can't be reached, so its links aren't listed." · failed action: **That didn't go through.** Nothing was changed. {reason} |
+
+## §design.copy-deck/worktree-cleanup — New session · worktrees line and Clean Up Merged (§chat.transcript/empty-worktrees, §chat.worktrees/cleanup)
+
+`{path}` is a worktree folder (mono, `~` for the home folder), `{branch}` its branch (mono), `{n}`
+and `{k}` counts, `{main}` the repository's main branch.
+
+| Where | Copy |
+|---|---|
+| The line | "{total} worktrees · {merged} merged" (1: "1 worktree") · with empty leftovers: " · {empty} empty" |
+| Button | `Clean Up Merged` (destructive, outlined) · while the dry run runs: `Checking…` · dry run failed (toast): "Couldn't check which worktrees can go. Nothing was removed. {message}" |
+| Confirm, title | "Remove {n} merged worktrees?" (1: "Remove 1 merged worktree?") · nothing removable: "Nothing to remove right now." |
+| Confirm, body | "These folders go away. A branch git finds in {main} is deleted too; the others keep their commits." · nothing removable: "Every worktree here stays, for the reasons below." · heading `Goes · {n}`, rows `{path}` then "{branch} · branch deleted", "{branch} · branch kept, merged by content" · heading `Stays · {k}`, rows `{path}` then the reason |
+| Confirm, buttons | `Remove {n} Worktrees` (1: `Remove 1 Worktree`), destructive · while it runs: `Removing…` · `Cancel` · nothing removable: `Close` |
+| Done | dialog title "Removed {n} · kept {k}", the kept rows with their reasons, `Close` · toast and screen reader: "Removed {n} worktrees. Kept {k}." (1: "1 worktree") · failed: "Couldn't remove worktrees. Some may be gone; the count is read again. {message}" |
+| Session tab, a tracked worktree whose folder is gone (§chat.worktrees/pane) | merged: status chip `Merged`, `title` "Its branch is in the main branch and its folder was cleaned up. This session still lists it." then chip `Cleaned up`, `title` "The folder was removed after its work was merged." · not merged: status chip `Removed` (warn), `title` "The folder is gone and its branch has commits the main branch doesn't." · no record: `Removed` (warn), `title` "The folder and its branch are gone, and nothing records a merge." · no commits: `Removed` (neutral), `title` "The folder is gone. Its branch had no commits of its own." · a dropped one: its `Dropped` chip, then `Removed` · the count line: "{n} active · {n} merged · {n} removed · {n} dropped", nonzero parts only |
+| Readiness reasons, folder gone (§chat.worktrees/readiness) | "Merged · cleaned up" · "Removed · not merged" · "Removed · no record of a merge" · "Removed · no commits" — the row's `title` words them as "{branch}: merged, cleaned up" / "{branch}: removed, not merged" |
+| sova_archive, per worktree (§app.overseer/tools) | "worktree {path}: removed; branch {branch} deleted (merged)" · "…; branch {branch} deleted (no commits of its own)" · "…; branch {branch} kept (merged by content)" · a folder already gone: "worktree {path}: already gone, dropped from git's list; …" · "worktree {path} ({branch}): kept, {reason}" with a reason from the row below, lower-cased first letter, no final period · "…: left, it belongs to session {id}" |
+| Reasons a tree stays (the server's) | "Not merged into {main}." · "Not on a branch." · "Locked." · "{n} uncommitted files: {first} and {n−1} more" (1: "1 uncommitted file: {first}") · "Session {name}'s folder is inside it." · "Session {name} tracks it and is open in a TUI." · "… and is running." · "… and has its sandbox on." · "A running process is inside it: {command} ({pid})." · "A live session under its .agent: {pid}." · "No longer in git's worktree list." · "Git refused: {git's first line}" · "Changed since the preview: {the new reason}" — `{name}` the session's title, else its short id |

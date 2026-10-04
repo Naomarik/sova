@@ -96,11 +96,11 @@ test("a project whose main stakeholder left counts once in its org's needsYou, u
   mkdirSync(join(root, "proj-left"));
   const pr = await orgs.addProject(org.id, { name: "Site", root: join(root, "proj-left") });
   const alp = await orgs.addPerson(org.id, { name: "Alperen", role: "Owner" });
-  await orgs.patchProject(org.id, pr.id, { stakeholder: alp.id });
+  await orgs.patchPlacement(org.id, pr.id, { stakeholder: alp.id });
   const count = async () => (await list()).find((o) => o.id === org.id)!.needsYou?.stakeholders;
   assert.equal(await count(), 0);
   await orgs.applyChange(org.id, alp.id, { status: "left" }, { kind: "operator" });
   assert.equal(await count(), 1);
-  await orgs.patchProject(org.id, pr.id, { stakeholder: null });
+  await orgs.patchPlacement(org.id, pr.id, { stakeholder: null });
   assert.equal(await count(), 0);
 });

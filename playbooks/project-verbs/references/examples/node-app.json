@@ -1,0 +1,62 @@
+{
+  "version": 1,
+  "sources": ["package.json", "Procfile.dev"],
+  "setup": [
+    {
+      "id": "deps",
+      "run": ["pnpm", "install", "--frozen-lockfile"],
+      "inputs": ["package.json", "pnpm-lock.yaml"],
+      "timeout": 600
+    }
+  ],
+  "data": {
+    "db": {
+      "kind": "hook",
+      "provision": [".sova/bin/db", "create", "app_${slot}"],
+      "deprovision": [".sova/bin/db", "drop", "app_${slot}"]
+    }
+  },
+  "services": {
+    "api": {
+      "cmd": ["node", "server/index.js"],
+      "env": {"PORT": "${ports.api.http}", "DATABASE_URL": "postgres://localhost:5432/${data.db}"},
+      "ports": {
+        "http": {"base": 3000, "stride": 10}
+      },
+      "ready": {"http": "http", "path": "/health"},
+      "about": "API: http://127.0.0.1:${ports.api.http}/ on database ${data.db}",
+      "isolation": {
+        "method": "names",
+        "why": "The host's Postgres stays shared; each copy uses its own database app_<slot>, made and dropped by the db hook."
+      }
+    },
+    "web": {
+      "cmd": ["pnpm", "exec", "vite", "--port", "${ports.web.http}", "--strictPort"],
+      "env": {"API_URL": "http://127.0.0.1:${ports.api.http}"},
+      "ports": {
+        "http": {"base": 5173, "stride": 10}
+      },
+      "requires": ["api"],
+      "ready": {"http": "http"},
+      "reload": "none",
+      "about": "Dev UI with hot reload: http://127.0.0.1:${ports.web.http}/",
+      "isolation": {
+        "method": "ports",
+        "why": "Stateless dev server; its own port per copy, pointed at the copy's own API."
+      }
+    }
+  },
+  "open": {"endpoint": "web.http"},
+  "hooks": {
+    "probe": {
+      "run": [".sova/bin/probe"]
+    }
+  },
+  "test": {
+    "run": [".sova/bin/test"],
+    "smoke": ["test/health.test.js"]
+  },
+  "share": {
+    "endpoints": ["web.http"]
+  }
+}

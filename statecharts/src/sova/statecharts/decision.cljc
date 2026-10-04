@@ -118,7 +118,7 @@
                                      [(ops/assign :promoted-at (b/now-ms d)) (ops/assign :promoted-text (:text-hash ev))
                                       (ops/assign :promoted-commit (:commit ev)) (ops/assign :record-present true)
                                       (ops/assign :fields-match true) (ops/assign :edited-in-spec false)]))})
-          (Send {:event :milestone/noted :targetexpr (fn [_ d] (b/project-sid (:org-id d) (:project-id d)))
+          (Send {:event :milestone/noted :targetexpr (fn [_ d] (b/placement-sid (:org-id d) (:project-id d)))
                  :content (fn [_ d] {:kind "decision-promoted" :shown (not (false? (:shown d)))})})))
 
       (state {:id :promoted}

@@ -613,8 +613,9 @@ Discard button of its own: saving is the dialog's.
   can't be saved blank. A save refreshes the mesh state, so the new name shows everywhere at once.
   Enter in a Mesh field does nothing: Save writes every tab's edits, and a key press in one field
   doesn't.
-- **Experimental**'s Claude Code switch is staged too. Its status line reads the saved setting, so
-  "Switch on to add its models" describes what the server does now, not the unsaved switch.
+- **Experimental** holds the **Adversarial review** switch (§chat.alignment-review/flag), staged
+  and saved like every other gated form; the Claude Code provider is no switch there, it is always
+  on (§app.claude-code-provider/always-on).
 - **Not gated.** General, Themes and Typography change only this browser and still apply as you
   pick. Actions run at once and are never part of a draft: Retry, Try Again, Check Again, Themes'
   Refresh, the Jev key's Save Key, Replace Key and Remove Key, Test Decisions, Tag Last 30 Days,
@@ -650,7 +651,7 @@ the label's text and its control are one target, at least 44px tall. A row that 
 control and reads left to right (Subagents' **Add a coordinator/monitor to new teams**, **Pause the
 team**, members-default and spec-writer switches, Summaries' **Fallback** switch, the Decisions switches and radios, Overseer proactivity radios, and the Typography text sizes) is only as
 wide as its text and control: a click on the empty row beside it does nothing. A row that spreads
-its text and switch across the panel (General's **Summary line**, the Claude Code provider, Mesh's
+its text and switch across the panel (General's **Summary line**, Mesh's
 sync rows, the Models policy switches) keeps the whole row as its target.
 
 ## §app.settings-dialog/claude-long-context-listed — A Claude Code `[1m]` alias counts as listed

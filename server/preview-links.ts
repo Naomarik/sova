@@ -3,6 +3,8 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, statSync, w
 import { dirname, join } from "node:path";
 import { FORBIDDEN_PREVIEW_PORTS, PREVIEW_DAYS_DEFAULT, PREVIEW_DAYS_MAX, PREVIEW_LABEL_RE } from "../shared/public-links";
 import type { PreviewErrorCode, PreviewState, PreviewView } from "../shared/preview-links";
+import { SHARE_DAYS_MAX } from "../shared/project-contract";
+import { keptPreview } from "./preview-kept";
 import { shareLinksChanged } from "./share/links-events";
 import { stateRoot } from "./state-root";
 
@@ -25,7 +27,6 @@ export interface PreviewRecord {
   id: string;
   /** SHA-256 of the label, hex. */
   hash: string;
-  orgId: string;
   projectId: string;
   port: number;
   createdAt: string;
@@ -80,12 +81,12 @@ export function validatePreviewFile(raw: unknown): StoreFile | { why: string } {
   const hashes = new Set<string>();
   for (const [i, l] of (raw.links as unknown[]).entries()) {
     const bad = (what: string) => ({ why: `link ${i}: ${what}` });
-    if (!isObj(l) || !onlyKeys(l, ["id", "hash", "orgId", "projectId", "port", "createdAt", "expiresAt", "revokedAt", "createdBy", "siblingOf", "sentTo"])) return bad("keys");
+    if (!isObj(l) || !onlyKeys(l, ["id", "hash", "projectId", "port", "createdAt", "expiresAt", "revokedAt", "createdBy", "siblingOf", "sentTo"])) return bad("keys");
     if (typeof l.id !== "string" || !PREVIEW_ID.test(l.id) || ids.has(l.id)) return bad("id");
     ids.add(l.id);
     if (typeof l.hash !== "string" || !/^[0-9a-f]{64}$/.test(l.hash) || hashes.has(l.hash)) return bad("hash");
     hashes.add(l.hash);
-    if (typeof l.orgId !== "string" || !REF.test(l.orgId) || typeof l.projectId !== "string" || !REF.test(l.projectId)) return bad("project");
+    if (typeof l.projectId !== "string" || !REF.test(l.projectId)) return bad("project");
     if (!isPort(l.port)) return bad("port");
     if (!ISO(l.createdAt) || !ISO(l.expiresAt) || (l.revokedAt !== undefined && !ISO(l.revokedAt))) return bad("times");
     if (typeof l.createdBy !== "string" || !(l.createdBy === "operator" || /^session:[A-Za-z0-9_.-]{1,128}$/.test(l.createdBy))) return bad("createdBy");
@@ -179,7 +180,6 @@ export const previewState = (r: PreviewRecord, now = Date.now()): PreviewState =
 export function viewOf(r: PreviewRecord, now = Date.now()): PreviewView {
   return {
     id: r.id,
-    orgId: r.orgId,
     projectId: r.projectId,
     port: r.port,
     createdAt: r.createdAt,
@@ -230,15 +230,14 @@ export function previewHashKnown(hash: string): boolean {
   return readOrEmpty().links.some((l) => l.hash === hash);
 }
 
-export function listPreviews(filter: { orgId?: string; projectId?: string } = {}, now = Date.now()): PreviewView[] {
-  const match = (x: { orgId: string; projectId: string }) => (!filter.orgId || x.orgId === filter.orgId) && (!filter.projectId || x.projectId === filter.projectId);
+export function listPreviews(filter: { projectId?: string } = {}, now = Date.now()): PreviewView[] {
+  const match = (x: { projectId: string }) => !filter.projectId || x.projectId === filter.projectId;
   return readOrEmpty().links.filter(match).map((r) => viewOf(r, now));
 }
 
 // ---- writes --------------------------------------------------------------------------------------
 
 export interface MintInput {
-  orgId: string;
   projectId: string;
   port: unknown;
   days?: unknown;
@@ -246,7 +245,7 @@ export interface MintInput {
 }
 
 /**
- * A person's own link to preview `of` (§app.outreach/links): the same org, project and port, expiring
+ * A person's own link to preview `of` (§app.outreach/links): the same project and port, expiring
  * with it (never later), and turned off with it. Refused unless `of` is active. `createdBy`: who sent it
  * (`operator`, or the sending overseer's `session:<id>`).
  */
@@ -259,7 +258,6 @@ export function mintSibling(of: string, sentTo: string, createdBy = "operator", 
   const record: PreviewRecord = {
     id: newId("pv_"),
     hash: hashLabel(label),
-    orgId: o.orgId,
     projectId: o.projectId,
     port: o.port,
     createdAt: iso(now),
@@ -287,27 +285,29 @@ export function checkDays(days: unknown): number {
   return days;
 }
 
-function checkProject(orgId: unknown, projectId: unknown): { orgId: string; projectId: string } {
-  if (typeof orgId !== "string" || !REF.test(orgId) || typeof projectId !== "string" || !REF.test(projectId)) throw new PreviewRefused("bad-project", "Name the project this preview belongs to.");
-  return { orgId, projectId };
+function checkProject(projectId: unknown): string {
+  if (typeof projectId !== "string" || !REF.test(projectId)) throw new PreviewRefused("bad-project", "Name the project this preview belongs to.");
+  return projectId;
 }
 
 /** Mint one preview. The label is returned once and never stored. Emits a `p` link change. */
 export function mintPreview(input: MintInput, sovaPorts: ReadonlySet<number>, now = Date.now()): { record: PreviewRecord; label: string } {
-  const { orgId, projectId } = checkProject(input.orgId, input.projectId);
+  const projectId = checkProject(input.projectId);
   const port = checkPort(input.port, sovaPorts);
   const days = checkDays(input.days);
+  const createdBy = input.createdBy ?? "operator";
+  // The file is strict: a record it would refuse is never written (it would serve no preview at all).
+  if (!(createdBy === "operator" || /^session:[A-Za-z0-9_.-]{1,128}$/.test(createdBy))) throw new PreviewRefused("bad-project", "A preview is made by the operator or a session.");
   const store = read();
   const label = newPreviewLabel();
   const record: PreviewRecord = {
     id: newId("pv_"),
     hash: hashLabel(label),
-    orgId,
     projectId,
     port,
     createdAt: iso(now),
     expiresAt: iso(now + days * DAY_MS),
-    createdBy: input.createdBy ?? "operator",
+    createdBy,
   };
   store.links.push(record);
   write(store);
@@ -331,17 +331,31 @@ export function revokePreview(id: string, now = Date.now()): PreviewRecord | nul
   return r;
 }
 
-/** Move an active one's expiry to `days` from now. */
+/** Move an active one's expiry to `days` from now (a running copy's link, §app.project-services/share: at most 7). */
 export function extendPreview(id: string, days: unknown, now = Date.now()): PreviewRecord | null {
   const d = checkDays(days);
   const store = read();
   const r = store.links.find((l) => l.id === id);
   if (!r) return null;
   if (previewState(r, now) !== "active") throw new PreviewRefused("bad-days", "Only an active preview can be extended.");
+  if (!r.siblingOf && keptPreview(r.id)?.target.kind === "instance" && d > SHARE_DAYS_MAX) throw new PreviewRefused("bad-days", `A running copy's link lasts 1 to ${SHARE_DAYS_MAX} days.`);
   // A sibling never outlives the preview it copies.
   const parent = r.siblingOf ? store.links.find((l) => l.id === r.siblingOf) : undefined;
   const want = now + d * DAY_MS;
   r.expiresAt = iso(parent ? Math.min(want, Date.parse(parent.expiresAt)) : want);
+  write(store);
+  shareLinksChanged({ kind: "p", cause: "renew" });
+  return r;
+}
+
+/** A shared copy's link shared again (§app.project-services/share): its expiry moves to the later of its own and `days` from now. */
+export function renewPreview(id: string, days: number, now = Date.now()): PreviewRecord | null {
+  const store = read();
+  const r = store.links.find((l) => l.id === id);
+  if (!r || previewState(r, now) !== "active") return null;
+  const want = now + days * DAY_MS;
+  if (want <= Date.parse(r.expiresAt)) return r;
+  r.expiresAt = iso(want);
   write(store);
   shareLinksChanged({ kind: "p", cause: "renew" });
   return r;

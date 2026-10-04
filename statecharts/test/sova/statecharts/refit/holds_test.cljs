@@ -15,12 +15,12 @@
 (defn- item-engine []
   (let [eng (core/new-engine registry/statecharts {:level-check lv/level-check :absorb-unknown true})]
     (core/start! eng sid "item" {:org-id "o1" :project-id "pr1" :id "g_1" :idea-id "§gap/x"} t0)
-    (core/send! eng sid :link/moved {:from "watch/o1/pr1" :statechart "watch" :states [:watch]
-                                     :exported {:settings {:autonomy "L3"} :roster-active true}} {:now t0})
+    (core/send! eng sid :link/moved {:from "watch/pr1" :statechart "watch" :states [:watch]
+                                     :exported {:settings {:autonomy "L3"}}} {:now t0})
     eng))
 
 (defn- unattended [allowance at-once]
-  {:by "overseer" :autonomy "L3" :roster-active true :paused false :archived false :ledger "day"
+  {:by "overseer" :autonomy "L3" :paused false :archived false :ledger "day"
    :hold-ms 600000 :project-id "pr1" :overseer-id "po1"
    :allowance {:gather allowance :promote {:used 0 :max 60} :create {:used 0 :max 4} :prompt {:used 0 :max 12}}
    :at-once (merge {:gatherings-open 0 :gatherings-cap 5 :coding-running 0 :coding-cap 2} at-once)})
@@ -97,11 +97,11 @@
 
 (deftest r8-an-unreviewed-confirm-required-hold-asks-the-overseer-to-look
   (let [eng  (core/new-engine registry/statecharts {:level-check lv/level-check :absorb-unknown true})
-        wsid "watch/o1/pr1"
+        wsid "watch/pr1"
         env  (assoc (unattended {:used 0 :max 6} {}) :confirm-kinds ["gather"])]
     ;; a project with an overseer (its watch keeps reasons only then)
-    (core/start! eng "project/o1/pr1" "project" {:org-id "o1" :id "pr1" :name "Site" :root "/r"} t0)
-    (core/send! eng "project/o1/pr1" :overseer/start {:by "operator" :conversation-id "c1"} {:now t0})
+    (core/start! eng "project/pr1" "project" {:id "pr1" :name "Site" :root "/r"} t0)
+    (core/send! eng "project/pr1" :overseer/start {:by "operator" :conversation-id "c1"} {:now t0})
     (core/send! eng wsid :settings/changed {:settings {:soon-look-sec 60}} {:now t0})
     (core/start! eng sid "item" {:org-id "o1" :project-id "pr1" :id "g_1" :idea-id "§gap/x"} t0)
     (core/send! eng sid :gather/start (merge (gather "p1" 1) env) {:now t0})

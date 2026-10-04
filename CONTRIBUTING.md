@@ -4,8 +4,9 @@
 
 ## Run a checkout
 
-Requires Git, Node.js ≥22.19, and pnpm (the version `packageManager` in `package.json` pins;
-`mise install` provides both Node and pnpm from `mise.toml`).
+Requires Git, Node.js ≥22.19, pnpm (the version `packageManager` in `package.json` pins) and
+Bun (the server and the unit tests run on it; the version `mise.toml` pins). `mise install`
+provides Node, pnpm and Bun from `mise.toml`.
 
 ```sh
 git clone https://github.com/Naomarik/sova.git
@@ -15,7 +16,8 @@ pnpm run build
 pnpm start
 ```
 
-Open <http://127.0.0.1:4800>. This runs your checkout; the release installer instead installs its
+`pnpm start` runs the server on Bun; Node only on request (`scripts/start-server.sh --node`, see
+the README's "Run on Bun (or Node)"). Open <http://127.0.0.1:4800>. This runs your checkout; the release installer instead installs its
 pinned tag. Provider login and network access are covered in [Getting started](docs/getting-started.md).
 
 For frontend development, run `pnpm run dev:server` and `pnpm run dev:web` in separate terminals,
@@ -33,8 +35,11 @@ pnpm test
 pnpm run build
 ```
 
-Unit tests use `tsx --test`; plain `node --test` does not resolve their extensionless TypeScript
-imports. Installer tests run with `bash scripts/install.test.sh` in temporary homes with stubbed
+`pnpm test` runs the unit tests on Bun, one `bun test` process per file, through
+`scripts/run-tests.mjs`; verify with it (and `pnpm run dev:hermetic` for a running server), not
+with Node. `pnpm run test:node` runs the same files on Node (`tsx --test`) when Node is what you
+were asked to check; plain `node --test` does not resolve their extensionless TypeScript imports.
+Bun missing makes `pnpm test` exit 2 rather than fall back to Node. Installer tests run with `bash scripts/install.test.sh` in temporary homes with stubbed
 toolchains. Extensions have their own test instructions in [pi-config](pi-config/README.md).
 
 For documentation-only changes, check commands against their implementations, verify relative
@@ -72,3 +77,21 @@ App state is written under `~/.pi/agent/sova/`.
 `pi-config/` is a standalone-installable bundle. Keep its installer and documentation
 self-contained: its `install.sh` must work on a plain copy of the directory, with no imports from
 Sova.
+
+## Release tags
+
+A tag is the record of a state the server actually ran, never a marker of "we merged
+something". A tag `v0.1.0-alpha.N` means all three of:
+
+- the tagged commit is both `master` and `origin/master`;
+- the whole check suite passed on that commit (`pnpm run typecheck`, `pnpm test`,
+  `pnpm run build`, and the extensions' own tests);
+- `sova-runtime.service` was restarted onto it and `GET /api/health` reports that commit as its
+  `head`.
+
+`N` counts tags and nothing else: `alpha.7` is always the seventh tag ever cut, numbers are
+never reused and never skip, and they do not follow the number of landings. Tags are cut at
+milestones, not on every landing: the merge captain cuts one when the user calls a milestone, on
+whatever live head exists then, with an annotated message naming what is new since the previous
+tag. Push a tag by name (`git push origin v0.1.0-alpha.1`); `--tags`, `--all` and `--force` are
+never used.

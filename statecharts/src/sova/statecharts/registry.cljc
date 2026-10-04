@@ -12,8 +12,10 @@
     [sova.statecharts.reconciler :as reconciler]
     [sova.statecharts.org :as org]
     [sova.statecharts.person :as person]
+    [sova.statecharts.placement :as placement]
     [sova.statecharts.proj :as proj]
     [sova.statecharts.residence :as residence]
+    [sova.statecharts.runtime :as runtime]
     [sova.statecharts.watch :as watch]
     [clojure.string :as str]
     [sova.statecharts.base :as b]
@@ -43,13 +45,15 @@
    "residence" residence/entry
    "person"    person/entry
    "project"   proj/entry
+   "placement" placement/entry
    "watch"     watch/entry
    "baton"      baton/entry
    "decision"   decision/entry
    "conflict"   conflict/entry
    "reconciler" reconciler/entry
    "item"       item/entry
-   "build"      build/entry})
+   "build"      build/entry
+   "runtime"    runtime/entry})
 
 (def statecharts (into {} (for [[k v] statecharts*] [k (with-card-checks v)])))
 

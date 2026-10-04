@@ -1,21 +1,27 @@
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { OPERATOR } from "../shared/baton";
 import type { OrgDetail, Person } from "../shared/orgs";
-import type { SovaConfirmItem } from "../shared/protocol";
+import type { SessionSummary, SovaConfirmItem } from "../shared/protocol";
+import { expandHome, guardedFolderProblem, overseerFolder } from "./overseer-folders";
+import { listProjects } from "./projects/spaces";
+import { ADD_LEAD, confirmRefusal } from "./overseer-sender";
 import { attentionChanged } from "./attention-memo";
 import { cardHeader } from "./overseer-tools";
 import { createBaton, handoffTo, offerTo, projectAbilities } from "./baton";
 import type { OperatorBy } from "./orgs";
 import { ABILITIES_PARAM, overseerAbilities } from "./gathering-abilities";
 import type { ToolCall } from "./overseer-idea-tools";
-import { readHistory } from "./orgs";
+import { orgOfProject, readHistory } from "./orgs";
 import {
   batonOf,
   displayName,
   orgFull,
   orgsList,
   personView,
+  placedOrg,
+  projectsList,
   projectView,
+  resolveAnyProject,
   resolveOrg,
   resolvePerson,
   resolveProject,
@@ -62,6 +68,8 @@ export interface OrgToolDeps {
   overseerId?(): string;
   /** A session reference in any form the tools print it, reduced to its id. */
   sessionRef(raw: unknown): string;
+  /** A session of this host by any form the tools print it (or its alias); null when none matches. */
+  session?(ref: unknown): Promise<SessionSummary | null>;
   obj(properties: Record<string, unknown>, required?: string[]): any;
   str(description: string, extra?: Record<string, unknown>): unknown;
   int(description: string, extra?: Record<string, unknown>): unknown;
@@ -76,8 +84,7 @@ const cut = (s: string, max: number) => {
 const enc = encodeURIComponent;
 
 /** The refusal of a people-facing act outside a confirmed turn (§app.overseer/org-people-facing). */
-export const confirmRefusal = (what: string) =>
-  `This reaches people or ends something: ask with sova_card, listing ${what} in its items, and act in the turn the user's click starts.`;
+export { confirmRefusal };
 /** What a started gathering session or offer says instead of a link. */
 export const noLinkNote = (names: string[]) => `No link was made: Needs you asks you to send ${names.join(", ")} their link.`;
 
@@ -85,7 +92,10 @@ export const noLinkNote = (names: string[]) => `No link was made: Needs you asks
 interface Targets {
   sessions?: string[];
   people?: { orgId: string; id: string; name: string }[];
-  projects?: { orgId: string; id: string; name: string }[];
+  projects?: { orgId: string | null; id: string; name: string }[];
+  /** Orgs it detaches, and folders it adds as projects (§app.overseer/org-project-add). */
+  orgs?: { id: string; name: string }[];
+  folders?: { root: string; orgId: string | null; name?: string }[];
 }
 
 export function orgTools(d: OrgToolDeps): Tool[] {
@@ -118,22 +128,30 @@ export function orgTools(d: OrgToolDeps): Tool[] {
       throw err;
     }
   }
-  /** Every target must be on the card whose click opened this turn. */
-  function requireConfirm(t: Targets): void {
+  /** Every target must be on the card whose click opened this turn. `lead`: what kind of act it is, for the refusal. */
+  function requireConfirm(t: Targets, lead?: string): void {
     const items = d.confirmed();
-    const has = (kind: "session" | "person" | "project", orgId: string | null, id: string) =>
+    const has = (kind: "session" | "person" | "project" | "org", orgId: string | null, id: string) =>
       !!items?.some((i) => i.kind === kind && i.id === id && (orgId === null || (i as { orgId?: string }).orgId === orgId));
+    // A folder row: the same checkout root, into the same org (or none), and the same name when the row names one.
+    const hasFolder = (f: { root: string; orgId: string | null; name?: string }) =>
+      !!items?.some((i) => i.kind === "folder" && i.id === f.root && (i.orgId ?? null) === f.orgId && (i.name === undefined || i.name === f.name));
+    const folderText = (f: { root: string; orgId: string | null }) => `the folder ${f.root}${f.orgId ? ` (into the organization ${f.orgId})` : " (standalone)"}`;
     const missing: string[] = [];
-    for (const p of t.projects ?? []) if (!has("project", p.orgId, p.id)) missing.push(`the project ${p.name} (${p.id})`);
+    for (const p of t.projects ?? []) if (!has("project", null, p.id)) missing.push(`the project ${p.name} (${p.id})`);
     for (const p of t.people ?? []) if (!has("person", p.orgId, p.id)) missing.push(`${p.name} (${p.id})`);
     for (const s of t.sessions ?? []) if (!has("session", null, s)) missing.push(`the session ${s}`);
+    for (const o of t.orgs ?? []) if (!has("org", null, o.id)) missing.push(`the organization ${o.name} (${o.id})`);
+    for (const f of t.folders ?? []) if (!hasFolder(f)) missing.push(folderText(f));
     if (!items || missing.length) {
       const all = [
         ...(t.projects ?? []).map((p) => `the project ${p.name} (${p.id})`),
         ...(t.people ?? []).map((p) => `${p.name} (${p.id})`),
         ...(t.sessions ?? []).map((s) => `the session ${s}`),
+        ...(t.orgs ?? []).map((o) => `the organization ${o.name} (${o.id})`),
+        ...(t.folders ?? []).map(folderText),
       ];
-      throw refuse(confirmRefusal(all.join(", ")));
+      throw refuse(confirmRefusal(all.join(", "), lead));
     }
   }
   /** The operator's act made through the Overseer, in the turn its confirm card started (the statecharts check the card). */
@@ -145,6 +163,10 @@ export function orgTools(d: OrgToolDeps): Tool[] {
   const orgOf = (ref: unknown) => resolveOrg(ref);
   const base = (orgId: string) => `/api/orgs/${enc(orgId)}`;
   const projectBase = (orgId: string, projectId: string) => `${base(orgId)}/projects/${enc(projectId)}`;
+  /** The project layer's routes for any registered project (its overseer, name, root, shelf). */
+  const projectsBase = (projectId: string) => `/api/projects/${enc(projectId)}`;
+  /** A confirm card's row for a project (its org, when one places it). */
+  const cardProject = (project: { id: string; name: string; orgId: string | null }) => ({ orgId: project.orgId, id: project.id, name: project.name });
   /** A person, or "operator" for the user themselves. */
   const target = (orgId: string, ref: unknown): { id: string; name: string } => {
     if (typeof ref === "string" && (ref.trim() === OPERATOR || ref.trim().toLowerCase() === "the user")) return { id: OPERATOR, name: displayName(orgId, OPERATOR) };
@@ -192,75 +214,144 @@ export function orgTools(d: OrgToolDeps): Tool[] {
     ),
   };
 
+  const projectsRead: Tool = {
+    name: "sova_projects",
+    label: "Projects",
+    description:
+      "Every project registered on this host (never a mesh peer's): its name and id, the organization that places it (or none), its root, the repository it was cloned from, and whether it is archived. sova_org_project {project} reads one in full; sova_org_project add registers a folder, a session's folder or a clone for the user.",
+    promptSnippet: "every project registered on this host, in an organization or not",
+    parameters: obj({}),
+    execute: d.read(async () => guard(async () => ({ content: text(projectsList()), details: {} }))),
+  };
+
   // ---- sova_org_project: a read without op, an act with one ------------------------------------------
 
   const projectRead = d.read(async (p) =>
     guard(async () => {
-      const org = orgOf(p.org);
-      const project = resolveProject(org.id, p.project);
-      return { content: text(await projectView(org.id, project.id, p.items === true)), details: { org: org.id, project: project.id } };
+      const project = resolveAnyProject(p.project, p.org);
+      return { content: text(await projectView(project.id, p.items === true)), details: { ...(project.orgId ? { org: project.orgId } : {}), project: project.id } };
     }),
   );
+  /** add (§app.overseer/org-project-add): a folder or a session's folder, only on a card's folder row; a clone, narrowed by the route. */
+  async function addOp(p: any): Promise<Out> {
+    const given = (v: unknown) => v !== undefined && v !== null && v !== "";
+    if ([p.root, p.session, p.clone].filter(given).length !== 1) throw refuse("add takes exactly one of root (a folder), session (a session's folder) or clone {repo, parent, folder?}.");
+    const name = typeof p.name === "string" && p.name.trim() ? p.name.trim() : undefined;
+    if (given(p.clone)) {
+      if (given(p.org)) throw refuse("A clone lands in no organization; import it after.");
+      const cl = p.clone;
+      if (!cl || typeof cl !== "object" || typeof cl.repo !== "string" || typeof cl.parent !== "string") throw refuse("clone is {repo, parent, folder?}: parent is the folder it goes under, absolute or ~/….");
+      const folder = typeof cl.folder === "string" && cl.folder.trim() ? { folder: cl.folder.trim() } : {};
+      const r = await counted("org", async () => ok(await d.call("POST", "/api/projects", { clone: { repo: cl.repo, parent: expandHome(cl.parent), ...folder }, ...(name ? { name } : {}) }), "Cloning", 201));
+      return { content: text(`Cloned ${cl.repo.trim()} and added ${r.project.name} (${r.project.id}), in no organization: ${r.project.root}.`), details: { project: r.project.id } };
+    }
+    let raw: unknown = p.root;
+    let origin: "folder" | "session" = "folder";
+    if (given(p.session)) {
+      const s = await d.session?.(p.session);
+      if (!s) throw refuse(`No session ${d.sessionRef(p.session) || "named"} on this host (sova_list_sessions lists them).`);
+      if (s.target) throw refuse(`That session's folder is on ${s.target}; only a folder on this host becomes a project here.`);
+      raw = s.cwd;
+      origin = "session";
+    }
+    const asked = typeof raw === "string" ? expandHome(raw) : String(raw);
+    // No card at all: the card's sentence, before any other refusal.
+    if (!d.confirmed()) requireConfirm({ folders: [{ root: asked, orgId: null }] }, ADD_LEAD);
+    const org = given(p.org) ? orgOf(p.org) : null;
+    const f = await overseerFolder(raw);
+    if ("problem" in f) throw refuse(f.problem);
+    const row = d.confirmed()?.find((i) => i.kind === "folder" && i.id === f.root && (i.orgId ?? null) === (org?.id ?? null));
+    const useName = name ?? (row?.kind === "folder" ? row.name : undefined);
+    requireConfirm({ folders: [{ root: f.root, orgId: org?.id ?? null, ...(useName ? { name: useName } : {}) }] }, ADD_LEAD);
+    const body = { root: f.asked, ...(useName ? { name: useName } : {}) };
+    const r = await counted("org", async () =>
+      org ? ok(await d.call("POST", `${base(org.id)}/projects`, body), "Adding the project", 201) : ok(await d.call("POST", "/api/projects", { ...body, origin }), "Adding the project", 201),
+    );
+    const made = listProjects().find((x) => x.root === f.root);
+    const normalizedFrom = typeof r?.normalizedFrom === "string" ? r.normalizedFrom : undefined;
+    return {
+      content: text(`Added ${made?.name ?? useName ?? f.root} (${made?.id ?? "?"})${org ? ` in ${org.name}` : ""}: ${f.root}${normalizedFrom ? `, the checkout root of ${normalizedFrom}` : ""}.`),
+      details: { ...(org ? { org: org.id } : {}), ...(made ? { project: made.id } : {}) },
+    };
+  }
+  /** import (§app.overseer/org-project-add): a standalone project into an org, only on a card listing it. */
+  async function importOp(p: any): Promise<Out> {
+    const project = resolveAnyProject(p.project);
+    requireConfirm({ projects: [cardProject(project)] });
+    if (p.org === undefined || p.org === null || p.org === "") throw refuse("org is required: the organization to import it into.");
+    const org = orgOf(p.org);
+    await counted("org", async () => ok(await d.call("POST", `${base(org.id)}/projects/import`, { projectId: project.id, confirm: true }), "Importing the project"));
+    return { content: text(`${project.name} is in ${org.name} now: its history was committed to ${org.name}'s workspace repo.`), details: { org: org.id, project: project.id } };
+  }
   const projectAct = d.act("sova_org_project", async (p) =>
     guard(async () => {
-      const org = orgOf(p.org);
+      if (p.op === "add") return addOp(p);
+      if (p.op === "import") return importOp(p);
+      if (p.op !== "edit" && p.op !== "archive" && p.op !== "unarchive") throw refuse("op must be edit, archive, unarchive, add or import (leave op out to read the project).");
+      const project = resolveAnyProject(p.project, p.org);
+      const details = { ...(project.orgId ? { org: project.orgId } : {}), project: project.id };
       switch (p.op) {
-        case "add": {
-          const r = await counted("org", async () => ok(await d.call("POST", `${base(org.id)}/projects`, { name: p.name, root: p.root }), "Adding the project"));
-          const made = (r as OrgDetail).projectList.find((x) => x.name === String(p.name ?? "").trim() && x.root === String(p.root ?? "").trim()) ?? (r as OrgDetail).projectList.at(-1);
-          return { content: text(`Added the project ${made?.name} (${made?.id}) to ${org.name}, root ${made?.root}.`), details: { org: org.id, project: made?.id } };
-        }
         case "edit": {
-          const project = resolveProject(org.id, p.project);
-          const body: Record<string, unknown> = {};
-          if (p.name !== undefined) body.name = p.name;
-          if (p.root !== undefined) body.root = p.root;
-          if (p.owner_hidden !== undefined) body.ownerHidden = p.owner_hidden;
-          if (p.stakeholder !== undefined) body.stakeholder = p.stakeholder === null || String(p.stakeholder).trim().toLowerCase() === "none" ? null : resolvePerson(org.id, p.stakeholder).id;
-          if (!Object.keys(body).length) throw refuse("Nothing to change: give name, root, stakeholder or owner_hidden.");
-          await counted("org", async () => ok(await d.call("PATCH", projectBase(org.id, project.id), body), "Changing the project"));
+          const own: Record<string, unknown> = {};
+          if (p.name !== undefined) own.name = p.name;
+          if (p.root !== undefined) own.root = p.root;
+          const placement = p.stakeholder !== undefined || p.owner_hidden !== undefined;
+          if (!Object.keys(own).length && !placement) throw refuse("Nothing to change: give name, root, stakeholder or owner_hidden.");
+          const org = placement ? placedOrg(project, "stakeholder or owner's page") : null;
+          const stakeholder =
+            org && p.stakeholder !== undefined ? (p.stakeholder === null || String(p.stakeholder).trim().toLowerCase() === "none" ? null : resolvePerson(org.id, p.stakeholder)) : undefined;
+          await counted("org", async () => {
+            if (Object.keys(own).length) ok(await d.call("PATCH", projectsBase(project.id), own), "Changing the project");
+            if (org)
+              ok(
+                await d.call("PATCH", `${projectBase(org.id, project.id)}/placement`, { ...(stakeholder !== undefined ? { stakeholder: stakeholder?.id ?? null } : {}), ...(p.owner_hidden !== undefined ? { ownerHidden: p.owner_hidden } : {}) }),
+                "Changing the project's place in the organization",
+              );
+          });
           const done = [
-            ...(body.name !== undefined ? [`renamed to "${body.name}"`] : []),
-            ...(body.root !== undefined ? [`root ${body.root}`] : []),
-            ...(body.stakeholder !== undefined ? [body.stakeholder === null ? "no main stakeholder" : `main stakeholder ${resolvePerson(org.id, body.stakeholder).name}`] : []),
-            ...(body.ownerHidden !== undefined ? [body.ownerHidden ? "hidden from the owner's page" : "shown on the owner's page"] : []),
+            ...(own.name !== undefined ? [`renamed to "${own.name}"`] : []),
+            ...(own.root !== undefined ? [`root ${own.root}`] : []),
+            ...(stakeholder !== undefined ? [stakeholder === null ? "no main stakeholder" : `main stakeholder ${stakeholder.name}`] : []),
+            ...(p.owner_hidden !== undefined ? [p.owner_hidden ? "hidden from the owner's page" : "shown on the owner's page"] : []),
           ];
-          return { content: text(`${project.name}: ${done.join(", ")}.`), details: { org: org.id, project: project.id } };
+          return { content: text(`${project.name}: ${done.join(", ")}.`), details };
         }
         case "archive": {
-          const project = resolveProject(org.id, p.project);
-          requireConfirm({ projects: [{ orgId: org.id, id: project.id, name: project.name }] });
-          await counted("org", async () => ok(await d.call("POST", `${projectBase(org.id, project.id)}/archive`), "Archiving the project"));
-          return { content: text(`${project.name} archived: it left the Projects lists and its overseer is paused. Nothing was deleted; unarchive brings it back.`), details: { org: org.id, project: project.id } };
+          requireConfirm({ projects: [cardProject(project)] });
+          await counted("org", async () => ok(await d.call("POST", `${projectsBase(project.id)}/archive`), "Archiving the project"));
+          return { content: text(`${project.name} archived: it left the Projects lists and its overseer is paused. Nothing was deleted; unarchive brings it back.`), details };
         }
         case "unarchive": {
-          const project = resolveProject(org.id, p.project);
-          await counted("org", async () => ok(await d.call("POST", `${projectBase(org.id, project.id)}/unarchive`), "Unarchiving the project"));
-          return { content: text(`${project.name} is back, as it was set.`), details: { org: org.id, project: project.id } };
+          await counted("org", async () => ok(await d.call("POST", `${projectsBase(project.id)}/unarchive`), "Unarchiving the project"));
+          return { content: text(`${project.name} is back, as it was set.`), details };
         }
         default:
-          throw refuse("op must be add, edit, archive or unarchive (leave op out to read the project).");
+          throw refuse("op must be edit, archive, unarchive, add or import (leave op out to read the project).");
       }
     }),
   );
   const projectTool: Tool = {
     name: "sova_org_project",
-    label: "Org project",
+    label: "Project",
     description:
-      "Without op: read one project of an organization and its project overseer (level chosen and in force, watching, models, coding mode, extra instructions, allowances, held items, last actions), its gathering sessions, decisions and open conflicts, spec status, coding sessions, ideas and to-dos (items: true lists the open to-dos and ideas with ids), the last owner update and its cost. With op (only in a turn the user started): add {name, root}; edit {project, name?, root?, stakeholder? (a person, or none), owner_hidden?}; archive {project} (only in the turn a confirm card's click opened, listing the project; refused while anything in it is open, naming what); unarchive {project}.",
-    promptSnippet: "read a project and its overseer; or add, edit, archive, unarchive a project",
+      "Without op: read one registered project (in an organization or not) and its project overseer (level chosen and in force, watching, models, coding mode, extra instructions, allowances, held items, last actions), its coding sessions, ideas and to-dos (items: true lists the open to-dos and ideas with ids) and its cost; for a project an organization places, also its gathering sessions, decisions and open conflicts, spec status and the last owner update. With op (only in a turn the user started): edit {project, name?, root?, stakeholder? (a person, or none), owner_hidden?} (stakeholder and owner_hidden only for a project an organization places); archive {project} (only in the turn a confirm card's click opened, listing the project; refused while anything in it is open, naming what); unarchive {project}; " +
+      "add {root | session | clone, org?, name?}: register a folder of this host (root: absolute or ~/…) or a session's folder (session), standalone or with org placed in that organization, only in the turn a confirm card's click opened, listing it as a folder row {root, org?, name?}; or clone {repo, parent, folder?} (https:// with no user or password in the URL, ssh://, user@host:path or GitHub's owner/name; parent absolute or ~/…; standalone; no card); " +
+      "import {project, org}: move a standalone project into an organization (its history is committed to the org's workspace repo; it can't be undone), only in the turn a confirm card's click opened, listing the project.",
+    promptSnippet: "read a project and its overseer; or edit, archive, unarchive, add (folder, session's folder, clone) or import a project",
     parameters: obj(
       {
-        op: str("Omit to read. add | edit | archive | unarchive", { enum: ["add", "edit", "archive", "unarchive"] }),
-        org: str("Organization id or exact name."),
-        project: str("Project id or exact name (read, edit, archive, unarchive)."),
+        op: str("Omit to read. edit | archive | unarchive | add | import", { enum: ["edit", "archive", "unarchive", "add", "import"] }),
+        org: str("Optional: the organization that places it, id or exact name (narrows a name). add: the organization to place it in (omit: standalone). import: the organization to import it into."),
+        project: str("Project id or exact name (all but add)."),
         items: bool("Read: also list the open to-dos and ideas with their ids."),
-        name: str("add, edit: the project's name."),
-        root: str("add, edit: its folder, an absolute path on this host."),
+        name: str("edit, add: the project's name."),
+        root: str("edit: its folder, an absolute path on this host. add: the folder to add, absolute or ~/…."),
+        session: str("add: a session of this host whose folder becomes the project."),
+        clone: obj({ repo: str("https://…, ssh://…, user@host:path or GitHub's owner/name."), parent: str("The folder it is cloned under, absolute or ~/…."), folder: str("Optional: the new folder's name.") }, ["repo", "parent"]),
         stakeholder: str("edit: the main stakeholder, a person's id or exact name, or none."),
         owner_hidden: bool("edit: hide the project from the owner's page (true) or show it (false)."),
       },
-      ["org"],
+      [],
     ),
     execute: (toolCallId: string, params: any, signal?: AbortSignal, onUpdate?: any, ctx?: any) =>
       params?.op === undefined || params?.op === null || params?.op === "" ? projectRead(toolCallId, params, signal, onUpdate, ctx) : projectAct(toolCallId, params, signal, onUpdate, ctx),
@@ -272,11 +363,12 @@ export function orgTools(d: OrgToolDeps): Tool[] {
     name: "sova_org",
     label: "Organization",
     description:
-      "Change an organization (only in a turn the user started): create {name} (its workspace repo goes in the default folder), rename {org, name}, about {org, text} (the About text every project overseer of the org reads; blank removes it; at most 4,000 characters), revert_about {org, at} (the About history line's time, from sova_orgs {org, about: true}), commit {org} (Commit Now: commit the workspace repo, and push when it has a remote). Never attach, detach, or set a remote: those are the user's.",
-    promptSnippet: "create or rename an org, write or revert its About text, commit its workspace",
+      "Change an organization (only in a turn the user started): create {name} (its workspace repo goes in the default folder), rename {org, name}, about {org, text} (the About text every project overseer of the org reads; blank removes it; at most 4,000 characters), revert_about {org, at} (the About history line's time, from sova_orgs {org, about: true}), commit {org} (Commit Now: commit the workspace repo, and push when it has a remote), attach {dir} (Attach a Restored Repo: a workspace repo's folder, absolute or ~/…; an org another host holds is never taken over: only the user attaches it anyway, on the Organizations page), detach {org} (it leaves this host and its owner's link stops; only in the turn a confirm card's click opened, listing the org in items.orgs). Never set or remove a remote: that is the user's.",
+    promptSnippet: "create, rename, attach or detach an org, write or revert its About text, commit its workspace",
     parameters: obj(
       {
-        op: str("create | rename | about | revert_about | commit", { enum: ["create", "rename", "about", "revert_about", "commit"] }),
+        op: str("create | rename | about | revert_about | commit | attach | detach", { enum: ["create", "rename", "about", "revert_about", "commit", "attach", "detach"] }),
+        dir: str("attach: the workspace repo's folder, absolute or ~/…."),
         org: str("Organization id or exact name (all but create)."),
         name: str("create, rename: the name."),
         text: str("about: the whole new About text."),
@@ -289,6 +381,20 @@ export function orgTools(d: OrgToolDeps): Tool[] {
         if (p.op === "create") {
           const r = (await counted("org", async () => ok(await d.call("POST", "/api/orgs", { name: p.name }), "Creating the organization"))) as OrgDetail;
           return { content: text(`Created the organization ${r.name} (${r.id}); its workspace repo is ${r.dir}.`), details: { org: r.id } };
+        }
+        if (p.op === "attach") {
+          // §app.overseer/org-project-add: never a takeover (the route ignores confirm for the Overseer's call).
+          if (typeof p.dir !== "string" || !p.dir.trim()) throw refuse("dir is required: the workspace repo's folder, absolute or ~/….");
+          const dir = expandHome(p.dir);
+          const guarded = guardedFolderProblem(dir);
+          if (guarded) throw refuse(guarded);
+          const r = (await counted("org", async () => {
+            const res = await d.call("POST", "/api/orgs/attach", { dir });
+            if (res.status === 409 && res.json?.code === "held")
+              throw refuse(`Not attached: ${typeof res.json.error === "string" ? res.json.error : "another host holds it."} Only the user can attach it anyway, taking it over from that host, on the Organizations page (sova_navigate {page: "orgs"}).`);
+            return ok(res, "Attaching", 201);
+          })) as OrgDetail;
+          return { content: text(`Attached ${r.name} (${r.id}) from ${r.dir}. Its project overseers wait at L0 until the user sets their level here, and links are not in the repo: the user sends new ones.`), details: { org: r.id } };
         }
         const org = orgOf(p.org);
         switch (p.op) {
@@ -315,8 +421,13 @@ export function orgTools(d: OrgToolDeps): Tool[] {
               details: { org: org.id },
             };
           }
+          case "detach": {
+            requireConfirm({ orgs: [{ id: org.id, name: org.name }] });
+            await counted("org", async () => ok(await d.call("DELETE", base(org.id)), "Detaching"));
+            return { content: text(`Detached ${org.name}: it left this host, and its owner's link, if it had one, was turned off. Its workspace repo is untouched.`), details: { org: org.id } };
+          }
           default:
-            throw refuse("op must be create, rename, about, revert_about or commit.");
+            throw refuse("op must be create, rename, about, revert_about, commit, attach or detach.");
         }
       }),
     ),
@@ -425,7 +536,7 @@ export function orgTools(d: OrgToolDeps): Tool[] {
     parameters: obj(
       {
         op: str("reconcile | promote | resolve | route | freeze", { enum: ["reconcile", "promote", "resolve", "route", "freeze"] }),
-        org: str("Organization id or exact name."),
+        org: str("Optional: the organization that places it, id or exact name."),
         project: str("Project id or exact name."),
         ids: { type: "array", items: { type: "string" }, description: "promote: decision ids (sova_org_project lists them)." },
         conflict: str("resolve, route: the conflict id (cf_…)."),
@@ -434,12 +545,12 @@ export function orgTools(d: OrgToolDeps): Tool[] {
         to: str("route: a person's id or exact name, or operator."),
         frozen: bool("freeze: true to freeze the spec, false to unfreeze."),
       },
-      ["op", "org", "project"],
+      ["op", "project"],
     ),
     execute: d.act("sova_project_decisions", async (p) =>
       guard(async () => {
-        const org = orgOf(p.org);
-        const project = resolveProject(org.id, p.project);
+        const project = resolveAnyProject(p.project, p.org);
+        const org = placedOrg(project, "decisions");
         const at = projectBase(org.id, project.id);
         switch (p.op) {
           case "reconcile": {
@@ -521,8 +632,8 @@ export function orgTools(d: OrgToolDeps): Tool[] {
       guard(async () => {
         switch (p.op) {
           case "start": {
-            const org = orgOf(p.org);
-            const project = resolveProject(org.id, p.project);
+            const project = resolveAnyProject(p.project, p.org);
+            const org = placedOrg(project, "roster to gather with");
             const list = Array.isArray(p.to) ? p.to : [p.to];
             if (!list.length || list.some((x: unknown) => typeof x !== "string" || !x.trim())) throw refuse("to is a person, operator, or a list of two or more people.");
             const to = list.map((x: string) => target(org.id, x));
@@ -598,10 +709,12 @@ export function orgTools(d: OrgToolDeps): Tool[] {
               const pv = listPreviews().find((v) => v.id === (p.preview as string).trim());
               if (!pv) throw refuse("No such preview.");
               if (!p.person) throw refuse("person is required with preview.");
-              const who = resolvePerson(pv.orgId, p.person);
-              requireConfirm({ people: [personOf(pv.orgId, who)] });
+              const pvOrg = orgOfProject(pv.projectId);
+              if (!pvOrg) throw refuse("That preview's project is in no organization here, so there is no roster to send it to.");
+              const who = resolvePerson(pvOrg, p.person);
+              requireConfirm({ people: [personOf(pvOrg, who)] });
               const r = await counted("org", async () =>
-                ok(await d.call("POST", "/api/outreach/send", { orgId: pv.orgId, projectId: pv.projectId, personId: who.id, link: { kind: "preview", preview: pv.id }, ...(note ? { note } : {}) }), "Sending the link"),
+                ok(await d.call("POST", "/api/outreach/send", { orgId: pvOrg, projectId: pv.projectId, personId: who.id, link: { kind: "preview", preview: pv.id }, ...(note ? { note } : {}) }), "Sending the link"),
               );
               if (r?.outcome === "sent") return { content: text(`Sent ${who.name} the preview link on WhatsApp.`), details: { person: who.id } };
               throw refuse(`Not sent: ${typeof r?.why === "string" ? r.why : "the send failed."}`);
@@ -667,7 +780,7 @@ export function orgTools(d: OrgToolDeps): Tool[] {
     parameters: obj(
       {
         op: str("start | settings | run_now | clear | idea | todo | message | code", { enum: ["start", "settings", "run_now", "clear", "idea", "todo", "message", "code"] }),
-        org: str("Organization id or exact name."),
+        org: str("Optional: the organization that places it, id or exact name."),
         project: str("Project id or exact name."),
         autonomy: str("settings: L0 | L1 | L2 | L3."),
         model: str('settings: its model "provider/model", or "" for the default; code: the coding session\'s model.'),
@@ -691,14 +804,13 @@ export function orgTools(d: OrgToolDeps): Tool[] {
         prompt: str("code: the first prompt (default: the item's text)."),
         item: str("code: a to-do (td_…) or idea (§…) of the project to start from, and link it."),
       },
-      ["op", "org", "project"],
+      ["op", "project"],
     ),
     execute: d.act("sova_project_overseer", async (p) =>
       guard(async () => {
-        const org = orgOf(p.org);
-        const project = resolveProject(org.id, p.project);
-        const at = `${projectBase(org.id, project.id)}/overseer`;
-        const details = { org: org.id, project: project.id };
+        const project = resolveAnyProject(p.project, p.org);
+        const at = `${projectsBase(project.id)}/overseer`;
+        const details = { ...(project.orgId ? { org: project.orgId } : {}), project: project.id };
         switch (p.op) {
           case "start": {
             const r = await counted("org", async () => ok(await d.call("POST", at), "Starting the overseer"));
@@ -717,7 +829,7 @@ export function orgTools(d: OrgToolDeps): Tool[] {
             return { content: text(`${project.name}'s overseer is looking now.`), details };
           }
           case "clear": {
-            requireConfirm({ projects: [{ orgId: org.id, id: project.id, name: project.name }] });
+            requireConfirm({ projects: [cardProject(project)] });
             const r = await counted("org", async () => ok(await d.call("POST", `${at}/clear`), "Clearing"));
             return { content: text(`Cleared ${project.name}'s overseer: a new conversation [${project.name} overseer](sova://s/${r.id}); its settings, notes, ideas and to-dos stay.`), details };
           }
@@ -812,11 +924,33 @@ export function orgTools(d: OrgToolDeps): Tool[] {
     ),
   };
 
-  return [orgsRead, projectTool, personRead, orgTool, rosterTool, ownerTool, decisionsTool, gatherTool, poTool];
+  return [orgsRead, projectsRead, projectTool, personRead, orgTool, rosterTool, ownerTool, decisionsTool, gatherTool, poTool];
 }
 
 /** A confirm card's person and project rows (§app.overseer/confirm): null when nothing on this host matches. */
 export const orgConfirmLookup = {
+  org(ref: string): Extract<SovaConfirmItem, { kind: "org" }> | null {
+    try {
+      const o = resolveOrg(ref);
+      return { kind: "org", id: o.id, name: o.name };
+    } catch {
+      return null;
+    }
+  },
+  /** A folder the Overseer may add, as its checkout root, into an org attached here (or none). */
+  async folder(root: string, org: string | null, name?: string): Promise<Extract<SovaConfirmItem, { kind: "folder" }> | null> {
+    let o: { id: string; name: string } | null = null;
+    if (org) {
+      try {
+        o = resolveOrg(org);
+      } catch {
+        return null;
+      }
+    }
+    const f = await overseerFolder(root);
+    if ("problem" in f) return null;
+    return { kind: "folder", id: f.root, ...(f.asked !== f.root ? { asked: f.asked } : {}), ...(o ? { orgId: o.id, orgName: o.name } : {}), ...(name ? { name: cut(name, 80) } : {}) };
+  },
   person(org: string, ref: string): Extract<SovaConfirmItem, { kind: "person" }> | null {
     try {
       const o = resolveOrg(org);
@@ -826,11 +960,10 @@ export const orgConfirmLookup = {
       return null;
     }
   },
-  project(org: string, ref: string): Extract<SovaConfirmItem, { kind: "project" }> | null {
+  project(org: string | null, ref: string): Extract<SovaConfirmItem, { kind: "project" }> | null {
     try {
-      const o = resolveOrg(org);
-      const p = resolveProject(o.id, ref);
-      return { kind: "project", id: p.id, orgId: o.id, name: p.name, orgName: o.name };
+      const p = resolveAnyProject(ref, org ?? undefined);
+      return { kind: "project", id: p.id, name: p.name, ...(p.orgId ? { orgId: p.orgId, orgName: resolveOrg(p.orgId).name } : {}) };
     } catch {
       return null;
     }

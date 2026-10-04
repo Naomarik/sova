@@ -1,11 +1,12 @@
 import { children, createContext, createEffect, createMemo, createSignal, For, Match, on, onCleanup, Show, Switch, useContext, type JSX } from "solid-js";
-import type { TmpAttachment, TranscriptItem } from "../../shared/protocol";
+import type { EntryMeta, HandoffRunInfo, TmpAttachment, TranscriptItem } from "../../shared/protocol";
 import type { BatonMark } from "../../shared/baton";
 import { wrapupRowIds } from "../lib/wrapup-rows";
 import { blockStreams, type LiveBlock, type LiveEntry, type LiveState, type LiveUserState } from "../lib/live";
 import { agoTime, prettyJson, shortModel, stampTime, thousands, tildePath } from "../lib/format";
 import { useMinuteNow } from "../lib/minute-clock";
-import { isObj, str, timestampOf, toolCallArgs, toolResultView } from "../lib/message";
+import { isObj, resultDetails as detailsOf, str, toolCallArgs, toolResultView } from "../lib/message";
+import { toolContent, type ToolSource } from "../lib/tool-content";
 import { stripPastedPaths } from "../lib/path-attachments";
 import { home } from "../lib/ui-state";
 import { ensureRendered, entryIdOf, JUMP_EVENT, loadRow, registerRows, registerTranscript } from "../lib/jump";
@@ -43,10 +44,14 @@ import { rowProvider } from "../lib/subagent-limit";
 import { normalizeShowChangesDetails, SHOW_CHANGES_TOOL } from "../../pi-config/extensions/show-changes/details";
 import { Banner, Chip, Icon } from "./ui";
 import { BriefRow, CardRevision, ConfirmCard, DeckCard, LinkCard, linkDetails, NavigateGo, OverseerChoiceRow, useOverseerThread } from "./OverseerCards";
-import { cardFold, confirmAnswer, confirmDetails, detailsOf, isBriefText } from "../lib/overseer";
+import { cardFold, confirmAnswer, confirmDetails, isBriefText } from "../lib/overseer";
 import { CARD_TOOL, LEGACY_CONFIRM_TOOL, normalizeCardDetails } from "../../shared/overseer-card";
 import { MessageActions, type MessageActionItem } from "./MessageActions";
 import { type MessageStrip, sameStrip, stripLabel, stripsByRow } from "../lib/message-actions";
+
+/** Whose transcript the rows inside are (lib/tool-content): a tool card asks it for the content its
+    row doesn't carry. Absent: the rows carry all they draw. */
+export const ToolSourceContext = createContext<ToolSource | null>(null);
 
 /**
  * What a view hangs under each delivered message. The thread decides
@@ -367,6 +372,30 @@ export function InfoRow(props: { children: JSX.Element }) {
   );
 }
 
+/** A /compact-handoff run (§chat.slash-commands/compact-handoff-row): an info row whose icon is
+    the live dot while the fork writes; the result entry (same id) replaces it in place. */
+function HandoffRunRow(props: { run: HandoffRunInfo; text: string }) {
+  return (
+    <div class="info-row" role="note">
+      <span class="info-row-text">
+        <Show when={props.run.status === "running"} fallback={<Icon name="info" small />}>
+          {/* The explain card's 16px slot, so the dot sits where the icon would. */}
+          <span class="explain-card-live" aria-hidden="true">
+            <span class="live-dot" />
+          </span>
+        </Show>
+        <Show when={props.run.status === "failed"}>
+          <Chip tone="error">Failed</Chip>
+        </Show>
+        <Show when={props.run.status === "interrupted"}>
+          <Chip tone="warn">Interrupted</Chip>
+        </Show>
+        <span>{props.text}</span>
+      </span>
+    </div>
+  );
+}
+
 function Unknown(props: { raw: unknown }) {
   const type = () => (isObj(props.raw) ? str(props.raw.type) : undefined) ?? "unknown";
   return (
@@ -388,9 +417,9 @@ function Unknown(props: { raw: unknown }) {
 const strings = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []);
 
 /** A compaction entry: where it happened in the thread, with its summary on demand. */
-function Compaction(props: { raw: Record<string, unknown> }) {
-  const tokens = () => (typeof props.raw.tokensBefore === "number" ? props.raw.tokensBefore : null);
-  const details = () => (isObj(props.raw.details) ? props.raw.details : {});
+function Compaction(props: { meta: EntryMeta }) {
+  const tokens = () => (typeof props.meta.tokensBefore === "number" ? props.meta.tokensBefore : null);
+  const details = () => (isObj(props.meta.details) ? props.meta.details : {});
   const read = () => strings(details().readFiles);
   const changed = () => strings(details().modifiedFiles);
   return (
@@ -405,7 +434,7 @@ function Compaction(props: { raw: Record<string, unknown> }) {
         </span>
       </summary>
       <div class="disclosure-body">
-        <div class="compaction-summary">{str(props.raw.summary) ?? ""}</div>
+        <div class="compaction-summary">{props.meta.summary ?? ""}</div>
         <Show when={read().length > 0}>
           <p class="toolcard-section-label">Files read</p>
           <ul class="compaction-files">
@@ -435,15 +464,10 @@ export function TurnError(props: { message: string }) {
 }
 
 /** A transcript row that ends a turn on an error (the `${entryId}:stop` info row): the error's own
-    words sit in its text, its producer's model on the row. */
+    words sit in its text, its producer's model on the row. The server words it "Error…" for a
+    stop reason of "error" and "Aborted…" otherwise. */
 export function isErroredTurnStop(it: TranscriptItem): boolean {
-  return (
-    it.kind === "info" &&
-    it.id.endsWith(":stop") &&
-    isObj(it.raw) &&
-    isObj(it.raw.message) &&
-    (it.raw.message as { stopReason?: unknown }).stopReason === "error"
-  );
+  return it.kind === "info" && it.id.endsWith(":stop") && (it.text ?? "").startsWith("Error");
 }
 
 /**
@@ -544,7 +568,7 @@ export function HistoryItems(props: {
   /** A show_changes call's checked details, once it succeeded (§chat.changes/show-changes-card). */
   const showChangesOf = (callId: string | undefined) => {
     const r = callId ? results().get(callId) : undefined;
-    return r && !toolResultView(r.raw, r.text).isError ? normalizeShowChangesDetails(detailsOf(r.raw)) : undefined;
+    return r && !toolResultView(r).isError ? normalizeShowChangesDetails(detailsOf(r)) : undefined;
   };
   const calls = createMemo(() => {
     const ids = new Set<string>();
@@ -601,9 +625,9 @@ export function HistoryItems(props: {
     const failedOf = (it: TranscriptItem): boolean => {
       if (it.kind === "tool-call") {
         const r = it.toolCallId ? results().get(it.toolCallId) : undefined;
-        return !!r && toolResultView(r.raw, r.text).isError;
+        return !!r && toolResultView(r).isError;
       }
-      if (it.kind === "tool-result") return !(it.toolCallId && callIds.has(it.toolCallId)) && toolResultView(it.raw, it.text).isError;
+      if (it.kind === "tool-result") return !(it.toolCallId && callIds.has(it.toolCallId)) && toolResultView(it).isError;
       return false;
     };
     // A run is folded by ONE key that outlives its rows: the first row's id, which the list keeps
@@ -669,6 +693,7 @@ export function HistoryItems(props: {
    * Every index below is the row's index in `rows()`, never in the built slice.
    */
   const scroller = props.whole ? null : useContext(ScrollerContext);
+  const toolSource = useContext(ToolSourceContext);
   const rowAt = createMemo(() => {
     const at = new Map<string, number>();
     rows().forEach((r, i) => at.set(r.id, i));
@@ -807,14 +832,14 @@ export function HistoryItems(props: {
             style={{ "--entry-est": rowEstimate(item, ...shownImages(item), !!chain(), foldedRun(chain()), !!chain()?.first) }}
           >
             <Show when={foldable(chain()) ? chain() : null}>{(run) => <ChainFold run={run()} />}</Show>
-            <Switch fallback={<Unknown raw={item.raw} />}>
+            <Switch fallback={<Unknown raw={item.entry} />}>
               <Match when={item.kind === "user" && isBriefText(item.text)}>
-                <BriefRow text={item.text ?? ""} time={timestampOf(item.raw)} />
+                <BriefRow text={item.text ?? ""} time={item.at} />
               </Match>
               <Match when={item.kind === "user"}>
                 <UserTurn
                   text={item.text ?? ""}
-                  time={timestampOf(item.raw)}
+                  time={item.at}
                   overseer={overseerSent().has(entryIdOf(item.id))}
                   sender={batonSent().has(entryIdOf(item.id)) ? nameOf(batonSent().get(entryIdOf(item.id))!) : undefined}
                   fromSession={sessionSent().get(entryIdOf(item.id))}
@@ -845,20 +870,20 @@ export function HistoryItems(props: {
                 {(mark) => <OverseerChoiceRow title={mark().title} answer={mark().answer} />}
               </Match>
               <Match when={item.kind === "worktree-merge" && item.worktreeMerge}>
-                {(merge) => <WorktreeMergeCard merge={merge()} time={timestampOf(item.raw)} />}
+                {(merge) => <WorktreeMergeCard merge={merge()} time={item.at} />}
               </Match>
               <Match when={item.kind === "wake" && item.wake}>
-                {(wake) => <WakeCard nudge={wake()} text={item.text ?? ""} time={timestampOf(item.raw)} />}
+                {(wake) => <WakeCard nudge={wake()} text={item.text ?? ""} time={item.at} />}
               </Match>
               <Match when={item.kind === "topic" && item.topic}>
-                {(batch) => <TopicCard batch={batch()} time={timestampOf(item.raw)} />}
+                {(batch) => <TopicCard batch={batch()} time={item.at} />}
               </Match>
               <Match when={item.kind === "assistant-text"}>
                 <AssistantText
                   text={item.text ?? ""}
                   author={shortModel(item.model) ?? props.author}
                   model={item.model}
-                  time={timestampOf(item.raw)}
+                  time={item.at}
                   showHead={
                     rows()[index() - 1]?.kind !== "assistant-text" || rows()[index() - 1]?.model !== item.model
                   }
@@ -880,13 +905,16 @@ export function HistoryItems(props: {
                 {(explain) => <ExplainCard explain={explain()} />}
               </Match>
               <Match when={item.kind === "report" && item.report?.team}>
-                {(team) => <TeamMessageCard report={item.report!} team={team()} time={timestampOf(item.raw)} attachments={item.attachments} />}
+                {(team) => <TeamMessageCard report={item.report!} team={team()} time={item.at} attachments={item.attachments} />}
               </Match>
               <Match when={item.kind === "report" && item.report}>
                 {(report) => <ReportRow report={report()} attachments={item.attachments} />}
               </Match>
-              <Match when={item.kind === "info" && isObj(item.raw) && item.raw.type === "compaction" && item.raw}>
-                {(raw) => <Compaction raw={raw()} />}
+              <Match when={item.kind === "info" && item.handoffRun}>
+                {(run) => <HandoffRunRow run={run()} text={item.text ?? ""} />}
+              </Match>
+              <Match when={item.kind === "info" && item.meta?.type === "compaction" && item.meta}>
+                {(meta) => <Compaction meta={meta()} />}
               </Match>
               <Match when={item.kind === "info"}>
                 <>
@@ -910,7 +938,7 @@ export function HistoryItems(props: {
                 {(() => {
                   const view = () => {
                     const r = item.toolCallId ? results().get(item.toolCallId) : undefined;
-                    return r ? toolResultView(r.raw, r.text) : undefined;
+                    return r ? toolResultView(r) : undefined;
                   };
                   const status = (): ToolStatus => {
                     const v = view();
@@ -919,12 +947,12 @@ export function HistoryItems(props: {
                   };
                   const resultDetails = () => {
                     const r = item.toolCallId ? results().get(item.toolCallId) : undefined;
-                    return r ? detailsOf(r.raw) : undefined;
+                    return r ? detailsOf(r) : undefined;
                   };
                   // A legacy card (from before card ids): read-only, answered by the rule it had then.
                   const confirm = () =>
                     item.text === LEGACY_CONFIRM_TOOL && status() !== "error"
-                      ? (confirmDetails(resultDetails()) ?? confirmDetails(toolCallArgs(item.raw, item.toolCallId)))
+                      ? (confirmDetails(resultDetails()) ?? confirmDetails(toolCallArgs(item)))
                       : null;
                   const card = () => (item.text === CARD_TOOL && status() === "done" ? cardRow(item) : undefined);
                   /** A made or ended link reads as a card naming its members (§app.overseer/links-tools);
@@ -932,7 +960,13 @@ export function HistoryItems(props: {
                   const linked = () =>
                     (item.text === "sova_link" || item.text === "sova_unlink") && status() === "done" ? linkDetails(resultDetails()) : null;
                   /** session_send and a profile's sova_create_session read as cards (§chat.profiles/delivery). */
-                  const profileCard = () => profileToolCard(item.text, status(), toolCallArgs(item.raw, item.toolCallId), resultDetails(), view()?.output);
+                  /** The arguments and output its rows don't carry, asked for by the call's row id. */
+                  const lazy = createMemo(() => {
+                    const r = item.toolCallId ? results().get(item.toolCallId) : undefined;
+                    if (!toolSource || !(item.tool?.lazy || r?.tool?.lazy)) return undefined;
+                    return toolContent.handle(toolSource, item.id, { resultId: r?.id, callId: item.toolCallId, size: (item.tool?.bytes ?? 0) + (r?.tool?.bytes ?? 0) });
+                  });
+                  const profileCard = () => profileToolCard(item.text, status(), toolCallArgs(item), resultDetails(), view()?.output);
                   return (
                     <Show
                       when={!card()}
@@ -953,7 +987,10 @@ export function HistoryItems(props: {
                       fallback={
                     <ToolCard
                       name={item.text ?? "tool"}
-                      args={toolCallArgs(item.raw, item.toolCallId)}
+                      args={toolCallArgs(item)}
+                      summary={item.tool?.summary}
+                      stats={(item.text === "edit" || item.text === "write") && item.toolCallId ? results().get(item.toolCallId)?.tool?.stats : undefined}
+                      lazy={lazy()}
                       details={resultDetails()}
                       status={status()}
                       output={view()?.output}
@@ -984,11 +1021,13 @@ export function HistoryItems(props: {
                 {/* Paired results render inside their call's card; orphans get their own. */}
                 <Show when={!item.toolCallId || !calls().has(item.toolCallId)}>
                   {(() => {
-                    const view = toolResultView(item.raw, item.text);
+                    const view = toolResultView(item);
+                    const lazy = toolSource && item.tool?.lazy ? toolContent.handle(toolSource, item.id, { resultId: item.id, size: item.tool.bytes }) : undefined;
                     return (
                       <ToolCard
                         name="result"
                         args={undefined}
+                        lazy={lazy}
                         status={view.isError ? "error" : "done"}
                         output={view.output}
                         images={item.images}
@@ -1060,6 +1099,18 @@ function LiveBlockView(props: { block: LiveBlock; live: LiveState; author: strin
             return newest.rev > own.rev ? null : newest;
           };
           const linked = () => ((b().name === "sova_link" || b().name === "sova_unlink") && status() === "done" ? linkDetails(tool()?.details) : null);
+          // A finished call keeps what it streamed for the settled row that replaces this one, so a
+          // card open now stays drawn while the fetch asks the session file (lib/tool-content).
+          const toolSource = useContext(ToolSourceContext);
+          createEffect(() => {
+            const t = tool();
+            if (!toolSource || !t || (t.status !== "done" && t.status !== "error")) return;
+            const args = b().args ?? t.args;
+            toolContent.seed(toolSource, b().id, {
+              ...(args !== undefined ? { args } : {}),
+              result: { output: t.output, isError: t.status === "error", ...(t.details !== undefined ? { details: t.details } : {}) },
+            });
+          });
           /** An align result that changed an alignment: its card, as soon as the result lands. */
           const aligned = () => (b().name === "align" && status() === "done" ? alignRowFromDetails(tool()?.details) : undefined);
           return (
@@ -1180,6 +1231,13 @@ export function LiveEntries(props: {
     <>
       <For each={props.live.entries}>
         {(entry: LiveEntry) => (
+          /* What the last row read (ThreadScroller `spot`) needs of a live message: the entry it was
+             written as, once its end has named it, or that it is a prompt no start has taken yet. */
+          <div
+            class="live-entry"
+            data-entry-read={entry.entryId}
+            data-queued={entry.kind === "user" && !entry.started && !entry.entryId ? "" : undefined}
+          >
           <Switch>
             <Match when={entry.kind === "user" && entry}>
               {(e) => (
@@ -1272,6 +1330,7 @@ export function LiveEntries(props: {
               )}
             </Match>
           </Switch>
+          </div>
         )}
       </For>
       <Show when={hidden()?.calls || hidden()?.thinking ? hidden() : null}>
@@ -1358,6 +1417,8 @@ export function ThreadScroller(props: {
   restore?: ScrollSpot | null;
   /** Told where the transcript was when it goes away, and whenever a scroll comes to rest. */
   onSpot?(spot: ScrollSpot): void;
+  /** This visit's rows have come (its hello or snapshot): until then, rows kept from the last visit. */
+  current?: boolean;
 }) {
   const paneId = usePaneId();
   let el!: HTMLElement;
@@ -1370,6 +1431,7 @@ export function ThreadScroller(props: {
   let lastGap = 0;
   const toBottom = () => {
     el.scrollTop = el.scrollHeight;
+    scrolledTop = el.scrollTop;
     lastGap = 0;
   };
   const resumeFollowing = () => {
@@ -1417,7 +1479,11 @@ export function ThreadScroller(props: {
   };
   /** The view's width at the last scroll event. */
   let scrolledWidth = 0;
+  /** Where the view was at the last scroll event, or the last scroll to the end. */
+  let scrolledTop = 0;
   const onScroll = () => {
+    const up = el.scrollTop < scrolledTop;
+    scrolledTop = el.scrollTop;
     if (jumpScrolling) jumpScrolled();
     // A scroll that moved the held row is the user's (the browser's anchoring keeps it in place).
     if (held && el.scrollTop !== held.at) {
@@ -1435,6 +1501,12 @@ export function ThreadScroller(props: {
     }
     const near = lastGap < FOLLOW_PX;
     if (near && performance.now() < jumpingUntil) return;
+    // Only the view moving up stops following. Content landing below a following view (a queued
+    // message drawn again after a switch back) lands in a task before the frame that settles it,
+    // and the browser's scroll anchoring can move the view down meanwhile: that event finds the
+    // end far below, and is not the reader leaving it. Back to the end instead. A disclosure the
+    // reader just opened is theirs to look at, so following is re-read from where the view is.
+    if (follow && !near && !up && !toggled) return settleSoon();
     if (near === follow) return;
     follow = near;
     setAway(near ? null : props.count);
@@ -1446,7 +1518,9 @@ export function ThreadScroller(props: {
    * new position instead of pulling the bottom back into view. Marked at the summary's click, which
    * comes before the open state changes (the `toggle` event is queued and may come after the frame
    * that lays the growth out), and again at `toggle`, where a lazy body is built; held for two
-   * frames after the later of the two.
+   * frames after the later of the two. Only a click starts it (a key on a summary clicks it too),
+   * and only the clicked disclosure's `toggle` marks it again: one drawn open (an alignment's
+   * approach) fires `toggle` as its row is built, and that is new content, not the user's.
    */
   let toggled = false;
   let toggleFrame = 0;
@@ -1455,12 +1529,132 @@ export function ThreadScroller(props: {
     cancelAnimationFrame(toggleFrame);
     toggleFrame = requestAnimationFrame(() => (toggleFrame = requestAnimationFrame(() => (toggled = false))));
   };
+  /** The disclosure whose summary was clicked last: its `toggle`, whenever it comes, is the reader's. */
+  let clicked: Element | null = null;
   const onClick = (e: MouseEvent) => {
-    if ((e.target as Element | null)?.closest?.("summary")) markToggle();
+    const summary = (e.target as Element | null)?.closest?.("summary");
+    if (!summary) return;
+    clicked = summary.parentElement;
+    markToggle();
+  };
+  const onToggle = (e: Event) => {
+    if (e.target !== clicked) return;
+    clicked = null;
+    markToggle();
   };
   onCleanup(() => cancelAnimationFrame(toggleFrame));
+  /**
+   * The last row read, for a view left at the end (`props.restore`), until this visit's rows have
+   * come: rows that land after it were added while the reader was away, so the view stops on it
+   * with "N new" instead of following past them. Dropped once the reader scrolls or touches the
+   * transcript, which then goes where they take it.
+   */
+  let readTo = props.restore?.follow && props.restore.lastRow ? props.restore : null;
+  /** The reader has scrolled or touched the transcript since it opened. */
+  let touched = false;
+  const onTouch = () => {
+    readTo = null;
+    touched = true;
+  };
+  const rowOf = (id: string) => el.querySelector<HTMLElement>(`.thread > .entry[data-entry="${CSS.escape(id)}"]`);
+  const drawn = (row: Element) => row.getBoundingClientRect().height > 0;
+  /** The last row read, by its row id or by the entry id a live row knew (an assistant message's
+      rows are `<entry id>:<block>`): its last drawn row. */
+  const lastRowOf = (id: string): HTMLElement | null => {
+    const exact = rowOf(id);
+    if (exact) return exact;
+    const entry = entryIdOf(id);
+    const rows = [...el.querySelectorAll<HTMLElement>(`.thread > .entry:is([data-entry="${CSS.escape(entry)}"], [data-entry^="${CSS.escape(entry)}:"])`)];
+    return rows.filter(drawn).at(-1) ?? rows.at(-1) ?? null;
+  };
+  const textOf = (row: Element) => (row.querySelector(".message-user .message-text")?.textContent ?? "").replace(/\s+/g, " ").trim();
+  /**
+   * The row the reader had read to (`readTo`): its last row read, then the live messages drawn
+   * below it, now rows of the transcript. First the ones with no entry yet when the reader left
+   * (a reply still streaming), the entries right after it; then each queued message, the next
+   * prompt when its text is the same (it was delivered while away; one still queued is a live row
+   * again, below every row).
+   */
+  const readRow = (spot: NonNullable<typeof readTo>): HTMLElement | null => {
+    let row = spot.lastRow ? lastRowOf(spot.lastRow) : null;
+    if (!row) return null;
+    const groups: HTMLElement[][] = [];
+    for (let next = row.nextElementSibling; next; next = next.nextElementSibling) {
+      if (!(next instanceof HTMLElement) || !next.matches(".entry") || !drawn(next)) continue;
+      const last = groups.at(-1);
+      if (last && entryIdOf(last[0]!.dataset.entry ?? "") === entryIdOf(next.dataset.entry ?? "")) last.push(next);
+      else groups.push([next]);
+    }
+    let i = 0;
+    for (let n = spot.unnamed ?? 0; n > 0 && i < groups.length; n--) row = groups[i++]!.at(-1)!;
+    for (const text of spot.queued ?? []) {
+      const group = groups[i];
+      if (group && textOf(group[0]!) === text.replace(/\s+/g, " ").trim()) row = groups[i++]!.at(-1)!;
+    }
+    return row;
+  };
+  /** The rows drawn below `row`: what "N new" counts after the last row read. */
+  const rowsAfter = (row: Element) => {
+    let n = 0;
+    for (let next = row.nextElementSibling; next; next = next.nextElementSibling) if (next.matches(".entry") && next.getBoundingClientRect().height > 0) n++;
+    return n;
+  };
+  /** The row the view stopped on, until this visit's rows have come. Rows kept from the last visit
+      count whole, this visit's from its hello's first row (`props.count`), so "N new" is counted
+      again then. Meanwhile it is still the last row read: a view replaced before then (a chat
+      that turns out to be written elsewhere opens as a watch) stops on it again. */
+  let heldRow: string | null = null;
+  /** The last row read's bottom at the bottom of the view, unless the reader has moved it since. */
+  const placeAtRead = (row: HTMLElement) => {
+    if (touched || !row.isConnected) return;
+    el.scrollTop += row.getBoundingClientRect().bottom - el.getBoundingClientRect().bottom;
+    lastGap = el.scrollHeight - el.scrollTop - el.clientHeight;
+  };
+  /** With rows below the last row read: its bottom at the bottom of the view, not following. Not
+      when they're short enough that the view would still be within FOLLOW_PX of the end. */
+  const holdAtRead = (): boolean => {
+    if (!readTo) return false;
+    const row = readRow(readTo);
+    if (!row) return false;
+    const added = rowsAfter(row);
+    if (!added) return false;
+    const id = row.dataset.entry ?? "";
+    readTo = null;
+    const top = el.scrollTop + row.getBoundingClientRect().bottom - el.getBoundingClientRect().bottom;
+    if (el.scrollHeight - top - el.clientHeight < FOLLOW_PX) return false;
+    el.scrollTop = top;
+    lastGap = el.scrollHeight - el.scrollTop - el.clientHeight;
+    follow = false;
+    heldRow = id;
+    setAway(Math.max(0, props.count - added));
+    // The rows around it are drawn at their real heights in the next frame: place it again then.
+    requestAnimationFrame(() => requestAnimationFrame(() => placeAtRead(row)));
+    return true;
+  };
+  createEffect(
+    on(
+      () => props.current,
+      (current) => {
+        if (!current || !(readTo || heldRow)) return;
+        requestAnimationFrame(() => {
+          holdAtRead();
+          readTo = null;
+          const row = heldRow && !follow ? rowOf(heldRow) : null;
+          if (row) {
+            setAway(Math.max(0, props.count - rowsAfter(row)));
+            placeAtRead(row);
+          }
+          heldRow = null;
+        });
+      },
+    ),
+  );
+
   /** Content was added or changed: back to the bottom while following. */
   const settle = () => {
+    // Before following: a scroll event between the rows landing and this frame may have read the
+    // view they grew as the reader's own.
+    if (holdAtRead()) return;
     if (!follow) return;
     if (toggled) return onScroll();
     toBottom();
@@ -1533,7 +1727,28 @@ export function ThreadScroller(props: {
    */
   const spot = (): ScrollSpot | null => {
     if (!el?.isConnected) return null;
-    if (follow) return { follow: true };
+    if (follow) {
+      // The last row drawn, a live one included (LiveEntries): one whose entry is known by that
+      // entry's id; the live messages below it with none yet are counted, the queued ones by text.
+      const rows = el.querySelectorAll<HTMLElement>(".thread > :is(.entry, .live-entry)");
+      let unnamed = 0;
+      const queued: string[] = [];
+      let lastRow: string | undefined;
+      for (let i = rows.length - 1; i >= 0 && lastRow === undefined; i--) {
+        const row = rows[i]!;
+        if (row.matches(".entry")) {
+          if (drawn(row)) lastRow = row.dataset.entry;
+          continue;
+        }
+        // Laid out as its contents: drawn when anything in it is.
+        if (![...row.querySelectorAll("*")].some(drawn)) continue;
+        if (row.dataset.entryRead) lastRow = row.dataset.entryRead;
+        else if (row.dataset.queued !== undefined) queued.unshift(textOf(row));
+        else unnamed++;
+      }
+      if (lastRow === undefined) return { follow: true };
+      return { follow: true, lastRow, ...(unnamed ? { unnamed } : {}), ...(queued.length ? { queued } : {}) };
+    }
     const top = el.getBoundingClientRect().top;
     for (const entry of el.querySelectorAll<HTMLElement>(".thread > .entry")) {
       const box = entry.getBoundingClientRect();
@@ -1544,7 +1759,7 @@ export function ThreadScroller(props: {
   };
   let spotTimer: ReturnType<typeof setTimeout> | undefined;
   const reportSpot = () => {
-    const s = spot();
+    const s = heldRow && !touched ? { follow: true as const, lastRow: heldRow } : spot();
     if (s) props.onSpot?.(s);
   };
   onCleanup(() => {
@@ -1603,7 +1818,7 @@ export function ThreadScroller(props: {
           observer.observe(node, { childList: true, subtree: true, characterData: true });
           // A jump (lib/jump) takes the view away from the bottom: stop following, as a scroll up would.
           node.addEventListener("click", onClick, true);
-          node.addEventListener("toggle", markToggle, true);
+          node.addEventListener("toggle", onToggle, true);
           viewResized?.observe(node);
           node.addEventListener("scrollend", () => (jumpScrolling = false));
           node.addEventListener(JUMP_EVENT, () => {
@@ -1619,7 +1834,10 @@ export function ThreadScroller(props: {
             registerTranscript(path, node);
             onCleanup(() => registerTranscript(path, null));
           }
-          queueMicrotask(() => restoreSpot() || toBottom());
+          for (const type of ["wheel", "touchstart", "pointerdown", "keydown"]) node.addEventListener(type, onTouch, { passive: true });
+          // Kept rows refetched in the background (lib/recent-preload) may already hold rows added
+          // after the last row read.
+          queueMicrotask(() => restoreSpot() || (toBottom(), holdAtRead()));
         }}
         onScroll={() => {
           onScroll();

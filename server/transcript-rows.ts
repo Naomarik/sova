@@ -15,7 +15,7 @@ import { activeBranch, normalizeEntries, parseLines } from "./transcript";
 type Entry = ReturnType<typeof parseLines>[number];
 
 /** One file's branch, normalized, with each row's JSON made once. */
-interface Rows {
+export interface Rows {
   /** Size and mtime the file had when it was read: a different one reads it again. */
   stamp: string;
   branch: Entry[];
@@ -27,13 +27,27 @@ interface Rows {
   branchIds: Set<string>;
   /** Row id → index, made on first use. */
   at?: Map<string, number>;
+  /** What keeping it costs, roughly: the file's bytes (its parsed branch) plus its rows' JSON. */
+  weight: number;
 }
 
-/** Files kept parsed: a view scrolling up, or prefetching, asks for one file many times running. */
+/** Files kept parsed: a view scrolling up, prefetching, or opening tool cards asks for one file many
+    times running. At most KEEP files and CACHE_BYTES of weight; the newest is kept whatever its size. */
 const KEEP = 3;
+const CACHE_BYTES = 24 * 1024 * 1024;
 const cache = new Map<string, Rows>();
 
-async function rowsOf(path: string): Promise<Rows> {
+function trim(): void {
+  let total = 0;
+  for (const r of cache.values()) total += r.weight;
+  while (cache.size > 1 && (cache.size > KEEP || total > CACHE_BYTES)) {
+    const oldest = cache.keys().next().value!;
+    total -= cache.get(oldest)!.weight;
+    cache.delete(oldest);
+  }
+}
+
+export async function rowsOf(path: string): Promise<Rows> {
   const st = await stat(path);
   const stamp = `${st.size}:${st.mtimeMs}`;
   const had = cache.get(path);
@@ -47,10 +61,12 @@ async function rowsOf(path: string): Promise<Rows> {
   const items = normalizeEntries(branch);
   const json = items.map((it) => JSON.stringify(it));
   const ids = (list: Entry[]) => new Set(list.map((e) => e.id).filter((id): id is string => typeof id === "string"));
-  const rows: Rows = { stamp, branch, items, json, sizes: json.map((s) => s.length), fileIds: ids(entries), branchIds: ids(branch) };
+  const sizes = json.map((s) => s.length);
+  const weight = st.size + sizes.reduce((n, x) => n + x, 0);
+  const rows: Rows = { stamp, branch, items, json, sizes, fileIds: ids(entries), branchIds: ids(branch), weight };
   cache.delete(path);
   cache.set(path, rows);
-  while (cache.size > KEEP) cache.delete(cache.keys().next().value!);
+  trim();
   return rows;
 }
 
@@ -137,49 +153,34 @@ export async function transcriptRows(
 /** Rows whose text a pane reads: an input's preview and title, a change row's "Model: x", a tool
     call's name. Every other row's text is only drawn by the thread. */
 const LIGHT_TEXT = new Set<TranscriptItem["kind"]>(["user", "wake", "info", "tool-call"]);
-/** A tool call's arguments are kept only as their short strings (a spawn's name). */
+/** A tool call's line is kept this long. */
 const LIGHT_ARG_CHARS = 200;
-/** A custom entry's data is kept when this small (a mode entry), else dropped. */
-const LIGHT_DATA_CHARS = 2000;
-
-const isRecord = (x: unknown): x is Record<string, unknown> => typeof x === "object" && x !== null && !Array.isArray(x);
-
-function lightRaw(raw: unknown, it: TranscriptItem): unknown {
-  if (!isRecord(raw)) return raw;
-  const out: Record<string, unknown> = {};
-  for (const k of ["type", "id", "parentId", "timestamp", "customType", "tokensBefore"]) if (raw[k] !== undefined) out[k] = raw[k];
-  if (typeof raw.summary === "string") out.summary = raw.summary.slice(0, 400);
-  if (raw.data !== undefined && JSON.stringify(raw.data).length <= LIGHT_DATA_CHARS) out.data = raw.data;
-  const m = raw.message;
-  if (isRecord(m)) {
-    const msg: Record<string, unknown> = {};
-    for (const k of ["role", "usage", "stopReason", "provider", "model", "customType", "toolCallId", "toolName", "isError"]) if (m[k] !== undefined) msg[k] = m[k];
-    if (it.kind === "tool-call" && Array.isArray(m.content)) {
-      const call = m.content.find((c) => isRecord(c) && c.type === "toolCall" && c.id === it.toolCallId);
-      if (isRecord(call)) {
-        const args = isRecord(call.arguments)
-          ? Object.fromEntries(Object.entries(call.arguments).filter(([, v]) => typeof v === "string" && v.length <= LIGHT_ARG_CHARS))
-          : undefined;
-        msg.content = [{ type: "toolCall", id: call.id, name: call.name, arguments: args }];
-      }
-    }
-    out.message = msg;
-  }
-  return out;
-}
+/** A compaction's summary is kept this long. */
+const LIGHT_SUMMARY_CHARS = 400;
 
 /**
  * A row as the session pane reads it (the Session tab's changes and fill, the Timeline's inputs,
  * turns, markers and chapters), without what only the thread draws: a reply's text, a tool's
- * output, image bytes (each image stays, as ""), a report's body and preview, the raw entry's
- * content. Every row stays, in order, so a turn's reply and tool counts and its time are the same
- * as on the whole branch.
+ * content, image bytes (each image stays, as ""), a report's body and preview, an unknown row's
+ * entry, a compaction's details. Every row stays, in order, so a turn's reply and tool counts and
+ * its time are the same as on the whole branch.
  */
 export function lightRow(it: TranscriptItem): TranscriptItem {
-  const out: TranscriptItem = { ...it, raw: lightRaw(it.raw, it) };
+  const out: TranscriptItem = { ...it };
   if (!LIGHT_TEXT.has(it.kind)) delete out.text;
   if (it.images) out.images = it.images.map(() => "");
   if (it.report) out.report = { ...it.report, body: "", preview: "" };
+  if (it.meta && (it.meta.details !== undefined || (it.meta.summary?.length ?? 0) > LIGHT_SUMMARY_CHARS)) {
+    const { details: _details, ...meta } = it.meta;
+    if (meta.summary !== undefined) meta.summary = meta.summary.slice(0, LIGHT_SUMMARY_CHARS);
+    out.meta = meta;
+  }
+  if (it.tool) {
+    const { args: _args, output: _output, details: _details, ...tool } = it.tool;
+    if (tool.summary !== undefined) tool.summary = tool.summary.slice(0, LIGHT_ARG_CHARS);
+    out.tool = tool;
+  }
+  delete out.entry;
   return out;
 }
 

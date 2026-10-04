@@ -1,4 +1,4 @@
-import type { PeerState } from "./protocol";
+import type { PeerStateView } from "./mesh-access";
 
 // Mesh version resync (§mesh.peers/resync): this host deploys the exact build it booted from to a
 // peer that is behind it. Types of this host's own /api/mesh/resync* routes (main listener only,
@@ -64,7 +64,7 @@ export interface ResyncSelf {
 export interface ResyncHost {
   id: string;
   label: string;
-  state: PeerState;
+  state: PeerStateView;
   /** The peer's commit: from its hello, else its details; absent when it says none. */
   commit?: string;
   relation: ResyncRelation;

@@ -9,8 +9,8 @@
 (def op {:by "operator"})
 (defn start [] (h/start! (h/new-host) "item" sid {:org-id "o1" :project-id "pr1" :id "g_1" :idea-id "§gap/invoicing"}))
 (defn watch-at [x level & {:keys [paused archived]}]
-  (h/send! x sid :link/moved {:from "watch/o1/pr1" :statechart "watch" :states [:watch]
-                              :exported {:settings {:autonomy level} :paused (boolean paused) :roster-active true :archived (boolean archived)}}))
+  (h/send! x sid :link/moved {:from "watch/pr1" :statechart "watch" :states [:watch]
+                              :exported {:settings {:autonomy level} :paused (boolean paused) :archived (boolean archived)}}))
 (defn baton [x n states & {:as ex}]
   (h/send! x sid :link/moved {:from (str "baton/o1/b" n) :statechart "baton" :states (into [:baton] states)
                               :exported (merge {:owner {:overseer-of "pr1"} :decisions [] :created-at n} ex)}))
@@ -18,7 +18,7 @@
   (h/send! x sid :link/moved {:from (str "decision/o1/pr1/" id) :statechart "decision" :states (into [:decision (keyword state)] states)
                               :exported (merge {:state state :author-owns-area true :statement (str "S " id)} ex)}))
 (defn build [x n states & {:as ex}]
-  (h/send! x sid :link/moved {:from (str "build/o1/pr1/c" n) :statechart "build" :states (into [:build] states)
+  (h/send! x sid :link/moved {:from (str "build/pr1/c" n) :statechart "build" :states (into [:build] states)
                               :exported (merge {:decisions ["d1"] :created-at n} ex)}))
 (defn drives [x] (filter #(= :drive (:op %)) (h/directives x sid)))
 

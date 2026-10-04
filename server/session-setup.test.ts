@@ -248,3 +248,31 @@ test("a failure is never served from the cache", async () => {
   assert.equal(found.state, "ok");
   assert.equal(loaderCalls, 1);
 });
+
+test("two sessions in one folder share one read, and each gets only its own off rows and switches", async () => {
+  const dir = fresh({ "AGENTS.md": "ctx\n", "s/SKILL.md": "skill\n" });
+  let loaderCalls = 0;
+  const a = sessionFile(dir);
+  const b = sessionFile(dir);
+  const deps: SetupDeps = {
+    runtime: () => null,
+    loader: () => {
+      loaderCalls++;
+      return Promise.resolve(loadout({ context: [{ path: join(dir, "AGENTS.md") }], skills: [{ name: "s", filePath: join(dir, "s", "SKILL.md") }] }));
+    },
+    switches: (path) =>
+      path === a ? { off: { v: 1, offContext: [join(dir, "AGENTS.md")], offSkills: ["s"] }, toggleable: true } : { off: null, toggleable: false },
+  };
+  const sa = await S.getSessionSetup(a, {}, deps);
+  const sb = await S.getSessionSetup(b, {}, deps);
+  const again = await S.getSessionSetup(a, {}, deps);
+  assert.equal(loaderCalls, 1, "the folder's lists are read once");
+  assert.ok(sa.state === "ok" && sb.state === "ok" && again.state === "ok");
+  if (sa.state !== "ok" || sb.state !== "ok" || again.state !== "ok") return;
+  assert.deepEqual([sa.context[0]!.off, sa.skills[0]!.off, sa.toggleable], [true, true, true]);
+  assert.deepEqual([sb.context[0]!.off, sb.skills[0]!.off, sb.toggleable], [undefined, undefined, false]);
+  // The overlay never leaked into the cached answer: a reads off again, b still reads on.
+  assert.deepEqual(again, sa);
+  const sb2 = await S.getSessionSetup(b, {}, deps);
+  assert.deepEqual(sb2, sb);
+});

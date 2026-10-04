@@ -12,8 +12,10 @@ import { join } from "node:path";
 export type PortOwner = { pid: number; cwd: string } | "none" | "unknown";
 
 const LISTEN = "0A";
-/** A local address that accepts loopback connections: 127.0.0.0/8, ::1, or any address. */
+/** A local address that accepts loopback connections: 127.0.0.0/8, ::1, or any address (IPv4-mapped ones too, below). */
 const LOOPBACK_OR_ANY = new Set(["00000000", "00000000000000000000000000000000", "00000000000000000000000001000000"]);
+/** The first 96 bits of an IPv4-mapped IPv6 address (::ffff:a.b.c.d) as /proc writes them. */
+const V4_MAPPED = "0000000000000000FFFF0000";
 
 /** The socket inodes listening on `port` whose address the preview can reach (loopback or any), from /proc/net/tcp{,6} text. Pure. */
 export function listeningInodes(tables: string[], port: number): Set<string> {
@@ -25,8 +27,10 @@ export function listeningInodes(tables: string[], port: number): Set<string> {
       if (f.length < 10) continue;
       const [addr, p] = (f[1] ?? "").split(":");
       if (p !== hexPort || f[3] !== LISTEN || !addr) continue;
-      // 127.x.x.x is little-endian in /proc: its last byte pair is 7F.
-      if (LOOPBACK_OR_ANY.has(addr) || (addr.length === 8 && addr.endsWith("7F"))) out.add(f[9]!);
+      // 127.x.x.x is little-endian in /proc: its last byte pair is 7F. A dual-stack socket (a JVM's, bound to
+      // "localhost") shows it IPv4-mapped in tcp6: ::ffff:127.x.x.x, or ::ffff:0.0.0.0 for any.
+      const v4 = addr.length === 32 && addr.startsWith(V4_MAPPED) ? addr.slice(24) : addr;
+      if (LOOPBACK_OR_ANY.has(v4) || (v4.length === 8 && v4.endsWith("7F"))) out.add(f[9]!);
     }
   return out;
 }

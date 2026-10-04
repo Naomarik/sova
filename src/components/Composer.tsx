@@ -358,6 +358,15 @@ export function Composer(props: {
     if (fromPointer ? loginOpenAtPress : loginOpen()) menu()?.close();
     else menu()?.show("login", loginLabel);
   };
+  // ---- Sandbox shield: the fourth trigger, for the sandbox panel (§chat.composer/sandbox-shield).
+  let shield: HTMLButtonElement | undefined;
+  const shieldOpen = () => !!shield && !!menu()?.open() && menu()?.anchor() === shield;
+  let shieldOpenAtPress = false;
+  const toggleShield = (fromPointer: boolean) => {
+    if (disabled() || !shield || !props.sandbox) return;
+    if (fromPointer ? shieldOpenAtPress : shieldOpen()) menu()?.close();
+    else menu()?.show("sandbox", shield);
+  };
 
   /** The subagents status row: what's working, or — once idle — what the session
       has, so the pane stays one click away after every worker settles. Its ring draws the
@@ -1338,11 +1347,22 @@ export function Composer(props: {
           </span>
           <Show when={sandboxBadge(props.sandbox?.state() ?? null)}>
             {(b) => (
-              <span class={`composer-sandbox composer-sandbox-${b().tone}`} title={b().label}>
-                <Icon name="shield" small />
+              <button
+                ref={shield}
+                type="button"
+                class={`composer-sandbox composer-sandbox-${b().tone}`}
+                aria-haspopup="menu"
+                aria-controls={paneId("composer-flyout")}
+                aria-expanded={shieldOpen() ? "true" : "false"}
+                aria-disabled={disabled() ? "true" : undefined}
+                title={b().label}
+                onPointerDown={() => (shieldOpenAtPress = shieldOpen())}
+                onClick={(e) => toggleShield(e.detail > 0)}
+              >
+                <Icon name={b().icon} small />
                 <Show when={b().word}>{(w) => <span aria-hidden="true">{w()}</span>}</Show>
                 <span class="visually-hidden">{b().label}</span>
-              </span>
+              </button>
             )}
           </Show>
           <Show when={props.mode}>{(c) => <ModeMenu control={c()} />}</Show>

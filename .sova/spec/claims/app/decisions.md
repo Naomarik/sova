@@ -298,7 +298,9 @@ appends (one line each).
 - The server **pushes** signal, tag and turn-error (`turnError`, §app.overseer/seen) changes: the read-only watch socket has a session-less
   feed (`/ws/watch?feed=sessions`) that sends a full snapshot of every session's marks on every connect (even an empty one),
   then one message per change (a signal, tag or turn error set, cleared or pruned), and backfill progress
-  while a backfill runs.
+  while a backfill runs. The same socket also carries the LLM calls in flight
+  (`llm_inflight`, §app.insights/llm-inflight): a snapshot on every connect, then one frame per
+  change of the total or its coverage; it never prompts a list read.
 - Changes are sent when a store is written or a pane attaches, and the server compares every 5 s
   while a feed is connected, so a turn that starts in a TUI clears its mark.
 - The same comparison sends `list_changed` (no payload; never on connect) when a session appears
@@ -308,7 +310,11 @@ appends (one line each).
   (read from git in the background, §chat.worktrees/readiness). The sidebar then reads the list again: at once if its last such read was at least a
   second ago, otherwise once, a second after that read, however many more arrive meanwhile. It
   also reads the list after every reconnect of the feed, since the list may have changed while
-  the socket was down. The feed adds no polling of its own. So a session started in a TUI reaches
+  the socket was down. The feed adds no polling of its own. The in-flight count adds none in the
+  browser either: on the server, while any feed (or a peer's count feed) is connected, one 5 s
+  timer re-judges the live records it already holds (a stale heartbeat, a dead pid) and re-reads
+  the live-record folder every 30 s, or every 5 s where the folder can't be watched; it never
+  reads the list. So a session started in a TUI reaches
   the sidebar within seconds, without a reload.
 - The sidebar holds the feed open while it is mounted. Once the snapshot arrives, the feed's
   signals, tags and turn error replace the list's on this server's rows, matched by session path (rows from mesh peers keep their list

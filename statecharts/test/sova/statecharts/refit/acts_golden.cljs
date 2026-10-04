@@ -8,7 +8,7 @@
    ["baton" ":baton/abilities"] {}
    ["baton" ":baton/close"] {:card? true, :confirm? true, :hold true, :needs "L1", :people-facing true, :tool "sova_close_gathering", :what? true}
    ["baton" ":baton/extend"] {}
-   ["project" ":outreach/send"] {:card? true, :confirm? true, :hold true, :hours? true, :needs "L1", :people-facing true, :tool "sova_send_to_person", :what? true}
+   ["placement" ":outreach/send"] {:card? true, :confirm? true, :hold true, :hours? true, :needs "L1", :people-facing true, :tool "sova_send_to_person", :what? true}
    ["baton" ":baton/goal-done"] {}
    ["baton" ":baton/hand-to"] {:hours? true}
    ["baton" ":baton/handoff"] {:card? true, :hours? true, :people-facing true}
@@ -50,7 +50,7 @@
    ["org" ":org/rename"] {}
    ["org" ":owner/set"] {}
    ["org" ":person/add"] {}
-   ["org" ":project/add"] {}
+   ["org" ":project/place"] {}
    ["person" ":hold/approve"] {:correction true, :needs "L0"}
    ["person" ":hold/cancel"] {:correction true, :needs "L0"}
    ["person" ":person/approve"] {:confirm? true, :hold true, :needs "L2", :people-facing true, :tool "sova_roster", :what? true}
@@ -58,23 +58,29 @@
    ["person" ":person/edit"] {}
    ["person" ":person/leave"] {:card? true, :people-facing true}
    ["person" ":person/revert"] {:card? true, :people-facing true}
-   ["project" ":baton/start"] {:card? true, :confirm? true, :counts "gather", :hold true, :hours? true, :needs "L1", :people-facing true, :tool "sova_start_gathering", :what? true}
+   ["placement" ":baton/start"] {:card? true, :confirm? true, :counts "gather", :hold true, :hours? true, :needs "L1", :people-facing true, :tool "sova_start_gathering", :what? true}
    ["project" ":build/start"] {:code-facing true, :confirm? true, :counts "create", :hold true, :needs "L3", :tool "sova_create_session", :what? true}
-   ["project" ":gap/file"] {:needs "L0", :tool "sova_idea"}
+   ["placement" ":gap/file"] {:needs "L0", :tool "sova_idea"}
+   ["placement" ":hold/approve"] {:correction true, :needs "L0"}
+   ["placement" ":hold/cancel"] {:correction true, :needs "L0"}
+   ["placement" ":placement/edit"] {}
    ["project" ":hold/approve"] {:correction true, :needs "L0"}
    ["project" ":hold/cancel"] {:correction true, :needs "L0"}
    ["project" ":overseer/clear"] {:card? true, :people-facing true}
    ["project" ":overseer/start"] {}
-   ["project" ":owner-update/post"] {:confirm? true, :hold true, :needs "L1", :people-facing true, :tool "sova_owner_update", :what? true}
+   ["placement" ":owner-update/post"] {:confirm? true, :hold true, :needs "L1", :people-facing true, :tool "sova_owner_update", :what? true}
    ["project" ":preview/start"] {:confirm? true, :hold true, :needs "L1", :people-facing true, :tool "sova_preview", :what? true}
    ["project" ":project/archive"] {:card? true, :people-facing true}
    ["project" ":project/edit"] {}
    ["project" ":project/unarchive"] {}
    ["project" ":services/down"] {:needs "L0", :tool "sova_project_verbs"}
    ["project" ":services/run"] {:needs "L3", :tool "sova_project_verbs"}
+   ["project" ":services/share"] {:confirm? true, :hold true, :needs "L1", :people-facing true, :tool "sova_project_verbs", :what? true}
+   ["project" ":verbs/onboard"] {:code-facing true, :confirm? true, :counts "create", :hold true, :needs "L3", :tool "sova_project_verbs", :what? true}
+   ["runtime" ":runtime/approve"] {}
    ["project" ":session/prompt"] {:code-facing true, :confirm? true, :counts "prompt", :hold true, :needs "L3", :tool "sova_send", :what? true}
-   ["project" ":spec/freeze"] {}
-   ["project" ":stakeholder/set"] {}
+   ["placement" ":spec/freeze"] {}
+   ["placement" ":stakeholder/set"] {}
    ["reconciler" ":correct/clear-failed"] {:correction true, :needs "L1", :tool "sova_correct"}
    ["reconciler" ":decision/promote"] {:code-facing true, :confirm? true, :counts "promote", :hold true, :needs "L2", :tool "sova_promote", :what? true}
    ["reconciler" ":draft/rewrite"] {}

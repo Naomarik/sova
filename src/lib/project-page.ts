@@ -4,7 +4,7 @@
 
 import { AUTONOMY_MEANING, type Autonomy, type ProjectOverseerCaps } from "../../shared/project-overseer";
 import { gapWords, holdWords, soonWords } from "./project-overseer-view";
-import type { ProjectTab } from "./orgs-route";
+import type { ProjectTab } from "./projects-route";
 
 const count = (n: number, one: string, many = `${one}s`): string => `${n} ${n === 1 ? one : many}`;
 
@@ -34,6 +34,8 @@ export interface SummaryCounts {
   decisions?: { total: number; ready: number };
   /** Open ideas: the gaps the overseer filed, and the rest. */
   ideas?: { gaps: number; other: number };
+  /** Where the ideas list is: Requirements while an org places the project, else Overview. */
+  ideasTab?: ProjectTab;
   todos?: number;
 }
 
@@ -49,7 +51,7 @@ export function summaryChips(c: SummaryCounts): SummaryChip[] {
     out.push({ id: "decisions", label: count(c.decisions.total, "decision"), tab: "requirements", section: "project-decisions", title: `${c.decisions.ready} ready to promote` });
   if (c.ideas !== undefined) {
     const { gaps, other } = c.ideas;
-    out.push({ id: "ideas", label: other ? `${count(gaps, "gap")} · ${count(other, "idea")}` : count(gaps, "gap"), tab: "requirements", section: "project-ideas", title: "Open gaps and ideas" });
+    out.push({ id: "ideas", label: !gaps && c.ideasTab === "overview" ? count(other, "idea") : other ? `${count(gaps, "gap")} · ${count(other, "idea")}` : count(gaps, "gap"), section: "project-ideas", title: "Open gaps and ideas", tab: c.ideasTab ?? "requirements" });
   }
   if (c.todos !== undefined) out.push({ id: "todos", label: count(c.todos, "to-do"), tab: "overview", section: "project-todos", title: "Open to-do items" });
   return out;
@@ -84,14 +86,15 @@ export type LimitColumn = (typeof LIMIT_COLUMNS)[number];
 export const LIMIT_COLUMN_LABEL: Record<LimitColumn, string> = { message: "Per message", day: "Per day", once: "At once" };
 
 type CapKey = keyof ProjectOverseerCaps;
-/** One row per limit; a column the limit doesn't have is absent. */
-export const LIMIT_ROWS: readonly { label: string; cells: Partial<Record<LimitColumn, CapKey>> }[] = [
-  { label: "Gathering sessions started", cells: { message: "gatherPerTurn", day: "gatherPerDay" } },
-  { label: "Decisions promoted", cells: { message: "promotePerTurn", day: "promotePerDay" } },
+/** One row per limit; a column the limit doesn't have is absent. `placed`: a limit on what only an
+    organization's tools do (gatherings, promotion), shown only while one places the project. */
+export const LIMIT_ROWS: readonly { label: string; cells: Partial<Record<LimitColumn, CapKey>>; placed?: true }[] = [
+  { label: "Gathering sessions started", cells: { message: "gatherPerTurn", day: "gatherPerDay" }, placed: true },
+  { label: "Decisions promoted", cells: { message: "promotePerTurn", day: "promotePerDay" }, placed: true },
   { label: "Coding sessions started", cells: { message: "createPerTurn", day: "createPerDay" } },
   { label: "Prompts to coding sessions", cells: { message: "promptsPerTurn", day: "promptsPerDay" } },
   { label: "Looks", cells: { day: "unattendedPerDay" } },
-  { label: "Gathering sessions open", cells: { once: "gatheringsOpen" } },
+  { label: "Gathering sessions open", cells: { once: "gatheringsOpen" }, placed: true },
   { label: "Coding sessions running", cells: { once: "codingRunning" } },
 ];
 

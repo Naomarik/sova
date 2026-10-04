@@ -4,7 +4,7 @@ import type { OrgProject, Person } from "../shared/orgs";
 import type { AttentionItem } from "../shared/protocol";
 import { allBatons, sessionPathOf } from "./baton";
 import { hostOf, isOrgHostOpen, type SessionInfo } from "./org-engine";
-import { isoOf, operatorName, orgDir, OrgError, readIndex, readOrg, readProjects, readRoster } from "./orgs";
+import { isoOf, operatorName, orgDir, OrgError, placementSid, readIndex, readOrg, readProjects, readRoster } from "./orgs";
 
 /**
  * The decision index (§app.requirements/decisions), read from the statecharts (q1: no decisions.json, no
@@ -135,7 +135,7 @@ export function readDecisionStore(orgId: string, projectId: string): DecisionSto
   const lastRun: ReconcileRun | null = run
     ? { at: isoOr(run.at), compared: typeof run.compared === "number" ? run.compared : 0, found: typeof run.found === "number" ? run.found : 0, ...(str(run.error) ? { error: str(run.error) } : {}) }
     : null;
-  const lastPromotedSpec = latestHash(rec, host.data(`project/${orgId}/${projectId}`)?.spec);
+  const lastPromotedSpec = latestHash(rec, host.data(placementSid(orgId, projectId))?.spec);
   return { decisions, lastRun, ...(lastPromotedSpec !== undefined ? { lastPromotedSpec } : {}) };
 }
 
@@ -307,7 +307,7 @@ export function conflictAttention(): AttentionItem[] {
           kind: "conflict-to-operator",
           since: Date.parse(c.createdAt) || 0,
           detail: `Settle a conflict in ${p.name}: ${who(a)} and ${who(b)} disagree about ${a?.area ?? b?.area ?? c.areaKey}.`,
-          href: `#/orgs/${encodeURIComponent(o.id)}/projects/${encodeURIComponent(p.id)}`,
+          href: `#/projects/${encodeURIComponent(p.id)}`,
           org: { orgId: o.id, orgName, projectId: p.id, projectName: p.name, ...(p.archived ? { projectArchived: true as const } : {}) },
         });
       }

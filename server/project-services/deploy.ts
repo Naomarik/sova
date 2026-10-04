@@ -1,7 +1,8 @@
 import { createHash, randomBytes } from "node:crypto";
-import { mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
-import { dirname, isAbsolute, join } from "node:path";
+import { accessSync, constants, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { delimiter, dirname, isAbsolute, join, resolve } from "node:path";
 import {
+  deployStepsOf,
   isDeployVerb,
   ordered,
   type AnyVerb,
@@ -18,10 +19,10 @@ import {
   type VerbResult,
 } from "../../shared/project-contract";
 import { projectOf } from "../project-root";
-import { approveDeployAtRef, definitionAt, deployApprovalOf, deployHashOf, deployReview, mainBranchOf, readDeployApprovals, targetStanding } from "./deploy-trust";
+import { approveDeployAtRef, definitionAt, deployApprovalOf, deployHashOf, deployReview, mainBranchOf, readDeployApprovals, resolveHost, targetStanding } from "./deploy-trust";
 import { callerTag, realGit, type Caller, type ProjectEngine } from "./engine";
 import { servicesRoot } from "./store";
-import { defHashOf, isApproved } from "./trust";
+import { defHashOf, hostVars, isApproved } from "./trust";
 
 /**
  * The deploy verbs (§app.project-services/deploy): a target of the definition's `deploy`, never an
@@ -37,6 +38,8 @@ type Git = typeof realGit;
 export const deployRoot = () => join(servicesRoot(), "deploy");
 const recordsDir = () => join(deployRoot(), "records");
 const notesFile = () => join(deployRoot(), "notes.json");
+const checkoutsDir = () => join(deployRoot(), "checkouts");
+const checksDir = () => join(deployRoot(), "checks");
 const requestsFile = () => join(deployRoot(), "requests.json");
 
 const rootKey = (root: string) => createHash("sha256").update(root).digest("hex").slice(0, 12);
@@ -295,12 +298,15 @@ export class Deployer {
     switch (run.verb) {
       case "deploy.status":
         return this.status(run);
+      case "deploy.check":
+        return this.check(run);
       default:
         throw new DeployFailure("unsupported", `${run.verb} is not built yet`);
     }
   }
 
   private result(run: DRun, failure?: DeployFailure): VerbResult {
+    const checksOk = run.verb !== "deploy.check" || !run.checks || run.checks.every((c) => c.ok);
     return ordered({
       v: 1,
       verb: run.verb as AnyVerb,
@@ -310,7 +316,7 @@ export class Deployer {
       generation: null,
       checkout: null,
       branch: null,
-      ok: !failure,
+      ok: !failure && checksOk,
       changed: run.changed,
       state: "absent",
       steps: run.steps,
@@ -336,6 +342,62 @@ export class Deployer {
     run.approved = isApproved(root, run.defHash);
     const deployHash = at.def.deploy ? deployHashOf(at.def.deploy) : null;
     return { deploy: at.def.deploy, deployHash, approved: !!deployHash && !!deployApprovalOf(root, deployHash), commit: at.commit };
+  }
+
+  // ---- deploy.check (§app.project-services/deploy-check) ------------------------------------------------
+
+  /**
+   * The recipe at `ref` proven offline, in a fresh checkout of that commit: it parses, every step's program
+   * resolves, every host variable and env credential it names is set on this host (presence, never value).
+   * It runs no step and contacts no target. Checks like doctor's: `ok` false when one fails, exit 0.
+   */
+  private async check(run: DRun): Promise<void> {
+    const root = run.root!;
+    const ref = run.req.ref ?? "HEAD";
+    const at = await definitionAt(root, ref, this.git);
+    if (!at.commit) throw new DeployFailure("not-found", `no commit ${ref} in ${root}`);
+    if (!at.def) throw new DeployFailure(at.error?.startsWith("no ") ? "not-found" : "invalid-definition", `the definition at ${ref}: ${at.error}`);
+    if (!at.def.deploy) throw new DeployFailure("not-found", `the definition at ${ref} declares no deploy`);
+    run.defHash = defHashOf(at.def);
+    run.approved = isApproved(root, run.defHash);
+    const d = at.def.deploy;
+    const hash = deployHashOf(d);
+    const host = hostVars(root);
+    const checks: Check[] = [{ id: "schema", ok: true, detail: `the deploy recipe at ${ref} (${at.commit.slice(0, 12)}) parses: ${d.targets.length} target${d.targets.length === 1 ? "" : "s"} (${d.targets.map((t) => t.name).join(", ")})` }];
+    const dir = await cutCheckout(this.git, root, at.commit, `check-${randomBytes(6).toString("hex")}`);
+    try {
+      const hostNames = new Set<string>();
+      for (const t of d.targets) {
+        const seen = new Set<string>();
+        for (const s of deployStepsOf(t)) {
+          for (const a of s.run) for (const m of a.matchAll(/\$\{host\.([^}]+)\}/g)) hostNames.add(m[1]!);
+          const program = resolveHost(s.run[0]!, host);
+          if (seen.has(program.text)) continue;
+          seen.add(program.text);
+          if (program.unset.length || program.text.includes("${")) {
+            checks.push({ id: `program:${t.name}/${s.key}`, ok: false, detail: `its program ${s.run[0]} is a template this host can't resolve${program.unset.length ? ` (${program.unset.join(", ")} unset)` : ""}` });
+            continue;
+          }
+          const r = resolveProgram(program.text, dir);
+          checks.push({ id: `program:${t.name}/${s.key}`, ok: r.ok, detail: r.detail });
+        }
+        if (t.verify) for (const m of t.verify.http.matchAll(/\$\{host\.([^}]+)\}/g)) hostNames.add(m[1]!);
+        for (const c of t.credentials)
+          checks.push(
+            c.kind === "env"
+              ? { id: `credential:${t.name}/${c.name}`, ok: !!host[c.name], detail: host[c.name] ? `${c.name} is set on this host (its value is never shown)` : `${c.name} is not set on this host: the operator sets it in Sova's host.json` }
+              : { id: `credential:${t.name}/${c.name}`, ok: true, detail: `${c.kind === "ssh" ? "an ssh key" : "a tool's login"}, kept by the tool: its check runs at plan, never here` },
+          );
+      }
+      for (const n of [...hostNames].sort())
+        checks.push({ id: `host:${n}`, ok: !!host[n], detail: host[n] ? `${n} is set on this host` : `${n} is not set on this host: the operator sets it in Sova's host.json` });
+    } finally {
+      await dropCheckout(this.git, root, dir);
+    }
+    run.checks = checks;
+    const pass = checks.every((c) => c.ok);
+    writeJson(join(checksDir(), `${rootKey(root)}-${hash12(hash)}.json`), { v: 1, project: root, ref, commit: at.commit, deployHash: hash, pass, checks, at: new Date(this.now()).toISOString() });
+    run.report = { deployHash: hash, approved: !!deployApprovalOf(root, hash) };
   }
 
   // ---- deploy.status --------------------------------------------------------------------------------------
@@ -376,6 +438,44 @@ export class Deployer {
       ...(run.req.target ? { history: records.filter((r) => r.target === run.req.target).slice(0, 20).map(viewOf) } : {}),
     };
   }
+}
+
+// ---- fresh checkouts (never the main checkout's working tree) -------------------------------------------
+
+/** Cut a detached worktree of `commit` under Sova's state, for a check or a plan. */
+export async function cutCheckout(git: Git, root: string, commit: string, name: string): Promise<string> {
+  const dir = join(checkoutsDir(), name);
+  mkdirSync(checkoutsDir(), { recursive: true });
+  const r = await git(["worktree", "add", "--detach", "--force", dir, commit], root);
+  if (r.code !== 0) throw new DeployFailure("start-failed", `cutting a fresh checkout of ${commit.slice(0, 12)} failed: ${r.stderr.trim() || `exit ${r.code}`}`);
+  return dir;
+}
+/** Remove a checkout cut by `cutCheckout`, whatever it holds. */
+export async function dropCheckout(git: Git, root: string, dir: string): Promise<void> {
+  if (!dir.startsWith(checkoutsDir() + "/")) return;
+  await git(["worktree", "remove", "--force", "--force", dir], root);
+  rmSync(dir, { recursive: true, force: true });
+  await git(["worktree", "prune"], root);
+}
+
+/** Where `program` (an argv's first word) resolves, from `cwd`, or why it doesn't. Reads only. */
+export function resolveProgram(program: string, cwd: string, path = process.env.PATH ?? ""): { ok: boolean; detail: string } {
+  const executable = (f: string) => {
+    try {
+      if (!statSync(f).isFile()) return false;
+      accessSync(f, constants.X_OK);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  if (program.includes("/")) {
+    const f = isAbsolute(program) ? program : resolve(cwd, program);
+    if (executable(f)) return { ok: true, detail: isAbsolute(program) ? `${program} is executable` : `${program} is in the checkout and executable` };
+    return { ok: false, detail: existsSync(f) ? `${program} is not executable` : `${program} is not ${isAbsolute(program) ? "on this host" : "in a fresh checkout of the commit"}` };
+  }
+  for (const d of path.split(delimiter).filter(Boolean)) if (executable(join(d, program))) return { ok: true, detail: `${program} is on PATH (${join(d, program)})` };
+  return { ok: false, detail: `${program} is not on PATH` };
 }
 
 /** The caller tag a record keeps (`operator`, `overseer:<id>` …). */

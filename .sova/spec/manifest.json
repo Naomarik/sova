@@ -7544,7 +7544,11 @@
         "server/claude-pool/agent.ts",
         "server/claude-pool/index.ts",
         "src/components/AccountsSettings.tsx",
-        "server/claude-pool/agent.test.ts"
+        "server/claude-pool/agent.test.ts",
+        "pi-config/extensions/claude-code/accounts.ts",
+        "pi-config/extensions/claude-code/accounts.test.ts",
+        "scripts/claude-pool-e2e/run.mjs",
+        "server/index.ts"
       ]
     },
     "§app.claude-logins/keeper": {
@@ -13363,6 +13367,22 @@
         "server/mesh/lan-reverse.ts",
         "server/mesh/lan-dialer.ts",
         "server/mesh/lan-relay.ts"
+      ]
+    },
+    "§app.claude-logins/login-moved": {
+      "kind": "behavior",
+      "requires": [
+        "§app.claude-logins/spawn-selection",
+        "§app.claude-logins/borrow-return",
+        "§app.claude-logins/failover"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/claude-code/provider/session-bridge.ts",
+        "pi-config/extensions/claude-code/accounts.ts",
+        "pi-config/extensions/claude-code/provider/login-failover.test.ts",
+        "pi-config/extensions/claude-code/accounts.test.ts"
       ]
     }
   },

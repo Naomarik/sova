@@ -24,6 +24,7 @@ import type {
 } from "../../shared/mesh-links";
 import type { LinkSandbox } from "../link-sandbox";
 import type { SessionSummary } from "../../shared/protocol";
+import { NotShared } from "./access";
 import { MeshLinks, MEMBER_CACHE_MS } from "./links";
 import { mountLinks } from "./links-routes";
 import type { PeerEntry } from "./peers";
@@ -55,6 +56,13 @@ interface Host {
   sandbox: (sessionId: string) => LinkSandbox;
   /** The next tar body served to this host is cut after this many bytes (a dropped connection). */
   cutTarAt?: number;
+  /** Peers this host's grant withholds links from: its peerFetch refuses link sends to them, as the
+      real outbound gate does (reads of the peer by id still go). */
+  withholdLinks: Set<string>;
+  /** Peers this host marked down (sawPeer false). */
+  sawDown: string[];
+  /** Called with every peerFetch, before it goes. */
+  onFetch?: (peerId: string, path: string) => void;
 }
 
 let hosts: Record<string, Host> = {};
@@ -98,6 +106,8 @@ function makeHost(id: string, label: string, opts: Partial<Pick<Host, "knowsSelf
     peerUp: [],
     clock: 1_000_000,
     sandbox: () => ({ on: false }),
+    withholdLinks: new Set(),
+    sawDown: [],
   } as Host;
   hosts[id] = h;
   const byId = (c: import("hono").Context, sid: string) => {
@@ -111,7 +121,10 @@ function makeHost(id: string, label: string, opts: Partial<Pick<Host, "knowsSelf
     peers: () => Object.values(hosts).filter((o) => o !== h).map(entryOf),
     self: () => ({ id: h.id, label: h.label }),
     selfNode: () => ({ ...(h.knowsSelf ? { nodeId: h.nodeId } : {}), addresses: [] }),
+    mayShareWith: (peerId: string, cap: string) => cap !== "links" || !h.withholdLinks.has(peerId),
     peerFetch: async (peerId: string, path: string, init?: RequestInit) => {
+      h.onFetch?.(peerId, path);
+      if (h.withholdLinks.has(peerId) && /^\/api\/peer\/links(?:[/?]|$)/.test(path) && !/^\/api\/peer\/links\/(?:whoami|read)(?:\?|$)/.test(path)) throw new NotShared(peerId);
       const to = hosts[peerId];
       if (!to?.up) throw new TypeError("fetch failed");
       const res = await to.app.request(path, init, { meshPeer: entryOf(h) });
@@ -122,7 +135,7 @@ function makeHost(id: string, label: string, opts: Partial<Pick<Host, "knowsSelf
     onPeerUp: (fn: (peerId: string) => void) => void h.peerUp.push(fn),
     onMeshStart: () => {},
     onMeshStop: () => {},
-    sawPeer: () => {},
+    sawPeer: (peerId: string, up: boolean) => void (up || h.sawDown.push(peerId)),
   };
   const deps = {
     root: () => h.root,
@@ -295,6 +308,62 @@ describe("the record (§mesh.links/record)", () => {
     C.sessions.set("sc", summary("sc"));
     r = await act<LinkError>(A, "POST", "/api/mesh/links", { members: [{ session: "sa" }, { host: "c", session: "sc" }] });
     assert.equal(r.json.reason, "old-build");
+  });
+
+  test("a member on a peer this host doesn't share links with is refused as such, never as down", async () => {
+    A.withholdLinks.add("b");
+    const r = await act<LinkError>(A, "POST", "/api/mesh/links", { members: [{ session: "sa" }, { host: "b", session: "sb" }] });
+    assert.equal(r.status, 409);
+    assert.equal(r.json.member, 1);
+    assert.match(r.json.error, /this host doesn't share links with Beta/);
+    assert.match(r.json.error, /Mesh page/);
+    assert.doesNotMatch(r.json.error, /didn't answer|down/);
+    assert.equal(A.links.all().length, 0);
+    assert.equal(B.links.all().length, 0);
+    assert.deepEqual(A.links.pending(), []);
+    assert.deepEqual(A.sawDown, []);
+  });
+
+  test("a grant lowered while the link is being made: refused, no live link left anywhere, nothing held", async () => {
+    // After the check, before the copy goes: the member lookup is the last call before it.
+    A.onFetch = (peerId, path) => {
+      if (path.startsWith("/api/sessions/")) A.withholdLinks.add(peerId);
+    };
+    let r = await act<LinkError>(A, "POST", "/api/mesh/links", { members: [{ session: "sa" }, { host: "b", session: "sb" }] });
+    assert.equal(r.status, 409);
+    assert.equal(r.json.member, 1);
+    assert.match(r.json.error, /this host doesn't share links with Beta/);
+    assert.equal(A.links.all().length, 0, "no local record of a link that never got out");
+    assert.equal(B.links.all().length, 0);
+    assert.deepEqual(A.links.pending(), []);
+    assert.deepEqual(A.sawDown, []);
+    // Three members: Gamma's copy got out, so the link is ended there and here, never left live.
+    A.withholdLinks.clear();
+    const C = makeHost("c", "Gamma");
+    C.sessions.set("sc", summary("sc"));
+    A.onFetch = (peerId, path) => {
+      if (peerId === "b" && path.startsWith("/api/sessions/")) A.withholdLinks.add("b");
+    };
+    r = await act<LinkError>(A, "POST", "/api/mesh/links", { members: [{ session: "sa" }, { host: "c", session: "sc" }, { host: "b", session: "sb" }] });
+    assert.equal(r.status, 409);
+    assert.equal(r.json.member, 2);
+    await settle();
+    assert.ok(A.links.all().every((l) => l.endedAt !== undefined), "no live local link");
+    assert.ok(C.links.all().length === 1 && C.links.all()[0]!.endedAt !== undefined, "Gamma's copy is ended");
+    assert.equal(B.links.all().length, 0);
+    assert.deepEqual(A.links.pending(), []);
+    assert.deepEqual(A.sawDown, []);
+  });
+
+  test("a message to a peer this host stopped sharing links with is refused, never held as if the peer were down", async () => {
+    await link();
+    A.withholdLinks.add("b");
+    const r = await act<LinkSendResult>(A, "POST", "/api/mesh/links/send", { session: "sa", text: "hi" });
+    assert.equal(r.status, 200);
+    assert.equal(r.json.deliveries[0]!.state, "refused");
+    assert.deepEqual(A.links.pending(), []);
+    assert.deepEqual(A.sawDown, []);
+    assert.equal(B.delivered.length, 0);
   });
 
   test("a peer that answers only summary?id= is still resolved", async () => {

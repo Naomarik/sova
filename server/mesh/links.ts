@@ -46,6 +46,7 @@ import {
 import type { SessionSummary } from "../../shared/protocol";
 import type { PeerStateView } from "../../shared/mesh-access";
 import type { LinkSandbox } from "../link-sandbox";
+import { NotShared, sharesWith } from "./access";
 import type { MeshApi } from "./index";
 import { LinkTransfers, newOfferId, OFFER_TTL_MS, type OfferListing, TransferError, type TransferEvent } from "./links-offers";
 import type { PullTimings } from "./links-transfer";
@@ -70,7 +71,7 @@ export const PUSH_EVERY_MS = 2_000;
 
 /** What this module needs from the rest of the server; server/index.ts wires it, tests fake it. */
 export interface LinksDeps {
-  mesh: Pick<MeshApi, "enabled" | "peers" | "self" | "peerFetch" | "onPeerUp" | "onMeshStart" | "onMeshStop" | "selfNode" | "sawPeer">;
+  mesh: Pick<MeshApi, "enabled" | "peers" | "self" | "peerFetch" | "onPeerUp" | "onMeshStart" | "onMeshStop" | "selfNode" | "sawPeer"> & Partial<Pick<MeshApi, "mayShareWith">>;
   /** `<stateRoot>`, read per call. */
   root(): string;
   /** A session on this host's disk, by id. */
@@ -169,7 +170,14 @@ interface MemberLookup {
 }
 
 /** What a hop to a member host came to. */
-type HopResult = { state: "sent"; answer: unknown } | { state: "down"; why: string } | { state: "final"; status: number; body: { error?: unknown; reason?: unknown } | null; why: string };
+// `withheld`: this host's own grant kept it from going (NotShared), so the peer is not down.
+type HopResult =
+  | { state: "sent"; answer: unknown }
+  | { state: "down"; why: string }
+  | { state: "final"; status: number; body: { error?: unknown; reason?: unknown } | null; why: string; withheld?: true };
+
+/** A member on a peer this host doesn't share links with (§app.overseer/links-tools). */
+const linksWithheld = (label: string) => `this host doesn't share links with ${label}; raise ${label}'s grant on this host's Mesh page to include links`;
 
 export class MeshLinks {
   private d: LinksDeps | null = null;
@@ -502,6 +510,7 @@ export class MeshLinks {
       const probe = this.deps.probe ? await this.deps.probe(peer!) : "up";
       if (probe === "skewed") fail(409, "skewed", `${peer!.label} runs a different protocol; update it first`);
       if (probe !== "up") fail(409, "unreachable", `${peer!.label} is ${probe}`);
+      if (!sharesWith(this.deps.mesh, peer!.id, "links")) fail(409, undefined, linksWithheld(peer!.label));
       const has = await this.whoami(peer!);
       if (has === "old-build") fail(409, "old-build", `${peer!.label} runs a build without links`);
       if (has === "down") fail(409, "unreachable", `${peer!.label} didn't answer`);
@@ -524,9 +533,30 @@ export class MeshLinks {
     if (!self) throw new LinkActError(409, { error: "This host doesn't know its own node identity yet, and no peer answered to tell it.", reason: "internal" });
     const link: MeshLink = { id: newLinkId(), createdAt: this.now(), createdBy: self, members };
     this.keep(link);
-    await Promise.all(members.filter((m) => m.nodeId !== self).map((m) => this.tell(m.nodeId, { kind: "link", body: { link, you: m.nodeId } })));
+    const told = await Promise.all(
+      members.filter((m) => m.nodeId !== self).map(async (m) => ({ m, r: await this.tell(m.nodeId, { kind: "link", body: { link, you: m.nodeId } }) })),
+    );
+    // A grant lowered since the check above: the link is not made, and no copy that got out stays live.
+    const withheld = told.find(({ r }) => r.state === "final" && r.withheld);
+    if (withheld) {
+      if (told.some(({ r }) => r.state === "sent" || r.state === "queued")) {
+        link.endedAt = this.now();
+        this.save();
+        this.spreadEnd(link);
+      } else this.forget(link.id);
+      const i = members.indexOf(withheld.m);
+      const label = this.hostLabel(withheld.m.nodeId);
+      throw new LinkActError(409, { error: `Member ${i + 1} (${asked[i]?.host ?? label}/${withheld.m.sessionId}): ${linksWithheld(label)}.`, member: i });
+    }
     this.notify(this.localSessions(link));
     return this.view(link);
+  }
+
+  /** Drop a link this host made that never got out. */
+  private forget(linkId: string): void {
+    const f = this.load();
+    f.links = f.links.filter((l) => l.id !== linkId);
+    this.save();
   }
 
   /** sova_unlink: end a link on every host that holds it; the earliest end wins. */
@@ -1219,6 +1249,8 @@ export class MeshLinks {
         signal: AbortSignal.timeout(HOP_TIMEOUT_MS),
       });
     } catch (err) {
+      // This host's own grant withheld it: final, never held, and the peer is not down.
+      if (err instanceof NotShared) return { state: "final", status: 403, body: null, why: linksWithheld(peer.label), withheld: true };
       this.deps.mesh.sawPeer(peer.id, false); // its next answer is a comeback: onPeerUp drains the outbox
       return { state: "down", why: `${peer.label} is down (${whyDown(err)})` };
     }

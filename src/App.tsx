@@ -31,6 +31,7 @@ import { noteSessionsHidden, sessionsHiddenBy } from "./lib/mesh";
 import { hostLabel, hostOf, isMeshHash, joinHostLists, linkedSessionRow, meshRetryDelay, meshState, meshOn, meshPeers, mergePeerLists, noteHost, notePeerOrgs, notePeerProjects, notePeerSessions, peerInfo, peerUnavailable, sameMeshInfo, sessionRouteFromHash, setMeshState } from "./lib/mesh";
 import { isOverseerHash, isOverseerShortcut, OVERSEER_HASH, OVERSEER_POLL_MS, overseerHistoryId } from "./lib/overseer";
 import { sessionIdFromHash, setGroupLinkIndex, setSessionIndex } from "./lib/session-links";
+import type { CostsQuery } from "./lib/cost-history";
 import { agentsHref, insightsRouteFromHash, legacyInsightsTarget } from "./lib/insights";
 import { transcriptRoot } from "./lib/jump";
 import { groupRouteFromHash } from "./lib/group-route";
@@ -56,7 +57,7 @@ import { closeSettings, openSettings, settingsOpenAt } from "./lib/settings-nav"
 import type { RewindControl } from "./lib/inputs";
 import { activeTab, groupSendAll, home, setActiveTab, setAdopter, setHome, toast } from "./lib/ui-state";
 import { createPaneInsight } from "./lib/pane-insight";
-import { sessionWorking, type UsageTotalView } from "./lib/workers";
+import { sessionWorking } from "./lib/workers";
 import { answeredPeers, workPeers } from "./lib/work-now";
 import { AgentsView } from "./components/AgentsView";
 import { NewSessionDialog } from "./components/NewSessionDialog";
@@ -804,15 +805,14 @@ export function App() {
   // ---- Subagents pane: open for one session path, closed whenever the route changes ----------
   /** `board`: opened in place from the Agents board, for a session with no view on screen. */
   const [subagents, setSubagents] = createSignal<{ path: string; selected: string | null; board?: boolean } | null>(null);
-  /** Each open chat's live workers (WS "workers"), reconciled by id so pane rows keep identity,
-      with the runtime's session-lifetime token Σ beside them. By path: a workspace runs several. */
-  const [chatWorkers, setChatWorkers] = createStore<Record<string, { list: WorkerInfo[]; usage: UsageTotalView | null } | undefined>>({});
-  const noteWorkers = (path: string, workers: WorkerInfo[] | null, usage: UsageTotalView | null) =>
+  /** Each open chat's live workers (WS "workers"), reconciled by id so pane rows keep identity.
+      By path: a workspace runs several. */
+  const [chatWorkers, setChatWorkers] = createStore<Record<string, { list: WorkerInfo[] } | undefined>>({});
+  const noteWorkers = (path: string, workers: WorkerInfo[] | null) =>
     batch(() => {
       if (!workers) return setChatWorkers(path, undefined);
-      if (!chatWorkers[path]) setChatWorkers(path, { list: [], usage: null });
+      if (!chatWorkers[path]) setChatWorkers(path, { list: [] });
       setChatWorkers(path, "list", reconcile(workers, { key: "id" }));
-      setChatWorkers(path, "usage", usage);
     });
   /** Each open chat's RECORDED Claude login id, by path; an unrecorded one is left out, so the
       usage readouts fall back to the login in use for new chats (§app.insights/sidebar-foot). */
@@ -1047,6 +1047,7 @@ export function App() {
                     detailsPath={boardPanePath()}
                     onOpenDetails={openDetailsFor}
                     onOpenAgents={openAgentsFor}
+                    costs={(insightsRoute() as { costs?: CostsQuery } | null)?.costs ?? null}
                   />
                 </Match>
                 {/* Every /explain page as a card (#/explanations[/<sessionId>]). */}
@@ -1227,9 +1228,7 @@ export function App() {
                 summary={summaryOf(path)}
                 onArchiveChanged={onArchived}
                 onGroupsChanged={refresh}
-                chatWorkers={subagents()?.board ? null : (chatWorkers[path]?.list ?? null)}
-                chatUsage={subagents()?.board ? null : (chatWorkers[path]?.usage ?? null)}
-                // No chat on screen from the board: the Timeline can't rewind, as when watching.
+                chatWorkers={subagents()?.board ? null : (chatWorkers[path]?.list ?? null)}                // No chat on screen from the board: the Timeline can't rewind, as when watching.
                 rewind={subagents()?.board ? undefined : rewindControls()[path]}
                 rewound={rewound()?.path === path ? rewound()! : null}
                 inputsOnly={inputsOnly() === path}

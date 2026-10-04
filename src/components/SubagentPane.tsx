@@ -2,20 +2,22 @@ import { createEffect, createMemo, createSignal, For, on, onCleanup, Show } from
 import type { LinkedAgentInfo } from "../../shared/mesh-links";
 import type { ContextInfo, TeamInfo, TeamMember, TranscriptItem, WatchServerMessage, WorkerInfo } from "../../shared/protocol";
 import { claudeWatchUrl, fetchHiddenWorkers, wsUrl } from "../lib/api";
-import { linkGroupId, linkGroups, linkHostLabel, linkReach, threadHost, type LinkReach } from "../lib/links";
+import type { UsageSessionSpend, UsageSpend } from "../../shared/usage/wire";
+import { linkGroupId, linkGroups, linkHostLabel, linkReach, sessionIdOfPath, threadHost, type LinkReach } from "../lib/links";
+import { spendTitle, spentAnything, spoken, workerSpendOf } from "../lib/spend";
 import { chatLinks } from "../lib/links-live";
 import { hostOf, meshState, sessionHrefOn } from "../lib/mesh";
 import { clockTime, compactModel, shortModel } from "../lib/format";
 import { memberBadges, memberStatus, newestEventLine } from "../lib/insights";
 import { createReconnectingSocket } from "../lib/socket";
 import { formatTokens } from "../lib/context";
-import { asOfClock, capTitle, ringContext, sortWorkers, sourceKey, sourceName, sourceOf, transcriptContext, transcriptUsage, usageHeadline,
-  usageTitle, usageUnavailable, type TranscriptSource, type UsageView, workerContext, workerEjected, workerLabel, workersNoun, workerTeam,
-  workerUsage } from "../lib/workers";
+import { asOfClock, capTitle, ringContext, sortWorkers, sourceKey, sourceName, sourceOf, transcriptContext, type TranscriptSource, workerContext,
+  workerEjected, workerLabel, workersNoun, workerTeam } from "../lib/workers";
 import { ConnectionBanner } from "./ConnectionBanner";
 import { ContextReadout } from "./ContextGauge";
 import { ContextRing } from "./ContextRing";
 import type { PaneInsight } from "./SessionPane";
+import { createSessionSpend } from "./SessionUsage";
 import { LinkedAgentMeta, LinkedAgentRow, LinkStateChip, LinkThreadView } from "./LinkedAgents";
 import { HistoryItems, ToolSourceContext, TranscriptSkeleton } from "./Thread";
 import { Banner, Chip, Icon } from "./ui";
@@ -75,6 +77,8 @@ export function SubagentPane(props: {
   onView(view: AgentsView): void;
   /** This is the Overseer's pane: it lists every link on its host and is no member of any. */
   overseer?: boolean;
+  /** The session's spend from the usage ledger (the pane's poll): each worker row's tokens. */
+  spend?: UsageSessionSpend;
 }) {
   const insight = {
     data: () => props.insight.data ?? undefined,
@@ -173,11 +177,10 @@ export function SubagentPane(props: {
   const grouped = () => groups().some((g) => g.team) || links().length > 0;
   /** A session with a team holds more than subagents, listed or not: the pane says so. */
   const noun = () => workersNoun((insight.data()?.teams.length ?? 0) > 0);
-  /** What the open transcript itself reports, which ticks between worker snapshots. Another
-      worker's numbers must never linger, so the selection clears it. */
-  const [watched, setWatched] = createSignal<UsageView | null>(null);
-  /** The open transcript's context fill, which ticks with every append; cleared with the selection
-      like `watched`. undefined: the transcript hasn't said (or an older server), so the row's stands. */
+  /** A listed worker's own spend, from the session's ledger answer; null when nothing is recorded. */
+  const spendOf = (w: WorkerInfo) => workerSpendOf(props.spend, w.id);
+  /** The open transcript's context fill, which ticks with every append; cleared with the selection.
+      undefined: the transcript hasn't said (or an older server), so the row's stands. */
   const [watchedContext, setWatchedContext] = createSignal<ContextInfo | "compacted" | null | undefined>(undefined);
   /** A worker's fill: the open transcript's own for the selected worker, else its row's. */
   const contextOf = (w: WorkerInfo): ContextInfo | "compacted" | null => {
@@ -206,10 +209,7 @@ export function SubagentPane(props: {
   createEffect(
     on(
       () => props.selected,
-      () => {
-        setWatched(null);
-        setWatchedContext(undefined);
-      },
+      () => setWatchedContext(undefined),
       { defer: true },
     ),
   );
@@ -283,7 +283,7 @@ export function SubagentPane(props: {
             </Show>
             <StatusChip worker={w()} liveSource={liveSource()} />
           </span>
-          <WorkerMeta worker={w()} liveSource={liveSource()} class="subagent-row-meta" />
+          <WorkerMeta worker={w()} spend={spendOf(w())?.withWorkers ?? null} liveSource={liveSource()} class="subagent-row-meta" />
           <Icon name="chevron-right" small class="subagent-row-go" />
         </button>
       )}
@@ -510,23 +510,10 @@ export function SubagentPane(props: {
                         </span>
                       )}
                     </Show>
-                    <Show
-                      when={watched() ?? workerUsage(w())}
-                      fallback={
-                        <Show when={usageUnavailable(w())}>
-                          <span>
-                            <MetaSep />
-                            usage unavailable
-                          </span>
-                        </Show>
-                      }
-                    >
-                      {(u) => (
-                        <span class="text-mono" title={usageTitle(u())}>
-                          <MetaSep />
-                          {formatTokens(usageHeadline(u()))} tok
-                        </span>
-                      )}
+                    {/* Its spend from the usage ledger, its own workers' included, read for as
+                        long as its transcript is open. */}
+                    <Show when={spendOf(w())?.sid ?? w().sessionId ?? (w().sessionFile ? sessionIdOfPath(w().sessionFile!) : null)} keyed>
+                      {(sid) => <WorkerTokens sid={sid} />}
                     </Show>
                     {/* How full its own context is, as the chat head says it — pushed to the
                         line's right edge, under the status chip, so it takes no dot. */}
@@ -575,7 +562,6 @@ export function SubagentPane(props: {
                     name={label(w())}
                     author={shortModel(w().model) ?? label(w())}
                     streaming={w().working}
-                    onUsage={setWatched}
                     onContext={(c) => setWatchedContext(transcriptContext(c, w()) ?? null)}
                   />
                 )}
@@ -657,7 +643,6 @@ function LinkedTranscript(props: { row: LinkedAgentInfo; reach: LinkReach; hostL
           author={shortModel(props.row.model) ?? props.row.title}
           streaming={props.row.state === "working"}
           what="session"
-          onUsage={() => {}}
           onContext={() => {}}
         />
       )}
@@ -712,18 +697,18 @@ function StatusChip(props: { worker: WorkerInfo; liveSource: boolean }) {
 /** `{provider}` · `{model}` · `{tokens}` · as of `{HH:MM}` (settled) · last task failed (idle
     after a failure). A `.meta-line`: too little room clips the model id, never the provider or the
     count beside it. */
-function WorkerMeta(props: { worker: WorkerInfo; liveSource: boolean; class: string }) {
+function WorkerMeta(props: { worker: WorkerInfo; spend: UsageSpend | null; liveSource: boolean; class: string }) {
   const provider = () => props.worker.provider;
   const model = () => compactModel(props.worker.model);
-  const usage = () => workerUsage(props.worker);
-  const unavailable = () => !usage() && usageUnavailable(props.worker);
+  /** Its own spend from the usage ledger; nothing recorded shows no tokens. */
+  const usage = () => (props.spend && props.spend.calls > 0 ? props.spend : null);
   const failed = () => memberStatus({ worker: props.worker } as TeamMember, props.liveSource).failed;
   /** Without a live source every row reads "as of" its last update. */
   const at = () => asOf(props.worker) ?? (props.liveSource ? undefined : props.worker.lastActivity);
   const iso = (t: number) => new Date(t).toISOString();
   const lead = () => provider() || model() || usage();
   return (
-    <Show when={lead() || unavailable() || at() !== undefined || failed()}>
+    <Show when={lead() || at() !== undefined || failed()}>
       <span class={`${props.class} meta-line`}>
         <Show when={provider()}>
           {(p) => <span>{p()}</span>}
@@ -746,25 +731,19 @@ function WorkerMeta(props: { worker: WorkerInfo; liveSource: boolean; class: str
               <Show when={provider() || model()}>
                 <MetaSep />
               </Show>
-              <span class="text-mono" title={usageTitle(u())}>
-                {formatTokens(usageHeadline(u()))}
+              <span class="text-mono" title={spendTitle(u())}>
+                {formatTokens(spoken(u()))}
               </span>
             </>
           )}
         </Show>
-        <Show when={unavailable()}>
-          <Show when={provider() || model()}>
-            <MetaSep />
-          </Show>
-          <span title="Its transcript couldn't be read, and it reported nothing before the restart.">usage unavailable</span>
-        </Show>
         <Show when={at()}>
           {(t) => (
             <>
-              <Show when={lead() || unavailable()}>
+              <Show when={lead()}>
                 <MetaSep />
               </Show>
-              <span>{lead() || unavailable() ? "as of" : "As of"}</span>
+              <span>{lead() ? "as of" : "As of"}</span>
               <span class="text-mono" title={iso(t())}>
                 {clockTime(iso(t()))}
               </span>
@@ -782,6 +761,27 @@ function WorkerMeta(props: { worker: WorkerInfo; liveSource: boolean; class: str
   );
 }
 
+/** The open worker's `{n} tok` in its view head: its spend from the usage ledger (its own workers'
+    included), polled while the view shows; nothing until the ledger has answered, nothing when
+    nothing is recorded. */
+function WorkerTokens(props: { sid: string }) {
+  const spend = createSessionSpend(() => props.sid);
+  const total = () => {
+    const s = spend.data();
+    return s && spentAnything(s) ? s.total : null;
+  };
+  return (
+    <Show when={total()}>
+      {(u) => (
+        <span class="text-mono" title={spendTitle(u())}>
+          <MetaSep />
+          {formatTokens(spoken(u()))} tok
+        </span>
+      )}
+    </Show>
+  );
+}
+
 /** A worker's transcript lives on its parent session's host, so it is read from there. */
 const watchUrl = (s: TranscriptSource, host: string | null): string =>
   s.kind === "pi" ? wsUrl("/ws/watch", s.path, false, host) : claudeWatchUrl(s.sessionId, host);
@@ -794,8 +794,6 @@ function WorkerTranscript(props: {
   source: TranscriptSource; host: string | null; name: string; author: string; streaming: boolean;
   /** What the transcript is, for its not-found copy: a worker's (default) or a linked session's. */
   what?: "worker" | "session";
-  /** The transcript's own running token total, for the view head; null when it reports none. */
-  onUsage(usage: UsageView | null): void;
   /** Each snapshot/append that carries a context fill (the whole message; the caller reads it). */
   onContext(msg: WatchServerMessage): void;
 }) {
@@ -812,16 +810,11 @@ function WorkerTranscript(props: {
           setGone(false);
           setItems(msg.items);
           setLastUpdate(new Date().toISOString());
-          // Cumulative on every message, so a server that reports none leaves the row's own count.
-          props.onUsage(transcriptUsage(msg));
           if ("context" in msg) props.onContext(msg);
           break;
         case "append":
           setItems((prev) => [...(prev ?? []), ...msg.items]);
           setLastUpdate(new Date().toISOString());
-          // Only ever upward: an append without a total (older server) leaves what we have.
-          const appended = transcriptUsage(msg);
-          if (appended) props.onUsage(appended);
           if ("context" in msg) props.onContext(msg);
           break;
         case "error":

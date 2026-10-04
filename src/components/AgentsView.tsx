@@ -1,7 +1,7 @@
 import { createEffect, createMemo, createSignal, For, Match, on, onCleanup, Show, Switch, type JSX } from "solid-js";
 import { newestTopics, topicTime } from "../../shared/outline-order";
 import type { AgentsInsight, ContextInfo, OutlineTopic, SessionSummary, WorktreeStatus } from "../../shared/protocol";
-import { fetchSessionInsight, fetchWorktrees } from "../lib/api";
+import { fetchSessionInsight, fetchWorktrees, getUsageSessions, getUsageToday } from "../lib/api";
 import {
   BOARD_FILTERS,
   BOARD_PAGE,
@@ -30,8 +30,9 @@ import {
   worktreePathsKey,
 } from "../lib/agents-board";
 import { compactModel, relativeTime, tildePath } from "../lib/format";
+import { browserZone, costsHref, type CostsQuery, DEFAULT_COSTS_QUERY } from "../lib/cost-history";
 import { agentsHref, teamKey } from "../lib/insights";
-import type { Poll } from "../lib/poll";
+import { createPoll, type Poll } from "../lib/poll";
 import { orgProjectOf } from "../lib/drag-archive";
 import { archiveSession, renameSession } from "../lib/session-actions";
 import { archiveBlockReason } from "../lib/session-selection";
@@ -42,6 +43,7 @@ import { capTitle } from "../lib/workers";
 import "../agents-board.css";
 import { ActionMenu } from "./ActionMenu";
 import { ContextRing } from "./ContextRing";
+import { CostsTab } from "./CostsTab";
 import { MoveToGroupMenu } from "./Groups";
 import { InsightsPage, ListSkeleton } from "./InsightsPage";
 import { TitleField } from "./SelectionToolbar";
@@ -67,7 +69,12 @@ interface BoardCtx {
   onOpenDetails(path: string): void;
   /** That session's Session details pane, on its Agents tab: a team chip's click. */
   onOpenAgents(path: string): void;
+  /** USD its workers have spent (the usage ledger), when above zero; null before the answer. */
+  workersSpend(sessionId: string): number | null;
 }
+
+/** Spend moves with every call, but a minute is fresh enough for a head figure and a row's chip. */
+const USAGE_POLL_MS = 60_000;
 
 const STATE_TONE: Record<BoardRow["state"], Tone | "accent" | undefined> = { working: "accent", "needs-you": "warn", idle: undefined, archived: undefined };
 
@@ -555,10 +562,12 @@ function BoardRowView(props: { row: BoardRow; ctx: BoardCtx }) {
               </a>
             )}
           </For>
-          <Show when={r().spend !== null}>
-            <span class="board-spend text-mono text-num" title="What its workers have spent so far">
-              {money(r().spend!)}
-            </span>
+          <Show when={props.ctx.workersSpend(s().id)}>
+            {(usd) => (
+              <span class="board-spend text-mono text-num" title="What its workers have spent, at any depth, at API prices">
+                {money(usd())}
+              </span>
+            )}
           </Show>
         </div>
 
@@ -609,6 +618,51 @@ function BoardRowView(props: { row: BoardRow; ctx: BoardCtx }) {
   );
 }
 
+/** The Costs tab's filter when you last left it, for this tab's life: Board → Costs brings it back. */
+let lastCosts: CostsQuery = DEFAULT_COSTS_QUERY;
+
+/** Board and Costs. Tabs switch views and the address says which; the tab bar is the skill's
+    (Left/Right move along it and wrap, Home/End jump, Enter or Space selects). */
+function AgentsTabs(props: { costs: boolean }) {
+  const tabs = [
+    { id: "board", label: "Board", href: () => agentsHref() },
+    { id: "costs", label: "Costs", href: () => costsHref(lastCosts) },
+  ] as const;
+  const els: HTMLButtonElement[] = [];
+  const selected = (id: string) => (id === "costs") === props.costs;
+  const onKey = (e: KeyboardEvent, i: number) => {
+    const last = tabs.length - 1;
+    const next = e.key === "ArrowRight" ? (i === last ? 0 : i + 1) : e.key === "ArrowLeft" ? (i === 0 ? last : i - 1) : e.key === "Home" ? 0 : e.key === "End" ? last : -1;
+    if (next < 0) return;
+    e.preventDefault();
+    els[next]?.focus();
+  };
+  return (
+    <div class="tabs agents-tabs" role="tablist" aria-label="Agents">
+      <For each={tabs}>
+        {(t, i) => (
+          <button
+            type="button"
+            role="tab"
+            class="tab"
+            id={`agents-tab-${t.id}`}
+            aria-selected={selected(t.id) ? "true" : "false"}
+            aria-controls={selected(t.id) ? "agents-tabpanel" : undefined}
+            tabindex={selected(t.id) ? 0 : -1}
+            ref={(el) => (els[i()] = el)}
+            onClick={() => {
+              if (!selected(t.id)) location.hash = t.href();
+            }}
+            onKeyDown={(e) => onKey(e, i())}
+          >
+            {t.label}
+          </button>
+        )}
+      </For>
+    </div>
+  );
+}
+
 /** `#/agents`: every session on one board; what it's about, where it stands and its worktrees folded inside. */
 export function AgentsView(props: {
   agents: Poll<AgentsInsight>;
@@ -623,7 +677,13 @@ export function AgentsView(props: {
   detailsPath: string | null;
   onOpenDetails(path: string): void;
   onOpenAgents(path: string): void;
+  /** The Costs tab's query, when `#/agents/costs` is the address; null on the board. */
+  costs: CostsQuery | null;
 }) {
+  const onCosts = () => props.costs !== null;
+  // Back on Costs from the board, the filter you left it with.
+  createEffect(() => props.costs && (lastCosts = props.costs));
+  const [costsTick, setCostsTick] = createSignal(0);
   const [filter, setFilter] = createSignal<BoardFilter | null>(null);
   const [query, setQuery] = createSignal("");
   const [limit, setLimit] = createSignal(BOARD_PAGE);
@@ -664,7 +724,7 @@ export function AgentsView(props: {
    * A string, so the poll below restarts only when the SET changes, never on a fresh list.
    */
   const treesKey = createMemo(() =>
-    worktreePathsKey(filter() === "unmerged" ? sortRows(rows().filter(inDefaultScope)).slice(0, limit()) : paged()),
+    onCosts() ? "" : worktreePathsKey(filter() === "unmerged" ? sortRows(rows().filter(inDefaultScope)).slice(0, limit()) : paged()),
   );
   const readTrees = async (key: string) => {
     if (!key || document.hidden) return;
@@ -690,7 +750,30 @@ export function AgentsView(props: {
     }),
   );
 
-  const totals = createMemo(() => boardTotals(rows().filter(inDefaultScope), trees().values(), props.now));
+  // Spend, all of it from the usage ledger: today's for the head, and the shown rows' workers'.
+  const today = createPoll(() => getUsageToday(browserZone()), USAGE_POLL_MS);
+  const [spends, setSpends] = createSignal<ReadonlyMap<string, number>>(new Map());
+  /** The rendered rows' session ids, as one string: the poll restarts only when the SET changes. */
+  const spendKey = createMemo(() => (onCosts() ? "" : paged().map((r) => r.session.id).join(",")));
+  const readSpends = async (key: string) => {
+    if (!key || document.hidden) return;
+    try {
+      const res = await getUsageSessions(key.split(","));
+      if (spendKey() !== key) return;
+      setSpends(new Map(Object.entries(res.sessions).map(([sid, s]) => [sid, s.workers.usd])));
+    } catch {
+      // The helper starting or down: the chips stay as they were; the Costs tab says why.
+    }
+  };
+  createEffect(
+    on(spendKey, (key) => {
+      void readSpends(key);
+      const t = setInterval(() => void readSpends(key), USAGE_POLL_MS);
+      onCleanup(() => clearInterval(t));
+    }),
+  );
+
+  const totals = createMemo(() => boardTotals(rows().filter(inDefaultScope), trees().values(), today.data()));
   const counts = createMemo(() => filterCounts(rows(), treesOf));
 
   /** The link, once its session's row is on the board: a team found before the list loads waits for it. */
@@ -741,11 +824,15 @@ export function AgentsView(props: {
     },
     onOpenDetails: (p) => props.onOpenDetails(p),
     onOpenAgents: (p) => props.onOpenAgents(p),
+    workersSpend: (sid) => {
+      const usd = spends().get(sid);
+      return usd && usd > 0 ? usd : null;
+    },
   };
 
   const meta = () => (props.sessions ? totalsLine(totals()) : undefined);
   const metaTitle = () =>
-    "Sessions working, sessions live, what workers of sessions active today have spent, and unmerged branches in the worktrees read so far.";
+    "Sessions working, sessions live, what this device has spent since midnight at API prices (every call, subscriptions included), and unmerged branches in the worktrees read so far.";
 
   const emptyLine = () => {
     const t = totals();
@@ -765,7 +852,12 @@ export function AgentsView(props: {
       onRefresh={() => {
         props.agents.refetch();
         props.onRefresh();
-        void readTrees(treesKey());
+        today.refetch();
+        if (onCosts()) setCostsTick((n) => n + 1);
+        else {
+          void readTrees(treesKey());
+          void readSpends(spendKey());
+        }
       }}
       error={props.agents.error()}
       errorTitle="Couldn't load agents."
@@ -773,6 +865,10 @@ export function AgentsView(props: {
       titleRef={props.titleRef}
       class="agents-page"
     >
+      <AgentsTabs costs={onCosts()} />
+      <Show when={props.costs}>{(q) => <CostsTab query={q()} sessions={props.sessions} now={props.now} tick={costsTick()} />}</Show>
+      <Show when={!onCosts()}>
+      <div class="agents-tabpanel" id="agents-tabpanel" role="tabpanel" aria-labelledby="agents-tab-board">
       <Show when={props.sessions} fallback={<ListSkeleton groups={1} rows={3} />}>
         <div class="board-bar">
           <label class="search board-search">
@@ -852,6 +948,8 @@ export function AgentsView(props: {
             </button>
           </Show>
         </Show>
+      </Show>
+      </div>
       </Show>
     </InsightsPage>
   );

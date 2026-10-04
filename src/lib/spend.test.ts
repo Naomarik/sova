@@ -1,23 +1,19 @@
 // Run: npx tsx --test src/lib/spend.test.ts (or npm test)
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { ModelSpend, SessionUsage, TranscriptItem } from "../../shared/protocol";
-import { absoluteTime, anyCost, firstLine, originLabel, spendRows, spentAnything, timelineEntries } from "./spend";
+import type { TranscriptItem } from "../../shared/protocol";
+import type { UsageOrigin, UsageSessionModelRow, UsageSessionSpend, UsageSpend, UsageWorkerRow } from "../../shared/usage/wire";
+import { absoluteTime, firstLine, originLabel, spendRows, spendTitle, spendUsd, spentAnything, timelineEntries, workerSpendOf } from "./spend";
 
-const spend = (model: string, origin: ModelSpend["origin"], input: number, output: number, cost?: number): ModelSpend => ({
-  model,
-  origin,
-  input,
-  output,
-  cacheRead: 0,
-  cacheWrite: 0,
-  ...(cost === undefined ? {} : { cost }),
-});
-
-const usage = (models: ModelSpend[]): SessionUsage => ({
-  total: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-  main: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+const zero = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cacheWrite1h: 0 };
+const sum = (input: number, output: number, usd = 0, calls = 1): UsageSpend => ({ usd, tokens: { ...zero, input, output }, usdBy: zero, calls, unpricedTokens: 0 });
+const row = (model: string, origin: UsageOrigin, input: number, output: number): UsageSessionModelRow => ({ ...sum(input, output), origin, provider: "p", model, status: "priced" });
+const worker = (sid: string, parent: string, id?: string): UsageWorkerRow => ({ ...sum(1, 1), sid, parent, withWorkers: sum(2, 2), ...(id ? { worker: id } : {}) });
+const spend = (models: UsageSessionModelRow[], workerList: UsageWorkerRow[] = [], calls = models.length): Pick<UsageSessionSpend, "sid" | "models" | "total" | "workerList"> => ({
+  sid: "s1",
   models,
+  total: sum(0, 0, 0, calls),
+  workerList,
 });
 
 const info = (id: string, text: string, timestamp?: string): TranscriptItem => ({
@@ -30,29 +26,22 @@ const info = (id: string, text: string, timestamp?: string): TranscriptItem => (
 
 test("originLabel names the three origins", () => {
   assert.equal(originLabel("main"), "Main thread");
-  assert.equal(originLabel("subagents"), "Subagents");
-  assert.equal(originLabel("team"), "Team");
+  assert.equal(originLabel("oneshot"), "Side calls");
+  assert.equal(originLabel("worker"), "Subagents");
 });
 
-test("spendRows puts the main thread first, then the biggest spender", () => {
+test("spendRows puts the main thread first, then side calls, then subagents, the biggest spender first in each", () => {
   const rows = spendRows(
-    usage([
-      spend("team-model", "team", 10, 10),
-      spend("sub-small", "subagents", 1, 1),
-      spend("sub-big", "subagents", 100, 100),
-      spend("main-b", "main", 5, 5),
-      spend("main-a", "main", 50, 50),
-    ]),
+    spend([row("sub-small", "worker", 1, 1), row("title", "oneshot", 2, 2), row("sub-big", "worker", 100, 100), row("main-b", "main", 5, 5), row("main-a", "main", 50, 50)]),
   );
   assert.deepEqual(
     rows.map((r) => r.model),
-    ["main-a", "main-b", "sub-big", "sub-small", "team-model"],
+    ["main-a", "main-b", "title", "sub-big", "sub-small"],
   );
 });
 
 test("spendRows keeps two equal rows in a stable order and never mutates its input", () => {
-  const models = [spend("b", "main", 1, 1), spend("a", "main", 1, 1)];
-  const source = usage(models);
+  const source = spend([row("b", "main", 1, 1), row("a", "main", 1, 1)]);
   assert.deepEqual(
     spendRows(source).map((r) => r.model),
     ["a", "b"],
@@ -61,27 +50,29 @@ test("spendRows keeps two equal rows in a stable order and never mutates its inp
     source.models.map((r) => r.model),
     ["b", "a"],
   );
-});
-
-test("spendRows survives an older server with no usage at all", () => {
   assert.deepEqual(spendRows(undefined), []);
 });
 
-test("spentAnything: a counted token, a row, or an unknown worker — never an empty or absent usage", () => {
+test("spentAnything: a recorded call, never an absent answer", () => {
   assert.equal(spentAnything(undefined), false);
-  assert.equal(spentAnything(usage([])), false);
-  assert.equal(spentAnything({ ...usage([]), total: { input: 0, output: 0, cacheRead: 12, cacheWrite: 0 } }), true);
-  assert.equal(spentAnything(usage([spend("a", "main", 0, 0)])), true);
-  assert.equal(spentAnything({ ...usage([]), unavailable: ["ag_04"] }), true);
+  assert.equal(spentAnything(spend([])), false);
+  assert.equal(spentAnything(spend([], [], 1)), true);
 });
 
-test("anyCost asks whether a Cost column would say anything", () => {
-  assert.equal(anyCost([]), false);
-  assert.equal(anyCost([spend("a", "main", 1, 1)]), false);
-  assert.equal(anyCost([spend("a", "main", 1, 1, 0)]), false);
-  assert.equal(anyCost([spend("a", "main", 1, 1), spend("b", "team", 1, 1, 0.004)]), true);
+test("dollars are always said, at API prices; the title carries the split", () => {
+  assert.equal(spendUsd(0), "$0.00");
+  assert.equal(spendUsd(0.004), "<$0.01");
+  assert.equal(spendUsd(1240.5), "$1,240.50");
+  assert.equal(spendTitle({ usd: 0.72, tokens: { ...zero, input: 1200, output: 30, cacheRead: 5000, cacheWrite: 0 } }), "1.2k in · 30 out · 5k cache read · 0 cache write · $0.72");
 });
 
+test("a listed worker's spend is its row under this session, matched by worker id", () => {
+  const list = [worker("w-a", "s1", "ag_01"), worker("w-b", "w-a", "ag_01"), worker("w-c", "other", "ag_02")];
+  assert.equal(workerSpendOf(spend([], list), "ag_01")?.sid, "w-a", "a nested worker with the same id is not this session's");
+  assert.equal(workerSpendOf(spend([], list), "ag_02")?.sid, "w-c", "the only row with that id");
+  assert.equal(workerSpendOf(spend([], list), "ag_09"), null);
+  assert.equal(workerSpendOf(undefined, "ag_01"), null);
+});
 test("firstLine takes one line and cuts on a word", () => {
   assert.equal(firstLine("Read the router, then changed it.\nAlso ran the tests."), "Read the router, then changed it.");
   assert.equal(firstLine("  \n"), "");

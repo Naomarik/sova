@@ -4,6 +4,7 @@
 
 import type { AgentsInsight, LiveAgentSession, SessionSummary, TeamInfo, WorktreeStatus } from "../../shared/protocol";
 import { SESSION_TITLE_MAX } from "../../shared/protocol";
+import type { UsageToday } from "../../shared/usage/wire";
 import { teamKey } from "./insights";
 import { isMainThread, isTopSession } from "./regions";
 import { rowNeedsYou, signalTitle } from "./signals";
@@ -42,8 +43,6 @@ export interface BoardRow {
   working: number;
   total: number;
   teams: TeamInfo[];
-  /** Lifetime USD of its workers, when the record reports one. */
-  spend: number | null;
   /** ms epoch. */
   lastActive: number;
 }
@@ -104,7 +103,6 @@ export function boardRows(sessions: readonly SessionSummary[], agents: Pick<Agen
       working: agent ? agent.workerCounts.working : (counts?.working ?? 0),
       total: agent ? Math.max(agent.workerCounts.total, agent.workers.length) : (counts?.total ?? 0),
       teams: agent?.teams ?? [],
-      spend: agent?.usageTotal?.cost ?? null,
       lastActive: Number.isNaN(t) ? 0 : t,
     };
   });
@@ -183,24 +181,17 @@ export function filterCounts(rows: readonly BoardRow[], treesOf: (path: string) 
 export interface BoardTotals {
   working: number;
   live: number;
-  /** USD across the workers of sessions active today (their lifetime spend); null when none reports one. */
+  /** This device's USD since local midnight, every call of every kind (the usage ledger's
+      `GET /api/usage/today`); null before its first answer and while nothing was spent today. */
   spendToday: number | null;
   /** Distinct unmerged branches across the trees read so far; null before any reading. */
   unmerged: number | null;
 }
 
-/** Local midnight of `now`. */
-const startOfDay = (now: number) => {
-  const d = new Date(now);
-  d.setHours(0, 0, 0, 0);
-  return d.getTime();
-};
-
-/** The head's totals. Trees are counted once each, however many sessions touch them. */
-export function boardTotals(rows: readonly BoardRow[], trees: Iterable<readonly WorktreeStatus[]>, now: number): BoardTotals {
-  const today = startOfDay(now);
-  let spend: number | null = null;
-  for (const r of rows) if (r.spend !== null && r.lastActive >= today) spend = (spend ?? 0) + r.spend;
+/** The head's totals. Trees are counted once each, however many sessions touch them. `today` is
+    the ledger's answer for today, undefined until it arrives. */
+export function boardTotals(rows: readonly BoardRow[], trees: Iterable<readonly WorktreeStatus[]>, today: Pick<UsageToday, "usd"> | undefined): BoardTotals {
+  const spend = today && today.usd > 0 ? today.usd : null;
   let read = false;
   const unmerged = new Set<string>();
   for (const list of trees) {

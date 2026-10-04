@@ -13388,6 +13388,43 @@
         "pi-config/extensions/claude-code/provider/login-failover.test.ts",
         "pi-config/extensions/claude-code/accounts.test.ts"
       ]
+    },
+    "§mesh.lan/accept-process": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "code": [
+        "server/mesh/relay-accept/main.ts",
+        "server/mesh/lan-accept.ts",
+        "server/mesh/lan-handoff.ts",
+        "server/mesh/lan-handoff-protocol.ts",
+        "server/mesh/lan-accept.test.ts",
+        "server/mesh/lan-handoff-protocol.test.ts",
+        "server/mesh/lan-internet.test.ts",
+        "scripts/mesh-lab/e2e/m9-internet-relay.test.mjs"
+      ],
+      "requires": [
+        "§mesh.lan/handshake",
+        "§mesh.lan/relay-listener",
+        "§mesh.lan/identity"
+      ]
+    },
+    "§mesh.vps/internet-relay": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "code": [
+        "scripts/mesh-vps/remote-setup.sh",
+        "scripts/mesh-vps/deploy.sh",
+        "scripts/mesh-vps/config.sh",
+        "scripts/mesh-vps/local.env.example",
+        "scripts/mesh-vps/sova-relay-accept.service.in",
+        "scripts/mesh-vps/SUDO.md",
+        "scripts/mesh-vps/exposure.sh",
+        "scripts/mesh-vps/README.md"
+      ],
+      "requires": [
+        "§mesh.lan/accept-process",
+        "§mesh/vps"
+      ]
     }
   },
   "boundary": {

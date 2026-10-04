@@ -5,7 +5,10 @@ A mesh host on a VPS is deployed from the laptop by `scripts/mesh-vps/deploy.sh`
 resync from the host menu, §mesh.peers/resync), as an unprivileged user with no root step of its own,
 and runs as that user's `sova-mesh` service with an isolated home and a fixed, minimal `PATH`. The new
 build is installed and built beside the running one and swapped in only once it built, so a failed
-build leaves the running app as it was.
+build leaves the running app as it was. What needs root is done once, by an admin, from
+`scripts/mesh-vps/SUDO.md` (letting the user's services run without a login, the firewall, the
+tailnet's HTTPS, the public share front, and an internet relay's accept process); a deploy never
+runs sudo.
 
 ## §mesh.vps/claude-code — Claude Code on the service PATH, or a warning
 
@@ -37,4 +40,42 @@ the deploy with "bun: install failed: the running app is unchanged". The service
 names that Bun (`SOVA_BUN`), and `run-sova.sh` starts the server through `scripts/start-server.sh`,
 so it runs on Bun. `SOVA_RUNTIME=node` in the site settings writes `SOVA_RUNTIME=node` into the
 service's environment at the next deploy, and the host then runs on the bundled Node instead; any
-other value but empty or `bun` stops the deploy before it starts.
+other value but empty or `bun` stops the deploy before it starts. An internet relay's accept process
+(§mesh.vps/internet-relay) always runs on the bundled Node, whatever `SOVA_RUNTIME` says; Bun only
+bundles it at deploy.
+
+## §mesh.vps/internet-relay — The internet relay on a VPS
+
+- `VPS_RELAY` in the site settings is `off` (the default) or `on`, and `VPS_RELAY_PORT` is the
+  relay's public port (4803 when unset; 443 works too, and the deploy warns when the public share
+  front already holds 443). Any other `VPS_RELAY` stops the deploy before it starts.
+- With `on`, each deploy bundles the accept process (§mesh.lan/accept-process) in the new build,
+  stamped with the deployed commit, before the swap: a failed bundle stops the deploy with "relay
+  accept: bundle failed: the running app is unchanged". After the swap it installs that bundle
+  atomically as `~/sova-mesh/accept/relay-accept.mjs`, makes `~/sova-mesh/relay` (mode 0750, the
+  user's own group) for the handoff socket, and writes `SOVA_RELAY_HANDOFF` into the service's
+  environment. It warns, and still finishes, when the user's group has other members, and when the
+  installed system unit is missing or differs from the one this build ships ("run SUDO.md §5 step 2
+  again"). With `off`, `SOVA_RELAY_HANDOFF` is not written, so Sova has no internet relay, and an
+  accept process still installed never listens.
+- The accept process runs as the system user `sova-relay`, from the system unit
+  `sova-relay-accept.service` that an admin installs once (SUDO.md §5, with the exact commands, their
+  checks and their undo). The unit sees only the bundled Node and the bundle (read-only), the handoff
+  directory, and its own state directory; it can't see the deploy user's home, the agent directory or
+  any other user's files; it can't gain privileges, load kernel modules, write executable memory or
+  make namespaces; it may use only IPv4, IPv6 and unix sockets, and it can't exchange a packet with
+  loopback, link-local (the cloud metadata service), multicast, private, carrier-grade NAT or tailnet
+  addresses; its memory is capped, and it restarts on exit. Node's permission model limits its file
+  access too. A firewall rule (SUDO.md §5) also drops every new outbound connection the `sova-relay`
+  user starts. Only port 443 needs a capability, and only then.
+- After a deploy the accept process needs no root step: Sova tells an accept process of another build
+  to exit, and its unit starts the newly installed bundle. Only a changed unit file asks for SUDO.md §5
+  step 2 again.
+- `scripts/mesh-vps/exposure.sh probe` with `VPS_RELAY=on` passes only if the relay port connects
+  from the public address, a TLS client with no certificate gets no HTTP answer, a client with a fresh
+  certificate no pairing knows gets no byte, TLS 1.2 is refused, the unit is active, and no process of
+  the deploy user listens on that port. With `VPS_RELAY=off` the port must time out, as every Sova
+  port does.
+- Away from home, a dial-out host paired with this relay is reached from this VPS's own page (its
+  `/peer/<id>/`), and from nowhere else: a relay never forwards a pairing to another host
+  (§mesh.lan/as-a-peer).

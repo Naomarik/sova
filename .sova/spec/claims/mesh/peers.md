@@ -85,7 +85,8 @@ without it neither borrows from nor lends to this host, and to that peer this ho
 
 Defaults:
 - With no `mesh-access.json`, and for any peer the file doesn't list, a peer has `full`, exactly
-  as before grants existed.
+  as before grants existed. A dial-out pairing is the exception: unlisted, or with no file, it has
+  `presence` (§mesh.lan/pairing); tailnet peers are unchanged.
 - A peer paired from the Mesh page's form gets the preset chosen there, `presence` by default.
 - A `mesh-access.json` that exists but can't be read or parsed fails closed: every peer gets hello
   only, and the Mesh page shows the error.
@@ -118,7 +119,8 @@ identifying callers by address instead (`SOVA_MESH_IDENTITY=addresses`). Such a 
 tailnet address (`SOVA_PEER_HOST`, tailnet addresses only), and its peer listener opens there and
 nowhere else; without a valid one it stays closed. A caller is served only if its connection comes
 from a tailnet address that is not this host's own and exactly one `peers.json` entry names that
-address (as its name or its URL's host); that entry is the caller. Any other caller is refused before
+address (as its name or its URL's host); that entry is the caller. A dial-out pairing
+(§mesh/lan) never counts as such an entry. Any other caller is refused before
 any route runs, as with `whois`. Unset, the host uses `whois` as before.
 
 This is weaker than `whois`: it trusts that the tailnet delivers packets only from the node that

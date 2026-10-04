@@ -75,5 +75,6 @@ again, whichever side calls first, with no page open. A name typed for a peer on
 peer's time, so only a newer rename by that peer replaces it; for a peer whose clock is more than a
 day ahead, its own name comes back the next time it comes up. A name a host was given before names
 carried a time stays until that host is renamed. Only the peer itself can change its name on another
-host (the gate's identity, never a request field). A host on an older build can't be renamed from
+host (the gate's identity, never a request field), and a dial-out pairing can't: its rename of
+itself is ignored and the name the operator gave it here stays (§mesh.lan/pairing). A host on an older build can't be renamed from
 here, and the dialog says so.

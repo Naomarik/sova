@@ -295,7 +295,9 @@ decisions, topic outlines, compaction, cache warming.
   connecting, unreachable, refusing, or too old to answer makes the total **partial** and is named
   in its sentence; it never adds a 0. A peer that answered and then went silent is pinged, and
   past a minute or so without a word its last count is dropped and it is unreachable. A count
-  past sane bounds, from a process or a peer, is capped or ignored, never added whole. With the mesh off, no browser listening, or a peer removed,
+  past sane bounds, from a process or a peer, is capped or ignored, never added whole. A dial-out
+  pairing (§mesh/lan) gets no socket: its calls are not counted, and it doesn't make the total
+  partial. With the mesh off, no browser listening, or a peer removed,
   no peer socket is open.
 - **Pushed, not polled.** The count rides the session feed (`/ws/watch?feed=sessions`) as an
   `llm_inflight` frame: a full snapshot on every connect, then a frame each time the total or its

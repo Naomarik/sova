@@ -145,21 +145,21 @@ export function velocityColumnAt(v: TokenVelocityView, group: 2 | 4, index: numb
   };
 }
 
-/** A local time on the 24-hour clock, `14:06`; seconds only off the minute, `14:06:30`. */
+/** A local time on the 24-hour clock, rounded down to its minute: `14:06`, never seconds. */
 function clock24(ms: number): string {
   const d = new Date(ms);
   const two = (n: number) => String(n).padStart(2, "0");
-  const hm = `${two(d.getHours())}:${two(d.getMinutes())}`;
-  return d.getSeconds() ? `${hm}:${two(d.getSeconds())}` : hm;
+  return `${two(d.getHours())}:${two(d.getMinutes())}`;
 }
 
 /** The scrub card's three lines: the span (`14:06–14:07`, the hollow column `Now`), the rate
     (`38k`, `at least` while partial) and a caption comparing it with the 30-minute mean. */
 export function velocityScrubCard(r: VelocityColumnReading): { span: string; atLeast: boolean; figure: string; caption: string } {
   let caption: string;
-  if (r.hollow) caption = "Still landing — replies in progress";
-  else if (!(r.tokens > 0) || r.vsMean === null) caption = "No output";
+  // The hollow column is a minute not yet over: say so, never that replies are in progress.
+  if (!(r.tokens > 0) || r.vsMean === null) caption = r.hollow ? "Nothing yet this minute" : "No output";
   else caption = `${r.vsMean < 0.1 ? "<0.1" : r.vsMean.toFixed(1)}× the 30-min average`;
+  if (r.hollow && r.tokens > 0 && r.vsMean !== null) caption = `So far this minute · ${caption}`;
   return {
     span: r.hollow ? "Now" : `${clock24(r.from)}–${clock24(r.to)}`,
     atLeast: r.partial,

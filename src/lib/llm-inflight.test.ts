@@ -269,16 +269,19 @@ test("velocityScrubCard: the span on a 24-hour clock, the figure, at least while
   assert.equal(c.caption, "3.1× the 30-min average");
   assert.match(c.span, /^\d\d:\d\d–\d\d:\d\d$/, "whole minutes: no seconds");
   const half = minute(Date.UTC(2026, 9, 5, 14, 6, 30));
-  assert.match(half.span, /^\d\d:\d\d:30–\d\d:\d\d:30$/, "a column on the half minute says so");
+  assert.match(half.span, /^\d\d:\d\d–\d\d:\d\d$/, "a column on the half minute still reads whole minutes");
   if (new Date(0).getTimezoneOffset() === 0) {
     // `pnpm test` runs on Bun with TZ=UTC: the exact strings.
     assert.equal(c.span, "14:06–14:07");
     assert.equal(minute(Date.UTC(2026, 9, 5, 23, 59)).span, "23:59–00:00", "a 24-hour clock");
-    assert.equal(half.span, "14:06:30–14:07:30");
+    assert.equal(half.span, "14:06–14:07", "each end rounded down to its minute");
   }
   assert.equal(minute(0, { partial: true }).atLeast, true);
   assert.equal(minute(0, { hollow: true }).span, "Now");
-  assert.equal(minute(0, { hollow: true }).caption, "Still landing — replies in progress");
+  assert.equal(minute(0, { hollow: true, vsMean: 1.2 }).caption, "So far this minute · 1.2× the 30-min average");
+  assert.equal(minute(0, { hollow: true, tokens: 0, perMinute: 0, vsMean: 0 }).caption, "Nothing yet this minute");
+  for (const extra of [{}, { tokens: 0, perMinute: 0, vsMean: 0 }])
+    assert.doesNotMatch(minute(0, { hollow: true, ...extra }).caption, /landing|in progress/i, "never claims replies are running");
   assert.equal(minute(0, { tokens: 0, perMinute: 0, vsMean: 0 }).caption, "No output");
   assert.equal(minute(0, { vsMean: 0.04 }).caption, "<0.1× the 30-min average", "never a 0.0×");
   assert.equal(minute(0, { vsMean: 0.5 }).caption, "0.5× the 30-min average");

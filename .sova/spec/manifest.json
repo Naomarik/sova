@@ -10580,9 +10580,11 @@
         "shared/project-contract.ts",
         "shared/project-contract.test.ts",
         "server/project-services/engine.ts",
+        "server/project-services/copy-tree.ts",
         "server/project-services/share.test.ts",
         "server/project-services/data-own-source.test.ts",
-        "server/project-services/ports-grace.test.ts"
+        "server/project-services/ports-grace.test.ts",
+        "server/project-services/copy-tree.test.ts"
       ]
     },
     "§app.project-services/create": {

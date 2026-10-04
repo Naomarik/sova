@@ -7,18 +7,39 @@
 
 .subagent-editor { container: subagent-editor / inline-size; }
 
-/* The list: name over footprint, actions after; at narrow widths the actions wrap under. */
+/* The list: name over footprint, both wrapping whole (a footprint can run to three long model ids
+   and a name to 48 characters). The actions take their own line under them, Delete pushed to its
+   end, apart from Edit; only a list wide enough for both puts the actions beside the name. Rows
+   start at the tab's content edge, under the head's buttons. */
+.subagent-editor-list { container: subagent-list / inline-size; }
 .subagent-editor-list-actions,
 .subagent-editor-row-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
-.subagent-editor-list .list-row { flex-wrap: wrap; row-gap: var(--space-2); }
-.subagent-editor-list .list-main { flex: 1 1 12rem; }
-.subagent-editor-list .list-title { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.subagent-editor-list .list-row { flex-direction: column; align-items: stretch; gap: var(--space-2); padding-inline: 0; }
+.subagent-editor-list .list-row > .button { align-self: flex-start; }
+/* A ghost button leading its line puts its text, not its padding, on the content edge (as Back does). */
+.subagent-editor-list .list-row > .list-main + .button-ghost { margin-inline-start: calc(var(--space-3) * -1); }
+.subagent-editor-list .list-main { flex: none; }
+.subagent-editor-list .list-title,
+.subagent-editor-list .list-meta { white-space: normal; overflow: visible; overflow-wrap: anywhere; }
+.subagent-editor-list .list-title { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-2); }
 .subagent-editor-list .list-meta { display: block; }
 .subagent-editor-list .list-meta.text-mono { font-family: var(--font-mono); font-size: var(--fs-mono); }
+.subagent-editor-row-actions > .button-destructive { margin-inline-start: auto; }
+@container subagent-list (min-width: 40rem) {
+  .subagent-editor-list .list-row { flex-direction: row; align-items: center; gap: var(--space-4); }
+  .subagent-editor-list .list-row > .button { align-self: center; }
+  .subagent-editor-list .list-row > .list-main + .button-ghost { margin-inline-start: 0; }
+  .subagent-editor-list .list-main { flex: 1 1 0; }
+  .subagent-editor-row-actions { flex: none; flex-wrap: nowrap; }
+  .subagent-editor-row-actions > .button-destructive { margin-inline-start: var(--space-2); }
+}
 
 /* The editor's head: Back lines its chevron up with the content edge. */
 .subagent-editor-back { margin-left: calc(var(--space-3) * -1); color: var(--color-ink-2); }
 .subagent-editor-name { gap: var(--space-1); }
+/* The name input keeps its 20rem; the footprint under it takes the panel's width before wrapping. */
+.subagent-editor-name.settings-team-role { max-width: none; }
+.subagent-editor-name > .input { max-width: 20rem; }
 .subagent-editor-name .field-label { margin-bottom: var(--space-1); }
 
 /* The three sections: a heading-s header, then their groups a space-5 apart. */
@@ -100,14 +121,28 @@ div.subagent-editor-flush { display: flex; flex-direction: column; gap: var(--sp
 .subagent-editor-number-row > .field-error { flex: 1; min-width: 0; }
 .subagent-editor-instructions > .overseer-fold-summary .overseer-fold-label { font-weight: var(--fw-medium); }
 
-/* A phone's panel: the slot's label goes above its row; the three selects stay side by side
-   until the panel is narrower still. */
+/* A model id longer than its select ends in an ellipsis; the select's title holds the whole id. */
+.subagent-editor-slot .select { text-overflow: ellipsis; }
+
+/* A closed fold's summary wraps beside its header instead of cutting a long model id or role name. */
+.subagent-editor .overseer-fold-summary { padding-block: var(--space-1); }
+.subagent-editor .overseer-fold-meta { flex: 1 1 0; white-space: normal; overflow: visible; overflow-wrap: anywhere; }
+
+/* A phone's panel: a worker takes two lines in reading (and focus) order — the slot's label and
+   Backend, then Model and Effort — so the model id gets most of the width. The fields' box steps
+   aside (display: contents) so the three selects sit on the slot's own grid. A lone row's Backend
+   takes the whole first line. */
 @container subagent-editor (max-width: 30rem) {
-  .subagent-editor-slot { grid-template-columns: minmax(0, 1fr); }
-  .subagent-editor-slot > .settings-delegate-slot-label,
-  .subagent-editor-slot > .settings-delegate-fields,
-  .subagent-editor-slot > .settings-delegate-issue { grid-column: 1; }
-}
-@container subagent-editor (max-width: 22rem) {
-  .subagent-editor-slot .settings-delegate-fields { grid-template-columns: minmax(0, 1fr); }
+  .subagent-editor .subagent-editor-slot,
+  .subagent-editor .subagent-editor-flush .subagent-editor-slot:not(:has(> .settings-delegate-slot-label)) {
+    grid-template-columns: 3.75rem minmax(0, 1fr) 6rem;
+    gap: var(--space-2);
+  }
+  .subagent-editor .subagent-editor-slot > .settings-delegate-fields { display: contents; }
+  .subagent-editor .subagent-editor-slot > .settings-delegate-slot-label { grid-column: 1; }
+  .subagent-editor .subagent-editor-slot .settings-delegate-fields > .field:nth-child(1) { grid-column: 2 / -1; }
+  .subagent-editor .subagent-editor-slot:not(:has(> .settings-delegate-slot-label)) .settings-delegate-fields > .field:nth-child(1) { grid-column: 1 / -1; }
+  .subagent-editor .subagent-editor-slot .settings-delegate-fields > .field:nth-child(2) { grid-column: 1 / 3; }
+  .subagent-editor .subagent-editor-slot .settings-delegate-fields > .field:nth-child(3) { grid-column: 3; }
+  .subagent-editor .subagent-editor-slot > .settings-delegate-issue { grid-column: 1 / -1; }
 }

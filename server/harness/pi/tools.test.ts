@@ -219,3 +219,41 @@ describe("end to end: an extension registers toPiTool(spec) and a run calls it",
     }
   });
 });
+
+describe("record_decision's quote entry over the raw branch (baton-loadout quoteEntryOf)", () => {
+  /** The walk it replaced: from the leaf up its parents through getEntry, at most 200 entries. */
+  const byParents = (sm: { getEntry(id: string): any }, id: string): string => {
+    let cur = sm.getEntry(id);
+    for (let hops = 0; cur && hops < 200; hops++) {
+      if (cur.type === "message" && cur.message?.role === "user" && cur.id) return cur.id;
+      cur = cur.parentId ? sm.getEntry(cur.parentId) : undefined;
+    }
+    return id;
+  };
+  const user = (text: string) => ({ role: "user", content: [{ type: "text", text }], timestamp: Date.now() });
+  const assistant = (text: string) => ({ role: "assistant", content: [{ type: "text", text }], api: "x", provider: "x", model: "x", usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } }, stopReason: "stop", timestamp: Date.now() });
+
+  test("the same entry as the parent walk: null leaf, a near user message, one past the 200-entry cap, and a branch off an older leaf", async () => {
+    const { quoteEntryOf } = await import("../../baton-loadout");
+    const sm = SessionManager.inMemory(dir);
+    const check = () => {
+      const c = toolCtx({ sessionManager: sm, cwd: dir } as never);
+      const marker = c.leafId() ?? "1700000000000";
+      assert.equal(quoteEntryOf(c.rawBranch(), marker), byParents(sm, marker));
+      return quoteEntryOf(c.rawBranch(), marker);
+    };
+    assert.equal(check(), "1700000000000", "no leaf: the marker itself");
+    const u1 = sm.appendMessage(user("first") as never);
+    sm.appendMessage(assistant("a") as never);
+    sm.appendCustomEntry("sova-baton-decision", { v: 1 });
+    assert.equal(check(), u1);
+    for (let i = 0; i < 198; i++) sm.appendCustomEntry("sova-test", { i });
+    assert.equal(check(), sm.getLeafId(), "past the cap: the leaf");
+    const u2 = sm.appendMessage(user("second") as never);
+    for (let i = 0; i < 199; i++) sm.appendCustomEntry("sova-test", { i });
+    assert.equal(check(), u2, "the 200th entry up is still read");
+    sm.branch(u1);
+    sm.appendMessage(assistant("b") as never);
+    assert.equal(check(), u1, "another branch: its own parents");
+  });
+});

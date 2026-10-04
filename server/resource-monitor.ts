@@ -28,6 +28,7 @@ import {
   attribute, cpuKey, foldCpu, SidMemory, type AttribProc, type CpuPrev, type HostedInfo, type Owner, type WorkerInfo,
 } from "./resource-monitor-attrib";
 import { canonicalPath } from "./paths";
+import { toolCtx } from "./harness/pi/tools";
 import { MonitorLog, MonitorRing, Rollup, type TickPoint } from "./resource-monitor-history";
 import {
   classifyArgv, parseBootTime, parseCmdline, parseEnviron, parseKeyValues, parseLoadavg, parseMeminfo, parseSelfCgroup,
@@ -110,13 +111,13 @@ export function monitorExtension(pi: ExtensionAPI): void {
     if (entry) entry.workers = ws;
   });
   pi.on("session_start", (_event, ctx) => {
-    const file = ctx.sessionManager.getSessionFile();
-    const path = file ? canonicalPath(file) : undefined;
+    const c = toolCtx(ctx);
+    const path = c.key ?? undefined;
     if (entry?.path !== path) drop();
     if (!path) return;
-    const sessionId = ctx.sessionManager.getSessionId();
+    const sessionId = c.sessionId;
     entry = {
-      token, path, sessionId, cwd: ctx.cwd, title: ctx.sessionManager.getSessionName(), workers, toolsRunning, lastToolEnd,
+      token, path, sessionId, cwd: c.cwd, title: c.title(), workers, toolsRunning, lastToolEnd,
       providerIds: providerIdsOf(sessionId),
     };
     hosted.set(path, entry);
@@ -124,7 +125,7 @@ export function monitorExtension(pi: ExtensionAPI): void {
     ask();
   });
   pi.on("session_info_changed", (_event, ctx) => {
-    if (entry) entry.title = ctx.sessionManager.getSessionName();
+    if (entry) entry.title = toolCtx(ctx).title();
   });
   pi.on("tool_execution_start", () => {
     toolsRunning++;

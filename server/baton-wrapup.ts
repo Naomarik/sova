@@ -1,4 +1,4 @@
-import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
+import type { ToolSpec } from "../shared/harness";
 import {
   BATON_SENT_ENTRY,
   BATON_WRAPUP_ENTRY,
@@ -165,7 +165,7 @@ export const WRAPUP_SYSTEM =
   "You maintain short profiles of the people an organization works with. You read a finished conversation and record only what it shows, with evidence. You have one tool.";
 
 /** The wrap-up's one tool, bound to a session. Refuses outside a running wrap-up. */
-export function wrapupTool(sessionId: string): ToolDefinition<any, any> {
+export function wrapupTool(sessionId: string): ToolSpec {
   return {
     name: WRAPUP_TOOL,
     label: "Write profile updates",
@@ -199,7 +199,7 @@ export function wrapupTool(sessionId: string): ToolDefinition<any, any> {
       const hit = batonById(sessionId);
       if (!hit) throw new Error("This conversation is no longer registered.");
       const { row } = hit;
-      const mine = messagesByPerson((ctx?.sessionManager?.getBranch() ?? []) as Entry[]);
+      const mine = messagesByPerson((ctx?.rawBranch() ?? []) as Entry[]);
       const updates: any[] = Array.isArray(params?.updates) ? params.updates.slice(0, 40) : [];
       for (const u of updates) {
         const personId = String(u?.personId ?? "");

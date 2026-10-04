@@ -92,7 +92,7 @@ describe("the prompt and the tool set stay in step", () => {
   test("sova_card never ends the turn; its details are the card, and a later call sees it", async () => {
     const card = buildOverseerTools().find((t) => t.name === "sova_card")!;
     const branch: unknown[] = [];
-    const ctx = { sessionManager: { getBranch: () => branch, getSessionId: () => "sess-1" } };
+    const ctx = { sessionId: "sess-1", cwd: "/", leafId: () => null, rawBranch: () => branch };
     const out = await card.execute("k1", { ops: [{ op: "create", title: "Archive 12 sessions?", options: [{ label: "Archive", tone: "danger" }, { label: "Cancel", reply: "no" }] }] }, undefined, undefined, ctx as never);
     assert.equal(out.terminate, undefined);
     assert.equal(out.details.card.id, "c_1");
@@ -117,14 +117,14 @@ describe("the prompt and the tool set stay in step", () => {
     addIdea({ id: "§sova/confirm-rows", title: "Cards list their subject" });
     const todo = addTodo({ text: "Tick the done ones" });
     const card = buildOverseerTools().find((t) => t.name === "sova_card")!;
-    const out = await card.execute("c2", { ops: [{ op: "create", title: "Tick?", options: [{ label: "Tick" }], items: { ideas: ["sova/confirm-rows"], todos: [todo.id] } }] }, undefined, undefined, {} as never);
+    const out = await card.execute("c2", { ops: [{ op: "create", title: "Tick?", options: [{ label: "Tick" }], items: { ideas: ["sova/confirm-rows"], todos: [todo.id] } }] }, undefined, undefined, undefined);
     assert.deepEqual(out.details.card.items, [
       { kind: "idea", id: "§sova/confirm-rows", title: "Cards list their subject", n: 1 },
       { kind: "todo", id: todo.id, text: "Tick the done ones", n: 2 },
     ]);
     assert.match((out.content[0] as { text: string }).text, /1\. §sova\/confirm-rows — Cards list their subject/);
     await assert.rejects(
-      card.execute("c3", { ops: [{ op: "create", title: "Archive?", options: [{ label: "Archive" }], items: { sessions: ["sova://s/nope-1"], todos: [todo.id, "td_missing0"] } }] }, undefined, undefined, {} as never),
+      card.execute("c3", { ops: [{ op: "create", title: "Archive?", options: [{ label: "Archive" }], items: { sessions: ["sova://s/nope-1"], todos: [todo.id, "td_missing0"] } }] }, undefined, undefined, undefined),
       /No card was shown\. These ids match nothing \(sessions: sova:\/\/s\/nope-1; todos: td_missing0\)/,
     );
   });
@@ -135,7 +135,7 @@ describe("the prompt and the tool set stay in step", () => {
     const b = addTodo({ text: "Just file it" });
     const card = buildOverseerTools().find((t) => t.name === "sova_card")!;
     const branch: unknown[] = [];
-    const ctx = { sessionManager: { getBranch: () => branch, getSessionId: () => "sess-rows" } };
+    const ctx = { sessionId: "sess-rows", cwd: "/", leafId: () => null, rawBranch: () => branch };
     const long = `${"Long note. ".repeat(25)}End.`;
     const out = await card.execute(
       "r1",
@@ -172,11 +172,11 @@ describe("the prompt and the tool set stay in step", () => {
       { ops: [{ op: "create", title: "Where next?", options: [{ label: "Done" }, { label: "Usage", link: { page: "usage" } }, { label: "PR", link: { url: "https://github.com/x/y/pull/1" } }, { label: "Settings", link: { page: "settings", settings_tab: "overseer" } }] }] },
       undefined,
       undefined,
-      {} as never,
+      undefined,
     );
     assert.deepEqual(out.details.card.options.map((o: { href?: string }) => o.href), [undefined, "#/usage", "https://github.com/x/y/pull/1", "settings:overseer"]);
     await assert.rejects(
-      card.execute("l2", { ops: [{ op: "create", title: "?", options: [{ label: "Go" }, { label: "Bad", link: { url: "http://x.test" } }, { label: "Creds", link: { url: "https://u:p@x.test" } }] }] }, undefined, undefined, {} as never),
+      card.execute("l2", { ops: [{ op: "create", title: "?", options: [{ label: "Go" }, { label: "Bad", link: { url: "http://x.test" } }, { label: "Creds", link: { url: "https://u:p@x.test" } }] }] }, undefined, undefined, undefined),
       /No card was shown\. options\[1\]\.link: url must be an https URL without credentials\. options\[2\]\.link: url must be/,
     );
   });

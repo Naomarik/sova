@@ -3,6 +3,7 @@ import { homedir } from "node:os";
 import { join, relative } from "node:path";
 import { type AgentSession, SessionManager } from "@earendil-works/pi-coding-agent";
 import { agentRoot } from "./state-root";
+import { toolCtx, toPiTool } from "./harness/pi/tools";
 import {
   autonomyMeaning,
   PER_DAY,
@@ -1011,14 +1012,14 @@ registerSpecialLoadout({
           {
             name: "sova-project-overseer",
             factory: (pi) => {
-              for (const t of tools) pi.registerTool(t);
+              for (const t of tools) pi.registerTool(toPiTool(t));
               pi.on("before_agent_start", (event, ctx) => {
                 event.systemPromptOptions.appendSystemPrompt = renderProjectOverseerPrompt(rt.projectId, tools, template);
                 // The open cards, hidden, as the Overseer's (§app.overseer/confirm).
-                return cardsNoteMessage(ctx.sessionManager.getBranch());
+                return cardsNoteMessage(toolCtx(ctx).rawBranch());
               });
               pi.on("session_compact", (_event, ctx) => {
-                const note = cardsNote(foldCards(ctx.sessionManager.getBranch()), true, sessionActivity());
+                const note = cardsNote(foldCards(toolCtx(ctx).rawBranch()), true, sessionActivity());
                 if (note) pi.sendMessage({ customType: CARDS_NOTE_MESSAGE, content: note, display: false });
               });
               pi.on("context", (event) => {

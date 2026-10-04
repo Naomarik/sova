@@ -5,6 +5,7 @@ import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { type AgentSession, SessionManager } from "@earendil-works/pi-coding-agent";
 import { agentRoot } from "./state-root";
+import { fromPiTool, toolCtx, toPiTool } from "./harness/pi/tools";
 import { loadPolicyFile, policyFilePath } from "../pi-config/extensions/sandbox/policy.ts";
 import {
   OVERSEER_BRIEF_PREFIX,
@@ -630,7 +631,10 @@ const host: OverseerToolHost = {
   },
   explorer: () => readOverseerSettings().explorer,
   explorerCwd: () => overseerDir(),
-  subagent: (name) => (overseerSession?.extensionRunner?.getToolDefinition(name) as SubagentTool | undefined) ?? null,
+  subagent: (name) => {
+    const def = overseerSession?.extensionRunner?.getToolDefinition(name);
+    return def ? (fromPiTool(def) as unknown as SubagentTool) : null;
+  },
 };
 
 /**
@@ -962,14 +966,14 @@ setOverseerRuntime({
           {
             name: "sova-overseer",
             factory: (pi) => {
-              for (const t of tools) pi.registerTool(t);
+              for (const t of tools) pi.registerTool(toPiTool(t));
               // A run started by a message: its prompt, with the notes and settings as they are now.
               // The run note (the time now, what cleared) and the open cards ride the prompt as a
               // hidden message, never the system prompt (a prompt change restarts a Claude Code CLI
               // and breaks the cache): persisted, so a restart or a fold keeps it.
               pi.on("before_agent_start", async (event, ctx) => {
                 event.systemPromptOptions.appendSystemPrompt = prompt.refresh();
-                return runNoteMessage(ctx.sessionManager.getBranch());
+                return runNoteMessage(toolCtx(ctx).rawBranch());
               });
               // The id check (§app.overseer/id-check): a run that linked a session id this host has no
               // file for leaves a hidden note naming the nearest real id. Sent while the run still
@@ -985,7 +989,7 @@ setOverseerRuntime({
               // A compaction summarizes the card results away: the exact open cards, once, after it.
               // The sessions in play go with them (§app.overseer/sessions-in-play), even with no card open.
               pi.on("session_compact", async (_event, ctx) => {
-                const note = await compactNoteMessage(ctx.sessionManager.getBranch());
+                const note = await compactNoteMessage(toolCtx(ctx).rawBranch());
                 if (note) pi.sendMessage(note);
               });
               // Worker reports and other extension messages reach the model redacted, like every tool's output.

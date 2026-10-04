@@ -20,9 +20,11 @@
  */
 
 import MarkdownIt from "markdown-it";
-import type { ExtensionAPI, ExtensionContext, ToolDefinition } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { HookCtx, ToolSpec } from "../shared/harness";
 import { FRAME_HARD_CHARS, FRAME_SOFT_CHARS } from "../src/vis/kinds/frame/parse";
 import { parseVis, visKindWord, type ParseResult } from "../src/vis/parse";
+import { toolCtx, toPiTool } from "./harness/pi/tools";
 import { resolveChatMode, type BranchEntries } from "./mode-state";
 
 /** customType of the hidden message a retry adds. Never displayed: the transcript drops it
@@ -226,7 +228,7 @@ export function visCheck(kind: "html" | "svg", source: string, parse: (kind: str
 
 type VisCheckParams = { kind: "html" | "svg"; source: string };
 
-export const visCheckTool: ToolDefinition<any, VisCheckDetails> = {
+export const visCheckTool: ToolSpec<any, VisCheckDetails> = {
   name: VIS_CHECK_TOOL,
   label: "vis check",
   description:
@@ -260,14 +262,14 @@ export function visCheckExtension(host: () => VisCheckHost | null) {
     hidden: true,
     factory: (pi: ExtensionAPI) => {
       const retry = new VisRetry();
-      pi.registerTool(visCheckTool);
+      pi.registerTool(toPiTool(visCheckTool));
 
       // The tool is in the loadout exactly while vis is on. pi activates every extension tool at
       // registration, so session_start takes it out of a chat without vis before any request; a
       // switch made meanwhile is picked up when the next run starts, or when this one settles.
-      const syncTool = (ctx: ExtensionContext) => {
+      const syncTool = (c: HookCtx) => {
         try {
-          const want = host()?.visOn(ctx.sessionManager.getBranch()) ?? visOnBranch(ctx.sessionManager.getBranch());
+          const want = host()?.visOn(c.rawBranch() as BranchEntries) ?? visOnBranch(c.rawBranch() as BranchEntries);
           const current = pi.getActiveTools();
           const has = current.includes(VIS_CHECK_TOOL);
           if (want && !has) pi.setActiveTools([...current, VIS_CHECK_TOOL]);
@@ -276,8 +278,8 @@ export function visCheckExtension(host: () => VisCheckHost | null) {
           // No loadout to change yet.
         }
       };
-      pi.on("session_start", async (_e, ctx) => syncTool(ctx));
-      pi.on("before_agent_start", async (_e, ctx) => syncTool(ctx));
+      pi.on("session_start", async (_e, ctx) => syncTool(toolCtx(ctx)));
+      pi.on("before_agent_start", async (_e, ctx) => syncTool(toolCtx(ctx)));
 
       pi.on("message_end", async (event) => {
         const m = event.message as { role?: string; content?: unknown };
@@ -286,7 +288,8 @@ export function visCheckExtension(host: () => VisCheckHost | null) {
 
       pi.on("agent_before_settle", async (event, ctx) => {
         const h = host();
-        const branch = () => ctx.sessionManager.getBranch();
+        const c = toolCtx(ctx);
+        const branch = () => c.rawBranch() as BranchEntries;
         const entry = retry.beforeSettle(event.outcome, {
           visOn: () => (h ? h.visOn(branch()) : visOnBranch(branch())),
           queued: () => h?.queued() ?? false,
@@ -298,7 +301,7 @@ export function visCheckExtension(host: () => VisCheckHost | null) {
 
       pi.on("agent_settled", async (_e, ctx) => {
         retry.settled();
-        syncTool(ctx);
+        syncTool(toolCtx(ctx));
       });
     },
   };

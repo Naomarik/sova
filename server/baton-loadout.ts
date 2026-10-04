@@ -1,6 +1,8 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
-import { SessionManager, type ToolDefinition } from "@earendil-works/pi-coding-agent";
+import { SessionManager } from "@earendil-works/pi-coding-agent";
+import type { ToolSpec } from "../shared/harness";
+import { toolCtx, toPiTool } from "./harness/pi/tools";
 import {
   abilitiesOf,
   BATON_DECISION_ENTRY,
@@ -186,26 +188,28 @@ async function modelAct(sessionId: string, event: string, payload: Record<string
 }
 
 /** The tools, bound to one session. `append` is the extension's own appendEntry. */
-export function batonTools(sessionId: string, append: AppendEntry): ToolDefinition<any, any>[] {
+export function batonTools(sessionId: string, append: AppendEntry): ToolSpec[] {
   const hit = batonById(sessionId);
   const roster = hit ? readRoster(hit.row.orgId) : [];
   const [handTo, goalDone, ...rest] = conversationTools(sessionId, append);
   return [handTo!, goalDone!, recordDecisionTool(sessionId, append, roster), ...rest];
 }
 
-/** The nearest user message up the tree from `id`: where a decision's quote was said. */
-function quoteEntryOf(sm: { getEntry(id: string): unknown } | undefined, id: string): string {
-  let cur = sm?.getEntry(id) as { id?: string; parentId?: string | null; type?: string; message?: { role?: string } } | undefined;
-  for (let hops = 0; cur && hops < 200; hops++) {
-    if (cur.type === "message" && cur.message?.role === "user" && cur.id) return cur.id;
-    cur = cur.parentId ? (sm?.getEntry(cur.parentId) as typeof cur) : undefined;
+/** The nearest user message up the tree from the leaf `id`: where a decision's quote was said. The
+    active branch is the leaf's parent chain, root first, so this walks it from its end (at most 200
+    entries); a branch that doesn't end at `id` (no leaf yet) has none. */
+export function quoteEntryOf(branch: readonly Record<string, any>[], id: string): string {
+  if (branch.at(-1)?.id !== id) return id;
+  for (let i = branch.length - 1, hops = 0; i >= 0 && hops < 200; i--, hops++) {
+    const cur = branch[i] as { id?: string; type?: string; message?: { role?: string } } | undefined;
+    if (cur?.type === "message" && cur.message?.role === "user" && cur.id) return cur.id;
   }
   return id;
 }
 
 /** record_decision, its owner areas listed as the roster has them now (the call itself always
     checks the roster as it is then). */
-export function recordDecisionTool(sessionId: string, append: AppendEntry, roster: readonly Person[]): ToolDefinition<any, any> {
+export function recordDecisionTool(sessionId: string, append: AppendEntry, roster: readonly Person[]): ToolSpec {
   return {
     name: "record_decision",
     label: "Record decision",
@@ -246,18 +250,18 @@ export function recordDecisionTool(sessionId: string, append: AppendEntry, roste
       const refused = host.explain(sid, "baton/record-decision", { ...payload, decisionId: "?", entryId: "?", markerId: "?" }, actorOn("model")(hit.row.orgId, hit.row.projectId));
       if (refused) throw new Error(refused.sentence);
       append(BATON_DECISION_ENTRY, { v: 1, area, ownerArea: payload.ownerArea, statement, quote, by: hit.row.holder ?? OPERATOR } satisfies BatonDecisionData);
-      const marker = ctx?.sessionManager?.getLeafId?.() ?? `${Date.now()}`;
-      await modelAct(sessionId, "baton/record-decision", { ...payload, decisionId: `${sessionId}:${marker}`, markerId: marker, entryId: quoteEntryOf(ctx?.sessionManager, marker) });
+      const marker = ctx?.leafId() ?? `${Date.now()}`;
+      await modelAct(sessionId, "baton/record-decision", { ...payload, decisionId: `${sessionId}:${marker}`, markerId: marker, entryId: quoteEntryOf(ctx?.rawBranch() ?? [], marker) });
       refreshShare(sessionId);
       // pi ends the run only when EVERY tool of the batch terminates: when this call rides with a
       // hand_to or goal_done, it must agree, or the model writes one more reply after the turn ended.
-      return { ...say("Recorded."), ...(batchEndsTurn(ctx?.sessionManager) ? { terminate: true } : {}) };
+      return { ...say("Recorded."), ...(batchEndsTurn(ctx?.rawBranch() ?? []) ? { terminate: true } : {}) };
     },
   };
 }
 
 /** hand_to, goal_done, propose_roster_edit and the wrap-up's tool. */
-function conversationTools(sessionId: string, append: AppendEntry): ToolDefinition<any, any>[] {
+function conversationTools(sessionId: string, append: AppendEntry): ToolSpec[] {
   return [
     {
       name: "hand_to",
@@ -282,7 +286,7 @@ function conversationTools(sessionId: string, append: AppendEntry): ToolDefiniti
         const chosen =
           !target || !row.holder || row.holder === OPERATOR || target.id === OPERATOR
             ? true
-            : handoffChosen(ctx?.sessionManager?.getBranch() ?? [], row.holder, target.name, row.goal);
+            : handoffChosen(ctx?.rawBranch() ?? [], row.holder, target.name, row.goal);
         const question = clip(params.question, QUESTION_MAX);
         const briefing = clip(params.briefing, BRIEFING_MAX);
         await inTool(sessionId, append, () => handTo(sessionId, String(params.person ?? ""), question, briefing, { chosen }));
@@ -364,8 +368,7 @@ function conversationTools(sessionId: string, append: AppendEntry): ToolDefiniti
 }
 
 /** Whether the assistant message that made the current tool calls also calls a turn-ending tool. */
-function batchEndsTurn(sm: { getBranch(): readonly any[] } | undefined): boolean {
-  const branch = sm?.getBranch() ?? [];
+function batchEndsTurn(branch: readonly any[]): boolean {
   for (let i = branch.length - 1; i >= 0; i--) {
     const e = branch[i];
     if (e?.type !== "message" || e.message?.role !== "assistant") continue;
@@ -657,8 +660,8 @@ registerSpecialLoadout({
             name: "sova-baton",
             factory: (pi) => {
               const append: AppendEntry = (type, data) => pi.appendEntry(type, data);
-              for (const t of batonTools(sessionId, append)) pi.registerTool(t);
-              pi.registerTool(readLinkTool(sessionId));
+              for (const t of batonTools(sessionId, append)) pi.registerTool(toPiTool(t));
+              pi.registerTool(toPiTool(readLinkTool(sessionId)));
               let offered = JSON.stringify(ownerAreaSchema(readRoster(hit.row.orgId)).enum);
               pi.on("before_agent_start", (event, ctx) => {
                 // The owner areas follow the roster: a change reaches the schema at the next run
@@ -669,7 +672,7 @@ registerSpecialLoadout({
                   const now = JSON.stringify(ownerAreaSchema(roster).enum);
                   if (now !== offered) {
                     offered = now;
-                    pi.registerTool(recordDecisionTool(sessionId, append, roster));
+                    pi.registerTool(toPiTool(recordDecisionTool(sessionId, append, roster)));
                   }
                   // Its abilities as they are now: the operator may have changed them since the last run.
                   pi.setActiveTools(activeBatonTools(sessionId));
@@ -687,7 +690,7 @@ registerSpecialLoadout({
                 const row = batonById(sessionId)?.row;
                 const redacted = redactContext(event.messages, row ? holderPhrases(row, event.messages) : []);
                 // Who wrote each message, added after the redaction (names are no secret).
-                const branch = (ctx?.sessionManager?.getBranch() ?? []) as Record<string, any>[];
+                const branch = (ctx ? toolCtx(ctx).rawBranch() : []) as Record<string, any>[];
                 const messages = row ? labelAuthors(redacted, authorNotes(branch, namesOf(row.orgId), row.holder), event.messages) : redacted;
                 return messages === event.messages ? undefined : { messages };
               });

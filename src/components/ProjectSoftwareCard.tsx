@@ -1,12 +1,14 @@
-import { createSignal, For, Show } from "solid-js";
+import { createEffect, createSignal, For, on, Show } from "solid-js";
 import type { ProjectRuntimeView } from "../../shared/project-runtime";
 import { ApiError, approveProjectRuntime, getProjectRuntime, runProjectVerbsPlaybook } from "../lib/api";
 import { relativeTime } from "../lib/format";
 import { createPoll, type Poll } from "../lib/poll";
-import { approveLabel, approveWhat, failedLine, liveWord, memoryWord, openWord, playbookLabel, portsWord, provenTail, reviewDefProblem, reviewProofWord, runStrip, runWord, SENSITIVE_TITLE, serviceFacts, shareWord, STANDING_CHIP } from "../lib/project-software";
+import { approveLabel, approveWhat, deployTickBlock, failedLine, liveWord, memoryWord, openWord, playbookLabel, portsWord, provenTail, reviewDefProblem, reviewProofWord, runStrip, runWord, SENSITIVE_TITLE, serviceFacts, shareWord, STANDING_CHIP } from "../lib/project-software";
 import { projectSessionHref, projectTabHref } from "../lib/projects-route";
 import { announce, toast } from "../lib/ui-state";
 import { ApproveMergeButton, proposedRun } from "./PlaybookReview";
+import { DeployReviewTicks } from "./ProjectDeployPanel";
+import { tickProgress } from "../lib/project-deploy";
 import { Chip, Icon } from "./ui";
 
 /** The registry changes on a merge, a conformance or a run: read it often enough to follow one. */
@@ -29,6 +31,21 @@ const errText = (err: unknown) => (err instanceof ApiError || err instanceof Err
  */
 export function ProjectSoftwareCard(props: { projectId: string; archived: boolean; runtime: Poll<ProjectRuntimeView> }) {
   const poll = props.runtime;
+  // A deploy recipe's ticks (§app.project-services/deploy-trust), kept for the recipe shown: a new hash starts over.
+  const [ticked, setTicked] = createSignal<ReadonlySet<string>>(new Set());
+  const deployReview = () => (poll.data()?.playbookState === "proposed" ? poll.data()?.playbook?.review?.deploy : undefined);
+  createEffect(on(() => deployReview()?.deployHash, () => setTicked(new Set<string>())));
+  const tick = (key: string, on: boolean) =>
+    setTicked((prev) => {
+      const next = new Set(prev);
+      if (on) next.add(key);
+      else next.delete(key);
+      return next;
+    });
+  const tickBlock = () => {
+    const r = deployReview();
+    return r ? deployTickBlock(r, ticked()) : null;
+  };
   const [busy, setBusy] = createSignal<"approve" | "run" | null>(null);
   const [error, setError] = createSignal<string | null>(null);
 
@@ -203,6 +220,17 @@ export function ProjectSoftwareCard(props: { projectId: string; archived: boolea
                     </p>
                   </Show>
                   <p class="list-meta">{reviewProofWord(r())}</p>
+                  {/* A deploy-setup run: its recipe, every resolved step ticked before Approve & Merge. */}
+                  <Show when={r().deploy}>
+                    {(d) => (
+                      <>
+                        <DeployReviewTicks review={d()} ticked={ticked()} onTick={tick} />
+                        <p class="list-meta" role="status">
+                          {tickProgress(d(), ticked()).line}
+                        </p>
+                      </>
+                    )}
+                  </Show>
                   <Show when={v().playbook?.path}>
                     {(path) => (
                       <p class="orgs-line">
@@ -221,7 +249,14 @@ export function ProjectSoftwareCard(props: { projectId: string; archived: boolea
             <div class="button-row project-software-actions">
               {/* While a run is proposed: one gesture, Approve & Merge (§app.project-runtime/approve-merge). */}
               <Show when={proposedRun(v())}>
-                {(run) => <ApproveMergeButton projectId={props.projectId} run={run()} onDone={(view) => (view ? poll.set(view) : poll.refetch())} />}
+                {(run) => (
+                  <ApproveMergeButton
+                    projectId={props.projectId}
+                    run={run()}
+                    {...(deployReview() ? { ticked: [...ticked()], blocked: tickBlock() } : {})}
+                    onDone={(view) => (view ? poll.set(view) : poll.refetch())}
+                  />
+                )}
               </Show>
               <Show when={!proposedRun(v()) && approveLabel(v())}>
                 {(label) => (

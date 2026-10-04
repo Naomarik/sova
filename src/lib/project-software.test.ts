@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { ProjectRuntimeView } from "../../shared/project-runtime";
-import { approveLabel, approveWhat, elapsedWord, failedLine, liveWord, memoryWord, openWord, playbookLabel, provenTail, reviewDefProblem, reviewProofWord, runStrip, runWord, serviceFacts, shareWord, STANDING_CHIP } from "./project-software";
+import { approveLabel, approveWhat, deployTickBlock, elapsedWord, failedLine, liveWord, memoryWord, openWord, playbookLabel, provenTail, reviewDefProblem, reviewProofWord, runStrip, runWord, serviceFacts, shareWord, STANDING_CHIP } from "./project-software";
 
 const base: ProjectRuntimeView = {
   projectId: "prj_1",
@@ -101,4 +101,10 @@ test("a proposed run's review in words, from the branch's definition and its con
   assert.equal(reviewDefProblem(r), null);
   assert.equal(reviewDefProblem({ ...r, def: { state: "absent" } }), "Its branch has no .sova/project.json.");
   assert.equal(reviewDefProblem({ ...r, def: { state: "invalid", error: "$.services: required" } }), "The definition on its branch is invalid: $.services: required");
+});
+
+test("a deploy-setup run's Approve & Merge waits until every step of its recipe is ticked", () => {
+  const review = { keys: ["prod/sync", "prod/verify", "prod/rollback"] };
+  assert.equal(deployTickBlock(review, new Set(["prod/sync"])), "Tick every step first: 1 of 3 steps ticked.");
+  assert.equal(deployTickBlock(review, new Set(review.keys)), null);
 });

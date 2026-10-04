@@ -345,7 +345,7 @@ describe("attention: a proposed verb playbook run (§app.project-runtime/review)
     assert.equal(it.tier, "act");
     assert.equal(it.since, NOW - 5000);
     assert.equal(it.detail, "Project verbs: approve 0123456789ab and merge into main");
-    assert.deepEqual(it.playbook, { projectId: "p1", label: "Project verbs", hash: "sha256:0123456789abcdef", approved: false, branch: "sova/verbs-1a2b3c", target: "main" });
+    assert.deepEqual(it.playbook, { projectId: "p1", label: "Project verbs", hash: "sha256:0123456789abcdef", approved: false, branch: "sova/verbs-1a2b3c", target: "main", approves: "definition" });
     const approved = sessionItems(row(summary("pb"), { playbook: { ...fact, approved: true } }), NOW).find((i) => i.kind === "playbook-review")!;
     assert.equal(approved.detail, "Project verbs: 0123456789ab is approved: merge it into main");
     const none = sessionItems(row(summary("pb"), { playbook: { ...fact, hash: undefined } }), NOW).find((i) => i.kind === "playbook-review")!;

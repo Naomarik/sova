@@ -142,7 +142,7 @@ export function sessionItems(row: AttentionRow, now: number, home?: string): Att
       kind: "playbook-review",
       since: pb.since || row.lastReplyAt || lastActive,
       detail: cap(reviewDetail(pb)),
-      playbook: { projectId: pb.projectId, label: pb.label, ...(pb.hash ? { hash: pb.hash } : {}), approved: pb.approved, branch: pb.branch, target: pb.target },
+      playbook: { projectId: pb.projectId, label: pb.label, ...(pb.hash ? { hash: pb.hash } : {}), approved: pb.approved, branch: pb.branch, target: pb.target, approves: pb.approves },
     });
   }
   // Decision signals (server/signals-store.ts): the list carries them only while unseen and idle,

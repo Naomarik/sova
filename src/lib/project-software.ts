@@ -1,3 +1,5 @@
+import type { DeployReview } from "../../shared/project-contract";
+import { tickProgress } from "./project-deploy";
 import type { ProjectRuntimeView, RuntimeMemory, RuntimeRunReview, RuntimeService, RuntimeStanding } from "../../shared/project-runtime";
 
 /**
@@ -134,4 +136,10 @@ export function reviewDefProblem(r: RuntimeRunReview): string | null {
   if (r.def.state === "absent") return "Its branch has no .sova/project.json.";
   if (r.def.state === "invalid") return `The definition on its branch is invalid: ${r.def.error ?? ""}`;
   return null;
+}
+
+/** Why a deploy-setup run's Approve & Merge can't go yet: steps of its recipe not ticked; null once every one is. */
+export function deployTickBlock(review: Pick<DeployReview, "keys">, ticked: ReadonlySet<string>): string | null {
+  const p = tickProgress(review, ticked);
+  return p.left ? `Tick every step first: ${p.line}.` : null;
 }

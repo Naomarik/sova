@@ -9,6 +9,11 @@ import { Banner } from "./ui";
 
 const errText = (err: unknown) => (err instanceof ApiError || err instanceof Error ? err.message : String(err));
 
+/** A deploy recipe is ticked step by step where its review is: the Software card. */
+export const TICK_ON_CARD = "Tick every step of the deploy recipe on the Software card first.";
+/** The Needs-you row has no room for the steps. */
+export const REVIEW_ON_PAGE = "Review the deploy recipe on the project page and tick every step first.";
+
 /** A proposed run's words from the registry the page reads, or null while nothing is proposed. */
 export function proposedRun(v: ProjectRuntimeView | undefined): (PlaybookReviewWords & { path?: string }) | null {
   const pb = v?.playbook;
@@ -32,6 +37,10 @@ export function proposedRun(v: ProjectRuntimeView | undefined): (PlaybookReviewW
 export function ApproveMergeButton(props: {
   projectId: string;
   run: Pick<PlaybookReviewWords, "hash" | "approved" | "target">;
+  /** A deploy recipe's ticked step keys, sent with the approval. */
+  ticked?: readonly string[];
+  /** Why it can't go yet (a deploy recipe with steps not ticked): disabled, with this as its reason. */
+  blocked?: string | null;
   class?: string;
   onDone?(view?: ProjectRuntimeView): void;
 }) {
@@ -41,10 +50,15 @@ export function ApproveMergeButton(props: {
   const go = async () => {
     const hash = props.run.hash;
     if (busy() || !hash) return;
+    if (props.blocked && !props.run.approved) {
+      setError(props.blocked);
+      announce(props.blocked);
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
-      const view = await approveMergeProjectRuntime(props.projectId, hash);
+      const view = await approveMergeProjectRuntime(props.projectId, hash, props.ticked);
       const done = `Merged into ${props.run.target}.`;
       toast(done);
       announce(done);
@@ -63,7 +77,10 @@ export function ApproveMergeButton(props: {
     <Show when={label()}>
       {(l) => (
         <span class="playbook-review-act">
-          <button type="button" class={`button button-sm button-primary${props.class ? ` ${props.class}` : ""}`} aria-disabled={busy() ? "true" : undefined} onClick={() => void go()}>
+          <button type="button" class={`button button-sm button-primary${props.class ? ` ${props.class}` : ""}`} aria-disabled={busy() || (props.blocked && !props.run.approved) ? "true" : undefined}
+            title={props.blocked && !props.run.approved ? props.blocked : undefined}
+            onClick={() => void go()}
+          >
             {l()}
           </button>
           <Show when={error()}>{(e) => <span class="field-error" role="status">{e()}</span>}</Show>
@@ -98,7 +115,7 @@ export function PlaybookReviewBanner(props: { projectId: string; runtime: Projec
                       </a>
                     )}
                   </Show>
-                  <ApproveMergeButton projectId={props.projectId} run={run()} onDone={props.onDone} />
+                  <ApproveMergeButton projectId={props.projectId} run={run()} blocked={run().approves === "deploy" ? TICK_ON_CARD : null} onDone={props.onDone} />
                 </span>
               }
             />

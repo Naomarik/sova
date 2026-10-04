@@ -2879,7 +2879,7 @@ export interface AttentionItem {
   };
   /** kind `playbook-review` only: what Approve & Merge needs (§app.project-runtime/approve-merge). `hash`
       absent: the branch has no valid definition, so there is nothing to approve. */
-  playbook?: { projectId: string; label: string; hash?: string; approved: boolean; branch: string; target: string };
+  playbook?: { projectId: string; label: string; hash?: string; approved: boolean; branch: string; target: string; approves?: "definition" | "deploy" };
 }
 
 /** Which org (and project) an organizational session belongs to; names as they read now. `projectId`

@@ -13,6 +13,7 @@ import { ActionMenu } from "./ActionMenu";
 import { costFigure, createProjectCost, ProjectCostCard } from "./ProjectCostCard";
 import { ProjectServicesTab } from "./ProjectServicesTab";
 import { PlaybookReviewBanner } from "./PlaybookReview";
+import { ProjectDeployPanel } from "./ProjectDeployPanel";
 import { createRuntimePoll, ProjectSoftwareCard } from "./ProjectSoftwareCard";
 import { ActivityCard, CodingSessionsCard, createProjectOverseer, IdeasCard, type ItemSendForm, OverseerSettings, OverseerSummary, type ProjectOverseer, TodosCard } from "./ProjectOverseerPanel";
 import { Banner, Icon } from "./ui";
@@ -290,6 +291,8 @@ export function ProjectPage(props: {
               <div class="project-col">
                 {/* Its software registry on this host (§app.project-runtime/software-card). */}
                 <ProjectSoftwareCard projectId={projectId} archived={!!archived()} runtime={runtime} />
+                {/* Its deploy targets on this host: the deploy panel, which reads deploy.status itself. */}
+                <ProjectDeployPanel projectId={projectId} root={project().root} archived={!!archived()} />
                 <ActivityCard po={po} />
                 <TodosCard po={po} send={org?.send} archived={!!archived()} />
                 {/* A placed project's ideas sit with its requirements; a standalone one's here. */}

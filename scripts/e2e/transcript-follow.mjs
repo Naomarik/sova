@@ -14,9 +14,8 @@
 // comes back at the end with no Jump to Latest (the running turn's rows and the queued message were
 // drawn when the reader left), while a turn that started and ended while away still stops at the
 // last row read with "· 2 new". These run real turns, on scripts/fake-claude.mjs: start the server
-// with `PATH="$(scripts/fake-claude-path.sh):$PATH" CLAUDE_CONFIG_DIR=<fixture login dir>` and
-// `{"version":1,"experimental":{"claudeCodeProvider":true}}` in the agent dir's sova/settings.json
-// (CLAUDE.md, "Claude logins in a hermetic run"). Without the fake they are skipped, never passed.
+// with `PATH="$(scripts/fake-claude-path.sh):$PATH" CLAUDE_CONFIG_DIR=<fixture login dir>` (the
+// Claude Code provider is always on; CLAUDE.md, "Claude logins in a hermetic run"). Without the fake they are skipped, never passed.
 //
 // Writes its fixtures into the hermetic agent dir and drives a hermetic server — `pnpm run
 // dev:hermetic` in THIS worktree, serving the built app (`pnpm run build` first) — through the

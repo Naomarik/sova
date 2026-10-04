@@ -3790,6 +3790,24 @@ export interface LlmInflight {
   /** `gaps.length > 0`: `count` is a floor, never shown as an exact number. */
   partial: boolean;
   gaps: LlmInflightGap[];
+  /** Output tokens of the last 30 minutes. Absent = unknown (a server too old to count them). */
+  tokens?: LlmTokens;
+}
+
+/** Output tokens of finished model calls, per 30 s slot, over the last 30 minutes
+    (server/llm-inflight.ts). Each call's output tokens (reasoning included; never input or cache
+    reads) are added once, at its end, spread evenly back over the time its reply streamed. */
+export interface LlmTokens {
+  /** Slot width in ms: always 30000. */
+  bucketMs: number;
+  /** floor(epochMs / bucketMs) of the newest slot (`out`'s last). The slots after it, up to now,
+      hold 0: any new token sends a fresh frame. */
+  end: number;
+  /** 60 slot totals, oldest → newest: `out[59]` is slot `end`, `out[0]` is slot `end − 59`. */
+  out: number[];
+  /** A floor: some calls' tokens are known to be missing (a process or peer without a ring, an
+      unreported process, a peer not heard from, a Claude Code turn's internal calls). */
+  partial: boolean;
 }
 
 /** WS /ws/watch?feed=llm — one host's OWN count, for its peers' fan-in (server/llm-inflight.ts).

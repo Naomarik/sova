@@ -4661,6 +4661,9 @@ a.group-option { color: inherit; text-decoration: none; }
   font-size: var(--fs-caption);
 }
 .insights-row[aria-current="page"] { background: var(--color-accent-tint); color: var(--color-ink); }
+/* The Agents row's load average (§app.insights/token-velocity): three numbers at the row's right
+   end, before the gear, muted; the working count's words give way before they do. */
+.agents-velocity { flex: none; white-space: nowrap; font-size: var(--fs-caption); color: var(--color-ink-muted); }
 /* The Usage row + Resource monitor button, and the Agents row + Settings gear:
    each link keeps the width, its button sits at the row's right end, and the two
    buttons share one class so they stack in one column. The link's right padding
@@ -6026,6 +6029,28 @@ a.subagent-row { text-decoration: none; }
 .sidebar-toolbar > .button-icon { flex: none; }
 .sidebar-toolbar > .overseer-entry { margin-left: auto; }
 .sidebar-toolbar > .sidebar-select-start { padding: 0 var(--space-2); gap: var(--space-1); flex: none; }
+/* The working-now line (§app.session-list/working-now): a link in the gap between the search icon
+   and the Overseer, only while work runs. No words, so nothing in it shrinks: each part is a 16px
+   muted icon (chat for sessions, the foot's person for subagents) and its figure, never cut. */
+.sidebar-toolbar > .sidebar-working {
+  flex: none;
+  min-height: var(--tap-min);
+  margin-right: var(--space-2);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  white-space: nowrap;
+  font-size: var(--fs-caption);
+  color: var(--color-ink-muted);
+  text-decoration: none;
+  border-radius: var(--r-sm);
+}
+.sidebar-working:hover { color: var(--color-ink); }
+.sidebar-working[aria-current="page"] { color: var(--color-ink); }
+.sidebar-working-part { display: inline-flex; align-items: center; gap: 2px; }
+.sidebar-working-part > .text-num { color: var(--color-ink-2); }
+/* The toolbar measured an overflow (long figures beside Select): the figures alone, "12 · 148". */
+.sidebar-working[data-fit="bare"] .icon { display: none; }
 
 /* The entry button. `position: relative` anchors its one mark: the count of
    Overseer messages you haven't read, top-right. It is aria-hidden: the button's

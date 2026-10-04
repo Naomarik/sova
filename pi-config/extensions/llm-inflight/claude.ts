@@ -14,7 +14,11 @@
  * request are inside that one call. A re-adopted worker's replayed history is never counted; until
  * its host goes live it counts as one running turn (unknown, so partial), then as it really is.
  *
- * Frames only drive a small per-lane state; nothing is kept from them. Builtins only.
+ * A counted call's end carries its reply's output tokens (the stream's `usage.output_tokens`, thinking
+ * included; never input or cache), spread back to its `message_start` (tracker.ts's ring); a
+ * bridge (countRequests: false) counts none, since the pi runtime counts that call already.
+ *
+ * Frames only drive a small per-lane state; nothing else is kept from them. Builtins only.
  */
 import { beginClaudeTurn, beginLlmCall, markDegraded, type LlmCallEnd } from "./tracker.ts";
 
@@ -42,7 +46,17 @@ interface Lane {
 	phase: "requesting" | "responding";
 	approximate: boolean;
 	end?: LlmCallEnd;
+	/** When its reply's first streamed event came (message_start). */
+	firstAt?: number;
+	/** Its reply's output tokens as last reported (cumulative in the stream). */
+	output: number;
 }
+
+/** A usage block's output tokens, or 0. */
+const outputOf = (usage: unknown): number => {
+	const n = (usage as { output_tokens?: unknown } | null | undefined)?.output_tokens;
+	return typeof n === "number" && Number.isFinite(n) && n > 0 ? n : 0;
+};
 
 export function createClaudeRequestObserver(options: ClaudeObserverOptions = {}): ClaudeRequestObserver {
 	const countRequests = options.countRequests !== false;
@@ -66,11 +80,11 @@ export function createClaudeRequestObserver(options: ClaudeObserverOptions = {})
 		const lane = lanes.get(key);
 		if (!lane) return;
 		lanes.delete(key);
-		lane.end?.();
+		lane.end?.(lane.output ? { output: lane.output, since: lane.firstAt } : undefined);
 	};
 	const openLane = (key: string, phase: Lane["phase"], approximate: boolean) => {
 		endLane(key);
-		const lane: Lane = { phase, approximate };
+		const lane: Lane = { phase, approximate, output: 0 };
 		lanes.set(key, lane);
 		startCall(lane);
 	};
@@ -106,9 +120,14 @@ export function createClaudeRequestObserver(options: ClaudeObserverOptions = {})
 						const key = laneOf(e);
 						if (type === "message_start") {
 							turn(true);
-							const lane = lanes.get(key);
-							if (lane) lane.phase = "responding";
+							if (lanes.get(key)) lanes.get(key)!.phase = "responding";
 							else openLane(key, "responding", true);
+							const lane = lanes.get(key)!;
+							lane.firstAt = Date.now();
+							lane.output = Math.max(lane.output, outputOf(e.event?.message?.usage));
+						} else if (type === "message_delta") {
+							const lane = lanes.get(key);
+							if (lane) lane.output = Math.max(lane.output, outputOf(e.event?.usage));
 						} else if (type === "message_stop") endLane(key);
 						return;
 					}
@@ -116,7 +135,11 @@ export function createClaudeRequestObserver(options: ClaudeObserverOptions = {})
 						// A whole reply with no stream before it (a non-streamed reply, an API error) ends the
 						// request. While a reply streams, assistant frames echo its blocks and change nothing.
 						const key = laneOf(e);
-						if (lanes.get(key)?.phase === "requesting") endLane(key);
+						const lane = lanes.get(key);
+						if (lane?.phase === "requesting") {
+							lane.output = outputOf(e.message?.usage);
+							endLane(key);
+						}
 						return;
 					}
 					case "result":

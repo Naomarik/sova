@@ -105,3 +105,16 @@ test("past the bound, the workers not looked at are one unknown entry, never sil
 	assert.equal(readUnadoptedWorkers(small).some((e) => e.key === "…overflow"), false);
 	fs.rmSync(small, { recursive: true, force: true });
 });
+
+test("tokens: an unadopted worker's last reported ring comes with its counts; a malformed one is dropped alone", () => {
+	const root = tmp();
+	const dir = worker(root, "o", "w", {});
+	const ring = { bucketMs: 30_000, end: 7, out: Array.from({ length: 60 }, (_, i) => (i === 59 ? 12 : 0)) };
+	write(path.join(dir, "llm.json"), counts(0, { tokens: ring }));
+	assert.deepEqual(readUnadoptedWorkers(root)[0]?.tokens, ring);
+	fs.writeFileSync(path.join(dir, "llm.json"), JSON.stringify(counts(1, { tokens: { ...ring, out: [1] } })) + " ");
+	const [w] = readUnadoptedWorkers(root);
+	assert.equal(w?.counts?.active, 1);
+	assert.equal(w?.tokens, undefined, "unknown, never a guess");
+	fs.rmSync(root, { recursive: true, force: true });
+});

@@ -1,123 +1,90 @@
-// The sidebar's one live figure: the logical LLM calls in flight across this host and every
-// connected host, as the session feed pushes it (`llm_inflight`).
-// Pure presentation: the expanded foot's Agents row, the phone bar and the spine all read
-// `llmInflightView`, so the three can't disagree. No Solid here, so the tests run it bare.
+// What the sidebar reads off the session feed's `llm_inflight` frame: no longer the calls in
+// flight (the sidebar's figure is the working count, src/lib/work-now.ts), but the token ring
+// that rides it — the output-token load average (§app.insights/token-velocity).
+// Pure presentation: the foot's Agents row, the phone bar and the spine tally all read
+// `tokenVelocityView`, so the three can't disagree. No Solid here, so the tests run it bare.
 
-import type { LlmInflight, LlmInflightGap } from "../../shared/protocol";
+import type { LlmInflight, LlmTokens } from "../../shared/protocol";
 
-export type LlmInflightState = "complete" | "partial" | "unknown";
+/** The windows, in minutes, newest first: the row prints their means in this order. */
+export const VELOCITY_WINDOWS = [5, 15, 30] as const;
+const LONGEST = 30;
 
-export interface LlmInflightView {
-  state: LlmInflightState;
-  /** Some of the count are one-shots timed from spawn to exit: estimates, said in the sentence,
-      never marked on the figure. */
-  approximate: boolean;
-  /** The bare figure for the phone bar and the spine tally: the number alone whenever known (a
-      floor or estimates are the sentence's to say, never a `+` or `~`), `–` unknown. */
-  figure: string;
-  /** The calls in flight, seen ones and one-shots alike; null while unknown. */
-  count: number | null;
-  /** The Agents row's words after the figure, the calls printed short as agents ("agents",
-      "agent"); null while unknown, when the row reads the plain word "Agents" and shows no figure. */
-  rowWord: string | null;
-  /** The count's sentence: the phone bar's clause and the spine tally's name. */
+export type TokenVelocityState = "complete" | "partial" | "unknown";
+
+export interface TokenVelocityView {
+  state: TokenVelocityState;
+  /** Output tokens a minute over each window, in `VELOCITY_WINDOWS`' order; null while unknown. */
+  perMinute: number[] | null;
+  /** What the row and the phone bar print: `48k 31k 12k`, the numbers bare whatever the state;
+      `–` while unknown. */
+  figures: string;
+  /** The title/aria-label sentence, ending in a full stop. */
   sentence: string;
-  /** "Agents: {sentence}", the start of the row's full label (`agentsRow`). */
-  agentsLabel: string;
-  /** The spine tally shows unless the count is a complete 0. */
-  showTally: boolean;
+  /** The ring holds a token in its last 30 minutes by `now`: only then does the sidebar tick. */
+  active: boolean;
 }
 
-const calls = (n: number) => (n === 1 ? "LLM call" : "LLM calls");
-const agents = (n: number) => (n === 1 ? "agent" : "agents");
-
-/** The sentence's opening: the exact calls, then the one-shots apart, never "at least" over an
-    estimate. `floor` is a partial count's "At least". */
-function callsClause(n: number, a: number, floor: boolean): string {
-  if (a === 0) return floor ? `At least ${n} ${calls(n)} running now` : n === 0 ? "No LLM calls running now" : `${n} ${calls(n)} running now`;
-  const exact = n - a;
-  // A floor can't vouch for none: with no exact call it says none was seen.
-  const head = exact === 0 ? (floor ? "No exact LLM calls seen" : "No exact LLM calls running now") :`${floor ? "At least " : ""}${exact} ${calls(exact)} running now`;
-  return `${head}, and ${a} ${a === 1 ? "one-shot" : "one-shots"} that may be calling`;
+/**
+ * A count in as few characters as it can say honestly: under 1,000 the whole number (`840`),
+ * 1,000–9,999 one decimal (`8.4k`), 10,000 up no decimal (`48k`), a million up one decimal
+ * (`1.2M`). Rounded to the whole token first; a figure that rounds up into the next tier is
+ * printed in that tier (`9,999` → `10k`, `999,999` → `1.0M`).
+ */
+export function denseCount(n: number): string {
+  const r = Math.max(0, Math.round(Number.isFinite(n) ? n : 0));
+  if (r < 1000) return `${r}`;
+  if (Math.round(r / 100) < 100) return `${(Math.round(r / 100) / 10).toFixed(1)}k`;
+  if (Math.round(r / 1000) < 1000) return `${Math.round(r / 1000)}k`;
+  return `${(Math.round(r / 100_000) / 10).toFixed(1)}M`;
 }
 
-/** One gap's reason, in words. `host` absent is this host; a peer is named by its label. */
-function gapWhy(g: LlmInflightGap, label: (id: string) => string): string {
-  const host = (id: string | undefined) => (id === undefined ? "this host" : label(id));
-  switch (g.reason) {
-    case "claude-internal":
-      return "Claude Code's own internal calls aren't visible.";
-    case "unreported":
-      return g.processes === 1 ? `1 process on ${host(g.host)} doesn't report.` : `${g.processes} processes on ${host(g.host)} don't report.`;
-    case "peer-connecting":
-      return `${host(g.host)} hasn't reported yet.`;
-    case "peer-unreachable":
-      return `${host(g.host)} can't be reached.`;
-    case "peer-unsupported":
-      return `${host(g.host)} runs an older Sova.`;
+/** The ring's slot `s`, 0 outside it (after its newest: nothing landed yet; before its oldest: gone). */
+function slot(t: LlmTokens, s: number): number {
+  const i = t.out.length - 1 - (t.end - s);
+  if (i < 0 || i >= t.out.length) return 0;
+  const v = t.out[i];
+  return typeof v === "number" && Number.isFinite(v) && v > 0 ? v : 0;
+}
+
+/** A ring the view can read: anything else is unknown, never a guessed 0. */
+const usable = (t: LlmTokens | undefined): t is LlmTokens =>
+  !!t && Number.isFinite(t.bucketMs) && t.bucketMs > 0 && Number.isFinite(t.end) && Array.isArray(t.out);
+
+/** The output-token means at `now` (epoch ms): for W minutes, the slots in (cur − W·60s/slot, cur]
+    summed and divided by W, `cur` being the slot `now` falls in. */
+export function tokenVelocityView(inflight: LlmInflight | null, now: number): TokenVelocityView {
+  const t = inflight?.tokens;
+  if (!usable(t)) {
+    return { state: "unknown", perMinute: null, figures: "–", sentence: "Output tokens a minute: not known yet.", active: false };
   }
+  const cur = Math.floor(now / t.bucketMs);
+  const perSlotMin = 60_000 / t.bucketMs;
+  const sumBack = (slots: number) => {
+    let sum = 0;
+    for (let s = cur - slots + 1; s <= cur; s++) sum += slot(t, s);
+    return sum;
+  };
+  const perMinute = VELOCITY_WINDOWS.map((w) => sumBack(Math.round(w * perSlotMin)) / w);
+  const active = sumBack(Math.round(LONGEST * perSlotMin)) > 0;
+  const [a, b, c] = perMinute.map(denseCount);
+  // The ring says its own coverage: the calls count's gaps are about calls, not tokens.
+  const floor = t.partial === true;
+  const sentence =
+    `Output tokens a minute: ${floor ? "at least " : ""}${a} over the last ${VELOCITY_WINDOWS[0]} minutes, ${b} over ${VELOCITY_WINDOWS[1]}, ${c} over ${VELOCITY_WINDOWS[2]}.` +
+    `${floor ? " Some calls' tokens can't be seen." : ""} Replies still being written aren't counted yet.`;
+  return { state: floor ? "partial" : "complete", perMinute, figures: `${a} ${b} ${c}`, sentence, active };
 }
 
-/** Why a partial count is only a floor: each reason that applies, once, in the gaps' order. */
-export function inflightWhy(gaps: readonly LlmInflightGap[], label: (id: string) => string = (id) => id): string {
-  return [...new Set(gaps.map((g) => gapWhy(g, label)))].join(" ");
-}
-
-/** The count as the sidebar shows it. `null` is unknown: no snapshot on the current connection. */
-export function llmInflightView(inflight: LlmInflight | null, label: (id: string) => string = (id) => id): LlmInflightView {
-  if (!inflight) {
-    const sentence = "LLM calls running now: not known yet";
-    return { state: "unknown", approximate: false, count: null, figure: "–", rowWord: null, sentence, agentsLabel: `Agents: ${sentence}`, showTally: true };
-  }
-  const n = inflight.count;
-  // One-shots are part of the count; a malformed frame can't claim more of them than calls.
-  const a = Math.min(Math.max(inflight.approximate, 0), n);
-  // A count with a gap is a floor, whatever `partial` says: never shown as an exact number.
-  if (inflight.partial || inflight.gaps.length > 0) {
-    const why = inflightWhy(inflight.gaps, label);
-    const sentence = `${callsClause(n, a, true)}.${why ? ` ${why}` : ""}`;
-    return { state: "partial", approximate: a > 0, count: n, figure: `${n}`, rowWord: agents(n), sentence, agentsLabel: `Agents: ${sentence}`, showTally: true };
-  }
-  const sentence = callsClause(n, a, false);
-  return { state: "complete", approximate: a > 0, count: n, figure: `${n}`, rowWord: agents(n), sentence, agentsLabel: `Agents: ${sentence}`, showTally: n > 0 };
-}
-
-/** This host's figures the Agents row keeps after the call count: fresh host sessions holding a
-    working subagent, and teams with a member working (`activeAgentCounts(…).sessions`,
-    `activeTeamCount`, from the Agents poll). */
-export interface LocalAgents {
-  sessions: number;
-  teams: number;
-}
-
-export interface AgentsRow {
-  /** After the first segment, each joined by " · ": `2 sessions`, `1 team`; a 0 is left out. */
-  secondary: { n: number; word: string }[];
-  /** The row's and the spine doorway's `title` and `aria-label`. */
-  label: string;
-}
-
-/** What the row's figure means, said whenever it shows one above 0. */
-export const AGENTS_DEFINITION = "Each agent counted is one model call in flight, background work included.";
-
-/** The Agents row: the call count first (every host), then this host's sessions and teams. */
-export function agentsRow(view: LlmInflightView, local: LocalAgents): AgentsRow {
-  const secondary: { n: number; word: string }[] = [];
-  if (local.sessions > 0) secondary.push({ n: local.sessions, word: local.sessions === 1 ? "session" : "sessions" });
-  if (local.teams > 0) secondary.push({ n: local.teams, word: local.teams === 1 ? "team" : "teams" });
-  const more: string[] = [];
-  if (view.count !== null && view.count > 0) more.push(AGENTS_DEFINITION);
-  if (secondary.length > 0) more.push(`On this host, subagents are working in ${secondary.map((p) => `${p.n} ${p.word}`).join(" and ")}.`);
-  // Alone, the count's sentence reads as before; followed by another, it gets exactly one full stop
-  // (a partial count's sentence already ends with one).
-  let label = view.agentsLabel;
-  for (const next of more) label += `${label.endsWith(".") ? " " : ". "}${next}`;
-  return { secondary, label };
-}
-
-/** Whether two pushed counts read the same, so an unchanged frame doesn't wake the sidebar. */
+/** Whether two pushed frames read the same, so an unchanged frame doesn't wake the sidebar. */
 export function sameInflight(a: LlmInflight | null, b: LlmInflight | null): boolean {
   if (a === b) return true;
   if (!a || !b) return false;
-  return a.count === b.count && a.approximate === b.approximate && a.partial === b.partial && JSON.stringify(a.gaps) === JSON.stringify(b.gaps);
+  return (
+    a.count === b.count &&
+    a.approximate === b.approximate &&
+    a.partial === b.partial &&
+    JSON.stringify(a.gaps) === JSON.stringify(b.gaps) &&
+    JSON.stringify(a.tokens ?? null) === JSON.stringify(b.tokens ?? null)
+  );
 }

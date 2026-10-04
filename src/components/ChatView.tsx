@@ -83,6 +83,7 @@ import {
   sessionContext,
   setDraftText,
   setLocalRunning,
+  setLocalWorking,
   setSessionContext,
   toast,
 } from "../lib/ui-state";
@@ -644,6 +645,7 @@ export function ChatView(props: {
           });
           setSessionContext(props.path, contextStateFor(msg.context ?? null, msg.items));
           setWorkersWorking(0); // a runtime without workers sends no "workers" after hello
+          setLocalWorking(props.path, 0);
           batch(() => {
             setWorkerList([]);
             setWorkersSaid(false);
@@ -657,6 +659,7 @@ export function ChatView(props: {
         case "workers":
           batch(() => {
             setWorkersWorking(msg.working);
+            setLocalWorking(props.path, msg.working);
             setWorkerList(msg.workers);
             setWorkersSaid(true);
           });
@@ -1446,7 +1449,10 @@ export function ChatView(props: {
     if (running && !wasRunning) props.onStarted();
     wasRunning = running;
   });
-  onCleanup(() => setMine(undefined));
+  onCleanup(() => {
+    setMine(undefined);
+    setLocalWorking(props.path, undefined);
+  });
 
   // The policy this chat is judged by. Cached app-wide, so the Settings dialog's last save is
   // already here; a policy we couldn't read blocks nothing (the server still refuses).

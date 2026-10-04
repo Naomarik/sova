@@ -55,6 +55,7 @@ import type { RewindControl } from "./lib/inputs";
 import { activeTab, groupSendAll, home, setActiveTab, setAdopter, setHome, toast } from "./lib/ui-state";
 import { createPaneInsight } from "./lib/pane-insight";
 import { sessionWorking, type UsageTotalView } from "./lib/workers";
+import { answeredPeers, workPeers } from "./lib/work-now";
 import { AgentsView } from "./components/AgentsView";
 import { NewSessionDialog } from "./components/NewSessionDialog";
 import { SettingsDialog } from "./components/SettingsDialog";
@@ -211,10 +212,16 @@ export function App() {
   const [peerLists, setPeerLists] = createSignal<ReadonlyMap<string, SessionSummary[]>>(new Map());
   /** The first GET /api/mesh/sessions has answered or failed: a peer's session a link names is known by now. */
   const [peersSettled, setPeersSettled] = createSignal(false);
+  /** The peers whose list in the last answer was a current one: the working count adds only
+      those, and any other makes it a floor (lib/work-now.ts). */
+  const [peersAnswered, setPeersAnswered] = createSignal<ReadonlySet<string>>(new Set(), {
+    equals: (a, b) => a.size === b.size && [...a].every((id) => b.has(id)),
+  });
   const loadPeerSessions = async () => {
     if (!meshOn()) return;
     try {
       const answer = await fetchMeshSessions();
+      setPeersAnswered(answeredPeers(answer));
       const next = mergePeerLists(peerLists(), answer, meshPeers());
       for (const p of meshPeers()) {
         const rows = next.get(p.id) ?? [];
@@ -226,7 +233,9 @@ export function App() {
       }
       setPeerLists(next);
     } catch {
-      // Keep the last lists: the peers' own status (GET /api/mesh) says what is down.
+      // Keep the last lists: the peers' own status (GET /api/mesh) says what is down. None of them
+      // is current now, so the working count leaves them out.
+      setPeersAnswered(new Set<string>());
     }
     setPeersSettled(true);
   };
@@ -251,6 +260,8 @@ export function App() {
   createEffect(() => {
     if (!meshOn()) closeMeshDetails();
   });
+  /** Every peer's part of the working count: its list while current, else null (a floor). */
+  const peerWork = createMemo(() => workPeers(meshPeers(), peerLists(), peersAnswered()));
   /** This host's sessions, then every peer's: the sidebar's list. With no peer it IS `list()`. */
   const allSessions = createMemo(() => {
     const l = list();
@@ -976,6 +987,7 @@ export function App() {
           usage={usage.data()}
           claudeLogin={usageLogin()}
           agents={agents.data()}
+          peerWork={peerWork()}
           insightsPage={footPage()}
           sharesOpen={sharesRoute()}
           onRefresh={refresh}

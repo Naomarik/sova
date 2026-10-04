@@ -12,7 +12,7 @@ import type { AddressInfo, Socket } from "node:net";
 import tls, { type Server, type TLSSocket } from "node:tls";
 import { relayAddress } from "../../shared/mesh-lan";
 import type { LanIdentity } from "./lan-cert";
-import { Admission, type AdmissionCounts, type AdmissionProfile } from "./lan-admission";
+import { Admission, type AdmissionCounts, type AdmissionProfile, sourceOf } from "./lan-admission";
 import { type Channel, pairedPeerOf, relayServerOptions } from "./lan-tls";
 
 export interface RelayPeer {
@@ -167,7 +167,8 @@ export class RelayListener {
     this.admission.handshakeDone(p.ip, false, now);
     if (!wasBanned && this.admission.isBanned(p.ip, now)) {
       this.opts.onEvent?.({ kind: "ban", ip: p.ip });
-      for (const q of this.pending.values()) if (q.ip === p.ip && !q.settled) q.raw.destroy();
+      const src = sourceOf(p.ip); // the ban is on the source: a global IPv6 address's whole /64
+      for (const q of this.pending.values()) if (!q.settled && sourceOf(q.ip) === src) q.raw.destroy();
     }
   }
 }

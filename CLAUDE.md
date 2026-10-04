@@ -126,7 +126,8 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
   id) and by the server's own one-shots, read only by the server's usage helper (its strict parse
   `parseUsageLine`), which prices every spend figure Sova shows; beside it llm-inflight keeps
   `<agent dir>/usage/cc-baseline/<claude session id>.json` `{v: 1, at, models}` (`claude-usage.ts`: each
-  Claude session's last cumulative `modelUsage`, so a resume never recounts), and the subagents extension
+  Claude session's last cumulative `modelUsage`, so a resume never recounts) with `<claude session id>.since.jsonl`
+  beside it (one line per message recorded since that baseline, so a process killed mid-turn is never recounted), and the subagents extension
   sets `PI_USAGE_PARENT=<parent sid>:<worker id>` in every worker's spawn env (the worker's records name
   their parent from it).
   Not covered by Sova's tsconfig, with these exceptions: the server imports

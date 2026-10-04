@@ -46,6 +46,7 @@ const { connectReverse, serveReverse } = await import("./lan-reverse");
 const { agentFetch } = await import("./lan-fetch");
 const { streamWebSocketServer } = await import("../runtime-quirks");
 const { accessFile } = await import("./access");
+const { cleanLabel } = await import("./details");
 type ReverseClient = Awaited<ReturnType<typeof connectReverse>>;
 
 const AUTH = { Cookie: `${AUTH_COOKIE}=${sovaToken()}` };
@@ -324,6 +325,16 @@ describe("this host as the relay", () => {
     await hello.body?.cancel();
   });
 
+  test("L6: a pairing can't rename itself here; names lose control and bidi characters", async () => {
+    const r = await agentFetch(askClient!.agent, "/api/peer/label", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ label: "Trusted\n[mesh] forged line", labelAt: Date.now() + 1000 }) });
+    assert.equal(r.status, 200, "answered as taken");
+    await r.body?.cancel();
+    assert.equal((await lan()).pairings.find((p) => p.id === "laptop")?.label, "Laptop", "the operator's name stays");
+    assert.equal(cleanLabel("Trusted\n[mesh] forged"), "Trusted[mesh] forged");
+    assert.equal(cleanLabel("a\u202eb\u2066c\u0007"), "abc");
+    assert.equal(cleanLabel("\u0000\u001b"), null, "nothing printable is no name");
+  });
+
   test("M1: a pairing whose grant can't be written is not made", async () => {
     const before = readFileSync(join(tmp, "agent", "sova", "peers.json"), "utf8");
     writeFileSync(accessFile(), "{broken");
@@ -474,4 +485,31 @@ describe("this host as the dial-out host", () => {
     assert.deepEqual((await lan()).pairings, []);
     assert.equal(tailscaleAsked, 0, "nothing ever asked Tailscale");
   });
+});
+
+test("L8: a relay listener that can't bind logs a fixed phrase and the code, never the address", async () => {
+  const { LanRuntime } = await import("./lan");
+  const { validatePeers } = await import("./peers");
+  const busy = createServer();
+  busy.listen(0, "127.0.0.1");
+  await new Promise((r) => busy.once("listening", r));
+  const busyPort = (busy.address() as { port: number }).port;
+  const v = validatePeers({ self: { id: "me", relay: { host: "127.0.0.1", port: busyPort } }, peers: [{ id: "laptop", lan: { role: "accept", pin: mintLanIdentity().pin } }] });
+  assert.ok("config" in v);
+  const rt = new LanRuntime({ fetch: () => new Response(null), upgrade: () => {}, pairingByNode: () => null });
+  const said: string[] = [];
+  const warn = console.warn;
+  console.warn = (...a: unknown[]) => void said.push(a.join(" "));
+  try {
+    await rt.apply(v.config);
+  } finally {
+    console.warn = warn;
+    await rt.stop();
+    busy.close();
+  }
+  assert.ok(said.some((l) => /EADDRINUSE/.test(l)), JSON.stringify(said));
+  for (const l of said) {
+    assert.doesNotMatch(l, /127\.0\.0\.1/, l);
+    assert.doesNotMatch(l, new RegExp(`\\b${busyPort}\\b`), l);
+  }
 });

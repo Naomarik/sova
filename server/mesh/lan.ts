@@ -22,7 +22,7 @@ import { LAN_PROFILE } from "./lan-admission";
 import { type DialerStatus, RelayDialer } from "./lan-dialer";
 import { RelayListener, type RelayPeer } from "./lan-relay";
 import { RelaySessions } from "./lan-relay-sessions";
-import { connectReverse, type ReverseClient, serveReverse } from "./lan-reverse";
+import { connectReverse, feedStream, type ReverseClient, serveReverse } from "./lan-reverse";
 import type { Channel } from "./lan-tls";
 import { type GateDeps, PeerGate } from "./listener";
 import type { Need } from "./access";
@@ -107,7 +107,8 @@ export class LanRuntime {
 
   /** Follow peers.json (null: the mesh is off). Serialized; resolves once the listener is in place. */
   apply(config: PeersConfig | null): Promise<void> {
-    this.chain = this.chain.then(() => this.reconcile(config)).catch((err) => console.warn(`[mesh] dial-out pairings: ${(err as Error).message}`));
+    // A fixed phrase and the error's code only: a listen error's message names the bind address.
+    this.chain = this.chain.then(() => this.reconcile(config)).catch((err) => console.warn(`[mesh] dial-out pairings: couldn't apply the pairings (${(err as NodeJS.ErrnoException).code ?? "error"})`));
     return this.chain;
   }
 
@@ -244,7 +245,7 @@ export class LanRuntime {
       server = this.gate.server(() => this.deps.pairingByNode(nodeId));
       this.servers.set(nodeId, server);
     }
-    server.emit("connection", d);
+    feedStream(server, d); // with the header, request and idle deadlines a listened server would have
   }
 
   private noteDial(peerId: string, s: DialerStatus): void {

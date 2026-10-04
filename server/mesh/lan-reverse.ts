@@ -14,7 +14,7 @@
 // socket's EOF once two streams have been open at once, so a closed relay would look connected
 // until the keepalive gave up. Bun has neither problem; the wrappers cost it nothing.
 
-import http, { type Agent, type ClientRequestArgs } from "node:http";
+import http, { type Agent, type ClientRequestArgs, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import http2, { type ClientHttp2Session, type ClientHttp2Stream, type Http2Stream, type ServerHttp2Session } from "node:http2";
 import { Duplex } from "node:stream";
 import type { WebSocket } from "ws";
@@ -30,6 +30,81 @@ export const PING_MS = 30_000;
 export const SILENT_MS = 90_000;
 
 const AUTHORITY = "lan-peer";
+
+/**
+ * A header list's size as HTTP/2 counts it (RFC 9113 §6.5.2: each field's name and value octets
+ * plus 32). Bun's HTTP/2 refuses a list past MAX_HEADER_LIST itself; Node's lets it through to the
+ * stream handler (seen on Node 25), so both ends check here too.
+ */
+export function headerListSize(headers: Record<string, string | string[] | number | undefined>): number {
+  let n = 0;
+  for (const [k, v] of Object.entries(headers)) {
+    for (const one of Array.isArray(v) ? v : v === undefined ? [] : [v]) n += Buffer.byteLength(k) + Buffer.byteLength(String(one)) + 32;
+  }
+  return n;
+}
+
+// ─── Deadlines for the in-process HTTP server a stream is fed to ──────────────────────────────────
+// That server never listens, so its own headersTimeout, requestTimeout and keepAliveTimeout never
+// run (they are checked only for connections it accepted itself), and a stream has no socket
+// timeout. These stand in for them, per stream: its request head must arrive within HEADER_MS, a
+// request body within REQUEST_MS, and a kept-alive stream may sit idle between requests for IDLE_MS.
+// An upgraded stream (a WebSocket) lives as long as its session.
+
+export const HEADER_MS = 10_000;
+export const REQUEST_MS = 300_000;
+export const IDLE_MS = 30_000;
+
+export interface StreamDeadlines {
+  headerMs?: number;
+  requestMs?: number;
+  idleMs?: number;
+}
+
+const watched = new WeakSet<Server>();
+const timers = new WeakMap<Duplex, { timer: NodeJS.Timeout | null }>();
+
+function arm(d: Duplex, ms: number): void {
+  const t = timers.get(d);
+  if (!t) return;
+  if (t.timer) clearTimeout(t.timer);
+  t.timer = setTimeout(() => d.destroy(), ms);
+  t.timer.unref?.();
+}
+
+function disarm(d: Duplex): void {
+  const t = timers.get(d);
+  if (t?.timer) clearTimeout(t.timer);
+  if (t) t.timer = null;
+}
+
+/** Hand `d` to `server` (`emit("connection")`) under the deadlines above. */
+export function feedStream(server: Server, d: Duplex, opts: StreamDeadlines = {}): void {
+  const headerMs = opts.headerMs ?? HEADER_MS;
+  const requestMs = opts.requestMs ?? REQUEST_MS;
+  const idleMs = opts.idleMs ?? IDLE_MS;
+  if (!watched.has(server)) {
+    watched.add(server);
+    // Before the server's own handler, which may finish the response at once.
+    server.prependListener("request", (req: IncomingMessage, res: ServerResponse) => {
+      const s = req.socket as Duplex;
+      if (req.complete) disarm(s);
+      else {
+        arm(s, requestMs);
+        // Bun may end the request after the response finished: the idle deadline stands then.
+        req.once("end", () => {
+          if (!res.writableFinished) disarm(s);
+        });
+      }
+      res.once("finish", () => arm(s, idleMs)); // the next request head, or nothing, within idleMs
+    });
+    server.on("upgrade", (req: IncomingMessage) => disarm(req.socket as Duplex));
+  }
+  timers.set(d, { timer: null });
+  arm(d, headerMs);
+  d.once("close", () => disarm(d));
+  server.emit("connection", d);
+}
 
 /** A plain Duplex over an HTTP/2 stream: no native handle for a consumer to bypass. */
 export function streamDuplex(h2s: Http2Stream): Duplex {
@@ -154,6 +229,10 @@ export function serveReverse(sock: Duplex, onStream: (d: Duplex) => void, timers
       stream.respond({ ":status": 400 }, { endStream: true });
       return;
     }
+    if (headerListSize(headers) > MAX_HEADER_LIST) {
+      stream.respond({ ":status": 431 }, { endStream: true });
+      return;
+    }
     stream.respond({ ":status": 200 });
     onStream(streamDuplex(stream));
   });
@@ -256,7 +335,7 @@ export function connectReverse(sock: Duplex, timers: ChannelTimers = {}, settleM
       timer.unref?.();
       req.once("response", (headers) => {
         clearTimeout(timer);
-        if (headers[":status"] !== 200) {
+        if (headers[":status"] !== 200 || headerListSize(headers) > MAX_HEADER_LIST) {
           uncount();
           req.close(http2.constants.NGHTTP2_CANCEL);
           return fail(new Error("refused"));

@@ -153,7 +153,7 @@ describe("isolation from the laptop's real tailnet", () => {
 
   test("Sova runs without NET_ADMIN", () => {
     for (const n of cfg.hosts) {
-      const bnd = sh(n, 'grep CapBnd /proc/$(pgrep -f "[i]mport tsx server/index.ts" | head -1)/status').out.split(/\s+/)[1];
+      const bnd = sh(n, 'grep CapBnd /proc/$(pgrep -f "[s]erver/index.ts" | head -1)/status').out.split(/\s+/)[1];
       assert.ok(bnd && (BigInt("0x" + bnd) & (1n << 12n)) === 0n, `${n} CapBnd ${bnd}`);
     }
   });

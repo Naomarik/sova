@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Deploy a commit of this worktree to the VPS as the user VPS_SSH logs in as (no sudo, never git push):
 #   scripts/mesh-vps/deploy.sh [--rev <sha>] [--claude-bin <path>]      (default HEAD; CLAUDE_BIN from local.env)
-# `git archive <sha>` is streamed over ssh into ~/sova-mesh/app.new, then remote-setup.sh installs Node + Caddy
+# `git archive <sha>` is streamed over ssh into ~/sova-mesh/app.new, then remote-setup.sh installs Node + Caddy (+ the pinned Bun, in app.new/.bun)
 # (checksummed, x86_64 or aarch64; any other architecture stops here), runs pnpm install --frozen-lockfile + vite build
 # in app.new, swaps it in only once that built (a failed build leaves the running app as it was), prepares the agent dir and
 # writes ~/sova-mesh/sova-mesh.env (Claude Code's directory on the unit's PATH, or a warning). If the sova-mesh user unit is running, it is restarted onto the new build.
@@ -26,7 +26,7 @@ printf '{"commit":"%s","source":"git archive","deployedAt":"%s"}\n' "$SHA" "$(da
 
 vps "R=$R NODE_VERSION=$NODE_VERSION NODE_SHA256_X64=$NODE_SHA256_X64 NODE_SHA256_ARM64=$NODE_SHA256_ARM64 \
   CADDY_VERSION=$CADDY_VERSION CADDY_SHA512_AMD64=$CADDY_SHA512_AMD64 CADDY_SHA512_ARM64=$CADDY_SHA512_ARM64 \
-  SOVA_PORT=$SOVA_PORT SOVA_PEER_PORT=$SOVA_PEER_PORT VPS_TAILNET_IP=$VPS_TAILNET_IP VPS_ID=$VPS_ID VPS_LABEL='$VPS_LABEL' CLAUDE_BIN='$CLAUDE_BIN' bash -s" < "$MESH_VPS_DIR/remote-setup.sh"
+  SOVA_PORT=$SOVA_PORT SOVA_PEER_PORT=$SOVA_PEER_PORT VPS_TAILNET_IP=$VPS_TAILNET_IP VPS_ID=$VPS_ID VPS_LABEL='$VPS_LABEL' CLAUDE_BIN='$CLAUDE_BIN' SOVA_RUNTIME='$SOVA_RUNTIME' bash -s" < "$MESH_VPS_DIR/remote-setup.sh"
 
 # installed user units follow the deployed copies (daemon-reload only when one changed)
 vps 'd=~/.config/systemd/user; n=0; for u in sova-mesh.service sova-frontdoor.service; do

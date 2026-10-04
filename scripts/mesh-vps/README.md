@@ -7,8 +7,8 @@ you don't need this kit: install Sova with `scripts/install.sh --service` and fo
 docs/public-links.md.
 
 What the VPS needs: Linux on x86_64 or aarch64 (any other architecture is refused before anything is downloaded),
-systemd user services, outbound HTTPS to nodejs.org, github.com and the npm registry, Tailscale, and an ordinary user
-you reach over the tailnet with ssh (`VPS_SSH`, `<user>` below). The VPS may be a shared host that also runs other
+systemd user services, outbound HTTPS to nodejs.org, github.com and the npm registry, `unzip` or `python3` (to
+unpack Bun), Tailscale, and an ordinary user you reach over the tailnet with ssh (`VPS_SSH`, `<user>` below). The VPS may be a shared host that also runs other
 services: these scripts run as `<user>` with no sudo, write only under `~<user>/sova-mesh`, and never touch /etc,
 system packages or any running service. The few root steps are in [SUDO.md](SUDO.md), for whoever administers the VPS.
 
@@ -23,7 +23,9 @@ system packages or any running service. The few root steps are in [SUDO.md](SUDO
 ## What is on the VPS
 
 Layout (`~/sova-mesh`): `node/` (Node 22 LTS, sha256-pinned per architecture), `bin/caddy` (sha512-pinned per
-architecture), `app/` (git archive of a commit; `app.prev` = the previous one), `agent/` (PI_CODING_AGENT_DIR;
+architecture), `app/` (git archive of a commit; `app.prev` = the previous one; Sova runs on its `app/.bun/bin/bun`, the
+Bun build the commit's mise.toml pins, sha256-checked against its `scripts/bun-release.txt`; `SOVA_RUNTIME=node` in
+local.env runs it on Node instead), `agent/` (PI_CODING_AGENT_DIR;
 `auth.json` starts EMPTY, keys arrive by sync; `sova/peers.json` is seeded once with self id `$VPS_ID` (default `vps`)
 and no peers (logins of every kind sync, subscriptions included; Settings → Mesh can switch this host to API keys
 only); the self id is never rewritten, since host filters and the front-door order reference it), `home/` (isolated
@@ -49,7 +51,7 @@ steps, if any, are in SUDO.md section 4.
 
 From the laptop:
 - `deploy.sh [--rev <sha>] [--claude-bin <path>]`: stream `git archive <sha>` over ssh into `app.new`, install
-  Node/Caddy for the VPS's architecture, pnpm install --frozen-lockfile and both vite builds in `app.new`, and only then
+  Node/Caddy for the VPS's architecture, the pinned Bun into `app.new/.bun`, pnpm install --frozen-lockfile and both vite builds in `app.new`, and only then
   swap it in (a failed install or build stops there and the running app is untouched), agent dir, env. Restarts the
   sova-mesh user unit if it is running. Claude Code is not installed by us: the directory of the VPS user's own
   `claude` (`--claude-bin` / CLAUDE_BIN, else `command -v claude` in that user's login shell, else ~/.local/bin and

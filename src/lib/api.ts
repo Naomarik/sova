@@ -449,13 +449,15 @@ export const saveModeDefault = (path: string) =>
     body: JSON.stringify({ saveDefault: true }),
   });
 
-/** POST /api/sandbox?path=… { on }: flip that held chat's sandbox from its next tool call.
-    "unsupported" when its runtime has no sandbox extension (the row isn't shown then). */
-export const setSandbox = (path: string, on: boolean) =>
+/** POST /api/sandbox?path=… { state, on }: set that held chat's sandbox state (§chat.sandbox/states)
+    from its next tool call. `on` rides along for a host whose server predates the three states
+    (it reads only `on`, so Off lands as Subagents only there). "unsupported" when its runtime has
+    no sandbox extension (the group isn't shown then). */
+export const setSandbox = (path: string, state: "off" | "subagents" | "on") =>
   request<SandboxApplyResult>(`/api/sandbox?path=${encodeURIComponent(path)}`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ on }),
+    body: JSON.stringify({ state, on: state === "on" }),
   });
 
 /** A local folder (string), or a folder on a configured target; `host`: on that peer, which then holds it. */

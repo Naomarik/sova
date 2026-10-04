@@ -7,6 +7,7 @@ import type {
   SessionGroup,
   SessionInsight,
   SessionSummary,
+  SandboxInfo,
   SovaConfirmItem,
   SovaNavigateDetails,
   TargetInfo,
@@ -92,6 +93,11 @@ export interface OverseerToolHost extends IdeaToolHost {
   /** Pin a held chat to the mode it is on now (ChatSession.pinMode): write its `mode` entry even when
       that mode equals the default, so a later mode.json change never moves it. Throws when it can't. */
   pinMode(path: string): Promise<void>;
+  /** A chat's sandbox now (opened here as `open` does), or null when its runtime has no sandbox
+      extension (§chat.sandbox/states). Absent: no session's sandbox can be set. */
+  sandbox?(path: string): Promise<SandboxInfo | null>;
+  /** The state a new session starts in: On when the policy's `defaultOn` is true, else Subagents only. */
+  sandboxDefault?(): SandboxState;
   /** Record that the Overseer started work in this session (the concurrency cap). `prompted`: a
       prompt was just accepted there, so it counts as running from now on, even in the moment
       before its run reports streaming. */
@@ -149,6 +155,21 @@ export const UNATTENDED_REFUSAL =
   "you may read, keep notes and ask, but nothing that changes a session runs here, and no approval for later or standing rule " +
   "the user adopted covers this act. Stop, and raise a sova_card card that says what you would do and why; the user's click " +
   "starts a turn in which you may act.";
+
+/** The sandbox states, loosest first (§chat.sandbox/states), and how the tools name them. */
+export type SandboxState = "off" | "subagents" | "on";
+const SANDBOX_STATES: readonly SandboxState[] = ["off", "subagents", "on"];
+const SANDBOX_LABEL: Record<SandboxState, string> = { off: "Off", subagents: "Subagents only", on: "On" };
+/** Lowering a session's sandbox runs only in a turn the user's card click opened (§app.overseer/tools). */
+export const SANDBOX_LOWER_REFUSAL =
+  "Lowering a session's sandbox needs the user's approval: ask with sova_card, listing the session, and set it in the turn the user's click starts. Nothing was changed.";
+export const SANDBOX_LOWER_CREATE_REFUSAL =
+  "Starting a session with its sandbox lowered needs the user's approval: ask with sova_card first (say the session starts with its sandbox lowered, and to what), and create it in the turn the user's click starts. No session was created.";
+function sandboxParam(v: unknown): SandboxState {
+  if (typeof v === "string" && (SANDBOX_STATES as readonly string[]).includes(v)) return v as SandboxState;
+  throw new Refusal('sandbox is "off", "subagents" or "on". Nothing was changed.');
+}
+const lowers = (to: SandboxState, from: SandboxState) => SANDBOX_STATES.indexOf(to) < SANDBOX_STATES.indexOf(from);
 
 /** The sessions an act names, for the approvals check: null for an act that names none. */
 export function actTargets(tool: string, params: any): string[] | null {
@@ -667,6 +688,17 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
     return { queued: r.json?.queued === true, kind: String(r.json?.kind ?? "prompt"), ...(r.json?.compacting ? { compacting: true } : {}) };
   }
 
+  /** Set a held chat's sandbox state through the route the composer uses; throws why it didn't take. */
+  async function setSandbox(s: SessionSummary, state: SandboxState): Promise<void> {
+    await host.open(s.path);
+    const r = await call("POST", `/api/sandbox?path=${encodeURIComponent(s.path)}`, { state });
+    if (r.status !== 200) throw failed(r, "Setting the sandbox");
+    if (r.json?.outcome === "unsupported") throw new Error("its runtime has no sandbox extension");
+    if (r.json?.outcome === "skip") throw new Error("another writer has that session");
+    const now = (r.json?.sandbox as SandboxInfo | undefined)?.state;
+    if (now !== state) throw new Error(`it reads ${now ? SANDBOX_LABEL[now] : "unknown"} after the change: ${r.json?.sandbox?.status ?? "no status"}`);
+  }
+
   async function checkSubagentProfile(id: unknown, peer: PeerRef | null = null) {
     const r = peer ? await peerCall(peer, "GET", "/api/settings/subagents") : await call("GET", "/api/settings/subagents");
     if (r.status !== 200 || r.json?.error || !Array.isArray(r.json?.profiles)) throw new Refusal("Subagent profiles couldn't be read. Nothing was changed.");
@@ -719,6 +751,13 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
         throw new Refusal(
           `Created ${link(s)} in ${whereOf(s)}, but its mode was not set (${r.json?.error ?? `HTTP ${r.status}`}), so ${hasPrompt ? "its first prompt was not sent" : "it is in its default mode"}. Set the mode with sova_set_session${hasPrompt ? ", then send the prompt with sova_send" : ""}.`,
         );
+    }
+    if (p.sandbox !== undefined) {
+      // Before its first prompt, like the mode: its first turn's tools and workers already run under it.
+      const want = p.sandbox as SandboxState;
+      const why = await setSandbox(s, want).then(() => null, (err) => (err instanceof Error ? err.message : String(err)));
+      if (why) throw new Refusal(`Created ${link(s)}, but its sandbox was not set (${why}), so ${hasPrompt ? "its first prompt was not sent" : "it has the default sandbox"}. Set it with sova_set_session${hasPrompt ? ", then send the prompt with sova_send" : ""}.`);
+      notes.push(`Sandbox: ${SANDBOX_LABEL[want]} (this session only).`);
     }
     if (p.subagent_profile !== undefined) {
       await host.open(s.path);
@@ -1038,6 +1077,7 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
         thinking: str("off | minimal | low | medium | high | xhigh | max"),
         mode: str("normal | delegate (see the mode extension)."),
         subagent_profile: str("Subagent profile id or off, from sova_list_subagent_profiles. This session only, before its first prompt; never saves a default."),
+        sandbox: str('Its sandbox, before its first prompt: "on" (its tools and its subagents confined), "subagents" (the default: only its subagents in its worktrees, write-only) or "off" (nothing confined). Below the default only in the turn the user\'s click on a card that said so opened. Not with host.', { enum: ["off", "subagents", "on"] }),
         minor_modes: { type: "array", items: { type: "string" }, description: 'Minor modes to have on from the first turn, e.g. ["spec"]; [] turns them all off. Omitted: the default.' },
         title: str("A title for the list, up to 80 characters."),
         group: str("Group id to add it to."),
@@ -1054,6 +1094,14 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
         }
         const onPeer = typeof p.host === "string" && p.host.trim() !== "";
         if (onPeer && typeof p.group === "string" && p.group) throw new Refusal("A group can't be given with host: groups belong to one host. No session was created.");
+        // A sandbox below the one it would start in needs the user's click (§app.overseer/tools); it
+        // refuses before anything is created or capped.
+        if (p.sandbox !== undefined) {
+          if (onPeer) throw new Refusal("A sandbox can't be given with host. No session was created.");
+          if (!host.sandbox) throw new Refusal("Sessions' sandboxes can't be set here. No session was created.");
+          const want = sandboxParam(p.sandbox);
+          if (lowers(want, host.sandboxDefault?.() ?? "subagents") && !host.confirmed()) throw new Refusal(SANDBOX_LOWER_CREATE_REFUSAL);
+        }
         // A profile (§chat/profiles): this host's, one the user let the Overseer start, and a One at
         // a time one only while it isn't live; each refuses before anything is created or capped.
         if (typeof p.profile === "string" && p.profile) {
@@ -1159,8 +1207,8 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
       name: "sova_set_session",
       label: "Set session",
       description:
-        "Rename a session, give it an alias (a short name the user chose, which every tool then takes in place of its id), or set its model, thinking level or mode (normal/delegate; minor modes such as spec). Model, thinking and mode need the session idle. Terminal-owned sessions are read-only.",
-      promptSnippet: "rename a session, alias it, or set its model, thinking or mode",
+        "Rename a session, give it an alias (a short name the user chose, which every tool then takes in place of its id), or set its model, thinking level, mode (normal/delegate; minor modes such as spec) or sandbox. Model, thinking and mode need the session idle; the sandbox does not. Lowering the sandbox (to off, or from on) runs only in the turn the user's click on a card listing the session opened. Terminal-owned sessions are read-only.",
+      promptSnippet: "rename a session, alias it, or set its model, thinking, mode or sandbox",
       parameters: obj(
         {
           session: str("Session id."),
@@ -1170,6 +1218,7 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
           thinking: str("off | minimal | low | medium | high | xhigh | max"),
           mode: str("normal | delegate"),
           subagent_profile: str("Subagent profile id or off. Changes only this chat's later work, not running workers or the default."),
+          sandbox: str('"on" (its tools and its subagents confined), "subagents" (only its subagents in its worktrees, write-only) or "off" (nothing confined). From its next tool call, and for subagents started or resumed afterwards. Lowering it needs the user\'s click on a card listing the session, in the turn that click opened.', { enum: ["off", "subagents", "on"] }),
           minor_modes: { type: "array", items: { type: "string" }, description: 'Minor modes to have on, e.g. ["spec"]; [] turns them all off.' },
         },
         ["session"],
@@ -1177,6 +1226,18 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
       execute: act("sova_set_session", async (p) => {
         const s = await resolveWritable(p.session);
         if (p.subagent_profile !== undefined) await checkSubagentProfile(p.subagent_profile);
+        // The sandbox is checked before anything changes: lowering it needs this turn to be the user's
+        // click on a card that lists this session (§app.overseer/tools), never an approval for later.
+        let sandbox: SandboxState | undefined;
+        if (p.sandbox !== undefined) {
+          sandbox = sandboxParam(p.sandbox);
+          if (!host.sandbox) throw new Refusal("Sessions' sandboxes can't be set here. Nothing was changed.");
+          await host.open(s.path);
+          const info = await host.sandbox(s.path);
+          if (!info) throw new Refusal(`${link(s)} has no sandbox extension, so its sandbox can't be set. Nothing was changed.`);
+          const now: SandboxState = info.state ?? (info.on ? "on" : "subagents");
+          if (lowers(sandbox, now) && !host.confirmed()?.some((i) => i.kind === "session" && i.id === s.id)) throw new Refusal(SANDBOX_LOWER_REFUSAL);
+        }
         const done: string[] = [];
         if (p.title !== undefined) {
           const t = typeof p.title === "string" && p.title.trim() ? p.title.trim() : null;
@@ -1215,7 +1276,11 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
           if (r.status !== 200) throw failed(r, "Switching subagent profile");
           done.push(`subagent profile ${p.subagent_profile} (running workers unchanged)`);
         }
-        if (!done.length) throw new Refusal("Nothing to change: give title, alias, model, thinking, mode, minor_modes or subagent_profile.");
+        if (sandbox !== undefined) {
+          await setSandbox(s, sandbox);
+          done.push(`sandbox ${SANDBOX_LABEL[sandbox]} (from its next tool call; running subagents keep theirs until resumed)`);
+        }
+        if (!done.length) throw new Refusal("Nothing to change: give title, alias, model, thinking, mode, minor_modes, subagent_profile or sandbox.");
         return { content: text(`${link(s)}: ${done.join(", ")}.`), details: { id: s.id, path: s.path } };
       }),
     },

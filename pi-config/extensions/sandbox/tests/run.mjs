@@ -11,6 +11,7 @@ const suites = [
 	...(noNaive ? [] : ["naive.mjs"]),
 	"contract.mjs",
 	"off-equals-stock.mjs",
+	"cache-invariant.mjs",
 	"runtime-escapes.mjs",
 	"midflight.mjs",
 	"worker-inheritance.mjs",

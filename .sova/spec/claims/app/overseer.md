@@ -177,6 +177,23 @@ host's sender secret never leaves it. The peer's own routes and refusals apply.
   with `host` checks the peer's list first and refuses if it cannot be read or resolve the id.
   Create pins the pick before its first prompt. This parameter is distinct from the capability
   session `profile` above: set-session still cannot widen a session's capabilities.
+- **Sandbox (§chat.sandbox/states).** `sova_create_session` and `sova_set_session` take
+  `sandbox`: `off`, `subagents` or `on`, for that session only, never a default. Raising it (to
+  On, or from Off to Subagents only) is an act like any other. **Lowering it needs the user's
+  click**: below the state the session is in (`sova_set_session`), or, for a new session, below
+  the state it would start in (`sova_create_session`: Subagents only, or On when the policy's
+  `defaultOn` is true). It runs only in a turn the user opened by clicking a card
+  (§app.overseer/confirm), by the exact-click test of §app.overseer/org-people-facing: for
+  `sova_set_session`, a card that lists that session; for `sova_create_session`, any card, since
+  the session does not exist yet (the prompt tells the Overseer that card must say the session
+  starts with its sandbox lowered, and how far). Anywhere else (a typed "yes", an unattended run,
+  under an approval for later or a standing rule) it refuses before anything is created or
+  changed (§design.copy-deck/sandbox has both refusals). A create sets the state before its
+  first prompt; a session whose runtime has no sandbox extension is refused like a failed mode
+  switch (created, its first prompt not sent). `sandbox` can't be given with `host`. A
+  sandbox-only `sova_set_session` is allowed while a turn or workers run. The result names the
+  state; `sova_set_session`'s also says it applies from the next tool call and that running
+  subagents keep theirs until resumed.
 - **TUI-live sessions are read-only**: every act on one is refused.
 - **Files: anywhere but credentials.** The Overseer's `read`, `grep`, `find` and `ls` reach any
   file on the machine except secret files, which none of them reads, lists or matches:
@@ -694,7 +711,8 @@ time. Both kinds of approval come only from the user's click on a card option th
   approval or rule that covers the tool and every session it names: an approval whose deadline has
   not passed and that lists them all, or a rule whose acts include the tool and whose sessions
   include them all. With one, the act runs within the caps (§app.overseer/caps), and its result
-  ends with "Done under g_2 (<its label>)." Without one, or for any act that names no session
+  ends with "Done under g_2 (<its label>)." Lowering a session's sandbox is never covered: it
+  needs the user's click in the same turn (§app.overseer/tools). Without one, or for any act that names no session
   (creating a session, ideas, todos, links, organizations), the refusal is the unattended one. A
   run the user started never needs or uses one.
 - **Every use is logged.** An act that ran under an approval or a rule appends a hidden

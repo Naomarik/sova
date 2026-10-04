@@ -696,6 +696,9 @@ export function registerSubagents(
 	// The minor modes each worker of this process was given at its start (§chat.mode-menu/workers),
 	// published with it and written to its record; empty when none.
 	const workerModes = new WeakMap<Worker, string[]>();
+	// How each worker of this process was confined at its start (§chat.sandbox/states), for agent_list:
+	// "on", "on, narrowed to {path}", "write-only to {path}" or "none". Unknown for a restored worker.
+	const workerSandbox = new WeakMap<Worker, string>();
 	/** What a worker was given: its start's, else (restored) its record's; undefined when unknown. */
 	const modesOf = (a: Worker): string[] | undefined => workerModes.get(a) ?? (isRestored(a) ? manifestModes(a.manifest) : undefined);
 	// Hosted workers re-adopted with a cwd this session no longer allows (§chat.worktrees/workers):
@@ -1263,6 +1266,8 @@ export function registerSubagents(
 		// The parent's worker modes as they are now: a snapshot for this batch, which a later switch never
 		// reaches. A resume takes them afresh too (the spec's raw systemPrompt never carries them).
 		const modesNow = modeWorker;
+		// Each spec's confinement, as agent_list names it (workerSandbox); none in a remote session.
+		const sandboxNotes: (string | undefined)[] = [];
 		const prepared = specs.map((spec, index) => {
 			if (!spec.prompt.trim()) throw new Error("Task must not be blank.");
 			// A team's monitor has no tools to follow them with; a worker on its worktree's own agent dir
@@ -1298,7 +1303,10 @@ export function registerSubagents(
 				}
 				launch = sandboxState.workerLaunch({ cwd, ...(tree ? { root: tree.path } : {}), backend: backendId, owner: workerKey("check") });
 				if (launch.kind === "refused") throw new Error(launch.reason);
-				if (launch.kind === "none") {
+				// Off (§chat.sandbox/states) is the one answer that leaves a worktree's worker unconfined; it
+				// counts only from a parent that is not on and says so (an older sandbox never does).
+				const unconfinedByOff = launch.kind === "none" && !sandbox && sandboxState.workers === "off";
+				if (launch.kind === "none" && !unconfinedByOff) {
 					throw new Error(tree
 						? `Cannot confine a worker to the worktree ${tree.path}: this session's sandbox gave no scope for it.`
 						: "This session's sandbox is on but gave no worker launch; a worker cannot start sandboxed.");
@@ -1306,6 +1314,7 @@ export function registerSubagents(
 				if (launch.kind === "confine" && backendId === "pi") throw new Error("This session's sandbox gave a pi worker no extension flags; it cannot start sandboxed.");
 				if (launch.kind === "pi" && backendId !== "pi") throw new Error(`This session's sandbox gave the ${backendId} worker no confinement; it cannot start sandboxed.`);
 			}
+			if (!remote) sandboxNotes[index] = launch.kind === "none" ? "none" : sandbox ? `on${tree ? `, narrowed to ${tree.path}` : ""}` : `write-only to ${tree?.path ?? cwd}`;
 			// Where a worker may start: the session's cwd or an active tracked worktree. Remote cwds are far paths, not checked.
 			if (!remote) {
 				const outside = worktreeCwdRefusal({ sessionCwd: ctx.cwd, cwd, set: worktreeSet });
@@ -1538,6 +1547,7 @@ export function registerSubagents(
 					group.agents.push(runner);
 					hosting.bind(id, runner);
 					workerModes.set(runner, givenModes);
+					if (sandboxNotes[index] !== undefined) workerSandbox.set(runner, sandboxNotes[index]!);
 					// What resume needs to start it again: the raw spec (resolved again against the
 					// session's state at resume time, like a spawn), with pi's inherited model written out.
 					launches.set(runner, {
@@ -2736,7 +2746,7 @@ export function registerSubagents(
 									`${g.id} — ${g.label}`,
 									...g.agents.map(
 										(a) =>
-											`  ${a.id} ${a.name} [${a.backend ?? "pi"}] ${a.status}${a.taskOutcome ? `/${a.taskOutcome}` : ""} ${a.model ?? "child default"} · ${listUsage(a)}${a.error ? ` · error: ${a.error}` : ""}${restoredNote(a)}${outsideWorktrees.has(a.id) ? " · outside this session's worktrees (adopted after a restart; kept running)" : ""}`,
+											`  ${a.id} ${a.name} [${a.backend ?? "pi"}] ${a.status}${a.taskOutcome ? `/${a.taskOutcome}` : ""} ${a.model ?? "child default"} · ${listUsage(a)}${a.error ? ` · error: ${a.error}` : ""}${workerSandbox.has(a) ? ` · sandbox: ${workerSandbox.get(a)}` : ""}${restoredNote(a)}${outsideWorktrees.has(a.id) ? " · outside this session's worktrees (adopted after a restart; kept running)" : ""}`,
 									),
 								].join("\n"),
 							)

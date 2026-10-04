@@ -59,7 +59,8 @@ export interface ConfinedLaunch {
 	spawnEnv: Record<string, string>;
 	/** Open a pipe at `stdio[fd]` for each, write `data`, then close the parent's end. */
 	fds: FdPayload[];
-	/** The sandbox tmp on the host, and as the program sees it (Linux `/tmp`; macOS the host path). */
+	/** The sandbox tmp on the host, and as the program sees it (Linux `/tmp`, or the host path under a
+	 * write-only scope, which keeps the host's /tmp; macOS the host path). */
 	tmpDir: string;
 	tmpInside: string;
 	enforcement: "full" | "partial";
@@ -134,7 +135,9 @@ export function workerTmpDir(scope: string, needs?: Pick<LaunchNeeds, "tmpDir">,
 		mkdirSync(host, { recursive: true, mode: 0o700 });
 	}
 	host = canonicalize(host);
-	return { host, inside: platform === "linux" ? "/tmp" : host };
+	// A write-only scope keeps the host's /tmp, and its tmp is writable at its own path (also when
+	// the backend falls back to a private /tmp: the tmp is a writable root, bound in place too).
+	return { host, inside: platform === "linux" && !s.parent.writeOnly ? "/tmp" : host };
 }
 
 /** Remove the default sandbox tmp when the worker is gone for good (never a `needs.tmpDir`). */
@@ -240,6 +243,7 @@ export async function confineLaunch(scope: string, needs: LaunchNeeds, launch: L
 		env: policy.writeOnly ? hostEnv(launch.env) : scrubEnv(launch.env, policy.envAllow),
 		sessionId: `${s.sessionId}.w-${s.owner}`,
 		...(binds.length ? { binds } : {}),
+		...(policy.writeOnly ? { hostTmp: true } : {}),
 	};
 	const probe = await backend.probe(backendPolicy);
 	if (!probe.ok) return refuse(unavailable(probe.reason));

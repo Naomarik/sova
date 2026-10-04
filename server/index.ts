@@ -996,7 +996,7 @@ app.post("/api/mode", async (c) => {
   return modeRefusal(c, () => chat.switchMode(request.patch));
 });
 
-// The sandbox extension's on/off for one held chat (§chat/sandbox): its /sandbox handler runs
+// The sandbox extension's state for one held chat (§chat.sandbox/states): its /sandbox handler runs
 // directly (server/sandbox-state.ts). "unsupported" when the runtime has no sandbox extension.
 app.post("/api/sandbox", async (c) => {
   const path = resolveSessionPath(c.req.query("path"));
@@ -1011,7 +1011,7 @@ app.post("/api/sandbox", async (c) => {
   if ("error" in parsed) return c.json({ error: parsed.error }, 400);
   const chat = heldChat(path);
   if (!chat) return c.json({ error: "That session isn't open on this server; open the chat first" }, 404);
-  return c.json(await chat.applySandbox(parsed.on));
+  return c.json(await chat.applySandbox(parsed.state));
 });
 
 // Resume one restored subagent worker of a held chat, idle (server/worker-resume.ts): the subagents

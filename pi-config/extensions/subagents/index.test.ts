@@ -4273,6 +4273,51 @@ test("worktrees: a worker starts only in the session cwd or an active tracked wo
 	}
 });
 
+test("sandbox Off (§chat.sandbox/states): a worktree's workers start unconfined only when the sandbox says workers off; agent_list names each worker's confinement", async () => {
+	const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "pi-subagents-off-")));
+	const wt = path.join(root, "wt-a");
+	fs.mkdirSync(wt, { recursive: true });
+	const h = teamHarness();
+	const created: any[] = [];
+	h.bus.emit(BACKEND_REGISTER_EVENT, fakeBackend(created));
+	h.ctx.sessionManager.getBranch = () => worktreesBranch([{ path: wt }]);
+	const writeOnly = workerLaunchOf((r: string) => ({ sandbox: "on", "sandbox-parent": JSON.stringify({ version: 1, writeOnly: true, writable: [r] }) }));
+	try {
+		// Off: the sandbox answers none for every worker, and says workers off.
+		h.bus.emit(SANDBOX_STATE_EVENT, { ...SANDBOX_OFF, workers: "off", workerLaunch: () => ({ kind: "none" }) });
+		await h.call("agent_spawn", { prompt: "pi off", cwd: wt });
+		assert.deepEqual(h.workers.at(-1).extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, LLM_INFLIGHT_EXTENSION], "no sandbox extension, no flags");
+		assert.equal(h.workers.at(-1).flags, undefined);
+		await h.call("agent_spawn", { prompt: "claude off", cwd: wt, backend: "claude-code" });
+		assert.equal(created.at(-1).confine, undefined, "a Claude Code worker is not confined either");
+		// Fail closed: the same none without workers off (an older sandbox) still refuses, of either backend.
+		h.bus.emit(SANDBOX_STATE_EVENT, { ...SANDBOX_OFF, workerLaunch: () => ({ kind: "none" }) });
+		for (const backend of [undefined, "claude-code"])
+			await assert.rejects(h.call("agent_spawn", { prompt: "x", cwd: wt, backend }), /Cannot confine a worker to the worktree .*: this session's sandbox gave no scope for it/);
+		// An on parent never takes none, whatever its event says about workers.
+		h.bus.emit(SANDBOX_STATE_EVENT, { ...SANDBOX_ON, workers: "off", workerLaunch: () => ({ kind: "none" }) });
+		await assert.rejects(h.call("agent_spawn", { prompt: "x", cwd: wt }), /Cannot confine a worker to the worktree/);
+		// Subagents only: write-only again.
+		h.bus.emit(SANDBOX_STATE_EVENT, { ...SANDBOX_OFF, workerLaunch: writeOnly });
+		await h.call("agent_spawn", { prompt: "pi sub", cwd: wt });
+		await h.call("agent_spawn", { prompt: "pi here" });
+		h.bus.emit(SANDBOX_STATE_EVENT, { ...SANDBOX_ON, workerLaunch: writeOnly });
+		await h.call("agent_spawn", { prompt: "pi on", cwd: wt });
+		await h.call("agent_spawn", { prompt: "pi on here" });
+		const list = (await h.call("agent_list", {})).content[0].text as string;
+		const lineOf = (id: string) => list.split("\n").find((l) => l.includes(` ${id} `)) ?? "";
+		const ids = h.workers.map((w: any) => w.id ?? w.options?.id).filter(Boolean);
+		assert.equal(ids.length, 5, `pi workers: ${ids.join(",")}`);
+		assert.match(lineOf(ids[0]), /· sandbox: none(\s|$|·)/, "pi off");
+		assert.match(list, new RegExp(`sandbox: write-only to ${wt.replace(/[/.]/g, "\\$&")}`), "pi sub");
+		assert.match(list, new RegExp(`sandbox: on, narrowed to ${wt.replace(/[/.]/g, "\\$&")}`), "pi on");
+		assert.match(lineOf(ids.at(-1)), /· sandbox: on(\s|$|·)/, "pi on here");
+	} finally {
+		await h.close();
+		fs.rmSync(root, { recursive: true, force: true });
+	}
+});
+
 test("worktrees: useWorktreeConfig runs a pi worker on <worktree>/.agent with its mode, the parent's session dir and trust; recorded for resume", async () => {
 	const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "pi-subagents-wtconfig-")));
 	const parentAgent = path.join(root, "parent-agent");

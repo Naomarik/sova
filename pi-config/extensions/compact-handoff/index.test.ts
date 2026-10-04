@@ -10,7 +10,7 @@ import { afterEach, test } from "node:test";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { BackgroundForkHandlers, BackgroundForkResult, BackgroundForkSpec } from "../subagents/fork/background.ts";
 import compactHandoff from "./index.ts";
-import { type BranchEntry, HANDOFF_ENTRY, NOTE_MESSAGE } from "./handoff.ts";
+import { type BranchEntry, HANDOFF_ENTRY, NOTE_MESSAGE, NOTHING_NOTE } from "./handoff.ts";
 import { RUN_ENTRY } from "./run.ts";
 
 type Handler = (event: any, ctx: any) => unknown;
@@ -212,6 +212,25 @@ test("the fork lands: note saved under the agent dir, entry and saved row append
 	// The main session never held the handoff turn.
 	assert.equal(h.branch.some((e) => e.type === "message" && e.message?.role === "assistant"), false);
 	assert.equal(h.branch.some((e) => e.type === "message" && e.message?.role === "toolResult"), false);
+});
+
+test("a nothing note: saved and compacted with no note line, nothing comes back then or later, and an older note is not revived", async () => {
+	const agent = temp();
+	const h = harness({ agentDir: agent });
+	h.pi.appendEntry(HANDOFF_ENTRY, { v: 1, path: path.join(agent, "compact-handoffs", "sess-1.md"), note: "older note", at: "2026-10-03T09:00:00.000Z", leafId: "u0" });
+	await h.run("focus text");
+	h.forks[0]!.settle({ finalOutput: `Checked.\n<handoff>\n${NOTHING_NOTE}\n</handoff>` });
+	const file = path.join(agent, "compact-handoffs", "sess-1.md");
+	assert.ok(fs.readFileSync(file, "utf8").endsWith(`${NOTHING_NOTE}\n`));
+	assert.equal((h.branch.filter((e) => e.customType === HANDOFF_ENTRY).at(-1)!.data as any).note, NOTHING_NOTE);
+	assert.equal(h.rows().at(-1).status, "saved");
+	assert.equal(h.compacts.length, 1);
+	assert.equal(h.compacts[0]!.customInstructions, "focus text");
+	h.compacts[0]!.onComplete!({});
+	h.compaction("u0");
+	h.branch.push({ type: "message", id: "u9", message: { role: "user", content: "later" } });
+	h.compaction("u9", "threshold");
+	assert.equal(h.sent.length, 0);
 });
 
 for (const [label, result, expect] of [

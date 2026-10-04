@@ -9,7 +9,10 @@ stops a run.
    fork through the shared fork core (`../subagents/fork/`, the same one /explain uses): the fork
    works in a copy of the session, on its warm prompt cache, under a read-only policy (read,
    search, a read-only shell line; no writes, no web), and is told to end its reply with the note
-   inside `<handoff>…</handoff>`. A Claude Code session resumes its live, idle CLI session, else
+   inside `<handoff>…</handoff>`. The note holds only what the summary would flatten (the user's
+   exact corrections, fine distinctions, why an option was rejected, unverified claims, traps,
+   where an older summary is wrong), never the state the summary keeps; with nothing to add it is
+   `Nothing beyond the summary.` A Claude Code session resumes its live, idle CLI session, else
    folds (and says so). If the fork can't start, the command says so and does nothing else.
 2. Nothing of the fork's turn enters the session. The run's row is a hidden `compact-handoff-run`
    custom entry `{v: 1, id, status, at, focus?, path?, error?}`, appended at the start
@@ -25,7 +28,9 @@ stops a run.
 4. After every compaction (this one, `/compact`, threshold, overflow), the newest
    `compact-handoff` entry on the branch comes back in full as a hidden `compact-handoff-note`
    message with its age and path. (A note from before the fork whose reply is still in the kept
-   tail gets only the preamble and path.) It never starts a turn.
+   tail gets only the preamble and path.) It never starts a turn. A `Nothing beyond the summary.` note is saved and
+   compacts like any other, but its compaction instructions don't mention a note and nothing comes
+   back, then or later; as the newest entry it also keeps an older note from coming back.
 
 The fork's files (the session copy and its own session) live in
 `<agent dir>/compact-handoffs/.runs/<run id>/`, removed when the run ends; a failed run's stays

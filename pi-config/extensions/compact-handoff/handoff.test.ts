@@ -11,7 +11,9 @@ import {
 	forkTask,
 	HANDOFF_ENTRY,
 	handoffPath,
+	isNothingNote,
 	latestHandoff,
+	NOTHING_NOTE,
 	noteInKeptTail,
 	restoreText,
 	runsRoot,
@@ -80,7 +82,8 @@ test("restoreText names the age and path, and carries the note unless the reply 
 	assert.match(full, /written 2026-10-03T10:00:00\.000Z \(2 hours ago\)/);
 	assert.match(full, /saved at \/a\/compact-handoffs\/s\.md/);
 	assert.match(full, /Check it against the summary/);
-	assert.match(full, /Re-read the files it names/);
+	assert.match(full, /Verify what it marks unverified before relying on it\./);
+	assert.doesNotMatch(full, /Re-read the files/);
 	assert.match(full, /<handoff>\nthe NOTE body\n<\/handoff>$/);
 	const short = restoreText(data, now, true);
 	assert.doesNotMatch(short, /the NOTE body/);
@@ -94,15 +97,23 @@ test("ago", () => {
 	assert.equal(ago(0, 2 * 86_400_000), "2 days ago");
 });
 
-test("the fork's task: read-only, everything durable in the note, a <handoff> block, the focus when given", () => {
+test("the fork's task: read-only, nuance only, never restating the summary, a <handoff> block, the nothing sentinel, the focus when given", () => {
 	const plain = forkTask("");
-	assert.match(plain, /read-only copy of the session/);
-	assert.match(plain, /cannot write anything/);
-	assert.match(plain, /Anything durable .* goes in the note/);
-	assert.doesNotMatch(plain, /Persist anything durable/);
+	assert.match(plain, /read-only copy/);
+	assert.match(plain, /nothing reaches the session except your note/);
+	assert.match(plain, /Do not restate any of that: no current state, no task list/);
+	assert.match(plain, /claims you have not verified, and how to verify each/);
+	assert.doesNotMatch(plain, /Anything durable/);
+	assert.ok(plain.includes(`If nothing qualifies, write <handoff>${NOTHING_NOTE}</handoff>.`));
 	assert.match(plain, /<handoff>…<\/handoff>/);
 	assert.doesNotMatch(plain, /focus/);
 	assert.match(forkTask("keep the API decisions"), /focus for this handoff and the summary: keep the API decisions/);
+});
+
+test("isNothingNote: the sentinel, trimmed, case and a final period ignored; nothing else", () => {
+	assert.equal(NOTHING_NOTE, "Nothing beyond the summary.");
+	for (const n of ["Nothing beyond the summary.", "  nothing beyond the summary\n", "NOTHING BEYOND THE SUMMARY."]) assert.equal(isNothingNote(n), true, n);
+	for (const n of ["Nothing beyond the summary. But: X", "Nothing", ""]) assert.equal(isNothingNote(n), false, n);
 });
 
 test("runsRoot sits beside the notes under a dot name no session id can take", () => {

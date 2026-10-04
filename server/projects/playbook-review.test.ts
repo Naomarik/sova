@@ -89,9 +89,11 @@ test("a run that ends with commits is proposed: a playbook-review item on its se
   assert.equal((await read()).playbookState, "running");
   await host.act(bsid, "turn/started", {}, SYSTEM);
   commit(wt, { ".sova/project.json": definition }, "Project verbs");
-  await read(); // the registry's read probes the run's branch: it has commits now
   assert.equal(playbookReviewOf(pid), null, "nothing waits while it works");
-  await host.act(bsid, "turn/ended", {}, SYSTEM);
+  // Its turn ends as the server hears it (agent_settled), with no read of the page since its commit: the branch is
+  // probed then, so the commits count.
+  const { noteBuildSettled } = await import("../build-loadout");
+  await noteBuildSettled(sessionPath, false);
   const v = await until((x) => x.playbookState === "proposed" && !!x.playbook?.branchHash);
   // The review, read by Sova from the branch's tip (§app.project-runtime/run-report), and the run's strip.
   const r = v.playbook!.review!;

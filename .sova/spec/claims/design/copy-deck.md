@@ -99,6 +99,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Long tool output | `Show All {n} Lines` |
 | Tool chips | Running · Done · Failed · No result |
 | Tool output label | Output · on error: Error |
+| Tool card opened before its content came (§chat.transcript/slim-rows) | after 0.3 s: "Loading arguments and output…" · a failed fetch: "Couldn't load this call's arguments and output. {error}" · button `Retry` · gone from the branch: "This call is no longer on the session's branch, so its arguments and output can't be shown." |
 | Stopped turn (info row) | Stopped by you at `{HH:MM}`. |
 | Report row, closed | {id} · {name} · chip · {first line} (hidden prefix "Report from ", or "Message: " without an agent) |
 | Report chips | Failed · Stopped · Aborted · Success · Done · Starting · Running · Waiting · Stopping |
@@ -1014,10 +1015,10 @@ merge, commit, repo, session, token, spec, L0–L3, workspace, roster.
 | …latest change | "Set by you {relative time}." |
 | …cleared (warn banner) | "{name} left the organization, so it has no owner now. Their owner link stopped working." |
 | …link line | "Owner link made {relative time} · expires {relative time} · opened {n} times" · none: "No owner link yet." · newest turned off or replaced: "The owner link is turned off." · under 14 days (warn): "Owner link expires {relative time}." · expired: "The owner link expired {relative time}." |
-| …buttons | `Get Owner Link` (secondary) · `Preview Owner Page` (secondary) · `Turn Off Owner Link` (destructive, outlined, apart) |
+| …buttons | `Get Owner Link` (secondary) · `Preview Owner Page` (secondary) · `Delete Owner Link` (destructive, outlined, apart) |
 | Get Owner Link, while one is live (confirm) | "{first}'s current link stops working at once. The new one works from now." · `Get Owner Link` · `Cancel` |
 | Get Owner Link, no owner | "Pick an owner first." |
-| Turn Off, confirm | "{first}'s owner page stops opening at once. The conversations and updates stay." · `Turn Off Owner Link` · `Cancel` |
+| Delete, confirm | "{first}'s owner link stops working for good. The conversations and updates stay." · `Delete Owner Link?` · `Cancel` · done (toast) "Owner link deleted." |
 | Link shown once | the baton strip's Copy Link pattern; `linkWarning` when no share address is known |
 | Preview modal title | "{org}, as {first} sees it" |
 | …line | "Read only. Nothing you do here reaches {first}, and no visit is recorded." |
@@ -1060,7 +1061,7 @@ host, person or recipient.
 | Titles | "Share Session" · "Manage Share" · Preview: "As they see it", line "{title} · Read only. No visit is recorded." |
 | Intro | "People you send a link to can read this conversation: your messages and the replies, with their drawings and images. Never tool steps, thinking, paths or costs." |
 | Title field | "Title they see" · hint "The session's own title may say more than you mean to." |
-| People | "People" · placeholder "A name only you see, like Ana" · `Add` · hint "Each person gets their own link, so you see who opened it and can turn one off alone." · remove "Remove {label}" |
+| People | "People" · placeholder "A name only you see, like Ana" · `Add` · hint "Each person gets their own link, so you see who opened it and can delete one alone." · remove "Remove {label}" |
 | Anyone | "Anyone with the link" · "One more link anyone can open. Its visits show the device type only." |
 | Follow live | "Follow live" · off "Off: they see the conversation as it is now. You can update it to now later." · on "They see new messages as the session goes on, including ones you haven't read yet." · managing, off: "Off: turning it on shows them new messages as the session goes on." · on: "They see new messages as the session goes on." |
 | Expiry | "Links expire after" · `1 day` / `7 days` / `30 days` / `90 days` |
@@ -1072,7 +1073,7 @@ host, person or recipient.
 | Update and stop following | titles "Update to Now" · "Stop Following Live" · "Their pages will show the conversation as it is here, images included." · "Follow live stops here: their pages keep the conversation as it is here, images included." · `Back to Share` · `Update to This` / `Stop Following Here` (`Saving…`) · failed: **Couldn't read the conversation.** Nothing changed. {reason} `Try Again` |
 | Foot | `Cancel` · `Preview` · `Create Link` / `Create Links` (`Creating…`) · Preview: `Back to Sharing` / `Back to Share` · managing: `Stop Sharing` (armed `Stop Every Link?`), `Preview`, `Done` |
 | New links | eyebrow "New link · shown once" / "{n} new links · shown once" · `Copy Link` (toast "Link copied.") · "We keep only a fingerprint of each link. If one is lost, Get New Link makes another." · the `linkWarning` text with `Open Settings` |
-| Managing | "Snapshot up to {date time}." · `Update to Now` (title "Their pages show the conversation as it is now.") · eyebrows "People", "Expiry" · `Get New Link` (title "A new link for them. This one stops working.") · `Turn Off` (armed "Turn Off {label}'s Link?", the anyone row "Turn Off This Link?") · placeholder "Add a person, like Ben" · `Add Person` · `Add Anyone Link` · "{n} days from now" · `Extend` · "Every live link then expires {n} days from now." · `Save Title` |
+| Managing | "Snapshot up to {date time}." · `Update to Now` (title "Their pages show the conversation as it is now.") · eyebrows "People", "Expiry" · `Get New Link` (title "A new link for them. This one stops working.") · `Delete Link` (armed "Delete {label}'s Link?", the anyone row "Delete This Link?", with "The link stops working for good." under it while armed) · placeholder "Add a person, like Ben" · `Add Person` · `Add Anyone Link` · "{n} days from now" · `Extend` · "Every live link then expires {n} days from now." · `Save Title` |
 | Stopped / gone | **Stopped {time}.** Every link is off. The session itself didn't change. · **The session file is gone.** Every link answers that it's no longer active. |
 | Errors | **Couldn't read the conversation to preview it.** Nothing was shared. {reason} `Try Again` · **Couldn't create the links.** Nothing was shared. {reason} · **That didn't go through.** Nothing changed. {reason} · "Couldn't read the preview. {reason}" |
 
@@ -1109,5 +1110,23 @@ host, person or recipient.
 | Sidebar foot | row "Shares" · spine "Shares" |
 | Page | title "Shares" · meta "{n} session shares · {n} organization links" (+ " · {n} viewing now") · `Refresh Shares` |
 | Cards | "Session shares" (row meta adds "session “{session title}”" when it differs) · "No session share has a live link." · disclosure "Ended · {n}" · "Organization links" (row "{hand-off title} · hand-off {n}" or "Owner page" · "{org} · {state} · Expires in {n} days") |
-| Actions | `Manage` · `Stop Sharing` (armed `Stop Every Link?`) · `Turn Off Link` (armed "Turn Off {person}'s Link?") |
+| Actions | `Manage` · `Stop Sharing` (armed `Stop Every Link?`) · `Delete Link` (armed "Delete {person}'s Link?", with "{person}'s link stops working for good." under it while armed) |
 | Empty and hosts | **No public links are open.** Share a session from its Sharing tab: Session details, then Sharing. · "{host} can't be reached, so its links aren't listed." · failed action: **That didn't go through.** Nothing was changed. {reason} |
+
+## §design.copy-deck/worktree-cleanup — New session · worktrees line and Clean Up Merged (§chat.transcript/empty-worktrees, §chat.worktrees/cleanup)
+
+`{path}` is a worktree folder (mono, `~` for the home folder), `{branch}` its branch (mono), `{n}`
+and `{k}` counts, `{main}` the repository's main branch.
+
+| Where | Copy |
+|---|---|
+| The line | "{total} worktrees · {merged} merged" (1: "1 worktree") · with empty leftovers: " · {empty} empty" |
+| Button | `Clean Up Merged` (destructive, outlined) · while the dry run runs: `Checking…` · dry run failed (toast): "Couldn't check which worktrees can go. Nothing was removed. {message}" |
+| Confirm, title | "Remove {n} merged worktrees?" (1: "Remove 1 merged worktree?") · nothing removable: "Nothing to remove right now." |
+| Confirm, body | "These folders go away. A branch git finds in {main} is deleted too; the others keep their commits." · nothing removable: "Every worktree here stays, for the reasons below." · heading `Goes · {n}`, rows `{path}` then "{branch} · branch deleted", "{branch} · branch kept, merged by content" · heading `Stays · {k}`, rows `{path}` then the reason |
+| Confirm, buttons | `Remove {n} Worktrees` (1: `Remove 1 Worktree`), destructive · while it runs: `Removing…` · `Cancel` · nothing removable: `Close` |
+| Done | dialog title "Removed {n} · kept {k}", the kept rows with their reasons, `Close` · toast and screen reader: "Removed {n} worktrees. Kept {k}." (1: "1 worktree") · failed: "Couldn't remove worktrees. Some may be gone; the count is read again. {message}" |
+| Session tab, a tracked worktree whose folder is gone (§chat.worktrees/pane) | merged: status chip `Merged`, `title` "Its branch is in the main branch and its folder was cleaned up. This session still lists it." then chip `Cleaned up`, `title` "The folder was removed after its work was merged." · not merged: status chip `Removed` (warn), `title` "The folder is gone and its branch has commits the main branch doesn't." · no record: `Removed` (warn), `title` "The folder and its branch are gone, and nothing records a merge." · no commits: `Removed` (neutral), `title` "The folder is gone. Its branch had no commits of its own." · a dropped one: its `Dropped` chip, then `Removed` · the count line: "{n} active · {n} merged · {n} removed · {n} dropped", nonzero parts only |
+| Readiness reasons, folder gone (§chat.worktrees/readiness) | "Merged · cleaned up" · "Removed · not merged" · "Removed · no record of a merge" · "Removed · no commits" — the row's `title` words them as "{branch}: merged, cleaned up" / "{branch}: removed, not merged" |
+| sova_archive, per worktree (§app.overseer/tools) | "worktree {path}: removed; branch {branch} deleted (merged)" · "…; branch {branch} deleted (no commits of its own)" · "…; branch {branch} kept (merged by content)" · a folder already gone: "worktree {path}: already gone, dropped from git's list; …" · "worktree {path} ({branch}): kept, {reason}" with a reason from the row below, lower-cased first letter, no final period · "…: left, it belongs to session {id}" |
+| Reasons a tree stays (the server's) | "Not merged into {main}." · "Not on a branch." · "Locked." · "{n} uncommitted files: {first} and {n−1} more" (1: "1 uncommitted file: {first}") · "Session {name}'s folder is inside it." · "Session {name} tracks it and is open in a TUI." · "… and is running." · "… and has its sandbox on." · "A running process is inside it: {command} ({pid})." · "A live session under its .agent: {pid}." · "No longer in git's worktree list." · "Git refused: {git's first line}" · "Changed since the preview: {the new reason}" — `{name}` the session's title, else its short id |

@@ -10,8 +10,11 @@
 
 ARG NODE_IMAGE=node:25.2.1-bookworm-slim
 ARG TAILSCALE_IMAGE=tailscale/tailscale:v1.102.5
+# The server runs on Bun (scripts/start-server.sh); keep the tag on the version mise.toml pins.
+ARG BUN_IMAGE=oven/bun:1.4.2-debian
 
 FROM ${TAILSCALE_IMAGE} AS tailscale
+FROM ${BUN_IMAGE} AS bun
 
 FROM ${NODE_IMAGE} AS deps
 RUN apt-get update \
@@ -19,6 +22,7 @@ RUN apt-get update \
       ca-certificates curl dnsutils git iproute2 iptables iputils-ping jq openssl procps socat \
  && rm -rf /var/lib/apt/lists/*
 RUN npm install -g pnpm@12.6.0 && npm cache clean --force
+COPY --from=bun /usr/local/bin/bun /usr/local/bin/bun
 WORKDIR /sova
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 RUN pnpm install --frozen-lockfile

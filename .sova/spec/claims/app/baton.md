@@ -51,7 +51,7 @@ once), **lease** (an offer's lock on its first taker).
   holder, state and message count — and the public title, only when the session head above shows a
   different one (a renamed session): otherwise it would say the title twice — who started it and
   when (§app.baton/told), its why and goal, folded under **Why and goal** (§app.baton/goal-on-strip),
-  What It's Told (§app.baton/told), and Get Link / Turn Off Link / Take Back / Close
+  What It's Told (§app.baton/told), and Get Link / Delete Link / Take Back / Close
   Session, and, while the org has an owner, Hide From / Show To the owner (§app.owner-page/conversations); the strip never shows a profile. Each strip action re-reads the session list at once,
   so the ` · <holder>` suffix moves without waiting for the list's next poll.
 - **Loadout.** No pi-config extension, skill, prompt template or context file is loaded; the only
@@ -275,11 +275,15 @@ once), **lease** (an offer's lock on its first taker).
   offer, with its fallback after a failure (§app.outreach/send).
 - The operator can get the current link (`GET /api/baton/:sid/link` mints a fresh one for the
   current hand-off and turns off the older ones for it: the host cannot show a token it no longer
-  has) and turn it off (`POST /api/baton/:sid/revoke`). A link is shown once, with a Copy Link
+  has, the strip's **New Link** with the tooltip "Makes a new link and deletes the one you sent
+  before") and delete it (`POST /api/baton/:sid/revoke`): **Delete Link**, asked twice like every
+  link's Delete ("Delete?", with "The link stops working for good." under it while it
+  waits; done: "Link deleted."). A link is shown once, with a Copy Link
   button; it stays on the strip until the operator dismisses it or a later hand-off exists (a
   reload of the strip's own data never clears it), and once a Get Link elsewhere (another tab)
   turned it off, the strip says "Replaced by a newer link." in place of its Copy Link. During an offer, `GET /api/baton/:sid/link?person=<id>` re-mints one invitee's link and
-  turns off that invitee's older one.
+  turns off that invitee's older one (its button's tooltip: "Makes a new link for {name} and
+  deletes their older one").
 - A person's page (§app.organizations/person-page) lists their links on this host with each one's
   state, and turns off one of them, or all of them at once; nothing else about the session
   changes.

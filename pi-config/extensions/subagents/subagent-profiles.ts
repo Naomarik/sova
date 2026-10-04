@@ -1,7 +1,7 @@
 /**
  * Subagent profiles: the one reader and writer of `<agent dir>/subagent-profiles.json`, named
  * bundles of every model a session's subagents are given — Delegate's four work kinds, the team
- * coordinator, monitor and members default, and the spec writer. A chat picks one (its hidden
+ * coordinator, monitor and members default, the spec writer and (optional) the alignment reviewer. A chat picks one (its hidden
  * `subagent-profile` entry, newest on the branch wins); a chat with no pick follows this device's
  * default (`subagent-profiles-default.json`, its own tiny file so the mesh-synced library never
  * moves it); a missing pick target falls to the default, and an unusable library to the legacy
@@ -28,7 +28,7 @@ import {
 	type DelegateSettings,
 	type WorkerChoice,
 } from "../mode/delegate.ts";
-import { loadSpec, parseSpec, SPEC_FILE_NAME, specDefaults, type SpecSettings, type SpecWriter } from "../mode/spec.ts";
+import { loadSpec, parseSpec, SPEC_FILE_NAME, SPEC_WRITER_LABEL, specDefaults, type SpecSettings, type SpecWriter } from "../mode/spec.ts";
 import {
 	parseTeamDefaults,
 	readTeamDefaults,
@@ -48,6 +48,8 @@ export const OFF_PROFILE_NAME = "Off";
 /** The profile seeding writes; a fixed id, so two devices seeding apart agree on it. */
 export const SEEDED_PROFILE_ID = "my-setup";
 export const SEEDED_PROFILE_NAME = "My setup";
+/** The reviewer's label, in Settings and in errors. */
+export const REVIEWER_LABEL = "Reviewer";
 /** The session's hidden custom entry carrying its pick: `{v: 1, profile}`. */
 export const PICK_ENTRY_TYPE = "subagent-profile";
 const MAX_NAME_CHARS = 48;
@@ -69,7 +71,15 @@ export interface SubagentProfile {
 	members: WorkerChoice | null;
 	/** null: the session writes the spec itself. */
 	specWriter: SpecWriter | null;
+	/**
+	 * The alignment reviewer (adversarial review, behind the mode extension's `adversarial-review`
+	 * flag): the same shape as the spec writer. null: None, no review. Absent: never set (an older
+	 * profile), read as None; a parse never adds the key.
+	 */
+	reviewer?: ReviewerRoute | null;
 }
+/** The reviewer's route: exactly the spec writer's `{primary, fallback}`. */
+export type ReviewerRoute = SpecWriter;
 export interface SubagentProfilesFile {
 	version: 1;
 	profiles: SubagentProfile[];
@@ -129,7 +139,7 @@ function parseProfile(at: string, raw: unknown, errors: string[]): SubagentProfi
 		errors.push(`${at}: must be an object`);
 		return undefined;
 	}
-	const known = ["id", "name", "delegate", "teams", "members", "specWriter"];
+	const known = ["id", "name", "delegate", "teams", "members", "specWriter", "reviewer"];
 	for (const key of Object.keys(raw)) if (!known.includes(key)) errors.push(`${at}.${key}: unknown key`);
 	const before = errors.length;
 	if (!isProfileId(raw.id)) errors.push(`${at}.id: must be lowercase letters, digits and dashes (at most 48), and not "${OFF_PROFILE_ID}"`);
@@ -158,8 +168,15 @@ function parseProfile(at: string, raw: unknown, errors: string[]): SubagentProfi
 		if ("error" in parsed) errors.push(`${at}.specWriter: ${parsed.error}`);
 		else specWriter = parsed.writer;
 	}
+	let reviewer: ReviewerRoute | null | undefined;
+	if (raw.reviewer === null) reviewer = null;
+	else if (raw.reviewer !== undefined) {
+		const parsed = parseSpec({ version: 1, writer: raw.reviewer });
+		if ("error" in parsed) errors.push(`${at}.reviewer: ${parsed.error.replaceAll(SPEC_WRITER_LABEL, REVIEWER_LABEL)}`);
+		else reviewer = parsed.writer;
+	}
 	if (errors.length > before || "error" in delegate) return undefined;
-	return { id: raw.id as string, name: raw.name as string, delegate: delegate.profiles, teams, members, specWriter };
+	return { id: raw.id as string, name: raw.name as string, delegate: delegate.profiles, teams, members, specWriter, ...(reviewer === undefined ? {} : { reviewer }) };
 }
 
 /** Strict validation of the whole file (or its raw text). Every error is collected; on any, no value. */
@@ -342,6 +359,31 @@ export function writeProfilesDefault(agentDir: string, value: unknown): Subagent
 	return writeJsonAtomic(subagentProfileDefaultPath(agentDir), parsed.value, agentDir);
 }
 
+// ── The reviewer's default (adversarial review) ──────────────────────────────
+
+/** The reviewer the seeding writes: Sol on pi, with Claude Code's Opus as its fallback. */
+export const DEFAULT_REVIEWER: ReviewerRoute = {
+	primary: { backend: "pi", model: "openai-codex/gpt-6.1-sol", effort: "high" },
+	fallback: { backend: "claude-code", model: "opus[1m]", effort: "high" },
+};
+
+/**
+ * Give every library profile WITHOUT a `reviewer` key the default reviewer, once adversarial review
+ * is switched on (Sova's Settings → Experimental). An explicit null (None) or an existing route is
+ * never touched, so a second run writes nothing. Through this module's own atomic writer, so the
+ * mesh's watcher syncs the library like any save. A malformed library is left alone (`ok: false`):
+ * the caller retries at a later save. Returns the ids it gave the default.
+ */
+export function seedReviewer(agentDir: string, reviewer: ReviewerRoute = DEFAULT_REVIEWER): { ok: boolean; seeded: string[] } {
+	const state = loadSubagentProfiles(agentDir);
+	if (state.state !== "ok") return { ok: false, seeded: [] };
+	const seeded = state.value.profiles.filter((p) => !("reviewer" in p)).map((p) => p.id);
+	if (seeded.length === 0) return { ok: true, seeded };
+	const value: SubagentProfilesFile = { version: 1, profiles: state.value.profiles.map((p) => ("reviewer" in p ? p : { ...p, reviewer: clone(reviewer) })) };
+	writeSubagentProfiles(agentDir, value);
+	return { ok: true, seeded };
+}
+
 // ── A chat's pick ────────────────────────────────────────────────────────────
 
 /** The pick a stored entry carries, or undefined for anything this version does not understand. */
@@ -381,6 +423,8 @@ export interface ResolvedSubagents {
 	/** Delegate's routing; null under Off (the agent picks every worker). */
 	delegate: DelegateSettings | null;
 	spec: SpecSettings;
+	/** The alignment reviewer; null: none (None, a profile without one, Off, or the legacy files). */
+	reviewer: ReviewerRoute | null;
 	/** Team defaults in the shape team_create reads; `absent` = no standing members. */
 	teams: TeamDefaultsState;
 	members: WorkerChoice | null;
@@ -403,6 +447,7 @@ function fromProfile(file: string, profile: SubagentProfile, source: "pick" | "d
 		name: profile.name,
 		delegate: { version: 1, profiles: clone(profile.delegate) },
 		spec: { version: 1, writer: profile.specWriter ? clone(profile.specWriter) : null },
+		reviewer: profile.reviewer ? clone(profile.reviewer) : null,
 		teams: teamsState(file, profile.name, profile.teams),
 		members: profile.members ? clone(profile.members) : null,
 		...(note ? { note } : {}),
@@ -416,6 +461,7 @@ function off(file: string, source: "pick" | "default", note?: string): ResolvedS
 		name: OFF_PROFILE_NAME,
 		delegate: null,
 		spec: specDefaults(),
+		reviewer: null,
 		teams: { state: "absent", file: `${file} (subagent profile "${OFF_PROFILE_NAME}")`, note: `the subagent profile "${OFF_PROFILE_NAME}" configures nothing` },
 		members: null,
 		...(note ? { note } : {}),
@@ -430,6 +476,7 @@ export function legacyResolved(agentDir: string, note?: string): ResolvedSubagen
 		name: "Legacy settings",
 		delegate: loadDelegate(path.join(agentDir, DELEGATE_FILE_NAME)),
 		spec: loadSpec(path.join(agentDir, SPEC_FILE_NAME)),
+		reviewer: null,
 		teams: readTeamDefaults(agentDir),
 		members: null,
 		...(note ? { note } : {}),
@@ -545,6 +592,8 @@ export function profileSlots(profile: SubagentProfile): { label: string; choice:
 	}
 	push("Spec writer primary", profile.specWriter?.primary ?? null);
 	push("Spec writer fallback", profile.specWriter?.fallback ?? null);
+	push(`${REVIEWER_LABEL} primary`, profile.reviewer?.primary ?? null);
+	push(`${REVIEWER_LABEL} fallback`, profile.reviewer?.fallback ?? null);
 	return out;
 }
 
@@ -555,12 +604,14 @@ export function profileWorkers(profile: SubagentProfile, fallbacks = true): Work
 	if (profile.teams?.coordinator.enabled) primaries.push(workerOf(profile.teams.coordinator.primary));
 	if (profile.teams?.coordinator.enabled && profile.teams.monitor.enabled) primaries.push(workerOf(profile.teams.monitor.primary));
 	if (profile.specWriter) primaries.push(profile.specWriter.primary);
+	if (profile.reviewer) primaries.push(profile.reviewer.primary);
 	if (!fallbacks) return primaries;
 	const rest: WorkerChoice[] = [];
 	for (const id of DELEGATE_PROFILES) if (profile.delegate[id].fallback) rest.push(profile.delegate[id].fallback!);
 	if (profile.teams?.coordinator.enabled && profile.teams.coordinator.fallback) rest.push(workerOf(profile.teams.coordinator.fallback));
 	if (profile.teams?.coordinator.enabled && profile.teams.monitor.enabled && profile.teams.monitor.fallback) rest.push(workerOf(profile.teams.monitor.fallback));
 	if (profile.specWriter?.fallback) rest.push(profile.specWriter.fallback);
+	if (profile.reviewer?.fallback) rest.push(profile.reviewer.fallback);
 	return [...primaries, ...rest];
 }
 const workerOf = (t: { backend: WorkerChoice["backend"]; model: string; effort?: string }): WorkerChoice => ({ backend: t.backend, model: t.model, effort: t.effort ?? "" });

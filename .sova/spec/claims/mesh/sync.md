@@ -10,7 +10,7 @@ A change to a synced category on one host reaches every up peer that has that ca
 file is one document; the most recently changed version wins, a deletion travels like a change,
 and a received document is written only if the program that reads it accepts it, atomically and
 under that program's own lock where it has one. A file that is a link into a git checkout is never
-written. **Settings** are Sova's and pi's host-wide preferences (the Claude Code switch, new-session
+written. **Settings** are Sova's and pi's host-wide preferences (Sova's experimental switches, new-session
 defaults, model favorites, model policy, request limits, Ollama Cloud's usage reset day
 (`usage-windows.json`, validated with its own strict parser), mode defaults, the legacy Delegate and
 Spec settings, and the whole `subagent-profiles.json` library), not

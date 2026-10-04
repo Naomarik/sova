@@ -1,4 +1,4 @@
-// Run: pnpm exec tsx --test src/lib/align-card.test.ts (or npm test). The align card's reading
+// Run: pnpm exec tsx --test src/lib/align-card.test.ts (or pnpm test / pnpm run test:bun). The align card's reading
 // order and DOM, rendered: the approach between the summary and the questions and open by
 // default, its steps numbered by their stable ids only with the whole inline-rich body in the
 // second column, findings and rejected folded below the questions — plus the view-model the card
@@ -10,12 +10,11 @@ import { test } from "node:test";
 
 // The SSR helper stays plain .mjs (node runs it uncompiled), so it has no types; its one export.
 // @ts-expect-error untyped .mjs import
-const { ssrHooks } = await import("./align-card-ssr.mjs");
-ssrHooks();
+const { importSsr } = await import("./align-card-ssr.mjs");
 const solid = await import("solid-js");
 const { renderToString } = await import("solid-js/web");
 const { cardSections } = await import("./align");
-const { AlignAnswerContext, AlignDocCard, AlignRow } = await import("../components/AlignDocCard.tsx");
+const { AlignAnswerContext, AlignDocCard, AlignRow } = await importSsr(new URL("../components/AlignDocCard.tsx", import.meta.url), (s: string) => import.meta.resolve(s));
 import type { AlignDocInfo, AlignRowInfo } from "../../shared/protocol";
 
 const cardCss = readFileSync(new URL("../design/align-viewer.css", import.meta.url), "utf8").replaceAll(/\/\*[\s\S]*?\*\//g, "");

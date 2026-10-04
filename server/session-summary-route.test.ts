@@ -53,6 +53,8 @@ describe("the Overseer's own folder and notes", () => {
       info.path,
       `${JSON.stringify({ type: "message", id: "ou1", parentId: null, timestamp: "2026-09-20T00:00:02.000Z", message: { role: "user", content: [{ type: "text", text: "what needs me" }], timestamp: 0 } })}\n`,
     );
+    // Appended from outside the server (not through its runtime): step past the listing's reuse window.
+    (await import("./list-generation")).sessionsChanged();
     const listed = (await (await app.request("/api/sessions")).json()) as { path: string; cwd: string; overseer?: true }[];
     assert.ok(
       listed.some((s) => s.overseer && s.cwd === overseerDir()),

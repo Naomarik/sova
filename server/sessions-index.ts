@@ -30,6 +30,7 @@ import { readDecisionSettings } from "./decide-settings";
 import { readSignals, signalsOverlay, workerSignalsOverlay } from "./signals-store";
 import { dropSessionTags, tagsFor } from "./session-tags";
 import { pruneReadiness, readinessOverlay } from "./merge-readiness";
+import { listGeneration } from "./list-generation";
 import { projectOverseerOfPath } from "./project-overseer-store";
 import { projectCodingIds, projectKeeps, projectSessionLookup } from "./project-sessions";
 import { reservedRoots } from "./projects/contributions";
@@ -853,8 +854,29 @@ function decisionFields(
   };
 }
 
-/** All sessions, newest activity first, with fresh live presence merged in. */
-export async function listSessions(): Promise<SessionSummary[]> {
+/** How long a finished listing serves further callers, from its build's start (§app.session-list/listing-reuse). */
+export const LIST_REUSE_MS = 1_000;
+let listing: { generation: number; startedAt: number; rows: Promise<SessionSummary[]> } | null = null;
+
+/** All sessions, newest activity first, with fresh live presence merged in. Callers share a build
+    that is running or started less than LIST_REUSE_MS ago, unless something in this process changed
+    since it started (server/list-generation.ts). Each caller gets its own array; rows are shared
+    and never mutated. */
+export function listSessions(): Promise<SessionSummary[]> {
+  const now = Date.now();
+  const generation = listGeneration();
+  let l = listing;
+  if (!l || l.generation !== generation || now - l.startedAt >= LIST_REUSE_MS || now < l.startedAt) {
+    const mine: { generation: number; startedAt: number; rows: Promise<SessionSummary[]> } = { generation, startedAt: now, rows: buildSessions() };
+    listing = l = mine;
+    mine.rows.catch(() => {
+      if (listing === mine) listing = null;
+    });
+  }
+  return l.rows.then((rows) => [...rows]);
+}
+
+async function buildSessions(): Promise<SessionSummary[]> {
   const files = await listSessionFiles();
   const live = readLive();
   const own = readOwnLiveRecords();

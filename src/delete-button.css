@@ -1,0 +1,3 @@
+/* A link's Delete while it waits for its second press: the line that says the link stops working for
+   good, on a line of its own under the button's row (a flex row wraps it there). */
+.delete-note { flex-basis: 100%; margin: 0; font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-2); white-space: normal; overflow-wrap: anywhere; }

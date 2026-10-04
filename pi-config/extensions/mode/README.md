@@ -231,31 +231,16 @@ writer**).
     (landings re-prompted twice, anything else once), and a ledger entry per
     git operation for the parent.
 
-  - **Structured observations.** Separately from those guards, task changes create
-    unresolved input-bound receipts through the trusted assessment companion. The
-    `spec_assess` tool is callable while spec is on: prepare a comparison, record
-    explicit dispositions/reasons/verification bases, or query its current inputs.
-    The task base and initial dirty hash states persist with the actual user entry;
-    retries and reopen retain that base, while attempts and new user boundaries
-    remain distinct. Missing or corrupt initial state is unknown, not a new baseline.
-    A disposition and a recorded passed result are declarations, never semantic
-    proof. The server's neutral **Spec observations** field reads owner/team receipts
-    separately from the existing bash check, readiness badge, and release policy.
-    Verification input matching/mismatch/unknown is distinct from the result.
-    Failed or unavailable operations flag a tool error while retaining structured
-    content/details. Successful preparations/records remain normal operations even
-    with unresolved items or failed verification declarations; stale/unknown status
-    remains a valid query. None of these flags changes continuations or release policy.
-
-    Code-writing pi workers receive this observer/tool through `spec-worker.ts`.
-    Native Claude workers use the same capture helper in their hooks and the
-    companion CLI for explicit records; an absent native prompt id remains null.
-    The server cannot verify native task boundaries with its pi-session reader,
-    so native task attribution remains unknown. A private native hook error marker
-    is not itself transported as a parent receipt: missing receipts mean absent
-    evidence/unknown applicability, not a successful comparison or an invented cause.
-    These cooperative observations do not establish forensic authorship of shared
-    filesystem changes. Remote tool execution remains outside this local observer.
+  - **No automatic assessments.** Neither the session, its pi workers (`spec-worker.ts`)
+    nor Claude Code workers' hooks run the assessment companion, capture a task
+    baseline or write a receipt, and none of them has an assessment tool. An
+    assessment is an explicit `sova-spec-assess.mjs prepare <name> --base <known rev>`,
+    `record` and `status` (`.sova/spec/USAGE.md`, `../spec/README.md`). A spawned
+    worker's `SOVA_SPEC_OWNER_SESSION`/`SOVA_SPEC_WORKER_ID`/`SOVA_SPEC_TEAM_ID` are
+    there for a caller to pass as `--attribution-json`. Receipts and task entries
+    left by the earlier automatic observer stay as they are; an old native hook state
+    keeps its assessment fields unchanged and ignored, while its census and turn
+    fields update as usual.
 
   See `../spec/README.md`.
 
@@ -346,6 +331,24 @@ they are listed, and a recommendation that names an option by its label reads
   the viewer shows the newest one when a session has no tool alignments, the
   transcript keeps its dim `── alignment v2 · questions open · 1/2 settled ──`
   marker, and nothing parses markdown any more.
+
+- **Adversarial review (experimental)** — behind the boolean launch flag
+  `--adversarial-review` (off by default; Sova passes it per hosted session).
+  Off, nothing here exists: the tool, its schema and the prompt are exactly as
+  without the feature (`tests/review-smoke.mjs` pins them to a fixture). On,
+  from `session_start` the tool is re-registered with two more ops — `review
+  {phase: plan | diff, state, reason, model?, blockers?}` and `close_blocker
+  {phase, id, by: check | evidence | waiver, evidence}` — and the rules for when
+  to review in its description and guidelines, and `/review plan|diff [al_N]`
+  asks for one. Each alignment then carries a `review` record (a `plan` and a
+  `diff` entry: state, reason, model, blockers), so it folds, resumes and
+  rewinds with the document. Starting a phase reserves it before the reviewer
+  spawns and never runs twice; `status implementing` waits for a running plan
+  review and `status done` for every review and every open blocker. The
+  reviewer is the chat's subagent profile's `reviewer` route (routed like the
+  spec writer; none = no review), spawned read-only (pi `read, grep, find, ls`;
+  claude-code `Read, Grep, Glob`) with the fixed prompt `review-prompt.ts`
+  writes, which the start's result carries filled in.
 
 The viewer key is `alt+a` by default; set `"viewerShortcut"` in `mode.json`
 to change it. If it collides with the mode toggle or the `align` toggle key,
@@ -638,19 +641,23 @@ node --test delegate.test.ts  # the routing file: defaults, parsing, persistence
 node --test routing.test.ts   # primary → fallback → ask, discovery failure, policy
 node --test spec.test.ts      # the spec writer file: parsing, persistence, per-turn re-read
 node --test align.test.ts     # alignments: ops, strict input and import, hints, fold, echo, note, nudge heuristic, legacy entries
+node --test review.test.ts    # adversarial review: the review and close_blocker ops, slots, guards, the record's normalization, the reviewer prompt
 node tests/smoke.mjs          # real index.ts against a fake pi host, no model requests
+node tests/review-smoke.mjs   # the adversarial-review flag through index.ts: off equals master's tool and prompt (fixture); on registers and runs the ops
 node tests/wake-turn.mjs      # real pi session + scripted provider: same prompt whoever starts the turn
 node tests/note-turn.mjs      # real pi session + scripted provider: a minor toggle keeps the head; notes, reopen, compaction
 node tests/align-turn.mjs     # real pi session + scripted provider: the align tool, its hidden notes (per prompt, after a compaction) and the settle nudge
 node --test also-changes.test.ts # the Also-changes grammar (s2-3's line, suffix ids, format errors), Plumbing/Deferred lines, landingGate
 node --test spec-guard.test.ts # the spec checks: census per tree (real Git + spec tools), judgeOp (M3-B-s2-2's own claim), the ledger, command detection
-node --test spec-assessment.test.ts # portable assessment transport, task snapshot integrity and unknown-baseline controls
+node --test spec-assessment.test.ts # the assessment transport, and that nothing else is left to capture with
+node tests/assessment-absence.mjs # session, worktree-config worker, pi worker and Claude Code hooks never call a trapped companion by themselves
 node tests/spec-turn.mjs      # real pi session + scripted provider: census digest, forbidden writes, landings (two merges, Plumbing, Deferred, a worker's ledger commit), Q&A line, re-prompts, mode:state
 node tests/spec-worker.mjs    # real pi session loading only spec-worker.ts (a pi worker's -e): the census digest; the turn-end check (edit, promote x2, Q&A line) and its ledger entry
 ```
 
 Sova repository integration only, from its root: `node server/tests/spec-assessment.mjs`
 exercises actual common worker spawning through a scripted RPC child running the pinned SDK,
-owner reopen and readiness consumption, plus parent assessment-tool activation/record/status.
+owner reopen, readiness and a spec-on mode session with no assessment call, then the explicit
+companion CLI against the known start revision.
 This cross-boundary fixture is not required by, and does not run on, a standalone copy of
 `pi-config/`; the extension and its portable tests import no Sova runtime.

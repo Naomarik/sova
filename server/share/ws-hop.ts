@@ -1,10 +1,11 @@
 import type { IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";
-import { WebSocket, WebSocketServer, type RawData } from "ws";
+import type { RawData, WebSocket } from "ws";
 import { refuse } from "../extensions";
 import { REFUSED_HEADER } from "../mesh/hello";
 import { SHARE_WS_MAX_PAYLOAD } from "./edge";
 import { hopLost, offlineUpgrade } from "./offline";
+import { cappedWebSocket, cappedWebSocketServer } from "../runtime-quirks";
 
 /**
  * A gateway's `/ws/h` hop (§mesh.public/routing, /offline): the page's socket at the gateway, one
@@ -143,7 +144,7 @@ export function createWsHop(opts: WsHopOptions = {}): WsHop {
   const totalMax = opts.total ?? WS_HOPS_TOTAL;
   const dialMs = opts.dialMs ?? WS_HOP_DIAL_MS;
   const upstreamMaxPayload = opts.upstreamMaxPayload ?? WS_HOP_UPSTREAM_MAX_PAYLOAD;
-  const wss = new WebSocketServer({ noServer: true, maxPayload: SHARE_WS_MAX_PAYLOAD });
+  const wss = cappedWebSocketServer({ noServer: true, maxPayload: SHARE_WS_MAX_PAYLOAD });
   const hops = new Map<string, Set<Hop>>();
   let open = 0;
   let disposed = false;
@@ -223,12 +224,14 @@ export function createWsHop(opts: WsHopOptions = {}): WsHop {
     socket.once("close", onGone);
 
     try {
-      up = new WebSocket(`ws://${target.host.includes(":") ? `[${target.host}]` : target.host}:${target.port}${target.path}`, {
+      up = cappedWebSocket(`ws://${target.host.includes(":") ? `[${target.host}]` : target.host}:${target.port}${target.path}`, undefined, {
         headers: target.headers,
         handshakeTimeout: dialMs,
         followRedirects: false,
         perMessageDeflate: false,
         maxPayload: upstreamMaxPayload,
+        // A message over it ends the hop like a lost host, as ws's own 1009 error does.
+        onOversize: () => hop.end("lost"),
       });
     } catch {
       return hop.end("offline");

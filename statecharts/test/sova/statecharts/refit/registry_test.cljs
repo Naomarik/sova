@@ -40,7 +40,7 @@
   (is (= {["baton" :baton/offer] #{"offer"} ["baton" :baton/close] #{"close"}
           ["placement" :baton/start] #{"gather" "offer"} ["item" :gather/start] #{"gather" "offer"}
           ["project" :build/start] #{"build"} ["project" :verbs/onboard] #{"build"} ["item" :build/start] #{"build"} ["build" :build/prompt] #{"prompt"} ["project" :session/prompt] #{"prompt"}
-          ["reconciler" :decision/promote] #{"promote"} ["placement" :owner-update/post] #{"owner-update"} ["placement" :outreach/send] #{"send"} ["project" :preview/start] #{"preview"}
+          ["reconciler" :decision/promote] #{"promote"} ["placement" :owner-update/post] #{"owner-update"} ["placement" :outreach/send] #{"send"} ["project" :preview/start] #{"preview"} ["project" :services/share] #{"preview"}
           ["person" :person/approve] #{"roster-approve"} ["person" :person/decline] #{"roster-decline"}}
          (into {} (for [[statechart ev m] (acts) :when (:confirm-kind m)] [[statechart ev] (kinds m)])))))
 
@@ -62,11 +62,11 @@
   (let [now (at/table)
         bad (for [k (sort (into (set (keys now)) (keys ag/golden))) :when (not= (get now k) (get ag/golden k))]
               [k :now (get now k) :golden (get ag/golden k)])]
-    (is (= 86 (count ag/golden)))
+    (is (= 87 (count ag/golden)))
     (is (empty? bad) (str (count bad) " differ: " (pr-str (take 10 bad))))))
 
 (deftest exactly-these-acts-are-held
   (is (= #{["baton" ":baton/close"] ["build" ":build/prompt"] ["item" ":build/start"] ["item" ":gather/start"]
            ["person" ":person/approve"] ["person" ":person/decline"] ["placement" ":baton/start"] ["project" ":build/start"]
-           ["placement" ":owner-update/post"] ["placement" ":outreach/send"] ["project" ":preview/start"] ["project" ":session/prompt"] ["project" ":verbs/onboard"] ["reconciler" ":decision/promote"]}
+           ["placement" ":owner-update/post"] ["placement" ":outreach/send"] ["project" ":preview/start"] ["project" ":services/share"] ["project" ":session/prompt"] ["project" ":verbs/onboard"] ["reconciler" ":decision/promote"]}
          (set (for [[k m] (at/table) :when (:hold m)] k)))))

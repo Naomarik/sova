@@ -177,7 +177,7 @@ user row.
 - Four levels, set per project (`PATCH …/overseer {autonomy}`), default **L1**:
   **L0 propose** (read, keep notes, file ideas, ask with a confirm card, stop the project's
   running instances, §app.project-services/callers), **L1 gather** (+ start
-  gathering sessions and offers, run the reconciler, publish preview links of its coding
+  gathering sessions and offers, share its running copies, run the reconciler, publish preview links of its coding
   sessions' apps, §app.project-overseer/previews), **L2 reconcile** (+ promote drafted
   decisions, approve or decline referrals), **L3 build** (+ start and prompt coding sessions in the
   project, within its limits, and create, start, reload, reset, tear down and conform the
@@ -336,8 +336,10 @@ user row.
   sentence and nothing runs; when the services engine then refuses or fails the verb, its activity
   row is refused with the engine's code and message, and the tool's result carries the engine's whole
   answer; once taken, the verb's own rules still apply: reset and teardown of an
-  instance it did not create, and stopping a shared service, answer `needs-confirm` (the
-  operator's).
+  instance it did not create, stopping a copy with an active share link (§app.project-services/share),
+  and stopping a shared service, answer `needs-confirm` (the operator's). `share` is `services/share`
+  (L1, held, refused while the project is archived, §app.project-overseer/previews); `revoke` is no
+  act: it runs at any level and in any run, never held, since it only takes something away.
 - `sova_promote` asks the reconciler as the overseer (`by: "overseer"`): a decision made outside its
   author's decision area (they don't own that area, §app.requirements/promotion: neither its
   roster owner nor, for an area no one owns, the main stakeholder) is refused for it in every turn,
@@ -366,7 +368,7 @@ user row.
   which is the project's own act: L3, counted as a prompt, held like one, kind `prompt`; never a
   gathering session; an optional `mode` and `minor_modes` too). Both take the mode within the operator's ceiling (§app.project-overseer/coding-mode).
   L3 also: `sova_project_verbs` create, up, apply, test, reset, teardown and conform (L0: its `down`;
-  status, logs and doctor are reads; below), and its `onboard {why}`, the project's `verbs/onboard`
+  L1: its `share`, held; `revoke` at any level; status, logs and doctor are reads; below), and its `onboard {why}`, the project's `verbs/onboard`
   act, which starts the Project verbs playbook (§app.project-runtime/onboard): counted and held like
   a coding session's start, and refused for an unattended overseer while the project's software is
   registered and current. The overseer may start it when the Software standing is unregistered,
@@ -561,7 +563,13 @@ user row.
 - **Remove Worktree** removes the worktree folder (git's own `worktree remove`; one with
   uncommitted changes is refused, naming them) and deletes the branch only when it is merged; an
   unmerged branch keeps its commits, and Merge Branch stays on its row. It is refused while the
-  session is working or has workers running. On a missing folder it only clears git's record of
+  session is working or has workers running. When the worktree has a running copy of the project
+  (an instance, §app.project-services/instances), Remove Worktree first tears that copy down
+  (§app.project-services/teardown, as the operator), which also ends its share links; if the teardown
+  fails, nothing is removed and the refusal says why ("Its running copy could not be torn down:
+  …"). Merge Branch never touches the copy: it keeps running, with its links, until it is stopped or
+  torn down, or its worktree is removed. Merge Branch also reloads the main copy's onMerge services
+  at once (§app.project-services/on-merge). On a missing folder it only clears git's record of
   it (and deletes a merged branch). The
   session and its transcript stay; its row says "Worktree removed", and `sova_send` refuses it:
   "Its worktree was removed, so it has no folder to work in." Nothing is removed on its own, a
@@ -572,14 +580,16 @@ user row.
 
 - **What they are for.** A preview link (§mesh.public/preview) shows one of the project's coding
   sessions' running apps to a stakeholder, the whole site at its own public address, until it is
-  turned off or expires. The prompt has a **Previews** section, and the two tools' descriptions
+  deleted or expires. The prompt has a **Previews** section, and the two tools' descriptions
   say the same: what previews are for, that a link reaches anyone who has it, to make one only
   for a stakeholder who should see the app now, to check it answers, that the overseer never sees
   a link, that a preview reaches a person with `sova_send_to_person` and its `preview` id (they get
   their own link to it, §app.outreach/links) or through the operator, who has the link on the
-  project page, and to turn it off once it has served its purpose (every link sent from it goes
-  off with it). If the app went down, whoever runs it (the coding session, prompted with
-  `sova_send`) starts it again: Sova never starts an app for a preview.
+  project page, and to delete it once it has served its purpose, which is for good (every link
+  sent from it stops working with it, and nothing brings one back). If the app went down, whoever runs it (the coding session, prompted with
+  `sova_send`) starts it again: Sova never starts an app for a preview. A running copy's link is the
+  one exception: the operator may Start its stopped copy from the Previews card
+  (§mesh.public/preview-card); a visit never starts anything.
 - **See.** `sova_previews` (read, any level) lists the project's previews, active ones first:
   each one's id, whether the operator has its link ("link kept for the operator", or "no link
   kept for the operator (shown only when it was made)", then "send it by its id"), what it serves ("port {n}", or "folder {path}" relative to its
@@ -608,10 +618,30 @@ user row.
   ahead: a listener that moved or a folder that went away drops it with the reason. It counts
   against no allowance. The act's payload and its effect's result carry no link, so the
   transition log never does.
-- **Turn off.** `sova_preview {op: "off", id}` turns off one of this project's previews at once, at
-  any level and in any run, never held and never waiting for a review: it only takes something
-  away. It is the card's Turn Off (`POST /api/previews/<id>/off`), and it is logged in the
-  overseer's activity.
+- **A running copy, shared.** A link can also show one of the project's running copies, an endpoint
+  its definition declares for sharing (§app.project-services/share): `sova_project_verbs {verb:
+  "share", instance, endpoint, days?}`. Once the services engine's own checks pass it is the project
+  statechart's `services/share` act, guarded as `preview/start` is: L1, people-facing, confirm kind
+  `preview`, held ("A preview link: {endpoint} of a running copy ({branch})"), refused while the
+  project is archived, counted against no allowance; its effect mints the link once it goes ahead,
+  checked again then, and its payload and result carry the link's id, never the link. The tool's
+  result names the link by its id, endpoint, expiry and state, never its URL. `sova_previews` lists
+  these links too, each with its id, endpoint, the copy's branch ("main" for the main checkout),
+  its expiry and its state, never the link. `revoke {link | instance}` takes them away at any level
+  and in any run, never held. Who gets the link: in a standalone project it is only for the
+  operator, who sees it in Sova; in an organization's project the overseer may then send it to a
+  roster person with `sova_send_to_person` and its `preview` id. The prompt's Previews section
+  and the tool descriptions say so.
+- **Seeing and stopping what runs.** The prompt also says how to see and stop any running copy of
+  the project at will: `sova_project_verbs status` lists every copy (main and each worktree's) with
+  its state, and `down` stops one at any level from L0, never held; a copy with an active share link
+  answers `needs-confirm` to it (§app.project-services/share), so the prompt says to revoke its links
+  first (`revoke {instance}`), then stop it.
+- **Delete.** `sova_preview {op: "off", id}` deletes one of this project's previews at once and for
+  good, at any level and in any run, never held and never waiting for a review: it only takes
+  something away. It is the card's Delete (`POST /api/previews/<id>/off`); its result says
+  "Deleted {id}: its link answers "no longer active" for good.", and it is logged in the
+  overseer's activity as "Deleted a preview link" (with its purpose).
 - **One shape for what comes next.** Both tools put each preview in their result's `details` in one
   fixed shape, `PreviewHandoff` (`shared/preview-links.ts`): `{v: 1, id, linkKept, purpose,
   expiresAt, projectId, sessionId, branch, target, state, running, createdBy}`, never the
@@ -1119,7 +1149,8 @@ user row.
   act waits for the overseer's review.", "A person was sent a WhatsApp message.", "The session was retired: the project keeps the 200
   sessions it started most recently, and this one was finished."; the project's running copies
   (§app.project-services/callers) have two, `services/down` "A running copy of the project was
-  stopped." and `services/run` "A running copy of the project was started or changed."; a move with no sentence is
+  stopped." and `services/run` "A running copy of the project was started or changed.", and its
+  shares one, `services/share` "A running copy of the project was shared."; a move with no sentence is
   quiet, never a raw event name), who (You, You via the Overseer, Overseer, Sova, or a person's name), the
   move ("{from} → {to}"), and "Reason: …" for a correction or a cancel, "Refused: …" for a refusal.
   With none: "Nothing has moved yet."

@@ -155,11 +155,11 @@ describe("the levels, as the statecharts declare them", () => {
     assert.deepEqual([TOOL_NEEDS.sova_pipeline, TOOL_NEEDS.sova_hold, TOOL_NEEDS.sova_correct, TOOL_NEEDS.sova_set_state], ["read", "L0", "L2", "operator"]);
   });
 
-  test("sova_project_verbs' level is its acts': services/down at L0, services/run at L3, neither held nor counted; onboard at L3, held and counted as a coding session's start", () => {
+  test("sova_project_verbs' level is its acts': services/down at L0, services/run at L3, neither held nor counted; services/share at L1, held, counted against nothing; onboard at L3, held and counted as a coding session's start", () => {
     const acts = statechartInfo("project")!.acts as Record<string, { needs?: string | null; tool?: string; hold?: boolean; counts?: string | null }>;
     assert.deepEqual(
       Object.entries(acts).filter(([, a]) => a.tool === "sova_project_verbs").map(([id, a]) => [id, a.needs, !!a.hold, a.counts ?? null]).sort(),
-      [["services/down", "L0", false, null], ["services/run", "L3", false, null], ["verbs/onboard", "L3", true, "create"]],
+      [["services/down", "L0", false, null], ["services/run", "L3", false, null], ["services/share", "L1", true, null], ["verbs/onboard", "L3", true, "create"]],
     );
     assert.equal(TOOL_NEEDS.sova_project_verbs, "L3", "its highest act");
     assert.equal(COUNTS.sova_project_verbs, "create", "only onboard draws on an allowance: a refusal for it is held until create comes back");
@@ -525,6 +525,29 @@ describe("preview links (§app.project-overseer/previews)", () => {
     assert.deepEqual(byId.pv_AAAAAAAAAAAAAAAA, { v: 1, id: PREVIEW.id, linkKept: true, purpose: "The shop for Ana", expiresAt: PREVIEW.expiresAt, projectId: "prj_bbbbbbbb", sessionId: "in-tree", branch: "sova/fix-abc123", target: { kind: "port", port: 5173 }, state: "active", running: true, createdBy: "session:po-1" });
   });
 
+  test("sova_previews lists a running copy's link by id, endpoint, branch, state and expiry, never its link", async () => {
+    const copy: PreviewView = { ...PREVIEW, id: "pv_DDDDDDDDDDDDDDDD", instance: "in_7", endpoint: "web.http", branch: "sova/pay-3f9a1c", sessionId: null, purpose: null, createdBy: "session:po-1", port: 4100 };
+    const main: PreviewView = { ...copy, id: "pv_EEEEEEEEEEEEEEEE", instance: "in_8", branch: null, running: false };
+    const gone: PreviewView = { ...copy, id: "pv_FFFFFFFFFFFFFFFF", state: "off", revokedAt: "2026-09-30T11:00:00.000Z", running: undefined };
+    const { run } = fake({ previews: [copy, main, gone] });
+    const out = (await run("sova_previews")) as { content: { text: string }[] };
+    const t = out.content[0]!.text;
+    assert.match(t, /^- pv_DDDDDDDDDDDDDDDD · running copy in_7, endpoint web\.http, on sova\/pay-3f9a1c · shared by you · active, the copy answers · expires 2026-10-01T10:00:00\.000Z · send it by its id$/m);
+    assert.match(t, /^- pv_EEEEEEEEEEEEEEEE · running copy in_8, endpoint web\.http, on the main checkout · shared by you · active, the copy is not running · /m);
+    assert.match(t, /^- pv_FFFFFFFFFFFFFFFF · .* · revoked · revoked 2026-09-30T11:00:00\.000Z · /m);
+    assert.ok(!JSON.stringify(out).includes(PREVIEW_LABEL), "never the link, in content or details");
+  });
+
+  test("the prompt and the tools say who gets a running copy's link, and how to see and stop what runs", () => {
+    const prompt = readFileSync(join(import.meta.dirname, "project-overseer-prompt.md"), "utf8");
+    assert.match(prompt, /in a standalone project it is only for the operator/);
+    assert.match(prompt, /In an\s+organization's project you may then send it to one of its people with `sova_send_to_person`/);
+    assert.match(prompt, /`sova_project_verbs` status lists every running copy of the project/);
+    assert.match(prompt, /stop any copy at will with `sova_project_verbs` down \(from L0, never held\)\. A copy with an active\s+share link answers needs-confirm to down: revoke its links first/);
+    const previews = fake().tools.find((x) => x.name === "sova_previews")!;
+    assert.match(previews.description, /In a standalone project such a link is only for the operator/);
+  });
+
   test("sova_project lists the active ones under Previews", async () => {
     const { run } = fake({ previews: [PREVIEW, { ...PREVIEW, id: "pv_CCCCCCCCCCCCCCCC", state: "expired" }] });
     const t = ((await run("sova_project")) as { content: { text: string }[] }).content[0]!.text;
@@ -556,11 +579,13 @@ describe("preview links (§app.project-overseer/previews)", () => {
     assert.deepEqual(out.details, { v: 1, held: "project/prj_bbbbbbbb:h7" });
   });
 
-  test("off turns one off by id", async () => {
+  test("off deletes one by id, for good", async () => {
     const { run, calls } = fake();
-    await assert.rejects(run("sova_preview", { op: "off" }), /Give the id/);
-    const out = (await run("sova_preview", { op: "off", id: "pv_AAAAAAAAAAAAAAAA" })) as { content: { text: string }[]; details: { preview: { state: string; running: null } } };
+    await assert.rejects(run("sova_preview", { op: "off" }), /Give the id of the preview to delete/);
+    const out = (await run("sova_preview", { op: "off", id: "pv_AAAAAAAAAAAAAAAA" })) as { content: { text: string }[]; details: { preview: { state: string; running: null }; note: string } };
     assert.deepEqual(calls, ["preview-off:pv_AAAAAAAAAAAAAAAA"]);
+    assert.equal(out.content[0]!.text, 'Deleted pv_AAAAAAAAAAAAAAAA: its link answers "no longer active" for good.');
+    assert.match(out.details.note, /^Deleted a preview link/);
     assert.equal(out.details.preview.state, "off");
     assert.equal(out.details.preview.running, null);
   });

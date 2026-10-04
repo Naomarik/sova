@@ -35,6 +35,7 @@ import { fileURLToPath } from "node:url";
 import type { Worker, SteerMode } from "./contracts.ts";
 import { summarizeFileChange } from "./codefold.ts";
 import { WORKER_TOOLS_ENV } from "./worker-mark.ts";
+import { lowerPriority } from "./priority.ts";
 import { LLM_STATUS_KEY, parseCounts, setChildCounts, type LlmChildReport } from "../llm-inflight/tracker.ts";
 
 /** Pi's built-in tool names. `--tools` and `--exclude-tools` also govern extension tools, so restriction must be phrased per case. */
@@ -537,6 +538,8 @@ export class SubagentRunner implements Worker {
 		this.proc = proc;
 		this.pid = typeof proc.pid === "number" ? proc.pid : undefined;
 		this.processAlive = true;
+		// Below the hosting server (priority.ts). A host's transport has no pid: the host was lowered at its spawn.
+		lowerPriority(this.pid);
 
 		// An async stdin write error while the child is still expected to be
 		// healthy means we can never command it again — fail closed and tear it

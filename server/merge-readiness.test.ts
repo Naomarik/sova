@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -11,6 +12,7 @@ import type { ReadinessState, SessionSummary, WorktreeStatus } from "../shared/p
 import type { FileFacts } from "./merge-readiness";
 import type { GitResult } from "./worktrees";
 const r = await import("./merge-readiness");
+const { DIRTY_TTL_MS } = await import("./worktrees");
 const { createFakeProvider } = await import("./decide-fake");
 const { MergeFollowUps } = await import("./merge-followup");
 
@@ -731,4 +733,215 @@ test("an unarchived session's inspection never queues reads of its own", async (
     r.treeReadinessOf(path, tracked().path); r.readinessChecksOf(path); await r.readinessIdle();
     assert.equal(reads, 1, "the listing's cadence covers it, as before");
   } finally { await r.readinessIdle(); r.resetReadiness(); }
+});
+
+test("a gone folder says what its work came to: merged and cleaned up, or removed and why; never in progress", async () => {
+  r.resetReadiness();
+  const gonePath = "/wt/gone-merged-branch-does-not-exist";
+  assert.equal(existsSync(gonePath), false);
+  const facts = (status: "active" | "merged"): FileFacts => ({ trees: [tracked({ path: gonePath, branch: "feat/gone", status })], merges: [] }) as unknown as FileFacts;
+  const asked: { dirs: readonly string[] }[] = [];
+  let answer: "merged" | "empty" | "unmerged" | null = "merged";
+  r.configureReadiness({ insights: { treeStatus: async () => null }, git: fakeGit({}), asksUser: () => undefined, now: () => 0, processStart: 0, gone: async (_t, dirs) => (asked.push({ dirs }), answer) });
+  try {
+    const s = summary("/sessions/x.jsonl", { cwd: "/home/u/webapps/sova" });
+    const reason = async (status: "active" | "merged" = "active") => (await r.computeReadiness(s, facts(status)))?.trees[0];
+    const merged = await r.computeReadiness(s, facts("active"));
+    assert.deepEqual(merged?.trees, [{ path: gonePath, branch: "feat/gone", state: "merged", merged: true, why: "cleaned up", reason: "Merged · cleaned up" }]);
+    assert.equal(merged?.badge, "merged");
+    assert.equal(merged?.cleanup, undefined, "a removed tree is no leftover to clean up");
+    assert.deepEqual(asked[0]?.dirs, ["/home/u/webapps/sova"], "git is read from the session's folder");
+    answer = "unmerged";
+    const unmerged = await r.computeReadiness(s, facts("active"));
+    assert.deepEqual([unmerged?.trees[0]?.state, unmerged?.trees[0]?.reason, unmerged?.trees[0]?.merged], ["removed", "Removed · not merged", undefined]);
+    assert.equal(unmerged?.badge, undefined, "unmerged work removed is never a merged badge");
+    assert.equal((await reason("merged"))?.reason, "Removed · not merged", "a branch git finds decides over the record");
+    answer = null;
+    assert.equal((await reason())?.reason, "Removed · no record of a merge");
+    assert.equal((await reason("merged"))?.reason, "Merged · cleaned up", "recorded merged, nothing else known: merged");
+    answer = "empty";
+    const empty = await r.computeReadiness(s, facts("active"));
+    assert.equal(empty?.trees[0]?.reason, "Removed · no commits");
+    // Every gone answer is one of these: none reads in progress.
+    for (const a of ["merged", "unmerged", "empty", null] as const) {
+      answer = a;
+      assert.notEqual((await reason())?.state, "in-progress");
+    }
+    // A folder that is there but unreadable is not "removed": the record still decides, as before.
+    r.configureReadiness({ insights: { treeStatus: async () => ({ path: gonePath, source: "session", exists: true, error: "git status: boom" }) } });
+    answer = "merged";
+    assert.equal((await reason())?.reason, "In progress · worktree folder gone");
+  } finally {
+    r.resetReadiness();
+  }
+});
+
+test("a gone folder whose branch the Merge Captain deleted reads merged from the captain's own record of its merge", async () => {
+  r.resetReadiness();
+  const gonePath = "/wt/captain-landed-does-not-exist";
+  const captain = sessionFile(chain([worktrees([tracked({ path: gonePath, branch: "feat/landed", session: "captain", how: "attached", status: "merged", merge: { target: "master", sha: "m1", at: 2, how: "tool" } })], "2026-09-29T15:36:00.000Z")]));
+  r.configureReadiness({ insights: { treeStatus: async () => null }, git: fakeGit({}), asksUser: () => undefined, now: () => 0, processStart: 0, gone: async () => null });
+  try {
+    const owner = { trees: [tracked({ path: gonePath, branch: "feat/landed" })], merges: [] } as unknown as FileFacts;
+    const s = summary("/sessions/owner.jsonl");
+    assert.equal((await r.computeReadiness(s, owner))?.trees[0]?.reason, "Removed · no record of a merge", "nothing has read the captain yet");
+    r.readinessOverlay(summary(captain, { id: "captain" }));
+    await r.readinessIdle();
+    const after = await r.computeReadiness(s, owner);
+    assert.deepEqual([after?.trees[0]?.state, after?.trees[0]?.merged, after?.trees[0]?.reason], ["merged", true, "Merged · cleaned up"]);
+    const other = { trees: [tracked({ path: gonePath, branch: "feat/other-branch" })], merges: [] } as unknown as FileFacts;
+    assert.equal((await r.computeReadiness(s, other))?.trees[0]?.reason, "Removed · no record of a merge", "only the same path and branch count");
+  } finally {
+    r.resetReadiness();
+  }
+});
+
+test("dirty lifetimes (§chat.worktrees/dirty-freshness): an idle session's merged, clean tree holds 5 minutes; running, unmerged, moved and inspected read sooner", async () => {
+  r.resetReadiness();
+  const path = sessionFile(chain([worktrees([tracked()], "2026-09-29T15:36:00.000Z")]));
+  const row = summary(path);
+  let now = 0, merged = true;
+  const asked: number[] = [];
+  const last = () => asked.at(-1);
+  // Unreadable stamps keep the 20 s cadence (settled sessions have their own test below).
+  r.configureReadiness({ now: () => now, asksUser: () => undefined, treeStamp: () => null, insights: {
+    treeStatus: async () => ({ ...readyStatus(), ...(merged ? { merged: "ancestor" as const, ahead: 0 } : {}) }),
+    dirtyLifetime: (dir, ms) => { assert.equal(dir, tracked().path); asked.push(ms); },
+  } });
+  try {
+    r.readinessOverlay(row); await r.readinessIdle();
+    assert.equal(r.readinessOverlay(row)?.trees[0]?.state, "merged");
+    assert.equal(last(), 0, "first sight reads now");
+    now += r.READINESS_TTL_MS;
+    r.readinessOverlay(row); await r.readinessIdle();
+    assert.equal(last(), r.IDLE_DIRTY_TTL_MS, "idle, merged and clean: the long lifetime");
+    assert.equal(r.treeReadinessOf(path, tracked().path)?.state, "merged", "an inspection answers from cache at once");
+    await r.readinessIdle();
+    assert.equal(last(), 0, "and re-reads the dirty state now");
+    r.treeReadinessOf(path, tracked().path); await r.readinessIdle();
+    assert.equal(asked.length, 3, "a second look right after reads nothing more");
+    now += r.READINESS_TTL_MS;
+    r.readinessOverlay({ ...row, busy: true }); await r.readinessIdle();
+    assert.equal(last(), 0, "a row change reads now");
+    now += r.READINESS_TTL_MS;
+    r.readinessOverlay({ ...row, busy: true }); await r.readinessIdle();
+    assert.equal(last(), DIRTY_TTL_MS, "running: 10 seconds");
+    now += r.READINESS_TTL_MS;
+    writeFileSync(path, `${JSON.stringify({ type: "custom", customType: "note", data: {}, timestamp: "2026-09-29T15:37:00.000Z" })}\n`, { flag: "a" });
+    r.readinessOverlay({ ...row, busy: true }); await r.readinessIdle();
+    assert.equal(last(), 0, "a file change reads now");
+    merged = false;
+    now += r.READINESS_TTL_MS;
+    r.readinessOverlay(row); await r.readinessIdle();
+    now += r.READINESS_TTL_MS;
+    r.readinessOverlay(row); await r.readinessIdle();
+    assert.equal(r.readinessOverlay(row)?.trees[0]?.state, "ready");
+    assert.equal(last(), DIRTY_TTL_MS, "an unmerged tree keeps 10 seconds while idle");
+    const before = asked.length;
+    r.treeReadinessOf(path, tracked().path); await r.readinessIdle();
+    assert.equal(asked.length, before, "no long reading, so an inspection queues nothing");
+  } finally { await r.readinessIdle(); r.resetReadiness(); }
+});
+
+test("settled sessions (§app/idle-git-cache): idle with every tree merged and clean, re-read every 5 minutes; a moved tree, a turn or a look re-read at once", async () => {
+  r.resetReadiness();
+  const path = sessionFile(chain([worktrees([tracked()], "2026-09-29T15:36:00.000Z")]));
+  const row = summary(path);
+  let now = 0, reads = 0, stamp = "s1", merged = true;
+  const asked: number[] = [];
+  r.configureReadiness({ now: () => now, asksUser: () => undefined, treeStamp: () => stamp, insights: {
+    treeStatus: async () => { reads++; return { ...readyStatus(), ...(merged ? { merged: "ancestor" as const, ahead: 0 } : {}) }; },
+    dirtyLifetime: (_dir, ms) => { asked.push(ms); },
+  } });
+  const tick = async (ms: number, over: Partial<SessionSummary> = {}) => { now += ms; r.readinessOverlay({ ...row, ...over }); await r.readinessIdle(); };
+  try {
+    await tick(0);
+    assert.equal(r.readinessOverlay(row)?.trees[0]?.state, "merged");
+    assert.equal(reads, 1);
+    for (let i = 0; i < 10; i++) await tick(r.READINESS_TTL_MS);
+    assert.equal(reads, 1, "settled: no 20 s re-reads");
+    await tick(r.SETTLED_TTL_MS - 10 * r.READINESS_TTL_MS);
+    assert.equal(reads, 2, "re-read once 5 minutes passed");
+    stamp = "s2"; // a commit, checkout or branch switch in the tree
+    await tick(1);
+    assert.equal(reads, 3, "a moved tree re-reads at once");
+    assert.equal(asked.at(-1), 0, "dirty state included");
+    await tick(r.READINESS_TTL_MS);
+    assert.equal(reads, 3);
+    now += DIRTY_TTL_MS;
+    assert.equal(r.treeReadinessOf(path, tracked().path)?.state, "merged", "opening it answers from cache at once");
+    await r.readinessIdle();
+    assert.equal(reads, 4, "and re-reads it");
+    r.treeReadinessOf(path, tracked().path); await r.readinessIdle();
+    assert.equal(reads, 4, "a second look within 10 s reads nothing more");
+    await tick(1, { busy: true });
+    assert.equal(reads, 5, "a turn starting re-reads at once");
+    await tick(r.READINESS_TTL_MS, { busy: true });
+    assert.equal(reads, 6, "running: the 20 s cadence");
+    merged = false;
+    await tick(1);
+    assert.equal(r.readinessOverlay(row)?.trees[0]?.state, "ready");
+    const before = reads;
+    await tick(r.READINESS_TTL_MS);
+    assert.equal(reads, before + 1, "not merged: the 20 s cadence");
+  } finally { await r.readinessIdle(); r.resetReadiness(); }
+});
+
+const gitEnv = { ...process.env, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t", GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_SYSTEM: "/dev/null" };
+const git = (cwd: string, ...args: string[]) => execFileSync("git", args, { cwd, env: gitEnv, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+const commit = (cwd: string, file: string, msg: string) => {
+  writeFileSync(join(cwd, file), `${msg}\n`);
+  git(cwd, "add", file);
+  git(cwd, "commit", "-q", "-m", msg);
+};
+
+// Right after a removal, the first look used to answer from the reading cached before it.
+test("a tree the cleanup service removes (§chat.worktrees/cleanup) reads 'Merged · cleaned up' on the first look after the removal", async () => {
+  const root = realpathSync(mkdtempSync(join(agentDir, "cleanup-")));
+  const main = join(root, "repo");
+  mkdirSync(main);
+  mkdirSync(join(root, "sessions"));
+  git(main, "init", "-q", "-b", "master");
+  commit(main, "init.txt", "init");
+  const base = git(main, "rev-parse", "HEAD");
+  const a = join(root, "wt-a");
+  const b = join(root, "wt-b");
+  git(main, "worktree", "add", "-q", "-b", "feat/a", a);
+  commit(a, "a.txt", "a: 1");
+  git(main, "merge", "-q", "--ff-only", "feat/a");
+  git(main, "worktree", "add", "-q", "-b", "feat/b", b, base);
+  commit(b, "b.txt", "b: 1");
+
+  // The session tracks both active: a merged (a cleanup leftover), b ready. Not settled, so no
+  // stamp check re-reads it on its own.
+  const SID = "01a103ed-a706-7126-a85b-000000000001";
+  const path = join(root, "sessions", `${SID}.jsonl`);
+  const tree = (p: string, branch: string) => ({ path: p, branch, base, baseBranch: "master", status: "active", session: SID, how: "created", at: 1 });
+  const entries = [{ type: "session", version: 3, id: SID, timestamp: "2026-10-04T10:00:00.000Z", cwd: main }, { type: "custom", customType: "worktrees", id: "e1", parentId: null, timestamp: "2026-10-04T10:00:01.000Z", data: { version: 1, trees: [tree(a, "feat/a"), tree(b, "feat/b")] } }];
+  writeFileSync(path, `${entries.map((e) => JSON.stringify(e)).join("\n")}\n`);
+  const row: SessionSummary = { id: SID, path, cwd: main, title: "t", createdAt: "", lastActiveAt: "2026-10-04T10:00:01.000Z", model: null, live: null, busy: false, origin: "web", archived: false };
+
+  const c = await import("./worktree-cleanup");
+  r.resetReadiness();
+  c.resetCleanup();
+  r.configureReadiness({ asksUser: () => undefined });
+  c.configureCleanup({ summary: async () => row, sessionFiles: async () => [path], readBranch: async () => entries.slice(1), processes: async () => [] });
+  try {
+    r.readinessOverlay(row);
+    await r.readinessIdle();
+    assert.equal(r.treeReadinessOf(path, a)?.reason, "Merged · still tracked active", "cached before the removal");
+    assert.equal(r.treeReadinessOf(path, b)?.state, "ready");
+
+    const res = await c.cleanupRemove(path, [a]);
+    assert.ok(res && res !== "busy");
+    assert.deepEqual(res.removed.map((x) => x.path), [a]);
+
+    assert.equal(r.treeReadinessOf(path, a)?.reason, "Merged · cleaned up", "the very first look");
+    assert.equal(r.readinessOverlay(row)?.trees.find((t) => t.path === a)?.reason, "Merged · cleaned up", "the session list too");
+    assert.equal(r.treeReadinessOf(path, b)?.state, "ready", "the other tree is untouched");
+  } finally {
+    await r.readinessIdle();
+    r.resetReadiness();
+    c.resetCleanup();
+  }
 });

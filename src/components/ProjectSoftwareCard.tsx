@@ -4,9 +4,9 @@ import { ApiError, approveProjectRuntime, getProjectRuntime, runProjectVerbsPlay
 import { relativeTime } from "../lib/format";
 import { createPoll } from "../lib/poll";
 import { approveLabel, approveWhat, failedLine, liveWord, memoryWord, playbookLabel, portsWord, provenTail, runWord, SENSITIVE_TITLE, serviceFacts, STANDING_CHIP } from "../lib/project-software";
-import { projectSessionHref } from "../lib/projects-route";
+import { projectSessionHref, projectTabHref } from "../lib/projects-route";
 import { announce, toast } from "../lib/ui-state";
-import { Chip } from "./ui";
+import { Chip, Icon } from "./ui";
 
 /** The registry changes on a merge, a conformance or a run: read it often enough to follow one. */
 const SOFTWARE_POLL_MS = 15_000;
@@ -112,6 +112,13 @@ export function ProjectSoftwareCard(props: { projectId: string; archived: boolea
                 </For>
               </ul>
             </Show>
+            {/* Where each copy is started, stopped, opened and read (§app.project-services/services-ui). */}
+            <p class="orgs-line">
+              <a class="project-software-open" href={projectTabHref(props.projectId, "branches")}>
+                Open Branches
+                <Icon name="chevron-right" small />
+              </a>
+            </p>
             <Show when={provenTail(v())}>
               {(tail) => (
                 <p class="list-meta">

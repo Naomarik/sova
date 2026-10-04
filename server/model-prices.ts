@@ -24,7 +24,7 @@ import { stateRoot } from "./state-root";
  * host with no cache fetches at its first check, however fresh the seed.
  * A failed fetch keeps the last good table and logs one line. `SOVA_PRICES_FETCH=off` never
  * fetches (hermetic tests), so prices then come from the seed or an existing cache; a `node --test`
- * process never fetches either (fetchEnabled).
+ * process never fetches either, nor does `bun test` (fetchEnabled).
  */
 
 export const MODELS_DEV_URL = "https://models.dev/api.json";
@@ -90,14 +90,14 @@ function currentOf(table: PriceTable): Parameters<typeof mergeFetched>[1] {
 
 /**
  * `SOVA_PRICES_FETCH=off|0|false` never fetches; `on|1|true` always may. Unset, a test process
- * (`node --test` sets NODE_TEST_CONTEXT) never fetches, so a test that starts the server stays
- * off the network.
+ * (`node --test` sets NODE_TEST_CONTEXT, `bun test` sets NODE_ENV=test) never fetches, so a test
+ * that starts the server stays off the network.
  */
 export function fetchEnabled(env: NodeJS.ProcessEnv): boolean {
   const v = (env.SOVA_PRICES_FETCH ?? "").toLowerCase();
   if (["off", "0", "false"].includes(v)) return false;
   if (["on", "1", "true"].includes(v)) return true;
-  return !env.NODE_TEST_CONTEXT;
+  return !env.NODE_TEST_CONTEXT && env.NODE_ENV !== "test";
 }
 
 const ms = (iso: string | null) => (iso ? Date.parse(iso) : -Infinity);

@@ -194,10 +194,13 @@ and again when the count changes, at most once a second. When there are none, an
     start of its run that the thread renders as a live, self-updating row for the run's
     duration, then append the result under the same id when the run settles; the result row
     replaces the running row in place, live and on reload. `/explain` does this (§chat/transcript report,
-    "Explain rows"). Unlike the "Ran" row, it is persisted: a reload mid-run shows it still
-    running. A run the restart or `/reload` stopped stays running until the session's next prompt
-    or `/explain`, which settles it as Interrupted (§chat.transcript/transcript-items, "Explain rows:
-    interrupted").
+    "Explain rows"), and so does `/compact-handoff`, whose `compact-handoff-run` row reads
+    "Writing a handoff note" while its background fork writes and is replaced by the run's result
+    (§chat.slash-commands/compact-handoff-row). Unlike the "Ran" row, it is persisted: a reload
+    mid-run shows it still running. A run the restart or `/reload` stopped stays running until the
+    session's next prompt or its next run of the same command (`/explain`, `/compact-handoff`),
+    which settles it as Interrupted (§chat.transcript/transcript-items, "Explain rows:
+    interrupted"; §chat.slash-commands/compact-handoff-row, "Interrupted").
 - **Reload.** The persisted entries render the same way. The local "Ran" row is local only and
   isn't restored.
 - **Unknown commands.** A `/word` that isn't in the list is sent and rendered as an ordinary
@@ -224,6 +227,83 @@ and again when the count changes, at most once a second. When there are none, an
   once the new one exists). A session that isn't web-spawned, or whose subagents are working,
   stays unarchived: archiving closes the runtime. The runtime doesn't register it, so it isn't
   in the menu. With arguments or images it's an ordinary message.
+
+## §chat.slash-commands/compact-handoff — /compact-handoff
+
+`/compact-handoff [focus]` compacts a session after the agent writes down what the summary would
+lose, and puts that note back right after the summary. It is an extension command
+(`pi-config/extensions/compact-handoff/`), so it is offered in the menu like any other and runs
+the same in the TUI and in Sova; `/compact` is unchanged.
+
+- **Refused while busy.** While a turn runs, a compaction runs, messages are queued or an earlier
+  `/compact-handoff` is still under way (its note being written, or its compaction waiting), it
+  does nothing and says why in a notification. A session with no conversation on disk yet has
+  nothing to hand off and is refused the same way.
+- **The note is written in a background fork.** Otherwise it starts a background fork of the
+  session (§chat.session-fork/background): a hidden child with the whole conversation, on the
+  session's warm prompt cache, that may only read (files, search, read-only shell; no writes, no
+  web). It is told the session is about to be compacted and to end its reply with a handoff note
+  inside `<handoff>…</handoff>`: what must survive the compaction (anything durable goes in the
+  note, since it can't write elsewhere), the exact files and ids to re-read, and the focus text,
+  if given. Nothing of that turn is written into the session: no instruction, reply or tool call
+  appears in the thread or in the model's context, only the run's row
+  (§chat.slash-commands/compact-handoff-row). The fork runs this way in every host and on every
+  provider; a Claude Code session whose CLI session is live and idle is resumed and forked there,
+  otherwise its history is replayed and a notification says the fork starts without the cache. If
+  the fork can't be started, the command says so in a notification and does nothing else; it
+  never falls back to a turn in the session.
+- **Then it compacts.** When the fork settles, the last non-empty `<handoff>` block of its final
+  reply is the note. It is saved, then the session compacts with the focus as the summary's
+  instructions, plus a line saying a handoff note is saved and comes back after the summary. The
+  session ends with the summary and the note after it, and no trace of the handoff turn.
+- **Messages during the fork.** The session stays usable while the fork writes. When a prompt,
+  a topic delivery or a scheduled run reaches it meanwhile, the note is still saved the moment the
+  fork settles, and the compaction waits for the next idle moment (the session settled, nothing
+  queued). A prompt that starts in the instant before the compaction begins still wins: the
+  compaction waits for the next idle moment again.
+- **Cancel.** `/compact-handoff cancel` stops the fork (Esc and Stop don't reach it), or drops a
+  compaction still waiting for an idle moment; the note, if already saved, stays saved. With
+  nothing under way it says so.
+- **No compaction** when the fork fails, is stopped, or its reply carries no block: a notification
+  says so and nothing is saved. A compaction that fails says so in a notification, except one the
+  user stopped; the note stays saved either way.
+- **The fork's own files** (the session copy it forked and its own session) live in a run
+  directory under `<agent dir>/compact-handoffs/.runs/`, deleted when the run ends; a failed run's
+  is kept for diagnosis and swept after 24 hours.
+- **Where the note lives.** `<agent dir>/compact-handoffs/<session id>.md` (directory 0700, file
+  0600, replaced atomically, the newest run wins), headed with the session id, folder, time,
+  leaf and focus; plus a copy in the session's hidden `compact-handoff` custom entry
+  `{v: 1, path, note, at, leafId}`, which follows the branch, a fork and a clone. The extension
+  writes both itself, on the machine running pi, so a sandboxed session (its agent dir is
+  read-only to tools) and a remote one (its tools run on the far host) save the same way.
+- **The note comes back after every compaction**, its own, a plain `/compact`, a threshold or an
+  overflow one: the newest `compact-handoff` entry on the branch is added in full as a hidden
+  message right after the summary, saying when it was written and where it is saved, to check it
+  against the summary and to re-read the files it names before acting on the next request. A note
+  from before the fork (written by a reply in the thread) whose reply is still in the kept part of
+  the history gets only that preamble and the path. It starts no turn: idle, it is added at once
+  and the session waits for the user; a compaction during a run adds it at that run's next turn
+  boundary. A branch with no entry adds nothing.
+
+## §chat.slash-commands/compact-handoff-row — The /compact-handoff row
+
+A `/compact-handoff` run is a persisted running row (§chat.slash-commands/in-the-thread): the
+extension appends a hidden `compact-handoff-run` custom entry `{v: 1, id, status, at, focus?,
+path?, error?}` (never model context) when the fork starts, with `status: "running"`, and again
+under the same `id` when it ends, with `saved` (and the note's `path`), `failed` (and the
+reason), `cancelled` or `interrupted`. In Sova only the newest per id renders, on reload and
+live (the result replaces the running row in place); in the TUI each entry draws its own line
+where it was appended, as `/explain`'s do.
+
+- **In Sova** it is an info row: running, "Writing a handoff note" with the focus, if any, and the
+  live dot where the info icon sits; saved, "Handoff note saved" with its path; failed, "Handoff
+  note failed" with a `.chip-error` "Failed" chip and the reason; cancelled, "Handoff cancelled";
+  interrupted, "Handoff interrupted" with a `.chip-warn` "Interrupted" chip. The compaction that
+  follows is its own row.
+- **Interrupted.** A run its session stopped before it settled (a restart, a `/reload`) leaves its
+  running entry as the newest. Opening the session writes nothing, so the row still reads running
+  then; the session's next prompt, or its next `/compact-handoff`, appends the `interrupted`
+  entry, which replaces it.
 
 ## §chat.slash-commands/commands-that-need-the-terminal-ui — Commands that need the terminal UI
 

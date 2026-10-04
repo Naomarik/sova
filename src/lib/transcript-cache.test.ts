@@ -8,7 +8,8 @@ const row = (id: string, text = id, extra: Partial<TranscriptItem> = {}): Transc
   id,
   kind: "assistant-text",
   text,
-  raw: { id: id.split(":")[0], timestamp: "2026-09-27T00:00:00Z", type: "message" },
+  at: "2026-09-27T00:00:00Z",
+  ...(id.includes(":") && !id.endsWith(":0") ? {} : { meta: { type: "message", role: "assistant" } }),
   ...extra,
 });
 
@@ -49,7 +50,11 @@ test("sameItem tells apart every field a row renders from", () => {
   assert.ok(!sameItem(base, { ...base, toolCallId: "c2" }));
   assert.ok(!sameItem(base, { ...base, images: ["data:x"] }));
   assert.ok(!sameItem(base, { ...base, report: { text: "x" } as never }));
-  assert.ok(!sameItem(base, { ...base, raw: { id: "t", timestamp: "2026-09-27T00:00:01Z", type: "message" } }), "another write of the entry");
+  assert.ok(!sameItem(base, { ...base, at: "2026-09-27T00:00:01Z" }), "another write of the entry");
+  assert.ok(!sameItem(base, { ...base, meta: { type: "message", role: "assistant", stopReason: "error" } }), "the entry's facts");
+  assert.ok(!sameItem(base, { ...base, tool: { summary: "ls", lazy: true } }), "the folded line");
+  assert.ok(!sameItem({ ...base, tool: { summary: "ls", stats: { added: 1, removed: 0 } } }, { ...base, tool: { summary: "ls", stats: { added: 2, removed: 0 } } }), "its count");
+  assert.ok(sameItem({ ...base, tool: { summary: "ls", lazy: true } }, { ...base, tool: { summary: "ls", lazy: true } }), "equal tool parts by value");
   assert.ok(sameItem({ ...base, images: ["data:a"] }, { ...base, images: ["data:a"] }), "equal images by value");
 });
 

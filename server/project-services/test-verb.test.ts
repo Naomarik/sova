@@ -67,6 +67,9 @@ let project = "";
 let engine: ProjectEngine;
 
 const define = (d: object, checkout = project) => {
+  // Never the real cwd: before `before` has set `project` it is "", and join("", ".sova", ...) is
+  // the repository's own .sova/project.json (it once was, under a runner that didn't await `before`).
+  assert.ok(checkout.startsWith(realpathSync(tmpdir()) + "/"), `define() outside the temp dir: "${checkout}"`);
   writeFileSync(join(checkout, ".sova", "project.json"), JSON.stringify(d, null, 2));
   const hash = defHashOf(parseDefinition(JSON.stringify(d)));
   approve(project, hash, hash);
@@ -204,12 +207,12 @@ test("a session tests its own worktree's instance, never the main checkout's; do
 test("conform suite 2: on-demand stays stopped after up, the smoke selection passes twice alike in A, B untouched", async () => {
   const r = await engine.run("conform", { project }, op);
   assert.equal(r.ok, true, `${r.error?.message}\n${JSON.stringify(r.conform?.checks, null, 1)}`);
-  assert.equal(r.conform!.suiteVersion, 2);
+  assert.equal(r.conform!.suiteVersion, 4);
   const ids = r.conform!.checks.map((c) => c.id);
   for (const id of ["on-demand-idle", "test-a", "test-a-again", "down-a", "no-leaks"]) assert.ok(ids.includes(id), `${id} in ${ids.join(",")}`);
   assert.ok(!ids.includes("test-unsupported"));
   const stamp = JSON.parse(readFileSync(join(conformDir(), "stamps.json"), "utf8")) as { stamps: Record<string, Record<string, { suiteVersion: number }>> };
-  assert.equal(Object.values(stamp.stamps[project]!)[0]!.suiteVersion, 2);
+  assert.equal(Object.values(stamp.stamps[project]!)[0]!.suiteVersion, 4);
 });
 
 test("conform suite 2 without a test: test answers unsupported", async () => {

@@ -22,7 +22,6 @@ const row = (id: string, kind: TranscriptItem["kind"], text?: string, extra: Par
   id,
   kind,
   text,
-  raw: {},
   ...extra,
 });
 const user = (id: string, text?: string, images = 0): TranscriptItem =>

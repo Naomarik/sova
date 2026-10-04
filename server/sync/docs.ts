@@ -24,7 +24,7 @@ import { writeFileAtomic } from "./logins-stores";
  * host's business: never offered, never overwritten.
  *
  * Which state is synced (the rest is per host by design):
- * - settings: Sova's settings.json (the claude-code provider switch) and defaults.json (new-session
+ * - settings: Sova's settings.json (Settings → Experimental's switches) and defaults.json (new-session
  *   model and thinking); pi's model-favorites.json and model-policy.json; the mode extension's
  *   mode.json (default mode), mode-delegate.json and mode-spec.json; the subagent profile library
  *   subagent-profiles.json (its device default, subagent-profiles-default.json, never syncs:

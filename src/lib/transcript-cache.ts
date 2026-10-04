@@ -17,24 +17,21 @@ export const CACHED_SESSIONS = 3;
 
 /**
  * The most JSON (characters) the Recent sessions kept beyond those may add up to. Kept rows take
- * about 1.0-1.6x their JSON in the heap, so this is about 50-60 MB; 5 Recent sessions of the
- * measured corpus take 25-28 MB, the 20 largest 112 MB.
+ * about 1.0-1.6x their JSON in the heap, so this is about 20-32 MB. Rows carry what they draw and
+ * no copy of their entry, so a whole branch is about a third of what it was (measured on 663 real
+ * sessions: 945 MB of rows became 295 MB): the 5 most recent sessions take 10 MB, the 20 most
+ * recent 17 MB, the 20 largest 88 MB.
  */
-export const CACHE_BUDGET = 40_000_000;
+export const CACHE_BUDGET = 20_000_000;
 
 const sameJson = (a: unknown, b: unknown): boolean => a === b || (a !== undefined && b !== undefined && JSON.stringify(a) === JSON.stringify(b));
 
 const sameStrings = (a: readonly string[] | undefined, b: readonly string[] | undefined): boolean =>
   a === b || (!!a && !!b && a.length === b.length && a.every((s, i) => s === b[i]));
 
-/** The entry behind `raw`, as far as it can be told apart cheaply: pi never rewrites an entry
-    under its id, so the id and the timestamp name its content. */
-const rawStamp = (raw: unknown): unknown =>
-  raw && typeof raw === "object" ? [(raw as { id?: unknown }).id, (raw as { timestamp?: unknown }).timestamp, (raw as { type?: unknown }).type] : raw;
-
 /**
- * Whether two rows render the same. The fields the server derives are compared in full; the
- * entry itself (`raw`, which holds a tool's whole output) by the id and time it was written under.
+ * Whether two rows render the same. Every field the server sends is compared in full: a row
+ * carries what it draws and no copy of its entry, so this is cheap.
  */
 export function sameItem(a: TranscriptItem, b: TranscriptItem): boolean {
   return (
@@ -44,7 +41,10 @@ export function sameItem(a: TranscriptItem, b: TranscriptItem): boolean {
     a.toolCallId === b.toolCallId &&
     a.model === b.model &&
     sameStrings(a.images, b.images) &&
-    sameJson(rawStamp(a.raw), rawStamp(b.raw)) &&
+    a.at === b.at &&
+    sameJson(a.meta, b.meta) &&
+    sameJson(a.tool, b.tool) &&
+    sameJson(a.entry, b.entry) &&
     sameJson(a.attachments, b.attachments) &&
     sameJson(a.report, b.report) &&
     sameJson(a.wake, b.wake) &&
@@ -75,11 +75,17 @@ export function reconcileItems(prev: readonly TranscriptItem[] | null | undefine
 }
 
 /**
- * Where a transcript was scrolled: at the end (following), or with a row's top `offset` px below
- * the top of the view. A row, not a pixel position, because rows are added at the end meanwhile
- * and rows not drawn yet have estimated heights.
+ * Where a transcript was scrolled: at the end (following), with the last row read there (`lastRow`:
+ * rows that come after it while away are new), or with a row's top `offset` px below the top of
+ * the view. A row, not a pixel position, because rows are added at the end meanwhile and rows not
+ * drawn yet have estimated heights.
+ * Live rows drawn below `lastRow` were read too (§chat.transcript/rendering, "Switching back"):
+ * `unnamed` live messages with no entry yet (a reply still streaming), which are the entries right
+ * after it, then the `queued` messages' texts, each the next prompt if it was delivered meanwhile.
  */
-export type ScrollSpot = { follow: true } | { follow: false; rowId: string; offset: number };
+export type ScrollSpot =
+  | { follow: true; lastRow?: string; unnamed?: number; queued?: string[] }
+  | { follow: false; rowId: string; offset: number };
 
 export interface CachedTranscript {
   items: TranscriptItem[];

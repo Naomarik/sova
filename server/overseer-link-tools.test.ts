@@ -80,7 +80,7 @@ function harness(
     overseerId: () => "ov",
     caps: () => ({ ...DEFAULT_CAPS, ...opts.caps }),
     session: async (ref: string) => (ref === "a" ? ({ id: "a", path: "/s/a.jsonl", title: "Local work", cwd: "/w" } as SessionSummary) : null),
-    transcript: async () => [{ id: "u", kind: "user" as const, text: "local ask", raw: {} }],
+    transcript: async () => [{ id: "u", kind: "user" as const, text: "local ask" }],
     attended: () => opts.attended ?? true,
     started: (p: string) => started.add(p),
     runningStarted: () => countRunning(started, (k) => busy.has(k), promptedAt),
@@ -186,7 +186,7 @@ describe("sova_unlink and sova_links", () => {
 });
 
 describe("sova_read_session with host", () => {
-  const slice = renderTranscript([{ id: "u", kind: "user", text: "remote ask", raw: {} }], { from: "tail", items: 20, chars: 6000, title: "Remote work", id: "r1" });
+  const slice = renderTranscript([{ id: "u", kind: "user", text: "remote ask" }], { from: "tail", items: 20, chars: 6000, title: "Remote work", id: "r1" });
 
   test("reads the peer's own rendered slice over the peer hop, never through this host's routes or with the sender mark", async () => {
     const h = harness({ peerRoutes: { "GET /api/peer/links/read": [200, { text: slice, from: 0, total: 1, title: "Remote work" }] } });

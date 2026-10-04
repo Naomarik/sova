@@ -272,6 +272,16 @@ it belongs, on the Session pane's Changes disclosure and the Timeline's change m
 
 Server `text` is used as-is. Put machine facts (ids, model names, counts) in `<code>`.
 
+**Handoff run rows.** A `/compact-handoff` run's `compact-handoff-run` entries
+(§chat.slash-commands/compact-handoff-row) are info rows, one per run id: on load only the newest
+entry per id renders, and a live append replaces the row carrying the same run id in place
+rather than adding one at the bottom. The text is the server's one line: "Writing a handoff
+note" (with `: {focus}` when given) while running, then "Handoff note saved" (with `: {path}`),
+"Handoff note failed" (with `: {reason}`), "Handoff cancelled" or "Handoff interrupted". While running, the live
+dot sits where the info icon goes; a failed run adds a `.chip-error` "Failed" chip and an
+interrupted one a `.chip-warn` "Interrupted" chip before the text. An entry whose shape this
+version can't read renders no row.
+
 **unknown.** Render the same as info, with the text `Unrecognized entry <code>{raw.type}</code>`,
 followed by a `.disclosure` labelled "Raw entry" that holds `<pre>` JSON. Never drop a row
 silently.
@@ -620,7 +630,12 @@ runaway reply there is capped: it can't write a line too long to read back or to
     scroll).
   - When the user scrolls up past 80px, following stops and a `.button.jump-latest` appears:
     "Jump to Latest · N new". Clicking it scrolls to the end, resumes following, and removes the
-    button.
+    button. Only the view moving up stops following: content landing below a following view (a
+    reply, a queued message drawn again after a switch back), or the browser moving the view down
+    to keep a row in place, never does, and the view goes back to the end.
+  - It also appears, not following, when you switch back to a session left at the end that gained
+    rows while you were away: the view stops at the last row read, and "N new" counts the rows
+    below it (§chat.transcript/rendering).
   - Chat sessions follow the same logic while streaming.
   - Sending a message always resumes following.
 - **When the TUI closes** (`live` goes null on refresh). A `.banner.banner-info` appears in
@@ -737,10 +752,21 @@ virtualized.
   end; rows above them stay unfetched. Open cards, focus and a revealed action strip survive the
   end of a turn, a reconnect and a rewind; only changed and new rows are built.
 - **Switching back.** The last 3 sessions opened in the tab keep their rows and where they were
-  scrolled: at the end while following, else the row at the top of the view and its offset. So
-  do the sessions in Recent, fetched ahead (§chat.transcript/recent-preload).
+  scrolled: at the end while following (and which row was last), else the row at the top of the
+  view and its offset. So do the sessions in Recent, fetched ahead (§chat.transcript/recent-preload).
   Switching back to one shows those rows at once, where they were (with Jump to Latest when not
-  following), while its `hello` or snapshot is on the way, then reconciles them as above. A kept
+  following), while its `hello` or snapshot is on the way, then reconciles them as above. The
+  last row read is the last row drawn when the reader left, live rows included: a running turn's
+  prompt, reply and tool rows, and a message still queued, count as read when they come back as
+  the transcript's rows. The server names the entry each message that ends was written as (on
+  its `message_end`), so a live row knows its row; a reply still streaming when the reader left is
+  the entry after the last row named, and a queued message delivered meanwhile is the next prompt
+  with its text. Only rows that arrive after the reader left count as gained. One
+  left at the end that gained rows while away, kept or brought by that `hello` or snapshot, stops
+  at the last row read: that row's bottom at the bottom of the view, not following, with "Jump to
+  Latest · N new" counting the rows below it, unless they're short enough that the view is still
+  within 80px of the end. One that gained none stays at the end, following, as does one whose last
+  row read isn't among its rows, or one the reader has scrolled or touched first. A kept
   spot whose row the `hello` didn't keep is fetched and placed then, unless the view has moved
   from the end meanwhile. Any other open lands at the end. A reload keeps nothing. Rows kept this
   way are never taken as the whole transcript: until this visit's `hello` or snapshot has said
@@ -776,6 +802,35 @@ what it did before.
 - **Not covered.** The built app's static files, extension sockets and routes (`/ext/`), a
   peer's sessions (`/peer/`) and the share listener are sent as before.
 
+## §chat.transcript/slim-rows — Rows carry what they draw
+
+A transcript row carries what its folded form draws and no copy of the entry it came from, so a
+long session's rows weigh about what its text weighs, and opening, switching and reloading never
+wait on megabytes nobody looks at. Nothing on screen changes: every row, its time, its chips, the
+inputs count, the context fill and the spend read exactly as before, and an opened tool card
+shows exactly what it showed before.
+
+- **No entry copy.** A row never carries its source entry. Each entry's first row carries that
+  entry's facts once (its type, role, model, usage, stop reason, error, a tool result's failure,
+  a compaction's figures), every row carries the entry's time, and a reply's other rows read the
+  facts from its first one. An unknown row, whose card shows the entry as JSON, still carries it.
+- **No reasoning signatures.** The encrypted reasoning a provider returns with its thinking (and
+  any signature on a text block or a tool call) never reaches the browser: not on a row, not in a
+  streamed event, not through any route.
+- **Tool calls load on opening.** A tool call's row carries its name, the one line its folded card
+  shows, and the "+n −m" of an edit or write; its result's row carries whether it failed, and its
+  images and named attachments. The arguments, the output and the result's details come from
+  `GET /api/transcript/tool` (read-only, a batch of row ids at a time) when the card is opened or
+  about to be: the thread fetches the cards near the view, or under the pointer or focus, ahead of
+  time, so opening one shows its body at once, with no flash and no jump. A card opened before its
+  content has come says it is loading only after about 0.3 s, and a failed fetch says so with a
+  way to try again. The folded line's tooltip shows the whole line, as before. Cards that draw as cards rather than
+  tool cards (`show_changes`, `sova_card`, `sova_confirm`, `sova_link`, `sova_unlink`, `align`,
+  `session_send`, `sova_create_session`, `sova_navigate`) keep their whole content on the row.
+  While a reply streams, its rows show everything as they always did.
+- **Full content where it's needed.** Copying, the Changes viewer and every server-side reader
+  (the Overseer's session reads) still get every tool's whole arguments and output.
+
 ## §chat.transcript/recent-preload — Recent sessions open at once
 
 The sessions in the sidebar's Recent (§app.session-list/recent) are kept in memory, so opening
@@ -799,7 +854,7 @@ view then reconciles them with its own `hello` or snapshot (§chat.transcript/re
   its newest rows, with any older ones a view fetched kept above them while they're still their
   ancestors. A failed fetch is retried only once the file changes.
 - **A memory budget.** The Recent sessions kept beyond the last 3 opened and those on screen add
-  up to at most 40 MB of transcript JSON (about 50-60 MB of memory). Past it, the largest go
+  up to at most 20 MB of transcript JSON (about 20-32 MB of memory). Past it, the largest go
   first. A session is not downloaded when the size its response announces can't fit, and one
   already found too big is not fetched again while the others are kept. Such a session opens
   the way any unkept one does: it lands at the end once its `hello` arrives.
@@ -942,7 +997,7 @@ card). On a phone it is `#/overview`, under the list's head row (§app.shell/ove
 | No session selected (unfolded) | The landing page below, not a bare `.empty`: `.overview` fills `.app-main`: the title "Overview" in `.overview-head`, the Start section's action card (`New Session`), then the Sessions card, Mesh, the Extensions section and the Explained grid when there are any, and last the Organizations card. No composer |
 | Loading transcript (after 300ms) | Three placeholder messages in `.thread`: a right-aligned `.skeleton` 40% × 44px, then a left `.skeleton-title` plus 3 `.skeleton-line` at 92/78/60%, then a `.skeleton-row` at 60% width. Put `aria-busy="true"` on the `section`. The head renders straight away from the `SessionSummary` |
 | Error (a watched TUI session) | `.banner.banner-error` in `.transcript-inner`. Title: "Couldn't load this transcript." Body: "The file at `{path}` wasn't changed. {server message}." Action: `Retry`. A chat the server refuses to open shows §app.shell's open-failure banner instead |
-| Empty (new session) | `.empty` with no icon: the title "New session in `~/webapps/sova`.", then, in an ordinary session, the Profile select and what it changes (§chat.profiles/picker), then the setup card (§chat.transcript/setup-card), then the footnote `.empty-body` "Your first message becomes its title." No action; the composer has focus. Show it only while the thread, holding every row of the branch (a list this short sits at the top, so its older rows, if any, are fetched at once), has no **rendered row**: model, thinking and mode change rows and the profile entry draw nothing and don't count, while local rows such as "Ran `/cmd`" (§chat/slash-commands) still do. Once any rendered row exists, the thread renders normally with no empty state |
+| Empty (new session) | `.empty` with no icon: the title "New session in `~/webapps/sova`.", then, in an ordinary session, the Profile select and what it changes (§chat.profiles/picker), then the setup card (§chat.transcript/setup-card), then the footnote `.empty-body` "Your first message becomes its title.", then, for a local folder in a git repository with linked worktrees, the worktrees line and its `Clean Up Merged` button (§chat.transcript/empty-worktrees). The composer has focus. Show it only while the thread, holding every row of the branch (a list this short sits at the top, so its older rows, if any, are fetched at once), has no **rendered row**: model, thinking and mode change rows and the profile entry draw nothing and don't count, while local rows such as "Ran `/cmd`" (§chat/slash-commands) still do. Once any rendered row exists, the thread renders normally with no empty state |
 | Agent/server error (`type:"error"`, not busy) | `.banner.banner-error` placed as the last item of the thread (in flow, so it stays in the record). Title: "The turn stopped with an error." Body: "{message}. Your messages are kept. Send again to retry." |
 
 ## §chat.transcript/setup-card — Setup card
@@ -987,21 +1042,25 @@ main-pane rows.
   keeps the whole card away.
 - **Read once.** It reads when it appears, and again only if it is asked about a different
   session; then it disappears until both new answers are in. An answer that arrives after the
-  card has gone, or for a session it no longer shows, is dropped. Nothing on it polls, refreshes
-  or links: no Refresh button, no timer, no anchors, and a commit's age is worked out when the
-  card draws and doesn't tick. Either answer can be the server's cached read of that folder, up
+  card has gone, or for a session it no longer shows, is dropped. Nothing on it polls or links: no
+  Refresh button, no timer, no anchors, and a commit's age is worked out when the card draws and
+  doesn't tick. The loadout is redrawn in two cases only, both from
+  /setup-card-toggles: a flip of a row's switch draws the server's answer in place, and when the
+  chat says the switch window has opened after the first read, the loadout is read again,
+  skipping the cache. Neither redraw draws over a newer answer. Either answer can be the server's cached read of that folder, up
   to 30s old for the loadout and 10s for the repository, and a repository read already running
   for the same session is joined rather than repeated.
 - **Order.** The loadout comes first and Repository last, every time. For a local folder pi's
   loader could read, the loadout is the `System context` line, then Context, then Skills. In
   every other case it is a single line (below). Each group after the first sits under a 1px
   `--color-border` rule.
-- **The one aggregate line.** `System context` leading, its figures trailing in the shape a row
-  uses. It adds up every Context row and every Skills row, which is exactly the two groups under
-  it, so it is the sum of their two totals. Its `title` is the one sentence saying so:
+- **The one aggregate line.** `System context` leading, its figures trailing in the shape a section
+  total uses (`KB · lines · ≈tokens`). It adds up every Context row and every Skills row that is on (a row switched off,
+  /setup-card-toggles, is listed but not counted), which is exactly what the two groups under it
+  total, so it is the sum of their two totals. Its `title` is the one sentence saying so:
   "Everything pi loads into the prompt, plus the skills it offers." It carries no heading, because
   it is a line and not a section. It is left out when it would read `0 B · 0 lines`, that is when
-  there are no files or only empty ones. It is not what the prompt costs before the first
+  there are no files, only empty ones, or every row is off. It is not what the prompt costs before the first
   message: it counts each offered skill's SKILL.md whole, and a skill loads only when it is used
   (/setup-card-skills). The title's "plus the skills it offers" is what says so.
 - **One line in place of Context and Skills.** A `.setup-note` in its own group, with no
@@ -1021,12 +1080,15 @@ main-pane rows.
   line. The two fail independently, so one failure never hides the other group.
 - **Width.** The card is at most 560px wide and left-aligned inside the centred empty state. It is
   its own inline-size container. Under 420px across, every row, the aggregate line and each
-  group's total put their figures on their own line under the name, left-aligned, and the group
-  padding tightens from `--space-4`/`--space-5` to `--space-3`/`--space-4`.
+  group's total put their figures on their own line under the name, left-aligned, except a row
+  with a switch (/setup-card-toggles): it stays one line, its name ellipsised, then ≈tokens, then
+  the switch at the right edge. The group padding tightens from `--space-4`/`--space-5` to `--space-3`/`--space-4`.
 - **Accessibility.** The card is a `section` with `aria-label="Session setup"`. Context, Skills
   and Repository are `h2`s (the session head's title is the `h1`). The aggregate line has no
   heading. Icons are `aria-hidden`. Rows aren't focusable, so what a row's `title` carries (a full
-  path, a skill's description) is available on hover only.
+  path, a skill's description) is available on hover only. The one exception: while the switch
+  window is open, each context file and skill row's switch (/setup-card-toggles) is a focusable
+  checkbox. The row itself still isn't focusable.
 
 ## §chat.transcript/setup-card-context — Setup card: Context
 
@@ -1042,7 +1104,7 @@ The files pi puts into the prompt, in the order it loads them.
   <ul class="setup-list">
     <li class="setup-row" title="/home/user/.pi/agent/AGENTS.md">
       <span class="setup-name"><span class="setup-path">~/.pi/agent/AGENTS.md</span></span>
-      <span class="setup-facts">2.1 KB · 48 lines · ≈530 tokens</span>
+      <span class="setup-facts">≈530 tokens</span>
     </li>
     <li class="setup-row" title="/home/user/webapps/sova/CLAUDE.md">…</li>
     <li class="setup-row" title="/home/user/webapps/sova/.pi/APPEND_SYSTEM.md">
@@ -1050,7 +1112,7 @@ The files pi puts into the prompt, in the order it loads them.
         <span class="setup-path">~/webapps/sova/.pi/APPEND_SYSTEM.md</span>
         <span class="setup-role">appended to the system prompt</span>
       </span>
-      <span class="setup-facts">1.9 KB · 17 lines · ≈480 tokens</span>
+      <span class="setup-facts">≈480 tokens</span>
     </li>
   </ul>
 </div>
@@ -1058,8 +1120,11 @@ The files pi puts into the prompt, in the order it loads them.
 
 - **Heading and count.** `Context · {n}`, where n is the rows listed, SYSTEM.md and
   APPEND_SYSTEM.md rows included. With none it reads `Context · 0`.
-- **The total beside the label** (`.setup-total`) is the rows added up, in the rows' own figures
-  (/setup-card-figures). It is left out when the rows add up to `0 B · 0 lines`.
+- **The total beside the label** (`.setup-total`) is the rows that are on added up, as size ·
+  lines · ≈tokens (/setup-card-figures). It is left out when they add up to `0 B · 0 lines`.
+- **Off rows.** A row this session has switched off (/setup-card-toggles) stays listed and
+  counted in the heading's n, but it is dimmed (`.setup-row-off`: its name and figures at half
+  opacity) and no total counts it, because pi doesn't load it.
 - **Load order, and each row's role.** A `SYSTEM.md` that replaces the default prompt comes
   first, marked "replaces the system prompt", because it is the prompt the rest is added to. The
   context files follow in the order pi layers them (global, then ancestors, then the folder),
@@ -1068,7 +1133,8 @@ The files pi puts into the prompt, in the order it loads them.
   chip.
 - **The row.** The path with the home folder written `~` (the full path when it isn't under home,
   or before home is known), on one line and cut with an ellipsis when it doesn't fit. The full
-  path is in the row's `title`. Then the role, if any, then the figures.
+  path is in the row's `title`. Then the role, if any, then its token estimate
+  (/setup-card-figures).
 - **Where the list comes from.** The same read as Skills (/setup-card-skills): the session's own
   chat when this server holds it, otherwise pi's loader for the folder. Sizes are measured on disk
   when the server reads, never taken from the loader. A file the loader names but Sova can't read
@@ -1081,7 +1147,7 @@ The files pi puts into the prompt, in the order it loads them.
   was one Sova couldn't read.
 - **A total never counts a file the list doesn't show.** One list makes the rows, this group's
   total and its share of the `System context` line, and a file left out of the list is left out of
-  all three.
+  all three. The converse doesn't hold for an off row: it is listed, but in neither total.
 
 ## §chat.transcript/setup-card-skills — Setup card: Skills
 
@@ -1097,17 +1163,20 @@ The skills pi offers this session: what it is **offered**, not what is loaded.
   <ul class="setup-list">
     <li class="setup-row" title="/home/user/.pi/agent/skills/pdf/SKILL.md&#10;Read and fill in PDF forms.">
       <span class="setup-name"><span class="setup-path">pdf</span></span>
-      <span class="setup-facts">4.2 KB · 120 lines · ≈1.1k tokens</span>
+      <span class="setup-facts">≈1.1k tokens</span>
     </li>
     <li class="setup-row" title="…">…</li>
   </ul>
 </div>
 ```
 
-- **Heading and count.** `Skills · {n}`, where n is the rows listed. The total beside the label
-  follows Context's rule and is left out at `0 B · 0 lines`.
-- **Offered, not loaded.** The rows are the skills pi lists to the model, in its order. A skill
-  loads when it is used, and the note's first two sentences say so. A row's figures are its whole
+- **Heading and count.** `Skills · {n}`, where n is the rows listed, off rows included. The total
+  beside the label follows Context's rule: it adds up only the rows that are on, and it is left
+  out at `0 B · 0 lines`.
+- **Offered, not loaded.** The rows that are on are the skills pi lists to the model, in its
+  order. A row this session has switched off (/setup-card-toggles) stays listed in its place,
+  dimmed like an off Context row, but it is not offered, so the model never sees it. A skill
+  loads when it is used, and the note's first two sentences say so. A row's token estimate is its whole
   SKILL.md file, so they are not something the session carries before it uses that skill.
 - **The row.** The skill's name, in the mono `.setup-path` face, with no path on screen and no
   role. The `title` holds the SKILL.md's full path, then on a new line its description, trimmed.
@@ -1212,16 +1281,110 @@ repository around the folder. Two of its figures:
   commits yet". A log the byte cap cut still lists the commits that arrived whole. Only a failed
   read says so in words ("The last commits couldn't be read.") instead of showing an empty list. The
   read is capped at three because this is a glance at where the folder stands, not a log viewer.
-- **Every loadout figure carries an estimated token count**: `31 KB · 475 lines · ≈8.1k tokens`, in
-  the app's one token formatter (§chat/context-window: `812 · 8.4k · 237k · 1M`), the same figure in the same place
-  on a row and on the section total that adds the rows up. The estimate is pi's own —
+- **Every loadout figure carries an estimated token count**, in the app's one token formatter
+  (§chat/context-window: `812 · 8.4k · 237k · 1M`). A Context or Skills row shows only that
+  estimate (`≈530 tokens`), with no size and no lines, neither on screen nor in a tooltip; the
+  section totals and the `System context` line keep `31 KB · 475 lines · ≈8.1k tokens`, the
+  token figure last in both, so it reads as one column. The estimate is pi's own —
   `ceil(characters ÷ CHARS_PER_TOKEN)`, `pi-ai`'s `estimateTextTokens`, never a tokenizer (characters
   are the decoded text's JS string length, UTF-16 code units, the same count pi makes) — so the
   card says what a file costs before it is sent, marked `≈` because a model's real count differs,
   and the note under each section says what the mark means: "Token counts are estimates: 4
   characters per token." That note appears **exactly when the section shows token figures**, and a
-  figure that isn't there is dropped rather than zeroed: a server that sends no estimate gets bytes
-  and lines, never `≈0 tokens` for a file nobody counted.
+  figure that isn't there is dropped rather than zeroed: a row the server sent no estimate for shows
+  no figure at all (never its size, never `≈0 tokens` for a file nobody counted), and a total
+  without estimates keeps bytes and lines.
+
+## §chat.transcript/setup-card-toggles — Setup card: switching context files and skills off
+
+On an ordinary session this server hosts, before its first message, every context file row and
+every skill row of the setup card (/setup-card-context, /setup-card-skills) carries an on/off
+switch. A switch that is off keeps that file out of this session's prompt, or that skill out of the
+skills it is offered, for this one session only.
+
+```html
+<li class="setup-row setup-row-off" title="/home/user/.pi/agent/AGENTS.md">
+  <span class="setup-name"><span class="setup-path">~/.pi/agent/AGENTS.md</span></span>
+  <span class="setup-facts">≈530 tokens</span>
+  <label class="toggle toggle-switch setup-toggle">
+    <input type="checkbox" aria-label="Load ~/.pi/agent/AGENTS.md" />   <!-- unchecked: off -->
+    <span class="toggle-box" />
+  </label>
+</li>
+```
+
+- **Which rows switch.** Every context file pi lists, the global `~/.pi/agent/AGENTS.md` (or
+  `CLAUDE.md`) included, and every skill. A SYSTEM.md that replaces the prompt and the
+  APPEND_SYSTEM.md sources get no switch: they are always loaded.
+- **When.** Exactly the Profile pick's window (§chat.profiles/picker, /applying): the switches show
+  only while the session is before its first message, the server holds its chat, the session is
+  local, ordinary (not the Overseer, a project overseer, baton, organization or worker session)
+  and not open in a terminal. Otherwise the card is as before, with no switches, though a row
+  this session keeps off still reads off (except while a terminal has it open, since the TUI
+  loads every row).
+- **On by default, every time.** Each new session starts with every row on. Nothing is
+  remembered between sessions, per folder or globally: the choice lives in the session alone.
+- **A flip applies at once.** The card sends the session's whole off set
+  (`POST /api/sessions/loadout {path, offContext, offSkills}`), and while it applies every switch
+  is disabled. The server writes a hidden `custom` entry `customType: "sova-loadout"`, data
+  `{v: 1, offContext: [absolute paths], offSkills: [skill names]}`, newest on the branch wins, then
+  rebuilds the session's runtime the way a profile pick does: open tabs get `reloaded` and
+  reconnect, keeping the draft. The answer is the card's new loadout, which it draws in place. A
+  refusal (409: "Context files and skills are fixed once a message is sent.", mid-turn, open in a
+  terminal, a foreign writer, a special session) changes nothing and is shown as a toast. A set
+  equal to the one the session already has writes nothing and rebuilds nothing.
+- **The entry.** It records exclusions only, never context: no file text, no skill text. It draws
+  no transcript row, so writing it keeps the empty state and the session still counts as before
+  its first message. It is never LLM context and the TUI ignores it.
+- **What it changes.** The runtime is built with pi's loader overrides (`agentsFilesOverride`,
+  `skillsOverride`), so an off file is absent from the system prompt, and an off skill is absent
+  from the skills list in the prompt, from `/skill:` expansion and from the composer's slash list.
+  The skill filter also covers skills an extension adds. A context file or skill named in the entry
+  that no longer exists is ignored. Sova-hosted runtimes honour it for every model, pi's and Claude
+  Code's alike (the Claude Code provider sends pi's own system prompt). Re-opening the session,
+  and restarting the server, rebuild the runtime from the same entry, so the choice holds.
+- **What it does not change.** A TUI that opens the session, and any worker the session spawns,
+  load their own context files and skills: they do not read this entry. A remote session's card
+  has no rows, so it has no switches.
+- **Off rows and the totals.** A row that is off stays listed, dimmed, with its switch off. The
+  Context and Skills headings still count every row listed, but each group's total and the
+  `System context` line add up only the rows that are on, so they say what this session loads and
+  is offered.
+- **The card's read.** Rows come from the runtime's unfiltered lists, so an off row can be switched
+  back on. The folder's cached read is shared as before; whether each row is off, and whether the
+  switches show, is worked out for each session on every read.
+- **Accessibility.** Each switch is a checkbox labelled "Load {path}" (the path as the row shows
+  it) for a file and "Offer {name}" for a skill, checked when on, reachable by keyboard.
+
+## §chat.transcript/empty-worktrees — The worktrees line under a new session
+
+A new session's empty state (the "Empty (new session)" row of States, above) ends, below its
+footnote and outside the setup card, with one muted line about the git worktrees of the
+repository its folder is in, and a button that removes the merged ones (§chat.worktrees/cleanup).
+Its words are the [copy deck](../design/copy-deck.md)'s §design.copy-deck/worktree-cleanup rows.
+
+- **When it shows.** For a local folder inside a git repository with at least one linked
+  worktree in git's list. A remote session, a folder outside a repository, a repository with no
+  linked worktree, and a read that fails show nothing. Never in the Overseer's empty state.
+- **The line.** "{total} worktrees · {merged} merged", with " · {empty} empty" when there are
+  empty leftovers (a branch with no commit of its own). The counts are §chat.worktrees/cleanup's:
+  every linked worktree in git's list, wherever its folder is.
+- **Read once.** It reads when the empty state appears (`GET /api/worktrees/summary`), and again
+  only after a removal, or when asked about a different session. Nothing polls: no timer. An
+  answer for a session it no longer shows is dropped. It never holds up the setup card, and the
+  card never waits for it.
+- **The button.** `Clean Up Merged`, outlined and destructive, after the line, only when merged
+  plus empty is above 0. A press first asks for a dry run, and the button says it is checking
+  while that runs. The dry run's answer opens a confirm dialog: what goes (each folder in mono,
+  with its branch, and whether that branch is deleted or kept), then what stays, each with its
+  reason. Its confirm button names the count; with nothing removable the dialog says so and only
+  closes. Focus starts on Cancel.
+- **Confirming** posts exactly the dry run's paths as `expect`, so a tree that changed after the
+  preview is kept with its new reason, never removed. The result is said in a toast and to screen
+  readers: removed {n}, kept {k}, with the kept trees' reasons in the dialog's place until it
+  closes. Then the line reads again.
+- **Accessibility.** The line is a `p` in the empty state; the button is a real `button` with its
+  words as its name; the dialog is an `alertdialog` that traps focus and returns it to the button.
 
 ## §chat.transcript/tokens — Tokens
 

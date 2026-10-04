@@ -11,7 +11,8 @@ import { approvalsFile, hostVarsFile } from "./store";
  */
 
 /** Drop what tuning may change without approval: every `timeout`, readiness paths, a service's `about` and
-    `isolation` (words for builders and readers) and the top-level `sources` (what drift reads); the default
+    `isolation` (words for builders and readers), the top-level `sources` (what drift reads) and `open` (the entry
+    point, which exposes nothing); the default
     `start: "up"` too, so a definition hashes as it did before `start` existed. */
 function hashed(v: unknown, key = ""): unknown {
   if (Array.isArray(v)) return v.map((x) => hashed(x, key));
@@ -19,7 +20,7 @@ function hashed(v: unknown, key = ""): unknown {
   const out: Record<string, unknown> = {};
   for (const k of Object.keys(v as Record<string, unknown>).sort()) {
     if (k === "timeout") continue;
-    if (key === "" && k === "sources") continue;
+    if (key === "" && (k === "sources" || k === "open")) continue;
     if (key === "ready" && k === "path") continue;
     if (key === "services" && (k === "about" || k === "isolation" || (k === "start" && (v as Record<string, unknown>)[k] === "up"))) continue;
     out[k] = hashed((v as Record<string, unknown>)[k], k);
@@ -27,7 +28,7 @@ function hashed(v: unknown, key = ""): unknown {
   return out;
 }
 
-/** The definition's hash: `sha256:<hex>` of its canonical JSON minus timeouts and readiness paths. */
+/** The definition's hash: `sha256:<hex>` of its canonical JSON minus what `hashed` drops. */
 export function defHashOf(def: ProjectDef): string {
   return `sha256:${createHash("sha256").update(JSON.stringify(hashed(def))).digest("hex")}`;
 }

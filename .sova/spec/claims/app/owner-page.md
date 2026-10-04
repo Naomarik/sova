@@ -229,7 +229,7 @@ copy is §design.copy-deck/owner-page, and its list of words never used there is
   person who left); the link's state (when
   it was made, when it expires, how many times it was opened, the expiry warned once under 14 days
   are left); `Get Owner Link` (with a confirm while a live one exists), `Preview Owner Page`, and
-  `Turn Off Owner Link` set apart as destructive. A new link is shown once, with Copy Link, as on
+  `Delete Owner Link` set apart as destructive (its confirm: §design.copy-deck/owner-page). A new link is shown once, with Copy Link, as on
   the baton strip.
 - **Preview.** `Preview Owner Page` opens a modal that shows exactly what the owner sees, from the
   same function with no token (`GET /api/orgs/:id/owner/preview[?project=<q_handle>|?c=<k_handle>]`, main listener only); it
@@ -240,7 +240,7 @@ copy is §design.copy-deck/owner-page, and its list of words never used there is
 - **Baton strip**: `Hide From {first name}` / `Show To {first name}` on each conversation of an org
   with an owner, and a line while it is hidden (§app.owner-page/conversations).
 - **Person page**: an `Owner` chip beside the owner's status, their owner link among their links
-  (state, made, expires, Turn Off), and their visits to the owner page as "Opened the owner page"
+  (state, made, expires, Delete), and their visits to the owner page as "Opened the owner page"
   rows (§app.organizations/person-page).
 
 ## §app.owner-page/rejected — Considered and not done

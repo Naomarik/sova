@@ -4,6 +4,7 @@ import { dirname, join } from "node:path";
 import { parseChoice } from "../pi-config/extensions/mode/delegate.ts";
 import type { DecisionSettings, WorkerChoice } from "../shared/protocol";
 import { stateRoot } from "./state-root";
+import { sessionsChanged } from "./list-generation";
 
 // Settings → Decisions: `<stateRoot>/decisions.json`. Nothing outside Sova reads it. Tolerant read
 // (a broken file reads as the defaults: everything off), strict PUT, atomic write.
@@ -118,6 +119,7 @@ export function writeDecisionSettings(settings: DecisionSettings, file = decisio
   const tmp = `${file}.${process.pid}.tmp`;
   writeFileSync(tmp, `${JSON.stringify(settings, null, 2)}\n`);
   renameSync(tmp, file);
+  sessionsChanged();
   cache = undefined;
 }
 

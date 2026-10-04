@@ -23,7 +23,8 @@ import { approve, defHashOf } from "./trust";
 process.env.PI_CODING_AGENT_DIR = mkdtempSync(join(tmpdir(), "sova-container-agent-"));
 
 const op: Caller = { kind: "operator" };
-const BASE = 30_000 + Math.floor(Math.random() * 20_000);
+// Below the kernel's ephemeral range (32768+), where any outgoing connection on the box can hold a port.
+const BASE = 20_000 + Math.floor(Math.random() * 10_000);
 const ENGINE = "podman";
 
 const DEF = {
@@ -117,7 +118,7 @@ test("a port its own container publishes is the instance's own, whoever listens;
   assert.deepEqual(doc.checks?.find((c) => c.id === "port:box.http"), { id: "port:box.http", ok: true, detail: `${port} held by its own container tbox-1` });
   published.delete("tbox-1");
   const lost = await engine.portClaim(recOf(a.instance), def(), "box", port);
-  assert.deepEqual(lost, { held: true, own: false, who: "a process this user can't read" }, "the listener alone proves nothing");
+  assert.deepEqual(lost, { held: true, own: false, who: "a process this user can't read", unreadable: true }, "the listener alone proves nothing");
   assert.equal((await engine.run("doctor", { instance: a.instance }, op)).checks?.find((c) => c.id === "port:box.http")?.ok, false);
 });
 

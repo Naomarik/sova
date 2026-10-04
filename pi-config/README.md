@@ -23,6 +23,7 @@ installs with `install.sh` alone, without the web app.
 | `extensions/claude-code/` | `claude-code` worker backend for the subagent tools, driving the installed Claude Code CLI |
 | `extensions/command-palette/` | `Ctrl+P` palette over models, sessions, settings, extension commands and skills |
 | `extensions/extension-toggle/` | `/extensions` to switch extensions on and off in-session |
+| `extensions/compact-handoff/` | `/compact-handoff [focus \| cancel]`: a read-only background fork of the session writes a handoff note, which is saved to `~/.pi/agent/compact-handoffs/<session id>.md` and the session's `compact-handoff` entry, then the session compacts; after this and every later compaction the newest note on the branch is added back, hidden, right after the summary |
 | `extensions/explain/` | `/explain <topic>`: one forked subagent writes a self-contained HTML explanation into `~/.pi/agent/explanations/`, kept forever and read in Sova |
 | `extensions/model-policy/` | The shared model policy (`model-policy.json`): which providers and models may be used at all, and which of them subagents may be given. Written by Sova's Settings → Models tab; this extension enforces the global half in the TUI |
 | `extensions/provider-limits/` | How many model requests each provider runs at once on this device (`provider-limits.json`, written by Sova's Settings → Models); requests over the limit wait instead of failing. Every pi worker loads it. Its `gate.ts` (builtins only) is imported by Sova |
@@ -177,7 +178,8 @@ node --test install.test.mjs
 cd extensions/subagents && node tests/run.mjs && node tests/smoke.mjs && node tests/team-smoke.mjs
 cd extensions/claude-code && node tests/run.mjs && node tests/smoke.mjs && node tests/ui-permissions.mjs
 cd extensions/extension-toggle && node --test index.test.ts
-cd extensions/mode && node --test index.test.ts delegate.test.ts routing.test.ts align.test.ts spec.test.ts spec-guard.test.ts also-changes.test.ts && node tests/smoke.mjs && node tests/wake-turn.mjs && node tests/align-turn.mjs && node tests/note-turn.mjs && node tests/spec-turn.mjs && node tests/spec-worker.mjs
+cd extensions/compact-handoff && node tests/run.mjs
+cd extensions/mode && node --test index.test.ts delegate.test.ts routing.test.ts align.test.ts review.test.ts spec.test.ts spec-guard.test.ts also-changes.test.ts && node tests/smoke.mjs && node tests/review-smoke.mjs && node tests/wake-turn.mjs && node tests/align-turn.mjs && node tests/note-turn.mjs && node tests/spec-turn.mjs && node tests/spec-worker.mjs
 cd extensions/model-policy && node --test policy.test.ts index.test.ts
 cd extensions/provider-limits && node tests/run.mjs
 cd extensions/llm-inflight && node tests/run.mjs

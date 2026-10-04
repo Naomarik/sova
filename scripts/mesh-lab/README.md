@@ -57,6 +57,9 @@ decimal string on Headscale.
 - **Extra environment**: `lab sova-env <node> SOVA_X=v…` writes `/run/lab/sova.env` in the container
   (`SOVA_*` names only, plain values). Sova reads it from its next start (`lab sova-restart <node>`);
   `--clear` removes it. Example: `SOVA_SYNC_LOGIN_KINDS=api-keys` on one host (an API-keys-only host).
+- **Runtime**: Sova runs on Bun (the image copies `bun` from `oven/bun:<the version mise.toml pins>`)
+  through `scripts/start-server.sh`; `lab sova-env <node> SOVA_RUNTIME=node` + `lab sova-restart <node>`
+  runs that host on Node.
 - **Home** `/root` (volume): the Claude store simulator uses `/root/.claude-lab`
   (`SOVA_SYNC_CLAUDE_DIR`), never `/root/.claude`.
 - **Listeners**: Sova's main listener stays on `127.0.0.1:4800`. The laptop reaches it through a

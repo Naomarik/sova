@@ -632,7 +632,9 @@ describe("limits through PATCH, held items and their retry", async () => {
   test("a look past the looks per day is held until midnight, and shown", async () => {
     await po.patchProjectOverseer(project.id, { caps: { unattendedPerDay: 1 }, watch: true });
     // A day of its own (the held-item test's looks fall on the day after tomorrow), then its one look (Run Now's counts too).
-    const t = Date.now() + 4 * 86_400_000;
+    // Moved by whole hours into 10:xx local, so its two hours never cross midnight (bun test runs in UTC).
+    const ahead = new Date(Date.now() + 4 * 86_400_000);
+    const t = ahead.getTime() + (10 - ahead.getHours()) * 3_600_000;
     await po.patchProjectOverseer(project.id, { caps: { unattendedPerDay: 12 } });
     await at(t);
     assert.equal(await at(t, () => po.lookNow(project.id)).then((r) => r.started), true);
@@ -717,7 +719,11 @@ describe("the watch loop's decision, on its watch statechart", async () => {
   const p = store.projectOverseerPaths(project.id);
   const watch = watchSid(project.id);
   const { looks } = fakeLooks(org.id);
-  let t = Date.now() + 3 * 86_400_000;
+  // Days ahead, moved by whole hours into 10:xx local (minutes, seconds and ms kept): the looks below
+  // span about an hour and count per local day, so a start late in the evening would split them at
+  // midnight (bun test runs in UTC, node in the host's zone).
+  const ahead = new Date(Date.now() + 3 * 86_400_000);
+  let t = ahead.getTime() + (10 - ahead.getHours()) * 3_600_000;
   /** The engines' clock moved to `t`, their due timers fired. */
   const to = async (next: number) => {
     t = next;

@@ -10,6 +10,8 @@ Complete graph queries remain available to machine consumers. Task-facing packet
 requirements within an explicit whole-response budget, with continuation and unknowns kept visible.
 They change context delivery, not release policy. Structured observation-only assessments are separately
 recorded input-bound comparisons, not proof of requirements truth or mandatory release policy.
+A shipped playbook runs these tools for a review the operator starts, inside limits the operator
+sets, and only then.
 
 ## §tools.spec/change-assessments — Input-bound structured comparisons
 
@@ -42,31 +44,57 @@ even when the requested claim's own prose is unchanged. Optional draft triage bi
 proposed, baseline and current manifest/claim sources it reads; changes to those inputs stale prior
 assessments even when candidate identities and reasons stay unchanged.
 
-## §tools.spec/assessment-observations — Automatic unresolved observations
+## §tools.spec/assessment-observations — Assessments run only when asked
 
-With spec enabled, observed task changes automatically create unresolved structured observations
-with a fixed task base and actual nullable parent, worker, task and attempt attribution. Retries
-and reopen preserve task identity and prior immutable receipts. Repeated changes to one path and
-late task-settle changes are observed by input fingerprints, not only new filename detection.
-Observation reports scope changes, not forensic authorship; ownership ambiguities remain unknown.
-Native Claude Code worker hooks collect the same unresolved observations and retain task identity
-only when the backend supplies a known prompt boundary identifier; otherwise task attribution stays
-null and unknown rather than guessing from prompt text or the time. The server cannot verify native
-task boundaries with its pi-session reader, so native task attribution remains unknown; private native
-hook error markers are not themselves parent receipts, and missing receipts mean absent evidence and
-unknown applicability, not a successful comparison or an inferred cause.
+No session, pi worker, worktree-configured worker or Claude Code worker hook runs an assessment
+capture, records a task baseline or writes an assessment receipt by itself: not when a task starts,
+after any tool call, when a run settles or when a session reopens, with spec on or off. Sessions and
+workers have no assessment tool. An assessment is an explicit companion CLI operation that an
+operator or agent asks for: `prepare` against a declared known base revision, then `record` and
+`status`. Its receipt names that declared base, never a claimed task start. Nothing captures a
+snapshot baseline on the caller's behalf, so a late call cannot subtract the task's own earlier edits
+or commits: with a known base and no declared snapshot, every committed and working-tree change since
+that base is included. Attribution is only what the caller passes; absent attribution stays null.
 
-An explicit assessment tool records or queries dispositions and structured verification results.
-It flags failed or unavailable CLI operations as SDK tool errors while retaining their structured
-content and details. Successful preparations and records remain normal operations even with
-outstanding claims or failed verification declarations, and stale or unknown status remains a valid
-observation query. These flags never change continuations, release gates or readiness.
-Session-list and merge-readiness refreshes do not consume assessment receipts or query their
-status. Explicit assessment queries and automatic runtime observations remain available without
-changing ordinary readiness checks, footer rules or release gates. A newer unresolved same-task observation is not
-hidden by an older preserved record. Failed verification remains an explicit outcome distinct from
-current input applicability and the recorder's disposition. Legacy labels without receipts remain
-declarations with unknown assessment provenance.
+Receipts and session task and error entries left by earlier automatic observation stay as they are:
+readable, immutable, and never migrated, rewritten or deleted. A native hook's state from then keeps
+its assessment fields unchanged and ignored: it loads without an error, a failure note or a new
+capture, while its ordinary census and turn fields go on updating. Session-list and
+merge-readiness refreshes do not consume assessment receipts or query their status. Explicit assessments never change continuations, ordinary
+readiness checks, footer rules or release gates. Successful preparations and records remain normal
+operations even with outstanding claims or failed verification declarations, and stale or unknown
+status remains a valid query. A newer unresolved same-task observation is not hidden by an older
+preserved record. Failed verification remains an explicit outcome distinct from current input
+applicability and the recorder's disposition. Legacy labels without receipts remain declarations
+with unknown assessment provenance.
+
+## §tools.spec/review-playbook — A spec review runs only when the operator starts it
+
+Sova ships a Spec review playbook (`playbooks/spec-review/`, §chat.playbooks): one Markdown entry
+with no script and no state of its own. It answers one question about a project's spec, either
+comparing code and docs against a known base revision or looking back at how the spec workflow went,
+never both in one run, and only when the operator sends it. It declares no schedule, and leaves no
+worker, monitor or timer running after its report.
+
+Its brief names the question, the kind, the root, a base that is an ancestor of HEAD, the scope and
+the limits: minutes, report length, model runs and tokens. A brief the operator's message gives in
+full is approved as sent; otherwise only a bounded preflight runs before the operator approves one.
+That preflight refuses a root that isn't the checkout's top folder, or a base that isn't a commit
+and an ancestor of HEAD, before it lists anything; otherwise it prints the full base and at most 201
+lines of the files changed since it. The approved scope is frozen: a file changed later is reported
+as outside it and never read, and a supporting read stays inside the root, scope and limits and is
+named in the report. The limits are cooperative: nothing enforces them, the report gives each as
+observed or unknown, a packet budget bounds only the bytes of the page it returns, and while token
+use is unknown the run asks before any further model run.
+
+A run writes nothing beyond its chat: no files, no assessment receipts, no workers, no cleanup. It
+reads with git, with the helpers known to apply turned off (fsmonitor, external diff, textconv;
+not a sandbox), with the trusted spec tools at the declared base, and with the agent's own file
+reading. Each published command re-establishes the tools' location, root and base itself, never
+relying on an earlier call. A request for a durable assessment receipt is reported as needing a
+separate opt-in method, since the companion has no bounded view of its capture. The report has
+fixed sections within the report length and keeps observed, inferred and proposed apart; changes to
+the playbook's own method appear there only as proposed diffs, never applied by the run.
 
 ## §tools.spec/census-note — The `[spec census]` note stays short
 

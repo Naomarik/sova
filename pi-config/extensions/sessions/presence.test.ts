@@ -181,3 +181,32 @@ test("v2 records round-trip to a peer channel and stay within the byte budget", 
     rmSync(d, { recursive: true, force: true });
   }
 });
+
+test("channels of one process share one scanner per dir, still see each other, and the last close stops it", async () => {
+  const d = dir();
+  const registry = () => (globalThis as Record<symbol, Map<string, unknown> | undefined>)[Symbol.for("pi-sessions/presence-scanners/v1")];
+  const scannersFor = () => [...(registry()?.keys() ?? [])].filter(k => k.startsWith(`${d}\0`)).length;
+  try {
+    const seen = new Map<string, IntercomExtensionEvent[]>();
+    const open = (name: string) => {
+      const events: IntercomExtensionEvent[] = [];
+      seen.set(name, events);
+      return createPresenceChannel({ dir: d, pollMs: 20, heartbeatMs: 40, info: info(name), onEvent: e => events.push(e) });
+    };
+    const channels = ["a", "b", "c"].map(open);
+    assert.equal(scannersFor(), 1, "one scanner for three channels in one dir");
+    await sleep(200);
+    for (const ch of channels) assert.equal((await ch.listSessions()).length, 3, "every channel sees its two siblings");
+    for (const [name, events] of seen) {
+      const joined = events.filter(e => e.type === "session_joined").map(e => e.type === "session_joined" ? e.session.name : "");
+      assert.deepEqual(joined.sort(), ["a", "b", "c"].filter(n => n !== name), `${name} saw each sibling join once, never itself`);
+    }
+    assert.equal(readdirSync(d).filter(n => n.endsWith(".json")).length, 3, "each channel still writes its own record");
+    channels[0]!.close(); channels[1]!.close();
+    assert.equal(scannersFor(), 1);
+    channels[2]!.close();
+    assert.equal(scannersFor(), 0, "the last close stops and drops the scanner");
+  } finally {
+    rmSync(d, { recursive: true, force: true });
+  }
+});

@@ -15,7 +15,7 @@ process.env.PI_CODING_AGENT_DIR = agentDir; // before the modules below compute 
 const sessionsDir = join(agentDir, "sessions", "--tmp-worktrees-test--");
 mkdirSync(sessionsDir, { recursive: true });
 
-const { WorktreeInsights, execGit, pickBase, sumNumstat } = await import("./worktrees");
+const { WorktreeInsights, execGit, pickBase, sumNumstat, worktreeStamp } = await import("./worktrees");
 type Runner = typeof execGit;
 
 const ENV = { ...process.env, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t", GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1" };
@@ -114,10 +114,12 @@ test("merge-tree leaves the repository's object store as it was", async () => {
   git(r, "add", ".");
   git(r, "commit", "-q", "-m", "base adds c");
   const before = git(r, "count-objects", "-v");
-  const t = await treeOf(new WorktreeInsights(), session(wt));
+  // Its own scratch root: the OS temp dir is shared with every other process making these.
+  const scratchDir = mkdtempSync(join(root, "scratch-"));
+  const t = await treeOf(new WorktreeInsights({ scratchDir }), session(wt));
   assert.equal(t.merged, "no"); // merging would add b.txt: a new tree, which must not land in .git
   assert.equal(git(r, "count-objects", "-v"), before);
-  assert.deepEqual(readdirSync(tmpdir()).filter((f) => f.startsWith("sova-merge-tree-")), []);
+  assert.deepEqual(readdirSync(scratchDir), [], "the scratch object directory is removed");
 });
 
 test("a dirty tree, untracked files included", async () => {
@@ -718,4 +720,60 @@ test("pickBase and sumNumstat", () => {
   assert.deepEqual(pickBase("refs/remotes/origin/HEAD\0ccc\0refs/remotes/origin/dev\n"), { name: "origin/dev", oid: "ccc" });
   assert.equal(pickBase(""), null);
   assert.deepEqual(sumNumstat("3\t1\ta.txt\n-\t-\tbin.png\n2\t0\told => new\n"), { added: 5, removed: 1 });
+});
+
+test("a dirty reading ends at once on an index or HEAD change; readiness's lifetime holds it otherwise, 0 reads now; the board keeps 10 s", async () => {
+  const r = repo("lifetime");
+  const wt = feature(r, "feat-life", ["x"]);
+  let now = 1_000_000;
+  const calls: string[][] = [];
+  const ins = new WorktreeInsights({ now: () => now, run: (args, opts) => { calls.push([...args]); return execGit(args, opts); } });
+  const statuses = () => calls.filter((a) => a[0] === "status").length;
+  ins.dirtyLifetime(wt, 300_000);
+  assert.equal((await ins.treeStatus(wt))?.dirty, false);
+  assert.equal(statuses(), 1);
+  now += 60_000;
+  writeFileSync(join(wt, "c.txt"), "untracked\n");
+  assert.equal((await ins.treeStatus(wt))?.dirty, false, "an untracked file waits out the lifetime");
+  assert.equal(statuses(), 1);
+  git(wt, "add", "c.txt");
+  assert.equal((await ins.treeStatus(wt))?.dirty, true, "git add ends the reading at once");
+  assert.equal(statuses(), 2);
+  git(wt, "commit", "-q", "-m", "c");
+  assert.equal((await ins.treeStatus(wt))?.dirty, false, "a commit ends it too");
+  assert.equal(statuses(), 3);
+  git(wt, "checkout", "-q", "-b", "feat-life-2");
+  await ins.treeStatus(wt);
+  assert.equal(statuses(), 4, "a branch switch ends it too");
+  writeFileSync(join(wt, "d.txt"), "x\n");
+  now += 60_000;
+  const board = await treeOf(ins, session(wt));
+  assert.equal(board.dirty, true, "the board's own reads keep DIRTY_TTL_MS");
+  assert.equal(statuses(), 5);
+  rmSync(join(wt, "d.txt"));
+  ins.dirtyLifetime(wt, 0);
+  assert.equal((await ins.treeStatus(wt))?.dirty, false, "0 reads now");
+  assert.equal(statuses(), 6);
+});
+
+test("worktreeStamp: an untracked file leaves it; add, commit and a branch switch move it; a removed folder is gone; no Git reads it as null", () => {
+  const r = repo("stamp");
+  const wt = feature(r, "feat-stamp", ["x"]);
+  const first = worktreeStamp(wt);
+  assert.ok(first && first !== "gone");
+  writeFileSync(join(wt, "u.txt"), "untracked\n");
+  assert.equal(worktreeStamp(wt), first, "untracked files are the dirty reading's business, not the stamp's");
+  git(wt, "add", "u.txt");
+  const added = worktreeStamp(wt);
+  assert.notEqual(added, first, "git add moves the index");
+  git(wt, "commit", "-q", "-m", "u");
+  const committed = worktreeStamp(wt);
+  assert.notEqual(committed, added, "a commit moves the branch ref");
+  git(wt, "checkout", "-q", "-b", "feat-stamp-2");
+  assert.notEqual(worktreeStamp(wt), committed, "a branch switch moves HEAD");
+  const plain = join(root, "stamp-plain");
+  mkdirSync(plain);
+  assert.equal(worktreeStamp(plain), null);
+  git(r, "worktree", "remove", "--force", wt);
+  assert.equal(worktreeStamp(wt), "gone");
 });

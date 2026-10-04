@@ -64,7 +64,8 @@
 .project-software-name { font-weight: var(--fw-semibold); color: var(--color-ink); }
 .project-software-failed { color: var(--status-error); }
 .project-software-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
-.project-software-feed { border-top: 1px solid var(--color-border); padding-top: var(--space-2); }
+/* Open Branches: a link with a 44px target, its chevron saying it goes somewhere. */
+.project-software-open { display: inline-flex; align-items: center; gap: var(--space-1); min-height: var(--tap-min); font-weight: var(--fw-medium); }.project-software-feed { border-top: 1px solid var(--color-border); padding-top: var(--space-2); }
 .project-spec-line { font-size: var(--fs-caption); }
 .project-frozen { max-width: 24rem; }
 
@@ -337,3 +338,102 @@ a.pipeline-link:hover, button.pipeline-link:hover, summary.pipeline-link:hover {
 }
 .project-confirm-row { justify-content: flex-start; min-height: var(--tap-min); }
 .pipeline-meta-warn { color: var(--status-warn); }
+
+/* ---- Branches tab and Running branches (§app.project-services/services-ui) ------------------------
+   Each card is its own container, so a row stacks by the card's width, not the window's. */
+.services-tab,
+.running-copies { container: services / inline-size; }
+/* Both use the pane's whole width: a copy's ports and actions need it more than a reading measure. */
+.card.orgs-section.services-tab,
+.card.orgs-section.running-copies,
+.card.orgs-section.projects-list-card { max-width: none; }
+.services-list, .running-copies-list { margin: 0; padding: 0; list-style: none; }
+.services-row { align-items: flex-start; flex-wrap: wrap; gap: var(--space-2) var(--space-4); padding: var(--space-3) 0; }
+.services-row-main { min-width: 14rem; display: flex; flex-direction: column; gap: var(--space-2); }
+/* The title line: name, state chip, then slot · memory · maker, in the same columns on every row. */
+.services-row-title { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-3); margin: 0; }
+.services-name { font-weight: var(--fw-semibold); color: var(--color-ink); overflow-wrap: anywhere; }
+.services-row-chip { display: inline-flex; }
+.services-row-meta { display: inline-flex; flex-wrap: wrap; gap: 0 var(--space-2); color: var(--color-ink-muted); font-size: var(--fs-caption); line-height: var(--lh-caption); font-weight: var(--fw-regular); }
+.services-row-meta > span + span::before { content: "·"; margin-right: var(--space-2); color: var(--color-ink-muted); }
+@container services (min-width: 640px) {
+  .services-row-title { display: grid; grid-template-columns: minmax(0, 12rem) 6.5rem minmax(0, 1fr); column-gap: var(--space-3); }
+}
+/* Ports: one tag per service (its name, then each port), wrapping as whole tags. */
+.services-facts { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin: 0; white-space: normal; }
+.services-svc {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 var(--space-2);
+  padding: 0 var(--space-2);
+  border-radius: var(--r-sm);
+  background: var(--color-sunken);
+  line-height: var(--lh-mono);
+}
+.services-svc-name { color: var(--color-ink-2); font-weight: var(--fw-medium); }
+.services-port { color: var(--color-ink-muted); }
+.services-port a { color: var(--color-accent); }
+.services-said { margin: 0; }
+/* The sentences under a row (not ready, Runs as…, why Share is off) wrap; never cut. */
+.services-row-main > .list-meta,
+.services-row-share > .list-meta { margin: 0; white-space: normal; overflow-wrap: anywhere; }
+/* Actions by weight: the row's own verb plain, the rest ghost, the destructive ones a group apart. */
+.services-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--space-2) var(--space-4); margin-left: auto; }
+.services-actions-group { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1); }
+.services-actions-danger { gap: var(--space-2); padding-left: var(--space-4); border-left: var(--stroke-thin) solid var(--color-border); }
+.services-actions-note { margin: 0; max-width: 28rem; text-align: right; white-space: normal; }
+.services-main-start { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); margin-top: var(--space-3); }
+.services-main-start .services-said { flex-basis: 100%; }
+.services-shared { margin-top: var(--space-5); }
+/* Running branches: a project's name, then its copies as the tab draws them, tighter. */
+.running-copies-project { padding: var(--space-3) 0; border-bottom: var(--stroke-thin) solid var(--color-border); }
+.running-copies-project:first-child { padding-top: 0; }
+.running-copies-project:last-child { border-bottom: 0; padding-bottom: 0; }
+.running-copies-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-1) var(--space-3); margin: 0 0 var(--space-1); }
+.running-copies-project .services-row { min-height: 0; padding: var(--space-2) 0; align-items: center; }
+/* The logs: mono, 24-hour times, the newest at the bottom. */
+.services-logs-lines {
+  margin: 0;
+  max-height: 60dvh;
+  overflow: auto;
+  padding: var(--space-3);
+  border-radius: var(--r-sm);
+  background: var(--color-sunken);
+  color: var(--color-ink);
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono);
+  line-height: var(--lh-mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.services-log-meta { color: var(--color-ink-muted); }
+/* Narrow: a row's facts first, then its actions under them at full touch size; the destructive
+   group on its own line, its divider turned to a gap. */
+@container services (max-width: 479px) {
+  .services-row { flex-direction: column; flex-wrap: nowrap; align-items: stretch; }
+  .running-copies-project .services-row { align-items: stretch; }
+  .services-row-main { min-width: 0; }
+  .services-actions { flex-direction: column; align-items: flex-start; justify-content: flex-start; gap: var(--space-2); margin-left: 0; }
+  .services-actions-group { gap: var(--space-2); }
+  .services-actions .button { min-height: var(--control-md); }
+  .services-actions-danger { padding-left: 0; border-left: 0; }
+  .services-actions-note { text-align: left; max-width: none; }
+}
+/* A copy's share links: a chip, then its own Copy Link and Delete Link; the form under the row's facts. */
+/* The links and the Share form take the row's whole width, under its facts and actions; nothing there, no line. */
+.services-row-share { flex-basis: 100%; min-width: 0; }
+.services-row-share:not(:has(*)) { display: none; }
+/* Each link is one group (chip, Copy Link, Delete Link) that wraps as a whole, never apart; an armed
+   Delete's line wraps under it. */
+.services-links { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-5); margin: 0; padding: 0; list-style: none; }
+.services-link { display: inline-flex; flex-wrap: nowrap; align-items: center; gap: var(--space-2); }
+.services-link:has(> .delete-note) { flex-wrap: wrap; }
+/* A phone's width can be under one group's: it wraps inside then, rather than scroll sideways. After
+   the rule above, which it overrides. */
+@container services (max-width: 479px) {
+  .services-link { flex-wrap: wrap; }
+}
+.services-share-form { margin-top: var(--space-2); padding: var(--space-3); border-radius: var(--r-md); background: var(--color-sunken); }
+.services-share-fields { display: flex; flex-wrap: wrap; gap: var(--space-3); }
+.services-share-fields .field { min-width: 10rem; }

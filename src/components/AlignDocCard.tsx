@@ -1,6 +1,7 @@
 import { createContext, For, Show, useContext } from "solid-js";
 import type { AlignDocInfo, AlignQuestionInfo, AlignRowInfo } from "../../shared/protocol";
 import { ALIGN_STATUS_CHIP, alignStatusOf, cardSections, isOpenDoc, openCount, openLabel, optionLetter, QUESTION_CHIP, questionStateOf, recommendedOption, type AlignCardSection } from "../lib/align";
+import { adversarialReview, PLAN_REVIEW_WAIT, planReviewRunning, reviewFoot, reviewLinesOf } from "../lib/align-review";
 import { Chip, Icon } from "./ui";
 import "../design/align-viewer.css";
 
@@ -28,6 +29,11 @@ export interface AlignAnswer {
   /** Why "Go With Recommendations" can't send now, else null. */
   goBlocked(): string | null;
   goWithRecommendations(doc: string): void;
+  /** Adversarial review is on in this chat (§chat.alignment-review/card): the foot offers Review Plan / Review Diff. */
+  review?(): boolean;
+  /** Why a review button can't send now (no reviewer for the chat's profile, or Go's own blocks), else null. */
+  reviewBlocked?(): string | null;
+  requestReview?(doc: string, phase: "plan" | "diff"): void;
 }
 export const AlignAnswerContext = createContext<AlignAnswer | null>(null);
 
@@ -91,9 +97,26 @@ export function AlignDocCard(props: { doc: AlignDocInfo; line?: string }) {
   const titleId = `align-doc-${++seq}`;
   const hintId = `${titleId}-hint`;
   const ctx = useContext(AlignAnswerContext);
-  /** Answerable: this card is its alignment's newest revision, open, with a question open. */
-  const answer = () => (ctx?.on() && ctx.current(props.doc.id)?.rev === props.doc.rev && isOpenDoc(props.doc) && openCount(props.doc) > 0 ? ctx : null);
-  const goBlocked = () => answer()?.goBlocked() ?? null;
+  /** This card is its alignment's newest revision, in a chat that takes answers. */
+  const newest = () => !!ctx?.on() && ctx.current(props.doc.id)?.rev === props.doc.rev;
+  /** Answerable: newest, open, with a question open. */
+  const answer = () => (newest() && isOpenDoc(props.doc) && openCount(props.doc) > 0 ? ctx : null);
+  /** With adversarial review on: what the foot offers for review (a button, or the phase's verdict line). */
+  const review = () => (newest() && adversarialReview() && ctx?.review?.() ? reviewFoot(props.doc) : null);
+  const reviewButton = () => {
+    const r = review();
+    return r?.kind === "button" ? r : null;
+  };
+  const reviewVerdict = () => {
+    const r = review();
+    return r?.kind === "line" ? r.text : null;
+  };
+  const reviewBlocked = () => ctx?.reviewBlocked?.() ?? null;
+  const goBlocked = () => {
+    const a = answer();
+    if (!a) return null;
+    return adversarialReview() && planReviewRunning(props.doc) ? PLAN_REVIEW_WAIT : a.goBlocked();
+  };
   // "Aligning" is every open document's default: only a later status earns a chip.
   const status = () => {
     const s = alignStatusOf(props.doc);
@@ -119,24 +142,47 @@ export function AlignDocCard(props: { doc: AlignDocInfo; line?: string }) {
         </p>
       </header>
       <AlignDocBody doc={props.doc} answer={answer()} />
-      <Show when={answer()}>
-        {(a) => (
-          <div class="card-foot align-doc-foot">
-            <button
-              type="button"
-              class="button button-sm"
-              aria-disabled={goBlocked() ? "true" : undefined}
-              aria-describedby={hintId}
-              title={goBlocked() ?? undefined}
-              onClick={() => !goBlocked() && a().goWithRecommendations(props.doc.id)}
-            >
-              Go With Recommendations
-            </button>
-            <span class="align-doc-foot-hint" id={hintId}>
-              {goBlocked() ?? "Or pick some answers and type the rest below."}
-            </span>
-          </div>
-        )}
+      <Show when={answer() || review()}>
+        <div class="card-foot align-doc-foot">
+          <Show when={answer()}>
+            {(a) => (
+              <>
+                <button
+                  type="button"
+                  class="button button-sm"
+                  aria-disabled={goBlocked() ? "true" : undefined}
+                  aria-describedby={hintId}
+                  title={goBlocked() ?? undefined}
+                  onClick={() => !goBlocked() && a().goWithRecommendations(props.doc.id)}
+                >
+                  Go With Recommendations
+                </button>
+                <span class="align-doc-foot-hint" id={hintId}>
+                  {goBlocked() ?? "Or pick some answers and type the rest below."}
+                </span>
+              </>
+            )}
+          </Show>
+          {/* Adversarial review (§chat.alignment-review/card): its phase's button while that phase
+              is missing or skipped, else its verdict line; a click only sends a message. */}
+          <Show when={reviewButton()}>
+            {(b) => (
+              <button
+                type="button"
+                class="button button-sm align-review-button"
+                aria-disabled={reviewBlocked() ? "true" : undefined}
+                title={reviewBlocked() ?? undefined}
+                onClick={() => !reviewBlocked() && ctx?.requestReview?.(props.doc.id, b().phase)}
+              >
+                {b().label}
+              </button>
+            )}
+          </Show>
+          <Show when={reviewVerdict()}>{(text) => <span class="align-doc-foot-hint align-review-verdict">{text()}</span>}</Show>
+          <Show when={reviewButton() && !answer() && reviewBlocked()}>
+            <span class="align-doc-foot-hint">{reviewBlocked()}</span>
+          </Show>
+        </div>
       </Show>
     </article>
   );
@@ -150,6 +196,7 @@ function AlignDocBody(props: { doc: AlignDocInfo; answer?: AlignAnswer | null })
       <Show when={props.doc.phase === "dropped" && props.doc.droppedWhy}>
         <p class="align-doc-dropped">Dropped: <Inline text={props.doc.droppedWhy ?? ""} /></p>
       </Show>
+      <AlignReviewLines doc={props.doc} />
       {/* The reading order is `cardSections`' own: the approach open between the summary and the
           questions, then the folded sections below the questions. */}
       <For each={sections().filter((s) => s.kind === "approach")}>{(s) => <AlignApproach section={s} />}</For>
@@ -160,6 +207,44 @@ function AlignDocBody(props: { doc: AlignDocInfo; answer?: AlignAnswer | null })
       </Show>
       <For each={sections().filter((s) => s.kind !== "approach")}>{(s) => <AlignSection section={s} />}</For>
     </>
+  );
+}
+
+/** The review record, one line per recorded phase and each open blocker with its check (§chat.alignment-review/card). Only with the feature on. */
+function AlignReviewLines(props: { doc: AlignDocInfo }) {
+  const lines = () => (adversarialReview() ? reviewLinesOf(props.doc) : []);
+  return (
+    <Show when={lines().length > 0}>
+      <ul class="align-review" aria-label="Review">
+        <For each={lines()}>
+          {(l) => (
+            <li class="align-review-line">
+              <Chip tone={l.tone}>{l.phase === "plan" ? "Plan" : "Diff"}</Chip>
+              <span class="align-review-text">
+                {l.text}
+                <Show when={l.model}>
+                  <span class="align-review-model"> · {l.model}</span>
+                </Show>
+              </span>
+              <Show when={l.open.length > 0}>
+                <ul class="align-review-blockers">
+                  <For each={l.open}>
+                    {(b) => (
+                      <li>
+                        <span class="text-mono align-item-id">{b.id}</span> <Inline text={b.title} />
+                        <span class="align-review-check">
+                          Check: <code>{b.check}</code>
+                        </span>
+                      </li>
+                    )}
+                  </For>
+                </ul>
+              </Show>
+            </li>
+          )}
+        </For>
+      </ul>
+    </Show>
   );
 }
 

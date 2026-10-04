@@ -357,8 +357,11 @@ mesh off. Copy is §design.copy-deck/public-links.
   port, expiring with it; its label is never stored, and the send carries its link once.
 - **What else a preview has** is kept beside it, in `<stateRoot>/preview-kept.json` (0600, written
   atomically, host-local, never synced or committed), per preview id: its link, its target (`port`,
-  or `static` with the folder Sova serves, §mesh.public/preview-serve), the coding session and
-  branch it shows, and its purpose, each only when known. It is read tolerantly: a file that
+  or `static` with the folder Sova serves, §mesh.public/preview-serve, or `instance`: a running
+  copy's endpoint, with the instance id, the endpoint, the generation it was made at and, for a
+  static copy, the serve that must hold the port, §app.project-services/share), the coding session and
+  branch it shows, and its purpose, each only when known. A copy's link dials its port as a port
+  preview does; a static copy's only while that copy's own serve holds the port. It is read tolerantly: a file that
   can't be read keeps no link and serves no folder, and every preview still opens. The link is a
   secret kept for the operator: the project overseer never sees it, and names a preview by its id
   (§app.project-overseer/previews). A preview made before this file existed has no kept link, only
@@ -369,24 +372,27 @@ mesh off. Copy is §design.copy-deck/public-links.
   be an integer 1–65535, not 4800, 4801, 4802 or 4810, and not a port this Sova process binds, its
   settings name (main, peer, share, ingress) or it serves a folder preview on. A `folder` is
   served by Sova itself (§mesh.public/preview-serve) and needs `sessionId`, the coding session of
-  the project whose worktree holds it. `purpose` is one line, at most 200 characters. `days` is 1
-  by default and at most 30. With no preview address it is refused with a named reason, and no
+  the project whose worktree holds it. A port held by a running copy (or a shared service) of a
+  project whose definition declares `sensitive` data is refused (`sensitive`: "…whose data is
+  derived from production: copies are never shared.", §app.project-services/share). `purpose` is one
+  line, at most 200 characters. `days` is 1 by default and at most 30. With no preview address it is refused with a named reason, and no
   link is made: `no-address` (none set here or on the gateway) or `gateway-old` (the via gateway
   doesn't list kind `p`: "{gateway} needs updating before it can carry preview links."). The
   answer carries the link, and the link is kept.
 - The app is always dialed at `127.0.0.1:<port>`, then `[::1]:<port>` when nothing listens there,
   and never at any other address.
-- **Turn Off** (`POST /api/previews/<id>/off`) revokes it, and every sibling of it: from then on its origin answers 410,
+- **Turn Off** (`POST /api/previews/<id>/off`; the operator's **Delete**, §mesh.public/preview-card) revokes it, for good, and every sibling of it: from then on its origin answers 410,
   and every open HTTP connection and websocket through it is closed at once. The same happens
   when it expires. **Extend** (`POST /api/previews/<id>/extend {days}`) moves its expiry to `days`
-  from now (at most 30; a sibling's, never past its original's). `GET /api/previews?projectId`
+  from now (at most 30; a running copy's link at most 7; a sibling's, never past its original's). `GET /api/previews?projectId`
   lists a project's previews (every project's without it) with each one's port, target, expiry,
   state and whether something listens on its port now (`running`; for a folder, whether Sova
   serves it now), its kept link (`url`, null when none is kept), purpose, coding session and branch
   (a recorded one, else the one matched by its worktree, §app.project-overseer/previews), with the
   preview address's state; a sibling carries `siblingOf`, `sentTo` and `sentToName`, and the lists
   name it on its original's **Sent to** line, or as "sent to {name}" on a row of its own when its
-  original isn't listed (§mesh.public/preview-card).
+  original isn't listed (§mesh.public/preview-card); a running copy's link also carries its
+  `instance` and `endpoint`.
 - A routed host sends each live preview's hash as a `p` row (§mesh.public/registry) only to a
   gateway target whose own info listed `p`; its gateway routes the preview host to its ingress
   (§mesh.public/routing).
@@ -467,26 +473,50 @@ would have expired, and answers them 410 too.
 - The project page has a **Previews** card: one row per active preview, where a person's own link
   (a sibling, §mesh.public/preview) is not a row of its own but a recipient of its original's row.
   The row's title is its purpose, else "Preview of port {n}" or "Preview of {folder}" ("the
-  worktree" for the worktree itself). Under it, on one line that wraps only when it must: its
-  coding session's title (a link to that session) · its branch in mono, cut to one line with the
-  whole name on hover · what it serves ("app on port {n}" or "static files") · "Matched by the
-  app's folder" when the session was matched now by the listener's worktree rather than recorded
-  (§app.project-overseer/previews) · a state chip, `Serving` (success) when the app answers on its
-  port or Sova serves its folder, else `Nothing on port {n}` or `Folder not served` (warn) · who
-  made it ("Made by you", or "Made by the overseer", a link to that conversation) · "Expires in
-  {time}", each part only when known. Then **Copy Link** ("Link copied.") when a link is kept or
-  this page just minted it, else, for an original only, the line "Link shown only when it was
-  made."; and **Turn Off** (a second click confirms: "Turn Off Preview?", or "Turn Off All {n}
-  Links?" counting the preview and its listed recipients when it has any; its tooltip says it
-  turns off the preview and every link sent from it; done: "Preview turned off.").
-- A row with active siblings has a **Sent to** line under it: each recipient's name (else "a
-  person"; its tooltip says who sent it, "Sent by you" or "Sent by the overseer") with its own small **Turn Off** (tooltip "Turns off only {name}'s link."; a second
-  click confirms: "Turn Off {name}'s Link?"; done: "{name}'s link turned off."), which turns off
-  only that person's link. A sibling whose original is not listed (turned off, expired or gone)
-  keeps a row of its own, with "sent to {name}" among its parts, no Copy Link and no "Link shown
-  only when it was made." line. Turned-off and expired previews are not listed. Below 480px each
-  row stacks its lines above its buttons, which share the row's width, and a long title or folder
-  wraps instead of widening the page.
+  worktree" for the worktree itself), as plain text. Under it its parts, in three groups, each part
+  only when known and a group only when it has one: where it comes from, its coding session's
+  title (a link to that session) · its branch in mono, cut to one line with the whole name on
+  hover and, on a tap, unfolded in place; what it serves ("app on port {n}" or "static files") ·
+  "Matched by the app's folder" when the session was matched now by the listener's worktree rather
+  than recorded (§app.project-overseer/previews) · a state chip, `Serving` (success) when the app
+  answers on its port or Sova serves its folder, else `Nothing on port {n}` or `Folder not served`
+  (warn); and who made it ("Made by you", or "Made by the overseer", a link to that conversation) ·
+  "Expires in {time}". A group stays whole and wraps beside the others; below 480px each group
+  takes a line of its own. Then, on a line of buttons under the row, **Copy Link** ("Link
+  copied.") and **Open** (the preview's address in a new tab) when a link is kept or this page
+  just minted it, else, for an original only, the line "Link shown only when it was made."; and at
+  the line's right a compact **Delete Preview**, which reads **Delete Preview + {n} Link(s)** when
+  it has listed recipients (its tooltip says it deletes the preview and every link sent from it;
+  done: "Preview deleted."; a failure: "Couldn't delete it. {reason}"). The card says Delete,
+  never Turn Off, because it is for good: the preview is turned off (§mesh.public/preview), every
+  link sent from it answers 410 from then on and nothing turns one back on, while the app on its
+  port keeps running. So a second click confirms, reading "Delete?", and while it waits a
+  line under the buttons says "The link stops working for good. Your app keeps running; make a
+  New Preview to share it again." (with recipients: "This link and the {n} sent from it stop
+  working for good. …"). When the card lists a single preview and shows New Preview, that Delete
+  sits on New Preview's line instead, at its right, with that line under it. The card's line under
+  its heading says it shares an app "until you delete it."
+- A row with active siblings has a **Sent to** line under its parts: each recipient's name (else "a
+  person"; its tooltip says who sent it, "Sent by you" or "Sent by the overseer") with its own
+  small **Delete Link** on that person's line (accessible name "Delete {name}'s Link"; tooltip
+  "Deletes only {name}'s link."; a second click confirms: it reads "Delete {name}'s
+  Link?" and a line under that person's line says "{name}'s link stops working for good."; done:
+  "{name}'s link deleted."), which turns off only that person's link, for good. A sibling whose original
+  is not listed (turned off, expired or gone) keeps a row of its own, with "sent to {name}" in its
+  last group, no Copy Link, no Open and no "Link shown only when it was made." line; its button
+  reads **Delete {name}'s Link** and confirms and reports like a recipient's. Turned-off and
+  expired previews are not listed. Below 480px a row drops its own side padding, so its title
+  lines up with the card's, its buttons keep their labels' width, and a long title or folder wraps
+  instead of widening the page.
+- A running copy's link (§app.project-services/share) is a row too. Its title is its purpose, else
+  "Preview of a copy's {endpoint}"; what it serves reads "{endpoint} of the copy in slot {n}" (or
+  "of the main checkout's copy"), with the copy's branch; its chip is the copy's state as the
+  engine's status reads it at each poll, from the endpoint's service: `Running` (success: ready or
+  degraded), `Starting` (info) or `Stopped` (warn, anything else). A stopped copy's row offers
+  **Start**, the operator's `up` of that copy (its tooltip: "Starts this copy. A visit to its link
+  never starts it."; the chip reads Starting until it answers; done: "Copy started.", else
+  "Couldn't start the copy. {reason}"). Reading the card never starts anything, and a turned-off
+  link's copy is not read.
 - Then a **New Preview** button, which opens the form in place: Port, Expires (1, 7 or 30 days),
   an optional Purpose (at most 200 characters, sent only when not blank), the warning "Anyone with
   this link can use the app on port {n} as if they were on this computer, including its logins,
@@ -494,8 +524,8 @@ would have expired, and answers them 410 too.
   refused mint shows its reason on the form; a made one closes it. With no preview address the
   card says so and how to set it, and offers no New Preview.
 - The Shares page lists this host's live previews the same way, one row per original with the
-  project, port, expiry and Turn Off, its recipients on a **Sent to** line each with its own Turn
-  Off, and a sibling whose original is not listed on a row of its own. A preview with recorded
+  project, port, expiry and the card's **Delete Preview** (with its confirm, line and toasts), its
+  recipients on a **Sent to** line each with its own **Delete Link** (likewise), and a sibling whose original is not listed on a row of its own. A preview with recorded
   visits (§mesh.public/visitor-log) gets a **Visits** disclosure under its row, and a recipient
   with visits one beside their name.
 
@@ -505,9 +535,11 @@ would have expired, and answers them 410 too.
   the project's coding sessions on this host (§app.project-overseer/coding-worktrees), judged at
   its real path, with no part of it below the worktree starting with a dot. Sova serves it itself
   on `127.0.0.1:<port>`, a free port it picks at the mint and records as the preview's `port`
-  (§mesh.public/preview), and the preview dials that port like any other. Sova never starts,
-  stops or restarts a program for a preview: a port preview shows what a coding session already
-  serves, and whoever runs that app starts it again when it stops ("Nothing on port {n}").
+  (§mesh.public/preview), and the preview dials that port like any other. A visit never starts,
+  stops or restarts anything: a port preview shows what a coding session already serves, and
+  whoever runs that app starts it again when it stops ("Nothing on port {n}"); a running copy's
+  link (§app.project-services/share) shows its copy, which only the operator starts again (Start on
+  the Previews card, §mesh.public/preview-card).
 - **Files only, inside the folder.** It answers only `GET` and `HEAD` (any other method: 405). The
   path is judged raw and after decoding, segment by segment: a segment that starts with `.` (a
   dot-file or dot-folder, `.git` and `.sova` included, `.` and `..`), an encoded `/` or `\`, a

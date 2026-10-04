@@ -82,7 +82,8 @@
 /* ---- #/shares ---- */
 .shares-card { display: flex; flex-direction: column; gap: var(--space-3); padding: var(--space-4); max-width: 880px; }
 .shares-card-title { margin: 0; font-size: var(--fs-heading-s); line-height: var(--lh-heading-s); font-weight: var(--fw-semibold); color: var(--color-ink); }
-.shares-row { gap: var(--space-3); align-items: flex-start; flex-wrap: wrap; }
+/* Buttons that wrap under a row's details keep clear of them (row-gap); beside them, the column gap. */
+.shares-row { gap: var(--space-4) var(--space-3); align-items: flex-start; flex-wrap: wrap; }
 .shares-row .list-main { flex: 1; min-width: 14rem; }
 .shares-row-title { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); white-space: normal; overflow-wrap: anywhere; }
 .shares-row .list-meta { white-space: normal; overflow-wrap: anywhere; }
@@ -101,30 +102,49 @@
 .share-recipient-error { flex-basis: 100%; margin: 0; }
 
 /* ---- Project page · Previews card ---- */
-.previews-row { align-items: flex-start; flex-wrap: wrap; }
-.previews-row .list-main { min-width: 14rem; }
+.previews-row { flex-direction: column; align-items: stretch; gap: var(--space-2); }
+.previews-row .list-main { min-width: 0; }
 .previews-row .list-title,
 .previews-row .list-meta { white-space: normal; overflow-wrap: anywhere; }
-/* Session · branch · what it serves: the dot sits in the gap before a part. A part that wraps to the
-   start of a line puts its dot left of the line's box, which the line clips: it never leads a line. */
-.previews-row-line { display: flex; flex-wrap: wrap; align-items: center; column-gap: var(--space-4); row-gap: 2px; overflow: clip; overflow-clip-margin: 2px; }
+/* Its parts in groups (where it comes from · what it serves and whether it does · who made it and
+   when it ends). A group stays whole and wraps beside the others; the dot sits in the gap before a
+   group, or a part inside one. A group or part that wraps to the start of a line puts its dot left
+   of the box, which the box clips: a dot never leads a line. */
+.previews-row-parts { display: flex; flex-wrap: wrap; align-items: center; column-gap: var(--space-4); row-gap: 2px; overflow: clip; overflow-clip-margin: 2px; }
+.previews-row-line { display: flex; flex-wrap: wrap; align-items: center; column-gap: var(--space-4); row-gap: 2px; min-width: 0; margin: 0; }
+.previews-row-line + .previews-row-line,
 .previews-row-line > :not(.chip) + :not(.chip) { position: relative; }
+.previews-row-line + .previews-row-line::before,
 .previews-row-line > :not(.chip) + :not(.chip)::before { content: "·"; position: absolute; left: calc(var(--space-4) / -2); transform: translateX(-50%); color: var(--color-ink-muted); }
-/* A long branch takes one line, cut short; its whole name is its tooltip. */
-.previews-row-line > .previews-row-branch { min-width: 0; max-width: min(32ch, 100%); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-/* The people a preview was sent to: a label, then each name with its own small Turn Off. */
-.previews-sent { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-3); margin-top: var(--space-1); }
+/* A long branch takes one line, cut short; its whole name is its tooltip, and a tap unfolds it. */
+.previews-row-branch { min-width: 0; max-width: 32ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0; border: 0; background: none; color: inherit; text-align: left; cursor: pointer; }
+.previews-row-branch:focus-visible { outline: var(--focus-ring); outline-offset: 2px; border-radius: var(--radius-xs); }
+.previews-row-branch-open { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
+/* The people a preview was sent to: a label, then each name with its own small Delete Link. */
+.previews-sent { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-1) var(--space-3); margin-top: var(--space-1); }
 .previews-sent-label { color: var(--color-ink-muted); }
-.previews-recipients { display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-3); margin: 0; padding: 0; list-style: none; }
+.previews-recipients { flex: 1 1 12rem; min-width: 0; display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-3); margin: 0; padding: 0; list-style: none; }
 .previews-recipient { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
 /* A recipient's own Visits (§mesh.public/visitor-log) folds out on a line of its own. */
 .shares-recipient > .share-visits, .previews-recipient > .share-visits { flex-basis: 100%; margin-top: 0; }
 .previews-recipient-name { font-weight: var(--fw-medium); color: var(--color-ink); }
 .previews-recipient-off.button-sm { min-height: 24px; padding: 0 var(--space-2); }
+/* The row's buttons on a line under it: Start, Copy Link and Open at the left, the preview's own
+   Delete at the right, apart from them, each as wide as its label. */
+.previews-row-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin-top: var(--space-2); }
+.previews-row-actions > .previews-off { margin-left: auto; }
+/* New Preview, and the only row's Delete at the right of the same line. */
+.previews-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2) var(--space-3); }
+/* While a Delete waits for its second click: that the link ends for good, under the buttons (a
+   recipient's under their own line). */
+.previews-off-note { margin: 0; font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-2); white-space: normal; overflow-wrap: anywhere; }
+.previews-recipient > .previews-off-note { flex-basis: 100%; }
 .previews-form-actions { display: flex; gap: var(--space-2); }
-/* A phone stacks the row: its lines first, then its buttons across the width. */
+/* A phone: the row loses its own side padding, so its title lines up with the card's heading, and
+   each group of parts takes a line of its own. */
 @media (max-width: 479px) {
-  .previews-row { flex-direction: column; flex-wrap: nowrap; align-items: stretch; }
-  .previews-row .list-main { min-width: 0; }
-  .previews-row-actions > .button { flex: 1 1 0; }
+  .previews-row { padding-left: 0; padding-right: 0; }
+  .previews-row-parts { flex-direction: column; align-items: flex-start; }
+  .previews-row-line { max-width: 100%; }
+  .previews-row-line + .previews-row-line::before { content: none; }
 }

@@ -21,7 +21,8 @@ CHROMIUM_BIN=/usr/bin/google-chrome-stable node scripts/perf-load/run.mjs --tree
 
 What it does: builds `<tree>/.agent` (hermetic), seeds 480 synthetic session files across 40 cwds,
 builds `<tree>/dist` if missing, starts `<tree>`'s server on the given port with
-`PI_CODING_AGENT_DIR=<tree>/.agent`, runs `churn.mjs` (appends messages + flips fake live records),
+`PI_CODING_AGENT_DIR=<tree>/.agent` (on Bun, `$SOVA_BUN` or `bun` on PATH; `--runtime node` or
+`SOVA_RUNTIME=node` runs it on Node), runs `churn.mjs` (appends messages + flips fake live records),
 and runs `probe.mjs`, which starts its **own** isolated headless browser (playwright skill, never a
 shared one) and measures over the window:
 

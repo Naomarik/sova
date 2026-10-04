@@ -30,6 +30,7 @@ import { parseWakeNudge } from "../shared/wake";
 import { inputSourceOf, type QueueImage, type QueueKind, WebQueue, type WebQueueItem } from "./queue";
 import { decodeUsageTotal, decodeWorkers } from "./insights";
 import { readLive, readOwnLiveRecords, workerCountsOf } from "./live";
+import { sessionsChanged } from "./list-generation";
 import { appliesAfter, defaultPatchOf, mergeMode, MINOR_MODES, modeApplyPlan, modeInfo, pinEntryFor, readMode, resolveChatMode, writeMode, type ModePatch, type ModeState } from "./mode-state";
 import { loadDefaults, saveDefaults } from "./web-defaults";
 import { subagentProfilesInfo, requireSubagentProfile, saveSubagentProfileDefault } from "./subagent-profiles";
@@ -40,33 +41,38 @@ import { claudeSpawnModels, WorkerContextReader, withWorkerContext } from "./wor
 import { resumeCommandOf, resumeWorker, type ResumeOutcome } from "./worker-resume";
 import { applySandbox, onSandboxAppend, sandboxCommandOf, sandboxMessage, type SandboxHost } from "./sandbox-state";
 import { chatClaudeLogin, claudeLoginAfterHello, claudeLoginMessage, isClaudeLoginEntry, LoginPick, loginName } from "./claude-login-state";
-import { contextForBranch, normalizeEntries, normalizeEntry } from "./transcript";
+import { contextForBranch, normalizeEntries, normalizeEntry, withoutSignatures } from "./transcript";
 import { cutTail, type HistoryPart, pullFields } from "./tail-hello";
 import { isOverseerId } from "./overseer-store";
 import { attachStreamGuard, capsFor, type StreamTrip } from "./stream-guard";
+import { useSlicedProviderReads } from "./runtime-quirks";
 import { targetOfCwd } from "./targets";
 import { sovaToken } from "./auth";
-import { claudeCodeProviderEnabled } from "./web-settings";
+import { installWorkerNice, lowerToolCommands } from "./process-priority";
 import { ForeignWriteGuard, markOwned, markOwnedStat, recentForeignWriteAgeSec } from "./write-guard";
 import { monitorExtension } from "./resource-monitor";
-import { applyForkCacheRouting, forkCacheExtension } from "./session-fork-cache";
+import { applyForkCacheRouting, forkCacheExtension } from "../pi-config/extensions/subagents/fork/cache.ts";
 import { visCheckExtension, type VisCheckHost } from "./vis-check";
 import { projectEngine } from "./project-services/routes";
 import { projectVerbsExtension } from "./project-services/tools";
 import { excludedTools, GRANT_TOOLS, keyOf, KNOWN_REMOVABLE_TOOLS, PROFILE_ENTRY, SESSION_SENT_ENTRY, singletonRaceText, type ProfileEntryData, type SessionSentData } from "../shared/profiles";
 import { profileOnBranch } from "./session-profile";
+import { LOADOUT_ENTRY, loadoutOnBranch, loadoutOverrides, type LoadoutEntryData, type LoadoutState } from "./session-loadout";
 import { RunState, SessionLimits, sessionPowersExtension } from "./session-powers";
 import { queuePushExtension, topicStore } from "./topics";
 import { instrumentModelRuntime } from "../pi-config/extensions/llm-inflight/runtime.ts";
 import { markDegraded } from "../pi-config/extensions/llm-inflight/tracker.ts";
+import { readWebSettings } from "./web-settings";
 
 const GUARD_POLL_MS = 3000;
 /** Hosted workers' context fill, read off their transcripts' tails; shared, mtime-gated. */
 const workerContextReader = new WorkerContextReader();
 
-/** The experimental Settings switch, as the claude-code extension registers it
-    (pi-config/extensions/claude-code/provider/index.ts CLAUDE_PROVIDER_FLAG). */
+/** The claude-code extension's provider flag (pi-config/extensions/claude-code/provider/index.ts
+    CLAUDE_PROVIDER_FLAG). Always on: every hosted runtime that loads extensions sets it. */
 const CLAUDE_CODE_FLAG = "claude-code-provider";
+/** The mode extension's flag behind adversarial review (pi-config/extensions/mode/index.ts REVIEW_FLAG). */
+const REVIEW_FLAG = "adversarial-review";
 
 /** This server's own bound origin, for the `link` extension's `sova-link` flag (setLinkOrigin). */
 let linkOrigin: string | null = null;
@@ -86,20 +92,23 @@ export const currentLinkOrigin = (): string | null => linkOrigin;
  *   marker (`outline: false`, FANOUT_MEMBER_ENTRY).
  * - `target`: a remote session (cwd = a target placeholder, server/targets.ts) switches
  *   pi-config's remote extension on for that target.
- * - `claude-code-provider`: the experimental Settings switch. When on, the claude-code extension
- *   registers the Claude Code CLI's models as first-class pi models. Read per runtime, so the
- *   switch applies to sessions created after it changed and never reaches an open one.
+ * - `claude-code-provider`: always set, so the claude-code extension registers the Claude Code
+ *   CLI's models as first-class pi models (§app.claude-code-provider/always-on). With no `claude`
+ *   CLI the extension registers nothing and the session carries on.
  * - `sova-link`: this server's own bound origin (setLinkOrigin), switching pi-config's `link`
  *   extension on (link_members/link_send/link_inbox call its /api/mesh/links/* routes). Absent
  *   until the listener is bound; workers never get it, so the tools are inert there.
  * - `sova-link-token`: beside `sova-link`, this server's per-install token, which the link tools
  *   send back as `x-sova-token` (§app.access/callers). In-process only: never argv, never env.
+ * - `adversarial-review`: only while Settings → Experimental's Adversarial review is saved on
+ *   (§chat.alignment-review/flag); read at each runtime start, so an open chat keeps what it began with.
  */
-function sessionFlags(cwd: string, outline = true, claudeCode = claudeCodeProviderEnabled()): Map<string, boolean | string> {
+function sessionFlags(cwd: string, outline = true): Map<string, boolean | string> {
   const flags = new Map<string, boolean | string>(outline ? [["topic-outline-headless", true]] : []);
   const target = targetOfCwd(cwd);
   if (target) flags.set("target", target);
-  if (claudeCode) flags.set(CLAUDE_CODE_FLAG, true);
+  flags.set(CLAUDE_CODE_FLAG, true);
+  if (readWebSettings().experimental.adversarialReview) flags.set(REVIEW_FLAG, true);
   if (linkOrigin) {
     flags.set("sova-link", linkOrigin);
     flags.set("sova-link-token", sovaToken());
@@ -109,8 +118,8 @@ function sessionFlags(cwd: string, outline = true, claudeCode = claudeCodeProvid
 
 /** The extension flags a runtime is handed: none for a loadout that loads no extension (a flag
     nobody registered only logs "Unknown option"), else sessionFlags. Exported for the tests. */
-export function extensionFlagsFor(cwd: string, outline: boolean, noExtensions: boolean, claudeCode = claudeCodeProviderEnabled()): Map<string, boolean | string> {
-  return noExtensions ? new Map() : sessionFlags(cwd, outline, claudeCode);
+export function extensionFlagsFor(cwd: string, outline: boolean, noExtensions: boolean): Map<string, boolean | string> {
+  return noExtensions ? new Map() : sessionFlags(cwd, outline);
 }
 
 /** The extensions every ordinary session loads beyond pi-config's: resource monitoring and
@@ -127,7 +136,7 @@ const DEFAULT_EXTENSION_FACTORIES = [
  * A flag no extension registered is NOT fatal: the SDK reports `Unknown option: --<flag>` as a
  * services diagnostic and carries on (verified against 0.86.1 with the switch on and a
  * claude-code extension that does not register it yet — the session still opened and every other
- * model still worked). That is what makes the experimental switch safe to leave on with an older
+ * model still worked). That is what makes the always-on provider flag safe with an older
  * pi-config: the provider is simply absent, and the diagnostic below says why.
  */
 async function servicesForCwd(
@@ -136,7 +145,9 @@ async function servicesForCwd(
   outline = true,
   resourceLoaderOptions?: CreateAgentSessionServicesOptions["resourceLoaderOptions"],
 ) {
-  return await createAgentSessionServices({
+  // Its workers and tool commands start below the server (§app.load-priority/workers).
+  installWorkerNice();
+  const services = await createAgentSessionServices({
     cwd,
     modelRuntime,
     extensionFlagValues: extensionFlagsFor(cwd, outline, !!resourceLoaderOptions?.noExtensions),
@@ -146,6 +157,8 @@ async function servicesForCwd(
     // and the monitor finds its Claude Code provider through the held sessions instead.
     resourceLoaderOptions: resourceLoaderOptions ?? { extensionFactories: [...DEFAULT_EXTENSION_FACTORIES] },
   });
+  lowerToolCommands(services.settingsManager);
+  return services;
 }
 
 /**
@@ -160,9 +173,15 @@ async function servicesForCwd(
  * fail startup. A failure just means the models are absent until a session opens.
  */
 export async function warmClaudeCodeProvider(modelRuntime: ModelRuntime, cwd: string): Promise<void> {
-  if (!claudeCodeProviderEnabled()) return;
   try {
-    const services = await servicesForCwd(cwd, modelRuntime);
+    // The provider flag alone: the throwaway session needs nothing else, and the link flags would
+    // read the access token, which throws (and logs its problem again) when the token file is damaged.
+    const services = await createAgentSessionServices({
+      cwd,
+      modelRuntime,
+      extensionFlagValues: new Map([[CLAUDE_CODE_FLAG, true]]),
+      resourceLoaderOptions: { extensionFactories: [...DEFAULT_EXTENSION_FACTORIES] },
+    });
     for (const d of services.diagnostics) console.warn(`[chat] claude-code warm-up ${d.type}: ${d.message}`);
     // The flag is only visible from session_start, and session_start is emitted by
     // AgentSession.bindExtensions (dist/core/agent-session.js:2029) — NOT by creating the session.
@@ -382,8 +401,14 @@ export function assertNotLive(path: string): void {
   }
 }
 
-/** Strip the per-delta `partial` snapshot (same as pi's rpc toJsonEvent) to keep frames small. */
-function toWireEvent(event: any): unknown {
+/** Strip the per-delta `partial` snapshot (same as pi's rpc toJsonEvent) to keep frames small, and
+    every provider signature (§chat.transcript/slim-rows: encrypted reasoning never reaches the
+    browser; message_end, turn_end and agent_end carry whole messages). */
+export function toWireEvent(event: any): unknown {
+  return withoutSignatures(wireEvent(event));
+}
+
+function wireEvent(event: any): unknown {
   if (event?.type !== "message_update") return event;
   const ame = event.assistantMessageEvent ?? {};
   let wire = ame;
@@ -986,6 +1011,9 @@ class ChatSession {
   }
   /** This runtime's profile, set by openSession (null for special kinds). */
   profileState: ProfileState | null = null;
+  /** The `sova-loadout` entry this runtime was built with, and the loader's unfiltered lists
+      (§chat.transcript/setup-card-toggles). Null for a special session, which keeps its own loadout. */
+  loadoutState: LoadoutState | null = null;
   /** The One at a time check passed for this runtime's first message. */
   private singletonCleared = false;
   /**
@@ -1615,6 +1643,9 @@ class ChatSession {
     this.guardTimer.unref();
     this.workersTimer = setInterval(() => this.pushWorkers(), GUARD_POLL_MS);
     this.workersTimer.unref();
+    // Provider bodies in reads no bigger than Node's, so the guard's abort lands as soon on any
+    // runtime (§app.server-runtime/quirks): the one place it is installed.
+    useSlicedProviderReads(session.agent);
     this.streamGuardOff?.();
     this.streamGuardOff = attachStreamGuard(session, () => capsFor(this.special), {
       onRunStart: () => (this.lastStreamTrip = null),
@@ -1632,6 +1663,9 @@ class ChatSession {
     });
     this.unsubscribe?.();
     this.unsubscribe = session.subscribe((event) => {
+      // A turn starting or settling, and a tool call ending (the Overseer's tools write stores in
+      // process), start the next session listing afresh (§app.session-list/listing-reuse).
+      if (event.type === "tool_execution_end" || event.type === "agent_start" || event.type === "agent_settled") sessionsChanged();
       // A Claude login picked during the reply goes in now, before the queue wake below can start
       // the next turn: applyLoginPick holds the web queue until it has landed
       // (§app.claude-logins/switch-queue).
@@ -1641,7 +1675,9 @@ class ChatSession {
         this.queue.onSdkEvent();
       }
       try {
-        this.broadcast({ type: "event", event: toWireEvent(event) });
+        const wire: Extract<ChatServerMessage, { type: "event" }> = { type: "event", event: toWireEvent(event) };
+        if (event.type === "message_end") this.holdForEntryId(wire, (event as { message?: unknown }).message);
+        else this.broadcast(wire);
       } catch (err) {
         console.error("[chat] failed to forward event", err);
       }
@@ -1795,6 +1831,34 @@ class ChatSession {
     this.flushDeferredAppends(); // open-time entries go first, as in pinMode
     this.session.sessionManager.appendCustomEntry(PROFILE_ENTRY, data);
     markOwned(this.path);
+  }
+
+  /**
+   * Write this session's context and skills entry (§chat.transcript/setup-card-toggles): the same
+   * window and refusals as a profile pick. The caller disposes the runtime afterwards, so the next
+   * open builds it with the entry.
+   */
+  writeLoadout(data: LoadoutEntryData): void {
+    if (this.special) throw new RefusedError("This session's context files and skills can't be switched.");
+    assertNotLive(this.path);
+    this.assertNoForeignWrites();
+    if (!this.isPristine()) throw new RefusedError("Context files and skills are fixed once a message is sent.");
+    if (this.session.isStreaming || this.isCompacting() || this.starting) throw new BusyError("Wait for the reply to finish first.", "busy");
+    this.flushDeferredAppends(); // open-time entries go first, as in writeProfile
+    this.session.sessionManager.appendCustomEntry(LOADOUT_ENTRY, data);
+    markOwned(this.path);
+  }
+
+  /** Whether the setup card may offer its switches now: what writeLoadout would accept, short of
+      a foreign writer (which only a write discovers). */
+  get loadoutToggleable(): boolean {
+    if (this.special || this.disposed || !this.isPristine()) return false;
+    try {
+      assertNotLive(this.path);
+    } catch {
+      return false;
+    }
+    return true;
   }
 
   /** Whether this chat is still before its first message (the picker is live). */
@@ -2504,7 +2568,7 @@ class ChatSession {
     if (after !== before)
       this.broadcast({
         type: "append",
-        items: [{ id: `thinking-${Date.now()}`, kind: "info", raw: { type: "thinking_level_change", thinkingLevel: after }, text: `Thinking: ${after}` }],
+        items: [{ id: `thinking-${Date.now()}`, kind: "info", meta: { type: "thinking_level_change" }, text: `Thinking: ${after}` }],
       });
     if (opts.save !== true) return after;
     if (this.overseer) overseerRuntime?.saveChoice({ thinking: after });
@@ -2932,7 +2996,42 @@ class ChatSession {
   }
 
   broadcast(msg: ChatServerMessage): void {
+    if (this.held) {
+      this.held.push(msg);
+      return;
+    }
     for (const c of this.clients) c.send(msg);
+  }
+
+  /** Broadcasts waiting behind a `message_end` until its entry id is known (holdForEntryId). */
+  private held: ChatServerMessage[] | null = null;
+  /**
+   * Sends a `message_end` tagged with the entry the SDK writes its message as (§chat.transcript/rendering,
+   * "Switching back": a live row knows its row). Listeners run BEFORE the SDK persists the message
+   * (agent-session.js `_handleAgentEvent`: `_emit`, then `appendMessage`, in the same synchronous
+   * stretch), so the event waits one microtask, as `markSend` does, and every broadcast meanwhile
+   * waits behind it: the order clients see is unchanged. Queued before `markSend`'s, so the leaf
+   * read here is still the message, never its marker.
+   */
+  private holdForEntryId(wire: Extract<ChatServerMessage, { type: "event" }>, message: unknown): void {
+    if (this.held) {
+      this.held.push(wire);
+      return;
+    }
+    this.held = [wire];
+    queueMicrotask(() => {
+      try {
+        const sm = this.session.sessionManager;
+        const leaf = sm.getLeafId();
+        const entry = leaf ? sm.getEntry(leaf) : undefined;
+        if (entry?.type === "message" && entry.message === message) wire.entryId = entry.id;
+      } catch {
+        // untagged: a client falls back to the rows it can see
+      }
+      const out = this.held ?? [];
+      this.held = null;
+      for (const m of out) this.broadcast(m);
+    });
   }
 
   /** Worker snapshot from this runtime's own live record (the sessions extension writes one
@@ -3317,6 +3416,7 @@ async function openSession(path: string, onDisposed: () => void): Promise<ChatSe
   // The profile the runtime was built with (§chat.profiles/enforcement), read from the branch at
   // every build: a pick disposes the runtime, so a runtime never outlives the profile it has.
   const profile: ProfileState = { data: null, excluded: [] };
+  const loadout: LoadoutState = { data: null };
   const createRuntime: CreateAgentSessionRuntimeFactory = async ({ cwd, sessionManager, sessionStartEvent }) => {
     // The outline opt-in is declined for a session an older build marked as a group member, and
     // the FILE says so (FANOUT_MEMBER_ENTRY), not a flag threaded through acquireChat, so the
@@ -3332,6 +3432,12 @@ async function openSession(path: string, onDisposed: () => void): Promise<ChatSe
     const data = special ? null : profileOnBranch(sessionManager.getBranch() as unknown as Parameters<typeof profileOnBranch>[0]);
     const snap = data?.profile ?? null;
     profile.data = data;
+    // The session's own context files and skills (§chat.transcript/setup-card-toggles), also read at
+    // every build: a flip disposes the runtime like a pick does. Special loadouts keep their own.
+    loadout.data = special ? null : loadoutOnBranch(sessionManager.getBranch() as unknown as Parameters<typeof loadoutOnBranch>[0]);
+    loadout.baseContext = undefined;
+    loadout.baseSkills = undefined;
+    const overrides = special ? undefined : loadoutOverrides(loadout);
     profile.run = undefined;
     profile.limits = undefined;
     if (snap?.grant.length) {
@@ -3354,6 +3460,7 @@ async function openSession(path: string, onDisposed: () => void): Promise<ChatSe
             queuePushExtension({ sessionId: () => sessionManager.getSessionId(), title: () => titleOf(sessionManager) }),
             ...powers,
           ],
+          ...overrides,
         });
     // Removals: the SDK's excludeTools, a filter on the registry itself, so no extension's
     // setActiveTools or re-registration brings a removed tool back.
@@ -3426,6 +3533,7 @@ async function openSession(path: string, onDisposed: () => void): Promise<ChatSe
     visHost.chat = chat;
     chat.deferredAppends = deferred;
     chat.profileState = profile;
+    if (!specialFor(sessionManager, path)) chat.loadoutState = loadout;
     const kind = specialFor(sessionManager, path);
     if (kind && kind.kind !== "overseer") {
       chat.special = kind.kind;

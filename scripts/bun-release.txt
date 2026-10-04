@@ -1,0 +1,16 @@
+# The Bun builds scripts/fetch-bun.sh may install (for scripts/install.sh, scripts/mesh-vps and
+# scripts/mesh-termux): each one's sha256 as the release's SHASUMS256.txt gives it, under
+# <release tag>/<asset>. The version fetched is the one mise.toml pins (`bun = "x.y.z"`); bumping it
+# there needs that release's lines here too, else fetch-bun.sh refuses ("no checksum for …").
+90987a3a16d7db556d886ac3d551e7b6d3edf0a1cf43acaed622e8676be1d12f  bun-v1.4.2/bun-darwin-aarch64.zip
+bad5bbd6cf14d0980d115f5954c9ff904df619d5e994d2da1ffccd3f316300b0  bun-v1.4.2/bun-darwin-x64-baseline.zip
+80520d7e17526308c9185d261679ac6d27798d3803a0e9f7ff9121ab8affb012  bun-v1.4.2/bun-darwin-x64.zip
+a1c7e2983f1bb65146beb256a4d72449f23042412bc2cf278aa6397ba27e0274  bun-v1.4.2/bun-linux-aarch64-android.zip
+71760b6c8ea30623b81a4907cb815d48e2ea266f2e73e751534a44a0607950df  bun-v1.4.2/bun-linux-aarch64-musl.zip
+54328bbc2d9c8e0c9f892c544d66c57a83b84139e34909e5ee81758f1ac8fda7  bun-v1.4.2/bun-linux-aarch64.zip
+fe36d8d4795e0eadc22fb6696d44d168491c2e5b9b7cbb12b8c96b0c0c40a4f9  bun-v1.4.2/bun-linux-x64-android-baseline.zip
+1e90fc0d3b83cb847b34338aff2765a7034bf53c50414344b3b0bf07a330a144  bun-v1.4.2/bun-linux-x64-android.zip
+c678040f14fe0440eb839d37cbd0ce4c051a32da72806ac97de6a6aab6bf728f  bun-v1.4.2/bun-linux-x64-baseline.zip
+76e1db84e98f22f78de0a87e309bfbbf297732847f9720db36750646c85c8c18  bun-v1.4.2/bun-linux-x64-musl-baseline.zip
+4835eca59d6da70f4674f5642f6e459dcadab773695b2ed9922d131057989742  bun-v1.4.2/bun-linux-x64-musl.zip
+36368faef7527875d5ffa52e53cd48021741f2a83eb6208a8dd64068d422a913  bun-v1.4.2/bun-linux-x64.zip

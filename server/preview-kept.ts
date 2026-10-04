@@ -2,6 +2,7 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, statSync, w
 import { dirname, join } from "node:path";
 import { PREVIEW_LABEL_RE } from "../shared/public-links";
 import { stateRoot } from "./state-root";
+import { sessionsChanged } from "./list-generation";
 
 /**
  * What else a preview has (§mesh.public/preview): `<stateRoot>/preview-kept.json`, beside
@@ -17,7 +18,8 @@ import { stateRoot } from "./state-root";
 
 export const PREVIEW_KEPT_FILE = "preview-kept.json";
 
-export type KeptTarget = { kind: "port" } | { kind: "static"; folder: string };
+/** `instance`: a running copy's endpoint (§app.project-services/share); `serve`: a static copy's serve id, which must hold the port for the link to dial. */
+export type KeptTarget = { kind: "port" } | { kind: "static"; folder: string } | { kind: "instance"; instance: string; endpoint: string; generation?: number; serve?: string };
 
 export interface KeptPreview {
   /** The link, `<scheme>://<label>.<zone>/`. */
@@ -38,6 +40,8 @@ export const previewKeptFile = (): string => join(stateRoot(), PREVIEW_KEPT_FILE
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 const PREVIEW_ID = /^pv_[A-Za-z0-9_-]{16}$/;
 const REF = /^[A-Za-z0-9_.:-]{1,128}$/;
+const ENDPOINT = /^[a-z][a-z0-9-]{0,30}\.[a-z][a-z0-9-]{0,30}$/;
+const SERVE = /^[A-Za-z0-9_.-]{1,200}$/;
 const optStr = (v: unknown, max: number): v is string | undefined => v === undefined || (typeof v === "string" && v.length <= max);
 
 /** One entry checked, or null. */
@@ -47,7 +51,17 @@ function entryOf(v: unknown): KeptPreview | null {
   let target: KeptTarget;
   if (t.kind === "port") target = { kind: "port" };
   else if (t.kind === "static" && typeof t.folder === "string" && t.folder.startsWith("/") && t.folder.length <= 4096) target = { kind: "static", folder: t.folder };
-  else return null;
+  else if (t.kind === "instance" && typeof t.instance === "string" && REF.test(t.instance) && typeof t.endpoint === "string" && ENDPOINT.test(t.endpoint)) {
+    if (t.generation !== undefined && !(typeof t.generation === "number" && Number.isInteger(t.generation) && t.generation >= 0)) return null;
+    if (t.serve !== undefined && (typeof t.serve !== "string" || !SERVE.test(t.serve))) return null;
+    target = {
+      kind: "instance",
+      instance: t.instance,
+      endpoint: t.endpoint,
+      ...(typeof t.generation === "number" ? { generation: t.generation } : {}),
+      ...(typeof t.serve === "string" ? { serve: t.serve } : {}),
+    };
+  } else return null;
   if (!optStr(v.url, 512) || !optStr(v.branch, 256) || !optStr(v.purpose, 400)) return null;
   if (v.sessionId !== undefined && (typeof v.sessionId !== "string" || !REF.test(v.sessionId))) return null;
   if (typeof v.url === "string") {
@@ -115,6 +129,7 @@ function write(file: KeptFile): void {
   writeFileSync(tmp, `${JSON.stringify(file, null, 2)}\n`, { mode: 0o600 });
   chmodSync(tmp, 0o600);
   renameSync(tmp, path);
+  sessionsChanged(); // a kept link changes what rows redact
 }
 
 /** What is kept for one preview, or null (one made before this file, or a broken entry). */

@@ -4,7 +4,7 @@ import type { TranscriptItem } from "../../shared/protocol";
 import { inputCount, inputsText } from "./input-count";
 import { isInput, isTurnStart } from "./turn";
 
-const item = (id: string, kind: TranscriptItem["kind"]): TranscriptItem => ({ id, kind, raw: {} });
+const item = (id: string, kind: TranscriptItem["kind"]): TranscriptItem => ({ id, kind });
 
 test("inputCount counts the branch's user rows, and nothing else", () => {
   const items = [

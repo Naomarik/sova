@@ -31,8 +31,11 @@
 import { existsSync, readFileSync } from "node:fs";
 import { DefaultResourceLoader, getAgentDir } from "@earendil-works/pi-coding-agent";
 import { CHARS_PER_TOKEN, type SessionSetup, type SessionSetupFile, type SessionSetupSkill } from "../shared/protocol";
-import { heldChat } from "./chat-manager";
+import { acquireChat, assertNotLive, disposeHeldChat, heldChat } from "./chat-manager";
 import { plan, readStoredCwd, type Plan } from "./git-summary";
+import { leavesOut, loadoutOnBranch, normalizeLoadout, type LoadoutEntryData } from "./session-loadout";
+import { getSessionSummary } from "./sessions-index";
+import { readActiveBranch } from "./transcript";
 
 /** How long an answer stays fresh, per folder. The same size as the Git section's TTL. */
 export const SETUP_TTL_MS = 30_000;
@@ -89,10 +92,54 @@ function loadoutOf(loader: Loader): Loadout {
   };
 }
 
-/** The loadout of the chat this server holds, or null when it holds none. */
+/** The loadout of the chat this server holds, or null when it holds none. A runtime built with a
+    `sova-loadout` entry answers with its loader's UNFILTERED lists (§chat.transcript/setup-card-toggles),
+    so a row it leaves out is still listed, and can be switched back on. */
 function runtimeLoadout(sessionPath: string): Loadout | null {
   const chat = heldChat(sessionPath);
-  return chat ? loadoutOf(chat.session.resourceLoader) : null;
+  if (!chat) return null;
+  const loadout = loadoutOf(chat.session.resourceLoader);
+  const base = chat.loadoutState;
+  return {
+    ...loadout,
+    ...(base?.baseContext ? { context: base.baseContext.map((path) => ({ path })) } : {}),
+    ...(base?.baseSkills ? { skills: base.baseSkills } : {}),
+  };
+}
+
+/** What one session switches off, and whether its card may switch rows now. Worked out per session
+    on every read; never part of the folder's cached answer. */
+export interface SessionSwitches {
+  off: LoadoutEntryData | null;
+  toggleable: boolean;
+}
+
+/** The held chat's own entry and window; else the newest entry in the file, read by Sova's own
+    parser, except for a TUI-live session (the TUI doesn't honour the entry). */
+async function sessionSwitches(sessionPath: string): Promise<SessionSwitches> {
+  const chat = heldChat(sessionPath);
+  if (chat) return { off: chat.loadoutState?.data ?? null, toggleable: chat.loadoutToggleable };
+  try {
+    assertNotLive(sessionPath);
+    return { off: loadoutOnBranch((await readActiveBranch(sessionPath)) as unknown as Parameters<typeof loadoutOnBranch>[0]), toggleable: false };
+  } catch {
+    return { off: null, toggleable: false };
+  }
+}
+
+type Loaded = Extract<SessionSetup, { state: "ok" }>;
+
+/** The folder's answer as one session sees it: its off rows marked, and whether it can switch them.
+    A new object: the cached answer is never changed. */
+export function withSwitches(setup: Loaded, sw: SessionSwitches): Loaded {
+  const offContext = new Set(sw.off?.offContext ?? []);
+  const offSkills = new Set(sw.off?.offSkills ?? []);
+  return {
+    ...setup,
+    context: setup.context.map(({ off: _o, ...f }) => (offContext.has(f.path) ? { ...f, off: true as const } : f)),
+    skills: setup.skills.map(({ off: _o, ...k }) => (offSkills.has(k.name) ? { ...k, off: true as const } : k)),
+    toggleable: sw.toggleable,
+  };
 }
 
 /**
@@ -118,6 +165,8 @@ export interface SetupDeps {
   runtime?: (sessionPath: string) => Loadout | null;
   /** pi's own read for a folder (default: DefaultResourceLoader, noExtensions). */
   loader?: (cwd: string) => Promise<Loadout>;
+  /** One session's off set and switch window (default: the held chat, else the file's entry). */
+  switches?: (sessionPath: string) => SessionSwitches | Promise<SessionSwitches>;
   /** Whether a local path exists (default: fs.existsSync). */
   exists?: (path: string) => boolean;
   now?: () => number;
@@ -145,7 +194,7 @@ function skillsOf(skills: Loadout["skills"]): SessionSetupSkill[] {
   return out;
 }
 
-const cache = new Map<string, Extract<SessionSetup, { state: "ok" }>>();
+const cache = new Map<string, Loaded>();
 const inflight = new Map<string, Promise<SessionSetup>>();
 
 /** Test seam: forget every cached read. */
@@ -192,7 +241,9 @@ async function read(cwd: string, sessionPath: string, deps: SetupDeps, now: () =
  * SETUP_TTL_MS; `fresh` skips the cache but joins a read already in flight. Never throws: every
  * failure is a `state: "unavailable"` with the reason in words.
  *
- * The key is the folder, not the session: two sessions in one repository share the same answer. No
+ * The key is the folder, not the session: two sessions in one repository share the same lists.
+ * What a session switches off, and whether it may switch now, is laid over that answer for each
+ * session on every read (§chat.transcript/setup-card-toggles), so it is never shared. No
  * concurrency limit — the fallback read
  * is one settings read plus a handful of small file reads (~20ms here), and the runtime path is
  * free.
@@ -217,12 +268,25 @@ export async function getSessionSetup(sessionPath: string, opts: { fresh?: boole
   if (p.kind === "refuse") return p.summary(now());
   if (p.kind === "remote") return { state: "remote", where: { kind: "remote", target: p.target }, cwd: p.place.cwd, checkedAt: now() };
 
-  const key = p.place.cwd;
+  const folder = await folderSetup(p.place.cwd, sessionPath, opts, deps, now);
+  if (folder.state !== "ok") return folder;
+  let sw: SessionSwitches;
+  try {
+    sw = await (deps.switches ?? sessionSwitches)(sessionPath);
+  } catch {
+    sw = { off: null, toggleable: false };
+  }
+  return withSwitches(folder, sw);
+}
+
+/** The folder's cached (or joined, or fresh) read. */
+function folderSetup(cwd: string, sessionPath: string, opts: { fresh?: boolean }, deps: SetupDeps, now: () => number): Promise<SessionSetup> {
+  const key = cwd;
   const hit = cache.get(key);
-  if (!opts.fresh && hit && now() - hit.checkedAt < SETUP_TTL_MS) return hit;
+  if (!opts.fresh && hit && now() - hit.checkedAt < SETUP_TTL_MS) return Promise.resolve(hit);
   const existing = inflight.get(key);
   if (existing) return existing;
-  const run = read(p.place.cwd, sessionPath, deps, now)
+  const run = read(cwd, sessionPath, deps, now)
     .then((setup) => {
       // A failure is never served from the cache, and neither is the answer before it: a folder
       // that was missing a moment ago may exist now.
@@ -233,4 +297,62 @@ export async function getSessionSetup(sessionPath: string, opts: { fresh?: boole
     .finally(() => inflight.delete(key));
   inflight.set(key, run);
   return run;
+}
+
+export type LoadoutResult = { ok: true; setup: SessionSetup } | { ok: false; status: 400 | 404 | 409; error: string };
+
+/** One switch at a time, so two quick flips write in the order they were made. */
+let applying: Promise<unknown> = Promise.resolve();
+
+/**
+ * POST /api/sessions/loadout (§chat.transcript/setup-card-toggles): write the session's whole off
+ * set as its `sova-loadout` entry and rebuild its runtime, the way a profile pick does
+ * (§chat.profiles/applying), then answer with the card's fresh read of the rebuilt runtime. Refused
+ * with nothing written once a message is on the branch, mid-turn, TUI-live, for a foreign writer,
+ * a special session or a remote one. An unchanged set writes nothing and rebuilds nothing.
+ */
+export function applyLoadout(path: string, body: unknown): Promise<LoadoutResult> {
+  const run = applying.then(() => applyLoadoutNow(path, body));
+  applying = run.catch(() => undefined);
+  return run;
+}
+
+const sameSet = (a: readonly string[], b: readonly string[]) => a.length === b.length && [...a].sort().join("\0") === [...b].sort().join("\0");
+
+async function applyLoadoutNow(path: string, body: unknown): Promise<LoadoutResult> {
+  const b = (body ?? {}) as { offContext?: unknown; offSkills?: unknown };
+  const data = normalizeLoadout({ v: 1, offContext: b.offContext, offSkills: b.offSkills });
+  if (!data) return { ok: false, status: 400, error: "Expected {path, offContext: absolute paths, offSkills: skill names}" };
+  const s = await getSessionSummary(path);
+  if (!s) return { ok: false, status: 404, error: "Session file not found" };
+  if (s.overseer || s.projectOverseer || s.baton || s.org || s.workerSession) return { ok: false, status: 409, error: "This session's context files and skills can't be switched." };
+  if (s.live) return { ok: false, status: 409, error: `It is open in a terminal (pid ${s.live.pid}), so this server must not write to it.` };
+  const stored = await readStoredCwd(path).catch(() => null);
+  let local = false;
+  try {
+    local = stored !== null && plan(stored).kind === "local";
+  } catch {
+    local = false;
+  }
+  if (!local) return { ok: false, status: 409, error: "Only a local session's context files and skills can be switched here." };
+  let chat;
+  try {
+    chat = await acquireChat(path);
+  } catch (err) {
+    return { ok: false, status: 409, error: err instanceof Error ? err.message : String(err) };
+  }
+  const current = chat.loadoutState?.data;
+  const unchanged = leavesOut(current) ? sameSet(current.offContext, data.offContext) && sameSet(current.offSkills, data.offSkills) : !leavesOut(data);
+  if (!unchanged) {
+    try {
+      chat.writeLoadout(data);
+    } catch (err) {
+      return { ok: false, status: 409, error: err instanceof Error ? err.message : String(err) };
+    }
+    await disposeHeldChat(path, "Applying the context files and skills.");
+    // Reopened here, so the answer is the rebuilt runtime's own read; a tab reconnecting meanwhile
+    // joins this same open.
+    await acquireChat(path).catch((err) => console.warn(`[setup] reopen after a switch failed: ${err instanceof Error ? err.message : String(err)}`));
+  }
+  return { ok: true, setup: await getSessionSetup(path, { fresh: true }) };
 }

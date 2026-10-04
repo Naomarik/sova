@@ -1,5 +1,5 @@
 import { archivedDropToast, orgProjectOf } from "../lib/drag-archive";
-import { batch, createEffect, createMemo, createSignal, For, Match, on, onCleanup, Show, Switch, type JSX } from "solid-js";
+import { batch, createEffect, createMemo, createResource, createSignal, For, Match, on, onCleanup, Show, Switch, type JSX } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import { Portal } from "solid-js/web";
 import type {
@@ -25,7 +25,8 @@ import { CardJumpContext } from "../lib/card-refs";
 import { AlignAnswerContext, type AlignAnswer } from "./AlignDocCard";
 import { acceptAllMessage, choosePick, clearPicks, composeWithPicks, optionPick, pickCount, picksLabel, picksOf, prunePicks, samePicks } from "../lib/align-picks";
 import { BatonStrip } from "./BatonStrip";
-import { approveSchedule, forkSession, getChatClaudeAccounts, getOverseerAutonomy, revokeOverseerPermit, revokeSchedule, setSandbox, setSessionArchived, wsUrl } from "../lib/api";
+import { approveSchedule, forkSession, getChatClaudeAccounts, getOverseerAutonomy, getSubagentProfiles, revokeOverseerPermit, revokeSchedule, setSandbox, setSessionArchived, wsUrl } from "../lib/api";
+import { adversarialReview, NO_REVIEWER, reviewRequestMessage } from "../lib/align-review";
 import type { OverseerAutonomy, ScheduleInfo } from "../../shared/protocol";
 import { LOGIN_UNCHANGED } from "../../shared/protocol";
 import { contextStateFor, messageContextTokens, windowOf } from "../lib/context";
@@ -119,11 +120,12 @@ import { Composer, type ComposerReason } from "./Composer";
 import { FlyoutSession, type LoginControl, type SandboxControl, type ThinkingControl, type UndoControl } from "./ComposerMenu";
 import { ConnectionBanner } from "./ConnectionBanner";
 import { SessionSetupCard } from "./SessionSetup";
+import { EmptyWorktrees } from "./EmptyWorktrees";
 import { PlaybooksDialog } from "./PlaybooksDialog";
 import type { ModeControl, ModeState } from "./ModeMenu";
 import type { ModelControl } from "./ModelMenu";
 import { ChangesSession } from "./ChangesViewer";
-import { HistoryItems, LiveEntries, type MessageActionsProvider, ThreadScroller, TranscriptSkeleton, TurnError } from "./Thread";
+import { HistoryItems, LiveEntries, type MessageActionsProvider, ThreadScroller, ToolSourceContext, TranscriptSkeleton, TurnError } from "./Thread";
 import { SubagentLimitRow } from "./SubagentLimitRow";
 import { failureHasRow } from "../lib/subagent-limit";
 import { Banner, Icon } from "./ui";
@@ -263,6 +265,8 @@ export function ChatView(props: {
   };
   /** The last hello's first row: rows that arrive above it are history, never "N new". */
   const [newFrom, setNewFrom] = createSignal<string | null>(null);
+  /** This connection's hello has come: the rows shown are no longer only the ones kept. */
+  const [helloed, setHelloed] = createSignal(false);
   // "Open in Session" from an Explanations card: once the transcript is here (hello), land on that
   // explanation's row. Only a jump waiting for this session is claimed, and only once; one whose
   // row isn't here is fetched, down to it.
@@ -624,6 +628,7 @@ export function ChatView(props: {
             // so a rewind or a reconnect doesn't make a whole list partial or its counts blink.
             olderRows.hello(msg);
             setNewFrom(msg.items[0]?.id ?? null);
+            setHelloed(true);
             // A client that connects mid-compaction shows it, as the compaction_start it missed would.
             setLive(reconcile({ ...emptyLive(), running: msg.isStreaming, activity: msg.isCompacting ? "Compacting context" : null }));
             setCompacting(!!msg.isCompacting);
@@ -834,7 +839,8 @@ export function ChatView(props: {
           props.onClaudeLogin?.(msg.login);
           break;
         case "event":
-          queue.push(msg.event);
+          // A message_end's entry id rides on the event itself, for applyEvent.
+          queue.push(msg.entryId && isObj(msg.event) ? { ...msg.event, entryId: msg.entryId } : msg.event);
           if (!frame) frame = requestAnimationFrame(flush);
           break;
         case "ui_request": {
@@ -1237,6 +1243,16 @@ export function ChatView(props: {
   const picks = createMemo(() => (alignAnswerable() ? prunePicks(picksOf(props.path), aligns()) : {}), {}, { equals: samePicks });
   /** Whether the composer holds typed text or an attachment: the card's button then waits. */
   const [hasDraft, setHasDraft] = createSignal(false);
+  /** With adversarial review on: whether this chat's subagent profile names a reviewer (§chat.alignment-review/card).
+      Read only while the feature is on; undefined until it answers (the button then stays usable). */
+  const [reviewerSet] = createResource(
+    () => (adversarialReview() && alignAnswerable() ? props.path : false),
+    async (path) => {
+      const info = await getSubagentProfiles(path);
+      const current = info.settings.profiles.find((p) => p.id === info.current.id);
+      return !!current?.reviewer;
+    },
+  );
   const alignAnswer: AlignAnswer = {
     on: alignAnswerable,
     current: (id) => aligns().find((e) => e.doc.id === id)?.doc,
@@ -1267,6 +1283,12 @@ export function ChatView(props: {
         clearPicks(props.path, doc);
         focusComposer();
       }
+    },
+    review: () => adversarialReview(),
+    reviewBlocked: () => alignAnswer.goBlocked() ?? (!reviewerSet.error && reviewerSet() === false ? NO_REVIEWER : null),
+    requestReview: (doc, phase) => {
+      if (alignAnswer.reviewBlocked?.()) return;
+      if (send(reviewRequestMessage(doc, phase), false, [])) focusComposer();
     },
   };
   const composerPicks = createMemo(() => {
@@ -1582,10 +1604,12 @@ export function ChatView(props: {
       <Show when={props.summary?.()?.baton}>
         <BatonStrip path={props.path} summary={() => props.summary?.()} onNames={setBatonNames} onOperatorHolds={setBatonMine} />
       </Show>
+      <ToolSourceContext.Provider value={{ kind: "pi", path: props.path }}>
       <ThreadScroller
         path={props.path}
         restore={cached?.spot}
         onSpot={(spot) => cacheSpot(cacheKey, spot)}
+        current={helloed()}
         count={visibleCount(newRows(items() ?? [], newFrom()), { tools: hideTools(props.path), thinking: hideThinking(props.path) }) + live.entries.length}
         resume={resume()}
         busy={!items()}
@@ -1825,8 +1849,9 @@ export function ChatView(props: {
                           />
                         )}
                       </Show>
-                      <SessionSetupCard path={props.path} />
+                      <SessionSetupCard path={props.path} editable={!!profileInfo()?.pickable && !profileInfo()?.locked} />
                       <p class="empty-body">Your first message becomes its title.</p>
+                      <EmptyWorktrees path={props.path} />
                     </div>
                   }
                 >
@@ -1843,6 +1868,7 @@ export function ChatView(props: {
             that never made a thread row (a refusal before any turn, a host move). */}
         <For each={errors()}>{(m) => <><TurnError message={m.message} /><Show when={!failureHasRow(live.entries, m.message)}><SubagentLimitRow path={props.path} message={m.message} provider={m.provider} /></Show></>}</For>
       </ThreadScroller>
+      </ToolSourceContext.Provider>
       <FlyoutSession.Provider value={() => props.path}>
       <Composer
         path={props.path}

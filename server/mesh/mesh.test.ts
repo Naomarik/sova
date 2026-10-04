@@ -337,7 +337,9 @@ describe("mesh OFF (no peers.json)", () => {
       assert.equal(await a.text(), await b.text(), mesh);
     }
     const [a, b] = await Promise.all([wsTrip(`${wsBase}/peer/b/ws/chat`), wsTrip(`${wsBase}/nopeer/ws/chat`)]);
-    assert.deepEqual(a, b);
+    // Bun's ws client names the URL in its error; the paths differ by design.
+    const unnamed = (r: Awaited<ReturnType<typeof wsTrip>>) => (r.error ? { ...r, error: r.error.replace(/\/(peer\/b|nopeer)\//, "/<path>/") } : r);
+    assert.deepEqual(unnamed(a), unnamed(b));
     assert.ok(a.error, "an unknown socket path is dropped, as before");
   });
 

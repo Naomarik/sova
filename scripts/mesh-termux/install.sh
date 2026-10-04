@@ -15,16 +15,19 @@
 #   --id <slug> --label <text>   this host's mesh id and label (default: phone / "Phone"); the id is only set once
 #   --node-id <StableID> --dns <MagicDNS name>   this phone's Tailscale StableID and name, for its own hello
 #   --port <n> --peer-port <n>   main listener 127.0.0.1:<port> (default 4800), peer listener <tailnet-ip>:<peer-port> (4801)
-#                          --node-id, --dns, --tailnet-ip, --port and --peer-port are remembered in ~/sova-mesh/.install:
+#                          --node-id, --dns, --tailnet-ip, --port, --peer-port and --node/--bun are remembered in ~/sova-mesh/.install:
 #                          a rerun without one of them uses the value given last (a new value replaces it)
 #   --claude-dir <dir>     the .claude dir the `claude` on PATH reads, as seen from Termux (default: detected; see
 #                          "Claude Code's store" below; a native claude reads ~/sova-mesh/home/.claude)
+#   --node / --bun         run Sova on Node (nodejs-lts) instead of Bun / back on Bun (the default: the Android build of
+#                          the Bun mise.toml pins, sha256-checked by scripts/fetch-bun.sh into ~/sova-mesh/app/.bun;
+#                          Android 9 or later). Remembered in ~/sova-mesh/.install like the identity flags below
 #   --ssh-key <public key> also keep an sshd for remote access: openssh, the key in ~/.ssh/authorized_keys, key-only
 #                          logins (password logins off), and the runit sshd service (it replaces a hand-started sshd,
 #                          so reopening Termux or a reboot brings it back). `uninstall.sh --keep-ssh` keeps these.
 #
 # What it adds, all recorded in ~/sova-mesh/.install so uninstall.sh removes exactly that:
-#   packages nodejs-lts ripgrep fd git tmux termux-services, plus the package of any other command it or Sova runs that
+#   packages nodejs-lts ripgrep fd git tmux termux-services (+ unzip, for Bun), plus the package of any other command it or Sova runs that
 #   is missing (+ their new dependencies; pnpm comes from node's corepack, pinned by package.json), ~/sova-mesh (app, agent dir, isolated HOME, TMPDIR, env), the runit service sova-mesh,
 #   ~/.termux/boot/sova-mesh (used by Termux:Boot), and a Termux wake lock.
 # It never touches /sdcard, never binds 0.0.0.0, never prints a secret, and writes nothing outside $HOME and $PREFIX.
@@ -44,7 +47,7 @@ main() {
 REF=${SOVA_REF:-$DEFAULT_REF}
 SOURCE_URL=${SOVA_SOURCE_URL:-}
 TAILNET_IP=${SOVA_TAILNET_IP:-}
-HOST_ID='' HOST_LABEL='' NODE_ID='' DNS_NAME='' SSH_KEY='' CLAUDE_DIR=''
+HOST_ID='' HOST_LABEL='' NODE_ID='' DNS_NAME='' SSH_KEY='' CLAUDE_DIR='' RUNTIME=''
 PORT=${SOVA_PORT:-}
 PEER_PORT=${SOVA_PEER_PORT:-}
 while [ $# -gt 0 ]; do
@@ -60,6 +63,8 @@ while [ $# -gt 0 ]; do
     --peer-port) PEER_PORT=${2:?}; shift 2 ;;
     --ssh-key) SSH_KEY=${2:?}; shift 2 ;;
     --claude-dir) CLAUDE_DIR=${2:?}; shift 2 ;;
+    --node) RUNTIME=node; shift ;;
+    --bun) RUNTIME=bun; shift ;;
     *) die "unknown option: $1 (see the header of install.sh)" ;;
   esac
 done
@@ -80,13 +85,15 @@ BASE="$HOME/sova-mesh"
 M="$BASE/.install"      # the manifest uninstall.sh reads
 # The identity and ports given on an earlier run (arg-* in the manifest): a rerun without the flag keeps them, so it never
 # drops SOVA_SELF_NODE_ID / SOVA_SELF_DNS from the env or moves a port. Only values given here are recorded, below.
-G_NODE_ID=$NODE_ID G_DNS_NAME=$DNS_NAME G_TAILNET_IP=$TAILNET_IP G_PORT=$PORT G_PEER_PORT=$PEER_PORT
+G_NODE_ID=$NODE_ID G_DNS_NAME=$DNS_NAME G_TAILNET_IP=$TAILNET_IP G_PORT=$PORT G_PEER_PORT=$PEER_PORT G_RUNTIME=$RUNTIME
 recorded() { [ ! -f "$M/arg-$1" ] || cat "$M/arg-$1"; }
 [ -n "$NODE_ID" ] || NODE_ID=$(recorded node-id)
 [ -n "$DNS_NAME" ] || DNS_NAME=$(recorded dns)
 [ -n "$TAILNET_IP" ] || TAILNET_IP=$(recorded tailnet-ip)
 [ -n "$PORT" ] || PORT=$(recorded port)
 [ -n "$PEER_PORT" ] || PEER_PORT=$(recorded peer-port)
+[ -n "$RUNTIME" ] || RUNTIME=$(recorded runtime)
+RUNTIME=${RUNTIME:-bun}
 PORT=${PORT:-4800}
 PEER_PORT=${PEER_PORT:-4801}
 case "$PORT$PEER_PORT" in *[!0-9]*) die "ports must be numbers" ;; esac
@@ -121,7 +128,7 @@ fi
 tailnet_ipv4 "$TAILNET_IP" || die "--tailnet-ip $TAILNET_IP is not a Tailscale address (100.64.0.0/10)"
 log "tailnet IP: $TAILNET_IP (peer listener), main listener 127.0.0.1:$PORT"
 # every value checked: record the ones given on this run (a detected or remembered one is never written again)
-for a in node-id:"$G_NODE_ID" dns:"$G_DNS_NAME" tailnet-ip:"$G_TAILNET_IP" port:"$G_PORT" peer-port:"$G_PEER_PORT"; do
+for a in node-id:"$G_NODE_ID" dns:"$G_DNS_NAME" tailnet-ip:"$G_TAILNET_IP" port:"$G_PORT" peer-port:"$G_PEER_PORT" runtime:"$G_RUNTIME"; do
   [ -z "${a#*:}" ] || printf '%s\n' "${a#*:}" > "$M/arg-${a%%:*}"
 done
 
@@ -142,6 +149,7 @@ TOOLS="node:nodejs-lts corepack:nodejs-lts rg:ripgrep fd:fd git:git tmux:tmux sv
   ps:procps cmp:diffutils sha256sum:coreutils nice:coreutils env:coreutils termux-wake-unlock:termux-tools
   ifconfig:net-tools"
 [ -z "$SSH_KEY" ] || TOOLS="$TOOLS sshd:openssh"
+[ "$RUNTIME" = node ] || TOOLS="$TOOLS unzip:unzip"
 missing=''
 for p in $WANT; do dpkg-query -W -f='${db:Status-Abbrev}' "$p" 2>/dev/null | grep -q '^ii' || missing="$missing $p"; done
 for t in $TOOLS; do
@@ -185,6 +193,14 @@ RUN_ENV="HOME=$BASE/home TMPDIR=$BASE/tmp COREPACK_HOME=$BASE/home/.cache/corepa
 PNPM_VERSION=${SOVA_PNPM_VERSION:-11.27.1}
 pnpm_() { env $RUN_ENV COREPACK_ENABLE_STRICT=0 corepack "pnpm@$PNPM_VERSION" "$@"; }
 command -v corepack >/dev/null || die "corepack is missing from nodejs-lts"
+# Sova's Bun, inside the app dir so it swaps in and out with it: kept when it is the pinned version (also from the app
+# it replaces), else downloaded. Not on Node (--node).
+bun_into() { # <app dir>
+  [ "$RUNTIME" = bun ] || return 0
+  if [ ! -x "$1/.bun/bin/bun" ] && [ -x "$BASE/app/.bun/bin/bun" ]; then mkdir -p "$1/.bun/bin" && cp -p "$BASE/app/.bun/bin/bun" "$1/.bun/bin/bun"; fi
+  env $RUN_ENV sh "$1/scripts/fetch-bun.sh" "$1/.bun" >/dev/null || die "could not install Bun for Android (Android 9 or later); rerun with --node to run Sova on Node"
+  log "bun: $("$1/.bun/bin/bun" --version) (sha256 verified at install)"
+}
 
 # ---- the source ------------------------------------------------------------------------------------
 log "source: $SOURCE_URL"
@@ -194,10 +210,12 @@ SUM=$(sha256sum "$BASE/dl/source.tar.gz" | cut -d' ' -f1)
 COMMIT=$(gzip -dc "$BASE/dl/source.tar.gz" | git get-tar-commit-id 2>/dev/null || true)
 if [ -f "$BASE/app/dist/index.html" ] && [ -f "$BASE/app/dist-share/index.html" ] && [ -f "$BASE/app/node_modules/.modules.yaml" ] && [ "$(cat "$BASE/app/.source-sha256" 2>/dev/null)" = "$SUM" ]; then
   log "app: already built from this source (${COMMIT:-sha256 $SUM})"
+  bun_into "$BASE/app"
 else
   rm -rf "$BASE/app.new" && mkdir -p "$BASE/app.new"
   tar -xzf "$BASE/dl/source.tar.gz" -C "$BASE/app.new" --strip-components=1
   [ -f "$BASE/app.new/package.json" ] && [ -f "$BASE/app.new/server/index.ts" ] || die "the tarball is not a Sova source tree"
+  bun_into "$BASE/app.new"
   cd "$BASE/app.new"
   log "pnpm $PNPM_VERSION install --frozen-lockfile (a few minutes on a phone)"
   pnpm_ install --frozen-lockfile --pm-on-fail=ignore --reporter=append-only >"$BASE/tmp/pnpm-install.log" 2>&1 || { tail -20 "$BASE/tmp/pnpm-install.log" >&2; die "pnpm install failed (log: $BASE/tmp/pnpm-install.log)"; }
@@ -337,6 +355,8 @@ fi
   echo "HOME=$BASE/home"
   echo "TMPDIR=$BASE/tmp"
   echo "PATH=$PREFIX/bin"
+  # the runtime (scripts/start-server.sh): the app's own Bun, or Node when installed with --node
+  if [ "$RUNTIME" = node ]; then echo "SOVA_RUNTIME=node"; else echo "SOVA_BUN=$BASE/app/.bun/bin/bun"; fi
 } > "$BASE/sova-mesh.env.tmp"
 if cmp -s "$BASE/sova-mesh.env.tmp" "$BASE/sova-mesh.env"; then rm "$BASE/sova-mesh.env.tmp"; else mv "$BASE/sova-mesh.env.tmp" "$BASE/sova-mesh.env"; NEW_ENV=1; fi
 
@@ -351,7 +371,8 @@ cd "$BASE/app"
 # the wake lock again at every start: reopening Termux (or runit restarting Sova) brings it back without a reboot
 termux-wake-lock && echo "[run-sova] termux-wake-lock taken"
 ( sleep 2; exec nice -n 10 node scripts/mesh-vps/warm-extensions.mjs > "$BASE/tmp/warm.log" 2>&1 ) &
-exec node --import tsx server/index.ts
+# Bun or Node as sova-mesh.env says (SOVA_BUN / SOVA_RUNTIME=node); sh, since Termux has no /bin/sh for its shebang
+exec sh scripts/start-server.sh
 EOF
 chmod 700 "$BASE/bin/run-sova"
 cp "$BASE/app/scripts/mesh-termux/uninstall.sh" "$BASE/uninstall.sh" 2>/dev/null && chmod 700 "$BASE/uninstall.sh" || true

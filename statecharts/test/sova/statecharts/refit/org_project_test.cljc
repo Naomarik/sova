@@ -174,6 +174,22 @@
     (let [y (h/send! x psid :services/run (po "L3"))]
       (is (empty? (h/outbox y psid)) "the act is the gate only: the host runs the verb"))))
 
+(deftest sharing-a-running-copy
+  ;; sova_project_verbs share (§app.project-overseer/previews): L1, people-facing, refused while archived; the
+  ;; effect shares the copy's endpoint, never a link.
+  (let [x (project)
+        po (fn [level] {:by "overseer" :autonomy level :verb "share" :instance "in_1" :endpoint "web.3000" :days 2 :overseer-id "po1"})]
+    (is (re-find #"sova_project_verbs needs L1" (h/refusal x psid :services/share (po "L0"))))
+    (is (nil? (h/refusal x psid :services/share (assoc (po "L0") :attended true))) "the operator's own run, at any level")
+    (is (nil? (h/refusal x psid :services/share (po "L1"))) "share at L1")
+    (is (= "web.9 is not declared for sharing." (h/refusal x psid :services/share (assoc (po "L1") :invalid "web.9 is not declared for sharing."))) "the host's own check")
+    (let [a (h/send! x psid :project/archive op)]
+      (is (= "Site is archived. Unarchive it first." (h/refusal a psid :services/share (po "L3")))))
+    (let [y (h/send! x psid :services/share (po "L1"))
+          fx (first (filter #(= "services-share" (:kind %)) (h/outbox y psid)))]
+      (is (= {:instance "in_1" :endpoint "web.3000" :days 2 :overseer-id "po1"} (select-keys fx [:instance :endpoint :days :overseer-id :url :link])))
+      (is (not-any? #(contains? fx %) [:url :label :link :hash]) "an effect carries no link: its result and payload are logged"))))
+
 (deftest hourly-committer
   (let [sid "residence/o1"
         x (-> (h/start! (h/new-host) "residence" sid {:org-id "o1" :host-id "h_me" :host-name "me" :mode "create" :commit-every-ms 3600000})

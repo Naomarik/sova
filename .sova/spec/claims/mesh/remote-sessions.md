@@ -37,7 +37,7 @@ it on the right host. Paths stay each host's own.
 Everything a peer session's pane reads or changes comes from and goes to that session's host: its
 models (the ones that host can run, with its own keys, favorites and model policy), its modes and
 mode default, its folder index for file mentions, its attachments and image previews, and, for a
-hand-off session, its baton strip: Get Link, Turn Off Link, Take Back, Close Session, Hand On, an
+hand-off session, its baton strip: Get Link, Delete Link, Take Back, Close Session, Hand On, an
 offer and its withdrawal, Extend, Retry Wrap-Up, an invitee's link, and approving or declining a
 person it proposed all go to that host (the session's id names it there). Settings →
 Models still edits only the host serving the page. With a Host chosen in New Session, the folder

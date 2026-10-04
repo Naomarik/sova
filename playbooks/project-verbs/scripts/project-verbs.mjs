@@ -23,11 +23,11 @@ export const CONTRACT_FILE = ".sova/project.json";
 // ---- canonical key order (references/contract.md; pinned against the parser by tests/) ----------
 
 export const ORDER = {
-  top: ["version", "slots", "host", "sources", "setup", "data", "services", "hooks", "test", "share", "deploy"],
+  top: ["version", "slots", "host", "sources", "setup", "data", "services", "open", "hooks", "test", "share", "deploy"],
   slots: ["cap"],
   step: ["id", "run", "inputs", "timeout"],
   data: ["kind", "path", "from", "provision", "deprovision", "timeout", "sensitive"],
-  service: ["cmd", "static", "cwd", "env", "ports", "requires", "ready", "reload", "build", "scope", "container", "start", "about", "isolation"],
+  service: ["cmd", "static", "cwd", "env", "ports", "requires", "ready", "reload", "build", "scope", "container", "start", "about", "isolation", "adopt", "onMerge"],
   port: ["base", "stride", "fixed"],
   ready: ["tcp", "http", "path", "timeout"],
   reload: ["signal", "cmd"],
@@ -35,6 +35,9 @@ export const ORDER = {
   hooks: ["probe"],
   test: ["run", "requires", "timeout", "smoke"],
   isolation: ["method", "why"],
+  adopt: ["unit", "ports"],
+  share: ["endpoints", "maxDays", "allow"],
+  open: ["endpoint", "path"],
 };
 /** Maps whose keys are names in declaration order, kept as written. */
 const NAMED_MAPS = new Set(["data", "services", "ports", "env"]);
@@ -65,6 +68,7 @@ export function canonical(def) {
       if (isObj(s.build)) s.build = sortKeys(s.build, ORDER.step);
       if (isObj(s.container)) s.container = sortKeys(s.container, ORDER.container);
       if (isObj(s.isolation)) s.isolation = sortKeys(s.isolation, ORDER.isolation);
+      if (isObj(s.adopt)) s.adopt = sortKeys(s.adopt, ORDER.adopt);
       d.services[k] = s;
     }
   if (isObj(d.hooks)) {
@@ -72,6 +76,8 @@ export function canonical(def) {
     if (isObj(d.hooks.probe)) d.hooks.probe = sortKeys(d.hooks.probe, ORDER.step);
   }
   if (isObj(d.test)) d.test = sortKeys(d.test, ORDER.test);
+  if (isObj(d.share)) d.share = sortKeys(d.share, ORDER.share);
+  if (isObj(d.open)) d.open = sortKeys(d.open, ORDER.open);
   return d;
 }
 
@@ -152,7 +158,11 @@ async function parserTakes(where) {
   if (!c) return false;
   const base = { version: 1, services: { web: { cmd: ["true"] } } };
   const probe =
-    where === "sources" ? { ...base, sources: ["package.json"] } : { version: 1, services: { web: { cmd: ["true"], isolation: { method: "ports", why: "probe" } } } };
+    where === "sources"
+      ? { ...base, sources: ["package.json"] }
+      : where === "open"
+        ? { version: 1, services: { web: { cmd: ["true"], ports: { http: { base: 40000 } } } }, open: { endpoint: "web.http" } }
+        : { version: 1, services: { web: { cmd: ["true"], isolation: { method: "ports", why: "probe" } } } };
   try {
     c.parseDefinition(JSON.stringify(probe));
     return true;
@@ -615,6 +625,8 @@ export async function plan(root) {
       if (changed.length) why.push(`Sources changed since the definition's last commit (${since.slice(0, 12)}): ${changed.join(", ")}.`);
     }
     for (const s of def.def.services) if (Object.keys(s.ports).length && !s.about) why.push(`Service ${s.name} has ports but no \`about\`.`);
+    if (raw?.open === undefined && hasPage(def.def) && (await parserTakes("open")))
+      why.push("The definition names no entry point (`open`): find where a person opens the app, or, for a library or an API-only project, say why there is none.");
   }
   return { root, definition: def.state, ...(def.error ? { error: def.error } : {}), since, sources, changed, unlisted, gone, why, nothing: why.length === 0 };
 }
@@ -630,6 +642,9 @@ function planDigest(p) {
   }
   return out.join("\n");
 }
+
+/** Whether a checkout service may serve a page (a static folder, or HTTP readiness): then the entry point is required, unless the project is API-only. */
+const hasPage = (def) => def.services.some((s) => s.scope === "checkout" && (s.static !== undefined || (s.ready && "http" in s.ready)));
 
 // ---- check: parse as the engine does, then the playbook's lints ----------------------------------
 
@@ -680,6 +695,8 @@ export async function check(file, root) {
       }
     }
   }
+  if (raw.open === undefined && hasPage(def) && (await parserTakes("open")))
+    notes.push("$.open: name the app's entry point ({endpoint, path}: where a person opens it); leave it out only for a library or an API-only project, and say why in the report");
   for (const d of def.data)
     if (d.kind === "dir" && d.from !== "empty" && !/^\$\{(main|checkout)\}/.test(d.from)) problems.push(`$.data.${d.name}.from: copy from inside the project (\${main}/… or \${checkout}/…); a path outside it is refused under confinement`);
   return { file, ok: problems.length === 0, problems, notes, services: def.services.map((s) => s.name), fatal: false };

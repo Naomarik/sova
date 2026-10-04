@@ -611,3 +611,21 @@ test("a thinking block stops streaming once a later block starts, so only the re
   applyEvent(set, { type: "message_end", message: { role: "assistant", content: [] } });
   assert.deepEqual(reply().blocks.map((_, i) => blockStreams(reply(), i)).filter(Boolean), [], "nothing streams once the message is done");
 });
+
+test("a message_end's entry id names the live row it becomes: the reply, and the prompt its start claimed, never a queued one", () => {
+  const [s, set] = store();
+  addPendingPrompt(set, "first", [], [], "c1");
+  addPendingPrompt(set, "second", [], [], "c2");
+  applyEvent(set, { type: "message_start", message: { role: "user", content: "first" } });
+  applyEvent(set, { type: "message_end", message: { role: "user", content: "first" }, entryId: "u1" });
+  applyEvent(set, messageStart("zai", "glm-5.3"));
+  applyEvent(set, { type: "message_end", message: { role: "assistant", content: [{ type: "text", text: "hi" }], stopReason: "stop" }, entryId: "a1" });
+  const [first, second, reply] = s.entries;
+  assert.equal(first?.kind === "user" && first.entryId, "u1");
+  assert.equal(second?.kind === "user" && second.entryId, undefined, "the prompt no start has taken stays unnamed");
+  assert.equal(reply?.kind === "assistant" && reply.entryId, "a1");
+  // An end with no id (an older server) names nothing.
+  applyEvent(set, { type: "message_start", message: { role: "user", content: "second" } });
+  applyEvent(set, { type: "message_end", message: { role: "user", content: "second" } });
+  assert.equal(s.entries[1]?.kind === "user" && s.entries[1].entryId, undefined);
+});

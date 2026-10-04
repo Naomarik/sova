@@ -126,6 +126,11 @@ for (const sig of ["SIGTERM", "SIGINT", "SIGHUP"])
  * Start `node --import tsx server/index.ts` under strace. Traced: every network syscall, execve,
  * file opens/stats (to see any tailscale socket or state path), and the event-loop waits (the
  * idle-wakeup count). Returns { proc, port, stop() }.
+ *
+ * Node on purpose, though Sova's default runtime is Bun: both sides must run on one runtime, the
+ * baseline (BASELINE_SHA, parity.mjs) predates Bun support, probe.mjs patches Node's builtins
+ * through `--import` and syncBuiltinESMExports, and allowed-diffs.json and the idle-wakeup counts
+ * were calibrated on Node's event loop.
  */
 export async function startServer({ tree, env, logDir, strace = true }) {
   mkdirSync(logDir, { recursive: true });

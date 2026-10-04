@@ -209,7 +209,101 @@ export type EntryKind =
   | "align" // an `align` tool result that changed an alignment, or an exemption (pi-config mode extension); see `align`
   | "unknown";
 
-/** A normalized transcript row. `raw` carries the full parsed JSONL entry for advanced rendering. */
+/**
+ * What a row's source entry says beyond the row itself (§chat.transcript/slim-rows): on the FIRST
+ * row of each entry only. A row with no `meta` reads its entry's first row's (by entry id,
+ * shared/row-counts `entryOfRow`): an assistant reply's later blocks and its `:stop` row. A row
+ * with its own `meta` reads only that (a Claude Code worker's rows each carry their own, even
+ * several results of one line). Never the entry's content.
+ */
+export interface EntryMeta {
+  /** The JSONL entry's type: "message", "compaction", "custom", "custom_message", "model_change", … */
+  type: string;
+  /** custom and custom_message entries, and a `custom` message's customType. */
+  customType?: string;
+  /** message entries: user | assistant | toolResult | custom | bashExecution | … */
+  role?: string;
+  provider?: string;
+  model?: string;
+  /** An assistant message's usage, as recorded. */
+  usage?: unknown;
+  stopReason?: string;
+  errorMessage?: string;
+  /** toolResult messages. */
+  toolName?: string;
+  toolCallId?: string;
+  isError?: boolean;
+  /** compaction entries. */
+  tokensBefore?: number;
+  summary?: string;
+  details?: unknown;
+}
+
+/** Tools whose rows keep their whole content (`ToolRowInfo.args`, `.output`, `.details`): the
+    thread draws them as cards rather than tool cards, from that content, folded. */
+export const EAGER_TOOLS: ReadonlySet<string> = new Set([
+  "show_changes",
+  "sova_card",
+  "sova_confirm",
+  "sova_link",
+  "sova_unlink",
+  "align",
+  "session_send",
+  "sova_create_session",
+  "sova_navigate",
+]);
+
+/** The tool part of a tool-call or tool-result row (§chat.transcript/slim-rows). */
+export interface ToolRowInfo {
+  /** tool-call: the line the folded card shows, argsSummary of the arguments (src/lib/message.ts),
+      whole (its tooltip shows all of it). */
+  summary?: string;
+  /** tool-call of agent_spawn / team_create: the name it gave its agent or team, when it gave one. */
+  spawn?: string;
+  /** tool-result whose details record a patch: its "+n −m" (src/lib/tool-diff-stats.ts summaryStats,
+      counted as for an edit). The card shows it only when its call is an edit or a write. */
+  stats?: { added: number; removed: number };
+  /** EAGER_TOOLS only: the call's arguments as recorded. */
+  args?: unknown;
+  /** EAGER_TOOLS only: the result's output (its text blocks joined, as the card shows it). */
+  output?: string;
+  /** EAGER_TOOLS only: the result's details. */
+  details?: unknown;
+  /** The content is withheld: fetch it with GET /api/transcript/tool. Absent on EAGER_TOOLS rows. */
+  lazy?: true;
+  /** JSON size of the withheld content (the arguments, or the output and details). */
+  bytes?: number;
+}
+
+/**
+ * GET /api/transcript/tool?path=<session .jsonl>&ids=<row id>[,<row id>…] (or `claude=<uuid>` for a
+ * Claude Code worker's own file instead of `path`): the whole content of tool rows, at most
+ * TOOL_CONTENT_MAX_IDS ids. Ids are tool-call or tool-result row ids; one not on the branch is
+ * absent from `items`. Read-only: a hosted session is read from its runtime, any other from its file.
+ */
+export interface ToolContentResponse {
+  items: Record<string, ToolContent>;
+}
+
+export interface ToolContent {
+  /** tool-call rows: the call's arguments as recorded. */
+  args?: unknown;
+  /** The row's result: a tool-call row's paired result, when the branch holds one, or a
+      tool-result row's own. `output` is the result's text blocks joined with "\n" (empty blocks
+      skipped), or, when it has none, the row's 2,000-character summary text. */
+  result?: {
+    output: string;
+    isError: boolean;
+    details?: unknown;
+    /** The entry's own `toolUseResult` (Claude Code's record of an edit), only when the message
+        has no details object: the Changes viewer reads it in their place. The card never does. */
+    toolUseResult?: unknown;
+  };
+}
+
+export const TOOL_CONTENT_MAX_IDS = 200;
+
+/** A normalized transcript row (§chat.transcript/slim-rows: what it draws, never its entry). */
 export interface TranscriptItem {
   id: string; // entry id
   kind: EntryKind;
@@ -224,8 +318,7 @@ export interface TranscriptItem {
       `/tmp/pi-clipboard-<uuid>.png`; replies, tool output and subagent reports quote it). Set on
       user, assistant-text, info (custom messages) and tool-result rows. Only concrete names outside
       markdown code spans/fences (shared/tmp-paths.ts), first 8 distinct per row. User rows: pi's own
-      clipboard paths are removed from `text`; every other row keeps its text as-is. `raw` is
-      untouched. Bytes: GET /api/attachment?path=. */
+      clipboard paths are removed from `text`; every other row keeps its text as-is. Bytes: GET /api/attachment?path=. */
   attachments?: TmpAttachment[];
   /** kind "report" only: the parsed message. `text` holds the same body. */
   report?: ReportInfo;
@@ -271,6 +364,9 @@ export interface TranscriptItem {
   profileMark?: { profile: SessionProfileField | null };
   /** kind "info" only: a subagents-team-event-v1 entry; `text` is `Team: ` + its sentence. */
   teamEvent?: TeamEvent;
+  /** kind "info" only: a /compact-handoff run's `compact-handoff-run` entry
+      (§chat.slash-commands/compact-handoff-row); `text` is its one line. Per `id` the newest renders. */
+  handoffRun?: HandoffRunInfo;
   /** kind "worktree-merge" only: the `worktree-merge` extension message's details (§chat.worktrees/merge-card).
       `text` is the one line the model read ("Merged feat/x into master at abc1234, 5 commits, +120 −30"). */
   worktreeMerge?: WorktreeMergeInfo;
@@ -280,7 +376,14 @@ export interface TranscriptItem {
       call, whose tool-call row renders nothing once this row is there. A failed call, a `get`, or
       details that don't check out stay an ordinary tool-result. */
   align?: AlignRowInfo;
-  raw: unknown;
+  /** The entry's timestamp (ISO), on every row whose entry has one. */
+  at?: string;
+  /** The entry's facts, on its first row only (EntryMeta). */
+  meta?: EntryMeta;
+  /** tool-call and tool-result rows. A lazy tool-result row carries no `text`. */
+  tool?: ToolRowInfo;
+  /** kind "unknown" only: the whole entry, for the card that shows it as JSON (signatures removed). */
+  entry?: unknown;
 }
 
 /** An alignment (§chat.alignment/document), as the `align` tool's snapshot carries it. The
@@ -301,6 +404,25 @@ export interface AlignDocInfo {
   rev: number;
   createdAt: string;
   updatedAt: string;
+  /** The adversarial review record (§chat.alignment-review/record); absent on every document no
+      review op touched, which is all of them with the `adversarial-review` flag off. */
+  review?: AlignReviewInfo;
+}
+
+export type AlignReviewPhaseInfo = "plan" | "diff";
+export type AlignReviewStateInfo = "skipped" | "running" | "clear" | "blocking" | "incomplete";
+export interface AlignReviewEntryInfo {
+  state: AlignReviewStateInfo;
+  /** One line: why reviewed or skipped, or the verdict's summary. */
+  reason: string;
+  /** "backend · model · effort". */
+  model?: string;
+  at: string;
+  blockers?: { id: string; title: string; check: string; closed?: { by: "check" | "evidence" | "waiver"; evidence: string; at: string } }[];
+}
+export interface AlignReviewInfo {
+  plan?: AlignReviewEntryInfo;
+  diff?: AlignReviewEntryInfo;
 }
 
 export interface AlignQuestionInfo {
@@ -320,7 +442,9 @@ export type AlignChangeInfo =
   | { kind: "decided" | "reopened" | "question-dropped"; q: string }
   | { kind: "accepted"; qs: string[] }
   | { kind: "status"; to: "implementing" | "done" | "open" }
-  | { kind: "dropped" };
+  | { kind: "dropped" }
+  | { kind: "review"; phase: AlignReviewPhaseInfo; state: AlignReviewStateInfo }
+  | { kind: "blocker-closed"; phase: AlignReviewPhaseInfo; id: string };
 
 /** An `align` call's details: `doc` (the snapshot after a changing call) or `exempt`; `line` is the
     changes in words ("q3 decided · +q11"). */
@@ -351,8 +475,7 @@ export interface WorktreeMergeInfo {
  * An extension message shown as a collapsed report row instead of a centered info row: every
  * `subagent-complete` (pi-config subagents: "### <id> (<name>) — <status>[ · task <outcome>]",
  * optional "Error: …", "Session: …" and "Model: …" lines, then the worker's final output), and
- * any other custom message longer than 200 characters or spanning lines. Parsed server-side;
- * `raw` is untouched.
+ * any other custom message longer than 200 characters or spanning lines. Parsed server-side.
  */
 export interface ReportInfo {
   /** The message's customType, e.g. "subagent-complete", "intercom_message". */
@@ -827,24 +950,29 @@ export interface PlaybookCatalog {
 }
 
 // GET /api/settings              -> WebSettings
-// PUT /api/settings              -> WebSettings (400 bad body; only the keys below are accepted)
+// PUT /api/settings              -> WebSettings (400 bad body; `experimental` must be an object,
+//                                   a known key a boolean; unknown keys are ignored)
 // GET /api/settings/claude-status -> ClaudeCliStatus
 // ---------------------------------------------------------------------------
 /** Sova's own settings, stored in <agentDir>/sova/settings.json (server/web-settings.ts).
     Nothing outside Sova reads this file, so it is not a cross-process contract the way the
     subagent policy is. */
 export interface WebSettings {
-  experimental: {
-    /** Offer the Claude Code CLI's models as first-class pi models. Default off. Drives the
-        `claude-code-provider` extension flag, so it takes effect for sessions created after the
-        change, not for ones already open. */
-    claudeCodeProvider: boolean;
-  };
+  experimental: ExperimentalSettings;
 }
 
-/** Whether the Claude Code CLI is usable, for the Experimental tab's status line. `version` is
+/** Settings → Experimental's switches, each a boolean, off unless stored `true`. The Claude Code
+    provider is always on now, and an old file's `claudeCodeProvider` is ignored. A new switch is a
+    key here and in server/web-settings.ts EXPERIMENTAL_KEYS. */
+export interface ExperimentalSettings {
+  /** Adversarial review of alignments (§chat.alignment-review/flag): new hosted sessions get the
+      mode extension's `adversarial-review` flag, and the web shows the review UI. */
+  adversarialReview: boolean;
+}
+
+/** Whether the Claude Code CLI is usable, for Settings → Accounts' status line. `version` is
     what `claude --version` printed; `models` counts the claude-code-cli models currently
-    registered with the runtime (0 while the toggle is off). `error` is set when the CLI could not
+    registered with the runtime. `error` is set when the CLI could not
     be run at all — the two fields are then absent. */
 export interface ClaudeCliStatus {
   version?: string;
@@ -1170,6 +1298,9 @@ export interface SessionSetupFile {
       reader shows bytes and lines rather than a 0 it would be inventing. A transitional read, not
       a permanent contract. */
   tokens?: number;
+  /** This session keeps this context file or skill out (§chat.transcript/setup-card-toggles): the
+      row is still listed, and no total counts it. Never set on SYSTEM.md / APPEND_SYSTEM.md rows. */
+  off?: true;
 }
 
 /** pi's own estimate of what text costs a model (pi-ai `estimateTextTokens`): the text's length in
@@ -1202,12 +1333,29 @@ export type SessionSetup =
       /** True when the read came from the open chat runtime — the exact set this session prompts
           with. False: pi's loader without extensions, which cannot see a path an extension adds. */
       fromRuntime: boolean;
+      /** The context and skill rows can be switched now (§chat.transcript/setup-card-toggles): this
+          server holds the chat, it is local, ordinary, not TUI-live and before its first message.
+          Worked out per session on every read, never cached with the folder's lists. */
+      toggleable?: boolean;
       checkedAt: number;
     }
   /** A target session: its cwd is a local placeholder, so its loadout can't be read here. */
   | { state: "remote"; where: { kind: "remote"; target: string }; cwd: string; checkedAt: number }
   /** Nothing could be read: `reason` is a sentence for the user. Never cached. */
   | { state: "unavailable"; where: GitWhere; cwd: string; reason: string; checkedAt: number };
+
+// POST /api/sessions/loadout {path, offContext, offSkills} -> SessionSetup
+//                                  (§chat.transcript/setup-card-toggles: the session's whole off set
+//                                  — context files by absolute path, skills by name — written as its
+//                                  hidden `sova-loadout` entry; the runtime is rebuilt, open tabs get
+//                                  `reloaded`, and the answer is the card's fresh read. 400 a bad
+//                                  body, 404 a missing session, 409 refused: a message on the branch,
+//                                  mid-turn, TUI-live, a foreign writer or a special session.)
+export interface SessionLoadoutRequest {
+  path: string;
+  offContext: string[];
+  offSkills: string[];
+}
 
 /** Longest group name, in characters, after trimming (SessionGroup.name; the server trims and
     refuses an empty or longer one with 400). The one place the limit is written down: the create
@@ -1714,8 +1862,11 @@ export type ChatServerMessage =
   | HistoryMessage
   /** Raw pi SDK agent event passthrough. Shapes documented in pi docs/rpc.md "Events":
       message_update (assistantMessageEvent: text_delta | thinking_delta | toolcall_start/delta/end),
-      tool_execution_start/update/end, turn_start/end, agent_start/end, agent_settled, ... */
-  | { type: "event"; event: unknown }
+      tool_execution_start/update/end, turn_start/end, agent_start/end, agent_settled, ...
+      `entryId` (optional, additive): on a `message_end`, the id of the entry the SDK wrote the
+      message as, so a live row knows the transcript row it becomes (§chat.transcript/rendering,
+      "Switching back"). Absent on every other event, and when the message wasn't written. */
+  | { type: "event"; event: unknown; entryId?: string }
   /** Extension dialog bridge (select/confirm/input). Optional in MVP. */
   | { type: "model"; model: string }    // active model changed (model_change passthrough events also exist)
   /** Active thinking level after a change: sent with hello, after set_thinking, and after a
@@ -1903,8 +2054,8 @@ export interface OlderSummary {
  *   earlier when that row is a tool result (its call comes with it) or inside a baton wrap-up;
  * - `from=…` alone: from that row to the end (a view refreshing the rows it holds).
  * `view=light` instead: the whole branch as `{ items, context }`, each row without what only the
- * thread draws (a reply's text, a tool's output, image bytes, a report's body, the raw entry's
- * content), for the session pane: every row stays, in order, with its kind, time and counts.
+ * thread draws (a reply's text, a tool's output, image bytes, a report's body), for the session
+ * pane: every row stays, in order, with its kind, time and counts.
  * `leaf=<entry id>` is the last entry the client's list renders: an id the file holds that is no
  * longer on the active branch (a rewind) answers 409 `{ code: "moved" }`, as does a `before` row
  * that isn't in the list; the client then starts again from a fresh tail. A `from`/`explain`
@@ -1986,6 +2137,58 @@ export interface WorktreeStatus {
 }
 export interface SessionWorktrees { sessionPath: string; trees: WorktreeStatus[] }
 export interface WorktreesInsight { sessions: SessionWorktrees[]; generatedAt: number }
+
+/** GET /api/worktrees/summary?path=<session> (§chat.worktrees/cleanup): every linked worktree in
+    git's list for the repository the session's folder is in. "none": a remote session, a folder
+    that isn't in a repository with a main checkout, or one that is gone. */
+export type WorktreesSummary =
+  | { state: "none" }
+  | {
+      state: "ok";
+      /** The main checkout's folder. */
+      repo: string;
+      /** master, else main; absent when the repository has neither (every tree then unmerged). */
+      mainBranch?: string;
+      total: number;
+      merged: number;
+      /** Empty leftovers: a branch with no commit of its own. */
+      empty: number;
+      unmerged: number;
+    };
+/** POST /api/worktrees/cleanup's body: `dryRun` previews; `expect` removes exactly those paths
+    that are still removable (never both). */
+export interface WorktreeCleanupRequest {
+  path: string;
+  dryRun?: boolean;
+  expect?: string[];
+}
+/** A worktree that goes (dry run) or went: how it is merged, and whether its branch is deleted. */
+export interface WorktreeCleanupRemoved {
+  path: string;
+  branch?: string;
+  kind: "ancestor" | "content" | "empty";
+  branchDeleted: boolean;
+}
+/** A worktree that stays, and the one reason why. */
+export interface WorktreeCleanupKept {
+  path: string;
+  branch?: string;
+  reason: string;
+}
+/** The dry run's answer. */
+export interface WorktreeCleanupPlan {
+  repo: string;
+  mainBranch?: string;
+  /** The server's home folder, so the dialog shows paths with `~`. */
+  home?: string;
+  remove: WorktreeCleanupRemoved[];
+  keep: WorktreeCleanupKept[];
+}
+/** A removal's answer, per expected path (other trees are never touched). */
+export interface WorktreeCleanupResult {
+  removed: WorktreeCleanupRemoved[];
+  kept: WorktreeCleanupKept[];
+}
 
 /** POST /api/workers/resume's answer: the worker as the runtime now lists it. */
 export interface WorkerResumeResult { worker: WorkerInfo | null }
@@ -2187,6 +2390,18 @@ export interface TeamMember {
 }
 export type TeamDuty = "coordinator" | "monitor";
 export type TeamEventKind = "handover" | "retire" | "pause" | "resume" | "wrap-up";
+
+/** One /compact-handoff run's row (pi-config/extensions/compact-handoff/run.ts `RunEntryData`). */
+export interface HandoffRunInfo {
+  id: string;
+  status: "running" | "saved" | "failed" | "cancelled" | "interrupted";
+  focus?: string;
+  /** status "saved": where the note is. */
+  path?: string;
+  /** status "failed": why. */
+  error?: string;
+}
+
 /** One subagents-team-event-v1 entry on the parent's active branch. `workerId`/`role`: the member
     the event is about (handover/retire: the old member; pause/resume: the monitor; wrap-up: the
     member told to wrap up). `text`: the one-sentence form the UI shows (server/reports.ts
@@ -2426,6 +2641,9 @@ export interface SessionWorktreeInfo {
   runningWorkers: number;
   /** Its merge readiness (§chat.worktrees/readiness), once the background read has one. */
   readiness?: WorktreeReadiness;
+  /** Tracked active with its folder gone: what its work came to, the same answer readiness gives
+      (§chat.worktrees/pane). "unknown": its branch is gone too and nothing records a merge. */
+  gone?: "merged" | "unmerged" | "empty" | "unknown";
 }
 
 // ---------------------------------------------------------------------------
@@ -3484,7 +3702,8 @@ export interface SessionSummary {
 }
 
 /** One worktree's merge readiness (§chat.worktrees/readiness). */
-export type ReadinessState = "merged" | "stale" | "in-progress" | "blocked" | "ready" | "waiting-approval";
+/** "removed": the worktree's folder is gone and its work isn't known merged (§chat.worktrees/readiness). */
+export type ReadinessState = "merged" | "stale" | "in-progress" | "blocked" | "ready" | "waiting-approval" | "removed";
 
 export interface WorktreeReadiness {
   /** Canonical top level (SessionWorktreeInfo.path). */

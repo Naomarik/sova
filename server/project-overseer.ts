@@ -51,6 +51,8 @@ import { setArchived } from "./archived-sessions";
 import { actOrThrow, heldAt, holdByRef, holdRef, refusalError } from "./org-engine";
 import { listPreviews, PreviewRefused } from "./preview-links";
 import { makePreview, previewViews, resolvePreview, sovaPorts, turnOffPreview as turnOffPreviewLink } from "./project-previews";
+import { shareFromAct } from "./project-services/share";
+import { readRegistry } from "./project-services/store";
 import { previewAddress } from "./share/preview-address";
 import { heldActs, projectOfHold } from "./project-holds";
 import type { ActResult } from "./org-host";
@@ -650,9 +652,34 @@ function toolHost(rt: Rt): PoToolHost {
       if (!view) throw new Error("The preview was made, but it can't be read back.");
       return { preview: view };
     },
-    async servicesAct(verb, instance) {
+    async servicesAct(verb, instance, detail) {
       // The gate of sova_project_verbs (§app.project-services/callers): the level is the statechart's; the verb runs
-      // in the engine once this is taken, never held, counting nothing.
+      // in the engine once this is taken, never held, counting nothing. Revoking runs with no act.
+      if (verb === "revoke") return;
+      if (verb === "share") {
+        // A running copy's link (§app.project-overseer/previews): L1, held unattended; the act's effect mints it (checked
+        // again), so the engine mints nothing itself. The payload and the effect's result carry no link.
+        const endpoint = detail?.endpoint ?? "";
+        const branch = instance ? (readRegistry().instances.find((i) => i.id === instance)?.branch ?? null) : null;
+        const overseerId = readPoState(paths)?.current ?? "";
+        const out = await actOrThrow(
+          engine(),
+          projectSessionSid,
+          "services/share",
+          { verb, instance, endpoint, ...(branch ? { branch } : {}), ...(detail?.days !== undefined ? { days: detail.days } : {}), overseerId },
+          envelope(),
+          { settle: true },
+        );
+        if (out.held) {
+          const h = heldAt(projectSessionSid, out.held);
+          return { held: `Held: the link to ${endpoint} of a running copy${branch ? ` (${branch})` : ""} waits until ${new Date(h.until).toISOString()} so the operator can cancel it; it goes ahead then unless cancelled (held act ${h.id}).` };
+        }
+        const fx = out.effects?.find((e) => e.kind === "services-share");
+        if (fx?.error) throw new OrgError(fx.error, 409);
+        const id = (fx?.result as { id?: unknown } | null)?.id;
+        if (typeof id !== "string") throw new Error("The link was made, but it can't be read back.");
+        return { done: { id } };
+      }
       await actOrThrow(engine(), projectSessionSid, verb === "down" ? "services/down" : "services/run", { verb, ...(instance ? { instance } : {}) }, envelope(), { settle: true });
     },
     async software() {
@@ -1357,6 +1384,17 @@ onOrgHostOpened((host, engine) => {
     const made = await makePreview(r, ports);
     return { id: made.record.id };
   });
+  // The project statechart's services/share, taken (or released from its hold): the services engine shares the copy
+  // again as the project overseer, every check again, and keeps the link host-local; the result names the link only.
+  host.effects.register("services-share", async (e) =>
+    shareFromAct({
+      projectId: String(host.data(String(e.sessionId))?.projectId ?? ""),
+      instance: String(e.instance ?? ""),
+      endpoint: String(e.endpoint ?? ""),
+      ...(typeof e.days === "number" ? { days: e.days } : {}),
+      overseerId: String(e.overseerId ?? ""),
+    }),
+  );
   host.invocations.register("sova/look", {
     start(inv, report) {
       const projectId = typeof inv.params?.projectId === "string" ? inv.params.projectId : String(host.data(String(inv.sessionId))?.projectId ?? "");

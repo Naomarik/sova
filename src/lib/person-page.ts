@@ -77,7 +77,7 @@ export const OWNER_LINK_STATE: Record<"live" | "expired" | "off", { word: string
   expired: { word: "Expired" },
 };
 
-/** A link that still opens: Turn Off applies to it. */
+/** A link that still opens: Delete Link applies to it. */
 export const linkLive = (state: LinkState): boolean => state === "writes" || state === "reads";
 
 type VisitIn = Pick<VisitRow, "kind" | "at" | "lastSeenAt" | "device" | "publicTitle" | "bot" | "otherHost"> & Partial<Pick<VisitRow, "via">>;

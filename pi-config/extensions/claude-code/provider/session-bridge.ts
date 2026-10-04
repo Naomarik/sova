@@ -1861,6 +1861,8 @@ export class SessionBridge implements ClaudeSessionBridge {
 	private readonly limits: SessionBridgeLimits;
 	/** This process's fork seed (`CLAUDE_FORK_ENV`), for its first conversation's child only. */
 	private forkSeed?: ClaudeForkPoint;
+	/** pi session id -> the fork point it was seeded with, and its source (seedFork). */
+	private readonly seeds = new Map<string, { point: ClaudeForkPoint; from: string }>();
 
 	constructor(options: SessionBridgeOptions = {}) {
 		this.options = options;
@@ -1871,6 +1873,33 @@ export class SessionBridge implements ClaudeSessionBridge {
 	/** See CliSession.forkPoint; undefined for a session with no child here. */
 	forkPoint(piSessionId: string): ClaudeForkPoint | undefined {
 		return this.sessions.get(piSessionId)?.forkPoint();
+	}
+
+	/**
+	 * Seed one pi session (a fork created in this process, fork-point.ts `seedForkPoint`) with its
+	 * source's fork point, for that session's first conversation child. Unlike the process seed,
+	 * it may be taken long after: see takeSeed.
+	 */
+	seedFork(piSessionId: string, point: ClaudeForkPoint, fromPiSessionId: string): void {
+		this.seeds.set(piSessionId, { point, from: fromPiSessionId });
+	}
+
+	/**
+	 * The fork point a new conversation child starts from: its own seed, only while the source's
+	 * CLI is still exactly there (live, idle, same record and prefix) — resuming a record that has
+	 * moved on would hand the fork the source's later turns — else this process's seed, once.
+	 */
+	private takeSeed(key: string): ClaudeForkPoint | undefined {
+		const seeded = this.seeds.get(key);
+		if (seeded) {
+			this.seeds.delete(key);
+			const now = this.forkPoint(seeded.from);
+			const same = now && now.claudeSessionId === seeded.point.claudeSessionId && now.messages === seeded.point.messages && now.prefix === seeded.point.prefix && now.cwd === seeded.point.cwd;
+			return same ? seeded.point : undefined;
+		}
+		const seed = this.forkSeed;
+		this.forkSeed = undefined;
+		return seed;
 	}
 
 	/**
@@ -1926,10 +1955,9 @@ export class SessionBridge implements ClaudeSessionBridge {
 		// under a fresh uuid, so their child would otherwise idle until reaped.
 		const oneShot = !session && request.tools.length === 0 && !this.cwds.has(key);
 		if (!session) {
-			// A pi child forked from a Claude session (explain) gets the seed for its conversation;
-			// one-shot requests (compaction, branch summaries) never do.
-			const seed = oneShot ? undefined : this.forkSeed;
-			if (seed) this.forkSeed = undefined;
+			// A pi child forked from a Claude session (a background fork) or a fork Sova seeded gets
+			// the seed for its conversation; one-shot requests (compaction, branch summaries) never do.
+			const seed = oneShot ? undefined : this.takeSeed(key);
 			session = new CliSession(key, this.options, this.cwdFor(key), seed, () => this.logins.get(key));
 			this.sessions.set(key, session);
 		}
@@ -1959,6 +1987,7 @@ export class SessionBridge implements ClaudeSessionBridge {
 	async disposeSession(piSessionId: string, reason = "pi session shut down"): Promise<void> {
 		this.cwds.delete(piSessionId);
 		this.logins.delete(piSessionId);
+		this.seeds.delete(piSessionId);
 		const session = this.sessions.get(piSessionId);
 		if (!session) return;
 		this.sessions.delete(piSessionId);

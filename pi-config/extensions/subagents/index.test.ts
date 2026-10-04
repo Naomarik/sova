@@ -4,6 +4,8 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { visibleWidth } from "@earendil-works/pi-tui";
+import { createAgentSession, DefaultResourceLoader, SessionManager, SettingsManager } from "@earendil-works/pi-coding-agent";
+import { fauxAssistantMessage, fauxProvider, fauxToolCall } from "@earendil-works/pi-ai";
 import * as os from "node:os";
 import { CLAUDE_CODE_EXTENSION, LLM_INFLIGHT_EXTENSION, MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, SPEC_CORE_DIR, SPEC_WORKER_EXTENSION, SPEC_HOOK_STATE, MEMBER_EXTENSION, MEMBER_MCP, REMOTE_EXTENSION, REMOTE_MCP, REMOTE_MCP_TOOL_TIMEOUT_MS, registerSubagents, boundedText, installedPackageDir, type SubagentsOptions } from "./index.ts";
 import { CLAUDE_PROVIDER_FLAG } from "../claude-code/provider/index.ts";
@@ -933,8 +935,8 @@ test("finished retention is bounded, preserves live/idle and wait references, an
 		assert.deepEqual(h.updates.at(-1).details.retention, listed.details.retention);
 		controller.abort();
 		assert.doesNotMatch((await liveWait).content[0].text, /\[Retention:/);
-		assert.equal(h.messages.length, 57); // idle + selected + all 55 completions
-		assert.ok(h.messages.some(m => m[0].content.includes("selected result survives eviction")));
+		assert.equal(h.messages.length, 56); // idle + all 55 completions; the wait returned selected's
+		assert.ok(!h.messages.some(m => m[0].content.includes("selected result survives eviction")));
 		await h.call("agent_spawn", { prompt: "new", name: selected.id, groupLabel: "run_02" });
 		assert.equal(h.workers.at(-1).id, "ag_59");
 		await assert.rejects(h.call("agent_transcript", { id: selected.id }), /unavailable.*6 finished worker/);
@@ -943,6 +945,396 @@ test("finished retention is bounded, preserves live/idle and wait references, an
 		await assert.rejects(h.call("agent_kill", { group: "missing-label" }), /No such run: missing-label.*5 empty run/);
 		assert.equal(h.workers.at(-1).status, "running");
 	} finally { await h.close(); }
+});
+
+const completions = (h: { messages: any[] }) => h.messages.filter(([m]: any[]) => m.customType === "subagent-complete");
+
+test("agent_wait: settles it returns are not also sent as subagent-complete; a later unwaited settle is", async () => {
+	const h = harness();
+	try {
+		await h.call("agent_spawn", { agents: [{ prompt: "a" }, { prompt: "b" }, { prompt: "c" }] });
+		const [w1, w2, w3] = h.workers;
+		const waiting = h.call("agent_wait", { ids: [w1.id, w2.id, w3.id] });
+		for (const [i, w] of [w1, w2, w3].entries()) {
+			w.output = `answer ${i + 1}`;
+			w.settle();
+		}
+		assert.equal(completions(h).length, 0, "nothing is sent while the wait collects");
+		const text = (await waiting).content[0].text;
+		for (const w of [w1, w2, w3]) assert.match(text, new RegExp(`### ${w.id} \\(${w.name}\\) — waiting\\n[\\s\\S]*${w.output}`));
+		assert.equal(completions(h).length, 0, "the wait result is the parent's only copy");
+		assert.equal(h.notices.length, 3, "the toast is unchanged");
+		await h.call("agent_steer", { id: w2.id, message: "again" });
+		w2.output = "answer 2b";
+		w2.settle();
+		assert.equal(completions(h).length, 1);
+		assert.match(completions(h)[0][0].content, /answer 2b/);
+		assert.equal(completions(h)[0][1].triggerTurn, true);
+	} finally { await h.close(); }
+});
+
+for (const end of ["abort", "timeout"] as const) {
+	test(`agent_wait (${end}): a settle the cancelled or timed-out wait returned is not sent; a later one is`, async () => {
+		const h = harness();
+		try {
+			await h.call("agent_spawn", { agents: [{ prompt: "a" }, { prompt: "b" }] });
+			const [w1, w2] = h.workers;
+			const controller = new AbortController();
+			const waiting = h.call("agent_wait", { ids: [w1.id, w2.id], ...(end === "timeout" ? { timeoutSeconds: 0.3 } : {}) }, controller.signal);
+			w1.output = "w1 done";
+			w1.settle();
+			await new Promise((r) => setTimeout(r, 20));
+			assert.equal(completions(h).length, 0, "no message while the wait is pending");
+			if (end === "abort") controller.abort();
+			const result = await waiting;
+			assert.match(result.content[0].text, end === "abort" ? /^Cancelled wait/ : /^Timed out; still working: ag_02/);
+			assert.match(result.content[0].text, /### ag_01 \(.*\) — waiting\n[^#]*w1 done/);
+			await new Promise((r) => setTimeout(r, 20));
+			assert.equal(completions(h).length, 0, "no message follows the returned settle");
+			w2.output = "w2 done";
+			w2.settle();
+			assert.equal(completions(h).length, 1);
+			assert.match(completions(h)[0][0].content, /^### ag_02[\s\S]*w2 done/);
+		} finally { await h.close(); }
+	});
+}
+
+test("agent_wait: a collected settle whose worker re-ran before the wait returned is sent once", async () => {
+	const h = harness();
+	try {
+		await h.call("agent_spawn", { prompt: "a" });
+		const [w1] = h.workers;
+		const waiting = h.call("agent_wait", { ids: [w1.id], timeoutSeconds: 0.3 });
+		w1.output = "first answer";
+		w1.settle();
+		// A queued steer starts the next task before the wait looks again.
+		w1.status = "running";
+		w1.output = undefined;
+		assert.equal(completions(h).length, 0);
+		const text = (await waiting).content[0].text;
+		assert.match(text, /^Timed out; still working: ag_01/);
+		assert.doesNotMatch(text, /first answer/);
+		assert.equal(completions(h).length, 1, "the unreported settle is sent when the wait returns");
+		assert.match(completions(h)[0][0].content, /— waiting\n[^#]*first answer/);
+		assert.equal(completions(h)[0][1].triggerTurn, true);
+		await new Promise((r) => setTimeout(r, 20));
+		assert.equal(completions(h).length, 1, "exactly once");
+	} finally { await h.close(); }
+});
+
+test("agent_wait: overlapping waits release a held settle once, after the last returns, unless one returned it", async () => {
+	const h = harness();
+	try {
+		await h.call("agent_spawn", { agents: [{ prompt: "a" }, { prompt: "b" }] });
+		const [w1, w2] = h.workers;
+		// The first wait returns w1's settle; the second still sees it re-running and must not resend it.
+		const a = h.call("agent_wait", { ids: [w1.id] });
+		const b = h.call("agent_wait", { ids: [w1.id, w2.id], timeoutSeconds: 1 });
+		w1.output = "w1 first";
+		w1.settle();
+		assert.match((await a).content[0].text, /w1 first/);
+		w1.status = "running";
+		w1.output = undefined;
+		w2.output = "w2 done";
+		w2.settle();
+		assert.doesNotMatch((await b).content[0].text, /w1 first/);
+		assert.equal(completions(h).length, 0, "the first wait returned w1's settle");
+		// Neither wait returned it: one message, sent when the last of them returns.
+		const c = h.call("agent_wait", { ids: [w1.id], timeoutSeconds: 0.2 });
+		const d = h.call("agent_wait", { ids: [w1.id], timeoutSeconds: 0.6 });
+		w1.output = "w1 second";
+		w1.settle();
+		w1.status = "running";
+		w1.output = undefined;
+		await c;
+		assert.equal(completions(h).length, 0, "held until the last collector returns");
+		await d;
+		assert.equal(completions(h).length, 1);
+		assert.match(completions(h)[0][0].content, /w1 second/);
+	} finally { await h.close(); }
+});
+
+const TOOL_TURN = [{ type: "toolCall", id: "call", name: "agent_wait", arguments: {} }];
+/** One parent turn ending, as pi's turn_end boundary reports it: a tool-call turn, or (no tool call) the one the run would stop after. */
+const turnEnd = (h: { event: (name: string, data: any) => unknown }, content: any[] = [{ type: "text", text: "done" }], over: { outcome?: string; pendingMessages?: any[] } = {}) =>
+	h.event("turn_end", {
+		message: { role: "assistant", content, stopReason: over.outcome === "aborted" ? "aborted" : content.some((c) => c.type === "toolCall") ? "toolUse" : "stop" },
+		outcome: over.outcome ?? "completed",
+		context: { pendingMessages: over.pendingMessages ?? [] },
+	});
+
+test("run hold: settles before agent_wait in the same run that the wait returns are never sent", async () => {
+	const h = harness();
+	try {
+		h.event("agent_start", {});
+		await h.call("agent_spawn", { agents: [{ prompt: "a" }, { prompt: "b" }] });
+		const [w1, w2] = h.workers;
+		w1.output = "answer 1";
+		w1.settle();
+		w2.output = "answer 2";
+		w2.settle();
+		assert.equal(completions(h).length, 0, "held while the run is in progress");
+		turnEnd(h, TOOL_TURN);
+		const text = (await h.call("agent_wait", { ids: [w1.id, w2.id] })).content[0].text;
+		assert.match(text, /answer 1[\s\S]*answer 2/);
+		turnEnd(h, TOOL_TURN);
+		turnEnd(h);
+		h.event("agent_end", { messages: [] });
+		assert.equal(completions(h).length, 0, "the wait result was the parent's only copy");
+		assert.equal(h.notices.length, 2, "the toast is unchanged");
+	} finally { await h.close(); }
+});
+
+test("run hold: an unwaited mid-run settle is sent once, waking, where the run would stop", async () => {
+	const h = harness();
+	try {
+		h.event("agent_start", {});
+		await h.call("agent_spawn", { prompt: "a" });
+		h.workers[0].output = "answer";
+		h.workers[0].settle();
+		assert.equal(completions(h).length, 0, "nothing at settle");
+		turnEnd(h, TOOL_TURN);
+		assert.equal(completions(h).length, 0, "nothing at a tool-call turn end");
+		turnEnd(h);
+		assert.equal(completions(h).length, 1, "sent at the stopping turn end");
+		assert.match(completions(h)[0][0].content, /answer/);
+		assert.deepEqual(completions(h)[0][1], { deliverAs: "followUp", triggerTurn: true });
+		turnEnd(h);
+		h.event("agent_end", { messages: [] });
+		assert.equal(completions(h).length, 1, "exactly once");
+	} finally { await h.close(); }
+});
+
+test("run hold: a queued user message defers the release to the next stopping turn end, or to agent_end", async () => {
+	const h = harness();
+	try {
+		const user = [{ role: "user", content: "next", timestamp: 0 }];
+		h.event("agent_start", {});
+		await h.call("agent_spawn", { agents: [{ prompt: "a" }, { prompt: "b" }] });
+		const [w1, w2] = h.workers;
+		w1.settle();
+		turnEnd(h, undefined, { pendingMessages: user });
+		assert.equal(completions(h).length, 0, "the user's message speaks first");
+		turnEnd(h);
+		assert.equal(completions(h).length, 1, "released at the next stopping turn end");
+		h.event("agent_end", { messages: [] });
+		h.event("agent_start", {});
+		w2.settle();
+		turnEnd(h, undefined, { pendingMessages: user });
+		assert.equal(completions(h).length, 1);
+		h.event("agent_end", { messages: [] });
+		assert.equal(completions(h).length, 2, "or at agent_end");
+		assert.deepEqual(completions(h)[1][1], { deliverAs: "followUp", triggerTurn: true });
+	} finally { await h.close(); }
+});
+
+test("run hold: an aborted run's held settles go into the transcript without starting a turn", async () => {
+	const h = harness();
+	try {
+		h.event("agent_start", {});
+		await h.call("agent_spawn", { agents: [{ prompt: "a" }, { prompt: "b" }] });
+		const [w1, w2] = h.workers;
+		w1.settle();
+		turnEnd(h, undefined, { outcome: "aborted" });
+		assert.equal(completions(h).length, 0, "an aborted turn is not a release point");
+		h.event("agent_end", { messages: [] });
+		assert.equal(completions(h).length, 1);
+		assert.deepEqual(completions(h)[0][1], { deliverAs: "followUp", triggerTurn: false });
+		// A Stop between turns: the run's signal is aborted though the last turn completed.
+		h.event("agent_start", {});
+		w2.settle();
+		turnEnd(h, TOOL_TURN);
+		h.ctx.signal = { aborted: true };
+		h.event("agent_end", { messages: [] });
+		delete h.ctx.signal;
+		assert.equal(completions(h).length, 2);
+		assert.deepEqual(completions(h)[1][1], { deliverAs: "followUp", triggerTurn: false });
+	} finally { await h.close(); }
+});
+
+test("run hold: a wake:false settle reaches the context at the next turn end, unless a wait in that turn returned it", async () => {
+	const h = harness();
+	try {
+		h.event("agent_start", {});
+		await h.call("agent_spawn", { agents: [{ prompt: "a", wake: false }, { prompt: "b", wake: false }] });
+		const [w1, w2] = h.workers;
+		w1.output = "quiet 1";
+		w1.settle();
+		assert.equal(completions(h).length, 0);
+		turnEnd(h, TOOL_TURN);
+		assert.equal(completions(h).length, 1, "sent at the next turn end, tool call or not");
+		assert.deepEqual(completions(h)[0][1], { deliverAs: "followUp", triggerTurn: false });
+		w2.output = "quiet 2";
+		w2.settle();
+		assert.match((await h.call("agent_wait", { ids: [w2.id] })).content[0].text, /quiet 2/);
+		turnEnd(h, TOOL_TURN);
+		turnEnd(h);
+		h.event("agent_end", { messages: [] });
+		assert.equal(completions(h).length, 1, "the wait returned w2's settle");
+	} finally { await h.close(); }
+});
+
+test("run hold: a settle a steered re-run moved past is sent at the stop; the one a wait returned is not", async () => {
+	const h = harness();
+	try {
+		h.event("agent_start", {});
+		await h.call("agent_spawn", { prompt: "a" });
+		const [w1] = h.workers;
+		w1.output = "first answer";
+		w1.settle();
+		await h.call("agent_steer", { id: w1.id, message: "again" });
+		turnEnd(h, TOOL_TURN);
+		const waiting = h.call("agent_wait", { ids: [w1.id] });
+		w1.output = "second answer";
+		w1.settle();
+		const text = (await waiting).content[0].text;
+		assert.match(text, /second answer/);
+		assert.doesNotMatch(text, /first answer/);
+		turnEnd(h, TOOL_TURN);
+		assert.equal(completions(h).length, 0);
+		turnEnd(h);
+		h.event("agent_end", { messages: [] });
+		assert.equal(completions(h).length, 1, "only the unreported settle");
+		assert.match(completions(h)[0][0].content, /first answer/);
+		assert.equal(completions(h)[0][1].triggerTurn, true);
+	} finally { await h.close(); }
+});
+
+test("run hold: shutting down mid-run sends the leftovers context-only", async () => {
+	const h = harness();
+	try {
+		h.event("agent_start", {});
+		await h.call("agent_spawn", { prompt: "a" });
+		h.workers[0].output = "unsent";
+		h.workers[0].settle();
+		assert.equal(completions(h).length, 0);
+	} finally { await h.close(); }
+	assert.equal(completions(h).length, 1);
+	assert.match(completions(h)[0][0].content, /unsent/);
+	assert.deepEqual(completions(h)[0][1], { deliverAs: "followUp", triggerTurn: false });
+});
+
+test("run hold: an idle parent is sent a settle at once, and a new session forgets an unfinished run", async () => {
+	const h = harness();
+	try {
+		await h.call("agent_spawn", { agents: [{ prompt: "a" }, { prompt: "b" }] });
+		h.workers[0].settle();
+		assert.equal(completions(h).length, 1);
+		assert.deepEqual(completions(h)[0][1], { deliverAs: "followUp", triggerTurn: true });
+		h.event("agent_start", {});
+		h.start();
+		h.workers[1].settle();
+		assert.equal(completions(h).length, 2, "session_start resets the run count");
+	} finally { await h.close(); }
+});
+
+/** A real AgentSession on a faux model, with the subagents extension and fake workers the test settles.
+ *  `order` records the run's boundaries and every custom message as pi emits them. */
+async function realSession() {
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), "subagents-hold-contract-"));
+	const faux = fauxProvider();
+	const order: string[] = [];
+	const workers: any[] = [];
+	const loader = new DefaultResourceLoader({
+		cwd: dir,
+		agentDir: dir,
+		noExtensions: true,
+		extensionFactories: [
+			(pi) => {
+				registerSubagents(pi, (options: any, handlers: any) => {
+					const worker: any = {
+						...options, wake: options.wake ?? true, extensions: [], status: "running", transcript: [],
+						usage: { input: 0, output: 0, turns: 0 }, steerCount: 0, output: "",
+						isFinished() { return ["killed", "done", "error"].includes(this.status); },
+						isSettled() { return this.isFinished() || this.status === "waiting"; },
+						finalOutput() { return this.output; },
+						async steer() { return { ok: true }; },
+						async kill() { this.status = "killed"; },
+						async dispose() { this.status = "killed"; },
+						settle(output: string) { this.output = output; this.status = "waiting"; handlers.onSettled(this); },
+					};
+					workers.push(worker);
+					return worker;
+				}, { policyFile: NO_POLICY_FILE, agentDir: NO_AGENT_DIR });
+				pi.on("agent_start", () => { order.push("agent_start"); });
+				pi.on("agent_end", () => { order.push("agent_end"); });
+				pi.on("agent_settled", () => { order.push("agent_settled"); });
+				pi.on("message_start", (event) => {
+					if (event.message.role === "custom") order.push(`custom:${event.message.customType}`);
+				});
+			},
+		],
+	});
+	await loader.reload();
+	const { session } = await createAgentSession({ cwd: dir, agentDir: dir, resourceLoader: loader, settingsManager: SettingsManager.inMemory(), sessionManager: SessionManager.inMemory(dir) });
+	await session.bindExtensions({ mode: "rpc" });
+	session.modelRuntime.registerNativeProvider(faux.provider);
+	await session.setModel(faux.getModel());
+	const completed = () => session.sessionManager.getEntries().filter((e: any) => e.type === "custom_message" && e.customType === "subagent-complete");
+	return { session, faux, order, workers, completed, close: () => { session.dispose(); fs.rmSync(dir, { recursive: true, force: true }); } };
+}
+
+test("contract (real AgentSession): held settles leave pi at the run's own boundaries — once, before agent_end, never duplicated", async () => {
+	// 1. Settled before the wait in the same run: the wait returns it, nothing else follows.
+	{
+		const s = await realSession();
+		try {
+			s.faux.setResponses([
+				fauxAssistantMessage(fauxToolCall("agent_spawn", { prompt: "a" }), { stopReason: "toolUse" }),
+				() => {
+					s.workers[0].settle("early answer");
+					return fauxAssistantMessage(fauxToolCall("agent_wait", { ids: [s.workers[0].id] }), { stopReason: "toolUse" });
+				},
+				fauxAssistantMessage("done"),
+			]);
+			await s.session.prompt("go");
+			await s.session.waitForIdle?.();
+			assert.equal(s.faux.state.callCount, 3, "no extra wake turn");
+			assert.equal(s.completed().length, 0, "the wait result was the only copy");
+			assert.deepEqual(s.order, ["agent_start", "agent_end", "agent_settled"]);
+		} finally { s.close(); }
+	}
+	// 2. Never waited: the followUp sent from the stopping turn's turn_end continues the same run.
+	{
+		const s = await realSession();
+		try {
+			s.faux.setResponses([
+				fauxAssistantMessage(fauxToolCall("agent_spawn", { prompt: "a" }), { stopReason: "toolUse" }),
+				() => {
+					s.workers[0].settle("late answer");
+					return fauxAssistantMessage("stopping");
+				},
+				fauxAssistantMessage("ack"),
+			]);
+			await s.session.prompt("go");
+			await s.session.waitForIdle?.();
+			assert.equal(s.faux.state.callCount, 3, "one wake turn");
+			assert.equal(s.completed().length, 1);
+			assert.deepEqual(s.order, ["agent_start", "custom:subagent-complete", "agent_end", "agent_settled"], "delivered before agent_end, no agent_settled in between");
+		} finally { s.close(); }
+	}
+	// 3. Aborted: triggerTurn:false at agent_end is persisted, and no turn starts.
+	{
+		const s = await realSession();
+		try {
+			s.faux.setResponses([
+				fauxAssistantMessage(fauxToolCall("agent_spawn", { prompt: "a" }), { stopReason: "toolUse" }),
+				() => {
+					s.workers[0].settle("stopped answer");
+					void s.session.abort();
+					return fauxAssistantMessage("cut", { stopReason: "aborted" });
+				},
+				fauxAssistantMessage("must not run"),
+			]);
+			await s.session.prompt("go");
+			await s.session.waitForIdle?.();
+			await new Promise((r) => setTimeout(r, 20));
+			assert.equal(s.faux.state.callCount, 2, "the Stop never wakes the parent");
+			assert.equal(s.completed().length, 1, "the held settle is in the transcript");
+			assert.equal(s.session.agent.hasQueuedMessages(), false, "nothing stranded in pi's queue");
+			assert.deepEqual(s.order.filter((e) => e === "agent_start"), ["agent_start"]);
+		} finally { s.close(); }
+	}
 });
 
 test("exit-only completion prunes finished workers and failed factories leave no empty runs", async () => {
@@ -3089,6 +3481,42 @@ test("routing: members report to the coordinator, the monitor stays silent, and 
 		const orphan = await h.ask("ag_02", { type: "question", message: "Anyone?" });
 		assert.equal(orphan.ok, true);
 		assert.equal(h.parentMessages("team-question").length, 1, "with no live coordinator, questions reach the operator again");
+	} finally { await h.cleanup(); }
+});
+
+test("routing: a parent agent_wait returns the coordinator's completion instead of a subagent-complete; a waited member still reports to the coordinator", async () => {
+	const h = coordinatedHarness(DEFAULTS_FILE);
+	try {
+		await h.call("team_create", { name: "Crew", objective: "Ship", members: [{ role: "dev", prompt: "build" }] });
+		const coordinator = h.worker("ag_01"), dev = h.worker("ag_02");
+		h.messages.length = 0;
+		const onCoordinator = h.call("agent_wait", { ids: ["ag_01"] });
+		coordinator.settle();
+		assert.match((await onCoordinator).content[0].text, /### ag_01 \(coordinator\) — waiting[\s\S]*Claude result/);
+		assert.equal(h.parentMessages("subagent-complete").length, 0, "the wait returned the coordinator's completion");
+		const onDev = h.call("agent_wait", { ids: ["ag_02"] });
+		dev.output = "built it";
+		dev.settle();
+		await h.tick();
+		assert.match(coordinator.lastSteer.message, /^\[Team report from dev \(ag_02\), team_01: finished — routed to you as coordinator\][\s\S]*built it/);
+		assert.match((await onDev).content[0].text, /built it/);
+		assert.equal(h.parentMessages("subagent-complete").length, 0);
+	} finally { await h.cleanup(); }
+});
+
+test("routing: a member's settle during the parent's run still reaches the coordinator at once", async () => {
+	const h = coordinatedHarness(DEFAULTS_FILE);
+	try {
+		await h.call("team_create", { name: "Crew", objective: "Ship", members: [{ role: "dev", prompt: "build" }] });
+		const coordinator = h.worker("ag_01"), dev = h.worker("ag_02");
+		h.messages.length = 0;
+		h.event("agent_start", {});
+		dev.output = "built it mid-run";
+		dev.settle();
+		await h.tick();
+		assert.match(coordinator.lastSteer.message, /^\[Team report from dev \(ag_02\), team_01: finished — routed to you as coordinator\][\s\S]*built it mid-run/);
+		h.event("agent_end", { messages: [] });
+		assert.equal(h.parentMessages("subagent-complete").length, 0, "only the parent's copy is ever held");
 	} finally { await h.cleanup(); }
 });
 

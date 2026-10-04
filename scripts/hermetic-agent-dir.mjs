@@ -11,10 +11,23 @@
 //   node scripts/hermetic-agent-dir.mjs --check   # verify only; nonzero if anything is off
 //   node scripts/hermetic-agent-dir.mjs --unlock-url   # also mint .agent's access token if it has
 //                                                  # none, and print the URL that unlocks the page
+//   node scripts/hermetic-agent-dir.mjs --copied-sessions   # the dir is about to receive copies of
+//                                                  # real sessions: set it up for them (below)
 //
 // `pnpm run dev:hermetic` passes --unlock-url, so its first visit needs no hunting for the token.
 // Without the flag the token is never printed (a deploy that builds its agent dir with this script
 // keeps it out of its logs).
+//
+// Copied sessions: a real session copied in still holds its wake nudges, and a hermetic server
+// hosting it would fire the overdue ones at once, with whatever auth the dir has. So whenever the
+// dir holds (or, with --copied-sessions, will receive) copies of real sessions, the wake-nudge
+// extension is left out and the scheduler's state (sova/schedules.json, sova/schedule-runs.jsonl)
+// is blanked. A session counts as copied when a file of the same name is in ~/.pi/agent/sessions
+// (its names are read, nothing there is touched). The mode is sticky: copied-sessions.json records
+// it, so a re-run never links wake-nudge back; schedules are blanked again only when new copies
+// arrive, --copied-sessions is passed, or the store holds a schedule approved in the real one
+// (~/.pi/agent/sova/schedules.json, read only), so schedules made in the hermetic server itself
+// survive a restart of dev:hermetic. A copied auth.json stays the user's choice.
 //
 // No link ever points into ~/.pi: the agent dir is self-contained. settings.json is derived from
 // pi-config/settings.json minus the machine-specific bits (external `packages`, changelog marker),
@@ -23,20 +36,23 @@
 import { randomBytes } from "node:crypto";
 import { copyFileSync, existsSync, linkSync, lstatSync, mkdirSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { basename, join, resolve } from "node:path";
 
 const ROOT = resolve(import.meta.dirname, "..");
 const PI_CONFIG = join(ROOT, "pi-config");
-const AGENT = join(ROOT, ".agent");
+// HERMETIC_AGENT_DIR builds another directory the same way (scripts/perf/load-experiment.mjs --agent-dir).
+const AGENT = process.env.HERMETIC_AGENT_DIR ? resolve(process.env.HERMETIC_AGENT_DIR) : join(ROOT, ".agent");
 const HOME_PI = join(homedir(), ".pi");
 
 /** Keys of pi-config/settings.json that are about this machine or the user's installed packages. */
 const MACHINE_SPECIFIC = new Set(["packages", "lastChangelogVersion"]);
 
-const check = process.argv[2] === "--check";
-const unlockUrl = process.argv[2] === "--unlock-url";
-if (process.argv[2] !== undefined && !check && !unlockUrl) {
-  console.error(`usage: ${process.argv[1]} [--check | --unlock-url]`);
+const args = process.argv.slice(2);
+const check = args.includes("--check");
+const unlockUrl = args.includes("--unlock-url");
+const copiedFlag = args.includes("--copied-sessions");
+if (args.some((a) => !["--check", "--unlock-url", "--copied-sessions"].includes(a)) || (check && unlockUrl)) {
+  console.error(`usage: ${process.argv[1]} [--check | --unlock-url] [--copied-sessions]`);
   process.exit(2);
 }
 
@@ -98,6 +114,70 @@ dir(AGENT);
 dir(join(AGENT, "extensions"));
 dir(join(AGENT, "sessions"));
 
+// --- copied sessions (see the header) ---------------------------------------------------------
+
+/** Every session file's name under `root`, the live registry left out; empty if unreadable. */
+function sessionNames(root) {
+  try {
+    return readdirSync(root, { recursive: true })
+      .map(String)
+      .filter((rel) => rel.endsWith(".jsonl") && !rel.split("/").includes("live"))
+      .map((rel) => basename(rel));
+  } catch {
+    return [];
+  }
+}
+
+const WAKE_NUDGE = "wake-nudge.ts";
+const copiedMarker = join(AGENT, "copied-sessions.json");
+let marked = null;
+try {
+  const raw = JSON.parse(readFileSync(copiedMarker, "utf8"));
+  marked = new Set(Array.isArray(raw?.sessions) ? raw.sessions.filter((n) => typeof n === "string") : []);
+} catch {}
+const real = new Set(sessionNames(join(HOME_PI, "agent", "sessions")));
+const copied = sessionNames(join(AGENT, "sessions")).filter((n) => real.has(n)).sort();
+const copiedMode = copiedFlag || marked !== null || copied.length > 0;
+const newCopies = copied.filter((n) => !marked?.has(n));
+const BLANK_STORE = `${JSON.stringify({ version: 1, seq: 0, schedules: [], logins: {} }, null, 2)}\n`;
+const scheduleFiles = [join(AGENT, "sova", "schedules.json"), join(AGENT, "sova", "schedule-runs.jsonl")];
+/** A store's approved schedules, by root and approval: the same approval is the same schedule. */
+function approvals(file) {
+  try {
+    const store = JSON.parse(readFileSync(file, "utf8"));
+    return (Array.isArray(store?.schedules) ? store.schedules : []).filter((x) => x?.approved).map((x) => `${x.root}\0${x.approved.at}\0${x.approved.pin}`);
+  } catch {
+    return [];
+  }
+}
+const realApprovals = new Set(approvals(join(HOME_PI, "agent", "sova", "schedules.json")));
+const copiedSchedules = approvals(scheduleFiles[0]).some((k) => realApprovals.has(k));
+// Blank the scheduler's state when the mode starts, new copies arrived, more are announced, or
+// it holds a schedule of the real store's.
+const blankSchedules = copiedMode && (copiedFlag || marked === null || newCopies.length > 0 || copiedSchedules);
+if (copiedMode) {
+  if (check) {
+    if (marked === null) problem(`copied sessions, not set up for them (rerun without --check): ${copiedMarker}`);
+    else if (newCopies.length > 0) problem(`new copied sessions since the last setup (rerun without --check): ${newCopies.join(", ")}`);
+    else if (copiedSchedules) problem(`holds the real scheduler's schedules (rerun without --check): ${scheduleFiles[0]}`);
+  } else {
+    writeFileSync(copiedMarker, `${JSON.stringify({ v: 1, sessions: [...new Set([...(marked ?? []), ...copied])].sort() }, null, 2)}\n`);
+    if (blankSchedules) {
+      const [store, runs] = scheduleFiles;
+      if (existsSync(store) && readFileSync(store, "utf8") !== BLANK_STORE) {
+        assertOutsideHomePi(store);
+        writeFileSync(store, BLANK_STORE);
+        console.log(`${store}: blanked (copied sessions)`);
+      }
+      if (existsSync(runs)) {
+        assertOutsideHomePi(runs);
+        rmSync(runs, { force: true });
+        console.log(`${runs}: removed (copied sessions)`);
+      }
+    }
+  }
+}
+
 // Every extension of THIS worktree: loose *.ts files, and directories that actually hold one.
 // pi's own rule (dist/core/extensions/loader.js, resolveExtensionEntries): a directory is an
 // extension only if it has package.json with a "pi.extensions" manifest, an index.ts, or an
@@ -124,6 +204,7 @@ for (const entry of readdirSync(extRoot, { withFileTypes: true }).sort((a, b) =>
   const path = join(extRoot, entry.name);
   const isExtension = entry.isFile() ? entry.name.endsWith(".ts") : entry.isDirectory() && isExtensionDir(path);
   if (!isExtension) continue;
+  if (copiedMode && entry.name === WAKE_NUDGE) continue; // never fire a copied session's nudges
   wanted.add(entry.name);
   link(path, join(AGENT, "extensions", entry.name));
 }
@@ -231,6 +312,7 @@ if (check) {
 }
 
 console.log(`${AGENT} ready (extensions -> ${extRoot})`);
+if (copiedMode) console.log(`copied sessions (${copied.length} found): ${WAKE_NUDGE} left out, schedules blanked when copies arrive (${copiedMarker})`);
 console.log(`use it with:  PORT=${process.env.SOVA_PORT || 4810} PI_CODING_AGENT_DIR=${AGENT} pnpm run dev:server`);
 
 /** .agent's access token, as the server keeps it (server/auth.ts): 32 random bytes in base64url at

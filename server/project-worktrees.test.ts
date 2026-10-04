@@ -72,6 +72,32 @@ describe("a coding session's worktree", () => {
     await assert.rejects(cutWorktree(await rootOf(root), root, "Fix it", undefined, "abc123"), /already exists/);
   });
 
+  test("repeated readings follow every ref move, packing and dirt; the folder's return is read again", async () => {
+    const root = repo();
+    const cut = await cutWorktree(await rootOf(root), root, "Cache it", undefined, "c4c4e0");
+    const wt = cut.worktree.path;
+    const read = () => readWorktree(cut.worktree, root);
+    assert.deepEqual(await read(), await read(), "unchanged refs, the same reading");
+    commitIn(wt, "a.txt", "a\n");
+    assert.equal((await read()).ahead, 1, "a commit on the branch is seen at once");
+    commitIn(wt, "b.txt", "b\n");
+    assert.deepEqual([(await read()).ahead, (await read()).unmerged], [2, 2]);
+    writeFileSync(join(wt, "c.txt"), "dirty\n");
+    assert.equal((await read()).dirty, true, "dirt is read every time");
+    rmSync(join(wt, "c.txt"));
+    git(root, "merge", "-q", "--ff-only", cut.worktree.branch);
+    assert.deepEqual([(await read()).merged, (await read()).unmerged], [true, 0], "the target's move is seen at once");
+    git(root, "pack-refs", "--all");
+    assert.equal((await read()).state, "merged", "packed refs still read right");
+    commitIn(wt, "d.txt", "d\n");
+    assert.deepEqual([(await read()).merged, (await read()).ahead], [false, 3], "a packed ref that moves again is seen");
+    const moved = `${wt}-away`;
+    git(root, "worktree", "move", wt, moved);
+    assert.equal((await read()).state, "missing");
+    git(root, "worktree", "move", moved, wt);
+    assert.deepEqual(await read(), { state: "open", merged: false, branch: true, ahead: 3, unmerged: 1, dirty: false, worktree: wt }, "back again, it is read from its folder");
+  });
+
   test("Merge Branch: only into the root's checked-out target, clean and idle; fast-forward, else a merge commit", async () => {
     const root = repo();
     const cut = await cutWorktree(await rootOf(root), root, "Login", undefined, "000001");

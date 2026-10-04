@@ -1,23 +1,32 @@
 import { createSignal, For, type JSX, Show } from "solid-js";
 import { PREVIEW_PURPOSE_MAX } from "../../shared/preview-links";
-import { getProjectPreviews, mintPreview, turnOffPreview } from "../lib/api";
+import { getProjectPreviews, mintPreview, runProjectVerb, turnOffPreview } from "../lib/api";
 import { createPoll } from "../lib/poll";
 import { previewRow, senderLine } from "../lib/preview-rows";
 import {
+  DELETE_ALL_TIP,
+  DELETE_CONFIRM,
+  deleteFailed,
+  deleteLabel,
+  deleteNote,
+  type PreviewGroup,
   parsePort,
+  PREVIEW_DELETED,
   PREVIEW_EXPIRY_CHOICES,
   previewGroups,
   previewWarning,
+  RECIPIENT_DELETE_LABEL,
+  recipientDeleteConfirm,
+  recipientDeleted,
+  recipientDeleteName,
+  recipientDeleteNote,
+  recipientDeleteTip,
   recipientName,
-  recipientOffConfirm,
-  recipientOffDone,
-  recipientOffTip,
   sentToLine,
-  TURN_OFF_ALL_TIP,
-  turnOffConfirm,
 } from "../lib/previews";
 import { resolveAppLink, sessionIndex, sessionIndexVersion } from "../lib/session-links";
-import { copyText, toast } from "../lib/ui-state";
+import { createArm } from "../lib/two-step";
+import { announce, copyText, toast } from "../lib/ui-state";
 import { Banner } from "./ui";
 
 const POLL_MS = 5_000;
@@ -42,9 +51,12 @@ function SessionLink(props: { href: string | null; children: JSX.Element }) {
 /**
  * A project's preview links (§mesh.public/preview-card): one row per active preview with what it is
  * for, its coding session, branch and what it serves, whether it serves now, who made it, its
- * expiry, Copy Link (the kept link, or one minted in this page) and Turn Off (every link sent from
- * it too); the people it was sent to on a Sent to line, each with a Turn Off of their own link;
- * then New Preview, which opens the form with the warning. Read every 5 seconds while the page shows.
+ * expiry, Copy Link and Open (the kept link, or one minted in this page) and Delete Preview (for
+ * good, every link sent from it too; on New Preview's line when it is the only row); the people it
+ * was sent to on a Sent to line, each with a Delete Link of their own; then New Preview, which opens
+ * the form with the warning. A running copy's link shows the copy's
+ * state (Running, Starting, Stopped) and, stopped, Start: the operator's `up`, the only thing that
+ * starts it (a visit never does). Read every 5 seconds while the page shows.
  */
 export function PreviewsCard(props: { projectId: string }) {
   const poll = createPoll(() => getProjectPreviews(props.projectId), POLL_MS);
@@ -55,8 +67,11 @@ export function PreviewsCard(props: { projectId: string }) {
   const [days, setDays] = createSignal<number>(PREVIEW_EXPIRY_CHOICES[0]);
   const [formError, setFormError] = createSignal<string | null>(null);
   const [busy, setBusy] = createSignal(false);
-  const [armed, setArmed] = createSignal<string | null>(null);
+  /** The Delete waiting for its second click, by preview id (§mesh.public/preview-card). */
+  const { armed, arm, reset, disarm } = createArm();
   const [formOpen, setFormOpen] = createSignal(false);
+  /** Copies this page is starting, by instance: Starting until `up` answers. */
+  const [starting, setStarting] = createSignal<ReadonlySet<string>>(new Set());
 
   const list = () => previewGroups(poll.data()?.previews ?? []);
   const address = () => poll.data()?.address;
@@ -89,18 +104,74 @@ export function PreviewsCard(props: { projectId: string }) {
     }
   };
 
-  /** A second click turns it off; `done` is the toast. */
-  const off = async (id: string, done = "Preview turned off.") => {
-    if (armed() !== id) return setArmed(id);
-    setArmed(null);
+  /** A second click deletes it (turns it off, for good); `note` says so while it waits (shown, and announced), `done` is the toast. */
+  const off = async (id: string, done: string, note: string) => {
+    if (armed() !== id) {
+      arm(id);
+      announce(note);
+      return;
+    }
+    reset();
     try {
       await turnOffPreview(id);
       toast(done);
     } catch (x) {
-      toast(`Couldn't turn it off. ${errText(x)}`);
+      toast(deleteFailed(errText(x)));
     }
     poll.refetch();
   };
+
+  /** Start a stopped copy (`up` as the operator); a refusal says why. */
+  const start = async (instance: string) => {
+    if (starting().has(instance)) return;
+    setStarting(new Set([...starting(), instance]));
+    try {
+      const r = await runProjectVerb(props.projectId, "up", { instance });
+      toast(r.ok ? "Copy started." : `Couldn't start the copy. ${r.error?.message ?? ""}`.trim());
+    } catch (x) {
+      toast(`Couldn't start the copy. ${errText(x)}`);
+    } finally {
+      const next = new Set(starting());
+      next.delete(instance);
+      setStarting(next);
+      poll.refetch();
+    }
+  };
+
+  /** One preview and New Preview showing: its Delete moves to New Preview's line, at its right. */
+  const solo = () => list().length === 1 && !formOpen() && (!address() || !!address()!.url);
+
+  /** A row's own Delete: the preview and every link sent from it, or, for a sibling listed alone, that person's link. */
+  const offPerson = (g: PreviewGroup) => (g.preview.siblingOf ? recipientName(g.preview) : null);
+  const offNote = (g: PreviewGroup) => {
+    const person = offPerson(g);
+    return person ? recipientDeleteNote(person) : deleteNote(g.recipients.length);
+  };
+  const noteId = (id: string) => `preview-off-note-${id}`;
+  const TurnOff = (p: { group: PreviewGroup }) => {
+    const v = () => p.group.preview;
+    const person = () => offPerson(p.group);
+    return (
+      <button
+        type="button"
+        class="button button-sm button-destructive previews-off"
+        title={person() ? recipientDeleteTip(person()!) : DELETE_ALL_TIP}
+        aria-describedby={armed() === v().id ? noteId(v().id) : undefined}
+        onClick={() => void off(v().id, person() ? recipientDeleted(person()!) : PREVIEW_DELETED, offNote(p.group))}
+        onBlur={() => disarm(v().id)}
+      >
+        {armed() === v().id ? (person() ? recipientDeleteConfirm(person()!) : DELETE_CONFIRM) : person() ? recipientDeleteName(person()!) : deleteLabel(p.group.recipients.length)}
+      </button>
+    );
+  };
+  /** While a Delete waits for its second click: what goes away for good, and what doesn't. */
+  const OffNote = (p: { group: PreviewGroup }) => (
+    <Show when={armed() === p.group.preview.id}>
+      <p class="list-meta previews-off-note" id={noteId(p.group.preview.id)}>
+        {offNote(p.group)}
+      </p>
+    </Show>
+  );
 
   const closeForm = () => {
     setFormOpen(false);
@@ -112,7 +183,7 @@ export function PreviewsCard(props: { projectId: string }) {
       <h2 class="orgs-h2" id="project-previews">
         Previews
       </h2>
-      <p class="orgs-line">Share a web app running on this computer, the whole site at its own address, until you turn it off.</p>
+      <p class="orgs-line">Share a web app running on this computer, the whole site at its own address, until you delete it.</p>
       <Show when={poll.error() && !poll.data()}>
         <p class="field-error">Couldn't read this project's previews. {poll.error()}</p>
       </Show>
@@ -124,34 +195,44 @@ export function PreviewsCard(props: { projectId: string }) {
           <For each={list()}>
             {(g) => {
               const v = g.preview;
-              const row = () => previewRow(v, Date.now(), links()[v.id]);
+              const row = () => previewRow(v.instance && starting().has(v.instance) ? { ...v, copy: { state: "starting", slot: v.copy?.slot ?? 0 } } : v, Date.now(), links()[v.id]);
+              /** A tap unfolds the cut branch in place: a phone has no hover for its tooltip. */
+              const [branchOpen, setBranchOpen] = createSignal(false);
               return (
                 <li class="list-row previews-row">
                   <div class="list-main">
                     <p class="list-title previews-row-title">{row().title}</p>
-                    <p class="list-meta previews-row-line">
-                      <Show when={row().session}>
-                        {(s) => <SessionLink href={s().href}>{s().title}</SessionLink>}
+                    <div class="list-meta previews-row-parts">
+                      <Show when={row().session || row().branch}>
+                        <p class="previews-row-line">
+                          <Show when={row().session}>
+                            {(s) => <SessionLink href={s().href}>{s().title}</SessionLink>}
+                          </Show>
+                          <Show when={row().branch}>
+                            {(b) => (
+                              <button type="button" class="text-mono previews-row-branch" classList={{ "previews-row-branch-open": branchOpen() }} title={b()} onClick={() => setBranchOpen(!branchOpen())}>
+                                {b()}
+                              </button>
+                            )}
+                          </Show>
+                        </p>
                       </Show>
-                      <Show when={row().branch}>
-                        {(b) => (
-                          <span class="text-mono previews-row-branch" title={b()}>
-                            {b()}
-                          </span>
-                        )}
-                      </Show>
-                      <span>{row().serves}</span>
-                      <Show when={row().matched}>
-                        <span>Matched by the app's folder</span>
-                      </Show>
-                      <span class={row().state.tone === "ok" ? "chip chip-success" : "chip chip-warn"}>
-                        <span class="chip-dot" aria-hidden="true" />
-                        {row().state.text}
-                      </span>
-                      <Show when={row().maker}>{(m) => <SessionLink href={m().href}>{m().text}</SessionLink>}</Show>
-                      <Show when={sentToLine(v)}>{(sent) => <span>{sent()}</span>}</Show>
-                      <span>{row().expires}</span>
-                    </p>
+                      <p class="previews-row-line">
+                        <span>{row().serves}</span>
+                        <Show when={row().matched}>
+                          <span>Matched by the app's folder</span>
+                        </Show>
+                        <span class={row().state.tone === "ok" ? "chip chip-success" : row().state.tone === "info" ? "chip chip-info" : "chip chip-warn"}>
+                          <span class="chip-dot" aria-hidden="true" />
+                          {row().state.text}
+                        </span>
+                      </p>
+                      <p class="previews-row-line">
+                        <Show when={row().maker}>{(m) => <SessionLink href={m().href}>{m().text}</SessionLink>}</Show>
+                        <Show when={sentToLine(v)}>{(sent) => <span>{sent()}</span>}</Show>
+                        <span>{row().expires}</span>
+                      </p>
+                    </div>
                     <Show when={row().linkNote}>{(note) => <p class="list-meta">{note()}</p>}</Show>
                     <Show when={g.recipients.length > 0}>
                       <div class="list-meta previews-sent">
@@ -168,12 +249,19 @@ export function PreviewsCard(props: { projectId: string }) {
                                   <button
                                     type="button"
                                     class="button button-sm button-destructive previews-recipient-off"
-                                    title={recipientOffTip(name())}
-                                    onClick={() => void off(r.id, recipientOffDone(name()))}
-                                    onBlur={() => armed() === r.id && setArmed(null)}
+                                    title={recipientDeleteTip(name())}
+                                    aria-label={armed() === r.id ? undefined : recipientDeleteName(name())}
+                                    aria-describedby={armed() === r.id ? noteId(r.id) : undefined}
+                                    onClick={() => void off(r.id, recipientDeleted(name()), recipientDeleteNote(name()))}
+                                    onBlur={() => disarm(r.id)}
                                   >
-                                    {armed() === r.id ? recipientOffConfirm(name()) : "Turn Off"}
+                                    {armed() === r.id ? recipientDeleteConfirm(name()) : RECIPIENT_DELETE_LABEL}
                                   </button>
+                                  <Show when={armed() === r.id}>
+                                    <p class="previews-off-note" id={noteId(r.id)}>
+                                      {recipientDeleteNote(name())}
+                                    </p>
+                                  </Show>
                                 </li>
                               );
                             }}
@@ -182,24 +270,35 @@ export function PreviewsCard(props: { projectId: string }) {
                       </div>
                     </Show>
                   </div>
-                  <div class="shares-row-actions previews-row-actions">
-                    <Show when={row().url}>
-                      {(url) => (
-                        <button type="button" class="button button-sm" onClick={() => copy(url())}>
-                          Copy Link
-                        </button>
-                      )}
-                    </Show>
-                    <button
-                      type="button"
-                      class="button button-sm button-destructive"
-                      title={v.siblingOf ? undefined : TURN_OFF_ALL_TIP}
-                      onClick={() => void off(v.id)}
-                      onBlur={() => armed() === v.id && setArmed(null)}
-                    >
-                      {armed() === v.id ? turnOffConfirm(g.recipients.length) : "Turn Off"}
-                    </button>
-                  </div>
+                  <Show when={row().start || row().url || !solo()}>
+                    <div class="previews-row-actions">
+                      <Show when={row().start}>
+                        {(s) => (
+                          <button type="button" class="button button-sm" title="Starts this copy. A visit to its link never starts it." onClick={() => void start(s().instance)}>
+                            Start
+                          </button>
+                        )}
+                      </Show>
+                      <Show when={row().url}>
+                        {(url) => (
+                          <>
+                            <button type="button" class="button button-sm" onClick={() => copy(url())}>
+                              Copy Link
+                            </button>
+                            <a class="button button-sm" href={url()} target="_blank" rel="noopener noreferrer">
+                              Open
+                            </a>
+                          </>
+                        )}
+                      </Show>
+                      <Show when={!solo()}>
+                        <TurnOff group={g} />
+                      </Show>
+                    </div>
+                  </Show>
+                  <Show when={!solo()}>
+                    <OffNote group={g} />
+                  </Show>
                 </li>
               );
             }}
@@ -210,11 +309,19 @@ export function PreviewsCard(props: { projectId: string }) {
         <Show
           when={formOpen()}
           fallback={
-            <div>
-              <button type="button" class="button button-sm" aria-expanded="false" onClick={() => setFormOpen(true)}>
-                New Preview
-              </button>
-            </div>
+            <>
+              <div class="previews-foot">
+                <button type="button" class="button button-sm" aria-expanded="false" onClick={() => setFormOpen(true)}>
+                  New Preview
+                </button>
+                <Show when={solo()}>
+                  <TurnOff group={list()[0]!} />
+                </Show>
+              </div>
+              <Show when={solo()}>
+                <OffNote group={list()[0]!} />
+              </Show>
+            </>
           }
         >
           <form id="preview-form" class="stack previews-form" onSubmit={(e) => void create(e)}>

@@ -1,16 +1,19 @@
 // Run: npx tsx --test server/insights-usage.test.ts
-// Uses a throwaway PI_CODING_AGENT_DIR and HOME in the OS temp dir; ~/.pi and the real
-// credential files are never read or written.
+// Uses a throwaway PI_CODING_AGENT_DIR in the OS temp dir and the runner's throwaway home
+// (hermetic-env.mjs, or test:bun's environment); ~/.pi and the real credential files are never read or written.
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
 import type { UsageProvider } from "../shared/protocol";
 
 const agentDir = mkdtempSync(join(tmpdir(), "sova-usage-test-"));
 process.env.PI_CODING_AGENT_DIR = agentDir; // before the module below computes USAGE_FILE
-process.env.HOME = agentDir; // credential files (auth-status) resolve under the throwaway dir
+// Credential files (auth-status) resolve under os.homedir(), which Bun won't let a test move in-process:
+// the runner's throwaway home, and no other.
+const home = homedir();
+assert.ok(process.env.SOVA_TEST_HOME && home.startsWith(process.env.SOVA_TEST_HOME), `${home} is not the runner's throwaway home`);
 const usageFile = join(agentDir, "cache", "usage-status.json");
 mkdirSync(join(agentDir, "cache"), { recursive: true });
 
@@ -286,8 +289,8 @@ test("a malformed cache is unavailable, not an error", async () => {
 
 test("auth: the sign-in rides on its provider, and only there", async () => {
   const exp = Date.now() + 5 * 3_600_000;
-  mkdirSync(join(agentDir, ".claude"), { recursive: true });
-  writeFileSync(join(agentDir, ".claude", ".credentials.json"), JSON.stringify({ claudeAiOauth: { accessToken: "FIXTUREtokenNeverSent", expiresAt: exp } }));
+  mkdirSync(join(home, ".claude"), { recursive: true });
+  writeFileSync(join(home, ".claude", ".credentials.json"), JSON.stringify({ claudeAiOauth: { accessToken: "FIXTUREtokenNeverSent", expiresAt: exp } }));
   try {
     writeCache({});
     const u = await getUsageInsight();
@@ -295,7 +298,7 @@ test("auth: the sign-in rides on its provider, and only there", async () => {
     for (const id of ["openai", "ollama", "zai", "deepseek"] as const) assert.equal(byId(u.providers, id).auth, undefined, id);
     assert.ok(!JSON.stringify(u).includes("FIXTUREtoken"));
   } finally {
-    rmSync(join(agentDir, ".claude"), { recursive: true, force: true });
+    rmSync(join(home, ".claude", ".credentials.json"), { force: true });
   }
   writeCache({});
   assert.equal(byId((await getUsageInsight()).providers, "claude").auth, undefined, "signed out: no auth");

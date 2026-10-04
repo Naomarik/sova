@@ -128,7 +128,8 @@ operator (§chat.alignment/session-mark) moves it to waiting instead, whatever i
 the next turn (the operator's answer) moves it back to running. The registry's feed (the Software card's, §app.project-runtime/standing) says
 "The Project verbs playbook was started{: why}.", "The Project verbs playbook could not start.",
 "The Project verbs playbook finished with no change.", "The Project verbs playbook proposes a
-definition on {branch}: approve it, then merge.", "The Project verbs playbook waits on your answers in
+definition on {branch}: approve it, then merge." ("… proposes a deploy recipe on {branch}: …" for a playbook
+that approves `deploy`; sova_project's Software block says the same of the run), "The Project verbs playbook waits on your answers in
 its session.", "The Project verbs playbook's branch was merged." and "The Project verbs playbook's worktree was removed."
 
 ## §app.project-runtime/playbook — The Project verbs playbook
@@ -217,7 +218,8 @@ declared", with an Orphan chip in warn; one row per data resource (name and kind
 one with a Sensitive chip in warn whose title says "Derived from production: copies of it are never
 shared."; "Proven {time} at {hash12} (suite v{n})";
 "Changed since: {paths}" while stale; "Failed at {check}: {detail}" while failed; the playbook
-run's session as a link; and the registry's latest feed lines, newest first, with
+run's line as a link to its session (while proposed, "The {Title} playbook proposes a definition on
+{branch}", or "… proposes a deploy recipe on {branch}" for a playbook that approves `deploy`); and, under its own "Feed" label after the actions, the registry's latest feed lines, newest first, with
 the project's onMerge notes (§app.project-services/on-merge) and deploy notes
 (§app.project-services/deploy-status) among them. Its actions are
 **Run Playbook** (**Run Again** once registered) and **Approve {hash12}**, each shown only while
@@ -370,11 +372,13 @@ beside it counts "{k} of {n} steps ticked"). Each target is a row: its name, its
 about, its last deploy with a state chip (Deploying, the live indicator; Deployed; Failed; Verify failed;
 Interrupted) and its line ("Deployed {commit7} · {url} answered 200", "Deploy of {commit7} failed:
 {why}"), and an overseer's request ("The overseer asks: deploy {commit7} to {target}? {why}"). An
-approved target offers **Plan Deploy** (**Open Plan** while a request waits); its plan shows each check,
-what will run in a fresh checkout of the commit, and "Expires in {n} min"; a refusal says why, and when it
+approved target offers **Plan Deploy** (**Open Plan** while a request waits); its plan shows its checks as
+one line that opens to each check ("{n} checks passed", or "{k} checks passed · {m} let through", open from
+the start when any is let through), what will run in a fresh checkout of the commit, and "Expires in {n} min"; a refusal says why, and when it
 needs a typed reason it asks for it ("Let it through without passing tests, because", "… with main's
 tree dirty, because") and offers **Plan Again**. A plan offers **Deploy {commit7}**, then a one-line
-confirm ("This ships {commit7} to {target}: {about} Everyone using it gets it.") with **Deploy Now** and
+confirm ("This ships {commit7} to {target}: {about}. Everyone using it gets it.", the period added only when
+{about} doesn't end its own sentence) with **Deploy Now** and
 **Cancel**. **Roll Back** (outlined destructive, its title saying what it does) confirms the same way with
 **Roll Back Now**; it is absent for a target that can't be rolled back. **Read Log** shows the last deploy's
 log (200 lines, redacted), and **Dismiss Request** clears an overseer's request. An archived project

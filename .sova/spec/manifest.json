@@ -13012,7 +13012,8 @@
         "src/lib/project-deploy.ts",
         "src/lib/project-deploy.test.ts",
         "src/lib/api.ts",
-        "src/components/ProjectPage.tsx"
+        "src/components/ProjectPage.tsx",
+        "src/projects.css"
       ]
     },
     "§app.project-runtime/deploy-playbook": {

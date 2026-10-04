@@ -1015,10 +1015,10 @@ merge, commit, repo, session, token, spec, L0–L3, workspace, roster.
 | …latest change | "Set by you {relative time}." |
 | …cleared (warn banner) | "{name} left the organization, so it has no owner now. Their owner link stopped working." |
 | …link line | "Owner link made {relative time} · expires {relative time} · opened {n} times" · none: "No owner link yet." · newest turned off or replaced: "The owner link is turned off." · under 14 days (warn): "Owner link expires {relative time}." · expired: "The owner link expired {relative time}." |
-| …buttons | `Get Owner Link` (secondary) · `Preview Owner Page` (secondary) · `Turn Off Owner Link` (destructive, outlined, apart) |
+| …buttons | `Get Owner Link` (secondary) · `Preview Owner Page` (secondary) · `Delete Owner Link` (destructive, outlined, apart) |
 | Get Owner Link, while one is live (confirm) | "{first}'s current link stops working at once. The new one works from now." · `Get Owner Link` · `Cancel` |
 | Get Owner Link, no owner | "Pick an owner first." |
-| Turn Off, confirm | "{first}'s owner page stops opening at once. The conversations and updates stay." · `Turn Off Owner Link` · `Cancel` |
+| Delete, confirm | "{first}'s owner link stops working for good. The conversations and updates stay." · `Delete Owner Link?` · `Cancel` · done (toast) "Owner link deleted." |
 | Link shown once | the baton strip's Copy Link pattern; `linkWarning` when no share address is known |
 | Preview modal title | "{org}, as {first} sees it" |
 | …line | "Read only. Nothing you do here reaches {first}, and no visit is recorded." |
@@ -1061,7 +1061,7 @@ host, person or recipient.
 | Titles | "Share Session" · "Manage Share" · Preview: "As they see it", line "{title} · Read only. No visit is recorded." |
 | Intro | "People you send a link to can read this conversation: your messages and the replies, with their drawings and images. Never tool steps, thinking, paths or costs." |
 | Title field | "Title they see" · hint "The session's own title may say more than you mean to." |
-| People | "People" · placeholder "A name only you see, like Ana" · `Add` · hint "Each person gets their own link, so you see who opened it and can turn one off alone." · remove "Remove {label}" |
+| People | "People" · placeholder "A name only you see, like Ana" · `Add` · hint "Each person gets their own link, so you see who opened it and can delete one alone." · remove "Remove {label}" |
 | Anyone | "Anyone with the link" · "One more link anyone can open. Its visits show the device type only." |
 | Follow live | "Follow live" · off "Off: they see the conversation as it is now. You can update it to now later." · on "They see new messages as the session goes on, including ones you haven't read yet." · managing, off: "Off: turning it on shows them new messages as the session goes on." · on: "They see new messages as the session goes on." |
 | Expiry | "Links expire after" · `1 day` / `7 days` / `30 days` / `90 days` |
@@ -1073,7 +1073,7 @@ host, person or recipient.
 | Update and stop following | titles "Update to Now" · "Stop Following Live" · "Their pages will show the conversation as it is here, images included." · "Follow live stops here: their pages keep the conversation as it is here, images included." · `Back to Share` · `Update to This` / `Stop Following Here` (`Saving…`) · failed: **Couldn't read the conversation.** Nothing changed. {reason} `Try Again` |
 | Foot | `Cancel` · `Preview` · `Create Link` / `Create Links` (`Creating…`) · Preview: `Back to Sharing` / `Back to Share` · managing: `Stop Sharing` (armed `Stop Every Link?`), `Preview`, `Done` |
 | New links | eyebrow "New link · shown once" / "{n} new links · shown once" · `Copy Link` (toast "Link copied.") · "We keep only a fingerprint of each link. If one is lost, Get New Link makes another." · the `linkWarning` text with `Open Settings` |
-| Managing | "Snapshot up to {date time}." · `Update to Now` (title "Their pages show the conversation as it is now.") · eyebrows "People", "Expiry" · `Get New Link` (title "A new link for them. This one stops working.") · `Turn Off` (armed "Turn Off {label}'s Link?", the anyone row "Turn Off This Link?") · placeholder "Add a person, like Ben" · `Add Person` · `Add Anyone Link` · "{n} days from now" · `Extend` · "Every live link then expires {n} days from now." · `Save Title` |
+| Managing | "Snapshot up to {date time}." · `Update to Now` (title "Their pages show the conversation as it is now.") · eyebrows "People", "Expiry" · `Get New Link` (title "A new link for them. This one stops working.") · `Delete Link` (armed "Delete {label}'s Link?", the anyone row "Delete This Link?", with "The link stops working for good." under it while armed) · placeholder "Add a person, like Ben" · `Add Person` · `Add Anyone Link` · "{n} days from now" · `Extend` · "Every live link then expires {n} days from now." · `Save Title` |
 | Stopped / gone | **Stopped {time}.** Every link is off. The session itself didn't change. · **The session file is gone.** Every link answers that it's no longer active. |
 | Errors | **Couldn't read the conversation to preview it.** Nothing was shared. {reason} `Try Again` · **Couldn't create the links.** Nothing was shared. {reason} · **That didn't go through.** Nothing changed. {reason} · "Couldn't read the preview. {reason}" |
 
@@ -1110,7 +1110,7 @@ host, person or recipient.
 | Sidebar foot | row "Shares" · spine "Shares" |
 | Page | title "Shares" · meta "{n} session shares · {n} organization links" (+ " · {n} viewing now") · `Refresh Shares` |
 | Cards | "Session shares" (row meta adds "session “{session title}”" when it differs) · "No session share has a live link." · disclosure "Ended · {n}" · "Organization links" (row "{hand-off title} · hand-off {n}" or "Owner page" · "{org} · {state} · Expires in {n} days") |
-| Actions | `Manage` · `Stop Sharing` (armed `Stop Every Link?`) · `Turn Off Link` (armed "Turn Off {person}'s Link?") |
+| Actions | `Manage` · `Stop Sharing` (armed `Stop Every Link?`) · `Delete Link` (armed "Delete {person}'s Link?", with "{person}'s link stops working for good." under it while armed) |
 | Empty and hosts | **No public links are open.** Share a session from its Sharing tab: Session details, then Sharing. · "{host} can't be reached, so its links aren't listed." · failed action: **That didn't go through.** Nothing was changed. {reason} |
 
 ## §design.copy-deck/worktree-cleanup — New session · worktrees line and Clean Up Merged (§chat.transcript/empty-worktrees, §chat.worktrees/cleanup)

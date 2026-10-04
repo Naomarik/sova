@@ -3894,7 +3894,7 @@
     "§app.baton/goal-and-loadout": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "code": [
         "server/baton.ts",
         "server/baton-loadout.ts",
@@ -3954,7 +3954,7 @@
     "§app.baton/links": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "code": [
         "server/baton-links.ts",
         "server/baton.ts",
@@ -3978,7 +3978,12 @@
         "server/baton-handoff.test.ts",
         "server/public-links.test.ts",
         "src/components/OwnerCard.tsx",
-        "server/share/share-state.ts"
+        "server/share/share-state.ts",
+        "src/lib/link-delete.ts",
+        "src/lib/link-delete.test.ts",
+        "src/components/DeleteButton.tsx",
+        "src/delete-button.css",
+        "src/lib/two-step.ts"
       ]
     },
     "§app.baton/needs-you": {
@@ -5090,7 +5095,7 @@
     "§app.organizations/person-page": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "requires": [
         "§app.organizations/org-page",
         "§app.organizations/roster",
@@ -5714,7 +5719,7 @@
     "§app.owner-page/controls": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "requires": [
         "§app.owner-page/owner",
         "§app.owner-page/link",
@@ -8426,7 +8431,7 @@
     "§app.session-share/shares-page": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "requires": [
         "§app.session-share/sheet",
         "§app.insights/placement"
@@ -8442,7 +8447,7 @@
     "§app.session-share/sheet": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "requires": [
         "§app.session-share/link",
         "§app.session-share/snapshot",
@@ -9198,7 +9203,8 @@
         "src/lib/preview-rows.test.ts",
         "server/project-previews.ts",
         "server/project-previews.test.ts",
-        "shared/preview-links.ts"
+        "shared/preview-links.ts",
+        "src/lib/two-step.ts"
       ]
     },
     "§mesh.public/preview-limits": {
@@ -9886,7 +9892,7 @@
     "§app.outreach/links": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "code": [
         "server/outreach/links.ts",
         "shared/outreach.ts",
@@ -10043,7 +10049,7 @@
     "§app.project-overseer/previews": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "requires": [
         "§mesh.public/preview",
         "§mesh.public/preview-serve",
@@ -12180,7 +12186,10 @@
         "src/lib/api.ts",
         "src/projects.css",
         "server/project-services/engine.ts",
-        "server/project-services/adopt.test.ts"
+        "server/project-services/adopt.test.ts",
+        "src/lib/link-delete.ts",
+        "src/delete-button.css",
+        "src/lib/two-step.ts"
       ]
     },
     "§app.project-services/adopt": {

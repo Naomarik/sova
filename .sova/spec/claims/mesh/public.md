@@ -381,7 +381,7 @@ mesh off. Copy is §design.copy-deck/public-links.
   answer carries the link, and the link is kept.
 - The app is always dialed at `127.0.0.1:<port>`, then `[::1]:<port>` when nothing listens there,
   and never at any other address.
-- **Turn Off** (`POST /api/previews/<id>/off`) revokes it, and every sibling of it: from then on its origin answers 410,
+- **Turn Off** (`POST /api/previews/<id>/off`; the operator's **Delete**, §mesh.public/preview-card) revokes it, for good, and every sibling of it: from then on its origin answers 410,
   and every open HTTP connection and websocket through it is closed at once. The same happens
   when it expires. **Extend** (`POST /api/previews/<id>/extend {days}`) moves its expiry to `days`
   from now (at most 30; a running copy's link at most 7; a sibling's, never past its original's). `GET /api/previews?projectId`
@@ -473,26 +473,41 @@ would have expired, and answers them 410 too.
 - The project page has a **Previews** card: one row per active preview, where a person's own link
   (a sibling, §mesh.public/preview) is not a row of its own but a recipient of its original's row.
   The row's title is its purpose, else "Preview of port {n}" or "Preview of {folder}" ("the
-  worktree" for the worktree itself). Under it, on one line that wraps only when it must: its
-  coding session's title (a link to that session) · its branch in mono, cut to one line with the
-  whole name on hover · what it serves ("app on port {n}" or "static files") · "Matched by the
-  app's folder" when the session was matched now by the listener's worktree rather than recorded
-  (§app.project-overseer/previews) · a state chip, `Serving` (success) when the app answers on its
-  port or Sova serves its folder, else `Nothing on port {n}` or `Folder not served` (warn) · who
-  made it ("Made by you", or "Made by the overseer", a link to that conversation) · "Expires in
-  {time}", each part only when known. Then **Copy Link** ("Link copied.") when a link is kept or
-  this page just minted it, else, for an original only, the line "Link shown only when it was
-  made."; and **Turn Off** (a second click confirms: "Turn Off Preview?", or "Turn Off All {n}
-  Links?" counting the preview and its listed recipients when it has any; its tooltip says it
-  turns off the preview and every link sent from it; done: "Preview turned off.").
-- A row with active siblings has a **Sent to** line under it: each recipient's name (else "a
-  person"; its tooltip says who sent it, "Sent by you" or "Sent by the overseer") with its own small **Turn Off** (tooltip "Turns off only {name}'s link."; a second
-  click confirms: "Turn Off {name}'s Link?"; done: "{name}'s link turned off."), which turns off
-  only that person's link. A sibling whose original is not listed (turned off, expired or gone)
-  keeps a row of its own, with "sent to {name}" among its parts, no Copy Link and no "Link shown
-  only when it was made." line. Turned-off and expired previews are not listed. Below 480px each
-  row stacks its lines above its buttons, which share the row's width, and a long title or folder
-  wraps instead of widening the page.
+  worktree" for the worktree itself), as plain text. Under it its parts, in three groups, each part
+  only when known and a group only when it has one: where it comes from, its coding session's
+  title (a link to that session) · its branch in mono, cut to one line with the whole name on
+  hover and, on a tap, unfolded in place; what it serves ("app on port {n}" or "static files") ·
+  "Matched by the app's folder" when the session was matched now by the listener's worktree rather
+  than recorded (§app.project-overseer/previews) · a state chip, `Serving` (success) when the app
+  answers on its port or Sova serves its folder, else `Nothing on port {n}` or `Folder not served`
+  (warn); and who made it ("Made by you", or "Made by the overseer", a link to that conversation) ·
+  "Expires in {time}". A group stays whole and wraps beside the others; below 480px each group
+  takes a line of its own. Then, on a line of buttons under the row, **Copy Link** ("Link
+  copied.") and **Open** (the preview's address in a new tab) when a link is kept or this page
+  just minted it, else, for an original only, the line "Link shown only when it was made."; and at
+  the line's right a compact **Delete Preview**, which reads **Delete Preview + {n} Link(s)** when
+  it has listed recipients (its tooltip says it deletes the preview and every link sent from it;
+  done: "Preview deleted."; a failure: "Couldn't delete it. {reason}"). The card says Delete,
+  never Turn Off, because it is for good: the preview is turned off (§mesh.public/preview), every
+  link sent from it answers 410 from then on and nothing turns one back on, while the app on its
+  port keeps running. So a second click confirms, reading "Delete?", and while it waits a
+  line under the buttons says "The link stops working for good. Your app keeps running; make a
+  New Preview to share it again." (with recipients: "This link and the {n} sent from it stop
+  working for good. …"). When the card lists a single preview and shows New Preview, that Delete
+  sits on New Preview's line instead, at its right, with that line under it. The card's line under
+  its heading says it shares an app "until you delete it."
+- A row with active siblings has a **Sent to** line under its parts: each recipient's name (else "a
+  person"; its tooltip says who sent it, "Sent by you" or "Sent by the overseer") with its own
+  small **Delete Link** on that person's line (accessible name "Delete {name}'s Link"; tooltip
+  "Deletes only {name}'s link."; a second click confirms: it reads "Delete {name}'s
+  Link?" and a line under that person's line says "{name}'s link stops working for good."; done:
+  "{name}'s link deleted."), which turns off only that person's link, for good. A sibling whose original
+  is not listed (turned off, expired or gone) keeps a row of its own, with "sent to {name}" in its
+  last group, no Copy Link, no Open and no "Link shown only when it was made." line; its button
+  reads **Delete {name}'s Link** and confirms and reports like a recipient's. Turned-off and
+  expired previews are not listed. Below 480px a row drops its own side padding, so its title
+  lines up with the card's, its buttons keep their labels' width, and a long title or folder wraps
+  instead of widening the page.
 - A running copy's link (§app.project-services/share) is a row too. Its title is its purpose, else
   "Preview of a copy's {endpoint}"; what it serves reads "{endpoint} of the copy in slot {n}" (or
   "of the main checkout's copy"), with the copy's branch; its chip is the copy's state as the
@@ -509,8 +524,8 @@ would have expired, and answers them 410 too.
   refused mint shows its reason on the form; a made one closes it. With no preview address the
   card says so and how to set it, and offers no New Preview.
 - The Shares page lists this host's live previews the same way, one row per original with the
-  project, port, expiry and Turn Off, its recipients on a **Sent to** line each with its own Turn
-  Off, and a sibling whose original is not listed on a row of its own. A preview with recorded
+  project, port, expiry and the card's **Delete Preview** (with its confirm, line and toasts), its
+  recipients on a **Sent to** line each with its own **Delete Link** (likewise), and a sibling whose original is not listed on a row of its own. A preview with recorded
   visits (§mesh.public/visitor-log) gets a **Visits** disclosure under its row, and a recipient
   with visits one beside their name.
 

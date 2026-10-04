@@ -704,8 +704,10 @@ The operator sees and drives every running copy from two places, both on this ho
   even when status keeps no URL) and toasts "Shared {endpoint} of {copy}." The copy's active links
   (status's `links`) are listed across the row's full width under its facts and actions, each a
   chip ("web.http · expires in 5 hours") with its **Copy Link** (when the page knows its URL) and
-  **Turn Off** on the same line, the three wrapping together as one group (Turn Off: the first click asks "Turn Off Link?", the second
-  runs `revoke` of that link). While the main checkout's definition declares sensitive data, every
+  **Delete Link** on the same line, the three wrapping together as one group (Delete Link: the first
+  click asks "Delete?" and shows "The link stops working for good. The copy keeps
+  running." under the group, the second runs `revoke` of that link, reading "Deleting…" until it
+  answers; done: "The {endpoint} link of {copy} is deleted."). While the main checkout's definition declares sensitive data, every
   copy's Share is disabled and the row reads "Derived from production: copies are never shared.";
   otherwise, while the engine says a copy can't be shared (`share.refused`), Share is disabled with
   that sentence under the row.

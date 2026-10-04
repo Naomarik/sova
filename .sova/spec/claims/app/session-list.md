@@ -764,6 +764,12 @@ thing it waits on being done.
   doesn't carry is not listed. **The count in the head is the rows**, and the region never lists a
   row the rest of the pane hides.
 - **Order: newest first**, by each session's newest act item (`since`); ties break on path.
+- **A project's deploy items** (`deploy-failed`, `deploy-request`, §app.project-services/deploy-status) belong
+  to no session, so they list under the session rows as rows of their own, newest first, narrowed by the
+  search (project, folder or sentence): the project's name, the digest's sentence and the folder, each
+  opening the project page (its Deploy panel). The head's count and the spine's door count them too, and
+  the head's title says how many are deploy items ("The 2 sessions waiting on you, newest first, and 1
+  deploy item." / "1 deploy item waiting on you.").
 - **Rows** are the same `SessionRow` as everywhere else — rail, marks, meta line, accessible name —
   with one difference: **line 2 is the digest's sentence** for the session's newest act item
   ("3 open questions in al_3 Autonomy settings", "Waiting on a dialog.", "429 rate limited", "1 subagent ended in an error."), in place of the gist

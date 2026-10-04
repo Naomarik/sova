@@ -218,7 +218,8 @@ one with a Sensitive chip in warn whose title says "Derived from production: cop
 shared."; "Proven {time} at {hash12} (suite v{n})";
 "Changed since: {paths}" while stale; "Failed at {check}: {detail}" while failed; the playbook
 run's session as a link; and the registry's latest feed lines, newest first, with
-the project's onMerge notes (§app.project-services/on-merge) among them. Its actions are
+the project's onMerge notes (§app.project-services/on-merge) and deploy notes
+(§app.project-services/deploy-status) among them. Its actions are
 **Run Playbook** (**Run Again** once registered) and **Approve {hash12}**, each shown only while
 the statechart would take it; while a run is proposed, **Approve & Merge** (or **Merge Branch**)
 replaces Approve (§app.project-runtime/approve-merge). A live run shows as its strip
@@ -234,7 +235,8 @@ run is proposed, its session has an act-tier attention item (§app.overseer/atte
 `playbook-review`, dated by its last turn's end: "{Title}: approve {hash12} and merge into {target}"
 while the branch's definition waits for approval, "{Title}: {hash12} is approved: merge it into
 {target}" once it is approved, and "{Title}: its branch {branch} has no valid definition: read its
-report" when the branch's definition is absent or invalid ({Title} the playbook's title, `target`
+report" when the branch's definition is absent or invalid (for a playbook that approves `deploy`, the
+hash is its deploy recipe's, and "no valid deploy recipe" when the branch declares none) ({Title} the playbook's title, `target`
 the branch the run's worktree merges into). So it lists in the sidebar's Needs you as the run's
 session row, counts in the Overseer's "need you", and is a phone-notification kind, "Playbook needs
 you", on by default (§app.notifications/delivery). The item goes only when the run leaves proposed:
@@ -248,7 +250,10 @@ merge it into {target}."; with no valid definition on the branch, "{Title} propo
 **Approve & Merge** (§app.project-runtime/approve-merge; **Merge Branch** once approved; none when
 there is nothing valid to approve) and a link to the run's session, **Read Report**. The Needs-you row
 of a `playbook-review` item carries the same button under it, the one exception to that region's
-rows having no button of their own (§app.session-list/needs-you).
+rows having no button of their own (§app.session-list/needs-you). For a playbook that approves `deploy`,
+neither has ticks: their button stays disabled while the recipe is unapproved, saying "Tick every step of
+the deploy recipe on the Software card first." (banner) or "Review the deploy recipe on the project page
+and tick every step first." (row).
 
 ## §app.project-runtime/approve-merge — Approve & Merge
 
@@ -261,7 +266,12 @@ hash is already approved, then runs Merge Branch on the run's session
 (§app.project-overseer/coding-worktrees) with all of its refusals. A merge that is refused keeps the
 approval (it is keyed by the hash, so it approves nothing else) and answers 409 with "Approved
 {hash12}, but the merge was refused: {its reason}". With no run proposed it is refused 409: "No
-playbook run is waiting for approval." It answers the registry,
+playbook run is waiting for approval." A run whose playbook approves `deploy`
+(§app.project-runtime/verb-playbooks) proposes its deploy recipe instead: `hash` is the recipe's own deploy
+hash at the branch's tip, the body's `ticked` lists the review's step keys the operator ticked, and the
+approval is the deploy recipe's (§app.project-services/deploy-trust), refused 409 with its own sentence ("The
+deploy recipe changed since it was shown: look again.", "Tick every step before approving: {n} not ticked
+(…)"), then the same Merge Branch. It answers the registry,
 read again. The Software
 card shows **Approve & Merge** in place of **Approve {hash12}** while a run is proposed (or **Merge
 Branch** once its hash is approved), beside the banner's and the Needs-you row's; each says, on a
@@ -287,7 +297,11 @@ data resource with its Sensitive chip, whether copies can be shared ("Shares {en
 "Never shared", or "Shares nothing"), the entry point ("Opens at {endpoint}{path}", or "No entry
 point"), and the conformance ("Conformance passed (confined, suite v{n})" with the measured memory of
 each service, or "Conformance failed at {check}: {detail}", or "No conformance of this definition
-yet"). A branch with no valid definition says why ("Its branch has no .sova/project.json." / "The
+yet"). For a run whose playbook approves `deploy`, the registry's read of the proposal also carries the
+branch's deploy recipe as Sova renders it (§app.project-services/deploy-trust), each resolved step with its
+key, and the Software card shows it under the review as a checkbox per step, its verify and its rollback
+(the ticks start over when the recipe's hash changes); its Approve & Merge stays disabled, "Tick every
+step first: {k} of {n} steps ticked.", until every step is ticked, then sends the ticked keys. A branch with no valid definition says why ("Its branch has no .sova/project.json." / "The
 definition on its branch is invalid: {error}"). Under it, **Read Report** links to the run's session,
 whose last message is its report.
 
@@ -309,3 +323,59 @@ coding mode (§app.project-overseer/coding-mode), so a decision it can't make fr
 not a guess: its open questions are the session's `open-questions` Needs-you item and push
 (§chat.alignment/session-mark), and the run's region waits (§app.project-runtime/onboard). An
 ordinary project coding session never gets align.
+
+## §app.project-runtime/deploy-standing — Each deploy target's standing
+
+Each deploy target has a standing on this host, derived by one rule from main's recipe at HEAD and
+this host's deploy approvals (§app.project-services/deploy-trust), never set by hand and never kept
+in the registry's statechart: **approved** while main's deploy hash is approved here; **stale** (shown
+"Out of date") when an approval here once covered the target but main's recipe is not approved now
+(it changed, another target did, or a branch's newer recipe was approved and not merged yet);
+**awaiting approval** when none ever did; **none** ("Not declared") for a target with history that
+main no longer declares. `deploy.status` answers it per target (§app.project-services/deploy-status);
+only an approved target can be planned.
+
+## §app.project-runtime/deploy-playbook — The Project deploy playbook
+
+`playbooks/project-deploy/` is a verb playbook (`approves: deploy`, titled "Project deploy",
+§app.project-runtime/verb-playbooks), started like any (`verbs/onboard {playbook: "project-deploy"}`) on
+its own branch with align on. It writes how the project ships, the definition's `deploy` and the
+names in `host`, and nothing that doesn't trace to the operator's answer. It is interview-first: after
+reading the state (`deploy.status`, the definition at HEAD) and the repository's deploy candidates, it
+asks with align, before writing anything, for the targets and what each is, each target's branch, its
+exact commands as argv (offering the candidates quoted, never inferring one), what builds, a host
+variable name for every address, user and path, each credential's name, kind and read-only check
+(never a value), the verify URL and status, the rollback (with the operator's reason when there is
+none), the tests required, and any read-only plan steps. It never runs a deploy, plan, build, rollback,
+verify or credential check, nor anything that reaches a target; the only verbs it calls are
+`deploy.status` and `deploy.check` (on its branch, at most 3 runs). Its driver
+`scripts/project-deploy.mjs` lists candidates (the deploy entrypoints the repository holds, read and
+never run, the host names and targets declared), formats (`fmt`, the Project verbs canonical form) and
+checks (Sova's parser plus a literal IP or user@host, a shell string inside an argv, or a
+secret-looking value: problems, exit 1). Its report lists each target, a trace of every field to the
+answer that set it, the host values and env credentials this host still lacks, the check, and "Approve
+& Merge {hash12} on the project page: tick each step on its review first."
+
+## §app.project-runtime/deploy-panel — The Deploy panel
+
+The project page's Overview has a **Deploy** card under the Software card, the operator's view of
+how the project ships, reading `deploy.status` every 5 seconds. With no deploy declared on main it says
+"Main declares no deploy yet." and offers **Set Up Deploy**, which starts the Project deploy playbook
+(§app.project-runtime/deploy-playbook). While main's recipe waits for approval it shows the review
+(§app.project-services/deploy-trust) as a checkbox per step, verify and rollback, each argv in mono with
+this host's values in place and an unset host value as a warn chip "Unset here: {names}", and **Approve
+Deploy {hash12}**, disabled with "Tick every step first: {n} left." until every step is ticked (the line
+beside it counts "{k} of {n} steps ticked"). Each target is a row: its name, its standing chip
+(Approved, Awaiting approval, Out of date, Not declared; §app.project-runtime/deploy-standing), its
+about, its last deploy with a state chip (Deploying, the live indicator; Deployed; Failed; Verify failed;
+Interrupted) and its line ("Deployed {commit7} · {url} answered 200", "Deploy of {commit7} failed:
+{why}"), and an overseer's request ("The overseer asks: deploy {commit7} to {target}? {why}"). An
+approved target offers **Plan Deploy** (**Open Plan** while a request waits); its plan shows each check,
+what will run in a fresh checkout of the commit, and "Expires in {n} min"; a refusal says why, and when it
+needs a typed reason it asks for it ("Let it through without passing tests, because", "… with main's
+tree dirty, because") and offers **Plan Again**. A plan offers **Deploy {commit7}**, then a one-line
+confirm ("This ships {commit7} to {target}: {about} Everyone using it gets it.") with **Deploy Now** and
+**Cancel**. **Roll Back** (outlined destructive, its title saying what it does) confirms the same way with
+**Roll Back Now**; it is absent for a target that can't be rolled back. **Read Log** shows the last deploy's
+log (200 lines, redacted), and **Dismiss Request** clears an overseer's request. An archived project
+plans and ships nothing from here.

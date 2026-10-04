@@ -2703,7 +2703,8 @@
         "server/server-stop.test.ts",
         "server/index.ts",
         "server/outreach/log.ts",
-        "server/projects/playbook-review.ts"
+        "server/projects/playbook-review.ts",
+        "server/project-services/deploy-attention.ts"
       ],
       "requires": [
         "§app.overseer/seen"
@@ -12858,7 +12859,10 @@
         "server/attention.test.ts",
         "server/push.test.ts",
         "src/app.css",
-        "src/lib/push-draft.test.ts"
+        "src/lib/push-draft.test.ts",
+        "src/components/ProjectSoftwareCard.tsx",
+        "src/lib/project-software.ts",
+        "src/lib/project-software.test.ts"
       ],
       "requires": [
         "§app.project-runtime/onboard",
@@ -12892,7 +12896,9 @@
         "shared/project-runtime.ts",
         "src/components/ProjectSoftwareCard.tsx",
         "src/lib/project-software.ts",
-        "src/lib/project-software.test.ts"
+        "src/lib/project-software.test.ts",
+        "src/components/ProjectDeployPanel.tsx",
+        "src/lib/project-deploy.ts"
       ],
       "requires": [
         "§app.project-runtime/registry"
@@ -12984,6 +12990,160 @@
         "§app.overseer/org-attribution",
         "§app.overseer/caps",
         "§app.overseer/tools"
+      ]
+    },
+    "§app.project-runtime/deploy-panel": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "requires": [
+        "§app.project-runtime/deploy-standing",
+        "§app.project-services/deploy-plan",
+        "§app.project-services/deploy-run"
+      ],
+      "code": [
+        "src/components/ProjectDeployPanel.tsx",
+        "src/lib/project-deploy.ts",
+        "src/lib/project-deploy.test.ts",
+        "src/lib/api.ts",
+        "src/components/ProjectPage.tsx"
+      ]
+    },
+    "§app.project-runtime/deploy-playbook": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.project-runtime/verb-playbooks",
+        "§app.project-services/deploy-check"
+      ],
+      "code": [
+        "playbooks/project-deploy/PLAYBOOK.md",
+        "playbooks/project-deploy/references/deploy.md",
+        "playbooks/project-deploy/scripts/project-deploy.mjs",
+        "server/project-services/deploy-playbook.test.ts"
+      ]
+    },
+    "§app.project-runtime/deploy-standing": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.project-services/deploy-trust"
+      ],
+      "code": [
+        "server/project-services/deploy-trust.ts",
+        "server/project-services/deploy.ts",
+        "server/project-services/deploy-trust.test.ts"
+      ]
+    },
+    "§app.project-services/deploy": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.project-services/contract",
+        "§app.project-services/result"
+      ],
+      "code": [
+        "shared/project-contract.ts",
+        "shared/project-contract-deploy.test.ts",
+        "shared/project-contract.test.ts",
+        "server/project-services/deploy.ts",
+        "server/project-services/engine.ts",
+        "server/project-services/engine.test.ts",
+        "playbooks/project-verbs/scripts/project-verbs.mjs",
+        "playbooks/project-verbs/references/contract.md"
+      ]
+    },
+    "§app.project-services/deploy-callers": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.project-services/deploy",
+        "§app.project-services/callers"
+      ],
+      "code": [
+        "server/project-services/deploy.ts",
+        "server/project-services/tools.ts",
+        "server/project-services/deploy-callers.test.ts",
+        "scripts/sova-project.mjs"
+      ]
+    },
+    "§app.project-services/deploy-check": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.project-services/deploy"
+      ],
+      "code": [
+        "server/project-services/deploy.ts",
+        "server/project-services/deploy-check.test.ts"
+      ]
+    },
+    "§app.project-services/deploy-plan": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.project-services/deploy",
+        "§app.project-services/deploy-trust",
+        "§app.project-services/test"
+      ],
+      "code": [
+        "server/project-services/deploy.ts",
+        "server/project-services/deploy-run.test.ts"
+      ]
+    },
+    "§app.project-services/deploy-run": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.project-services/deploy-plan",
+        "§app.project-services/supervisor"
+      ],
+      "code": [
+        "server/project-services/deploy.ts",
+        "server/project-services/deploy-runner.mjs",
+        "server/project-services/deploy-run.test.ts",
+        "server/project-services/routes.ts"
+      ]
+    },
+    "§app.project-services/deploy-status": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.project-services/deploy-run",
+        "§app.overseer/attention-digest"
+      ],
+      "code": [
+        "server/project-services/deploy.ts",
+        "server/project-services/deploy-attention.ts",
+        "server/project-services/deploy-status.test.ts",
+        "server/overseer.ts",
+        "shared/protocol.ts",
+        "server/project-services/routes.ts"
+      ]
+    },
+    "§app.project-services/deploy-trust": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.project-services/deploy",
+        "§app.project-services/trust"
+      ],
+      "code": [
+        "server/project-services/deploy-trust.ts",
+        "server/project-services/deploy-trust.test.ts",
+        "server/project-services/trust.ts",
+        "server/project-services/observe.ts",
+        "server/project-services/routes.ts",
+        "server/project-services/deploy.ts"
       ]
     }
   },

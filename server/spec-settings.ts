@@ -13,7 +13,7 @@ import {
 import type { SpecSaveResult, SpecSettingsInfo } from "../shared/protocol";
 import { delegateOptions, verifySlots, type DelegateSources } from "./delegate";
 
-// Settings → Modes → Spec: which worker writes the spec (draft claims and evidence) while the spec
+// The spec writer (legacy file; Settings → Subagents now edits it per profile): which worker writes the spec (draft claims and evidence) while the spec
 // minor mode is on. The file (~/.pi/agent/mode-spec.json) and its rules are the mode extension's
 // (pi-config/extensions/mode/spec.ts); the offer and the save check are Delegate's
 // (server/delegate.ts), since a writer is the same backend · model · effort tuple. Every session

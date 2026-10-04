@@ -1,6 +1,6 @@
 import type { DelegateBackendId, WorkerChoice } from "./protocol";
 
-// Settings → Teams (server/team-defaults.ts). Their own file, outside protocol.ts on purpose: its
+// The legacy team defaults (server/team-defaults.ts; read by Settings → Subagents for seeding). Their own file, outside protocol.ts on purpose: its
 // hash is the mesh's compatibility fingerprint, and these types are one host's local settings
 // screen, never sent between hosts, so a change here must not make hosts refuse each other.
 //

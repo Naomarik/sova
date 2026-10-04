@@ -753,7 +753,7 @@ export interface ContextInfo { tokens: number; window: number | null }
 //                                          answered it can't run; unverifiable or policy-denied tuples save with a
 //                                          warning. Sessions with spec on, in either major mode, pick it up at
 //                                          their next turn)
-// GET/PUT /api/settings/team(/options): Settings → Teams, in shared/team-defaults.ts
+// GET/PUT /api/settings/team(/options): legacy team defaults, in shared/team-defaults.ts
 // ---------------------------------------------------------------------------
 
 // GET /api/settings/summarizer  -> SummarizerSettingsInfo (~/.pi/agent/topic-outline.json's `summarizers`; missing

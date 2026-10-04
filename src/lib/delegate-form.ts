@@ -9,7 +9,7 @@ import type {
 } from "../../shared/protocol";
 
 /**
- * Settings → Modes → Delegate's form rules. Pure, so the
+ * Worker-row form rules (first Delegate's, now Settings → Subagents' and others'). Pure, so the
  * component only draws: what each select offers, what a change does to the rest of its row, and
  * what the row says about the pick.
  *

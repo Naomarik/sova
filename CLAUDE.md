@@ -49,12 +49,12 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
   to pin the sessions it starts with a mode (a project's coding sessions, the Overseer's
   sova_create_session / sova_set_session), so the entry's shape is a contract too; mode
   `mode-delegate.json` = Delegate's global routing (four profiles, each backend/model/effort plus
-  an optional fallback), written by Sova's Settings → Modes → Delegate and re-read by every
+  an optional fallback), no longer written by Sova (Settings → Subagents edits routing per profile; the file seeds and backs that library), and re-read by every
   Delegate session at each turn boundary — never snapshotted into a session; mode `mode-spec.json`
   = the spec minor mode's writer (one backend/model/effort plus an optional fallback, or `null`: the
-  session writes the spec itself), written by Settings → Modes → Spec and re-read the same way by
+  session writes the spec itself), seeding/backing the profiles' spec writer the same way, and re-read the same way by
   every session with spec on, in either major mode), subagents `team-defaults.json` = the standing
-  coordinator and monitor every new team gets (absent = off), written by Sova's Settings → Teams and
+  coordinator and monitor every new team gets (absent = off), seeding Settings → Subagents' Teams section and
   read by the subagents extension at team creation), and subagent profiles: `subagent-profiles.json`
   = the library of named subagent setups (a profile bundles Delegate's four routes, the standing
   coordinator/monitor, the members default and the spec writer),
@@ -129,7 +129,7 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
   writer of `model-favorites.json`, with its lock, re-read and atomic rename, for the TUI palette
   and Sova's picker alike), `server/team-defaults.ts` imports
   `pi-config/extensions/subagents/team-defaults.ts` (builtins only: the file's types, defaults,
-  strict parse, reader and atomic writer for Settings → Teams), `server/process-priority.ts`
+  strict parse, reader and atomic writer for the legacy team defaults), `server/process-priority.ts`
   imports its `priority.ts` (builtins only: the `Symbol.for("sova:worker-nice")` hook through which
   the server sets the niceness its hosted sessions' workers and tool commands start at, and the
   lowering the subagents extension does; claude-code and the sandbox, which import nothing outside

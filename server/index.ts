@@ -807,9 +807,10 @@ app.put("/api/settings", async (c) => {
   return "error" in result ? c.json({ error: result.error }, 400) : c.json(result);
 });
 
-// Settings → Modes → Delegate: which worker each kind of
-// Delegate work goes to. The file is the mode extension's; every Delegate session re-reads it at
-// its next turn boundary, so a save here reaches open Delegate chats and TUI sessions alike.
+// Legacy Delegate routing (mode-delegate.json): which worker each kind of Delegate work goes to.
+// Sova's UI no longer PUTs it (Settings → Subagents edits routing per profile); it seeds the profile
+// library and is its fallback. The file is the mode extension's; every Delegate session re-reads it
+// at its next turn boundary.
 const delegateSources: DelegateSources = {
   piModels: () => listRegistryModels(),
   claudeModels: () => cachedClaudeModels(),
@@ -856,8 +857,9 @@ app.put("/api/settings/delegate", async (c) => {
   return "error" in result ? c.json({ error: result.error }, 400) : c.json(result);
 });
 
-// Settings → Modes → Spec: which worker writes the spec while the spec minor mode is on. The file is
-// the mode extension's; every session with spec on re-reads it at its next turn boundary, in either
+// Legacy spec writer (mode-spec.json): which worker writes the spec while the spec minor mode is on.
+// Sova's UI no longer PUTs it (Settings → Subagents edits it per profile); it seeds the profile
+// library and is its fallback. The file is the mode extension's; every session with spec on re-reads it at its next turn boundary, in either
 // major mode. Discovery and the save check are Delegate's.
 app.get("/api/settings/spec", (c) => c.json(specInfo()));
 app.get("/api/settings/spec/options", async (c) => c.json(await specOptions(delegateSources)));
@@ -872,8 +874,9 @@ app.put("/api/settings/spec", async (c) => {
   return "error" in result ? c.json({ error: result.error }, 400) : c.json(result);
 });
 
-// Settings → Teams: the coordinator and monitor every new team gets. The file is the subagents
-// extension's; it reads it when a team is created, so a save applies to teams created after it.
+// Legacy team defaults (team-defaults.json): the coordinator and monitor every new team gets.
+// Sova's UI only reads it now (Settings → Subagents seeds a profile's roles from it); the file is the
+// subagents extension's, read when a team is created, so a save applies to teams created after it.
 // Discovery and the save check are Delegate's; a file that can't be read is never overwritten (409).
 app.get("/api/settings/team", (c) => c.json(teamDefaultsInfo()));
 app.get("/api/settings/team/options", async (c) => c.json(await teamOptions(delegateSources)));

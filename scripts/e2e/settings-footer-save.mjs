@@ -101,7 +101,10 @@ try {
     if (ready) await ready.waitFor({ state: "visible", timeout: 20000 });
   };
   const hostInput = dialog.locator("#mesh-host-label");
-  const neverTui = dialog.getByRole("checkbox", { name: "Never send TUI sessions" });
+  /** The first profile's Edit in Settings → Subagents (the library is seeded on first read). */
+  const subagentEdit = dialog.locator('[id^="subagents-edit-"]').first();
+  const profileName = dialog.locator("#subagents-name");
+  const neverTui =dialog.getByRole("checkbox", { name: "Never send TUI sessions" });
   /** A switch's input is drawn by its label (the box is visual only): click the label to move it. */
   const setSwitch = async (input, on) => {
     await input.waitFor({ state: "attached", timeout: 20000 });
@@ -134,14 +137,13 @@ try {
     for (const [name, ready] of [
       ["General", dialog.locator("#recent-count")],
       ["Models", dialog.locator(".model-policy-list")],
-      ["Modes", dialog.locator(".settings-delegate-file").nth(1)],
-      ["Teams", dialog.locator("#team-contextPct")],
+      ["Subagents", subagentEdit],
       ["Overseer", dialog.locator("#overseer-extra-prompt")],
       ["Decisions", dialog.locator("#decisions-exclusions")],
-      ["Summaries", dialog.locator("#summarizer-primary-model")],
+      ["Summaries", dialog.locator("#settings-summaries-title")],
       ["Themes", null],
       ["Mesh", hostInput],
-      ["Experimental", dialog.locator(".settings-provider")],
+      ["Experimental", dialog.locator("#experimental-review-hint")],
     ]) {
       await openTab(name, ready);
       if (name === "Summaries") await shot("dialog-summaries");
@@ -177,12 +179,13 @@ try {
     await shot("dialog-dirty-mesh");
   });
 
-  await check("Modes tab: its forms end in the Stored in line, and the footer is the dialog's", async () => {
-    await openTab("Modes", dialog.locator(".settings-delegate-file").nth(1));
-    eq(await dialog.getByRole("button", { name: "Reset to Defaults" }).count(), 1, "Delegate's Reset to Defaults (in its heading)");
+  await check("Summaries tab: its form ends in the Stored in line, and Reset to Defaults sits in its heading", async () => {
+    await openTab("Summaries", dialog.locator("#settings-summaries-title"));
+    await dialog.locator(".settings-delegate-file").waitFor({ state: "visible", timeout: 20000 });
+    eq(await dialog.getByRole("button", { name: "Reset to Defaults" }).count(), 1, "Reset to Defaults");
     const inHead = await dialog.locator(".settings-type-head").getByRole("button", { name: "Reset to Defaults" }).count();
     eq(inHead, 1, "Reset to Defaults sits in the section heading");
-    await shot("dialog-modes-dirty");
+    await shot("dialog-summaries-dirty");
   });
 
   await check("Save from a third tab (General) writes both forms; the files on disk say so", async () => {
@@ -259,27 +262,26 @@ try {
     eq(tuiOnDisk(), tui0, "the retry is written");
   });
 
-  await check("Reset to Defaults in a section's heading changes the draft only", async () => {
-    const ctx = dialog.locator("#team-contextPct");
-    await openTab("Teams", ctx);
-    const reset = dialog.locator(".settings-type-head").getByRole("button", { name: "Reset to Defaults" });
-    const teamInfo = await api("/api/settings/team");
-    const def = teamInfo.defaults.monitor.contextPct;
-    // Neither the default nor what an earlier run saved: the edit must make the form dirty.
-    const custom = [55, 56, 57].find((v) => v !== def && v !== teamInfo.settings.monitor.contextPct);
-    await ctx.fill(String(custom));
-    await waitStatus("Unsaved: Teams");
+  await check("Subagents' profile editor: an edit is a draft until the footer saves it, and Discard brings the saved value back", async () => {
+    await openTab("Subagents", subagentEdit);
+    await subagentEdit.click();
+    await profileName.waitFor({ state: "visible", timeout: 20000 });
+    const info = await api("/api/settings/subagents");
+    const id = (await subagentEdit.getAttribute("id")).slice("subagents-edit-".length);
+    const nameOnDisk = () => readJson(info.file).profiles.find((p) => p.id === id)?.name;
+    // Not what an earlier run saved: the edit must make the form dirty.
+    const custom = `E2E ${Date.now().toString(36)}`;
+    await profileName.fill(custom);
+    await waitStatus("Unsaved: Subagents");
     await footButton("Save Changes").click();
-    await waitStatus("Saved Teams.");
-    const teamFile = (await api("/api/settings/team")).file;
-    eq(readJson(teamFile).monitor.contextPct, custom, "saved value on disk");
-    assert(await reset.isEnabled(), "Reset to Defaults is enabled off the defaults");
-    await reset.click();
-    eq(await ctx.inputValue(), String(def), "the field shows the default");
-    await waitStatus("Unsaved: Teams");
-    eq(readJson(teamFile).monitor.contextPct, custom, "the file is unchanged");
+    await waitStatus("Saved Subagents.");
+    eq(nameOnDisk(), custom, `the profile's name in ${info.file}`);
+    await profileName.fill(`${custom} x`);
+    await waitStatus("Unsaved: Subagents");
+    eq(nameOnDisk(), custom, "the file is unchanged");
     await footButton("Discard Changes").click();
-    eq(await ctx.inputValue(), String(custom), "Discard brings the saved value back");
+    await waitStatus("");
+    eq(await profileName.inputValue(), custom, "Discard brings the saved value back");
   });
 
   await check("Cancel with unsaved edits holds the close and asks", async () => {

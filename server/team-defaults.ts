@@ -15,7 +15,7 @@ import type { WorkerChoice } from "../shared/protocol";
 import type { TeamDefaults, TeamDefaultsInfo, TeamDefaultsSaveResult } from "../shared/team-defaults";
 import { delegateOptions, verifySlots, type DelegateSources } from "./delegate";
 
-// Settings → Teams: the standing coordinator and monitor every new team gets. The file
+// Team defaults (legacy file; Settings → Subagents now edits teams per profile): the standing coordinator and monitor every new team gets. The file
 // (~/.pi/agent/team-defaults.json) and what the members do are the subagents extension's
 // (pi-config/extensions/subagents/team-defaults.ts); the offer and the save check are Delegate's
 // (server/delegate.ts), since each member's model is the same backend · model · effort tuple. The

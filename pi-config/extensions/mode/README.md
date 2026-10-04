@@ -487,8 +487,9 @@ a routing kept there would vanish on the next `/mode default`:
   id or alias and its `effort` one of `low medium high xhigh max`.
 - `fallback: null` means none. A missing file reads as the defaults; a slot that
   doesn't parse takes its default; an unknown `version` reads as all defaults.
-- Edit it in Sova (Settings → Modes → Delegate, which offers only what each
-  backend actually lists) or by hand. Nothing in this extension writes it.
+- Edit it by hand. Sova no longer writes it: Delegate routing is edited per
+  subagent profile in Settings → Subagents, and this file only seeds that
+  library and is its fallback. Nothing in this extension writes it.
 
 **Global, read at every turn boundary, never snapshotted.** The file is shared
 by every session, TUI and Sova alike. A session in delegate re-reads it (one
@@ -566,9 +567,10 @@ independent of Delegate:
   to fall back to); a fallback that doesn't parse, or repeats the primary,
   reads as none.
 - Tuples are exactly Delegate's (`WorkerChoice`, `parseChoice`), and the file
-  is its own for the same reason `mode-delegate.json` is. Edit it in Sova
-  (Settings → Modes → Spec, with a **None — this session writes the spec**
-  choice) or by hand; nothing in this extension writes it.
+  is its own for the same reason `mode-delegate.json` is. Edit it by hand;
+  Sova no longer writes it (the spec writer is edited per subagent profile in
+  Settings → Subagents; this file only seeds that library and is its
+  fallback). Nothing in this extension writes it.
 - **Global, read at every turn boundary, never snapshotted.** A session with
   spec on re-reads it (one `stat`) in `before_agent_start`; with spec off it is
   never read.

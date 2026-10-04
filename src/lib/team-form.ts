@@ -2,7 +2,7 @@ import type { TeamDefaults } from "../../shared/team-defaults";
 import { sameChoice, type DraftChoice } from "./delegate-form";
 
 /**
- * Settings → Teams' form rules: the standing coordinator and monitor every new team gets, and how
+ * Team form rules (Settings → Subagents' Teams section): the standing coordinator and monitor every new team gets, and how
  * long a replaced member has to hand over. The worker rows are Delegate's (delegate-form.ts,
  * WorkerSlotRow), with its rule: nothing here ever picks a model the user didn't. Numbers are kept
  * as typed (NaN while a field is blank) so an unusable value is shown, never silently clamped.

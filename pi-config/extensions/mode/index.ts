@@ -28,10 +28,11 @@
  * never leaks into another session. ~/.pi/agent/mode.json holds the shortcuts and the
  * default a new session starts from; `/mode default` (and the palette's "save as default")
  * is the only thing here that writes it. The Delegate routing is global and never snapshotted:
- * nothing here writes mode-delegate.json (Sova's Settings → Modes → Delegate does).
+ * nothing here writes mode-delegate.json (nor does Sova any more: Settings → Subagents edits the
+ * routing per subagent profile; the file only seeds that library and is its fallback).
  *
- * The spec minor mode's writer (spec.ts, ~/.pi/agent/mode-spec.json, written by Settings → Modes →
- * Spec) is global the same way: while spec is on, under either major mode, it is re-read at every
+ * The spec minor mode's writer (spec.ts, ~/.pi/agent/mode-spec.json, now only a seed and fallback
+ * for the spec writer of a Settings → Subagents profile) is global the same way: while spec is on, under either major mode, it is re-read at every
  * turn boundary, routed like a Delegate profile and probed through the same discovery.
  */
 import {

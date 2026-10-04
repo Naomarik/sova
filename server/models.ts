@@ -116,7 +116,7 @@ export async function listModels(): Promise<ModelInfo[]> {
 
 /**
  * Every model the shared runtime holds with credentials: what a worker could be spawned from
- * (Settings → Modes → Delegate). Today the same list as listModels, kept apart because the two
+ * (Settings → Subagents' worker rows). Today the same list as listModels, kept apart because the two
  * questions differ. The Claude Code provider's models are registered per runtime, so
  * this is still not the whole truth for them — see DelegateBackendOptions.sessionScopedProviders.
  */

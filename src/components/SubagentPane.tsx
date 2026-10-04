@@ -3,7 +3,7 @@ import type { LinkedAgentInfo } from "../../shared/mesh-links";
 import type { ContextInfo, TeamInfo, TeamMember, TranscriptItem, WatchServerMessage, WorkerInfo } from "../../shared/protocol";
 import { claudeWatchUrl, fetchHiddenWorkers, wsUrl } from "../lib/api";
 import type { UsageSessionSpend, UsageSpend } from "../../shared/usage/wire";
-import { linkGroupId, linkGroups, linkHostLabel, linkReach, sessionIdOfPath, threadHost, type LinkReach } from "../lib/links";
+import { linkGroupId, linkGroups, linkHostLabel, linkReach, threadHost, type LinkReach } from "../lib/links";
 import { spendTitle, spentAnything, spoken, workerSpendOf } from "../lib/spend";
 import { chatLinks } from "../lib/links-live";
 import { hostOf, meshState, sessionHrefOn } from "../lib/mesh";
@@ -511,8 +511,9 @@ export function SubagentPane(props: {
                       )}
                     </Show>
                     {/* Its spend from the usage ledger, its own workers' included, read for as
-                        long as its transcript is open. */}
-                    <Show when={spendOf(w())?.sid ?? w().sessionId ?? (w().sessionFile ? sessionIdOfPath(w().sessionFile!) : null)} keyed>
+                        long as its transcript is open: by the sid its roster row in the
+                        session's answer names, never one derived from the worker. */}
+                    <Show when={spendOf(w())?.sid} keyed>
                       {(sid) => <WorkerTokens sid={sid} />}
                     </Show>
                     {/* How full its own context is, as the chat head says it — pushed to the

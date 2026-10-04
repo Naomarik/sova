@@ -12568,6 +12568,38 @@
         "scripts/fetch-bun.sh",
         "scripts/bun-release.txt"
       ]
+    },
+    "§mesh.vps/runtime": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "requires": [
+        "§app.server-runtime/choice"
+      ],
+      "code": [
+        "scripts/mesh-vps/remote-setup.sh",
+        "scripts/mesh-vps/run-sova.sh",
+        "scripts/mesh-vps/config.sh",
+        "scripts/mesh-vps/deploy.sh",
+        "scripts/mesh-vps/local.env.example",
+        "scripts/mesh-vps/README.md",
+        "scripts/fetch-bun.sh",
+        "scripts/bun-release.txt"
+      ]
+    },
+    "§mesh.phone/runtime": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "requires": [
+        "§app.server-runtime/choice"
+      ],
+      "code": [
+        "scripts/mesh-termux/install.sh",
+        "scripts/mesh-termux/README.md",
+        "scripts/fetch-bun.sh",
+        "scripts/bun-release.txt"
+      ]
     }
   },
   "boundary": {

@@ -22,6 +22,19 @@ models will fail" and finishes anyway; everything else on the host works as befo
 The VPS setup reads the host's architecture (`uname -m`) before it downloads anything. On `x86_64`
 it installs the `linux-x64` Node and the `linux_amd64` Caddy builds; on `aarch64` or `arm64` the
 `linux-arm64` Node and the `linux_arm64` Caddy builds. Each download is checked against its own
-pinned checksum in `config.sh`. On any other architecture the deploy stops before downloading,
+pinned checksum in `config.sh`. Bun's `linux-x64` or `linux-aarch64` build is fetched the same way
+(§mesh.vps/runtime), checked against the deployed commit's `scripts/bun-release.txt`. On any other architecture the deploy stops before downloading,
 with "unsupported architecture {name}: the VPS kit supports x86_64 and aarch64", and the running
 app is left as it was.
+
+## §mesh.vps/runtime — The VPS host runs on Bun
+
+Each deploy installs the Bun the deployed commit's `mise.toml` pins into the new build's
+`app.new/.bun/bin/bun` (`scripts/fetch-bun.sh`, sha256-checked against that commit's
+`scripts/bun-release.txt`; the running build's copy is reused when it is that version), before
+the dependencies are installed, so Bun swaps in and out with the app. A failed Bun install stops
+the deploy with "bun: install failed: the running app is unchanged". The service's environment
+names that Bun (`SOVA_BUN`), and `run-sova.sh` starts the server through `scripts/start-server.sh`,
+so it runs on Bun. `SOVA_RUNTIME=node` in the site settings writes `SOVA_RUNTIME=node` into the
+service's environment at the next deploy, and the host then runs on the bundled Node instead; any
+other value but empty or `bun` stops the deploy before it starts.

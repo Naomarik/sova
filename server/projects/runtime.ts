@@ -1,6 +1,6 @@
 import { basename } from "node:path";
 import type { InstanceSummary, ServiceView, VerbResult } from "../../shared/project-contract";
-import type { ProjectRuntimeView, RuntimeOrphan, RuntimePlaybook, RuntimeProof, RuntimeService, RuntimeStanding } from "../../shared/project-runtime";
+import type { ProjectRuntimeView, RuntimeOrphan, RuntimePlaybook, RuntimePlaybookState, RuntimeProof, RuntimeService, RuntimeStanding } from "../../shared/project-runtime";
 import { buildSessionPath, readBuild, probeBuild, withWorktreePath } from "../build-loadout";
 import type { Envelope } from "../org-envelope";
 import { hostOf, isOrgHostOpen, onOrgChange, onOrgHostOpened, type Effect, type OrgHostApi } from "../org-engine";
@@ -25,6 +25,8 @@ import { engineOf, engineOrThrow, listProjects, operatorEnvelopeOf, projectArchi
  */
 
 const SYSTEM = { by: "system" } as unknown as Envelope;
+/** The playbook region's states while a run is live (its build watched, a new run refused). */
+const LIVE_RUN = new Set(["running", "waiting", "proposed"]);
 const OBSERVE_EVERY_MS = 5 * 60_000;
 const SETTLE_MS = 500;
 
@@ -98,7 +100,7 @@ export function observe(projectId: string): Promise<void> {
     const payload = observedPayload(await observeRuntime(root));
     const d = obj(at.host.data(at.sid));
     const pb = obj(d.playbook);
-    if ((d.playbookState === "running" || d.playbookState === "proposed") && str(pb.sessionId)) {
+    if (LIVE_RUN.has(str(d.playbookState)) && str(pb.sessionId)) {
       const branch = (await probePlaybookBuild(projectId, root, str(pb.sessionId))) || str(pb.branch);
       if (branch) payload.branchFacts = branchPayload(await branchFacts(root, branch));
     }
@@ -293,7 +295,10 @@ function playbookView(host: OrgHostApi, d: Record<string, unknown>): RuntimePlay
   const build = obj(host.data(str(pb.sid)));
   return {
     sessionId: str(pb.sessionId),
+    playbookId: str(pb.playbookId) || "project-verbs",
     label: str(pb.label) || DEFAULT_PLAYBOOK_LABEL,
+    approves: pb.approves === "deploy" ? "deploy" : "definition",
+    ...(d.playbookState === "waiting" && typeof pb.questions === "number" && pb.questions > 0 ? { questions: pb.questions } : {}),
     ...(path ? { path } : {}),
     ...(str(pb.title) ? { title: str(pb.title) } : str(host.data(str(pb.sid))?.title) ? { title: str(host.data(str(pb.sid))?.title) } : {}),
     ...(str(pb.why) ? { why: str(pb.why) } : {}),
@@ -308,7 +313,7 @@ function playbookView(host: OrgHostApi, d: Record<string, unknown>): RuntimePlay
 
 /** The live title of a running playbook (the "already running" refusal), or null. */
 function liveRun(host: OrgHostApi, d: Record<string, unknown>): string | null {
-  if (d.playbookState !== "running" && d.playbookState !== "proposed") return null;
+  if (!LIVE_RUN.has(str(d.playbookState))) return null;
   const pb = obj(d.playbook);
   return str(pb.title) || str(host.data(str(pb.sid))?.title) || str(pb.sessionId);
 }
@@ -345,7 +350,7 @@ export async function readRuntime(projectId: string, opts: { observe?: boolean }
   return {
     projectId,
     standing: ((["unregistered", "awaiting-approval", "conforming", "registered", "stale", "failed"] as const).find((s) => cfg.includes(s)) ?? "unregistered") as RuntimeStanding,
-    playbookState: d.playbookState === "running" || d.playbookState === "proposed" ? d.playbookState : "idle",
+    playbookState: LIVE_RUN.has(str(d.playbookState)) ? (d.playbookState as RuntimePlaybookState) : "idle",
     def: def.state ? { state: def.state as "absent" | "invalid" | "present", ...(def.hash ? { hash: str(def.hash) } : {}), ...(def.error ? { error: str(def.error) } : {}) } : null,
     commit: str(d.commit) || null,
     suite: typeof d.suite === "number" ? d.suite : null,
@@ -415,6 +420,8 @@ export async function approveMerge(projectId: string, hash: string, by: Operator
   await readRuntime(projectId);
   const review = playbookReviewOf(projectId);
   if (!review) throw new RuntimeRefusal(NO_RUN_PROPOSED, 409);
+  // What this host approves today is a definition (§app.project-runtime/verb-playbooks).
+  if (review.approves !== "definition") throw new RuntimeRefusal(`${review.label} proposes a ${review.approves}, which can't be approved here yet.`, 409);
   // Never main's hash by mistake: only the one the branch proposes now.
   if (!review.hash || review.hash !== hash) throw new RuntimeRefusal(CHANGED_SINCE, 409);
   if (!review.approved) await approveRuntime(projectId, hash, by);
@@ -428,20 +435,24 @@ export async function approveMerge(projectId: string, hash: string, by: Operator
 }
 
 /** What starting the playbook needs stamped on `verbs/onboard`: the host's refusal (its own, else a live run) and the standing. */
-export async function onboardStamp(projectId: string, input: { why?: string; model?: string; thinking?: string }) {
+export async function onboardStamp(projectId: string, input: OnboardInput) {
   const start = await onboardStart(projectId, input);
   const at = runtimeOf(projectId);
   const d = at ? obj(at.host.data(at.sid)) : {};
   const running = at ? liveRun(at.host, d) : null;
   const standing = at ? ((["unregistered", "awaiting-approval", "conforming", "registered", "stale", "failed"] as const).find((s) => (at.host.configuration(at.sid) ?? []).includes(s)) ?? null) : null;
   const invalid = start.invalid || (running ? ALREADY_RUNNING(running) : "");
-  return { start, extra: { ...(input.why?.trim() ? { why: input.why.trim() } : {}), ...(invalid ? { invalid, invalidStatus: 409 } : {}), ...(standing ? { runtimeStanding: standing } : {}) } };
+  // The verb playbook the run is keyed by (§app.project-runtime/verb-playbooks).
+  const who = { playbookId: start.playbookId, label: start.label, approves: start.approves };
+  return { start, extra: { ...who, ...(input.why?.trim() ? { why: input.why.trim() } : {}), ...(invalid ? { invalid, invalidStatus: 409 } : {}), ...(standing ? { runtimeStanding: standing } : {}) } };
 }
 
 export interface OnboardInput {
   why?: string;
   model?: string;
   thinking?: string;
+  /** A verb playbook's id (default project-verbs). */
+  playbook?: string;
 }
 
 /**
@@ -485,7 +496,7 @@ export function softwareLines(v: ProjectRuntimeView): string[] {
   if (v.proof) out.push(`Proven: ${v.proof.pass ? "passed" : "failed"} at ${h(v.proof.hash)} (suite v${v.proof.suite}), ${v.proof.at}.`);
   if (v.playbook)
     out.push(
-      `Project verbs playbook: ${v.playbookState === "idle" ? `last run ${v.playbook.result ?? "ended"}` : v.playbookState === "proposed" ? `proposes a definition on ${v.playbook.branch ?? "its branch"} (the operator approves and merges)` : "running"} (session ${v.playbook.sessionId}, started by ${v.playbook.startedBy}).`,
+      `${v.playbook.label} playbook: ${v.playbookState === "idle" ? `last run ${v.playbook.result ?? "ended"}` : v.playbookState === "proposed" ? `proposes a definition on ${v.playbook.branch ?? "its branch"} (the operator approves and merges)` : v.playbookState === "waiting" ? "waits on the operator's answers to its open questions" : "running"} (session ${v.playbook.sessionId}, started by ${v.playbook.startedBy}).`,
     );
   if (["unregistered", "stale", "failed"].includes(v.standing) && v.playbookState === "idle") out.push("At L3 you may start the playbook once: sova_project_verbs onboard {why}. Never approve or merge.");
   return out;

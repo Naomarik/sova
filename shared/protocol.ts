@@ -889,6 +889,9 @@ export interface PlaybookInfo {
   title: string;              // frontmatter title, else name, else the id
   description: string;        // frontmatter description, else ""
   promptHint?: string;        // frontmatter promptHint: what the reader may want to specify for the first turn
+  /** Frontmatter `approves: definition | deploy`: a verb playbook, whose proposal the operator approves and merges
+      (§app.project-runtime/verb-playbooks). Absent (or any other value): not a verb playbook. */
+  approves?: "definition" | "deploy";
   source: "sova" | "user" | "project";
   dir: string;                // ABSOLUTE directory holding the playbook: its entry file, scripts/, references/…; every relative path in it resolves here
   entry: PlaybookEntry;       // the file read as the playbook: PLAYBOOK.md when the folder has one, else SKILL.md

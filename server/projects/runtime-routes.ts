@@ -75,7 +75,7 @@ export function registerRuntimeRoutes(app: Hono<any>): void {
     handle(async (c) => {
       const pid = c.req.param("pid") ?? "";
       const b = await body(c);
-      const input = { ...(opt(b.why) ? { why: opt(b.why) } : {}), ...(opt(b.model) ? { model: opt(b.model) } : {}), ...(opt(b.thinking) ? { thinking: opt(b.thinking) } : {}) };
+      const input = { ...(opt(b.why) ? { why: opt(b.why) } : {}), ...(opt(b.model) ? { model: opt(b.model) } : {}), ...(opt(b.thinking) ? { thinking: opt(b.thinking) } : {}), ...(opt(b.playbook) ? { playbook: opt(b.playbook) } : {}) };
       const made = await startOnboard(pid, input, operatorEnvelopeOf(pid, operatorBy(c)));
       return c.json({ sessionId: made.sessionId, path: made.path, ...(made.worktree ? { worktree: made.worktree } : {}), ...(made.notPrompted ? { notPrompted: made.notPrompted } : {}) }, 201);
     }),

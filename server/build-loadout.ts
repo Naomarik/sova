@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
-import { existsSync, writeFileSync } from "node:fs";
+import { existsSync, statSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
+import { readAlignScan } from "./align-state";
 import { acquireChat, isSessionBusy, setOpeningChoice } from "./chat-manager";
 import { noteBuildMerged } from "./build-merged";
 import { mergeMode } from "./mode-state";
@@ -425,7 +426,7 @@ export async function syncBuildTurn(projectId: string, sid: string, path: string
   const working = isSessionBusy(path);
   const workers = workingSubagents(path);
   if (working && d.turn !== "working") await host.act(sid, "turn/started", {}, SYSTEM);
-  if (!working && d.turn === "working") await host.act(sid, "turn/ended", {}, SYSTEM);
+  if (!working && d.turn === "working") await host.act(sid, "turn/ended", { questions: await openQuestionsAt(path) }, SYSTEM);
   if (workers !== (typeof d.workers === "number" ? d.workers : 0)) await host.act(sid, "workers/changed", { n: workers }, SYSTEM);
 }
 
@@ -455,6 +456,16 @@ export async function syncProjectBuilds(projectId: string): Promise<void> {
   }
 }
 
+/** The open alignment questions a session waits on the operator for (§chat.alignment/session-mark), at a turn's end:
+    a verb playbook's run that asks waits (§app.project-runtime/onboard). 0 when none, or the file can't be read. */
+async function openQuestionsAt(path: string): Promise<number> {
+  try {
+    return (await readAlignScan(path, statSync(path).size, null)).summary?.openQuestions ?? 0;
+  } catch {
+    return 0;
+  }
+}
+
 /** A build's turn ended (agent_settled): the statechart hears the turn (and its end), so the overseer is told of its own. */
 export async function noteBuildSettled(path: string, failed: boolean): Promise<void> {
   const want = canonicalPath(path);
@@ -464,7 +475,7 @@ export async function noteBuildSettled(path: string, failed: boolean): Promise<v
     if (!hit) return;
     const host = hostOf(hit.engine);
     if (host.data(hit.sid)?.turn !== "working") await host.act(hit.sid, "turn/started", {}, SYSTEM);
-    await host.act(hit.sid, "turn/ended", { failed }, SYSTEM);
+    await host.act(hit.sid, "turn/ended", { failed, questions: await openQuestionsAt(p) }, SYSTEM);
     return;
   }
 }

@@ -17,6 +17,8 @@ export interface PlaybookReviewFact extends PlaybookReviewWords {
   path: string;
   /** ms epoch: its last turn's end (when it became proposed). */
   since: number;
+  /** What its proposal approves (§app.project-runtime/verb-playbooks). */
+  approves: "definition" | "deploy";
 }
 
 export const DEFAULT_PLAYBOOK_LABEL = "Project verbs";
@@ -47,6 +49,7 @@ export function playbookReviewOf(projectId: string): PlaybookReviewFact | null {
     target: str(build.target) || "main",
     ...(hash ? { hash } : {}),
     approved: !!hash && bf.approved === true,
+    approves: pb.approves === "deploy" ? "deploy" : "definition",
     since: typeof build.lastTurnAt === "number" ? build.lastTurnAt : typeof pb.at === "number" ? pb.at : 0,
   };
 }

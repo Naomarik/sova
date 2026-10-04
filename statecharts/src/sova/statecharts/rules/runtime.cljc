@@ -110,7 +110,8 @@
 
 (defn run-moved
   "Where the playbook's build has got to, from its `link/moved` (`{:states :exported}`): :merged, :removed,
-   :not-started, :no-change (a turn ended, not running, no commits), :proposed (a turn ended, not running,
+   :not-started, :waiting (a turn ended, not running, its session waits on open alignment questions, whatever
+   its branch holds), :no-change (a turn ended, not running, no commits), :proposed (a turn ended, not running,
    commits not merged), :working (running again), or nil (nothing to say yet)."
   [{:keys [states exported]}]
   (let [s (set states) ex exported]
@@ -120,5 +121,6 @@
       (contains? s :not-started) :not-started
       (true? (:running ex)) :working
       (nil? (:last-turn-at ex)) nil
+      (pos? (or (:questions ex) 0)) :waiting
       (= "no-commits" (:branch-state ex)) :no-change
       (contains? #{"unmerged" "new-since-merge"} (:branch-state ex)) :proposed)))

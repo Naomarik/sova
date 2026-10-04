@@ -17,7 +17,7 @@ export interface FeedRow {
 }
 
 const STANDINGS = ["unregistered", "awaiting-approval", "conforming", "registered", "stale", "failed"] as const;
-const RUNS = ["idle", "running", "proposed"] as const;
+const RUNS = ["idle", "running", "waiting", "proposed"] as const;
 
 const obj = (v: unknown): Record<string, unknown> => (v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {});
 const str = (v: unknown): string => (typeof v === "string" ? v : "");
@@ -39,6 +39,9 @@ class Mirror {
 
 /** Main's hash as shown: the log drops hash values, so the statechart keeps `hash12` beside them. */
 const shown = (m: Mirror): string => str(m.get("hash12")) || hash12(m.get("def", "hash"));
+
+/** The run's playbook by its title (§app.project-runtime/verb-playbooks); a run recorded before it had one is Project verbs'. */
+const label = (m: Mirror): string => str(m.get("playbook", "label")) || "Project verbs";
 
 const entered = (r: FeedRow, s: string): boolean => r.after.includes(s) && !r.before.includes(s);
 
@@ -70,20 +73,22 @@ function standingLine(s: string, m: Mirror): string | null {
 function runLine(s: string, r: FeedRow, m: Mirror): string | null {
   switch (s) {
     case "running":
-      if (r.before.includes("proposed")) return null;
-      return `The Project verbs playbook was started${str(m.get("playbook", "why")) ? `: ${str(m.get("playbook", "why"))}` : ""}.`;
+      if (r.before.includes("proposed") || r.before.includes("waiting")) return null;
+      return `The ${label(m)} playbook was started${str(m.get("playbook", "why")) ? `: ${str(m.get("playbook", "why"))}` : ""}.`;
+    case "waiting":
+      return `The ${label(m)} playbook waits on your answers in its session.`;
     case "proposed":
-      return `The Project verbs playbook proposes a definition on ${str(m.get("playbook", "branch"))}: approve it, then merge.`;
+      return `The ${label(m)} playbook proposes a definition on ${str(m.get("playbook", "branch"))}: approve it, then merge.`;
     case "idle":
       switch (str(m.get("playbook", "result"))) {
         case "no-change":
-          return "The Project verbs playbook finished with no change.";
+          return `The ${label(m)} playbook finished with no change.`;
         case "merged":
-          return "The Project verbs playbook's branch was merged.";
+          return `The ${label(m)} playbook's branch was merged.`;
         case "not-started":
-          return "The Project verbs playbook could not start.";
+          return `The ${label(m)} playbook could not start.`;
         case "removed":
-          return "The Project verbs playbook's worktree was removed.";
+          return `The ${label(m)} playbook's worktree was removed.`;
       }
   }
   return null;

@@ -5,7 +5,8 @@
  */
 
 export type RuntimeStanding = "unregistered" | "awaiting-approval" | "conforming" | "registered" | "stale" | "failed";
-export type RuntimePlaybookState = "idle" | "running" | "proposed";
+/** `waiting`: its last turn ended on open alignment questions, answered in its session (§app.project-runtime/onboard). */
+export type RuntimePlaybookState = "idle" | "running" | "waiting" | "proposed";
 
 export interface RuntimeMemory {
   peakBytes: number | null;
@@ -61,8 +62,13 @@ export interface RuntimeProof {
 
 export interface RuntimePlaybook {
   sessionId: string;
-  /** The playbook's title ("Project verbs"): every sentence about the run names it. */
+  /** The verb playbook the run is keyed by (§app.project-runtime/verb-playbooks), its title ("Project verbs"), which
+      every sentence about the run names it by, and what its proposal approves. */
+  playbookId: string;
   label: string;
+  approves: "definition" | "deploy";
+  /** While waiting: the open alignment questions its session asks the operator. */
+  questions?: number;
   /** Its session file on this host, when known (the card links it). */
   path?: string;
   title?: string;

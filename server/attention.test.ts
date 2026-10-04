@@ -338,7 +338,7 @@ describe("blockerCount: the count \"Brief me\" compares (§app.overseer/brief-re
 });
 
 describe("attention: a proposed verb playbook run (§app.project-runtime/review)", () => {
-  const fact = { projectId: "p1", sessionId: "s1", path: "/s/pb.jsonl", label: "Project verbs", branch: "sova/verbs-1a2b3c", target: "main", hash: "sha256:0123456789abcdef", approved: false, since: NOW - 5000 };
+  const fact = { projectId: "p1", sessionId: "s1", path: "/s/pb.jsonl", label: "Project verbs", branch: "sova/verbs-1a2b3c", target: "main", hash: "sha256:0123456789abcdef", approved: false, since: NOW - 5000, approves: "definition" as const };
   test("is an act item of the run's session, worded by what waits, carrying what Approve & Merge needs", () => {
     const items = sessionItems(row(summary("pb"), { playbook: fact }), NOW);
     const it = items.find((i) => i.kind === "playbook-review")!;

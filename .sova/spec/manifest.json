@@ -11651,7 +11651,11 @@
         "server/chat-manager.ts",
         "server/index.ts",
         "server/sessions-configure.ts",
-        "shared/mesh-links.ts"
+        "shared/mesh-links.ts",
+        "server/delegate.ts",
+        "server/spec-settings.ts",
+        "server/team-defaults.ts",
+        "shared/team-defaults.ts"
       ]
     },
     "§chat.subagent-profiles/settings": {
@@ -11669,7 +11673,8 @@
         "server/subagent-profiles.ts",
         "src/lib/subagent-editor.ts",
         "src/lib/subagent-editor.test.ts",
-        "src/components/WorkerSlotRow.tsx"
+        "src/components/WorkerSlotRow.tsx",
+        "src/lib/team-form.ts"
       ]
     },
     "§chat/subagent-profiles": {

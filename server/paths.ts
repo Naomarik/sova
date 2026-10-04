@@ -1,6 +1,6 @@
 import { realpathSync } from "node:fs";
 import { dirname, join, resolve, sep } from "node:path";
-import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import { agentRoot } from "./state-root";
 
 function canonical(p: string): string {
   try {
@@ -11,7 +11,7 @@ function canonical(p: string): string {
 }
 
 /** Canonical (symlink-free) sessions dir, so every path derived from it is canonical too. */
-export const SESSIONS_DIR = canonical(join(getAgentDir(), "sessions"));
+export const SESSIONS_DIR = canonical(join(agentRoot(), "sessions"));
 export const LIVE_DIR = join(SESSIONS_DIR, "live");
 
 /**
@@ -51,8 +51,8 @@ export function sessionPathShape(raw: string | undefined | null): string | null 
   if (!raw) return null;
   const abs = resolve(raw);
   if (!abs.endsWith(".jsonl")) return null;
-  const literal = abs.startsWith(join(getAgentDir(), "sessions") + sep)
-    ? join(SESSIONS_DIR, abs.slice(join(getAgentDir(), "sessions").length))
+  const literal = abs.startsWith(join(agentRoot(), "sessions") + sep)
+    ? join(SESSIONS_DIR, abs.slice(join(agentRoot(), "sessions").length))
     : abs;
   return isInsideSessions(literal) ? literal : null;
 }

@@ -11,7 +11,6 @@ import {
   createAgentSessionServices,
   type ExtensionUIContext,
   type ExtensionUIDialogOptions,
-  getAgentDir,
   ModelRuntime,
   initTheme,
   SessionManager,
@@ -58,6 +57,7 @@ import { projectEngine } from "./project-services/routes";
 import { projectVerbsExtension } from "./project-services/tools";
 import { excludedTools, GRANT_TOOLS, keyOf, KNOWN_REMOVABLE_TOOLS, PROFILE_ENTRY, SESSION_SENT_ENTRY, singletonRaceText, type ProfileEntryData, type SessionSentData } from "../shared/profiles";
 import { profileOnBranch } from "./session-profile";
+import { agentRoot } from "./state-root";
 import { LOADOUT_ENTRY, loadoutOnBranch, loadoutOverrides, type LoadoutEntryData, type LoadoutState } from "./session-loadout";
 import { RunState, SessionLimits, sessionPowersExtension } from "./session-powers";
 import { queuePushExtension, topicStore } from "./topics";
@@ -3524,7 +3524,7 @@ async function openSession(path: string, onDisposed: () => void): Promise<ChatSe
   try {
     const runtime = await createAgentSessionRuntime(createRuntime, {
       cwd: openCwd,
-      agentDir: getAgentDir(),
+      agentDir: agentRoot(),
       sessionManager,
     });
     let unregisterUsage: (() => void) | undefined;

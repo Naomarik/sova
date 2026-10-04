@@ -3,7 +3,8 @@ import { closeSync, mkdirSync, openSync, readFileSync, readSync, statSync, write
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
-import { type AgentSession, getAgentDir, SessionManager } from "@earendil-works/pi-coding-agent";
+import { type AgentSession, SessionManager } from "@earendil-works/pi-coding-agent";
+import { agentRoot } from "./state-root";
 import { loadPolicyFile, policyFilePath } from "../pi-config/extensions/sandbox/policy.ts";
 import {
   OVERSEER_BRIEF_PREFIX,
@@ -578,7 +579,7 @@ const host: OverseerToolHost = {
   sandbox: async (path) => (await acquireChat(path)).sandboxInfo(),
   // The extension's own default (index.ts defaultOn): an unreadable policy file starts sessions off.
   sandboxDefault: () => {
-    const f = loadPolicyFile(policyFilePath(getAgentDir()));
+    const f = loadPolicyFile(policyFilePath(agentRoot()));
     return f.ok && f.value.defaultOn ? "on" : "subagents";
   },
   started: (path, prompted) => {

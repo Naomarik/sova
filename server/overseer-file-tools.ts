@@ -12,13 +12,13 @@ import {
   DEFAULT_MAX_BYTES,
   detectSupportedImageMimeTypeFromFile,
   formatSize,
-  getAgentDir,
   truncateHead,
   truncateLine,
   type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import { type RootConfinement, SecretGuard } from "./overseer-deny";
 import { type Redactor, redactingTool, serverRedactor } from "./overseer-redact";
+import { agentRoot } from "./state-root";
 
 /**
  * The Overseer's read, grep, find and ls: pi's own tools, except that no secret file
@@ -121,7 +121,7 @@ function resolveArg(p: string, cwd: string): string {
 
 /** The binary pi would run: its own download in the agent dir, else the one on PATH. */
 function toolBinary(name: "rg" | "fd"): string {
-  const local = join(getAgentDir(), "bin", name);
+  const local = join(agentRoot(), "bin", name);
   return existsSync(local) ? local : name;
 }
 

@@ -5,7 +5,7 @@
 // the restore rule have one source of truth. Nothing else from pi-config. See CLAUDE.md.
 import { createHash } from "node:crypto";
 import { join } from "node:path";
-import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import { agentRoot } from "./state-root";
 import { MINOR_DESCRIPTIONS, MINOR_MODES } from "../pi-config/extensions/mode/minor.ts";
 import {
   activeOf,
@@ -25,7 +25,7 @@ export type { ModeState };
 export { MINOR_MODES };
 
 export const MODE_FILE_NAME = "mode.json";
-export const modeFile = () => join(getAgentDir(), MODE_FILE_NAME);
+export const modeFile = () => join(agentRoot(), MODE_FILE_NAME);
 
 export function modeInfo(state: ModeState): ModeInfo {
   return {

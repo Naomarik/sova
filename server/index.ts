@@ -6,7 +6,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
-import { getAgentDir, SessionManager } from "@earendil-works/pi-coding-agent";
+import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { type Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { compress } from "hono/compress";
@@ -48,7 +48,7 @@ import { acquireChat, disposeAllChats, getModelRuntime, heldChat, heldChats, Mod
 import { receiverSpecial, startTopicDelivery } from "./topic-delivery";
 import { projectOverseerOfPath } from "./project-overseer-store";
 import { canonicalPath, LIVE_DIR, resolveSessionPath, SESSIONS_DIR } from "./paths";
-import { stateRoot } from "./state-root";
+import { agentRoot, stateRoot } from "./state-root";
 import { runtimeInfo } from "./runtime-choice";
 import { cappedWebSocket } from "./runtime-quirks";
 import { claudeCodeModelCount, listModels, listRegistryModels, resolveContext } from "./models";
@@ -348,7 +348,7 @@ app.post("/api/sessions/connect", async (c) => {
   }
   const dir = join(stateRoot(), "connect");
   mkdirSync(dir, { recursive: true });
-  const agents = template.replaceAll("{{TARGETS_FILE}}", targetsFile()).replaceAll("{{AGENT_DIR}}", getAgentDir());
+  const agents = template.replaceAll("{{TARGETS_FILE}}", targetsFile()).replaceAll("{{AGENT_DIR}}", agentRoot());
   const tmp = join(dir, `AGENTS.md.${process.pid}.tmp`);
   writeFileSync(tmp, agents);
   renameSync(tmp, join(dir, "AGENTS.md"));
@@ -1486,7 +1486,7 @@ mountLinks(app, meshApi, {
         if (!path) return [];
         return heldChat(path)?.session.sessionManager.getBranch() ?? readActiveBranch(path);
       },
-      agentDir: getAgentDir,
+      agentDir: agentRoot,
     }),
   homedir,
   protectedRoots: () => [stateRoot(), SESSIONS_DIR],
@@ -1497,7 +1497,7 @@ setLinksSource(linkedAgents);
 setInsightLinks(linkedAgents);
 onSessionArchived((id) => void meshLinks.endFor(id));
 // A chat archived or deleted ends its hand-picks of Claude logins (§app.claude-logins/idle-pin).
-onSessionArchived((id) => clearPicksOf(getAgentDir(), id));
+onSessionArchived((id) => clearPicksOf(agentRoot(), id));
 // Topic queues (§chat.topics/delivery): batches to a topic's receiver when it is idle or settles.
 // An org's ordinary sessions (a project's coding sessions, unregistered workspace files) get their
 // batches; only what the runtime opens as special, and workers, are refused (receiverSpecial).
@@ -1738,7 +1738,7 @@ configureReadiness({
 // Never fatal, with or without a `claude` CLI: see warmClaudeCodeProvider.
 void (async () => {
   try {
-    await warmClaudeCodeProvider(await getModelRuntime(), getAgentDir());
+    await warmClaudeCodeProvider(await getModelRuntime(), agentRoot());
   } catch (err) {
     console.warn("[server] claude-code warm-up skipped:", err instanceof Error ? err.message : String(err));
   }

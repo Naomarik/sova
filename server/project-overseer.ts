@@ -1,7 +1,8 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, relative } from "node:path";
-import { type AgentSession, getAgentDir, SessionManager } from "@earendil-works/pi-coding-agent";
+import { type AgentSession, SessionManager } from "@earendil-works/pi-coding-agent";
+import { agentRoot } from "./state-root";
 import {
   autonomyMeaning,
   PER_DAY,
@@ -959,7 +960,7 @@ export function projectContextFiles<T extends { path: string }>(files: T[], root
 /** What the project overseer's file tools never read, even inside its root: the folders other layers
     reserve (an attached org's workspace: the roster's contacts, every project's transcripts) and pi's
     and Sova's state (the host's link store, every session). */
-const confinedOut = () => [...reservedRoots(), getAgentDir(), join(homedir(), ".pi")];
+const confinedOut = () => [...reservedRoots(), agentRoot(), join(homedir(), ".pi")];
 
 registerSpecialLoadout({
   kind: "project-overseer",

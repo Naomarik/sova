@@ -1,9 +1,8 @@
 import { chmodSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join } from "node:path";
-import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import type { OutreachFile, OutreachPatch, SenderRoute } from "../../shared/outreach";
-import { stateRoot } from "../state-root";
+import { agentRoot, stateRoot } from "../state-root";
 
 /**
  * `<stateRoot>/outreach.json` (§app.outreach/sender-route): how this host reaches the WhatsApp
@@ -16,7 +15,7 @@ export const OFF: OutreachFile = { version: 1, sender: "off", acceptFrom: [], pa
 export const outreachFile = (): string => join(stateRoot(), "outreach.json");
 
 /** The sender's home by default (services/whatsapp/IPC.md): `<agent dir>/sova/whatsapp`. */
-export const defaultSenderHome = (): string => join(getAgentDir(), "sova", "whatsapp");
+export const defaultSenderHome = (): string => join(agentRoot(), "sova", "whatsapp");
 /** pi's own default agent dir's sender home, whatever this server's agent dir is (a hermetic server). */
 export const piDefaultSenderHome = (): string => join(homedir(), ".pi", "agent", "sova", "whatsapp");
 

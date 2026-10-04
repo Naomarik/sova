@@ -1,4 +1,4 @@
-import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import { agentRoot } from "./state-root";
 // The claude-code extension's own registry and its session entry (node built-ins only). See CLAUDE.md.
 import { ClaudeLogins, CLAUDE_LOGIN_ENTRY, planLabel } from "../pi-config/extensions/claude-code/accounts.ts";
 import type { ChatClaudeLogin, ChatServerMessage } from "../shared/protocol";
@@ -38,7 +38,7 @@ export interface ChatLoginExtra {
 }
 
 /** The chat's login, or null when the registry can't name one. Reads the registry; never touches a login's directory. */
-export function chatClaudeLogin(branch: readonly Entry[], logins: ClaudeLogins = (hostLogins ??= new ClaudeLogins({ agentDir: getAgentDir() })), extra: ChatLoginExtra = {}): ChatClaudeLogin | null {
+export function chatClaudeLogin(branch: readonly Entry[], logins: ClaudeLogins = (hostLogins ??= new ClaudeLogins({ agentDir: agentRoot() })), extra: ChatLoginExtra = {}): ChatClaudeLogin | null {
   try {
     const accounts = logins.accounts();
     const recorded = newestLoginEntry(branch);
@@ -78,7 +78,7 @@ export function claudeLoginAfterHello(branch: readonly Entry[], logins?: ClaudeL
  * The name the chat shows for a login it may be moved to: its label, else its email, from this
  * device's registry, else from the pool (a login free at the keeper), else its id.
  */
-export function loginName(id: string, logins: ClaudeLogins = (hostLogins ??= new ClaudeLogins({ agentDir: getAgentDir() }))): string {
+export function loginName(id: string, logins: ClaudeLogins = (hostLogins ??= new ClaudeLogins({ agentDir: agentRoot() }))): string {
   try {
     const accounts = logins.accounts();
     const record = accounts.logins.find((l) => l.id === id);

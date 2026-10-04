@@ -1,5 +1,5 @@
 import type { Hono } from "hono";
-import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import { agentRoot } from "./state-root";
 // The claude-code extension's login standing (node built-ins only). See CLAUDE.md.
 import { defaultClaudeDir, loginDir, readAccountsState, readiness } from "../pi-config/extensions/claude-code/accounts.ts";
 import { heldChat } from "./chat-manager";
@@ -30,7 +30,7 @@ type AppRequest = (path: string, init?: RequestInit) => Response | Promise<Respo
 
 /** This host's Claude logins as the keeper reads them: each one's standing now. */
 function loginsNow(): LoginNow[] {
-  const agentDir = getAgentDir();
+  const agentDir = agentRoot();
   const state = readAccountsState(agentDir);
   const out: LoginNow[] = [];
   for (const [id, standing] of Object.entries(state.logins)) {

@@ -246,6 +246,48 @@ test("a dial-out host never dials a public relay address, nor a name that resolv
   await assert.rejects(connectPinned(mac, relayId.pin, "192.0.2.1", 9, "answer", 300), /^Error: relay address isn't private$/);
 });
 
+test("a pairing marked as on the internet may dial a public relay, or a name's first unicast answer; never every interface or a group address", async () => {
+  const names: Record<string, string[]> = { "vps.example": ["0.0.0.0", "224.0.0.9", "203.0.113.10", "10.0.0.4"], "groups.example": ["255.255.255.255", "ff02::1"] };
+  const lookup = async (h: string) => {
+    if (!names[h]) throw Object.assign(new Error("getaddrinfo ENOTFOUND"), { code: "ENOTFOUND" });
+    return names[h]!.map((address) => ({ address }));
+  };
+  for (const h of ["203.0.113.10", "2001:db8::4", "100.64.0.9", "10.0.0.4"]) assert.equal(await relayTarget(h, lookup, true), h, h);
+  assert.equal(await relayTarget("::ffff:203.0.113.10", lookup, true), "203.0.113.10");
+  assert.equal(await relayTarget("vps.example", lookup, true), "203.0.113.10", "skips every-interface and multicast answers");
+  for (const h of ["0.0.0.0", "::", "224.0.0.1", "255.255.255.255", "ff02::1", "groups.example"]) assert.equal(await relayTarget(h, lookup, true), null, h);
+  // Without the mark the very same names and addresses keep the local-network rule.
+  assert.equal(await relayTarget("vps.example", lookup), "10.0.0.4");
+  assert.equal(await relayTarget("203.0.113.10", lookup), null);
+});
+
+test("internet dial: an accept process that ends the connection after the outer handshake reads as 'accept process refused', never as a wrong pin", async () => {
+  // A stand-in accept process: completes the outer TLS 1.3 handshake with the dialer's certificate,
+  // then closes, as one that doesn't know this pin (or whose relay refused it) does. On Bun the inner
+  // client may then report a finished handshake (TLS 1.2, no certificate, no token): that must not
+  // be taken for a connection, nor for the relay's pin.
+  const outerKey = mintLanIdentity();
+  const server = tls.createServer({ ...relayServerOptions(outerKey) }, (s) => s.destroy());
+  server.on("tlsClientError", () => {});
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const port = (server.address() as AddressInfo).port;
+  for (const channel of ["answer", "ask"] as const) {
+    await assert.rejects(connectPinned(mac, relayId.pin, "127.0.0.1", port, channel, 3000, true), /^Error: accept process refused$/, channel);
+  }
+  server.close();
+});
+
+test("internet dial: nothing listening is 'refused', as for any relay", async () => {
+  const s = net.createServer();
+  s.listen(0, "127.0.0.1");
+  await once(s, "listening");
+  const port = (s.address() as AddressInfo).port;
+  s.close();
+  await once(s, "close");
+  await assert.rejects(connectPinned(mac, relayId.pin, "127.0.0.1", port, "answer", 3000, true), /^Error: refused$/);
+});
+
 test("pins come from the certificate's key", () => {
   assert.ok(spkiPin(new crypto.X509Certificate(mac.certPem)) === mac.pin);
 });

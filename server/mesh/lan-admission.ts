@@ -32,6 +32,9 @@ export interface AdmissionProfile {
   trustMs: number;
   maxTrusted: number;
   trustedBanMs: number;
+  /** New handshakes a second, all sources together, from sources that didn't pair recently
+      (absent: no such cap). Trusted sources are never counted or refused by it. */
+  untrustedPerSecond?: number;
 }
 
 const BASE = {
@@ -47,9 +50,10 @@ const BASE = {
   trustedBanMs: 30_000,
 };
 export const LAN_PROFILE: AdmissionProfile = { ...BASE, banMs: 5 * 60_000 };
-// No internet profile: a relay on the internet waits for the separate accept process (§mesh.lan/pairing).
+/** An internet relay's listener, which only the accept process runs (§mesh.lan/relay-listener). */
+export const INTERNET_PROFILE: AdmissionProfile = { ...BASE, banMs: 15 * 60_000, maxTracked: 16_384, untrustedPerSecond: 64 };
 
-export type Refusal = "banned" | "too many handshakes" | "too fast" | "full" | "too many addresses";
+export type Refusal = "banned" | "too many handshakes" | "too fast" | "full" | "too many addresses" | "busy";
 
 interface Entry {
   handshaking: number;
@@ -83,7 +87,9 @@ export class Admission {
   private readonly trusted = new Map<string, number>();
   private open = 0;
   private bans = 0;
-  private readonly refused: Record<Refusal, number> = { banned: 0, "too many handshakes": 0, "too fast": 0, full: 0, "too many addresses": 0 };
+  /** When each of the last second's admitted handshakes from untrusted sources started. */
+  private untrustedStarts: number[] = [];
+  private readonly refused: Record<Refusal, number> = { banned: 0, "too many handshakes": 0, "too fast": 0, full: 0, "too many addresses": 0, busy: 0 };
 
   constructor(private readonly profile: AdmissionProfile) {}
 
@@ -109,6 +115,12 @@ export class Admission {
     const slots = this.profile.maxConnections - (trusted ? 0 : this.profile.reservedConnections);
     if (this.open >= slots) return this.refuse("full");
     if (e.handshaking >= this.profile.perIpHandshakes) return this.refuse("too many handshakes");
+    const cap = this.profile.untrustedPerSecond;
+    if (cap !== undefined && !trusted) {
+      this.untrustedStarts = this.untrustedStarts.filter((t) => now - t < 1000);
+      if (this.untrustedStarts.length >= cap) return this.refuse("busy");
+      this.untrustedStarts.push(now);
+    }
     e.handshaking++;
     e.open++;
     this.open++;

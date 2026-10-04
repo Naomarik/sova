@@ -781,7 +781,12 @@ Three tools let the Overseer make and end links between sessions on different ho
   its host (a peer id; this host when left out) and session id. A peer's member is resolved on its
   own host by id (§mesh.links/by-id). It refuses, naming the member, a TUI-live session, an archived
   one, a worker's session, the Overseer's own, a baton session, a project overseer's session, any
-  other organization's session (§app.session-list/organizations), a session on a host that is down or skewed, and a second member on the same host as another. There
+  other organization's session (§app.session-list/organizations), a session on a host that is down or skewed, and a second member on the same host as another.
+  A member on a peer this host doesn't share links with (its grant to that peer, §mesh.peers/grants)
+  is refused before anything is sent, naming the host and saying this host doesn't share links with
+  it, to be raised on this host's Mesh page; if the grant is lowered while the link is being made,
+  the link is not made and nothing is left behind. That refusal is never reported as the host being
+  down or not answering, and leaves the host's state as it was. There
   is **no confirmation card**: linking changes no session and sends nothing, so it is not
   destructive. Like every act it is refused in an unattended turn (§app.overseer/tools), counts
   against a per-turn cap of 3 links (§app.overseer/caps), and is written to the action log. The

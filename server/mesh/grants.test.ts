@@ -32,7 +32,7 @@ setIdentity({
 });
 
 const { app, server } = await import("../index");
-const { listenerInfo, mayShareWith, peerFetch, stopMesh } = await import("./index");
+const { listenerInfo, mayShareWith, NotShared, peerFetch, stopMesh } = await import("./index");
 const { accessFile, classifyRequest, classifyUpgrade, clearDenied } = await import("./access");
 const { clearProbes, ownProtocol } = await import("./hello");
 const { clearPeerReach } = await import("./proxy");
@@ -332,7 +332,7 @@ describe("grants on the peer listener", () => {
 describe("this host's own calls", () => {
   test("what it doesn't grant a peer, it never sends it; reading the peer's own things still goes", async () => {
     await grant("b", { preset: "full", caps: { links: false, "sync.logins": false } });
-    await assert.rejects(peerFetch("b", "/api/peer/links/whoami"), /not shared with b/);
+    await assert.rejects(peerFetch("b", "/api/peer/links", { method: "POST", body: "{}" }), /not shared with b/);
     await assert.rejects(peerFetch("b", "/api/peer/credentials/manifest"), /not shared with b/);
     await assert.rejects(peerFetch("b", "/api/peer/claude-pool/doc"), /not shared with b/);
     assert.equal((await peerFetch("b", "/api/sessions")).status, 200);
@@ -343,6 +343,34 @@ describe("this host's own calls", () => {
     await assert.rejects(peerFetch("b", "/api/peer/sync/extensions"), /not shared with b/);
     await grant("b", { preset: "none" });
     await assert.rejects(peerFetch("b", "/api/peer/label", { method: "POST", body: "{}" }), /not shared with b/);
+    await grant("b", null);
+  });
+
+  test("reading a peer about itself or its session by id is the peer's grant, never this host's; link sends stay gated", async () => {
+    await grant("b", { preset: "none" });
+    // The link identity probe and the transcript read leave whatever this host grants b.
+    assert.equal((await peerFetch("b", "/api/peer/links/whoami")).status, 200);
+    assert.equal((await peerFetch("b", "/api/peer/links/read?id=s1&items=5")).status, 200);
+    // What this host sends b on its own initiative does not, and says why: withheld, not down.
+    for (const path of ["/api/peer/links", "/api/peer/links/lk_0123456789abcdef/message", "/api/peer/links/lk_0123456789abcdef/end", "/api/peer/links/lk_0123456789abcdef/offers"]) {
+      await assert.rejects(peerFetch("b", path, { method: "POST", body: "{}" }), (err: unknown) => err instanceof NotShared && /not shared with b/.test(err.message), path);
+    }
+    await assert.rejects(peerFetch("b", "/api/peer/links/whoami/x"), NotShared);
+    await assert.rejects(peerFetch("b", "/api/peer/links/readx"), NotShared);
+    await grant("b", null);
+  });
+
+  test("serving: the transcript read needs this host's sessions grant, links alone is not enough", async () => {
+    await grant("b", { preset: "presence", caps: { links: true } });
+    whoisNode = "nB";
+    const read = await peerCall("GET", "/api/peer/links/read?id=nope");
+    assert.equal(read.status, 403);
+    assert.equal(read.marker, "denied");
+    assert.equal((await peerCall("GET", "/api/peer/links/whoami")).status, 200);
+    await grant("b", { preset: "presence", caps: { sessions: true } });
+    const allowed = await peerCall("GET", "/api/peer/links/read?id=nope");
+    assert.notEqual(allowed.marker, "denied");
+    assert.equal(allowed.status, 404); // no such session: the route ran
     await grant("b", null);
   });
 

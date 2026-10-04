@@ -18,6 +18,7 @@ const { overseerTools, TurnLimits, renderTranscript } = await import("./overseer
 const { countRunning } = await import("./overseer");
 const { DEFAULT_CAPS } = await import("./overseer-store");
 const { disposeAllChats } = await import("./chat-manager");
+const { mayShareWith, NotShared, outboundRefusal } = await import("./mesh/index");
 
 after(async () => {
   await disposeAllChats();
@@ -45,6 +46,8 @@ function harness(
     links?: { list?: MeshLinkView[]; create?: MeshLinkView | { status: number; error: string }; end?: MeshLinkView };
     peers?: PeerRef[];
     peerRoutes?: Record<string, [number, unknown] | Error>;
+    /** Gate each peer call through the real outbound table, as peerFetch does. */
+    gated?: boolean;
   } = {},
 ) {
   const local: { method: string; path: string; body: unknown }[] = [];
@@ -90,6 +93,7 @@ function harness(
     peerSession: async () => null,
     peerRequest: async (peer: string, path: string, init?: RequestInit) => {
       const method = init?.method ?? "GET";
+      if (opts.gated && outboundRefusal(peer, path)) throw new NotShared(peer);
       remote.push({ peer, method, path, body: init?.body ? JSON.parse(String(init.body)) : undefined, headers: new Headers(init?.headers) });
       const hit = opts.peerRoutes?.[`${method} ${path.split("?")[0]}`];
       if (hit instanceof Error) throw hit;
@@ -198,6 +202,24 @@ describe("sova_read_session with host", () => {
     const q = new URL(`http://x${h.remote[0]!.path}`).searchParams;
     assert.deepEqual(Object.fromEntries(q), { id: "r1", from: "tail", items: "5", chars: "6000" });
     assert.equal(h.remote[0]!.headers.get("x-sova-overseer"), null);
+  });
+
+  test("reads a peer this host grants nothing: the read is the peer's grant to this host, never this host's", async () => {
+    // The mesh here lists no peer, so this host shares nothing with vps (its grant is none).
+    assert.equal(mayShareWith("vps", "links"), false);
+    assert.equal(mayShareWith("vps", "sessions"), false);
+    const h = harness({ gated: true, peerRoutes: { "GET /api/peer/links/read": [200, { text: slice, from: 0, total: 1, title: "Remote work" }] } });
+    const out = await h.run("sova_read_session", { host: "vps", session: "r1" });
+    assert.match(out.text, /^On VPS \(vps\):\n<<untrusted content/);
+    assert.match(out.text, /USER: remote ask/);
+    assert.equal(h.remote.length, 1);
+  });
+
+  test("a call this host's grant withholds is a refusal saying so, never \"didn't answer\"", async () => {
+    const h = harness({ peerRoutes: { "GET /api/peer/links/read": new NotShared("vps") } });
+    const out = (await h.run("sova_read_session", { host: "vps", session: "r1" })).text;
+    assert.match(out, /^ERROR: This host doesn't share that with VPS \(vps\): its grant to VPS on this host's Mesh page withholds it/);
+    assert.doesNotMatch(out, /didn't answer/);
   });
 
   test("a slice that comes back unwrapped is wrapped here, so it is always data", async () => {

@@ -193,6 +193,8 @@ describe("the route classifier", () => {
     assert.equal(need("GET", "/api/peer/credentials/entry"), "sync.logins");
     assert.equal(need("POST", "/api/peer/claude-pool/lend"), "sync.logins");
     assert.equal(need("POST", "/api/peer/links"), "links");
+    assert.equal(need("GET", "/api/peer/links/whoami"), "links");
+    assert.equal(need("GET", "/api/peer/links/read"), "sessions");
     assert.equal(need("GET", "/api/peer/links/x/offers/y/tar"), "links");
     assert.equal(need("POST", "/api/peer/outreach/send"), "outreach");
     assert.equal(need("PUT", "/api/peer/share-gateway/links"), "share");

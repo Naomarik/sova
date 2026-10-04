@@ -407,6 +407,9 @@ same Sandbox group as the `plus` menu (§chat.composer/composer-flyout); clickin
 - **Name.** `title` and the visually hidden text are the extension's own status line, the one
   `/sandbox` prints in a terminal ("Sandbox on · workspace-write · full enforcement", "Sandbox off
   · workers unconfined"). `aria-expanded` is true while the flyout is open on its panel.
+- **Target.** At least 44px wide (`--tap-min`), the glyph centred in it, and 44px tall: the
+  button is the caption row's `--control-sm` high and an invisible extension above and below
+  makes up the rest, as on the login indicator. The hover and open background fill the button.
 - **Disabled** (`aria-disabled`, it opens nothing) while the composer is disabled. **Hidden** when
   the runtime has no sandbox extension, and when the composer is collapsed.
 - **Source.** The server sends `{type:"sandbox", on, state, enforcement, status}` after the hello,

@@ -89,7 +89,7 @@ let a: VerbResult;
 test("the contract: share.endpoints name a copy's own declared ports; maxDays 1–7; allow false or true; shared services never", () => {
   const def = parseDefinition(JSON.stringify(DEF));
   assert.deepEqual(def.share, { endpoints: ["web.http", "site.http"], maxDays: 5 });
-  assert.deepEqual(def.reserved, {}, "share is no longer reserved");
+  assert.equal(def.deploy, undefined, "no deploy declared");
   const bad = (share: unknown, re: RegExp) => assert.throws(() => parseDefinition(JSON.stringify({ ...DEF, share })), (e: unknown) => e instanceof DefinitionError && re.test(e.message));
   bad({ endpoints: ["db.tcp"] }, /share\.endpoints\[0\]: a shared service is never shared/);
   bad({ endpoints: ["web.nope"] }, /names no declared port/);

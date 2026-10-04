@@ -878,9 +878,19 @@ itself.
   §chat.worktrees/readiness) has the same item as a decide item instead, "Merged with {n} open
   question(s) in {al_N} {title}" (or "… in {m} alignments"): visible in the digest, never Needs you,
   a brief or a phone notification.
+- **Needs you, a proposed playbook run** (§app.project-runtime/review): `playbook-review` on the
+  run's session while a verb playbook's run is proposed, "{Title}: approve {hash12} and merge into
+  {target}" (or its approved and no-definition forms), dated by its last turn's end, carrying what
+  Approve & Merge needs (`playbook: {projectId, hash?, approved, branch, target}`).
+- **Needs you, a deploy** (§app.project-services/deploy-status): items of no session, linking to the
+  project's page: `deploy-failed`, one per deploy target whose latest deploy failed, failed its verify
+  or was interrupted, "Deploy of {commit7} to {target} failed: {why}" (or "… ran, and its verify
+  failed: …", "… was interrupted: …"; "Rollback of …" for a rollback), until a later deploy of that
+  target; and `deploy-request`, one per overseer's open request to deploy, "Deploy {commit7} to
+  {target}? {why}", until the operator plans that target or dismisses it. Never a phone notification.
 - **Only real blockers are act.** The act tier — Needs you, the Overseer's "need you" count, its
   briefs and phone notifications — is exactly: open alignment questions on an unmerged branch, open dialogs, errored
-  turns, subagent errors, and the baton and roster hand-offs and held acts below. A guess (a
+  turns, subagent errors, proposed playbook runs, failed deploys and deploy requests, and the baton and roster hand-offs and held acts below. A guess (a
   reply that seems to ask, a team that seems stalled) and a branch ready to merge are decide
   items: a line in the digest and a quiet mark on the session's row, never a brief.
 - **Nothing puts an item away.** The digest lists act items by the rules above and nothing else:

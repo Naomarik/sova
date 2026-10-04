@@ -52,7 +52,13 @@ which is also its live view: its tool calls render as tool cards as they happen.
   workspace (the roster's contacts, every project's transcripts) or pi's or Sova's state (the
   host's link store, every session), even when the root holds them. A path argument that fails is
   refused with the reason; a listing or search leaves such entries out; a secret file inside the
-  root is still refused. No shell, no edit or write tool. Its prompt is Sova's
+  root is still refused. One folder outside the root is open to `read` alone: this conversation's
+  own attachments folder (`<stateRoot>/attachments/<its session id>/`, where an image the
+  operator pastes into its composer is saved, §chat/images), so it sees what the operator attaches, an image as
+  an image. A path there must be inside that folder both as written and at its realpath (a symlink
+  in it that leads elsewhere is refused); another conversation's attachments and the rest of Sova's
+  state stay refused, and `grep`, `find` and `ls` never reach it. The prompt says so. No shell, no
+  edit or write tool. Its prompt is Sova's
   (`server/project-overseer-prompt.md`), re-rendered at every run with the project, the level in
   force (a standalone project's with the standalone level meanings, and only its coding-session, prompt
   and look limits; gathering sessions and promotions appear only while placed), the caps, while placed
@@ -461,7 +467,9 @@ user row.
   - `delegate` only when `codingMode.mode` is `delegate`: "Delegate is off for this project's coding
     sessions; the operator can allow it on the project page." Automatic never allows it.
   - `align` never: "Align needs someone to answer its questions, and nobody answers a coding
-    session's."
+    session's." The one exception is not the overseer's: a verb playbook's run
+    (§app.project-runtime/verb-playbooks) gets align on beside the project's mode, from Sova, when it
+    starts, because the operator answers its questions (§app.project-runtime/onboard).
   - `spec` may be turned on; it may not be turned off while the project's mode (or Automatic)
     has it on: "Spec is on for this project's coding sessions; only the operator can turn it off
     on the project page."

@@ -42,6 +42,8 @@
    ["runtime" ":failed" [] "[:registered]" 0] false
    ["runtime" ":failed" [] "[:stale]" 0] true
    ["runtime" ":proposed" [":link/moved"] "[:idle]" 0] {"runtime/playbook-done" :overseer-started}
+   ["runtime" ":waiting" [":link/moved"] "[:idle]" 0] {"runtime/playbook-done" :overseer-started}
+   ["runtime" ":waiting" [":link/moved"] "[:proposed]" 0] false
    ["runtime" ":registered" [] "[:failed]" 0] true
    ["runtime" ":registered" [] "[:stale]" 0] true
    ["runtime" ":running" [":link/moved"] "[:idle]" 0] {"runtime/playbook-done" :overseer-started}

@@ -1,3 +1,5 @@
+import type { DeployReview } from "./project-contract";
+
 /**
  * The project's software registry as the page reads it (§app/project-runtime): `GET /api/projects/:pid/runtime`.
  * The registry is the host-local statechart `runtime/<p>`; each service's live state per instance is joined
@@ -5,7 +7,8 @@
  */
 
 export type RuntimeStanding = "unregistered" | "awaiting-approval" | "conforming" | "registered" | "stale" | "failed";
-export type RuntimePlaybookState = "idle" | "running" | "proposed";
+/** `waiting`: its last turn ended on open alignment questions, answered in its session (§app.project-runtime/onboard). */
+export type RuntimePlaybookState = "idle" | "running" | "waiting" | "proposed";
 
 export interface RuntimeMemory {
   peakBytes: number | null;
@@ -61,6 +64,13 @@ export interface RuntimeProof {
 
 export interface RuntimePlaybook {
   sessionId: string;
+  /** The verb playbook the run is keyed by (§app.project-runtime/verb-playbooks), its title ("Project verbs"), which
+      every sentence about the run names it by, and what its proposal approves. */
+  playbookId: string;
+  label: string;
+  approves: "definition" | "deploy";
+  /** While waiting: the open alignment questions its session asks the operator. */
+  questions?: number;
   /** Its session file on this host, when known (the card links it). */
   path?: string;
   title?: string;
@@ -70,10 +80,37 @@ export interface RuntimePlaybook {
   /** Set once the run ended: merged, removed, not-started, no-change. */
   result?: string;
   branch?: string;
+  /** The branch its worktree merges into. */
+  target?: string;
   /** The definition its branch proposes, while proposed. */
   branchHash?: string;
   branchApproved?: boolean;
   branchProof?: RuntimeProof | null;
+  /** While the run is live: its session as the session list reads it now (§app.project-runtime/run-progress). */
+  live?: RuntimeRunLive;
+  /** While proposed: what its branch proposes, read by the host (§app.project-runtime/run-report). */
+  review?: RuntimeRunReview;
+}
+
+export interface RuntimeRunLive {
+  working: boolean;
+  /** The session's outline "now" line, when it has one. */
+  now?: string;
+  /** Open alignment questions its session waits on the operator for. */
+  questions?: number;
+}
+
+/** The definition on a proposed run's branch at its tip, and the newest confined conformance of its hash. */
+export interface RuntimeRunReview {
+  def: { state: "absent" | "invalid" | "present"; hash?: string; error?: string };
+  services: (Omit<RuntimeService, "live" | "requires"> & { start: "up" | "on-demand" })[];
+  data: RuntimeData[];
+  /** null: no `share` (nothing is shared). */
+  share: { endpoints: string[]; allow: boolean } | null;
+  open: { endpoint: string; path: string } | null;
+  proof: RuntimeProof | null;
+  /** A deploy-setup run's recipe at the branch's tip, every step to tick before Approve & Merge (absent for a definition). */
+  deploy?: DeployReview;
 }
 
 export interface RuntimeFeedLine {

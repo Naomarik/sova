@@ -34,6 +34,8 @@ export interface UsageHelper {
   /** True while a child is running. */
   running(): boolean;
   pid(): number | null;
+  /** Stop or resume reading its answers (the benchmark's unread-output stretch). */
+  pauseOutput(paused: boolean): void;
   stop(): Promise<void>;
 }
 
@@ -132,6 +134,10 @@ export function startUsageHelper(opts: HelperOptions = {}): UsageHelper {
     },
     running: () => child !== null,
     pid: () => child?.pid ?? null,
+    pauseOutput(paused) {
+      if (paused) child?.stdout?.pause();
+      else child?.stdout?.resume();
+    },
     stop() {
       stopped = true;
       if (restartTimer) clearTimeout(restartTimer);

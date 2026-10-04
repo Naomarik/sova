@@ -60,7 +60,8 @@ import { worktreeInsights } from "./worktrees";
 import { DiffError, gitDiffs, scopeFromQuery } from "./git-diff";
 import { decodeWorkers, teamDuties, getAgentsInsight, getHiddenWorkers, getSessionInsight, setInsightLinks, getUsageInsight, invalidateUsageMemo, refreshUsageInsight, setUsageResetDay, usageRefreshBusy } from "./insights";
 import { startUsagePoller } from "./usage-poll";
-import { startPriceRefresh } from "./model-prices";
+import { startSharedUsageHelper, stopSharedUsageHelper } from "./usage-helper/client";
+import { registerUsageRoutes } from "./usage-routes";
 import { archiveSession, cachedTitleOf, cleanupSessions, getSessionSummary, idOf, lastReplyOf, listCwds, listSessionFiles, listSessions, onSessionArchived, onSummaryLineChanged } from "./sessions-index";
 import { cleanSessionTitle, SESSION_TITLE_MAX, setSessionTitle } from "./session-titles";
 import { contextForBranch, normalizeEntries, readActiveBranch } from "./transcript";
@@ -359,6 +360,8 @@ registerOrgRoutes(app);
 registerWrapupRoutes(app);
 registerProjectOverseerRoutes(app);
 registerProjectCostRoutes(app);
+// The usage ledger: every figure of spend, answered by the usage helper (§app.insights/usage-ledger).
+registerUsageRoutes(app);
 registerProjectRoutes(app);
 // Project services: the verbs over a project's .sova/project.json (server/project-services/; §app/project-services).
 registerProjectServiceRoutes(app);
@@ -1743,9 +1746,9 @@ void (async () => {
 
 // Keeps the shared usage cache fresh without an open TUI (SOVA_USAGE_POLL=off switches it off).
 const usagePoller = startUsagePoller({ busy: usageRefreshBusy, onFetched: invalidateUsageMemo });
-// models.dev prices for project costs: refreshed in the background when older than 3 days
-// (§app.project-costs/price-table; SOVA_PRICES_FETCH=off switches fetching off).
-const priceRefresh = startPriceRefresh();
+// The usage helper child: reads the usage ledger, keeps its rollup, pulls models.dev prices every
+// 6 hours and answers every spend query off this loop (§app.insights/usage-ledger).
+startSharedUsageHelper();
 
 let shuttingDown = false;
 async function shutdown() {
@@ -1771,7 +1774,7 @@ async function shutdown() {
   runLedger.freeze();
   for (const chat of heldChats()) if (chat.session.isStreaming) chat.session.abort().catch(() => {});
   usagePoller.stop();
-  priceRefresh.stop();
+  void stopSharedUsageHelper();
   autoTitleSweep.stop();
   stopResourceMonitor();
   meshLinks.stop();

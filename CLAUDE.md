@@ -118,7 +118,13 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
   `{version: 1, ollama?: {resetDay: 1..31}}` (missing or unreadable = unknown; written by the Usage
   page's Ollama card and by `/usage reset-day ollama <1-31|clear>`, whose argument is a contract
   too; synced like the policy), from which the server derives Ollama's monthly window as it reads
-  usage.
+  usage; the usage ledger (`pi-config/extensions/llm-inflight/usage-record.ts`, builtins only,
+  §app.insights/usage-ledger): `<agent dir>/usage/v1/<UTC day>/<producer>.jsonl`, one record per
+  model call `{v: 1, key, ts, device, producer, src, provider, model, responseModel?, input, output,
+  cacheRead, cacheWrite, cacheWrite1h?, owner, parent, worker?, kind, purpose?, cwd?, project?, starter?,
+  stop?}`, written at each call's end by llm-inflight (one writer per file: the process's producer
+  id) and by the server's own one-shots, read only by the server's usage helper (its strict parse
+  `parseUsageLine`), which prices every spend figure Sova shows.
   Not covered by Sova's tsconfig, with these exceptions: the server imports
   `pi-config/extensions/mode/state.ts`, `minor.ts`, `delegate.ts` and `spec.ts` (`server/mode-state.ts`,
   `server/delegate.ts`, `server/spec-settings.ts`; hence `allowImportingTsExtensions`),
@@ -173,6 +179,11 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
   `pi-config/extensions/mode/align.ts` (builtins only: the `align` tool's details shape, its strict
   check `normalizeAlignDetails` and the one fold `foldAlignments` — the transcript's align row and
   the session list's `SessionSummary.align` read what the extension writes, with its own code),
+  the server's one-shot paths (`server/decide-llm.ts`, `server/decide-jev.ts`,
+  `server/session-autotitle.ts`) and its usage helper (`server/usage-helper/`) import
+  `pi-config/extensions/llm-inflight/usage-record.ts` (builtins only: the ledger record's shape,
+  writer and strict parse; the watcher does not watch it, so an edit reaches a running server only
+  at its restart),
   `server/insights.ts` imports
   `pi-config/extensions/usage-status/fetch.ts` and `windows.ts` (`server/sync/docs.ts` imports
   `windows.ts` too, for the file's sync registration; fetch.ts imports `claude-code/accounts.ts`, builtins

@@ -388,7 +388,7 @@ offers Retry and the built-in themes list anyway — the app's own themes don't 
 
 ## §app.settings-dialog/profiles — Profiles
 
-The tab after Teams: every profile a session in the open session's folder can use
+The tab after Subagents: every profile a session in the open session's folder can use
 (§chat.profiles/projects), read-only. It opens with one line: "Profiles are files. Ask an agent to
 add or change one, or edit {path}." `{path}` is the project's `.sova/profiles/` folder (else your
 `session-profiles.json`), and a **File Format** link opens `docs/profiles.md`.

@@ -56,7 +56,8 @@ shell string is accepted anywhere: every command is an argv array of non-empty s
   readable process not its own, or another container) fails at once (`port-held`); a listener this
   user can't read that no container claims, as root's docker-proxy reads, counts as listening.
   One `cmd` checkout service (no `container`) may say `adopt: {unit, ports}`: in slot 0 it is that
-  systemd user unit, which Sova did not start, on those fixed ports (§app.project-services/adopt).
+  systemd user unit (on macOS, the launchd agent of that name without `.service`), which Sova did not
+  start, on those fixed ports (§app.project-services/adopt).
   A `cmd` checkout service may say `onMerge: "reload"` (the only value; never a static or shared
   service): the main checkout's copy reloads it whenever main moves (§app.project-services/on-merge).
 - **`setup`**: steps `{id, run: argv, inputs?: [checkout files], timeout?}` run at create, in order.
@@ -286,7 +287,8 @@ endpoints its definition lists, and the sentence saying why it can't be shared, 
 (default 100) of one service or all, oldest first, as `{t, service, text}`, from the journal or the
 log file; for a model they are redacted and wrapped as untrusted text.
 On an adopted slot 0 (§app.project-services/adopt), status shows the adopted unit's row (its unit
-name, main pid, memory, readiness and when it started) and logs read that unit's journal.
+name, main pid, memory, readiness and when it started) and logs read that unit's journal (on macOS,
+its launchd agent's output file).
 
 ## §app.project-services/doctor — doctor
 
@@ -585,18 +587,23 @@ are not affected: their verbs follow the ordinary rules. When slot 0 adopts a un
 ## §app.project-services/adopt — Slot 0 adopts a unit Sova did not start
 
 A `cmd` checkout service may say `adopt: {unit, ports}`: in slot 0 (the main checkout) it is not
-started by Sova but is that systemd user unit, installed and run by the operator (Sova's own
-definition adopts `sova-runtime.service` on 4800). `unit` is a whole service name (`<name>.service`),
+started by Sova but is that unit, installed and run by the operator: the systemd user unit, or on
+macOS the launchd agent in the user's GUI domain whose label is the unit's name without `.service`
+(Sova's own definition adopts `sova-runtime.service` on 4800: the agent `sova-runtime` on macOS).
+`unit` is a whole service name (`<name>.service`),
 never one of Sova's own (`sova-svc-…`, `sova-hook-…`, `sova-restart-…`); `ports` gives each of the
 service's ports the fixed port the unit listens on, which no slot's allocation may give any service.
 At most one service adopts, never a static, container or shared one, and the key is inside the
 hash. Every other slot runs the service as usual, on its allocated ports.
 
-On an adopted slot 0, Sova only reads the unit (`systemctl --user show`), whatever its supervisor:
+On an adopted slot 0, Sova only reads the unit (`systemctl --user show`; on macOS `launchctl print
+gui/<uid>/<label>`, with when its main process started and the memory of that process's tree read
+from `ps`), whatever its supervisor:
 status shows the service with the unit's name, its main pid, resident memory and readiness on the
 unit's ports, `ready` once that answers, else from the unit's state, and a detail saying it is the
 adopted unit and when it started (for the server's own unit, "this server" and the commit it
-loaded); the copy is wanted running. Logs read the unit's journal. `create` records the instance and
+loaded); the copy is wanted running. Logs read the unit's journal (on macOS, the last lines of the
+file launchd writes the agent's standard output to). `create` records the instance and
 runs no setup or data step there; `up`, `down`, `reset` and `teardown` answer `refused-slot0` ("…is
 the adopted unit …, which Sova never starts or stops"), as does a test run that needs the adopted
 service. `apply` is the one verb that changes it, under the self-host rule
@@ -604,14 +611,17 @@ service. `apply` is the one verb that changes it, under the self-host rule
 while a session this server hosts is busy. Then the service's `build` runs when declared and
 changed, and instead of a reload Sova schedules a gated restart, `systemd-run --user
 --on-active=30s` running `scripts/sova-restart-gate.mjs` from the server's own code, each schedule a
-transient unit of its own; the step says "restart scheduled", and `apply` answers at once without
+transient unit of its own (on macOS, the same script started as a process in a session of its own
+that waits the 30 s itself, so it outlives the restart it causes); the step says "restart
+scheduled", and `apply` answers at once without
 waiting for readiness, since the server may be the unit it restarts. When it fires, the gate reads
 the scheduling server's live records again (the same busy rule) and only then restarts the unit
-with `systemctl --user restart`; a busy server makes it exit 75 and restart nothing, and a unit
+with `systemctl --user restart` (on macOS `launchctl kickstart -k gui/<uid>/<label>`); a busy server
+makes it exit 75 and restart nothing, and a unit
 whose main pid changed since the schedule was restarted already, so it does nothing. Each outcome
 is a line in `<state root>/project-services/logs/restart-gate.log`. A unit that is not loaded
-answers `not-found`; a host where `systemd-run` can't schedule it answers `unsupported`; nothing
-restarts in either case.
+answers `not-found`; a host where `systemd-run` can't schedule it (on macOS, where the gate can't be
+started) answers `unsupported`; nothing restarts in either case.
 
 ## §app.project-services/on-merge — The main checkout's copy follows main
 

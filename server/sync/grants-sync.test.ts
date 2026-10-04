@@ -33,6 +33,7 @@ class LoginHost {
     readonly mesh: LoginHost[],
     base: string,
     readonly shares?: Record<string, string[]>,
+    debounceMs = 60_000,
   ) {
     const dir = join(base, id, "agent");
     mkdirSync(dir, { recursive: true });
@@ -43,7 +44,7 @@ class LoginHost {
       sidecarPath: join(dir, "login-sync.json"),
       peers: () => this.mesh.filter((h) => h !== this).map((h) => this.peerTo(h)),
       log: () => {},
-      debounceMs: 60_000,
+      debounceMs,
       ...(shares ? { shares: (peer: string, key: string) => (shares[peer] ?? []).includes(key) } : {}),
     });
   }
@@ -147,6 +148,37 @@ test("logins: turning one off stops future exchanges, logouts included, but can'
     assert.equal(b!.auth().zai?.key, "sk-1", "nor does the logout");
   } finally {
     for (const h of [a!, b!]) h.sync.stop();
+  }
+});
+
+test("logins: a key a host takes from one peer goes on to another at its next exchange, never at once", async () => {
+  // A shares the key with C only; C shares everything with B (§mesh.peers/grants: sync still
+  // replicates through other hosts). Taking A's key schedules nothing on C: its watcher sees its
+  // own write, whose fingerprint its records already hold. B gets the key on C's next exchange
+  // (the 5-minute reconcile, a peer-up, or a settings save), and never the key A keeps.
+  const KEEP = "pi:lab-keep";
+  const HELD = "pi:lab-held";
+  const base = join(root, `l${++seq}`);
+  const hosts: LoginHost[] = [];
+  // A short debounce: any sync the adoption scheduled would fire inside the wait below.
+  hosts.push(new LoginHost("a", hosts, base, { c: [KEEP] }, 20));
+  hosts.push(new LoginHost("b", hosts, base, { a: [KEEP, HELD], c: [KEEP, HELD] }, 20));
+  hosts.push(new LoginHost("c", hosts, base, { a: [KEEP, HELD], b: [KEEP, HELD] }, 20));
+  const [a, b, c] = hosts as [LoginHost, LoginHost, LoginHost];
+  for (const h of hosts) await h.sync.start();
+  try {
+    await a.key("lab-keep", "sk-keep");
+    await a.key("lab-held", "sk-held");
+    await a.sync.syncWith(a.peerTo(c));
+    assert.equal(c.auth()["lab-keep"]?.key, "sk-keep");
+    await new Promise((r) => setTimeout(r, 400)); // C's watcher and any debounced sync have fired
+    assert.equal(b.auth()["lab-keep"], undefined, "taking a key schedules no onward push");
+    await c.sync.syncAll(); // C's next exchange
+    assert.equal(b.auth()["lab-keep"]?.key, "sk-keep");
+    await converge(hosts);
+    for (const h of [b, c]) assert.equal(h.auth()["lab-held"], undefined, `${h.id} never gets the key A keeps`);
+  } finally {
+    for (const h of hosts) h.sync.stop();
   }
 });
 

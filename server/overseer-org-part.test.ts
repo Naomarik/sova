@@ -56,7 +56,7 @@ reconcile.setReconcileDeps({
 });
 
 const org = await orgs.createOrg({ name: "Gate", dir: join(root, "ws") });
-const tony = await orgs.addPerson(org.id, { name: "Tony", role: "IT", decides: ["invoicing"], contact: { email: "tony@example.invalid", phone: "15550000101" } });
+const tony = await orgs.addPerson(org.id, { name: "Tony", role: "IT", decides: ["invoicing"], language: "tr", skills: ["archery"], voice: "Greet with Merhaba; keep it short.", contact: { email: "tony@example.invalid", phone: "15550000101" } });
 const ana = await orgs.addPerson(org.id, { name: "Ana", role: "Finance", decides: ["payroll"], contact: { email: "ana@example.invalid", phone: "15550000102" } });
 await orgs.addPerson(org.id, { name: "Bob", status: "proposed", role: "Ops", contact: { email: "bob@example.invalid" }, referral: { why: "Runs the warehouse.", referredBy: tony.id } });
 await orgs.addPerson(org.id, { name: "Bea", status: "proposed", role: "Ops", contact: { email: "bea@example.invalid" }, referral: { why: "Keeps the books.", referredBy: tony.id } });
@@ -106,8 +106,13 @@ describe("its levels (§app.project-overseer/autonomy-levels)", () => {
   test("sova_roster: read at any level, never contact details; approving needs L2 outside the operator's turns", async () => {
     await settings(portal.id, { autonomy: "L0" });
     const out = await run("sova_roster", { op: "read" }, { attended: false });
-    assert.match(textOf(out), /Tony/);
+    assert.match(textOf(out), /- Tony \(id \S+\) — IT; decides: invoicing\n  language: tr · skills: archery\n  voice: "Greet with Merhaba; keep it short\."/, "the operator's agent sees how to address them");
+    assert.match(textOf(out), /- Bob \(id \S+\) — Ops · proposed/);
     assert.doesNotMatch(JSON.stringify(out), /example\.invalid|1555000010/, "contact details never reach the model");
+    const prompt = po.renderProjectOverseerPrompt(portal.id, []);
+    assert.match(prompt, /voice: "Greet with Merhaba; keep it short\."/, "the prompt's roster too");
+    assert.doesNotMatch(prompt, /example\.invalid|1555000010/);
+    assert.match(textOf(await run("sova_project", {}, { attended: false })), /language: tr · skills: archery/);
     await assert.rejects(() => run("sova_roster", { op: "approve", person: "Bea" }, { attended: false }), /sova_roster needs L2/);
     await settings(portal.id, { autonomy: "L2", holdMin: 0 });
     const ok = await run("sova_roster", { op: "approve", person: "Bea" }, { attended: false });

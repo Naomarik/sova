@@ -362,6 +362,9 @@ The pool's order keeps each account's logins together (§app.claude-logins/regis
 follows the document for the logins it holds: their label, **Use** and order (the pool's order)
 are written into its registry when they differ, so a rename, a switch or a move made on any device
 reaches the spawns and the chats of the device that runs the login.
+A device exchanges the pool directly only with peers whose grant includes logins
+(§mesh.peers/grants): one that doesn't neither borrows from nor lends to it, and reads it as away.
+Membership stays per device: the document still reaches every device through the others.
 
 ## §app.claude-logins/keeper — The keeper
 

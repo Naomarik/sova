@@ -216,6 +216,12 @@ test("mapTmp maps /tmp into the session tmp, never out of it", { skip: process.p
 	assert.equal(mapTmp("/home/u/x", p, "write"), "/home/u/x");
 	assert.equal(mapTmp("/tmp/ws/a.txt", p, "write"), "/tmp/ws/a.txt");
 	assert.equal(mapTmp("/tmp/does-not-exist-anywhere", p, "read"), "/tmp/does-not-exist-anywhere");
+	// A write-only worker sees the host's /tmp (read-only): nothing is mapped, so a write there is
+	// checked, and refused, at the host path, as bwrap's read-only /tmp refuses it.
+	const wo = { ...p, writeOnly: true };
+	assert.equal(mapTmp("/tmp/x", wo, "write"), "/tmp/x");
+	assert.equal(mapTmp("/tmp/x", wo, "read"), "/tmp/x");
+	assert.equal(mapTmp("/s/tmp/x", wo, "write"), "/s/tmp/x");
 });
 
 test("bash: denial note, runner failure, per-call env only from PATH and PI_*", async () => {

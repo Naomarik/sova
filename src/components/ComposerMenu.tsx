@@ -4,7 +4,7 @@ import { ensureModels, thinkingLevelsFor } from "../lib/models";
 import { useHostScope } from "../lib/host-scope";
 import { confirmActivate, confirmReset } from "../lib/confirm-step";
 import { hideThinking, hideTools, setHideThinking, setHideTools } from "../lib/ui-state";
-import { sandboxRowTitle } from "../lib/sandbox";
+import { SANDBOX_ROWS, sandboxStateOf, type SandboxState } from "../lib/sandbox";
 import { loginMenu, resendNote } from "../lib/claude-login";
 import type { ContextState } from "../lib/context";
 import type { ChatClaudeLogin, ClaudeAccountsInfo, SandboxInfo } from "../../shared/protocol";
@@ -31,13 +31,14 @@ export interface UndoControl {
   run(): void;
 }
 
-/** What the chat view exposes so the flyout can flip this chat's sandbox (§chat/sandbox). */
+/** What the chat view exposes so the flyout (and the shield) can set this chat's sandbox state
+    (§chat.sandbox/states). */
 export interface SandboxControl {
-  /** The runtime's last "sandbox" message; null = no sandbox extension, so there is no row. */
+  /** The runtime's last "sandbox" message; null = no sandbox extension, so there is no group. */
   state: Accessor<SandboxInfo | null>;
-  /** A flip is on its way to the server. */
-  pending: Accessor<boolean>;
-  set(on: boolean): void;
+  /** The state asked for, until the server's answer. */
+  pending: Accessor<SandboxState | null>;
+  set(state: SandboxState): void;
 }
 
 /** What the chat view exposes so the flyout can move this chat to another Claude login
@@ -61,8 +62,8 @@ export interface LoginControl {
 }
 
 /** The flyout's panels: the "+" button's root menu, the indicator's model panel, the model menu's
-    picker the model panel opens, and the login label's login panel. */
-export type FlyoutPanel = "menu" | "model" | "picker" | "login";
+    picker the model panel opens, the login label's login panel, and the sandbox shield's panel. */
+export type FlyoutPanel = "menu" | "model" | "picker" | "login" | "sandbox";
 
 /** What the composer gets on mount so a second trigger — the model indicator — can open
     this one popover, anchored above itself. */
@@ -130,7 +131,7 @@ export function ComposerMenu(props: {
   onPlaybooks?: () => void;
   /** Chat sessions only: "Undo last turn", a two-step row (the first click arms it). */
   undo?: UndoControl | null;
-  /** Chat sessions whose runtime has the sandbox extension: the Sandbox row. */
+  /** Chat sessions whose runtime has the sandbox extension: the Sandbox group (and the shield's panel). */
   sandbox?: SandboxControl | null;
   /** Chat sessions on a Claude Code model with several logins: the login panel. */
   login?: LoginControl | null;
@@ -159,6 +160,31 @@ export function ComposerMenu(props: {
   const levels = createMemo(() => (props.thinking ? thinkingLevelsFor(props.model?.model(), host()) : []));
   /** One level is no choice, and an unknown model has no ladder to show yet. */
   const showThinking = () => levels().length > 1;
+
+  /** The Sandbox group (§chat.composer/composer-flyout): three radios, checked on the state the
+      session reports, never on the click. The "+" panel holds it, and the shield's panel alone. */
+  const sandboxRows = createMemo<Row[]>(() => {
+    // Only when the runtime has the sandbox extension; without it the group doesn't exist.
+    const sandbox = props.sandbox;
+    const sbx = sandbox?.state();
+    if (!sandbox || !sbx) return [];
+    const now = sandboxStateOf(sbx);
+    const pending = sandbox.pending();
+    return SANDBOX_ROWS.map(({ state, label, title }) => ({
+      id: `sandbox-${state}`,
+      role: "menuitemradio" as const,
+      label,
+      checked: state === now,
+      busy: state === pending,
+      disabled: props.disabled || pending !== null,
+      describe: props.disabled,
+      title: props.disabled ? undefined : title, // disabled: the composer's reason line says why
+      run: () => {
+        if (pending !== null || state === now) return;
+        sandbox.set(state); // stays open: the check (and the shield) follow the server's answer
+      },
+    }));
+  });
 
   /** The "+" panel: what you do to the session that isn't choosing a model. */
   const menuRows = createMemo<Row[]>(() => {
@@ -221,21 +247,7 @@ export function ComposerMenu(props: {
         run: () => setHideThinking(path, !hideThinking(path)),
       });
     }
-    // Only when the runtime has the sandbox extension; without it the row doesn't exist.
-    const sandbox = props.sandbox;
-    const sbx = sandbox?.state();
-    if (sandbox && sbx)
-      out.push({
-        id: "sandbox",
-        role: "menuitemcheckbox",
-        label: "Sandbox",
-        checked: sbx.on,
-        busy: sandbox.pending(),
-        disabled: props.disabled || sandbox.pending(),
-        describe: props.disabled,
-        title: props.disabled ? undefined : sandboxRowTitle(sbx), // disabled: the composer's reason line says why
-        run: () => sandbox.set(!sbx.on), // stays open: the check (and the shield) is the feedback
-      });
+    out.push(...sandboxRows());
     // Last, after its own separator: the only row here that changes the session.
     const undo = props.undo;
     if (undo) {
@@ -357,7 +369,9 @@ export function ComposerMenu(props: {
   });
 
   /** The panel in front, which is the only list rendered — and so the keyboard's whole order. */
-  const rows = createMemo<Row[]>(() => (panel() === "model" ? modelRows() : panel() === "login" ? loginRows() : menuRows()));
+  const rows = createMemo<Row[]>(() =>
+    panel() === "model" ? modelRows() : panel() === "login" ? loginRows() : panel() === "sandbox" ? sandboxRows() : menuRows(),
+  );
 
   /** Rows of one section, each with its index in `rows()` — the keyboard's order. */
   const pick = (keep: (r: Row) => boolean) => rows().map((r, index) => ({ r, index })).filter((x) => keep(x.r));
@@ -373,7 +387,10 @@ export function ComposerMenu(props: {
     const r = from.getBoundingClientRect();
     if (from.offsetParent === null || (r.width === 0 && r.height === 0)) return false;
     menu.style.setProperty("--menu-bottom", `${Math.round(innerHeight - r.top + 4)}px`);
-    menu.style.setProperty("--menu-left", `${Math.round(r.left)}px`);
+    // Kept on screen: a trigger at the right end (the sandbox shield) would push it past the edge.
+    // Hidden, it has no width yet; openMenu places it again once shown.
+    const w = menu.offsetWidth;
+    menu.style.setProperty("--menu-left", `${Math.round(w ? Math.max(4, Math.min(r.left, innerWidth - w - 4)) : r.left)}px`);
     return true;
   };
 
@@ -388,6 +405,7 @@ export function ComposerMenu(props: {
     // Show first: a panel that mounts into a hidden popover can't take focus.
     if (!menu.matches(":popover-open")) menu.showPopover();
     setPanel(to);
+    place(); // now that the panel has a width
     if (to === "login") props.login?.refresh(); // standings change: read them at each opening
     void ensureModels(host()).catch(() => {}); // the Thinking ladder needs the list; the picker reports its own failure
     if (to !== "picker") focusFirst();
@@ -485,6 +503,16 @@ export function ComposerMenu(props: {
       <Show when={p.r.chevron}>
         <Icon name="chevron-right" small class="composer-flyout-chevron" />
       </Show>
+    </div>
+  );
+
+  /** The labelled Sandbox group, in whichever panel is in front. */
+  const SandboxGroup = () => (
+    <div class="model-menu-group composer-flyout-sandbox" role="group" aria-labelledby={paneId("composer-flyout-sandbox")}>
+      <div class="list-group-label" id={paneId("composer-flyout-sandbox")}>
+        Sandbox
+      </div>
+      <Index each={pick((r) => r.id.startsWith("sandbox-"))}>{(x) => <Item r={x().r} index={x().index} />}</Index>
     </div>
   );
 
@@ -601,16 +629,24 @@ export function ComposerMenu(props: {
               </div>
             )}
           </Match>
+          {/* The shield's panel (§chat.composer/sandbox-shield): the Sandbox group alone. */}
+          <Match when={panel() === "sandbox"}>
+            <div class="model-menu-list composer-flyout-list" role="menu" aria-label="Sandbox" onKeyDown={onListKeyDown}>
+              <SandboxGroup />
+            </div>
+          </Match>
           <Match when={panel() === "menu"}>
             <div class="model-menu-list composer-flyout-list" role="menu" aria-label="More actions" onKeyDown={onListKeyDown}>
               <Index each={pick((r) => r.id === "attach" || r.id === "commands" || r.id === "playbooks")}>{(x) => <Item r={x().r} index={x().index} />}</Index>
               {/* The rows are picked by id, so a row that matches no section is built and never
                   rendered. */}
-              <Show when={pick((r) => r.id.startsWith("hide-") || r.id === "sandbox").length > 0}>
+              <Show when={pick((r) => r.id.startsWith("hide-")).length > 0}>
                 <div class="composer-flyout-sep" role="separator" />
-                <Index each={pick((r) => r.id.startsWith("hide-") || r.id === "sandbox")}>
-                  {(x) => <Item r={x().r} index={x().index} />}
-                </Index>
+                <Index each={pick((r) => r.id.startsWith("hide-"))}>{(x) => <Item r={x().r} index={x().index} />}</Index>
+              </Show>
+              <Show when={pick((r) => r.id.startsWith("sandbox-")).length > 0}>
+                <div class="composer-flyout-sep" role="separator" />
+                <SandboxGroup />
               </Show>
               <Show when={pick((r) => r.id === "undo").length > 0}>
                 <div class="composer-flyout-sep" role="separator" />

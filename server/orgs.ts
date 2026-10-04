@@ -1150,6 +1150,21 @@ export function participantLine(p: Person): string {
   return `- ${p.name} (id ${p.id})${p.role ? ` — ${p.role}` : ""}${decides}`;
 }
 
+/** A person as the project overseer (operator-facing) knows them: the participant line, their status when not
+    active, and indented language, skills, competence and voice, so it knows how to address and write to them.
+    Never contact. Never in a conversation with a person: there, others are `participantLine` only. */
+export function overseerPersonLine(p: Person): string {
+  const comp = Object.entries(p.competence)
+    .map(([k, c]) => `${k} ${c.level}/5`)
+    .join(", ");
+  const profile = [p.language ? `language: ${p.language}` : "", p.skills.length ? `skills: ${p.skills.join(", ")}` : "", comp ? `competence: ${comp}` : ""].filter(Boolean).join(" · ");
+  return [
+    `${participantLine(p)}${p.status !== "active" ? ` · ${p.status}` : ""}`,
+    ...(profile ? [`  ${profile}`] : []),
+    ...(p.voice ? [`  voice: "${p.voice.replace(/\s+/g, " ").trim()}"`] : []),
+  ].join("\n");
+}
+
 /** The project overseer's line about the project's main stakeholder (while active), or null. */
 export function stakeholderLine(project: Pick<OrgProject, "stakeholder">, roster: Person[]): string | null {
   const p = project.stakeholder ? roster.find((x) => x.id === project.stakeholder && x.status === "active") : undefined;

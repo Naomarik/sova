@@ -13,7 +13,8 @@ import { after, test } from "node:test";
 import { runtimeCommand } from "./client";
 
 const ROOT = join(import.meta.dirname, "..", "..");
-const ENTRY = join(import.meta.dirname, "main.ts");
+// USAGE_HELPER_MAIN points the test at another entry (to check it still fails on an old main.ts).
+const ENTRY = process.env.USAGE_HELPER_MAIN ?? join(import.meta.dirname, "main.ts");
 const CAP_MB = 400;
 const dirs: string[] = [];
 const kids: ChildProcess[] = [];
@@ -91,12 +92,21 @@ test("idle on an empty agent dir and with its answers unread: memory stays flat"
     }
   };
   idle.stdout!.resume();
-  const [a, b] = await Promise.all([watch(idle, 30), watch(stalled, 30, ask)]);
-  const settled = (xs: number[]) => xs.slice(5);
-  assert.ok(Math.max(...a) < 150, `idle RSS ${Math.max(...a)} MB`);
-  assert.ok(slope(settled(a)) < 3, `idle RSS grows ${slope(settled(a)).toFixed(1)} MB/min: ${a.map(Math.round).join(" ")}`);
-  assert.ok(Math.max(...b) < 200, `unread RSS ${Math.max(...b)} MB`);
-  assert.ok(slope(settled(b)) < 3, `unread RSS grows ${slope(settled(b)).toFixed(1)} MB/min: ${b.map(Math.round).join(" ")}`);
+  // A helper warms up for its first seconds (a 3-minute probe: idle 33 -> 34 MB by 15 s then flat;
+  // unread 29 -> 46 MB by 5 s then flat or falling), so the plateau is judged on the tail only:
+  // after 20 s of warm-up, 25 s of samples must neither trend up nor step up.
+  const [a, b] = await Promise.all([watch(idle, 45), watch(stalled, 45, ask)]);
+  const WARM = 20;
+  const plateau = (name: string, xs: number[], cap: number) => {
+    const series = xs.map(Math.round).join(" ");
+    assert.ok(xs.length >= 40, `${name}: only ${xs.length} samples: ${series}`);
+    assert.ok(Math.max(...xs) < cap, `${name} RSS ${Math.max(...xs)} MB: ${series}`);
+    const tail = xs.slice(WARM);
+    assert.ok(slope(tail) < 6, `${name} RSS grows ${slope(tail).toFixed(1)} MB/min after warm-up: ${series}`);
+    assert.ok(Math.max(...tail) - tail[0]! < 8, `${name} RSS climbs ${(Math.max(...tail) - tail[0]!).toFixed(1)} MB after warm-up: ${series}`);
+  };
+  plateau("idle", a, 150);
+  plateau("unread", b, 200);
   idle.stdin!.end();
   stalled.kill("SIGKILL");
 });

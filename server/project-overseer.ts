@@ -37,6 +37,7 @@ import { hostOf, isOrgHostOpen, onOrgHostOpened, setOrgClockForTest, type Invoca
 import { cardsNoteMessage, pathOfId, sessionActivity, toolCatalogue } from "./session-prompt";
 import { CARDS_NOTE_MESSAGE, cardsNote, foldCards } from "../shared/overseer-card";
 import { RootConfinement } from "./overseer-deny";
+import { sessionAttachmentsDir } from "./attachments";
 import { overseerFileTools } from "./overseer-file-tools";
 import { getIdea, promptToc, readManifest, readProse, updateIdea } from "./overseer-ideas";
 import { redactExtensionMessages, serverRedactor } from "./overseer-redact";
@@ -46,7 +47,7 @@ import { UserTurns } from "./user-turns";
 import { canonicalPath } from "./paths";
 import { isViewing, markSeen, readSeen } from "./seen";
 import { cleanSessionTitle, readSessionTitles, setSessionTitle } from "./session-titles";
-import { getSessionSummary, indexedSessionPaths, listSessions } from "./sessions-index";
+import { getSessionSummary, idOf, indexedSessionPaths, listSessions } from "./sessions-index";
 import { setArchived } from "./archived-sessions";
 import { actOrThrow, heldAt, holdByRef, holdRef, refusalError } from "./org-engine";
 import { listPreviews, PreviewRefused } from "./preview-links";
@@ -1029,8 +1030,13 @@ registerSpecialLoadout({
       },
       tools: [...tools.map((t) => t.name), ...PO_BUILTINS],
       // read/grep/find/ls in the project root only, never a secret file, a reserved folder or
-      // Sova's own state (overseer-deny.ts), whatever the root holds.
-      customTools: overseerFileTools(project.root, undefined, undefined, () => new RootConfinement(projectOf(rt.projectId).root, confinedOut())),
+      // Sova's own state (overseer-deny.ts), whatever the root holds; read also opens this
+      // conversation's own attachments folder (what the operator pastes into it). This loadout is
+      // this conversation's: a clear opens the next one with its own.
+      customTools: overseerFileTools(project.root, undefined, undefined, () => {
+        const own = sessionAttachmentsDir(idOf(path));
+        return new RootConfinement(projectOf(rt.projectId).root, confinedOut(), own ? [own] : []);
+      }),
       model: settings.model ?? defaults.model ?? null,
       thinking: settings.thinking ?? defaults.thinking ?? null,
     };

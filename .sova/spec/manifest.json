@@ -4527,11 +4527,14 @@
         "src/components/ProjectOverseerHead.tsx",
         "src/components/ChatView.tsx",
         "server/project-overseer-routes.ts",
-        "src/projects.css"
+        "src/projects.css",
+        "server/overseer-org-part.ts",
+        "server/overseer-org-part.test.ts"
       ],
       "requires": [
         "§app.overseer/hosting",
-        "§app.organizations/workspace-repo"
+        "§app.organizations/workspace-repo",
+        "§chat/images"
       ]
     },
     "§app.project-overseer/tools": {
@@ -4552,7 +4555,10 @@
         "server/outreach.test.ts",
         "statecharts/src/sova/statecharts/proj.cljc",
         "server/project-services/tools.ts",
-        "server/vendor/statecharts.js"
+        "server/vendor/statecharts.js",
+        "server/overseer-org-part.ts",
+        "server/orgs.ts",
+        "server/overseer-org-part.test.ts"
       ],
       "requires": [
         "§app.baton/goal-and-loadout",

@@ -344,7 +344,7 @@ function PoolLogins(props: LoginActions & {
       </Show>
       <Show
         when={props.pool.logins.length > 0}
-        fallback={<p class="field-hint">No logins in the pool yet. Add one below: it starts on this device and goes back to the keeper when it's idle.</p>}
+        fallback={<p class="field-hint">No logins in the pool yet. Add one below: it starts on this device; away from the keeper it goes back when it's idle.</p>}
       >
         <ol class="accounts-accounts" data-testid="claude-pool">
           <For each={groups()}>
@@ -631,7 +631,7 @@ export function AccountsSettingsSection() {
       >
         <p class="settings-intro">
           Every device on the mesh shares these logins, one device at a time. A device that needs Claude borrows a free one from the keeper, and
-          gives it back after a usage limit, when you ask, or after 30 minutes idle. Claude Code's own login on each device is its last resort.
+          gives it back after a usage limit, when you ask, or, on a device other than the keeper, after 30 minutes idle unless a chat there picked it. Claude Code's own login on each device is its last resort.
         </p>
       </Show>
 

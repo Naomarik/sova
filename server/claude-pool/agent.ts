@@ -4,7 +4,9 @@ import { join } from "node:path";
 import {
   ACCOUNTS_DIR_NAME,
   LOCAL_DEVICE_ID,
+  PICKS_DIR_NAME,
   clearLeaving,
+  clearLoginPick,
   isLoginId,
   markLeaving,
   pidAlive,
@@ -13,6 +15,7 @@ import {
   readAccounts,
   readAccountsState,
   readLeaving,
+  readLoginPicks,
   readLoginUse,
   readWants,
   updateAccounts,
@@ -43,8 +46,8 @@ import { readJournal, setOp, type JournalOp } from "./journal";
  * The pool agent (§app.claude-logins/pool … /migration): one per Sova server while the mesh is on.
  * It keeps the pool document, lends free logins while this device is the keeper, borrows for the
  * processes here that need one (their `claude-pool/wants/`), returns logins (limit, sign-in
- * failure, the user's request, a pin elsewhere, 30 minutes idle), and replays its journal after a
- * crash. Transport-agnostic: peers are `PoolPeer`s (HTTP over the peer listener in production,
+ * failure, the user's request, a pin elsewhere, 30 minutes idle on a device that is not the
+ * keeper and not picked by hand), and replays its journal after a crash. Transport-agnostic: peers are `PoolPeer`s (HTTP over the peer listener in production,
  * direct calls in tests).
  *
  * Invariants (DESIGN-phase2.md §0): a login runs on at most one device (a second copy exists only
@@ -105,6 +108,8 @@ export interface PoolAgentOptions {
   kill?: (pid: number, signal: NodeJS.Signals) => void;
   idleMs?: number;
   offerTtlMs?: number;
+  /** How long a lend waits for the idle children on a keeper-held login it frees to let go (real time). */
+  freeWaitMs?: number;
   /** Drain bounds: after a limit/auth failure or idleness, and after the user's request or a pin. */
   quickCutMs?: number;
   slowCutMs?: number;
@@ -128,6 +133,7 @@ const SLOW_CUT_MS = 15 * 60_000;
 const TICK_MS = 5_000;
 const SYNC_MS = 60_000;
 const KILL_GRACE_MS = 10_000;
+const FREE_WAIT_MS = 8_000;
 
 /**
  * `claude` processes by the CLAUDE_CONFIG_DIR in their environment (Linux /proc; this user's
@@ -161,8 +167,15 @@ export function scanClaudeProcs(): Map<string, number[]> {
 
 export const poolDocPath = (stateDir: string): string => join(stateDir, "claude-pool.json");
 
+/** A chat archived or deleted: its hand-picks end, on every login here (`<login dir>/.sova-picks/`). */
+export function clearPicksOf(agentDir: string, sessionId: string): void {
+  let names: string[] = [];
+  try { names = readdirSync(join(agentDir, ACCOUNTS_DIR_NAME)); } catch { return; }
+  for (const id of names) if (isLoginId(id)) clearLoginPick(agentDir, id, sessionId);
+}
+
 export class PoolAgent {
-  private readonly o: Required<Pick<PoolAgentOptions, "idleMs" | "offerTtlMs" | "quickCutMs" | "slowCutMs" | "tickMs" | "syncMs">> & PoolAgentOptions;
+  private readonly o: Required<Pick<PoolAgentOptions, "idleMs" | "offerTtlMs" | "freeWaitMs" | "quickCutMs" | "slowCutMs" | "tickMs" | "syncMs">> & PoolAgentOptions;
   private readonly now: () => number;
   private readonly alive: (pid: number) => boolean;
   private timer?: ReturnType<typeof setInterval>;
@@ -175,9 +188,14 @@ export class PoolAgent {
   private ticking = false;
   /** This pass's /proc view (scanClaudeProcs): read once per tick or incoming call, dropped after. */
   private procs?: { at: number; map: Map<string, number[]> };
+  /**
+   * The last activity seen on each login held here, at its holder seq: a lease goes with its child
+   * (reaped idle, torn down), so without this a login would look unused since it was taken.
+   */
+  private readonly seenActive = new Map<string, { seq: number; at: number }>();
 
   constructor(options: PoolAgentOptions) {
-    this.o = { idleMs: IDLE_MS, offerTtlMs: OFFER_TTL_MS, quickCutMs: QUICK_CUT_MS, slowCutMs: SLOW_CUT_MS, tickMs: TICK_MS, syncMs: SYNC_MS, ...options };
+    this.o = { idleMs: IDLE_MS, offerTtlMs: OFFER_TTL_MS, freeWaitMs: FREE_WAIT_MS, quickCutMs: QUICK_CUT_MS, slowCutMs: SLOW_CUT_MS, tickMs: TICK_MS, syncMs: SYNC_MS, ...options };
     this.now = options.now ?? Date.now;
     this.alive = options.pidAlive ?? pidAlive;
     this.startedAt = this.now();
@@ -413,6 +431,19 @@ export class PoolAgent {
     return { inUse: true, busy: true, lastActiveAt: this.now(), children: [...leased.children, ...extra] };
   }
 
+  /** When a login held here was last used: its leases now, or what was seen before they went. */
+  private lastActive(id: string, l: PoolLogin, use: ReturnType<PoolAgent["use"]>): number {
+    const seen = this.seenActive.get(id);
+    const at = Math.max(use.busy ? this.now() : use.lastActiveAt, seen?.seq === l.holder.seq ? seen.at : 0);
+    this.seenActive.set(id, { seq: l.holder.seq, at });
+    return Math.max(at, l.holder.at, this.startedAt);
+  }
+
+  /** A chat here picked this login by hand and is still on it (accounts.ts readLoginPicks). */
+  private picked(id: string): boolean {
+    return readLoginPicks(this.o.agentDir, id).length > 0;
+  }
+
   // ---- journal recovery -----------------------------------------------------------------------
 
   private async recover(): Promise<void> {
@@ -467,12 +498,13 @@ export class PoolAgent {
     const doc = this.doc();
     if (doc.keeper.value !== this.self) return { none: "not the keeper" };
     if (typeof req?.requestId !== "string" || !req.requestId || req.requestId.length > 64) return { none: "bad request" };
-    const id = this.lendable(doc, asker, req)[0];
+    let id = this.lendable(doc, asker, req)[0];
+    if (!id) id = await this.freeIdleHeld(asker, req);
     if (!id) return { none: "no free login" };
     this.busyIds.add(id);
     try {
       const files = await readLoginFiles(join(this.o.agentDir, ACCOUNTS_DIR_NAME, id));
-      const login = doc.logins[id]!;
+      const login = this.doc().logins[id]!;
       const seq = login.holder.seq + 1;
       setOp(this.o.stateDir, id, { op: "lend", state: "offered", peer: asker, seq, requestId: req.requestId, at: this.now(), credentialsHash: credentialsHash(files.credentials) });
       this.crash("lend-offered");
@@ -481,6 +513,64 @@ export class PoolAgent {
     } finally {
       this.busyIds.delete(id);
     }
+  }
+
+  /**
+   * Nothing free, and a peer asks: free one login this keeper holds, so logins still go where they
+   * are needed although the keeper never returns its own for idleness. Only one unused for idleMs,
+   * not busy, not picked by hand, pinned nowhere (or to the asker), ready. Idle children on it here
+   * let go first (the leaving mark; a bounded wait, given up when one gets busy). The keeper's chats
+   * lose an idle login only to a real borrow.
+   */
+  private async freeIdleHeld(asker: string, req: LendRequest): Promise<string | undefined> {
+    const doc = this.doc();
+    const reg = this.registry();
+    const journal = readJournal(this.o.stateDir);
+    const state = readAccountsState(this.o.agentDir);
+    const now = this.now();
+    const found: Array<{ id: string; inUse: boolean }> = [];
+    for (const id of poolOrder(doc)) {
+      const l = doc.logins[id]!;
+      if (l.removed.value || !l.enabled.value) continue;
+      if (l.holder.device !== this.self || l.holder.free || reg.get(id)?.device !== this.self) continue;
+      if (journal.ops[id] || this.busyIds.has(id) || !hasCredentials(this.o.agentDir, id)) continue;
+      if (l.pin.value && l.pin.value !== asker) continue;
+      if (standingNow(doc, id, now) || readLeaving(this.o.agentDir, id)) continue;
+      const s = state.logins[id];
+      if (s?.kind === "auth" || (s?.kind === "limit" && (s.until ?? s.at + 15 * 60_000) > now)) continue;
+      if (req.excludeLogins?.includes(id) || (req.only && req.only !== id)) continue;
+      const account = l.identity?.accountUuid;
+      if (account && req.excludeAccounts?.includes(account)) continue;
+      if (this.picked(id)) continue;
+      const use = this.use(id);
+      if (use.busy || now - this.lastActive(id, l, use) < this.o.idleMs) continue;
+      found.push({ id, inUse: use.inUse || use.children.length > 0 });
+    }
+    const pick = found.find((c) => !c.inUse) ?? found[0];
+    if (!pick) return undefined;
+    const id = pick.id;
+    this.busyIds.add(id);
+    try {
+      if (pick.inUse) {
+        markLeaving(this.o.agentDir, id, "idle", now);
+        const until = Date.now() + this.o.freeWaitMs;
+        for (;;) {
+          this.procs = undefined;
+          const use = this.use(id);
+          if (!use.inUse && !use.children.length) break;
+          if (use.busy || Date.now() >= until) {
+            clearLeaving(this.o.agentDir, id);
+            return undefined;
+          }
+          await new Promise((r) => setTimeout(r, 250));
+        }
+      }
+      this.keepHere(id, `idle, freed for ${asker}`);
+    } finally {
+      this.busyIds.delete(id);
+    }
+    this.procs = undefined;
+    return this.lendable(this.doc(), asker, req).includes(id) ? id : undefined;
   }
 
   /** POST /api/peer/claude-pool/lend/commit: the asker staged it; drop ours and hand it over. */
@@ -712,7 +802,11 @@ export class PoolAgent {
       if (l.pin.value && l.pin.value !== this.self) { this.leave(id, "return", "pin"); continue; }
       if (l.pin.value === this.self) continue;
       const use = this.use(id);
-      const last = Math.max(use.lastActiveAt, l.holder.at, this.startedAt);
+      const last = this.lastActive(id, l, use);
+      // Idleness never takes a login from the keeper (it has nowhere to send it; a peer's borrow
+      // frees one instead, freeIdleHeld), nor from a chat that picked it by hand.
+      if (!doc.keeper.value || doc.keeper.value === this.self) continue;
+      if (this.picked(id)) continue;
       if (!use.busy && now - last >= this.o.idleMs) this.leave(id, "return", "idle");
     }
   }
@@ -723,6 +817,7 @@ export class PoolAgent {
     const slow = reason === "user" || reason === "pin";
     const drainless = reason === "keeper";
     markLeaving(this.o.agentDir, id, reason, now);
+    this.seenActive.delete(id);
     setOp(this.o.stateDir, id, { op: "leave", kind, state: "draining", reason, at: now, cutAt: now + (drainless ? 0 : slow ? this.o.slowCutMs : this.o.quickCutMs) });
     this.log(`${id} leaves (${kind}: ${reason})`);
   }
@@ -769,11 +864,12 @@ export class PoolAgent {
     if (op.state === "deleting") return this.finishLeave(id);
   }
 
-  /** This device is the keeper: a held login becomes free here, no transfer. */
+  /** This device is the keeper: a held login becomes free here, no transfer (its picks end, as a move ends them). */
   private keepHere(id: string, reason: string): void {
     const standing = this.localStanding(id);
     updateAccounts(this.o.agentDir, (a) => { const l = a.logins.find((x) => x.id === id); if (l) l.device = null; });
     clearLeaving(this.o.agentDir, id);
+    rmSync(join(this.o.agentDir, ACCOUNTS_DIR_NAME, id, PICKS_DIR_NAME), { recursive: true, force: true });
     this.updateDoc((doc) => {
       const l = doc.logins[id];
       if (!l) return;

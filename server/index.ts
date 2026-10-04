@@ -112,6 +112,7 @@ import { deliverLinkMessage, heldSessionPath, notifyLinksChanged, setLinkOrigin,
 import { linkSandboxOf } from "./link-sandbox";
 import { mountSync } from "./sync";
 import { mountClaudePool } from "./claude-pool";
+import { clearPicksOf } from "./claude-pool/agent";
 import { markSeen } from "./seen";
 import {
   attentionForWire,
@@ -1492,6 +1493,8 @@ const linkedAgents = async (id: string, path: string) => meshLinks.linkedAgents(
 setLinksSource(linkedAgents);
 setInsightLinks(linkedAgents);
 onSessionArchived((id) => void meshLinks.endFor(id));
+// A chat archived or deleted ends its hand-picks of Claude logins (§app.claude-logins/idle-pin).
+onSessionArchived((id) => clearPicksOf(getAgentDir(), id));
 // Topic queues (§chat.topics/delivery): batches to a topic's receiver when it is idle or settles.
 // An org's ordinary sessions (a project's coding sessions, unregistered workspace files) get their
 // batches; only what the runtime opens as special, and workers, are refused (receiverSpecial).

@@ -1,20 +1,23 @@
-// A LAN host keeps one connection up per paired relay (§mesh.lan/dialer): dial, pin, answer the
-// relay's streams (lan-reverse.ts), and on any loss wait and dial again. Removing the pairing stops
-// it at once, with every stream inside.
+// A dial-out host keeps its connections to each paired relay up (§mesh.lan/dialer): dial, pin, run
+// the channel, and on any loss wait and dial again. On the `answer` channel it answers the relay's
+// streams; on the `ask` channel it holds an HTTP/2 client for its own requests to the relay
+// (lan-reverse.ts). Removing the pairing stops it at once, with every stream inside.
 //
 // Statuses carry fixed phrases only: never raw error text, a pin or an address.
 
 import type { Duplex } from "node:stream";
 import type { TLSSocket } from "node:tls";
 import type { LanIdentity } from "./lan-cert";
-import { type ChannelTimers, type ReverseServer, serveReverse } from "./lan-reverse";
-import { connectPinned, type DialFailure, dialFailure, type PinnedPeer } from "./lan-tls";
+import { type ChannelTimers, connectReverse, type ReverseClient, serveReverse } from "./lan-reverse";
+import { type Channel, connectPinned, type DialFailure, dialFailure } from "./lan-tls";
 
-export interface RelayTarget extends PinnedPeer {
+export interface RelayTarget {
   id: string;
   label: string;
   host: string;
   port: number;
+  /** The relay's pin. */
+  pin: string;
 }
 
 export type DialerStatus =
@@ -48,8 +51,11 @@ const phraseOf = (err: unknown): DialFailure => {
 export interface RelayDialerOptions {
   identity: LanIdentity;
   relay: RelayTarget;
-  /** A relay request: a stream to hand to the in-process server. */
-  onStream: (d: Duplex, relay: RelayTarget) => void;
+  channel: Channel;
+  /** `answer` channel: a relay request, a stream to hand to the in-process server. */
+  onStream?: (d: Duplex, relay: RelayTarget) => void;
+  /** `ask` channel: the client for requests to the relay while connected, null once it is lost. */
+  onClient?: (client: ReverseClient | null, relay: RelayTarget) => void;
   onStatus?: (s: DialerStatus, relay: RelayTarget) => void;
   /** A connection up this long resets the backoff. */
   stableMs?: number;
@@ -57,15 +63,13 @@ export interface RelayDialerOptions {
   timers?: ChannelTimers;
   random?: () => number;
   now?: () => number;
-  /** For tests: how a pinned socket is obtained. */
-  connect?: typeof connectPinned;
 }
 
 export class RelayDialer {
   private state: DialerStatus = { state: "stopped" };
   private stopped = true;
   private timer: ReturnType<typeof setTimeout> | null = null;
-  private channel: ReverseServer | null = null;
+  private close: (() => void) | null = null;
   private attempt = 0;
   private readonly backoff: Backoff;
   private readonly now: () => number;
@@ -92,8 +96,9 @@ export class RelayDialer {
     this.attempt++; // an in-flight dial finds itself stale
     if (this.timer) clearTimeout(this.timer);
     this.timer = null;
-    this.channel?.close();
-    this.channel = null;
+    this.close?.();
+    this.close = null;
+    if (this.opts.channel === "ask") this.opts.onClient?.(null, this.opts.relay);
     this.set({ state: "stopped" });
   }
 
@@ -102,37 +107,64 @@ export class RelayDialer {
     this.opts.onStatus?.(s, this.opts.relay);
   }
 
+  private stale(my: number): boolean {
+    return my !== this.attempt || this.stopped;
+  }
+
   private async dial(): Promise<void> {
     const my = ++this.attempt;
-    const { relay } = this.opts;
+    const { relay, channel } = this.opts;
     this.set({ state: "connecting" });
     let sock: TLSSocket;
     try {
-      sock = await (this.opts.connect ?? connectPinned)(this.opts.identity, relay, relay.host, relay.port, this.opts.connectTimeoutMs);
+      sock = await connectPinned(this.opts.identity, relay.pin, relay.host, relay.port, channel, this.opts.connectTimeoutMs);
     } catch (err) {
-      if (my === this.attempt && !this.stopped) this.retry(phraseOf(err));
+      if (!this.stale(my)) this.retry(phraseOf(err));
       return;
     }
-    if (my !== this.attempt || this.stopped) {
+    if (this.stale(my)) {
       sock.destroy();
       return;
     }
-    // TLS 1.3: a relay that refuses our certificate says so after our side finished; keep why.
+    // TLS 1.3: a relay that refuses this host says so after this side finished; keep why.
     let why: DialFailure = "closed";
     sock.on("error", (err) => {
       why = phraseOf(err);
     });
     let connectedAt = 0;
-    const channel = serveReverse(sock, (d) => this.opts.onStream(d, relay), this.opts.timers);
-    this.channel = channel;
-    channel.session.once("remoteSettings", () => {
-      if (my !== this.attempt || this.stopped) return;
+    const up = () => {
+      if (this.stale(my)) return;
       connectedAt = this.now();
       this.set({ state: "connected", since: connectedAt });
-    });
-    await channel.closed;
-    if (my !== this.attempt || this.stopped) return;
-    this.channel = null;
+    };
+    let closed: Promise<void>;
+    if (channel === "answer") {
+      const server = serveReverse(sock, (d) => this.opts.onStream?.(d, relay), this.opts.timers);
+      this.close = () => server.close();
+      server.session.once("remoteSettings", up);
+      closed = server.closed;
+    } else {
+      this.close = () => sock.destroy();
+      let client: ReverseClient;
+      try {
+        client = await connectReverse(sock, this.opts.timers);
+      } catch {
+        if (!this.stale(my)) this.retry(why);
+        return;
+      }
+      if (this.stale(my)) {
+        client.close();
+        return;
+      }
+      this.close = () => client.close();
+      up();
+      this.opts.onClient?.(client, relay);
+      closed = client.closed;
+    }
+    await closed;
+    if (channel === "ask" && my === this.attempt) this.opts.onClient?.(null, relay);
+    if (this.stale(my)) return;
+    this.close = null;
     if (connectedAt && this.now() - connectedAt >= (this.opts.stableMs ?? 30_000)) this.backoff.reset();
     this.retry(why);
   }

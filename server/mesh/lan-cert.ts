@@ -1,9 +1,10 @@
-// A LAN host's TLS identity (§mesh.lan/identity): one ECDSA P-256 key and a self-signed X.509 v3
-// certificate built here in DER (Node and Bun parse certificates but can't mint them, and Sova adds
-// no dependency). The certificate only carries the key: the TLS handshake's CertificateVerify
-// proves possession, and the SPKI pin decides trust (§mesh.lan/handshake).
+// A host's TLS identity for dial-out pairings (§mesh.lan/identity): one ECDSA P-256 key and a
+// self-signed X.509 v3 certificate built here in DER (Node and Bun parse certificates but can't mint
+// them, and Sova adds no dependency). The certificate only carries the key: the TLS handshake's
+// CertificateVerify proves possession, and the SPKI pin decides trust (§mesh.lan/handshake). No
+// library ever verifies the certificate itself.
 //
-// Builtins only. Nothing here logs; callers must never log a key, pin or pairing code.
+// Builtins only. Nothing here logs; callers must never log a key.
 
 import crypto, { type KeyObject, X509Certificate } from "node:crypto";
 
@@ -11,7 +12,7 @@ export interface LanIdentity {
   /** PKCS#8 PEM. Secret: never logged, synced or shown. */
   keyPem: string;
   certPem: string;
-  /** base64url SHA-256 of the certificate's SubjectPublicKeyInfo (43 characters). */
+  /** The certificate key's pin (see spkiPin). */
   pin: string;
 }
 
@@ -89,22 +90,31 @@ export function mintLanIdentity(): LanIdentity {
 }
 
 // ─── Pins and fingerprints ──────────────────────────────────────────────────────────────────────
+// A pin is the first 128 bits of SHA-256(SubjectPublicKeyInfo), as 32 upper-case hex digits: short
+// enough to read out or paste, and far past what a second-preimage search could match (64 bits
+// would be within reach of a large GPU budget). People see it as 8 groups of 4 (`fingerprint`).
 
-const PIN_RE = /^[A-Za-z0-9_-]{43}$/;
+const PIN_RE = /^[0-9A-F]{32}$/;
 
-/** base64url SHA-256 of the SPKI of a key or certificate. */
+/** The pin of a key or certificate. */
 export function spkiPin(of: KeyObject | X509Certificate): string {
   const key = of instanceof X509Certificate ? of.publicKey : of.type === "private" ? crypto.createPublicKey(of) : of;
-  return crypto.createHash("sha256").update(key.export({ type: "spki", format: "der" })).digest("base64url");
+  return crypto.createHash("sha256").update(key.export({ type: "spki", format: "der" })).digest().subarray(0, 16).toString("hex").toUpperCase();
 }
 
 export const isPin = (s: unknown): s is string => typeof s === "string" && PIN_RE.test(s);
 
-/** The pin's first 8 bytes as `ABCD-EF01-2345-6789`, for people to cross-check two screens. */
+/** A pin as people type or paste it (any case, spaces or dashes between digits), or null. */
+export function parsePin(input: unknown): string | null {
+  if (typeof input !== "string" || input.length > 80) return null;
+  const hex = input.replace(/[\s-]/g, "").toUpperCase();
+  return PIN_RE.test(hex) ? hex : null;
+}
+
+/** `ABCD-EF01-…` (8 groups of 4), the form pages show and people compare. */
 export function fingerprint(pin: string): string {
   if (!isPin(pin)) throw new Error("not a pin");
-  const hex = Buffer.from(pin, "base64url").subarray(0, 8).toString("hex").toUpperCase();
-  return hex.match(/.{4}/g)!.join("-");
+  return pin.match(/.{4}/g)!.join("-");
 }
 
 /** Constant-time pin equality (pins aren't secret; this just never short-circuits). */
@@ -113,40 +123,7 @@ export function samePin(a: string, b: string): boolean {
   return crypto.timingSafeEqual(Buffer.from(a), Buffer.from(b));
 }
 
-// ─── Pairing codes ──────────────────────────────────────────────────────────────────────────────
-
-export const PAIRING_PREFIX = "sova-lan-1.";
-export const PAIRING_MAX = 1024;
-const B64URL_RE = /^[A-Za-z0-9_-]+$/;
-
-/** The code a host shows so another can pin it: its certificate, which carries the pin. */
-export function pairingCode(certPem: string): string {
-  return PAIRING_PREFIX + Buffer.from(new X509Certificate(certPem).raw).toString("base64url");
-}
-
-/**
- * A pasted pairing code, checked as a whole: prefix, size, alphabet, a certificate with a P-256 key
- * whose own signature verifies, and not a CA. Anything else is null, with no detail: the caller says
- * only that the code isn't valid.
- */
-export function parsePairingCode(code: unknown): { certPem: string; pin: string } | null {
-  if (typeof code !== "string") return null;
-  const text = code.trim();
-  if (text.length > PAIRING_MAX || !text.startsWith(PAIRING_PREFIX)) return null;
-  const body = text.slice(PAIRING_PREFIX.length);
-  if (!B64URL_RE.test(body)) return null;
-  try {
-    const der = Buffer.from(body, "base64url");
-    if (der.toString("base64url") !== body) return null; // non-canonical encoding
-    const x = new X509Certificate(der);
-    if (!Buffer.from(x.raw).equals(der)) return null; // trailing bytes, or a PEM-in-DER trick
-    const key = x.publicKey;
-    if (key.asymmetricKeyType !== "ec" || key.asymmetricKeyDetails?.namedCurve !== "prime256v1") return null;
-    if (x.ca) return null;
-    if (!x.verify(key)) return null;
-    // Re-encode from the parsed DER so what we store is exactly what we checked.
-    return { certPem: pem(Buffer.from(x.raw)), pin: spkiPin(x) };
-  } catch {
-    return null;
-  }
-}
+/** The node id a dial-out pairing goes by in peers.json and the grants file: `lan:<pin, lower case>`. */
+export const LAN_NODE_PREFIX = "lan:";
+export const lanNodeId = (pin: string): string => `${LAN_NODE_PREFIX}${pin.toLowerCase()}`;
+export const isLanNodeId = (nodeId: string): boolean => nodeId.toLowerCase().startsWith(LAN_NODE_PREFIX);

@@ -1,11 +1,9 @@
-// A relay's listener for LAN hosts that dial in (§mesh.lan/relay-listener). It exists only while a
-// host is paired, binds one given address (never every interface), admits each TCP connection
-// before any TLS work (lan-admission.ts), and hands on only sockets whose client pin is a paired
-// host's (§mesh.lan/handshake). What runs over that socket is the caller's (lan-reverse.ts).
-//
-// setSecureContext doesn't reliably replace a server's client-cert `ca` on Bun or Node, so a change
-// of pairings rebuilds the server on the same address; the pin check after the handshake always
-// reads the current pairings, so a removed host is refused even by a socket the old `ca` let through.
+// A relay's listener for dial-out hosts (§mesh.lan/relay-listener). It exists only while a host is
+// paired, binds one given address (never every interface), admits each TCP connection before any
+// TLS work (lan-admission.ts), and hands on only sockets whose client pin is a paired host's, with
+// the channel they asked for (§mesh.lan/handshake). What runs over that socket is the caller's
+// (lan-reverse.ts). The pin check reads the current pairings, so a pairing change needs no rebuild;
+// only a different bind does.
 //
 // Builtins only. Records counts and bans, never what a connection carried, a pin or a key.
 
@@ -14,12 +12,11 @@ import type { AddressInfo, Socket } from "node:net";
 import tls, { type Server, type TLSSocket } from "node:tls";
 import type { LanIdentity } from "./lan-cert";
 import { Admission, type AdmissionCounts, type AdmissionProfile } from "./lan-admission";
-import { pairedPeerOf, relayServerOptions } from "./lan-tls";
+import { type Channel, pairedPeerOf, relayServerOptions } from "./lan-tls";
 
 export interface RelayPeer {
   id: string;
   label: string;
-  certPem: string;
   pin: string;
 }
 
@@ -30,8 +27,8 @@ export interface RelayListenerOptions {
   port: number;
   identity: LanIdentity;
   profile: AdmissionProfile;
-  /** A socket that proved to be `peer`. The caller owns it from here on. */
-  onPeer: (sock: TLSSocket, peer: RelayPeer) => void;
+  /** A socket that proved to be `peer`, on `channel`. The caller owns it from here on. */
+  onPeer: (sock: TLSSocket, peer: RelayPeer, channel: Channel) => void;
   onEvent?: (e: RelayEvent) => void;
   now?: () => number;
 }
@@ -83,11 +80,9 @@ export class RelayListener {
   }
 
   private async apply(peers: RelayPeer[]): Promise<void> {
-    const same = peers.length === this.paired.length && peers.every((p, i) => p.pin === this.paired[i]?.pin && p.certPem === this.paired[i]?.certPem);
-    this.paired = peers; // the post-handshake check reads this at once, before any rebuild
-    if (same && (this.server || !peers.length)) return;
-    await this.stopServer();
-    if (peers.length) await this.startServer();
+    this.paired = peers; // the post-handshake check reads this at once
+    if (!peers.length) await this.stopServer();
+    else if (!this.server) await this.startServer();
   }
 
   private async stopServer(): Promise<void> {
@@ -101,7 +96,7 @@ export class RelayListener {
   }
 
   private async startServer(): Promise<void> {
-    const server = tls.createServer(relayServerOptions(this.opts.identity, this.paired));
+    const server = tls.createServer(relayServerOptions(this.opts.identity));
     server.prependListener("connection", (raw: Socket) => this.onRaw(raw));
     server.on("tlsClientError", (_err: Error, sock: TLSSocket) => {
       this.settle(sock, false);
@@ -140,14 +135,14 @@ export class RelayListener {
 
   private onSecure(sock: TLSSocket): void {
     sock.on("error", () => {});
-    const peer = pairedPeerOf(sock, this.paired);
-    if (!peer) {
+    const hit = pairedPeerOf(sock, this.paired);
+    if (!hit) {
       this.settle(sock, false);
       sock.destroy();
       return;
     }
     this.settle(sock, true);
-    this.opts.onPeer(sock, peer);
+    this.opts.onPeer(sock, hit.peer, hit.channel);
   }
 
   private settle(sock: TLSSocket, ok: boolean): void {

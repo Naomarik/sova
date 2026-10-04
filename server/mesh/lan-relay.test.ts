@@ -9,10 +9,9 @@ import { RelayListener, type RelayEvent, type RelayPeer } from "./lan-relay";
 import { connectPinned } from "./lan-tls";
 
 const relayId = mintLanIdentity();
-const relayPin = { certPem: relayId.certPem, pin: relayId.pin };
 const mac = mintLanIdentity();
 const mac2 = mintLanIdentity();
-const peer = (id: LanIdentity, label: string): RelayPeer => ({ id: label, label, certPem: id.certPem, pin: id.pin });
+const peer = (id: LanIdentity, label: string): RelayPeer => ({ id: label, label, pin: id.pin });
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 function listener() {
@@ -21,7 +20,7 @@ function listener() {
   const socks: TLSSocket[] = [];
   const l = new RelayListener({
     host: "127.0.0.1", port: 0, identity: relayId, profile: LAN_PROFILE,
-    onPeer: (s, p) => { got.push(p.label); socks.push(s); },
+    onPeer: (s, p, ch) => { got.push(ch === "answer" ? p.label : `${p.label}/${ch}`); socks.push(s); },
     onEvent: (e) => events.push(e),
   });
   return { l, got, events, socks, port: () => l.address()!.port, done: async () => { socks.forEach((s) => s.destroy()); await l.close(); } };
@@ -29,7 +28,7 @@ function listener() {
 
 /** Dial; the relay's verdict comes after the client's handshake in TLS 1.3, so wait for it. */
 async function dial(id: LanIdentity, port: number): Promise<void> {
-  const s = await connectPinned(id, relayPin, "127.0.0.1", port, 2000).catch(() => null);
+  const s = await connectPinned(id, relayId.pin, "127.0.0.1", port, "answer", 2000).catch(() => null);
   await sleep(150);
   s?.destroy();
 }
@@ -58,6 +57,16 @@ test("hands on a paired host's socket with its record; an unpaired one never", a
   await t.done();
 });
 
+test("the channel a host asked for reaches the caller", async () => {
+  const t = listener();
+  await t.l.setPaired([peer(mac, "mac")]);
+  const s = await connectPinned(mac, relayId.pin, "127.0.0.1", t.port(), "ask", 2000);
+  await sleep(150);
+  s.destroy();
+  assert.deepEqual(t.got, ["mac/ask"]);
+  await t.done();
+});
+
 test("pairing a second host takes effect for new connections; unpairing refuses at once", async () => {
   const t = listener();
   await t.l.setPaired([peer(mac, "mac")]);
@@ -65,7 +74,7 @@ test("pairing a second host takes effect for new connections; unpairing refuses 
   await dial(mac2, port);
   assert.deepEqual(t.got, []);
   await t.l.setPaired([peer(mac, "mac"), peer(mac2, "mac2")]);
-  assert.equal(t.port(), port, "rebuilt on the same address");
+  assert.equal(t.port(), port, "the same listener");
   await dial(mac2, port);
   assert.deepEqual(t.got, ["mac2"]);
   void t.l.setPaired([peer(mac2, "mac2")]); // not awaited: the pin check must already refuse
@@ -108,17 +117,17 @@ test("closing the listener stops accepting; a socket already handed on stays the
   const t = listener();
   await t.l.setPaired([peer(mac, "mac")]);
   const port = t.port();
-  const live = await connectPinned(mac, relayPin, "127.0.0.1", port, 2000);
+  const live = await connectPinned(mac, relayId.pin, "127.0.0.1", port, "answer", 2000);
   await sleep(150);
   assert.equal(t.socks.length, 1);
   await t.l.close();
   assert.equal(t.socks[0]!.destroyed, false);
-  await assert.rejects(connectPinned(mac, relayPin, "127.0.0.1", port, 1000), /refused/);
+  await assert.rejects(connectPinned(mac, relayId.pin, "127.0.0.1", port, "answer", 1000), /refused/);
   live.destroy();
   t.socks[0]!.destroy();
 });
 
-test("every one of several paired hosts is accepted (each identity has its own certificate name)", async () => {
+test("every one of several paired hosts is accepted", async () => {
   const t = listener();
   const mac3 = mintLanIdentity();
   await t.l.setPaired([peer(mac, "mac"), peer(mac2, "mac2"), peer(mac3, "mac3")]);

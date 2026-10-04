@@ -7,7 +7,7 @@ import { mintLanIdentity } from "./lan-cert";
 import { LAN_PROFILE } from "./lan-admission";
 import { Backoff, type DialerStatus, RelayDialer, type RelayTarget } from "./lan-dialer";
 import { RelayListener } from "./lan-relay";
-import { connectReverse, type ReverseClient } from "./lan-reverse";
+import { connectReverse, type ReverseClient, serveReverse } from "./lan-reverse";
 
 const relayId = mintLanIdentity();
 const mac = mintLanIdentity();
@@ -25,23 +25,27 @@ test("Backoff: 1 s doubling to 60 s, jittered by a quarter either way, reset to 
   assert.equal(low.next(), 45000, "never past 60 s, even jittered");
 });
 
-/** A relay that runs the reverse client for each paired host and serves nothing else. */
+/** A relay: on `answer` it runs the reverse client; on `ask` it answers from its own server. */
 async function relay(paired = [mac]) {
   const clients: ReverseClient[] = [];
+  const own = http.createServer((_req, res) => res.end("from the relay"));
   const l = new RelayListener({
     host: "127.0.0.1", port: 0, identity: relayId, profile: { ...LAN_PROFILE, failuresToBan: 1000 },
-    onPeer: (sock) => void connectReverse(sock).then((c) => clients.push(c), () => {}),
+    onPeer: (sock, _p, ch) => {
+      if (ch === "answer") void connectReverse(sock).then((c) => clients.push(c), () => {});
+      else serveReverse(sock, (d) => own.emit("connection", d));
+    },
   });
-  await l.setPaired(paired.map((id, i) => ({ id: `h${i}`, label: `h${i}`, certPem: id.certPem, pin: id.pin })));
+  await l.setPaired(paired.map((id, i) => ({ id: `h${i}`, label: `h${i}`, pin: id.pin })));
   return { l, clients, port: l.address()!.port };
 }
 
-const target = (port: number, over: Partial<RelayTarget> = {}): RelayTarget => ({ id: "r", label: "Relay", host: "127.0.0.1", port, certPem: relayId.certPem, pin: relayId.pin, ...over });
+const target = (port: number, over: Partial<RelayTarget> = {}): RelayTarget => ({ id: "r", label: "Relay", host: "127.0.0.1", port, pin: relayId.pin, ...over });
 
 function dialer(t: RelayTarget, statuses: DialerStatus[], id = mac) {
   const inner = http.createServer((_req, res) => res.end("from the LAN host"));
   return new RelayDialer({
-    identity: id, relay: t, random: () => 0,
+    identity: id, relay: t, channel: "answer", random: () => 0,
     onStream: (d) => inner.emit("connection", d),
     onStatus: (s) => statuses.push(s),
   });
@@ -118,7 +122,7 @@ test("failure reasons are fixed phrases, and no status names an address or pin",
   const imposter = mintLanIdentity();
   const cases: [RelayTarget, string, typeof mac][] = [
     [target(deadPort), "refused", mac],
-    [target(r.port, { certPem: imposter.certPem, pin: imposter.pin }), "relay's pin didn't match", mac],
+    [target(r.port, { pin: imposter.pin }), "relay's pin didn't match", mac],
     [target(r.port), "rejected by the relay", mintLanIdentity()], // a host the relay never paired
   ];
   const all: DialerStatus[] = [];
@@ -137,5 +141,17 @@ test("failure reasons are fixed phrases, and no status names an address or pin",
   const text = JSON.stringify(all);
   assert.doesNotMatch(text, /127\.0\.0\.1/);
   for (const pin of [mac.pin, relayId.pin, imposter.pin]) assert.ok(!text.includes(pin), "a pin in a status");
+  await r.l.close();
+});
+
+test("the ask channel holds a client for the dial-out host's own requests, and drops it on stop", async () => {
+  const r = await relay();
+  const held: (ReverseClient | null)[] = [];
+  const d = new RelayDialer({ identity: mac, relay: target(r.port), channel: "ask", random: () => 0, onClient: (c) => held.push(c) });
+  d.start();
+  await until(() => d.status.state === "connected" && held.length === 1);
+  assert.equal(await fetchVia(held[0]!), "from the relay");
+  d.stop();
+  assert.equal(held.at(-1), null);
   await r.l.close();
 });

@@ -11,7 +11,7 @@ import { test } from "node:test";
 import tls, { type TLSSocket } from "node:tls";
 import { mintLanIdentity } from "./lan-cert";
 import { connectPinned, relayServerOptions } from "./lan-tls";
-import { type ChannelTimers, connectReverse, type ReverseClient, type ReverseServer, serveReverse, streamDuplex } from "./lan-reverse";
+import { type ChannelTimers, connectReverse, type ReverseClient, type ReverseServer, serveReverse, socketDuplex, streamDuplex } from "./lan-reverse";
 import { MESSAGE_TOO_BIG, streamWebSocketServer } from "../runtime-quirks";
 
 const relayId = mintLanIdentity();
@@ -46,7 +46,7 @@ function innerServer() {
 /** A pinned pair with the reverse channel up on both ends. */
 async function pair(timers: { relay?: ChannelTimers; mac?: ChannelTimers } = {}) {
   const inner = innerServer();
-  const srv = tls.createServer(relayServerOptions(relayId, [{ certPem: mac.certPem, pin: mac.pin }]));
+  const srv = tls.createServer(relayServerOptions(relayId));
   const relaySide = new Promise<{ sock: TLSSocket; client: ReverseClient }>((resolve, reject) => {
     srv.once("secureConnection", (sock: TLSSocket) => {
       sock.on("error", () => {});
@@ -55,7 +55,7 @@ async function pair(timers: { relay?: ChannelTimers; mac?: ChannelTimers } = {})
   });
   srv.listen(0, "127.0.0.1");
   await once(srv, "listening");
-  const sock = await connectPinned(mac, { certPem: relayId.certPem, pin: relayId.pin }, "127.0.0.1", (srv.address() as AddressInfo).port);
+  const sock = await connectPinned(mac, relayId.pin, "127.0.0.1", (srv.address() as AddressInfo).port, "answer");
   const macSide: ReverseServer = serveReverse(sock, (d) => inner.server.emit("connection", d), timers.mac);
   const { client } = await relaySide;
   srv.close();
@@ -195,15 +195,15 @@ test("streamDuplex carries no address", async () => {
 
 // A LAN host behind serveReverse driven by a raw h2 client (no connectReverse).
 async function rawPair() {
-  const srv = tls.createServer(relayServerOptions(relayId, [{ certPem: mac.certPem, pin: mac.pin }]));
+  const srv = tls.createServer(relayServerOptions(relayId));
   const client = new Promise<http2.ClientHttp2Session>((resolve) => srv.once("secureConnection", (sock: TLSSocket) => {
-    const c = http2.connect("https://lan-peer", { createConnection: () => sock });
+    const c = http2.connect("http://lan-peer", { createConnection: () => socketDuplex(sock) as never });
     c.on("error", () => {});
     resolve(c);
   }));
   srv.listen(0, "127.0.0.1");
   await once(srv, "listening");
-  const sock = await connectPinned(mac, { certPem: relayId.certPem, pin: relayId.pin }, "127.0.0.1", (srv.address() as AddressInfo).port);
+  const sock = await connectPinned(mac, relayId.pin, "127.0.0.1", (srv.address() as AddressInfo).port, "answer");
   const server = serveReverse(sock, (d) => d.end("HTTP/1.1 204 No Content\r\n\r\n"));
   srv.close();
   return { client: await client, server };
@@ -211,11 +211,11 @@ async function rawPair() {
 
 // A relay socket whose LAN host speaks h2 but never answers a stream.
 async function rawPairForRelay() {
-  const srv = tls.createServer(relayServerOptions(relayId, [{ certPem: mac.certPem, pin: mac.pin }]));
+  const srv = tls.createServer(relayServerOptions(relayId));
   const relaySock = new Promise<TLSSocket>((r) => srv.once("secureConnection", (s: TLSSocket) => r(s)));
   srv.listen(0, "127.0.0.1");
   await once(srv, "listening");
-  const sock = await connectPinned(mac, { certPem: relayId.certPem, pin: relayId.pin }, "127.0.0.1", (srv.address() as AddressInfo).port);
+  const sock = await connectPinned(mac, relayId.pin, "127.0.0.1", (srv.address() as AddressInfo).port, "answer");
   const session = http2.performServerHandshake(sock, { settings: { enablePush: false } });
   session.on("stream", () => {}); // never responds
   session.on("error", () => {});

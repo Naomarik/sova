@@ -6,7 +6,8 @@ import { DENIED, type PeerStateView } from "../../shared/mesh-access";
 import type { MeshBuildHello } from "../../shared/mesh-resync";
 import type { AdvertisedGateway, MeshHelloPublic, ShareGatewayHello } from "../../shared/public-links";
 import { gatewayPublicUrl, isPublicUrl } from "../share/registry";
-import { type PeerEntry, peerUrl, readPeers } from "./peers";
+import { fetchPeer, peerKey } from "./dial";
+import { type PeerEntry, readPeers } from "./peers";
 
 // Hello: who a Sova host is and which wire contract it speaks. The fingerprint and the package
 // version are read once, never at import: at boot (primeFingerprint, from server/index.ts through
@@ -118,11 +119,12 @@ export interface ProbeResult {
     answered as well: it is reachable, it just shows this host nothing. */
 export const answered = (probe: ProbeResult): boolean => probe.state === "up" || probe.state === "skewed" || probe.state === "hidden";
 
-/** GET <base>/api/peer/hello, classified. Never throws. */
-export async function probeHello(base: string): Promise<ProbeResult> {
+/** GET <base>/api/peer/hello, classified (`base` a URL, or how to fetch a path from the peer). Never throws. */
+export async function probeHello(base: string | ((path: string, init: RequestInit) => Promise<Response>)): Promise<ProbeResult> {
   const t0 = performance.now();
+  const get = typeof base === "string" ? (path: string, init: RequestInit) => fetch(`${base}${path}`, init) : base;
   try {
-    const res = await fetch(`${base}/api/peer/hello`, { signal: AbortSignal.timeout(PROBE_TIMEOUT_MS) });
+    const res = await get("/api/peer/hello", { signal: AbortSignal.timeout(PROBE_TIMEOUT_MS) });
     if (res.status === 403 && res.headers.get(REFUSED_HEADER) === "refused") {
       await res.body?.cancel();
       return { state: "refused", error: "this host is not in its peers.json" };
@@ -153,10 +155,10 @@ const probes = new Map<string, { at: number; result: Promise<ProbeResult> }>();
 const lastSeen = new Map<string, number>();
 
 export function probePeer(peer: PeerEntry): Promise<ProbeResult> {
-  const base = peerUrl(peer);
+  const base = peerKey(peer);
   const hit = probes.get(base);
   if (hit && Date.now() - hit.at < PROBE_CACHE_MS) return hit.result;
-  const result = probeHello(base).then((r) => {
+  const result = probeHello((path, init) => fetchPeer(peer, path, init)).then((r) => {
     if (answered(r)) lastSeen.set(peer.id, Date.now());
     return r;
   });
@@ -183,6 +185,7 @@ export async function advertisedGateways(peers: () => PeerEntry[] = peersNow): P
   }
   const found = await Promise.all(
     list.map(async (peer): Promise<AdvertisedGateway | null> => {
+      if (peer.lan) return null; // a dial-out pairing is never a share gateway (§mesh.lan/pairing)
       try {
         const r = await probePeer(peer);
         const url = r.state === "up" ? r.hello?.shareGateway?.publicUrl : undefined;

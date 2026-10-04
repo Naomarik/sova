@@ -55,25 +55,145 @@ export function peerMayReach(pathname: string): boolean {
 const REFUSAL = { error: "not a peer" };
 const DENIAL = { error: "not shared with this host" };
 
-export class PeerListener {
-  private servers: Server[] = [];
-  private state: ListenerState;
-  private retry: NodeJS.Timeout | null = null;
-  private closed = false;
-  /** Every connection that passed the gate, by the caller's StableID (HTTP keep-alive and
-      upgraded sockets alike: an upgrade keeps the same TCP socket). */
+/** Who is calling on a request's connection: the peer, from the current peers.json, or null. */
+export type Identify = (req: IncomingMessage) => Promise<PeerEntry | null> | PeerEntry | null;
+
+export type GateDeps = Pick<ListenerDeps, "fetch" | "upgrade" | "allows">;
+
+/**
+ * Everything after "who is calling" (§mesh.peers/listener): what a peer may reach, the grant
+ * check (§mesh.peers/grants), dispatch into the app with the caller in `c.env.meshPeer`, and the
+ * record of what each connection was let through for, so a removed peer or a lowered grant ends
+ * it. The tailnet listener and the dial-out pairings' streams (§mesh.lan/as-a-peer) share it; only
+ * how the caller is known differs.
+ */
+export class PeerGate {
+  /** Every connection that passed the gate, by the caller's node id (HTTP keep-alive and upgraded
+      sockets alike: an upgrade keeps the same connection). */
   private admitted = new Map<Duplex, string>();
   /** What each admitted connection was last let through for: its last request's need, or its
       socket's (an upgrade keeps it for as long as the socket lives). */
   private admittedFor = new Map<Duplex, Need>();
   private readonly handle: (req: IncomingMessage, res: ServerResponse) => void;
 
-  constructor(private readonly deps: ListenerDeps) {
-    this.state = { addresses: [], port: deps.port };
+  constructor(private readonly deps: GateDeps) {
     this.handle = getRequestListener((req, env) => {
       const peer = (env.incoming as IncomingMessage & { meshPeer?: PeerEntry }).meshPeer;
       return deps.fetch(req, { ...env, meshPeer: peer });
     });
+  }
+
+  private async identified(req: IncomingMessage, identify: Identify): Promise<PeerEntry | null> {
+    const peer = await identify(req);
+    if (peer && !this.admitted.has(req.socket)) {
+      this.admitted.set(req.socket, peer.nodeId);
+      req.socket.once("close", () => {
+        this.admitted.delete(req.socket);
+        this.admittedFor.delete(req.socket);
+      });
+    }
+    return peer;
+  }
+
+  /** The grant check after identity; records what the connection was let through for. */
+  private granted(req: IncomingMessage, peer: PeerEntry, need: Need): boolean {
+    if (this.deps.allows && !this.deps.allows(peer, need)) return false;
+    this.admittedFor.set(req.socket, need);
+    return true;
+  }
+
+  /** An HTTP server answering through this gate, its callers known by `identify`. The tailnet
+      listener listens on it; a pairing's is never listened on and is fed streams. */
+  server(identify: Identify): Server {
+    const server = createServer((req, res) => void this.request(req, res, identify));
+    server.on("upgrade", (req: IncomingMessage, socket: Duplex, head: Buffer) => void this.upgrade(req, socket, head, identify));
+    return server;
+  }
+
+  async request(req: IncomingMessage, res: ServerResponse, identify: Identify): Promise<void> {
+    const peer = await this.identified(req, identify);
+    if (!peer) {
+      res.writeHead(403, { "Content-Type": "application/json", [REFUSED_HEADER]: "refused" });
+      res.end(JSON.stringify(REFUSAL));
+      return;
+    }
+    const url = requestUrl(req);
+    if (!url) {
+      res.writeHead(400, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "Bad request" }));
+      return;
+    }
+    if (!peerMayReach(url.pathname) || url.pathname.startsWith("/ws/")) {
+      res.writeHead(404, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "Not found" }));
+      return;
+    }
+    if (!this.granted(req, peer, classifyRequest(req.method ?? "GET", url.pathname).need)) {
+      res.writeHead(403, { "Content-Type": "application/json", [REFUSED_HEADER]: DENIED });
+      res.end(JSON.stringify(DENIAL));
+      return;
+    }
+    (req as IncomingMessage & { meshPeer?: PeerEntry }).meshPeer = peer;
+    this.handle(req, res);
+  }
+
+  async upgrade(req: IncomingMessage, socket: Duplex, head: Buffer, identify: Identify): Promise<void> {
+    socket.on("error", () => {});
+    const peer = await this.identified(req, identify);
+    if (!peer) {
+      refuseWith(socket, 403, REFUSAL, { [REFUSED_HEADER]: "refused" });
+      return;
+    }
+    const url = requestUrl(req);
+    if (!url) {
+      refuse(socket, 400, { error: "Bad request" });
+      return;
+    }
+    if (url.pathname !== "/ws/chat" && url.pathname !== "/ws/watch") {
+      refuse(socket, 404, { error: "Not found" });
+      return;
+    }
+    if (!this.granted(req, peer, classifyUpgrade(url.pathname, url.searchParams).need)) {
+      refuseWith(socket, 403, DENIAL, { [REFUSED_HEADER]: DENIED });
+      return;
+    }
+    this.deps.upgrade(req, socket, head);
+  }
+
+  /** Drop every admitted connection whose caller is no longer allowed (a peer removed from
+      peers.json): its kept-alive HTTP connections and its open sockets end now. */
+  revoke(allowed: (nodeId: string) => boolean): void {
+    for (const [socket, nodeId] of this.admitted) {
+      if (allowed(nodeId)) continue;
+      this.admitted.delete(socket);
+      this.admittedFor.delete(socket);
+      socket.destroy();
+    }
+  }
+
+  /** Drop every admitted connection whose grant no longer covers what it was let through for (a
+      lowered grant): its open sockets and kept-alive connections end now (§mesh.peers/grants). */
+  revokeGrants(allows: (nodeId: string, need: Need) => boolean): void {
+    for (const [socket, need] of this.admittedFor) {
+      const nodeId = this.admitted.get(socket);
+      if (nodeId === undefined || allows(nodeId, need)) continue;
+      this.admitted.delete(socket);
+      this.admittedFor.delete(socket);
+      socket.destroy();
+    }
+  }
+}
+
+export class PeerListener {
+  private servers: Server[] = [];
+  private state: ListenerState;
+  private retry: NodeJS.Timeout | null = null;
+  private closed = false;
+  private readonly gate: PeerGate;
+
+  constructor(private readonly deps: ListenerDeps) {
+    this.state = { addresses: [], port: deps.port };
+    this.gate = new PeerGate(deps);
   }
 
   info(): ListenerState {
@@ -96,7 +216,10 @@ export class PeerListener {
     let port = this.deps.port;
     for (const address of addresses) {
       if (this.closed) return;
-      const server = this.createServer();
+      const server = this.gate.server(async (req) => {
+        const node = await callerNode(req.socket);
+        return node ? this.deps.peerByNode(node) : null;
+      });
       try {
         await new Promise<void>((resolve, reject) => {
           server.once("error", reject);
@@ -134,7 +257,7 @@ export class PeerListener {
       s.closeAllConnections();
     }
     // closeAllConnections leaves upgraded sockets alone: a mesh turned off cuts peers' sockets too.
-    this.revoke(() => false);
+    this.gate.revoke(() => false);
     this.state = { addresses: [], port: this.deps.port };
   }
 
@@ -148,99 +271,12 @@ export class PeerListener {
     this.retry.unref();
   }
 
-  private async gate(req: IncomingMessage): Promise<PeerEntry | null> {
-    const node = await callerNode(req.socket);
-    const peer = node ? this.deps.peerByNode(node) : null;
-    if (peer && !this.admitted.has(req.socket)) {
-      this.admitted.set(req.socket, peer.nodeId);
-      req.socket.once("close", () => {
-        this.admitted.delete(req.socket);
-        this.admittedFor.delete(req.socket);
-      });
-    }
-    return peer;
-  }
-
-  /** The grant check after identity; records what the connection was let through for. */
-  private granted(req: IncomingMessage, peer: PeerEntry, need: Need): boolean {
-    if (this.deps.allows && !this.deps.allows(peer, need)) return false;
-    this.admittedFor.set(req.socket, need);
-    return true;
-  }
-
-  /** Drop every admitted connection whose caller is no longer allowed (a peer removed from
-      peers.json): its kept-alive HTTP connections and its open sockets end now. */
   revoke(allowed: (nodeId: string) => boolean): void {
-    for (const [socket, nodeId] of this.admitted) {
-      if (allowed(nodeId)) continue;
-      this.admitted.delete(socket);
-      this.admittedFor.delete(socket);
-      socket.destroy();
-    }
+    this.gate.revoke(allowed);
   }
 
-  /** Drop every admitted connection whose grant no longer covers what it was let through for (a
-      lowered grant): its open sockets and kept-alive connections end now (§mesh.peers/grants). */
   revokeGrants(allows: (nodeId: string, need: Need) => boolean): void {
-    for (const [socket, need] of this.admittedFor) {
-      const nodeId = this.admitted.get(socket);
-      if (nodeId === undefined || allows(nodeId, need)) continue;
-      this.admitted.delete(socket);
-      this.admittedFor.delete(socket);
-      socket.destroy();
-    }
-  }
-
-  private createServer(): Server {
-    const server = createServer(async (req, res) => {
-      const peer = await this.gate(req);
-      if (!peer) {
-        res.writeHead(403, { "Content-Type": "application/json", [REFUSED_HEADER]: "refused" });
-        res.end(JSON.stringify(REFUSAL));
-        return;
-      }
-      const url = requestUrl(req);
-      if (!url) {
-        res.writeHead(400, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ error: "Bad request" }));
-        return;
-      }
-      if (!peerMayReach(url.pathname) || url.pathname.startsWith("/ws/")) {
-        res.writeHead(404, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ error: "Not found" }));
-        return;
-      }
-      if (!this.granted(req, peer, classifyRequest(req.method ?? "GET", url.pathname).need)) {
-        res.writeHead(403, { "Content-Type": "application/json", [REFUSED_HEADER]: DENIED });
-        res.end(JSON.stringify(DENIAL));
-        return;
-      }
-      (req as IncomingMessage & { meshPeer?: PeerEntry }).meshPeer = peer;
-      this.handle(req, res);
-    });
-    server.on("upgrade", async (req: IncomingMessage, socket: Duplex, head: Buffer) => {
-      socket.on("error", () => {});
-      const peer = await this.gate(req);
-      if (!peer) {
-        refuseWith(socket, 403, REFUSAL, { [REFUSED_HEADER]: "refused" });
-        return;
-      }
-      const url = requestUrl(req);
-      if (!url) {
-        refuse(socket, 400, { error: "Bad request" });
-        return;
-      }
-      if (url.pathname !== "/ws/chat" && url.pathname !== "/ws/watch") {
-        refuse(socket, 404, { error: "Not found" });
-        return;
-      }
-      if (!this.granted(req, peer, classifyUpgrade(url.pathname, url.searchParams).need)) {
-        refuseWith(socket, 403, DENIAL, { [REFUSED_HEADER]: DENIED });
-        return;
-      }
-      this.deps.upgrade(req, socket, head);
-    });
-    return server;
+    this.gate.revokeGrants(allows);
   }
 }
 

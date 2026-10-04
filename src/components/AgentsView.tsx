@@ -26,6 +26,7 @@ import {
   treeName,
   treeTitle,
   visibleRows,
+  workersChips,
   WORKTREES_POLL_MS,
   worktreePathsKey,
 } from "../lib/agents-board";
@@ -760,7 +761,7 @@ export function AgentsView(props: {
     try {
       const res = await getUsageSessions(key.split(","));
       if (spendKey() !== key) return;
-      setSpends(new Map(Object.entries(res.sessions).map(([sid, s]) => [sid, s.workers.usd])));
+      setSpends(workersChips(res));
     } catch {
       // The helper starting or down: the chips stay as they were; the Costs tab says why.
     }
@@ -824,10 +825,7 @@ export function AgentsView(props: {
     },
     onOpenDetails: (p) => props.onOpenDetails(p),
     onOpenAgents: (p) => props.onOpenAgents(p),
-    workersSpend: (sid) => {
-      const usd = spends().get(sid);
-      return usd && usd > 0 ? usd : null;
-    },
+    workersSpend: (sid) => spends().get(sid) ?? null,
   };
 
   const meta = () => (props.sessions ? totalsLine(totals()) : undefined);

@@ -13,7 +13,7 @@ import type { RewindControl } from "../lib/inputs";
 import { activeTab, home } from "../lib/ui-state";
 import { sessionWorking, workingSplit } from "../lib/workers";
 import { sessionIdOfPath } from "../lib/links";
-import { spendUsd } from "../lib/spend";
+import { paneTitleCost } from "../lib/spend";
 import { createSessionSpend } from "./SessionUsage";
 import { ChatView, type ChatRefusal, type OverseerChat } from "./ChatView";
 import { ContextGauge, contextDescribedBy } from "./ContextGauge";
@@ -210,9 +210,8 @@ export function SessionView(props: {
    */
   const memberSpend = props.paneId ? createSessionSpend(() => s()?.id ?? sessionIdOfPath(path)) : null;
   const paneTitle = () => {
-    const spend = memberSpend?.data();
-    const cost = spend && spend.total.usd > 0 ? spendUsd(spend.total.usd) : null;
-    return [paneName(), cwdLabel(s(), null), ...(cost ? [`${cost} this session`] : [])].filter(Boolean).join(" · ");
+    const cost = paneTitleCost(memberSpend?.data());
+    return [paneName(), cwdLabel(s(), null), ...(cost ? [cost] : [])].filter(Boolean).join(" · ");
   };
 
   /** The single-session view's head, unchanged: the whole width of the main column. */

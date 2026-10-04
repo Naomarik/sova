@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { TranscriptItem } from "../../shared/protocol";
 import type { UsageOrigin, UsageSessionModelRow, UsageSessionSpend, UsageSpend, UsageWorkerRow } from "../../shared/usage/wire";
-import { absoluteTime, firstLine, originLabel, spendRows, spendTitle, spendUsd, spentAnything, timelineEntries, workerSpendOf } from "./spend";
+import { absoluteTime, firstLine, headChipSpend, originLabel, paneTitleCost, spendTitle, spendUsd, spentAnything, timelineEntries, transcriptHeaderSpend, usageTabRows, workerRowSpend, workerSpendOf } from "./spend";
 
 const zero = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cacheWrite1h: 0 };
 const sum = (input: number, output: number, usd = 0, calls = 1): UsageSpend => ({ usd, tokens: { ...zero, input, output }, usdBy: zero, calls, unpricedTokens: 0 });
@@ -30,8 +30,8 @@ test("originLabel names the three origins", () => {
   assert.equal(originLabel("worker"), "Subagents");
 });
 
-test("spendRows puts the main thread first, then side calls, then subagents, the biggest spender first in each", () => {
-  const rows = spendRows(
+test("usageTabRows puts the main thread first, then side calls, then subagents, the biggest spender first in each", () => {
+  const rows = usageTabRows(
     spend([row("sub-small", "worker", 1, 1), row("title", "oneshot", 2, 2), row("sub-big", "worker", 100, 100), row("main-b", "main", 5, 5), row("main-a", "main", 50, 50)]),
   );
   assert.deepEqual(
@@ -40,17 +40,17 @@ test("spendRows puts the main thread first, then side calls, then subagents, the
   );
 });
 
-test("spendRows keeps two equal rows in a stable order and never mutates its input", () => {
+test("usageTabRows keeps two equal rows in a stable order and never mutates its input", () => {
   const source = spend([row("b", "main", 1, 1), row("a", "main", 1, 1)]);
   assert.deepEqual(
-    spendRows(source).map((r) => r.model),
+    usageTabRows(source).map((r) => r.model),
     ["a", "b"],
   );
   assert.deepEqual(
     source.models.map((r) => r.model),
     ["b", "a"],
   );
-  assert.deepEqual(spendRows(undefined), []);
+  assert.deepEqual(usageTabRows(undefined), []);
 });
 
 test("spentAnything: a recorded call, never an absent answer", () => {
@@ -73,6 +73,42 @@ test("a listed worker's spend is its row under this session, matched by worker i
   assert.equal(workerSpendOf(spend([], list), "ag_09"), null);
   assert.equal(workerSpendOf(undefined, "ag_01"), null);
 });
+// One test per surface: each reads its figure straight off the ledger's answer, never a sum of its own.
+const answer = (sid: string, total: UsageSpend, workerList: UsageWorkerRow[] = []) => ({ sid, total, workerList });
+
+test("head chip: the answer's total, once it is this session's and something was spoken", () => {
+  const t = sum(1000, 200, 0.5, 3);
+  assert.equal(headChipSpend(answer("s1", t), "s1"), t, "the very object the ledger sent");
+  assert.equal(headChipSpend(answer("s0", t), "s1"), null, "an answer for the previous session never shows");
+  assert.equal(headChipSpend(undefined, "s1"), null, "no figure before the answer");
+  assert.equal(headChipSpend(answer("s1", sum(0, 0, 0, 0)), "s1"), null, "nothing recorded");
+  assert.equal(headChipSpend(answer("s1", { ...sum(0, 0, 0.1, 2), tokens: { ...zero, cacheRead: 900 } }), "s1"), null, "cache only: nothing spoken");
+  assert.equal(headChipSpend(answer("s1", t), null), null);
+});
+
+test("worker row: the worker's withWorkers figure, nothing for a worker with no call", () => {
+  const w = { ...worker("w-a", "s1", "ag_01"), withWorkers: sum(7, 3, 2, 4) };
+  const idle = { ...worker("w-b", "s1", "ag_02"), withWorkers: sum(0, 0, 0, 0) };
+  const spend = answer("s1", sum(0, 0), [w, idle]);
+  assert.equal(workerRowSpend(spend, "ag_01"), w.withWorkers, "own and its workers', never only its own");
+  assert.equal(workerRowSpend(spend, "ag_02"), null);
+  assert.equal(workerRowSpend(spend, "ag_03"), null, "no row: no tokens, never 0");
+  assert.equal(workerRowSpend(undefined, "ag_01"), null);
+});
+
+test("transcript header: the worker's own answer's total, once it has a call", () => {
+  const t = sum(5, 5, 0.2, 1);
+  assert.equal(transcriptHeaderSpend({ total: t }), t);
+  assert.equal(transcriptHeaderSpend({ total: sum(0, 0, 0, 0) }), null);
+  assert.equal(transcriptHeaderSpend(undefined), null);
+});
+
+test("workspace pane title: the answer's total dollars, left out at zero", () => {
+  assert.equal(paneTitleCost({ total: sum(1, 1, 12.5) }), "$12.50 this session");
+  assert.equal(paneTitleCost({ total: sum(1, 1, 0) }), null);
+  assert.equal(paneTitleCost(undefined), null);
+});
+
 test("firstLine takes one line and cuts on a word", () => {
   assert.equal(firstLine("Read the router, then changed it.\nAlso ran the tests."), "Read the router, then changed it.");
   assert.equal(firstLine("  \n"), "");

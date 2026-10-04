@@ -18,6 +18,7 @@ import {
   sortRows,
   teamForLink,
   totalsLine,
+  workersChips,
   treeLines,
   treeMerge,
   treeName,
@@ -164,6 +165,14 @@ test("totals: sessions working and live, the ledger's spend today, unmerged tree
   assert.deepEqual(blank, { working: 0, live: 0, spendToday: null, unmerged: null });
   assert.equal(totalsLine(blank), "0 working · 0 live", "no answer yet and no reading: nothing claimed");
   assert.equal(boardTotals([], [], { usd: 0 }).spendToday, null, "nothing spent today: left out");
+});
+
+test("board row chip: each session's workers' dollars from the ledger's answer, none at zero or with no record", () => {
+  const spend = (usd: number) => ({ usd, tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cacheWrite1h: 0 }, usdBy: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cacheWrite1h: 0 }, calls: 1, unpricedTokens: 0 });
+  const chips = workersChips({ sessions: { a: { total: spend(9), workers: spend(4.5) }, b: { total: spend(3), workers: spend(0) } } });
+  assert.equal(chips.get("a"), 4.5, "the workers' part, never the session's total");
+  assert.equal(chips.has("b"), false, "nothing spent by its workers: no chip");
+  assert.equal(chips.has("c"), false, "no record: no chip");
 });
 
 test("money: symbol first, two decimals, a sub-cent spend is not $0.00", () => {

@@ -5,7 +5,7 @@ import { formatTokens } from "../lib/context";
 import { explainCaption, explainHref, explainInterrupted, explainState, newestFirst } from "../lib/explain";
 import { relativeTime } from "../lib/format";
 import { sessionIdOfPath } from "../lib/links";
-import { absoluteTime, spendTitle, spentAnything, spoken } from "../lib/spend";
+import { absoluteTime, headChipSpend, spendTitle, spoken } from "../lib/spend";
 import { activeTab, sessionContext, setActiveTab, toast } from "../lib/ui-state";
 import { capTitle, workerLabel, workerTeam } from "../lib/workers";
 import type { RewindControl } from "../lib/inputs";
@@ -112,10 +112,7 @@ export function SessionPane(props: {
   const spend = createSessionSpend(sid);
   /** The head chip's figure, the Usage tab's headline: nothing until the ledger has answered, and
       nothing when nothing was spent. */
-  const total = () => {
-    const s = spend.data();
-    return s && s.sid === sid() && spentAnything(s) && spoken(s.total) > 0 ? s.total : null;
-  };
+  const total = () => headChipSpend(spend.data(), sid());
   // Settled once, on open: a default that followed the working count would move the tab under
   // the reader when the last worker finished.
   const fallback: TabId = untrack(working) > 0 ? "agents" : "session";

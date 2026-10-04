@@ -4,7 +4,7 @@
 
 import type { AgentsInsight, LiveAgentSession, SessionSummary, TeamInfo, WorktreeStatus } from "../../shared/protocol";
 import { SESSION_TITLE_MAX } from "../../shared/protocol";
-import type { UsageToday } from "../../shared/usage/wire";
+import type { UsageSessionsTotals, UsageToday } from "../../shared/usage/wire";
 import { teamKey } from "./insights";
 import { isMainThread, isTopSession } from "./regions";
 import { rowNeedsYou, signalTitle } from "./signals";
@@ -186,6 +186,12 @@ export interface BoardTotals {
   spendToday: number | null;
   /** Distinct unmerged branches across the trees read so far; null before any reading. */
   unmerged: number | null;
+}
+
+/** The board rows' workers chips, off the ledger's many-sessions answer: each session's workers'
+    dollars, only when above zero (a session with no record, or none spent, shows no chip). */
+export function workersChips(res: Pick<UsageSessionsTotals, "sessions">): ReadonlyMap<string, number> {
+  return new Map(Object.entries(res.sessions).flatMap(([sid, s]) => (s.workers.usd > 0 ? [[sid, s.workers.usd] as const] : [])));
 }
 
 /** The head's totals. Trees are counted once each, however many sessions touch them. `today` is

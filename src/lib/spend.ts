@@ -20,7 +20,7 @@ export const spoken = (u: Pick<UsageSpend, "tokens">): number => u.tokens.input 
  * first inside each — the reader is looking for "what cost this". Ties go by provider and model
  * so two identical rows never swap places between polls.
  */
-export function spendRows(spend: Pick<UsageSessionSpend, "models"> | undefined): UsageSessionModelRow[] {
+export function usageTabRows(spend: Pick<UsageSessionSpend, "models"> | undefined): UsageSessionModelRow[] {
   const rank = (o: UsageOrigin) => (o === "main" ? 0 : o === "oneshot" ? 1 : 2);
   return [...(spend?.models ?? [])].sort(
     (a, b) => rank(a.origin) - rank(b.origin) || spoken(b) - spoken(a) || `${a.provider}/${a.model}`.localeCompare(`${b.provider}/${b.model}`),
@@ -42,12 +42,35 @@ export function spendTitle(s: Pick<UsageSpend, "tokens" | "usd">): string {
   return [`${formatTokens(t.input)} in`, `${formatTokens(t.output)} out`, `${formatTokens(t.cacheRead)} cache read`, `${formatTokens(t.cacheWrite)} cache write`, spendUsd(s.usd)].join(" · ");
 }
 
-/** A listed worker's own spend: its row under this session (`worker` id, parent this session),
+/** A listed worker's ledger row: its row under this session (`worker` id, parent this session),
     else the only row with that worker id; null when nothing is recorded for it. */
 export function workerSpendOf(spend: Pick<UsageSessionSpend, "sid" | "workerList"> | undefined, workerId: string): UsageWorkerRow | null {
   const rows = spend?.workerList.filter((r) => r.worker === workerId) ?? [];
   return rows.find((r) => r.parent === spend!.sid) ?? (rows.length === 1 ? rows[0]! : null);
 }
+
+// Each surface's figure, read straight off the ledger's answer: nothing here adds anything up.
+
+/** The session pane head's token chip: the answer's total, only once the answer is for this
+    session and something was spoken; null hides the chip. */
+export function headChipSpend(spend: Pick<UsageSessionSpend, "sid" | "total"> | undefined, sid: string | null): UsageSpend | null {
+  return spend && sid && spend.sid === sid && spentAnything(spend) && spoken(spend.total) > 0 ? spend.total : null;
+}
+
+/** A worker row's tokens: the worker's own calls and its workers', at any depth (`withWorkers`);
+    null for a worker with no recorded call. */
+export function workerRowSpend(spend: Pick<UsageSessionSpend, "sid" | "workerList"> | undefined, workerId: string): UsageSpend | null {
+  const row = workerSpendOf(spend, workerId);
+  return row && row.withWorkers.calls > 0 ? row.withWorkers : null;
+}
+
+/** The open worker transcript's header: the worker's own answer's total; null until it has a call. */
+export const transcriptHeaderSpend = (spend: Pick<UsageSessionSpend, "total"> | undefined): UsageSpend | null =>
+  spend && spentAnything(spend) ? spend.total : null;
+
+/** A workspace pane title's "$x this session": the answer's total dollars; null when nothing was spent. */
+export const paneTitleCost = (spend: Pick<UsageSessionSpend, "total"> | undefined): string | null =>
+  spend && spend.total.usd > 0 ? `${spendUsd(spend.total.usd)} this session` : null;
 
 /** A compaction summary in one line: first line, cut at a word boundary near `max`. */
 export function firstLine(text: string | null | undefined, max = 120): string {

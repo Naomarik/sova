@@ -5,7 +5,7 @@ import { getUsageSession } from "../lib/api";
 import { formatTokens } from "../lib/context";
 import { compactModel } from "../lib/format";
 import { createPoll, type Poll } from "../lib/poll";
-import { originLabel, spendRows, spendTitle, spendUsd, spentAnything, spoken } from "../lib/spend";
+import { originLabel, spendTitle, spendUsd, spentAnything, spoken, usageTabRows } from "../lib/spend";
 import { Banner } from "./ui";
 
 /** A session's spend moves with every call; the pane's head chip and Usage tab read it this often. */
@@ -36,7 +36,7 @@ const oneLine = { "white-space": "nowrap" } as const;
  */
 export function SessionUsageTab(props: { spend: Poll<UsageSessionSpend>; workers: WorkerInfo[] }) {
   const spend = () => props.spend.data();
-  const rows = () => spendRows(spend());
+  const rows = () => usageTabRows(spend());
   const working = () => props.workers.filter((w) => w.working).length;
 
   return (

@@ -4,7 +4,7 @@ import type { ContextInfo, TeamInfo, TeamMember, TranscriptItem, WatchServerMess
 import { claudeWatchUrl, fetchHiddenWorkers, wsUrl } from "../lib/api";
 import type { UsageSessionSpend, UsageSpend } from "../../shared/usage/wire";
 import { linkGroupId, linkGroups, linkHostLabel, linkReach, threadHost, type LinkReach } from "../lib/links";
-import { spendTitle, spentAnything, spoken, workerSpendOf } from "../lib/spend";
+import { spendTitle, spoken, transcriptHeaderSpend, workerRowSpend, workerSpendOf } from "../lib/spend";
 import { chatLinks } from "../lib/links-live";
 import { hostOf, meshState, sessionHrefOn } from "../lib/mesh";
 import { clockTime, compactModel, shortModel } from "../lib/format";
@@ -283,7 +283,7 @@ export function SubagentPane(props: {
             </Show>
             <StatusChip worker={w()} liveSource={liveSource()} />
           </span>
-          <WorkerMeta worker={w()} spend={spendOf(w())?.withWorkers ?? null} liveSource={liveSource()} class="subagent-row-meta" />
+          <WorkerMeta worker={w()} spend={workerRowSpend(props.spend, w().id)} liveSource={liveSource()} class="subagent-row-meta" />
           <Icon name="chevron-right" small class="subagent-row-go" />
         </button>
       )}
@@ -701,8 +701,8 @@ function StatusChip(props: { worker: WorkerInfo; liveSource: boolean }) {
 function WorkerMeta(props: { worker: WorkerInfo; spend: UsageSpend | null; liveSource: boolean; class: string }) {
   const provider = () => props.worker.provider;
   const model = () => compactModel(props.worker.model);
-  /** Its own spend from the usage ledger; nothing recorded shows no tokens. */
-  const usage = () => (props.spend && props.spend.calls > 0 ? props.spend : null);
+  /** Its spend from the usage ledger (workerRowSpend); nothing recorded shows no tokens. */
+  const usage = () => props.spend;
   const failed = () => memberStatus({ worker: props.worker } as TeamMember, props.liveSource).failed;
   /** Without a live source every row reads "as of" its last update. */
   const at = () => asOf(props.worker) ?? (props.liveSource ? undefined : props.worker.lastActivity);
@@ -767,10 +767,7 @@ function WorkerMeta(props: { worker: WorkerInfo; spend: UsageSpend | null; liveS
     nothing is recorded. */
 function WorkerTokens(props: { sid: string }) {
   const spend = createSessionSpend(() => props.sid);
-  const total = () => {
-    const s = spend.data();
-    return s && spentAnything(s) ? s.total : null;
-  };
+  const total = () => transcriptHeaderSpend(spend.data());
   return (
     <Show when={total()}>
       {(u) => (

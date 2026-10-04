@@ -20,7 +20,7 @@ session gets none.
 In Sova the flag is Settings → Experimental's **Adversarial review** switch (`adversarialReview`
 in Sova's settings, off by default), with one line saying what it does. A hosted session started
 while it is saved on gets `--adversarial-review`; one already open keeps what it started with. The
-web shows the Reviewer fieldset and the card's review lines and buttons only while it is saved on.
+web shows the Reviewer section and the card's review lines and buttons only while it is saved on.
 
 ## §chat.alignment-review/record — The review record
 
@@ -115,8 +115,9 @@ without the key still parses, and a parse never adds it. The mode extension reso
 profile at each turn boundary, assessed against discovery and the model policy like the spec
 writer (§chat.subagent-profiles/resolution), and the code uses only what the profile lists, never
 a model of its own: the primary, else the fallback once (disclosed), else `incomplete`. With the
-flag on, Settings → Subagents shows a **Reviewer** fieldset under Spec writer, with the same rows,
-validation and save rules (a toggle "Review alignments with a reviewer", off = None, "No review.").
+flag on, Settings → Subagents' profile editor shows a **Reviewer** section under Spec writer
+(§chat.subagent-profiles/settings), with the same rows, validation and save rules (a toggle "Review
+alignments with a reviewer", off = None, "No review.").
 
 **Seeding.** The first time Settings → Experimental saves the switch on, every library profile with
 no `reviewer` key gets the default: primary pi · `openai-codex/gpt-6.1-sol` · high, fallback

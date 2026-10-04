@@ -11693,20 +11693,6 @@
       "authority": "accepted",
       "evidence": "unreviewed"
     },
-    "§chat.subagent-profiles/editor-rows": {
-      "kind": "behavior",
-      "requires": [
-        "§chat.subagent-profiles/settings",
-        "§app.settings-dialog/modes"
-      ],
-      "authority": "accepted",
-      "evidence": "verified",
-      "code": [
-        "src/components/SubagentProfilesSettings.tsx",
-        "src/components/SubagentProfilesSettings.css",
-        "src/components/WorkerSlotRow.tsx"
-      ]
-    },
     "§app.project-services/instance-note": {
       "kind": "behavior",
       "authority": "accepted",
@@ -13519,6 +13505,20 @@
         "§mesh.lan/identity",
         "§mesh.lan/pairing",
         "§mesh.peers/address-identity"
+      ]
+    },
+    "§chat.subagent-profiles/editor-rows": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.subagent-profiles/settings",
+        "§app.settings-dialog/modes"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/components/SubagentProfilesSettings.tsx",
+        "src/components/SubagentProfilesSettings.css",
+        "src/components/WorkerSlotRow.tsx"
       ]
     }
   },

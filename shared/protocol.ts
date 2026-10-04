@@ -2987,7 +2987,12 @@ export type SovaConfirmItem =
   /** A project registered on this host: its name, and the org's when one places it (§app.overseer/org-tools). */
   | { kind: "project"; id: string; orgId?: string; name: string; orgName?: string; note?: string }
   /** A roster person: name, status and org. Never a contact or a link. */
-  | { kind: "person"; id: string; orgId: string; name: string; orgName: string; status: "active" | "proposed" | "left"; note?: string };
+  | { kind: "person"; id: string; orgId: string; name: string; orgName: string; status: "active" | "proposed" | "left"; note?: string }
+  /** An organization attached here (§app.overseer/org-project-add: a detach lists it). */
+  | { kind: "org"; id: string; name: string; note?: string }
+  /** A folder to add as a project (§app.overseer/org-project-add): `id` is its checkout root, `asked` the folder as
+      given when that differs, the org it goes into (none: standalone) and the name it gets when the card named one. */
+  | { kind: "folder"; id: string; asked?: string; orgId?: string; orgName?: string; name?: string; note?: string };
 
 /** The longest note one confirm item may carry. */
 export const CONFIRM_NOTE_MAX = 220;

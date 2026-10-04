@@ -71,7 +71,7 @@ function linkSchema(orgs: boolean) {
     {
       session: S("A session id: open it (alone, or focused inside group)."),
       group: S("A group id: open its workspace."),
-      page: S("usage | agents | overseer | settings", { enum: ["usage", "agents", "overseer", "settings"] }),
+      page: orgs ? S("usage | agents | overseer | settings | orgs", { enum: ["usage", "agents", "overseer", "settings", "orgs"] }) : S("usage | agents | overseer | settings", { enum: ["usage", "agents", "overseer", "settings"] }),
       team: S("With page agents: a team id."),
       settings_tab: S("With page settings: the tab."),
       ...(orgs ? { org: S("An organization, by id or exact name: its page, or with project/person theirs."), project: S("With org: a project, by id or exact name."), person: S("With org: a roster person, by id or exact name.") } : {}),

@@ -286,16 +286,107 @@ export function cgroupPids(unit: string): number[] {
 }
 
 /**
- * A unit Sova did not start, read only (`systemctl --user show`): never started, stopped or signalled
- * here, whatever the driver. `unit` is the whole name (`sova-runtime.service`).
+ * A unit Sova did not start, read only (`systemctl --user show`; on macOS its launchd agent, as
+ * launchdAdoptedStatus reads it): never started, stopped or signalled here, whatever the driver.
+ * `unit` is the whole name (`sova-runtime.service`).
  */
-export async function adoptedStatus(unit: string, exec: Exec = realExec, pidsOf: (unit: string) => number[] = cgroupPids): Promise<AdoptedStatus> {
+export async function adoptedStatus(unit: string, exec: Exec = realExec, pidsOf: (unit: string) => number[] = cgroupPids, platform: NodeJS.Platform = process.platform): Promise<AdoptedStatus> {
+  if (platform === "darwin") return launchdAdoptedStatus(unit, exec);
   const r = await exec("systemctl", ["--user", "show", unit, "--timestamp=unix", "--property=LoadState,ActiveState,SubState,MainPID,ExecMainStatus,Result,ActiveEnterTimestamp"], { timeoutMs: 5_000 });
   if (r.code !== 0) return { state: "missing", pid: null, startedAt: null, rssBytes: null, detail: `systemctl could not read ${unit}: ${r.stderr.trim() || `exit ${r.code}`}` };
   const st = parseShow(r.stdout);
   const enter = /^ActiveEnterTimestamp=(.*)$/m.exec(r.stdout)?.[1];
   const live = st.state === "active" || st.state === "activating";
   return { ...st, startedAt: live ? parseEnterTimestamp(enter) : null, rssBytes: live ? rssOf(pidsOf(unit)) : null };
+}
+
+// ---- an adopted unit under launchd (macOS) -----------------------------------------------------
+
+/** The launchd label an adopted unit is on macOS: its name without `.service` (§app.project-services/adopt). */
+export const launchdLabelOf = (unit: string) => unit.replace(/\.service$/, "");
+/** The agent's service target in this user's GUI domain. */
+export const launchdTarget = (unit: string, uid = process.getuid?.() ?? 0) => `gui/${uid}/${launchdLabelOf(unit)}`;
+
+/** `launchctl print`'s own `key = value` lines (one tab in; nested blocks are deeper) (pure, for tests). */
+export function parseLaunchctlPrint(text: string): Record<string, string> {
+  const kv: Record<string, string> = {};
+  for (const line of text.split("\n")) {
+    const m = /^\t([^\t=][^=]*?) = (.*)$/.exec(line);
+    if (m && !(m[1]! in kv)) kv[m[1]!] = m[2]!.trim();
+  }
+  return kv;
+}
+
+/** An agent's `launchctl print` reading → its status: running is active, a scheduled spawn activating, else inactive, or failed after a failing exit (pure, for tests). */
+export function launchdStatusOf(kv: Record<string, string>): UnitStatus {
+  const exit = /^-?\d+$/.test(kv["last exit code"] ?? "") ? Number(kv["last exit code"]) : null;
+  const st = kv.state ?? "unknown";
+  const state: UnitState = st === "running" ? "active" : st === "spawn scheduled" || st === "spawning" ? "activating" : exit ? "failed" : "inactive";
+  const pid = state === "active" && Number(kv.pid) > 0 ? Number(kv.pid) : null;
+  return { state, pid, exit, detail: `${st}${exit !== null ? ` (last exit ${exit})` : ""}` };
+}
+
+/** `ps -o etime=` (`[[dd-]hh:]mm:ss`) in seconds, or null (pure, for tests). */
+export function parseEtime(v: string): number | null {
+  const m = /^\s*(?:(?:(\d+)-)?(\d+):)?(\d+):(\d+)\s*$/.exec(v);
+  return m ? ((Number(m[1] ?? 0) * 24 + Number(m[2] ?? 0)) * 60 + Number(m[3])) * 60 + Number(m[4]) : null;
+}
+
+/** The live pids of `pid`'s process tree (and the groups its members made), from `ps`. */
+export function processTree(pid: number, table: ProcTable = hostProcTable()): number[] {
+  return unitMembers(table.list(), pid, false);
+}
+
+/**
+ * An adopted agent on macOS, read only (`launchctl print gui/<uid>/<label>`): its state and main
+ * pid, when that process started (`ps -o etime=`), and its tree's resident memory. Not loaded is
+ * `missing` with no detail (not-found); launchctl failing otherwise carries its message (unsupported).
+ */
+export async function launchdAdoptedStatus(unit: string, exec: Exec = realExec, treeOf: (pid: number) => number[] = (pid) => processTree(pid), now = Date.now()): Promise<AdoptedStatus> {
+  const target = launchdTarget(unit);
+  const r = await exec("launchctl", ["print", target], { timeoutMs: 5_000 });
+  if (r.code !== 0) {
+    if (r.code === 113 || /Could not find service/i.test(r.stderr + r.stdout)) return { state: "missing", pid: null, startedAt: null, rssBytes: null };
+    return { state: "missing", pid: null, startedAt: null, rssBytes: null, detail: `launchctl could not read ${target}: ${(r.stderr || r.stdout).trim() || `exit ${r.code}`}` };
+  }
+  const st = launchdStatusOf(parseLaunchctlPrint(r.stdout));
+  if (st.pid === null) return { ...st, startedAt: null, rssBytes: null };
+  const ps = await exec("ps", ["-o", "etime=", "-p", String(st.pid)], { timeoutMs: 5_000 });
+  const age = ps.code === 0 ? parseEtime(ps.stdout) : null;
+  return { ...st, startedAt: age !== null ? new Date(Math.floor(now / 1000) * 1000 - age * 1000).toISOString() : null, rssBytes: rssOf(treeOf(st.pid)) };
+}
+
+/** The pids of an adopted unit: its cgroup on Linux, the agent's process tree on macOS. */
+export async function adoptedPids(unit: string, platform: NodeJS.Platform = process.platform): Promise<number[]> {
+  if (platform !== "darwin") return cgroupPids(unit);
+  const st = await launchdAdoptedStatus(unit, realExec, () => []);
+  return st.pid === null ? [] : processTree(st.pid);
+}
+
+/** The last `lines` lines of a log file, oldest first, with no times; [] when it can't be read. */
+export function tailLines(file: string, lines: number): { t: string; text: string }[] {
+  try {
+    const size = statSync(file).size;
+    const fd = openSync(file, "r");
+    const want = Math.min(size, 256 * 1024);
+    const buf = Buffer.alloc(want);
+    readSync(fd, buf, 0, want, size - want);
+    closeSync(fd);
+    const all = buf.toString("utf8").split("\n");
+    if (all.at(-1) === "") all.pop();
+    if (want < size) all.shift(); // a cut first line
+    return all.slice(-lines).map((text) => ({ t: "", text }));
+  } catch {
+    return [];
+  }
+}
+
+/** An adopted unit's logs: its journal on Linux; on macOS the tail of the file launchd writes the agent's stdout to. */
+export async function adoptedLogs(unit: string, lines: number, platform: NodeJS.Platform = process.platform, exec: Exec = realExec): Promise<{ t: string; text: string }[]> {
+  if (platform !== "darwin") return new SystemdDriver(exec).logs(unit.replace(/\.service$/, ""), lines);
+  const r = await exec("launchctl", ["print", launchdTarget(unit)], { timeoutMs: 5_000 });
+  const file = r.code === 0 ? parseLaunchctlPrint(r.stdout)["stdout path"] : undefined;
+  return file ? tailLines(file, lines) : [];
 }
 
 // ---- detached ----------------------------------------------------------------------------------
@@ -541,21 +632,7 @@ export class DetachedDriver implements Driver {
     return r ? this.members(r.pid) : [];
   }
   async logs(unit: string, lines: number, _sinceMs?: number) {
-    try {
-      const f = this.logFile(unit);
-      const size = statSync(f).size;
-      const fd = openSync(f, "r");
-      const want = Math.min(size, 256 * 1024);
-      const buf = Buffer.alloc(want);
-      readSync(fd, buf, 0, want, size - want);
-      closeSync(fd);
-      const all = buf.toString("utf8").split("\n");
-      if (all.at(-1) === "") all.pop();
-      if (want < size) all.shift(); // a cut first line
-      return all.slice(-lines).map((text) => ({ t: "", text }));
-    } catch {
-      return [];
-    }
+    return tailLines(this.logFile(unit), lines);
   }
   async runOnce(spec: OnceSpec) {
     const t0 = Date.now();

@@ -64,7 +64,7 @@ export const sourceKey = (share: ShareRecord): string =>
  * changed source is built once more, and anything else is the dead link. Nothing produced for a
  * source the link no longer grants leaves the host.
  */
-async function whileGranted<T>(token: string, build: (share: ShareRecord) => Promise<T | null>): Promise<{ ok: true; value: T | null; link: ShareLinkRecord } | { ok: false; access: Exclude<ShareAccess, { ok: true }> }> {
+export async function whileGranted<T>(token: string, build: (share: ShareRecord) => Promise<T | null>): Promise<{ ok: true; value: T | null; link: ShareLinkRecord } | { ok: false; access: Exclude<ShareAccess, { ok: true }> }> {
   for (let attempt = 0; attempt < 3; attempt++) {
     const before = shareAccess(token);
     if (!before.ok) return { ok: false, access: before };

@@ -220,6 +220,9 @@ const minted = (share: SessionShare, tokens: { recipientId: string; label: strin
   ...warning,
 });
 
+/** Tests' seam: runs after a PATCH's validation reads, right before its guarded write (a write landing there must refuse it). */
+export const patchHooks: { validated?: () => void | Promise<void> } = {};
+
 export function registerSessionShareRoutes(app: Hono): void {
   startSessionShareLive();
   // Archiving a session stops its shares (§app.session-share/link).
@@ -363,6 +366,7 @@ export function registerSessionShareRoutes(app: Hono): void {
         const checked = await startOn(share.sessionPath, end, from, given === undefined ? START_GONE : STALE);
         if (given !== undefined) patch.from = checked;
       }
+      await patchHooks.validated?.();
       // Written only if the mode, end and start are still the ones validated above.
       patchShare(id, patch, boundsOf(share));
       await pushShareView(id);

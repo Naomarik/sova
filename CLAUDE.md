@@ -308,7 +308,8 @@ Rules:
   `head`).
 - The one verb form (Sova as its own project, `.sova/project.json`: slot 0 adopts
   `sova-runtime.service`): the operator's Apply on the project's Services tab, or
-  `sova-project apply --project ~/webapps/sova --confirm`. It is refused while any hosted session is
+  `sova-project apply --checkout ~/webapps/sova --confirm` (apply names its instance: the main
+  checkout's is slot 0; `--project` alone is refused, `invalid-request`). It is refused while any hosted session is
   busy (your own turn included, so an agent never gets it through), and otherwise schedules
   `scripts/sova-restart-gate.mjs` 30 s out, which re-reads the live records when it fires and
   restarts only if nothing is busy then (else exit 75, logged in
@@ -318,7 +319,7 @@ Rules:
 - On macOS the live server is the launchd agent `sova-runtime` (`~/Library/LaunchAgents/sova-runtime.plist`,
   README's launchd example), and every rule above holds. Its restart is
   `launchctl kickstart -k gui/$(id -u)/sova-runtime`, never run by hand from a hosted session: use the
-  verb form (`sova-project apply … --confirm`; its gate runs detached from the server, waits the
+  verb form (`sova-project apply --checkout ~/webapps/sova --confirm`; its gate runs detached from the server, waits the
   30 s itself and then kickstarts the agent) or ask the user. Its pid and state:
   `launchctl print gui/$(id -u)/sova-runtime`; its start time: `ps -o lstart= -p <pid>`; its log:
   `~/Library/Logs/sova-runtime.log`.

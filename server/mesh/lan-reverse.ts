@@ -302,7 +302,8 @@ export function connectReverse(sock: Duplex, timers: ChannelTimers = {}, settleM
       clearTimeout(deadline);
       resolve(client);
     };
-    session.once("connect", onReady);
+    // Ready when the dial-out host has spoken (its SETTINGS), not at the local `connect`: a host
+    // that drops the connection right after the handshake (it pinned another relay) is never handed on.
     session.once("remoteSettings", onReady);
     session.once("close", () => {
       if (settled) return;

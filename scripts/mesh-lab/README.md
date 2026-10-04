@@ -252,6 +252,16 @@ The harnesses:
   one of two lab API keys with C, so C gets that one alone, and B (which A grants nothing) gets it
   through C, never the other. Turning the login off keeps C's copy and sends nothing newer.
 
+- **m8-dialout** (takes the LOCK; no LLM turns; leaves no pairing and no relay setting): dial-out
+  pairings (§mesh/lan). `plain`, with no Tailscale at all, is the dial-out host; the first host is its
+  relay, listening on its lab-network address only. Each side makes its key from its own page and
+  pastes the other's fingerprint. The relay listens only while a dial-out host is paired; a client with
+  no certificate or offering TLS 1.2 gets no HTTP answer. Both channels come up, each side starts at
+  presence, and each direction follows the answering host's grant: sessions shared one way only, a
+  hardened `/peer` answer and a WebSocket over a stream on the relay, and a lowered grant hiding the
+  relay again. A second pairing pinned to the wrong fingerprint is refused without disturbing the real
+  one. Removing the pairing on the relay drops plain's connections at once and closes the port.
+
 Front-door Caddyfile essentials, the template for the real one: `lb_policy first`,
 `health_uri /api/health` with 1 s interval/timeout, `lb_try_duration 5s`, `flush_interval -1`,
 `header_up Host {upstream_hostport}` (for `tailscale serve` upstreams), and

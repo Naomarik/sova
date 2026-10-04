@@ -188,9 +188,15 @@ export class LanRuntime {
     if (channel === "ask") {
       const server = serveReverse(sock, (d) => this.feed(peer.nodeId, d));
       const held = { close: () => server.close() };
-      this.askSessions.admit(peer.id, peer.label, held, Date.now());
-      void server.closed.then(() => this.askSessions.ended(peer.id, held));
-      this.deps.sawPeer?.(peer.id, true);
+      // Admitted (replacing the pairing's older connection) only once its HTTP/2 session is up, as
+      // on the answer channel: a connection its own dialer drops at once, such as one that pinned
+      // another relay, never displaces a working one.
+      server.session.once("remoteSettings", () => {
+        if (!this.accepted.some((p) => p.id === peer.id)) return server.close(); // unpaired meanwhile
+        this.askSessions.admit(peer.id, peer.label, held, Date.now());
+        void server.closed.then(() => this.askSessions.ended(peer.id, held));
+        this.deps.sawPeer?.(peer.id, true);
+      });
       return;
     }
     void connectReverse(sock).then(

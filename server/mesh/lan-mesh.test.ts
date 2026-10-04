@@ -281,6 +281,27 @@ describe("this host as the relay", () => {
     d.stop();
   });
 
+  test("the paired host dialing with a wrong relay pin never displaces its working connection", async () => {
+    let status = "";
+    const wrongPin = mintLanIdentity().pin;
+    for (const channel of ["ask", "answer"] as const) {
+      status = "";
+      const d = new RelayDialer({ identity: other, relay: { id: "relay", label: "Relay", host: "127.0.0.1", port, pin: wrongPin }, channel, onStatus: (s) => (status = s.state) });
+      d.start();
+      await until(`the ${channel} refusal`, () => status === "waiting");
+      d.stop();
+    }
+    await new Promise((r) => setTimeout(r, 200));
+    assert.equal(askClient!.destroyed, false);
+    const hello = await agentFetch(askClient!.agent, "/api/peer/hello");
+    assert.equal(hello.status, 200, "the real ask channel still answers");
+    await hello.body?.cancel();
+    const p = (await lan()).pairings.find((x) => x.id === "laptop")!;
+    assert.equal(p.channels.answer.state, "connected");
+    assert.equal(p.channels.ask.state, "connected");
+    assert.equal(p.cloneSuspected, undefined);
+  });
+
   test("removing the pairing ends its connections at once and stops the listener", async () => {
     const client = askClient!;
     const [status] = await api("DELETE", "/api/mesh/lan/pairings/laptop");

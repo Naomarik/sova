@@ -35,7 +35,7 @@ run `setopt NO_BG_NICE` first: zsh starts `cmd &` at nice 5, every server would 
 harness logs a WARNING line when its own nice isn't 0.
 
 ```sh
-cd .
+# From the repo root:
 
 # 0. Preconditions: ports free, systemd scopes work, no leftovers.
 ss -ltn | grep -E ':(4867|9267)\b' && echo "PORT TAKEN: stop here"

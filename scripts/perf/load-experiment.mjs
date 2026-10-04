@@ -32,7 +32,7 @@ import { getPriority, homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 
-const ROOT = resolve(import.meta.dirname, "..", "..");
+import { ROOT, shown } from "./paths.mjs";
 const args = process.argv.slice(2);
 const has = (name) => args.includes(`--${name}`);
 const opt = (name, fallback) => {
@@ -95,7 +95,7 @@ function summarize(dir) {
     });
   const variants = [...new Set(runs.map((x) => x.meta.variant))];
   const lines = [];
-  lines.push(`Runs: ${runs.length} in ${dir}. Medians across reps of each run's p50/p95; ms unless noted.`, "");
+  lines.push(`Runs: ${runs.length} in ${shown(dir)}. Medians across reps of each run's p50/p95; ms unless noted.`, "");
   lines.push("| variant | phase | reps | /api/sessions p50 | p95 | max | reload p50 | p95 | tail p50 | p95 | full p50 | p95 | ELD mean p50 | ELD max p95 | ELD max | load1 | cpu PSI some % | main thread % |");
   lines.push("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|");
   const agg = {};
@@ -453,7 +453,7 @@ async function oneRun(variant, rep, bigPath) {
     current.clear();
   }
   writeFileSync(join(OUT, `${runId}.samples.jsonl`), samples.map((s) => JSON.stringify(s)).join("\n") + "\n");
-  writeFileSync(join(OUT, `${runId}.meta.json`), JSON.stringify({ runId, variant, rep, nice: variant === "nice10" ? NICE : variant === "fixed" ? "setting" : 0, weight: variant.startsWith("weight") ? WEIGHT : null, mix: MIX, T, systemd, bigPath }, null, 1));
+  writeFileSync(join(OUT, `${runId}.meta.json`), JSON.stringify({ runId, variant, rep, nice: variant === "nice10" ? NICE : variant === "fixed" ? "setting" : 0, weight: variant.startsWith("weight") ? WEIGHT : null, mix: MIX, T, systemd, bigPath: shown(bigPath) }, null, 1));
   const s = runStats(samples).load;
   log(`${runId}: load /api/sessions p50 ${r(s.sessions.p50)} p95 ${r(s.sessions.p95)} ms, reload p50 ${r(s.reload.p50)}, ELD max p95 ${r(s.eldMax.p95)} ms, load1 ${r(s.load1)}`);
   log(`${runId}: cooling ${T.cool}s`);
@@ -482,7 +482,7 @@ if (getPriority() !== 0) log(`WARNING: this harness runs at nice ${getPriority()
 
 if (!existsSync(join(AGENT, "sessions"))) throw new Error(`no sessions in ${AGENT}: run with --prepare first`);
 const big = probeSession();
-log(`out ${OUT}; agent ${AGENT}; transcript probe ${big.path} (${(big.size / 1e6).toFixed(1)} MB); systemd scopes ${systemd}; variants ${VARIANTS.join(",")} x ${REPS}; mix ${MIX}; phases ${JSON.stringify(T)}`);
+log(`out ${shown(OUT)}; agent ${shown(AGENT)}; transcript probe ${shown(big.path)} (${(big.size / 1e6).toFixed(1)} MB); systemd scopes ${systemd}; variants ${VARIANTS.join(",")} x ${REPS}; mix ${MIX}; phases ${JSON.stringify(T)}`);
 // Rotate the order each rep so slow drift in machine load spreads over every variant.
 for (let rep = 1; rep <= REPS; rep++) {
   const order = VARIANTS.map((_, i) => VARIANTS[(i + rep - 1) % VARIANTS.length]);

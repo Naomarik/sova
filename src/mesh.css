@@ -225,3 +225,11 @@
 .mesh-access-theirs { display: flex; flex-direction: column; gap: 2px; padding-top: var(--space-2); border-top: 1px solid var(--color-border); }
 .mesh-access-preset,
 .mesh-add-preset { max-width: 360px; }
+
+/* Dial-out pairings (§mesh.lan/pairing): this host's fingerprint, read out and compared by eye. */
+.mesh-pair-self { display: flex; flex-direction: column; gap: var(--space-1); }
+.mesh-pair-fingerprint { font-family: var(--font-mono); font-size: var(--fs-body); color: var(--color-ink); overflow-wrap: anywhere; }
+/* A fingerprint or relay line is read in full, never cut off. */
+.list-meta.mesh-pair-wrap { white-space: normal; overflow: visible; overflow-wrap: anywhere; }
+.mesh-pair-row { flex-wrap: wrap; }
+.mesh-pair-row > .list-main { flex: 1 1 14rem; }

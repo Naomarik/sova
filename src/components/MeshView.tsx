@@ -2,6 +2,7 @@ import { createEffect, createResource, createSignal, For, onCleanup, onMount, Sh
 import { ApiError, claimMeshLogin, fetchFrontDoor, fetchMesh, fetchMeshAccess, fetchMeshCandidates, fetchMeshLogins, getClaudeAccounts, getMeshSettings, putMeshPeers, putMeshSettings } from "../lib/api";
 import { MESH_PRESETS, PRESET_HINT, PRESET_LABEL, type MeshAccessView, type MeshPreset } from "../lib/mesh-access";
 import { PeerAccess } from "./MeshAccess";
+import { MeshPairings } from "./MeshPairings";
 import { deviceLoginChip } from "../lib/claude-pool";
 import type { ClaudePoolInfo } from "../../shared/protocol";
 import { copyText } from "../lib/ui-state";
@@ -525,6 +526,17 @@ export function MeshView(props: { now: number; titleRef(el: HTMLHeadingElement):
           )}
         </Show>
       </section>
+
+      {/* Hosts off the tailnet (§mesh.lan/pairing); each also shows in Hosts above, with its grant. */}
+      <MeshPairings
+        now={props.now}
+        tick={ticks()}
+        taken={meshPeers().map((p) => p.id)}
+        onChanged={() => {
+          void poll.refetch();
+          setTicks((n) => n + 1);
+        }}
+      />
 
       <section class="card mesh-card" aria-labelledby="mesh-sync-title">
         <div class="mesh-card-head">

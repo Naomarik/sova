@@ -1,0 +1,61 @@
+// The Deploy panel's words (§app.project-runtime/deploy-panel), pure so they run under tsx --test:
+// a target's standing chip, its last deploy, a plan's checks and deadline, and how many of a
+// review's steps are still unticked. The panel (src/components/ProjectDeployPanel.tsx) renders them.
+
+import type { DeployRecordView, DeployReview, DeployStanding, DeployTargetView } from "../../shared/project-contract";
+
+export const short = (commit: string) => commit.slice(0, 7);
+export const hash12 = (h: string) => h.replace(/^sha256:/, "").slice(0, 12);
+
+/** Each standing's chip: approved is the only success; out of date and awaiting are things to act on. */
+export const DEPLOY_STANDING_CHIP: Record<DeployStanding, { word: string; tone?: "success" | "warn" | "info" }> = {
+  approved: { word: "Approved", tone: "success" },
+  "awaiting-approval": { word: "Awaiting approval", tone: "warn" },
+  stale: { word: "Out of date", tone: "warn" },
+  none: { word: "Not declared" },
+};
+
+/** A record's state as a chip: running is the live indicator. */
+export const DEPLOY_STATE_CHIP: Record<DeployRecordView["state"], { word: string; tone?: "success" | "warn" | "error" | "accent" }> = {
+  running: { word: "Deploying", tone: "accent" },
+  succeeded: { word: "Deployed", tone: "success" },
+  failed: { word: "Failed", tone: "error" },
+  "verify-failed": { word: "Verify failed", tone: "error" },
+  interrupted: { word: "Interrupted", tone: "error" },
+};
+
+/** "Deployed 1a2b3c4 · steps 2 of 2" / "Rollback of 1a2b3c4 failed: steps.sync exited with 3". */
+export function recordLine(r: DeployRecordView, totalSteps?: number): string {
+  const what = r.kind === "rollback" ? "Rollback of" : "Deploy of";
+  if (r.state === "running") return `${r.kind === "rollback" ? "Rolling back to" : "Deploying"} ${short(r.commit)}${totalSteps ? ` · step ${Math.min(r.steps.length + 1, totalSteps)} of ${totalSteps}` : ""}`;
+  if (r.state === "succeeded") return `${r.kind === "rollback" ? "Rolled back to" : "Deployed"} ${short(r.commit)}${r.verify ? ` · ${r.verify.url} answered ${r.verify.status}` : ""}`;
+  if (r.state === "verify-failed") return `${what} ${short(r.commit)} ran, and its verify failed: ${r.detail ?? ""}`;
+  if (r.state === "interrupted") return `${what} ${short(r.commit)} was interrupted: ${r.detail ?? ""}`;
+  return `${what} ${short(r.commit)} failed: ${r.detail ?? ""}`;
+}
+
+/** What Rollback does for a target, or null when it can't. */
+export function rollbackWord(t: Pick<DeployTargetView, "rollback" | "verifiedCommit">): string | null {
+  if (typeof t.rollback === "object") return null;
+  if (t.rollback === "steps") return "Runs the target's rollback steps.";
+  return "Deploys the last verified commit before this one again.";
+}
+
+/** "2 of 9 steps ticked" / "Every step ticked." */
+export function tickProgress(review: Pick<DeployReview, "keys">, ticked: ReadonlySet<string>): { left: number; line: string } {
+  const left = review.keys.filter((k) => !ticked.has(k)).length;
+  return { left, line: left ? `${review.keys.length - left} of ${review.keys.length} steps ticked` : "Every step ticked." };
+}
+
+/** "Expires in 12 min" / "Expired": a plan is good for 15 minutes. */
+export function planDeadline(expiresAt: string, now: number): string {
+  const ms = Date.parse(expiresAt) - now;
+  if (!(ms > 0)) return "Expired: plan again";
+  const min = Math.ceil(ms / 60_000);
+  return `Expires in ${min} min`;
+}
+
+/** Which typed reasons a needs-override refusal asks for, read from its sentence. */
+export function overridesAsked(message: string): { tests: boolean; dirty: boolean } {
+  return { tests: /overrideTests/.test(message), dirty: /overrideDirty/.test(message) };
+}

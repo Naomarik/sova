@@ -13,8 +13,10 @@ export const PI = /@earendil-works[/+]/;
 /** Paths the scan skips: the adapter, and the scanner's own files. Each must exist. */
 export const EXCLUDED = ["server/harness/pi/", "server/harness-boundary.test.ts", "server/harness/boundary-scan.ts", "server/harness/fixtures/"];
 
-/** Modules whose raw API is counted by import binding (M2 adds server/harness/pi/reader.ts). */
-export const RAW_SOURCES = ["server/transcript.ts"];
+/** Modules whose raw API is counted by import binding: the adapter's reader, and the transcript, which
+    re-exports it until M2-Z. One raw module using or re-exporting another's raw API is the raw layer
+    itself, not a reader: every file that imports either is counted. */
+export const RAW_SOURCES = ["server/transcript.ts", "server/harness/pi/reader.ts"];
 export const RAW_API = ["parseLines", "activeBranch", "readActiveBranch", "entryOf", "normalizeEntries", "normalizeEntry", "rawOf"];
 /** Raw readers counted by property or identifier name, whatever the receiver. */
 export const RAW_NAMES = ["getBranch", "getEntries", "getEntry", "rawBranch"];
@@ -168,6 +170,7 @@ export function scanText(path: string, text: string): FileScan {
   const out: FileScan = { path, imports: null, importHits: [], calls: [], shapes: [], reaches: [], writers: [], wrappers: [], violations: [], edges: [], imported: [] };
   const zone = zoneOf(path);
   if (!zone.scanned) return out;
+  const rawLayer = RAW_SOURCES.some((r) => sameModule(path, r));
   const src = ts.createSourceFile(path, text, ts.ScriptTarget.Latest, true, kindOf(path));
   const lineOf = (n: ts.Node) => src.getLineAndCharacterOfPosition(n.getStart(src)).line + 1;
   const hit = (list: Hit[], rule: string, n: ts.Node) => list.push({ rule, line: lineOf(n) });
@@ -196,7 +199,7 @@ export function scanText(path: string, text: string): FileScan {
       if (target && !typeOnly) out.edges.push(target);
       const named = c?.namedBindings && ts.isNamedImports(c.namedBindings) ? c.namedBindings.elements : [];
       const ns = c?.namedBindings && ts.isNamespaceImport(c.namedBindings) ? c.namedBindings.name.text : null;
-      if (RAW_SOURCES.some((r) => sameModule(target, r))) {
+      if (!rawLayer && RAW_SOURCES.some((r) => sameModule(target, r))) {
         for (const e of named) if (RAW_API.includes((e.propertyName ?? e.name).text) && !e.isTypeOnly && !c!.isTypeOnly) rawLocals.add(e.name.text);
         if (ns) rawNamespaces.add(ns);
       }
@@ -214,7 +217,7 @@ export function scanText(path: string, text: string): FileScan {
       if (PI.test(spec)) piHit(typeOnly ? "type" : "runtime", `export from "${spec}"`, st);
       if (target && !typeOnly) out.edges.push(target);
       const names = st.exportClause && ts.isNamedExports(st.exportClause) ? st.exportClause.elements.map((e) => (e.propertyName ?? e.name).text) : null;
-      if (zone.counted && RAW_SOURCES.some((r) => sameModule(target, r)) && (names === null || names.some((n) => RAW_API.includes(n))))
+      if (zone.counted && !rawLayer && RAW_SOURCES.some((r) => sameModule(target, r)) && (names === null || names.some((n) => RAW_API.includes(n))))
         out.violations.push({ code: "reexport", line: lineOf(st), message: "re-exports the transcript's raw API, which would hide every downstream call: import it where it is used" });
       if (zone.counted && fromAdapter(target) && (names === null || names.some((n) => BRIDGES.includes(n))))
         out.violations.push({ code: "reexport", line: lineOf(st), message: "re-exports an adapter bridge (liveRead/stateOf), which would hide every downstream reach: import it where it is used" });

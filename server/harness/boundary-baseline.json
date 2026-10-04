@@ -87,7 +87,7 @@
     "server/share/routes.ts": {"calls": 1, "shapes": 0, "reaches": 1},
     "server/transcript-rows.ts": {"calls": 3, "shapes": 0, "reaches": 0},
     "server/transcript-tool.ts": {"calls": 1, "shapes": 0, "reaches": 0},
-    "server/transcript.ts": {"calls": 0, "shapes": 45, "reaches": 0},
+    "server/transcript.ts": {"calls": 0, "shapes": 39, "reaches": 0},
     "server/unread-replies.ts": {"calls": 2, "shapes": 2, "reaches": 0},
     "server/user-turns.ts": {"calls": 0, "shapes": 1, "reaches": 0},
     "server/vis-check.ts": {"calls": 3, "shapes": 0, "reaches": 0},

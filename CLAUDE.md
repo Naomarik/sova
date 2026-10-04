@@ -281,7 +281,9 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
 - `pnpm run typecheck` — must pass. `pnpm run build` — must pass.
 - `pnpm run prices:update` — regenerate the checked-in price seed `shared/model-prices/seed.json` from models.dev and print
   the changes and any unpriced model (`--from <api.json>` offline, `--check` writes nothing). Aliases are hand-kept in
-  `aliases.json` there. Servers refresh their own copy (`<state root>/model-prices.json`) every 3 days; `SOVA_PRICES_FETCH=off` stops that.
+  `aliases.json` there. Servers keep their own price history in `<state root>/model-prices.json`: the usage helper
+  (`server/usage-helper/`) pulls models.dev every 6 hours and on Refresh Prices, a pull only adds dated periods, and
+  the seed is copied there only when the file is missing; `SOVA_PRICES_FETCH=off` stops pulling.
 - The share listener serves the share page (`/h/`, `/i/`, `/h/assets/`) from `dist-share/` (`vite build --mode share`);
   `SOVA_SHARE_DIST=<dir>` names another build, read per request (tests point it at a stub page). With no built page it answers 503.
 - `pnpm test` — unit tests (`server/*.test.ts`, `src/lib/*.test.ts`), **on Bun** (the summary line

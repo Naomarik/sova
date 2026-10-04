@@ -34,6 +34,8 @@ export interface UsageSession {
 	parent?: string | null;
 	worker?: string;
 	project?: string;
+	/** What its own turns are for right now (a baton's wrap-up): they keep the session's kind. */
+	purpose?: string;
 }
 
 /** Who a call is recorded for. */
@@ -95,6 +97,18 @@ export function noteUsageSession(sessionId: string, note: Partial<UsageSession> 
 	else state().notes.delete(sessionId);
 }
 
+/**
+ * Mark what session `sessionId`'s own calls are for until cleared (undefined), over any other
+ * note: a turn its host prompts for a purpose of its own (a baton's wrap-up), whatever async
+ * path its calls take.
+ */
+export function setUsageSessionPurpose(sessionId: string, purpose: string | undefined): void {
+	if (!sessionId) return;
+	const s = state();
+	const { purpose: _, ...rest } = s.notes.get(sessionId) ?? {};
+	noteUsageSession(sessionId, purpose ? { ...rest, purpose } : Object.keys(rest).length ? rest : undefined);
+}
+
 /** The registered session `sessionId`, with any host note over it. */
 export function usageSession(sessionId: string | undefined): UsageSession | undefined {
 	if (!sessionId) return undefined;
@@ -130,9 +144,12 @@ export function currentUsageContext(): UsageContext | undefined {
 export function resolveUsageAttribution(routingId?: string, hint?: { purpose?: string }): UsageAttribution {
 	const s = state();
 	const ctx = s.context.getStore();
-	const purpose = ctx?.purpose ?? hint?.purpose;
+	let purpose = ctx?.purpose ?? hint?.purpose;
 	const of = (owner: string | null, session: UsageSession | undefined, routed: boolean): UsageAttribution => {
-		const kind = ctx?.kind ?? (purpose && !HOUSEKEEPING.has(purpose) ? "oneshot" : routed || purpose ? (session?.kind ?? "oneshot") : "oneshot");
+		// A session's own turn marked by its host (session.purpose) keeps the session's kind.
+		const own = routed && !purpose ? session?.purpose : undefined;
+		if (own) purpose = own;
+		const kind = ctx?.kind ?? (purpose && !own && !HOUSEKEEPING.has(purpose) ? "oneshot" : routed || purpose ? (session?.kind ?? "oneshot") : "oneshot");
 		const parent = ctx?.parent !== undefined ? ctx.parent : (session?.parent ?? null);
 		const worker = ctx?.worker ?? session?.worker;
 		const cwd = ctx?.cwd ?? session?.cwd;

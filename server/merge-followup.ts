@@ -4,6 +4,7 @@ import type { DecisionSettings, SessionReadiness } from "../shared/protocol";
 import { type Answer, DecisionError, type DecisionProvider, type JsonObject, type Question } from "./decide";
 import { maySend } from "./decide-settings";
 import { stateRoot } from "./state-root";
+import { withUsageContext } from "../pi-config/extensions/llm-inflight/attribution.ts";
 
 /**
  * One follow-up check per merge (§app.decisions/merge-followup): on the first reply that ends a turn
@@ -194,7 +195,10 @@ export class MergeFollowUps {
     const now = this.deps.now?.() ?? Date.now();
     this.inFlight.add(key);
     try {
-      const result = await this.deps.provider().decide({ purpose: "merge-followup", state: followUpState(input), questions: FOLLOW_UP_QUESTIONS, dedupeKey: `merge-followup:${key}` });
+      // The usage ledger: this decision is the session's one-shot.
+      const result = await withUsageContext({ owner: input.sessionId, cwd: input.cwd, kind: "oneshot" }, () =>
+        this.deps.provider().decide({ purpose: "merge-followup", state: followUpState(input), questions: FOLLOW_UP_QUESTIONS, dedupeKey: `merge-followup:${key}` }),
+      );
       const store = readStore(this.file);
       store.cards[key] = {
         at: this.deps.now?.() ?? Date.now(),

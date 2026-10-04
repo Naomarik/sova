@@ -7,7 +7,7 @@ import path from "node:path";
 import test from "node:test";
 import { ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { createAssistantMessageEventStream, fauxAssistantMessage, fauxProvider, type AssistantMessage } from "@earendil-works/pi-ai";
-import { registerUsageSession, resolveUsageAttribution, withUsageContext, withUsagePurpose } from "./attribution.ts";
+import { noteUsageSession, registerUsageSession, resolveUsageAttribution, setUsageSessionPurpose, withUsageContext, withUsagePurpose } from "./attribution.ts";
 import { createClaudeRequestObserver } from "./claude.ts";
 import { recordClaudeEnvelope } from "./record.ts";
 import { instrumentModelRuntime } from "./runtime.ts";
@@ -141,6 +141,31 @@ test("a cache warm (one token asked) keeps its session's kind with purpose cache
 		[
 			["sess-w", "worker", "cache-warm", "sess-parent", "ag_03"],
 			["sess-w", "worker", "compaction", "sess-parent", "ag_03"],
+		],
+	);
+});
+
+test("a host-marked turn (a baton's wrap-up) keeps the session's kind with its purpose, until cleared; an overseer note gives its kind", async () => {
+	const read = ledger();
+	const done = registerUsageSession("sess-baton", { kind: "main", cwd: "/w/baton", parent: null });
+	const ov = registerUsageSession("sess-ov", { kind: "main", parent: null });
+	noteUsageSession("sess-ov", { kind: "overseer" });
+	const { rt, model } = await runtimeWith(() => ({ usage: tokens(1, 1) }));
+	setUsageSessionPurpose("sess-baton", "wrapup");
+	await rt.streamSimple(model, context, { sessionId: "sess-baton" }).result();
+	setUsageSessionPurpose("sess-baton", undefined);
+	await rt.streamSimple(model, context, { sessionId: "sess-baton" }).result();
+	await rt.streamSimple(model, context, { sessionId: "sess-ov" }).result();
+	await tick();
+	done();
+	ov();
+	noteUsageSession("sess-ov", undefined);
+	assert.deepEqual(
+		read().map((r) => [r.owner, r.kind, r.purpose ?? null]),
+		[
+			["sess-baton", "main", "wrapup"],
+			["sess-baton", "main", null],
+			["sess-ov", "overseer", null],
 		],
 	);
 });

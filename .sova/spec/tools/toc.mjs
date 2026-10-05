@@ -125,13 +125,14 @@ export function mentionsOf(masked) {
 // ---------------------------------------------------------------- sentences
 // Units: a paragraph, list item, table row, quote line or heading; within a unit, sentences end at
 // . ! ? (optionally closed by quotes, brackets or emphasis) followed by space and a non-lowercase start.
-function units(masked) {
+function units(masked, { title = true } = {}) {
   const res = [];
   let start = -1, at = 0, first = true;
   for (const ln of masked.split("\n")) {
     const end = at + ln.length, t = ln.trim();
-    // The heading's title (line 1) is a unit of its own; the lines after it open a new one.
-    const opens = first || at === masked.indexOf("\n") + 1 || /^(?:[-*+]|\d+[.)])\s|^[|>#]/.test(t);
+    // In a whole passage the heading's title (line 1) is a unit of its own; the lines after it open a new
+    // one. A unit's own text (title: false) never splits at its line ends.
+    const opens = first || (title && at === masked.indexOf("\n") + 1) || /^(?:[-*+]|\d+[.)])\s|^[|>#]/.test(t);
     first = false;
     if (!t) { if (start >= 0) res.push([start, at - 1]); start = -1; }
     else if (opens || start < 0) { if (start >= 0) res.push([start, at - 1]); start = at; }
@@ -140,9 +141,9 @@ function units(masked) {
   if (start >= 0) res.push([start, masked.length]);
   return res;
 }
-export function sentences(masked) {
+export function sentences(masked, opts) {
   const out = [];
-  for (const [a, b] of units(masked)) {
+  for (const [a, b] of units(masked, opts)) {
     const u = masked.slice(a, b);
     let s = 0;
     while (s < u.length && /\s/.test(u[s])) s++; // past masked markup, so quotes never include it
@@ -170,7 +171,7 @@ const stripMarker = (s) => s.replace(/^(?:[-*+]|\d+[.)])\s+/, "");
 // The first sentence of a unit, at least WHAT_MIN characters: a short run-in ("**Auto-grow.**") takes the next too.
 const WHAT_MIN = 20;
 function firstSentence(unit) {
-  const ss = sentences(unit);
+  const ss = sentences(unit, { title: false });
   if (!ss.length) return null;
   let k = 0;
   while (k + 1 < ss.length && squash(unit.slice(ss[0][0], ss[k][1]).replace(/[*_]/g, "")).length < WHAT_MIN) k++;

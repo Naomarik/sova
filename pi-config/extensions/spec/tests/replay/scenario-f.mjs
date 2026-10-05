@@ -174,7 +174,8 @@ async function pull(ctx, repo, index) {
   const lines = Object.fromEntries(DIRS.map((d) => [d, byDir[d].length]));
   const whyProse = all.filter((l) => l.whySource === "prose").length, whyComment = all.filter((l) => l.whySource === "comment").length;
   // Every what is a whole sentence of its passage (or says it was clipped with "…"); the wrapped §f.dep/rule tests it.
-  const cut = all.filter((l) => l.whatSource !== "none" && typeof l.what === "string" && cutWhat(l.what, index.passages.get(l.id)?.text ?? "") !== "whole").map((l) => `${l.id}: "${l.what}"`);
+  // A "none" line (no prose sentence) is exempt only if it says so; an empty what fails on any line.
+  const cut = all.filter((l) => !said(l.what) || (l.whatSource !== "none" && cutWhat(l.what, index.passages.get(l.id)?.text ?? "") !== "whole")).map((l) => `${l.id}: "${l.what ?? ""}"`);
   return [
     row("f", "f.pull.lines", { ...lines, whyProse, whyComment, bytes, calls }, [
       guard("f.pull.items-shown", broken.length === 0 && unshown.length === 0, broken.length ? `toc failed: ${broken.join("; ")}` : unshown.length ? `not shown: ${unshown.join("; ")}` : "every planted link is a contents line in its direction"),

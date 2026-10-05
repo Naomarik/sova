@@ -141,6 +141,12 @@ test("pull checks run where toc exists: held by a faithful contents view, each f
   // A what cut at the end of its first source line (the 70d6696e toc) reads as a what; the whole-sentence guards catch it.
   const cut = await runArm(sabotaged([STUB, [T, "const body = (units[0] ?? \"\").replace(", "const body = (units[0] ?? \"\").split(\"\\n\")[0].replace("]], STUB_FILES), { label: "stub-cut", only: ["f", "g"] });
   for (const name of ["f.pull.what-whole", "g.pull.what-whole"]) assert.ok(failed(cut).includes(name), `${name} trips on a what cut at the line end (failed: ${failed(cut).join(", ")})`);
+  // Every what blanked, as prose and as "none" (no prose sentence) alike: never a whole sentence.
+  const WHAT = "what: body.split(/(?<=[.:])\\s/)[0] || \"(no text)\",";
+  for (const [label, patches] of [["blank", [[T, WHAT, "what: \"\","]]], ["blank-none", [[T, WHAT, "what: \"\","], [T, "whatSource: body ? \"prose\" : \"none\"", "whatSource: \"none\""]]]]) {
+    const blank = await runArm(sabotaged([STUB, ...patches], STUB_FILES), { label: `stub-${label}`, only: ["f", "g"] });
+    for (const name of ["f.pull.what-whole", "g.pull.what-whole"]) assert.ok(failed(blank).includes(name), `${name} trips when every what is blank (${label}; failed: ${failed(blank).join(", ")})`);
+  }
 
   const bad = await runArm(sabotaged([STUB,
     [T, "out: () => claims[id].requires ?? [],", "out: () => [],"],                                  // out-links hidden

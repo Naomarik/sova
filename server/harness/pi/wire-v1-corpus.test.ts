@@ -35,7 +35,7 @@ const nameOf = (set: FixtureSet, f: FixtureSet["fixtures"][number]): string => {
 
 // ---- The faux streams
 
-/** pi's event as chat-manager's toWireEvent sends it (server/chat-manager.ts:409): a message_update
+/** pi's event as toV1Event sends it (server/harness/pi/wire.ts): a message_update
     without `partial` and its message, a toolcall_start naming its call. Signatures don't matter here. */
 function wireEvent(event: any): unknown {
   if (event?.type !== "message_update") return event;

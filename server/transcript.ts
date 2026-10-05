@@ -90,12 +90,18 @@ function truncate(s: string, max: number): string {
 const textOf = (h: HEntry | undefined, images = true): string => (h ? joinedText(h, { images }) : "");
 
 // ---- What a row carries (§chat.transcript/slim-rows) ---------------------------------------------
-// A row never carries its source entry over the wire. The server keeps it beside the row, in a
-// WeakMap that JSON never sees, for its own readers of whole content (the Overseer's session reads,
+// A row never carries its source entry over the wire. The server keeps it on the row, as a hidden
+// (non-enumerable) property that JSON never sees, for its own readers of whole content (the Overseer's session reads,
 // the tool-content route): `sourceOf(row)`, the neutral entry (shared/harness-history.ts) it was
 // made from, whatever wrote it (pi's reader, or the Claude Code transcript's rows).
 
-const sources = new WeakMap<TranscriptItem, HEntry>();
+const SOURCE = Symbol("source");
+/** Kept on the row itself as a non-enumerable property (JSON, spreads and deep equality never see it): a
+    WeakMap over every cached row cost each GC more than the rows did. */
+const sources = {
+  get: (it: TranscriptItem | undefined): HEntry | undefined => (it as { [SOURCE]?: HEntry } | undefined)?.[SOURCE],
+  set: (it: TranscriptItem, h: HEntry): void => void Object.defineProperty(it, SOURCE, { value: h, writable: true, configurable: true }),
+};
 
 /** The entry a row was made from (server-side only; never serialized). */
 export const sourceOf = (it: TranscriptItem): HEntry | undefined => sources.get(it);

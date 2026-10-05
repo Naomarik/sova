@@ -321,12 +321,14 @@ function aboutLines(ctx, id, p) {
   return about.map((n) => ({ id: n.id, group: "about-it", src: ctx.decls.get(n.id), target: n.target, about: true, ...(n.via ? { via: n.via } : {}) }));
 }
 
-// A record's agreed {by, at}, and whether it is built: code plus evidence reviewed or verified (the
-// draft tool's BUILT_LABELS rule). → {agreed} | {}
+// Built = code plus evidence reviewed or verified: the draft tool's BUILT_LABELS rule. The one copy the views share.
+export const BUILT_LABELS = new Set(["reviewed", "verified"]);
+export const isBuilt = (rec) => Array.isArray(rec?.code) && rec.code.length > 0 && BUILT_LABELS.has(rec.evidence);
+// A record's agreed {by, at}, and whether it is built. → {agreed} | {}
 export function agreedOf(rec) {
   const a = rec?.agreed;
   if (!a || typeof a !== "object" || typeof a.by !== "string" || typeof a.at !== "string") return {};
-  return { agreed: { by: a.by, at: a.at, built: !!rec.code?.length && ["reviewed", "verified"].includes(rec.evidence) } };
+  return { agreed: { by: a.by, at: a.at, built: isBuilt(rec) } };
 }
 export const agreedText = (x) => (x.agreed ? ` · agreed (decision) ${x.agreed.at} by ${x.agreed.by}, ${x.agreed.built ? "built" : "not built"}` : "");
 

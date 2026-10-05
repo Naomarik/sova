@@ -33,10 +33,9 @@ export type TurnEvent = HarnessEvent;
     the SDK's loadout declarations and summaries. Every other role (a user message, an extension's
     custom message, anything new) is input, and input decides who the run belongs to. */
 const NEUTRAL_ROLES = new Set(["assistant", "toolResult", "system", "compactionSummary", "branchSummary", "bashExecution"]);
-/** Custom messages only the server writes: the hidden open-cards note (with the run note) and the
-    id check's note (§app.overseer/id-check). */
-const STATE_NOTES = new Set<unknown>([CARDS_NOTE_MESSAGE, ID_NOTE_MESSAGE]);
-const isCardsNote = (m: unknown): boolean => (m as { role?: unknown; customType?: unknown } | undefined)?.role === "custom" && STATE_NOTES.has((m as { customType?: unknown }).customType);
+/** Custom messages only the server writes, by note type: the hidden open-cards note (with the run note)
+    and the id check's note (§app.overseer/id-check). */
+const STATE_NOTES = new Set<string>([CARDS_NOTE_MESSAGE, ID_NOTE_MESSAGE]);
 
 /**
  * Whether the Overseer is answering the user: the one source of truth for both the per-turn caps
@@ -140,12 +139,12 @@ export class UserTurns {
         this.retryCard = null;
         return false;
       case "message.start":
-        return this.entered(event.handle);
+        return this.entered(event.handle, event.noteType);
       default:
         return false;
     }
   }
-  private entered(message: unknown): boolean {
+  private entered(message: unknown, noteType: string | undefined): boolean {
     const role = (message as { role?: unknown } | undefined)?.role;
     const rerun = this.rerun;
     const rerunCard = this.rerunCard;
@@ -162,7 +161,7 @@ export class UserTurns {
     }
     // The Overseer's own open-cards note is state, not input (§app.overseer/confirm), and so is the
     // id check's note (§app.overseer/id-check): neither changes who the run belongs to, wherever it lands.
-    if ((typeof role === "string" && NEUTRAL_ROLES.has(role)) || isCardsNote(message)) {
+    if ((typeof role === "string" && NEUTRAL_ROLES.has(role)) || (noteType !== undefined && STATE_NOTES.has(noteType))) {
       this.rerun = rerun;
       this.rerunCard = rerunCard;
       return false;

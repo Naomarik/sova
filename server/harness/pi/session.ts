@@ -104,9 +104,10 @@ export function harnessEventOf(event: { type: string; [k: string]: any }): Harne
   switch (type) {
     case "message.start":
     case "message.end": {
-      const message = event.message as { role?: unknown; content?: unknown } | undefined;
+      const message = event.message as { role?: unknown; content?: unknown; customType?: unknown } | undefined;
       const role = message?.role === "user" ? "user" : message?.role === "assistant" ? "assistant" : "other";
-      return { type, frame, role, ...(role === "user" ? { text: messageText(message!.content) } : {}), handle: message ?? undefined };
+      const noteType = message?.role === "custom" && typeof message.customType === "string" ? message.customType : undefined;
+      return { type, frame, role, ...(role === "user" ? { text: messageText(message!.content) } : {}), ...(noteType !== undefined ? { noteType } : {}), handle: message ?? undefined };
     }
     case "message.update": {
       const message = event.message as { role?: unknown } | undefined;

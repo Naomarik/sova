@@ -86,12 +86,14 @@ export interface HarnessFrame {
   entryId?: string;
 }
 
-/** A message the agent started or ended: its role, its text blocks joined (user messages only) and the
-    object the harness holds it as (its identity, for `persistedId` and for telling who sent a user message,
-    server/user-turns.ts, which also reads its role and text). */
+/** A message the agent started or ended: its role, its text blocks joined (user messages only), the note
+    type of an extension's note (`noteType`, a custom message only) and the object the harness holds it as
+    (its identity, for `persistedId` and for telling who sent a user message, server/user-turns.ts, which also
+    reads its role and text). */
 interface HarnessMessageEvent {
   role: "user" | "assistant" | "other";
   text?: string;
+  noteType?: string;
   handle: object | undefined;
 }
 

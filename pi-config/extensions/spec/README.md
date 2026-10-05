@@ -21,8 +21,9 @@ to assert that those decisions have been implemented.
 
 | Path | What it is |
 | --- | --- |
-| `core/sova-spec.mjs` | The read-only core: `packet`, `check`, `census`, `foreign`, `scope`, `impact` |
+| `core/sova-spec.mjs` | The read-only core: `packet`, `toc`, `read`, `check`, `census`, `foreign`, `scope`, `impact` |
 | `core/packet.mjs` | The standalone core's bounded packet serialization and stateless navigation module |
+| `core/toc.mjs`, `core/read.mjs` | Pull: `toc`, a one-hop contents view (what, why, size per line), and `read`, one exact passage without its chain |
 | `core/README.md` | The core's reference: commands, exit codes, the manifest format it reads, evidence states |
 | `core/sova-spec-draft.mjs` | Drafts: full-copy proposals of `.sova/spec`, their evidence, and guarded promotion into the current docs |
 | `DRAFTS.md` | The draft workflow's reference |
@@ -30,6 +31,7 @@ to assert that those decisions have been implemented.
 | `core/sova-spec-review.mjs` | The review companion: `prepare`, `record`, `status`. It keeps the exact bytes a review compared |
 | `core/sova-spec-assess.mjs` | Observation-only input-bound dispositions and metadata-only receipts: `prepare`, `record`, `status` |
 | `tests/*.test.mjs` | Black-box fixture tests that spawn the CLIs against temporary projects |
+| [`GOALS.md`](GOALS.md) | What the spec system is for: its goals and constraints. A change to these tools names the goal it serves and is measured against today's tools (`tests/replay/`) |
 
 ## Core (read-only)
 

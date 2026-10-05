@@ -6,6 +6,8 @@ library. There is no install step and no config import, and it never writes a fi
 ```sh
 node sova-spec.mjs check                [--root DIR] [--spec DIR] [--json]
 node sova-spec.mjs packet §ns/name      [--part prose|inventory|frontier|code|findings] [--cursor TOKEN] [--budget BYTES] [--root DIR] [--spec DIR] [--read-policy review]
+node sova-spec.mjs toc    §ns/name --dir out|in|down|up|mentions [--json] [--budget BYTES] [--cursor TOKEN] [--root DIR] [--spec DIR]
+node sova-spec.mjs read   §ns/name      [--whole] [--json] [--budget BYTES] [--cursor TOKEN] [--root DIR] [--spec DIR]
 node sova-spec.mjs scope  §ns/name      [--root DIR] [--spec DIR] [--json] [--budget BYTES]
 node sova-spec.mjs impact §ns/name      [--root DIR] [--spec DIR] [--json]
 node sova-spec.mjs census               [--root DIR] [--spec DIR] [--json]
@@ -85,6 +87,55 @@ reported provenance/code-readability state invalidate them; restart the stream r
 versions. Code-content-only changes need not invalidate a cursor when only code locations and
 readability were reported. A continuation may change the supported budget. No session, cursor
 store or source snapshot is written, and no project code is run.
+
+## Pull: `toc` and `read`
+
+`packet` pushes a claim's whole declared closure. `toc` and `read` let the reader choose instead:
+look at the contents one hop out, then read the passages the task needs, one at a time. Both live in
+their own modules (`toc.mjs`, `read.mjs`), parse their own flags, and read the graph with this core's
+loader. Flags may come before or after the command word. `sova-spec --help` doesn't list them;
+`toc --help` and `read --help` print their own bounded JSON help.
+
+**`toc §id --dir DIR`** lists the neighbours one hop away in one direction:
+
+| `--dir` | Lines | Groups |
+|---|---|---|
+| `out` | the declared `requires`, then the § the claim's prose names without requiring | `requires`, `named` |
+| `in` | the claims whose `requires` name it | `required-by` |
+| `down` | an H1's H2s, or a section's members, in declaration order | `children`, `members` |
+| `up` | an H2's parent | `parent` |
+| `mentions` | the claims whose prose names it | `mentioned-by` |
+
+Each line has `id`, `title`, `kind`, `labels` (when declared), `bytes` (what `read` of it delivers;
+an H1's lede) and `whole` (an H1's lede plus all its H2s), `what` and `whatSource`
+(`prose|blockquote|none`), and, for `out`, `in` and `mentions`, `why` and `whySource`
+(`prose|comment|none`). What is the first prose sentence after the heading: fences, comments,
+tables and headings skipped, a blockquote only when nothing else is prose, at least 20 and at most
+200 characters, never code. Why is the first visible-prose sentence of the linking claim naming the
+other, else an HTML comment naming it, else exactly `not mentioned in this claim's text`. Mentions
+mask fenced code, HTML comments and double-backtick spans; single backticks count, and `§a.b` reads
+as `§a/b`. A line for an id with no record or span is `dangling: true`.
+
+`seed` describes the requested claim the same way. `footer` holds `delivered` (always empty: a
+contents line is never the passage), `listed` and `notListed` for this response, `otherDirections`
+(the line count of each direction not asked) and `unknowns` (`requires-uninvestigated` for a
+behavior with no `requires` key, or for `in` the behaviors that could also require it; `unknown` for
+dangling targets). Exit 0 is done without unknowns, 1 is more lines or an unknown, 2 a refusal.
+
+**`read §id [--whole]`** returns one passage, exact, with no closure: `items: [{index, id, kind,
+labels?, title, file, lines, text, fragment}]`, where `text` is byte-for-byte the passage `scope`
+returns. An H1 gives its lede; `--whole` gives the lede and then each H2 in declaration order. The
+`footer` names (`named`) the passage's `requires` and prose mentions that this call did not deliver,
+and for an H1 read as its lede, `children` and `wholeBytes`. Exit 0 is done, 1 more, 2 a refusal.
+
+Both take `--json` (compact JSON) or print readable text, under one whole-response budget either
+way: integers 1,024–32,768, default 12,000 for `toc` and 32,768 for `read`, so one passage of
+ordinary size is one call. What doesn't fit is paged with `--cursor`, as packet pages: `read`
+splits an oversized passage into exact UTF-8 fragments (finish at `end == total`). Cursors bind the
+root, spec, request and the whole computed stream, so a spec change that alters it makes them stale. Refusals
+(`usage`, `unknown-id`, `graph-untrusted` with `cause: manifest-not-found` when there's no
+manifest, `token-malformed`, `token-mismatch-or-stale`, `token-range`, `budget-refused`) are small
+JSON within the budget. Nothing is stored.
 
 ## Format read (version 1)
 

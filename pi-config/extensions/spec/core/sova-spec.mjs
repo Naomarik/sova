@@ -10,6 +10,8 @@ import { createHash } from "node:crypto";
 import { join, resolve, dirname, relative, posix } from "node:path";
 import { fileURLToPath } from "node:url";
 import { PACKET_PARTS, PACKET_HELP, packetBudget, packetError, packetOrder, packetPage, serializePacket } from "./packet.mjs";
+import { tocMain, pullCommand } from "./toc.mjs";
+import { readMain } from "./read.mjs";
 
 const ID_SRC = String.raw`§[a-z][a-z-]*(?:\.[a-z][a-z-]*)?/[a-z][a-z-]*`;
 const ID_RE = new RegExp(`^${ID_SRC}$`);
@@ -1116,7 +1118,13 @@ function packetMain(opt) {
     inputs: packetInputs, result, findings, passages, part: opt.part, cursor: opt.cursor, budget }));
 }
 
+// The pull commands (toc, read) live in their own modules and reach the graph only through the core's own loader.
+const pullCore = () => ({ findSpec, load, specDir, parentOf, exitOf, findings: () => findings, DEFAULT_SPEC });
+
 function main(argv) {
+  const pull = pullCommand(argv);
+  if (pull?.command === "toc") return tocMain(pull.rest, pullCore());
+  if (pull?.command === "read") return readMain(pull.rest, pullCore());
   const opt = parseArgs(argv);
   packetInvocation = argv[0] === "packet" || opt.pos[0] === "packet";
   reviewPolicy = opt["read-policy"] === "review"; assessmentPolicy = false;

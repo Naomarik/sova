@@ -1,0 +1,11 @@
+{
+  "id": "legacy-0001",
+  "cwd": "/home/user/legacy",
+  "title": "A string-content legacy question",
+  "createdAt": "2025-01-01T00:00:00.000Z",
+  "model": "anthropic/claude-3",
+  "context": {
+    "tokens": 10,
+    "window": null
+  }
+}

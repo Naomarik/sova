@@ -1,0 +1,71 @@
+{
+  "operator": {
+    "view": {
+      "publicTitle": "Golden launch",
+      "state": "active",
+      "holder": "Alice",
+      "items": [
+        {
+          "kind": "message",
+          "id": "o0000002",
+          "by": "p_alice",
+          "name": "Alice",
+          "text": "Start a team",
+          "at": "2026-09-01T10:00:02.000Z"
+        },
+        {
+          "kind": "reply",
+          "id": "o000000d",
+          "text": "The team finished.",
+          "at": "2026-09-01T10:00:13.000Z"
+        }
+      ]
+    },
+    "photos": 0
+  },
+  "bob": {
+    "view": {
+      "publicTitle": "Golden launch",
+      "state": "active",
+      "holder": "Alice",
+      "items": [
+        {
+          "kind": "message",
+          "id": "o0000002",
+          "by": "p_alice",
+          "name": "Alice",
+          "text": "Start a team",
+          "at": "2026-09-01T10:00:02.000Z"
+        },
+        {
+          "kind": "reply",
+          "id": "o000000d",
+          "text": "The team finished.",
+          "at": "2026-09-01T10:00:13.000Z"
+        }
+      ]
+    },
+    "photos": 0
+  },
+  "untilOffer": {
+    "publicTitle": "Golden launch",
+    "state": "active",
+    "holder": null,
+    "items": [
+      {
+        "kind": "message",
+        "id": "o0000002",
+        "by": "p_alice",
+        "name": "Alice",
+        "text": "Start a team",
+        "at": "2026-09-01T10:00:02.000Z"
+      },
+      {
+        "kind": "reply",
+        "id": "o000000d",
+        "text": "The team finished.",
+        "at": "2026-09-01T10:00:13.000Z"
+      }
+    ]
+  }
+}

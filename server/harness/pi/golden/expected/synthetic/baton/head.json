@@ -1,0 +1,14 @@
+{
+  "header": {
+    "type": "session",
+    "version": 3,
+    "id": "0190a000-0000-7000-8000-p00000000000",
+    "timestamp": "2026-09-01T10:00:00.000Z",
+    "cwd": "/home/user/workspace/golden-org"
+  },
+  "title": "Alice asks about the launch date",
+  "model": "zai/glm-5.3",
+  "overseer": false,
+  "input": true,
+  "profile": null
+}

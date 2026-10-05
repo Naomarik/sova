@@ -1,0 +1,11 @@
+{
+  "zero": 5,
+  "mid": 2,
+  "after": 0,
+  "incremental": {
+    "before": 3,
+    "after": 5,
+    "fullCounts": 1,
+    "fresh": 5
+  }
+}

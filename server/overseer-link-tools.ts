@@ -1,4 +1,4 @@
-import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
+import type { ToolSpec } from "../shared/harness";
 import type { LinkCreate, LinkError, LinkMemberView, MeshLinkView } from "../shared/mesh-links";
 import type { ToolCall } from "./overseer-idea-tools";
 
@@ -15,7 +15,7 @@ import type { ToolCall } from "./overseer-idea-tools";
  */
 
 type Out = { content: { type: "text"; text: string }[]; details: unknown };
-type Tool = ToolDefinition<any, any>;
+type Tool = ToolSpec;
 
 export interface LinkToolDeps {
   act(name: string, run: (params: any, toolCallId: string, call: ToolCall) => Promise<Out>): Tool["execute"];

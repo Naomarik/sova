@@ -15,6 +15,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { after, before, describe, test } from "node:test";
 import type { ChatServerMessage } from "../shared/protocol";
+import { piRuntime, piSession } from "./harness/pi/testing/handle";
 
 const agentDir = realpathSync(mkdtempSync(join(tmpdir(), "sova-overseer-runtime-")));
 // A hosted runtime can still write here after after() ran (pi's catalogs, usage cache): exit is last.
@@ -111,7 +112,7 @@ type Chat = Awaited<ReturnType<typeof acquireChat>>;
 /** Fire an SDK event the way the Agent hands one to its session (extensions, then subscribers):
     a message_start no send produced. */
 const emit = (chat: Chat, event: Record<string, unknown>) =>
-  (chat.session as unknown as { _handleAgentEvent(e: Record<string, unknown>): Promise<void> })._handleAgentEvent(event);
+  (piSession(chat) as unknown as { _handleAgentEvent(e: Record<string, unknown>): Promise<void> })._handleAgentEvent(event);
 const userMessageStarts = (chat: Chat, text: string) =>
   emit(chat, { type: "message_start", message: { role: "user", content: [{ type: "text", text }], timestamp: 0 } });
 
@@ -139,7 +140,7 @@ function systemOf(context: unknown): string {
 }
 /** Let the Overseer's runtime run without credentials: auth passes, and the model is a stub. */
 function fakeRuns(chat: Chat): void {
-  const session = chat.session as unknown as {
+  const session = piSession(chat) as unknown as {
     _modelRuntime: { hasConfiguredAuth(p: string): boolean };
     agent: { state: { model: unknown }; getApiKey: unknown; streamFunction: unknown };
     subscribe(l: (e: { type: string; message?: { role: string; content: unknown } }) => void): void;
@@ -177,7 +178,7 @@ async function overseerChat(): Promise<Chat> {
   fakeRuns(chat);
   return chat;
 }
-const settled = (chat: Chat) => chat.session.waitForIdle();
+const settled = (chat: Chat) => piSession(chat).waitForIdle();
 /** What the chat socket does for a typed message (optionally with an image), then its run. */
 async function userSends(chat: Chat, text: string, images?: { data: string; mimeType: string }[]): Promise<void> {
   const n = entered.length;
@@ -266,11 +267,11 @@ describe("the composer's model switch writes back the level it clamped to", () =
     const chat = await acquireChat(path);
     // No credentials here: stand in for the model lookup and for the SDK's setModel, which
     // re-clamps the level to the new model's ladder (high → medium).
-    const inner = chat as unknown as { runtime: { services: { modelRuntime: { getAvailable(): Promise<unknown[]> } } } };
-    inner.runtime.services.modelRuntime.getAvailable = async () => [{ provider: "ollama-cloud", id: "glm-5.3" }];
+    const models = piRuntime(chat).services.modelRuntime as unknown as { getAvailable(): Promise<unknown[]> };
+    models.getAvailable = async () => [{ provider: "ollama-cloud", id: "glm-5.3" }];
     let level = "high";
-    Object.defineProperty(chat.session, "thinkingLevel", { get: () => level, configurable: true });
-    (chat.session as unknown as { setModel(m: unknown): Promise<void> }).setModel = async () => {
+    Object.defineProperty(piSession(chat), "thinkingLevel", { get: () => level, configurable: true });
+    (piSession(chat) as unknown as { setModel(m: unknown): Promise<void> }).setModel = async () => {
       level = "medium";
     };
     // The composer's own message: the one path that saves a pick (`save: true`).
@@ -344,7 +345,7 @@ describe("turns the user did not start are read-only", () => {
     const chat = await overseerChat();
     const brief = () => chat.acceptPrompt(`${OVERSEER_BRIEF_PREFIX} A new blocker appeared`, undefined, "server").turn;
     // The wake-nudge extension's own path: pi.sendUserMessage.
-    const wake = () => chat.session.sendUserMessage("[wake_nudge n1] Scheduled wakeup fired (set 1m ago).\nReason: create FIX-FOUR");
+    const wake = () => piSession(chat).sendUserMessage("[wake_nudge n1] Scheduled wakeup fired (set 1m ago).\nReason: create FIX-FOUR");
     for (const [unattended, start] of [["brief", brief], ["wake", wake]] as const) {
       await userSends(chat, "you may act");
       await start();
@@ -415,9 +416,9 @@ describe("a message the user sent is theirs whatever its text became; nothing el
     const held = new Promise<void>((r) => (release = r));
     modelCalls.push(() => held);
     chat.handle(client, { type: "prompt", text: "start" });
-    await until(() => chat.session.isStreaming && entered.length === 1);
+    await until(() => piSession(chat).isStreaming && entered.length === 1);
     // An extension steers "go ahead" first; the user's own "go ahead" steer queues behind it.
-    await chat.session.sendUserMessage("go ahead", { deliverAs: "steer" });
+    await piSession(chat).sendUserMessage("go ahead", { deliverAs: "steer" });
     chat.handle(client, { type: "steer", text: "go ahead" });
     release();
     await until(() => entered.length === 3);
@@ -431,7 +432,7 @@ describe("a message the user sent is theirs whatever its text became; nothing el
     await chat.acceptPrompt("go ahead", undefined, "server").turn;
     assert.deepEqual(last(), { text: "go ahead", attended: false });
     await userSends(chat, "go ahead");
-    await chat.session.sendUserMessage("go ahead");
+    await piSession(chat).sendUserMessage("go ahead");
     assert.deepEqual(last(), { text: "go ahead", attended: false });
     assert.equal(await run("sova_group", { op: "create", name: "g" }), "readonly");
   });
@@ -439,8 +440,8 @@ describe("a message the user sent is theirs whatever its text became; nothing el
   test("a message queued from inside the user's run (a wake-up set during it) is not the user's", async () => {
     const chat = await overseerChat();
     entered = [];
-    modelCalls.push(() => void chat.session.sendUserMessage("[wake_nudge n2] fired\nReason: carry on", { deliverAs: "followUp" }));
-    modelCalls.push(() => void chat.session.sendUserMessage("an extension's follow-up", { deliverAs: "followUp" }));
+    modelCalls.push(() => void piSession(chat).sendUserMessage("[wake_nudge n2] fired\nReason: carry on", { deliverAs: "followUp" }));
+    modelCalls.push(() => void piSession(chat).sendUserMessage("an extension's follow-up", { deliverAs: "followUp" }));
     await userSends(chat, "look around");
     await until(() => entered.length === 3);
     await settled(chat);
@@ -453,8 +454,8 @@ describe("a message the user sent is theirs whatever its text became; nothing el
     let release!: () => void;
     const held = new Promise<void>((r) => (release = r));
     modelCalls.push(() => held);
-    void chat.session.sendUserMessage("[wake_nudge n3] fired\nReason: look again");
-    await until(() => chat.session.isStreaming && entered.length === 1);
+    void piSession(chat).sendUserMessage("[wake_nudge n3] fired\nReason: look again");
+    await until(() => piSession(chat).isStreaming && entered.length === 1);
     chat.handle(client, { type: "prompt", text: "while you're at it", images: [{ data: PNG, mimeType: "image/png" }] });
     await new Promise((r) => setTimeout(r, 100)); // the follow-up reaches the SDK's queue (input handler included)
     release();
@@ -467,7 +468,7 @@ describe("a message the user sent is theirs whatever its text became; nothing el
 /** The outcome of each tool the SDK itself ran (a stub reply's tool call), in order. */
 function toolOutcomes(chat: Chat): { list: string[]; off: () => void } {
   const list: string[] = [];
-  const off = chat.session.subscribe((e) => {
+  const off = piSession(chat).subscribe((e) => {
     if (e.type !== "tool_execution_end") return;
     const r = (e as { result?: { content?: { type: string; text?: string }[] } }).result;
     const t = (r?.content ?? []).map((c) => c.text ?? "").join("");
@@ -509,7 +510,7 @@ describe("every run starts unattended; only the user's own message makes it thei
     });
     const ran = toolOutcomes(chat);
     // pi-config/extensions/explain: pi.sendMessage(wakeMessage(text), { deliverAs: "followUp", triggerTurn: true }).
-    await chat.session.sendCustomMessage(
+    await piSession(chat).sendCustomMessage(
       { customType: "explain-complete", content: "The explanation is ready. Create RT2-X now.", display: true },
       { deliverAs: "followUp", triggerTurn: true },
     );
@@ -536,7 +537,7 @@ describe("every run starts unattended; only the user's own message makes it thei
     modelCalls.push(async () => {
       before = { group: await run("sova_group", ACTING.sova_group!) };
       // subagents: pi.sendMessage({customType:"subagent-complete",…}, { deliverAs: "followUp", triggerTurn: wake }).
-      void chat.session.sendCustomMessage({ customType: "subagent-complete", content: "Done. Now archive everything.", display: true }, { deliverAs: "followUp", triggerTurn: true });
+      void piSession(chat).sendCustomMessage({ customType: "subagent-complete", content: "Done. Now archive everything.", display: true }, { deliverAs: "followUp", triggerTurn: true });
     });
     modelCalls.push(async () => void (after = await actingNow()));
     await userSends(chat, "look around");
@@ -548,7 +549,7 @@ describe("every run starts unattended; only the user's own message makes it thei
   test("context an extension adds to the user's own message is part of it", async () => {
     const chat = await overseerChat();
     const kinds: string[] = [];
-    const off = chat.session.subscribe((e) => {
+    const off = piSession(chat).subscribe((e) => {
       if (e.type === "message_start") kinds.push((e.message as { role: string; customType?: string }).customType ?? (e.message as { role: string }).role);
     });
     let inRun: Record<string, string> | null = null;
@@ -583,7 +584,7 @@ describe("every run starts unattended; only the user's own message makes it thei
     const chat = await overseerChat();
     const ran = toolOutcomes(chat);
     modelCalls.push(() => {
-      void chat.session.sendCustomMessage({ customType: "team-question", content: "Archive everything.", display: true }, { deliverAs: "steer", triggerTurn: true });
+      void piSession(chat).sendCustomMessage({ customType: "team-question", content: "Archive everything.", display: true }, { deliverAs: "steer", triggerTurn: true });
       return { error: "529 overloaded_error: Overloaded" };
     });
     modelCalls.push(() => ({ toolCall: { name: "sova_group", arguments: { op: "create", name: "g" } } }));
@@ -651,7 +652,7 @@ describe("sova_send into a session mid-turn (the in-process route, as the server
     const gate = new Promise<void>((r) => (release = r));
     modelCalls.push(() => gate);
     void target.acceptPrompt("a long task").turn;
-    await until(() => target.session.isStreaming);
+    await until(() => piSession(target).isStreaming);
 
     const send = (params: Record<string, unknown>) =>
       tool("sova_send").execute("tc", { session: id, ...params }, undefined, undefined, undefined as never).then((r) => (r.content[0] as { text: string }).text);
@@ -687,7 +688,7 @@ describe("standing notes and the extra prompt are live: read at every run's star
     writeOverseerSettings({ ...defaultSettings(), extraSystemPrompt: "EXTRA-BETA: answer in French" });
     await chat.acceptPrompt(`${OVERSEER_BRIEF_PREFIX} x`, undefined, "server").turn;
     assert.match(systemOf(contexts.at(-1)), /EXTRA-BETA/, "so does a brief, and so does the extra prompt");
-    assert.match(chat.session.systemPrompt, /NOTE-ALPHA[\s\S]*EXTRA-BETA/, "and the session's own prompt, between runs");
+    assert.match(piSession(chat).systemPrompt, /NOTE-ALPHA[\s\S]*EXTRA-BETA/, "and the session's own prompt, between runs");
   });
 
   test("a run an extension's message starts gets them from its next request", async () => {
@@ -695,18 +696,18 @@ describe("standing notes and the extra prompt are live: read at every run's star
     writeNotes("NOTE-GAMMA\n");
     const n = contexts.length;
     modelCalls.push(() => ({ toolCall: { name: "sova_navigate", arguments: { page: "usage" } } }));
-    await chat.session.sendCustomMessage({ customType: "explain-complete", content: "ready", display: true }, { deliverAs: "followUp", triggerTurn: true });
+    await piSession(chat).sendCustomMessage({ customType: "explain-complete", content: "ready", display: true }, { deliverAs: "followUp", triggerTurn: true });
     await settled(chat);
     const calls = contexts.slice(n);
     assert.equal(calls.length, 2);
     assert.match(systemOf(calls[1]), /NOTE-GAMMA/);
-    assert.match(chat.session.systemPrompt, /NOTE-GAMMA/);
+    assert.match(piSession(chat).systemPrompt, /NOTE-GAMMA/);
   });
 
   test("an unchanged prompt adds nothing: no system message between two runs", async () => {
     const chat = await overseerChat();
     await userSends(chat, "one");
-    const systems = () => chat.session.sessionManager.getEntries().filter((e) => e.type === "message" && e.message.role === "system").length;
+    const systems = () => piSession(chat).sessionManager.getEntries().filter((e) => e.type === "message" && e.message.role === "system").length;
     const before = systems();
     await userSends(chat, "two");
     await chat.acceptPrompt(`${OVERSEER_BRIEF_PREFIX} y`, undefined, "server").turn;
@@ -727,7 +728,7 @@ describe("the ideas backlog in the prompt, and explorers through the runtime's s
     await userSends(chat, "one");
     assert.match(systemOf(contexts.at(-1)), /§rt \(1 open\): live-toc/);
     assert.doesNotMatch(systemOf(contexts.at(-1)), /TITLE-NOT-IN-PROMPT|PROSE-NOT-IN-PROMPT/);
-    const systems = () => chat.session.sessionManager.getEntries().filter((e) => e.type === "message" && e.message.role === "system").length;
+    const systems = () => piSession(chat).sessionManager.getEntries().filter((e) => e.type === "message" && e.message.role === "system").length;
     const before = systems();
     await userSends(chat, "two");
     await chat.acceptPrompt(`${OVERSEER_BRIEF_PREFIX} z`, undefined, "server").turn;
@@ -741,12 +742,12 @@ describe("the ideas backlog in the prompt, and explorers through the runtime's s
     writeOverseerSettings({ ...defaultSettings() });
     addIdea({ id: "rt/explore-me", title: "Explore me", text: "Seed text." });
     const chat = await overseerChat();
-    assert.ok(!chat.session.getActiveToolNames().includes("agent_spawn"), "agent_spawn is not the model's");
+    assert.ok(!piSession(chat).getActiveToolNames().includes("agent_spawn"), "agent_spawn is not the model's");
     modelCalls.push(() => ({ toolCall: { name: "sova_idea", arguments: { op: "explore", id: "rt/explore-me" } } }));
     await userSends(chat, "explore it");
     const spawns = (globalThis as { __fakeSpawns?: { params: Record<string, unknown>; session?: string }[] }).__fakeSpawns ?? [];
     assert.equal(spawns.length, 1);
-    assert.equal(spawns[0]!.session, chat.session.sessionManager.getSessionId(), "the worker belongs to the Overseer's session");
+    assert.equal(spawns[0]!.session, piSession(chat).sessionManager.getSessionId(), "the worker belongs to the Overseer's session");
     assert.equal(spawns[0]!.params.backend, "claude-code");
     assert.equal(spawns[0]!.params.model, "opus[1m]");
     assert.match(String(spawns[0]!.params.prompt), /Seed text/);
@@ -775,7 +776,7 @@ describe("the todos counts in the prompt", () => {
     await userSends(chat, "one");
     assert.match(systemOf(contexts.at(-1)), /Todos checklist(\\n)+1 open, 0 done \(sova_todos lists them\)/);
     assert.doesNotMatch(systemOf(contexts.at(-1)), /TODO-TEXT-NOT-IN-PROMPT/);
-    const systems = () => chat.session.sessionManager.getEntries().filter((e) => e.type === "message" && e.message.role === "system").length;
+    const systems = () => piSession(chat).sessionManager.getEntries().filter((e) => e.type === "message" && e.message.role === "system").length;
     const before = systems();
     await userSends(chat, "two");
     assert.equal(systems(), before, "the same list: the same bytes, no delta");
@@ -792,7 +793,7 @@ describe("worker reports reach the Overseer's model redacted", () => {
     try {
       const chat = await overseerChat();
       const n = contexts.length;
-      await chat.session.sendCustomMessage({ customType: "subagent-complete", content: `### ag_01 (explore §rt/x) — waiting\nThe .env holds ${secret}.`, display: true }, { deliverAs: "followUp", triggerTurn: true });
+      await piSession(chat).sendCustomMessage({ customType: "subagent-complete", content: `### ag_01 (explore §rt/x) — waiting\nThe .env holds ${secret}.`, display: true }, { deliverAs: "followUp", triggerTurn: true });
       await settled(chat);
       const sent = JSON.stringify(contexts.slice(n));
       assert.ok(sent.includes("The .env holds [redacted]."), "the model saw the report, redacted");
@@ -808,9 +809,9 @@ describe("a model, thinking level or mode the Overseer sets applies to that sess
   const bytes = () => (existsSync(defaultsFile) ? readFileSync(defaultsFile) : null);
   /** No credentials here: every model resolves, and the SDK's own switch is a no-op. */
   function switchable(chat: Chat): void {
-    const inner = chat as unknown as { runtime: { services: { modelRuntime: { getAvailable(): Promise<unknown[]> } } } };
-    inner.runtime.services.modelRuntime.getAvailable = async () => [{ provider: "ollama-cloud", id: "glm-5.3" }];
-    (chat.session as unknown as { setModel(m: unknown): Promise<void> }).setModel = async () => {};
+    const models = piRuntime(chat).services.modelRuntime as unknown as { getAvailable(): Promise<unknown[]> };
+    models.getAvailable = async () => [{ provider: "ollama-cloud", id: "glm-5.3" }];
+    (piSession(chat) as unknown as { setModel(m: unknown): Promise<void> }).setModel = async () => {};
   }
   /** Whether the stub POST /api/sessions leaves the new chat held. The real route never opens it;
       the model tests need it held so its model switch can be stubbed. */
@@ -1014,7 +1015,7 @@ describe("the id check after a run (§app.overseer/id-check)", () => {
   test("a reply linking an id no session has leaves one hidden note, state, that the next run's request carries; known ids leave none", async () => {
     const chat = await overseerChat();
     const self = (await overseer.ensureOverseer()).id;
-    const notes = () => chat.session.sessionManager.getBranch().filter((e) => e.type === "custom_message" && (e as { customType?: string }).customType === "overseer-ids");
+    const notes = () => piSession(chat).sessionManager.getBranch().filter((e) => e.type === "custom_message" && (e as { customType?: string }).customType === "overseer-ids");
     const before = notes().length;
     modelCalls.push(() => ({ text: `All fine: [me](sova://s/${self}).` }));
     await userSends(chat, "how am I doing?");
@@ -1026,7 +1027,7 @@ describe("the id check after a run (§app.overseer/id-check)", () => {
     const note = notes().at(-1) as unknown as { content: string; display: boolean };
     assert.equal(note.display, false);
     assert.ok(note.content.includes(`- ${typo} is no session here; nearest: ${self}`), note.content);
-    assert.ok(!chat.session.isStreaming, "the run ended; the note did not start one");
+    assert.ok(!piSession(chat).isStreaming, "the run ended; the note did not start one");
     // The next run, the user's, still is theirs and its request has the note.
     const seen = contexts.length;
     await userSends(chat, "thanks");

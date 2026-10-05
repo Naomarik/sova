@@ -1,0 +1,36 @@
+{
+  "vocabulary": [
+    "Root",
+    "Leaf closes the cycle"
+  ],
+  "senders": {
+    "$map": [
+      [
+        "k0000003",
+        "p_alice"
+      ]
+    ]
+  },
+  "sendersNoHolder": {
+    "$map": []
+  },
+  "notes": [
+    {
+      "timestamp": 1788256801000,
+      "text": "Root",
+      "note": "[From someone]"
+    },
+    {
+      "timestamp": 1788256803000,
+      "text": "Leaf closes the cycle",
+      "note": "[From Alice]"
+    }
+  ],
+  "counted": 2,
+  "model": {
+    "model": null,
+    "thinking": null
+  },
+  "photos": 0,
+  "modelRef": "zai/glm-5.3"
+}

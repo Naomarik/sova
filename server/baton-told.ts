@@ -1,7 +1,5 @@
-import { realpathSync } from "node:fs";
-import { basename, dirname, join } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
 import type { BatonSession, BatonStarted, BatonStartedFor, BatonStarter, BatonTold, BatonToldTool } from "../shared/baton";
+import type { HEntry } from "../shared/harness";
 import { batonById, batonSid, sessionPathOf } from "./baton";
 import { activeBatonTools, batonTools, BATON_TOOLS, renderBatonPrompt } from "./baton-loadout";
 import { photosFor } from "./baton-images";
@@ -13,7 +11,8 @@ import { readManifest } from "./overseer-ideas";
 import { readOverseerState } from "./overseer-store";
 import { readTodos } from "./overseer-todos";
 import { projectOverseerPaths, readPoState } from "./project-overseer-store";
-import { readActiveBranch, type Entry } from "./transcript";
+import { readBranch } from "./harness/pi/reader";
+import { piReplay, replaySystem, type Replay } from "./harness/pi/system-replay";
 
 /**
  * Who started a gathering session, and what it is told (§app.baton/told): the strip's Started by line
@@ -28,7 +27,6 @@ import { readActiveBranch, type Entry } from "./transcript";
 
 const str = (v: unknown): string => (typeof v === "string" ? v : "");
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
-const isoOf = (ms: unknown): string => (typeof ms === "number" && Number.isFinite(ms) ? new Date(ms).toISOString() : "");
 
 /** Who started it, as its statechart data records it; a session from before `started` by its owner and startedVia. Pure. */
 export function starterOf(data: Record<string, unknown>): { who: BatonStarter; overseerId?: string; why?: string } {
@@ -112,35 +110,7 @@ function startedForOf(row: BatonSession, data: Record<string, unknown>): BatonSt
   return undefined;
 }
 
-// ---- the prompt, replayed as pi replays it --------------------------------------------------------------
-
-/** A system entry's message, as pi 0.86+ writes it. */
-export interface SystemMessage {
-  role: "system";
-  content: unknown;
-  sections?: Record<string, string | null>;
-  toolsAdded?: { name: string; description?: string; parameters?: unknown }[];
-  toolsRemoved?: { name: string }[];
-  timestamp?: number;
-}
-
-/** pi-ai's transcript replay (the functions pi itself replays system entries with). */
-export interface Replay {
-  getCurrentSystemPrompt(messages: readonly { role: string }[]): string;
-  getCurrentTools(messages: readonly { role: string }[]): { name: string; description?: string; parameters?: unknown }[];
-}
-
-let replayLoad: Promise<Replay> | null = null;
-/** pi-ai, resolved beside the pi package's real path (pnpm keeps it there, not in Sova's own dependencies). */
-export function piReplay(): Promise<Replay> {
-  replayLoad ??= (async () => {
-    const pi = realpathSync(fileURLToPath(import.meta.resolve("@earendil-works/pi-coding-agent")));
-    let dir = dirname(pi);
-    while (basename(dir) !== "pi-coding-agent" && dirname(dir) !== dir) dir = dirname(dir);
-    return (await import(pathToFileURL(join(dirname(dir), "pi-ai", "dist", "utils", "transcript.js")).href)) as Replay;
-  })();
-  return replayLoad;
-}
+// ---- the prompt, replayed as pi replays it (server/harness/pi/system-replay.ts) -------------------------
 
 export interface RecordedPrompt {
   /** The conversation's prompt as last recorded before any wrap-up; null when the file has none yet. */
@@ -162,20 +132,9 @@ const toolOf = (t: { name: string; description?: string; parameters?: unknown })
  * entry that adds its tool: the conversation's prompt and tools are those before it, and the wrap-up's own
  * prompt is the replay through it. Pure, given the replay.
  */
-export function recordedPrompt(branch: readonly Entry[], replay: Replay): RecordedPrompt {
-  const system = branch
-    .filter((e) => e.type === "message" && isObj(e.message) && e.message.role === "system")
-    .map((e) => ({ message: e.message as SystemMessage, at: str(e.timestamp) }));
-  const cut = system.findIndex((s) => (s.message.toolsAdded ?? []).some((t) => t.name === WRAPUP_TOOL));
-  const before = cut === -1 ? system : system.slice(0, cut);
-  const changed = before.filter((s) => Object.keys(s.message.sections ?? {}).length > 0 || str(s.message.content) !== "");
-  const last = changed.at(-1);
-  const messages = before.map((s) => s.message);
-  return {
-    prompt: before.length ? { text: replay.getCurrentSystemPrompt(messages), at: last?.at || before.at(-1)!.at || isoOf(before.at(-1)!.message.timestamp), changes: changed.length } : null,
-    ...(cut === -1 ? {} : { wrapup: { text: replay.getCurrentSystemPrompt(system.map((s) => s.message)), at: system[cut]!.at || isoOf(system[cut]!.message.timestamp) } }),
-    tools: replay.getCurrentTools(messages).map(toolOf),
-  };
+export function recordedPrompt(branch: readonly HEntry[], replay: Replay): RecordedPrompt {
+  const r = replaySystem(branch, replay, WRAPUP_TOOL);
+  return { prompt: r.prompt, ...(r.through ? { wrapup: r.through } : {}), tools: r.tools.map(toolOf) };
 }
 
 /** The loadout's tools it doesn't have now, and when it would. Pure. */
@@ -185,12 +144,12 @@ export function inactiveTools(has: readonly string[]): { name: string; when: str
 }
 
 /** The model and thinking level the branch last recorded, else null. Pure. */
-export function recordedModel(branch: readonly Entry[]): { model: string | null; thinking: string | null } {
+export function recordedModel(branch: readonly HEntry[]): { model: string | null; thinking: string | null } {
   let model: string | null = null;
   let thinking: string | null = null;
-  for (const e of branch) {
-    if (e.type === "model_change" && e.provider && e.modelId) model = `${e.provider}/${e.modelId}`;
-    if (e.type === "thinking_level_change" && typeof e.thinkingLevel === "string") thinking = e.thinkingLevel;
+  for (const h of branch) {
+    if (h.kind === "setting" && h.what === "model" && h.provider && h.modelId) model = `${h.provider}/${h.modelId}`;
+    if (h.kind === "setting" && h.what === "thinking" && typeof h.level === "string") thinking = h.level;
   }
   return { model, thinking };
 }
@@ -201,9 +160,9 @@ export async function toldOf(sessionId: string): Promise<BatonTold | null> {
   if (!hit) return null;
   const { row, dir } = hit;
   const data = batonData(row) ?? {};
-  let branch: Entry[] = [];
+  let branch: HEntry[] = [];
   try {
-    branch = await readActiveBranch(sessionPathOf(dir, row));
+    branch = await readBranch(sessionPathOf(dir, row));
   } catch {
     branch = []; // a session the statechart spawned before its file exists
   }
@@ -215,7 +174,7 @@ export async function toldOf(sessionId: string): Promise<BatonTold | null> {
     // Never run: what the next reply would get, rendered now (the only render; labelled a preview).
     prompt = { kind: "preview", text: renderBatonPrompt(sessionId, undefined, !!(await photosFor(row, dir, undefined, branch).catch(() => null))) };
     const active = new Set(activeBatonTools(sessionId));
-    tools = [...batonTools(sessionId, () => {}), readLinkTool(sessionId)].filter((t) => active.has(t.name)).map(toolOf);
+    tools = [...batonTools(sessionId, { append: () => "" }), readLinkTool(sessionId)].filter((t) => active.has(t.name)).map(toolOf);
   }
   const { model, thinking } = recordedModel(branch);
   const startedFor = startedForOf(row, data);

@@ -1,0 +1,10 @@
+{
+  "prompt": {
+    "prompt": null,
+    "tools": []
+  },
+  "model": {
+    "model": "openai/gpt-5.5",
+    "thinking": null
+  }
+}

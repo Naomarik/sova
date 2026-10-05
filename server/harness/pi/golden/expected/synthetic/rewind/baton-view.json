@@ -1,0 +1,71 @@
+{
+  "operator": {
+    "view": {
+      "publicTitle": "Golden launch",
+      "state": "active",
+      "holder": "Alice",
+      "items": [
+        {
+          "kind": "message",
+          "id": "d0000002",
+          "by": "p_alice",
+          "name": "Alice",
+          "text": "First question",
+          "at": "2026-09-01T10:00:02.000Z"
+        },
+        {
+          "kind": "reply",
+          "id": "d0000003",
+          "text": "First answer",
+          "at": "2026-09-01T10:00:03.000Z"
+        }
+      ]
+    },
+    "photos": 0
+  },
+  "bob": {
+    "view": {
+      "publicTitle": "Golden launch",
+      "state": "active",
+      "holder": "Alice",
+      "items": [
+        {
+          "kind": "message",
+          "id": "d0000002",
+          "by": "p_alice",
+          "name": "Alice",
+          "text": "First question",
+          "at": "2026-09-01T10:00:02.000Z"
+        },
+        {
+          "kind": "reply",
+          "id": "d0000003",
+          "text": "First answer",
+          "at": "2026-09-01T10:00:03.000Z"
+        }
+      ]
+    },
+    "photos": 0
+  },
+  "untilOffer": {
+    "publicTitle": "Golden launch",
+    "state": "active",
+    "holder": null,
+    "items": [
+      {
+        "kind": "message",
+        "id": "d0000002",
+        "by": "p_alice",
+        "name": "Alice",
+        "text": "First question",
+        "at": "2026-09-01T10:00:02.000Z"
+      },
+      {
+        "kind": "reply",
+        "id": "d0000003",
+        "text": "First answer",
+        "at": "2026-09-01T10:00:03.000Z"
+      }
+    ]
+  }
+}

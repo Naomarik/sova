@@ -1,0 +1,74 @@
+{
+  "operator": {
+    "view": {
+      "publicTitle": "Golden launch",
+      "state": "active",
+      "holder": "Alice",
+      "items": [
+        {
+          "kind": "message",
+          "id": "00000004",
+          "by": "p_alice",
+          "name": "Alice",
+          "text": "Write a lot",
+          "at": "2026-09-03T08:00:00.012Z"
+        },
+        {
+          "kind": "reply",
+          "id": "00000005",
+          "text": "This reply is long enough to be cut off. More words keep coming. More words keep coming. More words keep coming. More words keep coming. More words keep coming. More words keep",
+          "cutOff": true,
+          "at": "2026-09-03T08:00:00.014Z"
+        }
+      ]
+    },
+    "photos": 0
+  },
+  "bob": {
+    "view": {
+      "publicTitle": "Golden launch",
+      "state": "active",
+      "holder": "Alice",
+      "items": [
+        {
+          "kind": "message",
+          "id": "00000004",
+          "by": "p_alice",
+          "name": "Alice",
+          "text": "Write a lot",
+          "at": "2026-09-03T08:00:00.012Z"
+        },
+        {
+          "kind": "reply",
+          "id": "00000005",
+          "text": "This reply is long enough to be cut off. More words keep coming. More words keep coming. More words keep coming. More words keep coming. More words keep coming. More words keep",
+          "cutOff": true,
+          "at": "2026-09-03T08:00:00.014Z"
+        }
+      ]
+    },
+    "photos": 0
+  },
+  "untilOffer": {
+    "publicTitle": "Golden launch",
+    "state": "active",
+    "holder": null,
+    "items": [
+      {
+        "kind": "message",
+        "id": "00000004",
+        "by": "p_alice",
+        "name": "Alice",
+        "text": "Write a lot",
+        "at": "2026-09-03T08:00:00.012Z"
+      },
+      {
+        "kind": "reply",
+        "id": "00000005",
+        "text": "This reply is long enough to be cut off. More words keep coming. More words keep coming. More words keep coming. More words keep coming. More words keep coming. More words keep",
+        "cutOff": true,
+        "at": "2026-09-03T08:00:00.014Z"
+      }
+    ]
+  }
+}

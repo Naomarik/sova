@@ -1,0 +1,316 @@
+{
+  "shown": [
+    {
+      "e": {
+        "type": "message",
+        "message": {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "Alice asks about the launch date"
+            }
+          ],
+          "timestamp": 1788256803000
+        },
+        "id": "p0000003",
+        "parentId": "p0000002",
+        "timestamp": "2026-09-01T10:00:03.000Z"
+      },
+      "role": "user",
+      "text": "Alice asks about the launch date",
+      "blocks": []
+    },
+    {
+      "e": {
+        "type": "message",
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "The launch is planned for Monday."
+            }
+          ],
+          "api": "openai-completions",
+          "provider": "zai",
+          "model": "glm-5.3",
+          "usage": {
+            "input": 1200,
+            "output": 80,
+            "cacheRead": 400,
+            "cacheWrite": 0,
+            "totalTokens": 1680,
+            "cost": {
+              "input": 0.001,
+              "output": 0.002,
+              "cacheRead": 0.0001,
+              "cacheWrite": 0,
+              "total": 0.0031
+            }
+          },
+          "stopReason": "stop",
+          "timestamp": 1788256805000
+        },
+        "id": "p0000005",
+        "parentId": "p0000004",
+        "timestamp": "2026-09-01T10:00:05.000Z"
+      },
+      "role": "assistant",
+      "text": "The launch is planned for Monday.",
+      "blocks": []
+    },
+    {
+      "e": {
+        "type": "message",
+        "message": {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "Bob confirms Monday, photo attached"
+            },
+            {
+              "type": "image",
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
+              "mimeType": "image/png"
+            }
+          ],
+          "timestamp": 1788256807000
+        },
+        "id": "p0000007",
+        "parentId": "p0000006",
+        "timestamp": "2026-09-01T10:00:07.000Z"
+      },
+      "role": "user",
+      "text": "Bob confirms Monday, photo attached",
+      "blocks": [
+        {
+          "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
+          "mime": "image/png"
+        }
+      ]
+    },
+    {
+      "e": {
+        "type": "message",
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "Thanks Bob, Monday it is."
+            }
+          ],
+          "api": "openai-completions",
+          "provider": "zai",
+          "model": "glm-5.3",
+          "usage": {
+            "input": 1200,
+            "output": 80,
+            "cacheRead": 400,
+            "cacheWrite": 0,
+            "totalTokens": 1680,
+            "cost": {
+              "input": 0.001,
+              "output": 0.002,
+              "cacheRead": 0.0001,
+              "cacheWrite": 0,
+              "total": 0.0031
+            }
+          },
+          "stopReason": "stop",
+          "timestamp": 1788256809000
+        },
+        "id": "p0000009",
+        "parentId": "p0000008",
+        "timestamp": "2026-09-01T10:00:09.000Z"
+      },
+      "role": "assistant",
+      "text": "Thanks Bob, Monday it is.",
+      "blocks": []
+    },
+    {
+      "e": {
+        "type": "message",
+        "message": {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "Carol will write the notes"
+            }
+          ],
+          "timestamp": 1788256813000
+        },
+        "id": "p000000d",
+        "parentId": "p000000c",
+        "timestamp": "2026-09-01T10:00:13.000Z"
+      },
+      "role": "user",
+      "text": "Carol will write the notes",
+      "blocks": []
+    },
+    {
+      "e": {
+        "type": "message",
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "Great, Carol."
+            }
+          ],
+          "api": "openai-completions",
+          "provider": "zai",
+          "model": "glm-5.3",
+          "usage": {
+            "input": 1200,
+            "output": 80,
+            "cacheRead": 400,
+            "cacheWrite": 0,
+            "totalTokens": 1680,
+            "cost": {
+              "input": 0.001,
+              "output": 0.002,
+              "cacheRead": 0.0001,
+              "cacheWrite": 0,
+              "total": 0.0031
+            }
+          },
+          "stopReason": "stop",
+          "timestamp": 1788256815000
+        },
+        "id": "p000000f",
+        "parentId": "p000000e",
+        "timestamp": "2026-09-01T10:00:15.000Z"
+      },
+      "role": "assistant",
+      "text": "Great, Carol.",
+      "blocks": []
+    },
+    {
+      "e": {
+        "type": "message",
+        "message": {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "Operator wrap-up prompt"
+            }
+          ],
+          "timestamp": 1788256819000
+        },
+        "id": "p0000013",
+        "parentId": "p0000012",
+        "timestamp": "2026-09-01T10:00:19.000Z"
+      },
+      "role": "user",
+      "text": "Operator wrap-up prompt",
+      "blocks": []
+    },
+    {
+      "e": {
+        "type": "message",
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "Wrap-up: updated two profiles."
+            }
+          ],
+          "api": "openai-completions",
+          "provider": "zai",
+          "model": "glm-5.3",
+          "usage": {
+            "input": 1200,
+            "output": 80,
+            "cacheRead": 400,
+            "cacheWrite": 0,
+            "totalTokens": 1680,
+            "cost": {
+              "input": 0.001,
+              "output": 0.002,
+              "cacheRead": 0.0001,
+              "cacheWrite": 0,
+              "total": 0.0031
+            }
+          },
+          "stopReason": "stop",
+          "timestamp": 1788256820000
+        },
+        "id": "p0000014",
+        "parentId": "p0000013",
+        "timestamp": "2026-09-01T10:00:20.000Z"
+      },
+      "role": "assistant",
+      "text": "Wrap-up: updated two profiles.",
+      "blocks": []
+    },
+    {
+      "e": {
+        "type": "message",
+        "message": {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "Message after the wrap-up"
+            }
+          ],
+          "timestamp": 1788256822000
+        },
+        "id": "p0000016",
+        "parentId": "p0000015",
+        "timestamp": "2026-09-01T10:00:22.000Z"
+      },
+      "role": "user",
+      "text": "Message after the wrap-up",
+      "blocks": []
+    }
+  ],
+  "branchTo": {
+    "leaf": [
+      "p0000001",
+      "p0000002",
+      "p0000003",
+      "p0000004",
+      "p0000005",
+      "p0000006",
+      "p0000007",
+      "p0000008",
+      "p0000009",
+      "p000000a",
+      "p000000b",
+      "p000000c",
+      "p000000d",
+      "p000000e",
+      "p000000f",
+      "p0000010",
+      "p0000011",
+      "p0000012",
+      "p0000013",
+      "p0000014",
+      "p0000015",
+      "p0000016"
+    ],
+    "mid": [
+      "p0000001",
+      "p0000002",
+      "p0000003",
+      "p0000004",
+      "p0000005",
+      "p0000006",
+      "p0000007",
+      "p0000008",
+      "p0000009",
+      "p000000a",
+      "p000000b",
+      "p000000c"
+    ],
+    "missing": null
+  }
+}

@@ -13,6 +13,7 @@ process.env.PI_CODING_AGENT_DIR = agentDir;
 const { runNote, briefedBlockers, CLEARED_WINDOW_MS } = await import("./overseer-run-note");
 const { briefText, runNoteMessage } = await import("./overseer");
 const { CARDS_NOTE_MESSAGE } = await import("../shared/overseer-card");
+const { historyOf } = await import("./harness/pi/reader");
 const { disposeAllChats } = await import("./chat-manager");
 type SessionNow = import("./overseer-run-note").SessionNow;
 
@@ -45,7 +46,7 @@ describe("the run note (§app.overseer/run-note)", () => {
 
   test("briefText's lines parse back to the blockers they name", () => {
     const at = NOW.getTime() - 10 * min;
-    const got = briefedBlockers([brief(at, [{ kind: "open-questions", id: "s-1", title: "Port [the] store" }, { kind: "needs-input", id: "s-2", title: "B" }])]);
+    const got = briefedBlockers(historyOf([brief(at, [{ kind: "open-questions", id: "s-1", title: "Port [the] store" }, { kind: "needs-input", id: "s-2", title: "B" }])]));
     assert.deepEqual(got, [
       { key: "s-1:open-questions", id: "s-1", kind: "open-questions", at },
       { key: "s-2:needs-input", id: "s-2", kind: "needs-input", at },
@@ -71,7 +72,7 @@ describe("the run note (§app.overseer/run-note)", () => {
       arch: live({ name: "Archived one", archived: true }),
     };
     const input = { now: NOW, act: { keys: new Set(["still:needs-input"]), complete: true }, session: (id: string) => sessions[id] ?? null };
-    const n = runNote({ ...input, branch });
+    const n = runNote({ ...input, branch: historyOf(branch) });
     assert.match(n.content, /\n- open-questions: \[Merged one\]\(sova:\/\/s\/merged\) — merged \(briefed 30m ago\)/);
     assert.match(n.content, /\n- open-questions: \[Answered one\]\(sova:\/\/s\/answered\) — its questions were answered in the session/);
     assert.match(n.content, /\n- error: \[gone\]\(sova:\/\/s\/gone\) — the session is gone/);
@@ -81,11 +82,11 @@ describe("the run note (§app.overseer/run-note)", () => {
 
     // The note is persisted with its details: the next run lists none of them again.
     branch.push({ type: "custom_message", customType: CARDS_NOTE_MESSAGE, content: n.content, display: false, details: n.details });
-    const again = runNote({ ...input, branch });
+    const again = runNote({ ...input, branch: historyOf(branch) });
     assert.ok(!again.content.includes("[cleared]"), again.content);
     // A later brief names one again, and it clears again: listed again.
     branch.push(brief(NOW.getTime() - 5 * min, [{ kind: "open-questions", id: "answered", title: "Q" }]));
-    const third = runNote({ ...input, branch });
+    const third = runNote({ ...input, branch: historyOf(branch) });
     assert.match(third.content, /\[Answered one\]\(sova:\/\/s\/answered\) — its questions were answered in the session \(briefed 5m ago\)/);
     assert.equal(third.details.cleared?.length, 1);
   });
@@ -95,7 +96,7 @@ describe("the run note (§app.overseer/run-note)", () => {
     const recent = NOW.getTime() - min;
     const branch = [brief(old, [{ kind: "error", id: "old", title: "O" }]), brief(recent, [{ kind: "error", id: "unknown", title: "U" }, { kind: "error", id: "arch", title: "R" }])];
     const session = (id: string) => (id === "arch" ? live({ archived: true }) : live());
-    const n = runNote({ now: NOW, branch, act: { keys: new Set(), complete: false }, session });
+    const n = runNote({ now: NOW, branch: historyOf(branch), act: { keys: new Set(), complete: false }, session });
     const cleared = part(n.content, "[cleared]");
     assert.ok(!cleared.includes("sova://s/old"), "outside the window");
     assert.ok(!n.content.includes("sova://s/old"), "nor in play: outside the window");
@@ -125,7 +126,7 @@ describe("the run note (§app.overseer/run-note)", () => {
       before: live({ name: "Before", merged: raised - min }),
       arch: live({ name: "Arch", archived: true }),
     };
-    const n = runNote({ now: NOW, branch, act: { keys: new Set(), complete: true }, session: (id) => sessions[id] ?? null, cardsText: "[cards] Open cards…" });
+    const n = runNote({ now: NOW, branch: historyOf(branch), act: { keys: new Set(), complete: true }, session: (id) => sessions[id] ?? null, cardsText: "[cards] Open cards…" });
     assert.match(n.content, /\n- c_4 item 1: \[After\]\(sova:\/\/s\/after\) — merged 20m ago, after the card was raised/);
     assert.match(n.content, /\n- c_4 item 3: \[Arch\]\(sova:\/\/s\/arch\) — archived/);
     assert.ok(!n.content.includes("sova://s/before"), n.content);
@@ -160,8 +161,8 @@ describe("the sessions in play (§app.overseer/sessions-in-play)", async () => {
       result("sova_list_sessions", now - 5 * min, { id: "listed" }),
       brief(now - 10 * min, [{ kind: "open-questions", id: "briefed", title: "B" }, { kind: "error", id: "sent", title: "S" }]),
     ];
-    assert.deepEqual(promptedOnBranch(branch).map((t) => t.id), ["made", "sent", "old"]);
-    const play = sessionsInPlay(branch, now, [{ id: "here", at: now - 1 * min }, { id: "made", at: now - 45 * min }]);
+    assert.deepEqual(promptedOnBranch(historyOf(branch)).map((t) => t.id), ["made", "sent", "old"]);
+    const play = sessionsInPlay(historyOf(branch), now, [{ id: "here", at: now - 1 * min }, { id: "made", at: now - 45 * min }]);
     assert.deepEqual(play, [
       { id: "here", prompted: now - min },
       { id: "sent", prompted: now - 40 * min, brief: { kind: "error", at: now - 10 * min } },
@@ -199,7 +200,7 @@ describe("the sessions in play (§app.overseer/sessions-in-play)", async () => {
   test("after a compaction the note carries them even with no card open; with neither, nothing is written", async () => {
     const { compactNoteMessage } = await import("./overseer");
     assert.equal(await compactNoteMessage([], now), undefined);
-    const note = (await compactNoteMessage([result("sova_send", now - 2 * min, { id: "no-such-session" })], now))!;
+    const note = (await compactNoteMessage(historyOf([result("sova_send", now - 2 * min, { id: "no-such-session" })]), now))!;
     assert.equal(note.customType, CARDS_NOTE_MESSAGE);
     assert.equal(note.display, false);
     assert.match(note.content, /^\[sessions in play\] /);
@@ -210,7 +211,7 @@ describe("the sessions in play (§app.overseer/sessions-in-play)", async () => {
     const branch = [result("sova_send", now - 3 * min, { id: "sent" })];
     const n = runNote({
       now: NOW,
-      branch,
+      branch: historyOf(branch),
       act: { keys: new Set(), complete: true },
       session: (id) => (id === "sent" ? live({ name: "Secret TOKEN-x", state: "idle" }) : null),
       cardsText: "[cards] none",

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
 import { isUnreadReply, UnreadReplies } from "./unread-replies";
-import { readActiveBranch } from "./transcript";
+import { readBranch } from "./harness/pi/reader";
 
 const dir = mkdtempSync(join(tmpdir(), "unread-replies-"));
 after(() => rmSync(dir, { recursive: true, force: true }));
@@ -22,7 +22,7 @@ function entry(parent: string | null, kind: "reply" | "tool" | "user", t: number
 }
 /** The count a full read of the branch gives: what the incremental one must equal. */
 async function fullCount(path: string, since: number) {
-  return (await readActiveBranch(path)).filter((e) => isUnreadReply(e, since)).length;
+  return (await readBranch(path)).filter((h) => isUnreadReply(h, since)).length;
 }
 /** Appends `k` turns (user, tool step, reply) after `leaf`; returns the new leaf. */
 function turns(path: string, leaf: string, k: number, t0: number): string {

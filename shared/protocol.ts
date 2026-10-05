@@ -10,6 +10,7 @@ import type { TopicBatchInfo } from "./topic-message";
 import type { LinkedAgentInfo } from "./mesh-links";
 import type { Permit } from "./overseer-grants";
 import type { OverseerCard } from "./overseer-card";
+import type { RowFacts, SovaEvent } from "./harness-wire";
 export type { WakeInfo };
 
 export interface SessionSummary {
@@ -378,8 +379,13 @@ export interface TranscriptItem {
   align?: AlignRowInfo;
   /** The entry's timestamp (ISO), on every row whose entry has one. */
   at?: string;
-  /** The entry's facts, on its first row only (EntryMeta). */
+  /** The entry's facts, on its first row only (EntryMeta). Absent on rows to a consumer that asked
+      for wire 2, which gets `facts` instead. */
   meta?: EntryMeta;
+  /** Wire 2 only (WireVersion): the entry's facts in the harness contract's words,
+      on its first row only, in place of `meta`; `{}` when none applies. A row with neither reads
+      `rowFacts` (shared/wire-v1.ts), which maps a v1 row's `meta`. */
+  facts?: RowFacts;
   /** tool-call and tool-result rows. A lazy tool-result row carries no `text`. */
   tool?: ToolRowInfo;
   /** kind "unknown" only: the whole entry, for the card that shows it as JSON (signatures removed). */
@@ -1659,7 +1665,8 @@ export interface SandboxApplyResult {
 /** WS /ws/chat?path= — full-duplex chat for webapp-owned sessions. `&tail=1` asks for the transcript
     newest rows first (`hello.older`, then `history`); `&tail=rest` for the newest rows alone, the
     older ones fetched over REST when wanted (`hello.older` and `olderSummary`, no `history`; see
-    TranscriptRows). Without either, every message is as it always was. */
+    TranscriptRows). Without either, every message is as it always was. `&wire=2`: events and rows
+    on wire 2 (WireVersion). */
 export type ChatClientMessage =
   /** `clientId` is the SENDER'S OWN id for this send, chosen before the round trip. When the send
       is held in the outgoing queue it becomes that item's `QueueItem.id`, so the client can key
@@ -1855,6 +1862,34 @@ export interface SlashCommand {
   path?: string;
 }
 
+/**
+ * Which wire a consumer reads. It asks for 2 with `wire=2` (WIRE_PARAM; `v` is
+ * taken, the visit's tab) on WS /ws/chat, WS /ws/watch and GET /api/transcript; anything else, the
+ * parameter absent included, is 1, today's frames and rows byte for byte. On wire 2 every live event
+ * is a V2EventFrame in place of a V1EventFrame, and every row (in `hello`, `snapshot`, `append`,
+ * `history` and the transcript routes) carries `facts` in place of `meta`; nothing else differs. A
+ * server that predates it ignores the parameter, so a wire-2 client still reads v1 (shared/wire-v1.ts
+ * `fromV1`, `rowFacts`).
+ */
+export type WireVersion = 1 | 2;
+export const WIRE_PARAM = "wire";
+
+/** A live event on wire 1: pi's event, passed through (see ChatServerMessage). */
+export interface V1EventFrame {
+  type: "event";
+  event: unknown;
+  entryId?: string;
+}
+
+/** A live event on wire 2, to a consumer that asked: one of the contract's events, the entry a
+    message was written as inside its `message.end`. Sent in place of a V1EventFrame: one frame per
+    event `fromV1` (shared/wire-v1.ts) maps it to, so a v1 event that maps to none sends nothing. */
+export interface V2EventFrame {
+  type: "event";
+  v: 2;
+  event: SovaEvent;
+}
+
 export type ChatServerMessage =
   /** First message after connect: current transcript + live state + context fill.
       thinking = the session's active thinking level (one of off…max), clamped to its model. */
@@ -1876,8 +1911,9 @@ export type ChatServerMessage =
       tool_execution_start/update/end, turn_start/end, agent_start/end, agent_settled, ...
       `entryId` (optional, additive): on a `message_end`, the id of the entry the SDK wrote the
       message as, so a live row knows the transcript row it becomes (§chat.transcript/rendering,
-      "Switching back"). Absent on every other event, and when the message wasn't written. */
-  | { type: "event"; event: unknown; entryId?: string }
+      "Switching back"). Absent on every other event, and when the message wasn't written.
+      Wire 1; a client that asked for wire 2 gets V2EventFrames in its place (WireVersion). */
+  | V1EventFrame
   /** Extension dialog bridge (select/confirm/input). Optional in MVP. */
   | { type: "model"; model: string }    // active model changed (model_change passthrough events also exist)
   /** Active thinking level after a change: sent with hello, after set_thinking, and after a
@@ -2009,7 +2045,7 @@ export type ChatServerMessage =
 /** WS /ws/watch?path= — read-only live view. Safe for sessions a TUI currently owns. Never writes.
     `&tail=1` cuts the snapshot as `/ws/chat` cuts its hello (`older`, then `history`); `&tail=rest`
     likewise with no `history` (`older`, `olderSummary`, `prefetch`; see TranscriptRows).
-    Also accepts `?claude=<uuid>` instead of `?path=`: a claude-code worker's own Claude Code
+    `&wire=2`: rows on wire 2 (WireVersion). Also accepts `?claude=<uuid>` instead of `?path=`: a claude-code worker's own Claude Code
     session (WorkerInfo.sessionId), found under ~/.claude/projects and normalized into the same
     rows. Same `snapshot`/`append`/`error` messages; an unknown id closes with 4404 like a bad path.
     What a transcript spent is never sent here: it is the usage ledger's (shared/usage/wire.ts). */
@@ -2065,6 +2101,7 @@ export interface OlderSummary {
  * longer on the active branch (a rewind) answers 409 `{ code: "moved" }`, as does a `before` row
  * that isn't in the list; the client then starts again from a fresh tail. A `from`/`explain`
  * target not on the branch answers 404 `{ code: "missing" }`.
+ * `wire=2`, with any of the above: rows on wire 2 (WireVersion).
  */
 export interface TranscriptRows {
   items: TranscriptItem[];

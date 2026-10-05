@@ -1,0 +1,16 @@
+[
+  "{\"type\":\"event\",\"v\":2,\"event\":{\"type\":\"run.start\"}}",
+  "{\"type\":\"event\",\"v\":2,\"event\":{\"type\":\"message.start\",\"role\":\"user\",\"text\":\"Can you think first?\",\"images\":[]}}",
+  "{\"type\":\"event\",\"v\":2,\"event\":{\"type\":\"message.end\",\"role\":\"user\",\"entryId\":\"00000004\"}}",
+  "{\"type\":\"event\",\"v\":2,\"event\":{\"type\":\"message.start\",\"role\":\"assistant\",\"model\":\"faux/faux-1\",\"parts\":[]}}",
+  "{\"type\":\"event\",\"v\":2,\"event\":{\"type\":\"part.start\",\"index\":0,\"kind\":\"thinking\"}}",
+  "{\"type\":\"event\",\"v\":2,\"event\":{\"type\":\"part.delta\",\"index\":0,\"kind\":\"thinking\",\"delta\":\"The user wants a\"}}",
+  "{\"type\":\"event\",\"v\":2,\"event\":{\"type\":\"part.delta\",\"index\":0,\"kind\":\"thinking\",\"delta\":\" short answer.\"}}",
+  "{\"type\":\"event\",\"v\":2,\"event\":{\"type\":\"part.end\",\"index\":0,\"kind\":\"thinking\",\"text\":\"The user wants a short answer.\"}}",
+  "{\"type\":\"event\",\"v\":2,\"event\":{\"type\":\"part.start\",\"index\":1,\"kind\":\"text\"}}",
+  "{\"type\":\"event\",\"v\":2,\"event\":{\"type\":\"part.delta\",\"index\":1,\"kind\":\"text\",\"delta\":\"Short answer: ye\"}}",
+  "{\"type\":\"event\",\"v\":2,\"event\":{\"type\":\"part.delta\",\"index\":1,\"kind\":\"text\",\"delta\":\"s.\"}}",
+  "{\"type\":\"event\",\"v\":2,\"event\":{\"type\":\"part.end\",\"index\":1,\"kind\":\"text\",\"text\":\"Short answer: yes.\"}}",
+  "{\"type\":\"event\",\"v\":2,\"event\":{\"type\":\"message.end\",\"role\":\"assistant\",\"entryId\":\"00000005\",\"model\":\"faux/faux-1\",\"parts\":[{\"kind\":\"thinking\",\"text\":\"The user wants a short answer.\"},{\"kind\":\"text\",\"text\":\"Short answer: yes.\"}],\"stop\":\"ok\",\"contextTokens\":2746}}",
+  "{\"type\":\"event\",\"v\":2,\"event\":{\"type\":\"run.settled\"}}"
+]

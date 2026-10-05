@@ -2,7 +2,7 @@
 // gets a `hello`/`snapshot` holding only the transcript's newest whole entries, with `older`
 // saying how many rows came before them, and then those older rows as `history` messages of about
 // HISTORY_CHUNK_CHARS each, newest chunk first, sent in the same synchronous step so no other
-// message can come between. The cut is made on the list `normalizeEntries` already produced, so
+// message can come between. The cut is made on the list the row builder already produced, so
 // the tail and the chunks, put back together, are exactly the rows a whole hello carries: every
 // whole-branch rule (the newest align doc, the newest explain run, the running model) has run.
 // Pure, for tsx --test.

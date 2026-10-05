@@ -1,0 +1,87 @@
+{
+  "shown": [
+    {
+      "e": {
+        "type": "message",
+        "message": {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "Do the thing"
+            }
+          ],
+          "timestamp": 1788256803000
+        },
+        "id": "h0000003",
+        "parentId": "h0000002",
+        "timestamp": "2026-09-01T10:00:03.000Z"
+      },
+      "role": "user",
+      "text": "Do the thing",
+      "blocks": []
+    },
+    {
+      "e": {
+        "type": "message",
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "The thing is done."
+            }
+          ],
+          "api": "openai-completions",
+          "provider": "anthropic",
+          "model": "claude-sonnet-5",
+          "usage": {
+            "input": 4000,
+            "output": 300,
+            "cacheRead": 50000,
+            "cacheWrite": 700,
+            "totalTokens": 55000,
+            "cost": {
+              "input": 0.001,
+              "output": 0.002,
+              "cacheRead": 0.0001,
+              "cacheWrite": 0,
+              "total": 0.0031
+            }
+          },
+          "stopReason": "stop",
+          "timestamp": 1788256806000
+        },
+        "id": "h0000006",
+        "parentId": "h0000005",
+        "timestamp": "2026-09-01T10:00:06.000Z"
+      },
+      "role": "assistant",
+      "text": "The thing is done.",
+      "blocks": []
+    }
+  ],
+  "branchTo": {
+    "leaf": [
+      "h0000001",
+      "h0000002",
+      "h0000003",
+      "h0000004",
+      "h0000005",
+      "h0000006",
+      "h0000007",
+      "h0000008",
+      "h0000009",
+      "h000000a"
+    ],
+    "mid": [
+      "h0000001",
+      "h0000002",
+      "h0000003",
+      "h0000004",
+      "h0000005",
+      "h0000006"
+    ],
+    "missing": null
+  }
+}

@@ -93,23 +93,23 @@ export interface WebQueueItem {
   /** Another session sent it (`session_send`, §chat.profiles/delivery): marked `sova-session-sent` at hand-off. */
   session?: { sessionId: string; title: string; hop: number };
   /** A person typed it outside this session's composer (a group batch the user sent): its input
-      source is `interactive` although Sova queued it (inputSourceOf). */
+      source is `user` although Sova queued it (inputSourceOf). */
   byPerson?: true;
   /** The Overseer only: a click on the confirm card of this tool call (§app.overseer/org-people-facing). */
   confirm?: string;
 }
 
 /**
- * pi's input source for a message Sova hands to the SDK (§app.overseer/input-source): `interactive`
- * only for what a person typed (this session's composer, a group batch, a baton participant),
- * `rpc` for everything Sova sends on its own (briefs, auto-resume, sova_send, another session's or
- * a project overseer's prompt). Never `extension`: vision-delegate skips that source, so an image
- * on such a message would go undescribed. Extensions read it: wake-nudge restarts its fire limit
- * only on `interactive`.
+ * The input source of a message Sova hands to the agent (§app.overseer/input-source): `user` only
+ * for what a person typed (this session's composer, a group batch, a baton participant), `queued`
+ * for everything Sova sends on its own (briefs, auto-resume, sova_send, another session's or a
+ * project overseer's prompt). Never `system`: vision-delegate skips that source, so an image on such
+ * a message would go undescribed. Extensions read it in pi's words (`interactive`, `rpc`, `extension`;
+ * server/harness/pi/session.ts maps them): wake-nudge restarts its fire limit only on `interactive`.
  */
-export function inputSourceOf(item: Pick<WebQueueItem, "origin" | "overseer" | "baton" | "byPerson">): "interactive" | "rpc" {
-  if (item.overseer) return "rpc";
-  return item.origin === "client" || item.baton || item.byPerson ? "interactive" : "rpc";
+export function inputSourceOf(item: Pick<WebQueueItem, "origin" | "overseer" | "baton" | "byPerson">): "user" | "queued" {
+  if (item.overseer) return "queued";
+  return item.origin === "client" || item.baton || item.byPerson ? "user" : "queued";
 }
 
 /**

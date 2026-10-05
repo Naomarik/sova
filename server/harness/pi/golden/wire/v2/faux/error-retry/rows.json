@@ -1,0 +1,45 @@
+[
+  {
+    "id": "00000001",
+    "kind": "info",
+    "text": "Model: faux/faux-1",
+    "at": "2026-09-03T08:00:00.006Z",
+    "facts": {
+      "setting": "model"
+    }
+  },
+  {
+    "id": "00000002",
+    "kind": "info",
+    "text": "Thinking: medium",
+    "at": "2026-09-03T08:00:00.007Z",
+    "facts": {
+      "setting": "thinking"
+    }
+  },
+  {
+    "id": "00000004",
+    "kind": "user",
+    "at": "2026-09-03T08:00:00.012Z",
+    "text": "Try this",
+    "facts": {}
+  },
+  {
+    "id": "00000005:stop",
+    "kind": "info",
+    "text": "Error: 503 Service Unavailable: the server is overloaded",
+    "at": "2026-09-03T08:00:00.013Z",
+    "model": "faux/faux-1",
+    "facts": {}
+  },
+  {
+    "id": "00000007:0",
+    "kind": "assistant-text",
+    "text": "Worked on the retry.",
+    "at": "2026-09-03T08:00:00.016Z",
+    "model": "faux/faux-1",
+    "facts": {
+      "contextTokens": 1371
+    }
+  }
+]

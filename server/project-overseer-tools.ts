@@ -1,6 +1,6 @@
 import { realpathSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
-import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
+import type { ToolSpec } from "../shared/harness";
 import type { ProjectSummary } from "../shared/projects";
 import { GAP_TAG, LIMIT_WHAT, PER_DAY, PER_TURN, PO_LIMIT_KINDS, type AllowanceUse, type Autonomy, type CodingWorktree, type HeldItem, type PoLimitKind, type ProjectCodingMode, type ProjectOverseerSettings } from "../shared/project-overseer";
 import type { IdeaStatus, SessionSummary, TranscriptItem } from "../shared/protocol";
@@ -39,7 +39,7 @@ import { READ_VERBS } from "../shared/project-contract";
  * wrapper keeps only the operator's own to-do list to their turns.
  */
 
-type Tool = ToolDefinition<any, any>;
+type Tool = ToolSpec;
 /** `partial`: what the act did not do although it did some of it (logged as outcome "partial"; never returned to the model). */
 type Out = { content: { type: "text"; text: string }[]; details: unknown; terminate?: boolean; partial?: string; refused?: string };
 

@@ -814,6 +814,9 @@ shows exactly what it showed before.
   entry's facts once (its type, role, model, usage, stop reason, error, a tool result's failure,
   a compaction's figures), every row carries the entry's time, and a reply's other rows read the
   facts from its first one. An unknown row, whose card shows the entry as JSON, still carries it.
+  A consumer that asked for wire 2 (§app.harness/wire) gets those facts in the harness contract's
+  words instead (a setting change, a context reset, a compaction's figures, a reply's context
+  fill, a tool result's tool and failure); every other consumer gets them as before.
 - **No reasoning signatures.** The encrypted reasoning a provider returns with its thinking (and
   any signature on a text block or a tool call) never reaches the browser: not on a row, not in a
   streamed event, not through any route.

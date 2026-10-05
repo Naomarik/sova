@@ -1,0 +1,42 @@
+{
+  "type": "view",
+  "view": {
+    "title": "Golden share",
+    "sharedAt": "2026-10-05T00:00:00.000Z",
+    "mode": "live",
+    "through": "2026-09-03T08:00:00.023Z",
+    "items": [
+      {
+        "kind": "user",
+        "n": 0,
+        "text": "Read notes.txt",
+        "at": "2026-09-03T08:00:00.012Z"
+      },
+      {
+        "kind": "user",
+        "n": 1,
+        "text": "and also check the second line",
+        "at": "2026-09-03T08:00:00.019Z"
+      },
+      {
+        "kind": "reply",
+        "n": 2,
+        "text": "The second line says line two.",
+        "at": "2026-09-03T08:00:00.020Z"
+      },
+      {
+        "kind": "user",
+        "n": 3,
+        "text": "then summarize",
+        "at": "2026-09-03T08:00:00.022Z"
+      },
+      {
+        "kind": "reply",
+        "n": 4,
+        "text": "Summary: two lines.",
+        "at": "2026-09-03T08:00:00.023Z"
+      }
+    ],
+    "images": 0
+  }
+}

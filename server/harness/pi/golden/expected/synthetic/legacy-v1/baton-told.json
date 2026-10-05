@@ -1,0 +1,10 @@
+{
+  "prompt": {
+    "prompt": null,
+    "tools": []
+  },
+  "model": {
+    "model": "anthropic/claude-3",
+    "thinking": null
+  }
+}

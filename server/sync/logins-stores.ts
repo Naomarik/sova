@@ -1,9 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { closeSync, existsSync, fsyncSync, lstatSync, openSync, readFileSync, realpathSync, renameSync, rmSync, unlinkSync, writeSync } from "node:fs";
-import { createRequire } from "node:module";
 import { basename, dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
-import { ModelRuntime } from "@earendil-works/pi-coding-agent";
+import { piGetAuth, requireFromPi } from "../harness/pi/package";
 import type { EntryKind, StoreId } from "./logins-merge";
 
 /**
@@ -39,8 +37,7 @@ interface ProperLockfile {
 let lockfileModule: ProperLockfile | undefined;
 function properLockfile(): ProperLockfile {
   if (!lockfileModule) {
-    const piEntry = fileURLToPath(import.meta.resolve("@earendil-works/pi-coding-agent"));
-    lockfileModule = createRequire(piEntry)("proper-lockfile") as ProperLockfile;
+    lockfileModule = requireFromPi("proper-lockfile") as ProperLockfile;
   }
   return lockfileModule;
 }
@@ -436,13 +433,12 @@ export function classifyClaudeEntry(v: Record<string, unknown>): StoreEntry | un
  */
 export function piRefresher(authPath: string): (provider: string, minValidityMs: number) => Promise<void> {
   return async (provider, minValidityMs) => {
-    const runtime = await ModelRuntime.create({ authPath, modelsPath: null, allowModelNetwork: false, refreshOnCreate: false });
     // pi refreshes anything inside its own 5-minute window unasked. An explicit minimum is only
     // needed beyond it, and pi then also demands the NEW token meet it, throwing after it has
     // already stored the rotation: a lifetime under the minimum is not a failed refresh.
     const overrides = minValidityMs > PI_REFRESH_WINDOW_MS ? { minOAuthValidityMs: minValidityMs } : {};
     try {
-      await runtime.getAuth(provider, overrides);
+      await piGetAuth(authPath, provider, overrides);
     } catch (error) {
       if (!/expires too soon/.test((error as Error).message)) throw error;
     }

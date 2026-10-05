@@ -1,5 +1,9 @@
 import { open, stat } from "node:fs/promises";
 import { isAbsolute } from "node:path";
+import type { HEntry } from "../shared/harness";
+import { lineEntry } from "./harness/pi/reader";
+import { WORKER_REGISTRY, WORKER_SESSION } from "./harness/state-kinds";
+import { stateView } from "./harness/state-view";
 import { type RawLiveRecord, readLiveRecords } from "./live";
 import { canonicalPath, sessionPathShape } from "./paths";
 
@@ -73,18 +77,18 @@ function contentText(content: unknown): string {
     .join("");
 }
 
-/** What one parsed session entry says: it marks its own file, and/or names worker refs. */
-export function entryFacts(e: any): { self: boolean; refs: string[] } {
+/** What one session entry says: it marks its own file, and/or names worker refs. */
+export function entryFacts(h: HEntry | null): { self: boolean; refs: string[] } {
   const none = { self: false, refs: [] };
-  if (!e || typeof e !== "object") return none;
-  if (e.type === "custom" && e.customType === WORKER_SESSION_MARKER) return { self: true, refs: [] };
-  if (e.type === "custom" && e.customType === WORKER_REGISTRY_TYPE) {
-    const d = e.data;
-    if (!d || typeof d !== "object") return none;
-    return { self: false, refs: [d.backendSessionFile, d.backendSessionId].filter(nonEmpty).map((s) => s.trim()) };
+  if (!h) return none;
+  if (h.kind === "state") {
+    const state = stateView([h]);
+    if (state.has(WORKER_SESSION)) return { self: true, refs: [] };
+    const d = state.latest(WORKER_REGISTRY)?.data;
+    return d ? { self: false, refs: [d.backendSessionFile, d.backendSessionId].filter(nonEmpty).map((s) => s.trim()) } : none;
   }
-  if (e.type === "custom_message" && e.customType === COMPLETION_TYPE) {
-    const ref = completionHeaderRef(contentText(e.content));
+  if (h.kind === "note" && !h.inMessage && h.noteType === COMPLETION_TYPE) {
+    const ref = completionHeaderRef(contentText(h.content));
     return { self: false, refs: ref ? [ref] : [] };
   }
   return none;
@@ -209,13 +213,7 @@ export class WorkerSessions {
 
   private consider(line: Buffer, entry: ScanEntry, seen: Set<string>): void {
     if (!NEEDLES.some((n) => line.includes(n))) return; // cheap: most lines are never parsed
-    let e: unknown;
-    try {
-      e = JSON.parse(line.toString("utf8"));
-    } catch {
-      return;
-    }
-    const facts = entryFacts(e);
+    const facts = entryFacts(lineEntry(line));
     if (facts.self) entry.self = true;
     for (const r of facts.refs) seen.add(r);
   }

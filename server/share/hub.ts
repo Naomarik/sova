@@ -1,5 +1,6 @@
 import type { WebSocket } from "ws";
 import { OPERATOR, type BatonSession, type GoneWhy, type BatonView, type BatonViewItem, type PersonRef, type ShareServerMessage } from "../../shared/baton";
+import type { HEntry } from "../../shared/harness";
 import { batonById, linkAccess, namesOf, outsiderCut, sessionPathOf } from "../baton";
 import { batonView, conversationVocabulary, redactPhrases, secretPhrases } from "../baton-view";
 import { profileRedactTexts, publicTerms, readOrg, readRoster } from "../orgs";
@@ -13,7 +14,7 @@ const orgName = (orgId: string): string => {
 };
 import { hashToken } from "../baton-links";
 import { serverRedactor } from "../overseer-redact";
-import { readActiveBranch } from "../transcript";
+import { readBranch } from "../harness/pi/reader";
 import { photosFor } from "../baton-images";
 
 /**
@@ -46,9 +47,9 @@ export async function readView(
   viewer?: PersonRef,
   untilOffer?: number,
   /** Receives the view's photos in order (the image route), and the branch it read. */
-  out?: { collect?: { data: string; mimeType: string }[]; branch?: Record<string, any>[] },
+  out?: { collect?: { data: string; mimeType: string }[]; branch?: HEntry[] },
 ): Promise<BatonView> {
-  const branch = (await readActiveBranch(sessionPathOf(dir, row)).catch(() => [])) as Record<string, any>[];
+  const branch = await readBranch(sessionPathOf(dir, row)).catch((): HEntry[] => []);
   if (out) out.branch = branch;
   const r = outsiderRedactor(row.orgId, [row.publicTitle, ...conversationVocabulary(branch)]);
   streamPhrases.set(row.sessionId, r.phrases);
@@ -70,7 +71,7 @@ export async function readView(
 export async function viewForToken(token: string): Promise<BatonView | { status: 404 | 410; why?: GoneWhy }> {
   const access = linkAccess(token);
   if (!access.ok) return { status: access.status, ...(access.why ? { why: access.why } : {}) };
-  const out: { branch?: Record<string, any>[] } = {};
+  const out: { branch?: HEntry[] } = {};
   const view = await readView(access.row, access.dir, access.link.personId, outsiderCut(access.row, access.link.personId), out);
   const names = namesOf(access.row.orgId);
   // The paperclip only while this link writes, photos are on and the model sees images (§app.baton/images).

@@ -1,0 +1,279 @@
+{
+  "full": {
+    "scan": {
+      "size": 4293,
+      "found": true,
+      "entries": [
+        {
+          "type": "session",
+          "id": "0190a000-0000-7000-8000-o00000000000",
+          "at": 1788256800000
+        },
+        {
+          "type": "model_change",
+          "id": "o0000001",
+          "parentId": null,
+          "at": 1788256801000
+        },
+        {
+          "type": "message",
+          "id": "o0000002",
+          "parentId": "o0000001",
+          "at": 1788256802000,
+          "userPrompt": true
+        },
+        {
+          "type": "custom",
+          "id": "o0000003",
+          "parentId": "o0000002",
+          "at": 1788256803000
+        },
+        {
+          "type": "custom",
+          "id": "o0000004",
+          "parentId": "o0000003",
+          "at": 1788256804000
+        },
+        {
+          "type": "custom",
+          "id": "o0000005",
+          "parentId": "o0000004",
+          "at": 1788256805000
+        },
+        {
+          "type": "custom",
+          "id": "o0000006",
+          "parentId": "o0000005",
+          "at": 1788256806000
+        },
+        {
+          "type": "custom",
+          "id": "o0000007",
+          "parentId": "o0000006",
+          "at": 1788256807000
+        },
+        {
+          "type": "custom",
+          "id": "o0000008",
+          "parentId": "o0000007",
+          "at": 1788256808000
+        },
+        {
+          "type": "custom",
+          "id": "o0000009",
+          "parentId": "o0000008",
+          "at": 1788256809000
+        },
+        {
+          "type": "custom_message",
+          "id": "o000000a",
+          "parentId": "o0000009",
+          "at": 1788256810000
+        },
+        {
+          "type": "custom",
+          "id": "o000000b",
+          "parentId": "o000000a",
+          "at": 1788256811000
+        },
+        {
+          "type": "custom",
+          "id": "o000000c",
+          "parentId": "o000000b",
+          "at": 1788256812000,
+          "customType": "worktrees",
+          "data": {
+            "version": 1,
+            "trees": [
+              {
+                "path": "/wt/golden-writer",
+                "branch": "feat/golden-writer",
+                "base": "abc",
+                "baseBranch": "master",
+                "status": "active",
+                "session": "0190a000-0000-7000-8000-o00000000000",
+                "how": "created",
+                "at": 1788256800000
+              }
+            ]
+          }
+        },
+        {
+          "type": "message",
+          "id": "o000000d",
+          "parentId": "o000000c",
+          "at": 1788256813000,
+          "reply": {
+            "stop": true,
+            "text": "The team finished."
+          }
+        }
+      ],
+      "checkIds": {
+        "$set": []
+      }
+    },
+    "facts": {
+      "trees": [
+        {
+          "path": "/wt/golden-writer",
+          "branch": "feat/golden-writer",
+          "base": "abc",
+          "baseBranch": "master",
+          "status": "active",
+          "session": "0190a000-0000-7000-8000-o00000000000",
+          "how": "created",
+          "at": 1788256800000
+        }
+      ],
+      "merges": [],
+      "lastReply": {
+        "id": "o000000d",
+        "at": 1788256813000,
+        "text": "The team finished."
+      }
+    }
+  },
+  "prefix": {
+    "scan": {
+      "size": 2223,
+      "found": false
+    },
+    "facts": null
+  },
+  "grown": {
+    "scan": {
+      "size": 4293,
+      "found": true,
+      "entries": [
+        {
+          "type": "session",
+          "id": "0190a000-0000-7000-8000-o00000000000",
+          "at": 1788256800000
+        },
+        {
+          "type": "model_change",
+          "id": "o0000001",
+          "parentId": null,
+          "at": 1788256801000
+        },
+        {
+          "type": "message",
+          "id": "o0000002",
+          "parentId": "o0000001",
+          "at": 1788256802000,
+          "userPrompt": true
+        },
+        {
+          "type": "custom",
+          "id": "o0000003",
+          "parentId": "o0000002",
+          "at": 1788256803000
+        },
+        {
+          "type": "custom",
+          "id": "o0000004",
+          "parentId": "o0000003",
+          "at": 1788256804000
+        },
+        {
+          "type": "custom",
+          "id": "o0000005",
+          "parentId": "o0000004",
+          "at": 1788256805000
+        },
+        {
+          "type": "custom",
+          "id": "o0000006",
+          "parentId": "o0000005",
+          "at": 1788256806000
+        },
+        {
+          "type": "custom",
+          "id": "o0000007",
+          "parentId": "o0000006",
+          "at": 1788256807000
+        },
+        {
+          "type": "custom",
+          "id": "o0000008",
+          "parentId": "o0000007",
+          "at": 1788256808000
+        },
+        {
+          "type": "custom",
+          "id": "o0000009",
+          "parentId": "o0000008",
+          "at": 1788256809000
+        },
+        {
+          "type": "custom_message",
+          "id": "o000000a",
+          "parentId": "o0000009",
+          "at": 1788256810000
+        },
+        {
+          "type": "custom",
+          "id": "o000000b",
+          "parentId": "o000000a",
+          "at": 1788256811000
+        },
+        {
+          "type": "custom",
+          "id": "o000000c",
+          "parentId": "o000000b",
+          "at": 1788256812000,
+          "customType": "worktrees",
+          "data": {
+            "version": 1,
+            "trees": [
+              {
+                "path": "/wt/golden-writer",
+                "branch": "feat/golden-writer",
+                "base": "abc",
+                "baseBranch": "master",
+                "status": "active",
+                "session": "0190a000-0000-7000-8000-o00000000000",
+                "how": "created",
+                "at": 1788256800000
+              }
+            ]
+          }
+        },
+        {
+          "type": "message",
+          "id": "o000000d",
+          "parentId": "o000000c",
+          "at": 1788256813000,
+          "reply": {
+            "stop": true,
+            "text": "The team finished."
+          }
+        }
+      ],
+      "checkIds": {
+        "$set": []
+      }
+    },
+    "facts": {
+      "trees": [
+        {
+          "path": "/wt/golden-writer",
+          "branch": "feat/golden-writer",
+          "base": "abc",
+          "baseBranch": "master",
+          "status": "active",
+          "session": "0190a000-0000-7000-8000-o00000000000",
+          "how": "created",
+          "at": 1788256800000
+        }
+      ],
+      "merges": [],
+      "lastReply": {
+        "id": "o000000d",
+        "at": 1788256813000,
+        "text": "The team finished."
+      }
+    }
+  }
+}

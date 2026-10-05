@@ -1,7 +1,7 @@
 import { readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { getAgentDir, type ToolDefinition } from "@earendil-works/pi-coding-agent";
+import { agentRoot } from "./state-root";
 
 /** What a secret value becomes in anything the Overseer reads or writes. */
 export const REDACTED = "[redacted]";
@@ -23,7 +23,7 @@ export const textValue = (text: unknown): string[] => (typeof text === "string" 
  * read by the server itself and parsed as JSON. `pick` takes the values out of one file. Nothing is
  * ever executed: a `models.json` `!command` is skipped, not run.
  */
-export function secretSources(home = homedir(), agentDir = getAgentDir()): SecretSource[] {
+export function secretSources(home = homedir(), agentDir = agentRoot()): SecretSource[] {
   const all = (json: unknown) => stringLeaves(json);
   return [
     // pi's stored provider keys, in the user's agent dir and the active one: every value in them.
@@ -310,6 +310,9 @@ export const REDACTING = Symbol.for("sova.overseer.redacting");
 
 type Content = { type: string; text?: string }[];
 
+/** Any tool with pi's positional execute: a ToolSpec, or one of pi's own (overseer-file-tools.ts). */
+export type AnyTool = { execute(toolCallId: string, params: any, signal: AbortSignal | undefined, onUpdate: ((partial: any) => void) | undefined, ctx: any): Promise<any> };
+
 /**
  * The Overseer's tool wrapper. Every Overseer tool goes through it (overseerTools and
  * overseerFileTools both return wrapped tools), so a new tool is covered by default:
@@ -319,7 +322,7 @@ type Content = { type: string; text?: string }[];
  * - its result after: text blocks and details (an image's bytes are left alone), partial updates,
  *   and the message of an error it throws.
  */
-export function redactingTool<T extends ToolDefinition<any, any>>(tool: T, redactor: () => Redactor = serverRedactor, opts: { args?: boolean } = {}): T {
+export function redactingTool<T extends AnyTool>(tool: T, redactor: () => Redactor = serverRedactor, opts: { args?: boolean } = {}): T {
   if ((tool as { [REDACTING]?: boolean })[REDACTING]) return tool;
   const clean = <R extends { content?: unknown; details?: unknown }>(r: Redactor, result: R): R => {
     if (!result || typeof result !== "object") return result;

@@ -1,0 +1,22 @@
+{
+  "full": {
+    "turnId": "00000005",
+    "replyAt": 1788422400013,
+    "lastUser": "Write a lot",
+    "assistantLast": "This reply is long enough to be cut off. More words keep coming. More words keep coming. More words keep coming. More words keep coming. More words keep coming. More words keep",
+    "tools": [],
+    "stopReason": "aborted",
+    "error": "Request was aborted",
+    "durationMs": 5
+  },
+  "window4k": {
+    "turnId": "00000005",
+    "replyAt": 1788422400013,
+    "lastUser": "Write a lot",
+    "assistantLast": "This reply is long enough to be cut off. More words keep coming. More words keep coming. More words keep coming. More words keep coming. More words keep coming. More words keep",
+    "tools": [],
+    "stopReason": "aborted",
+    "error": "Request was aborted",
+    "durationMs": 5
+  }
+}

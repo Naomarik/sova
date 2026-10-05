@@ -1,0 +1,115 @@
+{
+  "teams": [],
+  "reports": {
+    "$map": []
+  },
+  "outline": {
+    "now": "Working on the parser",
+    "overall": "Golden fixture session",
+    "lastHeading": null,
+    "state": "fresh",
+    "generatedAt": 1788256920000,
+    "topics": [
+      {
+        "id": "t1",
+        "heading": "Parser",
+        "bullets": [
+          "Parser first point",
+          "Parser second point",
+          "Parser third point"
+        ],
+        "at": 1788256920000,
+        "manual": false,
+        "entryId": null,
+        "anchorAt": 1788256920000
+      },
+      {
+        "id": "t2",
+        "heading": "Tests",
+        "bullets": [
+          "Tests first point",
+          "Tests second point",
+          "Tests third point"
+        ],
+        "at": 1788256920000,
+        "manual": false,
+        "entryId": null,
+        "anchorAt": 1788256920000
+      }
+    ]
+  },
+  "outlines": [
+    {
+      "id": "a000003f",
+      "timestamp": "2026-09-01T10:01:03.000Z",
+      "now": "Working on the parser",
+      "overall": "Golden fixture session",
+      "generatedAt": 1788256920000
+    }
+  ],
+  "compactions": [
+    {
+      "id": "a0000024",
+      "timestamp": "2026-09-01T10:00:36.000Z",
+      "tokensBefore": 123456,
+      "summary": "## Summary\nAll of the above.",
+      "readFiles": [
+        "src/a.ts"
+      ],
+      "modifiedFiles": [
+        "src/b.ts"
+      ]
+    }
+  ],
+  "rewinds": [],
+  "explanations": [
+    {
+      "id": "ex_1",
+      "topic": "The reader",
+      "summary": "How the reader works.",
+      "createdAt": "2026-09-01T10:01:00.000Z",
+      "parentSessionId": "p1",
+      "model": "zai/glm-5.3"
+    },
+    {
+      "id": "ex_2",
+      "topic": "Broken",
+      "summary": "",
+      "createdAt": "2026-09-01T10:02:00.000Z",
+      "parentSessionId": "p1",
+      "error": "child died",
+      "status": "interrupted"
+    }
+  ],
+  "sessionId": "0190a000-0000-7000-8000-a00000000000",
+  "skills": {
+    "offered": [
+      {
+        "name": "golden-skill",
+        "from": "2026-09-01T10:00:32.000Z",
+        "description": "A skill",
+        "location": "/home/user/.pi/skills/golden-skill/SKILL.md"
+      }
+    ],
+    "used": []
+  },
+  "workerRecords": {
+    "all": [],
+    "active": []
+  },
+  "teamEvents": [
+    {
+      "id": "a0000032",
+      "teamId": "team_01",
+      "kind": "wrap-up",
+      "workerId": "ag_02",
+      "role": "writer",
+      "at": "2026-09-01T10:01:00.000Z",
+      "detail": "context 78% of 200k",
+      "text": "writer was asked to wrap up: context 78% of 200k."
+    }
+  ],
+  "settled": {
+    "$map": []
+  }
+}

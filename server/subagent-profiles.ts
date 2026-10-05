@@ -1,4 +1,4 @@
-import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import { agentRoot } from "./state-root";
 import {
   loadSubagentProfiles, legacyProfile, parseSubagentProfiles, readProfilesDefault, resolveSubagents, profilesDefaultOf,
   footprint, profileProviders, profileSlots, writeSubagentProfiles, writeProfilesDefault, OFF_FOOTPRINT,
@@ -6,7 +6,7 @@ import {
 import type { SubagentProfilesInfo } from "../shared/subagent-profiles";
 import { delegateOptions, verifySlots, type DelegateSources } from "./delegate";
 
-export function subagentProfilesInfo(pick?: string, dir = getAgentDir()): SubagentProfilesInfo {
+export function subagentProfilesInfo(pick?: string, dir = agentRoot()): SubagentProfilesInfo {
   const state = loadSubagentProfiles(dir);
   const def = readProfilesDefault(dir);
   const r = resolveSubagents(dir, pick, state, def);
@@ -28,14 +28,14 @@ export function subagentProfilesInfo(pick?: string, dir = getAgentDir()): Subage
 }
 
 /** Validate on this host before writing a session pick or creating anything. */
-export function requireSubagentProfile(id: unknown, dir = getAgentDir()): string {
+export function requireSubagentProfile(id: unknown, dir = agentRoot()): string {
   const i = subagentProfilesInfo(undefined, dir);
   if (i.error) throw new Error(i.error);
   if (typeof id !== "string" || !i.profiles.some(p => p.id === id)) throw new Error(`Unknown subagent profile: ${String(id)}`);
   return id;
 }
 
-export async function saveSubagentProfiles(body: unknown, sources: DelegateSources, dir = getAgentDir()): Promise<SubagentProfilesInfo | { error: string }> {
+export async function saveSubagentProfiles(body: unknown, sources: DelegateSources, dir = agentRoot()): Promise<SubagentProfilesInfo | { error: string }> {
   const old = subagentProfilesInfo(undefined, dir);
   if (old.error) return { error: old.error };
   const parsed = parseSubagentProfiles(body);
@@ -57,6 +57,6 @@ export async function saveSubagentProfiles(body: unknown, sources: DelegateSourc
 }
 
 /** Set this device's default (writes the default file only; the library and no other chat move). */
-export function saveSubagentProfileDefault(id: unknown, dir = getAgentDir()): void {
+export function saveSubagentProfileDefault(id: unknown, dir = agentRoot()): void {
   writeProfilesDefault(dir, { version: 1, default: requireSubagentProfile(id, dir) });
 }

@@ -9,6 +9,7 @@ import { join } from "node:path";
 import { after, before, describe, test } from "node:test";
 import { startStreamStub, stubModelsJson } from "./stream-stub";
 import { clockTime } from "../pi-config/extensions/stamp/format.ts";
+import { piSession } from "./harness/pi/testing/handle";
 
 for (const k of Object.keys(process.env)) if (/_API_KEY$|_AUTH_TOKEN$/.test(k)) delete process.env[k];
 
@@ -89,7 +90,7 @@ describe("the overseer's last run says how it ended", async () => {
     for (let i = 0; i < 200 && stub.stats.startedAt === null; i++) await new Promise((res) => setTimeout(res, 10));
     recovery.markShutdown();
     try {
-      await chat.session.abort();
+      await piSession(chat).abort();
       await new Promise((res) => setTimeout(res, 50));
       assert.equal(store.readMemo(p).lastRun?.outcome, "started", "nothing recorded while the process goes down");
       // The next process: its org engine resumes the watch, whose look was running (`sova/resumed`).

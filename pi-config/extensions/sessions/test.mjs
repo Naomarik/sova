@@ -120,15 +120,15 @@ test('presence shares bounded assistant text, never thinking or full tool result
   } finally { await h.emit('session_shutdown'); }
 });
 
-test('presence publishes each worker transcript path, session id and effort, dropping invalid ones', async () => {
+test('presence publishes each worker transcript path, session id, effort and team, dropping invalid ones', async () => {
   const h = harness();
   try {
     await h.emit('session_start');
     const file = '/home/u/.pi/agent/sessions/--home-u-app--/2026-09-20T00-00-00-000Z_0199.jsonl';
     h.pi.events.emit('subagents:workers-snapshot', { version: 1, workers: [
-      { id: 'ag_01', name: 'pi-worker', status: 'running', backend: 'pi', sessionFile: file, sessionId: '0199', effort: 'high', modes: ['spec'] },
-      { id: 'ag_02', name: 'claude-worker', status: 'waiting', backend: 'claude-code', sessionId: 'c'.repeat(64) },
-      { id: 'ag_03', name: 'bad', status: 'running', sessionFile: '/' + 'x'.repeat(1024), sessionId: 7, effort: 5, modes: ['spec', 'Bad Name'] },
+      { id: 'ag_01', name: 'pi-worker', status: 'running', backend: 'pi', sessionFile: file, sessionId: '0199', effort: 'high', modes: ['spec'], teamId: 'team_01' },
+      { id: 'ag_02', name: 'claude-worker', status: 'waiting', backend: 'claude-code', sessionId: 'c'.repeat(64), teamId: 't'.repeat(65) },
+      { id: 'ag_03', name: 'bad', status: 'running', sessionFile: '/' + 'x'.repeat(1024), sessionId: 7, effort: 5, modes: ['spec', 'Bad Name'], teamId: 3 },
     ] });
     await tick();
     const rows = h.latest().workers;
@@ -144,6 +144,9 @@ test('presence publishes each worker transcript path, session id and effort, dro
     // The modes it was given: kept whole, absent stays absent, a list with any bad name is dropped whole.
     assert.deepEqual(pi.modes, ['spec']);
     for (const w of [claude, bad]) assert.ok(!('modes' in JSON.parse(JSON.stringify(w))), w.id);
+    // Its team: kept whole; a non-string or over-limit id is dropped, never truncated.
+    assert.equal(pi.teamId, 'team_01');
+    for (const w of [claude, bad]) assert.ok(!('teamId' in JSON.parse(JSON.stringify(w))), w.id);
   } finally { await h.emit('session_shutdown'); }
 });
 

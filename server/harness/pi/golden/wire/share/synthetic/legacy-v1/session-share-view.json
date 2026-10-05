@@ -1,0 +1,30 @@
+{
+  "type": "view",
+  "view": {
+    "title": "Golden share",
+    "sharedAt": "2026-10-05T00:00:00.000Z",
+    "mode": "live",
+    "through": "2025-01-01T00:00:04.000Z",
+    "items": [
+      {
+        "kind": "user",
+        "n": 0,
+        "text": "A string-content legacy question",
+        "at": "2025-01-01T00:00:02.000Z"
+      },
+      {
+        "kind": "reply",
+        "n": 1,
+        "text": "Legacy answer",
+        "at": "2025-01-01T00:00:03.000Z"
+      },
+      {
+        "kind": "user",
+        "n": 2,
+        "text": "Second legacy question",
+        "at": "2025-01-01T00:00:04.000Z"
+      }
+    ],
+    "images": 0
+  }
+}

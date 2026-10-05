@@ -4,7 +4,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { describeActive } from "../pi-config/extensions/sandbox/state.ts";
 import type { ChatServerMessage } from "../shared/protocol";
-import { applySandbox, onSandboxAppend, parseSandboxBody, sandboxCommandOf, sandboxInfo, type SandboxHost } from "./sandbox-state";
+import { applySandbox, onSandboxAppend, parseSandboxBody, sandboxInfo, type SandboxHost } from "./sandbox-state";
+import { sandboxCommandOf } from "./harness/pi/commands";
 
 const EXT = "/home/u/.pi/agent/extensions/sandbox/index.ts";
 type Entry = { type: string; customType?: string; data?: unknown };

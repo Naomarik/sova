@@ -1,0 +1,39 @@
+{
+  "teams": [],
+  "reports": {
+    "$map": []
+  },
+  "outline": null,
+  "outlines": [],
+  "compactions": [],
+  "rewinds": [],
+  "explanations": [],
+  "sessionId": "0190a000-0000-7000-8000-q00000000000",
+  "skills": {
+    "offered": [],
+    "used": []
+  },
+  "workerRecords": {
+    "all": [],
+    "active": []
+  },
+  "teamEvents": [],
+  "settled": {
+    "$map": []
+  },
+  "worktrees": {
+    "version": 1,
+    "trees": [
+      {
+        "path": "/wt/export",
+        "branch": "feat/export",
+        "base": "abc",
+        "baseBranch": "master",
+        "status": "active",
+        "session": "0190a000-0000-7000-8000-q00000000000",
+        "how": "created",
+        "at": 1788256800000
+      }
+    ]
+  }
+}

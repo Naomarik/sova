@@ -1,0 +1,62 @@
+{
+  "00000001": {
+    "ok": false,
+    "reason": "not_on_branch",
+    "message": "Nothing on this branch started that reply, so there is nothing to run again."
+  },
+  "00000001:0": {
+    "ok": false,
+    "reason": "not_on_branch",
+    "message": "Nothing on this branch started that reply, so there is nothing to run again."
+  },
+  "00000002": {
+    "ok": false,
+    "reason": "not_on_branch",
+    "message": "Nothing on this branch started that reply, so there is nothing to run again."
+  },
+  "00000002:0": {
+    "ok": false,
+    "reason": "not_on_branch",
+    "message": "Nothing on this branch started that reply, so there is nothing to run again."
+  },
+  "00000003": {
+    "ok": false,
+    "reason": "not_on_branch",
+    "message": "Nothing on this branch started that reply, so there is nothing to run again."
+  },
+  "00000003:0": {
+    "ok": false,
+    "reason": "not_on_branch",
+    "message": "Nothing on this branch started that reply, so there is nothing to run again."
+  },
+  "00000004": {
+    "ok": false,
+    "reason": "not_on_branch",
+    "message": "That is your own message; rewind to it to edit and send it again."
+  },
+  "00000004:0": {
+    "ok": false,
+    "reason": "not_on_branch",
+    "message": "That is your own message; rewind to it to edit and send it again."
+  },
+  "00000005": {
+    "ok": true,
+    "userId": "00000004",
+    "text": "Write a lot"
+  },
+  "00000005:0": {
+    "ok": true,
+    "userId": "00000004",
+    "text": "Write a lot"
+  },
+  "no-such-entry": {
+    "ok": false,
+    "reason": "not_on_branch",
+    "message": "That reply is not on this chat's current branch anymore."
+  },
+  "no-such-entry:0": {
+    "ok": false,
+    "reason": "not_on_branch",
+    "message": "That reply is not on this chat's current branch anymore."
+  }
+}

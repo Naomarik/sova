@@ -1,11 +1,14 @@
-import type { ExtensionAPI, ToolDefinition } from "@earendil-works/pi-coding-agent";
+import type { PiExtensionAPI } from "../harness/pi/extension-types";
 import { execFile } from "node:child_process";
 import { realpathSync } from "node:fs";
 import { resolve } from "node:path";
+import type { ToolCtx, ToolSpec } from "../../shared/harness";
 import { DEPLOY_READ_VERBS, DEPLOY_VERBS, exitOf, VERBS, type VerbResult } from "../../shared/project-contract";
 import { redactingTool, serverRedactor, type Redactor } from "../overseer-redact";
+import { toPiTool } from "../harness/pi/tools";
+import { WORKTREES } from "../harness/state-kinds";
+import { stateView } from "../harness/state-view";
 import { projectRootOf } from "../project-root";
-import { worktreesOf } from "../worktrees-state";
 import type { Caller, ProjectEngine, VerbAct } from "./engine";
 import { registerInstanceNote, resultNote } from "./note";
 
@@ -16,7 +19,7 @@ import { registerInstanceNote, resultNote } from "./note";
  * result is the verb's own JSON; log lines are wrapped as untrusted and everything is redacted.
  */
 
-type Tool = ToolDefinition<any, any>;
+type Tool = ToolSpec;
 
 const PARAMS = {
   type: "object",
@@ -123,9 +126,9 @@ export interface VerbToolOptions {
   promptSnippet: string;
   engine: () => ProjectEngine;
   /** Who is calling, per call (the session's own worktrees are read then). */
-  caller: (ctx: unknown) => Promise<Caller>;
+  caller: (ctx: ToolCtx | undefined) => Promise<Caller>;
   /** The project a call without one is about. */
-  defaultProject: (ctx: unknown) => Promise<string | null>;
+  defaultProject: (ctx: ToolCtx | undefined) => Promise<string | null>;
   redactor?: () => Redactor;
   /** The Overseers' verb `onboard` (absent: the verb is not offered). */
   onboard?: OnboardRun;
@@ -138,7 +141,7 @@ export function projectVerbsTool(o: VerbToolOptions): Tool {
     description: `${o.description} ${VERB_HELP}${o.onboard ? ONBOARD_HELP : ""}`,
     promptSnippet: o.promptSnippet,
     parameters: (o.onboard ? OVERSEER_PARAMS : PARAMS) as unknown as Tool["parameters"],
-    async execute(_id: string, params: any, signal?: AbortSignal, _onUpdate?: unknown, ctx?: unknown) {
+    async execute(_id: string, params: any, signal?: AbortSignal, _onUpdate?: unknown, ctx?: ToolCtx) {
       const p = (params ?? {}) as Record<string, unknown>;
       if (o.onboard && p.verb === "onboard") {
         const out = await o.onboard(typeof p.why === "string" ? p.why.trim() : "", p);
@@ -147,7 +150,7 @@ export function projectVerbsTool(o: VerbToolOptions): Tool {
       const caller = await o.caller(ctx);
       // No tool result ever carries a share link's URL (§app.project-services/share): the engine gives it to the operator only.
       const r = withoutUrls(await o.engine().run(String(p.verb ?? ""), bodyOf(p, await o.defaultProject(ctx)), caller, signal ? { signal } : {}));
-      const note = await resultNote(o.engine(), r, (ctx as SessionCtx | undefined)?.sessionManager?.getBranch() ?? []);
+      const note = await resultNote(o.engine(), r, ctx?.state() ?? stateView([]));
       return { content: [{ type: "text" as const, text: renderResult(r, note) }], details: { v: 1, result: r } };
     },
   };
@@ -170,16 +173,11 @@ function gitTop(cwd: string): Promise<string | null> {
   );
 }
 
-interface SessionCtx {
-  cwd?: string;
-  sessionManager?: { getSessionId(): string; getBranch(): readonly unknown[]; getCwd?(): string };
-}
-
 /** The session's own checkouts: its tracked worktrees, and its cwd's checkout. */
-async function ownCheckouts(ctx: SessionCtx): Promise<string[]> {
+async function ownCheckouts(ctx: ToolCtx | undefined): Promise<string[]> {
   const own = new Set<string>();
-  for (const t of worktreesOf(ctx.sessionManager?.getBranch() ?? [])?.trees ?? []) own.add(canonical(t.path));
-  const cwd = ctx.cwd ?? ctx.sessionManager?.getCwd?.();
+  for (const t of ctx?.state().latest(WORKTREES)?.data.trees ?? []) own.add(canonical(t.path));
+  const cwd = ctx?.cwd;
   if (cwd) {
     const top = await gitTop(cwd);
     if (top) own.add(top);
@@ -192,9 +190,9 @@ export function projectVerbsExtension(engine: () => ProjectEngine) {
   return {
     name: "sova-project-verbs",
     hidden: true,
-    factory: (pi: ExtensionAPI) => {
+    factory: (pi: PiExtensionAPI) => {
       pi.registerTool(
-        projectVerbsTool({
+        toPiTool(projectVerbsTool({
           name: "project_verbs",
           label: "Project verbs",
           description:
@@ -204,19 +202,17 @@ export function projectVerbsExtension(engine: () => ProjectEngine) {
           promptSnippet: "run, reload, inspect and tear down your own worktree's running copy of the project (up, apply, logs, status…)",
           engine,
           defaultProject: async (ctx) => {
-            const c = (ctx ?? {}) as SessionCtx;
-            const cwd = c.cwd ?? c.sessionManager?.getCwd?.();
+            const cwd = ctx?.cwd;
             return cwd ? projectRootOf(cwd) : null;
           },
           caller: async (ctx) => {
-            const c = (ctx ?? {}) as SessionCtx;
-            const cwd = c.cwd ?? c.sessionManager?.getCwd?.();
-            return { kind: "session", id: c.sessionManager?.getSessionId() ?? "unknown", root: cwd ? await projectRootOf(cwd) : null, own: await ownCheckouts(c) };
+            const cwd = ctx?.cwd;
+            return { kind: "session", id: ctx?.sessionId ?? "unknown", root: cwd ? await projectRootOf(cwd) : null, own: await ownCheckouts(ctx) };
           },
-        }),
+        })),
       );
       // Its own instances' ports, data and tests, as a hidden note (§app.project-services/instance-note).
-      registerInstanceNote(pi, engine, (ctx) => ownCheckouts((ctx ?? {}) as SessionCtx));
+      registerInstanceNote(pi, engine, ownCheckouts);
     },
   };
 }

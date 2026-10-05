@@ -1,4 +1,4 @@
-import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
+import type { ToolSpec } from "../shared/harness";
 import type {
   AttentionDigest,
   FolderListing,
@@ -20,8 +20,8 @@ import { relativeTime } from "../pi-config/extensions/stamp/format.ts";
 import { newestTopics, topicTime } from "../shared/outline-order";
 import { whereOf } from "./attention";
 import { NotShared } from "./mesh/access";
-import { alignmentText, openAlignmentsOf } from "./align-state";
-import { entryOf } from "./transcript";
+import { alignmentTextIn, openAlignmentsIn } from "./align-state";
+import { sourceOf } from "./transcript";
 import type { ReadinessChecks } from "./merge-readiness";
 import { idOfAlias, sessionName } from "./session-names";
 import { type Redactor, redactingTool, serverRedactor } from "./overseer-redact";
@@ -349,15 +349,14 @@ export function topicsLine(topics: readonly { heading: string; at: number; secti
     reason, its error and its text; undefined when there is none. */
 export function lastReplyIn(items: readonly TranscriptItem[]): { at: number; stopReason?: string; error?: string; text: string } | undefined {
   for (let i = items.length - 1; i >= 0; i--) {
-    const raw = entryOf(items[i]!) as { type?: unknown; timestamp?: unknown; message?: { role?: unknown; content?: unknown; stopReason?: unknown; errorMessage?: unknown; timestamp?: unknown } } | undefined;
-    const m = raw?.type === "message" ? raw.message : undefined;
-    if (m?.role !== "assistant") continue;
-    const at = typeof raw!.timestamp === "string" ? Date.parse(raw!.timestamp) : typeof m.timestamp === "number" ? m.timestamp : NaN;
-    const text = typeof m.content === "string" ? m.content : Array.isArray(m.content) ? m.content.map((b) => (b?.type === "text" && typeof b.text === "string" ? b.text : "")).filter(Boolean).join("\n") : "";
+    const h = sourceOf(items[i]!);
+    if (h?.kind !== "assistant") continue;
+    const at = typeof h.at === "string" ? Date.parse(h.at) : typeof h.sentAt === "number" ? h.sentAt : NaN;
+    const text = h.blocks.map((b) => (b.type === "text" && typeof b.text === "string" ? b.text : "")).filter(Boolean).join("\n");
     return {
       at: Number.isFinite(at) ? at : 0,
-      ...(typeof m.stopReason === "string" ? { stopReason: m.stopReason } : {}),
-      ...(typeof m.errorMessage === "string" && m.errorMessage ? { error: m.errorMessage } : {}),
+      ...(typeof h.stop === "string" ? { stopReason: h.stop } : {}),
+      ...(typeof h.error === "string" && h.error ? { error: h.error } : {}),
       text,
     };
   }
@@ -388,7 +387,7 @@ export function truthLines(
     const message = s.turnError?.message ?? reply?.error;
     out.push(`Turn error: ${message ? cut(message, 300) : "the last turn stopped with an error"}`);
   }
-  const docs = items ? openAlignmentsOf(items.map(entryOf)) : [];
+  const docs = items ? openAlignmentsIn(items.map(sourceOf)) : [];
   if (docs.length) {
     const list = docs.map((d) => `${d.id} "${cut(d.title, 80)}": ${d.open} of ${d.total} question${d.total === 1 ? "" : "s"} open`).join("; ");
     const waits = s.align ? "the session waits on the user's answers" : "not waiting on the user (they spoke since, or align is off)";
@@ -448,7 +447,7 @@ export const SETTINGS_TABS = ["general", "models", "modes", "overseer", "summari
 
 // ---- the tools ---------------------------------------------------------------------------------
 
-type Tool = ToolDefinition<any, any>;
+type Tool = ToolSpec;
 
 /** JSON-Schema object shorthand (pi validates plain JSON Schema as well as TypeBox). */
 function obj(properties: Record<string, unknown>, required: string[] = []): any {
@@ -931,7 +930,7 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
         const doc = typeof p.doc === "string" && p.doc.trim() ? p.doc.trim() : undefined;
         let body: string;
         try {
-          body = alignmentText(items.map(entryOf), { ...(doc ? { doc } : {}), waits: !!s.align });
+          body = alignmentTextIn(items.map(sourceOf), { ...(doc ? { doc } : {}), waits: !!s.align });
         } catch (err) {
           throw new Refusal(err instanceof Error ? err.message : String(err));
         }
@@ -1555,7 +1554,7 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
  * roster (§app.overseer/org-projection): each becomes `[contact]`. Its arguments are left as the
  * model wrote them, so a write stores what it was given.
  */
-export function contactRedactingTool<T extends ToolDefinition<any, any>>(tool: T): T {
+export function contactRedactingTool<T extends ToolSpec>(tool: T): T {
   const clean = <R>(r: ReturnType<typeof contactRedactor>, result: R): R => {
     if (!result || typeof result !== "object") return result;
     const res = result as { content?: unknown; details?: unknown };

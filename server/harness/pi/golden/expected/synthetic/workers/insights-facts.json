@@ -1,0 +1,273 @@
+{
+  "teams": [
+    {
+      "id": "team_01",
+      "name": "golden-team",
+      "objective": "Write files.",
+      "createdAt": 1788256800000,
+      "members": [
+        {
+          "workerId": "ag_01",
+          "role": "coordinator",
+          "orchestrator": true,
+          "backend": "pi",
+          "model": "zai/glm-5.3",
+          "ownedPaths": [],
+          "addedAt": 1788256800000,
+          "duty": "coordinator"
+        },
+        {
+          "workerId": "ag_02",
+          "role": "writer",
+          "orchestrator": false,
+          "backend": "pi",
+          "model": "zai/glm-5.3",
+          "ownedPaths": [],
+          "addedAt": 1788256800000
+        },
+        {
+          "workerId": "ag_03",
+          "role": "monitor",
+          "orchestrator": false,
+          "backend": "pi",
+          "model": "zai/glm-5.3",
+          "ownedPaths": [],
+          "addedAt": 1788256800000,
+          "duty": "monitor"
+        },
+        {
+          "workerId": "ag_04",
+          "role": "writer-2",
+          "orchestrator": false,
+          "backend": "pi",
+          "model": "zai/glm-5.3",
+          "ownedPaths": [],
+          "addedAt": 1788256800000,
+          "successorOf": "ag_02"
+        }
+      ]
+    }
+  ],
+  "reports": {
+    "$map": [
+      [
+        "ag_02",
+        {
+          "status": "done",
+          "outcome": "success",
+          "at": "2026-09-01T10:00:10.000Z"
+        }
+      ]
+    ]
+  },
+  "outline": null,
+  "outlines": [],
+  "compactions": [],
+  "rewinds": [],
+  "explanations": [],
+  "sessionId": "0190a000-0000-7000-8000-o00000000000",
+  "skills": {
+    "offered": [],
+    "used": []
+  },
+  "workerRecords": {
+    "all": [
+      {
+        "type": "custom",
+        "customType": "subagents-worker-manifest",
+        "data": {
+          "v": 1,
+          "kind": "worker-manifest",
+          "backend": "pi",
+          "workerId": "ag_02",
+          "name": "writer",
+          "status": "running",
+          "team": {
+            "teamId": "team_01",
+            "role": "writer"
+          },
+          "spec": {
+            "cwd": "/wt/golden-writer"
+          }
+        },
+        "id": "o0000004",
+        "parentId": "o0000003",
+        "timestamp": "2026-09-01T10:00:04.000Z"
+      },
+      {
+        "type": "custom",
+        "customType": "subagents-worker-manifest",
+        "data": {
+          "v": 1,
+          "kind": "worker-manifest",
+          "backend": "pi",
+          "workerId": "ag_02",
+          "status": "done",
+          "taskOutcome": "success",
+          "endedAt": 1788257520000
+        },
+        "id": "o0000007",
+        "parentId": "o0000006",
+        "timestamp": "2026-09-01T10:00:07.000Z"
+      },
+      {
+        "type": "custom",
+        "customType": "subagents-worker-manifest",
+        "data": {
+          "v": 1,
+          "kind": "worker-manifest",
+          "backend": "pi",
+          "workerId": "ag_03",
+          "status": "lost",
+          "at": 1788257580000
+        },
+        "id": "o0000009",
+        "parentId": "o0000008",
+        "timestamp": "2026-09-01T10:00:09.000Z"
+      },
+      {
+        "type": "custom",
+        "customType": "subagents-worker-registry",
+        "data": {
+          "version": 1,
+          "workers": [
+            {
+              "id": "ag_09",
+              "name": "legacy"
+            }
+          ]
+        },
+        "id": "o000000b",
+        "parentId": "o000000a",
+        "timestamp": "2026-09-01T10:00:11.000Z"
+      }
+    ],
+    "active": [
+      {
+        "type": "custom",
+        "customType": "subagents-worker-manifest",
+        "data": {
+          "v": 1,
+          "kind": "worker-manifest",
+          "backend": "pi",
+          "workerId": "ag_02",
+          "name": "writer",
+          "status": "running",
+          "team": {
+            "teamId": "team_01",
+            "role": "writer"
+          },
+          "spec": {
+            "cwd": "/wt/golden-writer"
+          }
+        },
+        "id": "o0000004",
+        "parentId": "o0000003",
+        "timestamp": "2026-09-01T10:00:04.000Z"
+      },
+      {
+        "type": "custom",
+        "customType": "subagents-worker-manifest",
+        "data": {
+          "v": 1,
+          "kind": "worker-manifest",
+          "backend": "pi",
+          "workerId": "ag_02",
+          "status": "done",
+          "taskOutcome": "success",
+          "endedAt": 1788257520000
+        },
+        "id": "o0000007",
+        "parentId": "o0000006",
+        "timestamp": "2026-09-01T10:00:07.000Z"
+      },
+      {
+        "type": "custom",
+        "customType": "subagents-worker-manifest",
+        "data": {
+          "v": 1,
+          "kind": "worker-manifest",
+          "backend": "pi",
+          "workerId": "ag_03",
+          "status": "lost",
+          "at": 1788257580000
+        },
+        "id": "o0000009",
+        "parentId": "o0000008",
+        "timestamp": "2026-09-01T10:00:09.000Z"
+      },
+      {
+        "type": "custom",
+        "customType": "subagents-worker-registry",
+        "data": {
+          "version": 1,
+          "workers": [
+            {
+              "id": "ag_09",
+              "name": "legacy"
+            }
+          ]
+        },
+        "id": "o000000b",
+        "parentId": "o000000a",
+        "timestamp": "2026-09-01T10:00:11.000Z"
+      }
+    ]
+  },
+  "teamEvents": [
+    {
+      "id": "o0000005",
+      "teamId": "team_01",
+      "kind": "handover",
+      "workerId": "ag_02",
+      "role": "writer",
+      "at": "2026-09-01T10:11:00.000Z",
+      "detail": "successor writer-2 (ag_04) on pi/zai/glm-5.3-flash; retire on team_ready or after 2 min",
+      "text": "writer handed over to writer-2 (ag_04)."
+    },
+    {
+      "id": "o0000008",
+      "teamId": "team_01",
+      "kind": "retire",
+      "workerId": "ag_02",
+      "role": "writer",
+      "at": "2026-09-01T10:12:00.000Z",
+      "detail": "retired: successor writer-2 (ag_04) confirmed the takeover",
+      "text": "writer retired. writer-2 confirmed the takeover."
+    }
+  ],
+  "settled": {
+    "$map": [
+      [
+        "ag_02",
+        {
+          "status": "done",
+          "outcome": "success",
+          "at": "2026-09-01T10:12:00.000Z"
+        }
+      ],
+      [
+        "ag_03",
+        {
+          "status": "interrupted",
+          "at": "2026-09-01T10:13:00.000Z"
+        }
+      ]
+    ]
+  },
+  "worktrees": {
+    "version": 1,
+    "trees": [
+      {
+        "path": "/wt/golden-writer",
+        "branch": "feat/golden-writer",
+        "base": "abc",
+        "baseBranch": "master",
+        "status": "active",
+        "session": "0190a000-0000-7000-8000-o00000000000",
+        "how": "created",
+        "at": 1788256800000
+      }
+    ]
+  }
+}

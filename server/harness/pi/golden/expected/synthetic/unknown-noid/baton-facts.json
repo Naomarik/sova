@@ -1,0 +1,42 @@
+{
+  "vocabulary": [
+    "Root question",
+    "Abandoned follow-up",
+    "After the id-less entry"
+  ],
+  "senders": {
+    "$map": [
+      [
+        "c0000005",
+        "p_alice"
+      ]
+    ]
+  },
+  "sendersNoHolder": {
+    "$map": []
+  },
+  "notes": [
+    {
+      "timestamp": 1788256801000,
+      "text": "Root question",
+      "note": "[From someone]"
+    },
+    {
+      "timestamp": 1788256803000,
+      "text": "Abandoned follow-up",
+      "note": "[From someone]"
+    },
+    {
+      "timestamp": 1788256805000,
+      "text": "After the id-less entry",
+      "note": "[From Alice]"
+    }
+  ],
+  "counted": 3,
+  "model": {
+    "model": null,
+    "thinking": null
+  },
+  "photos": 0,
+  "modelRef": "zai/glm-5.3"
+}

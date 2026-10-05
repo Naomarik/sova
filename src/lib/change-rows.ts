@@ -6,12 +6,11 @@
 // in the conversation, and a locally drawn row also reappeared after every reload once the
 // persisted `model_change` came back.
 import type { TranscriptItem } from "../../shared/protocol";
+import { rowFacts } from "../../shared/wire-v1";
 
 /** Whether an item is one of the three settings-change families the thread leaves out. */
 export function isChangeRow(item: TranscriptItem): boolean {
-  if (item.kind !== "info" || !item.meta) return false;
-  const { type, customType } = item.meta;
-  return type === "model_change" || type === "thinking_level_change" || (type === "custom" && customType === "mode");
+  return item.kind === "info" && rowFacts(item)?.setting !== undefined;
 }
 
 /** The session's profile entry (§chat.profiles/after-first-message): like the change rows it never

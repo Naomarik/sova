@@ -715,8 +715,10 @@ virtualized.
   window. A row that draws nothing (a tool result shown in its call's card) takes no space. A
   row's single image counts at the height its box will have
   (§chat.images/thread-thumbnails), two or more at an estimate of their rows of tiles. A
-  row being pointed at, focused or revealed (§chat.transcript/message-actions) is always drawn
-  whole.
+  row being pointed at or focused is always drawn whole, a focused one even scrolled away; a
+  revealed row (§chat.transcript/message-actions) is drawn whenever it is on screen. Pressing in
+  a row never changes whether it is skipped: a row that turned skippable mid-press crashed
+  Chrome 154's tab.
 - **Jumps build their target first.** Whether an entry can be jumped to is asked of the rows the
   thread renders, not of what is built. Every jump builds the rows down from its target if the
   fill hasn't reached it, then scrolls and tints as before (§chat.timeline/jumping): a Timeline

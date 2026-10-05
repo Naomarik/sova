@@ -193,29 +193,20 @@ export default function commandPalette(pi: ExtensionAPI) {
       { id: "expand-tools", label: "Expand tool output", run: () => ctx.ui.setToolsExpanded(true) },
       { id: "collapse-tools", label: "Collapse tool output", run: () => ctx.ui.setToolsExpanded(false) },
     ] });
-    for (const [source, label] of [["extension", "Extensions"], ["prompt", "Prompt templates"], ["skill", "Skills"]] as const) {
-      const commands = pi.getCommands().filter(c => c.source === source && c.name !== "palette");
-      roots.push({ id: source, label, children: commands.map(c => {
-        const run = async (ask: boolean) => {
-          const args = ask ? await ctx.ui.input(`/${c.name}`, "Arguments (optional)") : "";
-          if (args === undefined) return;
-          const command = `/${c.name}${args.trim() ? ` ${args.trim()}` : ""}`;
-          if (source === "extension") {
-            pi.sendUserMessage(command, { expandPromptTemplates: true, deliverAs: "followUp" });
-          } else {
-            // Skills and templates start model work. Compose for review, never
-            // submit just because someone selected a search result.
-            const draft = ctx.ui.getEditorText();
-            const composed = await ctx.ui.editor(`Compose /${c.name} (submit from main editor)`, command + (draft ? `\n${draft}` : ""));
-            if (composed !== undefined) ctx.ui.setEditorText(composed);
-          }
-        };
-        return { id: `${source}:${c.name}`, label: `/${c.name}`, description: c.description, children: [
-          { id: `${c.name}:run`, label: source === "extension" ? "Run command" : "Compose prompt", run: () => run(false) },
-          { id: `${c.name}:args`, label: "With arguments…", run: () => run(true) },
-        ] };
-      }) });
-    }
+    // Skills and prompt templates start model work, so they are typed in the
+    // editor, never sent from a search result: only extension commands are listed.
+    const commands = pi.getCommands().filter(c => c.source === "extension" && c.name !== "palette");
+    roots.push({ id: "extension", label: "Extensions", children: commands.map(c => {
+      const run = async (ask: boolean) => {
+        const args = ask ? await ctx.ui.input(`/${c.name}`, "Arguments (optional)") : "";
+        if (args === undefined) return;
+        pi.sendUserMessage(`/${c.name}${args.trim() ? ` ${args.trim()}` : ""}`, { expandPromptTemplates: true, deliverAs: "followUp" });
+      };
+      return { id: `extension:${c.name}`, label: `/${c.name}`, description: c.description, children: [
+        { id: `${c.name}:run`, label: "Run command", run: () => run(false) },
+        { id: `${c.name}:args`, label: "With arguments…", run: () => run(true) },
+      ] };
+    }) });
     return roots;
   }
 

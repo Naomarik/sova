@@ -409,15 +409,25 @@ test("agent_models discovers active Pi and native backend models with explicit e
 	} finally { await h.close(); }
 });
 
-test("/subagents models selects a model without spawning a worker", async () => {
+test("/subagents and /agents only open the monitor: arguments are ignored, no model picker or editor text", async () => {
 	const h = harness();
 	h.ctx.modelRegistry.getAvailable = () => [{ provider: "ollama-cloud", id: "deepseek-v4.1-flash", name: "DeepSeek" }];
-	let editor = "";
-	h.ctx.ui.select = async (_title: string, choices: string[]) => choices[0];
-	h.ctx.ui.setEditorText = (value: string) => { editor = value; };
+	const opened: string[] = [];
+	h.ctx.ui.custom = async (factory: any) => new Promise((resolve) => {
+		const view = factory({ requestRender() {} }, { fg: (_: string, text: string) => text }, {}, resolve);
+		opened.push(view.constructor.name);
+		resolve(undefined);
+	});
+	h.ctx.ui.select = async () => { throw new Error("no picker"); };
+	h.ctx.ui.setEditorText = () => { throw new Error("no editor text"); };
 	try {
-		await h.commands.get("subagents").handler("models deepseek 4.1 flash", h.ctx);
-		assert.match(editor, /ollama-cloud\/deepseek-v4\.1-flash/);
+		for (const name of ["subagents", "agents"]) {
+			const command = h.commands.get(name);
+			assert.equal(command.description, "Open the subagent monitor");
+			assert.equal(command.getArgumentCompletions, undefined);
+			await command.handler("models deepseek 4.1 flash", h.ctx);
+		}
+		assert.deepEqual(opened, ["AgentsModal", "AgentsModal"]);
 		assert.equal(h.workers.length, 0);
 	} finally { await h.close(); }
 });
@@ -1271,7 +1281,13 @@ async function realSession() {
 	session.modelRuntime.registerNativeProvider(faux.provider);
 	await session.setModel(faux.getModel());
 	const completed = () => session.sessionManager.getEntries().filter((e: any) => e.type === "custom_message" && e.customType === "subagent-complete");
-	return { session, faux, order, workers, completed, close: () => { session.dispose(); fs.rmSync(dir, { recursive: true, force: true }); } };
+	// As pi's own runtime quits: session_shutdown first (the extension stops its refresh timer), then dispose.
+	const close = async () => {
+		await session.extensionRunner.emit({ type: "session_shutdown", reason: "quit" });
+		session.dispose();
+		fs.rmSync(dir, { recursive: true, force: true });
+	};
+	return { session, faux, order, workers, completed, close };
 }
 
 test("contract (real AgentSession): held settles leave pi at the run's own boundaries — once, before agent_end, never duplicated", async () => {
@@ -1292,7 +1308,7 @@ test("contract (real AgentSession): held settles leave pi at the run's own bound
 			assert.equal(s.faux.state.callCount, 3, "no extra wake turn");
 			assert.equal(s.completed().length, 0, "the wait result was the only copy");
 			assert.deepEqual(s.order, ["agent_start", "agent_end", "agent_settled"]);
-		} finally { s.close(); }
+		} finally { await s.close(); }
 	}
 	// 2. Never waited: the followUp sent from the stopping turn's turn_end continues the same run.
 	{
@@ -1311,7 +1327,7 @@ test("contract (real AgentSession): held settles leave pi at the run's own bound
 			assert.equal(s.faux.state.callCount, 3, "one wake turn");
 			assert.equal(s.completed().length, 1);
 			assert.deepEqual(s.order, ["agent_start", "custom:subagent-complete", "agent_end", "agent_settled"], "delivered before agent_end, no agent_settled in between");
-		} finally { s.close(); }
+		} finally { await s.close(); }
 	}
 	// 3. Aborted: triggerTurn:false at agent_end is persisted, and no turn starts.
 	{
@@ -1333,7 +1349,7 @@ test("contract (real AgentSession): held settles leave pi at the run's own bound
 			assert.equal(s.completed().length, 1, "the held settle is in the transcript");
 			assert.equal(s.session.agent.hasQueuedMessages(), false, "nothing stranded in pi's queue");
 			assert.deepEqual(s.order.filter((e) => e === "agent_start"), ["agent_start"]);
-		} finally { s.close(); }
+		} finally { await s.close(); }
 	}
 });
 
@@ -4395,7 +4411,7 @@ test("spec on: every code-writing worker (pi, claude-code, team member) gets the
 		const claude = created[1];
 		assert.equal(claude.systemPrompt, `Own words.\n\n${brief}`);
 		const hooks = JSON.parse(claude.settingsJson).hooks;
-		assert.deepEqual(Object.keys(hooks).sort(), ["PostToolUse", "Stop", "UserPromptSubmit"]);
+		assert.deepEqual(Object.keys(hooks).sort(), ["PostToolUse", "PreToolUse", "Stop", "UserPromptSubmit"]);
 		const post = hooks.PostToolUse[0];
 		assert.equal(post.matcher, "*", "after ANY tool, Bash included");
 		assert.ok(post.hooks[0].command.includes(SPEC_HOOK_SCRIPT) && post.hooks[0].command.includes(" post --core "));

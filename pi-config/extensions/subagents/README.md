@@ -51,10 +51,6 @@ including extension/cloud providers. Claude asks its CLI's initialization endpoi
 for models/effort choices without submitting a model task. Discovery failures are
 reported per backend, not silently converted into an empty model list.
 
-`/subagents models [search]` (or `/agents models [search]`) opens a model picker;
-selecting a choice prefills a delegation request with the exact backend and ID.
-It does not start a worker until you supply and send the task.
-
 Spawn one worker:
 
 ```json
@@ -349,8 +345,8 @@ while it does not exist the pre-Models-tab file
 `~/.pi/agent/subagents/settings.json` is read instead and its two lists are
 treated as the subagent dimension, which is what they always meant.
 
-A disabled provider blocks all of its models; `agent_models` and the
-`/subagents models` picker stop listing blocked choices, and `agent_spawn`,
+A disabled provider blocks all of its models; `agent_models` stops listing
+blocked choices, and `agent_spawn`,
 `team_create`, and `team_add` reject one with a reason — whether it was named
 explicitly, taken from an agentType definition, or inherited from the parent
 session's model. The reason says whether the model is off everywhere or only for

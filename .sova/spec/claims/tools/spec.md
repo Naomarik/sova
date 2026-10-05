@@ -359,7 +359,8 @@ it); failing that, an HTML comment naming it, labelled as a comment; failing tha
 by its `about` field, "about §x (declared on the note)", since the field itself is the written reason;
 failing that, exactly "not mentioned in this claim's text". The JSON says which (`whatSource`, and
 `whySource` `prose`, `comment`, `declared` or `none`). A line, and the requested claim, whose record
-carries `agreed` shows who agreed to it and when, and whether it is built (it maps `code` and its
+carries `agreed` shows who made the decision and when, never that they read its current words, and
+whether it is built (it maps `code` and its
 `evidence` is `reviewed` or `verified`), as "agreed <at> by <by>, not built" or ", built", so an
 agreed promise not yet built never reads like a built one.
 

@@ -7,10 +7,11 @@
 //
 //   node scenario-g.mjs --record <extensions tree>   rewrite data/g-baseline.json from that tree's packet arm
 import "../../../claude-code/tests/hermetic-env.mjs";
+import { createHash } from "node:crypto";
 import { readFileSync, writeFileSync, existsSync, realpathSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { specIndex, scoreNeed, readStream, proseTexts, median, pool, idsIn, parentOf, capability, readToc } from "./fullness.mjs";
+import { specIndex, scoreNeed, readStream, proseTexts, median, pool, idsIn, parentOf, capability, readToc, accepts, readLines } from "./fullness.mjs";
 import { Tools, workspace, scrubProcessEnv } from "./lib.mjs";
 import { DATA, extractPinned } from "./pinned.mjs";
 
@@ -164,6 +165,8 @@ export async function fullness(ctx) {
     rows.push(row(`g.impact.${seed.slice(1).replace(/[/.]/g, "-")}`, r.json ? { consumers: r.json.consumers?.length ?? null, frontier: r.json.frontier?.length ?? null } : `no-json(status ${r.status})`));
   }
 
+  rows.push(...(await mapRows(ctx, root)));
+
   // The pull proxy: n/a only when the tree's sova-spec.mjs rejects `toc` as an unknown command.
   const toc = await capability(ctx.tools, root, ctx.ws.home, "toc");
   if (toc === "absent") {
@@ -205,6 +208,55 @@ export async function fullness(ctx) {
     // A row, not a guard: one hop is a proxy, and a need two hops out is a fair loss to report. The guard
     // "no need packet answers is lost unless shown" belongs to the agent arm, where the agent may take more hops.
     rows.push(row("g.pull.not-shown", lostUnshown.join("; ") || "none"));
+  }
+  return rows;
+}
+
+/** Files whose claims `where` must list (every claim whose `code` names the file), and one to rank. */
+const WHERE_ALL = "server/chat-manager.ts";
+const WHERE_RANKED = "shared/protocol.ts";
+
+/**
+ * M3's views over the pinned spec: `impact --near` (narrowed reverse impact) and `where` (claims for a file), each
+ * n/a only when the tree rejects the command or flag; plus digests of what must not change (`scope` and plain
+ * `impact` over every seed), so any change to them shows as a changed row.
+ */
+async function mapRows(ctx, root) {
+  const rows = [];
+  const seeds = [...new Set(DATA.comparisons.map((c) => c.seed))].sort();
+  const digest = async (cmd) => {
+    const h = createHash("sha256");
+    for (const out of await pool(seeds, 8, async (s) => (await ctx.tools.runAsync(root, ctx.ws.home, [cmd, s])).stdout.split(root).join("<root>"))) h.update(out);
+    return h.digest("hex").slice(0, 16);
+  };
+  rows.push(row("g.digest.scope", await digest("scope")));
+  rows.push(row("g.digest.impact", await digest("impact")));
+
+  const near = await accepts(ctx.tools, root, ctx.ws.home, ["impact", "§chat/composer", "--near"]);
+  if (near === "absent") rows.push(row("g.target.impact-near.chat-composer", "n/a: this tree has no impact --near"));
+  else {
+    const r = await readLines(ctx.tools, root, ctx.ws.home, ["impact", "§chat/composer", "--near"]);
+    const groups = r.first?.counts?.groups ?? {};
+    rows.push(row("g.target.impact-near.chat-composer", r.ok ? { consumers: groups.consumer ?? null, frontier: groups.frontier ?? null, lines: r.lines.length, calls: r.calls } : `refused: ${r.refused}`, [
+      guard("g.impact-near.answers", r.ok, r.ok ? "impact --near answered" : `impact --near failed: ${r.refused}`),
+    ]));
+  }
+
+  const where = await accepts(ctx.tools, root, ctx.ws.home, ["where", WHERE_ALL]);
+  if (where === "absent") {
+    rows.push(row("g.where.all", "n/a: this tree has no where", [guard("g.where.all-listed", true, "n/a: this tree has no where", true)]));
+    rows.push(row("g.target.where-ranked", "n/a: this tree has no where"));
+  } else {
+    const claims = JSON.parse(readFileSync(join(root, ".sova/spec/manifest.json"), "utf8")).claims;
+    const mapping = Object.entries(claims).filter(([, r]) => (r.code ?? []).includes(WHERE_ALL)).map(([id]) => id);
+    const all = await readLines(ctx.tools, root, ctx.ws.home, ["where", "--all", WHERE_ALL]);
+    const listed = new Set(all.lines.map((l) => l.id));
+    const missing = mapping.filter((id) => !listed.has(id));
+    rows.push(row("g.where.all", { file: WHERE_ALL, mapped: mapping.length, listed: listed.size, calls: all.calls }, [
+      guard("g.where.all-listed", all.ok && missing.length === 0, !all.ok ? `where --all failed: ${all.refused}` : missing.length ? `not listed: ${missing.slice(0, 5).join(", ")}${missing.length > 5 ? ` … ${missing.length - 5} more` : ""}` : `all ${mapping.length} claims whose code names the file are listed`),
+    ]));
+    const ranked = await readLines(ctx.tools, root, ctx.ws.home, ["where", WHERE_RANKED]);
+    rows.push(row("g.target.where-ranked", ranked.ok ? { file: WHERE_RANKED, total: ranked.first?.total ?? null, shown: ranked.lines.length, ranked: ranked.first?.counts?.ranked ?? null, bytes: ranked.bytes } : `refused: ${ranked.refused}`));
   }
   return rows;
 }

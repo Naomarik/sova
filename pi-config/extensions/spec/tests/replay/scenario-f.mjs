@@ -10,7 +10,7 @@
 // Rows measure; guards hold today and must keep holding; target rows record what today's tools miss by design.
 // The pull checks need `toc` (and `read`); a tree without them reports n/a, never a pass.
 import { Repo, seedSpec } from "./lib.mjs";
-import { specIndex, readStream, proseTexts, idsIn, capability, readToc, readPassage } from "./fullness.mjs";
+import { specIndex, readStream, proseTexts, idsIn, capability, readToc, readPassage, accepts, readLines } from "./fullness.mjs";
 import { FRAME_CAP, DIRS } from "./scenario-g.mjs";
 
 const row = (scenario, metric, value, guards = []) => ({ scenario, metric, value, guards });
@@ -113,6 +113,18 @@ export async function sliceQuality(ctx) {
   rows.push(row("f", "f.impact", imp.json ? { consumers: consumers.length, frontier: front.length, unrelatedOnFrontier: front.includes(P.unrelated) } : `no-json(status ${imp.status})`, [
     guard("f.true-consumer-kept", consumers.includes(P.consumer) || front.includes(P.consumer), `${P.consumer} is ${consumers.includes(P.consumer) ? "a consumer" : front.includes(P.consumer) ? "on the frontier" : "gone"}`),
   ]));
+  // Narrowed impact (`--near`): n/a only when the tree rejects the flag.
+  if ((await accepts(ctx.tools, repo.root, ctx.ws.home, ["impact", "§f/seed", "--near"])) === "absent") {
+    rows.push(row("f", "f.impact-near", "n/a", [guard("f.near.true-consumer-kept", true, "n/a: no impact --near", true), guard("f.near.unrelated-off-frontier", true, "n/a: no impact --near", true)]));
+  } else {
+    const n = await readLines(ctx.tools, repo.root, ctx.ws.home, ["impact", "§f/seed", "--near"]);
+    const groupOf = (id) => n.lines.filter((l) => l.id === id).map((l) => l.group);
+    const kept = groupOf(P.consumer), stray = groupOf(P.unrelated).filter((g) => g === "frontier");
+    rows.push(row("f", "f.impact-near", n.ok ? { lines: n.lines.length, consumer: kept.join(",") || "absent", unrelated: groupOf(P.unrelated).join(",") || "absent" } : `refused: ${n.refused}`, [
+      guard("f.near.true-consumer-kept", n.ok && kept.length > 0, n.ok ? `${P.consumer}: ${kept.join(",") || "absent"}` : `impact --near failed: ${n.refused}`),
+      guard("f.near.unrelated-off-frontier", n.ok && stray.length === 0, n.ok ? `${P.unrelated}: ${groupOf(P.unrelated).join(",") || "absent"}` : `impact --near failed: ${n.refused}`),
+    ]));
+  }
 
   // ── Under pull ──
   rows.push(...(await pull(ctx, repo, index)));

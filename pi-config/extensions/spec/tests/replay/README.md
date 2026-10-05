@@ -67,6 +67,7 @@ purpose: `node scenario-g.mjs --record <tree made from the baseline ref>`. `data
 | M1 onward | ratchet: g's needs shown one hop out (`g.pull.total.shown`, 86/138 at M1) never drops |
 | M2 (spec-mode text) | agent arm, all 24 comparisons, on the M1+M5 tree: no need packet answers lost unless its passage was seen; answered ≥ packet's; calls per comparison within today's 7–18; the 21 checked one by one |
 | M4 (span promotion) | a.diff-h2.hand-reapply 1 → 0; `a.target.same-spot` both orders land, byte-identical; a's guards hold |
+| M3 (`map`, `where`, `impact --near`) | f: `impact §f/seed --near` keeps the true consumer and keeps the unrelated one off its frontier (guards); g: `g.target.impact-near.chat-composer` frontier 143 → ≤ 25, `g.where.all` lists every claim whose code names server/chat-manager.ts (guard, 74), `g.target.where-ranked` for shared/protocol.ts (107, top 10); `g.digest.scope` and `g.digest.impact` (plain impact) unchanged |
 | M5, M6 | the f/g target rows they claim (embed read whole, core arrives unasked, about note travels; answered-or-named), and which of the 21 come into view |
 
 ## The agent arm (opt-in, not deterministic)

@@ -146,13 +146,15 @@ it was merged from, byte for byte, or the promotion is refused as a conflict and
 
 ## §tools.spec/agreed-promotion — An agreed promise lands in the main spec before it is built
 
-A behavior or surface record may carry `agreed: {by, at}`: who agreed to its wording and when (an
-ISO date, optionally with a time). It is written when the person agrees, and it belongs to that
-wording: a promotion may replace the `agreed` of a record current already has only when the same
-promotion also changes that record's prose and the new `at` is not earlier than the old one. A
-promotion that changes `agreed` on unchanged prose, or that removes it without deleting the whole
-record, is refused, so the later build updates the same record and still says who decided, and
-nobody re-stamps a decision silently. A record with `agreed` and no `code` may be
+A behavior or surface record may carry `agreed: {by, at}`: who made the decision it records, and
+when (an ISO date, optionally with a time). It names who decided and when, not that they read the
+record's current words; no tool checks what the prose means. A later promotion may reword the prose
+and keep `agreed`. A change of meaning goes back to the person who decided, and their new agreement
+replaces `agreed`: a promotion may replace the `agreed` of a record current already has only when
+the same promotion also changes that record's prose and the new `at` is not earlier than the old
+one. A promotion that changes `agreed` on unchanged prose, or that removes it without deleting the
+whole record, is refused, so the later build updates the same record and still says who decided,
+and nobody re-stamps a decision silently. A record with `agreed` and no `code` may be
 promoted on doc-only evidence, as notes and sections are: that records the decision, not that
 anything was built. A record reads as built only when it has `code` and the `evidence` label
 `reviewed` or `verified`, so doc-only evidence for an agreed record that declares either one is

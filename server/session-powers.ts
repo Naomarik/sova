@@ -1,4 +1,4 @@
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { PiExtensionAPI } from "./harness/pi/extension-types";
 import type { ToolSpec } from "../shared/harness";
 import { toPiTool } from "./harness/pi/tools";
 import { appendFileSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
@@ -190,12 +190,12 @@ export class RunState {
     this.hops.set(text, hop);
   }
   observe(event: TurnEvent): void {
-    if (event.type === "agent_start") {
+    if (event.type === "run.start") {
       this.hop = 0;
       this.limits.runStarted();
     }
-    if (event.type === "message_start") {
-      const t = userMessageText(event.message);
+    if (event.type === "message.start") {
+      const t = userMessageText(event.handle);
       if (t !== null) {
         const h = this.hops.get(t);
         if (h !== undefined) {
@@ -461,7 +461,7 @@ export function sessionPowersExtension(ctx: PowersContext) {
   return {
     name: "sova-session-powers",
     hidden: true,
-    factory: (pi: ExtensionAPI) => {
+    factory: (pi: PiExtensionAPI) => {
       for (const t of sessionPowersTools(ctx)) pi.registerTool(toPiTool(t));
     },
   };

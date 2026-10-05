@@ -298,7 +298,7 @@ export const PI_QUIRKS: readonly PiQuirk[] = [
     kind: "semantic",
     relies: "The resource loader's appendSystemPromptOverride parts are read when the base system prompt is rebuilt, which setActiveToolsByName(getActiveToolNames()) does; a run alone keeps the prompt it was built with.",
     pi: ["AgentSession.setActiveToolsByName", "AgentSession._rebuildSystemPrompt", "DefaultResourceLoader.appendSystemPromptOverride"],
-    where: [{ file: "server/overseer.ts", symbol: "LivePrompt.rebase" }],
+    where: [{ file: "server/harness/pi/session.ts", symbol: "PiHarnessSession.refreshSystemPrompt" }, { file: "server/overseer.ts", symbol: "LivePrompt.rebase" }],
     canary: "P19 rebuild-prompt: setActiveToolsByName(getActiveToolNames()) re-reads the loader's appendSystemPrompt parts",
     retireWhen: "pi adds a public refreshSystemPrompt(), or re-reads the parts at each run",
   },

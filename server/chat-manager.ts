@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { runLedger } from "./auto-resume";
 import { closeSync, existsSync, openSync, readSync } from "node:fs";
-import type { AgentSession, AgentSessionRuntime, CreateAgentSessionServicesOptions, SessionManager, ToolDefinition } from "@earendil-works/pi-coding-agent";
+import type { AgentSession, AgentSessionRuntime, SessionManager } from "@earendil-works/pi-coding-agent";
 import { LOGIN_UNCHANGED } from "../shared/protocol";
 import { type BatonSentData, OPERATOR } from "../shared/baton";
 import type { ChatClientMessage, ChatModeResult, ChatServerMessage, CompactRefusal, V1EventFrame, V2EventFrame, ModeApplies, ModeInfo, OverseerDialogAnswerData, OverseerSentMarkerData, QueueItem, RegenerateRefusal, RewindRefusal, SandboxApplyResult, SandboxInfo, SlashCommand, TranscriptItem, WorkerInfo } from "../shared/protocol";
@@ -31,6 +31,7 @@ import { onWire, withRows } from "./wire-rows";
 import type { DialogBridge, HarnessEvent, HarnessSession, HEntry, ImageInput, SessionState, SessionStateWriter, StateKind, StateView } from "../shared/harness";
 import { historyOf, storedAsString } from "./harness/pi/reader";
 import { extensionFlagValues, getModelRuntime, openPiSession, type OpenFlags, type OpenRead, type PiBuild, type PiModelRuntime, warmClaudeCodeProvider as warmPiProvider } from "./harness/pi/open";
+import type { PiLoaderOptions, PiToolDefinition } from "./harness/pi/extension-types";
 import { bindPiExtensions } from "./harness/pi/ui-bridge";
 import { contextOfBranch } from "./harness/pi/usage";
 import { extensionEntries, piSessionState } from "./harness/pi/state";
@@ -413,12 +414,12 @@ export function isOverseerFile(s: SessionMarks): boolean {
  */
 export interface OverseerRuntime {
   loadout(path: string): Promise<{
-    resourceLoaderOptions: NonNullable<CreateAgentSessionServicesOptions["resourceLoaderOptions"]>;
+    resourceLoaderOptions: PiLoaderOptions;
     /** The tool allowlist: built-in, extension and inline tools alike. */
     tools: string[];
     /** SDK custom tools: they replace a built-in or an extension's tool of the same name (the
         Overseer's secret-guarded read/grep/find/ls). */
-    customTools?: ToolDefinition[];
+    customTools?: PiToolDefinition[];
     /** From overseer.json, never defaults.json. */
     model: string | null;
     thinking: string | null;
@@ -428,10 +429,10 @@ export interface OverseerRuntime {
   /** Every open of an Overseer runtime, once bound: brings its mode back to normal with no minor
       modes, whatever its branch restored. */
   opened(chat: ChatSession): Promise<void>;
-  /** Called with every AgentSession the Overseer's runtime builds, so `userSend` can recognise the
+  /** Called with every session the Overseer's runtime builds, so `userSend` can recognise the
       message it produced when that message reaches the Agent, and every run is decided from the
       session's own event stream. */
-  watchSession(session: AgentSession): void;
+  watchSession(session: HarnessSession): void;
   /** Runs the SDK call that hands the Overseer a message the user sent from the UI (a prompt, a
       steer, a regenerate; `origin` "client"). The turn the resulting message opens is the user's,
       whatever an extension's `input` handler or a template made of its text: full tools, and the
@@ -461,8 +462,8 @@ export interface SpecialLoadout {
   loadout(path: string): Promise<SpecialLoadoutResult>;
   /** Every open, once bound. */
   opened?(chat: ChatSession): Promise<void>;
-  /** Every AgentSession the runtime builds. */
-  watchSession?(session: AgentSession, path: string): void;
+  /** Every session the runtime builds. */
+  watchSession?(session: HarnessSession, path: string): void;
   /** A message from this server's own composer (/ws/chat prompt or steer): who sent it, or throw a
       refusal the client is told. Absent: sent as usual, unattributed. `undo` puts back what the
       kind recorded for it when the runtime then refuses the message. `text` and `images`, when
@@ -1521,7 +1522,7 @@ class ChatSession {
     // runtime (§app.server-runtime/quirks): the one place it is installed.
     useSlicedProviderReads(session.agent);
     this.streamGuardOff?.();
-    this.streamGuardOff = attachStreamGuard(session, () => capsFor(this.special), {
+    this.streamGuardOff = attachStreamGuard(harness, () => capsFor(this.special), {
       onRunStart: () => (this.lastStreamTrip = null),
       onTrip: (trip) => {
         this.lastStreamTrip = trip;
@@ -3249,8 +3250,8 @@ async function openSession(path: string, onDisposed: () => void): Promise<ChatSe
       built: (session) => {
         if (profile.run) {
           const run = profile.run;
-          run.turns.watch(session.agent as unknown as Parameters<RunState["turns"]["watch"]>[0]);
-          session.subscribe((event) => run.observe(event as Parameters<RunState["observe"]>[0]));
+          run.turns.watch(session);
+          session.subscribe((event) => run.observe(event));
         }
         // The Overseer tells a message the user sent from every other by the object it reaches the Agent as.
         if (kind?.kind === "overseer") overseerRuntime?.watchSession(session);

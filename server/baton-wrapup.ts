@@ -11,7 +11,6 @@ import {
 import type { Person } from "../shared/orgs";
 import { batonById, sessionPathOf } from "./baton";
 import { acquireChat } from "./chat-manager";
-import { liveRead } from "./harness/pi/reader";
 import { BATON_WRAPUP } from "./harness/state-kinds";
 import { aboutSomeoneElse, detectLanguage } from "./baton-guards";
 import { withoutAuthorNotes } from "./baton-view";
@@ -305,15 +304,15 @@ export async function runWrapup(sessionId: string, normalTools: readonly string[
   try {
     chat.appendStateRow(BATON_WRAPUP, { v: 1, phase: "start" } satisfies BatonWrapupData);
     run = beginWrapupRun(sessionId);
-    chat.session.setActiveToolsByName([WRAPUP_TOOL]);
+    chat.harness.setActiveTools([WRAPUP_TOOL]);
     // The usage ledger records this turn's calls as the session's wrap-up (the project card's split).
-    setUsageSessionPurpose(chat.session.sessionManager.getSessionId(), "wrapup");
-    const from = liveRead(chat.session).branch().length;
+    setUsageSessionPurpose(chat.harness.id, "wrapup");
+    const from = chat.harness.branch().length;
     const { turn } = chat.acceptPrompt(wrapupPrompt(row, readRoster(row.orgId)), undefined, "server");
     await turn;
     // Only this turn's answer counts: a stop that wrote none must not read as the session's own
     // earlier turn (goal_done, an ordinary tool call).
-    const last = liveRead(chat.session)
+    const last = chat.harness
       .branch()
       .slice(from)
       .reverse()
@@ -328,10 +327,10 @@ export async function runWrapup(sessionId: string, normalTools: readonly string[
     error = err instanceof Error ? err.message : String(err);
   } finally {
     endWrapupRun(sessionId);
-    setUsageSessionPurpose(chat.session.sessionManager.getSessionId(), undefined);
-    chat.session.setActiveToolsByName([...normalTools]);
+    setUsageSessionPurpose(chat.harness.id, undefined);
+    chat.harness.setActiveTools([...normalTools]);
   }
-  await inferLanguages(sessionId, row, liveRead(chat.session).branch(), run);
+  await inferLanguages(sessionId, row, chat.harness.branch(), run);
   try {
     chat.appendStateRow(BATON_WRAPUP, {
       v: 1,

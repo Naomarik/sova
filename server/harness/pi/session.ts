@@ -12,15 +12,18 @@ import type {
   HarnessQueue,
   HarnessResources,
   HarnessSession,
+  HarnessStreamDelta,
   HEntry,
   ImageInput,
   InputSource,
   SendOptions,
   SessionState,
+  ToolSpec,
 } from "../../../shared/harness";
 import { historyOf, toHEntry } from "./reader";
 import { resourcesOf } from "./resources";
 import { piSessionState } from "./state";
+import { fromPiTool } from "./tools";
 import { watchUserMessages } from "./turns";
 import { v1Frame, writtenEntryId } from "./wire";
 
@@ -75,6 +78,17 @@ function messageText(content: unknown): string {
     .join("\n");
 }
 
+/** The pieces of pi's assistant-message stream the stream guard counts (pi-ai's AssistantMessageEvent). */
+const STREAM_KIND = { toolcall_delta: "tool-call", text_delta: "text", thinking_delta: "thinking" } as const;
+
+/** A message_update's stream piece, when it is one the stream guard counts. */
+function streamDeltaOf(e: { type?: string; contentIndex?: number; delta?: unknown } | undefined): HarnessStreamDelta | undefined {
+  if (!e) return undefined;
+  if (e.type === "toolcall_start") return { kind: "tool-call.start", index: e.contentIndex };
+  const kind = STREAM_KIND[e.type as keyof typeof STREAM_KIND];
+  return kind ? { kind, index: e.contentIndex, delta: typeof e.delta === "string" ? e.delta : "" } : undefined;
+}
+
 /** One pi event as the HarnessEvent it is (exactly one per event). */
 export function harnessEventOf(event: { type: string; [k: string]: any }): HarnessEvent {
   const frame = () => v1Frame(event);
@@ -86,10 +100,16 @@ export function harnessEventOf(event: { type: string; [k: string]: any }): Harne
       const role = message?.role === "user" ? "user" : message?.role === "assistant" ? "assistant" : "other";
       return { type, frame, role, ...(role === "user" ? { text: messageText(message!.content) } : {}), handle: message ?? undefined };
     }
+    case "message.update": {
+      const message = event.message as { role?: unknown } | undefined;
+      const role = message?.role === "user" ? "user" : message?.role === "assistant" ? "assistant" : "other";
+      const stream = streamDeltaOf(event.assistantMessageEvent);
+      return { type, frame, role, handle: message ?? undefined, ...(stream ? { stream } : {}) };
+    }
     case "queue":
       return { type, frame, steering: event.steering, followUp: event.followUp };
     case "compaction.end":
-      return { type, frame, wrote: typeof event.result === "object" && event.result !== null };
+      return { type, frame, wrote: typeof event.result === "object" && event.result !== null, willRetry: event.willRetry === true };
     case "entry.appended":
       return event.entry ? { type, frame, entry: toHEntry(event.entry) } : { type: "other", frame };
     default:
@@ -217,8 +237,21 @@ export class PiHarnessSession implements HarnessSession {
   activeTools(): string[] {
     return this.s.getActiveToolNames();
   }
+  setActiveTools(names: readonly string[]): void {
+    this.s.setActiveToolsByName(names as string[]);
+  }
+  /** P19: pi's public way to rebuild the base prompt options from the loader's parts, the tool set passed
+      back unchanged. */
+  refreshSystemPrompt(): void {
+    const s = this.s;
+    s.setActiveToolsByName(s.getActiveToolNames());
+  }
   registeredTools(): string[] {
     return this.s.extensionRunner.getAllRegisteredTools().map((r) => r.definition.name);
+  }
+  registeredTool(name: string): ToolSpec | undefined {
+    const def = this.s.extensionRunner?.getToolDefinition(name);
+    return def ? fromPiTool(def) : undefined;
   }
   /** pi's rpc get_commands enumeration (rpc-mode.js "get_commands"): extension commands, prompt templates,
       skills. */

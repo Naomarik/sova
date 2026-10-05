@@ -54,7 +54,7 @@ Paths in "Where" are under `server/`.
 | P16 custom-message-idle | semantic | `PiHarnessSession.appendNote` (harness/pi/session.ts), `ChatSession.appendNote` (chat-manager.ts) | `AgentSession.sendCustomMessage` | never: a contract worth keeping a canary for |
 | P17 theme-global | private-read | `currentTheme` (harness/pi/ui-bridge.ts) | `initTheme`, `Symbol.for("@earendil-works/pi-coding-agent:theme")` | pi exports the theme instance |
 | P18 warmup-shutdown | internal-API | `warmClaudeCodeProvider` (harness/pi/open.ts) | `AgentSession.bindExtensions`, `AgentSession.dispose`, `ExtensionRunner.emit`, `ExtensionRunner.hasHandlers` | dispose() emits session_shutdown (then the warm-up's own emit would double it) |
-| P19 rebuild-prompt | semantic | `LivePrompt.rebase` (overseer.ts) | `AgentSession.setActiveToolsByName`, `AgentSession._rebuildSystemPrompt`, `DefaultResourceLoader.appendSystemPromptOverride` | pi adds a public refreshSystemPrompt(), or re-reads the parts at each run |
+| P19 rebuild-prompt | semantic | `PiHarnessSession.refreshSystemPrompt` (harness/pi/session.ts), `LivePrompt.rebase` (overseer.ts) | `AgentSession.setActiveToolsByName`, `AgentSession._rebuildSystemPrompt`, `DefaultResourceLoader.appendSystemPromptOverride` | pi adds a public refreshSystemPrompt(), or re-reads the parts at each run |
 | P20 model-restore-gate | semantic | `recordedModelForEmptyBranch` (harness/pi/open.ts), `modelForSessionOpen` (harness/pi/open.ts) | `createAgentSession`, `SessionManager.buildSessionContext` | pi restores a recorded model on any branch |
 | T1 scripted-model (test-only) | private-write | `ScriptedModel.attach` (harness/pi/testing/scripted-model.ts) | `AgentSession._modelRuntime`, `Agent.getApiKey`, `Agent.streamFunction` | pi offers a public test model hook |
 
@@ -172,7 +172,7 @@ Canary: `P18 warmup-shutdown: bindExtensions emits session_start; a bare dispose
 
 ### P19 rebuild-prompt
 
-The resource loader's `appendSystemPromptOverride` parts are read when the base system prompt is rebuilt, which `setActiveToolsByName(getActiveToolNames())` does; a run alone keeps the prompt it was built with.
+The resource loader's `appendSystemPromptOverride` parts are read when the base system prompt is rebuilt, which `setActiveToolsByName(getActiveToolNames())` does; a run alone keeps the prompt it was built with. The driving session's `refreshSystemPrompt()` is that call; the Overseer makes it at each run's start.
 
 Canary: `P19 rebuild-prompt: setActiveToolsByName(getActiveToolNames()) re-reads the loader's appendSystemPrompt parts`.
 

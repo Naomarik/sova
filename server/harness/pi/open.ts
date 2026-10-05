@@ -6,30 +6,25 @@ import {
   type AgentSession,
   type AgentSessionRuntime,
   type CreateAgentSessionRuntimeFactory,
-  type CreateAgentSessionServicesOptions,
   createAgentSessionFromServices,
   createAgentSessionRuntime,
   createAgentSessionServices,
   ModelRuntime,
   SessionManager,
-  type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
-import type { SessionRead, StateView } from "../../../shared/harness";
+import type { HarnessSession, SessionRead, StateView } from "../../../shared/harness";
 import { applyForkCacheRouting } from "../../../pi-config/extensions/subagents/fork/cache.ts";
 import { instrumentModelRuntime } from "../../../pi-config/extensions/llm-inflight/runtime.ts";
 import { markDegraded } from "../../../pi-config/extensions/llm-inflight/tracker.ts";
 import { installWorkerNice, lowerToolCommands } from "../../process-priority";
 import { agentRoot } from "../../state-root";
+import type { PiExtensionFactory, PiLoaderOptions, PiToolDefinition } from "./extension-types";
 import { liveRead } from "./reader";
+import { PiHarnessSession } from "./session";
 import { piSessionState } from "./state";
 import { currentTheme } from "./ui-bridge";
 
-/** pi's resource loader options for a runtime: the extensions it loads and any loader overrides. */
-export type PiLoaderOptions = NonNullable<CreateAgentSessionServicesOptions["resourceLoaderOptions"]>;
-/** An extension factory entry of a loader's `extensionFactories`. */
-export type PiExtensionFactory = NonNullable<PiLoaderOptions["extensionFactories"]>[number];
-export type PiModelRuntime = ModelRuntime;
-export type PiToolDefinition = ToolDefinition;
+export type { PiExtensionFactory, PiLoaderOptions, PiModelRuntime, PiToolDefinition } from "./extension-types";
 
 /**
  * The extension flags a runtime starts with, by meaning; Sova decides each value (server/chat-manager.ts
@@ -248,14 +243,15 @@ export interface PiBuild {
   /** A tool allowlist (built-in, extension and inline tools alike) and custom tools that replace a tool
       of the same name: a special loadout's. */
   tools?: string[];
-  customTools?: ToolDefinition[];
+  customTools?: PiToolDefinition[];
   /** For a session that may still open on a default: the model ref and thinking level it should, already
       checked against Sova's policy and ladder; null, or a missing field, leaves pi's choice. */
   opening(): { model?: string; thinking?: string } | null;
   /** Route the provider's prompt cache by the file's inherited fork key (an ordinary session). */
   forkCacheRouting: boolean;
-  /** Each session built, before anything runs on it (the profile's run state, a special kind's watch). */
-  built?(session: AgentSession): void;
+  /** Each session built, as a driving session over it, before anything runs on it (the profile's run state,
+      a special kind's watch). */
+  built?(session: HarnessSession): void;
 }
 
 /** A session file opened for a hosted chat, its runtime not built yet. */
@@ -324,7 +320,7 @@ export async function openPiSession(path: string, cwdOverride: string | undefine
         ...(excluded.length ? { excludeTools: excluded } : {}),
       });
       if (plan.forkCacheRouting) applyForkCacheRouting(created.session);
-      plan.built?.(created.session);
+      if (plan.built) plan.built(new PiHarnessSession({ session: created.session, services }));
       return {
         ...created,
         services,

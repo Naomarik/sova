@@ -147,7 +147,7 @@ const stopping = new Set<string>();
 async function interruptReply(chat: ChatSession): Promise<void> {
   const since = chat.leafId();
   const kept = [];
-  for (let i = 0; i < 3 && (chat.session.isStreaming || chat.isCompacting() || chat.turnStarting); i++) {
+  for (let i = 0; i < 3 && (chat.harness.isRunning() || chat.isCompacting() || chat.turnStarting); i++) {
     // A turn that is starting (a message just handed over) can't be aborted until its run begins.
     await chat.whenStarted();
     kept.push(...(await chat.stopRun(() => true)));
@@ -454,7 +454,7 @@ export async function flushEntries(path: string): Promise<void> {
   const waiting = waitingEntries.get(path);
   if (!waiting) return;
   const chat = await acquireChat(path);
-  if (chat.session.isStreaming || chat.isCompacting()) return; // the next settle writes them
+  if (chat.harness.isRunning() || chat.isCompacting()) return; // the next settle writes them
   waitingEntries.delete(path);
   for (const e of waiting) if (typeof e.data.key !== "string" || !hasEntry(chat, e.data.key)) chat.appendStateRow(e.kind, e.data);
 }
@@ -564,7 +564,7 @@ export function registerBatonEffects(host: OrgHostApi, orgId: string): void {
     } finally {
       stopping.delete(sessionId);
     }
-    if (!chat.session.isStreaming && !chat.turnStarting) await replyFact(sessionId, "reply/ended");
+    if (!chat.harness.isRunning() && !chat.turnStarting) await replyFact(sessionId, "reply/ended");
     return {};
   });
 
@@ -696,31 +696,30 @@ registerSpecialLoadout({
   async opened(chat) {
     // The wrap-up's tool is in the allowlist, and active only during the wrap-up turn; read_link
     // only while the session can read links.
-    chat.session.setActiveToolsByName(activeBatonTools(chat.session.sessionId));
+    chat.harness.setActiveTools(activeBatonTools(chat.harness.id));
   },
   watchSession(session, path) {
     const sessionId = batonOfPath(path)?.row.sessionId;
     if (!sessionId) return;
     let writing = false;
-    session.subscribe((event) => {
-      const e = event as { type: string; message?: { role?: string } };
+    session.subscribe((e) => {
       // The wrap-up's words are nobody's business on a share page, and its turn is no reply.
       // The runtime took the turn (its first event, before any text: a model may think or call tools first): the reply
       // is being written, so its end renews the lease and applies what waited for it.
-      if (e.type === "agent_start" && !wrapupActive(sessionId) && !writing) {
+      if (e.type === "run.start" && !wrapupActive(sessionId) && !writing) {
         writing = true;
         void replyFact(sessionId, "reply/writing");
       }
-      if (e.type === "message_update" && e.message?.role === "assistant") {
+      if (e.type === "message.update" && e.role === "assistant") {
         if (!wrapupActive(sessionId)) {
-          streamShare(sessionId, streamingText(e.message));
+          streamShare(sessionId, streamingText(e.handle));
           if (!writing) {
             writing = true;
             void replyFact(sessionId, "reply/writing");
           }
         }
-      } else if (e.type === "message_end" || e.type === "agent_settled" || e.type === "entry_appended") refreshShare(sessionId);
-      if (e.type === "agent_settled") {
+      } else if (e.type === "message.end" || e.type === "run.settled" || e.type === "entry.appended") refreshShare(sessionId);
+      if (e.type === "run.settled") {
         writing = false;
         // Entries that arrived mid-run (the transcript takes none then).
         setTimeout(() => void flushEntries(path).catch(() => {}), 0);

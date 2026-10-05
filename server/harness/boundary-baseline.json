@@ -13,17 +13,13 @@
     "server/overseer-file-tools.ts": "runtime",
     "server/overseer-redact.test.ts": "runtime",
     "server/overseer-runtime.test.ts": "runtime",
-    "server/overseer.ts": "type",
     "server/project-coding-runtime.test.ts": "runtime",
-    "server/project-overseer.ts": "type",
     "server/project-services/note.ts": "type",
     "server/project-services/tools.ts": "type",
     "server/resource-monitor.ts": "type",
     "server/session-fork.test.ts": "runtime",
     "server/session-loadout.test.ts": "runtime",
     "server/session-loadout.ts": "type",
-    "server/session-powers.ts": "type",
-    "server/stream-guard.ts": "type",
     "server/subagent-profiles.test.ts": "runtime",
     "server/sync/grants-sync.test.ts": "runtime",
     "server/sync/logins-stores.test.ts": "runtime",
@@ -36,11 +32,8 @@
     "server/vis-check.ts": "type"
   },
   "readers": {
-    "server/baton-wrapup.ts": {"calls": 0, "shapes": 0, "reaches": 7},
     "server/chat-manager.ts": {"calls": 2, "shapes": 2, "reaches": 9},
     "server/org-test-fixtures.ts": {"calls": 0, "shapes": 1, "reaches": 0},
-    "server/overseer.ts": {"calls": 1, "shapes": 2, "reaches": 10},
-    "server/project-overseer.ts": {"calls": 0, "shapes": 0, "reaches": 3},
     "server/user-turns.ts": {"calls": 0, "shapes": 1, "reaches": 0},
     "shared/wire-v1.ts": {"calls": 0, "shapes": 22, "reaches": 0},
     "src/lib/legacy-rows.ts": {"calls": 0, "shapes": 6, "reaches": 0}
@@ -48,10 +41,5 @@
   "writers": {},
   "wrappers": [],
   "piAdapter": [],
-  "session": {
-    "server/baton-loadout.ts": 4,
-    "server/baton-wrapup.ts": 4,
-    "server/overseer.ts": 8,
-    "server/project-overseer.ts": 8
-  }
+  "session": {}
 }

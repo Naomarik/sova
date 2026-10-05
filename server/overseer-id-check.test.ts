@@ -13,6 +13,8 @@ process.env.PI_CODING_AGENT_DIR = agentDir;
 const { assistantText, editDistance, ID_NOTE_MAX, ID_NOTE_MESSAGE, idCheckNote, linkedSessionIds, nearestId, nearMaxEdits } = await import("./overseer-id-check");
 const { idNoteMessage } = await import("./overseer");
 const { UserTurns } = await import("./user-turns");
+const { harnessEventOf } = await import("./harness/pi/session");
+const { watchUserMessages } = await import("./harness/pi/turns");
 const { disposeAllChats } = await import("./chat-manager");
 
 after(async () => {
@@ -82,16 +84,16 @@ describe("the id check (§app.overseer/id-check)", () => {
   test("the note is state: it never makes a run read-only, nor the user's", () => {
     const turns = new UserTurns();
     const agent = { prompt: async (_m: unknown) => {}, steer: (_m: unknown) => {}, followUp: (_m: unknown) => {} };
-    turns.watch(agent as never);
+    turns.watch({ onUserMessage: (claim) => watchUserMessages(agent, claim) });
     const msg = { role: "user", content: "what's running?" };
     turns.send(() => agent.prompt(msg as never));
-    turns.observe({ type: "agent_start" });
-    turns.observe({ type: "message_start", message: msg });
-    turns.observe({ type: "message_start", message: { role: "assistant", content: [] } });
-    turns.observe({ type: "message_start", message: { role: "custom", customType: ID_NOTE_MESSAGE, content: "[ids] …", display: false } });
+    turns.observe(harnessEventOf({ type: "agent_start" }));
+    turns.observe(harnessEventOf({ type: "message_start", message: msg }));
+    turns.observe(harnessEventOf({ type: "message_start", message: { role: "assistant", content: [] } }));
+    turns.observe(harnessEventOf({ type: "message_start", message: { role: "custom", customType: ID_NOTE_MESSAGE, content: "[ids] …", display: false } }));
     assert.equal(turns.attended(), true);
-    turns.observe({ type: "agent_start" });
-    turns.observe({ type: "message_start", message: { role: "custom", customType: ID_NOTE_MESSAGE, content: "[ids] …", display: false } });
+    turns.observe(harnessEventOf({ type: "agent_start" }));
+    turns.observe(harnessEventOf({ type: "message_start", message: { role: "custom", customType: ID_NOTE_MESSAGE, content: "[ids] …", display: false } }));
     assert.equal(turns.attended(), false);
   });
 });

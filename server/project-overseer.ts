@@ -1,7 +1,6 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, relative } from "node:path";
-import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import { agentRoot } from "./state-root";
 import { toolCtx, toPiTool } from "./harness/pi/tools";
 import { createSessionFile } from "./harness/pi/state";
@@ -26,6 +25,7 @@ import {
   type ProjectOverseerMarkerData,
   type StartedSession,
 } from "../shared/project-overseer";
+import type { HarnessSession } from "../shared/harness";
 import type { OverseerState } from "../shared/protocol";
 import { noteBuildMerged } from "./build-merged";
 import { buildSessionPath, buildSetupEnded, buildSid, newBuildSessionId, noteBuildSettled, noteBuildStarted, probeBuild, readBuild, readBuilds, syncBuildTurn, syncProjectBuilds, withWorktreePath } from "./build-loadout";
@@ -64,7 +64,7 @@ import type { ActResult } from "./org-host";
 import type { Envelope, LedgerCounts } from "./org-envelope";
 import { ledgerOf } from "./org-stamp";
 import { rowsOf } from "./transcript";
-import { liveRead, readBranch } from "./harness/pi/reader";
+import { readBranch } from "./harness/pi/reader";
 import { UnreadReplies } from "./unread-replies";
 import { loadDefaults } from "./web-defaults";
 import { addWebSession } from "./web-sessions";
@@ -138,7 +138,7 @@ const PROMPT_FILE = join(import.meta.dirname, "project-overseer-prompt.md");
 interface Rt {
   projectId: string;
   turns: UserTurns;
-  session: AgentSession | null;
+  session: HarnessSession | null;
   /** A look's message was just handed in: the run it starts is the look's (the watch hears `turn/started {look}`). */
   lookStarting?: boolean;
 }
@@ -257,7 +257,7 @@ export async function clearProjectOverseer(projectId: string): Promise<ProjectOv
   const oldPath = st ? await pathOfId(st.current) : null;
   if (oldPath) {
     const chat = heldChat(oldPath);
-    if (chat?.session.isStreaming) await drainQueueThenAbort(chat.session, (m) => chat.broadcast(m), chat.queue).catch(() => {});
+    if (chat?.harness.isRunning()) await drainQueueThenAbort(chat.session, (m) => chat.broadcast(m), chat.queue).catch(() => {});
     await disposeHeldChat(oldPath, "The project overseer was cleared. Opening the new conversation.");
   }
   const rt = rtOf(projectId);
@@ -422,11 +422,11 @@ export async function patchProjectOverseer(projectId: string, body: unknown): Pr
   const st = readPoState(p);
   const path = st ? await pathOfId(st.current) : null;
   const chat = path ? heldChat(path) : undefined;
-  if (chat && !chat.session.isStreaming) {
-    const cur = chat.session.model ? `${chat.session.model.provider}/${chat.session.model.id}` : null;
+  if (chat && !chat.harness.isRunning()) {
+    const cur = chat.harness.model()?.ref ?? null;
     try {
       if (s.model && s.model !== cur) await chat.setModelRef(s.model);
-      if (s.thinking && s.thinking !== chat.session.thinkingLevel) chat.setThinking(s.thinking);
+      if (s.thinking && s.thinking !== chat.harness.thinking()) chat.setThinking(s.thinking);
     } catch (err) {
       throw new OrgError(err instanceof Error ? err.message : String(err));
     }
@@ -744,8 +744,7 @@ async function overseerRunning(projectId: string): Promise<{ model: string | nul
   const st = readPoState(projectOverseerPaths(projectId));
   const path = st ? await pathOfId(st.current) : null;
   const chat = path ? heldChat(path) : undefined;
-  const m = chat?.session.model;
-  return { model: m ? `${m.provider}/${m.id}` : null, thinking: chat?.session.thinkingLevel ?? null };
+  return { model: chat?.harness.model()?.ref ?? null, thinking: chat?.harness.thinking() ?? null };
 }
 
 export interface StartedCoding {
@@ -1044,10 +1043,10 @@ registerSpecialLoadout({
   watchSession(session, path) {
     const rt = rtOfPath(path);
     rt.session = session;
-    rt.turns.watch(session.agent);
+    rt.turns.watch(session);
     session.subscribe((event) => {
       // The watch hears the runtime's turns: a look's, another run, the operator's message entering it.
-      if (event.type === "agent_start") {
+      if (event.type === "run.start") {
         const look = !!rt.lookStarting;
         rt.lookStarting = false;
         void watchFact(rt.projectId, "turn/started", { look });
@@ -1056,7 +1055,7 @@ registerSpecialLoadout({
         // The watch starts a fresh message allowance (its ledger/reset-message).
         void watchFact(rt.projectId, "turn/user-entered");
       }
-      if (event.type === "agent_settled") void watchFact(rt.projectId, "turn/ended");
+      if (event.type === "run.settled") void watchFact(rt.projectId, "turn/ended");
     });
   },
   userSend(path, send) {
@@ -1297,7 +1296,7 @@ export const CUT_OFF_DETAIL = "The server restarted during the run.";
 
 /** How an unattended run ended, from its own part of the branch (entries past `from`). */
 function runEnd(chat: ChatSession, from: number, err?: unknown): { outcome: "finished" | "stopped" | "cut-off"; detail?: string } {
-  const mine = liveRead(chat.session).branch().slice(from);
+  const mine = chat.harness.branch().slice(from);
   const last = [...mine].reverse().find((e) => e.kind === "assistant");
   const stop = last?.stop;
   const failed = !last || stop === "error" || stop === "aborted" || err !== undefined;
@@ -1347,7 +1346,7 @@ async function runLook(projectId: string, text: string, report: InvocationReport
     if (!path) return report("not-started", "no conversation yet");
     const po = await acquireChat(path);
     po.assertModelAllowed();
-    const from = liveRead(po.session).branch().length;
+    const from = po.harness.branch().length;
     const rt = rtOf(projectId);
     rt.lookStarting = true;
     const { queued, turn } = po.acceptPrompt(`${text}${lookAppendix(projectId)}`, undefined, "server");
@@ -1452,7 +1451,7 @@ export function noteCodingSettled(path: string): void {
 function lastTurnFailed(path: string): boolean {
   const chat = heldChat(path);
   if (!chat) return false;
-  const branch = liveRead(chat.session).branch();
+  const branch = chat.harness.branch();
   for (let i = branch.length - 1; i >= 0; i--) {
     const e = branch[i]!;
     if (e.kind === "assistant") return e.stop === "error" || e.stop === "aborted";

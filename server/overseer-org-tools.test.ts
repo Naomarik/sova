@@ -31,6 +31,8 @@ const overseer = await import("./overseer");
 const sessionPrompt = await import("./session-prompt");
 const tools = await import("./overseer-tools");
 const { UserTurns } = await import("./user-turns");
+const { harnessEventOf } = await import("./harness/pi/session");
+const { watchUserMessages } = await import("./harness/pi/turns");
 const { historyOf } = await import("./harness/pi/reader");
 const view = await import("./overseer-org-view");
 const confirm = await import("./overseer-confirm");
@@ -626,17 +628,17 @@ describe("the confirm card: people and projects, and the click that opens a conf
   test("UserTurns: a click's card lasts for its own run only; a typed message opens none", () => {
     const turns = new UserTurns();
     const agent = { prompt: async (_m: unknown) => {}, steer: (_m: unknown) => {}, followUp: (_m: unknown) => {} };
-    turns.watch(agent as never);
+    turns.watch({ onUserMessage: (claim) => watchUserMessages(agent, claim) });
     const msg = { role: "user", content: "Start the session with Lee." };
     turns.send(() => agent.prompt(msg as never), "card1");
-    turns.observe({ type: "agent_start" });
-    turns.observe({ type: "message_start", message: msg });
+    turns.observe(harnessEventOf({ type: "agent_start" }));
+    turns.observe(harnessEventOf({ type: "message_start", message: msg }));
     assert.equal(turns.attended(), true);
     assert.equal(turns.confirmedCard(), "card1");
     const typed = { role: "user", content: "yes" };
     turns.send(() => agent.prompt(typed as never));
-    turns.observe({ type: "agent_start" });
-    turns.observe({ type: "message_start", message: typed });
+    turns.observe(harnessEventOf({ type: "agent_start" }));
+    turns.observe(harnessEventOf({ type: "message_start", message: typed }));
     assert.equal(turns.attended(), true);
     assert.equal(turns.confirmedCard(), null);
   });
@@ -644,21 +646,21 @@ describe("the confirm card: people and projects, and the click that opens a conf
   test("UserTurns: the open-cards note is state, not input; any other extension message still ends the user's part", () => {
     const turns = new UserTurns();
     const agent = { prompt: async (_m: unknown) => {}, steer: (_m: unknown) => {}, followUp: (_m: unknown) => {} };
-    turns.watch(agent as never);
+    turns.watch({ onUserMessage: (claim) => watchUserMessages(agent, claim) });
     const msg = { role: "user", content: "c_1 a: Start the session with Lee." };
     turns.send(() => agent.prompt(msg as never), "c_1");
-    turns.observe({ type: "agent_start" });
-    turns.observe({ type: "message_start", message: msg });
-    turns.observe({ type: "message_start", message: { role: "assistant", content: [] } });
+    turns.observe(harnessEventOf({ type: "agent_start" }));
+    turns.observe(harnessEventOf({ type: "message_start", message: msg }));
+    turns.observe(harnessEventOf({ type: "message_start", message: { role: "assistant", content: [] } }));
     // After the model replied (a compaction's note steered in mid-run): the run stays the user's.
-    turns.observe({ type: "message_start", message: { role: "custom", customType: "overseer-cards", content: "[cards] …", display: false } });
+    turns.observe(harnessEventOf({ type: "message_start", message: { role: "custom", customType: "overseer-cards", content: "[cards] …", display: false } }));
     assert.equal(turns.attended(), true);
     assert.equal(turns.confirmedCard(), "c_1");
-    turns.observe({ type: "message_start", message: { role: "custom", customType: "worker-report", content: "done", display: true } });
+    turns.observe(harnessEventOf({ type: "message_start", message: { role: "custom", customType: "worker-report", content: "done", display: true } }));
     assert.equal(turns.attended(), false);
     // A run a brief starts is not made the user's by the note either.
-    turns.observe({ type: "agent_start" });
-    turns.observe({ type: "message_start", message: { role: "custom", customType: "overseer-cards", content: "[cards] …", display: false } });
+    turns.observe(harnessEventOf({ type: "agent_start" }));
+    turns.observe(harnessEventOf({ type: "message_start", message: { role: "custom", customType: "overseer-cards", content: "[cards] …", display: false } }));
     assert.equal(turns.attended(), false);
   });
 });

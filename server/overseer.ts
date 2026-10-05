@@ -3,10 +3,9 @@ import { closeSync, mkdirSync, openSync, readFileSync, readSync, statSync } from
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
-import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import { agentRoot } from "./state-root";
-import { fromPiTool, toolCtx, toPiTool } from "./harness/pi/tools";
-import { createSessionFile, piSessionState, stateOf } from "./harness/pi/state";
+import { toolCtx, toPiTool } from "./harness/pi/tools";
+import { createSessionFile } from "./harness/pi/state";
 import { GRANT, GRANT_USE, OVERSEER, REVOKE, RULE } from "./harness/state-kinds";
 import { loadPolicyFile, policyFilePath } from "../pi-config/extensions/sandbox/policy.ts";
 import {
@@ -94,8 +93,8 @@ import { probePeer } from "./mesh/hello";
 import { meshLinks } from "./mesh/links";
 import type { PeerLinkRead } from "../shared/mesh-links";
 import { rowsOf } from "./transcript";
-import { branchOf, joinedText, liveRead, parsePi, readActiveBranch, readBranch } from "./harness/pi/reader";
-import type { HEntry } from "../shared/harness";
+import { branchOf, joinedText, lineEntry, parsePi, readBranch } from "./harness/pi/reader";
+import type { HarnessSession, HEntry } from "../shared/harness";
 import { archiveWorktrees } from "./archive-worktrees";
 import { markOwned } from "./write-guard";
 import { signalTextOf, teamStallOf } from "./signals-store";
@@ -144,12 +143,8 @@ export function hasOverseerMarker(path: string): boolean {
     const n = readSync(fd, buf, 0, buf.length, 0);
     for (const line of buf.subarray(0, n).toString("utf8").split("\n")) {
       if (!line.includes(OVERSEER_ENTRY)) continue;
-      try {
-        const e = JSON.parse(line);
-        if (e?.type === "custom" && e.customType === OVERSEER_ENTRY) return true;
-      } catch {
-        // torn line: keep looking
-      }
+      const e = lineEntry(line); // null for a torn line: keep looking
+      if (e?.kind === "state" && e.key === OVERSEER_ENTRY) return true;
     }
     return false;
   } catch {
@@ -247,7 +242,7 @@ export async function clearOverseer(): Promise<OverseerInfo> {
   const carried = old && st ? carriedRules(old.branch, old.all, st.current) : [];
   if (oldPath) {
     const chat = heldChat(oldPath);
-    if (chat?.session.isStreaming) await drainQueueThenAbort(chat.session, (m) => chat.broadcast(m), chat.queue).catch(() => {});
+    if (chat?.harness.isRunning()) await drainQueueThenAbort(chat.session, (m) => chat.broadcast(m), chat.queue).catch(() => {});
     await disposeHeldChat(oldPath, "The Overseer was cleared. Opening the new conversation.");
   }
   limits.reset();
@@ -434,23 +429,23 @@ async function applySettingsNow(): Promise<void> {
     pendingApply = false; // the next open syncs from the file (chat-manager syncOverseerModel)
     return;
   }
-  if (chat.session.isStreaming) return;
+  if (chat.harness.isRunning()) return;
   pendingApply = false;
   // A conversation that has written no model or thinking yet (nothing sent): reopen it rather than
   // switch it. A switch would first flush the open-time pi-default model/thinking entries and then
   // record the new model — three info rows before the first message. A reopen seeds the runtime
   // from overseer.json directly (chat-manager createRuntime), so the file only ever records the
   // chosen model, at the first prompt. Open tabs get "reloaded" and reconnect.
-  const untouched = !liveRead(chat.session).entries().some(sentOrSet);
+  const untouched = !chat.harness.entries().some(sentOrSet);
   if (untouched) {
     await disposeHeldChat(chat.path, "The Overseer's model changed; reopening it.");
     return;
   }
   const s = readOverseerSettings();
-  const cur = chat.session.model ? `${chat.session.model.provider}/${chat.session.model.id}` : null;
+  const cur = chat.harness.model()?.ref ?? null;
   try {
     if (s.model && s.model !== cur) await chat.setModelRef(s.model);
-    if (s.thinking && s.thinking !== chat.session.thinkingLevel) chat.setThinking(s.thinking);
+    if (s.thinking && s.thinking !== chat.harness.thinking()) chat.setThinking(s.thinking);
   } catch (err) {
     console.warn("[overseer] applying settings failed:", err instanceof Error ? err.message : String(err));
   }
@@ -531,9 +526,9 @@ async function peerSession(peerId: string, id: string): Promise<SessionSummary |
   return null;
 }
 
-/** The Overseer runtime's session (watchSession): its extension runner holds the subagents
+/** The Overseer runtime's driving session (watchSession): its registered tools include the subagents
     extension's tools, which the explorer routes call in-process (overseer-idea-tools.ts). */
-let overseerSession: AgentSession | null = null;
+let overseerSession: HarnessSession | null = null;
 
 const host: OverseerToolHost = {
   request: (path, init) => {
@@ -558,7 +553,7 @@ const host: OverseerToolHost = {
   held(path) {
     const chat = heldChat(path);
     if (!chat) return null;
-    return { streaming: chat.session.isStreaming, queued: chat.queue.size, dialogs: chat.pendingDialogs() };
+    return { streaming: chat.harness.isRunning(), queued: chat.queue.size, dialogs: chat.pendingDialogs() };
   },
   answerDialog(path, dialogId, value, answer) {
     const chat = heldChat(path);
@@ -609,30 +604,29 @@ const host: OverseerToolHost = {
     peerPoll.unref?.();
   },
   links: meshLinks,
-  worktrees: archiveWorktrees(readActiveBranch),
+  worktrees: archiveWorktrees(readBranch),
   runningStarted: () => countRunning(started, running, promptedAt),
   counted: (path) => countRunning(started.has(path) ? [path] : [], running, promptedAt) > 0,
   attended: () => turns.attended(),
-  confirmed: () => confirmedItems(turns.confirmedCard(), overseerSession ? liveRead(overseerSession).branch() : []),
+  confirmed: () => confirmedItems(turns.confirmedCard(), overseerSession ? overseerSession.branch() : []),
   // Approvals and rules (§app.overseer/approvals): read from the current runtime's file each call,
   // so a revoke applies from the next act on.
   permit(tool, sessions) {
     if (!overseerSession) return null;
-    const read = liveRead(overseerSession);
     const now = Date.now();
-    const p = coveringPermit(foldPermits(read.branch(), read.entries(), now), tool, sessions, now);
+    const p = coveringPermit(foldPermits(overseerSession.branch(), overseerSession.entries(), now), tool, sessions, now);
     return p ? { id: p.id, label: permitLabel(p) } : null;
   },
   aliases: () => readAliases(),
   setAlias: (id, alias) => setAlias(id, alias),
   used(id, tool, sessions, toolCallId) {
-    if (overseerSession) stateOf(overseerSession).append(GRANT_USE, { v: 1, id, tool, sessions, toolCallId, at: new Date().toISOString() });
+    if (overseerSession) overseerSession.state.append(GRANT_USE, { v: 1, id, tool, sessions, toolCallId, at: new Date().toISOString() });
   },
   explorer: () => readOverseerSettings().explorer,
   explorerCwd: () => overseerDir(),
   subagent: (name) => {
-    const def = overseerSession?.extensionRunner?.getToolDefinition(name);
-    return def ? (fromPiTool(def) as unknown as SubagentTool) : null;
+    const tool = overseerSession?.registeredTool(name);
+    return tool ? (tool as unknown as SubagentTool) : null;
   },
 };
 
@@ -711,10 +705,7 @@ async function overseerEntries(): Promise<{ path: string; branch: readonly HEntr
   const path = st ? await pathOfId(st.current) : null;
   if (!path) return null;
   const chat = heldChat(path);
-  if (chat) {
-    const read = liveRead(chat.session);
-    return { path, branch: read.branch(), all: read.entries() };
-  }
+  if (chat) return { path, branch: chat.harness.branch(), all: chat.harness.entries() };
   const { entries } = parsePi(await readFile(path, "utf8").catch(() => ""));
   return { path, branch: branchOf(entries), all: entries };
 }
@@ -735,7 +726,7 @@ export async function revokePermit(id: string): Promise<{ ok: true } | { ok: fal
   if (!e || !p) return { ok: false, status: 404, error: `No approval or rule ${id} in the current Overseer conversation.` };
   if (p.status !== "live") return { ok: false, status: 409, error: `${id} has already ${p.status === "expired" ? "expired" : "been revoked"}.` };
   const chat = await acquireChat(e.path);
-  stateOf(chat.session).append(REVOKE, { v: 1, id, at: new Date().toISOString(), by: "user" });
+  chat.harness.state.append(REVOKE, { v: 1, id, at: new Date().toISOString(), by: "user" });
   return { ok: true };
 }
 
@@ -928,13 +919,12 @@ class LivePrompt {
     return next.join("\n\n");
   }
   /** A run starts: bring the session's base options to the current text (a no-op when unchanged). */
-  rebase(session: Pick<AgentSession, "setActiveToolsByName" | "getActiveToolNames">): void {
+  rebase(session: Pick<HarnessSession, "refreshSystemPrompt">): void {
     const text = this.refresh();
     if (this.built.get(session) === text) return;
     this.built.set(session, text);
-    // The SDK's public way to rebuild the base prompt options (from the loader's parts); the tool
-    // set is passed back unchanged.
-    session.setActiveToolsByName(session.getActiveToolNames());
+    // The SDK rebuilds the base prompt options from the loader's parts (quirk P19).
+    session.refreshSystemPrompt();
   }
 }
 
@@ -1011,22 +1001,21 @@ setOverseerRuntime({
   watchSession(session) {
     overseerSession = session;
     // Its model requests are background work under a provider's request limit (§app.provider-limits/queue).
-    markBackground(session.sessionManager.getSessionId());
-    turns.watch(session.agent);
+    markBackground(session.id);
+    turns.watch(session);
     const prompt = livePrompt;
     session.subscribe((event) => {
-      if (event.type === "agent_start") prompt?.rebase(session);
+      if (event.type === "run.start") prompt?.rebase(session);
       if (turns.observe(event)) limits.reset();
       // A click that approves for later or adopts a rule: the server writes it, once the click's
       // message is in the file (the SDK appends it right after this event's listeners run).
-      if (event.type === "message_end" && (event.message as { role?: string } | undefined)?.role === "user" && turns.confirmedCard()) {
+      if (event.type === "message.end" && event.role === "user" && turns.confirmedCard()) {
         const card = turns.confirmedCard();
         setImmediate(() => {
           try {
-            const read = liveRead(session);
-            const w = permitOnClick(card, read.branch(), read.entries());
+            const w = permitOnClick(card, session.branch(), session.entries());
             if (w) {
-              const state = piSessionState(session.sessionManager);
+              const state = session.state;
               if (w.type === RULE_ENTRY) state.append(RULE, w.data);
               else state.append(GRANT, w.data);
             }
@@ -1132,7 +1121,7 @@ async function tick(): Promise<void> {
   // The user looked at the Overseer since the last brief: the unattended run starts over.
   if ((readSeen()[st.current] ?? 0) > lastBriefAt || isViewing(st.current)) unattended = 0;
   const chat = heldChat(path);
-  const idle = !chat || (!chat.session.isStreaming && chat.queue.size === 0);
+  const idle = !chat || (!chat.harness.isRunning() && chat.queue.size === 0);
   const counts = new Map(act.map((i) => [blockerKey(i), blockerCount(i)]));
   const d = briefDecision({ current: act.map(blockerKey), counts, announced, proactivity: settings.proactivity, now: Date.now(), lastBriefAt, unattended, overseerIdle: idle });
   announced = d.announced;

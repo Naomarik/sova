@@ -2,18 +2,14 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { CARDS_NOTE_MESSAGE } from "../shared/overseer-card";
 import { OVERSEER_BRIEF_PREFIX } from "../shared/protocol";
 import { parseWakeNudge } from "../shared/wake";
+import type { HarnessEvent, HarnessSession } from "../shared/harness";
 import { ID_NOTE_MESSAGE } from "./overseer-id-check";
-import { watchUserMessages } from "./harness/pi/turns";
 
 // ---- who started the turn ----------------------------------------------------------------------
 
-/** The part of the SDK's `Agent` every user-role message passes through on its way into the
-    context: a turn started with messages, a steer, a follow-up. */
-export interface UserMessageSink {
-  prompt(...args: never[]): Promise<void>;
-  steer(message: never): void;
-  followUp(message: never): void;
-}
+/** Where every user-role message passes on its way into the context (a turn started with messages,
+    a steer, a follow-up): the driving session's user-message hook. */
+export type UserMessageSource = Pick<HarnessSession, "onUserMessage">;
 
 /** The text of a user-role message as the SDK holds it (a string, or text and image parts); null
     for any other role. */
@@ -28,14 +24,10 @@ export function userMessageText(message: unknown): string | null {
     .join("\n");
 }
 
-/** The session events `UserTurns.observe` reads: the AgentSession's own stream (`session.subscribe`),
+/** The session events `UserTurns.observe` reads: the driving session's own stream (`subscribe`),
     which carries every message entering the context, including the context-only custom messages
     the SDK appends between turns without telling extensions. */
-export interface TurnEvent {
-  type: string;
-  message?: unknown;
-  willRetry?: boolean;
-}
+export type TurnEvent = HarnessEvent;
 
 /** Roles that bring nothing from outside into the context: the model's own output, tool results,
     the SDK's loadout declarations and summaries. Every other role (a user message, an extension's
@@ -52,7 +44,7 @@ const isCardsNote = (m: unknown): boolean => (m as { role?: unknown; customType?
  * a wake-up, an extension's message such as an /explain result or a worker's report: every acting
  * tool refuses).
  *
- * Per run. Every run starts unattended (`agent_start`), whatever the run before it was, and only a
+ * Per run. Every run starts unattended (`run.start`), whatever the run before it was, and only a
  * message the user sent from the UI makes it attended. Which messages those are is decided by
  * identity, not by text: the chat runtime hands each one (a typed message, a quick action, a
  * confirm-card click, a steer, a regenerate) to the SDK inside `send`, and the first user-role
@@ -104,11 +96,11 @@ export class UserTurns {
   send<T>(send: () => T, confirm?: string): T {
     return this.sending.run({ open: true, ...(confirm ? { confirm } : {}) }, send);
   }
-  /** Mark, from now on, the user message each `send` produces as it reaches this Agent. */
-  watch(agent: UserMessageSink): void {
-    if (this.watched.has(agent)) return;
-    this.watched.add(agent);
-    watchUserMessages(agent, (input) => this.claim(input));
+  /** Mark, from now on, the user message each `send` produces as it reaches this session's agent. */
+  watch(session: UserMessageSource): void {
+    if (this.watched.has(session)) return;
+    this.watched.add(session);
+    session.onUserMessage((input) => this.claim(input));
   }
   private claim(input: unknown): void {
     const ctx = this.sending.getStore();
@@ -123,7 +115,7 @@ export class UserTurns {
       entered the context (the per-turn caps renew). */
   observe(event: TurnEvent): boolean {
     switch (event.type) {
-      case "agent_start":
+      case "run.start":
         this.now = false;
         this.batch = false;
         this.rerun = this.retry;
@@ -132,23 +124,23 @@ export class UserTurns {
         this.retryCard = null;
         this.card = null;
         return false;
-      case "auto_retry_start":
+      case "retry.start":
         this.retry = this.now;
         this.retryCard = this.card;
         return false;
-      case "compaction_end":
+      case "compaction.end":
         if (event.willRetry) {
           this.retry = this.now;
           this.retryCard = this.card;
         }
         return false;
-      case "auto_retry_end":
-      case "agent_settled":
+      case "retry.end":
+      case "run.settled":
         this.retry = null;
         this.retryCard = null;
         return false;
-      case "message_start":
-        return this.entered(event.message);
+      case "message.start":
+        return this.entered(event.handle);
       default:
         return false;
     }

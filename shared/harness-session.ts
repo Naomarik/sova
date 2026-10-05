@@ -2,10 +2,12 @@
 // nothing but its siblings, emits nothing. What a hosted chat (server/chat-manager.ts) drives its agent
 // through instead of pi's AgentSession; pi's implementation is server/harness/pi/session.ts. Sized to the
 // chat's real call sites, and the dialog bridge its extensions' UI calls reach it through
-// (§app.harness/session-open): history surgery (rewind, compaction) and extension commands are not here yet.
+// (§app.harness/session-open), and what the special loadouts and the stream guard watch a session through
+// (§app.harness/session-special): history surgery (rewind, compaction) and extension commands are not here yet.
 import type { EntryId, ModelRef } from "./harness-core";
 import type { HEntry, SessionRead } from "./harness-history";
 import type { SessionState } from "./harness-state";
+import type { ToolSpec } from "./harness-tools";
 
 /** Who an input is from, as the extensions' input handlers are told: a person (`user`), Sova's own queue
     or a server-started message (`queued`), or Sova acting for itself (`system`: a link, a topic batch).
@@ -85,12 +87,19 @@ export interface HarnessFrame {
 }
 
 /** A message the agent started or ended: its role, its text blocks joined (user messages only) and the
-    object the harness holds it as (identity only: `persistedId`). */
+    object the harness holds it as (its identity, for `persistedId` and for telling who sent a user message,
+    server/user-turns.ts, which also reads its role and text). */
 interface HarnessMessageEvent {
   role: "user" | "assistant" | "other";
   text?: string;
   handle: object | undefined;
 }
+
+/** A piece of a streaming reply (the runaway-stream guard counts them): a tool call starting, or the
+    characters of a tool call's arguments, of text or of thinking. `index` is the content block's. */
+export type HarnessStreamDelta =
+  | { kind: "tool-call.start"; index?: number }
+  | { kind: "tool-call" | "text" | "thinking"; index?: number; delta: string };
 
 /**
  * One live event of the session, in Sova's words: exactly one per harness event, delivered inside the
@@ -104,7 +113,9 @@ export type HarnessEvent = { frame(): HarnessFrame } & (
   | { type: "turn.start" }
   | { type: "turn.end" }
   | ({ type: "message.start" } & HarnessMessageEvent)
-  | { type: "message.update" }
+  /** A streaming message changed: its role, the message so far (`handle`, read with the transcript's
+      text helpers) and the piece that arrived, when it is one the stream guard counts. */
+  | { type: "message.update"; role: "user" | "assistant" | "other"; handle: object | undefined; stream?: HarnessStreamDelta }
   /** Listeners run before the message's entry is written; one microtask later it is (persistedId). */
   | ({ type: "message.end" } & HarnessMessageEvent)
   | { type: "tool.start" }
@@ -113,8 +124,8 @@ export type HarnessEvent = { frame(): HarnessFrame } & (
   /** The agent's queue mirror changed: its texts now. */
   | { type: "queue"; steering: readonly string[]; followUp: readonly string[] }
   | { type: "compaction.start" }
-  /** `wrote`: a compaction entry was written. */
-  | { type: "compaction.end"; wrote: boolean }
+  /** `wrote`: a compaction entry was written; `willRetry`: the request that overflowed runs again. */
+  | { type: "compaction.end"; wrote: boolean; willRetry: boolean }
   | { type: "retry.start" }
   | { type: "retry.end" }
   /** An entry appended outside the agent loop's own messages (an extension's state, a note). */
@@ -158,7 +169,14 @@ export interface HarnessSession extends SessionRead {
   /** Set the thinking level; the harness clamps it to the model's ladder (read it back with thinking()). */
   setThinking(level: string): void;
   activeTools(): string[];
+  /** Make exactly these tools active (by name); the system prompt is rebuilt with them. */
+  setActiveTools(names: readonly string[]): void;
+  /** Rebuild the system prompt from the loader's parts as they are now, tools unchanged (the Overseer's
+      refreshed prompt at a run's start). */
+  refreshSystemPrompt(): void;
   registeredTools(): string[];
+  /** An extension's registered tool, by name, as a Sova tool (the Overseer's subagent tools). */
+  registeredTool(name: string): ToolSpec | undefined;
   commands(): HarnessCommand[];
   /** What the runtime loaded for its prompt, extension-added skill paths included. */
   resources(): HarnessResources;

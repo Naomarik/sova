@@ -80,6 +80,22 @@ describe("PiHarnessSession (§app.harness/session)", () => {
       appendSystemPrompt: ["/w/APPEND.md"],
     });
 
+    // The special loadouts' calls (§app.harness/session-special): tools, the prompt rebuild, a registered tool.
+    const setTools: Calls = [];
+    s.setActiveToolsByName = recorder(setTools, undefined);
+    s.getActiveToolNames = () => ["read", "sova_session"];
+    let executed: unknown[] = [];
+    s.extensionRunner.getToolDefinition = (name: string) =>
+      name === "subagent_run" ? { name, label: "Run", description: "runs", parameters: {}, execute: (...a: unknown[]) => ((executed = a), Promise.resolve({ content: [] })) } : undefined;
+    chat.harness.setActiveTools(["only_this"]);
+    chat.harness.refreshSystemPrompt();
+    assert.deepEqual(setTools, [[["only_this"]], [["read", "sova_session"]]]);
+    const tool = chat.harness.registeredTool("subagent_run");
+    assert.equal(tool?.name, "subagent_run");
+    await tool!.execute("call-1", { x: 1 }, undefined, undefined, { native: "ctx" } as never);
+    assert.deepEqual(executed, ["call-1", { x: 1 }, undefined, undefined, "ctx"]);
+    assert.equal(chat.harness.registeredTool("nope"), undefined);
+
     // And through the chat's own path: a queued hand-off reaches the patched prompt, not pi's.
     Object.defineProperty(s, "isStreaming", { get: () => false, configurable: true });
     const { turn } = chat.acceptPrompt("typed", undefined, "client");
@@ -132,6 +148,20 @@ describe("PiHarnessSession (§app.harness/session)", () => {
     assert.ok(q.type === "queue" && q.steering[0] === "s" && q.followUp.length === 0);
     assert.ok((harnessEventOf({ type: "compaction_end", result: {} }) as { wrote?: boolean }).wrote === true);
     assert.ok((harnessEventOf({ type: "compaction_end", result: undefined, aborted: true }) as { wrote?: boolean }).wrote === false);
+    const retried = harnessEventOf({ type: "compaction_end", result: {}, willRetry: true });
+    assert.ok(retried.type === "compaction.end" && retried.willRetry === true);
+    assert.ok((harnessEventOf({ type: "compaction_end", result: {} }) as { willRetry?: boolean }).willRetry === false);
+    // A streaming reply: its role, the message so far, and the piece the stream guard counts.
+    const partial = { role: "assistant", content: [{ type: "text", text: "hi" }] };
+    const update = (e: unknown) => harnessEventOf({ type: "message_update", message: partial, assistantMessageEvent: e });
+    const text = update({ type: "text_delta", contentIndex: 0, delta: "hi" });
+    assert.ok(text.type === "message.update" && text.role === "assistant" && text.handle === partial);
+    assert.deepEqual((text as { stream?: unknown }).stream, { kind: "text", index: 0, delta: "hi" });
+    assert.deepEqual((update({ type: "toolcall_start", contentIndex: 2 }) as { stream?: unknown }).stream, { kind: "tool-call.start", index: 2 });
+    assert.deepEqual((update({ type: "toolcall_delta", contentIndex: 2, delta: "  " }) as { stream?: unknown }).stream, { kind: "tool-call", index: 2, delta: "  " });
+    assert.deepEqual((update({ type: "thinking_delta", delta: 7 }) as { stream?: unknown }).stream, { kind: "thinking", index: undefined, delta: "" });
+    for (const e of [{ type: "text_start", contentIndex: 0 }, { type: "toolcall_end", contentIndex: 2 }, undefined])
+      assert.ok(!("stream" in update(e)), JSON.stringify(e));
     const appended = harnessEventOf({ type: "entry_appended", entry: { type: "custom", id: "c1", parentId: null, customType: "k", data: 1 } });
     assert.ok(appended.type === "entry.appended" && appended.entry?.kind === "state");
     assert.equal(harnessEventOf({ type: "entry_appended" }).type, "other");

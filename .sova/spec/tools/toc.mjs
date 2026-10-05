@@ -134,6 +134,8 @@ function units(masked, { title = true } = {}) {
     // one. A unit's own text (title: false) never splits at its line ends.
     const opens = first || (title && at === masked.indexOf("\n") + 1) || /^(?:[-*+]|\d+[.)])\s|^[|>#]/.test(t);
     first = false;
+    // A thematic break (---, ***, ___) ends a unit and is never prose itself.
+    if (/^ {0,3}([-*_])( *\1){2,} *$/.test(ln)) { if (start >= 0) res.push([start, at - 1]); start = -1; at = end + 1; continue; }
     if (!t) { if (start >= 0) res.push([start, at - 1]); start = -1; }
     else if (opens || start < 0) { if (start >= 0) res.push([start, at - 1]); start = at; }
     at = end + 1;

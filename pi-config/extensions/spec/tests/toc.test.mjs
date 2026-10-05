@@ -285,6 +285,15 @@ test("what: a first sentence wrapped across lines comes out whole; a heading tit
   assert.equal(m["§e/named"].why, "Named, see §a.top/seed", "the title is its own unit, not joined to the body");
 });
 
+test("what: a thematic break is never a prose sentence", () => {
+  const root = fixture();
+  write(root, ".sova/spec/claims/e/named.md", "# §e/named — Named\n\n| a | b |\n|---|---|\n| 1 | 2 |\n\n---\n");
+  write(root, ".sova/spec/claims/c/quiet.md", "# §c/quiet — Quiet\n\n| a | b |\n|---|---|\n\n***\n\nThe real sentence comes after the rule.\n");
+  const l = byId(toc(root, "§a.top/seed", "out"));
+  assert.deepEqual([l["§e/named"].whatSource, l["§e/named"].what], ["none", "no prose sentence"]);
+  assert.deepEqual([l["§c/quiet"].whatSource, l["§c/quiet"].what], ["prose", "The real sentence comes after the rule."]);
+});
+
 test("why: a long sentence is clipped around the target's own mention, never another one in its namespace", () => {
   const root = fixture();
   const filler = (n) => Array.from({ length: n }, (_, i) => `word${i}`).join(" ");

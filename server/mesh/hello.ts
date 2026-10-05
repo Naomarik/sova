@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { readFileSync, statSync } from "node:fs";
 import { hostname } from "node:os";
-import { VERSION as PI_VERSION } from "@earendil-works/pi-coding-agent";
+import { PI_VERSION } from "../harness/pi/package";
 import { DENIED, type PeerStateView } from "../../shared/mesh-access";
 import type { MeshBuildHello } from "../../shared/mesh-resync";
 import type { AdvertisedGateway, MeshHelloPublic, ShareGatewayHello } from "../../shared/public-links";

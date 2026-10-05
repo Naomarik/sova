@@ -5,7 +5,7 @@ import { isIP } from "node:net";
 import { hostname as osHostname, networkInterfaces } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import type { Duplex } from "node:stream";
-import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import { agentRoot } from "./state-root";
 import type { Context } from "hono";
 import { consumeCode, mintCode } from "./auth-devices";
 import { isDirectLocal } from "./compression";
@@ -26,11 +26,11 @@ export const TOKEN_HEADER = "x-sova-token";
 export const SERVER_HEADER = "X-Sova-Server";
 
 /** The token file: `<agent dir>/sova/auth-token`. Deleting it and restarting revokes every browser. */
-export const tokenFile = (): string => join(getAgentDir(), "sova", "auth-token");
+export const tokenFile = (): string => join(agentRoot(), "sova", "auth-token");
 
 /** Per install, so two Sovas on one host name (4800 beside a hermetic 4810: cookies ignore
     ports) never overwrite each other's cookie. Derived from the agent dir, not the token. */
-export const AUTH_COOKIE = `sova_token_${createHash("sha256").update(resolve(getAgentDir())).digest("hex").slice(0, 8)}`;
+export const AUTH_COOKIE = `sova_token_${createHash("sha256").update(resolve(agentRoot())).digest("hex").slice(0, 8)}`;
 
 const COOKIE_MAX_AGE = 365 * 24 * 60 * 60;
 const TOKEN_RE = /^[A-Za-z0-9_-]{32,}$/;

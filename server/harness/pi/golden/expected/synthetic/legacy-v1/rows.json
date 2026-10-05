@@ -1,0 +1,6 @@
+[
+  "{\"id\":\"line0\",\"kind\":\"info\",\"text\":\"Model: anthropic/claude-3\",\"at\":\"2025-01-01T00:00:01.000Z\",\"meta\":{\"type\":\"model_change\"}}",
+  "{\"id\":\"line1\",\"kind\":\"user\",\"at\":\"2025-01-01T00:00:02.000Z\",\"text\":\"A string-content legacy question\",\"meta\":{\"type\":\"message\",\"role\":\"user\"}}",
+  "{\"id\":\"line2:0\",\"kind\":\"assistant-text\",\"text\":\"Legacy answer\",\"at\":\"2025-01-01T00:00:03.000Z\",\"model\":\"anthropic/claude-3\",\"meta\":{\"type\":\"message\",\"role\":\"assistant\",\"provider\":\"anthropic\",\"model\":\"claude-3\",\"usage\":{\"input\":10,\"output\":5,\"cacheRead\":0,\"cacheWrite\":0},\"stopReason\":\"stop\"}}",
+  "{\"id\":\"line3\",\"kind\":\"user\",\"at\":\"2025-01-01T00:00:04.000Z\",\"text\":\"Second legacy question\",\"meta\":{\"type\":\"message\",\"role\":\"user\"}}"
+]

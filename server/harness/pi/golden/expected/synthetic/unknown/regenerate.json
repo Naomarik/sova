@@ -1,0 +1,62 @@
+{
+  "b0000001": {
+    "ok": false,
+    "reason": "not_on_branch",
+    "message": "That is your own message; rewind to it to edit and send it again."
+  },
+  "b0000001:0": {
+    "ok": false,
+    "reason": "not_on_branch",
+    "message": "That is your own message; rewind to it to edit and send it again."
+  },
+  "b0000002": {
+    "ok": true,
+    "userId": "b0000001",
+    "text": "Before the unknown entry"
+  },
+  "b0000002:0": {
+    "ok": true,
+    "userId": "b0000001",
+    "text": "Before the unknown entry"
+  },
+  "b0000003": {
+    "ok": true,
+    "userId": "b0000001",
+    "text": "Before the unknown entry"
+  },
+  "b0000003:0": {
+    "ok": true,
+    "userId": "b0000001",
+    "text": "Before the unknown entry"
+  },
+  "b0000004": {
+    "ok": true,
+    "userId": "b0000001",
+    "text": "Before the unknown entry"
+  },
+  "b0000004:0": {
+    "ok": true,
+    "userId": "b0000001",
+    "text": "Before the unknown entry"
+  },
+  "b0000005": {
+    "ok": true,
+    "userId": "b0000001",
+    "text": "Before the unknown entry"
+  },
+  "b0000005:0": {
+    "ok": true,
+    "userId": "b0000001",
+    "text": "Before the unknown entry"
+  },
+  "no-such-entry": {
+    "ok": false,
+    "reason": "not_on_branch",
+    "message": "That reply is not on this chat's current branch anymore."
+  },
+  "no-such-entry:0": {
+    "ok": false,
+    "reason": "not_on_branch",
+    "message": "That reply is not on this chat's current branch anymore."
+  }
+}

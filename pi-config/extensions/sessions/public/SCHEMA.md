@@ -113,7 +113,7 @@ enforce them, and the reference reader enforces them again.
 **WorkerEntry**: `id` ✔ (150), `name` ✔ (120), `status` ✔ (80, free text),
 `model` (100), `preview` (180), `backend` (32, v2), `sessionFile` (1024, v2, optional),
 `sessionId` (64, v2, optional), `effort` (32, v2, optional), `modes` (string[], ≤ 8 names of 32, v2,
-optional), `startedAt`/`lastActivity`/`endedAt`
+optional), `teamId` (64, v2, optional), `startedAt`/`lastActivity`/`endedAt`
 (ms epoch, v2), `outcome` (`success`|`error`|`aborted`, v2), `usage` (WorkerUsage, v2),
 `turns` (non-negative integer, v2, optional), and, for a restored worker (v2, all optional): `restored` (`true`), `usageSource`
 (`transcript`|`snapshot`|`none`), `usageAsOf` (ms epoch), `interruptedAt` (ms epoch),
@@ -132,6 +132,10 @@ absent means the writer didn't publish one (records written before it existed).
 `modes` names the mode extension's minor modes the worker was given at its start (today only
 `spec` reaches workers). Absent when it was given none, or the writer didn't publish it; an
 empty, over-long or malformed list is dropped whole.
+`teamId` is the id of the team the worker is a member of (e.g. `team_01`): its session team
+while the team is live, else, for a restored member, the team its durable record names. Absent
+when it is in no team, or the writer didn't publish it (records written before it existed). Same
+rule: empty or over-limit ⇒ dropped, never truncated; a reader that ignores it behaves as before.
 `turns` counts the model replies the worker has had so far, across resumes (a restored worker's
 comes from its transcript or last snapshot). It sits beside `usage`, not in it, so the size
 trimmer's drop of `usage` keeps it. Absent means unknown (an older writer, nothing counted), never 0;

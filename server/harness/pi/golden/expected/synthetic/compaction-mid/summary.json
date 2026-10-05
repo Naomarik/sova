@@ -1,0 +1,11 @@
+{
+  "id": "0190a000-0000-7000-8000-g00000000000",
+  "cwd": "/home/user/golden",
+  "title": "Long work",
+  "createdAt": "2026-09-01T10:00:00.000Z",
+  "model": "zai/glm-5.3",
+  "context": {
+    "tokens": 5000,
+    "window": null
+  }
+}

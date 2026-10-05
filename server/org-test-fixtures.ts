@@ -7,6 +7,7 @@ import { appendFileSync, readFileSync } from "node:fs";
 import { BATON_DECISION_ENTRY } from "../shared/baton";
 import type { Conflict } from "../shared/decisions";
 import { batonById, batonOfPath } from "./baton";
+import { parsePi } from "./harness/pi/reader";
 import { areaKeyOf, conflictSid, ownerAreaChoices } from "./decisions";
 import { buildSetupEnded, buildSid, seedBuildEffectsForTest, type BuildKind } from "./build-loadout";
 import { envelopeFor, hostOf, setOrgClockForTest } from "./org-engine";
@@ -71,12 +72,14 @@ export async function recordDecision(path: string, d: { area: string; ownerArea?
   const hit = batonOfPath(path);
   if (!hit) throw new Error(`No gathering session at ${path}`);
   const { orgId, projectId, sessionId } = hit.row;
-  const lines = readFileSync(path, "utf8").trim().split("\n").map((l) => JSON.parse(l) as { id?: string; type?: string; message?: { role?: string } });
-  const parentId = lines.at(-1)!.id!;
+  const file = parsePi(readFileSync(path, "utf8"));
+  const parentId = (file.entries.at(-1)?.id ?? file.header?.id)!;
   // The quote's location: the nearest user message before it (quoteEntryOf).
-  const quoteEntry = [...lines].reverse().find((e) => e.type === "message" && e.message?.role === "user")?.id ?? parentId;
+  const quoteEntry = [...file.entries].reverse().find((h) => h.kind === "user")?.id ?? parentId;
   const markerId = `d${(++decisionSeq).toString(16).padStart(7, "0")}`;
   const ts = at ?? new Date().toISOString();
+  // A raw line, not SessionState: the marker's id is the fixture's own (`markerId`, which the decision id
+  // names) and its time is `at`, neither of which a state write lets the caller choose.
   appendFileSync(path, `${JSON.stringify({ type: "custom", id: markerId, parentId, timestamp: ts, customType: BATON_DECISION_ENTRY, data: { v: 1, ...d, by: hit.row.holder ?? "operator" } })}\n`);
   if (at) setOrgClockForTest(() => Date.parse(at));
   try {

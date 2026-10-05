@@ -1,0 +1,13 @@
+{
+  "prompted": [],
+  "briefed": [],
+  "cleared": {
+    "$set": []
+  },
+  "lastReply": {
+    "at": 1735689603000,
+    "stopReason": "stop",
+    "text": "Legacy answer"
+  },
+  "openAlignments": []
+}

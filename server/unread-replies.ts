@@ -1,11 +1,11 @@
 import { open, readFile, stat } from "node:fs/promises";
-import { activeBranch, type Entry, parseLines } from "./transcript";
+import type { HEntry } from "../shared/harness";
+import { lineEntry, parsePiBranch } from "./harness/pi/reader";
 
 /** A final reply (not a tool-use step) newer than `since`: what the unread count counts. */
-export function isUnreadReply(e: Entry, since: number): boolean {
-  const m = e.type === "message" ? e.message : null;
-  if (m?.role !== "assistant" || m.stopReason === "toolUse") return false;
-  const t = typeof m.timestamp === "number" ? m.timestamp : Date.parse(e.timestamp ?? "");
+export function isUnreadReply(h: HEntry, since: number): boolean {
+  if (h.kind !== "assistant" || h.stop === "toolUse") return false;
+  const t = typeof h.sentAt === "number" ? h.sentAt : Date.parse(h.at ?? "");
   return Number.isFinite(t) && t > since;
 }
 
@@ -31,7 +31,7 @@ interface Counted {
  * While the file only grows by entries that extend the active branch (each one's parent is the
  * leaf before it), only the appended lines are parsed; anything else (the file shrank or was
  * rewritten, another path or `since`, an entry that starts another branch, a line that doesn't
- * parse, a file without entry ids) counts the whole branch again, as `readActiveBranch` does.
+ * parse, a file without entry ids) counts the whole branch again, as `readBranch` does.
  */
 export class UnreadReplies {
   private memo: Counted | null = null;
@@ -72,15 +72,11 @@ export class UnreadReplies {
       let count = m.count;
       for (const line of added.subarray(0, end).toString("utf8").split("\n")) {
         if (!line.trim()) continue;
-        let e: Entry;
-        try {
-          e = JSON.parse(line);
-        } catch {
-          return null;
-        }
-        if (!e || typeof e !== "object" || e.type === "session" || typeof e.id !== "string" || e.parentId !== leafId) return null;
-        leafId = e.id;
-        if (isUnreadReply(e, m.since)) count++;
+        // A line that doesn't parse, or is a header, or has no id, ends the incremental read.
+        const h = lineEntry(line);
+        if (!h || h.id === null || h.parentId !== leafId) return null;
+        leafId = h.id;
+        if (isUnreadReply(h, m.since)) count++;
       }
       const counted = m.size + end;
       const all = buf.subarray(0, counted - from);
@@ -99,7 +95,7 @@ export class UnreadReplies {
       this.memo = null;
       return 0;
     }
-    const branch = activeBranch(parseLines(bytes.toString("utf8")));
+    const branch = parsePiBranch(bytes.toString("utf8")).branch;
     let count = 0;
     for (const e of branch) if (isUnreadReply(e, since)) count++;
     // Kept for the next read only when it can go on from here: whole lines, a leaf with an id.

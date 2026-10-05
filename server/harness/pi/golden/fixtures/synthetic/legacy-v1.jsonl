@@ -1,0 +1,5 @@
+{"type":"session","id":"legacy-0001","timestamp":"2025-01-01T00:00:00.000Z","cwd":"/home/user/legacy"}
+{"type":"model_change","timestamp":"2025-01-01T00:00:01.000Z","provider":"anthropic","modelId":"claude-3"}
+{"type":"message","timestamp":"2025-01-01T00:00:02.000Z","message":{"role":"user","content":"A string-content legacy question","timestamp":1735689602000}}
+{"type":"message","timestamp":"2025-01-01T00:00:03.000Z","message":{"role":"assistant","content":[{"type":"text","text":"Legacy answer"}],"provider":"anthropic","model":"claude-3","usage":{"input":10,"output":5,"cacheRead":0,"cacheWrite":0},"stopReason":"stop","timestamp":1735689603000}}
+{"type":"message","timestamp":"2025-01-01T00:00:04.000Z","message":{"role":"user","content":"Second legacy question","timestamp":1735689604000}}

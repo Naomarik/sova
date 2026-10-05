@@ -1,0 +1,11 @@
+{
+  "model": "anthropic/claude-3",
+  "context": {
+    "tokens": 10,
+    "model": "anthropic/claude-3"
+  },
+  "reply": {
+    "at": 1735689603000,
+    "stopReason": "stop"
+  }
+}

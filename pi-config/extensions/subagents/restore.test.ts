@@ -15,6 +15,7 @@ import { BACKEND_REGISTER_EVENT } from "./contracts.ts";
 import { WORKER_MANIFEST_ENTRY_TYPE } from "./registry.ts";
 import { resolvedModel } from "./worker-transcript.ts";
 import { MODE_WORKER_EVENT } from "../mode/events.ts";
+import { ClaudeRunner } from "../claude-code/runner.ts";
 
 const SNAPSHOT = "subagents:workers-snapshot";
 const NO_POLICY_FILE = path.join(os.tmpdir(), "subagents-tests-absent-policy.json");
@@ -286,11 +287,14 @@ test("a claude-code worker resumes by session id through its backend; not loaded
 				isFinished() { return false; }, isSettled() { return this.status === "waiting"; }, finalOutput: () => "",
 				async steer() { return { ok: true }; }, async kill() {}, async dispose() {},
 			};
+			// The real ClaudeRunner's own methods: none may make it a thenable.
+			for (const k of Object.getOwnPropertyNames(ClaudeRunner.prototype)) if (k !== "constructor" && !(k in worker)) { const d = Object.getOwnPropertyDescriptor(ClaudeRunner.prototype, k)!; if (typeof d.value === "function") worker[k] = d.value; }
 			setTimeout(() => { worker.status = "waiting"; handlers.onChange(); }, 5);
 			return worker;
 		},
 	});
-	await m.call("agent_resume", { id: "ag_04" });
+	const resumed = await m.call("agent_resume", { id: "ag_04" });
+	assert.ok(!resumed?.isError, "the resume reports success");
 	assert.deepEqual(created[0].resume, { sessionId: id, startedAt: restoredStart }, "the restored entry's start travels with the resume");
 	assert.deepEqual([created[0].model, created[0].systemPrompt, created[0].permissionMode], ["sonnet", "be terse", "acceptEdits"]);
 	await m.shutdown();
@@ -444,6 +448,43 @@ test("restart: a paused team stays paused (its resumed monitor is sent the resum
 		const resumedDev = await second.call("agent_resume", { id: "ag_02" });
 		assert.match(resumedDev.content[0].text, /idle .*nothing was sent to it/);
 		assert.equal(second.workers.at(-1).lastSteer, undefined);
+	} finally {
+		await second.shutdown();
+		fs.rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test("restart: a restored team member's row names its saved team, and still does once resumed", async () => {
+	const root = fs.mkdtempSync(path.join(os.tmpdir(), "pi-subagents-restore-teamid-"));
+	const agentDir = path.join(root, "agent");
+	fs.mkdirSync(agentDir); // no team-defaults.json: no coordinator or monitor
+	const file = sessionFile();
+	const first = manager(file, { agentDir, mailboxRoot: path.join(root, "mail1") });
+	const second = manager(file, { agentDir, mailboxRoot: path.join(root, "mail2") });
+	try {
+		first.start();
+		await first.call("team_create", { name: "Crew", objective: "Ship", members: [{ role: "dev", prompt: "Write f01." }, { role: "qa", prompt: "Test f01." }] });
+		await first.call("agent_spawn", { agents: [{ prompt: "solo", name: "loner" }] });
+		for (const w of first.workers) w.identify(`/nowhere/${w.id}.jsonl`);
+		await new Promise((r) => setTimeout(r, 150)); // the throttled refresh writes the refs
+		const live = Object.fromEntries(first.snapshot().workers.map((w: any) => [w.name, w.teamId]));
+		assert.deepEqual(live, { dev: "team_01", qa: "team_01", loner: undefined });
+		for (const w of first.workers) w.settle();
+		await first.shutdown();
+		second.start();
+		await until(() => (second.snapshot()?.workers ?? []).length === 3, "restored workers");
+		const rows = () => Object.fromEntries(second.snapshot().workers.map((w: any) => [w.id, { restored: w.restored, teamId: w.teamId }]));
+		// Its team is history until a resume adopts it; the row still names it, from the durable record.
+		assert.deepEqual(rows(), {
+			ag_01: { restored: true, teamId: "team_01" }, ag_02: { restored: true, teamId: "team_01" },
+			ag_03: { restored: true, teamId: undefined },
+		});
+		await second.call("agent_resume", { id: "ag_01" });
+		await until(() => second.snapshot().workers.find((w: any) => w.id === "ag_01")?.restored === undefined, "ag_01 resumed");
+		assert.deepEqual(rows(), {
+			ag_01: { restored: undefined, teamId: "team_01" }, ag_02: { restored: true, teamId: "team_01" },
+			ag_03: { restored: true, teamId: undefined },
+		});
 	} finally {
 		await second.shutdown();
 		fs.rmSync(root, { recursive: true, force: true });

@@ -1,0 +1,37 @@
+{
+  "v": 1,
+  "note": "Shrink-only (§app.harness/boundary). Never add a file, raise a count or list a wrapper; lower it in the change that removes a hit. Regenerate with SOVA_BOUNDARY_OUT=<abs path> pnpm test -- server/harness-boundary.test.ts.",
+  "imports": {
+    "pi-config/extensions/subagents/fork/cache.ts": "type",
+    "server/baton-images.test.ts": "runtime",
+    "server/chat-model.test.ts": "type",
+    "server/image-note.test.ts": "runtime",
+    "server/input-source.test.ts": "runtime",
+    "server/overseer-file-tools.ts": "runtime",
+    "server/overseer-redact.test.ts": "runtime",
+    "server/overseer-runtime.test.ts": "runtime",
+    "server/project-coding-runtime.test.ts": "runtime",
+    "server/session-fork.test.ts": "runtime",
+    "server/session-loadout.test.ts": "runtime",
+    "server/subagent-profiles.test.ts": "runtime",
+    "server/sync/grants-sync.test.ts": "runtime",
+    "server/sync/logins-stores.test.ts": "runtime",
+    "server/sync/logins.test.ts": "runtime",
+    "server/tests/spec-assessment.mjs": "runtime",
+    "server/transcript.test.ts": "runtime",
+    "server/vis-check.test.ts": "runtime"
+  },
+  "readers": {
+    "shared/wire-v1.ts": {"calls": 0, "shapes": 22, "reaches": 0},
+    "src/lib/legacy-rows.ts": {"calls": 0, "shapes": 6, "reaches": 0}
+  },
+  "writers": {},
+  "wrappers": [],
+  "piAdapter": [],
+  "session": {},
+  "extension": {
+    "server/chat-manager.ts": 2,
+    "server/index.ts": 1,
+    "server/insights.ts": 2
+  }
+}

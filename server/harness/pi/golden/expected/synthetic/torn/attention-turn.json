@@ -1,0 +1,20 @@
+{
+  "full": {
+    "turnId": "j0000002",
+    "replyAt": 1788256802000,
+    "lastUser": "Before the damage",
+    "assistantLast": "After the malformed line",
+    "tools": [],
+    "stopReason": "stop",
+    "durationMs": 1000
+  },
+  "window4k": {
+    "turnId": "j0000002",
+    "replyAt": 1788256802000,
+    "lastUser": "Before the damage",
+    "assistantLast": "After the malformed line",
+    "tools": [],
+    "stopReason": "stop",
+    "durationMs": 1000
+  }
+}

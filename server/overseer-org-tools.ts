@@ -1,4 +1,4 @@
-import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
+import type { ToolSpec } from "../shared/harness";
 import { OPERATOR } from "../shared/baton";
 import type { OrgDetail, Person } from "../shared/orgs";
 import type { SessionSummary, SovaConfirmItem } from "../shared/protocol";
@@ -42,7 +42,7 @@ import {
  */
 
 type Out = { content: { type: "text"; text: string }[]; details: unknown };
-type Tool = ToolDefinition<any, any>;
+type Tool = ToolSpec;
 type Resp = { status: number; json: any };
 
 export type OrgLimitKind = "org" | "gather" | "create" | "prompt";

@@ -1,0 +1,431 @@
+{
+  "shown": [
+    {
+      "e": {
+        "type": "message",
+        "message": {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "Plain question about the parser"
+            }
+          ],
+          "timestamp": 1788256808000
+        },
+        "id": "a0000008",
+        "parentId": "a0000007",
+        "timestamp": "2026-09-01T10:00:08.000Z"
+      },
+      "role": "user",
+      "text": "Plain question about the parser",
+      "blocks": []
+    },
+    {
+      "e": {
+        "type": "message",
+        "message": {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "Two screenshots attached /tmp/pi-clipboard-golden-0001.png\n\n[Image: original 2560x1600, displayed at 2000x1250. Multiply coordinates by 1.28 to map to original image.]\n[Image: original 4000x3000, displayed at 2000x1500. Multiply coordinates by 2.00 to map to original image.]"
+            },
+            {
+              "type": "image",
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
+              "mimeType": "image/png"
+            },
+            {
+              "type": "image",
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
+              "mimeType": "image/png"
+            }
+          ],
+          "timestamp": 1788256810000
+        },
+        "id": "a000000a",
+        "parentId": "a0000009",
+        "timestamp": "2026-09-01T10:00:10.000Z"
+      },
+      "role": "user",
+      "text": "Two screenshots attached",
+      "blocks": [
+        {
+          "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
+          "mime": "image/png"
+        },
+        {
+          "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
+          "mime": "image/png"
+        }
+      ]
+    },
+    {
+      "e": {
+        "type": "message",
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "thinking",
+              "thinking": "Consider the parser.",
+              "thinkingSignature": "sig-abc"
+            },
+            {
+              "type": "text",
+              "text": "Here is the answer, see /tmp/golden-chart.png"
+            },
+            {
+              "type": "toolCall",
+              "id": "call_1",
+              "name": "read",
+              "arguments": {
+                "path": "src/a.ts"
+              }
+            }
+          ],
+          "api": "openai-completions",
+          "provider": "zai",
+          "model": "glm-5.3",
+          "usage": {
+            "input": 5000,
+            "output": 200,
+            "cacheRead": 1000,
+            "cacheWrite": 300,
+            "totalTokens": 6500,
+            "cost": {
+              "input": 0.001,
+              "output": 0.002,
+              "cacheRead": 0.0001,
+              "cacheWrite": 0,
+              "total": 0.0031
+            }
+          },
+          "stopReason": "toolUse",
+          "timestamp": 1788256812000
+        },
+        "id": "a000000c",
+        "parentId": "a000000b",
+        "timestamp": "2026-09-01T10:00:12.000Z"
+      },
+      "role": "assistant",
+      "text": "Here is the answer, see",
+      "blocks": []
+    },
+    {
+      "e": {
+        "type": "message",
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "future_block",
+              "payload": 1
+            },
+            {
+              "type": "text",
+              "text": "Unknown block before me"
+            }
+          ],
+          "api": "openai-completions",
+          "provider": "zai",
+          "model": "glm-5.3",
+          "usage": {
+            "input": 1200,
+            "output": 80,
+            "cacheRead": 400,
+            "cacheWrite": 0,
+            "totalTokens": 1680,
+            "cost": {
+              "input": 0.001,
+              "output": 0.002,
+              "cacheRead": 0.0001,
+              "cacheWrite": 0,
+              "total": 0.0031
+            }
+          },
+          "stopReason": "stop",
+          "timestamp": 1788256818000
+        },
+        "id": "a0000012",
+        "parentId": "a0000011",
+        "timestamp": "2026-09-01T10:00:18.000Z"
+      },
+      "role": "assistant",
+      "text": "Unknown block before me",
+      "blocks": []
+    },
+    {
+      "e": {
+        "type": "message",
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "partial"
+            }
+          ],
+          "api": "openai-completions",
+          "provider": "zai",
+          "model": "glm-5.3",
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 0,
+            "cost": {
+              "input": 0.001,
+              "output": 0.002,
+              "cacheRead": 0.0001,
+              "cacheWrite": 0,
+              "total": 0.0031
+            }
+          },
+          "stopReason": "error",
+          "errorMessage": "429 Too Many Requests: rate limited",
+          "timestamp": 1788256819000
+        },
+        "id": "a0000013",
+        "parentId": "a0000012",
+        "timestamp": "2026-09-01T10:00:19.000Z"
+      },
+      "role": "assistant",
+      "text": "partial",
+      "blocks": []
+    },
+    {
+      "e": {
+        "type": "message",
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "cut off"
+            }
+          ],
+          "api": "openai-completions",
+          "provider": "zai",
+          "model": "glm-5.3",
+          "usage": {
+            "input": 1200,
+            "output": 80,
+            "cacheRead": 400,
+            "cacheWrite": 0,
+            "totalTokens": 1680,
+            "cost": {
+              "input": 0.001,
+              "output": 0.002,
+              "cacheRead": 0.0001,
+              "cacheWrite": 0,
+              "total": 0.0031
+            }
+          },
+          "stopReason": "length",
+          "timestamp": 1788256821000
+        },
+        "id": "a0000015",
+        "parentId": "a0000014",
+        "timestamp": "2026-09-01T10:00:21.000Z"
+      },
+      "role": "assistant",
+      "text": "cut off",
+      "blocks": []
+    },
+    {
+      "e": {
+        "type": "message",
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "No provider on this one"
+            }
+          ],
+          "api": "openai-completions",
+          "usage": {
+            "input": 1200,
+            "output": 80,
+            "cacheRead": 400,
+            "cacheWrite": 0,
+            "totalTokens": 1680,
+            "cost": {
+              "input": 0.001,
+              "output": 0.002,
+              "cacheRead": 0.0001,
+              "cacheWrite": 0,
+              "total": 0.0031
+            }
+          },
+          "stopReason": "stop",
+          "timestamp": 1788256822000
+        },
+        "id": "a0000016",
+        "parentId": "a0000015",
+        "timestamp": "2026-09-01T10:00:22.000Z"
+      },
+      "role": "assistant",
+      "text": "No provider on this one",
+      "blocks": []
+    },
+    {
+      "e": {
+        "type": "message",
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "Final reply after everything."
+            }
+          ],
+          "api": "openai-completions",
+          "provider": "zai",
+          "model": "glm-5.3",
+          "usage": {
+            "input": 2000,
+            "output": 100,
+            "cacheRead": 60000,
+            "cacheWrite": 500,
+            "totalTokens": 62600,
+            "cost": {
+              "input": 0.001,
+              "output": 0.002,
+              "cacheRead": 0.0001,
+              "cacheWrite": 0,
+              "total": 0.0031
+            }
+          },
+          "stopReason": "stop",
+          "timestamp": 1788256872000
+        },
+        "id": "a0000048",
+        "parentId": "a0000047",
+        "timestamp": "2026-09-01T10:01:12.000Z"
+      },
+      "role": "assistant",
+      "text": "Final reply after everything.",
+      "blocks": []
+    }
+  ],
+  "branchTo": {
+    "leaf": [
+      "a0000001",
+      "a0000002",
+      "a0000003",
+      "a0000004",
+      "a0000005",
+      "a0000006",
+      "a0000007",
+      "a0000008",
+      "a0000009",
+      "a000000a",
+      "a000000b",
+      "a000000c",
+      "a000000d",
+      "a000000e",
+      "a000000f",
+      "a0000010",
+      "a0000011",
+      "a0000012",
+      "a0000013",
+      "a0000014",
+      "a0000015",
+      "a0000016",
+      "a0000017",
+      "a0000018",
+      "a0000019",
+      "a000001a",
+      "a000001b",
+      "a000001c",
+      "a000001d",
+      "a000001e",
+      "a000001f",
+      "a0000020",
+      "a0000021",
+      "a0000022",
+      "a0000023",
+      "a0000024",
+      "a0000025",
+      "a0000026",
+      "a0000027",
+      "a0000028",
+      "a0000029",
+      "a000002a",
+      "a000002b",
+      "a000002c",
+      "a000002d",
+      "a000002e",
+      "a000002f",
+      "a0000030",
+      "a0000031",
+      "a0000032",
+      "a0000033",
+      "a0000034",
+      "a0000035",
+      "a0000036",
+      "a0000037",
+      "a0000038",
+      "a0000039",
+      "a000003a",
+      "a000003b",
+      "a000003c",
+      "a000003d",
+      "a000003e",
+      "a000003f",
+      "a0000040",
+      "a0000041",
+      "a0000042",
+      "a0000043",
+      "a0000044",
+      "a0000045",
+      "a0000046",
+      "a0000047",
+      "a0000048"
+    ],
+    "mid": [
+      "a0000001",
+      "a0000002",
+      "a0000003",
+      "a0000004",
+      "a0000005",
+      "a0000006",
+      "a0000007",
+      "a0000008",
+      "a0000009",
+      "a000000a",
+      "a000000b",
+      "a000000c",
+      "a000000d",
+      "a000000e",
+      "a000000f",
+      "a0000010",
+      "a0000011",
+      "a0000012",
+      "a0000013",
+      "a0000014",
+      "a0000015",
+      "a0000016",
+      "a0000017",
+      "a0000018",
+      "a0000019",
+      "a000001a",
+      "a000001b",
+      "a000001c",
+      "a000001d",
+      "a000001e",
+      "a000001f",
+      "a0000020",
+      "a0000021",
+      "a0000022",
+      "a0000023",
+      "a0000024",
+      "a0000025"
+    ],
+    "missing": null
+  }
+}

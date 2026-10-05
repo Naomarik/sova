@@ -1,0 +1,257 @@
+[
+  {
+    "call": {
+      "fn": "applyEvent",
+      "args": [
+        {
+          "type": "message_start",
+          "message": {
+            "role": "assistant",
+            "provider": "zai",
+            "model": "glm-5.3",
+            "content": []
+          }
+        }
+      ]
+    },
+    "state": {
+      "entries": [
+        {
+          "kind": "assistant",
+          "blocks": [],
+          "done": false,
+          "model": "zai/glm-5.3"
+        }
+      ],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "call": {
+      "fn": "applyEvent",
+      "args": [
+        {
+          "type": "message_update",
+          "assistantMessageEvent": {
+            "type": "thinking_start",
+            "contentIndex": 0
+          }
+        }
+      ]
+    },
+    "state": {
+      "entries": [
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "thinking",
+              "text": ""
+            }
+          ],
+          "done": false,
+          "model": "zai/glm-5.3"
+        }
+      ],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "call": {
+      "fn": "applyEvent",
+      "args": [
+        {
+          "type": "message_update",
+          "assistantMessageEvent": {
+            "type": "toolcall_start",
+            "contentIndex": 1,
+            "id": "t1",
+            "toolName": "read"
+          }
+        }
+      ]
+    },
+    "state": {
+      "entries": [
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "thinking",
+              "text": ""
+            },
+            {
+              "type": "toolCall",
+              "id": "t1",
+              "name": "read",
+              "argsText": ""
+            }
+          ],
+          "done": false,
+          "model": "zai/glm-5.3"
+        }
+      ],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "call": {
+      "fn": "applyEvent",
+      "args": [
+        {
+          "type": "tool_execution_start",
+          "toolCallId": "t9",
+          "toolName": "agent_spawn",
+          "args": {}
+        }
+      ]
+    },
+    "state": {
+      "entries": [
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "thinking",
+              "text": ""
+            },
+            {
+              "type": "toolCall",
+              "id": "t1",
+              "name": "read",
+              "argsText": ""
+            }
+          ],
+          "done": false,
+          "model": "zai/glm-5.3"
+        }
+      ],
+      "tools": {
+        "t9": {
+          "name": "agent_spawn",
+          "args": {},
+          "status": "running",
+          "output": "",
+          "images": []
+        }
+      },
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "call": {
+      "fn": "applyEvent",
+      "args": [
+        {
+          "type": "tool_execution_end",
+          "toolCallId": "t9",
+          "toolName": "agent_spawn",
+          "result": {
+            "content": []
+          }
+        }
+      ]
+    },
+    "state": {
+      "entries": [
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "thinking",
+              "text": ""
+            },
+            {
+              "type": "toolCall",
+              "id": "t1",
+              "name": "read",
+              "argsText": ""
+            }
+          ],
+          "done": false,
+          "model": "zai/glm-5.3"
+        }
+      ],
+      "tools": {
+        "t9": {
+          "name": "agent_spawn",
+          "args": {},
+          "status": "done",
+          "output": "",
+          "images": []
+        }
+      },
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "call": {
+      "fn": "applyEvent",
+      "args": [
+        {
+          "type": "message_update",
+          "assistantMessageEvent": {
+            "type": "text_start",
+            "contentIndex": 2
+          }
+        }
+      ]
+    },
+    "state": {
+      "entries": [
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "thinking",
+              "text": ""
+            },
+            {
+              "type": "toolCall",
+              "id": "t1",
+              "name": "read",
+              "argsText": ""
+            },
+            {
+              "type": "text",
+              "text": ""
+            }
+          ],
+          "done": false,
+          "model": "zai/glm-5.3"
+        }
+      ],
+      "tools": {
+        "t9": {
+          "name": "agent_spawn",
+          "args": {},
+          "status": "done",
+          "output": "",
+          "images": []
+        }
+      },
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  }
+]

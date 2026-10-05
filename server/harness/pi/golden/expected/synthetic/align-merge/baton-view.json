@@ -1,0 +1,113 @@
+{
+  "operator": {
+    "view": {
+      "publicTitle": "Golden launch",
+      "state": "active",
+      "holder": "Alice",
+      "items": [
+        {
+          "kind": "message",
+          "id": "q0000003",
+          "by": "",
+          "name": "Someone",
+          "text": "Align on the export, then build it",
+          "at": "2026-09-01T10:00:03.000Z"
+        },
+        {
+          "kind": "reply",
+          "id": "q000000a",
+          "text": "Two questions are open on Export. Shall I go on?",
+          "at": "2026-09-01T10:00:10.000Z"
+        },
+        {
+          "kind": "message",
+          "id": "q000000b",
+          "by": "p_alice",
+          "name": "Alice",
+          "text": "Yes, build it",
+          "at": "2026-09-01T10:00:11.000Z"
+        },
+        {
+          "kind": "reply",
+          "id": "q0000012",
+          "text": "Merged. Restart the server to pick it up.\n\nAlso changes: none",
+          "at": "2026-09-01T10:00:18.000Z"
+        }
+      ]
+    },
+    "photos": 0
+  },
+  "bob": {
+    "view": {
+      "publicTitle": "Golden launch",
+      "state": "active",
+      "holder": "Alice",
+      "items": [
+        {
+          "kind": "message",
+          "id": "q0000003",
+          "by": "",
+          "name": "Someone",
+          "text": "Align on the export, then build it",
+          "at": "2026-09-01T10:00:03.000Z"
+        },
+        {
+          "kind": "reply",
+          "id": "q000000a",
+          "text": "Two questions are open on Export. Shall I go on?",
+          "at": "2026-09-01T10:00:10.000Z"
+        },
+        {
+          "kind": "message",
+          "id": "q000000b",
+          "by": "p_alice",
+          "name": "Alice",
+          "text": "Yes, build it",
+          "at": "2026-09-01T10:00:11.000Z"
+        },
+        {
+          "kind": "reply",
+          "id": "q0000012",
+          "text": "Merged. Restart the server to pick it up.\n\nAlso changes: none",
+          "at": "2026-09-01T10:00:18.000Z"
+        }
+      ]
+    },
+    "photos": 0
+  },
+  "untilOffer": {
+    "publicTitle": "Golden launch",
+    "state": "active",
+    "holder": null,
+    "items": [
+      {
+        "kind": "message",
+        "id": "q0000003",
+        "by": "",
+        "name": "Someone",
+        "text": "Align on the export, then build it",
+        "at": "2026-09-01T10:00:03.000Z"
+      },
+      {
+        "kind": "reply",
+        "id": "q000000a",
+        "text": "Two questions are open on Export. Shall I go on?",
+        "at": "2026-09-01T10:00:10.000Z"
+      },
+      {
+        "kind": "message",
+        "id": "q000000b",
+        "by": "p_alice",
+        "name": "Alice",
+        "text": "Yes, build it",
+        "at": "2026-09-01T10:00:11.000Z"
+      },
+      {
+        "kind": "reply",
+        "id": "q0000012",
+        "text": "Merged. Restart the server to pick it up.\n\nAlso changes: none",
+        "at": "2026-09-01T10:00:18.000Z"
+      }
+    ]
+  }
+}

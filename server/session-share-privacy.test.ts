@@ -32,7 +32,8 @@ mkdirSync(process.env.SOVA_SHARE_DIST, { recursive: true });
 writeFileSync(join(process.env.SOVA_SHARE_DIST, "index.html"), "<!doctype html><title>Shared</title>");
 
 const { sessionShareView, sessionShareImage, sourceReadable, currentLeaf, resetShareViewCache, SESSION_SHARE_TEXT_MAX, SESSION_SHARE_TEXT_CEILING, cutAtToken, withoutImagePaths } = await import("./session-share-view");
-const { normalizeEntries, parseLines, toolContents } = await import("./transcript");
+const { normalizeEntries, toolContents } = await import("./transcript");
+const { parseLines } = await import("./harness/pi/reader");
 const { createShare } = await import("./session-shares");
 const { pushView } = await import("./session-share-presence");
 const { pushShareView } = await import("./share/session-live");

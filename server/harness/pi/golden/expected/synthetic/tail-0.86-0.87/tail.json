@@ -1,0 +1,11 @@
+{
+  "model": "anthropic/claude-sonnet-5",
+  "context": {
+    "tokens": 54700,
+    "model": "anthropic/claude-sonnet-5"
+  },
+  "reply": {
+    "at": 1788256806000,
+    "stopReason": "stop"
+  }
+}

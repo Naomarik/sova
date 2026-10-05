@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import { agentRoot } from "./state-root";
 import {
   CLAUDE_EFFORTS,
   DELEGATE_BACKENDS,
@@ -38,7 +38,7 @@ import { CLAUDE_CODE_PROVIDER } from "./models";
 // offers, the policy's view of them, and a save that refuses what discovery says cannot run.
 // Every Delegate session — TUI or web — re-reads the file at its next turn boundary.
 
-export const delegateFile = () => join(getAgentDir(), DELEGATE_FILE_NAME);
+export const delegateFile = () => join(agentRoot(), DELEGATE_FILE_NAME);
 
 const BACKEND_LABELS: Record<DelegateBackend, string> = { pi: "pi", "claude-code": "Claude Code" };
 

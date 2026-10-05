@@ -1,0 +1,295 @@
+{
+  "operator": {
+    "view": {
+      "publicTitle": "Golden launch",
+      "state": "active",
+      "holder": "Alice",
+      "items": [
+        {
+          "kind": "message",
+          "id": "a0000008",
+          "by": "",
+          "name": "Someone",
+          "text": "Plain question about the parser",
+          "at": "2026-09-01T10:00:08.000Z"
+        },
+        {
+          "kind": "message",
+          "id": "a000000a",
+          "by": "p_alice",
+          "name": "Alice",
+          "text": "Two screenshots attached /tmp/pi-clipboard-golden-0001.png",
+          "at": "2026-09-01T10:00:10.000Z",
+          "images": [
+            {
+              "n": 0,
+              "mime": "image/png"
+            },
+            {
+              "n": 1,
+              "mime": "image/png"
+            }
+          ]
+        },
+        {
+          "kind": "reply",
+          "id": "a000000c",
+          "text": "Here is the answer, see /tmp/golden-chart.png",
+          "at": "2026-09-01T10:00:12.000Z"
+        },
+        {
+          "kind": "reply",
+          "id": "a0000012",
+          "text": "Unknown block before me",
+          "at": "2026-09-01T10:00:18.000Z"
+        },
+        {
+          "kind": "reply",
+          "id": "a0000013",
+          "text": "partial",
+          "cutOff": true,
+          "at": "2026-09-01T10:00:19.000Z"
+        },
+        {
+          "kind": "reply",
+          "id": "a0000015",
+          "text": "cut off",
+          "at": "2026-09-01T10:00:21.000Z"
+        },
+        {
+          "kind": "reply",
+          "id": "a0000016",
+          "text": "No provider on this one",
+          "at": "2026-09-01T10:00:22.000Z"
+        },
+        {
+          "kind": "handoff",
+          "id": "a0000037",
+          "n": 1,
+          "from": "Alice",
+          "to": "Bob",
+          "question": "Can you check?",
+          "briefing": "Context here"
+        },
+        {
+          "kind": "decision",
+          "id": "a0000038",
+          "by": "Bob",
+          "area": "API",
+          "statement": "Use REST"
+        },
+        {
+          "kind": "done",
+          "id": "a0000039",
+          "summary": "Finished."
+        },
+        {
+          "kind": "offer",
+          "id": "a000003a",
+          "n": 2,
+          "from": "Bob",
+          "to": [
+            "Carol",
+            "Dave",
+            "Someone"
+          ],
+          "invited": 3,
+          "question": "Anyone?",
+          "briefing": "More"
+        }
+      ]
+    },
+    "photos": 2
+  },
+  "bob": {
+    "view": {
+      "publicTitle": "Golden launch",
+      "state": "active",
+      "holder": "Alice",
+      "items": [
+        {
+          "kind": "message",
+          "id": "a0000008",
+          "by": "",
+          "name": "Someone",
+          "text": "Plain question about the parser",
+          "at": "2026-09-01T10:00:08.000Z"
+        },
+        {
+          "kind": "message",
+          "id": "a000000a",
+          "by": "p_alice",
+          "name": "Alice",
+          "text": "Two screenshots attached /tmp/pi-clipboard-golden-0001.png",
+          "at": "2026-09-01T10:00:10.000Z",
+          "images": [
+            {
+              "n": 0,
+              "mime": "image/png"
+            },
+            {
+              "n": 1,
+              "mime": "image/png"
+            }
+          ]
+        },
+        {
+          "kind": "reply",
+          "id": "a000000c",
+          "text": "Here is the answer, see /tmp/golden-chart.png",
+          "at": "2026-09-01T10:00:12.000Z"
+        },
+        {
+          "kind": "reply",
+          "id": "a0000012",
+          "text": "Unknown block before me",
+          "at": "2026-09-01T10:00:18.000Z"
+        },
+        {
+          "kind": "reply",
+          "id": "a0000013",
+          "text": "partial",
+          "cutOff": true,
+          "at": "2026-09-01T10:00:19.000Z"
+        },
+        {
+          "kind": "reply",
+          "id": "a0000015",
+          "text": "cut off",
+          "at": "2026-09-01T10:00:21.000Z"
+        },
+        {
+          "kind": "reply",
+          "id": "a0000016",
+          "text": "No provider on this one",
+          "at": "2026-09-01T10:00:22.000Z"
+        },
+        {
+          "kind": "handoff",
+          "id": "a0000037",
+          "n": 1,
+          "from": "Alice",
+          "to": "Bob",
+          "question": "Can you check?",
+          "briefing": "Context here"
+        },
+        {
+          "kind": "decision",
+          "id": "a0000038",
+          "by": "Bob",
+          "area": "API",
+          "statement": "Use REST"
+        },
+        {
+          "kind": "done",
+          "id": "a0000039",
+          "summary": "Finished."
+        },
+        {
+          "kind": "offer",
+          "id": "a000003a",
+          "n": 2,
+          "from": "Bob",
+          "to": [],
+          "invited": 3,
+          "question": "Anyone?"
+        }
+      ]
+    },
+    "photos": 2
+  },
+  "untilOffer": {
+    "publicTitle": "Golden launch",
+    "state": "active",
+    "holder": null,
+    "items": [
+      {
+        "kind": "message",
+        "id": "a0000008",
+        "by": "",
+        "name": "Someone",
+        "text": "Plain question about the parser",
+        "at": "2026-09-01T10:00:08.000Z"
+      },
+      {
+        "kind": "message",
+        "id": "a000000a",
+        "by": "p_alice",
+        "name": "Alice",
+        "text": "Two screenshots attached /tmp/pi-clipboard-golden-0001.png",
+        "at": "2026-09-01T10:00:10.000Z",
+        "images": [
+          {
+            "n": 0,
+            "mime": "image/png"
+          },
+          {
+            "n": 1,
+            "mime": "image/png"
+          }
+        ]
+      },
+      {
+        "kind": "reply",
+        "id": "a000000c",
+        "text": "Here is the answer, see /tmp/golden-chart.png",
+        "at": "2026-09-01T10:00:12.000Z"
+      },
+      {
+        "kind": "reply",
+        "id": "a0000012",
+        "text": "Unknown block before me",
+        "at": "2026-09-01T10:00:18.000Z"
+      },
+      {
+        "kind": "reply",
+        "id": "a0000013",
+        "text": "partial",
+        "cutOff": true,
+        "at": "2026-09-01T10:00:19.000Z"
+      },
+      {
+        "kind": "reply",
+        "id": "a0000015",
+        "text": "cut off",
+        "at": "2026-09-01T10:00:21.000Z"
+      },
+      {
+        "kind": "reply",
+        "id": "a0000016",
+        "text": "No provider on this one",
+        "at": "2026-09-01T10:00:22.000Z"
+      },
+      {
+        "kind": "handoff",
+        "id": "a0000037",
+        "n": 1,
+        "from": "Alice",
+        "to": "Bob",
+        "question": "Can you check?"
+      },
+      {
+        "kind": "decision",
+        "id": "a0000038",
+        "by": "Bob",
+        "area": "API",
+        "statement": "Use REST"
+      },
+      {
+        "kind": "done",
+        "id": "a0000039",
+        "summary": "Finished."
+      },
+      {
+        "kind": "offer",
+        "id": "a000003a",
+        "n": 2,
+        "from": "Bob",
+        "to": [],
+        "invited": 3,
+        "question": "Anyone?",
+        "briefing": "More"
+      }
+    ]
+  }
+}

@@ -1,0 +1,1490 @@
+{
+  "full": {
+    "size": 22680,
+    "found": true,
+    "summary": {
+      "openDocs": 1,
+      "openQuestions": 2,
+      "questionDocs": 1,
+      "lead": {
+        "id": "al_1",
+        "title": "Export"
+      }
+    },
+    "entries": [
+      {
+        "type": "session",
+        "id": "0190a000-0000-7000-8000-a00000000000"
+      },
+      {
+        "type": "model_change",
+        "id": "a0000001",
+        "parentId": null
+      },
+      {
+        "type": "thinking_level_change",
+        "id": "a0000002",
+        "parentId": "a0000001"
+      },
+      {
+        "type": "custom",
+        "id": "a0000003",
+        "parentId": "a0000002"
+      },
+      {
+        "type": "custom",
+        "id": "a0000004",
+        "parentId": "a0000003",
+        "customType": "mode",
+        "data": {
+          "mode": "delegate",
+          "active": {
+            "major": "delegate"
+          }
+        }
+      },
+      {
+        "type": "custom",
+        "id": "a0000005",
+        "parentId": "a0000004",
+        "customType": "mode",
+        "data": {
+          "minor": "spec",
+          "on": true
+        }
+      },
+      {
+        "type": "custom",
+        "id": "a0000006",
+        "parentId": "a0000005",
+        "customType": "mode",
+        "data": {
+          "strict": true
+        }
+      },
+      {
+        "type": "custom",
+        "id": "a0000007",
+        "parentId": "a0000006",
+        "customType": "mode",
+        "data": {
+          "active": {
+            "major": "code"
+          }
+        }
+      },
+      {
+        "type": "message",
+        "id": "a0000008",
+        "parentId": "a0000007",
+        "userPrompt": true
+      },
+      {
+        "type": "custom",
+        "id": "a0000009",
+        "parentId": "a0000008"
+      },
+      {
+        "type": "message",
+        "id": "a000000a",
+        "parentId": "a0000009",
+        "userPrompt": true
+      },
+      {
+        "type": "custom",
+        "id": "a000000b",
+        "parentId": "a000000a"
+      },
+      {
+        "type": "message",
+        "id": "a000000c",
+        "parentId": "a000000b"
+      },
+      {
+        "type": "message",
+        "id": "a000000d",
+        "parentId": "a000000c"
+      },
+      {
+        "type": "message",
+        "id": "a000000e",
+        "parentId": "a000000d"
+      },
+      {
+        "type": "message",
+        "id": "a000000f",
+        "parentId": "a000000e"
+      },
+      {
+        "type": "message",
+        "id": "a0000010",
+        "parentId": "a000000f"
+      },
+      {
+        "type": "message",
+        "id": "a0000011",
+        "parentId": "a0000010"
+      },
+      {
+        "type": "message",
+        "id": "a0000012",
+        "parentId": "a0000011"
+      },
+      {
+        "type": "message",
+        "id": "a0000013",
+        "parentId": "a0000012"
+      },
+      {
+        "type": "message",
+        "id": "a0000014",
+        "parentId": "a0000013"
+      },
+      {
+        "type": "message",
+        "id": "a0000015",
+        "parentId": "a0000014"
+      },
+      {
+        "type": "message",
+        "id": "a0000016",
+        "parentId": "a0000015"
+      },
+      {
+        "type": "message",
+        "id": "a0000017",
+        "parentId": "a0000016"
+      },
+      {
+        "type": "message",
+        "id": "a0000018",
+        "parentId": "a0000017",
+        "message": {
+          "role": "toolResult",
+          "toolName": "align",
+          "isError": false,
+          "details": {
+            "v": 1,
+            "changes": [
+              {
+                "kind": "created"
+              }
+            ],
+            "line": "created",
+            "doc": {
+              "id": "al_1",
+              "title": "Export",
+              "summary": "Download a session.",
+              "findings": [],
+              "approach": [],
+              "rejected": [],
+              "questions": [
+                {
+                  "id": "q1",
+                  "topic": "Format",
+                  "ask": "Format?",
+                  "recommendation": {
+                    "choice": "yes",
+                    "why": "simpler"
+                  }
+                },
+                {
+                  "id": "q2",
+                  "topic": "Zip",
+                  "ask": "Zip?",
+                  "recommendation": {
+                    "choice": "yes",
+                    "why": "simpler"
+                  }
+                }
+              ],
+              "phase": "open",
+              "next": {
+                "f": 0,
+                "a": 0,
+                "x": 0,
+                "q": 2
+              },
+              "rev": 1,
+              "createdAt": "2026-09-01T10:00:00.000Z",
+              "updatedAt": "2026-09-01T10:00:00.000Z"
+            }
+          }
+        }
+      },
+      {
+        "type": "message",
+        "id": "a0000019",
+        "parentId": "a0000018",
+        "message": {
+          "role": "toolResult",
+          "toolName": "align",
+          "isError": false,
+          "details": {
+            "v": 1,
+            "changes": [],
+            "line": "",
+            "exempt": {
+              "why": "a question, no change"
+            }
+          }
+        }
+      },
+      {
+        "type": "message",
+        "id": "a000001a",
+        "parentId": "a0000019"
+      },
+      {
+        "type": "message",
+        "id": "a000001b",
+        "parentId": "a000001a"
+      },
+      {
+        "type": "message",
+        "id": "a000001c",
+        "parentId": "a000001b"
+      },
+      {
+        "type": "message",
+        "id": "a000001d",
+        "parentId": "a000001c"
+      },
+      {
+        "type": "message",
+        "id": "a000001e",
+        "parentId": "a000001d"
+      },
+      {
+        "type": "message",
+        "id": "a000001f",
+        "parentId": "a000001e"
+      },
+      {
+        "type": "message",
+        "id": "a0000020",
+        "parentId": "a000001f"
+      },
+      {
+        "type": "session_info",
+        "id": "a0000021",
+        "parentId": "a0000020"
+      },
+      {
+        "type": "label",
+        "id": "a0000022",
+        "parentId": "a0000021"
+      },
+      {
+        "type": "label",
+        "id": "a0000023",
+        "parentId": "a0000022"
+      },
+      {
+        "type": "compaction",
+        "id": "a0000024",
+        "parentId": "a0000023"
+      },
+      {
+        "type": "branch_summary",
+        "id": "a0000025",
+        "parentId": "a0000024"
+      },
+      {
+        "type": "custom",
+        "id": "a0000026",
+        "parentId": "a0000025"
+      },
+      {
+        "type": "custom",
+        "id": "a0000027",
+        "parentId": "a0000026"
+      },
+      {
+        "type": "custom",
+        "id": "a0000028",
+        "parentId": "a0000027",
+        "customType": "align-doc",
+        "data": {
+          "version": 1,
+          "doc": {
+            "id": "al_9",
+            "title": "Old",
+            "markdown": "# Old",
+            "questions": []
+          }
+        }
+      },
+      {
+        "type": "custom",
+        "id": "a0000029",
+        "parentId": "a0000028",
+        "customType": "align-doc",
+        "data": {
+          "version": 1,
+          "doc": {
+            "id": "al_9",
+            "title": "Export",
+            "markdown": "# Export\n\nDecide the format.",
+            "questions": [
+              {
+                "checked": true
+              },
+              {
+                "checked": false
+              }
+            ],
+            "revision": 3
+          }
+        }
+      },
+      {
+        "type": "custom",
+        "id": "a000002a",
+        "parentId": "a0000029"
+      },
+      {
+        "type": "custom",
+        "id": "a000002b",
+        "parentId": "a000002a"
+      },
+      {
+        "type": "custom",
+        "id": "a000002c",
+        "parentId": "a000002b"
+      },
+      {
+        "type": "custom",
+        "id": "a000002d",
+        "parentId": "a000002c"
+      },
+      {
+        "type": "custom",
+        "id": "a000002e",
+        "parentId": "a000002d"
+      },
+      {
+        "type": "custom",
+        "id": "a000002f",
+        "parentId": "a000002e"
+      },
+      {
+        "type": "custom",
+        "id": "a0000030",
+        "parentId": "a000002f"
+      },
+      {
+        "type": "custom",
+        "id": "a0000031",
+        "parentId": "a0000030"
+      },
+      {
+        "type": "custom",
+        "id": "a0000032",
+        "parentId": "a0000031"
+      },
+      {
+        "type": "custom",
+        "id": "a0000033",
+        "parentId": "a0000032"
+      },
+      {
+        "type": "custom",
+        "id": "a0000034",
+        "parentId": "a0000033"
+      },
+      {
+        "type": "custom",
+        "id": "a0000035",
+        "parentId": "a0000034"
+      },
+      {
+        "type": "custom",
+        "id": "a0000036",
+        "parentId": "a0000035"
+      },
+      {
+        "type": "custom",
+        "id": "a0000037",
+        "parentId": "a0000036"
+      },
+      {
+        "type": "custom",
+        "id": "a0000038",
+        "parentId": "a0000037"
+      },
+      {
+        "type": "custom",
+        "id": "a0000039",
+        "parentId": "a0000038"
+      },
+      {
+        "type": "custom",
+        "id": "a000003a",
+        "parentId": "a0000039"
+      },
+      {
+        "type": "custom",
+        "id": "a000003b",
+        "parentId": "a000003a"
+      },
+      {
+        "type": "custom",
+        "id": "a000003c",
+        "parentId": "a000003b"
+      },
+      {
+        "type": "custom",
+        "id": "a000003d",
+        "parentId": "a000003c"
+      },
+      {
+        "type": "custom",
+        "id": "a000003e",
+        "parentId": "a000003d"
+      },
+      {
+        "type": "custom",
+        "id": "a000003f",
+        "parentId": "a000003e"
+      },
+      {
+        "type": "custom",
+        "id": "a0000040",
+        "parentId": "a000003f"
+      },
+      {
+        "type": "custom_message",
+        "id": "a0000041",
+        "parentId": "a0000040"
+      },
+      {
+        "type": "custom_message",
+        "id": "a0000042",
+        "parentId": "a0000041"
+      },
+      {
+        "type": "custom_message",
+        "id": "a0000043",
+        "parentId": "a0000042"
+      },
+      {
+        "type": "custom_message",
+        "id": "a0000044",
+        "parentId": "a0000043"
+      },
+      {
+        "type": "custom_message",
+        "id": "a0000045",
+        "parentId": "a0000044"
+      },
+      {
+        "type": "usage",
+        "id": "a0000046",
+        "parentId": "a0000045"
+      },
+      {
+        "type": "context_edit",
+        "id": "a0000047",
+        "parentId": "a0000046"
+      },
+      {
+        "type": "message",
+        "id": "a0000048",
+        "parentId": "a0000047"
+      }
+    ]
+  },
+  "prefix": {
+    "size": 13953,
+    "found": true,
+    "summary": {
+      "openDocs": 1,
+      "openQuestions": 2,
+      "questionDocs": 1,
+      "lead": {
+        "id": "al_1",
+        "title": "Export"
+      }
+    },
+    "entries": [
+      {
+        "type": "session",
+        "id": "0190a000-0000-7000-8000-a00000000000"
+      },
+      {
+        "type": "model_change",
+        "id": "a0000001",
+        "parentId": null
+      },
+      {
+        "type": "thinking_level_change",
+        "id": "a0000002",
+        "parentId": "a0000001"
+      },
+      {
+        "type": "custom",
+        "id": "a0000003",
+        "parentId": "a0000002"
+      },
+      {
+        "type": "custom",
+        "id": "a0000004",
+        "parentId": "a0000003",
+        "customType": "mode",
+        "data": {
+          "mode": "delegate",
+          "active": {
+            "major": "delegate"
+          }
+        }
+      },
+      {
+        "type": "custom",
+        "id": "a0000005",
+        "parentId": "a0000004",
+        "customType": "mode",
+        "data": {
+          "minor": "spec",
+          "on": true
+        }
+      },
+      {
+        "type": "custom",
+        "id": "a0000006",
+        "parentId": "a0000005",
+        "customType": "mode",
+        "data": {
+          "strict": true
+        }
+      },
+      {
+        "type": "custom",
+        "id": "a0000007",
+        "parentId": "a0000006",
+        "customType": "mode",
+        "data": {
+          "active": {
+            "major": "code"
+          }
+        }
+      },
+      {
+        "type": "message",
+        "id": "a0000008",
+        "parentId": "a0000007",
+        "userPrompt": true
+      },
+      {
+        "type": "custom",
+        "id": "a0000009",
+        "parentId": "a0000008"
+      },
+      {
+        "type": "message",
+        "id": "a000000a",
+        "parentId": "a0000009",
+        "userPrompt": true
+      },
+      {
+        "type": "custom",
+        "id": "a000000b",
+        "parentId": "a000000a"
+      },
+      {
+        "type": "message",
+        "id": "a000000c",
+        "parentId": "a000000b"
+      },
+      {
+        "type": "message",
+        "id": "a000000d",
+        "parentId": "a000000c"
+      },
+      {
+        "type": "message",
+        "id": "a000000e",
+        "parentId": "a000000d"
+      },
+      {
+        "type": "message",
+        "id": "a000000f",
+        "parentId": "a000000e"
+      },
+      {
+        "type": "message",
+        "id": "a0000010",
+        "parentId": "a000000f"
+      },
+      {
+        "type": "message",
+        "id": "a0000011",
+        "parentId": "a0000010"
+      },
+      {
+        "type": "message",
+        "id": "a0000012",
+        "parentId": "a0000011"
+      },
+      {
+        "type": "message",
+        "id": "a0000013",
+        "parentId": "a0000012"
+      },
+      {
+        "type": "message",
+        "id": "a0000014",
+        "parentId": "a0000013"
+      },
+      {
+        "type": "message",
+        "id": "a0000015",
+        "parentId": "a0000014"
+      },
+      {
+        "type": "message",
+        "id": "a0000016",
+        "parentId": "a0000015"
+      },
+      {
+        "type": "message",
+        "id": "a0000017",
+        "parentId": "a0000016"
+      },
+      {
+        "type": "message",
+        "id": "a0000018",
+        "parentId": "a0000017",
+        "message": {
+          "role": "toolResult",
+          "toolName": "align",
+          "isError": false,
+          "details": {
+            "v": 1,
+            "changes": [
+              {
+                "kind": "created"
+              }
+            ],
+            "line": "created",
+            "doc": {
+              "id": "al_1",
+              "title": "Export",
+              "summary": "Download a session.",
+              "findings": [],
+              "approach": [],
+              "rejected": [],
+              "questions": [
+                {
+                  "id": "q1",
+                  "topic": "Format",
+                  "ask": "Format?",
+                  "recommendation": {
+                    "choice": "yes",
+                    "why": "simpler"
+                  }
+                },
+                {
+                  "id": "q2",
+                  "topic": "Zip",
+                  "ask": "Zip?",
+                  "recommendation": {
+                    "choice": "yes",
+                    "why": "simpler"
+                  }
+                }
+              ],
+              "phase": "open",
+              "next": {
+                "f": 0,
+                "a": 0,
+                "x": 0,
+                "q": 2
+              },
+              "rev": 1,
+              "createdAt": "2026-09-01T10:00:00.000Z",
+              "updatedAt": "2026-09-01T10:00:00.000Z"
+            }
+          }
+        }
+      },
+      {
+        "type": "message",
+        "id": "a0000019",
+        "parentId": "a0000018",
+        "message": {
+          "role": "toolResult",
+          "toolName": "align",
+          "isError": false,
+          "details": {
+            "v": 1,
+            "changes": [],
+            "line": "",
+            "exempt": {
+              "why": "a question, no change"
+            }
+          }
+        }
+      },
+      {
+        "type": "message",
+        "id": "a000001a",
+        "parentId": "a0000019"
+      },
+      {
+        "type": "message",
+        "id": "a000001b",
+        "parentId": "a000001a"
+      },
+      {
+        "type": "message",
+        "id": "a000001c",
+        "parentId": "a000001b"
+      },
+      {
+        "type": "message",
+        "id": "a000001d",
+        "parentId": "a000001c"
+      },
+      {
+        "type": "message",
+        "id": "a000001e",
+        "parentId": "a000001d"
+      },
+      {
+        "type": "message",
+        "id": "a000001f",
+        "parentId": "a000001e"
+      },
+      {
+        "type": "message",
+        "id": "a0000020",
+        "parentId": "a000001f"
+      },
+      {
+        "type": "session_info",
+        "id": "a0000021",
+        "parentId": "a0000020"
+      },
+      {
+        "type": "label",
+        "id": "a0000022",
+        "parentId": "a0000021"
+      },
+      {
+        "type": "label",
+        "id": "a0000023",
+        "parentId": "a0000022"
+      },
+      {
+        "type": "compaction",
+        "id": "a0000024",
+        "parentId": "a0000023"
+      },
+      {
+        "type": "branch_summary",
+        "id": "a0000025",
+        "parentId": "a0000024"
+      },
+      {
+        "type": "custom",
+        "id": "a0000026",
+        "parentId": "a0000025"
+      },
+      {
+        "type": "custom",
+        "id": "a0000027",
+        "parentId": "a0000026"
+      },
+      {
+        "type": "custom",
+        "id": "a0000028",
+        "parentId": "a0000027",
+        "customType": "align-doc",
+        "data": {
+          "version": 1,
+          "doc": {
+            "id": "al_9",
+            "title": "Old",
+            "markdown": "# Old",
+            "questions": []
+          }
+        }
+      },
+      {
+        "type": "custom",
+        "id": "a0000029",
+        "parentId": "a0000028",
+        "customType": "align-doc",
+        "data": {
+          "version": 1,
+          "doc": {
+            "id": "al_9",
+            "title": "Export",
+            "markdown": "# Export\n\nDecide the format.",
+            "questions": [
+              {
+                "checked": true
+              },
+              {
+                "checked": false
+              }
+            ],
+            "revision": 3
+          }
+        }
+      },
+      {
+        "type": "custom",
+        "id": "a000002a",
+        "parentId": "a0000029"
+      },
+      {
+        "type": "custom",
+        "id": "a000002b",
+        "parentId": "a000002a"
+      },
+      {
+        "type": "custom",
+        "id": "a000002c",
+        "parentId": "a000002b"
+      },
+      {
+        "type": "custom",
+        "id": "a000002d",
+        "parentId": "a000002c"
+      },
+      {
+        "type": "custom",
+        "id": "a000002e",
+        "parentId": "a000002d"
+      },
+      {
+        "type": "custom",
+        "id": "a000002f",
+        "parentId": "a000002e"
+      },
+      {
+        "type": "custom",
+        "id": "a0000030",
+        "parentId": "a000002f"
+      },
+      {
+        "type": "custom",
+        "id": "a0000031",
+        "parentId": "a0000030"
+      },
+      {
+        "type": "custom",
+        "id": "a0000032",
+        "parentId": "a0000031"
+      },
+      {
+        "type": "custom",
+        "id": "a0000033",
+        "parentId": "a0000032"
+      },
+      {
+        "type": "custom",
+        "id": "a0000034",
+        "parentId": "a0000033"
+      },
+      {
+        "type": "custom",
+        "id": "a0000035",
+        "parentId": "a0000034"
+      },
+      {
+        "type": "custom",
+        "id": "a0000036",
+        "parentId": "a0000035"
+      },
+      {
+        "type": "custom",
+        "id": "a0000037",
+        "parentId": "a0000036"
+      },
+      {
+        "type": "custom",
+        "id": "a0000038",
+        "parentId": "a0000037"
+      },
+      {
+        "type": "custom",
+        "id": "a0000039",
+        "parentId": "a0000038"
+      },
+      {
+        "type": "custom",
+        "id": "a000003a",
+        "parentId": "a0000039"
+      },
+      {
+        "type": "custom",
+        "id": "a000003b",
+        "parentId": "a000003a"
+      },
+      {
+        "type": "custom",
+        "id": "a000003c",
+        "parentId": "a000003b"
+      },
+      {
+        "type": "custom",
+        "id": "a000003d",
+        "parentId": "a000003c"
+      },
+      {
+        "type": "custom",
+        "id": "a000003e",
+        "parentId": "a000003d"
+      },
+      {
+        "type": "custom",
+        "id": "a000003f",
+        "parentId": "a000003e"
+      },
+      {
+        "type": "custom",
+        "id": "a0000040",
+        "parentId": "a000003f"
+      },
+      {
+        "type": "custom_message",
+        "id": "a0000041",
+        "parentId": "a0000040"
+      },
+      {
+        "type": "custom_message",
+        "id": "a0000042",
+        "parentId": "a0000041"
+      },
+      {
+        "type": "custom_message",
+        "id": "a0000043",
+        "parentId": "a0000042"
+      },
+      {
+        "type": "custom_message",
+        "id": "a0000044",
+        "parentId": "a0000043"
+      },
+      {
+        "type": "custom_message",
+        "id": "a0000045",
+        "parentId": "a0000044"
+      },
+      {
+        "type": "usage",
+        "id": "a0000046",
+        "parentId": "a0000045"
+      },
+      {
+        "type": "context_edit",
+        "id": "a0000047",
+        "parentId": "a0000046"
+      },
+      {
+        "type": "message",
+        "id": "a0000048",
+        "parentId": "a0000047"
+      }
+    ]
+  },
+  "grown": {
+    "size": 22680,
+    "found": true,
+    "summary": {
+      "openDocs": 1,
+      "openQuestions": 2,
+      "questionDocs": 1,
+      "lead": {
+        "id": "al_1",
+        "title": "Export"
+      }
+    },
+    "entries": [
+      {
+        "type": "session",
+        "id": "0190a000-0000-7000-8000-a00000000000"
+      },
+      {
+        "type": "model_change",
+        "id": "a0000001",
+        "parentId": null
+      },
+      {
+        "type": "thinking_level_change",
+        "id": "a0000002",
+        "parentId": "a0000001"
+      },
+      {
+        "type": "custom",
+        "id": "a0000003",
+        "parentId": "a0000002"
+      },
+      {
+        "type": "custom",
+        "id": "a0000004",
+        "parentId": "a0000003",
+        "customType": "mode",
+        "data": {
+          "mode": "delegate",
+          "active": {
+            "major": "delegate"
+          }
+        }
+      },
+      {
+        "type": "custom",
+        "id": "a0000005",
+        "parentId": "a0000004",
+        "customType": "mode",
+        "data": {
+          "minor": "spec",
+          "on": true
+        }
+      },
+      {
+        "type": "custom",
+        "id": "a0000006",
+        "parentId": "a0000005",
+        "customType": "mode",
+        "data": {
+          "strict": true
+        }
+      },
+      {
+        "type": "custom",
+        "id": "a0000007",
+        "parentId": "a0000006",
+        "customType": "mode",
+        "data": {
+          "active": {
+            "major": "code"
+          }
+        }
+      },
+      {
+        "type": "message",
+        "id": "a0000008",
+        "parentId": "a0000007",
+        "userPrompt": true
+      },
+      {
+        "type": "custom",
+        "id": "a0000009",
+        "parentId": "a0000008"
+      },
+      {
+        "type": "message",
+        "id": "a000000a",
+        "parentId": "a0000009",
+        "userPrompt": true
+      },
+      {
+        "type": "custom",
+        "id": "a000000b",
+        "parentId": "a000000a"
+      },
+      {
+        "type": "message",
+        "id": "a000000c",
+        "parentId": "a000000b"
+      },
+      {
+        "type": "message",
+        "id": "a000000d",
+        "parentId": "a000000c"
+      },
+      {
+        "type": "message",
+        "id": "a000000e",
+        "parentId": "a000000d"
+      },
+      {
+        "type": "message",
+        "id": "a000000f",
+        "parentId": "a000000e"
+      },
+      {
+        "type": "message",
+        "id": "a0000010",
+        "parentId": "a000000f"
+      },
+      {
+        "type": "message",
+        "id": "a0000011",
+        "parentId": "a0000010"
+      },
+      {
+        "type": "message",
+        "id": "a0000012",
+        "parentId": "a0000011"
+      },
+      {
+        "type": "message",
+        "id": "a0000013",
+        "parentId": "a0000012"
+      },
+      {
+        "type": "message",
+        "id": "a0000014",
+        "parentId": "a0000013"
+      },
+      {
+        "type": "message",
+        "id": "a0000015",
+        "parentId": "a0000014"
+      },
+      {
+        "type": "message",
+        "id": "a0000016",
+        "parentId": "a0000015"
+      },
+      {
+        "type": "message",
+        "id": "a0000017",
+        "parentId": "a0000016"
+      },
+      {
+        "type": "message",
+        "id": "a0000018",
+        "parentId": "a0000017",
+        "message": {
+          "role": "toolResult",
+          "toolName": "align",
+          "isError": false,
+          "details": {
+            "v": 1,
+            "changes": [
+              {
+                "kind": "created"
+              }
+            ],
+            "line": "created",
+            "doc": {
+              "id": "al_1",
+              "title": "Export",
+              "summary": "Download a session.",
+              "findings": [],
+              "approach": [],
+              "rejected": [],
+              "questions": [
+                {
+                  "id": "q1",
+                  "topic": "Format",
+                  "ask": "Format?",
+                  "recommendation": {
+                    "choice": "yes",
+                    "why": "simpler"
+                  }
+                },
+                {
+                  "id": "q2",
+                  "topic": "Zip",
+                  "ask": "Zip?",
+                  "recommendation": {
+                    "choice": "yes",
+                    "why": "simpler"
+                  }
+                }
+              ],
+              "phase": "open",
+              "next": {
+                "f": 0,
+                "a": 0,
+                "x": 0,
+                "q": 2
+              },
+              "rev": 1,
+              "createdAt": "2026-09-01T10:00:00.000Z",
+              "updatedAt": "2026-09-01T10:00:00.000Z"
+            }
+          }
+        }
+      },
+      {
+        "type": "message",
+        "id": "a0000019",
+        "parentId": "a0000018",
+        "message": {
+          "role": "toolResult",
+          "toolName": "align",
+          "isError": false,
+          "details": {
+            "v": 1,
+            "changes": [],
+            "line": "",
+            "exempt": {
+              "why": "a question, no change"
+            }
+          }
+        }
+      },
+      {
+        "type": "message",
+        "id": "a000001a",
+        "parentId": "a0000019"
+      },
+      {
+        "type": "message",
+        "id": "a000001b",
+        "parentId": "a000001a"
+      },
+      {
+        "type": "message",
+        "id": "a000001c",
+        "parentId": "a000001b"
+      },
+      {
+        "type": "message",
+        "id": "a000001d",
+        "parentId": "a000001c"
+      },
+      {
+        "type": "message",
+        "id": "a000001e",
+        "parentId": "a000001d"
+      },
+      {
+        "type": "message",
+        "id": "a000001f",
+        "parentId": "a000001e"
+      },
+      {
+        "type": "message",
+        "id": "a0000020",
+        "parentId": "a000001f"
+      },
+      {
+        "type": "session_info",
+        "id": "a0000021",
+        "parentId": "a0000020"
+      },
+      {
+        "type": "label",
+        "id": "a0000022",
+        "parentId": "a0000021"
+      },
+      {
+        "type": "label",
+        "id": "a0000023",
+        "parentId": "a0000022"
+      },
+      {
+        "type": "compaction",
+        "id": "a0000024",
+        "parentId": "a0000023"
+      },
+      {
+        "type": "branch_summary",
+        "id": "a0000025",
+        "parentId": "a0000024"
+      },
+      {
+        "type": "custom",
+        "id": "a0000026",
+        "parentId": "a0000025"
+      },
+      {
+        "type": "custom",
+        "id": "a0000027",
+        "parentId": "a0000026"
+      },
+      {
+        "type": "custom",
+        "id": "a0000028",
+        "parentId": "a0000027",
+        "customType": "align-doc",
+        "data": {
+          "version": 1,
+          "doc": {
+            "id": "al_9",
+            "title": "Old",
+            "markdown": "# Old",
+            "questions": []
+          }
+        }
+      },
+      {
+        "type": "custom",
+        "id": "a0000029",
+        "parentId": "a0000028",
+        "customType": "align-doc",
+        "data": {
+          "version": 1,
+          "doc": {
+            "id": "al_9",
+            "title": "Export",
+            "markdown": "# Export\n\nDecide the format.",
+            "questions": [
+              {
+                "checked": true
+              },
+              {
+                "checked": false
+              }
+            ],
+            "revision": 3
+          }
+        }
+      },
+      {
+        "type": "custom",
+        "id": "a000002a",
+        "parentId": "a0000029"
+      },
+      {
+        "type": "custom",
+        "id": "a000002b",
+        "parentId": "a000002a"
+      },
+      {
+        "type": "custom",
+        "id": "a000002c",
+        "parentId": "a000002b"
+      },
+      {
+        "type": "custom",
+        "id": "a000002d",
+        "parentId": "a000002c"
+      },
+      {
+        "type": "custom",
+        "id": "a000002e",
+        "parentId": "a000002d"
+      },
+      {
+        "type": "custom",
+        "id": "a000002f",
+        "parentId": "a000002e"
+      },
+      {
+        "type": "custom",
+        "id": "a0000030",
+        "parentId": "a000002f"
+      },
+      {
+        "type": "custom",
+        "id": "a0000031",
+        "parentId": "a0000030"
+      },
+      {
+        "type": "custom",
+        "id": "a0000032",
+        "parentId": "a0000031"
+      },
+      {
+        "type": "custom",
+        "id": "a0000033",
+        "parentId": "a0000032"
+      },
+      {
+        "type": "custom",
+        "id": "a0000034",
+        "parentId": "a0000033"
+      },
+      {
+        "type": "custom",
+        "id": "a0000035",
+        "parentId": "a0000034"
+      },
+      {
+        "type": "custom",
+        "id": "a0000036",
+        "parentId": "a0000035"
+      },
+      {
+        "type": "custom",
+        "id": "a0000037",
+        "parentId": "a0000036"
+      },
+      {
+        "type": "custom",
+        "id": "a0000038",
+        "parentId": "a0000037"
+      },
+      {
+        "type": "custom",
+        "id": "a0000039",
+        "parentId": "a0000038"
+      },
+      {
+        "type": "custom",
+        "id": "a000003a",
+        "parentId": "a0000039"
+      },
+      {
+        "type": "custom",
+        "id": "a000003b",
+        "parentId": "a000003a"
+      },
+      {
+        "type": "custom",
+        "id": "a000003c",
+        "parentId": "a000003b"
+      },
+      {
+        "type": "custom",
+        "id": "a000003d",
+        "parentId": "a000003c"
+      },
+      {
+        "type": "custom",
+        "id": "a000003e",
+        "parentId": "a000003d"
+      },
+      {
+        "type": "custom",
+        "id": "a000003f",
+        "parentId": "a000003e"
+      },
+      {
+        "type": "custom",
+        "id": "a0000040",
+        "parentId": "a000003f"
+      },
+      {
+        "type": "custom_message",
+        "id": "a0000041",
+        "parentId": "a0000040"
+      },
+      {
+        "type": "custom_message",
+        "id": "a0000042",
+        "parentId": "a0000041"
+      },
+      {
+        "type": "custom_message",
+        "id": "a0000043",
+        "parentId": "a0000042"
+      },
+      {
+        "type": "custom_message",
+        "id": "a0000044",
+        "parentId": "a0000043"
+      },
+      {
+        "type": "custom_message",
+        "id": "a0000045",
+        "parentId": "a0000044"
+      },
+      {
+        "type": "usage",
+        "id": "a0000046",
+        "parentId": "a0000045"
+      },
+      {
+        "type": "context_edit",
+        "id": "a0000047",
+        "parentId": "a0000046"
+      },
+      {
+        "type": "message",
+        "id": "a0000048",
+        "parentId": "a0000047"
+      }
+    ]
+  }
+}

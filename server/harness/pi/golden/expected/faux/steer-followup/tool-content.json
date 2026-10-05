@@ -1,0 +1,17 @@
+{
+  "00000005:0": {
+    "args": {
+      "path": "notes.txt"
+    },
+    "result": {
+      "output": "line one\nline two\n",
+      "isError": false
+    }
+  },
+  "00000006": {
+    "result": {
+      "output": "line one\nline two\n",
+      "isError": false
+    }
+  }
+}

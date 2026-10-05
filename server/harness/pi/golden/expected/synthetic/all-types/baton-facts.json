@@ -1,0 +1,46 @@
+{
+  "vocabulary": [
+    "Plain question about the parser",
+    "Two screenshots attached /tmp/pi-clipboard-golden-0001.png\n\n[Image: original 2560x1600, displayed at 2000x1250. Multiply coordinates by 1.28 to map to original image.]\n[Image: original 4000x3000, displayed at 2000x1500. Multiply coordinates by 2.00 to map to original image.]",
+    "API"
+  ],
+  "senders": {
+    "$map": [
+      [
+        "a0000021",
+        "p_alice"
+      ],
+      [
+        "a000000a",
+        "p_alice"
+      ]
+    ]
+  },
+  "sendersNoHolder": {
+    "$map": [
+      [
+        "a0000021",
+        "p_alice"
+      ]
+    ]
+  },
+  "notes": [
+    {
+      "timestamp": 1788256808000,
+      "text": "Plain question about the parser",
+      "note": "[From someone]"
+    },
+    {
+      "timestamp": 1788256810000,
+      "text": "Two screenshots attached /tmp/pi-clipboard-golden-0001.png\n\n[Image: original 2560x1600, displayed at 2000x1250. Multiply coordinates by 1.28 to map to original image.]\n[Image: original 4000x3000, displayed at 2000x1500. Multiply coordinates by 2.00 to map to original image.]",
+      "note": "[From Alice]"
+    }
+  ],
+  "counted": 2,
+  "model": {
+    "model": "zai/glm-5.3",
+    "thinking": "medium"
+  },
+  "photos": 2,
+  "modelRef": "zai/glm-5.3"
+}

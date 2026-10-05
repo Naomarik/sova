@@ -1,0 +1,539 @@
+[
+  {
+    "call": {
+      "fn": "applyEvent",
+      "args": [
+        {
+          "type": "agent_start"
+        }
+      ]
+    },
+    "state": {
+      "entries": [],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": [
+      "clearTurnError",
+      "announceWorking"
+    ]
+  },
+  {
+    "call": {
+      "fn": "applyEvent",
+      "args": [
+        {
+          "type": "message_start",
+          "message": {
+            "role": "assistant",
+            "provider": "zai",
+            "model": "glm-5.3",
+            "content": [],
+            "stopReason": "stop"
+          }
+        }
+      ]
+    },
+    "state": {
+      "entries": [
+        {
+          "kind": "assistant",
+          "blocks": [],
+          "done": false,
+          "model": "zai/glm-5.3"
+        }
+      ],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "call": {
+      "fn": "applyEvent",
+      "args": [
+        {
+          "type": "message_end",
+          "message": {
+            "role": "assistant",
+            "provider": "zai",
+            "model": "glm-5.3",
+            "content": [
+              {
+                "type": "text",
+                "text": "ok"
+              }
+            ],
+            "stopReason": "stop",
+            "usage": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0
+            }
+          }
+        }
+      ]
+    },
+    "state": {
+      "entries": [
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "ok"
+            }
+          ],
+          "done": true,
+          "model": "zai/glm-5.3"
+        }
+      ],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "call": {
+      "fn": "applyEvent",
+      "args": [
+        {
+          "type": "message_start",
+          "message": {
+            "role": "assistant",
+            "provider": "zai",
+            "model": "glm-5.3",
+            "content": [],
+            "stopReason": "stop"
+          }
+        }
+      ]
+    },
+    "state": {
+      "entries": [
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "ok"
+            }
+          ],
+          "done": true,
+          "model": "zai/glm-5.3"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [],
+          "done": false,
+          "model": "zai/glm-5.3"
+        }
+      ],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "call": {
+      "fn": "applyEvent",
+      "args": [
+        {
+          "type": "message_end",
+          "message": {
+            "role": "assistant",
+            "provider": "zai",
+            "model": "glm-5.3",
+            "content": [
+              {
+                "type": "text",
+                "text": "ok"
+              }
+            ],
+            "stopReason": "error",
+            "errorMessage": "503",
+            "usage": {
+              "input": 50
+            }
+          }
+        }
+      ]
+    },
+    "state": {
+      "entries": [
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "ok"
+            }
+          ],
+          "done": true,
+          "model": "zai/glm-5.3"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "ok"
+            }
+          ],
+          "done": true,
+          "model": "zai/glm-5.3",
+          "error": "503"
+        }
+      ],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "call": {
+      "fn": "applyEvent",
+      "args": [
+        {
+          "type": "message_start",
+          "message": {
+            "role": "assistant",
+            "provider": "zai",
+            "model": "glm-5.3",
+            "content": [],
+            "stopReason": "stop"
+          }
+        }
+      ]
+    },
+    "state": {
+      "entries": [
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "ok"
+            }
+          ],
+          "done": true,
+          "model": "zai/glm-5.3"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "ok"
+            }
+          ],
+          "done": true,
+          "model": "zai/glm-5.3",
+          "error": "503"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [],
+          "done": false,
+          "model": "zai/glm-5.3"
+        }
+      ],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "call": {
+      "fn": "applyEvent",
+      "args": [
+        {
+          "type": "message_end",
+          "message": {
+            "role": "assistant",
+            "provider": "zai",
+            "model": "glm-5.3",
+            "content": [
+              {
+                "type": "text",
+                "text": "ok"
+              }
+            ],
+            "stopReason": "aborted",
+            "usage": {
+              "input": 50
+            }
+          }
+        }
+      ]
+    },
+    "state": {
+      "entries": [
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "ok"
+            }
+          ],
+          "done": true,
+          "model": "zai/glm-5.3"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "ok"
+            }
+          ],
+          "done": true,
+          "model": "zai/glm-5.3",
+          "error": "503"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "ok"
+            }
+          ],
+          "done": true,
+          "model": "zai/glm-5.3",
+          "stoppedAt": "2026-01-01T00:00:00.000Z"
+        }
+      ],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "call": {
+      "fn": "applyEvent",
+      "args": [
+        {
+          "type": "message_start",
+          "message": {
+            "role": "assistant",
+            "provider": "zai",
+            "model": "glm-5.3",
+            "content": [],
+            "stopReason": "stop"
+          }
+        }
+      ]
+    },
+    "state": {
+      "entries": [
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "ok"
+            }
+          ],
+          "done": true,
+          "model": "zai/glm-5.3"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "ok"
+            }
+          ],
+          "done": true,
+          "model": "zai/glm-5.3",
+          "error": "503"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "ok"
+            }
+          ],
+          "done": true,
+          "model": "zai/glm-5.3",
+          "stoppedAt": "2026-01-01T00:00:00.000Z"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [],
+          "done": false,
+          "model": "zai/glm-5.3"
+        }
+      ],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "call": {
+      "fn": "applyEvent",
+      "args": [
+        {
+          "type": "message_end",
+          "message": {
+            "role": "assistant",
+            "provider": "zai",
+            "model": "glm-5.3",
+            "content": [
+              {
+                "type": "text",
+                "text": "ok"
+              }
+            ],
+            "stopReason": "stop"
+          }
+        }
+      ]
+    },
+    "state": {
+      "entries": [
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "ok"
+            }
+          ],
+          "done": true,
+          "model": "zai/glm-5.3"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "ok"
+            }
+          ],
+          "done": true,
+          "model": "zai/glm-5.3",
+          "error": "503"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "ok"
+            }
+          ],
+          "done": true,
+          "model": "zai/glm-5.3",
+          "stoppedAt": "2026-01-01T00:00:00.000Z"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "ok"
+            }
+          ],
+          "done": true,
+          "model": "zai/glm-5.3"
+        }
+      ],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "call": {
+      "fn": "applyEvent",
+      "args": [
+        {
+          "type": "agent_settled"
+        }
+      ]
+    },
+    "state": {
+      "entries": [
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "ok"
+            }
+          ],
+          "done": true,
+          "model": "zai/glm-5.3"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "ok"
+            }
+          ],
+          "done": true,
+          "model": "zai/glm-5.3",
+          "error": "503"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "ok"
+            }
+          ],
+          "done": true,
+          "model": "zai/glm-5.3",
+          "stoppedAt": "2026-01-01T00:00:00.000Z"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "ok"
+            }
+          ],
+          "done": true,
+          "model": "zai/glm-5.3"
+        }
+      ],
+      "tools": {},
+      "running": false,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": [
+      "settled"
+    ]
+  }
+]

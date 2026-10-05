@@ -16,23 +16,25 @@ import {
   type BatonViewItem,
   type PersonRef,
 } from "../shared/baton";
-import { stripImageNotes } from "../shared/image-note";
+import type { HEntry } from "../shared/harness";
 import { shareFences } from "../src/share/markdown";
 import { visKindWord } from "../src/vis/parse";
 import { canonicalKind } from "../src/vis/registry";
+import { typedText } from "./harness/pi/reader";
 import { REDACTED } from "./overseer-redact";
 
 /**
  * The outsider view (§app.baton/outsider-view): a baton session's active branch reduced to what a
  * participant may see. Pure: the caller reads the branch, the names and the redaction phrases.
  *
- * An ALLOWLIST over raw entries, never a denylist over rendered rows: a user message, the reply's
- * text blocks, and the three baton cards. Thinking, tool calls and results, system messages,
- * model/thinking changes, compactions, every other custom entry and anything pi adds later are
+ * An ALLOWLIST over the branch's entries, never a denylist over rendered rows: a user message, the
+ * reply's text blocks, and the three baton cards. Thinking, tool calls and results, system messages,
+ * model/thinking changes, compactions, every other state entry and anything pi adds later are
  * dropped because nothing here names them.
  */
 
-type Entry = Record<string, any>;
+/** A state entry's data (pi's custom entry's), as its writer wrote it. */
+const dataOf = (h: HEntry & { kind: "state" }): Record<string, any> | null | undefined => h.data as Record<string, any> | null | undefined;
 
 const textOf = (content: unknown): string => {
   if (typeof content === "string") return content;
@@ -127,12 +129,12 @@ export function secretPhrases(phrases: readonly string[], vocabulary: readonly s
 }
 
 /** The conversation's own public words: what people wrote, and the decisions' areas (before the wrap-up). */
-export function conversationVocabulary(branch: readonly Entry[]): string[] {
+export function conversationVocabulary(branch: readonly HEntry[]): string[] {
   const out: string[] = [];
-  for (const e of branch) {
-    if (e.type === "custom" && e.customType === BATON_WRAPUP_ENTRY) break;
-    if (e.type === "message" && e.message?.role === "user") out.push(textOf(e.message.content));
-    else if (e.type === "custom" && e.customType === BATON_DECISION_ENTRY && typeof e.data?.area === "string") out.push(e.data.area);
+  for (const h of branch) {
+    if (h.kind === "state" && h.key === BATON_WRAPUP_ENTRY) break;
+    if (h.kind === "user") out.push(textOf(h.blocks));
+    else if (h.kind === "state" && h.key === BATON_DECISION_ENTRY && typeof dataOf(h)?.area === "string") out.push(dataOf(h)!.area);
   }
   return out;
 }
@@ -143,12 +145,14 @@ export function conversationVocabulary(branch: readonly Entry[]): string[] {
  * last message is the holder's. The one rule the share pages, the operator's view and the model's
  * context all read. Pure.
  */
-export function messageSenders(branch: readonly Entry[], holder: PersonRef | null): Map<string, string> {
+export function messageSenders(branch: readonly HEntry[], holder: PersonRef | null): Map<string, string> {
   const by = new Map<string, string>();
-  for (const e of branch)
-    if (e.type === "custom" && e.customType === BATON_SENT_ENTRY && typeof e.data?.targetId === "string" && typeof e.data?.by === "string") by.set(e.data.targetId, e.data.by);
-  let lastUserId: string | undefined;
-  for (const e of branch) if (e.type === "message" && e.message?.role === "user") lastUserId = e.id;
+  for (const h of branch) {
+    const d = h.kind === "state" && h.key === BATON_SENT_ENTRY ? dataOf(h) : undefined;
+    if (typeof d?.targetId === "string" && typeof d?.by === "string") by.set(d.targetId, d.by);
+  }
+  let lastUserId: string | null | undefined;
+  for (const h of branch) if (h.kind === "user") lastUserId = h.id;
   if (lastUserId && holder && !by.has(lastUserId)) by.set(lastUserId, holder);
   return by;
 }
@@ -168,20 +172,20 @@ export interface AuthorNote {
  * never an id, a role, a contact or a question. Deterministic per message, so earlier turns never
  * change (the prompt cache). Pure.
  */
-export function authorNotes(branch: readonly Entry[], names: Record<string, string>, holder: PersonRef | null): AuthorNote[] {
+export function authorNotes(branch: readonly HEntry[], names: Record<string, string>, holder: PersonRef | null): AuthorNote[] {
   const senders = messageSenders(branch, holder);
   const name = (ref: unknown): string =>
     ref === OPERATOR ? `${names[OPERATOR] || "The operator"} (the operator)` : (typeof ref === "string" && names[ref]) || "someone";
   const out: AuthorNote[] = [];
   let moves: string[] = [];
-  for (const e of branch) {
+  for (const h of branch) {
     // The wrap-up's own prompt is nobody's message.
-    if (e.type === "custom" && e.customType === BATON_WRAPUP_ENTRY) break;
-    if (e.type === "custom" && e.customType === BATON_HANDOFF_ENTRY) moves.push(`[The conversation passed from ${name(e.data?.from)} to ${name(e.data?.to)}]`);
-    else if (e.type === "custom" && e.customType === BATON_OFFER_ENTRY && Array.isArray(e.data?.to))
-      moves.push(`[${name(e.data.from)} offered the conversation to ${e.data.to.map(name).join(", ")}]`);
-    if (e.type !== "message" || e.message?.role !== "user") continue;
-    out.push({ timestamp: e.message.timestamp, text: textOf(e.message.content), note: [...moves, `[From ${name(senders.get(e.id))}]`].join("\n") });
+    if (h.kind === "state" && h.key === BATON_WRAPUP_ENTRY) break;
+    if (h.kind === "state" && h.key === BATON_HANDOFF_ENTRY) moves.push(`[The conversation passed from ${name(dataOf(h)?.from)} to ${name(dataOf(h)?.to)}]`);
+    else if (h.kind === "state" && h.key === BATON_OFFER_ENTRY && Array.isArray(dataOf(h)?.to))
+      moves.push(`[${name(dataOf(h)!.from)} offered the conversation to ${dataOf(h)!.to.map(name).join(", ")}]`);
+    if (h.kind !== "user") continue;
+    out.push({ timestamp: h.sentAt, text: textOf(h.blocks), note: [...moves, `[From ${name(h.id === null ? undefined : senders.get(h.id))}]`].join("\n") });
     moves = [];
   }
   return out;
@@ -219,8 +223,8 @@ export function labelAuthors<M>(messages: M[], notes: readonly AuthorNote[], ori
 
 export interface ViewInput {
   row: Pick<BatonSession, "publicTitle" | "state" | "holder" | "abilities">;
-  /** The active branch, oldest first (server/transcript.ts readActiveBranch). */
-  branch: Entry[];
+  /** The active branch, oldest first (server/harness/pi/reader.ts readBranch). */
+  branch: readonly HEntry[];
   /** personId (and "operator") → display name. */
   names: Record<string, string>;
   /** The viewer: a person id (the share page) or undefined (the project overseer's reads: every briefing). */
@@ -259,17 +263,16 @@ export function batonView(input: ViewInput): BatonView {
 
   const items: BatonViewItem[] = [];
   let photos = 0;
-  for (const e of branch) {
+  for (const h of branch) {
     // The wrap-up is the operator's: nothing from its marker on is anyone else's to see.
-    if (e.type === "custom" && e.customType === BATON_WRAPUP_ENTRY) break;
-    const id = typeof e.id === "string" ? e.id : "";
-    const at = typeof e.timestamp === "string" ? e.timestamp : undefined;
-    if (e.type === "message") {
-      const role = e.message?.role;
-      if (role === "user") {
+    if (h.kind === "state" && h.key === BATON_WRAPUP_ENTRY) break;
+    const id = h.id ?? "";
+    const at = typeof h.at === "string" ? h.at : undefined;
+    if (h.kind === "user" || h.kind === "assistant") {
+      if (h.kind === "user") {
         // Shown as typed: pi's resize notes are for the model (§chat.images/resize-notes).
-        const text = stripImageNotes(textOf(e.message.content), e.message.content).trim();
-        const blocks = imagesOf(e.message.content);
+        const text = typedText(textOf(h.blocks), h).trim();
+        const blocks = imagesOf(h.blocks);
         // A message of photos alone is still a row (§app.baton/images).
         if (!text && !blocks.length) continue;
         const images = blocks.map((b) => {
@@ -278,20 +281,20 @@ export function batonView(input: ViewInput): BatonView {
         });
         const sender = by.get(id) ?? "";
         items.push({ kind: "message", id, by: sender, name: sender ? name(sender) : "Someone", text: redact(text), ...(at ? { at } : {}), ...(images.length ? { images } : {}) });
-      } else if (role === "assistant") {
-        const text = textOf(e.message.content).trim();
+      } else {
+        const text = textOf(h.blocks).trim();
         if (!text) continue;
         // Stopped before it finished (the stream guard, a shutdown, Take back, Stop): its start
         // only, marked, never a runaway's whole text on someone's phone.
-        const stop = e.message.stopReason;
+        const stop = h.stop;
         if (stop === "error" || stop === "aborted") items.push({ kind: "reply", id, text: cutReply(said(text), CUT_REPLY_MAX), cutOff: true, ...(at ? { at } : {}) });
         else items.push({ kind: "reply", id, text: said(text), ...(at ? { at } : {}) });
       }
       continue;
     }
-    if (e.type !== "custom") continue;
-    const d = e.data ?? {};
-    if (e.customType === BATON_HANDOFF_ENTRY && typeof d.n === "number") {
+    if (h.kind !== "state") continue;
+    const d = dataOf(h) ?? {};
+    if (h.key === BATON_HANDOFF_ENTRY && typeof d.n === "number") {
       const addressee = viewer === undefined || viewer === d.to;
       // The limit's hand-off tells the operator what to do; the people only that the limit was reached.
       const question = viewer !== undefined && d.to === OPERATOR && d.question === LIMIT_QUESTION ? LIMIT_REACHED_FOR_PEOPLE : said(String(d.question ?? ""));
@@ -304,7 +307,7 @@ export function batonView(input: ViewInput): BatonView {
         question,
         ...(addressee && typeof d.briefing === "string" && d.briefing.trim() ? { briefing: said(d.briefing) } : {}),
       });
-    } else if (e.customType === BATON_OFFER_ENTRY && typeof d.n === "number" && Array.isArray(d.to)) {
+    } else if (h.key === BATON_OFFER_ENTRY && typeof d.n === "number" && Array.isArray(d.to)) {
       const invited = viewer === undefined || d.to.includes(viewer);
       items.push({
         kind: "offer",
@@ -318,9 +321,9 @@ export function batonView(input: ViewInput): BatonView {
         ...(invited && typeof d.briefing === "string" && d.briefing.trim() ? { briefing: said(d.briefing) } : {}),
       });
       if (input.untilOffer === d.n) break;
-    } else if (e.customType === BATON_DECISION_ENTRY) {
+    } else if (h.key === BATON_DECISION_ENTRY) {
       items.push({ kind: "decision", id, by: name(d.by), area: redact(String(d.area ?? "")), statement: said(String(d.statement ?? "")) });
-    } else if (e.customType === BATON_DONE_ENTRY) {
+    } else if (h.key === BATON_DONE_ENTRY) {
       items.push({ kind: "done", id, summary: said(String(d.summary ?? "")) });
     }
   }

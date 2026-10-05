@@ -1,0 +1,24 @@
+{
+  "type": "view",
+  "view": {
+    "title": "Golden share",
+    "sharedAt": "2026-10-05T00:00:00.000Z",
+    "mode": "live",
+    "through": "2026-09-03T08:00:00.013Z",
+    "items": [
+      {
+        "kind": "user",
+        "n": 0,
+        "text": "hello",
+        "at": "2026-09-03T08:00:00.012Z"
+      },
+      {
+        "kind": "reply",
+        "n": 1,
+        "text": "Hello there. How can I help?",
+        "at": "2026-09-03T08:00:00.013Z"
+      }
+    ],
+    "images": 0
+  }
+}

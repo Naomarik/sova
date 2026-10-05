@@ -11,6 +11,8 @@ import { join } from "node:path";
 import { after, describe, test } from "node:test";
 import { resizeImage } from "@earendil-works/pi-coding-agent";
 import { BATON_OFFER_ENTRY, BATON_SENT_ENTRY, BATON_WRAPUP_ENTRY, MB, OPERATOR, PHOTO_DEFAULTS, type BatonView } from "../shared/baton";
+import { historyOf } from "./harness/pi/reader";
+import { piSession } from "./harness/pi/testing/handle";
 
 const root = realpathSync(mkdtempSync(join(tmpdir(), "sova-baton-images-")));
 process.on("exit", () => rmSync(root, { recursive: true, force: true }));
@@ -64,12 +66,12 @@ const T = "A".repeat(43);
 
 /** The runtime's model, as the photo check reads it. */
 function withModel(chat: Awaited<ReturnType<typeof acquireChat>>, input: string[]): void {
-  Object.defineProperty(chat.session, "model", { configurable: true, get: () => ({ provider: "fake", id: "m", input }) });
+  Object.defineProperty(piSession(chat), "model", { configurable: true, get: () => ({ provider: "fake", id: "m", input }) });
 }
 /** session.prompt as a recorder of what the runtime was handed. */
 function capture(chat: Awaited<ReturnType<typeof acquireChat>>): { text: string; images?: { type: string; data: string; mimeType: string }[] }[] {
   const got: { text: string; images?: { type: string; data: string; mimeType: string }[] }[] = [];
-  (chat.session as unknown as { prompt: unknown }).prompt = async (text: string, opts?: { images?: { type: string; data: string; mimeType: string }[] }) => {
+  (piSession(chat) as unknown as { prompt: unknown }).prompt = async (text: string, opts?: { images?: { type: string; data: string; mimeType: string }[] }) => {
     got.push({ text, ...(opts?.images ? { images: opts.images } : {}) });
   };
   return got;
@@ -361,7 +363,7 @@ describe("sending photos", () => {
     const { c, chat } = await session();
     const id = ((await (await upload(c.token!, JPEG)).json()) as { id: string }).id;
     settings.writeBatonSettings({ messagesMax: 60, photos: { ...PHOTO_DEFAULTS, perConversation: 1 } });
-    chat.session.sessionManager.appendMessage({ role: "user", content: [{ type: "image", data: JPEG.toString("base64"), mimeType: "image/jpeg" }], timestamp: Date.now() } as never);
+    piSession(chat).sessionManager.appendMessage({ role: "user", content: [{ type: "image", data: JPEG.toString("base64"), mimeType: "image/jpeg" }], timestamp: Date.now() } as never);
     const res = await message(c.token!, { text: "", images: [id] });
     assert.deepEqual([res.status, ((await res.json()) as { error: string }).error], [409, "This conversation has reached its photo limit."]);
     settings.writeBatonSettings({ messagesMax: 60, photos: PHOTO_DEFAULTS });
@@ -373,7 +375,7 @@ describe("sending photos", () => {
 describe("the view and the photo route", () => {
   const img = (tag: string) => ({ type: "image", data: Buffer.from(tag).toString("base64"), mimeType: "image/png" });
   const user = (id: string, content: unknown[]) => ({ type: "message", id, timestamp: "2026-09-30T00:00:00.000Z", message: { role: "user", content, timestamp: 1 } });
-  const branch = [
+  const branch = historyOf([
     user("u1", [{ type: "text", text: "two of them\n\n[Image: original 4000x3000, displayed at 2000x1500. Multiply coordinates by 2.00 to map to original image.]" }, img("a"), img("b")]),
     { type: "custom", id: "s1", customType: BATON_SENT_ENTRY, data: { targetId: "u1", by: tony.id } },
     { type: "custom", id: "o1", customType: BATON_OFFER_ENTRY, data: { n: 2, from: tony.id, to: [tony.id, maria.id], question: "q" } },
@@ -381,7 +383,7 @@ describe("the view and the photo route", () => {
     { type: "custom", id: "s2", customType: BATON_SENT_ENTRY, data: { targetId: "u2", by: maria.id } },
     { type: "custom", id: "w1", customType: BATON_WRAPUP_ENTRY, data: {} },
     user("u3", [img("d")]),
-  ];
+  ]);
   const view = (untilOffer?: number) => {
     const collect: { data: string; mimeType: string }[] = [];
     const v = batonView({ row: { publicTitle: "T", state: "open", holder: maria.id }, branch, names: { [tony.id]: "Tony", [maria.id]: "Maria" }, viewer: tony.id, redact: (t) => t, collect, ...(untilOffer ? { untilOffer } : {}) });
@@ -464,7 +466,7 @@ describe("the gathering model and the operator", () => {
     const c = await start(OPERATOR);
     const chat = await acquireChat(c.path);
     const got = capture(chat);
-    const dir = sessionAttachmentsDir(chat.session.sessionId)!;
+    const dir = sessionAttachmentsDir(piSession(chat).sessionId)!;
     mkdirSync(dir, { recursive: true });
     const file = join(dir, "sova-33333333-3333-4333-8333-333333333333.jpg");
     writeFileSync(file, JPEG);

@@ -1,0 +1,53 @@
+[
+  {
+    "call": {
+      "fn": "applyQueue",
+      "args": [
+        [
+          {
+            "id": "o1",
+            "kind": "followUp",
+            "text": "run the tests",
+            "origin": "server",
+            "overseer": true
+          },
+          {
+            "id": "s7",
+            "kind": "followUp",
+            "text": "status check",
+            "origin": "server"
+          }
+        ]
+      ]
+    },
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "id": "o1",
+          "queueKind": "followUp",
+          "text": "run the tests",
+          "state": "queued",
+          "images": [],
+          "handed": false,
+          "origin": "server",
+          "overseer": true
+        },
+        {
+          "kind": "user",
+          "id": "s7",
+          "queueKind": "followUp",
+          "text": "status check",
+          "state": "queued",
+          "images": [],
+          "handed": false,
+          "origin": "server"
+        }
+      ],
+      "tools": {},
+      "running": false,
+      "activity": null,
+      "stopping": false
+    }
+  }
+]

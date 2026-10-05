@@ -1,6 +1,8 @@
-// Run: pnpm exec tsx --test server/stream-guard.test.ts. A fake session and a fake clock; no model.
+// Run: pnpm exec tsx --test server/stream-guard.test.ts. A fake session and a fake clock; no model. The fake
+// emits pi's events, mapped to driving-session events the way the adapter maps them.
 import assert from "node:assert/strict";
 import { afterEach, describe, test } from "node:test";
+import { harnessEventOf } from "./harness/pi/session";
 import { attachStreamGuard, BATON_RUN_WALL_MS, capsFor, setStreamCapsForTest, type GuardClock, type StreamCaps, type StreamTrip } from "./stream-guard";
 
 type Listener = (e: any) => void;
@@ -26,7 +28,7 @@ function harness(caps: Partial<StreamCaps> = {}) {
   };
   const session = {
     subscribe(fn: Listener) {
-      listener = fn;
+      listener = (e) => fn(harnessEventOf(e));
       return () => (listener = null);
     },
     abort: async () => void aborts++,

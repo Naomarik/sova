@@ -9,6 +9,7 @@ import { join } from "node:path";
 import { after, describe, test } from "node:test";
 import { SESSION_SHARE_EXCERPT_MAX } from "../shared/session-share";
 import { branchTo, resetShareViewCache, sessionShareImage, sessionShareOutline, sessionShareView, shareSpan, shownEntries, sliceBranch, type ShareSource } from "./session-share-view";
+import { historyOf, type PiFile } from "./harness/pi/reader";
 import type { Entry } from "./transcript";
 
 const root = realpathSync(mkdtempSync(join(tmpdir(), "sova-share-view-")));
@@ -48,10 +49,12 @@ function write(name: string, entries: Entry[]): string {
   return p;
 }
 const src = (sessionPath: string, cutEntryId: string | null, from: string | null): ShareSource => ({ sessionPath, cutEntryId, from, title: "T", sharedAt: "2026-09-30T01:00:00.000Z", mode: cutEntryId ? "snapshot" : "live" });
-const ids = (es: Entry[] | null) => es?.map((e) => e.id) ?? null;
+const ids = (es: readonly { id: unknown }[] | null) => es?.map((e) => e.id) ?? null;
+/** The chain as the share view reads a file: no header, the entries as neutral history. */
+const chainFile = (): PiFile => ({ header: null, entries: historyOf(chain()) });
 
 describe("sliceBranch", () => {
-  const branch = chain();
+  const branch = historyOf(chain());
   test("null start is the whole branch; a start is the suffix from it", () => {
     assert.equal(sliceBranch(branch, null), branch);
     assert.deepEqual(ids(sliceBranch(branch, "u1")), ids(branch), "at the root");
@@ -59,19 +62,19 @@ describe("sliceBranch", () => {
     assert.deepEqual(ids(sliceBranch(branch, "a3")), ["a3"], "at the end");
   });
   test("start equal to end is one entry", () => {
-    const toA2 = branchTo(chain(), "a2")!;
+    const toA2 = branchTo(chainFile(), "a2")!;
     assert.deepEqual(ids(sliceBranch(toA2, "a2")), ["a2"]);
   });
   test("a start off the branch, or after the cut, is null", () => {
     assert.equal(sliceBranch(branch, "nope"), null);
-    assert.equal(sliceBranch(branchTo(chain(), "a2")!, "u3"), null, "after the cut");
+    assert.equal(sliceBranch(branchTo(chainFile(), "a2")!, "u3"), null, "after the cut");
   });
 });
 
 describe("shownEntries", () => {
   test("keeps user and reply messages; drops wake nudges and tool results, before any scrub", () => {
     assert.deepEqual(
-      shownEntries(chain()).map((s) => s.e.id),
+      shownEntries(historyOf(chain())).map((s) => s.e.id),
       ["u1", "a1", "u2", "a2", "u3", "a3"],
     );
   });

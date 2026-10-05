@@ -3,8 +3,8 @@ import http from "node:http";
 import https from "node:https";
 import { BlockList, isIP, type LookupFunction } from "node:net";
 import { createBrotliDecompress, createGunzip, createInflate } from "node:zlib";
-import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { abilitiesOf } from "../shared/baton";
+import type { HEntry, ToolSpec } from "../shared/harness";
 import { batonById } from "./baton";
 
 /**
@@ -125,21 +125,13 @@ export function linkProblem(raw: string): { url: URL } | { error: string } {
 export const typedInConversation = (url: string, texts: readonly string[]): boolean => url.length > 0 && texts.some((t) => t.includes(url));
 
 /** The text of every message people (the operator included) wrote on this branch; never the model's. */
-export function writtenTexts(branch: readonly unknown[]): string[] {
-  return branch.flatMap((e) => {
-    const entry = e as { type?: string; message?: { role?: string; content?: unknown } };
-    if (entry.type !== "message" || entry.message?.role !== "user") return [];
-    const c = entry.message.content;
-    return [typeof c === "string" ? c : Array.isArray(c) ? c.map((b: any) => (b?.type === "text" ? String(b.text ?? "") : "")).join("") : ""];
-  });
+export function writtenTexts(branch: readonly HEntry[]): string[] {
+  return branch.flatMap((h) => (h.kind === "user" ? [h.blocks.map((b: any) => (b?.type === "text" ? String(b.text ?? "") : "")).join("")] : []));
 }
 
 /** Reads this session has made (successful results on the branch). */
-export const readsSoFar = (branch: readonly unknown[]): number =>
-  branch.filter((e) => {
-    const m = (e as { type?: string; message?: { role?: string; toolName?: string; isError?: boolean } }).message;
-    return (e as { type?: string }).type === "message" && m?.role === "toolResult" && m.toolName === READ_LINK_TOOL && !m.isError;
-  }).length;
+export const readsSoFar = (branch: readonly HEntry[]): number =>
+  branch.filter((h) => h.kind === "tool-result" && h.tool === READ_LINK_TOOL && !h.isError).length;
 
 // ---- the page's text --------------------------------------------------------------------------------
 
@@ -285,7 +277,7 @@ export function pageResult(p: Page): string {
 }
 
 /** The tool, bound to one session. Active only while the session can read links; it checks again. */
-export function readLinkTool(sessionId: string, read = readLink): ToolDefinition<any, any> {
+export function readLinkTool(sessionId: string, read = readLink): ToolSpec {
   return {
     name: READ_LINK_TOOL,
     label: "Read link",
@@ -302,7 +294,7 @@ export function readLinkTool(sessionId: string, read = readLink): ToolDefinition
       const row = batonById(sessionId)?.row;
       if (!row) throw new Error("This conversation is no longer registered.");
       if (!abilitiesOf(row).readLinks) throw new Error("This conversation can't read links.");
-      const branch = (ctx?.sessionManager?.getBranch() ?? []) as unknown[];
+      const branch = ctx?.branch() ?? [];
       const url = typeof params.url === "string" ? params.url.trim() : "";
       if (!typedInConversation(url, writtenTexts(branch))) throw new Error(NOT_TYPED);
       if (readsSoFar(branch) >= READS_MAX) throw new Error(TOO_MANY);

@@ -22,7 +22,8 @@ mkdirSync(claudeProject, { recursive: true });
 
 const { decodeWorkers, getSessionInsight } = await import("./insights");
 const { canonicalPath } = await import("./paths");
-const { resumeWorker, resumeCommandOf } = await import("./worker-resume");
+const { resumeWorker } = await import("./worker-resume");
+const { resumeCommandOf } = await import("./harness/pi/commands");
 const { resolvedModel } = await import("../pi-config/extensions/subagents/worker-transcript.ts");
 
 after(() => rmSync(root, { recursive: true, force: true }));

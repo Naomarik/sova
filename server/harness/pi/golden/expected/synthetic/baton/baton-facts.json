@@ -1,0 +1,68 @@
+{
+  "vocabulary": [
+    "Alice asks about the launch date",
+    "Bob confirms Monday, photo attached",
+    "Launch",
+    "Carol will write the notes"
+  ],
+  "senders": {
+    "$map": [
+      [
+        "p0000003",
+        "p_alice"
+      ],
+      [
+        "p0000007",
+        "p_bob"
+      ],
+      [
+        "p000000d",
+        "p_carol"
+      ],
+      [
+        "p0000016",
+        "p_alice"
+      ]
+    ]
+  },
+  "sendersNoHolder": {
+    "$map": [
+      [
+        "p0000003",
+        "p_alice"
+      ],
+      [
+        "p0000007",
+        "p_bob"
+      ],
+      [
+        "p000000d",
+        "p_carol"
+      ]
+    ]
+  },
+  "notes": [
+    {
+      "timestamp": 1788256803000,
+      "text": "Alice asks about the launch date",
+      "note": "[From Alice]"
+    },
+    {
+      "timestamp": 1788256807000,
+      "text": "Bob confirms Monday, photo attached",
+      "note": "[The conversation passed from Alice to Bob]\n[From Bob]"
+    },
+    {
+      "timestamp": 1788256813000,
+      "text": "Carol will write the notes",
+      "note": "[Bob offered the conversation to Carol, Dave]\n[From Carol]"
+    }
+  ],
+  "counted": 3,
+  "model": {
+    "model": "zai/glm-5.3",
+    "thinking": null
+  },
+  "photos": 1,
+  "modelRef": "zai/glm-5.3"
+}

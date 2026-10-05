@@ -14,7 +14,7 @@ process.env.PI_CODING_AGENT_DIR = agentDir; // before the modules below compute 
 after(() => rmSync(agentDir, { recursive: true, force: true }));
 
 const { entryOf, normalizeEntry } = await import("./transcript");
-const { rewindSession } = await import("./chat-manager");
+const { rewindSession } = await import("./harness/pi/history-ops");
 const { getSessionSummary } = await import("./sessions-index");
 
 // Verbatim text blocks of three user entries pi 0.87.1 wrote in a hermetic Sova session
@@ -117,7 +117,7 @@ describe("where Sova shows a user message's text", () => {
         // pi's navigateTree returns the target's text blocks as stored (contentText(content, "")).
         navigateTree: async () => ({ cancelled: false, editorText: text }),
       };
-      const out = await rewindSession(session, "u1", { guard() {}, beforeMarker() {}, queued: () => false });
+      const out = await rewindSession(session, "u1", { guard() {}, refusal: () => null, beforeMarker() {}, queued: () => false });
       assert.deepEqual(out, { ok: true, editorText: expected });
     }
   });

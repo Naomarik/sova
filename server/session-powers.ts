@@ -1,4 +1,6 @@
-import type { ExtensionAPI, ToolDefinition } from "@earendil-works/pi-coding-agent";
+import type { PiExtensionAPI } from "./harness/pi/extension-types";
+import type { ToolSpec } from "../shared/harness";
+import { toPiTool } from "./harness/pi/tools";
 import { appendFileSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { SessionInsight, SessionSummary, TranscriptItem } from "../shared/protocol";
@@ -188,12 +190,12 @@ export class RunState {
     this.hops.set(text, hop);
   }
   observe(event: TurnEvent): void {
-    if (event.type === "agent_start") {
+    if (event.type === "run.start") {
       this.hop = 0;
       this.limits.runStarted();
     }
-    if (event.type === "message_start") {
-      const t = userMessageText(event.message);
+    if (event.type === "message.start") {
+      const t = userMessageText(event.handle);
       if (t !== null) {
         const h = this.hops.get(t);
         if (h !== undefined) {
@@ -223,7 +225,7 @@ export interface PowersContext {
   path?: () => string;
 }
 
-type Tool = ToolDefinition<any, any>;
+type Tool = ToolSpec;
 const obj = (properties: Record<string, unknown>, required: string[] = []): any => ({ type: "object", properties, required, additionalProperties: false });
 const str = (description: string, extra: Record<string, unknown> = {}) => ({ type: "string", description, ...extra });
 const int = (description: string, extra: Record<string, unknown> = {}) => ({ type: "integer", description, ...extra });
@@ -459,8 +461,8 @@ export function sessionPowersExtension(ctx: PowersContext) {
   return {
     name: "sova-session-powers",
     hidden: true,
-    factory: (pi: ExtensionAPI) => {
-      for (const t of sessionPowersTools(ctx)) pi.registerTool(t);
+    factory: (pi: PiExtensionAPI) => {
+      for (const t of sessionPowersTools(ctx)) pi.registerTool(toPiTool(t));
     },
   };
 }

@@ -1,4 +1,4 @@
-import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
+import type { ToolSpec } from "../shared/harness";
 import type { SessionSummary, SovaTodoDetails, TodoPatch, TodoRecord } from "../shared/protocol";
 import type { ToolCall } from "./overseer-idea-tools";
 import { addTodo, clearDone, readTodos, removeTodo, TodoError, updateTodo } from "./overseer-todos";
@@ -11,7 +11,7 @@ import { addTodo, clearDone, readTodos, removeTodo, TodoError, updateTodo } from
  */
 
 type Out = { content: { type: "text"; text: string }[]; details: unknown };
-type Tool = ToolDefinition<any, any>;
+type Tool = ToolSpec;
 
 export interface TodoToolDeps {
   act(name: string, run: (params: any, toolCallId: string, call: ToolCall) => Promise<Out>): Tool["execute"];

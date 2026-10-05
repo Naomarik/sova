@@ -5,6 +5,7 @@ import { BATON_DECISION_ENTRY, BATON_DONE_ENTRY, BATON_ENTRY, BATON_HANDOFF_ENTR
 import { OVERSEER_SENT_ENTRY } from "../shared/protocol";
 import { authorNotes, batonView, labelAuthors, markupBackstop, redactPhrases, WITHHELD_FENCE } from "./baton-view";
 import { batonKinds, BROKEN_DRAWING, renderShareMarkdown } from "../src/share/markdown";
+import { historyOf } from "./harness/pi/reader";
 
 const names = { operator: "Omar", p_t: "Tony", p_m: "Maria" };
 const custom = (id: string, customType: string, data: unknown) => ({ type: "custom", id, customType, data });
@@ -43,7 +44,7 @@ const BRANCH = [
 ];
 
 const view = (viewer?: string, redact = (t: string) => t) =>
-  batonView({ row: { publicTitle: "Portal", state: "done", holder: null }, branch: BRANCH, names, ...(viewer ? { viewer } : {}), redact });
+  batonView({ row: { publicTitle: "Portal", state: "done", holder: null }, branch: historyOf(BRANCH), names, ...(viewer ? { viewer } : {}), redact });
 
 test("only messages, reply text and the three cards survive, in order", () => {
   const v = view("p_t");
@@ -80,7 +81,7 @@ test("every string goes through the redactor", () => {
 
 test("a message whose sender marker hasn't landed yet is the holder's only when it is the last one", () => {
   const branch = [msg("u1", "user", "first"), msg("u2", "user", "second")];
-  const v = batonView({ row: { publicTitle: "T", state: "open", holder: "p_m" }, branch, names, viewer: "p_m", redact: (t) => t });
+  const v = batonView({ row: { publicTitle: "T", state: "open", holder: "p_m" }, branch: historyOf(branch), names, viewer: "p_m", redact: (t) => t });
   assert.deepEqual(
     v.items.map((i) => (i.kind === "message" ? i.name : "")),
     ["Someone", "Maria"],
@@ -94,7 +95,7 @@ const texts = (messages: any[]) => messages.filter((m) => m.role === "user").map
 
 test("the model's context: each person's message opens with its own author, and the moves since the one before", () => {
   const branch = BRANCH.map((e: any) => (e.type === "message" ? at(structuredClone(e), Number(e.id.replace(/\D/g, "") || 0) + 1) : e));
-  const labelled = labelAuthors(contextOf(branch), authorNotes(branch, names, null));
+  const labelled = labelAuthors(contextOf(branch), authorNotes(historyOf(branch), names, null));
   assert.deepEqual(texts(labelled), [
     "[The conversation passed from Omar (the operator) to Tony]\n[From Tony]\nOn srv-01.",
     "[The conversation passed from Tony to Maria]\n[From Maria]\nExcel please. Omar decides bonuses.",
@@ -110,7 +111,7 @@ test("the model's context: each person's message opens with its own author, and 
 
 test("labels are the markers' (one rule with the views): the unmarked last message is the holder's; an earlier one is someone's", () => {
   const branch = [at(msg("u1", "user", "first"), 1), at(msg("u2", "user", "second"), 2)];
-  assert.deepEqual(texts(labelAuthors(contextOf(branch), authorNotes(branch, names, "p_m"))), ["[From someone]\nfirst", "[From Maria]\nsecond"]);
+  assert.deepEqual(texts(labelAuthors(contextOf(branch), authorNotes(historyOf(branch), names, "p_m"))), ["[From someone]\nfirst", "[From Maria]\nsecond"]);
 });
 
 test("an offer is a line; the wrap-up's prompt and anything after its marker carry no author", () => {
@@ -121,7 +122,7 @@ test("an offer is a line; the wrap-up's prompt and anything after its marker car
     custom("w1", BATON_WRAPUP_ENTRY, { v: 1, phase: "start" }),
     at(msg("u2", "user", "[Wrap-up] record profiles"), 2),
   ];
-  assert.deepEqual(texts(labelAuthors(contextOf(branch), authorNotes(branch, names, "p_m"))), [
+  assert.deepEqual(texts(labelAuthors(contextOf(branch), authorNotes(historyOf(branch), names, "p_m"))), [
     "[Omar (the operator) offered the conversation to Tony, Maria]\n[From Maria]\nmine",
     "[Wrap-up] record profiles",
   ]);
@@ -137,10 +138,10 @@ test("a message is found by its timestamp and text, in branch order, and matched
   ];
   const original = contextOf(branch).slice(1);
   const redacted = original.map((m: any) => ({ ...m, content: "ok [redacted]" }));
-  const out = labelAuthors(redacted, authorNotes(branch, names, null), original);
+  const out = labelAuthors(redacted, authorNotes(historyOf(branch), names, null), original);
   assert.deepEqual(texts(out), ["[From Maria]\nok [redacted]"]);
   const none = [{ role: "user", content: "not on the branch", timestamp: 9 }];
-  assert.equal(labelAuthors(none, authorNotes(branch, names, null)), none, "nothing labelled: the same array");
+  assert.equal(labelAuthors(none, authorNotes(historyOf(branch), names, null)), none, "nothing labelled: the same array");
 });
 
 test("a reply that stopped before it finished shows its first 4,000 characters, marked cut off; a finished one is whole", () => {
@@ -149,7 +150,7 @@ test("a reply that stopped before it finished shows its first 4,000 characters, 
     custom("c1", BATON_HANDOFF_ENTRY, { v: 1, n: 1, from: "operator", to: "p_t", question: "Q?" }),
     { type: "message", id: "a1", message: { role: "assistant", content: [{ type: "text", text }], ...(stopReason ? { stopReason } : {}) } },
   ];
-  const reply = (b: unknown[]) => batonView({ row: { publicTitle: "P", state: "open", holder: "p_t" }, branch: b as never, names, viewer: "p_t", redact: (t) => t }).items.find((i) => i.kind === "reply");
+  const reply = (b: unknown[]) => batonView({ row: { publicTitle: "P", state: "open", holder: "p_t" }, branch: historyOf(b), names, viewer: "p_t", redact: (t) => t }).items.find((i) => i.kind === "reply");
   for (const stop of ["error", "aborted"]) {
     const r = reply(branch(stop));
     assert.ok(r && r.kind === "reply");
@@ -169,7 +170,7 @@ test("the limit's hand-off to the operator shows people that the limit was reach
   const { LIMIT_QUESTION } = await import("../shared/baton");
   const b = [custom("c1", BATON_HANDOFF_ENTRY, { v: 1, n: 2, from: "p_t", to: "operator", question: LIMIT_QUESTION })];
   const q = (viewer?: string) => {
-    const h = batonView({ row: { publicTitle: "P", state: "needs-you", holder: "operator" }, branch: b as never, names, ...(viewer ? { viewer } : {}), redact: (t) => t }).items[0];
+    const h = batonView({ row: { publicTitle: "P", state: "needs-you", holder: "operator" }, branch: historyOf(b), names, ...(viewer ? { viewer } : {}), redact: (t) => t }).items[0];
     return h?.kind === "handoff" ? h.question : null;
   };
   assert.equal(q("p_t"), "This conversation reached its message limit.");
@@ -178,7 +179,7 @@ test("the limit's hand-off to the operator shows people that the limit was reach
 
 test("the view says whether its replies' vis html runs: only with draw and interactive drawings, as the session is now", () => {
   const drawings = (abilities?: { draw: boolean; readLinks: boolean; drawHtml: boolean }) =>
-    batonView({ row: { publicTitle: "Portal", state: "open", holder: "p_t", ...(abilities ? { abilities } : {}) }, branch: BRANCH, names, redact: (t) => t }).drawings;
+    batonView({ row: { publicTitle: "Portal", state: "open", holder: "p_t", ...(abilities ? { abilities } : {}) }, branch: historyOf(BRANCH), names, redact: (t) => t }).drawings;
   assert.deepEqual(drawings(), { html: false }, "a session from before abilities");
   assert.deepEqual(drawings({ draw: true, readLinks: false, drawHtml: false }), { html: false });
   assert.deepEqual(drawings({ draw: false, readLinks: false, drawHtml: true }), { html: false }, "interactive drawings count only with draw");

@@ -1,0 +1,252 @@
+{
+  "shown": [
+    {
+      "e": {
+        "type": "message",
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "Build is green."
+            }
+          ],
+          "api": "openai-completions",
+          "provider": "zai",
+          "model": "glm-5.3",
+          "usage": {
+            "input": 1200,
+            "output": 80,
+            "cacheRead": 400,
+            "cacheWrite": 0,
+            "totalTokens": 1680,
+            "cost": {
+              "input": 0.001,
+              "output": 0.002,
+              "cacheRead": 0.0001,
+              "cacheWrite": 0,
+              "total": 0.0031
+            }
+          },
+          "stopReason": "stop",
+          "timestamp": 1788256803000
+        },
+        "id": "n0000003",
+        "parentId": "n0000002",
+        "timestamp": "2026-09-01T10:00:03.000Z"
+      },
+      "role": "assistant",
+      "text": "Build is green.",
+      "blocks": []
+    },
+    {
+      "e": {
+        "type": "message",
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "Report sent."
+            }
+          ],
+          "api": "openai-completions",
+          "provider": "zai",
+          "model": "glm-5.3",
+          "usage": {
+            "input": 1200,
+            "output": 80,
+            "cacheRead": 400,
+            "cacheWrite": 0,
+            "totalTokens": 1680,
+            "cost": {
+              "input": 0.001,
+              "output": 0.002,
+              "cacheRead": 0.0001,
+              "cacheWrite": 0,
+              "total": 0.0031
+            }
+          },
+          "stopReason": "stop",
+          "timestamp": 1788256805000
+        },
+        "id": "n0000005",
+        "parentId": "n0000004",
+        "timestamp": "2026-09-01T10:00:05.000Z"
+      },
+      "role": "assistant",
+      "text": "Report sent.",
+      "blocks": []
+    },
+    {
+      "e": {
+        "type": "message",
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "Reviewed."
+            }
+          ],
+          "api": "openai-completions",
+          "provider": "zai",
+          "model": "glm-5.3",
+          "usage": {
+            "input": 1200,
+            "output": 80,
+            "cacheRead": 400,
+            "cacheWrite": 0,
+            "totalTokens": 1680,
+            "cost": {
+              "input": 0.001,
+              "output": 0.002,
+              "cacheRead": 0.0001,
+              "cacheWrite": 0,
+              "total": 0.0031
+            }
+          },
+          "stopReason": "stop",
+          "timestamp": 1788256807000
+        },
+        "id": "n0000007",
+        "parentId": "n0000006",
+        "timestamp": "2026-09-01T10:00:07.000Z"
+      },
+      "role": "assistant",
+      "text": "Reviewed.",
+      "blocks": []
+    },
+    {
+      "e": {
+        "type": "message",
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "Noted."
+            }
+          ],
+          "api": "openai-completions",
+          "provider": "zai",
+          "model": "glm-5.3",
+          "usage": {
+            "input": 1200,
+            "output": 80,
+            "cacheRead": 400,
+            "cacheWrite": 0,
+            "totalTokens": 1680,
+            "cost": {
+              "input": 0.001,
+              "output": 0.002,
+              "cacheRead": 0.0001,
+              "cacheWrite": 0,
+              "total": 0.0031
+            }
+          },
+          "stopReason": "stop",
+          "timestamp": 1788256809000
+        },
+        "id": "n0000009",
+        "parentId": "n0000008",
+        "timestamp": "2026-09-01T10:00:09.000Z"
+      },
+      "role": "assistant",
+      "text": "Noted.",
+      "blocks": []
+    },
+    {
+      "e": {
+        "type": "message",
+        "message": {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "<skill name=\"golden-skill\" location=\"/home/user/.pi/skills/golden-skill/SKILL.md\">\nSkill body\n</skill>\n\nUse the golden skill please"
+            }
+          ],
+          "timestamp": 1788256810000
+        },
+        "id": "n000000a",
+        "parentId": "n0000009",
+        "timestamp": "2026-09-01T10:00:10.000Z"
+      },
+      "role": "user",
+      "text": "<skill name=\"golden-skill\" location=\"/home/user/.pi/skills/golden-skill/SKILL.md\">\nSkill body\n</skill>\n\nUse the golden skill please",
+      "blocks": []
+    },
+    {
+      "e": {
+        "type": "message",
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "Done; anything else?"
+            }
+          ],
+          "api": "openai-completions",
+          "provider": "zai",
+          "model": "glm-5.3",
+          "usage": {
+            "input": 1200,
+            "output": 80,
+            "cacheRead": 400,
+            "cacheWrite": 0,
+            "totalTokens": 1680,
+            "cost": {
+              "input": 0.001,
+              "output": 0.002,
+              "cacheRead": 0.0001,
+              "cacheWrite": 0,
+              "total": 0.0031
+            }
+          },
+          "stopReason": "stop",
+          "timestamp": 1788256816000
+        },
+        "id": "n0000010",
+        "parentId": "n000000f",
+        "timestamp": "2026-09-01T10:00:16.000Z"
+      },
+      "role": "assistant",
+      "text": "Done; anything else?",
+      "blocks": []
+    }
+  ],
+  "branchTo": {
+    "leaf": [
+      "n0000001",
+      "n0000002",
+      "n0000003",
+      "n0000004",
+      "n0000005",
+      "n0000006",
+      "n0000007",
+      "n0000008",
+      "n0000009",
+      "n000000a",
+      "n000000b",
+      "n000000c",
+      "n000000d",
+      "n000000e",
+      "n000000f",
+      "n0000010"
+    ],
+    "mid": [
+      "n0000001",
+      "n0000002",
+      "n0000003",
+      "n0000004",
+      "n0000005",
+      "n0000006",
+      "n0000007",
+      "n0000008",
+      "n0000009"
+    ],
+    "missing": null
+  }
+}

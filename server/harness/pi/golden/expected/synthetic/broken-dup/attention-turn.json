@@ -1,0 +1,20 @@
+{
+  "full": {
+    "turnId": "m0000002",
+    "replyAt": 1788256809000,
+    "lastUser": "Root",
+    "assistantLast": "Second copy of m0000002",
+    "tools": [],
+    "stopReason": "stop",
+    "durationMs": 8000
+  },
+  "window4k": {
+    "turnId": "m0000002",
+    "replyAt": 1788256809000,
+    "lastUser": "Root",
+    "assistantLast": "Second copy of m0000002",
+    "tools": [],
+    "stopReason": "stop",
+    "durationMs": 8000
+  }
+}

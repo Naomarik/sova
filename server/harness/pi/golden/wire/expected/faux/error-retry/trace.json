@@ -1,0 +1,887 @@
+[
+  {
+    "frame": 0,
+    "state": {
+      "entries": [],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": [
+      "clearTurnError",
+      "announceWorking"
+    ]
+  },
+  {
+    "frame": 1,
+    "state": {
+      "entries": [],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 2,
+    "state": {
+      "entries": [],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 3,
+    "state": {
+      "entries": [],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 4,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "Try this",
+          "state": "delivered",
+          "started": true,
+          "images": []
+        }
+      ],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 5,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "Try this",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000004"
+        }
+      ],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 6,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "Try this",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000004"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [],
+          "done": false,
+          "model": "faux/faux-1"
+        }
+      ],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 7,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "Try this",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000004"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": ""
+            }
+          ],
+          "done": false,
+          "model": "faux/faux-1"
+        }
+      ],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 8,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "Try this",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000004"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": ""
+            }
+          ],
+          "done": false,
+          "model": "faux/faux-1"
+        }
+      ],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 9,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "Try this",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000004"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": ""
+            }
+          ],
+          "done": false,
+          "model": "faux/faux-1"
+        }
+      ],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 10,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "Try this",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000004"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": ""
+            }
+          ],
+          "done": true,
+          "model": "faux/faux-1",
+          "entryId": "00000005",
+          "error": "503 Service Unavailable: the server is overloaded"
+        }
+      ],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 11,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "Try this",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000004"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": ""
+            }
+          ],
+          "done": true,
+          "model": "faux/faux-1",
+          "entryId": "00000005",
+          "error": "503 Service Unavailable: the server is overloaded"
+        }
+      ],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 12,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "Try this",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000004"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": ""
+            }
+          ],
+          "done": true,
+          "model": "faux/faux-1",
+          "entryId": "00000005",
+          "error": "503 Service Unavailable: the server is overloaded"
+        }
+      ],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 13,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "Try this",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000004"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": ""
+            }
+          ],
+          "done": true,
+          "model": "faux/faux-1",
+          "entryId": "00000005",
+          "error": "503 Service Unavailable: the server is overloaded"
+        }
+      ],
+      "tools": {},
+      "running": true,
+      "activity": "Retrying after a provider error",
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 14,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "Try this",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000004"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": ""
+            }
+          ],
+          "done": true,
+          "model": "faux/faux-1",
+          "entryId": "00000005",
+          "error": "503 Service Unavailable: the server is overloaded"
+        }
+      ],
+      "tools": {},
+      "running": true,
+      "activity": "Retrying after a provider error",
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 15,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "Try this",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000004"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": ""
+            }
+          ],
+          "done": true,
+          "model": "faux/faux-1",
+          "entryId": "00000005",
+          "error": "503 Service Unavailable: the server is overloaded"
+        }
+      ],
+      "tools": {},
+      "running": true,
+      "activity": "Retrying after a provider error",
+      "stopping": false
+    },
+    "effects": [
+      "clearTurnError",
+      "announceWorking"
+    ]
+  },
+  {
+    "frame": 16,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "Try this",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000004"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": ""
+            }
+          ],
+          "done": true,
+          "model": "faux/faux-1",
+          "entryId": "00000005",
+          "error": "503 Service Unavailable: the server is overloaded"
+        }
+      ],
+      "tools": {},
+      "running": true,
+      "activity": "Retrying after a provider error",
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 17,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "Try this",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000004"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": ""
+            }
+          ],
+          "done": true,
+          "model": "faux/faux-1",
+          "entryId": "00000005",
+          "error": "503 Service Unavailable: the server is overloaded"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [],
+          "done": false,
+          "model": "faux/faux-1"
+        }
+      ],
+      "tools": {},
+      "running": true,
+      "activity": "Retrying after a provider error",
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 18,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "Try this",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000004"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": ""
+            }
+          ],
+          "done": true,
+          "model": "faux/faux-1",
+          "entryId": "00000005",
+          "error": "503 Service Unavailable: the server is overloaded"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": ""
+            }
+          ],
+          "done": false,
+          "model": "faux/faux-1"
+        }
+      ],
+      "tools": {},
+      "running": true,
+      "activity": "Retrying after a provider error",
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 19,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "Try this",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000004"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": ""
+            }
+          ],
+          "done": true,
+          "model": "faux/faux-1",
+          "entryId": "00000005",
+          "error": "503 Service Unavailable: the server is overloaded"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "Worked on the re"
+            }
+          ],
+          "done": false,
+          "model": "faux/faux-1"
+        }
+      ],
+      "tools": {},
+      "running": true,
+      "activity": "Retrying after a provider error",
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 20,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "Try this",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000004"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": ""
+            }
+          ],
+          "done": true,
+          "model": "faux/faux-1",
+          "entryId": "00000005",
+          "error": "503 Service Unavailable: the server is overloaded"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "Worked on the retry."
+            }
+          ],
+          "done": false,
+          "model": "faux/faux-1"
+        }
+      ],
+      "tools": {},
+      "running": true,
+      "activity": "Retrying after a provider error",
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 21,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "Try this",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000004"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": ""
+            }
+          ],
+          "done": true,
+          "model": "faux/faux-1",
+          "entryId": "00000005",
+          "error": "503 Service Unavailable: the server is overloaded"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "Worked on the retry."
+            }
+          ],
+          "done": false,
+          "model": "faux/faux-1"
+        }
+      ],
+      "tools": {},
+      "running": true,
+      "activity": "Retrying after a provider error",
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 22,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "Try this",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000004"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": ""
+            }
+          ],
+          "done": true,
+          "model": "faux/faux-1",
+          "entryId": "00000005",
+          "error": "503 Service Unavailable: the server is overloaded"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "Worked on the retry."
+            }
+          ],
+          "done": true,
+          "model": "faux/faux-1",
+          "entryId": "00000007"
+        }
+      ],
+      "tools": {},
+      "running": true,
+      "activity": "Retrying after a provider error",
+      "stopping": false
+    },
+    "effects": [
+      {
+        "context": 1371
+      }
+    ]
+  },
+  {
+    "frame": 23,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "Try this",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000004"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": ""
+            }
+          ],
+          "done": true,
+          "model": "faux/faux-1",
+          "entryId": "00000005",
+          "error": "503 Service Unavailable: the server is overloaded"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "Worked on the retry."
+            }
+          ],
+          "done": true,
+          "model": "faux/faux-1",
+          "entryId": "00000007"
+        }
+      ],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 24,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "Try this",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000004"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": ""
+            }
+          ],
+          "done": true,
+          "model": "faux/faux-1",
+          "entryId": "00000005",
+          "error": "503 Service Unavailable: the server is overloaded"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "Worked on the retry."
+            }
+          ],
+          "done": true,
+          "model": "faux/faux-1",
+          "entryId": "00000007"
+        }
+      ],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 25,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "Try this",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000004"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": ""
+            }
+          ],
+          "done": true,
+          "model": "faux/faux-1",
+          "entryId": "00000005",
+          "error": "503 Service Unavailable: the server is overloaded"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "Worked on the retry."
+            }
+          ],
+          "done": true,
+          "model": "faux/faux-1",
+          "entryId": "00000007"
+        }
+      ],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 26,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "Try this",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000004"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": ""
+            }
+          ],
+          "done": true,
+          "model": "faux/faux-1",
+          "entryId": "00000005",
+          "error": "503 Service Unavailable: the server is overloaded"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "Worked on the retry."
+            }
+          ],
+          "done": true,
+          "model": "faux/faux-1",
+          "entryId": "00000007"
+        }
+      ],
+      "tools": {},
+      "running": false,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": [
+      "settled"
+    ]
+  }
+]

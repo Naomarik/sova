@@ -1,0 +1,36 @@
+{
+  "type": "view",
+  "view": {
+    "title": "Golden share",
+    "sharedAt": "2026-10-05T00:00:00.000Z",
+    "mode": "live",
+    "through": "2026-09-01T10:00:18.000Z",
+    "items": [
+      {
+        "kind": "user",
+        "n": 0,
+        "text": "Align on the export, then build it",
+        "at": "2026-09-01T10:00:03.000Z"
+      },
+      {
+        "kind": "reply",
+        "n": 1,
+        "text": "Two questions are open on Export. Shall I go on?",
+        "at": "2026-09-01T10:00:10.000Z"
+      },
+      {
+        "kind": "user",
+        "n": 2,
+        "text": "Yes, build it",
+        "at": "2026-09-01T10:00:11.000Z"
+      },
+      {
+        "kind": "reply",
+        "n": 3,
+        "text": "Merged. Restart the server to pick it up.\n\nAlso changes: none",
+        "at": "2026-09-01T10:00:18.000Z"
+      }
+    ],
+    "images": 0
+  }
+}

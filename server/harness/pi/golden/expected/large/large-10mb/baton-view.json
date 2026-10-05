@@ -1,0 +1,12 @@
+{
+  "$digest": {
+    "sha256": "5702bb3829fefecbf478f17456519aeef7cd89558ba4d1dd568222206f98736d",
+    "bytes": 1569050,
+    "head": "{\"bob\":{\"photos\":6,\"view\":{\"holder\":\"Alice\",\"items\":[{\"at\":\"2026-09-04T09:00:04.000Z\",\"by\":\"\",\"id\":\"00000004\",\"kind\":\"message\",\"name\":\"Someone\",\"text\":\"Turn 0: parser parser model usage fork token win",
+    "parts": {
+      "bob": "e674ff48d96776b1",
+      "operator": "e674ff48d96776b1",
+      "untilOffer": "d4a040c9d4373d77"
+    }
+  }
+}

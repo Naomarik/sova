@@ -1,0 +1,129 @@
+[
+  {
+    "call": {
+      "fn": "applyEvent",
+      "args": [
+        {
+          "type": "compaction_start",
+          "reason": "manual"
+        }
+      ]
+    },
+    "state": {
+      "entries": [],
+      "tools": {},
+      "running": false,
+      "activity": "Compacting context",
+      "stopping": false
+    },
+    "effects": [
+      "compacting"
+    ]
+  },
+  {
+    "call": {
+      "fn": "applyEvent",
+      "args": [
+        {
+          "type": "compaction_end",
+          "reason": "manual",
+          "aborted": true
+        }
+      ]
+    },
+    "state": {
+      "entries": [],
+      "tools": {},
+      "running": false,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": [
+      "compactingDone"
+    ]
+  },
+  {
+    "call": {
+      "fn": "applyEvent",
+      "args": [
+        {
+          "type": "agent_start"
+        }
+      ]
+    },
+    "state": {
+      "entries": [],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": [
+      "clearTurnError",
+      "announceWorking"
+    ]
+  },
+  {
+    "call": {
+      "fn": "applyEvent",
+      "args": [
+        {
+          "type": "compaction_start",
+          "reason": "threshold"
+        }
+      ]
+    },
+    "state": {
+      "entries": [],
+      "tools": {},
+      "running": true,
+      "activity": "Compacting context",
+      "stopping": false
+    },
+    "effects": [
+      "compacting"
+    ]
+  },
+  {
+    "call": {
+      "fn": "applyEvent",
+      "args": [
+        {
+          "type": "compaction_end",
+          "reason": "threshold",
+          "aborted": true
+        }
+      ]
+    },
+    "state": {
+      "entries": [],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": [
+      "compactingDone"
+    ]
+  },
+  {
+    "call": {
+      "fn": "applyEvent",
+      "args": [
+        {
+          "type": "agent_settled"
+        }
+      ]
+    },
+    "state": {
+      "entries": [],
+      "tools": {},
+      "running": false,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": [
+      "settled"
+    ]
+  }
+]

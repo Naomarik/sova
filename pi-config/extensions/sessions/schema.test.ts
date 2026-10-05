@@ -94,6 +94,22 @@ test("worker effort: kept whole, invalid values dropped, absent stays absent", (
   for (const w of p.workers) assert.ok(!("effort" in w), w.id);
 });
 
+test("worker teamId: kept whole, invalid values dropped, absent stays absent", () => {
+  const v2 = example("v2");
+  const good = clone(v2);
+  Object.assign(good.presence.workers[0], { teamId: "team_01" });
+  const r = parseLiveRecord(good, NOW)!;
+  assert.equal(r.presence!.workers[0].teamId, "team_01");
+  assert.ok(!("teamId" in r.presence!.workers[1]), "a record written before teamId existed still decodes without it");
+  const bad = clone(v2);
+  Object.assign(bad.presence.workers[0], { teamId: "t".repeat(65) });
+  Object.assign(bad.presence.workers[1], { teamId: 3 });
+  Object.assign(bad.presence.workers[2], { teamId: "" });
+  const p = parseLiveRecord(bad, NOW)!.presence!;
+  assert.equal(p.workers.length, 3, "an invalid teamId never rejects the worker or the record");
+  for (const w of p.workers) assert.ok(!("teamId" in w), w.id);
+});
+
 test("activity.error only survives in the error state; invalid target is dropped, presence kept", () => {
   const v2 = example("v2");
   v2.presence.activity.error = "boom";

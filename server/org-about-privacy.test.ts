@@ -11,6 +11,7 @@ import { join, relative, resolve } from "node:path";
 import { after, describe, test } from "node:test";
 import { BATON_DECISION_ENTRY, BATON_SENT_ENTRY } from "../shared/baton";
 import type { DecisionProvider, DecisionRequest } from "./decide";
+import { piSession } from "./harness/pi/testing/handle";
 
 const root = realpathSync(mkdtempSync(join(tmpdir(), "sova-about-")));
 // A hosted runtime can still write here after after() ran (pi's catalogs, usage cache): exit is last.
@@ -67,7 +68,7 @@ const sent = new Map<string, string[]>();
 const stubbed = new WeakSet<object>();
 async function stubbedChat(path: string): Promise<Chat> {
   const chat = await acquireChat(path);
-  const s = chat.session as unknown as {
+  const s = piSession(chat) as unknown as {
     _modelRuntime: { hasConfiguredAuth(p: string): boolean };
     agent: { state: { model: unknown }; getApiKey: unknown; streamFunction: unknown };
   };
@@ -96,7 +97,7 @@ async function turn(path: string, text: string, by?: { sessionId: string; person
   if (by) baton.noteMessage(by.sessionId, by.personId);
   const { turn: t } = chat.acceptPrompt(text, undefined, "server", undefined, by ? { sentByBaton: { by: by.personId } } : undefined);
   await t;
-  await chat.session.waitForIdle();
+  await piSession(chat).waitForIdle();
   const got = (sent.get(path) ?? []).slice(before);
   assert.ok(got.length > 0, `the model was called for ${path}`);
   return got;
@@ -295,7 +296,7 @@ describe("the About text reaches the project overseer's prompt and nothing else"
     await disposeHeldChat((await po.ensureProjectOverseer(project.id)).path, "closed by the test");
     const made = await po.codeItem(project.id, { todoId: todo.id });
     assert.equal(made.notPrompted, undefined, "its first prompt was sent");
-    await (await acquireChat(made.path)).session.waitForIdle();
+    await piSession(await acquireChat(made.path)).waitForIdle();
     await until(() => (sent.get(made.path)?.length ?? 0) > 0);
     for (const got of sent.get(made.path)!) assert.ok(!leaks(got), "a coding session request");
     assert.ok(sent.get(made.path)!.some((c) => c.includes("Add a CSV export")), "control: the request carried its first prompt");

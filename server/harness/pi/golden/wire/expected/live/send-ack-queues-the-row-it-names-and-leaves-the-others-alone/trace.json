@@ -1,0 +1,91 @@
+[
+  {
+    "call": {
+      "fn": "addPendingPrompt",
+      "args": [
+        "one",
+        [],
+        [],
+        "c1"
+      ]
+    },
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "one",
+          "state": "sending",
+          "images": [],
+          "id": "c1"
+        }
+      ],
+      "tools": {},
+      "running": false,
+      "activity": null,
+      "stopping": false
+    }
+  },
+  {
+    "call": {
+      "fn": "addPendingPrompt",
+      "args": [
+        "two",
+        [],
+        [],
+        "c2"
+      ]
+    },
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "one",
+          "state": "sending",
+          "images": [],
+          "id": "c1"
+        },
+        {
+          "kind": "user",
+          "text": "two",
+          "state": "sending",
+          "images": [],
+          "id": "c2"
+        }
+      ],
+      "tools": {},
+      "running": false,
+      "activity": null,
+      "stopping": false
+    }
+  },
+  {
+    "call": {
+      "fn": "markQueued",
+      "args": [
+        "c2"
+      ]
+    },
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "one",
+          "state": "sending",
+          "images": [],
+          "id": "c1"
+        },
+        {
+          "kind": "user",
+          "text": "two",
+          "state": "queued",
+          "images": [],
+          "id": "c2"
+        }
+      ],
+      "tools": {},
+      "running": false,
+      "activity": null,
+      "stopping": false
+    }
+  }
+]

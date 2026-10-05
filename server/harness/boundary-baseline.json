@@ -42,7 +42,6 @@
     "server/vis-check.ts": "type"
   },
   "readers": {
-    "server/align-state.ts": {"calls": 1, "shapes": 9, "reaches": 0},
     "server/attention-signals.ts": {"calls": 2, "shapes": 1, "reaches": 0},
     "server/baton-guards.ts": {"calls": 0, "shapes": 7, "reaches": 0},
     "server/baton-images.ts": {"calls": 1, "shapes": 3, "reaches": 0},
@@ -60,7 +59,7 @@
     "server/git-summary.ts": {"calls": 0, "shapes": 1, "reaches": 0},
     "server/index.ts": {"calls": 6, "shapes": 0, "reaches": 8},
     "server/insights.ts": {"calls": 2, "shapes": 16, "reaches": 0},
-    "server/merge-readiness.ts": {"calls": 1, "shapes": 13, "reaches": 0},
+    "server/merge-readiness.ts": {"calls": 0, "shapes": 1, "reaches": 0},
     "server/org-test-fixtures.ts": {"calls": 0, "shapes": 1, "reaches": 0},
     "server/overseer-card-tool.ts": {"calls": 1, "shapes": 1, "reaches": 0},
     "server/overseer-run-note.ts": {"calls": 0, "shapes": 4, "reaches": 0},

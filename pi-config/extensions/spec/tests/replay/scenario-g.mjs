@@ -7,10 +7,11 @@
 //
 //   node scenario-g.mjs --record <extensions tree>   rewrite data/g-baseline.json from that tree's packet arm
 import "../../../claude-code/tests/hermetic-env.mjs";
+import { createHash } from "node:crypto";
 import { readFileSync, writeFileSync, existsSync, realpathSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { specIndex, scoreNeed, readStream, proseTexts, median, pool, idsIn, parentOf, capability, readToc } from "./fullness.mjs";
+import { specIndex, scoreNeed, readStream, proseTexts, median, pool, idsIn, parentOf, capability, readToc, accepts, readLines } from "./fullness.mjs";
 import { Tools, workspace, scrubProcessEnv } from "./lib.mjs";
 import { DATA, extractPinned } from "./pinned.mjs";
 
@@ -20,6 +21,8 @@ const BASELINE_FILE = join(HERE, "data/g-baseline.json");
 export const FRAME_CAP = 12000;
 export const DIRS = ["out", "in", "down", "up", "mentions"];
 const IMPACT_SEEDS = ["§chat/composer"];
+/** The ratchet (D18): needs shown one hop out by toc never drop below what M1 reached (106/138 at its gated head c67a1ae2). */
+const SHOWN_FLOOR = 106;
 /** The families whose contents lines are graded for a written "why" (plan §5b.8). */
 const WHY_FAMILIES = ["§chat/composer", "§chat/sandbox"];
 
@@ -164,10 +167,12 @@ export async function fullness(ctx) {
     rows.push(row(`g.impact.${seed.slice(1).replace(/[/.]/g, "-")}`, r.json ? { consumers: r.json.consumers?.length ?? null, frontier: r.json.frontier?.length ?? null } : `no-json(status ${r.status})`));
   }
 
+  rows.push(...(await mapRows(ctx, root)));
+
   // The pull proxy: n/a only when the tree's sova-spec.mjs rejects `toc` as an unknown command.
   const toc = await capability(ctx.tools, root, ctx.ws.home, "toc");
   if (toc === "absent") {
-    rows.push(row("g.pull.total", "n/a: this tree has no toc", [guard("g.pull.toc-answers", true, "n/a: this tree has no toc", true)]));
+    rows.push(row("g.pull.total", "n/a: this tree has no toc", [guard("g.pull.toc-answers", true, "n/a: this tree has no toc", true), guard("g.pull.shown-floor", true, "n/a: this tree has no toc", true)]));
     for (const h1 of WHY_FAMILIES) rows.push(row(`g.pull.why.${h1.slice(1).replace("/", "-")}`, "n/a"));
   } else {
     // Contents-line quality: `--dir out` over each H2 of the family. "requires" lines are the declared edges
@@ -197,14 +202,70 @@ export async function fullness(ctx) {
     }
     const broken = pulls.flatMap(({ c, q }) => q.broken.map((b) => `${c.id} ${b}`));
     const lostUnshown = pulls.flatMap(({ c, q }) => q.lostUnshown.map((i) => `${c.id}:${i} ${c.needs[i].need}`));
+    const shown = pulls.reduce((s, { q }) => s + q.shown, 0);
     const L = pulls.reduce((s, { q }) => ({ total: s.total + q.lines.total, withWhat: s.withWhat + q.lines.withWhat, withWhy: s.withWhy + q.lines.withWhy }), { total: 0, withWhat: 0, withWhy: 0 });
     rows.push(row("g.pull.total", {
-      shown: pulls.reduce((s, { q }) => s + q.shown, 0), of, bytesMedian: median(pulls.map(({ q }) => q.bytes)), bytesTotal: pulls.reduce((s, { q }) => s + q.bytes, 0), callsTotal: pulls.reduce((s, { q }) => s + q.calls, 0),
+      shown, of, bytesMedian: median(pulls.map(({ q }) => q.bytes)), bytesTotal: pulls.reduce((s, { q }) => s + q.bytes, 0), callsTotal: pulls.reduce((s, { q }) => s + q.calls, 0),
       lines: L.total, linesWithWhat: L.withWhat, linesWithWhy: L.withWhy, answeredByPacketNotShown: lostUnshown.length,
-    }, [guard("g.pull.toc-answers", broken.length === 0, broken.length ? `toc failed: ${broken.slice(0, 5).join("; ")}` : "every toc call answered")]));
+    }, [
+      guard("g.pull.toc-answers", broken.length === 0, broken.length ? `toc failed: ${broken.slice(0, 5).join("; ")}` : "every toc call answered"),
+      guard("g.pull.shown-floor", shown >= SHOWN_FLOOR, `needs shown one hop out: ${shown}/${of}; floor ${SHOWN_FLOOR} (M1)`),
+    ]));
     // A row, not a guard: one hop is a proxy, and a need two hops out is a fair loss to report. The guard
     // "no need packet answers is lost unless shown" belongs to the agent arm, where the agent may take more hops.
     rows.push(row("g.pull.not-shown", lostUnshown.join("; ") || "none"));
+  }
+  return rows;
+}
+
+/** Files whose claims `where` must list (every claim whose `code` names the file), and one to rank. */
+const WHERE_ALL = "server/chat-manager.ts";
+const WHERE_RANKED = "shared/protocol.ts";
+
+/**
+ * M3's views over the pinned spec: `impact --near` (narrowed reverse impact) and `where` (claims for a file), each
+ * n/a only when the tree rejects the command or flag; plus digests of what must not change (`scope` and plain
+ * `impact` over every seed), so any change to them shows as a changed row.
+ */
+async function mapRows(ctx, root) {
+  const rows = [];
+  const seeds = [...new Set(DATA.comparisons.map((c) => c.seed))].sort();
+  const digest = async (cmd) => {
+    const h = createHash("sha256");
+    for (const out of await pool(seeds, 8, async (s) => (await ctx.tools.runAsync(root, ctx.ws.home, [cmd, s])).stdout.split(root).join("<root>"))) h.update(out);
+    return h.digest("hex").slice(0, 16);
+  };
+  rows.push(row("g.digest.scope", await digest("scope")));
+  rows.push(row("g.digest.impact", await digest("impact")));
+
+  const near = await accepts(ctx.tools, root, ctx.ws.home, ["impact", "§chat/composer", "--near"]);
+  if (near === "absent") rows.push(row("g.target.impact-near.chat-composer", "n/a: this tree has no impact --near"));
+  else {
+    const r = await readLines(ctx.tools, root, ctx.ws.home, ["impact", "§chat/composer", "--near"]);
+    const groups = r.first?.counts?.groups ?? {};
+    rows.push(row("g.target.impact-near.chat-composer", r.ok ? { consumers: groups.consumer ?? null, frontier: groups.frontier ?? null, lines: r.lines.length, calls: r.calls } : `refused: ${r.refused}`, [
+      guard("g.impact-near.answers", r.ok, r.ok ? "impact --near answered" : `impact --near failed: ${r.refused}`),
+    ]));
+  }
+
+  const where = await accepts(ctx.tools, root, ctx.ws.home, ["where", WHERE_ALL]);
+  if (where === "absent") {
+    rows.push(row("g.where.all", "n/a: this tree has no where", [guard("g.where.all-listed", true, "n/a: this tree has no where", true), guard("g.where.file-read", true, "n/a: this tree has no where", true)]));
+    rows.push(row("g.target.where-ranked", "n/a: this tree has no where", [guard("g.where.ranked-file-read", true, "n/a: this tree has no where", true)]));
+  } else {
+    const claims = JSON.parse(readFileSync(join(root, ".sova/spec/manifest.json"), "utf8")).claims;
+    const mapping = Object.entries(claims).filter(([, r]) => (r.code ?? []).includes(WHERE_ALL)).map(([id]) => id);
+    const all = await readLines(ctx.tools, root, ctx.ws.home, ["where", "--all", WHERE_ALL]);
+    const listed = new Set(all.lines.map((l) => l.id));
+    const missing = mapping.filter((id) => !listed.has(id));
+    // The source file is archived beside the pinned spec; a where that couldn't read it ranks nothing, which is ✗, never a quiet 0.
+    const fileRead = (r) => guard(`g.where.${r === all ? "file-read" : "ranked-file-read"}`, r.first?.file?.state === "read", `file.state ${r.first?.file?.state ?? "absent"}`);
+    rows.push(row("g.where.all", { file: WHERE_ALL, state: all.first?.file?.state ?? null, mapped: mapping.length, listed: listed.size, calls: all.calls }, [
+      guard("g.where.all-listed", all.ok && missing.length === 0, !all.ok ? `where --all failed: ${all.refused}` : missing.length ? `not listed: ${missing.slice(0, 5).join(", ")}${missing.length > 5 ? ` … ${missing.length - 5} more` : ""}` : `all ${mapping.length} claims whose code names the file are listed`),
+      fileRead(all),
+    ]));
+    const ranked = await readLines(ctx.tools, root, ctx.ws.home, ["where", WHERE_RANKED]);
+    rows.push(row("g.target.where-ranked", ranked.ok ? { file: WHERE_RANKED, state: ranked.first?.file?.state ?? null, total: ranked.first?.total ?? null, shown: ranked.lines.length, ranked: ranked.first?.counts?.ranked ?? null, bytes: ranked.bytes } : `refused: ${ranked.refused}`, [fileRead(ranked)]));
   }
   return rows;
 }

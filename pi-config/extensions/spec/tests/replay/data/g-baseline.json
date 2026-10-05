@@ -39,7 +39,7 @@
     "§app.organizations/person-page",
     "§chat.transcript/states",
     null,
-    "§app.baton/goal-and-loadout"
+    "§chat.transcript/transcript-items"
    ]
   },
   "C02": {
@@ -64,7 +64,7 @@
     "§app.projects/registration",
     "§app.projects/clone",
     "§app.projects/registration",
-    "§app.project-overseer/statecharts",
+    "§app.projects/registration",
     null
    ]
   },
@@ -110,9 +110,9 @@
     "absent"
    ],
    "passageOf": [
-    "§app.baton/images",
+    "§app.shell/viewport",
     "§app/shell",
-    "§app/markdown-viewer",
+    "§app/shell",
     "§app.shell/resizing-the-sessions-pane",
     null
    ]
@@ -167,14 +167,14 @@
     "in"
    ],
    "passageOf": [
-    "§chat.composer/composer-flyout",
+    "§chat/model-menu",
     "§chat.model-menu/content-and-order",
     null,
     "§chat.model-menu/errors",
     "§chat.model-menu/menu",
     null,
     "§chat.model-menu/states",
-    "§chat.composer/composer-flyout",
+    "§chat.model-menu/states",
     "§chat.model-menu/saved-default"
    ]
   },
@@ -225,11 +225,11 @@
     "in"
    ],
    "passageOf": [
-    "§app.baton/needs-you",
-    "§app.baton/goal-and-loadout",
     "§app.session-list/anatomy",
     "§app.session-list/anatomy",
-    "§app.organizations/workspace-repo",
+    "§app.session-list/anatomy",
+    "§app.session-list/anatomy",
+    "§app.session-list/selecting-several-sessions",
     "§app.session-list/anatomy"
    ]
   },
@@ -346,10 +346,10 @@
     "in"
    ],
    "passageOf": [
-    "§app.baton/links",
-    "§mesh.lan/handshake",
+    "§mesh/peers",
+    "§mesh.peers/allowlist",
     "§mesh.peers/health",
-    "§app.claude-logins/registry",
+    "§mesh.peers/off",
     "§mesh.peers/resync",
     "§mesh.peers/off"
    ]
@@ -396,9 +396,9 @@
     "n/a"
    ],
    "passageOf": [
-    "§app/decisions",
-    "§app.decisions/privacy",
-    "§app.decisions/providers",
+    "§app.notifications/delivery",
+    "§app/notifications",
+    "§app.notifications/delivery",
     "§app.notifications/delivery",
     null
    ]
@@ -419,10 +419,10 @@
     "absent"
    ],
    "passageOf": [
-    "§app/baton",
+    "§app.project-runtime/registry",
     null,
-    "§app.baton/goal-and-loadout",
-    "§app.baton/links",
+    "§app/project-runtime",
+    "§app/project-runtime",
     null
    ]
   },
@@ -593,7 +593,7 @@
     "§design.ground-rules/voice",
     "§design/token-index",
     "§design.copy-deck/main-pane",
-    "§app.claude-logins/failover"
+    "§chat.images/composer-attachments"
    ]
   },
   "C24": {
@@ -618,7 +618,7 @@
     "§app.session-share/never",
     "§app.session-share/link",
     "§design.copy-deck/session-share",
-    "§app.baton/links",
+    "§app.session-share/link",
     "§app.session-share/page"
    ]
   }

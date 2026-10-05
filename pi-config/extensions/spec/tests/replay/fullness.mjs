@@ -50,12 +50,16 @@ export function passageAt(index, at) {
   return null;
 }
 
-/** Merge spans [{rel, from, to}] per file; touching or overlapping ranges join. Sorted by file, then line. */
+/**
+ * Merge spans [{rel, from, to}] per file; touching or overlapping ranges join. Files keep the order they first appear
+ * in (a slice lists its seed's file first), lines ascend within a file. The first probe hit is searched in this
+ * order, as the research did, so a hit lands in the seed's own file before a far one.
+ */
 export function mergeSpans(spans) {
   const by = new Map();
   for (const s of spans) by.set(s.rel, [...(by.get(s.rel) ?? []), [s.from, s.to]]);
   const out = [];
-  for (const rel of [...by.keys()].sort()) {
+  for (const rel of by.keys()) {
     const rs = by.get(rel).sort((a, b) => a[0] - b[0]);
     let cur = null;
     for (const [a, b] of rs) {
@@ -148,6 +152,33 @@ export async function capability(tools, root, home, cmd) {
   if (!r.json) return "broken";
   const unknown = (r.json.findings ?? []).some((f) => f.code === "usage" && new RegExp(`^unknown command ${cmd}\\b`).test(f.message ?? ""));
   return r.json.exit === 2 && unknown ? "absent" : "present";
+}
+
+/**
+ * Does this tree accept `args` (a command, or a command with a new flag)? A tree that lacks it answers with a
+ * usage finding `unknown command <x>` or `unknown flag <x>` (exit 2). → "absent" | "present" | "broken"
+ */
+export async function accepts(tools, root, home, args) {
+  const r = await tools.runAsync(root, home, args);
+  if (!r.json) return "broken";
+  const unknown = (r.json.findings ?? []).some((f) => f.code === "usage" && /^unknown (command|flag) /.test(f.message ?? ""));
+  return r.json.exit === 2 && unknown ? "absent" : "present";
+}
+
+/** Every page of a command answering `{lines, next}`. → { ok, refused, lines, first, calls, bytes } */
+export async function readLines(tools, root, home, args) {
+  let r = await tools.runAsync(root, home, args), calls = 1, bytes = Buffer.byteLength(r.stdout);
+  const lines = [], first = r.json;
+  if (!first || first.status === "refused" || first.exit === 2 || !Array.isArray(first.lines)) return { ok: false, refused: first?.code ?? `no-json(status ${r.status})`, lines, first, calls, bytes };
+  for (;;) {
+    lines.push(...r.json.lines);
+    if (!r.json.next || calls >= 200) break;
+    r = await tools.runAsync(root, home, [...args, "--cursor", r.json.next]);
+    calls++;
+    bytes += Buffer.byteLength(r.stdout);
+    if (!r.json || !Array.isArray(r.json.lines)) return { ok: false, refused: r.json?.code ?? "page-unreadable", lines, first, calls, bytes };
+  }
+  return { ok: true, refused: null, lines, first, calls, bytes };
 }
 
 /** Every page of `toc <id> --dir <dir>`, following `next`. → { ok, refused, lines, seed, footer, calls, bytes } */

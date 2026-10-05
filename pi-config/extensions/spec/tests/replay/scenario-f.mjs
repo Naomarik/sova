@@ -10,7 +10,7 @@
 // Rows measure; guards hold today and must keep holding; target rows record what today's tools miss by design.
 // The pull checks need `toc` (and `read`); a tree without them reports n/a, never a pass.
 import { Repo, seedSpec } from "./lib.mjs";
-import { specIndex, readStream, proseTexts, idsIn, capability, readToc, readPassage } from "./fullness.mjs";
+import { specIndex, readStream, proseTexts, idsIn, capability, readToc, readPassage, accepts, readLines } from "./fullness.mjs";
 import { FRAME_CAP, DIRS } from "./scenario-g.mjs";
 
 const row = (scenario, metric, value, guards = []) => ({ scenario, metric, value, guards });
@@ -113,6 +113,18 @@ export async function sliceQuality(ctx) {
   rows.push(row("f", "f.impact", imp.json ? { consumers: consumers.length, frontier: front.length, unrelatedOnFrontier: front.includes(P.unrelated) } : `no-json(status ${imp.status})`, [
     guard("f.true-consumer-kept", consumers.includes(P.consumer) || front.includes(P.consumer), `${P.consumer} is ${consumers.includes(P.consumer) ? "a consumer" : front.includes(P.consumer) ? "on the frontier" : "gone"}`),
   ]));
+  // Narrowed impact (`--near`): n/a only when the tree rejects the flag.
+  if ((await accepts(ctx.tools, repo.root, ctx.ws.home, ["impact", "§f/seed", "--near"])) === "absent") {
+    rows.push(row("f", "f.impact-near", "n/a", [guard("f.near.true-consumer-kept", true, "n/a: no impact --near", true), guard("f.near.unrelated-off-frontier", true, "n/a: no impact --near", true)]));
+  } else {
+    const n = await readLines(ctx.tools, repo.root, ctx.ws.home, ["impact", "§f/seed", "--near"]);
+    const groupOf = (id) => n.lines.filter((l) => l.id === id).map((l) => l.group);
+    const kept = groupOf(P.consumer), stray = groupOf(P.unrelated).filter((g) => g === "frontier");
+    rows.push(row("f", "f.impact-near", n.ok ? { lines: n.lines.length, consumer: kept.join(",") || "absent", unrelated: groupOf(P.unrelated).join(",") || "absent" } : `refused: ${n.refused}`, [
+      guard("f.near.true-consumer-kept", n.ok && kept.length > 0, n.ok ? `${P.consumer}: ${kept.join(",") || "absent"}` : `impact --near failed: ${n.refused}`),
+      guard("f.near.unrelated-off-frontier", n.ok && stray.length === 0, n.ok ? `${P.unrelated}: ${groupOf(P.unrelated).join(",") || "absent"}` : `impact --near failed: ${n.refused}`),
+    ]));
+  }
 
   // ── Under pull ──
   rows.push(...(await pull(ctx, repo, index)));
@@ -144,7 +156,8 @@ async function pull(ctx, repo, index) {
   }
   // What arrives unasked with a plain `read` of the seed (first page): its items and any frame items.
   const unasked = await ctx.tools.runAsync(repo.root, ctx.ws.home, ["read", SEED]);
-  for (const it of [...(unasked.json?.items ?? []), ...(unasked.json?.frame?.items ?? [])]) if (typeof it?.id === "string" && it.id !== SEED) delivered.add(it.id);
+  for (const it of unasked.json?.items ?? []) if (typeof it?.id === "string" && it.id !== SEED) delivered.add(it.id);
+  idsIn(unasked.json?.frame ?? {}, delivered); // the frame, in whatever form read carries it (items or passages)
   const where = (id) => DIRS.filter((d) => byDir[d].some((l) => l.id === id));
   const line = (id) => DIRS.flatMap((d) => byDir[d]).find((l) => l.id === id);
   // Each planted link shows as a line in the direction a builder would ask for it.
@@ -175,7 +188,8 @@ async function readRows(ctx, repo, index, capable) {
   const own = index.passages.get(SEED);
   const r = capable === "broken" ? { ok: false, refused: "no-json" } : await readPassage(ctx.tools, repo.root, ctx.ws.home, SEED);
   const named = new Set(r.footer?.named ?? []);
-  const links = [P.dep, P.panel, P.wander].filter((id) => !named.has(id));
+  // A link read delivered (an embed arrives whole) needs no name; every other one must be named.
+  const links = [P.dep, P.panel, P.wander].filter((id) => !named.has(id) && !r.texts?.has(id));
   return [row("f", "f.pull.read", r.ok ? { bytes: r.text ? Buffer.byteLength(r.text) : null, own: own.bytes, calls: r.calls } : `refused: ${r.refused}`, [
     guard("f.pull.read-exact", r.ok && r.text === own.text, r.ok ? (r.text === own.text ? "read returns exactly the seed's passage" : "read's text differs from the seed's source span") : `read failed: ${r.refused}`),
     guard("f.pull.read-names-links", r.ok && links.length === 0, links.length ? `links not named by read: ${links.join(", ")}` : "every link of the seed it didn't deliver is named"),

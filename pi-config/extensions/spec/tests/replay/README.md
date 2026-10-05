@@ -34,6 +34,7 @@ saying nothing) fails it.
 | e. draft leftovers | drafts fully promoted, superseded by a `-2` copy, and live: what `status`, `check`, `census` and `foreign --landing` say of each | the fixture set up as intended |
 | f. slice quality (synthetic) | a small spec with planted items around the seed `§f.seed/edit`: a true dependency and its own dependency, an embedded H1 with 3 H2s, a contrast-only edge to a 40 KB H1, an unlinked sibling that answers a need, a `core: true` claim, an `about` note, a true and an unrelated uninvestigated consumer. `packet`: bytes, passages, files, calls, precision (share of bytes a builder of the seed needs), wander bytes, names-only, unknown, frame bytes; `impact`: consumers, frontier, whether the unrelated consumer is on it. Under pull (`toc`, `read`): lines per direction, written whys, bytes | dependencies read whole; the contrast target read or named; spans byte-exact; frame ≤ 12,000 B; the true consumer kept by `impact`. Under pull: each planted link is a line in its direction, every such line has a what and a why, the unrelated consumer shows only under `--dir in`, `read` returns the seed's exact span and names every link it did not deliver |
 | g. fullness (real spec) | the 24 needs comparisons (`data/comparisons.json`) over `.sova/spec` pinned to one revision. `packet` (every prose page, plus a `frame` stream if the tree has one), per comparison: needs answered (partial = 0.5), named, bytes, seed-file share, frame bytes, calls, passages, files, unknown; totals with medians, ground rules reached (x/24), matching copy-deck sections reached (x/17); `impact §chat/composer`. Pull proxy (needs `toc`): needs whose passage is a `toc` line one hop from the seed (any direction), toc bytes and calls, needs packet answers that no line shows, and contents-line quality for the composer and sandbox families (`--dir out` lines with a why from prose or from an HTML comment, all lines and `requires` lines apart) | every delivered passage byte-exact; every `toc` call answers; no need answered at the recorded baseline (`data/g-baseline.json`) lost unless its passage is named; the total never drops; frame ≤ 12,000 B |
+| h. agreed, not built | a draft adds a behavior with `agreed: {by, at}` and no code, records `--doc-only` evidence and promotes (target: promoted, 0 → 1); a second does the same for a behavior that maps code | nothing that lands on doc-only evidence reads as built (no code, no reviewed/verified label); doc-only never covers a record that maps code |
 
 **Targets.** Some of the plan's checks fail on today's tools by design (the sibling read or named, the
 `about` note read, the core claim and the embedded H1 arriving unasked, every need answered or named).
@@ -64,9 +65,11 @@ purpose: `node scenario-g.mjs --record <tree made from the baseline ref>`. `data
 | --- | --- |
 | M0 | the baseline tree against itself: zero diff, every guard held; a sabotaged tree trips every guard |
 | M1 (`toc`, `read`) | computed run, no agent: `packet` and `scope` unchanged (g's packet rows, d's exactness), f's pull guards hold; g's pull proxy rows give bytes and calls per comparison; the 21 needs packet answers but no `toc` line shows one hop out are listed by id |
-| M1 onward | ratchet: g's needs shown one hop out (`g.pull.total.shown`, 86/138 at M1) never drops |
-| M2 (spec-mode text) | agent arm, all 24 comparisons, on the M1+M5 tree: no need packet answers lost unless its passage was seen; answered ≥ packet's; calls per comparison within today's 7–18; the 21 checked one by one |
+| M1 onward | ratchet guard `g.pull.shown-floor`: needs shown one hop out never below 106/138 (M1's gate run at c67a1ae2) |
+| M2 (spec-mode text) | agent arm, all 24 comparisons, same model and level in both arms, on the M1+M5 tree. Answered ≥ the AGENT packet arm on the same 24 (on the 8-sample: 30.5/48), not the computed packet (34/48 on the sample, 93.5/138 in all), because an agent stops paging early. Every M2 scorecard reports both packet numbers. No need the agent packet arm answered is lost unless its passage was seen in a toc line or footer; calls per comparison within today's 7–18; the needs packet answers but toc does not show one hop out (3 at M1) checked one by one |
 | M4 (span promotion) | a.diff-h2.hand-reapply 1 → 0; `a.target.same-spot` both orders land, byte-identical; a's guards hold |
+| M3 (`map`, `where`, `impact --near`) | f: `impact §f/seed --near` keeps the true consumer and keeps the unrelated one off its frontier (guards); g: `g.target.impact-near.chat-composer` frontier 143 → ≤ 25, `g.where.all` lists every claim whose code names server/chat-manager.ts (guard, 74), `g.target.where-ranked` for shared/protocol.ts (107, top 10); `g.digest.scope` and `g.digest.impact` (plain impact) unchanged |
+| M8 (`agreed`, draft tool) | `h.target.agreed-promoted` 0 → 1; guards `h.unbuilt-not-built`, `h.doc-only-refuses-code` hold; `a.stacked.relisted-at-master` stays a target (needs the own-rule change) |
 | M5, M6 | the f/g target rows they claim (embed read whole, core arrives unasked, about note travels; answered-or-named), and which of the 21 come into view |
 
 ## The agent arm (opt-in, not deterministic)
@@ -88,7 +91,10 @@ node agent-arm.mjs grade --out <run dir>     # grade a finished run again; start
   holding only the pinned manifest and claims and `tools/`, the tree's `spec/core`. pi runs with
   `-p --mode json --tools bash,read`, no discovered extensions, context files, skills or prompt
   templates, and `-e` for provider-limits and llm-inflight from the pi agent directory (one must be
-  provider-limits). The prompt (the same for both arms but for the tool lines) names the surface and
+  provider-limits), and `--append-system-prompt` with the tree's own `mode/spec-mode.md` (the text that
+  ships with that tree; only its trusted-core line is pointed at `tools/`, and the docs it names are copied
+  beside it; its sha is in `run.json`; `--instructions <file>` or `--no-instructions` for experiments; two
+  runs compare only if both had instructions). The prompt (the same for both arms but for the tool lines) names the surface and
   its § id, says what a builder must find, and asks for a brief.
 - **Output:** `<out>/<arm>-<model>-<time>/` with `run.json`, and per comparison `prompt.txt`,
   `events.jsonl`, `stderr.txt`, `exit.json` and `sessions/`; then `agent-scorecard.json` and
@@ -99,6 +105,7 @@ node agent-arm.mjs grade --out <run dir>     # grade a finished run again; start
   read, contents lines seen, tokens, commands that reach outside the work directory. The guard,
   reported: no need the recorded packet baseline answers is lost unless the agent saw its passage in a
   toc line or a footer.
+- **Rules and worked examples:** [GRADING.md](GRADING.md), including the two hand-reading jobs a reviewer may do.
 - **The 8-comparison sample:** C01, C05, C07, C10, C14, C17, C19, C22 (`SAMPLE` in the script).
 
 ## Determinism

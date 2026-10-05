@@ -4,7 +4,7 @@
 // contract beyond the JSON shape the harness reads:
 //   toc <§id> --dir out|in|down|up|mentions → { id, dir, seed: {id}, lines: [{id, title, what, whatSource, why, whySource, bytes}], footer: {delivered: []} }
 //   read <§id>                              → { id, items: [{index, id, text}], footer: {named: [§id]} }
-import { readFileSync } from "node:fs";
+import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { specIndex, parentOf } from "./fullness.mjs";
 
@@ -19,7 +19,22 @@ const esc = (s) => s.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&");
 const mentions = (text, target) => new RegExp(`${esc(target)}(?![\\w./-])`).test(text);
 
 const seed = index.passages.get(id);
-if (!seed || !claims[id]) out({ status: "refused", code: "unknown-id" }, 2);
+if (cmd === "where") {
+  // where [--all] <path>: every claim whose code names the path.
+  const path = argv.slice(1).find((a) => !a.startsWith("--") && a !== flag("--root"));
+  const hits = Object.keys(claims).filter((x) => (claims[x].code ?? []).includes(path)).sort();
+  out({ query: path, file: { path, state: existsSync(join(root, path)) ? "read" : "missing" }, total: hits.length, counts: { claims: hits.length, ranked: 0 }, lines: hits.map((x) => ({ id: x })) });
+} else if (cmd === "impact" && argv.includes("--near")) {
+  // impact <§id> --near: requirers of the seed's family are consumers; uninvestigated behaviors that mention it, frontier.
+  const family = Object.keys(claims).filter((x) => x === id || parentOf(x) === id);
+  const lines = Object.keys(claims).sort().flatMap((x) => {
+    if (family.includes(x)) return [];
+    if ((claims[x].requires ?? []).some((t) => family.includes(t))) return [{ group: "consumer", id: x }];
+    if (claims[x].kind === "behavior" && claims[x].requires === undefined && family.some((f) => mentions(index.passages.get(x)?.text ?? "", f))) return [{ group: "frontier", id: x }];
+    return [];
+  });
+  out({ id, near: true, counts: { groups: { consumer: lines.filter((l) => l.group === "consumer").length, frontier: lines.filter((l) => l.group === "frontier").length } }, lines });
+} else if (!seed || !claims[id]) out({ status: "refused", code: "unknown-id" }, 2);
 else if (cmd === "read") out({ id, items: [{ index: 0, id, text: seed.text }], footer: { named: [...(claims[id].requires ?? [])].filter((x) => x !== id) } });
 else {
   const dir = flag("--dir");

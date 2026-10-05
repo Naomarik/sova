@@ -87,7 +87,7 @@ export const probes: Probe[] = [
     formats: ["pi"],
     run(f) {
       const branch = activeBranch(parseLines(f.text));
-      return titleOf({ getBranch: () => branch as never });
+      return titleOf(historyOf(branch));
     },
   },
 ];

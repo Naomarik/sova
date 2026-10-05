@@ -1,8 +1,8 @@
 // The harness contract, the driving session (§app/harness, §app.harness/session). Types only: imports
 // nothing but its siblings, emits nothing. What a hosted chat (server/chat-manager.ts) drives its agent
 // through instead of pi's AgentSession; pi's implementation is server/harness/pi/session.ts. Sized to the
-// chat's real call sites: opening a runtime, history surgery (rewind, compaction), extension commands and
-// the dialog bridge are not here yet.
+// chat's real call sites, and the dialog bridge its extensions' UI calls reach it through
+// (§app.harness/session-open): history surgery (rewind, compaction) and extension commands are not here yet.
 import type { EntryId, ModelRef } from "./harness-core";
 import type { HEntry, SessionRead } from "./harness-history";
 import type { SessionState } from "./harness-state";
@@ -234,4 +234,15 @@ export interface HarnessSession extends SessionRead {
   /** One harness listener per call, registered now: a synchronous pass-through, so listeners keep the
       order they were registered in, relative to the harness's own. Returns the unsubscribe. */
   subscribe(fn: (event: HarnessEvent) => void): () => void;
+}
+
+/** An extension's dialog as the chat shows it (pi's side: server/harness/pi/ui-bridge.ts). The chat keeps
+    the pending dialogs: it broadcasts each request, takes the first answer, and settles on `fallback` when
+    nobody can answer, the request times out or its signal aborts. */
+export interface DialogBridge {
+  /** A dialog that waits for an answer: `parse` turns the answer into the extension's value (a throw, or
+      no answer, is `fallback`). `request` carries `method` and the dialog's fields. */
+  open<T>(request: Record<string, unknown>, fallback: T, parse: (value: unknown) => T, o?: { signal?: AbortSignal; timeout?: number }): Promise<T>;
+  /** A request nobody answers (a notification, a status line). */
+  fireAndForget(request: Record<string, unknown>): void;
 }

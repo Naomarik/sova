@@ -52,6 +52,7 @@ const CM = "server/chat-manager.ts";
 const SESSION = "server/harness/pi/session.ts";
 const OPS = "server/harness/pi/history-ops.ts";
 const COMMANDS = "server/harness/pi/commands.ts";
+const OPEN = "server/harness/pi/open.ts";
 
 export const PI_QUIRKS: readonly PiQuirk[] = [
   {
@@ -62,9 +63,9 @@ export const PI_QUIRKS: readonly PiQuirk[] = [
       "Building a session on a branch with no messages (or no thinking entry) appends model_change/thinking_level_change through the session manager's own appendModelChange/appendThinkingLevelChange properties, so replacing them before construction defers those writes; Sova queues them until the first write and drops the one that restates the recorded model.",
     pi: ["createAgentSession", "SessionManager.appendModelChange", "SessionManager.appendThinkingLevelChange"],
     where: [
-      { file: CM, symbol: "openSession" },
+      { file: OPEN, symbol: "openPiSession" },
       { file: CM, symbol: "ChatSession.flushDeferredAppends" },
-      { file: CM, symbol: "restatesRecordedModel" },
+      { file: OPEN, symbol: "restatesRecordedModel" },
     ],
     canary: "P1 open-writes-nothing: building a session on a message-less file appends model and thinking through the manager's instance methods",
     retireWhen: "pi stops appending at construction, or offers an open that writes nothing",
@@ -283,7 +284,7 @@ export const PI_QUIRKS: readonly PiQuirk[] = [
     kind: "private-read",
     relies: 'initTheme() registers the theme on globalThis[Symbol.for("@earendil-works/pi-coding-agent:theme")], which Sova reads to hand extensions ctx.ui.theme (pi does not export the instance).',
     pi: ["initTheme", 'Symbol.for("@earendil-works/pi-coding-agent:theme")'],
-    where: [{ file: CM, symbol: "currentTheme" }],
+    where: [{ file: "server/harness/pi/ui-bridge.ts", symbol: "currentTheme" }],
     canary: "P17 theme-global: initTheme registers the theme on globalThis under pi's Symbol.for key",
     retireWhen: "pi exports the theme instance",
   },
@@ -293,7 +294,7 @@ export const PI_QUIRKS: readonly PiQuirk[] = [
     kind: "internal-API",
     relies: "bindExtensions() emits session_start; a bare dispose() emits no session_shutdown, so the warm-up emits it through extensionRunner.emit before disposing.",
     pi: ["AgentSession.bindExtensions", "AgentSession.dispose", "ExtensionRunner.emit", "ExtensionRunner.hasHandlers"],
-    where: [{ file: CM, symbol: "warmClaudeCodeProvider" }],
+    where: [{ file: OPEN, symbol: "warmClaudeCodeProvider" }],
     canary: "P18 warmup-shutdown: bindExtensions emits session_start; a bare dispose() skips session_shutdown, which the runner's emit delivers",
     retireWhen: "dispose() emits session_shutdown (then the warm-up's own emit would double it)",
   },
@@ -314,8 +315,8 @@ export const PI_QUIRKS: readonly PiQuirk[] = [
     relies: "createAgentSession restores the branch's recorded model only when the branch has messages; for a message-less session it builds (and appends) another model unless Sova passes the recorded one.",
     pi: ["createAgentSession", "SessionManager.buildSessionContext"],
     where: [
-      { file: CM, symbol: "recordedModelForEmptyBranch" },
-      { file: CM, symbol: "modelForSessionOpen" },
+      { file: OPEN, symbol: "recordedModelForEmptyBranch" },
+      { file: OPEN, symbol: "modelForSessionOpen" },
     ],
     canary: "P20 model-restore-gate: the SDK restores a recorded model only when the branch has messages",
     retireWhen: "pi restores a recorded model on any branch",

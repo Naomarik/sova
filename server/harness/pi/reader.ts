@@ -62,10 +62,17 @@ const isObj = (v: unknown): v is Record<string, any> => !!v && typeof v === "obj
 
 const BLOCKS = new Set(["text", "thinking", "toolCall", "image"]);
 
+/** The block arrays made from a bare string content (legacy files), for `storedAsString`. */
+const fromString = new WeakSet<HBlock[]>();
+
 /** pi's content as blocks: pi's own array when every block is one Sova knows (no copy), else a copy with
     each unknown block wrapped; a string is one text block. */
 function blocksOf(content: unknown): HBlock[] {
-  if (typeof content === "string") return [{ type: "text", text: content }];
+  if (typeof content === "string") {
+    const blocks: HBlock[] = [{ type: "text", text: content }];
+    fromString.add(blocks);
+    return blocks;
+  }
   if (!Array.isArray(content)) return [];
   if (content.every((b) => isObj(b) && BLOCKS.has(b.type as string))) return content as HBlock[];
   return content.map((b) => (isObj(b) && BLOCKS.has(b.type as string) ? (b as HBlock) : { type: "unknown", raw: b }));
@@ -523,6 +530,12 @@ const blocksOfEntry = (h: HEntry): HBlock[] => ("blocks" in h ? h.blocks : []);
 export function firstText(h: HEntry): string | undefined {
   for (const b of blocksOfEntry(h)) if (b.type === "text" && typeof b.text === "string") return typedText(b.text, h);
   return undefined;
+}
+
+/** Whether the entry's content was stored as a bare string (legacy files, which pi's migration keeps so), not
+    as blocks: a reader that has always read only block arrays (a session's title) reads no text there. */
+export function storedAsString(h: HEntry): boolean {
+  return "blocks" in h && fromString.has(h.blocks);
 }
 
 /** The text blocks joined by `sep` (default "\n"); an image block is "[image]" unless `images` is false.

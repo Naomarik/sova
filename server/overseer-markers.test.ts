@@ -148,7 +148,7 @@ describe("the Overseer file", () => {
     const { path } = await overseer.ensureOverseer();
     const chat = await acquireChat(path);
     assert.equal(chat.overseer, true);
-    assert.ok(isOverseerFile(chat.session.sessionManager));
+    assert.ok(isOverseerFile(chat.harness));
     const active = chat.session.getActiveToolNames();
     assert.ok(active.includes("sova_attention") && active.includes("sova_card"), active.join(","));
     for (const banned of ["bash", "edit", "write"]) assert.ok(!active.includes(banned), `${banned} must not be active`);
@@ -210,7 +210,7 @@ describe("the Overseer file", () => {
     assert.equal((await getSessionSummary(cur.path))?.overseer, true, "the current one still is the Overseer");
     const chat = await acquireChat(forkPath, true);
     assert.equal(chat.overseer, false);
-    assert.equal(isOverseerFile(chat.session.sessionManager), false);
+    assert.equal(isOverseerFile(chat.harness), false);
     const active = chat.session.getActiveToolNames();
     assert.ok(!active.some((n) => n.startsWith("sova_")), `the ordinary loadout: ${active.join(",")}`);
     assert.doesNotMatch(chat.session.systemPrompt, /You are the one Overseer/);

@@ -1,23 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { runLedger } from "./auto-resume";
 import { closeSync, existsSync, openSync, readSync } from "node:fs";
-import {
-  type AgentSession,
-  type AgentSessionRuntime,
-  type CreateAgentSessionRuntimeFactory,
-  type CreateAgentSessionServicesOptions,
-  createAgentSessionFromServices,
-  createAgentSessionRuntime,
-  createAgentSessionServices,
-  type ExtensionUIContext,
-  type ExtensionUIDialogOptions,
-  ModelRuntime,
-  initTheme,
-  SessionManager,
-  type Theme,
-  type ToolDefinition,
-} from "@earendil-works/pi-coding-agent";
-import { LOGIN_UNCHANGED, OVERSEER_ENTRY } from "../shared/protocol";
+import type { AgentSession, AgentSessionRuntime, CreateAgentSessionServicesOptions, SessionManager, ToolDefinition } from "@earendil-works/pi-coding-agent";
+import { LOGIN_UNCHANGED } from "../shared/protocol";
 import { type BatonSentData, OPERATOR } from "../shared/baton";
 import type { ChatClientMessage, ChatModeResult, ChatServerMessage, V1EventFrame, V2EventFrame, ModeApplies, ModeInfo, OverseerDialogAnswerData, OverseerSentMarkerData, QueueItem, RegenerateRefusal, SandboxApplyResult, SandboxInfo, SlashCommand, TranscriptItem, WorkerInfo } from "../shared/protocol";
 import { COMPACT_COMMAND, COMPACT_IMAGES_REFUSAL, compactCommand } from "../shared/compact";
@@ -42,46 +27,37 @@ import type { SandboxState } from "../pi-config/extensions/sandbox/state.ts";
 import { chatClaudeLogin, claudeLoginAfterHello, claudeLoginMessage, isClaudeLoginEntry, LoginPick, loginName } from "./claude-login-state";
 import { rowsOf, rowsOfEntry } from "./transcript";
 import { onWire, withRows } from "./wire-rows";
-import type { CompactOutcome, HarnessEvent, HarnessSession, HEntry, ImageInput, SessionState, SessionStateWriter, StateKind } from "../shared/harness";
-import { historyOf } from "./harness/pi/reader";
+import type { CompactOutcome, DialogBridge, HarnessEvent, HarnessSession, HEntry, ImageInput, SessionState, SessionStateWriter, StateKind, StateView } from "../shared/harness";
+import { historyOf, storedAsString } from "./harness/pi/reader";
+import { extensionFlagValues, getModelRuntime, openPiSession, type OpenFlags, type OpenRead, type PiBuild, type PiModelRuntime, warmClaudeCodeProvider as warmPiProvider } from "./harness/pi/open";
+import { bindPiExtensions } from "./harness/pi/ui-bridge";
 import { contextOfBranch } from "./harness/pi/usage";
 import { extensionEntries } from "./harness/pi/state";
 import { isAlreadyProcessing, PiHarnessSession } from "./harness/pi/session";
 import { drainQueueThenAbort, isCompactionInProgress } from "./harness/pi/history-ops";
-import { BATON_SENT, LOADOUT, MODE, OVERSEER_DIALOG_ANSWER, OVERSEER_SENT, PROFILE, SESSION_SENT, SUBAGENT_PROFILE, TOPIC_DELIVERED } from "./harness/state-kinds";
+import { BATON_SENT, FANOUT_MEMBER, LOADOUT, MODE, OVERSEER, OVERSEER_DIALOG_ANSWER, OVERSEER_SENT, PROFILE, SESSION_SENT, SUBAGENT_PROFILE, TOPIC_DELIVERED } from "./harness/state-kinds";
 import { cutTail, type HistoryPart, pullFields } from "./tail-hello";
 import { isOverseerId } from "./overseer-store";
 import { attachStreamGuard, capsFor, type StreamTrip } from "./stream-guard";
 import { useSlicedProviderReads } from "./runtime-quirks";
 import { targetOfCwd } from "./targets";
 import { sovaToken } from "./auth";
-import { installWorkerNice, lowerToolCommands } from "./process-priority";
 import { ForeignWriteGuard, markOwned, markOwnedStat, recentForeignWriteAgeSec } from "./write-guard";
 import { monitorExtension } from "./resource-monitor";
-import { applyForkCacheRouting, forkCacheExtension } from "../pi-config/extensions/subagents/fork/cache.ts";
+import { forkCacheExtension } from "../pi-config/extensions/subagents/fork/cache.ts";
 import { visCheckExtension, type VisCheckHost } from "./vis-check";
 import { projectEngine } from "./project-services/routes";
 import { projectVerbsExtension } from "./project-services/tools";
 import { excludedTools, GRANT_TOOLS, keyOf, KNOWN_REMOVABLE_TOOLS, singletonRaceText, type ProfileEntryData, type SessionSentData } from "../shared/profiles";
-import { profileOnBranch } from "./session-profile";
-import { agentRoot } from "./state-root";
-import { loadoutOnBranch, loadoutOverrides, type LoadoutEntryData, type LoadoutState } from "./session-loadout";
+import { loadoutOverrides, type LoadoutEntryData, type LoadoutState } from "./session-loadout";
 import { RunState, SessionLimits, sessionPowersExtension } from "./session-powers";
 import { queuePushExtension, topicStore } from "./topics";
-import { instrumentModelRuntime } from "../pi-config/extensions/llm-inflight/runtime.ts";
-import { markDegraded } from "../pi-config/extensions/llm-inflight/tracker.ts";
 import { noteUsageSession, registerUsageSession } from "../pi-config/extensions/llm-inflight/attribution.ts";
 import { readWebSettings } from "./web-settings";
 
 const GUARD_POLL_MS = 3000;
 /** Hosted workers' context fill, read off their transcripts' tails; shared, mtime-gated. */
 const workerContextReader = new WorkerContextReader();
-
-/** The claude-code extension's provider flag (pi-config/extensions/claude-code/provider/index.ts
-    CLAUDE_PROVIDER_FLAG). Always on: every hosted runtime that loads extensions sets it. */
-const CLAUDE_CODE_FLAG = "claude-code-provider";
-/** The mode extension's flag behind adversarial review (pi-config/extensions/mode/index.ts REVIEW_FLAG). */
-const REVIEW_FLAG = "adversarial-review";
 
 /** This server's own bound origin, for the `link` extension's `sova-link` flag (setLinkOrigin). */
 let linkOrigin: string | null = null;
@@ -93,42 +69,40 @@ export function setLinkOrigin(origin: string): void {
 export const currentLinkOrigin = (): string | null => linkOrigin;
 
 /**
- * The extension flags every webapp-hosted runtime starts with.
+ * The extension flags every webapp-hosted runtime starts with (named in pi's words by
+ * server/harness/pi/open.ts, OpenFlags).
  *
- * - `topic-outline-headless`: topic-outline only summarizes in the TUI unless its host opts in;
- *   opt in so web chats get outlines. Boolean flag: the SDK sets it true whatever the value.
+ * - topic outline: topic-outline only summarizes in the TUI unless its host opts in;
+ *   opt in so web chats get outlines.
  *   Workers never get it, and neither does a session carrying an older build's group-member
  *   marker (`outline: false`, FANOUT_MEMBER_ENTRY).
  * - `target`: a remote session (cwd = a target placeholder, server/targets.ts) switches
  *   pi-config's remote extension on for that target.
- * - `claude-code-provider`: always set, so the claude-code extension registers the Claude Code
+ * - the Claude Code provider: always set, so the claude-code extension registers the Claude Code
  *   CLI's models as first-class pi models (§app.claude-code-provider/always-on). With no `claude`
  *   CLI the extension registers nothing and the session carries on.
- * - `sova-link`: this server's own bound origin (setLinkOrigin), switching pi-config's `link`
+ * - the link: this server's own bound origin (setLinkOrigin), switching pi-config's `link`
  *   extension on (link_members/link_send/link_inbox call its /api/mesh/links/* routes). Absent
- *   until the listener is bound; workers never get it, so the tools are inert there.
- * - `sova-link-token`: beside `sova-link`, this server's per-install token, which the link tools
- *   send back as `x-sova-token` (§app.access/callers). In-process only: never argv, never env.
- * - `adversarial-review`: only while Settings → Experimental's Adversarial review is saved on
+ *   until the listener is bound; workers never get it, so the tools are inert there. Beside it,
+ *   this server's per-install token, which the link tools send back as `x-sova-token`
+ *   (§app.access/callers). In-process only: never argv, never env.
+ * - adversarial review: only while Settings → Experimental's Adversarial review is saved on
  *   (§chat.alignment-review/flag); read at each runtime start, so an open chat keeps what it began with.
  */
-function sessionFlags(cwd: string, outline = true): Map<string, boolean | string> {
-  const flags = new Map<string, boolean | string>(outline ? [["topic-outline-headless", true]] : []);
+function sessionFlags(cwd: string, outline = true): OpenFlags {
+  const flags: OpenFlags = { outline };
   const target = targetOfCwd(cwd);
-  if (target) flags.set("target", target);
-  flags.set(CLAUDE_CODE_FLAG, true);
-  if (readWebSettings().experimental.adversarialReview) flags.set(REVIEW_FLAG, true);
-  if (linkOrigin) {
-    flags.set("sova-link", linkOrigin);
-    flags.set("sova-link-token", sovaToken());
-  }
+  if (target) flags.target = target;
+  flags.claudeCode = true;
+  if (readWebSettings().experimental.adversarialReview) flags.review = true;
+  if (linkOrigin) flags.link = { origin: linkOrigin, token: sovaToken() };
   return flags;
 }
 
 /** The extension flags a runtime is handed: none for a loadout that loads no extension (a flag
     nobody registered only logs "Unknown option"), else sessionFlags. Exported for the tests. */
 export function extensionFlagsFor(cwd: string, outline: boolean, noExtensions: boolean): Map<string, boolean | string> {
-  return noExtensions ? new Map() : sessionFlags(cwd, outline);
+  return noExtensions ? new Map() : extensionFlagValues(sessionFlags(cwd, outline));
 }
 
 /** The extensions every ordinary session loads beyond pi-config's: resource monitoring and
@@ -139,101 +113,15 @@ const DEFAULT_EXTENSION_FACTORIES = [
   { name: "sova-fork-cache", factory: forkCacheExtension },
 ];
 
-/**
- * Build services for a webapp runtime.
- *
- * A flag no extension registered is NOT fatal: the SDK reports `Unknown option: --<flag>` as a
- * services diagnostic and carries on (verified against 0.86.1 with the switch on and a
- * claude-code extension that does not register it yet — the session still opened and every other
- * model still worked). That is what makes the always-on provider flag safe with an older
- * pi-config: the provider is simply absent, and the diagnostic below says why.
- */
-async function servicesForCwd(
-  cwd: string,
-  modelRuntime: ModelRuntime,
-  outline = true,
-  resourceLoaderOptions?: CreateAgentSessionServicesOptions["resourceLoaderOptions"],
-) {
-  // Its workers and tool commands start below the server (§app.load-priority/workers).
-  installWorkerNice();
-  const services = await createAgentSessionServices({
-    cwd,
-    modelRuntime,
-    extensionFlagValues: extensionFlagsFor(cwd, outline, !!resourceLoaderOptions?.noExtensions),
-    // An ordinary session gets the resource monitor's listener (which session this runtime hosts,
-    // its workers' pids, when its tools run; §app.resource-monitor/attribution). A special loadout
-    // (Overseer, baton, project overseer) keeps exactly its own: it runs no shell and no workers,
-    // and the monitor finds its Claude Code provider through the held sessions instead.
-    resourceLoaderOptions: resourceLoaderOptions ?? { extensionFactories: [...DEFAULT_EXTENSION_FACTORIES] },
-  });
-  lowerToolCommands(services.settingsManager);
-  return services;
-}
-
-/**
- * Register the Claude Code provider without waiting for the user to open a session.
- *
- * The provider registers from the claude-code extension's session_start, straight into the
- * ModelRuntime it is handed — and Sova shares one runtime across every session, so building a
- * throwaway services instance with the flag set is enough to make claude-code-cli/* appear in
- * GET /api/models for the picker. The instance is discarded; only the registration outlives it.
- *
- * Best-effort by design: the CLI may be missing or unauthenticated, and neither is a reason to
- * fail startup. A failure just means the models are absent until a session opens.
- */
-export async function warmClaudeCodeProvider(modelRuntime: ModelRuntime, cwd: string): Promise<void> {
-  try {
-    // The provider flag alone: the throwaway session needs nothing else, and the link flags would
-    // read the access token, which throws (and logs its problem again) when the token file is damaged.
-    const services = await createAgentSessionServices({
-      cwd,
-      modelRuntime,
-      extensionFlagValues: new Map([[CLAUDE_CODE_FLAG, true]]),
-      resourceLoaderOptions: { extensionFactories: [...DEFAULT_EXTENSION_FACTORIES] },
-    });
-    for (const d of services.diagnostics) console.warn(`[chat] claude-code warm-up ${d.type}: ${d.message}`);
-    // The flag is only visible from session_start, and session_start is emitted by
-    // AgentSession.bindExtensions (dist/core/agent-session.js:2029) — NOT by creating the session.
-    // So the warm-up has to go all the way to bindExtensions, exactly as a real chat does, or the
-    // extension factory runs and registers nothing (verified: the factory logs, session_start
-    // never fires). SessionManager.create() defers writing until the first assistant reply
-    // (CLAUDE.md, "Backend notes"), and this session never prompts, so no file is left behind.
-    const { session } = await createAgentSessionFromServices({ services, sessionManager: SessionManager.create(cwd) });
-    currentTheme(); // extensions may read the theme singleton at session_start; initialize it first
-    await session.bindExtensions({
-      mode: "rpc",
-      onError: (err) => console.warn(`[chat] claude-code warm-up extension error (${err.extensionPath}): ${err.error}`),
-    });
-    // The registration now lives in the shared runtime; the session itself must not outlive the
-    // warm-up, or every extension's session_start side effects (timers, live records) would.
-    //
-    // Shut the extensions down BEFORE disposing, which is what AgentSessionRuntime.dispose does
-    // (agent-session-runtime.js:296 — emitSessionShutdownEvent, then session.dispose). A bare
-    // session.dispose() skips session_shutdown, and extensions that armed a timer at session_start
-    // then fire it against a disposed session: the sessions extension's focus-discovery timeout
-    // did exactly that, throwing "This extension ctx is stale after session replacement or reload"
-    // as an unhandledRejection on every warm-up.
-    if (session.extensionRunner.hasHandlers("session_shutdown")) {
-      await session.extensionRunner.emit({ type: "session_shutdown", reason: "quit" });
-    }
-    session.dispose();
-  } catch (err) {
-    console.warn(`[chat] claude-code warm-up failed: ${err instanceof Error ? err.message : String(err)}`);
-  }
+/** Register the Claude Code provider without waiting for the user to open a session: a throwaway
+    session with the default extensions and the provider flag alone (server/harness/pi/open.ts).
+    Best-effort; never throws. */
+export function warmClaudeCodeProvider(modelRuntime: PiModelRuntime, cwd: string): Promise<void> {
+  return warmPiProvider(modelRuntime, cwd, DEFAULT_EXTENSION_FACTORIES);
 }
 
 /** pi's ThinkingLevel ladder (see server/models.ts, which mirrors the semantics). */
 const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
-type ThinkingLevel = (typeof THINKING_LEVELS)[number];
-
-// Extensions may read ctx.ui.theme; pi's `theme` singleton isn't exported, so initialize
-// it and read the global instance it registers (same key as pi's theme.js).
-const THEME_KEY = Symbol.for("@earendil-works/pi-coding-agent:theme");
-function currentTheme(): Theme {
-  const g = globalThis as Record<symbol, Theme | undefined>;
-  if (!g[THEME_KEY]) initTheme(undefined, false);
-  return g[THEME_KEY] as Theme;
-}
 
 /** A refusal to write. code per shared/protocol.ts: busy = TUI owns it (force never helps),
  *  recent = unknown writer (reconnect with &force=1), reloaded = another client reloaded the runtime. */
@@ -412,23 +300,8 @@ const historyOnWire2 = (part: HistoryPart): HistoryPart => {
   return { msg, raw: JSON.stringify(msg) };
 };
 
-let modelRuntimePromise: Promise<ModelRuntime> | null = null;
-export function getModelRuntime(): Promise<ModelRuntime> {
-  modelRuntimePromise ??= ModelRuntime.create().then(
-    (runtime) => {
-      // Every pi call of this process (hosted chats, compaction, warming, one-shots) passes through
-      // this one runtime: count it here, before anything can call it. One that can't be
-      // instrumented leaves this host's count partial, never a silent 0.
-      if (instrumentModelRuntime(runtime) === "unsupported") markDegraded("server-runtime");
-      return runtime;
-    },
-    (err) => {
-      modelRuntimePromise = null;
-      throw err;
-    },
-  );
-  return modelRuntimePromise;
-}
+/** The one pi model runtime this process shares (server/harness/pi/open.ts). */
+export { getModelRuntime };
 
 /** Throws BusyError if another process (TUI/CLI) currently owns the session file. */
 export function assertNotLive(path: string): void {
@@ -494,18 +367,25 @@ export const REWIND_ENTRY = "sova-rewind";
  */
 export const FANOUT_MEMBER_ENTRY = "sova-fanout-member";
 
+/** What a session file is recognised by when it opens: its id and its state over the whole file (a
+ *  session being opened, server/harness/pi/open.ts OpenRead, or a held chat's driving session). */
+export interface SessionMarks {
+  readonly id: string;
+  readonly state: { file(): StateView };
+}
+
 /** Whether a session file carries that marker. The predicate openSession keys the outline
  *  exception on. */
-export function isFanoutMember(sm: Pick<SessionManager, "getEntries">): boolean {
-  return sm.getEntries().some((e) => e.type === "custom" && e.customType === FANOUT_MEMBER_ENTRY);
+export function isFanoutMember(s: Pick<SessionMarks, "state">): boolean {
+  return s.state.file().has(FANOUT_MEMBER);
 }
 
 /** Whether a session file is an Overseer file: it carries the marker its creation wrote
  *  (server/overseer.ts) AND overseer-state.json knows it (the current conversation or one in its
  *  history). A fork of an Overseer file inherits the marker but is known to neither, so it opens
  *  as an ordinary session, as SessionSummary.overseer lists it. */
-export function isOverseerFile(sm: Pick<SessionManager, "getEntries" | "getSessionId">): boolean {
-  return isOverseerId(sm.getSessionId()) && sm.getEntries().some((e) => e.type === "custom" && e.customType === OVERSEER_ENTRY);
+export function isOverseerFile(s: SessionMarks): boolean {
+  return isOverseerId(s.id) && s.state.file().has(OVERSEER);
 }
 
 /**
@@ -559,7 +439,7 @@ export type SpecialKind = "overseer" | "baton" | "project-overseer";
  */
 export interface SpecialLoadout {
   kind: Exclude<SpecialKind, "overseer">;
-  matches(sm: Pick<SessionManager, "getEntries" | "getSessionId">, path: string): boolean;
+  matches(s: SessionMarks, path: string): boolean;
   loadout(path: string): Promise<SpecialLoadoutResult>;
   /** Every open, once bound. */
   opened?(chat: ChatSession): Promise<void>;
@@ -600,9 +480,9 @@ export function cwdOverride(path: string): string | undefined {
 }
 
 /** The special kind a session file opens as: the Overseer's first, then each registered kind. */
-function specialFor(sm: Pick<SessionManager, "getEntries" | "getSessionId">, path: string): { kind: SpecialKind; entry: SpecialLoadout | null } | null {
-  if (isOverseerFile(sm)) return { kind: "overseer", entry: null };
-  const entry = specialLoadouts.find((s) => s.matches(sm, path));
+function specialFor(marks: SessionMarks, path: string): { kind: SpecialKind; entry: SpecialLoadout | null } | null {
+  if (isOverseerFile(marks)) return { kind: "overseer", entry: null };
+  const entry = specialLoadouts.find((s) => s.matches(marks, path));
   return entry ? { kind: entry.kind, entry } : null;
 }
 
@@ -696,21 +576,16 @@ function listCommands(harness: HarnessSession): SlashCommand[] {
   return [COMPACT_COMMAND, ...harness.commands().filter((c) => !(c.source === "extension" && c.name === COMPACT_COMMAND.name))];
 }
 
-/** A session's title as the list would say it: its name, else its first message, else "Untitled". */
-export function titleOf(sm: Pick<SessionManager, "getBranch">): string {
-  const branch = sm.getBranch();
+/** A session's title as the list would say it: its name, else its first message, else "Untitled". A first
+    message stored as a bare string (legacy files) has never been read for it: "Untitled". */
+export function titleOf(branch: readonly HEntry[]): string {
   for (let i = branch.length - 1; i >= 0; i--) {
-    const e = branch[i]!;
-    if (e.type === "session_info" && typeof (e as { name?: unknown }).name === "string" && (e as { name: string }).name.trim()) return (e as { name: string }).name.trim();
+    const h = branch[i]!;
+    if (h.kind === "setting" && h.what === "name" && typeof h.name === "string" && h.name.trim()) return h.name.trim();
   }
-  const first = branch.find((e) => e.type === "message" && e.message.role === "user");
-  const t = first && first.type === "message" ? textBlocks((first.message as { content?: unknown }).content).replace(/\s+/g, " ").trim() : "";
+  const first = branch.find((h) => h.kind === "user");
+  const t = first && first.kind === "user" && !storedAsString(first) ? textBlocks(first.blocks).replace(/\s+/g, " ").trim() : "";
   return t ? t.slice(0, 80) : "Untitled";
-}
-
-function modelLabel(session: AgentSession): string | null {
-  const m = session.model;
-  return m ? `${m.provider}/${m.id}` : null;
 }
 
 interface PendingUi {
@@ -1496,12 +1371,9 @@ class ChatSession {
         this.broadcast({ type: "error", code: "internal", message: `Stopped the turn: ${trip.detail}.` });
       },
     });
-    await session.bindExtensions({
-      uiContext: this.createUiContext(),
-      mode: "rpc",
-      onError: (err) =>
-        this.broadcast({ type: "error", code: "internal", message: `Extension error (${err.extensionPath}): ${err.error}` }),
-    });
+    await bindPiExtensions(session, this.dialogs, (extensionPath, error) =>
+      this.broadcast({ type: "error", code: "internal", message: `Extension error (${extensionPath}): ${error}` }),
+    );
     this.unsubscribe?.();
     // Through the driving session: one pi listener, registered here, after the stream guard and the
     // extensions, as before; each event arrives once, in pi's tick (P12 message-end-before-persist).
@@ -2946,16 +2818,16 @@ class ChatSession {
   }
 
   /**
-   * Extension dialog bridge (pattern from pi's rpc-mode): select/confirm/input/editor are
-   * broadcast as ui_request and resolved by the first ui_response. notify/setStatus are
-   * forwarded fire-and-forget (request.fireAndForget = true). TUI-only features are no-ops.
+   * Extension dialog bridge (server/harness/pi/ui-bridge.ts turns pi's UI calls into it): a dialog is
+   * broadcast as ui_request and resolved by the first ui_response; a fire-and-forget request
+   * (notify, setStatus) is forwarded with request.fireAndForget = true.
    */
-  private createUiContext(): ExtensionUIContext {
-    const dialog = <T>(
-      opts: ExtensionUIDialogOptions | undefined,
-      fallback: T,
+  private readonly dialogs: DialogBridge = {
+    open: <T>(
       request: Record<string, unknown>,
+      fallback: T,
       parse: (value: unknown) => T,
+      opts: { signal?: AbortSignal; timeout?: number } | undefined,
     ): Promise<T> => {
       if (opts?.signal?.aborted || this.clients.size === 0) return Promise.resolve(fallback);
       const id = randomUUID();
@@ -2991,44 +2863,9 @@ class ChatSession {
         });
         this.broadcast({ type: "ui_request", id, request: { ...request, timeout: opts?.timeout } });
       });
-    };
-    const str = (v: unknown) => (typeof v === "string" ? v : undefined);
-    const fireAndForget = (request: Record<string, unknown>) =>
-      this.broadcast({ type: "ui_request", id: randomUUID(), request: { ...request, fireAndForget: true } });
-
-    return {
-      select: (title, options, opts) => dialog(opts, undefined, { method: "select", title, options }, str),
-      confirm: (title, message, opts) => dialog(opts, false, { method: "confirm", title, message }, (v) => v === true),
-      input: (title, placeholder, opts) => dialog(opts, undefined, { method: "input", title, placeholder }, str),
-      editor: (title, prefill) => dialog(undefined, undefined, { method: "editor", title, prefill }, str),
-      notify: (message, type) => fireAndForget({ method: "notify", message, notifyType: type }),
-      setStatus: (key, text) => fireAndForget({ method: "setStatus", statusKey: key, statusText: text }),
-      onTerminalInput: () => () => {},
-      setWorkingMessage: () => {},
-      setWorkingVisible: () => {},
-      setWorkingIndicator: () => {},
-      setHiddenThinkingLabel: () => {},
-      setWidget: () => {},
-      setFooter: () => {},
-      setHeader: () => {},
-      setTitle: () => {},
-      custom: async () => undefined as never,
-      pasteToEditor: () => {},
-      setEditorText: () => {},
-      getEditorText: () => "",
-      addAutocompleteProvider: () => {},
-      setEditorComponent: () => {},
-      getEditorComponent: () => undefined,
-      get theme() {
-        return currentTheme();
-      },
-      getAllThemes: () => [],
-      getTheme: () => undefined,
-      setTheme: () => ({ success: false, error: "Theme switching not supported in Sova" }),
-      getToolsExpanded: () => false,
-      setToolsExpanded: () => {},
-    };
-  }
+    },
+    fireAndForget: (request) => this.broadcast({ type: "ui_request", id: randomUUID(), request: { ...request, fireAndForget: true } }),
+  };
 }
 
 /** Listeners told each time a hosted chat's run settles (attention signals, tags). A registry, not
@@ -3152,59 +2989,6 @@ export function isSessionBusy(path: string): boolean {
   return !!chat && !chat.disposed && chat.harness.isRunning();
 }
 
-/** A model as the runtime resolves it, without naming pi-ai's `Model` (not re-exported by the SDK entry). */
-type ResolvedModel = NonNullable<ReturnType<ModelRuntime["getModel"]>>;
-
-/**
- * The model a MESSAGE-LESS session records for itself, for openSession to pass as
- * `createAgentSessionFromServices`' `model`. The SDK restores a session's recorded model only
- * when the branch already has messages (sdk.js gates the restore on `messages.length > 0`), and
- * a session can record a model_change and nothing else (its model set before its first message)
- * — so without this, its runtime resolves the server default and the first turn runs a model
- * nobody chose.
- * Once the branch has messages the SDK does this itself, which is why the message-less case is
- * the only one answered here. The two guards are the SDK's own restore guards (getModel, then
- * hasConfiguredAuth): on either failure the answer is undefined and the SDK falls back —
- * binding a recorded model must never fail the open.
- */
-export function recordedModelForEmptyBranch(
-  sessionManager: Pick<SessionManager, "buildSessionContext">,
-  modelRuntime: Pick<ModelRuntime, "getModel" | "hasConfiguredAuth">,
-): ResolvedModel | undefined {
-  const context = sessionManager.buildSessionContext();
-  if (context.messages.length > 0 || !context.model) return undefined;
-  const model = modelRuntime.getModel(context.model.provider, context.model.modelId);
-  return model && modelRuntime.hasConfiguredAuth(model.provider) ? model : undefined;
-}
-
-/** The recorded choice outranks an eligible global default; undefined leaves the SDK
- *  to choose. savedDefault has already passed the pristine-session and available/auth checks. */
-export function modelForSessionOpen(
-  sessionManager: Pick<SessionManager, "buildSessionContext">,
-  modelRuntime: Pick<ModelRuntime, "getModel" | "hasConfiguredAuth">,
-  savedDefault: ResolvedModel | undefined,
-): ResolvedModel | undefined {
-  return recordedModelForEmptyBranch(sessionManager, modelRuntime) ?? savedDefault;
-}
-
-/** A branch's resolved context, as buildSessionContext() reports it. */
-type BranchContext = ReturnType<SessionManager["buildSessionContext"]>;
-
-/**
- * Whether the runtime's construction-time model append only restates what the branch already
- * records. The SDK appends the model it was built with for a session with no messages
- * (sdk.js:261), and a message-less file that already records exactly that model would get a
- * second identical `model_change` on the first prompt, and transcript.ts renders one `Model:`
- * row per entry: the session would open with the same row twice.
- * Both halves of the condition are load-bearing. With messages on the branch that append is the
- * SDK's own resume record, and a pair that differs from the recorded one is a real change (the
- * fallback default after an unauthenticated recorded model) — those must still be written.
- */
-export function restatesRecordedModel(context: BranchContext, provider: string, modelId: string): boolean {
-  if (context.messages.length > 0 || !context.model) return false;
-  return context.model.provider === provider && context.model.modelId === modelId;
-}
-
 async function overseerLoadout(path: string) {
   if (!overseerRuntime) throw new Error("The Overseer is not available on this server.");
   return overseerRuntime.loadout(path);
@@ -3212,44 +2996,22 @@ async function overseerLoadout(path: string) {
 
 /** Bring an opened Overseer runtime to overseer.json's model and thinking, without the composer's
     write-back (the setting is already what it says). Stale or unauthenticated choices are skipped. */
-async function syncOverseerModel(chat: ChatSession, modelRuntime: ModelRuntime, path: string): Promise<void> {
+async function syncOverseerModel(chat: ChatSession, path: string): Promise<void> {
   const want = await overseerLoadout(path);
-  const session = chat.session;
-  if (want.model && want.model !== modelLabel(session) && modelAllowed(readModelPolicy(), want.model)) {
-    const model = (await modelRuntime.getAvailable().catch(() => [])).find((m) => `${m.provider}/${m.id}` === want.model);
-    if (model) await session.setModel(model);
+  const harness = chat.harness;
+  if (want.model && want.model !== (harness.model()?.ref ?? null) && modelAllowed(readModelPolicy(), want.model)) {
+    const found = await harness.findModel(want.model).catch(() => null);
+    if (found?.ok) await harness.setModel(found.model);
   }
-  if (want.thinking && want.thinking !== session.thinkingLevel && (THINKING_LEVELS as readonly string[]).includes(want.thinking))
-    session.setThinkingLevel(want.thinking as Parameters<AgentSession["setThinkingLevel"]>[0]);
+  if (want.thinking && want.thinking !== harness.thinking() && (THINKING_LEVELS as readonly string[]).includes(want.thinking))
+    harness.setThinking(want.thinking);
 }
 
 async function openSession(path: string, onDisposed: () => void): Promise<ChatSession> {
   if (!existsSync(path)) throw new Error(`Session file not found: ${path}`);
-  const modelRuntime = await getModelRuntime();
-  const sessionManager = SessionManager.open(path, undefined, cwdOverride(path));
-  // The SDK records model/thinking-level entries while constructing a session (for sessions with
-  // no messages yet, or no thinking entry on the branch). Queue them and write them just before
-  // the first prompt, so merely opening (browsing) a session never modifies its file.
-  const deferred: Array<() => void> = [];
-  const appendModelChange = sessionManager.appendModelChange;
-  const appendThinkingLevelChange = sessionManager.appendThinkingLevelChange;
-  // Everything is deferred except the one append restatesRecordedModel names — see its comment
-  // for why that restatement must be dropped rather than queued. Reading the context once, before
-  // the runtime exists, is what lets the filter answer without touching the file.
-  const openContext = sessionManager.buildSessionContext();
-  sessionManager.appendModelChange = (...args: Parameters<typeof appendModelChange>) => {
-    if (restatesRecordedModel(openContext, args[0], args[1])) return "";
-    deferred.push(() => appendModelChange.apply(sessionManager, args));
-    return "";
-  };
-  sessionManager.appendThinkingLevelChange = (...args: Parameters<typeof appendThinkingLevelChange>) => {
-    deferred.push(() => appendThinkingLevelChange.apply(sessionManager, args));
-    return "";
-  };
-  const restore = () => {
-    sessionManager.appendModelChange = appendModelChange;
-    sessionManager.appendThinkingLevelChange = appendThinkingLevelChange;
-  };
+  // Merely opening (browsing) a session never modifies its file: the model/thinking entries pi records
+  // while building it wait in `file.deferred` for the first prompt (server/harness/pi/open.ts, P1).
+  const file = await openPiSession(path, cwdOverride(path));
   // The chat that hosts this runtime, once bound: the vis extension is built before it exists, and
   // until bind() has resolved the chat's mode it reads the mode from the branch itself.
   const visHost: { chat?: ChatSession } = {};
@@ -3257,7 +3019,7 @@ async function openSession(path: string, onDisposed: () => void): Promise<ChatSe
   // every build: a pick disposes the runtime, so a runtime never outlives the profile it has.
   const profile: ProfileState = { data: null, excluded: [] };
   const loadout: LoadoutState = { data: null };
-  const createRuntime: CreateAgentSessionRuntimeFactory = async ({ cwd, sessionManager, sessionStartEvent }) => {
+  const build = async ({ cwd, read }: { cwd: string; read: OpenRead }): Promise<PiBuild> => {
     // The outline opt-in is declined for a session an older build marked as a group member, and
     // the FILE says so (FANOUT_MEMBER_ENTRY), not a flag threaded through acquireChat, so the
     // marker survives restarts. Nothing writes the marker any more. Everything else about the loadout — `target`,
@@ -3265,102 +3027,85 @@ async function openSession(path: string, onDisposed: () => void): Promise<ChatSe
     // The Overseer (server/overseer.ts) is recognised the same way, by its marker, and gets its own
     // loadout: its prompt appended after the user's APPEND_SYSTEM.md, its sova_* tools, a tool
     // allowlist, no topic outline (nobody lists it), and its model from overseer.json.
-    const kind = specialFor(sessionManager, path);
+    const kind = specialFor(read, path);
     const special = kind ? (kind.entry ? await kind.entry.loadout(path) : await overseerLoadout(path)) : null;
     // An ordinary chat gets the default extensions plus the vis feedback extension
     // (server/vis-check.ts); the special loadouts keep exactly their own.
-    const data = special ? null : profileOnBranch(sessionManager.getBranch() as unknown as Parameters<typeof profileOnBranch>[0]);
+    const data = special ? null : (read.state.branch().latest(PROFILE)?.data ?? null);
     const snap = data?.profile ?? null;
     profile.data = data;
     // The session's own context files and skills (§chat.transcript/setup-card-toggles), also read at
     // every build: a flip disposes the runtime like a pick does. Special loadouts keep their own.
-    loadout.data = special ? null : loadoutOnBranch(sessionManager.getBranch() as unknown as Parameters<typeof loadoutOnBranch>[0]);
+    loadout.data = special ? null : (read.state.branch().latest(LOADOUT)?.data ?? null);
     loadout.baseContext = undefined;
     loadout.baseSkills = undefined;
     const overrides = special ? undefined : loadoutOverrides(loadout);
     profile.run = undefined;
     profile.limits = undefined;
     if (snap?.grant.length) {
-      profile.limits = new SessionLimits(sessionManager.getSessionId(), snap.limits);
+      profile.limits = new SessionLimits(read.id, snap.limits);
       profile.run = new RunState(profile.limits);
     }
     const powers =
       snap?.grant.length && profile.run && profile.limits
-        ? [sessionPowersExtension({ sessionId: sessionManager.getSessionId(), cwd, title: () => titleOf(sessionManager), profile: snap, run: profile.run, limits: profile.limits, path: () => path })]
+        ? [sessionPowersExtension({ sessionId: read.id, cwd, title: () => titleOf(read.branch()), profile: snap, run: profile.run, limits: profile.limits, path: () => path })]
         : [];
-    const services = special
-      ? await servicesForCwd(cwd, modelRuntime, false, special.resourceLoaderOptions)
-      : await servicesForCwd(cwd, modelRuntime, !isFanoutMember(sessionManager), {
-          extensionFactories: [
-            ...DEFAULT_EXTENSION_FACTORIES,
-            visCheckExtension(() => (visHost.chat && !visHost.chat.disposed ? visHost.chat.visCheckHost() : null)),
-            // project_verbs: its own worktrees' running instances (server/project-services/tools.ts).
-            projectVerbsExtension(projectEngine),
-            // queue_push: every ordinary session can answer on a topic (§chat.topics/push).
-            queuePushExtension({ sessionId: () => sessionManager.getSessionId(), title: () => titleOf(sessionManager) }),
-            ...powers,
-          ],
-          ...overrides,
-        });
-    // Removals: the SDK's excludeTools, a filter on the registry itself, so no extension's
-    // setActiveTools or re-registration brings a removed tool back.
-    const present = services.resourceLoader.getExtensions().extensions.flatMap((e) => [...e.tools.keys()]);
-    profile.excluded = snap?.remove.length ? excludedTools(snap.remove, present) : [];
-    for (const d of services.diagnostics) console.warn(`[chat] runtime ${d.type}: ${d.message}`);
-    // A session with no messages yet starts from the saved new-session defaults (web-defaults.ts):
-    // resolve the stored model ref against models with configured auth and let the SDK clamp the
-    // stored level to the model's ladder. Anything stale or unauthenticated is skipped, so a bad
-    // default degrades to pi's own default instead of failing the open.
-    let defaultModel: Awaited<ReturnType<typeof modelRuntime.getAvailable>>[number] | undefined;
-    let defaultThinking: ThinkingLevel | undefined;
-    if (!historyOf(sessionManager.getBranch()).some((h) => h.kind === "user")) {
-      const opening = openingChoices.get(path);
-      openingChoices.delete(path);
-      const defaults = special ? { model: special.model ?? undefined, thinking: special.thinking ?? undefined } : { ...loadDefaults(), ...opening };
-      // A stored default the user has since turned off is stale like any other: skipped here, so
-      // the session opens on pi's own default rather than on a model it would refuse to send with.
-      if (defaults.model && modelAllowed(readModelPolicy(), defaults.model))
-        defaultModel = (await modelRuntime.getAvailable().catch(() => [])).find(
-          (m) => `${m.provider}/${m.id}` === defaults.model,
-        );
-      if (defaults.thinking && (THINKING_LEVELS as readonly string[]).includes(defaults.thinking))
-        defaultThinking = defaults.thinking as ThinkingLevel;
-    }
-    const model = modelForSessionOpen(sessionManager, modelRuntime, defaultModel);
-    const created = await createAgentSessionFromServices({
-      services,
-      sessionManager,
-      sessionStartEvent,
-      model,
-      ...(defaultThinking ? { thinkingLevel: defaultThinking as Parameters<AgentSession["setThinkingLevel"]>[0] } : {}), // same cast as setThinkingLevel above: our ladder has "off", the SDK's union doesn't
-      ...(special ? { tools: special.tools, ...(special.customTools ? { customTools: special.customTools } : {}) } : {}),
-      ...(profile.excluded.length ? { excludeTools: profile.excluded } : {}),
-    });
-    if (!special) applyForkCacheRouting(created.session);
-    if (profile.run) {
-      const run = profile.run;
-      run.turns.watch(created.session.agent as unknown as Parameters<RunState["turns"]["watch"]>[0]);
-      created.session.subscribe((event) => run.observe(event as Parameters<RunState["observe"]>[0]));
-    }
-    // The Overseer tells a message the user sent from every other by the object it reaches the Agent as.
-    if (kind?.kind === "overseer") overseerRuntime?.watchSession(created.session);
-    else kind?.entry?.watchSession?.(created.session, path);
+    const outline = special ? false : !isFanoutMember(read);
     return {
-      ...created,
-      services,
-      diagnostics: services.diagnostics,
+      loader: special
+        ? special.resourceLoaderOptions
+        : {
+            extensionFactories: [
+              ...DEFAULT_EXTENSION_FACTORIES,
+              visCheckExtension(() => (visHost.chat && !visHost.chat.disposed ? visHost.chat.visCheckHost() : null)),
+              // project_verbs: its own worktrees' running instances (server/project-services/tools.ts).
+              projectVerbsExtension(projectEngine),
+              // queue_push: every ordinary session can answer on a topic (§chat.topics/push).
+              queuePushExtension({ sessionId: () => read.id, title: () => titleOf(read.branch()) }),
+              ...powers,
+            ],
+            ...overrides,
+          },
+      flags: () => sessionFlags(cwd, outline),
+      // Removals: the SDK's excludeTools, a filter on the registry itself, so no extension's
+      // setActiveTools or re-registration brings a removed tool back.
+      exclude: (present) => (profile.excluded = snap?.remove.length ? excludedTools(snap.remove, present) : []),
+      ...(special ? { tools: special.tools, ...(special.customTools ? { customTools: special.customTools } : {}) } : {}),
+      // A session with no messages yet starts from the saved new-session defaults (web-defaults.ts):
+      // the stored model ref is resolved against models with configured auth and the SDK clamps the
+      // stored level to the model's ladder. Anything stale or unauthenticated is skipped, so a bad
+      // default degrades to pi's own default instead of failing the open.
+      opening: () => {
+        if (read.branch().some((h) => h.kind === "user")) return null;
+        const opening = openingChoices.get(path);
+        openingChoices.delete(path);
+        const defaults = special ? { model: special.model ?? undefined, thinking: special.thinking ?? undefined } : { ...loadDefaults(), ...opening };
+        return {
+          // A stored default the user has since turned off is stale like any other: skipped here, so
+          // the session opens on pi's own default rather than on a model it would refuse to send with.
+          ...(defaults.model && modelAllowed(readModelPolicy(), defaults.model) ? { model: defaults.model } : {}),
+          ...(defaults.thinking && (THINKING_LEVELS as readonly string[]).includes(defaults.thinking) ? { thinking: defaults.thinking } : {}),
+        };
+      },
+      forkCacheRouting: !special,
+      built: (session) => {
+        if (profile.run) {
+          const run = profile.run;
+          run.turns.watch(session.agent as unknown as Parameters<RunState["turns"]["watch"]>[0]);
+          session.subscribe((event) => run.observe(event as Parameters<RunState["observe"]>[0]));
+        }
+        // The Overseer tells a message the user sent from every other by the object it reaches the Agent as.
+        if (kind?.kind === "overseer") overseerRuntime?.watchSession(session);
+        else kind?.entry?.watchSession?.(session, path);
+      },
     };
   };
-  const sessionCwd = sessionManager.getCwd();
+  const sessionCwd = file.read.cwd;
   // The runtime cannot be built against a directory that is gone. Check before doing the work, so
   // the failure is classified (ConfigError, not "internal") and cheap to repeat.
   const openCwd = sessionCwd ? resolveOpenCwd(path, sessionCwd) : sessionCwd;
   try {
-    const runtime = await createAgentSessionRuntime(createRuntime, {
-      cwd: openCwd,
-      agentDir: agentRoot(),
-      sessionManager,
-    });
+    const runtime = await file.start(openCwd, build);
     let unregisterUsage: (() => void) | undefined;
     const chat = new ChatSession(path, runtime, () => {
       unregisterUsage?.();
@@ -3375,14 +3120,14 @@ async function openSession(path: string, onDisposed: () => void): Promise<ChatSe
       throw err;
     }
     visHost.chat = chat;
-    chat.deferredAppends = deferred;
+    chat.deferredAppends = file.deferred;
     chat.profileState = profile;
-    if (!specialFor(sessionManager, path)) chat.loadoutState = loadout;
-    const kind = specialFor(sessionManager, path);
+    if (!specialFor(file.read, path)) chat.loadoutState = loadout;
+    const kind = specialFor(file.read, path);
     // The usage ledger (llm-inflight attribution.ts): this chat's calls are its own, an Overseer's or
     // a project overseer's as `overseer`. Registered here as well as by the extension at
     // session_start, since a special loadout may not load it.
-    const usageSid = sessionManager.getSessionId();
+    const usageSid = file.read.id;
     if (kind?.kind === "overseer" || kind?.kind === "project-overseer") noteUsageSession(usageSid, { kind: "overseer" });
     unregisterUsage = registerUsageSession(usageSid, { kind: "main", ...(openCwd ? { cwd: openCwd } : {}), parent: null });
     if (kind && kind.kind !== "overseer") {
@@ -3394,9 +3139,9 @@ async function openSession(path: string, onDisposed: () => void): Promise<ChatSe
       chat.special = "overseer";
       // A conversation that already has messages keeps the model its file records (the SDK restores
       // it); overseer.json is the Overseer's setting, so bring the runtime to it now. The appends
-      // this makes are still deferred (the patch above is live until `restore`), so opening writes
+      // this makes are still deferred (the hold is live until `restoreAppends`), so opening writes
       // nothing, like any other open.
-      await syncOverseerModel(chat, modelRuntime, path).catch((err) =>
+      await syncOverseerModel(chat, path).catch((err) =>
         console.warn(`[overseer] model sync skipped: ${err instanceof Error ? err.message : String(err)}`),
       );
       await overseerRuntime?.opened(chat);
@@ -3407,7 +3152,7 @@ async function openSession(path: string, onDisposed: () => void): Promise<ChatSe
     const config = asConfigError(err, sessionCwd);
     throw config ?? err;
   } finally {
-    restore();
+    file.restoreAppends();
   }
 }
 

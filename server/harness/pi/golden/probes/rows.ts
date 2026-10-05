@@ -5,7 +5,9 @@ import { appendFileSync } from "node:fs";
 import type { TranscriptItem } from "../../../../../shared/protocol";
 import { normalizeClaudeText } from "../../../../claude-transcript";
 import { resolveContext } from "../../../../models";
-import { activeBranch, contextForBranch, normalizeEntries, normalizeEntry, parseLines } from "../../../../transcript";
+import { normalizeEntries, normalizeEntry } from "../../../../transcript";
+import { activeBranch, parseLines } from "../../reader";
+import { contextForBranch, contextOfBranch } from "../../usage";
 import { clearRowsCache, transcriptLight, transcriptRows, type RowsQuery } from "../../../../transcript-rows";
 import { claudeToolContent, piToolContent } from "../../../../transcript-tool";
 import { SessionTail } from "../../../../watch";
@@ -74,7 +76,7 @@ export const probes: Probe[] = [
         chunk: { chars: 1 },
         "leaf-abandoned": abandoned ? { tail: true, leaf: abandoned } : { tail: true, leaf: "no-such-entry" },
       };
-      const context = (branch: Parameters<typeof contextForBranch>[0]) => resolveContext(contextForBranch(branch));
+      const context = (branch: Parameters<typeof contextOfBranch>[0]) => resolveContext(contextOfBranch(branch));
       const out: Record<string, unknown> = {};
       for (const [name, q] of Object.entries(queries)) out[name] = await transcriptRows(path, q, context);
       out.light = await transcriptLight(path, context);

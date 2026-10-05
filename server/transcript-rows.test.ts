@@ -23,7 +23,8 @@ mkdirSync(cwd, { recursive: true });
 
 const { app, server } = await import("./index");
 const { chunkStart, rangeStart, tailStart } = await import("./tail-hello");
-const { activeBranch, normalizeEntries, parseLines } = await import("./transcript");
+const { normalizeEntries } = await import("./transcript");
+const { activeBranch, parseLines } = await import("./harness/pi/reader");
 const { summarize, isInput } = await import("../shared/row-counts");
 const { acquireChat, disposeAllChats } = await import("./chat-manager");
 const { canonicalPath } = await import("./paths");

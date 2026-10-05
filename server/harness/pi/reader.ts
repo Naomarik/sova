@@ -5,8 +5,7 @@
 // last line and rewrites a file it migrates), and these files may be owned by a running TUI.
 //
 // The raw API (parseLines, activeBranch, readActiveBranch, rawOf) is counted by the boundary's reader
-// ratchet wherever it is imported (server/harness/boundary-scan.ts RAW_SOURCES); server/transcript.ts
-// re-exports it until the last reader moves (M2-Z).
+// ratchet wherever it is imported (server/harness/boundary-scan.ts RAW_SOURCES).
 import { open, readFile, stat } from "node:fs/promises";
 import type { AgentSession, ExtensionContext, SessionManager } from "@earendil-works/pi-coding-agent";
 import type { EntryId, HBlock, HEntry, HHeader, HUsage, SessionRead } from "../../../shared/harness";

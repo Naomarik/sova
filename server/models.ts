@@ -5,7 +5,7 @@ import type { ContextInfo, ModelInfo } from "../shared/protocol";
 import { getModelRuntime } from "./chat-manager";
 import { readFavorites } from "./model-favorites";
 import { agentRoot } from "./state-root";
-import type { BranchContext } from "./transcript";
+import type { BranchContext } from "./harness/pi/usage";
 
 /** pi's cached remote catalogs (READ-ONLY): {[provider]: {models: [{id, contextWindow}]}}. */
 const MODELS_STORE_FILE = join(agentRoot(), "models-store.json");

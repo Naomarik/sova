@@ -8,6 +8,7 @@ import { join } from "node:path";
 import { after, describe, test } from "node:test";
 import { Hono } from "hono";
 import { BATON_HANDOFF_ENTRY, BATON_LEASE_ENTRY, BATON_SENT_ENTRY, LEASE_IDLE_MS, OPERATOR } from "../shared/baton";
+import { piSession } from "./harness/pi/testing/handle";
 
 const root = realpathSync(mkdtempSync(join(tmpdir(), "sova-baton-handoff-")));
 process.env.PI_CODING_AGENT_DIR = join(root, "agent");
@@ -66,7 +67,7 @@ async function heldChat(path: string, opts: { holdStart?: boolean; seen?: unknow
   let release!: () => void;
   const gate = new Promise<void>((r) => (release = r));
   let start: () => void = () => {};
-  const s = chat.session as unknown as {
+  const s = piSession(chat) as unknown as {
     _modelRuntime: { hasConfiguredAuth(p: string): boolean };
     agent: { state: { model: unknown }; getApiKey: unknown; streamFunction: unknown };
     _runInputHandlers(...a: unknown[]): Promise<unknown>;
@@ -119,7 +120,7 @@ describe("a lease never lapses while the reply to its holder is being written", 
     const tonyTok = c.links!.find((l) => l.personId === tony.id)!.token;
     const { chat, release } = await heldChat(c.path);
     says(chat, c.sessionId, maria.id, "two decisions, then a question");
-    await until(() => chat.session.isStreaming);
+    await until(() => piSession(chat).isStreaming);
     // Her lease's time passes while the model is still answering her.
     await new Promise((r) => setTimeout(r, 1300));
     assert.equal(baton.batonById(c.sessionId)!.row.holder, maria.id, "mid-reply a lapsed lease stays with its holder");
@@ -128,7 +129,7 @@ describe("a lease never lapses while the reply to its holder is being written", 
     const before = Date.now();
     assert.equal(hostOf(org.id).data(`baton/${org.id}/${c.sessionId}`)?.["reply"], "writing", "the runtime took the turn: the reply is being written");
     release();
-    await until(() => !chat.session.isStreaming);
+    await until(() => !piSession(chat).isStreaming);
     // The claim's entry, which met the reply, is written after it, not lost.
     await until(() => entriesOf(c.path).some((e) => e.customType === BATON_LEASE_ENTRY && e.data.event === "claimed"));
     const o = baton.currentOffer(baton.batonById(c.sessionId)!.row)!;
@@ -144,10 +145,10 @@ describe("the operator's moves stop a reply in flight", () => {
     const c = await baton.createBaton({ orgId: org.id, projectId: project.id, to: bob.id, publicTitle: "Reminders", goal: "g" });
     const { chat } = await heldChat(c.path);
     says(chat, c.sessionId, bob.id, "here is a long answer");
-    await until(() => chat.session.isStreaming);
+    await until(() => piSession(chat).isStreaming);
     const res = await post(`/api/baton/${c.sessionId}/take`);
     assert.equal(res.status, 200, await res.clone().text());
-    assert.equal(chat.session.isStreaming, false);
+    assert.equal(piSession(chat).isStreaming, false);
     const row = baton.batonById(c.sessionId)!.row;
     assert.equal(row.holder, OPERATOR);
     assert.equal(row.state, "needs-you");
@@ -164,7 +165,7 @@ describe("the operator's moves stop a reply in flight", () => {
     const c = await baton.createBaton({ orgId: org.id, projectId: project.id, to: a.id, publicTitle: "Offer on", goal: "g" });
     const { chat } = await heldChat(c.path);
     says(chat, c.sessionId, a.id, "answering");
-    await until(() => chat.session.isStreaming);
+    await until(() => piSession(chat).isStreaming);
     const res = await post(`/api/baton/${c.sessionId}/offer`, { to: [b.id, c2.id] });
     assert.equal(res.status, 201, await res.clone().text());
     assert.equal(baton.batonById(c.sessionId)!.row.holder, null);
@@ -177,14 +178,14 @@ describe("someone marked left", () => {
     const c = await baton.createBaton({ orgId: org.id, projectId: project.id, to: bob.id, publicTitle: "Held", goal: "g" });
     const { chat } = await heldChat(c.path);
     says(chat, c.sessionId, bob.id, "still typing");
-    await until(() => chat.session.isStreaming);
+    await until(() => piSession(chat).isStreaming);
     await orgs.applyChange(org.id, bob.id, { status: "left" }, { kind: "operator" });
     assert.throws(() => baton.noteMessage(c.sessionId, bob.id), /no longer taking part/, "refused at once, before the move lands");
     await until(() => baton.batonById(c.sessionId)!.row.holder === OPERATOR);
     assert.deepEqual(baton.linkAccess(c.token!), { ok: false, status: 410 });
     const needs = baton.batonSummaryField(c.path)!.needsYou!;
     assert.deepEqual([needs.from, needs.question], ["Bo Left", "(left the organization)"]);
-    assert.equal(chat.session.isStreaming, false);
+    assert.equal(piSession(chat).isStreaming, false);
   });
 
   test("an invitee of an open offer who leaves: the offer goes to the operator; one someone else holds carries on", async () => {
@@ -217,7 +218,7 @@ describe("someone marked left", () => {
     assert.ok(prompt.includes("# People who have left the organization"), prompt);
     assert.doesNotMatch(prompt, /\bGate\b/, "the model is never given the org name (§app.organizations/privacy)");
     assert.match(block.slice(0, block.indexOf("# How to work")), /- Gus Gone — was Staff/);
-    const tool = loadout.batonTools(c.sessionId, () => {}).find((t) => t.name === "propose_roster_edit")!;
+    const tool = loadout.batonTools(c.sessionId, { append: () => "" }).find((t) => t.name === "propose_roster_edit")!;
     await assert.rejects(
       tool.execute("tc", { name: "gus gone", role: "IT", contact: { email: "gus@example.com" }, why: "knows it", quote: "ask Gus" }, undefined, undefined, undefined as never),
       /Gus Gone has left the organization/,
@@ -235,12 +236,12 @@ describe("record_decision's owner areas follow the roster (§app.requirements/ow
     release();
     const enumOf = (tools: unknown[]) => (tools as { name: string; parameters: any }[]).find((t) => t.name === "record_decision")!.parameters.properties.ownerArea.enum as string[];
     says(chat, c.sessionId, ana.id, "first");
-    await until(() => calls.length === 1 && !chat.session.isStreaming);
+    await until(() => calls.length === 1 && !piSession(chat).isStreaming);
     assert.ok(enumOf(calls[0]!).includes("website"));
     assert.ok(!enumOf(calls[0]!).includes("hosting"));
     await orgs.applyChange(org.id, ana.id, { decides: ["website", "hosting"] }, { kind: "operator" });
     says(chat, c.sessionId, ana.id, "second");
-    await until(() => calls.length === 2 && !chat.session.isStreaming);
+    await until(() => calls.length === 2 && !piSession(chat).isStreaming);
     assert.ok(enumOf(calls[1]!).includes("hosting"), JSON.stringify(enumOf(calls[1]!)));
     assert.deepEqual((calls[1] as { name: string }[]).map((t) => t.name).sort(), [...loadout.BATON_TOOLS].sort(), "the wrap-up's tool stays inactive");
   });
@@ -252,7 +253,7 @@ describe("record_decision's owner areas follow the roster (§app.requirements/ow
     const { chat, release } = await heldChat(c.path, { script: [[call("t1", "payroll"), call("t2", "Finance")]] });
     release();
     says(chat, c.sessionId, kim.id, "we pay on the 1st");
-    await until(() => !chat.session.isStreaming && entriesOf(c.path).some((e) => e.message?.role === "toolResult" && e.message.toolCallId === "t2"));
+    await until(() => !piSession(chat).isStreaming && entriesOf(c.path).some((e) => e.message?.role === "toolResult" && e.message.toolCallId === "t2"));
     const results = entriesOf(c.path).filter((e) => e.message?.role === "toolResult");
     const text = (id: string) => JSON.stringify(results.find((e) => e.message.toolCallId === id)!.message.content);
     assert.match(text("t1"), /\\"payroll\\" is not an owner area\. Use one of: .*\\"finance\\".* or \\"none\\"\./, text("t1"));
@@ -334,7 +335,7 @@ describe("moves, the starting turn and the message limit together", () => {
     const { chat, start } = await heldChat(c.path, { holdStart: true });
     says(chat, c.sessionId, kim.id, "first words");
     await tick();
-    assert.equal(chat.session.isStreaming, false, "the run has not begun");
+    assert.equal(piSession(chat).isStreaming, false, "the run has not begun");
     const took = post(`/api/baton/${c.sessionId}/take`);
     await tick();
     assert.equal(holderOf(c.sessionId), kim.id, "the move waits for the starting turn instead of slipping in before it");
@@ -342,7 +343,7 @@ describe("moves, the starting turn and the message limit together", () => {
     const res = await took;
     assert.equal(res.status, 200, await res.clone().text());
     assert.equal(holderOf(c.sessionId), OPERATOR);
-    assert.equal(chat.session.isStreaming, false);
+    assert.equal(piSession(chat).isStreaming, false);
     const es = entriesOf(c.path);
     const lastIndex = (pred: (e: any) => boolean) => es.map(pred).lastIndexOf(true);
     const reply = lastIndex((e) => e.type === "message" && e.message.role === "assistant");
@@ -359,7 +360,7 @@ describe("moves, the starting turn and the message limit together", () => {
     await tick();
     assert.equal(holderOf(c.sessionId), lee.id, "not while the turn is starting");
     start();
-    await until(() => chat.session.isStreaming);
+    await until(() => piSession(chat).isStreaming);
     assert.equal(holderOf(c.sessionId), lee.id, "nor mid-reply");
     release();
     await until(() => holderOf(c.sessionId) === OPERATOR);
@@ -375,14 +376,14 @@ describe("moves, the starting turn and the message limit together", () => {
     const c = await baton.createBaton({ orgId: org.id, projectId: project.id, to: amy.id, publicTitle: "Capped", goal: "g", messagesMax: 1 });
     const { chat, release } = await heldChat(c.path);
     says(chat, c.sessionId, amy.id, "last");
-    await until(() => chat.session.isStreaming);
+    await until(() => piSession(chat).isStreaming);
     const h = await post(`/api/baton/${c.sessionId}/handoff`, { to: bo.id, question: "q" });
     assert.equal(h.status, 409, await h.clone().text());
     const o = await post(`/api/baton/${c.sessionId}/offer`, { to: [bo.id, di.id] });
     assert.equal(o.status, 409, await o.clone().text());
-    assert.equal(chat.session.isStreaming, true, "the reply still runs");
+    assert.equal(piSession(chat).isStreaming, true, "the reply still runs");
     release();
-    await until(() => !chat.session.isStreaming);
+    await until(() => !piSession(chat).isStreaming);
     assert.equal(lastReply(c.path)?.message.stopReason, "stop");
   });
 });
@@ -414,17 +415,17 @@ describe("a move that stops a reply drops nothing queued behind it", () => {
       const c = await baton.createBaton({ orgId: org.id, projectId: project.id, to: kay.id, publicTitle: "Queued", goal: "g" });
       const { chat } = await heldChat(c.path);
       says(chat, c.sessionId, kay.id, "first");
-      await until(() => chat.session.isStreaming);
+      await until(() => piSession(chat).isStreaming);
       says(chat, c.sessionId, kay.id, "second");
       // As live: the first queued message is inside the SDK, the next waits in Sova's queue.
-      await until(() => chat.session.agent.hasQueuedMessages());
+      await until(() => piSession(chat).agent.hasQueuedMessages());
       says(chat, c.sessionId, kay.id, "third");
       await move(c.sessionId, kay.id);
       assert.deepEqual(after(c.path), ["stopped", [kay.id, "second"], [kay.id, "third"], "hand-off"]);
       assert.equal(chat.queue.size, 0);
-      assert.equal(chat.session.isStreaming, false, "the kept messages start no reply");
+      assert.equal(piSession(chat).isStreaming, false, "the kept messages start no reply");
       assert.equal(baton.batonById(c.sessionId)!.row.budget.messagesUsed, 3, "each counted once, when it was accepted");
-      const context = chat.session.agent.state.messages.filter((m) => m.role === "user").map((m) => (m.content as { text?: string }[]).map((b) => b.text).join(""));
+      const context = piSession(chat).agent.state.messages.filter((m) => m.role === "user").map((m) => (m.content as { text?: string }[]).map((b) => b.text).join(""));
       assert.deepEqual(context.slice(-2), ["second", "third"], "the model reads them with the next turn");
     });
   }
@@ -436,9 +437,9 @@ describe("a clean close keeps what is queued", () => {
     const c = await baton.createBaton({ orgId: org.id, projectId: project.id, to: may.id, publicTitle: "Closing", goal: "g" });
     const { chat } = await heldChat(c.path);
     says(chat, c.sessionId, may.id, "CLOSE-FIRST");
-    await until(() => chat.session.isStreaming);
+    await until(() => piSession(chat).isStreaming);
     says(chat, c.sessionId, may.id, "CLOSE-SECOND");
-    await until(() => chat.session.agent.hasQueuedMessages());
+    await until(() => piSession(chat).agent.hasQueuedMessages());
     says(chat, c.sessionId, may.id, "CLOSE-THIRD");
     assert.equal(await disposeHeldChat(c.path, "Archived"), true);
     const es = entriesOf(c.path);
@@ -452,7 +453,7 @@ describe("a clean close keeps what is queued", () => {
     assert.equal(baton.batonById(c.sessionId)!.row.budget.messagesUsed, 3, "counted once, when accepted");
     // Reopened, the model reads them with the next turn.
     const again = await acquireChat(c.path);
-    const context = again.session.agent.state.messages.filter((m) => m.role === "user").map((m) => (m.content as { text?: string }[]).map((b) => b.text).join(""));
+    const context = piSession(again).agent.state.messages.filter((m) => m.role === "user").map((m) => (m.content as { text?: string }[]).map((b) => b.text).join(""));
     assert.deepEqual(context, ["CLOSE-FIRST", "CLOSE-SECOND", "CLOSE-THIRD"]);
   });
 });
@@ -465,18 +466,18 @@ describe("the model reads who wrote each message", () => {
     const seen: unknown[][] = [];
     const { chat, release } = await heldChat(c.path, { seen });
     says(chat, c.sessionId, kim.id, "KIM-FIRST");
-    await until(() => chat.session.isStreaming);
+    await until(() => piSession(chat).isStreaming);
     says(chat, c.sessionId, kim.id, "KIM-QUEUED");
-    await until(() => chat.session.agent.hasQueuedMessages());
+    await until(() => piSession(chat).agent.hasQueuedMessages());
     assert.equal((await post(`/api/baton/${c.sessionId}/take`)).status, 200);
     const op = orgs.operatorName();
     says(chat, c.sessionId, OPERATOR, "OP-ASKS who wrote those?");
     await until(() => seen.length === 2);
     release();
-    await until(() => !chat.session.isStreaming);
+    await until(() => !piSession(chat).isStreaming);
     assert.equal((await post(`/api/baton/${c.sessionId}/handoff`, { to: lee.id, question: "q" })).status, 200);
     says(chat, c.sessionId, lee.id, "LEE-ANSWERS");
-    await until(() => seen.length === 3 && !chat.session.isStreaming);
+    await until(() => seen.length === 3 && !piSession(chat).isStreaming);
     const users = (seen.at(-1) as { role: string; content: { type: string; text?: string }[] }[])
       .filter((m) => m.role === "user")
       .map((m) => m.content.map((b) => b.text ?? "").join(""));

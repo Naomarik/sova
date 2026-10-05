@@ -1,0 +1,85 @@
+{
+  "teams": [
+    {
+      "id": "team_01",
+      "name": "t",
+      "objective": "o",
+      "createdAt": 1788256800000,
+      "members": [
+        {
+          "workerId": "ag_01",
+          "role": "writer",
+          "orchestrator": false,
+          "backend": "pi",
+          "model": "zai/glm-5.3",
+          "ownedPaths": [],
+          "addedAt": 1788256800000
+        }
+      ]
+    }
+  ],
+  "reports": {
+    "$map": []
+  },
+  "outline": null,
+  "outlines": [],
+  "compactions": [],
+  "rewinds": [],
+  "explanations": [],
+  "sessionId": "0190a000-0000-7000-8000-e00000000000",
+  "skills": {
+    "offered": [],
+    "used": []
+  },
+  "workerRecords": {
+    "all": [
+      {
+        "type": "custom",
+        "customType": "subagents-worker-manifest",
+        "data": {
+          "v": 1,
+          "kind": "worker-manifest",
+          "backend": "pi",
+          "workerId": "ag_01",
+          "name": "helper",
+          "status": "running"
+        },
+        "id": "e0000003",
+        "parentId": "e0000002",
+        "timestamp": "2026-09-01T10:00:03.000Z"
+      }
+    ],
+    "active": [
+      {
+        "type": "custom",
+        "customType": "subagents-worker-manifest",
+        "data": {
+          "v": 1,
+          "kind": "worker-manifest",
+          "backend": "pi",
+          "workerId": "ag_01",
+          "name": "helper",
+          "status": "running"
+        },
+        "id": "e0000003",
+        "parentId": "e0000002",
+        "timestamp": "2026-09-01T10:00:03.000Z"
+      }
+    ]
+  },
+  "teamEvents": [
+    {
+      "id": "e0000005",
+      "teamId": "team_01",
+      "kind": "pause",
+      "workerId": "ag_01",
+      "role": "writer",
+      "at": "2026-09-01T10:00:01.000Z",
+      "detail": "pause → coordinator: wait",
+      "text": "writer paused the team: wait."
+    }
+  ],
+  "settled": {
+    "$map": []
+  }
+}

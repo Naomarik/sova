@@ -1,0 +1,30 @@
+{
+  "vocabulary": [
+    "What is this image?\n\n[Image: original 2560x1600, displayed at 2000x1250. Multiply coordinates by 1.28 to map to original image.]"
+  ],
+  "senders": {
+    "$map": [
+      [
+        "00000004",
+        "p_alice"
+      ]
+    ]
+  },
+  "sendersNoHolder": {
+    "$map": []
+  },
+  "notes": [
+    {
+      "timestamp": 1788422400008,
+      "text": "What is this image?\n\n[Image: original 2560x1600, displayed at 2000x1250. Multiply coordinates by 1.28 to map to original image.]",
+      "note": "[From Alice]"
+    }
+  ],
+  "counted": 1,
+  "model": {
+    "model": "faux/faux-1",
+    "thinking": "medium"
+  },
+  "photos": 1,
+  "modelRef": "faux/faux-1"
+}

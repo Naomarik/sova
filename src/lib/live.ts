@@ -1,14 +1,26 @@
-// Assembles the in-progress agent run from raw pi SDK events (docs/rpc.md "Events").
-// The store holds only what streamed since the last settle; on agent_settled the chat view
-// refetches the normalized transcript and resets this.
+// Assembles the in-progress agent run from live events, in the harness contract's words (SovaEvent,
+// shared/harness-wire.ts): a wire-2 frame carries one, a wire-1 frame maps through `fromV1`
+// (shared/wire-v1.ts, `liveEventsOf`). The store holds only what streamed since the last settle; on
+// run.settled the chat view refetches the normalized transcript and resets this.
 
 import { produce, type SetStoreFunction } from "solid-js/store";
-import { stripImageNotes } from "../../shared/image-note";
+import type { SovaEvent, SovaPart } from "../../shared/harness-wire";
 import { isLinkMessage } from "../../shared/link-message";
 import { parseTopicBatch } from "../../shared/topic-message";
-import type { TmpAttachment, UploadResult } from "../../shared/protocol";
-import { imagesFromContent } from "./images";
-import { contentText, isObj, str } from "./message";
+import type { TmpAttachment, UploadResult, V1EventFrame, V2EventFrame } from "../../shared/protocol";
+import { fromV1 } from "../../shared/wire-v1";
+import {
+  compactionEndEffects,
+  compactionStartEffects,
+  NO_VIEW,
+  replyEndEffects,
+  settleEffects,
+  toolEndEffects,
+  turnStartEffects,
+  type LiveEffect,
+  type LiveEffectsContext,
+} from "./live-effects";
+import { isObj } from "./message";
 
 export type LiveBlock =
   | { type: "text"; text: string }
@@ -29,7 +41,7 @@ export type LiveEntry =
   | {
       kind: "user";
       /** This tab's id for the message (sent as `clientId`), or the server's for a queued message
-          nobody here authored. Absent only for a row rebuilt from a bare message_start. */
+          nobody here authored. Absent only for a row rebuilt from a bare message.start. */
       id?: string;
       /** Which queue holds it while it is queued. */
       queueKind?: "steer" | "followUp";
@@ -37,12 +49,12 @@ export type LiveEntry =
           snapshot no longer lists it. Not a claim about WHY it left — only `message_start` says
           delivered, a removal says removed and `queue_cleared` says a Stop took it back. */
       handed?: boolean;
-      /** The agent's own `message_start` for this message has been applied to this row, so no
+      /** The agent's own `message.start` for this message has been applied to this row, so no
           later start may claim it. Not the same fact as `state: "delivered"`: the server reports a
           delivery by id (`queue_item_gone`, a `consumed` refusal) BEFORE the start, so a delivered
           row can still be waiting for its start. */
       started?: boolean;
-      /** The transcript entry the message was written as: its `message_end`'s `entryId`
+      /** The transcript entry the message was written as: its `message.end`'s `entryId`
           (§chat.transcript/rendering, "Switching back": the row this one becomes). */
       entryId?: string;
       /** Who put it in the queue: "server" is a prompt this session made for itself (a group
@@ -66,12 +78,12 @@ export type LiveEntry =
       kind: "assistant";
       blocks: LiveBlock[];
       done: boolean;
-      /** "provider/model" producing this message, from message_start/message_end. */
+      /** "provider/model" producing this message, from message.start/message.end. */
       model?: string;
       error?: string;
       /** ISO time the message ended as aborted. */
       stoppedAt?: string;
-      /** The transcript entry the message was written as (its `message_end`'s `entryId`). */
+      /** The transcript entry the message was written as (its `message.end`'s `entryId`). */
       entryId?: string;
     };
 
@@ -88,7 +100,7 @@ export interface LiveTool {
 export interface LiveState {
   entries: LiveEntry[];
   tools: Record<string, LiveTool>;
-  /** True from agent_start (or hello.isStreaming) until agent_settled. */
+  /** True from run.start (or hello.isStreaming) until run.settled. */
   running: boolean;
   /** What the agent is doing besides generating, e.g. retrying or compacting. */
   activity: string | null;
@@ -128,24 +140,8 @@ export function blockStreams(entry: { blocks: LiveBlock[]; done: boolean }, i: n
   return entry.blocks[i]?.type !== "thinking" || !entry.blocks.slice(i + 1).some(Boolean);
 }
 
-/** "provider/model" of a streaming assistant message, when the event carries one. */
-function liveModelOf(msg: Record<string, unknown>): string | undefined {
-  const provider = str(msg.provider);
-  const model = str(msg.model);
-  return provider && model ? `${provider}/${model}` : undefined;
-}
-
-function blocksFromContent(content: unknown): LiveBlock[] {
-  if (!Array.isArray(content)) return [];
-  const out: LiveBlock[] = [];
-  for (const c of content) {
-    if (!isObj(c)) continue;
-    if (c.type === "text") out.push({ type: "text", text: str(c.text) ?? "" });
-    else if (c.type === "thinking") out.push({ type: "thinking", text: str(c.thinking) ?? "" });
-    else if (c.type === "toolCall")
-      out.push({ type: "toolCall", id: str(c.id) ?? "", name: str(c.name) ?? "tool", argsText: "", args: c.arguments });
-  }
-  return out;
+function blocksOf(parts: readonly SovaPart[]): LiveBlock[] {
+  return parts.map((p): LiveBlock => (p.kind === "toolCall" ? { type: "toolCall", id: p.id, name: p.name, argsText: "", args: p.args } : { type: p.kind, text: p.text }));
 }
 
 /** The reply still streaming, if any. Not only the last entry: a message sent while the reply
@@ -166,12 +162,6 @@ function lastAssistant(s: LiveState): Extract<LiveEntry, { kind: "assistant" }> 
   s.entries.push(entry);
   return s.entries[s.entries.length - 1] as Extract<LiveEntry, { kind: "assistant" }>;
 }
-
-function toolOutput(result: unknown): string {
-  return isObj(result) ? contentText(result.content) : typeof result === "string" ? result : "";
-}
-
-const toolImages = (result: unknown) => (isObj(result) ? imagesFromContent(result.content) : []);
 
 /**
  * The id a message of ours is known by everywhere after this: in `send_ack`, in the queue
@@ -365,27 +355,71 @@ export function takeBackQueued(set: SetStoreFunction<LiveState>, drained: string
 /** The live-only event a baton sender marker becomes (see applyEvent). */
 export const BATON_SENT_EVENT = "sova_baton_sent";
 
-export function applyEvent(set: SetStoreFunction<LiveState>, event: unknown) {
-  if (!isObj(event)) return;
-  const type = str(event.type);
+/** What applyEvent takes: a live event off the wire, or the client-local baton sender marker. */
+export type LiveEvent = SovaEvent | { type: typeof BATON_SENT_EVENT; by: string };
+
+/** A live event frame's events: a wire-2 frame's own, a wire-1 frame's mapped (an older server, or
+    one that wasn't asked; a message_end's `entryId` lands inside its `message.end`). */
+export function liveEventsOf(frame: V1EventFrame | V2EventFrame): SovaEvent[] {
+  return "v" in frame && frame.v === 2 ? (isObj(frame.event) ? [frame.event] : []) : fromV1(frame);
+}
+
+/** What an event with no effects returns: one shared array, never written. */
+const NO_EFFECTS: LiveEffect[] = Object.freeze([]) as unknown as LiveEffect[];
+
+/** A part event (the most frequent, a delta on every streamed token) on the store: it has no effects. */
+function applyPart(s: LiveState, event: Extract<SovaEvent, { type: "part.start" | "part.delta" | "part.end" }>): void {
+  const entry = lastAssistant(s);
+  const i = event.index ?? entry.blocks.length;
+  const cur = entry.blocks[i];
+  if (event.type === "part.start") {
+    if (event.kind === "toolCall") entry.blocks[i] = { type: "toolCall", id: event.id ?? "", name: event.name ?? "tool", argsText: "" };
+    else entry.blocks[i] = { type: event.kind, text: "" };
+  } else if (event.type === "part.delta") {
+    if (event.kind === "toolCall") {
+      if (cur?.type === "toolCall") cur.argsText += event.delta;
+    } else if (cur?.type === event.kind) cur.text += event.delta;
+    else entry.blocks[i] = { type: event.kind, text: event.delta };
+  } else if (event.kind === "toolCall") {
+    entry.blocks[i] = {
+      type: "toolCall",
+      id: event.id ?? (cur?.type === "toolCall" ? cur.id : ""),
+      name: event.name ?? (cur?.type === "toolCall" ? cur.name : "tool"),
+      argsText: cur?.type === "toolCall" ? cur.argsText : "",
+      args: event.args,
+    };
+  } else if (event.text !== undefined) entry.blocks[i] = { type: event.kind, text: event.text };
+}
+
+/**
+ * Applies one live event to the store, and returns what it does besides (live-effects.ts), for the
+ * chat view to run: `view` says whose view it lands in.
+ */
+export function applyEvent(set: SetStoreFunction<LiveState>, event: LiveEvent, view: LiveEffectsContext = NO_VIEW): LiveEffect[] {
+  if (event.type === "part.start" || event.type === "part.delta" || event.type === "part.end") {
+    set(produce((s) => applyPart(s, event)));
+    return NO_EFFECTS;
+  }
+  let effects = NO_EFFECTS;
   set(
     produce((s) => {
-      switch (type) {
-        case "agent_start":
+      switch (event.type) {
+        case "run.start":
+          effects = turnStartEffects();
           s.running = true;
           break;
-        case "agent_settled":
+        case "run.settled":
+          effects = settleEffects();
           s.running = false;
           s.activity = null;
           s.stopping = false;
           break;
-        case "message_start": {
-          const msg = isObj(event.message) ? event.message : {};
-          if (msg.role === "assistant") {
+        case "message.start": {
+          if (event.role === "assistant") {
             s.running = true;
-            const model = liveModelOf(msg);
-            s.entries.push({ kind: "assistant", blocks: blocksFromContent(msg.content), done: false, ...(model ? { model } : {}) });
-          } else if (msg.role === "user") {
+            const model = event.model;
+            s.entries.push({ kind: "assistant", blocks: blocksOf(event.parts), done: false, ...(model ? { model } : {}) });
+          } else {
             // Which row this is, among the rows no start has claimed yet — NOT the undelivered
             // ones. A message sent mid-turn is reported delivered by id before its start arrives
             // (the SDK takes it off its queue before emitting the start, and SDK events wait for
@@ -398,9 +432,9 @@ export function applyEvent(set: SetStoreFunction<LiveState>, event: unknown) {
             // is what keeps two queued messages from swapping labels when the steer ahead of the
             // follow-up is delivered first. Each start claims one row, so the same words sent
             // twice are still two messages, and a start no row waits for is a new one.
-            // Without pi 0.87's image resize notes, as the transcript shows it — which also lets the
-            // row this tab sent match by its typed text.
-            const text = stripImageNotes(contentText(msg.content), msg.content);
+            // The text comes without pi 0.87's image resize notes, as the transcript shows it —
+            // which also lets the row this tab sent match by its typed text.
+            const text = event.text;
             // A link message (§mesh.links/transcript) is a partner's, handed to the agent by the
             // server: never a row of this tab's, so it claims none and draws none.
             if (isLinkMessage(text)) break;
@@ -414,134 +448,81 @@ export function applyEvent(set: SetStoreFunction<LiveState>, event: unknown) {
             if (row) {
               row.state = "delivered";
               row.started = true;
-            } else s.entries.push({ kind: "user", text, state: "delivered", started: true, images: imagesFromContent(msg.content) });
+            } else s.entries.push({ kind: "user", text, state: "delivered", started: true, images: event.images });
           }
           break;
         }
-        // Not an SDK event: ChatView queues it when a baton sender marker arrives, so it applies in
-        // order after the message_start it follows. The marker names an entry id a live row doesn't
+        // Not a wire event: ChatView queues it when a baton sender marker arrives, so it applies in
+        // order after the message.start it follows. The marker names an entry id a live row doesn't
         // have yet; it belongs to the newest started row no marker has named.
         case BATON_SENT_EVENT: {
-          const by = str(event.by);
+          const by = typeof event.by === "string" ? event.by : undefined;
           const row = [...s.entries].reverse().find((e): e is Extract<LiveEntry, { kind: "user" }> => e.kind === "user" && !!e.started && !e.by);
           if (row && by) row.by = by;
           break;
         }
-        case "message_update": {
-          const ev = isObj(event.assistantMessageEvent) ? event.assistantMessageEvent : null;
-          if (!ev) break;
-          const entry = lastAssistant(s);
-          const i = typeof ev.contentIndex === "number" ? ev.contentIndex : entry.blocks.length;
-          const delta = str(ev.delta) ?? "";
-          const cur = entry.blocks[i];
-          switch (ev.type) {
-            case "text_start":
-              entry.blocks[i] = { type: "text", text: "" };
-              break;
-            case "text_delta":
-              if (cur?.type === "text") cur.text += delta;
-              else entry.blocks[i] = { type: "text", text: delta };
-              break;
-            case "text_end":
-              if (typeof ev.content === "string") entry.blocks[i] = { type: "text", text: ev.content };
-              break;
-            case "thinking_start":
-              entry.blocks[i] = { type: "thinking", text: "" };
-              break;
-            case "thinking_delta":
-              if (cur?.type === "thinking") cur.text += delta;
-              else entry.blocks[i] = { type: "thinking", text: delta };
-              break;
-            case "thinking_end":
-              if (typeof ev.content === "string") entry.blocks[i] = { type: "thinking", text: ev.content };
-              break;
-            case "toolcall_start":
-              entry.blocks[i] = { type: "toolCall", id: str(ev.id) ?? "", name: str(ev.toolName) ?? "tool", argsText: "" };
-              break;
-            case "toolcall_delta":
-              if (cur?.type === "toolCall") cur.argsText += delta;
-              break;
-            case "toolcall_end": {
-              const tc = isObj(ev.toolCall) ? ev.toolCall : {};
-              entry.blocks[i] = {
-                type: "toolCall",
-                id: str(tc.id) ?? (cur?.type === "toolCall" ? cur.id : ""),
-                name: str(tc.name) ?? (cur?.type === "toolCall" ? cur.name : "tool"),
-                argsText: cur?.type === "toolCall" ? cur.argsText : "",
-                args: tc.arguments,
-              };
-              break;
-            }
-          }
-          break;
-        }
-        case "message_end": {
-          const msg = isObj(event.message) ? event.message : {};
-          // The entry it was written as (ChatView puts the `event` message's `entryId` here).
-          const entryId = str(event.entryId);
-          if (msg.role === "user") {
+        case "message.end": {
+          // The entry it was written as.
+          const entryId = event.entryId;
+          if (event.role === "user") {
             // The row its start claimed: the newest started one no end has named yet.
             const row = [...s.entries].reverse().find((e): e is Extract<LiveEntry, { kind: "user" }> => e.kind === "user" && !!e.started && !e.entryId);
             if (row && entryId) row.entryId = entryId;
             break;
           }
-          if (msg.role !== "assistant") break;
+          effects = replyEndEffects(event);
           const entry = lastAssistant(s);
           if (entryId) entry.entryId = entryId;
-          // message_end is authoritative.
-          const model = liveModelOf(msg);
-          if (model) entry.model = model;
-          const blocks = blocksFromContent(msg.content);
+          // message.end is authoritative.
+          if (event.model) entry.model = event.model;
+          const blocks = blocksOf(event.parts);
           if (blocks.length) entry.blocks = blocks;
           entry.done = true;
-          if (msg.stopReason === "error") entry.error = str(msg.errorMessage) ?? "The model returned an error";
-          else if (msg.stopReason === "aborted") entry.stoppedAt = new Date().toISOString();
+          if (event.stop === "error") entry.error = event.error ?? "The model returned an error";
+          else if (event.stop === "aborted") entry.stoppedAt = new Date().toISOString();
           break;
         }
-        case "tool_execution_start": {
-          const id = str(event.toolCallId);
-          if (id) s.tools[id] = { name: str(event.toolName) ?? "tool", args: event.args, status: "running", output: "", images: [] };
+        case "tool.start":
+          if (event.callId) s.tools[event.callId] = { name: event.name, args: event.args, status: "running", output: "", images: [] };
           break;
-        }
-        case "tool_execution_update": {
-          const id = str(event.toolCallId);
-          const t = id ? s.tools[id] : undefined;
+        case "tool.update": {
+          const t = event.callId ? s.tools[event.callId] : undefined;
           if (t) {
-            t.output = toolOutput(event.partialResult);
-            t.images = toolImages(event.partialResult);
+            t.output = event.output;
+            t.images = event.images;
           }
           break;
         }
-        case "tool_execution_end": {
-          const id = str(event.toolCallId);
+        case "tool.end": {
+          effects = toolEndEffects(event, view);
+          const id = event.callId;
           if (!id) break;
           const prev = s.tools[id];
           s.tools[id] = {
-            name: str(event.toolName) ?? prev?.name ?? "tool",
+            name: event.name ?? prev?.name ?? "tool",
             args: prev?.args ?? event.args,
-            status: event.isError === true ? "error" : "done",
-            output: toolOutput(event.result),
-            images: toolImages(event.result),
-            ...(isObj(event.result) && event.result.details !== undefined ? { details: event.result.details } : {}),
+            status: event.isError ? "error" : "done",
+            output: event.output,
+            images: event.images,
+            ...(event.details !== undefined ? { details: event.details } : {}),
           };
           break;
         }
-        case "auto_retry_start":
-          s.activity = "Retrying after a provider error";
-          break;
-        case "compaction_start":
-          s.activity = "Compacting context";
-          break;
-        case "auto_retry_end":
-          s.activity = null;
-          break;
-        case "compaction_end":
-          s.activity = null;
-          // A /compact runs with no turn, so no agent_settled follows to clear a Stop pressed
-          // during it; inside a turn (pi's automatic compaction) the turn's own settle still does.
-          if (!s.running) s.stopping = false;
+        case "activity":
+          if (event.phase === "start") {
+            if (event.what === "compaction") effects = compactionStartEffects();
+            s.activity = event.what === "retry" ? "Retrying after a provider error" : "Compacting context";
+          } else if (event.what === "retry") s.activity = null;
+          else {
+            effects = compactionEndEffects(event);
+            s.activity = null;
+            // A /compact runs with no turn, so no run.settled follows to clear a Stop pressed during
+            // it; inside a turn (pi's automatic compaction) the turn's own settle still does.
+            if (!s.running) s.stopping = false;
+          }
           break;
       }
     }),
   );
+  return effects;
 }

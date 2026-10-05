@@ -1,0 +1,29 @@
+{
+  "q0000004:0": {
+    "args": {}
+  },
+  "q0000006:0": {
+    "args": {}
+  },
+  "q0000008:0": {
+    "args": {}
+  },
+  "q000000d:0": {
+    "args": {}
+  },
+  "q000000d:1": {
+    "args": {
+      "command": "pnpm test"
+    },
+    "result": {
+      "output": "run-tests (bun): 10 files, 0 fail",
+      "isError": false
+    }
+  },
+  "q000000f": {
+    "result": {
+      "output": "run-tests (bun): 10 files, 0 fail",
+      "isError": false
+    }
+  }
+}

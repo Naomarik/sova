@@ -7,6 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, test } from "node:test";
 import { BATON_DECISION_ENTRY, BATON_HANDOFF_ENTRY, BATON_SENT_ENTRY } from "../shared/baton";
+import { historyOf } from "./harness/pi/reader";
 
 const root = realpathSync(mkdtempSync(join(tmpdir(), "sova-baton-guards-")));
 process.env.PI_CODING_AGENT_DIR = join(root, "agent");
@@ -39,26 +40,28 @@ const user = (by: string, text: string) => {
   ];
 };
 const reply = (text: string) => ({ type: "message", id: `a${++seq}`, message: { role: "assistant", content: [{ type: "text", text }] } });
+/** Raw entries as the branch a tool reads (`ctx.branch()`). */
+const h = (raw: readonly unknown[]) => historyOf(raw);
 
 describe("hand_to: the person talking chooses who answers next", () => {
   test("pure: named by the holder, named in the goal, or proposed and answered since the last hand-off", () => {
     const g = "Find out who may change supplier bank details.";
-    assert.equal(guards.handoffChosen([...user(maria.id, "Please ask nadia, she knows.")], maria.id, "Nadia Haddad", g), true, "the holder named her (any case)");
-    assert.equal(guards.handoffChosen([...user(maria.id, "No idea who handles that.")], maria.id, "Nadia Haddad", g), false, "the model would pick on its own");
-    assert.equal(guards.handoffChosen([...user(maria.id, "No idea.")], maria.id, "Nadia Haddad", `${g} Then ask Nadia Haddad.`), true, "the operator chose");
+    assert.equal(guards.handoffChosen(h([...user(maria.id, "Please ask nadia, she knows.")]), maria.id, "Nadia Haddad", g), true, "the holder named her (any case)");
+    assert.equal(guards.handoffChosen(h([...user(maria.id, "No idea who handles that.")]), maria.id, "Nadia Haddad", g), false, "the model would pick on its own");
+    assert.equal(guards.handoffChosen(h([...user(maria.id, "No idea.")]), maria.id, "Nadia Haddad", `${g} Then ask Nadia Haddad.`), true, "the operator chose");
     const asked = [...user(maria.id, "No idea."), reply("Nadia (vendor contracts) or Tony (finance approvals) could know. Who should I ask?")];
-    assert.equal(guards.handoffChosen(asked, maria.id, "Nadia Haddad", g), false, "proposed, not answered yet: the same reply's hand-off is refused");
-    assert.equal(guards.handoffChosen([...asked, ...user(maria.id, "The first one.")], maria.id, "Nadia Haddad", g), true, "proposed, then answered");
+    assert.equal(guards.handoffChosen(h(asked), maria.id, "Nadia Haddad", g), false, "proposed, not answered yet: the same reply's hand-off is refused");
+    assert.equal(guards.handoffChosen(h([...asked, ...user(maria.id, "The first one.")]), maria.id, "Nadia Haddad", g), true, "proposed, then answered");
     const before = [reply("Nadia might know."), { type: "custom", id: "h", customType: BATON_HANDOFF_ENTRY, data: { n: 1 } }, ...user(maria.id, "Hi, no idea.")];
-    assert.equal(guards.handoffChosen(before, maria.id, "Nadia Haddad", g), false, "a name from before this holder took over was never put to them");
-    assert.equal(guards.handoffChosen([...user(tony.id, "Ask Nadia."), ...user(maria.id, "No idea.")], maria.id, "Nadia Haddad", g), false, "another person's words are not the holder's choice");
+    assert.equal(guards.handoffChosen(h(before), maria.id, "Nadia Haddad", g), false, "a name from before this holder took over was never put to them");
+    assert.equal(guards.handoffChosen(h([...user(tony.id, "Ask Nadia."), ...user(maria.id, "No idea.")]), maria.id, "Nadia Haddad", g), false, "another person's words are not the holder's choice");
   });
 
   test("the tool refuses a person the holder did not choose, and says what to do; a chosen one goes through", async () => {
     const c = await baton.createBaton({ orgId: org.id, projectId: project.id, to: maria.id, publicTitle: "Bank details", goal: "Find out who may change supplier bank details." });
-    const hand = batonTools(c.sessionId, () => {}).find((t) => t.name === "hand_to")!;
+    const hand = batonTools(c.sessionId, { append: () => "" }).find((t) => t.name === "hand_to")!;
     let branch: any[] = [...user(maria.id, "No idea who handles that, sorry.")];
-    const call = (person: string) => hand.execute("id", { person, question: "Who may change bank details?", briefing: "Maria asked." } as never, undefined, undefined, { sessionManager: { getBranch: () => branch } } as never);
+    const call = (person: string) => hand.execute("id", { person, question: "Who may change bank details?", briefing: "Maria asked." } as never, undefined, undefined, { sessionId: "s", cwd: "/", leafId: () => null, branch: () => h(branch) } as never);
     await assert.rejects(call("Nadia Haddad"), /Maria Lopez has not chosen Nadia Haddad.*ask them to choose/);
     assert.equal(baton.batonById(c.sessionId)!.row.holder, maria.id, "nothing moved");
     branch = [...branch, reply("Nadia (vendor contracts) or Tony (finance approvals) may know. Who should I ask?"), ...user(maria.id, "Tony please.")];
@@ -66,8 +69,8 @@ describe("hand_to: the person talking chooses who answers next", () => {
     assert.equal(baton.batonById(c.sessionId)!.row.holder, tony.id);
     // The operator is always reachable, and an operator holder picks freely.
     const d = await baton.createBaton({ orgId: org.id, projectId: project.id, to: maria.id, publicTitle: "x", goal: "g" });
-    const handD = batonTools(d.sessionId, () => {}).find((t) => t.name === "hand_to")!;
-    await handD.execute("id", { person: "operator", question: "q?", briefing: "b" } as never, undefined, undefined, { sessionManager: { getBranch: () => [] } } as never);
+    const handD = batonTools(d.sessionId, { append: () => "" }).find((t) => t.name === "hand_to")!;
+    await handD.execute("id", { person: "operator", question: "q?", briefing: "b" } as never, undefined, undefined, { sessionId: "s", cwd: "/", leafId: () => null, branch: () => [] } as never);
     assert.equal(baton.batonById(d.sessionId)!.row.holder, "operator");
   });
 });
@@ -95,7 +98,7 @@ describe("the wrap-up records what people say about themselves", () => {
       await tool.execute("id", { updates: [
         { personId: nadia.id, field: "skills", to: ["Portuguese"], quote: "[The conversation passed from Omar (the operator) to Nadia Haddad]\n[From Nadia Haddad]\nI negotiate every vendor contract in Portuguese." },
         { personId: bob.id, field: "skills", to: ["contracts"], quote: "[From Bob Chen] I negotiate every vendor contract" },
-      ] } as never, undefined, undefined, { sessionManager: { getBranch: () => branch } } as never);
+      ] } as never, undefined, undefined, { sessionId: "s", cwd: "/", leafId: () => null, branch: () => h(branch) } as never);
     } finally {
       wrap.endWrapupRun(c.sessionId);
     }
@@ -119,7 +122,7 @@ describe("the wrap-up records what people say about themselves", () => {
         { personId: tony.id, field: "voice", to: "technical", quote: "Bob is our expert in PowerShell scripting" },
         { personId: tony.id, field: "skills", to: ["invoice approval"], quote: "I approve every invoice over five thousand myself" },
         { personId: bob.id, field: "skills", to: ["Microsoft 365 administration"], quote: "I do Microsoft 365 administration" },
-      ] } as never, undefined, undefined, { sessionManager: { getBranch: () => branch } } as never);
+      ] } as never, undefined, undefined, { sessionId: "s", cwd: "/", leafId: () => null, branch: () => h(branch) } as never);
     } finally {
       wrap.endWrapupRun(c.sessionId);
     }
@@ -154,8 +157,8 @@ describe("the wrap-up records what people say about themselves", () => {
     const tool = wrap.wrapupTool(c.sessionId);
     const run = wrap.beginWrapupRun(c.sessionId);
     try {
-      await tool.execute("id", { updates: [{ personId: kim.id, field: "language", to: "fr", quote: "The export runs every night" }] } as never, undefined, undefined, { sessionManager: { getBranch: () => branch } } as never);
-      await wrap.inferLanguages(c.sessionId, row, branch, run);
+      await tool.execute("id", { updates: [{ personId: kim.id, field: "language", to: "fr", quote: "The export runs every night" }] } as never, undefined, undefined, { sessionId: "s", cwd: "/", leafId: () => null, branch: () => h(branch) } as never);
+      await wrap.inferLanguages(c.sessionId, row, h(branch), run);
     } finally {
       wrap.endWrapupRun(c.sessionId);
     }

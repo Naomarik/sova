@@ -1,0 +1,58 @@
+[
+  {
+    "call": {
+      "fn": "addPendingPrompt",
+      "args": [
+        "my own"
+      ]
+    },
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "my own",
+          "state": "sending",
+          "images": []
+        }
+      ],
+      "tools": {},
+      "running": false,
+      "activity": null,
+      "stopping": false
+    }
+  },
+  {
+    "call": {
+      "fn": "applyEvent",
+      "args": [
+        {
+          "type": "message_start",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "[link_msg lk_0123456789abcdef lm_0123456789abcdef] from Partner (box/abc)\nhello\n\nReply with link_send (to: \"abc\")."
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "my own",
+          "state": "sending",
+          "images": []
+        }
+      ],
+      "tools": {},
+      "running": false,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  }
+]

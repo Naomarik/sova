@@ -1,0 +1,13 @@
+{
+  "model": "zai/glm-5.3",
+  "context": {
+    "tokens": 5000,
+    "model": null
+  },
+  "reply": {
+    "at": 1788256808000,
+    "stopReason": "error",
+    "error": "overloaded",
+    "provider": "zai"
+  }
+}

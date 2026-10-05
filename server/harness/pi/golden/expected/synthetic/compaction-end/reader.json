@@ -1,0 +1,31 @@
+{
+  "header": {
+    "type": "session",
+    "version": 3,
+    "id": "0190a000-0000-7000-8000-f00000000000",
+    "timestamp": "2026-09-01T10:00:00.000Z",
+    "cwd": "/home/user/golden"
+  },
+  "lines": 6,
+  "entries": 5,
+  "ids": [
+    "0190a000-0000-7000-8000-f00000000000",
+    "f0000001",
+    "f0000002",
+    "f0000003",
+    "f0000004"
+  ],
+  "branch": [
+    "f0000001",
+    "f0000002",
+    "f0000003",
+    "f0000004"
+  ],
+  "leaf": "f0000004",
+  "types": [
+    "model_change",
+    "message",
+    "message",
+    "compaction"
+  ]
+}

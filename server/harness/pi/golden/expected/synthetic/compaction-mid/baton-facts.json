@@ -1,0 +1,36 @@
+{
+  "vocabulary": [
+    "Long work",
+    "Continue"
+  ],
+  "senders": {
+    "$map": [
+      [
+        "g0000006",
+        "p_alice"
+      ]
+    ]
+  },
+  "sendersNoHolder": {
+    "$map": []
+  },
+  "notes": [
+    {
+      "timestamp": 1788256802000,
+      "text": "Long work",
+      "note": "[From someone]"
+    },
+    {
+      "timestamp": 1788256806000,
+      "text": "Continue",
+      "note": "[From Alice]"
+    }
+  ],
+  "counted": 2,
+  "model": {
+    "model": "anthropic/claude-sonnet-5",
+    "thinking": null
+  },
+  "photos": 0,
+  "modelRef": "zai/glm-5.3"
+}

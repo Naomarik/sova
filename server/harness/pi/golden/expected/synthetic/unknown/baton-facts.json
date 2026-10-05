@@ -1,0 +1,30 @@
+{
+  "vocabulary": [
+    "Before the unknown entry"
+  ],
+  "senders": {
+    "$map": [
+      [
+        "b0000001",
+        "p_alice"
+      ]
+    ]
+  },
+  "sendersNoHolder": {
+    "$map": []
+  },
+  "notes": [
+    {
+      "timestamp": 1788256801000,
+      "text": "Before the unknown entry",
+      "note": "[From Alice]"
+    }
+  ],
+  "counted": 1,
+  "model": {
+    "model": null,
+    "thinking": null
+  },
+  "photos": 0,
+  "modelRef": "zai/glm-5.3"
+}

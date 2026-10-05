@@ -1,0 +1,369 @@
+[
+  {
+    "call": {
+      "fn": "addPendingPrompt",
+      "args": [
+        "ok",
+        [],
+        [],
+        "c1"
+      ]
+    },
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "ok",
+          "state": "sending",
+          "images": [],
+          "id": "c1"
+        }
+      ],
+      "tools": {},
+      "running": false,
+      "activity": null,
+      "stopping": false
+    }
+  },
+  {
+    "call": {
+      "fn": "applyEvent",
+      "args": [
+        {
+          "type": "message_start",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "ok"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "ok",
+          "state": "delivered",
+          "images": [],
+          "id": "c1",
+          "started": true
+        }
+      ],
+      "tools": {},
+      "running": false,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "call": {
+      "fn": "applyEvent",
+      "args": [
+        {
+          "type": "message_start",
+          "message": {
+            "role": "assistant",
+            "content": []
+          }
+        }
+      ]
+    },
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "ok",
+          "state": "delivered",
+          "images": [],
+          "id": "c1",
+          "started": true
+        },
+        {
+          "kind": "assistant",
+          "blocks": [],
+          "done": false
+        }
+      ],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "call": {
+      "fn": "addPendingPrompt",
+      "args": [
+        "ok",
+        [],
+        [],
+        "c2"
+      ]
+    },
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "ok",
+          "state": "delivered",
+          "images": [],
+          "id": "c1",
+          "started": true
+        },
+        {
+          "kind": "assistant",
+          "blocks": [],
+          "done": false
+        },
+        {
+          "kind": "user",
+          "text": "ok",
+          "state": "sending",
+          "images": [],
+          "id": "c2"
+        }
+      ],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    }
+  },
+  {
+    "call": {
+      "fn": "applyQueue",
+      "args": [
+        [
+          {
+            "id": "c2",
+            "kind": "steer",
+            "text": "ok",
+            "state": "sending"
+          }
+        ]
+      ]
+    },
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "ok",
+          "state": "delivered",
+          "images": [],
+          "id": "c1",
+          "started": true
+        },
+        {
+          "kind": "assistant",
+          "blocks": [],
+          "done": false
+        },
+        {
+          "kind": "user",
+          "text": "ok",
+          "state": "queued",
+          "images": [],
+          "id": "c2",
+          "queueKind": "steer",
+          "handed": true
+        }
+      ],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    }
+  },
+  {
+    "call": {
+      "fn": "markDelivered",
+      "args": [
+        "c2"
+      ]
+    },
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "ok",
+          "state": "delivered",
+          "images": [],
+          "id": "c1",
+          "started": true
+        },
+        {
+          "kind": "assistant",
+          "blocks": [],
+          "done": false
+        },
+        {
+          "kind": "user",
+          "text": "ok",
+          "state": "delivered",
+          "images": [],
+          "id": "c2",
+          "queueKind": "steer",
+          "handed": true
+        }
+      ],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    }
+  },
+  {
+    "call": {
+      "fn": "applyQueue",
+      "args": [
+        []
+      ]
+    },
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "ok",
+          "state": "delivered",
+          "images": [],
+          "id": "c1",
+          "started": true
+        },
+        {
+          "kind": "assistant",
+          "blocks": [],
+          "done": false
+        },
+        {
+          "kind": "user",
+          "text": "ok",
+          "state": "delivered",
+          "images": [],
+          "id": "c2",
+          "queueKind": "steer",
+          "handed": true
+        }
+      ],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    }
+  },
+  {
+    "call": {
+      "fn": "applyEvent",
+      "args": [
+        {
+          "type": "message_start",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "ok"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "ok",
+          "state": "delivered",
+          "images": [],
+          "id": "c1",
+          "started": true
+        },
+        {
+          "kind": "assistant",
+          "blocks": [],
+          "done": false
+        },
+        {
+          "kind": "user",
+          "text": "ok",
+          "state": "delivered",
+          "images": [],
+          "id": "c2",
+          "queueKind": "steer",
+          "handed": true,
+          "started": true
+        }
+      ],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "call": {
+      "fn": "applyEvent",
+      "args": [
+        {
+          "type": "message_start",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "ok"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "ok",
+          "state": "delivered",
+          "images": [],
+          "id": "c1",
+          "started": true
+        },
+        {
+          "kind": "assistant",
+          "blocks": [],
+          "done": false
+        },
+        {
+          "kind": "user",
+          "text": "ok",
+          "state": "delivered",
+          "images": [],
+          "id": "c2",
+          "queueKind": "steer",
+          "handed": true,
+          "started": true
+        },
+        {
+          "kind": "user",
+          "text": "ok",
+          "state": "delivered",
+          "started": true,
+          "images": []
+        }
+      ],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  }
+]

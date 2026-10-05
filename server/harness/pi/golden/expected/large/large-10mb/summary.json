@@ -1,0 +1,15 @@
+{
+  "id": "0190a000-0000-7000-8000-1a7ge0000000",
+  "cwd": "/home/user/large",
+  "title": "Turn 0: parser parser model usage fork token window reader fork usage golden en…",
+  "createdAt": "2026-09-04T09:00:00.000Z",
+  "model": "zai/glm-5.3",
+  "context": {
+    "tokens": 31511,
+    "window": null
+  },
+  "outlineNow": "Working on turn 860",
+  "outlineGist": "A large golden session",
+  "outlineAt": 1788515885000,
+  "outlineTopics": 1
+}

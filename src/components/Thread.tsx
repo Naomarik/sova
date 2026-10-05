@@ -1,5 +1,7 @@
 import { children, createContext, createEffect, createMemo, createSignal, For, Match, on, onCleanup, Show, Switch, useContext, type JSX } from "solid-js";
-import type { EntryMeta, HandoffRunInfo, TmpAttachment, TranscriptItem } from "../../shared/protocol";
+import type { RowFacts } from "../../shared/harness-wire";
+import type { HandoffRunInfo, TmpAttachment, TranscriptItem } from "../../shared/protocol";
+import { rowFacts } from "../../shared/wire-v1";
 import type { BatonMark } from "../../shared/baton";
 import { wrapupRowIds } from "../lib/wrapup-rows";
 import { blockStreams, type LiveBlock, type LiveEntry, type LiveState, type LiveUserState } from "../lib/live";
@@ -417,9 +419,9 @@ function Unknown(props: { raw: unknown }) {
 const strings = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []);
 
 /** A compaction entry: where it happened in the thread, with its summary on demand. */
-function Compaction(props: { meta: EntryMeta }) {
-  const tokens = () => (typeof props.meta.tokensBefore === "number" ? props.meta.tokensBefore : null);
-  const details = () => (isObj(props.meta.details) ? props.meta.details : {});
+function Compaction(props: { compaction: NonNullable<RowFacts["compaction"]> }) {
+  const tokens = () => props.compaction.tokensBefore ?? null;
+  const details = () => (isObj(props.compaction.details) ? props.compaction.details : {});
   const read = () => strings(details().readFiles);
   const changed = () => strings(details().modifiedFiles);
   return (
@@ -434,7 +436,7 @@ function Compaction(props: { meta: EntryMeta }) {
         </span>
       </summary>
       <div class="disclosure-body">
-        <div class="compaction-summary">{props.meta.summary ?? ""}</div>
+        <div class="compaction-summary">{props.compaction.summary ?? ""}</div>
         <Show when={read().length > 0}>
           <p class="toolcard-section-label">Files read</p>
           <ul class="compaction-files">
@@ -913,8 +915,8 @@ export function HistoryItems(props: {
               <Match when={item.kind === "info" && item.handoffRun}>
                 {(run) => <HandoffRunRow run={run()} text={item.text ?? ""} />}
               </Match>
-              <Match when={item.kind === "info" && item.meta?.type === "compaction" && item.meta}>
-                {(meta) => <Compaction meta={meta()} />}
+              <Match when={item.kind === "info" && rowFacts(item)?.compaction}>
+                {(compaction) => <Compaction compaction={compaction()} />}
               </Match>
               <Match when={item.kind === "info"}>
                 <>

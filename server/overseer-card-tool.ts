@@ -1,4 +1,4 @@
-import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
+import type { HEntry, ToolCtx, ToolSpec } from "../shared/harness";
 import {
   applyCardCall,
   CARD_ANSWERS_MAX,
@@ -9,7 +9,6 @@ import {
   CARD_OPS,
   CARD_TOOL,
   CardError,
-  cardResultOf,
   checkCardCall,
   foldCardDetails,
   type CardDetails,
@@ -20,6 +19,7 @@ import {
 import { GRANTABLE_ACTS } from "../shared/overseer-grants";
 import { CONFIRM_NOTE_MAX } from "../shared/protocol";
 import { clickOnlyCard, itemsSchema, resolveConfirmItems, type ConfirmLookup } from "./overseer-confirm";
+import { cardDetailsOf } from "./overseer-run-note";
 
 /**
  * `sova_card`, shared by the Overseer and the project overseer (§app.overseer/confirm): the
@@ -30,7 +30,7 @@ import { clickOnlyCard, itemsSchema, resolveConfirmItems, type ConfirmLookup } f
  * answers.
  */
 
-type Tool = ToolDefinition<any, any>;
+type Tool = ToolSpec;
 type Out = { content: { type: "text"; text: string }[]; details: CardDetails };
 
 /** A link option's target, as the model gives it: sova_navigate's fields, the org pages, or a URL. */
@@ -58,10 +58,10 @@ export interface CardToolDeps {
   wrap(run: (params: any) => Promise<Out>): Tool["execute"];
   refusal(message: string): Error;
   /** The session's branch when the call's context has none (tests). */
-  branch?(): readonly unknown[];
+  branch?(): readonly HEntry[];
 }
 
-type Ctx = { sessionManager?: { getBranch(): unknown[]; getSessionId?(): string } } | undefined;
+type Ctx = ToolCtx | undefined;
 
 const S = (description?: string, extra: Record<string, unknown> = {}) => ({ type: "string", minLength: 1, ...(description ? { description } : {}), ...extra });
 const obj = (properties: Record<string, unknown>, required: string[] = [], extra: Record<string, unknown> = {}) => ({ type: "object", properties, required, additionalProperties: false, ...extra });
@@ -185,16 +185,14 @@ export function cardTool(d: CardToolDeps): Tool {
   const pending = new Map<string, { session: string; details: CardDetails; at: number }>();
   /** The branch's cards, plus this tool's own results the branch doesn't hold yet. */
   const cardsNow = (ctx: Ctx): OverseerCard[] => {
-    const branch = ctx?.sessionManager?.getBranch() ?? d.branch?.() ?? [];
-    const session = ctx?.sessionManager?.getSessionId?.() ?? "";
+    const branch = ctx?.branch() ?? d.branch?.() ?? [];
+    const session = ctx?.sessionId ?? "";
     const seen = new Set<string>();
-    for (const e of branch as { type?: string; message?: { role?: string; toolName?: string; toolCallId?: string } }[]) {
-      if (e?.type === "message" && e.message?.role === "toolResult" && e.message.toolName === CARD_TOOL && e.message.toolCallId) seen.add(e.message.toolCallId);
-    }
+    for (const e of branch) if (e.kind === "tool-result" && e.tool === CARD_TOOL && e.callId) seen.add(e.callId);
     const now = Date.now();
     for (const [id, p] of pending) if (seen.has(id) || now - p.at > PENDING_MS) pending.delete(id);
     const extra = [...pending.values()].filter((p) => p.session === session).map((p) => p.details);
-    return foldCardDetails([...branch.map(cardResultOf), ...extra]);
+    return foldCardDetails([...branch.map(cardDetailsOf), ...extra]);
   };
   const run = async (params: any, toolCallId: string, ctx: Ctx): Promise<Out> => {
     try {
@@ -224,7 +222,7 @@ export function cardTool(d: CardToolDeps): Tool {
         prepared = { items, hrefs, clickOnly: await clickOnlyCard(items, d.lookup) };
       }
       const outcome = applyCardCall(cardsNow(ctx), params, { now: new Date().toISOString(), audience: d.audience, grants: d.grants === true, ...(prepared ? { prepared } : {}) });
-      if (outcome.details.card || outcome.details.closed) pending.set(toolCallId, { session: ctx?.sessionManager?.getSessionId?.() ?? "", details: outcome.details, at: Date.now() });
+      if (outcome.details.card || outcome.details.closed) pending.set(toolCallId, { session: ctx?.sessionId ?? "", details: outcome.details, at: Date.now() });
       const cutLine = cutNotes.length ? `\nNotes over ${CONFIRM_NOTE_MAX} characters were cut with "…" (item, length): ${cutNotes.join(", ")}. Keep notes to 2 short sentences.` : "";
       return { content: [{ type: "text", text: outcome.text + cutLine }], details: outcome.details };
     } catch (err) {

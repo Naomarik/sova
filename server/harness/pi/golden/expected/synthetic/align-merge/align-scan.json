@@ -1,0 +1,980 @@
+{
+  "full": {
+    "size": 8303,
+    "found": true,
+    "summary": {
+      "openDocs": 1,
+      "openQuestions": 1,
+      "questionDocs": 1,
+      "lead": {
+        "id": "al_1",
+        "title": "Export"
+      }
+    },
+    "entries": [
+      {
+        "type": "session",
+        "id": "0190a000-0000-7000-8000-q00000000000"
+      },
+      {
+        "type": "model_change",
+        "id": "q0000001",
+        "parentId": null
+      },
+      {
+        "type": "custom",
+        "id": "q0000002",
+        "parentId": "q0000001",
+        "customType": "mode",
+        "data": {
+          "mode": "code",
+          "active": {
+            "major": "code"
+          }
+        }
+      },
+      {
+        "type": "message",
+        "id": "q0000003",
+        "parentId": "q0000002",
+        "userPrompt": true
+      },
+      {
+        "type": "message",
+        "id": "q0000004",
+        "parentId": "q0000003"
+      },
+      {
+        "type": "message",
+        "id": "q0000005",
+        "parentId": "q0000004",
+        "message": {
+          "role": "toolResult",
+          "toolName": "align",
+          "isError": false,
+          "details": {
+            "v": 1,
+            "changes": [
+              {
+                "kind": "created"
+              }
+            ],
+            "line": "created",
+            "doc": {
+              "id": "al_1",
+              "title": "Export",
+              "summary": "Download a session.",
+              "findings": [],
+              "approach": [],
+              "rejected": [],
+              "questions": [
+                {
+                  "id": "q1",
+                  "topic": "Format",
+                  "ask": "Format?",
+                  "recommendation": {
+                    "choice": "yes",
+                    "why": "simpler"
+                  }
+                },
+                {
+                  "id": "q2",
+                  "topic": "Zip",
+                  "ask": "Zip?",
+                  "recommendation": {
+                    "choice": "yes",
+                    "why": "simpler"
+                  }
+                }
+              ],
+              "phase": "open",
+              "next": {
+                "f": 0,
+                "a": 0,
+                "x": 0,
+                "q": 2
+              },
+              "rev": 1,
+              "createdAt": "2026-09-01T10:00:00.000Z",
+              "updatedAt": "2026-09-01T10:00:00.000Z"
+            }
+          }
+        }
+      },
+      {
+        "type": "message",
+        "id": "q0000006",
+        "parentId": "q0000005"
+      },
+      {
+        "type": "message",
+        "id": "q0000007",
+        "parentId": "q0000006",
+        "message": {
+          "role": "toolResult",
+          "toolName": "align",
+          "isError": false,
+          "details": {
+            "v": 1,
+            "changes": [
+              {
+                "kind": "created"
+              }
+            ],
+            "line": "created",
+            "doc": {
+              "id": "al_2",
+              "title": "Pane",
+              "summary": "Show workers.",
+              "findings": [],
+              "approach": [],
+              "rejected": [],
+              "questions": [
+                {
+                  "id": "q1",
+                  "topic": "Cap",
+                  "ask": "Cap?",
+                  "recommendation": {
+                    "choice": "yes",
+                    "why": "simpler"
+                  }
+                }
+              ],
+              "phase": "open",
+              "next": {
+                "f": 0,
+                "a": 0,
+                "x": 0,
+                "q": 1
+              },
+              "rev": 1,
+              "createdAt": "2026-09-01T10:00:00.000Z",
+              "updatedAt": "2026-09-01T10:00:00.000Z"
+            }
+          }
+        }
+      },
+      {
+        "type": "message",
+        "id": "q0000008",
+        "parentId": "q0000007"
+      },
+      {
+        "type": "message",
+        "id": "q0000009",
+        "parentId": "q0000008",
+        "message": {
+          "role": "toolResult",
+          "toolName": "align",
+          "isError": false,
+          "details": {
+            "v": 1,
+            "changes": [
+              {
+                "kind": "decided",
+                "q": "q1"
+              }
+            ],
+            "line": "q1 decided",
+            "doc": {
+              "id": "al_1",
+              "title": "Export",
+              "summary": "Download a session.",
+              "findings": [],
+              "approach": [],
+              "rejected": [],
+              "questions": [
+                {
+                  "id": "q1",
+                  "topic": "Format",
+                  "ask": "Format?",
+                  "recommendation": {
+                    "choice": "yes",
+                    "why": "simpler"
+                  },
+                  "decision": {
+                    "text": "JSONL",
+                    "by": "user",
+                    "at": "2026-09-01T10:00:00.000Z"
+                  }
+                },
+                {
+                  "id": "q2",
+                  "topic": "Zip",
+                  "ask": "Zip?",
+                  "recommendation": {
+                    "choice": "yes",
+                    "why": "simpler"
+                  }
+                }
+              ],
+              "phase": "open",
+              "next": {
+                "f": 0,
+                "a": 0,
+                "x": 0,
+                "q": 2
+              },
+              "rev": 2,
+              "createdAt": "2026-09-01T10:00:00.000Z",
+              "updatedAt": "2026-09-01T10:00:00.000Z"
+            }
+          }
+        }
+      },
+      {
+        "type": "message",
+        "id": "q000000a",
+        "parentId": "q0000009"
+      },
+      {
+        "type": "message",
+        "id": "q000000b",
+        "parentId": "q000000a",
+        "userPrompt": true
+      },
+      {
+        "type": "custom",
+        "id": "q000000c",
+        "parentId": "q000000b"
+      },
+      {
+        "type": "message",
+        "id": "q000000d",
+        "parentId": "q000000c"
+      },
+      {
+        "type": "message",
+        "id": "q000000e",
+        "parentId": "q000000d",
+        "message": {
+          "role": "toolResult",
+          "toolName": "align",
+          "isError": false,
+          "details": {
+            "v": 1,
+            "changes": [
+              {
+                "kind": "accepted",
+                "qs": [
+                  "q1"
+                ]
+              },
+              {
+                "kind": "status",
+                "to": "done"
+              }
+            ],
+            "line": "q1 accepted · → done",
+            "doc": {
+              "id": "al_2",
+              "title": "Pane",
+              "summary": "Show workers.",
+              "findings": [],
+              "approach": [],
+              "rejected": [],
+              "questions": [
+                {
+                  "id": "q1",
+                  "topic": "Cap",
+                  "ask": "Cap?",
+                  "recommendation": {
+                    "choice": "yes",
+                    "why": "simpler"
+                  },
+                  "decision": {
+                    "text": "yes",
+                    "by": "accepted-recommendation",
+                    "at": "2026-09-01T10:00:00.000Z"
+                  }
+                }
+              ],
+              "phase": "done",
+              "next": {
+                "f": 0,
+                "a": 0,
+                "x": 0,
+                "q": 1
+              },
+              "rev": 2,
+              "createdAt": "2026-09-01T10:00:00.000Z",
+              "updatedAt": "2026-09-01T10:00:00.000Z"
+            }
+          }
+        }
+      },
+      {
+        "type": "message",
+        "id": "q000000f",
+        "parentId": "q000000e"
+      },
+      {
+        "type": "custom_message",
+        "id": "q0000010",
+        "parentId": "q000000f"
+      },
+      {
+        "type": "custom",
+        "id": "q0000011",
+        "parentId": "q0000010"
+      },
+      {
+        "type": "message",
+        "id": "q0000012",
+        "parentId": "q0000011"
+      }
+    ]
+  },
+  "prefix": {
+    "size": 4399,
+    "found": true,
+    "summary": {
+      "openDocs": 2,
+      "openQuestions": 2,
+      "questionDocs": 2,
+      "lead": {
+        "id": "al_1",
+        "title": "Export"
+      }
+    },
+    "entries": [
+      {
+        "type": "session",
+        "id": "0190a000-0000-7000-8000-q00000000000"
+      },
+      {
+        "type": "model_change",
+        "id": "q0000001",
+        "parentId": null
+      },
+      {
+        "type": "custom",
+        "id": "q0000002",
+        "parentId": "q0000001",
+        "customType": "mode",
+        "data": {
+          "mode": "code",
+          "active": {
+            "major": "code"
+          }
+        }
+      },
+      {
+        "type": "message",
+        "id": "q0000003",
+        "parentId": "q0000002",
+        "userPrompt": true
+      },
+      {
+        "type": "message",
+        "id": "q0000004",
+        "parentId": "q0000003"
+      },
+      {
+        "type": "message",
+        "id": "q0000005",
+        "parentId": "q0000004",
+        "message": {
+          "role": "toolResult",
+          "toolName": "align",
+          "isError": false,
+          "details": {
+            "v": 1,
+            "changes": [
+              {
+                "kind": "created"
+              }
+            ],
+            "line": "created",
+            "doc": {
+              "id": "al_1",
+              "title": "Export",
+              "summary": "Download a session.",
+              "findings": [],
+              "approach": [],
+              "rejected": [],
+              "questions": [
+                {
+                  "id": "q1",
+                  "topic": "Format",
+                  "ask": "Format?",
+                  "recommendation": {
+                    "choice": "yes",
+                    "why": "simpler"
+                  }
+                },
+                {
+                  "id": "q2",
+                  "topic": "Zip",
+                  "ask": "Zip?",
+                  "recommendation": {
+                    "choice": "yes",
+                    "why": "simpler"
+                  }
+                }
+              ],
+              "phase": "open",
+              "next": {
+                "f": 0,
+                "a": 0,
+                "x": 0,
+                "q": 2
+              },
+              "rev": 1,
+              "createdAt": "2026-09-01T10:00:00.000Z",
+              "updatedAt": "2026-09-01T10:00:00.000Z"
+            }
+          }
+        }
+      },
+      {
+        "type": "message",
+        "id": "q0000006",
+        "parentId": "q0000005"
+      },
+      {
+        "type": "message",
+        "id": "q0000007",
+        "parentId": "q0000006",
+        "message": {
+          "role": "toolResult",
+          "toolName": "align",
+          "isError": false,
+          "details": {
+            "v": 1,
+            "changes": [
+              {
+                "kind": "created"
+              }
+            ],
+            "line": "created",
+            "doc": {
+              "id": "al_2",
+              "title": "Pane",
+              "summary": "Show workers.",
+              "findings": [],
+              "approach": [],
+              "rejected": [],
+              "questions": [
+                {
+                  "id": "q1",
+                  "topic": "Cap",
+                  "ask": "Cap?",
+                  "recommendation": {
+                    "choice": "yes",
+                    "why": "simpler"
+                  }
+                }
+              ],
+              "phase": "open",
+              "next": {
+                "f": 0,
+                "a": 0,
+                "x": 0,
+                "q": 1
+              },
+              "rev": 1,
+              "createdAt": "2026-09-01T10:00:00.000Z",
+              "updatedAt": "2026-09-01T10:00:00.000Z"
+            }
+          }
+        }
+      },
+      {
+        "type": "message",
+        "id": "q0000008",
+        "parentId": "q0000007"
+      },
+      {
+        "type": "message",
+        "id": "q0000009",
+        "parentId": "q0000008",
+        "message": {
+          "role": "toolResult",
+          "toolName": "align",
+          "isError": false,
+          "details": {
+            "v": 1,
+            "changes": [
+              {
+                "kind": "decided",
+                "q": "q1"
+              }
+            ],
+            "line": "q1 decided",
+            "doc": {
+              "id": "al_1",
+              "title": "Export",
+              "summary": "Download a session.",
+              "findings": [],
+              "approach": [],
+              "rejected": [],
+              "questions": [
+                {
+                  "id": "q1",
+                  "topic": "Format",
+                  "ask": "Format?",
+                  "recommendation": {
+                    "choice": "yes",
+                    "why": "simpler"
+                  },
+                  "decision": {
+                    "text": "JSONL",
+                    "by": "user",
+                    "at": "2026-09-01T10:00:00.000Z"
+                  }
+                },
+                {
+                  "id": "q2",
+                  "topic": "Zip",
+                  "ask": "Zip?",
+                  "recommendation": {
+                    "choice": "yes",
+                    "why": "simpler"
+                  }
+                }
+              ],
+              "phase": "open",
+              "next": {
+                "f": 0,
+                "a": 0,
+                "x": 0,
+                "q": 2
+              },
+              "rev": 2,
+              "createdAt": "2026-09-01T10:00:00.000Z",
+              "updatedAt": "2026-09-01T10:00:00.000Z"
+            }
+          }
+        }
+      },
+      {
+        "type": "message",
+        "id": "q000000a",
+        "parentId": "q0000009"
+      },
+      {
+        "type": "message",
+        "id": "q000000b",
+        "parentId": "q000000a",
+        "userPrompt": true
+      },
+      {
+        "type": "custom",
+        "id": "q000000c",
+        "parentId": "q000000b"
+      },
+      {
+        "type": "message",
+        "id": "q000000d",
+        "parentId": "q000000c"
+      },
+      {
+        "type": "message",
+        "id": "q000000e",
+        "parentId": "q000000d",
+        "message": {
+          "role": "toolResult",
+          "toolName": "align",
+          "isError": false,
+          "details": {
+            "v": 1,
+            "changes": [
+              {
+                "kind": "accepted",
+                "qs": [
+                  "q1"
+                ]
+              },
+              {
+                "kind": "status",
+                "to": "done"
+              }
+            ],
+            "line": "q1 accepted · → done",
+            "doc": {
+              "id": "al_2",
+              "title": "Pane",
+              "summary": "Show workers.",
+              "findings": [],
+              "approach": [],
+              "rejected": [],
+              "questions": [
+                {
+                  "id": "q1",
+                  "topic": "Cap",
+                  "ask": "Cap?",
+                  "recommendation": {
+                    "choice": "yes",
+                    "why": "simpler"
+                  },
+                  "decision": {
+                    "text": "yes",
+                    "by": "accepted-recommendation",
+                    "at": "2026-09-01T10:00:00.000Z"
+                  }
+                }
+              ],
+              "phase": "done",
+              "next": {
+                "f": 0,
+                "a": 0,
+                "x": 0,
+                "q": 1
+              },
+              "rev": 2,
+              "createdAt": "2026-09-01T10:00:00.000Z",
+              "updatedAt": "2026-09-01T10:00:00.000Z"
+            }
+          }
+        }
+      },
+      {
+        "type": "message",
+        "id": "q000000f",
+        "parentId": "q000000e"
+      },
+      {
+        "type": "custom_message",
+        "id": "q0000010",
+        "parentId": "q000000f"
+      },
+      {
+        "type": "custom",
+        "id": "q0000011",
+        "parentId": "q0000010"
+      },
+      {
+        "type": "message",
+        "id": "q0000012",
+        "parentId": "q0000011"
+      }
+    ]
+  },
+  "grown": {
+    "size": 8303,
+    "found": true,
+    "summary": {
+      "openDocs": 1,
+      "openQuestions": 1,
+      "questionDocs": 1,
+      "lead": {
+        "id": "al_1",
+        "title": "Export"
+      }
+    },
+    "entries": [
+      {
+        "type": "session",
+        "id": "0190a000-0000-7000-8000-q00000000000"
+      },
+      {
+        "type": "model_change",
+        "id": "q0000001",
+        "parentId": null
+      },
+      {
+        "type": "custom",
+        "id": "q0000002",
+        "parentId": "q0000001",
+        "customType": "mode",
+        "data": {
+          "mode": "code",
+          "active": {
+            "major": "code"
+          }
+        }
+      },
+      {
+        "type": "message",
+        "id": "q0000003",
+        "parentId": "q0000002",
+        "userPrompt": true
+      },
+      {
+        "type": "message",
+        "id": "q0000004",
+        "parentId": "q0000003"
+      },
+      {
+        "type": "message",
+        "id": "q0000005",
+        "parentId": "q0000004",
+        "message": {
+          "role": "toolResult",
+          "toolName": "align",
+          "isError": false,
+          "details": {
+            "v": 1,
+            "changes": [
+              {
+                "kind": "created"
+              }
+            ],
+            "line": "created",
+            "doc": {
+              "id": "al_1",
+              "title": "Export",
+              "summary": "Download a session.",
+              "findings": [],
+              "approach": [],
+              "rejected": [],
+              "questions": [
+                {
+                  "id": "q1",
+                  "topic": "Format",
+                  "ask": "Format?",
+                  "recommendation": {
+                    "choice": "yes",
+                    "why": "simpler"
+                  }
+                },
+                {
+                  "id": "q2",
+                  "topic": "Zip",
+                  "ask": "Zip?",
+                  "recommendation": {
+                    "choice": "yes",
+                    "why": "simpler"
+                  }
+                }
+              ],
+              "phase": "open",
+              "next": {
+                "f": 0,
+                "a": 0,
+                "x": 0,
+                "q": 2
+              },
+              "rev": 1,
+              "createdAt": "2026-09-01T10:00:00.000Z",
+              "updatedAt": "2026-09-01T10:00:00.000Z"
+            }
+          }
+        }
+      },
+      {
+        "type": "message",
+        "id": "q0000006",
+        "parentId": "q0000005"
+      },
+      {
+        "type": "message",
+        "id": "q0000007",
+        "parentId": "q0000006",
+        "message": {
+          "role": "toolResult",
+          "toolName": "align",
+          "isError": false,
+          "details": {
+            "v": 1,
+            "changes": [
+              {
+                "kind": "created"
+              }
+            ],
+            "line": "created",
+            "doc": {
+              "id": "al_2",
+              "title": "Pane",
+              "summary": "Show workers.",
+              "findings": [],
+              "approach": [],
+              "rejected": [],
+              "questions": [
+                {
+                  "id": "q1",
+                  "topic": "Cap",
+                  "ask": "Cap?",
+                  "recommendation": {
+                    "choice": "yes",
+                    "why": "simpler"
+                  }
+                }
+              ],
+              "phase": "open",
+              "next": {
+                "f": 0,
+                "a": 0,
+                "x": 0,
+                "q": 1
+              },
+              "rev": 1,
+              "createdAt": "2026-09-01T10:00:00.000Z",
+              "updatedAt": "2026-09-01T10:00:00.000Z"
+            }
+          }
+        }
+      },
+      {
+        "type": "message",
+        "id": "q0000008",
+        "parentId": "q0000007"
+      },
+      {
+        "type": "message",
+        "id": "q0000009",
+        "parentId": "q0000008",
+        "message": {
+          "role": "toolResult",
+          "toolName": "align",
+          "isError": false,
+          "details": {
+            "v": 1,
+            "changes": [
+              {
+                "kind": "decided",
+                "q": "q1"
+              }
+            ],
+            "line": "q1 decided",
+            "doc": {
+              "id": "al_1",
+              "title": "Export",
+              "summary": "Download a session.",
+              "findings": [],
+              "approach": [],
+              "rejected": [],
+              "questions": [
+                {
+                  "id": "q1",
+                  "topic": "Format",
+                  "ask": "Format?",
+                  "recommendation": {
+                    "choice": "yes",
+                    "why": "simpler"
+                  },
+                  "decision": {
+                    "text": "JSONL",
+                    "by": "user",
+                    "at": "2026-09-01T10:00:00.000Z"
+                  }
+                },
+                {
+                  "id": "q2",
+                  "topic": "Zip",
+                  "ask": "Zip?",
+                  "recommendation": {
+                    "choice": "yes",
+                    "why": "simpler"
+                  }
+                }
+              ],
+              "phase": "open",
+              "next": {
+                "f": 0,
+                "a": 0,
+                "x": 0,
+                "q": 2
+              },
+              "rev": 2,
+              "createdAt": "2026-09-01T10:00:00.000Z",
+              "updatedAt": "2026-09-01T10:00:00.000Z"
+            }
+          }
+        }
+      },
+      {
+        "type": "message",
+        "id": "q000000a",
+        "parentId": "q0000009"
+      },
+      {
+        "type": "message",
+        "id": "q000000b",
+        "parentId": "q000000a",
+        "userPrompt": true
+      },
+      {
+        "type": "custom",
+        "id": "q000000c",
+        "parentId": "q000000b"
+      },
+      {
+        "type": "message",
+        "id": "q000000d",
+        "parentId": "q000000c"
+      },
+      {
+        "type": "message",
+        "id": "q000000e",
+        "parentId": "q000000d",
+        "message": {
+          "role": "toolResult",
+          "toolName": "align",
+          "isError": false,
+          "details": {
+            "v": 1,
+            "changes": [
+              {
+                "kind": "accepted",
+                "qs": [
+                  "q1"
+                ]
+              },
+              {
+                "kind": "status",
+                "to": "done"
+              }
+            ],
+            "line": "q1 accepted · → done",
+            "doc": {
+              "id": "al_2",
+              "title": "Pane",
+              "summary": "Show workers.",
+              "findings": [],
+              "approach": [],
+              "rejected": [],
+              "questions": [
+                {
+                  "id": "q1",
+                  "topic": "Cap",
+                  "ask": "Cap?",
+                  "recommendation": {
+                    "choice": "yes",
+                    "why": "simpler"
+                  },
+                  "decision": {
+                    "text": "yes",
+                    "by": "accepted-recommendation",
+                    "at": "2026-09-01T10:00:00.000Z"
+                  }
+                }
+              ],
+              "phase": "done",
+              "next": {
+                "f": 0,
+                "a": 0,
+                "x": 0,
+                "q": 1
+              },
+              "rev": 2,
+              "createdAt": "2026-09-01T10:00:00.000Z",
+              "updatedAt": "2026-09-01T10:00:00.000Z"
+            }
+          }
+        }
+      },
+      {
+        "type": "message",
+        "id": "q000000f",
+        "parentId": "q000000e"
+      },
+      {
+        "type": "custom_message",
+        "id": "q0000010",
+        "parentId": "q000000f"
+      },
+      {
+        "type": "custom",
+        "id": "q0000011",
+        "parentId": "q0000010"
+      },
+      {
+        "type": "message",
+        "id": "q0000012",
+        "parentId": "q0000011"
+      }
+    ]
+  }
+}

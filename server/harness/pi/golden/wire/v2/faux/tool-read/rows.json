@@ -1,0 +1,77 @@
+[
+  {
+    "id": "00000001",
+    "kind": "info",
+    "text": "Model: faux/faux-1",
+    "at": "2026-09-03T08:00:00.006Z",
+    "facts": {
+      "setting": "model"
+    }
+  },
+  {
+    "id": "00000002",
+    "kind": "info",
+    "text": "Thinking: medium",
+    "at": "2026-09-03T08:00:00.007Z",
+    "facts": {
+      "setting": "thinking"
+    }
+  },
+  {
+    "id": "00000004",
+    "kind": "user",
+    "at": "2026-09-03T08:00:00.012Z",
+    "text": "What is in notes.txt?",
+    "facts": {}
+  },
+  {
+    "id": "00000005:0",
+    "kind": "assistant-text",
+    "text": "Reading it.",
+    "at": "2026-09-03T08:00:00.013Z",
+    "model": "faux/faux-1",
+    "facts": {
+      "contextTokens": 2746
+    }
+  },
+  {
+    "id": "00000005:1",
+    "kind": "tool-call",
+    "text": "read",
+    "toolCallId": "call_read_1",
+    "at": "2026-09-03T08:00:00.013Z",
+    "model": "faux/faux-1",
+    "tool": {
+      "summary": "notes.txt",
+      "lazy": true,
+      "bytes": 20
+    }
+  },
+  {
+    "id": "00000006",
+    "kind": "tool-result",
+    "toolCallId": "call_read_1",
+    "at": "2026-09-03T08:00:00.015Z",
+    "facts": {
+      "tool": {
+        "name": "read",
+        "callId": "call_read_1",
+        "isError": false
+      }
+    },
+    "tool": {
+      "lazy": true,
+      "bytes": 18
+    }
+  },
+  {
+    "id": "00000007:0",
+    "kind": "assistant-text",
+    "text": "It has two lines.",
+    "at": "2026-09-03T08:00:00.017Z",
+    "model": "faux/faux-1",
+    "facts": {
+      "contextTokens": 1417
+    }
+  }
+]

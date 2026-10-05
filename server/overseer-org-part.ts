@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { existsSync, statSync } from "node:fs";
-import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
+import type { ToolSpec } from "../shared/harness";
 import { OPERATOR, type BatonSession } from "../shared/baton";
 import type { DecisionRow, DecisionsInfo } from "../shared/decisions";
 import { ORG_ABOUT_MAX, type Person } from "../shared/orgs";
@@ -39,7 +39,7 @@ import { readView } from "./share/hub";
  * A standalone project gets none of it.
  */
 
-type Tool = ToolDefinition<any, any>;
+type Tool = ToolSpec;
 type Out = { content: { type: "text"; text: string }[]; details: unknown; partial?: string };
 
 /** The org placing `projectId` in `engine`, or null: standalone, or not here. */

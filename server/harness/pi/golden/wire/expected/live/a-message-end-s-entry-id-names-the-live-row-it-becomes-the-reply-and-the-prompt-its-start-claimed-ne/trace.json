@@ -1,0 +1,348 @@
+[
+  {
+    "call": {
+      "fn": "addPendingPrompt",
+      "args": [
+        "first",
+        [],
+        [],
+        "c1"
+      ]
+    },
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "first",
+          "state": "sending",
+          "images": [],
+          "id": "c1"
+        }
+      ],
+      "tools": {},
+      "running": false,
+      "activity": null,
+      "stopping": false
+    }
+  },
+  {
+    "call": {
+      "fn": "addPendingPrompt",
+      "args": [
+        "second",
+        [],
+        [],
+        "c2"
+      ]
+    },
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "first",
+          "state": "sending",
+          "images": [],
+          "id": "c1"
+        },
+        {
+          "kind": "user",
+          "text": "second",
+          "state": "sending",
+          "images": [],
+          "id": "c2"
+        }
+      ],
+      "tools": {},
+      "running": false,
+      "activity": null,
+      "stopping": false
+    }
+  },
+  {
+    "call": {
+      "fn": "applyEvent",
+      "args": [
+        {
+          "type": "message_start",
+          "message": {
+            "role": "user",
+            "content": "first"
+          }
+        }
+      ]
+    },
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "first",
+          "state": "delivered",
+          "images": [],
+          "id": "c1",
+          "started": true
+        },
+        {
+          "kind": "user",
+          "text": "second",
+          "state": "sending",
+          "images": [],
+          "id": "c2"
+        }
+      ],
+      "tools": {},
+      "running": false,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "call": {
+      "fn": "applyEvent",
+      "args": [
+        {
+          "type": "message_end",
+          "message": {
+            "role": "user",
+            "content": "first"
+          },
+          "entryId": "u1"
+        }
+      ]
+    },
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "first",
+          "state": "delivered",
+          "images": [],
+          "id": "c1",
+          "started": true,
+          "entryId": "u1"
+        },
+        {
+          "kind": "user",
+          "text": "second",
+          "state": "sending",
+          "images": [],
+          "id": "c2"
+        }
+      ],
+      "tools": {},
+      "running": false,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "call": {
+      "fn": "applyEvent",
+      "args": [
+        {
+          "type": "message_start",
+          "message": {
+            "role": "assistant",
+            "provider": "zai",
+            "model": "glm-5.3",
+            "content": []
+          }
+        }
+      ]
+    },
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "first",
+          "state": "delivered",
+          "images": [],
+          "id": "c1",
+          "started": true,
+          "entryId": "u1"
+        },
+        {
+          "kind": "user",
+          "text": "second",
+          "state": "sending",
+          "images": [],
+          "id": "c2"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [],
+          "done": false,
+          "model": "zai/glm-5.3"
+        }
+      ],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "call": {
+      "fn": "applyEvent",
+      "args": [
+        {
+          "type": "message_end",
+          "message": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "hi"
+              }
+            ],
+            "stopReason": "stop"
+          },
+          "entryId": "a1"
+        }
+      ]
+    },
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "first",
+          "state": "delivered",
+          "images": [],
+          "id": "c1",
+          "started": true,
+          "entryId": "u1"
+        },
+        {
+          "kind": "user",
+          "text": "second",
+          "state": "sending",
+          "images": [],
+          "id": "c2"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "hi"
+            }
+          ],
+          "done": true,
+          "model": "zai/glm-5.3",
+          "entryId": "a1"
+        }
+      ],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "call": {
+      "fn": "applyEvent",
+      "args": [
+        {
+          "type": "message_start",
+          "message": {
+            "role": "user",
+            "content": "second"
+          }
+        }
+      ]
+    },
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "first",
+          "state": "delivered",
+          "images": [],
+          "id": "c1",
+          "started": true,
+          "entryId": "u1"
+        },
+        {
+          "kind": "user",
+          "text": "second",
+          "state": "delivered",
+          "images": [],
+          "id": "c2",
+          "started": true
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "hi"
+            }
+          ],
+          "done": true,
+          "model": "zai/glm-5.3",
+          "entryId": "a1"
+        }
+      ],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "call": {
+      "fn": "applyEvent",
+      "args": [
+        {
+          "type": "message_end",
+          "message": {
+            "role": "user",
+            "content": "second"
+          }
+        }
+      ]
+    },
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "first",
+          "state": "delivered",
+          "images": [],
+          "id": "c1",
+          "started": true,
+          "entryId": "u1"
+        },
+        {
+          "kind": "user",
+          "text": "second",
+          "state": "delivered",
+          "images": [],
+          "id": "c2",
+          "started": true
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "hi"
+            }
+          ],
+          "done": true,
+          "model": "zai/glm-5.3",
+          "entryId": "a1"
+        }
+      ],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  }
+]

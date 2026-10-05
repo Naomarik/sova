@@ -14,6 +14,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, test } from "node:test";
+import { piRuntime, piSession } from "./harness/pi/testing/handle";
 
 const agentDir = mkdtempSync(join(tmpdir(), "sova-chatcfg-test-"));
 // A hosted runtime can still write here after after() ran (pi's catalogs, usage cache): exit is last.
@@ -133,9 +134,9 @@ describe("the saved default for new sessions", () => {
     const path = session(cwd, entries);
     markOwned(path); // written by us, as POST /api/sessions does, not by an unknown writer
     const chat = await acquireChat(path);
-    const inner = chat as unknown as { runtime: { services: { modelRuntime: { getAvailable(): Promise<unknown[]> } } } };
-    inner.runtime.services.modelRuntime.getAvailable = async () => [{ provider: "ollama-cloud", id: "glm-5.3" }];
-    (chat.session as unknown as { setModel(m: unknown): Promise<void> }).setModel = async () => {};
+    const models = piRuntime(chat).services.modelRuntime as unknown as { getAvailable(): Promise<unknown[]> };
+    models.getAvailable = async () => [{ provider: "ollama-cloud", id: "glm-5.3" }];
+    (piSession(chat) as unknown as { setModel(m: unknown): Promise<void> }).setModel = async () => {};
     return chat;
   }
   async function until(cond: () => boolean): Promise<void> {
@@ -152,7 +153,7 @@ describe("the saved default for new sessions", () => {
     chat.handle(client, { type: "set_model", ref: "ollama-cloud/glm-5.3" });
     await until(() => saved()?.model === "ollama-cloud/glm-5.3");
     chat.handle(client, { type: "set_thinking", level: "low" });
-    assert.equal(saved()?.thinking, chat.session.thinkingLevel);
+    assert.equal(saved()?.thinking, piSession(chat).thinkingLevel);
   });
 
   test("the same switch without save: true changes that chat and never the default", async () => {

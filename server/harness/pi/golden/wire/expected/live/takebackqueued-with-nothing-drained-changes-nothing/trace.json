@@ -1,0 +1,47 @@
+[
+  {
+    "call": {
+      "fn": "addPendingPrompt",
+      "args": [
+        "hi"
+      ]
+    },
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "hi",
+          "state": "sending",
+          "images": []
+        }
+      ],
+      "tools": {},
+      "running": false,
+      "activity": null,
+      "stopping": false
+    }
+  },
+  {
+    "call": {
+      "fn": "takeBackQueued",
+      "args": [
+        []
+      ]
+    },
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "hi",
+          "state": "sending",
+          "images": []
+        }
+      ],
+      "tools": {},
+      "running": false,
+      "activity": null,
+      "stopping": false
+    },
+    "returned": ""
+  }
+]

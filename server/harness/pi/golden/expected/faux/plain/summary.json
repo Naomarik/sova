@@ -1,0 +1,11 @@
+{
+  "id": "00000000-0000-7000-8000-000000000001",
+  "cwd": "/golden-agent/cwd/plain",
+  "title": "hello",
+  "createdAt": "2026-09-03T08:00:00.005Z",
+  "model": "faux/faux-1",
+  "context": {
+    "tokens": 2734,
+    "window": null
+  }
+}

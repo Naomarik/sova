@@ -1,0 +1,6 @@
+[
+  "{\"id\":\"j0000001\",\"kind\":\"user\",\"at\":\"2026-09-01T10:00:01.000Z\",\"text\":\"Before the damage\",\"meta\":{\"type\":\"message\",\"role\":\"user\"}}",
+  "{\"id\":\"j0000002:0\",\"kind\":\"assistant-text\",\"text\":\"After the malformed line\",\"at\":\"2026-09-01T10:00:02.000Z\",\"model\":\"zai/glm-5.3\",\"meta\":{\"type\":\"message\",\"role\":\"assistant\",\"provider\":\"zai\",\"model\":\"glm-5.3\",\"usage\":{\"input\":1200,\"output\":80,\"cacheRead\":400,\"cacheWrite\":0,\"totalTokens\":1680,\"cost\":{\"input\":0.001,\"output\":0.002,\"cacheRead\":0.0001,\"cacheWrite\":0,\"total\":0.0031}},\"stopReason\":\"stop\"}}",
+  "{\"id\":\"line2\",\"kind\":\"unknown\",\"meta\":{\"type\":\"unknown\"},\"entry\":[1,2,3]}",
+  "{\"id\":\"j0000003\",\"kind\":\"user\",\"at\":\"2026-09-01T10:00:03.000Z\",\"text\":\"Last whole line\",\"meta\":{\"type\":\"message\",\"role\":\"user\"}}"
+]

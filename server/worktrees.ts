@@ -30,6 +30,7 @@ import { homedir, tmpdir } from "node:os";
 import { dirname, isAbsolute, join, normalize, resolve, sep } from "node:path";
 import { LEGACY_REGISTRY_ENTRY_TYPE, readWorkerManifests, WORKER_MANIFEST_ENTRY_TYPE } from "../pi-config/extensions/subagents/worker-transcript.ts";
 import type { SessionWorktrees, WorktreeStatus, WorktreesInsight } from "../shared/protocol";
+import { headerOf } from "./harness/pi/reader";
 import { resolveSessionPath } from "./paths";
 import { parseTargetCwd } from "./targets";
 
@@ -694,9 +695,9 @@ export function candidatesOf(text: string): SessionCandidates {
     } catch {
       continue;
     }
-    const e = v as { type?: unknown; cwd?: unknown } | null;
-    if (isHeader && e?.type === "session") {
-      if (typeof e.cwd === "string" && e.cwd !== "") cwd = e.cwd;
+    const header = isHeader ? headerOf(v) : null;
+    if (header) {
+      if (typeof header.cwd === "string" && header.cwd !== "") cwd = header.cwd;
       continue;
     }
     records.push(v);

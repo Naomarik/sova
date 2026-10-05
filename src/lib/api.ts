@@ -74,6 +74,7 @@ import type {
   PushTestResult,
 } from "../../shared/protocol";
 import type { MeshFrontDoor, MeshLocalSettings } from "../../shared/mesh-local";
+import { WIRE_PARAM } from "../../shared/protocol";
 import type { LanPairingAdd, LanRelayPut, LanStatus } from "../../shared/mesh-lan";
 import type {
   MeshAccessPut,
@@ -719,6 +720,10 @@ export const cleanupSessions = (req: CleanupRequest | PathsCleanupRequest, dryRu
     body: JSON.stringify({ ...req, dryRun }),
   }).then((raw) => ({ ...parseCleanupResult(raw), refused: refusedEntries(raw) }));
 
+/** Rows and live events in the harness contract's words (WireVersion): a server that predates it
+    ignores this and sends wire 1, which the readers map (shared/wire-v1.ts). */
+const WIRE = `${WIRE_PARAM}=2`;
+
 /** A peer session's items name files on that peer (images it attached): their bytes come from it
     too. A peer on an older Sova sends its rows in the old shape (lib/legacy-rows). */
 function noteAttachmentsHost(path: string, items: TranscriptItem[]): TranscriptItem[] {
@@ -731,11 +736,11 @@ function noteAttachmentsHost(path: string, items: TranscriptItem[]): TranscriptI
 /** The whole branch with each row light (`view=light`): what the session pane reads of every row,
     without the replies' text, tools' output and image bytes that only the thread draws. */
 export const fetchTranscriptLight = (path: string) =>
-  request<{ items: TranscriptItem[] }>(`/api/transcript?path=${encodeURIComponent(path)}&view=light`).then((r) => noteAttachmentsHost(path, r.items));
+  request<{ items: TranscriptItem[] }>(`/api/transcript?path=${encodeURIComponent(path)}&view=light&${WIRE}`).then((r) => noteAttachmentsHost(path, r.items));
 
 /** The transcript plus its context-window fill (null when unknown or stale). */
 export const fetchTranscriptWithContext = (path: string) =>
-  request<{ items: TranscriptItem[]; context: ContextInfo | null }>(`/api/transcript?path=${encodeURIComponent(path)}`).then((r) => ({
+  request<{ items: TranscriptItem[]; context: ContextInfo | null }>(`/api/transcript?path=${encodeURIComponent(path)}&${WIRE}`).then((r) => ({
     items: noteAttachmentsHost(path, r.items),
     context: r.context ?? null,
   }));
@@ -749,6 +754,7 @@ export async function fetchTranscriptRows(path: string, ask: RowsAsk, leaf?: str
   const q = new URLSearchParams({ path });
   for (const [k, v] of Object.entries(ask)) q.set(k, v === true ? "1" : String(v));
   if (leaf) q.set("leaf", leaf);
+  q.set(WIRE_PARAM, "2");
   try {
     const r = await request<TranscriptRows>(`/api/transcript?${q}`);
     return { ...r, items: noteAttachmentsHost(path, r.items) };
@@ -784,7 +790,7 @@ export async function fetchTranscriptForCache(
   const aborter = new AbortController();
   // The newest rows only, as a view's hello carries them (TranscriptRows): the view fetches the
   // rest when it wants them (lib/older-rows).
-  const res = await fetch(routeUrl(`/api/transcript?path=${encodeURIComponent(path)}&tail=1`), { signal: aborter.signal });
+  const res = await fetch(routeUrl(`/api/transcript?path=${encodeURIComponent(path)}&tail=1&${WIRE}`), { signal: aborter.signal });
   if (res.status === 401) onUnauthorized(await res.json().catch(() => undefined));
   if (!res.ok) throw new ApiError(`${res.status} ${res.statusText}`, res.status);
   const announced = Number(res.headers.get("content-length")) || 0;
@@ -898,7 +904,7 @@ export const removeWorktrees = (path: string, expect: string[]) =>
  * something that isn't a TUI. It never overrides a live TUI.
  */
 export function wsUrl(endpoint: "/ws/chat" | "/ws/watch", path: string, force = false, host: string | null = hostOf(path)): string {
-  return `${wsOrigin()}${peerBase(host)}${endpoint}?path=${encodeURIComponent(path)}${force ? "&force=1" : ""}`;
+  return `${wsOrigin()}${peerBase(host)}${endpoint}?path=${encodeURIComponent(path)}${force ? "&force=1" : ""}&${WIRE}`;
 }
 
 function wsOrigin(): string {

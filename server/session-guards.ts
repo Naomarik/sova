@@ -1,6 +1,7 @@
+import type { HEntry } from "../shared/harness";
 import type { SessionSummary, TranscriptItem } from "../shared/protocol";
 import { alignRowText } from "./align-state";
-import { entryOf } from "./transcript";
+import { sourceOf } from "./transcript";
 
 /**
  * Guards every in-process session tool shares: the Overseer's sova_* tools (server/overseer-tools.ts),
@@ -46,10 +47,9 @@ export function hiddenFromProfiles(s: SessionSummary): boolean {
   return !!(s.overseer || s.projectOverseer || s.org || s.baton || s.workerSession);
 }
 
-function argSummary(raw: unknown, toolCallId?: string): string {
-  const content = (raw as { message?: { content?: unknown } })?.message?.content;
-  if (!Array.isArray(content)) return "";
-  const call = content.find((b) => b?.type === "toolCall" && (toolCallId === undefined || b.id === toolCallId));
+function argSummary(h: HEntry | undefined, toolCallId?: string): string {
+  if (!h || !("blocks" in h)) return "";
+  const call = h.blocks.find((b) => b.type === "toolCall" && (toolCallId === undefined || b.id === toolCallId)) as { arguments?: unknown } | undefined;
   const args = call?.arguments;
   if (!args || typeof args !== "object") return "";
   // Never a call's contact (a referral's, §app.overseer/org-projection), whatever order its arguments are in.
@@ -83,7 +83,7 @@ export function renderTranscript(
         line = `ASSISTANT: ${it.text ?? ""}`;
         break;
       case "tool-call":
-        line = `→ ${it.text ?? "tool"} ${argSummary(entryOf(it), it.toolCallId)}`.trimEnd();
+        line = `→ ${it.text ?? "tool"} ${argSummary(sourceOf(it), it.toolCallId)}`.trimEnd();
         break;
       case "report":
         line = `REPORT (${it.report?.source ?? "extension"}): ${it.text ?? ""}`;

@@ -3,7 +3,7 @@ import type { IncomingMessage, Server } from "node:http";
 import type { Duplex } from "node:stream";
 import type { WebSocket } from "ws";
 import { cappedWebSocketServer, streamWebSocketServer } from "./runtime-quirks";
-import type { ChatClientMessage, ChatServerMessage, LlmFeedMessage, SessionFeedMessage, WatchServerMessage } from "../shared/protocol";
+import type { ChatClientMessage, ChatServerMessage, LlmFeedMessage, SessionFeedMessage, V2EventFrame, WatchServerMessage } from "../shared/protocol";
 import { refuseUpgrade } from "./auth";
 import { isDirectLocal } from "./compression";
 import { acquireChat, BusyError, ConfigError, type ChatClient } from "./chat-manager";
@@ -19,8 +19,10 @@ import { meshUpgrade } from "./mesh";
 import { type Normalize, SessionTail } from "./watch";
 import { sharedWorkerWindowResolver } from "./models";
 import { contextTally, type Format, type WindowResolver } from "./worker-context";
+import { wireOf } from "./wire-rows";
+import type { WireVersion } from "../shared/protocol";
 
-function sendJson(ws: WebSocket, msg: ChatServerMessage | WatchServerMessage | SessionFeedMessage | LlmFeedMessage): void {
+function sendJson(ws: WebSocket, msg: ChatServerMessage | V2EventFrame | WatchServerMessage | SessionFeedMessage | LlmFeedMessage): void {
   if (ws.readyState !== ws.OPEN) return;
   try {
     ws.send(JSON.stringify(msg));
@@ -44,10 +46,11 @@ function sendRaw(ws: WebSocket, json: string): void {
     `prefetch` for a browser on this machine connecting directly: it may as well fetch it all). */
 type TailAsk = { tail: false } | { tail: true; pull: false } | { tail: true; pull: true; prefetch: boolean };
 
-async function handleChat(ws: WebSocket, path: string, force: boolean, ask: TailAsk): Promise<void> {
+async function handleChat(ws: WebSocket, path: string, force: boolean, ask: TailAsk, wire: WireVersion): Promise<void> {
   const client: ChatClient = {
     send: (msg) => sendJson(ws, msg),
     sendRaw: (json) => sendRaw(ws, json),
+    ...(wire === 2 ? { wire: 2 as const } : {}),
     ...(ask.tail ? { tail: true } : {}),
     ...(ask.tail && ask.pull ? { pull: { prefetch: ask.prefetch } } : {}),
   };
@@ -99,7 +102,7 @@ async function handleChat(ws: WebSocket, path: string, force: boolean, ask: Tail
   for (const msg of early.splice(0)) chat.handle(client, msg);
 }
 
-function handleWatch(ws: WebSocket, path: string, ask: TailAsk, normalize?: Normalize, format: Format = "pi"): void {
+function handleWatch(ws: WebSocket, path: string, ask: TailAsk, wire: WireVersion, normalize?: Normalize, format: Format = "pi"): void {
   // pi replies name their model, so the fill carries its window; the runtime is resolved first.
   let resolve: WindowResolver = () => null;
   const tail = new SessionTail(
@@ -109,6 +112,7 @@ function handleWatch(ws: WebSocket, path: string, ask: TailAsk, normalize?: Norm
     contextTally(format, (ref) => resolve(ref)),
     ask.tail && !ask.pull ? (json) => sendRaw(ws, json) : undefined,
     ask.tail && ask.pull ? { prefetch: ask.prefetch } : undefined,
+    wire,
   );
   // A claude-code worker's own file has no Sova session id: nothing to stamp.
   const id = normalize ? "" : idOf(path);
@@ -210,6 +214,8 @@ function upgradeWith(server: typeof wss, req: IncomingMessage, socket: Duplex, h
     // alone (server/transcript-rows.ts); anything else, as it always was.
     const t = url.searchParams.get("tail");
     const tail: TailAsk = t === "1" ? { tail: true, pull: false } : t === "rest" ? { tail: true, pull: true, prefetch: direct } : { tail: false };
+    // ?wire=2: events and rows in the harness contract's words (server/wire-rows.ts); else wire 1.
+    const wire = wireOf(url.searchParams);
     // /ws/watch?claude=<uuid>: a claude-code worker's own session file, in CC's own format.
     const claudeId = route === "/ws/watch" ? url.searchParams.get("claude") : null;
     if (claudeId) {
@@ -220,7 +226,7 @@ function upgradeWith(server: typeof wss, req: IncomingMessage, socket: Duplex, h
         return;
       }
       // REST serves pi session files only: a Claude Code file's older rows are pushed, as with ?tail=1.
-      handleWatch(ws, file, tail.tail ? { tail: true, pull: false } : tail, normalizeClaudeText, "claude");
+      handleWatch(ws, file, tail.tail ? { tail: true, pull: false } : tail, wire, normalizeClaudeText, "claude");
       return;
     }
     const path = resolveSessionPath(url.searchParams.get("path"));
@@ -231,12 +237,12 @@ function upgradeWith(server: typeof wss, req: IncomingMessage, socket: Duplex, h
       return;
     }
     if (route === "/ws/chat") {
-      handleChat(ws, path, url.searchParams.get("force") === "1", tail).catch((err) => {
+      handleChat(ws, path, url.searchParams.get("force") === "1", tail, wire).catch((err) => {
         console.error("[ws/chat]", err);
         ws.close(4500, "internal");
       });
     } else {
-      handleWatch(ws, path, tail);
+      handleWatch(ws, path, tail, wire);
     }
   });
 }

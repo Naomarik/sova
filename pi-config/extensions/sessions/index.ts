@@ -10,7 +10,7 @@ import { subscribeWorkers, type WorkerSummary, type WorkerUsageTotal } from "./w
 import { SessionsOverlay } from "./ui.ts";
 import { clean, SessionStore, parseOutline, type Presence, type PresenceOutline } from "./state.ts";
 import { isCounting, snapshot as llmSnapshot, subscribe as subscribeLlm } from "../llm-inflight/tracker.ts";
-import { countWorkers, fit, presenceWorkers, RECORD_BUDGET, SCHEMA_VERSION, SESSION_MODES, workerModes, WORKER_EFFORT_MAX, WORKER_SESSION_FILE_MAX, WORKER_SESSION_ID_MAX, type Activity, type SessionMeta, type SessionState } from "./schema.ts";
+import { countWorkers, fit, presenceWorkers, RECORD_BUDGET, SCHEMA_VERSION, SESSION_MODES, workerModes, WORKER_EFFORT_MAX, WORKER_SESSION_FILE_MAX, WORKER_SESSION_ID_MAX, WORKER_TEAM_ID_MAX, type Activity, type SessionMeta, type SessionState } from "./schema.ts";
 
 const OUTLINE_SNAPSHOT = "topic-outline:snapshot";
 const OUTLINE_REQUEST = "topic-outline:request";
@@ -206,6 +206,7 @@ export default function sessions(pi: ExtensionAPI, deps: SessionsDeps = {}) {
         sessionId: w.sessionId ? clean(w.sessionId, WORKER_SESSION_ID_MAX) : undefined,
         effort: w.effort ? clean(w.effort, WORKER_EFFORT_MAX) : undefined,
         modes: workerModes(w.modes),
+        teamId: w.teamId ? clean(w.teamId, WORKER_TEAM_ID_MAX) : undefined,
         startedAt: w.startedAt, lastActivity: w.lastActivity, endedAt: w.endedAt, outcome: w.outcome,
         // Counts only, already normalized by the snapshot decoder.
         usage: w.usage ? { ...w.usage } : undefined,

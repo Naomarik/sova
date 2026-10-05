@@ -9,7 +9,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { ModelRuntime, SessionManager } from "@earendil-works/pi-coding-agent";
-import { modelForSessionOpen, recordedModelForEmptyBranch, restatesRecordedModel } from "./chat-manager";
+import { modelForSessionOpen, recordedModelForEmptyBranch, restatesRecordedModel } from "./harness/pi/open";
 
 type Recorded = { provider: string; modelId: string } | null;
 type Message = { role: string };

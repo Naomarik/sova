@@ -1,0 +1,95 @@
+{
+  "operator": {
+    "view": {
+      "publicTitle": "Golden launch",
+      "state": "active",
+      "holder": "Alice",
+      "items": [
+        {
+          "kind": "message",
+          "id": "k0000001",
+          "by": "",
+          "name": "Someone",
+          "text": "Root",
+          "at": "2026-09-01T10:00:01.000Z"
+        },
+        {
+          "kind": "reply",
+          "id": "k0000002",
+          "text": "Middle",
+          "at": "2026-09-01T10:00:02.000Z"
+        },
+        {
+          "kind": "message",
+          "id": "k0000003",
+          "by": "p_alice",
+          "name": "Alice",
+          "text": "Leaf closes the cycle",
+          "at": "2026-09-01T10:00:03.000Z"
+        }
+      ]
+    },
+    "photos": 0
+  },
+  "bob": {
+    "view": {
+      "publicTitle": "Golden launch",
+      "state": "active",
+      "holder": "Alice",
+      "items": [
+        {
+          "kind": "message",
+          "id": "k0000001",
+          "by": "",
+          "name": "Someone",
+          "text": "Root",
+          "at": "2026-09-01T10:00:01.000Z"
+        },
+        {
+          "kind": "reply",
+          "id": "k0000002",
+          "text": "Middle",
+          "at": "2026-09-01T10:00:02.000Z"
+        },
+        {
+          "kind": "message",
+          "id": "k0000003",
+          "by": "p_alice",
+          "name": "Alice",
+          "text": "Leaf closes the cycle",
+          "at": "2026-09-01T10:00:03.000Z"
+        }
+      ]
+    },
+    "photos": 0
+  },
+  "untilOffer": {
+    "publicTitle": "Golden launch",
+    "state": "active",
+    "holder": null,
+    "items": [
+      {
+        "kind": "message",
+        "id": "k0000001",
+        "by": "",
+        "name": "Someone",
+        "text": "Root",
+        "at": "2026-09-01T10:00:01.000Z"
+      },
+      {
+        "kind": "reply",
+        "id": "k0000002",
+        "text": "Middle",
+        "at": "2026-09-01T10:00:02.000Z"
+      },
+      {
+        "kind": "message",
+        "id": "k0000003",
+        "by": "p_alice",
+        "name": "Alice",
+        "text": "Leaf closes the cycle",
+        "at": "2026-09-01T10:00:03.000Z"
+      }
+    ]
+  }
+}

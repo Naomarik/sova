@@ -1,12 +1,11 @@
 import { BATON_HANDOFF_ENTRY, BATON_OFFER_ENTRY, BATON_SENT_ENTRY } from "../shared/baton";
+import type { HEntry } from "../shared/harness";
 import type { Person } from "../shared/orgs";
 
 /**
  * Server-side guards on what a baton model may do (§app.baton/hand-off, §app.organizations/wrap-up):
  * checks a cheap model can't talk its way past. Pure: callers pass the branch, roster and names.
  */
-
-type Entry = Record<string, any>;
 
 const textOf = (content: unknown): string =>
   typeof content === "string"
@@ -37,25 +36,27 @@ export function names(text: string, fullName: string, exactCase = false): boolea
  * in a reply since the last hand-off and the holder has answered since. Otherwise the model picked
  * someone on its own.
  */
-export function handoffChosen(branch: readonly Entry[], holder: string, target: string, goal: string): boolean {
+export function handoffChosen(branch: readonly HEntry[], holder: string, target: string, goal: string): boolean {
   if (names(goal, target)) return true;
   const sentBy = new Map<string, string>();
-  for (const e of branch) if (e.type === "custom" && e.customType === BATON_SENT_ENTRY && typeof e.data?.targetId === "string") sentBy.set(e.data.targetId, e.data.by);
-  let lastUser: string | undefined;
-  for (const e of branch) if (e.type === "message" && e.message?.role === "user") lastUser = e.id;
+  for (const h of branch) {
+    const d = h.kind === "state" && h.key === BATON_SENT_ENTRY ? (h.data as Record<string, any> | null | undefined) : undefined;
+    if (typeof d?.targetId === "string") sentBy.set(d.targetId, d.by);
+  }
+  let lastUser: string | null | undefined;
+  for (const h of branch) if (h.kind === "user") lastUser = h.id;
   let proposed = false;
-  for (const e of branch) {
+  for (const h of branch) {
     // A name the model mentioned before this hand-off was never put to this holder.
-    if (e.type === "custom" && (e.customType === BATON_HANDOFF_ENTRY || e.customType === BATON_OFFER_ENTRY)) proposed = false;
-    if (e.type !== "message") continue;
-    const text = textOf(e.message?.content);
-    if (e.message?.role === "assistant") {
-      if (names(text, target)) proposed = true;
+    if (h.kind === "state" && (h.key === BATON_HANDOFF_ENTRY || h.key === BATON_OFFER_ENTRY)) proposed = false;
+    if (h.kind === "assistant") {
+      if (names(textOf(h.blocks), target)) proposed = true;
       continue;
     }
-    if (e.message?.role !== "user") continue;
+    if (h.kind !== "user") continue;
+    const text = textOf(h.blocks);
     // Its marker lands a microtask after the message: until then, the last message is the holder's.
-    const by = sentBy.get(e.id) ?? (e.id === lastUser ? holder : undefined);
+    const by = (h.id === null ? undefined : sentBy.get(h.id)) ?? (h.id === lastUser ? holder : undefined);
     if (by !== holder) continue;
     if (names(text, target) || proposed) return true;
   }

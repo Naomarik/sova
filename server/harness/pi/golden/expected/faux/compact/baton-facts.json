@@ -1,0 +1,36 @@
+{
+  "vocabulary": [
+    "First question",
+    "Second question"
+  ],
+  "senders": {
+    "$map": [
+      [
+        "00000006",
+        "p_alice"
+      ]
+    ]
+  },
+  "sendersNoHolder": {
+    "$map": []
+  },
+  "notes": [
+    {
+      "timestamp": 1788422400008,
+      "text": "First question",
+      "note": "[From someone]"
+    },
+    {
+      "timestamp": 1788422400014,
+      "text": "Second question",
+      "note": "[From Alice]"
+    }
+  ],
+  "counted": 2,
+  "model": {
+    "model": "faux/faux-1",
+    "thinking": "medium"
+  },
+  "photos": 0,
+  "modelRef": "faux/faux-1"
+}

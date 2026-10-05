@@ -1,0 +1,48 @@
+// Rule-only escapes (§app.harness/boundary): no baseline, every hit fails. A production file importing what
+// only tests may (`server/harness/pi/testing/`, `host-registry.ts`), a cast or a string-named member on the
+// driving session or one of its parts (the way to its private pi session), and a StateKind that is not a
+// registered binding (a cast, an object declared as one, or a kind built at the `append` call). Each block is
+// scanned as its own file at `path` (default server/fixture.ts) and must give exactly `expect`.
+// ---- T1 the tests' handle from production code expect={"violations":["test-only-import"]}
+import { piSession } from "./harness/pi/testing/handle"; piSession(chat).prompt("x");
+// ---- T2 a type import counts too expect={"violations":["test-only-import"]}
+import type { ScriptedModel } from "./harness/pi/testing/scripted-model";
+// ---- T3 the runtime registry, imported dynamically expect={"violations":["test-only-import"]}
+const { hostedRuntimes } = await import("./harness/pi/host-registry");
+// ---- T4 re-exported expect={"violations":["test-only-import"]}
+export { piRuntime } from "./harness/pi/testing/handle";
+// ---- T5 a test may path=server/chat.test.ts expect={}
+import { piSession } from "./harness/pi/testing/handle"; piSession(chat).prompt("x");
+// ---- T6 the adapter's other files are not test-only expect={}
+import { isAlreadyProcessing } from "./harness/pi/session";
+// ---- H1 a cast to reach pi's private session expect={"violations":["harness-private"]}
+(chat.harness as any).s._isEmittingAgentSettled;
+// ---- H2 an angle-bracket cast of a bare harness expect={"violations":["harness-private"]}
+const s = (<any>harness).s;
+// ---- H3 a member named by a string expect={"violations":["harness-private"]}
+chat.harness["s"].prompt("x");
+// ---- H4 a part of the driving session, cast twice (counted once) expect={"violations":["harness-private"]}
+(this.harness.queue as unknown as { q: unknown[] }).q;
+// ---- H5 the contract's own members, and a cast of a call's result expect={}
+chat.harness.isRunning(); const h: HarnessSession = chat.harness; (chat.harness.model() as any)?.ref; harness?.queue.hasQueued();
+// ---- H6 tests are exempt path=server/chat.test.ts expect={}
+(chat.harness as any).s;
+// ---- S1 a new type written through a cast expect={"violations":["adhoc-state-kind"]}
+chat.harness.state.append({ type: "brand-new", owner: "sova" } as any, data);
+// ---- S2 a kind built at the call expect={"violations":["adhoc-state-kind"]}
+ctx.state().append({ type: "brand-new", owner: "sova", parse: (d) => d, fold: "presence" }, data);
+// ---- S3 a kind looked up by string expect={"violations":["adhoc-state-kind"]}
+state.append(kinds["brand-new"], data);
+// ---- S4 an object asserted as a StateKind expect={"violations":["adhoc-state-kind"]}
+const K = { type: "brand-new", owner: "sova", parse: (d: unknown) => d, fold: "presence" } as StateKind<unknown>;
+// ---- S5 an object declared as one outside the registry expect={"violations":["adhoc-state-kind"]}
+const K: StateKind<unknown> = { type: "brand-new", owner: "sova", parse: (d: unknown) => d, fold: "presence" };
+// ---- S6 the registry defines kinds path=server/harness/state-kinds.ts expect={}
+const K = { type: "brand-new", owner: "sova", parse: (d: unknown) => d, fold: "presence" } satisfies StateKind<unknown>;
+const L: StateKind<unknown> = { type: "other", owner: "sova", parse: (d: unknown) => d, fold: "presence" };
+// ---- S7 registered kinds by binding, and other appends expect={}
+chat.harness.state.append(TOPIC_DELIVERED, d); ctx.state().append(kinds.MODE, d); state.append(this.kind, d); params.append("a", "b"); list.append(x as any);
+// ---- S8 a kind typed, not built expect={}
+const seed: [StateKind<any>, unknown][] = [[BATON, data]]; function w<T>(kind: StateKind<T>, data: T) { return state.append(kind, data); }
+// ---- S9 tests are exempt path=server/state.test.ts expect={}
+chat.harness.state.append({ type: "brand-new" } as any, data);

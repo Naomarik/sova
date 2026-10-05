@@ -1,0 +1,121 @@
+// Reader ratchet fixtures, `calls` and `shapes` (§app.harness/boundary). Each block is scanned as its
+// own file at `path` (default server/fixture.ts) and must give exactly `expect`.
+// ---- parseLines call expect={"calls":1}
+import { parseLines } from "./transcript";
+export const entries = parseLines(text);
+// ---- each raw API name expect={"calls":6}
+import { activeBranch, readActiveBranch, entryOf, normalizeEntries, normalizeEntry, rawOf } from "./transcript";
+activeBranch(x); await readActiveBranch(p); entryOf(item); normalizeEntries(es); normalizeEntry(e); rawOf(h);
+// ---- passed as a value expect={"calls":1}
+import { parseLines } from "./transcript";
+export const all = texts.map(parseLines);
+// ---- aliased import expect={"calls":1}
+import { parseLines as pl } from "./transcript";
+export const entries = pl(text);
+// ---- namespace import expect={"calls":1}
+import * as T from "./transcript.ts";
+export const entries = T.parseLines(text);
+// ---- from a subdirectory path=server/mesh/fixture.ts expect={"calls":1}
+import { activeBranch } from "../transcript";
+export const b = activeBranch(es);
+// ---- a type-only import is no call expect={}
+import type { parseLines } from "./transcript";
+type P = typeof parseLines;
+// ---- an unrelated local entryOf is not the transcript's expect={}
+function entryOf(x: number) { return x; }
+export const y = entryOf(1);
+// ---- an entryOf imported from elsewhere is not the transcript's expect={}
+import { entryOf } from "./project-services/view-routes";
+export const v = entryOf([], null);
+// ---- getBranch expect={"calls":1}
+export const b = sm.getBranch();
+// ---- optional getEntries expect={"calls":1}
+export const all = sm?.getEntries?.();
+// ---- getEntry expect={"calls":1}
+export const e = sm.getEntry(id);
+// ---- element access getEntry expect={"calls":1}
+export const e = sm["getEntry"](id);
+// ---- rawBranch expect={"calls":1}
+export const b = ctx.rawBranch();
+// ---- destructured getBranch expect={"calls":1}
+const { getBranch } = sm;
+// ---- a method signature is no call expect={}
+interface Reader { getBranch(): unknown[]; getEntries(): unknown[] }
+// ---- customType property read expect={"shapes":1}
+export const t = e.customType;
+// ---- customType element read expect={"shapes":1}
+export const t = e["customType"];
+// ---- customType destructured expect={"shapes":1}
+const { customType } = e;
+// ---- .type === pi type expect={"shapes":1}
+export const isCustom = e.type === "custom";
+// ---- literal on the left, !== expect={"shapes":1}
+export const notMsg = "message" !== e.type;
+// ---- loose == on optional chain expect={"shapes":1}
+export const u = e?.type == "usage";
+// ---- switch on .type expect={"shapes":2}
+switch (e.type) {
+  case "compaction":
+  case "label":
+    break;
+  case "not-a-pi-type":
+    break;
+}
+// ---- JSON-spelled fields in line prefilters expect={"shapes":3}
+if (line.includes('"type":"message"') || line.includes('"customType":"') || line.includes('"role":"')) keep(line);
+// ---- negative: a non-pi type literal expect={}
+export const ev = msg.type === "event";
+// ---- negative: an object literal write expect={}
+export const entry = { type: "custom", customType: "x" };
+// ---- negative: .kind expect={}
+export const k = x.kind === "custom";
+// ---- negative: a bare identifier (too broad to count) expect={}
+const { type } = e;
+export const c = type === "custom";
+// ---- negative: a type member expect={}
+interface E { customType: string; type: "custom" }
+// ---- negative: switch on something else expect={}
+switch (kind) { case "custom": break; }
+// ---- negative: a JSON string of another type expect={}
+const s = '"type":"event"';
+// ---- src: pi event comparisons and meta reads path=src/lib/fixture.ts expect={"shapes":5}
+if (ev.type === "message_start") start();
+switch (ev.type) { case "tool_execution_end": end(); break; case "other": break; }
+export const t = row.meta?.usage;
+export const isCompaction = row.meta.type === "compaction";
+// ---- src: meta?. on a bare identifier path=src/lib/fixture.ts expect={"shapes":1}
+export const m = meta?.model;
+// ---- server: event names and meta are not counted there expect={}
+if (ev.type === "message_start") start();
+export const u = row.meta?.usage;
+// ---- re-export of the raw API fails expect={"violations":["reexport"]}
+export { parseLines } from "./transcript";
+// ---- export star of transcript fails expect={"violations":["reexport"]}
+export * from "./transcript";
+// ---- re-export of an imported raw binding fails expect={"violations":["reexport"]}
+import { parseLines } from "./transcript";
+export { parseLines };
+// ---- re-export of a non-raw transcript name is fine expect={}
+export { contextForBranch } from "./transcript";
+// ---- a test file counts no reads path=server/fixture.test.ts expect={}
+import { parseLines } from "./transcript";
+const es = parseLines(t).filter((e) => e.type === "custom" && e.customType === "x");
+sm.getBranch();
+// ---- the adapter counts no reads path=server/harness/pi/reader.ts expect={}
+import { parseLines } from "../../transcript";
+const es = parseLines(t).filter((e) => e.type === "custom" && e.customType === "x");
+// ---- the reader's raw API counts like the transcript's expect={"calls":2}
+import { parseLines, rawOf } from "./harness/pi/reader";
+const raw = parseLines(t).concat(h.map(rawOf));
+// ---- the reader's raw API from a subdirectory path=server/mesh/fixture.ts expect={"calls":1}
+import { readActiveBranch as rab } from "../harness/pi/reader.ts";
+await rab(p);
+// ---- re-export of the reader's raw API fails expect={"violations":["reexport"]}
+export { rawOf } from "./harness/pi/reader";
+// ---- the neutral reader is no raw read expect={}
+import { branchOf, parsePi, readBranch, toHEntry } from "./harness/pi/reader";
+const b = branchOf(parsePi(t).entries).concat(await readBranch(p), [toHEntry(x)]);
+// ---- the transcript forwards the reader's raw API path=server/transcript.ts expect={}
+export { activeBranch, parseLines, readActiveBranch } from "./harness/pi/reader";
+import { rawOf } from "./harness/pi/reader";
+export const rowsOf = (h) => normalizeEntries(h.map(rawOf));

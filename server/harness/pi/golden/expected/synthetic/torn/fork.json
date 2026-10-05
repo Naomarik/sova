@@ -1,0 +1,6 @@
+{
+  "parse": {
+    "ok": false,
+    "why": "line 5 is not JSON (a torn or corrupt write?)"
+  }
+}

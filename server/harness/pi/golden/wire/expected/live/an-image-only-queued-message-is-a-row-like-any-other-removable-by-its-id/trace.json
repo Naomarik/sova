@@ -1,0 +1,100 @@
+[
+  {
+    "call": {
+      "fn": "addPendingPrompt",
+      "args": [
+        "",
+        [],
+        [
+          {
+            "path": "/tmp/sova-x.png",
+            "name": "sova-x.png",
+            "mimeType": "image/png",
+            "size": 10
+          }
+        ],
+        "c1"
+      ]
+    },
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "",
+          "state": "sending",
+          "images": [],
+          "id": "c1",
+          "attachments": [
+            {
+              "path": "/tmp/sova-x.png",
+              "name": "sova-x.png",
+              "mimeType": "image/png",
+              "size": 10,
+              "available": true
+            }
+          ]
+        }
+      ],
+      "tools": {},
+      "running": false,
+      "activity": null,
+      "stopping": false
+    }
+  },
+  {
+    "call": {
+      "fn": "applyQueue",
+      "args": [
+        [
+          {
+            "id": "c1",
+            "kind": "steer",
+            "text": "",
+            "images": 1
+          }
+        ]
+      ]
+    },
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "",
+          "state": "queued",
+          "images": [],
+          "id": "c1",
+          "attachments": [
+            {
+              "path": "/tmp/sova-x.png",
+              "name": "sova-x.png",
+              "mimeType": "image/png",
+              "size": 10,
+              "available": true
+            }
+          ],
+          "queueKind": "steer",
+          "handed": false
+        }
+      ],
+      "tools": {},
+      "running": false,
+      "activity": null,
+      "stopping": false
+    }
+  },
+  {
+    "call": {
+      "fn": "markRemoved",
+      "args": [
+        "c1"
+      ]
+    },
+    "state": {
+      "entries": [],
+      "tools": {},
+      "running": false,
+      "activity": null,
+      "stopping": false
+    }
+  }
+]

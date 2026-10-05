@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, test } from "node:test";
 import { OVERSEER_DIALOG_ANSWER_ENTRY, OVERSEER_ENTRY, OVERSEER_SENT_ENTRY, type ChatServerMessage } from "../shared/protocol";
+import { piSession } from "./harness/pi/testing/handle";
 
 const agentDir = realpathSync(mkdtempSync(join(tmpdir(), "sova-overseer-markers-")));
 // A hosted runtime can still write here after after() ran (pi's catalogs, usage cache): exit is last.
@@ -19,6 +20,7 @@ mkdirSync(cwd, { recursive: true });
 
 const { acquireChat, BusyError, disposeAllChats, isOverseerFile, REWIND_ENTRY, resolveRegenerate } = await import("./chat-manager");
 const { normalizeEntries, normalizeEntry } = await import("./transcript");
+const { historyOf } = await import("./harness/pi/reader");
 const { canonicalPath } = await import("./paths");
 const { getSessionSummary } = await import("./sessions-index");
 // Registers the Overseer runtime loadout with chat-manager, as index.ts does.
@@ -87,7 +89,7 @@ describe("marker entries in the transcript", () => {
 
   test("regenerating the reply to an Overseer-sent message walks back past the marker to that message", () => {
     const branch = [user("u1", null, "run the tests"), sent("m1", "u1", "u1"), assistant("a1", "m1", "ok")];
-    const r = resolveRegenerate(branch, "a1:0");
+    const r = resolveRegenerate(historyOf(branch), "a1:0");
     assert.deepEqual(r, { ok: true, userId: "u1", text: "run the tests" });
   });
 });
@@ -147,12 +149,12 @@ describe("the Overseer file", () => {
     const { path } = await overseer.ensureOverseer();
     const chat = await acquireChat(path);
     assert.equal(chat.overseer, true);
-    assert.ok(isOverseerFile(chat.session.sessionManager));
-    const active = chat.session.getActiveToolNames();
+    assert.ok(isOverseerFile(chat.harness));
+    const active = piSession(chat).getActiveToolNames();
     assert.ok(active.includes("sova_attention") && active.includes("sova_card"), active.join(","));
     for (const banned of ["bash", "edit", "write"]) assert.ok(!active.includes(banned), `${banned} must not be active`);
     assert.ok(active.every((n) => n.startsWith("sova_") || ["read", "grep", "find", "ls", "wake_nudge"].includes(n)), active.join(","));
-    assert.match(chat.session.systemPrompt, /You are the one Overseer/);
+    assert.match(piSession(chat).systemPrompt, /You are the one Overseer/);
   });
 
   test("its read/grep/find/ls refuse secret files; an ordinary session's are pi's own", async () => {
@@ -160,7 +162,7 @@ describe("the Overseer file", () => {
     writeFileSync(join(agentDir, "auth.json"), '{"zai":{"key":"SECRET-KEY-MARKER"}}\n');
     writeFileSync(join(cwd, "plain.txt"), "plain words\n");
     const run = async (chat: Awaited<ReturnType<typeof acquireChat>>, name: string, params: Record<string, unknown>) => {
-      const tool = chat.session.agent.state.tools.find((t) => t.name === name)!;
+      const tool = piSession(chat).agent.state.tools.find((t) => t.name === name)!;
       try {
         const r = await tool.execute("tc", params as never);
         return (r.content as { text?: string }[]).map((c) => c.text ?? "").join("");
@@ -209,10 +211,10 @@ describe("the Overseer file", () => {
     assert.equal((await getSessionSummary(cur.path))?.overseer, true, "the current one still is the Overseer");
     const chat = await acquireChat(forkPath, true);
     assert.equal(chat.overseer, false);
-    assert.equal(isOverseerFile(chat.session.sessionManager), false);
-    const active = chat.session.getActiveToolNames();
+    assert.equal(isOverseerFile(chat.harness), false);
+    const active = piSession(chat).getActiveToolNames();
     assert.ok(!active.some((n) => n.startsWith("sova_")), `the ordinary loadout: ${active.join(",")}`);
-    assert.doesNotMatch(chat.session.systemPrompt, /You are the one Overseer/);
+    assert.doesNotMatch(piSession(chat).systemPrompt, /You are the one Overseer/);
 
     // History files stay the Overseer's (read-only) after a clear; the fork stays ordinary.
     const info = await overseer.clearOverseer();
@@ -232,7 +234,7 @@ describe("the Overseer file", () => {
 /** Let a plain session run without credentials: auth passes and the model is a stub replying
     "ok". `hold` makes each model call wait on it, so a turn stays mid-stream until released. */
 function stubModel(chat: Awaited<ReturnType<typeof acquireChat>>, hold?: () => Promise<void>): void {
-  const session = chat.session as unknown as {
+  const session = piSession(chat) as unknown as {
     _modelRuntime: { hasConfiguredAuth(p: string): boolean };
     agent: { state: { model: unknown }; getApiKey: unknown; streamFunction: unknown };
   };
@@ -304,10 +306,10 @@ describe("POST /api/sessions/prompt's rule (promptSession)", () => {
     chat.attach({ send: (m) => void (m.type === "queue" ? snaps.push(m.items) : m.type === "queue_item_gone" ? gone.push(m) : null) });
     // Which SDK entry each hand-off took: a steer goes into the running turn, a follow-up waits.
     const steered: string[] = [];
-    const steer = chat.session.steer.bind(chat.session);
-    chat.session.steer = (text, images) => (steered.push(text), steer(text, images));
+    const steer = piSession(chat).steer.bind(piSession(chat));
+    piSession(chat).steer = (text, images) => (steered.push(text), steer(text, images));
     void chat.acceptPrompt("a long task").turn;
-    await until(() => chat.session.isStreaming);
+    await until(() => piSession(chat).isStreaming);
     return { path, chat, release, snaps, gone, steered, pending: () => (chat as unknown as { senderMarks: unknown[] }).senderMarks };
   }
   const ov = async () => (await overseer.ensureOverseer()).id;
@@ -330,7 +332,7 @@ describe("POST /api/sessions/prompt's rule (promptSession)", () => {
     const r = await sessionPrompt.promptSession(path, "check the build", await ov());
     assert.deepEqual(r, { ok: true, queued: false, kind: "prompt" });
     await until(() => userRows(path).some(([t, m]) => t === "check the build" && m));
-    await chat.session.waitForIdle();
+    await piSession(chat).waitForIdle();
     assert.deepEqual(userRows(path), [["hi", false], ["check the build", true]]);
   });
 
@@ -344,7 +346,7 @@ describe("POST /api/sessions/prompt's rule (promptSession)", () => {
     await until(() => t.gone.some((g) => g.itemId === row!.id));
     assert.equal(t.gone.find((g) => g.itemId === row!.id)?.reason, "delivered");
     await until(() => userRows(t.path).some(([x, m]) => x === "then run the tests" && m));
-    await t.chat.session.waitForIdle();
+    await piSession(t.chat).waitForIdle();
     // The turn's own message is not the Overseer's: only the one it sent is marked.
     assert.deepEqual(userRows(t.path), [["hi", false], ["a long task", false], ["then run the tests", true]]);
     assert.deepEqual(t.pending(), []);
@@ -358,7 +360,7 @@ describe("POST /api/sessions/prompt's rule (promptSession)", () => {
     assert.deepEqual(t.snaps.at(-1)?.map((i) => [i.kind, i.origin, i.overseer]), [["steer", "server", true]]);
     t.release();
     await until(() => userRows(t.path).some(([x, m]) => x === "stop and use pnpm" && m));
-    await t.chat.session.waitForIdle();
+    await piSession(t.chat).waitForIdle();
     assert.deepEqual(userRows(t.path), [["hi", false], ["a long task", false], ["stop and use pnpm", true]]);
     assert.deepEqual(t.steered, ["stop and use pnpm"], "handed to the SDK as a steer");
   });
@@ -375,7 +377,7 @@ describe("POST /api/sessions/prompt's rule (promptSession)", () => {
     assert.equal(out.ok, true);
     assert.deepEqual(t.pending(), []);
     t.release();
-    await t.chat.session.waitForIdle();
+    await piSession(t.chat).waitForIdle();
     assert.deepEqual(userRows(t.path), [["hi", false], ["a long task", false]]);
     assert.ok(!readFileSync(t.path, "utf8").includes(OVERSEER_SENT_ENTRY));
   });
@@ -387,7 +389,7 @@ describe("POST /api/sessions/prompt's rule (promptSession)", () => {
     assert.deepEqual(t.snaps.at(-1)?.map((i) => [i.kind, i.origin, i.overseer]), [["followUp", "server", undefined]]);
     t.release();
     await until(() => userRows(t.path).some(([x]) => x === "from a script"));
-    await t.chat.session.waitForIdle();
+    await piSession(t.chat).waitForIdle();
     assert.deepEqual(userRows(t.path).at(-1), ["from a script", false]);
   });
 

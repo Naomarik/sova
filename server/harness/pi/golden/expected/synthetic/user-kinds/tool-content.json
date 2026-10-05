@@ -1,0 +1,47 @@
+{
+  "n000000b:0": {
+    "args": {
+      "url": "https://example.com/doc"
+    },
+    "result": {
+      "output": "Example Domain",
+      "isError": false
+    }
+  },
+  "n000000b:1": {
+    "args": {
+      "command": "cat /home/user/.pi/skills/other-skill/SKILL.md"
+    },
+    "result": {
+      "output": "skill text",
+      "isError": false
+    }
+  },
+  "n000000c": {
+    "result": {
+      "output": "Example Domain",
+      "isError": false
+    }
+  },
+  "n000000d": {
+    "result": {
+      "output": "skill text",
+      "isError": false
+    }
+  },
+  "n000000e:0": {
+    "args": {
+      "url": "https://example.com/missing"
+    },
+    "result": {
+      "output": "404",
+      "isError": true
+    }
+  },
+  "n000000f": {
+    "result": {
+      "output": "404",
+      "isError": true
+    }
+  }
+}

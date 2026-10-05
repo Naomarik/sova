@@ -43,6 +43,7 @@ export function sameItem(a: TranscriptItem, b: TranscriptItem): boolean {
     sameStrings(a.images, b.images) &&
     a.at === b.at &&
     sameJson(a.meta, b.meta) &&
+    sameJson(a.facts, b.facts) &&
     sameJson(a.tool, b.tool) &&
     sameJson(a.entry, b.entry) &&
     sameJson(a.attachments, b.attachments) &&

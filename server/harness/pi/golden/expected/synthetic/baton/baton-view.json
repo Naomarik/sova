@@ -1,0 +1,248 @@
+{
+  "operator": {
+    "view": {
+      "publicTitle": "Golden launch",
+      "state": "active",
+      "holder": "Alice",
+      "items": [
+        {
+          "kind": "message",
+          "id": "p0000003",
+          "by": "p_alice",
+          "name": "Alice",
+          "text": "Alice asks about the launch date",
+          "at": "2026-09-01T10:00:03.000Z"
+        },
+        {
+          "kind": "reply",
+          "id": "p0000005",
+          "text": "The launch is planned for Monday.",
+          "at": "2026-09-01T10:00:05.000Z"
+        },
+        {
+          "kind": "handoff",
+          "id": "p0000006",
+          "n": 1,
+          "from": "Alice",
+          "to": "Bob",
+          "question": "Bob, can you confirm Monday?",
+          "briefing": "Alice needs a date"
+        },
+        {
+          "kind": "message",
+          "id": "p0000007",
+          "by": "p_bob",
+          "name": "Bob",
+          "text": "Bob confirms Monday, photo attached",
+          "at": "2026-09-01T10:00:07.000Z",
+          "images": [
+            {
+              "n": 0,
+              "mime": "image/png"
+            }
+          ]
+        },
+        {
+          "kind": "reply",
+          "id": "p0000009",
+          "text": "Thanks Bob, Monday it is.",
+          "at": "2026-09-01T10:00:09.000Z"
+        },
+        {
+          "kind": "decision",
+          "id": "p000000a",
+          "by": "Bob",
+          "area": "Launch",
+          "statement": "Launch on Monday"
+        },
+        {
+          "kind": "offer",
+          "id": "p000000b",
+          "n": 2,
+          "from": "Bob",
+          "to": [
+            "Carol",
+            "Dave"
+          ],
+          "invited": 2,
+          "question": "Who can write the notes?",
+          "briefing": "Launch notes"
+        },
+        {
+          "kind": "message",
+          "id": "p000000d",
+          "by": "p_carol",
+          "name": "Carol",
+          "text": "Carol will write the notes",
+          "at": "2026-09-01T10:00:13.000Z"
+        },
+        {
+          "kind": "reply",
+          "id": "p000000f",
+          "text": "Great, Carol.",
+          "at": "2026-09-01T10:00:15.000Z"
+        },
+        {
+          "kind": "done",
+          "id": "p0000011",
+          "summary": "Launch Monday, Carol writes notes."
+        }
+      ]
+    },
+    "photos": 1
+  },
+  "bob": {
+    "view": {
+      "publicTitle": "Golden launch",
+      "state": "active",
+      "holder": "Alice",
+      "items": [
+        {
+          "kind": "message",
+          "id": "p0000003",
+          "by": "p_alice",
+          "name": "Alice",
+          "text": "Alice asks about the launch date",
+          "at": "2026-09-01T10:00:03.000Z"
+        },
+        {
+          "kind": "reply",
+          "id": "p0000005",
+          "text": "The launch is planned for Monday.",
+          "at": "2026-09-01T10:00:05.000Z"
+        },
+        {
+          "kind": "handoff",
+          "id": "p0000006",
+          "n": 1,
+          "from": "Alice",
+          "to": "Bob",
+          "question": "Bob, can you confirm Monday?",
+          "briefing": "Alice needs a date"
+        },
+        {
+          "kind": "message",
+          "id": "p0000007",
+          "by": "p_bob",
+          "name": "Bob",
+          "text": "Bob confirms Monday, photo attached",
+          "at": "2026-09-01T10:00:07.000Z",
+          "images": [
+            {
+              "n": 0,
+              "mime": "image/png"
+            }
+          ]
+        },
+        {
+          "kind": "reply",
+          "id": "p0000009",
+          "text": "Thanks Bob, Monday it is.",
+          "at": "2026-09-01T10:00:09.000Z"
+        },
+        {
+          "kind": "decision",
+          "id": "p000000a",
+          "by": "Bob",
+          "area": "Launch",
+          "statement": "Launch on Monday"
+        },
+        {
+          "kind": "offer",
+          "id": "p000000b",
+          "n": 2,
+          "from": "Bob",
+          "to": [],
+          "invited": 2,
+          "question": "Who can write the notes?"
+        },
+        {
+          "kind": "message",
+          "id": "p000000d",
+          "by": "p_carol",
+          "name": "Carol",
+          "text": "Carol will write the notes",
+          "at": "2026-09-01T10:00:13.000Z"
+        },
+        {
+          "kind": "reply",
+          "id": "p000000f",
+          "text": "Great, Carol.",
+          "at": "2026-09-01T10:00:15.000Z"
+        },
+        {
+          "kind": "done",
+          "id": "p0000011",
+          "summary": "Launch Monday, Carol writes notes."
+        }
+      ]
+    },
+    "photos": 1
+  },
+  "untilOffer": {
+    "publicTitle": "Golden launch",
+    "state": "active",
+    "holder": null,
+    "items": [
+      {
+        "kind": "message",
+        "id": "p0000003",
+        "by": "p_alice",
+        "name": "Alice",
+        "text": "Alice asks about the launch date",
+        "at": "2026-09-01T10:00:03.000Z"
+      },
+      {
+        "kind": "reply",
+        "id": "p0000005",
+        "text": "The launch is planned for Monday.",
+        "at": "2026-09-01T10:00:05.000Z"
+      },
+      {
+        "kind": "handoff",
+        "id": "p0000006",
+        "n": 1,
+        "from": "Alice",
+        "to": "Bob",
+        "question": "Bob, can you confirm Monday?"
+      },
+      {
+        "kind": "message",
+        "id": "p0000007",
+        "by": "p_bob",
+        "name": "Bob",
+        "text": "Bob confirms Monday, photo attached",
+        "at": "2026-09-01T10:00:07.000Z",
+        "images": [
+          {
+            "n": 0,
+            "mime": "image/png"
+          }
+        ]
+      },
+      {
+        "kind": "reply",
+        "id": "p0000009",
+        "text": "Thanks Bob, Monday it is.",
+        "at": "2026-09-01T10:00:09.000Z"
+      },
+      {
+        "kind": "decision",
+        "id": "p000000a",
+        "by": "Bob",
+        "area": "Launch",
+        "statement": "Launch on Monday"
+      },
+      {
+        "kind": "offer",
+        "id": "p000000b",
+        "n": 2,
+        "from": "Bob",
+        "to": [],
+        "invited": 2,
+        "question": "Who can write the notes?",
+        "briefing": "Launch notes"
+      }
+    ]
+  }
+}

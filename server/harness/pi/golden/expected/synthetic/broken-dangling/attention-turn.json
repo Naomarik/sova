@@ -1,0 +1,20 @@
+{
+  "full": {
+    "turnId": "l0000004",
+    "replyAt": 1788256804000,
+    "lastUser": "Parent is missing",
+    "assistantLast": "Reply on the dangling branch",
+    "tools": [],
+    "stopReason": "stop",
+    "durationMs": 1000
+  },
+  "window4k": {
+    "turnId": "l0000004",
+    "replyAt": 1788256804000,
+    "lastUser": "Parent is missing",
+    "assistantLast": "Reply on the dangling branch",
+    "tools": [],
+    "stopReason": "stop",
+    "durationMs": 1000
+  }
+}

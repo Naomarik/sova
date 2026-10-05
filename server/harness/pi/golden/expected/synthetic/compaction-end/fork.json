@@ -1,0 +1,47 @@
+{
+  "parse": {
+    "ok": true,
+    "lines": 4
+  },
+  "branch": [
+    "f0000001",
+    "f0000002",
+    "f0000003",
+    "f0000004"
+  ],
+  "fanout": false,
+  "prefixes": {
+    "f0000001": {
+      "ok": false,
+      "reason": "not_assistant",
+      "message": "Only an assistant reply can be forked from.",
+      "status": 400
+    },
+    "f0000002": {
+      "ok": false,
+      "reason": "not_assistant",
+      "message": "Only an assistant reply can be forked from.",
+      "status": 400
+    },
+    "f0000003": {
+      "ok": true,
+      "prefix": [
+        "{\"type\":\"model_change\",\"provider\":\"zai\",\"modelId\":\"glm-5.3\",\"id\":\"f0000001\",\"parentId\":null,\"timestamp\":\"2026-09-01T10:00:01.000Z\"}",
+        "{\"type\":\"message\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"Long work\"}],\"timestamp\":1788256802000},\"id\":\"f0000002\",\"parentId\":\"f0000001\",\"timestamp\":\"2026-09-01T10:00:02.000Z\"}",
+        "{\"type\":\"message\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"Done with step one\"}],\"api\":\"openai-completions\",\"provider\":\"zai\",\"model\":\"glm-5.3\",\"usage\":{\"input\":80000,\"output\":500,\"cacheRead\":20000,\"cacheWrite\":1000,\"totalTokens\":101500,\"cost\":{\"input\":0.001,\"output\":0.002,\"cacheRead\":0.0001,\"cacheWrite\":0,\"total\":0.0031}},\"stopReason\":\"stop\",\"timestamp\":1788256803000},\"id\":\"f0000003\",\"parentId\":\"f0000002\",\"timestamp\":\"2026-09-01T10:00:03.000Z\"}"
+      ]
+    },
+    "f0000004": {
+      "ok": false,
+      "reason": "not_assistant",
+      "message": "Only an assistant reply can be forked from.",
+      "status": 400
+    },
+    "no-such-entry": {
+      "ok": false,
+      "reason": "not_on_branch",
+      "message": "That reply is not on this chat's current branch anymore.",
+      "status": 400
+    }
+  }
+}

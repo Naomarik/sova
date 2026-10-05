@@ -1,0 +1,89 @@
+{
+  "operator": {
+    "view": {
+      "publicTitle": "Golden launch",
+      "state": "active",
+      "holder": "Alice",
+      "items": [
+        {
+          "kind": "message",
+          "id": "00000004",
+          "by": "p_alice",
+          "name": "Alice",
+          "text": "What is this image?",
+          "at": "2026-09-03T08:00:00.012Z",
+          "images": [
+            {
+              "n": 0,
+              "mime": "image/png"
+            }
+          ]
+        },
+        {
+          "kind": "reply",
+          "id": "00000005",
+          "text": "A solid blue rectangle.",
+          "at": "2026-09-03T08:00:00.013Z"
+        }
+      ]
+    },
+    "photos": 1
+  },
+  "bob": {
+    "view": {
+      "publicTitle": "Golden launch",
+      "state": "active",
+      "holder": "Alice",
+      "items": [
+        {
+          "kind": "message",
+          "id": "00000004",
+          "by": "p_alice",
+          "name": "Alice",
+          "text": "What is this image?",
+          "at": "2026-09-03T08:00:00.012Z",
+          "images": [
+            {
+              "n": 0,
+              "mime": "image/png"
+            }
+          ]
+        },
+        {
+          "kind": "reply",
+          "id": "00000005",
+          "text": "A solid blue rectangle.",
+          "at": "2026-09-03T08:00:00.013Z"
+        }
+      ]
+    },
+    "photos": 1
+  },
+  "untilOffer": {
+    "publicTitle": "Golden launch",
+    "state": "active",
+    "holder": null,
+    "items": [
+      {
+        "kind": "message",
+        "id": "00000004",
+        "by": "p_alice",
+        "name": "Alice",
+        "text": "What is this image?",
+        "at": "2026-09-03T08:00:00.012Z",
+        "images": [
+          {
+            "n": 0,
+            "mime": "image/png"
+          }
+        ]
+      },
+      {
+        "kind": "reply",
+        "id": "00000005",
+        "text": "A solid blue rectangle.",
+        "at": "2026-09-03T08:00:00.013Z"
+      }
+    ]
+  }
+}

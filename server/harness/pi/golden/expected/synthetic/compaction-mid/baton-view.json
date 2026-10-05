@@ -1,0 +1,134 @@
+{
+  "operator": {
+    "view": {
+      "publicTitle": "Golden launch",
+      "state": "active",
+      "holder": "Alice",
+      "items": [
+        {
+          "kind": "message",
+          "id": "g0000002",
+          "by": "",
+          "name": "Someone",
+          "text": "Long work",
+          "at": "2026-09-01T10:00:02.000Z"
+        },
+        {
+          "kind": "reply",
+          "id": "g0000003",
+          "text": "Done with step one",
+          "at": "2026-09-01T10:00:03.000Z"
+        },
+        {
+          "kind": "message",
+          "id": "g0000006",
+          "by": "p_alice",
+          "name": "Alice",
+          "text": "Continue",
+          "at": "2026-09-01T10:00:06.000Z"
+        },
+        {
+          "kind": "reply",
+          "id": "g0000007",
+          "text": "Step two",
+          "at": "2026-09-01T10:00:07.000Z"
+        },
+        {
+          "kind": "reply",
+          "id": "g0000008",
+          "text": "errored",
+          "cutOff": true,
+          "at": "2026-09-01T10:00:08.000Z"
+        }
+      ]
+    },
+    "photos": 0
+  },
+  "bob": {
+    "view": {
+      "publicTitle": "Golden launch",
+      "state": "active",
+      "holder": "Alice",
+      "items": [
+        {
+          "kind": "message",
+          "id": "g0000002",
+          "by": "",
+          "name": "Someone",
+          "text": "Long work",
+          "at": "2026-09-01T10:00:02.000Z"
+        },
+        {
+          "kind": "reply",
+          "id": "g0000003",
+          "text": "Done with step one",
+          "at": "2026-09-01T10:00:03.000Z"
+        },
+        {
+          "kind": "message",
+          "id": "g0000006",
+          "by": "p_alice",
+          "name": "Alice",
+          "text": "Continue",
+          "at": "2026-09-01T10:00:06.000Z"
+        },
+        {
+          "kind": "reply",
+          "id": "g0000007",
+          "text": "Step two",
+          "at": "2026-09-01T10:00:07.000Z"
+        },
+        {
+          "kind": "reply",
+          "id": "g0000008",
+          "text": "errored",
+          "cutOff": true,
+          "at": "2026-09-01T10:00:08.000Z"
+        }
+      ]
+    },
+    "photos": 0
+  },
+  "untilOffer": {
+    "publicTitle": "Golden launch",
+    "state": "active",
+    "holder": null,
+    "items": [
+      {
+        "kind": "message",
+        "id": "g0000002",
+        "by": "",
+        "name": "Someone",
+        "text": "Long work",
+        "at": "2026-09-01T10:00:02.000Z"
+      },
+      {
+        "kind": "reply",
+        "id": "g0000003",
+        "text": "Done with step one",
+        "at": "2026-09-01T10:00:03.000Z"
+      },
+      {
+        "kind": "message",
+        "id": "g0000006",
+        "by": "p_alice",
+        "name": "Alice",
+        "text": "Continue",
+        "at": "2026-09-01T10:00:06.000Z"
+      },
+      {
+        "kind": "reply",
+        "id": "g0000007",
+        "text": "Step two",
+        "at": "2026-09-01T10:00:07.000Z"
+      },
+      {
+        "kind": "reply",
+        "id": "g0000008",
+        "text": "errored",
+        "cutOff": true,
+        "at": "2026-09-01T10:00:08.000Z"
+      }
+    ]
+  }
+}

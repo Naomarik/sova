@@ -1,0 +1,221 @@
+{
+  "p0000001": {
+    "outcome": {
+      "ok": false,
+      "reason": "not_on_branch",
+      "message": "That input is not on this chat's current branch anymore."
+    },
+    "marks": []
+  },
+  "p0000002": {
+    "outcome": {
+      "ok": false,
+      "reason": "not_on_branch",
+      "message": "That input is not on this chat's current branch anymore."
+    },
+    "marks": []
+  },
+  "p0000003": {
+    "outcome": {
+      "ok": true,
+      "editorText": "Alice asks about the launch date"
+    },
+    "marks": [
+      {
+        "type": "sova-rewind",
+        "data": {
+          "targetId": "p0000003",
+          "fromLeafId": "p0000016"
+        }
+      }
+    ]
+  },
+  "p0000004": {
+    "outcome": {
+      "ok": false,
+      "reason": "not_on_branch",
+      "message": "That input is not on this chat's current branch anymore."
+    },
+    "marks": []
+  },
+  "p0000005": {
+    "outcome": {
+      "ok": false,
+      "reason": "not_on_branch",
+      "message": "That input is not on this chat's current branch anymore."
+    },
+    "marks": []
+  },
+  "p0000006": {
+    "outcome": {
+      "ok": false,
+      "reason": "not_on_branch",
+      "message": "That input is not on this chat's current branch anymore."
+    },
+    "marks": []
+  },
+  "p0000007": {
+    "outcome": {
+      "ok": true,
+      "editorText": "Bob confirms Monday, photo attached"
+    },
+    "marks": [
+      {
+        "type": "sova-rewind",
+        "data": {
+          "targetId": "p0000007",
+          "fromLeafId": "p0000016"
+        }
+      }
+    ]
+  },
+  "p0000008": {
+    "outcome": {
+      "ok": false,
+      "reason": "not_on_branch",
+      "message": "That input is not on this chat's current branch anymore."
+    },
+    "marks": []
+  },
+  "p0000009": {
+    "outcome": {
+      "ok": false,
+      "reason": "not_on_branch",
+      "message": "That input is not on this chat's current branch anymore."
+    },
+    "marks": []
+  },
+  "p000000a": {
+    "outcome": {
+      "ok": false,
+      "reason": "not_on_branch",
+      "message": "That input is not on this chat's current branch anymore."
+    },
+    "marks": []
+  },
+  "p000000b": {
+    "outcome": {
+      "ok": false,
+      "reason": "not_on_branch",
+      "message": "That input is not on this chat's current branch anymore."
+    },
+    "marks": []
+  },
+  "p000000c": {
+    "outcome": {
+      "ok": false,
+      "reason": "not_on_branch",
+      "message": "That input is not on this chat's current branch anymore."
+    },
+    "marks": []
+  },
+  "p000000d": {
+    "outcome": {
+      "ok": true,
+      "editorText": "Carol will write the notes"
+    },
+    "marks": [
+      {
+        "type": "sova-rewind",
+        "data": {
+          "targetId": "p000000d",
+          "fromLeafId": "p0000016"
+        }
+      }
+    ]
+  },
+  "p000000e": {
+    "outcome": {
+      "ok": false,
+      "reason": "not_on_branch",
+      "message": "That input is not on this chat's current branch anymore."
+    },
+    "marks": []
+  },
+  "p000000f": {
+    "outcome": {
+      "ok": false,
+      "reason": "not_on_branch",
+      "message": "That input is not on this chat's current branch anymore."
+    },
+    "marks": []
+  },
+  "p0000010": {
+    "outcome": {
+      "ok": false,
+      "reason": "not_on_branch",
+      "message": "That input is not on this chat's current branch anymore."
+    },
+    "marks": []
+  },
+  "p0000011": {
+    "outcome": {
+      "ok": false,
+      "reason": "not_on_branch",
+      "message": "That input is not on this chat's current branch anymore."
+    },
+    "marks": []
+  },
+  "p0000012": {
+    "outcome": {
+      "ok": false,
+      "reason": "not_on_branch",
+      "message": "That input is not on this chat's current branch anymore."
+    },
+    "marks": []
+  },
+  "p0000013": {
+    "outcome": {
+      "ok": true,
+      "editorText": "Operator wrap-up prompt"
+    },
+    "marks": [
+      {
+        "type": "sova-rewind",
+        "data": {
+          "targetId": "p0000013",
+          "fromLeafId": "p0000016"
+        }
+      }
+    ]
+  },
+  "p0000014": {
+    "outcome": {
+      "ok": false,
+      "reason": "not_on_branch",
+      "message": "That input is not on this chat's current branch anymore."
+    },
+    "marks": []
+  },
+  "p0000015": {
+    "outcome": {
+      "ok": false,
+      "reason": "not_on_branch",
+      "message": "That input is not on this chat's current branch anymore."
+    },
+    "marks": []
+  },
+  "p0000016": {
+    "outcome": {
+      "ok": true,
+      "editorText": "Message after the wrap-up"
+    },
+    "marks": [
+      {
+        "type": "sova-rewind",
+        "data": {
+          "targetId": "p0000016",
+          "fromLeafId": "p0000016"
+        }
+      }
+    ]
+  },
+  "no-such-entry": {
+    "outcome": {
+      "ok": false,
+      "reason": "not_on_branch",
+      "message": "That input is not on this chat's current branch anymore."
+    },
+    "marks": []
+  }
+}

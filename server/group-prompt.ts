@@ -76,7 +76,7 @@ export const realBatchDeps: BatchDeps = {
   misconfigured: (path) => activeConfigFailure(path) !== undefined,
   streaming: (path) => {
     const chat = heldChat(path);
-    return !!chat && chat.session.isStreaming;
+    return !!chat && chat.harness.isRunning();
   },
   foreignWriter: (path) => {
     const chat = heldChat(path);

@@ -814,9 +814,10 @@ export function registerSubagents(
 			if (typeof a[key] === "number" && Number.isFinite(a[key])) out[key] = a[key];
 		return out;
 	};
-	// Session-team membership only; history teams have no live workers.
-	const teamField = (id: string) => {
-		const teamId = teams.teamOf(id);
+	// Session-team membership; a restored member's team is history until a resume adopts it,
+	// so its row names the team its durable record keeps.
+	const teamField = (a: Worker) => {
+		const teamId = teams.teamOf(a.id) ?? (isRestored(a) ? a.manifest.team?.teamId : undefined);
 		return teamId ? { teamId } : {};
 	};
 	// Lifetime Σ across every worker this session ever spawned: the live list plus what
@@ -880,7 +881,7 @@ export function registerSubagents(
 			...(typeof a.effort === "string" && a.effort ? { effort: a.effort } : {}),
 			// The minor modes it was given at its start; absent when none (or unknown).
 			...(modesOf(a)?.length ? { modes: [...modesOf(a)!] } : {}),
-			...teamField(a.id),
+			...teamField(a),
 			...timestamps(a),
 			...(a.taskOutcome === "success" || a.taskOutcome === "error" || a.taskOutcome === "aborted"
 				? { outcome: a.taskOutcome } : {}),

@@ -276,7 +276,9 @@ Enforced in the tool, never by the prompt; each has a default and is editable pe
 
 ## §chat.profiles/live-commit — What the live server runs
 
-- `GET /api/health` answers `{ok: true, startedAt, head, runtime}`: when this server process started (ISO
+- `GET /api/health` answers `{ok: true, startedAt, head, runtime, unknownEntries}`: when this server process started (ISO
   time) and the commit its own checkout had then (`git rev-parse HEAD` in the server's folder, read
-  once at start; `null` when that fails), and the runtime it runs on (§app.server-runtime/health). So a merge round checks that the live server runs
+  once at start; `null` when that fails), the runtime it runs on (§app.server-runtime/health), and
+  how many session entries its pi can't read the server has met since it started, a number only
+  (§app.harness/unknown-entries). So a merge round checks that the live server runs
   master's commit with one request.

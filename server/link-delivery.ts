@@ -20,7 +20,7 @@ const refused = (reason: LinkRefusal, message: string): PeerLinkMessageResult =>
 
 /** The runtime this server holds for a session id, as its path; null when none is held. */
 export function heldSessionPath(sessionId: string): string | null {
-  return heldChats().find((c) => c.session.sessionId === sessionId)?.path ?? null;
+  return heldChats().find((c) => c.harness.id === sessionId)?.path ?? null;
 }
 
 /**

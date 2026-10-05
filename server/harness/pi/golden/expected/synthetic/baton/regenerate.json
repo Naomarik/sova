@@ -1,0 +1,302 @@
+{
+  "p0000001": {
+    "ok": false,
+    "reason": "not_on_branch",
+    "message": "Nothing on this branch started that reply, so there is nothing to run again."
+  },
+  "p0000001:0": {
+    "ok": false,
+    "reason": "not_on_branch",
+    "message": "Nothing on this branch started that reply, so there is nothing to run again."
+  },
+  "p0000002": {
+    "ok": false,
+    "reason": "not_on_branch",
+    "message": "Nothing on this branch started that reply, so there is nothing to run again."
+  },
+  "p0000002:0": {
+    "ok": false,
+    "reason": "not_on_branch",
+    "message": "Nothing on this branch started that reply, so there is nothing to run again."
+  },
+  "p0000003": {
+    "ok": false,
+    "reason": "not_on_branch",
+    "message": "That is your own message; rewind to it to edit and send it again."
+  },
+  "p0000003:0": {
+    "ok": false,
+    "reason": "not_on_branch",
+    "message": "That is your own message; rewind to it to edit and send it again."
+  },
+  "p0000004": {
+    "ok": true,
+    "userId": "p0000003",
+    "text": "Alice asks about the launch date"
+  },
+  "p0000004:0": {
+    "ok": true,
+    "userId": "p0000003",
+    "text": "Alice asks about the launch date"
+  },
+  "p0000005": {
+    "ok": true,
+    "userId": "p0000003",
+    "text": "Alice asks about the launch date"
+  },
+  "p0000005:0": {
+    "ok": true,
+    "userId": "p0000003",
+    "text": "Alice asks about the launch date"
+  },
+  "p0000006": {
+    "ok": true,
+    "userId": "p0000003",
+    "text": "Alice asks about the launch date"
+  },
+  "p0000006:0": {
+    "ok": true,
+    "userId": "p0000003",
+    "text": "Alice asks about the launch date"
+  },
+  "p0000007": {
+    "ok": false,
+    "reason": "not_on_branch",
+    "message": "That is your own message; rewind to it to edit and send it again."
+  },
+  "p0000007:0": {
+    "ok": false,
+    "reason": "not_on_branch",
+    "message": "That is your own message; rewind to it to edit and send it again."
+  },
+  "p0000008": {
+    "ok": true,
+    "userId": "p0000007",
+    "text": "Bob confirms Monday, photo attached",
+    "images": [
+      {
+        "type": "image",
+        "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
+        "mimeType": "image/png"
+      }
+    ]
+  },
+  "p0000008:0": {
+    "ok": true,
+    "userId": "p0000007",
+    "text": "Bob confirms Monday, photo attached",
+    "images": [
+      {
+        "type": "image",
+        "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
+        "mimeType": "image/png"
+      }
+    ]
+  },
+  "p0000009": {
+    "ok": true,
+    "userId": "p0000007",
+    "text": "Bob confirms Monday, photo attached",
+    "images": [
+      {
+        "type": "image",
+        "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
+        "mimeType": "image/png"
+      }
+    ]
+  },
+  "p0000009:0": {
+    "ok": true,
+    "userId": "p0000007",
+    "text": "Bob confirms Monday, photo attached",
+    "images": [
+      {
+        "type": "image",
+        "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
+        "mimeType": "image/png"
+      }
+    ]
+  },
+  "p000000a": {
+    "ok": true,
+    "userId": "p0000007",
+    "text": "Bob confirms Monday, photo attached",
+    "images": [
+      {
+        "type": "image",
+        "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
+        "mimeType": "image/png"
+      }
+    ]
+  },
+  "p000000a:0": {
+    "ok": true,
+    "userId": "p0000007",
+    "text": "Bob confirms Monday, photo attached",
+    "images": [
+      {
+        "type": "image",
+        "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
+        "mimeType": "image/png"
+      }
+    ]
+  },
+  "p000000b": {
+    "ok": true,
+    "userId": "p0000007",
+    "text": "Bob confirms Monday, photo attached",
+    "images": [
+      {
+        "type": "image",
+        "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
+        "mimeType": "image/png"
+      }
+    ]
+  },
+  "p000000b:0": {
+    "ok": true,
+    "userId": "p0000007",
+    "text": "Bob confirms Monday, photo attached",
+    "images": [
+      {
+        "type": "image",
+        "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
+        "mimeType": "image/png"
+      }
+    ]
+  },
+  "p000000c": {
+    "ok": true,
+    "userId": "p0000007",
+    "text": "Bob confirms Monday, photo attached",
+    "images": [
+      {
+        "type": "image",
+        "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
+        "mimeType": "image/png"
+      }
+    ]
+  },
+  "p000000c:0": {
+    "ok": true,
+    "userId": "p0000007",
+    "text": "Bob confirms Monday, photo attached",
+    "images": [
+      {
+        "type": "image",
+        "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
+        "mimeType": "image/png"
+      }
+    ]
+  },
+  "p000000d": {
+    "ok": false,
+    "reason": "not_on_branch",
+    "message": "That is your own message; rewind to it to edit and send it again."
+  },
+  "p000000d:0": {
+    "ok": false,
+    "reason": "not_on_branch",
+    "message": "That is your own message; rewind to it to edit and send it again."
+  },
+  "p000000e": {
+    "ok": true,
+    "userId": "p000000d",
+    "text": "Carol will write the notes"
+  },
+  "p000000e:0": {
+    "ok": true,
+    "userId": "p000000d",
+    "text": "Carol will write the notes"
+  },
+  "p000000f": {
+    "ok": true,
+    "userId": "p000000d",
+    "text": "Carol will write the notes"
+  },
+  "p000000f:0": {
+    "ok": true,
+    "userId": "p000000d",
+    "text": "Carol will write the notes"
+  },
+  "p0000010": {
+    "ok": true,
+    "userId": "p000000d",
+    "text": "Carol will write the notes"
+  },
+  "p0000010:0": {
+    "ok": true,
+    "userId": "p000000d",
+    "text": "Carol will write the notes"
+  },
+  "p0000011": {
+    "ok": true,
+    "userId": "p000000d",
+    "text": "Carol will write the notes"
+  },
+  "p0000011:0": {
+    "ok": true,
+    "userId": "p000000d",
+    "text": "Carol will write the notes"
+  },
+  "p0000012": {
+    "ok": true,
+    "userId": "p000000d",
+    "text": "Carol will write the notes"
+  },
+  "p0000012:0": {
+    "ok": true,
+    "userId": "p000000d",
+    "text": "Carol will write the notes"
+  },
+  "p0000013": {
+    "ok": false,
+    "reason": "not_on_branch",
+    "message": "That is your own message; rewind to it to edit and send it again."
+  },
+  "p0000013:0": {
+    "ok": false,
+    "reason": "not_on_branch",
+    "message": "That is your own message; rewind to it to edit and send it again."
+  },
+  "p0000014": {
+    "ok": true,
+    "userId": "p0000013",
+    "text": "Operator wrap-up prompt"
+  },
+  "p0000014:0": {
+    "ok": true,
+    "userId": "p0000013",
+    "text": "Operator wrap-up prompt"
+  },
+  "p0000015": {
+    "ok": true,
+    "userId": "p0000013",
+    "text": "Operator wrap-up prompt"
+  },
+  "p0000015:0": {
+    "ok": true,
+    "userId": "p0000013",
+    "text": "Operator wrap-up prompt"
+  },
+  "p0000016": {
+    "ok": false,
+    "reason": "not_on_branch",
+    "message": "That is your own message; rewind to it to edit and send it again."
+  },
+  "p0000016:0": {
+    "ok": false,
+    "reason": "not_on_branch",
+    "message": "That is your own message; rewind to it to edit and send it again."
+  },
+  "no-such-entry": {
+    "ok": false,
+    "reason": "not_on_branch",
+    "message": "That reply is not on this chat's current branch anymore."
+  },
+  "no-such-entry:0": {
+    "ok": false,
+    "reason": "not_on_branch",
+    "message": "That reply is not on this chat's current branch anymore."
+  }
+}

@@ -13,6 +13,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, test } from "node:test";
 import type { ChatServerMessage } from "../shared/protocol";
+import { piSession } from "./harness/pi/testing/handle";
 
 const agentDir = mkdtempSync(join(tmpdir(), "sova-queue-clients-test-"));
 // A hosted runtime can still write here after after() ran (pi's catalogs, usage cache): exit is last.
@@ -92,7 +93,7 @@ describe("the SDK surface this feature stands on, in the copy the repo actually 
     // fake answers whatever it is told to. Reading a package proves what that copy says; only
     // calling it through the repo's own import proves what Sova will run.
     const { chat } = await twoClients();
-    const session = chat.session;
+    const session = piSession(chat);
     for (const name of ["steer", "prompt", "clearQueue", "getSteeringMessages", "getFollowUpMessages", "abort"] as const) {
       assert.equal(typeof session[name], "function", `AgentSession.${name}`);
     }
@@ -163,15 +164,15 @@ describe("the queue, seen by two tabs on one chat", () => {
     // whenever the session was streaming — which would put a second item of ours in the SDK
     // beside a queued steer and make a removal of either one unable to use clearQueue at all.
     const { chat, mine } = await twoClients();
-    Object.defineProperty(chat.session, "isStreaming", { get: () => true, configurable: true });
+    Object.defineProperty(piSession(chat), "isStreaming", { get: () => true, configurable: true });
     mine.length = 0;
 
     const { queued } = chat.acceptPrompt("a group batch prompt");
     assert.equal(queued, true, "accepted into the queue, not sent");
     // Nothing reached the SDK: both of its mirrors are still empty, and so is its real queue.
-    assert.deepEqual([...chat.session.getSteeringMessages()], []);
-    assert.deepEqual([...chat.session.getFollowUpMessages()], []);
-    assert.equal(chat.session.pendingMessageCount, 0, "the SDK holds nothing of ours");
+    assert.deepEqual([...piSession(chat).getSteeringMessages()], []);
+    assert.deepEqual([...piSession(chat).getFollowUpMessages()], []);
+    assert.equal(piSession(chat).pendingMessageCount, 0, "the SDK holds nothing of ours");
     const snap = mine.find((m) => m.type === "queue") as Extract<ChatServerMessage, { type: "queue" }>;
     assert.deepEqual(snap.items.map((i) => [i.kind, i.state, i.origin]), [["followUp", "queued", "server"]]);
   });
@@ -181,7 +182,7 @@ describe("the queue, seen by two tabs on one chat", () => {
     // streaming, where the composer's own mid-turn send is a `steer`. The frame type is the whole
     // difference — the same text as a steer would be delivered INTO the running turn.
     const { chat, me, mine } = await twoClients();
-    Object.defineProperty(chat.session, "isStreaming", { get: () => true, configurable: true });
+    Object.defineProperty(piSession(chat), "isStreaming", { get: () => true, configurable: true });
     const text = playbookTurnText({ title: "Brandmaker", dir: "/abs/playbooks/brandmaker", body: "# Brandmaker\n/skill:x $1\n" }, "Acme");
     mine.length = 0;
 
@@ -190,7 +191,7 @@ describe("the queue, seen by two tabs on one chat", () => {
     assert.deepEqual(ack, { type: "send_ack", clientId: "pb1", queued: true }, "queued, so the row is removable");
     const snap = mine.find((m) => m.type === "queue") as Extract<ChatServerMessage, { type: "queue" }>;
     assert.deepEqual(snap.items.map((i) => [i.id, i.kind, i.origin]), [["pb1", "followUp", "client"]]);
-    assert.deepEqual([...chat.session.getSteeringMessages()], [], "nothing was steered into the turn");
+    assert.deepEqual([...piSession(chat).getSteeringMessages()], [], "nothing was steered into the turn");
 
     // The collision check: the same text as a steer frame DOES become a steer, so the assertion
     // above is about the frame type, not about something every mid-turn send does.
@@ -206,7 +207,7 @@ describe("the queue, seen by two tabs on one chat", () => {
     // user the model received a message that was discarded, and dropping Remove for good. The
     // snapshot alone cannot carry that difference, so the REASON is broadcast, not addressed.
     const { chat, them, mine, theirs } = await twoClients();
-    Object.defineProperty(chat.session, "isStreaming", { get: () => true, configurable: true });
+    Object.defineProperty(piSession(chat), "isStreaming", { get: () => true, configurable: true });
     // Two items: the first is handed to the SDK, the second stays held and is the one B removes.
     chat.queue.enqueue({ kind: "steer", text: "first", origin: "client", id: "x1" });
     chat.queue.enqueue({ kind: "steer", text: "second", origin: "client", id: "x2" });
@@ -237,7 +238,7 @@ describe("the queue, seen by two tabs on one chat", () => {
     // The other half of removing the synthetic one: `queue_cleared` must not have gone missing
     // along with it, or Stop would silently stop returning text to the composer.
     const { chat, me, mine } = await twoClients();
-    Object.defineProperty(chat.session, "isStreaming", { get: () => true, configurable: true });
+    Object.defineProperty(piSession(chat), "isStreaming", { get: () => true, configurable: true });
     chat.queue.enqueue({ kind: "steer", text: "held one", origin: "client", id: "s1" });
     chat.queue.enqueue({ kind: "steer", text: "held two", origin: "client", id: "s2" });
     await until(() => chat.queue.snapshot().some((i) => i.id === "s2"));
@@ -269,10 +270,10 @@ describe("the queue, seen by two tabs on one chat", () => {
     const { chat, mine, theirs } = await twoClients();
     // An extension command is the same shape and needs no extension: prompt() executes it and
     // queues nothing. "/help" is not registered in this runtime, so nothing runs either.
-    const original = chat.session.prompt.bind(chat.session);
-    (chat.session as unknown as { prompt: unknown }).prompt = async () => {}; // accepted, queues nothing
+    const original = piSession(chat).prompt.bind(piSession(chat));
+    (piSession(chat) as unknown as { prompt: unknown }).prompt = async () => {}; // accepted, queues nothing
     try {
-      Object.defineProperty(chat.session, "isStreaming", { get: () => true, configurable: true });
+      Object.defineProperty(piSession(chat), "isStreaming", { get: () => true, configurable: true });
       mine.length = 0;
       theirs.length = 0;
       chat.queue.enqueue({ kind: "steer", text: "/nothing-registered", origin: "client", id: "d1" });
@@ -281,7 +282,7 @@ describe("the queue, seen by two tabs on one chat", () => {
       assert.deepEqual(gone(mine), { type: "queue_item_gone", itemId: "d1", reason: "dropped", text: "/nothing-registered" });
       assert.deepEqual(gone(theirs), gone(mine), "and the second tab is told the same thing");
     } finally {
-      (chat.session as unknown as { prompt: unknown }).prompt = original;
+      (piSession(chat) as unknown as { prompt: unknown }).prompt = original;
     }
   });
 });

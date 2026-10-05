@@ -1,0 +1,47 @@
+// Writer ratchet fixtures (§app.harness/boundary, a4): every call site counts once, whatever its type
+// argument. Each block is scanned as its own file at `path` (default server/fixture.ts).
+// ---- literal type expect={"writers":1}
+sm.appendCustomEntry("lit", d);
+// ---- constant type expect={"writers":1}
+const MARK = "sova-mark";
+sm.appendCustomEntry(MARK, d);
+// ---- template type expect={"writers":1}
+sm.appendCustomEntry(`x-${k}`, d);
+// ---- computed type expect={"writers":1}
+sm.appendCustomEntry(typeOf(x), d);
+// ---- a type read off an object expect={"writers":1,"shapes":1}
+sm.appendCustomEntry(entry.customType, entry.data);
+// ---- optional chaining expect={"writers":1}
+sm?.appendCustomEntry?.(MARK, d);
+// ---- element access expect={"writers":1}
+sm["appendCustomEntry"](MARK, d);
+// ---- bind expect={"writers":1}
+const f = sm.appendCustomEntry.bind(sm);
+// ---- call and apply expect={"writers":2}
+sm.appendCustomEntry.call(sm, MARK, d);
+sm.appendCustomEntry.apply(sm, [MARK, d]);
+// ---- destructured expect={"writers":1}
+const { appendCustomEntry } = sm;
+// ---- destructured, then called expect={"writers":2}
+const { appendCustomEntry } = sm;
+appendCustomEntry(MARK, d);
+// ---- the extension API's appendEntry expect={"writers":1}
+pi.appendEntry(MARK, d);
+// ---- appendSpecialEntry expect={"writers":1}
+chat.appendSpecialEntry(T, d);
+// ---- three sites, three counts expect={"writers":3}
+sm.appendCustomEntry("a", 1);
+sm.appendCustomEntry("a", 2);
+chat.appendSpecialEntry("b", 3);
+// ---- negative: a method declaration is no call expect={}
+class C { appendSpecialEntry(type: string, data: unknown) { return 1; } }
+// ---- negative: a signature and a Pick are types expect={}
+interface W { appendCustomEntry(type: string, data: unknown): string }
+type P = Pick<SessionManager, "appendCustomEntry">;
+// ---- negative: a comment and a string expect={}
+// sm.appendCustomEntry("x", 1)
+log("appendCustomEntry");
+// ---- negative: a test file path=server/fixture.test.ts expect={}
+sm.appendCustomEntry("lit", d);
+// ---- negative: the adapter path=server/harness/pi/state.ts expect={}
+sm.appendCustomEntry("lit", d);

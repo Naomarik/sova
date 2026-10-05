@@ -1,0 +1,58 @@
+[
+  {
+    "call": {
+      "fn": "applyQueue",
+      "args": [
+        [
+          {
+            "id": "c2",
+            "kind": "steer",
+            "text": "two"
+          }
+        ]
+      ]
+    },
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "id": "c2",
+          "queueKind": "steer",
+          "text": "two",
+          "state": "queued",
+          "images": [],
+          "handed": false
+        }
+      ],
+      "tools": {},
+      "running": false,
+      "activity": null,
+      "stopping": false
+    }
+  },
+  {
+    "call": {
+      "fn": "markRemoved",
+      "args": [
+        "c1"
+      ]
+    },
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "id": "c2",
+          "queueKind": "steer",
+          "text": "two",
+          "state": "queued",
+          "images": [],
+          "handed": false
+        }
+      ],
+      "tools": {},
+      "running": false,
+      "activity": null,
+      "stopping": false
+    }
+  }
+]

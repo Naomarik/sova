@@ -10,6 +10,7 @@ import { join } from "node:path";
 import { after, describe, test } from "node:test";
 import WebSocket from "ws";
 import type { AlignDocInfo, TranscriptItem } from "../shared/protocol";
+import { piSession } from "./harness/pi/testing/handle";
 
 const agentDir = realpathSync(mkdtempSync(join(tmpdir(), "sova-tail-hello-")));
 process.env.PI_CODING_AGENT_DIR = agentDir;
@@ -20,7 +21,8 @@ const cwd = join(agentDir, "cwd");
 mkdirSync(cwd, { recursive: true });
 
 const { cutTail, historyRanges, pullFields, tailStart, TAIL_CHARS, HISTORY_CHUNK_CHARS } = await import("./tail-hello");
-const { activeBranch, normalizeEntries, parseLines } = await import("./transcript");
+const { normalizeEntries } = await import("./transcript");
+const { activeBranch, parseLines } = await import("./harness/pi/reader");
 const { acquireChat, disposeAllChats } = await import("./chat-manager");
 const { canonicalPath } = await import("./paths");
 const { attachWebSockets } = await import("./ws");
@@ -310,7 +312,7 @@ describe("chat: a rewind with a tail client and a whole client", () => {
     assert.ok(ack > 0, tt.join(","));
     assert.ok(tt.slice(ack + 1).length > 0 && tt.slice(ack + 1).every((x) => x === "history"), tt.join(","));
     assert.ok(!tt.slice(0, ack).includes("history"));
-    const branch = normalizeEntries(chat.session.sessionManager.getBranch());
+    const branch = normalizeEntries(piSession(chat).sessionManager.getBranch());
     const list = tail.filter((m) => m.type === "history").reduce((l: TranscriptItem[], c) => [...c.items, ...l], tail[0].items);
     assert.deepEqual(list, branch);
     assert.deepEqual(legacy.map((m) => m.type).filter((x) => x === "history"), []);

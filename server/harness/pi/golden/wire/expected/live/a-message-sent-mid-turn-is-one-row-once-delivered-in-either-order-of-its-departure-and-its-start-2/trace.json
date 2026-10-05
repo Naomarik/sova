@@ -1,0 +1,303 @@
+[
+  {
+    "call": {
+      "fn": "applyEvent",
+      "args": [
+        {
+          "type": "message_start",
+          "message": {
+            "role": "assistant",
+            "provider": "zai",
+            "model": "glm-5.3",
+            "content": []
+          }
+        }
+      ]
+    },
+    "state": {
+      "entries": [
+        {
+          "kind": "assistant",
+          "blocks": [],
+          "done": false,
+          "model": "zai/glm-5.3"
+        }
+      ],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "call": {
+      "fn": "addPendingPrompt",
+      "args": [
+        "what is this?\n/home/u/.pi/agent/sova/attachments/s1/sova-shot.png",
+        [],
+        [
+          {
+            "path": "/home/u/.pi/agent/sova/attachments/s1/sova-shot.png",
+            "name": "sova-shot.png",
+            "mimeType": "image/png",
+            "size": 10
+          }
+        ],
+        "c1"
+      ]
+    },
+    "state": {
+      "entries": [
+        {
+          "kind": "assistant",
+          "blocks": [],
+          "done": false,
+          "model": "zai/glm-5.3"
+        },
+        {
+          "kind": "user",
+          "text": "what is this?\n/home/u/.pi/agent/sova/attachments/s1/sova-shot.png",
+          "state": "sending",
+          "images": [],
+          "id": "c1",
+          "attachments": [
+            {
+              "path": "/home/u/.pi/agent/sova/attachments/s1/sova-shot.png",
+              "name": "sova-shot.png",
+              "mimeType": "image/png",
+              "size": 10,
+              "available": true
+            }
+          ]
+        }
+      ],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    }
+  },
+  {
+    "call": {
+      "fn": "applyQueue",
+      "args": [
+        [
+          {
+            "id": "c1",
+            "kind": "steer",
+            "text": "what is this?\n/home/u/.pi/agent/sova/attachments/s1/sova-shot.png",
+            "state": "sending"
+          }
+        ]
+      ]
+    },
+    "state": {
+      "entries": [
+        {
+          "kind": "assistant",
+          "blocks": [],
+          "done": false,
+          "model": "zai/glm-5.3"
+        },
+        {
+          "kind": "user",
+          "text": "what is this?\n/home/u/.pi/agent/sova/attachments/s1/sova-shot.png",
+          "state": "queued",
+          "images": [],
+          "id": "c1",
+          "attachments": [
+            {
+              "path": "/home/u/.pi/agent/sova/attachments/s1/sova-shot.png",
+              "name": "sova-shot.png",
+              "mimeType": "image/png",
+              "size": 10,
+              "available": true
+            }
+          ],
+          "queueKind": "steer",
+          "handed": true
+        }
+      ],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    }
+  },
+  {
+    "call": {
+      "fn": "markQueued",
+      "args": [
+        "c1"
+      ]
+    },
+    "state": {
+      "entries": [
+        {
+          "kind": "assistant",
+          "blocks": [],
+          "done": false,
+          "model": "zai/glm-5.3"
+        },
+        {
+          "kind": "user",
+          "text": "what is this?\n/home/u/.pi/agent/sova/attachments/s1/sova-shot.png",
+          "state": "queued",
+          "images": [],
+          "id": "c1",
+          "attachments": [
+            {
+              "path": "/home/u/.pi/agent/sova/attachments/s1/sova-shot.png",
+              "name": "sova-shot.png",
+              "mimeType": "image/png",
+              "size": 10,
+              "available": true
+            }
+          ],
+          "queueKind": "steer",
+          "handed": true
+        }
+      ],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    }
+  },
+  {
+    "call": {
+      "fn": "applyEvent",
+      "args": [
+        {
+          "type": "message_start",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "what is this?\n/home/u/.pi/agent/sova/attachments/s1/sova-shot.png"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "state": {
+      "entries": [
+        {
+          "kind": "assistant",
+          "blocks": [],
+          "done": false,
+          "model": "zai/glm-5.3"
+        },
+        {
+          "kind": "user",
+          "text": "what is this?\n/home/u/.pi/agent/sova/attachments/s1/sova-shot.png",
+          "state": "delivered",
+          "images": [],
+          "id": "c1",
+          "attachments": [
+            {
+              "path": "/home/u/.pi/agent/sova/attachments/s1/sova-shot.png",
+              "name": "sova-shot.png",
+              "mimeType": "image/png",
+              "size": 10,
+              "available": true
+            }
+          ],
+          "queueKind": "steer",
+          "handed": true,
+          "started": true
+        }
+      ],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "call": {
+      "fn": "markDelivered",
+      "args": [
+        "c1"
+      ]
+    },
+    "state": {
+      "entries": [
+        {
+          "kind": "assistant",
+          "blocks": [],
+          "done": false,
+          "model": "zai/glm-5.3"
+        },
+        {
+          "kind": "user",
+          "text": "what is this?\n/home/u/.pi/agent/sova/attachments/s1/sova-shot.png",
+          "state": "delivered",
+          "images": [],
+          "id": "c1",
+          "attachments": [
+            {
+              "path": "/home/u/.pi/agent/sova/attachments/s1/sova-shot.png",
+              "name": "sova-shot.png",
+              "mimeType": "image/png",
+              "size": 10,
+              "available": true
+            }
+          ],
+          "queueKind": "steer",
+          "handed": true,
+          "started": true
+        }
+      ],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    }
+  },
+  {
+    "call": {
+      "fn": "applyQueue",
+      "args": [
+        []
+      ]
+    },
+    "state": {
+      "entries": [
+        {
+          "kind": "assistant",
+          "blocks": [],
+          "done": false,
+          "model": "zai/glm-5.3"
+        },
+        {
+          "kind": "user",
+          "text": "what is this?\n/home/u/.pi/agent/sova/attachments/s1/sova-shot.png",
+          "state": "delivered",
+          "images": [],
+          "id": "c1",
+          "attachments": [
+            {
+              "path": "/home/u/.pi/agent/sova/attachments/s1/sova-shot.png",
+              "name": "sova-shot.png",
+              "mimeType": "image/png",
+              "size": 10,
+              "available": true
+            }
+          ],
+          "queueKind": "steer",
+          "handed": true,
+          "started": true
+        }
+      ],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    }
+  }
+]

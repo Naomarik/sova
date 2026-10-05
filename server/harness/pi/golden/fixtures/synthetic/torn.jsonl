@@ -1,0 +1,9 @@
+{"type":"session","version":3,"id":"0190a000-0000-7000-8000-j00000000000","timestamp":"2026-09-01T10:00:00.000Z","cwd":"/home/user/golden"}
+{"type":"message","message":{"role":"user","content":[{"type":"text","text":"Before the damage"}],"timestamp":1788256801000},"id":"j0000001","parentId":null,"timestamp":"2026-09-01T10:00:01.000Z"}
+
+   
+{"type":"message","id":"j-broken","parentId":
+{"type":"message","message":{"role":"assistant","content":[{"type":"text","text":"After the malformed line"}],"api":"openai-completions","provider":"zai","model":"glm-5.3","usage":{"input":1200,"output":80,"cacheRead":400,"cacheWrite":0,"totalTokens":1680,"cost":{"input":0.001,"output":0.002,"cacheRead":0.0001,"cacheWrite":0,"total":0.0031}},"stopReason":"stop","timestamp":1788256802000},"id":"j0000002","parentId":"j0000001","timestamp":"2026-09-01T10:00:02.000Z"}
+[1,2,3]
+{"type":"message","message":{"role":"user","content":[{"type":"text","text":"Last whole line"}],"timestamp":1788256803000},"id":"j0000003","parentId":"j0000002","timestamp":"2026-09-01T10:00:03.000Z"}
+{"type":"message","id":"j0000099","parentId":"j0000003","timestamp":"2026-09-01T10:00:09.000Z","message":{"role":"assistant","content":[{"type":"text","text":"torn

@@ -56,6 +56,7 @@ Paths in "Where" are under `server/`.
 | P18 warmup-shutdown | internal-API | `warmClaudeCodeProvider` (harness/pi/open.ts) | `AgentSession.bindExtensions`, `AgentSession.dispose`, `ExtensionRunner.emit`, `ExtensionRunner.hasHandlers` | dispose() emits session_shutdown (then the warm-up's own emit would double it) |
 | P19 rebuild-prompt | semantic | `PiHarnessSession.refreshSystemPrompt` (harness/pi/session.ts), `LivePrompt.rebase` (overseer.ts) | `AgentSession.setActiveToolsByName`, `AgentSession._rebuildSystemPrompt`, `DefaultResourceLoader.appendSystemPromptOverride` | pi adds a public refreshSystemPrompt(), or re-reads the parts at each run |
 | P20 model-restore-gate | semantic | `recordedModelForEmptyBranch` (harness/pi/open.ts), `modelForSessionOpen` (harness/pi/open.ts) | `createAgentSession`, `SessionManager.buildSessionContext` | pi restores a recorded model on any branch |
+| P21 codemode-definition | semantic | `captureCodemode` (harness/pi/codemode.ts), `scriptRegistry` (harness/pi/codemode.ts) | `createCodemodeExtension`, `ExtensionAPI.registerTool`, `ExtensionContext.modelRegistry`, `ExtensionToolContext.executeTool` | pi exports the codemode tool definition and a model hook for scripts |
 | T1 scripted-model (test-only) | private-write | `ScriptedModel.attach` (harness/pi/testing/scripted-model.ts) | `AgentSession._modelRuntime`, `Agent.getApiKey`, `Agent.streamFunction` | pi offers a public test model hook |
 
 ## What each one relies on
@@ -181,6 +182,12 @@ Canary: `P19 rebuild-prompt: setActiveToolsByName(getActiveToolNames()) re-reads
 `createAgentSession` restores the branch's recorded model only when the branch has messages; for a message-less session it builds (and appends) another model unless Sova passes the recorded one.
 
 Canary: `P20 model-restore-gate: the SDK restores a recorded model only when the branch has messages`.
+
+### P21 codemode-definition
+
+`createCodemodeExtension()`'s factory registers exactly one tool, `codemode`, with `defaultActive: false`, through the API it is handed, so Sova runs it against its own extension's API with `registerTool` caught and registers the definition (or its Claude Code form) itself (§chat.mode-menu/codemode). A script's `models.classify` / `models.generateImages` reach the tool context's `modelRegistry`, where Sova's wrapper applies the model policy, the provider-limits slot and the chat's usage context. Nested calls go through `ctx.executeTool`: their `tool_execution_*` events carry `parentToolCallId` and ids `<parent>/<n>`, and they write no transcript entries (the result keeps `details.calls`).
+
+Canary: `P21 codemode-definition: the factory registers one inactive codemode tool, its models.* reach ctx.modelRegistry, nested calls carry parentToolCallId`.
 
 ### T1 scripted-model (test-only)
 

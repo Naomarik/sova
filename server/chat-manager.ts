@@ -44,6 +44,8 @@ import { sovaToken } from "./auth";
 import { ForeignWriteGuard, markOwned, markOwnedStat, recentForeignWriteAgeSec } from "./write-guard";
 import { monitorExtension } from "./resource-monitor";
 import { forkCacheExtension } from "../pi-config/extensions/subagents/fork/cache.ts";
+import { codemodeFactory } from "./harness/pi/codemode";
+import { claimSessionSlot, holdingSlot } from "./provider-limits";
 import { visCheckExtension, type VisCheckHost } from "./vis-check";
 import { projectEngine } from "./project-services/routes";
 import { projectVerbsExtension } from "./project-services/tools";
@@ -104,12 +106,19 @@ export function extensionFlagsFor(cwd: string, outline: boolean, noExtensions: b
   return noExtensions ? new Map() : extensionFlagValues(sessionFlags(cwd, outline));
 }
 
-/** The extensions every ordinary session loads beyond pi-config's: resource monitoring and
-    inherited fork-cache affinity. Neither changes prompt sections or tool declarations.
-    A caller that passes its own list for an ordinary session starts from this one. */
+/** The extensions every ordinary session loads beyond pi-config's: resource monitoring, inherited
+    fork-cache affinity, and pi's codemode tool (registered inactive: the codemode minor mode turns it
+    on, §chat.mode-menu/codemode; in a Claude Code chat it is a fixed stub). None changes prompt
+    sections or tool declarations by loading. A caller that passes its own list for an ordinary session
+    starts from this one; the special loadouts keep exactly their own. */
 const DEFAULT_EXTENSION_FACTORIES = [
   { name: "sova-resource-monitor", factory: monitorExtension },
   { name: "sova-fork-cache", factory: forkCacheExtension },
+  codemodeFactory({
+    allowed: (ref) => modelAllowed(readModelPolicy(), ref),
+    acquire: (provider, opts) => claimSessionSlot(provider, opts),
+    holding: holdingSlot,
+  }),
 ];
 
 /** Register the Claude Code provider without waiting for the user to open a session: a throwaway
@@ -1416,8 +1425,9 @@ class ChatSession {
     // extensions, as before; each event arrives once, in pi's tick (P12 message-end-before-persist).
     this.unsubscribe = harness.subscribe((event) => {
       // A turn starting or settling, and a tool call ending (the Overseer's tools write stores in
-      // process), start the next session listing afresh (§app.session-list/listing-reuse).
-      if (event.type === "tool.end" || event.type === "run.start" || event.type === "run.settled") sessionsChanged();
+      // process), start the next session listing afresh (§app.session-list/listing-reuse). A codemode
+      // script's own calls don't: its result's end does, once.
+      if ((event.type === "tool.end" && !event.nested) || event.type === "run.start" || event.type === "run.settled") sessionsChanged();
       // A Claude login picked during the reply goes in now, before the queue wake below can start
       // the next turn: applyLoginPick holds the web queue until it has landed
       // (§app.claude-logins/switch-queue).

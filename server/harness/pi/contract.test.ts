@@ -5,7 +5,7 @@
 // faux provider, registered through the public ModelRuntime API: no network, no private fields.
 // C1 the session manager's append* methods (the entry union), C2 the custom entry's line, C3 the event
 // names and fields chat-manager's bind() reads, C5 image content as prompt/steer take and store it.
-// P1-P20 and T1 are the quirk canaries (QUIRKS.md, quirks.ts): each asserts that a pi behaviour a Sova
+// P1-P21 and T1 are the quirk canaries (QUIRKS.md, quirks.ts): each asserts that a pi behaviour a Sova
 // workaround or assumption rests on still holds. Their turns run on testing/scripted-model.ts (a held
 // reply makes the mid-turn windows deterministic). When one fails, triage it by its QUIRKS.md row.
 import assert from "node:assert/strict";
@@ -641,6 +641,53 @@ describe("pi contract", () => {
     const b = await quirkSession({ file: used, model: null, settings });
     assert.equal(b.session.model?.id, "faux-2", "with messages the recorded model is restored");
     b.session.dispose();
+  });
+
+  test("P21 codemode-definition: the factory registers one inactive codemode tool, its models.* reach ctx.modelRegistry, nested calls carry parentToolCallId", async () => {
+    const registered: any[] = [];
+    let registryAsked = 0;
+    const capture = (api: any) => {
+      const caught = new Proxy(api, { get: (t, k) => (k === "registerTool" ? (def: any) => void registered.push(def) : Reflect.get(t, k)) });
+      pi.agent.createCodemodeExtension()(caught);
+      const def = registered[0];
+      // As Sova's scriptRegistry does: the context's registry, seen through a wrapper.
+      api.registerTool({
+        ...def,
+        execute: (id: string, params: unknown, signal: unknown, onUpdate: unknown, ctx: any) =>
+          def.execute(id, params, signal, onUpdate, new Proxy(ctx, {
+            get: (t, k) => {
+              // Members as they are (a Proxy must return pi's read-only executeTool unchanged).
+              if (k !== "modelRegistry") return Reflect.get(t, k);
+              return new Proxy(t.modelRegistry, { get: (r, m) => { if (m === "classify") registryAsked++; const v = Reflect.get(r, m); return typeof v === "function" ? v.bind(r) : v; } });
+            },
+          })),
+      });
+      api.registerTool({ name: "echo", label: "echo", description: "echo", parameters: Type.Object({ word: Type.String() }), execute: async (_id: string, p: { word: string }) => ({ content: [{ type: "text", text: p.word }], details: {} }) });
+    };
+    const { session, model, events, runtime, sm } = await quirkSession({ extensions: [capture] });
+    assert.deepEqual(registered.map((d) => [d.name, d.defaultActive]), [["codemode", false]], "one tool, codemode, registered inactive");
+    assert.ok(!session.getActiveToolNames().includes("codemode"), "inactive after the build");
+    session.setActiveToolsByName([...session.getActiveToolNames(), "codemode"]);
+    assert.ok(session.getActiveToolNames().includes("codemode"), "setActiveTools activates it");
+    (runtime as any).registerProvider("cls", {
+      apiKey: "test",
+      models: [{ type: "classifier", id: "cls-1", name: "cls-1", api: "test-classifier", baseUrl: "http://127.0.0.1:9", input: ["text"], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 1000 }],
+      classifiers: { "test-classifier": { classify: async () => ({ provider: "cls", model: "cls-1", answers: { q: { type: "bool", probability: 1 } }, stopReason: "stop" }) } },
+    });
+    const code = `const w = await tools.echo({ word: "hi" });
+const r = await models.classify({ provider: "cls", id: "cls-1" }, { state: {}, questions: { q: { type: "bool", instructions: "?", criteria: { true: "y", false: "n" } } } });
+return w + ":" + r.stopReason;`;
+    model.reply({ toolCall: { name: "codemode", arguments: { code } } }, { text: "done" });
+    await session.prompt("go");
+    const nested = events.filter((e) => e.type?.startsWith("tool_execution_") && e.parentToolCallId);
+    assert.ok(nested.length >= 2, "the nested call's events carry parentToolCallId");
+    assert.ok(nested.every((e) => e.parentToolCallId === "call-1" && e.toolCallId === "call-1/1"), "and the id <parent>/<n>");
+    assert.equal(registryAsked, 1, "the script's models.classify went through ctx.modelRegistry");
+    const results = sm.getEntries().filter((e: any) => e.type === "message" && e.message.role === "toolResult");
+    assert.deepEqual(results.map((e: any) => e.message.toolName), ["codemode"], "nested calls write no entries");
+    assert.match(results[0].message.content.map((b: any) => b.text ?? "").join(""), /hi:stop/);
+    assert.deepEqual(results[0].message.details.calls.map((c: any) => c.name), ["echo", "models.classify"]);
+    session.dispose();
   });
 
   test("T1 scripted-model: the members the test double replaces exist, and it runs a turn", async () => {

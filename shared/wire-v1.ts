@@ -180,8 +180,8 @@ export function fromV1(frame: Pick<V1EventFrame, "event" | "entryId">): SovaEven
       return callId ? [{ type: "tool.update", callId, output: toolOutput(event.partialResult), images: toolImages(event.partialResult) }] : [];
     }
     case "tool_execution_end": {
-      const callId = str(event.toolCallId);
-      if (!callId) return [];
+      // No call id still ends a tool (the Overseer's navigate is decided from the end alone).
+      const callId = str(event.toolCallId) ?? "";
       const name = str(event.toolName);
       const details = isObj(event.result) ? event.result.details : undefined;
       return [

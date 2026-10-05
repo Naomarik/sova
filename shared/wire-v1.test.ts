@@ -125,7 +125,7 @@ describe("fromV1: the table", () => {
     assert.deepEqual(v1({ type: "message_end", message: { role: "custom" } }), []);
   });
 
-  test("tool execution: start, update, end; no call id maps to none", () => {
+  test("tool execution: start, update, end; no call id maps to none, except an end", () => {
     const result = { content: [{ type: "text", text: "out" }, { type: "text", text: "put" }, PNG], details: { diff: "d" } };
     assert.deepEqual(v1({ type: "tool_execution_start", toolCallId: "c1", toolName: "bash", args: { cmd: "ls" } }), [{ type: "tool.start", callId: "c1", name: "bash", args: { cmd: "ls" } }]);
     assert.deepEqual(v1({ type: "tool_execution_start", toolCallId: "c1" }), [{ type: "tool.start", callId: "c1", name: "tool", args: undefined }]);
@@ -138,7 +138,9 @@ describe("fromV1: the table", () => {
     assert.deepEqual(v1({ type: "tool_execution_end", toolCallId: "c1", result: { content: [] }, isError: "yes" }), [
       { type: "tool.end", callId: "c1", args: undefined, isError: false, output: "", images: [] },
     ]);
-    for (const type of ["tool_execution_start", "tool_execution_update", "tool_execution_end"]) assert.deepEqual(v1({ type, toolName: "bash" }), [], type);
+    for (const type of ["tool_execution_start", "tool_execution_update"]) assert.deepEqual(v1({ type, toolName: "bash" }), [], type);
+    // An end without a call id still ends a tool: its effects (the Overseer's navigate) don't need one.
+    assert.deepEqual(v1({ type: "tool_execution_end", toolName: "bash" }), [{ type: "tool.end", callId: "", name: "bash", args: undefined, isError: false, output: "", images: [] }]);
   });
 
   test("retry and compaction activity; a compaction that wrote one says so", () => {

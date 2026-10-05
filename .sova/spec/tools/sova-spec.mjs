@@ -12,6 +12,7 @@ import { fileURLToPath } from "node:url";
 import { PACKET_PARTS, PACKET_HELP, packetBudget, packetError, packetOrder, packetPage, serializePacket } from "./packet.mjs";
 import { tocMain, pullCommand } from "./toc.mjs";
 import { readMain } from "./read.mjs";
+import { fieldShape, checkFields, frameOf, frameFinding, aboutNotes } from "./fields.mjs";
 import { lookCommand, graphMain, nearMain } from "./graph.mjs";
 import { mapMain } from "./map.mjs";
 import { whereMain } from "./where.mjs";
@@ -254,6 +255,7 @@ function validateRecords(ctx) {
     if (rec.kind === "surface" && idToFile(id, dirKinds).level !== 1) bad("kind-mismatch", "a surface must be an H1 identifier", id);
     idList(rec, "requires", id);
     idList(rec, "members", id);
+    fieldShape(rec, id, bad, ID_RE);
     if (rec.members !== undefined && rec.kind !== "section") bad("record-invalid", "only sections have members", id);
     if (rec.code !== undefined && !(Array.isArray(rec.code) && rec.code.every((c) => typeof c === "string")))
       bad("record-invalid", "code must be an array of path strings", id);
@@ -449,6 +451,7 @@ function scope(ctx, seed, budget) {
       addFrontier({ id, reason: "requires-uninvestigated" });
     }
     for (const r of [...(rec.requires ?? [])].sort()) edge(r, { reason: "requires", of: id });
+    for (const e of [...(rec.embeds ?? [])].sort()) edge(e, { reason: "embeds", of: id });
   };
   visit(seed, { reason: "requested" });
   let list = [...passages.values()];
@@ -488,7 +491,7 @@ function containersOf(ctx, ids) {
 // Reverse requires index: target → the ids that require it.
 function reverseOf(ctx) {
   const rev = new Map();
-  for (const [id, r] of ctx.claims) for (const t of r.requires ?? []) rev.set(t, [...(rev.get(t) ?? []), id]);
+  for (const [id, r] of ctx.claims) for (const t of [...(r.requires ?? []), ...(r.embeds ?? [])]) if (!(rev.get(t) ?? []).includes(id)) rev.set(t, [...(rev.get(t) ?? []), id]);
   return rev;
 }
 
@@ -532,6 +535,7 @@ function check(ctx) {
     }
     provenance(ctx, id);
   }
+  checkFields(ctx, add);
   const code = codeUnion(ctx, [...ctx.claims.keys()]);
   const kinds = {}, labels = { authority: {}, evidence: {}, unlabeled: 0 };
   for (const r of ctx.claims.values()) {
@@ -1117,8 +1121,19 @@ function packetMain(opt) {
   if (opt.alias) add("note", "id-alias", `${opt.alias} is not a § identifier; read as ${opt.id} (did you mean ${opt.id}?)`, { id: opt.id });
   const result = scope(ctx, opt.id);
   const passages = packetOrder(ctx, opt.id, result.passages, parentOf);
+  // Notes about the seed, its H1 and the surfaces it embeds travel with it, after the closure.
+  const parent = parentOf(opt.id, ctx.dirKinds);
+  for (const { id, target } of aboutNotes(ctx, [opt.id, ...(parent ? [parent] : []), ...(ctx.claims.get(opt.id).embeds ?? [])])) {
+    const known = passages.find((p) => p.id === id), reason = { reason: "about", of: target };
+    if (known) { if (!known.reasons.some((r) => r.reason === "about")) known.reasons.push(reason); continue; }
+    const d = ctx.decls.get(id), rec = ctx.claims.get(id);
+    const p = { id, kind: rec.kind, ...labelsOf(rec), file: d.file, lines: d.lines, reasons: [reason], text: d.text, provenance: provenance(ctx, id) };
+    passages.push(p); result.passages.push(p);
+  }
+  const frame = frameOf(ctx);
+  frameFinding(frame, add);
   return write(packetPage({ identity: { root, spec: opt.spec, id: opt.id, readPolicy: reviewPolicy ? "review" : "default" },
-    inputs: packetInputs, result, findings, passages, part: opt.part, cursor: opt.cursor, budget }));
+    inputs: packetInputs, result, findings, passages, part: opt.part, cursor: opt.cursor, budget, frame }));
 }
 
 // The pull commands (toc, read) live in their own modules and reach the graph only through the core's own loader.

@@ -146,13 +146,15 @@ it was merged from, byte for byte, or the promotion is refused as a conflict and
 
 ## §tools.spec/agreed-promotion — An agreed promise lands in the main spec before it is built
 
-A behavior or surface record may carry `agreed: {by, at}`: who agreed to its wording and when (an
-ISO date, optionally with a time). It is written when the person agrees, and it belongs to that
-wording: a promotion may replace the `agreed` of a record current already has only when the same
-promotion also changes that record's prose and the new `at` is not earlier than the old one. A
-promotion that changes `agreed` on unchanged prose, or that removes it without deleting the whole
-record, is refused, so the later build updates the same record and still says who decided, and
-nobody re-stamps a decision silently. A record with `agreed` and no `code` may be
+A behavior or surface record may carry `agreed: {by, at}`: who made the decision it records, and
+when (an ISO date, optionally with a time). It names who decided and when, not that they read the
+record's current words; no tool checks what the prose means. A later promotion may reword the prose
+and keep `agreed`. A change of meaning goes back to the person who decided, and their new agreement
+replaces `agreed`: a promotion may replace the `agreed` of a record current already has only when
+the same promotion also changes that record's prose and the new `at` is not earlier than the old
+one. A promotion that changes `agreed` on unchanged prose, or that removes it without deleting the
+whole record, is refused, so the later build updates the same record and still says who decided,
+and nobody re-stamps a decision silently. A record with `agreed` and no `code` may be
 promoted on doc-only evidence, as notes and sections are: that records the decision, not that
 anything was built. A record reads as built only when it has `code` and the `evidence` label
 `reviewed` or `verified`, so doc-only evidence for an agreed record that declares either one is
@@ -219,7 +221,7 @@ machine inspection and review. No new mandatory assessment or release gate is in
 ### Reading a packet
 
 `packet '§ns/name'` starts the prose stream. `--part inventory|frontier|code|findings` starts a
-detailed inventory independently; `--cursor` continues the chosen stream, and the budget may be
+detailed inventory independently, and `--part frame` the always-on frame (§tools.spec/frame); `--cursor` continues the chosen stream, and the budget may be
 changed between pages. Counts name the whole streams; `remaining` and `next` describe only the
 selected stream. An empty stream terminates without a cursor. `packet --help` also returns small
 bounded JSON. The global help and the existing graph commands keep their existing formats.
@@ -330,27 +332,23 @@ The read-only `toc '§id' --dir out|in|down|up|mentions` command is a contents v
 claims one hop from the requested one in a single direction, so the reader picks what to open
 instead of receiving a whole dependency chain. `out` lists the claim's declared `requires`, then, in
 a group of their own, the claims its prose names without requiring them; `in` lists the claims whose
-`requires` name it, and for an H2, in a group of their own headed "required through its H1", the
-claims that require its H1, since requiring an H1 brings all of its H2s; `down` lists an H1's H2
-children, or a section's members, in declaration order; `up` gives the parent of an H2; `mentions`
-lists the claims whose prose names it. It never follows a second hop and never prints a neighbour's
-passage. On an H1 with H2s, `out` also says how many of its H2s require claims outside it and how
-many distinct claims those are, pointing at `toc` on each H2 and at `map` on the area, so an H1 whose
-own record requires nothing never reads as an area that needs nothing.
+`requires` name it; `down` lists an H1's H2 children, or a section's members, in declaration order;
+`up` gives the parent of an H2; `mentions` lists the claims whose prose names it. Records carrying
+the optional `embeds` and `about` fields add groups of their own to `out` and `in`
+(§tools.spec/record-fields). It never follows a second hop and never prints a neighbour's passage.
 
 The output starts with the requested claim itself: its id, title, kind, labels, size and its own
 "what". Then each neighbour gets one line, grouped under a heading per kind of link and ordered by id
 (`down` keeps declaration order): the § id and its heading title; **what**; for `out`, `in` and
 `mentions`, **why**; and **size** in UTF-8 bytes, which is what reading it alone costs, and for an H1
 its lede's bytes and its whole file's bytes. **What** is the passage's first prose sentence after its
-heading, verbatim with whitespace collapsed: fenced code, HTML comments, tables, thematic breaks and
-headings are skipped, list markers are dropped, a sentence ends at `.`, `?`, `!` or `:` followed by a space (never
+heading, verbatim with whitespace collapsed: fenced code, HTML comments, tables and headings are
+skipped, list markers are dropped, a sentence ends at `.`, `?`, `!` or `:` followed by a space (never
 inside a code span) and runs on until it has 20 characters, and anything past 200 characters is cut
 with `…`. A blockquote is used only when the passage has no other prose; a passage with none says
 "no prose sentence", with its code's size when it has code, and never quotes code. **Why** is the
 first visible-prose sentence of the linking claim's text that names the other one (the requested
-claim's for `out`, the neighbour's for `in` and `mentions`, naming the H1 for a line required through
-it); failing that, an HTML comment naming it,
+claim's for `out`, the neighbour's for `in` and `mentions`); failing that, an HTML comment naming it,
 labelled as a comment; failing that, exactly "not mentioned in this claim's text". The JSON says
 which (`whatSource`, `whySource`).
 
@@ -376,17 +374,68 @@ project code is run, and the `packet` and `scope` outputs are unchanged.
 ## §tools.spec/single-read — `read` returns one passage at its own size
 
 The read-only `read '§id'` command returns exactly one declared passage and nothing it requires,
-contains or mentions. For an H1 that passage is its lede, the text before its first H2; `--whole`
+contains or mentions, except the surfaces its record `embeds`: those are drawn inside it, so each
+follows as further passages, whole (lede and every H2), in the same stream, and so does each surface
+those embed in turn; and its first page
+carries the always-on frame outside the budget (§tools.spec/frame). For an H1 that passage
+is its lede, the text before its first H2; `--whole`
 returns the lede and then every H2 of the file in declaration order, each as its own passage. The
 text is byte-for-byte the passage the `scope` API supplies, with its id, kind, title, file, lines
 and any declared labels, and a passage larger than the budget arrives as exact UTF-8 fragments,
 as packet prose does, whose concatenation recovers it.
 
 After the passage, a footer names the § it declares through `requires` and the § its prose names
-(masked as in the contents view) that this read does not deliver on any of its pages, so a link
-left unopened is still named; for an H1 read as its lede it also gives the number of H2s left out and the whole file's
+(masked as in the contents view) that this call did not deliver, so a link left unopened is still
+named; for an H1 read as its lede it also gives the number of H2s left out and the whole file's
 size, with the flag that reads it. The default budget is 32,768 bytes, so any single passage of
 ordinary size arrives in one call; explicit budgets are 1,024 to 32,768. The cursor and
 stored-nothing rules are the contents view's, with compact JSON with `--json` and readable text
 without; exit 0 when the stream is done, 1 when more remains, 2 on a refusal such as an unknown id
 or an untrusted graph.
+
+## §tools.spec/record-fields — Optional `embeds`, `core` and `about` record fields
+
+A manifest record may carry three optional fields, each project flagging its own records; none is a
+new kind, label value or top-level key, so a core that predates them reads the same manifest and
+ignores them. `embeds: [§id]` names surfaces drawn inside this claim, which a reader of it needs
+whole. `core: true` marks a claim, typically an H2, as part of the always-on frame (see
+§tools.spec/frame). `about: [§id]` on a note names the surface or behavior the note serves, so the
+note is written once and its target's record is never edited to link it.
+
+An `embeds` edge is a dependency like `requires`: `scope` and `packet` follow it with the reason
+`embeds`, reverse `impact` walks it back to the embedding claim, and the contents view lists it under
+`out` in an "embeds" group of its own and under `in` as "embedded by". `read` of a claim also
+delivers each surface it embeds, whole (see §tools.spec/single-read).
+
+An `about` note shows in the contents view under `out` for its target, in an "about" group, and also
+for each H2 of a target H1, marked as reached through that H1. `read` names the notes about the
+passage it delivers, and `packet` adds to its prose the notes about the requested claim, its H1 and
+the surfaces it embeds, each with the reason `about`. On a spec whose records carry none of these
+fields, every existing output is unchanged except packet's help text and its new `frame` part.
+
+`check` validates them. A value of the wrong shape is a record error, like a malformed `requires`:
+`embeds` or `about` not an array of § ids, or `core` not a boolean. A misuse is a warning naming the
+record, so one misplaced field never makes the whole graph untrusted: `about` on a record that is
+not a note, a target with no record, an `embeds` target that is not a surface, and an `about` target
+that is a note or section.
+
+## §tools.spec/frame — The always-on frame is its own stream, at most 12,000 bytes
+
+The frame is the passages of every record flagged `core: true`, in file and line order, each the
+exact text `scope` supplies (an H1 gives its lede only, never its H2s). It is never mixed into what a
+reader asked for, and the page budget of the requested claim is spent on that claim alone.
+`packet '§id' --part frame` pages it as a stream of its own, and `read --frame`, with no § id, reads
+it under read's budget and cursor rules. So that it arrives unasked, the first page of `read '§id'`
+also carries the whole frame as items of their own, outside that page's budget, leaving out any
+passage this read delivers, which arrives in the read's own stream instead; continuation pages
+never carry it, and `--no-frame` drops it for a reader that already has it.
+
+Whenever the spec flags at least one core record, every `packet`, `toc` and `read` page (refusals
+aside) names the frame with its passage count, its byte count (the sum of its passages' UTF-8 bytes)
+and the cap, packet's counts include the `frame` stream, and the readable text of `toc` and `read`
+says how to read it, so the frame is always named even when it is not delivered. A
+spec with no core record prints nothing about a frame, and its outputs are unchanged.
+
+The cap is 12,000 decimal bytes. A frame over it is still delivered whole, never cut: the summary
+marks it over the cap, and `check` and `packet` report a `frame-over-cap` warning with its size, so
+the project moves a record out of the frame or accepts the cost in plain view.

@@ -1,6 +1,7 @@
 // Contents view: one hop of neighbours around a § id, one line each (what, why, size). Node stdlib only;
 // never reads anything but the parsed graph and never writes. Shared pull helpers for read.mjs live here too.
 import { createHash } from "node:crypto";
+import { embedsOf, embeddedBy, aboutNotes, frameOf, frameSummary, frameLine } from "./fields.mjs";
 
 export const DIRS = ["out", "in", "down", "up", "mentions"];
 const ID_RE = /^§[a-z][a-z-]*(?:\.[a-z][a-z-]*)?\/[a-z][a-z-]*$/;
@@ -27,6 +28,8 @@ export function pullArgs(argv, command) {
     const a = argv[i];
     if (a === "--json") o.json = true;
     else if (a === "--whole" && command === "read") o.whole = true;
+    else if (a === "--frame" && command === "read") o.frame = true;
+    else if (a === "--no-frame" && command === "read") o.noFrame = true;
     else if (a === "--help" || a === "-h") o.help = true;
     else if (VALUE_FLAGS.includes(a) && (a !== "--dir" || command === "toc")) {
       if (i + 1 >= argv.length) { o.usage ??= `${a} needs a value`; break; }
@@ -38,6 +41,7 @@ export function pullArgs(argv, command) {
   o.budget = budgetOf(o.budget, DEFAULT_BUDGET[command]);
   if (o.usage || o.help) return o;
   if (o.budget === null) { o.usage = `${command} --budget takes an integer from 1024 to 32768`; return o; }
+  if (o.frame) { if (o.pos.length || o.whole || o.noFrame) o.usage = "read --frame takes no §id, --whole or --no-frame"; return o; }
   if (o.pos.length !== 1) { o.usage = `${command} takes one §id`; return o; }
   const raw = o.pos[0];
   if (/^§[a-z][a-z-]*\.[a-z][a-z-]*$/.test(raw)) { o.alias = raw; o.id = raw.replace(".", "/"); }
@@ -65,7 +69,7 @@ export function openGraph(o, core) {
   const findings = core.findings();
   if (!ctx || core.exitOf(findings) === 2)
     return { refused: "graph-untrusted", ...(findings.some((f) => f.code === "manifest-not-found") ? { cause: "manifest-not-found" } : {}) };
-  if (!ctx.claims.has(o.id) || !ctx.decls.has(o.id)) return { refused: "unknown-id", message: `${o.id} has no manifest record` };
+  if (o.id !== undefined && (!ctx.claims.has(o.id) || !ctx.decls.has(o.id))) return { refused: "unknown-id", message: `${o.id} has no manifest record` };
   return { root, ctx };
 }
 
@@ -260,9 +264,10 @@ export function boundedRefusal(command, budget, code, extra = {}) {
 
 // ---------------------------------------------------------------- toc
 const GROUPS = {
-  out: ["requires", "named"], in: ["required-by", "required-through-parent"], down: ["children", "members"], up: ["parent"], mentions: ["mentioned-by"],
+  out: ["requires", "embeds", "about", "named"], in: ["required-by", "required-through-parent", "embedded-by"], down: ["children", "members"], up: ["parent"], mentions: ["mentioned-by"],
 };
-const HEADS = { requires: "requires", named: "named in its text, not required", "required-by": "required by", "required-through-parent": "required through its H1",
+const HEADS = { requires: "requires", embeds: "embeds (drawn inside it; read delivers them whole)", about: "about (notes that serve it)",
+  named: "named in its text, not required", "required-by": "required by", "required-through-parent": "required through its H1", "embedded-by": "embedded by",
   children: "children", members: "members", parent: "parent", "mentioned-by": "mentioned by" };
 function labelsOf(rec) {
   const l = {};
@@ -275,9 +280,14 @@ function labelsOf(rec) {
 function neighbours(ctx, id, dir, parentOf) {
   const rec = ctx.claims.get(id), seed = ctx.decls.get(id);
   if (dir === "out") {
-    const req = [...new Set(rec.requires ?? [])].sort();
-    const named = namedIn(seed, id).filter((x) => !req.includes(x)).sort();
+    const emb = [...new Set(rec.embeds ?? [])].sort(), req = [...new Set(rec.requires ?? [])].filter((x) => !emb.includes(x)).sort();
+    // Notes about the claim, then notes about its H1 (marked via), each note once.
+    const p = parentOf(id, ctx.dirKinds), about = aboutNotes(ctx, [id]);
+    if (p) for (const n of aboutNotes(ctx, [p])) if (!about.some((a) => a.id === n.id)) about.push({ ...n, via: p });
+    const named = namedIn(seed, id).filter((x) => !req.includes(x) && !emb.includes(x) && !about.some((a) => a.id === x)).sort();
     return [...req.map((to) => ({ id: to, group: "requires", src: seed, target: to })),
+      ...emb.map((to) => ({ id: to, group: "embeds", src: seed, target: to })),
+      ...about.map((n) => ({ id: n.id, group: "about", src: ctx.decls.get(n.id), target: n.target, ...(n.via ? { via: n.via } : {}) })),
       ...named.map((to) => ({ id: to, group: "named", src: seed, target: to }))];
   }
   if (dir === "in") {
@@ -286,7 +296,8 @@ function neighbours(ctx, id, dir, parentOf) {
     // Requiring an H1 brings every H2 of it, so those claims reach an H2 through its parent.
     const through = p && ctx.claims.has(p) ? by(p).filter((k) => k !== id && !direct.includes(k)) : [];
     return [...direct.map((k) => ({ id: k, group: "required-by", src: ctx.decls.get(k), target: id })),
-      ...through.map((k) => ({ id: k, group: "required-through-parent", src: ctx.decls.get(k), target: p, via: p }))];
+      ...through.map((k) => ({ id: k, group: "required-through-parent", src: ctx.decls.get(k), target: p, via: p })),
+      ...embeddedBy(ctx, id).map((k) => ({ id: k, group: "embedded-by", src: ctx.decls.get(k), target: id }))];
   }
   if (dir === "down") return rec.kind === "section" ? (rec.members ?? []).map((m) => ({ id: m, group: "members" }))
     : childrenInOrder(ctx, id).map((c) => ({ id: c, group: "children" }));
@@ -303,9 +314,8 @@ function neighbours(ctx, id, dir, parentOf) {
 function line(ctx, n) {
   const d = ctx.decls.get(n.id), rec = ctx.claims.get(n.id), w = n.src ? whyOf(n.src, n.target) : null;
   const why = w ? { why: w.why, whySource: w.whySource } : {};
-  if (n.via) why.via = n.via;
-  if (!d || !rec) return { id: n.id, group: n.group, dangling: true, ...why };
-  return { id: n.id, group: n.group, title: titleOf(d), kind: rec.kind, level: d.level, ...labelsOf(rec), ...sizeOf(ctx, n.id), ...whatOf(d), ...why };
+  if (!d || !rec) return { id: n.id, group: n.group, ...(n.via ? { via: n.via } : {}), dangling: true, ...why };
+  return { id: n.id, group: n.group, ...(n.via ? { via: n.via } : {}), title: titleOf(d), kind: rec.kind, level: d.level, ...labelsOf(rec), ...sizeOf(ctx, n.id), ...whatOf(d), ...why };
 }
 
 export function tocStream(ctx, id, dir, parentOf) {
@@ -345,14 +355,14 @@ const lab = (e) => (e.labels ? ` · ${[e.labels.authority ?? "-", e.labels.evide
 export function renderToc(out) {
   const L = [], s = out.seed, D = out.dir.toUpperCase();
   L.push(`${s.id} — ${s.title}  ${s.kind}${lab(s)} · ${sizeText(s)}`, `  what: ${s.what}`);
-  if (out.dir === "out" && !out.counts.groups.requires)
+  if (out.dir === "out" && !out.counts.groups.requires && !out.counts.groups.embeds)
     L.push(`${D}: requires: ${s.requires === null && s.kind === "behavior" ? "dependencies uninvestigated (no requires key)" : "none declared"}`);
   if (s.childRequires) L.push(`${D}: its ${s.childRequires.h2s} H2(s) require ${s.childRequires.claims} claim(s) outside it: toc each H2 --dir out, or map '${s.id}'`);
   let group = null;
   for (const e of out.lines) {
-    if (e.group !== group) { group = e.group; L.push(`${D}: ${HEADS[group]}${e.via ? " " + e.via : ""} (${out.counts.groups[group]})`); }
+    if (e.group !== group) { group = e.group; L.push(`${D}: ${HEADS[group]}${group === "required-through-parent" ? " " + e.via : ""} (${out.counts.groups[group]})`); }
     if (e.dangling) L.push(`  ${e.id} — unknown: no record or span`);
-    else L.push(`  ${e.id} — ${e.title}  ${e.kind}${lab(e)} · ${sizeText(e)}`, `    what: ${e.what}`);
+    else L.push(`  ${e.id} — ${e.title}  ${e.kind}${lab(e)} · ${sizeText(e)}${e.via && e.group === "about" ? ` · about its H1 ${e.via}` : ""}`, `    what: ${e.what}`);
     if (e.why !== undefined) L.push(e.whySource === "comment" ? `    why (comment): ${e.why}` : `    why:  ${e.why}`);
   }
   if (!out.counts.entries && out.dir !== "out") L.push(`${D}: none`);
@@ -360,6 +370,7 @@ export function renderToc(out) {
   const f = out.footer;
   L.push(`delivered: no passage (contents only; read '§id' delivers one) · listed ${f.listed} · not listed ${f.notListed}`,
     `other directions: ${Object.entries(f.otherDirections).map(([d, n]) => `${d} ${n}`).join(" · ")}`, ...f.unknowns.map((u) => u.message));
+  if (out.frame) L.push(frameLine(out.frame));
   if (out.next) L.push(`more: toc '${out.id}' --dir ${out.dir} --cursor ${out.next}`);
   L.push(`exit ${out.exit}`);
   return L.join("\n") + "\n";
@@ -379,7 +390,8 @@ export function tocMain(argv, core) {
   if (o.dir === "up" && !list.length) notes.push({ code: "no-parent", message: `${o.id} is an H1: it has no parent` });
   const groups = {};
   for (const e of list) groups[e.group] = (groups[e.group] ?? 0) + 1;
-  const fp = digest({ root, spec: o.spec, id: o.id, dir: o.dir, seed, list, unknowns, otherDirections });
+  const frame = frameSummary(frameOf(ctx));
+  const fp = digest({ root, spec: o.spec, id: o.id, dir: o.dir, seed, list, unknowns, otherDirections, ...(frame ? { frame } : {}) });
   let index = 0;
   if (o.cursor !== undefined) {
     const t = decodeToken(o.cursor, fp, "toc");
@@ -391,7 +403,7 @@ export function tocMain(argv, core) {
     const more = at < list.length;
     return { tool: "sova-spec", command: "toc", exit: more || unknowns.length ? 1 : 0, status: more ? "more" : "done", budget, id: o.id, dir: o.dir,
       seed, counts: { entries: list.length, groups }, remaining: list.length - at, lines, notes,
-      footer: { delivered: [], listed: lines.length, notListed: list.length - at, otherDirections, unknowns },
+      footer: { delivered: [], listed: lines.length, notListed: list.length - at, otherDirections, unknowns }, ...(frame ? { frame } : {}),
       next: more ? tokenFor(fp, "toc", at) : null, notice: TOC_NOTICE };
   };
   const lines = [];

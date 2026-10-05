@@ -43,7 +43,6 @@
   },
   "readers": {
     "server/align-state.ts": {"calls": 1, "shapes": 9, "reaches": 0},
-    "server/attention-signals.ts": {"calls": 2, "shapes": 1, "reaches": 0},
     "server/baton-guards.ts": {"calls": 0, "shapes": 7, "reaches": 0},
     "server/baton-images.ts": {"calls": 1, "shapes": 3, "reaches": 0},
     "server/baton-loadout.ts": {"calls": 7, "shapes": 7, "reaches": 4},
@@ -59,7 +58,7 @@
     "server/git-diff.ts": {"calls": 0, "shapes": 3, "reaches": 0},
     "server/git-summary.ts": {"calls": 0, "shapes": 1, "reaches": 0},
     "server/index.ts": {"calls": 6, "shapes": 0, "reaches": 8},
-    "server/insights.ts": {"calls": 2, "shapes": 16, "reaches": 0},
+    "server/insights.ts": {"calls": 1, "shapes": 0, "reaches": 0},
     "server/merge-readiness.ts": {"calls": 1, "shapes": 13, "reaches": 0},
     "server/org-test-fixtures.ts": {"calls": 0, "shapes": 1, "reaches": 0},
     "server/overseer-card-tool.ts": {"calls": 1, "shapes": 1, "reaches": 0},
@@ -88,13 +87,10 @@
     "server/transcript-rows.ts": {"calls": 3, "shapes": 0, "reaches": 0},
     "server/transcript-tool.ts": {"calls": 1, "shapes": 0, "reaches": 0},
     "server/transcript.ts": {"calls": 0, "shapes": 39, "reaches": 0},
-    "server/unread-replies.ts": {"calls": 2, "shapes": 2, "reaches": 0},
     "server/user-turns.ts": {"calls": 0, "shapes": 1, "reaches": 0},
     "server/vis-check.ts": {"calls": 3, "shapes": 0, "reaches": 0},
     "server/watch.ts": {"calls": 4, "shapes": 1, "reaches": 0},
-    "server/worker-context.ts": {"calls": 2, "shapes": 0, "reaches": 0},
     "server/worker-sessions.ts": {"calls": 0, "shapes": 6, "reaches": 0},
-    "server/worker-skills.ts": {"calls": 2, "shapes": 0, "reaches": 0},
     "server/worktree-cleanup.ts": {"calls": 0, "shapes": 2, "reaches": 0},
     "server/worktrees.ts": {"calls": 0, "shapes": 1, "reaches": 0},
     "shared/overseer-card.ts": {"calls": 0, "shapes": 1, "reaches": 0},
@@ -122,8 +118,5 @@
     "server/baton-loadout.ts:writeEntry",
     "server/chat-manager.ts:appendSpecialEntry"
   ],
-  "piAdapter": [
-    "server/worker-context.test.ts",
-    "server/worker-context.ts"
-  ]
+  "piAdapter": []
 }

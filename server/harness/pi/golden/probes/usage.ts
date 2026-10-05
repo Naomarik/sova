@@ -5,8 +5,10 @@
 import { appendFileSync, statSync } from "node:fs";
 import { readTailBranch, turnFacts } from "../../../../attention-signals";
 import { extractFacts } from "../../../../insights";
-import { collectSkills } from "../../../../skills";
-import { activeBranch, parseLines } from "../../../../transcript";
+import { parseJsonl } from "../../../../jsonl";
+import { claudeSkillLines, collectSkills, skillLinesOf } from "../../../../skills";
+import { parseLines } from "../../../../transcript";
+import { branchOf, parsePi } from "../../reader";
 import { UnreadReplies } from "../../../../unread-replies";
 import { contextTally, readTailFill } from "../../../../worker-context";
 import { forgetWorkerSkills, workerSkills } from "../../../../worker-skills";
@@ -40,7 +42,7 @@ export const probes: Probe[] = [
   {
     name: "skills",
     formats: ["pi", "cc"],
-    run: (f) => collectSkills(activeBranch(parseLines(f.text))),
+    run: (f) => collectSkills(f.format === "pi" ? skillLinesOf(branchOf(parsePi(f.text).entries)) : claudeSkillLines(parseJsonl(f.text))),
   },
   {
     name: "worker-skills",

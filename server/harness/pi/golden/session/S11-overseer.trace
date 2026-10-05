@@ -1,0 +1,65 @@
+step attach A, B
+A {"type":"hello","isStreaming":false,"isCompacting":false,"model":"scripted/scripted","thinking":"off","items":[]}
+A {"type":"commands"}
+A {"type":"queue","items":[]}
+A {"type":"mode","mode":"normal","minorModes":[],"strict":false,"applies":"now"}
+A {"type":"profile","profile":null,"locked":false,"pickable":false,"tools":"<elided>","removed":[],"granted":[]}
+B {"type":"hello","isStreaming":false,"isCompacting":false,"model":"scripted/scripted","thinking":"off","items":[]}
+B {"type":"commands"}
+B {"type":"queue","items":[]}
+B {"type":"mode","mode":"normal","minorModes":[],"strict":false,"applies":"now"}
+B {"type":"profile","profile":null,"locked":false,"pickable":false,"tools":"<elided>","removed":[],"granted":[]}
+step A sends {"type":"prompt","text":"how are the sessions?","clientId":"c1"}
+write {"id":"00000002","type":"model_change"}
+write {"id":"00000003","type":"thinking_level_change"}
+sdk prompt ["how are the sessions?",{"source":"interactive"}]
+A {"type":"send_ack","clientId":"c1","queued":false}
+A {"type":"links","links":[]}
+B {"type":"links","links":[]}
+A {"type":"event","event":{"type":"agent_start"}}
+B {"type":"event","v":2,"event":{"type":"run.start"}}
+A {"type":"event","event":{"type":"turn_start"}}
+A {"type":"event","event":{"type":"message_start","message":{"role":"system","elided":true}}}
+write {"id":"00000004","type":"message","role":"system"}
+A {"type":"event","event":{"type":"message_end","message":{"role":"system","elided":true}},"entryId":"00000004"}
+A {"type":"event","event":{"type":"message_start","message":{"role":"user","content":[{"type":"text","text":"how are the sessions?"}],"timestamp":1000000000000}}}
+B {"type":"event","v":2,"event":{"type":"message.start","role":"user","text":"how are the sessions?","images":[]}}
+write {"id":"00000005","type":"message","role":"user"}
+A {"type":"event","event":{"type":"message_end","message":{"role":"user","content":[{"type":"text","text":"how are the sessions?"}],"timestamp":1000000000000}},"entryId":"00000005"}
+B {"type":"event","v":2,"event":{"type":"message.end","role":"user","entryId":"00000005"}}
+A {"type":"event","event":{"type":"message_start","message":{"role":"custom","customType":"overseer-cards","content":"<elided>","display":false,"details":{"v":1},"timestamp":1000000000000}}}
+write {"id":"00000006","type":"custom_message","customType":"overseer-cards"}
+A {"type":"event","event":{"type":"message_end","message":{"role":"custom","customType":"overseer-cards","content":"<elided>","display":false,"details":{"v":1},"timestamp":1000000000000}}}
+got attended at the model call true
+A {"type":"event","event":{"type":"message_start","message":{"role":"assistant","api":"openai-completions","provider":"scripted","model":"scripted","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1000000000000,"content":[{"type":"text","text":"ok"}],"stopReason":"stop"}}}
+B {"type":"event","v":2,"event":{"type":"message.start","role":"assistant","model":"scripted/scripted","parts":[{"kind":"text","text":"ok"}]}}
+write {"id":"00000007","type":"message","role":"assistant"}
+A {"type":"event","event":{"type":"message_end","message":{"role":"assistant","api":"openai-completions","provider":"scripted","model":"scripted","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1000000000000,"content":[{"type":"text","text":"ok"}],"stopReason":"stop"}},"entryId":"00000007"}
+B {"type":"event","v":2,"event":{"type":"message.end","role":"assistant","entryId":"00000007","model":"scripted/scripted","parts":[{"kind":"text","text":"ok"}],"stop":"ok"}}
+A {"type":"event","event":{"type":"turn_end","message":{"role":"assistant","api":"openai-completions","provider":"scripted","model":"scripted","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1000000000000,"content":[{"type":"text","text":"ok"}],"stopReason":"stop"},"toolResults":[]}}
+A {"type":"event","event":{"type":"agent_end","messages":[{"role":"system","elided":true},{"role":"user","content":[{"type":"text","text":"how are the sessions?"}],"timestamp":1000000000000},{"role":"custom","customType":"overseer-cards","content":"<elided>","display":false,"details":{"v":1},"timestamp":1000000000000},{"role":"assistant","api":"openai-completions","provider":"scripted","model":"scripted","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1000000000000,"content":[{"type":"text","text":"ok"}],"stopReason":"stop"}],"willRetry":false}}
+A {"type":"event","event":{"type":"agent_settled"}}
+B {"type":"event","v":2,"event":{"type":"run.settled"}}
+step a server brief
+sdk prompt ["[overseer-brief] a session is waiting",{"source":"rpc"}]
+A {"type":"event","event":{"type":"agent_start"}}
+B {"type":"event","v":2,"event":{"type":"run.start"}}
+A {"type":"event","event":{"type":"turn_start"}}
+A {"type":"event","event":{"type":"message_start","message":{"role":"user","content":[{"type":"text","text":"[overseer-brief] a session is waiting"}],"timestamp":1000000000000}}}
+B {"type":"event","v":2,"event":{"type":"message.start","role":"user","text":"[overseer-brief] a session is waiting","images":[]}}
+write {"id":"00000008","type":"message","role":"user"}
+A {"type":"event","event":{"type":"message_end","message":{"role":"user","content":[{"type":"text","text":"[overseer-brief] a session is waiting"}],"timestamp":1000000000000}},"entryId":"00000008"}
+B {"type":"event","v":2,"event":{"type":"message.end","role":"user","entryId":"00000008"}}
+A {"type":"event","event":{"type":"message_start","message":{"role":"custom","customType":"overseer-cards","content":"<elided>","display":false,"details":{"v":1},"timestamp":1000000000000}}}
+write {"id":"00000009","type":"custom_message","customType":"overseer-cards"}
+A {"type":"event","event":{"type":"message_end","message":{"role":"custom","customType":"overseer-cards","content":"<elided>","display":false,"details":{"v":1},"timestamp":1000000000000}}}
+got attended at the model call false
+A {"type":"event","event":{"type":"message_start","message":{"role":"assistant","api":"openai-completions","provider":"scripted","model":"scripted","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1000000000000,"content":[{"type":"text","text":"ok"}],"stopReason":"stop"}}}
+B {"type":"event","v":2,"event":{"type":"message.start","role":"assistant","model":"scripted/scripted","parts":[{"kind":"text","text":"ok"}]}}
+write {"id":"00000010","type":"message","role":"assistant"}
+A {"type":"event","event":{"type":"message_end","message":{"role":"assistant","api":"openai-completions","provider":"scripted","model":"scripted","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1000000000000,"content":[{"type":"text","text":"ok"}],"stopReason":"stop"}},"entryId":"00000010"}
+B {"type":"event","v":2,"event":{"type":"message.end","role":"assistant","entryId":"00000010","model":"scripted/scripted","parts":[{"kind":"text","text":"ok"}],"stop":"ok"}}
+A {"type":"event","event":{"type":"turn_end","message":{"role":"assistant","api":"openai-completions","provider":"scripted","model":"scripted","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1000000000000,"content":[{"type":"text","text":"ok"}],"stopReason":"stop"},"toolResults":[]}}
+A {"type":"event","event":{"type":"agent_end","messages":[{"role":"user","content":[{"type":"text","text":"[overseer-brief] a session is waiting"}],"timestamp":1000000000000},{"role":"custom","customType":"overseer-cards","content":"<elided>","display":false,"details":{"v":1},"timestamp":1000000000000},{"role":"assistant","api":"openai-completions","provider":"scripted","model":"scripted","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1000000000000,"content":[{"type":"text","text":"ok"}],"stopReason":"stop"}],"willRetry":false}}
+A {"type":"event","event":{"type":"agent_settled"}}
+B {"type":"event","v":2,"event":{"type":"run.settled"}}

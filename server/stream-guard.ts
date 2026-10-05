@@ -1,4 +1,4 @@
-import type { AgentSession, AgentSessionEvent } from "@earendil-works/pi-coding-agent";
+import type { HarnessSession } from "../shared/harness";
 import type { SpecialKind } from "./chat-manager";
 
 /**
@@ -31,7 +31,7 @@ export interface StreamCaps {
   toolArgChars: number;
   /** Text + thinking + tool-argument characters of one assistant message; null = none. */
   outputChars: number | null;
-  /** agent_start → agent_end; null = none. */
+  /** A run's start → its end; null = none. */
   runWallMs: number | null;
   /** How stale the heartbeat may be (the loop starved)… */
   starvedMs: number;
@@ -100,11 +100,11 @@ const n = (x: number) => x.toLocaleString("en-US");
 const isSpace = (c: number) => c === 32 || c === 9 || c === 10 || c === 13;
 
 /**
- * Watch one session's stream. On a trip: `onTrip` once, then `session.abort()` (which also stops
- * pi's auto-retry), once per run. `onRunStart` runs at each agent_start. Returns the unsubscribe.
+ * Watch one driving session's stream. On a trip: `onTrip` once, then `session.abort()` (which also
+ * stops pi's auto-retry), once per run. `onRunStart` runs at each run's start. Returns the unsubscribe.
  */
 export function attachStreamGuard(
-  session: Pick<AgentSession, "subscribe" | "abort">,
+  session: Pick<HarnessSession, "subscribe" | "abort">,
   caps: () => StreamCaps,
   hooks: { onTrip(trip: StreamTrip): void; onRunStart?(): void },
   clock: GuardClock = realClock,
@@ -138,9 +138,9 @@ export function attachStreamGuard(
     if (c.runWallMs !== null && now - runStart > c.runWallMs) trip("wall-clock", `the turn ran past ${n(Math.round(c.runWallMs / 60_000))} minutes`, now - runStart);
   };
 
-  const off = session.subscribe((event: AgentSessionEvent) => {
+  const off = session.subscribe((event) => {
     const type = event.type;
-    if (type === "agent_start") {
+    if (type === "run.start") {
       running = true;
       tripped = false;
       runStart = clock.now();
@@ -152,7 +152,7 @@ export function attachStreamGuard(
       hooks.onRunStart?.();
       return;
     }
-    if (type === "agent_end" || type === "agent_settled") {
+    if (type === "run.end" || type === "run.settled") {
       running = false;
       disarm();
       return;
@@ -161,24 +161,23 @@ export function attachStreamGuard(
     const c = caps();
     checkClock(c);
     if (tripped) return;
-    if (type === "message_start") {
+    if (type === "message.start") {
       output = 0;
       args.clear();
       return;
     }
-    if (type !== "message_update") return;
-    const e = (event as { assistantMessageEvent?: { type: string; contentIndex?: number; delta?: string } }).assistantMessageEvent;
+    if (event.type !== "message.update") return;
+    const e = event.stream;
     if (!e) return;
-    if (e.type === "toolcall_start") {
-      args.set(e.contentIndex ?? -1, { chars: 0, run: 0 });
+    if (e.kind === "tool-call.start") {
+      args.set(e.index ?? -1, { chars: 0, run: 0 });
       return;
     }
-    if (e.type !== "toolcall_delta" && e.type !== "text_delta" && e.type !== "thinking_delta") return;
-    const delta = typeof e.delta === "string" ? e.delta : "";
+    const delta = e.delta;
     output += delta.length;
     if (c.outputChars !== null && output > c.outputChars) return trip("output", `the reply passed ${n(c.outputChars)} characters`, output);
-    if (e.type !== "toolcall_delta") return;
-    const i = e.contentIndex ?? -1;
+    if (e.kind !== "tool-call") return;
+    const i = e.index ?? -1;
     let a = args.get(i);
     if (!a) args.set(i, (a = { chars: 0, run: 0 }));
     a.chars += delta.length;

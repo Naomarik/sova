@@ -1,0 +1,20 @@
+{
+  "full": {
+    "turnId": "p0000014",
+    "replyAt": 1788256820000,
+    "lastUser": "Operator wrap-up prompt",
+    "assistantLast": "Wrap-up: updated two profiles.",
+    "tools": [],
+    "stopReason": "stop",
+    "durationMs": 1000
+  },
+  "window4k": {
+    "turnId": "p0000014",
+    "replyAt": 1788256820000,
+    "lastUser": "Operator wrap-up prompt",
+    "assistantLast": "Wrap-up: updated two profiles.",
+    "tools": [],
+    "stopReason": "stop",
+    "durationMs": 1000
+  }
+}

@@ -1,0 +1,495 @@
+{
+  "full": {
+    "scan": {
+      "size": 8303,
+      "found": true,
+      "entries": [
+        {
+          "type": "session",
+          "id": "0190a000-0000-7000-8000-q00000000000",
+          "at": 1788256800000
+        },
+        {
+          "type": "model_change",
+          "id": "q0000001",
+          "parentId": null,
+          "at": 1788256801000
+        },
+        {
+          "type": "custom",
+          "id": "q0000002",
+          "parentId": "q0000001",
+          "at": 1788256802000
+        },
+        {
+          "type": "message",
+          "id": "q0000003",
+          "parentId": "q0000002",
+          "at": 1788256803000,
+          "userPrompt": true
+        },
+        {
+          "type": "message",
+          "id": "q0000004",
+          "parentId": "q0000003",
+          "at": 1788256804000,
+          "reply": {
+            "stop": false,
+            "text": ""
+          }
+        },
+        {
+          "type": "message",
+          "id": "q0000005",
+          "parentId": "q0000004",
+          "at": 1788256805000
+        },
+        {
+          "type": "message",
+          "id": "q0000006",
+          "parentId": "q0000005",
+          "at": 1788256806000,
+          "reply": {
+            "stop": false,
+            "text": ""
+          }
+        },
+        {
+          "type": "message",
+          "id": "q0000007",
+          "parentId": "q0000006",
+          "at": 1788256807000
+        },
+        {
+          "type": "message",
+          "id": "q0000008",
+          "parentId": "q0000007",
+          "at": 1788256808000,
+          "reply": {
+            "stop": false,
+            "text": ""
+          }
+        },
+        {
+          "type": "message",
+          "id": "q0000009",
+          "parentId": "q0000008",
+          "at": 1788256809000
+        },
+        {
+          "type": "message",
+          "id": "q000000a",
+          "parentId": "q0000009",
+          "at": 1788256810000,
+          "reply": {
+            "stop": true,
+            "text": "Two questions are open on Export. Shall I go on?"
+          }
+        },
+        {
+          "type": "message",
+          "id": "q000000b",
+          "parentId": "q000000a",
+          "at": 1788256811000,
+          "userPrompt": true
+        },
+        {
+          "type": "custom",
+          "id": "q000000c",
+          "parentId": "q000000b",
+          "at": 1788256812000,
+          "customType": "worktrees",
+          "data": {
+            "version": 1,
+            "trees": [
+              {
+                "path": "/wt/export",
+                "branch": "feat/export",
+                "base": "abc",
+                "baseBranch": "master",
+                "status": "active",
+                "session": "0190a000-0000-7000-8000-q00000000000",
+                "how": "created",
+                "at": 1788256800000
+              }
+            ]
+          }
+        },
+        {
+          "type": "message",
+          "id": "q000000d",
+          "parentId": "q000000c",
+          "at": 1788256813000,
+          "reply": {
+            "stop": false,
+            "text": ""
+          },
+          "checkCalls": [
+            "call_c"
+          ]
+        },
+        {
+          "type": "message",
+          "id": "q000000e",
+          "parentId": "q000000d",
+          "at": 1788256814000
+        },
+        {
+          "type": "message",
+          "id": "q000000f",
+          "parentId": "q000000e",
+          "at": 1788256815000,
+          "check": {
+            "toolCallId": "call_c",
+            "ok": true
+          }
+        },
+        {
+          "type": "custom_message",
+          "id": "q0000010",
+          "parentId": "q000000f",
+          "at": 1788256816000,
+          "merge": {
+            "path": "/wt/export",
+            "branch": "feat/export",
+            "target": "master",
+            "sha": "def5678",
+            "commits": 4,
+            "added": 40,
+            "removed": 3,
+            "fastForward": true
+          }
+        },
+        {
+          "type": "custom",
+          "id": "q0000011",
+          "parentId": "q0000010",
+          "at": 1788256817000,
+          "customType": "worktrees",
+          "data": {
+            "version": 1,
+            "trees": [
+              {
+                "path": "/wt/export",
+                "branch": "feat/export",
+                "base": "abc",
+                "baseBranch": "master",
+                "status": "merged",
+                "session": "0190a000-0000-7000-8000-q00000000000",
+                "how": "created",
+                "at": 1788256800000
+              }
+            ]
+          }
+        },
+        {
+          "type": "message",
+          "id": "q0000012",
+          "parentId": "q0000011",
+          "at": 1788256818000,
+          "reply": {
+            "stop": true,
+            "text": "Merged. Restart the server to pick it up."
+          }
+        }
+      ],
+      "checkIds": {
+        "$set": [
+          "call_c"
+        ]
+      }
+    },
+    "facts": {
+      "trees": [
+        {
+          "path": "/wt/export",
+          "branch": "feat/export",
+          "base": "abc",
+          "baseBranch": "master",
+          "status": "active",
+          "session": "0190a000-0000-7000-8000-q00000000000",
+          "how": "created",
+          "at": 1788256800000
+        }
+      ],
+      "merges": [
+        {
+          "path": "/wt/export",
+          "branch": "feat/export",
+          "target": "master",
+          "sha": "def5678",
+          "commits": 4,
+          "added": 40,
+          "removed": 3,
+          "fastForward": true,
+          "id": "q0000010",
+          "at": 1788256816000,
+          "reply": {
+            "id": "q0000012",
+            "at": 1788256818000,
+            "text": "Merged. Restart the server to pick it up."
+          }
+        }
+      ],
+      "lastCheck": {
+        "at": 1788256815000,
+        "ok": true
+      },
+      "lastReply": {
+        "id": "q0000012",
+        "at": 1788256818000,
+        "text": "Merged. Restart the server to pick it up."
+      }
+    }
+  },
+  "prefix": {
+    "scan": {
+      "size": 4399,
+      "found": false
+    },
+    "facts": null
+  },
+  "grown": {
+    "scan": {
+      "size": 8303,
+      "found": true,
+      "entries": [
+        {
+          "type": "session",
+          "id": "0190a000-0000-7000-8000-q00000000000",
+          "at": 1788256800000
+        },
+        {
+          "type": "model_change",
+          "id": "q0000001",
+          "parentId": null,
+          "at": 1788256801000
+        },
+        {
+          "type": "custom",
+          "id": "q0000002",
+          "parentId": "q0000001",
+          "at": 1788256802000
+        },
+        {
+          "type": "message",
+          "id": "q0000003",
+          "parentId": "q0000002",
+          "at": 1788256803000,
+          "userPrompt": true
+        },
+        {
+          "type": "message",
+          "id": "q0000004",
+          "parentId": "q0000003",
+          "at": 1788256804000,
+          "reply": {
+            "stop": false,
+            "text": ""
+          }
+        },
+        {
+          "type": "message",
+          "id": "q0000005",
+          "parentId": "q0000004",
+          "at": 1788256805000
+        },
+        {
+          "type": "message",
+          "id": "q0000006",
+          "parentId": "q0000005",
+          "at": 1788256806000,
+          "reply": {
+            "stop": false,
+            "text": ""
+          }
+        },
+        {
+          "type": "message",
+          "id": "q0000007",
+          "parentId": "q0000006",
+          "at": 1788256807000
+        },
+        {
+          "type": "message",
+          "id": "q0000008",
+          "parentId": "q0000007",
+          "at": 1788256808000,
+          "reply": {
+            "stop": false,
+            "text": ""
+          }
+        },
+        {
+          "type": "message",
+          "id": "q0000009",
+          "parentId": "q0000008",
+          "at": 1788256809000
+        },
+        {
+          "type": "message",
+          "id": "q000000a",
+          "parentId": "q0000009",
+          "at": 1788256810000,
+          "reply": {
+            "stop": true,
+            "text": "Two questions are open on Export. Shall I go on?"
+          }
+        },
+        {
+          "type": "message",
+          "id": "q000000b",
+          "parentId": "q000000a",
+          "at": 1788256811000,
+          "userPrompt": true
+        },
+        {
+          "type": "custom",
+          "id": "q000000c",
+          "parentId": "q000000b",
+          "at": 1788256812000,
+          "customType": "worktrees",
+          "data": {
+            "version": 1,
+            "trees": [
+              {
+                "path": "/wt/export",
+                "branch": "feat/export",
+                "base": "abc",
+                "baseBranch": "master",
+                "status": "active",
+                "session": "0190a000-0000-7000-8000-q00000000000",
+                "how": "created",
+                "at": 1788256800000
+              }
+            ]
+          }
+        },
+        {
+          "type": "message",
+          "id": "q000000d",
+          "parentId": "q000000c",
+          "at": 1788256813000,
+          "reply": {
+            "stop": false,
+            "text": ""
+          },
+          "checkCalls": [
+            "call_c"
+          ]
+        },
+        {
+          "type": "message",
+          "id": "q000000e",
+          "parentId": "q000000d",
+          "at": 1788256814000
+        },
+        {
+          "type": "message",
+          "id": "q000000f",
+          "parentId": "q000000e",
+          "at": 1788256815000,
+          "check": {
+            "toolCallId": "call_c",
+            "ok": true
+          }
+        },
+        {
+          "type": "custom_message",
+          "id": "q0000010",
+          "parentId": "q000000f",
+          "at": 1788256816000,
+          "merge": {
+            "path": "/wt/export",
+            "branch": "feat/export",
+            "target": "master",
+            "sha": "def5678",
+            "commits": 4,
+            "added": 40,
+            "removed": 3,
+            "fastForward": true
+          }
+        },
+        {
+          "type": "custom",
+          "id": "q0000011",
+          "parentId": "q0000010",
+          "at": 1788256817000,
+          "customType": "worktrees",
+          "data": {
+            "version": 1,
+            "trees": [
+              {
+                "path": "/wt/export",
+                "branch": "feat/export",
+                "base": "abc",
+                "baseBranch": "master",
+                "status": "merged",
+                "session": "0190a000-0000-7000-8000-q00000000000",
+                "how": "created",
+                "at": 1788256800000
+              }
+            ]
+          }
+        },
+        {
+          "type": "message",
+          "id": "q0000012",
+          "parentId": "q0000011",
+          "at": 1788256818000,
+          "reply": {
+            "stop": true,
+            "text": "Merged. Restart the server to pick it up."
+          }
+        }
+      ],
+      "checkIds": {
+        "$set": [
+          "call_c"
+        ]
+      }
+    },
+    "facts": {
+      "trees": [
+        {
+          "path": "/wt/export",
+          "branch": "feat/export",
+          "base": "abc",
+          "baseBranch": "master",
+          "status": "active",
+          "session": "0190a000-0000-7000-8000-q00000000000",
+          "how": "created",
+          "at": 1788256800000
+        }
+      ],
+      "merges": [
+        {
+          "path": "/wt/export",
+          "branch": "feat/export",
+          "target": "master",
+          "sha": "def5678",
+          "commits": 4,
+          "added": 40,
+          "removed": 3,
+          "fastForward": true,
+          "id": "q0000010",
+          "at": 1788256816000,
+          "reply": {
+            "id": "q0000012",
+            "at": 1788256818000,
+            "text": "Merged. Restart the server to pick it up."
+          }
+        }
+      ],
+      "lastCheck": {
+        "at": 1788256815000,
+        "ok": true
+      },
+      "lastReply": {
+        "id": "q0000012",
+        "at": 1788256818000,
+        "text": "Merged. Restart the server to pick it up."
+      }
+    }
+  }
+}

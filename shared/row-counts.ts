@@ -2,10 +2,12 @@
 // counts the rows it holds (src/lib/turn.ts `isInput`, src/lib/message-count.ts), and the server
 // counts the rows it didn't send with a newest-rows-first hello (server/tail-hello.ts
 // `olderSummary`), so the two add up to the count of the whole branch. Imports only the card model
-// (shared/overseer-card.ts, pure) at runtime, for the open cards above the rows a client holds.
+// (shared/overseer-card.ts, pure) at runtime, for the open cards above the rows a client holds, and
+// the row facts reader (shared/wire-v1.ts, pure).
 
 import { CARD_TOOL, isOpenCard, normalizeCardDetails, type CardDetails, type OverseerCard } from "./overseer-card";
 import type { AlignDocInfo, OlderSummary, TranscriptItem } from "./protocol";
+import { rowFacts } from "./wire-v1";
 
 /** The user's inputs: a user row or a wake nudge (src/lib/turn.ts says why a link message isn't). */
 export const isInput = (row: Pick<TranscriptItem, "kind">): boolean => row.kind === "user" || row.kind === "wake";
@@ -42,7 +44,9 @@ export function summarize(rows: readonly TranscriptItem[]): OlderSummary {
 /** The sova_card result a row is, when it is one (cardResultOf, read off the slim row: sova_card
     keeps its details on the row, EAGER_TOOLS): its details, normalized, else undefined. */
 export function cardResultOfRow(it: TranscriptItem): CardDetails | undefined {
-  if (it.kind !== "tool-result" || it.meta?.role !== "toolResult" || it.meta.toolName !== CARD_TOOL || it.meta.isError === true) return undefined;
+  if (it.kind !== "tool-result") return undefined;
+  const tool = rowFacts(it)?.tool;
+  if (!tool || tool.name !== CARD_TOOL || tool.isError === true) return undefined;
   return normalizeCardDetails(it.tool?.details);
 }
 

@@ -2,7 +2,7 @@
 // The head's context meter: which assistant reply's usage is the context fill.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { contextForBranch, messageContextTokens } from "./transcript";
+import { contextForBranch, messageContextTokens } from "./harness/pi/usage";
 import { messageContextTokens as clientMessageContextTokens } from "../src/lib/context";
 
 const usage = (input: number, cacheRead = 0, cacheWrite = 0) => ({ input, output: 5, cacheRead, cacheWrite });

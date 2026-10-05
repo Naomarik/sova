@@ -73,6 +73,19 @@ test("decodeWorkers carries a worker's turns (model replies): a non-negative int
   assert.ok(!("usage" in workers[6]!), "a record's usage is the TUI's, never decoded");
 });
 
+test("decodeWorkers carries a worker's team id: a non-empty string, else absent", () => {
+  const workers = decodeWorkers({ workers: [
+    { id: "ag_01", name: "a", status: "running", teamId: "team_01" },
+    { id: "ag_02", name: "b", status: "running" },
+    { id: "ag_03", name: "c", status: "running", teamId: "" },
+    { id: "ag_04", name: "d", status: "running", teamId: 2 },
+  ] }, true) as WorkerInfo[];
+  assert.equal(workers[0]!.teamId, "team_01");
+  for (const w of workers.slice(1)) assert.ok(!("teamId" in w), `${w.id}: absent`);
+  // The ws `workers` rows are this decode of the session's own record (ChatSession.workersSnapshot).
+  assert.equal((JSON.parse(JSON.stringify(workers[0])) as WorkerInfo).teamId, "team_01");
+});
+
 test("decodeWorkers names each worker's provider: the ref's, the catalog's, or claude code", () => {
   // A bare id resolves through pi's cached catalogs — models-store.json in this throwaway dir.
   writeFileSync(join(agentDir, "models-store.json"), JSON.stringify({ zai: { models: [{ id: "glm-5.3" }] } }));

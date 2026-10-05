@@ -1,0 +1,30 @@
+{
+  "vocabulary": [
+    "Fork from here please"
+  ],
+  "senders": {
+    "$map": [
+      [
+        "e0000007",
+        "p_alice"
+      ]
+    ]
+  },
+  "sendersNoHolder": {
+    "$map": []
+  },
+  "notes": [
+    {
+      "timestamp": 1788256807000,
+      "text": "Fork from here please",
+      "note": "[From Alice]"
+    }
+  ],
+  "counted": 1,
+  "model": {
+    "model": "openai/gpt-5.5",
+    "thinking": null
+  },
+  "photos": 0,
+  "modelRef": "zai/glm-5.3"
+}

@@ -22,8 +22,9 @@ import { readFile, stat } from "node:fs/promises";
 import { isAbsolute } from "node:path";
 import type { SessionSkills, WorkerInfo } from "../shared/protocol";
 import { resolveClaudeSession } from "./claude-transcript";
-import { collectSkills, hasSkills } from "./skills";
-import { activeBranch, parseLines } from "./transcript";
+import { branchOf, headerOf, historyOf } from "./harness/pi/reader";
+import { parseJsonl } from "./jsonl";
+import { claudeSkillLines, collectSkills, hasSkills, type SkillLine, skillLinesOf } from "./skills";
 
 /** Parsed skills kept per file. Enough for several sessions' worth of workers at once. */
 const CACHE_MAX = 64;
@@ -42,6 +43,16 @@ const defaultWorkerFile: WorkerFile = (w) => {
 /** Nested agents' lines live in the parent's file too. They are their own agent's work, not this
     worker's, and attributing them here would credit a load to the wrong agent. */
 const isNested = (entry: unknown): boolean => !!entry && typeof entry === "object" && (entry as { isSidechain?: unknown }).isSidechain === true;
+
+/**
+ * A worker transcript's skill lines. A pi session file (it has a header) is read on its active branch;
+ * a Claude Code file has no branch links, so every line counts, in order, except a nested agent's.
+ */
+function skillLinesOfText(text: string): SkillLine[] {
+  const lines = parseJsonl(text);
+  if (lines.some((l) => headerOf(l) !== null)) return skillLinesOf(branchOf(historyOf(lines)));
+  return claudeSkillLines(lines.filter((e) => !isNested(e)));
+}
 
 /**
  * One file's skills. Returns null when the file is missing or unreadable: a worker we cannot read
@@ -65,10 +76,7 @@ async function skillsOfFile(file: string): Promise<SessionSkills | null> {
   } catch {
     return null;
   }
-  // `activeBranch` walks parentId for a pi file; a Claude Code file has no such links, and it
-  // returns every entry as-is for those (its own legacy-file rule), which is what we want here.
-  const entries = activeBranch(parseLines(text)).filter((e) => !isNested(e));
-  const skills = collectSkills(entries);
+  const skills = collectSkills(skillLinesOfText(text));
   if (cache.size >= CACHE_MAX) cache.clear();
   cache.set(file, { key, skills });
   return skills;

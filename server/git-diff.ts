@@ -48,7 +48,10 @@ import { lstat, open, readFile, readlink, stat } from "node:fs/promises";
 import { isAbsolute, join, normalize } from "node:path";
 import type { DiffFilePatch, DiffFileStatus, DiffFileSummary, DiffScope, DiffSide, DiffSummary } from "../shared/protocol";
 import { mergedReviewBase } from "../pi-config/extensions/worktrees/git.ts";
-import { canonical, isWithin, normalizeMergeDetails, restoreActive, type TrackedWorktree, type WorktreeMergeDetails, WORKTREE_MERGE_MESSAGE } from "../pi-config/extensions/worktrees/state.ts";
+import { canonical, isWithin, normalizeMergeDetails, type TrackedWorktree, type WorktreeMergeDetails, WORKTREE_MERGE_MESSAGE } from "../pi-config/extensions/worktrees/state.ts";
+import { lineEntry } from "./harness/pi/reader";
+import { WORKTREES } from "./harness/state-kinds";
+import { stateView } from "./harness/state-view";
 import { resolveSessionPath } from "./paths";
 import { parseTargetCwd } from "./targets";
 import { candidatesOf, pickBase } from "./worktrees";
@@ -205,21 +208,15 @@ export function knownFoldersOf(text: string): Known {
   workerCwds.forEach(add);
   for (const line of text.split("\n")) {
     if (!line.includes("worktree")) continue;
-    let e: { type?: unknown; customType?: unknown; data?: unknown; details?: unknown } | null;
-    try {
-      e = JSON.parse(line);
-    } catch {
-      continue;
-    }
-    if (!e || typeof e !== "object") continue;
-    if (e.type === "custom") {
-      const set = restoreActive([e as { type: string; customType?: string; data?: unknown }]);
+    const h = lineEntry(line);
+    if (h?.kind === "state") {
+      const set = stateView([h]).latest(WORKTREES)?.data;
       for (const t of set?.trees ?? []) {
         trees.push(t);
         add(t.path);
       }
-    } else if (e.type === "custom_message" && e.customType === WORKTREE_MERGE_MESSAGE) {
-      const m = normalizeMergeDetails(e.details);
+    } else if (h?.kind === "note" && !h.inMessage && h.noteType === WORKTREE_MERGE_MESSAGE) {
+      const m = normalizeMergeDetails(h.details);
       if (m) merges.push(m);
       add(m?.path);
     }

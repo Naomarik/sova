@@ -6,12 +6,12 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
-import { getAgentDir, SessionManager } from "@earendil-works/pi-coding-agent";
 import { type Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { compress } from "hono/compress";
 import { isDirectLocal } from "./compression";
 import { asksForRows, type RowsQuery, transcriptLight, transcriptRows } from "./transcript-rows";
+import { rowsFor, wireOf } from "./wire-rows";
 import { claudeToolContent, parseToolIds, piToolContent } from "./transcript-tool";
 import { resolveClaudeSession } from "./claude-transcript";
 import { registerOrgRoutes } from "./org-routes";
@@ -48,7 +48,7 @@ import { acquireChat, disposeAllChats, getModelRuntime, heldChat, heldChats, Mod
 import { receiverSpecial, startTopicDelivery } from "./topic-delivery";
 import { projectOverseerOfPath } from "./project-overseer-store";
 import { canonicalPath, LIVE_DIR, resolveSessionPath, SESSIONS_DIR } from "./paths";
-import { stateRoot } from "./state-root";
+import { agentRoot, stateRoot } from "./state-root";
 import { runtimeInfo } from "./runtime-choice";
 import { cappedWebSocket } from "./runtime-quirks";
 import { claudeCodeModelCount, listModels, listRegistryModels, resolveContext } from "./models";
@@ -64,7 +64,11 @@ import { startSharedUsageHelper, stopSharedUsageHelper } from "./usage-helper/cl
 import { registerUsageRoutes } from "./usage-routes";
 import { archiveSession, cachedTitleOf, cleanupSessions, getSessionSummary, idOf, lastReplyOf, listCwds, listSessionFiles, listSessions, onSessionArchived, onSummaryLineChanged } from "./sessions-index";
 import { cleanSessionTitle, SESSION_TITLE_MAX, setSessionTitle } from "./session-titles";
-import { contextForBranch, normalizeEntries, readActiveBranch } from "./transcript";
+import { rowsOf } from "./transcript";
+import { readBranch, unknownEntries } from "./harness/pi/reader";
+import { contextOfBranch } from "./harness/pi/usage";
+import { appendToClosedFile, createSessionFile, extensionEntries } from "./harness/pi/state";
+import { SUBAGENT_PROFILE } from "./harness/state-kinds";
 import { checkTmpImage, deleteAttachment, MAX_ATTACHMENT_BYTES, readTmpImage, saveUploadedImage, sessionAttachmentsDir, UploadError } from "./attachments";
 import { listFolders } from "./folders";
 import { listProjectFiles } from "./files";
@@ -229,8 +233,9 @@ app.onError((err, c) => {
   return c.json({ error: err.message }, 500);
 });
 
-// What this process runs (§chat.profiles/live-commit): its start and its checkout's commit then.
-app.get("/api/health", (c) => c.json({ ok: true, startedAt: SERVER_STARTED_AT, head: SERVER_HEAD, runtime: SERVER_RUNTIME }));
+// What this process runs (§chat.profiles/live-commit): its start and its checkout's commit then, and how
+// many entries its pi can't read it has met (§app.harness/unknown-entries; a number only, the route is open).
+app.get("/api/health", (c) => c.json({ ok: true, startedAt: SERVER_STARTED_AT, head: SERVER_HEAD, runtime: SERVER_RUNTIME, unknownEntries: unknownEntries() }));
 // A browser's way in (§app.access/unlock): the token it was given sets the install's cookie.
 app.post("/api/auth/unlock", bodyLimit({ maxSize: 4096 }), unlock);
 // Both routes stay behind the gate, and refuse peer-listener and relayed calls as well.
@@ -261,10 +266,7 @@ async function createWebSession(c: Context, cwd: string, start?: { profile: Prof
   }
   const made = await createWebSessionFile(c, cwd);
   if (made instanceof Response) return made;
-  if (subagentProfile !== undefined) {
-    const sm = SessionManager.open(made.path);
-    sm.appendCustomEntry("subagent-profile", { v: 1, profile: subagentProfile });
-  }
+  if (subagentProfile !== undefined) appendToClosedFile(made.path, SUBAGENT_PROFILE, { v: 1, profile: subagentProfile });
   if (!start || !pick) return c.json(made, 201);
   const applied = await applyProfile(made.path, pick, start.by ?? "start");
   if (!applied.ok) return c.json({ error: `Created the session, but its profile was not set: ${applied.error}`, session: made }, applied.status);
@@ -276,18 +278,21 @@ async function createWebSession(c: Context, cwd: string, start?: { profile: Prof
 }
 
 async function createWebSessionFile(c: Context, cwd: string) {
-  const sm = SessionManager.create(resolve(cwd));
-  const rawPath = sm.getSessionFile();
-  const header = sm.getHeader();
-  if (!rawPath || !header) return c.json({ error: "SessionManager did not produce a session file" }, 500);
-  // SessionManager defers writing until the first assistant reply; write the header now so
-  // the session exists on disk (listable, watchable, openable by path).
-  writeFileSync(rawPath, `${JSON.stringify(header)}\n`, { flag: "wx" });
-  const path = canonicalPath(rawPath); // same key resolveSessionPath() will produce
+  // pi defers writing until the first assistant reply; the header is written now so the session
+  // exists on disk (listable, watchable, openable by path).
+  let made: { path: string; id: string };
+  try {
+    made = createSessionFile({ cwd: resolve(cwd) });
+  } catch (err) {
+    const noFile = "SessionManager did not produce a session file";
+    if (err instanceof Error && err.message === noFile) return c.json({ error: noFile }, 500);
+    throw err;
+  }
+  const path = canonicalPath(made.path); // same key resolveSessionPath() will produce
   markOwned(path); // fresh mtime is ours, not a foreign writer's
-  addWebSession(header.id);
+  addWebSession(made.id);
   // Seen at birth: whoever made it is looking at it, so its first reply can later read as unread.
-  markSeen(header.id);
+  markSeen(made.id);
   const summary = await getSessionSummary(path);
   if (!summary) return c.json({ error: "Failed to read back new session" }, 500);
   return summary;
@@ -348,7 +353,7 @@ app.post("/api/sessions/connect", async (c) => {
   }
   const dir = join(stateRoot(), "connect");
   mkdirSync(dir, { recursive: true });
-  const agents = template.replaceAll("{{TARGETS_FILE}}", targetsFile()).replaceAll("{{AGENT_DIR}}", getAgentDir());
+  const agents = template.replaceAll("{{TARGETS_FILE}}", targetsFile()).replaceAll("{{AGENT_DIR}}", agentRoot());
   const tmp = join(dir, `AGENTS.md.${process.pid}.tmp`);
   writeFileSync(tmp, agents);
   renameSync(tmp, join(dir, "AGENTS.md"));
@@ -687,7 +692,7 @@ app.get("/api/sessions/git", async (c) => {
 // Merged worktrees of the session's repository (server/worktree-cleanup.ts, §chat.worktrees/cleanup):
 // the count for a new session's empty state, the dry run, and a removal of exactly the confirmed
 // paths that are still removable. Only when asked; never --force.
-configureCleanup({ summary: (path) => getSessionSummary(path), sessionFiles: listSessionFiles, readBranch: readActiveBranch });
+configureCleanup({ summary: (path) => getSessionSummary(path), sessionFiles: listSessionFiles, readBranch });
 app.get("/api/worktrees/summary", async (c) => {
   const path = resolveSessionPath(c.req.query("path"));
   if (!path) return c.json({ error: "Invalid or missing ?path= (must be a .jsonl under the pi sessions dir)" }, 400);
@@ -1048,17 +1053,19 @@ app.get("/api/transcript", async (c) => {
     leaf: c.req.query("leaf") || undefined,
     chars: Number(c.req.query("chars")) || undefined,
   };
+  // `wire=2`: rows with `facts` in place of `meta` (server/wire-rows.ts); else as they always were.
+  const wire = wireOf({ get: (name: string) => c.req.query(name) });
   if (c.req.query("view") === "light") {
-    const body = await transcriptLight(path, (branch) => resolveContext(contextForBranch(branch)));
+    const body = await transcriptLight(path, (branch) => resolveContext(contextOfBranch(branch)), wire);
     return c.body(body, 200, { "Content-Type": "application/json; charset=UTF-8" });
   }
   if (asksForRows(q)) {
-    const r = await transcriptRows(path, q, (branch) => resolveContext(contextForBranch(branch)));
+    const r = await transcriptRows(path, q, (branch) => resolveContext(contextOfBranch(branch)), wire);
     if (r.status !== 200) return c.json({ error: r.error, code: r.code }, r.status);
     return c.body(r.body, 200, { "Content-Type": "application/json; charset=UTF-8" });
   }
-  const branch = await readActiveBranch(path);
-  return c.json({ items: normalizeEntries(branch), context: await resolveContext(contextForBranch(branch)) });
+  const branch = await readBranch(path);
+  return c.json({ items: rowsFor(rowsOf(branch), wire), context: await resolveContext(contextOfBranch(branch)) });
 });
 
 // The whole content of tool rows (§chat.transcript/slim-rows): a row carries only what its folded
@@ -1076,7 +1083,10 @@ app.get("/api/transcript/tool", async (c) => {
   const path = resolveSessionPath(c.req.query("path"));
   if (!path) return c.json({ error: "Invalid or missing ?path= (must be a .jsonl under the pi sessions dir)" }, 400);
   if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
-  const items = await piToolContent(path, ids, () => heldChat(path)?.session.sessionManager.getBranch() as Record<string, any>[] | undefined);
+  const items = await piToolContent(path, ids, () => {
+    const chat = heldChat(path);
+    return chat ? chat.harness.branch() : undefined;
+  });
   return c.json({ items } satisfies ToolContentResponse);
 });
 
@@ -1487,9 +1497,9 @@ mountLinks(app, meshApi, {
       branch: async (sid) => {
         const path = await pathOfId(sid);
         if (!path) return [];
-        return heldChat(path)?.session.sessionManager.getBranch() ?? readActiveBranch(path);
+        return extensionEntries(heldChat(path)?.harness.branch() ?? (await readBranch(path)));
       },
-      agentDir: getAgentDir,
+      agentDir: agentRoot,
     }),
   homedir,
   protectedRoots: () => [stateRoot(), SESSIONS_DIR],
@@ -1500,7 +1510,7 @@ setLinksSource(linkedAgents);
 setInsightLinks(linkedAgents);
 onSessionArchived((id) => void meshLinks.endFor(id));
 // A chat archived or deleted ends its hand-picks of Claude logins (§app.claude-logins/idle-pin).
-onSessionArchived((id) => clearPicksOf(getAgentDir(), id));
+onSessionArchived((id) => clearPicksOf(agentRoot(), id));
 // Topic queues (§chat.topics/delivery): batches to a topic's receiver when it is idle or settles.
 // An org's ordinary sessions (a project's coding sessions, unregistered workspace files) get their
 // batches; only what the runtime opens as special, and workers, are refused (receiverSpecial).
@@ -1673,7 +1683,7 @@ startScheduleKeeper((path, init) => app.request(path, init));
 startResourceMonitor({
   logDir: join(stateRoot(), "monitor"),
   liveDir: LIVE_DIR,
-  held: () => heldChats().map((c) => ({ path: c.path, sessionId: c.session.sessionId, cwd: c.session.sessionManager.getCwd() })),
+  held: () => heldChats().map((c) => ({ path: c.path, sessionId: c.harness.id, cwd: c.harness.cwd })),
   titleOf: cachedTitleOf,
 });
 // Every attached org's workspace repo: its residence statechart commits whatever changed at most hourly, then pushes.
@@ -1741,7 +1751,7 @@ configureReadiness({
 // Never fatal, with or without a `claude` CLI: see warmClaudeCodeProvider.
 void (async () => {
   try {
-    await warmClaudeCodeProvider(await getModelRuntime(), getAgentDir());
+    await warmClaudeCodeProvider(await getModelRuntime(), agentRoot());
   } catch (err) {
     console.warn("[server] claude-code warm-up skipped:", err instanceof Error ? err.message : String(err));
   }
@@ -1775,7 +1785,7 @@ async function shutdown() {
   markShutdown();
   // The aborts below settle every run: the ledger keeps them as cut off (§app.overseer/auto-resume).
   runLedger.freeze();
-  for (const chat of heldChats()) if (chat.session.isStreaming) chat.session.abort().catch(() => {});
+  for (const chat of heldChats()) if (chat.harness.isRunning()) chat.harness.abort().catch(() => {});
   usagePoller.stop();
   void stopSharedUsageHelper();
   autoTitleSweep.stop();

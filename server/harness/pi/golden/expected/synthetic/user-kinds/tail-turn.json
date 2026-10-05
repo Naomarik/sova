@@ -1,0 +1,5 @@
+{
+  "turnId": "n0000010",
+  "assistant": "Done; anything else?",
+  "user": "<skill name=\"golden-skill\" location=\"/home/user/.pi/skills/golden-skill/SKILL.md\">\nSkill body\n</skill>\n\nUse the golden skill please"
+}

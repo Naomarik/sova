@@ -1,0 +1,24 @@
+{
+  "header": {
+    "type": "session",
+    "version": 3,
+    "id": "0190a000-0000-7000-8000-a00000000000",
+    "timestamp": "2026-09-01T10:00:00.000Z",
+    "cwd": "/home/user/golden",
+    "parentSession": "/home/user/.pi/agent/sessions/--home-user-golden--/2026-08-31T09-00-00-000Z_0190a000-0000-7000-8000-parent000000.jsonl"
+  },
+  "title": "Plain question about the parser",
+  "model": "zai/glm-5.3",
+  "overseer": false,
+  "input": true,
+  "profile": {
+    "v": 1,
+    "profile": {
+      "id": "reviewer",
+      "label": "Reviewer",
+      "icon": "user",
+      "source": "sova",
+      "singleton": true
+    }
+  }
+}

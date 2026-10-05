@@ -1,0 +1,13 @@
+{
+  "header": {
+    "type": "session",
+    "id": "legacy-0001",
+    "timestamp": "2025-01-01T00:00:00.000Z",
+    "cwd": "/home/user/legacy"
+  },
+  "title": "A string-content legacy question",
+  "model": "anthropic/claude-3",
+  "overseer": false,
+  "input": true,
+  "profile": null
+}

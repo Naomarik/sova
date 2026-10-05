@@ -1,0 +1,14 @@
+{
+  "prompted": [],
+  "briefed": [],
+  "cleared": {
+    "$set": []
+  },
+  "lastReply": {
+    "at": 1788256808000,
+    "stopReason": "error",
+    "error": "overloaded",
+    "text": "errored"
+  },
+  "openAlignments": []
+}

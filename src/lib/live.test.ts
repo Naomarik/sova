@@ -1,8 +1,12 @@
-// Run: npx tsx --test src/lib/live.test.ts
+// Run: pnpm test -- src/lib/live.test.ts
+// Every test runs on the three paths a live event takes to the reducer: an older server's wire-1 frame
+// (ChatView's unwrapping), a wire-2 server's frames, and `fromV1` on the event alone (the shim).
 import assert from "node:assert/strict";
-import { test } from "node:test";
-import { createStore } from "solid-js/store";
+import { test as nodeTest } from "node:test";
+import { createStore, type SetStoreFunction } from "solid-js/store";
 import { parseTopicBatch, formatTopicBatch } from "../../shared/topic-message";
+import type { V1EventFrame } from "../../shared/protocol";
+import { fromV1 } from "../../shared/wire-v1";
 import {
   addPendingPrompt,
   applyEvent,
@@ -10,6 +14,7 @@ import {
   BATON_SENT_EVENT,
   blockStreams,
   emptyLive,
+  liveEventsOf,
   markDelivered,
   markQueued,
   markRemoved,
@@ -18,9 +23,41 @@ import {
   runDetail,
   takeBackQueued,
   unsentRows,
+  type LiveEvent,
   type LiveState,
   type QueuedItem,
 } from "./live";
+
+const PATHS = ["v1", "v2", "shim"] as const;
+let path: (typeof PATHS)[number] = "v1";
+
+/** node:test's `test`, once per path. The tests are synchronous, so `path` holds for the whole body. */
+function test(name: string, fn: () => void): void {
+  for (const p of PATHS)
+    nodeTest(`${name} [${p}]`, () => {
+      path = p;
+      fn();
+    });
+}
+
+/** A pi event (with a message_end's `entryId` on it, where ChatView used to put it), applied on the
+    current path; the baton sender marker is client-local, so it is applied as it is on every path. */
+function feed(set: SetStoreFunction<LiveState>, ev: Record<string, unknown>): void {
+  if (ev.type === BATON_SENT_EVENT) {
+    applyEvent(set, ev as LiveEvent);
+    return;
+  }
+  const { entryId, ...event } = ev;
+  // As the server sends it: the entry id on the frame, through JSON.
+  const v1: V1EventFrame = JSON.parse(JSON.stringify({ type: "event", event, ...(typeof entryId === "string" ? { entryId } : {}) }));
+  const events =
+    path === "v1"
+      ? liveEventsOf(v1)
+      : path === "v2"
+        ? fromV1(v1).flatMap((e) => liveEventsOf(JSON.parse(JSON.stringify({ type: "event", v: 2, event: e }))))
+        : fromV1({ event: ev });
+  for (const e of events) applyEvent(set, e);
+}
 
 function store(): [LiveState, ReturnType<typeof createStore<LiveState>>[1]] {
   const [s, set] = createStore<LiveState>(emptyLive());
@@ -34,15 +71,15 @@ const messageStart = (provider?: string, model?: string) => ({
 
 test("message_start attributes the streaming message to its model", () => {
   const [s, set] = store();
-  applyEvent(set, messageStart("zai", "glm-5.3"));
+  feed(set, messageStart("zai", "glm-5.3"));
   assert.equal(s.entries[0]?.kind, "assistant");
   if (s.entries[0]?.kind === "assistant") assert.equal(s.entries[0].model, "zai/glm-5.3");
 });
 
 test("message_end is authoritative and can override the model", () => {
   const [s, set] = store();
-  applyEvent(set, messageStart("zai", "glm-5.3"));
-  applyEvent(set, {
+  feed(set, messageStart("zai", "glm-5.3"));
+  feed(set, {
     type: "message_end",
     message: {
       role: "assistant",
@@ -60,7 +97,7 @@ test("message_end is authoritative and can override the model", () => {
 
 test("events without provider/model leave the entry's model unset", () => {
   const [s, set] = store();
-  applyEvent(set, messageStart());
+  feed(set, messageStart());
   if (s.entries[0]?.kind === "assistant") assert.equal(s.entries[0].model, undefined);
 });
 
@@ -74,7 +111,7 @@ test("a pending prompt carries its uploads as available attachments until delive
   assert.equal(entry.text, `look at this\n${path}`);
   assert.deepEqual(entry.images, []);
   assert.deepEqual(entry.attachments, [{ path, name: path.slice(5), mimeType: "image/png", size: 1234, available: true }]);
-  applyEvent(set, { type: "message_start", message: { role: "user", content: [{ type: "text", text: entry.text }] } });
+  feed(set, { type: "message_start", message: { role: "user", content: [{ type: "text", text: entry.text }] } });
   assert.equal(s.entries.length, 1);
   if (s.entries[0]?.kind === "user") {
     assert.equal(s.entries[0].state, "delivered");
@@ -91,8 +128,8 @@ test("a pending prompt without uploads has no attachments", () => {
 test("takeBackQueued drops the drained prompts' pending rows and hands their text back", () => {
   const [s, set] = store();
   addPendingPrompt(set, "first prompt");
-  applyEvent(set, { type: "message_start", message: { role: "user", content: [{ type: "text", text: "first prompt" }] } });
-  applyEvent(set, messageStart("zai", "glm-5.3"));
+  feed(set, { type: "message_start", message: { role: "user", content: [{ type: "text", text: "first prompt" }] } });
+  feed(set, messageStart("zai", "glm-5.3"));
   addPendingPrompt(set, "so basically");
   addPendingPrompt(set, "and later");
   const text = takeBackQueued(set, ["so basically", "and later"]);
@@ -107,7 +144,7 @@ test("takeBackQueued drops the drained prompts' pending rows and hands their tex
 test("takeBackQueued keeps unrelated and already-delivered rows with the same text", () => {
   const [s, set] = store();
   addPendingPrompt(set, "same");
-  applyEvent(set, { type: "message_start", message: { role: "user", content: [{ type: "text", text: "same" }] } });
+  feed(set, { type: "message_start", message: { role: "user", content: [{ type: "text", text: "same" }] } });
   addPendingPrompt(set, "other");
   addPendingPrompt(set, "same");
   // An expanded skill/template queues different text: no row matches, the text still comes back.
@@ -159,7 +196,7 @@ test("a queued row missing from the next snapshot is NOT called delivered", () =
   applyQueue(set, [queued("c1", "one")]);
   applyQueue(set, []);
   assert.deepEqual(userRows(s), [{ id: "c1", text: "one", state: "queued", handed: true }]);
-  applyEvent(set, { type: "message_start", message: { role: "user", content: [{ type: "text", text: "one" }] } });
+  feed(set, { type: "message_start", message: { role: "user", content: [{ type: "text", text: "one" }] } });
   assert.equal(userRows(s)[0]!.state, "delivered");
 });
 
@@ -250,7 +287,7 @@ test("message_start delivers the row with THAT text, not whichever came first", 
   addPendingPrompt(set, "steer me", [], [], "c2");
   applyQueue(set, [queued("c1", "follow up", { kind: "followUp" }), queued("c2", "steer me")]);
   // Steers go before follow-ups in the loop: the SECOND row is delivered first.
-  applyEvent(set, { type: "message_start", message: { role: "user", content: [{ type: "text", text: "steer me" }] } });
+  feed(set, { type: "message_start", message: { role: "user", content: [{ type: "text", text: "steer me" }] } });
   assert.deepEqual(userRows(s).map((r) => [r.id, r.state]), [
     ["c1", "queued"],
     ["c2", "delivered"],
@@ -272,7 +309,7 @@ const userStart = (text: string) => ({ type: "message_start", message: { role: "
 function deliverMidTurn(set: ReturnType<typeof store>[1], id: string, started: string, stillHeld: QueuedItem[] = []) {
   markDelivered(set, id); // queue_item_gone{delivered}
   applyQueue(set, stillHeld); // queue
-  applyEvent(set, userStart(started)); // event{message_start}, a frame later
+  feed(set, userStart(started)); // event{message_start}, a frame later
 }
 
 test("a message sent mid-turn is ONE row once delivered, in either order of its departure and its start", () => {
@@ -280,13 +317,13 @@ test("a message sent mid-turn is ONE row once delivered, in either order of its 
   const text = `what is this?\n${path}`;
   for (const departureFirst of [true, false]) {
     const [s, set] = store();
-    applyEvent(set, messageStart("zai", "glm-5.3")); // the reply this message interrupts
+    feed(set, messageStart("zai", "glm-5.3")); // the reply this message interrupts
     addPendingPrompt(set, text, [], [{ path, name: "sova-shot.png", mimeType: "image/png", size: 10 }], "c1");
     applyQueue(set, [queued("c1", text, { state: "sending" })]);
     markQueued(set, "c1");
     if (departureFirst) deliverMidTurn(set, "c1", text);
     else {
-      applyEvent(set, userStart(text));
+      feed(set, userStart(text));
       markDelivered(set, "c1");
       applyQueue(set, []);
     }
@@ -318,8 +355,8 @@ test("a start whose row was already delivered doesn't take the queued message be
 test("the same words twice are two messages: one start per row, and a start no row is waiting for is a new message", () => {
   const [s, set] = store();
   addPendingPrompt(set, "ok", [], [], "c1");
-  applyEvent(set, userStart("ok")); // sent idle: no queue, its start alone delivers it
-  applyEvent(set, messageStart());
+  feed(set, userStart("ok")); // sent idle: no queue, its start alone delivers it
+  feed(set, messageStart());
   addPendingPrompt(set, "ok", [], [], "c2"); // the same words again, mid-turn
   applyQueue(set, [queued("c2", "ok", { state: "sending" })]);
   deliverMidTurn(set, "c2", "ok");
@@ -329,7 +366,7 @@ test("the same words twice are two messages: one start per row, and a start no r
   ]);
   // A third "ok" that no row here was waiting for — another tab's send, a group prompt — is shown,
   // not taken for an echo of either: a row answers to one start, never to its words alone.
-  applyEvent(set, userStart("ok"));
+  feed(set, userStart("ok"));
   assert.deepEqual(userRows(s).map((r) => [r.id, r.state]), [
     ["c1", "delivered"],
     ["c2", "delivered"],
@@ -353,8 +390,8 @@ test("a start whose text was rewritten on the way claims the row the server deli
 
 test("a message sent while a reply streams doesn't split the reply in two", () => {
   const [s, set] = store();
-  const update = (ev: Record<string, unknown>) => applyEvent(set, { type: "message_update", assistantMessageEvent: ev });
-  applyEvent(set, messageStart("zai", "glm-5.3"));
+  const update = (ev: Record<string, unknown>) => feed(set, { type: "message_update", assistantMessageEvent: ev });
+  feed(set, messageStart("zai", "glm-5.3"));
   update({ type: "thinking_start", contentIndex: 0 });
   update({ type: "thinking_delta", contentIndex: 0, delta: "Definitive timeline" });
   addPendingPrompt(set, "this session is weird", [], [], "c1");
@@ -362,7 +399,7 @@ test("a message sent while a reply streams doesn't split the reply in two", () =
   assert.deepEqual(runDetail(s), { step: "thinking", text: "thinking" });
   update({ type: "thinking_delta", contentIndex: 0, delta: " for today" });
   update({ type: "toolcall_start", contentIndex: 1, id: "t1", toolName: "bash" });
-  applyEvent(set, {
+  feed(set, {
     type: "message_end",
     message: {
       role: "assistant",
@@ -486,7 +523,7 @@ const PNG = { type: "image", data: "AAAA", mimeType: "image/png" };
 
 test("a user message_start no row waits for shows the text without pi's image resize notes", () => {
   const [s, set] = store();
-  applyEvent(set, { type: "message_start", message: { role: "user", content: [{ type: "text", text: NOTED }, PNG, PNG] } });
+  feed(set, { type: "message_start", message: { role: "user", content: [{ type: "text", text: NOTED }, PNG, PNG] } });
   const row = s.entries[0];
   assert.equal(row?.kind, "user");
   if (row?.kind === "user") {
@@ -494,7 +531,7 @@ test("a user message_start no row waits for shows the text without pi's image re
     assert.equal(row.images?.length, 2);
   }
   // Only on a message carrying the images: a typed look-alike is shown as written.
-  applyEvent(set, { type: "message_start", message: { role: "user", content: [{ type: "text", text: NOTED }] } });
+  feed(set, { type: "message_start", message: { role: "user", content: [{ type: "text", text: NOTED }] } });
   const plain = s.entries[1];
   if (plain?.kind === "user") assert.equal(plain.text, NOTED);
   else assert.fail("expected a user row");
@@ -504,7 +541,7 @@ test("a noted message_start claims the row whose typed text it carries, not the 
   const [s, set] = store();
   addPendingPrompt(set, "earlier words");
   addPendingPrompt(set, "Two images. Reply with just OK.");
-  applyEvent(set, { type: "message_start", message: { role: "user", content: [{ type: "text", text: NOTED }, PNG, PNG] } });
+  feed(set, { type: "message_start", message: { role: "user", content: [{ type: "text", text: NOTED }, PNG, PNG] } });
   assert.deepEqual(
     s.entries.map((e) => (e.kind === "user" ? [e.text, !!e.started] : e.kind)),
     [["earlier words", false], ["Two images. Reply with just OK.", true]],
@@ -513,20 +550,20 @@ test("a noted message_start claims the row whose typed text it carries, not the 
 
 test("a Stop pressed during a /compact (no turn) clears at compaction_end; inside a turn the turn's settle still owns it", () => {
   const [s, set] = store();
-  applyEvent(set, { type: "compaction_start", reason: "manual" });
+  feed(set, { type: "compaction_start", reason: "manual" });
   set("stopping", true);
   assert.equal(s.activity, "Compacting context");
-  applyEvent(set, { type: "compaction_end", reason: "manual", aborted: true });
+  feed(set, { type: "compaction_end", reason: "manual", aborted: true });
   assert.equal(s.activity, null);
   assert.equal(s.stopping, false);
 
   // pi's automatic compaction runs inside a turn: Stop still waits for that turn's agent_settled.
-  applyEvent(set, { type: "agent_start" });
-  applyEvent(set, { type: "compaction_start", reason: "threshold" });
+  feed(set, { type: "agent_start" });
+  feed(set, { type: "compaction_start", reason: "threshold" });
   set("stopping", true);
-  applyEvent(set, { type: "compaction_end", reason: "threshold", aborted: true });
+  feed(set, { type: "compaction_end", reason: "threshold", aborted: true });
   assert.equal(s.stopping, true);
-  applyEvent(set, { type: "agent_settled" });
+  feed(set, { type: "agent_settled" });
   assert.equal(s.stopping, false);
 });
 
@@ -538,7 +575,7 @@ test("a topic batch's start claims none of this tab's pending rows and adds its 
     batch: "tb_0123456789ab",
     notes: [{ id: "qi_0123456789ab", from: { sessionId: "s1", title: "Fix login" }, at: "2026-10-01T10:00:00.000Z", text: "READY feat/x 0123456" }],
   });
-  applyEvent(set, { type: "message_start", message: { role: "user", content: [{ type: "text", text: batch }] } });
+  feed(set, { type: "message_start", message: { role: "user", content: [{ type: "text", text: batch }] } });
   const users = s.entries.filter((e) => e.kind === "user") as { text: string; started?: boolean }[];
   assert.equal(users.length, 2, "the batch is its own row, never a claim");
   assert.equal(users[0]!.text, "my own");
@@ -552,7 +589,7 @@ test("a link message's start draws no row and claims none of this tab's pending 
   const [s, set] = store();
   addPendingPrompt(set, "my own");
   const link = "[link_msg lk_0123456789abcdef lm_0123456789abcdef] from Partner (box/abc)\nhello\n\nReply with link_send (to: \"abc\").";
-  applyEvent(set, { type: "message_start", message: { role: "user", content: [{ type: "text", text: link }] } });
+  feed(set, { type: "message_start", message: { role: "user", content: [{ type: "text", text: link }] } });
   assert.equal(s.entries.length, 1);
   if (s.entries[0]?.kind === "user") {
     assert.equal(s.entries[0].text, "my own");
@@ -563,40 +600,40 @@ test("a link message's start draws no row and claims none of this tab's pending 
 test("a baton sender marker names the live row it follows: the newest started row no marker has named", () => {
   const [s, set] = store();
   const userStart = (text: string) => ({ type: "message_start", message: { role: "user", content: text } });
-  applyEvent(set, userStart("from the operator"));
-  applyEvent(set, { type: BATON_SENT_EVENT, by: "operator" });
-  applyEvent(set, userStart("from Bob"));
-  applyEvent(set, { type: BATON_SENT_EVENT, by: "p_bob00001" });
+  feed(set, userStart("from the operator"));
+  feed(set, { type: BATON_SENT_EVENT, by: "operator" });
+  feed(set, userStart("from Bob"));
+  feed(set, { type: BATON_SENT_EVENT, by: "p_bob00001" });
   const users = s.entries.filter((e) => e.kind === "user") as { text: string; by?: string }[];
   assert.deepEqual(users.map((u) => [u.text, u.by]), [["from the operator", "operator"], ["from Bob", "p_bob00001"]]);
   // A marker with no live row waiting for one names nothing (the row is history already).
-  applyEvent(set, { type: BATON_SENT_EVENT, by: "p_other001" });
+  feed(set, { type: BATON_SENT_EVENT, by: "p_other001" });
   assert.deepEqual((s.entries.filter((e) => e.kind === "user") as { by?: string }[]).map((u) => u.by), ["operator", "p_bob00001"]);
 });
 
 test("runDetail names the step the run-status row draws as an icon, with its words", () => {
   const [s, set] = store();
-  const update = (ev: Record<string, unknown>) => applyEvent(set, { type: "message_update", assistantMessageEvent: ev });
+  const update = (ev: Record<string, unknown>) => feed(set, { type: "message_update", assistantMessageEvent: ev });
   assert.equal(runDetail(s), null);
-  applyEvent(set, messageStart("zai", "glm-5.3"));
+  feed(set, messageStart("zai", "glm-5.3"));
   assert.equal(runDetail(s), null, "between blocks: no step");
   update({ type: "thinking_start", contentIndex: 0 });
   assert.deepEqual(runDetail(s), { step: "thinking", text: "thinking" });
   update({ type: "toolcall_start", contentIndex: 1, id: "t1", toolName: "read" });
   assert.deepEqual(runDetail(s), { step: "tool", text: "running read" });
-  applyEvent(set, { type: "tool_execution_start", toolCallId: "t9", toolName: "agent_spawn", args: {} });
+  feed(set, { type: "tool_execution_start", toolCallId: "t9", toolName: "agent_spawn", args: {} });
   assert.deepEqual(runDetail(s), { step: "tool", text: "running agent_spawn" }, "a running tool wins over the last block");
-  applyEvent(set, { type: "tool_execution_end", toolCallId: "t9", toolName: "agent_spawn", result: { content: [] } });
+  feed(set, { type: "tool_execution_end", toolCallId: "t9", toolName: "agent_spawn", result: { content: [] } });
   update({ type: "text_start", contentIndex: 2 });
   assert.deepEqual(runDetail(s), { step: "writing", text: "writing" });
 });
 
 test("a thinking block stops streaming once a later block starts, so only the reply's head pulses", () => {
   const [s, set] = store();
-  const update = (ev: Record<string, unknown>) => applyEvent(set, { type: "message_update", assistantMessageEvent: ev });
+  const update = (ev: Record<string, unknown>) => feed(set, { type: "message_update", assistantMessageEvent: ev });
   const reply = () => s.entries[0] as Extract<LiveState["entries"][number], { kind: "assistant" }>;
   const streams = () => reply().blocks.map((_, i) => blockStreams(reply(), i));
-  applyEvent(set, messageStart("zai", "glm-5.3"));
+  feed(set, messageStart("zai", "glm-5.3"));
   update({ type: "thinking_start", contentIndex: 0 });
   update({ type: "thinking_delta", contentIndex: 0, delta: "Let me plan" });
   assert.deepEqual(streams(), [true]);
@@ -608,7 +645,7 @@ test("a thinking block stops streaming once a later block starts, so only the re
   update({ type: "toolcall_start", contentIndex: 4, id: "t1", toolName: "bash" });
   assert.equal(blockStreams(reply(), 2), false);
   assert.equal(blockStreams(reply(), 4), true, "a tool call keeps its message's streaming state");
-  applyEvent(set, { type: "message_end", message: { role: "assistant", content: [] } });
+  feed(set, { type: "message_end", message: { role: "assistant", content: [] } });
   assert.deepEqual(reply().blocks.map((_, i) => blockStreams(reply(), i)).filter(Boolean), [], "nothing streams once the message is done");
 });
 
@@ -616,16 +653,16 @@ test("a message_end's entry id names the live row it becomes: the reply, and the
   const [s, set] = store();
   addPendingPrompt(set, "first", [], [], "c1");
   addPendingPrompt(set, "second", [], [], "c2");
-  applyEvent(set, { type: "message_start", message: { role: "user", content: "first" } });
-  applyEvent(set, { type: "message_end", message: { role: "user", content: "first" }, entryId: "u1" });
-  applyEvent(set, messageStart("zai", "glm-5.3"));
-  applyEvent(set, { type: "message_end", message: { role: "assistant", content: [{ type: "text", text: "hi" }], stopReason: "stop" }, entryId: "a1" });
+  feed(set, { type: "message_start", message: { role: "user", content: "first" } });
+  feed(set, { type: "message_end", message: { role: "user", content: "first" }, entryId: "u1" });
+  feed(set, messageStart("zai", "glm-5.3"));
+  feed(set, { type: "message_end", message: { role: "assistant", content: [{ type: "text", text: "hi" }], stopReason: "stop" }, entryId: "a1" });
   const [first, second, reply] = s.entries;
   assert.equal(first?.kind === "user" && first.entryId, "u1");
   assert.equal(second?.kind === "user" && second.entryId, undefined, "the prompt no start has taken stays unnamed");
   assert.equal(reply?.kind === "assistant" && reply.entryId, "a1");
   // An end with no id (an older server) names nothing.
-  applyEvent(set, { type: "message_start", message: { role: "user", content: "second" } });
-  applyEvent(set, { type: "message_end", message: { role: "user", content: "second" } });
+  feed(set, { type: "message_start", message: { role: "user", content: "second" } });
+  feed(set, { type: "message_end", message: { role: "user", content: "second" } });
   assert.equal(s.entries[1]?.kind === "user" && s.entries[1].entryId, undefined);
 });

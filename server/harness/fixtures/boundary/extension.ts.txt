@@ -1,0 +1,26 @@
+// extensionEntries fixtures (§app.harness/boundary): the adapter's hand-out of raw custom entries, for the
+// pi-config cores that fold pi's own entry shape, counted by import binding in non-test files (the baseline's
+// `extension` list). Each block is scanned as its own file at `path` (default server/fixture.ts) and must
+// give exactly `expect`.
+// ---- E1 one use expect={"extension":1}
+import { extensionEntries } from "./harness/pi/state"; claudeSpawnModels(extensionEntries(entries));
+// ---- E2 two uses expect={"extension":2}
+import { extensionEntries } from "./harness/pi/state"; const all = extensionEntries(a); const on = extensionEntries(b);
+// ---- E3 aliased expect={"extension":1}
+import { extensionEntries as raw } from "./harness/pi/state"; raw(entries);
+// ---- E4 through a namespace expect={"extension":1}
+import * as st from "./harness/pi/state"; st.extensionEntries(entries);
+// ---- E5 passed on as a value expect={"extension":1}
+import { extensionEntries } from "./harness/pi/state"; const f = extensionEntries;
+// ---- E6 from the web app path=src/lib/x.ts expect={"extension":1}
+import { extensionEntries } from "../../server/harness/pi/state"; extensionEntries(h);
+// ---- E7 another module's function of the same name expect={}
+import { extensionEntries } from "./other"; extensionEntries(entries);
+// ---- E8 re-exported from the adapter expect={"violations":["reexport"]}
+export { extensionEntries } from "./harness/pi/state";
+// ---- E9 re-exported by its local binding expect={"violations":["reexport"]}
+import { extensionEntries } from "./harness/pi/state"; export { extensionEntries };
+// ---- E10 tests are exempt path=server/chat.test.ts expect={}
+import { extensionEntries } from "./harness/pi/state"; extensionEntries(entries);
+// ---- E11 the adapter is excluded path=server/harness/pi/insights.ts expect={}
+import { extensionEntries } from "./state"; extensionEntries(entries);

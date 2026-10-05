@@ -18,7 +18,7 @@ import { availableParallelism, freemem, loadavg, platform, totalmem } from "node
 import { join } from "node:path";
 import { performance } from "node:perf_hooks";
 import { loopDelaySampler, type LoopDelaySampler } from "./runtime-quirks";
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { PiExtensionAPI } from "./harness/pi/extension-types";
 import { claudeSessionId } from "../pi-config/extensions/claude-code/provider/session-records.ts";
 import type {
   MonitorBucket, MonitorHistory, MonitorPointProc, MonitorProc, MonitorProcKind, MonitorResolution, MonitorScope,
@@ -28,6 +28,7 @@ import {
   attribute, cpuKey, foldCpu, SidMemory, type AttribProc, type CpuPrev, type HostedInfo, type Owner, type WorkerInfo,
 } from "./resource-monitor-attrib";
 import { canonicalPath } from "./paths";
+import { toolCtx } from "./harness/pi/tools";
 import { MonitorLog, MonitorRing, Rollup, type TickPoint } from "./resource-monitor-history";
 import {
   classifyArgv, parseBootTime, parseCmdline, parseEnviron, parseKeyValues, parseLoadavg, parseMeminfo, parseSelfCgroup,
@@ -91,7 +92,7 @@ export function decodeWorkerEvent(data: unknown): WorkerInfo[] | null {
  * tells the monitor which session the runtime hosts, its workers with their live pids (the
  * in-process `subagents:workers-snapshot` event; never on disk), and when its tools run.
  */
-export function monitorExtension(pi: ExtensionAPI): void {
+export function monitorExtension(pi: PiExtensionAPI): void {
   const token = {};
   let entry: HostedEntry | null = null;
   let workers: WorkerInfo[] = [];
@@ -110,13 +111,13 @@ export function monitorExtension(pi: ExtensionAPI): void {
     if (entry) entry.workers = ws;
   });
   pi.on("session_start", (_event, ctx) => {
-    const file = ctx.sessionManager.getSessionFile();
-    const path = file ? canonicalPath(file) : undefined;
+    const c = toolCtx(ctx);
+    const path = c.key ?? undefined;
     if (entry?.path !== path) drop();
     if (!path) return;
-    const sessionId = ctx.sessionManager.getSessionId();
+    const sessionId = c.sessionId;
     entry = {
-      token, path, sessionId, cwd: ctx.cwd, title: ctx.sessionManager.getSessionName(), workers, toolsRunning, lastToolEnd,
+      token, path, sessionId, cwd: c.cwd, title: c.title(), workers, toolsRunning, lastToolEnd,
       providerIds: providerIdsOf(sessionId),
     };
     hosted.set(path, entry);
@@ -124,7 +125,7 @@ export function monitorExtension(pi: ExtensionAPI): void {
     ask();
   });
   pi.on("session_info_changed", (_event, ctx) => {
-    if (entry) entry.title = ctx.sessionManager.getSessionName();
+    if (entry) entry.title = toolCtx(ctx).title();
   });
   pi.on("tool_execution_start", () => {
     toolsRunning++;

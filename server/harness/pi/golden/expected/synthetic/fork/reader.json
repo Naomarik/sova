@@ -1,0 +1,50 @@
+{
+  "header": {
+    "type": "session",
+    "version": 3,
+    "id": "0190a000-0000-7000-8000-e00000000000",
+    "timestamp": "2026-09-01T10:00:00.000Z",
+    "cwd": "/home/user/golden",
+    "parentSession": "/home/user/.pi/agent/sessions/--home-user-golden--/2026-08-31T09-00-00-000Z_0190a000-0000-7000-8000-source000000.jsonl"
+  },
+  "lines": 12,
+  "entries": 11,
+  "ids": [
+    "0190a000-0000-7000-8000-e00000000000",
+    "e0000001",
+    "e0000002",
+    "e0000003",
+    "e0000004",
+    "e0000005",
+    "e0000006",
+    "e0000007",
+    "e0000008",
+    "e0000009",
+    "e000000a"
+  ],
+  "branch": [
+    "e0000001",
+    "e0000002",
+    "e0000003",
+    "e0000004",
+    "e0000005",
+    "e0000006",
+    "e0000007",
+    "e0000008",
+    "e0000009",
+    "e000000a"
+  ],
+  "leaf": "e000000a",
+  "types": [
+    "model_change",
+    "custom",
+    "custom",
+    "custom",
+    "custom",
+    "custom",
+    "message",
+    "message",
+    "message",
+    "message"
+  ]
+}

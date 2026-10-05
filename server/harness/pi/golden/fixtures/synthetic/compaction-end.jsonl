@@ -1,0 +1,5 @@
+{"type":"session","version":3,"id":"0190a000-0000-7000-8000-f00000000000","timestamp":"2026-09-01T10:00:00.000Z","cwd":"/home/user/golden"}
+{"type":"model_change","provider":"zai","modelId":"glm-5.3","id":"f0000001","parentId":null,"timestamp":"2026-09-01T10:00:01.000Z"}
+{"type":"message","message":{"role":"user","content":[{"type":"text","text":"Long work"}],"timestamp":1788256802000},"id":"f0000002","parentId":"f0000001","timestamp":"2026-09-01T10:00:02.000Z"}
+{"type":"message","message":{"role":"assistant","content":[{"type":"text","text":"Done with step one"}],"api":"openai-completions","provider":"zai","model":"glm-5.3","usage":{"input":80000,"output":500,"cacheRead":20000,"cacheWrite":1000,"totalTokens":101500,"cost":{"input":0.001,"output":0.002,"cacheRead":0.0001,"cacheWrite":0,"total":0.0031}},"stopReason":"stop","timestamp":1788256803000},"id":"f0000003","parentId":"f0000002","timestamp":"2026-09-01T10:00:03.000Z"}
+{"type":"compaction","summary":"Step one summarized.","firstKeptEntryId":"f0000002","tokensBefore":101000,"details":{"readFiles":[],"modifiedFiles":["a.ts"]},"id":"f0000004","parentId":"f0000003","timestamp":"2026-09-01T10:00:04.000Z"}

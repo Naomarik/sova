@@ -1,0 +1,84 @@
+{
+  "shown": [
+    {
+      "e": {
+        "type": "message",
+        "id": "00000004",
+        "parentId": "00000003",
+        "timestamp": "2026-09-03T08:00:00.012Z",
+        "message": {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "Can you think first?"
+            }
+          ],
+          "timestamp": 1788422400008
+        }
+      },
+      "role": "user",
+      "text": "Can you think first?",
+      "blocks": []
+    },
+    {
+      "e": {
+        "type": "message",
+        "id": "00000005",
+        "parentId": "00000004",
+        "timestamp": "2026-09-03T08:00:00.013Z",
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "thinking",
+              "thinking": "The user wants a short answer."
+            },
+            {
+              "type": "text",
+              "text": "Short answer: yes."
+            }
+          ],
+          "api": "faux-golden",
+          "provider": "faux",
+          "model": "faux-1",
+          "usage": {
+            "input": 1373,
+            "output": 13,
+            "cacheRead": 0,
+            "cacheWrite": 1373,
+            "totalTokens": 2759,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "stop",
+          "responseId": "faux-resp-0",
+          "timestamp": 1788350401000
+        }
+      },
+      "role": "assistant",
+      "text": "Short answer: yes.",
+      "blocks": []
+    }
+  ],
+  "branchTo": {
+    "leaf": [
+      "00000001",
+      "00000002",
+      "00000003",
+      "00000004",
+      "00000005"
+    ],
+    "mid": [
+      "00000001",
+      "00000002",
+      "00000003"
+    ],
+    "missing": null
+  }
+}

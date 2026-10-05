@@ -1,0 +1,33 @@
+{
+  "teams": [],
+  "reports": {
+    "$map": []
+  },
+  "outline": null,
+  "outlines": [],
+  "compactions": [
+    {
+      "id": "00000008",
+      "timestamp": "2026-09-03T08:00:00.022Z",
+      "tokensBefore": 1417,
+      "summary": "## Summary\nTwo questions were answered.\n\n---\n\n**Turn Context (split turn):**\n\n## Summary\nTwo questions were answered.",
+      "readFiles": [],
+      "modifiedFiles": []
+    }
+  ],
+  "rewinds": [],
+  "explanations": [],
+  "sessionId": "00000000-0000-7000-8000-000000000001",
+  "skills": {
+    "offered": [],
+    "used": []
+  },
+  "workerRecords": {
+    "all": [],
+    "active": []
+  },
+  "teamEvents": [],
+  "settled": {
+    "$map": []
+  }
+}

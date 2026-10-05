@@ -1,0 +1,20 @@
+{
+  "full": {
+    "turnId": "0000000a",
+    "replyAt": 1788350403000,
+    "lastUser": "then summarize",
+    "assistantLast": "Summary: two lines.",
+    "tools": [],
+    "stopReason": "stop",
+    "durationMs": 0
+  },
+  "window4k": {
+    "turnId": "0000000a",
+    "replyAt": 1788350403000,
+    "lastUser": "then summarize",
+    "assistantLast": "Summary: two lines.",
+    "tools": [],
+    "stopReason": "stop",
+    "durationMs": 0
+  }
+}

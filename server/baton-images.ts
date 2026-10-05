@@ -3,13 +3,14 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync,
 import { open, readFile, unlink } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { PHOTO_TYPES, type BatonPhotoSettings, type BatonSession } from "../shared/baton";
+import type { HEntry } from "../shared/harness";
 import { findTmpImagePaths } from "../shared/tmp-paths";
 import { sessionAttachmentsDir, sniffImageMime } from "./attachments";
 import { batonById, sessionPathOf } from "./baton";
 import { readBatonSettings } from "./baton-settings";
 import { getModelRuntime, heldChat } from "./chat-manager";
+import { readBranch } from "./harness/pi/reader";
 import { stateRoot } from "./state-root";
-import { readActiveBranch } from "./transcript";
 import { loadDefaults } from "./web-defaults";
 
 /**
@@ -411,15 +412,12 @@ export function ensureSweep(): void {
 
 // ---- can this session take photos? ----------------------------------------------------------------
 
-type Entry = Record<string, any>;
-
 /** The last model the branch recorded, as "provider/id". */
-export function branchModelRef(branch: readonly Entry[]): string | null {
+export function branchModelRef(branch: readonly HEntry[]): string | null {
   for (let i = branch.length - 1; i >= 0; i--) {
-    const e = branch[i];
-    if (e?.type === "model_change" && typeof e.provider === "string" && typeof e.modelId === "string") return `${e.provider}/${e.modelId}`;
-    if (e?.type === "message" && e.message?.role === "assistant" && typeof e.message.provider === "string" && typeof e.message.model === "string")
-      return `${e.message.provider}/${e.message.model}`;
+    const h = branch[i];
+    if (h?.kind === "setting" && h.what === "model" && typeof h.provider === "string" && typeof h.modelId === "string") return `${h.provider}/${h.modelId}`;
+    if (h?.kind === "assistant" && typeof h.provider === "string" && typeof h.model === "string") return `${h.provider}/${h.model}`;
   }
   return null;
 }
@@ -429,12 +427,12 @@ export function branchModelRef(branch: readonly Entry[]): string | null {
  * model, else the one its file last recorded, else the row's or the new-session default. Unknown
  * is no.
  */
-export async function sessionSeesImages(row: BatonSession, dir: string, branch?: readonly Entry[]): Promise<boolean> {
+export async function sessionSeesImages(row: BatonSession, dir: string, branch?: readonly HEntry[]): Promise<boolean> {
   const path = sessionPathOf(dir, row);
   const held = heldChat(path);
-  const model = held?.session.model;
-  if (model) return Array.isArray(model.input) && model.input.includes("image");
-  const b = branch ?? ((await readActiveBranch(path).catch(() => [])) as Entry[]);
+  const model = held?.harness.model();
+  if (model) return model.images;
+  const b = branch ?? (await readBranch(path).catch(() => []));
   const ref = branchModelRef(b) ?? row.model ?? loadDefaults().model ?? null;
   if (!ref) return false;
   const slash = ref.indexOf("/");
@@ -448,16 +446,15 @@ export async function sessionSeesImages(row: BatonSession, dir: string, branch?:
 }
 
 /** What a writing link may send now: the photo limits, or null (photos off, or a model without vision). */
-export async function photosFor(row: BatonSession, dir: string, settings: BatonPhotoSettings = readBatonSettings().photos, branch?: readonly Entry[]): Promise<BatonPhotoSettings | null> {
+export async function photosFor(row: BatonSession, dir: string, settings: BatonPhotoSettings = readBatonSettings().photos, branch?: readonly HEntry[]): Promise<BatonPhotoSettings | null> {
   if (!settings.enabled) return null;
   return (await sessionSeesImages(row, dir, branch)) ? settings : null;
 }
 
 /** The photos the conversation holds: image blocks in its user messages. */
-export function photoCount(branch: readonly Entry[]): number {
+export function photoCount(branch: readonly HEntry[]): number {
   let n = 0;
-  for (const e of branch)
-    if (e?.type === "message" && e.message?.role === "user" && Array.isArray(e.message.content)) n += e.message.content.filter((b: any) => b?.type === "image").length;
+  for (const h of branch) if (h?.kind === "user") n += h.blocks.filter((b) => b?.type === "image").length;
   return n;
 }
 

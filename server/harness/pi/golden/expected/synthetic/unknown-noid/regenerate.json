@@ -1,0 +1,62 @@
+{
+  "c0000001": {
+    "ok": false,
+    "reason": "not_on_branch",
+    "message": "That is your own message; rewind to it to edit and send it again."
+  },
+  "c0000001:0": {
+    "ok": false,
+    "reason": "not_on_branch",
+    "message": "That is your own message; rewind to it to edit and send it again."
+  },
+  "c0000002": {
+    "ok": true,
+    "userId": "c0000001",
+    "text": "Root question"
+  },
+  "c0000002:0": {
+    "ok": true,
+    "userId": "c0000001",
+    "text": "Root question"
+  },
+  "c0000003": {
+    "ok": false,
+    "reason": "not_on_branch",
+    "message": "That is your own message; rewind to it to edit and send it again."
+  },
+  "c0000003:0": {
+    "ok": false,
+    "reason": "not_on_branch",
+    "message": "That is your own message; rewind to it to edit and send it again."
+  },
+  "c0000004": {
+    "ok": true,
+    "userId": "c0000003",
+    "text": "Abandoned follow-up"
+  },
+  "c0000004:0": {
+    "ok": true,
+    "userId": "c0000003",
+    "text": "Abandoned follow-up"
+  },
+  "c0000005": {
+    "ok": false,
+    "reason": "not_on_branch",
+    "message": "That is your own message; rewind to it to edit and send it again."
+  },
+  "c0000005:0": {
+    "ok": false,
+    "reason": "not_on_branch",
+    "message": "That is your own message; rewind to it to edit and send it again."
+  },
+  "no-such-entry": {
+    "ok": false,
+    "reason": "not_on_branch",
+    "message": "That reply is not on this chat's current branch anymore."
+  },
+  "no-such-entry:0": {
+    "ok": false,
+    "reason": "not_on_branch",
+    "message": "That reply is not on this chat's current branch anymore."
+  }
+}

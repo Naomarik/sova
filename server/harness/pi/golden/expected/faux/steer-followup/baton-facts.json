@@ -1,0 +1,42 @@
+{
+  "vocabulary": [
+    "Read notes.txt",
+    "and also check the second line",
+    "then summarize"
+  ],
+  "senders": {
+    "$map": [
+      [
+        "00000009",
+        "p_alice"
+      ]
+    ]
+  },
+  "sendersNoHolder": {
+    "$map": []
+  },
+  "notes": [
+    {
+      "timestamp": 1788422400008,
+      "text": "Read notes.txt",
+      "note": "[From someone]"
+    },
+    {
+      "timestamp": 1788422400014,
+      "text": "and also check the second line",
+      "note": "[From someone]"
+    },
+    {
+      "timestamp": 1788422400015,
+      "text": "then summarize",
+      "note": "[From Alice]"
+    }
+  ],
+  "counted": 3,
+  "model": {
+    "model": "faux/faux-1",
+    "thinking": "medium"
+  },
+  "photos": 0,
+  "modelRef": "faux/faux-1"
+}

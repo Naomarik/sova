@@ -4,7 +4,7 @@
 // loopback ports, a throwaway PI_CODING_AGENT_DIR; ~/.pi untouched.
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import { connect, type AddressInfo, type Socket } from "node:net";
 import { tmpdir } from "node:os";
@@ -47,7 +47,7 @@ const until = async (ok: () => boolean, ms = 3000, what = "condition"): Promise<
 };
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-type Mode = "accept" | "delay" | "open-then-destroy" | "greet" | { big: number };
+type Mode = "accept" | "delay" | "open-then-destroy" | "greet" | { big: number } | { frames: readonly string[] };
 
 /** A routed host's ingress stand-in. `sockets` counts its live upgraded TCP sockets. */
 async function upstream(mode: { current: Mode }, delayMs = 300) {
@@ -74,7 +74,8 @@ async function upstream(mode: { current: Mode }, delayMs = 300) {
         hosts.push(ws);
         ws.on("message", (d) => received.push(String(d)));
         // After the page is accepted at the gateway, so the cap ends a live hop.
-        if (typeof m === "object") setTimeout(() => ws.send("x".repeat(m.big)), 100);
+        if (typeof m === "object" && "big" in m) setTimeout(() => ws.send("x".repeat(m.big)), 100);
+        if (typeof m === "object" && "frames" in m) setTimeout(() => m.frames.forEach((f) => ws.send(f)), 100);
         if (m === "greet") ws.send("greeting");
       });
     if (m === "delay") setTimeout(go, delayMs);
@@ -504,6 +505,46 @@ test("N4: the upstream client has its own message cap; a message over it ends th
     assert.equal(await closed(page), 4503);
     await recovers(gw, up, mode);
   } finally {
+    gw.close();
+    up.close();
+  }
+});
+
+// ---- the harness wire (§app.harness/wire, "Hops change nothing") ----------------------------------
+
+test("wire: v1- and wire-2-shaped frames from the origin reach the page byte for byte, whether or not the page asked for wire=2", async () => {
+  // Every recorded faux stream's v1 control frames and pinned wire-2 frames (server/harness/pi/golden/wire).
+  const wire = join(import.meta.dirname, "harness/pi/golden/wire");
+  const read = (dir: string) => readdirSync(join(wire, dir)).sort().flatMap((s) => JSON.parse(readFileSync(join(wire, dir, s, "frames.json"), "utf8")) as string[]);
+  const frames = [...read("expected/faux"), ...read("v2/faux")];
+  assert.ok(frames.some((f) => f.includes('"v":2')) && frames.some((f) => f.includes('"type":"message_update"')), "both shapes are sent");
+  const up = await upstream({ current: { frames } });
+  let search = "";
+  const hop: WsHop = createWsHop({ dialMs: 2000 });
+  const gw = await bound(
+    edge.createShareServer({
+      dispatch: (_q, res) => void res.writeHead(404).end(),
+      upgrade: (req, socket, head, { url }) => {
+        search = url.search;
+        hop.forward(req, socket, head, KEY, { host: "127.0.0.1", port: up.port, path: `/ws/h${url.search}`, headers: {} }, () => true);
+      },
+    }),
+  );
+  try {
+    for (const ask of ["", "&wire=2"]) {
+      const got: string[] = [];
+      const ws = new WebSocket(`ws://127.0.0.1:${gw.port}/ws/h?token=${TOKEN}${ask}`);
+      ws.on("message", (d, isBinary) => got.push(isBinary ? "<binary>" : String(d)));
+      await until(() => got.length >= frames.length, 5000, `${frames.length} frames${ask}`);
+      ws.close();
+      assert.equal(search, `?token=${TOKEN}${ask}`, "the gateway hands the hop the query as the page sent it");
+      const i = got.findIndex((f, k) => f !== frames[k]);
+      assert.equal(i, -1, `frame ${i}${ask} differs: ${got[i]?.slice(0, 120)}`);
+      assert.equal(got.length, frames.length);
+      await until(() => hop.count(KEY) === 0, 3000, "slot released");
+    }
+  } finally {
+    hop.dispose();
     gw.close();
     up.close();
   }

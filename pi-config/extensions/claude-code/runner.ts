@@ -391,10 +391,10 @@ export class ClaudeRunner implements Worker {
 			this.fail("Claude runner does not support Pi forks or nested extensions"); return;
 		}
 		if (o.logins?.acquire && this.login) { void this.startOnAcquired(o.logins.acquire.bind(o.logins)); return; }
-		this.then(this.launch(o.resume?.sessionId, o.env), () => void this.initialize());
+		this.afterLaunch(this.launch(o.resume?.sessionId, o.env), () => void this.initialize());
 	}
 	/** After a launch: `next` once it spawned (a confined launch resolves later). */
-	private then(launched: boolean | Promise<boolean>, next: () => void): void {
+	private afterLaunch(launched: boolean | Promise<boolean>, next: () => void): void {
 		if (launched === true) next();
 		else if (launched !== false) void launched.then((ok) => { if (ok) next(); });
 	}
@@ -410,7 +410,7 @@ export class ClaudeRunner implements Worker {
 			}
 		} catch { /* start on the login chosen at creation */ }
 		if (this.stopping || this.closed) return;
-		this.then(this.launch(this.options.resume?.sessionId, env), () => void this.initialize());
+		this.afterLaunch(this.launch(this.options.resume?.sessionId, env), () => void this.initialize());
 	}
 
 	/**

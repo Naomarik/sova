@@ -1,0 +1,20 @@
+[
+  "{\"type\":\"event\",\"v\":2,\"event\":{\"type\":\"run.start\"}}",
+  "{\"type\":\"event\",\"v\":2,\"event\":{\"type\":\"message.start\",\"role\":\"user\",\"text\":\"Try this\",\"images\":[]}}",
+  "{\"type\":\"event\",\"v\":2,\"event\":{\"type\":\"message.end\",\"role\":\"user\",\"entryId\":\"00000004\"}}",
+  "{\"type\":\"event\",\"v\":2,\"event\":{\"type\":\"message.start\",\"role\":\"assistant\",\"model\":\"faux/faux-1\",\"parts\":[]}}",
+  "{\"type\":\"event\",\"v\":2,\"event\":{\"type\":\"part.start\",\"index\":0,\"kind\":\"text\"}}",
+  "{\"type\":\"event\",\"v\":2,\"event\":{\"type\":\"part.delta\",\"index\":0,\"kind\":\"text\",\"delta\":\"\"}}",
+  "{\"type\":\"event\",\"v\":2,\"event\":{\"type\":\"part.end\",\"index\":0,\"kind\":\"text\",\"text\":\"\"}}",
+  "{\"type\":\"event\",\"v\":2,\"event\":{\"type\":\"message.end\",\"role\":\"assistant\",\"entryId\":\"00000005\",\"model\":\"faux/faux-1\",\"parts\":[{\"kind\":\"text\",\"text\":\"\"}],\"stop\":\"error\",\"error\":\"503 Service Unavailable: the server is overloaded\"}}",
+  "{\"type\":\"event\",\"v\":2,\"event\":{\"type\":\"activity\",\"what\":\"retry\",\"phase\":\"start\"}}",
+  "{\"type\":\"event\",\"v\":2,\"event\":{\"type\":\"run.start\"}}",
+  "{\"type\":\"event\",\"v\":2,\"event\":{\"type\":\"message.start\",\"role\":\"assistant\",\"model\":\"faux/faux-1\",\"parts\":[]}}",
+  "{\"type\":\"event\",\"v\":2,\"event\":{\"type\":\"part.start\",\"index\":0,\"kind\":\"text\"}}",
+  "{\"type\":\"event\",\"v\":2,\"event\":{\"type\":\"part.delta\",\"index\":0,\"kind\":\"text\",\"delta\":\"Worked on the re\"}}",
+  "{\"type\":\"event\",\"v\":2,\"event\":{\"type\":\"part.delta\",\"index\":0,\"kind\":\"text\",\"delta\":\"try.\"}}",
+  "{\"type\":\"event\",\"v\":2,\"event\":{\"type\":\"part.end\",\"index\":0,\"kind\":\"text\",\"text\":\"Worked on the retry.\"}}",
+  "{\"type\":\"event\",\"v\":2,\"event\":{\"type\":\"message.end\",\"role\":\"assistant\",\"entryId\":\"00000007\",\"model\":\"faux/faux-1\",\"parts\":[{\"kind\":\"text\",\"text\":\"Worked on the retry.\"}],\"stop\":\"ok\",\"contextTokens\":1371}}",
+  "{\"type\":\"event\",\"v\":2,\"event\":{\"type\":\"activity\",\"what\":\"retry\",\"phase\":\"end\"}}",
+  "{\"type\":\"event\",\"v\":2,\"event\":{\"type\":\"run.settled\"}}"
+]

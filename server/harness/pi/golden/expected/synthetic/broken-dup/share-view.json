@@ -1,0 +1,75 @@
+{
+  "shown": [
+    {
+      "e": {
+        "type": "message",
+        "message": {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "Root"
+            }
+          ],
+          "timestamp": 1788256801000
+        },
+        "id": "m0000001",
+        "parentId": null,
+        "timestamp": "2026-09-01T10:00:01.000Z"
+      },
+      "role": "user",
+      "text": "Root",
+      "blocks": []
+    },
+    {
+      "e": {
+        "type": "message",
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "Second copy of m0000002"
+            }
+          ],
+          "provider": "zai",
+          "model": "glm-5.3",
+          "stopReason": "stop",
+          "timestamp": 1788256809000
+        },
+        "id": "m0000002",
+        "parentId": "m0000001",
+        "timestamp": "2026-09-01T10:00:03.000Z"
+      },
+      "role": "assistant",
+      "text": "Second copy of m0000002",
+      "blocks": []
+    },
+    {
+      "e": {
+        "type": "message",
+        "message": {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "After the duplicate"
+            }
+          ],
+          "timestamp": 1788256804000
+        },
+        "id": "m0000003",
+        "parentId": "m0000002",
+        "timestamp": "2026-09-01T10:00:04.000Z"
+      },
+      "role": "user",
+      "text": "After the duplicate",
+      "blocks": []
+    }
+  ],
+  "branchTo": {
+    "leaf": null,
+    "mid": null,
+    "missing": null
+  }
+}

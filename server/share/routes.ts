@@ -207,7 +207,7 @@ export function createShareApp(): Hono {
     // The photos, read before anything is counted: an expired one sends the page back to upload it.
     let images: SdkImage[] | undefined;
     if (photos && photoIds.length) {
-      if (photoCount(chat.session.sessionManager.getBranch() as Record<string, any>[]) + photoIds.length > photos.perConversation)
+      if (photoCount(chat.harness.branch()) + photoIds.length > photos.perConversation)
         return c.json(refusal("photo-limit", "This conversation has reached its photo limit."), 409);
       try {
         images = takeStaged(sessionId, by, photoIds);

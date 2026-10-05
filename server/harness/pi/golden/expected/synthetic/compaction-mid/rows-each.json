@@ -1,0 +1,28 @@
+[
+  [],
+  [
+    "{\"id\":\"g0000001\",\"kind\":\"info\",\"text\":\"Model: zai/glm-5.3\",\"at\":\"2026-09-01T10:00:01.000Z\",\"meta\":{\"type\":\"model_change\"}}"
+  ],
+  [
+    "{\"id\":\"g0000002\",\"kind\":\"user\",\"at\":\"2026-09-01T10:00:02.000Z\",\"text\":\"Long work\",\"meta\":{\"type\":\"message\",\"role\":\"user\"}}"
+  ],
+  [
+    "{\"id\":\"g0000003:0\",\"kind\":\"assistant-text\",\"text\":\"Done with step one\",\"at\":\"2026-09-01T10:00:03.000Z\",\"model\":\"zai/glm-5.3\",\"meta\":{\"type\":\"message\",\"role\":\"assistant\",\"provider\":\"zai\",\"model\":\"glm-5.3\",\"usage\":{\"input\":80000,\"output\":500,\"cacheRead\":20000,\"cacheWrite\":1000,\"totalTokens\":101500,\"cost\":{\"input\":0.001,\"output\":0.002,\"cacheRead\":0.0001,\"cacheWrite\":0,\"total\":0.0031}},\"stopReason\":\"stop\"}}"
+  ],
+  [
+    "{\"id\":\"g0000004\",\"kind\":\"info\",\"text\":\"Compacted (101000 tokens): Step one summarized.\",\"at\":\"2026-09-01T10:00:04.000Z\",\"meta\":{\"type\":\"compaction\",\"tokensBefore\":101000,\"summary\":\"Step one summarized.\"}}"
+  ],
+  [
+    "{\"id\":\"g0000005\",\"kind\":\"info\",\"text\":\"Model: anthropic/claude-sonnet-5\",\"at\":\"2026-09-01T10:00:05.000Z\",\"meta\":{\"type\":\"model_change\"}}"
+  ],
+  [
+    "{\"id\":\"g0000006\",\"kind\":\"user\",\"at\":\"2026-09-01T10:00:06.000Z\",\"text\":\"Continue\",\"meta\":{\"type\":\"message\",\"role\":\"user\"}}"
+  ],
+  [
+    "{\"id\":\"g0000007:0\",\"kind\":\"assistant-text\",\"text\":\"Step two\",\"at\":\"2026-09-01T10:00:07.000Z\",\"meta\":{\"type\":\"message\",\"role\":\"assistant\",\"usage\":{\"input\":3000,\"output\":100,\"cacheRead\":0,\"cacheWrite\":2000,\"totalTokens\":5100,\"cost\":{\"input\":0.001,\"output\":0.002,\"cacheRead\":0.0001,\"cacheWrite\":0,\"total\":0.0031}},\"stopReason\":\"stop\"}}"
+  ],
+  [
+    "{\"id\":\"g0000008:0\",\"kind\":\"assistant-text\",\"text\":\"errored\",\"at\":\"2026-09-01T10:00:08.000Z\",\"model\":\"zai/glm-5.3\",\"meta\":{\"type\":\"message\",\"role\":\"assistant\",\"provider\":\"zai\",\"model\":\"glm-5.3\",\"usage\":{\"input\":5000,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"totalTokens\":5000,\"cost\":{\"input\":0.001,\"output\":0.002,\"cacheRead\":0.0001,\"cacheWrite\":0,\"total\":0.0031}},\"stopReason\":\"error\",\"errorMessage\":\"overloaded\"}}",
+    "{\"id\":\"g0000008:stop\",\"kind\":\"info\",\"text\":\"Error: overloaded\",\"at\":\"2026-09-01T10:00:08.000Z\",\"model\":\"zai/glm-5.3\"}"
+  ]
+]

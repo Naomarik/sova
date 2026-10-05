@@ -1,0 +1,40 @@
+{
+  "teams": [],
+  "reports": {
+    "$map": []
+  },
+  "outline": null,
+  "outlines": [],
+  "compactions": [],
+  "rewinds": [],
+  "explanations": [],
+  "sessionId": "0190a000-0000-7000-8000-n00000000000",
+  "skills": {
+    "offered": [],
+    "used": [
+      {
+        "name": "golden-skill",
+        "at": "2026-09-01T10:00:10.000Z",
+        "entryId": "n000000a",
+        "how": "invoked",
+        "location": "/home/user/.pi/skills/golden-skill/SKILL.md",
+        "args": "Use the golden skill please"
+      },
+      {
+        "name": "other-skill",
+        "at": "2026-09-01T10:00:11.000Z",
+        "entryId": "n000000b:1",
+        "how": "shell",
+        "location": "/home/user/.pi/skills/other-skill/SKILL.md"
+      }
+    ]
+  },
+  "workerRecords": {
+    "all": [],
+    "active": []
+  },
+  "teamEvents": [],
+  "settled": {
+    "$map": []
+  }
+}

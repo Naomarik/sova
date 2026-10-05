@@ -1,0 +1,48 @@
+{
+  "type": "view",
+  "view": {
+    "title": "Golden share",
+    "sharedAt": "2026-10-05T00:00:00.000Z",
+    "mode": "live",
+    "through": "2026-09-01T10:00:16.000Z",
+    "items": [
+      {
+        "kind": "reply",
+        "n": 0,
+        "text": "Build is green.",
+        "at": "2026-09-01T10:00:03.000Z"
+      },
+      {
+        "kind": "reply",
+        "n": 1,
+        "text": "Report sent.",
+        "at": "2026-09-01T10:00:05.000Z"
+      },
+      {
+        "kind": "reply",
+        "n": 2,
+        "text": "Reviewed.",
+        "at": "2026-09-01T10:00:07.000Z"
+      },
+      {
+        "kind": "reply",
+        "n": 3,
+        "text": "Noted.",
+        "at": "2026-09-01T10:00:09.000Z"
+      },
+      {
+        "kind": "user",
+        "n": 4,
+        "text": "<skill name=\"golden-skill\" location=\"/home/user/.pi/skills/golden-skill/SKILL.md\">\nSkill body\n</skill>\n\nUse the golden skill please",
+        "at": "2026-09-01T10:00:10.000Z"
+      },
+      {
+        "kind": "reply",
+        "n": 5,
+        "text": "Done; anything else?",
+        "at": "2026-09-01T10:00:16.000Z"
+      }
+    ],
+    "images": 0
+  }
+}

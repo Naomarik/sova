@@ -1,0 +1,20 @@
+{
+  "id": "0190a000-0000-7000-8000-q00000000000",
+  "cwd": "/home/user/golden",
+  "title": "Align on the export, then build it",
+  "createdAt": "2026-09-01T10:00:00.000Z",
+  "model": "zai/glm-5.3",
+  "context": {
+    "tokens": 1600,
+    "window": null
+  },
+  "align": {
+    "openDocs": 1,
+    "openQuestions": 1,
+    "questionDocs": 1,
+    "lead": {
+      "id": "al_1",
+      "title": "Export"
+    }
+  }
+}

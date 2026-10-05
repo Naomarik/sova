@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import { agentRoot } from "./state-root";
 import { CLAUDE_EFFORTS, DELEGATE_BACKENDS, PI_EFFORTS } from "../pi-config/extensions/mode/delegate.ts";
 import {
   loadSpec,
@@ -19,7 +19,7 @@ import { delegateOptions, verifySlots, type DelegateSources } from "./delegate";
 // (server/delegate.ts), since a writer is the same backend · model · effort tuple. Every session
 // with spec on — TUI or web, in either major mode — re-reads the file at its next turn boundary.
 
-export const specFile = () => join(getAgentDir(), SPEC_FILE_NAME);
+export const specFile = () => join(agentRoot(), SPEC_FILE_NAME);
 
 const BACKEND_LABELS = { pi: "pi", "claude-code": "Claude Code" } as const;
 

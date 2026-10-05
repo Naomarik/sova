@@ -2,7 +2,8 @@
  * Skills: which ones the session's prompt OFFERED, and which ones it actually LOADED.
  *
  * Read from the session's own JSONL with our parser, never through the SDK: `SessionManager.open`
- * rewrites files (CLAUDE.md), and a TUI may own this one. Pure — it takes parsed entries and
+ * rewrites files (CLAUDE.md), and a TUI may own this one. Pure — it takes a session's lines (a
+ * harness's neutral history, `skillLinesOf`, or a Claude Code transcript, `claudeSkillLines`) and
  * returns data, so every rule below is pinned by server/skills.test.ts.
  *
  * None of the signals is authoritative on its own:
@@ -24,6 +25,7 @@
  */
 
 import { posix } from "node:path";
+import type { HBlock, HEntry } from "../shared/harness";
 import type { SessionSkillOffer, SessionSkills, SessionSkillUse } from "../shared/protocol";
 
 type Rec = Record<string, unknown>;
@@ -80,6 +82,69 @@ function textOf(content: unknown): string {
   if (typeof content === "string") return content;
   if (!Array.isArray(content)) return "";
   return content.map((b) => (isRec(b) && typeof b.text === "string" ? b.text : "")).join("\n");
+}
+
+/** One line of a session as skills read it, whatever wrote it. `id` is what a load's row is keyed by;
+    `cwd` is the working directory the line records, if any (relative paths resolve against the last). */
+export type SkillLine = { id: string; at?: string; cwd?: string } & (
+  /** The prompt's skills section changed: its new text ("" when it was removed). */
+  | { kind: "offer"; section: string }
+  | { kind: "user"; text: string }
+  /** An assistant message's content blocks as written, one row each. */
+  | { kind: "assistant"; blocks: readonly unknown[] }
+  /** Says nothing about skills but its `cwd`. */
+  | { kind: "other" }
+);
+
+/** A block as its harness wrote it: one this version can't read is passed on whole. */
+const asWritten = (b: HBlock): unknown => (b.type === "unknown" ? b.raw : b);
+
+/**
+ * A branch of neutral history entries as skill lines: the prompt's `skills` section (pi writes it on
+ * system entries), user text, assistant blocks. `cwd` is the session's directory, when the caller has it.
+ */
+export function skillLinesOf(branch: readonly HEntry[], cwd?: string): SkillLine[] {
+  const out: SkillLine[] = cwd ? [{ id: "", cwd, kind: "other" }] : [];
+  for (const h of branch) {
+    const base = { id: h.id ?? "", at: str(h.at) };
+    if (h.kind === "system") {
+      // Absent key: unchanged. Present and null: the section was removed, so nothing is offered.
+      if (h.sections && "skills" in h.sections) out.push({ ...base, kind: "offer", section: str(h.sections.skills) ?? "" });
+    } else if (h.kind === "user") out.push({ ...base, kind: "user", text: textOf(h.blocks.map(asWritten)) });
+    else if (h.kind === "assistant") out.push({ ...base, kind: "assistant", blocks: h.blocks.map(asWritten) });
+  }
+  return out;
+}
+
+/** A Claude Code transcript's lines as skill lines: its line type is the role, and every line carries
+    its cwd. Lines spelled the other way (a `message` entry) are read too, so one rule serves both. */
+export function claudeSkillLines(entries: readonly unknown[]): SkillLine[] {
+  const out: SkillLine[] = [];
+  for (const entry of entries) {
+    if (!isRec(entry)) continue;
+    // A Claude Code line carries `uuid`, which is what its transcript rows are keyed by
+    // (`claude-transcript.ts`), so a jump target resolves on both backends.
+    const base = { id: str(entry.id) ?? str(entry.uuid) ?? "", at: str(entry.timestamp), cwd: str(entry.cwd) };
+    const message = isRec(entry.message) ? entry.message : undefined;
+    const role = str(message?.role);
+    const type = str(entry.type);
+    const said = message && (type === "message" || type === "assistant" || type === "user" || type === "system");
+    if (said && role === "system") {
+      const sections = isRec(message.sections) ? message.sections : undefined;
+      if (sections && "skills" in sections) {
+        out.push({ ...base, kind: "offer", section: str(sections.skills) ?? "" });
+        continue;
+      }
+    } else if (said && role === "user") {
+      out.push({ ...base, kind: "user", text: textOf(message.content) });
+      continue;
+    } else if (said && role === "assistant" && Array.isArray(message.content)) {
+      out.push({ ...base, kind: "assistant", blocks: message.content });
+      continue;
+    }
+    if (base.cwd) out.push({ ...base, kind: "other" });
+  }
+  return out;
 }
 
 /** The text inside one `<tag>…</tag>`, unescaped; undefined when the tag is absent or empty. */
@@ -194,43 +259,28 @@ function usesFromToolCall(name: string, args: unknown, entryId: string, at: stri
 }
 
 /**
- * Everything the entries say about skills: what was offered along this branch, and every load.
+ * Everything the lines say about skills: what was offered along this branch, and every load.
  * Pass the active branch, oldest first — the same entries the transcript renders.
  */
-export function collectSkills(entries: readonly unknown[]): SessionSkills {
+export function collectSkills(lines: readonly SkillLine[]): SessionSkills {
   const offered: SessionSkillOffer[] = [];
   const open = new Map<string, SessionSkillOffer>();
   const used: SessionSkillUse[] = [];
-  /** The directory relative paths resolve against: pi's header carries it, and so does every
-      Claude Code line. Without it a relative SKILL.md path cannot be named honestly. */
+  /** The directory relative paths resolve against: the session's, and every Claude Code line
+      carries its own. Without it a relative SKILL.md path cannot be named honestly. */
   let cwd: string | undefined;
 
-  for (const entry of entries) {
-    if (!isRec(entry)) continue;
-    const at = str(entry.timestamp);
-    const thisCwd = str(entry.cwd);
-    if (thisCwd) cwd = thisCwd;
-    // pi entries carry `id`; a Claude Code line carries `uuid`, which is what its transcript rows
-    // are keyed by (`claude-transcript.ts`), so a jump target resolves on both backends.
-    const id = str(entry.id) ?? str(entry.uuid) ?? "";
-    const message = isRec(entry.message) ? entry.message : undefined;
-    if (!message) continue;
-    const role = str(message.role);
-    // pi wraps everything in a `message` entry; a Claude Code transcript's line type IS the role
-    // (`assistant`, `user`). Both are accepted so one parser serves the two backends.
-    const type = str(entry.type);
-    if (type !== "message" && type !== "assistant" && type !== "user" && type !== "system") continue;
+  for (const line of lines) {
+    const { id, at } = line;
+    if (line.cwd) cwd = line.cwd;
 
-    if (role === "system") {
-      const sections = isRec(message.sections) ? message.sections : undefined;
-      // Absent key: unchanged. Present and null: the section was removed, so nothing is offered.
-      if (sections && "skills" in sections) applyOffer(parseSkillSection(str(sections.skills) ?? ""), at, open, offered);
+    if (line.kind === "offer") {
+      applyOffer(parseSkillSection(line.section), at, open, offered);
       continue;
     }
 
-    if (role === "user") {
-      const text = textOf(message.content).trimStart();
-      const m = SKILL_BLOCK_RE.exec(text);
+    if (line.kind === "user") {
+      const m = SKILL_BLOCK_RE.exec(line.text.trimStart());
       if (m) {
         const args = m[4]?.trim();
         used.push(use(m[1]!, id, at, "invoked", { location: m[2]!, ...(args ? { args } : {}) }));
@@ -238,9 +288,9 @@ export function collectSkills(entries: readonly unknown[]): SessionSkills {
       continue;
     }
 
-    if (role === "assistant" && Array.isArray(message.content)) {
+    if (line.kind === "assistant") {
       // One item per block in the transcript, so the row to jump to is `${entryId}:${blockIndex}`.
-      message.content.forEach((block, i) => {
+      line.blocks.forEach((block, i) => {
         if (!isRec(block)) return;
         // pi writes `toolCall` with `arguments`; a Claude Code transcript writes `tool_use` with
         // `input`. One parser for both, so "what counts as a skill load" is defined once.

@@ -1,0 +1,23 @@
+{
+  "full": {
+    "scan": {
+      "size": 2367,
+      "found": false
+    },
+    "facts": null
+  },
+  "prefix": {
+    "scan": {
+      "size": 1123,
+      "found": false
+    },
+    "facts": null
+  },
+  "grown": {
+    "scan": {
+      "size": 2367,
+      "found": false
+    },
+    "facts": null
+  }
+}

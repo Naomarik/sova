@@ -20,10 +20,12 @@
  */
 
 import MarkdownIt from "markdown-it";
-import type { ExtensionAPI, ExtensionContext, ToolDefinition } from "@earendil-works/pi-coding-agent";
+import type { PiExtensionAPI } from "./harness/pi/extension-types";
+import type { HookCtx, StateView, ToolSpec } from "../shared/harness";
 import { FRAME_HARD_CHARS, FRAME_SOFT_CHARS } from "../src/vis/kinds/frame/parse";
 import { parseVis, visKindWord, type ParseResult } from "../src/vis/parse";
-import { resolveChatMode, type BranchEntries } from "./mode-state";
+import { toolCtx, toPiTool } from "./harness/pi/tools";
+import { chatModeOf } from "./mode-state";
 
 /** customType of the hidden message a retry adds. Never displayed: the transcript drops it
     (`display: false`, server/transcript.ts) and the live view draws no custom-role message. */
@@ -115,7 +117,7 @@ export function retryEntry(failures: readonly VisFailure[]) {
 /** What the hosting chat answers for the retry and the tool. */
 export interface VisCheckHost {
   /** The vis minor mode is on for this chat. */
-  visOn(branch: BranchEntries): boolean;
+  visOn(state: StateView): boolean;
   /** A message waits behind this run (Sova's queue or the SDK's): it goes first, no retry. */
   queued(): boolean;
   /** This runtime may still write the file (no TUI took it, no foreign writer seen). */
@@ -123,7 +125,7 @@ export interface VisCheckHost {
 }
 
 /** The mode a branch resolves to, by the server's own rule (the extension's too). */
-export const visOnBranch = (branch: BranchEntries): boolean => resolveChatMode(branch).minorModes.includes("vis");
+export const visOnBranch = (state: StateView): boolean => chatModeOf(state).minorModes.includes("vis");
 
 /**
  * The retry's state for one runtime: the run's assistant text, and whether this run has had its
@@ -226,7 +228,7 @@ export function visCheck(kind: "html" | "svg", source: string, parse: (kind: str
 
 type VisCheckParams = { kind: "html" | "svg"; source: string };
 
-export const visCheckTool: ToolDefinition<any, VisCheckDetails> = {
+export const visCheckTool: ToolSpec<any, VisCheckDetails> = {
   name: VIS_CHECK_TOOL,
   label: "vis check",
   description:
@@ -258,16 +260,16 @@ export function visCheckExtension(host: () => VisCheckHost | null) {
   return {
     name: "sova-vis-check",
     hidden: true,
-    factory: (pi: ExtensionAPI) => {
+    factory: (pi: PiExtensionAPI) => {
       const retry = new VisRetry();
-      pi.registerTool(visCheckTool);
+      pi.registerTool(toPiTool(visCheckTool));
 
       // The tool is in the loadout exactly while vis is on. pi activates every extension tool at
       // registration, so session_start takes it out of a chat without vis before any request; a
       // switch made meanwhile is picked up when the next run starts, or when this one settles.
-      const syncTool = (ctx: ExtensionContext) => {
+      const syncTool = (c: HookCtx) => {
         try {
-          const want = host()?.visOn(ctx.sessionManager.getBranch()) ?? visOnBranch(ctx.sessionManager.getBranch());
+          const want = host()?.visOn(c.state()) ?? visOnBranch(c.state());
           const current = pi.getActiveTools();
           const has = current.includes(VIS_CHECK_TOOL);
           if (want && !has) pi.setActiveTools([...current, VIS_CHECK_TOOL]);
@@ -276,8 +278,8 @@ export function visCheckExtension(host: () => VisCheckHost | null) {
           // No loadout to change yet.
         }
       };
-      pi.on("session_start", async (_e, ctx) => syncTool(ctx));
-      pi.on("before_agent_start", async (_e, ctx) => syncTool(ctx));
+      pi.on("session_start", async (_e, ctx) => syncTool(toolCtx(ctx)));
+      pi.on("before_agent_start", async (_e, ctx) => syncTool(toolCtx(ctx)));
 
       pi.on("message_end", async (event) => {
         const m = event.message as { role?: string; content?: unknown };
@@ -286,9 +288,9 @@ export function visCheckExtension(host: () => VisCheckHost | null) {
 
       pi.on("agent_before_settle", async (event, ctx) => {
         const h = host();
-        const branch = () => ctx.sessionManager.getBranch();
+        const c = toolCtx(ctx);
         const entry = retry.beforeSettle(event.outcome, {
-          visOn: () => (h ? h.visOn(branch()) : visOnBranch(branch())),
+          visOn: () => (h ? h.visOn(c.state()) : visOnBranch(c.state())),
           queued: () => h?.queued() ?? false,
           writable: () => h?.writable() ?? true,
         });
@@ -298,7 +300,7 @@ export function visCheckExtension(host: () => VisCheckHost | null) {
 
       pi.on("agent_settled", async (_e, ctx) => {
         retry.settled();
-        syncTool(ctx);
+        syncTool(toolCtx(ctx));
       });
     },
   };

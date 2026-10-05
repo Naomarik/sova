@@ -1,0 +1,20 @@
+// Wrapper detector fixtures (§app.harness/boundary): a function that forwards its own parameter as a
+// written entry's type is a new writer. Each block is scanned at server/fixture.ts unless `path` says.
+// ---- a function declaration expect={"writers":1,"wrappers":["w"]}
+function w(t: string, d: unknown) { sm.appendCustomEntry(t, d); }
+// ---- an arrow assigned to a const expect={"writers":1,"wrappers":["append"]}
+const append = (type: string, data: unknown) => pi.appendEntry(type, data);
+// ---- a method expect={"writers":1,"wrappers":["put"]}
+class C { put(kind: string) { this.chat.appendSpecialEntry(kind, {}); } }
+// ---- a destructured parameter expect={"writers":1,"wrappers":["w2"]}
+const w2 = ({ type, data }: { type: string; data: unknown }) => sm.appendCustomEntry(type, data);
+// ---- an inner closure forwards the outer parameter expect={"writers":1,"wrappers":["outer"]}
+function outer(t: string) { return () => sm.appendCustomEntry(t, 1); }
+// ---- an object property expect={"writers":1,"wrappers":["write"]}
+const host = { write: (t: string) => chat.appendSpecialEntry(t, null) };
+// ---- not a wrapper: the parameter is the data, not the type expect={"writers":1}
+function f(x: unknown) { sm.appendCustomEntry(CONST, x); }
+// ---- not a wrapper: a local, not a parameter expect={"writers":1}
+function g() { const t = pick(); sm.appendCustomEntry(t, 1); }
+// ---- not a wrapper in a test path=server/fixture.test.ts expect={}
+function w(t: string, d: unknown) { sm.appendCustomEntry(t, d); }

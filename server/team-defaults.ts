@@ -1,4 +1,4 @@
-import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import { agentRoot } from "./state-root";
 import { CLAUDE_EFFORTS, DELEGATE_BACKENDS, PI_EFFORTS } from "../pi-config/extensions/mode/delegate.ts";
 // The subagents extension's own reader and writer of the file (node builtins only): the shape, the
 // strict parse, the atomic write, and the defaults a missing file stands for. See CLAUDE.md.
@@ -21,7 +21,7 @@ import { delegateOptions, verifySlots, type DelegateSources } from "./delegate";
 // (server/delegate.ts), since each member's model is the same backend · model · effort tuple. The
 // extension re-reads the file at every team_create, so a save applies to teams created after it.
 
-export const teamDefaultsFile = (agentDir = getAgentDir()) => teamDefaultsPath(agentDir);
+export const teamDefaultsFile = (agentDir = agentRoot()) => teamDefaultsPath(agentDir);
 
 const BACKEND_LABELS = { pi: "pi", "claude-code": "Claude Code" } as const;
 
@@ -42,7 +42,7 @@ export function teamDefaultsOff(): TeamDefaults {
   return off;
 }
 
-export function teamDefaultsInfo(agentDir = getAgentDir()): TeamDefaultsInfo {
+export function teamDefaultsInfo(agentDir = agentRoot()): TeamDefaultsInfo {
   const stored = readTeamDefaults(agentDir);
   return {
     settings: stored.state === "ok" ? toWire(stored.value) : teamDefaultsOff(),
@@ -74,7 +74,7 @@ const ROLES = [
  * can't be checked, or that the policy refuses (Enabled or Subagents), is saved with a warning. A
  * member that is off is still checked — its rows are what turning it back on restores.
  */
-export async function saveTeamDefaults(body: unknown, sources: DelegateSources, agentDir = getAgentDir()): Promise<TeamSaveOutcome> {
+export async function saveTeamDefaults(body: unknown, sources: DelegateSources, agentDir = agentRoot()): Promise<TeamSaveOutcome> {
   const stored = readTeamDefaults(agentDir);
   if (stored.state === "malformed")
     return { status: 409, body: { error: `${stored.file} can't be read (${stored.errors.join("; ")}), so it wasn't overwritten; fix or delete it first` } };

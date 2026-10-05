@@ -5,7 +5,7 @@ import { connect } from "node:net";
 import { homedir, tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import { agentRoot } from "../state-root";
 import { shadowSource, type Policy } from "../../pi-config/extensions/sandbox/backend.ts";
 import { LinuxBwrapBackend, RELAY_PORT, findExecutable } from "../../pi-config/extensions/sandbox/backends/linux-bwrap.ts";
 import { proxyEnv } from "../../pi-config/extensions/sandbox/env.ts";
@@ -76,7 +76,7 @@ function fromProblem(src: string, roots: string[], hidden: string[]): string | n
 }
 
 /** The host policy a confined unit of `checkout` runs under (the sandbox policy file, as a session there would get it). */
-export function confinedPolicy(checkout: string, dataDir: string, tmpDir: string, agentDir = getAgentDir()): { ok: true; value: ResolvedPolicy } | { ok: false; error: string } {
+export function confinedPolicy(checkout: string, dataDir: string, tmpDir: string, agentDir = agentRoot()): { ok: true; value: ResolvedPolicy } | { ok: false; error: string } {
   const r = resolveSessionPolicy({ agentDir, cwd: checkout, sessionId: "conform", tmpDir, worktreeRoots: [dataDir], home: homedir() });
   if (!r.ok) return { ok: false, error: r.error };
   if (r.value.level !== "workspace-write") return { ok: false, error: "the sandbox policy is read-only, so a confined run could write nothing" };
@@ -249,7 +249,7 @@ export async function openConfinement(opts: OpenOptions): Promise<Confinement | 
   const bwrap = findExecutable("bwrap");
   const nsenter = findExecutable("nsenter") ?? (existsSync("/usr/bin/nsenter") ? "/usr/bin/nsenter" : undefined);
   if (!bwrap || !nsenter) return { refused: `confined conformance needs ${!bwrap ? "bwrap" : "nsenter"} on the server's PATH: approve this definition to conform it` };
-  const agentDir = opts.agentDir ?? getAgentDir();
+  const agentDir = opts.agentDir ?? agentRoot();
   const runId = randomBytes(4).toString("hex");
   const dir = join(conformDir(), `run-${runId}`);
   const tmpRoot = join(dir, "tmp");

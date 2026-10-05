@@ -1,0 +1,103 @@
+[
+  {
+    "call": {
+      "fn": "addPendingPrompt",
+      "args": [
+        "earlier words"
+      ]
+    },
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "earlier words",
+          "state": "sending",
+          "images": []
+        }
+      ],
+      "tools": {},
+      "running": false,
+      "activity": null,
+      "stopping": false
+    }
+  },
+  {
+    "call": {
+      "fn": "addPendingPrompt",
+      "args": [
+        "Two images. Reply with just OK."
+      ]
+    },
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "earlier words",
+          "state": "sending",
+          "images": []
+        },
+        {
+          "kind": "user",
+          "text": "Two images. Reply with just OK.",
+          "state": "sending",
+          "images": []
+        }
+      ],
+      "tools": {},
+      "running": false,
+      "activity": null,
+      "stopping": false
+    }
+  },
+  {
+    "call": {
+      "fn": "applyEvent",
+      "args": [
+        {
+          "type": "message_start",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "Two images. Reply with just OK.\n\n[Image: original 2560x1600, displayed at 2000x1250. Multiply coordinates by 1.28 to map to original image.]\n[Image: original 3000x1000, displayed at 2000x667. Multiply coordinates by 1.50 to map to original image.]"
+              },
+              {
+                "type": "image",
+                "data": "AAAA",
+                "mimeType": "image/png"
+              },
+              {
+                "type": "image",
+                "data": "AAAA",
+                "mimeType": "image/png"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "earlier words",
+          "state": "sending",
+          "images": []
+        },
+        {
+          "kind": "user",
+          "text": "Two images. Reply with just OK.",
+          "state": "delivered",
+          "images": [],
+          "started": true
+        }
+      ],
+      "tools": {},
+      "running": false,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  }
+]

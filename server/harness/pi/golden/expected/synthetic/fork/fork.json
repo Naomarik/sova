@@ -1,0 +1,92 @@
+{
+  "parse": {
+    "ok": true,
+    "lines": 10
+  },
+  "branch": [
+    "e0000001",
+    "e0000002",
+    "e0000003",
+    "e0000004",
+    "e0000005",
+    "e0000006",
+    "e0000007",
+    "e0000008",
+    "e0000009",
+    "e000000a"
+  ],
+  "fanout": false,
+  "prefixes": {
+    "e0000001": {
+      "ok": false,
+      "reason": "not_assistant",
+      "message": "Only an assistant reply can be forked from.",
+      "status": 400
+    },
+    "e0000002": {
+      "ok": false,
+      "reason": "not_assistant",
+      "message": "Only an assistant reply can be forked from.",
+      "status": 400
+    },
+    "e0000003": {
+      "ok": false,
+      "reason": "not_assistant",
+      "message": "Only an assistant reply can be forked from.",
+      "status": 400
+    },
+    "e0000004": {
+      "ok": false,
+      "reason": "not_assistant",
+      "message": "Only an assistant reply can be forked from.",
+      "status": 400
+    },
+    "e0000005": {
+      "ok": false,
+      "reason": "not_assistant",
+      "message": "Only an assistant reply can be forked from.",
+      "status": 400
+    },
+    "e0000006": {
+      "ok": false,
+      "reason": "not_assistant",
+      "message": "Only an assistant reply can be forked from.",
+      "status": 400
+    },
+    "e0000007": {
+      "ok": false,
+      "reason": "not_assistant",
+      "message": "Only an assistant reply can be forked from.",
+      "status": 400
+    },
+    "e0000008": {
+      "ok": false,
+      "reason": "tool_boundary",
+      "message": "That reply was still waiting on a tool result. Fork from a later reply in the same turn.",
+      "status": 400
+    },
+    "e0000009": {
+      "ok": false,
+      "reason": "not_assistant",
+      "message": "Only an assistant reply can be forked from.",
+      "status": 400
+    },
+    "e000000a": {
+      "ok": true,
+      "prefix": [
+        "{\"type\":\"model_change\",\"provider\":\"openai\",\"modelId\":\"gpt-5.5\",\"id\":\"e0000001\",\"parentId\":null,\"timestamp\":\"2026-09-01T10:00:01.000Z\"}",
+        "{\"type\":\"custom\",\"customType\":\"sova-fork-cache\",\"data\":{\"v\":1,\"key\":\"pck_golden\",\"from\":\"0190a000-0000-7000-8000-source000000\"},\"id\":\"e0000002\",\"parentId\":\"e0000001\",\"timestamp\":\"2026-09-01T10:00:02.000Z\"}",
+        "{\"type\":\"message\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"Fork from here please\"}],\"timestamp\":1788256807000},\"id\":\"e0000007\",\"parentId\":\"e0000002\",\"timestamp\":\"2026-09-01T10:00:07.000Z\"}",
+        "{\"type\":\"message\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"toolCall\",\"id\":\"call_w\",\"name\":\"wake_nudge\",\"arguments\":{\"in\":\"5m\"}}],\"api\":\"openai-completions\",\"provider\":\"zai\",\"model\":\"glm-5.3\",\"usage\":{\"input\":1200,\"output\":80,\"cacheRead\":400,\"cacheWrite\":0,\"totalTokens\":1680,\"cost\":{\"input\":0.001,\"output\":0.002,\"cacheRead\":0.0001,\"cacheWrite\":0,\"total\":0.0031}},\"stopReason\":\"toolUse\",\"timestamp\":1788256808000},\"id\":\"e0000008\",\"parentId\":\"e0000007\",\"timestamp\":\"2026-09-01T10:00:08.000Z\"}",
+        "{\"type\":\"message\",\"message\":{\"role\":\"toolResult\",\"toolCallId\":\"call_w\",\"toolName\":\"wake_nudge\",\"content\":[{\"type\":\"text\",\"text\":\"Wake nudge n3 set for 5m\"}],\"isError\":false,\"timestamp\":1788256809000},\"id\":\"e0000009\",\"parentId\":\"e0000008\",\"timestamp\":\"2026-09-01T10:00:09.000Z\"}",
+        "{\"type\":\"message\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"I will check back in five minutes.\"}],\"api\":\"openai-completions\",\"provider\":\"zai\",\"model\":\"glm-5.3\",\"usage\":{\"input\":1200,\"output\":80,\"cacheRead\":400,\"cacheWrite\":0,\"totalTokens\":1680,\"cost\":{\"input\":0.001,\"output\":0.002,\"cacheRead\":0.0001,\"cacheWrite\":0,\"total\":0.0031}},\"stopReason\":\"stop\",\"timestamp\":1788256810000},\"id\":\"e000000a\",\"parentId\":\"e0000009\",\"timestamp\":\"2026-09-01T10:00:10.000Z\"}"
+      ]
+    },
+    "no-such-entry": {
+      "ok": false,
+      "reason": "not_on_branch",
+      "message": "That reply is not on this chat's current branch anymore.",
+      "status": 400
+    }
+  }
+}

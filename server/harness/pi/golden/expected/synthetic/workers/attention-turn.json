@@ -1,0 +1,20 @@
+{
+  "full": {
+    "turnId": "o000000d",
+    "replyAt": 1788256813000,
+    "lastUser": "Start a team",
+    "assistantLast": "The team finished.",
+    "tools": [],
+    "stopReason": "stop",
+    "durationMs": 11000
+  },
+  "window4k": {
+    "turnId": "o000000d",
+    "replyAt": 1788256813000,
+    "lastUser": "Start a team",
+    "assistantLast": "The team finished.",
+    "tools": [],
+    "stopReason": "stop",
+    "durationMs": 11000
+  }
+}

@@ -20,7 +20,7 @@ import type { CostScopeSource, ProjectScope } from "./usage-helper/project";
  * Main listener only: never the share listener, the owner page or the project overseer's tools.
  */
 
-async function titleOf(path: string, fallback: string): Promise<string> {
+export async function titleOf(path: string, fallback: string): Promise<string> {
   const s = await getSessionSummary(path).catch(() => null);
   return s?.title?.trim() || fallback;
 }

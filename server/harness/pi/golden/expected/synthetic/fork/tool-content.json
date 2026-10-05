@@ -1,0 +1,27 @@
+{
+  "e0000008:0": {
+    "args": {
+      "in": "5m"
+    },
+    "result": {
+      "output": "Wake nudge n3 set for 5m",
+      "isError": false,
+      "details": {
+        "id": "n3",
+        "at": 1788257100000,
+        "timer": "armed"
+      }
+    }
+  },
+  "e0000009": {
+    "result": {
+      "output": "Wake nudge n3 set for 5m",
+      "isError": false,
+      "details": {
+        "id": "n3",
+        "at": 1788257100000,
+        "timer": "armed"
+      }
+    }
+  }
+}

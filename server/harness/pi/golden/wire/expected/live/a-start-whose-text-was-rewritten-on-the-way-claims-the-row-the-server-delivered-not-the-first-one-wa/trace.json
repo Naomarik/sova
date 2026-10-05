@@ -1,0 +1,195 @@
+[
+  {
+    "call": {
+      "fn": "addPendingPrompt",
+      "args": [
+        "mine",
+        [],
+        [],
+        "c1"
+      ]
+    },
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "mine",
+          "state": "sending",
+          "images": [],
+          "id": "c1"
+        }
+      ],
+      "tools": {},
+      "running": false,
+      "activity": null,
+      "stopping": false
+    }
+  },
+  {
+    "call": {
+      "fn": "applyQueue",
+      "args": [
+        [
+          {
+            "id": "t2",
+            "kind": "steer",
+            "text": "theirs",
+            "state": "sending"
+          },
+          {
+            "id": "c1",
+            "kind": "steer",
+            "text": "mine"
+          }
+        ]
+      ]
+    },
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "mine",
+          "state": "queued",
+          "images": [],
+          "id": "c1",
+          "queueKind": "steer",
+          "handed": false
+        },
+        {
+          "kind": "user",
+          "id": "t2",
+          "queueKind": "steer",
+          "text": "theirs",
+          "state": "queued",
+          "images": [],
+          "handed": true
+        }
+      ],
+      "tools": {},
+      "running": false,
+      "activity": null,
+      "stopping": false
+    }
+  },
+  {
+    "call": {
+      "fn": "markDelivered",
+      "args": [
+        "t2"
+      ]
+    },
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "mine",
+          "state": "queued",
+          "images": [],
+          "id": "c1",
+          "queueKind": "steer",
+          "handed": false
+        },
+        {
+          "kind": "user",
+          "id": "t2",
+          "queueKind": "steer",
+          "text": "theirs",
+          "state": "delivered",
+          "images": [],
+          "handed": true
+        }
+      ],
+      "tools": {},
+      "running": false,
+      "activity": null,
+      "stopping": false
+    }
+  },
+  {
+    "call": {
+      "fn": "applyQueue",
+      "args": [
+        [
+          {
+            "id": "c1",
+            "kind": "steer",
+            "text": "mine"
+          }
+        ]
+      ]
+    },
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "mine",
+          "state": "queued",
+          "images": [],
+          "id": "c1",
+          "queueKind": "steer",
+          "handed": false
+        },
+        {
+          "kind": "user",
+          "id": "t2",
+          "queueKind": "steer",
+          "text": "theirs",
+          "state": "delivered",
+          "images": [],
+          "handed": true
+        }
+      ],
+      "tools": {},
+      "running": false,
+      "activity": null,
+      "stopping": false
+    }
+  },
+  {
+    "call": {
+      "fn": "applyEvent",
+      "args": [
+        {
+          "type": "message_start",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "theirs\n\n[image: a chart]"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "mine",
+          "state": "queued",
+          "images": [],
+          "id": "c1",
+          "queueKind": "steer",
+          "handed": false
+        },
+        {
+          "kind": "user",
+          "id": "t2",
+          "queueKind": "steer",
+          "text": "theirs",
+          "state": "delivered",
+          "images": [],
+          "handed": true,
+          "started": true
+        }
+      ],
+      "tools": {},
+      "running": false,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  }
+]

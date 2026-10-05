@@ -1,0 +1,30 @@
+{
+  "vocabulary": [
+    "Start a team"
+  ],
+  "senders": {
+    "$map": [
+      [
+        "o0000002",
+        "p_alice"
+      ]
+    ]
+  },
+  "sendersNoHolder": {
+    "$map": []
+  },
+  "notes": [
+    {
+      "timestamp": 1788256802000,
+      "text": "Start a team",
+      "note": "[From Alice]"
+    }
+  ],
+  "counted": 1,
+  "model": {
+    "model": "zai/glm-5.3",
+    "thinking": null
+  },
+  "photos": 0,
+  "modelRef": "zai/glm-5.3"
+}

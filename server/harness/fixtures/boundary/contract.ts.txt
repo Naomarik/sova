@@ -1,0 +1,30 @@
+// The contract's types-only rule (§app.harness/boundary): a shared/harness*.ts file imports only its
+// siblings, with `import type`, and declares nothing that emits code. default-path=shared/harness-x.ts
+// ---- types and sibling imports are fine expect={}
+import type { EntryId } from "./harness-core";
+import type { ToolCtx } from "./harness-tools.ts";
+export type Id = EntryId;
+export interface Thing { id: Id; ctx: ToolCtx }
+declare const brand: unique symbol;
+export interface Branded { readonly [brand]: true }
+export {};
+// ---- the barrel's re-exports are fine path=shared/harness.ts expect={}
+export * from "./harness-core";
+export * from "./harness-tools";
+// ---- a value import of a sibling emits code expect={"violations":["types-only"]}
+import { EntryId } from "./harness-core";
+// ---- a non-sibling import expect={"violations":["types-only"]}
+import type { TokenUsage } from "./protocol";
+// ---- a non-sibling re-export path=shared/harness.ts expect={"violations":["types-only"]}
+export * from "./protocol";
+// ---- a const expect={"violations":["types-only"]}
+export const KINDS = ["a", "b"] as const;
+// ---- a function expect={"violations":["types-only"]}
+export function stateView() { return null; }
+// ---- an enum expect={"violations":["types-only"]}
+export enum Kind { A }
+// ---- a class expect={"violations":["types-only"]}
+export class View {}
+// ---- the rule binds only the contract files path=shared/other.ts expect={}
+import { thing } from "./protocol";
+export const KINDS = ["a", "b"] as const;

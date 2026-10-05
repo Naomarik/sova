@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, test } from "node:test";
 import { clearClaudeSessionCache, editDetailsOf, normalizeClaudeEntries, piToolArgs, resolveClaudeSession } from "./claude-transcript";
-import { entryOf, normalizeEntry, toolContents } from "./transcript";
+import { normalizeEntry, sourceOf, toolContents } from "./transcript";
 import type { TranscriptItem } from "../shared/protocol";
 
 // --- real CC 2.1.278 lines -------------------------------------------------
@@ -94,16 +94,13 @@ describe("resolveClaudeSession", () => {
 // --- normalizer ------------------------------------------------------------
 
 describe("normalizeClaudeEntries", () => {
-  test("a prompt becomes one user row, text and timestamp in the pi shape", () => {
+  test("a prompt becomes one user row, text and time kept on its source entry", () => {
     const [it, ...rest] = normalizeClaudeEntries(parse([USER_LINE]));
     assert.equal(rest.length, 0);
     assert.equal(it?.kind, "user");
     assert.equal(it?.text, "[Request interrupted by user for tool use]");
     assert.equal(it?.id, "57333ea3-0a32-4543-9b85-c7e2c9626e22");
-    const raw = entryOf(it!) as any;
-    assert.equal(raw.type, "message");
-    assert.equal(raw.timestamp, "2026-09-19T04:34:33.452Z");
-    assert.deepEqual(raw.message, { role: "user", content: [{ type: "text", text: "[Request interrupted by user for tool use]" }] });
+    assert.deepEqual(sourceOf(it!), { id: null, parentId: null, at: "2026-09-19T04:34:33.452Z", kind: "user", blocks: [{ type: "text", text: "[Request interrupted by user for tool use]" }] });
   });
 
   test("a tool_use row carries the tool name, call id and a pi toolCall block", () => {
@@ -113,7 +110,7 @@ describe("normalizeClaudeEntries", () => {
     assert.equal(it?.toolCallId, "toolu_0184tMDWQRMxvrbn75sQuRTC");
     assert.equal(it?.id, "79673a4a-e3a0-4b65-9e09-9777cc5b8d6b:0");
     assert.equal(it?.model, "claude/claude-opus-5");
-    const block = (entryOf(it!) as any).message.content[0];
+    const block = (sourceOf(it!) as any).blocks[0];
     assert.equal(block.type, "toolCall");
     assert.equal(block.id, "toolu_0184tMDWQRMxvrbn75sQuRTC");
     assert.deepEqual(block.arguments, {});
@@ -122,8 +119,8 @@ describe("normalizeClaudeEntries", () => {
   test("CC tool names map to pi's", () => {
     const [it] = normalizeClaudeEntries(parse([BASH_LINE]));
     assert.equal(it?.text, "bash");
-    assert.equal((entryOf(it!) as any).message.content[0].name, "bash");
-    assert.equal((entryOf(it!) as any).message.content[0].arguments.command, "cd ~/pi-config/extensions/sessions && cat ui.ts");
+    assert.equal((sourceOf(it!) as any).blocks[0].name, "bash");
+    assert.equal((sourceOf(it!) as any).blocks[0].arguments.command, "cd ~/pi-config/extensions/sessions && cat ui.ts");
   });
 
   test("a tool_result pairs with its call and reads as a pi toolResult", () => {
@@ -135,17 +132,17 @@ describe("normalizeClaudeEntries", () => {
     assert.equal(result.text, undefined, "a result row carries no output: it is fetched on opening");
     assert.equal(result.tool?.lazy, true);
     assert.deepEqual(toolContents(items, [items[0]!.id])[items[0]!.id]?.result, { output: "No messages delivered to you yet.", isError: false });
-    const msg = (entryOf(result) as any).message;
-    assert.equal(msg.role, "toolResult");
-    assert.equal(msg.isError, false);
-    assert.deepEqual(msg.content, [{ type: "text", text: "No messages delivered to you yet." }]);
+    const h = sourceOf(result) as any;
+    assert.equal(h.kind, "tool-result");
+    assert.equal(h.isError, false);
+    assert.deepEqual(h.blocks, [{ type: "text", text: "No messages delivered to you yet." }]);
   });
 
   test("an errored result is flagged", () => {
     const line = JSON.parse(TOOL_RESULT_LINE) as any;
     line.message.content[0].is_error = true;
     const [it] = normalizeClaudeEntries([line]);
-    assert.equal((entryOf(it!) as any).message.isError, true);
+    assert.equal((sourceOf(it!) as any).isError, true);
   });
 
   test("a long result comes whole from the tool-content read, never on the row", () => {
@@ -181,7 +178,7 @@ describe("normalizeClaudeEntries", () => {
     const [it] = normalizeClaudeEntries([line]);
     assert.equal(toolContents([it!], [it!.id])[it!.id]?.result?.output, "two shots");
     assert.deepEqual(it?.images, [`data:image/png;base64,${img.source.data}`, "data:image/jpeg;base64,AAAA"]);
-    assert.deepEqual((entryOf(it!) as any).message.content, [{ type: "text", text: "two shots" }]);
+    assert.deepEqual((sourceOf(it!) as any).blocks, [{ type: "text", text: "two shots" }]);
   });
 
   test("a result with no base64 image has no images field", () => {
@@ -276,8 +273,8 @@ describe("Edit / MultiEdit / Write", () => {
     message: { role: "user", content: [{ tool_use_id: `t-${name}`, type: "tool_result", content: isError ? "<tool_use_error>no match</tool_use_error>" : "The file has been updated.", ...(isError ? { is_error: true } : {}) }] },
     toolUseResult,
   });
-  const argsOf = (it: TranscriptItem) => (entryOf(it) as any).message.content[0];
-  const detailsOf = (it: TranscriptItem) => (entryOf(it) as any).message.details;
+  const argsOf = (it: TranscriptItem) => (sourceOf(it) as any).blocks[0];
+  const detailsOf = (it: TranscriptItem) => (sourceOf(it) as any).details;
 
   test("Edit maps onto pi's edit arguments and carries structuredPatch, not originalFile", () => {
     const [call, res] = normalizeClaudeEntries([
@@ -287,7 +284,7 @@ describe("Edit / MultiEdit / Write", () => {
     assert.equal(call!.text, "edit");
     assert.deepEqual(argsOf(call!), { type: "toolCall", id: "t-Edit", name: "edit", arguments: { path: "/home/user/p/a.ts", edits: [{ oldText: "b", newText: "B" }], replaceAll: true } });
     assert.deepEqual(detailsOf(res!), { structuredPatch: [HUNK] });
-    assert.equal(JSON.stringify(entryOf(res!)).includes("originalFile"), false);
+    assert.equal(JSON.stringify(sourceOf(res!)).includes("originalFile"), false);
   });
 
   test("MultiEdit is an edit with every entry; Write keeps path and content", () => {

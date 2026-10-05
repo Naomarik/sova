@@ -1,5 +1,4 @@
 import { statSync } from "node:fs";
-import { CARDS_NOTE_MESSAGE, cardsNote, foldCards } from "../shared/overseer-card";
 import { acquireChat } from "./chat-manager";
 import { readOverseerState } from "./overseer-store";
 import { projectOverseerOfPath } from "./project-overseer-store";
@@ -29,13 +28,6 @@ export async function pathOfId(id: string): Promise<string | null> {
   if (known) return known;
   for (const p of await listSessionFiles()) if (idOf(p) === id) return p;
   return null;
-}
-
-/** before_agent_start's hidden open-cards note for a branch (§app.overseer/confirm), or nothing when
-    no card is open. Shared with the project overseer. */
-export function cardsNoteMessage(branch: readonly unknown[]): { message: { customType: string; content: string; display: false } } | undefined {
-  const note = cardsNote(foldCards(branch), false, sessionActivity());
-  return note ? { message: { customType: CARDS_NOTE_MESSAGE, content: note, display: false } } : undefined;
 }
 
 /** When a session was last active (its file's mtime, as the session list says), by id, for the
@@ -85,7 +77,7 @@ export async function promptSession(path: string, text: string, sentBy?: string,
   }
   // Queue or start is decided by acceptPrompt from the runtime's own state, in one synchronous step.
   let queued: boolean;
-  const compacting = !chat.session.isStreaming && chat.isCompacting();
+  const compacting = !chat.harness.isRunning() && chat.isCompacting();
   try {
     chat.assertModelAllowed();
     const r = chat.acceptPrompt(text, undefined, "server", undefined, { delivery, ...(overseerId ? { sentByOverseer: { overseerId } } : {}) });

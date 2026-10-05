@@ -14235,6 +14235,21 @@
         "pi-config/extensions/subagents/README.md",
         "pi-config/extensions/claude-code/README.md"
       ]
+    },
+    "§tools.spec/span-promotion": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§tools.spec/promotion-integrity"
+      ],
+      "code": [
+        "pi-config/extensions/spec/core/sova-spec-draft.mjs",
+        "pi-config/extensions/spec/tests/draft-span.test.mjs",
+        "pi-config/extensions/spec/DRAFTS.md",
+        "pi-config/extensions/spec/PROMOTE.md",
+        "pi-config/extensions/spec/README.md"
+      ]
     }
   },
   "boundary": {

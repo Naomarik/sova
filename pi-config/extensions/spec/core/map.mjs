@@ -1,10 +1,10 @@
 // Orientation: every area on one page (`map`), one namespace (`map ns`), or one area (`map §ns/name`).
 // Node stdlib only; reads the parsed graph only and never writes.
 import { whatOf, titleOf, fingerprintOf, boundedRefusal, emit } from "./toc.mjs";
-import { lookArgs, idArg, openSpec, refuse, indexOf, namespaceOf, labelsOf, labelText, isInterface, paged, pageFields } from "./graph.mjs";
+import { lookArgs, idArg, openSpec, refuse, indexOf, depsOf, namespaceOf, labelsOf, labelText, isInterface, paged, pageFields,
+  agreedCounts, agreedText, agreementOf, agreementText } from "./graph.mjs";
 
-const MAP_NOTICE = "Computed from declared records and claim text; counts are declarations, never proof. Agreement (agreed, not built) is not recorded in this spec format yet.";
-const AGREED = { code: "agreed-not-recorded", message: "agreed-not-built: not available (no agreed field yet)" };
+const MAP_NOTICE = "Computed from declared records and claim text; counts are declarations, never proof. agreed records who made the decision and when, never that anyone read the current words.";
 const HUBS = 10;
 
 // Counts by declared label over ids: {authority: {accepted: n}, evidence: {…}, unlabelled: n}.
@@ -21,12 +21,12 @@ function labelCounts(ctx, ids) {
 const countsText = (c) => [...Object.entries(c.authority), ...Object.entries(c.evidence), ...(c.unlabelled ? [["unlabelled", c.unlabelled]] : [])]
   .map(([k, n]) => `${k} ${n}`).join(" · ") || "no labels";
 
-// requires edges from ids to claims outside them, and from outside into them. → {out: [{from, to}], in: [...]}
+// requires and embeds edges from ids to claims outside them, and from outside into them. → {out: [{from, to, kind}], in: [...]}
 function crossing(ix, ids) {
   const inside = new Set(ids), out = [], into = [];
-  for (const id of ids) for (const to of [...new Set(ix.ctx.claims.get(id).requires ?? [])].sort()) if (!inside.has(to)) out.push({ from: id, to });
-  for (const id of ids) for (const from of ix.rev.get(id) ?? []) if (!inside.has(from)) into.push({ from, to: id });
-  into.sort((a, b) => (a.from + a.to < b.from + b.to ? -1 : 1));
+  for (const id of ids) for (const { to, kind } of depsOf(ix.ctx.claims.get(id))) if (!inside.has(to)) out.push({ from: id, to, kind });
+  for (const id of ids) for (const from of ix.rev.get(id) ?? []) if (!inside.has(from)) for (const kind of ix.kindsOf(from, id)) into.push({ from, to: id, kind });
+  into.sort((a, b) => (a.from + a.to + a.kind < b.from + b.to + b.kind ? -1 : 1));
   return { out, in: into };
 }
 
@@ -63,7 +63,8 @@ function overview(ix, namespace) {
       requiresOut: x.out.length, requiresIn: x.in.length };
   });
   for (const h of hubs(ix, ids)) list.push({ type: "hub", ...h });
-  return { list, counts: { namespaces, areas: areas.length, claims: ids.length, labels: labelCounts(ctx, ids), gaps: gaps(ix, ids) } };
+  const agreed = agreedCounts(ctx, ids);
+  return { list, counts: { namespaces, areas: areas.length, claims: ids.length, labels: labelCounts(ctx, ids), ...(agreed ? { agreedNotBuilt: agreed } : {}), gaps: gaps(ix, ids) } };
 }
 
 // One area: its claims, the edges crossing its boundary, the tokens it defines.
@@ -72,7 +73,7 @@ function area(ix, id) {
   const list = m.map((c) => {
     const rec = ctx.claims.get(c);
     return { type: "claim", id: c, title: titleOf(ctx.decls.get(c)), kind: rec.kind, ...labelsOf(rec), code: (rec.code ?? []).length,
-      requires: rec.requires === undefined ? null : rec.requires.length, requiredBy: (ix.rev.get(c) ?? []).length };
+      requires: rec.requires === undefined ? null : rec.requires.length, requiredBy: (ix.rev.get(c) ?? []).length, ...agreementOf(rec) };
   });
   for (const e of x.out) list.push({ type: "out", ...e });
   for (const e of x.in) list.push({ type: "in", ...e });
@@ -88,29 +89,30 @@ function area(ix, id) {
     list.push({ type: "token", token, definedBy: by, usedElsewhere: elsewhere });
   }
   const counts = { claims: m.length, labels: labelCounts(ctx, m), code: new Set(m.flatMap((c) => ctx.claims.get(c).code ?? [])).size,
-    requiresOut: x.out.length, requiresIn: x.in.length, tokens: defs.size, gaps: gaps(ix, m) };
+    requiresOut: x.out.length, requiresIn: x.in.length, tokens: defs.size, ...(agreedCounts(ctx, m) ? { agreedNotBuilt: agreedCounts(ctx, m) } : {}), gaps: gaps(ix, m) };
   return { list, counts };
 }
 
-const HEADS = { claim: "claims", out: "requires out of the area", in: "required from other areas", token: "interface tokens it defines (heading or first sentence)", hub: "hubs: the code files the most records list" };
+const HEADS = { claim: "claims", out: "requires or embeds out of the area", in: "required or embedded from other areas", token: "interface tokens it defines (heading or first sentence)", hub: "hubs: the code files the most records list" };
 export function renderMap(out) {
   const L = [], c = out.counts;
   if (out.area) {
     const a = out.area;
-    L.push(`${a.id} — ${a.title}  ${c.claims} claim(s) · ${countsText(c.labels)} · ${c.code} code file(s) · requires out ${c.requiresOut} · in ${c.requiresIn}`, `  what: ${a.what}`);
+    L.push(`${a.id} — ${a.title}  ${c.claims} claim(s) · ${countsText(c.labels)} · ${c.code} code file(s) · requires/embeds out ${c.requiresOut} · in ${c.requiresIn}`, `  what: ${a.what}`);
   } else L.push(`map${out.namespace ? ` ${out.namespace}` : ""}: ${c.claims} claim(s) in ${c.areas} area(s), ${Object.keys(c.namespaces).length} namespace(s) · ${countsText(c.labels)}`);
-  for (const n of out.notes) L.push(n.code === AGREED.code ? n.message : `note ${n.code}: ${n.message}`);
+  L.push(agreedText(c.agreedNotBuilt));
+  for (const n of out.notes) L.push(`note ${n.code}: ${n.message}`);
   let head = null, ns = null;
   for (const e of out.lines) {
     if (e.type === "area") {
       if (e.namespace !== ns) { ns = e.namespace; L.push(`${ns} (${c.namespaces[ns].areas} area(s), ${c.namespaces[ns].claims} claim(s))`); }
-      L.push(`  ${e.id} — ${e.title}  ${e.claims} claim(s) · ${countsText(e.labels)} · requires out ${e.requiresOut} · in ${e.requiresIn}`, `    what: ${e.what}`);
+      L.push(`  ${e.id} — ${e.title}  ${e.claims} claim(s) · ${countsText(e.labels)} · requires/embeds out ${e.requiresOut} · in ${e.requiresIn}`, `    what: ${e.what}`);
       continue;
     }
     if (e.type !== head) { head = e.type; L.push(`${HEADS[head]}${out.area && head !== "claim" ? ` (${c[{ out: "requiresOut", in: "requiresIn", token: "tokens" }[head]]})` : ""}`); }
     if (e.type === "hub") L.push(`  ${e.path}  ${e.records}`);
-    else if (e.type === "claim") L.push(`  ${e.id} — ${e.title}  ${e.kind} · ${labelText(e.labels)} · code ${e.code} · requires ${e.requires === null ? "uninvestigated" : e.requires} · required by ${e.requiredBy}`);
-    else if (e.type === "out" || e.type === "in") L.push(`  ${e.from} → ${e.to}`);
+    else if (e.type === "claim") L.push(`  ${e.id} — ${e.title}  ${e.kind} · ${labelText(e.labels)} · code ${e.code} · requires ${e.requires === null ? "uninvestigated" : e.requires} · required or embedded by ${e.requiredBy}${agreementText(e)}`);
+    else if (e.type === "out" || e.type === "in") L.push(`  ${e.from} → ${e.to}${e.kind === "embeds" ? " (embeds)" : ""}`);
     else if (e.type === "token") L.push(`  \`${e.token}\` — ${e.definedBy.join(", ")}${e.usedElsewhere ? ` · used by ${e.usedElsewhere} claim(s) elsewhere` : ""}`);
   }
   L.push(gapsText(c.gaps));
@@ -131,7 +133,7 @@ export function mapMain(argv, core) {
   if (raw !== undefined && !id && !/^[a-z][a-z-]*$/.test(raw)) return done(boundedRefusal("map", budget, "usage", { message: `not a namespace or § identifier: ${raw}` }));
   const g = openSpec(o, core);
   if (g.refused) return done(refuse("map", budget, g));
-  const ix = indexOf(g.ctx, core.parentOf), notes = [AGREED];
+  const ix = indexOf(g.ctx, core.parentOf), notes = [];
   if (id?.alias) notes.push({ code: "id-alias", message: `${id.alias} is not a § identifier; read as ${id.id}` });
   let r, areaId = null;
   if (id) {

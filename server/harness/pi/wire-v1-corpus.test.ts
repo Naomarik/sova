@@ -19,8 +19,9 @@ import { isChangeRow } from "../../../src/lib/change-rows";
 import { contextFromItems, messageContextTokens } from "../../../src/lib/context";
 import { contentText, toolResultView } from "../../../src/lib/message";
 import { normalizeClaudeText } from "../../claude-transcript";
-import { metaOf, normalizeEntries } from "../../transcript";
+import { normalizeEntries } from "../../transcript";
 import { activeBranch, parseLines } from "./reader";
+import { metaOf } from "./wire";
 import { fixtureSets, GOLDEN_DIR, shortHash, type FixtureSet } from "./golden/golden";
 
 const sets = fixtureSets();

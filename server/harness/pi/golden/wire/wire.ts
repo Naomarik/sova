@@ -5,7 +5,7 @@
 // fromV1(control frames); W3.4's server must send the control frames byte for byte.
 import assert from "node:assert/strict";
 import { createStore } from "solid-js/store";
-import { toWireEvent } from "../../../../chat-manager";
+import { toV1Event as toWireEvent } from "../../wire";
 import { messageContextTokens } from "../../../../../src/lib/context";
 import * as live from "../../../../../src/lib/live";
 import type { SovaEvent } from "../../../../../shared/harness-wire";

@@ -1,0 +1,44 @@
+[
+  {
+    "id": "00000001",
+    "kind": "info",
+    "text": "Model: faux/faux-1",
+    "at": "2026-09-03T08:00:00.006Z",
+    "facts": {
+      "setting": "model"
+    }
+  },
+  {
+    "id": "00000002",
+    "kind": "info",
+    "text": "Thinking: medium",
+    "at": "2026-09-03T08:00:00.007Z",
+    "facts": {
+      "setting": "thinking"
+    }
+  },
+  {
+    "id": "00000004",
+    "kind": "user",
+    "at": "2026-09-03T08:00:00.012Z",
+    "text": "Can you think first?",
+    "facts": {}
+  },
+  {
+    "id": "00000005:0",
+    "kind": "thinking",
+    "text": "The user wants a short answer.",
+    "at": "2026-09-03T08:00:00.013Z",
+    "model": "faux/faux-1",
+    "facts": {
+      "contextTokens": 2746
+    }
+  },
+  {
+    "id": "00000005:1",
+    "kind": "assistant-text",
+    "text": "Short answer: yes.",
+    "at": "2026-09-03T08:00:00.013Z",
+    "model": "faux/faux-1"
+  }
+]

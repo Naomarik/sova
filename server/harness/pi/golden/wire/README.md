@@ -52,3 +52,12 @@ frame as ChatView reads it (`liveEventsOf`, so `fromV1`), which is what the trac
 frames a server makes of it (`{type:"event", v:2, event}` per `fromV1` event, through JSON). Both must give
 the recorded state and effects at every step, and the effects must still equal `flushEffectsBeforeW30` of the
 v1 event. The baton sender marker is client-local and is applied as it is on both.
+
+## Wire 2 (W3.4)
+
+`v2/faux/<scenario>/` pins what a consumer that asked for wire 2 gets, through the server's real paths
+(`server/harness/pi/wire-compat.test.ts`, which also writes them): `frames.json`, each frame a `ChatSession`
+client with `wire: 2` receives for the scenario's events (every control frame through `fromV1`, one frame per
+event), and `rows.json`, that client's hello rows (`facts` in place of `meta`). The same test holds the wire-1
+client to `expected/faux/<scenario>/frames.json` byte for byte. Record a missing one with
+`SOVA_GOLDEN_MODE=record pnpm test -- server/harness/pi/wire-compat.test.ts`; never re-record the wire-1 files.

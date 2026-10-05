@@ -212,7 +212,7 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
   restored workers; the dev watcher does not watch these, so an edit there reaches a
   running server only at its next restart). The shared fork core (`pi-config/extensions/subagents/fork/`,
   one owner of every fork's cache logic: Sova's "Fork from here" and the background forks /explain
-  runs) has a server half: `server/chat-manager.ts`, `server/session-fork.ts` and their tests import
+  runs) has a server half: `server/chat-manager.ts`, `server/harness/pi/fork.ts` and their tests import
   `fork/cache.ts` (runtime builtins only, pi types: a fork's inherited prompt-cache key and its
   `sova-fork-cache` entry, the `prompt_cache_key` hook and the Codex `session-id` affinity routing),
   and `server/session-fork-routes.ts` imports `fork/claude.ts` (builtins only, through

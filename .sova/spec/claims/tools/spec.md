@@ -353,7 +353,7 @@ prints a neighbour's passage. On an H1 with H2s, `out` also says how many of its
 claims outside it and how many distinct claims those are, pointing at `toc` on each H2 and at `map` on
 the area, so an H1 whose own record requires nothing never reads as an area that needs nothing. When
 none does, it says "none of its N H2s requires or embeds a claim outside it"; either way it counts the
-H2s that are behaviors with no `requires` key, whose dependencies are unknown, not none, and names
+H2s that are behaviors with no `requires` key, whose dependencies are unknown, not none, and counts
 them among the unknowns, so an area whose H2s were never investigated never reads as needing nothing.
 
 The output starts with the requested claim itself: its id, title, kind, labels, size, the number of

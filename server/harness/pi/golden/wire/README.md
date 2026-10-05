@@ -61,3 +61,15 @@ client with `wire: 2` receives for the scenario's events (every control frame th
 event), and `rows.json`, that client's hello rows (`facts` in place of `meta`). The same test holds the wire-1
 client to `expected/faux/<scenario>/frames.json` byte for byte. Record a missing one with
 `SOVA_GOLDEN_MODE=record pnpm test -- server/harness/pi/wire-compat.test.ts`; never re-record the wire-1 files.
+
+## The hops (W3.5)
+
+`share/<set>/<fixture>/session-share-view.json` pins the frame a session share page's socket gets for each
+committed fixture (`{type:"view", view}`, a live share titled "Golden share"; `null` where the share refuses the
+file), written by `server/share-wire.test.ts`. They were recorded on this branch and compare equal on the
+server before wire 2 (`6088958a`, the tree W3.4 started from), so they are the share frames as they were. That
+test also holds both share sockets and `/api/s` to no `event`, `meta` or `facts` key, and to the same bytes
+whether or not the page asks for `wire=2`. The mesh hop is pinned without goldens of its own: in
+`server/mesh/proxy-wire.test.ts` a stand-in peer answers per wire with `expected/faux/*/frames.json` or
+`v2/faux/*/{frames,rows}.json`, and the browser behind `/peer/<id>/` must get them byte for byte with its
+query unchanged; `server/share-ws-hop.test.ts` does the same for the gateway's `/ws/h` hop.

@@ -1,0 +1,24 @@
+{
+  "type": "view",
+  "view": {
+    "title": "Golden share",
+    "sharedAt": "2026-10-05T00:00:00.000Z",
+    "mode": "live",
+    "through": "2026-09-03T08:00:00.014Z",
+    "items": [
+      {
+        "kind": "user",
+        "n": 0,
+        "text": "Write a lot",
+        "at": "2026-09-03T08:00:00.012Z"
+      },
+      {
+        "kind": "reply",
+        "n": 1,
+        "text": "This reply is long enough to be cut off. More words keep coming. More words keep coming. More words keep coming. More words keep coming. More words keep coming. More words keep",
+        "at": "2026-09-03T08:00:00.014Z"
+      }
+    ],
+    "images": 0
+  }
+}

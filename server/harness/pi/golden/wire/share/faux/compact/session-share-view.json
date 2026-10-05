@@ -1,0 +1,36 @@
+{
+  "type": "view",
+  "view": {
+    "title": "Golden share",
+    "sharedAt": "2026-10-05T00:00:00.000Z",
+    "mode": "live",
+    "through": "2026-09-03T08:00:00.022Z",
+    "items": [
+      {
+        "kind": "user",
+        "n": 0,
+        "text": "First question",
+        "at": "2026-09-03T08:00:00.012Z"
+      },
+      {
+        "kind": "reply",
+        "n": 1,
+        "text": "First answer, with some detail to summarize later.",
+        "at": "2026-09-03T08:00:00.013Z"
+      },
+      {
+        "kind": "user",
+        "n": 2,
+        "text": "Second question",
+        "at": "2026-09-03T08:00:00.016Z"
+      },
+      {
+        "kind": "reply",
+        "n": 3,
+        "text": "Second answer.",
+        "at": "2026-09-03T08:00:00.017Z"
+      }
+    ],
+    "images": 0
+  }
+}

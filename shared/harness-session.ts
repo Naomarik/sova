@@ -53,6 +53,8 @@ export interface HarnessModel {
   readonly ref: ModelRef;
   readonly provider: string;
   readonly id: string;
+  /** It takes images as input. */
+  readonly images: boolean;
 }
 
 /** A slash command the runtime offers (an extension's, a prompt template, a skill). */
@@ -63,6 +65,15 @@ export interface HarnessCommand {
   /** A template's or skill's scope (project, user, …), "path" for an explicit one. */
   location?: string;
   path?: string;
+}
+
+/** What a runtime loaded for its prompt, as paths: the context files, the skills, the system prompt's
+    source file and the files appended to it. */
+export interface HarnessResources {
+  context: readonly { path: string }[];
+  skills: readonly { name: string; filePath: string; description?: string }[];
+  systemPrompt?: string;
+  appendSystemPrompt: readonly string[];
 }
 
 /** A live event's wire-1 frame, the shape every consumer that didn't ask for wire 2 reads
@@ -149,6 +160,8 @@ export interface HarnessSession extends SessionRead {
   activeTools(): string[];
   registeredTools(): string[];
   commands(): HarnessCommand[];
+  /** What the runtime loaded for its prompt, extension-added skill paths included. */
+  resources(): HarnessResources;
 
   // ── writes outside a turn
   /** A user message entered with no turn; its id. Call refreshContext() after the last one. */

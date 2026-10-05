@@ -82,7 +82,7 @@ export function startScheduleKeeper(request: AppRequest): ScheduleKeeper {
     sessions: () => listSessions(),
     busy(path) {
       const chat = heldChat(path);
-      return !!chat && (chat.session.isStreaming || chat.queue.size > 0 || chat.session.agent.hasQueuedMessages());
+      return !!chat && (chat.harness.isRunning() || chat.queue.size > 0 || chat.harness.queue.hasQueued());
     },
     freeSlots: freeRunSlots,
     started: countStarted,

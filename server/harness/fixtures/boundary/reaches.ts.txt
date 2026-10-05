@@ -8,7 +8,7 @@ ctx?.sessionManager?.getSessionId?.();
 ctx["sessionManager"].getCwd();
 // ---- F4 expect={"reaches":3}
 const { sessionManager } = ctx; sessionManager.getLeafId();
-// ---- F5 expect={"reaches":2,"calls":1}
+// ---- F5 expect={"reaches":2,"calls":1,"session":1}
 const sm = chat.session.sessionManager; sm.getHeader(); sm.getEntries();
 // ---- F6 expect={"reaches":1}
 function f(sm: { getSessionFile(): string }) { return sm.getSessionFile(); }

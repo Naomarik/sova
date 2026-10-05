@@ -20,8 +20,8 @@ import { relativeTime } from "../pi-config/extensions/stamp/format.ts";
 import { newestTopics, topicTime } from "../shared/outline-order";
 import { whereOf } from "./attention";
 import { NotShared } from "./mesh/access";
-import { alignmentText, openAlignmentsOf } from "./align-state";
-import { entryOf, sourceOf } from "./transcript";
+import { alignmentTextIn, openAlignmentsIn } from "./align-state";
+import { sourceOf } from "./transcript";
 import type { ReadinessChecks } from "./merge-readiness";
 import { idOfAlias, sessionName } from "./session-names";
 import { type Redactor, redactingTool, serverRedactor } from "./overseer-redact";
@@ -387,7 +387,7 @@ export function truthLines(
     const message = s.turnError?.message ?? reply?.error;
     out.push(`Turn error: ${message ? cut(message, 300) : "the last turn stopped with an error"}`);
   }
-  const docs = items ? openAlignmentsOf(items.map(entryOf)) : [];
+  const docs = items ? openAlignmentsIn(items.map(sourceOf)) : [];
   if (docs.length) {
     const list = docs.map((d) => `${d.id} "${cut(d.title, 80)}": ${d.open} of ${d.total} question${d.total === 1 ? "" : "s"} open`).join("; ");
     const waits = s.align ? "the session waits on the user's answers" : "not waiting on the user (they spoke since, or align is off)";
@@ -930,7 +930,7 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
         const doc = typeof p.doc === "string" && p.doc.trim() ? p.doc.trim() : undefined;
         let body: string;
         try {
-          body = alignmentText(items.map(entryOf), { ...(doc ? { doc } : {}), waits: !!s.align });
+          body = alignmentTextIn(items.map(sourceOf), { ...(doc ? { doc } : {}), waits: !!s.align });
         } catch (err) {
           throw new Refusal(err instanceof Error ? err.message : String(err));
         }

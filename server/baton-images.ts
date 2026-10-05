@@ -430,8 +430,8 @@ export function branchModelRef(branch: readonly HEntry[]): string | null {
 export async function sessionSeesImages(row: BatonSession, dir: string, branch?: readonly HEntry[]): Promise<boolean> {
   const path = sessionPathOf(dir, row);
   const held = heldChat(path);
-  const model = held?.session.model;
-  if (model) return Array.isArray(model.input) && model.input.includes("image");
+  const model = held?.harness.model();
+  if (model) return model.images;
   const b = branch ?? (await readBranch(path).catch(() => []));
   const ref = branchModelRef(b) ?? row.model ?? loadDefaults().model ?? null;
   if (!ref) return false;

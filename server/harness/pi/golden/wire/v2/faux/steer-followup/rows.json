@@ -1,0 +1,94 @@
+[
+  {
+    "id": "00000001",
+    "kind": "info",
+    "text": "Model: faux/faux-1",
+    "at": "2026-09-03T08:00:00.006Z",
+    "facts": {
+      "setting": "model"
+    }
+  },
+  {
+    "id": "00000002",
+    "kind": "info",
+    "text": "Thinking: medium",
+    "at": "2026-09-03T08:00:00.007Z",
+    "facts": {
+      "setting": "thinking"
+    }
+  },
+  {
+    "id": "00000004",
+    "kind": "user",
+    "at": "2026-09-03T08:00:00.012Z",
+    "text": "Read notes.txt",
+    "facts": {}
+  },
+  {
+    "id": "00000005:0",
+    "kind": "tool-call",
+    "text": "read",
+    "toolCallId": "call_read_2",
+    "at": "2026-09-03T08:00:00.013Z",
+    "model": "faux/faux-1",
+    "facts": {
+      "contextTokens": 2748
+    },
+    "tool": {
+      "summary": "notes.txt",
+      "lazy": true,
+      "bytes": 20
+    }
+  },
+  {
+    "id": "00000006",
+    "kind": "tool-result",
+    "toolCallId": "call_read_2",
+    "at": "2026-09-03T08:00:00.017Z",
+    "facts": {
+      "tool": {
+        "name": "read",
+        "callId": "call_read_2",
+        "isError": false
+      }
+    },
+    "tool": {
+      "lazy": true,
+      "bytes": 18
+    }
+  },
+  {
+    "id": "00000007",
+    "kind": "user",
+    "at": "2026-09-03T08:00:00.019Z",
+    "text": "and also check the second line",
+    "facts": {}
+  },
+  {
+    "id": "00000008:0",
+    "kind": "assistant-text",
+    "text": "The second line says line two.",
+    "at": "2026-09-03T08:00:00.020Z",
+    "model": "faux/faux-1",
+    "facts": {
+      "contextTokens": 1430
+    }
+  },
+  {
+    "id": "00000009",
+    "kind": "user",
+    "at": "2026-09-03T08:00:00.022Z",
+    "text": "then summarize",
+    "facts": {}
+  },
+  {
+    "id": "0000000a:0",
+    "kind": "assistant-text",
+    "text": "Summary: two lines.",
+    "at": "2026-09-03T08:00:00.023Z",
+    "model": "faux/faux-1",
+    "facts": {
+      "contextTokens": 1433
+    }
+  }
+]

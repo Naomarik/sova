@@ -104,8 +104,8 @@ loader. Flags may come before or after the command word. `sova-spec --help` does
 
 | `--dir` | Lines | Groups |
 |---|---|---|
-| `out` | the declared `requires`, then the § the claim's prose names without requiring | `requires`, `named` |
-| `in` | the claims whose `requires` name it; for an H2, also the claims that require its H1 (`via` names it) | `required-by`, `required-through-parent` |
+| `out` | the declared `requires`, the `embeds`, the notes `about` it or its H1, then the § the claim's prose names without requiring | `requires`, `embeds`, `about`, `named` |
+| `in` | the claims whose `requires` name it; the claims that `embeds` it; the notes `about` it; for an H2, also those that require or embed its H1 and the notes about its H1 (`via` names it) | `required-by`, `required-through-parent`, `embedded-by`, `embedded-through-parent`, `about-it` |
 | `down` | an H1's H2s, or a section's members, in declaration order | `children`, `members` |
 | `up` | an H2's parent | `parent` |
 | `mentions` | the claims whose prose names it | `mentioned-by` |
@@ -113,8 +113,10 @@ loader. Flags may come before or after the command word. `sova-spec --help` does
 Each line has `id`, `title`, `kind`, `labels` (when declared), `bytes` (what `read` of it delivers;
 an H1's lede) and `whole` (an H1's lede plus all its H2s), `what` and `whatSource`
 (`prose|blockquote|none`), and, for `out`, `in` and `mentions`, `why` and `whySource`
-(`prose|comment|none`). What is the first prose sentence after the heading: fences, comments,
-tables and headings skipped, a blockquote only when nothing else is prose, at least 20 and at most
+(`prose|comment|declared|none`; `declared` is a note's `about` field when its prose names nothing). A record with
+`agreed` adds `agreed: {by, at, built}` (built: `code` plus evidence `reviewed` or `verified`), and
+the text reads `agreed <at> by <by>, not built` (or `, built`); `read` items carry it too. What is the first prose sentence after the heading: fences, comments,
+tables, thematic breaks and headings skipped, a blockquote only when nothing else is prose, at least 20 and at most
 200 characters, never code. Why is the first visible-prose sentence of the linking claim naming the
 other, else an HTML comment naming it, else exactly `not mentioned in this claim's text`. Mentions
 mask fenced code, HTML comments and double-backtick spans; single backticks count, and `§a.b` reads

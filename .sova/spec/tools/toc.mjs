@@ -264,10 +264,10 @@ export function boundedRefusal(command, budget, code, extra = {}) {
 
 // ---------------------------------------------------------------- toc
 const GROUPS = {
-  out: ["requires", "embeds", "about", "named"], in: ["required-by", "required-through-parent", "embedded-by"], down: ["children", "members"], up: ["parent"], mentions: ["mentioned-by"],
+  out: ["requires", "embeds", "about", "named"], in: ["required-by", "required-through-parent", "embedded-by", "embedded-through-parent", "about-it"], down: ["children", "members"], up: ["parent"], mentions: ["mentioned-by"],
 };
 const HEADS = { requires: "requires", embeds: "embeds (drawn inside it; read delivers them whole)", about: "about (notes that serve it)",
-  named: "named in its text, not required", "required-by": "required by", "required-through-parent": "required through its H1", "embedded-by": "embedded by",
+  named: "named in its text, not required", "required-by": "required by", "required-through-parent": "required through its H1", "embedded-by": "embedded by", "embedded-through-parent": "embedded through its H1", "about-it": "notes about it",
   children: "children", members: "members", parent: "parent", "mentioned-by": "mentioned by" };
 function labelsOf(rec) {
   const l = {};
@@ -297,7 +297,11 @@ function neighbours(ctx, id, dir, parentOf) {
     const through = p && ctx.claims.has(p) ? by(p).filter((k) => k !== id && !direct.includes(k)) : [];
     return [...direct.map((k) => ({ id: k, group: "required-by", src: ctx.decls.get(k), target: id })),
       ...through.map((k) => ({ id: k, group: "required-through-parent", src: ctx.decls.get(k), target: p, via: p })),
-      ...embeddedBy(ctx, id).map((k) => ({ id: k, group: "embedded-by", src: ctx.decls.get(k), target: id }))];
+      ...embeddedBy(ctx, id).map((k) => ({ id: k, group: "embedded-by", src: ctx.decls.get(k), target: id })),
+      // Embedding an H1 draws all of it, so its embedders reach each H2 too; notes serve it or its H1.
+      ...(p && ctx.claims.has(p) ? embeddedBy(ctx, p).filter((k) => k !== id && !embeddedBy(ctx, id).includes(k)) : [])
+        .map((k) => ({ id: k, group: "embedded-through-parent", src: ctx.decls.get(k), target: p, via: p })),
+      ...aboutLines(ctx, id, p)];
   }
   if (dir === "down") return rec.kind === "section" ? (rec.members ?? []).map((m) => ({ id: m, group: "members" }))
     : childrenInOrder(ctx, id).map((c) => ({ id: c, group: "children" }));
@@ -311,11 +315,28 @@ function neighbours(ctx, id, dir, parentOf) {
   return out;
 }
 
+function aboutLines(ctx, id, p) {
+  const about = aboutNotes(ctx, [id]);
+  if (p) for (const n of aboutNotes(ctx, [p])) if (!about.some((a) => a.id === n.id)) about.push({ ...n, via: p });
+  return about.map((n) => ({ id: n.id, group: "about-it", src: ctx.decls.get(n.id), target: n.target, about: true, ...(n.via ? { via: n.via } : {}) }));
+}
+
+// A record's agreed {by, at}, and whether it is built: code plus evidence reviewed or verified (the
+// draft tool's BUILT_LABELS rule). → {agreed} | {}
+export function agreedOf(rec) {
+  const a = rec?.agreed;
+  if (!a || typeof a !== "object" || typeof a.by !== "string" || typeof a.at !== "string") return {};
+  return { agreed: { by: a.by, at: a.at, built: !!rec.code?.length && ["reviewed", "verified"].includes(rec.evidence) } };
+}
+export const agreedText = (x) => (x.agreed ? ` · agreed ${x.agreed.at} by ${x.agreed.by}, ${x.agreed.built ? "built" : "not built"}` : "");
+
 function line(ctx, n) {
   const d = ctx.decls.get(n.id), rec = ctx.claims.get(n.id), w = n.src ? whyOf(n.src, n.target) : null;
   const why = w ? { why: w.why, whySource: w.whySource } : {};
+  // A note's about field is itself a written reason for the link.
+  if ((n.about || n.group === "about") && why.whySource === "none") Object.assign(why, { why: `about ${n.target} (declared on the note)`, whySource: "declared" });
   if (!d || !rec) return { id: n.id, group: n.group, ...(n.via ? { via: n.via } : {}), dangling: true, ...why };
-  return { id: n.id, group: n.group, ...(n.via ? { via: n.via } : {}), title: titleOf(d), kind: rec.kind, level: d.level, ...labelsOf(rec), ...sizeOf(ctx, n.id), ...whatOf(d), ...why };
+  return { id: n.id, group: n.group, ...(n.via ? { via: n.via } : {}), title: titleOf(d), kind: rec.kind, level: d.level, ...labelsOf(rec), ...agreedOf(rec), ...sizeOf(ctx, n.id), ...whatOf(d), ...why };
 }
 
 export function tocStream(ctx, id, dir, parentOf) {
@@ -344,7 +365,7 @@ export function tocStream(ctx, id, dir, parentOf) {
     childRequires = { h2s, claims: outside.size };
   }
   const otherDirections = Object.fromEntries(DIRS.filter((d) => d !== dir).map((d) => [d, neighbours(ctx, id, d, parentOf).length]));
-  return { seed: { id, title: titleOf(seed), kind: rec.kind, level: seed.level, ...labelsOf(rec), file: seed.file, lines: seed.lines, ...sizeOf(ctx, id), ...whatOf(seed),
+  return { seed: { id, title: titleOf(seed), kind: rec.kind, level: seed.level, ...labelsOf(rec), ...agreedOf(rec), file: seed.file, lines: seed.lines, ...sizeOf(ctx, id), ...whatOf(seed),
     ...(dir === "out" ? { requires: rec.requires === undefined ? null : rec.requires.length } : {}), ...(childRequires ? { childRequires } : {}) }, list, unknowns, otherDirections };
 }
 
@@ -354,15 +375,15 @@ const lab = (e) => (e.labels ? ` · ${[e.labels.authority ?? "-", e.labels.evide
 
 export function renderToc(out) {
   const L = [], s = out.seed, D = out.dir.toUpperCase();
-  L.push(`${s.id} — ${s.title}  ${s.kind}${lab(s)} · ${sizeText(s)}`, `  what: ${s.what}`);
+  L.push(`${s.id} — ${s.title}  ${s.kind}${lab(s)} · ${sizeText(s)}${agreedText(s)}`, `  what: ${s.what}`);
   if (out.dir === "out" && !out.counts.groups.requires && !out.counts.groups.embeds)
     L.push(`${D}: requires: ${s.requires === null && s.kind === "behavior" ? "dependencies uninvestigated (no requires key)" : "none declared"}`);
   if (s.childRequires) L.push(`${D}: its ${s.childRequires.h2s} H2(s) require ${s.childRequires.claims} claim(s) outside it: toc each H2 --dir out, or map '${s.id}'`);
   let group = null;
   for (const e of out.lines) {
-    if (e.group !== group) { group = e.group; L.push(`${D}: ${HEADS[group]}${group === "required-through-parent" ? " " + e.via : ""} (${out.counts.groups[group]})`); }
+    if (e.group !== group) { group = e.group; L.push(`${D}: ${HEADS[group]}${group.endsWith("-through-parent") ? " " + e.via : ""} (${out.counts.groups[group]})`); }
     if (e.dangling) L.push(`  ${e.id} — unknown: no record or span`);
-    else L.push(`  ${e.id} — ${e.title}  ${e.kind}${lab(e)} · ${sizeText(e)}${e.via && e.group === "about" ? ` · about its H1 ${e.via}` : ""}`, `    what: ${e.what}`);
+    else L.push(`  ${e.id} — ${e.title}  ${e.kind}${lab(e)} · ${sizeText(e)}${e.via && (e.group === "about" || e.group === "about-it") ? ` · about its H1 ${e.via}` : ""}${agreedText(e)}`, `    what: ${e.what}`);
     if (e.why !== undefined) L.push(e.whySource === "comment" ? `    why (comment): ${e.why}` : `    why:  ${e.why}`);
   }
   if (!out.counts.entries && out.dir !== "out") L.push(`${D}: none`);

@@ -309,6 +309,44 @@ test("in on an H2 lists the claims that require its H1; out on an H1 counts what
   assert.equal(toc(root, "§a.top/seed", "out").seed.childRequires, undefined);
 });
 
+test("in lists embedders of the claim or its H1 and the notes about either; an about field is a declared why", () => {
+  const root = fixture(), m = JSON.parse(readFileSync(join(root, ".sova/spec/manifest.json"), "utf8"));
+  m.claims["§j/host"] = { kind: "surface", requires: [], embeds: ["§a/top"] };
+  m.claims["§k/note"] = { kind: "note", about: ["§a/top"] };
+  m.claims["§k/said"] = { kind: "note", about: ["§a.top/hint"] };
+  write(root, ".sova/spec/manifest.json", JSON.stringify(m));
+  write(root, ".sova/spec/claims/j/host.md", "# §j/host — Host\n\nThe host draws the top inside its frame.\n");
+  write(root, ".sova/spec/claims/k/note.md", "# §k/note — Note\n\nA note that names nothing at all.\n");
+  write(root, ".sova/spec/claims/k/said.md", "# §k/said — Said\n\nThis note explains §a.top/hint in prose.\n");
+  const j = toc(root, "§a.top/hint", "in"), l = byId(j);
+  assert.deepEqual(j.lines.map((x) => [x.group, x.id, x.via]),
+    [["required-by", "§a.top/seed", undefined], ["embedded-through-parent", "§j/host", "§a/top"], ["about-it", "§k/said", undefined], ["about-it", "§k/note", "§a/top"]], "notes about it, then notes about its H1");
+  assert.deepEqual([l["§k/note"].why, l["§k/note"].whySource], ["about §a/top (declared on the note)", "declared"]);
+  assert.deepEqual([l["§k/said"].why, l["§k/said"].whySource], ["This note explains §a.top/hint in prose.", "prose"]);
+  const { r } = cli(root, ["toc", "§a.top/hint", "--dir", "in"], { json: false });
+  assert.match(r.stdout, /^IN: embedded through its H1 §a\/top \(1\)$/m);
+  assert.match(r.stdout, /^IN: notes about it \(2\)$/m);
+  assert.deepEqual(toc(root, "§a/top", "in").lines.map((x) => [x.group, x.id]), [["embedded-by", "§j/host"], ["about-it", "§k/note"]]);
+});
+
+test("agreed records show who agreed and when, and whether built, in toc and read", () => {
+  const root = fixture(), m = JSON.parse(readFileSync(join(root, ".sova/spec/manifest.json"), "utf8"));
+  Object.assign(m.claims["§a.top/hint"], { agreed: { by: "operator", at: "2026-10-05" } });
+  Object.assign(m.claims["§c/quiet"], { agreed: { by: "pm", at: "2026-10-01" }, code: ["src/q.txt"], evidence: "verified" });
+  write(root, ".sova/spec/manifest.json", JSON.stringify(m));
+  write(root, "src/q.txt", "q\n");
+  const l = byId(toc(root, "§a.top/seed", "out"));
+  assert.deepEqual(l["§a.top/hint"].agreed, { by: "operator", at: "2026-10-05", built: false });
+  assert.deepEqual(l["§c/quiet"].agreed, { by: "pm", at: "2026-10-01", built: true });
+  assert.equal(l["§b/dep"].agreed, undefined, "no agreed field, no agreed key");
+  const text = cli(root, ["toc", "§a.top/seed", "--dir", "out"], { json: false }).r.stdout;
+  assert.match(text, /§a\.top\/hint — Hint .* · agreed 2026-10-05 by operator, not built$/m);
+  assert.match(text, /§c\/quiet — Quiet .* · agreed 2026-10-01 by pm, built$/m);
+  assert.deepEqual(toc(root, "§a.top/hint", "up").seed.agreed, { by: "operator", at: "2026-10-05", built: false });
+  assert.deepEqual(read(root, ["§a.top/hint"]).items[0].agreed, { by: "operator", at: "2026-10-05", built: false });
+  assert.match(cli(root, ["read", "§a.top/hint"], { json: false }).r.stdout, /^── §a\.top\/hint — Hint .* · agreed 2026-10-05 by operator, not built$/m);
+});
+
 test("read's footer speaks for the whole read, on every page", () => {
   const root = fixture();
   write(root, ".sova/spec/claims/a/top.md", readFileSync(join(root, ".sova/spec/claims/a/top.md"), "utf8").replace("A hint that only", "A hint about §e/named that only"));

@@ -1,6 +1,6 @@
 // One passage, exact, at its own size: no closure. Node stdlib only; never writes.
 import { pullArgs, openGraph, titleOf, childrenInOrder, sizeOf, namedIn, kb, fingerprintOf, tokenFor, decodeToken,
-  boundedRefusal, emit, sizeIn } from "./toc.mjs";
+  boundedRefusal, emit, sizeIn, agreedOf, agreedText } from "./toc.mjs";
 import { embedsOf, aboutNotes, frameOf, frameSummary, frameLine } from "./fields.mjs";
 
 const READ_NOTICE = "One passage, exact scope text; nothing it requires, contains or mentions is delivered. The footer names those links. Finish fragments at end == total.";
@@ -13,7 +13,7 @@ function passage(ctx, id, embeddedIn) {
   const labels = {};
   if (rec.authority !== undefined) labels.authority = rec.authority;
   if (rec.evidence !== undefined) labels.evidence = rec.evidence;
-  return { id, kind: rec.kind, ...(Object.keys(labels).length ? { labels } : {}), title: titleOf(d), file: d.file, lines: d.lines,
+  return { id, kind: rec.kind, ...(Object.keys(labels).length ? { labels } : {}), ...agreedOf(rec), title: titleOf(d), file: d.file, lines: d.lines,
     ...(embeddedIn ? { embeddedIn } : {}), text: d.text };
 }
 
@@ -49,7 +49,7 @@ export function renderRead(out) {
   for (const p of out.items) {
     const f = p.fragment, lb = p.labels ? `; ${[p.labels.authority ?? "-", p.labels.evidence ?? "-"].join("/")}` : "";
     const part = f.complete ? kb(f.total) : `bytes ${f.start}-${f.end} of ${f.total}`;
-    L.push(`── ${p.id} — ${p.title} [${p.kind}${lb}] ${p.file}:${p.lines[0]}-${p.lines[1]} (${part})${p.embeddedIn ? ` · embedded in ${p.embeddedIn}` : ""}`, p.text.replace(/\n$/, ""));
+    L.push(`── ${p.id} — ${p.title} [${p.kind}${lb}] ${p.file}:${p.lines[0]}-${p.lines[1]} (${part})${p.embeddedIn ? ` · embedded in ${p.embeddedIn}` : ""}${agreedText(p)}`, p.text.replace(/\n$/, ""));
   }
   L.push(`named here, not delivered by this read: ${out.footer.named.join(", ") || "none"}`);
   if (out.footer.about?.length) L.push(`notes about it, not delivered by this read: ${out.footer.about.join(", ")}`);

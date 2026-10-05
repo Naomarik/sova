@@ -134,7 +134,7 @@ test("toc lists embeds, about notes (directly and through the H1) and embedded-b
   const viaH1 = out.lines.find((l) => l.id === "§design.copy/editor");
   assert.equal(viaH1.via, "§s/seed");
   assert.equal(viaH1.whySource, "prose");
-  assert.equal(out.lines.find((l) => l.id === "§design.copy/edit-only").whySource, "none");
+  assert.equal(out.lines.find((l) => l.id === "§design.copy/edit-only").whySource, "declared", "the about field is the written reason");
   assert.equal(out.frame.passages, 2);
   const inn = json(root, ["toc", "§s/panel", "--dir", "in"]);
   assert.deepEqual(inn.lines.map((l) => [l.id, l.group]), [["§s.seed/edit", "embedded-by"]]);

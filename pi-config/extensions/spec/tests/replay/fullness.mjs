@@ -50,12 +50,16 @@ export function passageAt(index, at) {
   return null;
 }
 
-/** Merge spans [{rel, from, to}] per file; touching or overlapping ranges join. Sorted by file, then line. */
+/**
+ * Merge spans [{rel, from, to}] per file; touching or overlapping ranges join. Files keep the order they first appear
+ * in (a slice lists its seed's file first), lines ascend within a file. The first probe hit is searched in this
+ * order, as the research did, so a hit lands in the seed's own file before a far one.
+ */
 export function mergeSpans(spans) {
   const by = new Map();
   for (const s of spans) by.set(s.rel, [...(by.get(s.rel) ?? []), [s.from, s.to]]);
   const out = [];
-  for (const rel of [...by.keys()].sort()) {
+  for (const rel of by.keys()) {
     const rs = by.get(rel).sort((a, b) => a[0] - b[0]);
     let cur = null;
     for (const [a, b] of rs) {

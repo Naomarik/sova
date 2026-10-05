@@ -21,8 +21,8 @@ const BASELINE_FILE = join(HERE, "data/g-baseline.json");
 export const FRAME_CAP = 12000;
 export const DIRS = ["out", "in", "down", "up", "mentions"];
 const IMPACT_SEEDS = ["§chat/composer"];
-/** The ratchet (D18): needs shown one hop out by toc never drop below what M1 reached. */
-const SHOWN_FLOOR = 86;
+/** The ratchet (D18): needs shown one hop out by toc never drop below what M1 reached (104/138 at d65042ae). */
+const SHOWN_FLOOR = 104;
 /** The families whose contents lines are graded for a written "why" (plan §5b.8). */
 const WHY_FAMILIES = ["§chat/composer", "§chat/sandbox"];
 

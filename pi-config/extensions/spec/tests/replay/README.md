@@ -65,7 +65,7 @@ purpose: `node scenario-g.mjs --record <tree made from the baseline ref>`. `data
 | --- | --- |
 | M0 | the baseline tree against itself: zero diff, every guard held; a sabotaged tree trips every guard |
 | M1 (`toc`, `read`) | computed run, no agent: `packet` and `scope` unchanged (g's packet rows, d's exactness), f's pull guards hold; g's pull proxy rows give bytes and calls per comparison; the 21 needs packet answers but no `toc` line shows one hop out are listed by id |
-| M1 onward | ratchet guard `g.pull.shown-floor`: needs shown one hop out never below 86/138 (M1) |
+| M1 onward | ratchet guard `g.pull.shown-floor`: needs shown one hop out never below 104/138 (M1 at d65042ae; reset from M1's final head) |
 | M2 (spec-mode text) | agent arm, all 24 comparisons, on the M1+M5 tree: no need packet answers lost unless its passage was seen; answered ≥ packet's; calls per comparison within today's 7–18; the 21 checked one by one |
 | M4 (span promotion) | a.diff-h2.hand-reapply 1 → 0; `a.target.same-spot` both orders land, byte-identical; a's guards hold |
 | M3 (`map`, `where`, `impact --near`) | f: `impact §f/seed --near` keeps the true consumer and keeps the unrelated one off its frontier (guards); g: `g.target.impact-near.chat-composer` frontier 143 → ≤ 25, `g.where.all` lists every claim whose code names server/chat-manager.ts (guard, 74), `g.target.where-ranked` for shared/protocol.ts (107, top 10); `g.digest.scope` and `g.digest.impact` (plain impact) unchanged |

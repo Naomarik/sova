@@ -138,18 +138,37 @@ test("the build updates the same agreed record, keeps agreed, and only then read
   assert.deepEqual(Object.keys(current(root)).sort(), ["§a.top/new", "§a.top/one", "§a/top"]);
 });
 
-test("agreed is written once: a promotion that changes or removes it is refused", () => {
+test("agreed belongs to its wording: re-stamped on unchanged prose, removed, or dated earlier is refused; reworded and agreed again is taken", () => {
   const root = project();
   agreedDraft(root, "talk", { agreed: AGREED });
   assert.equal(ev(root, "talk", "§a.top/new", "doc-only").exit, 0);
   assert.equal(promote(root, "talk", "§a.top/new").exit, 0);
-  const cases = { changed: (r) => { r.agreed = { by: "someone else", at: "2026-10-06" }; }, removed: (r) => { delete r.agreed; } };
-  for (const [name, fn] of Object.entries(cases)) {
+  const reword = (name) => write(root, D(name, "claims/a/top.md"), `${TOP}\n## §a.top/new\n\nNew does Z and W, as agreed again.\n`);
+  const cases = {
+    restamped: { fn: (r) => { r.agreed = { by: "someone else", at: "2026-10-06" }; }, why: /prose is unchanged/ },
+    removed: { fn: (r) => { delete r.agreed; }, why: /deleting the whole record/ },
+    "removed-reworded": { fn: (r) => { delete r.agreed; }, reworded: true, why: /deleting the whole record/ },
+    earlier: { fn: (r) => { r.agreed = { by: "someone else", at: "2026-10-04T23:59Z" }; }, reworded: true, why: /earlier than current/ },
+  };
+  for (const [name, { fn, reworded, why }] of Object.entries(cases)) {
     assert.equal(run(root, "new", name, "--write").exit, 0);
     editManifest(root, D(name, "manifest.json"), (m) => { const r = m.claims["§a.top/new"]; fn(r); r.code = ["lib/new.txt"]; });
+    if (reworded) reword(name);
     assert.equal(ev(root, name, "§a.top/new", "snapshot").exit, 0);
-    assert.ok(codes(run(root, "promote", name, "--id", "§a.top/new")).includes("agreed-rewritten"), name);
+    const p = run(root, "promote", name, "--id", "§a.top/new"), r = p.refusals.filter((x) => x.code === "agreed-rewritten");
+    assert.equal(r.length, 1, name);
+    assert.match(r[0].message, why, name);
   }
+  // the person agreed again to new words (same day counts as not earlier): the stamp moves with the wording
+  const again = { by: "someone else", at: "2026-10-05T16:00Z" };
+  assert.equal(run(root, "new", "reagreed", "--write").exit, 0);
+  editManifest(root, D("reagreed", "manifest.json"), (m) => { m.claims["§a.top/new"].agreed = again; });
+  reword("reagreed");
+  assert.equal(ev(root, "reagreed", "§a.top/new", "doc-only").exit, 0);
+  const w = promote(root, "reagreed", "§a.top/new");
+  assert.equal(w.exit, 0, JSON.stringify(w.refusals));
+  assert.deepEqual(current(root)["§a.top/new"].agreed, again);
+  assert.match(read(root, FILE), /as agreed again/);
   // deleting the whole record (the decision was dropped) is an ordinary deletion
   assert.equal(run(root, "new", "drop", "--write").exit, 0);
   write(root, D("drop", "claims/a/top.md"), TOP);

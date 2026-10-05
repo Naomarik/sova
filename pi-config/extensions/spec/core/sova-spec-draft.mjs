@@ -955,10 +955,13 @@ async function plan(root, o) {
     else if (auth !== "accepted" && auth !== "migrated") refuse("authority-missing", `${id} declares no authority label; set "authority": "accepted" (or keep "migrated" for ported text) in the draft record before recording evidence`);
     const bad = agreedProblem(recOf(a.prop, id));
     if (bad) refuse("agreed-invalid", `${id}: ${bad}`);
-    // `agreed` is written once, at agreement: the build adds code and evidence to the same record and keeps who decided.
-    const was = recOf(a.cur, id)?.agreed, r = a.records.find((x) => x.id === id);
-    if (was !== undefined && r?.merge === "apply" && recOf(a.prop, id) !== undefined && canon(recOf(a.prop, id).agreed) !== canon(was))
-      refuse("agreed-rewritten", `${id} was agreed ${JSON.stringify(was)} in current; agreed is written once, at agreement, so keep it as it is in the draft record`);
+    // `agreed` belongs to the wording it was given for: the build keeps it; only reworded prose, agreed again, replaces it.
+    const was = recOf(a.cur, id)?.agreed, now = recOf(a.prop, id)?.agreed, r = a.records.find((x) => x.id === id);
+    if (was !== undefined && r?.merge === "apply" && canon(now) !== canon(was)) {
+      if (now === undefined) refuse("agreed-rewritten", `${id} was agreed ${JSON.stringify(was)} in current; agreed is removed only by deleting the whole record`);
+      else if (!a.changed.get(id).text) refuse("agreed-rewritten", `${id} was agreed ${JSON.stringify(was)} in current and its prose is unchanged; agreed is replaced only when the promotion rewords the prose it was given for`);
+      else if (!bad && obj(was) && typeof was.at === "string" && Date.parse(now.at) < Date.parse(was.at)) refuse("agreed-rewritten", `${id}: the new agreed at ${now.at} is earlier than current's ${was.at}`);
+    }
   }
   const evidence = [];
   for (const id of [...ids].filter((x) => a.changed.has(x)).sort()) {

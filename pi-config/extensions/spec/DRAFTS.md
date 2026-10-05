@@ -128,7 +128,7 @@ again **per declaration** (see "Per-declaration merge" below); only what that fi
 | `selection-incomplete` | A promoted file also carries changes to IDs you didn't select. Files move whole. |
 | `candidate-invalid` / `candidate-dangling` | The merged candidate graph (current plus the selected units) doesn't load in the core, or gains a dangling edge that current doesn't have. |
 | `candidate-label` / `authority-missing` | A selected ID that isn't being deleted is labelled `authority: "candidate"` in the draft, or declares no `authority`. This applies to a prose-only change too. |
-| `agreed-invalid` / `agreed-rewritten` | A selected record's `agreed` is malformed or sits on a note or section, or the draft changes or removes the `agreed` current already has (see "Agreed, not built"). |
+| `agreed-invalid` / `agreed-rewritten` | A selected record's `agreed` is malformed or sits on a note or section, or the draft removes the `agreed` current already has, or replaces it without rewording the prose or with an earlier `at` (see "Agreed, not built"). |
 | `base-untrusted` | The draft's baseline graph doesn't load in the core (exit 2), so changes can't be attributed to IDs. Start a new draft from a fixed current. |
 | `draft-invalid` | The draft's own graph doesn't load (exit 2). Run `check NAME` and fix it. |
 | `not-changed`, `plan-changed`, `nothing-to-write`, `pending-transaction`, `lock-occupied`, `race` | These mean what they say. |
@@ -185,10 +185,12 @@ records the decision, not that it was built.
 - **Built** means the record has `code` and the `evidence` label `reviewed` or `verified`. So
   `--doc-only` is refused (`doc-only-refused`) for an agreed record that maps code or carries one of
   those labels; a record with no `agreed` at all is refused as before.
-- **Written once.** The build edits the same record: it adds `code` (and its label), keeps `agreed`
-  as it is, and records commit or snapshot evidence of the code. A promotion that changes or removes
-  an `agreed` current already has is refused (`agreed-rewritten`). Deleting the whole record is an
-  ordinary deletion.
+- **It belongs to the wording.** The build edits the same record: it adds `code` (and its label),
+  keeps `agreed` as it is, and records commit or snapshot evidence of the code. A promotion may
+  replace the `agreed` current already has only when it also rewords that record's prose (the
+  person agreed again to the new words) and the new `at` is not earlier than the old one. Changing
+  `agreed` on unchanged prose, an earlier `at`, or removing `agreed` is refused (`agreed-rewritten`).
+  Deleting the whole record is an ordinary deletion.
 - **Shape.** `agreed` must be an object with exactly a non-empty `by` and a real date `at`, on a
   behavior or surface; anything else is refused (`agreed-invalid`) at `evidence` and at `promote`.
 - It is a record field, not a label value: the core ignores record fields it doesn't know, while an

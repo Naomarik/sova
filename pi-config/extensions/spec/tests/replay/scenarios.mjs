@@ -189,11 +189,11 @@ export async function merging(ctx) {
 }
 
 /** A new note H2 in a draft, inserted right before `before` (a heading line of the draft's claim file). */
-function addH2(repo, draft, id, text, before = "## §a.top/two") {
+function addH2(repo, draft, id, text, before = "## §a.top/two", record = { kind: "note", authority: "accepted" }) {
   replaceIn(repo, draftClaim(draft, "§a.top/one"), before, `## ${id}\n\n${text}\n\n${before}`);
   const rel = `.sova/spec/drafts/${draft}/spec/manifest.json`;
   const m = JSON.parse(repo.read(rel));
-  m.claims[id] = { kind: "note", authority: "accepted" };
+  m.claims[id] = record;
   repo.write(rel, JSON.stringify(m, null, 2) + "\n");
 }
 
@@ -576,7 +576,35 @@ export async function leftovers(ctx) {
   return rows;
 }
 
-export const SCENARIOS = { a: merging, b: evidenceDrift, c: hookNoise, d: invocations, e: leftovers, f: sliceQuality, g: fullness };
+// ── (h) Agreed, not built ────────────────────────────────────────────────────
+
+/**
+ * A requirements chat's outcome: a draft adds a behavior with `agreed: {by, at}` and no code, records --doc-only
+ * evidence and promotes. A second draft tries the same for a behavior that maps code. Whatever lands must not read
+ * as built: no code, and no reviewed/verified evidence label.
+ */
+export async function agreement(ctx) {
+  const repo = standard(ctx, "h-agreed");
+  const agreed = { by: "replay", at: "2023-11-14" };
+  const attempt = (draft, id, text, extra) => {
+    ctx.tools.draft(repo.root, ctx.ws.home, ["new", draft, "--write"]);
+    addH2(repo, draft, id, text, "## §a.top/two", { kind: "behavior", authority: "accepted", requires: [], agreed, ...extra });
+    const ev = docOnly(ctx, repo, draft, id);
+    const p = /^exit0$/.test(outcome(ev)) ? promote(ctx, repo, draft, id) : { refused: [`evidence:${outcome(ev)}`] };
+    return p.refused.join("+") || "promoted";
+  };
+  const unbuilt = attempt("talk", "§a.top/agreed-rule", "The agreed rule says what a chat decided.", {});
+  const built = attempt("talk-built", "§a.top/built-rule", "The built rule maps code.", { code: ["src/one.txt"] });
+  const current = JSON.parse(repo.read(".sova/spec/manifest.json")).claims;
+  const readsBuilt = (id) => current[id] && ((current[id].code ?? []).length > 0 || ["reviewed", "verified"].includes(current[id].evidence));
+  return [row("h", "h.target.agreed-promoted", unbuilt === "promoted" ? 1 : 0), row("h", "h.agreed", { unbuilt, built }, [
+    // Nothing that landed on doc-only evidence reads as built (no code, no reviewed/verified label).
+    guard("h.unbuilt-not-built", !readsBuilt("§a.top/agreed-rule") && !readsBuilt("§a.top/built-rule"), ["§a.top/agreed-rule", "§a.top/built-rule"].map((id) => current[id] ? `${id}: code ${JSON.stringify(current[id].code ?? [])}, evidence ${current[id].evidence ?? "none"}` : `${id}: not current`).join("; ")),
+    guard("h.doc-only-refuses-code", built !== "promoted" && !current["§a.top/built-rule"], `an agreed record that maps code, on doc-only evidence: ${built}`),
+  ])];
+}
+
+export const SCENARIOS = { a: merging, b: evidenceDrift, c: hookNoise, d: invocations, e: leftovers, f: sliceQuality, g: fullness, h: agreement };
 
 /** Load a module of the arm's tree (each tree's own copy, so two arms never share module state). */
 export function moduleLoader(tree) {

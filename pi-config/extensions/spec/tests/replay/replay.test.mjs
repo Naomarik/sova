@@ -31,7 +31,7 @@ test("self-check: this tree against itself differs on no row, and every guard ho
   const diff = diffCards(a, b);
   assert.deepEqual(diff.rows.filter((r) => r.changed), [], "baseline vs baseline must show zero difference");
   assert.ok(diff.rows.length >= 30, `all scenarios ran (${diff.rows.length} rows)`);
-  for (const s of ["a", "b", "c", "d", "e", "f", "g"]) assert.ok(a.rows.some((r) => r.scenario === s), `scenario ${s} has rows`);
+  for (const s of ["a", "b", "c", "d", "e", "f", "g", "h"]) assert.ok(a.rows.some((r) => r.scenario === s), `scenario ${s} has rows`);
   assert.deepEqual(failed(a), []);
   assert.deepEqual(failed(b), []);
   assert.doesNotMatch(JSON.stringify(a.rows), /spec-replay-|\/tmp\//, "no temp path in a value");
@@ -138,6 +138,13 @@ test("pull checks run only where toc exists: n/a without it, held by a faithful 
   const names = failed(bad);
   for (const name of ["f.ran", "f.pull.items-shown", "f.pull.what-and-why", "f.pull.unrelated-only-in", "f.pull.read-exact", "f.pull.read-names-links", "g.packet.ran", "g.pull.toc-answers", "f.near.true-consumer-kept", "f.near.unrelated-off-frontier", "g.where.all-listed", "g.impact-near.answers"])
     assert.ok(names.includes(name), `${name} fails on the sabotaged stub (failed: ${names.join(", ")})`);
+});
+
+test("h's guards trip when doc-only evidence covers any behavior, code and all", { timeout: 600_000 }, async () => {
+  const tree = sabotaged([["spec/core/sova-spec-draft.mjs", 'const DOC_ONLY_KINDS = new Set(["note", "section"]);', 'const DOC_ONLY_KINDS = new Set(["note", "section", "behavior"]);']]);
+  const card = await runArm(tree, { label: "sabotaged", only: ["h"] });
+  assert.equal(card.errors, undefined, JSON.stringify(card.errors));
+  for (const name of ["h.unbuilt-not-built", "h.doc-only-refuses-code"]) assert.ok(failed(card).includes(name), `${name} (failed: ${failed(card).join(", ")})`);
 });
 
 test("the manifest-merge guard trips when the driver refuses every merge", { timeout: 600_000 }, async () => {

@@ -109,11 +109,15 @@ test("f and g catch the cheap slice: a packet that stops following requires read
 const STUB_FILES = { "spec/core/toc-stub.mjs": fileURLToPath(new URL("./toc-stub.mjs", import.meta.url)), "spec/core/fullness.mjs": fileURLToPath(new URL("./fullness.mjs", import.meta.url)) };
 const STUB = ["spec/core/sova-spec.mjs", "if (direct) {\n  try {", "if (direct && ([\"toc\", \"read\", \"where\"].includes(process.argv[2]) || (process.argv[2] === \"impact\" && process.argv.includes(\"--near\")))) await import(\"./toc-stub.mjs\");\nelse if (direct) {\n  try {"];
 
-test("pull checks run only where toc exists: n/a without it, held by a faithful contents view, each failed by a contents view that cheats", { timeout: 600_000 }, async () => {
-  const plain = await runArm(TREE, { label: "plain", only: ["f"] });
+test("pull checks are n/a on a tree without toc (the pinned revision's), never a pass", { timeout: 600_000, skip: spawnSync("git", ["-C", TREE, "cat-file", "-e", `${PINNED_REV}^{commit}`]).status !== 0 && "the pinned revision is not in this checkout" }, async () => {
+  const dest = mkdtempSync(join(tmpdir(), "spec-replay-tree-"));
+  temps.push(dest);
+  const plain = await runArm(makeTree(PINNED_REF, join(dest, "t"), TREE), { label: "plain", only: ["f"] });
   const na = plain.rows.flatMap((r) => r.guards).filter((g) => g.name.startsWith("f.pull."));
   assert.ok(na.length >= 4 && na.every((g) => g.na), "a tree without toc: every pull guard is n/a, never a pass");
+});
 
+test("pull checks run where toc exists: held by a faithful contents view, each failed by a contents view that cheats", { timeout: 600_000 }, async () => {
   const good = await runArm(sabotaged([STUB], STUB_FILES), { label: "stub", only: ["f", "g"] });
   assert.equal(good.errors, undefined, JSON.stringify(good.errors));
   assert.deepEqual(failed(good), []);

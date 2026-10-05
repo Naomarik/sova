@@ -5,9 +5,9 @@ library. There is no install step and no config import, and it never writes a fi
 
 ```sh
 node sova-spec.mjs check                [--root DIR] [--spec DIR] [--json]
-node sova-spec.mjs packet §ns/name      [--part prose|inventory|frontier|code|findings] [--cursor TOKEN] [--budget BYTES] [--root DIR] [--spec DIR] [--read-policy review]
+node sova-spec.mjs packet §ns/name      [--part prose|inventory|frontier|code|findings|frame] [--cursor TOKEN] [--budget BYTES] [--root DIR] [--spec DIR] [--read-policy review]
 node sova-spec.mjs toc    §ns/name --dir out|in|down|up|mentions [--json] [--budget BYTES] [--cursor TOKEN] [--root DIR] [--spec DIR]
-node sova-spec.mjs read   §ns/name      [--whole] [--json] [--budget BYTES] [--cursor TOKEN] [--root DIR] [--spec DIR]
+node sova-spec.mjs read   §ns/name      [--whole] [--no-frame] | read --frame [--json] [--budget BYTES] [--cursor TOKEN] [--root DIR] [--spec DIR]
 node sova-spec.mjs scope  §ns/name      [--root DIR] [--spec DIR] [--json] [--budget BYTES]
 node sova-spec.mjs impact §ns/name      [--root DIR] [--spec DIR] [--json]
 node sova-spec.mjs impact §ns/name --near [--json] [--budget BYTES] [--cursor TOKEN] [--root DIR] [--spec DIR]
@@ -140,6 +140,30 @@ root, spec, request and the whole computed stream, so a spec change that alters 
 (`usage`, `unknown-id`, `graph-untrusted` with `cause: manifest-not-found` when there's no
 manifest, `token-malformed`, `token-mismatch-or-stale`, `token-range`, `budget-refused`) are small
 JSON within the budget. Nothing is stored.
+
+## Optional record fields: `embeds`, `core`, `about`
+
+Three optional manifest record fields, handled in their own module (`fields.mjs`). None is a kind,
+a label value or a top-level key, so an older core reads the manifest and ignores them. A spec whose
+records carry none of them gets exactly the output it got before.
+
+| Field | On | Means | Read by |
+|---|---|---|---|
+| `embeds: [§id]` | any record | surfaces drawn inside this one, needed whole | `scope`/`packet` follow it (reason `embeds`); `impact` walks it back; `toc --dir out` group `embeds`, `--dir in` group `embedded-by`; `read` delivers each target whole after the passage, items marked `embeddedIn` |
+| `core: true` | any record, usually an H2 | part of the always-on frame | the frame stream: `packet §id --part frame`, `read --frame`, and `frame.items` on the first page of `read §id` (outside its budget; `--no-frame` drops it) |
+| `about: [§id]` | notes only | the surface or behavior the note serves | `toc --dir out` group `about` (also for an H2 of the target H1, marked `via`); `read` footer `about`; `packet` prose, reason `about`, for the seed, its H1 and the surfaces it embeds |
+
+**The frame** is every `core: true` record's passage in file and line order (an H1 gives its lede).
+It is never part of another stream or of the requested claim's page budget. When the spec flags at
+least one core record, every `packet`, `toc` and `read` response carries `frame: {passages, bytes,
+cap, overCap}`, and its text form says how to read it; `packet` counts then include `frame`. The cap
+is 12,000 bytes (the sum of the passages' UTF-8 bytes). Over it, the frame is still delivered whole,
+and `check` and `packet` report a `frame-over-cap` warning.
+
+`check` errors (exit 2) when `embeds` or `about` is not an array of § ids, or `core` is not a
+boolean. It warns on `about` on a record that is not a note (`about-not-note`), a target with no
+record (`dangling-edge`), an `embeds` target that is not a surface (`embeds-not-surface`), and an
+`about` target that is a note or section (`about-wrong-kind`).
 
 ## Look: `map`, `where`, `impact --near`, `graph`
 

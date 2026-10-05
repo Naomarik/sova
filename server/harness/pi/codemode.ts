@@ -245,14 +245,42 @@ export function codemodeExtension(deps: CodemodeDeps = UNGATED): (pi: ExtensionA
       return { customType: CODEMODE_NOTE_TYPE, content, display: false, details: { v: 1, on: minorOn } };
     }
 
-    pi.on("session_start", async (_event, ctx) => {
-      running = false;
-      applyForm(ctx);
+    /**
+     * The Claude Code form is declared at all times, whatever pi restored: on a tree navigation pi takes the
+     * active tools from the branch's newest system message, which may predate the switch to Claude Code (and
+     * the mode extension leaves the tool alone while pinned). Re-added before that loadout reaches a request.
+     */
+    function keepStubDeclared(): void {
+      if (!stub) return;
+      try {
+        const active = pi.getActiveTools();
+        if (!active.includes(CODEMODE_TOOL)) pi.setActiveTools([...active, CODEMODE_TOOL]);
+      } catch {
+        // No loadout yet: session_start comes back here.
+      }
+    }
+
+    /** What the model was told, as the branch now in use says. */
+    function readTold(ctx: Ctx): void {
       try {
         told = stub ? toldOnBranch(ctx.sessionManager.getBranch() as never) : undefined;
       } catch {
         told = undefined;
       }
+    }
+
+    pi.on("session_start", async (_event, ctx) => {
+      running = false;
+      applyForm(ctx);
+      keepStubDeclared();
+      readTold(ctx);
+    });
+
+    // pi restores the branch's loadout before it emits this (agent-session navigateTree).
+    pi.on("session_tree", async (_event, ctx) => {
+      applyForm(ctx);
+      keepStubDeclared();
+      readTold(ctx);
     });
 
     // A model switch between runs takes its form at once, so the next run's prompt is built with it.
@@ -263,6 +291,7 @@ export function codemodeExtension(deps: CodemodeDeps = UNGATED): (pi: ExtensionA
     // A run a user's prompt starts: the note rides beside the prompt.
     pi.on("before_agent_start", async (event, ctx) => {
       if (applyForm(ctx)) patchRunOptions(event.systemPromptOptions as never);
+      keepStubDeclared();
       const note = takeNote();
       if (note) pi.sendMessage(note, { deliverAs: "nextTurn" });
     });
@@ -272,6 +301,7 @@ export function codemodeExtension(deps: CodemodeDeps = UNGATED): (pi: ExtensionA
       if (running) return;
       running = true;
       applyForm(ctx);
+      keepStubDeclared();
       const note = takeNote();
       if (note) pi.sendMessage(note);
     });

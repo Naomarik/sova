@@ -334,6 +334,25 @@ return JSON.stringify([on.stopReason, on.answers.q && on.answers.q.probability, 
   await disposeHeldChat(b.path, "test done");
 });
 
+test("a Claude Code chat keeps its stub declared after navigating back before the switch to Claude Code", async () => {
+  const { path } = sessionFile();
+  const chat = await acquireChat(path);
+  const s = stub(chat);
+  await turn(chat, s, "on pi");
+  assert.ok(!toolNames(s.seen.at(-1)).includes("codemode"), "pi's form, off: not declared");
+  const firstReply = lines(path).filter((e) => e.type === "message" && e.message.role === "assistant").at(-1)!.id as string;
+  (piSession(chat) as unknown as { agent: { state: { model: unknown } } }).agent.state.model = stubModel("claude-code-cli");
+  await turn(chat, s, "on claude code");
+  const claude = s.seen.at(-1)!.tools;
+  assert.ok(claude.some((t) => t.name === "codemode" && t.description === CODEMODE_STUB_DESCRIPTION));
+  // Back to before the switch: pi restores that branch's loadout, which has no codemode.
+  await (piSession(chat) as unknown as { navigateTree(id: string, o: { summarize: boolean }): Promise<unknown> }).navigateTree(firstReply, { summarize: false });
+  await turn(chat, s, "after navigating");
+  assert.ok(toolNames(s.seen.at(-1)).includes("codemode"), "the stub is declared again");
+  assert.deepEqual(s.seen.at(-1)!.tools, claude, "the same tool list the CLI had");
+  await disposeHeldChat(path, "test done");
+});
+
 test("with spec on, what the spec guard tells a script's write reaches the model on the codemode result", async () => {
   const { path } = sessionFile(["spec", "codemode"]);
   const chat = await acquireChat(path);

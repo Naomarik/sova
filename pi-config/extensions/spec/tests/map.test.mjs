@@ -1,0 +1,143 @@
+// map, graph and impact --near: computed views over the whole graph, bounded, stateless; the core's own parser.
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { fixture, cli, pages, write, CORE } from "./map-fixture.mjs";
+
+test("map: every area with its lede's first sentence, label counts, crossing edges, hubs and gaps; agreement absent, never 0", () => {
+  const root = fixture();
+  const { j } = cli(root, ["map"]);
+  assert.equal(j.status, "done");
+  assert.equal(j.counts.areas, 9);
+  assert.deepEqual(Object.keys(j.counts.namespaces), ["ed", "ot", "section"]);
+  assert.ok(!("agreedNotBuilt" in j.counts), "no count when the spec records no agreement");
+  assert.equal(j.notes[0].code, "agreed-not-recorded");
+  const ed = j.lines.find((l) => l.id === "§ed/seed");
+  assert.equal(ed.title, "Editor (`EditorPane`)");
+  assert.equal(ed.what, "The editor pane, where a draft is written.");
+  assert.equal(ed.claims, 3);
+  assert.deepEqual(ed.labels, { authority: { accepted: 2, migrated: 1 }, evidence: { unreviewed: 1, verified: 2 }, unlabelled: 0 });
+  assert.equal(ed.requiresOut, 1, "compose → §ot/base");
+  assert.equal(ed.requiresIn, 2, "§ot/uses and §ot/whole");
+  const hubs = j.lines.filter((l) => l.type === "hub");
+  assert.deepEqual(hubs[0], { type: "hub", path: "src/editor.ts", records: 2 });
+  assert.deepEqual(j.counts.gaps, { uninvestigated: 3, noCode: 5, noProse: 0, noInterfaceToken: 8 });
+  const text = cli(root, ["map"], { json: false }).r.stdout;
+  assert.match(text, /agreed-not-built: not available \(no agreed field yet\)/);
+  assert.match(text, /^ed \(1 area\(s\), 3 claim\(s\)\)$/m);
+  assert.match(text, /^  §ed\/seed — Editor \(`EditorPane`\)  3 claim\(s\) · accepted 2 · migrated 1 · unreviewed 1 · verified 2 · requires out 1 · in 2$/m);
+  assert.match(text, /^gaps: 3 behavior\(s\) with no requires key/m);
+});
+
+test("map NAMESPACE and map §area: one namespace; one area's claims, crossing edges and the tokens it defines", () => {
+  const root = fixture();
+  const ns = cli(root, ["map", "ot"]).j;
+  assert.ok(ns.lines.filter((l) => l.type === "area").every((l) => l.namespace === "ot"));
+  assert.equal(ns.counts.claims, 7);
+  assert.equal(cli(root, ["map", "zz"]).j.code, "unknown-namespace");
+  const a = cli(root, ["map", "§ed/seed"]).j;
+  assert.equal(a.area.id, "§ed/seed");
+  assert.deepEqual(a.lines.filter((l) => l.type === "claim").map((l) => l.id), ["§ed/seed", "§ed.seed/compose", "§ed.seed/save"], "H1 first, then declaration order");
+  const save = a.lines.find((l) => l.id === "§ed.seed/save");
+  assert.equal(save.requires, null, "no requires key reads as uninvestigated, not 0");
+  assert.deepEqual(a.lines.filter((l) => l.type === "out").map((l) => [l.from, l.to]), [["§ed.seed/compose", "§ot/base"]]);
+  assert.deepEqual(a.lines.filter((l) => l.type === "in").map((l) => [l.from, l.to]), [["§ot/uses", "§ed.seed/compose"], ["§ot/whole", "§ed/seed"]]);
+  const tokens = a.lines.filter((l) => l.type === "token");
+  assert.deepEqual(tokens.map((t) => t.token), ["Composer.send()", "EditorPane", "POST /api/send", "draftId"].sort());
+  assert.equal(tokens.find((t) => t.token === "draftId").usedElsewhere, 1);
+  const h2 = cli(root, ["map", "§ed.seed/compose"]).j;
+  assert.equal(h2.area.id, "§ed/seed");
+  assert.equal(h2.notes.find((n) => n.code === "area-of").message, "§ed.seed/compose is an H2: showing its area §ed/seed");
+  assert.equal(cli(root, ["map", "§no/such"]).j.code, "unknown-id");
+  assert.equal(cli(root, ["map", "Bad!"]).j.code, "usage");
+});
+
+test("map pages under a small budget with a stateless cursor, losing no line; flags may come first", () => {
+  const root = fixture();
+  const all = cli(root, ["map"]).j.lines;
+  const ps = pages(root, ["map"], 2000);
+  assert.ok(ps.length > 1);
+  assert.deepEqual(ps.flatMap((p) => p.lines), all);
+  assert.ok(ps.slice(0, -1).every((p) => p.exit === 1 && p.status === "more"));
+  const first = spawnSync(process.execPath, [CORE, "--root", root, "--json", "map", "ot"], { encoding: "utf8" });
+  assert.deepEqual(JSON.parse(first.stdout), cli(root, ["map", "ot"]).j);
+  const bad = cli(root, ["map", "--cursor", "AAAA"]).j;
+  assert.equal(bad.code, "token-malformed");
+  const help = cli(root, ["map", "--help"]).j;
+  assert.match(help.help, /^map \[namespace \| §ns\/name\]/);
+  assert.equal(cli(root, ["map"], { budget: 5 }).j.code, "usage");
+});
+
+test("graph --json: one paged payload of nodes and edges by kind; text prints counts only; never written", () => {
+  const root = fixture();
+  const ps = pages(root, ["graph"], 2048);
+  assert.ok(ps.length > 2);
+  const nodes = ps.flatMap((p) => p.nodes), edges = ps.flatMap((p) => p.edges), counts = ps[0].counts;
+  assert.ok(ps.every((p) => JSON.stringify(p.counts) === JSON.stringify(counts)), "counts on every page");
+  assert.equal(nodes.length, counts.nodes);
+  assert.equal(edges.length, counts.edges);
+  assert.deepEqual(nodes.map((n) => n.id), [...nodes.map((n) => n.id)].sort());
+  const compose = nodes.find((n) => n.id === "§ed.seed/compose");
+  assert.equal(compose.area, "§ed/seed");
+  assert.equal(compose.what, "`Composer.send()` posts `POST /api/send` with the `draftId`.");
+  assert.deepEqual(compose.labels, { authority: "accepted", evidence: "verified" });
+  assert.equal(compose.code, 2);
+  assert.equal(nodes.find((n) => n.id === "§ed.seed/save").requires, null);
+  const has = (kind, from, to) => edges.some((e) => e.kind === kind && e.from === from && e.to === to);
+  assert.ok(has("requires", "§ed.seed/compose", "§ot/base"));
+  assert.ok(has("member", "§section/bundle", "§ed.seed/save"));
+  assert.ok(has("contains", "§ed/seed", "§ed.seed/save"));
+  assert.ok(has("mentions", "§ot/planted", "§ed/seed"));
+  assert.ok(!has("mentions", "§ot/coder", "§ed/seed"), "a comment is not a mention");
+  assert.ok(has("code", "§ot/coder", "src/link.ts"));
+  assert.deepEqual(counts.byKind, { requires: 4, member: 1, contains: 2, mentions: 3, code: 8 });
+  const one = cli(root, ["graph"], { budget: 32768 }).j;
+  assert.deepEqual({ nodes: one.nodes, edges: one.edges }, { nodes, edges }, "the same payload whatever the page size");
+  const text = cli(root, ["graph"], { json: false }).r;
+  assert.equal(text.status, 0);
+  assert.match(text.stdout, /^graph: 11 nodes, 18 edges \(requires 4 · member 1 · contains 2 · mentions 3 · code 8\)$/m);
+  assert.ok(!text.stdout.includes("§"), "text is counts only");
+  write(root, ".sova/spec/claims/ot/base.md", "# §ot/base — Base\n\nChanged text.\n");
+  assert.equal(cli(root, ["graph", "--cursor", ps[0].next], { budget: 2048 }).j.code, "token-mismatch-or-stale");
+});
+
+test("impact --near: one reverse hop over the family, the next hop named, code neighbours, mentions, a narrowed frontier", () => {
+  const root = fixture();
+  const { j } = cli(root, ["impact", "§ed/seed", "--near"]);
+  assert.equal(j.near, true);
+  assert.deepEqual(j.family, ["§ed/seed", "§ed.seed/compose", "§ed.seed/save"]);
+  const group = (g) => j.lines.filter((l) => l.group === g);
+  assert.deepEqual(group("consumer").map((l) => [l.id, l.requires]), [["§ot/uses", ["§ed.seed/compose"]], ["§ot/whole", ["§ed/seed"]]]);
+  const uses = group("consumer")[0];
+  assert.equal(uses.why, "It sends through the composer (§ed.seed/compose).");
+  assert.equal(uses.whySource, "prose");
+  assert.equal(group("consumer")[1].why, "not mentioned in this claim's text");
+  assert.deepEqual(group("container").map((l) => [l.id, l.members]), [["§section/bundle", ["§ed.seed/save"]]]);
+  assert.deepEqual(group("next").map((l) => [l.id, l.requires]), [["§ot/second", ["§ot/uses"]]]);
+  assert.deepEqual(group("frontier").map((l) => [l.id, l.reason]), [["§ed.seed/save", "in-family"], ["§ot/planted", "mentions-family"]], "the planted consumer stays");
+  assert.ok(!j.lines.some((l) => l.id === "§ot/unrelated"));
+  assert.equal(j.counts.uninvestigatedElsewhere, 1, "the rest are counted, never dropped");
+  assert.deepEqual(group("mentioned").map((l) => l.id), ["§ot/planted", "§ot/uses"]);
+  assert.deepEqual(group("code").map((l) => [l.path, l.ids]), [["src/shared.ts", ["§ot/coder"]]]);
+  assert.equal(j.exit, 1, "a frontier is an unknown");
+  const text = cli(root, ["impact", "§ed/seed", "--near"], { json: false }).r.stdout;
+  assert.match(text, /^1 more behavior\(s\) have no requires key and don't name the family: impact '§ed\/seed' lists them$/m);
+  assert.match(text, /^frontier: no requires key, in or mentioning the family \(2\)$/m);
+});
+
+test("impact --near on an H2: itself, plus the claims requiring its parent; paging; plain impact keeps its own output", () => {
+  const root = fixture();
+  const { j } = cli(root, ["impact", "§ed.seed/compose", "--near"]);
+  assert.deepEqual(j.family, ["§ed.seed/compose"]);
+  assert.equal(j.parent, "§ed/seed");
+  assert.deepEqual(j.lines.filter((l) => l.group === "consumer").map((l) => [l.id, l.via ?? null]), [["§ot/uses", null], ["§ot/whole", "parent"]]);
+  assert.deepEqual(j.lines.filter((l) => l.group === "frontier").map((l) => l.id), [], "planted names the H1, not this H2");
+  const all = cli(root, ["impact", "§ed/seed", "--near"]).j.lines;
+  assert.deepEqual(pages(root, ["impact", "§ed/seed", "--near"], 1500).flatMap((p) => p.lines), all);
+  const plain = cli(root, ["impact", "§ed/seed"]).j;
+  assert.equal(plain.near, undefined);
+  assert.deepEqual(plain.consumers.map((c) => c.id), ["§ot/whole"]);
+  assert.ok(plain.frontier.length === 3, "plain impact still lists every uninvestigated behavior");
+  assert.equal(cli(root, ["impact", "§no/such", "--near"]).j.code, "unknown-id");
+  assert.equal(cli(root, ["impact", "--near"]).j.code, "usage");
+});

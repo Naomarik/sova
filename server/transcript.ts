@@ -1,4 +1,3 @@
-import { readFile } from "node:fs/promises";
 import {
   EAGER_TOOLS,
   OVERSEER_DIALOG_ANSWER_ENTRY,
@@ -12,6 +11,8 @@ import {
   type ToolRowInfo,
   type TranscriptItem,
 } from "../shared/protocol";
+import type { HEntry } from "../shared/harness";
+import { noteUnknown, rawOf, unknownTypeOf } from "./harness/pi/reader";
 import { PROFILE_ENTRY, SESSION_SENT_ENTRY } from "../shared/profiles";
 import { profileField, profileOnBranch } from "./session-profile";
 import {
@@ -48,50 +49,15 @@ import { alignResultOf } from "../pi-config/extensions/mode/align.ts";
 import { argsSummary, contentText as cardText, isObj, SPAWN_TOOLS, spawnName } from "../src/lib/message";
 import { summaryStats } from "../src/lib/tool-diff-stats";
 
-// We parse JSONL ourselves instead of using SessionManager.open(): open() is not
-// read-only (it appends "\n" to a trailing partial line and rewrites the file when
-// migrating old versions), and these files may be owned by a running TUI.
+// The parse, the branch rule and the context rule live in the pi adapter's reader (§app.harness/reader);
+// they are re-exported here until the last reader moves onto it (M2-Z). Rows are still built from raw
+// entries: `rowsOf` takes neutral history, so readers that move need not wait for the row builder.
+export { activeBranch, parseLines, readActiveBranch } from "./harness/pi/reader";
+export { contextForBranch, messageContextTokens, type BranchContext } from "./harness/pi/usage";
 
 export type Entry = Record<string, any>;
 
 const RESULT_TEXT_MAX = 2000;
-
-/** Parse JSONL text into objects, skipping blank/malformed lines. */
-export function parseLines(text: string): Entry[] {
-  const out: Entry[] = [];
-  for (const line of text.split("\n")) {
-    if (!line.trim()) continue;
-    try {
-      const v = JSON.parse(line);
-      if (v && typeof v === "object") out.push(v);
-    } catch {
-      // malformed line: skip
-    }
-  }
-  return out;
-}
-
-/**
- * Active branch = walk parentId from the leaf (last entry in file order, same rule
- * as SessionManager._buildIndex) back to the root. Returned root-first.
- * Legacy v1 files without ids are linear: return them as-is.
- */
-export function activeBranch(entries: Entry[]): Entry[] {
-  const body = entries.filter((e) => e.type !== "session");
-  if (body.length === 0) return [];
-  if (body.some((e) => typeof e.id !== "string")) return body;
-  const byId = new Map<string, Entry>();
-  for (const e of body) byId.set(e.id, e);
-  const path: Entry[] = [];
-  const seen = new Set<string>();
-  let cur: Entry | undefined = body[body.length - 1];
-  while (cur && !seen.has(cur.id)) {
-    seen.add(cur.id);
-    path.push(cur);
-    cur = cur.parentId ? byId.get(cur.parentId) : undefined;
-  }
-  return path.reverse();
-}
 
 /** Text blocks joined; image blocks become "[image]" unless the caller renders them as images. */
 function contentText(content: unknown, imagePlaceholder = true): string {
@@ -447,6 +413,7 @@ function normalizeMessage(entry: Entry, id: string, state?: { model?: string }):
       // conversation either, so neither do we.
       return [];
     default:
+      noteUnknown(unknownTypeOf(entry), typeof entry.id === "string" ? entry.id : null);
       return [item(id, "unknown", entry)];
   }
 }
@@ -795,6 +762,7 @@ function entryRows(entry: Entry, fallbackId: string, state?: { model?: string })
       }
       return [customRow(id, entry, entry.customType, entry.content)];
     default:
+      noteUnknown(unknownTypeOf(entry), typeof entry.id === "string" ? entry.id : null);
       return [item(id, "unknown", entry)];
   }
 }
@@ -819,54 +787,14 @@ export function normalizeEntries(entries: Entry[]): TranscriptItem[] {
   return out;
 }
 
-/** Read a session file and return its active-branch entries (root-first). */
-export async function readActiveBranch(path: string): Promise<Entry[]> {
-  return activeBranch(parseLines(await readFile(path, "utf8")));
+/** The rows of a run of neutral history (a branch, or any slice of one), exactly as normalizeEntries makes
+    them from the same entries' raw lines. The readers that move onto the neutral reader call this; the
+    row builder moves under it later (M2-R2). */
+export function rowsOf(history: readonly HEntry[]): TranscriptItem[] {
+  return normalizeEntries(history.map(rawOf));
 }
 
-/** Context fill before the window lookup: tokens + the model ("provider/id") that produced them. */
-export interface BranchContext {
-  tokens: number;
-  model: string | null;
-}
-
-/**
- * Tokens in context as one assistant message reports them (input + cacheRead + cacheWrite), or
- * null when it says nothing about the context: no usage, an error or aborted reply, or a usage of
- * zero (a request that failed before the model read anything). Mirrored by src/lib/context.ts
- * messageContextTokens.
- */
-export function messageContextTokens(m: unknown): number | null {
-  if (!m || typeof m !== "object") return null;
-  const msg = m as Record<string, any>;
-  if (msg.role !== "assistant" || msg.stopReason === "error" || msg.stopReason === "aborted") return null;
-  const u = msg.usage;
-  if (!u || typeof u !== "object") return null;
-  const tokens = (Number(u.input) || 0) + (Number(u.cacheRead) || 0) + (Number(u.cacheWrite) || 0);
-  return tokens > 0 ? tokens : null;
-}
-
-/**
- * Context fill = messageContextTokens of the LAST assistant message on the branch that reports
- * one; an error reply or a zero usage is passed over, so it never shows as an empty context. A
- * compaction after it makes that number stale, so we return null until the next reply.
- * The model is the assistant message's own provider/model, else the last model_change before it,
- * else the session's first model_change.
- */
-export function contextForBranch(branch: Entry[]): BranchContext | null {
-  for (let i = branch.length - 1; i >= 0; i--) {
-    const e = branch[i]!;
-    if (e.type === "compaction" || (e.type === "message" && e.message?.role === "compactionSummary")) return null;
-    const m = e.type === "message" ? e.message : undefined;
-    const tokens = messageContextTokens(m);
-    if (tokens === null) continue;
-    let model = m.provider && m.model ? `${m.provider}/${m.model}` : null;
-    if (!model) {
-      const change = branch.slice(0, i).reverse().find((x) => x.type === "model_change")
-        ?? branch.find((x) => x.type === "model_change");
-      if (change) model = `${change.provider}/${change.modelId}`;
-    }
-    return { tokens, model };
-  }
-  return null;
+/** One appended entry's rows, as normalizeEntry makes them (`state` carries the running model). */
+export function rowsOfEntry(h: HEntry, fallbackId = "?", state?: { model?: string }): TranscriptItem[] {
+  return normalizeEntry(rawOf(h), fallbackId, state);
 }

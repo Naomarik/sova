@@ -1,0 +1,624 @@
+[
+  {
+    "call": {
+      "fn": "applyEvent",
+      "args": [
+        {
+          "type": "agent_start"
+        }
+      ]
+    },
+    "state": {
+      "entries": [],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": [
+      "clearTurnError",
+      "announceWorking"
+    ]
+  },
+  {
+    "call": {
+      "fn": "applyEvent",
+      "args": [
+        {
+          "type": "tool_execution_start",
+          "toolCallId": "n1",
+          "toolName": "sova_navigate",
+          "args": {
+            "to": "usage"
+          }
+        }
+      ]
+    },
+    "state": {
+      "entries": [],
+      "tools": {
+        "n1": {
+          "name": "sova_navigate",
+          "args": {
+            "to": "usage"
+          },
+          "status": "running",
+          "output": "",
+          "images": []
+        }
+      },
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "call": {
+      "fn": "applyEvent",
+      "args": [
+        {
+          "type": "tool_execution_end",
+          "toolCallId": "n1",
+          "toolName": "sova_navigate",
+          "args": {
+            "to": "usage"
+          },
+          "result": {
+            "content": [
+              {
+                "type": "text",
+                "text": "Go"
+              }
+            ],
+            "details": {
+              "href": "#/usage",
+              "label": "Usage"
+            }
+          },
+          "isError": false
+        }
+      ]
+    },
+    "state": {
+      "entries": [],
+      "tools": {
+        "n1": {
+          "name": "sova_navigate",
+          "args": {
+            "to": "usage"
+          },
+          "status": "done",
+          "output": "Go",
+          "images": [],
+          "details": {
+            "href": "#/usage",
+            "label": "Usage"
+          }
+        }
+      },
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": [],
+    "overseer": [
+      {
+        "navigate": "#/usage"
+      }
+    ]
+  },
+  {
+    "call": {
+      "fn": "applyEvent",
+      "args": [
+        {
+          "type": "tool_execution_end",
+          "toolCallId": "n2",
+          "toolName": "sova_navigate",
+          "args": {
+            "to": "usage"
+          },
+          "result": {
+            "content": [],
+            "details": {
+              "href": "settings:models",
+              "label": "Models"
+            }
+          },
+          "isError": false
+        }
+      ]
+    },
+    "state": {
+      "entries": [],
+      "tools": {
+        "n1": {
+          "name": "sova_navigate",
+          "args": {
+            "to": "usage"
+          },
+          "status": "done",
+          "output": "Go",
+          "images": [],
+          "details": {
+            "href": "#/usage",
+            "label": "Usage"
+          }
+        },
+        "n2": {
+          "name": "sova_navigate",
+          "args": {
+            "to": "usage"
+          },
+          "status": "done",
+          "output": "",
+          "images": [],
+          "details": {
+            "href": "settings:models",
+            "label": "Models"
+          }
+        }
+      },
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": [],
+    "overseer": [
+      {
+        "navigate": "settings:models"
+      }
+    ]
+  },
+  {
+    "call": {
+      "fn": "applyEvent",
+      "args": [
+        {
+          "type": "tool_execution_end",
+          "toolCallId": "n3",
+          "toolName": "sova_navigate",
+          "args": {
+            "to": "usage"
+          },
+          "result": {
+            "content": [
+              {
+                "type": "text",
+                "text": "Go"
+              }
+            ],
+            "details": {
+              "href": "#/usage",
+              "label": "Usage"
+            }
+          },
+          "isError": true
+        }
+      ]
+    },
+    "state": {
+      "entries": [],
+      "tools": {
+        "n1": {
+          "name": "sova_navigate",
+          "args": {
+            "to": "usage"
+          },
+          "status": "done",
+          "output": "Go",
+          "images": [],
+          "details": {
+            "href": "#/usage",
+            "label": "Usage"
+          }
+        },
+        "n2": {
+          "name": "sova_navigate",
+          "args": {
+            "to": "usage"
+          },
+          "status": "done",
+          "output": "",
+          "images": [],
+          "details": {
+            "href": "settings:models",
+            "label": "Models"
+          }
+        },
+        "n3": {
+          "name": "sova_navigate",
+          "args": {
+            "to": "usage"
+          },
+          "status": "error",
+          "output": "Go",
+          "images": [],
+          "details": {
+            "href": "#/usage",
+            "label": "Usage"
+          }
+        }
+      },
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "call": {
+      "fn": "applyEvent",
+      "args": [
+        {
+          "type": "tool_execution_end",
+          "toolCallId": "n4",
+          "toolName": "sova_other",
+          "args": {
+            "to": "usage"
+          },
+          "result": {
+            "content": [
+              {
+                "type": "text",
+                "text": "Go"
+              }
+            ],
+            "details": {
+              "href": "#/usage",
+              "label": "Usage"
+            }
+          },
+          "isError": false
+        }
+      ]
+    },
+    "state": {
+      "entries": [],
+      "tools": {
+        "n1": {
+          "name": "sova_navigate",
+          "args": {
+            "to": "usage"
+          },
+          "status": "done",
+          "output": "Go",
+          "images": [],
+          "details": {
+            "href": "#/usage",
+            "label": "Usage"
+          }
+        },
+        "n2": {
+          "name": "sova_navigate",
+          "args": {
+            "to": "usage"
+          },
+          "status": "done",
+          "output": "",
+          "images": [],
+          "details": {
+            "href": "settings:models",
+            "label": "Models"
+          }
+        },
+        "n3": {
+          "name": "sova_navigate",
+          "args": {
+            "to": "usage"
+          },
+          "status": "error",
+          "output": "Go",
+          "images": [],
+          "details": {
+            "href": "#/usage",
+            "label": "Usage"
+          }
+        },
+        "n4": {
+          "name": "sova_other",
+          "args": {
+            "to": "usage"
+          },
+          "status": "done",
+          "output": "Go",
+          "images": [],
+          "details": {
+            "href": "#/usage",
+            "label": "Usage"
+          }
+        }
+      },
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "call": {
+      "fn": "applyEvent",
+      "args": [
+        {
+          "type": "tool_execution_end",
+          "toolCallId": "n5",
+          "toolName": "sova_navigate",
+          "args": {
+            "to": "usage"
+          },
+          "result": {
+            "content": [],
+            "details": {
+              "href": "https://example.com"
+            }
+          },
+          "isError": false
+        }
+      ]
+    },
+    "state": {
+      "entries": [],
+      "tools": {
+        "n1": {
+          "name": "sova_navigate",
+          "args": {
+            "to": "usage"
+          },
+          "status": "done",
+          "output": "Go",
+          "images": [],
+          "details": {
+            "href": "#/usage",
+            "label": "Usage"
+          }
+        },
+        "n2": {
+          "name": "sova_navigate",
+          "args": {
+            "to": "usage"
+          },
+          "status": "done",
+          "output": "",
+          "images": [],
+          "details": {
+            "href": "settings:models",
+            "label": "Models"
+          }
+        },
+        "n3": {
+          "name": "sova_navigate",
+          "args": {
+            "to": "usage"
+          },
+          "status": "error",
+          "output": "Go",
+          "images": [],
+          "details": {
+            "href": "#/usage",
+            "label": "Usage"
+          }
+        },
+        "n4": {
+          "name": "sova_other",
+          "args": {
+            "to": "usage"
+          },
+          "status": "done",
+          "output": "Go",
+          "images": [],
+          "details": {
+            "href": "#/usage",
+            "label": "Usage"
+          }
+        },
+        "n5": {
+          "name": "sova_navigate",
+          "args": {
+            "to": "usage"
+          },
+          "status": "done",
+          "output": "",
+          "images": [],
+          "details": {
+            "href": "https://example.com"
+          }
+        }
+      },
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "call": {
+      "fn": "applyEvent",
+      "args": [
+        {
+          "type": "tool_execution_end",
+          "toolName": "sova_navigate",
+          "args": {
+            "to": "usage"
+          },
+          "result": {
+            "content": [
+              {
+                "type": "text",
+                "text": "Go"
+              }
+            ],
+            "details": {
+              "href": "#/usage",
+              "label": "Usage"
+            }
+          },
+          "isError": false
+        }
+      ]
+    },
+    "state": {
+      "entries": [],
+      "tools": {
+        "n1": {
+          "name": "sova_navigate",
+          "args": {
+            "to": "usage"
+          },
+          "status": "done",
+          "output": "Go",
+          "images": [],
+          "details": {
+            "href": "#/usage",
+            "label": "Usage"
+          }
+        },
+        "n2": {
+          "name": "sova_navigate",
+          "args": {
+            "to": "usage"
+          },
+          "status": "done",
+          "output": "",
+          "images": [],
+          "details": {
+            "href": "settings:models",
+            "label": "Models"
+          }
+        },
+        "n3": {
+          "name": "sova_navigate",
+          "args": {
+            "to": "usage"
+          },
+          "status": "error",
+          "output": "Go",
+          "images": [],
+          "details": {
+            "href": "#/usage",
+            "label": "Usage"
+          }
+        },
+        "n4": {
+          "name": "sova_other",
+          "args": {
+            "to": "usage"
+          },
+          "status": "done",
+          "output": "Go",
+          "images": [],
+          "details": {
+            "href": "#/usage",
+            "label": "Usage"
+          }
+        },
+        "n5": {
+          "name": "sova_navigate",
+          "args": {
+            "to": "usage"
+          },
+          "status": "done",
+          "output": "",
+          "images": [],
+          "details": {
+            "href": "https://example.com"
+          }
+        }
+      },
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": [],
+    "overseer": [
+      {
+        "navigate": "#/usage"
+      }
+    ]
+  },
+  {
+    "call": {
+      "fn": "applyEvent",
+      "args": [
+        {
+          "type": "agent_settled"
+        }
+      ]
+    },
+    "state": {
+      "entries": [],
+      "tools": {
+        "n1": {
+          "name": "sova_navigate",
+          "args": {
+            "to": "usage"
+          },
+          "status": "done",
+          "output": "Go",
+          "images": [],
+          "details": {
+            "href": "#/usage",
+            "label": "Usage"
+          }
+        },
+        "n2": {
+          "name": "sova_navigate",
+          "args": {
+            "to": "usage"
+          },
+          "status": "done",
+          "output": "",
+          "images": [],
+          "details": {
+            "href": "settings:models",
+            "label": "Models"
+          }
+        },
+        "n3": {
+          "name": "sova_navigate",
+          "args": {
+            "to": "usage"
+          },
+          "status": "error",
+          "output": "Go",
+          "images": [],
+          "details": {
+            "href": "#/usage",
+            "label": "Usage"
+          }
+        },
+        "n4": {
+          "name": "sova_other",
+          "args": {
+            "to": "usage"
+          },
+          "status": "done",
+          "output": "Go",
+          "images": [],
+          "details": {
+            "href": "#/usage",
+            "label": "Usage"
+          }
+        },
+        "n5": {
+          "name": "sova_navigate",
+          "args": {
+            "to": "usage"
+          },
+          "status": "done",
+          "output": "",
+          "images": [],
+          "details": {
+            "href": "https://example.com"
+          }
+        }
+      },
+      "running": false,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": [
+      "settled"
+    ]
+  }
+]

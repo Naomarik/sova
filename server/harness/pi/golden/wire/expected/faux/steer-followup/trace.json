@@ -1,0 +1,2347 @@
+[
+  {
+    "frame": 0,
+    "state": {
+      "entries": [],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": [
+      "clearTurnError",
+      "announceWorking"
+    ]
+  },
+  {
+    "frame": 1,
+    "state": {
+      "entries": [],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 2,
+    "state": {
+      "entries": [],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 3,
+    "state": {
+      "entries": [],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 4,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "Read notes.txt",
+          "state": "delivered",
+          "started": true,
+          "images": []
+        }
+      ],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 5,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "Read notes.txt",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000004"
+        }
+      ],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 6,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "Read notes.txt",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000004"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [],
+          "done": false,
+          "model": "faux/faux-1"
+        }
+      ],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 7,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "Read notes.txt",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000004"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "toolCall",
+              "id": "call_read_2",
+              "name": "read",
+              "argsText": ""
+            }
+          ],
+          "done": false,
+          "model": "faux/faux-1"
+        }
+      ],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 8,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "Read notes.txt",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000004"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "toolCall",
+              "id": "call_read_2",
+              "name": "read",
+              "argsText": "{\"path\":\"notes.t"
+            }
+          ],
+          "done": false,
+          "model": "faux/faux-1"
+        }
+      ],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 9,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "Read notes.txt",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000004"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "toolCall",
+              "id": "call_read_2",
+              "name": "read",
+              "argsText": "{\"path\":\"notes.txt\"}"
+            }
+          ],
+          "done": false,
+          "model": "faux/faux-1"
+        }
+      ],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 10,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "Read notes.txt",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000004"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "toolCall",
+              "id": "call_read_2",
+              "name": "read",
+              "argsText": "{\"path\":\"notes.txt\"}",
+              "args": {
+                "path": "notes.txt"
+              }
+            }
+          ],
+          "done": false,
+          "model": "faux/faux-1"
+        }
+      ],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 11,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "Read notes.txt",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000004"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "toolCall",
+              "id": "call_read_2",
+              "name": "read",
+              "argsText": "",
+              "args": {
+                "path": "notes.txt"
+              }
+            }
+          ],
+          "done": true,
+          "model": "faux/faux-1",
+          "entryId": "00000005"
+        }
+      ],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": [
+      {
+        "context": 2748
+      }
+    ]
+  },
+  {
+    "frame": 12,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "Read notes.txt",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000004"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "toolCall",
+              "id": "call_read_2",
+              "name": "read",
+              "argsText": "",
+              "args": {
+                "path": "notes.txt"
+              }
+            }
+          ],
+          "done": true,
+          "model": "faux/faux-1",
+          "entryId": "00000005"
+        }
+      ],
+      "tools": {
+        "call_read_2": {
+          "name": "read",
+          "args": {
+            "path": "notes.txt"
+          },
+          "status": "running",
+          "output": "",
+          "images": []
+        }
+      },
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 13,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "Read notes.txt",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000004"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "toolCall",
+              "id": "call_read_2",
+              "name": "read",
+              "argsText": "",
+              "args": {
+                "path": "notes.txt"
+              }
+            }
+          ],
+          "done": true,
+          "model": "faux/faux-1",
+          "entryId": "00000005"
+        }
+      ],
+      "tools": {
+        "call_read_2": {
+          "name": "read",
+          "args": {
+            "path": "notes.txt"
+          },
+          "status": "running",
+          "output": "",
+          "images": []
+        }
+      },
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 14,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "Read notes.txt",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000004"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "toolCall",
+              "id": "call_read_2",
+              "name": "read",
+              "argsText": "",
+              "args": {
+                "path": "notes.txt"
+              }
+            }
+          ],
+          "done": true,
+          "model": "faux/faux-1",
+          "entryId": "00000005"
+        }
+      ],
+      "tools": {
+        "call_read_2": {
+          "name": "read",
+          "args": {
+            "path": "notes.txt"
+          },
+          "status": "running",
+          "output": "",
+          "images": []
+        }
+      },
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 15,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "Read notes.txt",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000004"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "toolCall",
+              "id": "call_read_2",
+              "name": "read",
+              "argsText": "",
+              "args": {
+                "path": "notes.txt"
+              }
+            }
+          ],
+          "done": true,
+          "model": "faux/faux-1",
+          "entryId": "00000005"
+        }
+      ],
+      "tools": {
+        "call_read_2": {
+          "name": "read",
+          "args": {
+            "path": "notes.txt"
+          },
+          "status": "done",
+          "output": "line one\nline two\n",
+          "images": []
+        }
+      },
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 16,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "Read notes.txt",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000004"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "toolCall",
+              "id": "call_read_2",
+              "name": "read",
+              "argsText": "",
+              "args": {
+                "path": "notes.txt"
+              }
+            }
+          ],
+          "done": true,
+          "model": "faux/faux-1",
+          "entryId": "00000005"
+        }
+      ],
+      "tools": {
+        "call_read_2": {
+          "name": "read",
+          "args": {
+            "path": "notes.txt"
+          },
+          "status": "done",
+          "output": "line one\nline two\n",
+          "images": []
+        }
+      },
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 17,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "Read notes.txt",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000004"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "toolCall",
+              "id": "call_read_2",
+              "name": "read",
+              "argsText": "",
+              "args": {
+                "path": "notes.txt"
+              }
+            }
+          ],
+          "done": true,
+          "model": "faux/faux-1",
+          "entryId": "00000005"
+        }
+      ],
+      "tools": {
+        "call_read_2": {
+          "name": "read",
+          "args": {
+            "path": "notes.txt"
+          },
+          "status": "done",
+          "output": "line one\nline two\n",
+          "images": []
+        }
+      },
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 18,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "Read notes.txt",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000004"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "toolCall",
+              "id": "call_read_2",
+              "name": "read",
+              "argsText": "",
+              "args": {
+                "path": "notes.txt"
+              }
+            }
+          ],
+          "done": true,
+          "model": "faux/faux-1",
+          "entryId": "00000005"
+        }
+      ],
+      "tools": {
+        "call_read_2": {
+          "name": "read",
+          "args": {
+            "path": "notes.txt"
+          },
+          "status": "done",
+          "output": "line one\nline two\n",
+          "images": []
+        }
+      },
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 19,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "Read notes.txt",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000004"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "toolCall",
+              "id": "call_read_2",
+              "name": "read",
+              "argsText": "",
+              "args": {
+                "path": "notes.txt"
+              }
+            }
+          ],
+          "done": true,
+          "model": "faux/faux-1",
+          "entryId": "00000005"
+        }
+      ],
+      "tools": {
+        "call_read_2": {
+          "name": "read",
+          "args": {
+            "path": "notes.txt"
+          },
+          "status": "done",
+          "output": "line one\nline two\n",
+          "images": []
+        }
+      },
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 20,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "Read notes.txt",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000004"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "toolCall",
+              "id": "call_read_2",
+              "name": "read",
+              "argsText": "",
+              "args": {
+                "path": "notes.txt"
+              }
+            }
+          ],
+          "done": true,
+          "model": "faux/faux-1",
+          "entryId": "00000005"
+        }
+      ],
+      "tools": {
+        "call_read_2": {
+          "name": "read",
+          "args": {
+            "path": "notes.txt"
+          },
+          "status": "done",
+          "output": "line one\nline two\n",
+          "images": []
+        }
+      },
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 21,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "Read notes.txt",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000004"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "toolCall",
+              "id": "call_read_2",
+              "name": "read",
+              "argsText": "",
+              "args": {
+                "path": "notes.txt"
+              }
+            }
+          ],
+          "done": true,
+          "model": "faux/faux-1",
+          "entryId": "00000005"
+        },
+        {
+          "kind": "user",
+          "text": "and also check the second line",
+          "state": "delivered",
+          "started": true,
+          "images": []
+        }
+      ],
+      "tools": {
+        "call_read_2": {
+          "name": "read",
+          "args": {
+            "path": "notes.txt"
+          },
+          "status": "done",
+          "output": "line one\nline two\n",
+          "images": []
+        }
+      },
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 22,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "Read notes.txt",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000004"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "toolCall",
+              "id": "call_read_2",
+              "name": "read",
+              "argsText": "",
+              "args": {
+                "path": "notes.txt"
+              }
+            }
+          ],
+          "done": true,
+          "model": "faux/faux-1",
+          "entryId": "00000005"
+        },
+        {
+          "kind": "user",
+          "text": "and also check the second line",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000007"
+        }
+      ],
+      "tools": {
+        "call_read_2": {
+          "name": "read",
+          "args": {
+            "path": "notes.txt"
+          },
+          "status": "done",
+          "output": "line one\nline two\n",
+          "images": []
+        }
+      },
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 23,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "Read notes.txt",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000004"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "toolCall",
+              "id": "call_read_2",
+              "name": "read",
+              "argsText": "",
+              "args": {
+                "path": "notes.txt"
+              }
+            }
+          ],
+          "done": true,
+          "model": "faux/faux-1",
+          "entryId": "00000005"
+        },
+        {
+          "kind": "user",
+          "text": "and also check the second line",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000007"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [],
+          "done": false,
+          "model": "faux/faux-1"
+        }
+      ],
+      "tools": {
+        "call_read_2": {
+          "name": "read",
+          "args": {
+            "path": "notes.txt"
+          },
+          "status": "done",
+          "output": "line one\nline two\n",
+          "images": []
+        }
+      },
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 24,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "Read notes.txt",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000004"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "toolCall",
+              "id": "call_read_2",
+              "name": "read",
+              "argsText": "",
+              "args": {
+                "path": "notes.txt"
+              }
+            }
+          ],
+          "done": true,
+          "model": "faux/faux-1",
+          "entryId": "00000005"
+        },
+        {
+          "kind": "user",
+          "text": "and also check the second line",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000007"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": ""
+            }
+          ],
+          "done": false,
+          "model": "faux/faux-1"
+        }
+      ],
+      "tools": {
+        "call_read_2": {
+          "name": "read",
+          "args": {
+            "path": "notes.txt"
+          },
+          "status": "done",
+          "output": "line one\nline two\n",
+          "images": []
+        }
+      },
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 25,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "Read notes.txt",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000004"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "toolCall",
+              "id": "call_read_2",
+              "name": "read",
+              "argsText": "",
+              "args": {
+                "path": "notes.txt"
+              }
+            }
+          ],
+          "done": true,
+          "model": "faux/faux-1",
+          "entryId": "00000005"
+        },
+        {
+          "kind": "user",
+          "text": "and also check the second line",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000007"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "The second line "
+            }
+          ],
+          "done": false,
+          "model": "faux/faux-1"
+        }
+      ],
+      "tools": {
+        "call_read_2": {
+          "name": "read",
+          "args": {
+            "path": "notes.txt"
+          },
+          "status": "done",
+          "output": "line one\nline two\n",
+          "images": []
+        }
+      },
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 26,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "Read notes.txt",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000004"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "toolCall",
+              "id": "call_read_2",
+              "name": "read",
+              "argsText": "",
+              "args": {
+                "path": "notes.txt"
+              }
+            }
+          ],
+          "done": true,
+          "model": "faux/faux-1",
+          "entryId": "00000005"
+        },
+        {
+          "kind": "user",
+          "text": "and also check the second line",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000007"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "The second line says line two."
+            }
+          ],
+          "done": false,
+          "model": "faux/faux-1"
+        }
+      ],
+      "tools": {
+        "call_read_2": {
+          "name": "read",
+          "args": {
+            "path": "notes.txt"
+          },
+          "status": "done",
+          "output": "line one\nline two\n",
+          "images": []
+        }
+      },
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 27,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "Read notes.txt",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000004"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "toolCall",
+              "id": "call_read_2",
+              "name": "read",
+              "argsText": "",
+              "args": {
+                "path": "notes.txt"
+              }
+            }
+          ],
+          "done": true,
+          "model": "faux/faux-1",
+          "entryId": "00000005"
+        },
+        {
+          "kind": "user",
+          "text": "and also check the second line",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000007"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "The second line says line two."
+            }
+          ],
+          "done": false,
+          "model": "faux/faux-1"
+        }
+      ],
+      "tools": {
+        "call_read_2": {
+          "name": "read",
+          "args": {
+            "path": "notes.txt"
+          },
+          "status": "done",
+          "output": "line one\nline two\n",
+          "images": []
+        }
+      },
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 28,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "Read notes.txt",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000004"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "toolCall",
+              "id": "call_read_2",
+              "name": "read",
+              "argsText": "",
+              "args": {
+                "path": "notes.txt"
+              }
+            }
+          ],
+          "done": true,
+          "model": "faux/faux-1",
+          "entryId": "00000005"
+        },
+        {
+          "kind": "user",
+          "text": "and also check the second line",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000007"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "The second line says line two."
+            }
+          ],
+          "done": true,
+          "model": "faux/faux-1",
+          "entryId": "00000008"
+        }
+      ],
+      "tools": {
+        "call_read_2": {
+          "name": "read",
+          "args": {
+            "path": "notes.txt"
+          },
+          "status": "done",
+          "output": "line one\nline two\n",
+          "images": []
+        }
+      },
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": [
+      {
+        "context": 1430
+      }
+    ]
+  },
+  {
+    "frame": 29,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "Read notes.txt",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000004"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "toolCall",
+              "id": "call_read_2",
+              "name": "read",
+              "argsText": "",
+              "args": {
+                "path": "notes.txt"
+              }
+            }
+          ],
+          "done": true,
+          "model": "faux/faux-1",
+          "entryId": "00000005"
+        },
+        {
+          "kind": "user",
+          "text": "and also check the second line",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000007"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "The second line says line two."
+            }
+          ],
+          "done": true,
+          "model": "faux/faux-1",
+          "entryId": "00000008"
+        }
+      ],
+      "tools": {
+        "call_read_2": {
+          "name": "read",
+          "args": {
+            "path": "notes.txt"
+          },
+          "status": "done",
+          "output": "line one\nline two\n",
+          "images": []
+        }
+      },
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 30,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "Read notes.txt",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000004"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "toolCall",
+              "id": "call_read_2",
+              "name": "read",
+              "argsText": "",
+              "args": {
+                "path": "notes.txt"
+              }
+            }
+          ],
+          "done": true,
+          "model": "faux/faux-1",
+          "entryId": "00000005"
+        },
+        {
+          "kind": "user",
+          "text": "and also check the second line",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000007"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "The second line says line two."
+            }
+          ],
+          "done": true,
+          "model": "faux/faux-1",
+          "entryId": "00000008"
+        }
+      ],
+      "tools": {
+        "call_read_2": {
+          "name": "read",
+          "args": {
+            "path": "notes.txt"
+          },
+          "status": "done",
+          "output": "line one\nline two\n",
+          "images": []
+        }
+      },
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 31,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "Read notes.txt",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000004"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "toolCall",
+              "id": "call_read_2",
+              "name": "read",
+              "argsText": "",
+              "args": {
+                "path": "notes.txt"
+              }
+            }
+          ],
+          "done": true,
+          "model": "faux/faux-1",
+          "entryId": "00000005"
+        },
+        {
+          "kind": "user",
+          "text": "and also check the second line",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000007"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "The second line says line two."
+            }
+          ],
+          "done": true,
+          "model": "faux/faux-1",
+          "entryId": "00000008"
+        }
+      ],
+      "tools": {
+        "call_read_2": {
+          "name": "read",
+          "args": {
+            "path": "notes.txt"
+          },
+          "status": "done",
+          "output": "line one\nline two\n",
+          "images": []
+        }
+      },
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 32,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "Read notes.txt",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000004"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "toolCall",
+              "id": "call_read_2",
+              "name": "read",
+              "argsText": "",
+              "args": {
+                "path": "notes.txt"
+              }
+            }
+          ],
+          "done": true,
+          "model": "faux/faux-1",
+          "entryId": "00000005"
+        },
+        {
+          "kind": "user",
+          "text": "and also check the second line",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000007"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "The second line says line two."
+            }
+          ],
+          "done": true,
+          "model": "faux/faux-1",
+          "entryId": "00000008"
+        },
+        {
+          "kind": "user",
+          "text": "then summarize",
+          "state": "delivered",
+          "started": true,
+          "images": []
+        }
+      ],
+      "tools": {
+        "call_read_2": {
+          "name": "read",
+          "args": {
+            "path": "notes.txt"
+          },
+          "status": "done",
+          "output": "line one\nline two\n",
+          "images": []
+        }
+      },
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 33,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "Read notes.txt",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000004"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "toolCall",
+              "id": "call_read_2",
+              "name": "read",
+              "argsText": "",
+              "args": {
+                "path": "notes.txt"
+              }
+            }
+          ],
+          "done": true,
+          "model": "faux/faux-1",
+          "entryId": "00000005"
+        },
+        {
+          "kind": "user",
+          "text": "and also check the second line",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000007"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "The second line says line two."
+            }
+          ],
+          "done": true,
+          "model": "faux/faux-1",
+          "entryId": "00000008"
+        },
+        {
+          "kind": "user",
+          "text": "then summarize",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000009"
+        }
+      ],
+      "tools": {
+        "call_read_2": {
+          "name": "read",
+          "args": {
+            "path": "notes.txt"
+          },
+          "status": "done",
+          "output": "line one\nline two\n",
+          "images": []
+        }
+      },
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 34,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "Read notes.txt",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000004"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "toolCall",
+              "id": "call_read_2",
+              "name": "read",
+              "argsText": "",
+              "args": {
+                "path": "notes.txt"
+              }
+            }
+          ],
+          "done": true,
+          "model": "faux/faux-1",
+          "entryId": "00000005"
+        },
+        {
+          "kind": "user",
+          "text": "and also check the second line",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000007"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "The second line says line two."
+            }
+          ],
+          "done": true,
+          "model": "faux/faux-1",
+          "entryId": "00000008"
+        },
+        {
+          "kind": "user",
+          "text": "then summarize",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000009"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [],
+          "done": false,
+          "model": "faux/faux-1"
+        }
+      ],
+      "tools": {
+        "call_read_2": {
+          "name": "read",
+          "args": {
+            "path": "notes.txt"
+          },
+          "status": "done",
+          "output": "line one\nline two\n",
+          "images": []
+        }
+      },
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 35,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "Read notes.txt",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000004"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "toolCall",
+              "id": "call_read_2",
+              "name": "read",
+              "argsText": "",
+              "args": {
+                "path": "notes.txt"
+              }
+            }
+          ],
+          "done": true,
+          "model": "faux/faux-1",
+          "entryId": "00000005"
+        },
+        {
+          "kind": "user",
+          "text": "and also check the second line",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000007"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "The second line says line two."
+            }
+          ],
+          "done": true,
+          "model": "faux/faux-1",
+          "entryId": "00000008"
+        },
+        {
+          "kind": "user",
+          "text": "then summarize",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000009"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": ""
+            }
+          ],
+          "done": false,
+          "model": "faux/faux-1"
+        }
+      ],
+      "tools": {
+        "call_read_2": {
+          "name": "read",
+          "args": {
+            "path": "notes.txt"
+          },
+          "status": "done",
+          "output": "line one\nline two\n",
+          "images": []
+        }
+      },
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 36,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "Read notes.txt",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000004"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "toolCall",
+              "id": "call_read_2",
+              "name": "read",
+              "argsText": "",
+              "args": {
+                "path": "notes.txt"
+              }
+            }
+          ],
+          "done": true,
+          "model": "faux/faux-1",
+          "entryId": "00000005"
+        },
+        {
+          "kind": "user",
+          "text": "and also check the second line",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000007"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "The second line says line two."
+            }
+          ],
+          "done": true,
+          "model": "faux/faux-1",
+          "entryId": "00000008"
+        },
+        {
+          "kind": "user",
+          "text": "then summarize",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000009"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "Summary: two lin"
+            }
+          ],
+          "done": false,
+          "model": "faux/faux-1"
+        }
+      ],
+      "tools": {
+        "call_read_2": {
+          "name": "read",
+          "args": {
+            "path": "notes.txt"
+          },
+          "status": "done",
+          "output": "line one\nline two\n",
+          "images": []
+        }
+      },
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 37,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "Read notes.txt",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000004"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "toolCall",
+              "id": "call_read_2",
+              "name": "read",
+              "argsText": "",
+              "args": {
+                "path": "notes.txt"
+              }
+            }
+          ],
+          "done": true,
+          "model": "faux/faux-1",
+          "entryId": "00000005"
+        },
+        {
+          "kind": "user",
+          "text": "and also check the second line",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000007"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "The second line says line two."
+            }
+          ],
+          "done": true,
+          "model": "faux/faux-1",
+          "entryId": "00000008"
+        },
+        {
+          "kind": "user",
+          "text": "then summarize",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000009"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "Summary: two lines."
+            }
+          ],
+          "done": false,
+          "model": "faux/faux-1"
+        }
+      ],
+      "tools": {
+        "call_read_2": {
+          "name": "read",
+          "args": {
+            "path": "notes.txt"
+          },
+          "status": "done",
+          "output": "line one\nline two\n",
+          "images": []
+        }
+      },
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 38,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "Read notes.txt",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000004"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "toolCall",
+              "id": "call_read_2",
+              "name": "read",
+              "argsText": "",
+              "args": {
+                "path": "notes.txt"
+              }
+            }
+          ],
+          "done": true,
+          "model": "faux/faux-1",
+          "entryId": "00000005"
+        },
+        {
+          "kind": "user",
+          "text": "and also check the second line",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000007"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "The second line says line two."
+            }
+          ],
+          "done": true,
+          "model": "faux/faux-1",
+          "entryId": "00000008"
+        },
+        {
+          "kind": "user",
+          "text": "then summarize",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000009"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "Summary: two lines."
+            }
+          ],
+          "done": false,
+          "model": "faux/faux-1"
+        }
+      ],
+      "tools": {
+        "call_read_2": {
+          "name": "read",
+          "args": {
+            "path": "notes.txt"
+          },
+          "status": "done",
+          "output": "line one\nline two\n",
+          "images": []
+        }
+      },
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 39,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "Read notes.txt",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000004"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "toolCall",
+              "id": "call_read_2",
+              "name": "read",
+              "argsText": "",
+              "args": {
+                "path": "notes.txt"
+              }
+            }
+          ],
+          "done": true,
+          "model": "faux/faux-1",
+          "entryId": "00000005"
+        },
+        {
+          "kind": "user",
+          "text": "and also check the second line",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000007"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "The second line says line two."
+            }
+          ],
+          "done": true,
+          "model": "faux/faux-1",
+          "entryId": "00000008"
+        },
+        {
+          "kind": "user",
+          "text": "then summarize",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000009"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "Summary: two lines."
+            }
+          ],
+          "done": true,
+          "model": "faux/faux-1",
+          "entryId": "0000000a"
+        }
+      ],
+      "tools": {
+        "call_read_2": {
+          "name": "read",
+          "args": {
+            "path": "notes.txt"
+          },
+          "status": "done",
+          "output": "line one\nline two\n",
+          "images": []
+        }
+      },
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": [
+      {
+        "context": 1433
+      }
+    ]
+  },
+  {
+    "frame": 40,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "Read notes.txt",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000004"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "toolCall",
+              "id": "call_read_2",
+              "name": "read",
+              "argsText": "",
+              "args": {
+                "path": "notes.txt"
+              }
+            }
+          ],
+          "done": true,
+          "model": "faux/faux-1",
+          "entryId": "00000005"
+        },
+        {
+          "kind": "user",
+          "text": "and also check the second line",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000007"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "The second line says line two."
+            }
+          ],
+          "done": true,
+          "model": "faux/faux-1",
+          "entryId": "00000008"
+        },
+        {
+          "kind": "user",
+          "text": "then summarize",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000009"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "Summary: two lines."
+            }
+          ],
+          "done": true,
+          "model": "faux/faux-1",
+          "entryId": "0000000a"
+        }
+      ],
+      "tools": {
+        "call_read_2": {
+          "name": "read",
+          "args": {
+            "path": "notes.txt"
+          },
+          "status": "done",
+          "output": "line one\nline two\n",
+          "images": []
+        }
+      },
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 41,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "Read notes.txt",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000004"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "toolCall",
+              "id": "call_read_2",
+              "name": "read",
+              "argsText": "",
+              "args": {
+                "path": "notes.txt"
+              }
+            }
+          ],
+          "done": true,
+          "model": "faux/faux-1",
+          "entryId": "00000005"
+        },
+        {
+          "kind": "user",
+          "text": "and also check the second line",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000007"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "The second line says line two."
+            }
+          ],
+          "done": true,
+          "model": "faux/faux-1",
+          "entryId": "00000008"
+        },
+        {
+          "kind": "user",
+          "text": "then summarize",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000009"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "Summary: two lines."
+            }
+          ],
+          "done": true,
+          "model": "faux/faux-1",
+          "entryId": "0000000a"
+        }
+      ],
+      "tools": {
+        "call_read_2": {
+          "name": "read",
+          "args": {
+            "path": "notes.txt"
+          },
+          "status": "done",
+          "output": "line one\nline two\n",
+          "images": []
+        }
+      },
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 42,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "Read notes.txt",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000004"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "toolCall",
+              "id": "call_read_2",
+              "name": "read",
+              "argsText": "",
+              "args": {
+                "path": "notes.txt"
+              }
+            }
+          ],
+          "done": true,
+          "model": "faux/faux-1",
+          "entryId": "00000005"
+        },
+        {
+          "kind": "user",
+          "text": "and also check the second line",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000007"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "The second line says line two."
+            }
+          ],
+          "done": true,
+          "model": "faux/faux-1",
+          "entryId": "00000008"
+        },
+        {
+          "kind": "user",
+          "text": "then summarize",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000009"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "Summary: two lines."
+            }
+          ],
+          "done": true,
+          "model": "faux/faux-1",
+          "entryId": "0000000a"
+        }
+      ],
+      "tools": {
+        "call_read_2": {
+          "name": "read",
+          "args": {
+            "path": "notes.txt"
+          },
+          "status": "done",
+          "output": "line one\nline two\n",
+          "images": []
+        }
+      },
+      "running": false,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": [
+      "settled"
+    ]
+  }
+]

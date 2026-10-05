@@ -65,6 +65,7 @@ import { registerUsageRoutes } from "./usage-routes";
 import { archiveSession, cachedTitleOf, cleanupSessions, getSessionSummary, idOf, lastReplyOf, listCwds, listSessionFiles, listSessions, onSessionArchived, onSummaryLineChanged } from "./sessions-index";
 import { cleanSessionTitle, SESSION_TITLE_MAX, setSessionTitle } from "./session-titles";
 import { contextForBranch, normalizeEntries, readActiveBranch } from "./transcript";
+import { unknownEntries } from "./harness/pi/reader";
 import { checkTmpImage, deleteAttachment, MAX_ATTACHMENT_BYTES, readTmpImage, saveUploadedImage, sessionAttachmentsDir, UploadError } from "./attachments";
 import { listFolders } from "./folders";
 import { listProjectFiles } from "./files";
@@ -229,8 +230,9 @@ app.onError((err, c) => {
   return c.json({ error: err.message }, 500);
 });
 
-// What this process runs (§chat.profiles/live-commit): its start and its checkout's commit then.
-app.get("/api/health", (c) => c.json({ ok: true, startedAt: SERVER_STARTED_AT, head: SERVER_HEAD, runtime: SERVER_RUNTIME }));
+// What this process runs (§chat.profiles/live-commit): its start and its checkout's commit then, and how
+// many entries its pi can't read it has met (§app.harness/unknown-entries; a number only, the route is open).
+app.get("/api/health", (c) => c.json({ ok: true, startedAt: SERVER_STARTED_AT, head: SERVER_HEAD, runtime: SERVER_RUNTIME, unknownEntries: unknownEntries() }));
 // A browser's way in (§app.access/unlock): the token it was given sets the install's cookie.
 app.post("/api/auth/unlock", bodyLimit({ maxSize: 4096 }), unlock);
 // Both routes stay behind the gate, and refuse peer-listener and relayed calls as well.

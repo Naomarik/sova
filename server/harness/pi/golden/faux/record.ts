@@ -76,7 +76,8 @@ function png(w: number, h: number): string {
 interface Run {
   session: any;
   faux: ReturnType<typeof createFauxCore>;
-  events: unknown[];
+  /** Each event's JSON, taken as it was emitted (eventJson). */
+  events: string[];
   cwd: string;
 }
 
@@ -103,8 +104,8 @@ async function open(agentDir: string, name: string): Promise<Run> {
     sessionManager: SessionManager.create(cwd, join(agentDir, "sessions", name)),
     settingsManager: SettingsManager.inMemory({ cacheWarming: "off", retry: { baseDelayMs: 1 }, compaction: { keepRecentTokens: 1 } } as never),
   });
-  const events: unknown[] = [];
-  session.subscribe((e: unknown) => void events.push(e));
+  const events: string[] = [];
+  session.subscribe((e: unknown) => void events.push(eventJson(e)));
   return { session, faux, events, cwd };
 }
 
@@ -191,21 +192,26 @@ export function normalize(texts: string[], ids: readonly string[], agentDir: str
   return replaced.map((t) => t.replace(UUID, (u) => uuids.get(u)!).replace(/"([0-9a-f]{8})"/g, (q, id: string) => (idMap.has(id) ? `"${idMap.get(id)}"` : q)));
 }
 
-/** Events as JSON lines, each `{type, …}` as pi emitted it (functions and cycles dropped). */
-function eventLines(events: unknown[]): string {
-  const seen = new WeakSet<object>();
-  const safe = (v: unknown) =>
-    JSON.stringify(v, (_k, x) => {
-      if (typeof x === "function") return undefined;
-      if (x instanceof Error) return { name: x.name, message: x.message };
-      if (x && typeof x === "object") {
-        if (seen.has(x)) return "[cycle]";
-        seen.add(x);
-      }
-      return x;
-    });
-  return `[\n${events.map((e) => `  ${safe(e)}`).join(",\n")}\n]\n`;
+/**
+ * One event `{type, …}` as pi emitted it, serialized at that moment: pi mutates and shares its objects
+ * across events (a message_end carries its message_start's message), so a later serialization would show
+ * neither. Functions are dropped; only a true cycle (an object inside itself) becomes "[cycle]".
+ */
+function eventJson(event: unknown): string {
+  const ancestors: object[] = [];
+  return JSON.stringify(event, function (this: unknown, _k, x) {
+    if (typeof x === "function") return undefined;
+    if (x instanceof Error) return { name: x.name, message: x.message };
+    if (!x || typeof x !== "object") return x;
+    while (ancestors.length && ancestors[ancestors.length - 1] !== this) ancestors.pop();
+    if (ancestors.includes(x)) return "[cycle]";
+    ancestors.push(x);
+    return x;
+  });
 }
+
+/** The events as the JSON array events.json holds, one event per line. */
+const eventLines = (events: readonly string[]): string => `[\n${events.map((e) => `  ${e}`).join(",\n")}\n]\n`;
 
 export async function recordFaux(outDir: string, only?: readonly string[]): Promise<string[]> {
   const written: string[] = [];

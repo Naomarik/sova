@@ -20,3 +20,18 @@ PI_PACKAGE_DIR=<prefix>/lib/node_modules/@earendil-works/pi-coding-agent pnpm te
 
 `PI_PACKAGE_DIR` is the `pi-coding-agent` package directory. Its pi-ai and typebox are resolved
 from its real path, as Node would from inside it.
+
+## The reader
+
+`reader.ts` is pi's session files as neutral history (`HEntry`, `shared/harness-history.ts`,
+§app.harness/reader): `parsePi`/`readPi`, `branchOf`/`readBranch`/`readTailBranch`, `historyOf` and
+`toHEntry` for raw entries already in hand, `liveRead(owner)` for a held session, the line scanners
+(`lineHead`, `lineMay`, `lineEntry`, `lineHeader`, `appendLines`, `atLineStart`, `BranchScan`) and
+the display text helpers (`typedText`, `firstText`, `joinedText`). `usage.ts` holds the context-fill
+rules (`contextOfBranch`, `contextStep`, `resetsContext`) and the worker adapter's usage accumulator.
+Rows come from `rowsOf(history)` / `rowsOfEntry(h)` in `server/transcript.ts`.
+
+`parseLines`, `activeBranch`, `readActiveBranch` and `rawOf` are the raw API, counted by the boundary's
+reader ratchet wherever they are imported; `liveRead` is counted as a reach. An entry this pi doesn't
+write is `kind: "unknown"` and is counted for `GET /api/health` (§app.harness/unknown-entries);
+`insertion.test.ts` proves no non-display golden probe changes when one is inserted anywhere.

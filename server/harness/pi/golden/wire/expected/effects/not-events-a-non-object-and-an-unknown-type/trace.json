@@ -1,0 +1,67 @@
+[
+  {
+    "call": {
+      "fn": "applyEvent",
+      "args": [
+        null
+      ]
+    },
+    "state": {
+      "entries": [],
+      "tools": {},
+      "running": false,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "call": {
+      "fn": "applyEvent",
+      "args": [
+        "agent_start"
+      ]
+    },
+    "state": {
+      "entries": [],
+      "tools": {},
+      "running": false,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "call": {
+      "fn": "applyEvent",
+      "args": [
+        {
+          "type": "future_event",
+          "message": {
+            "role": "assistant",
+            "provider": "zai",
+            "model": "glm-5.3",
+            "content": [
+              {
+                "type": "text",
+                "text": "ok"
+              }
+            ],
+            "stopReason": "stop",
+            "usage": {
+              "input": 5
+            }
+          }
+        }
+      ]
+    },
+    "state": {
+      "entries": [],
+      "tools": {},
+      "running": false,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  }
+]

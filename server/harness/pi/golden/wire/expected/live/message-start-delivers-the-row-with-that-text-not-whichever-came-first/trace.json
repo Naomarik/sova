@@ -1,0 +1,153 @@
+[
+  {
+    "call": {
+      "fn": "addPendingPrompt",
+      "args": [
+        "follow up",
+        [],
+        [],
+        "c1"
+      ]
+    },
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "follow up",
+          "state": "sending",
+          "images": [],
+          "id": "c1"
+        }
+      ],
+      "tools": {},
+      "running": false,
+      "activity": null,
+      "stopping": false
+    }
+  },
+  {
+    "call": {
+      "fn": "addPendingPrompt",
+      "args": [
+        "steer me",
+        [],
+        [],
+        "c2"
+      ]
+    },
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "follow up",
+          "state": "sending",
+          "images": [],
+          "id": "c1"
+        },
+        {
+          "kind": "user",
+          "text": "steer me",
+          "state": "sending",
+          "images": [],
+          "id": "c2"
+        }
+      ],
+      "tools": {},
+      "running": false,
+      "activity": null,
+      "stopping": false
+    }
+  },
+  {
+    "call": {
+      "fn": "applyQueue",
+      "args": [
+        [
+          {
+            "id": "c1",
+            "kind": "followUp",
+            "text": "follow up"
+          },
+          {
+            "id": "c2",
+            "kind": "steer",
+            "text": "steer me"
+          }
+        ]
+      ]
+    },
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "follow up",
+          "state": "queued",
+          "images": [],
+          "id": "c1",
+          "queueKind": "followUp",
+          "handed": false
+        },
+        {
+          "kind": "user",
+          "text": "steer me",
+          "state": "queued",
+          "images": [],
+          "id": "c2",
+          "queueKind": "steer",
+          "handed": false
+        }
+      ],
+      "tools": {},
+      "running": false,
+      "activity": null,
+      "stopping": false
+    }
+  },
+  {
+    "call": {
+      "fn": "applyEvent",
+      "args": [
+        {
+          "type": "message_start",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "steer me"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "follow up",
+          "state": "queued",
+          "images": [],
+          "id": "c1",
+          "queueKind": "followUp",
+          "handed": false
+        },
+        {
+          "kind": "user",
+          "text": "steer me",
+          "state": "delivered",
+          "images": [],
+          "id": "c2",
+          "queueKind": "steer",
+          "handed": false,
+          "started": true
+        }
+      ],
+      "tools": {},
+      "running": false,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  }
+]

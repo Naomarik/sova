@@ -107,6 +107,11 @@ describe("toolCtx", () => {
     assert.equal(c.leafId(), sm.getLeafId());
     assert.equal(c.rawBranch()[0]!.id, id);
     assert.equal(c.title(), "Later");
+    // The neutral branch reads the same entries, live too (§app.harness/reader).
+    assert.deepEqual(c.branch().map((h) => [h.id, h.kind]), [[id, "state"], [sm.getLeafId(), "setting"]]);
+    sm.appendMessage({ role: "user", content: [{ type: "text", text: "hi" }], timestamp: 1 });
+    assert.deepEqual(c.branch().map((h) => h.id), sm.getBranch().map((e) => e.id));
+    assert.equal(c.branch().at(-1)!.kind, "user");
   });
 
   test("a file session's key is its canonical path, through a symlinked folder too", () => {

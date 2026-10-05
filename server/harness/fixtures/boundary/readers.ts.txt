@@ -104,3 +104,18 @@ sm.getBranch();
 // ---- the adapter counts no reads path=server/harness/pi/reader.ts expect={}
 import { parseLines } from "../../transcript";
 const es = parseLines(t).filter((e) => e.type === "custom" && e.customType === "x");
+// ---- the reader's raw API counts like the transcript's expect={"calls":2}
+import { parseLines, rawOf } from "./harness/pi/reader";
+const raw = parseLines(t).concat(h.map(rawOf));
+// ---- the reader's raw API from a subdirectory path=server/mesh/fixture.ts expect={"calls":1}
+import { readActiveBranch as rab } from "../harness/pi/reader.ts";
+await rab(p);
+// ---- re-export of the reader's raw API fails expect={"violations":["reexport"]}
+export { rawOf } from "./harness/pi/reader";
+// ---- the neutral reader is no raw read expect={}
+import { branchOf, parsePi, readBranch, toHEntry } from "./harness/pi/reader";
+const b = branchOf(parsePi(t).entries).concat(await readBranch(p), [toHEntry(x)]);
+// ---- the transcript forwards the reader's raw API path=server/transcript.ts expect={}
+export { activeBranch, parseLines, readActiveBranch } from "./harness/pi/reader";
+import { rawOf } from "./harness/pi/reader";
+export const rowsOf = (h) => normalizeEntries(h.map(rawOf));

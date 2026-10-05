@@ -1,7 +1,8 @@
 // The harness contract, tools (§app/harness). Types only: imports nothing but its siblings, emits nothing.
 // Sova's tools are ToolSpecs; the adapter (server/harness/pi/tools.ts) turns each into the harness's own
-// tool (§app.harness/tools). M2 adds ToolCtx.branch(), M4 adds ToolCtx.state() and deletes rawBranch().
+// tool (§app.harness/tools). M4 adds ToolCtx.state() and deletes rawBranch().
 import type { EntryId, HarnessId, SessionKey } from "./harness-core";
+import type { HEntry } from "./harness-history";
 
 /** A plain JSON Schema object (Sova's tools build theirs with obj/str/bool, overseer-tools.ts). */
 export type JsonSchema = { readonly [key: string]: unknown };
@@ -29,6 +30,8 @@ export interface ToolCtx {
   readonly cwd: string;
   /** The active branch's leaf, null in an empty session. */
   leafId(): EntryId | null;
+  /** The active branch, root first, as neutral history (§app.harness/reader). */
+  branch(): HEntry[];
   /** TEMPORARY, M1 to M4: the active branch, root first, as the harness stores it. Every call counts in
       the boundary's reader ratchet (§app.harness/boundary). */
   rawBranch(): readonly Record<string, any>[];

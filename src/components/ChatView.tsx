@@ -15,7 +15,7 @@ import type {
   TranscriptItem,
   WorkerInfo,
 } from "../../shared/protocol";
-import { createTurnOwner, goTo, navigateDetails } from "../lib/overseer";
+import { createTurnOwner, goTo } from "../lib/overseer";
 import { batonComposerGate } from "../lib/baton-strip";
 import { tuiOnlyCommand } from "../lib/slash";
 import { OverseerThreadContext, QuickActions, scrollToCard } from "./OverseerCards";
@@ -30,7 +30,7 @@ import { approveSchedule, forkSession, getChatClaudeAccounts, getOverseerAutonom
 import { adversarialReview, NO_REVIEWER, reviewRequestMessage } from "../lib/align-review";
 import type { OverseerAutonomy, ScheduleInfo } from "../../shared/protocol";
 import { LOGIN_UNCHANGED } from "../../shared/protocol";
-import { contextStateFor, messageContextTokens, windowOf } from "../lib/context";
+import { contextStateFor, windowOf } from "../lib/context";
 import {
   addPendingPrompt,
   applyEvent,
@@ -504,35 +504,20 @@ export function ChatView(props: {
     let navigate: string | null = null;
     batch(() => {
       for (const ev of events) {
-        if (isObj(ev) && ev.type === "agent_start") {
-          setTurnError(null); // a fresh turn supersedes the last one's failure
-          announce(turnWord("working.", "Working."));
-        }
-        // Context fill at turn end: the finished assistant message carries the final usage
-        // (no extra server push). A compaction makes it stale until the next reply.
-        if (isObj(ev) && ev.type === "message_end" && isObj(ev.message) && ev.message.role === "assistant") {
-          const tokens = messageContextTokens(ev.message);
-          if (tokens !== null) setSessionContext(props.path, { tokens, window: windowOf(sessionContext()[props.path]) });
-        }
-        if (isObj(ev) && ev.type === "compaction_start") setCompacting(true);
-        if (isObj(ev) && ev.type === "compaction_end") {
-          setCompacting(false);
-          // Only a compaction that WROTE one makes the fill stale; a failed or cancelled one
-          // (no `result`) left the context exactly as it was.
-          if (isObj(ev.result)) setSessionContext(props.path, "compacted");
-        }
-        // The Overseer's navigate: applied only in the tab whose message started this turn — never
-        // another tab's, never a proactive brief's (no tab sent it), never a replay.
-        if (props.overseer && isObj(ev) && ev.type === "tool_execution_end" && ev.toolName === "sova_navigate" && ev.isError !== true && owner.mine()) {
-          const nav = navigateDetails(isObj(ev.result) ? ev.result.details : undefined);
-          if (nav) navigate = nav.href;
-        }
-        applyEvent(setLive, ev);
-        if (isObj(ev) && ev.type === "agent_settled") {
-          settled = true;
-          owner.settled();
-          setCardSent({});
-          refreshAutonomy();
+        // What the event does besides the live store (lib/live-effects): run in the order given.
+        for (const effect of applyEvent(setLive, ev, { overseer: !!props.overseer, mine: owner.mine() })) {
+          if (effect === "clearTurnError") setTurnError(null);
+          else if (effect === "announceWorking") announce(turnWord("working.", "Working."));
+          else if (effect === "compacting") setCompacting(true);
+          else if (effect === "compactingDone") setCompacting(false);
+          else if (effect === "compacted") setSessionContext(props.path, "compacted");
+          else if (effect === "settled") {
+            settled = true;
+            owner.settled();
+            setCardSent({});
+            refreshAutonomy();
+          } else if ("context" in effect) setSessionContext(props.path, { tokens: effect.context, window: windowOf(sessionContext()[props.path]) });
+          else navigate = effect.navigate;
         }
       }
     });

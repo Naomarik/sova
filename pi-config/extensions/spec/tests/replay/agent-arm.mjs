@@ -6,6 +6,7 @@
 //                            [--comparisons C01,C05,…|sample|all] [--concurrency N] [--timeout-min M] [--pi <bin>]
 //                            [--work <dir>] [--extension <dir>]… [--pinned <dir holding .sova/spec>] [--dry-run]
 //   node agent-arm.mjs grade --out <dir>      grade every finished run under <dir> again (no agent is started)
+//   node agent-arm.mjs compare --baseline <packet run dir> --candidate <run dir>   M2: against the agent packet arm
 //
 // Each comparison gets a work directory holding only the pinned `.sova/spec` (manifest and claims; its vendored
 // tools and docs removed) and `tools/` (the tree's spec/core), outside any repository. pi runs there with
@@ -127,10 +128,32 @@ function jsonsIn(text) {
   return text.split("\n").flatMap((l) => { try { return [JSON.parse(l)]; } catch { return []; } });
 }
 
+/**
+ * What one call reached besides the tools (GRADING.md, "Reaching around the tools"): `directSpec` opens spec files
+ * without the tools; `scratch` is the agent's own temp files (where it saved tool output); `outside` is any other path
+ * out of the work directory. Paths are words with at least two segments starting at `/`, `~/` or `../`.
+ */
+export function accessesOf(call, cmd, workRoot) {
+  const out = [];
+  const what = cmd.replace(/\s+/g, " ").slice(0, 160);
+  if (/\.sova\/spec\//.test(cmd) && !(call.tool === "bash" && /^\s*node tools\/sova-spec\.mjs\b/.test(cmd) && !/[|;&]/.test(cmd))) out.push({ kind: "directSpec", what });
+  const paths = call.tool === "read" ? [cmd] : [...cmd.matchAll(/(?:^|[\s'"=(<>])((?:~|\.\.)?\/[\w.-]+(?:\/[\w.-]+)+)/g)].map((m) => m[1]);
+  for (const p of paths) {
+    const abs = p.startsWith("~") ? p : resolve(workRoot ?? "/work", p);
+    if (workRoot && (abs === workRoot || abs.startsWith(`${workRoot}/`))) continue;
+    if (!workRoot && !p.startsWith("/") && !p.startsWith("~") && !p.startsWith("..")) continue;
+    if (/^\/dev\//.test(abs)) continue; // /dev/null and the like are no read
+    if (/^\/tmp\/|^\/var\/tmp\//.test(abs) || (process.env.TMPDIR && abs.startsWith(process.env.TMPDIR))) out.push({ kind: "scratch", what });
+    else out.push({ kind: "outside", what });
+    break;
+  }
+  return out;
+}
+
 /** Grade one finished run against the pinned index. */
 export function grade(index, c, events, workRoot) {
   const { calls, usage, final } = readEvents(events);
-  const fragments = [], spans = [], seenLines = new Set(), footerNamed = new Set(), outside = [];
+  const fragments = [], spans = [], seenLines = new Set(), footerNamed = new Set(), access = { outside: [], directSpec: [], scratch: [] };
   let bytes = 0;
   const claimsRel = (p) => {
     const abs = resolve(workRoot ?? "/", p);
@@ -141,7 +164,7 @@ export function grade(index, c, events, workRoot) {
     const text = call.result?.text ?? "";
     bytes += Buffer.byteLength(text);
     const cmd = call.tool === "bash" ? String(call.args?.command ?? "") : String(call.args?.path ?? "");
-    if (/(^|\s|['"])(\/|~|\.\.)/.test(cmd) && !/^\s*node tools\//.test(cmd)) outside.push(cmd.slice(0, 160));
+    for (const a of accessesOf(call, cmd, workRoot)) access[a.kind].push(a.what);
     for (const j of jsonsIn(text)) {
       if (!j || typeof j !== "object") continue;
       for (const it of j.items ?? []) if (typeof it?.text === "string" && typeof it.id === "string") fragments.push({ id: it.id, start: it.fragment?.start ?? 0, text: it.text });
@@ -176,9 +199,9 @@ export function grade(index, c, events, workRoot) {
   const lost = (base?.values ?? []).map((v, i) => (v > 0 && needs[i].value < v && !(base.passageOf[i] && (seenLines.has(base.passageOf[i]) || footerNamed.has(base.passageOf[i])))) ? `${i} ${c.needs[i].need}` : null).filter(Boolean);
   return {
     answered: scored.reduce((s, x) => s + x.value, 0), of: scored.length, named: scored.filter((x) => x.named).length,
-    needs: needs.map((x) => (x.status === "missed" && x.named ? "named" : x.status)).join(" "),
+    needs: needs.map((x) => (x.status === "missed" && x.named ? "named" : x.status)).join(" "), values: needs.map((x) => x.value), shown: [...new Set([...seenLines, ...footerNamed])].sort(),
     bytes, calls: calls.length, toolErrors: calls.filter((x) => x.result?.isError).length, passagesRead: delivered.size, contentsLines: seenLines.size,
-    outside, usage, lostVsPacket: lost, final,
+    outside: access.outside, directSpec: access.directSpec, scratch: access.scratch, usage, lostVsPacket: lost, final,
   };
 }
 
@@ -251,21 +274,51 @@ export function gradeDir(out, index) {
   const total = {
     answered: done.reduce((s, r) => s + r.answered, 0), of: done.reduce((s, r) => s + r.of, 0), packetAnswered: done.reduce((s, r) => s + packet[r.id], 0),
     bytesMedian: median(done.map((r) => r.bytes)), callsMedian: median(done.map((r) => r.calls)), callsMax: Math.max(0, ...done.map((r) => r.calls)),
-    lostVsPacket: done.reduce((s, r) => s + r.lostVsPacket.length, 0), outsideAttempts: done.reduce((s, r) => s + r.outside.length, 0),
+    lostVsPacket: done.reduce((s, r) => s + r.lostVsPacket.length, 0), outside: done.reduce((s, r) => s + r.outside.length, 0),
+    directSpec: done.reduce((s, r) => s + (r.directSpec?.length ?? 0), 0), scratch: done.reduce((s, r) => s + (r.scratch?.length ?? 0), 0),
   };
   const card = { arm: meta.arm, model: meta.model, tree: meta.treeSource ?? meta.tree, pinned: meta.pinned, runId: meta.runId, total, rows };
   writeFileSync(join(out, "agent-scorecard.json"), JSON.stringify(card, null, 2) + "\n");
   const lines = [`agent arm: ${meta.arm} · model ${meta.model} · tree ${meta.treeSource ? `${meta.treeSource.ref} @ ${meta.treeSource.commit.slice(0, 12)}` : meta.tree}`, ""];
-  for (const r of rows) lines.push(r.missing ? `  ${r.id}  (no events)` : `  ${r.id}  answered ${r.answered}/${r.of} (packet ${packet[r.id]})  bytes ${r.bytes}  calls ${r.calls}  read ${r.passagesRead}  lines ${r.contentsLines}  lost-vs-packet ${r.lostVsPacket.length}  outside ${r.outside.length}  exit ${r.exit}${r.signal ? ` ${r.signal}` : ""}`);
-  lines.push("", `total answered ${total.answered}/${total.of} (packet ${total.packetAnswered}); median bytes ${total.bytesMedian}; median calls ${total.callsMedian} (max ${total.callsMax}); lost vs packet, unshown: ${total.lostVsPacket}; outside attempts: ${total.outsideAttempts}`);
+  for (const r of rows) lines.push(r.missing ? `  ${r.id}  (no events)` : `  ${r.id}  answered ${r.answered}/${r.of} (packet ${packet[r.id]})  bytes ${r.bytes}  calls ${r.calls}  read ${r.passagesRead}  lines ${r.contentsLines}  lost-vs-packet ${r.lostVsPacket.length}  outside ${r.outside.length}  direct-spec ${r.directSpec.length}  scratch ${r.scratch.length}  exit ${r.exit}${r.signal ? ` ${r.signal}` : ""}`);
+  lines.push("", `total answered ${total.answered}/${total.of} (packet ${total.packetAnswered}); median bytes ${total.bytesMedian}; median calls ${total.callsMedian} (max ${total.callsMax}); lost vs packet, unshown: ${total.lostVsPacket}; outside: ${total.outside}; direct spec reads: ${total.directSpec}; scratch files: ${total.scratch}`);
   writeFileSync(join(out, "summary.txt"), lines.join("\n") + "\n");
   return card;
+}
+
+/**
+ * M2's comparison: a candidate run against the AGENT packet arm on the same comparisons, model and level. A need
+ * the agent packet arm answered is lost when the candidate scores lower and never saw its passage in a toc line or a
+ * footer. Both packet numbers (agent and computed) are reported.
+ */
+export function compareRuns(baseDir, candDir) {
+  const base = JSON.parse(readFileSync(join(baseDir, "agent-scorecard.json"), "utf8"));
+  const cand = JSON.parse(readFileSync(join(candDir, "agent-scorecard.json"), "utf8"));
+  if (base.model !== cand.model) throw new Error(`models differ: ${base.model} vs ${cand.model}; compare only at one model and level`);
+  const rows = [], lost = [];
+  for (const r of cand.rows.filter((x) => !x.missing)) {
+    const b = base.rows.find((x) => x.id === r.id && !x.missing);
+    if (!b) { rows.push({ id: r.id, missing: "baseline" }); continue; }
+    const c = DATA.comparisons.find((x) => x.id === r.id);
+    const passageOf = BASELINE.comparisons[r.id].passageOf;
+    (b.values ?? []).forEach((v, i) => { if (v > 0 && (r.values?.[i] ?? 0) < v && !(r.shown ?? []).includes(passageOf[i])) lost.push(`${r.id}:${i} ${c.needs[i].need}`); });
+    rows.push({ id: r.id, answered: r.answered, agentPacket: b.answered, computedPacket: BASELINE.comparisons[r.id].values.reduce((s, v) => s + v, 0), bytes: r.bytes, packetBytes: b.bytes, calls: r.calls, packetCalls: b.calls });
+  }
+  const sum = (k) => rows.reduce((s, x) => s + (x[k] ?? 0), 0);
+  return { baseline: base.runId, candidate: cand.runId, model: cand.model, total: { answered: sum("answered"), agentPacket: sum("agentPacket"), computedPacket: sum("computedPacket"), lostUnseen: lost.length, bytesMedian: median(rows.map((x) => x.bytes)), packetBytesMedian: median(rows.map((x) => x.packetBytes)), callsMax: Math.max(0, ...rows.map((x) => x.calls ?? 0)) }, lost, rows };
 }
 
 async function main(argv) {
   const o = parseArgs(argv);
   const cmd = o._?.[0];
   if (cmd === "run") return cmdRun(o);
+  if (cmd === "compare") {
+    if (!o.baseline || !o.candidate) throw new Error("compare needs --baseline <packet-arm run dir> --candidate <run dir>");
+    const card = compareRuns(resolve(o.baseline), resolve(o.candidate));
+    writeFileSync(join(resolve(o.candidate), "compare.json"), JSON.stringify(card, null, 2) + "\n");
+    console.log(JSON.stringify(card.total));
+    return;
+  }
   if (cmd === "grade") {
     if (!o.out) throw new Error("grade needs --out <run dir>");
     const scratch = join(tmpdir(), `spec-agent-grade-${process.pid}`);

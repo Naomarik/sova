@@ -58,6 +58,25 @@ mechanically.
   first matches inside the read set answers it. This is the weak spot: a bare probe can match an
   unrelated line (see "Hand-reading jobs").
 
+## Reaching around the tools (the same rule in every arm)
+
+The score counts content, not route. A passage the agent saw counts as read whichever way it came
+back: through the tool directly, piped through `node -e`, or saved to a temp file and printed again.
+The route is reported, and it never changes the score. Each call that reaches past the tools is
+classed (`accessesOf` in `agent-arm.mjs`):
+
+- **scratch**: the agent's own temp files (`/tmp/…`), where it saved tool output to page through it.
+  Allowed. Their bytes count again in "bytes", because the agent read them again.
+- **directSpec**: a spec file opened without the tools (`cat .sova/spec/claims/…`, the file tool on a
+  claims file, or `.sova/spec/` inside a pipeline). A violation of the prompt, reported per comparison.
+  What it returned still counts as read, so both arms are scored on what the agent actually saw.
+- **outside**: any other path out of the work directory (`../../src/…`, a home path). A violation,
+  reported. Ordinary pipe targets such as `/dev/null` are not reads.
+
+A path is a word of at least two segments starting with `/`, `~/` or `../`. Regex literals and
+tokens in a script don't count. First run (packet arm, 8 comparisons): 0 outside, 0 directSpec,
+33 scratch. The 22 "outside" an earlier grader reported were `/dev/null` and these scratch files.
+
 ## The agent arm's guard (reported, not an exit code)
 
 For each need the recorded packet baseline answers (`data/g-baseline.json` `values[i] > 0`): it is

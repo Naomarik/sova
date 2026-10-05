@@ -361,7 +361,7 @@ failing that, exactly "not mentioned in this claim's text". The JSON says which 
 `whySource` `prose`, `comment`, `declared` or `none`). A line, and the requested claim, whose record
 carries `agreed` shows who made the decision and when, never that they read its current words, and
 whether it is built (it maps `code` and its
-`evidence` is `reviewed` or `verified`), as "agreed <at> by <by>, not built" or ", built", so an
+`evidence` is `reviewed` or `verified`), as "agreed (decision) <at> by <by>, not built" or ", built", the wording `map` uses, so an
 agreed promise not yet built never reads like a built one.
 
 Mentions are found in prose only: text inside fenced code, HTML comments and double-backtick spans

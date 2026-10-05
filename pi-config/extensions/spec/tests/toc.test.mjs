@@ -121,6 +121,19 @@ test("in and mentions: the neighbour's sentence is the why; masked mentions neve
   assert.deepEqual(toc(root, "§a/top", "mentions").lines.map((l) => l.id), ["§d/talker"], "§a.top reads as §a/top");
 });
 
+test("a § named only in a heading's title is a mention; the declaring id never mentions itself", () => {
+  const root = fixture(), m = JSON.parse(readFileSync(join(root, ".sova/spec/manifest.json"), "utf8"));
+  m.claims["§g/titled"] = { kind: "note" };
+  write(root, ".sova/spec/manifest.json", JSON.stringify(m));
+  write(root, ".sova/spec/claims/g/titled.md", "# §g/titled — Waiting on the seed (§a.top/seed, queued)\nBody text that names nothing at all here.\n");
+  const j = toc(root, "§a.top/seed", "mentions"), l = byId(j);
+  assert.deepEqual(j.lines.map((x) => x.id), ["§d/talker", "§g/titled"]);
+  assert.equal(l["§g/titled"].why, "Waiting on the seed (§a.top/seed, queued)", "the title, without heading markup");
+  assert.equal(l["§g/titled"].what, "Body text that names nothing at all here.", "what still skips the heading");
+  assert.ok(!toc(root, "§g/titled", "mentions").lines.length, "nothing mentions it, and its own heading does not count");
+  assert.deepEqual(toc(root, "§g/titled", "out").lines.map((x) => [x.group, x.id]), [["named", "§a.top/seed"]]);
+});
+
 test("a behavior with no requires key reads as uninvestigated, never as requires (0)", () => {
   const root = fixture(), j = toc(root, "§a.top/open", "out");
   assert.equal(j.seed.requires, null);

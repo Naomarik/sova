@@ -91,12 +91,14 @@ export function sizeOf(ctx, id) {
 
 // ---------------------------------------------------------------- masking (string indices preserved)
 const blank = (s) => s.replace(/[^\n]/g, " ");
-// The heading line, fenced blocks and HTML comments always; double-backtick spans when asked (L2's mask).
-export function mask(text, { doubleTicks = true, comments = true } = {}) {
+// Fenced blocks and HTML comments always; double-backtick spans when asked (L2's mask). On the heading
+// line only the declaring markup ("## §id —") is masked, so a § named in a title is still a mention;
+// `heading: true` masks the whole heading line instead.
+export function mask(text, { doubleTicks = true, comments = true, heading = false } = {}) {
   const lines = text.split("\n");
   let fence = null;
   const out = lines.map((ln, i) => {
-    if (i === 0) return blank(ln);
+    if (i === 0) return heading ? blank(ln) : ln.replace(/^ {0,3}#{1,6}[ \t]+\S+(?:[ \t]+[—–:-]+)?[ \t]*/, blank);
     const f = /^ {0,3}(`{3,}|~{3,})/.exec(ln);
     if (fence) { if (f && f[1][0] === fence[0] && f[1].length >= fence.length && !ln.trim().slice(f[1].length).trim()) fence = null; return blank(ln); }
     if (f) { fence = f[1]; return blank(ln); }
@@ -125,10 +127,12 @@ export function mentionsOf(masked) {
 // . ! ? (optionally closed by quotes, brackets or emphasis) followed by space and a non-lowercase start.
 function units(masked) {
   const res = [];
-  let start = -1, at = 0;
+  let start = -1, at = 0, first = true;
   for (const ln of masked.split("\n")) {
     const end = at + ln.length, t = ln.trim();
-    const opens = /^(?:[-*+]|\d+[.)])\s|^[|>#]/.test(t);
+    // The heading's title (line 1) is a unit of its own; the lines after it open a new one.
+    const opens = first || at === masked.indexOf("\n") + 1 || /^(?:[-*+]|\d+[.)])\s|^[|>#]/.test(t);
+    first = false;
     if (!t) { if (start >= 0) res.push([start, at - 1]); start = -1; }
     else if (opens || start < 0) { if (start >= 0) res.push([start, at - 1]); start = at; }
     at = end + 1;
@@ -141,6 +145,7 @@ export function sentences(masked) {
   for (const [a, b] of units(masked)) {
     const u = masked.slice(a, b);
     let s = 0;
+    while (s < u.length && /\s/.test(u[s])) s++; // past masked markup, so quotes never include it
     // Punctuation inside a code span (`a: b`) never ends a sentence.
     const v = u.replace(/`[^`\n]*`/g, (c) => "`" + "x".repeat(c.length - 2) + "`");
     for (const m of v.matchAll(/[.!?:]["'”’)\]*_`]*(?=\s)/g)) {
@@ -175,7 +180,7 @@ function firstSentence(unit) {
 // What: the first sentence of the passage's own prose. Fenced code, HTML comments, tables and headings
 // are skipped; a blockquote is used only when there is no other prose. Verbatim, whitespace collapsed.
 export function whatOf(decl) {
-  const m = mask(decl.text, { doubleTicks: false });
+  const m = mask(decl.text, { doubleTicks: false, heading: true });
   let quote = null;
   for (const [a, b] of units(m)) {
     const unit = m.slice(a, b), t = unit.trim();

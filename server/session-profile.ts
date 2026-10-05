@@ -5,7 +5,6 @@ import {
   DEFAULT_PROFILE_ID,
   keyOf,
   normalizeCaps,
-  PROFILE_ENTRY,
   singletonRunningText,
   sourceOf,
   type ListedProfile,
@@ -14,6 +13,8 @@ import {
   type ProfileSource,
   type SnapshotProfile,
 } from "../shared/profiles";
+import { stateViewOf } from "./harness/pi/state-view-of";
+import { PROFILE } from "./harness/state-kinds";
 import { findProfile, type ProfilePick } from "./profile-sources";
 import { approvalRefusal } from "./profile-trust";
 
@@ -25,17 +26,10 @@ import { approvalRefusal } from "./profile-trust";
  * this module must not (chat-manager imports it).
  */
 
-type BranchEntry = { type: string; customType?: string; data?: unknown };
-
-/** The newest `sova-profile` entry on a branch (null: none, i.e. Default). */
-export function profileOnBranch(branch: readonly BranchEntry[]): ProfileEntryData | null {
-  for (let i = branch.length - 1; i >= 0; i--) {
-    const e = branch[i]!;
-    if (e.type !== "custom" || e.customType !== PROFILE_ENTRY) continue;
-    const d = e.data as ProfileEntryData | undefined;
-    if (d && d.v === 1 && (d.profile === null || (typeof d.profile === "object" && typeof d.profile.id === "string"))) return d;
-  }
-  return null;
+/** The newest well-formed `sova-profile` entry on a branch (null: none, i.e. Default). The entries are pi's
+    or the reader's (any mix), read through the state view. */
+export function profileOnBranch(branch: readonly unknown[]): ProfileEntryData | null {
+  return stateViewOf(branch).latest(PROFILE)?.data ?? null;
 }
 
 /** `SessionSummary.profile` for an entry, or undefined for Default. */

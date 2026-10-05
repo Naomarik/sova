@@ -129,14 +129,17 @@ export function mentionsOf(masked) {
 // ---------------------------------------------------------------- sentences
 // Units: a paragraph, list item, table row, quote line or heading; within a unit, sentences end at
 // . ! ? (optionally closed by quotes, brackets or emphasis) followed by space and a non-lowercase start.
-function units(masked) {
+function units(masked, { title = true } = {}) {
   const res = [];
   let start = -1, at = 0, first = true;
   for (const ln of masked.split("\n")) {
     const end = at + ln.length, t = ln.trim();
-    // The heading's title (line 1) is a unit of its own; the lines after it open a new one.
-    const opens = first || at === masked.indexOf("\n") + 1 || /^(?:[-*+]|\d+[.)])\s|^[|>#]/.test(t);
+    // In a whole passage the heading's title (line 1) is a unit of its own; the lines after it open a new
+    // one. A unit's own text (title: false) never splits at its line ends.
+    const opens = first || (title && at === masked.indexOf("\n") + 1) || /^(?:[-*+]|\d+[.)])\s|^[|>#]/.test(t);
     first = false;
+    // A thematic break (---, ***, ___) ends a unit and is never prose itself.
+    if (/^ {0,3}([-*_])( *\1){2,} *$/.test(ln)) { if (start >= 0) res.push([start, at - 1]); start = -1; at = end + 1; continue; }
     if (!t) { if (start >= 0) res.push([start, at - 1]); start = -1; }
     else if (opens || start < 0) { if (start >= 0) res.push([start, at - 1]); start = at; }
     at = end + 1;
@@ -144,9 +147,9 @@ function units(masked) {
   if (start >= 0) res.push([start, masked.length]);
   return res;
 }
-export function sentences(masked) {
+export function sentences(masked, opts) {
   const out = [];
-  for (const [a, b] of units(masked)) {
+  for (const [a, b] of units(masked, opts)) {
     const u = masked.slice(a, b);
     let s = 0;
     while (s < u.length && /\s/.test(u[s])) s++; // past masked markup, so quotes never include it
@@ -163,18 +166,26 @@ export function sentences(masked) {
   return out.filter(([a, b]) => masked.slice(a, b).trim());
 }
 const squash = (s) => s.replace(/\s+/g, " ").trim();
-function clip(s, max, around = -1) {
+// Cut to max characters with a visible "…". With around (and len), the window always keeps s[around, around + len).
+function clip(s, max, around = -1, len = 0) {
   if (s.length <= max) return s;
-  if (around < 0 || around < max - 20) return s.slice(0, s.lastIndexOf(" ", max - 1) > max / 2 ? s.lastIndexOf(" ", max - 1) : max - 1) + "…";
-  const from = Math.max(0, Math.min(around - Math.floor(max / 3), s.length - max + 2));
+  const cut = s.lastIndexOf(" ", max - 1) > max / 2 ? s.lastIndexOf(" ", max - 1) : max - 1;
+  if (around < 0 || around + len <= cut) return s.slice(0, cut) + "…";
+  const from = Math.max(0, around + len - (max - 2), Math.min(around - Math.floor(max / 3), s.length - max + 2));
   return "…" + s.slice(from, from + max - 2) + "…";
+}
+// Where text names target (its own id, else the §a.b alias of an H1): [index, length], or [-1, 0].
+function spanOf(text, target) {
+  const hit = mentionsOf(text).find((x) => x.id === target);
+  if (!hit) return [-1, 0];
+  return [hit.index, target.length]; // the alias §a.b is as long as §a/b
 }
 const stripMarker = (s) => s.replace(/^(?:[-*+]|\d+[.)])\s+/, "");
 
 // The first sentence of a unit, at least WHAT_MIN characters: a short run-in ("**Auto-grow.**") takes the next too.
 const WHAT_MIN = 20;
 function firstSentence(unit) {
-  const ss = sentences(unit);
+  const ss = sentences(unit, { title: false });
   if (!ss.length) return null;
   let k = 0;
   while (k + 1 < ss.length && squash(unit.slice(ss[0][0], ss[k][1]).replace(/[*_]/g, "")).length < WHAT_MIN) k++;
@@ -206,13 +217,13 @@ export function whyOf(decl, target) {
   if (hit) {
     const s = sentences(m).find(([a, b]) => hit.index >= a && hit.index < b);
     const text = stripMarker(squash(decl.text.slice(s[0], s[1])));
-    return { why: clip(text, WHY_MAX, text.indexOf("§" + target.slice(1).split(/[./]/)[0])), whySource: "prose" };
+    return { why: clip(text, WHY_MAX, ...spanOf(text, target)), whySource: "prose" };
   }
   const body = blank(decl.text.split("\n", 1)[0]) + decl.text.slice(Math.max(0, decl.text.indexOf("\n")));
   for (const c of body.matchAll(/<!--([\s\S]*?)(?:-->|$)/g))
     if (mentionsOf(c[1]).some((x) => x.id === target)) {
       const text = squash(c[1]);
-      return { why: clip(text, WHY_MAX, text.indexOf(target)), whySource: "comment" };
+      return { why: clip(text, WHY_MAX, ...spanOf(text, target)), whySource: "comment" };
     }
   return { why: NOT_MENTIONED, whySource: "none" };
 }

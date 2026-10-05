@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -273,4 +273,66 @@ test("read: refusals are coded and bounded", () => {
   assert.equal(read(root, ["§a.top/seed", "--budget", "99"]).code, "usage");
   assert.equal(read(root, ["§a.top/seed", "--cursor", "abc"]).code, "token-malformed");
   assert.equal(read(root, ["§a.top/seed", "--cursor", toc(root, "§a.top/seed", "out", { budget: 1400 }).next]).code, "token-mismatch-or-stale");
+});
+
+// ---------------------------------------------------------------- what: whole sentences
+test("what: a first sentence wrapped across lines comes out whole; a heading title is still its own unit", () => {
+  const root = fixture();
+  write(root, ".sova/spec/claims/e/named.md", "# §e/named — Named, see §a.top/seed\nThe first sentence starts on this line,\nruns on across a second line\nand ends on the third. A second sentence.\n");
+  const l = byId(toc(root, "§a.top/seed", "out"));
+  assert.equal(l["§e/named"].what, "The first sentence starts on this line, runs on across a second line and ends on the third.");
+  const m = byId(toc(root, "§a.top/seed", "mentions"));
+  assert.equal(m["§e/named"].why, "Named, see §a.top/seed", "the title is its own unit, not joined to the body");
+});
+
+test("what: a thematic break is never a prose sentence", () => {
+  const root = fixture();
+  write(root, ".sova/spec/claims/e/named.md", "# §e/named — Named\n\n| a | b |\n|---|---|\n| 1 | 2 |\n\n---\n");
+  write(root, ".sova/spec/claims/c/quiet.md", "# §c/quiet — Quiet\n\n| a | b |\n|---|---|\n\n***\n\nThe real sentence comes after the rule.\n");
+  const l = byId(toc(root, "§a.top/seed", "out"));
+  assert.deepEqual([l["§e/named"].whatSource, l["§e/named"].what], ["none", "no prose sentence"]);
+  assert.deepEqual([l["§c/quiet"].whatSource, l["§c/quiet"].what], ["prose", "The real sentence comes after the rule."]);
+});
+
+test("why: a long sentence is clipped around the target's own mention, never another one in its namespace", () => {
+  const root = fixture();
+  const filler = (n) => Array.from({ length: n }, (_, i) => `word${i}`).join(" ");
+  write(root, ".sova/spec/claims/c/quiet.md", `# §c/quiet — Quiet\n\nIt follows §a.top/hint closely, ${filler(40)}, and in the end it relies on §a.top/seed for the rest of ${filler(12)} here.\n`);
+  const why = toc(root, "§a.top/seed", "in").lines.find((l) => l.id === "§c/quiet").why;
+  assert.ok(why.length <= 240 && why.startsWith("…"), why);
+  assert.ok(why.includes("§a.top/seed"), `the printed why names the target: ${why}`);
+});
+
+// Over the project's own spec: a what that ends mid-sentence (no "…", no sentence end) while the
+// passage's text runs on to the next line of the same paragraph is a cut, never a whole sentence.
+const SPEC_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../../..");
+test("what: over the real spec, no what line ends mid-sentence", { skip: !existsSync(join(SPEC_ROOT, ".sova/spec/manifest.json")) }, async () => {
+  const { whatOf, mask } = await import("../core/toc.mjs");
+  const ids = Object.keys(JSON.parse(readFileSync(join(SPEC_ROOT, ".sova/spec/manifest.json"), "utf8")).claims)
+    .filter((id) => !/^§[a-z][a-z-]*\.[a-z]/.test(id) || id.startsWith("§section."));
+  const cut = [];
+  let checked = 0;
+  for (const id of ids) {
+    let cursor, texts = [];
+    do {
+      const r = spawnSync(process.execPath, [CORE, "read", id, "--whole", "--root", SPEC_ROOT, "--json", ...(cursor ? ["--cursor", cursor] : [])], { encoding: "utf8", maxBuffer: 1 << 26 });
+      const j = JSON.parse(r.stdout);
+      assert.notEqual(j.status, "refused", `${id}: ${r.stdout}`);
+      for (const it of j.items) { if (it.fragment.start === 0) texts.push({ id: it.id, text: "" }); texts.at(-1).text += it.text; }
+      cursor = j.next;
+    } while (cursor);
+    for (const d of texts) {
+      const w = whatOf(d);
+      if (w.whatSource !== "prose" || w.what.endsWith("…")) continue;
+      checked++;
+      if (/[.!?:]["'”’)\]*_`]*$/.test(w.what)) continue;
+      // Where does the what's last word sit in the masked passage, and does its paragraph continue?
+      const words = w.what.split(" "), m = mask(d.text, { doubleTicks: false, heading: true });
+      const re = new RegExp(words.map((x) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("\\s+") + "[ \\t]*\\n[ \\t]*(\\S)");
+      const hit = re.exec(m);
+      if (hit && !/^[-*+|>#\d]/.test(hit[1])) cut.push(`${d.id}: ${w.what.slice(-60)}`);
+    }
+  }
+  assert.ok(checked > 100, `checked ${checked} what lines`);
+  assert.deepEqual(cut, [], `${cut.length} what line(s) cut at a line end`);
 });

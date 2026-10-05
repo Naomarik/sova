@@ -14235,6 +14235,38 @@
         "pi-config/extensions/subagents/README.md",
         "pi-config/extensions/claude-code/README.md"
       ]
+    },
+    "§tools.spec/contents-view": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§tools.spec/context-packets",
+        "§tools.spec/inspection-safety"
+      ],
+      "code": [
+        "pi-config/extensions/spec/core/toc.mjs",
+        "pi-config/extensions/spec/core/sova-spec.mjs",
+        "pi-config/extensions/spec/tests/toc.test.mjs",
+        "pi-config/extensions/spec/core/README.md",
+        "pi-config/extensions/spec/README.md"
+      ]
+    },
+    "§tools.spec/single-read": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§tools.spec/contents-view",
+        "§tools.spec/context-packets"
+      ],
+      "code": [
+        "pi-config/extensions/spec/core/read.mjs",
+        "pi-config/extensions/spec/core/toc.mjs",
+        "pi-config/extensions/spec/core/sova-spec.mjs",
+        "pi-config/extensions/spec/tests/toc.test.mjs",
+        "pi-config/extensions/spec/core/README.md"
+      ]
     }
   },
   "boundary": {

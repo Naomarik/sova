@@ -91,7 +91,10 @@ node agent-arm.mjs grade --out <run dir>     # grade a finished run again; start
   holding only the pinned manifest and claims and `tools/`, the tree's `spec/core`. pi runs with
   `-p --mode json --tools bash,read`, no discovered extensions, context files, skills or prompt
   templates, and `-e` for provider-limits and llm-inflight from the pi agent directory (one must be
-  provider-limits). The prompt (the same for both arms but for the tool lines) names the surface and
+  provider-limits), and `--append-system-prompt` with the tree's own `mode/spec-mode.md` (the text that
+  ships with that tree; only its trusted-core line is pointed at `tools/`, and the docs it names are copied
+  beside it; its sha is in `run.json`; `--instructions <file>` or `--no-instructions` for experiments; two
+  runs compare only if both had instructions). The prompt (the same for both arms but for the tool lines) names the surface and
   its § id, says what a builder must find, and asks for a brief.
 - **Output:** `<out>/<arm>-<model>-<time>/` with `run.json`, and per comparison `prompt.txt`,
   `events.jsonl`, `stderr.txt`, `exit.json` and `sessions/`; then `agent-scorecard.json` and

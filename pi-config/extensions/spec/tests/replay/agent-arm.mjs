@@ -5,6 +5,7 @@
 //   node agent-arm.mjs run   --tree <extensions dir> --arm packet|pull --model <provider/id:thinking> --out <dir>
 //                            [--comparisons C01,C05,…|sample|all] [--concurrency N] [--timeout-min M] [--pi <bin>]
 //                            [--work <dir>] [--extension <dir>]… [--pinned <dir holding .sova/spec>] [--dry-run]
+//                            [--instructions <file> | --no-instructions]   default: the tree's mode/spec-mode.md
 //   node agent-arm.mjs grade --out <dir>      grade every finished run under <dir> again (no agent is started)
 //   node agent-arm.mjs compare --baseline <packet run dir> --candidate <run dir>   M2: against the agent packet arm
 //
@@ -21,6 +22,7 @@
 import { spawn, spawnSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync, realpathSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
+import { createHash } from "node:crypto";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { DATA, extractPinned } from "./pinned.mjs";
@@ -70,7 +72,25 @@ function workDir(base, tree, pinnedRoot) {
   cpSync(join(pinnedRoot, ".sova/spec/manifest.json"), join(base, ".sova/spec/manifest.json"));
   cpSync(join(pinnedRoot, ".sova/spec/claims"), join(base, ".sova/spec/claims"), { recursive: true });
   cpSync(join(tree, "spec/core"), join(base, "tools"), { recursive: true });
+  // The docs the instructions point at as `$core/../X.md` (tools/../X.md), so every path they name exists here.
+  for (const doc of ["PROMOTE.md", "README.md", "DRAFTS.md"]) if (existsSync(join(tree, "spec", doc))) cpSync(join(tree, "spec", doc), join(base, doc));
   return base;
+}
+
+/**
+ * The instructions the agent gets: the tree under test's spec-mode text (`<tree>/mode/spec-mode.md`), or `--instructions
+ * <file>` to experiment, or none with `--no-instructions`. Adapted only mechanically, the same in every arm: the
+ * trusted-core line resolves to the work directory's `tools/`. → { source, sha256, adaptedSha256, text } | null
+ */
+export function instructionsFor(tree, o = {}) {
+  if (o.noInstructions) return null;
+  const source = o.instructions ? resolve(o.instructions) : join(tree, "mode/spec-mode.md");
+  if (!existsSync(source)) { if (o.instructions) throw new Error(`instructions ${source} not found`); return null; }
+  const raw = readFileSync(source, "utf8");
+  const text = raw.replace(/^core=.*\/extensions\/spec\/core"\s*$/m, 'core="$PWD/tools"');
+  if (text === raw && /^core=/m.test(raw)) throw new Error("the instructions' core= line has an unexpected form; adapt the harness, not the text");
+  const sha = (s) => createHash("sha256").update(s).digest("hex");
+  return { source: o.instructions ? source : "<tree>/mode/spec-mode.md", sha256: sha(raw), adaptedSha256: sha(text), text };
 }
 
 const agentDir = () => {
@@ -79,9 +99,9 @@ const agentDir = () => {
 };
 
 /** One pi run; resolves when it exits or times out. */
-function runPi({ pi, model, work, sessions, extensions, text, events, stderr, timeoutMs }) {
+function runPi({ pi, model, work, sessions, extensions, text, instructions, events, stderr, timeoutMs }) {
   const args = ["-p", "--mode", "json", "--no-extensions", ...extensions.flatMap((e) => ["-e", e]), "--no-context-files", "--no-skills",
-    "--no-prompt-templates", "--no-approve", "--model", model, "--tools", "bash,read", "--session-dir", sessions, text];
+    "--no-prompt-templates", "--no-approve", ...(instructions ? ["--append-system-prompt", instructions] : []), "--model", model, "--tools", "bash,read", "--session-dir", sessions, text];
   return new Promise((done) => {
     const started = Date.now();
     const child = spawn(pi, args, { cwd: work, stdio: ["ignore", "pipe", "pipe"] });
@@ -210,6 +230,7 @@ function parseArgs(argv) {
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--dry-run") o.dryRun = true;
+    else if (a === "--no-instructions") o.noInstructions = true;
     else if (a === "--extension") o.extension.push(argv[++i]);
     else if (a.startsWith("--") && i + 1 < argv.length) o[a.slice(2)] = argv[++i];
     else (o._ ??= []).push(a);
@@ -239,7 +260,9 @@ async function cmdRun(o) {
   mkdirSync(pinnedDir, { recursive: true });
   const pinnedRoot = o.pinned ? resolve(o.pinned) : extractPinned(pinnedDir);
   const index = specIndex(pinnedRoot);
-  const meta = { runId, arm: o.arm, model: o.model, tree, treeSource: readSource(tree), pinned: DATA.pinned, comparisons: ids, concurrency, timeoutMin: Number(o["timeout-min"] ?? 20), extensions, pi: o.pi ?? "pi", started: new Date().toISOString(), dryRun: Boolean(o.dryRun) };
+  const instr = instructionsFor(tree, o);
+  if (instr) writeFileSync(join(out, "instructions.md"), instr.text);
+  const meta = { runId, arm: o.arm, model: o.model, instructions: instr ? { source: instr.source, sha256: instr.sha256, adaptedSha256: instr.adaptedSha256 } : null, tree, treeSource: readSource(tree), pinned: DATA.pinned, comparisons: ids, concurrency, timeoutMin: Number(o["timeout-min"] ?? 20), extensions, pi: o.pi ?? "pi", started: new Date().toISOString(), dryRun: Boolean(o.dryRun) };
   writeFileSync(join(out, "run.json"), JSON.stringify(meta, null, 2) + "\n");
   await pool(comps, concurrency, async (c) => {
     const dir = join(out, c.id);
@@ -248,7 +271,7 @@ async function cmdRun(o) {
     const text = prompt(c, o.arm);
     writeFileSync(join(dir, "prompt.txt"), text + "\n");
     if (o.dryRun) { writeFileSync(join(dir, "dry-run.json"), JSON.stringify({ work, cwdFiles: readdirSync(work).sort() }, null, 2) + "\n"); return; }
-    const r = await runPi({ pi: meta.pi, model: o.model, work, sessions: join(dir, "sessions"), extensions, text, events: join(dir, "events.jsonl"), stderr: join(dir, "stderr.txt"), timeoutMs: meta.timeoutMin * 60_000 });
+    const r = await runPi({ pi: meta.pi, model: o.model, work, sessions: join(dir, "sessions"), extensions, text, instructions: instr ? join(out, "instructions.md") : null, events: join(dir, "events.jsonl"), stderr: join(dir, "stderr.txt"), timeoutMs: meta.timeoutMin * 60_000 });
     writeFileSync(join(dir, "exit.json"), JSON.stringify({ ...r, work }, null, 2) + "\n");
     console.error(`${c.id}: exit ${r.code}${r.signal ? ` (${r.signal})` : ""} in ${Math.round(r.ms / 1000)} s`);
   });
@@ -277,7 +300,7 @@ export function gradeDir(out, index) {
     lostVsPacket: done.reduce((s, r) => s + r.lostVsPacket.length, 0), outside: done.reduce((s, r) => s + r.outside.length, 0),
     directSpec: done.reduce((s, r) => s + (r.directSpec?.length ?? 0), 0), scratch: done.reduce((s, r) => s + (r.scratch?.length ?? 0), 0),
   };
-  const card = { arm: meta.arm, model: meta.model, tree: meta.treeSource ?? meta.tree, pinned: meta.pinned, runId: meta.runId, total, rows };
+  const card = { arm: meta.arm, model: meta.model, instructions: meta.instructions ?? null, tree: meta.treeSource ?? meta.tree, pinned: meta.pinned, runId: meta.runId, total, rows };
   writeFileSync(join(out, "agent-scorecard.json"), JSON.stringify(card, null, 2) + "\n");
   const lines = [`agent arm: ${meta.arm} · model ${meta.model} · tree ${meta.treeSource ? `${meta.treeSource.ref} @ ${meta.treeSource.commit.slice(0, 12)}` : meta.tree}`, ""];
   for (const r of rows) lines.push(r.missing ? `  ${r.id}  (no events)` : `  ${r.id}  answered ${r.answered}/${r.of} (packet ${packet[r.id]})  bytes ${r.bytes}  calls ${r.calls}  read ${r.passagesRead}  lines ${r.contentsLines}  lost-vs-packet ${r.lostVsPacket.length}  outside ${r.outside.length}  direct-spec ${r.directSpec.length}  scratch ${r.scratch.length}  exit ${r.exit}${r.signal ? ` ${r.signal}` : ""}`);
@@ -295,6 +318,7 @@ export function compareRuns(baseDir, candDir) {
   const base = JSON.parse(readFileSync(join(baseDir, "agent-scorecard.json"), "utf8"));
   const cand = JSON.parse(readFileSync(join(candDir, "agent-scorecard.json"), "utf8"));
   if (base.model !== cand.model) throw new Error(`models differ: ${base.model} vs ${cand.model}; compare only at one model and level`);
+  if (Boolean(base.instructions) !== Boolean(cand.instructions)) throw new Error("one run had instructions and the other not; both arms get their own tree's spec-mode text, or neither");
   const rows = [], lost = [];
   for (const r of cand.rows.filter((x) => !x.missing)) {
     const b = base.rows.find((x) => x.id === r.id && !x.missing);

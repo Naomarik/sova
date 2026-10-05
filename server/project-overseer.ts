@@ -4,7 +4,7 @@ import { join, relative } from "node:path";
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import { agentRoot } from "./state-root";
 import { toolCtx, toPiTool } from "./harness/pi/tools";
-import { createSessionFile, stateViewOf } from "./harness/pi/state";
+import { createSessionFile } from "./harness/pi/state";
 import { PROJECT_OVERSEER } from "./harness/state-kinds";
 import {
   autonomyMeaning,
@@ -29,7 +29,7 @@ import {
 import type { OverseerState } from "../shared/protocol";
 import { noteBuildMerged } from "./build-merged";
 import { buildSessionPath, buildSetupEnded, buildSid, newBuildSessionId, noteBuildSettled, noteBuildStarted, probeBuild, readBuild, readBuilds, syncBuildTurn, syncProjectBuilds, withWorktreePath } from "./build-loadout";
-import { acquireChat, BusyError, disposeHeldChat, drainQueueThenAbort, heldChat, isSessionBusy, onAgentSettled, onAgentStarted, registerSpecialLoadout, type ChatSession } from "./chat-manager";
+import { acquireChat, BusyError, disposeHeldChat, drainQueueThenAbort, heldChat, isSessionBusy, onAgentSettled, onAgentStarted, registerSpecialLoadout, type ChatSession, type SessionMarks } from "./chat-manager";
 import { shuttingDown } from "./wrapup-recovery";
 import { listModels } from "./models";
 import { workingSubagents } from "./live";
@@ -937,8 +937,8 @@ export async function removeCodingWorktree(projectId: string, sessionId: unknown
 // ---- the runtime loadout ------------------------------------------------------------------------------
 
 /** The file's project overseer marker: the first one written (a malformed first marker reads null). */
-function markerOf(sm: { getEntries(): readonly unknown[] }): ProjectOverseerMarkerData | null {
-  return stateViewOf(sm.getEntries()).first(PROJECT_OVERSEER)?.data ?? null;
+function markerOf(s: SessionMarks): ProjectOverseerMarkerData | null {
+  return s.state.file().first(PROJECT_OVERSEER)?.data ?? null;
 }
 
 /** The runtime whose file this is (the loadout's lookups), or a refusal. */
@@ -974,12 +974,12 @@ registerSpecialLoadout({
   },
   // The marker, in the sessions dir of the engine that holds the project, AND a conversation the project's state
   // knows: a fork or a copy elsewhere opens as an ordinary session.
-  matches(sm, path) {
-    const m = markerOf(sm);
+  matches(s, path) {
+    const m = markerOf(s);
     if (!m) return false;
     try {
-      if (!projectOverseerOfPath(path, sm.getSessionId())) return false;
-      return isPoId(projectOverseerPaths(m.projectId), sm.getSessionId());
+      if (!projectOverseerOfPath(path, s.id)) return false;
+      return isPoId(projectOverseerPaths(m.projectId), s.id);
     } catch {
       return false;
     }

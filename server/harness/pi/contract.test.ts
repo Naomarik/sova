@@ -583,7 +583,7 @@ describe("pi contract", () => {
   test("P17 theme-global: initTheme registers the theme on globalThis under pi's Symbol.for key", () => {
     initTheme(undefined, false);
     const theme = (globalThis as any)[Symbol.for("@earendil-works/pi-coding-agent:theme")];
-    assert.equal(typeof theme, "object", "fixed or renamed: currentTheme (chat-manager) reads this key");
+    assert.equal(typeof theme, "object", "fixed or renamed: currentTheme (harness/pi/ui-bridge.ts) reads this key");
     assert.ok(theme);
   });
 

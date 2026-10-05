@@ -1,7 +1,7 @@
 import { mkdirSync, readFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import type { HEntry, SessionStateWriter, StateKind, ToolSpec } from "../shared/harness";
-import { createSessionFile, stateViewOf, toolStateWriter } from "./harness/pi/state";
+import { createSessionFile, toolStateWriter } from "./harness/pi/state";
 import { toolCtx, toPiTool } from "./harness/pi/tools";
 import { BATON, BATON_DECISION, BATON_DONE, BATON_EFFECT_KINDS, BATON_HANDOFF, BATON_LEASE, BATON_OFFER, BATON_PROPOSAL } from "./harness/state-kinds";
 import {
@@ -27,7 +27,7 @@ import { inlineOperatorImages } from "./baton-images";
 import { readBatonSettings } from "./baton-settings";
 import { authorNotes, labelAuthors, streamingText } from "./baton-view";
 import { runWrapup, WRAPUP_SYSTEM, WRAPUP_TOOL, wrapupActive, wrapupTool } from "./baton-wrapup";
-import { acquireChat, BusyError, type ChatSession, RefusedError, registerSpecialLoadout } from "./chat-manager";
+import { acquireChat, BusyError, type ChatSession, RefusedError, registerSpecialLoadout, type SessionMarks } from "./chat-manager";
 import { hostOf, onOrgChange, onOrgHostOpened, type Effect, type OrgHostApi } from "./org-engine";
 import type { Step } from "./statecharts";
 import type { Envelope } from "./org-envelope";
@@ -622,7 +622,7 @@ onOrgChange((_orgId, change) => {
 });
 
 
-const isBatonMarked = (sm: { getEntries(): readonly unknown[] }) => stateViewOf(sm.getEntries()).has(BATON);
+const isBatonMarked = (s: SessionMarks) => s.state.file().has(BATON);
 
 registerSpecialLoadout({
   kind: "baton",

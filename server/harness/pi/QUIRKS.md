@@ -36,7 +36,7 @@ Paths in "Where" are under `server/`.
 
 | Quirk | Kind | Where | pi | Retire when |
 |---|---|---|---|---|
-| P1 open-writes-nothing | monkey-patch | `openSession` (chat-manager.ts), `ChatSession.flushDeferredAppends` (chat-manager.ts), `restatesRecordedModel` (chat-manager.ts) | `createAgentSession`, `SessionManager.appendModelChange`, `SessionManager.appendThinkingLevelChange` | pi stops appending at construction, or offers an open that writes nothing |
+| P1 open-writes-nothing | monkey-patch | `openPiSession` (harness/pi/open.ts), `ChatSession.flushDeferredAppends` (chat-manager.ts), `restatesRecordedModel` (harness/pi/open.ts) | `createAgentSession`, `SessionManager.appendModelChange`, `SessionManager.appendThinkingLevelChange` | pi stops appending at construction, or offers an open that writes nothing |
 | P2 compaction-write-wrap | monkey-patch | `compactSession` (chat-manager.ts) | `AgentSession.compact`, `SessionManager.appendCompaction` | pi offers a pre-write hook for a compaction |
 | P3 compaction-error-text | error-text | `compactSession` (chat-manager.ts), `isCompactionInProgress` (chat-manager.ts) | `AgentSession.compact`, `AgentSession.prompt` | pi throws typed errors |
 | P4 already-processing | error-text | `isAlreadyProcessing` (harness/pi/session.ts), `ChatSession.linkToSdk` (chat-manager.ts) | `AgentSession.prompt`, `Agent.prompt` | pi throws a typed error |
@@ -52,10 +52,10 @@ Paths in "Where" are under `server/`.
 | P14 command-direct-call | internal-API | `ChatSession.modeCommand` (chat-manager.ts), `ChatSession.claudeLoginCommand` (chat-manager.ts), `ChatSession.applyMode` (chat-manager.ts), `ChatSession.syncModePrompt` (chat-manager.ts), `ChatSession.applyLoginPick` (chat-manager.ts), `ChatSession.sandboxHost` (chat-manager.ts), `ChatSession.resumeWorker` (chat-manager.ts), `sandboxCommandOf` (sandbox-state.ts), `resumeCommandOf` (worker-resume.ts) | `ExtensionRunner.getCommand`, `ExtensionRunner.createCommandContext`, `ResolvedCommand.sourceInfo` | pi offers a public run-command API for embedders |
 | P15 accept-vs-complete | semantic | `PiHarnessSession.send` (harness/pi/session.ts), `ChatSession.linkToSdk` (chat-manager.ts) | `AgentSession.prompt`, `PromptOptions.preflightResult` | never: HarnessSession.send and its onAccepted mirror it; keep the canary |
 | P16 custom-message-idle | semantic | `PiHarnessSession.appendNote` (harness/pi/session.ts), `ChatSession.appendNote` (chat-manager.ts) | `AgentSession.sendCustomMessage` | never: a contract worth keeping a canary for |
-| P17 theme-global | private-read | `currentTheme` (chat-manager.ts) | `initTheme`, `Symbol.for("@earendil-works/pi-coding-agent:theme")` | pi exports the theme instance |
-| P18 warmup-shutdown | internal-API | `warmClaudeCodeProvider` (chat-manager.ts) | `AgentSession.bindExtensions`, `AgentSession.dispose`, `ExtensionRunner.emit`, `ExtensionRunner.hasHandlers` | dispose() emits session_shutdown (then the warm-up's own emit would double it) |
+| P17 theme-global | private-read | `currentTheme` (harness/pi/ui-bridge.ts) | `initTheme`, `Symbol.for("@earendil-works/pi-coding-agent:theme")` | pi exports the theme instance |
+| P18 warmup-shutdown | internal-API | `warmClaudeCodeProvider` (harness/pi/open.ts) | `AgentSession.bindExtensions`, `AgentSession.dispose`, `ExtensionRunner.emit`, `ExtensionRunner.hasHandlers` | dispose() emits session_shutdown (then the warm-up's own emit would double it) |
 | P19 rebuild-prompt | semantic | `LivePrompt.rebase` (overseer.ts) | `AgentSession.setActiveToolsByName`, `AgentSession._rebuildSystemPrompt`, `DefaultResourceLoader.appendSystemPromptOverride` | pi adds a public refreshSystemPrompt(), or re-reads the parts at each run |
-| P20 model-restore-gate | semantic | `recordedModelForEmptyBranch` (chat-manager.ts), `modelForSessionOpen` (chat-manager.ts) | `createAgentSession`, `SessionManager.buildSessionContext` | pi restores a recorded model on any branch |
+| P20 model-restore-gate | semantic | `recordedModelForEmptyBranch` (harness/pi/open.ts), `modelForSessionOpen` (harness/pi/open.ts) | `createAgentSession`, `SessionManager.buildSessionContext` | pi restores a recorded model on any branch |
 | T1 scripted-model (test-only) | private-write | `ScriptedModel.attach` (harness/pi/testing/scripted-model.ts) | `AgentSession._modelRuntime`, `Agent.getApiKey`, `Agent.streamFunction` | pi offers a public test model hook |
 
 ## What each one relies on

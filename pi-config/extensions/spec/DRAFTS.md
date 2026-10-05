@@ -185,10 +185,10 @@ records the decision, not that it was built.
 - **Built** means the record has `code` and the `evidence` label `reviewed` or `verified`. So
   `--doc-only` is refused (`doc-only-refused`) for an agreed record that maps code or carries one of
   those labels; a record with no `agreed` at all is refused as before.
-- **It belongs to the wording.** The build edits the same record: it adds `code` (and its label),
-  keeps `agreed` as it is, and records commit or snapshot evidence of the code. A promotion may
-  replace the `agreed` current already has only when it also rewords that record's prose (the
-  person agreed again to the new words) and the new `at` is not earlier than the old one. Changing
+- **It names who decided.** The build edits the same record: it adds `code` (and its label), keeps
+  `agreed` as it is, and records commit or snapshot evidence of the code. A rewording may keep
+  `agreed`; a change of meaning goes back to the person, and their new agreement replaces it, in
+  the same promotion as the reworded prose, with an `at` not earlier than the old one. Changing
   `agreed` on unchanged prose, an earlier `at`, or removing `agreed` is refused (`agreed-rewritten`).
   Deleting the whole record is an ordinary deletion.
 - **Shape.** `agreed` must be an object with exactly a non-empty `by` and a real date `at`, on a

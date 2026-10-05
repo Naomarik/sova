@@ -18,6 +18,7 @@ const { concurrencyRefusal, overseerTools, renderTranscript, TurnLimits, BUILTIN
 const { buildOverseerTools, countRunning, renderOverseerPrompt, briefDecision, BRIEF_MIN_GAP_MS, BRIEF_REPEAT_MS } = await import("./overseer");
 const { DEFAULT_CAPS, readOverseerSettings } = await import("./overseer-store");
 const { disposeAllChats } = await import("./chat-manager");
+const { historyOf } = await import("./harness/pi/reader");
 
 after(async () => {
   await disposeAllChats();
@@ -92,7 +93,7 @@ describe("the prompt and the tool set stay in step", () => {
   test("sova_card never ends the turn; its details are the card, and a later call sees it", async () => {
     const card = buildOverseerTools().find((t) => t.name === "sova_card")!;
     const branch: unknown[] = [];
-    const ctx = { sessionId: "sess-1", cwd: "/", leafId: () => null, rawBranch: () => branch };
+    const ctx = { sessionId: "sess-1", cwd: "/", leafId: () => null, rawBranch: () => branch, branch: () => historyOf(branch) };
     const out = await card.execute("k1", { ops: [{ op: "create", title: "Archive 12 sessions?", options: [{ label: "Archive", tone: "danger" }, { label: "Cancel", reply: "no" }] }] }, undefined, undefined, ctx as never);
     assert.equal(out.terminate, undefined);
     assert.equal(out.details.card.id, "c_1");
@@ -135,7 +136,7 @@ describe("the prompt and the tool set stay in step", () => {
     const b = addTodo({ text: "Just file it" });
     const card = buildOverseerTools().find((t) => t.name === "sova_card")!;
     const branch: unknown[] = [];
-    const ctx = { sessionId: "sess-rows", cwd: "/", leafId: () => null, rawBranch: () => branch };
+    const ctx = { sessionId: "sess-rows", cwd: "/", leafId: () => null, rawBranch: () => branch, branch: () => historyOf(branch) };
     const long = `${"Long note. ".repeat(25)}End.`;
     const out = await card.execute(
       "r1",

@@ -45,6 +45,7 @@ import { open } from "node:fs/promises";
 import { isAbsolute } from "node:path";
 import type { GitChange, GitCommit, GitFileChange, GitRepoSummary, GitSummary, GitWhere } from "../shared/protocol";
 import type { ExecResult } from "./files";
+import { lineHeader } from "./harness/pi/reader";
 import { classifyFailure, parseTargetCwd, runOnTarget, type TargetRunResult } from "./targets";
 
 /** How long a read stays fresh. */
@@ -472,8 +473,8 @@ export async function readStoredCwd(path: string): Promise<string | null> {
     const buf = Buffer.alloc(64 * 1024);
     const { bytesRead } = await fh.read(buf, 0, buf.length, 0);
     const first = buf.subarray(0, bytesRead).toString("utf8").split("\n", 1)[0] ?? "";
-    const header = JSON.parse(first) as { type?: unknown; cwd?: unknown };
-    return header?.type === "session" && typeof header.cwd === "string" && header.cwd !== "" ? header.cwd : null;
+    const cwd = lineHeader(first)?.cwd;
+    return typeof cwd === "string" && cwd !== "" ? cwd : null;
   } catch {
     return null;
   } finally {

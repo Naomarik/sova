@@ -225,7 +225,7 @@ describe("end to end: an extension registers toPiTool(spec) and a run calls it",
   });
 });
 
-describe("record_decision's quote entry over the raw branch (baton-loadout quoteEntryOf)", () => {
+describe("record_decision's quote entry over the branch (baton-loadout quoteEntryOf)", () => {
   /** The walk it replaced: from the leaf up its parents through getEntry, at most 200 entries. */
   const byParents = (sm: { getEntry(id: string): any }, id: string): string => {
     let cur = sm.getEntry(id);
@@ -244,8 +244,8 @@ describe("record_decision's quote entry over the raw branch (baton-loadout quote
     const check = () => {
       const c = toolCtx({ sessionManager: sm, cwd: dir } as never);
       const marker = c.leafId() ?? "1700000000000";
-      assert.equal(quoteEntryOf(c.rawBranch(), marker), byParents(sm, marker));
-      return quoteEntryOf(c.rawBranch(), marker);
+      assert.equal(quoteEntryOf(c.branch(), marker), byParents(sm, marker));
+      return quoteEntryOf(c.branch(), marker);
     };
     assert.equal(check(), "1700000000000", "no leaf: the marker itself");
     const u1 = sm.appendMessage(user("first") as never);

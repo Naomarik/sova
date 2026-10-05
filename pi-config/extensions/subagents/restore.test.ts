@@ -454,6 +454,43 @@ test("restart: a paused team stays paused (its resumed monitor is sent the resum
 	}
 });
 
+test("restart: a restored team member's row names its saved team, and still does once resumed", async () => {
+	const root = fs.mkdtempSync(path.join(os.tmpdir(), "pi-subagents-restore-teamid-"));
+	const agentDir = path.join(root, "agent");
+	fs.mkdirSync(agentDir); // no team-defaults.json: no coordinator or monitor
+	const file = sessionFile();
+	const first = manager(file, { agentDir, mailboxRoot: path.join(root, "mail1") });
+	const second = manager(file, { agentDir, mailboxRoot: path.join(root, "mail2") });
+	try {
+		first.start();
+		await first.call("team_create", { name: "Crew", objective: "Ship", members: [{ role: "dev", prompt: "Write f01." }, { role: "qa", prompt: "Test f01." }] });
+		await first.call("agent_spawn", { agents: [{ prompt: "solo", name: "loner" }] });
+		for (const w of first.workers) w.identify(`/nowhere/${w.id}.jsonl`);
+		await new Promise((r) => setTimeout(r, 150)); // the throttled refresh writes the refs
+		const live = Object.fromEntries(first.snapshot().workers.map((w: any) => [w.name, w.teamId]));
+		assert.deepEqual(live, { dev: "team_01", qa: "team_01", loner: undefined });
+		for (const w of first.workers) w.settle();
+		await first.shutdown();
+		second.start();
+		await until(() => (second.snapshot()?.workers ?? []).length === 3, "restored workers");
+		const rows = () => Object.fromEntries(second.snapshot().workers.map((w: any) => [w.id, { restored: w.restored, teamId: w.teamId }]));
+		// Its team is history until a resume adopts it; the row still names it, from the durable record.
+		assert.deepEqual(rows(), {
+			ag_01: { restored: true, teamId: "team_01" }, ag_02: { restored: true, teamId: "team_01" },
+			ag_03: { restored: true, teamId: undefined },
+		});
+		await second.call("agent_resume", { id: "ag_01" });
+		await until(() => second.snapshot().workers.find((w: any) => w.id === "ag_01")?.restored === undefined, "ag_01 resumed");
+		assert.deepEqual(rows(), {
+			ag_01: { restored: undefined, teamId: "team_01" }, ag_02: { restored: true, teamId: "team_01" },
+			ag_03: { restored: true, teamId: undefined },
+		});
+	} finally {
+		await second.shutdown();
+		fs.rmSync(root, { recursive: true, force: true });
+	}
+});
+
 test("resume: the worktree gate applies again — refused once the worker's worktree is dropped, allowed while it is active", async () => {
 	const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "subagents-resume-wt-")));
 	const live = path.join(root, "live");

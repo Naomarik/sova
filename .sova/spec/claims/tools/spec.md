@@ -339,9 +339,9 @@ lists the claims whose prose names it. Records carrying the optional `embeds` an
 add groups of their own to `out` and `in` (§tools.spec/record-fields); `in` lists both the claims
 that embed it, or for an H2 its H1, and the notes about it or its H1, so a claim drawn inside another
 or served by a note never reads as one nothing points at. It never follows a second hop and never
-prints a neighbour's passage. On an H1 with H2s, `out` also says how many of its H2s require claims
-outside it and how many distinct claims those are, pointing at `toc` on each H2 and at `map` on the
-area, so an H1 whose own record requires nothing never reads as an area that needs nothing.
+prints a neighbour's passage. On an H1 with H2s, `out` also says how many of its H2s require or embed
+claims outside it and how many distinct claims those are, pointing at `toc` on each H2 and at `map` on
+the area, so an H1 whose own record requires nothing never reads as an area that needs nothing.
 
 The output starts with the requested claim itself: its id, title, kind, labels, size, the number of
 code files its record lists (which `read` names), and its own "what". Then each neighbour gets one line, grouped under a heading per kind of link and ordered by id
@@ -355,7 +355,8 @@ with `…`. A blockquote is used only when the passage has no other prose; a pas
 "no prose sentence", with its code's size when it has code, and never quotes code. **Why** is the
 first visible-prose sentence of the linking claim's text that names the other one (the requested
 claim's for `out`, the neighbour's for `in` and `mentions`, naming the H1 for a line reached through
-it); failing that, an HTML comment naming it, labelled as a comment; failing that, for a note linked
+it), cut to 240 characters around its own mention of the link, with `…` where it is cut; failing
+that, an HTML comment naming it, labelled as a comment; failing that, for a note linked
 by its `about` field, "about §x (declared on the note)", since the field itself is the written reason;
 failing that, exactly "not mentioned in this claim's text". The JSON says which (`whatSource`, and
 `whySource` `prose`, `comment`, `declared` or `none`). A line, and the requested claim, whose record

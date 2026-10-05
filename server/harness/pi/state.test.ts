@@ -97,7 +97,7 @@ describe("stateOf and toolStateWriter", () => {
 });
 
 describe("createSessionFile", () => {
-  test("is today's hand-written file: header, then each seed record, written now and exclusively", () => {
+  test("is today's hand-written file: header, then each seed record, written now", () => {
     const rule = { v: 1 as const, card: "c_1", option: "a", label: "L", createdAt: "2026-01-01T00:00:00.000Z", message: "m", id: "r_1", text: "t", acts: ["sova_send" as const], sessions: "any" as const };
     const made = createSessionFile({ cwd: dir, sessionsDir: join(dir, "a"), id: "0198a000-0000-7000-8000-000000000003", seed: [[OVERSEER, { v: 1 }], [RULE, rule]] });
     assert.equal(made.id, "0198a000-0000-7000-8000-000000000003");
@@ -107,7 +107,29 @@ describe("createSessionFile", () => {
     sm.appendCustomEntry("overseer-rule", rule);
     const want = `${[JSON.stringify(sm.getHeader()), ...sm.getEntries().map((e) => JSON.stringify(e))].join("\n")}\n`;
     assert.equal(canonical(readFileSync(made.path, "utf8")), canonical(want));
-    assert.throws(() => createSessionFile({ cwd: dir, sessionsDir: join(dir, "a"), id: "0198a000-0000-7000-8000-000000000003" }), /EEXIST/);
+  });
+
+  test("never overwrites: a second file at the same path throws", () => {
+    // pi names the file `<time>_<id>.jsonl`, so both calls run at one pinned instant to resolve one path.
+    const RealDate = globalThis.Date;
+    const at = RealDate.parse("2026-01-02T03:04:05.006Z");
+    globalThis.Date = class extends RealDate {
+      constructor(...a: any[]) {
+        if (a.length) super(...(a as [any]));
+        else super(at);
+      }
+      static now = () => at;
+    } as DateConstructor;
+    try {
+      const opts = { cwd: dir, sessionsDir: join(dir, "d"), id: "0198a000-0000-7000-8000-000000000004" };
+      const made = createSessionFile(opts);
+      assert.match(made.path, /2026-01-02T03-04-05-006Z_0198a000-0000-7000-8000-000000000004\.jsonl$/, "the pinned instant names the file");
+      const before = readFileSync(made.path, "utf8");
+      assert.throws(() => createSessionFile({ ...opts, seed: [[OVERSEER, { v: 1 }]] }), /EEXIST/);
+      assert.equal(readFileSync(made.path, "utf8"), before);
+    } finally {
+      globalThis.Date = RealDate;
+    }
   });
 
   test("with no seed, the header alone", () => {

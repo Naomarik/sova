@@ -21,6 +21,11 @@ PI_PACKAGE_DIR=<prefix>/lib/node_modules/@earendil-works/pi-coding-agent pnpm te
 `PI_PACKAGE_DIR` is the `pi-coding-agent` package directory. Its pi-ai and typebox are resolved
 from its real path, as Node would from inside it.
 
+Its P1–P20 and T1 tests are the quirk canaries: `QUIRKS.md` (typed in `quirks.ts`) lists every pi
+behaviour Sova leans on beyond pi's promises, where Sova relies on it, and when it can go. A failing
+canary is triaged by its row there; `quirks-meta.test.ts` keeps the registry, the canaries and the code
+in step.
+
 ## The reader
 
 `reader.ts` is pi's session files as neutral history (`HEntry`, `shared/harness-history.ts`,

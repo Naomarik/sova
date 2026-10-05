@@ -119,3 +119,7 @@ a time, and results are collected by comparison, never by finishing order.
 The runner imports `claude-code/tests/hermetic-env.mjs` first, so the in-process hooks see a throwaway
 home. Shell effects in scenario c are applied by the harness, not run. Values carry no temp paths.
 Hook timing (`Date.now()`, file mtimes) is used only for ordering within a run, never in a value.
+The hooks bound each git and census call by a 5 s timeout and add an "incomplete check" note when one runs
+out, so a loaded machine can add a note the tree didn't cause (seen once: `c.claude.notes` 7 for 6). c
+therefore runs each hook's session in fresh repos until two runs give the same notes (paths aside), at most
+5, and fails the scenario if none repeat. With the timeout cut to 150 ms, 1 run in 6 differed before and 0 in 18 after.

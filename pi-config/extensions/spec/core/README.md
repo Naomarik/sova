@@ -124,7 +124,7 @@ as `§a/b`. A line for an id with no record or span is `dangling: true`.
 
 `seed` describes the requested claim the same way, plus `codeFiles` (how many code files its record
 lists; `read` names them); for `out` on an H1 with H2s it adds
-`childRequires: {h2s, claims}`, how many H2s require or embed claims outside the H1 and how many distinct claims. `footer` holds `delivered` (always empty: a
+`childRequires: {h2s, claims, of, uninvestigated}`, how many of its `of` H2s require or embed claims outside the H1, how many distinct claims, and how many H2s are behaviors with no `requires` key (also a `requires-uninvestigated` unknown, so exit 1). `footer` holds `delivered` (always empty: a
 contents line is never the passage), `listed` and `notListed` for this response, `otherDirections`
 (the line count of each direction not asked) and `unknowns` (`requires-uninvestigated` for a
 behavior with no `requires` key, or for `in` the behaviors that could also require it; `unknown` for

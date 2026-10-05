@@ -695,7 +695,7 @@ function relatedOf(ctx, hits, related, own = () => false) {
     if (rec.kind === "behavior" && rec.requires === undefined)
       add("note", "touched-uninvestigated", `${id} is touched and has no requires key: dependencies not investigated`, { id });
     if (cur.has(id))
-      add("note", "touched-foreign", `${id} is foreign (the task didn't create it) and ${files.get(id).join(", ")} changed: read it with read; flag it if a user sees a change there, even one your new claim describes; a gap it already had never flags, even one you now rely on`, { id });
+      add("note", "touched-foreign", `${id} is foreign (the task didn't create it) and ${files.get(id).join(", ")} changed: read it with read '${id}'; flag it if a user sees a change there, even one your new claim describes; a gap it already had never flags, even one you now rely on`, { id });
     return { id, kind: rec.kind, ...labelsOf(rec), created: !cur.has(id), file: d?.file, lines: d?.lines, files: files.get(id),
       requires: rec.requires ?? null, consumers: consumersOf(ctx, rev, id).map((c) => ({ id: c.id, depth: c.depth })) };
   });

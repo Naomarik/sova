@@ -358,13 +358,17 @@ export function tocStream(ctx, id, dir, parentOf) {
   let childRequires;
   if (dir === "out" && seed.level === 1 && (ctx.children.get(id) ?? []).length) {
     const inside = new Set([id, ...ctx.children.get(id)]), outside = new Set();
-    let h2s = 0;
+    let h2s = 0, uninvestigated = 0;
     for (const c of ctx.children.get(id)) {
+      if (ctx.claims.get(c)?.kind === "behavior" && ctx.claims.get(c).requires === undefined) uninvestigated++;
       const r = ctx.claims.get(c), ext = [...(r?.requires ?? []), ...(r?.embeds ?? [])].filter((t) => !inside.has(t));
       if (ext.length) h2s++;
       ext.forEach((t) => outside.add(t));
     }
-    childRequires = { h2s, claims: outside.size };
+    const of = ctx.children.get(id).length;
+    childRequires = { h2s, claims: outside.size, of, uninvestigated };
+    // An H2 never investigated is unknown, not a part that needs nothing.
+    if (uninvestigated) unknowns.push({ code: "requires-uninvestigated", message: `${uninvestigated} of the ${of} H2s of ${id} have no requires key: their dependencies are unknown, not none` });
   }
   const otherDirections = Object.fromEntries(DIRS.filter((d) => d !== dir).map((d) => [d, neighbours(ctx, id, d, parentOf).length]));
   return { seed: { id, title: titleOf(seed), kind: rec.kind, level: seed.level, ...labelsOf(rec), ...agreedOf(rec), codeFiles: Array.isArray(rec.code) ? rec.code.length : 0, file: seed.file, lines: seed.lines, ...sizeOf(ctx, id), ...whatOf(seed),
@@ -380,7 +384,11 @@ export function renderToc(out) {
   L.push(`${s.id} — ${s.title}  ${s.kind}${lab(s)} · ${sizeText(s)}${s.codeFiles ? ` · code ${s.codeFiles} file(s), read names them` : ""}${agreedText(s)}`, `  what: ${s.what}`);
   if (out.dir === "out" && !out.counts.groups.requires && !out.counts.groups.embeds)
     L.push(`${D}: requires: ${s.requires === null && s.kind === "behavior" ? "dependencies uninvestigated (no requires key)" : "none declared"}`);
-  if (s.childRequires) L.push(`${D}: its ${s.childRequires.h2s} H2(s) require or embed ${s.childRequires.claims} claim(s) outside it: toc each H2 --dir out, or map '${s.id}'`);
+  if (s.childRequires) {
+    const c = s.childRequires, un = c.uninvestigated ? `; ${c.uninvestigated} of its ${c.of} H2s have no requires key: their dependencies are unknown, not none` : "";
+    L.push(c.claims ? `${D}: its ${c.h2s} H2(s) require or embed ${c.claims} claim(s) outside it: toc each H2 --dir out, or map '${s.id}'${un}`
+      : `${D}: none of its ${c.of} H2s requires or embeds a claim outside it${un}`);
+  }
   let group = null;
   for (const e of out.lines) {
     if (e.group !== group) { group = e.group; L.push(`${D}: ${HEADS[group]}${group.endsWith("-through-parent") ? " " + e.via : ""} (${out.counts.groups[group]})`); }

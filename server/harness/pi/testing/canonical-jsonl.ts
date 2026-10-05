@@ -32,6 +32,9 @@ export interface CanonicalOptions {
   literals?: Record<string, string>;
   /** Bodies to elide (default ["system"]). */
   elide?: readonly Elide[];
+  /** Also replace a known entry id where it is not a whole quoted string (a row's block id
+      `<id>:0`, a trace's free text), bounded by non-hex characters. Off by default. */
+  idsAnywhere?: boolean;
 }
 
 const ENTRY_ID = /"id":"([0-9a-f]{8})"/g;
@@ -100,8 +103,9 @@ export class Canonicalizer {
     // Entry ids: collected from each line's own "id", in file order, then replaced wherever quoted.
     for (const m of out.matchAll(ENTRY_ID)) if (!this.ids.has(m[1]!)) this.ids.set(m[1]!, String(this.ids.size + 1).padStart(8, "0"));
     if (this.ids.size) {
-      const any = new RegExp(`"(${[...this.ids.keys()].map(escapeRe).join("|")})"`, "g");
-      out = out.replace(any, (_, id: string) => `"${this.ids.get(id)}"`);
+      const alt = [...this.ids.keys()].map(escapeRe).join("|");
+      const any = this.opts.idsAnywhere ? new RegExp(`(?<![0-9a-f])(${alt})(?![0-9a-f])`, "g") : new RegExp(`"(${alt})"`, "g");
+      out = out.replace(any, (_: string, id: string) => (this.opts.idsAnywhere ? this.ids.get(id)! : `"${this.ids.get(id)}"`));
     }
 
     out = out.replace(ISO, CANON_ISO);

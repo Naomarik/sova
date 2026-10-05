@@ -160,6 +160,17 @@ test("pull checks run where toc exists: held by a faithful contents view, each f
     assert.ok(names.includes(name), `${name} fails on the sabotaged stub (failed: ${names.join(", ")})`);
 });
 
+/** read's embed line (M5); the test below runs once this tree's read delivers embeds. */
+const EMBED_LINE = "for (const k of [t, ...childrenInOrder(ctx, t)])";
+test("an embed delivered as its lede only is not whole: the target says so and read-names-links trips", { timeout: 600_000, skip: !readFileSync(join(TREE, "spec/core/read.mjs"), "utf8").includes(EMBED_LINE) && "this tree's read does not deliver embeds (M5)" }, async () => {
+  const value = (card) => card.rows.find((r) => r.metric === "f.pull.target.unasked")?.value ?? "";
+  const whole = await runArm(sabotaged([]), { label: "whole", only: ["f"] });
+  assert.match(value(whole), /§f\/panel:delivered whole/);
+  const lede = await runArm(sabotaged([["spec/core/read.mjs", EMBED_LINE, "for (const k of [t])"]]), { label: "lede", only: ["f"] });
+  assert.match(value(lede), /§f\/panel:delivered, not whole/);
+  assert.ok(failed(lede).includes("f.pull.read-names-links"), `failed: ${failed(lede).join(", ")}`);
+});
+
 test("h's guards trip when doc-only evidence covers any behavior, code and all", { timeout: 600_000 }, async () => {
   const tree = sabotaged([["spec/core/sova-spec-draft.mjs", 'const DOC_ONLY_KINDS = new Set(["note", "section"]);', 'const DOC_ONLY_KINDS = new Set(["note", "section", "behavior"]);']]);
   const card = await runArm(tree, { label: "sabotaged", only: ["h"] });
@@ -210,6 +221,40 @@ test("agent arm grading: what came back in tool results is what was read; leavin
   const empty = grade(index, c, "", root);
   assert.equal(empty.answered, 0);
   assert.equal(empty.lostVsPacket.length, JSON.parse(readFileSync(BASELINE_PATH, "utf8")).comparisons.C18.values.filter((v) => v > 0).length);
+});
+
+test("agent arm grading: a passage the frame carries is read, JSON or text; toc lines and footer names in text are seen", { skip: spawnSync("git", ["-C", TREE, "cat-file", "-e", `${PINNED_REV}^{commit}`]).status !== 0 && "the pinned revision is not in this checkout" }, () => {
+  const root = mkdtempSync(join(tmpdir(), "spec-replay-agent-"));
+  temps.push(root);
+  extractPinned(root);
+  const index = specIndex(root);
+  // The first comparison with a packet-answered need whose passage is not the seed's own.
+  const recorded = JSON.parse(readFileSync(BASELINE_PATH, "utf8")).comparisons;
+  const other = (cc) => recorded[cc.id].values.findIndex((v, k) => v > 0 && recorded[cc.id].passageOf[k] && recorded[cc.id].passageOf[k] !== cc.seed);
+  const c = DATA.comparisons.find((cc) => other(cc) >= 0);
+  const base = recorded[c.id], i = other(c);
+  const p = index.passages.get(base.passageOf[i]);
+  const call = (n, command, text) => [
+    { type: "tool_execution_start", toolCallId: `c${n}`, toolName: "bash", args: { command } },
+    { type: "tool_execution_end", toolCallId: `c${n}`, toolName: "bash", isError: false, result: { content: [{ type: "text", text }] } },
+  ];
+  const run = (...calls) => grade(index, c, calls.flat().map((e) => JSON.stringify(e)).join("\n"), root);
+  // The need's passage arrives only as a frame item on read's first page.
+  const json = run(call(1, `node tools/sova-spec.mjs read '${c.seed}' --json`, JSON.stringify({ command: "read", items: [], footer: { named: [] }, frame: { passages: 1, items: [{ id: p.id, text: p.text }] } })));
+  assert.equal(json.values[i], base.values[i], `${p.id} carried by the frame (JSON) answers need ${i}`);
+  const text = run(call(1, `node tools/sova-spec.mjs read '${c.seed}'`, `── frame: always applies\n── ${p.id} — x [behavior] ${p.file}:${p.lines[0]}-${p.lines[1]} (1 KB) · frame\n${p.text.replace(/\n$/, "")}\nexit 0`));
+  assert.equal(text.values[i], base.values[i], `${p.id} carried by the frame (text) answers need ${i}`);
+  // Text toc: every packet-answered passage shown as a contents line or named in read's footer; nothing read.
+  const shownIds = [...new Set(base.passageOf.filter((x, k) => x && base.values[k] > 0))];
+  const [half, rest] = [shownIds.slice(0, Math.ceil(shownIds.length / 2)), shownIds.slice(Math.ceil(shownIds.length / 2))];
+  const seen = run(
+    call(1, `node tools/sova-spec.mjs toc '${c.seed}' --dir out`, [`${c.seed} — Seed  behavior · 1 KB`, "  what: x", "OUT: requires (1)", ...half.flatMap((id) => [`  ${id} — T  behavior · 1 KB`, "    what: y"]), "exit 0"].join("\n")),
+    call(2, `node tools/sova-spec.mjs read '${c.seed}'`, `── ${c.seed} — Seed [behavior]\nbody\nnamed here, not delivered by this call: ${rest.join(", ") || "none"}\nexit 0`),
+  );
+  assert.equal(seen.answered, 0);
+  assert.deepEqual(seen.lostVsPacket, [], "a need whose passage was seen is not lost");
+  assert.ok(shownIds.every((id) => seen.shown.includes(id)), `seen: ${seen.shown.join(", ")}`);
+  assert.equal(seen.contentsLines, half.length);
 });
 
 test("make-tree: a ref's pi-config/extensions, with its commit recorded for the scorecard", { skip: spawnSync("git", ["-C", TREE, "rev-parse", "HEAD"]).status !== 0 && "not in a Git checkout" }, async () => {

@@ -23,7 +23,9 @@ const P = {
   wander: "§f/wander", sibling: "§f.seed/limits", core: "§design.rules/voice", about: "§design.copy/editor",
   consumer: "§f.other/uses-edit", unrelated: "§f.other/unrelated",
 };
-const WANDER_KIDS = ["first", "second", "third", "fourth"].map((k) => `§f.wander/${k}`);
+/** Did read hand over the embedded surface whole: its H1 and every H2, each byte-exact? (A lede alone is not.) */
+const embedWhole = (index, texts) => [P.panel, ...P.panelKids].every((id) => texts?.get(id) === index.passages.get(id).text);
+const WANDER_KIDS =["first", "second", "third", "fourth"].map((k) => `§f.wander/${k}`);
 
 /** About 10 KB of prose that says nothing the seed needs; deterministic. */
 const filler = (tag) => Array.from({ length: 108 }, (_, i) => `The ${tag} archive keeps entry ${i + 1} in the order it arrived, and a reader may page through it.`).join(" ") + "\n";
@@ -181,7 +183,7 @@ async function pull(ctx, repo, index) {
       guard("f.pull.unrelated-only-in", broken.length === 0 && strayUnrelated.length === 0, strayUnrelated.length ? `the unrelated consumer shows under ${strayUnrelated.join(",")}` : "the unrelated consumer shows only under --dir in, if at all"),
     ]),
     ...(rd === "absent" ? [row("f", "f.pull.read", "n/a", [na("f.pull.read-exact", "read"), na("f.pull.read-names-links", "read")])] : await readRows(ctx, repo, index, rd)),
-    row("f", "f.pull.target.unasked", [P.core, P.panel].map((id) => `${id}:${delivered.has(id) ? "delivered" : "not"}`).join(", ")),
+    row("f", "f.pull.target.unasked", `${P.core}:${delivered.has(P.core) ? "delivered" : "not"}, ${P.panel}:${embedWhole(index, (await readPassage(ctx.tools, repo.root, ctx.ws.home, SEED)).texts) ? "delivered whole" : delivered.has(P.panel) ? "delivered, not whole" : "not"}`),
     row("f", "f.pull.target.about-note", where(P.about).length ? `line under ${where(P.about).join(",")}` : "absent"),
     row("f", "f.pull.target.sibling", where(P.sibling).length ? `line under ${where(P.sibling).join(",")}` : "absent"),
   ];
@@ -192,8 +194,8 @@ async function readRows(ctx, repo, index, capable) {
   const own = index.passages.get(SEED);
   const r = capable === "broken" ? { ok: false, refused: "no-json" } : await readPassage(ctx.tools, repo.root, ctx.ws.home, SEED);
   const named = new Set(r.footer?.named ?? []);
-  // A link read delivered (an embed arrives whole) needs no name; every other one must be named.
-  const links = [P.dep, P.panel, P.wander].filter((id) => !named.has(id) && !r.texts?.has(id));
+  // A link read delivered (an embed arrives whole, every H2 byte-exact) needs no name; every other one must be named.
+  const links = [P.dep, P.panel, P.wander].filter((id) => !named.has(id) && !(id === P.panel ? embedWhole(index, r.texts) : r.texts?.get(id) === index.passages.get(id).text));
   return [row("f", "f.pull.read", r.ok ? { bytes: r.text ? Buffer.byteLength(r.text) : null, own: own.bytes, calls: r.calls } : `refused: ${r.refused}`, [
     guard("f.pull.read-exact", r.ok && r.text === own.text, r.ok ? (r.text === own.text ? "read returns exactly the seed's passage" : "read's text differs from the seed's source span") : `read failed: ${r.refused}`),
     guard("f.pull.read-names-links", r.ok && links.length === 0, links.length ? `links not named by read: ${links.join(", ")}` : "every link of the seed it didn't deliver is named"),

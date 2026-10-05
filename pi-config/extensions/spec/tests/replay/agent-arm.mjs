@@ -185,11 +185,18 @@ export function grade(index, c, events, workRoot) {
     bytes += Buffer.byteLength(text);
     const cmd = call.tool === "bash" ? String(call.args?.command ?? "") : String(call.args?.path ?? "");
     for (const a of accessesOf(call, cmd, workRoot)) access[a.kind].push(a.what);
-    for (const j of jsonsIn(text)) {
-      if (!j || typeof j !== "object") continue;
-      for (const it of j.items ?? []) if (typeof it?.text === "string" && typeof it.id === "string") fragments.push({ id: it.id, start: it.fragment?.start ?? 0, text: it.text });
+    const jsons = jsonsIn(text).filter((j) => j && typeof j === "object");
+    for (const j of jsons) {
+      // read's first page carries the frame (core records) beside its items; both arrive as passages.
+      for (const it of [...(j.items ?? []), ...(j.frame?.items ?? [])]) if (typeof it?.text === "string" && typeof it.id === "string") fragments.push({ id: it.id, start: it.fragment?.start ?? 0, text: it.text });
       for (const l of j.lines ?? []) if (typeof l?.id === "string") seenLines.add(l.id);
-      for (const id of j.footer?.named ?? []) footerNamed.add(id);
+      for (const id of [...(j.footer?.named ?? []), ...(j.footer?.about ?? [])]) if (typeof id === "string") footerNamed.add(id);
+    }
+    // The readable (text) forms of toc and read: contents lines and the footer's named ids. Passage text in
+    // text mode is verbatim, so the raw-text check below finds it.
+    if (!jsons.length && call.tool === "bash" && /sova-spec\.mjs["']?\s+(?:toc|read)\b/.test(cmd)) {
+      for (const m of text.matchAll(/^ {2}(§[^\s,]+) — /gm)) seenLines.add(m[1]);
+      for (const m of text.matchAll(/^(?:named here|notes about it), not delivered by this call: (.+)$/gm)) for (const id of m[1].match(/§[^\s,]+/g) ?? []) footerNamed.add(id);
     }
     // A claims file read by the read tool: the lines it returned.
     if (call.tool === "read" && claimsRel(cmd)) {

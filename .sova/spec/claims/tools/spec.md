@@ -375,7 +375,8 @@ project code is run, and the `packet` and `scope` outputs are unchanged.
 
 The read-only `read '§id'` command returns exactly one declared passage and nothing it requires,
 contains or mentions, except the surfaces its record `embeds`: those are drawn inside it, so each
-follows as further passages, whole (lede and every H2), in the same stream; and its first page
+follows as further passages, whole (lede and every H2), in the same stream, and so does each surface
+those embed in turn; and its first page
 carries the always-on frame outside the budget (§tools.spec/frame). For an H1 that passage
 is its lede, the text before its first H2; `--whole`
 returns the lede and then every H2 of the file in declaration order, each as its own passage. The
@@ -410,7 +411,7 @@ An `about` note shows in the contents view under `out` for its target, in an "ab
 for each H2 of a target H1, marked as reached through that H1. `read` names the notes about the
 passage it delivers, and `packet` adds to its prose the notes about the requested claim, its H1 and
 the surfaces it embeds, each with the reason `about`. On a spec whose records carry none of these
-fields, every existing output is unchanged.
+fields, every existing output is unchanged except packet's help text and its new `frame` part.
 
 `check` validates them. A value of the wrong shape is a record error, like a malformed `requires`:
 `embeds` or `about` not an array of § ids, or `core` not a boolean. A misuse is a warning naming the
@@ -426,8 +427,8 @@ reader asked for, and the page budget of the requested claim is spent on that cl
 `packet '§id' --part frame` pages it as a stream of its own, and `read --frame`, with no § id, reads
 it under read's budget and cursor rules. So that it arrives unasked, the first page of `read '§id'`
 also carries the whole frame as items of their own, outside that page's budget, leaving out any
-passage the page already delivers; continuation pages never carry it, and `--no-frame` drops it
-for a reader that already has it.
+passage this read delivers, which arrives in the read's own stream instead; continuation pages
+never carry it, and `--no-frame` drops it for a reader that already has it.
 
 Whenever the spec flags at least one core record, every `packet`, `toc` and `read` page (refusals
 aside) names the frame with its passage count, its byte count (the sum of its passages' UTF-8 bytes)

@@ -448,6 +448,8 @@ before you claim a feature.
   already includes the `# Minor mode: spec` block, follow it without rereading. Otherwise read
   `pi-config/extensions/mode/spec-mode.md`, the same text, and follow it. It applies in Sova
   whether or not that mode is on; don't turn any mode on. Commands are in `.sova/spec/USAGE.md`.
+- A change to the spec tools themselves names the goal it serves in
+  `pi-config/extensions/spec/GOALS.md` and is measured against today's tools by the replay harness.
 
 ## Method
 

@@ -1,6 +1,6 @@
 import { open, readFile, stat } from "node:fs/promises";
 import type { HEntry } from "../shared/harness";
-import { branchOf, lineEntry, parsePi } from "./harness/pi/reader";
+import { lineEntry, parsePiBranch } from "./harness/pi/reader";
 
 /** A final reply (not a tool-use step) newer than `since`: what the unread count counts. */
 export function isUnreadReply(h: HEntry, since: number): boolean {
@@ -95,7 +95,7 @@ export class UnreadReplies {
       this.memo = null;
       return 0;
     }
-    const branch = branchOf(parsePi(bytes.toString("utf8")).entries);
+    const branch = parsePiBranch(bytes.toString("utf8")).branch;
     let count = 0;
     for (const e of branch) if (isUnreadReply(e, since)) count++;
     // Kept for the next read only when it can go on from here: whole lines, a leaf with an id.

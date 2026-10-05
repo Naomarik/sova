@@ -364,12 +364,43 @@ export function liveEventsOf(frame: V1EventFrame | V2EventFrame): SovaEvent[] {
   return "v" in frame && frame.v === 2 ? (isObj(frame.event) ? [frame.event] : []) : fromV1(frame);
 }
 
+/** What an event with no effects returns: one shared array, never written. */
+const NO_EFFECTS: LiveEffect[] = Object.freeze([]) as unknown as LiveEffect[];
+
+/** A part event (the most frequent, a delta on every streamed token) on the store: it has no effects. */
+function applyPart(s: LiveState, event: Extract<SovaEvent, { type: "part.start" | "part.delta" | "part.end" }>): void {
+  const entry = lastAssistant(s);
+  const i = event.index ?? entry.blocks.length;
+  const cur = entry.blocks[i];
+  if (event.type === "part.start") {
+    if (event.kind === "toolCall") entry.blocks[i] = { type: "toolCall", id: event.id ?? "", name: event.name ?? "tool", argsText: "" };
+    else entry.blocks[i] = { type: event.kind, text: "" };
+  } else if (event.type === "part.delta") {
+    if (event.kind === "toolCall") {
+      if (cur?.type === "toolCall") cur.argsText += event.delta;
+    } else if (cur?.type === event.kind) cur.text += event.delta;
+    else entry.blocks[i] = { type: event.kind, text: event.delta };
+  } else if (event.kind === "toolCall") {
+    entry.blocks[i] = {
+      type: "toolCall",
+      id: event.id ?? (cur?.type === "toolCall" ? cur.id : ""),
+      name: event.name ?? (cur?.type === "toolCall" ? cur.name : "tool"),
+      argsText: cur?.type === "toolCall" ? cur.argsText : "",
+      args: event.args,
+    };
+  } else if (event.text !== undefined) entry.blocks[i] = { type: event.kind, text: event.text };
+}
+
 /**
  * Applies one live event to the store, and returns what it does besides (live-effects.ts), for the
  * chat view to run: `view` says whose view it lands in.
  */
 export function applyEvent(set: SetStoreFunction<LiveState>, event: LiveEvent, view: LiveEffectsContext = NO_VIEW): LiveEffect[] {
-  let effects: LiveEffect[] = [];
+  if (event.type === "part.start" || event.type === "part.delta" || event.type === "part.end") {
+    set(produce((s) => applyPart(s, event)));
+    return NO_EFFECTS;
+  }
+  let effects = NO_EFFECTS;
   set(
     produce((s) => {
       switch (event.type) {
@@ -428,31 +459,6 @@ export function applyEvent(set: SetStoreFunction<LiveState>, event: LiveEvent, v
           const by = typeof event.by === "string" ? event.by : undefined;
           const row = [...s.entries].reverse().find((e): e is Extract<LiveEntry, { kind: "user" }> => e.kind === "user" && !!e.started && !e.by);
           if (row && by) row.by = by;
-          break;
-        }
-        case "part.start":
-        case "part.delta":
-        case "part.end": {
-          const entry = lastAssistant(s);
-          const i = event.index ?? entry.blocks.length;
-          const cur = entry.blocks[i];
-          if (event.type === "part.start") {
-            if (event.kind === "toolCall") entry.blocks[i] = { type: "toolCall", id: event.id ?? "", name: event.name ?? "tool", argsText: "" };
-            else entry.blocks[i] = { type: event.kind, text: "" };
-          } else if (event.type === "part.delta") {
-            if (event.kind === "toolCall") {
-              if (cur?.type === "toolCall") cur.argsText += event.delta;
-            } else if (cur?.type === event.kind) cur.text += event.delta;
-            else entry.blocks[i] = { type: event.kind, text: event.delta };
-          } else if (event.kind === "toolCall") {
-            entry.blocks[i] = {
-              type: "toolCall",
-              id: event.id ?? (cur?.type === "toolCall" ? cur.id : ""),
-              name: event.name ?? (cur?.type === "toolCall" ? cur.name : "tool"),
-              argsText: cur?.type === "toolCall" ? cur.argsText : "",
-              args: event.args,
-            };
-          } else if (event.text !== undefined) entry.blocks[i] = { type: event.kind, text: event.text };
           break;
         }
         case "message.end": {

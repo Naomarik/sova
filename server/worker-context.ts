@@ -18,7 +18,7 @@ import type { HEntry } from "../shared/harness";
 import { claudeContextOf } from "../pi-config/extensions/claude-code/transcript-adapter.ts";
 import { readWorkerManifests, type WorkerManifest } from "../pi-config/extensions/subagents/worker-transcript.ts";
 import { resolveClaudeSession } from "./claude-transcript";
-import { branchOf, lineEntry, parsePi } from "./harness/pi/reader";
+import { lineEntry, parsePiBranch } from "./harness/pi/reader";
 import { contextStep } from "./harness/pi/usage";
 import { parseJsonl } from "./jsonl";
 import { resolveSessionPath } from "./paths";
@@ -89,6 +89,10 @@ function piFill(h: HEntry | null): TailFill {
 /** Cheap pre-filter before JSON.parse: only these lines can say anything. */
 const mayMatter = (line: Buffer, format: Format): boolean =>
   line.includes('"assistant"') || line.includes(format === "pi" ? "compaction" : "compact_boundary");
+
+/** Exact, for a pi line as text: only a reply, a compaction or a compaction's summary says anything (piFill), and
+    such a line spells "assistant" or "compaction" in it, unless it escapes them (`\u`). */
+const mayFill = (line: string): boolean => line.includes("assistant") || line.includes("compaction") || line.includes("\\u");
 
 /**
  * The fill at the file's LAST reply that reports one, scanned backwards from EOF (16KB chunks,
@@ -243,10 +247,18 @@ export function contextTally(format: Format, resolve: WindowResolver): ContextTa
   return (text, part) => {
     if (part === "snapshot") state = null;
     if (format === "pi") {
-      const { entries } = parsePi(text);
-      for (const h of part === "snapshot" ? branchOf(entries) : entries) {
-        const fill = piFill(h);
-        if (fill) state = fill;
+      if (part === "snapshot") {
+        for (const h of parsePiBranch(text).branch) {
+          const fill = piFill(h);
+          if (fill) state = fill;
+        }
+      } else {
+        // Appended lines in file order, each read only when it can say something (the rows read them all).
+        for (const line of text.split("\n")) {
+          if (!mayFill(line)) continue;
+          const fill = piFill(lineEntry(line));
+          if (fill) state = fill;
+        }
       }
     } else {
       for (const e of parseJsonl(text)) {

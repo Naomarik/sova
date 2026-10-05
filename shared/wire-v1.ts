@@ -81,9 +81,18 @@ const toolImages = (result: unknown) => (isObj(result) ? imagesFromContent(resul
 
 // ---- Events
 
+const DELTA_KIND = new Map<unknown, "text" | "thinking" | "toolCall">([["text_delta", "text"], ["thinking_delta", "thinking"], ["toolcall_delta", "toolCall"]]);
+
 /** One streamed assistant event (`message_update`'s `assistantMessageEvent`, as toV1Event sends it:
     a toolcall_start carries `id` and `toolName`). Its other types (start, done, error) map to none. */
 function partEvent(ev: Record<string, unknown>): SovaEvent[] {
+  // The deltas, nearly every frame of a turn: made without the spreads below (same keys, same order).
+  const kind = DELTA_KIND.get(ev.type);
+  if (kind !== undefined) {
+    const delta = str(ev.delta) ?? "";
+    const index = ev.contentIndex;
+    return [typeof index === "number" ? { type: "part.delta", index, kind, delta } : { type: "part.delta", kind, delta }];
+  }
   const at = typeof ev.contentIndex === "number" ? { index: ev.contentIndex } : {};
   const delta = str(ev.delta) ?? "";
   const ended = (kind: "text" | "thinking"): SovaEvent[] => {

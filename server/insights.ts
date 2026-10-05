@@ -44,7 +44,7 @@ import { readLiveRecords, type RawLiveRecord, workerCountsOf } from "./live";
 import { modelProvider, sharedWorkerWindowResolver } from "./models";
 import { resolveSessionPath } from "./paths";
 import { collectSkills, hasSkills, skillLinesOf } from "./skills";
-import { branchOf, parsePi } from "./harness/pi/reader";
+import { parsePiBranch } from "./harness/pi/reader";
 import { extensionEntries } from "./harness/pi/state";
 import { REWIND } from "./harness/state-kinds";
 import { stateView } from "./harness/state-view";
@@ -752,11 +752,8 @@ export function extractFacts(text: string): SessionFacts {
   const rewinds: RewindInfo[] = [];
   const explanations: ExplanationInfo[] = [];
   const teamEvents: TeamEvent[] = [];
-  const { header, entries } = parsePi(text);
-  const branch = branchOf(entries);
-  const isWorkerRecord = (h: HEntry) => h.kind === "state" && WORKER_RECORD_TYPES.has(h.key);
+  const { header, branch, states: records = [] } = parsePiBranch(text, { states: WORKER_RECORD_TYPES });
   const branchIds = new Set(branch.map((h) => h.id));
-  const records = entries.filter(isWorkerRecord);
   for (const h of branch) {
     if (h.kind === "state" && h.key === TEAM_ENTRY) addTeamEntry(teams, h.data);
     else if (h.kind === "state" && h.key === TEAM_EVENT_TYPE) {

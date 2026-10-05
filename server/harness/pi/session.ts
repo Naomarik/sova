@@ -28,7 +28,7 @@ import type {
 } from "../../../shared/harness";
 import { commandContextOf, ownedCommand } from "./commands";
 import { compactSession, rewindSession } from "./history-ops";
-import { historyOf, toHEntry } from "./reader";
+import { liveHistory, toHEntry } from "./reader";
 import { resourcesOf } from "./resources";
 import { piSessionState } from "./state";
 import { fromPiTool } from "./tools";
@@ -164,10 +164,12 @@ export class PiHarnessSession implements HarnessSession {
     return this.s.sessionManager.getLeafId() ?? null;
   }
   branch(): HEntry[] {
-    return historyOf(this.s.sessionManager.getBranch());
+    const sm = this.s.sessionManager;
+    return liveHistory(sm, "branch", sm.getBranch());
   }
   entries(): HEntry[] {
-    return historyOf(this.s.sessionManager.getEntries());
+    const sm = this.s.sessionManager;
+    return liveHistory(sm, "entries", sm.getEntries());
   }
   entry(id: EntryId): HEntry | undefined {
     return toHEntry(this.s.sessionManager.getEntry(id)) ?? undefined;

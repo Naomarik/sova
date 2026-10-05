@@ -11,7 +11,7 @@ import { readFile, stat } from "node:fs/promises";
 import type { HEntry } from "../shared/harness";
 import type { ContextInfo, TranscriptItem, WireVersion } from "../shared/protocol";
 import { entryOfRow, summarize } from "../shared/row-counts";
-import { branchOf, parsePi } from "./harness/pi/reader";
+import { parsePiBranch } from "./harness/pi/reader";
 import { chunkStart, HISTORY_CHUNK_CHARS, rangeStart, TAIL_CHARS, TAIL_MIN_ROWS, tailStart } from "./tail-hello";
 import { rowsOf as historyRows } from "./transcript";
 import { rowFor } from "./wire-rows";
@@ -25,7 +25,7 @@ export interface Rows {
   /** Each row's JSON on wire 1, whose lengths (`sizes`) every cut is made by. */
   json: string[];
   sizes: number[];
-  /** Each row's JSON on wire 2, made on its first ask. */
+  /** Each row's JSON on wire 2, made on its first ask (a hole until then). */
   json2?: string[];
   /** Every entry id in the file (the header's included), and those on the active branch. */
   fileIds: Set<string>;
@@ -61,30 +61,40 @@ export async function rowsOf(path: string): Promise<Rows> {
     cache.set(path, had);
     return had;
   }
-  const { header, entries } = parsePi(await readFile(path, "utf8"));
-  const branch = branchOf(entries);
+  const { branch, ids: fileIds } = parsePiBranch(await readFile(path, "utf8"), { ids: true });
   const items = historyRows(branch);
   const json = items.map((it) => JSON.stringify(it));
   const ids = (list: readonly unknown[]) => new Set(list.filter((id): id is string => typeof id === "string"));
   const sizes = json.map((s) => s.length);
   const weight = st.size + sizes.reduce((n, x) => n + x, 0);
-  const fileIds = ids([header?.id, ...entries.map((h) => h.id)]);
-  const rows: Rows = { stamp, branch, items, json, sizes, fileIds, branchIds: ids(branch.map((h) => h.id)), weight };
+  const rows: Rows = { stamp, branch, items, json, sizes, fileIds: fileIds!, branchIds: ids(branch.map((h) => h.id)), weight };
   cache.delete(path);
   cache.set(path, rows);
   trim();
   return rows;
 }
 
-/** The rows' JSON on `wire`. */
-function jsonOn(rows: Rows, wire: WireVersion): string[] {
-  if (wire === 1) return rows.json;
-  if (!rows.json2) {
-    rows.json2 = rows.items.map((it) => JSON.stringify(rowFor(it, 2)));
-    rows.weight += rows.json2.reduce((n, x) => n + x.length, 0);
+/** Rows [from, end)'s JSON on `wire`. Wire 2's is made per row on its first ask, only for the rows an answer
+    sends; a row without facts is the same on both wires. */
+function jsonOn(rows: Rows, wire: WireVersion, from: number, end: number): string[] {
+  if (wire === 1) return rows.json.slice(from, end);
+  const json2 = (rows.json2 ??= new Array<string>(rows.items.length));
+  const out: string[] = [];
+  let made = 0;
+  for (let i = from; i < end; i++) {
+    let s = json2[i];
+    if (s === undefined) {
+      const it = rows.items[i]!;
+      s = json2[i] = it.meta === undefined ? rows.json[i]! : JSON.stringify(rowFor(it, 2));
+      made += s.length;
+    }
+    out.push(s);
+  }
+  if (made) {
+    rows.weight += made;
     trim();
   }
-  return rows.json2;
+  return out;
 }
 
 const indexOfRow = (rows: Rows, id: string): number => {
@@ -163,7 +173,7 @@ export async function transcriptRows(
   // The fill, as the whole-branch response carries it, for the answers that reach the end.
   const ctx = q.tail || !q.before ? `,"context":${JSON.stringify(await context(rows.branch))}` : "";
   const summary = JSON.stringify(summarize(rows.items.slice(0, from)));
-  return { status: 200, body: `{"items":[${jsonOn(rows, wire).slice(from, end).join(",")}],"older":${from},"olderSummary":${summary}${ctx}}` };
+  return { status: 200, body: `{"items":[${jsonOn(rows, wire, from, end).join(",")}],"older":${from},"olderSummary":${summary}${ctx}}` };
 }
 
 // ---- The light view: `view=light` ----------------------------------------------------------------

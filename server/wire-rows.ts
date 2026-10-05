@@ -18,9 +18,10 @@ export const wireOf = (search: URLSearchParams | { get(name: string): string | n
 export function rowFor(it: TranscriptItem, wire: WireVersion): TranscriptItem {
   if (wire === 1 || it.meta === undefined) return it;
   const out: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(it)) {
+  // for-in, not Object.entries: a row is a plain object, so the same own keys in the same order, unallocated.
+  for (const k in it) {
     if (k === "meta") out.facts = factsFromMeta(it.meta);
-    else out[k] = v;
+    else out[k] = it[k as keyof TranscriptItem];
   }
   return out as unknown as TranscriptItem;
 }

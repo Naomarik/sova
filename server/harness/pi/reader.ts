@@ -1,6 +1,6 @@
 // pi's session files as Sova's neutral history (§app.harness/reader). The one place that knows pi's entry
 // and message shapes: it parses a file, finds its active branch, and turns each entry into an HEntry
-// (shared/harness-history.ts), keeping the raw entry beside it (`rawOf`) for the readers that have not
+// (shared/harness-history.ts), keeping the raw entry on it, hidden (`rawOf`), for the readers that have not
 // moved yet. It only reads: never SessionManager.open(), which is not read-only (it appends "\n" to a torn
 // last line and rewrites a file it migrates), and these files may be owned by a running TUI.
 //
@@ -50,12 +50,14 @@ export async function readActiveBranch(path: string): Promise<Entry[]> {
 
 // ---- Neutral entries -------------------------------------------------------------------------------
 
-const raws = new WeakMap<HEntry, Entry>();
+/** Where an HEntry keeps the raw entry it was made from: a non-enumerable property, so JSON, spreads and
+    deep equality never see it (a process-wide WeakMap cost every parse more than the conversion did). */
+const RAW = Symbol("raw");
 
 /** TEMPORARY (M2 to M4): the raw entry an HEntry was made from, for the state folds that still read pi's
     custom entries. Counted by the boundary's reader ratchet. */
 export function rawOf(h: HEntry): Entry {
-  return raws.get(h)!;
+  return (h as any)?.[RAW];
 }
 
 const isObj = (v: unknown): v is Record<string, any> => !!v && typeof v === "object" && !Array.isArray(v);
@@ -74,8 +76,16 @@ function blocksOf(content: unknown): HBlock[] {
     return blocks;
   }
   if (!Array.isArray(content)) return [];
-  if (content.every((b) => isObj(b) && BLOCKS.has(b.type as string))) return content as HBlock[];
+  if (allKnown(content)) return content as HBlock[];
   return content.map((b) => (isObj(b) && BLOCKS.has(b.type as string) ? (b as HBlock) : { type: "unknown", raw: b }));
+}
+
+function allKnown(content: unknown[]): boolean {
+  for (let i = 0; i < content.length; i++) {
+    const b = content[i];
+    if (!isObj(b) || !BLOCKS.has(b.type as string)) return false;
+  }
+  return true;
 }
 
 /** A usage object as HUsage, each count read as the context rule reads it (`Number(x) || 0`); undefined
@@ -164,67 +174,81 @@ export function toHEntry(raw: unknown): HEntry | null {
   if (!raw || typeof raw !== "object") return null;
   const e = raw as Entry;
   if (e.type === "session") return null;
-  const base: Record<string, any> = { id: typeof e.id === "string" ? e.id : null, parentId: typeof e.parentId === "string" ? e.parentId : null };
-  put(base, "at", e.timestamp);
-  let h: HEntry | null = null;
+  // Fields are set one by one in the order the HEntry lists them (its JSON is the golden's).
+  const h: Record<string, any> = { id: typeof e.id === "string" ? e.id : null, parentId: typeof e.parentId === "string" ? e.parentId : null };
+  if (e.timestamp !== undefined) h.at = e.timestamp;
+  let known = true;
   switch (e.type) {
     case "message":
-      h = isObj(e.message) ? messageOf(e.message, base) : null;
+      known = isObj(e.message) && messageOf(e.message, h) !== null;
       break;
     case "model_change":
-      h = Object.assign(base, { kind: "setting", what: "model" }) as HEntry;
+      h.kind = "setting";
+      h.what = "model";
       put(h, "provider", e.provider);
       put(h, "modelId", e.modelId);
       break;
     case "thinking_level_change":
-      h = Object.assign(base, { kind: "setting", what: "thinking" }) as HEntry;
+      h.kind = "setting";
+      h.what = "thinking";
       put(h, "level", e.thinkingLevel);
       break;
     case "session_info":
-      h = Object.assign(base, { kind: "setting", what: "name" }) as HEntry;
+      h.kind = "setting";
+      h.what = "name";
       put(h, "name", e.name);
       break;
     case "label":
-      h = Object.assign(base, { kind: "setting", what: "label" }) as HEntry;
+      h.kind = "setting";
+      h.what = "label";
       put(h, "label", e.label);
       put(h, "targetId", e.targetId);
       break;
     case "compaction":
-      h = Object.assign(base, { kind: "compaction" }) as HEntry;
+      h.kind = "compaction";
       put(h, "tokensBefore", e.tokensBefore);
       put(h, "summary", e.summary);
       put(h, "details", e.details);
       break;
     case "branch_summary":
-      h = Object.assign(base, { kind: "summary", of: "branch" }) as HEntry;
+      h.kind = "summary";
+      h.of = "branch";
       put(h, "summary", e.summary);
-      put(h, "inMessage", false);
+      h.inMessage = false;
       break;
     case "usage":
-      h = Object.assign(base, { kind: "usage-record" }) as HEntry;
+      h.kind = "usage-record";
       put(h, "provider", e.provider);
       put(h, "model", e.model);
       put(h, "usage", usageOf(e.usage));
       break;
     case "context_edit":
-      h = Object.assign(base, { kind: "context-edit" }) as HEntry;
+      h.kind = "context-edit";
       break;
     case "custom":
-      h = Object.assign(base, { kind: "state", key: e.customType, data: e.data }) as HEntry;
+      h.kind = "state";
+      h.key = e.customType;
+      h.data = e.data;
       break;
     case "custom_message":
-      h = Object.assign(base, { kind: "note", content: e.content, display: e.display !== false, inMessage: false }) as HEntry;
+      h.kind = "note";
+      h.content = e.content;
+      h.display = e.display !== false;
+      h.inMessage = false;
       put(h, "noteType", e.customType);
       put(h, "details", e.details);
       break;
+    default:
+      known = false;
   }
-  if (h === null) {
+  if (!known) {
     const type = unknownTypeOf(e);
-    h = Object.assign(base, { kind: "unknown", type }) as HEntry;
+    h.kind = "unknown";
+    h.type = type;
     noteUnknown(type, h.id);
   }
-  raws.set(h, e);
-  return h;
+  Object.defineProperty(h, RAW, { value: e });
+  return h as HEntry;
 }
 
 /** Raw entries (a file's, a branch's, a held session's) as HEntries, the header left out. */
@@ -269,6 +293,57 @@ export function parsePi(text: string): PiFile {
     if (h) entries.push(h);
   }
   return { header, entries };
+}
+
+/** The entry types and message roles toHEntry reads: anything else is `kind: "unknown"`. */
+const KNOWN_TYPES = new Set(["message", "model_change", "thinking_level_change", "session_info", "label", "compaction", "branch_summary", "usage", "context_edit", "custom", "custom_message"]);
+const KNOWN_ROLES = new Set(["user", "assistant", "toolResult", "bashExecution", "custom", "branchSummary", "compactionSummary", "system"]);
+
+/** Whether toHEntry would make a raw (non-header) entry `kind: "unknown"`. */
+const isUnknown = (e: Entry): boolean => (e.type === "message" ? !(isObj(e.message) && KNOWN_ROLES.has(e.message.role)) : !KNOWN_TYPES.has(e.type));
+
+export interface PiBranch {
+  /** The first header in the file, null when it has none. */
+  header: HHeader | null;
+  /** The active branch, root first (branchOf's rule). */
+  branch: HEntry[];
+  /** With `ids`: every entry id in the file, the header's included. */
+  ids?: Set<string>;
+  /** With `states`: every state entry whose key is one of them, on the branch or not, in file order. */
+  states?: HEntry[];
+}
+
+/**
+ * A whole pi session file's text as parsePi reads it, but only the active branch converted: the branch is
+ * picked on the raw entries (activeBranch's rule, the same as branchOf's over HEntries). Every unknown entry
+ * in the file is counted, in file order, as parsePi counts it.
+ */
+export function parsePiBranch(text: string, opts: { ids?: boolean; states?: ReadonlySet<unknown> } = {}): PiBranch {
+  let header: HHeader | null = null;
+  const all = parseLines(text);
+  for (const raw of all) {
+    if (raw.type === "session") header ??= headerOf(raw);
+    else if (isUnknown(raw)) noteUnknown(unknownTypeOf(raw), typeof raw.id === "string" ? raw.id : null);
+  }
+  const onBranch = activeBranch(all);
+  const branch = historyOf(onBranch);
+  const out: PiBranch = { header, branch };
+  if (opts.ids) {
+    const ids = new Set<string>();
+    if (typeof header?.id === "string") ids.add(header.id);
+    for (const e of all) if (e.type !== "session" && typeof e.id === "string") ids.add(e.id);
+    out.ids = ids;
+  }
+  if (opts.states) {
+    const converted = new Map<Entry, HEntry>();
+    for (let i = 0; i < onBranch.length; i++) converted.set(onBranch[i]!, branch[i]!);
+    const states: HEntry[] = [];
+    for (const e of all) {
+      if (e.type === "custom" && opts.states.has(e.customType)) states.push(converted.get(e) ?? toHEntry(e)!);
+    }
+    out.states = states;
+  }
+  return out;
 }
 
 export async function readPi(path: string): Promise<PiFile> {
@@ -336,7 +411,7 @@ export function strictBranchTo(file: PiFile, cutEntryId: string | null): HEntry[
 
 /** A session file's active branch as HEntries. */
 export async function readBranch(path: string): Promise<HEntry[]> {
-  return branchOf(parsePi(await readFile(path, "utf8")).entries);
+  return parsePiBranch(await readFile(path, "utf8")).branch;
 }
 
 /** The active branch as far as the file's last `maxBytes` show it (the first, cut line dropped): a recent
@@ -350,13 +425,40 @@ export async function readTailBranch(path: string, maxBytes: number): Promise<HE
     const { bytesRead } = await fh.read(buf, 0, buf.length, start);
     let text = buf.subarray(0, bytesRead).toString("utf8");
     if (start > 0) text = text.slice(text.indexOf("\n") + 1);
-    return branchOf(parsePi(text).entries);
+    return parsePiBranch(text).branch;
   } finally {
     await fh.close();
   }
 }
 
 // ---- Held sessions ---------------------------------------------------------------------------------
+
+interface Converted {
+  raw: readonly unknown[];
+  h: (HEntry | null)[];
+}
+const converted = new WeakMap<object, { branch?: Converted; entries?: Converted }>();
+
+/**
+ * A held session's entries as historyOf makes them, `raw` being what pi just returned for `owner` (its
+ * session manager): its branch or all its entries. pi never modifies an entry once appended, so one that is
+ * the same object at the same place as on the last call for `owner` is the HEntry made then; only the others
+ * are converted. A new array every call; the HEntries in it are shared between calls (read them, never write).
+ */
+export function liveHistory(owner: object, which: "branch" | "entries", raw: readonly unknown[]): HEntry[] {
+  let memo = converted.get(owner);
+  if (!memo) converted.set(owner, (memo = {}));
+  const prev = memo[which];
+  const h: (HEntry | null)[] = new Array(raw.length);
+  const out: HEntry[] = [];
+  for (let i = 0; i < raw.length; i++) {
+    const r = raw[i];
+    const x = (h[i] = prev !== undefined && prev.raw[i] === r ? prev.h[i]! : toHEntry(r));
+    if (x) out.push(x);
+  }
+  memo[which] = { raw: raw.slice(), h };
+  return out;
+}
 
 type ManagerLike = Pick<SessionManager, "getSessionId" | "getCwd" | "getLeafId" | "getBranch" | "getEntries" | "getEntry">;
 /** Anything that carries a pi session manager (an AgentSession, an extension's context), or the manager. */
@@ -376,8 +478,8 @@ export function liveRead(owner: LiveOwner): SessionRead {
       return sm.getCwd();
     },
     leafId: () => sm.getLeafId() ?? null,
-    branch: () => historyOf(sm.getBranch()),
-    entries: () => historyOf(sm.getEntries()),
+    branch: () => liveHistory(sm, "branch", sm.getBranch()),
+    entries: () => liveHistory(sm, "entries", sm.getEntries()),
     entry: (id: EntryId) => toHEntry(sm.getEntry(id)) ?? undefined,
   };
 }

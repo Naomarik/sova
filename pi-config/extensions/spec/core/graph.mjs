@@ -2,6 +2,7 @@
 // `graph` (one paged payload) and `impact --near` (one reverse hop). Node stdlib only; never writes.
 // map.mjs and where.mjs build on the index here.
 import { posix } from "node:path";
+import { aboutNotes } from "./fields.mjs";
 import { mask, namedIn, whatOf, whyOf, titleOf, sizeOf, kb, fingerprintOf, tokenFor, decodeToken, boundedRefusal, emit, sizeIn }
   from "./toc.mjs";
 
@@ -113,19 +114,52 @@ export function indexOf(ctx, parentOf) {
   for (const id of ids) members.get(areaOf(id))?.push(id);
   // An area lists its H1 first, then its H2s in declaration order.
   for (const m of members.values()) m.sort((a, b) => ctx.decls.get(a).level - ctx.decls.get(b).level || ctx.decls.get(a).line - ctx.decls.get(b).line);
-  const code = new Map(), rev = new Map(), tokens = new Map(), df = new Map();
+  const code = new Map(), rev = new Map(), revKinds = new Map(), tokens = new Map(), df = new Map();
   for (const id of ids) {
     const rec = ctx.claims.get(id);
     for (const c of new Set((rec.code ?? []).map((p) => posix.normalize(p.split("\\").join("/"))))) code.set(c, [...(code.get(c) ?? []), id]);
-    for (const t of new Set(rec.requires ?? [])) rev.set(t, [...(rev.get(t) ?? []), id]);
+    for (const { to, kind } of depsOf(rec)) {
+      if (!(rev.get(to) ?? []).includes(id)) rev.set(to, [...(rev.get(to) ?? []), id]);
+      revKinds.set(`${to}\n${id}`, [...(revKinds.get(`${to}\n${id}`) ?? []), kind]);
+    }
     const spans = spansOf(ctx.decls.get(id));
     tokens.set(id, spans);
     for (const s of spans) if (isInterface(s.token)) df.set(s.token, (df.get(s.token) ?? 0) + 1);
   }
   const weight = (t) => Math.log((ids.length + 1) / (df.get(t) ?? 1));
   const ifaceOf = (id) => tokens.get(id).filter((s) => isInterface(s.token)).map((s) => s.token);
-  return { ctx, ids, areas, members, areaOf, code, rev, tokens, df, weight, ifaceOf, parentOf };
+  // The kinds of dependency edge from → to: ["requires"], ["embeds"] or both.
+  const kindsOf = (from, to) => revKinds.get(`${to}\n${from}`) ?? [];
+  return { ctx, ids, areas, members, areaOf, code, rev, kindsOf, tokens, df, weight, ifaceOf, parentOf };
 }
+
+// A record's dependency edges: requires, then embeds (a surface drawn inside it), each once per kind.
+export function depsOf(rec) {
+  return [...[...new Set(rec.requires ?? [])].sort().map((to) => ({ to, kind: "requires" })),
+    ...[...new Set(rec.embeds ?? [])].sort().map((to) => ({ to, kind: "embeds" }))];
+}
+
+// ---------------------------------------------------------------- agreement
+// Built = a code list plus one of these evidence labels: the rule of BUILT_LABELS in sova-spec-draft.mjs.
+const BUILT_LABELS = new Set(["reviewed", "verified"]);
+export const isBuilt = (rec) => (rec.code ?? []).length > 0 && BUILT_LABELS.has(rec.evidence);
+const agreedOf = (rec) => (rec.agreed && typeof rec.agreed === "object" && typeof rec.agreed.at === "string" ? rec.agreed : null);
+const atTime = (at) => { const n = Date.parse(at); return Number.isNaN(n) ? Date.parse(at.slice(0, 10)) : n; };
+// Over ids: how many carry agreed, and of those not built, how many with the earliest and latest decision dates.
+// → null when none carries agreed. Dates, never ages, so the output does not depend on today.
+export function agreedCounts(ctx, ids) {
+  const agreed = ids.filter((id) => agreedOf(ctx.claims.get(id)));
+  if (!agreed.length) return null;
+  const open = agreed.filter((id) => !isBuilt(ctx.claims.get(id))).map((id) => agreedOf(ctx.claims.get(id)).at)
+    .sort((a, b) => atTime(a) - atTime(b) || (a < b ? -1 : 1));
+  return { agreed: agreed.length, notBuilt: open.length, oldest: open.length ? open[0].slice(0, 10) : null, newest: open.length ? open.at(-1).slice(0, 10) : null };
+}
+export const agreedText = (a) => (a
+  ? `agreed (decision), not built: ${a.notBuilt} of ${a.agreed} agreed${a.notBuilt ? ` · decided ${a.oldest}${a.newest !== a.oldest ? ` … ${a.newest}` : ""}` : ""}`
+  : "agreed-not-built: no record here carries agreed");
+// One record's agreement, as the views print it: who decided and when, never that they read this text.
+export const agreementOf = (rec) => { const a = agreedOf(rec); return a ? { agreed: { by: rec.agreed.by, at: a.at }, built: isBuilt(rec) } : {}; };
+export const agreementText = (e) => (e.agreed ? ` · agreed (decision) ${e.agreed.at} by ${e.agreed.by}, ${e.built ? "built" : "not built"}` : "");
 
 // ---------------------------------------------------------------- bounded pages
 // Lines that fit the budget, then a cursor bound to every computed line. build(lines, at) → envelope.
@@ -149,22 +183,24 @@ export const pageFields = (list, lines, at, next) => ({ status: at < list.length
 
 // ---------------------------------------------------------------- graph
 const GRAPH_NOTICE = "Computed from the manifest and claim files on each call; never stored. Concatenate nodes and edges across pages in order to rebuild the one payload.";
-const EDGE_KINDS = ["requires", "member", "contains", "mentions", "code"];
+const EDGE_KINDS = ["requires", "embeds", "member", "contains", "about", "mentions", "code"];
 
 export function graphPayload(ix) {
   const { ctx } = ix;
   const nodes = ix.ids.map((id) => {
     const d = ctx.decls.get(id), rec = ctx.claims.get(id), w = whatOf(d);
     return { id, kind: rec.kind, level: d.level, namespace: namespaceOf(id), area: ix.areaOf(id), title: titleOf(d), what: w.what, whatSource: w.whatSource,
-      ...labelsOf(rec), ...sizeOf(ctx, id), file: d.file, lines: d.lines, requires: rec.requires === undefined ? null : rec.requires.length, code: (rec.code ?? []).length };
+      ...labelsOf(rec), ...sizeOf(ctx, id), file: d.file, lines: d.lines, requires: rec.requires === undefined ? null : rec.requires.length, code: (rec.code ?? []).length,
+      ...(rec.core === true ? { core: true } : {}), ...(agreedOf(rec) ? { agreed: rec.agreed } : {}) };
   });
   const edges = [];
   const known = (to) => (ctx.claims.has(to) && ctx.decls.has(to) ? {} : { dangling: true });
   for (const id of ix.ids) {
     const rec = ctx.claims.get(id);
-    for (const to of [...new Set(rec.requires ?? [])].sort()) edges.push({ kind: "requires", from: id, to, ...known(to) });
+    for (const { to, kind } of depsOf(rec)) edges.push({ kind, from: id, to, ...known(to) });
     for (const to of [...new Set(rec.members ?? [])].sort()) edges.push({ kind: "member", from: id, to, ...known(to) });
     for (const to of ix.members.get(id) ?? []) if (to !== id) edges.push({ kind: "contains", from: id, to });
+    if (Array.isArray(rec.about)) for (const to of [...new Set(rec.about)].sort()) edges.push({ kind: "about", from: id, to, ...known(to) });
     for (const to of namedIn(ctx.decls.get(id), id).sort()) edges.push({ kind: "mentions", from: id, to, ...known(to) });
     for (const to of [...new Set(rec.code ?? [])].sort()) edges.push({ kind: "code", from: id, to });
   }
@@ -198,10 +234,11 @@ export function graphMain(argv, core) {
 }
 
 // ---------------------------------------------------------------- impact --near
-const NEAR_NOTICE = "One reverse hop over requires, plus code neighbours and mentions, named. A why is the first sentence naming the link, never proof of a dependency.";
-const NEAR_GROUPS = ["consumer", "container", "frontier", "next", "mentioned", "code"];
-const NEAR_HEADS = { consumer: "consumers (one hop: their requires name the family)", container: "sections listing it", frontier: "frontier: no requires key, in or mentioning the family",
-  next: "next hop (require a consumer; named only)", mentioned: "mentioned by (named only)", code: "code neighbours (files the family lists; fewest other records first)" };
+const NEAR_NOTICE = "One reverse hop over requires and embeds, plus about notes, code neighbours and mentions, named. A why is the first sentence naming the link, never proof of a dependency.";
+const NEAR_GROUPS = ["consumer", "container", "about", "frontier", "next", "mentioned", "code"];
+const NEAR_HEADS = { consumer: "consumers (one hop: their requires or embeds name the family)", container: "sections listing it", about: "notes about it (named only)",
+  frontier: "frontier: no requires key, in or mentioning the family",
+  next: "next hop (require or embed a consumer; named only)", mentioned: "mentioned by, not on the frontier (named only)", code: "code neighbours (files the family lists; fewest other records first)" };
 const CODE_IDS = 12;
 
 // The seed's family: an H1 and its H2s, or an H2 alone. → {family, parent}
@@ -223,13 +260,18 @@ export function nearImpact(ix, seed) {
   if (parent) for (const c of ix.rev.get(parent) ?? []) if (!fam.has(c) && !consumers.has(c)) consumers.set(c, [parent]);
   const list = [];
   for (const c of [...consumers.keys()].sort()) {
-    // The why is the first family member it requires whose link its text explains, prose before comment.
+    // The why is the first family member it links to whose link its text explains, prose before comment.
     const via = consumers.get(c), ws = via.map((t) => whyOf(ctx.decls.get(c), t));
     const w = ws.find((x) => x.whySource === "prose") ?? ws.find((x) => x.whySource === "comment") ?? ws[0];
-    list.push({ group: "consumer", ...line(c), requires: via, ...(via[0] === parent ? { via: "parent" } : {}), why: w.why, whySource: w.whySource });
+    const by = (kind) => via.filter((t) => ix.kindsOf(c, t).includes(kind));
+    const embeds = by("embeds");
+    list.push({ group: "consumer", ...line(c), requires: by("requires"), ...(embeds.length ? { embeds } : {}), ...(via[0] === parent ? { via: "parent" } : {}),
+      why: w.why, whySource: w.whySource });
   }
   for (const [id, rec] of [...ctx.claims].sort(([a], [b]) => (a < b ? -1 : 1)))
     if (rec.kind === "section" && (rec.members ?? []).some((m) => fam.has(m))) list.push({ group: "container", id, members: rec.members.filter((m) => fam.has(m)) });
+  for (const { id, target } of aboutNotes(ctx, [...family, ...(parent ? [parent] : [])]))
+    if (!fam.has(id)) list.push({ group: "about", id, about: target, ...(target === parent ? { via: "parent" } : {}) });
   const mentioners = ix.ids.filter((id) => !fam.has(id) && namedIn(ctx.decls.get(id), id).some((m) => fam.has(m)));
   const open = ix.ids.filter((id) => ctx.claims.get(id).kind === "behavior" && ctx.claims.get(id).requires === undefined);
   const near = open.filter((id) => fam.has(id) || mentioners.includes(id));
@@ -237,7 +279,7 @@ export function nearImpact(ix, seed) {
   const next = new Map();
   for (const c of consumers.keys()) for (const n of ix.rev.get(c) ?? []) if (!fam.has(n) && !consumers.has(n)) next.set(n, [...(next.get(n) ?? []), c]);
   for (const n of [...next.keys()].sort()) list.push({ group: "next", id: n, requires: next.get(n) });
-  for (const id of mentioners) list.push({ group: "mentioned", id });
+  for (const id of mentioners) if (!near.includes(id)) list.push({ group: "mentioned", id });
   const files = [...new Set(family.flatMap((f) => (ctx.claims.get(f).code ?? []).map((p) => posix.normalize(p.split("\\").join("/")))))];
   const shared = files.map((path) => ({ path, others: (ix.code.get(path) ?? []).filter((x) => !fam.has(x)) })).filter((f) => f.others.length)
     .sort((a, b) => a.others.length - b.others.length || (a.path < b.path ? -1 : 1));
@@ -251,20 +293,21 @@ export function nearImpact(ix, seed) {
 
 export function renderNear(out) {
   const L = [], s = out.seed;
-  L.push(`impact --near ${s.id} — ${s.title}  family ${out.family.length} (${out.family.length > 1 ? "the H1 and its H2s" : out.parent ? `an H2; claims requiring ${out.parent} count too` : "itself"})`);
+  L.push(`impact --near ${s.id} — ${s.title}  family ${out.family.length} (${out.family.length > 1 ? "the H1 and its H2s" : out.parent ? `an H2; claims requiring or embedding ${out.parent} count too` : "itself"})`);
   let group = null;
   for (const e of out.lines) {
     if (e.group !== group) { group = e.group; L.push(`${NEAR_HEADS[group]} (${out.counts.groups[group]})`); }
     if (e.group === "consumer") {
-      L.push(`  ${e.id} — ${e.title}  ${e.kind}${e.labels ? ` · ${labelText(e.labels)}` : ""} · ${kb(e.bytes)} · requires ${e.requires.join(", ")}${e.via ? " (via parent)" : ""}`,
+      L.push(`  ${e.id} — ${e.title}  ${e.kind}${e.labels ? ` · ${labelText(e.labels)}` : ""} · ${kb(e.bytes)}${e.requires.length ? ` · requires ${e.requires.join(", ")}` : ""}${e.embeds ? ` · embeds ${e.embeds.join(", ")}` : ""}${e.via ? " (via parent)" : ""}`,
         `    what: ${e.what}`, e.whySource === "comment" ? `    why (comment): ${e.why}` : `    why:  ${e.why}`);
     } else if (e.group === "frontier") L.push(`  ${e.id} — ${e.title}  ${e.reason === "in-family" ? "in the family" : "mentions the family"}`, `    what: ${e.what}`);
     else if (e.group === "container") L.push(`  ${e.id} (members ${e.members.join(", ")})`);
-    else if (e.group === "next") L.push(`  ${e.id} (requires ${e.requires.join(", ")})`);
+    else if (e.group === "about") L.push(`  ${e.id} (about ${e.about}${e.via ? ", via parent" : ""})`);
+    else if (e.group === "next") L.push(`  ${e.id} (requires or embeds ${e.requires.join(", ")})`);
     else if (e.group === "code") L.push(`  ${e.path} — ${e.records} other record(s): ${e.ids.join(", ")}${e.more ? ` … +${e.more}: where ${e.path} --all` : ""}`);
     else L.push(`  ${e.id}`);
   }
-  for (const g of NEAR_GROUPS) if (!out.counts.groups[g] && g !== "container") L.push(`${NEAR_HEADS[g]}: none`);
+  for (const g of NEAR_GROUPS) if (!out.counts.groups[g] && g !== "container" && g !== "about") L.push(`${NEAR_HEADS[g]}: none`);
   if (out.counts.uninvestigatedElsewhere) L.push(`${out.counts.uninvestigatedElsewhere} more behavior(s) have no requires key and don't name the family: impact '${s.id}' lists them`);
   L.push(`delivered: no passage · listed ${out.lines.length} · not listed ${out.remaining}`);
   if (out.next) L.push(`more: impact '${s.id}' --near --cursor ${out.next}`);

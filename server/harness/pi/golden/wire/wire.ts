@@ -1,13 +1,16 @@
-// The wire goldens (README.md here): what the browser's live path does with each event before milestone 3
-// ports it to SovaEvent. For a faux stream, the v1 control frames the server sends (toWireEvent plus the
-// message_end entry id); for every input, the per-step LiveState trace and the effects log of today's
-// applyEvent. W3.2's reducer must reproduce the traces from v2 frames and from fromV1(control frames); W3.4's
-// server must send the control frames byte for byte.
+// The wire goldens (README.md here): what the browser's live path does with each event, recorded before
+// milestone 3 ported it to SovaEvent. For a faux stream, the v1 control frames the server sends (toWireEvent
+// plus the message_end entry id); for every input, the per-step LiveState trace and the effects log of the
+// pre-port applyEvent. The ported reducer reproduces the traces on both paths, (a) v2 frames and (b)
+// fromV1(control frames); W3.4's server must send the control frames byte for byte.
 import assert from "node:assert/strict";
 import { createStore } from "solid-js/store";
 import { toWireEvent } from "../../../../chat-manager";
 import { messageContextTokens } from "../../../../../src/lib/context";
 import * as live from "../../../../../src/lib/live";
+import type { SovaEvent } from "../../../../../shared/harness-wire";
+import type { V1EventFrame } from "../../../../../shared/protocol";
+import { fromV1 } from "../../../../../shared/wire-v1";
 import { NO_VIEW, type LiveEffect, type LiveEffectsContext } from "../../../../../src/lib/live-effects";
 import { isObj } from "../../../../../src/lib/message";
 import { navigateDetails } from "../../../../../src/lib/overseer";
@@ -47,10 +50,33 @@ export function controlFrames(events: readonly unknown[], sessionJsonl: string):
   });
 }
 
-/** What ChatView's `case "event"` queues for a frame: the event, with a message_end's entry id on it. */
+/** What ChatView's `case "event"` queued for a frame before the port: the event, with a message_end's entry
+    id on it (the recorded inputs' form). */
 export function clientEvent(frame: string): unknown {
   const msg = JSON.parse(frame) as { event: unknown; entryId?: string };
   return msg.entryId && isObj(msg.event) ? { ...msg.event, entryId: msg.entryId } : msg.event;
+}
+
+/** A recorded input event's v1 frame, as the server sends it: a message_end's entry id on the frame. */
+export function frameOf(ev: unknown): V1EventFrame {
+  if (!isObj(ev)) return { type: "event", event: ev };
+  const { entryId, ...event } = ev;
+  return { type: "event", event, ...(typeof entryId === "string" && entryId ? { entryId } : {}) };
+}
+
+/**
+ * The events the ported reducer gets for a v1 frame, on each path, as ChatView reads them (live.ts
+ * liveEventsOf), through JSON: (a) the wire-2 frames a server makes of it (one per `fromV1` event) and (b) the
+ * v1 frame itself, through the shim. The baton sender marker is client-local: it is applied as it is.
+ */
+export function pathEvents(frame: V1EventFrame): { v2: live.LiveEvent[]; shim: live.LiveEvent[] } {
+  const ev = frame.event;
+  if (isObj(ev) && ev.type === live.BATON_SENT_EVENT) return { v2: [ev as live.LiveEvent], shim: [ev as live.LiveEvent] };
+  const wire = <T>(v: T): T => JSON.parse(JSON.stringify(v));
+  return {
+    v2: fromV1(frame).flatMap((e: SovaEvent) => live.liveEventsOf(wire({ type: "event", v: 2, event: e } as const))),
+    shim: live.liveEventsOf(wire(frame)),
+  };
 }
 
 /**
@@ -105,21 +131,30 @@ function atFixedNow<T>(fn: () => T): T {
 }
 
 /**
- * The trace of `calls` on a fresh store: after each, the state and (for applyEvent) its effects. A twin store
- * runs every call in OVERSEER_MINE's view; the view may change effects, never the state. Each applyEvent's
+ * The trace of `calls` on a fresh store: after each, the state and (for applyEvent) its effects. An applyEvent
+ * call's v1 event (from `frames[i]` when given, else `frameOf` its recorded event) runs through the shim path,
+ * which is what is recorded, and through the v2 path on a second store; the two must agree step by step. Twin
+ * stores run each path in OVERSEER_MINE's view; the view may change effects, never the state. Each event's
  * effects must equal the flush they were pulled out of (flushEffectsBeforeW30), in both views.
  */
-export function trace(calls: readonly Call[], frames = false): Step[] {
+export function trace(calls: readonly Call[], frames?: readonly string[]): Step[] {
   return atFixedNow(() => {
-    const [s, set] = createStore<live.LiveState>(live.emptyLive());
-    const [twin, setTwin] = createStore<live.LiveState>(live.emptyLive());
+    const fresh = () => createStore<live.LiveState>(live.emptyLive());
+    const [s, set] = fresh();
+    const [twin, setTwin] = fresh();
+    const [v2s, setV2] = fresh();
+    const [v2Twin, setV2Twin] = fresh();
+    const apply = (to: typeof set, events: live.LiveEvent[], view: LiveEffectsContext) => events.flatMap((e) => live.applyEvent(to, e, view));
     return calls.map((call, i): Step => {
       const where = frames ? `frame ${i}` : `call ${i} (${call.fn})`;
       const step: Step = frames ? { frame: i, state: null } : { call, state: null };
       if (call.fn === "applyEvent") {
         const ev = call.args[0];
-        const effects = live.applyEvent(set, ev, NO_VIEW);
-        const overseer = live.applyEvent(setTwin, ev, OVERSEER_MINE);
+        const paths = pathEvents(frames ? (JSON.parse(frames[i]!) as V1EventFrame) : frameOf(ev));
+        const effects = apply(set, paths.shim, NO_VIEW);
+        const overseer = apply(setTwin, paths.shim, OVERSEER_MINE);
+        assert.deepEqual(apply(setV2, paths.v2, NO_VIEW), effects, `${where}: v2 effects differ from the shim's`);
+        assert.deepEqual(apply(setV2Twin, paths.v2, OVERSEER_MINE), overseer, `${where}: v2 Overseer effects differ from the shim's`);
         assert.deepEqual(effects, flushEffectsBeforeW30(ev, false, false), `${where}: effects differ from the pre-W3.0 flush`);
         assert.deepEqual(overseer, flushEffectsBeforeW30(ev, true, true), `${where}: Overseer effects differ from the pre-W3.0 flush`);
         step.effects = effects;
@@ -127,19 +162,20 @@ export function trace(calls: readonly Call[], frames = false): Step[] {
       } else {
         const fn = live[call.fn] as (set: unknown, ...args: unknown[]) => unknown;
         const returned = fn(set, ...call.args);
-        fn(setTwin, ...call.args);
+        for (const other of [setTwin, setV2, setV2Twin]) fn(other, ...call.args);
         if (returned !== undefined) step.returned = returned;
       }
       step.state = snapshot(s);
       assert.deepEqual(snapshot(twin), step.state, `${where}: the view changed the state`);
+      assert.deepEqual(snapshot(v2s), step.state, `${where}: the v2 path's state differs from the shim's`);
+      assert.deepEqual(snapshot(v2Twin), step.state, `${where}: the view changed the v2 path's state`);
       return step;
     });
   });
 }
 
-/** A faux stream's trace: each control frame through ChatView's unwrapping, then applyEvent. */
-export const frameTrace = (frames: readonly string[]): Step[] =>
-  trace(frames.map((f) => ({ fn: "applyEvent", args: [clientEvent(f)] })), true);
+/** A faux stream's trace: each control frame as ChatView reads it, on both paths. */
+export const frameTrace = (frames: readonly string[]): Step[] => trace(frames.map((f) => ({ fn: "applyEvent", args: [clientEvent(f)] })), frames);
 
 /** A sequence's file name: its test name, lowercased, every run of other characters one "-". */
 export function slug(name: string): string {

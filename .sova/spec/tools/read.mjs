@@ -33,7 +33,7 @@ export function renderRead(out) {
     const part = f.complete ? kb(f.total) : `bytes ${f.start}-${f.end} of ${f.total}`;
     L.push(`── ${p.id} — ${p.title} [${p.kind}${lb}] ${p.file}:${p.lines[0]}-${p.lines[1]} (${part})`, p.text.replace(/\n$/, ""));
   }
-  L.push(`named here, not delivered by this call: ${out.footer.named.join(", ") || "none"}`);
+  L.push(`named here, not delivered by this read: ${out.footer.named.join(", ") || "none"}`);
   if (out.footer.children) L.push(`its ${out.footer.children} H2 are not delivered (whole file ${kb(out.footer.wholeBytes)}): read '${out.id}' --whole, or toc '${out.id}' --dir down`);
   if (out.next) L.push(`${out.remaining} passage(s) not finished: read '${out.id}'${out.whole ? " --whole" : ""} --cursor ${out.next}`);
   L.push(`exit ${out.exit}`);

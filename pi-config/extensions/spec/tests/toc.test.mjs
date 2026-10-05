@@ -285,6 +285,40 @@ test("what: a first sentence wrapped across lines comes out whole; a heading tit
   assert.equal(m["§e/named"].why, "Named, see §a.top/seed", "the title is its own unit, not joined to the body");
 });
 
+test("in on an H2 lists the claims that require its H1; out on an H1 counts what its H2s require", () => {
+  const root = fixture(), m = JSON.parse(readFileSync(join(root, ".sova/spec/manifest.json"), "utf8"));
+  m.claims["§h/user"] = { kind: "behavior", requires: ["§a/top", "§a.top/seed"] };
+  m.claims["§i/whole"] = { kind: "behavior", requires: ["§a/top"] };
+  write(root, ".sova/spec/manifest.json", JSON.stringify(m));
+  write(root, ".sova/spec/claims/h/user.md", "# §h/user — User\n\nIt builds on §a.top/seed directly.\n");
+  write(root, ".sova/spec/claims/i/whole.md", "# §i/whole — Whole\n\nIt follows all of §a/top, every child included.\n");
+  const j = toc(root, "§a.top/hint", "in");
+  assert.deepEqual(j.lines.map((l) => [l.group, l.id, l.via]), [["required-by", "§a.top/seed", undefined], ["required-through-parent", "§h/user", "§a/top"], ["required-through-parent", "§i/whole", "§a/top"]]);
+  assert.equal(byId(j)["§i/whole"].why, "It follows all of §a/top, every child included.", "the why names the H1");
+  assert.equal(byId(j)["§h/user"].whySource, "none");
+  const seed = toc(root, "§a.top/seed", "in");
+  assert.deepEqual(seed.lines.map((l) => [l.group, l.id]), [["required-by", "§c/quiet"], ["required-by", "§h/user"], ["required-through-parent", "§i/whole"]],
+    "a claim that requires both is listed once, directly");
+  assert.equal(toc(root, "§a.top/hint", "out").footer.otherDirections.in, 3);
+  const { r } = cli(root, ["toc", "§a.top/hint", "--dir", "in"], { json: false });
+  assert.match(r.stdout, /^IN: required through its H1 §a\/top \(2\)$/m);
+  assert.equal(toc(root, "§i/whole", "in").lines.length, 0, "an H1 has no parent to reach it through");
+  const top = toc(root, "§a/top", "out");
+  assert.deepEqual(top.seed.childRequires, { h2s: 1, claims: 3 }, "the seed requires §b/dep, §c/quiet, §z/gone outside; §a.top/hint is inside");
+  assert.match(cli(root, ["toc", "§a/top", "--dir", "out"], { json: false }).r.stdout, /OUT: its 1 H2\(s\) require 3 claim\(s\) outside it: toc each H2 --dir out, or map '§a\/top'/);
+  assert.equal(toc(root, "§a.top/seed", "out").seed.childRequires, undefined);
+});
+
+test("read's footer speaks for the whole read, on every page", () => {
+  const root = fixture();
+  write(root, ".sova/spec/claims/a/top.md", readFileSync(join(root, ".sova/spec/claims/a/top.md"), "utf8").replace("A hint that only", "A hint about §e/named that only"));
+  const first = read(root, ["§a/top", "--whole"], { budget: 1024 });
+  assert.equal(first.status, "more");
+  assert.ok(!first.footer.named.some((id) => id.startsWith("§a.top/")), "a passage this read delivers later is not named");
+  const { r } = cli(root, ["read", "§a/top"], { json: false });
+  assert.match(r.stdout, /named here, not delivered by this read: /);
+});
+
 test("what: a thematic break is never a prose sentence", () => {
   const root = fixture();
   write(root, ".sova/spec/claims/e/named.md", "# §e/named — Named\n\n| a | b |\n|---|---|\n| 1 | 2 |\n\n---\n");

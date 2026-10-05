@@ -105,7 +105,7 @@ loader. Flags may come before or after the command word. `sova-spec --help` does
 | `--dir` | Lines | Groups |
 |---|---|---|
 | `out` | the declared `requires`, then the § the claim's prose names without requiring | `requires`, `named` |
-| `in` | the claims whose `requires` name it | `required-by` |
+| `in` | the claims whose `requires` name it; for an H2, also the claims that require its H1 (`via` names it) | `required-by`, `required-through-parent` |
 | `down` | an H1's H2s, or a section's members, in declaration order | `children`, `members` |
 | `up` | an H2's parent | `parent` |
 | `mentions` | the claims whose prose names it | `mentioned-by` |
@@ -120,7 +120,8 @@ other, else an HTML comment naming it, else exactly `not mentioned in this claim
 mask fenced code, HTML comments and double-backtick spans; single backticks count, and `§a.b` reads
 as `§a/b`. A line for an id with no record or span is `dangling: true`.
 
-`seed` describes the requested claim the same way. `footer` holds `delivered` (always empty: a
+`seed` describes the requested claim the same way; for `out` on an H1 with H2s it adds
+`childRequires: {h2s, claims}`, how many H2s require claims outside the H1 and how many distinct claims. `footer` holds `delivered` (always empty: a
 contents line is never the passage), `listed` and `notListed` for this response, `otherDirections`
 (the line count of each direction not asked) and `unknowns` (`requires-uninvestigated` for a
 behavior with no `requires` key, or for `in` the behaviors that could also require it; `unknown` for
@@ -129,7 +130,7 @@ dangling targets). Exit 0 is done without unknowns, 1 is more lines or an unknow
 **`read §id [--whole]`** returns one passage, exact, with no closure: `items: [{index, id, kind,
 labels?, title, file, lines, text, fragment}]`, where `text` is byte-for-byte the passage `scope`
 returns. An H1 gives its lede; `--whole` gives the lede and then each H2 in declaration order. The
-`footer` names (`named`) the passage's `requires` and prose mentions that this call did not deliver,
+`footer` names (`named`) the passage's `requires` and prose mentions that this read does not deliver on any of its pages,
 and for an H1 read as its lede, `children` and `wholeBytes`. Exit 0 is done, 1 more, 2 a refusal.
 
 Both take `--json` (compact JSON) or print readable text, under one whole-response budget either

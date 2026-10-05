@@ -260,9 +260,9 @@ export function boundedRefusal(command, budget, code, extra = {}) {
 
 // ---------------------------------------------------------------- toc
 const GROUPS = {
-  out: ["requires", "named"], in: ["required-by"], down: ["children", "members"], up: ["parent"], mentions: ["mentioned-by"],
+  out: ["requires", "named"], in: ["required-by", "required-through-parent"], down: ["children", "members"], up: ["parent"], mentions: ["mentioned-by"],
 };
-const HEADS = { requires: "requires", named: "named in its text, not required", "required-by": "required by",
+const HEADS = { requires: "requires", named: "named in its text, not required", "required-by": "required by", "required-through-parent": "required through its H1",
   children: "children", members: "members", parent: "parent", "mentioned-by": "mentioned by" };
 function labelsOf(rec) {
   const l = {};
@@ -280,8 +280,14 @@ function neighbours(ctx, id, dir, parentOf) {
     return [...req.map((to) => ({ id: to, group: "requires", src: seed, target: to })),
       ...named.map((to) => ({ id: to, group: "named", src: seed, target: to }))];
   }
-  if (dir === "in") return [...ctx.claims].filter(([, r]) => (r.requires ?? []).includes(id)).map(([k]) => k).sort()
-    .map((k) => ({ id: k, group: "required-by", src: ctx.decls.get(k), target: id }));
+  if (dir === "in") {
+    const by = (t) => [...ctx.claims].filter(([, r]) => (r.requires ?? []).includes(t)).map(([k]) => k).sort();
+    const direct = by(id), p = seed.level === 2 ? parentOf(id, ctx.dirKinds) : null;
+    // Requiring an H1 brings every H2 of it, so those claims reach an H2 through its parent.
+    const through = p && ctx.claims.has(p) ? by(p).filter((k) => k !== id && !direct.includes(k)) : [];
+    return [...direct.map((k) => ({ id: k, group: "required-by", src: ctx.decls.get(k), target: id })),
+      ...through.map((k) => ({ id: k, group: "required-through-parent", src: ctx.decls.get(k), target: p, via: p }))];
+  }
   if (dir === "down") return rec.kind === "section" ? (rec.members ?? []).map((m) => ({ id: m, group: "members" }))
     : childrenInOrder(ctx, id).map((c) => ({ id: c, group: "children" }));
   if (dir === "up") { const p = parentOf(id, ctx.dirKinds); return p && ctx.claims.has(p) ? [{ id: p, group: "parent" }] : []; }
@@ -297,6 +303,7 @@ function neighbours(ctx, id, dir, parentOf) {
 function line(ctx, n) {
   const d = ctx.decls.get(n.id), rec = ctx.claims.get(n.id), w = n.src ? whyOf(n.src, n.target) : null;
   const why = w ? { why: w.why, whySource: w.whySource } : {};
+  if (n.via) why.via = n.via;
   if (!d || !rec) return { id: n.id, group: n.group, dangling: true, ...why };
   return { id: n.id, group: n.group, title: titleOf(d), kind: rec.kind, level: d.level, ...labelsOf(rec), ...sizeOf(ctx, n.id), ...whatOf(d), ...why };
 }
@@ -314,9 +321,21 @@ export function tocStream(ctx, id, dir, parentOf) {
   }
   const dangling = list.filter((e) => e.dangling).map((e) => e.id);
   if (dangling.length) unknowns.push({ code: "unknown", message: `unknown: no record or span for ${dangling.join(", ")}`, ids: dangling });
+  // An H1 whose own record requires nothing can still have H2s that require claims outside it.
+  let childRequires;
+  if (dir === "out" && seed.level === 1 && (ctx.children.get(id) ?? []).length) {
+    const inside = new Set([id, ...ctx.children.get(id)]), outside = new Set();
+    let h2s = 0;
+    for (const c of ctx.children.get(id)) {
+      const ext = (ctx.claims.get(c)?.requires ?? []).filter((t) => !inside.has(t));
+      if (ext.length) h2s++;
+      ext.forEach((t) => outside.add(t));
+    }
+    childRequires = { h2s, claims: outside.size };
+  }
   const otherDirections = Object.fromEntries(DIRS.filter((d) => d !== dir).map((d) => [d, neighbours(ctx, id, d, parentOf).length]));
   return { seed: { id, title: titleOf(seed), kind: rec.kind, level: seed.level, ...labelsOf(rec), file: seed.file, lines: seed.lines, ...sizeOf(ctx, id), ...whatOf(seed),
-    ...(dir === "out" ? { requires: rec.requires === undefined ? null : rec.requires.length } : {}) }, list, unknowns, otherDirections };
+    ...(dir === "out" ? { requires: rec.requires === undefined ? null : rec.requires.length } : {}), ...(childRequires ? { childRequires } : {}) }, list, unknowns, otherDirections };
 }
 
 export const kb = (n) => (n < 1000 ? `${n} B` : `${(n / 1000).toFixed(1)} KB`);
@@ -328,9 +347,10 @@ export function renderToc(out) {
   L.push(`${s.id} — ${s.title}  ${s.kind}${lab(s)} · ${sizeText(s)}`, `  what: ${s.what}`);
   if (out.dir === "out" && !out.counts.groups.requires)
     L.push(`${D}: requires: ${s.requires === null && s.kind === "behavior" ? "dependencies uninvestigated (no requires key)" : "none declared"}`);
+  if (s.childRequires) L.push(`${D}: its ${s.childRequires.h2s} H2(s) require ${s.childRequires.claims} claim(s) outside it: toc each H2 --dir out, or map '${s.id}'`);
   let group = null;
   for (const e of out.lines) {
-    if (e.group !== group) { group = e.group; L.push(`${D}: ${HEADS[group]} (${out.counts.groups[group]})`); }
+    if (e.group !== group) { group = e.group; L.push(`${D}: ${HEADS[group]}${e.via ? " " + e.via : ""} (${out.counts.groups[group]})`); }
     if (e.dangling) L.push(`  ${e.id} — unknown: no record or span`);
     else L.push(`  ${e.id} — ${e.title}  ${e.kind}${lab(e)} · ${sizeText(e)}`, `    what: ${e.what}`);
     if (e.why !== undefined) L.push(e.whySource === "comment" ? `    why (comment): ${e.why}` : `    why:  ${e.why}`);

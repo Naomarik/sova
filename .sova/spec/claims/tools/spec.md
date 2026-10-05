@@ -363,7 +363,9 @@ code files its record lists (which `read` names), and its own "what". Then each 
 its lede's bytes and its whole file's bytes. **What** is the passage's first prose sentence after its
 heading, verbatim with whitespace collapsed: fenced code, HTML comments, tables, thematic breaks and
 headings are skipped, list markers are dropped, a sentence ends at `.`, `?`, `!` or `:` followed by a space (never
-inside a code span) and runs on until it has 20 characters, and anything past 200 characters is cut
+inside a code span or an open quote, nor at a closing quote the sentence runs on past in lowercase,
+and a `:` never inside open parentheses or brackets) and runs on until it
+has 20 characters, not counting the list marker, and anything past 200 characters is cut
 with `…`. A blockquote is used only when the passage has no other prose; a passage with none says
 "no prose sentence", with its code's size when it has code, and never quotes code. **Why** is the
 first visible-prose sentence of the linking claim's text that names the other one (the requested

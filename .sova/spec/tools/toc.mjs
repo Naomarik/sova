@@ -160,11 +160,19 @@ export function sentences(masked, opts) {
   return out.filter(([a, b]) => masked.slice(a, b).trim());
 }
 const squash = (s) => s.replace(/\s+/g, " ").trim();
-function clip(s, max, around = -1) {
+// Cut to max characters with a visible "…". With around (and len), the window always keeps s[around, around + len).
+function clip(s, max, around = -1, len = 0) {
   if (s.length <= max) return s;
-  if (around < 0 || around < max - 20) return s.slice(0, s.lastIndexOf(" ", max - 1) > max / 2 ? s.lastIndexOf(" ", max - 1) : max - 1) + "…";
-  const from = Math.max(0, Math.min(around - Math.floor(max / 3), s.length - max + 2));
+  const cut = s.lastIndexOf(" ", max - 1) > max / 2 ? s.lastIndexOf(" ", max - 1) : max - 1;
+  if (around < 0 || around + len <= cut) return s.slice(0, cut) + "…";
+  const from = Math.max(0, around + len - (max - 2), Math.min(around - Math.floor(max / 3), s.length - max + 2));
   return "…" + s.slice(from, from + max - 2) + "…";
+}
+// Where text names target (its own id, else the §a.b alias of an H1): [index, length], or [-1, 0].
+function spanOf(text, target) {
+  const hit = mentionsOf(text).find((x) => x.id === target);
+  if (!hit) return [-1, 0];
+  return [hit.index, target.length]; // the alias §a.b is as long as §a/b
 }
 const stripMarker = (s) => s.replace(/^(?:[-*+]|\d+[.)])\s+/, "");
 
@@ -203,13 +211,13 @@ export function whyOf(decl, target) {
   if (hit) {
     const s = sentences(m).find(([a, b]) => hit.index >= a && hit.index < b);
     const text = stripMarker(squash(decl.text.slice(s[0], s[1])));
-    return { why: clip(text, WHY_MAX, text.indexOf("§" + target.slice(1).split(/[./]/)[0])), whySource: "prose" };
+    return { why: clip(text, WHY_MAX, ...spanOf(text, target)), whySource: "prose" };
   }
   const body = blank(decl.text.split("\n", 1)[0]) + decl.text.slice(Math.max(0, decl.text.indexOf("\n")));
   for (const c of body.matchAll(/<!--([\s\S]*?)(?:-->|$)/g))
     if (mentionsOf(c[1]).some((x) => x.id === target)) {
       const text = squash(c[1]);
-      return { why: clip(text, WHY_MAX, text.indexOf(target)), whySource: "comment" };
+      return { why: clip(text, WHY_MAX, ...spanOf(text, target)), whySource: "comment" };
     }
   return { why: NOT_MENTIONED, whySource: "none" };
 }

@@ -285,6 +285,15 @@ test("what: a first sentence wrapped across lines comes out whole; a heading tit
   assert.equal(m["§e/named"].why, "Named, see §a.top/seed", "the title is its own unit, not joined to the body");
 });
 
+test("why: a long sentence is clipped around the target's own mention, never another one in its namespace", () => {
+  const root = fixture();
+  const filler = (n) => Array.from({ length: n }, (_, i) => `word${i}`).join(" ");
+  write(root, ".sova/spec/claims/c/quiet.md", `# §c/quiet — Quiet\n\nIt follows §a.top/hint closely, ${filler(40)}, and in the end it relies on §a.top/seed for the rest of ${filler(12)} here.\n`);
+  const why = toc(root, "§a.top/seed", "in").lines.find((l) => l.id === "§c/quiet").why;
+  assert.ok(why.length <= 240 && why.startsWith("…"), why);
+  assert.ok(why.includes("§a.top/seed"), `the printed why names the target: ${why}`);
+});
+
 // Over the project's own spec: a what that ends mid-sentence (no "…", no sentence end) while the
 // passage's text runs on to the next line of the same paragraph is a cut, never a whole sentence.
 const SPEC_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../../..");

@@ -147,6 +147,9 @@ function units(masked, { title = true } = {}) {
   if (start >= 0) res.push([start, masked.length]);
   return res;
 }
+const count = (t, c) => t.split(c).length - 1;
+const quoted = (t) => count(t, "\"") % 2 === 1 || count(t, "“") > count(t, "”");
+const opened = (t) => count(t, "(") > count(t, ")") || count(t, "[") > count(t, "]") || quoted(t);
 export function sentences(masked, opts) {
   const out = [];
   for (const [a, b] of units(masked, opts)) {
@@ -158,6 +161,12 @@ export function sentences(masked, opts) {
     for (const m of v.matchAll(/[.!?:]["'”’)\]*_`]*(?=\s)/g)) {
       const e = m.index + m[0].length;
       if (/\b(?:e\.g|i\.e|etc|vs|cf)\.$/.test(u.slice(Math.max(0, e - 5), e))) continue;
+      // A colon inside open parentheses, brackets or quotes, or any end inside an open quote (a quoted
+      // sentence), is part of the sentence, not its end.
+      // (Closers taken with the end count, so `said "stop."` still ends there.)
+      if (m[0][0] === ":" ? opened(v.slice(s, m.index)) : quoted(v.slice(s, e))) continue;
+      // A quotation that closes mid-sentence ("…here." until one exists) runs on into lowercase.
+      if (/["”]/.test(m[0]) && /^\s+[a-z]/.test(u.slice(e))) continue;
       out.push([a + s, a + e]); s = e;
       while (s < u.length && /\s/.test(u[s])) s++;
     }
@@ -188,7 +197,7 @@ function firstSentence(unit) {
   const ss = sentences(unit, { title: false });
   if (!ss.length) return null;
   let k = 0;
-  while (k + 1 < ss.length && squash(unit.slice(ss[0][0], ss[k][1]).replace(/[*_]/g, "")).length < WHAT_MIN) k++;
+  while (k + 1 < ss.length && stripMarker(squash(unit.slice(ss[0][0], ss[k][1]))).replace(/[*_]/g, "").length < WHAT_MIN) k++;
   return clip(stripMarker(squash(unit.slice(ss[0][0], ss[k][1]))), WHAT_MAX);
 }
 

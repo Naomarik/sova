@@ -401,6 +401,25 @@ test("read's footer speaks for the whole read, on every page", () => {
   assert.match(r.stdout, /named here, not delivered by this read: /);
 });
 
+test("what: a colon inside parentheses or quotes doesn't end it; the 20-character floor ignores the list marker", () => {
+  const root = fixture();
+  write(root, ".sova/spec/claims/e/named.md", "# §e/named — Named\n\nLogins (pi `auth.json`: keys, tokens) sync between hosts. More follows.\n");
+  write(root, ".sova/spec/claims/c/quiet.md", "# §c/quiet — Quiet\n\nThe tab says \"All projects: $40\" above the list. Then more.\n");
+  write(root, ".sova/spec/claims/b/dep.md", "# §b/dep — Dep\n\n- **Short run-in.** The real sentence follows.\n");
+  const l = byId(toc(root, "§a.top/seed", "out"));
+  assert.equal(l["§e/named"].what, "Logins (pi `auth.json`: keys, tokens) sync between hosts.");
+  assert.equal(l["§c/quiet"].what, "The tab says \"All projects: $40\" above the list.");
+  assert.equal(l["§b/dep"].what, "**Short run-in.** The real sentence follows.");
+  write(root, ".sova/spec/claims/e/named.md", "# §e/named — Named\n\nOne part: the colon outside brackets still ends it here. More.\n");
+  assert.equal(byId(toc(root, "§a.top/seed", "out"))["§e/named"].what, "One part: the colon outside brackets still ends it here.", "20 characters, so it runs on");
+  // A period inside an open quote is not the end; a quoted sentence that closes the sentence is.
+  write(root, ".sova/spec/claims/e/named.md", "# §e/named — Named\n\nThe list shows \"None yet. Yours appear here.\" until one exists. Then more.\n");
+  write(root, ".sova/spec/claims/c/quiet.md", "# §c/quiet — Quiet\n\nThe button is labelled \"Stop the turn.\" Then more follows.\n");
+  const q = byId(toc(root, "§a.top/seed", "out"));
+  assert.equal(q["§e/named"].what, "The list shows \"None yet. Yours appear here.\" until one exists.");
+  assert.equal(q["§c/quiet"].what, "The button is labelled \"Stop the turn.\"");
+});
+
 test("what: a thematic break is never a prose sentence", () => {
   const root = fixture();
   write(root, ".sova/spec/claims/e/named.md", "# §e/named — Named\n\n| a | b |\n|---|---|\n| 1 | 2 |\n\n---\n");

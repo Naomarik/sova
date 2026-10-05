@@ -2,24 +2,15 @@
 // owns resume: its `agent-resume <ag_NN>` command handler starts the worker again from its durable
 // record, idle, and throws a readable Error when it can't. Sova calls that handler directly (as
 // applyMode calls /mode), so no command text ever reaches the model.
-
-/** The part of an extension command Sova calls. */
-interface Command {
-  handler(args: string, ctx: unknown): Promise<void> | void;
-  sourceInfo?: { path?: string };
-}
-
-/** The subagents extension's own `agent-resume`, never another extension's command of that name. */
-export function resumeCommandOf(runner: { getCommand(name: string): Command | undefined }): Command | undefined {
-  const cmd = runner.getCommand("agent-resume");
-  return cmd && /[\\/]extensions[\\/]subagents[\\/]index\.ts$/.test(cmd.sourceInfo?.path ?? "") ? cmd : undefined;
-}
+import type { OwnedCommand } from "../shared/harness";
 
 /** Worker ids as the subagents extension mints them. Anything else never reaches the handler. */
 export const WORKER_ID_RE = /^ag_\d{1,6}$/;
 
 export interface ResumeHost {
-  command(): Command | undefined;
+  /** The subagents extension's own `agent-resume` (HarnessSession.command("agent-resume")), never another
+      extension's command of that name; undefined when it isn't loaded. */
+  command(): OwnedCommand | undefined;
   /** A TUI or another writer owns the session file: nothing may be started from here. */
   foreign(): boolean;
   commandContext(): unknown;

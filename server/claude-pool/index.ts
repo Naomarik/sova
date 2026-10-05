@@ -1,9 +1,8 @@
 import type { Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
-import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { defaultClaudeDir } from "../../pi-config/extensions/claude-code/accounts.ts";
 import type { MeshApi } from "../mesh";
-import { stateRoot } from "../state-root";
+import { agentRoot, stateRoot } from "../state-root";
 import { loginKindsPin } from "../sync/logins-merge";
 import { PoolAgent, type CommitReply, type LendReply, type PoolPeer, type ReturnReply } from "./agent";
 import { parseDoc, type PoolDoc } from "./doc";
@@ -77,7 +76,7 @@ export interface PoolPaths {
   stateDir: () => string;
   claudeDir: () => string;
 }
-const defaultPaths: PoolPaths = { agentDir: getAgentDir, stateDir: stateRoot, claudeDir: () => defaultClaudeDir() };
+const defaultPaths: PoolPaths = { agentDir: agentRoot, stateDir: stateRoot, claudeDir: () => defaultClaudeDir() };
 
 export function mountClaudePool(app: Hono, mesh: MeshApi, paths: PoolPaths = defaultPaths): void {
   const canHold = () => (loginKindsPin() ?? (mesh.settings().loginKinds === "api-keys" ? "api-keys" : "all")) !== "api-keys";

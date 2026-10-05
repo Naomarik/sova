@@ -5,6 +5,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
 import { parseDefinition } from "../../shared/project-contract";
+import { historyOf } from "../harness/pi/reader";
+import { stateView } from "../harness/state-view";
 import { staticServes, stopStaticServe } from "../preview-serve";
 import { DetachedDriver, parseMemoryPeak, systemdRunArgv } from "./drivers";
 import { ProjectEngine, type Caller } from "./engine";
@@ -132,7 +134,7 @@ test("delivered hidden at a turn's start only when it changed, again after a com
   assert.equal(first.message.details.digest, noteDigest(first.message.content));
   assert.match(first.message.content, /^Sova instance note for /);
   branch.push({ type: "custom_message", ...first.message });
-  assert.equal(lastNoteDigest(branch), first.message.details.digest);
+  assert.equal(lastNoteDigest(historyOf(branch)), first.message.details.digest);
   assert.equal(await handlers.before_agent_start!({}, ctx), undefined, "unchanged: nothing sent");
   // A reworded about is a new fact.
   define(def("Test REPL, now with a new client"), checkout);
@@ -149,11 +151,11 @@ test("delivered hidden at a turn's start only when it changed, again after a com
 
   // The same text after a single instance's status; none after a whole project's, or after logs.
   const st = await engine.run("status", { instance: id }, op);
-  const note = await resultNote(engine, st, []);
+  const note = await resultNote(engine, st, stateView([]));
   assert.equal(note, instanceNote((await engine.noteFacts(checkout))!, false));
   assert.ok(renderResult(st, note).endsWith(note!));
-  assert.equal(await resultNote(engine, await engine.run("status", { project }, op), []), null);
-  assert.equal(await resultNote(engine, await engine.run("logs", { instance: id }, op), []), null);
+  assert.equal(await resultNote(engine, await engine.run("status", { project }, op), stateView([])), null);
+  assert.equal(await resultNote(engine, await engine.run("logs", { instance: id }, op), stateView([])), null);
   define(def(), checkout);
 });
 

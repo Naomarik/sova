@@ -7,6 +7,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { after, test } from "node:test";
+import { piSession } from "./harness/pi/testing/handle";
 
 const dir = mkdtempSync(join(tmpdir(), "sova-fork-routes-"));
 process.env.PI_CODING_AGENT_DIR = dir;
@@ -102,11 +103,11 @@ test("fork route: held runtime checks streaming, compaction and queued sends wit
   const before = readFileSync(path, "utf8");
   const chat = await acquireChat(path, true);
   try {
-    Object.defineProperty(chat.session, "isStreaming", { get: () => true, configurable: true });
+    Object.defineProperty(piSession(chat), "isStreaming", { get: () => true, configurable: true });
     const streaming = await post({ path, entryId: "a1" });
     assert.equal(streaming.status, 409);
     assert.match((await streaming.json() as { error: string }).error, /Stop the current turn/);
-    Reflect.deleteProperty(chat.session, "isStreaming");
+    Reflect.deleteProperty(piSession(chat), "isStreaming");
 
     t.mock.method(chat, "isCompacting", () => true);
     const compacting = await post({ path, entryId: "a1" });
@@ -124,7 +125,7 @@ test("fork route: held runtime checks streaming, compaction and queued sends wit
     assert.equal(idle.status, 201, await idle.text());
     assert.equal(readFileSync(path, "utf8"), before, "opening and forking the held source never writes to it");
   } finally {
-    Reflect.deleteProperty(chat.session, "isStreaming");
+    Reflect.deleteProperty(piSession(chat), "isStreaming");
     t.mock.restoreAll();
     await disposeAllChats();
   }

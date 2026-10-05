@@ -1,0 +1,37 @@
+{
+  "header": {
+    "type": "session",
+    "version": 3,
+    "id": "0190a000-0000-7000-8000-c00000000000",
+    "timestamp": "2026-09-01T10:00:00.000Z",
+    "cwd": "/home/user/golden"
+  },
+  "lines": 8,
+  "entries": 7,
+  "ids": [
+    "0190a000-0000-7000-8000-c00000000000",
+    "c0000001",
+    "c0000002",
+    "c0000003",
+    "c0000004",
+    null,
+    "c0000005"
+  ],
+  "branch": [
+    "c0000001",
+    "c0000002",
+    "c0000003",
+    "c0000004",
+    null,
+    "c0000005"
+  ],
+  "leaf": "c0000005",
+  "types": [
+    "message",
+    "message",
+    "message",
+    "message",
+    "future_entry",
+    "message"
+  ]
+}

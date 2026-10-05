@@ -1,9 +1,12 @@
 import { randomBytes, timingSafeEqual } from "node:crypto";
-import { closeSync, mkdirSync, openSync, readFileSync, readSync, statSync, writeFileSync } from "node:fs";
+import { closeSync, mkdirSync, openSync, readFileSync, readSync, statSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
-import { type AgentSession, getAgentDir, SessionManager } from "@earendil-works/pi-coding-agent";
+import { agentRoot } from "./state-root";
+import { toolCtx, toPiTool } from "./harness/pi/tools";
+import { createSessionFile } from "./harness/pi/state";
+import { GRANT, GRANT_USE, OVERSEER, REVOKE, RULE } from "./harness/state-kinds";
 import { loadPolicyFile, policyFilePath } from "../pi-config/extensions/sandbox/policy.ts";
 import {
   OVERSEER_BRIEF_PREFIX,
@@ -64,13 +67,13 @@ import { promptTodos, readTodos } from "./overseer-todos";
 import type { SubagentTool } from "./overseer-idea-tools";
 import { workerDenial } from "./delegate";
 import { BUILTIN_ALLOWED, overseerTools, type OverseerToolHost, renderTranscript, TurnLimits } from "./overseer-tools";
-import { userMessageText, UserTurns } from "./user-turns";
+import { UserTurns } from "./user-turns";
 import { OVERSEER_SENDER_HEADER, overseerSender, senderSecret } from "./overseer-sender";
 
-import { cardsNoteMessage, onSessionPrompted, pathOfId, promptSession, sessionActivity, toolCatalogue, type PromptDelivery, type PromptResult } from "./session-prompt";
+import { onSessionPrompted, pathOfId, promptSession, sessionActivity, toolCatalogue, type PromptDelivery, type PromptResult } from "./session-prompt";
 import { contactRedactor } from "./overseer-org-view";
 import { CARDS_NOTE_MESSAGE, cardsNote, clickItems, foldCards, matchCardClick } from "../shared/overseer-card";
-import { actsText, carriedRules, clickWrote, coveringPermit, foldPermits, type Permit, permitFromClick, REVOKE_ENTRY, RULE_ENTRY, type RuleEntry, sessionsText, USE_ENTRY } from "../shared/overseer-grants";
+import { actsText, carriedRules, clickWrote, coveringPermit, foldPermits, type Permit, permitFromClick, RULE_ENTRY, type RuleEntry, sessionsText } from "../shared/overseer-grants";
 import { readAliases, sessionName, setAlias } from "./session-names";
 import { RESUME_DELAY_MS, resumeInterrupted, runLedger } from "./auto-resume";
 import { schedulesForWire } from "./schedules";
@@ -83,13 +86,15 @@ import { isViewing, markSeen, readSeen } from "./seen";
 import { UnreadReplies } from "./unread-replies";
 import { cleanupSessions, getSessionSummary, idOf, indexedSessionPaths, lastReplyAtOf, listSessionFiles, listSessions } from "./sessions-index";
 import { getSessionInsight } from "./insights";
-import { branchLabels, runNote, runNoteSessionIds, type SessionNow, sessionsInPlay, sessionsInPlayText, type Touched } from "./overseer-run-note";
+import { branchLabels, cardsOnBranch, runNote, runNoteSessionIds, type SessionNow, sessionsInPlay, sessionsInPlayText, type Touched } from "./overseer-run-note";
 import { assistantText, ID_NOTE_MESSAGE, idCheckNote } from "./overseer-id-check";
 import { meshApi } from "./mesh";
 import { probePeer } from "./mesh/hello";
 import { meshLinks } from "./mesh/links";
 import type { PeerLinkRead } from "../shared/mesh-links";
-import { activeBranch, normalizeEntries, parseLines, readActiveBranch } from "./transcript";
+import { rowsOf } from "./transcript";
+import { branchOf, joinedText, lineEntry, parsePi, readBranch } from "./harness/pi/reader";
+import type { HarnessSession, HEntry } from "../shared/harness";
 import { archiveWorktrees } from "./archive-worktrees";
 import { markOwned } from "./write-guard";
 import { signalTextOf, teamStallOf } from "./signals-store";
@@ -138,12 +143,8 @@ export function hasOverseerMarker(path: string): boolean {
     const n = readSync(fd, buf, 0, buf.length, 0);
     for (const line of buf.subarray(0, n).toString("utf8").split("\n")) {
       if (!line.includes(OVERSEER_ENTRY)) continue;
-      try {
-        const e = JSON.parse(line);
-        if (e?.type === "custom" && e.customType === OVERSEER_ENTRY) return true;
-      } catch {
-        // torn line: keep looking
-      }
+      const e = lineEntry(line); // null for a torn line: keep looking
+      if (e?.kind === "state" && e.key === OVERSEER_ENTRY) return true;
     }
     return false;
   } catch {
@@ -154,24 +155,21 @@ export function hasOverseerMarker(path: string): boolean {
 }
 
 
+/** An entry that says the conversation was used: a message, or a model or thinking-level change. */
+const sentOrSet = (e: HEntry): boolean =>
+  e.kind === "setting" ? e.what === "model" || e.what === "thinking" : e.kind === "note" || e.kind === "summary" ? e.inMessage : ["user", "assistant", "tool-result", "shell", "system"].includes(e.kind);
+
 /** A new Overseer file: header + marker (and the rules a /clear carries, §app.overseer/approvals),
     written now (like every web session), ours. */
 function createOverseerFile(carried: readonly RuleEntry[] = []): { id: string; path: string } {
   const dir = overseerDir();
   mkdirSync(dir, { recursive: true });
-  const sm = SessionManager.create(dir);
-  const raw = sm.getSessionFile();
-  const header = sm.getHeader();
-  if (!raw || !header) throw new Error("SessionManager did not produce a session file");
-  // The marker rides the hand-written file, like the fanout member marker: appended to the manager
-  // first, then [header, ...entries] is the whole file (SessionManager.create defers its own write).
-  sm.appendCustomEntry(OVERSEER_ENTRY, { v: 1 });
-  for (const rule of carried) sm.appendCustomEntry(RULE_ENTRY, rule);
-  writeFileSync(raw, `${[JSON.stringify(header), ...sm.getEntries().map((e) => JSON.stringify(e))].join("\n")}\n`, { flag: "wx" });
-  const path = canonicalPath(raw);
+  // The marker (then each carried rule) is written with the header, in one whole file.
+  const made = createSessionFile({ cwd: dir, seed: [[OVERSEER, { v: 1 }], ...carried.map((rule) => [RULE, rule] as const)] });
+  const path = canonicalPath(made.path);
   markOwned(path);
-  markSeen(header.id);
-  return { id: header.id, path };
+  markSeen(made.id);
+  return { id: made.id, path };
 }
 
 /** Delete history files that fell off the end (>20). Through the cleanup "paths" mode, so the same
@@ -244,7 +242,7 @@ export async function clearOverseer(): Promise<OverseerInfo> {
   const carried = old && st ? carriedRules(old.branch, old.all, st.current) : [];
   if (oldPath) {
     const chat = heldChat(oldPath);
-    if (chat?.session.isStreaming) await drainQueueThenAbort(chat.session, (m) => chat.broadcast(m), chat.queue).catch(() => {});
+    if (chat?.harness.isRunning()) await drainQueueThenAbort(chat.harness, (m) => chat.broadcast(m), chat.queue).catch(() => {});
     await disposeHeldChat(oldPath, "The Overseer was cleared. Opening the new conversation.");
   }
   limits.reset();
@@ -431,25 +429,23 @@ async function applySettingsNow(): Promise<void> {
     pendingApply = false; // the next open syncs from the file (chat-manager syncOverseerModel)
     return;
   }
-  if (chat.session.isStreaming) return;
+  if (chat.harness.isRunning()) return;
   pendingApply = false;
   // A conversation that has written no model or thinking yet (nothing sent): reopen it rather than
   // switch it. A switch would first flush the open-time pi-default model/thinking entries and then
   // record the new model — three info rows before the first message. A reopen seeds the runtime
   // from overseer.json directly (chat-manager createRuntime), so the file only ever records the
   // chosen model, at the first prompt. Open tabs get "reloaded" and reconnect.
-  const untouched = !chat.session.sessionManager
-    .getEntries()
-    .some((e) => e.type === "message" || e.type === "model_change" || e.type === "thinking_level_change");
+  const untouched = !chat.harness.entries().some(sentOrSet);
   if (untouched) {
     await disposeHeldChat(chat.path, "The Overseer's model changed; reopening it.");
     return;
   }
   const s = readOverseerSettings();
-  const cur = chat.session.model ? `${chat.session.model.provider}/${chat.session.model.id}` : null;
+  const cur = chat.harness.model()?.ref ?? null;
   try {
     if (s.model && s.model !== cur) await chat.setModelRef(s.model);
-    if (s.thinking && s.thinking !== chat.session.thinkingLevel) chat.setThinking(s.thinking);
+    if (s.thinking && s.thinking !== chat.harness.thinking()) chat.setThinking(s.thinking);
   } catch (err) {
     console.warn("[overseer] applying settings failed:", err instanceof Error ? err.message : String(err));
   }
@@ -530,9 +526,9 @@ async function peerSession(peerId: string, id: string): Promise<SessionSummary |
   return null;
 }
 
-/** The Overseer runtime's session (watchSession): its extension runner holds the subagents
+/** The Overseer runtime's driving session (watchSession): its registered tools include the subagents
     extension's tools, which the explorer routes call in-process (overseer-idea-tools.ts). */
-let overseerSession: AgentSession | null = null;
+let overseerSession: HarnessSession | null = null;
 
 const host: OverseerToolHost = {
   request: (path, init) => {
@@ -551,13 +547,13 @@ const host: OverseerToolHost = {
     return getSessionSummary(path, rt ? (r) => contextWindow(r, rt) : undefined);
   },
   digest: () => attentionForWire(),
-  transcript: async (path) => normalizeEntries(await readActiveBranch(path)),
+  transcript: async (path) => rowsOf(await readBranch(path)),
   insight: (path) => getSessionInsight(path),
   checks: (path) => readinessChecksOf(path),
   held(path) {
     const chat = heldChat(path);
     if (!chat) return null;
-    return { streaming: chat.session.isStreaming, queued: chat.queue.size, dialogs: chat.pendingDialogs() };
+    return { streaming: chat.harness.isRunning(), queued: chat.queue.size, dialogs: chat.pendingDialogs() };
   },
   answerDialog(path, dialogId, value, answer) {
     const chat = heldChat(path);
@@ -578,7 +574,7 @@ const host: OverseerToolHost = {
   sandbox: async (path) => (await acquireChat(path)).sandboxInfo(),
   // The extension's own default (index.ts defaultOn): an unreadable policy file starts sessions off.
   sandboxDefault: () => {
-    const f = loadPolicyFile(policyFilePath(getAgentDir()));
+    const f = loadPolicyFile(policyFilePath(agentRoot()));
     return f.ok && f.value.defaultOn ? "on" : "subagents";
   },
   started: (path, prompted) => {
@@ -608,28 +604,30 @@ const host: OverseerToolHost = {
     peerPoll.unref?.();
   },
   links: meshLinks,
-  worktrees: archiveWorktrees(readActiveBranch),
+  worktrees: archiveWorktrees(readBranch),
   runningStarted: () => countRunning(started, running, promptedAt),
   counted: (path) => countRunning(started.has(path) ? [path] : [], running, promptedAt) > 0,
   attended: () => turns.attended(),
-  confirmed: () => confirmedItems(turns.confirmedCard(), overseerSession?.sessionManager.getBranch() ?? []),
+  confirmed: () => confirmedItems(turns.confirmedCard(), overseerSession ? overseerSession.branch() : []),
   // Approvals and rules (§app.overseer/approvals): read from the current runtime's file each call,
   // so a revoke applies from the next act on.
   permit(tool, sessions) {
-    const sm = overseerSession?.sessionManager;
-    if (!sm) return null;
+    if (!overseerSession) return null;
     const now = Date.now();
-    const p = coveringPermit(foldPermits(sm.getBranch(), sm.getEntries(), now), tool, sessions, now);
+    const p = coveringPermit(foldPermits(overseerSession.branch(), overseerSession.entries(), now), tool, sessions, now);
     return p ? { id: p.id, label: permitLabel(p) } : null;
   },
   aliases: () => readAliases(),
   setAlias: (id, alias) => setAlias(id, alias),
   used(id, tool, sessions, toolCallId) {
-    overseerSession?.sessionManager.appendCustomEntry(USE_ENTRY, { v: 1, id, tool, sessions, toolCallId, at: new Date().toISOString() });
+    if (overseerSession) overseerSession.state.append(GRANT_USE, { v: 1, id, tool, sessions, toolCallId, at: new Date().toISOString() });
   },
   explorer: () => readOverseerSettings().explorer,
   explorerCwd: () => overseerDir(),
-  subagent: (name) => (overseerSession?.extensionRunner?.getToolDefinition(name) as SubagentTool | undefined) ?? null,
+  subagent: (name) => {
+    const tool = overseerSession?.registeredTool(name);
+    return tool ? (tool as unknown as SubagentTool) : null;
+  },
 };
 
 /**
@@ -644,7 +642,7 @@ export async function renderPeerRead(
 ): Promise<PeerLinkRead> {
   const s = await getSessionSummary(path);
   const title = s?.title ?? "Untitled";
-  const items = normalizeEntries(await readActiveBranch(path));
+  const items = rowsOf(await readBranch(path));
   const text = renderTranscript(items, {
     from: opts.from === "start" || opts.from === "last_user" ? opts.from : "tail",
     items: Math.min(40, Math.max(1, Math.trunc(opts.items ?? 20) || 20)),
@@ -665,20 +663,14 @@ export async function renderPeerRead(
  * choice. Null otherwise: typed text, a closed card, a card id that matches nothing (a tool call id
  * from before card ids included). Pure over the branch, for the tests.
  */
-export function confirmedItems(card: string | null, branch: readonly unknown[]): SovaConfirmItem[] | null {
+export function confirmedItems(card: string | null, branch: readonly HEntry[]): SovaConfirmItem[] | null {
   if (!card) return null;
-  const entries = branch as { type?: string; message?: { role?: string } }[];
-  let last = -1;
-  for (let i = entries.length - 1; i >= 0; i--) {
-    if (entries[i]?.type === "message" && entries[i]!.message?.role === "user") {
-      last = i;
-      break;
-    }
-  }
+  let last = branch.length - 1;
+  while (last >= 0 && branch[last]!.kind !== "user") last--;
   if (last < 0) return null;
-  const c = foldCards(entries.slice(0, last)).find((x) => x.id === card);
+  const c = cardsOnBranch(branch.slice(0, last)).find((x) => x.id === card);
   if (!c || c.phase !== "open") return null;
-  const click = matchCardClick(c, userMessageText(entries[last]!.message)?.trim() ?? "");
+  const click = matchCardClick(c, joinedText(branch[last]!, { images: false }).trim());
   if (!click) return null;
   return clickItems(c, click).map(({ n: _n, default: _d, decided: _x, ...item }) => item as SovaConfirmItem);
 }
@@ -689,21 +681,15 @@ export function confirmedItems(card: string | null, branch: readonly unknown[]):
  * with the card open when it arrived (the people-facing gate's own test), and the option it chose
  * must carry `later` or `rule`. `all` is the whole file (numbering, one write per click). Pure.
  */
-export function permitOnClick(card: string | null, branch: readonly unknown[], all: readonly unknown[], now = new Date().toISOString()): ReturnType<typeof permitFromClick> {
+export function permitOnClick(card: string | null, branch: readonly HEntry[], all: readonly HEntry[], now = new Date().toISOString()): ReturnType<typeof permitFromClick> {
   if (!card) return undefined;
-  const entries = branch as { type?: string; id?: string; message?: { role?: string } }[];
-  let last = -1;
-  for (let i = entries.length - 1; i >= 0; i--) {
-    if (entries[i]?.type === "message" && entries[i]!.message?.role === "user") {
-      last = i;
-      break;
-    }
-  }
-  const message = entries[last]?.id;
+  let last = branch.length - 1;
+  while (last >= 0 && branch[last]!.kind !== "user") last--;
+  const message = branch[last]?.id;
   if (last < 0 || !message || clickWrote(all, message)) return undefined;
-  const c = foldCards(entries.slice(0, last)).find((x) => x.id === card);
+  const c = foldCards(branch.slice(0, last)).find((x) => x.id === card);
   if (!c || c.phase !== "open") return undefined;
-  const click = matchCardClick(c, userMessageText(entries[last]!.message)?.trim() ?? "");
+  const click = matchCardClick(c, joinedText(branch[last]!, { images: false }).trim());
   return click ? permitFromClick(c, click, all, message, now) : undefined;
 }
 
@@ -714,14 +700,14 @@ export function permitLabel(p: Permit): string {
 }
 
 /** The Overseer file's entries: the held runtime's, else read from disk. */
-async function overseerEntries(): Promise<{ path: string; branch: readonly unknown[]; all: readonly unknown[] } | null> {
+async function overseerEntries(): Promise<{ path: string; branch: readonly HEntry[]; all: readonly HEntry[] } | null> {
   const st = readOverseerState();
   const path = st ? await pathOfId(st.current) : null;
   if (!path) return null;
   const chat = heldChat(path);
-  if (chat) return { path, branch: chat.session.sessionManager.getBranch(), all: chat.session.sessionManager.getEntries() };
-  const all = parseLines(await readFile(path, "utf8").catch(() => ""));
-  return { path, branch: activeBranch(all), all };
+  if (chat) return { path, branch: chat.harness.branch(), all: chat.harness.entries() };
+  const { entries } = parsePi(await readFile(path, "utf8").catch(() => ""));
+  return { path, branch: branchOf(entries), all: entries };
 }
 
 /** GET /api/overseer/autonomy: the running count and cap, and every grant and rule. */
@@ -740,7 +726,7 @@ export async function revokePermit(id: string): Promise<{ ok: true } | { ok: fal
   if (!e || !p) return { ok: false, status: 404, error: `No approval or rule ${id} in the current Overseer conversation.` };
   if (p.status !== "live") return { ok: false, status: 409, error: `${id} has already ${p.status === "expired" ? "expired" : "been revoked"}.` };
   const chat = await acquireChat(e.path);
-  chat.session.sessionManager.appendCustomEntry(REVOKE_ENTRY, { v: 1, id, at: new Date().toISOString(), by: "user" });
+  chat.harness.state.append(REVOKE, { v: 1, id, at: new Date().toISOString(), by: "user" });
   return { ok: true };
 }
 
@@ -751,8 +737,8 @@ export async function revokePermit(id: string): Promise<{ ok: true } | { ok: fal
  * archived), then the open cards (§app.overseer/confirm). One message, so it stays the cards note
  * the attendance rule treats as state. A failure to read the sessions still sends the time and the cards.
  */
-export async function runNoteMessage(branch: readonly unknown[], now = new Date()): Promise<{ message: { customType: string; content: string; display: false; details?: unknown } }> {
-  const cardsText = cardsNote(foldCards(branch), false, sessionActivity());
+export async function runNoteMessage(branch: readonly HEntry[], now = new Date()): Promise<{ message: { customType: string; content: string; display: false; details?: unknown } }> {
+  const cardsText = cardsNote(cardsOnBranch(branch), false, sessionActivity());
   let note: { content: string; details: unknown };
   try {
     const prompted = touchedHere();
@@ -810,8 +796,8 @@ async function sessionsNow(ids: readonly string[]): Promise<Map<string, SessionN
  * The note written once after a compaction (§app.overseer/confirm, §app.overseer/sessions-in-play):
  * the sessions in play, then the exact open cards; undefined when there is neither.
  */
-export async function compactNoteMessage(branch: readonly unknown[], now = Date.now()): Promise<{ customType: string; content: string; display: false } | undefined> {
-  const cards = cardsNote(foldCards(branch), true, sessionActivity());
+export async function compactNoteMessage(branch: readonly HEntry[], now = Date.now()): Promise<{ customType: string; content: string; display: false } | undefined> {
+  const cards = cardsNote(cardsOnBranch(branch), true, sessionActivity());
   let play: string | undefined;
   try {
     const inPlay = sessionsInPlay(branch, now, touchedHere());
@@ -933,13 +919,12 @@ class LivePrompt {
     return next.join("\n\n");
   }
   /** A run starts: bring the session's base options to the current text (a no-op when unchanged). */
-  rebase(session: Pick<AgentSession, "setActiveToolsByName" | "getActiveToolNames">): void {
+  rebase(session: Pick<HarnessSession, "refreshSystemPrompt">): void {
     const text = this.refresh();
     if (this.built.get(session) === text) return;
     this.built.set(session, text);
-    // The SDK's public way to rebuild the base prompt options (from the loader's parts); the tool
-    // set is passed back unchanged.
-    session.setActiveToolsByName(session.getActiveToolNames());
+    // The SDK rebuilds the base prompt options from the loader's parts (quirk P19).
+    session.refreshSystemPrompt();
   }
 }
 
@@ -961,14 +946,14 @@ setOverseerRuntime({
           {
             name: "sova-overseer",
             factory: (pi) => {
-              for (const t of tools) pi.registerTool(t);
+              for (const t of tools) pi.registerTool(toPiTool(t));
               // A run started by a message: its prompt, with the notes and settings as they are now.
               // The run note (the time now, what cleared) and the open cards ride the prompt as a
               // hidden message, never the system prompt (a prompt change restarts a Claude Code CLI
               // and breaks the cache): persisted, so a restart or a fold keeps it.
               pi.on("before_agent_start", async (event, ctx) => {
                 event.systemPromptOptions.appendSystemPrompt = prompt.refresh();
-                return runNoteMessage(ctx.sessionManager.getBranch());
+                return runNoteMessage(toolCtx(ctx).branch());
               });
               // The id check (§app.overseer/id-check): a run that linked a session id this host has no
               // file for leaves a hidden note naming the nearest real id. Sent while the run still
@@ -984,7 +969,7 @@ setOverseerRuntime({
               // A compaction summarizes the card results away: the exact open cards, once, after it.
               // The sessions in play go with them (§app.overseer/sessions-in-play), even with no card open.
               pi.on("session_compact", async (_event, ctx) => {
-                const note = await compactNoteMessage(ctx.sessionManager.getBranch());
+                const note = await compactNoteMessage(toolCtx(ctx).branch());
                 if (note) pi.sendMessage(note);
               });
               // Worker reports and other extension messages reach the model redacted, like every tool's output.
@@ -1016,21 +1001,24 @@ setOverseerRuntime({
   watchSession(session) {
     overseerSession = session;
     // Its model requests are background work under a provider's request limit (§app.provider-limits/queue).
-    markBackground(session.sessionManager.getSessionId());
-    turns.watch(session.agent);
+    markBackground(session.id);
+    turns.watch(session);
     const prompt = livePrompt;
     session.subscribe((event) => {
-      if (event.type === "agent_start") prompt?.rebase(session);
+      if (event.type === "run.start") prompt?.rebase(session);
       if (turns.observe(event)) limits.reset();
       // A click that approves for later or adopts a rule: the server writes it, once the click's
       // message is in the file (the SDK appends it right after this event's listeners run).
-      if (event.type === "message_end" && (event.message as { role?: string } | undefined)?.role === "user" && turns.confirmedCard()) {
+      if (event.type === "message.end" && event.role === "user" && turns.confirmedCard()) {
         const card = turns.confirmedCard();
         setImmediate(() => {
           try {
-            const sm = session.sessionManager;
-            const w = permitOnClick(card, sm.getBranch(), sm.getEntries());
-            if (w) sm.appendCustomEntry(w.type, w.data);
+            const w = permitOnClick(card, session.branch(), session.entries());
+            if (w) {
+              const state = session.state;
+              if (w.type === RULE_ENTRY) state.append(RULE, w.data);
+              else state.append(GRANT, w.data);
+            }
           } catch (err) {
             console.warn("[overseer] approval not written:", err instanceof Error ? err.message : String(err));
           }
@@ -1133,7 +1121,7 @@ async function tick(): Promise<void> {
   // The user looked at the Overseer since the last brief: the unattended run starts over.
   if ((readSeen()[st.current] ?? 0) > lastBriefAt || isViewing(st.current)) unattended = 0;
   const chat = heldChat(path);
-  const idle = !chat || (!chat.session.isStreaming && chat.queue.size === 0);
+  const idle = !chat || (!chat.harness.isRunning() && chat.queue.size === 0);
   const counts = new Map(act.map((i) => [blockerKey(i), blockerCount(i)]));
   const d = briefDecision({ current: act.map(blockerKey), counts, announced, proactivity: settings.proactivity, now: Date.now(), lastBriefAt, unattended, overseerIdle: idle });
   announced = d.announced;

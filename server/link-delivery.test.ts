@@ -13,6 +13,7 @@ import { join } from "node:path";
 import { after, describe, test } from "node:test";
 import { formatLinkMessage, parseLinkMessage } from "../shared/link-message";
 import type { ChatServerMessage } from "../shared/protocol";
+import { piSession } from "./harness/pi/testing/handle";
 
 const agentDir = mkdtempSync(join(tmpdir(), "sova-link-delivery-test-"));
 // A hosted runtime can still write here after after() ran (pi's catalogs, usage cache): exit is last.
@@ -28,6 +29,7 @@ mkdirSync(cwd, { recursive: true });
 const { acquireChat, disposeAllChats, resolveRegenerate } = await import("./chat-manager");
 const { deliverLinkMessage, heldSessionPath } = await import("./link-delivery");
 const { canonicalPath } = await import("./paths");
+const { historyOf } = await import("./harness/pi/reader");
 const { normalizeEntry } = await import("./transcript");
 const { getSessionSummary, onSessionArchived, archiveSession, cleanupSessions, idOf, isZeroInput, listSessions } = await import("./sessions-index");
 const { readTailTurn } = await import("./session-tags");
@@ -125,15 +127,15 @@ describe("§mesh.links/transcript: exclusions", () => {
     assert.deepEqual(Object.keys(turnQuestions(facts("please fix the build"))), ["asks_user"], "the user's own turn is asked (§app.decisions/asks-user): the tag makes the difference");
     // turnFacts reads the tagged message as the turn's opener, as the classifier needs.
     const branch = [msg("l1", null, "user", linkText()), msg("a1", "l1", "assistant", "Should I merge it?")];
-    assert.ok(turnFacts(branch as never)!.lastUser.startsWith("[link_msg "));
+    assert.ok(turnFacts(historyOf(branch))!.lastUser.startsWith("[link_msg "));
   });
 
   test("Regenerate refuses a reply to a link message, with its own reason", () => {
     const branch = [msg("u1", null, "user", "hello"), msg("a1", "u1", "assistant", "hi"), msg("l1", "a1", "user", linkText()), msg("a2", "l1", "assistant", "done")];
-    const r = resolveRegenerate(branch, "a2:0");
+    const r = resolveRegenerate(historyOf(branch), "a2:0");
     assert.equal(r.ok, false);
     assert.equal(!r.ok && r.reason, "link");
-    assert.equal(resolveRegenerate(branch, "a1").ok, true, "the user's own turn still regenerates");
+    assert.equal(resolveRegenerate(historyOf(branch), "a1").ok, true, "the user's own turn still regenerates");
   });
 });
 
@@ -143,7 +145,7 @@ describe("§mesh.links/delivery: ChatSession.deliverToAgent", () => {
     const chat = await acquireChat(path, true);
     const log: ChatServerMessage[] = [];
     chat.attach({ send: (m) => void log.push(m) });
-    return { chat, path, log, session: chat.session as any };
+    return { chat, path, log, session: piSession(chat) as any };
   }
 
   test("idle: starts a turn with the text verbatim, as an extension's input, never queued", async () => {
@@ -322,7 +324,7 @@ describe("§mesh.links/delivery: Stop takes back only the user's own messages", 
     const log: ChatServerMessage[] = [];
     const client = { send: (m: ChatServerMessage) => void log.push(m) };
     chat.attach(client);
-    const session = chat.session as any;
+    const session = piSession(chat) as any;
     Object.defineProperty(session, "isStreaming", { get: () => true, configurable: true });
     session.abort = async () => {};
     // The REAL steer, into the REAL SDK queue: the Stop split must work against what pi hands back.
@@ -349,7 +351,7 @@ describe("§mesh.links/delivery: Stop takes back only the user's own messages", 
     const link = linkText();
     const path = sessionFile([msg("u1", null, "user", "hi"), msg("a1", "u1", "assistant", "hello"), msg("l1", "a1", "user", link)]);
     const chat = await acquireChat(path, true);
-    const session = chat.session as any;
+    const session = piSession(chat) as any;
     (chat as any).linkStopped.push(link);
     Object.defineProperty(session, "isStreaming", { get: () => true, configurable: true });
     const steers: string[] = [];
@@ -381,7 +383,7 @@ describe("deliverLinkMessage: the refusals, before any runtime opens", () => {
     const special = plainSession();
     const chat = await acquireChat(special, true);
     chat.special = "baton";
-    (chat.session as any).prompt = async () => assert.fail("never handed to pi");
+    (piSession(chat) as any).prompt = async () => assert.fail("never handed to pi");
     assert.equal(((await deliverLinkMessage(special, linkText())) as any).reason, "special");
     assert.equal(((await deliverLinkMessage(join(sessionsDir, "gone.jsonl"), linkText())) as any).reason, "no-session");
   });

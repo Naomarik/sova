@@ -8,7 +8,7 @@ import { OVERSEER_ENTRY, type SessionSummary } from "../shared/protocol";
 import { activityOf, type LiveRecord, type RawLiveRecord, readLive, readOwnLiveRecords, workerCountsOf, workingSubagents } from "./live";
 import { extraSessionRoots, LIVE_DIR, resolveSessionPath, sessionPathShape, SESSIONS_DIR } from "./paths";
 import { isWebSession, removeWebSession } from "./web-sessions";
-import { stripImageNotes } from "../shared/image-note";
+import type { HEntry } from "../shared/harness";
 import { isLinkMessage } from "../shared/link-message";
 import { isTopicBatch } from "../shared/topic-message";
 import { parseWakeNudge } from "../shared/wake";
@@ -22,7 +22,8 @@ import { cwdOverride, disposeHeldChat, getModelRuntime, isSessionBusy, pendingDi
 import { isUnread, isViewing, readSeen, turnErrorShows } from "./seen";
 import { contextWindow } from "./models";
 import { parseTargetCwd } from "./targets";
-import { messageContextTokens } from "./transcript";
+import { firstText, headerOf, lineEntry, lineMay, toHEntry } from "./harness/pi/reader";
+import { contextStep } from "./harness/pi/usage";
 import { type AlignScan, readAlignScan } from "./align-state";
 import { WorkerSessions } from "./worker-sessions";
 import { isOverseerId, overseerDir } from "./overseer-store";
@@ -138,14 +139,8 @@ function summaryLine(s: string): string {
   return t.length > SUMMARY_MAX ? `${t.slice(0, SUMMARY_MAX - 1)}…` : t;
 }
 
-function userText(content: unknown): string {
-  if (typeof content === "string") return content;
-  if (Array.isArray(content)) {
-    // Without pi 0.87's image resize notes: a title is the text as typed.
-    for (const b of content) if (b?.type === "text" && typeof b.text === "string") return stripImageNotes(b.text, content);
-  }
-  return "";
-}
+/** A user entry's first text, without pi 0.87's image resize notes: a title is the text as typed. */
+const userText = (h: HEntry): string => firstText(h) ?? "";
 
 /** A user message that never titles a session: a fired wake nudge, or a partner's message over a
     link (§mesh.links/transcript), or a topic batch (§chat.topics/row) — none is something the user said. */
@@ -153,7 +148,7 @@ const notTitle = (text: string): boolean => parseWakeNudge(text) !== null || isL
 
 /** Best-effort title from a user message line cut off by the read cap (huge pastes). */
 function titleFromPartial(line: string): string | null {
-  if (!/"type":"message"/.test(line) || !/"role":"user"/.test(line)) return null;
+  if (!/"type":"message"/.test(line) || !lineMay(line, "user")) return null;
   const m = /"(?:content|text)":"((?:[^"\\]|\\.){1,400})/.exec(line);
   if (!m?.[1]) return null;
   let s = m[1];
@@ -168,11 +163,10 @@ function titleFromPartial(line: string): string | null {
   return null;
 }
 
-/** "provider/model" of a model_change or assistant message entry, else null. */
-function modelOf(e: any): string | null {
-  if (e?.type === "model_change" && e.provider && e.modelId) return `${e.provider}/${e.modelId}`;
-  const msg = e?.type === "message" ? e.message : null;
-  if (msg?.role === "assistant" && msg.provider && msg.model) return `${msg.provider}/${msg.model}`;
+/** "provider/model" of a model setting or an assistant reply, else null. */
+function modelOf(h: HEntry | null): string | null {
+  if (h?.kind === "setting" && h.what === "model" && h.provider && h.modelId) return `${h.provider}/${h.modelId}`;
+  if (h?.kind === "assistant" && h.provider && h.model) return `${h.provider}/${h.model}`;
   return null;
 }
 
@@ -184,7 +178,7 @@ const NL = 0x0a;
  * Lines cut off by the cap or torn by a writer mid-append are skipped. Not branch-aware (the file
  * end wins), unlike the transcript's per-message resolution. null when the window has none.
  */
-async function readTailModel(path: string, size: number): Promise<string | null> {
+export async function readTailModel(path: string, size: number): Promise<string | null> {
   const fh = await open(path, "r");
   try {
     const floor = Math.max(0, size - MAX_TAIL);
@@ -204,12 +198,9 @@ async function readTailModel(path: string, size: number): Promise<string | null>
         if (i < 0 && start > 0) break; // line start not read yet: carry it into the next chunk
         const line = buf.subarray(i + 1, stop);
         if (line.includes('"model_change"') || line.includes('"assistant"')) {
-          try {
-            const m = modelOf(JSON.parse(line.toString("utf-8")));
-            if (m) return m;
-          } catch {
-            // torn trailing line or not JSON: skip
-          }
+          // A torn trailing line or one that isn't JSON reads as null: skipped.
+          const m = modelOf(lineEntry(line));
+          if (m) return m;
         }
         if (i < 0) return null;
         stop = i;
@@ -282,8 +273,8 @@ async function scanOutline(fh: FileHandle, size: number, floor: number): Promise
       const line = buf.subarray(i + 1, stop);
       if (line.includes('"topic-outline"')) {
         try {
-          const e = JSON.parse(line.toString("utf-8"));
-          const data = e?.type === "custom" && e?.customType === "topic-outline" ? e.data : null;
+          const h = lineEntry(line);
+          const data = h?.kind === "state" && h.key === "topic-outline" ? (h.data as any) : null;
           if (data && typeof data.now === "string") {
             const now = summaryLine(data.now);
             // An empty "now" (drafting/none) is no summary: keep scanning for one that reads.
@@ -353,21 +344,18 @@ interface TailContext {
 }
 
 /**
- * contextForBranch's rule (server/transcript.ts) applied to ONE raw entry, walking backwards:
- * "stale" for a compaction (the fill before it no longer describes the context), a TailContext
- * for an assistant message that counts (messageContextTokens), null to keep scanning. A reply
+ * contextForBranch's rule (server/harness/pi/usage.ts) applied to ONE entry, walking backwards:
+ * "stale" for a compaction or its summary (the fill before it no longer describes the context), a
+ * TailContext for an assistant reply that counts (contextStep), null to keep scanning. A reply
  * with no usage, a failed or aborted one, one reporting 0 context tokens, and pi 0.86.0's
- * top-level `type:"usage"` entries are all skipped.
+ * top-level usage records are all skipped.
  */
-function contextOf(e: any): TailContext | "stale" | null {
-  if (e?.type === "compaction") return "stale";
-  const msg = e?.type === "message" ? e.message : null;
-  if (!msg) return null;
-  if (msg.role === "compactionSummary") return "stale";
-  if (msg.role !== "assistant") return null;
-  const tokens = messageContextTokens(msg); // null: an error/aborted or zero-usage reply, keep walking
-  if (tokens === null) return null;
-  return { tokens, model: msg.provider && msg.model ? `${msg.provider}/${msg.model}` : null };
+function contextOf(h: HEntry | null): TailContext | "stale" | null {
+  if (!h) return null;
+  const step = contextStep(h); // null: an error/aborted or zero-usage reply, keep walking
+  if (step === "compacted") return "stale";
+  if (step === null || h.kind !== "assistant") return null;
+  return { tokens: step, model: h.provider && h.model ? `${h.provider}/${h.model}` : null };
 }
 
 /**
@@ -378,7 +366,7 @@ function contextOf(e: any): TailContext | "stale" | null {
  * message with a usage object gives input + cacheRead + cacheWrite. null when the window has
  * neither. Not branch-aware — on a rewound session the tail can be a reply the head never sees.
  */
-async function readTailContext(path: string, size: number): Promise<TailContext | null> {
+export async function readTailContext(path: string, size: number): Promise<TailContext | null> {
   const fh = await open(path, "r");
   try {
     const floor = Math.max(0, size - MAX_TAIL);
@@ -398,13 +386,10 @@ async function readTailContext(path: string, size: number): Promise<TailContext 
         if (i < 0 && start > 0) break; // line start not read yet: carry it into the next chunk
         const line = buf.subarray(i + 1, stop);
         if (line.includes('"assistant"') || line.includes("compaction")) {
-          try {
-            const hit = contextOf(JSON.parse(line.toString("utf-8")));
-            if (hit === "stale") return null;
-            if (hit) return hit;
-          } catch {
-            // torn trailing line or not JSON: skip
-          }
+          // A torn trailing line or one that isn't JSON reads as null: skipped.
+          const hit = contextOf(lineEntry(line));
+          if (hit === "stale") return null;
+          if (hit) return hit;
         }
         if (i < 0) return null;
         stop = i;
@@ -417,11 +402,11 @@ async function readTailContext(path: string, size: number): Promise<TailContext 
   }
 }
 
-/** When an entry happened, ms epoch: the message's own `timestamp` (ms), else the entry's ISO one. */
-function entryTime(e: any): number | null {
-  const m = e?.message?.timestamp;
+/** When a reply happened, ms epoch: the message's own time (ms), else the entry's ISO one. */
+function entryTime(h: { sentAt?: unknown; at?: unknown }): number | null {
+  const m = h.sentAt;
   if (typeof m === "number" && Number.isFinite(m)) return m;
-  const t = typeof e?.timestamp === "string" ? Date.parse(e.timestamp) : NaN;
+  const t = typeof h.at === "string" ? Date.parse(h.at) : NaN;
   return Number.isFinite(t) ? t : null;
 }
 
@@ -440,16 +425,16 @@ export interface LastReply {
   provider?: string;
 }
 
-/** A parsed line as a finished reply, or null when it is not one. */
-export function finishedReply(e: any): LastReply | null {
-  if (e?.type !== "message" || e.message?.role !== "assistant") return null;
-  const stop = e.message.stopReason;
+/** An entry as a finished reply, or null when it is not one. */
+export function finishedReply(h: HEntry | null): LastReply | null {
+  if (h?.kind !== "assistant") return null;
+  const stop: unknown = h.stop;
   if (typeof stop !== "string" || UNFINISHED_STOPS.has(stop)) return null;
-  const at = entryTime(e);
+  const at = entryTime(h);
   if (at === null) return null;
-  const msg = e.message.errorMessage;
+  const msg: unknown = h.error;
   const error = stop === "error" && typeof msg === "string" && msg.trim() ? redactPreviewLinks(msg.trim()).slice(0, REPLY_ERROR_MAX) : undefined;
-  const provider = stop === "error" && typeof e.message.provider === "string" ? e.message.provider : undefined;
+  const provider = stop === "error" && typeof h.provider === "string" ? h.provider : undefined;
   return { at, stopReason: stop, ...(error ? { error } : {}), ...(provider ? { provider } : {}) };
 }
 
@@ -478,12 +463,9 @@ export async function readTailReply(path: string, size: number): Promise<LastRep
         if (i < 0 && start > 0) break;
         const line = buf.subarray(i + 1, stop);
         if (line.includes('"assistant"')) {
-          try {
-            const hit = finishedReply(JSON.parse(line.toString("utf-8")));
-            if (hit) return hit;
-          } catch {
-            // torn trailing line or not JSON: skip
-          }
+          // A torn trailing line or one that isn't JSON reads as null: skipped.
+          const hit = finishedReply(lineEntry(line));
+          if (hit) return hit;
         }
         if (i < 0) return null;
         stop = i;
@@ -504,7 +486,7 @@ export async function readTailReply(path: string, size: number): Promise<LastRep
 /** `input`: the head holds a user message of any kind. A wake nudge or a partner's link message
     never titles a session, but it is still something written in it: a session whose only user
     messages are link messages has real turns and is never an empty husk. */
-async function readHead(path: string): Promise<{ header: any; title: string | null; model: string | null; overseer: boolean; input: boolean; profile?: ProfileEntryData | null } | null> {
+export async function readHead(path: string): Promise<{ header: any; title: string | null; model: string | null; overseer: boolean; input: boolean; profile?: ProfileEntryData | null } | null> {
   const fh = await open(path, "r");
   try {
     // The Overseer marker is written right after the header, before any user message, so the
@@ -535,19 +517,22 @@ async function readHead(path: string): Promise<{ header: any; title: string | nu
           continue;
         }
         if (!header) {
-          if (e?.type !== "session") return null; // not a pi session
+          if (!headerOf(e)) return null; // not a pi session
           header = e;
           continue;
         }
-        if (e.type === "model_change" && !model && e.provider && e.modelId) model = `${e.provider}/${e.modelId}`;
-        if (e.type === "custom" && e.customType === OVERSEER_ENTRY) overseer = true;
+        // A `null` line has always failed the head read (the file is left out of the list).
+        if (e === null) throw new TypeError("a null entry in the session's head");
+        const h = toHEntry(e);
+        if (h?.kind === "setting" && h.what === "model" && !model && h.provider && h.modelId) model = `${h.provider}/${h.modelId}`;
+        if (h?.kind === "state" && h.key === OVERSEER_ENTRY) overseer = true;
         // The profile is fixed at the first message, so the newest entry before it is the session's.
-        if (e.type === "custom" && e.customType === PROFILE_ENTRY) profile = profileOnBranch([e]);
-        if (e.type === "message") {
-          const msg = e.message ?? {};
-          if (!model && msg.role === "assistant" && msg.provider && msg.model) model = `${msg.provider}/${msg.model}`;
-          if (msg.role === "user") input = true;
-          if (msg.role === "user" && title === null && !notTitle(userText(msg.content))) title = oneLine(userText(msg.content));
+        // Its fold still reads the raw entry (SessionState replaces it).
+        if (h?.kind === "state" && h.key === PROFILE_ENTRY) profile = profileOnBranch([e]);
+        if (h?.kind === "assistant" && !model && h.provider && h.model) model = `${h.provider}/${h.model}`;
+        if (h?.kind === "user") {
+          input = true;
+          if (title === null && !notTitle(userText(h))) title = oneLine(userText(h));
         }
         if (title !== null && model) return { header, title, model, overseer, input, profile };
       }
@@ -559,10 +544,11 @@ async function readHead(path: string): Promise<{ header: any; title: string | nu
         // EOF: final line without trailing newline (or a writer mid-append)
         try {
           const e = JSON.parse(pending);
-          if (!header && e?.type === "session") header = e;
-          else if (header && e?.type === "message" && e.message?.role === "user") {
+          const h = header ? toHEntry(e) : null;
+          if (!header && headerOf(e)) header = e;
+          else if (h?.kind === "user") {
             input = true;
-            if (!notTitle(userText(e.message.content))) title = oneLine(userText(e.message.content));
+            if (!notTitle(userText(h))) title = oneLine(userText(h));
           }
         } catch {
           // partial line: ignore

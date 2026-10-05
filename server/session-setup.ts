@@ -4,11 +4,11 @@
 //
 // Two sources, one shape:
 //
-//  - **the open chat's own loader** (`heldChat(path).session.resourceLoader`) when this server
+//  - **the open chat's own loader** (`heldChat(path).harness.resources()`) when this server
 //    holds the session: the exact set that session prompts with, extension-added skill paths
 //    included, and free — the runtime has already read every one of those files to build its
 //    prompt;
-//  - **pi's own loader without extensions** (`DefaultResourceLoader({ noExtensions: true })`), for
+//  - **pi's own loader without extensions** (`folderResources`, server/harness/pi/resources.ts), for
 //    a session nobody holds (an empty file a TUI owns, read through /ws/watch). That is a LOWER
 //    BOUND: a skill path an extension registers at session_start is invisible to it, which is what
 //    `fromRuntime` reports.
@@ -29,13 +29,17 @@
 // pi has already done.
 
 import { existsSync, readFileSync } from "node:fs";
-import { DefaultResourceLoader, getAgentDir } from "@earendil-works/pi-coding-agent";
+import type { HarnessResources } from "../shared/harness";
 import { CHARS_PER_TOKEN, type SessionSetup, type SessionSetupFile, type SessionSetupSkill } from "../shared/protocol";
 import { acquireChat, assertNotLive, disposeHeldChat, heldChat } from "./chat-manager";
 import { plan, readStoredCwd, type Plan } from "./git-summary";
-import { leavesOut, loadoutOnBranch, normalizeLoadout, type LoadoutEntryData } from "./session-loadout";
+import { leavesOut, normalizeLoadout, type LoadoutEntryData } from "./session-loadout";
 import { getSessionSummary } from "./sessions-index";
-import { readActiveBranch } from "./transcript";
+import { agentRoot } from "./state-root";
+import { readBranch } from "./harness/pi/reader";
+import { folderResources } from "./harness/pi/resources";
+import { LOADOUT } from "./harness/state-kinds";
+import { stateView } from "./harness/state-view";
 
 /** How long an answer stays fresh, per folder. The same size as the Git section's TTL. */
 export const SETUP_TTL_MS = 30_000;
@@ -72,25 +76,7 @@ export function measureFile(path: string): { bytes: number; lines: number; token
 }
 
 /** What a loader found, whichever loader it was. Only paths: the contents are pi's business. */
-export interface Loadout {
-  context: readonly { path: string }[];
-  skills: readonly { name: string; filePath: string; description?: string }[];
-  systemPrompt?: string;
-  appendSystemPrompt: readonly string[];
-}
-
-/** The four loader reads this needs, structurally — the SDK's `ResourceLoader` and
-    `DefaultResourceLoader` both satisfy it. */
-type Loader = Pick<DefaultResourceLoader, "getAgentsFiles" | "getSkills" | "getSystemPromptSource" | "getAppendSystemPromptSources">;
-
-function loadoutOf(loader: Loader): Loadout {
-  return {
-    context: loader.getAgentsFiles().agentsFiles.map((f) => ({ path: f.path })),
-    skills: loader.getSkills().skills.map((s) => ({ name: s.name, filePath: s.filePath, description: s.description })),
-    systemPrompt: loader.getSystemPromptSource()?.path,
-    appendSystemPrompt: loader.getAppendSystemPromptSources().map((s) => s.path),
-  };
-}
+export type Loadout = HarnessResources;
 
 /** The loadout of the chat this server holds, or null when it holds none. A runtime built with a
     `sova-loadout` entry answers with its loader's UNFILTERED lists (§chat.transcript/setup-card-toggles),
@@ -98,7 +84,7 @@ function loadoutOf(loader: Loader): Loadout {
 function runtimeLoadout(sessionPath: string): Loadout | null {
   const chat = heldChat(sessionPath);
   if (!chat) return null;
-  const loadout = loadoutOf(chat.session.resourceLoader);
+  const loadout = chat.harness.resources();
   const base = chat.loadoutState;
   return {
     ...loadout,
@@ -121,7 +107,7 @@ async function sessionSwitches(sessionPath: string): Promise<SessionSwitches> {
   if (chat) return { off: chat.loadoutState?.data ?? null, toggleable: chat.loadoutToggleable };
   try {
     assertNotLive(sessionPath);
-    return { off: loadoutOnBranch((await readActiveBranch(sessionPath)) as unknown as Parameters<typeof loadoutOnBranch>[0]), toggleable: false };
+    return { off: stateView(await readBranch(sessionPath)).latest(LOADOUT)?.data ?? null, toggleable: false };
   } catch {
     return { off: null, toggleable: false };
   }
@@ -152,9 +138,7 @@ export function withSwitches(setup: Loaded, sw: SessionSwitches): Loaded {
  * is a session nothing is prompting in.
  */
 async function loaderLoadout(cwd: string): Promise<Loadout> {
-  const loader = new DefaultResourceLoader({ cwd, agentDir: getAgentDir(), noExtensions: true });
-  await loader.reload();
-  return loadoutOf(loader);
+  return folderResources(cwd, agentRoot());
 }
 
 /** Injectable seams; every one has the real default. Tests swap them, callers never pass them. */
@@ -163,7 +147,7 @@ export interface SetupDeps {
   storedCwd?: (sessionPath: string) => Promise<string | null>;
   /** The loadout of an OPEN chat, or null when nothing holds it (default: heldChat). */
   runtime?: (sessionPath: string) => Loadout | null;
-  /** pi's own read for a folder (default: DefaultResourceLoader, noExtensions). */
+  /** pi's own read for a folder (default: folderResources, pi's loader without extensions). */
   loader?: (cwd: string) => Promise<Loadout>;
   /** One session's off set and switch window (default: the held chat, else the file's entry). */
   switches?: (sessionPath: string) => SessionSwitches | Promise<SessionSwitches>;

@@ -1,0 +1,49 @@
+[
+  {
+    "call": {
+      "fn": "applyQueue",
+      "args": [
+        [
+          {
+            "id": "c1",
+            "kind": "steer",
+            "text": "mine"
+          },
+          {
+            "id": "s7",
+            "kind": "followUp",
+            "text": "status check",
+            "origin": "server"
+          }
+        ]
+      ]
+    },
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "id": "c1",
+          "queueKind": "steer",
+          "text": "mine",
+          "state": "queued",
+          "images": [],
+          "handed": false
+        },
+        {
+          "kind": "user",
+          "id": "s7",
+          "queueKind": "followUp",
+          "text": "status check",
+          "state": "queued",
+          "images": [],
+          "handed": false,
+          "origin": "server"
+        }
+      ],
+      "tools": {},
+      "running": false,
+      "activity": null,
+      "stopping": false
+    }
+  }
+]

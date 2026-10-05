@@ -12,6 +12,7 @@ import { after, describe, test } from "node:test";
 import { Hono } from "hono";
 import WebSocket from "ws";
 import { BATON_HANDOFF_ENTRY, BATON_SENT_ENTRY, MESSAGES_CAP, MESSAGES_DEFAULT, OPERATOR, PHOTO_DEFAULTS, type BatonViewItem } from "../shared/baton";
+import { piSession } from "./harness/pi/testing/handle";
 
 const root = realpathSync(mkdtempSync(join(tmpdir(), "sova-share-msg-")));
 // A hosted runtime can still write here after after() ran (pi's catalogs, usage cache): exit is last.
@@ -60,7 +61,7 @@ const until = async (ready: () => boolean, ms = 2000) => {
 /** The SDK's prompt() as far as this path cares: input handlers first (a macrotask), then the run
     becomes active — a prompt that finds a run active without a streamingBehavior is refused. */
 function fakeSdk(chat: Awaited<ReturnType<typeof acquireChat>>): string[] {
-  const s = chat.session as unknown as { _isAgentRunActive: boolean; prompt: unknown };
+  const s = piSession(chat) as unknown as { _isAgentRunActive: boolean; prompt: unknown };
   const got: string[] = [];
   s.prompt = async (text: string, opts?: { streamingBehavior?: string }) => {
     await new Promise((r) => setTimeout(r, 5));
@@ -131,7 +132,7 @@ describe("the share message route", () => {
     const chat = await acquireChat(c.path);
     const got = fakeSdk(chat);
     assert.equal((await post(c.token!, "one")).status, 202);
-    await until(() => got.length === 1 && !chat.session.isStreaming);
+    await until(() => got.length === 1 && !piSession(chat).isStreaming);
     // The reply to the last allowed message ends (this fake SDK emits no run events): the stop moves then.
     await replyEnded(c.sessionId);
     const res = await post(c.token!, "two");

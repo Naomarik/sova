@@ -12,6 +12,7 @@ import { basename, join, resolve } from "node:path";
 import { after, describe, test } from "node:test";
 import type { SovaConfirmItem } from "../shared/protocol";
 import type { OverseerToolHost } from "./overseer-tools";
+import { piSession } from "./harness/pi/testing/handle";
 
 const root = realpathSync(mkdtempSync(join(tmpdir(), "sova-oorg-")));
 // A hosted runtime can still write here after after() ran (pi's catalogs, usage cache): exit is last.
@@ -31,6 +32,9 @@ const overseer = await import("./overseer");
 const sessionPrompt = await import("./session-prompt");
 const tools = await import("./overseer-tools");
 const { UserTurns } = await import("./user-turns");
+const { harnessEventOf } = await import("./harness/pi/session");
+const { watchUserMessages } = await import("./harness/pi/turns");
+const { historyOf } = await import("./harness/pi/reader");
 const view = await import("./overseer-org-view");
 const confirm = await import("./overseer-confirm");
 const { applyCardCall, cardLines } = await import("../shared/overseer-card");
@@ -44,7 +48,8 @@ const { settled } = await import("./workspace-git");
 const { canonicalPath } = await import("./paths");
 const { markOwned } = await import("./write-guard");
 const { getSessionSummary } = await import("./sessions-index");
-const { normalizeEntries, readActiveBranch } = await import("./transcript");
+const { normalizeEntries } = await import("./transcript");
+const { readActiveBranch } = await import("./harness/pi/reader");
 const { orgLookup } = await import("./org-sessions");
 const { readBuilds, setBuildSessionMakerForTest } = await import("./build-loadout");
 const { setReconcileDeps } = await import("./reconcile");
@@ -102,7 +107,7 @@ const usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0
 const stubbedSet = new WeakSet<object>();
 async function stubbed(path: string) {
   const chat = await acquireChat(path);
-  const s = chat.session as unknown as { _modelRuntime: { hasConfiguredAuth(p: string): boolean }; agent: { state: { model: unknown }; getApiKey: unknown; streamFunction: unknown } };
+  const s = piSession(chat) as unknown as { _modelRuntime: { hasConfiguredAuth(p: string): boolean }; agent: { state: { model: unknown }; getApiKey: unknown; streamFunction: unknown } };
   if (stubbedSet.has(s)) return chat;
   stubbedSet.add(s);
   s._modelRuntime.hasConfiguredAuth = () => true;
@@ -425,7 +430,7 @@ describe("the organization tools (§app.overseer/org-tools)", async () => {
     const sent = await call("sova_project_overseer", { op: "message", org: org.id, project: project.id, text: "Please check the backups." });
     assert.ok(sent.ok, sent.text);
     assert.match(sent.text, /Sent to \[Ledger overseer\]/);
-    await (await acquireChat(path)).session.waitForIdle();
+    await piSession(await acquireChat(path)).waitForIdle();
     await until(() => readFileSync(path, "utf8").includes(OVERSEER_SENT_ENTRY));
     const lines = readFileSync(path, "utf8").trim().split("\n").map((l) => JSON.parse(l));
     const marker = lines.find((l) => l.customType === OVERSEER_SENT_ENTRY);
@@ -469,7 +474,7 @@ describe("the organization tools (§app.overseer/org-tools)", async () => {
     // The page's own Start Coding Session still needs an item.
     const page = await app.request(`/api/projects/${project.id}/overseer/items/code`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ prompt: "x", title: "y" }) });
     assert.equal(page.status, 400);
-    await (await acquireChat(row.path!)).session.waitForIdle();
+    await piSession(await acquireChat(row.path!)).waitForIdle();
   });
 
   test("marker: no contact value, link token or /h/ URL in any result, refusal or action-log line; the About text only in its one read", () => {
@@ -601,7 +606,7 @@ describe("the confirm card: people and projects, and the click that opens a conf
     ).details;
     const result = (details: unknown, id = "k1") => ({ type: "message", message: { role: "toolResult", toolCallId: id, toolName: "sova_card", details } });
     const user = (text: string) => ({ type: "message", message: { role: "user", content: [{ type: "text", text }] } });
-    const branch = (...more: unknown[]) => [user("start one with Lee"), result(created), ...more];
+    const branch = (...more: unknown[]) => historyOf([user("start one with Lee"), result(created), ...more]);
     const bare = (items: readonly { n?: number }[]) => items.map(({ n: _n, ...it }) => it);
     // An unrelated message before the click leaves the card open: the click still approves.
     assert.deepEqual(overseer.confirmedItems("c_1", branch(user("what's Lee working on?"), user("c_1 a: Start the session with Lee."))), bare(created.card!.items));
@@ -618,23 +623,23 @@ describe("the confirm card: people and projects, and the click that opens a conf
     assert.equal(overseer.confirmedItems("c_1", branch(result(dropped, "k2"), user("c_1 a: Start the session with Lee."))), null, "a dropped card");
     // The model recording the answer later in the same run doesn't take the approval away.
     const answered = applyCardCall([created.card!], { card: "c_1", ops: [{ op: "answer", text: "start", option: "a" }] }, { now: "2026-09-30T10:02:00.000Z" }).details;
-    assert.deepEqual(overseer.confirmedItems("c_1", [...branch(user("c_1 a: Start the session with Lee.")), result(answered, "k3")]), bare(created.card!.items), "recorded after the click");
+    assert.deepEqual(overseer.confirmedItems("c_1", branch(user("c_1 a: Start the session with Lee."), result(answered, "k3"))), bare(created.card!.items), "recorded after the click");
   });
 
   test("UserTurns: a click's card lasts for its own run only; a typed message opens none", () => {
     const turns = new UserTurns();
     const agent = { prompt: async (_m: unknown) => {}, steer: (_m: unknown) => {}, followUp: (_m: unknown) => {} };
-    turns.watch(agent as never);
+    turns.watch({ onUserMessage: (claim) => watchUserMessages(agent, claim) });
     const msg = { role: "user", content: "Start the session with Lee." };
     turns.send(() => agent.prompt(msg as never), "card1");
-    turns.observe({ type: "agent_start" });
-    turns.observe({ type: "message_start", message: msg });
+    turns.observe(harnessEventOf({ type: "agent_start" }));
+    turns.observe(harnessEventOf({ type: "message_start", message: msg }));
     assert.equal(turns.attended(), true);
     assert.equal(turns.confirmedCard(), "card1");
     const typed = { role: "user", content: "yes" };
     turns.send(() => agent.prompt(typed as never));
-    turns.observe({ type: "agent_start" });
-    turns.observe({ type: "message_start", message: typed });
+    turns.observe(harnessEventOf({ type: "agent_start" }));
+    turns.observe(harnessEventOf({ type: "message_start", message: typed }));
     assert.equal(turns.attended(), true);
     assert.equal(turns.confirmedCard(), null);
   });
@@ -642,21 +647,21 @@ describe("the confirm card: people and projects, and the click that opens a conf
   test("UserTurns: the open-cards note is state, not input; any other extension message still ends the user's part", () => {
     const turns = new UserTurns();
     const agent = { prompt: async (_m: unknown) => {}, steer: (_m: unknown) => {}, followUp: (_m: unknown) => {} };
-    turns.watch(agent as never);
+    turns.watch({ onUserMessage: (claim) => watchUserMessages(agent, claim) });
     const msg = { role: "user", content: "c_1 a: Start the session with Lee." };
     turns.send(() => agent.prompt(msg as never), "c_1");
-    turns.observe({ type: "agent_start" });
-    turns.observe({ type: "message_start", message: msg });
-    turns.observe({ type: "message_start", message: { role: "assistant", content: [] } });
+    turns.observe(harnessEventOf({ type: "agent_start" }));
+    turns.observe(harnessEventOf({ type: "message_start", message: msg }));
+    turns.observe(harnessEventOf({ type: "message_start", message: { role: "assistant", content: [] } }));
     // After the model replied (a compaction's note steered in mid-run): the run stays the user's.
-    turns.observe({ type: "message_start", message: { role: "custom", customType: "overseer-cards", content: "[cards] …", display: false } });
+    turns.observe(harnessEventOf({ type: "message_start", message: { role: "custom", customType: "overseer-cards", content: "[cards] …", display: false } }));
     assert.equal(turns.attended(), true);
     assert.equal(turns.confirmedCard(), "c_1");
-    turns.observe({ type: "message_start", message: { role: "custom", customType: "worker-report", content: "done", display: true } });
+    turns.observe(harnessEventOf({ type: "message_start", message: { role: "custom", customType: "worker-report", content: "done", display: true } }));
     assert.equal(turns.attended(), false);
     // A run a brief starts is not made the user's by the note either.
-    turns.observe({ type: "agent_start" });
-    turns.observe({ type: "message_start", message: { role: "custom", customType: "overseer-cards", content: "[cards] …", display: false } });
+    turns.observe(harnessEventOf({ type: "agent_start" }));
+    turns.observe(harnessEventOf({ type: "message_start", message: { role: "custom", customType: "overseer-cards", content: "[cards] …", display: false } }));
     assert.equal(turns.attended(), false);
   });
 });

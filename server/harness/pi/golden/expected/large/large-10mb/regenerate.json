@@ -1,0 +1,122 @@
+{
+  "00000001": {
+    "ok": false,
+    "reason": "not_on_branch",
+    "message": "Nothing on this branch started that reply, so there is nothing to run again."
+  },
+  "00000001:0": {
+    "ok": false,
+    "reason": "not_on_branch",
+    "message": "Nothing on this branch started that reply, so there is nothing to run again."
+  },
+  "00000089": {
+    "ok": false,
+    "reason": "not_on_branch",
+    "message": "That is your own message; rewind to it to edit and send it again."
+  },
+  "00000089:0": {
+    "ok": false,
+    "reason": "not_on_branch",
+    "message": "That is your own message; rewind to it to edit and send it again."
+  },
+  "00000110": {
+    "ok": false,
+    "reason": "not_on_branch",
+    "message": "That is your own message; rewind to it to edit and send it again."
+  },
+  "00000110:0": {
+    "ok": false,
+    "reason": "not_on_branch",
+    "message": "That is your own message; rewind to it to edit and send it again."
+  },
+  "00000198": {
+    "ok": false,
+    "reason": "not_on_branch",
+    "message": "That is your own message; rewind to it to edit and send it again."
+  },
+  "00000198:0": {
+    "ok": false,
+    "reason": "not_on_branch",
+    "message": "That is your own message; rewind to it to edit and send it again."
+  },
+  "0000021f": {
+    "ok": true,
+    "userId": "0000021d",
+    "text": "Turn 133: session golden golden context entry golden golden rows parser context fork result rows session golden reader window usage token reader reader tool model window context fork parser branch token token"
+  },
+  "0000021f:0": {
+    "ok": true,
+    "userId": "0000021d",
+    "text": "Turn 133: session golden golden context entry golden golden rows parser context fork result rows session golden reader window usage token reader reader tool model window context fork parser branch token token"
+  },
+  "000002a7": {
+    "ok": true,
+    "userId": "000002a4",
+    "text": "Turn 166: session golden context fork watch reader fork fork branch entry entry reader usage fork token reader branch window window token watch parser fork usage entry context usage watch session context"
+  },
+  "000002a7:0": {
+    "ok": true,
+    "userId": "000002a4",
+    "text": "Turn 166: session golden context fork watch reader fork fork branch entry entry reader usage fork token reader branch window window token watch parser fork usage entry context usage watch session context"
+  },
+  "0000032e": {
+    "ok": true,
+    "userId": "0000032d",
+    "text": "Turn 200: token parser parser result parser watch usage window golden result usage golden reader result context rows fork model window window entry model parser token golden session token context reader model"
+  },
+  "0000032e:0": {
+    "ok": true,
+    "userId": "0000032d",
+    "text": "Turn 200: token parser parser result parser watch usage window golden result usage golden reader result context rows fork model window window entry model parser token golden session token context reader model"
+  },
+  "000003b6": {
+    "ok": false,
+    "reason": "not_on_branch",
+    "message": "That is your own message; rewind to it to edit and send it again."
+  },
+  "000003b6:0": {
+    "ok": false,
+    "reason": "not_on_branch",
+    "message": "That is your own message; rewind to it to edit and send it again."
+  },
+  "0000043d": {
+    "ok": false,
+    "reason": "not_on_branch",
+    "message": "That is your own message; rewind to it to edit and send it again."
+  },
+  "0000043d:0": {
+    "ok": false,
+    "reason": "not_on_branch",
+    "message": "That is your own message; rewind to it to edit and send it again."
+  },
+  "00000e41": {
+    "ok": true,
+    "userId": "00000e40",
+    "text": "After the rewind 1: golden token fork usage branch token result context fork rows session golden model fork rows context rows usage fork context"
+  },
+  "00000e41:0": {
+    "ok": true,
+    "userId": "00000e40",
+    "text": "After the rewind 1: golden token fork usage branch token result context fork rows session golden model fork rows context rows usage fork context"
+  },
+  "000004c1": {
+    "ok": false,
+    "reason": "not_on_branch",
+    "message": "That reply is not on this chat's current branch anymore."
+  },
+  "000004c1:0": {
+    "ok": false,
+    "reason": "not_on_branch",
+    "message": "That reply is not on this chat's current branch anymore."
+  },
+  "no-such-entry": {
+    "ok": false,
+    "reason": "not_on_branch",
+    "message": "That reply is not on this chat's current branch anymore."
+  },
+  "no-such-entry:0": {
+    "ok": false,
+    "reason": "not_on_branch",
+    "message": "That reply is not on this chat's current branch anymore."
+  }
+}

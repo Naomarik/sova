@@ -10,6 +10,7 @@ import { Hono } from "hono";
 import { BATON_LEASE_ENTRY, BATON_OFFER_ENTRY, BATON_PROPOSAL_ENTRY, BATON_SENT_ENTRY, BATON_WRAPUP_ENTRY, LEASE_IDLE_MS, OPERATOR, POOL } from "../shared/baton";
 import type { Person } from "../shared/orgs";
 import type { SessionSummary } from "../shared/protocol";
+import { historyOf } from "./harness/pi/reader";
 
 const root = realpathSync(mkdtempSync(join(tmpdir(), "sova-baton-offers-")));
 // A hosted runtime can still write here after after() ran (pi's catalogs, usage cache): exit is last.
@@ -127,11 +128,11 @@ describe("offers and leases", async () => {
     assert.throws(() => baton.noteMessage(c.sessionId, OPERATOR), /holds the baton/);
     assert.equal(baton.batonById(c.sessionId)!.row.budget.messagesUsed, 1, "refusals are not counted");
     // The view Maria's page gets: up to the offer card, the holder unnamed.
-    const branch = [
+    const branch = historyOf([
       ...entriesOf(c.path),
       { type: "message", id: "u1", message: { role: "user", content: "TONY-SAYS" } },
       { type: "custom", id: "s1", customType: BATON_SENT_ENTRY, data: { v: 1, targetId: "u1", by: tony.id } },
-    ];
+    ]);
     const names = baton.namesOf(org.id);
     const cut = batonView({ row, branch, names, viewer: maria.id, untilOffer: 1, redact: (t) => t });
     assert.ok(!JSON.stringify(cut).includes("TONY-SAYS"));
@@ -300,7 +301,7 @@ describe("offers and leases", async () => {
 describe("referrals", async () => {
   const c = await baton.createBaton({ orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "Bank", goal: "g" });
   const appended: { type: string; data: any }[] = [];
-  const tools = batonTools(c.sessionId, (type, data) => appended.push({ type, data }));
+  const tools = batonTools(c.sessionId, { append: (kind, data: any) => (appended.push({ type: kind.type, data }), "") });
   const propose = tools.find((t) => t.name === "propose_roster_edit")!;
   const call = (params: unknown) => propose.execute("id", params as never, undefined, undefined, undefined as never);
 
@@ -353,7 +354,7 @@ describe("referrals", async () => {
 describe("the wrap-up's writer", async () => {
   const c = await baton.createBaton({ orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "Wrap", goal: "g" });
   await baton.handTo(c.sessionId, maria.id, "q", "");
-  const branch = [
+  const branch = historyOf([
     { type: "message", id: "u1", message: { role: "user", content: "We run everything on Xero and I write SQL daily" } },
     { type: "custom", id: "m1", customType: BATON_SENT_ENTRY, data: { v: 1, targetId: "u1", by: tony.id } },
     { type: "message", id: "u2", message: { role: "user", content: [{ type: "text", text: "Hola, prefiero español por favor" }] } },
@@ -361,9 +362,9 @@ describe("the wrap-up's writer", async () => {
     { type: "message", id: "a1", message: { role: "assistant", content: [{ type: "text", text: "Tony is a Xero expert" }] } },
     { type: "custom", id: "w1", customType: BATON_WRAPUP_ENTRY, data: { v: 1, phase: "start" } },
     { type: "message", id: "u3", message: { role: "user", content: "[Wrap-up] Tony is also a Kubernetes admin" } },
-  ];
+  ]);
   const tool = wrap.wrapupTool(c.sessionId);
-  const run = (updates: unknown[]) => tool.execute("id", { updates } as never, undefined, undefined, { sessionManager: { getBranch: () => branch } } as never);
+  const run = (updates: unknown[]) => tool.execute("id", { updates } as never, undefined, undefined, { sessionId: "s", cwd: "/", leafId: () => null, branch: () => branch } as never);
 
   test("pure helpers: a person's own words before the wrap-up; merged values", () => {
     const mine = wrap.messagesByPerson(branch);
@@ -401,7 +402,7 @@ describe("the wrap-up's writer", async () => {
       await tool.execute("id", { updates: [
         { personId: ana.id, field: "language", to: "en", quote: "the invoices go out on Mondays" },
         { personId: ben.id, field: "language", to: "en", quote: "the bank export runs nightly" },
-      ] } as never, undefined, undefined, { sessionManager: { getBranch: () => br } } as never);
+      ] } as never, undefined, undefined, { sessionId: "s", cwd: "/", leafId: () => null, branch: () => historyOf(br) } as never);
     } finally {
       wrap.endWrapupRun(d.sessionId);
     }

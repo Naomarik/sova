@@ -1,0 +1,10 @@
+{
+  "tail": {
+    "tokens": 54700,
+    "model": "anthropic/claude-sonnet-5"
+  },
+  "tally": {
+    "tokens": 54700,
+    "window": 200000
+  }
+}

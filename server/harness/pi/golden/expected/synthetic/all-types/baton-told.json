@@ -1,0 +1,22 @@
+{
+  "prompt": {
+    "prompt": {
+      "text": "Base prompt\n\n<available_skills>\n<skill><name>golden-skill</name><description>A skill</description><location>/home/user/.pi/skills/golden-skill/SKILL.md</location></skill>\n</available_skills>",
+      "at": "2026-09-01T10:00:32.000Z",
+      "changes": 1
+    },
+    "tools": [
+      {
+        "name": "echo",
+        "description": "Echo",
+        "parameters": {
+          "type": "object"
+        }
+      }
+    ]
+  },
+  "model": {
+    "model": "zai/glm-5.3",
+    "thinking": "medium"
+  }
+}

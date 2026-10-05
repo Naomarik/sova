@@ -4,6 +4,8 @@
 // built as the reader scrolls up to them or a jump needs them.
 // This file is the arithmetic; Thread.tsx does the mounting and the scroll anchoring.
 
+import type { TranscriptItem } from "../../shared/protocol";
+import { rowFacts } from "../../shared/wire-v1";
 import { dataUrlSize, type ImageSize, thumbBoxHeight } from "./image-size";
 
 /** Rows built with the hello: a phone screen holds ~10 rows, a desktop ~20, so this is several
@@ -151,7 +153,7 @@ const wrapped = (s: TextShape, perLine: number) =>
   `min(${MAX_EST_LINES}, ${+(perLine * s.lines).toFixed(2)} + ${s.chars} / var(--entry-cols, 110)) * var(--entry-line, 22.5px)`;
 
 /** A compaction draws as a folded disclosure, not as its summary's text (Thread `Compaction`). */
-const isCompaction = (item: { meta?: { type?: string } }) => item.meta?.type === "compaction";
+const isCompaction = (item: Pick<TranscriptItem, "facts" | "meta">) => rowFacts(item)?.compaction !== undefined;
 
 /**
  * A row's height until it is first drawn (`content-visibility: auto` skips rows off screen, and a
@@ -162,7 +164,7 @@ const isCompaction = (item: { meta?: { type?: string } }) => item.meta?.type ===
  * depend on it; a drawn row remembers its real height. A row that draws nothing (a paired tool
  * result) takes no space whatever its estimate (`.entry:empty`).
  */
-export function rowEstimate(item: { kind: string; text?: string; meta?: { type?: string } }, images?: readonly string[], at: ImagesAt = "user", chain = false, folded = false, first = false): string {
+export function rowEstimate(item: { kind: string; text?: string } & Pick<TranscriptItem, "facts" | "meta">, images?: readonly string[], at: ImagesAt = "user", chain = false, folded = false, first = false): string {
   const text = item.text ?? "";
   // A run head reserves its group line (44), gap (8), and step (24). Middle steps
   // retain the 32px convention. Folded, only the 44px group line draws, never images.

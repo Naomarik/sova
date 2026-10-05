@@ -1,0 +1,95 @@
+{
+  "operator": {
+    "view": {
+      "publicTitle": "Golden launch",
+      "state": "active",
+      "holder": "Alice",
+      "items": [
+        {
+          "kind": "message",
+          "id": "",
+          "by": "",
+          "name": "Someone",
+          "text": "A string-content legacy question",
+          "at": "2025-01-01T00:00:02.000Z"
+        },
+        {
+          "kind": "reply",
+          "id": "",
+          "text": "Legacy answer",
+          "at": "2025-01-01T00:00:03.000Z"
+        },
+        {
+          "kind": "message",
+          "id": "",
+          "by": "",
+          "name": "Someone",
+          "text": "Second legacy question",
+          "at": "2025-01-01T00:00:04.000Z"
+        }
+      ]
+    },
+    "photos": 0
+  },
+  "bob": {
+    "view": {
+      "publicTitle": "Golden launch",
+      "state": "active",
+      "holder": "Alice",
+      "items": [
+        {
+          "kind": "message",
+          "id": "",
+          "by": "",
+          "name": "Someone",
+          "text": "A string-content legacy question",
+          "at": "2025-01-01T00:00:02.000Z"
+        },
+        {
+          "kind": "reply",
+          "id": "",
+          "text": "Legacy answer",
+          "at": "2025-01-01T00:00:03.000Z"
+        },
+        {
+          "kind": "message",
+          "id": "",
+          "by": "",
+          "name": "Someone",
+          "text": "Second legacy question",
+          "at": "2025-01-01T00:00:04.000Z"
+        }
+      ]
+    },
+    "photos": 0
+  },
+  "untilOffer": {
+    "publicTitle": "Golden launch",
+    "state": "active",
+    "holder": null,
+    "items": [
+      {
+        "kind": "message",
+        "id": "",
+        "by": "",
+        "name": "Someone",
+        "text": "A string-content legacy question",
+        "at": "2025-01-01T00:00:02.000Z"
+      },
+      {
+        "kind": "reply",
+        "id": "",
+        "text": "Legacy answer",
+        "at": "2025-01-01T00:00:03.000Z"
+      },
+      {
+        "kind": "message",
+        "id": "",
+        "by": "",
+        "name": "Someone",
+        "text": "Second legacy question",
+        "at": "2025-01-01T00:00:04.000Z"
+      }
+    ]
+  }
+}

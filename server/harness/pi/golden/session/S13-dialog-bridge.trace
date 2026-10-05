@@ -1,0 +1,83 @@
+step attach A, B
+A {"type":"hello","isStreaming":false,"isCompacting":false,"model":"scripted/scripted","thinking":"off","items":[]}
+A {"type":"commands"}
+A {"type":"queue","items":[]}
+A {"type":"mode","mode":"normal","minorModes":[],"strict":false,"applies":"now"}
+A {"type":"profile","profile":null,"locked":false,"pickable":true,"tools":"<elided>","removed":[],"granted":[]}
+B {"type":"hello","isStreaming":false,"isCompacting":false,"model":"scripted/scripted","thinking":"off","items":[]}
+B {"type":"commands"}
+B {"type":"queue","items":[]}
+B {"type":"mode","mode":"normal","minorModes":[],"strict":false,"applies":"now"}
+B {"type":"profile","profile":null,"locked":false,"pickable":true,"tools":"<elided>","removed":[],"granted":[]}
+step A sends {"type":"prompt","text":"ask me","clientId":"c1"}
+write {"id":"00000001","type":"model_change"}
+write {"id":"00000002","type":"thinking_level_change"}
+sdk prompt ["ask me",{"source":"interactive"}]
+A {"type":"send_ack","clientId":"c1","queued":false}
+A {"type":"links","links":[]}
+B {"type":"links","links":[]}
+A {"type":"event","event":{"type":"agent_start"}}
+B {"type":"event","v":2,"event":{"type":"run.start"}}
+A {"type":"event","event":{"type":"turn_start"}}
+A {"type":"event","event":{"type":"message_start","message":{"role":"system","elided":true}}}
+write {"id":"00000003","type":"message","role":"system"}
+A {"type":"event","event":{"type":"message_end","message":{"role":"system","elided":true}},"entryId":"00000003"}
+A {"type":"event","event":{"type":"message_start","message":{"role":"user","content":[{"type":"text","text":"ask me"}],"timestamp":1000000000000}}}
+B {"type":"event","v":2,"event":{"type":"message.start","role":"user","text":"ask me","images":[]}}
+write {"id":"00000004","type":"message","role":"user"}
+A {"type":"event","event":{"type":"message_end","message":{"role":"user","content":[{"type":"text","text":"ask me"}],"timestamp":1000000000000}},"entryId":"00000004"}
+B {"type":"event","v":2,"event":{"type":"message.end","role":"user","entryId":"00000004"}}
+A {"type":"event","event":{"type":"message_start","message":{"role":"assistant","api":"openai-completions","provider":"scripted","model":"scripted","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1000000000000,"content":[{"type":"toolCall","id":"call-1","name":"golden_ask","arguments":{}}],"stopReason":"toolUse"}}}
+B {"type":"event","v":2,"event":{"type":"message.start","role":"assistant","model":"scripted/scripted","parts":[{"kind":"toolCall","id":"call-1","name":"golden_ask","args":{}}]}}
+write {"id":"00000005","type":"message","role":"assistant"}
+A {"type":"event","event":{"type":"message_end","message":{"role":"assistant","api":"openai-completions","provider":"scripted","model":"scripted","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1000000000000,"content":[{"type":"toolCall","id":"call-1","name":"golden_ask","arguments":{}}],"stopReason":"toolUse"}},"entryId":"00000005"}
+B {"type":"event","v":2,"event":{"type":"message.end","role":"assistant","entryId":"00000005","model":"scripted/scripted","parts":[{"kind":"toolCall","id":"call-1","name":"golden_ask","args":{}}],"stop":"ok"}}
+A {"type":"event","event":{"type":"tool_execution_start","toolCallId":"call-1","toolName":"golden_ask","args":{}}}
+B {"type":"event","v":2,"event":{"type":"tool.start","callId":"call-1","name":"golden_ask","args":{}}}
+A {"type":"ui_request","id":"00000000-0000-7000-8000-000000000002","request":{"method":"select","title":"Pick a colour","options":["Red","Blue"]}}
+B {"type":"ui_request","id":"00000000-0000-7000-8000-000000000002","request":{"method":"select","title":"Pick a colour","options":["Red","Blue"]}}
+step B sends {"type":"ui_response","id":"00000000-0000-7000-8000-000000000002","value":"Red"}
+A {"type":"ui_resolved","id":"00000000-0000-7000-8000-000000000002"}
+B {"type":"ui_resolved","id":"00000000-0000-7000-8000-000000000002"}
+A {"type":"event","event":{"type":"tool_execution_end","toolCallId":"call-1","toolName":"golden_ask","result":{"content":[{"type":"text","text":"picked Red"}],"details":{}},"isError":false}}
+B {"type":"event","v":2,"event":{"type":"tool.end","callId":"call-1","name":"golden_ask","isError":false,"output":"picked Red","images":[],"details":{}}}
+A {"type":"event","event":{"type":"message_start","message":{"role":"toolResult","toolCallId":"call-1","toolName":"golden_ask","content":[{"type":"text","text":"picked Red"}],"details":{},"isError":false,"timestamp":1000000000000}}}
+write {"id":"00000006","type":"message","role":"toolResult"}
+A {"type":"event","event":{"type":"message_end","message":{"role":"toolResult","toolCallId":"call-1","toolName":"golden_ask","content":[{"type":"text","text":"picked Red"}],"details":{},"isError":false,"timestamp":1000000000000}},"entryId":"00000006"}
+A {"type":"event","event":{"type":"turn_end","message":{"role":"assistant","api":"openai-completions","provider":"scripted","model":"scripted","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1000000000000,"content":[{"type":"toolCall","id":"call-1","name":"golden_ask","arguments":{}}],"stopReason":"toolUse"},"toolResults":[{"role":"toolResult","toolCallId":"call-1","toolName":"golden_ask","content":[{"type":"text","text":"picked Red"}],"details":{},"isError":false,"timestamp":1000000000000}]}}
+A {"type":"event","event":{"type":"turn_start"}}
+A {"type":"event","event":{"type":"message_start","message":{"role":"assistant","api":"openai-completions","provider":"scripted","model":"scripted","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1000000000000,"content":[{"type":"toolCall","id":"call-2","name":"golden_ask","arguments":{}}],"stopReason":"toolUse"}}}
+B {"type":"event","v":2,"event":{"type":"message.start","role":"assistant","model":"scripted/scripted","parts":[{"kind":"toolCall","id":"call-2","name":"golden_ask","args":{}}]}}
+write {"id":"00000007","type":"message","role":"assistant"}
+A {"type":"event","event":{"type":"message_end","message":{"role":"assistant","api":"openai-completions","provider":"scripted","model":"scripted","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1000000000000,"content":[{"type":"toolCall","id":"call-2","name":"golden_ask","arguments":{}}],"stopReason":"toolUse"}},"entryId":"00000007"}
+B {"type":"event","v":2,"event":{"type":"message.end","role":"assistant","entryId":"00000007","model":"scripted/scripted","parts":[{"kind":"toolCall","id":"call-2","name":"golden_ask","args":{}}],"stop":"ok"}}
+A {"type":"event","event":{"type":"tool_execution_start","toolCallId":"call-2","toolName":"golden_ask","args":{}}}
+B {"type":"event","v":2,"event":{"type":"tool.start","callId":"call-2","name":"golden_ask","args":{}}}
+A {"type":"ui_request","id":"00000000-0000-7000-8000-000000000003","request":{"method":"select","title":"Pick a colour","options":["Red","Blue"]}}
+B {"type":"ui_request","id":"00000000-0000-7000-8000-000000000003","request":{"method":"select","title":"Pick a colour","options":["Red","Blue"]}}
+step the Overseer answers
+A {"type":"ui_resolved","id":"00000000-0000-7000-8000-000000000003"}
+B {"type":"ui_resolved","id":"00000000-0000-7000-8000-000000000003"}
+write {"id":"00000008","type":"custom","customType":"sova-overseer-dialog-answer"}
+A {"type":"append","items":[{"id":"00000008","kind":"info","text":"Overseer chose: Blue","at":"2000-01-01T00:00:00.000Z","overseerMark":{"kind":"dialog-answer","title":"Pick a colour","answer":"Blue"},"meta":{"type":"custom","customType":"sova-overseer-dialog-answer"}}]}
+B {"type":"append","items":[{"id":"00000008","kind":"info","text":"Overseer chose: Blue","at":"2000-01-01T00:00:00.000Z","overseerMark":{"kind":"dialog-answer","title":"Pick a colour","answer":"Blue"},"facts":{}}]}
+A {"type":"event","event":{"type":"tool_execution_end","toolCallId":"call-2","toolName":"golden_ask","result":{"content":[{"type":"text","text":"picked Blue"}],"details":{}},"isError":false}}
+B {"type":"event","v":2,"event":{"type":"tool.end","callId":"call-2","name":"golden_ask","isError":false,"output":"picked Blue","images":[],"details":{}}}
+A {"type":"event","event":{"type":"message_start","message":{"role":"toolResult","toolCallId":"call-2","toolName":"golden_ask","content":[{"type":"text","text":"picked Blue"}],"details":{},"isError":false,"timestamp":1000000000000}}}
+write {"id":"00000009","type":"message","role":"toolResult"}
+A {"type":"event","event":{"type":"message_end","message":{"role":"toolResult","toolCallId":"call-2","toolName":"golden_ask","content":[{"type":"text","text":"picked Blue"}],"details":{},"isError":false,"timestamp":1000000000000}},"entryId":"00000009"}
+A {"type":"event","event":{"type":"turn_end","message":{"role":"assistant","api":"openai-completions","provider":"scripted","model":"scripted","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1000000000000,"content":[{"type":"toolCall","id":"call-2","name":"golden_ask","arguments":{}}],"stopReason":"toolUse"},"toolResults":[{"role":"toolResult","toolCallId":"call-2","toolName":"golden_ask","content":[{"type":"text","text":"picked Blue"}],"details":{},"isError":false,"timestamp":1000000000000}]}}
+A {"type":"event","event":{"type":"turn_start"}}
+A {"type":"event","event":{"type":"message_start","message":{"role":"assistant","api":"openai-completions","provider":"scripted","model":"scripted","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1000000000000,"content":[{"type":"toolCall","id":"call-3","name":"golden_ask","arguments":{}}],"stopReason":"toolUse"}}}
+B {"type":"event","v":2,"event":{"type":"message.start","role":"assistant","model":"scripted/scripted","parts":[{"kind":"toolCall","id":"call-3","name":"golden_ask","args":{}}]}}
+write {"id":"00000010","type":"message","role":"assistant"}
+A {"type":"event","event":{"type":"message_end","message":{"role":"assistant","api":"openai-completions","provider":"scripted","model":"scripted","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1000000000000,"content":[{"type":"toolCall","id":"call-3","name":"golden_ask","arguments":{}}],"stopReason":"toolUse"}},"entryId":"00000010"}
+B {"type":"event","v":2,"event":{"type":"message.end","role":"assistant","entryId":"00000010","model":"scripted/scripted","parts":[{"kind":"toolCall","id":"call-3","name":"golden_ask","args":{}}],"stop":"ok"}}
+A {"type":"event","event":{"type":"tool_execution_start","toolCallId":"call-3","toolName":"golden_ask","args":{}}}
+B {"type":"event","v":2,"event":{"type":"tool.start","callId":"call-3","name":"golden_ask","args":{}}}
+A {"type":"ui_request","id":"00000000-0000-7000-8000-000000000004","request":{"method":"select","title":"Pick a colour","options":["Red","Blue"]}}
+B {"type":"ui_request","id":"00000000-0000-7000-8000-000000000004","request":{"method":"select","title":"Pick a colour","options":["Red","Blue"]}}
+step detach A, B
+write {"id":"00000011","type":"message","role":"toolResult"}
+write {"id":"00000012","type":"message","role":"assistant"}
+got pending dialogs 0

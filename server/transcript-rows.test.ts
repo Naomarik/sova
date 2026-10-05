@@ -11,6 +11,7 @@ import { join } from "node:path";
 import { after, describe, test } from "node:test";
 import WebSocket from "ws";
 import type { TranscriptItem, TranscriptRows } from "../shared/protocol";
+import { piSession } from "./harness/pi/testing/handle";
 
 const agentDir = realpathSync(mkdtempSync(join(tmpdir(), "sova-rows-")));
 process.env.PI_CODING_AGENT_DIR = agentDir;
@@ -23,7 +24,8 @@ mkdirSync(cwd, { recursive: true });
 
 const { app, server } = await import("./index");
 const { chunkStart, rangeStart, tailStart } = await import("./tail-hello");
-const { activeBranch, normalizeEntries, parseLines } = await import("./transcript");
+const { normalizeEntries } = await import("./transcript");
+const { activeBranch, parseLines } = await import("./harness/pi/reader");
 const { summarize, isInput } = await import("../shared/row-counts");
 const { acquireChat, disposeAllChats } = await import("./chat-manager");
 const { canonicalPath } = await import("./paths");
@@ -341,7 +343,7 @@ describe("chat: a rewind with a pull client, a push client and a whole client", 
     for (const l of [pull, push, legacy]) l.length = 0;
     chat.handle(p, { type: "rewind", id: "r1", entryId: "u140" });
     for (let i = 0; i < 100 && !pull.some((m) => m.type === "rewound" || m.type === "rewind_refused"); i++) await new Promise((r) => setTimeout(r, 20));
-    const branch = normalizeEntries(chat.session.sessionManager.getBranch());
+    const branch = normalizeEntries(piSession(chat).sessionManager.getBranch());
     const ph = pull.find((m) => m.type === "hello");
     assert.ok(ph.older > 0);
     assert.deepEqual(ph.items, branch.slice(ph.older));

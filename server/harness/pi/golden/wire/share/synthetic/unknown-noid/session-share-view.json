@@ -1,0 +1,30 @@
+{
+  "type": "view",
+  "view": {
+    "title": "Golden share",
+    "sharedAt": "2026-10-05T00:00:00.000Z",
+    "mode": "live",
+    "through": "2026-09-01T10:00:05.000Z",
+    "items": [
+      {
+        "kind": "user",
+        "n": 0,
+        "text": "Root question",
+        "at": "2026-09-01T10:00:01.000Z"
+      },
+      {
+        "kind": "reply",
+        "n": 1,
+        "text": "Kept answer",
+        "at": "2026-09-01T10:00:04.000Z"
+      },
+      {
+        "kind": "user",
+        "n": 2,
+        "text": "After the id-less entry",
+        "at": "2026-09-01T10:00:05.000Z"
+      }
+    ],
+    "images": 0
+  }
+}

@@ -1,0 +1,58 @@
+{
+  "full": {
+    "turnId": "n0000010",
+    "replyAt": 1788256816000,
+    "lastUser": "<skill name=\"golden-skill\" location=\"/home/user/.pi/skills/golden-skill/SKILL.md\">\nSkill body\n</skill>\n\nUse the golden skill please",
+    "assistantLast": "Done; anything else?",
+    "tools": [
+      {
+        "name": "read_link",
+        "args": "{\"url\":\"https://example.com/doc\"}",
+        "result": "Example Domain",
+        "ok": true
+      },
+      {
+        "name": "bash",
+        "args": "{\"command\":\"cat /home/user/.pi/skills/other-skill/SKILL.md\"}",
+        "result": "skill text",
+        "ok": true
+      },
+      {
+        "name": "read_link",
+        "args": "{\"url\":\"https://example.com/missing\"}",
+        "result": "404",
+        "ok": false
+      }
+    ],
+    "stopReason": "stop",
+    "durationMs": 6000
+  },
+  "window4k": {
+    "turnId": "n0000010",
+    "replyAt": 1788256816000,
+    "lastUser": "<skill name=\"golden-skill\" location=\"/home/user/.pi/skills/golden-skill/SKILL.md\">\nSkill body\n</skill>\n\nUse the golden skill please",
+    "assistantLast": "Done; anything else?",
+    "tools": [
+      {
+        "name": "read_link",
+        "args": "{\"url\":\"https://example.com/doc\"}",
+        "result": "Example Domain",
+        "ok": true
+      },
+      {
+        "name": "bash",
+        "args": "{\"command\":\"cat /home/user/.pi/skills/other-skill/SKILL.md\"}",
+        "result": "skill text",
+        "ok": true
+      },
+      {
+        "name": "read_link",
+        "args": "{\"url\":\"https://example.com/missing\"}",
+        "result": "404",
+        "ok": false
+      }
+    ],
+    "stopReason": "stop",
+    "durationMs": 6000
+  }
+}

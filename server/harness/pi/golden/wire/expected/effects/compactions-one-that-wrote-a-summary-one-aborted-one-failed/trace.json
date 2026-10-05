@@ -1,0 +1,141 @@
+[
+  {
+    "call": {
+      "fn": "applyEvent",
+      "args": [
+        {
+          "type": "compaction_start",
+          "reason": "manual"
+        }
+      ]
+    },
+    "state": {
+      "entries": [],
+      "tools": {},
+      "running": false,
+      "activity": "Compacting context",
+      "stopping": false
+    },
+    "effects": [
+      "compacting"
+    ]
+  },
+  {
+    "call": {
+      "fn": "applyEvent",
+      "args": [
+        {
+          "type": "compaction_end",
+          "reason": "manual",
+          "result": {
+            "summary": "s",
+            "firstKeptEntryId": "e1",
+            "tokensBefore": 1000
+          },
+          "aborted": false,
+          "willRetry": false
+        }
+      ]
+    },
+    "state": {
+      "entries": [],
+      "tools": {},
+      "running": false,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": [
+      "compactingDone",
+      "compacted"
+    ]
+  },
+  {
+    "call": {
+      "fn": "applyEvent",
+      "args": [
+        {
+          "type": "compaction_start",
+          "reason": "threshold"
+        }
+      ]
+    },
+    "state": {
+      "entries": [],
+      "tools": {},
+      "running": false,
+      "activity": "Compacting context",
+      "stopping": false
+    },
+    "effects": [
+      "compacting"
+    ]
+  },
+  {
+    "call": {
+      "fn": "applyEvent",
+      "args": [
+        {
+          "type": "compaction_end",
+          "reason": "threshold",
+          "aborted": true,
+          "willRetry": false
+        }
+      ]
+    },
+    "state": {
+      "entries": [],
+      "tools": {},
+      "running": false,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": [
+      "compactingDone"
+    ]
+  },
+  {
+    "call": {
+      "fn": "applyEvent",
+      "args": [
+        {
+          "type": "compaction_start",
+          "reason": "overflow"
+        }
+      ]
+    },
+    "state": {
+      "entries": [],
+      "tools": {},
+      "running": false,
+      "activity": "Compacting context",
+      "stopping": false
+    },
+    "effects": [
+      "compacting"
+    ]
+  },
+  {
+    "call": {
+      "fn": "applyEvent",
+      "args": [
+        {
+          "type": "compaction_end",
+          "reason": "overflow",
+          "aborted": false,
+          "willRetry": false,
+          "errorMessage": "failed"
+        }
+      ]
+    },
+    "state": {
+      "entries": [],
+      "tools": {},
+      "running": false,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": [
+      "compactingDone"
+    ]
+  }
+]

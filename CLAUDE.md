@@ -12,6 +12,12 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
 ## Layout & ownership
 
 - `shared/protocol.ts` — the REST/WS wire contract. Change only with team coordination.
+- `shared/harness.ts` — the harness contract: a types-only barrel over `shared/harness-core.ts`,
+  `-tools`, `-history`, `-wire`, `-state`, `-session` (each imports only its siblings, with
+  `import type`, and emits no code), what Sova code outside the adapter speaks instead of pi's
+  shapes. Owned by **backend**; see **Harness boundary**.
+- `server/harness/pi/` — the pi adapter: the only place outside the baseline that may reach
+  `@earendil-works/*`.
 - `server/` — Node backend: Hono (REST) + `ws` (2 WS endpoints), embeds the pi SDK. Owned by **backend**.
 - `src/` — SolidJS + TS frontend (Vite, vite-plugin-solid; HMR = live reload). Owned by **frontend**, except `src/design/`.
   One runtime import runs the other way: `server/vis-check.ts` (the vis retry and the `vis_check` tool) imports
@@ -206,7 +212,7 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
   restored workers; the dev watcher does not watch these, so an edit there reaches a
   running server only at its next restart). The shared fork core (`pi-config/extensions/subagents/fork/`,
   one owner of every fork's cache logic: Sova's "Fork from here" and the background forks /explain
-  runs) has a server half: `server/chat-manager.ts`, `server/session-fork.ts` and their tests import
+  runs) has a server half: `server/chat-manager.ts`, `server/harness/pi/fork.ts` and their tests import
   `fork/cache.ts` (runtime builtins only, pi types: a fork's inherited prompt-cache key and its
   `sova-fork-cache` entry, the `prompt_cache_key` hook and the Codex `session-id` affinity routing),
   and `server/session-fork-routes.ts` imports `fork/claude.ts` (builtins only, through
@@ -493,10 +499,13 @@ is a separate install and may be another version — a fact read there is not a 
 - **Sova writes `custom` entries with `customType: "sova-rewind"`** (`data: {targetId, fromLeafId}`)
   into webapp-owned session files. `navigateTree(id, {summarize:false})` only moves the in-memory
   leaf and `SessionManager.open()` takes the file's LAST entry as the leaf, so without this marker a
-  reload or restart reverts a rewind. It is invisible (normalizeEntry renders unknown custom types as
-  nothing; the TUI ignores it too), never LLM context, no usage. Written by `rewindSession` in
-  `server/chat-manager.ts`, parented on the new leaf; the open-time deferred appends are flushed
-  AFTER navigating (before, they would land on the abandoned branch).
+  reload or restart reverts a rewind (quirk P10). It is invisible (the transcript's `entryRows`,
+  `server/transcript.ts`, gives no row for it; the TUI ignores it too), never LLM context, no usage. It is the `REWIND` kind of the
+  registry `server/harness/state-kinds.ts`, written through `SessionState` (pi adapter:
+  `server/harness/pi/state.ts`) by `rewindSession` (`server/harness/pi/history-ops.ts`, the chat's
+  `HarnessSession.rewindTo`), parented on the new
+  leaf; the open-time deferred appends are flushed AFTER navigating (before, they would land on the
+  abandoned branch). Every other Sova custom entry works the same way (§app.harness/state).
 - SDK: `createAgentSession`, `createAgentSessionRuntime`, `SessionManager.open(path)/create(cwd)`,
   `ModelRuntime.create()` (no args → reuses `~/.pi/agent` auth). Events via `session.subscribe`.
   Docs: `docs/sdk.md`; examples: `examples/sdk/11-sessions.ts`, `13-session-runtime.ts`.
@@ -506,11 +515,81 @@ is a separate install and may be another version — a fact read there is not a 
   (tail the JSONL with fs.watch + parse appended lines).
 - Extension dialog bridge (ExtensionUIContext) pattern: `dist/modes/rpc/rpc-mode.js` —
   `createExtensionUIContext` at line 83, bound via `bindExtensions({uiContext, mode:"rpc", ...})` at line 231.
+  Sova's is `createPiUiContext`/`bindPiExtensions` (`server/harness/pi/ui-bridge.ts`), bound by
+  `PiChatHost.bindExtensions` (`server/harness/pi/host.ts`).
+
+## Harness boundary
+
+Sova speaks its own harness contract; pi is its one harness, behind one adapter (§app/harness).
+
+- `shared/harness.ts` is the contract. The server drives a live session only through `HarnessSession`
+  (`shared/harness-session.ts`; pi's is `PiHarnessSession`, `server/harness/pi/session.ts`): a
+  `ChatSession` has `chat.harness` and holds its pi runtime as a `PiChatHost` (`server/harness/pi/host.ts`),
+  never the `AgentSession`. Tests that drive or patch pi directly use `piSession(chat)`/`piRuntime(chat)`
+  (`server/harness/pi/testing/handle.ts`). (§app.harness/session)
+- **Every reach into pi's internals is a quirk** in `server/harness/pi/QUIRKS.md` (typed rows: `quirks.ts`):
+  a monkey-patch, private read, error text, ordering or internal API, each with its sites and a canary
+  (`P1`…`P20`, `T1`) in `contract.test.ts`. On a pin bump or a TUI pi upgrade, run the canaries against
+  that pi (command below); a failing canary is a triage by its row, never a test edit.
+  `quirks-meta.test.ts` fails on a private cast, method-table cast or SDK-member assignment that no row
+  names. A new reach adds its row, canary and sites in the same change.
+- `server/harness/pi/` is the only code that may reach pi:
+  an import of `@earendil-works/*` in any form (static, type, `import()`, `require`,
+  `import.meta.resolve`, or any string naming the package) anywhere else in `server/`, `shared/`,
+  `src/` (tests included), or in a pi-config file the server or the web app imports at runtime,
+  fails `pnpm test`. Only the adapter may import `pi-config/extensions/subagents/adapters/pi.ts`.
+- `server/harness-boundary.test.ts` keeps four ratchets against `server/harness/boundary-baseline.json`,
+  exact per file (tests are not counted for reads and writes):
+  pi imports (runtime or type); raw pi entry reads — `calls` (the transcript's raw API by import
+  binding: `parseLines`, `activeBranch`, `readActiveBranch`, `entryOf`, `normalizeEntries`,
+  `normalizeEntry`, `rawOf`; `getBranch`/`getEntries`/`getEntry`/`rawBranch` by name), `shapes`
+  (`.customType` reads, `.type` compared to a pi entry type, JSON-spelled `"type":"…"`/`"customType":"`/
+  `"role":"` strings, and in `src/`/`shared/` pi event-name comparisons and `.meta` reads), `reaches`
+  (`sessionManager`, members only pi's SessionManager has, the `SessionManager` class, and the
+  `liveRead`/`stateOf` bridges); and custom-entry writes (`appendCustomEntry`, `appendEntry`,
+  `appendSpecialEntry`, every call site whatever its type argument, plus any function that forwards
+  its own parameter as the entry type, listed in `wrappers`); and pi agent-session reaches through
+  `.session` (`chat.session.isStreaming`, a `.session.` member read; ask `chat.harness` instead).
+  Above the baseline fails, and so does
+  below it — lower the baseline in the change that removes the hit. It also fails when a test file
+  under `server/`, `shared/` or `src/` is matched by no glob in `scripts/run-tests.mjs`.
+- **The baseline only shrinks.** Never add a file, raise a count or list a new wrapper to make the
+  test pass; if a change seems to need it, stop and ask the user. A working-tree baseline that grew
+  past `HEAD`'s fails too. `SOVA_BOUNDARY_OUT=<absolute path> pnpm test --
+  server/harness-boundary.test.ts` writes the computed baseline for the diff; after a merge,
+  regenerate it on the merged tree. One file entered the baseline by design: `shared/wire-v1.ts`,
+  the v1 wire shim, which must read pi's v1 event names to turn an older server's or peer's frames
+  into `SovaEvent`s; it stays pi-import-free, and no other file joins it.
+- New work is harness-neutral: a server feature imports `shared/harness.ts` and `server/harness/`,
+  never pi; new per-session state is a `StateKind` registered in `server/harness/state-kinds.ts` and
+  written through `SessionState` (`ToolCtx.state()` / `StateView` to read), never `appendCustomEntry`
+  or a raw custom entry with a new customType; history is read through the neutral reader, never `parseLines` plus a switch on
+  `entry.type`; wire additions use `SovaEvent`/`RowFacts`, and `src/` never branches on pi entry or
+  event names. A new Sova agent feature is never a new pi-config extension and never a new call to
+  an extension's command handler; existing extensions are grandfathered, and the pi-config files
+  the server imports stay pi-free (the import ratchet covers them). (§app.harness/new-work)
+- History is `HEntry`s (`shared/harness-history.ts`) from `server/harness/pi/reader.ts`
+  (`readBranch`, `parsePi` + `branchOf`, the line scanners, `ctx.branch()`, `liveRead`), rows from
+  `rowsOf(history)`. `parseLines`/`activeBranch`/`readActiveBranch` and `rawOf` are adapter-internal:
+  outside it they are counted raw reads, and none is left outside the v1 shim (§app.harness/reader).
+  State is read through a `StateView` (`stateView(history)`, `ToolCtx.state()`), never a fold over raw entries.
+- Paths under the agent directory come from `agentRoot()` (`server/state-root.ts`), never
+  `getAgentDir` (§app.harness/agent-root). A Sova tool is a `ToolSpec` (`shared/harness-tools.ts`);
+  register it with `toPiTool`, read pi's context in a Sova hook only through `toolCtx(ctx)` (a
+  `HookCtx`), and hand a pi tool to Sova code with `fromPiTool` (`server/harness/pi/tools.ts`,
+  §app.harness/tools).
+- A test that pins pi behaviour lives in `server/harness/pi/` (`contract.test.ts`), imports pi only
+  through `server/harness/pi/testing/load-pi.ts`, and runs against another pi with
+  `PI_PACKAGE_DIR="$(npm root -g)/@earendil-works/pi-coding-agent" pnpm test --
+  server/harness/pi/contract.test.ts` (run it on every pin bump and TUI pi upgrade);
+  `server/harness/**/*.test.ts` is in the runner's GLOBS.
 
 ## Conventions
 
 TS strict, ESM, no new dependencies without asking. Server normalizes JSONL entries into
-`TranscriptItem`; frontend renders those, and renders live streaming from the raw passthrough events.
+`TranscriptItem`; frontend renders those, and renders live streaming from `SovaEvent`s (it asks for
+`wire=2`; `shared/wire-v1.ts` maps an older server's v1 frames and rows). `src/` never branches on pi
+event or entry names, and wire additions use `SovaEvent`/`RowFacts` (`shared/harness-wire.ts`).
 Frontend is SolidJS (NOT React): signals/stores, `<For>/<Show>`, `onCleanup` for WS teardown.
 
 - Never keep secrets or machine-specific details in the repo (it is public): no keys, tokens, real IPs, hostnames, tailnet names, device IDs or home paths in code, scripts, tests, docs or commit messages. Read them from a gitignored env file (e.g. `local.env`, with a committed `local.env.example` of placeholders); when you create one, tell the user so they can fill it in.
@@ -520,13 +599,13 @@ Frontend is SolidJS (NOT React): signals/stores, `<For>/<Show>`, `onCleanup` for
 - `SessionManager.open(path)` is NOT read-only: `loadEntriesFromFile` appends `"\n"` to a trailing
   partial line (`dist/core/session-manager.js:367`) and `_rewriteFile()` (`:754`) rewrites the whole
   file when migrating old versions (`:722`). Never call it on a file a TUI may own —
-  transcript/watch use our own parser (`server/transcript.ts`); `open()` only for webapp-owned chats.
+  transcript/watch use our own parser (`server/harness/pi/reader.ts`); `open()` only for webapp-owned chats.
 - `SessionManager.create(cwd)` defers writing the file until the first assistant reply
   (`_persist()`, `dist/core/session-manager.js:785` — body byte-identical from 0.85.1 through 0.87.1).
   `POST /api/sessions` writes the header line itself so the new session exists on disk immediately.
 - pi's `theme` singleton is not re-exported from the package entry (`dist/index.d.ts` exports
   `initTheme`/`Theme` only, though `theme` exists on `modes/interactive/theme/theme.ts`). The
-  ExtensionUIContext bridge calls `initTheme()` and reads
+  ExtensionUIContext bridge (`currentTheme`, `server/harness/pi/ui-bridge.ts`, quirk P17) calls `initTheme()` and reads
   `globalThis[Symbol.for("@earendil-works/pi-coding-agent:theme")]` — same key pi sets in
   `dist/modes/interactive/theme/theme.js:536`.
 - The sessions extension also loads inside our embedded runtimes and writes `live/*.json` with the
@@ -539,17 +618,17 @@ Frontend is SolidJS (NOT React): signals/stores, `<For>/<Show>`, `onCleanup` for
   `SessionManager.appendUsage()`; only caller is `dist/core/cache-warmer.js:249` with
   `kind:"cache_warm"`). Cache warming is ON by default (`getCacheWarmingMode()` →`"streaming"`,
   `dist/core/settings-manager.js:637`), so expect these in webapp-owned sessions. The webapp hides
-  both from the transcript (`server/transcript.ts:175` and `:315`) and never counts them: a cache
+  both from the transcript (their `system` and `usage-record` kinds give no rows, `server/transcript.ts` `entryRows`) and never counts them: a cache
   warm's spend is the usage ledger's record, written when the warm call ends (llm-inflight `runtime.ts`). They never move context
   fill: `contextForBranch` reads assistant-message usage only (`messageContextTokens`,
-  `server/transcript.ts:397`).
+  `server/harness/pi/usage.ts`).
   `compaction` entries also gained a `systemMessage` field (additive; we ignore it).
 - **`steer()`/`followUp()` now run extension `input` handlers** (`source` defaults to `"interactive"`,
   `dist/core/agent-session.js` `_queueUserInput`); on 0.85.1 they bypassed them entirely
   (0.85.1 `steer()` went straight to `_queueSteer`). Narrow blast radius: `prompt()` ALREADY ran them
-  on 0.85.1 (`agent-session.js:842`), and `handOffQueued` (`server/chat-manager.ts:679-680`) only
-  calls `steer()` while streaming, for a steer item whose text is not a `/command` — every other web
-  send goes through `prompt()`. So
+  on 0.85.1 (`agent-session.js:842`), and `ChatSession.handOffQueued` (`server/chat-manager.ts`) only
+  calls `harness.steer()` while streaming, for a steer item whose text is not a `/command` — every other web
+  send goes through `harness.send()` (pi's `prompt()`). So
   the pi-config handlers (`vision-delegate`, which describes attached images for non-vision models,
   and `wake-nudge`) have always run against our runtimes; the genuinely new case is the mid-stream
   steer. A handler returning `{action:"handled"}` silently swallows the message
@@ -561,7 +640,7 @@ Frontend is SolidJS (NOT React): signals/stores, `<For>/<Show>`, `onCleanup` for
 - Unidentified writers (e.g. a headless/orchestrating pi, not in the live registry): `/ws/chat` refuses
   (`code:"busy"`, close 4409) a session the server doesn't hold whose mtime is < 120s old
   (`RECENT_WRITE_MS` in `server/write-guard.ts`, shared constant with the frontend) unless `&force=1`.
-  While holding a runtime, `ForeignWriteGuard` checks appended lines carry ids our SessionManager knows;
+  While holding a runtime, `ForeignWriteGuard` checks appended lines carry ids our session knows (`harness.hasEntry`);
   any foreign line → busy on every prompt/steer until a `&force=1` reconnect reloads the runtime from disk.
   TUI-live sessions stay refused even with force.
 - `SessionSummary.origin`: ids of sessions spawned via `POST /api/sessions` persist in
@@ -570,8 +649,9 @@ Frontend is SolidJS (NOT React): signals/stores, `<For>/<Show>`, `onCleanup` for
   server's own adds, so ids another running server adds show as "web" here only after a restart.
 - Opening a chat runtime must not write: the SDK appends model_change/thinking_level_change at
   construction (empty sessions, or no thinking entry on the branch — `dist/core/sdk.js:261-272`,
-  the same appends since 0.85.1). `openSession` defers those two
-  appends and replays them right before the first prompt/steer; a never-prompted session stays untouched.
+  the same appends since 0.85.1). `openPiSession` (`server/harness/pi/open.ts`, quirk P1) defers those two
+  appends and the chat replays them right before its first write (`ChatSession.flushDeferredAppends`);
+  a never-prompted session stays untouched.
 - Images: 0.87.1 `ImageContent` is still `{type:"image", data, mimeType}` (pi-ai `dist/types.d.ts:256`)
   for prompt/steer/followUp AND storage
   (sdk.md's `source:{type:"base64"}` example is stale). Model favorites are the
@@ -585,12 +665,13 @@ Frontend is SolidJS (NOT React): signals/stores, `<For>/<Show>`, `onCleanup` for
   and `agent.state.messages` is overwritten from it (`_refreshFinalizedContext`, `:418`). ASSIGNING
   `agent.state.messages` no longer reaches the model — append through the session's SessionManager
   and call `session.refreshContext()` (`agent-session.d.ts:314`); the `btw` extension's side-thread
-  seed does exactly that (`seedBtwSession`). Sova assigns it nowhere.
+  seed does exactly that (`seedBtwSession`), and so does the chat's `enterQueued` through
+  `HarnessSession.appendUserMessage`/`refreshContext` (quirk P6). Sova assigns it nowhere.
 - pi 0.87.0 `context_edit` entries (`ContextEditEntry`, `session-manager.d.ts`: `targetId`,
   `replacement: {content} | null`) change what an earlier entry sends the model, never raw history.
   pi writes one ITSELF on every auto-retry and overflow recovery (`_omitRecoveryAttempt`,
   `agent-session.js:667`, emitted as `entry_appended`), so webapp-owned sessions get them. The
-  transcript renders nothing for them (`normalizeEntry`) and the edited message keeps its row;
+  transcript renders nothing for them (`entryRows`, `server/transcript.ts`) and the edited message keeps its row;
   `contextForBranch` does not treat one as staleness (pi's own accounting does: usage before a later
   edit is not the context size) — in practice pi's only trailing edit is followed by a retry reply
   or a compaction, both of which already reset the fill.
@@ -598,8 +679,8 @@ Frontend is SolidJS (NOT React): signals/stores, `<For>/<Show>`, `onCleanup` for
   included, `agent-session.js:531-553`): it resolves at once, and its turn runs inside the
   PREVIOUS `prompt()`'s promise, whose rejection then carries the deferred turn's error. An item
   still held when the queue wakes on `agent_settled` is handed off synchronously inside that window,
-  so its turn takes this path: it still starts, and its failure surfaces through the previous
-  call's failure handling, which every `prompt()` call site in `server/chat-manager.ts` attaches
+  so its turn takes this path (quirk P5): it still starts, and its failure surfaces through the previous
+  call's failure handling, which every `harness.send()` call site in `server/chat-manager.ts` attaches
   (`.catch`, or the returned `turn`). Topic batches (`server/topic-delivery.ts`,
   `ChatSession.deliverTopicBatch`) stay out of that window on purpose: a settle only schedules a
   drain on a timer, after the web queue's own hand-off, and a batch counts as delivered at its user

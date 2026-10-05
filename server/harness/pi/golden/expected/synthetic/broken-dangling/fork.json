@@ -1,0 +1,37 @@
+{
+  "parse": {
+    "ok": true,
+    "lines": 4
+  },
+  "branch": {
+    "ok": false,
+    "why": "entry l0000003 points at a parent (lmissing) that is not in the file"
+  },
+  "fanout": false,
+  "prefixes": {
+    "l0000003": {
+      "ok": false,
+      "reason": "invalid",
+      "message": "That session's entry chain is broken: entry l0000003 points at a parent (lmissing) that is not in the file.",
+      "status": 400
+    },
+    "l0000004": {
+      "ok": false,
+      "reason": "invalid",
+      "message": "That session's entry chain is broken: entry l0000003 points at a parent (lmissing) that is not in the file.",
+      "status": 400
+    },
+    "l0000001": {
+      "ok": false,
+      "reason": "invalid",
+      "message": "That session's entry chain is broken: entry l0000003 points at a parent (lmissing) that is not in the file.",
+      "status": 400
+    },
+    "no-such-entry": {
+      "ok": false,
+      "reason": "invalid",
+      "message": "That session's entry chain is broken: entry l0000003 points at a parent (lmissing) that is not in the file.",
+      "status": 400
+    }
+  }
+}

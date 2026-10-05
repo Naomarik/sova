@@ -2,7 +2,6 @@ import { randomUUID } from "node:crypto";
 import { closeSync, constants, linkSync, lstatSync, mkdirSync, openSync, realpathSync, rmSync, statSync, writeSync } from "node:fs";
 import { open } from "node:fs/promises";
 import { basename, dirname, extname, join } from "node:path";
-import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { stateRoot } from "./state-root";
 import type { TmpAttachment } from "../shared/protocol";
 import { ATTACHMENT_TAIL, findTmpImagePaths, isPiClipboardName, SESSION_ID, TMP_IMAGE_PATH } from "../shared/tmp-paths";
@@ -17,7 +16,7 @@ const TMP_DIR = "/tmp";
 /** Sova's durable attachments: a composer-draft upload lands in `<root>/<session id>/`, so a
     reload keeps it with the draft text (server/drafts.ts), and the path the prompt names stays
     readable after the send (the transcript renders it; /tmp gets cleaned). Per call, not at
-    load: PI_CODING_AGENT_DIR is read by getAgentDir each time, which the tests rely on. Uploads
+    load: PI_CODING_AGENT_DIR is read by agentRoot() each time, which the tests rely on. Uploads
     are named `sova-<uuid>`. */
 export const attachmentsRoot = () => join(stateRoot(), "attachments");
 

@@ -46,7 +46,7 @@ describe("owner areas in a gathering session", async () => {
 
   test("record_decision's schema lists the owner areas; an unknown one is refused naming the choices; a pick is stored as the roster spells it", async () => {
     const appended: { type: string; data: any }[] = [];
-    const tool = loadout.batonTools(c.sessionId, (type, data) => appended.push({ type, data })).find((t) => t.name === "record_decision")!;
+    const tool = loadout.batonTools(c.sessionId, { append: (kind, data: any) => (appended.push({ type: kind.type, data }), "") }).find((t) => t.name === "record_decision")!;
     const schema = tool.parameters as any;
     assert.deepEqual(schema.properties.ownerArea.enum, ["website", "branding", "invoicing", "none"]);
     assert.ok(schema.required.includes("ownerArea"));
@@ -63,7 +63,7 @@ describe("owner areas in a gathering session", async () => {
   test("the choices follow the roster: a new area is offered at the next run, and a removed one is refused", async () => {
     await orgs.applyChange(org.id, bob.id, { decides: ["invoicing", "hosting"] }, { kind: "operator" });
     assert.deepEqual(loadout.ownerAreaSchema(orgs.readRoster(org.id)).enum, ["website", "branding", "invoicing", "hosting", "none"]);
-    const tool = loadout.batonTools(c.sessionId, () => {}).find((t) => t.name === "record_decision")!;
+    const tool = loadout.batonTools(c.sessionId, { append: () => "" }).find((t) => t.name === "record_decision")!;
     await orgs.applyChange(org.id, bob.id, { decides: ["hosting"] }, { kind: "operator" });
     // A tool built before the change still checks the roster as it is now.
     await assert.rejects(

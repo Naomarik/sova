@@ -2,7 +2,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync, renameSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import type { Hono } from "hono";
-import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import { agentRoot } from "./state-root";
 // The claude-code extension's own registry (node built-ins only): the file, each login's
 // directory, this host's standing of each login and the order. See CLAUDE.md.
 import {
@@ -102,7 +102,7 @@ export class ClaudeAccountsService {
 
   private readonly keychain: KeychainOptions;
   constructor(options: ClaudeAccountsOptions = {}) {
-    this.agentDir = options.agentDir ?? getAgentDir();
+    this.agentDir = options.agentDir ?? agentRoot();
     this.env = options.env ?? process.env;
     this.executable = options.executable ?? "claude";
     this.timeouts = { url: URL_TIMEOUT_MS, finish: FINISH_TIMEOUT_MS, flow: FLOW_TIMEOUT_MS, logout: LOGOUT_TIMEOUT_MS, ...options.timeouts };
@@ -479,13 +479,13 @@ export class ClaudeAccountsService {
  * otherwise run `default` on that login).
  */
 export function claudeBaseSpawnEnv(): NodeJS.ProcessEnv {
-  return claudeBaseEnv(process.env, getAgentDir());
+  return claudeBaseEnv(process.env, agentRoot());
 }
 
 /** The environment a server-side `claude` spawn runs with: this host's first usable login. */
 export function claudeLoginEnv(): Record<string, string> {
   try {
-    return new ClaudeLogins({ agentDir: getAgentDir() }).select().env;
+    return new ClaudeLogins({ agentDir: agentRoot() }).select().env;
   } catch {
     return {};
   }

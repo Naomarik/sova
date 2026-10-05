@@ -1,0 +1,5 @@
+[
+  "{\"id\":\"m0000001\",\"kind\":\"user\",\"at\":\"2026-09-01T10:00:01.000Z\",\"text\":\"Root\",\"meta\":{\"type\":\"message\",\"role\":\"user\"}}",
+  "{\"id\":\"m0000002:0\",\"kind\":\"assistant-text\",\"text\":\"Second copy of m0000002\",\"at\":\"2026-09-01T10:00:03.000Z\",\"model\":\"zai/glm-5.3\",\"meta\":{\"type\":\"message\",\"role\":\"assistant\",\"provider\":\"zai\",\"model\":\"glm-5.3\",\"stopReason\":\"stop\"}}",
+  "{\"id\":\"m0000003\",\"kind\":\"user\",\"at\":\"2026-09-01T10:00:04.000Z\",\"text\":\"After the duplicate\",\"meta\":{\"type\":\"message\",\"role\":\"user\"}}"
+]

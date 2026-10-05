@@ -3,7 +3,8 @@
 // assistant message on the branch that reports a context (not an error or aborted reply, not a
 // zero usage); a compaction after it makes that stale → null.
 
-import type { ContextInfo, EntryMeta, TranscriptItem } from "../../shared/protocol";
+import type { ContextInfo, TranscriptItem } from "../../shared/protocol";
+import { rowFacts } from "../../shared/wire-v1";
 import { isObj } from "./message";
 
 /** Tokens in context for one assistant usage object, or null when there's no usage. */
@@ -26,20 +27,17 @@ export function messageContextTokens(message: unknown): number | null {
   return tokens !== null && tokens > 0 ? tokens : null;
 }
 
-const isCompaction = (meta: EntryMeta) => meta.type === "compaction" || (meta.type === "message" && meta.role === "compactionSummary");
-
 /**
- * Fill from normalized transcript items: each entry's facts ride its first row (`meta`), so the
- * other rows of a reply are skipped. `window` comes from the server (the model's contextWindow),
- * unknown → null.
+ * Fill from normalized transcript items: each entry's facts ride its first row (`rowFacts`: `facts`,
+ * or a wire-1 row's `meta`), so the other rows of a reply are skipped. `window` comes from the
+ * server (the model's contextWindow), unknown → null.
  */
 export function contextFromItems(items: TranscriptItem[], window: number | null): ContextState {
   for (let i = items.length - 1; i >= 0; i--) {
-    const meta = items[i]!.meta;
-    if (!meta) continue;
-    if (isCompaction(meta)) return "compacted";
-    const tokens = meta.type === "message" ? messageContextTokens(meta) : null;
-    if (tokens !== null) return { tokens, window };
+    const facts = rowFacts(items[i]!);
+    if (!facts) continue;
+    if (facts.resetsContext) return "compacted";
+    if (facts.contextTokens !== undefined) return { tokens: facts.contextTokens, window };
   }
   return null;
 }

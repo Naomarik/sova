@@ -1,0 +1,10 @@
+{
+  "tail": {
+    "tokens": 10175,
+    "model": null
+  },
+  "tally": {
+    "tokens": 10175,
+    "window": null
+  }
+}

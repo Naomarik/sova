@@ -1,5 +1,5 @@
 // A worker's context fill, for the subagents pane: how full the worker's OWN context window is as
-// of its last reply — the session head's rule (server/transcript.ts contextForBranch) applied to
+// of its last reply — the session head's rule (server/harness/pi/usage.ts contextStep) applied to
 // the worker's transcript.
 //
 // Live workers publish no such number (the live registry's worker usage is spend only, and this
@@ -14,13 +14,15 @@ import { closeSync, openSync, readSync, statSync } from "node:fs";
 import { isAbsolute, sep } from "node:path";
 import type { ContextInfo, WatchContext, WorkerInfo } from "../shared/protocol";
 import { claudeContextWindow } from "../pi-config/extensions/claude-code/context-window.ts";
+import type { HEntry } from "../shared/harness";
 import { claudeContextOf } from "../pi-config/extensions/claude-code/transcript-adapter.ts";
-import { piContextOf } from "../pi-config/extensions/subagents/adapters/pi.ts";
 import { readWorkerManifests, type WorkerManifest } from "../pi-config/extensions/subagents/worker-transcript.ts";
 import { resolveClaudeSession } from "./claude-transcript";
+import { branchOf, lineEntry, parsePi } from "./harness/pi/reader";
+import { contextStep } from "./harness/pi/usage";
+import { parseJsonl } from "./jsonl";
 import { resolveSessionPath } from "./paths";
 import { targetsRoot } from "./targets";
-import { activeBranch, parseLines } from "./transcript";
 
 /** A model ref ("provider/id", or a bare id) → its context window, or null when unknown. */
 export type WindowResolver = (ref: string) => number | null;
@@ -70,16 +72,18 @@ const CHUNK = 16 * 1024;
 const MAX_TAIL = 256 * 1024;
 const NL = 0x0a;
 
-/** What one parsed line says, in `format`. */
-function lineFill(entry: unknown, format: Format): TailFill {
-  if (format === "claude") {
-    const c = claudeContextOf(entry);
-    return typeof c === "number" ? { tokens: c, model: null } : c;
-  }
-  const c = piContextOf(entry);
+/** What one Claude Code line says. */
+function claudeFill(entry: unknown): TailFill {
+  const c = claudeContextOf(entry);
+  return typeof c === "number" ? { tokens: c, model: null } : c;
+}
+
+/** What one pi entry says. */
+function piFill(h: HEntry | null): TailFill {
+  const c = h ? contextStep(h) : null;
   if (typeof c !== "number") return c;
-  const m = (entry as { message?: { provider?: unknown; model?: unknown } }).message;
-  return { tokens: c, model: typeof m?.provider === "string" && typeof m.model === "string" ? `${m.provider}/${m.model}` : null };
+  const m = h as Extract<HEntry, { kind: "assistant" }>;
+  return { tokens: c, model: typeof m.provider === "string" && typeof m.model === "string" ? `${m.provider}/${m.model}` : null };
 }
 
 /** Cheap pre-filter before JSON.parse: only these lines can say anything. */
@@ -111,7 +115,7 @@ export function readTailFill(file: string, size: number, format: Format): TailFi
         const line = buf.subarray(i + 1, stop);
         if (line.length > 0 && mayMatter(line, format)) {
           try {
-            const hit = lineFill(JSON.parse(line.toString("utf8")), format);
+            const hit = format === "claude" ? claudeFill(JSON.parse(line.toString("utf8"))) : piFill(lineEntry(line));
             if (hit) return hit;
           } catch {
             // a torn trailing line, or not JSON
@@ -238,10 +242,17 @@ export function contextTally(format: Format, resolve: WindowResolver): ContextTa
   let state: TailFill = null;
   return (text, part) => {
     if (part === "snapshot") state = null;
-    const lines = parseLines(text);
-    for (const e of format === "pi" && part === "snapshot" ? activeBranch(lines) : lines) {
-      const fill = lineFill(e, format);
-      if (fill) state = fill;
+    if (format === "pi") {
+      const { entries } = parsePi(text);
+      for (const h of part === "snapshot" ? branchOf(entries) : entries) {
+        const fill = piFill(h);
+        if (fill) state = fill;
+      }
+    } else {
+      for (const e of parseJsonl(text)) {
+        const fill = claudeFill(e);
+        if (fill) state = fill;
+      }
     }
     if (state === null || state === "compacted") return state;
     return { tokens: state.tokens, window: format === "pi" && state.model ? resolve(state.model) : null };

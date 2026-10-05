@@ -1,0 +1,92 @@
+{
+  "g0000001": {
+    "ok": false,
+    "reason": "not_on_branch",
+    "message": "Nothing on this branch started that reply, so there is nothing to run again."
+  },
+  "g0000001:0": {
+    "ok": false,
+    "reason": "not_on_branch",
+    "message": "Nothing on this branch started that reply, so there is nothing to run again."
+  },
+  "g0000002": {
+    "ok": false,
+    "reason": "not_on_branch",
+    "message": "That is your own message; rewind to it to edit and send it again."
+  },
+  "g0000002:0": {
+    "ok": false,
+    "reason": "not_on_branch",
+    "message": "That is your own message; rewind to it to edit and send it again."
+  },
+  "g0000003": {
+    "ok": true,
+    "userId": "g0000002",
+    "text": "Long work"
+  },
+  "g0000003:0": {
+    "ok": true,
+    "userId": "g0000002",
+    "text": "Long work"
+  },
+  "g0000004": {
+    "ok": true,
+    "userId": "g0000002",
+    "text": "Long work"
+  },
+  "g0000004:0": {
+    "ok": true,
+    "userId": "g0000002",
+    "text": "Long work"
+  },
+  "g0000005": {
+    "ok": true,
+    "userId": "g0000002",
+    "text": "Long work"
+  },
+  "g0000005:0": {
+    "ok": true,
+    "userId": "g0000002",
+    "text": "Long work"
+  },
+  "g0000006": {
+    "ok": false,
+    "reason": "not_on_branch",
+    "message": "That is your own message; rewind to it to edit and send it again."
+  },
+  "g0000006:0": {
+    "ok": false,
+    "reason": "not_on_branch",
+    "message": "That is your own message; rewind to it to edit and send it again."
+  },
+  "g0000007": {
+    "ok": true,
+    "userId": "g0000006",
+    "text": "Continue"
+  },
+  "g0000007:0": {
+    "ok": true,
+    "userId": "g0000006",
+    "text": "Continue"
+  },
+  "g0000008": {
+    "ok": true,
+    "userId": "g0000006",
+    "text": "Continue"
+  },
+  "g0000008:0": {
+    "ok": true,
+    "userId": "g0000006",
+    "text": "Continue"
+  },
+  "no-such-entry": {
+    "ok": false,
+    "reason": "not_on_branch",
+    "message": "That reply is not on this chat's current branch anymore."
+  },
+  "no-such-entry:0": {
+    "ok": false,
+    "reason": "not_on_branch",
+    "message": "That reply is not on this chat's current branch anymore."
+  }
+}

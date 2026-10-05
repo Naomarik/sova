@@ -1,0 +1,37 @@
+{
+  "teams": [],
+  "reports": {
+    "$map": []
+  },
+  "outline": null,
+  "outlines": [],
+  "compactions": [],
+  "rewinds": [
+    {
+      "id": "d0000009",
+      "timestamp": "2026-09-01T10:00:09.000Z",
+      "targetId": "d0000007",
+      "fromLeafId": "d0000008"
+    },
+    {
+      "id": "d000000a",
+      "timestamp": "2026-09-01T10:00:10.000Z",
+      "targetId": "",
+      "fromLeafId": ""
+    }
+  ],
+  "explanations": [],
+  "sessionId": "0190a000-0000-7000-8000-d00000000000",
+  "skills": {
+    "offered": [],
+    "used": []
+  },
+  "workerRecords": {
+    "all": [],
+    "active": []
+  },
+  "teamEvents": [],
+  "settled": {
+    "$map": []
+  }
+}

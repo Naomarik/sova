@@ -1,0 +1,90 @@
+{
+  "shown": [
+    {
+      "e": {
+        "type": "message",
+        "message": {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "Root"
+            }
+          ],
+          "timestamp": 1788256801000
+        },
+        "id": "k0000001",
+        "parentId": "k0000003",
+        "timestamp": "2026-09-01T10:00:01.000Z"
+      },
+      "role": "user",
+      "text": "Root",
+      "blocks": []
+    },
+    {
+      "e": {
+        "type": "message",
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "Middle"
+            }
+          ],
+          "api": "openai-completions",
+          "provider": "zai",
+          "model": "glm-5.3",
+          "usage": {
+            "input": 1200,
+            "output": 80,
+            "cacheRead": 400,
+            "cacheWrite": 0,
+            "totalTokens": 1680,
+            "cost": {
+              "input": 0.001,
+              "output": 0.002,
+              "cacheRead": 0.0001,
+              "cacheWrite": 0,
+              "total": 0.0031
+            }
+          },
+          "stopReason": "stop",
+          "timestamp": 1788256802000
+        },
+        "id": "k0000002",
+        "parentId": "k0000001",
+        "timestamp": "2026-09-01T10:00:02.000Z"
+      },
+      "role": "assistant",
+      "text": "Middle",
+      "blocks": []
+    },
+    {
+      "e": {
+        "type": "message",
+        "message": {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "Leaf closes the cycle"
+            }
+          ],
+          "timestamp": 1788256803000
+        },
+        "id": "k0000003",
+        "parentId": "k0000002",
+        "timestamp": "2026-09-01T10:00:03.000Z"
+      },
+      "role": "user",
+      "text": "Leaf closes the cycle",
+      "blocks": []
+    }
+  ],
+  "branchTo": {
+    "leaf": null,
+    "mid": null,
+    "missing": null
+  }
+}

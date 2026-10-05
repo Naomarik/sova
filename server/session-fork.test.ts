@@ -13,7 +13,7 @@ mkdirSync(sessionsDir, { recursive: true });
 const cwd = join(agentDir, "cwd");
 mkdirSync(cwd, { recursive: true });
 
-const { forkSessionFile, forkPrefix, parseSourceDoc, reconstructPath, activeBranchLines } = await import("./session-fork");
+const { forkSessionFile, forkPrefix, parseSourceDoc, reconstructPath, activeBranchLines } = await import("./harness/pi/fork");
 const { canonicalPath } = await import("./paths");
 const { FORK_CACHE_ENTRY, inheritedCacheKey } = await import("../pi-config/extensions/subagents/fork/cache.ts");
 const { normalizeEntries } = await import("./transcript");

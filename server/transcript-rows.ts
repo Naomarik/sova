@@ -5,24 +5,29 @@
 // for a browser on this machine. Read from the file with our own parser, never a runtime, never a
 // write; normalized over the whole active branch as the hello and the snapshot are, and cut with
 // their rules (server/tail-hello.ts), so what the socket sent and what comes from here concatenate.
+// On wire 2 (`wire=2`) the same rows go out mapped (server/wire-rows.ts), cut where wire 1 cuts them.
 
 import { readFile, stat } from "node:fs/promises";
-import type { ContextInfo, TranscriptItem } from "../shared/protocol";
+import type { HEntry } from "../shared/harness";
+import type { ContextInfo, TranscriptItem, WireVersion } from "../shared/protocol";
 import { entryOfRow, summarize } from "../shared/row-counts";
+import { branchOf, parsePi } from "./harness/pi/reader";
 import { chunkStart, HISTORY_CHUNK_CHARS, rangeStart, TAIL_CHARS, TAIL_MIN_ROWS, tailStart } from "./tail-hello";
-import { activeBranch, normalizeEntries, parseLines } from "./transcript";
-
-type Entry = ReturnType<typeof parseLines>[number];
+import { rowsOf as historyRows } from "./transcript";
+import { rowFor } from "./wire-rows";
 
 /** One file's branch, normalized, with each row's JSON made once. */
 export interface Rows {
   /** Size and mtime the file had when it was read: a different one reads it again. */
   stamp: string;
-  branch: Entry[];
+  branch: HEntry[];
   items: TranscriptItem[];
+  /** Each row's JSON on wire 1, whose lengths (`sizes`) every cut is made by. */
   json: string[];
   sizes: number[];
-  /** Every entry id in the file, and those on the active branch. */
+  /** Each row's JSON on wire 2, made on its first ask. */
+  json2?: string[];
+  /** Every entry id in the file (the header's included), and those on the active branch. */
   fileIds: Set<string>;
   branchIds: Set<string>;
   /** Row id → index, made on first use. */
@@ -56,18 +61,30 @@ export async function rowsOf(path: string): Promise<Rows> {
     cache.set(path, had);
     return had;
   }
-  const entries = parseLines(await readFile(path, "utf8"));
-  const branch = activeBranch(entries);
-  const items = normalizeEntries(branch);
+  const { header, entries } = parsePi(await readFile(path, "utf8"));
+  const branch = branchOf(entries);
+  const items = historyRows(branch);
   const json = items.map((it) => JSON.stringify(it));
-  const ids = (list: Entry[]) => new Set(list.map((e) => e.id).filter((id): id is string => typeof id === "string"));
+  const ids = (list: readonly unknown[]) => new Set(list.filter((id): id is string => typeof id === "string"));
   const sizes = json.map((s) => s.length);
   const weight = st.size + sizes.reduce((n, x) => n + x, 0);
-  const rows: Rows = { stamp, branch, items, json, sizes, fileIds: ids(entries), branchIds: ids(branch), weight };
+  const fileIds = ids([header?.id, ...entries.map((h) => h.id)]);
+  const rows: Rows = { stamp, branch, items, json, sizes, fileIds, branchIds: ids(branch.map((h) => h.id)), weight };
   cache.delete(path);
   cache.set(path, rows);
   trim();
   return rows;
+}
+
+/** The rows' JSON on `wire`. */
+function jsonOn(rows: Rows, wire: WireVersion): string[] {
+  if (wire === 1) return rows.json;
+  if (!rows.json2) {
+    rows.json2 = rows.items.map((it) => JSON.stringify(rowFor(it, 2)));
+    rows.weight += rows.json2.reduce((n, x) => n + x.length, 0);
+    trim();
+  }
+  return rows.json2;
 }
 
 const indexOfRow = (rows: Rows, id: string): number => {
@@ -118,7 +135,8 @@ const MAX_CHARS = 8 * 1024 * 1024;
 export async function transcriptRows(
   path: string,
   q: RowsQuery,
-  context: (branch: Entry[]) => Promise<ContextInfo | null>,
+  context: (branch: readonly HEntry[]) => Promise<ContextInfo | null>,
+  wire: WireVersion = 1,
 ): Promise<RowsAnswer> {
   const rows = await rowsOf(path);
   const moved = (why: string): RowsAnswer => ({ status: 409, error: `The branch moved: ${why}.`, code: "moved" });
@@ -145,7 +163,7 @@ export async function transcriptRows(
   // The fill, as the whole-branch response carries it, for the answers that reach the end.
   const ctx = q.tail || !q.before ? `,"context":${JSON.stringify(await context(rows.branch))}` : "";
   const summary = JSON.stringify(summarize(rows.items.slice(0, from)));
-  return { status: 200, body: `{"items":[${rows.json.slice(from, end).join(",")}],"older":${from},"olderSummary":${summary}${ctx}}` };
+  return { status: 200, body: `{"items":[${jsonOn(rows, wire).slice(from, end).join(",")}],"older":${from},"olderSummary":${summary}${ctx}}` };
 }
 
 // ---- The light view: `view=light` ----------------------------------------------------------------
@@ -163,7 +181,8 @@ const LIGHT_SUMMARY_CHARS = 400;
  * turns, markers and chapters), without what only the thread draws: a reply's text, a tool's
  * content, image bytes (each image stays, as ""), a report's body and preview, an unknown row's
  * entry, a compaction's details. Every row stays, in order, so a turn's reply and tool counts and
- * its time are the same as on the whole branch.
+ * its time are the same as on the whole branch. Made on wire 1: a wire-2 light row is this one's
+ * mapping, so its compaction facts lose the details and the long summary too.
  */
 export function lightRow(it: TranscriptItem): TranscriptItem {
   const out: TranscriptItem = { ...it };
@@ -184,10 +203,10 @@ export function lightRow(it: TranscriptItem): TranscriptItem {
   return out;
 }
 
-/** The whole branch, each row light (`view=light`), with the fill: `{ items, context }`. */
-export async function transcriptLight(path: string, context: (branch: Entry[]) => Promise<ContextInfo | null>): Promise<string> {
+/** The whole branch, each row light (`view=light`), on `wire`, with the fill: `{ items, context }`. */
+export async function transcriptLight(path: string, context: (branch: readonly HEntry[]) => Promise<ContextInfo | null>, wire: WireVersion = 1): Promise<string> {
   const rows = await rowsOf(path);
-  return JSON.stringify({ items: rows.items.map(lightRow), context: await context(rows.branch) });
+  return JSON.stringify({ items: rows.items.map((it) => rowFor(lightRow(it), wire)), context: await context(rows.branch) });
 }
 
 /** Forget every parsed file (tests). */

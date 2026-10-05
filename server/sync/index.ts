@@ -1,11 +1,10 @@
 import { join } from "node:path";
 import type { Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
-import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import type { MeshLoginEntry, MeshLogins, SyncCategory, SyncStatus } from "../../shared/protocol";
 import type { MeshApi } from "../mesh";
 import type { MeshCap } from "../../shared/mesh-access";
-import { stateRoot } from "../state-root";
+import { agentRoot, stateRoot } from "../state-root";
 import { loginKindsPin, parseEntryKey, type EntryKey, type LoginKinds } from "./logins-merge";
 import { ClaudeCredentialStore, PiAuthStore, piRefresher, type CredentialStore } from "./logins-stores";
 import { CredentialSync, type CredentialStatusEntry, type CredentialEntryReply, type CredentialManifest, type CredentialPushReply, type SyncPeer } from "./logins";
@@ -113,7 +112,7 @@ export interface SyncPaths {
   stateDir: () => string;
   claudeDir: () => string | null;
 }
-const defaultPaths: SyncPaths = { agentDir: getAgentDir, stateDir: stateRoot, claudeDir: () => claudeSyncDir() };
+const defaultPaths: SyncPaths = { agentDir: agentRoot, stateDir: stateRoot, claudeDir: () => claudeSyncDir() };
 
 /** Mount the sync routes and hooks. Call after meshRoutes(app) (its /api/peer/* gate runs first). */
 export function mountSync(app: Hono, mesh: MeshApi, paths: SyncPaths = defaultPaths): SyncRuntime {

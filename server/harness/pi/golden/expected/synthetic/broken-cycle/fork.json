@@ -1,0 +1,37 @@
+{
+  "parse": {
+    "ok": true,
+    "lines": 3
+  },
+  "branch": {
+    "ok": false,
+    "why": "the entry chain cycles at k0000003"
+  },
+  "fanout": false,
+  "prefixes": {
+    "k0000001": {
+      "ok": false,
+      "reason": "invalid",
+      "message": "That session's entry chain is broken: the entry chain cycles at k0000003.",
+      "status": 400
+    },
+    "k0000002": {
+      "ok": false,
+      "reason": "invalid",
+      "message": "That session's entry chain is broken: the entry chain cycles at k0000003.",
+      "status": 400
+    },
+    "k0000003": {
+      "ok": false,
+      "reason": "invalid",
+      "message": "That session's entry chain is broken: the entry chain cycles at k0000003.",
+      "status": 400
+    },
+    "no-such-entry": {
+      "ok": false,
+      "reason": "invalid",
+      "message": "That session's entry chain is broken: the entry chain cycles at k0000003.",
+      "status": 400
+    }
+  }
+}

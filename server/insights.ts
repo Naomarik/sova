@@ -1,6 +1,6 @@
 import { readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
-import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import { agentRoot } from "./state-root";
 import type {
   AgentsInsight,
   SessionWorktreeInfo,
@@ -30,6 +30,7 @@ import type {
   WorkerInfo,
   WorkerStatus,
 } from "../shared/protocol";
+import type { HEntry } from "../shared/harness";
 import type { LinkedAgentInfo } from "../shared/mesh-links";
 // The usage-status extension's fetch/cache core. Part of the sanctioned pi-config import
 // surface (node builtins only, like extensions/mode/state.ts) — see CLAUDE.md.
@@ -42,8 +43,11 @@ import { hasPage, listExplanations, sortExplanations } from "./explanations";
 import { readLiveRecords, type RawLiveRecord, workerCountsOf } from "./live";
 import { modelProvider, sharedWorkerWindowResolver } from "./models";
 import { resolveSessionPath } from "./paths";
-import { collectSkills, hasSkills } from "./skills";
-import { activeBranch, parseLines } from "./transcript";
+import { collectSkills, hasSkills, skillLinesOf } from "./skills";
+import { branchOf, parsePi } from "./harness/pi/reader";
+import { extensionEntries } from "./harness/pi/state";
+import { REWIND } from "./harness/state-kinds";
+import { stateView } from "./harness/state-view";
 import { describeWorktrees, worktreesOf } from "./worktrees-state";
 import { goneWorkOf, REMOVED_EMPTY, treeReadinessOf } from "./merge-readiness";
 import { LAST_KNOWN_REASON, lastKnownUsage, rememberUsage } from "./usage-last-known";
@@ -75,7 +79,7 @@ const strings = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is
 // ---------------------------------------------------------------------------
 // Usage: ~/.pi/agent/cache/usage-status.json (written by the usage-status extension)
 
-const USAGE_FILE = join(getAgentDir(), "cache", "usage-status.json");
+const USAGE_FILE = join(agentRoot(), "cache", "usage-status.json");
 /** This server's poller (server/usage-poll.ts) and TUI pis refresh the cache every few minutes;
     older than this means none of them is (the poller is failing or off, and no TUI is open). */
 const USAGE_STALE_MS = 10 * 60_000;
@@ -415,7 +419,7 @@ export async function getUsageInsight(): Promise<UsageInsight> {
   const auth = await readAuthStatus();
   // Ollama's month is derived from the declared day now, never cached: a changed day or a month
   // rollover shows at once (§app.insights/usage-reset-day).
-  const ollamaResetDay = readUsageWindows(getAgentDir()).ollama?.resetDay ?? null;
+  const ollamaResetDay = readUsageWindows(agentRoot()).ollama?.resetDay ?? null;
   const providers = read.map((p) => withDeclaredReset(auth[p.id] ? { ...p, auth: auth[p.id] } : p, ollamaResetDay, Date.now()));
   const own = providers.find((p) => p.id === "claude");
   const claudeLogins = own ? await readClaudeLogins(own, ownFetchedAt, claudeAccounts) : undefined;
@@ -432,7 +436,7 @@ export async function setUsageResetDay(body: unknown): Promise<UsageInsight | { 
   if (!isRec(body) || body.provider !== "ollama") return { error: 'provider must be "ollama"' };
   const day = body.day;
   if (day !== null && !(typeof day === "number" && Number.isInteger(day) && day >= 1 && day <= 31)) return { error: "day must be a whole day from 1 to 31, or null" };
-  setOllamaResetDay(day, getAgentDir());
+  setOllamaResetDay(day, agentRoot());
   return getUsageInsight();
 }
 
@@ -606,9 +610,9 @@ function contentText(content: unknown): string {
   return "";
 }
 
-function addReport(reports: SessionFacts["reports"], e: Rec): void {
+function addReport(reports: SessionFacts["reports"], e: { content: unknown; at?: unknown }): void {
   const text = contentText(e.content);
-  const at = str(e.timestamp) ?? "";
+  const at = str(e.at) ?? "";
   const m = REPORT_HEAD.exec(text);
   if (m?.[1] && m[2]) {
     reports.set(m[1], { status: m[2], ...(m[3] ? { outcome: m[3] } : {}), at });
@@ -660,10 +664,10 @@ const OUTLINE_SNAPSHOTS_MAX = 200;
 /** Adds one topic-outline entry to the series, validated by decodeOutline like the latest one. A
     malformed or older-version payload, one with no summary text, or a repeat of the previous
     accepted summary adds nothing: the axis should show each summary once. */
-function addOutlineSnapshot(list: OutlineSnapshot[], e: Rec): void {
+function addOutlineSnapshot(list: OutlineSnapshot[], e: { id: unknown; at?: unknown; data: unknown }): void {
   const o = decodeOutline(e.data);
   const id = str(e.id);
-  const timestamp = str(e.timestamp);
+  const timestamp = str(e.at);
   if (!o || !id || !timestamp || (!o.now && !o.overall)) return;
   const prev = list[list.length - 1];
   if (prev && prev.now === o.now && prev.overall === o.overall) return;
@@ -693,11 +697,11 @@ function decodeExplanation(data: unknown): ExplanationInfo | null {
   return x;
 }
 
-function decodeCompaction(e: Rec): CompactionInfo {
+function decodeCompaction(e: Extract<HEntry, { kind: "compaction" }>): CompactionInfo {
   const details = isRec(e.details) ? e.details : {};
   return {
     id: str(e.id) ?? "",
-    timestamp: str(e.timestamp) ?? "",
+    timestamp: str(e.at) ?? "",
     tokensBefore: num(e.tokensBefore) ?? null,
     summary: str(e.summary) ?? "",
     readFiles: strings(details.readFiles),
@@ -705,17 +709,11 @@ function decodeCompaction(e: Rec): CompactionInfo {
   };
 }
 
-/** The invisible custom entry a rewind appends — REWIND_ENTRY in chat-manager.ts, which owns the
-    write. The literals are spelled again rather than imported: chat-manager imports THIS module,
-    and the cycle would pull the pi SDK into every path that reads a session's facts, tests
-    included. */
-const REWIND_ENTRY = "sova-rewind";
-
 /** One rewind marker, as chat-manager wrote it: ids and a stamp, no text (the abandoned turns are
     not on this branch). An entry missing either half can't be placed on an axis, so it is dropped. */
-function decodeRewind(e: Rec): RewindInfo | null {
+function decodeRewind(e: { id: unknown; at?: unknown; data: unknown }): RewindInfo | null {
   const id = str(e.id);
-  const timestamp = str(e.timestamp);
+  const timestamp = str(e.at);
   if (!id || !timestamp) return null;
   const data = isRec(e.data) ? e.data : {};
   return { id, timestamp, targetId: str(data.targetId) ?? "", fromLeafId: str(data.fromLeafId) ?? "" };
@@ -745,7 +743,7 @@ function settledStates(records: Rec[]): SessionFacts["settled"] {
   return out;
 }
 
-function extractFacts(text: string): SessionFacts {
+export function extractFacts(text: string): SessionFacts {
   const teams = new Map<string, RosterTeam>();
   const reports: SessionFacts["reports"] = new Map();
   let outlineData: unknown;
@@ -754,34 +752,36 @@ function extractFacts(text: string): SessionFacts {
   const rewinds: RewindInfo[] = [];
   const explanations: ExplanationInfo[] = [];
   const teamEvents: TeamEvent[] = [];
-  const entries = parseLines(text);
-  const header = entries.find((e) => e.type === "session");
-  const branch = activeBranch(entries);
-  const isWorkerRecord = (e: Rec) => e.type === "custom" && WORKER_RECORD_TYPES.has(e.customType);
-  const branchIds = new Set(branch.map((e) => e.id));
-  const allRecords = entries.filter(isWorkerRecord);
-  for (const e of branch) {
-    if (e.type === "custom" && e.customType === TEAM_ENTRY) addTeamEntry(teams, e.data);
-    else if (e.type === "custom" && e.customType === TEAM_EVENT_TYPE) {
-      const ev = teamEventOf(e);
+  const { header, entries } = parsePi(text);
+  const branch = branchOf(entries);
+  const isWorkerRecord = (h: HEntry) => h.kind === "state" && WORKER_RECORD_TYPES.has(h.key);
+  const branchIds = new Set(branch.map((h) => h.id));
+  const records = entries.filter(isWorkerRecord);
+  for (const h of branch) {
+    if (h.kind === "state" && h.key === TEAM_ENTRY) addTeamEntry(teams, h.data);
+    else if (h.kind === "state" && h.key === TEAM_EVENT_TYPE) {
+      const ev = teamEventOf({ id: h.id ?? undefined, data: h.data });
       if (ev) teamEvents.push(ev);
     }
-    else if (e.type === "custom" && e.customType === "topic-outline") {
-      outlineData = e.data;
-      addOutlineSnapshot(outlines, e);
+    else if (h.kind === "state" && h.key === "topic-outline") {
+      outlineData = h.data;
+      addOutlineSnapshot(outlines, h);
     }
-    else if (e.type === "custom_message" && e.customType === "subagent-complete") addReport(reports, e);
-    else if (e.type === "compaction") compactions.push(decodeCompaction(e));
-    else if (e.type === "custom" && e.customType === REWIND_ENTRY) {
-      const r = decodeRewind(e);
-      if (r) rewinds.push(r);
-    }
-    else if (e.type === "custom" && e.customType === EXPLAIN_ENTRY) {
-      const x = decodeExplanation(e.data);
+    else if (h.kind === "note" && !h.inMessage && h.noteType === "subagent-complete") addReport(reports, h);
+    else if (h.kind === "compaction") compactions.push(decodeCompaction(h));
+    else if (h.kind === "state" && h.key === EXPLAIN_ENTRY) {
+      const x = decodeExplanation(h.data);
       if (x) explanations.push(x);
     }
   }
-  const activeRecords = allRecords.filter((e) => branchIds.has(e.id));
+  // The rewind markers on the branch (the registry's REWIND, which chat-manager's rewind writes), oldest first.
+  for (const r of stateView(branch).list(REWIND)) {
+    const x = decodeRewind(r);
+    if (x) rewinds.push(x);
+  }
+  // The subagents extension folds its worker records in pi's own entry shape.
+  const allRecords = extensionEntries(records);
+  const activeRecords = extensionEntries(records.filter((h) => branchIds.has(h.id)));
   return {
     teams: [...teams.values()],
     reports,
@@ -792,7 +792,7 @@ function extractFacts(text: string): SessionFacts {
     rewinds,
     explanations,
     sessionId: (header ? str(header.id) : undefined) ?? null,
-    skills: collectSkills(branch),
+    skills: collectSkills(skillLinesOf(branch)),
     workerRecords: { all: allRecords, active: activeRecords },
     teamEvents,
     settled: settledStates(activeRecords),

@@ -1,0 +1,8 @@
+{
+  "model": "zai/glm-5.3",
+  "context": null,
+  "reply": {
+    "at": 1788256803000,
+    "stopReason": "stop"
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "full": {
+    "turnId": "d0000003",
+    "replyAt": 1788256803000,
+    "lastUser": "First question",
+    "assistantLast": "First answer",
+    "tools": [],
+    "stopReason": "stop",
+    "durationMs": 1000
+  },
+  "window4k": {
+    "turnId": "d0000003",
+    "replyAt": 1788256803000,
+    "lastUser": "First question",
+    "assistantLast": "First answer",
+    "tools": [],
+    "stopReason": "stop",
+    "durationMs": 1000
+  }
+}

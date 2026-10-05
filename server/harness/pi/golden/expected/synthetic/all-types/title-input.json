@@ -1,0 +1,23 @@
+{
+  "userMessages": [
+    "Plain question about the parser",
+    "Two screenshots attached /tmp/pi-clipboard-golden-0001.png"
+  ],
+  "topics": [
+    {
+      "heading": "Parser",
+      "bullets": [
+        "Parser first point",
+        "Parser second point"
+      ]
+    },
+    {
+      "heading": "Tests",
+      "bullets": [
+        "Tests first point",
+        "Tests second point"
+      ]
+    }
+  ],
+  "summaryLine": "Golden fixture session"
+}

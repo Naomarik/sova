@@ -1,0 +1,156 @@
+[
+  {
+    "call": {
+      "fn": "addPendingPrompt",
+      "args": [
+        "same"
+      ]
+    },
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "same",
+          "state": "sending",
+          "images": []
+        }
+      ],
+      "tools": {},
+      "running": false,
+      "activity": null,
+      "stopping": false
+    }
+  },
+  {
+    "call": {
+      "fn": "applyEvent",
+      "args": [
+        {
+          "type": "message_start",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "same"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "same",
+          "state": "delivered",
+          "images": [],
+          "started": true
+        }
+      ],
+      "tools": {},
+      "running": false,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "call": {
+      "fn": "addPendingPrompt",
+      "args": [
+        "other"
+      ]
+    },
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "same",
+          "state": "delivered",
+          "images": [],
+          "started": true
+        },
+        {
+          "kind": "user",
+          "text": "other",
+          "state": "sending",
+          "images": []
+        }
+      ],
+      "tools": {},
+      "running": false,
+      "activity": null,
+      "stopping": false
+    }
+  },
+  {
+    "call": {
+      "fn": "addPendingPrompt",
+      "args": [
+        "same"
+      ]
+    },
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "same",
+          "state": "delivered",
+          "images": [],
+          "started": true
+        },
+        {
+          "kind": "user",
+          "text": "other",
+          "state": "sending",
+          "images": []
+        },
+        {
+          "kind": "user",
+          "text": "same",
+          "state": "sending",
+          "images": []
+        }
+      ],
+      "tools": {},
+      "running": false,
+      "activity": null,
+      "stopping": false
+    }
+  },
+  {
+    "call": {
+      "fn": "takeBackQueued",
+      "args": [
+        [
+          "same",
+          "<skill>expanded</skill>"
+        ]
+      ]
+    },
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "same",
+          "state": "delivered",
+          "images": [],
+          "started": true
+        },
+        {
+          "kind": "user",
+          "text": "other",
+          "state": "sending",
+          "images": []
+        }
+      ],
+      "tools": {},
+      "running": false,
+      "activity": null,
+      "stopping": false
+    },
+    "returned": "same\n\n<skill>expanded</skill>"
+  }
+]

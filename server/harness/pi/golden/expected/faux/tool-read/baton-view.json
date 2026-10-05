@@ -1,0 +1,89 @@
+{
+  "operator": {
+    "view": {
+      "publicTitle": "Golden launch",
+      "state": "active",
+      "holder": "Alice",
+      "items": [
+        {
+          "kind": "message",
+          "id": "00000004",
+          "by": "p_alice",
+          "name": "Alice",
+          "text": "What is in notes.txt?",
+          "at": "2026-09-03T08:00:00.012Z"
+        },
+        {
+          "kind": "reply",
+          "id": "00000005",
+          "text": "Reading it.",
+          "at": "2026-09-03T08:00:00.013Z"
+        },
+        {
+          "kind": "reply",
+          "id": "00000007",
+          "text": "It has two lines.",
+          "at": "2026-09-03T08:00:00.017Z"
+        }
+      ]
+    },
+    "photos": 0
+  },
+  "bob": {
+    "view": {
+      "publicTitle": "Golden launch",
+      "state": "active",
+      "holder": "Alice",
+      "items": [
+        {
+          "kind": "message",
+          "id": "00000004",
+          "by": "p_alice",
+          "name": "Alice",
+          "text": "What is in notes.txt?",
+          "at": "2026-09-03T08:00:00.012Z"
+        },
+        {
+          "kind": "reply",
+          "id": "00000005",
+          "text": "Reading it.",
+          "at": "2026-09-03T08:00:00.013Z"
+        },
+        {
+          "kind": "reply",
+          "id": "00000007",
+          "text": "It has two lines.",
+          "at": "2026-09-03T08:00:00.017Z"
+        }
+      ]
+    },
+    "photos": 0
+  },
+  "untilOffer": {
+    "publicTitle": "Golden launch",
+    "state": "active",
+    "holder": null,
+    "items": [
+      {
+        "kind": "message",
+        "id": "00000004",
+        "by": "p_alice",
+        "name": "Alice",
+        "text": "What is in notes.txt?",
+        "at": "2026-09-03T08:00:00.012Z"
+      },
+      {
+        "kind": "reply",
+        "id": "00000005",
+        "text": "Reading it.",
+        "at": "2026-09-03T08:00:00.013Z"
+      },
+      {
+        "kind": "reply",
+        "id": "00000007",
+        "text": "It has two lines.",
+        "at": "2026-09-03T08:00:00.017Z"
+      }
+    ]
+  }
+}

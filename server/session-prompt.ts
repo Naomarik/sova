@@ -77,7 +77,7 @@ export async function promptSession(path: string, text: string, sentBy?: string,
   }
   // Queue or start is decided by acceptPrompt from the runtime's own state, in one synchronous step.
   let queued: boolean;
-  const compacting = !chat.session.isStreaming && chat.isCompacting();
+  const compacting = !chat.harness.isRunning() && chat.isCompacting();
   try {
     chat.assertModelAllowed();
     const r = chat.acceptPrompt(text, undefined, "server", undefined, { delivery, ...(overseerId ? { sentByOverseer: { overseerId } } : {}) });

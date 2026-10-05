@@ -1,5 +1,5 @@
 import { open } from "node:fs/promises";
-import type { HBlock } from "../shared/harness";
+import type { HBlock, HEntry } from "../shared/harness";
 import type { SessionAlign } from "../shared/protocol";
 import {
   alignResultOf,
@@ -230,6 +230,21 @@ export function waitingAlignOf(branch: readonly ScanEntry[]): SessionAlign | und
   if (lastDoc < lastUser) return undefined;
   return sessionAlignOf(foldAlignments(branch).docs);
 }
+
+/** A neutral entry as the extension's fold reads it (pi's entry shape): an `align` result or an `align-doc`
+    record; null for anything the fold passes over. The same reading compactLine makes of a line. */
+function foldEntryOf(h: HEntry | undefined): Record<string, unknown> | null {
+  if (h?.kind === "tool-result" && h.tool === "align") return { type: "message", message: { role: "toolResult", toolName: "align", isError: h.isError === true, details: h.details } };
+  if (h?.kind === "state" && h.key === "align-doc") return { type: "custom", customType: h.key, data: h.data };
+  return null;
+}
+
+/** openAlignmentsOf over neutral entries (a branch, or a transcript's row sources), root first. */
+export const openAlignmentsIn = (history: readonly (HEntry | undefined)[]) => openAlignmentsOf(history.map(foldEntryOf));
+
+/** alignmentText over neutral entries, root first. */
+export const alignmentTextIn = (history: readonly (HEntry | undefined)[], opts: { doc?: string; waits: boolean; now?: number }) =>
+  alignmentText(history.map(foldEntryOf), opts);
 
 /**
  * A session file's alignments for the list, read incrementally. Until an `align` result appears the

@@ -163,9 +163,10 @@ Don't import a highlight.js stylesheet. These rules are the whole theme, and the
 A fenced block whose info string is `vis <kind>` is a **drawing**, not code. Sova draws it with its
 own Solid/SVG code (`src/vis/`): no diagram or chart dependency, and **model HTML or SVG never
 enters the app's DOM**. Assistant-text rows only (§chat/markdown's scope), and the replies on share
-and owner pages, which draw only `chart`, `flow`, `matrix`, `timeline`, `tree`, `steps`,
-`wireframe` and `layers`, with no Source or Copy and no frames, and show one quiet line instead of a broken
-block's source (§app.baton/outsider-view).
+and owner pages, which draw `chart`, `flow`, `matrix`, `timeline`, `tree`, `steps`, `wireframe`,
+`layers`, `state` and `sequence`, an `svg` as a static image, and an `html` in a frame only when the
+session allows it, with no Source or Copy, and show one quiet line instead of any other kind's or a
+broken block's source (§app.baton/outsider-view).
 
 - **Kinds.** One registry (`src/vis/registry.ts`) lists every fence word; nothing else is drawn:
 
@@ -278,8 +279,18 @@ block's source (§app.baton/outsider-view).
     `caption:` lines: up to 8K (8,192) draws as is; up to 16K (16,384) draws with the warning
     "large: <n>K characters of <kind> (aim under 8K)"; over 16K is an error. The guide says to aim
     under 8K and states what is counted;
-  - an `<iframe sandbox="allow-scripts">` with `srcdoc` (**never** `allow-same-origin`), a CSP that
-    blocks all network access, and the app's tokens injected (re-sent on theme change);
+  - an `<iframe sandbox="allow-scripts">` (**never** `allow-same-origin`) whose document carries a
+    CSP that blocks every fetch (scripts, styles, images, fonts, media and connections from
+    anywhere but inline code and `data:`/`blob:`), and the app's tokens injected (re-sent on theme
+    change). The CSP does not stop the frame navigating itself or a WebRTC connection. In the chat
+    the document is the frame's `srcdoc`. On share and owner pages, whose own CSP runs no inline
+    script, the frame loads the share build's static frame host (`/h/assets/vis-frame.html`, same
+    host; its header CSP sandboxes it to an opaque origin and allows only `frame-ancestors 'self'`,
+    §app.baton/share-listener), and the page posts it the same document once it loads; the host
+    accepts only the first such message from its parent, deletes `RTCPeerConnection` and its
+    `webkit` alias (best effort: it closes the obvious path, not every one), and writes that
+    document in place. The page's `frame-src 'self'` keeps the frame's own navigations on the
+    page's host;
   - **no autoplay**: a motion gate runs before the model's code and holds CSS animations, SMIL,
     `requestAnimationFrame` and `setInterval` until the first pointer or key event in the frame
     (`setTimeout` loops and script-made SVG escape it; the guide asks for a Play/Step button);

@@ -787,7 +787,10 @@ Organizations region's own Needs you, never the global one.
   area), and in the model's own context the holder's, from its earlier replies. People's messages
   reach the model and the page as they wrote them. So a verbatim repeat of a profile by the model
   reaches an outsider as `[redacted]`, and no ordinary word, job title or area is ever blanked
-  for it. A paraphrase is not caught; that residual risk is the prompt's to hold.
+  for it. A paraphrase is not caught; that residual risk is the prompt's to hold. A drawing whose
+  markup hides a secret phrase (in an entity, split by a tag, in an attribute or a script escape)
+  is withheld whole on the share and owner pages: it shows as the quiet line, and the operator's
+  log notes it by its kind only (§app.baton/outsider-view).
 - The org's name is never in the baton prompt; as a backstop the share page redacts it, as a
   whole word, from what the model wrote (a goal may carry it), unless the title or someone in the
   conversation used it.

@@ -17,10 +17,15 @@ once), **lease** (an offer's lock on its first taker).
 - The operator starts one from an org's project on the org page: the first holder (an active
   person, or the operator), a **public title** (all an outsider sees of the goal), the **goal**
   (never shown to outsiders and never repeated verbatim by the model), a first question (default:
-  the public title), optionally a model and thinking level (else the new-session defaults), and a
+  the public title), optionally a model and thinking level (the Start form's **Model** and
+  **Thinking** selects: the models the app's model picker offers, favorites first, and the chosen
+  model's thinking levels; each preselects the project's gathering model or thinking when the
+  project sets one, else **Default**, which sends none and so takes the new-session default;
+  changing the project re-derives a select the operator hasn't picked, and a model change that
+  leaves the chosen level unoffered moves it to Default and says so), and a
   message limit (the Start form's **Message limit**, placeholder "Default: <n>"; else the default
-  from Settings), and what it can do (**It can:** `Draw`, `Read links`, checked as the project's set,
-  §app.baton/abilities). `POST /api/baton {orgId, projectId, to,
+  from Settings), and what it can do (**It can:** `Draw`, `Interactive drawings (HTML)`, `Read
+  links`, checked as the project's set, §app.baton/abilities). `POST /api/baton {orgId, projectId, to,
   publicTitle, goal, question?, briefing?, parentSessionId?, model?, thinking?, messagesMax?, abilities?}` answers 201 with the
   session's path and, when `to` is a person, that hand-off's link, or, when `to` is a list of two or
   more people, one link per invitee (§app.baton/offers-and-leases); links are shown once.
@@ -334,9 +339,23 @@ once), **lease** (an offer's lock on its first taker).
   addressee); the done card; the decision cards ("Noted", the area and the statement); and who
   holds the baton now ("Waiting on <name>", "Your turn, <name>.", or done/closed); on a holder's
   older link, while a newer one of theirs holds it, "You have a newer link to this conversation.
-  Use that one to write." and no composer. The composer
-  appears only while the link writes, with the hint "{n} of 4,000 characters · Ctrl+Enter sends"
-  (figures with a thousands comma).
+  Use that one to write." and no composer. The first hand-off card, when the viewer is its
+  addressee, is headed "Your question" (the status line already names them); the viewer's own
+  messages carry "You" for screen readers only, their side and fill marking them. While the view
+  loads, the status line says "Loading the conversation." under a placeholder title; that text is
+  never the page's heading.
+- **The composer** appears only while the link writes: one rounded field holding the textarea,
+  the attach control (§app.baton/images) on its left and an icon-only Send ("Send", "Sending")
+  on its right. The textarea starts at one line and grows with its text up to a cap, then
+  scrolls; it has no resize grip. Send is plainly disabled while there is nothing to send, a
+  send runs or a photo uploads. Under the field, "Ctrl+Enter sends" shows only on a device with
+  a fine pointer that can hover, and "{n} of 4,000 characters" (figures with a thousands comma)
+  only from 3,200 characters on; "Waiting for photos to finish." replaces both while an upload
+  runs.
+- **Where it sits.** On open and after each change (a view, a sending echo, streamed text) the
+  page scrolls so the newest item ends above the composer, never under it. Below 768 px the
+  composer stays at the bottom of the screen; from 768 px it follows the conversation directly
+  and pins to the bottom only once the conversation is taller than the window.
 - Never: thinking, tool calls or results, the system prompt, the model, session id, path or cwd,
   the project or org beyond the public title, the goal, any profile field, any roster person's id,
   other sessions, or any other Sova UI. A message row's sender is its name plus a label, `you` (the
@@ -351,13 +370,24 @@ once), **lease** (an offer's lock on its first taker).
   text stays escaped. No other scheme is linked, nor an address without one (`www.x.com`, an
   e-mail address). The model's replies render as markdown, whose links open the same way.
 - **Drawings.** A `vis` fence in a reply whose kind is `chart`, `flow`, `matrix`, `timeline`,
-  `tree`, `steps`, `wireframe` or `layers` is drawn as in the chat (§chat.markdown/visuals): the same figure,
-  title, notes and caption, with no Source or Copy. Any other kind (`html`, `svg`, `sequence`,
-  `state`, `code`), and a block that doesn't parse, shows one muted line, "A drawing couldn't be
-  shown here.", and never its source; the operator's transcript keeps the source and the error.
-  While the fence is still open the page shows the "Drawing…" box. A drawing is text of the reply,
-  so it is filtered like the rest of it; nothing new crosses the wire. The page's CSP is unchanged:
-  no frame runs.
+  `tree`, `steps`, `wireframe`, `layers`, `state` or `sequence` is drawn as in the chat
+  (§chat.markdown/visuals): the same figure, title, notes and caption, with no Source or Copy. A
+  `vis svg` is drawn as a static image (an `<img>` of the parsed document, under its title), so
+  none of its script or links run. A `vis html` runs in a sandboxed frame (§chat.markdown/visuals)
+  only while the session can draw interactive drawings (§app.baton/abilities; the view carries
+  `drawings: {html}` from the session's abilities as they are now). Otherwise `html`, and always
+  `code`, and a block that doesn't parse, shows one muted line, "A drawing couldn't be shown
+  here.", and never its source; the operator's transcript keeps the source and the error. While
+  the fence is still open the page shows the "Drawing…" box. A drawing is text of the reply, so it
+  is filtered like the rest of it. As a backstop for markup, the server also checks each `html`
+  or `svg` fence the page would draw (found by the page's own parse, so one in a list item or a
+  quote too) for the secret phrases with its entities decoded and its tags stripped; a phrase
+  found only that way replaces the whole fence with one that shows the quiet line, and the
+  operator's log notes it. While a reply streams, an unclosed `html` or `svg` fence gets the same
+  check, and on a hit its text is left out of the streaming text, so it never crosses the socket.
+  The frame is a static document of the share build (`/h/assets/vis-frame.html`) on the page's
+  own host, which the page hands the drawing to; the page's own CSP gains only `frame-src 'self'`
+  and still runs no inline script.
 - A hand-off to the operator at the message limit shows people "This conversation reached its
   message limit." as its question; the operator's own transcript keeps the instruction to them.
 - A reply that stopped before it finished (the stream guard, §chat.transcript/runaway-stream, a
@@ -475,8 +505,14 @@ once), **lease** (an offer's lock on its first taker).
   on a routed host's ingress from its admitted gateway; every other client's is its own socket
   address.
 - Every response is `Cache-Control: no-store` and `Referrer-Policy: no-referrer` (the token is in
-  the URL); the page carries a CSP allowing only its own scripts, and reply links open with no
-  referrer.
+  the URL); the page carries a CSP allowing only its own scripts and frames of its own host
+  (`frame-src 'self'`), and reply links open with no referrer. Every response may not be framed
+  (`X-Frame-Options: DENY`), except the one frame host `/h/assets/vis-frame.html`
+  (§chat.markdown/visuals): its type is `text/html` (no other asset may be HTML), and it carries
+  `X-Frame-Options: SAMEORIGIN` and its own CSP, `sandbox allow-scripts; default-src 'none';
+  script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:;
+  media-src data: blob:; form-action 'none'; base-uri 'none'; frame-ancestors 'self'`, the same
+  headers wherever it is served from (this listener, or the gateway passing a routed host's).
 - The listener records visits (§app.baton/visits): it reads the user agent only to name a device
   family, a scanner or a link previewer, and keeps neither it nor the client address. The page
   shell resolves a token only for a known previewer's user agent, and answers the same either way.
@@ -496,7 +532,9 @@ once), **lease** (an offer's lock on its first taker).
   that can't see images gets no photo at all: the upload and the message routes refuse one (409,
   code `no-photos`), and the operator's strip and the project page's gathering-model picker say
   "This model can't see photos: people won't get an attach button."
-- **Attaching.** A 44 px paperclip button ("Attach Photos") left of the textarea opens the device's
+- **Attaching.** An icon-only paperclip button ("Attach Photos") inside the composer's field, left of the
+  text and bottom-aligned with Send, 44 px tall as a touch target but drawn as a 20 px icon on no
+  fill of its own, opens the device's
   own picker (`accept="image/*"`, several at once, no `capture`, so a phone offers its camera,
   photo library and files); pasting image files and dropping them on the composer attach too
   (a paste keeps its text). Each file is processed on the device before it leaves it: decoded
@@ -514,9 +552,9 @@ once), **lease** (an offer's lock on its first taker).
   APP13, PNG `eXIf` and text chunks, WebP `EXIF` and `XMP `). A photo is staged host-local under
   `<stateRoot>/baton-uploads/<sessionId>/` (0700, files 0600, never the workspace repo), named by
   a random id, and removed once sent, after 24 hours, or when the session closes.
-- **The pending strip** above the textarea shows each photo as a 32 px preview, its name and size,
-  a progress bar while it uploads, Retry after a failure, and a 44 px Remove; it wraps and never
-  squeezes the textarea at 320 px. Send takes text, photos or both, and waits while an upload runs
+- **The pending strip**, inside the composer's field above the text, shows each photo as a 32 px
+  preview, its name and size, a progress bar while it uploads, Retry after a failure, and a 44 px
+  Remove; it wraps and never squeezes the textarea at 320 px. Send takes text, photos or both, and waits while an upload runs
   ("Waiting for photos to finish."). Additions and refusals are announced in a polite live region.
 - **Sending.** `POST /api/h/<token>/message {text, images?: [id]}`: each id a photo this link staged
   for this session; at most the per-message limit; text may be empty when there are photos. A
@@ -649,34 +687,51 @@ once), **lease** (an offer's lock on its first taker).
 
 ## §app.baton/abilities — What a gathering session can do
 
-- **Two abilities.** **Draw**: the prompt carries a guide to the business drawings the share page
-  draws (§app.baton/outsider-view). **Read links**: the `read_link` tool (§app.baton/read-link).
+- **Three abilities.** **Draw**: the prompt carries a guide to the drawings the share page draws
+  (§app.baton/outsider-view). **Interactive drawings** (`drawHtml`): with Draw, the guide also
+  teaches `vis html`, which the share and owner pages then run in a sandboxed frame; it takes
+  effect only while Draw is on. **Read links**: the `read_link` tool (§app.baton/read-link).
   Nothing else is ever loaded for them: no mode, no pi-config extension, no web search
   (§app.baton/goal-and-loadout).
-- **The project's setting.** `overseer.json` `gatheringAbilities` is `{draw, readLinks}` (two
-  booleans), or `null`: **Automatic**, which is draw on, read links off. Set on the project page
-  under the gathering sessions' model (`PATCH …/overseer {gatheringAbilities}`); anything but null
-  or two booleans refuses the patch (400), and a file with a bad value reads as Automatic.
-  `GET …/overseer` answers what a session started now gets (`gatheringAbilitiesNow`).
+- **The project's setting.** `overseer.json` `gatheringAbilities` is `{draw, readLinks,
+  drawHtml}` (booleans; a missing `drawHtml` reads as false), or `null`: **Automatic**, which is
+  draw on, read links off, interactive drawings off. Set on the project page under the gathering
+  sessions' model (`PATCH …/overseer {gatheringAbilities}`): the select (Automatic, Draw, Draw and
+  read links, Read links, Neither) and, under it, a separate checkbox **Interactive drawings
+  (HTML)**, disabled while the select is Automatic, Read links or Neither. A select change keeps
+  the checkbox's current value (Automatic has none), so switching never silently clears it.
+  Anything but null or that shape refuses the patch (400), and a file with a bad value reads as
+  Automatic. `GET …/overseer` answers what a session started now gets (`gatheringAbilitiesNow`).
 - **Every start writes the set on the session's statechart** (`abilities`), fixed at start:
   the Start a Session form, Send to person…, the project overseer's `sova_start_gathering` and
   `sova_offer`, the global Overseer's `sova_gather start`, and a conflict's settle session. A start
   that names no abilities gets the project's set. On the form the operator may choose anything
-  (`abilities: {draw?, readLinks?}`, each a boolean, else 400).
+  (`abilities: {draw?, readLinks?, drawHtml?}`, each a boolean, else 400); the form's
+  **Interactive drawings (HTML)** checkbox is disabled while Draw is unticked.
 - **The overseers' ceiling.** `sova_start_gathering`, `sova_offer` and `sova_gather start` take an
-  optional `abilities: {draw?, read_links?}` over the project's set: either may be turned off, draw
-  may be turned on, and read links only when the project's set has it: "Reading links is off for
-  this project's gathering sessions; the operator can allow it on the project page." The refusal
-  comes before anything is created or counted.
-- **The strip** (§app.baton/goal-and-loadout) shows **It can:** with `Draw` and `Read links`
-  checkboxes, and the operator can change them while the session is open
-  (`POST /api/baton/:sid/abilities {draw?, readLinks?}`, answering the strip's `BatonInfo`;
-  refused once it is done or closed). A change applies from the session's next reply: the prompt
-  and the tools are set when a run starts. The share page never shows them.
-- **The drawing guide** is Sova's short opening plus the vis guide's shared rules and `mark`
-  syntax (with every kind's `mark` targets in one line) and its `flow`, `chart`, `matrix`,
-  `timeline`, `tree`, `steps`, `wireframe` and `layers` files (owner notes and stub kinds stripped
-  as the vis mode strips them; its examples parse, tested). Its rules: at most one
+  optional `abilities: {draw?, read_links?, draw_html?}` over the project's set: any may be turned
+  off, draw may be turned on, read links only when the project's set has it ("Reading links is
+  off for this project's gathering sessions; the operator can allow it on the project page."),
+  and interactive drawings only when the project's set has them ("Interactive drawings are off
+  for this project's gathering sessions; the operator can allow them on the project page."). The
+  refusal comes before anything is created or counted.
+- **The strip** (§app.baton/goal-and-loadout) shows **It can:** with `Draw`, `Interactive
+  drawings (HTML)` (disabled while Draw is off) and `Read links` checkboxes, and the operator can
+  change them while the session is open (`POST /api/baton/:sid/abilities {draw?, readLinks?,
+  drawHtml?}`, answering the strip's `BatonInfo`; refused once it is done or closed). A change
+  applies from the session's next reply: the prompt and the tools are set when a run starts. The
+  share page never shows them; whether it runs a reply's `vis html` follows the session's
+  abilities as they are now (§app.baton/outsider-view).
+- **The drawing guide** comes in two tiers, each built once. **Draw**: Sova's short opening plus
+  the vis guide's shared rules and `mark` syntax (with every kind's `mark` targets in one line) and
+  its `flow`, `chart`, `matrix`, `timeline`, `tree`, `steps`, `wireframe`, `layers`, `state` and
+  `sequence` files and an `svg` section (owner notes and stub kinds stripped as the vis mode strips
+  them; its examples parse, tested). The `svg` section teaches a static image only (no script,
+  animation or button), and a `sequence`'s actors are systems or steps, never people. **Draw with
+  interactive drawings**: the same plus a `vis html` section: fit a phone's width first, aim under
+  4K characters, nothing external (no scripts, fonts, images or fetches), motion only behind a
+  Play or Step button, never ask for a password or contact details in an input, and every privacy
+  rule applies to text inside markup and scripts too. `code` is never taught. Its rules: at most one
   drawing in a reply, and only when a picture helps the person; only about the person's own
   subject (their figures, a screen or layout they describe, their own work's steps); never about
   people, roles, the roster, who decides what, the goal, or how this conversation is run. A

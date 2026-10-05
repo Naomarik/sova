@@ -3982,7 +3982,7 @@
     "§app.baton/goal-and-loadout": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "code": [
         "server/baton.ts",
         "server/baton-loadout.ts",
@@ -4182,7 +4182,34 @@
         "src/share/thread.css",
         "src/vis/share-markdown.test.ts",
         "src/vis/share-views.ts",
-        "src/share/vis-icons.ts"
+        "src/share/vis-icons.ts",
+        "server/harness/pi/golden/CHANGES.md",
+        "server/harness/pi/golden/expected/faux/abort/baton-view.json",
+        "server/harness/pi/golden/expected/faux/compact/baton-view.json",
+        "server/harness/pi/golden/expected/faux/error-retry/baton-view.json",
+        "server/harness/pi/golden/expected/faux/image-resize/baton-view.json",
+        "server/harness/pi/golden/expected/faux/plain/baton-view.json",
+        "server/harness/pi/golden/expected/faux/steer-followup/baton-view.json",
+        "server/harness/pi/golden/expected/faux/thinking/baton-view.json",
+        "server/harness/pi/golden/expected/faux/tool-read/baton-view.json",
+        "server/harness/pi/golden/expected/large/large-10mb/baton-view.json",
+        "server/harness/pi/golden/expected/synthetic/align-merge/baton-view.json",
+        "server/harness/pi/golden/expected/synthetic/all-types/baton-view.json",
+        "server/harness/pi/golden/expected/synthetic/baton/baton-view.json",
+        "server/harness/pi/golden/expected/synthetic/broken-cycle/baton-view.json",
+        "server/harness/pi/golden/expected/synthetic/broken-dangling/baton-view.json",
+        "server/harness/pi/golden/expected/synthetic/broken-dup/baton-view.json",
+        "server/harness/pi/golden/expected/synthetic/compaction-end/baton-view.json",
+        "server/harness/pi/golden/expected/synthetic/compaction-mid/baton-view.json",
+        "server/harness/pi/golden/expected/synthetic/fork/baton-view.json",
+        "server/harness/pi/golden/expected/synthetic/legacy-v1/baton-view.json",
+        "server/harness/pi/golden/expected/synthetic/rewind/baton-view.json",
+        "server/harness/pi/golden/expected/synthetic/tail-0.86-0.87/baton-view.json",
+        "server/harness/pi/golden/expected/synthetic/torn/baton-view.json",
+        "server/harness/pi/golden/expected/synthetic/unknown-noid/baton-view.json",
+        "server/harness/pi/golden/expected/synthetic/unknown/baton-view.json",
+        "server/harness/pi/golden/expected/synthetic/user-kinds/baton-view.json",
+        "server/harness/pi/golden/expected/synthetic/workers/baton-view.json"
       ],
       "requires": [
         "§app.organizations/privacy"
@@ -4213,7 +4240,8 @@
         "server/public-links.test.ts",
         "server/share/share-state.ts",
         "server/runtime-quirks.ts",
-        "server/runtime-quirks.test.ts"
+        "server/runtime-quirks.test.ts",
+        "shared/vis-frame-host.ts"
       ],
       "requires": [
         "§app.baton/links",
@@ -4368,7 +4396,8 @@
         "server/person-page.ts",
         "server/owner-page.ts",
         "server/org-host/log.ts",
-        "server/org-host/privacy.test.ts"
+        "server/org-host/privacy.test.ts",
+        "src/share/markdown.ts"
       ]
     },
     "§app.organizations/projects": {
@@ -6758,7 +6787,8 @@
         "src/vis/golden.json",
         "server/vis-check.ts",
         "server/vis-check.test.ts",
-        "src/vis/multimark.test.ts"
+        "src/vis/multimark.test.ts",
+        "shared/vis-frame-host.ts"
       ]
     },
     "§chat.mode-menu/minor-toggle-keeps-prompt": {

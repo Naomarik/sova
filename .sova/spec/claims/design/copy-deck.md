@@ -779,12 +779,13 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Where | Copy |
 |---|---|
 | Project page, under the gathering sessions' model | label `Gathering sessions can` · options `Automatic` · `Draw` · `Draw and read links` · `Read links` · `Neither` |
-| …its hint (`.field-hint`) | "Every gathering session this project starts gets this, unless its start says otherwise. One started now: {now}." — `{now}` one of "draw", "draw, read links", "read links", "nothing extra" |
+| …its hint (`.field-hint`) | "Every gathering session this project starts gets this, unless its start says otherwise. One started now: {now}." — `{now}` one of "draw", "draw with interactive drawings", "draw, read links", "draw with interactive drawings, read links", "read links", "nothing extra" |
 | …saved (toast) | "Gathering sessions: {option}." — e.g. "Gathering sessions: Draw and read links." |
-| Start a Session form | `It can:` · checkboxes `Draw` · `Read links`, checked as the project's set |
-| Baton strip | `It can:` · checkboxes `Draw` · `Read links` · saved (toast): "Drawing on from its next reply." · "Drawing off from its next reply." · "Reading links on from its next reply." · "Reading links off from its next reply." · refused: the server's words |
+| …under the select | checkbox `Interactive drawings (HTML)` (disabled while the select is `Automatic`, `Read links` or `Neither`) · saved (toast): "Gathering sessions: interactive drawings on." · "Gathering sessions: interactive drawings off." |
+| Start a Session form | `It can:` · checkboxes `Draw` · `Interactive drawings (HTML)` (disabled while Draw is unticked) · `Read links`, checked as the project's set |
+| Baton strip | `It can:` · checkboxes `Draw` · `Interactive drawings (HTML)` (disabled while Draw is off) · `Read links` · saved (toast): "Drawing on from its next reply." · "Drawing off from its next reply." · "Interactive drawings on from its next reply." · "Interactive drawings off from its next reply." · "Reading links on from its next reply." · "Reading links off from its next reply." · refused: the server's words |
 | Share and owner pages, a drawing that can't be drawn there | "A drawing couldn't be shown here." (muted, one line, never the source) |
-| Overseer tool refusal (the model reads it) | "Reading links is off for this project's gathering sessions; the operator can allow it on the project page." |
+| Overseer tool refusals (the model reads them) | "Reading links is off for this project's gathering sessions; the operator can allow it on the project page." · "Interactive drawings are off for this project's gathering sessions; the operator can allow them on the project page." |
 | `read_link` refusals (the model reads them) | "Only a link someone wrote in this conversation can be opened." · "That address can't be opened from here." · "Not a text page: {content type}." · "This conversation has already read 10 links." · "The page didn't answer in time." · "The page answered {status}." |
 
 ## §design.copy-deck/gathering-images — Photos in gathering chats (§app.baton/images)

@@ -233,7 +233,9 @@ links". When nothing answers in time, it replies with the state as it stands.
   through as they are.
 - A hashed `/h/assets/<name>` comes from the gateway's own share build first, else from the first
   live host whose snapshot listed the name, typed by its extension (js, css, woff2, svg, png; any
-  other is never fetched), capped at 5 MB while streaming.
+  other is never fetched), capped at 5 MB while streaming. One name is typed by its exact name
+  instead: the frame host `vis-frame.html` is `text/html`, passed with the frame host's own
+  headers (§app.baton/share-listener); any other `.html` name is never fetched.
 
 ## §mesh.public/withdrawn-hop — A link its own host withdrew
 

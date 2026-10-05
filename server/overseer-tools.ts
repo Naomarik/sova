@@ -21,7 +21,7 @@ import { newestTopics, topicTime } from "../shared/outline-order";
 import { whereOf } from "./attention";
 import { NotShared } from "./mesh/access";
 import { alignmentText, openAlignmentsOf } from "./align-state";
-import { entryOf } from "./transcript";
+import { entryOf, sourceOf } from "./transcript";
 import type { ReadinessChecks } from "./merge-readiness";
 import { idOfAlias, sessionName } from "./session-names";
 import { type Redactor, redactingTool, serverRedactor } from "./overseer-redact";
@@ -349,15 +349,14 @@ export function topicsLine(topics: readonly { heading: string; at: number; secti
     reason, its error and its text; undefined when there is none. */
 export function lastReplyIn(items: readonly TranscriptItem[]): { at: number; stopReason?: string; error?: string; text: string } | undefined {
   for (let i = items.length - 1; i >= 0; i--) {
-    const raw = entryOf(items[i]!) as { type?: unknown; timestamp?: unknown; message?: { role?: unknown; content?: unknown; stopReason?: unknown; errorMessage?: unknown; timestamp?: unknown } } | undefined;
-    const m = raw?.type === "message" ? raw.message : undefined;
-    if (m?.role !== "assistant") continue;
-    const at = typeof raw!.timestamp === "string" ? Date.parse(raw!.timestamp) : typeof m.timestamp === "number" ? m.timestamp : NaN;
-    const text = typeof m.content === "string" ? m.content : Array.isArray(m.content) ? m.content.map((b) => (b?.type === "text" && typeof b.text === "string" ? b.text : "")).filter(Boolean).join("\n") : "";
+    const h = sourceOf(items[i]!);
+    if (h?.kind !== "assistant") continue;
+    const at = typeof h.at === "string" ? Date.parse(h.at) : typeof h.sentAt === "number" ? h.sentAt : NaN;
+    const text = h.blocks.map((b) => (b.type === "text" && typeof b.text === "string" ? b.text : "")).filter(Boolean).join("\n");
     return {
       at: Number.isFinite(at) ? at : 0,
-      ...(typeof m.stopReason === "string" ? { stopReason: m.stopReason } : {}),
-      ...(typeof m.errorMessage === "string" && m.errorMessage ? { error: m.errorMessage } : {}),
+      ...(typeof h.stop === "string" ? { stopReason: h.stop } : {}),
+      ...(typeof h.error === "string" && h.error ? { error: h.error } : {}),
       text,
     };
   }

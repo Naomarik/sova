@@ -6,8 +6,9 @@
 //
 // Everything here is read-only. The JSONL is Claude Code's own format (pinned to CLI 2.1.278 by
 // the fixtures in claude-transcript.test.ts), so normalizeClaudeEntries translates it into the
-// same TranscriptItem rows server/transcript.ts produces for pi sessions — including a synthetic,
-// pi-shaped `raw` message, so the existing frontend renders these rows with no special case. Edit,
+// same TranscriptItem rows server/transcript.ts produces for pi sessions, each kept beside a neutral
+// history entry (shared/harness-history.ts) made here, never by pi's reader, so the existing frontend and
+// the server's row readers take these rows with no special case. Edit,
 // MultiEdit and Write take pi's edit/write argument names, and their results carry CC's own
 // hunks as `details.structuredPatch` (pi's edit carries `details.patch` text instead).
 
@@ -15,8 +16,10 @@ import { existsSync } from "node:fs";
 import { sep } from "node:path";
 import { locateClaudeSession } from "../pi-config/extensions/claude-code/transcript-adapter.ts";
 import { claudeProjectsRoot } from "../pi-config/extensions/claude-code/provider/session-records.ts";
+import type { HEntry } from "../shared/harness";
 import type { EntryKind, TranscriptItem } from "../shared/protocol";
-import { parseLines, slimRows, sourced } from "./transcript";
+import { parseJsonl } from "./jsonl";
+import { slimRows, withSource } from "./transcript";
 
 type Entry = Record<string, any>;
 
@@ -145,22 +148,25 @@ function contentImages(content: unknown): string[] | undefined {
   return out.length ? out : undefined;
 }
 
+type Body = HEntry extends infer E ? (E extends unknown ? Omit<E, "id" | "parentId" | "at"> : never) : never;
+
 /**
- * A pi-shaped `message` entry as each CC row's source (server/transcript.ts `sourced`): the slim
- * row's time, facts and tool line, and the tool-content route's arguments and output, are read from
- * it exactly as from a pi entry (a "toolCall" block with a matching id; a result's content text plus
- * isError), so CC rows need no special case. One per row: each row carries its own `meta`.
+ * A neutral entry as each CC row's source (server/transcript.ts `withSource`): the slim row's time,
+ * facts and tool line, and the tool-content route's arguments and output, are read from it exactly as
+ * from a pi session's (a "toolCall" block with a matching id; a result's text blocks plus isError), so CC
+ * rows need no special case. One per row: each row carries its own `meta`. CC lines are linear, so the
+ * entry has no place in a tree.
  */
-function raw(timestamp: string | undefined, message: Record<string, unknown>): unknown {
-  return { type: "message", timestamp, message };
+function source(time: string | undefined, body: Body): HEntry {
+  return { id: null, parentId: null, ...(time !== undefined ? { at: time } : {}), ...body } as HEntry;
 }
 
-function item(id: string, kind: EntryKind, rawEntry: unknown, text?: string, toolCallId?: string, images?: string[]): TranscriptItem {
+function item(id: string, kind: EntryKind, h: HEntry, text?: string, toolCallId?: string, images?: string[]): TranscriptItem {
   const it: TranscriptItem = { id, kind };
   if (text !== undefined) it.text = text;
   if (toolCallId !== undefined) it.toolCallId = toolCallId;
   if (images) it.images = images;
-  return sourced(it, rawEntry);
+  return withSource(it, h);
 }
 
 /** An assistant line: CC writes one content block per line, all sharing one message.id. */
@@ -171,14 +177,14 @@ function assistantItems(entry: Entry, id: string, time: string | undefined, mode
     const bid = `${id}:${i}`;
     if (b?.type === "text") {
       if (typeof b.text === "string" && b.text.trim()) {
-        const it = item(bid, "assistant-text", raw(time, { role: "assistant", content: [{ type: "text", text: b.text }] }), b.text);
+        const it = item(bid, "assistant-text", source(time, { kind: "assistant", blocks: [{ type: "text", text: b.text }] }), b.text);
         if (model) it.model = model;
         out.push(it);
       }
     } else if (b?.type === "thinking") {
       // Redacted thinking arrives as an empty string with only a signature: nothing to show.
       if (typeof b.thinking === "string" && b.thinking.trim()) {
-        const it = item(bid, "thinking", raw(time, { role: "assistant", content: [{ type: "thinking", thinking: b.thinking }] }), b.thinking);
+        const it = item(bid, "thinking", source(time, { kind: "assistant", blocks: [{ type: "thinking", thinking: b.thinking }] }), b.thinking);
         if (model) it.model = model;
         out.push(it);
       }
@@ -188,7 +194,7 @@ function assistantItems(entry: Entry, id: string, time: string | undefined, mode
       const it = item(
         bid,
         "tool-call",
-        raw(time, { role: "assistant", content: [{ type: "toolCall", id: callId, name, arguments: piToolArgs(b.name, b.input) }] }),
+        source(time, { kind: "assistant", blocks: [{ type: "toolCall", id: callId, name, arguments: piToolArgs(b.name, b.input) }] }),
         name,
         callId,
       );
@@ -216,7 +222,7 @@ function userItems(entry: Entry, id: string, time: string | undefined): Transcri
       return item(
         `${id}:${i}`,
         "tool-result",
-        raw(time, { role: "toolResult", toolCallId: callId, isError, content: [{ type: "text", text }], ...(details ? { details } : {}) }),
+        source(time, { kind: "tool-result", ...(callId !== undefined ? { callId } : {}), isError, blocks: [{ type: "text", text }], ...(details ? { details } : {}) }),
         truncate(text, RESULT_TEXT_MAX),
         callId,
         contentImages(b.content),
@@ -226,7 +232,7 @@ function userItems(entry: Entry, id: string, time: string | undefined): Transcri
   const text = contentText(content);
   const images = contentImages(content);
   if (!text.trim() && !images) return [];
-  return [item(id, "user", raw(time, { role: "user", content: [{ type: "text", text }] }), text.trim() ? text : undefined, undefined, images)];
+  return [item(id, "user", source(time, { kind: "user", blocks: [{ type: "text", text }] }), text.trim() ? text : undefined, undefined, images)];
 }
 
 /** Normalize one CC JSONL line into 0..n TranscriptItems, as they go over the wire (slimRows). */
@@ -245,7 +251,8 @@ function claudeRows(entry: Entry, fallbackId: string): TranscriptItem[] {
     if (entry.subtype !== "compact_boundary") return [];
     const pre = entry.compactMetadata?.preTokens;
     const tokens = typeof pre === "number" ? ` (${pre} tokens)` : "";
-    return [item(id, "info", raw(time, { role: "custom" }), `Compacted${tokens}`)];
+    // Its facts read as they always have, an extension's message (role "custom"), not a pi compaction.
+    return [item(id, "info", source(time, { kind: "note", content: undefined, display: true, inMessage: true }), `Compacted${tokens}`)];
   }
   if (!entry.message || typeof entry.message !== "object") return [];
   if (entry.type === "user") {
@@ -268,5 +275,5 @@ export function normalizeClaudeEntries(entries: unknown[]): TranscriptItem[] {
 
 /** A SessionTail `Normalize` for CC files: same work for a snapshot and for appended lines. */
 export function normalizeClaudeText(text: string): TranscriptItem[] {
-  return normalizeClaudeEntries(parseLines(text));
+  return normalizeClaudeEntries(parseJsonl(text));
 }

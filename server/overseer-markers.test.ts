@@ -19,6 +19,7 @@ mkdirSync(cwd, { recursive: true });
 
 const { acquireChat, BusyError, disposeAllChats, isOverseerFile, REWIND_ENTRY, resolveRegenerate } = await import("./chat-manager");
 const { normalizeEntries, normalizeEntry } = await import("./transcript");
+const { historyOf } = await import("./harness/pi/reader");
 const { canonicalPath } = await import("./paths");
 const { getSessionSummary } = await import("./sessions-index");
 // Registers the Overseer runtime loadout with chat-manager, as index.ts does.
@@ -87,7 +88,7 @@ describe("marker entries in the transcript", () => {
 
   test("regenerating the reply to an Overseer-sent message walks back past the marker to that message", () => {
     const branch = [user("u1", null, "run the tests"), sent("m1", "u1", "u1"), assistant("a1", "m1", "ok")];
-    const r = resolveRegenerate(branch, "a1:0");
+    const r = resolveRegenerate(historyOf(branch), "a1:0");
     assert.deepEqual(r, { ok: true, userId: "u1", text: "run the tests" });
   });
 });

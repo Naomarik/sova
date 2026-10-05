@@ -1,8 +1,9 @@
 import { type FSWatcher, watch } from "node:fs";
 import { open, stat } from "node:fs/promises";
 import type { TranscriptItem, WatchServerMessage } from "../shared/protocol";
+import { branchOf, parsePi } from "./harness/pi/reader";
 import { cutTail, pullFields } from "./tail-hello";
-import { activeBranch, normalizeEntries, parseLines } from "./transcript";
+import { rowsOf } from "./transcript";
 import type { ContextTally } from "./worker-context";
 
 const POLL_MS = 1500;
@@ -10,9 +11,11 @@ const POLL_MS = 1500;
 /** JSONL text -> rows. Whole file on snapshot, the new lines only on append. */
 export type Normalize = (text: string, part: "snapshot" | "append") => TranscriptItem[];
 
-/** pi sessions: the active branch of the file, the new rows as they land. */
-const piNormalize: Normalize = (text, part) =>
-  normalizeEntries(part === "snapshot" ? activeBranch(parseLines(text)) : parseLines(text).filter((e) => e.type !== "session"));
+/** pi sessions: the active branch of the file, the new rows as they land (a header line has none). */
+const piNormalize: Normalize = (text, part) => {
+  const { entries } = parsePi(text);
+  return rowsOf(part === "snapshot" ? branchOf(entries) : entries);
+};
 
 /**
  * Read-only tail of one session JSONL file for one client. Opens the file with "r" only.

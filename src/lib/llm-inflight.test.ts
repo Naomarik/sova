@@ -1,134 +1,23 @@
 // Run: pnpm exec tsx --test src/lib/llm-inflight.test.ts
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { LlmInflight } from "../../shared/protocol";
-import { agentsRow, inflightWhy, llmInflightView, sameInflight } from "./llm-inflight";
-import { activeAgentCounts, activeTeamCount } from "./workers";
+import type { LlmInflight, LlmTokens } from "../../shared/protocol";
+import { denseCount, sameInflight, tokenVelocityView, VELOCITY_SCALE_FLOOR, velocityChart, velocityPitch } from "./llm-inflight";
 
 const complete = (count: number): LlmInflight => ({ count, approximate: 0, partial: false, gaps: [] });
-const labels: Record<string, string> = { "peer-a": "studio", "peer-b": "laptop" };
-const label = (id: string) => labels[id] ?? id;
 
-test("complete: a bare figure, singular at 1, and the only state that may read 0", () => {
-  const zero = llmInflightView(complete(0));
-  assert.equal(zero.state, "complete");
-  assert.equal(zero.figure, "0");
-  assert.equal(zero.rowWord, "agents");
-  assert.equal(zero.sentence, "No LLM calls running now");
-  assert.equal(zero.agentsLabel, "Agents: No LLM calls running now");
-  assert.equal(zero.showTally, false, "the spine tally hides only a complete 0");
+const B = 30_000;
+/** A ring whose newest slot is `end`, with `slots` (age in slots back from `end` → tokens). */
+function ring(end: number, slots: Record<number, number>, partial = false): LlmTokens {
+  const out = Array.from({ length: 60 }, () => 0);
+  for (const [age, n] of Object.entries(slots)) out[59 - Number(age)] = n;
+  return { bucketMs: B, end, out, partial };
+}
+const withTokens = (tokens: LlmTokens | undefined, base: LlmInflight = complete(0)): LlmInflight => ({ ...base, tokens });
+/** A moment inside slot `s`. */
+const at = (s: number) => s * B + 1_000;
 
-  const one = llmInflightView(complete(1));
-  assert.deepEqual([one.figure, one.rowWord, one.sentence, one.agentsLabel, one.showTally], ["1", "agent", "1 LLM call running now", "Agents: 1 LLM call running now", true]);
-
-  const many = llmInflightView(complete(3));
-  assert.deepEqual([many.figure, many.rowWord, many.sentence, many.agentsLabel], ["3", "agents", "3 LLM calls running now", "Agents: 3 LLM calls running now"]);
-});
-
-test("unknown (no snapshot on this connection): no figure, the word Agents, never a 0", () => {
-  const v = llmInflightView(null);
-  assert.equal(v.state, "unknown");
-  assert.equal(v.figure, "–");
-  assert.equal(v.rowWord, null, "the row reads the plain word Agents");
-  assert.equal(v.sentence, "LLM calls running now: not known yet");
-  assert.equal(v.agentsLabel, "Agents: LLM calls running now: not known yet");
-  assert.equal(v.showTally, true);
-  assert.doesNotMatch(v.figure, /0/);
-});
-
-test("partial: a floor shown as the bare number, the reasons in the sentence, even at 0", () => {
-  const v = llmInflightView({ count: 3, approximate: 0, partial: true, gaps: [{ reason: "claude-internal" }] });
-  assert.equal(v.state, "partial");
-  assert.equal(v.figure, "3", "the number only: the floor is the sentence's to say");
-  assert.equal(v.rowWord, "agents");
-  assert.equal(v.sentence, "At least 3 LLM calls running now. Claude Code's own internal calls aren't visible.");
-  assert.equal(v.agentsLabel, "Agents: At least 3 LLM calls running now. Claude Code's own internal calls aren't visible.");
-
-  const zero = llmInflightView({ count: 0, approximate: 0, partial: true, gaps: [{ reason: "peer-unreachable", host: "peer-a" }] }, label);
-  assert.equal(zero.figure, "0");
-  assert.equal(zero.state, "partial", "a partial 0 is a floor, never a proven 0");
-  assert.equal(zero.showTally, true);
-  assert.equal(zero.sentence, "At least 0 LLM calls running now. studio can't be reached.");
-
-  const one = llmInflightView({ count: 1, approximate: 0, partial: true, gaps: [{ reason: "claude-internal" }] });
-  assert.equal(one.figure, "1");
-  assert.match(one.sentence, /^At least 1 LLM call running now\./);
-});
-
-test("approximate one-shots: the same figure as an exact one, the sentence apart", () => {
-  const exact = llmInflightView(complete(1));
-  const approx = llmInflightView({ count: 1, approximate: 1, partial: false, gaps: [] });
-  assert.equal(exact.figure, "1");
-  assert.equal(approx.figure, "1");
-  assert.equal(approx.approximate, true);
-  assert.equal(exact.approximate, false);
-  assert.equal(approx.state, "complete", "an estimate is not a gap");
-  assert.equal(approx.rowWord, "agent");
-  assert.equal(approx.sentence, "No exact LLM calls running now, and 1 one-shot that may be calling");
-  assert.equal(approx.agentsLabel, "Agents: No exact LLM calls running now, and 1 one-shot that may be calling");
-  assert.notEqual(approx.sentence, exact.sentence);
-  assert.equal(approx.showTally, true);
-
-  const three = llmInflightView({ count: 3, approximate: 1, partial: false, gaps: [] });
-  assert.deepEqual([three.figure, three.rowWord, three.sentence], ["3", "agents", "2 LLM calls running now, and 1 one-shot that may be calling"]);
-
-  const two = llmInflightView({ count: 2, approximate: 1, partial: false, gaps: [] });
-  assert.equal(two.sentence, "1 LLM call running now, and 1 one-shot that may be calling");
-
-  const plural = llmInflightView({ count: 5, approximate: 2, partial: false, gaps: [] });
-  assert.deepEqual([plural.figure, plural.sentence], ["5", "3 LLM calls running now, and 2 one-shots that may be calling"]);
-
-  const allOneShots = llmInflightView({ count: 2, approximate: 2, partial: false, gaps: [] });
-  assert.equal(allOneShots.sentence, "No exact LLM calls running now, and 2 one-shots that may be calling");
-});
-
-test("partial and approximate together: the bare number, never \"at least\" over the estimates", () => {
-  const v = llmInflightView({ count: 4, approximate: 1, partial: true, gaps: [{ reason: "claude-internal" }] });
-  assert.equal(v.state, "partial");
-  assert.equal(v.approximate, true);
-  assert.equal(v.figure, "4");
-  assert.equal(v.rowWord, "agents");
-  assert.equal(v.sentence, "At least 3 LLM calls running now, and 1 one-shot that may be calling. Claude Code's own internal calls aren't visible.");
-  const none = llmInflightView({ count: 2, approximate: 2, partial: true, gaps: [{ reason: "peer-connecting", host: "peer-b" }] }, label);
-  assert.equal(none.figure, "2");
-  assert.equal(none.sentence, "No exact LLM calls seen, and 2 one-shots that may be calling. laptop hasn't reported yet.");
-  const exactPartial = llmInflightView({ count: 4, approximate: 0, partial: true, gaps: [{ reason: "claude-internal" }] });
-  assert.equal(exactPartial.figure, "4");
-  assert.equal(exactPartial.approximate, false, "no estimate in it");
-  assert.notEqual(exactPartial.sentence, v.sentence, "the figures match; the sentences tell them apart");
-});
-
-test("a malformed frame can't claim more one-shots than calls", () => {
-  assert.equal(llmInflightView({ count: 1, approximate: 3, partial: false, gaps: [] }).sentence, "No exact LLM calls running now, and 1 one-shot that may be calling");
-  assert.equal(llmInflightView({ count: 2, approximate: -1, partial: false, gaps: [] }).figure, "2");
-});
-
-test("a gap makes the count a floor even if `partial` disagrees", () => {
-  const v = llmInflightView({ count: 2, approximate: 0, partial: false, gaps: [{ reason: "peer-connecting", host: "peer-b" }] }, label);
-  assert.equal(v.state, "partial");
-  assert.equal(v.figure, "2");
-  assert.match(v.sentence, /^At least 2 /);
-});
-
-test("each reason in words, once, in the gaps' order; this host and peers by label", () => {
-  assert.equal(
-    inflightWhy(
-      [
-        { reason: "claude-internal" },
-        { reason: "claude-internal", host: "peer-a" },
-        { reason: "unreported", processes: 2 },
-        { reason: "unreported", host: "peer-a", processes: 1 },
-        { reason: "peer-connecting", host: "peer-b" },
-        { reason: "peer-unreachable", host: "peer-a" },
-        { reason: "peer-unsupported", host: "peer-x" },
-      ],
-      label,
-    ),
-    "Claude Code's own internal calls aren't visible. 2 processes on this host don't report. 1 process on studio doesn't report. laptop hasn't reported yet. studio can't be reached. peer-x runs an older Sova.",
-  );
-});
-
-test("sameInflight: an unchanged frame is equal; any change to the figure or its coverage is not", () => {
+test("sameInflight: an unchanged frame is equal; any change to the count, its coverage or the ring is not", () => {
   const a: LlmInflight = { count: 2, approximate: 0, partial: true, gaps: [{ reason: "claude-internal" }] };
   assert.equal(sameInflight(a, { ...a, gaps: [{ reason: "claude-internal" }] }), true);
   assert.equal(sameInflight(null, null), true);
@@ -137,116 +26,177 @@ test("sameInflight: an unchanged frame is equal; any change to the figure or its
   assert.equal(sameInflight(a, { ...a, count: 3 }), false);
   assert.equal(sameInflight(a, { ...a, partial: false, gaps: [] }), false);
   assert.equal(sameInflight(a, { ...a, gaps: [{ reason: "claude-internal", host: "peer-a" }] }), false);
+  const t = withTokens(ring(100, { 0: 5 }));
+  assert.equal(sameInflight(t, withTokens(ring(100, { 0: 5 }))), true);
+  assert.equal(sameInflight(t, withTokens(ring(100, { 0: 6 }))), false, "a frame that only moves the ring still wakes the sidebar");
+  assert.equal(sameInflight(t, withTokens(ring(101, { 1: 5 }))), false);
+  assert.equal(sameInflight(t, withTokens(ring(100, { 0: 5 }, true))), false);
+  assert.equal(sameInflight(t, complete(0)), false, "a ring appearing is a change");
 });
 
-// ---- The Agents row: the call count first, then this host's sessions and teams ------------------
-
-const rowText = (r: ReturnType<typeof agentsRow>, v: ReturnType<typeof llmInflightView>) =>
-  [v.rowWord ? `${v.figure} ${v.rowWord}` : "Agents", ...r.secondary.map((p) => `${p.n} ${p.word}`)].join(" · ");
-
-test("agents row: the call count and this host's sessions and teams are separate figures", () => {
-  const v = llmInflightView(complete(3));
-  const r = agentsRow(v, { sessions: 4, teams: 2 });
-  assert.equal(rowText(r, v), "3 agents · 4 sessions · 2 teams");
-  assert.equal(r.label, "Agents: 3 LLM calls running now. Each agent counted is one model call in flight, background work included. On this host, subagents are working in 4 sessions and 2 teams.");
-  const bg = llmInflightView(complete(5));
-  const one = agentsRow(bg, { sessions: 1, teams: 1 });
-  assert.equal(rowText(one, bg), "5 agents · 1 session · 1 team", "background calls imply no session or team");
-  assert.equal(one.label, "Agents: 5 LLM calls running now. Each agent counted is one model call in flight, background work included. On this host, subagents are working in 1 session and 1 team.");
+test("dense format: whole under 1,000, one decimal to 9,999, none from 10,000, one decimal from a million", () => {
+  const cases: [number, string][] = [
+    [0, "0"],
+    [840, "840"],
+    [999, "999"],
+    [999.4, "999"],
+    [999.6, "1.0k"], // rounds into the next tier, printed there
+    [1000, "1.0k"],
+    [8400, "8.4k"],
+    [9949, "9.9k"],
+    [9950, "10k"],
+    [9999, "10k"],
+    [10_000, "10k"],
+    [48_200, "48k"],
+    [120_000, "120k"],
+    [999_499, "999k"],
+    [999_999, "1.0M"],
+    [1_000_000, "1.0M"],
+    [1_240_000, "1.2M"],
+    [12_300_000, "12.3M"],
+  ];
+  for (const [n, s] of cases) assert.equal(denseCount(n), s, `${n}`);
+  assert.equal(denseCount(-5), "0", "never a negative");
+  assert.equal(denseCount(Number.NaN), "0");
 });
 
-test("agents row: a 0 is left out, and with both 0 the row and its label are the count's alone", () => {
-  const v = llmInflightView(complete(2));
-  const sOnly = agentsRow(v, { sessions: 2, teams: 0 });
-  assert.equal(rowText(sOnly, v), "2 agents · 2 sessions");
-  assert.equal(sOnly.label, "Agents: 2 LLM calls running now. Each agent counted is one model call in flight, background work included. On this host, subagents are working in 2 sessions.");
-  const tOnly = agentsRow(v, { sessions: 0, teams: 1 });
-  assert.equal(rowText(tOnly, v), "2 agents · 1 team");
-  assert.equal(tOnly.label, "Agents: 2 LLM calls running now. Each agent counted is one model call in flight, background work included. On this host, subagents are working in 1 team.");
-  const none = agentsRow(v, { sessions: 0, teams: 0 });
-  assert.deepEqual(none.secondary, []);
-  assert.equal(none.label, `Agents: 2 LLM calls running now. Each agent counted is one model call in flight, background work included.`);
-  assert.equal(rowText(none, v), "2 agents");
-});
-
-test("agents row: an unknown count stays unknown beside nonzero local figures", () => {
-  const v = llmInflightView(null);
-  const r = agentsRow(v, { sessions: 2, teams: 1 });
-  assert.equal(rowText(r, v), "Agents · 2 sessions · 1 team");
-  assert.equal(r.label, "Agents: LLM calls running now: not known yet. On this host, subagents are working in 2 sessions and 1 team.");
-  assert.doesNotMatch(rowText(r, v), /\b0\b/);
-});
-
-test("agents row: partial and approximate counts keep their marks; one full stop between sentences", () => {
-  const p = llmInflightView({ count: 3, approximate: 0, partial: true, gaps: [{ reason: "claude-internal" }] });
-  const rp = agentsRow(p, { sessions: 1, teams: 0 });
-  assert.equal(rowText(rp, p), "3 agents · 1 session");
-  assert.equal(rp.label, "Agents: At least 3 LLM calls running now. Claude Code's own internal calls aren't visible. Each agent counted is one model call in flight, background work included. On this host, subagents are working in 1 session.");
-  assert.doesNotMatch(rp.label, /\.\./);
-  const pa = llmInflightView({ count: 4, approximate: 1, partial: true, gaps: [{ reason: "claude-internal" }] });
-  const rpa = agentsRow(pa, { sessions: 2, teams: 1 });
-  assert.equal(rowText(rpa, pa), "4 agents · 2 sessions · 1 team");
-  assert.doesNotMatch(rpa.label, /\.\./);
-  const a = llmInflightView({ count: 1, approximate: 1, partial: false, gaps: [] });
-  const ra = agentsRow(a, { sessions: 0, teams: 3 });
-  assert.equal(rowText(ra, a), "1 agent · 3 teams");
-  assert.equal(ra.label, "Agents: No exact LLM calls running now, and 1 one-shot that may be calling. Each agent counted is one model call in flight, background work included. On this host, subagents are working in 3 teams.");
-  const zero = llmInflightView(complete(0));
-  const rz = agentsRow(zero, { sessions: 1, teams: 0 });
-  assert.equal(rowText(rz, zero), "0 agents · 1 session");
-  assert.equal(rz.label, "Agents: No LLM calls running now. On this host, subagents are working in 1 session.");
-});
-
-test("agents row reads the old helpers unchanged: fresh host sessions only, teams with a member working", () => {
-  const rec = (fresh: boolean, working: number, teams: { working: number }[] = [], mode = "tui") => ({
-    mode,
-    fresh,
-    workerCounts: { total: 0, working, waiting: 2, done: 0, error: 0, killed: 0 },
-    workers: [],
-    teams,
-  });
-  const agents = { at: 0, totals: { sessions: 0, working: 0, total: 0, teams: 0, teamWorking: 0, soloWorking: 0 }, sessions: [
-    rec(true, 2, [{ working: 1 }, { working: 0 }]),
-    rec(false, 5, [{ working: 3 }]), // stale heartbeat: never counted
-    rec(true, 0, [{ working: 0 }]), // only waiting workers
-    rec(true, 3, [], "rpc"), // a headless worker pi is not a host session
-  ] } as never;
-  const local = { sessions: activeAgentCounts(agents).sessions, teams: activeTeamCount(agents) };
-  assert.deepEqual(local, { sessions: 1, teams: 1 });
-  const v = llmInflightView(complete(7));
-  assert.equal(rowText(agentsRow(v, local), v), "7 agents · 1 session · 1 team");
-  assert.deepEqual(agentsRow(v, { sessions: activeAgentCounts(undefined).sessions, teams: activeTeamCount(undefined) }).secondary, [], "no poll yet: nothing local");
-});
-
-test("agents row: the definition sentence comes only with a figure above 0", () => {
-  const D = "Each agent counted is one model call in flight, background work included.";
-  const label = (v: ReturnType<typeof llmInflightView>, sessions = 0) => agentsRow(v, { sessions, teams: 0 }).label;
-  assert.equal(label(llmInflightView(null)), "Agents: LLM calls running now: not known yet", "unknown: no definition, as before");
-  assert.equal(label(llmInflightView(null), 1), "Agents: LLM calls running now: not known yet. On this host, subagents are working in 1 session.");
-  assert.equal(label(llmInflightView(complete(0))), "Agents: No LLM calls running now", "complete 0: no definition");
-  assert.equal(label(llmInflightView(complete(1))), `Agents: 1 LLM call running now. ${D}`);
-  assert.equal(label(llmInflightView({ count: 2, approximate: 2, partial: false, gaps: [] })), `Agents: No exact LLM calls running now, and 2 one-shots that may be calling. ${D}`);
-  const partial0 = llmInflightView({ count: 0, approximate: 0, partial: true, gaps: [{ reason: "claude-internal" }] });
-  assert.equal(label(partial0), "Agents: At least 0 LLM calls running now. Claude Code's own internal calls aren't visible.", "a 0+ floor: no definition");
-  const partial = llmInflightView({ count: 3, approximate: 0, partial: true, gaps: [{ reason: "claude-internal" }] });
-  assert.equal(label(partial), `Agents: At least 3 LLM calls running now. Claude Code's own internal calls aren't visible. ${D}`);
-  for (const v of [complete(0), complete(1), complete(9), { count: 4, approximate: 1, partial: true, gaps: [{ reason: "claude-internal" as const }] }, null]) {
-    assert.doesNotMatch(label(llmInflightView(v), 2), /\.\.|\. \./, "exactly one full stop between sentences");
+test("unknown: no snapshot, or a server with no ring — a dash, an empty chart, never a 0, no tick", () => {
+  for (const f of [null, complete(3)]) {
+    const v = tokenVelocityView(f, at(100));
+    assert.equal(v.state, "unknown");
+    assert.equal(v.readout, "–");
+    assert.equal(v.perMinute, null);
+    assert.equal(v.series.length, 60);
+    assert.ok(v.series.every((x) => x === 0));
+    assert.equal(v.mean30, 0);
+    assert.equal(v.scale, VELOCITY_SCALE_FLOOR);
+    assert.equal(v.sentence, "Output tokens a minute: not known yet.");
+    assert.equal(v.active, false);
+    const c = velocityChart(v, 2, 18);
+    assert.deepEqual([c.columns, c.meanY], [[], null], "the baseline alone: the row keeps its height");
   }
+  const bad = withTokens({ bucketMs: 0, end: 1, out: [], partial: false });
+  assert.equal(tokenVelocityView(bad, at(1)).state, "unknown", "a ring it can't read is unknown");
 });
 
-test("agents word on the row: 0/1/many, partial, approximate, unknown", () => {
-  const word = (v: ReturnType<typeof llmInflightView>) => (v.rowWord ? `${v.figure} ${v.rowWord}` : "Agents");
-  assert.equal(word(llmInflightView(complete(0))), "0 agents");
-  assert.equal(word(llmInflightView(complete(1))), "1 agent");
-  assert.equal(word(llmInflightView(complete(6))), "6 agents");
-  assert.equal(word(llmInflightView({ count: 1, approximate: 0, partial: true, gaps: [{ reason: "claude-internal" }] })), "1 agent", "the word follows the number shown, partial or not");
-  assert.equal(word(llmInflightView({ count: 1, approximate: 1, partial: false, gaps: [] })), "1 agent");
-  assert.equal(word(llmInflightView({ count: 1, approximate: 1, partial: true, gaps: [{ reason: "claude-internal" }] })), "1 agent");
-  assert.equal(word(llmInflightView({ count: 0, approximate: 0, partial: true, gaps: [{ reason: "claude-internal" }] })), "0 agents");
-  const p1 = llmInflightView({ count: 1, approximate: 0, partial: true, gaps: [{ reason: "claude-internal" }] });
-  assert.deepEqual([p1.state, p1.figure, p1.agentsLabel], ["partial", "1", "Agents: At least 1 LLM call running now. Claude Code's own internal calls aren't visible."]);
-  assert.equal(word(llmInflightView({ count: 3, approximate: 1, partial: false, gaps: [] })), "3 agents");
-  assert.equal(word(llmInflightView({ count: 3, approximate: 1, partial: true, gaps: [{ reason: "claude-internal" }] })), "3 agents");
-  assert.equal(word(llmInflightView(null)), "Agents");
+test("windowed means per minute over 5 and 30 minutes; the readout is the 5-minute one", () => {
+  // 3,000 tokens 1 minute ago, 6,000 ten minutes ago, 12,000 twenty minutes ago.
+  const t = ring(1000, { 2: 3000, 20: 6000, 40: 12_000 });
+  const v = tokenVelocityView(withTokens(t), at(1000));
+  assert.deepEqual(v.perMinute, [3000 / 5, (3000 + 6000 + 12_000) / 30]);
+  assert.equal(v.readout, "600");
+  assert.equal(v.mean30, 700);
+  assert.equal(v.state, "complete");
+  assert.equal(v.sentence, "Output tokens a minute: 600 over the last 5 minutes, 700 over 30. Replies still being written aren't counted yet.");
+  assert.doesNotMatch(v.sentence, /15/, "the 15-minute mean is gone from the words too");
+  assert.equal(v.active, true);
+});
+
+test("window edges: exactly 2W slots up to and including the current one", () => {
+  const v = tokenVelocityView(withTokens(ring(500, { 9: 500, 10: 1000 })), at(500));
+  assert.equal(v.perMinute![0], 100, "age 9 in the 5-minute window, age 10 out");
+  assert.equal(v.perMinute![1], 50);
+  const old = tokenVelocityView(withTokens(ring(500, { 59: 3000 })), at(500));
+  assert.deepEqual(old.perMinute, [0, 100], "the ring's oldest slot is in the 30-minute window");
+});
+
+test("series: 60 per-minute rates, oldest first, the current slot last, aligned to the browser's clock", () => {
+  const t = ring(1000, { 0: 500, 1: 200, 59: 100 });
+  const v = tokenVelocityView(withTokens(t), at(1000));
+  assert.equal(v.series.length, 60);
+  assert.equal(v.series[59], 1000, "the current slot last, as a rate a minute (× 2)");
+  assert.equal(v.series[58], 400);
+  assert.equal(v.series[0], 200, "the ring's oldest slot first");
+  // Two slots later the same ring has moved left; the slots after its newest read 0.
+  const later = tokenVelocityView(withTokens(t), at(1002));
+  assert.equal(later.series[57], 1000);
+  assert.deepEqual(later.series.slice(58), [0, 0]);
+  assert.equal(later.series[0], 0, "the oldest has dropped off");
+});
+
+test("scale: the 30 minutes' peak, never under 10k a minute", () => {
+  const trickle = tokenVelocityView(withTokens(ring(10, { 3: 1000 })), at(10));
+  assert.equal(trickle.scale, 10_000, "a 2k trickle is drawn against the floor");
+  const busy = tokenVelocityView(withTokens(ring(10, { 3: 60_000, 9: 20_000 })), at(10));
+  assert.equal(busy.scale, 120_000, "a 120k peak fills the height");
+});
+
+test("chart at 0, light, 100k+: baseline only, low blocks, full height at the peak", () => {
+  const zero = tokenVelocityView(withTokens(ring(10, {})), at(10));
+  assert.equal(zero.readout, "0");
+  assert.deepEqual(velocityChart(zero, 2, 18), { columns: [], meanY: null, count: 30 });
+  // ~2k a minute steady: every slot 1,000 tokens.
+  const steady = Object.fromEntries(Array.from({ length: 60 }, (_, i) => [i, 1000]));
+  const light = tokenVelocityView(withTokens(ring(10, steady)), at(10));
+  assert.equal(light.readout, "2.0k");
+  const lc = velocityChart(light, 2, 18);
+  assert.equal(lc.columns.length, 30, "one-minute columns: two slots each");
+  assert.ok(lc.columns.filter((c) => !c.hollow).every((c) => c.height === 3), "2k on a 10k floor: 20% of 16px");
+  assert.equal(lc.meanY, 18 - 1 - 3);
+  // A trickle far under a pixel still draws a low block, never nothing beside tokens.
+  const trickle = tokenVelocityView(withTokens(ring(10, { 30: 10 })), at(10));
+  assert.deepEqual(velocityChart(trickle, 2, 18).columns.map((c) => [c.index, c.height]), [[14, 2]], "10 tokens: the 2px floor");
+  const heavy = tokenVelocityView(withTokens(ring(10, { ...steady, 5: 60_000 })), at(10));
+  const hc = velocityChart(heavy, 2, 18);
+  assert.equal(heavy.readout, "14k", "(9 × 1,000 + 60,000) / 5 minutes");
+  assert.equal(heavy.scale, 120_000);
+  const peak = hc.columns.find((c) => c.index === 27)!;
+  assert.equal(peak.height, 8, "the peak slot's minute: (120k + 2k) / 2 on a 120k scale, half of 16px");
+  assert.ok(hc.columns.filter((c) => c.index !== 27 && !c.hollow).every((c) => c.height === 2), "2k beside a 120k peak: the 2px floor, not dropped");
+});
+
+test("hollow newest minute: the last one-minute column on the row, the last two-minute column on the phone; at least 4px", () => {
+  const steady = Object.fromEntries(Array.from({ length: 60 }, (_, i) => [i, 30_000]));
+  const v = tokenVelocityView(withTokens(ring(10, steady)), at(10));
+  const row = velocityChart(v, 2, 18);
+  assert.deepEqual(row.columns.filter((c) => c.hollow).map((c) => c.index), [29]);
+  const phone = velocityChart(v, 4, 16);
+  assert.equal(phone.count, 15);
+  assert.deepEqual(phone.columns.filter((c) => c.hollow).map((c) => c.index), [14]);
+  assert.ok(phone.columns.every((c) => c.height === 14), "four slots average into two-minute columns");
+  assert.equal(phone.meanY, 1, "a mean at the peak sits level with the columns' tops");
+  // The newest minute barely in: an outline needs 4px to show its hollow; with nothing in, nothing drawn.
+  const low = tokenVelocityView(withTokens(ring(10, { ...steady, 0: 10, 1: 10 })), at(10));
+  assert.deepEqual(velocityChart(low, 2, 18).columns.filter((c) => c.hollow).map((c) => c.height), [4]);
+  const none = tokenVelocityView(withTokens(ring(10, { ...steady, 0: 0, 1: 0 })), at(10));
+  assert.deepEqual(velocityChart(none, 2, 18).columns.filter((c) => c.hollow), []);
+});
+
+test("row pitch: one whole-pixel pitch for every column, never under 3px, 2px gaps from 5px", () => {
+  assert.deepEqual(velocityPitch(186, 30), { pitch: 6, gap: 2, width: 180 }, "the 320px pane");
+  assert.deepEqual(velocityPitch(154, 30), { pitch: 5, gap: 2, width: 150 }, "the 288px pane");
+  assert.deepEqual(velocityPitch(130, 30), { pitch: 4, gap: 1, width: 120 });
+  assert.deepEqual(velocityPitch(0, 30), { pitch: 3, gap: 1, width: 90 }, "not measured yet");
+  assert.deepEqual(velocityPitch(Number.NaN, 30), { pitch: 3, gap: 1, width: 90 });
+});
+
+test("the clock moves the windows between frames, and an emptied ring stops the tick", () => {
+  const t = ring(1000, { 0: 6000 });
+  assert.deepEqual(tokenVelocityView(withTokens(t), at(1000)).perMinute, [1200, 200]);
+  assert.deepEqual(tokenVelocityView(withTokens(t), at(1012)).perMinute, [0, 200]);
+  const gone = tokenVelocityView(withTokens(t), at(1060));
+  assert.deepEqual(gone.perMinute, [0, 0]);
+  assert.equal(gone.active, false);
+  assert.deepEqual(tokenVelocityView(withTokens(t), at(999)).perMinute, [0, 0], "a browser clock behind the server's sums nothing ahead");
+});
+
+test("partial: the same readout and chart, \"at least\" and why in words only; the calls count's gaps don't decide it", () => {
+  const p = tokenVelocityView(withTokens(ring(10, { 0: 48_000 * 5 }, true)), at(10));
+  assert.equal(p.state, "partial");
+  assert.equal(p.readout, "48k", "no + or ~ on the figure");
+  assert.equal(p.sentence, "Output tokens a minute: at least 48k over the last 5 minutes, 8.0k over 30. Some calls' tokens can't be seen. Replies still being written aren't counted yet.");
+  const same = tokenVelocityView(withTokens(ring(10, { 0: 48_000 * 5 })), at(10));
+  assert.deepEqual(velocityChart(p, 2, 18), velocityChart(same, 2, 18));
+  const callsPartial = withTokens(ring(10, {}), { count: 1, approximate: 0, partial: true, gaps: [{ reason: "claude-internal" }] });
+  assert.equal(tokenVelocityView(callsPartial, at(10)).state, "complete", "the ring says its own coverage");
+});
+
+test("malformed slots count as nothing", () => {
+  const t = ring(10, {});
+  t.out[59] = Number.NaN;
+  t.out[58] = -40;
+  t.out[57] = 100;
+  const v = tokenVelocityView(withTokens(t), at(10));
+  assert.deepEqual(v.perMinute, [20, 100 / 30]);
+  assert.deepEqual(v.series.slice(57), [200, 0, 0]);
 });

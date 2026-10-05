@@ -11,6 +11,7 @@ import {
   cpuLine,
   detailRows,
   frontDoorLine,
+  hostMark,
   hostTone,
   joinedLine,
   labelProblem,
@@ -168,4 +169,13 @@ test("Browser access: always for this host; a peer must answer on a build that r
   assert.match(browserAccessRefusal(h({ details: details() }))!, /Update Phone/, "an older build doesn't report it");
   assert.match(browserAccessRefusal(h({ unavailable: "update", details: undefined }))!, /Update Phone/);
   assert.match(browserAccessRefusal(h({ state: "down", unavailable: "down", details: undefined }))!, /isn't answering/);
+});
+
+test("hostMark: dot tone from the mesh state, words only in the title, null while unknown", () => {
+  assert.equal(hostMark("MacBook", undefined, null), null);
+  assert.deepEqual(hostMark("MacBook", "up", null), { tone: "up", title: "This session lives on MacBook · up" });
+  assert.deepEqual(hostMark("MacBook", "skewed", null), { tone: "skewed", title: "This session lives on MacBook · other version" });
+  assert.deepEqual(hostMark("MacBook", "down", "MacBook isn't answering."), { tone: "down", title: "This session lives on MacBook · MacBook isn't answering." });
+  assert.equal(hostMark("MacBook", "refused", null)?.tone, "down");
+  assert.equal(hostMark("MacBook", "hidden", null)?.tone, "skewed");
 });

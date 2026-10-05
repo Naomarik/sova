@@ -21,6 +21,7 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import { locateMarker, markerOrdinalIndex, sameFingerprint, textOf } from "./anchors.ts";
 import { loadConfig, DEFAULT_CONFIG } from "./config.ts";
 import { SummarizerChain } from "./summarizers/chain.ts";
+import { withUsageContext } from "../llm-inflight/attribution.ts";
 import { createClaudeCliSummarizer } from "./summarizers/claude-cli.ts";
 import { createPiModelSummarizer } from "./summarizers/pi-model.ts";
 import { policyGated } from "./summarizers/policy-gate.ts";
@@ -282,7 +283,8 @@ export default function topicOutline(pi: ExtensionAPI): void {
     rt.store.state = hadContent ? "updating" : "drafting";
     updateStatus(true);
     try {
-      const { result } = await rt.chain.run({
+      const chain = rt.chain;
+      const input = {
         existingOutline: existingOutlineJson(rt.store.topics),
         newLines: delta.map(message => message.line),
         // Context only: the previous run may have cut a thread halfway. Its p refs are not in validRefs.
@@ -290,7 +292,12 @@ export default function topicOutline(pi: ExtensionAPI): void {
         validRefs,
         purpose: rt.store.purpose,
         signal: runActive.signal,
-      });
+      };
+      // The summary's model call is this session's one-shot in the usage ledger (llm-inflight).
+      const { result } = await withUsageContext(
+        { owner: rt.ctx.sessionManager.getSessionId(), cwd: rt.ctx.cwd, purpose: "outline", kind: "oneshot" },
+        () => chain.run(input),
+      );
       // The branch may have moved (tree navigation / compaction) while the model ran.
       if (runtime === rt && rt.ctx.sessionManager.getLeafId() === leafBefore) {
         rt.store.apply(result, anchors, basisLeafId, rt.config.limits);

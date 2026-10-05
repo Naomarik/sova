@@ -6,6 +6,12 @@
 export type CostKind = "overseer" | "gathering" | "settle" | "wrapup" | "coding-overseer" | "coding-operator" | "workers" | "reconcile";
 export const COST_KINDS: readonly CostKind[] = ["overseer", "gathering", "settle", "wrapup", "coding-overseer", "coding-operator", "workers", "reconcile"];
 
+/** A kind as the card shows it: coding sessions are one row whoever started them (the starters line says who). */
+export type CostCardKind = "overseer" | "gathering" | "settle" | "wrapup" | "coding" | "workers" | "reconcile";
+export const COST_CARD_KINDS: readonly CostCardKind[] = ["overseer", "gathering", "settle", "wrapup", "coding", "workers", "reconcile"];
+/** The card kind of a session kind. */
+export const cardKindOf = (k: CostKind): CostCardKind => (k === "coding-overseer" || k === "coding-operator" ? "coding" : k);
+
 /** Who started it: the project's overseer (its conversations and what it started, with their
     workers and wrap-ups), the operator (their own batons, Start coding session, Reconcile Now, their
     workers), or Sova on its own (the reconciler's automatic runs). */
@@ -51,15 +57,6 @@ export interface CostSession extends CostRow {
   countedAt?: string;
 }
 
-/** A part of the total that is an estimate. `cache-write-1h-assumed`: Claude Code messages from before
-    the bridge split its cache writes, priced at the 1-hour rate. `model-from-alias`: Claude Code
-    messages that didn't record the model that answered, priced by the alias's date. */
-export interface CostEstimate {
-  code: "cache-write-1h-assumed" | "model-from-alias";
-  messages: number;
-  usd: number;
-}
-
 export interface ProjectCost {
   projectId: string;
   totalUsd: number;
@@ -71,15 +68,17 @@ export interface ProjectCost {
   prices: { source: "models.dev"; fetchedAt: string | null };
   /** Sessions counted (every kind, workers included; the reconciler counts as one). */
   sessions: number;
-  byKind: ({ kind: CostKind } & CostRow)[];
+  /** By the card's kinds (both coding kinds as one), in the scope's order, only those with a cost. */
+  byKind: ({ kind: CostCardKind } & CostRow)[];
   byStarter: ({ by: CostStarter } & CostRow)[];
   byModel: CostModelRow[];
+  /** The model table's "All models" footer: every model summed (unpriced tokens count, add no dollars). */
+  allModels: CostRow;
   /** The top 20 by cost. */
   top: CostSession[];
   /** Tokens with no API price, summed per model: not in the total. `model` is the recorded ref, or
       "unknown" for a legacy count with no model. */
   unpriced: { model: string; tokens: number; why: string }[];
-  estimates: CostEstimate[];
   /** Sessions whose files aren't on this host, shown as last counted. */
   notOnHost: { sessions: number; countedAt: string | null } | null;
   /** What the total leaves out, one sentence each. */

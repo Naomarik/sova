@@ -77,7 +77,8 @@ export function readinessChip(w: Pick<SessionWorktreeInfo, "readiness">): Worktr
     case "ready":
       return { label: "Ready to merge", tone: "success", title: why || "Nothing stands in the way of a merge." };
     case "waiting-approval":
-      return { label: "Waiting for your OK", tone: "info", title: `Ready to merge, and the last reply asks you. ${why}`.trim() };
+      // Mergeable like Ready to merge, so the same tone the list row's lit count takes for both.
+      return { label: "Waiting for your OK", tone: "success", title: `Ready to merge, and the last reply asks you. ${why}`.trim() };
     case "in-progress":
       return { label: "In progress", tone: "neutral", title: why || "Work is still going on here." };
     case "blocked":

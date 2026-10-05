@@ -13,6 +13,9 @@ import {
   type Question,
 } from "./decide";
 import { beginLlmCall } from "../pi-config/extensions/llm-inflight/tracker.ts";
+import { resolveUsageAttribution, withUsagePurpose } from "../pi-config/extensions/llm-inflight/attribution.ts";
+import { recordUsage } from "../pi-config/extensions/llm-inflight/record.ts";
+import { usagePurposeOf } from "./decide-llm";
 
 // Jev (TypeSafe, https://api.typesafe.ai): POST /v1/systemone {state, model, questions}. Plain
 // fetch, no SDK. boolean → noul, choice → choice (criteria = options), score → score (criteria =
@@ -153,6 +156,7 @@ export function createJevProvider(opts: JevProviderOptions): DecisionProvider & 
       const deadline = BACKGROUND_PURPOSES.has(req.purpose) ? backgroundTimeoutMs : timeoutMs;
       // In flight from the request until its answer is read.
       const call = beginLlmCall({ source: "jev" });
+      const who = withUsagePurpose(usagePurposeOf(req), () => resolveUsageAttribution());
       let res: Response;
       try {
         res = await withDeadline(deadline, req.signal, (signal) =>
@@ -177,15 +181,28 @@ export function createJevProvider(opts: JevProviderOptions): DecisionProvider & 
       } finally {
         call();
       }
+      const b = body as { answers?: Record<string, unknown>; model?: unknown; usage?: { input_tokens?: unknown; output_tokens?: unknown } } | null;
+      const usage =
+        b?.usage && typeof b.usage.input_tokens === "number" ? { inputTokens: b.usage.input_tokens, outputTokens: typeof b.usage.output_tokens === "number" ? b.usage.output_tokens : 0 } : undefined;
+      // One usage-ledger record per reply that reports usage (an answer that won't parse spent it too),
+      // for the session its caller named (else none).
+      if (usage) {
+        recordUsage({
+          src: "jev",
+          provider: "jev",
+          model,
+          ...(typeof b!.model === "string" ? { responseModel: b!.model } : {}),
+          tokens: { input: usage.inputTokens, output: usage.outputTokens, cacheRead: 0, cacheWrite: 0 },
+          who,
+          ...(requestId ? { key: `jev:${requestId}` } : {}),
+        });
+      }
       if (!res.ok) {
         const { failure, message } = jevFailure(res.status, body);
         throw new DecisionError(failure, scrub(message, key), { provider: "jev", status: res.status, requestId, retryAfterMs: res.status === 429 ? (retryAfter(res.headers.get("retry-after")) ?? undefined) : undefined });
       }
-      const b = body as { answers?: Record<string, unknown>; model?: unknown; usage?: { input_tokens?: unknown; output_tokens?: unknown } } | null;
       if (!b || !b.answers || typeof b.answers !== "object") throw malformed("Jev's reply has no answers", requestId);
       const answers = Object.fromEntries(Object.entries(req.questions).map(([id, q]) => [id, fromJevAnswer(id, q, b.answers?.[id], requestId)]));
-      const usage =
-        b.usage && typeof b.usage.input_tokens === "number" ? { inputTokens: b.usage.input_tokens, outputTokens: typeof b.usage.output_tokens === "number" ? b.usage.output_tokens : 0 } : undefined;
       return { answers, provider: "jev", model: typeof b.model === "string" ? b.model : model, latencyMs: Date.now() - started, ...(usage ? { usage } : {}) };
     },
     /** GET /v1/models with this key (default: the stored one): does Jev accept it? Free. */

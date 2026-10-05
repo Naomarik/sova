@@ -71,7 +71,7 @@ import {
 } from "../lib/remote-status";
 import { remotePlaceOf } from "../lib/remote-session";
 import { createReconnectingSocket } from "../lib/socket";
-import { usageTotal, type UsageTotalView, workingSplit } from "../lib/workers";
+import { workingSplit } from "../lib/workers";
 import { providerWait, watchProviderWaits } from "../lib/provider-waiting";
 import { waitingSentence } from "../../shared/provider-limits";
 import type { UploadResult } from "../../shared/protocol";
@@ -85,6 +85,7 @@ import {
   sessionContext,
   setDraftText,
   setLocalRunning,
+  setLocalWorking,
   setSessionContext,
   toast,
 } from "../lib/ui-state";
@@ -185,7 +186,7 @@ export function ChatView(props: {
   onSettled(): void;
   /** This runtime's subagents (WS "workers"; [] after each hello), for the subagents pane. The
       Σ is the runtime's session-lifetime worker token total, null while no server reports one. */
-  onWorkers?(workers: WorkerInfo[], usage: UsageTotalView | null): void;
+  onWorkers?(workers: WorkerInfo[]): void;
   /** This chat's Claude login (WS "claude_login"; null after each hello), for the sidebar foot's
       usage glance. */
   onClaudeLogin?(login: ChatClaudeLogin | null): void;
@@ -646,11 +647,12 @@ export function ChatView(props: {
           });
           setSessionContext(props.path, contextStateFor(msg.context ?? null, msg.items));
           setWorkersWorking(0); // a runtime without workers sends no "workers" after hello
+          setLocalWorking(props.path, 0);
           batch(() => {
             setWorkerList([]);
             setWorkersSaid(false);
           });
-          props.onWorkers?.([], null);
+          props.onWorkers?.([]);
           // "links" comes after hello only when there are any: until one does, the pane reads the
           // polled insight, never a list from before the reconnect.
           noteLinks(props.path, null);
@@ -659,10 +661,11 @@ export function ChatView(props: {
         case "workers":
           batch(() => {
             setWorkersWorking(msg.working);
+            setLocalWorking(props.path, msg.working);
             setWorkerList(msg.workers);
             setWorkersSaid(true);
           });
-          props.onWorkers?.(msg.workers, usageTotal(msg));
+          props.onWorkers?.(msg.workers);
           break;
         case "links":
           noteLinks(props.path, msg.links);
@@ -1468,7 +1471,10 @@ export function ChatView(props: {
     if (running && !wasRunning) props.onStarted();
     wasRunning = running;
   });
-  onCleanup(() => setMine(undefined));
+  onCleanup(() => {
+    setMine(undefined);
+    setLocalWorking(props.path, undefined);
+  });
 
   // The policy this chat is judged by. Cached app-wide, so the Settings dialog's last save is
   // already here; a policy we couldn't read blocks nothing (the server still refuses).

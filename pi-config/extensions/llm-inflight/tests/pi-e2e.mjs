@@ -139,8 +139,12 @@ try {
 		.map((e) => JSON.parse(e.statusText));
 	assert.ok(sent, `the worker reported at session start: ${rpc.err}`);
 	assert.deepEqual(reports.map((r) => r.active), [0, 1, 0], "one report per change: idle, the call, idle again");
-	const { producer, ...last } = reports.at(-1);
+	const { producer, tokens, ...last } = reports.at(-1);
 	assert.deepEqual(last, { v: 1, active: 0, approximate: 0, claudeTurns: 0, degraded: false, folded: [] });
+	assert.equal(tokens.bucketMs, 30_000);
+	assert.equal(tokens.out.length, 60);
+	assert.equal(tokens.out.reduce((a, b) => a + b, 0), 1, "the call's one completion token, never its prompt's");
+	assert.equal(reports.at(-2).tokens.out.reduce((a, b) => a + b, 0), 0, "and it lands with the call's end, in the same report");
 	assert.match(producer, /^[\w-]{8,64}$/, "the worker says who it is, so a record of its own is never counted again");
 	assert.ok(reports.every((r) => r.producer === producer), "one producer for the worker's lifetime");
 	console.log("✔ pi e2e (rpc worker): the worker reports its count to its parent on change only, ending at 0");

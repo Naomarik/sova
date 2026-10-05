@@ -19,6 +19,7 @@ import { dirname } from "node:path";
 import { relativeTime } from "../pi-config/extensions/stamp/format.ts";
 import { newestTopics, topicTime } from "../shared/outline-order";
 import { whereOf } from "./attention";
+import { NotShared } from "./mesh/access";
 import { alignmentText, openAlignmentsOf } from "./align-state";
 import { entryOf } from "./transcript";
 import type { ReadinessChecks } from "./merge-readiness";
@@ -536,7 +537,8 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
       );
     return peer;
   }
-  /** `call` over the peer hop. A peer that doesn't answer is a refusal naming it, never an empty result. */
+  /** `call` over the peer hop. A peer that doesn't answer is a refusal naming it, never an empty result;
+      a call this host's own grant to the peer withholds is a refusal saying so, never "didn't answer". */
   async function peerCall(peer: PeerRef, method: string, path: string, body?: unknown): Promise<{ status: number; json: any }> {
     let res: Response;
     try {
@@ -546,6 +548,8 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
         ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
       });
     } catch (err) {
+      if (err instanceof NotShared)
+        throw new Refusal(`This host doesn't share that with ${peer.label} (${peer.id}): its grant to ${peer.label} on this host's Mesh page withholds it, so nothing was sent.`);
       throw new Refusal(`${peer.label} (${peer.id}) didn't answer (${err instanceof Error ? err.message : String(err)}).`);
     }
     let json: any = null;

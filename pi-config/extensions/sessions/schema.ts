@@ -201,6 +201,19 @@ export interface LlmPresence {
    *  none of them again, whatever record carries them. Sorted; at most 64 written (tracker.ts
    *  MAX_FOLDED), up to 256 accepted. */
   folded: string[];
+  /** Output tokens of its ended calls (its summed workers' too), per 30 s slot; absent from an
+   *  older counter (its tokens are unknown). */
+  tokens?: LlmTokenRing;
+}
+
+/** presence.llm.tokens: 60 epoch-aligned slots of 30 s, oldest first; `out[59]` is slot `end`
+ *  (floor(ms / 30000)). Each slot ≤ 10,000,000. */
+export interface LlmTokenRing {
+  bucketMs: 30000;
+  end: number;
+  out: number[];
+  /** Some of the process's calls' tokens are known missing (a worker that reported no ring). */
+  partial?: true;
 }
 
 export interface LiveRecord {
@@ -343,8 +356,17 @@ function parseLlm(value: unknown): LlmPresence | undefined {
     || ![active, approximate, claudeTurns].every(count) || typeof degraded !== "boolean") return;
   if (folded !== undefined && (!Array.isArray(folded) || folded.length > 256
     || !folded.every(f => typeof f === "string" && f.length > 0 && f.length <= 64))) return;
+  const tokens = parseTokenRing(value.tokens);
   return { v: 1, producer, pid, active, approximate: Math.min(approximate as number, active as number), claudeTurns, degraded,
-    folded: [...new Set((folded ?? []) as string[])].sort() } as LlmPresence;
+    folded: [...new Set((folded ?? []) as string[])].sort(), ...(tokens ? { tokens } : {}) } as LlmPresence;
+}
+
+/** presence.llm.tokens, or undefined (dropped alone: the counts stay) when it isn't one. */
+function parseTokenRing(value: unknown): LlmTokenRing | undefined {
+  if (!isObj(value) || value.bucketMs !== 30000 || !Number.isSafeInteger(value.end) || (value.end as number) < 0) return;
+  const out = value.out;
+  if (!Array.isArray(out) || out.length !== 60 || !out.every(n => count(n) && (n as number) <= 10_000_000)) return;
+  return { bucketMs: 30000, end: value.end as number, out: [...out] as number[], ...(value.partial === true ? { partial: true as const } : {}) };
 }
 
 function parseCounts(value: unknown): WorkerCounts | undefined {

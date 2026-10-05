@@ -98,6 +98,16 @@ worker never controls.
 
 ## §mesh.remote-sessions/head-host — A peer session's head names its host
 
-A peer session's head starts its meta line with the host, `on <peer> · <folder> · …`, titled "This
-session lives on <peer>". When the line is too narrow (a 390px phone), the folder gives way first:
+A peer session's head starts its meta line with the host, `<peer> · <folder> · …` (marked as
+§mesh.remote-sessions/head-host-state says), titled "This session lives on <peer>". When the line is too narrow (a 390px phone), the folder gives way first:
 the host keeps its whole name unless that name alone is longer than half the line.
+
+## §mesh.remote-sessions/head-host-state — The head's host carries its live state
+
+A peer session's host, in the single-session head and in a workspace pane's head, is a small dot
+and the host's name in ink, without "on". The dot takes the host filter's tone from the mesh state
+(up green; other version or hidden amber; down or refused red). No state word shows; the hover
+title and accessible name carry it: "This session lives on <peer> · up", or the peer's unavailable
+sentence. While the mesh state or the peer is unknown, the host is today's plain muted label with
+no dot. A pane's head keeps the mark after the name, and the name gives way before it. A local
+session shows no host.

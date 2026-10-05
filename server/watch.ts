@@ -3,7 +3,6 @@ import { open, stat } from "node:fs/promises";
 import type { TranscriptItem, WatchServerMessage } from "../shared/protocol";
 import { cutTail, pullFields } from "./tail-hello";
 import { activeBranch, normalizeEntries, parseLines } from "./transcript";
-import { piUsageTally, totalOf, type UsageTally } from "./transcript-usage";
 import type { ContextTally } from "./worker-context";
 
 const POLL_MS = 1500;
@@ -36,10 +35,8 @@ export class SessionTail {
     private readonly send: (msg: WatchServerMessage) => void,
     /** How this file's lines become rows; claude-code workers write a different format. */
     private readonly normalize: Normalize = piNormalize,
-    /** Running token total for this connection, in that same format. One per tail: it
-        deduplicates across reads, so it must not be shared between clients. */
-    private readonly tally: UsageTally = piUsageTally(),
-    /** The transcript's context fill, same feed; per connection for the same reason. */
+    /** The transcript's context fill, same feed. One per tail: it follows reads, so it must not
+        be shared between clients. (What it spent is the usage ledger's: /api/usage/session.) */
     private readonly context?: ContextTally,
     /** Set for a tail-first client: its snapshot is cut, and the history goes out through this. */
     private readonly sendRaw?: (json: string) => void,
@@ -92,7 +89,6 @@ export class SessionTail {
     const { size } = await stat(this.path);
     const { text, consumed } = await this.readComplete(0, size);
     this.offset = consumed;
-    const usage = totalOf(this.tally(text, "snapshot"));
     const context = this.context?.(text, "snapshot");
     if (this.closed) return;
     const items = this.normalize(text, "snapshot");
@@ -100,7 +96,6 @@ export class SessionTail {
     this.send({
       type: "snapshot",
       items: cut ? cut.items : items,
-      ...(usage ? { usage } : {}),
       ...(context !== undefined ? { context } : {}),
       ...(cut && cut.older > 0 ? { older: cut.older } : {}),
       ...(cut && cut.older > 0 && this.pull ? pullFields(items, cut.older, this.pull.prefetch) : {}),
@@ -139,10 +134,8 @@ export class SessionTail {
     if (!consumed) return;
     this.offset += consumed;
     const items = this.normalize(text, "append");
-    // Cumulative, so a row-less batch that still spent tokens keeps the header honest.
-    const usage = totalOf(this.tally(text, "append"));
     // The state after this batch, sent explicitly — "compacted" included — on every append.
     const context = this.context?.(text, "append");
-    if (items.length && !this.closed) this.send({ type: "append", items, ...(usage ? { usage } : {}), ...(context !== undefined ? { context } : {}) });
+    if (items.length && !this.closed) this.send({ type: "append", items, ...(context !== undefined ? { context } : {}) });
   }
 }

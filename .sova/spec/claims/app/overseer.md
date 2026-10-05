@@ -781,7 +781,21 @@ Three tools let the Overseer make and end links between sessions on different ho
   its host (a peer id; this host when left out) and session id. A peer's member is resolved on its
   own host by id (§mesh.links/by-id). It refuses, naming the member, a TUI-live session, an archived
   one, a worker's session, the Overseer's own, a baton session, a project overseer's session, any
-  other organization's session (§app.session-list/organizations), a session on a host that is down or skewed, and a second member on the same host as another. There
+  other organization's session (§app.session-list/organizations), a session on a host that is down or skewed, and a second member on the same host as another.
+  A member on a peer this host doesn't share links with (its grant to that peer, §mesh.peers/grants)
+  is refused before anything is sent, naming the host and saying this host doesn't share links with
+  it, to be raised on this host's Mesh page; if the grant is lowered while the link is being made,
+  the link is not made and nothing is left behind. That refusal is never reported as the host being
+  down or not answering, and leaves the host's state as it was. A member host that refuses the
+  link's copy (any final refusal: its session went away, a LAN pairing's copy names a host it doesn't know)
+  also means the link is not made: the call fails naming that member and the host's reason, and no
+  live link is left. A host whose copy got out, or whose answer was lost on the way, is told the
+  end, as the link's copy marked ended, so a copy it was still storing can't stay live (from the
+  outbox while it is down); the link is forgotten on this host only when no copy was
+  sent at all. A link with a member on a LAN pairing of this host (§mesh/lan) may join only this
+  host and that pairing: one with a third host, or one this host's Overseer makes between that
+  pairing and another peer, is refused before anything is sent, naming the member, because a LAN
+  pairing can't name a third host (§mesh.links/host-names). There
   is **no confirmation card**: linking changes no session and sends nothing, so it is not
   destructive. Like every act it is refused in an unattended turn (§app.overseer/tools), counts
   against a per-turn cap of 3 links (§app.overseer/caps), and is written to the action log. The
@@ -789,7 +803,8 @@ Three tools let the Overseer make and end links between sessions on different ho
   folds that card, or `sova_unlink`'s.
 - **`sova_unlink {link}`** (an act) ends a link on every member host (§mesh.links/record).
 - **`sova_links {}`** (a read) lists every link this host knows, with each member's host, state
-  and last activity, ended links included and marked.
+  and last activity, ended links included and marked, with why when the link keeps a reason
+  (§mesh.links/delivery).
 - **Creating a member on a peer.** `sova_create_session` takes an optional `host`; with a peer's id
   it creates the session on that peer, with the same caps and refusals. Title and first prompt go
   through the peer's own routes; a group can't be given with `host` (groups are per host); model,

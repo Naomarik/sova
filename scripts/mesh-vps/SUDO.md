@@ -10,7 +10,8 @@ Which sections you need:
 |---|---|
 | Public share links only (a share-only gateway, mesh off) | 1, then 4 |
 | This VPS as a mesh host | 1, 2, and 3 if you want the tailnet front door |
-| Both | all |
+| Both | 1 to 4 |
+| This VPS as an internet relay for a dial-out host (a laptop reaching it from any network) | 1, 2, then 5 |
 
 ## 1. Let `<user>`'s services run without a login session (always)
 
@@ -126,3 +127,72 @@ Check afterwards: set `SHARE_FRONT` in `local.env`, then from your own machine r
 4802 times out), and press Verify Address in Sova. `tailscale funnel status` lists 443 only.
 Undo: `sudo setcap -r ~<user>/sova-mesh/bin/caddy`, `sudo ufw delete allow 80/tcp; sudo ufw delete allow 443/tcp`,
 `tailscale funnel --https=443 off`.
+
+## 5. An internet relay (a dial-out host reaches this VPS from any network)
+
+The relay's public port belongs to a separate **accept process** that runs as its own system user, `sova-relay`, never as
+`<user>` and never inside Sova. It checks the dial-out host's certificate, then hands the still-encrypted connection to
+Sova over a unix socket in `~<user>/sova-mesh/relay/`; Sova runs its own pinned TLS inside it, end to end with the
+dial-out host, so the accept process never sees what the two say. It listens only while Sova tells it to (an internet
+relay is set on the Mesh page and at least one dial-out host is paired), and refuses everyone whenever Sova is gone.
+
+First, as yourself: set `VPS_RELAY=on` (and `VPS_RELAY_PORT`, 4803 unless you choose 443) in `local.env` and run
+`scripts/mesh-vps/deploy.sh`. It bundles the accept process into `~<user>/sova-mesh/accept/`, makes the handoff
+directory, points Sova at it, and writes the unit for you to install, `~<user>/sova-mesh/sova-relay-accept.service`.
+`<user>`'s own group (`id -gn <user>`, below `<group>`) must have no other members: the deploy warns if it has.
+
+Then, as an admin, once:
+
+```sh
+# 1. The accept process's own user: no home, no shell, no login.
+sudo useradd --system --user-group --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin sova-relay
+
+# 2. Its unit. Read it first: it is the sandbox (the user, the paths it sees, the address ranges it may not reach).
+less ~<user>/sova-mesh/sova-relay-accept.service
+sudo install -m 0644 -o root -g root ~<user>/sova-mesh/sova-relay-accept.service /etc/systemd/system/sova-relay-accept.service
+
+# 3. Start it now and at every boot.
+sudo systemctl daemon-reload && sudo systemctl enable --now sova-relay-accept.service
+
+# 4. Open the port on the public interface only (and in the provider's cloud firewall, if it has one).
+#    <public-if>: the interface with the public address (`ip -br addr`).
+sudo ufw allow in on <public-if> to any port 4803 proto tcp comment 'sova internet relay'
+
+# 5. Recommended: drop every new outbound connection the accept process starts, beyond what the unit already denies.
+#    In /etc/ufw/before.rules, just above the `COMMIT` line that ends the *filter section, add:
+#      -A ufw-before-output -m owner --uid-owner sova-relay -m conntrack --ctstate NEW -j DROP
+#    and in /etc/ufw/before6.rules, just above its `COMMIT`:
+#      -A ufw6-before-output -m owner --uid-owner sova-relay -m conntrack --ctstate NEW -j DROP
+sudoedit /etc/ufw/before.rules
+sudoedit /etc/ufw/before6.rules
+sudo ufw reload
+
+# 6. Check.
+systemctl is-active sova-relay-accept                        # active
+sudo systemd-analyze security sova-relay-accept.service      # a low exposure score (the unit's sandbox)
+sudo journalctl -u sova-relay-accept -n 20 --no-pager        # "control connected" once Sova's mesh is on
+```
+
+For **port 443** instead: set `VPS_RELAY_PORT=443` before the deploy (the rendered unit then carries
+`CAP_NET_BIND_SERVICE`, the only capability it ever gets) and open 443 in step 4. 443 passes more networks' filters,
+but it can't be used while this VPS's public share front (section 4: Caddy, a web server or Funnel) holds 443; the deploy
+warns if it does.
+
+Then, on this VPS's Mesh page (its tailnet address): pair the dial-out host first, if it isn't paired yet (the mesh must
+be on for Sova to open its handoff socket), then under "This host as a relay" choose "Reached from: The internet", this
+VPS's public address and port 4803, and Save Relay. The dial-out host pairs this VPS with "This relay is on the internet"
+checked. From your own machine, `VPS_RELAY=on scripts/mesh-vps/exposure.sh probe` must PASS.
+
+Later deploys need no sudo: Sova tells an accept process of an older build to exit, and its unit starts the new bundle.
+Only when a deploy prints "the installed sova-relay-accept.service differs from this build's" run step 2 (and 3's
+`daemon-reload` plus `sudo systemctl restart sova-relay-accept`) again.
+
+Undo (then deploy with `VPS_RELAY=off`, which stops pointing Sova at the handoff socket):
+
+```sh
+sudo systemctl disable --now sova-relay-accept.service
+sudo rm /etc/systemd/system/sova-relay-accept.service && sudo systemctl daemon-reload
+sudo ufw delete allow in on <public-if> to any port 4803 proto tcp
+sudoedit /etc/ufw/before.rules /etc/ufw/before6.rules && sudo ufw reload   # remove the two lines from step 5
+sudo userdel sova-relay && sudo rm -rf /var/lib/sova-relay                  # its outer key goes with it
+```

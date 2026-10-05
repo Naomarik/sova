@@ -4,6 +4,7 @@ import { handoffLine, type LinkKind, type LinkRef, type LinkRefusal, type Outrea
 import { linksOfKey, mintLink, revokeLinks } from "../baton-links";
 import { batonById, currentOffer, reachedBy } from "../baton";
 import { operatorName, readProjects, readRoster } from "../orgs";
+import { dropSiblingLinks, keepSiblingLink } from "../preview-kept";
 import { listPreviews, mintSibling, revokePreview } from "../preview-links";
 import { awaitShareLinks } from "../share/links-events";
 import { linkUrl, shareState } from "../share/listener";
@@ -141,10 +142,24 @@ const preview: LinkResolver = {
     } catch (err) {
       throw new LinkRefused("preview-off", err instanceof Error ? err.message : String(err));
     }
-    return { url: `${previewOrigin(zone, result.label)}/`, line: `${operatorName()} shared a preview with you.`, log: { previewId: result.record.id }, minted: { previewId: result.record.id } };
+    const url = `${previewOrigin(zone, result.label)}/`;
+    // Kept for the operator's Sent to line only (§mesh.public/preview): never in the log, a result or a model's context.
+    try {
+      keepSiblingLink(result.record.id, url);
+    } catch (err) {
+      console.warn(`[outreach] a person's preview link isn't kept (${err instanceof Error ? err.name : "error"}); it still goes`);
+    }
+    return { url, line: `${operatorName()} shared a preview with you.`, log: { previewId: result.record.id }, minted: { previewId: result.record.id } };
   },
   revoke(minted) {
-    if (minted.previewId) revokePreview(minted.previewId);
+    const id = minted.previewId;
+    if (!id) return;
+    revokePreview(id);
+    try {
+      dropSiblingLinks((k) => k !== id);
+    } catch {
+      // Turned off already: a kept link of an ended sibling is never listed, and the sweep drops it.
+    }
   },
 };
 

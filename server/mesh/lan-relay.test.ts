@@ -42,6 +42,14 @@ test("listens only while a host is paired, and never on every interface or a pub
   for (const host of ["192.0.2.10", "2001:db8::1", "100.64.0.1", "relay.example"]) {
     assert.throws(() => new RelayListener({ host, port: 0, identity: relayId, profile: LAN_PROFILE, onPeer: () => {} }), /one local-network address/, host);
   }
+  // The internet scope (the accept process's alone) takes one public address, never every interface
+  // or a group address; the default scope above never takes a public one.
+  for (const host of ["192.0.2.10", "2001:db8::1", "198.51.100.7"]) {
+    assert.doesNotThrow(() => new RelayListener({ scope: "internet", host, port: 0, identity: relayId, profile: LAN_PROFILE, onPeer: () => {} }), host);
+  }
+  for (const host of ["0.0.0.0", "::", "::ffff:0.0.0.0", "224.0.0.1", "255.255.255.255", "ff02::1", "relay.example"]) {
+    assert.throws(() => new RelayListener({ scope: "internet", host, port: 0, identity: relayId, profile: LAN_PROFILE, onPeer: () => {} }), /an internet relay binds one address/, host);
+  }
   const t = listener();
   assert.equal(t.l.listening, false);
   await t.l.setPaired([]);

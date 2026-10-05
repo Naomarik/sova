@@ -254,8 +254,8 @@ The harnesses:
 
 - **m8-dialout** (takes the LOCK; no LLM turns; leaves no pairing and no relay setting): dial-out
   pairings (§mesh/lan). `plain`, with no Tailscale at all, is the dial-out host; the first host is its
-  relay, listening on its lab-network address only; it refuses a public address, every-interface
-  spellings and an "internet" exposure, and plain refuses a relay at a public address. Each side makes its key from its own page and
+  relay, listening on its lab-network address only; it refuses a public address and every-interface
+  spellings, an "internet" exposure while it has no accept process (409), and plain refuses a relay at a public address. Each side makes its key from its own page and
   pastes the other's fingerprint. The relay listens only while a dial-out host is paired; a client with
   no certificate or offering TLS 1.2 gets no HTTP answer. Both channels come up, each side starts at
   presence, and each direction follows the answering host's grant: sessions shared one way only, a
@@ -263,6 +263,19 @@ The harnesses:
   relay again. A second pairing pinned to the wrong fingerprint is refused without disturbing the real
   one. Stop Relaying drops both channels within a second though the pairing stays, and relaying again
   lets plain back in. Removing the pairing on the relay drops plain's connections at once and closes the port.
+
+- **m9-internet-relay** (needs `lab up --wan`; takes the LOCK; no LLM turns; undoes everything it set up): an
+  internet relay behind its separate accept process (§mesh.lan/accept-process). `--wan` puts the first host and
+  `plain` on `sovamesh_wan`, 198.51.100.0/24, a range Sova judges public. In the relay's container the test builds
+  the accept process's bundle as the deploy does, runs it as its own uid with only the handoff socket's group, and
+  adds iptables owner rules standing in for its unit's IPAddressDeny; Sova gets `SOVA_RELAY_HANDOFF` and restarts.
+  The internet relay can't be saved before the accept process runs (409); once it runs, the public port's listener
+  is the accept process's and binds one address. plain, with the internet mark (an unmarked public relay is
+  refused), comes up on both channels, and each direction follows the answering host's grant. An unpaired
+  certificate gets no byte and TLS 1.2 never completes, with nothing reaching Sova; a forged handoff written to
+  the socket as the accept process's uid, proving another key, is refused and flagged. The accept process's uid
+  reaches neither Sova's loopback port, the tailnet nor the lab network. Killing it drops both channels at once and
+  closes the port (no fallback); restarted, plain comes back. Stop Relaying ends everything.
 
 Front-door Caddyfile essentials, the template for the real one: `lb_policy first`,
 `health_uri /api/health` with 1 s interval/timeout, `lb_try_duration 5s`, `flush_interval -1`,

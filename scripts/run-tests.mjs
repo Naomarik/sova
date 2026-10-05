@@ -43,6 +43,7 @@ const GLOBS = [
   "server/org-host/*.test.ts",
   "server/claude-pool/*.test.ts",
   "server/voice/*.test.ts",
+  "server/usage-helper/*.test.ts",
   "src/lib/*.test.ts",
   "src/lib/voice/*.test.ts",
   "src/vis/**/*.test.ts",

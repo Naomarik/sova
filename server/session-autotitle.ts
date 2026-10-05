@@ -8,6 +8,7 @@ import { parseWakeNudge } from "../shared/wake";
 import { DecisionError, extractJsonObject, failureMessage } from "./decide";
 import { claudeRun, LLM_TIMEOUT_MS, parseClaudeEnvelope, piText, type LlmProviderDeps } from "./decide-llm";
 import { cleanSessionTitle, writeAutoTitle } from "./session-titles";
+import { withUsageContext } from "../pi-config/extensions/llm-inflight/attribution.ts";
 
 // Sova names sessions itself (§app.session-list/auto-titles): one short title per session from
 // what it became, stored as an `auto` title in Sova's own title store — never in the .jsonl, and
@@ -266,7 +267,10 @@ export async function nameSession(path: string, mode: "button" | "sweep", deps: 
   if (input.userMessages.length === 0) return { outcome: "skipped", reason: "no-input" };
   if (mode === "sweep" && !input.summaryLine) return { outcome: "skipped", reason: "no-input", detail: "no summary line" };
   if (opts.dryRun) return { outcome: "would-name" };
-  const result = await titleFromChain(deps.settings(), buildTitlePrompt(input), deps);
+  // The title's model call is the session's one-shot in the usage ledger.
+  const result = await withUsageContext({ owner: s!.id, ...(s!.cwd ? { cwd: s!.cwd } : {}), purpose: "title", kind: "oneshot" }, () =>
+    titleFromChain(deps.settings(), buildTitlePrompt(input), deps),
+  );
   if ("failure" in result) return { outcome: "skipped", reason: result.failure, detail: result.detail, backoff: result.backoff };
   if (!writeAutoTitle(s!.id, result.title, { redo: mode === "button", now: deps.now?.() })) return { outcome: "skipped", reason: "explicit" };
   return { outcome: "named", title: result.title };

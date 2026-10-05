@@ -194,6 +194,22 @@ function entries(h, path) {
 const answers = (h, path) =>
   entries(h, path).filter((e) => e.type === "message" && e.message?.role === "assistant").map((e) => (e.message.content ?? []).map((c) => c.text ?? "").join(""));
 const loginEntries = (h, path) => entries(h, path).filter((e) => e.type === "custom" && e.customType === "claude-login").map((e) => e.data);
+/** `set_claude_login` on a chat's socket (the composer's pick): returns once the chat is on it. */
+const PICK = `import WebSocket from "ws";
+const [path, login, token] = process.argv.slice(1);
+const ws = new WebSocket("ws://127.0.0.1:4800/ws/chat?path=" + encodeURIComponent(path), { headers: { "x-sova-token": token, Origin: "http://127.0.0.1:4800" } });
+const end = (code, msg) => { console.log(msg); ws.close(); process.exit(code); };
+setTimeout(() => end(1, "timed out"), 60000);
+ws.on("error", (e) => end(1, String(e)));
+ws.on("message", (b) => {
+  const m = JSON.parse(b.toString());
+  if (m.type === "hello") ws.send(JSON.stringify({ type: "set_claude_login", login }));
+  else if (m.type === "claude_login" && m.login?.id === login && !m.login.pending) end(0, "picked");
+  else if (m.type === "error") end(1, m.message);
+});`;
+function pickLogin(h, path, login) {
+  return docker("exec", "-w", WT, `sovapool-${h}`, "node", "--input-type=module", "-e", PICK, path, login, tokenOf(h));
+}
 async function waitAnswer(h, path, n, ms = 90_000) {
   return waitFor(`answer #${n} on ${h}`, () => {
     const a = answers(h, path);
@@ -238,11 +254,11 @@ async function main() {
   check(hasCreds("desk", alpha.id), "nothing moved or was deleted by forming the pool");
   if (process.argv.includes("--keep")) return log(`paired; desk on http://127.0.0.1:4821/#t=${tokenOf("desk")}`);
 
-  log(`3. idle return: after ${IDLE_MS / 1000}s unused, desk's held logins become free`);
-  await waitFor("all free at desk", async () => (await pool("desk")).logins.every((l) => l.holder.free && l.holder.device === "desk"), IDLE_MS + 60_000);
-  check(true, "alpha, beta, gamma free at the keeper");
+  log(`3. no idle return at the keeper: desk keeps its held logins past ${IDLE_MS / 1000}s unused`);
+  await sleep(IDLE_MS + 5_000);
+  check((await pool("desk")).logins.every((l) => !l.holder.free && l.holder.device === "desk"), "alpha, beta, gamma still held by desk");
 
-  log("4. borrow: a chat on vps borrows the first free login and answers on it");
+  log("4. borrow on demand: nothing is free, so a chat on vps borrows desk's first idle held login and answers on it");
   const chat = await newChat("vps");
   await prompt("vps", chat, "hello");
   const a1 = await waitAnswer("vps", chat, 1);
@@ -308,6 +324,25 @@ async function main() {
   await waitFor("vps returns it", async () => !hasCreds("vps", held) && hasCreds("desk", held), IDLE_MS + 60_000);
   await waitFor("phone sees it free", async () => (await pool("phone")).logins.find((l) => l.id === held).holder.free, 30_000);
   check(true, `${name[held]} is free at desk again (phone's view)`);
+
+  log(`10. a hand-pick stays: a chat on vps picks ${name[held]} by hand; it stays on vps for ${(2 * IDLE_MS) / 1000}s unused`);
+  const picker = await newChat("vps");
+  check(pickLogin("vps", picker, held) === "picked", `the chat picked ${name[held]}`);
+  check(hasCreds("vps", held) && !hasCreds("desk", held), `${name[held]} was borrowed by name from desk`);
+  check(sh("vps", `ls ${loginDir(held)}/.sova-picks 2>/dev/null || true`).includes(".json"), "the pick is marked on the login");
+  await prompt("vps", picker, "on the picked login");
+  const a6 = await waitAnswer("vps", picker, 1);
+  check(a6.includes(held), `the chat answered on it: "${a6}"`);
+  check(loginEntries("vps", picker).some((e) => e.login === held && e.reason === "manual"), "the chat records the manual pick");
+  await sleep(2 * IDLE_MS + 5_000);
+  check(hasCreds("vps", held) && (await pool("desk")).logins.find((l) => l.id === held).holder.device === "vps", "still held by vps after twice the idle time");
+
+  log(`11. archiving the chat ends its pick: the login goes back to desk after ${IDLE_MS / 1000}s unused`);
+  const archived = await api("vps", "POST", "/api/sessions/archive", { path: picker, archived: true });
+  check(archived.status === 200, "the chat is archived");
+  check(!sh("vps", `ls ${loginDir(held)}/.sova-picks 2>/dev/null || true`).includes(".json"), "its pick mark is gone");
+  await waitFor("vps returns it", async () => !hasCreds("vps", held) && hasCreds("desk", held), IDLE_MS + 60_000);
+  check(true, `${name[held]} is back at desk`);
 
   for (const l of [alpha, beta, gamma]) assertOne(l.id, "at the end");
   log("PASS: every scenario");

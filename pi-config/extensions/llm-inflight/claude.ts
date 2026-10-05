@@ -14,9 +14,21 @@
  * request are inside that one call. A re-adopted worker's replayed history is never counted; until
  * its host goes live it counts as one running turn (unknown, so partial), then as it really is.
  *
- * Frames only drive a small per-lane state; nothing is kept from them. Builtins only.
+ * A counted call's end carries its reply's output tokens (the stream's `usage.output_tokens`, thinking
+ * included; never input or cache), spread back to its `message_start` (tracker.ts's ring); a
+ * bridge (countRequests: false) counts none, since the pi runtime counts that call already.
+ *
+ * With `usage`, the same frames also feed the usage ledger (claude-usage.ts): one record per
+ * Anthropic message id, and at each result a residual against the session's last recorded total.
+ *
+ * Frames only drive a small per-lane state; nothing else is kept from them. Builtins only.
  */
+import path from "node:path";
+import type { UsageAttribution } from "./attribution.ts";
+import { createClaudeUsageCollector, fileBaselineStore, type ClaudeUsageCollector } from "./claude-usage.ts";
+import { claimUsageProvider, recordUsage } from "./record.ts";
 import { beginClaudeTurn, beginLlmCall, markDegraded, type LlmCallEnd } from "./tracker.ts";
+import { defaultAgentDir } from "./usage-record.ts";
 
 export interface ClaudeRequestObserver {
 	/** One decoded stdout record. Never throws. */
@@ -35,6 +47,63 @@ export interface ClaudeObserverOptions {
 	countRequests?: boolean;
 	/** Start counting at once (default) or only at activate(). */
 	active?: boolean;
+	/** Record what the CLI spends in the usage ledger (claude-usage.ts), whether counting or not. */
+	usage?: ClaudeUsageRecording;
+}
+
+export interface ClaudeUsageRecording {
+	/** Who its calls are for; `claudeSession` is the CLI's own session id, once a frame named it. */
+	who(claudeSession: string | undefined): UsageAttribution;
+	/** The model asked for (an alias such as `opus[1m]`), when known; the answering model is `responseModel`. */
+	model?: string;
+	/** The CLI starts its session fresh (no `--resume`): a session with no baseline starts at zero. */
+	fresh?: boolean;
+	/** Where the per-session baselines live (default `<agent dir>/usage/cc-baseline`). */
+	baselineDir?: string;
+	/** A provider bridge: this observer records `claude-code-cli`'s calls, and the pi runtime no longer does. */
+	bridge?: boolean;
+}
+
+/** `<agent dir>/usage/cc-baseline`: each Claude session's last cumulative total (a sibling of the ledger's `v1`). */
+export const claudeBaselineDir = (agentDir: string = defaultAgentDir()): string => path.join(agentDir, "usage", "cc-baseline");
+
+/** The usage half of an observer: one record per Anthropic message, plus each result's residual. */
+function usageCollector(rec: ClaudeUsageRecording): ClaudeUsageCollector | undefined {
+	try {
+		if (rec.bridge) claimUsageProvider("claude-code-cli");
+		const model = (answered: string) => (rec.model ? { model: rec.model, ...(answered && answered !== rec.model ? { responseModel: answered } : {}) } : { model: answered || "unknown" });
+		return createClaudeUsageCollector({
+			fresh: rec.fresh === true,
+			baseline: fileBaselineStore(rec.baselineDir ?? claudeBaselineDir()),
+			sink: {
+				call(c) {
+					recordUsage({
+						src: "claude",
+						provider: "claude-code-cli",
+						...model(c.model),
+						tokens: { input: c.tokens.i, output: c.tokens.o, cacheRead: c.tokens.cr, cacheWrite: c.tokens.cw, cacheWrite1h: c.tokens.cw1h },
+						who: rec.who(c.claudeSession),
+						...(c.id ? { key: `cc:${c.id}` } : {}),
+						...(c.stop ? { stop: c.stop } : {}),
+						ts: c.at,
+					});
+				},
+				residual(r) {
+					recordUsage({
+						src: "claude-residual",
+						provider: "claude-code-cli",
+						...model(r.model),
+						tokens: { input: r.tokens.i, output: r.tokens.o, cacheRead: r.tokens.cr, cacheWrite: r.tokens.cw },
+						who: rec.who(r.claudeSession),
+						key: `ccr:${r.claudeSession}:${r.total}:${r.model}`,
+						ts: r.at,
+					});
+				},
+			},
+		});
+	} catch {
+		return undefined;
+	}
 }
 
 interface Lane {
@@ -42,10 +111,21 @@ interface Lane {
 	phase: "requesting" | "responding";
 	approximate: boolean;
 	end?: LlmCallEnd;
+	/** When its reply's first streamed event came (message_start). */
+	firstAt?: number;
+	/** Its reply's output tokens as last reported (cumulative in the stream). */
+	output: number;
 }
+
+/** A usage block's output tokens, or 0. */
+const outputOf = (usage: unknown): number => {
+	const n = (usage as { output_tokens?: unknown } | null | undefined)?.output_tokens;
+	return typeof n === "number" && Number.isFinite(n) && n > 0 ? n : 0;
+};
 
 export function createClaudeRequestObserver(options: ClaudeObserverOptions = {}): ClaudeRequestObserver {
 	const countRequests = options.countRequests !== false;
+	const usage = options.usage ? usageCollector(options.usage) : undefined;
 	let active = options.active !== false;
 	let closed = false;
 	const lanes = new Map<string, Lane>();
@@ -66,11 +146,11 @@ export function createClaudeRequestObserver(options: ClaudeObserverOptions = {})
 		const lane = lanes.get(key);
 		if (!lane) return;
 		lanes.delete(key);
-		lane.end?.();
+		lane.end?.(lane.output ? { output: lane.output, since: lane.firstAt } : undefined);
 	};
 	const openLane = (key: string, phase: Lane["phase"], approximate: boolean) => {
 		endLane(key);
-		const lane: Lane = { phase, approximate };
+		const lane: Lane = { phase, approximate, output: 0 };
 		lanes.set(key, lane);
 		startCall(lane);
 	};
@@ -92,6 +172,9 @@ export function createClaudeRequestObserver(options: ClaudeObserverOptions = {})
 	return {
 		frame(event) {
 			if (closed || !event || typeof event !== "object") return;
+			// A replay is recorded too: a message already recorded has the same key, and a result at or
+			// under the session's baseline adds nothing (claude-usage.ts).
+			usage?.frame(event);
 			try {
 				const e = event as Record<string, any>;
 				switch (e.type) {
@@ -106,9 +189,14 @@ export function createClaudeRequestObserver(options: ClaudeObserverOptions = {})
 						const key = laneOf(e);
 						if (type === "message_start") {
 							turn(true);
-							const lane = lanes.get(key);
-							if (lane) lane.phase = "responding";
+							if (lanes.get(key)) lanes.get(key)!.phase = "responding";
 							else openLane(key, "responding", true);
+							const lane = lanes.get(key)!;
+							lane.firstAt = Date.now();
+							lane.output = Math.max(lane.output, outputOf(e.event?.message?.usage));
+						} else if (type === "message_delta") {
+							const lane = lanes.get(key);
+							if (lane) lane.output = Math.max(lane.output, outputOf(e.event?.usage));
 						} else if (type === "message_stop") endLane(key);
 						return;
 					}
@@ -116,7 +204,11 @@ export function createClaudeRequestObserver(options: ClaudeObserverOptions = {})
 						// A whole reply with no stream before it (a non-streamed reply, an API error) ends the
 						// request. While a reply streams, assistant frames echo its blocks and change nothing.
 						const key = laneOf(e);
-						if (lanes.get(key)?.phase === "requesting") endLane(key);
+						const lane = lanes.get(key);
+						if (lane?.phase === "requesting") {
+							lane.output = outputOf(e.message?.usage);
+							endLane(key);
+						}
 						return;
 					}
 					case "result":
@@ -138,6 +230,7 @@ export function createClaudeRequestObserver(options: ClaudeObserverOptions = {})
 		close() {
 			if (closed) return;
 			endAll();
+			usage?.close();
 			closed = true;
 			replayTurn?.();
 			replayTurn = undefined;

@@ -18,7 +18,16 @@
  * (its options copied with an `onPayload` that calls the caller's own and returns what it returns),
  * its stream is returned as is, a synchronous throw is rethrown, and the end is read from the
  * stream's own result promise (never a second iterator) or its `end()`.
+ *
+ * The one thing read from a reply is its final message's `usage`: its output tokens (reasoning
+ * included) go to the call's end with the time of its first streamed event (tracker.ts's ring), and
+ * its token counts to one usage record (record.ts), owned by the request's own session if that
+ * registered, else by the caller's usage context (attribution.ts), resolved when the call is made.
+ * A `claude-code-cli` reply is left to the CLI's stream observer when one records in this process
+ * (claude.ts), so it is never recorded twice.
  */
+import { resolveUsageAttribution, type UsageAttribution } from "./attribution.ts";
+import { recordUsage, usageProviderClaimed } from "./record.ts";
 import { beginLlmCall, markCounting, markDegraded, withinLlmCall, type LlmCallEnd } from "./tracker.ts";
 
 const MARK = Symbol.for("sova.llm-inflight.runtime.v1");
@@ -76,10 +85,63 @@ function around(stream: object, name: string, after: (args: unknown[]) => void):
 	}
 }
 
+/** A final message's output tokens (pi's `usage.output`: reasoning included, never input or cache). */
+function outputOf(message: unknown): number {
+	const n = (message as { usage?: { output?: unknown } } | undefined)?.usage?.output;
+	return typeof n === "number" && Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+interface Asked {
+	provider: string;
+	model: string;
+	who: UsageAttribution;
+}
+
+/** What the request asked for and who it is for, read when the call is made. */
+function askedOf(model: unknown, options: unknown): Asked | undefined {
+	try {
+		const m = model as { provider?: unknown; id?: unknown } | undefined;
+		const o = options as { sessionId?: unknown; maxTokens?: unknown } | undefined;
+		const sid = typeof o?.sessionId === "string" ? o.sessionId : undefined;
+		// pi's prompt-cache warm asks for one token.
+		const who = resolveUsageAttribution(sid, o?.maxTokens === 1 ? { purpose: "cache-warm" } : undefined);
+		return { provider: typeof m?.provider === "string" ? m.provider : "", model: typeof m?.id === "string" ? m.id : "", who };
+	} catch {
+		return undefined;
+	}
+}
+
+/** One usage record for a call's final message (none for a deferred handle, or no tokens). Never throws. */
+function recordReply(message: unknown, asked: Asked | undefined): void {
+	try {
+		if (!asked) return;
+		const m = message as { provider?: unknown; model?: unknown; responseModel?: unknown; stopReason?: unknown; timestamp?: unknown; usage?: Record<string, unknown> } | undefined;
+		if (!m?.usage || m.stopReason === "deferred") return;
+		const provider = typeof m.provider === "string" && m.provider ? m.provider : asked.provider;
+		if (usageProviderClaimed(provider)) return;
+		const model = typeof m.model === "string" && m.model ? m.model : asked.model;
+		const u = m.usage;
+		const ts = typeof m.timestamp === "number" && m.timestamp > 0 ? m.timestamp : undefined;
+		recordUsage({
+			src: "pi",
+			provider,
+			model,
+			...(typeof m.responseModel === "string" ? { responseModel: m.responseModel } : {}),
+			tokens: { input: u.input as number, output: u.output as number, cacheRead: u.cacheRead as number, cacheWrite: u.cacheWrite as number, cacheWrite1h: u.cacheWrite1h as number },
+			who: asked.who,
+			// A registered session's reply carries its stream-start time, persisted with it.
+			...(asked.who.routed && asked.who.owner && ts ? { key: `pi:${asked.who.owner}:${ts}:${provider}/${model}` } : {}),
+			...(typeof m.stopReason === "string" ? { stop: m.stopReason } : {}),
+		});
+	} catch {
+		// Recording only.
+	}
+}
+
 /**
- * Watch `stream` until it ends, then end `call`. The call is in flight from its issue: the request's
- * `onPayload` (every pi provider calls it just before sending), else the stream's first event that
- * isn't an error. Never throws.
+ * Watch `stream` until it ends, then end `call` with its reply's output tokens. The call is in
+ * flight from its issue: the request's `onPayload` (every pi provider calls it just before
+ * sending), else the stream's first event that isn't an error. Never throws.
  */
 function finishWith(stream: unknown, call: LlmCallEnd, onResult?: (message: unknown) => void): void {
 	try {
@@ -87,9 +149,16 @@ function finishWith(stream: unknown, call: LlmCallEnd, onResult?: (message: unkn
 			call();
 			return;
 		}
+		let firstAt: number | undefined;
 		Promise.resolve(stream.result()).then(
 			(message) => {
-				call();
+				let output = 0;
+				try {
+					output = outputOf(message);
+				} catch {
+					// Bookkeeping only.
+				}
+				call(output ? { output, since: firstAt } : undefined);
 				try {
 					onResult?.(message);
 				} catch {
@@ -105,11 +174,16 @@ function finishWith(stream: unknown, call: LlmCallEnd, onResult?: (message: unkn
 			const type = (args[0] as { type?: unknown } | undefined)?.type;
 			if (type === "error") return;
 			seen = true;
+			firstAt = Date.now();
 			call.waiting(false);
 			restorePush?.();
 		});
-		// A stream ended without a final message never settles its result: its end() still ends the call.
-		around(stream, "end", () => call());
+		// A stream ended without a final message never settles its result: its end() still ends the
+		// call. One microtask later, so a final message settled just before (pi's push of "done"
+		// resolves the result, then end() runs) ends it first, with its tokens.
+		around(stream, "end", () => {
+			Promise.resolve().then(() => call());
+		});
 	} catch {
 		call();
 	}
@@ -190,6 +264,7 @@ export function instrumentModelRuntime(runtime: unknown): Instrumented {
 			function (this: unknown, ...args: unknown[]) {
 				let call: LlmCallEnd;
 				let callArgs: unknown[];
+				const asked = askedOf(args[0], args[2]);
 				try {
 					// Pending until issued: auth, a provider-limits queue and setup are not in flight.
 					call = beginLlmCall({ source: "runtime", pending: true });
@@ -204,18 +279,25 @@ export function instrumentModelRuntime(runtime: unknown): Instrumented {
 					call();
 					throw error;
 				}
-				finishWith(result, call, (message) => deferred.note(message));
+				finishWith(result, call, (message) => {
+					deferred.note(message);
+					recordReply(message, asked);
+				});
 				return result;
 			};
 		/** Fetching or cancelling a deferred handle: not a call; a final answer retires the handle. */
-		const retiring = (original: Method, final: (value: unknown) => boolean): Method =>
+		const retiring = (original: Method, final: (value: unknown) => boolean, record = false): Method =>
 			function (this: unknown, ...args: unknown[]) {
+				const asked = record ? askedOf(args[0], args[2]) : undefined;
 				const result = original.apply(this, args);
 				try {
 					const settled = isStream(result) ? result.result() : result;
 					Promise.resolve(settled).then(
 						(value) => {
-							if (final(value)) deferred.retire(args[1]);
+							if (!final(value)) return;
+							deferred.retire(args[1]);
+							// A deferred request's final reply: what its remote work spent.
+							recordReply(value, asked);
 						},
 						() => undefined,
 					);
@@ -227,7 +309,7 @@ export function instrumentModelRuntime(runtime: unknown): Instrumented {
 		define("stream", counted(stream as Method));
 		define("streamSimple", counted(streamSimple as Method));
 		if (typeof rt.streamDeferred === "function")
-			define("streamDeferred", retiring(rt.streamDeferred as Method, (m) => (m as { stopReason?: unknown } | undefined)?.stopReason !== "deferred"));
+			define("streamDeferred", retiring(rt.streamDeferred as Method, (m) => (m as { stopReason?: unknown } | undefined)?.stopReason !== "deferred", true));
 		if (typeof rt.cancelDeferred === "function") define("cancelDeferred", retiring(rt.cancelDeferred as Method, () => true));
 		Object.defineProperty(rt, MARK, { value: true, configurable: false, enumerable: false });
 		markCounting();

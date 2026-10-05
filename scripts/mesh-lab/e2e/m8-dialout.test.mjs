@@ -7,7 +7,7 @@
 //     on the `answer` channel, the dial-out host on the `ask` channel; presence by default;
 //   - the relay's /peer proxy to the dial-out host returns hardened answers, and WebSockets ride a stream;
 //   - a client with no certificate, or TLS 1.2, never gets an answer; a wrong pin is refused;
-//   - the relay takes only a private address of its own (no public one, no "internet" exposure);
+//   - the relay takes only a private address of its own (no public one; "internet" needs an accept process, M9);
 //   - Stop Relaying ends both channels at once while the pairing stays, and relaying again lets it back;
 //   - removing the pairing on either side ends the connections at once, and the relay stops listening.
 //   scripts/mesh-lab/lab e2e m8-dialout      (takes the lab LOCK; leaves no pairing and no relay)
@@ -79,13 +79,17 @@ describe("pairing", () => {
     for (const n of [R, DIALER]) assert.equal(sh(n, 'stat -c %a "$PI_CODING_AGENT_DIR/sova/lan-identity.json"').out, "600", `${n}'s key file`);
   });
 
-  test("the relay takes only a local-network address of its own: no public address, no internet relay", async () => {
+  test("the relay takes only a local-network address of its own: no public address, no internet relay without an accept process", async () => {
     assert.match(relayIp, /^(10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.)/, "the lab network is private (the relay must take its address)");
-    for (const relay of [{ host: "203.0.113.7", port: RELAY_PORT }, { host: "0::", port: RELAY_PORT }, { host: relayIp, port: RELAY_PORT, exposure: "internet" }]) {
+    for (const relay of [{ host: "203.0.113.7", port: RELAY_PORT }, { host: "0::", port: RELAY_PORT }]) {
       const res = await laptopFetch(R, "/api/mesh/lan/relay", send("PUT", { relay }));
       assert.equal(res.status, 400, JSON.stringify(relay));
       await res.body?.cancel();
     }
+    // This host has no accept process (no SOVA_RELAY_HANDOFF): an internet relay is refused (M9 runs one).
+    const net = await laptopFetch(R, "/api/mesh/lan/relay", send("PUT", { relay: { host: relayIp, port: RELAY_PORT, exposure: "internet" } }));
+    assert.equal(net.status, 409);
+    assert.equal((await net.json()).error, "the accept process isn't running (SUDO.md §5)");
     assert.equal((await lanOf(R)).relay, undefined, "nothing saved");
     const dial = await laptopFetch(DIALER, "/api/mesh/lan/pairings", send("POST", { id: "public", role: "dial", pin: "0000-0000-0000-0000-0000-0000-0000-0001", host: "198.51.100.7", port: RELAY_PORT }));
     assert.equal(dial.status, 400, "a dial-out host never pairs a public relay address");

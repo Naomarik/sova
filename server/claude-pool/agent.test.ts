@@ -14,12 +14,14 @@ import {
   parseEtime,
   readAccounts,
   readLeaving,
+  readLoginPicks,
   writeAccounts,
+  writeLoginPick,
   type ClaudeAccountsFile,
 } from "../../pi-config/extensions/claude-code/accounts.ts";
 import { spawn, spawnSync } from "node:child_process";
 import { keychainService, resetKeychainMtimes, type KeychainOptions } from "../../pi-config/extensions/claude-code/keychain.ts";
-import { PoolAgent, scanClaudeProcs, type PoolPeer } from "./agent";
+import { clearPicksOf, PoolAgent, scanClaudeProcs, type PoolPeer } from "./agent";
 import { INCOMING_DIR_NAME } from "./creds";
 import { emptyDoc, mergeDocs, newPoolLogin, poolOrder, reg } from "./doc";
 import { readJournal } from "./journal";
@@ -511,6 +513,59 @@ describe("returning", () => {
     assert.deepEqual(usableOn(w, L1), ["d"], "pinned: never returned for idleness");
   });
 
+  test("a child's exit does not reset idleness: the last activity seen on a login is remembered", async () => {
+    const { w, d, k, clock } = await borrowed();
+    const leases = join(d.agentDir, "claude-accounts", L1, ".sova-leases");
+    mkdirSync(leases, { recursive: true });
+    clock.now += 20 * MIN;
+    writeFileSync(join(leases, `${process.pid}.json`), JSON.stringify({ v: 1, owner: process.pid, users: 1, busy: 0, children: [], lastActiveAt: clock.now, at: clock.now }));
+    await d.agent.tick();
+    // The child is reaped: its lease goes, and with it the only record of the turn at +20 min.
+    rmSync(leases, { recursive: true });
+    clock.now += 11 * MIN;
+    await d.agent.tick();
+    await d.agent.tick();
+    assert.deepEqual(usableOn(w, L1), ["d"], "31 minutes after the borrow but 11 after its last use: kept");
+    clock.now += 20 * MIN;
+    await d.agent.tick();
+    await d.agent.tick();
+    assert.equal(holder(k, L1)!.free, true, "31 minutes after its last use: returned");
+  });
+
+  test("a login a chat here picked by hand is never returned for idleness; Return still moves it", async () => {
+    const { w, d, k, clock } = await borrowed();
+    want(d, { excludeLogins: [L1] });
+    await d.agent.tick();
+    assert.deepEqual(usableOn(w, L2), ["d"]);
+    writeLoginPick(d.agentDir, L2, "chat-picked", clock.now);
+    clock.now += 61 * MIN;
+    await d.agent.tick();
+    await d.agent.tick();
+    assert.equal(holder(k, L1)!.free, true, "L1, unpicked, went back");
+    assert.deepEqual(usableOn(w, L2), ["d"], "L2, picked, stays past twice the idle time");
+    clearPicksOf(d.agentDir, "another-chat");
+    assert.equal(readLoginPicks(d.agentDir, L2).length, 1, "another chat's archive leaves the pick");
+    k.agent.askReturn(L2);
+    await w.syncAll();
+    await d.agent.tick();
+    await d.agent.tick();
+    assert.equal(existsSync(credsPath(d, L2)), false, "the user's Return moves it all the same");
+    assert.equal(holder(k, L2)!.free, true);
+  });
+
+  test("archiving or deleting the chat ends its pick: the login goes back once idle", async () => {
+    const { w, d, k, clock } = await borrowed();
+    writeLoginPick(d.agentDir, L1, "chat-picked", clock.now);
+    clock.now += 61 * MIN;
+    await d.agent.tick();
+    assert.deepEqual(usableOn(w, L1), ["d"]);
+    clearPicksOf(d.agentDir, "chat-picked");
+    assert.deepEqual(readLoginPicks(d.agentDir, L1), []);
+    await d.agent.tick();
+    await d.agent.tick();
+    assert.equal(holder(k, L1)!.free, true);
+  });
+
   test("pinned to another device: the holder returns it and that device takes it", async () => {
     const { w, d, k } = await borrowed();
     k.agent.setPin(L1, "e");
@@ -660,6 +715,56 @@ describe("processes without a lease (started before this version, or by hand)", 
 });
 
 describe("the keeper, removal, and a device that holds no subscription login", () => {
+  test("the keeper never returns a login it holds for idleness", async () => {
+    const { w, k, clock } = await pool();
+    want(k);
+    await k.agent.tick();
+    assert.deepEqual(usableOn(w, L1), ["k"], "the keeper took L1 for itself");
+    clock.now += 120 * MIN;
+    await k.agent.tick();
+    await k.agent.tick();
+    assert.deepEqual({ device: holder(k, L1)!.device, free: holder(k, L1)!.free }, { device: "k", free: false });
+    assert.equal(readAccounts(k.agentDir).value.logins.find((l) => l.id === L1)!.device, "k");
+    assert.equal(readLeaving(k.agentDir, L1), undefined);
+    assert.deepEqual(usableOn(w, L1), ["k"]);
+  });
+
+  test("nothing free: a peer's borrow gets an idle login the keeper holds, never a picked one, and only on a borrow", async () => {
+    const { w, k, clock } = await pool();
+    const d = w.dev("d");
+    const e = w.dev("e");
+    want(k);
+    await k.agent.tick();
+    want(k, { excludeLogins: [L1] });
+    await k.agent.tick();
+    assert.deepEqual([usableOn(w, L1), usableOn(w, L2)], [["k"], ["k"]], "the keeper holds both");
+    writeLoginPick(k.agentDir, L2, "chat-on-k", clock.now);
+    await w.syncAll();
+    want(d);
+    await d.agent.tick();
+    assert.deepEqual([usableOn(w, L1), usableOn(w, L2)], [["k"], ["k"]], "used moments ago: not lent");
+    clock.now += 60 * MIN;
+    await w.tickAll(2);
+    assert.deepEqual([usableOn(w, L1), usableOn(w, L2)], [["k"], ["k"]], "no borrow: nothing moves");
+    // L1 has an idle chat child at the keeper; it lets go once the login is marked leaving.
+    const leases = join(k.agentDir, "claude-accounts", L1, ".sova-leases");
+    mkdirSync(leases, { recursive: true });
+    writeFileSync(join(leases, `${process.pid}.json`), JSON.stringify({ v: 1, owner: process.pid, users: 1, busy: 0, children: [], lastActiveAt: clock.now - 45 * MIN, at: clock.now }));
+    let markedFirst = false;
+    const release = setTimeout(() => { markedFirst = readLeaving(k.agentDir, L1)?.reason === "idle"; rmSync(leases, { recursive: true, force: true }); }, 300);
+    want(d);
+    await d.agent.tick();
+    clearTimeout(release);
+    assert.ok(markedFirst, "its idle children were asked to let go first");
+    assert.deepEqual(usableOn(w, L1), ["d"], "d borrowed L1, the keeper's idle login");
+    assert.equal(existsSync(credsPath(k, L1)), false);
+    await w.syncAll();
+    want(e);
+    await e.agent.tick();
+    assert.deepEqual(usableOn(w, L2), ["k"], "L2, picked by a chat on the keeper, is never lent");
+    assert.deepEqual(readAccounts(e.agentDir).value.logins.filter((l) => l.device === "e"), []);
+  });
+
   test("a new keeper: the old one hands every free login over; borrowing then goes to the new one", async () => {
     const { w, k, clock } = await pool();
     const d = w.dev("d");

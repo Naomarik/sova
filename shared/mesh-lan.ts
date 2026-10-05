@@ -19,6 +19,8 @@ export interface LanPairingStatus {
   /** role "dial": where its relay listens. */
   host?: string;
   port?: number;
+  /** role "dial": its relay is on the internet (behind its accept process). */
+  internet?: true;
   /** answer: the relay asks, the dial-out host answers. ask: the dial-out host asks. */
   channels: { answer: LanChannelStatus; ask: LanChannelStatus };
   /** Its connections keep replacing each other: two machines may hold its key. */
@@ -32,14 +34,29 @@ export interface LanStatus {
   relay?: {
     host: string;
     port: number;
-    /** Only "lan": an internet relay waits for the separate accept process (§mesh.lan/pairing). */
-    exposure: "lan";
-    /** Listening now: only while it accepts at least one pairing. */
+    /** "lan": Sova's own listener, local-network addresses only. "internet": the accept process
+        listens, on Sova's word (§mesh.lan/accept-process). */
+    exposure: RelayExposure;
+    /** Listening now: only while it accepts at least one pairing (and, on the internet, while the
+        accept process runs). */
     listening: boolean;
     boundPort?: number;
     counts?: { open: number; banned: number; bans: number };
   };
+  /** This host's accept process, for an internet relay. */
+  acceptor: AcceptorStatus;
   pairings: LanPairingStatus[];
+}
+
+export type RelayExposure = "lan" | "internet";
+
+/** "not configured": SOVA_RELAY_HANDOFF is unset, or its directory isn't Sova's own. */
+export type AcceptorState = "running" | "not running" | "wrong version" | "not configured";
+
+export interface AcceptorStatus {
+  state: AcceptorState;
+  /** Set when it ever vouched for a host the connection didn't prove (until Sova restarts). */
+  mismatchAt?: number;
 }
 
 /** POST /api/mesh/lan/pairings: add a pairing. `grant` defaults to "presence". */
@@ -51,17 +68,20 @@ export interface LanPairingAdd {
   pin: string;
   host?: string;
   port?: number;
+  /** role "dial": the relay is on the internet; only then may `host` be public. */
+  internet?: boolean;
   grant?: string;
 }
 
 /** PUT /api/mesh/lan/relay: this host as a relay (null: not one). */
-export type LanRelayPut = { host: string; port: number; exposure?: "lan" } | null;
+export type LanRelayPut = { host: string; port: number; exposure?: RelayExposure } | null;
 
 // ─── Relay addresses ────────────────────────────────────────────────────────────────────────────
-// A relay listens, and a dial-out host dials, only on a loopback, private or link-local address
-// (§mesh.lan/pairing). A relay on a public address would run the public handshake inside Sova's own
-// process; that waits for a separate, unprivileged accept process. Pure, so the server and the page
-// judge an address the same way.
+// A LAN relay listens, and a dial-out host dials, only on a loopback, private or link-local address
+// (§mesh.lan/pairing): Sova's own listener never takes a public address. An internet relay's public
+// handshake runs in the separate accept process, which binds any one unicast address
+// (relayBindAddress), and only a pairing marked as on the internet dials one. Pure, so the server
+// and the page judge an address the same way.
 
 export type AddressScope = "loopback" | "private" | "link-local" | "public";
 
@@ -154,7 +174,25 @@ export function relayAddress(host: string): { address: string } | { error: strin
   const ip = parseIp(host);
   if (!ip) return { error: "not an IP address" };
   if (ip.bytes.every((b) => b === 0)) return { error: "every interface, never one address" };
-  if (addressScope(ip.bytes) === "public") return { error: "a public address; a relay is reachable only on a local network until Sova has its separate accept process" };
+  if (addressScope(ip.bytes) === "public") return { error: "a public address; only a relay reached from the internet (through its accept process) may use one" };
+  if (ip.text.includes("%") && addressScope(ip.bytes) !== "link-local") return { error: "a zone belongs only to a link-local address" };
+  return { address: ip.text };
+}
+
+/** Multicast (224/4, ff00::/8) or the IPv4 limited broadcast: never one host's address. */
+function isGroupAddress(bytes: readonly number[]): boolean {
+  if (bytes.length === 4) return ((bytes[0] ?? 0) & 0xf0) === 0xe0 || bytes.every((b) => b === 255);
+  return bytes[0] === 0xff;
+}
+
+/** Why `host` can't be an internet relay's address (where its accept process binds, or where a
+    pairing marked as on the internet dials), or the address as Sova keeps it: any one unicast IP
+    literal, public or private, never every interface, a multicast or a broadcast address. */
+export function relayBindAddress(host: string): { address: string } | { error: string } {
+  const ip = parseIp(host);
+  if (!ip) return { error: "not an IP address" };
+  if (ip.bytes.every((b) => b === 0)) return { error: "every interface, never one address" };
+  if (isGroupAddress(ip.bytes)) return { error: "a multicast or broadcast address, never one host's" };
   if (ip.text.includes("%") && addressScope(ip.bytes) !== "link-local") return { error: "a zone belongs only to a link-local address" };
   return { address: ip.text };
 }

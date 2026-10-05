@@ -1,0 +1,84 @@
+# systemd SYSTEM unit for an internet relay's accept process (§mesh.lan/accept-process, §mesh.vps/internet-relay).
+# A TEMPLATE: remote-setup.sh renders it (VPS_RELAY=on) into ~/sova-mesh/sova-relay-accept.service with @GROUP@ (the
+# deploy user's group) and @BASE@ (~/sova-mesh) filled in; an admin installs that file once (SUDO.md §5). It runs as the
+# system user sova-relay, never as the deploy user, and sees only: the bundled Node and the bundle (read-only), the
+# handoff directory, and its own state directory (its outer key). It holds no key of Sova's and can't read the agent
+# directory.
+#
+# The public port is Sova's to name (the Mesh page), 4803 by default. With VPS_RELAY_PORT below 1024 (443), the render
+# turns on the two capability lines below, and only then (SUDO.md §5: the public share front may hold 443 already).
+[Unit]
+Description=Sova internet relay accept process
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=sova-relay
+Group=sova-relay
+# The deploy user's own group: the only way to reach Sova's handoff socket (its directory is 0750, the socket 0660).
+SupplementaryGroups=@GROUP@
+# Node, never Bun, whatever SOVA_RUNTIME says. --jitless allows MemoryDenyWriteExecute; --permission limits files.
+# (Node 22's permission model doesn't gate the network: IPAddressDeny and the firewall rule do. Node 25+ also needs --allow-net.)
+ExecStart=/opt/sova-relay/node/bin/node --jitless --permission --allow-fs-read=/opt/sova-relay/accept --allow-fs-read=/var/lib/sova-relay --allow-fs-write=/var/lib/sova-relay /opt/sova-relay/accept/relay-accept.mjs
+Environment=SOVA_ACCEPT_HANDOFF=/run/sova-handoff/h.sock
+# A new build exits by itself when Sova says so; always start the bundle that is installed now.
+Restart=always
+RestartSec=2
+
+# --- what it can see -------------------------------------------------------------------------------------------
+StateDirectory=sova-relay
+StateDirectoryMode=0700
+UMask=0077
+ProtectSystem=strict
+ProtectHome=tmpfs
+BindReadOnlyPaths=@BASE@/node:/opt/sova-relay/node
+BindReadOnlyPaths=@BASE@/accept:/opt/sova-relay/accept
+# A directory, so a socket Sova re-creates stays visible.
+BindPaths=@BASE@/relay:/run/sova-handoff
+PrivateTmp=yes
+PrivateDevices=yes
+PrivateIPC=yes
+ProtectProc=invisible
+ProcSubset=pid
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+KeyringMode=private
+RemoveIPC=yes
+
+# --- what it can do ----------------------------------------------------------------------------------------------
+NoNewPrivileges=yes
+RestrictSUIDSGID=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+# A filtered call fails (Node tries to raise its file limit at start) instead of killing the process.
+SystemCallErrorNumber=EPERM
+CapabilityBoundingSet=
+AmbientCapabilities=
+# Port 443 only:
+#CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+#AmbientCapabilities=CAP_NET_BIND_SERVICE
+
+# --- the network: IPv4, IPv6 and unix sockets only, and no packet to or from loopback (Sova's own port), link-local
+# (the cloud metadata service), multicast, private ranges, carrier-grade NAT or the tailnet. A dial-out host always
+# arrives from a public address. Unix sockets are not IP: the handoff socket still works.
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+IPAddressDeny=localhost link-local multicast 0.0.0.0/8 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 100.64.0.0/10 fc00::/7 fd7a:115c:a1e0::/48
+
+# --- how much -----------------------------------------------------------------------------------------------------
+MemoryMax=192M
+MemorySwapMax=0
+TasksMax=32
+LimitNOFILE=1024
+
+[Install]
+WantedBy=multi-user.target

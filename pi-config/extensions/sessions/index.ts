@@ -225,13 +225,14 @@ export default function sessions(pi: ExtensionAPI, deps: SessionsDeps = {}) {
       session: { ...meta(), id: selfId() ?? `p${process.pid}-00000000`, endpointEpoch: EPOCH_PLACEHOLDER } }, config.budgetBytes);
     return value;
   }
-  /** This process's LLM calls in flight (llm-inflight): absent only when nothing here counts them
-   *  (no counter loaded); a counter that can't see its runtime publishes degraded. */
+  /** This process's LLM calls in flight and its output-token ring (llm-inflight): absent only when
+   *  nothing here counts them (no counter loaded); a counter that can't see its runtime publishes degraded. */
   function llmPresence(): Presence["llm"] {
     try {
       const s = llmSnapshot();
       if (!isCounting() && !s.degraded) return undefined;
-      return { v: 1, producer: s.producer, pid: s.pid, active: s.active, approximate: s.approximate, claudeTurns: s.claudeTurns, degraded: s.degraded, folded: s.folded };
+      return { v: 1, producer: s.producer, pid: s.pid, active: s.active, approximate: s.approximate, claudeTurns: s.claudeTurns, degraded: s.degraded, folded: s.folded,
+        tokens: { ...s.tokens, bucketMs: 30000 } };
     } catch { return undefined; }
   }
   function publish() {

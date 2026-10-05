@@ -16,6 +16,7 @@ import { aboutSomeoneElse, detectLanguage } from "./baton-guards";
 import { withoutAuthorNotes } from "./baton-view";
 import { applyChange, operatorName, readHistory, readRoster } from "./orgs";
 import { shuttingDown } from "./wrapup-recovery";
+import { setUsageSessionPurpose } from "../pi-config/extensions/llm-inflight/attribution.ts";
 
 /**
  * The autonomous wrap-up (§app.organizations/wrap-up): once a baton session is done (goal_done) or
@@ -303,6 +304,8 @@ export async function runWrapup(sessionId: string, normalTools: readonly string[
     chat.appendSpecialEntry(BATON_WRAPUP_ENTRY, { v: 1, phase: "start" } satisfies BatonWrapupData);
     run = beginWrapupRun(sessionId);
     chat.session.setActiveToolsByName([WRAPUP_TOOL]);
+    // The usage ledger records this turn's calls as the session's wrap-up (the project card's split).
+    setUsageSessionPurpose(chat.session.sessionManager.getSessionId(), "wrapup");
     const from = chat.session.sessionManager.getBranch().length;
     const { turn } = chat.acceptPrompt(wrapupPrompt(row, readRoster(row.orgId)), undefined, "server");
     await turn;
@@ -319,6 +322,7 @@ export async function runWrapup(sessionId: string, normalTools: readonly string[
     error = err instanceof Error ? err.message : String(err);
   } finally {
     endWrapupRun(sessionId);
+    setUsageSessionPurpose(chat.session.sessionManager.getSessionId(), undefined);
     chat.session.setActiveToolsByName([...normalTools]);
   }
   await inferLanguages(sessionId, row, chat.session.sessionManager.getBranch() as Entry[], run);

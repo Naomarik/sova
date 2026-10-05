@@ -22,13 +22,13 @@ export function treeSource(tree) {
 }
 
 /** One arm: every selected scenario against `tree`, in a fresh workspace. Paths in values are normalized. */
-export async function runArm(tree, { label, only } = {}) {
+export async function runArm(tree, { label, only, pinned } = {}) {
   scrubProcessEnv();
   const abs = realpathSync(resolve(tree));
   for (const need of ["spec/core/sova-spec.mjs", "mode/spec-guard.ts", "claude-code/spec-hooks.ts"])
     if (!existsSync(join(abs, need))) throw new Error(`${tree} is not an extensions tree: no ${need}`);
   const ws = workspace(label ?? "arm");
-  const ctx = { tools: new Tools(abs), ws, module: moduleLoader(abs) };
+  const ctx = { tools: new Tools(abs), ws, module: moduleLoader(abs), ...(pinned ? { pinned: realpathSync(resolve(pinned)) } : {}) };
   const rows = [];
   const errors = [];
   try {
@@ -48,6 +48,18 @@ export async function runArm(tree, { label, only } = {}) {
   };
 }
 
+/** A guard's result in one arm: true, false, "n/a" (the tree lacks what it checks; never a pass), or null (absent). */
+const guardState = (g) => (g === undefined ? null : g.na ? "n/a" : g.ok);
+
+/** A changed value, shortened: for two objects, only the keys that differ. */
+function change(a, b) {
+  const cell = (v) => { const s = typeof v === "string" ? v : JSON.stringify(v); return s.length > 46 ? `${s.slice(0, 45)}…` : s; };
+  const obj = (v) => v && typeof v === "object" && !Array.isArray(v);
+  if (!obj(a) || !obj(b)) return `${cell(a)} → ${cell(b)}`;
+  const keys = [...new Set([...Object.keys(a), ...Object.keys(b)])].filter((k) => stable(a[k]) !== stable(b[k]));
+  return keys.map((k) => `${k} ${cell(a[k])} → ${cell(b[k])}`).join("; ");
+}
+
 /** Per-row difference of two scorecards, by metric. */
 export function diffCards(baseline, candidate) {
   const byMetric = (card) => new Map(card.rows.map((r) => [r.metric, r]));
@@ -56,7 +68,7 @@ export function diffCards(baseline, candidate) {
   const rows = metrics.map((metric) => {
     const x = b.get(metric), y = c.get(metric);
     const guards = [...new Set([...(x?.guards ?? []), ...(y?.guards ?? [])].map((g) => g.name))].map((name) => ({
-      name, baseline: x?.guards.find((g) => g.name === name)?.ok ?? null, candidate: y?.guards.find((g) => g.name === name)?.ok ?? null,
+      name, baseline: guardState(x?.guards.find((g) => g.name === name)), candidate: guardState(y?.guards.find((g) => g.name === name)),
     }));
     const changed = stable(x?.value) !== stable(y?.value) || guards.some((g) => g.baseline !== g.candidate);
     return { metric, scenario: (x ?? y).scenario, baseline: x ? x.value : null, candidate: y ? y.value : null, changed, guards };
@@ -64,7 +76,7 @@ export function diffCards(baseline, candidate) {
   return { changed: rows.filter((r) => r.changed).length, rows };
 }
 
-const failedGuards = (card) => card.rows.flatMap((r) => r.guards.filter((g) => !g.ok).map((g) => `${g.name}: ${g.detail}`));
+const failedGuards = (card) => card.rows.flatMap((r) => r.guards.filter((g) => !g.ok && !g.na).map((g) => `${g.name}: ${g.detail}`));
 
 /** The one-screen summary. */
 export function summary(baseline, candidate, diff) {
@@ -73,8 +85,8 @@ export function summary(baseline, candidate, diff) {
   const lines = [`baseline:  ${src(baseline)}`, `candidate: ${src(candidate)}`, ""];
   const w = Math.max(...diff.rows.map((r) => r.metric.length));
   for (const r of diff.rows) {
-    const guards = r.guards.length ? ` [${r.guards.map((g) => (g.candidate ? "✓" : "✗")).join("")}]` : "";
-    lines.push(`${r.changed ? "*" : " "} ${r.metric.padEnd(w)}  ${r.changed ? `${cell(r.baseline)} → ${cell(r.candidate)}` : cell(r.candidate)}${guards}`);
+    const guards = r.guards.length ? ` [${r.guards.map((g) => (g.candidate === "n/a" ? "–" : g.candidate ? "✓" : "✗")).join("")}]` : "";
+    lines.push(`${r.changed ? "*" : " "} ${r.metric.padEnd(w)}  ${r.changed ? change(r.baseline, r.candidate) : cell(r.candidate)}${guards}`);
   }
   const bf = failedGuards(baseline), cf = failedGuards(candidate);
   lines.push("", `${diff.changed} of ${diff.rows.length} rows differ; guards failed: baseline ${bf.length}, candidate ${cf.length}`);
@@ -87,14 +99,14 @@ async function main(argv) {
   const opt = {};
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
-    if (["--baseline", "--candidate", "--out", "--only"].includes(a) && i + 1 < argv.length) opt[a.slice(2)] = argv[++i];
+    if (["--baseline", "--candidate", "--out", "--only", "--pinned"].includes(a) && i + 1 < argv.length) opt[a.slice(2)] = argv[++i];
     else if (a === "--json") opt.json = true;
     else { console.error(`unknown argument ${a}`); return 2; }
   }
-  if (!opt.baseline || !opt.candidate) { console.error("usage: node run.mjs --baseline <extensions dir> --candidate <extensions dir> [--out <dir>] [--only a,b,c,d,e] [--json]"); return 2; }
+  if (!opt.baseline || !opt.candidate) { console.error("usage: node run.mjs --baseline <extensions dir> --candidate <extensions dir> [--out <dir>] [--only a,b,…,g] [--pinned <dir holding .sova/spec>] [--json]"); return 2; }
   const only = opt.only?.split(",");
-  const baseline = await runArm(opt.baseline, { label: "baseline", only });
-  const candidate = await runArm(opt.candidate, { label: "candidate", only });
+  const baseline = await runArm(opt.baseline, { label: "baseline", only, pinned: opt.pinned });
+  const candidate = await runArm(opt.candidate, { label: "candidate", only, pinned: opt.pinned });
   const diff = diffCards(baseline, candidate);
   const out = opt.out ? resolve(opt.out) : mkdtempSync(join(tmpdir(), "spec-replay-out-"));
   mkdirSync(out, { recursive: true });

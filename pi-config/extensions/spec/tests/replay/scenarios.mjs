@@ -4,6 +4,8 @@
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { Repo, seedSpec, editDraftRecord, replaceIn, outcome } from "./lib.mjs";
+import { sliceQuality } from "./scenario-f.mjs";
+import { fullness } from "./scenario-g.mjs";
 
 const row = (scenario, metric, value, guards = []) => ({ scenario, metric, value, guards });
 const guard = (name, ok, detail = "") => ({ name, ok: Boolean(ok), detail });
@@ -457,7 +459,7 @@ export async function leftovers(ctx) {
   return rows;
 }
 
-export const SCENARIOS = { a: merging, b: evidenceDrift, c: hookNoise, d: invocations, e: leftovers };
+export const SCENARIOS = { a: merging, b: evidenceDrift, c: hookNoise, d: invocations, e: leftovers, f: sliceQuality, g: fullness };
 
 /** Load a module of the arm's tree (each tree's own copy, so two arms never share module state). */
 export function moduleLoader(tree) {

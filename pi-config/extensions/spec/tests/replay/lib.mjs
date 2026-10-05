@@ -1,7 +1,7 @@
 // Replay harness plumbing: seeded scratch Git repos and the spec CLIs of one tool tree, run hermetically.
 // Node stdlib only; imports nothing outside pi-config. Every Git commit gets a fixed author and a
 // date from a per-repo counter, so the same script yields the same commit ids on every run.
-import { spawnSync } from "node:child_process";
+import { spawnSync, execFile } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync, existsSync, rmSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -14,7 +14,7 @@ const AUTHOR = { name: "Replay Fixture", email: "replay@example.invalid" };
 export function childEnv(home) {
   return {
     PATH: process.env.PATH ?? "/usr/bin:/bin",
-    HOME: home, XDG_CONFIG_HOME: join(home, ".config"),
+    HOME: home, XDG_CONFIG_HOME: join(home, ".config"), TMPDIR: join(dirname(home), "tmp"),
     LANG: "C", LC_ALL: "C", TZ: "UTC",
     GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: join(home, ".gitconfig"),
   };
@@ -32,6 +32,7 @@ export function workspace(label) {
   const base = realpathSync(mkdtempSync(join(tmpdir(), `spec-replay-${label}-`)));
   const home = join(base, "home");
   mkdirSync(home, { recursive: true });
+  mkdirSync(join(base, "tmp"));
   writeFileSync(join(home, ".gitconfig"), "");
   let n = 0;
   return {
@@ -88,6 +89,15 @@ export class Tools {
     let out = null;
     try { out = JSON.parse(r.stdout); } catch { /* not JSON */ }
     return { status: r.status, stdout: r.stdout, stderr: r.stderr, json: out };
+  }
+  /** `run`, without blocking: for read-only commands that may run side by side. */
+  runAsync(root, home, args, { script = "sova-spec.mjs", json = true, rootFlag = true } = {}) {
+    const argv = [join(this.core, script), ...args, ...(rootFlag ? ["--root", root] : []), ...(json ? ["--json"] : [])];
+    return new Promise((done) => execFile(process.execPath, argv, { cwd: root, env: childEnv(home), encoding: "utf8", maxBuffer: 32 * 1024 * 1024, timeout: 60_000 }, (err, stdout, stderr) => {
+      let out = null;
+      try { out = JSON.parse(stdout); } catch { /* not JSON */ }
+      done({ status: err ? (typeof err.code === "number" ? err.code : null) : 0, stdout, stderr, json: out });
+    }));
   }
   spec(root, home, args, o) { return this.run(root, home, args, o); }
   draft(root, home, args, o) { return this.run(root, home, args, { ...o, script: "sova-spec-draft.mjs" }); }

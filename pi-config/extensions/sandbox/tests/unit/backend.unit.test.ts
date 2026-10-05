@@ -97,6 +97,17 @@ test("darwin, EPERM/EACCES from realpath on a leaf (Bun on TCC dirs): the canoni
 	assert.throws(() => tolerantRealpath(join(root, "loopA"), failingIo((p) => p.includes("/loop")), "darwin"), { code: "EPERM" });
 });
 
+test("darwin, a refused relative symlink reached through a symlinked parent resolves against the real parent", (t) => {
+	const root = realpathSync(mkdtempSync(join(tmpdir(), "sbx-canon-relink-")));
+	t.after(() => rmSync(root, { recursive: true, force: true }));
+	mkdirSync(join(root, "deep", "real"), { recursive: true });
+	mkdirSync(join(root, "deep", "t"));
+	symlinkSync(join(root, "deep", "real"), join(root, "lib"));
+	symlinkSync("../t", join(root, "deep", "real", "Rel"));
+	const io = failingIo((p) => p.endsWith("/Rel"));
+	assert.equal(canonicalizePath(join(root, "lib", "Rel"), undefined, io, "darwin"), realpathSync(join(root, "deep", "t")));
+});
+
 test("unchanged: ENOENT/ENOTDIR walk, symlinked ancestors, missing paths, other errors, and non-darwin never falls back", (t) => {
 	const root = tccTree(t);
 	for (const platform of ["darwin", "linux"] as const) {

@@ -54,7 +54,8 @@ function darwinRealpath(p: string, io: RealpathIo, hops: number): string {
 		}
 		if (isLink) {
 			if (hops >= MAX_HOPS) throw err;
-			return darwinRealpath(resolve(parent, io.readlink(p)), io, hops + 1);
+			// A relative target is relative to the link's real directory, not its spelled parent.
+			return darwinRealpath(resolve(darwinRealpath(parent, io, hops), io.readlink(p)), io, hops + 1);
 		}
 		return join(darwinRealpath(parent, io, hops), basename(p));
 	}

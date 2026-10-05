@@ -5,6 +5,7 @@
 import { resolveRegenerate, rewindSession, titleOf } from "../../../../chat-manager";
 import { activeBranchLines, forkPrefix, isFanoutSource, parseSourceDoc } from "../../fork";
 import { activeBranch, parseLines } from "../../../../transcript";
+import { historyOf } from "../../reader";
 import { linesOrDigest, targetsOf, type Fixture, type Probe } from "../golden";
 
 /** The ids each per-id probe asks about: the branch's (all, or a sample on a large or real session: targetsOf),
@@ -43,11 +44,11 @@ export const probes: Probe[] = [
     name: "regenerate",
     formats: ["pi"],
     run(f) {
-      const branch = activeBranch(parseLines(f.text));
+      const branch = historyOf(activeBranch(parseLines(f.text)));
       const out: Record<string, unknown> = {};
       for (const id of askedIds(f)) {
-        out[id] = resolveRegenerate(branch as never, id);
-        out[`${id}:0`] = resolveRegenerate(branch as never, `${id}:0`);
+        out[id] = resolveRegenerate(branch, id);
+        out[`${id}:0`] = resolveRegenerate(branch, `${id}:0`);
       }
       return out;
     },

@@ -28,6 +28,7 @@ mkdirSync(cwd, { recursive: true });
 const { acquireChat, disposeAllChats, resolveRegenerate } = await import("./chat-manager");
 const { deliverLinkMessage, heldSessionPath } = await import("./link-delivery");
 const { canonicalPath } = await import("./paths");
+const { historyOf } = await import("./harness/pi/reader");
 const { normalizeEntry } = await import("./transcript");
 const { getSessionSummary, onSessionArchived, archiveSession, cleanupSessions, idOf, isZeroInput, listSessions } = await import("./sessions-index");
 const { readTailTurn } = await import("./session-tags");
@@ -130,10 +131,10 @@ describe("§mesh.links/transcript: exclusions", () => {
 
   test("Regenerate refuses a reply to a link message, with its own reason", () => {
     const branch = [msg("u1", null, "user", "hello"), msg("a1", "u1", "assistant", "hi"), msg("l1", "a1", "user", linkText()), msg("a2", "l1", "assistant", "done")];
-    const r = resolveRegenerate(branch, "a2:0");
+    const r = resolveRegenerate(historyOf(branch), "a2:0");
     assert.equal(r.ok, false);
     assert.equal(!r.ok && r.reason, "link");
-    assert.equal(resolveRegenerate(branch, "a1").ok, true, "the user's own turn still regenerates");
+    assert.equal(resolveRegenerate(historyOf(branch), "a1").ok, true, "the user's own turn still regenerates");
   });
 });
 

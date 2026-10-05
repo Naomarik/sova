@@ -19,7 +19,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { LOGIN_UNCHANGED, OVERSEER_DIALOG_ANSWER_ENTRY, OVERSEER_ENTRY, OVERSEER_SENT_ENTRY } from "../shared/protocol";
 import { BATON_SENT_ENTRY, type BatonSentData, OPERATOR } from "../shared/baton";
-import type { ChatClientMessage, ChatModeResult, ChatServerMessage, CompactRefusal, ModeApplies, ModeInfo, OverseerDialogAnswerData, OverseerSentMarkerData, QueueItem, RegenerateRefusal, RewindRefusal, SandboxApplyResult, SandboxInfo, SlashCommand, TranscriptItem, WorkerInfo } from "../shared/protocol";
+import type { ChatClientMessage, ChatModeResult, ChatServerMessage, CompactRefusal, V1EventFrame, V2EventFrame, ModeApplies, ModeInfo, OverseerDialogAnswerData, OverseerSentMarkerData, QueueItem, RegenerateRefusal, RewindRefusal, SandboxApplyResult, SandboxInfo, SlashCommand, TranscriptItem, WorkerInfo } from "../shared/protocol";
 import { COMPACT_COMMAND, COMPACT_IMAGES_REFUSAL, compactCommand } from "../shared/compact";
 import type { LinkedAgentInfo } from "../shared/mesh-links";
 import { stripImageNotes } from "../shared/image-note";
@@ -41,7 +41,9 @@ import { resumeCommandOf, resumeWorker, type ResumeOutcome } from "./worker-resu
 import { applySandbox, onSandboxAppend, sandboxCommandOf, sandboxInfo, sandboxMessage, type SandboxHost } from "./sandbox-state";
 import type { SandboxState } from "../pi-config/extensions/sandbox/state.ts";
 import { chatClaudeLogin, claudeLoginAfterHello, claudeLoginMessage, isClaudeLoginEntry, LoginPick, loginName } from "./claude-login-state";
-import { rowsOf, rowsOfEntry, withoutSignatures } from "./transcript";
+import { rowsOf, rowsOfEntry } from "./transcript";
+import { endsMessage, v1Frame, writtenEntryId } from "./harness/pi/wire";
+import { onWire, withRows } from "./wire-rows";
 import type { HEntry } from "../shared/harness";
 import { historyOf, liveRead, toHEntry } from "./harness/pi/reader";
 import { contextOfBranch } from "./harness/pi/usage";
@@ -335,10 +337,13 @@ function asConfigError(err: unknown, cwd: string): ConfigError | null {
 
 /** Minimal client interface so ws.ts owns the socket details. */
 export interface ChatClient {
-  send(msg: ChatServerMessage): void;
+  send(msg: ChatServerMessage | V2EventFrame): void;
   /** The same message already serialized (server/ws.ts): a hello or history made once for every
       client that gets it. Without it, `send`. */
   sendRaw?(json: string): void;
+  /** Asked for wire 2 (`/ws/chat?wire=2`, shared/protocol.ts WireVersion): its events and rows are
+      mapped (server/wire-rows.ts). Absent: wire 1, every message as it always was. */
+  wire?: 2;
   /** Asked for newest rows first (`/ws/chat?tail=1`): its hellos are cut (server/tail-hello.ts). */
   tail?: boolean;
   /** …and fetches the older rows itself (`?tail=rest`, server/transcript-rows.ts): no history is
@@ -346,16 +351,30 @@ export interface ChatClient {
   pull?: { prefetch: boolean };
 }
 
-/** `msg` to one client, serialized at most once however many clients get it (`raw`). */
-function deliver(client: ChatClient, msg: ChatServerMessage, raw: () => string): void {
-  if (client.sendRaw) client.sendRaw(raw());
-  else client.send(msg);
+const wireOfClient = (client: ChatClient) => client.wire ?? 1;
+
+/** A message on each wire (its rows mapped for wire 2, server/wire-rows.ts), each made and serialized at
+    most once however many clients get it. */
+type PerWire = (wire: 1 | 2) => { msg: ChatServerMessage; json?: string };
+function perWire(msg: ChatServerMessage): PerWire {
+  const made: { 1?: { msg: ChatServerMessage; json?: string }; 2?: { msg: ChatServerMessage; json?: string } } = {};
+  return (wire) => (made[wire] ??= { msg: withRows(msg, wire) });
 }
 
-/** A hello cut for tail clients: the hello they get, and the history that follows it. */
+/** The message to one client, on its wire, serialized once for every client that takes JSON. */
+function deliver(client: ChatClient, msg: PerWire): void {
+  const on = msg(wireOfClient(client));
+  if (client.sendRaw) client.sendRaw((on.json ??= JSON.stringify(on.msg)));
+  else client.send(on.msg);
+}
+
+/** A hello cut for tail clients: the hello they get, and the history that follows it. Cut on wire-1
+    rows (their JSON sizes), so both wires cut at the same rows. */
 interface CutHello {
   hello: Extract<ChatServerMessage, { type: "hello" }>;
   history: HistoryPart[];
+  /** The history on wire 2, made for the first wire-2 client that gets it. */
+  history2?: HistoryPart[];
   /** The whole branch's rows, for a `?tail=rest` client's summary of the ones it wasn't sent. */
   all: TranscriptItem[];
 }
@@ -366,17 +385,30 @@ function cutHello(hello: Extract<ChatServerMessage, { type: "hello" }>, history 
   return { hello: cut.older > 0 ? { ...hello, items: cut.items, older: cut.older } : hello, history: cut.history, all: hello.items };
 }
 
-/** The cut hello as `client` gets it: a `?tail=rest` client's also sums up the rows before it. */
+/** The cut hello as `client` gets it, on its wire: a `?tail=rest` client's also sums up the rows before it. */
 function helloFor(cut: CutHello, client: ChatClient): ChatServerMessage {
   const older = cut.hello.older ?? 0;
-  return client.pull && older > 0 ? { ...cut.hello, ...pullFields(cut.all, older, client.pull.prefetch) } : cut.hello;
+  const hello = client.pull && older > 0 ? { ...cut.hello, ...pullFields(cut.all, older, client.pull.prefetch) } : cut.hello;
+  return withRows(hello, wireOfClient(client));
 }
 
 /** A cut hello's history to the tail clients that got that hello and are still here. */
 function sendHistory(cut: CutHello | null, clients: readonly ChatClient[], still: (c: ChatClient) => boolean): void {
   if (!cut) return;
-  for (const c of clients) if (still(c)) for (const part of cut.history) deliver(c, part.msg, () => part.raw);
+  for (const c of clients) {
+    if (!still(c)) continue;
+    const parts = c.wire === 2 ? (cut.history2 ??= cut.history.map(historyOnWire2)) : cut.history;
+    for (const part of parts) {
+      if (c.sendRaw) c.sendRaw(part.raw);
+      else c.send(part.msg);
+    }
+  }
 }
+
+const historyOnWire2 = (part: HistoryPart): HistoryPart => {
+  const msg = withRows(part.msg, 2);
+  return { msg, raw: JSON.stringify(msg) };
+};
 
 let modelRuntimePromise: Promise<ModelRuntime> | null = null;
 export function getModelRuntime(): Promise<ModelRuntime> {
@@ -404,28 +436,6 @@ export function assertNotLive(path: string): void {
       `Session is open in another pi process (pid ${rec.pid}, ${rec.mode ?? "tui"}); it is read-only here. Use watch instead.`,
     );
   }
-}
-
-/** Strip the per-delta `partial` snapshot (same as pi's rpc toJsonEvent) to keep frames small, and
-    every provider signature (§chat.transcript/slim-rows: encrypted reasoning never reaches the
-    browser; message_end, turn_end and agent_end carry whole messages). */
-export function toWireEvent(event: any): unknown {
-  return withoutSignatures(wireEvent(event));
-}
-
-function wireEvent(event: any): unknown {
-  if (event?.type !== "message_update") return event;
-  const ame = event.assistantMessageEvent ?? {};
-  let wire = ame;
-  if ("partial" in ame) {
-    const { partial, ...rest } = ame;
-    wire = rest;
-    if (ame.type === "toolcall_start") {
-      const tc = partial?.content?.[ame.contentIndex];
-      if (tc?.type === "toolCall") wire = { ...rest, id: tc.id, toolName: tc.name };
-    }
-  }
-  return { type: "message_update", usage: event.message?.usage, assistantMessageEvent: wire };
 }
 
 type SdkImage = NonNullable<Parameters<AgentSession["steer"]>[1]>[number];
@@ -1672,8 +1682,8 @@ class ChatSession {
         this.queue.onSdkEvent();
       }
       try {
-        const wire: Extract<ChatServerMessage, { type: "event" }> = { type: "event", event: toWireEvent(event) };
-        if (event.type === "message_end") this.holdForEntryId(wire, (event as { message?: unknown }).message);
+        const wire = v1Frame(event);
+        if (endsMessage(event)) this.holdForEntryId(wire, (event as { message?: unknown }).message);
         else this.broadcast(wire);
       } catch (err) {
         console.error("[chat] failed to forward event", err);
@@ -2206,7 +2216,7 @@ class ChatSession {
     // A tail client's older rows go last, after the state its first paint needs, and in this same
     // synchronous step, so no event, append or other hello can come between them.
     const cut = client.tail ? cutHello(hello, !client.pull) : null;
-    client.send(cut ? helloFor(cut, client) : hello);
+    client.send(cut ? helloFor(cut, client) : withRows(hello, wireOfClient(client)));
     client.send(this.commands());
     // The queue goes out on EVERY attach, empty or not: a reconnect resets the pane's live rows to
     // nothing, so a client that is told nothing cannot tell "no queue" from "not told yet" and
@@ -2972,7 +2982,7 @@ class ChatSession {
     if (this.disposed) return () => {};
     const hello = this.hello();
     let cut: CutHello | null = null;
-    let raw: string | null = null;
+    const whole = perWire(hello);
     const tails: ChatClient[] = [];
     const pushed = [...this.clients].some((c) => c.tail && !c.pull);
     for (const c of this.clients) {
@@ -2980,7 +2990,7 @@ class ChatSession {
         cut ??= cutHello(hello, pushed);
         if (!c.pull) tails.push(c);
         c.send(helloFor(cut, c));
-      } else deliver(c, hello, () => (raw ??= JSON.stringify(hello)));
+      } else deliver(c, whole);
     }
     // Every client's hello handler clears its worker list, and pushWorkers only sends on change,
     // so an unchanged set would stay blank: re-send it now (attach() does the same after hello).
@@ -2998,12 +3008,18 @@ class ChatSession {
     return () => sendHistory(cut, tails, (c) => this.clients.has(c));
   }
 
+  /** `msg` to every client, on its wire (server/wire-rows.ts): wire 1 the message itself, wire 2 its
+      mapping, made once for all the wire-2 clients. */
   broadcast(msg: ChatServerMessage): void {
     if (this.held) {
       this.held.push(msg);
       return;
     }
-    for (const c of this.clients) c.send(msg);
+    let on2: (ChatServerMessage | V2EventFrame)[] | undefined;
+    for (const c of this.clients) {
+      if (c.wire === 2) for (const m of (on2 ??= onWire(msg, 2))) c.send(m);
+      else c.send(msg);
+    }
   }
 
   /** Broadcasts waiting behind a `message_end` until its entry id is known (holdForEntryId). */
@@ -3016,7 +3032,7 @@ class ChatSession {
    * waits behind it: the order clients see is unchanged. Queued before `markSend`'s, so the leaf
    * read here is still the message, never its marker.
    */
-  private holdForEntryId(wire: Extract<ChatServerMessage, { type: "event" }>, message: unknown): void {
+  private holdForEntryId(wire: V1EventFrame, message: unknown): void {
     if (this.held) {
       this.held.push(wire);
       return;
@@ -3024,10 +3040,8 @@ class ChatSession {
     this.held = [wire];
     queueMicrotask(() => {
       try {
-        const sm = this.session.sessionManager;
-        const leaf = sm.getLeafId();
-        const entry = leaf ? sm.getEntry(leaf) : undefined;
-        if (entry?.type === "message" && entry.message === message) wire.entryId = entry.id;
+        const id = writtenEntryId(this.session, message);
+        if (id !== undefined) wire.entryId = id;
       } catch {
         // untagged: a client falls back to the rows it can see
       }

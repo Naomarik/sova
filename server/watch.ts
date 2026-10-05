@@ -1,9 +1,10 @@
 import { type FSWatcher, watch } from "node:fs";
 import { open, stat } from "node:fs/promises";
-import type { TranscriptItem, WatchServerMessage } from "../shared/protocol";
+import type { TranscriptItem, WatchServerMessage, WireVersion } from "../shared/protocol";
 import { branchOf, parsePi } from "./harness/pi/reader";
 import { cutTail, pullFields } from "./tail-hello";
 import { rowsOf } from "./transcript";
+import { withRows } from "./wire-rows";
 import type { ContextTally } from "./worker-context";
 
 const POLL_MS = 1500;
@@ -24,6 +25,7 @@ const piNormalize: Normalize = (text, part) => {
  * with `?tail=1`), each snapshot holds only the newest rows and its older rows follow as `history`
  * before anything else (server/tail-hello.ts): no read runs until the snapshot's step is done.
  * With `pull` (`?tail=rest`), the snapshot is cut the same way and nothing follows it.
+ * On `wire` 2 (`?wire=2`) every row goes out mapped (server/wire-rows.ts), cut where wire 1 cuts it.
  */
 export class SessionTail {
   private offset = 0;
@@ -46,6 +48,8 @@ export class SessionTail {
     /** Set for a `?tail=rest` client: its snapshot is cut, and it fetches the older rows itself
         (server/transcript-rows.ts); `prefetch`: all of them, now (a browser on this machine). */
     private readonly pull?: { prefetch: boolean },
+    /** The wire the client asked for: its rows' facts as `meta` (1) or `facts` (2). */
+    private readonly wire: WireVersion = 1,
   ) {}
 
   async start(): Promise<void> {
@@ -96,14 +100,14 @@ export class SessionTail {
     if (this.closed) return;
     const items = this.normalize(text, "snapshot");
     const cut = this.sendRaw || this.pull ? cutTail(items, { history: !this.pull }) : null;
-    this.send({
+    this.send(withRows({
       type: "snapshot",
       items: cut ? cut.items : items,
       ...(context !== undefined ? { context } : {}),
       ...(cut && cut.older > 0 ? { older: cut.older } : {}),
       ...(cut && cut.older > 0 && this.pull ? pullFields(items, cut.older, this.pull.prefetch) : {}),
-    });
-    if (cut && this.sendRaw) for (const part of cut.history) this.sendRaw(part.raw);
+    }, this.wire));
+    if (cut && this.sendRaw) for (const part of cut.history) this.sendRaw(this.wire === 1 ? part.raw : JSON.stringify(withRows(part.msg, this.wire)));
   }
 
   private kick(): void {
@@ -139,6 +143,6 @@ export class SessionTail {
     const items = this.normalize(text, "append");
     // The state after this batch, sent explicitly — "compacted" included — on every append.
     const context = this.context?.(text, "append");
-    if (items.length && !this.closed) this.send({ type: "append", items, ...(context !== undefined ? { context } : {}) });
+    if (items.length && !this.closed) this.send(withRows({ type: "append", items, ...(context !== undefined ? { context } : {}) }, this.wire));
   }
 }

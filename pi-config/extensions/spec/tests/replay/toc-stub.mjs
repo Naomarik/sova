@@ -48,12 +48,19 @@ else {
   }[dir];
   if (!pick) out({ status: "refused", code: "usage" }, 2);
   else {
+    // What a passage is: the first sentence of its first prose unit (paragraph or list item; tables, headings,
+    // fences, comments and rules skipped), whitespace collapsed; for the seed and every line alike.
+    const whatOf = (x) => {
+      const units = index.passages.get(x).text.split("\n").slice(1).join("\n").replace(/^ {0,3}(`{3,}|~{3,})[^]*?^ {0,3}\1[ \t]*$/gm, "").replace(/<!--[^]*?-->/g, "").replace(/^ {0,3}([-*_])(?:[ \t]*\1){2,}[ \t]*$/gm, "")
+        .split(/\n[ \t]*\n|\n(?=[ \t]*(?:[-*+]|\d+[.)])[ \t])/).map((u) => u.replace(/^[ \t]*>[ \t]?/gm, "").trim()).filter((u) => u && !/^[|#]/.test(u));
+      const body = (units[0] ?? "").replace(/^(?:[-*+]|\d+[.)])[ \t]+/, "").replace(/\s+/g, " ");
+      return { what: body.split(/(?<=[.:])\s/)[0] || "(no text)", whatSource: body ? "prose" : "none" };
+    };
     const lines = pick().filter((x) => index.passages.has(x)).map((x) => {
       const p = index.passages.get(x);
-      const body = p.text.split("\n").slice(1).join(" ").replace(/\s+/g, " ").trim();
       const why = seed.text.split("\n").find((l) => mentions(l, x)) ?? index.passages.get(x).text.split("\n").find((l) => mentions(l, id));
-      return { id: x, title: p.text.split("\n")[0].replace(/^#+ \S+( — )?/, ""), what: body.split(/(?<=[.:])\s/)[0] || "(no text)", why: why ? why.trim() : "not mentioned in this claim's text", whySource: why ? "prose" : "none", whatSource: "prose", bytes: p.bytes };
+      return { id: x, title: p.text.split("\n")[0].replace(/^#+ \S+( — )?/, ""), ...whatOf(x), why: why ? why.trim() : "not mentioned in this claim's text", whySource: why ? "prose" : "none", bytes: p.bytes };
     });
-    out({ id, dir, seed: { id }, lines, footer: { delivered: [] } });
+    out({ id, dir, seed: { id, ...whatOf(id) }, lines, footer: { delivered: [] } });
   }
 }

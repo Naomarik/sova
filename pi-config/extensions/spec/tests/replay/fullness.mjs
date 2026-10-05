@@ -98,6 +98,28 @@ export function parentOf(id) {
 }
 
 /**
+ * Is a contents line's "what" a whole sentence of its passage? Checked against the passage's own text, not the
+ * tool's splitter: a what that ends in terminal punctuation (closing quotes, brackets or emphasis allowed) or in
+ * "…" is whole. One that ends without it is whole only if its source unit (paragraph, list item, quote line) ends
+ * right there too; if the unit runs on, the sentence was cut. A what found nowhere in the passage can't be
+ * checked and counts against the tool, and so does an empty one. → "whole" | "cut" | "unlocated" | "empty"
+ */
+export function cutWhat(what, text) {
+  const w = typeof what === "string" ? what.replace(/\s+/g, " ").trim() : "";
+  if (!w) return "empty";
+  if (w.endsWith("…") || /[.!?:;]["'”’)\]`*_]*$/.test(w)) return "whole";
+  // Quote markers drop; unit breaks (blank lines, list items, headings, table rows) become \0; other whitespace collapses.
+  const body = text.split("\n").slice(1).map((ln) => ln.replace(/^[ \t]*>[ \t]?/, "")).join("\n")
+    .replace(/\n[ \t]*(?:\n|(?=(?:[-*+]|\d+[.)])[ \t]|#|\|))/g, "\0")
+    .replace(/(^|\0)[ \t\n]*(?:[-*+]|\d+[.)])[ \t]+/g, "$1")
+    .replace(/[ \t\n]+/g, " ");
+  const at = body.indexOf(w);
+  if (at < 0) return "unlocated";
+  const rest = body.slice(at + w.length).replace(/^ +/, "");
+  return !rest || rest.startsWith("\0") ? "whole" : "cut";
+}
+
+/**
  * Score one need against a slice.
  * - `delivered`: Set of ids whose exact text the arm handed over; `named`: Set of ids it named without text;
  *   `extraSpans`: line ranges [{rel, from, to}] read some other way (a file read by line).

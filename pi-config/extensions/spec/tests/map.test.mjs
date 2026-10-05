@@ -11,7 +11,7 @@ test("map: every area with its lede's first sentence, label counts, crossing edg
   assert.equal(j.counts.areas, 9);
   assert.deepEqual(Object.keys(j.counts.namespaces), ["ed", "ot", "section"]);
   assert.ok(!("agreedNotBuilt" in j.counts), "no count when the spec records no agreement");
-  assert.equal(j.notes[0].code, "agreed-not-recorded");
+  assert.deepEqual(j.notes, []);
   const ed = j.lines.find((l) => l.id === "§ed/seed");
   assert.equal(ed.title, "Editor (`EditorPane`)");
   assert.equal(ed.what, "The editor pane, where a draft is written.");
@@ -23,9 +23,9 @@ test("map: every area with its lede's first sentence, label counts, crossing edg
   assert.deepEqual(hubs[0], { type: "hub", path: "src/editor.ts", records: 2 });
   assert.deepEqual(j.counts.gaps, { uninvestigated: 3, noCode: 5, noProse: 0, noInterfaceToken: 8 });
   const text = cli(root, ["map"], { json: false }).r.stdout;
-  assert.match(text, /agreed-not-built: not available \(no agreed field yet\)/);
+  assert.match(text, /^agreed-not-built: no record here carries agreed$/m);
   assert.match(text, /^ed \(1 area\(s\), 3 claim\(s\)\)$/m);
-  assert.match(text, /^  §ed\/seed — Editor \(`EditorPane`\)  3 claim\(s\) · accepted 2 · migrated 1 · unreviewed 1 · verified 2 · requires out 1 · in 2$/m);
+  assert.match(text, /^  §ed\/seed — Editor \(`EditorPane`\)  3 claim\(s\) · accepted 2 · migrated 1 · unreviewed 1 · verified 2 · requires\/embeds out 1 · in 2$/m);
   assert.match(text, /^gaps: 3 behavior\(s\) with no requires key/m);
 });
 
@@ -90,12 +90,12 @@ test("graph --json: one paged payload of nodes and edges by kind; text prints co
   assert.ok(has("mentions", "§ot/planted", "§ed/seed"));
   assert.ok(!has("mentions", "§ot/coder", "§ed/seed"), "a comment is not a mention");
   assert.ok(has("code", "§ot/coder", "src/link.ts"));
-  assert.deepEqual(counts.byKind, { requires: 4, member: 1, contains: 2, mentions: 3, code: 8 });
+  assert.deepEqual(counts.byKind, { requires: 4, embeds: 0, member: 1, contains: 2, about: 0, mentions: 3, code: 8 });
   const one = cli(root, ["graph"], { budget: 32768 }).j;
   assert.deepEqual({ nodes: one.nodes, edges: one.edges }, { nodes, edges }, "the same payload whatever the page size");
   const text = cli(root, ["graph"], { json: false }).r;
   assert.equal(text.status, 0);
-  assert.match(text.stdout, /^graph: 11 nodes, 18 edges \(requires 4 · member 1 · contains 2 · mentions 3 · code 8\)$/m);
+  assert.match(text.stdout, /^graph: 11 nodes, 18 edges \(requires 4 · embeds 0 · member 1 · contains 2 · about 0 · mentions 3 · code 8\)$/m);
   assert.ok(!text.stdout.includes("§"), "text is counts only");
   write(root, ".sova/spec/claims/ot/base.md", "# §ot/base — Base\n\nChanged text.\n");
   assert.equal(cli(root, ["graph", "--cursor", ps[0].next], { budget: 2048 }).j.code, "token-mismatch-or-stale");
@@ -117,7 +117,7 @@ test("impact --near: one reverse hop over the family, the next hop named, code n
   assert.deepEqual(group("frontier").map((l) => [l.id, l.reason]), [["§ed.seed/save", "in-family"], ["§ot/planted", "mentions-family"]], "the planted consumer stays");
   assert.ok(!j.lines.some((l) => l.id === "§ot/unrelated"));
   assert.equal(j.counts.uninvestigatedElsewhere, 1, "the rest are counted, never dropped");
-  assert.deepEqual(group("mentioned").map((l) => l.id), ["§ot/planted", "§ot/uses"]);
+  assert.deepEqual(group("mentioned").map((l) => l.id), ["§ot/uses"], "a frontier claim is not listed again");
   assert.deepEqual(group("code").map((l) => [l.path, l.ids]), [["src/shared.ts", ["§ot/coder"]]]);
   assert.equal(j.exit, 1, "a frontier is an unknown");
   const text = cli(root, ["impact", "§ed/seed", "--near"], { json: false }).r.stdout;

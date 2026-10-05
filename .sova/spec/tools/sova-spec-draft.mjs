@@ -40,7 +40,7 @@ const ID_RE = /^§[a-z][a-z-]*(?:\.[a-z][a-z-]*)?\/[a-z][a-z-]*$/;
 const HEX = /^[0-9a-f]{64}$/;
 // Kinds that carry no implementation: their prose may be promoted on --doc-only evidence.
 const DOC_ONLY_KINDS = new Set(["note", "section"]);
-// Kinds whose record may say who agreed to its wording before it is built (`agreed: {by, at}`); with no `code`
+// Kinds whose record may say who decided it, and when, before it is built (`agreed: {by, at}`); with no `code`
 // such a record may land on --doc-only evidence too. Built = `code` plus one of BUILT_LABELS as its `evidence`.
 const AGREED_KINDS = new Set(["behavior", "surface"]), BUILT_LABELS = new Set(["reviewed", "verified"]);
 const AGREED_AT = /^(\d{4}-\d{2}-\d{2})(?:T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:\d{2}))?$/;
@@ -499,7 +499,7 @@ function mergeSpans(B, C, P) {
   return { text, ids: new Map(out.map((s) => [s.id, s.text])) };
 }
 const recOf = (t, id) => (t.manifest?.claims ?? {})[id];
-// A record's `agreed: {by, at}`: who agreed to its wording, and when. → null (absent or well-formed) | what is wrong
+// A record's `agreed: {by, at}`: who made the decision, and when. → null (absent or well-formed) | what is wrong
 function agreedProblem(rec) {
   if (rec?.agreed === undefined) return null;
   const x = rec.agreed, day = obj(x) && typeof x.at === "string" ? AGREED_AT.exec(x.at)?.[1] : undefined;
@@ -955,7 +955,7 @@ async function plan(root, o) {
     else if (auth !== "accepted" && auth !== "migrated") refuse("authority-missing", `${id} declares no authority label; set "authority": "accepted" (or keep "migrated" for ported text) in the draft record before recording evidence`);
     const bad = agreedProblem(recOf(a.prop, id));
     if (bad) refuse("agreed-invalid", `${id}: ${bad}`);
-    // `agreed` belongs to the wording it was given for: the build keeps it; only reworded prose, agreed again, replaces it.
+    // `agreed` names who decided: the build and a rewording keep it; a new agreement replaces it only with reworded prose.
     const was = recOf(a.cur, id)?.agreed, now = recOf(a.prop, id)?.agreed, r = a.records.find((x) => x.id === id);
     if (was !== undefined && r?.merge === "apply" && canon(now) !== canon(was)) {
       if (now === undefined) refuse("agreed-rewritten", `${id} was agreed ${JSON.stringify(was)} in current; agreed is removed only by deleting the whole record`);

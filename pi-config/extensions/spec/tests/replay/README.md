@@ -66,6 +66,7 @@ purpose: `node scenario-g.mjs --record <tree made from the baseline ref>`. `data
 | M0 | the baseline tree against itself: zero diff, every guard held; a sabotaged tree trips every guard |
 | M1 (`toc`, `read`) | computed run, no agent: `packet` and `scope` unchanged (g's packet rows, d's exactness), f's pull guards hold; g's pull proxy rows give bytes and calls per comparison; the 21 needs packet answers but no `toc` line shows one hop out are listed by id |
 | M1 onward | ratchet guard `g.pull.shown-floor`: needs shown one hop out never below 106/138 (M1's gate run at c67a1ae2) |
+| M1 onward | guards `g.pull.what-whole` and `f.pull.what-whole`: every contents-line what is a whole sentence of its passage or ends in "…" (`cutWhat` in fullness.mjs checks it against the source, not the tool's splitter). Over the pinned spec, `toc <H1> --dir down` for every H1; f plants a first sentence that wraps (§f.dep/rule). Integration 70d6696e cuts 413 of 800 at the end of the first source line |
 | M2 (spec-mode text) | agent arm, all 24 comparisons, same model and level in both arms, on the M1+M5 tree. Answered ≥ the AGENT packet arm on the same 24 (on the 8-sample: 30.5/48), not the computed packet (34/48 on the sample, 93.5/138 in all), because an agent stops paging early. Every M2 scorecard reports both packet numbers. No need the agent packet arm answered is lost unless its passage was seen in a toc line or footer; calls per comparison within today's 7–18; the needs packet answers but toc does not show one hop out (3 at M1) checked one by one |
 | M4 (span promotion) | a.diff-h2.hand-reapply 1 → 0; `a.target.same-spot` both orders land, byte-identical; a's guards hold |
 | M3 (`map`, `where`, `impact --near`) | f: `impact §f/seed --near` keeps the true consumer and keeps the unrelated one off its frontier (guards); g: `g.target.impact-near.chat-composer` frontier 143 → ≤ 25, `g.where.all` lists every claim whose code names server/chat-manager.ts (guard, 74), `g.target.where-ranked` for shared/protocol.ts (107, top 10); `g.digest.scope` and `g.digest.impact` (plain impact) unchanged |
@@ -94,8 +95,13 @@ node agent-arm.mjs grade --out <run dir>     # grade a finished run again; start
   provider-limits), and `--append-system-prompt` with the tree's own `mode/spec-mode.md` (the text that
   ships with that tree; only its trusted-core line is pointed at `tools/`, and the docs it names are copied
   beside it; its sha is in `run.json`; `--instructions <file>` or `--no-instructions` for experiments; two
-  runs compare only if both had instructions). The prompt (the same for both arms but for the tool lines) names the surface and
-  its § id, says what a builder must find, and asks for a brief.
+  runs compare only if both had instructions). The task prompt is the same in every arm (`PROMPT_VERSION`
+  neutral-1; compare refuses two versions): it names the surface and its § id, says what a builder must find,
+  points at `node tools/sova-spec.mjs <command> … --root .`, names no command or reading strategy, and asks
+  for a brief. How the agent reads comes only from the tree's mode text, so an M2 number measures that text.
+- **Not measured:** "every `census --changed` claim read". The agent edits nothing, in a directory outside any
+  repository, where `census --changed` refuses (`exit 2`, `census: null`), so the guard would hold for an agent
+  that read nothing. `compare` lists it under `notMeasured`.
 - **Output:** `<out>/<arm>-<model>-<time>/` with `run.json`, and per comparison `prompt.txt`,
   `events.jsonl`, `stderr.txt`, `exit.json` and `sessions/`; then `agent-scorecard.json` and
   `summary.txt`.
@@ -118,3 +124,7 @@ a time, and results are collected by comparison, never by finishing order.
 The runner imports `claude-code/tests/hermetic-env.mjs` first, so the in-process hooks see a throwaway
 home. Shell effects in scenario c are applied by the harness, not run. Values carry no temp paths.
 Hook timing (`Date.now()`, file mtimes) is used only for ordering within a run, never in a value.
+The hooks bound each git and census call by a 5 s timeout and add an "incomplete check" note when one runs
+out, so a loaded machine can add a note the tree didn't cause (seen once: `c.claude.notes` 7 for 6). c
+therefore runs each hook's session in fresh repos until two runs give the same notes (paths aside), at most
+5, and fails the scenario if none repeat. With the timeout cut to 150 ms, 1 run in 6 differed before and 0 in 18 after.

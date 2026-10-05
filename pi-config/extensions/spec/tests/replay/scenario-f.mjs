@@ -6,11 +6,12 @@
 // - a sibling H2 that answers a need (§f.seed/limits; nothing links it);
 // - a core claim (§design.rules/voice, `core: true`), linked to nothing;
 // - an about note (§design.copy/editor, `about: [§f/seed]`, its heading names the surface);
-// - two uninvestigated behaviors: one that mentions the seed (the true consumer), one unrelated.
+// - two uninvestigated behaviors: one that mentions the seed (the true consumer), one unrelated;
+// - a first sentence that wraps across source lines (§f.dep/rule), so a contents line cut at the line end shows.
 // Rows measure; guards hold today and must keep holding; target rows record what today's tools miss by design.
 // The pull checks need `toc` (and `read`); a tree without them reports n/a, never a pass.
 import { Repo, seedSpec } from "./lib.mjs";
-import { specIndex, readStream, proseTexts, idsIn, capability, readToc, readPassage, accepts, readLines } from "./fullness.mjs";
+import { specIndex, readStream, proseTexts, idsIn, capability, readToc, readPassage, accepts, readLines, cutWhat } from "./fullness.mjs";
 import { FRAME_CAP, DIRS } from "./scenario-g.mjs";
 
 const row = (scenario, metric, value, guards = []) => ({ scenario, metric, value, guards });
@@ -22,7 +23,9 @@ const P = {
   wander: "§f/wander", sibling: "§f.seed/limits", core: "§design.rules/voice", about: "§design.copy/editor",
   consumer: "§f.other/uses-edit", unrelated: "§f.other/unrelated",
 };
-const WANDER_KIDS = ["first", "second", "third", "fourth"].map((k) => `§f.wander/${k}`);
+/** Did read hand over the embedded surface whole: its H1 and every H2, each byte-exact? (A lede alone is not.) */
+const embedWhole = (index, texts) => [P.panel, ...P.panelKids].every((id) => texts?.get(id) === index.passages.get(id).text);
+const WANDER_KIDS =["first", "second", "third", "fourth"].map((k) => `§f.wander/${k}`);
 
 /** About 10 KB of prose that says nothing the seed needs; deterministic. */
 const filler = (tag) => Array.from({ length: 108 }, (_, i) => `The ${tag} archive keeps entry ${i + 1} in the order it arrived, and a reader may page through it.`).join(" ") + "\n";
@@ -34,7 +37,7 @@ const FILES = {
     "Editing saves the draft whenever the writer pauses, as §f.dep/rule allows. The toolbar is drawn inside the editor as §f/panel. Unlike §f/wander, editing never asks before it saves.", "",
     "## §f.seed/limits — Limits", "", "A draft holds at most 200 lines; the 201st is refused with \"Drafts stop at 200 lines.\"", "",
   ].join("\n"),
-  ".sova/spec/claims/f/dep.md": "# §f/dep — Saving\n\nWhen drafts may be written.\n\n## §f.dep/rule — Save rule\n\nA save runs only when no other save is in flight; it builds on §f.deep/base.\n",
+  ".sova/spec/claims/f/dep.md": "# §f/dep — Saving\n\nWhen drafts may be written.\n\n## §f.dep/rule — Save rule\n\nA save runs only when no other save\nis in flight; it builds on §f.deep/base.\n",
   ".sova/spec/claims/f/deep.md": "# §f/deep — Write queue\n\nThe one queue every write goes through.\n\n## §f.deep/base — Queue order\n\nEvery write goes through one queue, in the order it was asked for.\n",
   ".sova/spec/claims/f/panel.md": "# §f/panel — Toolbar\n\nThe formatting toolbar, drawn inside a host surface.\n\n## §f.panel/bold — Bold\n\nBold wraps the selection in `**`.\n\n## §f.panel/italic — Italic\n\nItalic wraps the selection in `_`.\n\n## §f.panel/link — Link\n\nLink asks for an address and wraps the selection as a link.\n",
   ".sova/spec/claims/f/wander.md": `# §f/wander — Archive\n\nThe archive of old drafts, which asks before it overwrites anything.\n\n${WANDER_KIDS.map((id, i) => `## ${id} — Archive part ${i + 1}\n\n${filler(`part-${i + 1}`)}`).join("\n")}`,
@@ -137,7 +140,7 @@ async function pull(ctx, repo, index) {
   const na = (name, what) => guard(name, true, `n/a: this tree has no ${what}`, true);
   if (toc === "absent") {
     return [
-      row("f", "f.pull.lines", "n/a", [na("f.pull.items-shown", "toc"), na("f.pull.what-and-why", "toc"), na("f.pull.unrelated-only-in", "toc")]),
+      row("f", "f.pull.lines", "n/a", [na("f.pull.items-shown", "toc"), na("f.pull.what-and-why", "toc"), na("f.pull.what-whole", "toc"), na("f.pull.unrelated-only-in", "toc")]),
       ...(rd === "absent" ? [row("f", "f.pull.read", "n/a", [na("f.pull.read-exact", "read"), na("f.pull.read-names-links", "read")])] : []),
       row("f", "f.pull.target.unasked", "n/a"),
       row("f", "f.pull.target.about-note", "n/a"),
@@ -170,14 +173,18 @@ async function pull(ctx, repo, index) {
   const all = DIRS.flatMap((d) => byDir[d]);
   const lines = Object.fromEntries(DIRS.map((d) => [d, byDir[d].length]));
   const whyProse = all.filter((l) => l.whySource === "prose").length, whyComment = all.filter((l) => l.whySource === "comment").length;
+  // Every what is a whole sentence of its passage (or says it was clipped with "…"); the wrapped §f.dep/rule tests it.
+  // A "none" line (no prose sentence) is exempt only if it says so; an empty what fails on any line.
+  const cut = all.filter((l) => !said(l.what) || (l.whatSource !== "none" && cutWhat(l.what, index.passages.get(l.id)?.text ?? "") !== "whole")).map((l) => `${l.id}: "${l.what ?? ""}"`);
   return [
     row("f", "f.pull.lines", { ...lines, whyProse, whyComment, bytes, calls }, [
       guard("f.pull.items-shown", broken.length === 0 && unshown.length === 0, broken.length ? `toc failed: ${broken.join("; ")}` : unshown.length ? `not shown: ${unshown.join("; ")}` : "every planted link is a contents line in its direction"),
       guard("f.pull.what-and-why", broken.length === 0 && vague.length === 0, vague.length ? `line without a what or a why: ${vague.join(", ")}` : "every planted line says what it is and why it is linked, or that no reason is written"),
+      guard("f.pull.what-whole", broken.length === 0 && cut.length === 0 && Boolean(line(P.dep)), cut.length ? `what cut mid-sentence: ${[...new Set(cut)].join("; ")}` : line(P.dep) ? "every what is a whole sentence, the wrapped one included" : `${P.dep} has no line`),
       guard("f.pull.unrelated-only-in", broken.length === 0 && strayUnrelated.length === 0, strayUnrelated.length ? `the unrelated consumer shows under ${strayUnrelated.join(",")}` : "the unrelated consumer shows only under --dir in, if at all"),
     ]),
     ...(rd === "absent" ? [row("f", "f.pull.read", "n/a", [na("f.pull.read-exact", "read"), na("f.pull.read-names-links", "read")])] : await readRows(ctx, repo, index, rd)),
-    row("f", "f.pull.target.unasked", [P.core, P.panel].map((id) => `${id}:${delivered.has(id) ? "delivered" : "not"}`).join(", ")),
+    row("f", "f.pull.target.unasked", `${P.core}:${delivered.has(P.core) ? "delivered" : "not"}, ${P.panel}:${embedWhole(index, (await readPassage(ctx.tools, repo.root, ctx.ws.home, SEED)).texts) ? "delivered whole" : delivered.has(P.panel) ? "delivered, not whole" : "not"}`),
     row("f", "f.pull.target.about-note", where(P.about).length ? `line under ${where(P.about).join(",")}` : "absent"),
     row("f", "f.pull.target.sibling", where(P.sibling).length ? `line under ${where(P.sibling).join(",")}` : "absent"),
   ];
@@ -188,8 +195,8 @@ async function readRows(ctx, repo, index, capable) {
   const own = index.passages.get(SEED);
   const r = capable === "broken" ? { ok: false, refused: "no-json" } : await readPassage(ctx.tools, repo.root, ctx.ws.home, SEED);
   const named = new Set(r.footer?.named ?? []);
-  // A link read delivered (an embed arrives whole) needs no name; every other one must be named.
-  const links = [P.dep, P.panel, P.wander].filter((id) => !named.has(id) && !r.texts?.has(id));
+  // A link read delivered (an embed arrives whole, every H2 byte-exact) needs no name; every other one must be named.
+  const links = [P.dep, P.panel, P.wander].filter((id) => !named.has(id) && !(id === P.panel ? embedWhole(index, r.texts) : r.texts?.get(id) === index.passages.get(id).text));
   return [row("f", "f.pull.read", r.ok ? { bytes: r.text ? Buffer.byteLength(r.text) : null, own: own.bytes, calls: r.calls } : `refused: ${r.refused}`, [
     guard("f.pull.read-exact", r.ok && r.text === own.text, r.ok ? (r.text === own.text ? "read returns exactly the seed's passage" : "read's text differs from the seed's source span") : `read failed: ${r.refused}`),
     guard("f.pull.read-names-links", r.ok && links.length === 0, links.length ? `links not named by read: ${links.join(", ")}` : "every link of the seed it didn't deliver is named"),

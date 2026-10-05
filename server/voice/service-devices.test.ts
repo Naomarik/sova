@@ -11,7 +11,7 @@ import { after, afterEach, describe, it } from "node:test";
 import { Hono } from "hono";
 import type { VoiceDecodeSettings, VoiceStatus } from "../../shared/protocol";
 import { SENTENCES } from "./calibration";
-import { modelFileOf, voicePaths, type VoicePaths } from "./install";
+import { modelFileOf, transcribeSupported, voicePaths, type VoicePaths } from "./install";
 import { catalogModel, DEFAULT_MODEL, PROMPT_SENTENCE, VAD_MODEL } from "./pins";
 import type { Probe } from "./platform";
 import { registerVoiceRoutes, VoiceService } from "./service";
@@ -296,7 +296,8 @@ describe("models through the routes", () => {
     assert.deepEqual(await ok.json(), { freed: catalogModel(Q8)!.bytes });
   });
 
-  it("switch to Parakeet (self-tested on its host), dictate with no fields, then back to whisper with the device's settings", async () => {
+  // The model list shows Parakeet only where transcribe.cpp builds (Linux x86_64).
+  it("switch to Parakeet (self-tested on its host), dictate with no fields, then back to whisper with the device's settings", { skip: !transcribeSupported() && "Parakeet is listed on Linux x86_64 only" }, async () => {
     const { a, service, paths, requests } = host();
     saved(paths, A, DEFAULT_MODEL.id, { beamSize: 5 });
     let res = await a.request(`/api/voice/models/${PARAKEET}/use`, { method: "POST" });

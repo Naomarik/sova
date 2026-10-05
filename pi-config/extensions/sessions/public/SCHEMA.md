@@ -113,7 +113,7 @@ enforce them, and the reference reader enforces them again.
 **WorkerEntry**: `id` ✔ (150), `name` ✔ (120), `status` ✔ (80, free text),
 `model` (100), `preview` (180), `backend` (32, v2), `sessionFile` (1024, v2, optional),
 `sessionId` (64, v2, optional), `effort` (32, v2, optional), `modes` (string[], ≤ 8 names of 32, v2,
-optional), `startedAt`/`lastActivity`/`endedAt`
+optional), `teamId` (64, v2, optional), `startedAt`/`lastActivity`/`endedAt`
 (ms epoch, v2), `outcome` (`success`|`error`|`aborted`, v2), `usage` (WorkerUsage, v2),
 `turns` (non-negative integer, v2, optional), and, for a restored worker (v2, all optional): `restored` (`true`), `usageSource`
 (`transcript`|`snapshot`|`none`), `usageAsOf` (ms epoch), `interruptedAt` (ms epoch),
@@ -132,6 +132,10 @@ absent means the writer didn't publish one (records written before it existed).
 `modes` names the mode extension's minor modes the worker was given at its start (today only
 `spec` reaches workers). Absent when it was given none, or the writer didn't publish it; an
 empty, over-long or malformed list is dropped whole.
+`teamId` is the id of the team the worker is a member of (e.g. `team_01`): its session team
+while the team is live, else, for a restored member, the team its durable record names. Absent
+when it is in no team, or the writer didn't publish it (records written before it existed). Same
+rule: empty or over-limit ⇒ dropped, never truncated; a reader that ignores it behaves as before.
 `turns` counts the model replies the worker has had so far, across resumes (a restored worker's
 comes from its transcript or last snapshot). It sits beside `usage`, not in it, so the size
 trimmer's drop of `usage` keeps it. Absent means unknown (an older writer, nothing counted), never 0;
@@ -176,10 +180,17 @@ be seen), `degraded` ✔ (boolean: some calls this process makes can't be seen),
 (string[], sorted, ≤ 64 ids of ≤ 64: the producers whose counts `active` already includes —
 the process's pi workers, transitively — so a reader counts none of them again, whichever record
 or worker file carries them; a worker whose ids would not fit is left out of `active` as well,
-never summed unnamed, and `degraded` is true; readers accept up to 256; absent reads as `[]`). All counts are non-negative integers. Several records written by one process carry the
+never summed unnamed, and `degraded` is true; readers accept up to 256; absent reads as `[]`),
+`tokens` (additive: the output tokens of the process's ended calls, its summed pi workers'
+included, as `{bucketMs: 30000, end, out, partial?}`: `out` is 60 integers 0–10,000,000, oldest
+first, `out[59]` the slot `end` = floor(epoch ms / 30000) as of the write; each call's output
+tokens, reasoning included and never input or cache reads, are added once at its end, spread
+evenly over the time its reply streamed; `partial: true` = some of its calls' tokens are known
+missing, such as a worker that reported none. Absent = an older counter: its tokens are unknown;
+a malformed one is dropped alone). All counts are non-negative integers. Several records written by one process carry the
 same `llm`: count a `producer` once. Absent means the process doesn't count (no counter loaded) — unknown, never 0;
-a malformed value is dropped. Rewritten only when the counts change (coalesced with every other
-change), never per token.
+a malformed value is dropped. Rewritten only when the counts change (a call's tokens land with
+its end: one change; coalesced with every other change), never per token.
 
 **Outline**: `now` (160), `overall` (300), `topics` (12 × 60), `lastHeading` (80),
 `state` (`none|drafting|fresh|updating|stale|failed-keeping-last`), `generatedAt`,

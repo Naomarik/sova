@@ -305,6 +305,8 @@ html, body { overflow: clip; overscroll-behavior: none; }
   font-weight: var(--fw-semibold);
 }
 .workspace-pane-head > .chip { flex-shrink: 1; min-width: 0; overflow: hidden; }
+/* A peer member's host: after its name, which gives way first; the host keeps up to 40% of the row. */
+.workspace-pane-host { flex: 0 1 auto; min-width: 0; max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-caption); }
 .workspace-pane-tools { flex: none; display: flex; align-items: center; gap: var(--space-1); }
 /* A pane is never a 720px head: the context readout keeps its short step
    (ring and "222k", no window) at every width, as under 720px in base.css. */
@@ -400,6 +402,10 @@ html, body { overflow: clip; overscroll-behavior: none; }
 .org-needs-held .org-needs-item { flex: 1; min-width: 0; border-bottom: 0; }
 .org-needs-held { border-bottom: var(--stroke-thin) solid var(--color-border); }
 .org-needs-cancel { flex: none; min-height: var(--tap-min); margin-right: var(--space-2); }
+/* A proposed playbook run's Approve & Merge, under its Needs you row (§app.project-runtime/review). */
+.needs-you-playbook { display: flex; padding: 0 var(--space-3) var(--space-2); border-bottom: var(--stroke-thin) solid var(--color-border); }
+.playbook-review-act { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.playbook-review-act .button { min-height: var(--tap-min); }
 .org-section + .org-section { border-top: var(--stroke-thin) solid var(--color-border); }
 /* The org head's count stays, open or shut (unlike a user's group, whose rows say it). */
 .org-section[open] > .group-label > .text-num { display: inline; }

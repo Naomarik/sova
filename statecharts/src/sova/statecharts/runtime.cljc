@@ -7,14 +7,15 @@
    ```
    runtime ‹compound› → regions ‹parallel›
    ├─ standing  unregistered · awaiting-approval · conforming · registered · stale · failed
-   └─ playbook  idle · running · proposed
+   └─ playbook  idle · running · waiting · proposed
    ```
 
    standing moves only by eventless transitions over `rules/runtime standing-of` (the facts the host
    observed on main's HEAD: `runtime/observed`, a quiet mirror sent only when they changed). Entering
    conforming emits effect `conform {hash}` (the operator's approval is the authority); entering
    registered records the registration. playbook follows the build the project's `verbs/onboard` started
-   (`playbook/started`, then its `link/moved`). `runtime/approve {hash}` is the operator's only.
+   (`playbook/started`, then its `link/moved`): keyed by the verb playbook's id, with its title (`label`) and what
+   its proposal approves; waiting while a turn ended on open alignment questions. `runtime/approve {hash}` is the operator's only.
 
    What runs right now (units, instances) is never stored here: the host joins the engine's status at read
    time. Start data: `{:project-id :root}`."
@@ -109,6 +110,20 @@
                        :params {:result (result-of k) :session-id (get-in d [:playbook :session-id])}
                        :key (str "runtime/playbook-done:" (get-in d [:playbook :sid]))})))))
 
+(defn- proposed-transition []
+  (transition {:sova/feed :feed :sova/asks-overseer false :event :link/moved :cond (moved-to :proposed) :target :proposed}
+    (script {:expr (fn [_ d] [(ops/assign :playbook (assoc (:playbook d) :branch (get-in (b/moved d) [:exported :branch])))])})
+    (reason (fn [d] {:kind "runtime/proposed" :asks false :params {:branch (get-in (b/moved d) [:exported :branch])}
+                     :key (str "runtime/proposed:" (get-in d [:playbook :sid]) ":" (get-in (b/moved d) [:exported :last-turn-at]))}))))
+
+(defn- waiting-transition
+  "A turn ended on open alignment questions: the run waits on the operator's answers (its count kept for the
+   page and the feed)."
+  []
+  (transition {:sova/feed :feed :event :link/moved :cond (moved-to :waiting) :target :waiting}
+    (script {:expr (fn [_ d] [(ops/assign :playbook (cond-> (assoc (:playbook d) :questions (get-in (b/moved d) [:exported :questions]))
+                                                      (get-in (b/moved d) [:exported :branch]) (assoc :branch (get-in (b/moved d) [:exported :branch]))))])})))
+
 ;; ---- facts ------------------------------------------------------------------------------------------
 
 (defn- observed-ops
@@ -187,20 +202,29 @@
             (transition {:sova/feed :feed :event :playbook/started :target :running}
               (script {:expr (fn [_ d] (let [ev (e d)]
                                          [(ops/assign :playbook (cond-> {:sid (:sid ev) :session-id (:session-id ev) :started-by (or (:started-by ev) "operator")
-                                                                         :at (b/now-ms d)}
+                                                                         :at (b/now-ms d)
+                                                                         :playbook-id (or (:playbook-id ev) "project-verbs")
+                                                                         :label (or (:label ev) "Project verbs")
+                                                                         :approves (or (:approves ev) "definition")}
                                                                   (:why ev) (assoc :why (:why ev))
                                                                   (:title ev) (assoc :title (:title ev))))]))})
               (dsl/watch (fn [d] (:sid (e d))))))
           (run-state :running "running"
             (ended-transition)
-            (transition {:sova/feed :feed :sova/asks-overseer false :event :link/moved :cond (moved-to :proposed) :target :proposed}
-              (script {:expr (fn [_ d] [(ops/assign :playbook (assoc (:playbook d) :branch (get-in (b/moved d) [:exported :branch])))])})
-              (reason (fn [d] {:kind "runtime/proposed" :asks false :params {:branch (get-in (b/moved d) [:exported :branch])}
-                               :key (str "runtime/proposed:" (get-in d [:playbook :sid]) ":" (get-in (b/moved d) [:exported :last-turn-at]))})))
+            (proposed-transition)
+            (waiting-transition)
+            (transition {:sova/feed :quiet :event :link/moved :cond run-of?}))
+          ;; Its turn ended on open alignment questions (§app.project-runtime/onboard): the operator's answer is
+          ;; its next turn.
+          (run-state :waiting "waiting"
+            (ended-transition)
+            (transition {:sova/feed :feed :event :link/moved :cond (moved-to :working) :target :running})
+            (proposed-transition)
             (transition {:sova/feed :quiet :event :link/moved :cond run-of?}))
           (run-state :proposed "proposed"
             (ended-transition)
             (transition {:sova/feed :feed :event :link/moved :cond (moved-to :working) :target :running})
+            (waiting-transition)
             (transition {:sova/feed :quiet :event :link/moved :cond run-of?})))))))
 
 (def acts

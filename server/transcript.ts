@@ -1,4 +1,3 @@
-import { readFile } from "node:fs/promises";
 import {
   EAGER_TOOLS,
   OVERSEER_DIALOG_ANSWER_ENTRY,
@@ -12,6 +11,9 @@ import {
   type ToolRowInfo,
   type TranscriptItem,
 } from "../shared/protocol";
+import type { HEntry } from "../shared/harness";
+import { joinedText, rawOf, toHEntry, typedText } from "./harness/pi/reader";
+import { metaOf, withoutSignatures } from "./harness/pi/wire";
 import { PROFILE_ENTRY, SESSION_SENT_ENTRY } from "../shared/profiles";
 import { profileField, profileOnBranch } from "./session-profile";
 import {
@@ -35,7 +37,6 @@ const BATON_ROWS = new Set([
   BATON_PROPOSAL_ENTRY,
   BATON_WRAPUP_ENTRY,
 ]);
-import { stripImageNotes } from "../shared/image-note";
 import { parseLinkMessage } from "../shared/link-message";
 import { parseTopicBatch } from "../shared/topic-message";
 import { parseWakeNudge } from "../shared/wake";
@@ -48,52 +49,15 @@ import { alignResultOf } from "../pi-config/extensions/mode/align.ts";
 import { argsSummary, contentText as cardText, isObj, SPAWN_TOOLS, spawnName } from "../src/lib/message";
 import { summaryStats } from "../src/lib/tool-diff-stats";
 
-// We parse JSONL ourselves instead of using SessionManager.open(): open() is not
-// read-only (it appends "\n" to a trailing partial line and rewrites the file when
-// migrating old versions), and these files may be owned by a running TUI.
+// The parse, the branch rule and the context rule live in the pi adapter's reader and usage modules
+// (§app.harness/reader); rows are built from the neutral history they give (`rowsOf`).
 
 export type Entry = Record<string, any>;
 
 const RESULT_TEXT_MAX = 2000;
 
-/** Parse JSONL text into objects, skipping blank/malformed lines. */
-export function parseLines(text: string): Entry[] {
-  const out: Entry[] = [];
-  for (const line of text.split("\n")) {
-    if (!line.trim()) continue;
-    try {
-      const v = JSON.parse(line);
-      if (v && typeof v === "object") out.push(v);
-    } catch {
-      // malformed line: skip
-    }
-  }
-  return out;
-}
-
-/**
- * Active branch = walk parentId from the leaf (last entry in file order, same rule
- * as SessionManager._buildIndex) back to the root. Returned root-first.
- * Legacy v1 files without ids are linear: return them as-is.
- */
-export function activeBranch(entries: Entry[]): Entry[] {
-  const body = entries.filter((e) => e.type !== "session");
-  if (body.length === 0) return [];
-  if (body.some((e) => typeof e.id !== "string")) return body;
-  const byId = new Map<string, Entry>();
-  for (const e of body) byId.set(e.id, e);
-  const path: Entry[] = [];
-  const seen = new Set<string>();
-  let cur: Entry | undefined = body[body.length - 1];
-  while (cur && !seen.has(cur.id)) {
-    seen.add(cur.id);
-    path.push(cur);
-    cur = cur.parentId ? byId.get(cur.parentId) : undefined;
-  }
-  return path.reverse();
-}
-
-/** Text blocks joined; image blocks become "[image]" unless the caller renders them as images. */
+/** An extension message's content (a string or blocks) as text: text blocks joined, an image block
+    "[image]". */
 function contentText(content: unknown, imagePlaceholder = true): string {
   if (typeof content === "string") return content;
   if (!Array.isArray(content)) return "";
@@ -121,103 +85,118 @@ function truncate(s: string, max: number): string {
   return s.length > max ? `${s.slice(0, max)}…` : s;
 }
 
-// ---- What a row carries (§chat.transcript/slim-rows) ---------------------------------------------
-// A row never carries its source entry over the wire. The server keeps it beside the row, in a
-// WeakMap that JSON never sees, for its own readers of whole content (the Overseer's session reads,
-// the tool-content route): `entryOf(row)`.
+/** An entry's text blocks joined by newlines (an image block "[image]" unless `images` is false); "" for
+    an entry with no blocks. */
+const textOf = (h: HEntry | undefined, images = true): string => (h ? joinedText(h, { images }) : "");
 
-const sources = new WeakMap<TranscriptItem, Entry>();
+// ---- What a row carries (§chat.transcript/slim-rows) ---------------------------------------------
+// A row never carries its source entry over the wire. The server keeps it on the row, as a hidden
+// (non-enumerable) property that JSON never sees, for its own readers of whole content (the Overseer's session reads,
+// the tool-content route): `sourceOf(row)`, the neutral entry (shared/harness-history.ts) it was
+// made from, whatever wrote it (pi's reader, or the Claude Code transcript's rows).
+
+const SOURCE = Symbol("source");
+/** Kept on the row itself as a non-enumerable property (JSON, spreads and deep equality never see it): a
+    WeakMap over every cached row cost each GC more than the rows did. */
+const sources = {
+  get: (it: TranscriptItem | undefined): HEntry | undefined => (it as { [SOURCE]?: HEntry } | undefined)?.[SOURCE],
+  set(it: TranscriptItem, h: HEntry): void {
+    SOURCE_DESC.value = h;
+    Object.defineProperty(it, SOURCE, SOURCE_DESC);
+    SOURCE_DESC.value = undefined;
+  },
+};
+/** One descriptor for every row's source (defineProperty reads it at the call): no object per row. */
+const SOURCE_DESC: PropertyDescriptor = { value: undefined, writable: true, configurable: true };
 
 /** The entry a row was made from (server-side only; never serialized). */
-export const entryOf = (it: TranscriptItem): Entry | undefined => sources.get(it);
+export const sourceOf = (it: TranscriptItem): HEntry | undefined => sources.get(it);
 
-/** Keep `entry` as `it`'s source; `at` is the entry's timestamp. */
-export function sourced(it: TranscriptItem, entry: unknown): TranscriptItem {
-  if (entry && typeof entry === "object") {
-    sources.set(it, entry as Entry);
-    const at = (entry as Entry).timestamp;
-    if (typeof at === "string") it.at = at;
+/** The raw pi entry a row was made from, for the readers not yet on `sourceOf`; undefined for a row no pi
+    entry made (a Claude Code row). */
+export function entryOf(it: TranscriptItem): Entry | undefined {
+  const h = sources.get(it);
+  return h && rawOf(h);
+}
+
+/** Keep `h` as `it`'s source; `at` is the entry's time. */
+export function withSource(it: TranscriptItem, h: HEntry | null | undefined): TranscriptItem {
+  if (h) {
+    sources.set(it, h);
+    if (typeof h.at === "string") it.at = h.at;
   }
   return it;
 }
 
-const SIGNATURE_KEYS = new Set(["thinkingSignature", "textSignature", "thoughtSignature"]);
-
-/** `v` without any provider signature (encrypted reasoning) at any depth; `v` itself when it holds
-    none, so the common case copies nothing. */
-export function withoutSignatures<T>(v: T): T {
-  if (Array.isArray(v)) {
-    let out: unknown[] | null = null;
-    v.forEach((x, i) => {
-      const y = withoutSignatures(x);
-      if (y !== x) (out ??= v.slice())[i] = y;
-    });
-    return (out ?? v) as T;
-  }
-  if (!v || typeof v !== "object") return v;
-  let out: Record<string, unknown> | null = null;
-  for (const [k, x] of Object.entries(v as Record<string, unknown>)) {
-    if (SIGNATURE_KEYS.has(k)) {
-      out ??= { ...(v as Record<string, unknown>) };
-      delete out[k];
-      continue;
-    }
-    const y = withoutSignatures(x);
-    if (y !== x) (out ??= { ...(v as Record<string, unknown>) })[k] = y;
-  }
-  return (out ?? v) as T;
+/** Keep a raw pi entry as `it`'s source (rows made by hand, in tests). */
+export function sourced(it: TranscriptItem, entry: unknown): TranscriptItem {
+  return withSource(it, toHEntry(entry));
 }
 
-/** An entry's facts, as its first row carries them (EntryMeta). */
-export function metaOf(entry: Entry): EntryMeta {
-  const meta: EntryMeta = { type: typeof entry.type === "string" ? entry.type : "unknown" };
-  if (typeof entry.customType === "string") meta.customType = entry.customType;
-  if (entry.type === "compaction") {
-    if (typeof entry.tokensBefore === "number") meta.tokensBefore = entry.tokensBefore;
-    if (typeof entry.summary === "string") meta.summary = entry.summary;
-    if (entry.details !== undefined) meta.details = entry.details;
-  }
-  const m = entry.message;
-  if (isObj(m)) {
-    const s = (k: string) => (typeof m[k] === "string" ? (m[k] as string) : undefined);
-    const put = <K extends keyof EntryMeta>(k: K, v: EntryMeta[K] | undefined) => {
-      if (v !== undefined) meta[k] = v;
-    };
-    put("role", s("role"));
-    put("provider", s("provider"));
-    put("model", s("model"));
-    if (m.usage !== undefined) meta.usage = m.usage;
-    put("stopReason", s("stopReason"));
-    put("errorMessage", s("errorMessage"));
-    put("toolName", s("toolName"));
-    put("toolCallId", s("toolCallId"));
-    if (typeof m.isError === "boolean") meta.isError = m.isError;
-    if (meta.customType === undefined) put("customType", s("customType"));
+/** An entry's facts, as its first row carries them on wire 1 (EntryMeta): a pi entry's as pi wrote them
+    (the adapter's metaOf: pi's own fields, its raw usage among them), else the neutral entry's (a Claude
+    Code row's). A wire-2 consumer gets them mapped (server/wire-rows.ts). */
+function factsOf(h: HEntry): EntryMeta {
+  const raw = rawOf(h);
+  return raw ? metaOf(raw) : neutralFacts(h);
+}
+
+/** The facts of an entry no pi entry made, in pi's words as a message of its kind would carry them. */
+function neutralFacts(h: HEntry): EntryMeta {
+  const meta: EntryMeta = { type: "message" };
+  const str = (v: unknown) => (typeof v === "string" ? v : undefined);
+  const put = <K extends keyof EntryMeta>(k: K, v: EntryMeta[K] | undefined) => {
+    if (v !== undefined) meta[k] = v;
+  };
+  switch (h.kind) {
+    case "user":
+      meta.role = "user";
+      break;
+    case "assistant":
+      meta.role = "assistant";
+      put("provider", str(h.provider));
+      put("model", str(h.model));
+      put("stopReason", str(h.stop));
+      put("errorMessage", str(h.error));
+      break;
+    case "tool-result":
+      meta.role = "toolResult";
+      put("toolName", str(h.tool));
+      put("toolCallId", str(h.callId));
+      if (typeof h.isError === "boolean") meta.isError = h.isError;
+      break;
+    case "note":
+      meta.role = "custom";
+      put("customType", str(h.noteType));
+      break;
+    default:
+      return { type: "unknown" };
   }
   return meta;
 }
 
 /** The call block a tool-call row stands for: the first `toolCall` with its id, as the card finds it. */
-function callBlock(entry: Entry | undefined, toolCallId: string | undefined): Record<string, unknown> | undefined {
-  const content = entry?.message?.content;
-  if (!Array.isArray(content)) return undefined;
-  const b = content.find((c) => isObj(c) && c.type === "toolCall" && c.id === toolCallId);
-  return isObj(b) ? b : undefined;
+function callBlock(h: HEntry | undefined, toolCallId: string | undefined): { arguments: unknown } | undefined {
+  if (!h || !("blocks" in h)) return undefined;
+  return h.blocks.find((b) => b.type === "toolCall" && b.id === toolCallId) as { arguments: unknown } | undefined;
 }
 
 /** A result row's output as the card shows it: its text blocks joined, else the row's own text. */
-function resultOutput(entry: Entry | undefined, text: string | undefined): string {
-  return cardText(entry?.message?.content) || text || "";
+function resultOutput(h: HEntry | undefined, text: string | undefined): string {
+  return cardText(h && "blocks" in h ? h.blocks : undefined) || text || "";
 }
+
+/** The tool result a row was made from, if it was made from one. */
+const resultEntry = (h: HEntry | undefined) => (h?.kind === "tool-result" ? h : undefined);
 
 const sizeOf = (v: unknown): number => (v === undefined ? 0 : (JSON.stringify(v)?.length ?? 0));
 
 /** A tool row's `tool`, from its source entry: the folded card's facts, and the whole content only
     for EAGER_TOOLS. A lazy result row loses its `text` (the content's 2,000-character cut). */
-function slimTool(it: TranscriptItem, entry: Entry | undefined): void {
+function slimTool(it: TranscriptItem, h: HEntry | undefined): void {
   if (it.kind === "tool-call") {
     const name = it.text ?? "tool";
-    const args = callBlock(entry, it.toolCallId)?.arguments;
+    const args = callBlock(h, it.toolCallId)?.arguments;
     const tool: ToolRowInfo = {};
     const summary = argsSummary(args);
     // Whole: the folded line's tooltip shows all of it (a heredoc's, at times, many KB).
@@ -236,10 +215,10 @@ function slimTool(it: TranscriptItem, entry: Entry | undefined): void {
     return;
   }
   if (it.kind !== "tool-result") return;
-  const m = entry?.message;
-  const name = isObj(m) && typeof m.toolName === "string" ? m.toolName : "";
-  const details = isObj(m) ? m.details : undefined;
-  const output = resultOutput(entry, it.text);
+  const r = resultEntry(h);
+  const name = typeof r?.tool === "string" ? r.tool : "";
+  const details = r?.details;
+  const output = resultOutput(h, it.text);
   const tool: ToolRowInfo = {};
   // Counted whatever the result's own name (a Claude Code worker's result names no tool): the card
   // shows it only on an edit or write call, as it would have counted it.
@@ -262,13 +241,17 @@ function slimTool(it: TranscriptItem, entry: Entry | undefined): void {
  * share it, so a reply's later blocks carry no meta of their own.
  */
 export function slimRows(rows: TranscriptItem[]): TranscriptItem[] {
-  let prev: Entry | undefined;
+  let prev: HEntry | undefined;
   for (const it of rows) {
-    const entry = sources.get(it);
-    if (entry && entry !== prev) it.meta = metaOf(entry);
-    prev = entry;
-    if (it.kind === "tool-call" || it.kind === "tool-result") slimTool(it, entry);
-    else if (it.kind === "unknown" && entry) it.entry = withoutSignatures(entry);
+    const h = sources.get(it);
+    if (h && h !== prev) it.meta = factsOf(h);
+    prev = h;
+    if (it.kind === "tool-call" || it.kind === "tool-result") slimTool(it, h);
+    else if (it.kind === "unknown" && h) {
+      // The Unrecognized entry card shows the entry as the harness wrote it.
+      const raw = rawOf(h);
+      if (raw) it.entry = withoutSignatures(raw);
+    }
   }
   return rows;
 }
@@ -283,13 +266,14 @@ export function toolContents(rows: readonly TranscriptItem[], ids: readonly stri
   const results = new Map<string, TranscriptItem>();
   for (const it of rows) if (it.kind === "tool-result" && it.toolCallId) results.set(it.toolCallId, it);
   const resultOf = (r: TranscriptItem): ToolContent["result"] => {
-    const entry = sources.get(r);
-    const m = entry?.message;
-    const out: NonNullable<ToolContent["result"]> = { output: resultOutput(entry, r.text ?? fullCut(entry)), isError: isObj(m) && m.isError === true };
-    if (isObj(m) && m.details !== undefined) out.details = m.details;
-    // An entry that recorded its edit as Claude Code's own `toolUseResult` beside the message (the
+    const h = sources.get(r);
+    const t = resultEntry(h);
+    const out: NonNullable<ToolContent["result"]> = { output: resultOutput(h, r.text ?? fullCut(h)), isError: t?.isError === true };
+    if (t && t.details !== undefined) out.details = t.details;
+    // A pi entry that recorded its edit as Claude Code's own `toolUseResult` beside the message (the
     // Changes viewer's fallback when the message has no details object).
-    if (!(isObj(m) && isObj(m.details)) && isObj(entry?.toolUseResult)) out.toolUseResult = entry!.toolUseResult;
+    const raw = h && rawOf(h);
+    if (!isObj(t?.details) && isObj(raw?.toolUseResult)) out.toolUseResult = raw!.toolUseResult;
     return out;
   };
   const out: Record<string, ToolContent> = {};
@@ -310,14 +294,14 @@ export function toolContents(rows: readonly TranscriptItem[], ids: readonly stri
 }
 
 /** The 2,000-character cut a result row's text was, for a row that no longer carries it. */
-function fullCut(entry: Entry | undefined): string {
-  return truncate(contentText(entry?.message?.content, false), RESULT_TEXT_MAX);
+function fullCut(h: HEntry | undefined): string {
+  return truncate(textOf(h, false), RESULT_TEXT_MAX);
 }
 
 function item(
   id: string,
   kind: EntryKind,
-  entry: unknown,
+  h: HEntry,
   text?: string,
   toolCallId?: string,
   images?: string[],
@@ -326,7 +310,7 @@ function item(
   if (text !== undefined) it.text = text;
   if (toolCallId !== undefined) it.toolCallId = toolCallId;
   if (images) it.images = images;
-  return sourced(it, entry);
+  return withSource(it, h);
 }
 
 /** Set `model` (the producing "provider/model") on an assistant-derived row, when known. */
@@ -342,113 +326,101 @@ function withPaths(it: TranscriptItem, source: string): TranscriptItem {
   return it;
 }
 
+type NoteEntry = Extract<HEntry, { kind: "note" }>;
+type StateEntry = Extract<HEntry, { kind: "state" }>;
+
 /** An extension message: a report row when it's a subagent report or long/multi-line, else an info row. */
-function customRow(id: string, entry: Entry, customType: unknown, content: unknown): TranscriptItem {
-  const text = contentText(content);
-  const source = typeof customType === "string" ? customType : "";
+function customRow(id: string, h: NoteEntry): TranscriptItem {
+  const text = contentText(h.content);
+  const source = typeof h.noteType === "string" ? h.noteType : "";
   // A coordinated team's report or question: a report row whatever its length, with the header
   // and trailer peeled off. Unparsed, it falls through to the generic row below.
   const team = parseTeamMessage(source, text);
   if (team) {
-    const it = withPaths(item(id, "report", entry, team.body), team.body);
+    const it = withPaths(item(id, "report", h, team.body), team.body);
     it.report = { source, body: team.body, preview: previewLine(team.body), truncated: team.truncated, team: team.team };
     return it;
   }
-  if (!isReport(source, text)) return withPaths(item(id, "info", entry, text), text);
+  if (!isReport(source, text)) return withPaths(item(id, "info", h, text), text);
   const report = parseReport(source, text);
-  const it = withPaths(item(id, "report", entry, report.body), report.body);
+  const it = withPaths(item(id, "report", h, report.body), report.body);
   it.report = report;
   return it;
 }
 
-function normalizeMessage(entry: Entry, id: string, state?: { model?: string }): TranscriptItem[] {
-  const m = entry.message ?? {};
-  switch (m.role) {
-    case "user": {
-      const raw = contentText(m.content, false);
-      const wake = parseWakeNudge(raw);
-      if (wake) {
-        const it = item(id, "wake", entry, raw);
-        it.wake = wake;
-        return [it];
-      }
-      // A partner's message over a link (§mesh.links/transcript): the model's, never the user's.
-      // Its own kind, so the thread renders nothing for it while the turn logic still sees a start.
-      const link = parseLinkMessage(raw);
-      if (link) {
-        const it = item(id, "link", entry, raw);
-        it.link = link;
-        return [it];
-      }
-      // Notes other sessions pushed to a topic this session opened (§chat.topics/row): never "You".
-      const topic = parseTopicBatch(raw);
-      if (topic) {
-        const it = item(id, "topic", entry, raw);
-        it.topic = topic;
-        return [it];
-      }
-      const it = item(id, "user", entry, undefined, undefined, contentImages(m.content));
-      // pi 0.87's image resize notes are for the model: the row shows the text as typed.
-      const { text, attachments } = inlineTmpImages(stripImageNotes(raw, m.content), true);
-      if (text !== undefined) it.text = text;
-      if (attachments) it.attachments = attachments;
-      return [it];
-    }
-    case "assistant": {
-      // One item per content block; ids are `${entryId}:${blockIndex}` so they stay unique.
-      const out: TranscriptItem[] = [];
-      // This row's producer: the message's own provider/model, else the last model_change seen.
-      const model =
-        (typeof m.provider === "string" && typeof m.model === "string" ? `${m.provider}/${m.model}` : undefined) ?? state?.model;
-      const blocks: any[] = Array.isArray(m.content) ? m.content : [];
-      blocks.forEach((b, i) => {
-        const bid = `${id}:${i}`;
-        if (b?.type === "text") {
-          if (b.text?.trim()) out.push(withModel(withPaths(item(bid, "assistant-text", entry, b.text), b.text), model));
-        } else if (b?.type === "thinking") {
-          if (b.thinking?.trim()) out.push(withModel(item(bid, "thinking", entry, b.thinking), model));
-        } else if (b?.type === "toolCall") {
-          out.push(withModel(item(bid, "tool-call", entry, String(b.name ?? "tool"), b.id), model));
-        } else {
-          out.push(item(bid, "unknown", entry));
-        }
-      });
-      if (m.stopReason === "error" || m.stopReason === "aborted") {
-        const why = m.errorMessage ? `: ${m.errorMessage}` : "";
-        // withModel: the turn's own provider rides the row (the limit row keys on it).
-        out.push(withModel(item(`${id}:stop`, "info", entry, `${m.stopReason === "error" ? "Error" : "Aborted"}${why}`), model));
-      }
-      return out;
-    }
-    case "toolResult": {
-      // An align call that changed an alignment, or recorded an exemption (§chat.alignment/card):
-      // its checked details are the row. A failed call, a `get` or unreadable details stay a plain
-      // tool result, inside their call's card.
-      const align = m.toolName === "align" ? alignResultOf(entry) : undefined;
-      if (align && (align.doc || align.exempt)) {
-        const it = item(id, "align", entry, contentText(m.content, false), m.toolCallId);
-        it.align = align;
-        return [it];
-      }
-      const text = contentText(m.content, false);
-      return [withPaths(item(id, "tool-result", entry, truncate(text, RESULT_TEXT_MAX), m.toolCallId, contentImages(m.content)), text)];
-    }
-    case "bashExecution":
-      return [item(id, "info", entry, truncate(`$ ${m.command ?? ""}\n${m.output ?? ""}`, RESULT_TEXT_MAX))];
-    case "custom":
-      return m.display === false ? [] : [customRow(id, entry, m.customType, m.content)];
-    case "branchSummary":
-      return [item(id, "info", entry, `Branch summary: ${m.summary ?? ""}`)];
-    case "compactionSummary":
-      return [item(id, "info", entry, `Compaction summary: ${m.summary ?? ""}`)];
-    case "system":
-      // pi 0.86.0+: the prompt/tool loadout state replayed from the transcript
-      // (content, sections, toolsAdded/Removed). The TUI does not show it as
-      // conversation either, so neither do we.
-      return [];
-    default:
-      return [item(id, "unknown", entry)];
+/** A user message's rows: a wake-up, a link message, a topic batch, or the user's own words. */
+function userRow(id: string, h: Extract<HEntry, { kind: "user" }>): TranscriptItem[] {
+  const raw = textOf(h, false);
+  const wake = parseWakeNudge(raw);
+  if (wake) {
+    const it = item(id, "wake", h, raw);
+    it.wake = wake;
+    return [it];
   }
+  // A partner's message over a link (§mesh.links/transcript): the model's, never the user's.
+  // Its own kind, so the thread renders nothing for it while the turn logic still sees a start.
+  const link = parseLinkMessage(raw);
+  if (link) {
+    const it = item(id, "link", h, raw);
+    it.link = link;
+    return [it];
+  }
+  // Notes other sessions pushed to a topic this session opened (§chat.topics/row): never "You".
+  const topic = parseTopicBatch(raw);
+  if (topic) {
+    const it = item(id, "topic", h, raw);
+    it.topic = topic;
+    return [it];
+  }
+  const it = item(id, "user", h, undefined, undefined, contentImages(h.blocks));
+  // pi 0.87's image resize notes are for the model: the row shows the text as typed.
+  const { text, attachments } = inlineTmpImages(typedText(raw, h), true);
+  if (text !== undefined) it.text = text;
+  if (attachments) it.attachments = attachments;
+  return [it];
+}
+
+/** A reply's rows: one item per content block, ids `${entryId}:${blockIndex}` so they stay unique, and
+    a stop row for an error or an abort. */
+function assistantRows(id: string, h: Extract<HEntry, { kind: "assistant" }>, state?: { model?: string }): TranscriptItem[] {
+  const out: TranscriptItem[] = [];
+  // This row's producer: the message's own provider/model, else the last model change seen.
+  const model = (typeof h.provider === "string" && typeof h.model === "string" ? `${h.provider}/${h.model}` : undefined) ?? state?.model;
+  // A reply whose content pi wrote as a string (it never does) has had no block rows; the reader reads
+  // such content as one text block.
+  const blocks: any[] = typeof rawOf(h)?.message?.content === "string" ? [] : h.blocks;
+  blocks.forEach((b, i) => {
+    const bid = `${id}:${i}`;
+    if (b?.type === "text") {
+      if (b.text?.trim()) out.push(withModel(withPaths(item(bid, "assistant-text", h, b.text), b.text), model));
+    } else if (b?.type === "thinking") {
+      if (b.thinking?.trim()) out.push(withModel(item(bid, "thinking", h, b.thinking), model));
+    } else if (b?.type === "toolCall") {
+      out.push(withModel(item(bid, "tool-call", h, String(b.name ?? "tool"), b.id), model));
+    } else {
+      out.push(item(bid, "unknown", h));
+    }
+  });
+  if (h.stop === "error" || h.stop === "aborted") {
+    const why = h.error ? `: ${h.error}` : "";
+    // withModel: the turn's own provider rides the row (the limit row keys on it).
+    out.push(withModel(item(`${id}:stop`, "info", h, `${h.stop === "error" ? "Error" : "Aborted"}${why}`), model));
+  }
+  return out;
+}
+
+/** A tool result's row, or an align row for an align call that changed an alignment, or recorded an
+    exemption (§chat.alignment/card): its checked details are the row. A failed call, a `get` or
+    unreadable details stay a plain tool result, inside their call's card. */
+function toolResultRow(id: string, h: Extract<HEntry, { kind: "tool-result" }>): TranscriptItem[] {
+  const align = h.tool === "align" ? alignResultOf(rawOf(h)) : undefined;
+  if (align && (align.doc || align.exempt)) {
+    const it = item(id, "align", h, textOf(h, false), h.callId);
+    it.align = align;
+    return [it];
+  }
+  const text = textOf(h, false);
+  return [withPaths(item(id, "tool-result", h, truncate(text, RESULT_TEXT_MAX), h.callId, contentImages(h.blocks)), text)];
 }
 
 /**
@@ -456,23 +428,23 @@ function normalizeMessage(entry: Entry, id: string, state?: { model?: string }):
  * `{strict}` for the strict toggle. Newer entries also carry an `active` snapshot (what the
  * session restores from); it is state, not a message, so it is never rendered.
  */
-function modeMarker(entry: Entry, id: string): TranscriptItem[] {
-  const d = entry.data;
-  if (d && typeof d.minor === "string" && typeof d.on === "boolean") return [item(id, "info", entry, `Minor mode: ${d.minor} ${d.on ? "on" : "off"}`)];
-  if (d && typeof d.mode === "string") return [item(id, "info", entry, `Mode → ${d.mode}`)];
-  if (d && typeof d.strict === "boolean") return [item(id, "info", entry, `Strict mode ${d.strict ? "on" : "off"}`)];
+function modeMarker(h: StateEntry, id: string): TranscriptItem[] {
+  const d: any = h.data;
+  if (d && typeof d.minor === "string" && typeof d.on === "boolean") return [item(id, "info", h, `Minor mode: ${d.minor} ${d.on ? "on" : "off"}`)];
+  if (d && typeof d.mode === "string") return [item(id, "info", h, `Mode → ${d.mode}`)];
+  if (d && typeof d.strict === "boolean") return [item(id, "info", h, `Strict mode ${d.strict ? "on" : "off"}`)];
   return [];
 }
 
 /** A pi-btw side-channel exchange. Hidden custom state in the TUI (it lives in the overlay);
     the web has no overlay, so show it as a report row or /btw answers would be silent. */
-function btwRow(id: string, entry: Entry): TranscriptItem[] {
-  const d: any = entry.data;
+function btwRow(id: string, h: StateEntry): TranscriptItem[] {
+  const d: any = h.data;
   const answer = typeof d?.answer === "string" ? d.answer : "";
   if (!answer.trim()) return []; // still running or malformed: stay hidden like the TUI
   const question = typeof d.question === "string" ? d.question.replace(/\s+/g, " ").trim().slice(0, 80) : "";
   const model = typeof d.provider === "string" && typeof d.model === "string" ? `${d.provider}/${d.model}` : undefined;
-  const it = withPaths(item(id, "report", entry, answer), answer);
+  const it = withPaths(item(id, "report", h, answer), answer);
   it.report = {
     source: "btw-thread-entry",
     agent: { id: "btw", name: question || "side question", status: "done" },
@@ -486,16 +458,16 @@ function btwRow(id: string, entry: Entry): TranscriptItem[] {
 
 const ALIGN_DOC = "align-doc";
 
-function isAlignDoc(entry: Entry): boolean {
-  return entry.type === "custom" && entry.customType === ALIGN_DOC;
+function isAlignDoc(h: HEntry): boolean {
+  return h.kind === "state" && h.key === ALIGN_DOC;
 }
 
 /** The mode extension's align document: data {version: 1, doc: AlignDoc | null}, a full snapshot
     per revision; align.ts is the only parser, so this reads the payload and never the markdown. doc
     null (cleared) or without markdown, a questions array or a title yields no row; normalizeEntries keeps only
     the newest align-doc entry on the branch. */
-function alignRow(id: string, entry: Entry): TranscriptItem[] {
-  const doc: any = entry.data?.doc;
+function alignRow(id: string, h: StateEntry): TranscriptItem[] {
+  const doc: any = (h.data as any)?.doc;
   if (!doc || typeof doc !== "object" || typeof doc.markdown !== "string" || !doc.markdown.trim()) return [];
   if (!Array.isArray(doc.questions) || typeof doc.title !== "string") return [];
   const markdown: string = doc.markdown;
@@ -506,7 +478,7 @@ function alignRow(id: string, entry: Entry): TranscriptItem[] {
     : open > 0 ? "questions-open"
     : total > 0 ? "ready"
     : "aligning";
-  const it = withPaths(item(id, "report", entry, markdown), markdown);
+  const it = withPaths(item(id, "report", h, markdown), markdown);
   it.report = {
     source: ALIGN_DOC,
     body: markdown,
@@ -538,8 +510,8 @@ const EXPLAIN_DOC = "explain-doc";
     The row carries the data verbatim for the gallery/strip; `preview` is the topic and `body` the
     summary, so the collapsed row reads without opening the page. Entries without an id, a topic
     or a createdAt are the extension mid-write: no row. */
-function explainRow(id: string, entry: Entry): TranscriptItem[] {
-  const d: any = entry.data;
+function explainRow(id: string, h: StateEntry): TranscriptItem[] {
+  const d: any = h.data;
   if (!d || typeof d !== "object") return [];
   const s = (v: unknown): string => (typeof v === "string" ? v : "");
   const explain: ExplanationInfo = {
@@ -564,7 +536,7 @@ function explainRow(id: string, entry: Entry): TranscriptItem[] {
   const note = s(d.note);
   if (err) explain.error = err;
   else if (note) explain.note = note;
-  const it = withPaths(item(id, "report", entry, explain.summary), explain.summary);
+  const it = withPaths(item(id, "report", h, explain.summary), explain.summary);
   it.report = { source: EXPLAIN_DOC, body: explain.summary, preview: explain.topic, truncated: false, explain };
   if (err) it.report.error = err;
   return [it];
@@ -577,8 +549,8 @@ const HANDOFF_STATUSES: readonly HandoffRunInfo["status"][] = ["running", "saved
     `{v: 1, id, status, at, focus?, path?, error?}` (pi-config/extensions/compact-handoff/run.ts)
     at the fork's start (`running`) and again, same id, when the run ends; normalizeEntries renders
     only the newest per id. An entry this version can't read: no row. */
-function handoffRunRow(id: string, entry: Entry): TranscriptItem[] {
-  const d: any = entry.data;
+function handoffRunRow(id: string, h: StateEntry): TranscriptItem[] {
+  const d: any = h.data;
   if (!d || d.v !== 1 || typeof d.id !== "string" || !d.id || !HANDOFF_STATUSES.includes(d.status)) return [];
   const s = (v: unknown): string => (typeof v === "string" ? v : "");
   const run: HandoffRunInfo = { id: d.id, status: d.status };
@@ -591,67 +563,67 @@ function handoffRunRow(id: string, entry: Entry): TranscriptItem[] {
     : run.status === "failed" ? `Handoff note failed${run.error ? `: ${run.error}` : ""}`
     : run.status === "cancelled" ? "Handoff cancelled"
     : "Handoff interrupted";
-  const it = item(id, "info", entry, text);
+  const it = item(id, "info", h, text);
   it.handoffRun = run;
   return [it];
 }
 
 /** The dedupe key of an entry rendered once per run id (explain-doc, compact-handoff-run), or null. */
-function runKey(entry: Entry): string | null {
-  if (entry.type !== "custom" || (entry.customType !== EXPLAIN_DOC && entry.customType !== HANDOFF_RUN)) return null;
-  const d: any = entry.data;
-  return d && typeof d === "object" && typeof d.id === "string" ? `${entry.customType}:${d.id}` : null;
+function runKey(h: HEntry): string | null {
+  if (h.kind !== "state" || (h.key !== EXPLAIN_DOC && h.key !== HANDOFF_RUN)) return null;
+  const d: any = h.data;
+  return d && typeof d === "object" && typeof d.id === "string" ? `${h.key}:${d.id}` : null;
 }
 
 /** The Overseer sent the user message `targetId`: a row that renders nothing itself — the client
     tags that user row "Overseer", matching by id in either arrival order. */
-function overseerSentRow(id: string, entry: Entry): TranscriptItem[] {
-  const d: any = entry.data;
+function overseerSentRow(id: string, h: StateEntry): TranscriptItem[] {
+  const d: any = h.data;
   if (!d || typeof d.targetId !== "string" || !d.targetId) return [];
-  const it = item(id, "info", entry);
+  const it = item(id, "info", h);
   it.overseerMark = { kind: "sent", targetId: d.targetId };
   return [it];
 }
 
 /** Another session sent the user message `targetId` (§chat.profiles/delivery): renders nothing
     itself; the client draws the sender header above that row. */
-function sessionSentRow(id: string, entry: Entry): TranscriptItem[] {
-  const d: any = entry.data;
+function sessionSentRow(id: string, h: StateEntry): TranscriptItem[] {
+  const d: any = h.data;
   if (!d || typeof d.targetId !== "string" || !d.targetId || typeof d.from?.sessionId !== "string") return [];
-  const it = item(id, "info", entry);
+  const it = item(id, "info", h);
   it.sessionMark = { kind: "sent", targetId: d.targetId, from: { sessionId: d.from.sessionId, title: typeof d.from.title === "string" ? d.from.title : "" }, hop: typeof d.hop === "number" ? d.hop : 1 };
   return [it];
 }
 
 /** The session's profile entry (§chat.profiles/after-first-message): the client draws its row only
     once a user message is on the branch. */
-function profileRow(id: string, entry: Entry): TranscriptItem[] {
-  const d = profileOnBranch([entry as { type: string; customType?: string; data?: unknown }]);
+function profileRow(id: string, h: StateEntry): TranscriptItem[] {
+  const d = profileOnBranch([rawOf(h) as { type: string; customType?: string; data?: unknown }]);
   if (!d) return [];
   const field = profileField(d) ?? null;
-  const it = item(id, "info", entry, field ? `Profile: ${field.label}${field.singleton ? " · One at a time" : ""}` : "Profile: Default");
+  const it = item(id, "info", h, field ? `Profile: ${field.label}${field.singleton ? " · One at a time" : ""}` : "Profile: Default");
   it.profileMark = { profile: field };
   return [it];
 }
 
 /** The Overseer answered an extension dialog: the machine row "Overseer chose: X". */
-function overseerAnswerRow(id: string, entry: Entry): TranscriptItem[] {
-  const d: any = entry.data;
+function overseerAnswerRow(id: string, h: StateEntry): TranscriptItem[] {
+  const d: any = h.data;
   const answer = d && typeof d.answer === "string" ? d.answer : "";
   const title = d && typeof d.title === "string" ? d.title : "";
-  const it = item(id, "info", entry, `Overseer chose: ${answer}`);
+  const it = item(id, "info", h, `Overseer chose: ${answer}`);
   it.overseerMark = { kind: "dialog-answer", title, answer };
   return [it];
 }
 
 /** A baton marker (§app.baton/attribution): the sender of a user row (renders nothing itself), or a
     hand-off, decision or done card. Undecodable: nothing. */
-function batonRow(id: string, entry: Entry): TranscriptItem[] {
-  const d: any = entry.data;
+function batonRow(id: string, h: StateEntry): TranscriptItem[] {
+  const d: any = h.data;
   if (!d || typeof d !== "object") return [];
   const s = (v: unknown) => (typeof v === "string" ? v : "");
-  const it = item(id, "info", entry);
-  switch (entry.customType) {
+  const it = item(id, "info", h);
+  switch (h.key) {
     case BATON_SENT_ENTRY:
       if (!s(d.targetId) || !s(d.by)) return [];
       it.batonMark = { kind: "sent", targetId: d.targetId, by: d.by };
@@ -709,164 +681,156 @@ function batonRow(id: string, entry: Entry): TranscriptItem[] {
 /** The claude-code provider's `claude-login` entry (§app.claude-logins/failover): the login a
     session runs on. Only a switch (it names the login it left) is a row, its notice as written;
     the plain record renders nothing. */
-function claudeLoginRow(id: string, entry: Entry): TranscriptItem[] {
-  const d = entry.data as { from?: unknown; text?: unknown } | undefined;
+function claudeLoginRow(id: string, h: StateEntry): TranscriptItem[] {
+  const d = h.data as { from?: unknown; text?: unknown } | undefined;
   if (!d || typeof d.from !== "string" || typeof d.text !== "string" || !d.text.trim()) return [];
-  return [item(id, "info", entry, d.text.slice(0, 300))];
+  return [item(id, "info", h, d.text.slice(0, 300))];
 }
 
 /** A subagents team event (handover, retire, pause, resume, wrap-up): one machine row, like a
     model change, in both webapp-owned and watched sessions. Undecodable: nothing. */
-function teamEventRow(id: string, entry: Entry): TranscriptItem[] {
-  const ev = teamEventOf(entry, id);
+function teamEventRow(id: string, h: StateEntry): TranscriptItem[] {
+  const ev = teamEventOf(h, id);
   if (!ev) return [];
-  const it = item(id, "info", entry, `Team: ${ev.text}`);
+  const it = item(id, "info", h, `Team: ${ev.text}`);
   it.teamEvent = ev;
   return [it];
 }
 
-/** Normalize one parsed JSONL entry into 0..n TranscriptItems, as they go over the wire
-    (slimRows). The header line yields none. */
-export function normalizeEntry(entry: Entry, fallbackId = "?", state?: { model?: string }): TranscriptItem[] {
-  return slimRows(entryRows(entry, fallbackId, state));
+/** A neutral entry's rows (0..n TranscriptItems), as they go over the wire (slimRows); `state` carries the
+    running model. An id-less entry's rows are keyed by `fallbackId`. */
+export function rowsOfEntry(h: HEntry, fallbackId = "?", state?: { model?: string }): TranscriptItem[] {
+  return slimRows(entryRows(h, fallbackId, state));
 }
 
-function entryRows(entry: Entry, fallbackId: string, state?: { model?: string }): TranscriptItem[] {
-  const id = typeof entry.id === "string" ? entry.id : fallbackId;
-  switch (entry.type) {
-    case "session":
-      return [];
-    case "usage":
+/** Normalize one parsed pi entry into 0..n TranscriptItems, as they go over the wire (slimRows). The
+    header line yields none. */
+export function normalizeEntry(entry: Entry, fallbackId = "?", state?: { model?: string }): TranscriptItem[] {
+  const h = toHEntry(entry);
+  return h ? rowsOfEntry(h, fallbackId, state) : [];
+}
+
+function entryRows(h: HEntry, fallbackId: string, state?: { model?: string }): TranscriptItem[] {
+  const id = h.id ?? fallbackId;
+  switch (h.kind) {
+    case "usage-record":
       // pi 0.86.0+: model-attributed usage outside the conversation (e.g. kind
-      // "cache_warm"). It contributes to session totals only (see transcript-usage.ts),
-      // never to the conversation; unknown `kind` values are still usage.
+      // "cache_warm"). Never a row: what it spent is in the usage ledger (recorded when the
+      // call ended, llm-inflight), and unknown `kind` values are still usage.
       return [];
-    case "context_edit":
+    case "context-edit":
       // pi 0.87.0+: an append-only edit (omit, or replace the content of) to what an earlier
       // entry sends the MODEL. pi writes one itself on every retried error and overflow recovery
       // (`_omitRecoveryAttempt`), and emits it as entry_appended. Raw history, usage and the
       // chat are unchanged — pi's own chat shows nothing for it, only /tree lists it — so the
       // edited message keeps its row and the edit renders nothing, not an unknown row.
       return [];
-    case "message":
-      return normalizeMessage(entry, id, state);
-    case "model_change":
-      if (state) state.model = `${entry.provider}/${entry.modelId}`;
-      return [item(id, "info", entry, `Model: ${entry.provider}/${entry.modelId}`)];
-    case "thinking_level_change":
-      return [item(id, "info", entry, `Thinking: ${entry.thinkingLevel}`)];
-    case "session_info":
-      return [item(id, "info", entry, `Session name: ${entry.name ?? ""}`)];
-    case "label":
-      return [item(id, "info", entry, entry.label ? `Label "${entry.label}" on ${entry.targetId}` : `Label cleared on ${entry.targetId}`)];
-    case "compaction":
-      return [item(id, "info", entry, `Compacted (${entry.tokensBefore ?? "?"} tokens): ${entry.summary ?? ""}`)];
-    case "branch_summary":
-      return [item(id, "info", entry, `Branch summary: ${entry.summary ?? ""}`)];
-    case "custom":
-      // Extension state, not displayable (docs/session-format.md). Exceptions: the mode
-      // extension's switch marker, which the TUI draws in the transcript too; and pi-btw's
-      // thread entries, which the TUI shows in its overlay but the web can only show here; and
-      // the align document, which the TUI opens in its viewer overlay; a finished /explain,
-      // whose page the TUI can only point at but the web can open inline; and a team event.
-      if (entry.customType === "mode") return modeMarker(entry, id);
-      if (entry.customType === "btw-thread-entry") return btwRow(id, entry);
-      if (entry.customType === ALIGN_DOC) return alignRow(id, entry);
-      if (entry.customType === EXPLAIN_DOC) return explainRow(id, entry);
-      if (entry.customType === HANDOFF_RUN) return handoffRunRow(id, entry);
-      if (entry.customType === OVERSEER_SENT_ENTRY) return overseerSentRow(id, entry);
-      if (entry.customType === SESSION_SENT_ENTRY) return sessionSentRow(id, entry);
-      if (entry.customType === PROFILE_ENTRY) return profileRow(id, entry);
-      if (entry.customType === OVERSEER_DIALOG_ANSWER_ENTRY) return overseerAnswerRow(id, entry);
-      if (entry.customType === TEAM_EVENT_TYPE) return teamEventRow(id, entry);
-      if (entry.customType === "claude-login") return claudeLoginRow(id, entry);
-      if (BATON_ROWS.has(entry.customType)) return batonRow(id, entry);
+    case "system":
+      // pi 0.86.0+: the prompt/tool loadout state replayed from the transcript
+      // (content, sections, toolsAdded/Removed). The TUI does not show it as
+      // conversation either, so neither do we.
       return [];
-    case "custom_message":
-      if (entry.display === false) return [];
+    case "user":
+      return userRow(id, h);
+    case "assistant":
+      return assistantRows(id, h, state);
+    case "tool-result":
+      return toolResultRow(id, h);
+    case "shell":
+      return [item(id, "info", h, truncate(`$ ${h.command ?? ""}\n${h.output ?? ""}`, RESULT_TEXT_MAX))];
+    case "note":
+      if (!h.display) return [];
       // The worktrees extension's merge card; details it can't read fall back to the plain row.
-      if (entry.customType === WORKTREE_MERGE_MESSAGE) {
-        const merge = mergeInfoOf(entry.details);
+      if (!h.inMessage && h.noteType === WORKTREE_MERGE_MESSAGE) {
+        const merge = mergeInfoOf(h.details);
         if (merge) {
-          const it = item(id, "worktree-merge", entry, contentText(entry.content));
+          const it = item(id, "worktree-merge", h, contentText(h.content));
           it.worktreeMerge = merge;
           return [it];
         }
       }
-      return [customRow(id, entry, entry.customType, entry.content)];
-    default:
-      return [item(id, "unknown", entry)];
+      return [customRow(id, h)];
+    case "summary":
+      return [item(id, "info", h, `${h.of === "branch" ? "Branch" : "Compaction"} summary: ${h.summary ?? ""}`)];
+    case "setting":
+      switch (h.what) {
+        case "model":
+          if (state) state.model = `${h.provider}/${h.modelId}`;
+          return [item(id, "info", h, `Model: ${h.provider}/${h.modelId}`)];
+        case "thinking":
+          return [item(id, "info", h, `Thinking: ${h.level}`)];
+        case "name":
+          return [item(id, "info", h, `Session name: ${h.name ?? ""}`)];
+        case "label":
+          return [item(id, "info", h, h.label ? `Label "${h.label}" on ${h.targetId}` : `Label cleared on ${h.targetId}`)];
+      }
+      return [];
+    case "compaction":
+      return [item(id, "info", h, `Compacted (${h.tokensBefore ?? "?"} tokens): ${h.summary ?? ""}`)];
+    case "state":
+      return stateRows(id, h);
+    case "unknown":
+      // Never dropped silently: the Unrecognized entry row, its entry as written (§app.harness/unknown-entries;
+      // the reader counted it).
+      return [item(id, "unknown", h)];
   }
 }
 
-export function normalizeEntries(entries: Entry[]): TranscriptItem[] {
+/** Extension state, not displayable (docs/session-format.md). Exceptions: the mode extension's switch
+    marker, which the TUI draws in the transcript too; and pi-btw's thread entries, which the TUI shows in
+    its overlay but the web can only show here; and the align document, which the TUI opens in its viewer
+    overlay; a finished /explain, whose page the TUI can only point at but the web can open inline; and a
+    team event. */
+function stateRows(id: string, h: StateEntry): TranscriptItem[] {
+  if (h.key === "mode") return modeMarker(h, id);
+  if (h.key === "btw-thread-entry") return btwRow(id, h);
+  if (h.key === ALIGN_DOC) return alignRow(id, h);
+  if (h.key === EXPLAIN_DOC) return explainRow(id, h);
+  if (h.key === HANDOFF_RUN) return handoffRunRow(id, h);
+  if (h.key === OVERSEER_SENT_ENTRY) return overseerSentRow(id, h);
+  if (h.key === SESSION_SENT_ENTRY) return sessionSentRow(id, h);
+  if (h.key === PROFILE_ENTRY) return profileRow(id, h);
+  if (h.key === OVERSEER_DIALOG_ANSWER_ENTRY) return overseerAnswerRow(id, h);
+  if (h.key === TEAM_EVENT_TYPE) return teamEventRow(id, h);
+  if (h.key === "claude-login") return claudeLoginRow(id, h);
+  if (BATON_ROWS.has(h.key)) return batonRow(id, h);
+  return [];
+}
+
+/** The rows of a run of history; `line(i)` is the position an id-less entry's rows are keyed by. */
+function historyRows(history: readonly HEntry[], line: (i: number) => number): TranscriptItem[] {
   const out: TranscriptItem[] = [];
-  const state: { model?: string } = {}; // running model_change, for assistant rows without their own
+  const state: { model?: string } = {}; // running model change, for assistant rows without their own
   // Align-doc entries are revisions of one document: only the newest renders (none if it's cleared).
   let newestAlign = -1;
-  entries.forEach((e, i) => { if (isAlignDoc(e)) newestAlign = i; });
+  history.forEach((h, i) => { if (isAlignDoc(h)) newestAlign = i; });
   // Each /explain and /compact-handoff run appends a running entry at its start and a final one
   // (same data.id) at settle: per id, only the newest renders, so a settled run is one row.
   // Entries without a string id are no key (their rows drop them anyway).
   const newestRun = new Map<string, number>();
-  entries.forEach((e, i) => { const k = runKey(e); if (k !== null) newestRun.set(k, i); });
-  entries.forEach((e, i) => {
-    if (isAlignDoc(e) && i !== newestAlign) return;
-    const k = runKey(e);
+  history.forEach((h, i) => { const k = runKey(h); if (k !== null) newestRun.set(k, i); });
+  history.forEach((h, i) => {
+    if (isAlignDoc(h) && i !== newestAlign) return;
+    const k = runKey(h);
     if (k !== null && newestRun.get(k) !== i) return;
-    out.push(...normalizeEntry(e, `line${i}`, state));
+    out.push(...rowsOfEntry(h, `line${line(i)}`, state));
   });
   return out;
 }
 
-/** Read a session file and return its active-branch entries (root-first). */
-export async function readActiveBranch(path: string): Promise<Entry[]> {
-  return activeBranch(parseLines(await readFile(path, "utf8")));
+/** The rows of a run of neutral history (a branch, or any slice of one), as they go over the wire. */
+export function rowsOf(history: readonly HEntry[]): TranscriptItem[] {
+  return historyRows(history, (i) => i);
 }
 
-/** Context fill before the window lookup: tokens + the model ("provider/id") that produced them. */
-export interface BranchContext {
-  tokens: number;
-  model: string | null;
-}
-
-/**
- * Tokens in context as one assistant message reports them (input + cacheRead + cacheWrite), or
- * null when it says nothing about the context: no usage, an error or aborted reply, or a usage of
- * zero (a request that failed before the model read anything). Mirrored by src/lib/context.ts
- * messageContextTokens.
- */
-export function messageContextTokens(m: unknown): number | null {
-  if (!m || typeof m !== "object") return null;
-  const msg = m as Record<string, any>;
-  if (msg.role !== "assistant" || msg.stopReason === "error" || msg.stopReason === "aborted") return null;
-  const u = msg.usage;
-  if (!u || typeof u !== "object") return null;
-  const tokens = (Number(u.input) || 0) + (Number(u.cacheRead) || 0) + (Number(u.cacheWrite) || 0);
-  return tokens > 0 ? tokens : null;
-}
-
-/**
- * Context fill = messageContextTokens of the LAST assistant message on the branch that reports
- * one; an error reply or a zero usage is passed over, so it never shows as an empty context. A
- * compaction after it makes that number stale, so we return null until the next reply.
- * The model is the assistant message's own provider/model, else the last model_change before it,
- * else the session's first model_change.
- */
-export function contextForBranch(branch: Entry[]): BranchContext | null {
-  for (let i = branch.length - 1; i >= 0; i--) {
-    const e = branch[i]!;
-    if (e.type === "compaction" || (e.type === "message" && e.message?.role === "compactionSummary")) return null;
-    const m = e.type === "message" ? e.message : undefined;
-    const tokens = messageContextTokens(m);
-    if (tokens === null) continue;
-    let model = m.provider && m.model ? `${m.provider}/${m.model}` : null;
-    if (!model) {
-      const change = branch.slice(0, i).reverse().find((x) => x.type === "model_change")
-        ?? branch.find((x) => x.type === "model_change");
-      if (change) model = `${change.provider}/${change.modelId}`;
-    }
-    return { tokens, model };
-  }
-  return null;
+/** The rows of parsed pi entries (a branch, or any slice of one); an id-less entry's rows are keyed by its
+    place in `entries`, the header's place included. */
+export function normalizeEntries(entries: Entry[]): TranscriptItem[] {
+  const history: HEntry[] = [];
+  const lines: number[] = [];
+  entries.forEach((e, i) => {
+    const h = toHEntry(e);
+    if (h) history.push(h), lines.push(i);
+  });
+  return historyRows(history, (i) => lines[i]!);
 }

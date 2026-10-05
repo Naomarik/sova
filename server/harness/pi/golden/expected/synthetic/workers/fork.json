@@ -1,0 +1,112 @@
+{
+  "parse": {
+    "ok": true,
+    "lines": 13
+  },
+  "branch": [
+    "o0000001",
+    "o0000002",
+    "o0000003",
+    "o0000004",
+    "o0000005",
+    "o0000006",
+    "o0000007",
+    "o0000008",
+    "o0000009",
+    "o000000a",
+    "o000000b",
+    "o000000c",
+    "o000000d"
+  ],
+  "fanout": false,
+  "prefixes": {
+    "o0000001": {
+      "ok": false,
+      "reason": "not_assistant",
+      "message": "Only an assistant reply can be forked from.",
+      "status": 400
+    },
+    "o0000002": {
+      "ok": false,
+      "reason": "not_assistant",
+      "message": "Only an assistant reply can be forked from.",
+      "status": 400
+    },
+    "o0000003": {
+      "ok": false,
+      "reason": "not_assistant",
+      "message": "Only an assistant reply can be forked from.",
+      "status": 400
+    },
+    "o0000004": {
+      "ok": false,
+      "reason": "not_assistant",
+      "message": "Only an assistant reply can be forked from.",
+      "status": 400
+    },
+    "o0000005": {
+      "ok": false,
+      "reason": "not_assistant",
+      "message": "Only an assistant reply can be forked from.",
+      "status": 400
+    },
+    "o0000006": {
+      "ok": false,
+      "reason": "not_assistant",
+      "message": "Only an assistant reply can be forked from.",
+      "status": 400
+    },
+    "o0000007": {
+      "ok": false,
+      "reason": "not_assistant",
+      "message": "Only an assistant reply can be forked from.",
+      "status": 400
+    },
+    "o0000008": {
+      "ok": false,
+      "reason": "not_assistant",
+      "message": "Only an assistant reply can be forked from.",
+      "status": 400
+    },
+    "o0000009": {
+      "ok": false,
+      "reason": "not_assistant",
+      "message": "Only an assistant reply can be forked from.",
+      "status": 400
+    },
+    "o000000a": {
+      "ok": false,
+      "reason": "not_assistant",
+      "message": "Only an assistant reply can be forked from.",
+      "status": 400
+    },
+    "o000000b": {
+      "ok": false,
+      "reason": "not_assistant",
+      "message": "Only an assistant reply can be forked from.",
+      "status": 400
+    },
+    "o000000c": {
+      "ok": false,
+      "reason": "not_assistant",
+      "message": "Only an assistant reply can be forked from.",
+      "status": 400
+    },
+    "o000000d": {
+      "ok": true,
+      "prefix": [
+        "{\"type\":\"model_change\",\"provider\":\"zai\",\"modelId\":\"glm-5.3\",\"id\":\"o0000001\",\"parentId\":null,\"timestamp\":\"2026-09-01T10:00:01.000Z\"}",
+        "{\"type\":\"message\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"Start a team\"}],\"timestamp\":1788256802000},\"id\":\"o0000002\",\"parentId\":\"o0000001\",\"timestamp\":\"2026-09-01T10:00:02.000Z\"}",
+        "{\"type\":\"custom_message\",\"customType\":\"subagent-complete\",\"content\":\"### ag_02 (writer) — done · task success\\nWrote 3 files.\",\"display\":true,\"id\":\"o000000a\",\"parentId\":\"o0000002\",\"timestamp\":\"2026-09-01T10:00:10.000Z\"}",
+        "{\"type\":\"custom\",\"customType\":\"worktrees\",\"data\":{\"version\":1,\"trees\":[{\"path\":\"/wt/golden-writer\",\"branch\":\"feat/golden-writer\",\"base\":\"abc\",\"baseBranch\":\"master\",\"status\":\"active\",\"session\":\"0190a000-0000-7000-8000-o00000000000\",\"how\":\"created\",\"at\":1788256800000}]},\"id\":\"o000000c\",\"parentId\":\"o000000a\",\"timestamp\":\"2026-09-01T10:00:12.000Z\"}",
+        "{\"type\":\"message\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"The team finished.\"}],\"api\":\"openai-completions\",\"provider\":\"zai\",\"model\":\"glm-5.3\",\"usage\":{\"input\":9000,\"output\":400,\"cacheRead\":30000,\"cacheWrite\":0,\"totalTokens\":39400,\"cost\":{\"input\":0.001,\"output\":0.002,\"cacheRead\":0.0001,\"cacheWrite\":0,\"total\":0.0031}},\"stopReason\":\"stop\",\"timestamp\":1788256813000},\"id\":\"o000000d\",\"parentId\":\"o000000c\",\"timestamp\":\"2026-09-01T10:00:13.000Z\"}"
+      ]
+    },
+    "no-such-entry": {
+      "ok": false,
+      "reason": "not_on_branch",
+      "message": "That reply is not on this chat's current branch anymore.",
+      "status": 400
+    }
+  }
+}

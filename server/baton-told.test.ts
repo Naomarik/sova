@@ -23,6 +23,7 @@ const baton = await import("./baton");
 const po = await import("./project-overseer");
 const store = await import("./project-overseer-store");
 const told = await import("./baton-told");
+const { piReplay } = await import("./harness/pi/system-replay");
 const { registerOrgRoutes } = await import("./org-routes");
 const { disposeAllChats } = await import("./chat-manager");
 const { settled } = await import("./workspace-git");
@@ -195,7 +196,7 @@ describe("what it is told: the prompt as the file last recorded it (§app.baton/
   });
 
   test("the replay is pi-ai's, resolved beside the pi package", async () => {
-    const r = await told.piReplay();
+    const r = await piReplay();
     assert.equal(typeof r.getCurrentSystemPrompt, "function");
     assert.equal(r.getCurrentSystemPrompt([{ role: "system", content: "base", sections: { a: "A" }, timestamp: 1 } as never]), "base\n\nA");
   });

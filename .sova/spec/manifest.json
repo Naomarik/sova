@@ -61,14 +61,16 @@
         "src/lib/insights.test.ts",
         "src/components/Sidebar.tsx",
         "src/design/base.css",
-        "src/lib/llm-inflight.ts"
+        "src/lib/llm-inflight.ts",
+        "src/lib/work-now.ts"
       ],
       "requires": [
         "§app.claude-logins/active-login",
         "§app.insights/usage-cards",
         "§app.resource-monitor/entry-button",
         "§app/settings-dialog",
-        "§app.insights/llm-inflight"
+        "§app.session-list/working-now",
+        "§app.insights/token-velocity"
       ]
     },
     "§app.insights/subagent-cards": {
@@ -112,7 +114,8 @@
         "server/insights-workers.test.ts",
         "server/insights-restored.test.ts",
         "src/lib/title-field.ts",
-        "src/lib/title-field.test.ts"
+        "src/lib/title-field.test.ts",
+        "shared/usage/wire.ts"
       ]
     },
     "§app.insights/tokens-motion-and-accessibility": {
@@ -152,7 +155,11 @@
         "src/lib/agents-board.ts",
         "src/App.tsx",
         "src/components/UsageView.tsx",
-        "src/components/InsightsPage.tsx"
+        "src/components/InsightsPage.tsx",
+        "src/components/CostsTab.tsx",
+        "src/lib/agents-board.test.ts",
+        "src/lib/api.ts",
+        "shared/usage/wire.ts"
       ]
     },
     "§app.session-list/accessibility": {
@@ -431,7 +438,15 @@
         "src/components/SubagentPane.tsx",
         "server/insights.ts",
         "src/components/SessionPane.tsx",
-        "src/design/base.css"
+        "src/design/base.css",
+        "src/lib/spend.ts",
+        "src/lib/spend.test.ts",
+        "src/components/SessionUsage.tsx",
+        "src/components/SessionView.tsx",
+        "src/lib/api.ts",
+        "server/usage-helper/query.ts",
+        "shared/usage/wire.ts",
+        "shared/protocol.ts"
       ]
     },
     "§app.subagents-pane/motion": {
@@ -482,7 +497,14 @@
         "src/design/base.css",
         "src/components/SessionPane.tsx",
         "src/components/ContextGauge.tsx",
-        "src/lib/workers.ts"
+        "src/lib/workers.ts",
+        "src/lib/spend.ts",
+        "src/lib/spend.test.ts",
+        "src/components/SessionUsage.tsx",
+        "src/components/SessionView.tsx",
+        "server/usage-helper/query.ts",
+        "shared/usage/wire.ts",
+        "shared/protocol.ts"
       ]
     },
     "§app.subagents-pane/trigger": {
@@ -499,7 +521,19 @@
         "src/design/align-viewer.css",
         "src/lib/workers.ts",
         "src/lib/workers.test.ts",
-        "src/lib/slash.ts"
+        "src/lib/slash.ts",
+        "server/insights.ts",
+        "server/insights-workers.test.ts",
+        "pi-config/extensions/sessions/workers.ts",
+        "pi-config/extensions/sessions/schema.ts",
+        "pi-config/extensions/sessions/index.ts",
+        "pi-config/extensions/sessions/public/SCHEMA.md",
+        "pi-config/extensions/sessions/public/live-record.schema.json",
+        "pi-config/extensions/sessions/test.mjs",
+        "pi-config/extensions/sessions/workers.test.ts",
+        "pi-config/extensions/sessions/schema.test.ts",
+        "pi-config/extensions/subagents/index.ts",
+        "pi-config/extensions/subagents/restore.test.ts"
       ]
     },
     "§app.subagents-pane/worker-rows": {
@@ -519,7 +553,15 @@
         "src/design/base.css",
         "src/components/ContextRing.tsx",
         "src/lib/workers.ts",
-        "src/lib/workers.test.ts"
+        "src/lib/workers.test.ts",
+        "src/lib/spend.ts",
+        "src/lib/spend.test.ts",
+        "src/components/SessionUsage.tsx",
+        "src/components/SessionPane.tsx",
+        "src/components/SessionView.tsx",
+        "src/lib/api.ts",
+        "server/usage-helper/query.ts",
+        "shared/usage/wire.ts"
       ]
     },
     "§app/extension-dialogs": {
@@ -646,7 +688,8 @@
         "src/components/ComposerMenu.tsx",
         "src/lib/api.ts",
         "src/lib/sandbox.ts",
-        "src/components/Composer.tsx"
+        "src/components/Composer.tsx",
+        "src/lib/sandbox.test.ts"
       ]
     },
     "§chat.composer/disabled-states": {
@@ -1155,7 +1198,10 @@
         "src/components/MeshView.tsx",
         "src/extensions.css",
         "src/components/ExplanationsView.tsx",
-        "src/lib/explanations.ts"
+        "src/lib/explanations.ts",
+        "src/components/OverviewSharesCard.tsx",
+        "src/lib/session-shares.ts",
+        "src/lib/session-shares.test.ts"
       ],
       "requires": [
         "§app.organizations/org-cards",
@@ -1190,6 +1236,7 @@
         "src/app.css",
         "src/lib/message-actions.ts",
         "src/lib/message-actions.test.ts",
+        "server/chat-regenerate.test.ts",
         "src/components/ChatView.tsx",
         "src/components/WatchView.tsx"
       ]
@@ -1346,7 +1393,11 @@
     "§design.copy-deck/insights": {
       "kind": "note",
       "authority": "accepted",
-      "evidence": "unreviewed"
+      "evidence": "unreviewed",
+      "code": [
+        "src/components/CostsTab.tsx",
+        "src/lib/cost-history.ts"
+      ]
     },
     "§design.copy-deck/live-watch": {
       "kind": "note",
@@ -1419,7 +1470,8 @@
       "code": [
         "src/components/SessionUsage.tsx",
         "src/components/SessionPane.tsx",
-        "src/components/SubagentPane.tsx"
+        "src/components/SubagentPane.tsx",
+        "src/lib/spend.ts"
       ]
     },
     "§design.copy-deck/timeline-tab": {
@@ -1458,7 +1510,10 @@
         "src/components/ui.tsx",
         "src/vis/icons.ts",
         "src/vis/kinds/wireframe/icons.ts",
-        "public/icons/share.svg"
+        "public/icons/share.svg",
+        "public/icons/shield-on.svg",
+        "public/icons/shield-partial.svg",
+        "public/icons/shield-off.svg"
       ]
     },
     "§design.ground-rules/motion": {
@@ -1694,7 +1749,9 @@
       "requires": [
         "§app.session-list/recent",
         "§app.session-list/accessibility",
-        "§app.shell/spine-column"
+        "§app.shell/spine-column",
+        "§app.session-list/working-now",
+        "§app.insights/token-velocity"
       ]
     },
     "§app.shell/spine-column": {
@@ -1970,7 +2027,12 @@
         "src/components/Composer.tsx",
         "src/components/ui.tsx",
         "src/design/base.css",
-        "src/lib/sandbox.ts"
+        "src/lib/sandbox.ts",
+        "public/icons/shield-on.svg",
+        "public/icons/shield-partial.svg",
+        "public/icons/shield-off.svg",
+        "src/components/ComposerMenu.tsx",
+        "src/lib/sandbox.test.ts"
       ]
     },
     "§design.copy-deck/sandbox": {
@@ -1988,7 +2050,10 @@
         "pi-config/extensions/sandbox/state.ts",
         "pi-config/extensions/sandbox/tools.ts",
         "src/components/ChatView.tsx",
-        "src/lib/sandbox.ts"
+        "src/lib/sandbox.ts",
+        "server/overseer-tools.ts",
+        "server/sandbox-state.ts",
+        "pi-config/extensions/subagents/index.ts"
       ]
     },
     "§app.sessions-extension/agent-dir": {
@@ -2074,7 +2139,9 @@
         "pi-config/extensions/subagents/README.md",
         "pi-config/extensions/subagents/restored.ts",
         "pi-config/extensions/subagents/teams.ts",
-        "pi-config/extensions/subagents/restore.test.ts"
+        "pi-config/extensions/subagents/restore.test.ts",
+        "server/worker-restore.ts",
+        "shared/protocol.ts"
       ]
     },
     "§app.worker-restore/transcript-protocol": {
@@ -2100,14 +2167,14 @@
       "code": [
         "pi-config/extensions/subagents/worker-transcript.ts",
         "pi-config/extensions/subagents/index.ts",
-        "server/transcript-usage.ts",
         "server/insights.ts",
         "shared/protocol.ts",
         "server/worker-restore.ts",
         "server/claude-transcript.ts",
         "pi-config/extensions/subagents/adapters/pi.ts",
         "pi-config/extensions/claude-code/transcript-adapter.ts",
-        "src/components/SessionDetails.tsx"
+        "src/components/SessionDetails.tsx",
+        "server/usage-helper/query.ts"
       ]
     },
     "§app.worker-restore/worker-record": {
@@ -2151,7 +2218,11 @@
         "server/transcript.ts",
         "src/lib/context.ts",
         "server/sessions-index.ts",
-        "src/components/ChatView.tsx"
+        "src/components/ChatView.tsx",
+        "server/harness/pi/usage.ts",
+        "server/transcript-context.test.ts",
+        "src/lib/live-effects.ts",
+        "src/lib/live-effects.test.ts"
       ]
     },
     "§chat.transcript/own-writes-across-restart": {
@@ -2669,7 +2740,8 @@
         "pi-config/extensions/claude-code/transcript-adapter.ts",
         "pi-config/extensions/claude-code/context-window.ts",
         "server/worker-context.test.ts",
-        "server/insights-restored.test.ts"
+        "server/insights-restored.test.ts",
+        "server/harness/pi/usage.test.ts"
       ],
       "requires": [
         "§chat.context-window/last-reply",
@@ -2693,7 +2765,9 @@
         "server/server-stop.ts",
         "server/server-stop.test.ts",
         "server/index.ts",
-        "server/outreach/log.ts"
+        "server/outreach/log.ts",
+        "server/projects/playbook-review.ts",
+        "server/project-services/deploy-attention.ts"
       ],
       "requires": [
         "§app.overseer/seen"
@@ -2756,7 +2830,9 @@
         "src/lib/older-rows.ts",
         "src/lib/older-rows.test.ts",
         "src/lib/session-links.ts",
-        "src/lib/card-refs.ts"
+        "src/lib/card-refs.ts",
+        "server/overseer-org-tools.ts",
+        "server/overseer-folders.ts"
       ],
       "requires": [
         "§app.overseer/tools",
@@ -2853,14 +2929,17 @@
     "§app.overseer/navigation": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "code": [
         "server/overseer-tools.ts",
         "src/lib/overseer.ts",
         "src/components/ChatView.tsx",
         "src/components/Thread.tsx",
         "src/components/ToolCard.tsx",
-        "src/lib/live.ts"
+        "src/lib/live.ts",
+        "server/overseer-card-tool.ts",
+        "src/lib/live-effects.ts",
+        "src/lib/live-effects.test.ts"
       ],
       "requires": [
         "§chat.transcript/a-queued-message"
@@ -3470,7 +3549,7 @@
     "§app.session-list/needs-you": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "code": [
         "src/lib/needs-you.ts",
         "src/lib/needs-you.test.ts",
@@ -3486,7 +3565,8 @@
         "server/attention.ts",
         "src/lib/api.ts",
         "src/design/base.css",
-        "src/lib/org-region.ts"
+        "src/lib/org-region.ts",
+        "src/components/PlaybookReview.tsx"
       ],
       "requires": [
         "§app.overseer/attention-digest",
@@ -4512,11 +4592,14 @@
         "src/components/ProjectOverseerHead.tsx",
         "src/components/ChatView.tsx",
         "server/project-overseer-routes.ts",
-        "src/projects.css"
+        "src/projects.css",
+        "server/overseer-org-part.ts",
+        "server/overseer-org-part.test.ts"
       ],
       "requires": [
         "§app.overseer/hosting",
-        "§app.organizations/workspace-repo"
+        "§app.organizations/workspace-repo",
+        "§chat/images"
       ]
     },
     "§app.project-overseer/tools": {
@@ -4537,7 +4620,10 @@
         "server/outreach.test.ts",
         "statecharts/src/sova/statecharts/proj.cljc",
         "server/project-services/tools.ts",
-        "server/vendor/statecharts.js"
+        "server/vendor/statecharts.js",
+        "server/overseer-org-part.ts",
+        "server/orgs.ts",
+        "server/overseer-org-part.test.ts"
       ],
       "requires": [
         "§app.baton/goal-and-loadout",
@@ -4695,7 +4781,7 @@
     "§app.shell/overview": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "reviewed",
       "code": [
         "src/App.tsx",
         "src/lib/overview-route.ts",
@@ -4917,7 +5003,13 @@
         "pi-config/extensions/sandbox/backend.ts",
         "pi-config/extensions/sandbox/backends/linux-bwrap.ts",
         "pi-config/extensions/sandbox/backends/darwin-seatbelt.ts",
-        "pi-config/extensions/sandbox/tests/unit/linux-bwrap.unit.test.ts"
+        "pi-config/extensions/sandbox/tests/unit/linux-bwrap.unit.test.ts",
+        "pi-config/extensions/sandbox/launch.ts",
+        "pi-config/extensions/sandbox/tools.ts",
+        "pi-config/extensions/claude-code/confined-launch.ts",
+        "pi-config/extensions/sandbox/tests/launch.unit.test.ts",
+        "pi-config/extensions/sandbox/tests/tools.unit.test.ts",
+        "pi-config/extensions/sandbox/README.md"
       ]
     },
     "§chat.worktrees/worktree-config": {
@@ -5032,7 +5124,16 @@
         "src/App.tsx",
         "src/lib/session-shares.ts",
         "src/lib/pane-shares.ts",
-        "src/lib/pane-shares.browser.test.ts"
+        "src/lib/pane-shares.browser.test.ts",
+        "src/components/SubagentPane.tsx",
+        "src/components/SessionView.tsx",
+        "src/lib/api.ts",
+        "server/usage-helper/query.ts",
+        "shared/usage/wire.ts",
+        "shared/protocol.ts",
+        "server/skills.ts",
+        "server/skills.test.ts",
+        "server/worker-skills.ts"
       ]
     },
     "§app.settings-dialog/claude-long-context-offered": {
@@ -5166,7 +5267,8 @@
         "src/components/SelectionToolbar.tsx",
         "src/lib/session-selection.ts",
         "src/lib/session-selection.test.ts",
-        "src/components/Sidebar.tsx"
+        "src/components/Sidebar.tsx",
+        "server/worker-sessions.ts"
       ]
     },
     "§app.session-list/organizations": {
@@ -5431,7 +5533,9 @@
         "server/mesh/links-routes.ts",
         "server/mesh/proxy.ts",
         "server/overseer-runtime.test.ts",
-        "src/lib/hidden-rows.ts"
+        "src/lib/hidden-rows.ts",
+        "server/mesh/links.ts",
+        "server/mesh/links.test.ts"
       ],
       "requires": [
         "§app.overseer/tools",
@@ -5442,7 +5546,8 @@
         "§mesh.peers/listener",
         "§app/baton",
         "§app/project-overseer",
-        "§app.overseer/sent-marker"
+        "§app.overseer/sent-marker",
+        "§mesh.links/host-names"
       ]
     },
     "§mesh.links/agents-pane": {
@@ -6064,7 +6169,14 @@
         "server/insights-hidden-workers.test.ts",
         "pi-config/extensions/sessions/schema.test.ts",
         "pi-config/extensions/sessions/test.mjs",
-        "pi-config/extensions/sessions/README.md"
+        "pi-config/extensions/sessions/README.md",
+        "src/lib/spend.ts",
+        "src/lib/spend.test.ts",
+        "src/components/SessionUsage.tsx",
+        "src/components/SessionPane.tsx",
+        "src/components/SessionView.tsx",
+        "server/usage-helper/query.ts",
+        "shared/usage/wire.ts"
       ]
     },
     "§app.project-overseer/page": {
@@ -6145,7 +6257,8 @@
         "src/lib/api.ts",
         "src/projects.css",
         "server/project-costs-routes.ts",
-        "server/index.ts"
+        "server/index.ts",
+        "shared/costs.ts"
       ],
       "evidence": "verified"
     },
@@ -6159,7 +6272,11 @@
         "server/project-costs-ledger.ts",
         "server/project-costs.ts",
         "server/project-costs.test.ts",
-        "server/project-overseer-store.ts"
+        "server/project-overseer-store.ts",
+        "server/usage-helper/project.ts",
+        "server/usage-helper/cost-snapshots.ts",
+        "server/usage-helper/ledger.test.ts",
+        "shared/costs.ts"
       ],
       "evidence": "verified"
     },
@@ -6185,9 +6302,10 @@
         "shared/model-prices/prices.ts",
         "shared/model-prices/aliases.json",
         "shared/model-prices/seed.json",
-        "server/model-prices.ts",
         "scripts/prices-update.mjs",
-        "server/model-prices.test.ts"
+        "server/model-prices.test.ts",
+        "server/usage-helper/price-book.ts",
+        "server/usage-helper/price-book.test.ts"
       ],
       "evidence": "verified"
     },
@@ -6199,7 +6317,11 @@
         "shared/model-prices/aliases.json",
         "server/project-costs.ts",
         "server/model-prices.test.ts",
-        "server/project-costs.test.ts"
+        "server/project-costs.test.ts",
+        "server/usage-helper/project.ts",
+        "server/usage-helper/cost-snapshots.ts",
+        "server/usage-helper/ledger.test.ts",
+        "shared/costs.ts"
       ],
       "evidence": "verified"
     },
@@ -6233,7 +6355,14 @@
         "pi-config/extensions/claude-code/transcript-adapter.ts",
         "pi-config/extensions/subagents/adapters/pi.ts",
         "pi-config/extensions/subagents/worker-transcript.ts",
-        "pi-config/extensions/claude-code/provider/stream.test.ts"
+        "pi-config/extensions/claude-code/provider/stream.test.ts",
+        "server/project-costs.ts",
+        "server/project-costs.test.ts",
+        "server/usage-helper/project.ts",
+        "server/usage-helper/cost-snapshots.ts",
+        "server/usage-helper/ledger.test.ts",
+        "shared/costs.ts",
+        "pi-config/extensions/llm-inflight/attribution.ts"
       ],
       "evidence": "verified"
     },
@@ -6246,7 +6375,10 @@
         "shared/costs.ts",
         "pi-config/extensions/subagents/worker-transcript.ts",
         "pi-config/extensions/subagents/adapters/pi.ts",
-        "pi-config/extensions/claude-code/transcript-adapter.ts"
+        "pi-config/extensions/claude-code/transcript-adapter.ts",
+        "server/usage-helper/project.ts",
+        "server/usage-helper/cost-snapshots.ts",
+        "server/usage-helper/ledger.test.ts"
       ],
       "evidence": "verified"
     },
@@ -6259,9 +6391,9 @@
         "server/project-costs-ledger.ts",
         "shared/costs.ts",
         "shared/model-prices/prices.ts",
-        "server/model-prices.ts",
         "src/components/ProjectCostCard.tsx",
-        "src/lib/costs.ts"
+        "src/lib/costs.ts",
+        "server/usage-helper/price-book.ts"
       ],
       "evidence": "verified"
     },
@@ -6707,7 +6839,9 @@
         "src/lib/profile-changes.test.ts",
         "src/lib/owner-card.test.ts",
         "src/lib/stakeholder.test.ts",
-        "src/lib/coding-worktrees.test.ts"
+        "src/lib/coding-worktrees.test.ts",
+        "server/projects/spaces.ts",
+        "server/project-import.ts"
       ],
       "requires": [
         "§app.overseer/sent-marker",
@@ -6734,7 +6868,8 @@
         "src/components/ChatView.tsx",
         "src/components/Thread.tsx",
         "server/org-routes.ts",
-        "server/orgs.ts"
+        "server/orgs.ts",
+        "server/overseer-sender.ts"
       ],
       "requires": [
         "§app.overseer/confirm",
@@ -7514,7 +7649,11 @@
         "server/claude-pool/agent.ts",
         "server/claude-pool/index.ts",
         "src/components/AccountsSettings.tsx",
-        "server/claude-pool/agent.test.ts"
+        "server/claude-pool/agent.test.ts",
+        "pi-config/extensions/claude-code/accounts.ts",
+        "pi-config/extensions/claude-code/accounts.test.ts",
+        "scripts/claude-pool-e2e/run.mjs",
+        "server/index.ts"
       ]
     },
     "§app.claude-logins/keeper": {
@@ -8437,7 +8576,7 @@
     "§app.session-share/shares-page": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "requires": [
         "§app.session-share/sheet",
         "§app.insights/placement"
@@ -8513,7 +8652,7 @@
     "§design.copy-deck/session-share": {
       "kind": "note",
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "reviewed",
       "requires": [
         "§app.session-share/page",
         "§app.session-share/sheet",
@@ -9196,7 +9335,7 @@
         "§mesh.public/preview"
       ],
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "code": [
         "src/components/PreviewsCard.tsx",
         "src/components/ProjectPage.tsx",
@@ -9661,6 +9800,7 @@
       "code": [
         "server/baton-told.ts",
         "server/baton-told.test.ts",
+        "server/harness/pi/system-replay.ts",
         "src/lib/baton-told.ts",
         "src/lib/baton-told.test.ts",
         "src/components/BatonStrip.tsx",
@@ -9901,7 +10041,7 @@
     "§app.outreach/links": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "code": [
         "server/outreach/links.ts",
         "shared/outreach.ts",
@@ -9911,7 +10051,9 @@
         "src/lib/previews.ts",
         "src/components/PreviewsCard.tsx",
         "src/components/SharesPage.tsx",
-        "server/outreach.test.ts"
+        "server/outreach.test.ts",
+        "server/preview-kept.ts",
+        "server/project-previews.test.ts"
       ],
       "requires": [
         "§app.baton/links",
@@ -10580,9 +10722,11 @@
         "shared/project-contract.ts",
         "shared/project-contract.test.ts",
         "server/project-services/engine.ts",
+        "server/project-services/copy-tree.ts",
         "server/project-services/share.test.ts",
         "server/project-services/data-own-source.test.ts",
-        "server/project-services/ports-grace.test.ts"
+        "server/project-services/ports-grace.test.ts",
+        "server/project-services/copy-tree.test.ts"
       ]
     },
     "§app.project-services/create": {
@@ -11368,7 +11512,9 @@
       ],
       "requires": [
         "§app.insights/sidebar-foot",
-        "§mesh.remote-sessions/host-filter"
+        "§mesh.remote-sessions/host-filter",
+        "§app.session-list/working-now",
+        "§app.insights/token-velocity"
       ]
     },
     "§design.ground-rules/text-fit": {
@@ -11616,7 +11762,7 @@
       "code": [
         "pi-config/extensions/subagents/fork/cache.ts",
         "pi-config/extensions/subagents/fork/cache.test.ts",
-        "server/session-fork.ts",
+        "server/harness/pi/fork.ts",
         "server/session-fork.test.ts",
         "server/chat-manager.ts"
       ]
@@ -11630,7 +11776,7 @@
         "§chat.transcript/message-actions"
       ],
       "code": [
-        "server/session-fork.ts",
+        "server/harness/pi/fork.ts",
         "server/session-fork.test.ts",
         "server/session-fork-routes.ts",
         "server/session-fork-routes.test.ts",
@@ -11767,7 +11913,8 @@
         "server/projects/clone.ts",
         "server/projects/routes.ts",
         "server/projects/routes.test.ts",
-        "src/components/AddProjectDialog.tsx"
+        "src/components/AddProjectDialog.tsx",
+        "server/overseer-folders.ts"
       ],
       "requires": [
         "§app.projects/registration"
@@ -11820,7 +11967,8 @@
         "src/components/AddProjectDialog.tsx",
         "src/components/SessionDetails.tsx",
         "src/lib/projects.ts",
-        "src/lib/projects.test.ts"
+        "src/lib/projects.test.ts",
+        "server/overseer-folders.ts"
       ],
       "requires": [
         "§app.organizations/registry"
@@ -11887,7 +12035,8 @@
         "server/index.ts",
         "src/components/OrgsView.tsx",
         "src/lib/api.ts",
-        "src/orgs.css"
+        "src/orgs.css",
+        "server/overseer-org-tools.test.ts"
       ],
       "requires": [
         "§app.projects/placement",
@@ -11948,7 +12097,8 @@
         "pi-config/extensions/llm-inflight/oneshot.test.ts",
         "pi-config/extensions/subagents/host.ts",
         "pi-config/extensions/subagents/host-transport.ts",
-        "pi-config/extensions/subagents/workers-dir.ts"
+        "pi-config/extensions/subagents/workers-dir.ts",
+        "pi-config/extensions/llm-inflight/record.ts"
       ],
       "requires": [
         "§app.provider-limits/in-flight",
@@ -11984,7 +12134,14 @@
         "server/project-overseer.ts",
         "server/project-services/tools.ts",
         "server/projects/runtime.test.ts",
-        "statecharts/test/sova/statecharts/refit/runtime_test.cljs"
+        "statecharts/test/sova/statecharts/refit/runtime_test.cljs",
+        "server/build-loadout.ts",
+        "server/projects/runtime-feed.ts",
+        "server/projects/runtime-feed.test.ts",
+        "server/projects/playbook-review.test.ts",
+        "statecharts/src/sova/statecharts/build.cljc",
+        "statecharts/src/sova/statecharts/rules/runtime.cljc",
+        "statecharts/EVENTS.md"
       ],
       "requires": [
         "§app.project-overseer/coding-worktrees"
@@ -12039,7 +12196,7 @@
     "§app.project-runtime/software-card": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "code": [
         "src/components/ProjectSoftwareCard.tsx",
         "src/components/ProjectPage.tsx",
@@ -12049,7 +12206,8 @@
         "src/projects.css",
         "server/projects/runtime.ts",
         "server/project-services/on-merge.ts",
-        "server/project-services/on-merge.test.ts"
+        "server/project-services/on-merge.test.ts",
+        "src/components/PlaybookReview.tsx"
       ],
       "requires": [
         "§app.project-runtime/registry"
@@ -12783,6 +12941,1194 @@
         "scripts/mesh-termux/README.md",
         "scripts/fetch-bun.sh",
         "scripts/bun-release.txt"
+      ]
+    },
+    "§chat.sandbox/states": {
+      "kind": "behavior",
+      "requires": [
+        "§chat/sandbox",
+        "§chat.sandbox/toggle",
+        "§chat.sandbox/workers",
+        "§chat.worktrees/workers"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/sandbox/state.ts",
+        "pi-config/extensions/sandbox/index.ts",
+        "pi-config/extensions/subagents/index.ts",
+        "server/sandbox-state.ts",
+        "server/sandbox-state.test.ts",
+        "server/sandbox-route.test.ts",
+        "shared/protocol.ts",
+        "pi-config/extensions/sandbox/README.md",
+        "pi-config/extensions/sandbox/tests/state.unit.test.ts",
+        "pi-config/extensions/sandbox/tests/index.unit.test.ts",
+        "pi-config/extensions/sandbox/tests/cache-invariant.mjs",
+        "pi-config/extensions/sandbox/tests/run.mjs",
+        "pi-config/extensions/subagents/index.test.ts",
+        "pi-config/extensions/claude-code/provider/session-bridge.ts"
+      ]
+    },
+    "§app.overseer/org-project-add": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/overseer-org-tools.ts",
+        "server/overseer-folders.ts",
+        "server/projects/routes.ts",
+        "server/projects/clone.ts",
+        "server/projects/spaces.ts",
+        "server/org-routes.ts",
+        "server/orgs.ts",
+        "server/project-import.ts",
+        "server/overseer-sender.ts",
+        "server/overseer-prompt.md",
+        "server/overseer-org-tools.test.ts",
+        "server/overseer-runtime.test.ts",
+        "server/projects/routes.test.ts"
+      ],
+      "requires": [
+        "§app.overseer/org-writes",
+        "§app.overseer/confirm",
+        "§app.projects/registration",
+        "§app.projects/clone",
+        "§app.projects/placement",
+        "§app.projects/import",
+        "§app.organizations/registry",
+        "§app.overseer/org-attribution",
+        "§app.overseer/caps",
+        "§app.overseer/tools"
+      ]
+    },
+    "§app.claude-logins/macos-keychain": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "requires": [
+        "§app.insights/usage-refresh",
+        "§app.claude-logins/accounts-tab",
+        "§app.insights/usage-cards",
+        "§chat.sandbox/claude-state",
+        "§app.claude-logins/add-remove",
+        "§app.claude-logins/pool"
+      ],
+      "code": [
+        "pi-config/extensions/claude-code/keychain.ts",
+        "pi-config/extensions/claude-code/keychain.test.ts",
+        "pi-config/extensions/usage-status/fetch.ts",
+        "pi-config/extensions/usage-status/fetch.test.ts",
+        "server/auth-status.ts",
+        "server/auth-status.test.ts",
+        "server/insights.ts",
+        "server/claude-accounts.ts",
+        "shared/protocol.ts",
+        "src/components/UsageView.tsx",
+        "src/components/AccountsSettings.tsx",
+        "pi-config/extensions/claude-code/accounts.ts",
+        "pi-config/extensions/claude-code/accounts.test.ts",
+        "server/claude-accounts.test.ts",
+        "scripts/fake-claude.mjs",
+        "server/claude-pool/agent.ts",
+        "server/claude-pool/agent.test.ts",
+        "src/lib/claude-pool.ts",
+        "src/lib/claude-pool.test.ts"
+      ]
+    },
+    "§app.project-runtime/approve-merge": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/projects/runtime.ts",
+        "server/projects/runtime-routes.ts",
+        "server/projects/playbook-review.test.ts",
+        "src/lib/api.ts",
+        "src/components/PlaybookReview.tsx",
+        "src/components/ProjectSoftwareCard.tsx"
+      ],
+      "requires": [
+        "§app.project-runtime/approve",
+        "§app.project-overseer/coding-worktrees"
+      ]
+    },
+    "§app.project-runtime/review": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/projects/playbook-review.ts",
+        "server/projects/playbook-review.test.ts",
+        "server/attention.ts",
+        "server/overseer.ts",
+        "server/push.ts",
+        "server/push-store.ts",
+        "shared/protocol.ts",
+        "src/components/PlaybookReview.tsx",
+        "src/components/ProjectPage.tsx",
+        "src/components/Sidebar.tsx",
+        "src/components/PushSettings.tsx",
+        "src/lib/needs-you.ts",
+        "shared/playbook-review.ts",
+        "shared/playbook-review.test.ts",
+        "src/lib/needs-you.test.ts",
+        "server/attention.test.ts",
+        "server/push.test.ts",
+        "src/app.css",
+        "src/lib/push-draft.test.ts",
+        "src/components/ProjectSoftwareCard.tsx",
+        "src/lib/project-software.ts",
+        "src/lib/project-software.test.ts"
+      ],
+      "requires": [
+        "§app.project-runtime/onboard",
+        "§app.overseer/attention-digest"
+      ]
+    },
+    "§app.project-runtime/run-progress": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/projects/runtime.ts",
+        "shared/project-runtime.ts",
+        "src/components/ProjectSoftwareCard.tsx",
+        "src/lib/project-software.ts",
+        "src/lib/project-software.test.ts",
+        "server/projects/playbook-review.ts",
+        "server/projects/playbook-review.test.ts"
+      ],
+      "requires": [
+        "§app.project-runtime/onboard"
+      ]
+    },
+    "§app.project-runtime/run-report": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/projects/playbook-review.ts",
+        "server/projects/runtime.ts",
+        "shared/project-runtime.ts",
+        "src/components/ProjectSoftwareCard.tsx",
+        "src/lib/project-software.ts",
+        "src/lib/project-software.test.ts",
+        "src/components/ProjectDeployPanel.tsx",
+        "src/lib/project-deploy.ts"
+      ],
+      "requires": [
+        "§app.project-runtime/registry"
+      ]
+    },
+    "§app.project-runtime/verb-playbooks": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/projects/onboard.ts",
+        "server/projects/onboard.test.ts",
+        "server/project-coding-mode.ts",
+        "server/project-overseer.ts",
+        "playbooks/project-verbs/PLAYBOOK.md",
+        "statecharts/src/sova/statecharts/runtime.cljc",
+        "statecharts/src/sova/statecharts/proj.cljc",
+        "server/build-loadout.ts",
+        "server/project-coding-mode.test.ts",
+        "server/playbooks.ts",
+        "shared/protocol.ts",
+        "server/projects/runtime.ts",
+        "server/projects/runtime-routes.ts",
+        "server/projects/runtime-feed.ts",
+        "server/projects/runtime-feed.test.ts",
+        "statecharts/src/sova/statecharts/build.cljc",
+        "statecharts/src/sova/statecharts/rules/runtime.cljc",
+        "statecharts/test/sova/statecharts/refit/runtime_test.cljs",
+        "statecharts/EVENTS.md"
+      ],
+      "requires": [
+        "§app.project-runtime/onboard"
+      ]
+    },
+    "§app.project-runtime/deploy-panel": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "requires": [
+        "§app.project-runtime/deploy-standing",
+        "§app.project-services/deploy-plan",
+        "§app.project-services/deploy-run"
+      ],
+      "code": [
+        "src/components/ProjectDeployPanel.tsx",
+        "src/lib/project-deploy.ts",
+        "src/lib/project-deploy.test.ts",
+        "src/lib/api.ts",
+        "src/components/ProjectPage.tsx",
+        "src/projects.css"
+      ]
+    },
+    "§app.project-runtime/deploy-playbook": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.project-runtime/verb-playbooks",
+        "§app.project-services/deploy-check"
+      ],
+      "code": [
+        "playbooks/project-deploy/PLAYBOOK.md",
+        "playbooks/project-deploy/references/deploy.md",
+        "playbooks/project-deploy/scripts/project-deploy.mjs",
+        "server/project-services/deploy-playbook.test.ts"
+      ]
+    },
+    "§app.project-runtime/deploy-standing": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.project-services/deploy-trust"
+      ],
+      "code": [
+        "server/project-services/deploy-trust.ts",
+        "server/project-services/deploy.ts",
+        "server/project-services/deploy-trust.test.ts"
+      ]
+    },
+    "§app.project-services/deploy": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.project-services/contract",
+        "§app.project-services/result"
+      ],
+      "code": [
+        "shared/project-contract.ts",
+        "shared/project-contract-deploy.test.ts",
+        "shared/project-contract.test.ts",
+        "server/project-services/deploy.ts",
+        "server/project-services/engine.ts",
+        "server/project-services/engine.test.ts",
+        "playbooks/project-verbs/scripts/project-verbs.mjs",
+        "playbooks/project-verbs/references/contract.md"
+      ]
+    },
+    "§app.project-services/deploy-callers": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.project-services/deploy",
+        "§app.project-services/callers"
+      ],
+      "code": [
+        "server/project-services/deploy.ts",
+        "server/project-services/tools.ts",
+        "server/project-services/deploy-callers.test.ts",
+        "scripts/sova-project.mjs"
+      ]
+    },
+    "§app.project-services/deploy-check": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.project-services/deploy"
+      ],
+      "code": [
+        "server/project-services/deploy.ts",
+        "server/project-services/deploy-check.test.ts"
+      ]
+    },
+    "§app.project-services/deploy-plan": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.project-services/deploy",
+        "§app.project-services/deploy-trust",
+        "§app.project-services/test"
+      ],
+      "code": [
+        "server/project-services/deploy.ts",
+        "server/project-services/deploy-run.test.ts"
+      ]
+    },
+    "§app.project-services/deploy-run": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.project-services/deploy-plan",
+        "§app.project-services/supervisor"
+      ],
+      "code": [
+        "server/project-services/deploy.ts",
+        "server/project-services/deploy-runner.mjs",
+        "server/project-services/deploy-run.test.ts",
+        "server/project-services/routes.ts"
+      ]
+    },
+    "§app.project-services/deploy-status": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.project-services/deploy-run",
+        "§app.overseer/attention-digest"
+      ],
+      "code": [
+        "server/project-services/deploy.ts",
+        "server/project-services/deploy-attention.ts",
+        "server/project-services/deploy-status.test.ts",
+        "server/overseer.ts",
+        "shared/protocol.ts",
+        "server/project-services/routes.ts"
+      ]
+    },
+    "§app.project-services/deploy-trust": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.project-services/deploy",
+        "§app.project-services/trust"
+      ],
+      "code": [
+        "server/project-services/deploy-trust.ts",
+        "server/project-services/deploy-trust.test.ts",
+        "server/project-services/trust.ts",
+        "server/project-services/observe.ts",
+        "server/project-services/routes.ts",
+        "server/project-services/deploy.ts"
+      ]
+    },
+    "§mesh.peers/grants": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "requires": [
+        "§mesh.peers/listener",
+        "§mesh.peers/allowlist",
+        "§mesh.sync/categories",
+        "§mesh.sync/logins",
+        "§app.claude-logins/pool",
+        "§app.access/gate"
+      ],
+      "code": [
+        "shared/mesh-access.ts",
+        "server/mesh/access.ts",
+        "server/mesh/listener.ts",
+        "server/mesh/index.ts",
+        "server/mesh/proxy.ts",
+        "server/sync/index.ts",
+        "server/sync/logins.ts",
+        "server/sync/docs.ts",
+        "server/claude-pool/index.ts",
+        "server/mesh/details.ts",
+        "src/components/MeshAccess.tsx",
+        "src/lib/mesh-access.ts",
+        "src/components/MeshView.tsx",
+        "src/lib/mesh.ts",
+        "server/mesh/access.test.ts",
+        "server/mesh/grants.test.ts",
+        "server/sync/grants-sync.test.ts",
+        "src/lib/mesh-access.test.ts",
+        "scripts/mesh-lab/e2e/m7-grants.test.mjs",
+        "server/mesh/lan-mesh.test.ts",
+        "server/overseer-link-tools.test.ts"
+      ]
+    },
+    "§mesh.lan/as-a-peer": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "code": [
+        "server/mesh/dial.ts",
+        "server/mesh/lan-fetch.ts",
+        "server/mesh/lan-fetch.test.ts",
+        "server/mesh/listener.ts",
+        "server/mesh/index.ts",
+        "server/mesh/proxy.ts",
+        "server/mesh/hello.ts",
+        "server/ws.ts",
+        "server/extensions.ts",
+        "server/mesh/lan.ts",
+        "server/mesh/lan-mesh.test.ts",
+        "server/mesh/proxy-pairing.test.ts"
+      ],
+      "requires": [
+        "§mesh.lan/pairing",
+        "§mesh.lan/reverse-channel",
+        "§mesh.peers/listener"
+      ]
+    },
+    "§mesh.lan/dialer": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "code": [
+        "server/mesh/lan-dialer.ts",
+        "server/mesh/lan-dialer.test.ts",
+        "server/mesh/lan.ts"
+      ],
+      "requires": [
+        "§mesh.lan/handshake",
+        "§mesh.lan/reverse-channel"
+      ]
+    },
+    "§mesh.lan/handshake": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "code": [
+        "server/mesh/lan-tls.ts",
+        "server/mesh/lan-tls.test.ts"
+      ],
+      "requires": [
+        "§mesh.lan/identity"
+      ]
+    },
+    "§mesh.lan/identity": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "code": [
+        "server/mesh/lan-cert.ts",
+        "server/mesh/lan-cert.test.ts"
+      ],
+      "requires": []
+    },
+    "§mesh.lan/pairing": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "code": [
+        "server/mesh/peers.ts",
+        "server/mesh/lan.ts",
+        "server/mesh/index.ts",
+        "server/mesh/lan-routes.ts",
+        "shared/mesh-lan.ts",
+        "server/mesh/gate.ts",
+        "server/mesh/lan-peers.test.ts",
+        "server/mesh/lan-mesh.test.ts",
+        "server/mesh/resync.ts",
+        "server/share/gateway-client.ts",
+        "server/index.ts",
+        "src/components/MeshPairings.tsx",
+        "src/components/MeshView.tsx",
+        "src/lib/mesh-lan.ts",
+        "src/lib/mesh-lan.test.ts",
+        "src/lib/api.ts",
+        "src/mesh.css",
+        "scripts/mesh-lab/e2e/m8-dialout.test.mjs",
+        "scripts/mesh-dialout/README.md",
+        "scripts/mesh-dialout/mac-e2e.mjs",
+        "scripts/mesh-dialout/local.env.example",
+        "scripts/mesh-vps/exposure.sh",
+        "server/mesh/access.ts",
+        "shared/mesh-access.ts",
+        "server/mesh/access.test.ts",
+        "scripts/mesh-vps/local.env.example"
+      ],
+      "requires": [
+        "§mesh.lan/identity",
+        "§mesh.lan/handshake"
+      ]
+    },
+    "§mesh.lan/relay-listener": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "code": [
+        "server/mesh/lan-admission.ts",
+        "server/mesh/lan-admission.test.ts",
+        "server/mesh/lan-relay.ts",
+        "server/mesh/lan-relay.test.ts"
+      ],
+      "requires": [
+        "§mesh.lan/handshake"
+      ]
+    },
+    "§mesh.lan/relay-sessions": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "code": [
+        "server/mesh/lan-relay-sessions.ts",
+        "server/mesh/lan-relay-sessions.test.ts",
+        "server/mesh/lan.ts",
+        "server/mesh/lan-mesh.test.ts"
+      ],
+      "requires": [
+        "§mesh.lan/reverse-channel",
+        "§mesh.lan/relay-listener"
+      ]
+    },
+    "§mesh.lan/reverse-channel": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "code": [
+        "server/mesh/lan-reverse.ts",
+        "server/mesh/lan-reverse.test.ts",
+        "server/runtime-quirks.ts",
+        "server/mesh/lan-mesh.test.ts",
+        "server/mesh/lan-h2-limits.test.ts",
+        "server/mesh/lan.ts"
+      ],
+      "requires": [
+        "§mesh.lan/handshake",
+        "§app.server-runtime/quirks"
+      ]
+    },
+    "§mesh/lan": {
+      "kind": "surface",
+      "authority": "accepted",
+      "code": [
+        "server/mesh/lan-reverse.ts",
+        "server/mesh/lan-dialer.ts",
+        "server/mesh/lan-relay.ts"
+      ]
+    },
+    "§app.claude-logins/login-moved": {
+      "kind": "behavior",
+      "requires": [
+        "§app.claude-logins/spawn-selection",
+        "§app.claude-logins/borrow-return",
+        "§app.claude-logins/failover"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/claude-code/provider/session-bridge.ts",
+        "pi-config/extensions/claude-code/accounts.ts",
+        "pi-config/extensions/claude-code/provider/login-failover.test.ts",
+        "pi-config/extensions/claude-code/accounts.test.ts"
+      ]
+    },
+    "§app.insights/token-velocity": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/lib/llm-inflight.ts",
+        "src/lib/llm-inflight.test.ts",
+        "src/components/Sidebar.tsx",
+        "src/design/base.css",
+        "shared/protocol.ts",
+        "server/llm-inflight.ts",
+        "pi-config/extensions/llm-inflight/tracker.ts",
+        "pi-config/extensions/llm-inflight/runtime.ts",
+        "pi-config/extensions/llm-inflight/claude.ts",
+        "pi-config/extensions/llm-inflight/index.ts",
+        "pi-config/extensions/llm-inflight/hosted.ts",
+        "pi-config/extensions/llm-inflight/README.md",
+        "pi-config/extensions/sessions/index.ts",
+        "pi-config/extensions/sessions/schema.ts",
+        "pi-config/extensions/sessions/public/SCHEMA.md",
+        "pi-config/extensions/subagents/runner.ts",
+        "server/llm-inflight.test.ts",
+        "pi-config/extensions/llm-inflight/tracker.test.ts",
+        "pi-config/extensions/llm-inflight/runtime.test.ts",
+        "pi-config/extensions/llm-inflight/claude.test.ts",
+        "pi-config/extensions/llm-inflight/hosted.test.ts",
+        "pi-config/extensions/llm-inflight/tests/pi-e2e.mjs",
+        "pi-config/extensions/sessions/schema.test.ts",
+        "pi-config/extensions/sessions/test.mjs"
+      ],
+      "requires": [
+        "§app.insights/llm-inflight"
+      ]
+    },
+    "§app.session-list/working-now": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/lib/work-now.ts",
+        "src/lib/work-now.test.ts",
+        "src/components/Sidebar.tsx",
+        "src/App.tsx",
+        "src/lib/ui-state.ts",
+        "src/components/ChatView.tsx",
+        "src/design/base.css"
+      ],
+      "requires": [
+        "§app.session-list/search",
+        "§mesh.remote-sessions/host-filter"
+      ]
+    },
+    "§mesh.lan/accept-process": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "code": [
+        "server/mesh/relay-accept/main.ts",
+        "server/mesh/lan-accept.ts",
+        "server/mesh/lan-handoff.ts",
+        "server/mesh/lan-handoff-protocol.ts",
+        "server/mesh/lan-accept.test.ts",
+        "server/mesh/lan-handoff-protocol.test.ts",
+        "server/mesh/lan-internet.test.ts",
+        "scripts/mesh-lab/e2e/m9-internet-relay.test.mjs"
+      ],
+      "requires": [
+        "§mesh.lan/handshake",
+        "§mesh.lan/relay-listener",
+        "§mesh.lan/identity"
+      ]
+    },
+    "§mesh.vps/internet-relay": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "code": [
+        "scripts/mesh-vps/remote-setup.sh",
+        "scripts/mesh-vps/deploy.sh",
+        "scripts/mesh-vps/config.sh",
+        "scripts/mesh-vps/local.env.example",
+        "scripts/mesh-vps/sova-relay-accept.service.in",
+        "scripts/mesh-vps/SUDO.md",
+        "scripts/mesh-vps/exposure.sh",
+        "scripts/mesh-vps/README.md"
+      ],
+      "requires": [
+        "§mesh.lan/accept-process",
+        "§mesh/vps"
+      ]
+    },
+    "§mesh.links/host-names": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/mesh/links.ts",
+        "server/mesh/links.test.ts",
+        "server/mesh/links-offers.ts",
+        "server/mesh/index.ts",
+        "shared/mesh-links.ts",
+        "server/mesh/lan-mesh.test.ts"
+      ],
+      "requires": [
+        "§mesh.links/record",
+        "§mesh.lan/identity",
+        "§mesh.lan/pairing",
+        "§mesh.peers/address-identity"
+      ]
+    },
+    "§app.insights/cost-history": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/lib/cost-history.ts",
+        "src/lib/cost-history.test.ts",
+        "src/components/CostsTab.tsx",
+        "src/costs-tab.css",
+        "src/components/AgentsView.tsx",
+        "src/lib/insights.ts",
+        "src/App.tsx",
+        "src/lib/api.ts",
+        "server/usage-routes.ts",
+        "server/usage-helper/query.ts",
+        "server/usage-helper/price-book.ts",
+        "shared/usage/wire.ts"
+      ],
+      "requires": [
+        "§app.insights/usage-ledger",
+        "§app.insights/team-cards"
+      ]
+    },
+    "§app.insights/usage-ledger": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/llm-inflight/usage-record.ts",
+        "shared/usage/wire.ts",
+        "pi-config/extensions/llm-inflight/usage-record.test.ts",
+        "pi-config/extensions/llm-inflight/attribution.ts",
+        "pi-config/extensions/llm-inflight/record.ts",
+        "pi-config/extensions/llm-inflight/claude-usage.ts",
+        "pi-config/extensions/llm-inflight/claude-usage.test.ts",
+        "pi-config/extensions/llm-inflight/usage.test.ts",
+        "pi-config/extensions/llm-inflight/runtime.ts",
+        "pi-config/extensions/llm-inflight/claude.ts",
+        "pi-config/extensions/llm-inflight/tracker.ts",
+        "pi-config/extensions/llm-inflight/index.ts",
+        "pi-config/extensions/llm-inflight/README.md",
+        "pi-config/extensions/subagents/index.ts",
+        "pi-config/extensions/claude-code/runner.ts",
+        "pi-config/extensions/claude-code/provider/session-bridge.ts",
+        "pi-config/extensions/topic-outline/index.ts",
+        "pi-config/extensions/topic-outline/summarizers/claude-cli.ts",
+        "server/decide-llm.ts",
+        "server/decide-jev.ts",
+        "server/session-autotitle.ts",
+        "server/chat-manager.ts",
+        "server/reconcile.ts",
+        "server/attention-signals.ts",
+        "server/session-tags.ts",
+        "server/merge-followup.ts",
+        "server/baton-wrapup.ts",
+        "server/usage-recording.test.ts",
+        "server/usage-routes.ts",
+        "server/index.ts",
+        "server/mesh/access.ts",
+        "shared/model-prices/prices.ts",
+        "scripts/run-tests.mjs",
+        "server/usage-helper/client.test.ts",
+        "server/usage-helper/client.ts",
+        "server/usage-helper/cost-snapshots.ts",
+        "server/usage-helper/ledger.test.ts",
+        "server/usage-helper/ledger.ts",
+        "server/usage-helper/main.ts",
+        "server/usage-helper/memory.test.ts",
+        "server/usage-helper/price-book.test.ts",
+        "server/usage-helper/price-book.ts",
+        "server/usage-helper/project.ts",
+        "server/usage-helper/query.ts",
+        "server/usage-helper/records.ts",
+        "server/usage-helper/service.ts"
+      ],
+      "requires": [
+        "§app.insights/llm-inflight",
+        "§app.project-costs/pricing"
+      ]
+    },
+    "§mesh.remote-sessions/head-host-state": {
+      "kind": "behavior",
+      "requires": [
+        "§mesh.remote-sessions/head-host",
+        "§mesh.remote-sessions/host-filter"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/components/HostStateMark.tsx",
+        "src/components/SessionView.tsx",
+        "src/lib/mesh-details.ts",
+        "src/lib/mesh-details.test.ts",
+        "src/design/base.css",
+        "src/app.css"
+      ]
+    },
+    "§app.harness/agent-root": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/state-root.ts",
+        "server/state-root.test.ts",
+        "server/harness/pi/agent-dir.ts",
+        "server/harness/pi/agent-dir.test.ts",
+        "server/delegate.ts",
+        "server/model-favorites.ts",
+        "server/model-policy.ts",
+        "server/spec-settings.ts",
+        "server/team-defaults.ts"
+      ],
+      "requires": []
+    },
+    "§app.harness/boundary": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/harness-boundary.test.ts",
+        "server/harness/boundary-scan.ts",
+        "server/harness/boundary-baseline.json",
+        "server/harness/fixtures/boundary/imports.ts.txt",
+        "server/harness/fixtures/boundary/readers.ts.txt",
+        "server/harness/fixtures/boundary/writers.ts.txt",
+        "server/harness/fixtures/boundary/wrappers.ts.txt",
+        "server/harness/fixtures/boundary/reaches.ts.txt",
+        "server/harness/fixtures/boundary/contract.ts.txt",
+        "scripts/run-tests.mjs",
+        "server/harness/pi/contract.test.ts",
+        "server/harness/pi/testing/load-pi.ts",
+        "server/harness/pi/README.md",
+        "server/harness/fixtures/boundary/session.ts.txt",
+        "server/harness/fixtures/boundary/escapes.ts.txt",
+        "server/harness/fixtures/boundary/extension.ts.txt"
+      ],
+      "requires": []
+    },
+    "§app.harness/new-work": {
+      "kind": "note",
+      "authority": "accepted",
+      "evidence": "reviewed"
+    },
+    "§app.harness/reader": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "shared/harness-history.ts",
+        "server/harness/pi/reader.ts",
+        "server/harness/pi/reader.test.ts",
+        "server/harness/pi/usage.ts",
+        "server/jsonl.ts",
+        "server/transcript.ts",
+        "server/harness/pi/golden/golden.ts",
+        "server/harness/pi/golden/golden.test.ts",
+        "server/harness/pi/golden/README.md",
+        "server/harness/pi/golden/CHANGES.md",
+        "server/harness/pi/golden/probes/reader.ts",
+        "server/harness/pi/golden/probes/rows.ts",
+        "server/harness/pi/golden/probes/usage.ts",
+        "server/harness/pi/golden/probes/list.ts",
+        "server/harness/pi/golden/probes/baton.ts",
+        "server/harness/pi/golden/probes/overseer.ts",
+        "server/harness/pi/golden/probes/fork.ts",
+        "server/harness/pi/golden/faux/record.ts",
+        "server/harness/pi/golden/fixtures/make-synthetic.ts",
+        "server/harness/pi/golden/fixtures/large.ts",
+        "scripts/harness-golden.mjs",
+        "scripts/harness-golden/faux-record.mjs"
+      ],
+      "requires": [
+        "§app.harness/boundary"
+      ]
+    },
+    "§app.harness/session": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "shared/harness-session.ts",
+        "server/harness/pi/session.ts",
+        "server/harness/pi/turns.ts",
+        "server/harness/pi/session.test.ts",
+        "server/harness/pi/chat-wiring.test.ts",
+        "server/chat-manager.ts",
+        "server/harness/pi/quirks.ts",
+        "server/harness/pi/QUIRKS.md",
+        "server/harness/pi/quirks-meta.test.ts",
+        "server/harness/pi/contract.test.ts",
+        "server/harness/pi/session-golden.test.ts",
+        "server/harness/pi/testing/compact-fixture-ext.ts",
+        "server/harness/pi/golden/session/README.md",
+        "server/harness/pi/host.ts",
+        "server/harness/pi/host-registry.ts",
+        "server/harness/pi/testing/handle.ts",
+        "server/harness/pi/resources.ts",
+        "server/index.ts",
+        "server/share/routes.ts",
+        "server/schedule-routes.ts",
+        "server/session-setup.ts",
+        "server/session-prompt.ts",
+        "server/session-profile-routes.ts",
+        "server/sessions-configure.ts",
+        "server/group-prompt.ts",
+        "server/link-delivery.ts",
+        "server/baton-images.ts",
+        "server/build-loadout.ts",
+        "server/overseer-tools.ts",
+        "server/align-state.ts",
+        "server/session-fork-routes.ts",
+        "server/chat-queue-clients.test.ts",
+        "server/harness/pi/package.ts",
+        "server/mesh/hello.ts",
+        "server/sync/logins-stores.ts"
+      ],
+      "requires": [
+        "§app.harness/boundary",
+        "§app.harness/wire",
+        "§app.harness/reader"
+      ]
+    },
+    "§app.harness/session-history": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/harness/pi/history-ops.ts",
+        "server/harness/pi/commands.ts",
+        "shared/harness-session.ts",
+        "server/harness/pi/session.ts",
+        "server/chat-manager.ts",
+        "server/sandbox-state.ts",
+        "server/worker-resume.ts",
+        "server/harness/pi/quirks.ts",
+        "server/harness/pi/QUIRKS.md",
+        "server/chat-rewind.test.ts",
+        "server/chat-compact.test.ts",
+        "server/image-note.test.ts",
+        "server/sandbox-state.test.ts",
+        "server/insights-restored.test.ts",
+        "server/harness/pi/golden/probes/fork.ts",
+        "server/chat-abort.test.ts"
+      ],
+      "requires": [
+        "§app.harness/boundary",
+        "§app.harness/state"
+      ]
+    },
+    "§app.harness/session-open": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/harness/pi/open.ts",
+        "server/harness/pi/ui-bridge.ts",
+        "server/harness/pi/ui-bridge.test.ts",
+        "shared/harness-session.ts",
+        "server/chat-manager.ts",
+        "server/harness/pi/reader.ts",
+        "server/baton-loadout.ts",
+        "server/project-overseer.ts",
+        "server/harness/pi/quirks.ts",
+        "server/harness/pi/QUIRKS.md",
+        "server/chat-model.test.ts"
+      ],
+      "requires": [
+        "§app.harness/boundary",
+        "§app.harness/reader",
+        "§app.harness/state"
+      ]
+    },
+    "§app.harness/session-special": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "shared/harness-session.ts",
+        "server/harness/pi/session.ts",
+        "server/harness/pi/open.ts",
+        "server/harness/pi/extension-types.ts",
+        "server/overseer.ts",
+        "server/project-overseer.ts",
+        "server/baton-loadout.ts",
+        "server/baton-wrapup.ts",
+        "server/stream-guard.ts",
+        "server/user-turns.ts",
+        "server/session-powers.ts",
+        "server/chat-manager.ts",
+        "server/harness/pi/quirks.ts",
+        "server/harness/pi/QUIRKS.md",
+        "server/stream-guard.test.ts",
+        "server/overseer-id-check.test.ts",
+        "server/overseer-org-tools.test.ts",
+        "server/session-profiles.test.ts",
+        "server/harness/pi/session.test.ts",
+        "server/vis-check.ts",
+        "server/topics.ts",
+        "server/resource-monitor.ts",
+        "server/project-services/note.ts",
+        "server/project-services/tools.ts",
+        "server/session-loadout.ts",
+        "server/models.ts"
+      ],
+      "requires": [
+        "§app.harness/boundary",
+        "§app.harness/reader",
+        "§app.harness/state"
+      ]
+    },
+    "§app.harness/state": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "shared/harness-state.ts",
+        "server/harness/state-view.ts",
+        "server/harness/state-kinds.ts",
+        "server/harness/state-kinds.test.ts",
+        "server/harness/pi/state.ts",
+        "server/harness/pi/state.test.ts",
+        "server/harness/pi/state-view-of.ts",
+        "server/harness/pi/system-replay.ts",
+        "server/harness/pi/state-golden.test.ts",
+        "server/harness/pi/golden/state/README.md",
+        "server/harness/pi/testing/canonical-jsonl.ts",
+        "server/harness/pi/testing/scripted-model.ts"
+      ],
+      "requires": [
+        "§app.harness/reader",
+        "§app.harness/boundary"
+      ]
+    },
+    "§app.harness/tools": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "shared/harness-tools.ts",
+        "server/harness/pi/tools.ts",
+        "server/harness/pi/tools.test.ts"
+      ],
+      "requires": []
+    },
+    "§app.harness/unknown-entries": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/harness/pi/reader.ts",
+        "server/harness/pi/reader.test.ts",
+        "server/harness/pi/insertion.test.ts",
+        "server/index.ts",
+        "server/auth-gate.test.ts"
+      ],
+      "requires": [
+        "§app.harness/reader",
+        "§chat.profiles/live-commit"
+      ]
+    },
+    "§app.harness/wire": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "shared/harness-wire.ts",
+        "shared/wire-v1.ts",
+        "shared/wire-v1.test.ts",
+        "server/harness/pi/wire-v1-corpus.test.ts",
+        "shared/protocol.ts",
+        "server/harness/pi/wire.ts",
+        "server/harness/pi/wire-compat.test.ts",
+        "server/harness/pi/golden/wire/wire.ts",
+        "server/harness/pi/golden/wire/README.md",
+        "server/harness/pi/golden/wire/v2/faux/abort/frames.json",
+        "server/harness/pi/golden/wire/v2/faux/abort/rows.json",
+        "server/harness/pi/golden/wire/v2/faux/compact/frames.json",
+        "server/harness/pi/golden/wire/v2/faux/compact/rows.json",
+        "server/harness/pi/golden/wire/v2/faux/error-retry/frames.json",
+        "server/harness/pi/golden/wire/v2/faux/error-retry/rows.json",
+        "server/harness/pi/golden/wire/v2/faux/image-resize/frames.json",
+        "server/harness/pi/golden/wire/v2/faux/image-resize/rows.json",
+        "server/harness/pi/golden/wire/v2/faux/plain/frames.json",
+        "server/harness/pi/golden/wire/v2/faux/plain/rows.json",
+        "server/harness/pi/golden/wire/v2/faux/steer-followup/frames.json",
+        "server/harness/pi/golden/wire/v2/faux/steer-followup/rows.json",
+        "server/harness/pi/golden/wire/v2/faux/thinking/frames.json",
+        "server/harness/pi/golden/wire/v2/faux/thinking/rows.json",
+        "server/harness/pi/golden/wire/v2/faux/tool-read/frames.json",
+        "server/harness/pi/golden/wire/v2/faux/tool-read/rows.json",
+        "server/wire-rows.ts",
+        "server/chat-manager.ts",
+        "server/ws.ts",
+        "server/watch.ts",
+        "server/transcript-rows.ts",
+        "server/transcript.ts",
+        "server/index.ts",
+        "server/harness/pi/row-facts.test.ts",
+        "src/lib/live.ts",
+        "src/lib/live.test.ts",
+        "src/lib/live-effects.ts",
+        "src/lib/live-effects.test.ts",
+        "src/components/ChatView.tsx",
+        "src/lib/api.ts",
+        "server/mesh/proxy-wire.test.ts",
+        "server/share-wire.test.ts",
+        "server/share-ws-hop.test.ts",
+        "scripts/harness-wire-e2e.mjs",
+        "scripts/harness-wire-e2e-mock-llm.mjs",
+        "server/harness/pi/golden/wire/share/faux/abort/session-share-view.json",
+        "server/harness/pi/golden/wire/share/faux/compact/session-share-view.json",
+        "server/harness/pi/golden/wire/share/faux/error-retry/session-share-view.json",
+        "server/harness/pi/golden/wire/share/faux/image-resize/session-share-view.json",
+        "server/harness/pi/golden/wire/share/faux/plain/session-share-view.json",
+        "server/harness/pi/golden/wire/share/faux/steer-followup/session-share-view.json",
+        "server/harness/pi/golden/wire/share/faux/thinking/session-share-view.json",
+        "server/harness/pi/golden/wire/share/faux/tool-read/session-share-view.json",
+        "server/harness/pi/golden/wire/share/synthetic/align-merge/session-share-view.json",
+        "server/harness/pi/golden/wire/share/synthetic/all-types/session-share-view.json",
+        "server/harness/pi/golden/wire/share/synthetic/baton/session-share-view.json",
+        "server/harness/pi/golden/wire/share/synthetic/broken-cycle/session-share-view.json",
+        "server/harness/pi/golden/wire/share/synthetic/broken-dangling/session-share-view.json",
+        "server/harness/pi/golden/wire/share/synthetic/broken-dup/session-share-view.json",
+        "server/harness/pi/golden/wire/share/synthetic/compaction-end/session-share-view.json",
+        "server/harness/pi/golden/wire/share/synthetic/compaction-mid/session-share-view.json",
+        "server/harness/pi/golden/wire/share/synthetic/fork/session-share-view.json",
+        "server/harness/pi/golden/wire/share/synthetic/legacy-v1/session-share-view.json",
+        "server/harness/pi/golden/wire/share/synthetic/rewind/session-share-view.json",
+        "server/harness/pi/golden/wire/share/synthetic/tail-0.86-0.87/session-share-view.json",
+        "server/harness/pi/golden/wire/share/synthetic/torn/session-share-view.json",
+        "server/harness/pi/golden/wire/share/synthetic/unknown-noid/session-share-view.json",
+        "server/harness/pi/golden/wire/share/synthetic/unknown/session-share-view.json",
+        "server/harness/pi/golden/wire/share/synthetic/user-kinds/session-share-view.json",
+        "server/harness/pi/golden/wire/share/synthetic/workers/session-share-view.json",
+        "server/harness/pi/golden/wire/expected/effects/a-turn-start-a-reply-that-measures-the-context-settle/trace.json",
+        "server/harness/pi/golden/wire/expected/effects/compactions-one-that-wrote-a-summary-one-aborted-one-failed/trace.json",
+        "server/harness/pi/golden/wire/expected/effects/not-events-a-non-object-and-an-unknown-type/trace.json",
+        "server/harness/pi/golden/wire/expected/effects/replies-that-measure-nothing-zero-usage-an-error-an-abort-no-usage/trace.json",
+        "server/harness/pi/golden/wire/expected/effects/the-overseer-navigate-ok-a-settings-target-an-error-another-tool-an-unsafe-href-no-call-id/trace.json",
+        "server/harness/pi/golden/wire/expected/faux/abort/frames.json",
+        "server/harness/pi/golden/wire/expected/faux/abort/trace.json",
+        "server/harness/pi/golden/wire/expected/faux/compact/frames.json",
+        "server/harness/pi/golden/wire/expected/faux/compact/trace.json",
+        "server/harness/pi/golden/wire/expected/faux/error-retry/frames.json",
+        "server/harness/pi/golden/wire/expected/faux/error-retry/trace.json",
+        "server/harness/pi/golden/wire/expected/faux/image-resize/frames.json",
+        "server/harness/pi/golden/wire/expected/faux/image-resize/trace.json",
+        "server/harness/pi/golden/wire/expected/faux/plain/frames.json",
+        "server/harness/pi/golden/wire/expected/faux/plain/trace.json",
+        "server/harness/pi/golden/wire/expected/faux/steer-followup/frames.json",
+        "server/harness/pi/golden/wire/expected/faux/steer-followup/trace.json",
+        "server/harness/pi/golden/wire/expected/faux/thinking/frames.json",
+        "server/harness/pi/golden/wire/expected/faux/thinking/trace.json",
+        "server/harness/pi/golden/wire/expected/faux/tool-read/frames.json",
+        "server/harness/pi/golden/wire/expected/faux/tool-read/trace.json",
+        "server/harness/pi/golden/wire/expected/live/a-baton-sender-marker-names-the-live-row-it-follows-the-newest-started-row-no-marker-has-named/trace.json",
+        "server/harness/pi/golden/wire/expected/live/a-chat-wide-refusal-still-returns-every-message-no-departure-spoke-for/trace.json",
+        "server/harness/pi/golden/wire/expected/live/a-departure-that-arrives-twice-removes-the-row-once-and-stays-idempotent/trace.json",
+        "server/harness/pi/golden/wire/expected/live/a-failed-hand-off-returns-its-text-once-in-either-order-of-its-two-messages-1/trace.json",
+        "server/harness/pi/golden/wire/expected/live/a-failed-hand-off-returns-its-text-once-in-either-order-of-its-two-messages-2/trace.json",
+        "server/harness/pi/golden/wire/expected/live/a-link-message-s-start-draws-no-row-and-claims-none-of-this-tab-s-pending-rows/trace.json",
+        "server/harness/pi/golden/wire/expected/live/a-message-end-s-entry-id-names-the-live-row-it-becomes-the-reply-and-the-prompt-its-start-claimed-ne/trace.json",
+        "server/harness/pi/golden/wire/expected/live/a-message-sent-mid-turn-is-one-row-once-delivered-in-either-order-of-its-departure-and-its-start-1/trace.json",
+        "server/harness/pi/golden/wire/expected/live/a-message-sent-mid-turn-is-one-row-once-delivered-in-either-order-of-its-departure-and-its-start-2/trace.json",
+        "server/harness/pi/golden/wire/expected/live/a-message-sent-while-a-reply-streams-doesn-t-split-the-reply-in-two/trace.json",
+        "server/harness/pi/golden/wire/expected/live/a-noted-message-start-claims-the-row-whose-typed-text-it-carries-not-the-first-open-one/trace.json",
+        "server/harness/pi/golden/wire/expected/live/a-pending-prompt-carries-its-uploads-as-available-attachments-until-delivered/trace.json",
+        "server/harness/pi/golden/wire/expected/live/a-pending-prompt-without-uploads-has-no-attachments/trace.json",
+        "server/harness/pi/golden/wire/expected/live/a-queued-message-the-overseer-sent-is-flagged-as-the-overseer-s-a-server-row-without-the-flag-is-not/trace.json",
+        "server/harness/pi/golden/wire/expected/live/a-queued-row-knows-its-own-text-so-a-departure-can-hand-it-back-without-a-body/trace.json",
+        "server/harness/pi/golden/wire/expected/live/a-queued-row-missing-from-the-next-snapshot-is-not-called-delivered/trace.json",
+        "server/harness/pi/golden/wire/expected/live/a-reconnect-rebuilds-the-queue-from-the-snapshot-alone-this-tab-s-rows-and-other-clients/trace.json",
+        "server/harness/pi/golden/wire/expected/live/a-refused-removal-leaves-the-row-in-the-state-the-refusal-reports-already-sent/trace.json",
+        "server/harness/pi/golden/wire/expected/live/a-removal-broadcast-for-a-message-this-client-never-had-changes-nothing/trace.json",
+        "server/harness/pi/golden/wire/expected/live/a-removal-reaches-every-client-the-tab-that-didn-t-ask-drops-the-row-from-the-broadcast-1/trace.json",
+        "server/harness/pi/golden/wire/expected/live/a-removal-reaches-every-client-the-tab-that-didn-t-ask-drops-the-row-from-the-broadcast-2/trace.json",
+        "server/harness/pi/golden/wire/expected/live/a-row-the-server-never-acknowledged-stays-sending-and-is-never-offered-as-removable/trace.json",
+        "server/harness/pi/golden/wire/expected/live/a-snapshot-turns-our-sent-rows-into-queued-ones-by-id/trace.json",
+        "server/harness/pi/golden/wire/expected/live/a-start-whose-row-was-already-delivered-doesn-t-take-the-queued-message-behind-it/trace.json",
+        "server/harness/pi/golden/wire/expected/live/a-start-whose-text-was-rewritten-on-the-way-claims-the-row-the-server-delivered-not-the-first-one-wa/trace.json",
+        "server/harness/pi/golden/wire/expected/live/a-stop-pressed-during-a-compact-no-turn-clears-at-compaction-end-inside-a-turn-the-turn-s-settle-sti/trace.json",
+        "server/harness/pi/golden/wire/expected/live/a-thinking-block-stops-streaming-once-a-later-block-starts-so-only-the-reply-s-head-pulses/trace.json",
+        "server/harness/pi/golden/wire/expected/live/a-topic-batch-s-start-claims-none-of-this-tab-s-pending-rows-and-adds-its-own/trace.json",
+        "server/harness/pi/golden/wire/expected/live/a-user-message-start-no-row-waits-for-shows-the-text-without-pi-s-image-resize-notes/trace.json",
+        "server/harness/pi/golden/wire/expected/live/an-image-only-queued-message-is-a-row-like-any-other-removable-by-its-id/trace.json",
+        "server/harness/pi/golden/wire/expected/live/events-without-provider-model-leave-the-entry-s-model-unset/trace.json",
+        "server/harness/pi/golden/wire/expected/live/message-end-is-authoritative-and-can-override-the-model/trace.json",
+        "server/harness/pi/golden/wire/expected/live/message-start-attributes-the-streaming-message-to-its-model/trace.json",
+        "server/harness/pi/golden/wire/expected/live/message-start-delivers-the-row-with-that-text-not-whichever-came-first/trace.json",
+        "server/harness/pi/golden/wire/expected/live/removal-is-by-id-so-a-middle-duplicate-goes-and-its-twins-stay/trace.json",
+        "server/harness/pi/golden/wire/expected/live/rundetail-names-the-step-the-run-status-row-draws-as-an-icon-with-its-words/trace.json",
+        "server/harness/pi/golden/wire/expected/live/send-ack-queues-the-row-it-names-and-leaves-the-others-alone/trace.json",
+        "server/harness/pi/golden/wire/expected/live/stop-returns-the-drained-text-exactly-once-whichever-order-its-two-messages-arrive-in-1/trace.json",
+        "server/harness/pi/golden/wire/expected/live/stop-returns-the-drained-text-exactly-once-whichever-order-its-two-messages-arrive-in-2/trace.json",
+        "server/harness/pi/golden/wire/expected/live/takebackqueued-drops-the-drained-prompts-pending-rows-and-hands-their-text-back/trace.json",
+        "server/harness/pi/golden/wire/expected/live/takebackqueued-keeps-unrelated-and-already-delivered-rows-with-the-same-text/trace.json",
+        "server/harness/pi/golden/wire/expected/live/takebackqueued-with-nothing-drained-changes-nothing/trace.json",
+        "server/harness/pi/golden/wire/expected/live/the-same-words-twice-are-two-messages-one-start-per-row-and-a-start-no-row-is-waiting-for-is-a-new-m/trace.json",
+        "server/harness/pi/golden/wire/extract-live.ts",
+        "server/harness/pi/golden/wire/inputs/effects.json",
+        "server/harness/pi/golden/wire/inputs/live-test.json",
+        "server/harness/pi/golden/wire/live-calls.ts",
+        "server/harness/pi/golden/wire/wire.test.ts"
+      ],
+      "requires": [
+        "§chat.transcript/slim-rows"
+      ]
+    },
+    "§app/harness": {
+      "kind": "note",
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "code": [
+        "shared/harness.ts",
+        "shared/harness-core.ts",
+        "shared/harness-tools.ts",
+        "shared/harness-history.ts",
+        "shared/harness-wire.ts",
+        "shared/harness-state.ts",
+        "shared/harness-session.ts"
       ]
     }
   },

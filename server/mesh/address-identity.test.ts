@@ -57,6 +57,19 @@ test("whois: exactly one matching entry is the caller; its StableID comes from p
   }
 });
 
+test("whois: a dial-out pairing at a tailnet address is never a match (L7)", async () => {
+  const restore = quiet();
+  try {
+    // A relay reached at the same tailnet ULA as a listed tailnet peer: the pairing neither shadows
+    // the peer (two hits) nor answers for it.
+    const pairing: PeerEntry = { id: "relay", label: "Relay", nodeId: "lan:0123456789abcdef0123456789abcdef", dnsName: "fd7a:115c:a1e0::5", lan: { role: "dial", pin: "0123456789ABCDEF0123456789ABCDEF", host: "fd7a:115c:a1e0::5", port: 4803 } };
+    assert.equal((await addressIdentity(() => [pairing, v6], env).whois("[fd7a:115c:a1e0::5]:5"))?.nodeId, "nSIX");
+    assert.equal(await addressIdentity(() => [pairing], env).whois("[fd7a:115c:a1e0::5]:5"), null);
+  } finally {
+    restore();
+  }
+});
+
 test("status: self from env, no peers (no discovery)", async () => {
   const s = await addressIdentity(() => [vps], env).status();
   assert.equal(s.self.nodeId, "nPHONE");

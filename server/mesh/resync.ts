@@ -273,6 +273,9 @@ export class ResyncService {
     if (typeof commit !== "string" || !SHA_RE.test(commit)) return { status: 400, body: { error: "Expected { commit } as the 40-hex commit the sheet showed" } };
     const peer = config.peers.find((p) => p.id === id);
     if (!peer) return { status: 404, body: { error: "No such host" } };
+    // A dial-out pairing (§mesh/lan) is reached only over its own connection, never at an address
+    // it gave: no recipe may push a build to it from here.
+    if (peer.lan) return { status: 409, body: { error: `${peer.label || peer.id} is a dial-out pairing: update it on that host` } };
     const name = peer.label || peer.id;
     const selfName = this.d.mesh.self().label;
     if (this.running(id)) return { status: 409, body: { error: `A resync of ${name} is already running` } };

@@ -1,8 +1,11 @@
 import { chmodSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { isIP } from "node:net";
 import { hostname } from "node:os";
 import { dirname, join } from "node:path";
+import { parseIp, relayAddress, relayBindAddress } from "../../shared/mesh-lan";
 import type { SyncCategory } from "../../shared/protocol";
 import { stateRoot } from "../state-root";
+import { isLanNodeId, lanNodeId, parsePin } from "./lan-cert";
 
 // The mesh allowlist: `<state root>/peers.json`, curated by the user (by hand or through
 // PUT /api/mesh/peers). The mesh is ON exactly when this file parses and lists at least one peer;
@@ -40,6 +43,37 @@ export interface PeerEntry {
   browserAccess?: false;
   /** When the peer set that (its clock, ms epoch, clamped); absent: it never sent a stamp. */
   browserAccessAt?: number;
+  /** A dial-out pairing (§mesh.lan/pairing), reached over pinned TLS instead of the tailnet. Its
+      nodeId is lanNodeId(pin); it has no url, serveUrl or browser address. */
+  lan?: LanLink;
+}
+
+/** How a dial-out pairing is reached. */
+export interface LanLink {
+  /** "dial": this host dials the peer, its relay. "accept": the peer dials this host. */
+  role: "dial" | "accept";
+  /** The peer's key pin: 32 upper-case hex digits (lan-cert.ts). */
+  pin: string;
+  /** role "dial": where the relay listens. */
+  host?: string;
+  port?: number;
+  /** role "dial" only: the relay is on the internet, so `host` may be public (§mesh.lan/pairing).
+      Absent: the local-network rule. */
+  internet?: true;
+}
+
+/** This host as a relay for dial-out hosts: where it listens while it accepts any (§mesh.lan/pairing). */
+export interface RelaySetting {
+  /** "lan": one loopback, private or link-local IP address of this host (shared/mesh-lan.ts
+      relayAddress). "internet": any one unicast address of this host (relayBindAddress), where the
+      accept process listens. */
+  host: string;
+  /** 1–65535; 0 picks a free port (tests). */
+  port: number;
+  /** "lan" (Sova's own listener; absent means it) or "internet" (the accept process listens, on
+      Sova's word, §mesh.lan/accept-process). Valid whether or not the accept process runs: its
+      health is checked when the setting is saved, never on a read. */
+  exposure?: "lan" | "internet";
 }
 
 export const SYNC_CATEGORIES: readonly SyncCategory[] = ["settings", "themes", "extensions", "logins"];
@@ -48,7 +82,7 @@ export interface PeersConfig {
   /** `labelAt`: when this host last renamed itself (ms epoch); absent: never, since recorded.
       `browserAccess`: this host's own Browser access setting; absent: SOVA_BROWSER_ACCESS decides.
       `browserAccessAt`: when it was last set (ms epoch). */
-  self: { id: string; label: string; serveUrl?: string; labelAt?: number; browserAccess?: boolean; browserAccessAt?: number };
+  self: { id: string; label: string; serveUrl?: string; labelAt?: number; browserAccess?: boolean; browserAccessAt?: number; relay?: RelaySetting };
   peers: PeerEntry[];
   /** Per-category sync switches the user has set; an absent category is on. */
   sync: Partial<Record<SyncCategory, boolean>>;
@@ -119,6 +153,8 @@ export function validatePeers(raw: unknown): { config: PeersConfig } | { error: 
   if (selfRaw.browserAccessAt !== undefined && !isTime(selfRaw.browserAccessAt)) return { error: "self.browserAccessAt must be a time (ms epoch)" };
   const selfServe = selfRaw.serveUrl === undefined || selfRaw.serveUrl === null ? null : checkUrl(selfRaw.serveUrl);
   if (selfServe && "error" in selfServe) return { error: `self.serveUrl ${selfServe.error}` };
+  const relay = selfRaw.relay === undefined || selfRaw.relay === null ? null : checkRelay(selfRaw.relay);
+  if (relay && "error" in relay) return { error: `self.relay ${relay.error}` };
   if (r.peers !== undefined && !Array.isArray(r.peers)) return { error: "peers must be an array" };
   const peers: PeerEntry[] = [];
   const ids = new Set([selfId]);
@@ -128,11 +164,17 @@ export function validatePeers(raw: unknown): { config: PeersConfig } | { error: 
     const e = p as Record<string, unknown>;
     if (typeof e.id !== "string" || !PEER_ID_RE.test(e.id)) return { error: `peers[${i}].id must match ${PEER_ID_RE}` };
     if (ids.has(e.id)) return { error: `peers[${i}].id ${e.id} is not unique (or is the self id)` };
-    const nodeId = text(e.nodeId, 128);
+    const lan = e.lan === undefined ? null : checkLan(e.lan);
+    if (lan && "error" in lan) return { error: `peers[${i}].lan ${lan.error}` };
+    const nodeId = lan ? lanNodeId(lan.link.pin) : text(e.nodeId, 128);
     if (!nodeId) return { error: `peers[${i}].nodeId is required` };
+    if (lan && e.nodeId !== undefined && e.nodeId !== nodeId) return { error: `peers[${i}].nodeId must be ${nodeId} for this pin` };
+    if (!lan && isLanNodeId(nodeId)) return { error: `peers[${i}].nodeId: "lan:" names a dial-out pairing, which needs a lan link` };
     if (nodes.has(nodeId)) return { error: `peers[${i}].nodeId is listed twice` };
-    const dnsName = text(e.dnsName, 253);
-    if (!dnsName || !NAME_RE.test(dnsName)) return { error: `peers[${i}].dnsName must be a tailnet name or IP` };
+    if (lan && (e.url !== undefined || e.serveUrl !== undefined)) return { error: `peers[${i}]: a dial-out pairing has no url or serveUrl` };
+    const dnsName = lan ? (lan.link.host ?? DIAL_OUT_NAME) : text(e.dnsName, 253);
+    // A pairing's was judged by checkLan (a link-local relay may carry a zone, which no name has).
+    if (!dnsName || (!lan && !NAME_RE.test(dnsName))) return { error: `peers[${i}].dnsName must be a tailnet name or IP` };
     if (e.label !== undefined && !text(e.label)) return { error: `peers[${i}].label must be a non-empty string (≤ 80)` };
     const url = e.url === undefined ? null : checkUrl(e.url);
     if (url && "error" in url) return { error: `peers[${i}].url ${url.error}` };
@@ -155,8 +197,10 @@ export function validatePeers(raw: unknown): { config: PeersConfig } | { error: 
       ...(serve ? { serveUrl: serve.url } : {}),
       ...(e.pairedAt !== undefined ? { pairedAt: e.pairedAt as number } : {}),
       ...(e.labelAt !== undefined ? { labelAt: e.labelAt as number } : {}),
-      ...(e.browserAccess === false ? { browserAccess: false as const } : {}),
+      // A dial-out pairing never has a browser address (§mesh.lan/pairing).
+      ...(e.browserAccess === false || lan ? { browserAccess: false as const } : {}),
       ...(e.browserAccessAt !== undefined ? { browserAccessAt: e.browserAccessAt as number } : {}),
+      ...(lan ? { lan: lan.link } : {}),
     });
   }
   const syncRaw = r.sync ?? {};
@@ -189,6 +233,7 @@ export function validatePeers(raw: unknown): { config: PeersConfig } | { error: 
     ...(selfRaw.labelAt !== undefined ? { labelAt: selfRaw.labelAt as number } : {}),
     ...(typeof selfRaw.browserAccess === "boolean" ? { browserAccess: selfRaw.browserAccess } : {}),
     ...(selfRaw.browserAccessAt !== undefined ? { browserAccessAt: selfRaw.browserAccessAt as number } : {}),
+    ...(relay ? { relay: relay.relay } : {}),
   };
   return {
     config: {
@@ -220,6 +265,52 @@ export const browserAccessSet = (config: PeersConfig | null): boolean =>
 export const nextLabelAt = (prev: number | undefined, now = Date.now()): number => Math.max(now, (prev ?? 0) + 1);
 
 const isTime = (v: unknown): boolean => typeof v === "number" && Number.isFinite(v) && v > 0;
+
+/** What an accepted pairing shows where a tailnet peer shows its name (it has no address here). */
+export const DIAL_OUT_NAME = "dial-out";
+const isPort = (v: unknown, zero = false): v is number => Number.isInteger(v) && (v as number) >= (zero ? 0 : 1) && (v as number) <= 65535;
+
+function checkLan(raw: unknown): { link: LanLink } | { error: string } {
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return { error: "must be an object" };
+  const r = raw as Record<string, unknown>;
+  if (r.role !== "dial" && r.role !== "accept") return { error: 'role must be "dial" or "accept"' };
+  const pin = parsePin(r.pin);
+  if (!pin) return { error: "pin must be 32 hex digits" };
+  if (r.internet !== undefined && r.internet !== true) return { error: "internet must be true, or absent" };
+  if (r.role === "accept") {
+    if (r.host !== undefined || r.port !== undefined) return { error: "an accepted pairing has no host or port" };
+    if (r.internet !== undefined) return { error: "only a relay this host dials can be marked as on the internet" };
+    return { link: { role: "accept", pin } };
+  }
+  const internet = r.internet === true;
+  const host = text(r.host, 253);
+  if (!host) return { error: "host must be the relay's name or IP" };
+  // An IP literal must be a relay address (never every interface, and never public unless the
+  // pairing is marked as on the internet); a name is judged by what it resolves to, at each dial
+  // (lan-tls.ts relayTarget), by the same rule.
+  const ip = internet ? relayBindAddress(host) : relayAddress(host);
+  if (parseIp(host) || isIP(host)) {
+    if ("error" in ip) return { error: `host ${JSON.stringify(host)}: ${ip.error}` };
+  } else if (!NAME_RE.test(host) || host.includes(":") || /^[0-9.]+$/.test(host)) return { error: "host must be the relay's name or IP" };
+  if (!isPort(r.port)) return { error: "port must be 1–65535" };
+  return { link: { role: "dial", pin, host: "address" in ip ? ip.address : host.replace(/\.$/, ""), port: r.port, ...(internet ? { internet: true as const } : {}) } };
+}
+
+/** The relay setting (§mesh.lan/pairing). "lan" (or absent): a loopback, private or link-local IP,
+    never every interface or a public address. "internet": any one unicast IP, where the accept
+    process listens; whether that process runs is never judged here (a crash must not turn the mesh
+    off), only when the setting is saved (lan-routes.ts). */
+function checkRelay(raw: unknown): { relay: RelaySetting } | { error: string } {
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return { error: "must be an object" };
+  const r = raw as Record<string, unknown>;
+  if (r.exposure !== undefined && r.exposure !== "lan" && r.exposure !== "internet") return { error: 'exposure must be "lan" or "internet"' };
+  const internet = r.exposure === "internet";
+  if (typeof r.host !== "string") return { error: "host must be one IP address of this host" };
+  const host = internet ? relayBindAddress(r.host) : relayAddress(r.host);
+  if ("error" in host) return { error: `host ${JSON.stringify(r.host)}: ${host.error}` };
+  if (!isPort(r.port, true)) return { error: "port must be 0–65535" };
+  return { relay: { host: host.address, port: r.port, ...(internet ? { exposure: "internet" as const } : {}) } };
+}
 
 /** A list of host ids (absent/null → undefined), or why it isn't one. */
 function hostIds(v: unknown, name: string): string[] | { error: string } | undefined {

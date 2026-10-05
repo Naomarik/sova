@@ -3,8 +3,9 @@
 
 What the user's pi extensions publish, read-only except for one cache: subscription usage
 (usage-status), which this server also keeps fresh itself (§app.insights/usage-refresh), teams and
-subagents (subagents + sessions live records), the LLM calls in flight (each process's own count
-in its live record, and each connected host's own count, §app.insights/llm-inflight), and
+subagents (subagents + sessions live records), the LLM calls in flight and their output-token ring
+(each process's own count in its live record, and each connected host's own count,
+§app.insights/llm-inflight, §app.insights/token-velocity), and
 per-session summaries (topic-outline, compaction). Data shapes are `UsageInsight`, `AgentsInsight`, and `SessionInsight` in
 `shared/protocol.ts`. **Every status says where it came from**: live-sourced states can pulse,
 while reported states (read from a session file after the fact) never pulse and carry
@@ -65,18 +66,31 @@ working worker is never the one it leaves out.
   </div>
   <!-- aria-current on #/agents and #/agents/* -->
   <a class="list-row list-row-interactive insights-row" href="#/agents"
-     title="Agents: 3 LLM calls running now. Each agent counted is one model call in flight, background work included. On this host, subagents are working in 4 sessions and 2 teams."
-     aria-label="Agents: 3 LLM calls running now. Each agent counted is one model call in flight, background work included. On this host, subagents are working in 4 sessions and 2 teams.">
+     title="Agents: 7 agents working now: 2 sessions and 5 subagents. Output tokens a minute: 48k over the last 5 minutes, 12k over 30. Replies still being written aren't counted yet."
+     aria-label="Agents: 7 agents working now: 2 sessions and 5 subagents. Output tokens a minute: 48k over the last 5 minutes, 12k over 30. Replies still being written aren't counted yet.">
     <span class="icon" style="--icon: url(/icons/worker.svg)" aria-hidden="true"></span>
-    <span class="insights-row-text"><span class="text-num">3</span> agents · <span class="text-num">4</span> sessions · <span class="text-num">2</span> teams</span>
+    <span class="agents-ticker">
+      <span class="agents-line">
+        <span class="insights-row-text"><span class="text-num">7</span> agents</span>
+        <!-- §app.insights/token-velocity: the 5-minute mean -->
+        <span class="agents-readout" aria-hidden="true"><b class="text-num">48k</b> <span>tok/min</span></span>
+      </span>
+      <span class="agents-chart" aria-hidden="true">
+        <!-- 180 = 30 columns × the measured 6px pitch at the 320px pane -->
+        <svg class="velocity-chart" width="180" height="18" viewBox="0 0 180 18">…30 columns, baseline, dashed 30-minute mean…</svg>
+        <span>30m</span>
+      </span>
+    </span>
   </a>
 </div>
 ```
 
-**Unfolded (≥768)** the foot holds **two stacked 44px rows, and both are always present**, so the layout never
-jumps. A third always-present row, **Shares**, sits under them: the whole-row link to `#/shares`
-(§app.session-share/shares-page, `external` icon, text "Shares"), with no button beside it; the
-spine's foot has its Shares icon button after Agents. **Folded (<768) none of this shows**: a
+**Unfolded (≥768)** the foot holds **two stacked rows, and both are always present**, so the layout never
+jumps: the Usage row is 44px and the Agents row 64px, the extra 20px holding the token chart
+(§app.insights/token-velocity) on a second line. Those two are the foot's only rows: it has no
+Shares row, and the spine's foot has no Shares button — the Shares page is reached from the
+overview's Shares card (§chat.transcript/landing-page) and from each Sharing section
+(§app.session-share/shares-page). **Folded (<768) none of this shows**: a
 phone's foot is one bar that opens a sheet holding these same rows verbatim
 (§app.insights/sidebar-foot-phone). Each row is a `.sidebar-foot-row`: the whole-row link, then one 44px icon button at its
 right end — the **Resource monitor** button on the Usage row (§app.resource-monitor/entry-button),
@@ -163,46 +177,31 @@ Usage glance needs the room.
     a clip). A number beside each meter was rejected: about 30px more per provider overruns the
     box. `.usage-glance` still clips
     (it never wraps) as a guard; the full reading stays in the row's `title` and `aria-label`.
-- **Agents row, what is live right now:** `{n} agents · {sessions} sessions · {teams} teams`.
-  - **The first figure** is the logical LLM calls in flight across this host and every connected
-    host (§app.insights/llm-inflight), printed short as agents: `{n} agents` (`1 agent`). It is
-    not a count of distinct agents or of busy turns: each one counted is a model call in flight —
-    a main thread's, a subagent's, or background work (summaries, titles, decisions, compaction,
-    cache warming) — and time spent running tools is not. A known count always shows the bare
-    number, `0 agents` included: a partial count or one with approximate one-shots in it is
-    marked by no `+` or `~`, only by its sentence (below). The word follows the number shown,
-    partial or not: `1 agent`, every other figure `agents`. While it is unknown the segment is the plain word "Agents", with
-    no figure, never a 0.
-  - **The other two are this host's, as before**, from `activeAgentCounts` and `activeTeamCount`
-    in `src/lib/workers.ts` (the Agents poll; nothing new is read for them), each dropped at 0
-    (`1 session`, `1 team`). Each is narrower than it looks:
-    - **An active agent** is a worker in a *fresh* host session that is working:
-      `workerCounts.working` — starting, running or stopping. A **waiting** worker (finished its
-      task, still attached), `done`, `error` and `killed` never count, and a stale heartbeat
-      never counts. The counts are read from `workerCounts`, not the `workers` array, because the
-      array drops evicted workers.
-    - **A host session** is any live record except a headless worker pi (`mode: "rpc"` without
-      `embedded`); Sova's own embedded rpc runtimes *are* sessions, because they host agents.
-    - **sessions** is how many fresh host sessions hold at least one active agent — not how many
-      are running.
-    - **teams** is `activeTeamCount`: a fresh host session's teams with at least one member
-      working.
-  - The two scopes differ on purpose: the first figure is every model call in flight, background
-    ones included, on every host; sessions and teams are where subagents work on this host. A
-    background call adds to the first figure only, never a session or a team.
-- **The row's full sentence** lives in its `title` and `aria-label`: the destination, the count's
-  sentence (which names them as LLM calls), whenever the count has a figure above 0 the
-  definition "Each agent counted is one model call in flight, background work included.", then
-  this host's subagent clause when there is one — "Agents: 3 LLM calls running now. Each agent
-  counted is one model call in flight, background work included. On this host, subagents are
-  working in 4 sessions and 2 teams." ("in 1 session", "in 2
-  sessions.", "in 1 team." — a part at 0 is left out, and so is the whole clause with both at 0);
-  "Agents: At least 3 LLM calls running now. Claude Code's own internal calls aren't visible.
-  Each agent counted is one model call in flight, background work included."; "Agents: LLM calls
-  running now: not known yet". A count sentence that stands alone (unknown, a complete 0, no
-  local clause) keeps its own ending, as above; wherever another sentence follows, each ends in
-  exactly one full stop.
-  The row itself has room for the figures, not for the sentence.
+- **Agents row, what is working right now:** `{n} agents` and how fast the agents are writing, on
+  two lines in one 64px whole-row link, the gear centred at its right.
+  - **The figure** is the working count (§app.session-list/working-now): the sessions whose own
+    turn is running plus the subagents working, on this host and every connected host — the sum
+    of the toolbar's breakdown line, so the two never disagree. It is printed short as agents:
+    `{n} agents` (`1 agent`). A known count always shows the bare number, `0 agents` included: a
+    floor (a connected host that isn't answering) is marked by no `+` or `~`, only by its
+    sentence (below). The word follows the number shown, floor or not: `1 agent`, every other
+    figure `agents`. While it is unknown the segment is the plain word "Agents", with no figure,
+    never a 0. No other figure follows it in words — the breakdown is the toolbar line's — and
+    teams are never counted (their members are subagents already).
+  - **The velocity** (§app.insights/token-velocity): line 1 ends with the readout, `48k tok/min`
+    (the figure semibold ink at body size, the unit muted micro), never shrunk or cut — `{n}
+    agents` truncates first; line 2, aligned under the text, is the 30-minute column chart, full
+    width, then a muted `30m`. `–` and the bare baseline while unknown, so the row never changes
+    height.
+  - The LLM calls in flight (§app.insights/llm-inflight) are not on the row, in its words or
+    anywhere else in the sidebar.
+- **The row's full sentence** lives in its `title` and `aria-label`: the destination, the working
+  count's sentence, then the velocity's sentence — "Agents: 7 agents working now: 2 sessions
+  and 5 subagents. Output tokens a minute: 48k over the last 5 minutes, 12k over 30.
+  Replies still being written aren't counted yet."; "Agents: No agents working now. Output tokens
+  a minute: …"; "Agents: Agents working now: not known yet. Output tokens a minute: not known
+  yet." Each sentence ends in exactly one full stop.
+  The row itself has room for the figures, not for the sentences.
 
 The rows take no chip, because the pages carry the status, and no color but the usage meters'
 fill tone. Each truncates with an ellipsis.
@@ -214,18 +213,23 @@ list needs the room. The bar is one plain button; tapping it opens a **bottom sh
 folded-width `.modal`, grip included; the scrim and Escape close it, focus is trapped inside and
 returns to the bar) holding the foot's columns **exactly as §app.insights/sidebar-foot draws
 them** — the host filter row (§mesh.remote-sessions/host-filter, only while the mesh is on), the
-Usage glance row with its monitor button, the Agents row with its Settings gear, and the Shares
-link row. Nothing in them is rewritten, only re-homed. At ≥768 the bar never shows and the foot
+Usage glance row with its monitor button, and the Agents row with its Settings gear; it has no
+Shares row (the Shares page is the overview's Shares card's, §chat.transcript/landing-page).
+Nothing in them is rewritten, only re-homed. At ≥768 the bar never shows and the foot
 is §app.insights/sidebar-foot as drawn there; the spine is untouched by either. The sheet's
-accessible name is "Hosts, usage, agents and shares".
+accessible name is "Hosts, usage and agents".
 
 The bar itself reads the same data as the rows, left to right:
 
 - **Mesh.** The connected count `{up}/{total}`, the host filter row's own figures
   (`connectedCount`) — shown only while the mesh is on, the same rule as the row.
-- **LLM calls in flight.** The `worker` icon and the Agents row's own figure
-  (§app.insights/llm-inflight: the bare `{n}` whenever known, partial too, `–` while unknown), no word — the bar
-  is a strip of figures; the accessible name says it. Always shown, a complete `0` included.
+- **Agents working.** The `worker` icon and the Agents row's own figure, the working count
+  (§app.session-list/working-now: the bare `{n}` whenever known, a floor too, `–` while unknown),
+  no word — the bar is a strip of figures; the accessible name says it. Always shown, a complete
+  `0` included.
+- **Velocity.** Right after it, the Agents row's readout with a short unit, `48k /min` (`–` while
+  unknown), then a 60×16 chart of the last 30 minutes in two-minute columns, the same
+  drawing as the row's (§app.insights/token-velocity). The bar stays 44px.
 - **Usage caps.** Every provider the glance has a part for — `usageGlance()`'s own parts, in its
   order (at most the five) — each as its `{abbr}` and the same pace meter the glance row draws
   (§app.insights/sidebar-foot, **Bars**, **Tone**; §app.insights/pace-tick), a credit provider as
@@ -237,16 +241,20 @@ The bar itself reads the same data as the rows, left to right:
   narrow phone can't hold clips at the edge, exactly like the glance row it stands for.
 
 The bar's accessible name says the facts in words, then what the tap does: "2 of 3 hosts
-connected. 3 LLM calls running now. Claude 5-hour: 12% used · 1h 5m of 5h · resets 4:59 PM; 7-day:
-87% used · day 6 of 7 · resets Oct 4 10:59 AM. Z.ai 5-hour: 41% used; MCP uses: 0% used. Open hosts, usage, agents
-and shares." — every glance part in the glance's own words; the LLM clause is the count's
-sentence (§app.insights/llm-inflight): "1 LLM call running now" at 1, "At least 3 LLM calls
-running now" while partial, "LLM calls running now: not known yet" while unknown.
+connected. 7 agents working now: 2 sessions and 5 subagents. Output tokens a minute: 48k over the
+last 5 minutes, 12k over 30. Replies still being written aren't counted yet. Claude
+5-hour: 12% used · 1h 5m of 5h · resets 4:59 PM; 7-day: 87% used · day 6 of 7 · resets Oct 4
+10:59 AM. Z.ai 5-hour: 41% used; MCP uses: 0% used. Open hosts, usage and agents." —
+every glance part in the glance's own words; the agents clause is the working count's sentence
+(§app.session-list/working-now): "1 agent working now: 1 session" at 1, "At least 3 agents working
+now: …" while a floor, "Agents working now: not known yet" while unknown; the velocity's
+sentence follows it (§app.insights/token-velocity). No LLM-calls clause.
 
 ## §app.insights/llm-inflight — LLM calls in flight: what the one count counts
 
-**The sidebar's one live figure is the number of logical LLM calls in flight right now, across this
-host and every connected host.** A logical call is one request a process has sent to a model
+**Sova counts the logical LLM calls in flight right now, across this host and every connected
+host, and pushes the count to every browser; the sidebar shows no figure for it, but the
+output-token ring the load average reads rides the same count (§app.insights/token-velocity).** A logical call is one request a process has sent to a model
 provider and is still waiting on or receiving, from the moment it is issued until its response
 ends, fails or is aborted. Time spent running tools between calls never counts, and neither does
 a request still queued for a provider-limits slot or sitting out a cooldown
@@ -255,8 +263,11 @@ a main thread's turn, a subagent's or team member's, and background work: titles
 decisions, topic outlines, compaction, cache warming.
 
 - **Where it is measured.** Each process counts its own calls, at the boundary every model
-  call of that process passes through, and keeps nothing but begin/end bookkeeping: no payload,
-  no token, no transcript is read or written for it, and nothing is written per token.
+  call of that process passes through, and keeps nothing but begin/end bookkeeping and, from each
+  call's end, the one number its reply reports as its output tokens (§app.insights/token-velocity):
+  no payload, no transcript and no other token count is read or written for it, and nothing is
+  written per token. The same boundary, at the same call end, appends the call's usage record
+  (§app.insights/usage-ledger); that is the ledger's, not part of this count.
   - **pi** (Sova's own server with its hosted chats and one-shots, a TUI, a pi worker): the
     process's model runtime, which every session, compaction and background caller of that
     process shares. A call is counted once however many wrappers it passes through.
@@ -282,7 +293,7 @@ decisions, topic outlines, compaction, cache warming.
   its host's record of the worker's last report, or, with no such report (a Claude Code worker),
   makes the count partial; once adopted, only its parent counts it. Every other process on the host publishes its count in its live record (`presence.llm`,
   `pi-config/extensions/sessions/public/SCHEMA.md`), rewritten only when the count or its coverage
-  changes, never per token. The server counts each process once (by its producer id, so a
+  changes, never per token. A call's output tokens land in that same rewrite, at the moment it ends. The server counts each process once (by its producer id, so a
   process with several live records is not counted twice, and the records its own hosted chats
   write are never added to its own count). A fresh record with no `presence.llm` (a process
   without the counter), and a record whose heartbeat went stale while its pid lives, make the
@@ -295,37 +306,192 @@ decisions, topic outlines, compaction, cache warming.
   connecting, unreachable, refusing, or too old to answer makes the total **partial** and is named
   in its sentence; it never adds a 0. A peer that answered and then went silent is pinged, and
   past a minute or so without a word its last count is dropped and it is unreachable. A count
-  past sane bounds, from a process or a peer, is capped or ignored, never added whole. With the mesh off, no browser listening, or a peer removed,
+  past sane bounds, from a process or a peer, is capped or ignored, never added whole. A dial-out
+  pairing (§mesh/lan) gets no socket: its calls are not counted, and it doesn't make the total
+  partial. With the mesh off, no browser listening, or a peer removed,
   no peer socket is open.
 - **Pushed, not polled.** The count rides the session feed (`/ws/watch?feed=sessions`) as an
   `llm_inflight` frame: a full snapshot on every connect, then a frame each time the total or its
   coverage changes. No browser timer and no per-tab peer socket reads it, and it never triggers a
   re-read of the session list or the Agents page's data.
-- **Three states, and only one of them may read 0.**
+- **Three states, and only one of them may read 0.** The frame carries them as data; the sidebar
+  no longer prints the count or its sentence (its figure is the working count,
+  §app.session-list/working-now), so they are for its readers — the token ring's coverage
+  (§app.insights/token-velocity), the server's own consumers and any later view.
   - **Complete** — every process on every counted host reports and nothing is known to be
-    unseen: the bare figure, `0` included ("No LLM calls running now").
-  - **Partial** — the count is a floor: its sentence says "At least {n} LLM
-    calls running now", followed by why (Claude Code's own internal calls aren't visible; a
-    process or a host doesn't report).
-  - **Approximate parts.** When `{a}` of the `{n}` are one-shots (approximate, above), they are
-    neither exact calls nor a floor, so the sentence counts them apart: "{n−a} LLM calls running now, and {a} one-shot
-    that may be calling" (complete), "At least {n−a} LLM calls running now, and {a} one-shot that
-    may be calling. {why}" (partial); "one-shots" from 2. With no exact call the first clause is
-    "No exact LLM calls running now" when complete, and "No exact LLM calls seen" when partial (a
-    floor of 0 asserts nothing).
-  - **The figure is the number only.** Whenever the count is known — complete, partial or with
-    one-shots in it — the figure the sidebar shows is the bare `{n}`, with no `+` and no `~`
-    (a mark beside the number was visual noise). That it is a floor, or holds estimates, lives in
-    the sentence (the `title` and `aria-label`), which still says so in full; the snapshot's own
-    `partial`, gaps and one-shot count are kept as they are. The Agents row's word agrees with
-    that shown number even while the count is partial (`1 agent`, never `1 agents`).
+    unseen: the count is exact, `0` included.
+  - **Partial** — the count is a floor: `partial` with the gaps that say why (Claude Code's own
+    internal calls aren't visible; a process or a host doesn't report).
+  - **Approximate parts.** `approximate` says how many of the `{n}` are one-shots (above): neither
+    exact calls nor a floor.
   - **Unknown** — the page has no snapshot from the current connection (before the first frame,
-    and from the moment the socket drops until the next snapshot): no figure (`–`), and the
-    sentence "LLM calls running now: not known yet". A previous connection's figure is never
-    shown.
+    and from the moment the socket drops until the next snapshot). A previous connection's
+    snapshot is never used.
 - **What it is not.** It is not the number of HTTP requests on the wire, nor every model call any
-  program on the machine makes: only processes running the counter report, and the sentence says
-  so whenever something is known to be missing.
+  program on the machine makes: only processes running the counter report, and its partial
+  state says so whenever something is known to be missing.
+
+## §app.insights/token-velocity — Token velocity: how fast the agents are writing
+
+**The sidebar shows how fast the agents are writing: the output tokens a minute over the last 5
+minutes as a labelled figure (`48k tok/min`), over a chart of the last 30 minutes, across this
+host and every connected host.**
+
+- **What is counted.** Each model call's **output tokens**, reasoning included, exactly as the
+  provider reports them for that call — never input, cache reads or cache writes. They are added
+  once, when the call ends (done, error or abort: whatever its reply reported by then), spread
+  evenly back over the time its reply streamed, from its first streamed event to its end, into a
+  ring of 60 thirty-second slots aligned to the epoch (slot *k* holds [*k* × 30 s, (*k* + 1) × 30 s)):
+  the last 30 minutes. A 2-minute reply fills four or five slots, not one spike; the part of a reply older
+  than 30 minutes is gone. The shares are rounded so a call's slots add up to exactly its count.
+- **Where it is measured.** In the counter that counts the calls (§app.insights/llm-inflight), at
+  the same boundary: a pi process reads the final message's output count of each call its model
+  runtime makes; a Claude Code worker's call takes the last output count its CLI streams for that
+  reply. A chat on the `claude-code` provider is counted once, as its pi call, never again by the
+  CLI it drives. A one-shot `claude -p` and Jev add no tokens.
+- **How it adds up.** As the calls do. A pi worker carries its ring in the report it already sends
+  its parent, and the parent sums it with its own; a worker that ends leaves its tokens in its
+  parent's ring until they age out (a worker detached for another session to adopt takes its
+  tokens with it and goes on reporting them itself). Each process publishes its ring in its live
+  record (`presence.llm.tokens`, `pi-config/extensions/sessions/public/SCHEMA.md`); the server
+  sums each counted process once, by the same producer rule (a folded worker's tokens are already
+  in its parent's), and adds each connected host's own ring once. While anyone listens, a process
+  or host that goes (an exit, a dead pid, a stale record, a dropped peer) leaves its last ring in
+  the sum until it ages out; tokens from before the server started, or ended while nobody
+  listened by processes since gone, are not there.
+- **Partial, never a guessed number.** Every gap of the calls count (a Claude Code turn running,
+  whose internal calls' tokens can't be seen; an unreported process; a peer connecting,
+  unreachable or too old) makes the tokens partial too, and so does a process, worker or peer that
+  publishes a count without a ring (an older counter, until its `/reload`).
+- **Bounds.** One process's slot is capped at 10,000,000 tokens and one host's at 100,000,000; a
+  malformed ring is dropped (its tokens unknown, so partial), never its count with it.
+- **Pushed with the count, never per token.** A call's tokens land at the instant it ends, in the
+  one change that already rewrites its live record and pushes the `llm_inflight` frame for the
+  count's drop. No timer, file or frame is added: time passing alone sends no frame (the browser
+  slides the windows itself).
+- **The means** are windowed means of the `tokens` ring on the `llm_inflight` frame
+  (§app.insights/llm-inflight), computed in the browser by `tokenVelocityView()` in
+  `src/lib/llm-inflight.ts`: for a window of W minutes, the tokens of the 2W thirty-second slots
+  up to and including the current one (by the browser's clock, epoch-aligned; slots after the
+  ring's newest are 0, slots older than its oldest are gone), divided by W.
+- **The figure and the chart.** The readout is the 5-minute mean, `48k tok/min` (the phone bar's
+  `48k /min`): the headline, since the newest minute under-reads while replies stream. The chart
+  draws the last 60 thirty-second slots, oldest left and the current slot last, grouped into
+  columns: on the Agents row 30 one-minute columns (two slots each), on the phone bar 15
+  two-minute columns (four each). A column is the mean per-minute rate of its slots (a slot's
+  tokens × 2), on a scale of the larger of 10,000 and the 30 minutes' peak slot — so a trickle
+  stays low and a 100k+ load fills the height. A column with any tokens is at least 2px tall, so
+  light load reads as low blocks, never as a scribble on the baseline; an empty one isn't drawn.
+  Columns are `--color-ink-2` over a 1px baseline in `--color-border-strong`. The Agents row's
+  chart (an `aria-hidden` SVG, 18px tall) is drawn at its line's own width in whole pixels: every
+  column has the same pitch, the width ÷ 30 rounded down (never under 3px), with a 2px gap from a
+  5px pitch and 1px under it, so no column is wider than another; it starts under the working
+  count's text, and a muted `30m` ends level with the readout's right edge, the pixels the pitch
+  leaves over going between them. The phone bar's chart is 60×16, 3px columns with a 1px
+  gap. The **30-minute mean** is a dashed 1px line (2px dash, 3px gap) in `--status-info`, drawn
+  behind the columns: a different hue from the neutral columns in both themes, so it never reads
+  as their tops, and a different shape (dashed, horizontal), so it never rests on the hue alone;
+  the sentence names the figure in words. It is a reference, not a status, so it takes neither
+  the accent (kept for the primary action and the live-run mark) nor a warn or error tone. No
+  gradient, and nothing moves.
+- **Dense format**, for the readout: under 1,000 the whole number (`840`); 1,000
+  to 9,999 one decimal and `k` (`8.4k`); 10,000 and up no decimal (`48k`, `120k`); a million and up
+  one decimal and `M` (`1.2M`). A value is rounded once, to the whole token, before it is formatted,
+  and a figure that rounds up into the next tier is printed in that tier (`9,999` → `10k`,
+  `999,999` → `1.0M`).
+- **Three states, as the calls count has them.**
+  - **Complete** — every counted process and host keeps a ring: the bare figure, `0 tok/min` (and
+    the baseline alone) included. Sentence: "Output tokens a minute: 48k over the last 5 minutes, 12k over 30. Replies still being written aren't counted yet."
+  - **Partial** — the ring says some calls' tokens are known missing: the same figure and chart,
+    and only the sentence says so: "Output tokens a minute: at least 48k over the last 5 minutes, 12k
+    over 30. Some calls' tokens can't be seen. Replies still being written aren't
+    counted yet."
+  - **Unknown** — no snapshot on this connection, or a server too old to send a ring: the readout
+    `–` over the baseline alone, and the sentence "Output tokens a minute: not known yet."
+- **Where it shows.** On the foot's Agents row, the readout after the working count and the chart
+  under them (§app.insights/sidebar-foot); on the phone bar after the agents figure
+  (§app.insights/sidebar-foot-phone); on the spine, no item of its own: the agents tally's name and
+  toast, and the Agents doorway's, end with its sentence (§app.session-list/spine). Every one of
+  those names carries the sentence; the figure and chart alone are never the only place it is said.
+- **The newest minute is hollow.** Tokens land when a reply ends, so the newest minute reads low
+  while replies stream. Its column (the phone's newest two-minute column) is drawn as a 1px
+  `--color-ink-2` outline with no fill, a shape and not only a tone, so the dip reads as "not in
+  yet", not as slowing down; the sentence's last clause says why. With any tokens it is at least
+  4px tall, the least an outline needs to show its hollow; with none yet it draws nothing, like
+  any empty column. There is no live estimate.
+- **Re-rendered by a local tick.** Between frames the windows and the chart slide with the clock: the sidebar
+  re-reads the view every 30 s, only while the ring holds a token in its last 30 minutes and the
+  tab is visible. An empty ring, or a hidden tab, runs no timer.
+
+## §app.insights/usage-ledger — The usage ledger: every model call's tokens, recorded once
+
+**Every model call made on this device by Sova or pi (main sessions, the Overseer, org and baton
+sessions, workers at any depth, pi or Claude Code, and one-shots: decisions, titles, topic
+outlines, image descriptions, compaction, branch summaries, cache warming) writes one usage record
+at its end, and every figure of spend Sova shows is read from these records and priced by one
+function.** Standalone `claude` use outside Sova and pi is not recorded.
+
+- **The record.** Token counts only, never a price: input, output, cache read, cache write (with its
+  1-hour part when the provider reports it), the provider, the model asked for and the model that
+  answered, when the call ended, the session that owns it, that session's parent (a worker's
+  session), the kind (`main`, `worker`, `overseer`, `oneshot`), the purpose of a side call
+  (`title`, `decide`, `outline`, `vision`, `branch-summary`, `compaction`, `cache-warm`, …), the
+  working directory and the org project when known, and a key that names the call. A call that
+  reports no tokens writes nothing. Each attempt of a retried call is its own record.
+- **Where.** `<agent dir>/usage/v1/<UTC day>/<producer>.jsonl`, one file per process and day, one
+  writer per file, one appended line per call; the shape and its strict parse are
+  `pi-config/extensions/llm-inflight/usage-record.ts` (builtins only). The server's own main loop
+  does nothing for a call but that one append.
+- **Recorded at the boundary that already counts calls** (§app.insights/llm-inflight): the pi model
+  runtime records each call when its stream ends; a Claude Code CLI (a chat on the `claude-code`
+  provider or a Claude Code worker) is recorded from its stream, once per Anthropic message id,
+  plus what its cumulative per-model totals show beyond those messages (its own subagents, side
+  queries, compaction), measured against the last total recorded for that Claude session so a
+  resume or re-adoption never counts history again; a `claude -p` one-shot and a Jev call are
+  recorded from their answers. A `claude-code` chat's calls are recorded from the CLI's stream
+  only, never again by the pi runtime.
+- **Whose call it is.** A call belongs to the session that registered with the process; a side call
+  made for a session (a title, a summary) carries the session, working directory and purpose its
+  caller names, so two concurrent side calls never take each other's owner. A worker names its
+  parent session.
+- **Counted once.** Records are deduplicated by their key, so a replayed stream or a record read
+  twice adds nothing. Nothing is recounted from transcripts: spend from before the ledger existed
+  is not shown.
+- **Off the main loop.** A helper child process of the server reads the records (at its start it
+  catches up every day and every file past what it already read, then follows appends), keeps a
+  rollup, prices it and answers every query; the server passes its answers to the browser
+  unparsed. The helper stopping or restarting loses nothing and counts nothing twice.
+- **Priced at read time, at the price in force at each call's own time**
+  (§app.project-costs/pricing): a rollup row never spans a price change, and when the price
+  history changes the affected days are priced again from the records. Subscription use (Claude
+  Code, Codex) is priced at API prices like everything else.
+- **Prices are data.** The dated price history lives in `<state root>/model-prices.json`; the
+  checked-in seed is only the starting copy when that file is missing. The server pulls models.dev
+  every 6 hours and on demand, and a pull only adds dated periods: an old period is never dropped
+  or rewritten.
+
+## §app.insights/cost-history — The Costs tab (`#/agents/costs`)
+
+**The Agents page has two tabs, Board (the board as it was, §app.insights/team-cards) and Costs,
+which shows this device's spend at API prices from the usage ledger (§app.insights/usage-ledger).**
+
+- **Route.** `#/agents/costs` opens the Costs tab; it is never read as a team key. The filters live
+  in the URL, so a reload or a shared link keeps them.
+- **Controls.** Range chips `7d` · `30d` · `All` (30d by default), and beside them multi-select **Provider** and
+  **Model** filters; the model choices narrow to the selected providers. The range and both filters
+  apply to every section below.
+- **Sections.** Stats: Total, Main sessions, Workers, One-shots. A daily cost bar chart (local
+  days). Tables by provider, by model (input · cache · output · cost), by kind and by project
+  (the org project, else the working directory). Top sessions, most expensive first; a click opens
+  the session.
+- **Prices.** "Prices as of {date}" with the last change found, and a **Refresh Prices** button that
+  pulls the prices now (§app.insights/usage-ledger); it says so when pulling is off or the prices are
+  still the starter list.
+- **When the helper is down** the tab says the counter isn't running yet and that nothing was lost;
+  it never shows another count.
+- **This device.** The tab says it counts this device only.
+- Works at phone widths: tables stack under 560px of page width.
+
 ## §app.insights/aggregate-chips-live-vs-working — Aggregate chips: "Live" vs "Working"
 
 - **Live** is session-level: a TUI has the file open. It keeps the accent everywhere and says
@@ -333,7 +499,9 @@ decisions, topic outlines, compaction, cache warming.
   (no dot), and the session head as a **static** `TUI` chip. The pulse moved to Busy and to
   running work; no TUI mark pulses anywhere (§design.ground-rules/motion).
 - **Working** is worker-level: a subagent is mid-task. On a member row it's
-  `.chip-accent.chip-live` "Working", and pulses only when live-sourced (see Team cards).
+  `.chip-accent.chip-live` "Working", and pulses only when live-sourced (see Team cards). The one
+  aggregate that also says "working" of a session's own turn is the toolbar's working-now line,
+  which names the two apart: "2 sessions · 5 subagents working" (§app.session-list/working-now).
 - **Aggregates are neutral** `.chip.chip-count`, with no dot and no pulse, so each row has only
   one pulsing thing:
   - **Session rows (§app/session-list):** no chip at all. The count is `{n}` + a `worker` icon in the row's
@@ -392,9 +560,13 @@ Both pages share one shell: a `.session-head` and a `.insights.pane` containing
   it's about, where it stands and its worktrees folded inside the row. When nothing is in view, its whole body under the bar is one `.empty`
   (§design/copy-deck): the live fact first ("{n} sessions live." or "No session is live right
   now."), then the absence for the chip or search in force.
+- **Tabs (Agents).** Under the head the Agents page has two tabs, Board (everything this section
+  and §app.insights/team-cards describe) and Costs (§app.insights/cost-history), at `#/agents` and
+  `#/agents/costs`.
 - **Head meta (Agents).** `{w} working · {l} live · {$} today · {u} unmerged`: sessions in the
-  Working state, live sessions, what the workers of sessions active since local midnight have
-  spent (their lifetime `usageTotal.cost`; left out when none reports a cost), and distinct
+  Working state, live sessions, this device's spend since local midnight at API prices, every
+  call of every kind (§app.insights/usage-ledger, `GET /api/usage/today`; left out before its
+  first answer and while nothing was spent today), and distinct
   unmerged branches among the worktrees read so far (left out before the first reading). The
   line's `title` says what each figure counts.
 - **Grid (Usage).** `.insights-grid` has 1 column. It becomes 2 columns when the `insights`
@@ -440,6 +612,10 @@ Both pages share one shell: a `.session-head` and a `.insights.pane` containing
   no chat is on. With more than one login it names it: "Claude (spare@example.com)'s 7-day
   window is at 90%." A window whose reset has already passed adds no sentence, as it decides no
   head chip: a 7-day window at 100% whose reset is gone never reads "quota is used up".
+- **macOS hint.** When the payload carries `claudeOwnLoginUnreadable` (macOS, and Claude Code's own
+  login is neither in its file nor in a keychain this server can read,
+  §app.claude-logins/macos-keychain), one muted `.usage-note` under the lead says "On macOS, add
+  your Claude login under Settings → Accounts."
 - **Cards.** There's one card per `providers[]` entry, in the order given: Claude, OpenAI,
   Ollama Cloud, Z.ai, DeepSeek. Z.ai follows the system like every other provider: no brand color, and
   the title is "Z.ai"; so does DeepSeek, titled "DeepSeek".
@@ -663,7 +839,9 @@ caches and locks, so each fetches on its own; servers on the same agent dir shar
 credentials say something: expiry times, when the sign-in was last renewed, and whether the access
 and refresh tokens have expired by the server's clock. It comes from the same credential files the
 usage fetch reads (Claude Code's `~/.claude/.credentials.json`, pi's `~/.pi/agent/auth.json`, the
-Codex CLI's `~/.codex/auth.json`), re-read only when a file changes. It carries numbers, enums and
+Codex CLI's `~/.codex/auth.json`), re-read only when a file changes; on macOS a Claude login with no
+credentials file is read from its keychain item instead, for the fetch and for these numbers
+(§app.claude-logins/macos-keychain), and then carries no `refreshedAt`. It carries numbers, enums and
 booleans only: no string from a credential file ever leaves the server. Claude's
 `refreshedAt` is the credentials file's modification time, and only while that time agrees (to
 within 10 minutes) with an 8-hour token lifetime ending at `expiresAt`; otherwise it is left out
@@ -776,7 +954,8 @@ Sova that aren't archived.
   (`outlineGist`, else the now line, else the cwd in mono). Activity: the compact
   model, the context ring (the sidebar row's rule: the open view's live fill wins, never without a
   window), last active in relative time, the state chip. Workers:
-  `{working}/{total} working`, a count chip per team, the workers' lifetime spend. A team chip is
+  `{working}/{total} working`, a count chip per team, the workers' spend at API prices, at any
+  depth, from the usage ledger (§app.insights/usage-ledger). A team chip is
   a link to `#/agents/{teamKey}`; a click on it opens that session's Session details pane in place
   on its Agents tab. Worktrees: see §app.insights/subagent-cards. Actions: Open, Session
   details, Archive or Unarchive, Move into group (the session pane's group menu, icon only), and ⋯. The head's totals line (working ·

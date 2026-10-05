@@ -1,25 +1,27 @@
-import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
+import type { ToolSpec } from "../shared/harness";
 import type {
   AttentionDigest,
   FolderListing,
   ModelInfo,
   OverseerCaps,
-  PeerState,
   SessionGroup,
   SessionInsight,
   SessionSummary,
+  SandboxInfo,
   SovaConfirmItem,
   SovaNavigateDetails,
   TargetInfo,
   TranscriptItem,
 } from "../shared/protocol";
+import type { PeerStateView } from "../shared/mesh-access";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { relativeTime } from "../pi-config/extensions/stamp/format.ts";
 import { newestTopics, topicTime } from "../shared/outline-order";
 import { whereOf } from "./attention";
-import { alignmentText, openAlignmentsOf } from "./align-state";
-import { entryOf } from "./transcript";
+import { NotShared } from "./mesh/access";
+import { alignmentTextIn, openAlignmentsIn } from "./align-state";
+import { sourceOf } from "./transcript";
 import type { ReadinessChecks } from "./merge-readiness";
 import { idOfAlias, sessionName } from "./session-names";
 import { type Redactor, redactingTool, serverRedactor } from "./overseer-redact";
@@ -92,6 +94,11 @@ export interface OverseerToolHost extends IdeaToolHost {
   /** Pin a held chat to the mode it is on now (ChatSession.pinMode): write its `mode` entry even when
       that mode equals the default, so a later mode.json change never moves it. Throws when it can't. */
   pinMode(path: string): Promise<void>;
+  /** A chat's sandbox now (opened here as `open` does), or null when its runtime has no sandbox
+      extension (§chat.sandbox/states). Absent: no session's sandbox can be set. */
+  sandbox?(path: string): Promise<SandboxInfo | null>;
+  /** The state a new session starts in: On when the policy's `defaultOn` is true, else Subagents only. */
+  sandboxDefault?(): SandboxState;
   /** Record that the Overseer started work in this session (the concurrency cap). `prompted`: a
       prompt was just accepted there, so it counts as running from now on, even in the moment
       before its run reports streaming. */
@@ -139,7 +146,7 @@ export interface PeerRef {
   id: string;
   label: string;
   nodeId: string;
-  state: PeerState;
+  state: PeerStateView;
   error?: string;
 }
 
@@ -149,6 +156,21 @@ export const UNATTENDED_REFUSAL =
   "you may read, keep notes and ask, but nothing that changes a session runs here, and no approval for later or standing rule " +
   "the user adopted covers this act. Stop, and raise a sova_card card that says what you would do and why; the user's click " +
   "starts a turn in which you may act.";
+
+/** The sandbox states, loosest first (§chat.sandbox/states), and how the tools name them. */
+export type SandboxState = "off" | "subagents" | "on";
+const SANDBOX_STATES: readonly SandboxState[] = ["off", "subagents", "on"];
+const SANDBOX_LABEL: Record<SandboxState, string> = { off: "Off", subagents: "Subagents only", on: "On" };
+/** Lowering a session's sandbox runs only in a turn the user's card click opened (§app.overseer/tools). */
+export const SANDBOX_LOWER_REFUSAL =
+  "Lowering a session's sandbox needs the user's approval: ask with sova_card, listing the session, and set it in the turn the user's click starts. Nothing was changed.";
+export const SANDBOX_LOWER_CREATE_REFUSAL =
+  "Starting a session with its sandbox lowered needs the user's approval: ask with sova_card first (say the session starts with its sandbox lowered, and to what), and create it in the turn the user's click starts. No session was created.";
+function sandboxParam(v: unknown): SandboxState {
+  if (typeof v === "string" && (SANDBOX_STATES as readonly string[]).includes(v)) return v as SandboxState;
+  throw new Refusal('sandbox is "off", "subagents" or "on". Nothing was changed.');
+}
+const lowers = (to: SandboxState, from: SandboxState) => SANDBOX_STATES.indexOf(to) < SANDBOX_STATES.indexOf(from);
 
 /** The sessions an act names, for the approvals check: null for an act that names none. */
 export function actTargets(tool: string, params: any): string[] | null {
@@ -327,15 +349,14 @@ export function topicsLine(topics: readonly { heading: string; at: number; secti
     reason, its error and its text; undefined when there is none. */
 export function lastReplyIn(items: readonly TranscriptItem[]): { at: number; stopReason?: string; error?: string; text: string } | undefined {
   for (let i = items.length - 1; i >= 0; i--) {
-    const raw = entryOf(items[i]!) as { type?: unknown; timestamp?: unknown; message?: { role?: unknown; content?: unknown; stopReason?: unknown; errorMessage?: unknown; timestamp?: unknown } } | undefined;
-    const m = raw?.type === "message" ? raw.message : undefined;
-    if (m?.role !== "assistant") continue;
-    const at = typeof raw!.timestamp === "string" ? Date.parse(raw!.timestamp) : typeof m.timestamp === "number" ? m.timestamp : NaN;
-    const text = typeof m.content === "string" ? m.content : Array.isArray(m.content) ? m.content.map((b) => (b?.type === "text" && typeof b.text === "string" ? b.text : "")).filter(Boolean).join("\n") : "";
+    const h = sourceOf(items[i]!);
+    if (h?.kind !== "assistant") continue;
+    const at = typeof h.at === "string" ? Date.parse(h.at) : typeof h.sentAt === "number" ? h.sentAt : NaN;
+    const text = h.blocks.map((b) => (b.type === "text" && typeof b.text === "string" ? b.text : "")).filter(Boolean).join("\n");
     return {
       at: Number.isFinite(at) ? at : 0,
-      ...(typeof m.stopReason === "string" ? { stopReason: m.stopReason } : {}),
-      ...(typeof m.errorMessage === "string" && m.errorMessage ? { error: m.errorMessage } : {}),
+      ...(typeof h.stop === "string" ? { stopReason: h.stop } : {}),
+      ...(typeof h.error === "string" && h.error ? { error: h.error } : {}),
       text,
     };
   }
@@ -366,7 +387,7 @@ export function truthLines(
     const message = s.turnError?.message ?? reply?.error;
     out.push(`Turn error: ${message ? cut(message, 300) : "the last turn stopped with an error"}`);
   }
-  const docs = items ? openAlignmentsOf(items.map(entryOf)) : [];
+  const docs = items ? openAlignmentsIn(items.map(sourceOf)) : [];
   if (docs.length) {
     const list = docs.map((d) => `${d.id} "${cut(d.title, 80)}": ${d.open} of ${d.total} question${d.total === 1 ? "" : "s"} open`).join("; ");
     const waits = s.align ? "the session waits on the user's answers" : "not waiting on the user (they spoke since, or align is off)";
@@ -426,7 +447,7 @@ export const SETTINGS_TABS = ["general", "models", "modes", "overseer", "summari
 
 // ---- the tools ---------------------------------------------------------------------------------
 
-type Tool = ToolDefinition<any, any>;
+type Tool = ToolSpec;
 
 /** JSON-Schema object shorthand (pi validates plain JSON Schema as well as TypeBox). */
 function obj(properties: Record<string, unknown>, required: string[] = []): any {
@@ -443,7 +464,10 @@ import { OVERSEER_CARD_HEADER } from "./overseer-sender";
 export { OVERSEER_CARD_HEADER };
 export function cardHeader(items: readonly SovaConfirmItem[]): string {
   const ids = (kind: SovaConfirmItem["kind"]) => items.filter((i) => i.kind === kind).map((i) => i.id);
-  return JSON.stringify({ people: ids("person"), projects: ids("project"), sessions: ids("session") });
+  // Folder and org rows (§app.overseer/org-project-add): the project and org routes check these themselves.
+  const folders = items.flatMap((i) => (i.kind === "folder" ? [{ root: i.id, org: i.orgId ?? null, ...(i.name ? { name: i.name } : {}) }] : []));
+  const orgs = ids("org");
+  return JSON.stringify({ people: ids("person"), projects: ids("project"), sessions: ids("session"), ...(folders.length ? { folders } : {}), ...(orgs.length ? { orgs } : {}) });
 }
 
 /**
@@ -508,11 +532,12 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
     }
     if (peer.state !== "up")
       throw new Refusal(
-        `${peer.label} (${peer.id}) is ${peer.state === "skewed" ? "on another protocol version (skewed)" : peer.state === "refused" ? "refusing this host (it doesn't list it as a peer)" : "down"}${peer.error ? `: ${peer.error}` : ""}, so nothing reaches it from here now.`,
+        `${peer.label} (${peer.id}) is ${peer.state === "skewed" ? "on another protocol version (skewed)" : peer.state === "refused" ? "refusing this host (it doesn't list it as a peer)" : peer.state === "hidden" ? "hiding everything from this host (its grant to this host is none)" : "down"}${peer.error ? `: ${peer.error}` : ""}, so nothing reaches it from here now.`,
       );
     return peer;
   }
-  /** `call` over the peer hop. A peer that doesn't answer is a refusal naming it, never an empty result. */
+  /** `call` over the peer hop. A peer that doesn't answer is a refusal naming it, never an empty result;
+      a call this host's own grant to the peer withholds is a refusal saying so, never "didn't answer". */
   async function peerCall(peer: PeerRef, method: string, path: string, body?: unknown): Promise<{ status: number; json: any }> {
     let res: Response;
     try {
@@ -522,6 +547,8 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
         ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
       });
     } catch (err) {
+      if (err instanceof NotShared)
+        throw new Refusal(`This host doesn't share that with ${peer.label} (${peer.id}): its grant to ${peer.label} on this host's Mesh page withholds it, so nothing was sent.`);
       throw new Refusal(`${peer.label} (${peer.id}) didn't answer (${err instanceof Error ? err.message : String(err)}).`);
     }
     let json: any = null;
@@ -586,6 +613,7 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
     if (p.page === "usage") return { href: "#/usage", label: "Open Usage" };
     if (p.page === "agents") return { href: p.team ? `#/agents/${encodeURIComponent(p.team)}` : "#/agents", label: "Open Agents" };
     if (p.page === "overseer") return { href: "#/overseer", label: "Open the Overseer" };
+    if (p.page === "orgs") return { href: "#/orgs", label: "Open Organizations" };
     if (p.page === "settings") {
       const tab = p.settings_tab ?? "general";
       if (!(SETTINGS_TABS as readonly string[]).includes(tab)) throw new Refusal(`settings_tab must be one of ${SETTINGS_TABS.join(", ")}.`);
@@ -663,6 +691,17 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
     return { queued: r.json?.queued === true, kind: String(r.json?.kind ?? "prompt"), ...(r.json?.compacting ? { compacting: true } : {}) };
   }
 
+  /** Set a held chat's sandbox state through the route the composer uses; throws why it didn't take. */
+  async function setSandbox(s: SessionSummary, state: SandboxState): Promise<void> {
+    await host.open(s.path);
+    const r = await call("POST", `/api/sandbox?path=${encodeURIComponent(s.path)}`, { state });
+    if (r.status !== 200) throw failed(r, "Setting the sandbox");
+    if (r.json?.outcome === "unsupported") throw new Error("its runtime has no sandbox extension");
+    if (r.json?.outcome === "skip") throw new Error("another writer has that session");
+    const now = (r.json?.sandbox as SandboxInfo | undefined)?.state;
+    if (now !== state) throw new Error(`it reads ${now ? SANDBOX_LABEL[now] : "unknown"} after the change: ${r.json?.sandbox?.status ?? "no status"}`);
+  }
+
   async function checkSubagentProfile(id: unknown, peer: PeerRef | null = null) {
     const r = peer ? await peerCall(peer, "GET", "/api/settings/subagents") : await call("GET", "/api/settings/subagents");
     if (r.status !== 200 || r.json?.error || !Array.isArray(r.json?.profiles)) throw new Refusal("Subagent profiles couldn't be read. Nothing was changed.");
@@ -715,6 +754,13 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
         throw new Refusal(
           `Created ${link(s)} in ${whereOf(s)}, but its mode was not set (${r.json?.error ?? `HTTP ${r.status}`}), so ${hasPrompt ? "its first prompt was not sent" : "it is in its default mode"}. Set the mode with sova_set_session${hasPrompt ? ", then send the prompt with sova_send" : ""}.`,
         );
+    }
+    if (p.sandbox !== undefined) {
+      // Before its first prompt, like the mode: its first turn's tools and workers already run under it.
+      const want = p.sandbox as SandboxState;
+      const why = await setSandbox(s, want).then(() => null, (err) => (err instanceof Error ? err.message : String(err)));
+      if (why) throw new Refusal(`Created ${link(s)}, but its sandbox was not set (${why}), so ${hasPrompt ? "its first prompt was not sent" : "it has the default sandbox"}. Set it with sova_set_session${hasPrompt ? ", then send the prompt with sova_send" : ""}.`);
+      notes.push(`Sandbox: ${SANDBOX_LABEL[want]} (this session only).`);
     }
     if (p.subagent_profile !== undefined) {
       await host.open(s.path);
@@ -884,7 +930,7 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
         const doc = typeof p.doc === "string" && p.doc.trim() ? p.doc.trim() : undefined;
         let body: string;
         try {
-          body = alignmentText(items.map(entryOf), { ...(doc ? { doc } : {}), waits: !!s.align });
+          body = alignmentTextIn(items.map(sourceOf), { ...(doc ? { doc } : {}), waits: !!s.align });
         } catch (err) {
           throw new Refusal(err instanceof Error ? err.message : String(err));
         }
@@ -1034,6 +1080,7 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
         thinking: str("off | minimal | low | medium | high | xhigh | max"),
         mode: str("normal | delegate (see the mode extension)."),
         subagent_profile: str("Subagent profile id or off, from sova_list_subagent_profiles. This session only, before its first prompt; never saves a default."),
+        sandbox: str('Its sandbox, before its first prompt: "on" (its tools and its subagents confined), "subagents" (the default: only its subagents in its worktrees, write-only) or "off" (nothing confined). Below the default only in the turn the user\'s click on a card that said so opened. Not with host.', { enum: ["off", "subagents", "on"] }),
         minor_modes: { type: "array", items: { type: "string" }, description: 'Minor modes to have on from the first turn, e.g. ["spec"]; [] turns them all off. Omitted: the default.' },
         title: str("A title for the list, up to 80 characters."),
         group: str("Group id to add it to."),
@@ -1050,6 +1097,14 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
         }
         const onPeer = typeof p.host === "string" && p.host.trim() !== "";
         if (onPeer && typeof p.group === "string" && p.group) throw new Refusal("A group can't be given with host: groups belong to one host. No session was created.");
+        // A sandbox below the one it would start in needs the user's click (§app.overseer/tools); it
+        // refuses before anything is created or capped.
+        if (p.sandbox !== undefined) {
+          if (onPeer) throw new Refusal("A sandbox can't be given with host. No session was created.");
+          if (!host.sandbox) throw new Refusal("Sessions' sandboxes can't be set here. No session was created.");
+          const want = sandboxParam(p.sandbox);
+          if (lowers(want, host.sandboxDefault?.() ?? "subagents") && !host.confirmed()) throw new Refusal(SANDBOX_LOWER_CREATE_REFUSAL);
+        }
         // A profile (§chat/profiles): this host's, one the user let the Overseer start, and a One at
         // a time one only while it isn't live; each refuses before anything is created or capped.
         if (typeof p.profile === "string" && p.profile) {
@@ -1155,8 +1210,8 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
       name: "sova_set_session",
       label: "Set session",
       description:
-        "Rename a session, give it an alias (a short name the user chose, which every tool then takes in place of its id), or set its model, thinking level or mode (normal/delegate; minor modes such as spec). Model, thinking and mode need the session idle. Terminal-owned sessions are read-only.",
-      promptSnippet: "rename a session, alias it, or set its model, thinking or mode",
+        "Rename a session, give it an alias (a short name the user chose, which every tool then takes in place of its id), or set its model, thinking level, mode (normal/delegate; minor modes such as spec) or sandbox. Model, thinking and mode need the session idle; the sandbox does not. Lowering the sandbox (to off, or from on) runs only in the turn the user's click on a card listing the session opened. Terminal-owned sessions are read-only.",
+      promptSnippet: "rename a session, alias it, or set its model, thinking, mode or sandbox",
       parameters: obj(
         {
           session: str("Session id."),
@@ -1166,6 +1221,7 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
           thinking: str("off | minimal | low | medium | high | xhigh | max"),
           mode: str("normal | delegate"),
           subagent_profile: str("Subagent profile id or off. Changes only this chat's later work, not running workers or the default."),
+          sandbox: str('"on" (its tools and its subagents confined), "subagents" (only its subagents in its worktrees, write-only) or "off" (nothing confined). From its next tool call, and for subagents started or resumed afterwards. Lowering it needs the user\'s click on a card listing the session, in the turn that click opened.', { enum: ["off", "subagents", "on"] }),
           minor_modes: { type: "array", items: { type: "string" }, description: 'Minor modes to have on, e.g. ["spec"]; [] turns them all off.' },
         },
         ["session"],
@@ -1173,6 +1229,18 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
       execute: act("sova_set_session", async (p) => {
         const s = await resolveWritable(p.session);
         if (p.subagent_profile !== undefined) await checkSubagentProfile(p.subagent_profile);
+        // The sandbox is checked before anything changes: lowering it needs this turn to be the user's
+        // click on a card that lists this session (§app.overseer/tools), never an approval for later.
+        let sandbox: SandboxState | undefined;
+        if (p.sandbox !== undefined) {
+          sandbox = sandboxParam(p.sandbox);
+          if (!host.sandbox) throw new Refusal("Sessions' sandboxes can't be set here. Nothing was changed.");
+          await host.open(s.path);
+          const info = await host.sandbox(s.path);
+          if (!info) throw new Refusal(`${link(s)} has no sandbox extension, so its sandbox can't be set. Nothing was changed.`);
+          const now: SandboxState = info.state ?? (info.on ? "on" : "subagents");
+          if (lowers(sandbox, now) && !host.confirmed()?.some((i) => i.kind === "session" && i.id === s.id)) throw new Refusal(SANDBOX_LOWER_REFUSAL);
+        }
         const done: string[] = [];
         if (p.title !== undefined) {
           const t = typeof p.title === "string" && p.title.trim() ? p.title.trim() : null;
@@ -1211,7 +1279,11 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
           if (r.status !== 200) throw failed(r, "Switching subagent profile");
           done.push(`subagent profile ${p.subagent_profile} (running workers unchanged)`);
         }
-        if (!done.length) throw new Refusal("Nothing to change: give title, alias, model, thinking, mode, minor_modes or subagent_profile.");
+        if (sandbox !== undefined) {
+          await setSandbox(s, sandbox);
+          done.push(`sandbox ${SANDBOX_LABEL[sandbox]} (from its next tool call; running subagents keep theirs until resumed)`);
+        }
+        if (!done.length) throw new Refusal("Nothing to change: give title, alias, model, thinking, mode, minor_modes, subagent_profile or sandbox.");
         return { content: text(`${link(s)}: ${done.join(", ")}.`), details: { id: s.id, path: s.path } };
       }),
     },
@@ -1360,12 +1432,12 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
       name: "sova_navigate",
       label: "Navigate",
       description:
-        "Move the user's browser tab (only the tab that sent the current message; never on a brief or wake-up) to a session, a group workspace, the usage or agents page, the Overseer, a Settings tab, or an organization, project or person page. Validates the target and returns its link. Make it the LAST call of a turn: the view changes when it lands.",
+        "Move the user's browser tab (only the tab that sent the current message; never on a brief or wake-up) to a session, a group workspace, the usage or agents page, the Overseer, a Settings tab, the Organizations page, or an organization, project or person page. Validates the target and returns its link. Make it the LAST call of a turn: the view changes when it lands.",
       promptSnippet: "open a session, workspace, page or Settings tab in the user's tab (last call)",
       parameters: obj({
         session: str("Session id to open (alone, or focused inside `group`)."),
         group: str("Group id: open its workspace."),
-        page: str("usage | agents | overseer | settings", { enum: ["usage", "agents", "overseer", "settings"] }),
+        page: str("usage | agents | overseer | settings | orgs", { enum: ["usage", "agents", "overseer", "settings", "orgs"] }),
         team: str("With page agents: a team id."),
         settings_tab: str(`With page settings: ${SETTINGS_TABS.join(" | ")}`, { enum: [...SETTINGS_TABS] }),
         org: str("An organization, by id or exact name: open its page (or, with person, theirs; with project, it narrows the name)."),
@@ -1416,6 +1488,8 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
         todo: (ref) => readTodos().todos.find((t) => t.id === ref) ?? null,
         person: orgConfirmLookup.person,
         project: orgConfirmLookup.project,
+        org: orgConfirmLookup.org,
+        folder: orgConfirmLookup.folder,
       },
       link: async (target) => (await navTarget(target)).href,
       wrap: (run) => act("sova_card", run, { unattended: true }),
@@ -1463,6 +1537,7 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
       confirmed: () => host.confirmed(),
       overseerId: () => host.overseerId(),
       sessionRef,
+      session: (ref) => lookup(ref),
       obj,
       str,
       int,
@@ -1479,7 +1554,7 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
  * roster (§app.overseer/org-projection): each becomes `[contact]`. Its arguments are left as the
  * model wrote them, so a write stores what it was given.
  */
-export function contactRedactingTool<T extends ToolDefinition<any, any>>(tool: T): T {
+export function contactRedactingTool<T extends ToolSpec>(tool: T): T {
   const clean = <R>(r: ReturnType<typeof contactRedactor>, result: R): R => {
     if (!result || typeof result !== "object") return result;
     const res = result as { content?: unknown; details?: unknown };

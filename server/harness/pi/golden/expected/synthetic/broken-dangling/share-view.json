@@ -1,0 +1,69 @@
+{
+  "shown": [
+    {
+      "e": {
+        "type": "message",
+        "message": {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "Parent is missing"
+            }
+          ],
+          "timestamp": 1788256803000
+        },
+        "id": "l0000003",
+        "parentId": "lmissing",
+        "timestamp": "2026-09-01T10:00:03.000Z"
+      },
+      "role": "user",
+      "text": "Parent is missing",
+      "blocks": []
+    },
+    {
+      "e": {
+        "type": "message",
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "Reply on the dangling branch"
+            }
+          ],
+          "api": "openai-completions",
+          "provider": "zai",
+          "model": "glm-5.3",
+          "usage": {
+            "input": 1200,
+            "output": 80,
+            "cacheRead": 400,
+            "cacheWrite": 0,
+            "totalTokens": 1680,
+            "cost": {
+              "input": 0.001,
+              "output": 0.002,
+              "cacheRead": 0.0001,
+              "cacheWrite": 0,
+              "total": 0.0031
+            }
+          },
+          "stopReason": "stop",
+          "timestamp": 1788256804000
+        },
+        "id": "l0000004",
+        "parentId": "l0000003",
+        "timestamp": "2026-09-01T10:00:04.000Z"
+      },
+      "role": "assistant",
+      "text": "Reply on the dangling branch",
+      "blocks": []
+    }
+  ],
+  "branchTo": {
+    "leaf": null,
+    "mid": null,
+    "missing": null
+  }
+}

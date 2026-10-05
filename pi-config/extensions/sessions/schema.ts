@@ -45,6 +45,8 @@ export const WORKER_SESSION_FILE_MAX = 1024;
 export const WORKER_SESSION_ID_MAX = 64;
 /** WorkerEntry.effort cap: level names are short ("off", "medium", "xhigh", "max"). */
 export const WORKER_EFFORT_MAX = 32;
+/** WorkerEntry.teamId cap: ids are short ("team_01"); over-limit is dropped, never truncated. */
+export const WORKER_TEAM_ID_MAX = 64;
 /** WorkerEntry.modes caps: at most this many names, each at most WORKER_MODE_MAX chars ("spec"). */
 export const WORKER_MODES_MAX = 8;
 export const WORKER_MODE_MAX = 32;
@@ -95,6 +97,8 @@ export interface WorkerEntry {
   effort?: string;
   /** The mode extension's minor modes the worker was given at its start (e.g. ["spec"]); absent when none, or unpublished. */
   modes?: string[];
+  /** The team the worker is a member of (its session team, or a restored member's saved one); absent = none, or unpublished. */
+  teamId?: string;
   startedAt?: number;
   lastActivity?: number;
   endedAt?: number;
@@ -201,6 +205,19 @@ export interface LlmPresence {
    *  none of them again, whatever record carries them. Sorted; at most 64 written (tracker.ts
    *  MAX_FOLDED), up to 256 accepted. */
   folded: string[];
+  /** Output tokens of its ended calls (its summed workers' too), per 30 s slot; absent from an
+   *  older counter (its tokens are unknown). */
+  tokens?: LlmTokenRing;
+}
+
+/** presence.llm.tokens: 60 epoch-aligned slots of 30 s, oldest first; `out[59]` is slot `end`
+ *  (floor(ms / 30000)). Each slot ≤ 10,000,000. */
+export interface LlmTokenRing {
+  bucketMs: 30000;
+  end: number;
+  out: number[];
+  /** Some of the process's calls' tokens are known missing (a worker that reported no ring). */
+  partial?: true;
 }
 
 export interface LiveRecord {
@@ -267,6 +284,7 @@ function parseWorker(value: unknown): WorkerEntry | undefined {
     // A truncated level would name a different one: same drop-don't-truncate rule.
     effort: whole(value.effort, WORKER_EFFORT_MAX),
     modes: workerModes(value.modes),
+    teamId: whole(value.teamId, WORKER_TEAM_ID_MAX),
     startedAt: num(value.startedAt) ? value.startedAt : undefined,
     lastActivity: num(value.lastActivity) ? value.lastActivity : undefined,
     endedAt: num(value.endedAt) ? value.endedAt : undefined,
@@ -343,8 +361,17 @@ function parseLlm(value: unknown): LlmPresence | undefined {
     || ![active, approximate, claudeTurns].every(count) || typeof degraded !== "boolean") return;
   if (folded !== undefined && (!Array.isArray(folded) || folded.length > 256
     || !folded.every(f => typeof f === "string" && f.length > 0 && f.length <= 64))) return;
+  const tokens = parseTokenRing(value.tokens);
   return { v: 1, producer, pid, active, approximate: Math.min(approximate as number, active as number), claudeTurns, degraded,
-    folded: [...new Set((folded ?? []) as string[])].sort() } as LlmPresence;
+    folded: [...new Set((folded ?? []) as string[])].sort(), ...(tokens ? { tokens } : {}) } as LlmPresence;
+}
+
+/** presence.llm.tokens, or undefined (dropped alone: the counts stay) when it isn't one. */
+function parseTokenRing(value: unknown): LlmTokenRing | undefined {
+  if (!isObj(value) || value.bucketMs !== 30000 || !Number.isSafeInteger(value.end) || (value.end as number) < 0) return;
+  const out = value.out;
+  if (!Array.isArray(out) || out.length !== 60 || !out.every(n => count(n) && (n as number) <= 10_000_000)) return;
+  return { bucketMs: 30000, end: value.end as number, out: [...out] as number[], ...(value.partial === true ? { partial: true as const } : {}) };
 }
 
 function parseCounts(value: unknown): WorkerCounts | undefined {

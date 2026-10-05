@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
+import type { HEntry } from "./harness";
 import type { SovaConfirmItem } from "./protocol";
 import {
   applyCardCall,
@@ -40,9 +41,16 @@ function run(calls: { input: unknown; prepared?: CardPrepared; now?: string }[],
   }
   return { cards, outs };
 }
-const entry = (details: unknown, extra: { isError?: boolean; toolName?: string } = {}) => ({
-  type: "message",
-  message: { role: "toolResult", toolName: extra.toolName ?? CARD_TOOL, toolCallId: "t", isError: extra.isError ?? false, details },
+/** A tool result as the reader gives it (`HEntry`). */
+const entry = (details: unknown, extra: { isError?: boolean; toolName?: string } = {}): HEntry => ({
+  id: null,
+  parentId: null,
+  kind: "tool-result",
+  tool: extra.toolName ?? CARD_TOOL,
+  callId: "t",
+  blocks: [],
+  isError: extra.isError ?? false,
+  details,
 });
 
 const archiveCard = {
@@ -380,4 +388,27 @@ test("details are v1 with the card snapshot and a line", () => {
   assert.equal(d.v, 1);
   assert.deepEqual(normalizeCardDetails(JSON.parse(JSON.stringify(d))), d);
   assert.equal(idea("x").kind, "idea");
+});
+
+describe("org, folder and standalone project rows (§app.overseer/org-project-add)", () => {
+  const rows: SovaConfirmItem[] = [
+    { kind: "project", id: "prj_solo0001", name: "Solo" },
+    { kind: "folder", id: "/home/u/code/app", asked: "/home/u/code/app/web", orgId: "org_a", orgName: "Acme", name: "App" },
+    { kind: "folder", id: "/home/u/code/tool" },
+    { kind: "org", id: "org_a", name: "Acme" },
+  ];
+  test("they survive the fold, in display order: orgs, folders, then projects", () => {
+    const created = applyCardCall([], { ops: [{ op: "create", title: "Add these?", options: [{ label: "Add" }] }] }, { now: "2026-10-04T10:00:00.000Z", prepared: { items: rows, hrefs: [], clickOnly: true } }).details;
+    const folded = foldCards([{ id: null, parentId: null, kind: "tool-result", callId: "k1", tool: CARD_TOOL, blocks: [], details: created }]);
+    assert.deepEqual(folded[0]!.items.map((i) => [i.kind, i.id]), [["org", "org_a"], ["folder", "/home/u/code/app"], ["folder", "/home/u/code/tool"], ["project", "prj_solo0001"]]);
+    const note = cardsNote(folded, false, () => undefined);
+    assert.match(note ?? "", /organization Acme \(org_a\)/);
+    assert.match(note ?? "", /folder \/home\/u\/code\/app \(the checkout root of \/home\/u\/code\/app\/web\), named App, into Acme \(org_a\)/);
+    assert.match(note ?? "", /folder \/home\/u\/code\/tool, standalone/);
+    assert.match(note ?? "", /project Solo \(prj_solo0001\), in no organization/);
+  });
+  test("a project with an org id but no org name (or the reverse) is malformed", () => {
+    const bad = applyCardCall([], { ops: [{ op: "create", title: "t", options: [{ label: "x" }] }] }, { now: "2026-10-04T10:00:00.000Z", prepared: { items: [{ kind: "project", id: "p", name: "P", orgId: "org_a" } as SovaConfirmItem], hrefs: [], clickOnly: true } }).details;
+    assert.equal(foldCards([{ id: null, parentId: null, kind: "tool-result", callId: "k1", tool: CARD_TOOL, blocks: [], details: bad }]).length, 0);
+  });
 });

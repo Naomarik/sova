@@ -179,7 +179,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 |---|---|
 | Trigger | `aria-label` / `title`: More Actions |
 | Menu panel `aria-label` | More actions |
-| Menu panel rows | Attach images · Commands · Playbooks · Hide tool calls · Hide thinking · Sandbox · Undo last turn (in this order, each only where it applies: Playbooks in chat sessions, §chat/playbooks; Sandbox where the runtime has a `sandbox` command, §chat/sandbox; Undo last turn per §chat/timeline) |
+| Menu panel rows | Attach images · Commands · Playbooks · Hide tool calls · Hide thinking · the Sandbox group (Off · Subagents only · On) · Undo last turn (in this order, each only where it applies: Playbooks in chat sessions, §chat/playbooks; the Sandbox group where the runtime has a `sandbox` command, §chat/sandbox, its copy in §design.copy-deck/sandbox; Undo last turn per §chat/timeline) |
 | Model panel `aria-label` | Model and thinking |
 | Model panel rows | Model · the Thinking group |
 | Model row | {id} · {provider} (`title`: {provider/id}) · no model: Choose model |
@@ -200,15 +200,21 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 
 | Where | Copy |
 |---|---|
-| Flyout row | Sandbox (checked while on) |
-| Flyout row `title`, off | Confine this session's tools, from the next tool call. |
-| Flyout row `title`, on | {status}. Turning it off applies from the next tool call. |
-| Composer shield word | (full: none) · Partial · Unavailable · Not enforced |
+| Flyout group label | Sandbox |
+| Flyout rows (`menuitemradio`, checked on the reported state) | Off · Subagents only · On |
+| Row `title`, Off | Off: nothing is confined, neither this session's tools nor its subagents. Applies from the next tool call, and to subagents started or resumed from now. |
+| Row `title`, Subagents only | Subagents only: this session's tools run unconfined; subagents in its worktrees write only there. Applies from the next tool call, and to subagents started or resumed from now. |
+| Row `title`, On | On: this session and its subagents. Applies from the next tool call, and to subagents started or resumed from now. |
+| Composer shield word | (On with full enforcement, Subagents only, Off: none) · Partial · Unavailable · Not enforced |
 | Composer shield `title` / accessible name | {status}: the extension's status line (below, TUI `/sandbox`) |
-| Toast and announcement on a flip | {status} (the extension's own line) |
+| Toast and announcement on a change | {status}. Running subagents keep theirs until resumed. |
+| Toast when the state did not change | {status} (the extension's own line) |
+| Off asked of a host without it (an older server) | This host's Sova has no Off; its sandbox stays {status}. |
 | Flip refused: another writer | Sandbox unchanged: another writer has this session. Nothing was written. |
 | Flip refused: other | Sandbox unchanged: {server error} |
-| Flip refused: server errors ({server error}) | Invalid or missing ?path= (must be a .jsonl under the pi sessions dir) · Expected JSON body { on: boolean } · That session isn't open on this server; open the chat first |
+| Flip refused: server errors ({server error}) | Invalid or missing ?path= (must be a .jsonl under the pi sessions dir) · Expected JSON body { state: "off" \| "subagents" \| "on" } or { on: boolean } · state and on disagree · That session isn't open on this server; open the chat first |
+| TUI `/sandbox` usage | usage: /sandbox on \| subagents \| off |
+| TUI footer | sandbox on (and its suffixes, §chat.sandbox/toggle) · Off: sandbox off · Subagents only: nothing |
 | Unavailable refusal (tool error) | Sandbox unavailable: {reason}. Nothing ran. Turn the sandbox off to run tools unconfined. |
 | Denial note (end of a tool result) | [sandbox: a write or connection outside the policy was refused] |
 | Hidden results omitted (end of find/grep output) | [sandbox: {n} result line(s) under hidden paths were omitted] |
@@ -217,8 +223,12 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Proxy refusal, port (403 body) | sova sandbox: port {port} is not in the sandbox proxy allowlist |
 | Proxy refusal, local address (403 body) | sova sandbox: {host} resolves to {address}, a local address, which is not in the sandbox proxy allowlist |
 | Per-project loosening ignored | Sandbox: `.sova/sandbox.json` can only tighten; ignored `{key}`. |
-| TUI `/sandbox` (describeActive) | Sandbox off · Sandbox on · {level} · full enforcement · Sandbox on · {level} · partial enforcement ({reasons}) · Sandbox on · {level} · unavailable: {reasons} (tools refuse) · not enforced (a remote session): Sandbox on · {reasons}, e.g. Sandbox on · not enforced on remote; with no reasons, Sandbox on · not enforced |
-| TUI transcript marker (terminal only; Sova's transcript shows none) | Sandbox → on · {level} · {enforcement} enforcement (not full adds: · {reasons}) · not enforced: Sandbox → on · {reasons} (no reasons: not enforced) · Sandbox → off |
+| TUI `/sandbox` (describeActive) | Off: Sandbox off · workers unconfined · Subagents only: Sandbox subagents only · workers in tracked worktrees write only there · Sandbox on · {level} · full enforcement · Sandbox on · {level} · partial enforcement ({reasons}) · Sandbox on · {level} · unavailable: {reasons} (tools refuse) · not enforced (a remote session): Sandbox on · {reasons}, e.g. Sandbox on · not enforced on remote; with no reasons, Sandbox on · not enforced |
+| TUI transcript marker (terminal only; Sova's transcript shows none) | Sandbox → on · {level} · {enforcement} enforcement (not full adds: · {reasons}) · not enforced: Sandbox → on · {reasons} (no reasons: not enforced) · Sandbox → subagents only · Sandbox → off |
+| `agent_list`, per worker | sandbox: on · sandbox: on, narrowed to {path} · sandbox: write-only to {path} · sandbox: none |
+| Overseer, lowering refused (`sova_set_session`) | Lowering a session's sandbox needs the user's approval: ask with sova_card, listing the session, and set it in the turn the user's click starts. Nothing was changed. |
+| Overseer, lowering refused (`sova_create_session`) | Starting a session with its sandbox lowered needs the user's approval: ask with sova_card first (say the session starts with its sandbox lowered, and to what), and create it in the turn the user's click starts. No session was created. |
+| Overseer, results | `sova_set_session`: sandbox {Off \| Subagents only \| On} (from its next tool call; running subagents keep theirs until resumed) · `sova_create_session`: Sandbox: {state} (this session only). |
 
 ## §design.copy-deck/playbooks — Playbooks (§chat/playbooks)
 
@@ -379,10 +389,13 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Where | Copy |
 |---|---|
 | Foot row 1 (→ `#/usage`) | Glance: `C` `O` `OL` `Z`, each with its pace meter and no number, then `DS {amount}` (DeepSeek has no quota, so it shows the money left, rounded to whole units: `DS $4` for a $4.29 balance) · Claude login with no current reading: `C` with empty tracks (muted) · no data: Usage · `title`: Usage, then a line per provider · `aria-label`: Usage: {lines joined by ". "} · a line: {Provider} {window}: {pct}% used · day {n} of {total} (under a day: {2h 10m} of {5h}) · resets {6:59 PM \| Oct 9 10:00 PM \| declared: Oct 14}, a two-window provider's bars joined by "; " · DeepSeek balance $4.29 (exact amount) · pending Claude: Claude ({login}) reading pending · then each other Claude account: Claude ({email}) {its bars} |
-| Foot row 2 (→ `#/agents`, §app.insights/llm-inflight) | `{n} agents` (1: `1 agent`), the bare number whenever known (partial and approximate too: no `+`, no `~`) · unknown: Agents — then this host's `{s} sessions` · `{t} teams` (1: `1 session`, `1 team`), joined by ` · `, a part at 0 left out · `title`/`aria-label`: Agents: {sentence}{. Each agent counted is one model call in flight, background work included. — only with a figure above 0}{. On this host, subagents are working in {s} sessions and {t} teams.} (a part at 0 left out, the clause too with both at 0; one full stop between) — sentence: {n} LLM calls running now (1: 1 LLM call running now; complete 0: No LLM calls running now) · partial: At least {n} LLM calls running now. {why} — why, each that applies: Claude Code's own internal calls aren't visible. · {n} processes on {host} don't report. (1: 1 process on {host} doesn't report.) · {host} hasn't reported yet. · {host} can't be reached. · {host} runs an older Sova. ({host}: this host, or the peer's label) · unknown: LLM calls running now: not known yet · with {a} approximate one-shots among the {n}: sentence {n−a} LLM calls running now, and {a} one-shot that may be calling (2+: one-shots; partial: At least {n−a} …, and … . {why}; no exact call: No exact LLM calls running now, and … — partial: No exact LLM calls seen, and … . {why}) |
+| Foot row 2 (→ `#/agents`, §app.session-list/working-now) | `{n} agents` (1: `1 agent`), the bare number whenever known (a floor too: no `+`, no `~`) · unknown: Agents — then the readout `{5m} tok/min` (§app.insights/token-velocity; unknown: `–`), and under them the chart's muted `30m` · `title`/`aria-label`: Agents: {working sentence}. {velocity sentence} (each ending in one full stop) — working sentence: {n} agents working now: {s} sessions and {m} subagents (1: 1 agent working now: 1 session; a part at 0 left out) · known 0: No agents working now · floor: At least {n} agents working now: … . Work on {host} isn't counted: it isn't answering. (2+: Work on {host} and {host} isn't counted: they aren't answering.; floor of 0: No agents seen working now. …) · unknown: Agents working now: not known yet |
+| Working-now line (toolbar, → `#/agents`, §app.session-list/working-now) | no words on the line: `chat` icon + `{s}` · `worker` icon + `{m}`, a part at 0 left out · `title`/`aria-label`: {s} sessions · {m} subagents working (1: `1 session`, `1 subagent`; a part at 0 left out: `1 session working`, `5 subagents working`) · floor: At least {…} working. Work on {host} isn't counted: it isn't answering. · omitted at 0 and while unknown |
+| Token velocity (§app.insights/token-velocity) | readout `48k tok/min` (phone bar: `48k /min`), the figure the 5-minute mean — under 1,000 whole (`840`), 1,000–9,999 one decimal (`8.4k`), 10,000 up no decimal (`48k`), a million up one decimal (`1.2M`) · chart label: `30m` · unknown: `–` · sentence: Output tokens a minute: {5m} over the last 5 minutes, {30m} over 30. Replies still being written aren't counted yet. · partial: Output tokens a minute: at least {5m} over the last 5 minutes, {30m} over 30. Some calls' tokens can't be seen. Replies still being written aren't counted yet. · unknown: Output tokens a minute: not known yet. |
 | Provider names | Claude · OpenAI · Ollama Cloud · Z.ai · DeepSeek |
 | Usage page title / head meta | Usage · Updated {rel} · never read: Not read yet |
 | Agents page title / head meta | Agents · `{w} working · {n} pi sessions running` ("{w} working · " dropped at 0; "1 pi session running") · 0 live: No pi sessions running |
+| Agents tabs and Costs tab (§app.insights/cost-history) | tabs: Board · Costs · range chips: 7d · 30d · All (default 30d) · filters: Provider · Model (none picked: every one) · stats: Total · Main sessions · Workers · One-shots · tables: By provider · By model (`Model` · `Input` · `Cache` · `Output` · `Cost`) · By kind · By project (neither project nor directory: "No project") · Top sessions (a worker: "{ag_01} in {parent title}", opening its parent) · a fully unpriced row's cost: "unpriced" · button: Refresh Prices · foot: "This device only, at API prices, subscriptions included." · "Prices as of {Mon D} · last change {Mon D}: {n} prices changed, {m} model added." · pulling off: "Pulling prices is off on this device." · never pulled: "Prices from the starter list: not pulled on this device yet." · error: "Couldn't load costs." · helper not running: "The usage counter isn't running yet. Nothing was lost: calls keep being recorded, and the figures come back when it starts." · head meta spend: `${x} today` |
 | Refresh `aria-label` | Refresh Usage · Refresh Agents |
 | Section heads (Agents page) | Teams · {n} active · Subagents · {n} working |
 | Agents page, 0 live (whole body) | **No pi sessions running.** Teams and subagents show up here while the pi session that started them runs. |
@@ -432,12 +445,11 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Pane | label and title: Session detail · tab strip `aria-label`: Session detail tabs · chip: `{w} working` (omitted at 0) · Close `aria-label`: Close session detail |
 | Row meta | `{provider}` · `{model}` · settled: `{model} · as of {HH:MM}` · idle after a failure adds: · last task failed (the provider leads: `claude code`, `zai`, …) |
 | Row status chips | Working · Starting · Queued (its `title` the waiting sentence) · Idle · Stopping · Done · Failed · Stopped · Restored · Interrupted · beside any of them, for a team member whose seat was released: Ejected |
-| Restored workers (§app.worker-restore/restore) | note: Not running since a server restart. · interrupted: Not running since a server restart; it was mid-task at `{HH:MM}`, and that turn never finished. · meta without usage: usage unavailable · snapshot cost: `$0.41 as of {HH:MM}` |
-| Usage tab | tab: Usage · headline: `{n}` tokens in and out · `$x` · Where: Main thread · Subagents · Team · footer: Main thread Σ · note: Main thread counts the active branch only. · workers: `{n}` subagents · `{w}` working (1: `1 subagent`) · nothing spent: Nothing spent in this session yet. · head chip: `{n} tokens`, accessible name `{n} tokens — show usage` |
-| Usage tab, after a restart | Cost cell: `$x*` (muted `*`, `title` "As of {HH:MM}") · note under the table: * Cost as of `{HH:MM}` (`{HH:MM} and {HH:MM}`), the last report before the restart. · Usage unavailable for `{ids}`: we couldn't read its transcript (their transcripts), so the totals above leave it (them) out. · Subagent lifetime: {n} tokens · `$x as of {HH:MM}` across {N} workers, then only as far as it applies: (includes evicted) · (includes restored) · (includes evicted and restored). |
+| Restored workers (§app.worker-restore/restore) | note: Not running since a server restart. · interrupted: Not running since a server restart; it was mid-task at `{HH:MM}`, and that turn never finished. |
+| Usage tab | tab: Usage · headline: `{n}` tokens in and out · `$x` · Where: Main thread · Side calls · Subagents · footer: Main thread Σ · workers: `{n}` subagents · `{w}` working (1: `1 subagent`) · nothing spent: Nothing spent in this session yet. · head chip: `{n} tokens`, accessible name `{n} tokens — show usage` |
 | View head modes chip | on the title row, right before the status chip: `{a}` / `{a}, {b}` — the mode names, comma-joined (only when it was given one; hover: "The modes this worker was given when it started.") |
 | View head id | beside the title, muted mono: `{id}` (e.g. `ag_02`) |
-| View head meta | `{model}` (hover: `{provider} · {model id}` — a claude-code worker's provider reads `claude code`) · `{level}` (only when the worker has an effort; hover: "effort {level}") · `{tokens} tok` (hover: the usage breakdown) · usage unavailable (when it has none) · `{context fill}` — compact, last, at the line's right edge with no `·` before it: the context ring + "`{pct}%`", hover: the §chat/context-window sentence; "Context `{tokens}`" when the window is unknown, "Context compacted" after a compaction, nothing before a reply has measured one |
+| View head meta | `{model}` (hover: `{provider} · {model id}` — a claude-code worker's provider reads `claude code`) · `{level}` (only when the worker has an effort; hover: "effort {level}") · `{tokens} tok` (hover: the usage breakdown) · `{context fill}` — compact, last, at the line's right edge with no `·` before it: the context ring + "`{pct}%`", hover: the §chat/context-window sentence; "Context `{tokens}`" when the window is unknown, "Context compacted" after a compaction, nothing before a reply has measured one |
 | Transcript section `aria-label` | {name} transcript |
 | Workers the live record doesn't list (§app.subagents-pane/hidden-workers) | line: `{shown} of {total} shown` · button: Show `{n}` More (`{n}`: every hidden worker, all added at once) · while loading: Loading… · failure: the reason, in the button's `title` |
 | No workers | **0 subagents in this session.** Workers it starts show up here while they run. |
@@ -818,13 +830,13 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Where | Copy |
 |---|---|
 | Card | heading `Cost` · total `$12.48` (mono) then "at API prices" · under it: "What these sessions would cost at each provider's API prices. Your subscriptions bill differently." |
-| Money | two decimals with thousands commas, mono: `$1,240.00` · `$0.56` · above 0 and under a cent: `<$0.01` · nothing: `$0.00` · the project total when part of it is an estimate: `≈$4.10` (`title` "Partly an estimate: see the note below.") |
+| Money | two decimals with thousands commas, mono: `$1,240.00` · `$0.56` · above 0 and under a cent: `<$0.01` · nothing: `$0.00` |
 | Tokens | the short figure used elsewhere: `940` · `12.3k` · `2.8M` |
 | By who started it (one line, only starters with a cost) | "Started by the overseer {usd} · by you {usd} · by Sova on its own {usd}" |
 | By kind (table) | heads `Kind` · `Cost` · rows `Overseer conversations` · `Gathering and offers` · `Settling` · `Wrap-ups` · `Coding sessions` · `Their workers` · `Reconciler` |
 | By model (table) | heads `Model` · `Input` · `Output` · `Cache read` · `Cache write` · `Cost` · a token cell: `{usd}` over `{tokens}` (muted) · last row `All models` (only with 2 or more models) · the tables sit in a disclosure `Breakdown by kind and model`, closed · a local model's cost cell: `local` · an unpriced model's cost cells: `unpriced` (muted) |
 | Top sessions | heading `Most expensive sessions` · row: `{title}` (link when on this host, else plain with "(not on this host)") · `{kind} · {started by}` with `started by` one of "started by the overseer", "started by you", "run by Sova" · `{usd}` |
-| Notes (one line each, only when true) | unpriced: "{tokens} tokens on {model} have no API price, so they aren't in the total." (one line per model; the reason as its `title`) · legacy: "{tokens} tokens counted before costs have no model recorded, so they aren't in the total." · estimate: "≈ Older Claude Code messages didn't record how long their cache was kept, so their cache writes are priced at the 1-hour rate." · not on this host: "{n} sessions aren't on this host: their cost is as last counted, {date}." · always: "Not counted: topic summaries, image descriptions, and Sova's own side calls." · always: "Prices from models.dev, as of {Mon D}." |
+| Notes (one line each, only when true) | unpriced: "{tokens} tokens on {model} have no API price, so they aren't in the total." (one line per model; the reason as its `title`) · legacy: "{tokens} tokens counted before costs have no model recorded, so they aren't in the total." · not on this host: "{n} sessions aren't on this host: their cost is as last counted, {date}." · always: "Not counted: Sova's own side calls that name no session of the project." · always: "Prices from models.dev, as of {Mon D}." |
 | Empty | "{n} sessions in this project. Nothing spent yet." · one: "1 session in this project. Nothing spent yet." · with no session: "Nothing spent yet." |
 | Loading · error | "Counting…" · "Couldn't count this project's cost. {reason}" (the API error's message) |
 | Org page, Projects tab | above the list: "All projects: {usd} at API prices." · each project row: `{usd}` (mono, muted) before the chevron · no projects: no line |
@@ -1107,7 +1119,7 @@ host, person or recipient.
 |---|---|
 | Tab | "Sharing" · a count chip while someone is viewing; accessible name "Sharing, {n} viewing now" |
 | Section | eyebrow "Sharing" · `All Shares` · none: "Not shared with anyone." · `Share Session` · `Manage` · an older host: "This host can't share sessions yet. It needs an update." · failed: "Couldn't read this session's shares. {reason}" |
-| Sidebar foot | row "Shares" · spine "Shares" |
+| Overview card | eyebrow "Shares" · title "Shares" · chip `{n}` · "{n} session shares · {n} organization links · {n} preview links" (+ " · {n} viewing now") · none: "No public links are open." · before the first read: "Reading shares…" |
 | Page | title "Shares" · meta "{n} session shares · {n} organization links" (+ " · {n} viewing now") · `Refresh Shares` |
 | Cards | "Session shares" (row meta adds "session “{session title}”" when it differs) · "No session share has a live link." · disclosure "Ended · {n}" · "Organization links" (row "{hand-off title} · hand-off {n}" or "Owner page" · "{org} · {state} · Expires in {n} days") |
 | Actions | `Manage` · `Stop Sharing` (armed `Stop Every Link?`) · `Delete Link` (armed "Delete {person}'s Link?", with "{person}'s link stops working for good." under it while armed) |

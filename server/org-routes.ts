@@ -20,7 +20,7 @@ import {
   createOrg,
   declinePerson,
   detachOrg,
-  orgCosts,
+  orgCostsAnswer,
   orgDetail,
   orgDir,
   orgsInfo,
@@ -42,7 +42,8 @@ import {
   setOperatorName,
   type OperatorBy,
 } from "./orgs";
-import { OVERSEER_CARD_HEADER, OVERSEER_SENDER_HEADER, overseerCard, overseerSender } from "./overseer-sender";
+import { ADD_LEAD, confirmRefusal, OVERSEER_CARD_HEADER, OVERSEER_SENDER_HEADER, overseerCard, overseerCardScope, overseerSender } from "./overseer-sender";
+import { overseerFolder } from "./overseer-folders";
 import { batonData, startedOf, toldOf } from "./baton-told";
 import type { EnvelopeCard } from "./org-envelope";
 import { holdItem, itemTimeline, pipelineInfo } from "./project-pipeline";
@@ -288,6 +289,22 @@ export function operatorBy(c: Context): OperatorBy {
   return { kind: "operator", via: "overseer", overseerId, ...(card ? { card } : {}) };
 }
 
+/** The card rows a sender-marked call carried (§app.overseer/org-project-add): only meaningful when `by.via` is set. */
+const cardScope = (c: Context) => overseerCardScope(c.req.header(OVERSEER_CARD_HEADER));
+
+/** The folder the global Overseer's Add Project in `orgId` registers: one it may add, on the card its call carried
+    as a folder row into this org (with the name, when the row names one); else the refusal. */
+async function overseerOrgAddRoot(c: Context, orgId: string, rawRoot: unknown, name: unknown): Promise<string> {
+  const folders = cardScope(c).folders.filter((f) => f.org === orgId);
+  const refusal = (what: string) => new OrgError(confirmRefusal(what, ADD_LEAD), 403);
+  if (!folders.length) throw refusal(`the folder ${typeof rawRoot === "string" ? rawRoot.trim() : "to add"} (into this organization)`);
+  const f = await overseerFolder(rawRoot);
+  if ("problem" in f) throw new OrgError(f.problem);
+  const named = typeof name === "string" && name.trim() ? name.trim() : undefined;
+  if (!folders.some((x) => x.root === f.root && (x.name === undefined || x.name === named))) throw refusal(`the folder ${f.root} (into this organization)`);
+  return f.asked;
+}
+
 /** A route param ("" when absent: every lookup then answers 404). */
 const p = (c: Context, name: string): string => c.req.param(name) ?? "";
 
@@ -321,7 +338,9 @@ export function registerOrgRoutes(app: Hono<any>): void {
     "/api/orgs/attach",
     handle(async (c) => {
       const b = await body(c);
-      const org = await attachOrg({ dir: b.dir, confirm: b.confirm });
+      const by = operatorBy(c);
+      // The global Overseer never takes an org over from another host: only the user's Attach Anyway does (§app.overseer/org-project-add).
+      const org = await attachOrg({ dir: b.dir, confirm: by.via ? false : b.confirm }, by);
       return c.json(await orgPage(org.id), 201);
     }),
   );
@@ -377,9 +396,13 @@ export function registerOrgRoutes(app: Hono<any>): void {
   app.delete(
     "/api/orgs/:id",
     handle(async (c) => {
+      const id = p(c, "id");
+      const by = operatorBy(c);
+      // The global Overseer's detach runs only in the turn a card listing the org opened (§app.overseer/org-project-add).
+      if (by.via && !cardScope(c).orgs.includes(id)) return c.json({ error: confirmRefusal(`the organization ${readOrg(id).name} (${id})`) }, 403);
       // Its owner link stops working here; an attach elsewhere sends a new one.
-      if (orgDir(p(c, "id"))) revokeOwnerLinks(p(c, "id"), "detached");
-      await detachOrg(p(c, "id"));
+      if (orgDir(id)) revokeOwnerLinks(id, "detached");
+      await detachOrg(id, by);
       return c.json({ ok: true });
     }),
   );
@@ -504,7 +527,9 @@ export function registerOrgRoutes(app: Hono<any>): void {
     handle(async (c) => {
       const id = p(c, "id");
       const b = await body(c);
-      const made = await addProject(id, { name: b.name, root: b.root });
+      const by = operatorBy(c);
+      const root = by.via ? await overseerOrgAddRoot(c, id, b.root, b.name) : b.root;
+      const made = await addProject(id, { name: b.name, root }, by);
       return c.json({ ...(await orgPage(id)), ...(made.normalizedFrom ? { normalizedFrom: made.normalizedFrom } : {}) }, 201);
     }),
   );
@@ -513,10 +538,14 @@ export function registerOrgRoutes(app: Hono<any>): void {
     "/api/orgs/:id/projects/import",
     handle(async (c) => {
       if (!localRequest(c)) return c.json({ error: "Projects are imported on their own host." }, 403);
-      if (c.req.header(OVERSEER_SENDER_HEADER)) return c.json({ error: "Only the operator imports a project." }, 403);
+      const by = operatorBy(c);
+      // A forged sender header (no secret) is refused as before; the global Overseer imports only in the turn a card
+      // listing the project opened (§app.overseer/org-project-add).
+      if (c.req.header(OVERSEER_SENDER_HEADER) && !by.via) return c.json({ error: "Only the operator imports a project." }, 403);
       const id = p(c, "id");
       const b = await body(c);
-      await importProject(id, b.projectId, b.confirm === true);
+      if (by.via && (typeof b.projectId !== "string" || !by.card?.projects.includes(b.projectId))) return c.json({ error: confirmRefusal(`the project ${typeof b.projectId === "string" ? b.projectId : "to import"}`) }, 403);
+      await importProject(id, b.projectId, b.confirm === true, by);
       nudgeMarks();
       return c.json(await orgPage(id));
     }),
@@ -548,7 +577,10 @@ export function registerOrgRoutes(app: Hono<any>): void {
   // The org's cost rollup: its projects' totals (each project's own card is /api/projects/:pid/costs).
   app.get(
     "/api/orgs/:id/costs",
-    handle(async (c) => c.json(await orgCosts(p(c, "id")), 200, { "Cache-Control": "no-store" })),
+    handle(async (c) => {
+      const a = await orgCostsAnswer(p(c, "id"));
+      return new Response(new Uint8Array(a.body), { status: a.status, headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" } });
+    }),
   );
 
   // ---- the Pipeline and held acts (§app.project-overseer/pipeline, /holds) ---------------------------------

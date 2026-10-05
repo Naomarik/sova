@@ -17,6 +17,8 @@ import { SummarizerError } from "../types.ts";
 import { buildPrompt, parseSummarizerJson } from "./chain.ts";
 import { claudeBaseEnv, hostLogins } from "../../claude-code/accounts.ts";
 import { beginClaudeOneShot } from "../../llm-inflight/claude.ts";
+import { resolveUsageAttribution } from "../../llm-inflight/attribution.ts";
+import { recordClaudeEnvelope } from "../../llm-inflight/record.ts";
 
 /** This host's first usable Claude login's environment (CLAUDE_CONFIG_DIR, or none for `default`). */
 function loginEnv(): Record<string, string> {
@@ -80,6 +82,7 @@ export function createClaudeCliSummarizer(spec: SummarizerSpec, claudeBin: strin
         // One LLM call in flight (llm-inflight), approximately: from the spawn to the process's real
         // exit. A kill (abort, timeout) is only intent: it counts until the process has gone.
         const endCall = beginClaudeOneShot();
+        const who = resolveUsageAttribution(undefined, { purpose: "outline" });
         child.once("exit", endCall);
         child.once("close", endCall);
         // 'error' also reports a failed kill of a live process; only a spawn that never ran ends it.
@@ -105,6 +108,8 @@ export function createClaudeCliSummarizer(spec: SummarizerSpec, claudeBin: strin
         child.on("error", error => settle(new SummarizerError(`spawn failed: ${error.message}`)));
         input.signal.addEventListener("abort", onAbort, { once: true });
         child.on("close", code => {
+          // What it spent, from its envelope (a failed run's too), for the session the outline is for.
+          if (stdout) recordClaudeEnvelope(stdout, who, spec.model);
           if (settled) return;
           if (code !== 0) {
             settle(new SummarizerError(`claude exited with code ${code}: ${stderr.slice(-400)}`));

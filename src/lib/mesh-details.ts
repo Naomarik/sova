@@ -4,7 +4,8 @@
 
 import { createSignal } from "solid-js";
 import type { HostDetails, MeshHostDetails } from "../../shared/mesh-details";
-import type { PeerState, PeerStatus, SyncCategory } from "../../shared/protocol";
+import type { SyncCategory } from "../../shared/protocol";
+import type { PeerStateView as PeerState, PeerStatusView as PeerStatus } from "../../shared/mesh-access";
 import { duration, relativeTime, shortDate } from "./format";
 
 export type { HostBrowserAccessResult, HostDetails, HostRenameResult, MeshDetails, MeshHostDetails } from "../../shared/mesh-details";
@@ -30,16 +31,25 @@ export const askHostFilter = (value: string | null): void => {
 };
 
 /** Hosts answering now, this host included, out of every host: "2/3 connected". A host on another
- *  version answers (it is only skewed); one that refused this host doesn't. */
+ *  version answers (it is only skewed), and so does one that hides from this host (it identified
+ *  this host and shows it nothing); one that refused this host doesn't. */
 export function connectedCount(peers: readonly Pick<PeerStatus, "state">[]): { up: number; total: number } {
-  return { up: 1 + peers.filter((p) => p.state === "up" || p.state === "skewed").length, total: 1 + peers.length };
+  return { up: 1 + peers.filter((p) => p.state === "up" || p.state === "skewed" || p.state === "hidden").length, total: 1 + peers.length };
 }
 
 /** A host's dot in the host menu: its tone, and the word said beside it (none when it is up). */
 export function hostTone(state: PeerState | "self"): { tone: "up" | "skewed" | "down"; word: string | null } {
   if (state === "up" || state === "self") return { tone: "up", word: null };
   if (state === "skewed") return { tone: "skewed", word: "other version" };
+  if (state === "hidden") return { tone: "skewed", word: "hidden" };
   return { tone: "down", word: state === "refused" ? "refused" : "down" };
+}
+
+/** A peer session's head mark: its dot tone and the words its title says; null while the state is unknown. */
+export function hostMark(name: string, state: PeerState | undefined, unavailable: string | null): { tone: "up" | "skewed" | "down"; title: string } | null {
+  if (!state) return null;
+  const { tone, word } = hostTone(state);
+  return { tone, title: `This session lives on ${name} · ${unavailable ?? word ?? "up"}` };
 }
 
 /** 1536 → "1.5 KB"; binary steps, one decimal under 10. */
@@ -88,6 +98,8 @@ export function unavailableText(h: Pick<MeshHostDetails, "unavailable" | "label"
       return `${h.label} doesn't list this host as a peer, so it won't answer.`;
     case "skewed":
       return `${h.label} runs another version of Sova.`;
+    case "hidden":
+      return `${h.label} shares nothing with this host. That's its choice, on its own Mesh page.`;
     default:
       return null;
   }
@@ -95,14 +107,14 @@ export function unavailableText(h: Pick<MeshHostDetails, "unavailable" | "label"
 
 /** The state word beside the dot: never the colour alone. */
 export function stateWord(h: Pick<MeshHostDetails, "state">): string {
-  return h.state === "self" ? "this host" : h.state === "up" ? "up" : h.state === "skewed" ? "other version" : h.state === "refused" ? "refused" : "down";
+  return h.state === "self" ? "this host" : h.state === "up" ? "up" : h.state === "skewed" ? "other version" : h.state === "refused" ? "refused" : h.state === "hidden" ? "hidden" : "down";
 }
 
 /** "up for 3h 12m" / "down for 40s" / "" when unknown. */
 export function sinceLine(h: Pick<MeshHostDetails, "state" | "stateSince">, now = Date.now()): string {
   if (h.stateSince === null) return "";
   const span = duration(now - h.stateSince);
-  return h.state === "up" || h.state === "self" ? `up for ${span}` : `not answering for ${span}`;
+  return h.state === "up" || h.state === "self" || h.state === "hidden" ? `up for ${span}` : `not answering for ${span}`;
 }
 
 /** When it was paired, or that nobody wrote it down. */
@@ -166,6 +178,7 @@ export const shortCommit = (sha: string | undefined): string | null => (sha ? sh
 export function renameRefusal(h: Pick<MeshHostDetails, "self" | "state" | "unavailable" | "label">): string | null {
   if (h.self) return null;
   if (h.unavailable === "update") return `Update ${h.label} to rename it from here.`;
+  if (h.state === "hidden" || h.unavailable === "hidden") return `${h.label} shares nothing with this host, so it can't be renamed from here.`;
   if (h.state !== "up" && h.state !== "skewed") return `${h.label} isn't answering, so it can't be renamed now.`;
   return null;
 }
@@ -174,6 +187,7 @@ export function renameRefusal(h: Pick<MeshHostDetails, "self" | "state" | "unava
 export function browserAccessRefusal(h: Pick<MeshHostDetails, "self" | "state" | "unavailable" | "label" | "details">): string | null {
   if (h.self) return null;
   if (h.unavailable === "update" || (h.details && typeof h.details.browserAccess !== "boolean")) return `Update ${h.label} to change this from here.`;
+  if (h.state === "hidden" || h.unavailable === "hidden") return `${h.label} shares nothing with this host, so this can't change from here.`;
   if (h.state !== "up" && h.state !== "skewed") return `${h.label} isn't answering, so this can't change now.`;
   return null;
 }

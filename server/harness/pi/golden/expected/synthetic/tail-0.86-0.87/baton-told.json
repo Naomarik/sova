@@ -1,0 +1,14 @@
+{
+  "prompt": {
+    "prompt": {
+      "text": "Base prompt\n\nAdditional instructions\n\n<available_skills></available_skills>\n\n<mode>code</mode>",
+      "at": "2026-09-01T10:00:09.000Z",
+      "changes": 2
+    },
+    "tools": []
+  },
+  "model": {
+    "model": "anthropic/claude-sonnet-5",
+    "thinking": null
+  }
+}

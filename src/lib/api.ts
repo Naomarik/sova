@@ -1,5 +1,5 @@
 import type { ProfilesListing } from "../../shared/profiles";
-import type { VerbResult } from "../../shared/project-contract";
+import type { DeployVerb, VerbResult } from "../../shared/project-contract";
 import type { HostServicesView, ProjectServicesView, ServicesUiVerb } from "../../shared/services-view";
 import type { SubagentProfilesFile, SubagentProfilesInfo } from "../../shared/subagent-profiles";
 import type {
@@ -63,11 +63,9 @@ import type {
   WorktreesInsight,
   MeshCandidate,
   MeshHello,
-  MeshInfo,
   MeshLoginClaim,
   MeshLogins,
   MeshPeerEntry,
-  MeshSessions,
   PushDevice,
   PushInfo,
   PushSettings,
@@ -76,6 +74,16 @@ import type {
   PushTestResult,
 } from "../../shared/protocol";
 import type { MeshFrontDoor, MeshLocalSettings } from "../../shared/mesh-local";
+import { WIRE_PARAM } from "../../shared/protocol";
+import type { LanPairingAdd, LanRelayPut, LanStatus } from "../../shared/mesh-lan";
+import type {
+  MeshAccessPut,
+  MeshAccessView,
+  MeshInfoView as MeshInfo,
+  MeshPeersPut,
+  MeshPreset,
+  MeshSessionsView as MeshSessions,
+} from "../../shared/mesh-access";
 import type { OwnerConversation, OwnerHome, OwnerLinkResult, OwnerProject, ProjectUpdate } from "../../shared/owner";
 import type { NamedChange, OrgDetail, OrgsInfo, PersonHours, PersonInput, PersonPage, PersonPreview, ProfileChange } from "../../shared/orgs";
 import type { BatonOutreach, SendLinkAnswer } from "../../shared/outreach";
@@ -83,6 +91,7 @@ import type { BatonInfo, BatonSettings, BatonTold, BatonStartInput, BatonStartRe
 import type { ConflictResolveInput, DecisionsInfo, PromoteResult, SpecStatus } from "../../shared/decisions";
 import type { PipelineInfo, PipelineTimeline } from "../../shared/pipeline";
 import type { OrgCosts, ProjectCost } from "../../shared/costs";
+import { MAX_USAGE_SESSIONS, type PricesInfo, type UsageCosts, type UsageSessionSpend, type UsageSessionsRequest, type UsageSessionsTotals, type UsageToday } from "../../shared/usage/wire";
 import type { ProjectRuntimeView } from "../../shared/project-runtime";
 import type { ProjectList, ProjectRegistered, ProjectSummary } from "../../shared/projects";
 import type { CodingStartInput, CodingStartResult, ItemCodeInput, ItemCodeResult, ItemSendInput, ItemSendResult, ProjectOverseerInfo, ProjectOverseerPatch } from "../../shared/project-overseer";
@@ -443,13 +452,15 @@ export const saveModeDefault = (path: string) =>
     body: JSON.stringify({ saveDefault: true }),
   });
 
-/** POST /api/sandbox?path=… { on }: flip that held chat's sandbox from its next tool call.
-    "unsupported" when its runtime has no sandbox extension (the row isn't shown then). */
-export const setSandbox = (path: string, on: boolean) =>
+/** POST /api/sandbox?path=… { state, on }: set that held chat's sandbox state (§chat.sandbox/states)
+    from its next tool call. `on` rides along for a host whose server predates the three states
+    (it reads only `on`, so Off lands as Subagents only there). "unsupported" when its runtime has
+    no sandbox extension (the group isn't shown then). */
+export const setSandbox = (path: string, state: "off" | "subagents" | "on") =>
   request<SandboxApplyResult>(`/api/sandbox?path=${encodeURIComponent(path)}`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ on }),
+    body: JSON.stringify({ state, on: state === "on" }),
   });
 
 /** A local folder (string), or a folder on a configured target; `host`: on that peer, which then holds it. */
@@ -689,6 +700,10 @@ export const cleanupSessions = (req: CleanupRequest | PathsCleanupRequest, dryRu
     body: JSON.stringify({ ...req, dryRun }),
   }).then((raw) => ({ ...parseCleanupResult(raw), refused: refusedEntries(raw) }));
 
+/** Rows and live events in the harness contract's words (WireVersion): a server that predates it
+    ignores this and sends wire 1, which the readers map (shared/wire-v1.ts). */
+const WIRE = `${WIRE_PARAM}=2`;
+
 /** A peer session's items name files on that peer (images it attached): their bytes come from it
     too. A peer on an older Sova sends its rows in the old shape (lib/legacy-rows). */
 function noteAttachmentsHost(path: string, items: TranscriptItem[]): TranscriptItem[] {
@@ -701,11 +716,11 @@ function noteAttachmentsHost(path: string, items: TranscriptItem[]): TranscriptI
 /** The whole branch with each row light (`view=light`): what the session pane reads of every row,
     without the replies' text, tools' output and image bytes that only the thread draws. */
 export const fetchTranscriptLight = (path: string) =>
-  request<{ items: TranscriptItem[] }>(`/api/transcript?path=${encodeURIComponent(path)}&view=light`).then((r) => noteAttachmentsHost(path, r.items));
+  request<{ items: TranscriptItem[] }>(`/api/transcript?path=${encodeURIComponent(path)}&view=light&${WIRE}`).then((r) => noteAttachmentsHost(path, r.items));
 
 /** The transcript plus its context-window fill (null when unknown or stale). */
 export const fetchTranscriptWithContext = (path: string) =>
-  request<{ items: TranscriptItem[]; context: ContextInfo | null }>(`/api/transcript?path=${encodeURIComponent(path)}`).then((r) => ({
+  request<{ items: TranscriptItem[]; context: ContextInfo | null }>(`/api/transcript?path=${encodeURIComponent(path)}&${WIRE}`).then((r) => ({
     items: noteAttachmentsHost(path, r.items),
     context: r.context ?? null,
   }));
@@ -719,6 +734,7 @@ export async function fetchTranscriptRows(path: string, ask: RowsAsk, leaf?: str
   const q = new URLSearchParams({ path });
   for (const [k, v] of Object.entries(ask)) q.set(k, v === true ? "1" : String(v));
   if (leaf) q.set("leaf", leaf);
+  q.set(WIRE_PARAM, "2");
   try {
     const r = await request<TranscriptRows>(`/api/transcript?${q}`);
     return { ...r, items: noteAttachmentsHost(path, r.items) };
@@ -754,7 +770,7 @@ export async function fetchTranscriptForCache(
   const aborter = new AbortController();
   // The newest rows only, as a view's hello carries them (TranscriptRows): the view fetches the
   // rest when it wants them (lib/older-rows).
-  const res = await fetch(routeUrl(`/api/transcript?path=${encodeURIComponent(path)}&tail=1`), { signal: aborter.signal });
+  const res = await fetch(routeUrl(`/api/transcript?path=${encodeURIComponent(path)}&tail=1&${WIRE}`), { signal: aborter.signal });
   if (res.status === 401) onUnauthorized(await res.json().catch(() => undefined));
   if (!res.ok) throw new ApiError(`${res.status} ${res.statusText}`, res.status);
   const announced = Number(res.headers.get("content-length")) || 0;
@@ -868,7 +884,7 @@ export const removeWorktrees = (path: string, expect: string[]) =>
  * something that isn't a TUI. It never overrides a live TUI.
  */
 export function wsUrl(endpoint: "/ws/chat" | "/ws/watch", path: string, force = false, host: string | null = hostOf(path)): string {
-  return `${wsOrigin()}${peerBase(host)}${endpoint}?path=${encodeURIComponent(path)}${force ? "&force=1" : ""}`;
+  return `${wsOrigin()}${peerBase(host)}${endpoint}?path=${encodeURIComponent(path)}${force ? "&force=1" : ""}&${WIRE}`;
 }
 
 function wsOrigin(): string {
@@ -900,9 +916,32 @@ export const fetchMesh = (init?: RequestInit) => request<MeshInfo>("/api/mesh", 
 export const fetchMeshHello = () => request<MeshHello>("/api/mesh/hello", meshReadInit(true));
 
 /** Replace peers.json's list; the answer is the mesh as it stands after the write. An entry
-    without `nodeId` is resolved by its name on the tailnet. */
-export const putMeshPeers = (peers: MeshPeerEntry[]) =>
-  request<MeshInfo>("/api/mesh/peers", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ peers }) });
+    without `nodeId` is resolved by its name on the tailnet. `grants` names the preset of a peer this
+    write pairs (by id; §mesh.peers/grants). */
+export const putMeshPeers = (peers: MeshPeerEntry[], grants?: Record<string, MeshPreset>) =>
+  request<MeshInfo>("/api/mesh/peers", {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ peers, ...(grants ? { grants } : {}) } satisfies MeshPeersPut),
+  });
+
+/** What each peer may see and do on this host (mesh-access.json); this host's own page only. */
+export const fetchMeshAccess = () => request<MeshAccessView>("/api/mesh/access");
+
+/** One peer's grant; null removes it (= full). The answer is the whole view after the write. */
+export const putMeshAccess = (body: MeshAccessPut) =>
+  request<MeshAccessView>("/api/mesh/access", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+
+// Dial-out pairings (§mesh.lan/pairing): this host's own page only.
+const lanJson = (method: string, body: unknown): RequestInit => ({ method, headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+/** This host's fingerprint (once made), its relay setting, and each pairing's connections. */
+export const fetchMeshLan = () => request<LanStatus>("/api/mesh/lan");
+/** Make this host's key, if it has none yet; the answer shows its fingerprint. */
+export const createMeshLanKey = () => request<LanStatus>("/api/mesh/lan/key", { method: "POST" });
+export const addMeshLanPairing = (body: LanPairingAdd) => request<LanStatus>("/api/mesh/lan/pairings", lanJson("POST", body));
+/** Remove a pairing: its connections end at once, and its grant goes. */
+export const removeMeshLanPairing = (id: string) => request<LanStatus>(`/api/mesh/lan/pairings/${encodeURIComponent(id)}`, { method: "DELETE" });
+export const putMeshLanRelay = (relay: LanRelayPut) => request<LanStatus>("/api/mesh/lan/relay", lanJson("PUT", { relay }));
 
 /** Tailnet nodes the serving host can see, and which of them run Sova. Only asked for on demand. */
 export const fetchMeshCandidates = () => request<MeshCandidate[]>("/api/mesh/candidates");
@@ -1161,6 +1200,20 @@ export const cancelHeldAct = (projectId: string, holdId: string, reason?: string
 export const getProjectCost = (projectId: string) => request<ProjectCost>(`${projectPath(projectId)}/costs`);
 export const getOrgCosts = (orgId: string) => request<OrgCosts>(`/api/orgs/${encodeURIComponent(orgId)}/costs`);
 
+// ---- the usage ledger: the Agents page's Costs tab ------------------------------------------------
+
+/** One query of this device's usage, priced (`costsApiSearch` builds its parameters). */
+export const getUsageCosts = (search: string) => request<UsageCosts>(`/api/usage/costs?${search}`);
+/** This device's spend since local midnight in `tz`: the Agents head's "$ today". */
+export const getUsageToday = (tz: string) => request<UsageToday>(`/api/usage/today?tz=${encodeURIComponent(tz)}`);
+/** One session's spend (a worker's sid: the worker's own and its workers'). */
+export const getUsageSession = (sid: string) => request<UsageSessionSpend>(`/api/usage/session?sid=${encodeURIComponent(sid)}`);
+/** Totals for many sessions at once (the board's rows). */
+export const getUsageSessions = (sids: string[]) =>
+  request<UsageSessionsTotals>("/api/usage/sessions", jsonInit("POST", { sids: sids.slice(0, MAX_USAGE_SESSIONS) } satisfies UsageSessionsRequest));
+/** Pull the price list now; answers when the pull settles, with the list's new standing. */
+export const refreshPrices = () => request<PricesInfo>("/api/usage/prices/refresh", jsonInit("POST", {}));
+
 // ---- a project's software registry (§app/project-runtime) -------------------------------------------
 /** The project's copies on this host, for its Branches tab (§app.project-services/services-ui). */
 export const getProjectServices = (projectId: string) => request<ProjectServicesView>(`${projectPath(projectId)}/services`);
@@ -1185,11 +1238,31 @@ export async function runRootVerb(root: string, verb: ServicesUiVerb, body: Reco
     throw err;
   }
 }
+/** Run the Project deploy playbook (§app.project-runtime/deploy-playbook): a verb playbook run that proposes a deploy recipe. */
+export const runDeploySetup = (projectId: string) =>
+  request<{ sessionId: string; path: string; worktree?: { path: string; branch: string }; notPrompted?: string }>(`${projectPath(projectId)}/verbs/onboard`, jsonInit("POST", { playbook: "project-deploy" }));
+/** A deploy verb as the operator (§app.project-services/deploy): a refusal is a result too, never thrown. */
+export async function runDeployVerb(root: string, verb: DeployVerb, body: Record<string, unknown>): Promise<VerbResult> {
+  try {
+    return await request<VerbResult>(`/api/project-services/${verb}`, jsonInit("POST", { ...body, project: root }));
+  } catch (err) {
+    const b = err instanceof ApiError ? (err.body as Partial<VerbResult> | undefined) : undefined;
+    if (b && b.v === 1 && typeof b.verb === "string") return b as VerbResult;
+    throw err;
+  }
+}
+/** Approve main's deploy recipe (§app.project-services/deploy-trust): the hash shown, with every step of its review ticked. */
+export const approveDeployRecipe = (root: string, deployHash: string, ticked: readonly string[]) =>
+  request<{ ok: true; deployHash: string }>("/api/project-services/deploy-approve", jsonInit("POST", { project: root, deployHash, ticked }));
 /** What runs on this host now, every project's (Running branches on `#/projects`). */
 export const getHostServices = () => request<HostServicesView>("/api/services");
 export const getProjectRuntime = (projectId: string) => request<ProjectRuntimeView>(`${projectPath(projectId)}/runtime`);
 /** Approve the definition shown (its hash) on this host: the operator's only. */
 export const approveProjectRuntime = (projectId: string, hash: string) => request<ProjectRuntimeView>(`${projectPath(projectId)}/runtime/approve`, jsonInit("POST", { hash }));
+/** Approve & Merge a proposed playbook run (§app.project-runtime/approve-merge): approve its hash, then Merge Branch.
+    A refused merge keeps the approval: the error says why. */
+export const approveMergeProjectRuntime = (projectId: string, hash: string, ticked?: readonly string[]) =>
+  request<ProjectRuntimeView>(`${projectPath(projectId)}/runtime/approve-merge`, jsonInit("POST", ticked ? { hash, ticked } : { hash }));
 /** Run the Project verbs playbook on the project: a coding session on its own branch. */
 export const runProjectVerbsPlaybook = (projectId: string, why?: string) =>
   request<{ sessionId: string; path: string; worktree?: { path: string; branch: string }; notPrompted?: string }>(`${projectPath(projectId)}/verbs/onboard`, jsonInit("POST", why ? { why } : {}));

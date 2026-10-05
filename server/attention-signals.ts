@@ -1,4 +1,4 @@
-import { open, stat } from "node:fs/promises";
+import type { HEntry } from "../shared/harness";
 import type { DecisionSettings, SessionSummary, TeamDuty, WorkerInfo } from "../shared/protocol";
 import { isLinkMessage } from "../shared/link-message";
 import { isTopicBatch } from "../shared/topic-message";
@@ -8,7 +8,8 @@ import { DecisionError, type DecisionProvider, type DecisionResult, type JsonObj
 import { maySend, terminalSession } from "./decide-settings";
 import type { RawLiveRecord } from "./live";
 import { isLooping, readSignals, signalsFile, type StoredStall, updateSignals, workerKey } from "./signals-store";
-import { activeBranch, parseLines } from "./transcript";
+import { joinedText, readTailBranch as readTail } from "./harness/pi/reader";
+import { withUsageContext } from "../pi-config/extensions/llm-inflight/attribution.ts";
 
 /**
  * Attention signals (Settings → Decisions → "needs you" marks): every FINISHED turn of a main
@@ -77,8 +78,6 @@ export const TAIL_BYTES = 1024 * 1024;
 // Caps, in characters, of what one state may carry (≈ 6k tokens at most).
 export const CAP = { title: 200, user: 2000, assistant: 4000, tool: 120, error: 300, tools: 8 } as const;
 
-type Entry = Record<string, any>;
-
 // ---- facts (pure) --------------------------------------------------------------------------------
 
 /** One tool call of the turn, paired with its result when there is one. */
@@ -105,71 +104,60 @@ export interface TurnFacts {
   durationMs: number;
 }
 
-const textOf = (content: unknown): string =>
-  typeof content === "string"
-    ? content
-    : Array.isArray(content)
-      ? content
-          .filter((b) => b?.type === "text" && typeof b.text === "string")
-          .map((b) => b.text)
-          .join("\n")
-      : "";
+/** An entry's text blocks, joined by newlines. */
+const textOf = (h: HEntry): string => joinedText(h, { images: false });
 
-function entryTime(e: Entry): number {
-  const m = e?.message?.timestamp;
+function entryTime(h: HEntry): number {
+  const m = "sentAt" in h ? h.sentAt : undefined;
   if (typeof m === "number" && Number.isFinite(m)) return m;
-  const t = typeof e?.timestamp === "string" ? Date.parse(e.timestamp) : NaN;
+  const t = typeof h.at === "string" ? Date.parse(h.at) : NaN;
   return Number.isFinite(t) ? t : 0;
 }
-
-const role = (e: Entry) => (e?.type === "message" ? e.message?.role : undefined);
 
 /**
  * The last finished turn of an active branch: from the last user message to the last assistant
  * message after it. null when there is none, or the branch ends mid-turn (the last reply asked for
  * a tool: the turn has not finished).
  */
-export function turnFacts(branch: readonly Entry[]): TurnFacts | null {
+export function turnFacts(branch: readonly HEntry[]): TurnFacts | null {
   let ai = -1;
-  for (let i = branch.length - 1; i >= 0; i--) if (role(branch[i]!) === "assistant") { ai = i; break; }
-  const lastEntry = branch[ai];
-  if (!lastEntry || typeof lastEntry.id !== "string") return null;
-  const last = lastEntry.message;
-  if (last?.stopReason === "toolUse") return null;
+  for (let i = branch.length - 1; i >= 0; i--) if (branch[i]!.kind === "assistant") { ai = i; break; }
+  const last = branch[ai];
+  if (!last || last.kind !== "assistant" || last.id === null) return null;
+  if (last.stop === "toolUse") return null;
   let ui = -1;
-  for (let i = ai - 1; i >= 0; i--) if (role(branch[i]!) === "user") { ui = i; break; }
+  for (let i = ai - 1; i >= 0; i--) if (branch[i]!.kind === "user") { ui = i; break; }
   const userEntry = branch[ui];
   const turn = branch.slice(ui + 1, ai + 1);
-  let assistantLast = textOf(last.content).trim();
-  for (let i = turn.length - 1; !assistantLast && i >= 0; i--) if (role(turn[i]!) === "assistant") assistantLast = textOf(turn[i]!.message.content).trim();
+  let assistantLast = textOf(last).trim();
+  for (let i = turn.length - 1; !assistantLast && i >= 0; i--) if (turn[i]!.kind === "assistant") assistantLast = textOf(turn[i]!).trim();
   const tools: ToolCallFact[] = [];
   const byCall = new Map<string, ToolCallFact>();
-  for (const e of turn) {
-    const m = e.message;
-    if (role(e) === "assistant" && Array.isArray(m.content)) {
-      for (const b of m.content) {
-        if (b?.type !== "toolCall") continue;
+  for (const h of turn) {
+    if (h.kind === "assistant") {
+      for (const b of h.blocks) {
+        if (b.type !== "toolCall") continue;
         const call: ToolCallFact = { name: String(b.name ?? "tool"), args: JSON.stringify(b.arguments ?? {}), result: "" };
         tools.push(call);
         if (typeof b.id === "string") byCall.set(b.id, call);
       }
-    } else if (role(e) === "toolResult") {
-      const call = typeof m.toolCallId === "string" ? byCall.get(m.toolCallId) : undefined;
+    } else if (h.kind === "tool-result") {
+      const call = typeof h.callId === "string" ? byCall.get(h.callId) : undefined;
       if (!call) continue;
-      call.ok = m.isError !== true;
-      call.result = textOf(m.content);
+      call.ok = h.isError !== true;
+      call.result = textOf(h);
     }
   }
-  const replyAt = entryTime(lastEntry);
+  const replyAt = entryTime(last);
   const started = userEntry ? entryTime(userEntry) : 0;
   return {
-    turnId: lastEntry.id,
+    turnId: last.id,
     replyAt,
-    lastUser: userEntry ? textOf(userEntry.message.content).trim() : "",
+    lastUser: userEntry ? textOf(userEntry).trim() : "",
     assistantLast,
     tools,
-    stopReason: String(last.stopReason ?? "stop"),
-    ...(last.stopReason === "error" || last.errorMessage ? { error: String(last.errorMessage ?? "The turn stopped with an error.") } : {}),
+    stopReason: String(last.stop ?? "stop"),
+    ...(last.stop === "error" || last.error ? { error: String(last.error ?? "The turn stopped with an error.") } : {}),
     durationMs: started && replyAt >= started ? replyAt - started : 0,
   };
 }
@@ -451,19 +439,8 @@ export function exclusionReason(
  * rule), walked back by parentId until an entry falls outside the window. Enough for the last
  * turn; a turn longer than the window is judged on its end.
  */
-export async function readTailBranch(path: string, maxBytes = TAIL_BYTES): Promise<Entry[]> {
-  const st = await stat(path);
-  const start = Math.max(0, st.size - maxBytes);
-  const fh = await open(path, "r");
-  try {
-    const buf = Buffer.alloc(st.size - start);
-    const { bytesRead } = await fh.read(buf, 0, buf.length, start);
-    let text = buf.subarray(0, bytesRead).toString("utf8");
-    if (start > 0) text = text.slice(text.indexOf("\n") + 1); // the first line is cut
-    return activeBranch(parseLines(text));
-  } finally {
-    await fh.close();
-  }
+export function readTailBranch(path: string, maxBytes = TAIL_BYTES): Promise<HEntry[]> {
+  return readTail(path, maxBytes);
 }
 
 /** A live worker's transcript ref (the same two kinds worker-restore reads), or null. */
@@ -610,7 +587,8 @@ export class AttentionSignals {
     }
     const key = `${s.id}:${facts.turnId}`;
     const state = questions.stuck ? turnState(s.title, facts) : asksState(s.title, facts);
-    const result = await this.decide(key, "attention", state, questions);
+    // The usage ledger: this decision is the session's one-shot.
+    const result = await withUsageContext({ owner: s.id, cwd: s.cwd, kind: "oneshot" }, () => this.decide(key, "attention", state, questions));
     if (!result) return false;
     // The feature or the session's eligibility may have changed while the call ran: then drop it.
     if (exclusionReason(s, this.d.settings(), this.d.held(s.path), this.d.home)) return true;
@@ -762,7 +740,8 @@ export class AttentionSignals {
     }
     // A stuck check is keyed by its time slot.
     const dedupe = `${key}:stuck:${Math.floor(now / WORKER_STUCK_EVERY_MS)}`;
-    const result = await this.decide(dedupe, "worker", workerState(w, summary, now), { stuck: STUCK });
+    // The usage ledger: a worker's stuck check is a one-shot of the session that runs it.
+    const result = await withUsageContext({ owner: parent.id, cwd: parent.cwd, kind: "oneshot" }, () => this.decide(dedupe, "worker", workerState(w, summary, now), { stuck: STUCK }));
     if (!result) return false;
     // Two strikes: a looping answer counts only after a looping one before it in the same turn.
     const strikes = isLooping(result.answers) ? (sameTurn && prev && isLooping(prev.answers) ? (prev.strikes ?? 1) : 0) + 1 : 0;

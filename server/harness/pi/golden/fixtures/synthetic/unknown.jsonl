@@ -1,0 +1,6 @@
+{"type":"session","version":3,"id":"0190a000-0000-7000-8000-b00000000000","timestamp":"2026-09-01T10:00:00.000Z","cwd":"/home/user/golden"}
+{"type":"message","message":{"role":"user","content":[{"type":"text","text":"Before the unknown entry"}],"timestamp":1788256801000},"id":"b0000001","parentId":null,"timestamp":"2026-09-01T10:00:01.000Z"}
+{"type":"future_entry","payload":{"a":1},"id":"b0000002","parentId":"b0000001","timestamp":"2026-09-01T10:00:02.000Z"}
+{"type":"message","message":{"role":"assistant","content":[{"type":"text","text":"Reply after the unknown entry"}],"api":"openai-completions","provider":"zai","model":"glm-5.3","usage":{"input":1200,"output":80,"cacheRead":400,"cacheWrite":0,"totalTokens":1680,"cost":{"input":0.001,"output":0.002,"cacheRead":0.0001,"cacheWrite":0,"total":0.0031}},"stopReason":"stop","timestamp":1788256803000},"id":"b0000003","parentId":"b0000002","timestamp":"2026-09-01T10:00:03.000Z"}
+{"type":"message","message":{"role":"future_role","content":[{"type":"text","text":"from the future"}],"timestamp":1788256804000},"id":"b0000004","parentId":"b0000003","timestamp":"2026-09-01T10:00:04.000Z"}
+{"type":"future_entry","payload":{"leaf":true},"id":"b0000005","parentId":"b0000004","timestamp":"2026-09-01T10:00:05.000Z"}

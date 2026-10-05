@@ -1,0 +1,34 @@
+{
+  "full": {
+    "turnId": "h0000006",
+    "replyAt": 1788256806000,
+    "lastUser": "Do the thing",
+    "assistantLast": "The thing is done.",
+    "tools": [
+      {
+        "name": "read",
+        "args": "{\"path\":\"x\"}",
+        "result": "x",
+        "ok": true
+      }
+    ],
+    "stopReason": "stop",
+    "durationMs": 3000
+  },
+  "window4k": {
+    "turnId": "h0000006",
+    "replyAt": 1788256806000,
+    "lastUser": "Do the thing",
+    "assistantLast": "The thing is done.",
+    "tools": [
+      {
+        "name": "read",
+        "args": "{\"path\":\"x\"}",
+        "result": "x",
+        "ok": true
+      }
+    ],
+    "stopReason": "stop",
+    "durationMs": 3000
+  }
+}

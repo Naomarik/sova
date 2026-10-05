@@ -1,0 +1,75 @@
+// Import ratchet fixtures (§app.harness/boundary). Each block is scanned as its own file at `path`
+// (default server/fixture.ts) and must give exactly `expect`; unnamed keys are zero/null/empty.
+// ---- named import expect={"imports":"runtime"}
+import { complete } from "@earendil-works/pi-ai";
+// ---- default import expect={"imports":"runtime"}
+import pi from "@earendil-works/pi-coding-agent";
+// ---- namespace import expect={"imports":"runtime"}
+import * as pi from "@earendil-works/pi-coding-agent";
+// ---- side-effect import expect={"imports":"runtime"}
+import "@earendil-works/pi-tui";
+// ---- mixed type and value specifiers expect={"imports":"runtime"}
+import { type Model, complete } from "@earendil-works/pi-ai";
+// ---- import type expect={"imports":"type"}
+import type { Model } from "@earendil-works/pi-ai";
+// ---- every specifier type expect={"imports":"type"}
+import { type Model, type Usage } from "@earendil-works/pi-ai";
+// ---- export star expect={"imports":"runtime"}
+export * from "@earendil-works/pi-ai";
+// ---- export named from expect={"imports":"runtime"}
+export { complete } from "@earendil-works/pi-ai";
+// ---- export type from expect={"imports":"type"}
+export type { Model } from "@earendil-works/pi-ai";
+// ---- typeof import() expect={"imports":"type"}
+type PiAi = typeof import("@earendil-works/pi-ai");
+// ---- import().T expect={"imports":"type"}
+type M = import("@earendil-works/pi-ai").Model;
+// ---- dynamic import() expect={"imports":"runtime"}
+const m = await import("@earendil-works/pi-ai");
+// ---- require expect={"imports":"runtime"}
+const m = require("@earendil-works/pi-ai");
+// ---- require.resolve expect={"imports":"runtime"}
+const p = require.resolve("@earendil-works/pi-ai");
+// ---- import.meta.resolve expect={"imports":"runtime"}
+const p = import.meta.resolve("@earendil-works/pi-coding-agent");
+// ---- import = require expect={"imports":"runtime"}
+import pi = require("@earendil-works/pi-coding-agent");
+// ---- createRequire string expect={"imports":"runtime"}
+const pi = createRequire(import.meta.url)("@earendil-works/pi-coding-agent");
+// ---- jiti.import string expect={"imports":"runtime"}
+const pi = await jiti.import("@earendil-works/pi-coding-agent/dist/core/sdk.js");
+// ---- a path string expect={"imports":"runtime"}
+const dir = join(root, "node_modules/@earendil-works/pi-coding-agent");
+// ---- a .pnpm path string expect={"imports":"runtime"}
+const dir = "node_modules/.pnpm/@earendil-works+pi-coding-agent@0.87.1/node_modules";
+// ---- an import inside a generated-script template expect={"imports":"runtime"}
+const script = `import { SessionManager } from "@earendil-works/pi-coding-agent"; run(${arg});`;
+// ---- a template middle part expect={"imports":"runtime"}
+const script = `${a} then "@earendil-works/pi-ai/${b}" and ${c}`;
+// ---- type import and a runtime string is runtime expect={"imports":"runtime"}
+import type { Model } from "@earendil-works/pi-ai";
+const later = () => import("@earendil-works/pi-ai");
+// ---- a test file still counts path=server/fixture.test.ts expect={"imports":"runtime"}
+import { SessionManager } from "@earendil-works/pi-coding-agent";
+// ---- a tests/ directory file still counts path=server/tests/fixture.mjs expect={"imports":"runtime"}
+const pi = await jiti.import("@earendil-works/pi-coding-agent");
+// ---- shared/ counts path=shared/fixture.ts expect={"imports":"type"}
+import type { Model } from "@earendil-works/pi-ai";
+// ---- src/ tsx counts path=src/components/Fixture.tsx expect={"imports":"runtime"}
+import { complete } from "@earendil-works/pi-ai";
+export const X = () => <div title="x">{String(complete)}</div>;
+// ---- Zone B pi-config file path=pi-config/extensions/fixture/core.ts expect={"imports":"type"}
+import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+// ---- the adapter is not scanned path=server/harness/pi/fixture.ts expect={}
+import { SessionManager } from "@earendil-works/pi-coding-agent";
+// ---- negative: a comment mention expect={}
+// import { SessionManager } from "@earendil-works/pi-coding-agent";
+/* require("@earendil-works/pi-ai") */
+export const x = 1;
+// ---- negative: a lookalike package expect={}
+import { a } from "@earendil-workshop/x";
+// ---- negative: a relative ./earendil import expect={}
+import { a } from "./earendil";
+import { b } from "./earendil-works";
+// ---- negative: a file outside every zone path=scripts/fixture.mjs expect={}
+import { SessionManager } from "@earendil-works/pi-coding-agent";

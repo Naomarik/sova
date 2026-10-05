@@ -5,6 +5,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
+import type { HarnessQueue } from "../shared/harness";
 import type { ChatServerMessage } from "../shared/protocol";
 
 const agentDir = mkdtempSync(join(tmpdir(), "sova-abort-test-"));
@@ -12,18 +13,20 @@ process.env.PI_CODING_AGENT_DIR = agentDir; // before chat-manager computes its 
 after(() => rmSync(agentDir, { recursive: true, force: true }));
 const { drainQueueThenAbort } = await import("./chat-manager");
 
-/** The two AgentSession members Stop uses, recording their call order. */
+/** The two driving-session members Stop uses, recording their call order. */
 function fakeSession(queue: { steering: string[]; followUp: string[] }) {
   const calls: string[] = [];
   return {
     calls,
-    clearQueue() {
-      calls.push("clearQueue");
-      const drained = { steering: [...queue.steering], followUp: [...queue.followUp] };
-      queue.steering = [];
-      queue.followUp = [];
-      return drained;
-    },
+    queue: {
+      clear() {
+        calls.push("clearQueue");
+        const drained = { steering: [...queue.steering], followUp: [...queue.followUp] };
+        queue.steering = [];
+        queue.followUp = [];
+        return drained;
+      },
+    } as Pick<HarnessQueue, "clear"> as HarnessQueue,
     async abort() {
       calls.push("abort");
     },

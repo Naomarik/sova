@@ -1,13 +1,13 @@
 // POST /api/sessions/fork: fork an ordinary, idle Sova chat through a delivered assistant reply
 // into a new web-owned session on the same host. Registered by server/index.ts. The route owns
-// every refusal the UI cannot know (the strip shows the server's sentence); server/session-fork.ts
+// every refusal the UI cannot know (the strip shows the server's sentence); server/harness/pi/fork.ts
 // owns the read-only source parse and the fork's bytes. The source is never written, opened as a
 // runtime, prompted or notified — and no model is called: creating the fork is file work only.
 import type { Hono } from "hono";
 import { existsSync } from "node:fs";
 import { assertNotLive, BusyError, heldChat } from "./chat-manager";
 import { resolveSessionPath } from "./paths";
-import { forkSessionFile } from "./session-fork";
+import { forkSessionFile } from "./harness/pi/fork";
 import { seedClaudeFork } from "../pi-config/extensions/subagents/fork/claude.ts";
 import { markSeen } from "./seen";
 import { getSessionSummary } from "./sessions-index";
@@ -80,7 +80,7 @@ export function registerSessionForkRoutes(app: Hono): void {
     }
     const chat = heldChat(path);
     if (chat) {
-      if (chat.disposed || chat.session.isStreaming)
+      if (chat.disposed || chat.harness.isRunning())
         return c.json({ error: "Stop the current turn before forking that session." }, 409);
       if (chat.isCompacting()) return c.json({ error: "Wait for the compaction to finish before forking that session." }, 409);
       if (chat.hasPendingSends())

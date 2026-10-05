@@ -2698,6 +2698,9 @@ a.group-option { color: inherit; text-decoration: none; }
 /* A peer session's host keeps its name on a narrow head: the folder after it gives way first. */
 .session-head-meta > .session-head-host { flex: none; max-width: 50%; }
 .session-head-meta > .session-head-host + * { flex: none; }
+/* Its live state (§mesh.remote-sessions/head-host-state): a dot in the host filter's tone, the name in ink. */
+.host-state-mark-known { display: inline-flex; align-items: center; gap: var(--space-1); color: var(--color-ink); font-weight: var(--fw-semibold); }
+.host-state-mark-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* A meta that's plain text (the Usage and Agents pages) is an anonymous flex
    item, which can't ellipsize: render it as a block so the line gets its "…". */
 .session-head-meta:not(:has(> *)) { display: block; text-overflow: ellipsis; }
@@ -3361,22 +3364,47 @@ a.group-option { color: inherit; text-decoration: none; }
   .composer-login-short { display: inline; }
 }
 
-/* The sandbox shield (§chat.composer): shown only while this chat's sandbox is on. Full
-   enforcement is a quiet ink glyph; anything less adds its word and a status color, so the
-   state never rests on hue. It sits at the right end, before the mode switch, which then
-   gives up its own auto margin. */
+/* The sandbox shield (§chat.composer/sandbox-shield): shown in every state while the runtime
+   has the sandbox extension, and the sandbox panel's trigger, drawn like the login label. Its
+   glyph names the state (shield-on, -partial, -off); On short of full enforcement adds its word
+   and a status color, so the state never rests on hue; Off is a faint ghost in muted ink. It
+   sits at the right end, before the mode switch, which then gives up its own auto margin. */
 .composer-sandbox {
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: var(--space-1);
   flex: none;
+  justify-content: center;
   margin-left: auto;
+  min-width: var(--tap-min);
+  min-height: var(--control-sm);
+  padding: 0 var(--space-2);
+  border: 0;
+  border-radius: var(--r-md);
+  background: transparent;
+  font: inherit;
+  font-size: var(--fs-caption);
   color: var(--color-ink-2);
   white-space: nowrap;
-  cursor: default;
+  cursor: pointer;
 }
+/* The 44px target the caption row is too short to hold, as on .composer-login. */
+.composer-sandbox::after {
+  content: "";
+  position: absolute;
+  inset: calc((var(--tap-min) - var(--control-sm)) / -2) 0;
+}
+.composer-sandbox-off { color: var(--color-ink-muted); }
 .composer-sandbox-warn { color: var(--status-warn); }
 .composer-sandbox-error { color: var(--status-error); }
+.composer-sandbox:hover,
+.composer-sandbox[aria-expanded="true"] { background: var(--color-sunken); }
+.composer-sandbox:active { transform: translateY(1px); }
+.composer-sandbox:focus-visible { outline: var(--focus-ring); outline-offset: 0; }
+.composer-sandbox[aria-disabled="true"] { cursor: not-allowed; }
+.composer-sandbox[aria-disabled="true"]:hover { background: transparent; }
+.composer-sandbox[aria-disabled="true"]:active { transform: none; }
 .composer-foot .composer-sandbox ~ .mode-trigger { margin-left: 0; }
 
 
@@ -4033,7 +4061,9 @@ a.group-option { color: inherit; text-decoration: none; }
   letter-spacing: normal;
   text-transform: none;
 }
-.composer-flyout-logins .composer-flyout-item[role="menuitemradio"] .composer-flyout-label {
+.composer-flyout-logins .composer-flyout-item[role="menuitemradio"] .composer-flyout-label,
+.composer-flyout-sandbox .composer-flyout-item[role="menuitemradio"] .composer-flyout-label {
+  /* Words, not ids: the Sandbox group's states (§chat.composer/composer-flyout). */
   font-family: inherit;
   font-size: inherit;
 }
@@ -4661,6 +4691,28 @@ a.group-option { color: inherit; text-decoration: none; }
   font-size: var(--fs-caption);
 }
 .insights-row[aria-current="page"] { background: var(--color-accent-tint); color: var(--color-ink); }
+/* The Agents row, two lines in one 64px link (§app.insights/token-velocity): line 1 the working
+   count (it truncates first) and the readout, line 2 the 30-minute chart, full width, and a muted
+   "30m". The gear beside the link stays centred (align-self). */
+.sidebar-foot-link-tall { min-height: 64px; }
+.agents-ticker { flex: 1; min-width: 0; display: grid; gap: 5px; }
+.agents-line { display: flex; align-items: baseline; gap: var(--space-2); min-width: 0; }
+/* The readout: the 5-minute mean in semibold ink at body size, its unit muted micro. Never shrinks. */
+.agents-readout { flex: none; white-space: nowrap; color: var(--color-ink-muted); font-size: var(--fs-micro); }
+.agents-readout > b { font-size: var(--fs-body); font-weight: var(--fw-semibold); color: var(--color-ink); }
+.agents-chart { display: flex; align-items: flex-end; gap: 6px; min-width: 0; font-size: var(--fs-micro); line-height: 1; color: var(--color-ink-muted); }
+.agents-chart > :last-child { flex: none; }
+/* The chart: columns in ink-2 on a border-strong baseline, the newest minute a hollow ink-2
+   outline (still landing: a shape, not only a tone), the 30-minute mean a thin dashed line in the
+   info tone, behind the columns — a hue the neutral columns never take, so it never reads as their
+   tops; not the accent, which is the primary action's and the live-run mark's. Nothing animates,
+   no gradient. The row's chart sits in `.velocity-fit`, the box it measures for its pitch. */
+.velocity-chart { display: block; flex: none; }
+.velocity-fit { flex: 1 1 0; min-width: 0; display: flex; overflow: hidden; }
+.velocity-baseline { fill: var(--color-border-strong); }
+.velocity-col { fill: var(--color-ink-2); }
+.velocity-col-hollow { fill: none; stroke: var(--color-ink-2); stroke-width: 1; }
+.velocity-mean { stroke: var(--status-info); stroke-width: 1; stroke-dasharray: 2 3; }
 /* The Usage row + Resource monitor button, and the Agents row + Settings gear:
    each link keeps the width, its button sits at the row's right end, and the two
    buttons share one class so they stack in one column. The link's right padding
@@ -4692,7 +4744,9 @@ a.group-option { color: inherit; text-decoration: none; }
   flex: none;
   display: flex;
   align-items: center;
-  justify-content: center;
+  /* `safe`: centred while it fits; past that it starts at its padding and clips at the right
+     edge only, so the agents figure is never the part cut off. */
+  justify-content: safe center;
   gap: var(--space-3);
   min-height: var(--tap-min);
   padding: 0 var(--space-4) env(safe-area-inset-bottom);
@@ -4712,6 +4766,9 @@ a.group-option { color: inherit; text-decoration: none; }
 .sidebar-footbar-seg { display: inline-flex; align-items: center; gap: var(--space-1); flex: none; }
 .sidebar-footbar-seg > .icon { color: var(--color-ink-muted); }
 .sidebar-footbar-seg .text-num { color: var(--color-ink-2); }
+/* The phone bar's velocity: the readout ("48k /min", the row's styles) and a 60×16 chart. */
+.sidebar-footbar-velocity { gap: var(--space-2); }
+.sidebar-footbar-velocity .agents-readout > b.text-num { color: var(--color-ink); }
 /* Each cap keeps the glance's own emphasis: at 80%+ semibold ink, never hue alone; a stale
    whole-file reading is muted, like the glance's. */
 .sidebar-footbar-cap-high { font-weight: var(--fw-semibold); }
@@ -6026,6 +6083,28 @@ a.subagent-row { text-decoration: none; }
 .sidebar-toolbar > .button-icon { flex: none; }
 .sidebar-toolbar > .overseer-entry { margin-left: auto; }
 .sidebar-toolbar > .sidebar-select-start { padding: 0 var(--space-2); gap: var(--space-1); flex: none; }
+/* The working-now line (§app.session-list/working-now): a link in the gap between the search icon
+   and the Overseer, only while work runs. No words, so nothing in it shrinks: each part is a 16px
+   muted icon (chat for sessions, the foot's person for subagents) and its figure, never cut. */
+.sidebar-toolbar > .sidebar-working {
+  flex: none;
+  min-height: var(--tap-min);
+  margin-right: var(--space-2);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  white-space: nowrap;
+  font-size: var(--fs-caption);
+  color: var(--color-ink-muted);
+  text-decoration: none;
+  border-radius: var(--r-sm);
+}
+.sidebar-working:hover { color: var(--color-ink); }
+.sidebar-working[aria-current="page"] { color: var(--color-ink); }
+.sidebar-working-part { display: inline-flex; align-items: center; gap: 2px; }
+.sidebar-working-part > .text-num { color: var(--color-ink-2); }
+/* The toolbar measured an overflow (long figures beside Select): the figures alone, "12 · 148". */
+.sidebar-working[data-fit="bare"] .icon { display: none; }
 
 /* The entry button. `position: relative` anchors its one mark: the count of
    Overseer messages you haven't read, top-right. It is aria-hidden: the button's

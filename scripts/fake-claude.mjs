@@ -9,6 +9,9 @@
 //                                  into $CLAUDE_CONFIG_DIR, identity from the code: ok-<name>#…),
 //                                  "bad…#…" fails, a line without "#" is an invalid code
 //   claude auth logout             removes .credentials.json
+//   With FAKE_CLAUDE_KEYCHAIN=<dir>, login and logout write and remove <dir>/<service> instead of
+//   .credentials.json, <service> named as macOS Claude Code names its keychain item (tests of the
+//   macOS keychain path, pi-config/extensions/claude-code/keychain.ts).
 //   claude auth status --json
 //   claude -p --input-format stream-json …   answers initialize, interrupt, and each user message
 //                                  with one text reply naming the login it ran on; a login dir
@@ -20,11 +23,16 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node
 import { homedir } from "node:os";
 import { basename, join } from "node:path";
 import { createInterface } from "node:readline";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 const args = process.argv.slice(2);
 const dir = process.env.CLAUDE_CONFIG_DIR || join(homedir(), ".claude");
 const out = (v) => process.stdout.write(`${JSON.stringify(v)}\n`);
+const keychain = process.env.FAKE_CLAUDE_KEYCHAIN;
+const configDir = process.env.CLAUDE_CONFIG_DIR;
+const credentialsPath = keychain
+  ? join(keychain, `Claude Code-credentials${configDir ? `-${createHash("sha256").update(configDir.normalize("NFC")).digest("hex").slice(0, 8)}` : ""}`)
+  : join(dir, ".credentials.json");
 
 if (args[0] === "--version") {
   process.stdout.write("0.0.0-fake (Claude Code)\n");
@@ -48,7 +56,7 @@ if (args[0] === "auth" && args[1] === "login") {
     }
     const name = code.replace(/^ok-?/, "") || "user";
     mkdirSync(dir, { recursive: true });
-    writeFileSync(join(dir, ".credentials.json"), JSON.stringify({ claudeAiOauth: { accessToken: "fake", refreshToken: "fake", expiresAt: Date.now() + 8 * 3600_000 } }), { mode: 0o600 });
+    writeFileSync(credentialsPath, JSON.stringify({ claudeAiOauth: { accessToken: "fake", refreshToken: "fake", expiresAt: Date.now() + 8 * 3600_000 } }), { mode: 0o600 });
     writeFileSync(join(dir, ".claude.json"), JSON.stringify({
       hasCompletedOnboarding: true,
       oauthAccount: { accountUuid: `acct-${name.split("+")[0]}`, emailAddress: `${name}@example.com`, organizationUuid: `org-${name}`, organizationName: `${name}'s org`, subscriptionType: "max" },
@@ -58,11 +66,11 @@ if (args[0] === "auth" && args[1] === "login") {
   });
   rl.on("close", () => process.exit(1));
 } else if (args[0] === "auth" && args[1] === "logout") {
-  rmSync(join(dir, ".credentials.json"), { force: true });
+  rmSync(credentialsPath, { force: true });
   process.stdout.write("Successfully logged out from your Anthropic account.\n");
   process.exit(0);
 } else if (args[0] === "auth" && args[1] === "status") {
-  const loggedIn = existsSync(join(dir, ".credentials.json"));
+  const loggedIn = existsSync(credentialsPath);
   let account = {};
   try { account = JSON.parse(readFileSync(join(dir, ".claude.json"), "utf8")).oauthAccount ?? {}; } catch {}
   out({ loggedIn, authMethod: loggedIn ? "claude.ai" : "none", ...(loggedIn ? { email: account.emailAddress, orgName: account.organizationName, subscriptionType: account.subscriptionType } : {}), configDirectory: dir });

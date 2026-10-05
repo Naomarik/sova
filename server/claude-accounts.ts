@@ -2,7 +2,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync, renameSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import type { Hono } from "hono";
-import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import { agentRoot } from "./state-root";
 // The claude-code extension's own registry (node built-ins only): the file, each login's
 // directory, this host's standing of each login and the order. See CLAUDE.md.
 import {
@@ -29,6 +29,8 @@ import {
 } from "../pi-config/extensions/claude-code/accounts.ts";
 import type { ClaudeLoginIdentity as WireIdentity } from "../shared/protocol";
 import type { ClaudeAccountsInfo, ClaudeLoginFlowState, ClaudeLoginRow } from "../shared/protocol";
+import { ownClaudeLoginUnreadable } from "./auth-status";
+import type { KeychainOptions } from "../pi-config/extensions/claude-code/keychain.ts";
 import { readPeers } from "./mesh/peers";
 import { poolAgent } from "./claude-pool";
 import type { PoolAgent } from "./claude-pool/agent";
@@ -56,6 +58,8 @@ export interface ClaudeAccountsOptions {
   timeouts?: Partial<{ url: number; finish: number; flow: number; logout: number }>;
   /** The pool agent while the mesh is on (server/claude-pool); test seam. */
   pool?: () => PoolAgent | null;
+  /** How a login's macOS keychain item is asked (platform, exec); test seam (§app.claude-logins/macos-keychain). */
+  keychain?: KeychainOptions;
 }
 
 interface Flow {
@@ -63,6 +67,11 @@ interface Flow {
   dir: string;
   /** Signing an existing login in again: its id (the flow runs in a fresh directory, moved over on success). */
   target?: string;
+  /**
+   * macOS: the sign-in again runs in the target's own directory instead, since Claude Code names
+   * the keychain item it writes by that directory; the directory is never removed or moved.
+   */
+  inPlace?: boolean;
   child: ChildProcess;
   state: ClaudeLoginFlowState;
   stdout: string;
@@ -91,13 +100,15 @@ export class ClaudeAccountsService {
   private readonly pool: () => PoolAgent | null;
   private flow: Flow | null = null;
 
+  private readonly keychain: KeychainOptions;
   constructor(options: ClaudeAccountsOptions = {}) {
-    this.agentDir = options.agentDir ?? getAgentDir();
+    this.agentDir = options.agentDir ?? agentRoot();
     this.env = options.env ?? process.env;
     this.executable = options.executable ?? "claude";
     this.timeouts = { url: URL_TIMEOUT_MS, finish: FINISH_TIMEOUT_MS, flow: FLOW_TIMEOUT_MS, logout: LOGOUT_TIMEOUT_MS, ...options.timeouts };
     this.logins = new ClaudeLogins({ agentDir: this.agentDir, env: this.env, ...(options.now ? { now: options.now } : {}) });
     this.pool = options.pool ?? poolAgent;
+    this.keychain = { env: this.env, ...options.keychain };
   }
 
   // -- reading -------------------------------------------------------------------------------
@@ -122,7 +133,7 @@ export class ClaudeAccountsService {
       identity: wireIdentity(this.logins.identityOf(id, accounts)),
       enabled: id === DEFAULT_LOGIN_ID ? (accounts.devices[this.logins.device] ?? accounts.devices[LOCAL_DEVICE_ID])?.defaultEnabled !== false : record?.enabled === true,
       standing,
-      signedIn: credentialsMtime(this.logins.dirOf(id)) !== undefined,
+      signedIn: credentialsMtime(this.logins.dirOf(id), this.keychain) !== undefined,
       ...(record ? { addedAt: record.addedAt } : {}),
     };
   }
@@ -252,7 +263,8 @@ export class ClaudeAccountsService {
     }
     if (!here) return { status: 404, body: { error: "No such login" } };
     const dir = loginDir(this.agentDir, id);
-    if (existsSync(join(dir, ".credentials.json"))) await this.run(["auth", "logout"], dir, this.timeouts.logout);
+    // Signed in: its file, or on macOS its keychain item, which Claude Code's logout deletes.
+    if (credentialsMtime(dir, { ...this.keychain, fresh: true }) !== undefined) await this.run(["auth", "logout"], dir, this.timeouts.logout);
     const result = this.change((accounts) => {
       accounts.logins = accounts.logins.filter((l) => l.id !== id);
       for (const entry of Object.values(accounts.devices)) entry.order = entry.order.filter((x) => x !== id);
@@ -304,7 +316,7 @@ export class ClaudeAccountsService {
   private endFlow(flow: Flow, state: ClaudeLoginFlowState, keepDir = false): void {
     clearTimeout(flow.timer);
     if (flow.child.exitCode === null && !flow.child.killed) flow.child.kill("SIGKILL");
-    if (!keepDir) rmSync(flow.dir, { recursive: true, force: true });
+    if (!keepDir && !flow.inPlace) rmSync(flow.dir, { recursive: true, force: true });
     this.setFlow(flow, state);
   }
 
@@ -319,7 +331,8 @@ export class ClaudeAccountsService {
       const known = isLoginId(target) && (!!this.pool()?.doc().logins[target] || readAccounts(this.agentDir).value.logins.some((l) => l.id === target));
       if (!known) return { status: 404, body: { error: "No such login" } };
     }
-    const id = newLoginId();
+    const inPlace = typeof target === "string" && (this.keychain.platform ?? process.platform) === "darwin";
+    const id = inPlace ? target : newLoginId();
     let dir: string;
     try {
       dir = ensureLoginDir(this.agentDir, id, this.logins.defaultDir);
@@ -330,12 +343,13 @@ export class ClaudeAccountsService {
     try {
       child = spawn(this.executable, ["auth", "login", "--claudeai"], { env: this.childEnv(dir), stdio: ["pipe", "pipe", "pipe"], shell: false });
     } catch (error) {
-      rmSync(dir, { recursive: true, force: true });
+      if (!inPlace) rmSync(dir, { recursive: true, force: true });
       return { status: 409, body: { error: `Could not run the Claude Code CLI: ${(error as Error).message}` } };
     }
     const flow: Flow = {
       id, dir, child, state: { state: "starting" }, stdout: "", stderr: "",
       ...(typeof target === "string" ? { target } : {}),
+      ...(inPlace ? { inPlace } : {}),
       timer: setTimeout(() => this.endFlow(flow, { state: "failed", error: "The sign-in was left alone for 10 minutes and was cancelled" }), this.timeouts.flow),
       exited: new Promise((resolve) => { child.once("close", (code) => resolve(code)); child.once("error", () => resolve(null)); }),
       waiters: new Set(),
@@ -391,7 +405,7 @@ export class ClaudeAccountsService {
   private async flowExited(flow: Flow, code: number | null): Promise<void> {
     if (this.flow !== flow || flow.state.state === "failed" || flow.state.state === "done") return;
     clearTimeout(flow.timer);
-    const signedIn = credentialsMtime(flow.dir) !== undefined;
+    const signedIn = credentialsMtime(flow.dir, { ...this.keychain, fresh: true }) !== undefined;
     if (code !== 0 || !signedIn) {
       const reason = /Login failed: ([^\n]+)/.exec(flow.stderr)?.[1]?.trim() ?? (code === 0 ? "Claude Code wrote no credentials" : `Claude Code exited (${code ?? "killed"})`);
       this.endFlow(flow, { state: "failed", error: reason.slice(0, 300) });
@@ -426,7 +440,7 @@ export class ClaudeAccountsService {
   private signedInAgain(flow: Flow, target: string, identity: ClaudeLoginIdentity | null): void {
     try {
       const dir = ensureLoginDir(this.agentDir, target, this.logins.defaultDir);
-      for (const name of [".credentials.json", ".claude.json"]) {
+      if (!flow.inPlace) for (const name of [".credentials.json", ".claude.json"]) {
         if (existsSync(join(flow.dir, name))) renameSync(join(flow.dir, name), join(dir, name));
       }
     } catch (error) {
@@ -465,13 +479,13 @@ export class ClaudeAccountsService {
  * otherwise run `default` on that login).
  */
 export function claudeBaseSpawnEnv(): NodeJS.ProcessEnv {
-  return claudeBaseEnv(process.env, getAgentDir());
+  return claudeBaseEnv(process.env, agentRoot());
 }
 
 /** The environment a server-side `claude` spawn runs with: this host's first usable login. */
 export function claudeLoginEnv(): Record<string, string> {
   try {
-    return new ClaudeLogins({ agentDir: getAgentDir() }).select().env;
+    return new ClaudeLogins({ agentDir: agentRoot() }).select().env;
   } catch {
     return {};
   }
@@ -487,7 +501,11 @@ async function json(c: { req: { json(): Promise<unknown> } }): Promise<unknown> 
 
 export function registerClaudeAccountRoutes(app: Hono, service = new ClaudeAccountsService()): ClaudeAccountsService {
   const send = (c: any, r: ServiceResult) => c.json(r.body, r.status, { "Cache-Control": "no-store" });
-  app.get("/api/claude/accounts", (c) => c.json(service.info(), 200, { "Cache-Control": "no-store" }));
+  // macOS only: Claude Code's own login in neither its file nor a readable keychain (§app.claude-logins/macos-keychain).
+  app.get("/api/claude/accounts", async (c) => {
+    const info = service.info();
+    return c.json(await ownClaudeLoginUnreadable() ? { ...info, claudeOwnLoginUnreadable: true as const } : info, 200, { "Cache-Control": "no-store" });
+  });
   app.post("/api/claude/accounts/flow", async (c) => send(c, await service.startFlow(await json(c))));
   app.post("/api/claude/accounts/flow/code", async (c) => send(c, await service.submitCode(await json(c))));
   app.delete("/api/claude/accounts/flow", (c) => send(c, service.cancelFlow()));

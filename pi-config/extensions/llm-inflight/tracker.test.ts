@@ -196,3 +196,95 @@ test("folded: every child producer counted here, transitively, so a reader never
 	assert.deepEqual(snapshot().folded, []);
 	assert.deepEqual(counts(), zero);
 });
+
+import { MAX_SLOT_TOKENS, parseTokenRing, slotOf, TOKEN_BUCKET_MS, TOKEN_SLOTS } from "./tracker.ts";
+
+const ring = (now: number) => snapshot(now).tokens;
+const diff = (a: number[], b: number[]) => b.map((n, i) => n - (a[i] ?? 0));
+const ringOf = (end: number, slots: Record<number, number>) => ({ bucketMs: TOKEN_BUCKET_MS, end, out: Array.from({ length: TOKEN_SLOTS }, (_, i) => slots[i] ?? 0) });
+
+test("tokens: epoch-aligned slots; a call's tokens spread evenly back from its first event to its end, exactly", () => {
+	const at = (slotOf(Date.now()) + 1) * TOKEN_BUCKET_MS - 1; // the current slot's last ms
+	const before = ring(at).out;
+	const r0 = ring(at);
+	assert.equal(r0.end, slotOf(at));
+	assert.equal(r0.bucketMs, 30_000);
+	assert.equal(r0.out.length, 60);
+	// 90 s of reply ending in slot `end`: 1/3 in each of the last three slots.
+	const end = beginLlmCall({ source: "runtime" });
+	end({ output: 301, since: at - 90_000 + 1, at });
+	const d = diff(before, ring(at).out);
+	assert.equal(d[56], 0);
+	assert.ok(d.slice(57).every((n) => n === 100 || n === 101), "a third in each of its three slots");
+	assert.equal(d.reduce((a, b) => a + b, 0), 301, "the shares add up to the call's tokens exactly");
+	// A call without a first event (since absent): all at its end.
+	const b2 = ring(at).out;
+	beginLlmCall({ source: "runtime" })({ output: 5, at });
+	assert.deepEqual(diff(b2, ring(at).out).slice(58), [0, 5]);
+	// Older than 30 minutes: that part is gone.
+	const b3 = ring(at).out;
+	beginLlmCall({ source: "runtime" })({ output: 1000, since: at - 60 * 60_000, at });
+	const d3 = diff(b3, ring(at).out);
+	const kept = d3.reduce((a, b) => a + b, 0);
+	assert.ok(kept >= 499 && kept <= 501 && d3.every((n) => n === 8 || n === 9), "only the last 30 minutes' share, evenly");
+	// Ageing: 5 slots later the ring has moved, dropping the oldest.
+	const later = ring(at + 5 * TOKEN_BUCKET_MS);
+	assert.equal(later.end, slotOf(at) + 5);
+	assert.deepEqual(later.out.slice(50, 55), ring(at).out.slice(55));
+	assert.deepEqual(later.out.slice(55), [0, 0, 0, 0, 0]);
+	// No tokens, no change; a waiting call's end with tokens is still one change.
+	let n = 0;
+	const off = subscribe(() => n++);
+	beginLlmCall({ source: "runtime", pending: true })();
+	assert.equal(n, 0);
+	beginLlmCall({ source: "runtime", pending: true })({ output: 3 });
+	assert.equal(n, 1);
+	off();
+});
+
+test("tokens: a child's ring is summed (aligned), replaced not added, and folded into retired when it goes", () => {
+	const now = Date.now();
+	const s = slotOf(now);
+	const base = ring(now).out;
+	setChildCounts("tok-a", { ...zero, producer: "tok-a", tokens: ringOf(s - 1, { 59: 10, 58: 4 }) });
+	assert.deepEqual(diff(base, ring(now).out).slice(57), [4, 10, 0], "aligned to this process's slot");
+	let n = 0;
+	const off = subscribe(() => n++);
+	setChildCounts("tok-a", { ...zero, producer: "tok-a", tokens: ringOf(s, { 58: 10, 57: 4 }) });
+	assert.equal(n, 0, "the same tokens a slot later: no change to publish");
+	setChildCounts("tok-a", { ...zero, producer: "tok-a", tokens: ringOf(s, { 59: 6, 58: 10, 57: 4 }) });
+	assert.equal(n, 1, "new tokens: one change");
+	assert.deepEqual(diff(base, ring(now).out).slice(57), [4, 10, 6], "replaced, never added");
+	setChildCounts("tok-a", undefined, { now });
+	assert.deepEqual(diff(base, ring(now).out).slice(57), [4, 10, 6], "a child that goes leaves its tokens until they age out");
+	assert.ok(ring(now + 60 * TOKEN_BUCKET_MS).out.every((n) => n === 0), "and then they are gone");
+	off();
+	// A detached child (retire: false): its tokens go with it, it reports them itself.
+	const b2 = ring(now).out;
+	setChildCounts("tok-b", { ...zero, producer: "tok-b", tokens: ringOf(s, { 59: 8 }) });
+	setChildCounts("tok-b", undefined, { retire: false });
+	assert.deepEqual(diff(b2, ring(now).out), new Array(60).fill(0));
+	// A child that reports no ring: the tokens are partial while it is summed.
+	setChildCounts("tok-c", { ...zero, producer: "tok-c" });
+	assert.equal(ring(now).partial, true);
+	setChildCounts("tok-c", undefined);
+	assert.equal(ring(now).partial, undefined);
+});
+
+test("tokens: a child past the folded cap is not summed, nor retired; reported rings are bounded", () => {
+	const now = Date.now();
+	const s = slotOf(now);
+	const many = Array.from({ length: MAX_FOLDED }, (_, i) => `tok-f${i}`);
+	setChildCounts("!tok-x0", { ...zero, producer: "tok-x0", folded: many.slice(1) });
+	const base = ring(now).out;
+	setChildCounts("!tok-x1", { ...zero, producer: "tok-x1", tokens: ringOf(s, { 59: 77 }) });
+	assert.deepEqual(diff(base, ring(now).out), new Array(60).fill(0), "over the cap: its tokens are not summed");
+	setChildCounts("!tok-x1", undefined, { now });
+	assert.deepEqual(diff(base, ring(now).out), new Array(60).fill(0), "nor kept when it goes");
+	setChildCounts("!tok-x0", undefined);
+	assert.equal(parseTokenRing({ bucketMs: 30_000, end: 5, out: new Array(59).fill(0) }), undefined, "60 slots or none");
+	assert.equal(parseTokenRing({ bucketMs: 60_000, end: 5, out: new Array(60).fill(0) }), undefined);
+	assert.equal(parseTokenRing({ bucketMs: 30_000, end: -1, out: new Array(60).fill(0) }), undefined);
+	assert.equal(parseTokenRing({ bucketMs: 30_000, end: 5, out: new Array(60).fill(1e12) })!.out[0], MAX_SLOT_TOKENS, "each slot capped");
+	assert.deepEqual(parseCounts(JSON.stringify({ v: 1, ...zero, tokens: ringOf(9, { 59: 3 }) }))!.tokens, ringOf(9, { 59: 3 }));
+});

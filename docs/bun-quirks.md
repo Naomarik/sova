@@ -33,6 +33,7 @@ The rules:
 | ws-handshake-timeout | 1.4.2 | TBD | `cappedWebSocket` in `server/runtime-quirks.ts`: its own timer, 50 ms after ws's, emits ws's error and terminates the socket | `ws-handshake-timeout` | `repros/ws-handshake-timeout.mjs` |
 | fetch-read-size | 1.4.2 | TBD (and pi-ai upstream) | `useSlicedProviderReads` / `slicingFetch` in `server/runtime-quirks.ts`, installed once in `server/chat-manager.ts` (skips google-* adapters, which refuse a custom fetch) | `fetch-read-size` | `repros/pi-ai-runaway-tool-call.mjs` |
 | event-loop-delay | 1.4.2 | TBD | `loopDelaySampler` in `server/runtime-quirks.ts` (used by `server/resource-monitor.ts`) | `event-loop-delay` | `repros/event-loop-delay.mjs` |
+| ws-stream | 1.4.2 | TBD | `streamWebSocketServer` / `streamWebSocket` in `server/runtime-quirks.ts` (the pure-JS ws inside the package, on both runtimes), used for WebSockets inside a LAN host's HTTP/2 streams | `ws-stream` | `repros/ws-stream.mjs` |
 
 ### resolver-case
 
@@ -134,6 +135,19 @@ a google-* adapter (pi-ai's Google adapters throw on a custom fetch). With it, t
 Bun is back under the 250 ms bound. `repros/pi-ai-runaway-tool-call.mjs` is the repro for pi-ai
 upstream, and it shows both behaviours on either runtime.
 
+
+### ws-stream
+
+A LAN host's requests reach it inside HTTP/2 CONNECT streams (§mesh.lan/reverse-channel), so a
+WebSocket there runs over a plain stream, not a socket the runtime accepted or dialed. Bun's `ws`
+shim can't do that: its server's `handleUpgrade` reads Bun's own server internals off the socket and
+throws a TypeError on any other stream, and its client ignores `createConnection` and dials the URL's
+host itself. The pure-JS implementation the `ws` package ships (`lib/websocket.js`,
+`lib/websocket-server.js`, loaded by path because `require.resolve("ws")` returns the shim's builtin
+id on Bun) does both on either runtime, and enforces `maxPayload` and `handshakeTimeout` itself.
+`streamWebSocketServer` and `streamWebSocket` use it on both runtimes, with no probe: on Node it is
+what `ws` is anyway. The capped checks still apply.
+
 ### event-loop-delay
 
 `perf_hooks.monitorEventLoopDelay` on Node records each timer interval: the resolution plus the
@@ -149,7 +163,7 @@ are never empty.
 These differ between the runtimes but need nothing in `server/runtime-quirks.ts`. They have no
 canary because they are test-harness or tooling facts, not bugs Sova works around.
 
-- **NODE_TEST_CONTEXT is unset under `bun test`.** `server/model-prices.ts` turns its price
+- **NODE_TEST_CONTEXT is unset under `bun test`.** `server/usage-helper/price-book.ts` turns its price
   refresh off when it sees Node's runner. Under `bun test` it would fetch models.dev, and the mesh
   tests' "no outbound request" checks would fail. The Bun runner sets `SOVA_PRICES_FETCH=off`.
 - **Loader hooks:** `module.register` and `module.registerHooks` don't apply under Bun. Tests that

@@ -1,12 +1,12 @@
 import type { Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
-import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { defaultClaudeDir } from "../../pi-config/extensions/claude-code/accounts.ts";
 import type { MeshApi } from "../mesh";
-import { stateRoot } from "../state-root";
+import { agentRoot, stateRoot } from "../state-root";
 import { loginKindsPin } from "../sync/logins-merge";
 import { PoolAgent, type CommitReply, type LendReply, type PoolPeer, type ReturnReply } from "./agent";
 import { parseDoc, type PoolDoc } from "./doc";
+import { sharesWith } from "../mesh/access";
 
 /**
  * The pool of Claude logins on the mesh (§app.claude-logins/pool). While the mesh is OFF nothing
@@ -76,13 +76,16 @@ export interface PoolPaths {
   stateDir: () => string;
   claudeDir: () => string;
 }
-const defaultPaths: PoolPaths = { agentDir: getAgentDir, stateDir: stateRoot, claudeDir: () => defaultClaudeDir() };
+const defaultPaths: PoolPaths = { agentDir: agentRoot, stateDir: stateRoot, claudeDir: () => defaultClaudeDir() };
 
 export function mountClaudePool(app: Hono, mesh: MeshApi, paths: PoolPaths = defaultPaths): void {
   const canHold = () => (loginKindsPin() ?? (mesh.settings().loginKinds === "api-keys" ? "api-keys" : "all")) !== "api-keys";
   // Each peer's last known up-state: onPeerUp, and every pool call's outcome (the 60 s exchange included).
   const upNow = new Map<string, boolean>();
   const peerInfo = () => mesh.peers().map((p) => ({ id: p.id, label: p.label, up: upNow.get(p.id) === true }));
+  // The pool goes with the logins grant (§mesh.peers/grants): this host never borrows from, lends to
+  // or gossips with a peer it doesn't share logins with, and to the pool that peer reads as away.
+  const poolPeers = () => mesh.peers().filter((p) => sharesWith(mesh, p.id, "sync.logins"));
 
   mesh.onMeshStart(() => {
     if (current) return;
@@ -91,7 +94,7 @@ export function mountClaudePool(app: Hono, mesh: MeshApi, paths: PoolPaths = def
       stateDir: paths.stateDir(),
       self: () => mesh.self().id,
       selfLabel: () => mesh.self().label,
-      peers: () => mesh.peers().map((p) => trackingPeer(httpPeer(mesh, p.id), upNow)),
+      peers: () => poolPeers().map((p) => trackingPeer(httpPeer(mesh, p.id), upNow)),
       peerInfo,
       defaultClaudeDir: paths.claudeDir(),
       canHold,
@@ -108,7 +111,7 @@ export function mountClaudePool(app: Hono, mesh: MeshApi, paths: PoolPaths = def
   mesh.onPeerUp((id) => {
     upNow.set(id, true);
     const agent = current;
-    const peer = mesh.peers().find((p) => p.id === id);
+    const peer = poolPeers().find((p) => p.id === id);
     if (!agent || !peer) return;
     // Pull what changed while it was away, then retry any step that waited for it.
     void agent.syncWith(trackingPeer(httpPeer(mesh, id), upNow)).then(() => agent.tick());

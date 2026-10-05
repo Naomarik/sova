@@ -1,0 +1,11 @@
+{
+  "model": "faux/faux-1",
+  "context": {
+    "tokens": 1433,
+    "model": "faux/faux-1"
+  },
+  "reply": {
+    "at": 1788350403000,
+    "stopReason": "stop"
+  }
+}

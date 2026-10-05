@@ -11,20 +11,23 @@ the same path and query, so every session route works for a peer's session uncha
 close codes arrive exactly as the peer sent them. A peer that can't be reached is reported as
 unreachable (an HTTP error before upgrade, or a close that the client retries), never as a code the
 client treats as final. A peer that takes the connection but sends no answer within 30 seconds is
-reported as timed out; an answer that has started is never cut off.
+reported as timed out; an answer that has started is never cut off. A peer this host doesn't grant
+`full` (§mesh.peers/grants) learns nothing of this host or the browser from a forwarded request.
 
 ## §mesh.remote-sessions/list — One list across hosts
 
 While the mesh is on, the session list shows every host's sessions together. Which host a row
 belongs to is stamped by the serving host from where it fetched it, never taken from the peer's
 answer. A host that is down keeps its last known rows, marked host offline, and they can't be
-opened until it returns. The existing session list route is unchanged.
+opened until it returns. A host that withholds its sessions from this host (it answers `denied`,
+§mesh.peers/grants) keeps no rows, and the list filtered to it says "Hidden by {host}". The existing
+session list route is unchanged.
 
 ## §mesh.remote-sessions/host-picker — New session: Host
 
 While the mesh is on, New Session has a **Host** choice above This Computer | Remote: where the
 agent runs and the conversation is stored. It defaults to the host serving the page, labelled by
-name. Down or skewed hosts are disabled with the reason. Choosing a host re-scopes folders, recent
+name. Down or skewed hosts, and hosts that hide their sessions from this one, are disabled with the reason. Choosing a host re-scopes folders, recent
 folders, targets and models to that host. Remote keeps meaning where the tools run.
 
 ## §mesh.remote-sessions/routing — Addresses
@@ -48,14 +51,15 @@ picker lists that host's folders.
 While the mesh is on and more than one host is known, the session pane's foot starts with a host
 row, directly above the usage row: it names the current choice (`All hosts`, or a host with its
 state dot), with `N/M connected` at its right end at every width (hosts answering now, this host
-included, out of all hosts; a host on another version answers and counts, one that refused this
-host doesn't). On a phone the foot's rows live in the sheet its bar opens
+included, out of all hosts; a host on another version answers and counts, and so does one that hides
+from this host; one that refused this host doesn't). On a phone the foot's rows live in the sheet its bar opens
 (§app.insights/sidebar-foot-phone), this one first, drawn exactly as here. The whole row is one target: a click anywhere on it opens the host
 menu (upward when there is no room below; a bottom sheet on a narrow screen), and the click itself
 changes no filter. The collapsed pane has no host item. The menu lists `All hosts` and then each
 host by name with its dot, whose tone and word follow the host's state: up is a green dot and no
 word; on another version (`skewed`) an amber dot and "other version"; not answering a red dot and
-"down"; refusing this host a red dot and "refused". A host on another version also says, under its
+"down"; refusing this host a red dot and "refused"; hiding everything from this host
+(§mesh.peers/grants) an amber dot and "hidden". A host on another version also says, under its
 name, where its build sits against this host's, and one that is behind has `Resync` beside it
 (§mesh.peers/resync). Exactly one is chosen.
 `All hosts` is the default and shows every host's sessions; a host shows only that host's sessions.
@@ -94,6 +98,16 @@ worker never controls.
 
 ## §mesh.remote-sessions/head-host — A peer session's head names its host
 
-A peer session's head starts its meta line with the host, `on <peer> · <folder> · …`, titled "This
-session lives on <peer>". When the line is too narrow (a 390px phone), the folder gives way first:
+A peer session's head starts its meta line with the host, `<peer> · <folder> · …` (marked as
+§mesh.remote-sessions/head-host-state says), titled "This session lives on <peer>". When the line is too narrow (a 390px phone), the folder gives way first:
 the host keeps its whole name unless that name alone is longer than half the line.
+
+## §mesh.remote-sessions/head-host-state — The head's host carries its live state
+
+A peer session's host, in the single-session head and in a workspace pane's head, is a small dot
+and the host's name in ink, without "on". The dot takes the host filter's tone from the mesh state
+(up green; other version or hidden amber; down or refused red). No state word shows; the hover
+title and accessible name carry it: "This session lives on <peer> · up", or the peer's unavailable
+sentence. While the mesh state or the peer is unknown, the host is today's plain muted label with
+no dot. A pane's head keeps the mark after the name, and the name gives way before it. A local
+session shows no host.

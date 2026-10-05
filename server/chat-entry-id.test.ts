@@ -12,6 +12,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
 import type { ChatServerMessage } from "../shared/protocol";
+import { piSession } from "./harness/pi/testing/handle";
 
 const agentDir = mkdtempSync(join(tmpdir(), "sova-entry-id-test-"));
 process.on("exit", () => rmSync(agentDir, { recursive: true, force: true }));
@@ -48,7 +49,7 @@ test("a forwarded message_end carries the id of the entry it was written as, and
   chat.attach({ send: (m: ChatServerMessage) => void log.push(m) });
   log.length = 0;
   // pi's own agent event path: listeners, then the write (agent-session.js `_handleAgentEvent`).
-  const sdk = (chat as unknown as { session: { _handleAgentEvent(e: unknown): Promise<void>; subscribe(fn: (e: { type: string }) => void): () => void } }).session;
+  const sdk = piSession(chat) as unknown as { _handleAgentEvent(e: unknown): Promise<void>; subscribe(fn: (e: { type: string }) => void): () => void };
   // A listener after ours broadcasting in the same synchronous stretch, before the write.
   const off = sdk.subscribe((e) => {
     if (e.type === "message_end") chat.broadcast({ type: "queue", items: [] });

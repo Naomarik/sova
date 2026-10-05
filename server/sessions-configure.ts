@@ -100,11 +100,10 @@ export async function configureSession(body: unknown): Promise<ConfigureOutcome>
     // Pinned, as sova_create_session and sova_set_session pin a local session: a mode equal to
     // the default still gets its entry, so it never follows a later change of mode.json.
     if (patch && !chat.pinMode()) throw new Error("Switched, but its mode entry was not written, so it may follow a later default");
-    const m = chat.session.model;
     const result: SessionConfigureResult = {
       ok: true,
-      model: m ? `${m.provider}/${m.id}` : null,
-      thinking: chat.session.thinkingLevel ?? null,
+      model: chat.harness.model()?.ref ?? null,
+      thinking: chat.harness.thinking() ?? null,
       ...(mode ? { mode: mode.mode, minorModes: mode.minorModes } : {}),
     };
     return { ok: true, result };

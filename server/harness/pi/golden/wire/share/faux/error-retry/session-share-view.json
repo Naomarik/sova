@@ -1,0 +1,24 @@
+{
+  "type": "view",
+  "view": {
+    "title": "Golden share",
+    "sharedAt": "2026-10-05T00:00:00.000Z",
+    "mode": "live",
+    "through": "2026-09-03T08:00:00.016Z",
+    "items": [
+      {
+        "kind": "user",
+        "n": 0,
+        "text": "Try this",
+        "at": "2026-09-03T08:00:00.012Z"
+      },
+      {
+        "kind": "reply",
+        "n": 1,
+        "text": "Worked on the retry.",
+        "at": "2026-09-03T08:00:00.016Z"
+      }
+    ],
+    "images": 0
+  }
+}

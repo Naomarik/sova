@@ -10,8 +10,12 @@ const agentDir = mkdtempSync(join(tmpdir(), "sova-regen-test-"));
 process.env.PI_CODING_AGENT_DIR = agentDir; // before chat-manager computes its paths
 after(() => rmSync(agentDir, { recursive: true, force: true }));
 
-const { resolveRegenerate } = await import("./chat-manager");
+const { resolveRegenerate: resolveOnHistory } = await import("./chat-manager");
+const { historyOf } = await import("./harness/pi/reader");
 const { parseWakeNudge } = await import("../shared/wake");
+
+/** The rule over raw pi entries, read as a held session's branch is (historyOf). */
+const resolveRegenerate = (branch: readonly unknown[], entryId: string) => resolveOnHistory(historyOf(branch), entryId);
 
 const user = (id: string, parentId: string | null, content: unknown) => ({
   type: "message",

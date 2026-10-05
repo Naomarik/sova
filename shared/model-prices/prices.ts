@@ -48,6 +48,8 @@ export interface PriceTable {
   fetchedAt: string | null;
   /** When the prices last changed (ISO); the table's version for audit. */
   changedAt: string | null;
+  /** What the last change was: the keys a download added or repriced at `changedAt`. */
+  lastChange?: MergeReport;
   /** `provider/model` (models.dev ids) → its dated prices. */
   models: Record<string, ModelPrice>;
 }
@@ -171,17 +173,29 @@ function rateFor(kind: TokenKind, rates: Rates, base: Rates): number | undefined
   return own(rates) ?? own(base);
 }
 
+export interface PriceOptions {
+  /**
+   * The context tier its calls were in (a tier's `inputAbove`, or null for the base rates). A sum of
+   * calls (a usage rollup row) passes the band its calls were sorted into one by one, since the
+   * sum's request input says nothing about any one request's.
+   */
+  tier?: number | null;
+}
+
 /** Price one usage record at its timestamp. */
-export function priceUsage(table: PriceTable, aliases: Aliases, ref: ModelRef, usage: TokenUsage, at: number | string): PricedUsage {
+export function priceUsage(table: PriceTable, aliases: Aliases, ref: ModelRef, usage: TokenUsage, at: number | string, opts: PriceOptions = {}): PricedUsage {
   const atMs = toMs(at);
   const r = resolvePriceRef(table, aliases, ref, atMs);
   if ("free" in r) return { status: "free", why: r.free };
   if ("unpriced" in r) return { status: "unpriced", ref: `${ref.provider}/${ref.model}`, why: r.unpriced };
   const period = periodAt(table.models[r.key]!, atMs);
   if (!period) return { status: "unpriced", ref: `${ref.provider}/${ref.model}`, why: `models.dev lists no price for ${r.key}` };
-  const requestInput = usage.input + usage.cacheRead + usage.cacheWrite5m + usage.cacheWrite1h;
   let tier: Tier | null = null;
-  for (const t of period.tiers ?? []) if (requestInput > t.inputAbove && (!tier || t.inputAbove > tier.inputAbove)) tier = t;
+  if (opts.tier !== undefined) tier = (opts.tier !== null && period.tiers?.find((t) => t.inputAbove === opts.tier)) || null;
+  else {
+    const requestInput = usage.input + usage.cacheRead + usage.cacheWrite5m + usage.cacheWrite1h;
+    for (const t of period.tiers ?? []) if (requestInput > t.inputAbove && (!tier || t.inputAbove > tier.inputAbove)) tier = t;
+  }
   const rates = tier?.rates ?? period.rates;
   const usd = { input: 0, output: 0, cacheRead: 0, cacheWrite5m: 0, cacheWrite1h: 0, total: 0 };
   const missing: TokenKind[] = [];
@@ -265,7 +279,7 @@ export interface MergeReport {
 /**
  * Fold a fresh fetch into `base` at `at` (ISO). A new key starts with `from: null`; a changed
  * price closes the current period at `at` and opens a new one; a key models.dev dropped keeps its
- * history. Returns a new table; `base` is untouched.
+ * history. Earlier periods are never rewritten, so hand-entered dates survive every download. Returns a new table; `base` is untouched.
  */
 export function mergeFetched(base: PriceTable, fetched: ReturnType<typeof normalizeModelsDev>, at: string): { table: PriceTable; report: MergeReport } {
   const models: Record<string, ModelPrice> = structuredClone(base.models);
@@ -289,7 +303,8 @@ export function mergeFetched(base: PriceTable, fetched: ReturnType<typeof normal
   const sorted: Record<string, ModelPrice> = {};
   for (const k of Object.keys(models).sort()) sorted[k] = models[k]!;
   const dirty = report.added.length > 0 || report.changed.length > 0;
-  return { table: { version: 1, source: "models.dev", fetchedAt: at, changedAt: dirty ? at : base.changedAt, models: sorted }, report };
+  const lastChange = dirty ? report : base.lastChange;
+  return { table: { version: 1, source: "models.dev", fetchedAt: at, changedAt: dirty ? at : base.changedAt, ...(lastChange ? { lastChange } : {}), models: sorted }, report };
 }
 
 /** A table read from disk, or null when its shape is wrong (a corrupt cache falls back to the seed). */
@@ -301,7 +316,9 @@ export function parseTable(raw: unknown): PriceTable | null {
     if (!m || !Array.isArray(m.periods) || m.periods.length === 0) return null;
     for (const p of m.periods) if (!p?.rates || num(p.rates.input) === undefined || num(p.rates.output) === undefined) return null;
   }
-  return { version: 1, source: "models.dev", fetchedAt: t.fetchedAt ?? null, changedAt: t.changedAt ?? null, models: t.models };
+  const lc = t.lastChange;
+  const lastChange = lc && Array.isArray(lc.added) && Array.isArray(lc.changed) ? { lastChange: { added: lc.added, changed: lc.changed } } : {};
+  return { version: 1, source: "models.dev", fetchedAt: t.fetchedAt ?? null, changedAt: t.changedAt ?? null, ...lastChange, models: t.models };
 }
 
 export const EMPTY_TABLE: PriceTable = { version: 1, source: "models.dev", fetchedAt: null, changedAt: null, models: {} };

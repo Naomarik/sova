@@ -1,0 +1,81 @@
+{
+  "shown": [
+    {
+      "e": {
+        "type": "message",
+        "id": "00000004",
+        "parentId": "00000003",
+        "timestamp": "2026-09-03T08:00:00.012Z",
+        "message": {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "Write a lot"
+            }
+          ],
+          "timestamp": 1788422400008
+        }
+      },
+      "role": "user",
+      "text": "Write a lot",
+      "blocks": []
+    },
+    {
+      "e": {
+        "type": "message",
+        "id": "00000005",
+        "parentId": "00000004",
+        "timestamp": "2026-09-03T08:00:00.014Z",
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "This reply is long enough to be cut off. More words keep coming. More words keep coming. More words keep coming. More words keep coming. More words keep coming. More words keep"
+            }
+          ],
+          "api": "faux-golden",
+          "provider": "faux",
+          "model": "faux-1",
+          "usage": {
+            "input": 1369,
+            "output": 251,
+            "cacheRead": 0,
+            "cacheWrite": 1369,
+            "totalTokens": 2989,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "aborted",
+          "responseId": "faux-resp-0",
+          "timestamp": 1788422400013,
+          "errorMessage": "Request was aborted"
+        }
+      },
+      "role": "assistant",
+      "text": "This reply is long enough to be cut off. More words keep coming. More words keep coming. More words keep coming. More words keep coming. More words keep coming. More words keep",
+      "blocks": []
+    }
+  ],
+  "branchTo": {
+    "leaf": [
+      "00000001",
+      "00000002",
+      "00000003",
+      "00000004",
+      "00000005"
+    ],
+    "mid": [
+      "00000001",
+      "00000002",
+      "00000003"
+    ],
+    "missing": null
+  }
+}

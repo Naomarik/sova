@@ -17,7 +17,8 @@ system packages or any running service. The few root steps are in [SUDO.md](SUDO
 1. `cp local.env.example local.env` and fill it in: the VPS's ssh target, public IP and tailnet IP, and for a mesh the
    laptop's peer values. `local.env` is untracked; versions, checksums and ports are in `config.sh`.
 2. `./deploy.sh` from the laptop.
-3. The root steps in [SUDO.md](SUDO.md): section 1 always, 2 and 3 for a mesh host, 4 for a share gateway.
+3. The root steps in [SUDO.md](SUDO.md): section 1 always, 2 and 3 for a mesh host, 4 for a share gateway, 5 for an
+   internet relay (`VPS_RELAY=on`: a dial-out host such as a laptop reaches this VPS from any network).
 4. Optionally `./smoke.sh` and `./exposure.sh probe` to check nothing of Sova's is public.
 
 ## What is on the VPS
@@ -38,6 +39,12 @@ Ports: Sova main 127.0.0.1:4800; peer listener <vps-tailnet-ip>:4801 (only while
 Caddy 127.0.0.1:4890 (admin 127.0.0.1:2089; optional, SUDO.md section 3); share links 127.0.0.1:4802 when this host is
 the share gateway. Nothing of Sova's binds the public interface. Your firewall (e.g. ufw) keeps it that way: allow
 4801 on the tailnet interface only, and 80/443 only for a public share front.
+
+The internet relay (optional, `VPS_RELAY=on`, SUDO.md section 5): the public port (4803) belongs to the accept process,
+which runs as the system user `sova-relay` from `/etc/systemd/system/sova-relay-accept.service` on the bundled Node, never
+as you and never inside Sova. Each deploy installs its bundle as `accept/relay-accept.mjs`, keeps Sova's handoff socket in
+`relay/` (0750, your group), names it in `sova-mesh.env` (`SOVA_RELAY_HANDOFF`), and renders the unit it ships as
+`sova-relay-accept.service` for the admin to install. With `off`, nothing of it is installed or named.
 
 Public share links (optional): in Sova, Settings → Public links → "This host is the gateway", with a public address
 (https://share.example.com) and a front, or the same over ssh when this host's page isn't reachable
@@ -63,7 +70,8 @@ From the laptop:
   and after.
 - `exposure.sh probe`: public 4800/4801/4802/4890/2089/8443/10443 must time out (VPS_CONTROL_PORTS, if set, are
   controls that must connect; with SHARE_FRONT = vhost, caddy or funnel, 443 is one too). ssh goes over the tailnet
-  ($VPS_SSH).
+  ($VPS_SSH). The relay port: times out with VPS_RELAY=off; with on, it connects, answers no HTTP without a
+  certificate and no byte to an unpaired one, refuses TLS 1.2, its unit is active and its listener isn't yours.
 - `laptop-forwarder.sh start|stop|status`: on the laptop, a user-level socat <laptop-tailnet-ip>:4872 -> the laptop's
   Sova (LAPTOP_TARGET, default 127.0.0.1:4870), the front door's upstream for the laptop (LAPTOP_SERVE_URL). Killable;
   the laptop's own `tailscale serve` is untouched. Only for the front door.

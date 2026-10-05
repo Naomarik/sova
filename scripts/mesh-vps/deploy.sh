@@ -5,6 +5,8 @@
 # (checksummed, x86_64 or aarch64; any other architecture stops here), runs pnpm install --frozen-lockfile + vite build
 # in app.new, swaps it in only once that built (a failed build leaves the running app as it was), prepares the agent dir and
 # writes ~/sova-mesh/sova-mesh.env (Claude Code's directory on the unit's PATH, or a warning). If the sova-mesh user unit is running, it is restarted onto the new build.
+# VPS_RELAY=on also bundles and installs the internet relay's accept process (§mesh.vps/internet-relay); its system unit then
+# picks up the new bundle by itself (Sova tells an older build to exit). No sudo here: SUDO.md §5 is the admin's, once.
 set -euo pipefail
 . "$(dirname "$0")/config.sh"
 need VPS_SSH VPS_TAILNET_IP
@@ -19,6 +21,9 @@ while [ $# -gt 0 ]; do
 done
 SHA=$(git -C "$ROOT_DIR" rev-parse --verify "$REV^{commit}") || die "no such commit: $REV"
 log "deploying ${SHA:0:12} to $VPS_SSH:~/$R"
+if [ "$VPS_RELAY" = on ] && [ "$VPS_RELAY_PORT" = 443 ]; then
+  case "$SHARE_FRONT" in vhost|caddy|funnel) log "WARNING: VPS_RELAY_PORT=443, but the $SHARE_FRONT share front holds public 443: the relay can't listen there (use 4803)" ;; esac
+fi
 
 vps "rm -rf ~/$R/app.new && mkdir -p ~/$R/app.new"
 git -C "$ROOT_DIR" archive --format=tar "$SHA" | vps "tar -x -C ~/$R/app.new"
@@ -26,7 +31,8 @@ printf '{"commit":"%s","source":"git archive","deployedAt":"%s"}\n' "$SHA" "$(da
 
 vps "R=$R NODE_VERSION=$NODE_VERSION NODE_SHA256_X64=$NODE_SHA256_X64 NODE_SHA256_ARM64=$NODE_SHA256_ARM64 \
   CADDY_VERSION=$CADDY_VERSION CADDY_SHA512_AMD64=$CADDY_SHA512_AMD64 CADDY_SHA512_ARM64=$CADDY_SHA512_ARM64 \
-  SOVA_PORT=$SOVA_PORT SOVA_PEER_PORT=$SOVA_PEER_PORT VPS_TAILNET_IP=$VPS_TAILNET_IP VPS_ID=$VPS_ID VPS_LABEL='$VPS_LABEL' CLAUDE_BIN='$CLAUDE_BIN' SOVA_RUNTIME='$SOVA_RUNTIME' bash -s" < "$MESH_VPS_DIR/remote-setup.sh"
+  SOVA_PORT=$SOVA_PORT SOVA_PEER_PORT=$SOVA_PEER_PORT VPS_TAILNET_IP=$VPS_TAILNET_IP VPS_ID=$VPS_ID VPS_LABEL='$VPS_LABEL' CLAUDE_BIN='$CLAUDE_BIN' SOVA_RUNTIME='$SOVA_RUNTIME' \
+  VPS_RELAY=$VPS_RELAY VPS_RELAY_PORT=$VPS_RELAY_PORT bash -s" < "$MESH_VPS_DIR/remote-setup.sh"
 
 # installed user units follow the deployed copies (daemon-reload only when one changed)
 vps 'd=~/.config/systemd/user; n=0; for u in sova-mesh.service sova-frontdoor.service; do

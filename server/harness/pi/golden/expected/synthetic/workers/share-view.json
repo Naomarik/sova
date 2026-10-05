@@ -1,0 +1,91 @@
+{
+  "shown": [
+    {
+      "e": {
+        "type": "message",
+        "message": {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "Start a team"
+            }
+          ],
+          "timestamp": 1788256802000
+        },
+        "id": "o0000002",
+        "parentId": "o0000001",
+        "timestamp": "2026-09-01T10:00:02.000Z"
+      },
+      "role": "user",
+      "text": "Start a team",
+      "blocks": []
+    },
+    {
+      "e": {
+        "type": "message",
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "The team finished."
+            }
+          ],
+          "api": "openai-completions",
+          "provider": "zai",
+          "model": "glm-5.3",
+          "usage": {
+            "input": 9000,
+            "output": 400,
+            "cacheRead": 30000,
+            "cacheWrite": 0,
+            "totalTokens": 39400,
+            "cost": {
+              "input": 0.001,
+              "output": 0.002,
+              "cacheRead": 0.0001,
+              "cacheWrite": 0,
+              "total": 0.0031
+            }
+          },
+          "stopReason": "stop",
+          "timestamp": 1788256813000
+        },
+        "id": "o000000d",
+        "parentId": "o000000c",
+        "timestamp": "2026-09-01T10:00:13.000Z"
+      },
+      "role": "assistant",
+      "text": "The team finished.",
+      "blocks": []
+    }
+  ],
+  "branchTo": {
+    "leaf": [
+      "o0000001",
+      "o0000002",
+      "o0000003",
+      "o0000004",
+      "o0000005",
+      "o0000006",
+      "o0000007",
+      "o0000008",
+      "o0000009",
+      "o000000a",
+      "o000000b",
+      "o000000c",
+      "o000000d"
+    ],
+    "mid": [
+      "o0000001",
+      "o0000002",
+      "o0000003",
+      "o0000004",
+      "o0000005",
+      "o0000006",
+      "o0000007"
+    ],
+    "missing": null
+  }
+}

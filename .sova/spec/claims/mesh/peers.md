@@ -24,6 +24,8 @@ only, and a `SessionSummary` carries no host or peer field.
 `peers.json` in Sova's state directory (mode 0600, written atomically) names this host and the
 peers it trusts, by Tailscale node identity. The user curates it, from the Mesh page or by hand.
 Discovery only suggests candidates; a node never becomes a peer by being on the tailnet.
+Pairing a peer from the Mesh page's form also records what it may see and do here (§mesh.peers/grants),
+`presence` unless the user picks more.
 
 ## §mesh.peers/listener — The peer listener and its one check
 
@@ -33,10 +35,85 @@ LocalAPI `whois` who the caller is, and serves it only if that node is listed in
 A tailnet node not in the list, and any caller Tailscale cannot identify, is refused before any
 route runs. The peer listener never forwards to a third host.
 
+A caller that passes this check is then held to what this host grants it (§mesh.peers/grants).
+
 The serving host's own page and API (including `/peer/<id>/…`) are gated by the tailnet alone, as
-before the mesh: any device that can reach one Sova host can use every peer through it. So every
-Sova host must be reachable by the same devices; a host that others must not reach through it (a
-shared or tagged server) does not belong in the same mesh yet.
+before the mesh: any device that can reach one Sova host can use every peer through it, as far as
+each peer grants that host. So a host that others must not reach through another host denies that
+host what it must not reach (§mesh.peers/grants).
+
+## §mesh.peers/grants — What each peer may see and do here
+
+Each host decides, on its own Mesh page, what each peer may see and do on it, and its peer listener
+enforces that after the identity check. Grants are per direction: what this host can see on a peer
+is that peer's grant to this host, never this host's choice. So reading a peer about itself or one
+of its sessions by id (the link identity probe, the peer transcript read) is only ever that peer's
+grant to this host, never held to this host's own grant to that peer; the peer serves the
+transcript read only to a host it grants sessions.
+
+The grants live in `mesh-access.json` in Sova's state directory (mode 0600, written atomically),
+keyed by each peer's node identity, so renaming a peer's id keeps its grant. The file is this host's
+alone: it is never synced, never sent to a peer and never shown to one. A grant is a preset, with
+optional per-capability switches on top:
+- `full`: everything, as before grants existed.
+- `sessions`: presence, sessions, links and the LLM in-flight count.
+- `presence`: the peer lists this host and reads its hello and details, nothing else.
+- `none`: nothing at all, hello included. The peer still passes the identity check, so it is not
+  "refused".
+
+The capabilities are:
+- presence: hello, details, and this host's name and Browser access tells;
+- sessions: the session list, transcripts and the chat and watch sockets, and starting and driving
+  sessions, files, models and modes;
+- links (§mesh/links);
+- the LLM in-flight count (§app.insights/llm-inflight);
+- each sync category (settings, themes, extensions, logins);
+- outreach (§app.outreach/sender-route) and share (§mesh/public);
+- admin: renaming this host, its Browser access, settings and every other write.
+
+Starting a session runs commands as the user, so the page says that granting sessions grants
+everything else in effect, and that the finer switches matter only while sessions is off.
+
+The logins grant also lists which logins (each provider in pi's `auth.json`, §mesh.sync/logins) go
+to that peer, chosen one by one on the Mesh page. Until the user turns one off, every login goes,
+including logins added later; after that, a login added later is not shared until it is chosen.
+Turning a login off stops future exchanges of it
+with that peer, but it cannot recall a copy the peer already holds. The page says so, and points to
+logging that login out there or rotating it. A sync category the peer isn't granted is neither
+served, pushed, pulled nor merged with it, in either direction. Sync still replicates through other
+hosts, each passing on what it took at its next exchange with that peer (its 5-minute reconcile, the
+peer coming back up, or a settings save), so the page warns that a category can reach the peer through any other host that shares it
+with that peer. The Claude login pool (§app.claude-logins/pool) goes with the logins grant: a peer
+without it neither borrows from nor lends to this host, and to that peer this host reads as away.
+
+Defaults:
+- With no `mesh-access.json`, and for any peer the file doesn't list, a peer has `full`, exactly
+  as before grants existed. A dial-out pairing is the exception: unlisted, or with no file, it has
+  `presence` (§mesh.lan/pairing); tailnet peers are unchanged.
+- A peer paired from the Mesh page's form gets the preset chosen there, `presence` by default.
+- A `mesh-access.json` that exists but can't be read or parsed fails closed: every peer gets hello
+  only, and the Mesh page shows the error.
+- An older build ignores the file, so moving a host back to one drops its grants.
+
+Every route and socket on the peer listener belongs to exactly one capability, and a route the
+listener doesn't classify needs `full`. A request the grant doesn't cover is refused with 403 and
+`X-Sova-Mesh: denied` ("refused" keeps meaning "not a peer"). Lowering a grant ends that peer's open
+sockets and kept-alive connections whose capability is gone, at once. On its own initiative the host
+never sends a peer what it doesn't grant it: no sync exchange, pool call, link delivery or offer,
+and no name or Browser access tell. While this host's grant to a peer is anything but `full`, a
+browser request it relays to that peer carries no name of this host and none of the browser's
+Origin, Referer, User-Agent, Accept-Language or forwarding headers.
+
+Grants are edited only from this host's own browser, at `/api/mesh/access`. No peer and no browser
+relayed through another host reaches it, so a peer can never raise its own grant. A browser holding
+this host's own token is the user operating this host, not a peer, and grants don't apply to it
+(§app.access/gate).
+
+A peer that answers `denied` is `hidden`, not down. It stays listed, and the host doesn't retry it
+any faster than its normal cadence. A peer that withholds its sessions keeps no rows in the session
+list, which says "Hidden by {host}" when filtered to it; the host menu says "hidden" beside it, and
+New Session's Host choice disables it. The Mesh page shows, for each peer, what this host can
+see there, as learned from that peer's answers, never from anything the peer claims.
 
 ## §mesh.peers/address-identity — Hosts without Tailscale LocalAPI
 
@@ -45,7 +122,8 @@ identifying callers by address instead (`SOVA_MESH_IDENTITY=addresses`). Such a 
 tailnet address (`SOVA_PEER_HOST`, tailnet addresses only), and its peer listener opens there and
 nowhere else; without a valid one it stays closed. A caller is served only if its connection comes
 from a tailnet address that is not this host's own and exactly one `peers.json` entry names that
-address (as its name or its URL's host); that entry is the caller. Any other caller is refused before
+address (as its name or its URL's host); that entry is the caller. A dial-out pairing
+(§mesh/lan) never counts as such an entry. Any other caller is refused before
 any route runs, as with `whois`. Unset, the host uses `whois` as before.
 
 This is weaker than `whois`: it trusts that the tailnet delivers packets only from the node that
@@ -68,7 +146,8 @@ While the mesh is on, the host polls each peer's `hello` and reports each as `up
 failed hello; its absence never breaks this host's own sessions or pages. A `skewed` peer
 answers, so it counts as reachable wherever this host acts on a peer coming back up: every
 reading of it (its hello, its session list, its own calls) agrees, and a poll never reads it as
-gone and back.
+gone and back. A peer that identifies this host but grants it nothing (its hello answers `denied`,
+§mesh.peers/grants) is `hidden`: reachable and not down, with nothing of it shown.
 
 ## §mesh.peers/discovery — Discovery hints
 

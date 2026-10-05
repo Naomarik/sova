@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync, watch, type FSWatcher } from "node:fs";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
-import type { LlmFeedMessage, LlmInflight, LlmInflightGap, SessionFeedMessage } from "../shared/protocol";
+import type { LlmFeedMessage, LlmInflight, LlmInflightGap, LlmTokens, SessionFeedMessage } from "../shared/protocol";
 
 /**
  * The logical LLM calls in flight: this host's own count, and the
@@ -18,6 +18,11 @@ import type { LlmFeedMessage, LlmInflight, LlmInflightGap, SessionFeedMessage } 
  * sends the peer's OWN count (`llm_local`): a count this host was sent never goes back out, so no
  * total is summed twice around the mesh. Peer sockets exist only while the mesh is on and a
  * browser listens.
+ *
+ * Output tokens ride the same counts: each process publishes a ring of 60 epoch-aligned 30 s slots
+ * (`tokens`), summed per host and over the mesh like `active`. A process or peer that departs
+ * leaves its last ring in the sum until it ages out (while anyone listens), so a finished worker's
+ * tokens don't vanish from the 30-minute window when its process does.
  */
 
 /** presence.llm as a process publishes it (and tracker.ts's snapshot()). */
@@ -33,6 +38,67 @@ export interface LlmProcessSnapshot {
       reporting to its parent, transitively): a live record or an unadopted worker of one of
       these adds nothing. */
   folded?: string[];
+  /** Its ended calls' output tokens (absent from an older counter: unknown). */
+  tokens?: TokenRing;
+}
+
+/** presence.llm.tokens: 60 slots of 30 s, oldest first; `out[59]` is slot `end`. */
+export interface TokenRing {
+  bucketMs: number;
+  end: number;
+  out: number[];
+  /** Some of its calls' tokens are known missing. */
+  partial?: true;
+}
+
+export const TOKEN_BUCKET_MS = 30_000;
+export const TOKEN_SLOTS = 60;
+/** The most one process's slot may claim (pi-config llm-inflight/tracker.ts MAX_SLOT_TOKENS). */
+export const MAX_SLOT_TOKENS = 10_000_000;
+/** The most one host's slot may claim, and the most the mesh total's may hold. */
+const MAX_HOST_SLOT_TOKENS = 10 * MAX_SLOT_TOKENS;
+const MAX_MESH_SLOT_TOKENS = 1_000_000_000;
+
+const slotOf = (ms: number): number => Math.floor(ms / TOKEN_BUCKET_MS);
+
+/** A ring as sent, its slots within `max`; undefined when it isn't one (its tokens are unknown). */
+export function parseTokenRing(raw: unknown, max: number = MAX_SLOT_TOKENS): TokenRing | undefined {
+  const r = raw as Partial<TokenRing> | null | undefined;
+  if (!r || typeof r !== "object" || r.bucketMs !== TOKEN_BUCKET_MS || !Number.isSafeInteger(r.end) || (r.end as number) < 0) return undefined;
+  if (!Array.isArray(r.out) || r.out.length !== TOKEN_SLOTS) return undefined;
+  const out: number[] = [];
+  for (const n of r.out) {
+    if (typeof n !== "number" || !Number.isInteger(n) || n < 0) return undefined;
+    out.push(Math.min(n, max));
+  }
+  return { bucketMs: TOKEN_BUCKET_MS, end: r.end as number, out, ...(r.partial === true ? { partial: true as const } : {}) };
+}
+
+/** `ring`'s slots as seen from slot `end`: older than end − 59 are gone, newer are 0. */
+export function alignRing(ring: { end: number; out: readonly number[] }, end: number): number[] {
+  const out = new Array<number>(TOKEN_SLOTS).fill(0);
+  const shift = end - ring.end;
+  if (Math.abs(shift) >= TOKEN_SLOTS) return out;
+  for (let i = 0; i < TOKEN_SLOTS; i++) {
+    const j = i + shift;
+    if (j >= 0 && j < TOKEN_SLOTS) out[i] = ring.out[j] ?? 0;
+  }
+  return out;
+}
+
+function addRing(into: number[], ring: { end: number; out: readonly number[] }, end: number, max: number): void {
+  const add = alignRing(ring, end);
+  for (let i = 0; i < TOKEN_SLOTS; i++) into[i] = Math.min(max, (into[i] ?? 0) + (add[i] ?? 0));
+}
+
+/** Two token snapshots say the same once time is allowed to pass: no slot gained or lost
+    anything but by ageing out. */
+function sameTokens(a: LlmTokens | undefined, b: LlmTokens | undefined): boolean {
+  if (!a || !b) return a === b;
+  if (a.partial !== b.partial) return false;
+  const [older, newer] = a.end <= b.end ? [a, b] : [b, a];
+  const aligned = alignRing(older, newer.end);
+  return newer.out.every((n, i) => n === aligned[i]);
 }
 
 /** A live detached worker no running parent has adopted (pi-config llm-inflight/hosted.ts):
@@ -42,6 +108,8 @@ export interface UnadoptedWorker {
   producer?: string;
   counts: { active: number; approximate: number; claudeTurns: number; degraded: boolean } | null;
   folded?: string[];
+  /** Its last reported ring; absent = its tokens are unknown. */
+  tokens?: TokenRing;
 }
 
 /** This process's counter. */
@@ -89,7 +157,8 @@ export function parseProcessLlm(raw: unknown): LlmProcessSnapshot | null {
   const { folded, bad } = parseFolded(r.folded);
   const over = active > MAX_CALLS || claudeTurns > MAX_CALLS;
   const a = Math.min(active, MAX_CALLS);
-  return { v: 1, producer: r.producer, pid, active: a, approximate: Math.min(approximate, a), claudeTurns: Math.min(claudeTurns, MAX_CALLS), degraded: r.degraded || bad || over, ...(folded ? { folded } : {}) };
+  const tokens = parseTokenRing(r.tokens);
+  return { v: 1, producer: r.producer, pid, active: a, approximate: Math.min(approximate, a), claudeTurns: Math.min(claudeTurns, MAX_CALLS), degraded: r.degraded || bad || over, ...(folded ? { folded } : {}), ...(tokens ? { tokens } : {}) };
 }
 
 /** What a live file says, as far as the count goes. */
@@ -115,8 +184,13 @@ export const EMPTY: LlmInflight = { count: 0, approximate: 0, partial: false, ga
  * has folded in (a worker reporting to its parent) adds nothing of its own.
  * A dead pid counts nothing; a process whose records are all stale, or none reports, is
  * `unreported`. An unadopted detached worker adds its last own count, or is `unreported`.
+ *
+ * Tokens (only when `own` has a ring): every counted ring summed at `now`'s slot; one missing (an
+ * older counter, a worker that never reported) makes them partial, as does any gap. `retained`,
+ * kept by the caller across calls, holds each counted producer's last ring: one no longer counted
+ * (gone, dead, stale) still adds it until it ages out, unless a counted process now folds it.
  */
-export function hostCount(own: LlmProcessSnapshot, entries: Iterable<LiveEntry>, now: number, alive: (pid: number) => boolean, workers: readonly UnadoptedWorker[] = []): LlmInflight {
+export function hostCount(own: LlmProcessSnapshot, entries: Iterable<LiveEntry>, now: number, alive: (pid: number) => boolean, workers: readonly UnadoptedWorker[] = [], retained?: Map<string, TokenRing>): LlmInflight {
   const byPid = new Map<number, LiveEntry[]>();
   for (const e of entries) {
     if (e.pid === own.pid || e.llm?.producer === own.producer) continue;
@@ -140,6 +214,19 @@ export function hostCount(own: LlmProcessSnapshot, entries: Iterable<LiveEntry>,
   let approximate = own.approximate;
   let claude = own.claudeTurns > 0;
   let unreported = own.degraded ? 1 : 0;
+  const end = slotOf(now);
+  const out = new Array<number>(TOKEN_SLOTS).fill(0);
+  let tokensMissing = !!own.tokens?.partial;
+  if (own.tokens) addRing(out, own.tokens, end, MAX_HOST_SLOT_TOKENS);
+  const addTokens = (producer: string | undefined, ring: TokenRing | undefined) => {
+    if (!ring) {
+      tokensMissing = true;
+      return;
+    }
+    if (ring.partial) tokensMissing = true;
+    addRing(out, ring, end, MAX_HOST_SLOT_TOKENS);
+    if (producer !== undefined) retained?.set(producer, ring);
+  };
   const add = (c: { active: number; approximate: number; claudeTurns: number; degraded: boolean }) => {
     const n = Math.min(c.active, MAX_CALLS);
     total += n;
@@ -156,17 +243,38 @@ export function hostCount(own: LlmProcessSnapshot, entries: Iterable<LiveEntry>,
     if (counted.has(llm.producer)) continue;
     counted.add(llm.producer);
     add(llm);
+    addTokens(llm.producer, llm.tokens);
   }
   for (const w of workers) {
     if (w.producer !== undefined && (folded.has(w.producer) || counted.has(w.producer))) continue;
     if (w.producer !== undefined) counted.add(w.producer);
-    if (w.counts) add(w.counts);
-    else unreported++;
+    if (w.counts) {
+      add(w.counts);
+      addTokens(w.producer, w.tokens);
+    } else unreported++;
+  }
+  // Departed producers: their last ring until it ages out, unless someone counted folds it now.
+  if (retained) {
+    for (const [producer, ring] of retained) {
+      if (counted.has(producer)) continue;
+      if (folded.has(producer) || producer === own.producer || ring.end + TOKEN_SLOTS <= end) {
+        retained.delete(producer);
+        continue;
+      }
+      const left = alignRing(ring, end);
+      if (left.every((n) => n === 0)) {
+        retained.delete(producer);
+        continue;
+      }
+      addRing(out, ring, end, MAX_HOST_SLOT_TOKENS);
+    }
   }
   const gaps: LlmInflightGap[] = [];
   if (claude) gaps.push({ reason: "claude-internal" });
   if (unreported) gaps.push({ reason: "unreported", processes: unreported });
-  return { count: total, approximate, partial: gaps.length > 0, gaps };
+  const result: LlmInflight = { count: total, approximate, partial: gaps.length > 0, gaps };
+  if (own.tokens) result.tokens = { bucketMs: TOKEN_BUCKET_MS, end, out, partial: gaps.length > 0 || tokensMissing };
+  return result;
 }
 
 /** A peer as the fan-in sees it. */
@@ -178,12 +286,19 @@ export type PeerState =
  * The total over this host and its peers. A peer whose count arrived adds it, once per server
  * instance (this host's own instance, reached through a peer entry, adds nothing); any other
  * peer is a gap, never a 0. Peers are taken in id order, so a duplicate is always the same one.
+ *
+ * Tokens (only when `local` has them) add each counted peer's ring at `local`'s slot; a peer
+ * without one makes them partial, as does any gap. `retained` (kept by the caller, by instance)
+ * holds each counted peer's last ring: a peer no longer counted adds it until it ages out.
  */
-export function meshTotal(local: LlmInflight, selfInstance: string, peers: ReadonlyMap<string, PeerState>): LlmInflight {
+export function meshTotal(local: LlmInflight, selfInstance: string, peers: ReadonlyMap<string, PeerState>, retained?: Map<string, TokenRing>): LlmInflight {
   let total = local.count;
   let approximate = local.approximate;
   const gaps: LlmInflightGap[] = [...local.gaps];
   const seen = new Set([selfInstance]);
+  const end = local.tokens?.end ?? 0;
+  const out = local.tokens ? [...local.tokens.out] : [];
+  let tokensMissing = !!local.tokens?.partial;
   for (const id of [...peers.keys()].sort()) {
     const p = peers.get(id)!;
     if (p.state !== "ok") {
@@ -198,8 +313,28 @@ export function meshTotal(local: LlmInflight, selfInstance: string, peers: Reado
       if (g.reason === "claude-internal") gaps.push({ reason: "claude-internal", host: id });
       else if (g.reason === "unreported") gaps.push({ reason: "unreported", host: id, processes: g.processes });
     }
+    const ring = p.local.tokens;
+    if (!local.tokens) continue;
+    if (!ring) tokensMissing = true;
+    else {
+      if (ring.partial) tokensMissing = true;
+      addRing(out, ring, end, MAX_MESH_SLOT_TOKENS);
+      retained?.set(p.instance, { bucketMs: TOKEN_BUCKET_MS, end: ring.end, out: ring.out });
+    }
   }
-  return { count: total, approximate, partial: gaps.length > 0, gaps };
+  if (retained && local.tokens) {
+    for (const [instance, ring] of retained) {
+      if (seen.has(instance)) continue;
+      if (alignRing(ring, end).every((n) => n === 0)) {
+        retained.delete(instance);
+        continue;
+      }
+      addRing(out, ring, end, MAX_MESH_SLOT_TOKENS);
+    }
+  }
+  const result: LlmInflight = { count: total, approximate, partial: gaps.length > 0, gaps };
+  if (local.tokens) result.tokens = { bucketMs: TOKEN_BUCKET_MS, end, out, partial: gaps.length > 0 || tokensMissing };
+  return result;
 }
 
 /** A minimal client socket (ws's WebSocket satisfies it). */
@@ -269,7 +404,13 @@ interface PeerLink {
   heard: number;
 }
 
-const same = (a: LlmInflight | null, b: LlmInflight): boolean => !!a && JSON.stringify(a) === JSON.stringify(b);
+/** Nothing to send: the counts and gaps are the same, and the tokens differ only by time passing. */
+const same = (a: LlmInflight | null, b: LlmInflight): boolean => {
+  if (!a) return false;
+  const { tokens: ta, ...ra } = a;
+  const { tokens: tb, ...rb } = b;
+  return JSON.stringify(ra) === JSON.stringify(rb) && sameTokens(ta, tb);
+};
 
 export class LlmInflightHub {
   readonly instance = randomUUID();
@@ -278,6 +419,9 @@ export class LlmInflightHub {
   private readonly entries = new Map<string, LiveEntry>();
   /** The unadopted workers as last read (refreshWorkers). */
   private workers: readonly UnadoptedWorker[] = [];
+  /** Each counted producer's last ring, and each counted peer instance's: kept until it ages out. */
+  private readonly retained = new Map<string, TokenRing>();
+  private readonly peerRetained = new Map<string, TokenRing>();
   private readonly links = new Map<string, PeerLink>();
   /** Peers that have sent a count on some connection: one silent later is unreachable, not old. */
   private readonly supported = new Set<string>();
@@ -327,13 +471,13 @@ export class LlmInflightHub {
 
   /** This host's own count (own process + live records as last read). */
   local(): LlmInflight {
-    return hostCount(this.opts.own.snapshot(), this.entries.values(), this.now(), this.alive, this.workers);
+    return hostCount(this.opts.own.snapshot(), this.entries.values(), this.now(), this.alive, this.workers, this.retained);
   }
 
   total(): LlmInflight {
     const peers = new Map<string, PeerState>();
     for (const [id, l] of this.links) peers.set(id, l.state);
-    return meshTotal(this.local(), this.instance, peers);
+    return meshTotal(this.local(), this.instance, peers, this.peerRetained);
   }
 
   /** Open peer sockets, by peer id (tests). */
@@ -357,6 +501,8 @@ export class LlmInflightHub {
     this.offOwn = null;
     this.entries.clear();
     this.workers = [];
+    this.retained.clear();
+    this.peerRetained.clear();
     this.lastLocal = this.lastTotal = null;
   }
 
@@ -575,7 +721,7 @@ export class LlmInflightHub {
         link.heard = this.now();
         link.retryMs = 0;
         if (link.answerTimer) clearTimeout(link.answerTimer);
-        settle({ state: "ok", instance: (msg as any).instance, local: (msg as any).local });
+        settle({ state: "ok", instance: (msg as any).instance, local: peerLocal((msg as any).local) });
       } else if (!answered && msg.type === "error") {
         answered = true;
         if (link.answerTimer) clearTimeout(link.answerTimer);
@@ -609,6 +755,14 @@ function isInflight(v: any): v is LlmInflight {
   const a = count(v?.approximate);
   return n !== null && n <= MAX_HOST_CALLS && a !== null && a <= n && typeof v.partial === "boolean" && Array.isArray(v.gaps) && v.gaps.length <= 2 &&
     v.gaps.every((g: any) => g && (g.reason === "claude-internal" || (g.reason === "unreported" && count(g.processes) !== null && g.processes <= MAX_CALLS)));
+}
+
+/** A peer's checked `local`, its tokens within a host's bounds (dropped, so unknown, when malformed). */
+function peerLocal(v: LlmInflight): LlmInflight {
+  const { tokens, ...rest } = v;
+  const ring = parseTokenRing(tokens, MAX_HOST_SLOT_TOKENS);
+  return { count: rest.count, approximate: rest.approximate, partial: rest.partial, gaps: rest.gaps,
+    ...(ring ? { tokens: { bucketMs: ring.bucketMs, end: ring.end, out: ring.out, partial: (tokens as any)?.partial === true } } : {}) };
 }
 
 let shared: LlmInflightHub | null = null;

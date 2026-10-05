@@ -1,0 +1,71 @@
+{
+  "operator": {
+    "view": {
+      "publicTitle": "Golden launch",
+      "state": "active",
+      "holder": "Alice",
+      "items": [
+        {
+          "kind": "message",
+          "id": "e0000007",
+          "by": "p_alice",
+          "name": "Alice",
+          "text": "Fork from here please",
+          "at": "2026-09-01T10:00:07.000Z"
+        },
+        {
+          "kind": "reply",
+          "id": "e000000a",
+          "text": "I will check back in five minutes.",
+          "at": "2026-09-01T10:00:10.000Z"
+        }
+      ]
+    },
+    "photos": 0
+  },
+  "bob": {
+    "view": {
+      "publicTitle": "Golden launch",
+      "state": "active",
+      "holder": "Alice",
+      "items": [
+        {
+          "kind": "message",
+          "id": "e0000007",
+          "by": "p_alice",
+          "name": "Alice",
+          "text": "Fork from here please",
+          "at": "2026-09-01T10:00:07.000Z"
+        },
+        {
+          "kind": "reply",
+          "id": "e000000a",
+          "text": "I will check back in five minutes.",
+          "at": "2026-09-01T10:00:10.000Z"
+        }
+      ]
+    },
+    "photos": 0
+  },
+  "untilOffer": {
+    "publicTitle": "Golden launch",
+    "state": "active",
+    "holder": null,
+    "items": [
+      {
+        "kind": "message",
+        "id": "e0000007",
+        "by": "p_alice",
+        "name": "Alice",
+        "text": "Fork from here please",
+        "at": "2026-09-01T10:00:07.000Z"
+      },
+      {
+        "kind": "reply",
+        "id": "e000000a",
+        "text": "I will check back in five minutes.",
+        "at": "2026-09-01T10:00:10.000Z"
+      }
+    ]
+  }
+}

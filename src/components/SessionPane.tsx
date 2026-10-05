@@ -1,12 +1,12 @@
-import { createEffect, createSignal, For, Match, on, onCleanup, onMount, Show, Switch, untrack } from "solid-js";
+import { createEffect, createMemo, createSignal, For, Match, on, onCleanup, onMount, Show, Switch, untrack } from "solid-js";
 import type { ExplanationInfo, SessionInsight, SessionSkillOffer, SessionSkillUse, SessionSummary, TranscriptItem, WorkerInfo } from "../../shared/protocol";
 import { fetchTranscriptLight } from "../lib/api";
-import { formatTokens } from "../lib/context";
 import { explainCaption, explainHref, explainInterrupted, explainState, newestFirst } from "../lib/explain";
 import { relativeTime } from "../lib/format";
-import { absoluteTime } from "../lib/spend";
+import { sessionIdOfPath } from "../lib/links";
+import { absoluteTime, headChipSpend, headChipWords } from "../lib/spend";
 import { activeTab, sessionContext, setActiveTab, toast } from "../lib/ui-state";
-import { capTitle, usageHeadline, usageTitle, usageTotal, type UsageTotalView, type UsageView, workerLabel, workerTeam } from "../lib/workers";
+import { capTitle, workerLabel, workerTeam } from "../lib/workers";
 import type { RewindControl } from "../lib/inputs";
 import { jumpWhenArrived } from "../lib/jump";
 import { paneShares } from "../lib/pane-shares";
@@ -14,7 +14,7 @@ import { sharingTabLabel } from "../lib/session-shares";
 import { RemotePaneStatus } from "./RemoteStatus";
 import { SessionDetails, SharingSection } from "./SessionDetails";
 import { SessionTimeline } from "./SessionTimeline";
-import { SessionUsageTab } from "./SessionUsage";
+import { createSessionSpend, SessionUsageTab } from "./SessionUsage";
 import { type AgentsView, SubagentPane } from "./SubagentPane";
 import { Chip, Icon } from "./ui";
 
@@ -62,8 +62,6 @@ export function SessionPane(props: {
   /** After a group change in the Session tab: the same list, for the Groups region. */
   onGroupsChanged(): void;
   chatWorkers: WorkerInfo[] | null;
-  /** The chat runtime's session-lifetime token Σ; null while watching or before the first one. */
-  chatUsage: UsageTotalView | null;
   selected: string | null;
   onSelect(id: string): void;
   onClose(): void;
@@ -105,18 +103,15 @@ export function SessionPane(props: {
 
   const sharing = paneShares(() => props.summary);
 
-  const working = () => (props.chatWorkers ?? props.insight.data?.workers ?? []).filter((w) => w.working).length;
-  /** The session's own spend, the Usage tab's headline. Nothing until the insight has loaded: the
-      workers' lifetime Σ first and the session's total a moment later read as one number jumping.
-      Only a loaded insight with no usage at all (an older server) falls back to that lifetime Σ,
-      the chat socket's, else the insight's. */
-  const total = (): { usage: UsageView; workers?: number } | null => {
-    const data = props.insight.data;
-    if (!data) return null;
-    if (data.usage) return usageHeadline(data.usage.total) > 0 ? { usage: data.usage.total } : null;
-    const lifetime = props.chatUsage ?? usageTotal(data);
-    return lifetime ? { usage: lifetime, workers: lifetime.workers } : null;
-  };
+  const workers = () => props.chatWorkers ?? props.insight.data?.workers ?? [];
+  const working = () => workers().filter((w) => w.working).length;
+  /** The session's spend from the usage ledger, for the head chip, the Usage tab and the Agents
+      tab's worker rows: one poll while the pane is open. */
+  const sid = createMemo(() => props.summary?.id ?? sessionIdOfPath(props.path));
+  const spend = createSessionSpend(sid);
+  /** The head chip's figure, the Usage tab's headline: nothing until the ledger has answered, and
+      nothing when nothing was spent. */
+  const total = () => headChipSpend(spend.data(), sid());
   // Settled once, on open: a default that followed the working count would move the tab under
   // the reader when the last worker finished.
   const fallback: TabId = untrack(working) > 0 ? "agents" : "session";
@@ -177,11 +172,11 @@ export function SessionPane(props: {
             <button
               type="button"
               class="chip chip-count subagents-usage"
-              aria-label={`${formatTokens(usageHeadline(t().usage))} tokens — show usage`}
-              title={usageTitle(t().usage, t().workers)}
+              aria-label={headChipWords(t()).label}
+              title={headChipWords(t()).title}
               onClick={() => setActiveTab(props.path, "usage")}
             >
-              {formatTokens(usageHeadline(t().usage))} tokens
+              {headChipWords(t()).text}
             </button>
           )}
         </Show>
@@ -261,10 +256,11 @@ export function SessionPane(props: {
               view={agentsView()}
               onView={setAgentsView}
               overseer={!!props.summary?.overseer}
+              spend={spend.data()}
             />
           </Match>
           <Match when={tab() === "usage"}>
-            <SessionUsageTab insight={props.insight} chatWorkers={props.chatWorkers} />
+            <SessionUsageTab spend={spend} workers={workers()} />
           </Match>
           <Match when={tab() === "sharing"}>
             <div class="session-panel-scroll" tabindex="0">

@@ -11,6 +11,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { after, test } from "node:test";
 import type { ChatServerMessage } from "../shared/protocol";
+import { piSession } from "./harness/pi/testing/handle";
 
 const absent = process.env.PI_SANDBOX_ROUTE_ABSENT === "1";
 const here = dirname(fileURLToPath(import.meta.url));
@@ -63,7 +64,8 @@ if (absent) {
 
   test("present: attach says off, a flip reaches every client and the branch, and off again", async () => {
     const { path, chat, sent } = await openChat();
-    assert.deepEqual(sent.find((m) => m.type === "sandbox"), { type: "sandbox", on: false, enforcement: "none", status: "Sandbox off" });
+    // No entry yet: Subagents only, the default (§chat.sandbox/states).
+    assert.deepEqual(sent.find((m) => m.type === "sandbox"), { type: "sandbox", on: false, state: "subagents", enforcement: "none", status: "Sandbox subagents only · workers in tracked worktrees write only there" });
     sent.length = 0;
     const res = await post(path, { on: true });
     const body = (await res.json()) as { outcome: string; sandbox: { on: boolean; enforcement: string } };
@@ -72,14 +74,38 @@ if (absent) {
     // Whatever this machine can enforce (no policy file here: unavailable), it is on and says so.
     assert.ok(["full", "partial", "unavailable"].includes(body.sandbox.enforcement));
     assert.ok(sent.some((m) => m.type === "sandbox" && m.on));
-    const entries = chat.session.sessionManager.getBranch().filter((e) => e.type === "custom" && e.customType === "sandbox");
+    const entries = piSession(chat).sessionManager.getBranch().filter((e) => e.type === "custom" && e.customType === "sandbox");
     assert.equal(entries.length, 1);
     // No transcript row for it: nothing was appended to the pane.
     assert.ok(!sent.some((m) => m.type === "append"));
 
     sent.length = 0;
-    const off = (await (await post(path, { on: false })).json()) as { sandbox: { on: boolean } };
+    // The older body: on false is Subagents only, never Off.
+    const off = (await (await post(path, { on: false })).json()) as { sandbox: { on: boolean; state: string } };
     assert.equal(off.sandbox.on, false);
+    assert.equal(off.sandbox.state, "subagents");
     assert.ok(sent.some((m) => m.type === "sandbox" && !m.on));
+  });
+
+  test("three states: { state } sets Off, Subagents only and On, each an entry of its own, and every client hears it", async () => {
+    const { path, chat, sent } = await openChat();
+    const entries = () => piSession(chat).sessionManager.getBranch().filter((e) => e.type === "custom" && e.customType === "sandbox").map((e) => (e as { data: Record<string, unknown> }).data);
+    sent.length = 0;
+    const off = (await (await post(path, { state: "off", on: false })).json()) as { outcome: string; sandbox: { on: boolean; state: string; status: string } };
+    assert.equal(off.outcome, "command");
+    assert.deepEqual([off.sandbox.on, off.sandbox.state, off.sandbox.status], [false, "off", "Sandbox off · workers unconfined"]);
+    assert.equal(entries().at(-1)?.workers, "off");
+    assert.ok(sent.some((m) => m.type === "sandbox" && m.state === "off"));
+    const sub = (await (await post(path, { state: "subagents" })).json()) as { sandbox: { state: string } };
+    assert.equal(sub.sandbox.state, "subagents");
+    assert.equal(entries().at(-1)?.workers, undefined);
+    const on = (await (await post(path, { state: "on" })).json()) as { sandbox: { on: boolean; state: string } };
+    assert.deepEqual([on.sandbox.on, on.sandbox.state], [true, "on"]);
+    assert.equal(entries().length, 3, "one entry per change");
+    // A body whose state and on disagree changes nothing.
+    const bad = await post(path, { state: "off", on: true });
+    assert.equal(bad.status, 400);
+    assert.deepEqual(await bad.json(), { error: "state and on disagree" });
+    assert.equal(entries().length, 3);
   });
 }

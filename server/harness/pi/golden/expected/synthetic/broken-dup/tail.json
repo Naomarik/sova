@@ -1,0 +1,11 @@
+{
+  "model": "zai/glm-5.3",
+  "context": {
+    "tokens": 1600,
+    "model": "zai/glm-5.3"
+  },
+  "reply": {
+    "at": 1788256809000,
+    "stopReason": "stop"
+  }
+}

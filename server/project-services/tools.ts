@@ -1,11 +1,14 @@
-import type { ExtensionAPI, ToolDefinition } from "@earendil-works/pi-coding-agent";
+import type { PiExtensionAPI } from "../harness/pi/extension-types";
 import { execFile } from "node:child_process";
 import { realpathSync } from "node:fs";
 import { resolve } from "node:path";
-import { exitOf, RESERVED_VERBS, VERBS, type VerbResult } from "../../shared/project-contract";
+import type { ToolCtx, ToolSpec } from "../../shared/harness";
+import { DEPLOY_READ_VERBS, DEPLOY_VERBS, exitOf, VERBS, type VerbResult } from "../../shared/project-contract";
 import { redactingTool, serverRedactor, type Redactor } from "../overseer-redact";
+import { toPiTool } from "../harness/pi/tools";
+import { WORKTREES } from "../harness/state-kinds";
+import { stateView } from "../harness/state-view";
 import { projectRootOf } from "../project-root";
-import { worktreesOf } from "../worktrees-state";
 import type { Caller, ProjectEngine, VerbAct } from "./engine";
 import { registerInstanceNote, resultNote } from "./note";
 
@@ -16,12 +19,12 @@ import { registerInstanceNote, resultNote } from "./note";
  * result is the verb's own JSON; log lines are wrapped as untrusted and everything is redacted.
  */
 
-type Tool = ToolDefinition<any, any>;
+type Tool = ToolSpec;
 
 const PARAMS = {
   type: "object",
   properties: {
-    verb: { type: "string", enum: [...VERBS, ...RESERVED_VERBS], description: "The verb." },
+    verb: { type: "string", enum: [...VERBS, ...DEPLOY_VERBS], description: "The verb." },
     project: { type: "string", description: "The project: an absolute path inside it (default: this session's project)." },
     instance: { type: "string", description: "An instance id (from status)." },
     checkout: { type: "string", description: "create/up: an existing worktree (absolute path) to run as an instance." },
@@ -37,6 +40,11 @@ const PARAMS = {
     endpoint: { type: "string", description: 'share/revoke: the endpoint, "<service>.<port>", one of the definition\'s share.endpoints.' },
     days: { type: "integer", minimum: 1, maximum: 7, description: "share: how many days the link lasts (default 1, at most 7 or the definition's share.maxDays)." },
     link: { type: "string", description: "revoke: one share link, by its id (pv_…)." },
+    target: { type: "string", description: "deploy.*: the deploy target, by name (deploy.status lists them)." },
+    commit: { type: "string", description: "deploy.plan/deploy.request: the commit to ship (default the target branch's tip)." },
+    plan: { type: "string", description: "deploy.run: a plan's id (pl_…); only the operator runs one." },
+    deploy: { type: "string", description: "deploy.logs: one deploy, by its id (dp_…; default the target's latest)." },
+    why: { type: "string", description: "deploy.request (and onboard): why, one line for the operator." },
   },
   required: ["verb"],
   additionalProperties: false,
@@ -47,8 +55,8 @@ const OVERSEER_PARAMS = {
   ...PARAMS,
   properties: {
     ...PARAMS.properties,
-    verb: { type: "string", enum: [...VERBS, ...RESERVED_VERBS, "onboard"], description: "The verb." },
-    why: { type: "string", description: "onboard: why the playbook runs now (one line, for the operator and the playbook)." },
+    verb: { type: "string", enum: [...VERBS, ...DEPLOY_VERBS, "onboard"], description: "The verb." },
+    why: { type: "string", description: "onboard: why the playbook runs now; deploy.request: why to ship now (one line, for the operator)." },
   },
 } as const;
 
@@ -64,12 +72,14 @@ const VERB_HELP =
   "status, logs, doctor (preflight), reset (fresh data), teardown (the only destructive verb: stops, deletes its data, removes a worktree Sova cut; never the branch), conform (Sova's conformance suite in two scratch copies), " +
   "test (runs the project's test command in that instance, starting what it requires; tests {pass, passed, failed, failures…}; error tests-failed when it did not pass, unsupported when the project declares none). " +
   "share {instance, endpoint, days?} gives a running copy a preview link to one endpoint the definition lists in share.endpoints (never anything else; never a copy whose data is sensitive); the result names the link by its id, never its URL, which only the operator sees. revoke {link} or {instance, endpoint?} ends links at once (never held). Teardown ends every link of its copy, and down of a copy with an active link is the operator's (needs-confirm). " +
-  "deploy is reserved (unsupported). A definition runs only once the operator approved its hash (error not-approved). Error busy: another verb is running on that instance; try again later.";
+  "A definition runs only once the operator approved its hash (error not-approved). Error busy: another verb is running on that instance; try again later. " +
+  "Deploy (a target of the definition's deploy section, never an instance): deploy.status {target?} (each target's standing, last deploy and history) and deploy.logs {target | deploy} read; deploy.check {ref?} proves a recipe offline (programs, host values, credentials by presence; runs nothing). " +
+  "Shipping is the operator's alone: deploy.run and deploy.rollback answer forbidden to every tool; deploy.plan is the operator's (the global Overseer's in a turn the user started); to ask for a deploy, deploy.request {target, commit?, why} raises it for the operator.";
 
 /** The request body the engine takes, from the tool's params. */
 function bodyOf(p: Record<string, unknown>, defaultProject: string | null): Record<string, unknown> {
   const out: Record<string, unknown> = {};
-  for (const k of ["project", "instance", "checkout", "branch", "from", "services", "restart", "lines", "resources", "ref", "select", "endpoint", "days", "link"]) if (p[k] !== undefined && p[k] !== null && p[k] !== "") out[k] = p[k];
+  for (const k of ["project", "instance", "checkout", "branch", "from", "services", "restart", "lines", "resources", "ref", "select", "endpoint", "days", "link", "target", "commit", "plan", "deploy", "why"]) if (p[k] !== undefined && p[k] !== null && p[k] !== "") out[k] = p[k];
   if (p.keep_data !== undefined) out.keepData = p.keep_data;
   if (!out.project && !out.instance && !out.checkout && defaultProject) out.project = defaultProject;
   return out;
@@ -85,8 +95,13 @@ export function withoutUrls(r: VerbResult): VerbResult {
 export function renderResult(r: VerbResult, note?: string | null): string {
   // A share held for the operator (§app.project-services/share): its step says so.
   const held = r.verb === "share" && !r.error && !r.links.length ? r.steps.find((s) => s.id === "share" && s.result === "skipped")?.detail : undefined;
+  const dp = r.deploy;
   const head = held
     ? `share: ${held}`
+    : !r.error && dp?.plan && r.verb === "deploy.plan"
+    ? `deploy.plan: ${dp.plan.planId} ships ${dp.plan.commit.slice(0, 7)} to ${dp.plan.target} once the operator runs it (until ${dp.plan.expiresAt})`
+    : !r.error && dp?.record && r.verb !== "deploy.logs"
+    ? `${r.verb}: ${dp.record.kind} ${dp.record.id} of ${dp.record.commit.slice(0, 7)} to ${dp.record.target} is ${dp.record.state}`
     : r.error
     ? `${r.verb} failed (exit ${exitOf(r)}): ${r.error.code}: ${r.error.message}`
     : r.tests
@@ -111,9 +126,9 @@ export interface VerbToolOptions {
   promptSnippet: string;
   engine: () => ProjectEngine;
   /** Who is calling, per call (the session's own worktrees are read then). */
-  caller: (ctx: unknown) => Promise<Caller>;
+  caller: (ctx: ToolCtx | undefined) => Promise<Caller>;
   /** The project a call without one is about. */
-  defaultProject: (ctx: unknown) => Promise<string | null>;
+  defaultProject: (ctx: ToolCtx | undefined) => Promise<string | null>;
   redactor?: () => Redactor;
   /** The Overseers' verb `onboard` (absent: the verb is not offered). */
   onboard?: OnboardRun;
@@ -126,7 +141,7 @@ export function projectVerbsTool(o: VerbToolOptions): Tool {
     description: `${o.description} ${VERB_HELP}${o.onboard ? ONBOARD_HELP : ""}`,
     promptSnippet: o.promptSnippet,
     parameters: (o.onboard ? OVERSEER_PARAMS : PARAMS) as unknown as Tool["parameters"],
-    async execute(_id: string, params: any, signal?: AbortSignal, _onUpdate?: unknown, ctx?: unknown) {
+    async execute(_id: string, params: any, signal?: AbortSignal, _onUpdate?: unknown, ctx?: ToolCtx) {
       const p = (params ?? {}) as Record<string, unknown>;
       if (o.onboard && p.verb === "onboard") {
         const out = await o.onboard(typeof p.why === "string" ? p.why.trim() : "", p);
@@ -135,7 +150,7 @@ export function projectVerbsTool(o: VerbToolOptions): Tool {
       const caller = await o.caller(ctx);
       // No tool result ever carries a share link's URL (§app.project-services/share): the engine gives it to the operator only.
       const r = withoutUrls(await o.engine().run(String(p.verb ?? ""), bodyOf(p, await o.defaultProject(ctx)), caller, signal ? { signal } : {}));
-      const note = await resultNote(o.engine(), r, (ctx as SessionCtx | undefined)?.sessionManager?.getBranch() ?? []);
+      const note = await resultNote(o.engine(), r, ctx?.state() ?? stateView([]));
       return { content: [{ type: "text" as const, text: renderResult(r, note) }], details: { v: 1, result: r } };
     },
   };
@@ -158,16 +173,11 @@ function gitTop(cwd: string): Promise<string | null> {
   );
 }
 
-interface SessionCtx {
-  cwd?: string;
-  sessionManager?: { getSessionId(): string; getBranch(): readonly unknown[]; getCwd?(): string };
-}
-
 /** The session's own checkouts: its tracked worktrees, and its cwd's checkout. */
-async function ownCheckouts(ctx: SessionCtx): Promise<string[]> {
+async function ownCheckouts(ctx: ToolCtx | undefined): Promise<string[]> {
   const own = new Set<string>();
-  for (const t of worktreesOf(ctx.sessionManager?.getBranch() ?? [])?.trees ?? []) own.add(canonical(t.path));
-  const cwd = ctx.cwd ?? ctx.sessionManager?.getCwd?.();
+  for (const t of ctx?.state().latest(WORKTREES)?.data.trees ?? []) own.add(canonical(t.path));
+  const cwd = ctx?.cwd;
   if (cwd) {
     const top = await gitTop(cwd);
     if (top) own.add(top);
@@ -180,9 +190,9 @@ export function projectVerbsExtension(engine: () => ProjectEngine) {
   return {
     name: "sova-project-verbs",
     hidden: true,
-    factory: (pi: ExtensionAPI) => {
+    factory: (pi: PiExtensionAPI) => {
       pi.registerTool(
-        projectVerbsTool({
+        toPiTool(projectVerbsTool({
           name: "project_verbs",
           label: "Project verbs",
           description:
@@ -192,19 +202,17 @@ export function projectVerbsExtension(engine: () => ProjectEngine) {
           promptSnippet: "run, reload, inspect and tear down your own worktree's running copy of the project (up, apply, logs, status…)",
           engine,
           defaultProject: async (ctx) => {
-            const c = (ctx ?? {}) as SessionCtx;
-            const cwd = c.cwd ?? c.sessionManager?.getCwd?.();
+            const cwd = ctx?.cwd;
             return cwd ? projectRootOf(cwd) : null;
           },
           caller: async (ctx) => {
-            const c = (ctx ?? {}) as SessionCtx;
-            const cwd = c.cwd ?? c.sessionManager?.getCwd?.();
-            return { kind: "session", id: c.sessionManager?.getSessionId() ?? "unknown", root: cwd ? await projectRootOf(cwd) : null, own: await ownCheckouts(c) };
+            const cwd = ctx?.cwd;
+            return { kind: "session", id: ctx?.sessionId ?? "unknown", root: cwd ? await projectRootOf(cwd) : null, own: await ownCheckouts(ctx) };
           },
-        }),
+        })),
       );
       // Its own instances' ports, data and tests, as a hidden note (§app.project-services/instance-note).
-      registerInstanceNote(pi, engine, (ctx) => ownCheckouts((ctx ?? {}) as SessionCtx));
+      registerInstanceNote(pi, engine, ownCheckouts);
     },
   };
 }
@@ -227,7 +235,7 @@ export function overseerVerbsTool(engine: () => ProjectEngine, overseerId: () =>
     caller: async () => ({ kind: "overseer", id: overseerId() }),
     ...(onboard ? { onboard } : {}),
   });
-  const reads = new Set(["status", "logs", "doctor"]);
+  const reads = new Set<string>(["status", "logs", "doctor", ...DEPLOY_READ_VERBS]);
   const exec = t.execute as unknown as LooseExec;
   const acted = wrap(exec);
   const execute: LooseExec = (id, params, signal, onUpdate, ctx) => (reads.has(String(params?.verb)) ? exec : acted)(id, params, signal, onUpdate, ctx);

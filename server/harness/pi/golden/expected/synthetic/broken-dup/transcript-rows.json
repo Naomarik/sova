@@ -1,0 +1,37 @@
+{
+  "tail": {
+    "status": 200,
+    "body": "{\"items\":[{\"id\":\"m0000001\",\"kind\":\"user\",\"at\":\"2026-09-01T10:00:01.000Z\",\"text\":\"Root\",\"meta\":{\"type\":\"message\",\"role\":\"user\"}},{\"id\":\"m0000002:0\",\"kind\":\"assistant-text\",\"text\":\"Second copy of m0000002\",\"at\":\"2026-09-01T10:00:03.000Z\",\"model\":\"zai/glm-5.3\",\"meta\":{\"type\":\"message\",\"role\":\"assistant\",\"provider\":\"zai\",\"model\":\"glm-5.3\",\"stopReason\":\"stop\"}},{\"id\":\"m0000003\",\"kind\":\"user\",\"at\":\"2026-09-01T10:00:04.000Z\",\"text\":\"After the duplicate\",\"meta\":{\"type\":\"message\",\"role\":\"user\"}}],\"older\":0,\"olderSummary\":{\"inputs\":[],\"messages\":0,\"replies\":false},\"context\":null}"
+  },
+  "before-mid": {
+    "status": 200,
+    "body": "{\"items\":[{\"id\":\"m0000001\",\"kind\":\"user\",\"at\":\"2026-09-01T10:00:01.000Z\",\"text\":\"Root\",\"meta\":{\"type\":\"message\",\"role\":\"user\"}}],\"older\":0,\"olderSummary\":{\"inputs\":[],\"messages\":0,\"replies\":false}}"
+  },
+  "from-first": {
+    "status": 200,
+    "body": "{\"items\":[{\"id\":\"m0000001\",\"kind\":\"user\",\"at\":\"2026-09-01T10:00:01.000Z\",\"text\":\"Root\",\"meta\":{\"type\":\"message\",\"role\":\"user\"}},{\"id\":\"m0000002:0\",\"kind\":\"assistant-text\",\"text\":\"Second copy of m0000002\",\"at\":\"2026-09-01T10:00:03.000Z\",\"model\":\"zai/glm-5.3\",\"meta\":{\"type\":\"message\",\"role\":\"assistant\",\"provider\":\"zai\",\"model\":\"glm-5.3\",\"stopReason\":\"stop\"}},{\"id\":\"m0000003\",\"kind\":\"user\",\"at\":\"2026-09-01T10:00:04.000Z\",\"text\":\"After the duplicate\",\"meta\":{\"type\":\"message\",\"role\":\"user\"}}],\"older\":0,\"olderSummary\":{\"inputs\":[],\"messages\":0,\"replies\":false},\"context\":null}"
+  },
+  "from-block-entry": {
+    "status": 200,
+    "body": "{\"items\":[{\"id\":\"m0000002:0\",\"kind\":\"assistant-text\",\"text\":\"Second copy of m0000002\",\"at\":\"2026-09-01T10:00:03.000Z\",\"model\":\"zai/glm-5.3\",\"meta\":{\"type\":\"message\",\"role\":\"assistant\",\"provider\":\"zai\",\"model\":\"glm-5.3\",\"stopReason\":\"stop\"}},{\"id\":\"m0000003\",\"kind\":\"user\",\"at\":\"2026-09-01T10:00:04.000Z\",\"text\":\"After the duplicate\",\"meta\":{\"type\":\"message\",\"role\":\"user\"}}],\"older\":1,\"olderSummary\":{\"inputs\":[\"m0000001\"],\"messages\":1,\"replies\":false},\"context\":null}"
+  },
+  "from-missing": {
+    "status": 404,
+    "error": "That entry isn't on this branch.",
+    "code": "missing"
+  },
+  "explain": {
+    "status": 404,
+    "error": "That entry isn't on this branch.",
+    "code": "missing"
+  },
+  "chunk": {
+    "status": 200,
+    "body": "{\"items\":[{\"id\":\"m0000001\",\"kind\":\"user\",\"at\":\"2026-09-01T10:00:01.000Z\",\"text\":\"Root\",\"meta\":{\"type\":\"message\",\"role\":\"user\"}},{\"id\":\"m0000002:0\",\"kind\":\"assistant-text\",\"text\":\"Second copy of m0000002\",\"at\":\"2026-09-01T10:00:03.000Z\",\"model\":\"zai/glm-5.3\",\"meta\":{\"type\":\"message\",\"role\":\"assistant\",\"provider\":\"zai\",\"model\":\"glm-5.3\",\"stopReason\":\"stop\"}},{\"id\":\"m0000003\",\"kind\":\"user\",\"at\":\"2026-09-01T10:00:04.000Z\",\"text\":\"After the duplicate\",\"meta\":{\"type\":\"message\",\"role\":\"user\"}}],\"older\":0,\"olderSummary\":{\"inputs\":[],\"messages\":0,\"replies\":false},\"context\":null}"
+  },
+  "leaf-abandoned": {
+    "status": 200,
+    "body": "{\"items\":[{\"id\":\"m0000001\",\"kind\":\"user\",\"at\":\"2026-09-01T10:00:01.000Z\",\"text\":\"Root\",\"meta\":{\"type\":\"message\",\"role\":\"user\"}},{\"id\":\"m0000002:0\",\"kind\":\"assistant-text\",\"text\":\"Second copy of m0000002\",\"at\":\"2026-09-01T10:00:03.000Z\",\"model\":\"zai/glm-5.3\",\"meta\":{\"type\":\"message\",\"role\":\"assistant\",\"provider\":\"zai\",\"model\":\"glm-5.3\",\"stopReason\":\"stop\"}},{\"id\":\"m0000003\",\"kind\":\"user\",\"at\":\"2026-09-01T10:00:04.000Z\",\"text\":\"After the duplicate\",\"meta\":{\"type\":\"message\",\"role\":\"user\"}}],\"older\":0,\"olderSummary\":{\"inputs\":[],\"messages\":0,\"replies\":false},\"context\":null}"
+  },
+  "light": "{\"items\":[{\"id\":\"m0000001\",\"kind\":\"user\",\"at\":\"2026-09-01T10:00:01.000Z\",\"text\":\"Root\",\"meta\":{\"type\":\"message\",\"role\":\"user\"}},{\"id\":\"m0000002:0\",\"kind\":\"assistant-text\",\"at\":\"2026-09-01T10:00:03.000Z\",\"model\":\"zai/glm-5.3\",\"meta\":{\"type\":\"message\",\"role\":\"assistant\",\"provider\":\"zai\",\"model\":\"glm-5.3\",\"stopReason\":\"stop\"}},{\"id\":\"m0000003\",\"kind\":\"user\",\"at\":\"2026-09-01T10:00:04.000Z\",\"text\":\"After the duplicate\",\"meta\":{\"type\":\"message\",\"role\":\"user\"}}],\"context\":null}"
+}

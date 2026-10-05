@@ -1,0 +1,31 @@
+{
+  "vocabulary": [
+    "A string-content legacy question",
+    "Second legacy question"
+  ],
+  "senders": {
+    "$map": []
+  },
+  "sendersNoHolder": {
+    "$map": []
+  },
+  "notes": [
+    {
+      "timestamp": 1735689602000,
+      "text": "A string-content legacy question",
+      "note": "[From someone]"
+    },
+    {
+      "timestamp": 1735689604000,
+      "text": "Second legacy question",
+      "note": "[From someone]"
+    }
+  ],
+  "counted": 2,
+  "model": {
+    "model": "anthropic/claude-3",
+    "thinking": null
+  },
+  "photos": 0,
+  "modelRef": "anthropic/claude-3"
+}

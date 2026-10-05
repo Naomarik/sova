@@ -1,6 +1,6 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import { agentRoot } from "./state-root";
 import type { ModelPolicy } from "../shared/protocol";
 
 /**
@@ -26,8 +26,8 @@ import type { ModelPolicy } from "../shared/protocol";
  * keeps working, in every session, until they turn one off here. The old file is left where it is:
  * it is never written again, and the unified file wins from the first save.
  */
-const FILE = join(getAgentDir(), "model-policy.json");
-const LEGACY_FILE = join(getAgentDir(), "subagents", "settings.json");
+const FILE = join(agentRoot(), "model-policy.json");
+const LEGACY_FILE = join(agentRoot(), "subagents", "settings.json");
 /** A policy is a hand-curated list, not a log; past this it's a bug, not a preference. */
 const MAX_ENTRIES = 200;
 

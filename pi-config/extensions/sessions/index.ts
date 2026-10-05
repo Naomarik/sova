@@ -10,7 +10,7 @@ import { subscribeWorkers, type WorkerSummary, type WorkerUsageTotal } from "./w
 import { SessionsOverlay } from "./ui.ts";
 import { clean, SessionStore, parseOutline, type Presence, type PresenceOutline } from "./state.ts";
 import { isCounting, snapshot as llmSnapshot, subscribe as subscribeLlm } from "../llm-inflight/tracker.ts";
-import { countWorkers, fit, presenceWorkers, RECORD_BUDGET, SCHEMA_VERSION, SESSION_MODES, workerModes, WORKER_EFFORT_MAX, WORKER_SESSION_FILE_MAX, WORKER_SESSION_ID_MAX, type Activity, type SessionMeta, type SessionState } from "./schema.ts";
+import { countWorkers, fit, presenceWorkers, RECORD_BUDGET, SCHEMA_VERSION, SESSION_MODES, workerModes, WORKER_EFFORT_MAX, WORKER_SESSION_FILE_MAX, WORKER_SESSION_ID_MAX, WORKER_TEAM_ID_MAX, type Activity, type SessionMeta, type SessionState } from "./schema.ts";
 
 const OUTLINE_SNAPSHOT = "topic-outline:snapshot";
 const OUTLINE_REQUEST = "topic-outline:request";
@@ -206,6 +206,7 @@ export default function sessions(pi: ExtensionAPI, deps: SessionsDeps = {}) {
         sessionId: w.sessionId ? clean(w.sessionId, WORKER_SESSION_ID_MAX) : undefined,
         effort: w.effort ? clean(w.effort, WORKER_EFFORT_MAX) : undefined,
         modes: workerModes(w.modes),
+        teamId: w.teamId ? clean(w.teamId, WORKER_TEAM_ID_MAX) : undefined,
         startedAt: w.startedAt, lastActivity: w.lastActivity, endedAt: w.endedAt, outcome: w.outcome,
         // Counts only, already normalized by the snapshot decoder.
         usage: w.usage ? { ...w.usage } : undefined,
@@ -225,13 +226,14 @@ export default function sessions(pi: ExtensionAPI, deps: SessionsDeps = {}) {
       session: { ...meta(), id: selfId() ?? `p${process.pid}-00000000`, endpointEpoch: EPOCH_PLACEHOLDER } }, config.budgetBytes);
     return value;
   }
-  /** This process's LLM calls in flight (llm-inflight): absent only when nothing here counts them
-   *  (no counter loaded); a counter that can't see its runtime publishes degraded. */
+  /** This process's LLM calls in flight and its output-token ring (llm-inflight): absent only when
+   *  nothing here counts them (no counter loaded); a counter that can't see its runtime publishes degraded. */
   function llmPresence(): Presence["llm"] {
     try {
       const s = llmSnapshot();
       if (!isCounting() && !s.degraded) return undefined;
-      return { v: 1, producer: s.producer, pid: s.pid, active: s.active, approximate: s.approximate, claudeTurns: s.claudeTurns, degraded: s.degraded, folded: s.folded };
+      return { v: 1, producer: s.producer, pid: s.pid, active: s.active, approximate: s.approximate, claudeTurns: s.claudeTurns, degraded: s.degraded, folded: s.folded,
+        tokens: { ...s.tokens, bucketMs: 30000 } };
     } catch { return undefined; }
   }
   function publish() {

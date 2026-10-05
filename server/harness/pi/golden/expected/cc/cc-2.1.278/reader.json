@@ -1,0 +1,36 @@
+{
+  "header": null,
+  "lines": 9,
+  "entries": 8,
+  "ids": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+  ],
+  "branch": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+  ],
+  "leaf": null,
+  "types": [
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "assistant",
+    "assistant",
+    "user",
+    "atis-latch"
+  ]
+}

@@ -1,5 +1,8 @@
 import { closeSync, existsSync, openSync, readFileSync, readSync, statSync } from "node:fs";
 import { basename, dirname, isAbsolute, join } from "node:path";
+import { lineEntry } from "./harness/pi/reader";
+import { PROJECT_OVERSEER } from "./harness/state-kinds";
+import { stateView } from "./harness/state-view";
 import { canonicalPath } from "./paths";
 import {
   AT_ONCE_MAX,
@@ -388,15 +391,12 @@ export function readPoMarker(path: string): ProjectOverseerMarkerData | null {
     const n = readSync(fd, buf, 0, buf.length, 0);
     for (const line of buf.subarray(0, n).toString("utf8").split("\n")) {
       if (!line.includes(PROJECT_OVERSEER_ENTRY)) continue;
-      try {
-        const e = JSON.parse(line);
-        // Any other key is ignored: the project id is the identity.
-        if (e?.type === "custom" && e.customType === PROJECT_OVERSEER_ENTRY && typeof e.data?.projectId === "string") {
-          data = { v: 1, projectId: e.data.projectId };
-          break;
-        }
-      } catch {
-        // torn line: keep looking
+      // A torn line reads as nothing: keep looking. Any other key is ignored: the project id is the identity.
+      const h = lineEntry(line);
+      const marker = h ? stateView([h]).latest(PROJECT_OVERSEER)?.data : undefined;
+      if (marker) {
+        data = marker;
+        break;
       }
     }
   } catch {

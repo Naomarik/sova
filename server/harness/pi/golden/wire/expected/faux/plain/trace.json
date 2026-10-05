@@ -1,0 +1,372 @@
+[
+  {
+    "frame": 0,
+    "state": {
+      "entries": [],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": [
+      "clearTurnError",
+      "announceWorking"
+    ]
+  },
+  {
+    "frame": 1,
+    "state": {
+      "entries": [],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 2,
+    "state": {
+      "entries": [],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 3,
+    "state": {
+      "entries": [],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 4,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "hello",
+          "state": "delivered",
+          "started": true,
+          "images": []
+        }
+      ],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 5,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "hello",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000004"
+        }
+      ],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 6,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "hello",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000004"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [],
+          "done": false,
+          "model": "faux/faux-1"
+        }
+      ],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 7,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "hello",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000004"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": ""
+            }
+          ],
+          "done": false,
+          "model": "faux/faux-1"
+        }
+      ],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 8,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "hello",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000004"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "Hello there. How"
+            }
+          ],
+          "done": false,
+          "model": "faux/faux-1"
+        }
+      ],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 9,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "hello",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000004"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "Hello there. How can I help?"
+            }
+          ],
+          "done": false,
+          "model": "faux/faux-1"
+        }
+      ],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 10,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "hello",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000004"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "Hello there. How can I help?"
+            }
+          ],
+          "done": false,
+          "model": "faux/faux-1"
+        }
+      ],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 11,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "hello",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000004"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "Hello there. How can I help?"
+            }
+          ],
+          "done": true,
+          "model": "faux/faux-1",
+          "entryId": "00000005"
+        }
+      ],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": [
+      {
+        "context": 2734
+      }
+    ]
+  },
+  {
+    "frame": 12,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "hello",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000004"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "Hello there. How can I help?"
+            }
+          ],
+          "done": true,
+          "model": "faux/faux-1",
+          "entryId": "00000005"
+        }
+      ],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 13,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "hello",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000004"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "Hello there. How can I help?"
+            }
+          ],
+          "done": true,
+          "model": "faux/faux-1",
+          "entryId": "00000005"
+        }
+      ],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 14,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "hello",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000004"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "Hello there. How can I help?"
+            }
+          ],
+          "done": true,
+          "model": "faux/faux-1",
+          "entryId": "00000005"
+        }
+      ],
+      "tools": {},
+      "running": false,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": [
+      "settled"
+    ]
+  }
+]

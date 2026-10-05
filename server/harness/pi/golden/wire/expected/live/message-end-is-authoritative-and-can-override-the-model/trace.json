@@ -1,0 +1,75 @@
+[
+  {
+    "call": {
+      "fn": "applyEvent",
+      "args": [
+        {
+          "type": "message_start",
+          "message": {
+            "role": "assistant",
+            "provider": "zai",
+            "model": "glm-5.3",
+            "content": []
+          }
+        }
+      ]
+    },
+    "state": {
+      "entries": [
+        {
+          "kind": "assistant",
+          "blocks": [],
+          "done": false,
+          "model": "zai/glm-5.3"
+        }
+      ],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "call": {
+      "fn": "applyEvent",
+      "args": [
+        {
+          "type": "message_end",
+          "message": {
+            "role": "assistant",
+            "provider": "openai",
+            "model": "gpt-5.5",
+            "content": [
+              {
+                "type": "text",
+                "text": "hi"
+              }
+            ],
+            "stopReason": "stop"
+          }
+        }
+      ]
+    },
+    "state": {
+      "entries": [
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "hi"
+            }
+          ],
+          "done": true,
+          "model": "openai/gpt-5.5"
+        }
+      ],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  }
+]

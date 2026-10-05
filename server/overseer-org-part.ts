@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { existsSync, statSync } from "node:fs";
-import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
+import type { ToolSpec } from "../shared/harness";
 import { OPERATOR, type BatonSession } from "../shared/baton";
 import type { DecisionRow, DecisionsInfo } from "../shared/decisions";
 import { ORG_ABOUT_MAX, type Person } from "../shared/orgs";
@@ -14,7 +14,7 @@ import { ABILITIES_PARAM, baseAbilities, overseerAbilities } from "./gathering-a
 import { actOrThrow, heldAt, holdRef, hostOf, isOrgHostOpen, onOrgHostOpened } from "./org-engine";
 import type { Envelope } from "./org-envelope";
 import { OrgError } from "./org-error";
-import { decidePersonAct, onOrgAttached, operatorName, participantLine, placementSid, readIndex, readOrg, readOrgAbout, readProjects, readRoster, stakeholderLine } from "./orgs";
+import { decidePersonAct, onOrgAttached, operatorName, overseerPersonLine, placementSid, readIndex, readOrg, readOrgAbout, readProjects, readRoster, stakeholderLine } from "./orgs";
 import { markSendsNoted, projectSends, sendsToNote } from "./outreach/log";
 import { updateIdea } from "./overseer-ideas";
 import { serverRedactor } from "./overseer-redact";
@@ -39,7 +39,7 @@ import { readView } from "./share/hub";
  * A standalone project gets none of it.
  */
 
-type Tool = ToolDefinition<any, any>;
+type Tool = ToolSpec;
 type Out = { content: { type: "text"; text: string }[]; details: unknown; partial?: string };
 
 /** The org placing `projectId` in `engine`, or null: standalone, or not here. */
@@ -270,7 +270,7 @@ function orgPrompt(orgId: string, projectId: string): string[] {
   const org = readOrg(orgId).name;
   const roster = readRoster(orgId);
   const active = roster.filter((x) => x.status === "active");
-  const rosterText = active.length ? [...active.map(participantLine), stakeholderLine(project, roster) ?? ""].filter(Boolean).join("\n") : "(nobody yet: ask the operator to add people)";
+  const rosterText = active.length ? [...active.map(overseerPersonLine), stakeholderLine(project, roster) ?? ""].filter(Boolean).join("\n") : "(nobody yet: ask the operator to add people)";
   const r = serverRedactor();
   const section = `# The organization: ${org}
 
@@ -342,6 +342,9 @@ Corrections also cover a gap done too early and a session linked to the wrong ga
   hold, where the operator can cancel it, and goes only in the person's working hours. You never see
   the link or their number. The note reaches the person as written: plain, short, your own words,
   never ids, costs, "About this organization", your notes, a goal or anything from a profile.
+- The roster shows each person's language, skills and voice. Voice says how to address and write to
+  them (greeting, language, register): follow it in every note, gathering question and title meant
+  for them, without quoting or mentioning it. Language and voice are about that person only.
 - You can check whether a message arrived: \`sova_send_status\` lists your project's WhatsApp sends
   with each one's latest state (held, refused, sent, delivered, read, failed, unknown) and why, by
   person or the most recent. Don't tell anyone a message went until it says sent or later; a look
@@ -412,7 +415,7 @@ async function orgRead(orgId: string, projectId: string): Promise<string[]> {
   const conflicts = (dec?.conflicts ?? []).filter((c) => c.state === "open");
   return [
     "## Roster (active)",
-    active.length ? active.map(participantLine).join("\n") : "(nobody yet)",
+    active.length ? active.map(overseerPersonLine).join("\n") : "(nobody yet)",
     ...(stakeholderLine(project, roster) ? [stakeholderLine(project, roster)!] : []),
     ...(proposed.length ? ["", "## Proposed, awaiting approval", ...proposed.map((x) => `- ${x.name} (id ${x.id})${x.role ? ` — ${x.role}` : ""}${x.referral ? `; referred by ${nm[x.referral.referredBy] ?? x.referral.referredBy}: ${cut(x.referral.why, 120)}` : ""}`)] : []),
     "",
@@ -606,13 +609,13 @@ function orgTools(orgId: string, ctx: OverseerToolCtx): Tool[] {
     {
       name: "sova_roster",
       label: "Roster",
-      description: "Read the roster (name, role, decision areas; never contact details), or approve / decline a proposed person (a referral). Approving needs L2 outside the operator's own turns.",
+      description: "Read the roster (each person's name, role, status, language, decision areas, skills and voice: how to address and write to them; never contact details), or approve / decline a proposed person (a referral). Approving needs L2 outside the operator's own turns.",
       promptSnippet: "read the roster; approve or decline a proposed person",
       parameters: obj({ op: str("read | approve | decline", { enum: ["read", "approve", "decline"] }), person: str("For approve/decline: the proposed person's id or name.") }, ["op"]),
       execute: act("sova_roster", async (q) => {
         const people = roster();
         if (q.op === "read" || q.op === undefined) {
-          const lines = people.map((x) => `${participantLine(x)}${x.status !== "active" ? ` · ${x.status}` : ""}`);
+          const lines = people.map(overseerPersonLine);
           const main = stakeholderLine(project(), people);
           if (main) lines.push(main);
           return { content: text(lines.join("\n") || "(the roster is empty)"), details: { count: people.length } };
@@ -722,7 +725,7 @@ function orgTools(orgId: string, ctx: OverseerToolCtx): Tool[] {
       label: "Send on WhatsApp",
       description:
         "Message a roster person on WhatsApp: a link, a short note, or both. The link is a reference the server turns into the address: session (one of this project's gathering sessions: sends them their own link to it, which they must hold or be a reached invitee of) or preview (a public preview link's id, pv_…, of this project: they get their own link to the same preview). You never see the link or their number. " +
-        "When you act on your own (not in a turn the operator started), each message first waits in the project's hold, where the operator can cancel it, and goes only in the person's working hours; in the operator's own turn it goes at once. The note is shown to the person as written: plain, short, in your own words, never an id, a cost, the About text, your notes, or anything from a profile or a contact (a note repeating those is refused).",
+        "When you act on your own (not in a turn the operator started), each message first waits in the project's hold, where the operator can cancel it, and goes only in the person's working hours; in the operator's own turn it goes at once. The note is shown to the person as written: plain, short, in your own words, in the language and manner their roster voice says (its greeting too, without quoting it), never an id, a cost, the About text, your notes, or anything from a profile or a contact (a note repeating those is refused).",
       promptSnippet: "message a roster person on WhatsApp: their gathering link, a preview link, and/or a short note (waits in the hold)",
       parameters: obj(
         {

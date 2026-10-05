@@ -68,6 +68,20 @@ export const [groupSendAll, setGroupSendAll] = createSignal(false);
 export const [localRunning, setLocalRunning] = createSignal<Record<string, boolean>>({});
 
 /**
+ * Working subagents of sessions this tab is chatting in, by path, as each chat's socket last said
+ * (absent until its hello). The working count (src/lib/work-now.ts) takes it over the polls.
+ */
+export const [localWorking, setLocalWorkingMap] = createSignal<Record<string, number>>({});
+export const setLocalWorking = (path: string, n: number | undefined) =>
+  setLocalWorkingMap((m) => {
+    if (m[path] === n) return m;
+    const next = { ...m };
+    if (n === undefined) delete next[path];
+    else next[path] = n;
+    return next;
+  });
+
+/**
  * Context-window fill per session path, kept current by the open chat/watch view and read by the
  * session head's meter. Missing key: not known yet; null: nothing to show; "compacted": the fill
  * is stale after a compaction until the next reply.

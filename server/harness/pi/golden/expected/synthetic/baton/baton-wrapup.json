@@ -1,0 +1,33 @@
+{
+  "mine": {
+    "$map": [
+      [
+        "p_alice",
+        [
+          {
+            "id": "p0000003",
+            "text": "Alice asks about the launch date"
+          }
+        ]
+      ],
+      [
+        "p_bob",
+        [
+          {
+            "id": "p0000007",
+            "text": "Bob confirms Monday, photo attached"
+          }
+        ]
+      ],
+      [
+        "p_carol",
+        [
+          {
+            "id": "p000000d",
+            "text": "Carol will write the notes"
+          }
+        ]
+      ]
+    ]
+  }
+}

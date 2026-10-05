@@ -8,13 +8,16 @@ import {
   TAG_TOPICS,
   type TagTopic,
 } from "../shared/protocol";
+import type { HEntry } from "../shared/harness";
 import { isLinkMessage } from "../shared/link-message";
 import { isTopicBatch } from "../shared/topic-message";
 import { type Answer, DecisionError, type DecisionProvider, type Question } from "./decide";
 import { maySend, terminalSession } from "./decide-settings";
+import { joinedText, lineEntry } from "./harness/pi/reader";
 import { serverRedactor } from "./overseer-redact";
 import { stateRoot } from "./state-root";
 import { sessionsChanged } from "./list-generation";
+import { withUsageContext } from "../pi-config/extensions/llm-inflight/attribution.ts";
 
 /**
  * Session tags (plan §5): a topic and a "throwaway" probability per session, answered
@@ -335,14 +338,8 @@ export function tagSkipReason(
 
 // --- input (head/tail only) ------------------------------------------------------------------
 
-function textOf(content: unknown): string {
-  if (typeof content === "string") return content;
-  if (!Array.isArray(content)) return "";
-  return content
-    .filter((b) => isObj(b) && b.type === "text" && typeof b.text === "string")
-    .map((b) => (b as { text: string }).text)
-    .join("\n");
-}
+/** An entry's text blocks, joined by newlines (images left out, notes kept). */
+const textOf = (h: HEntry): string => joinedText(h, { images: false });
 
 /**
  * The file's last finished assistant reply (its entry id and text) and the last user message
@@ -371,18 +368,13 @@ export async function readTailTurn(path: string, size: number): Promise<{ turnId
         if (i < 0 && start > floor) break;
         const line = buf.subarray(i + 1, stop);
         if (line.includes(found ? '"user"' : '"assistant"')) {
-          try {
-            const e = JSON.parse(line.toString("utf-8"));
-            const m = e?.type === "message" ? e.message : null;
-            if (!found && m?.role === "assistant" && m.stopReason !== "toolUse" && typeof e.id === "string") {
-              found = { turnId: e.id, assistant: textOf(m.content) };
-            } else if (found && m?.role === "user") {
-              // A partner's message over a link, or a topic batch, is never topic evidence (§mesh.links/transcript, §chat.topics/row).
-              const user = textOf(m.content);
-              return done(isLinkMessage(user) || isTopicBatch(user) ? null : user);
-            }
-          } catch {
-            // torn line or not JSON: skip
+          const h = lineEntry(line); // null: a torn line or not JSON, skipped
+          if (!found && h?.kind === "assistant" && h.stop !== "toolUse" && h.id !== null) {
+            found = { turnId: h.id, assistant: textOf(h) };
+          } else if (found && h?.kind === "user") {
+            // A partner's message over a link, or a topic batch, is never topic evidence (§mesh.links/transcript, §chat.topics/row).
+            const user = textOf(h);
+            return done(isLinkMessage(user) || isTopicBatch(user) ? null : user);
           }
         }
         if (i < 0) return done(null);
@@ -509,7 +501,10 @@ export class SessionTagger {
       const now = this.now();
       if (!needsTagging(readStore().sessions[row.id], turn.turnId, now)) return { kind: "fresh" };
       const state = tagState(row, turn, now, this.deps.redact);
-      const result = await this.deps.provider().decide({ purpose: "tags", state, questions: TAG_QUESTIONS, dedupeKey: `tags:${row.id}`, ...(opts.signal ? { signal: opts.signal } : {}) });
+      // The usage ledger: the tags' decision is the session's one-shot.
+      const result = await withUsageContext({ owner: row.id, cwd: row.cwd, kind: "oneshot" }, () =>
+        this.deps.provider().decide({ purpose: "tags", state, questions: TAG_QUESTIONS, dedupeKey: `tags:${row.id}`, ...(opts.signal ? { signal: opts.signal } : {}) }),
+      );
       const a = result.answers;
       let before: SessionTags | undefined;
       const store = update((s) => {

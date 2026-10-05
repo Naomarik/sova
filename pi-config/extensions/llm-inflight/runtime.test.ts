@@ -508,3 +508,40 @@ test("cache warming (pi's own CacheWarmer on the instrumented runtime) is counte
 	await until(() => active() === 0, "and ends with its reply");
 	warmer.cancel();
 });
+
+const ringTotal = () => snapshot().tokens.out.reduce((a, b) => a + b, 0);
+
+test("tokens: a call's output tokens (never input or cache) land once, with its end, in one change", async () => {
+	const reply = deferred();
+	const usage = { input: 500, output: 42, cacheRead: 9000, cacheWrite: 70, totalTokens: 9612, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
+	const p = controllable([{ beforeReply: reply.promise, events: (m) => [{ type: "start", partial: message(m) } as AssistantMessageEvent, { type: "done", reason: "stop", message: message(m, { usage }) } as AssistantMessageEvent] }]);
+	const { rt, model } = await runtimeWith(p.streamSimple);
+	const before = ringTotal();
+	const seen: Array<{ active: number; tokens: number }> = [];
+	const off = subscribe(() => seen.push({ active: active(), tokens: ringTotal() - before }));
+	const s = rt.streamSimple(model, context);
+	await until(() => active() === 1, "in flight");
+	reply.resolve();
+	await s.result();
+	await until(() => active() === 0, "ended");
+	off();
+	assert.equal(ringTotal() - before, 42, "usage.output only");
+	assert.deepEqual(seen, [{ active: 1, tokens: 0 }, { active: 0, tokens: 42 }], "the tokens change with the end, never apart from it");
+});
+
+test("tokens: an error or abort counts the output it reports; a stream ended without a message counts none", async () => {
+	const usage = { input: 1, output: 7, cacheRead: 0, cacheWrite: 0, totalTokens: 8, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
+	const p = controllable([{ events: (m) => [{ type: "error", reason: "error", error: message(m, { stopReason: "error", errorMessage: "boom", usage }) } as AssistantMessageEvent] }]);
+	const { rt, model } = await runtimeWith(p.streamSimple);
+	const before = ringTotal();
+	await rt.completeSimple(model, context);
+	await until(() => active() === 0, "ended");
+	assert.equal(ringTotal() - before, 7);
+
+	const fake = { stream: () => undefined, streamSimple: () => { const s = createAssistantMessageEventStream(); queueMicrotask(() => s.end()); return s; } };
+	instrumentModelRuntime(fake);
+	const mid = ringTotal();
+	fake.streamSimple();
+	await until(() => active() === 0, "end() alone ends it");
+	assert.equal(ringTotal() - mid, 0);
+});

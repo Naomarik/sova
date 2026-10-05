@@ -814,6 +814,9 @@ shows exactly what it showed before.
   entry's facts once (its type, role, model, usage, stop reason, error, a tool result's failure,
   a compaction's figures), every row carries the entry's time, and a reply's other rows read the
   facts from its first one. An unknown row, whose card shows the entry as JSON, still carries it.
+  A consumer that asked for wire 2 (§app.harness/wire) gets those facts in the harness contract's
+  words instead (a setting change, a context reset, a compaction's figures, a reply's context
+  fill, a tool result's tool and failure); every other consumer gets them as before.
 - **No reasoning signatures.** The encrypted reasoning a provider returns with its thinking (and
   any signature on a text block or a tool call) never reaches the browser: not on a row, not in a
   streamed event, not through any route.
@@ -879,7 +882,7 @@ and the 120-second rule applies.
 ## §chat.transcript/landing-page — The overview (`#/`)
 
 With no session selected the main pane is the overview: not an empty state with a grid bolted on — it is one
-page with up to six parts, in this order (the Mesh card, §mesh.ui/card, sits after the Sessions
+page with up to seven parts, in this order (the Mesh card, §mesh.ui/card, sits after the Sessions
 card). On a phone it is `#/overview`, under the list's head row (§app.shell/overview):
 
 1. **The title**: `.overview-head` holding a plain `h1.overview-title`, "Overview" (`--fs-heading-m`,
@@ -888,7 +891,7 @@ card). On a phone it is `#/overview`, under the list's head row (§app.shell/ove
 2. **The Start section**, under a `Start` section eyebrow: one action card per way to start
    something, in a `ul.overview-actions` grid — `New Session` ("Start a chat with pi in any folder
    or on any host."), the only one. Organizations is not a Start
-   card: it has its own section, the page's last (part 6). Each card is one
+   card: it has its own section, the page's last (part 7). Each card is one
    `.card.action-card`: its icon (`plus`) on a 36px `--color-sunken` tile, the
    title (`--fs-heading-s`, semibold) and the line (`--color-ink-2`). The whole card is the control,
    a `<button>` that opens its dialog (New Session's), named by
@@ -922,7 +925,23 @@ card). On a phone it is `#/overview`, under the list's head row (§app.shell/ove
    with none, "No explanations yet. Run `/explain` in a session to write one." Before the first
    list has loaded the line reads "Reading explanations…". It is the way to the page at every
    width, and on a phone the only one outside a session (list → Overview → the card).
-6. **The Organizations section**, always and always last (below Mesh, Extensions and Explanations),
+6. **The Shares card**, always (with no public link too), under a `Shares` section eyebrow, after
+   the Explanations card and before Organizations: the Explanations card's shape — one full-width
+   `a.card.ext-card` to `#/shares` (§app.session-share/shares-page) with the `external` icon, the
+   title `Shares`, a count chip (`{n}`: every live public link counted on the line), and one line:
+   `{n} session shares · {n} organization links · {n} preview links` (`1 session share`,
+   `1 organization link`, `1 preview link` at 1), then ` · {n} viewing now` only while anyone is
+   (the Shares page's own viewing count). Session shares are the shares with a live link and
+   organization links every live hand-off and owner link, both from `GET /api/shares-overview` on
+   this host and each up peer; preview links are this host's active previews from
+   `GET /api/previews`, a person's own link (§mesh.public/preview) counted as one link of its own.
+   With none: "No public links are open." Before the first read has answered the line reads
+   "Reading shares…" and the chip is not shown. A host that doesn't answer is left out of the
+   counts and the card never names it (the Shares page does). It reads again every 30 seconds
+   while the overview is shown, and never while it isn't. It is the way to the Shares page at
+   every width: the sidebar foot, its phone sheet and the spine have no Shares entry
+   (§app.insights/sidebar-foot).
+7. **The Organizations section**, always and always last (below Mesh, Extensions, Explanations and Shares),
    under an `Organizations` section eyebrow: one full-width `.card.overview-orgs`, the entry point
    to `#/orgs` (§app/organizations). Its head is the `network` icon on the same 36px sunken tile as
    the Start cards, the title `Organizations` (`--fs-heading-s`, semibold) — a link to `#/orgs`,
@@ -963,6 +982,10 @@ card). On a phone it is `#/overview`, under the list's head row (§app.shell/ove
     <h2 class="explain-section-head" id="explain-section-title">Explanations</h2>
     <ul class="ext-grid ext-grid-full"><li><a class="card ext-card" href="#/explanations">…icon · Explanations · chip {n} · Latest line…</a></li></ul>
   </section>
+  <section class="explain-section" aria-labelledby="shares-section-title">
+    <h2 class="explain-section-head" id="shares-section-title">Shares</h2>
+    <ul class="ext-grid ext-grid-full"><li><a class="card ext-card" href="#/shares">…external · Shares · chip {n} · counts line…</a></li></ul>
+  </section>
   <section class="explain-section" aria-labelledby="overview-orgs-title">…Organizations, the .card.overview-orgs…</section>
 </div>
 ```
@@ -981,8 +1004,8 @@ card). On a phone it is `#/overview`, under the list's head row (§app.shell/ove
   `display-l` page opener was rejected: this is the second thing on the page, not its title.
 - **Where the CSS lives.** `.overview`, `.overview-head`, `.overview-title`, `.explain-section` and
   `.explain-section-head` are in `src/design/base.css`; the Start grid, `.action-card` and the
-  Organizations card are in `src/home.css`, beside the Sessions card; the Explanations card is an
-  extension card (`src/extensions.css`); `.explain-grid` and every `.explain-tile` rule are in
+  Organizations card are in `src/home.css`, beside the Sessions card; the Explanations and Shares
+  cards are extension cards (`src/extensions.css`); `.explain-grid` and every `.explain-tile` rule are in
   `src/explain.css`, which owns the tile on the Explanations page.
 - **No grid here.** The overview no longer lists the pages themselves: the card leads to the
   Explanations page, where every one is a card with its filters (§app.insights/explanations-page).

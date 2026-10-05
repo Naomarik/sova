@@ -17,6 +17,10 @@ const { createFakeProvider } = await import("./decide-fake");
 const { decisionDefaults } = await import("./decide-settings");
 const { WorkerTranscriptAdapters } = await import("../pi-config/extensions/subagents/worker-transcript.ts");
 
+const { historyOf } = await import("./harness/pi/reader");
+/** The facts of a branch written as pi's raw entries. */
+const turnFactsOf = (branch: E[]) => sig.turnFacts(historyOf(branch));
+
 const NOW = Date.parse("2026-09-25T12:00:00.000Z");
 const iso = (ms: number) => new Date(ms).toISOString();
 let seq = 0;
@@ -105,7 +109,7 @@ function finishedTurn(t = NOW - 60_000, took = 6 * 60_000): E[] {
 
 describe("turnFacts: the last finished turn of a branch", () => {
   test("pairs calls with results, knows errors, measures the turn, keys it by the last assistant entry", () => {
-    const f = sig.turnFacts(finishedTurn())!;
+    const f = turnFactsOf(finishedTurn())!;
     assert.equal(f.turnId, "a3");
     assert.equal(f.replyAt, NOW - 60_000);
     assert.equal(f.durationMs, 6 * 60_000);
@@ -117,14 +121,14 @@ describe("turnFacts: the last finished turn of a branch", () => {
   });
 
   test("a branch ending on a tool request is mid-turn: nothing to classify", () => {
-    assert.equal(sig.turnFacts(finishedTurn().slice(0, 2)), null);
-    assert.equal(sig.turnFacts([user("u", null, "hi", NOW)]), null);
+    assert.equal(turnFactsOf(finishedTurn().slice(0, 2)), null);
+    assert.equal(turnFactsOf([user("u", null, "hi", NOW)]), null);
   });
 
   test("an errored reply with no text: the error is a fact, the last text of the turn is the reply", () => {
     const b = [...finishedTurn().slice(0, 5), assistant("a3", "r2", NOW, [], "error", { errorMessage: "overloaded" })];
     b.splice(3, 1, assistant("a2", "r1", NOW - 80_000, [{ type: "text", text: "Reading the file." }, call("c2", "read", { path: "src/x.ts" })], "toolUse"));
-    const f = sig.turnFacts(b)!;
+    const f = turnFactsOf(b)!;
     assert.equal(f.error, "overloaded");
     assert.equal(f.assistantLast, "Reading the file.");
   });
@@ -138,7 +142,7 @@ describe("turnFacts: the last finished turn of a branch", () => {
 
 describe("failure is a fact of the file, never a question", () => {
   test("the excerpt carries no tool-failure counts or per-call failed marks (an exit-1 grep misled the classifier)", () => {
-    const facts = sig.turnFacts(finishedTurn())!;
+    const facts = turnFactsOf(finishedTurn())!;
     assert.equal(facts.tools[0]!.ok, false, "the fixture does hold a failed call");
     const st = sig.turnState("t", facts) as any;
     assert.equal(st.tool_failures, undefined);
@@ -150,7 +154,7 @@ describe("failure is a fact of the file, never a question", () => {
   });
 
   test("no question asks whether the work failed, for a turn or a worker", () => {
-    const f = sig.turnFacts(finishedTurn())!;
+    const f = turnFactsOf(finishedTurn())!;
     const all = { ...sig.turnQuestions({ ...f, durationMs: sig.LONG_TURN_MS }) };
     assert.deepEqual(Object.keys(all), ["stuck", "asks_user"]);
     assert.doesNotMatch(JSON.stringify(all), /fail/i);
@@ -186,7 +190,7 @@ describe("failure is a fact of the file, never a question", () => {
 
 describe("state and questions", () => {
   test("every text field is capped; the reply keeps its END (where it asks)", () => {
-    const f = { ...sig.turnFacts(finishedTurn())!, lastUser: "u".repeat(10_000), assistantLast: `${"x".repeat(10_000)} DECIDE?` };
+    const f = { ...turnFactsOf(finishedTurn())!, lastUser: "u".repeat(10_000), assistantLast: `${"x".repeat(10_000)} DECIDE?` };
     f.tools = Array.from({ length: 30 }, (_, i) => ({ name: "bash", args: "{}", ok: true, result: "r".repeat(1000) + i }));
     const st = sig.turnState("t".repeat(1000), f) as any;
     assert.equal(st.last_user_message.length, sig.CAP.user);
@@ -198,7 +202,7 @@ describe("state and questions", () => {
   });
 
   test("the stuck question is asked only of a long turn; asks_user only of a reply that looks like it asks", () => {
-    const f = { ...sig.turnFacts(finishedTurn(NOW - 60_000, 60_000))!, assistantLast: "Done: the build passes." };
+    const f = { ...turnFactsOf(finishedTurn(NOW - 60_000, 60_000))!, assistantLast: "Done: the build passes." };
     assert.deepEqual(Object.keys(sig.turnQuestions(f)), [], "a short turn that asks nothing has no question at all");
     assert.deepEqual(Object.keys(sig.turnQuestions({ ...f, durationMs: sig.LONG_TURN_MS })), ["stuck"]);
     assert.deepEqual(Object.keys(sig.turnQuestions({ ...f, tools: Array.from({ length: sig.LONG_TURN_TOOLS }, () => f.tools[0]!) })), ["stuck"]);
@@ -207,7 +211,7 @@ describe("state and questions", () => {
   });
 
   test("asks_user is skipped while the session has open alignment questions, and for a turn a link message opened", () => {
-    const f = { ...sig.turnFacts(finishedTurn(NOW - 60_000, 60_000))!, assistantLast: "Want me to take it on?" };
+    const f = { ...turnFactsOf(finishedTurn(NOW - 60_000, 60_000))!, assistantLast: "Want me to take it on?" };
     assert.deepEqual(Object.keys(sig.turnQuestions(f, { openQuestions: 2 })), [], "open questions already put it in Needs you");
     assert.deepEqual(Object.keys(sig.turnQuestions(f, { openQuestions: 0 })), ["asks_user"], "an align plan with 0 open questions is still asked (01a0edc0)");
     const linked = { ...f, lastUser: '[link_msg lk_0123456789abcdef lm_0123456789abcdef] from "Alice" (host/abc)\nwhat\'s your ETA?\n\nReply with link_send (to: "abc").' };
@@ -215,7 +219,7 @@ describe("state and questions", () => {
   });
 
   test("a long turn that mostly waited on workers is not asked stuck", () => {
-    const f = sig.turnFacts(finishedTurn())!;
+    const f = turnFactsOf(finishedTurn())!;
     const w = (name: string) => ({ name, args: "{}", result: "" });
     const waits = [w("agent_wait"), w("team_inbox"), w("wake_nudge"), w("mcp__team__team_msg"), w("bash")];
     assert.equal(sig.mostlyWaits(waits), true);

@@ -15,7 +15,7 @@ import type {
   TranscriptItem,
   WorkerInfo,
 } from "../../shared/protocol";
-import { createTurnOwner, goTo, navigateDetails } from "../lib/overseer";
+import { createTurnOwner, goTo } from "../lib/overseer";
 import { batonComposerGate } from "../lib/baton-strip";
 import { tuiOnlyCommand } from "../lib/slash";
 import { OverseerThreadContext, QuickActions, scrollToCard } from "./OverseerCards";
@@ -25,17 +25,19 @@ import { CardJumpContext } from "../lib/card-refs";
 import { AlignAnswerContext, type AlignAnswer } from "./AlignDocCard";
 import { acceptAllMessage, choosePick, clearPicks, composeWithPicks, optionPick, pickCount, picksLabel, picksOf, prunePicks, samePicks } from "../lib/align-picks";
 import { BatonStrip } from "./BatonStrip";
+import { sandboxOffMissing, type SandboxState } from "../lib/sandbox";
 import { approveSchedule, forkSession, getChatClaudeAccounts, getOverseerAutonomy, getSubagentProfiles, revokeOverseerPermit, revokeSchedule, setSandbox, setSessionArchived, wsUrl } from "../lib/api";
 import { adversarialReview, NO_REVIEWER, reviewRequestMessage } from "../lib/align-review";
-import type { OverseerAutonomy, ScheduleInfo } from "../../shared/protocol";
+import type { OverseerAutonomy, ScheduleInfo, V1EventFrame, V2EventFrame } from "../../shared/protocol";
 import { LOGIN_UNCHANGED } from "../../shared/protocol";
-import { contextStateFor, messageContextTokens, windowOf } from "../lib/context";
+import { contextStateFor, windowOf } from "../lib/context";
 import {
   addPendingPrompt,
   applyEvent,
   BATON_SENT_EVENT,
   applyQueue,
   emptyLive,
+  liveEventsOf,
   markDelivered,
   markQueued,
   markRemoved,
@@ -44,6 +46,7 @@ import {
   runDetail,
   takeBackQueued,
   unsentRows,
+  type LiveEvent,
   type LiveState,
   type LiveUserState,
 } from "../lib/live";
@@ -70,7 +73,7 @@ import {
 } from "../lib/remote-status";
 import { remotePlaceOf } from "../lib/remote-session";
 import { createReconnectingSocket } from "../lib/socket";
-import { usageTotal, type UsageTotalView, workingSplit } from "../lib/workers";
+import { workingSplit } from "../lib/workers";
 import { providerWait, watchProviderWaits } from "../lib/provider-waiting";
 import { waitingSentence } from "../../shared/provider-limits";
 import type { UploadResult } from "../../shared/protocol";
@@ -84,6 +87,7 @@ import {
   sessionContext,
   setDraftText,
   setLocalRunning,
+  setLocalWorking,
   setSessionContext,
   toast,
 } from "../lib/ui-state";
@@ -184,7 +188,7 @@ export function ChatView(props: {
   onSettled(): void;
   /** This runtime's subagents (WS "workers"; [] after each hello), for the subagents pane. The
       Σ is the runtime's session-lifetime worker token total, null while no server reports one. */
-  onWorkers?(workers: WorkerInfo[], usage: UsageTotalView | null): void;
+  onWorkers?(workers: WorkerInfo[]): void;
   /** This chat's Claude login (WS "claude_login"; null after each hello), for the sidebar foot's
       usage glance. */
   onClaudeLogin?(login: ChatClaudeLogin | null): void;
@@ -416,7 +420,7 @@ export function ChatView(props: {
   const [profileInfo, setProfileInfo] = createSignal<ChatProfileInfo | null>(null);
   /** A One at a time race at Send (§chat.profiles/singleton): the session that has it. */
   const [profileRace, setProfileRace] = createSignal<{ label: string; running: { id: string; path: string; title: string } } | null>(null);
-  const [sandboxPending, setSandboxPending] = createSignal(false);
+  const [sandboxPending, setSandboxPending] = createSignal<SandboxState | null>(null);
   /** This chat's Claude login (WS "claude_login"), null until told or when the host can't name one. */
   const [claudeLogin, setClaudeLogin] = createSignal<ChatClaudeLogin | null>(null);
   /** Local "Ran /name args" rows; `tui` marks one that asked for a UI Sova can't show, `note` one
@@ -492,7 +496,7 @@ export function ChatView(props: {
   };
 
   // Deltas arrive far faster than frames; apply them in one batch per animation frame.
-  let queue: unknown[] = [];
+  let queue: LiveEvent[] = [];
   let frame = 0;
   const flush = () => {
     frame = 0;
@@ -502,35 +506,20 @@ export function ChatView(props: {
     let navigate: string | null = null;
     batch(() => {
       for (const ev of events) {
-        if (isObj(ev) && ev.type === "agent_start") {
-          setTurnError(null); // a fresh turn supersedes the last one's failure
-          announce(turnWord("working.", "Working."));
-        }
-        // Context fill at turn end: the finished assistant message carries the final usage
-        // (no extra server push). A compaction makes it stale until the next reply.
-        if (isObj(ev) && ev.type === "message_end" && isObj(ev.message) && ev.message.role === "assistant") {
-          const tokens = messageContextTokens(ev.message);
-          if (tokens !== null) setSessionContext(props.path, { tokens, window: windowOf(sessionContext()[props.path]) });
-        }
-        if (isObj(ev) && ev.type === "compaction_start") setCompacting(true);
-        if (isObj(ev) && ev.type === "compaction_end") {
-          setCompacting(false);
-          // Only a compaction that WROTE one makes the fill stale; a failed or cancelled one
-          // (no `result`) left the context exactly as it was.
-          if (isObj(ev.result)) setSessionContext(props.path, "compacted");
-        }
-        // The Overseer's navigate: applied only in the tab whose message started this turn — never
-        // another tab's, never a proactive brief's (no tab sent it), never a replay.
-        if (props.overseer && isObj(ev) && ev.type === "tool_execution_end" && ev.toolName === "sova_navigate" && ev.isError !== true && owner.mine()) {
-          const nav = navigateDetails(isObj(ev.result) ? ev.result.details : undefined);
-          if (nav) navigate = nav.href;
-        }
-        applyEvent(setLive, ev);
-        if (isObj(ev) && ev.type === "agent_settled") {
-          settled = true;
-          owner.settled();
-          setCardSent({});
-          refreshAutonomy();
+        // What the event does besides the live store (lib/live-effects): run in the order given.
+        for (const effect of applyEvent(setLive, ev, { overseer: !!props.overseer, mine: owner.mine() })) {
+          if (effect === "clearTurnError") setTurnError(null);
+          else if (effect === "announceWorking") announce(turnWord("working.", "Working."));
+          else if (effect === "compacting") setCompacting(true);
+          else if (effect === "compactingDone") setCompacting(false);
+          else if (effect === "compacted") setSessionContext(props.path, "compacted");
+          else if (effect === "settled") {
+            settled = true;
+            owner.settled();
+            setCardSent({});
+            refreshAutonomy();
+          } else if ("context" in effect) setSessionContext(props.path, { tokens: effect.context, window: windowOf(sessionContext()[props.path]) });
+          else navigate = effect.navigate;
         }
       }
     });
@@ -645,11 +634,12 @@ export function ChatView(props: {
           });
           setSessionContext(props.path, contextStateFor(msg.context ?? null, msg.items));
           setWorkersWorking(0); // a runtime without workers sends no "workers" after hello
+          setLocalWorking(props.path, 0);
           batch(() => {
             setWorkerList([]);
             setWorkersSaid(false);
           });
-          props.onWorkers?.([], null);
+          props.onWorkers?.([]);
           // "links" comes after hello only when there are any: until one does, the pane reads the
           // polled insight, never a list from before the reconnect.
           noteLinks(props.path, null);
@@ -658,10 +648,11 @@ export function ChatView(props: {
         case "workers":
           batch(() => {
             setWorkersWorking(msg.working);
+            setLocalWorking(props.path, msg.working);
             setWorkerList(msg.workers);
             setWorkersSaid(true);
           });
-          props.onWorkers?.(msg.workers, usageTotal(msg));
+          props.onWorkers?.(msg.workers);
           break;
         case "links":
           noteLinks(props.path, msg.links);
@@ -825,7 +816,7 @@ export function ChatView(props: {
           setModeState({ mode: msg.mode, minorModes: msg.minorModes, strict: msg.strict, applies: msg.applies });
           break;
         case "sandbox":
-          setSandboxState({ on: msg.on, enforcement: msg.enforcement, status: msg.status });
+          setSandboxState({ on: msg.on, ...(msg.state ? { state: msg.state } : {}), enforcement: msg.enforcement, status: msg.status });
           break;
         case "profile": {
           const { type: _t, ...info } = msg;
@@ -839,8 +830,9 @@ export function ChatView(props: {
           props.onClaudeLogin?.(msg.login);
           break;
         case "event":
-          // A message_end's entry id rides on the event itself, for applyEvent.
-          queue.push(msg.entryId && isObj(msg.event) ? { ...msg.event, entryId: msg.entryId } : msg.event);
+          // Wire 1 or 2 alike (an older server never sends 2): in the contract's words, the entry a
+          // message was written as inside its end.
+          queue.push(...liveEventsOf(msg as V1EventFrame | V2EventFrame));
           if (!frame) frame = requestAnimationFrame(flush);
           break;
         case "ui_request": {
@@ -1428,20 +1420,24 @@ export function ChatView(props: {
   };
   /** The composer foot's mode switch: this chat's WS "mode" state and its session file. */
   const modeControl: ModeControl = { state: modeState, path: props.path };
-  /** The flyout's Sandbox row: the extension answers with a toast and a "sandbox" message. */
+  /** The flyout's Sandbox group and the shield's panel: the extension answers with a toast and a
+      "sandbox" message. */
   const sandboxControl: SandboxControl = {
     state: sandbox,
     pending: sandboxPending,
-    set: (on) => {
-      setSandboxPending(true);
-      setSandbox(props.path, on)
+    set: (state) => {
+      setSandboxPending(state);
+      setSandbox(props.path, state)
         .then((r) => {
           if (r.outcome === "skip") toast("Sandbox unchanged: another writer has this session. Nothing was written.");
-          if (r.sandbox) setSandboxState(r.sandbox);
-          if (r.sandbox) announce(r.sandbox.status);
+          if (!r.sandbox) return;
+          setSandboxState(r.sandbox);
+          announce(r.sandbox.status);
+          const missing = sandboxOffMissing(state, r.sandbox);
+          if (missing) toast(missing);
         })
         .catch((err) => toast(`Sandbox unchanged: ${err instanceof Error ? err.message : String(err)}`))
-        .finally(() => setSandboxPending(false));
+        .finally(() => setSandboxPending(null));
     },
   };
 
@@ -1463,7 +1459,10 @@ export function ChatView(props: {
     if (running && !wasRunning) props.onStarted();
     wasRunning = running;
   });
-  onCleanup(() => setMine(undefined));
+  onCleanup(() => {
+    setMine(undefined);
+    setLocalWorking(props.path, undefined);
+  });
 
   // The policy this chat is judged by. Cached app-wide, so the Settings dialog's last save is
   // already here; a policy we couldn't read blocks nothing (the server still refuses).

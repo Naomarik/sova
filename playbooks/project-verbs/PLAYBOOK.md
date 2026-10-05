@@ -1,5 +1,6 @@
 ---
 title: Project verbs
+approves: definition
 description: Declares how this project runs in .sova/project.json, so every worktree gets its own isolated running copy: chooses isolation per service, writes the definition, hooks and a minimal app adapter on a branch, and proves it with conformance.
 promptHint: Why you are running it (first onboarding, or what changed), and anything Sova can't see: services you never start, data that must not be copied, ports to keep clear.
 ---
@@ -14,6 +15,9 @@ Paths here are relative to this playbook's folder. `scripts/project-verbs.mjs` d
 - Your checkout is a worktree on its own branch, never the main checkout. A Project verbs run started from the project page already is one. Started anywhere else: check `git worktree list`; in the main checkout, cut a worktree first (the `worktree` tool, `create project-verbs`) and work there.
 - Read the project at HEAD. The main checkout may have uncommitted edits: they are not the project, and the definition must not depend on them.
 - Every run of the project's code goes through `project_verbs`. Before the operator approves, `conform` is the only verb that runs your definition (confined: a private network namespace, the sandbox's files rule); `up` and `test` answer `not-approved`, and that is expected.
+
+## When you need a decision, ask
+You run with `align` on, and the operator answers you. When the repository can't settle a choice that changes what you write, ask with `align` and end your turn instead of guessing: which of two held ports a service takes when its usual one is busy, whether a store is production data when its name doesn't say, which of two serving services is the app's entry point, whether a task that writes outside the checkout may run in a copy. One question per choice, each with the options you found, what each means for the definition, and your recommendation. The answer arrives as the next message; carry on from where you stopped. Never ask what you can read (a file, a route, a port in use), and never ask for approval or a merge: those are the operator's buttons, after your report.
 
 ## Steps
 1. **State.** `project_verbs {verb: "status"}` and `{verb: "doctor"}` for the project; the run's reason is the text after `---` in this message, if any.
@@ -58,7 +62,7 @@ Paths here are relative to this playbook's folder. `scripts/project-verbs.mjs` d
 - `Tests`: the command, the smoke selection and its counts.
 - `Adapter`: each app file changed, and the literal it keeps as its default; and each of those files the main checkout has uncommitted edits to (Merge Branch needs them committed or set aside first).
 - `Deploy entrypoints found (never run)`: what inspect listed.
-- `Next`: "Approve <hash12> on the project page's Software card, then Merge Branch." (or why it can't be approved yet).
+- `Next`: "Approve & Merge <hash12> on the project page." (or why it can't be approved yet).
 
 ## Never
 Approve a definition, merge, push or rebase. Edit, start, stop or reset the main checkout or its running processes (its datastores included). Run deploy, prod, release, tunnel or backup tasks. Start anything by hand (`&`, `nohup`, tmux, `bb tmux`, `docker run`): only the verbs start things. Copy secrets or local config into tracked files, or write `${host.…}` values into the repo. Print, copy or log a channel's credentials (bot tokens, push or API keys, SMTP passwords) anywhere: reports, fixtures, tests, commit messages, messages to anyone; read config files with such values masked. Send anything real while testing. Weaken, skip or rewrite a conformance check or the smoke selection to make conform pass.

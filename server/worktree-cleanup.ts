@@ -9,6 +9,7 @@
 // `git branch -d` only for a branch in the main branch by ancestry. Each removal is appended to the
 // ledger (server/removed-worktrees.ts) that readiness reads for a removed tree. Git by argv, never
 // a shell; reads under --no-optional-locks (server/worktrees.ts execGit).
+import { execFile } from "node:child_process";
 import { readdir, readFile, readlink, stat } from "node:fs/promises";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
@@ -17,6 +18,7 @@ import type { SessionSummary, WorktreeCleanupKept, WorktreeCleanupPlan, Worktree
 import { runGit } from "../pi-config/extensions/worktrees/git.ts";
 import { canonical, isWithin, WORKTREES_ENTRY_TYPE } from "../pi-config/extensions/worktrees/state.ts";
 import { readStoredCwd } from "./git-summary";
+import { lineHeader, lineNeedle } from "./harness/pi/reader";
 import { worktreesRemoved } from "./merge-readiness";
 import { appendLedger, mergedByContent, resetContentMerges, type RemovedWorktree } from "./removed-worktrees";
 import { sandboxInfo } from "./sandbox-state";
@@ -79,6 +81,8 @@ export interface ProcFacts {
   pid: number;
   command: string;
   paths: string[];
+  /** Set when the processes could not be read at all: every tree is kept, with this as its reason. */
+  unreadable?: string;
 }
 
 export interface CleanupDeps {
@@ -107,8 +111,17 @@ export interface CleanupDeps {
 
 const writeGit: GitRunner = async (args, opts) => runGit([...args], opts.cwd);
 
-/** /proc/<pid>/cwd and /proc/<pid>/fd/* of every process this user can read. */
-export async function scanProcesses(): Promise<ProcFacts[]> {
+/**
+ * The live processes and the paths they hold: /proc/<pid>/cwd and /proc/<pid>/fd/* of every process
+ * this user can read on Linux; elsewhere (macOS) `lsof` of this user's processes. When `lsof` can't
+ * answer, one `unreadable` entry: a tree is kept, never assumed free.
+ */
+export async function scanProcesses(platform: NodeJS.Platform = process.platform, lsof: () => Promise<{ code: number; stdout: string; stderr: string }> = runLsof): Promise<ProcFacts[]> {
+  if (platform !== "linux") {
+    const r = await lsof();
+    if (r.code !== 0) return [{ pid: 0, command: "lsof", paths: [], unreadable: `Its processes couldn't be read (lsof: ${r.stderr.trim().split("\n")[0] || `exit ${r.code}`}), so it is kept.` }];
+    return parseLsof(r.stdout, process.pid);
+  }
   let pids: string[];
   try {
     pids = (await readdir("/proc")).filter((d) => /^\d+$/.test(d));
@@ -134,6 +147,28 @@ export async function scanProcesses(): Promise<ProcFacts[]> {
     }),
   );
   return out;
+}
+
+const runLsof = () =>
+  new Promise<{ code: number; stdout: string; stderr: string }>((done) =>
+    execFile("lsof", ["-nP", "-w", "-u", String(process.getuid?.() ?? ""), "-Fpcn"], { timeout: 30_000, maxBuffer: 256 * 1024 * 1024, env: { ...process.env, LC_ALL: "C" } }, (err, stdout, stderr) =>
+      done({ code: err ? (typeof err.code === "number" ? err.code : 127) : 0, stdout: String(stdout ?? ""), stderr: String(stderr ?? "") || (err && typeof err.code !== "number" ? err.message : "") }),
+    ),
+  );
+
+/** `lsof -Fpcn` output (`p<pid>`, `c<command>`, `f<fd>`, `n<name>` lines) → each process's cwd and open files, `self` left out (pure, for tests). */
+export function parseLsof(text: string, self: number): ProcFacts[] {
+  const out: ProcFacts[] = [];
+  let cur: ProcFacts | null = null;
+  for (const line of text.split("\n")) {
+    const v = line.slice(1);
+    if (line[0] === "p") {
+      cur = { pid: Number(v), command: "process", paths: [] };
+      if (cur.pid !== self) out.push(cur);
+    } else if (cur && line[0] === "c") cur.command = v || "process";
+    else if (cur && line[0] === "n" && v.startsWith("/")) cur.paths.push(v.replace(/ \(deleted\)$/, ""));
+  }
+  return out.filter((p) => p.paths.length);
 }
 
 function pidAlive(pid: number): boolean {
@@ -283,7 +318,6 @@ export async function worktreesSummary(sessionPath: string): Promise<WorktreesSu
 
 // --- refusals ----------------------------------------------------------------------------------
 
-const MARKER = `"customType":"${WORKTREES_ENTRY_TYPE}"`;
 /** A session as a refusal names it: its title, else (none, or a new session's "Untitled") its short id. */
 const nameOf = (s: SessionSummary | null, path: string): string => {
   const title = s?.title?.trim();
@@ -300,7 +334,7 @@ interface FileScan {
   tracks?: { active: Set<string>; sandbox: boolean };
 }
 const scans = new Map<string, FileScan>();
-const MARKER_BYTES = Buffer.from(MARKER);
+const MARKER_BYTES = lineNeedle({ state: WORKTREES_ENTRY_TYPE });
 /** Changed files read at once: a cold scan of hundreds of MB never sits in memory whole. */
 const READ_CONCURRENCY = 4;
 
@@ -308,8 +342,8 @@ const READ_CONCURRENCY = 4;
 function headerCwd(buf: Buffer): string | null {
   try {
     const first = buf.subarray(0, 64 * 1024).toString("utf8").split("\n", 1)[0] ?? "";
-    const header = JSON.parse(first) as { type?: unknown; cwd?: unknown };
-    return header?.type === "session" && typeof header.cwd === "string" && header.cwd !== "" ? header.cwd : null;
+    const cwd = lineHeader(first)?.cwd;
+    return typeof cwd === "string" && cwd !== "" ? cwd : null;
   } catch {
     return null;
   }
@@ -457,6 +491,7 @@ export async function refusal(t: ClassifiedTree, use: UseFacts, procs: readonly 
   const files = await dirtyFiles(d.git, t.path);
   if (typeof files === "string") return files;
   if (files.length) return `${filesWords(files)}.`;
+  for (const p of procs) if (p.unreadable) return p.unreadable;
   for (const p of procs) if (p.paths.some((x) => isWithin(x, root))) return `A running process is inside it: ${p.command} (${p.pid}).`;
   const pid = liveRecordPid(t.path, d.alive);
   if (pid) return `A live session under its .agent: ${pid}.`;

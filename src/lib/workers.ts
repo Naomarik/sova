@@ -1,5 +1,4 @@
 import type { AgentsInsight, ContextInfo, LiveAgentSession, SessionSummary, TeamInfo, WorkerInfo } from "../../shared/protocol";
-import { formatTokens } from "./context";
 import { clockTime } from "./format";
 
 /** Subagents working now in a session, TUI-run or web-run; 0 when none or unknown.
@@ -186,45 +185,6 @@ export const sourceOf = (key: string): TranscriptSource =>
 export const sourceName = (s: TranscriptSource): string => (s.kind === "pi" ? s.path : `Claude session ${s.sessionId}`);
 
 /**
- * Token counts, as the pane reads them. Structurally `TokenUsage` in shared/protocol.ts; the
- * accessors below take the loosest shape that can carry one, so a row, a `workers` message or a
- * watch message can be passed straight in whether or not the server that sent it reports usage.
- */
-export interface UsageView {
-  input: number;
-  output: number;
-  cacheRead: number;
-  cacheWrite: number;
-  cost?: number;
-}
-export interface UsageTotalView extends UsageView {
-  /** How many workers the Σ covers — a session-lifetime count, so it can exceed the list. */
-  workers: number;
-}
-
-const n = (v: unknown): number => (typeof v === "number" && Number.isFinite(v) && v > 0 ? v : 0);
-
-/**
- * Usage arrives from a server that may be older than this build, on messages whose type may not
- * declare the field yet, so these accessors read it off `unknown` and validate as they go.
- * Null means "nothing to show": no field, or a worker that has spent nothing.
- */
-function asUsage(value: unknown): UsageView | null {
-  if (!value || typeof value !== "object") return null;
-  const u = value as Record<string, unknown>;
-  const usage: UsageView = { input: n(u.input), output: n(u.output), cacheRead: n(u.cacheRead), cacheWrite: n(u.cacheWrite) };
-  if (usage.input + usage.output + usage.cacheRead + usage.cacheWrite <= 0) return null;
-  const cost = n(u.cost);
-  return cost > 0 ? { ...usage, cost } : usage;
-}
-
-/** A worker's own counts, or null when it has none (nothing spent, or an older pi-config). */
-export const workerUsage = (w: unknown): UsageView | null => asUsage((w as { usage?: unknown } | null)?.usage);
-
-/** The counts a watch `snapshot`/`append` carries for the open transcript, or null. */
-export const transcriptUsage = (msg: unknown): UsageView | null => asUsage((msg as { usage?: unknown } | null)?.usage);
-
-/**
  * A context state off `unknown` (a server older than this build sends none): a fill with a
  * positive token count, or "compacted". Anything else is "nothing to show" — never a 0 fill.
  * A fill without a window takes `fallbackWindow` (a Claude Code transcript can't name its own).
@@ -259,18 +219,6 @@ export function transcriptContext(msg: unknown, worker: unknown): ContextInfo | 
     that in words) and never a fill without a denominator — the sidebar ring's rule. */
 export const ringContext = (s: ContextInfo | "compacted" | null): ContextInfo | null => (s && s !== "compacted" && s.window ? s : null);
 
-/** The session-lifetime Σ on a `workers` message or a session insight, with its head count. */
-export function usageTotal(source: unknown): UsageTotalView | null {
-  const raw = (source as { usageTotal?: unknown } | null)?.usageTotal;
-  const usage = asUsage(raw);
-  if (!usage) return null;
-  const workers = (raw as Record<string, unknown>).workers;
-  return { ...usage, workers: Number.isSafeInteger(workers) && (workers as number) > 0 ? (workers as number) : 0 };
-}
-
-/** The headline number: what was actually spoken, input + output. The subagents pane spec shows cache in the title. */
-export const usageHeadline = (u: UsageView): number => u.input + u.output;
-
 /**
  * A native `title` kept to a readable size: cut at a word boundary near `max`, ellipsis added.
  * Tooltips have no scroll and no width of their own, so a 4000-char objective is a wall of text.
@@ -287,46 +235,3 @@ export function capTitle(text: string | null | undefined, max = 300): string | u
 /** `14:06` for an epoch-ms "as of" stamp; empty for a bad one. */
 export const asOfClock = (ms: number): string => clockTime(new Date(ms).toISOString());
 
-/** A worker whose usage couldn't be read at all: the pane says "unavailable", never 0. */
-export const usageUnavailable = (w: Pick<WorkerInfo, "usageSource">): boolean => w.usageSource === "unavailable";
-
-/**
- * The lifetime line's parenthesis, naming only what applies: " (includes evicted)" when the Σ
- * covers workers the list doesn't show with usage, " (includes restored)" when some were rebuilt
- * after a restart, both, or "" for neither.
- */
-export function lifetimeIncludes(total: { workers: number; restored?: number }, listed: readonly Pick<WorkerInfo, "usage">[]): string {
-  const parts: string[] = [];
-  if (total.workers > listed.filter((w) => w.usage).length) parts.push("evicted");
-  if ((total.restored ?? 0) > 0) parts.push("restored");
-  return parts.length ? ` (includes ${parts.join(" and ")})` : "";
-}
-
-/** `ag_03`, `ag_03 and ag_05`, `ag_03, ag_05, and ag_07` (serial comma). */
-export function idList(ids: readonly string[]): string {
-  if (ids.length <= 2) return ids.join(" and ");
-  return `${ids.slice(0, -1).join(", ")}, and ${ids[ids.length - 1]}`;
-}
-
-/** `$1.24`, `$0.08`, `<$0.01`; nothing at all when the backend reported no cost. */
-export function formatCost(cost: number | undefined): string | null {
-  if (cost === undefined || !(cost > 0)) return null;
-  return cost < 0.01 ? "<$0.01" : `$${cost.toFixed(2)}`;
-}
-
-/**
- * The `title` behind a token chip: the split the headline hides, and the cost when there is one.
- * `workers` is set for a Σ, whose head count is the point — it covers workers the list dropped.
- */
-export function usageTitle(u: UsageView, workers?: number): string {
-  const parts = [
-    `${formatTokens(u.input)} in`,
-    `${formatTokens(u.output)} out`,
-    `${formatTokens(u.cacheRead)} cache read`,
-    `${formatTokens(u.cacheWrite)} cache write`,
-  ];
-  const cost = formatCost(u.cost);
-  if (cost) parts.push(cost);
-  const head = workers === undefined ? "" : `${workers} ${workers === 1 ? "subagent" : "subagents"} so far · `;
-  return head + parts.join(" · ");
-}

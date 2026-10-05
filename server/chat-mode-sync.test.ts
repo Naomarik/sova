@@ -16,6 +16,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { after, test } from "node:test";
 import type { ChatServerMessage } from "../shared/protocol";
+import { piSession } from "./harness/pi/testing/handle";
 
 const agentDir = realpathSync(mkdtempSync(join(tmpdir(), "sova-mode-sync-")));
 // A hosted runtime can still write here after after() ran (pi's catalogs, usage cache): exit is last.
@@ -74,7 +75,7 @@ function systemOf(context: unknown): string {
 }
 
 function fakeRuns(chat: Chat): void {
-  const session = chat.session as unknown as {
+  const session = piSession(chat) as unknown as {
     _modelRuntime: { hasConfiguredAuth(p: string): boolean };
     agent: { state: { model: unknown }; getApiKey: unknown; streamFunction: unknown };
   };
@@ -114,7 +115,7 @@ async function userTurn(chat: Chat, text: string): Promise<void> {
   replies.push("tool", "text");
   chat.handle(client, { type: "prompt", text });
   await until(() => prompts.length >= n + 2);
-  await chat.session.waitForIdle();
+  await piSession(chat).waitForIdle();
 }
 
 /** A worker settling: the subagents extension's message starts a turn, which calls a tool, then replies. */
@@ -124,7 +125,7 @@ async function wakeTurn(chat: Chat): Promise<void> {
   const pi = (globalThis as { __modeSyncPi?: { sendMessage(m: unknown, o: unknown): Promise<void> } }).__modeSyncPi!;
   await pi.sendMessage({ customType: "subagent-complete", content: "worker done", display: true }, { triggerTurn: true, deliverAs: "followUp" });
   await until(() => prompts.length >= n + 2);
-  await chat.session.waitForIdle();
+  await piSession(chat).waitForIdle();
 }
 
 const modeSections = (path: string) =>

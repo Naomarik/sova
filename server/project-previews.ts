@@ -5,7 +5,7 @@ import { readBuilds, withWorktreePath } from "./build-loadout";
 import { projectOf } from "./project-overseer-store";
 import { peerPort } from "./mesh/peers";
 import { portOwner, type PortOwner } from "./port-owner";
-import { keepPreview, keptPreview, type KeptPreview } from "./preview-kept";
+import { dropSiblingLinks, keepPreview, keptPreview, type KeptPreview } from "./preview-kept";
 import { checkDays, checkPort, findPreviewByHash, listPreviews, mintPreview, onPreviewEnded, PreviewRefused, revokePreview, type PreviewRecord } from "./preview-links";
 import { startStaticServe, staticServes, stopStaticServe } from "./preview-serve";
 import { sensitivePortRefusal } from "./project-services/sensitive";
@@ -214,7 +214,22 @@ export async function makePreview(r: ResolvedPreview, sovaPorts: ReadonlySet<num
 export async function turnOffPreview(id: string): Promise<PreviewRecord | null> {
   const r = revokePreview(id);
   await stopStaticServe(id).catch(() => false);
+  sweepSiblingLinks();
   return r;
+}
+
+/** Drop every kept person's link whose sibling is no longer active (turned off, expired, gone): §mesh.public/preview. */
+export function sweepSiblingLinks(now = Date.now()): string[] {
+  const all = listPreviews({}, now);
+  // No record at all is an unreadable (or removed) preview-links.json: nothing is known to have ended, so nothing goes.
+  if (!all.length) return [];
+  const active = new Set(all.filter((v) => v.siblingOf && v.state === "active").map((v) => v.id));
+  try {
+    return dropSiblingLinks((id) => active.has(id));
+  } catch (err) {
+    console.warn(`[preview] couldn't drop ended people's links (${err instanceof Error ? err.name : "error"})`);
+    return [];
+  }
 }
 
 // ---- folder serves: which ports, the proxy's guard, startup and expiry ----------------------------------
@@ -264,7 +279,7 @@ export async function rebindStaticPreviews(now = Date.now()): Promise<{ bound: s
 /**
  * Stop serving folders of previews that are no longer active (expired, turned off elsewhere, gone).
  * Only a preview's own serve (`pv_…`): a copy's static service (served under its unit name) and a
- * preview being staged are never its to stop.
+ * preview being staged are never its to stop. Then drop the kept people's links of ended siblings.
  */
 export async function sweepStaticPreviews(now = Date.now()): Promise<void> {
   for (const s of staticServes()) {
@@ -272,6 +287,7 @@ export async function sweepStaticPreviews(now = Date.now()): Promise<void> {
     const v = listPreviews({}, now).find((x) => x.id === s.id);
     if (!v || v.state !== "active") await stopStaticServe(s.id).catch(() => false);
   }
+  sweepSiblingLinks(now);
 }
 
 let started = false;
@@ -285,6 +301,7 @@ export function startStaticPreviews(): void {
   onPreviewEnded((hash) => {
     const r = findPreviewByHash(hash);
     if (r) void stopStaticServe(r.id).catch(() => false);
+    if (r?.siblingOf) sweepSiblingLinks();
   });
 }
 
@@ -316,7 +333,8 @@ export async function previewViews(filter: { projectId?: string } = {}, deps: { 
   const out: PreviewView[] = [];
   for (const base of listPreviews(filter, now)) {
     const record = { ...base, hash: "" } as PreviewRecord;
-    // A person's sibling (§app.outreach/links) shows its original's app: its target, session and purpose, never its link.
+    // A person's sibling (§app.outreach/links) shows its original's app: its target, session and purpose, never its
+    // link. Its person's kept link is never in a view (`url` stays null): only the operator's routes add it, as `sentLink`.
     const own = keptPreview(base.id);
     const kept = own ?? (base.siblingOf ? keptPreview(previewRootId(base)) : null);
     const all = await trees(base.projectId);
@@ -338,7 +356,7 @@ export async function previewViews(filter: { projectId?: string } = {}, deps: { 
       ...base,
       ...(base.state === "active" ? { running: await isRunning(record, kept) } : {}),
       target,
-      url: own?.url ?? null,
+      url: base.siblingOf ? null : own?.url ?? null,
       purpose: kept?.purpose ?? null,
       sessionId: kept?.sessionId ?? tree?.sessionId ?? null,
       branch: kept?.branch ?? tree?.branch ?? null,

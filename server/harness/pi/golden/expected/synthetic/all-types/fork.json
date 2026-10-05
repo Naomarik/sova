@@ -1,0 +1,685 @@
+{
+  "parse": {
+    "ok": true,
+    "lines": 72
+  },
+  "branch": [
+    "a0000001",
+    "a0000002",
+    "a0000003",
+    "a0000004",
+    "a0000005",
+    "a0000006",
+    "a0000007",
+    "a0000008",
+    "a0000009",
+    "a000000a",
+    "a000000b",
+    "a000000c",
+    "a000000d",
+    "a000000e",
+    "a000000f",
+    "a0000010",
+    "a0000011",
+    "a0000012",
+    "a0000013",
+    "a0000014",
+    "a0000015",
+    "a0000016",
+    "a0000017",
+    "a0000018",
+    "a0000019",
+    "a000001a",
+    "a000001b",
+    "a000001c",
+    "a000001d",
+    "a000001e",
+    "a000001f",
+    "a0000020",
+    "a0000021",
+    "a0000022",
+    "a0000023",
+    "a0000024",
+    "a0000025",
+    "a0000026",
+    "a0000027",
+    "a0000028",
+    "a0000029",
+    "a000002a",
+    "a000002b",
+    "a000002c",
+    "a000002d",
+    "a000002e",
+    "a000002f",
+    "a0000030",
+    "a0000031",
+    "a0000032",
+    "a0000033",
+    "a0000034",
+    "a0000035",
+    "a0000036",
+    "a0000037",
+    "a0000038",
+    "a0000039",
+    "a000003a",
+    "a000003b",
+    "a000003c",
+    "a000003d",
+    "a000003e",
+    "a000003f",
+    "a0000040",
+    "a0000041",
+    "a0000042",
+    "a0000043",
+    "a0000044",
+    "a0000045",
+    "a0000046",
+    "a0000047",
+    "a0000048"
+  ],
+  "fanout": false,
+  "prefixes": {
+    "a0000001": {
+      "ok": false,
+      "reason": "not_assistant",
+      "message": "Only an assistant reply can be forked from.",
+      "status": 400
+    },
+    "a0000002": {
+      "ok": false,
+      "reason": "not_assistant",
+      "message": "Only an assistant reply can be forked from.",
+      "status": 400
+    },
+    "a0000003": {
+      "ok": false,
+      "reason": "not_assistant",
+      "message": "Only an assistant reply can be forked from.",
+      "status": 400
+    },
+    "a0000004": {
+      "ok": false,
+      "reason": "not_assistant",
+      "message": "Only an assistant reply can be forked from.",
+      "status": 400
+    },
+    "a0000005": {
+      "ok": false,
+      "reason": "not_assistant",
+      "message": "Only an assistant reply can be forked from.",
+      "status": 400
+    },
+    "a0000006": {
+      "ok": false,
+      "reason": "not_assistant",
+      "message": "Only an assistant reply can be forked from.",
+      "status": 400
+    },
+    "a0000007": {
+      "ok": false,
+      "reason": "not_assistant",
+      "message": "Only an assistant reply can be forked from.",
+      "status": 400
+    },
+    "a0000008": {
+      "ok": false,
+      "reason": "not_assistant",
+      "message": "Only an assistant reply can be forked from.",
+      "status": 400
+    },
+    "a0000009": {
+      "ok": false,
+      "reason": "not_assistant",
+      "message": "Only an assistant reply can be forked from.",
+      "status": 400
+    },
+    "a000000a": {
+      "ok": false,
+      "reason": "not_assistant",
+      "message": "Only an assistant reply can be forked from.",
+      "status": 400
+    },
+    "a000000b": {
+      "ok": false,
+      "reason": "not_assistant",
+      "message": "Only an assistant reply can be forked from.",
+      "status": 400
+    },
+    "a000000c": {
+      "ok": false,
+      "reason": "tool_boundary",
+      "message": "That reply was still waiting on a tool result. Fork from a later reply in the same turn.",
+      "status": 400
+    },
+    "a000000d": {
+      "ok": false,
+      "reason": "not_assistant",
+      "message": "Only an assistant reply can be forked from.",
+      "status": 400
+    },
+    "a000000e": {
+      "ok": false,
+      "reason": "tool_boundary",
+      "message": "That reply was still waiting on a tool result. Fork from a later reply in the same turn.",
+      "status": 400
+    },
+    "a000000f": {
+      "ok": false,
+      "reason": "not_assistant",
+      "message": "Only an assistant reply can be forked from.",
+      "status": 400
+    },
+    "a0000010": {
+      "ok": false,
+      "reason": "not_assistant",
+      "message": "Only an assistant reply can be forked from.",
+      "status": 400
+    },
+    "a0000011": {
+      "ok": false,
+      "reason": "not_assistant",
+      "message": "Only an assistant reply can be forked from.",
+      "status": 400
+    },
+    "a0000012": {
+      "ok": true,
+      "prefix": [
+        "{\"type\":\"model_change\",\"provider\":\"zai\",\"modelId\":\"glm-5.3\",\"id\":\"a0000001\",\"parentId\":null,\"timestamp\":\"2026-09-01T10:00:01.000Z\"}",
+        "{\"type\":\"thinking_level_change\",\"thinkingLevel\":\"medium\",\"id\":\"a0000002\",\"parentId\":\"a0000001\",\"timestamp\":\"2026-09-01T10:00:02.000Z\"}",
+        "{\"type\":\"custom\",\"customType\":\"sova-profile\",\"data\":{\"v\":1,\"profile\":{\"id\":\"reviewer\",\"label\":\"Reviewer\",\"icon\":\"user\",\"source\":\"sova\",\"singleton\":true}},\"id\":\"a0000003\",\"parentId\":\"a0000002\",\"timestamp\":\"2026-09-01T10:00:03.000Z\"}",
+        "{\"type\":\"custom\",\"customType\":\"mode\",\"data\":{\"mode\":\"delegate\",\"active\":{\"major\":\"delegate\"}},\"id\":\"a0000004\",\"parentId\":\"a0000003\",\"timestamp\":\"2026-09-01T10:00:04.000Z\"}",
+        "{\"type\":\"custom\",\"customType\":\"mode\",\"data\":{\"minor\":\"spec\",\"on\":true},\"id\":\"a0000005\",\"parentId\":\"a0000004\",\"timestamp\":\"2026-09-01T10:00:05.000Z\"}",
+        "{\"type\":\"custom\",\"customType\":\"mode\",\"data\":{\"strict\":true},\"id\":\"a0000006\",\"parentId\":\"a0000005\",\"timestamp\":\"2026-09-01T10:00:06.000Z\"}",
+        "{\"type\":\"custom\",\"customType\":\"mode\",\"data\":{\"active\":{\"major\":\"code\"}},\"id\":\"a0000007\",\"parentId\":\"a0000006\",\"timestamp\":\"2026-09-01T10:00:07.000Z\"}",
+        "{\"type\":\"message\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"Plain question about the parser\"}],\"timestamp\":1788256808000},\"id\":\"a0000008\",\"parentId\":\"a0000007\",\"timestamp\":\"2026-09-01T10:00:08.000Z\"}",
+        "{\"type\":\"custom\",\"customType\":\"sova-overseer-sent\",\"data\":{\"targetId\":\"a0000008\"},\"id\":\"a0000009\",\"parentId\":\"a0000008\",\"timestamp\":\"2026-09-01T10:00:09.000Z\"}",
+        "{\"type\":\"message\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"Two screenshots attached /tmp/pi-clipboard-golden-0001.png\\n\\n[Image: original 2560x1600, displayed at 2000x1250. Multiply coordinates by 1.28 to map to original image.]\\n[Image: original 4000x3000, displayed at 2000x1500. Multiply coordinates by 2.00 to map to original image.]\"},{\"type\":\"image\",\"data\":\"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==\",\"mimeType\":\"image/png\"},{\"type\":\"image\",\"data\":\"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==\",\"mimeType\":\"image/png\"}],\"timestamp\":1788256810000},\"id\":\"a000000a\",\"parentId\":\"a0000009\",\"timestamp\":\"2026-09-01T10:00:10.000Z\"}",
+        "{\"type\":\"custom\",\"customType\":\"sova-session-sent\",\"data\":{\"targetId\":\"a000000a\",\"from\":{\"sessionId\":\"0190a000-0000-7000-8000-sender000000\",\"title\":\"Sender\"},\"hop\":2},\"id\":\"a000000b\",\"parentId\":\"a000000a\",\"timestamp\":\"2026-09-01T10:00:11.000Z\"}",
+        "{\"type\":\"message\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"thinking\",\"thinking\":\"Consider the parser.\",\"thinkingSignature\":\"sig-abc\"},{\"type\":\"text\",\"text\":\"Here is the answer, see /tmp/golden-chart.png\"},{\"type\":\"toolCall\",\"id\":\"call_1\",\"name\":\"read\",\"arguments\":{\"path\":\"src/a.ts\"}}],\"api\":\"openai-completions\",\"provider\":\"zai\",\"model\":\"glm-5.3\",\"usage\":{\"input\":5000,\"output\":200,\"cacheRead\":1000,\"cacheWrite\":300,\"totalTokens\":6500,\"cost\":{\"input\":0.001,\"output\":0.002,\"cacheRead\":0.0001,\"cacheWrite\":0,\"total\":0.0031}},\"stopReason\":\"toolUse\",\"timestamp\":1788256812000},\"id\":\"a000000c\",\"parentId\":\"a000000b\",\"timestamp\":\"2026-09-01T10:00:12.000Z\"}",
+        "{\"type\":\"message\",\"message\":{\"role\":\"toolResult\",\"toolCallId\":\"call_1\",\"toolName\":\"read\",\"content\":[{\"type\":\"text\",\"text\":\"file contents line 1\\nline 2\"}],\"isError\":false,\"details\":{\"truncation\":null},\"timestamp\":1788256813000},\"id\":\"a000000d\",\"parentId\":\"a000000c\",\"timestamp\":\"2026-09-01T10:00:13.000Z\"}",
+        "{\"type\":\"message\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"toolCall\",\"id\":\"call_2\",\"name\":\"bash\",\"arguments\":{\"command\":\"pnpm test\",\"timeout\":60}},{\"type\":\"toolCall\",\"id\":\"call_3\",\"name\":\"edit\",\"arguments\":{\"path\":\"src/a.ts\",\"edits\":[{\"oldText\":\"a\",\"newText\":\"b\"}]}},{\"type\":\"toolCall\",\"id\":\"call_4\",\"name\":\"agent_spawn\",\"arguments\":{\"name\":\"helper\",\"task\":\"do it\"}}],\"api\":\"openai-completions\",\"provider\":\"zai\",\"model\":\"glm-5.3\",\"usage\":{\"input\":1200,\"output\":80,\"cacheRead\":400,\"cacheWrite\":0,\"totalTokens\":1680,\"cost\":{\"input\":0.001,\"output\":0.002,\"cacheRead\":0.0001,\"cacheWrite\":0,\"total\":0.0031}},\"stopReason\":\"toolUse\",\"timestamp\":1788256814000},\"id\":\"a000000e\",\"parentId\":\"a000000d\",\"timestamp\":\"2026-09-01T10:00:14.000Z\"}",
+        "{\"type\":\"message\",\"message\":{\"role\":\"toolResult\",\"toolCallId\":\"call_2\",\"toolName\":\"bash\",\"content\":[{\"type\":\"text\",\"text\":\"Error: tests failed\"}],\"isError\":true,\"timestamp\":1788256815000},\"id\":\"a000000f\",\"parentId\":\"a000000e\",\"timestamp\":\"2026-09-01T10:00:15.000Z\"}",
+        "{\"type\":\"message\",\"message\":{\"role\":\"toolResult\",\"toolCallId\":\"call_3\",\"toolName\":\"edit\",\"content\":[{\"type\":\"text\",\"text\":\"Successfully replaced text\"}],\"isError\":false,\"details\":{\"diff\":\"-1 a\\n+1 b\",\"firstChangedLine\":1},\"timestamp\":1788256816000},\"id\":\"a0000010\",\"parentId\":\"a000000f\",\"timestamp\":\"2026-09-01T10:00:16.000Z\"}",
+        "{\"type\":\"message\",\"message\":{\"role\":\"toolResult\",\"toolCallId\":\"call_4\",\"toolName\":\"agent_spawn\",\"content\":[{\"type\":\"text\",\"text\":\"spawned ag_01 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}],\"isError\":false,\"timestamp\":1788256817000},\"id\":\"a0000011\",\"parentId\":\"a0000010\",\"timestamp\":\"2026-09-01T10:00:17.000Z\"}",
+        "{\"type\":\"message\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"future_block\",\"payload\":1},{\"type\":\"text\",\"text\":\"Unknown block before me\"}],\"api\":\"openai-completions\",\"provider\":\"zai\",\"model\":\"glm-5.3\",\"usage\":{\"input\":1200,\"output\":80,\"cacheRead\":400,\"cacheWrite\":0,\"totalTokens\":1680,\"cost\":{\"input\":0.001,\"output\":0.002,\"cacheRead\":0.0001,\"cacheWrite\":0,\"total\":0.0031}},\"stopReason\":\"stop\",\"timestamp\":1788256818000},\"id\":\"a0000012\",\"parentId\":\"a0000011\",\"timestamp\":\"2026-09-01T10:00:18.000Z\"}"
+      ]
+    },
+    "a0000013": {
+      "ok": true,
+      "prefix": [
+        "{\"type\":\"model_change\",\"provider\":\"zai\",\"modelId\":\"glm-5.3\",\"id\":\"a0000001\",\"parentId\":null,\"timestamp\":\"2026-09-01T10:00:01.000Z\"}",
+        "{\"type\":\"thinking_level_change\",\"thinkingLevel\":\"medium\",\"id\":\"a0000002\",\"parentId\":\"a0000001\",\"timestamp\":\"2026-09-01T10:00:02.000Z\"}",
+        "{\"type\":\"custom\",\"customType\":\"sova-profile\",\"data\":{\"v\":1,\"profile\":{\"id\":\"reviewer\",\"label\":\"Reviewer\",\"icon\":\"user\",\"source\":\"sova\",\"singleton\":true}},\"id\":\"a0000003\",\"parentId\":\"a0000002\",\"timestamp\":\"2026-09-01T10:00:03.000Z\"}",
+        "{\"type\":\"custom\",\"customType\":\"mode\",\"data\":{\"mode\":\"delegate\",\"active\":{\"major\":\"delegate\"}},\"id\":\"a0000004\",\"parentId\":\"a0000003\",\"timestamp\":\"2026-09-01T10:00:04.000Z\"}",
+        "{\"type\":\"custom\",\"customType\":\"mode\",\"data\":{\"minor\":\"spec\",\"on\":true},\"id\":\"a0000005\",\"parentId\":\"a0000004\",\"timestamp\":\"2026-09-01T10:00:05.000Z\"}",
+        "{\"type\":\"custom\",\"customType\":\"mode\",\"data\":{\"strict\":true},\"id\":\"a0000006\",\"parentId\":\"a0000005\",\"timestamp\":\"2026-09-01T10:00:06.000Z\"}",
+        "{\"type\":\"custom\",\"customType\":\"mode\",\"data\":{\"active\":{\"major\":\"code\"}},\"id\":\"a0000007\",\"parentId\":\"a0000006\",\"timestamp\":\"2026-09-01T10:00:07.000Z\"}",
+        "{\"type\":\"message\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"Plain question about the parser\"}],\"timestamp\":1788256808000},\"id\":\"a0000008\",\"parentId\":\"a0000007\",\"timestamp\":\"2026-09-01T10:00:08.000Z\"}",
+        "{\"type\":\"custom\",\"customType\":\"sova-overseer-sent\",\"data\":{\"targetId\":\"a0000008\"},\"id\":\"a0000009\",\"parentId\":\"a0000008\",\"timestamp\":\"2026-09-01T10:00:09.000Z\"}",
+        "{\"type\":\"message\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"Two screenshots attached /tmp/pi-clipboard-golden-0001.png\\n\\n[Image: original 2560x1600, displayed at 2000x1250. Multiply coordinates by 1.28 to map to original image.]\\n[Image: original 4000x3000, displayed at 2000x1500. Multiply coordinates by 2.00 to map to original image.]\"},{\"type\":\"image\",\"data\":\"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==\",\"mimeType\":\"image/png\"},{\"type\":\"image\",\"data\":\"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==\",\"mimeType\":\"image/png\"}],\"timestamp\":1788256810000},\"id\":\"a000000a\",\"parentId\":\"a0000009\",\"timestamp\":\"2026-09-01T10:00:10.000Z\"}",
+        "{\"type\":\"custom\",\"customType\":\"sova-session-sent\",\"data\":{\"targetId\":\"a000000a\",\"from\":{\"sessionId\":\"0190a000-0000-7000-8000-sender000000\",\"title\":\"Sender\"},\"hop\":2},\"id\":\"a000000b\",\"parentId\":\"a000000a\",\"timestamp\":\"2026-09-01T10:00:11.000Z\"}",
+        "{\"type\":\"message\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"thinking\",\"thinking\":\"Consider the parser.\",\"thinkingSignature\":\"sig-abc\"},{\"type\":\"text\",\"text\":\"Here is the answer, see /tmp/golden-chart.png\"},{\"type\":\"toolCall\",\"id\":\"call_1\",\"name\":\"read\",\"arguments\":{\"path\":\"src/a.ts\"}}],\"api\":\"openai-completions\",\"provider\":\"zai\",\"model\":\"glm-5.3\",\"usage\":{\"input\":5000,\"output\":200,\"cacheRead\":1000,\"cacheWrite\":300,\"totalTokens\":6500,\"cost\":{\"input\":0.001,\"output\":0.002,\"cacheRead\":0.0001,\"cacheWrite\":0,\"total\":0.0031}},\"stopReason\":\"toolUse\",\"timestamp\":1788256812000},\"id\":\"a000000c\",\"parentId\":\"a000000b\",\"timestamp\":\"2026-09-01T10:00:12.000Z\"}",
+        "{\"type\":\"message\",\"message\":{\"role\":\"toolResult\",\"toolCallId\":\"call_1\",\"toolName\":\"read\",\"content\":[{\"type\":\"text\",\"text\":\"file contents line 1\\nline 2\"}],\"isError\":false,\"details\":{\"truncation\":null},\"timestamp\":1788256813000},\"id\":\"a000000d\",\"parentId\":\"a000000c\",\"timestamp\":\"2026-09-01T10:00:13.000Z\"}",
+        "{\"type\":\"message\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"toolCall\",\"id\":\"call_2\",\"name\":\"bash\",\"arguments\":{\"command\":\"pnpm test\",\"timeout\":60}},{\"type\":\"toolCall\",\"id\":\"call_3\",\"name\":\"edit\",\"arguments\":{\"path\":\"src/a.ts\",\"edits\":[{\"oldText\":\"a\",\"newText\":\"b\"}]}},{\"type\":\"toolCall\",\"id\":\"call_4\",\"name\":\"agent_spawn\",\"arguments\":{\"name\":\"helper\",\"task\":\"do it\"}}],\"api\":\"openai-completions\",\"provider\":\"zai\",\"model\":\"glm-5.3\",\"usage\":{\"input\":1200,\"output\":80,\"cacheRead\":400,\"cacheWrite\":0,\"totalTokens\":1680,\"cost\":{\"input\":0.001,\"output\":0.002,\"cacheRead\":0.0001,\"cacheWrite\":0,\"total\":0.0031}},\"stopReason\":\"toolUse\",\"timestamp\":1788256814000},\"id\":\"a000000e\",\"parentId\":\"a000000d\",\"timestamp\":\"2026-09-01T10:00:14.000Z\"}",
+        "{\"type\":\"message\",\"message\":{\"role\":\"toolResult\",\"toolCallId\":\"call_2\",\"toolName\":\"bash\",\"content\":[{\"type\":\"text\",\"text\":\"Error: tests failed\"}],\"isError\":true,\"timestamp\":1788256815000},\"id\":\"a000000f\",\"parentId\":\"a000000e\",\"timestamp\":\"2026-09-01T10:00:15.000Z\"}",
+        "{\"type\":\"message\",\"message\":{\"role\":\"toolResult\",\"toolCallId\":\"call_3\",\"toolName\":\"edit\",\"content\":[{\"type\":\"text\",\"text\":\"Successfully replaced text\"}],\"isError\":false,\"details\":{\"diff\":\"-1 a\\n+1 b\",\"firstChangedLine\":1},\"timestamp\":1788256816000},\"id\":\"a0000010\",\"parentId\":\"a000000f\",\"timestamp\":\"2026-09-01T10:00:16.000Z\"}",
+        "{\"type\":\"message\",\"message\":{\"role\":\"toolResult\",\"toolCallId\":\"call_4\",\"toolName\":\"agent_spawn\",\"content\":[{\"type\":\"text\",\"text\":\"spawned ag_01 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}],\"isError\":false,\"timestamp\":1788256817000},\"id\":\"a0000011\",\"parentId\":\"a0000010\",\"timestamp\":\"2026-09-01T10:00:17.000Z\"}",
+        "{\"type\":\"message\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"future_block\",\"payload\":1},{\"type\":\"text\",\"text\":\"Unknown block before me\"}],\"api\":\"openai-completions\",\"provider\":\"zai\",\"model\":\"glm-5.3\",\"usage\":{\"input\":1200,\"output\":80,\"cacheRead\":400,\"cacheWrite\":0,\"totalTokens\":1680,\"cost\":{\"input\":0.001,\"output\":0.002,\"cacheRead\":0.0001,\"cacheWrite\":0,\"total\":0.0031}},\"stopReason\":\"stop\",\"timestamp\":1788256818000},\"id\":\"a0000012\",\"parentId\":\"a0000011\",\"timestamp\":\"2026-09-01T10:00:18.000Z\"}",
+        "{\"type\":\"message\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"partial\"}],\"api\":\"openai-completions\",\"provider\":\"zai\",\"model\":\"glm-5.3\",\"usage\":{\"input\":0,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"totalTokens\":0,\"cost\":{\"input\":0.001,\"output\":0.002,\"cacheRead\":0.0001,\"cacheWrite\":0,\"total\":0.0031}},\"stopReason\":\"error\",\"errorMessage\":\"429 Too Many Requests: rate limited\",\"timestamp\":1788256819000},\"id\":\"a0000013\",\"parentId\":\"a0000012\",\"timestamp\":\"2026-09-01T10:00:19.000Z\"}"
+      ]
+    },
+    "a0000014": {
+      "ok": true,
+      "prefix": [
+        "{\"type\":\"model_change\",\"provider\":\"zai\",\"modelId\":\"glm-5.3\",\"id\":\"a0000001\",\"parentId\":null,\"timestamp\":\"2026-09-01T10:00:01.000Z\"}",
+        "{\"type\":\"thinking_level_change\",\"thinkingLevel\":\"medium\",\"id\":\"a0000002\",\"parentId\":\"a0000001\",\"timestamp\":\"2026-09-01T10:00:02.000Z\"}",
+        "{\"type\":\"custom\",\"customType\":\"sova-profile\",\"data\":{\"v\":1,\"profile\":{\"id\":\"reviewer\",\"label\":\"Reviewer\",\"icon\":\"user\",\"source\":\"sova\",\"singleton\":true}},\"id\":\"a0000003\",\"parentId\":\"a0000002\",\"timestamp\":\"2026-09-01T10:00:03.000Z\"}",
+        "{\"type\":\"custom\",\"customType\":\"mode\",\"data\":{\"mode\":\"delegate\",\"active\":{\"major\":\"delegate\"}},\"id\":\"a0000004\",\"parentId\":\"a0000003\",\"timestamp\":\"2026-09-01T10:00:04.000Z\"}",
+        "{\"type\":\"custom\",\"customType\":\"mode\",\"data\":{\"minor\":\"spec\",\"on\":true},\"id\":\"a0000005\",\"parentId\":\"a0000004\",\"timestamp\":\"2026-09-01T10:00:05.000Z\"}",
+        "{\"type\":\"custom\",\"customType\":\"mode\",\"data\":{\"strict\":true},\"id\":\"a0000006\",\"parentId\":\"a0000005\",\"timestamp\":\"2026-09-01T10:00:06.000Z\"}",
+        "{\"type\":\"custom\",\"customType\":\"mode\",\"data\":{\"active\":{\"major\":\"code\"}},\"id\":\"a0000007\",\"parentId\":\"a0000006\",\"timestamp\":\"2026-09-01T10:00:07.000Z\"}",
+        "{\"type\":\"message\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"Plain question about the parser\"}],\"timestamp\":1788256808000},\"id\":\"a0000008\",\"parentId\":\"a0000007\",\"timestamp\":\"2026-09-01T10:00:08.000Z\"}",
+        "{\"type\":\"custom\",\"customType\":\"sova-overseer-sent\",\"data\":{\"targetId\":\"a0000008\"},\"id\":\"a0000009\",\"parentId\":\"a0000008\",\"timestamp\":\"2026-09-01T10:00:09.000Z\"}",
+        "{\"type\":\"message\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"Two screenshots attached /tmp/pi-clipboard-golden-0001.png\\n\\n[Image: original 2560x1600, displayed at 2000x1250. Multiply coordinates by 1.28 to map to original image.]\\n[Image: original 4000x3000, displayed at 2000x1500. Multiply coordinates by 2.00 to map to original image.]\"},{\"type\":\"image\",\"data\":\"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==\",\"mimeType\":\"image/png\"},{\"type\":\"image\",\"data\":\"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==\",\"mimeType\":\"image/png\"}],\"timestamp\":1788256810000},\"id\":\"a000000a\",\"parentId\":\"a0000009\",\"timestamp\":\"2026-09-01T10:00:10.000Z\"}",
+        "{\"type\":\"custom\",\"customType\":\"sova-session-sent\",\"data\":{\"targetId\":\"a000000a\",\"from\":{\"sessionId\":\"0190a000-0000-7000-8000-sender000000\",\"title\":\"Sender\"},\"hop\":2},\"id\":\"a000000b\",\"parentId\":\"a000000a\",\"timestamp\":\"2026-09-01T10:00:11.000Z\"}",
+        "{\"type\":\"message\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"thinking\",\"thinking\":\"Consider the parser.\",\"thinkingSignature\":\"sig-abc\"},{\"type\":\"text\",\"text\":\"Here is the answer, see /tmp/golden-chart.png\"},{\"type\":\"toolCall\",\"id\":\"call_1\",\"name\":\"read\",\"arguments\":{\"path\":\"src/a.ts\"}}],\"api\":\"openai-completions\",\"provider\":\"zai\",\"model\":\"glm-5.3\",\"usage\":{\"input\":5000,\"output\":200,\"cacheRead\":1000,\"cacheWrite\":300,\"totalTokens\":6500,\"cost\":{\"input\":0.001,\"output\":0.002,\"cacheRead\":0.0001,\"cacheWrite\":0,\"total\":0.0031}},\"stopReason\":\"toolUse\",\"timestamp\":1788256812000},\"id\":\"a000000c\",\"parentId\":\"a000000b\",\"timestamp\":\"2026-09-01T10:00:12.000Z\"}",
+        "{\"type\":\"message\",\"message\":{\"role\":\"toolResult\",\"toolCallId\":\"call_1\",\"toolName\":\"read\",\"content\":[{\"type\":\"text\",\"text\":\"file contents line 1\\nline 2\"}],\"isError\":false,\"details\":{\"truncation\":null},\"timestamp\":1788256813000},\"id\":\"a000000d\",\"parentId\":\"a000000c\",\"timestamp\":\"2026-09-01T10:00:13.000Z\"}",
+        "{\"type\":\"message\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"toolCall\",\"id\":\"call_2\",\"name\":\"bash\",\"arguments\":{\"command\":\"pnpm test\",\"timeout\":60}},{\"type\":\"toolCall\",\"id\":\"call_3\",\"name\":\"edit\",\"arguments\":{\"path\":\"src/a.ts\",\"edits\":[{\"oldText\":\"a\",\"newText\":\"b\"}]}},{\"type\":\"toolCall\",\"id\":\"call_4\",\"name\":\"agent_spawn\",\"arguments\":{\"name\":\"helper\",\"task\":\"do it\"}}],\"api\":\"openai-completions\",\"provider\":\"zai\",\"model\":\"glm-5.3\",\"usage\":{\"input\":1200,\"output\":80,\"cacheRead\":400,\"cacheWrite\":0,\"totalTokens\":1680,\"cost\":{\"input\":0.001,\"output\":0.002,\"cacheRead\":0.0001,\"cacheWrite\":0,\"total\":0.0031}},\"stopReason\":\"toolUse\",\"timestamp\":1788256814000},\"id\":\"a000000e\",\"parentId\":\"a000000d\",\"timestamp\":\"2026-09-01T10:00:14.000Z\"}",
+        "{\"type\":\"message\",\"message\":{\"role\":\"toolResult\",\"toolCallId\":\"call_2\",\"toolName\":\"bash\",\"content\":[{\"type\":\"text\",\"text\":\"Error: tests failed\"}],\"isError\":true,\"timestamp\":1788256815000},\"id\":\"a000000f\",\"parentId\":\"a000000e\",\"timestamp\":\"2026-09-01T10:00:15.000Z\"}",
+        "{\"type\":\"message\",\"message\":{\"role\":\"toolResult\",\"toolCallId\":\"call_3\",\"toolName\":\"edit\",\"content\":[{\"type\":\"text\",\"text\":\"Successfully replaced text\"}],\"isError\":false,\"details\":{\"diff\":\"-1 a\\n+1 b\",\"firstChangedLine\":1},\"timestamp\":1788256816000},\"id\":\"a0000010\",\"parentId\":\"a000000f\",\"timestamp\":\"2026-09-01T10:00:16.000Z\"}",
+        "{\"type\":\"message\",\"message\":{\"role\":\"toolResult\",\"toolCallId\":\"call_4\",\"toolName\":\"agent_spawn\",\"content\":[{\"type\":\"text\",\"text\":\"spawned ag_01 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}],\"isError\":false,\"timestamp\":1788256817000},\"id\":\"a0000011\",\"parentId\":\"a0000010\",\"timestamp\":\"2026-09-01T10:00:17.000Z\"}",
+        "{\"type\":\"message\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"future_block\",\"payload\":1},{\"type\":\"text\",\"text\":\"Unknown block before me\"}],\"api\":\"openai-completions\",\"provider\":\"zai\",\"model\":\"glm-5.3\",\"usage\":{\"input\":1200,\"output\":80,\"cacheRead\":400,\"cacheWrite\":0,\"totalTokens\":1680,\"cost\":{\"input\":0.001,\"output\":0.002,\"cacheRead\":0.0001,\"cacheWrite\":0,\"total\":0.0031}},\"stopReason\":\"stop\",\"timestamp\":1788256818000},\"id\":\"a0000012\",\"parentId\":\"a0000011\",\"timestamp\":\"2026-09-01T10:00:18.000Z\"}",
+        "{\"type\":\"message\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"partial\"}],\"api\":\"openai-completions\",\"provider\":\"zai\",\"model\":\"glm-5.3\",\"usage\":{\"input\":0,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"totalTokens\":0,\"cost\":{\"input\":0.001,\"output\":0.002,\"cacheRead\":0.0001,\"cacheWrite\":0,\"total\":0.0031}},\"stopReason\":\"error\",\"errorMessage\":\"429 Too Many Requests: rate limited\",\"timestamp\":1788256819000},\"id\":\"a0000013\",\"parentId\":\"a0000012\",\"timestamp\":\"2026-09-01T10:00:19.000Z\"}",
+        "{\"type\":\"message\",\"message\":{\"role\":\"assistant\",\"content\":[],\"api\":\"openai-completions\",\"provider\":\"zai\",\"model\":\"glm-5.3\",\"usage\":{\"input\":10,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"totalTokens\":10,\"cost\":{\"input\":0.001,\"output\":0.002,\"cacheRead\":0.0001,\"cacheWrite\":0,\"total\":0.0031}},\"stopReason\":\"aborted\",\"timestamp\":1788256820000},\"id\":\"a0000014\",\"parentId\":\"a0000013\",\"timestamp\":\"2026-09-01T10:00:20.000Z\"}"
+      ]
+    },
+    "a0000015": {
+      "ok": true,
+      "prefix": [
+        "{\"type\":\"model_change\",\"provider\":\"zai\",\"modelId\":\"glm-5.3\",\"id\":\"a0000001\",\"parentId\":null,\"timestamp\":\"2026-09-01T10:00:01.000Z\"}",
+        "{\"type\":\"thinking_level_change\",\"thinkingLevel\":\"medium\",\"id\":\"a0000002\",\"parentId\":\"a0000001\",\"timestamp\":\"2026-09-01T10:00:02.000Z\"}",
+        "{\"type\":\"custom\",\"customType\":\"sova-profile\",\"data\":{\"v\":1,\"profile\":{\"id\":\"reviewer\",\"label\":\"Reviewer\",\"icon\":\"user\",\"source\":\"sova\",\"singleton\":true}},\"id\":\"a0000003\",\"parentId\":\"a0000002\",\"timestamp\":\"2026-09-01T10:00:03.000Z\"}",
+        "{\"type\":\"custom\",\"customType\":\"mode\",\"data\":{\"mode\":\"delegate\",\"active\":{\"major\":\"delegate\"}},\"id\":\"a0000004\",\"parentId\":\"a0000003\",\"timestamp\":\"2026-09-01T10:00:04.000Z\"}",
+        "{\"type\":\"custom\",\"customType\":\"mode\",\"data\":{\"minor\":\"spec\",\"on\":true},\"id\":\"a0000005\",\"parentId\":\"a0000004\",\"timestamp\":\"2026-09-01T10:00:05.000Z\"}",
+        "{\"type\":\"custom\",\"customType\":\"mode\",\"data\":{\"strict\":true},\"id\":\"a0000006\",\"parentId\":\"a0000005\",\"timestamp\":\"2026-09-01T10:00:06.000Z\"}",
+        "{\"type\":\"custom\",\"customType\":\"mode\",\"data\":{\"active\":{\"major\":\"code\"}},\"id\":\"a0000007\",\"parentId\":\"a0000006\",\"timestamp\":\"2026-09-01T10:00:07.000Z\"}",
+        "{\"type\":\"message\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"Plain question about the parser\"}],\"timestamp\":1788256808000},\"id\":\"a0000008\",\"parentId\":\"a0000007\",\"timestamp\":\"2026-09-01T10:00:08.000Z\"}",
+        "{\"type\":\"custom\",\"customType\":\"sova-overseer-sent\",\"data\":{\"targetId\":\"a0000008\"},\"id\":\"a0000009\",\"parentId\":\"a0000008\",\"timestamp\":\"2026-09-01T10:00:09.000Z\"}",
+        "{\"type\":\"message\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"Two screenshots attached /tmp/pi-clipboard-golden-0001.png\\n\\n[Image: original 2560x1600, displayed at 2000x1250. Multiply coordinates by 1.28 to map to original image.]\\n[Image: original 4000x3000, displayed at 2000x1500. Multiply coordinates by 2.00 to map to original image.]\"},{\"type\":\"image\",\"data\":\"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==\",\"mimeType\":\"image/png\"},{\"type\":\"image\",\"data\":\"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==\",\"mimeType\":\"image/png\"}],\"timestamp\":1788256810000},\"id\":\"a000000a\",\"parentId\":\"a0000009\",\"timestamp\":\"2026-09-01T10:00:10.000Z\"}",
+        "{\"type\":\"custom\",\"customType\":\"sova-session-sent\",\"data\":{\"targetId\":\"a000000a\",\"from\":{\"sessionId\":\"0190a000-0000-7000-8000-sender000000\",\"title\":\"Sender\"},\"hop\":2},\"id\":\"a000000b\",\"parentId\":\"a000000a\",\"timestamp\":\"2026-09-01T10:00:11.000Z\"}",
+        "{\"type\":\"message\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"thinking\",\"thinking\":\"Consider the parser.\",\"thinkingSignature\":\"sig-abc\"},{\"type\":\"text\",\"text\":\"Here is the answer, see /tmp/golden-chart.png\"},{\"type\":\"toolCall\",\"id\":\"call_1\",\"name\":\"read\",\"arguments\":{\"path\":\"src/a.ts\"}}],\"api\":\"openai-completions\",\"provider\":\"zai\",\"model\":\"glm-5.3\",\"usage\":{\"input\":5000,\"output\":200,\"cacheRead\":1000,\"cacheWrite\":300,\"totalTokens\":6500,\"cost\":{\"input\":0.001,\"output\":0.002,\"cacheRead\":0.0001,\"cacheWrite\":0,\"total\":0.0031}},\"stopReason\":\"toolUse\",\"timestamp\":1788256812000},\"id\":\"a000000c\",\"parentId\":\"a000000b\",\"timestamp\":\"2026-09-01T10:00:12.000Z\"}",
+        "{\"type\":\"message\",\"message\":{\"role\":\"toolResult\",\"toolCallId\":\"call_1\",\"toolName\":\"read\",\"content\":[{\"type\":\"text\",\"text\":\"file contents line 1\\nline 2\"}],\"isError\":false,\"details\":{\"truncation\":null},\"timestamp\":1788256813000},\"id\":\"a000000d\",\"parentId\":\"a000000c\",\"timestamp\":\"2026-09-01T10:00:13.000Z\"}",
+        "{\"type\":\"message\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"toolCall\",\"id\":\"call_2\",\"name\":\"bash\",\"arguments\":{\"command\":\"pnpm test\",\"timeout\":60}},{\"type\":\"toolCall\",\"id\":\"call_3\",\"name\":\"edit\",\"arguments\":{\"path\":\"src/a.ts\",\"edits\":[{\"oldText\":\"a\",\"newText\":\"b\"}]}},{\"type\":\"toolCall\",\"id\":\"call_4\",\"name\":\"agent_spawn\",\"arguments\":{\"name\":\"helper\",\"task\":\"do it\"}}],\"api\":\"openai-completions\",\"provider\":\"zai\",\"model\":\"glm-5.3\",\"usage\":{\"input\":1200,\"output\":80,\"cacheRead\":400,\"cacheWrite\":0,\"totalTokens\":1680,\"cost\":{\"input\":0.001,\"output\":0.002,\"cacheRead\":0.0001,\"cacheWrite\":0,\"total\":0.0031}},\"stopReason\":\"toolUse\",\"timestamp\":1788256814000},\"id\":\"a000000e\",\"parentId\":\"a000000d\",\"timestamp\":\"2026-09-01T10:00:14.000Z\"}",
+        "{\"type\":\"message\",\"message\":{\"role\":\"toolResult\",\"toolCallId\":\"call_2\",\"toolName\":\"bash\",\"content\":[{\"type\":\"text\",\"text\":\"Error: tests failed\"}],\"isError\":true,\"timestamp\":1788256815000},\"id\":\"a000000f\",\"parentId\":\"a000000e\",\"timestamp\":\"2026-09-01T10:00:15.000Z\"}",
+        "{\"type\":\"message\",\"message\":{\"role\":\"toolResult\",\"toolCallId\":\"call_3\",\"toolName\":\"edit\",\"content\":[{\"type\":\"text\",\"text\":\"Successfully replaced text\"}],\"isError\":false,\"details\":{\"diff\":\"-1 a\\n+1 b\",\"firstChangedLine\":1},\"timestamp\":1788256816000},\"id\":\"a0000010\",\"parentId\":\"a000000f\",\"timestamp\":\"2026-09-01T10:00:16.000Z\"}",
+        "{\"type\":\"message\",\"message\":{\"role\":\"toolResult\",\"toolCallId\":\"call_4\",\"toolName\":\"agent_spawn\",\"content\":[{\"type\":\"text\",\"text\":\"spawned ag_01 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}],\"isError\":false,\"timestamp\":1788256817000},\"id\":\"a0000011\",\"parentId\":\"a0000010\",\"timestamp\":\"2026-09-01T10:00:17.000Z\"}",
+        "{\"type\":\"message\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"future_block\",\"payload\":1},{\"type\":\"text\",\"text\":\"Unknown block before me\"}],\"api\":\"openai-completions\",\"provider\":\"zai\",\"model\":\"glm-5.3\",\"usage\":{\"input\":1200,\"output\":80,\"cacheRead\":400,\"cacheWrite\":0,\"totalTokens\":1680,\"cost\":{\"input\":0.001,\"output\":0.002,\"cacheRead\":0.0001,\"cacheWrite\":0,\"total\":0.0031}},\"stopReason\":\"stop\",\"timestamp\":1788256818000},\"id\":\"a0000012\",\"parentId\":\"a0000011\",\"timestamp\":\"2026-09-01T10:00:18.000Z\"}",
+        "{\"type\":\"message\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"partial\"}],\"api\":\"openai-completions\",\"provider\":\"zai\",\"model\":\"glm-5.3\",\"usage\":{\"input\":0,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"totalTokens\":0,\"cost\":{\"input\":0.001,\"output\":0.002,\"cacheRead\":0.0001,\"cacheWrite\":0,\"total\":0.0031}},\"stopReason\":\"error\",\"errorMessage\":\"429 Too Many Requests: rate limited\",\"timestamp\":1788256819000},\"id\":\"a0000013\",\"parentId\":\"a0000012\",\"timestamp\":\"2026-09-01T10:00:19.000Z\"}",
+        "{\"type\":\"message\",\"message\":{\"role\":\"assistant\",\"content\":[],\"api\":\"openai-completions\",\"provider\":\"zai\",\"model\":\"glm-5.3\",\"usage\":{\"input\":10,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"totalTokens\":10,\"cost\":{\"input\":0.001,\"output\":0.002,\"cacheRead\":0.0001,\"cacheWrite\":0,\"total\":0.0031}},\"stopReason\":\"aborted\",\"timestamp\":1788256820000},\"id\":\"a0000014\",\"parentId\":\"a0000013\",\"timestamp\":\"2026-09-01T10:00:20.000Z\"}",
+        "{\"type\":\"message\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"cut off\"}],\"api\":\"openai-completions\",\"provider\":\"zai\",\"model\":\"glm-5.3\",\"usage\":{\"input\":1200,\"output\":80,\"cacheRead\":400,\"cacheWrite\":0,\"totalTokens\":1680,\"cost\":{\"input\":0.001,\"output\":0.002,\"cacheRead\":0.0001,\"cacheWrite\":0,\"total\":0.0031}},\"stopReason\":\"length\",\"timestamp\":1788256821000},\"id\":\"a0000015\",\"parentId\":\"a0000014\",\"timestamp\":\"2026-09-01T10:00:21.000Z\"}"
+      ]
+    },
+    "a0000016": {
+      "ok": true,
+      "prefix": [
+        "{\"type\":\"model_change\",\"provider\":\"zai\",\"modelId\":\"glm-5.3\",\"id\":\"a0000001\",\"parentId\":null,\"timestamp\":\"2026-09-01T10:00:01.000Z\"}",
+        "{\"type\":\"thinking_level_change\",\"thinkingLevel\":\"medium\",\"id\":\"a0000002\",\"parentId\":\"a0000001\",\"timestamp\":\"2026-09-01T10:00:02.000Z\"}",
+        "{\"type\":\"custom\",\"customType\":\"sova-profile\",\"data\":{\"v\":1,\"profile\":{\"id\":\"reviewer\",\"label\":\"Reviewer\",\"icon\":\"user\",\"source\":\"sova\",\"singleton\":true}},\"id\":\"a0000003\",\"parentId\":\"a0000002\",\"timestamp\":\"2026-09-01T10:00:03.000Z\"}",
+        "{\"type\":\"custom\",\"customType\":\"mode\",\"data\":{\"mode\":\"delegate\",\"active\":{\"major\":\"delegate\"}},\"id\":\"a0000004\",\"parentId\":\"a0000003\",\"timestamp\":\"2026-09-01T10:00:04.000Z\"}",
+        "{\"type\":\"custom\",\"customType\":\"mode\",\"data\":{\"minor\":\"spec\",\"on\":true},\"id\":\"a0000005\",\"parentId\":\"a0000004\",\"timestamp\":\"2026-09-01T10:00:05.000Z\"}",
+        "{\"type\":\"custom\",\"customType\":\"mode\",\"data\":{\"strict\":true},\"id\":\"a0000006\",\"parentId\":\"a0000005\",\"timestamp\":\"2026-09-01T10:00:06.000Z\"}",
+        "{\"type\":\"custom\",\"customType\":\"mode\",\"data\":{\"active\":{\"major\":\"code\"}},\"id\":\"a0000007\",\"parentId\":\"a0000006\",\"timestamp\":\"2026-09-01T10:00:07.000Z\"}",
+        "{\"type\":\"message\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"Plain question about the parser\"}],\"timestamp\":1788256808000},\"id\":\"a0000008\",\"parentId\":\"a0000007\",\"timestamp\":\"2026-09-01T10:00:08.000Z\"}",
+        "{\"type\":\"custom\",\"customType\":\"sova-overseer-sent\",\"data\":{\"targetId\":\"a0000008\"},\"id\":\"a0000009\",\"parentId\":\"a0000008\",\"timestamp\":\"2026-09-01T10:00:09.000Z\"}",
+        "{\"type\":\"message\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"Two screenshots attached /tmp/pi-clipboard-golden-0001.png\\n\\n[Image: original 2560x1600, displayed at 2000x1250. Multiply coordinates by 1.28 to map to original image.]\\n[Image: original 4000x3000, displayed at 2000x1500. Multiply coordinates by 2.00 to map to original image.]\"},{\"type\":\"image\",\"data\":\"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==\",\"mimeType\":\"image/png\"},{\"type\":\"image\",\"data\":\"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==\",\"mimeType\":\"image/png\"}],\"timestamp\":1788256810000},\"id\":\"a000000a\",\"parentId\":\"a0000009\",\"timestamp\":\"2026-09-01T10:00:10.000Z\"}",
+        "{\"type\":\"custom\",\"customType\":\"sova-session-sent\",\"data\":{\"targetId\":\"a000000a\",\"from\":{\"sessionId\":\"0190a000-0000-7000-8000-sender000000\",\"title\":\"Sender\"},\"hop\":2},\"id\":\"a000000b\",\"parentId\":\"a000000a\",\"timestamp\":\"2026-09-01T10:00:11.000Z\"}",
+        "{\"type\":\"message\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"thinking\",\"thinking\":\"Consider the parser.\",\"thinkingSignature\":\"sig-abc\"},{\"type\":\"text\",\"text\":\"Here is the answer, see /tmp/golden-chart.png\"},{\"type\":\"toolCall\",\"id\":\"call_1\",\"name\":\"read\",\"arguments\":{\"path\":\"src/a.ts\"}}],\"api\":\"openai-completions\",\"provider\":\"zai\",\"model\":\"glm-5.3\",\"usage\":{\"input\":5000,\"output\":200,\"cacheRead\":1000,\"cacheWrite\":300,\"totalTokens\":6500,\"cost\":{\"input\":0.001,\"output\":0.002,\"cacheRead\":0.0001,\"cacheWrite\":0,\"total\":0.0031}},\"stopReason\":\"toolUse\",\"timestamp\":1788256812000},\"id\":\"a000000c\",\"parentId\":\"a000000b\",\"timestamp\":\"2026-09-01T10:00:12.000Z\"}",
+        "{\"type\":\"message\",\"message\":{\"role\":\"toolResult\",\"toolCallId\":\"call_1\",\"toolName\":\"read\",\"content\":[{\"type\":\"text\",\"text\":\"file contents line 1\\nline 2\"}],\"isError\":false,\"details\":{\"truncation\":null},\"timestamp\":1788256813000},\"id\":\"a000000d\",\"parentId\":\"a000000c\",\"timestamp\":\"2026-09-01T10:00:13.000Z\"}",
+        "{\"type\":\"message\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"toolCall\",\"id\":\"call_2\",\"name\":\"bash\",\"arguments\":{\"command\":\"pnpm test\",\"timeout\":60}},{\"type\":\"toolCall\",\"id\":\"call_3\",\"name\":\"edit\",\"arguments\":{\"path\":\"src/a.ts\",\"edits\":[{\"oldText\":\"a\",\"newText\":\"b\"}]}},{\"type\":\"toolCall\",\"id\":\"call_4\",\"name\":\"agent_spawn\",\"arguments\":{\"name\":\"helper\",\"task\":\"do it\"}}],\"api\":\"openai-completions\",\"provider\":\"zai\",\"model\":\"glm-5.3\",\"usage\":{\"input\":1200,\"output\":80,\"cacheRead\":400,\"cacheWrite\":0,\"totalTokens\":1680,\"cost\":{\"input\":0.001,\"output\":0.002,\"cacheRead\":0.0001,\"cacheWrite\":0,\"total\":0.0031}},\"stopReason\":\"toolUse\",\"timestamp\":1788256814000},\"id\":\"a000000e\",\"parentId\":\"a000000d\",\"timestamp\":\"2026-09-01T10:00:14.000Z\"}",
+        "{\"type\":\"message\",\"message\":{\"role\":\"toolResult\",\"toolCallId\":\"call_2\",\"toolName\":\"bash\",\"content\":[{\"type\":\"text\",\"text\":\"Error: tests failed\"}],\"isError\":true,\"timestamp\":1788256815000},\"id\":\"a000000f\",\"parentId\":\"a000000e\",\"timestamp\":\"2026-09-01T10:00:15.000Z\"}",
+        "{\"type\":\"message\",\"message\":{\"role\":\"toolResult\",\"toolCallId\":\"call_3\",\"toolName\":\"edit\",\"content\":[{\"type\":\"text\",\"text\":\"Successfully replaced text\"}],\"isError\":false,\"details\":{\"diff\":\"-1 a\\n+1 b\",\"firstChangedLine\":1},\"timestamp\":1788256816000},\"id\":\"a0000010\",\"parentId\":\"a000000f\",\"timestamp\":\"2026-09-01T10:00:16.000Z\"}",
+        "{\"type\":\"message\",\"message\":{\"role\":\"toolResult\",\"toolCallId\":\"call_4\",\"toolName\":\"agent_spawn\",\"content\":[{\"type\":\"text\",\"text\":\"spawned ag_01 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}],\"isError\":false,\"timestamp\":1788256817000},\"id\":\"a0000011\",\"parentId\":\"a0000010\",\"timestamp\":\"2026-09-01T10:00:17.000Z\"}",
+        "{\"type\":\"message\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"future_block\",\"payload\":1},{\"type\":\"text\",\"text\":\"Unknown block before me\"}],\"api\":\"openai-completions\",\"provider\":\"zai\",\"model\":\"glm-5.3\",\"usage\":{\"input\":1200,\"output\":80,\"cacheRead\":400,\"cacheWrite\":0,\"totalTokens\":1680,\"cost\":{\"input\":0.001,\"output\":0.002,\"cacheRead\":0.0001,\"cacheWrite\":0,\"total\":0.0031}},\"stopReason\":\"stop\",\"timestamp\":1788256818000},\"id\":\"a0000012\",\"parentId\":\"a0000011\",\"timestamp\":\"2026-09-01T10:00:18.000Z\"}",
+        "{\"type\":\"message\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"partial\"}],\"api\":\"openai-completions\",\"provider\":\"zai\",\"model\":\"glm-5.3\",\"usage\":{\"input\":0,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"totalTokens\":0,\"cost\":{\"input\":0.001,\"output\":0.002,\"cacheRead\":0.0001,\"cacheWrite\":0,\"total\":0.0031}},\"stopReason\":\"error\",\"errorMessage\":\"429 Too Many Requests: rate limited\",\"timestamp\":1788256819000},\"id\":\"a0000013\",\"parentId\":\"a0000012\",\"timestamp\":\"2026-09-01T10:00:19.000Z\"}",
+        "{\"type\":\"message\",\"message\":{\"role\":\"assistant\",\"content\":[],\"api\":\"openai-completions\",\"provider\":\"zai\",\"model\":\"glm-5.3\",\"usage\":{\"input\":10,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"totalTokens\":10,\"cost\":{\"input\":0.001,\"output\":0.002,\"cacheRead\":0.0001,\"cacheWrite\":0,\"total\":0.0031}},\"stopReason\":\"aborted\",\"timestamp\":1788256820000},\"id\":\"a0000014\",\"parentId\":\"a0000013\",\"timestamp\":\"2026-09-01T10:00:20.000Z\"}",
+        "{\"type\":\"message\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"cut off\"}],\"api\":\"openai-completions\",\"provider\":\"zai\",\"model\":\"glm-5.3\",\"usage\":{\"input\":1200,\"output\":80,\"cacheRead\":400,\"cacheWrite\":0,\"totalTokens\":1680,\"cost\":{\"input\":0.001,\"output\":0.002,\"cacheRead\":0.0001,\"cacheWrite\":0,\"total\":0.0031}},\"stopReason\":\"length\",\"timestamp\":1788256821000},\"id\":\"a0000015\",\"parentId\":\"a0000014\",\"timestamp\":\"2026-09-01T10:00:21.000Z\"}",
+        "{\"type\":\"message\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"No provider on this one\"}],\"api\":\"openai-completions\",\"usage\":{\"input\":1200,\"output\":80,\"cacheRead\":400,\"cacheWrite\":0,\"totalTokens\":1680,\"cost\":{\"input\":0.001,\"output\":0.002,\"cacheRead\":0.0001,\"cacheWrite\":0,\"total\":0.0031}},\"stopReason\":\"stop\",\"timestamp\":1788256822000},\"id\":\"a0000016\",\"parentId\":\"a0000015\",\"timestamp\":\"2026-09-01T10:00:22.000Z\"}"
+      ]
+    },
+    "a0000017": {
+      "ok": false,
+      "reason": "tool_boundary",
+      "message": "That reply was still waiting on a tool result. Fork from a later reply in the same turn.",
+      "status": 400
+    },
+    "a0000018": {
+      "ok": false,
+      "reason": "not_assistant",
+      "message": "Only an assistant reply can be forked from.",
+      "status": 400
+    },
+    "a0000019": {
+      "ok": false,
+      "reason": "not_assistant",
+      "message": "Only an assistant reply can be forked from.",
+      "status": 400
+    },
+    "a000001a": {
+      "ok": false,
+      "reason": "not_assistant",
+      "message": "Only an assistant reply can be forked from.",
+      "status": 400
+    },
+    "a000001b": {
+      "ok": false,
+      "reason": "not_assistant",
+      "message": "Only an assistant reply can be forked from.",
+      "status": 400
+    },
+    "a000001c": {
+      "ok": false,
+      "reason": "not_assistant",
+      "message": "Only an assistant reply can be forked from.",
+      "status": 400
+    },
+    "a000001d": {
+      "ok": false,
+      "reason": "not_assistant",
+      "message": "Only an assistant reply can be forked from.",
+      "status": 400
+    },
+    "a000001e": {
+      "ok": false,
+      "reason": "not_assistant",
+      "message": "Only an assistant reply can be forked from.",
+      "status": 400
+    },
+    "a000001f": {
+      "ok": false,
+      "reason": "not_assistant",
+      "message": "Only an assistant reply can be forked from.",
+      "status": 400
+    },
+    "a0000020": {
+      "ok": false,
+      "reason": "not_assistant",
+      "message": "Only an assistant reply can be forked from.",
+      "status": 400
+    },
+    "a0000021": {
+      "ok": false,
+      "reason": "not_assistant",
+      "message": "Only an assistant reply can be forked from.",
+      "status": 400
+    },
+    "a0000022": {
+      "ok": false,
+      "reason": "not_assistant",
+      "message": "Only an assistant reply can be forked from.",
+      "status": 400
+    },
+    "a0000023": {
+      "ok": false,
+      "reason": "not_assistant",
+      "message": "Only an assistant reply can be forked from.",
+      "status": 400
+    },
+    "a0000024": {
+      "ok": false,
+      "reason": "not_assistant",
+      "message": "Only an assistant reply can be forked from.",
+      "status": 400
+    },
+    "a0000025": {
+      "ok": false,
+      "reason": "not_assistant",
+      "message": "Only an assistant reply can be forked from.",
+      "status": 400
+    },
+    "a0000026": {
+      "ok": false,
+      "reason": "not_assistant",
+      "message": "Only an assistant reply can be forked from.",
+      "status": 400
+    },
+    "a0000027": {
+      "ok": false,
+      "reason": "not_assistant",
+      "message": "Only an assistant reply can be forked from.",
+      "status": 400
+    },
+    "a0000028": {
+      "ok": false,
+      "reason": "not_assistant",
+      "message": "Only an assistant reply can be forked from.",
+      "status": 400
+    },
+    "a0000029": {
+      "ok": false,
+      "reason": "not_assistant",
+      "message": "Only an assistant reply can be forked from.",
+      "status": 400
+    },
+    "a000002a": {
+      "ok": false,
+      "reason": "not_assistant",
+      "message": "Only an assistant reply can be forked from.",
+      "status": 400
+    },
+    "a000002b": {
+      "ok": false,
+      "reason": "not_assistant",
+      "message": "Only an assistant reply can be forked from.",
+      "status": 400
+    },
+    "a000002c": {
+      "ok": false,
+      "reason": "not_assistant",
+      "message": "Only an assistant reply can be forked from.",
+      "status": 400
+    },
+    "a000002d": {
+      "ok": false,
+      "reason": "not_assistant",
+      "message": "Only an assistant reply can be forked from.",
+      "status": 400
+    },
+    "a000002e": {
+      "ok": false,
+      "reason": "not_assistant",
+      "message": "Only an assistant reply can be forked from.",
+      "status": 400
+    },
+    "a000002f": {
+      "ok": false,
+      "reason": "not_assistant",
+      "message": "Only an assistant reply can be forked from.",
+      "status": 400
+    },
+    "a0000030": {
+      "ok": false,
+      "reason": "not_assistant",
+      "message": "Only an assistant reply can be forked from.",
+      "status": 400
+    },
+    "a0000031": {
+      "ok": false,
+      "reason": "not_assistant",
+      "message": "Only an assistant reply can be forked from.",
+      "status": 400
+    },
+    "a0000032": {
+      "ok": false,
+      "reason": "not_assistant",
+      "message": "Only an assistant reply can be forked from.",
+      "status": 400
+    },
+    "a0000033": {
+      "ok": false,
+      "reason": "not_assistant",
+      "message": "Only an assistant reply can be forked from.",
+      "status": 400
+    },
+    "a0000034": {
+      "ok": false,
+      "reason": "not_assistant",
+      "message": "Only an assistant reply can be forked from.",
+      "status": 400
+    },
+    "a0000035": {
+      "ok": false,
+      "reason": "not_assistant",
+      "message": "Only an assistant reply can be forked from.",
+      "status": 400
+    },
+    "a0000036": {
+      "ok": false,
+      "reason": "not_assistant",
+      "message": "Only an assistant reply can be forked from.",
+      "status": 400
+    },
+    "a0000037": {
+      "ok": false,
+      "reason": "not_assistant",
+      "message": "Only an assistant reply can be forked from.",
+      "status": 400
+    },
+    "a0000038": {
+      "ok": false,
+      "reason": "not_assistant",
+      "message": "Only an assistant reply can be forked from.",
+      "status": 400
+    },
+    "a0000039": {
+      "ok": false,
+      "reason": "not_assistant",
+      "message": "Only an assistant reply can be forked from.",
+      "status": 400
+    },
+    "a000003a": {
+      "ok": false,
+      "reason": "not_assistant",
+      "message": "Only an assistant reply can be forked from.",
+      "status": 400
+    },
+    "a000003b": {
+      "ok": false,
+      "reason": "not_assistant",
+      "message": "Only an assistant reply can be forked from.",
+      "status": 400
+    },
+    "a000003c": {
+      "ok": false,
+      "reason": "not_assistant",
+      "message": "Only an assistant reply can be forked from.",
+      "status": 400
+    },
+    "a000003d": {
+      "ok": false,
+      "reason": "not_assistant",
+      "message": "Only an assistant reply can be forked from.",
+      "status": 400
+    },
+    "a000003e": {
+      "ok": false,
+      "reason": "not_assistant",
+      "message": "Only an assistant reply can be forked from.",
+      "status": 400
+    },
+    "a000003f": {
+      "ok": false,
+      "reason": "not_assistant",
+      "message": "Only an assistant reply can be forked from.",
+      "status": 400
+    },
+    "a0000040": {
+      "ok": false,
+      "reason": "not_assistant",
+      "message": "Only an assistant reply can be forked from.",
+      "status": 400
+    },
+    "a0000041": {
+      "ok": false,
+      "reason": "not_assistant",
+      "message": "Only an assistant reply can be forked from.",
+      "status": 400
+    },
+    "a0000042": {
+      "ok": false,
+      "reason": "not_assistant",
+      "message": "Only an assistant reply can be forked from.",
+      "status": 400
+    },
+    "a0000043": {
+      "ok": false,
+      "reason": "not_assistant",
+      "message": "Only an assistant reply can be forked from.",
+      "status": 400
+    },
+    "a0000044": {
+      "ok": false,
+      "reason": "not_assistant",
+      "message": "Only an assistant reply can be forked from.",
+      "status": 400
+    },
+    "a0000045": {
+      "ok": false,
+      "reason": "not_assistant",
+      "message": "Only an assistant reply can be forked from.",
+      "status": 400
+    },
+    "a0000046": {
+      "ok": false,
+      "reason": "not_assistant",
+      "message": "Only an assistant reply can be forked from.",
+      "status": 400
+    },
+    "a0000047": {
+      "ok": false,
+      "reason": "not_assistant",
+      "message": "Only an assistant reply can be forked from.",
+      "status": 400
+    },
+    "a0000048": {
+      "ok": true,
+      "prefix": [
+        "{\"type\":\"model_change\",\"provider\":\"zai\",\"modelId\":\"glm-5.3\",\"id\":\"a0000001\",\"parentId\":null,\"timestamp\":\"2026-09-01T10:00:01.000Z\"}",
+        "{\"type\":\"thinking_level_change\",\"thinkingLevel\":\"medium\",\"id\":\"a0000002\",\"parentId\":\"a0000001\",\"timestamp\":\"2026-09-01T10:00:02.000Z\"}",
+        "{\"type\":\"custom\",\"customType\":\"sova-profile\",\"data\":{\"v\":1,\"profile\":{\"id\":\"reviewer\",\"label\":\"Reviewer\",\"icon\":\"user\",\"source\":\"sova\",\"singleton\":true}},\"id\":\"a0000003\",\"parentId\":\"a0000002\",\"timestamp\":\"2026-09-01T10:00:03.000Z\"}",
+        "{\"type\":\"custom\",\"customType\":\"mode\",\"data\":{\"mode\":\"delegate\",\"active\":{\"major\":\"delegate\"}},\"id\":\"a0000004\",\"parentId\":\"a0000003\",\"timestamp\":\"2026-09-01T10:00:04.000Z\"}",
+        "{\"type\":\"custom\",\"customType\":\"mode\",\"data\":{\"minor\":\"spec\",\"on\":true},\"id\":\"a0000005\",\"parentId\":\"a0000004\",\"timestamp\":\"2026-09-01T10:00:05.000Z\"}",
+        "{\"type\":\"custom\",\"customType\":\"mode\",\"data\":{\"strict\":true},\"id\":\"a0000006\",\"parentId\":\"a0000005\",\"timestamp\":\"2026-09-01T10:00:06.000Z\"}",
+        "{\"type\":\"custom\",\"customType\":\"mode\",\"data\":{\"active\":{\"major\":\"code\"}},\"id\":\"a0000007\",\"parentId\":\"a0000006\",\"timestamp\":\"2026-09-01T10:00:07.000Z\"}",
+        "{\"type\":\"message\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"Plain question about the parser\"}],\"timestamp\":1788256808000},\"id\":\"a0000008\",\"parentId\":\"a0000007\",\"timestamp\":\"2026-09-01T10:00:08.000Z\"}",
+        "{\"type\":\"custom\",\"customType\":\"sova-overseer-sent\",\"data\":{\"targetId\":\"a0000008\"},\"id\":\"a0000009\",\"parentId\":\"a0000008\",\"timestamp\":\"2026-09-01T10:00:09.000Z\"}",
+        "{\"type\":\"message\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"Two screenshots attached /tmp/pi-clipboard-golden-0001.png\\n\\n[Image: original 2560x1600, displayed at 2000x1250. Multiply coordinates by 1.28 to map to original image.]\\n[Image: original 4000x3000, displayed at 2000x1500. Multiply coordinates by 2.00 to map to original image.]\"},{\"type\":\"image\",\"data\":\"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==\",\"mimeType\":\"image/png\"},{\"type\":\"image\",\"data\":\"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==\",\"mimeType\":\"image/png\"}],\"timestamp\":1788256810000},\"id\":\"a000000a\",\"parentId\":\"a0000009\",\"timestamp\":\"2026-09-01T10:00:10.000Z\"}",
+        "{\"type\":\"custom\",\"customType\":\"sova-session-sent\",\"data\":{\"targetId\":\"a000000a\",\"from\":{\"sessionId\":\"0190a000-0000-7000-8000-sender000000\",\"title\":\"Sender\"},\"hop\":2},\"id\":\"a000000b\",\"parentId\":\"a000000a\",\"timestamp\":\"2026-09-01T10:00:11.000Z\"}",
+        "{\"type\":\"message\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"thinking\",\"thinking\":\"Consider the parser.\",\"thinkingSignature\":\"sig-abc\"},{\"type\":\"text\",\"text\":\"Here is the answer, see /tmp/golden-chart.png\"},{\"type\":\"toolCall\",\"id\":\"call_1\",\"name\":\"read\",\"arguments\":{\"path\":\"src/a.ts\"}}],\"api\":\"openai-completions\",\"provider\":\"zai\",\"model\":\"glm-5.3\",\"usage\":{\"input\":5000,\"output\":200,\"cacheRead\":1000,\"cacheWrite\":300,\"totalTokens\":6500,\"cost\":{\"input\":0.001,\"output\":0.002,\"cacheRead\":0.0001,\"cacheWrite\":0,\"total\":0.0031}},\"stopReason\":\"toolUse\",\"timestamp\":1788256812000},\"id\":\"a000000c\",\"parentId\":\"a000000b\",\"timestamp\":\"2026-09-01T10:00:12.000Z\"}",
+        "{\"type\":\"message\",\"message\":{\"role\":\"toolResult\",\"toolCallId\":\"call_1\",\"toolName\":\"read\",\"content\":[{\"type\":\"text\",\"text\":\"file contents line 1\\nline 2\"}],\"isError\":false,\"details\":{\"truncation\":null},\"timestamp\":1788256813000},\"id\":\"a000000d\",\"parentId\":\"a000000c\",\"timestamp\":\"2026-09-01T10:00:13.000Z\"}",
+        "{\"type\":\"message\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"toolCall\",\"id\":\"call_2\",\"name\":\"bash\",\"arguments\":{\"command\":\"pnpm test\",\"timeout\":60}},{\"type\":\"toolCall\",\"id\":\"call_3\",\"name\":\"edit\",\"arguments\":{\"path\":\"src/a.ts\",\"edits\":[{\"oldText\":\"a\",\"newText\":\"b\"}]}},{\"type\":\"toolCall\",\"id\":\"call_4\",\"name\":\"agent_spawn\",\"arguments\":{\"name\":\"helper\",\"task\":\"do it\"}}],\"api\":\"openai-completions\",\"provider\":\"zai\",\"model\":\"glm-5.3\",\"usage\":{\"input\":1200,\"output\":80,\"cacheRead\":400,\"cacheWrite\":0,\"totalTokens\":1680,\"cost\":{\"input\":0.001,\"output\":0.002,\"cacheRead\":0.0001,\"cacheWrite\":0,\"total\":0.0031}},\"stopReason\":\"toolUse\",\"timestamp\":1788256814000},\"id\":\"a000000e\",\"parentId\":\"a000000d\",\"timestamp\":\"2026-09-01T10:00:14.000Z\"}",
+        "{\"type\":\"message\",\"message\":{\"role\":\"toolResult\",\"toolCallId\":\"call_2\",\"toolName\":\"bash\",\"content\":[{\"type\":\"text\",\"text\":\"Error: tests failed\"}],\"isError\":true,\"timestamp\":1788256815000},\"id\":\"a000000f\",\"parentId\":\"a000000e\",\"timestamp\":\"2026-09-01T10:00:15.000Z\"}",
+        "{\"type\":\"message\",\"message\":{\"role\":\"toolResult\",\"toolCallId\":\"call_3\",\"toolName\":\"edit\",\"content\":[{\"type\":\"text\",\"text\":\"Successfully replaced text\"}],\"isError\":false,\"details\":{\"diff\":\"-1 a\\n+1 b\",\"firstChangedLine\":1},\"timestamp\":1788256816000},\"id\":\"a0000010\",\"parentId\":\"a000000f\",\"timestamp\":\"2026-09-01T10:00:16.000Z\"}",
+        "{\"type\":\"message\",\"message\":{\"role\":\"toolResult\",\"toolCallId\":\"call_4\",\"toolName\":\"agent_spawn\",\"content\":[{\"type\":\"text\",\"text\":\"spawned ag_01 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}],\"isError\":false,\"timestamp\":1788256817000},\"id\":\"a0000011\",\"parentId\":\"a0000010\",\"timestamp\":\"2026-09-01T10:00:17.000Z\"}",
+        "{\"type\":\"message\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"future_block\",\"payload\":1},{\"type\":\"text\",\"text\":\"Unknown block before me\"}],\"api\":\"openai-completions\",\"provider\":\"zai\",\"model\":\"glm-5.3\",\"usage\":{\"input\":1200,\"output\":80,\"cacheRead\":400,\"cacheWrite\":0,\"totalTokens\":1680,\"cost\":{\"input\":0.001,\"output\":0.002,\"cacheRead\":0.0001,\"cacheWrite\":0,\"total\":0.0031}},\"stopReason\":\"stop\",\"timestamp\":1788256818000},\"id\":\"a0000012\",\"parentId\":\"a0000011\",\"timestamp\":\"2026-09-01T10:00:18.000Z\"}",
+        "{\"type\":\"message\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"partial\"}],\"api\":\"openai-completions\",\"provider\":\"zai\",\"model\":\"glm-5.3\",\"usage\":{\"input\":0,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"totalTokens\":0,\"cost\":{\"input\":0.001,\"output\":0.002,\"cacheRead\":0.0001,\"cacheWrite\":0,\"total\":0.0031}},\"stopReason\":\"error\",\"errorMessage\":\"429 Too Many Requests: rate limited\",\"timestamp\":1788256819000},\"id\":\"a0000013\",\"parentId\":\"a0000012\",\"timestamp\":\"2026-09-01T10:00:19.000Z\"}",
+        "{\"type\":\"message\",\"message\":{\"role\":\"assistant\",\"content\":[],\"api\":\"openai-completions\",\"provider\":\"zai\",\"model\":\"glm-5.3\",\"usage\":{\"input\":10,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"totalTokens\":10,\"cost\":{\"input\":0.001,\"output\":0.002,\"cacheRead\":0.0001,\"cacheWrite\":0,\"total\":0.0031}},\"stopReason\":\"aborted\",\"timestamp\":1788256820000},\"id\":\"a0000014\",\"parentId\":\"a0000013\",\"timestamp\":\"2026-09-01T10:00:20.000Z\"}",
+        "{\"type\":\"message\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"cut off\"}],\"api\":\"openai-completions\",\"provider\":\"zai\",\"model\":\"glm-5.3\",\"usage\":{\"input\":1200,\"output\":80,\"cacheRead\":400,\"cacheWrite\":0,\"totalTokens\":1680,\"cost\":{\"input\":0.001,\"output\":0.002,\"cacheRead\":0.0001,\"cacheWrite\":0,\"total\":0.0031}},\"stopReason\":\"length\",\"timestamp\":1788256821000},\"id\":\"a0000015\",\"parentId\":\"a0000014\",\"timestamp\":\"2026-09-01T10:00:21.000Z\"}",
+        "{\"type\":\"message\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"No provider on this one\"}],\"api\":\"openai-completions\",\"usage\":{\"input\":1200,\"output\":80,\"cacheRead\":400,\"cacheWrite\":0,\"totalTokens\":1680,\"cost\":{\"input\":0.001,\"output\":0.002,\"cacheRead\":0.0001,\"cacheWrite\":0,\"total\":0.0031}},\"stopReason\":\"stop\",\"timestamp\":1788256822000},\"id\":\"a0000016\",\"parentId\":\"a0000015\",\"timestamp\":\"2026-09-01T10:00:22.000Z\"}",
+        "{\"type\":\"message\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"toolCall\",\"id\":\"call_5\",\"name\":\"align\",\"arguments\":{}},{\"type\":\"toolCall\",\"id\":\"call_6\",\"name\":\"align\",\"arguments\":{}}],\"api\":\"openai-completions\",\"provider\":\"zai\",\"model\":\"glm-5.3\",\"usage\":{\"input\":1200,\"output\":80,\"cacheRead\":400,\"cacheWrite\":0,\"totalTokens\":1680,\"cost\":{\"input\":0.001,\"output\":0.002,\"cacheRead\":0.0001,\"cacheWrite\":0,\"total\":0.0031}},\"stopReason\":\"toolUse\",\"timestamp\":1788256823000},\"id\":\"a0000017\",\"parentId\":\"a0000016\",\"timestamp\":\"2026-09-01T10:00:23.000Z\"}",
+        "{\"type\":\"message\",\"message\":{\"role\":\"toolResult\",\"toolCallId\":\"call_5\",\"toolName\":\"align\",\"content\":[{\"type\":\"text\",\"text\":\"created\"}],\"isError\":false,\"details\":{\"v\":1,\"changes\":[{\"kind\":\"created\"}],\"line\":\"created\",\"doc\":{\"id\":\"al_1\",\"title\":\"Export\",\"summary\":\"Download a session.\",\"findings\":[],\"approach\":[],\"rejected\":[],\"questions\":[{\"id\":\"q1\",\"topic\":\"Format\",\"ask\":\"Format?\",\"recommendation\":{\"choice\":\"yes\",\"why\":\"simpler\"}},{\"id\":\"q2\",\"topic\":\"Zip\",\"ask\":\"Zip?\",\"recommendation\":{\"choice\":\"yes\",\"why\":\"simpler\"}}],\"phase\":\"open\",\"next\":{\"f\":0,\"a\":0,\"x\":0,\"q\":2},\"rev\":1,\"createdAt\":\"2026-09-01T10:00:00.000Z\",\"updatedAt\":\"2026-09-01T10:00:00.000Z\"}},\"timestamp\":1788256824000},\"id\":\"a0000018\",\"parentId\":\"a0000017\",\"timestamp\":\"2026-09-01T10:00:24.000Z\"}",
+        "{\"type\":\"message\",\"message\":{\"role\":\"toolResult\",\"toolCallId\":\"call_6\",\"toolName\":\"align\",\"content\":[{\"type\":\"text\",\"text\":\"exempt\"}],\"isError\":false,\"details\":{\"v\":1,\"changes\":[],\"line\":\"\",\"exempt\":{\"why\":\"a question, no change\"}},\"timestamp\":1788256825000},\"id\":\"a0000019\",\"parentId\":\"a0000018\",\"timestamp\":\"2026-09-01T10:00:25.000Z\"}",
+        "{\"type\":\"message\",\"message\":{\"role\":\"bashExecution\",\"command\":\"ls -la\",\"output\":\"total 0\",\"exitCode\":0,\"cancelled\":false,\"truncated\":false,\"timestamp\":1788256826000},\"id\":\"a000001a\",\"parentId\":\"a0000019\",\"timestamp\":\"2026-09-01T10:00:26.000Z\"}",
+        "{\"type\":\"message\",\"message\":{\"role\":\"custom\",\"customType\":\"note-ext\",\"content\":\"A short extension note\",\"display\":true,\"timestamp\":1788256827000},\"id\":\"a000001b\",\"parentId\":\"a000001a\",\"timestamp\":\"2026-09-01T10:00:27.000Z\"}",
+        "{\"type\":\"message\",\"message\":{\"role\":\"custom\",\"customType\":\"note-ext\",\"content\":\"Hidden extension note\",\"display\":false,\"timestamp\":1788256828000},\"id\":\"a000001c\",\"parentId\":\"a000001b\",\"timestamp\":\"2026-09-01T10:00:28.000Z\"}",
+        "{\"type\":\"message\",\"message\":{\"role\":\"custom\",\"customType\":\"subagent-complete\",\"content\":\"### ag_01 (helper) — done · task success\\nAll green.\",\"display\":true,\"timestamp\":1788256829000},\"id\":\"a000001d\",\"parentId\":\"a000001c\",\"timestamp\":\"2026-09-01T10:00:29.000Z\"}",
+        "{\"type\":\"message\",\"message\":{\"role\":\"branchSummary\",\"summary\":\"We tried a different approach.\",\"fromId\":\"a000001d\",\"timestamp\":1788256830000},\"id\":\"a000001e\",\"parentId\":\"a000001d\",\"timestamp\":\"2026-09-01T10:00:30.000Z\"}",
+        "{\"type\":\"message\",\"message\":{\"role\":\"compactionSummary\",\"summary\":\"Earlier work summarized.\",\"tokensBefore\":90000,\"timestamp\":1788256831000},\"id\":\"a000001f\",\"parentId\":\"a000001e\",\"timestamp\":\"2026-09-01T10:00:31.000Z\"}",
+        "{\"type\":\"message\",\"message\":{\"role\":\"system\",\"content\":[{\"type\":\"text\",\"text\":\"Base prompt\"}],\"sections\":{\"skills\":\"<available_skills>\\n<skill><name>golden-skill</name><description>A skill</description><location>/home/user/.pi/skills/golden-skill/SKILL.md</location></skill>\\n</available_skills>\",\"tools\":null},\"toolsAdded\":[{\"name\":\"echo\",\"description\":\"Echo\",\"parameters\":{\"type\":\"object\"}}],\"toolsRemoved\":[{\"name\":\"old\"}],\"timestamp\":1788256832000},\"id\":\"a0000020\",\"parentId\":\"a000001f\",\"timestamp\":\"2026-09-01T10:00:32.000Z\"}",
+        "{\"type\":\"session_info\",\"name\":\"Golden all types\",\"id\":\"a0000021\",\"parentId\":\"a0000020\",\"timestamp\":\"2026-09-01T10:00:33.000Z\"}",
+        "{\"type\":\"label\",\"targetId\":\"a0000021\",\"label\":\"checkpoint\",\"id\":\"a0000022\",\"parentId\":\"a0000021\",\"timestamp\":\"2026-09-01T10:00:34.000Z\"}",
+        "{\"type\":\"label\",\"targetId\":\"a0000021\",\"id\":\"a0000023\",\"parentId\":\"a0000022\",\"timestamp\":\"2026-09-01T10:00:35.000Z\"}",
+        "{\"type\":\"compaction\",\"summary\":\"## Summary\\nAll of the above.\",\"firstKeptEntryId\":\"a0000021\",\"tokensBefore\":123456,\"details\":{\"readFiles\":[\"src/a.ts\"],\"modifiedFiles\":[\"src/b.ts\"]},\"id\":\"a0000024\",\"parentId\":\"a0000023\",\"timestamp\":\"2026-09-01T10:00:36.000Z\"}",
+        "{\"type\":\"branch_summary\",\"fromId\":\"a0000021\",\"summary\":\"Abandoned branch notes.\",\"id\":\"a0000025\",\"parentId\":\"a0000024\",\"timestamp\":\"2026-09-01T10:00:37.000Z\"}",
+        "{\"type\":\"custom\",\"customType\":\"btw-thread-entry\",\"data\":{\"question\":\"Side   question about\\nthe cache?\",\"answer\":\"The cache is warm.\",\"provider\":\"zai\",\"model\":\"glm-5.3\"},\"id\":\"a0000026\",\"parentId\":\"a0000025\",\"timestamp\":\"2026-09-01T10:00:38.000Z\"}",
+        "{\"type\":\"custom\",\"customType\":\"btw-thread-entry\",\"data\":{\"question\":\"Still running\",\"answer\":\"\"},\"id\":\"a0000027\",\"parentId\":\"a0000026\",\"timestamp\":\"2026-09-01T10:00:39.000Z\"}",
+        "{\"type\":\"custom\",\"customType\":\"align-doc\",\"data\":{\"version\":1,\"doc\":{\"id\":\"al_9\",\"title\":\"Old\",\"markdown\":\"# Old\",\"questions\":[]}},\"id\":\"a0000028\",\"parentId\":\"a0000027\",\"timestamp\":\"2026-09-01T10:00:40.000Z\"}",
+        "{\"type\":\"custom\",\"customType\":\"align-doc\",\"data\":{\"version\":1,\"doc\":{\"id\":\"al_9\",\"title\":\"Export\",\"markdown\":\"# Export\\n\\nDecide the format.\",\"questions\":[{\"checked\":true},{\"checked\":false}],\"revision\":3}},\"id\":\"a0000029\",\"parentId\":\"a0000028\",\"timestamp\":\"2026-09-01T10:00:41.000Z\"}",
+        "{\"type\":\"custom\",\"customType\":\"explain-doc\",\"data\":{\"id\":\"ex_1\",\"topic\":\"The reader\",\"summary\":\"\",\"createdAt\":\"2026-09-01T10:01:00.000Z\",\"parentSessionId\":\"p1\",\"status\":\"running\"},\"id\":\"a000002a\",\"parentId\":\"a0000029\",\"timestamp\":\"2026-09-01T10:00:42.000Z\"}",
+        "{\"type\":\"custom\",\"customType\":\"explain-doc\",\"data\":{\"id\":\"ex_1\",\"topic\":\"The reader\",\"summary\":\"How the reader works.\",\"createdAt\":\"2026-09-01T10:01:00.000Z\",\"parentSessionId\":\"p1\",\"model\":\"zai/glm-5.3\"},\"id\":\"a000002b\",\"parentId\":\"a000002a\",\"timestamp\":\"2026-09-01T10:00:43.000Z\"}",
+        "{\"type\":\"custom\",\"customType\":\"explain-doc\",\"data\":{\"id\":\"ex_2\",\"topic\":\"Broken\",\"summary\":\"\",\"createdAt\":\"2026-09-01T10:02:00.000Z\",\"parentSessionId\":\"p1\",\"status\":\"interrupted\",\"error\":\"child died\"},\"id\":\"a000002c\",\"parentId\":\"a000002b\",\"timestamp\":\"2026-09-01T10:00:44.000Z\"}",
+        "{\"type\":\"custom\",\"customType\":\"compact-handoff-run\",\"data\":{\"v\":1,\"id\":\"ho_1\",\"status\":\"running\",\"at\":1788256800000,\"focus\":\"the parser\"},\"id\":\"a000002d\",\"parentId\":\"a000002c\",\"timestamp\":\"2026-09-01T10:00:45.000Z\"}",
+        "{\"type\":\"custom\",\"customType\":\"compact-handoff-run\",\"data\":{\"v\":1,\"id\":\"ho_1\",\"status\":\"saved\",\"at\":1788256800000,\"path\":\"/home/user/golden/HANDOFF.md\"},\"id\":\"a000002e\",\"parentId\":\"a000002d\",\"timestamp\":\"2026-09-01T10:00:46.000Z\"}",
+        "{\"type\":\"custom\",\"customType\":\"compact-handoff-run\",\"data\":{\"v\":1,\"id\":\"ho_2\",\"status\":\"failed\",\"at\":1788256800000,\"error\":\"no model\"},\"id\":\"a000002f\",\"parentId\":\"a000002e\",\"timestamp\":\"2026-09-01T10:00:47.000Z\"}",
+        "{\"type\":\"custom\",\"customType\":\"sova-profile\",\"data\":{\"v\":1,\"profile\":{\"id\":\"default\",\"label\":\"Default\",\"icon\":\"user\",\"source\":\"sova\"}},\"id\":\"a0000030\",\"parentId\":\"a000002f\",\"timestamp\":\"2026-09-01T10:00:48.000Z\"}",
+        "{\"type\":\"custom\",\"customType\":\"sova-overseer-dialog-answer\",\"data\":{\"title\":\"Pick one\",\"answer\":\"Yes\"},\"id\":\"a0000031\",\"parentId\":\"a0000030\",\"timestamp\":\"2026-09-01T10:00:49.000Z\"}",
+        "{\"type\":\"custom\",\"customType\":\"claude-login\",\"data\":{\"v\":1,\"login\":\"work\",\"label\":\"Work\",\"from\":\"default\",\"fromLabel\":\"Personal\",\"reason\":\"limit\",\"text\":\"Switched to Work: Personal hit its limit.\"},\"id\":\"a0000034\",\"parentId\":\"a0000031\",\"timestamp\":\"2026-09-01T10:00:52.000Z\"}",
+        "{\"type\":\"custom\",\"customType\":\"claude-login\",\"data\":{\"v\":1,\"login\":\"work\"},\"id\":\"a0000035\",\"parentId\":\"a0000034\",\"timestamp\":\"2026-09-01T10:00:53.000Z\"}",
+        "{\"type\":\"custom\",\"customType\":\"sova-baton-sent\",\"data\":{\"v\":1,\"targetId\":\"a0000021\",\"by\":\"p_alice\"},\"id\":\"a0000036\",\"parentId\":\"a0000035\",\"timestamp\":\"2026-09-01T10:00:54.000Z\"}",
+        "{\"type\":\"custom\",\"customType\":\"sova-baton-handoff\",\"data\":{\"v\":1,\"n\":1,\"from\":\"p_alice\",\"to\":\"p_bob\",\"question\":\"Can you check?\",\"briefing\":\"Context here\"},\"id\":\"a0000037\",\"parentId\":\"a0000036\",\"timestamp\":\"2026-09-01T10:00:55.000Z\"}",
+        "{\"type\":\"custom\",\"customType\":\"sova-baton-decision\",\"data\":{\"v\":1,\"by\":\"p_bob\",\"area\":\"API\",\"statement\":\"Use REST\",\"quote\":\"REST is fine\"},\"id\":\"a0000038\",\"parentId\":\"a0000037\",\"timestamp\":\"2026-09-01T10:00:56.000Z\"}",
+        "{\"type\":\"custom\",\"customType\":\"sova-baton-done\",\"data\":{\"v\":1,\"summary\":\"Finished.\"},\"id\":\"a0000039\",\"parentId\":\"a0000038\",\"timestamp\":\"2026-09-01T10:00:57.000Z\"}",
+        "{\"type\":\"custom\",\"customType\":\"sova-baton-offer\",\"data\":{\"v\":1,\"n\":2,\"offerId\":\"of_1\",\"from\":\"p_bob\",\"to\":[\"p_carol\",\"p_dave\",7],\"question\":\"Anyone?\",\"briefing\":\"More\"},\"id\":\"a000003a\",\"parentId\":\"a0000039\",\"timestamp\":\"2026-09-01T10:00:58.000Z\"}",
+        "{\"type\":\"custom\",\"customType\":\"sova-baton-lease\",\"data\":{\"v\":1,\"n\":2,\"offerId\":\"of_1\",\"event\":\"claimed\",\"by\":\"p_carol\"},\"id\":\"a000003b\",\"parentId\":\"a000003a\",\"timestamp\":\"2026-09-01T10:00:59.000Z\"}",
+        "{\"type\":\"custom\",\"customType\":\"sova-baton-proposal\",\"data\":{\"v\":1,\"personId\":\"p_erin\",\"name\":\"Erin\",\"role\":\"QA\",\"why\":\"tests\",\"by\":\"p_carol\"},\"id\":\"a000003c\",\"parentId\":\"a000003b\",\"timestamp\":\"2026-09-01T10:01:00.000Z\"}",
+        "{\"type\":\"custom\",\"customType\":\"sova-baton-wrapup\",\"data\":{\"v\":1,\"phase\":\"start\"},\"id\":\"a000003d\",\"parentId\":\"a000003c\",\"timestamp\":\"2026-09-01T10:01:01.000Z\"}",
+        "{\"type\":\"custom\",\"customType\":\"sova-baton-wrapup\",\"data\":{\"v\":1,\"phase\":\"end\",\"applied\":[{\"personId\":\"p_bob\"}],\"refused\":[],\"error\":\"one refused\"},\"id\":\"a000003e\",\"parentId\":\"a000003d\",\"timestamp\":\"2026-09-01T10:01:02.000Z\"}",
+        "{\"type\":\"custom\",\"customType\":\"topic-outline\",\"data\":{\"version\":2,\"now\":\"Working on the parser\",\"overall\":\"Golden fixture session\",\"state\":\"fresh\",\"generatedAt\":1788256920000,\"topics\":[{\"id\":\"t1\",\"heading\":\"Parser\",\"summary\":[\"Parser first point\",\"Parser second point\",\"Parser third point\"],\"at\":1788256920000,\"anchor\":{\"entryId\":null,\"timestamp\":1788256920000}},{\"id\":\"t2\",\"heading\":\"Tests\",\"summary\":[\"Tests first point\",\"Tests second point\",\"Tests third point\"],\"at\":1788256920000,\"anchor\":{\"entryId\":null,\"timestamp\":1788256920000}}]},\"id\":\"a000003f\",\"parentId\":\"a000003e\",\"timestamp\":\"2026-09-01T10:01:03.000Z\"}",
+        "{\"type\":\"custom\",\"customType\":\"some-extension-state\",\"data\":{\"any\":\"thing\"},\"id\":\"a0000040\",\"parentId\":\"a000003f\",\"timestamp\":\"2026-09-01T10:01:04.000Z\"}",
+        "{\"type\":\"custom_message\",\"customType\":\"worktree-merge\",\"content\":\"Merged feat/golden into master\",\"display\":true,\"details\":{\"version\":1,\"path\":\"/wt/golden\",\"branch\":\"feat/golden\",\"target\":\"master\",\"sha\":\"abc1234\",\"commits\":3,\"added\":10,\"removed\":2,\"fastForward\":true,\"how\":\"tool\"},\"id\":\"a0000041\",\"parentId\":\"a0000040\",\"timestamp\":\"2026-09-01T10:01:05.000Z\"}",
+        "{\"type\":\"custom_message\",\"customType\":\"worktree-merge\",\"content\":\"Merged, details unreadable\",\"display\":true,\"details\":{\"version\":9},\"id\":\"a0000042\",\"parentId\":\"a0000041\",\"timestamp\":\"2026-09-01T10:01:06.000Z\"}",
+        "{\"type\":\"custom_message\",\"customType\":\"hidden-ext\",\"content\":\"Never shown\",\"display\":false,\"id\":\"a0000043\",\"parentId\":\"a0000042\",\"timestamp\":\"2026-09-01T10:01:07.000Z\"}",
+        "{\"type\":\"custom_message\",\"customType\":\"generic-ext\",\"content\":[{\"type\":\"text\",\"text\":\"A generic extension message\\nwith two lines\"}],\"display\":true,\"id\":\"a0000044\",\"parentId\":\"a0000043\",\"timestamp\":\"2026-09-01T10:01:08.000Z\"}",
+        "{\"type\":\"custom_message\",\"customType\":\"team-report\",\"content\":\"[Team report from coordinator lead (ag_01), team_01 — golden team · milestone]\\nMilestone reached.\\n(Informational: no action is requested.)\",\"display\":true,\"id\":\"a0000045\",\"parentId\":\"a0000044\",\"timestamp\":\"2026-09-01T10:01:09.000Z\"}",
+        "{\"type\":\"usage\",\"kind\":\"cache_warm\",\"provider\":\"anthropic\",\"model\":\"claude-sonnet-5\",\"usage\":{\"input\":0,\"output\":0,\"cacheRead\":9000,\"cacheWrite\":0,\"totalTokens\":9000,\"cost\":{\"input\":0.001,\"output\":0.002,\"cacheRead\":0.0001,\"cacheWrite\":0,\"total\":0.0031}},\"id\":\"a0000046\",\"parentId\":\"a0000045\",\"timestamp\":\"2026-09-01T10:01:10.000Z\"}",
+        "{\"type\":\"context_edit\",\"targetId\":\"a0000021\",\"replacement\":null,\"id\":\"a0000047\",\"parentId\":\"a0000046\",\"timestamp\":\"2026-09-01T10:01:11.000Z\"}",
+        "{\"type\":\"message\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"Final reply after everything.\"}],\"api\":\"openai-completions\",\"provider\":\"zai\",\"model\":\"glm-5.3\",\"usage\":{\"input\":2000,\"output\":100,\"cacheRead\":60000,\"cacheWrite\":500,\"totalTokens\":62600,\"cost\":{\"input\":0.001,\"output\":0.002,\"cacheRead\":0.0001,\"cacheWrite\":0,\"total\":0.0031}},\"stopReason\":\"stop\",\"timestamp\":1788256872000},\"id\":\"a0000048\",\"parentId\":\"a0000047\",\"timestamp\":\"2026-09-01T10:01:12.000Z\"}"
+      ]
+    },
+    "no-such-entry": {
+      "ok": false,
+      "reason": "not_on_branch",
+      "message": "That reply is not on this chat's current branch anymore.",
+      "status": 400
+    }
+  }
+}

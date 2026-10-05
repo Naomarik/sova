@@ -10,6 +10,7 @@ import type { TopicBatchInfo } from "./topic-message";
 import type { LinkedAgentInfo } from "./mesh-links";
 import type { Permit } from "./overseer-grants";
 import type { OverseerCard } from "./overseer-card";
+import type { RowFacts, SovaEvent } from "./harness-wire";
 export type { WakeInfo };
 
 export interface SessionSummary {
@@ -378,8 +379,13 @@ export interface TranscriptItem {
   align?: AlignRowInfo;
   /** The entry's timestamp (ISO), on every row whose entry has one. */
   at?: string;
-  /** The entry's facts, on its first row only (EntryMeta). */
+  /** The entry's facts, on its first row only (EntryMeta). Absent on rows to a consumer that asked
+      for wire 2, which gets `facts` instead. */
   meta?: EntryMeta;
+  /** Wire 2 only (WireVersion): the entry's facts in the harness contract's words,
+      on its first row only, in place of `meta`; `{}` when none applies. A row with neither reads
+      `rowFacts` (shared/wire-v1.ts), which maps a v1 row's `meta`. */
+  facts?: RowFacts;
   /** tool-call and tool-result rows. A lazy tool-result row carries no `text`. */
   tool?: ToolRowInfo;
   /** kind "unknown" only: the whole entry, for the card that shows it as JSON (signatures removed). */
@@ -889,6 +895,9 @@ export interface PlaybookInfo {
   title: string;              // frontmatter title, else name, else the id
   description: string;        // frontmatter description, else ""
   promptHint?: string;        // frontmatter promptHint: what the reader may want to specify for the first turn
+  /** Frontmatter `approves: definition | deploy`: a verb playbook, whose proposal the operator approves and merges
+      (§app.project-runtime/verb-playbooks). Absent (or any other value): not a verb playbook. */
+  approves?: "definition" | "deploy";
   source: "sova" | "user" | "project";
   dir: string;                // ABSOLUTE directory holding the playbook: its entry file, scripts/, references/…; every relative path in it resolves here
   entry: PlaybookEntry;       // the file read as the playbook: PLAYBOOK.md when the folder has one, else SKILL.md
@@ -1033,6 +1042,8 @@ export interface ClaudeAccountsInfo {
   flow: ClaudeLoginFlowState | null;
   /** The pool of logins across the mesh (§app.claude-logins/pool); absent while the mesh is off. */
   pool?: ClaudePoolInfo;
+  /** macOS only: Claude Code's own login can't be read here (§app.claude-logins/macos-keychain). Absent otherwise. */
+  claudeOwnLoginUnreadable?: true;
 }
 /** A device of the mesh, as the pool shows it. */
 export interface ClaudePoolDevice {
@@ -1069,6 +1080,8 @@ export interface ClaudePoolLogin {
   moving?: { op: "lend" | "borrow" | "leave"; state: string; reason?: string; peer?: string };
   /** Return was asked and the holder has not returned it yet. */
   returnAsked?: boolean;
+  /** Held by this Mac with its sign-in only in the macOS keychain, which the pool can't move: it never leaves (§app.claude-logins/macos-keychain). */
+  staysHere?: true;
 }
 export interface ClaudePoolInfo {
   self: string;
@@ -1633,11 +1646,15 @@ export interface ChatModeResult extends ModeInfo {
     workspace-write · full enforcement"); `enforcement` is "none" while off. */
 export interface SandboxInfo {
   on: boolean;
+  /** Which of the three states (§chat.sandbox/states). Absent from a server that predates them:
+      read `on` then (true: On, false: Subagents only). */
+  state?: "off" | "subagents" | "on";
   enforcement: "full" | "partial" | "unavailable" | "none";
   status: string;
 }
 
-/** POST /api/sandbox?path=…: "command" = the extension's /sandbox handler ran (its answer in
+/** POST /api/sandbox?path=… with `{ state }` (or the older `{ on }`; both together must agree):
+    "command" = the extension's /sandbox handler ran (its answer in
     `sandbox`, also sent as a "sandbox" message); "unsupported" = no sandbox extension in this
     runtime, nothing happened; "skip" = a TUI or foreign writer owns the file, nothing written. */
 export interface SandboxApplyResult {
@@ -1648,7 +1665,8 @@ export interface SandboxApplyResult {
 /** WS /ws/chat?path= — full-duplex chat for webapp-owned sessions. `&tail=1` asks for the transcript
     newest rows first (`hello.older`, then `history`); `&tail=rest` for the newest rows alone, the
     older ones fetched over REST when wanted (`hello.older` and `olderSummary`, no `history`; see
-    TranscriptRows). Without either, every message is as it always was. */
+    TranscriptRows). Without either, every message is as it always was. `&wire=2`: events and rows
+    on wire 2 (WireVersion). */
 export type ChatClientMessage =
   /** `clientId` is the SENDER'S OWN id for this send, chosen before the round trip. When the send
       is held in the outgoing queue it becomes that item's `QueueItem.id`, so the client can key
@@ -1844,6 +1862,34 @@ export interface SlashCommand {
   path?: string;
 }
 
+/**
+ * Which wire a consumer reads. It asks for 2 with `wire=2` (WIRE_PARAM; `v` is
+ * taken, the visit's tab) on WS /ws/chat, WS /ws/watch and GET /api/transcript; anything else, the
+ * parameter absent included, is 1, today's frames and rows byte for byte. On wire 2 every live event
+ * is a V2EventFrame in place of a V1EventFrame, and every row (in `hello`, `snapshot`, `append`,
+ * `history` and the transcript routes) carries `facts` in place of `meta`; nothing else differs. A
+ * server that predates it ignores the parameter, so a wire-2 client still reads v1 (shared/wire-v1.ts
+ * `fromV1`, `rowFacts`).
+ */
+export type WireVersion = 1 | 2;
+export const WIRE_PARAM = "wire";
+
+/** A live event on wire 1: pi's event, passed through (see ChatServerMessage). */
+export interface V1EventFrame {
+  type: "event";
+  event: unknown;
+  entryId?: string;
+}
+
+/** A live event on wire 2, to a consumer that asked: one of the contract's events, the entry a
+    message was written as inside its `message.end`. Sent in place of a V1EventFrame: one frame per
+    event `fromV1` (shared/wire-v1.ts) maps it to, so a v1 event that maps to none sends nothing. */
+export interface V2EventFrame {
+  type: "event";
+  v: 2;
+  event: SovaEvent;
+}
+
 export type ChatServerMessage =
   /** First message after connect: current transcript + live state + context fill.
       thinking = the session's active thinking level (one of off…max), clamped to its model. */
@@ -1865,8 +1911,9 @@ export type ChatServerMessage =
       tool_execution_start/update/end, turn_start/end, agent_start/end, agent_settled, ...
       `entryId` (optional, additive): on a `message_end`, the id of the entry the SDK wrote the
       message as, so a live row knows the transcript row it becomes (§chat.transcript/rendering,
-      "Switching back"). Absent on every other event, and when the message wasn't written. */
-  | { type: "event"; event: unknown; entryId?: string }
+      "Switching back"). Absent on every other event, and when the message wasn't written.
+      Wire 1; a client that asked for wire 2 gets V2EventFrames in its place (WireVersion). */
+  | V1EventFrame
   /** Extension dialog bridge (select/confirm/input). Optional in MVP. */
   | { type: "model"; model: string }    // active model changed (model_change passthrough events also exist)
   /** Active thinking level after a change: sent with hello, after set_thinking, and after a
@@ -1899,10 +1946,7 @@ export type ChatServerMessage =
   /** This chat's subagent workers, from the runtime's own live record (presence.workers/workerCounts).
       Sent after hello when the record has workers, then whenever the snapshot changes (polled ~3s),
       so it keeps coming after the parent turn settles. working 0 = none running. */
-  /** `usageTotal` is the session-lifetime token Σ across every worker this runtime ever spawned
-      (live ones plus the ones its retention cap dropped), so it is NOT the sum of `workers[].usage`.
-      Absent when the live record predates it. */
-  | { type: "workers"; working: number; total: number; workers: WorkerInfo[]; usageTotal?: TokenUsageTotal }
+  | { type: "workers"; working: number; total: number; workers: WorkerInfo[] }
   /** This session's linked members on other hosts (§mesh.links/agents-pane; for the Overseer, every
       member of every link this host knows). Sent after hello when there are any, and again whenever
       a link message lands or a link is made or ended. Links not ended only; [] = none left. */
@@ -2001,13 +2045,10 @@ export type ChatServerMessage =
 /** WS /ws/watch?path= — read-only live view. Safe for sessions a TUI currently owns. Never writes.
     `&tail=1` cuts the snapshot as `/ws/chat` cuts its hello (`older`, then `history`); `&tail=rest`
     likewise with no `history` (`older`, `olderSummary`, `prefetch`; see TranscriptRows).
-    Also accepts `?claude=<uuid>` instead of `?path=`: a claude-code worker's own Claude Code
+    `&wire=2`: rows on wire 2 (WireVersion). Also accepts `?claude=<uuid>` instead of `?path=`: a claude-code worker's own Claude Code
     session (WorkerInfo.sessionId), found under ~/.claude/projects and normalized into the same
     rows. Same `snapshot`/`append`/`error` messages; an unknown id closes with 4404 like a bad path.
-
-    Both `snapshot` and `append` may carry `usage`: the tokens the whole transcript has used so
-    far (always cumulative, never a delta), so an open header can tick while the file grows. It is
-    absent while the transcript reports no usage at all, and carries no cost for a Claude session. */
+    What a transcript spent is never sent here: it is the usage ledger's (shared/usage/wire.ts). */
 /** The open transcript's context fill as of its last reply, on every snapshot/append: a fill,
     "compacted" (a compaction came after that reply), or null (no reply reports one yet). `window`
     is known for pi files (the reply's own model); a Claude Code file doesn't name its variant, so
@@ -2060,6 +2101,7 @@ export interface OlderSummary {
  * longer on the active branch (a rewind) answers 409 `{ code: "moved" }`, as does a `before` row
  * that isn't in the list; the client then starts again from a fresh tail. A `from`/`explain`
  * target not on the branch answers 404 `{ code: "missing" }`.
+ * `wire=2`, with any of the above: rows on wire 2 (WireVersion).
  */
 export interface TranscriptRows {
   items: TranscriptItem[];
@@ -2080,9 +2122,9 @@ export interface HistoryMessage {
 /** `snapshot.older`: as `hello.older` — only with `?tail=1`; the rows follow as `history`, before
     any `append`. A snapshot sent again (the file was rewritten) is cut the same way. */
 export type WatchServerMessage =
-  | { type: "snapshot"; items: TranscriptItem[]; usage?: TokenUsage; context?: WatchContext; older?: number; olderSummary?: OlderSummary; prefetch?: boolean }
+  | { type: "snapshot"; items: TranscriptItem[]; context?: WatchContext; older?: number; olderSummary?: OlderSummary; prefetch?: boolean }
   | HistoryMessage
-  | { type: "append"; items: TranscriptItem[]; usage?: TokenUsage; context?: WatchContext } // new JSONL rows since snapshot, as they appear
+  | { type: "append"; items: TranscriptItem[]; context?: WatchContext } // new JSONL rows since snapshot, as they appear
   | { type: "error"; message: string };
 
 // ---------------------------------------------------------------------------
@@ -2258,6 +2300,10 @@ export interface UsageInsight {
   /** Ollama Cloud's declared reset day (usage-windows.json, §app.insights/usage-reset-day): 1..31,
       or null while none is set. Absent from an older server. */
   ollamaResetDay?: number | null;
+  /** macOS only: Claude Code's own login is in neither `.credentials.json` nor a keychain this
+      server can read (§app.claude-logins/macos-keychain); the page says to add it under Settings →
+      Accounts. Absent otherwise. */
+  claudeOwnLoginUnreadable?: true;
 }
 /** `PUT /api/insights/usage/reset-day`: set (1..31) or clear (null) a provider's declared reset
     day; answers with the whole UsageInsight. */
@@ -2299,16 +2345,6 @@ export type WorkerStatus = "starting" | "running" | "waiting" | "stopping" | "do
 /** Cumulative token counts. Non-negative integers; `cost` is USD and only present when the
     backend reports one. */
 export interface TokenUsage { input: number; output: number; cacheRead: number; cacheWrite: number; cost?: number }
-/** A token Σ plus the number of workers it covers — a session-lifetime count that can exceed the
-    workers currently listed, because evicted ones keep counting. */
-export interface TokenUsageTotal extends TokenUsage {
-  workers: number;
-  /** ms: some of it is a restored worker's last snapshot (Claude cost), true as of then. */
-  asOf?: number;
-  /** How many of `workers` were restored after a server restart (their spend rebuilt from their
-      records). Absent or 0 when none were. */
-  restored?: number;
-}
 export interface WorkerInfo {
   id: string; name: string; status: WorkerStatus; working: boolean;
   model?: string; backend?: string; preview?: string;
@@ -2337,24 +2373,11 @@ export interface WorkerInfo {
   sessionFile?: string;
   /** Backend session id when there is no pi session file (claude-code: its Claude session id). */
   sessionId?: string;
-  /** Tokens this worker has used so far (both backends report them). Absent for a worker that
-      has spent nothing yet, and from live records written by an older pi-config. */
-  usage?: TokenUsage;
   /** Model replies this worker has had so far, across resumes (the TUI's '{n} turns'): the live
       record's `workers[].turns`, or for a restored worker its transcript's or last snapshot's
       count. Absent when unknown (an older writer, a record that never counted) — never 0 for
       unknown. */
   turns?: number;
-  /** Where `usage` comes from. `transcript`: recomputed from its own transcript (exact tokens;
-      cost only when the backend records one). `snapshot`: the last number the worker reported
-      before the restart, true as of `usageAsOf`. `unavailable`: its transcript couldn't be read
-      and nothing was reported, so `usage` is absent — never read that as 0. Absent on a running
-      worker's live number and from older writers. */
-  usageSource?: "transcript" | "snapshot" | "unavailable";
-  /** ms: part of `usage` is the worker's last report before the restart and was true then — all
-      of it for `snapshot`, only the cost for a `transcript` Claude worker (its transcript records
-      tokens, never cost). */
-  usageAsOf?: number;
   /** ms: a restored worker died mid-turn at about this time; the turn's answer never arrived. */
   interruptedAt?: number;
   /** A restored worker can be resumed from here: the session is hosted by this server and the
@@ -2436,9 +2459,6 @@ export interface LiveAgentSession {
   state: "working" | "idle" | "needs-input" | "error";
   workerCounts: { total: number; working: number; waiting: number; done: number; error: number; killed: number };
   workers: WorkerInfo[]; // may be shorter than workerCounts.total
-  /** Lifetime token Σ across every worker this session ever spawned (presence.workerUsage), so
-      it can cover more workers than `workers` lists. Absent from older records and servers. */
-  usageTotal?: TokenUsageTotal;
   teams: TeamInfo[];
 }
 export interface AgentsInsight {
@@ -2491,28 +2511,6 @@ export interface RewindInfo {
   timestamp: string; // its ISO stamp
   targetId: string; // the user entry the chat rewound to ("" if the write carried none)
   fromLeafId: string; // the leaf it was on before ("" when the session had none)
-}
-/** Where a model's tokens were spent: the main thread, plain subagents, or team members. */
-export type SpendOrigin = "main" | "subagents" | "team";
-/** One model's token spend from one origin; cost is USD when reported. */
-export interface ModelSpend extends TokenUsage {
-  model: string; origin: SpendOrigin;
-  /** ms: part of this row is a restored worker's last reported snapshot, true as of then. */
-  asOf?: number;
-}
-/** This session's token spend. `models` holds one row per model × origin — a mid-session model
-    switch adds a row. Main rows tally the active branch's assistant usage (rewinds don't count);
-    worker rows come from the live record's per-worker usage, so they cover listed workers only —
-    `workersTotal` is the session-lifetime Σ across every worker ever spawned and can exceed their
-    sum (evicted workers surface there, not as rows). */
-export interface SessionUsage {
-  total: TokenUsage;
-  main: TokenUsage;
-  models: ModelSpend[];
-  workersTotal?: TokenUsageTotal;
-  /** Ids of listed workers whose usage couldn't be read (no transcript, nothing reported): they
-      are in no row and in no Σ, so every total above is a lower bound while this is non-empty. */
-  unavailable?: string[];
 }
 /** One skill the session's prompt OFFERED. pi records the offered set as a diffed prompt section,
     so a skill appears only in the system entries that introduced or changed it: `from` is the entry
@@ -2575,8 +2573,6 @@ export interface SessionInsight {
       `GET /api/insights/session/workers` (SessionHiddenWorkers). Absent when the session isn't
       live, when `workers` is already every worker, or from an older server. */
   workerTotal?: number;
-  /** The same lifetime token Σ as LiveAgentSession.usageTotal, for the session on screen. */
-  usageTotal?: TokenUsageTotal;
 
   /** Which skills the session's prompt offered, and which were actually loaded: see
       server/skills.ts for the four signals and their reliability. Absent when neither is known. */
@@ -2587,9 +2583,6 @@ export interface SessionInsight {
       except that a Claude Code transcript records no offered set at all. Absent when no worker
       loaded anything, so the payload stays lean. */
   workerSkills?: Record<string, SessionSkills>;
-  /** Token spend for the whole session: per model × origin rows plus the Σs (see SessionUsage).
-      Absent when nothing has been spent yet, or from an older server. */
-  usage?: SessionUsage;
   /** /explain artifacts parented to this session (store ∪ JSONL explain-doc entries, deduped by
       id, newest first). Absent from older servers. */
   explanations?: ExplanationInfo[];
@@ -2604,9 +2597,8 @@ export interface SessionInsight {
 
 /** `GET /api/insights/session/workers?path=`: the workers recorded on the session's active branch
     that its live record doesn't list, newest first, read from the session file only when asked
-    (§app.subagents-pane/hidden-workers). Each is built from its durable records alone: its usage
-    is the snapshot saved there (`usageSource: "snapshot"`, or "unavailable"), never its
-    transcript's. Nothing is hidden when the session has no live record: the insight then lists
+    (§app.subagents-pane/hidden-workers). Each is built from its durable records alone, never its
+    transcript (what it spent is the usage ledger's). Nothing is hidden when the session has no live record: the insight then lists
     every worker already. */
 export interface SessionHiddenWorkers {
   workers: WorkerInfo[];
@@ -2822,6 +2814,9 @@ export type AttentionKind =
   | "roster-proposal"  // a baton session proposed a new roster person (referral): approve or decline
   | "project-stakeholder" // an org project's main stakeholder left: pick a new one (no session: `path` "", `href` the project page)
   | "held-act"            // act tier, never pushed: a statechart act waits in a hold before it reaches a person or the code; Cancel stops it (no session: `path` "", `href` the project page, `held` set)
+  | "playbook-review"     // act tier: a verb playbook's run is proposed and waits on Approve & Merge (§app.project-runtime/review; the run's session, `playbook` set)
+  | "deploy-failed"       // act tier, never pushed: a deploy target's latest deploy failed, its verify failed or its runner stopped (§app.project-services/deploy-status; no session: `path` "", `href` the project page)
+  | "deploy-request"      // act tier, never pushed: an overseer asks the operator to deploy (deploy.request; no session: `path` "", `href` the project page)
   | "outreach-not-sent"   // act tier, never pushed: a project overseer's WhatsApp send was refused or failed (no session: `path` "", `href` the person's page)
   | "conflict-to-operator" // decide tier, never pushed: an open conflict routed to the operator (or unrouted) with no settle session (no session: `path` "", `href` the project page)
   | "asks-you"        // decide tier: decisions' guess that the last reply of a turn with no open alignment question asks the user something
@@ -2871,6 +2866,9 @@ export interface AttentionItem {
     /** ms epoch: the hold ended and it waits for the overseer to approve it (r8: an act on the project's confirm list); the row's stall clock runs from here. */
     reviewSince?: number;
   };
+  /** kind `playbook-review` only: what Approve & Merge needs (§app.project-runtime/approve-merge). `hash`
+      absent: the branch has no valid definition, so there is nothing to approve. */
+  playbook?: { projectId: string; label: string; hash?: string; approved: boolean; branch: string; target: string; approves?: "definition" | "deploy" };
 }
 
 /** Which org (and project) an organizational session belongs to; names as they read now. `projectId`
@@ -2983,7 +2981,12 @@ export type SovaConfirmItem =
   /** A project registered on this host: its name, and the org's when one places it (§app.overseer/org-tools). */
   | { kind: "project"; id: string; orgId?: string; name: string; orgName?: string; note?: string }
   /** A roster person: name, status and org. Never a contact or a link. */
-  | { kind: "person"; id: string; orgId: string; name: string; orgName: string; status: "active" | "proposed" | "left"; note?: string };
+  | { kind: "person"; id: string; orgId: string; name: string; orgName: string; status: "active" | "proposed" | "left"; note?: string }
+  /** An organization attached here (§app.overseer/org-project-add: a detach lists it). */
+  | { kind: "org"; id: string; name: string; note?: string }
+  /** A folder to add as a project (§app.overseer/org-project-add): `id` is its checkout root, `asked` the folder as
+      given when that differs, the org it goes into (none: standalone) and the name it gets when the card named one. */
+  | { kind: "folder"; id: string; asked?: string; orgId?: string; orgName?: string; name?: string; note?: string };
 
 /** The longest note one confirm item may carry. */
 export const CONFIRM_NOTE_MAX = 220;
@@ -3175,8 +3178,8 @@ export const OVERSEER_BRIEF_PREFIX = "[overseer-brief]";
 
 /** The act-tier kinds a phone notification can be about (server/attention.ts). */
 /** "looping" (Subagent stuck) is retired: a stuck subagent is a decide item, never a blocker. */
-export type PushKind = "needs-input" | "open-questions" | "error" | "baton-needs-you" | "worker-error";
-export const PUSH_KINDS: readonly PushKind[] = ["needs-input", "open-questions", "error", "baton-needs-you", "worker-error"];
+export type PushKind = "needs-input" | "open-questions" | "error" | "baton-needs-you" | "worker-error" | "playbook-review";
+export const PUSH_KINDS: readonly PushKind[] = ["needs-input", "open-questions", "error", "baton-needs-you", "worker-error", "playbook-review"];
 
 /** `<stateRoot>/push.json`. */
 export interface PushSettings {
@@ -3816,6 +3819,24 @@ export interface LlmInflight {
   /** `gaps.length > 0`: `count` is a floor, never shown as an exact number. */
   partial: boolean;
   gaps: LlmInflightGap[];
+  /** Output tokens of the last 30 minutes. Absent = unknown (a server too old to count them). */
+  tokens?: LlmTokens;
+}
+
+/** Output tokens of finished model calls, per 30 s slot, over the last 30 minutes
+    (server/llm-inflight.ts). Each call's output tokens (reasoning included; never input or cache
+    reads) are added once, at its end, spread evenly back over the time its reply streamed. */
+export interface LlmTokens {
+  /** Slot width in ms: always 30000. */
+  bucketMs: number;
+  /** floor(epochMs / bucketMs) of the newest slot (`out`'s last). The slots after it, up to now,
+      hold 0: any new token sends a fresh frame. */
+  end: number;
+  /** 60 slot totals, oldest → newest: `out[59]` is slot `end`, `out[0]` is slot `end − 59`. */
+  out: number[];
+  /** A floor: some calls' tokens are known to be missing (a process or peer without a ring, an
+      unreported process, a peer not heard from, a Claude Code turn's internal calls). */
+  partial: boolean;
 }
 
 /** WS /ws/watch?feed=llm — one host's OWN count, for its peers' fan-in (server/llm-inflight.ts).

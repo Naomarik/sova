@@ -28,9 +28,11 @@ import {
 import { socketReconnects } from "./lib/socket";
 import { actSessionCount, setAppBadge } from "./lib/push";
 import { firstBaseline, helloStep, HELLO_POLL_MS, meshReadInit, pathOfViewKey, sessionViewKey, watchMove, HOST_CONFIRM_MS, seedPeerList, setHostCheck, type HelloBaseline, type PendingHost, type HelloChange, sessionHrefOn } from "./lib/mesh";
+import { noteSessionsHidden, sessionsHiddenBy } from "./lib/mesh";
 import { hostLabel, hostOf, isMeshHash, joinHostLists, linkedSessionRow, meshRetryDelay, meshState, meshOn, meshPeers, mergePeerLists, noteHost, notePeerOrgs, notePeerProjects, notePeerSessions, peerInfo, peerUnavailable, sameMeshInfo, sessionRouteFromHash, setMeshState } from "./lib/mesh";
 import { isOverseerHash, isOverseerShortcut, OVERSEER_HASH, OVERSEER_POLL_MS, overseerHistoryId } from "./lib/overseer";
 import { sessionIdFromHash, setGroupLinkIndex, setSessionIndex } from "./lib/session-links";
+import type { CostsQuery } from "./lib/cost-history";
 import { agentsHref, insightsRouteFromHash, legacyInsightsTarget } from "./lib/insights";
 import { transcriptRoot } from "./lib/jump";
 import { groupRouteFromHash } from "./lib/group-route";
@@ -56,7 +58,8 @@ import { closeSettings, openSettings, settingsOpenAt } from "./lib/settings-nav"
 import type { RewindControl } from "./lib/inputs";
 import { activeTab, groupSendAll, home, setActiveTab, setAdopter, setHome, toast } from "./lib/ui-state";
 import { createPaneInsight } from "./lib/pane-insight";
-import { sessionWorking, type UsageTotalView } from "./lib/workers";
+import { sessionWorking } from "./lib/workers";
+import { answeredPeers, workPeers } from "./lib/work-now";
 import { AgentsView } from "./components/AgentsView";
 import { NewSessionDialog } from "./components/NewSessionDialog";
 import { SettingsDialog } from "./components/SettingsDialog";
@@ -66,6 +69,7 @@ import { HomeSessionsCard } from "./components/HomeSessionsCard";
 import { OverviewActions } from "./components/OverviewActions";
 import { AccessPage } from "./components/AccessPage";
 import { OverviewOrgsCard } from "./components/OverviewOrgsCard";
+import { OverviewSharesCard } from "./components/OverviewSharesCard";
 import { MeshCard, MeshView, StaleTabBanner } from "./components/MeshView";
 import { SharesPage } from "./components/SharesPage";
 import { isSharesHash } from "./lib/session-shares";
@@ -225,12 +229,21 @@ export function App() {
   const [peerLists, setPeerLists] = createSignal<ReadonlyMap<string, SessionSummary[]>>(new Map());
   /** The first GET /api/mesh/sessions has answered or failed: a peer's session a link names is known by now. */
   const [peersSettled, setPeersSettled] = createSignal(false);
+  /** The peers whose list in the last answer was a current one: the working count adds only
+      those, and any other makes it a floor (lib/work-now.ts). */
+  const [peersAnswered, setPeersAnswered] = createSignal<ReadonlySet<string>>(new Set(), {
+    equals: (a, b) => a.size === b.size && [...a].every((id) => b.has(id)),
+  });
   const loadPeerSessions = async () => {
     if (!meshOn()) return;
     const revision = archiveChanges.revision;
     try {
       const answer = await fetchMeshSessions();
+      // An answer an archive change made stale is dropped whole: the kept lists stay the ones
+      // `peersAnswered` describes.
       if (revision !== archiveChanges.revision) return;
+      noteSessionsHidden(answer);
+      setPeersAnswered(answeredPeers(answer));
       const next = mergePeerLists(peerLists(), answer, meshPeers());
       for (const [host, rows] of next) archiveChanges.observe(rows, (path) => hostOf(path) === host);
       for (const p of meshPeers()) {
@@ -243,7 +256,9 @@ export function App() {
       }
       setPeerLists(next);
     } catch {
-      // Keep the last lists: the peers' own status (GET /api/mesh) says what is down.
+      // Keep the last lists: the peers' own status (GET /api/mesh) says what is down. None of them
+      // is current now, so the working count leaves them out.
+      setPeersAnswered(new Set<string>());
     } finally {
       // An answer an archive change made stale still settles: the next poll brings the lists.
       setPeersSettled(true);
@@ -270,6 +285,8 @@ export function App() {
   createEffect(() => {
     if (!meshOn()) closeMeshDetails();
   });
+  /** Every peer's part of the working count: its list while current, else null (a floor). */
+  const peerWork = createMemo(() => workPeers(meshPeers(), peerLists(), peersAnswered(), sessionsHiddenBy));
   /** This host's sessions, then every peer's: the sidebar's list. With no peer it IS `list()`. */
   const allSessions = createMemo(() => {
     const l = list();
@@ -839,15 +856,14 @@ export function App() {
   // ---- Subagents pane: open for one session path, closed whenever the route changes ----------
   /** `board`: opened in place from the Agents board, for a session with no view on screen. */
   const [subagents, setSubagents] = createSignal<{ path: string; selected: string | null; board?: boolean } | null>(null);
-  /** Each open chat's live workers (WS "workers"), reconciled by id so pane rows keep identity,
-      with the runtime's session-lifetime token Σ beside them. By path: a workspace runs several. */
-  const [chatWorkers, setChatWorkers] = createStore<Record<string, { list: WorkerInfo[]; usage: UsageTotalView | null } | undefined>>({});
-  const noteWorkers = (path: string, workers: WorkerInfo[] | null, usage: UsageTotalView | null) =>
+  /** Each open chat's live workers (WS "workers"), reconciled by id so pane rows keep identity.
+      By path: a workspace runs several. */
+  const [chatWorkers, setChatWorkers] = createStore<Record<string, { list: WorkerInfo[] } | undefined>>({});
+  const noteWorkers = (path: string, workers: WorkerInfo[] | null) =>
     batch(() => {
       if (!workers) return setChatWorkers(path, undefined);
-      if (!chatWorkers[path]) setChatWorkers(path, { list: [], usage: null });
+      if (!chatWorkers[path]) setChatWorkers(path, { list: [] });
       setChatWorkers(path, "list", reconcile(workers, { key: "id" }));
-      setChatWorkers(path, "usage", usage);
     });
   /** Each open chat's RECORDED Claude login id, by path; an unrecorded one is left out, so the
       usage readouts fall back to the login in use for new chats (§app.insights/sidebar-foot). */
@@ -1027,8 +1043,8 @@ export function App() {
           usage={usage.data()}
           claudeLogin={usageLogin()}
           agents={agents.data()}
+          peerWork={peerWork()}
           insightsPage={footPage()}
-          sharesOpen={sharesRoute()}
           onRefresh={refresh}
           onArchiveStart={onArchiveStart}
           onNew={() => setCreating(true)}
@@ -1081,6 +1097,7 @@ export function App() {
                     detailsPath={boardPanePath()}
                     onOpenDetails={openDetailsFor}
                     onOpenAgents={openAgentsFor}
+                    costs={(insightsRoute() as { costs?: CostsQuery } | null)?.costs ?? null}
                   />
                 </Match>
                 {/* Every /explain page as a card (#/explanations[/<sessionId>]). */}
@@ -1243,6 +1260,8 @@ export function App() {
                   <MeshCard />
                   <Show when={installed()}>{(list) => <ExtensionCards extensions={list()} />}</Show>
                   <ExplanationsCard explanations={explanations.data()} now={now()} />
+                  {/* Every public link at a glance, and the way into #/shares. */}
+                  <OverviewSharesCard />
                   {/* Last: every organization at a glance, and the way into #/orgs. */}
                   <OverviewOrgsCard now={now()} />
                 </div>
@@ -1261,9 +1280,7 @@ export function App() {
                 summary={summaryOf(path)}
                 onArchiveChanged={onArchived}
                 onGroupsChanged={refresh}
-                chatWorkers={subagents()?.board ? null : (chatWorkers[path]?.list ?? null)}
-                chatUsage={subagents()?.board ? null : (chatWorkers[path]?.usage ?? null)}
-                // No chat on screen from the board: the Timeline can't rewind, as when watching.
+                chatWorkers={subagents()?.board ? null : (chatWorkers[path]?.list ?? null)}                // No chat on screen from the board: the Timeline can't rewind, as when watching.
                 rewind={subagents()?.board ? undefined : rewindControls()[path]}
                 rewound={rewound()?.path === path ? rewound()! : null}
                 inputsOnly={inputsOnly() === path}

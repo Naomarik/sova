@@ -12,13 +12,13 @@ import {
   DEFAULT_MAX_BYTES,
   detectSupportedImageMimeTypeFromFile,
   formatSize,
-  getAgentDir,
   truncateHead,
   truncateLine,
   type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import { type RootConfinement, SecretGuard } from "./overseer-deny";
 import { type Redactor, redactingTool, serverRedactor } from "./overseer-redact";
+import { agentRoot } from "./state-root";
 
 /**
  * The Overseer's read, grep, find and ls: pi's own tools, except that no secret file
@@ -35,7 +35,8 @@ import { type Redactor, redactingTool, serverRedactor } from "./overseer-redact"
  *
  * With `confine` (the project overseer's), every path is also held to a root: a path argument
  * outside it (or in an excluded folder) is refused, and listings and searches leave such entries
- * out, exactly as they do secret files.
+ * out, exactly as they do secret files. Its read-only folders (RootConfinement's `readable`) open to
+ * read alone.
  */
 export function overseerFileTools(
   cwd: string,
@@ -43,11 +44,20 @@ export function overseerFileTools(
   redactor: () => Redactor = serverRedactor,
   confine?: () => RootConfinement,
 ): ToolDefinition[] {
-  const guard = (): PathGuard => {
+  // `forRead`: the confinement's read-only folders open too (read's guard only).
+  const guard = (forRead = false): PathGuard => {
     const s = secrets();
     const c = confine?.();
     if (!c) return s;
-    return { check: (p) => (c.check(p), s.check(p)), isSecret: (p) => c.problem(p) !== null || s.isSecret(p) };
+    const problem = (p: string) => (forRead ? c.readProblem(p) : c.problem(p));
+    return {
+      check: (p) => {
+        const why = problem(p);
+        if (why) throw new Error(why);
+        s.check(p);
+      },
+      isSecret: (p) => problem(p) !== null || s.isSecret(p),
+    };
   };
   const read = createReadToolDefinition(cwd);
   const find = createFindToolDefinition(cwd);
@@ -58,7 +68,7 @@ export function overseerFileTools(
       ...read,
       // A fresh guard per call: the rules resolve symlinks, which may have changed.
       execute: (...args: Parameters<typeof read.execute>) => {
-        const g = guard();
+        const g = guard(true);
         return createReadToolDefinition(cwd, {
           operations: {
             access: async (p) => (g.check(p), access(p, constants.R_OK)),
@@ -111,7 +121,7 @@ function resolveArg(p: string, cwd: string): string {
 
 /** The binary pi would run: its own download in the agent dir, else the one on PATH. */
 function toolBinary(name: "rg" | "fd"): string {
-  const local = join(getAgentDir(), "bin", name);
+  const local = join(agentRoot(), "bin", name);
   return existsSync(local) ? local : name;
 }
 

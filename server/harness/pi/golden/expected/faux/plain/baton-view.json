@@ -1,0 +1,71 @@
+{
+  "operator": {
+    "view": {
+      "publicTitle": "Golden launch",
+      "state": "active",
+      "holder": "Alice",
+      "items": [
+        {
+          "kind": "message",
+          "id": "00000004",
+          "by": "p_alice",
+          "name": "Alice",
+          "text": "hello",
+          "at": "2026-09-03T08:00:00.012Z"
+        },
+        {
+          "kind": "reply",
+          "id": "00000005",
+          "text": "Hello there. How can I help?",
+          "at": "2026-09-03T08:00:00.013Z"
+        }
+      ]
+    },
+    "photos": 0
+  },
+  "bob": {
+    "view": {
+      "publicTitle": "Golden launch",
+      "state": "active",
+      "holder": "Alice",
+      "items": [
+        {
+          "kind": "message",
+          "id": "00000004",
+          "by": "p_alice",
+          "name": "Alice",
+          "text": "hello",
+          "at": "2026-09-03T08:00:00.012Z"
+        },
+        {
+          "kind": "reply",
+          "id": "00000005",
+          "text": "Hello there. How can I help?",
+          "at": "2026-09-03T08:00:00.013Z"
+        }
+      ]
+    },
+    "photos": 0
+  },
+  "untilOffer": {
+    "publicTitle": "Golden launch",
+    "state": "active",
+    "holder": null,
+    "items": [
+      {
+        "kind": "message",
+        "id": "00000004",
+        "by": "p_alice",
+        "name": "Alice",
+        "text": "hello",
+        "at": "2026-09-03T08:00:00.012Z"
+      },
+      {
+        "kind": "reply",
+        "id": "00000005",
+        "text": "Hello there. How can I help?",
+        "at": "2026-09-03T08:00:00.013Z"
+      }
+    ]
+  }
+}

@@ -575,10 +575,11 @@ export class SubagentRunner implements Worker {
 		proc.on("close", (code, signal) => this.finalizeExit(code ?? null, signal ?? null));
 		// Until its first report the worker's calls are unknown, not 0.
 		setChildCounts(this.llmKey, this.llmLast);
-		// A hosted worker left running for the next manager: its calls are no longer this process's.
+		// A hosted worker left running for the next manager: its calls are no longer this process's,
+		// nor its tokens (it goes on reporting them itself), so they are not kept here either.
 		proc.on("detached", () => {
 			this.llmDetached = true;
-			setChildCounts(this.llmKey, undefined);
+			setChildCounts(this.llmKey, undefined, { retire: false });
 		});
 
 		if (this.adopted) {

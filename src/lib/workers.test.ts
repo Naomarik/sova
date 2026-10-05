@@ -2,14 +2,12 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import {
-  lifetimeIncludes,
   ringContext,
   transcriptContext,
   workerContext,
   activeAgentCounts,
   activeTeamCount,
   capTitle,
-  formatCost,
   isHostSession,
   sessionWorking,
   showSubagentsLabel,
@@ -21,10 +19,6 @@ import {
   showWorkersOfLabel,
   subagentsWorkingLabel,
   teamNote,
-  transcriptUsage,
-  usageHeadline,
-  usageTitle,
-  usageTotal,
   workerEjected,
   workerLabel,
   workersNoun,
@@ -32,7 +26,6 @@ import {
   workersRunningLabel,
   workersWorkingLabel,
   workerTeam,
-  workerUsage,
   workingChipTitle,
   workingSplit,
 } from "./workers";
@@ -188,38 +181,6 @@ test("sourceOf reads a key back, sourceName describes it", () => {
   assert.equal(sourceName(sourceOf("claude:abc")), "Claude session abc");
 });
 
-test("usage accessors read counts off whatever the server sent, or nothing", () => {
-  const usage = { input: 1200, output: 340, cacheRead: 98_000, cacheWrite: 4500, cost: 0.41 };
-  assert.deepEqual(workerUsage({ id: "ag_01", usage }), usage);
-  assert.equal(workerUsage({ id: "ag_01" }), null, "an older pi-config publishes none");
-  assert.equal(workerUsage({ id: "ag_01", usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } }), null,
-    "a worker that spent nothing shows nothing");
-  assert.equal(workerUsage(null), null);
-  // Garbage counts as 0, and a cost of 0 is dropped rather than shown as free.
-  assert.deepEqual(workerUsage({ usage: { input: "12", output: -4, cacheRead: 5, cacheWrite: Number.NaN, cost: 0 } }),
-    { input: 0, output: 0, cacheRead: 5, cacheWrite: 0 });
-  assert.deepEqual(transcriptUsage({ type: "append", items: [], usage }), usage);
-  assert.equal(transcriptUsage({ type: "append", items: [] }), null);
-  // The Σ keeps its head count, which is a lifetime number and may exceed the list.
-  assert.deepEqual(usageTotal({ workers: [], usageTotal: { ...usage, workers: 57 } }), { ...usage, workers: 57 });
-  assert.equal(usageTotal({ workers: [], usageTotal: { ...usage, workers: -1 } })!.workers, 0);
-  assert.equal(usageTotal({ workers: [] }), null);
-  assert.equal(usageTotal(undefined), null);
-});
-
-test("usage headline is input + output; the title carries the split, the cost and the head count", () => {
-  const usage = { input: 1200, output: 340, cacheRead: 98_000, cacheWrite: 4500, cost: 0.41 };
-  assert.equal(usageHeadline(usage), 1540);
-  assert.equal(usageTitle(usage), "1.2k in · 340 out · 98k cache read · 4.5k cache write · $0.41");
-  assert.equal(usageTitle({ ...usage, cost: undefined }), "1.2k in · 340 out · 98k cache read · 4.5k cache write",
-    "no cost line when the backend reports none");
-  assert.equal(usageTitle(usage, 57).startsWith("57 subagents so far · "), true);
-  assert.equal(usageTitle(usage, 1).startsWith("1 subagent so far · "), true);
-  assert.equal(formatCost(0.004), "<$0.01");
-  assert.equal(formatCost(0), null);
-  assert.equal(formatCost(undefined), null);
-});
-
 const team = (name: string, ...ids: string[]) => ({ id: `t_${name}`, name, members: ids.map((workerId) => ({ workerId, role: workerId })) });
 const w = (id: string, working: boolean, teamId?: string) => ({ id, working, teamId });
 
@@ -307,14 +268,6 @@ test("capTitle keeps tooltips short, cutting at a word boundary", () => {
   assert.equal(capTitle("ab cdefghij", 5), "ab cd…", "boundary too early would gut it — hard cut instead");
   assert.equal(capTitle("abcd efghij", 6), "abcd…");
   assert.equal(capTitle("exactly ten", 11), "exactly ten", "max is inclusive");
-});
-
-test("lifetimeIncludes names only what applies: evicted, restored, both, or nothing", () => {
-  const listed = [{ usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0 } }, {}];
-  assert.equal(lifetimeIncludes({ workers: 1 }, listed), "", "before any restart, nothing evicted: no parenthesis");
-  assert.equal(lifetimeIncludes({ workers: 3 }, listed), " (includes evicted)");
-  assert.equal(lifetimeIncludes({ workers: 1, restored: 1 }, listed), " (includes restored)");
-  assert.equal(lifetimeIncludes({ workers: 2, restored: 2 }, listed), " (includes evicted and restored)");
 });
 
 describe("worker context fill", () => {

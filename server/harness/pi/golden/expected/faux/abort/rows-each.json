@@ -1,0 +1,17 @@
+[
+  [],
+  [
+    "{\"id\":\"00000001\",\"kind\":\"info\",\"text\":\"Model: faux/faux-1\",\"at\":\"2026-09-03T08:00:00.006Z\",\"meta\":{\"type\":\"model_change\"}}"
+  ],
+  [
+    "{\"id\":\"00000002\",\"kind\":\"info\",\"text\":\"Thinking: medium\",\"at\":\"2026-09-03T08:00:00.007Z\",\"meta\":{\"type\":\"thinking_level_change\"}}"
+  ],
+  [],
+  [
+    "{\"id\":\"00000004\",\"kind\":\"user\",\"at\":\"2026-09-03T08:00:00.012Z\",\"text\":\"Write a lot\",\"meta\":{\"type\":\"message\",\"role\":\"user\"}}"
+  ],
+  [
+    "{\"id\":\"00000005:0\",\"kind\":\"assistant-text\",\"text\":\"This reply is long enough to be cut off. More words keep coming. More words keep coming. More words keep coming. More words keep coming. More words keep coming. More words keep\",\"at\":\"2026-09-03T08:00:00.014Z\",\"model\":\"faux/faux-1\",\"meta\":{\"type\":\"message\",\"role\":\"assistant\",\"provider\":\"faux\",\"model\":\"faux-1\",\"usage\":{\"input\":1369,\"output\":251,\"cacheRead\":0,\"cacheWrite\":1369,\"totalTokens\":2989,\"cost\":{\"input\":0,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"total\":0}},\"stopReason\":\"aborted\",\"errorMessage\":\"Request was aborted\"}}",
+    "{\"id\":\"00000005:stop\",\"kind\":\"info\",\"text\":\"Aborted: Request was aborted\",\"at\":\"2026-09-03T08:00:00.014Z\",\"model\":\"faux/faux-1\"}"
+  ]
+]

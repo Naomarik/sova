@@ -8,6 +8,7 @@ import { join, resolve } from "node:path";
 import { after, describe, test } from "node:test";
 import { BATON_DECISION_ENTRY, BATON_DONE_ENTRY, BATON_HANDOFF_ENTRY, BATON_SENT_ENTRY } from "../shared/baton";
 import type { SessionSummary } from "../shared/protocol";
+import { piRuntime, piSession } from "./harness/pi/testing/handle";
 
 const root = realpathSync(mkdtempSync(join(tmpdir(), "sova-baton-rt-")));
 // A hosted runtime can still write here after after() ran (pi's catalogs, usage cache): exit is last.
@@ -41,11 +42,11 @@ describe("a baton session's runtime", async () => {
     const chat = await acquireChat(c.path);
     assert.equal(chat.special, "baton");
     assert.equal(chat.overseer, false);
-    assert.deepEqual([...chat.session.getActiveToolNames()].sort(), ["goal_done", "hand_to", "propose_roster_edit", "record_decision"]);
+    assert.deepEqual([...piSession(chat).getActiveToolNames()].sort(), ["goal_done", "hand_to", "propose_roster_edit", "record_decision"]);
     assert.deepEqual([...BATON_TOOLS].sort(), ["goal_done", "hand_to", "propose_roster_edit", "record_decision"]);
-    assert.deepEqual(chat.session.getAllTools().map((t) => t.name).sort(), [...LOADOUT_TOOLS].sort(), "no built-in, no extension tool");
-    assert.ok(!chat.session.getActiveToolNames().includes("write_profile_updates"), "the wrap-up tool is never active in the conversation");
-    const loaded = chat.runtime.services.resourceLoader.getExtensions().extensions.map((e) => e.path);
+    assert.deepEqual(piSession(chat).getAllTools().map((t) => t.name).sort(), [...LOADOUT_TOOLS].sort(), "no built-in, no extension tool");
+    assert.ok(!piSession(chat).getActiveToolNames().includes("write_profile_updates"), "the wrap-up tool is never active in the conversation");
+    const loaded = piRuntime(chat).services.resourceLoader.getExtensions().extensions.map((e) => e.path);
     assert.deepEqual(loaded, ["<inline:sova-baton>"], "no pi-config extension loads");
   });
 
@@ -57,7 +58,7 @@ describe("a baton session's runtime", async () => {
     writeFileSync(file, `${JSON.stringify({ type: "session", version: 3, id: "01a0dd00-0000-7000-8000-000000000001", timestamp: "2026-09-26T00:00:00.000Z", cwd })}\n`);
     const chat = await acquireChat(canonicalPath(file), true);
     assert.equal(chat.special, null);
-    const loaded = chat.runtime.services.resourceLoader.getExtensions().extensions.map((e) => e.path);
+    const loaded = piRuntime(chat).services.resourceLoader.getExtensions().extensions.map((e) => e.path);
     assert.ok(loaded.some((p) => p.includes("vision-delegate")), `pi-config extensions load for an ordinary session (got ${loaded.length})`);
   });
 
@@ -85,12 +86,12 @@ describe("a baton session's runtime", async () => {
     const fresh = await baton.createBaton({ orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "Pristine", goal: "Settle it" }, { mintLink: false });
     const chat = await acquireChat(fresh.path);
     assert.equal(chat.special, "baton");
-    const branch = chat.session.sessionManager.getBranch();
+    const branch = piSession(chat).sessionManager.getBranch();
     assert.ok(!branch.some((e) => e.type === "message" && e.message.role === "user"), "the baton has no user message yet");
     // The model resolves without credentials and the SDK's switch is a no-op, as in chat-config.test.ts.
-    const inner = chat as unknown as { runtime: { services: { modelRuntime: { getAvailable(): Promise<unknown[]> } } } };
-    inner.runtime.services.modelRuntime.getAvailable = async () => [{ provider: "ollama-cloud", id: "glm-5.3" }];
-    (chat.session as unknown as { setModel(m: unknown): Promise<void> }).setModel = async () => {};
+    const models = piRuntime(chat).services.modelRuntime as unknown as { getAvailable(): Promise<unknown[]> };
+    models.getAvailable = async () => [{ provider: "ollama-cloud", id: "glm-5.3" }];
+    (piSession(chat) as unknown as { setModel(m: unknown): Promise<void> }).setModel = async () => {};
     await chat.setModelRef("ollama-cloud/glm-5.3", { save: true });
     chat.setThinking("low", { save: true });
     assert.equal(existsSync(defaultsFile), false, "defaults.json was not written");

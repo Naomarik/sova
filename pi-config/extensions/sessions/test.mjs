@@ -120,15 +120,15 @@ test('presence shares bounded assistant text, never thinking or full tool result
   } finally { await h.emit('session_shutdown'); }
 });
 
-test('presence publishes each worker transcript path, session id and effort, dropping invalid ones', async () => {
+test('presence publishes each worker transcript path, session id, effort and team, dropping invalid ones', async () => {
   const h = harness();
   try {
     await h.emit('session_start');
     const file = '/home/u/.pi/agent/sessions/--home-u-app--/2026-09-20T00-00-00-000Z_0199.jsonl';
     h.pi.events.emit('subagents:workers-snapshot', { version: 1, workers: [
-      { id: 'ag_01', name: 'pi-worker', status: 'running', backend: 'pi', sessionFile: file, sessionId: '0199', effort: 'high', modes: ['spec'] },
-      { id: 'ag_02', name: 'claude-worker', status: 'waiting', backend: 'claude-code', sessionId: 'c'.repeat(64) },
-      { id: 'ag_03', name: 'bad', status: 'running', sessionFile: '/' + 'x'.repeat(1024), sessionId: 7, effort: 5, modes: ['spec', 'Bad Name'] },
+      { id: 'ag_01', name: 'pi-worker', status: 'running', backend: 'pi', sessionFile: file, sessionId: '0199', effort: 'high', modes: ['spec'], teamId: 'team_01' },
+      { id: 'ag_02', name: 'claude-worker', status: 'waiting', backend: 'claude-code', sessionId: 'c'.repeat(64), teamId: 't'.repeat(65) },
+      { id: 'ag_03', name: 'bad', status: 'running', sessionFile: '/' + 'x'.repeat(1024), sessionId: 7, effort: 5, modes: ['spec', 'Bad Name'], teamId: 3 },
     ] });
     await tick();
     const rows = h.latest().workers;
@@ -144,6 +144,9 @@ test('presence publishes each worker transcript path, session id and effort, dro
     // The modes it was given: kept whole, absent stays absent, a list with any bad name is dropped whole.
     assert.deepEqual(pi.modes, ['spec']);
     for (const w of [claude, bad]) assert.ok(!('modes' in JSON.parse(JSON.stringify(w))), w.id);
+    // Its team: kept whole; a non-string or over-limit id is dropped, never truncated.
+    assert.equal(pi.teamId, 'team_01');
+    for (const w of [claude, bad]) assert.ok(!('teamId' in JSON.parse(JSON.stringify(w))), w.id);
   } finally { await h.emit('session_shutdown'); }
 });
 
@@ -265,17 +268,23 @@ test('presence.llm: absent until the process counts; then its counts, rewritten 
     assert.equal(h.latest().llm, undefined, 'a process without the counter publishes no count (unknown, not 0)');
     tracker.markCounting();
     await tick();
-    const first = h.latest().llm;
+    const { tokens: firstTokens, ...first } = h.latest().llm;
     assert.deepEqual({ ...first, producer: typeof first.producer }, { v: 1, producer: 'string', pid: process.pid, active: 0, approximate: 0, claudeTurns: 0, degraded: false, folded: [] });
+    assert.deepEqual([firstTokens.bucketMs, firstTokens.out.length], [30000, 60], 'and its output-token ring');
+    const sum = () => h.latest().llm.tokens.out.reduce((a, b) => a + b, 0);
+    const tokensBefore = sum();
     const before = h.sent.length;
     const end = tracker.beginLlmCall({ source: 'runtime' });
     const end2 = tracker.beginLlmCall({ source: 'claude-oneshot', approximate: true });
     await tick();
     assert.equal(h.sent.length, before + 1, 'two changes inside the coalescing window: one rewrite');
     assert.deepEqual([h.latest().llm.active, h.latest().llm.approximate], [2, 1]);
-    end(); end2();
+    const ended = h.sent.length;
+    end({ output: 40 }); end2();
     await tick();
     assert.equal(h.latest().llm.active, 0);
+    assert.equal(h.sent.length, ended + 1, 'the tokens ride the same rewrite as the end');
+    assert.equal(sum() - tokensBefore, 40);
     const settled = h.sent.length;
     await tick();
     assert.equal(h.sent.length, settled, 'nothing changes, nothing is written');

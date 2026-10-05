@@ -1,4 +1,6 @@
-import type { ExtensionAPI, ToolDefinition } from "@earendil-works/pi-coding-agent";
+import type { PiExtensionAPI } from "./harness/pi/extension-types";
+import type { ToolSpec } from "../shared/harness";
+import { toPiTool } from "./harness/pi/tools";
 import { existsSync } from "node:fs";
 import { isArchived } from "./archived-sessions";
 import { Refusal, text } from "./session-guards";
@@ -134,7 +136,7 @@ export function pushNote(ctx: PusherContext, params: { topic?: unknown; text?: u
   return `Queued on "${topic}".`;
 }
 
-type Tool = ToolDefinition<any, any>;
+type Tool = ToolSpec;
 
 export function queuePushTool(ctx: PusherContext): Tool {
   return {
@@ -154,8 +156,8 @@ export function queuePushExtension(ctx: PusherContext) {
   return {
     name: "sova-topics",
     hidden: true,
-    factory: (pi: ExtensionAPI) => {
-      pi.registerTool(queuePushTool(ctx));
+    factory: (pi: PiExtensionAPI) => {
+      pi.registerTool(toPiTool(queuePushTool(ctx)));
     },
   };
 }

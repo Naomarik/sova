@@ -101,6 +101,57 @@ Then `systemctl --user daemon-reload && systemctl --user enable --now sova.servi
 Bun found, or Bun failing at boot), the reason is on the unit's journal
 (`journalctl --user -u sova.service`).
 
+**As a launchd agent (macOS).** The same service as a LaunchAgent: save this as
+`~/Library/LaunchAgents/sova.plist`. launchd expands neither `~` nor `$HOME`, so replace
+`/path/to/sova` with your checkout's absolute path and `/path/to/your-home` with your home directory's.
+The label is the systemd unit's name without `.service`: a project whose slot 0 adopts `sova.service`
+reads, and restarts through its gate, the agent `sova` on macOS.
+Sova's own `.sova/project.json` adopts `sova-runtime.service`, so for Sova hosting itself name both
+the label and the file `sova-runtime`.
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>sova</string>
+  <!-- ExecStartPre's twin (link newly merged pi extensions; a failure never blocks the start), then
+       the launcher, which execs the server: launchd's pid is the server's. -->
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/sh</string>
+    <string>-c</string>
+    <string>"$0"/pi-config/install.sh --links || true; exec "$0"/scripts/start-server.sh</string>
+    <string>/path/to/sova</string>
+  </array>
+  <key>WorkingDirectory</key><string>/path/to/sova</string>
+  <!-- The launcher runs `node` (and `bun`) by name; launchd's default PATH has neither. -->
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key><string>/path/to/your-home/.local/share/mise/shims:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <key>LANG</key><string>en_US.UTF-8</string>
+  </dict>
+  <key>RunAtLoad</key><true/>
+  <!-- Restart=always: `launchctl bootout` is the stop you ask for. -->
+  <key>KeepAlive</key><true/>
+  <key>ThrottleInterval</key><integer>2</integer>
+  <!-- TimeoutStopSec: a stop drains hosted runtimes and workers (launchd's default is 20 s, and it
+       caps an agent's at 60 s). -->
+  <key>ExitTimeOut</key><integer>60</integer>
+  <!-- No App Nap timer throttling for a server. -->
+  <key>ProcessType</key><string>Interactive</string>
+  <key>StandardOutPath</key><string>/path/to/your-home/Library/Logs/sova.log</string>
+  <key>StandardErrorPath</key><string>/path/to/your-home/Library/Logs/sova.log</string>
+</dict>
+</plist>
+```
+
+Then `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/sova.plist`. Restart it with
+`launchctl kickstart -k gui/$(id -u)/sova` and stop it with `launchctl bootout gui/$(id -u)/sova`;
+`launchctl print gui/$(id -u)/sova` shows its state and pid. Its output goes to the log file, which
+launchd never rotates. **Switch to Node** by adding `SOVA_RUNTIME=node` to `EnvironmentVariables`,
+then `bootout` and `bootstrap` again.
+
 ## More work, less window switching
 
 - **Try several approaches at once.** Start parallel sessions with different models, send a shared

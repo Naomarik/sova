@@ -1,0 +1,17 @@
+[package]
+name = "usage-helper-rs"
+version = "0.1.0"
+edition = "2021"
+description = "Benchmark twin of server/usage-helper (Bun): same ledger files, same stdin/stdout protocol"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+flate2 = "1"
+libc = "0.2"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"

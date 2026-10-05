@@ -103,6 +103,7 @@ import { specHookSettings, withClaudeSettings } from "../claude-code/spec-hooks.
 import { LEDGER_ENV, ledgerPath, workerLedgerPath } from "../mode/spec-guard.ts";
 import { ASSESSMENT_OWNER_ENV, ASSESSMENT_WORKER_ENV, ASSESSMENT_TEAM_ENV } from "../mode/spec-assessment.ts";
 import { DEFAULT_CLAUDE_TOOLS } from "../claude-code/transport.ts";
+import { USAGE_PARENT_ENV } from "../llm-inflight/attribution.ts";
 import { workerSpecBrief, writesCode } from "./spec-brief.ts";
 import { restoreActive as restoreWorktrees, treeOf, workerCwdRefusal as worktreeCwdRefusal, type WorktreesActive } from "../worktrees/state.ts";
 
@@ -696,6 +697,9 @@ export function registerSubagents(
 	// The minor modes each worker of this process was given at its start (§chat.mode-menu/workers),
 	// published with it and written to its record; empty when none.
 	const workerModes = new WeakMap<Worker, string[]>();
+	// How each worker of this process was confined at its start (§chat.sandbox/states), for agent_list:
+	// "on", "on, narrowed to {path}", "write-only to {path}" or "none". Unknown for a restored worker.
+	const workerSandbox = new WeakMap<Worker, string>();
 	/** What a worker was given: its start's, else (restored) its record's; undefined when unknown. */
 	const modesOf = (a: Worker): string[] | undefined => workerModes.get(a) ?? (isRestored(a) ? manifestModes(a.manifest) : undefined);
 	// Hosted workers re-adopted with a cwd this session no longer allows (§chat.worktrees/workers):
@@ -810,9 +814,10 @@ export function registerSubagents(
 			if (typeof a[key] === "number" && Number.isFinite(a[key])) out[key] = a[key];
 		return out;
 	};
-	// Session-team membership only; history teams have no live workers.
-	const teamField = (id: string) => {
-		const teamId = teams.teamOf(id);
+	// Session-team membership; a restored member's team is history until a resume adopts it,
+	// so its row names the team its durable record keeps.
+	const teamField = (a: Worker) => {
+		const teamId = teams.teamOf(a.id) ?? (isRestored(a) ? a.manifest.team?.teamId : undefined);
 		return teamId ? { teamId } : {};
 	};
 	// Lifetime Σ across every worker this session ever spawned: the live list plus what
@@ -876,7 +881,7 @@ export function registerSubagents(
 			...(typeof a.effort === "string" && a.effort ? { effort: a.effort } : {}),
 			// The minor modes it was given at its start; absent when none (or unknown).
 			...(modesOf(a)?.length ? { modes: [...modesOf(a)!] } : {}),
-			...teamField(a.id),
+			...teamField(a),
 			...timestamps(a),
 			...(a.taskOutcome === "success" || a.taskOutcome === "error" || a.taskOutcome === "aborted"
 				? { outcome: a.taskOutcome } : {}),
@@ -1263,6 +1268,8 @@ export function registerSubagents(
 		// The parent's worker modes as they are now: a snapshot for this batch, which a later switch never
 		// reaches. A resume takes them afresh too (the spec's raw systemPrompt never carries them).
 		const modesNow = modeWorker;
+		// Each spec's confinement, as agent_list names it (workerSandbox); none in a remote session.
+		const sandboxNotes: (string | undefined)[] = [];
 		const prepared = specs.map((spec, index) => {
 			if (!spec.prompt.trim()) throw new Error("Task must not be blank.");
 			// A team's monitor has no tools to follow them with; a worker on its worktree's own agent dir
@@ -1298,7 +1305,10 @@ export function registerSubagents(
 				}
 				launch = sandboxState.workerLaunch({ cwd, ...(tree ? { root: tree.path } : {}), backend: backendId, owner: workerKey("check") });
 				if (launch.kind === "refused") throw new Error(launch.reason);
-				if (launch.kind === "none") {
+				// Off (§chat.sandbox/states) is the one answer that leaves a worktree's worker unconfined; it
+				// counts only from a parent that is not on and says so (an older sandbox never does).
+				const unconfinedByOff = launch.kind === "none" && !sandbox && sandboxState.workers === "off";
+				if (launch.kind === "none" && !unconfinedByOff) {
 					throw new Error(tree
 						? `Cannot confine a worker to the worktree ${tree.path}: this session's sandbox gave no scope for it.`
 						: "This session's sandbox is on but gave no worker launch; a worker cannot start sandboxed.");
@@ -1306,6 +1316,7 @@ export function registerSubagents(
 				if (launch.kind === "confine" && backendId === "pi") throw new Error("This session's sandbox gave a pi worker no extension flags; it cannot start sandboxed.");
 				if (launch.kind === "pi" && backendId !== "pi") throw new Error(`This session's sandbox gave the ${backendId} worker no confinement; it cannot start sandboxed.`);
 			}
+			if (!remote) sandboxNotes[index] = launch.kind === "none" ? "none" : sandbox ? `on${tree ? `, narrowed to ${tree.path}` : ""}` : `write-only to ${tree?.path ?? cwd}`;
 			// Where a worker may start: the session's cwd or an active tracked worktree. Remote cwds are far paths, not checked.
 			if (!remote) {
 				const outside = worktreeCwdRefusal({ sessionCwd: ctx.cwd, cwd, set: worktreeSet });
@@ -1466,13 +1477,18 @@ export function registerSubagents(
 					// A worker on its worktree's agent dir: pi resolves everything there (never written to disk).
 					const tooling = teamMember ? memberTooling(spec.backend ?? "pi") : "none";
 					const baseEnv = treeConfig ? { ...memberVars, ...treeConfig.env } : tooling === "pi" ? memberVars : undefined;
-					const env = specOn && !remote ? {
+					// The usage ledger's parent (llm-inflight attribution.ts): a pi worker reads it itself, a
+					// Claude Code worker's runner reads it from its options here.
+					const parentSid = ctx.sessionManager.getSessionId?.();
+					const usageEnv = parentSid ? { [USAGE_PARENT_ENV]: `${parentSid}:${id}` } : undefined;
+					const specEnv = specOn && !remote ? {
 						...(backendPrepared?.env as Record<string, string> | undefined), ...baseEnv,
 						...(ledger ? { [LEDGER_ENV]: ledger } : {}),
 						[ASSESSMENT_OWNER_ENV]: ctx.sessionManager.getSessionId?.() ?? "",
 						[ASSESSMENT_WORKER_ENV]: id,
 						[ASSESSMENT_TEAM_ENV]: request.team?.teamId ?? "",
 					} : ledger ? { ...baseEnv, [LEDGER_ENV]: ledger } : baseEnv;
+					const env = usageEnv ? { ...specEnv, ...usageEnv } : specEnv;
 					const name = (spec.count ?? 1) > 1 ? `${base}-${i + 1}` : base;
 					// Hosted: the runner's spawnImpl starts a detached host instead of the worker itself.
 					const hostedWorker = !resuming && hosting.active();
@@ -1538,6 +1554,7 @@ export function registerSubagents(
 					group.agents.push(runner);
 					hosting.bind(id, runner);
 					workerModes.set(runner, givenModes);
+					if (sandboxNotes[index] !== undefined) workerSandbox.set(runner, sandboxNotes[index]!);
 					// What resume needs to start it again: the raw spec (resolved again against the
 					// session's state at resume time, like a spawn), with pi's inherited model written out.
 					launches.set(runner, {
@@ -2736,7 +2753,7 @@ export function registerSubagents(
 									`${g.id} — ${g.label}`,
 									...g.agents.map(
 										(a) =>
-											`  ${a.id} ${a.name} [${a.backend ?? "pi"}] ${a.status}${a.taskOutcome ? `/${a.taskOutcome}` : ""} ${a.model ?? "child default"} · ${listUsage(a)}${a.error ? ` · error: ${a.error}` : ""}${restoredNote(a)}${outsideWorktrees.has(a.id) ? " · outside this session's worktrees (adopted after a restart; kept running)" : ""}`,
+											`  ${a.id} ${a.name} [${a.backend ?? "pi"}] ${a.status}${a.taskOutcome ? `/${a.taskOutcome}` : ""} ${a.model ?? "child default"} · ${listUsage(a)}${a.error ? ` · error: ${a.error}` : ""}${workerSandbox.has(a) ? ` · sandbox: ${workerSandbox.get(a)}` : ""}${restoredNote(a)}${outsideWorktrees.has(a.id) ? " · outside this session's worktrees (adopted after a restart; kept running)" : ""}`,
 									),
 								].join("\n"),
 							)

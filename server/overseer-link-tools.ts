@@ -1,4 +1,4 @@
-import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
+import type { ToolSpec } from "../shared/harness";
 import type { LinkCreate, LinkError, LinkMemberView, MeshLinkView } from "../shared/mesh-links";
 import type { ToolCall } from "./overseer-idea-tools";
 
@@ -15,7 +15,7 @@ import type { ToolCall } from "./overseer-idea-tools";
  */
 
 type Out = { content: { type: "text"; text: string }[]; details: unknown };
-type Tool = ToolDefinition<any, any>;
+type Tool = ToolSpec;
 
 export interface LinkToolDeps {
   act(name: string, run: (params: any, toolCallId: string, call: ToolCall) => Promise<Out>): Tool["execute"];
@@ -64,7 +64,7 @@ export function memberRow(m: LinkMemberView, now = Date.now()): string {
 
 /** One link: its id, when made, ended or not, then a line per member. */
 export function linkBlock(v: MeshLinkView, now = Date.now()): string {
-  const head = `- ${v.link.id} · made ${ago(v.link.createdAt, now)}${v.link.endedAt ? ` · ENDED ${ago(v.link.endedAt, now)}` : ""}`;
+  const head = `- ${v.link.id} · made ${ago(v.link.createdAt, now)}${v.link.endedAt ? ` · ENDED ${ago(v.link.endedAt, now)}${v.link.endedWhy ? ` (${v.link.endedWhy})` : ""}` : ""}`;
   return [head, ...v.members.map((m) => `  - ${memberRow(m, now)}`)].join("\n");
 }
 

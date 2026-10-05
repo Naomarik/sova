@@ -4,6 +4,7 @@
 import type { AgentsInsight, TeamEvent, TeamInfo, TeamMember, UsageAuth, UsageBalance, UsageClaudeLogin, UsageInsight, UsageProvider, UsageWindow } from "../../shared/protocol";
 import type { Tone } from "../components/ui";
 import { accountGroups, type LoginFacts, loginName } from "./claude-login-groups";
+import { costsRouteFromHash, type CostsQuery } from "./cost-history";
 import { clockTime, duration, relativeTime, shortDate, stampTime, thousands } from "./format";
 import { isHostSession } from "./workers";
 
@@ -792,8 +793,12 @@ export const explanationsHref = (sessionId?: string | null) =>
   sessionId ? `#/explanations/${encodeURIComponent(sessionId)}` : "#/explanations";
 
 /** The insights page in the hash, if any: `#/usage`, `#/agents`, `#/agents/<teamKey>` (a bare team
-    id from older links too), `#/explanations`, `#/explanations/<sessionId>`. */
-export type InsightsRoute = { page: "usage" } | { page: "agents"; team: string | null } | { page: "explanations"; session: string | null };
+    id from older links too), `#/agents/costs[?…]` (the Agents page's Costs tab: `costs` set),
+    `#/explanations`, `#/explanations/<sessionId>`. */
+export type InsightsRoute =
+  | { page: "usage" }
+  | { page: "agents"; team: string | null; costs?: CostsQuery }
+  | { page: "explanations"; session: string | null };
 
 export function insightsRouteFromHash(hash: string): InsightsRoute | null {
   if (hash === "#/usage") return { page: "usage" };
@@ -805,6 +810,9 @@ export function insightsRouteFromHash(hash: string): InsightsRoute | null {
       return { page: "explanations", session: null };
     }
   }
+  // Before the team key: "costs" is the tab, never a team.
+  const costs = costsRouteFromHash(hash);
+  if (costs) return { page: "agents", team: null, costs };
   const m = /^#\/agents(?:\/(.+))?$/.exec(hash);
   if (!m) return null;
   try {

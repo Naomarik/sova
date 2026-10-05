@@ -251,17 +251,20 @@ const idsInUse = (): string[] => [...readRegistry().map((e) => e.id), ...listPro
  * already a project here or a reserved root. `engine` "standalone": its own engine, made here; else the
  * open engine that will hold it. Starts `project/<p>`, which starts its watch.
  */
-export async function registerProjectIn(engine: string, rawRoot: unknown, input: RegisterInput): Promise<{ project: ProjectSummary; normalizedFrom?: string }> {
+export async function registerProjectIn(engine: string, rawRoot: unknown, input: RegisterInput, by: OperatorBy = OPERATOR_BY): Promise<{ project: ProjectSummary; normalizedFrom?: string }> {
   const prepared = await prepareRegistration(rawRoot, { rootsInUse: () => listProjects(), reservedRoots });
   const name = typeof input.name === "string" && input.name.trim() ? input.name.trim() : prepared.name;
-  const data = (id: string) => ({ id, name, root: prepared.root, origin: input.origin, ...(input.remote ? { remote: input.remote } : {}), createdAt: Date.now() });
+  // The global Overseer's add for the user is marked in its data and its start row (§app.overseer/org-project-add).
+  const via = by.via ? { via: by.via } : {};
+  const data = (id: string) => ({ id, name, root: prepared.root, origin: input.origin, ...(input.remote ? { remote: input.remote } : {}), ...via, createdAt: Date.now() });
+  const envelope = { by: "operator", ...via, ...(by.overseerId ? { overseerId: by.overseerId } : {}) };
   let id: string;
   if (engine === "standalone") {
     const entry = addRegistryEntry(idsInUse());
     id = entry.id;
     try {
       const host = await openProjectEngine(id, entry.dir);
-      await start(host, id, data(id));
+      await start(host, id, data(id), envelope);
     } catch (err) {
       removeRegistryEntry(id, { removeEmptyDir: true });
       throw err;
@@ -269,14 +272,14 @@ export async function registerProjectIn(engine: string, rawRoot: unknown, input:
   } else {
     if (!isOrgHostOpen(engine)) throw new RegistryError("That engine is not open on this host.", 409);
     id = mintProjectId(idsInUse());
-    await start(hostOf(engine), id, data(id));
+    await start(hostOf(engine), id, data(id), envelope);
   }
   where.set(id, engine === "standalone" ? id : engine);
   return { project: readProject(id), ...(prepared.normalizedFrom ? { normalizedFrom: prepared.normalizedFrom } : {}) };
 }
 
-async function start(host: OrgHostApi, id: string, data: Record<string, unknown>): Promise<void> {
-  const r = await host.start(projectSid(id), "project", data, { by: "operator" });
+async function start(host: OrgHostApi, id: string, data: Record<string, unknown>, envelope: Record<string, unknown>): Promise<void> {
+  const r = await host.start(projectSid(id), "project", data, envelope);
   const refused = (r as { refusal?: { sentence?: string } } | undefined)?.refusal;
   if (refused) throw new RegistryError(refused.sentence ?? "The project could not be started.", 409);
 }

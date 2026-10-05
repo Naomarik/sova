@@ -16,6 +16,7 @@ import { freshAccessToken, refreshLogin, switchText, type RefreshImpl, type Clau
 import { ACCOUNTS_MODULE, CONFINED_DROP_ENV, CONFINED_SETTINGS, TOKEN_FD, claudeNeeds, confinedSourceEnv, confinedVersionProbe, launchModule, loginDirOf, type ClaudeConfine } from "./confined-launch.ts";
 import type { AgentStatus, AgentUsage, TaskOutcome, TranscriptItem, TranscriptKind, SteerResult } from "../subagents/runner.ts";
 import type { Worker, WorkerHandlers, SteerMode, SpawnOptions } from "../subagents/contracts.ts";
+import { usageParentFromEnv } from "../llm-inflight/attribution.ts";
 import { createClaudeRequestObserver, type ClaudeRequestObserver } from "../llm-inflight/claude.ts";
 
 /**
@@ -292,7 +293,24 @@ export class ClaudeRunner implements Worker {
 		const forced = this.login && this.options.logins?.forcedFailure?.(this.login.id);
 		// Its model calls count in this process (llm-inflight). A re-adopted worker's replay is
 		// history: counting starts when the host goes live (adopt()).
-		const requestObserver = createClaudeRequestObserver({ active: !this.options.adopt || this.transport !== undefined });
+		// Its spend is recorded here too (the usage ledger): owned by its Claude session, its parent the
+		// session that spawned it (PI_USAGE_PARENT, set at spawn). Only a first launch starts fresh.
+		const parent = usageParentFromEnv(this.options.env ?? {});
+		const requestObserver = createClaudeRequestObserver({
+			active: !this.options.adopt || this.transport !== undefined,
+			usage: {
+				who: (claudeSession) => ({
+					owner: claudeSession ?? this.sessionId ?? null,
+					parent: parent?.parent ?? null,
+					worker: parent?.worker ?? this.id,
+					kind: "worker",
+					cwd: this.cwd,
+					routed: false,
+				}),
+				...(this.model ? { model: this.model } : {}),
+				fresh: !this.options.adopt && !this.options.resume && this.transport === undefined,
+			},
+		});
 		this.requestObserver = requestObserver;
 		const transport: ClaudeTransport = new ClaudeTransport({
 			timings: this.timings,
@@ -373,10 +391,10 @@ export class ClaudeRunner implements Worker {
 			this.fail("Claude runner does not support Pi forks or nested extensions"); return;
 		}
 		if (o.logins?.acquire && this.login) { void this.startOnAcquired(o.logins.acquire.bind(o.logins)); return; }
-		this.then(this.launch(o.resume?.sessionId, o.env), () => void this.initialize());
+		this.afterLaunch(this.launch(o.resume?.sessionId, o.env), () => void this.initialize());
 	}
 	/** After a launch: `next` once it spawned (a confined launch resolves later). */
-	private then(launched: boolean | Promise<boolean>, next: () => void): void {
+	private afterLaunch(launched: boolean | Promise<boolean>, next: () => void): void {
 		if (launched === true) next();
 		else if (launched !== false) void launched.then((ok) => { if (ok) next(); });
 	}
@@ -392,7 +410,7 @@ export class ClaudeRunner implements Worker {
 			}
 		} catch { /* start on the login chosen at creation */ }
 		if (this.stopping || this.closed) return;
-		this.then(this.launch(this.options.resume?.sessionId, env), () => void this.initialize());
+		this.afterLaunch(this.launch(this.options.resume?.sessionId, env), () => void this.initialize());
 	}
 
 	/**

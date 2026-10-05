@@ -625,7 +625,10 @@ runaway reply there is capped: it can't write a line too long to read back or to
 - **Appends.** `append` items fade in (the rows' `.message` uses no transform, so no animation is
   needed).
 - **Auto-follow.**
-  - *Following* means the transcript's scroll bottom is within 80px of the end. While following,
+  - *Following* means the transcript's scroll bottom is within 80px of the end, by the reader's
+    own scroll: the browser taking a view to the end doesn't make it following; only the reader's
+    own scroll, a wheel down at the end, or Jump to Latest does
+    (§chat.transcript/turn-end-keeps-reader). While following,
     every append or streamed delta scrolls to the bottom (`scrollTop = scrollHeight`, no smooth
     scroll).
   - When the user scrolls up past 80px, following stops and a `.button.jump-latest` appears:
@@ -649,6 +652,25 @@ runaway reply there is capped: it can't write a line too long to read back or to
   (§chat.transcript/rendering). While the rows held have no reply to read the context fill from,
   the gauge shows the fill the server read from the whole branch (the snapshot's, or the last
   append's).
+
+## §chat.transcript/turn-end-keeps-reader — A turn's end never moves a reader who scrolled up
+
+- **One swap.** When a chat turn ends, the streamed rows give way to the rows saved for that turn
+  in one step: the saved rows land and the streamed rows and command rows leave together, so the
+  page never lays out holding both. A reader scrolled up from the end stays on the line they were
+  reading, not following, with Jump to Latest still showing, even while the saved rows are first
+  drawn at an estimate: the last row that stays, at the top of the view or above it, is held in
+  place until the reader moves (a wheel, a touch, a key or a press on the transcript). A reader at
+  the end, following, stays at the end through it.
+- **Following comes back only by the reader's hand.** A view that isn't following follows again
+  when the reader's own scroll (a wheel, a touch, a key, or a press on the transcript such as
+  dragging its scrollbar or opening a disclosure) brings it within 80px of the end of the rows as
+  they stood, when they wheel down while already there, when a jump's own scroll lands there
+  (§chat.timeline/jumping), when the view gets narrower or wider, or on Jump to Latest and on
+  sending a message. Rows drawn shorter for a moment (a turn's saved rows at their estimate) don't
+  bring the end closer; a lower end counts once it has stood 0.6 s. The view reaching the end any
+  other way (the browser clamping it as rows below get shorter or leave) doesn't follow again: it
+  stays where the browser put it, not following, with Jump to Latest showing, until one of those.
 
 ## §chat.transcript/rendering — Opening and switching a long transcript
 

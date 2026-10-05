@@ -14235,6 +14235,24 @@
         "pi-config/extensions/subagents/README.md",
         "pi-config/extensions/claude-code/README.md"
       ]
+    },
+    "§chat.transcript/turn-end-keeps-reader": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.transcript/live-watch",
+        "§chat.transcript/rendering"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/components/Thread.tsx",
+        "src/components/ChatView.tsx",
+        "src/lib/older-rows.ts",
+        "src/lib/older-rows-view.ts",
+        "src/lib/older-rows.test.ts",
+        "src/lib/older-rows-view.browser.test.ts",
+        "scripts/e2e/transcript-follow.mjs"
+      ]
     }
   },
   "boundary": {

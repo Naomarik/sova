@@ -1,0 +1,95 @@
+{
+  "operator": {
+    "view": {
+      "publicTitle": "Golden launch",
+      "state": "active",
+      "holder": "Alice",
+      "items": [
+        {
+          "kind": "message",
+          "id": "j0000001",
+          "by": "",
+          "name": "Someone",
+          "text": "Before the damage",
+          "at": "2026-09-01T10:00:01.000Z"
+        },
+        {
+          "kind": "reply",
+          "id": "j0000002",
+          "text": "After the malformed line",
+          "at": "2026-09-01T10:00:02.000Z"
+        },
+        {
+          "kind": "message",
+          "id": "j0000003",
+          "by": "p_alice",
+          "name": "Alice",
+          "text": "Last whole line",
+          "at": "2026-09-01T10:00:03.000Z"
+        }
+      ]
+    },
+    "photos": 0
+  },
+  "bob": {
+    "view": {
+      "publicTitle": "Golden launch",
+      "state": "active",
+      "holder": "Alice",
+      "items": [
+        {
+          "kind": "message",
+          "id": "j0000001",
+          "by": "",
+          "name": "Someone",
+          "text": "Before the damage",
+          "at": "2026-09-01T10:00:01.000Z"
+        },
+        {
+          "kind": "reply",
+          "id": "j0000002",
+          "text": "After the malformed line",
+          "at": "2026-09-01T10:00:02.000Z"
+        },
+        {
+          "kind": "message",
+          "id": "j0000003",
+          "by": "p_alice",
+          "name": "Alice",
+          "text": "Last whole line",
+          "at": "2026-09-01T10:00:03.000Z"
+        }
+      ]
+    },
+    "photos": 0
+  },
+  "untilOffer": {
+    "publicTitle": "Golden launch",
+    "state": "active",
+    "holder": null,
+    "items": [
+      {
+        "kind": "message",
+        "id": "j0000001",
+        "by": "",
+        "name": "Someone",
+        "text": "Before the damage",
+        "at": "2026-09-01T10:00:01.000Z"
+      },
+      {
+        "kind": "reply",
+        "id": "j0000002",
+        "text": "After the malformed line",
+        "at": "2026-09-01T10:00:02.000Z"
+      },
+      {
+        "kind": "message",
+        "id": "j0000003",
+        "by": "p_alice",
+        "name": "Alice",
+        "text": "Last whole line",
+        "at": "2026-09-01T10:00:03.000Z"
+      }
+    ]
+  }
+}

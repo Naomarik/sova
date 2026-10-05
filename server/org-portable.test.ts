@@ -8,6 +8,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameS
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { after, describe, test } from "node:test";
+import { piSession } from "./harness/pi/testing/handle";
 
 const root = realpathSync(mkdtempSync(join(tmpdir(), "sova-portable-")));
 // A hosted runtime can still write here after after() ran (pi's catalogs, usage cache): exit is last.
@@ -187,12 +188,12 @@ describe("clone + attach = the whole organization", async () => {
     assert.equal(existsSync(header.cwd), false, "the header's cwd is the old host's");
     assert.equal(cwdOverride(batonPath), orgs.orgDir(b.id));
     const chat = await acquireChat(batonPath);
-    assert.equal(chat.session.sessionManager.getCwd(), orgs.orgDir(b.id));
+    assert.equal(piSession(chat).sessionManager.getCwd(), orgs.orgDir(b.id));
     const poPath = (await po.projectOverseerInfo(project.id)).path!;
     assert.equal(cwdOverride(poPath), join(root, "proj-b"));
     const poChat = await acquireChat(poPath);
     assert.equal(poChat.special, "project-overseer");
-    assert.equal(poChat.session.sessionManager.getCwd(), join(root, "proj-b"));
+    assert.equal(piSession(poChat).sessionManager.getCwd(), join(root, "proj-b"));
     assert.equal(readFileSync(batonPath, "utf8").split("\n")[0], JSON.stringify(header), "opening rewrote nothing");
     // The session list groups them by the same dirs, not the old host's.
     assert.equal((await getSessionSummary(batonPath))?.cwd, orgs.orgDir(b.id));

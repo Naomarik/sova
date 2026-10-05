@@ -1,0 +1,92 @@
+{
+  "parse": {
+    "ok": true,
+    "lines": 10
+  },
+  "branch": [
+    "h0000001",
+    "h0000002",
+    "h0000003",
+    "h0000004",
+    "h0000005",
+    "h0000006",
+    "h0000007",
+    "h0000008",
+    "h0000009",
+    "h000000a"
+  ],
+  "fanout": false,
+  "prefixes": {
+    "h0000001": {
+      "ok": false,
+      "reason": "not_assistant",
+      "message": "Only an assistant reply can be forked from.",
+      "status": 400
+    },
+    "h0000002": {
+      "ok": false,
+      "reason": "not_assistant",
+      "message": "Only an assistant reply can be forked from.",
+      "status": 400
+    },
+    "h0000003": {
+      "ok": false,
+      "reason": "not_assistant",
+      "message": "Only an assistant reply can be forked from.",
+      "status": 400
+    },
+    "h0000004": {
+      "ok": false,
+      "reason": "tool_boundary",
+      "message": "That reply was still waiting on a tool result. Fork from a later reply in the same turn.",
+      "status": 400
+    },
+    "h0000005": {
+      "ok": false,
+      "reason": "not_assistant",
+      "message": "Only an assistant reply can be forked from.",
+      "status": 400
+    },
+    "h0000006": {
+      "ok": true,
+      "prefix": [
+        "{\"type\":\"model_change\",\"provider\":\"anthropic\",\"modelId\":\"claude-sonnet-5\",\"id\":\"h0000001\",\"parentId\":null,\"timestamp\":\"2026-09-01T10:00:01.000Z\"}",
+        "{\"type\":\"message\",\"message\":{\"role\":\"system\",\"content\":\"Base prompt\",\"sections\":{\"skills\":\"<available_skills></available_skills>\"},\"timestamp\":1788256802000},\"id\":\"h0000002\",\"parentId\":\"h0000001\",\"timestamp\":\"2026-09-01T10:00:02.000Z\"}",
+        "{\"type\":\"message\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"Do the thing\"}],\"timestamp\":1788256803000},\"id\":\"h0000003\",\"parentId\":\"h0000002\",\"timestamp\":\"2026-09-01T10:00:03.000Z\"}",
+        "{\"type\":\"message\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"toolCall\",\"id\":\"call_t\",\"name\":\"read\",\"arguments\":{\"path\":\"x\"}}],\"api\":\"openai-completions\",\"provider\":\"anthropic\",\"model\":\"claude-sonnet-5\",\"usage\":{\"input\":1200,\"output\":80,\"cacheRead\":400,\"cacheWrite\":0,\"totalTokens\":1680,\"cost\":{\"input\":0.001,\"output\":0.002,\"cacheRead\":0.0001,\"cacheWrite\":0,\"total\":0.0031}},\"stopReason\":\"toolUse\",\"timestamp\":1788256804000},\"id\":\"h0000004\",\"parentId\":\"h0000003\",\"timestamp\":\"2026-09-01T10:00:04.000Z\"}",
+        "{\"type\":\"message\",\"message\":{\"role\":\"toolResult\",\"toolCallId\":\"call_t\",\"toolName\":\"read\",\"content\":[{\"type\":\"text\",\"text\":\"x\"}],\"isError\":false,\"timestamp\":1788256805000},\"id\":\"h0000005\",\"parentId\":\"h0000004\",\"timestamp\":\"2026-09-01T10:00:05.000Z\"}",
+        "{\"type\":\"message\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"The thing is done.\"}],\"api\":\"openai-completions\",\"provider\":\"anthropic\",\"model\":\"claude-sonnet-5\",\"usage\":{\"input\":4000,\"output\":300,\"cacheRead\":50000,\"cacheWrite\":700,\"totalTokens\":55000,\"cost\":{\"input\":0.001,\"output\":0.002,\"cacheRead\":0.0001,\"cacheWrite\":0,\"total\":0.0031}},\"stopReason\":\"stop\",\"timestamp\":1788256806000},\"id\":\"h0000006\",\"parentId\":\"h0000005\",\"timestamp\":\"2026-09-01T10:00:06.000Z\"}"
+      ]
+    },
+    "h0000007": {
+      "ok": false,
+      "reason": "not_assistant",
+      "message": "Only an assistant reply can be forked from.",
+      "status": 400
+    },
+    "h0000008": {
+      "ok": false,
+      "reason": "not_assistant",
+      "message": "Only an assistant reply can be forked from.",
+      "status": 400
+    },
+    "h0000009": {
+      "ok": false,
+      "reason": "not_assistant",
+      "message": "Only an assistant reply can be forked from.",
+      "status": 400
+    },
+    "h000000a": {
+      "ok": false,
+      "reason": "not_assistant",
+      "message": "Only an assistant reply can be forked from.",
+      "status": 400
+    },
+    "no-such-entry": {
+      "ok": false,
+      "reason": "not_on_branch",
+      "message": "That reply is not on this chat's current branch anymore.",
+      "status": 400
+    }
+  }
+}

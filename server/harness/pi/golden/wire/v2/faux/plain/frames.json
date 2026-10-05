@@ -1,0 +1,12 @@
+[
+  "{\"type\":\"event\",\"v\":2,\"event\":{\"type\":\"run.start\"}}",
+  "{\"type\":\"event\",\"v\":2,\"event\":{\"type\":\"message.start\",\"role\":\"user\",\"text\":\"hello\",\"images\":[]}}",
+  "{\"type\":\"event\",\"v\":2,\"event\":{\"type\":\"message.end\",\"role\":\"user\",\"entryId\":\"00000004\"}}",
+  "{\"type\":\"event\",\"v\":2,\"event\":{\"type\":\"message.start\",\"role\":\"assistant\",\"model\":\"faux/faux-1\",\"parts\":[]}}",
+  "{\"type\":\"event\",\"v\":2,\"event\":{\"type\":\"part.start\",\"index\":0,\"kind\":\"text\"}}",
+  "{\"type\":\"event\",\"v\":2,\"event\":{\"type\":\"part.delta\",\"index\":0,\"kind\":\"text\",\"delta\":\"Hello there. How\"}}",
+  "{\"type\":\"event\",\"v\":2,\"event\":{\"type\":\"part.delta\",\"index\":0,\"kind\":\"text\",\"delta\":\" can I help?\"}}",
+  "{\"type\":\"event\",\"v\":2,\"event\":{\"type\":\"part.end\",\"index\":0,\"kind\":\"text\",\"text\":\"Hello there. How can I help?\"}}",
+  "{\"type\":\"event\",\"v\":2,\"event\":{\"type\":\"message.end\",\"role\":\"assistant\",\"entryId\":\"00000005\",\"model\":\"faux/faux-1\",\"parts\":[{\"kind\":\"text\",\"text\":\"Hello there. How can I help?\"}],\"stop\":\"ok\",\"contextTokens\":2734}}",
+  "{\"type\":\"event\",\"v\":2,\"event\":{\"type\":\"run.settled\"}}"
+]

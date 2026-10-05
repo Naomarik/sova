@@ -1,0 +1,20 @@
+[
+  "{\"type\":\"event\",\"v\":2,\"event\":{\"type\":\"run.start\"}}",
+  "{\"type\":\"event\",\"v\":2,\"event\":{\"type\":\"message.start\",\"role\":\"user\",\"text\":\"Write a lot\",\"images\":[]}}",
+  "{\"type\":\"event\",\"v\":2,\"event\":{\"type\":\"message.end\",\"role\":\"user\",\"entryId\":\"00000004\"}}",
+  "{\"type\":\"event\",\"v\":2,\"event\":{\"type\":\"message.start\",\"role\":\"assistant\",\"model\":\"faux/faux-1\",\"parts\":[]}}",
+  "{\"type\":\"event\",\"v\":2,\"event\":{\"type\":\"part.start\",\"index\":0,\"kind\":\"text\"}}",
+  "{\"type\":\"event\",\"v\":2,\"event\":{\"type\":\"part.delta\",\"index\":0,\"kind\":\"text\",\"delta\":\"This reply is lo\"}}",
+  "{\"type\":\"event\",\"v\":2,\"event\":{\"type\":\"part.delta\",\"index\":0,\"kind\":\"text\",\"delta\":\"ng enough to be \"}}",
+  "{\"type\":\"event\",\"v\":2,\"event\":{\"type\":\"part.delta\",\"index\":0,\"kind\":\"text\",\"delta\":\"cut off. More wo\"}}",
+  "{\"type\":\"event\",\"v\":2,\"event\":{\"type\":\"part.delta\",\"index\":0,\"kind\":\"text\",\"delta\":\"rds keep coming.\"}}",
+  "{\"type\":\"event\",\"v\":2,\"event\":{\"type\":\"part.delta\",\"index\":0,\"kind\":\"text\",\"delta\":\" More words keep\"}}",
+  "{\"type\":\"event\",\"v\":2,\"event\":{\"type\":\"part.delta\",\"index\":0,\"kind\":\"text\",\"delta\":\" coming. More wo\"}}",
+  "{\"type\":\"event\",\"v\":2,\"event\":{\"type\":\"part.delta\",\"index\":0,\"kind\":\"text\",\"delta\":\"rds keep coming.\"}}",
+  "{\"type\":\"event\",\"v\":2,\"event\":{\"type\":\"part.delta\",\"index\":0,\"kind\":\"text\",\"delta\":\" More words keep\"}}",
+  "{\"type\":\"event\",\"v\":2,\"event\":{\"type\":\"part.delta\",\"index\":0,\"kind\":\"text\",\"delta\":\" coming. More wo\"}}",
+  "{\"type\":\"event\",\"v\":2,\"event\":{\"type\":\"part.delta\",\"index\":0,\"kind\":\"text\",\"delta\":\"rds keep coming.\"}}",
+  "{\"type\":\"event\",\"v\":2,\"event\":{\"type\":\"part.delta\",\"index\":0,\"kind\":\"text\",\"delta\":\" More words keep\"}}",
+  "{\"type\":\"event\",\"v\":2,\"event\":{\"type\":\"message.end\",\"role\":\"assistant\",\"entryId\":\"00000005\",\"model\":\"faux/faux-1\",\"parts\":[{\"kind\":\"text\",\"text\":\"This reply is long enough to be cut off. More words keep coming. More words keep coming. More words keep coming. More words keep coming. More words keep coming. More words keep\"}],\"stop\":\"aborted\"}}",
+  "{\"type\":\"event\",\"v\":2,\"event\":{\"type\":\"run.settled\"}}"
+]

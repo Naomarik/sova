@@ -1,0 +1,30 @@
+{
+  "vocabulary": [
+    "First question"
+  ],
+  "senders": {
+    "$map": [
+      [
+        "d0000002",
+        "p_alice"
+      ]
+    ]
+  },
+  "sendersNoHolder": {
+    "$map": []
+  },
+  "notes": [
+    {
+      "timestamp": 1788256802000,
+      "text": "First question",
+      "note": "[From Alice]"
+    }
+  ],
+  "counted": 1,
+  "model": {
+    "model": "zai/glm-5.3",
+    "thinking": null
+  },
+  "photos": 0,
+  "modelRef": "zai/glm-5.3"
+}

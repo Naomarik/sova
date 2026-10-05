@@ -1,0 +1,70 @@
+{
+  "type": "view",
+  "view": {
+    "title": "Golden share",
+    "sharedAt": "2026-10-05T00:00:00.000Z",
+    "mode": "live",
+    "through": "2026-09-01T10:01:12.000Z",
+    "items": [
+      {
+        "kind": "user",
+        "n": 0,
+        "text": "Plain question about the parser",
+        "at": "2026-09-01T10:00:08.000Z"
+      },
+      {
+        "kind": "user",
+        "n": 1,
+        "text": "Two screenshots attached",
+        "at": "2026-09-01T10:00:10.000Z",
+        "images": [
+          {
+            "n": 0,
+            "mime": "image/png"
+          },
+          {
+            "n": 1,
+            "mime": "image/png"
+          }
+        ]
+      },
+      {
+        "kind": "reply",
+        "n": 2,
+        "text": "Here is the answer, see",
+        "at": "2026-09-01T10:00:12.000Z"
+      },
+      {
+        "kind": "reply",
+        "n": 3,
+        "text": "Unknown block before me",
+        "at": "2026-09-01T10:00:18.000Z"
+      },
+      {
+        "kind": "reply",
+        "n": 4,
+        "text": "partial",
+        "at": "2026-09-01T10:00:19.000Z"
+      },
+      {
+        "kind": "reply",
+        "n": 5,
+        "text": "cut off",
+        "at": "2026-09-01T10:00:21.000Z"
+      },
+      {
+        "kind": "reply",
+        "n": 6,
+        "text": "No provider on this one",
+        "at": "2026-09-01T10:00:22.000Z"
+      },
+      {
+        "kind": "reply",
+        "n": 7,
+        "text": "Final reply after everything.",
+        "at": "2026-09-01T10:01:12.000Z"
+      }
+    ],
+    "images": 2
+  }
+}

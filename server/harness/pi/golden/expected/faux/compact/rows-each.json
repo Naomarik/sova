@@ -1,0 +1,25 @@
+[
+  [],
+  [
+    "{\"id\":\"00000001\",\"kind\":\"info\",\"text\":\"Model: faux/faux-1\",\"at\":\"2026-09-03T08:00:00.006Z\",\"meta\":{\"type\":\"model_change\"}}"
+  ],
+  [
+    "{\"id\":\"00000002\",\"kind\":\"info\",\"text\":\"Thinking: medium\",\"at\":\"2026-09-03T08:00:00.007Z\",\"meta\":{\"type\":\"thinking_level_change\"}}"
+  ],
+  [],
+  [
+    "{\"id\":\"00000004\",\"kind\":\"user\",\"at\":\"2026-09-03T08:00:00.012Z\",\"text\":\"First question\",\"meta\":{\"type\":\"message\",\"role\":\"user\"}}"
+  ],
+  [
+    "{\"id\":\"00000005:0\",\"kind\":\"assistant-text\",\"text\":\"First answer, with some detail to summarize later.\",\"at\":\"2026-09-03T08:00:00.013Z\",\"model\":\"faux/faux-1\",\"meta\":{\"type\":\"message\",\"role\":\"assistant\",\"provider\":\"faux\",\"model\":\"faux-1\",\"usage\":{\"input\":1371,\"output\":13,\"cacheRead\":0,\"cacheWrite\":1371,\"totalTokens\":2755,\"cost\":{\"input\":0,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"total\":0}},\"stopReason\":\"stop\"}}"
+  ],
+  [
+    "{\"id\":\"00000006\",\"kind\":\"user\",\"at\":\"2026-09-03T08:00:00.016Z\",\"text\":\"Second question\",\"meta\":{\"type\":\"message\",\"role\":\"user\"}}"
+  ],
+  [
+    "{\"id\":\"00000007:0\",\"kind\":\"assistant-text\",\"text\":\"Second answer.\",\"at\":\"2026-09-03T08:00:00.017Z\",\"model\":\"faux/faux-1\",\"meta\":{\"type\":\"message\",\"role\":\"assistant\",\"provider\":\"faux\",\"model\":\"faux-1\",\"usage\":{\"input\":21,\"output\":4,\"cacheRead\":1371,\"cacheWrite\":21,\"totalTokens\":1417,\"cost\":{\"input\":0,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"total\":0}},\"stopReason\":\"stop\"}}"
+  ],
+  [
+    "{\"id\":\"00000008\",\"kind\":\"info\",\"text\":\"Compacted (1417 tokens): ## Summary\\nTwo questions were answered.\\n\\n---\\n\\n**Turn Context (split turn):**\\n\\n## Summary\\nTwo questions were answered.\",\"at\":\"2026-09-03T08:00:00.022Z\",\"meta\":{\"type\":\"compaction\",\"tokensBefore\":1417,\"summary\":\"## Summary\\nTwo questions were answered.\\n\\n---\\n\\n**Turn Context (split turn):**\\n\\n## Summary\\nTwo questions were answered.\",\"details\":{\"readFiles\":[],\"modifiedFiles\":[]}}}"
+  ]
+]

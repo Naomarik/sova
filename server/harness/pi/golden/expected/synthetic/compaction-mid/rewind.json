@@ -1,0 +1,88 @@
+{
+  "g0000001": {
+    "outcome": {
+      "ok": false,
+      "reason": "not_on_branch",
+      "message": "That input is not on this chat's current branch anymore."
+    },
+    "marks": []
+  },
+  "g0000002": {
+    "outcome": {
+      "ok": true,
+      "editorText": "Long work"
+    },
+    "marks": [
+      {
+        "type": "sova-rewind",
+        "data": {
+          "targetId": "g0000002",
+          "fromLeafId": "g0000008"
+        }
+      }
+    ]
+  },
+  "g0000003": {
+    "outcome": {
+      "ok": false,
+      "reason": "not_on_branch",
+      "message": "That input is not on this chat's current branch anymore."
+    },
+    "marks": []
+  },
+  "g0000004": {
+    "outcome": {
+      "ok": false,
+      "reason": "not_on_branch",
+      "message": "That input is not on this chat's current branch anymore."
+    },
+    "marks": []
+  },
+  "g0000005": {
+    "outcome": {
+      "ok": false,
+      "reason": "not_on_branch",
+      "message": "That input is not on this chat's current branch anymore."
+    },
+    "marks": []
+  },
+  "g0000006": {
+    "outcome": {
+      "ok": true,
+      "editorText": "Continue"
+    },
+    "marks": [
+      {
+        "type": "sova-rewind",
+        "data": {
+          "targetId": "g0000006",
+          "fromLeafId": "g0000008"
+        }
+      }
+    ]
+  },
+  "g0000007": {
+    "outcome": {
+      "ok": false,
+      "reason": "not_on_branch",
+      "message": "That input is not on this chat's current branch anymore."
+    },
+    "marks": []
+  },
+  "g0000008": {
+    "outcome": {
+      "ok": false,
+      "reason": "not_on_branch",
+      "message": "That input is not on this chat's current branch anymore."
+    },
+    "marks": []
+  },
+  "no-such-entry": {
+    "outcome": {
+      "ok": false,
+      "reason": "not_on_branch",
+      "message": "That input is not on this chat's current branch anymore."
+    },
+    "marks": []
+  }
+}

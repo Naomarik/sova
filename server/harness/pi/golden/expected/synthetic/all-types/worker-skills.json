@@ -1,0 +1,13 @@
+{
+  "ag_01": {
+    "offered": [
+      {
+        "name": "golden-skill",
+        "from": "2026-09-01T10:00:32.000Z",
+        "description": "A skill",
+        "location": "/home/user/.pi/skills/golden-skill/SKILL.md"
+      }
+    ],
+    "used": []
+  }
+}

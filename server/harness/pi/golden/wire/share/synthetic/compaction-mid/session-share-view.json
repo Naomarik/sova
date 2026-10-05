@@ -1,0 +1,42 @@
+{
+  "type": "view",
+  "view": {
+    "title": "Golden share",
+    "sharedAt": "2026-10-05T00:00:00.000Z",
+    "mode": "live",
+    "through": "2026-09-01T10:00:08.000Z",
+    "items": [
+      {
+        "kind": "user",
+        "n": 0,
+        "text": "Long work",
+        "at": "2026-09-01T10:00:02.000Z"
+      },
+      {
+        "kind": "reply",
+        "n": 1,
+        "text": "Done with step one",
+        "at": "2026-09-01T10:00:03.000Z"
+      },
+      {
+        "kind": "user",
+        "n": 2,
+        "text": "Continue",
+        "at": "2026-09-01T10:00:06.000Z"
+      },
+      {
+        "kind": "reply",
+        "n": 3,
+        "text": "Step two",
+        "at": "2026-09-01T10:00:07.000Z"
+      },
+      {
+        "kind": "reply",
+        "n": 4,
+        "text": "errored",
+        "at": "2026-09-01T10:00:08.000Z"
+      }
+    ],
+    "images": 0
+  }
+}

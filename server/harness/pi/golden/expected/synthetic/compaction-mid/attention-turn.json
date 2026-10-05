@@ -1,0 +1,22 @@
+{
+  "full": {
+    "turnId": "g0000008",
+    "replyAt": 1788256808000,
+    "lastUser": "Continue",
+    "assistantLast": "errored",
+    "tools": [],
+    "stopReason": "error",
+    "error": "overloaded",
+    "durationMs": 2000
+  },
+  "window4k": {
+    "turnId": "g0000008",
+    "replyAt": 1788256808000,
+    "lastUser": "Continue",
+    "assistantLast": "errored",
+    "tools": [],
+    "stopReason": "error",
+    "error": "overloaded",
+    "durationMs": 2000
+  }
+}

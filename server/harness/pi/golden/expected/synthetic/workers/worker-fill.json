@@ -1,0 +1,10 @@
+{
+  "tail": {
+    "tokens": 39000,
+    "model": "zai/glm-5.3"
+  },
+  "tally": {
+    "tokens": 39000,
+    "window": 200000
+  }
+}

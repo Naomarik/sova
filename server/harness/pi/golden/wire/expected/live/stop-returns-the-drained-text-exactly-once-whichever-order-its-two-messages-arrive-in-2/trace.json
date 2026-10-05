@@ -1,0 +1,92 @@
+[
+  {
+    "call": {
+      "fn": "addPendingPrompt",
+      "args": [
+        "so basically",
+        [],
+        [],
+        "c1"
+      ]
+    },
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "so basically",
+          "state": "sending",
+          "images": [],
+          "id": "c1"
+        }
+      ],
+      "tools": {},
+      "running": false,
+      "activity": null,
+      "stopping": false
+    }
+  },
+  {
+    "call": {
+      "fn": "applyQueue",
+      "args": [
+        [
+          {
+            "id": "c1",
+            "kind": "steer",
+            "text": "so basically"
+          }
+        ]
+      ]
+    },
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "so basically",
+          "state": "queued",
+          "images": [],
+          "id": "c1",
+          "queueKind": "steer",
+          "handed": false
+        }
+      ],
+      "tools": {},
+      "running": false,
+      "activity": null,
+      "stopping": false
+    }
+  },
+  {
+    "call": {
+      "fn": "takeBackQueued",
+      "args": [
+        [
+          "so basically"
+        ]
+      ]
+    },
+    "state": {
+      "entries": [],
+      "tools": {},
+      "running": false,
+      "activity": null,
+      "stopping": false
+    },
+    "returned": "so basically"
+  },
+  {
+    "call": {
+      "fn": "markRemoved",
+      "args": [
+        "c1"
+      ]
+    },
+    "state": {
+      "entries": [],
+      "tools": {},
+      "running": false,
+      "activity": null,
+      "stopping": false
+    }
+  }
+]

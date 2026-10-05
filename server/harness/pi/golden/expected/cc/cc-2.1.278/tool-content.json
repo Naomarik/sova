@@ -1,0 +1,26 @@
+{
+  "79673a4a-e3a0-4b65-9e09-9777cc5b8d6b:0": {
+    "args": {},
+    "result": {
+      "output": "No messages delivered to you yet.",
+      "isError": false
+    }
+  },
+  "12a0af6d-18c4-4106-9ccb-a7bf2471519f:0": {
+    "result": {
+      "output": "No messages delivered to you yet.",
+      "isError": false
+    }
+  },
+  "aeedd3f5-5a30-48db-a32d-b2d70d670aed:0": {
+    "args": {
+      "command": "cd ~/pi-config/extensions/sessions && cat ui.ts"
+    }
+  },
+  "1a8aa37f-f8d3-4e01-95f6-ed47fcfc2d4d:0": {
+    "result": {
+      "output": "",
+      "isError": false
+    }
+  }
+}

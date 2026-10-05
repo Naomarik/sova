@@ -1,0 +1,87 @@
+{
+  "shown": [
+    {
+      "e": {
+        "type": "message",
+        "message": {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "Fork from here please"
+            }
+          ],
+          "timestamp": 1788256807000
+        },
+        "id": "e0000007",
+        "parentId": "e0000006",
+        "timestamp": "2026-09-01T10:00:07.000Z"
+      },
+      "role": "user",
+      "text": "Fork from here please",
+      "blocks": []
+    },
+    {
+      "e": {
+        "type": "message",
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "I will check back in five minutes."
+            }
+          ],
+          "api": "openai-completions",
+          "provider": "zai",
+          "model": "glm-5.3",
+          "usage": {
+            "input": 1200,
+            "output": 80,
+            "cacheRead": 400,
+            "cacheWrite": 0,
+            "totalTokens": 1680,
+            "cost": {
+              "input": 0.001,
+              "output": 0.002,
+              "cacheRead": 0.0001,
+              "cacheWrite": 0,
+              "total": 0.0031
+            }
+          },
+          "stopReason": "stop",
+          "timestamp": 1788256810000
+        },
+        "id": "e000000a",
+        "parentId": "e0000009",
+        "timestamp": "2026-09-01T10:00:10.000Z"
+      },
+      "role": "assistant",
+      "text": "I will check back in five minutes.",
+      "blocks": []
+    }
+  ],
+  "branchTo": {
+    "leaf": [
+      "e0000001",
+      "e0000002",
+      "e0000003",
+      "e0000004",
+      "e0000005",
+      "e0000006",
+      "e0000007",
+      "e0000008",
+      "e0000009",
+      "e000000a"
+    ],
+    "mid": [
+      "e0000001",
+      "e0000002",
+      "e0000003",
+      "e0000004",
+      "e0000005",
+      "e0000006"
+    ],
+    "missing": null
+  }
+}

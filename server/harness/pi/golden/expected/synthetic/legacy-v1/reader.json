@@ -1,0 +1,30 @@
+{
+  "header": {
+    "type": "session",
+    "id": "legacy-0001",
+    "timestamp": "2025-01-01T00:00:00.000Z",
+    "cwd": "/home/user/legacy"
+  },
+  "lines": 6,
+  "entries": 5,
+  "ids": [
+    "legacy-0001",
+    null,
+    null,
+    null,
+    null
+  ],
+  "branch": [
+    null,
+    null,
+    null,
+    null
+  ],
+  "leaf": null,
+  "types": [
+    "model_change",
+    "message",
+    "message",
+    "message"
+  ]
+}

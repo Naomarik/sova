@@ -11,6 +11,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { after, describe, test } from "node:test";
+import { piSession } from "./harness/pi/testing/handle";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const tmp = realpathSync(mkdtempSync(join(tmpdir(), "sova-po-coding-")));
@@ -57,7 +58,7 @@ const modeEntries = (path: string) =>
 type Chat = Awaited<ReturnType<typeof acquireChat>>;
 const held = (chat: Chat) => ({ mode: chat.modeState.mode, minorModes: [...chat.modeState.minorModes] });
 const onBranch = (chat: Chat) => {
-  const s = resolveChatMode(chat.session.sessionManager.getBranch());
+  const s = resolveChatMode(piSession(chat).sessionManager.getBranch());
   return { mode: s.mode, minorModes: [...s.minorModes] };
 };
 
@@ -281,7 +282,7 @@ describe("a project's coding sessions", async () => {
     // Persisted, and the model gets it: reopened from the file, it is in the context as a user message.
     await disposeHeldChat(made.path, "test: reopen");
     const chat = await acquireChat(made.path);
-    const llm = convertToLlm(chat.session.sessionManager.buildSessionContext().messages);
+    const llm = convertToLlm(piSession(chat).sessionManager.buildSessionContext().messages);
     assert.ok(llm.some((m) => m.role === "user" && JSON.stringify(m.content).includes(`on the branch ${made.worktree!.branch}`)), JSON.stringify(llm));
     // Only its own: an earlier test's merge may still reach the watch in this window (master notes every merge).
     const added = store.readMemo(p).pending.filter((t) => !pendingBefore.includes(t));
@@ -436,7 +437,7 @@ describe("a project's coding sessions", async () => {
     const seen: string[] = [];
     const off = onAgentStarted((path) => seen.push(path));
     const chat = await acquireChat(row.path!);
-    (chat.session as unknown as { _emit(e: unknown): void })._emit({ type: "agent_start" });
+    (piSession(chat) as unknown as { _emit(e: unknown): void })._emit({ type: "agent_start" });
     off();
     assert.ok(seen.includes(row.path!), "agent_start reached the listener");
     for (let i = 0; i < 100 && hostOf(org.id).data(sid)?.turn !== "working"; i++) await new Promise((r) => setTimeout(r, 20));
@@ -483,7 +484,7 @@ describe("a project's coding sessions", async () => {
     const path = (out.details as { path: string }).path;
     const chat = await acquireChat(path);
     assert.equal(chat.special, "baton");
-    assert.equal(chat.session.extensionRunner.getCommand("mode"), undefined, "no mode extension");
+    assert.equal(piSession(chat).extensionRunner.getCommand("mode"), undefined, "no mode extension");
     assert.deepEqual(modeEntries(path), [], "no mode entry");
   });
 });

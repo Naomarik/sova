@@ -1,0 +1,24 @@
+{
+  "teams": [],
+  "reports": {
+    "$map": []
+  },
+  "outline": null,
+  "outlines": [],
+  "compactions": [],
+  "rewinds": [],
+  "explanations": [],
+  "sessionId": "0190a000-0000-7000-8000-b00000000000",
+  "skills": {
+    "offered": [],
+    "used": []
+  },
+  "workerRecords": {
+    "all": [],
+    "active": []
+  },
+  "teamEvents": [],
+  "settled": {
+    "$map": []
+  }
+}

@@ -9,6 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, test } from "node:test";
 import type { ChatServerMessage } from "../shared/protocol";
+import { piSession } from "./harness/pi/testing/handle";
 
 const agentDir = realpathSync(mkdtempSync(join(tmpdir(), "sova-input-source-")));
 process.on("exit", () => rmSync(agentDir, { recursive: true, force: true }));
@@ -48,7 +49,7 @@ const TEST_MODEL = {
 let hold: Promise<void> | null = null;
 type Chat = Awaited<ReturnType<typeof acquireChat>>;
 function stubModel(chat: Chat): void {
-  const session = chat.session as unknown as {
+  const session = piSession(chat) as unknown as {
     _modelRuntime: { hasConfiguredAuth(p: string): boolean };
     agent: { state: { model: unknown }; getApiKey: unknown; streamFunction: unknown };
   };
@@ -88,34 +89,34 @@ const client = {
 };
 
 describe("input source (§app.overseer/input-source)", () => {
-  test("inputSourceOf: interactive only for what a person typed", () => {
-    assert.equal(inputSourceOf({ origin: "client" }), "interactive");
-    assert.equal(inputSourceOf({ origin: "server", byPerson: true }), "interactive", "a group batch");
-    assert.equal(inputSourceOf({ origin: "server", baton: { by: "p1" } }), "interactive", "a baton participant");
-    assert.equal(inputSourceOf({ origin: "server" }), "rpc", "a brief, a schedule, another session");
-    assert.equal(inputSourceOf({ origin: "server", overseer: {} }), "rpc", "sova_send");
-    assert.equal(inputSourceOf({ origin: "client", overseer: {} }), "rpc", "a project overseer's prompt");
+  test("inputSourceOf: user (pi's interactive) only for what a person typed", () => {
+    assert.equal(inputSourceOf({ origin: "client" }), "user");
+    assert.equal(inputSourceOf({ origin: "server", byPerson: true }), "user", "a group batch");
+    assert.equal(inputSourceOf({ origin: "server", baton: { by: "p1" } }), "user", "a baton participant");
+    assert.equal(inputSourceOf({ origin: "server" }), "queued", "a brief, a schedule, another session");
+    assert.equal(inputSourceOf({ origin: "server", overseer: {} }), "queued", "sova_send");
+    assert.equal(inputSourceOf({ origin: "client", overseer: {} }), "queued", "a project overseer's prompt");
   });
 
   test("a server prompt (a brief, auto-resume's report), sova_send and a group batch reach the extensions as rpc, rpc and interactive; a typed one as interactive", async () => {
     const { chat, path } = await newChat();
     await chat.acceptPrompt("[overseer-brief] a brief", undefined, "server").turn;
     await until(() => sourceOf("[overseer-brief] a brief") !== undefined);
-    await chat.session.waitForIdle();
+    await piSession(chat).waitForIdle();
     assert.equal(sourceOf("[overseer-brief] a brief"), "rpc");
     // sova_send's route, which auto-resume's prompts take too.
     const sent = await sessionPrompt.promptSession(path, "sent by the overseer");
     assert.ok(sent.ok);
     await until(() => sourceOf("sent by the overseer") !== undefined);
-    await chat.session.waitForIdle();
+    await piSession(chat).waitForIdle();
     assert.equal(sourceOf("sent by the overseer"), "rpc");
     await chat.acceptPrompt("from the group composer", undefined, "server", undefined, { byPerson: true }).turn;
     await until(() => sourceOf("from the group composer") !== undefined);
-    await chat.session.waitForIdle();
+    await piSession(chat).waitForIdle();
     assert.equal(sourceOf("from the group composer"), "interactive");
     chat.handle(client, { type: "prompt", text: "typed here" });
     await until(() => sourceOf("typed here") !== undefined);
-    await chat.session.waitForIdle();
+    await piSession(chat).waitForIdle();
     assert.equal(sourceOf("typed here"), "interactive");
     assert.ok(!g.__inputs!.some((i) => i.source === "extension"), "never extension: vision-delegate skips that");
   });
@@ -125,13 +126,13 @@ describe("input source (§app.overseer/input-source)", () => {
     let release!: () => void;
     hold = new Promise((r) => (release = r));
     chat.handle(client, { type: "prompt", text: "a long turn" });
-    await until(() => chat.session.isStreaming);
+    await until(() => piSession(chat).isStreaming);
     const r = chat.acceptPrompt("queued brief", undefined, "server");
     assert.equal(r.queued, true);
     hold = null;
     release();
     await until(() => sourceOf("queued brief") !== undefined, 5000);
-    await chat.session.waitForIdle();
+    await piSession(chat).waitForIdle();
     assert.equal(sourceOf("a long turn"), "interactive");
     assert.equal(sourceOf("queued brief"), "rpc");
   });

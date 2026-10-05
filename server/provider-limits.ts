@@ -1,4 +1,4 @@
-import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import { agentRoot } from "./state-root";
 // The provider-limits extension's own file and gate (node builtins only): the shape, the strict
 // parse, the atomic write, the defaults a missing file stands for, and the queue files. See CLAUDE.md.
 import {
@@ -18,7 +18,7 @@ import type { ProviderLimitsInfo, ProviderWaiting } from "../shared/provider-lim
 // (§app.provider-limits/waiting-shown). The file (~/.pi/agent/provider-limits.json) is read by every
 // process's gate at each request, so a save applies to the next request anywhere on the device.
 
-export function providerLimitsInfo(agentDir = getAgentDir(), now = Date.now()): ProviderLimitsInfo {
+export function providerLimitsInfo(agentDir = agentRoot(), now = Date.now()): ProviderLimitsInfo {
   const stored = readProviderLimits(agentDir);
   const limits = stored.state === "ok" ? { ...stored.value.limits } : { ...DEFAULT_PROVIDER_LIMITS };
   const lowered: ProviderLimitsInfo["lowered"] = {};
@@ -41,7 +41,7 @@ export function providerLimitsInfo(agentDir = getAgentDir(), now = Date.now()): 
 export type ProviderLimitsSaveOutcome = { status: 200; body: ProviderLimitsInfo } | { status: 400 | 409; body: { error: string } };
 
 /** Replace the whole file (PUT `{limits}`). A stored file that can't be read is never overwritten (409). */
-export function saveProviderLimits(body: unknown, agentDir = getAgentDir()): ProviderLimitsSaveOutcome {
+export function saveProviderLimits(body: unknown, agentDir = agentRoot()): ProviderLimitsSaveOutcome {
   const stored = readProviderLimits(agentDir);
   if (stored.state === "malformed")
     return { status: 409, body: { error: `${stored.file} can't be read (${stored.errors.join("; ")}), so it wasn't overwritten; fix or delete it first` } };
@@ -60,7 +60,7 @@ let cache: { at: number; dir: string; value: ProviderWaiting } | null = null;
 const CACHE_MS = 750;
 
 /** Who waits now, by session id, from the queue files (read-only; cached briefly, since every open tab polls it). */
-export function providerWaiting(agentDir = getAgentDir(), now = Date.now()): ProviderWaiting {
+export function providerWaiting(agentDir = agentRoot(), now = Date.now()): ProviderWaiting {
   if (cache && cache.dir === agentDir && now - cache.at < CACHE_MS) return cache.value;
   const value: ProviderWaiting = { sessions: Object.fromEntries(waitingBySession(queueSnapshot(agentDir, now))) };
   cache = { at: now, dir: agentDir, value };

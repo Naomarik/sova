@@ -1,0 +1,72 @@
+{
+  "type": "view",
+  "view": {
+    "title": "Golden share",
+    "sharedAt": "2026-10-05T00:00:00.000Z",
+    "mode": "live",
+    "through": "2026-09-01T10:00:22.000Z",
+    "items": [
+      {
+        "kind": "user",
+        "n": 0,
+        "text": "Alice asks about the launch date",
+        "at": "2026-09-01T10:00:03.000Z"
+      },
+      {
+        "kind": "reply",
+        "n": 1,
+        "text": "The launch is planned for Monday.",
+        "at": "2026-09-01T10:00:05.000Z"
+      },
+      {
+        "kind": "user",
+        "n": 2,
+        "text": "Bob confirms Monday, photo attached",
+        "at": "2026-09-01T10:00:07.000Z",
+        "images": [
+          {
+            "n": 0,
+            "mime": "image/png"
+          }
+        ]
+      },
+      {
+        "kind": "reply",
+        "n": 3,
+        "text": "Thanks Bob, Monday it is.",
+        "at": "2026-09-01T10:00:09.000Z"
+      },
+      {
+        "kind": "user",
+        "n": 4,
+        "text": "Carol will write the notes",
+        "at": "2026-09-01T10:00:13.000Z"
+      },
+      {
+        "kind": "reply",
+        "n": 5,
+        "text": "Great, Carol.",
+        "at": "2026-09-01T10:00:15.000Z"
+      },
+      {
+        "kind": "user",
+        "n": 6,
+        "text": "Operator wrap-up prompt",
+        "at": "2026-09-01T10:00:19.000Z"
+      },
+      {
+        "kind": "reply",
+        "n": 7,
+        "text": "Wrap-up: updated two profiles.",
+        "at": "2026-09-01T10:00:20.000Z"
+      },
+      {
+        "kind": "user",
+        "n": 8,
+        "text": "Message after the wrap-up",
+        "at": "2026-09-01T10:00:22.000Z"
+      }
+    ],
+    "images": 1
+  }
+}

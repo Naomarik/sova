@@ -1,0 +1,97 @@
+{
+  "h0000001": {
+    "outcome": {
+      "ok": false,
+      "reason": "not_on_branch",
+      "message": "That input is not on this chat's current branch anymore."
+    },
+    "marks": []
+  },
+  "h0000002": {
+    "outcome": {
+      "ok": false,
+      "reason": "not_on_branch",
+      "message": "That input is not on this chat's current branch anymore."
+    },
+    "marks": []
+  },
+  "h0000003": {
+    "outcome": {
+      "ok": true,
+      "editorText": "Do the thing"
+    },
+    "marks": [
+      {
+        "type": "sova-rewind",
+        "data": {
+          "targetId": "h0000003",
+          "fromLeafId": "h000000a"
+        }
+      }
+    ]
+  },
+  "h0000004": {
+    "outcome": {
+      "ok": false,
+      "reason": "not_on_branch",
+      "message": "That input is not on this chat's current branch anymore."
+    },
+    "marks": []
+  },
+  "h0000005": {
+    "outcome": {
+      "ok": false,
+      "reason": "not_on_branch",
+      "message": "That input is not on this chat's current branch anymore."
+    },
+    "marks": []
+  },
+  "h0000006": {
+    "outcome": {
+      "ok": false,
+      "reason": "not_on_branch",
+      "message": "That input is not on this chat's current branch anymore."
+    },
+    "marks": []
+  },
+  "h0000007": {
+    "outcome": {
+      "ok": false,
+      "reason": "not_on_branch",
+      "message": "That input is not on this chat's current branch anymore."
+    },
+    "marks": []
+  },
+  "h0000008": {
+    "outcome": {
+      "ok": false,
+      "reason": "not_on_branch",
+      "message": "That input is not on this chat's current branch anymore."
+    },
+    "marks": []
+  },
+  "h0000009": {
+    "outcome": {
+      "ok": false,
+      "reason": "not_on_branch",
+      "message": "That input is not on this chat's current branch anymore."
+    },
+    "marks": []
+  },
+  "h000000a": {
+    "outcome": {
+      "ok": false,
+      "reason": "not_on_branch",
+      "message": "That input is not on this chat's current branch anymore."
+    },
+    "marks": []
+  },
+  "no-such-entry": {
+    "outcome": {
+      "ok": false,
+      "reason": "not_on_branch",
+      "message": "That input is not on this chat's current branch anymore."
+    },
+    "marks": []
+  }
+}

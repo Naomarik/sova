@@ -1,0 +1,17 @@
+{
+  "h0000004:0": {
+    "args": {
+      "path": "x"
+    },
+    "result": {
+      "output": "x",
+      "isError": false
+    }
+  },
+  "h0000005": {
+    "result": {
+      "output": "x",
+      "isError": false
+    }
+  }
+}

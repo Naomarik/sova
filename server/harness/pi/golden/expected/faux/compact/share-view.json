@@ -1,0 +1,146 @@
+{
+  "shown": [
+    {
+      "e": {
+        "type": "message",
+        "id": "00000004",
+        "parentId": "00000003",
+        "timestamp": "2026-09-03T08:00:00.012Z",
+        "message": {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "First question"
+            }
+          ],
+          "timestamp": 1788422400008
+        }
+      },
+      "role": "user",
+      "text": "First question",
+      "blocks": []
+    },
+    {
+      "e": {
+        "type": "message",
+        "id": "00000005",
+        "parentId": "00000004",
+        "timestamp": "2026-09-03T08:00:00.013Z",
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "First answer, with some detail to summarize later."
+            }
+          ],
+          "api": "faux-golden",
+          "provider": "faux",
+          "model": "faux-1",
+          "usage": {
+            "input": 1371,
+            "output": 13,
+            "cacheRead": 0,
+            "cacheWrite": 1371,
+            "totalTokens": 2755,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "stop",
+          "responseId": "faux-resp-0",
+          "timestamp": 1788350401000
+        }
+      },
+      "role": "assistant",
+      "text": "First answer, with some detail to summarize later.",
+      "blocks": []
+    },
+    {
+      "e": {
+        "type": "message",
+        "id": "00000006",
+        "parentId": "00000005",
+        "timestamp": "2026-09-03T08:00:00.016Z",
+        "message": {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "Second question"
+            }
+          ],
+          "timestamp": 1788422400014
+        }
+      },
+      "role": "user",
+      "text": "Second question",
+      "blocks": []
+    },
+    {
+      "e": {
+        "type": "message",
+        "id": "00000007",
+        "parentId": "00000006",
+        "timestamp": "2026-09-03T08:00:00.017Z",
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "Second answer."
+            }
+          ],
+          "api": "faux-golden",
+          "provider": "faux",
+          "model": "faux-1",
+          "usage": {
+            "input": 21,
+            "output": 4,
+            "cacheRead": 1371,
+            "cacheWrite": 21,
+            "totalTokens": 1417,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "stop",
+          "responseId": "faux-resp-1",
+          "timestamp": 1788350402000
+        }
+      },
+      "role": "assistant",
+      "text": "Second answer.",
+      "blocks": []
+    }
+  ],
+  "branchTo": {
+    "leaf": [
+      "00000001",
+      "00000002",
+      "00000003",
+      "00000004",
+      "00000005",
+      "00000006",
+      "00000007",
+      "00000008"
+    ],
+    "mid": [
+      "00000001",
+      "00000002",
+      "00000003",
+      "00000004",
+      "00000005"
+    ],
+    "missing": null
+  }
+}

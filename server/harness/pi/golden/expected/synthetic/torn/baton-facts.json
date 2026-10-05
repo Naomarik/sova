@@ -1,0 +1,36 @@
+{
+  "vocabulary": [
+    "Before the damage",
+    "Last whole line"
+  ],
+  "senders": {
+    "$map": [
+      [
+        "j0000003",
+        "p_alice"
+      ]
+    ]
+  },
+  "sendersNoHolder": {
+    "$map": []
+  },
+  "notes": [
+    {
+      "timestamp": 1788256801000,
+      "text": "Before the damage",
+      "note": "[From someone]"
+    },
+    {
+      "timestamp": 1788256803000,
+      "text": "Last whole line",
+      "note": "[From Alice]"
+    }
+  ],
+  "counted": 2,
+  "model": {
+    "model": null,
+    "thinking": null
+  },
+  "photos": 0,
+  "modelRef": "zai/glm-5.3"
+}

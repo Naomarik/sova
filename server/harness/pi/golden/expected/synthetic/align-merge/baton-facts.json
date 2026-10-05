@@ -1,0 +1,36 @@
+{
+  "vocabulary": [
+    "Align on the export, then build it",
+    "Yes, build it"
+  ],
+  "senders": {
+    "$map": [
+      [
+        "q000000b",
+        "p_alice"
+      ]
+    ]
+  },
+  "sendersNoHolder": {
+    "$map": []
+  },
+  "notes": [
+    {
+      "timestamp": 1788256803000,
+      "text": "Align on the export, then build it",
+      "note": "[From someone]"
+    },
+    {
+      "timestamp": 1788256811000,
+      "text": "Yes, build it",
+      "note": "[From Alice]"
+    }
+  ],
+  "counted": 2,
+  "model": {
+    "model": "zai/glm-5.3",
+    "thinking": null
+  },
+  "photos": 0,
+  "modelRef": "zai/glm-5.3"
+}

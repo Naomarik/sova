@@ -1,5 +1,5 @@
 import type { Hono } from "hono";
-import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import { agentRoot } from "./state-root";
 // The claude-code extension's login standing (node built-ins only). See CLAUDE.md.
 import { defaultClaudeDir, loginDir, readAccountsState, readiness } from "../pi-config/extensions/claude-code/accounts.ts";
 import { heldChat } from "./chat-manager";
@@ -14,7 +14,8 @@ import { DEFAULT_TICK_MS, ScheduleKeeper, scheduleKeeper, scheduleRunsFile, sche
 import { readSeen } from "./seen";
 import { writeAutoTitle } from "./session-titles";
 import { listSessions } from "./sessions-index";
-import { readActiveBranch } from "./transcript";
+import type { HEntry } from "../shared/harness";
+import { readBranch } from "./harness/pi/reader";
 
 /**
  * The playbook schedules' keeper, wired to the real server (§chat/schedules), and their routes.
@@ -30,7 +31,7 @@ type AppRequest = (path: string, init?: RequestInit) => Response | Promise<Respo
 
 /** This host's Claude logins as the keeper reads them: each one's standing now. */
 function loginsNow(): LoginNow[] {
-  const agentDir = getAgentDir();
+  const agentDir = agentRoot();
   const state = readAccountsState(agentDir);
   const out: LoginNow[] = [];
   for (const [id, standing] of Object.entries(state.logins)) {
@@ -46,15 +47,21 @@ function loginsNow(): LoginNow[] {
   return out;
 }
 
+/** A turn's message: what the user, the model, a tool or the shell said, an extension's message in the
+    conversation, a summary standing in for context, or the system prompt. An entry this version can't
+    read is none of them (§app.harness/unknown-entries). */
+const isMessage = (h: HEntry): boolean =>
+  h.kind === "user" || h.kind === "assistant" || h.kind === "tool-result" || h.kind === "shell" || h.kind === "system" || ((h.kind === "note" || h.kind === "summary") && h.inMessage);
+
 /** The session's branch ends in a failed turn: when, and the Claude login it ran on (only a recorded one). */
-async function lastTurn(path: string): Promise<{ failed: boolean; at: number; login?: string } | null> {
-  const branch = (await readActiveBranch(path)) as { type?: string; timestamp?: string; message?: { role?: string; stopReason?: string } }[];
+export async function lastTurn(path: string): Promise<{ failed: boolean; at: number; login?: string } | null> {
+  const branch = await readBranch(path);
   for (let i = branch.length - 1; i >= 0; i--) {
-    const e = branch[i]!;
-    if (e.type !== "message") continue;
-    if (e.message?.role !== "assistant" || e.message.stopReason !== "error") return { failed: false, at: 0 };
-    const login = chatClaudeLogin(branch as never);
-    return { failed: true, at: Date.parse(e.timestamp ?? "") || 0, ...(login?.recorded ? { login: login.id } : {}) };
+    const h = branch[i]!;
+    if (!isMessage(h)) continue;
+    if (h.kind !== "assistant" || h.stop !== "error") return { failed: false, at: 0 };
+    const login = chatClaudeLogin(branch);
+    return { failed: true, at: Date.parse(h.at ?? "") || 0, ...(login?.recorded ? { login: login.id } : {}) };
   }
   return null;
 }
@@ -75,7 +82,7 @@ export function startScheduleKeeper(request: AppRequest): ScheduleKeeper {
     sessions: () => listSessions(),
     busy(path) {
       const chat = heldChat(path);
-      return !!chat && (chat.session.isStreaming || chat.queue.size > 0 || chat.session.agent.hasQueuedMessages());
+      return !!chat && (chat.harness.isRunning() || chat.queue.size > 0 || chat.harness.queue.hasQueued());
     },
     freeSlots: freeRunSlots,
     started: countStarted,

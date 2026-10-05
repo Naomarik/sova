@@ -1,0 +1,30 @@
+{
+  "vocabulary": [
+    "Do the thing"
+  ],
+  "senders": {
+    "$map": [
+      [
+        "h0000003",
+        "p_alice"
+      ]
+    ]
+  },
+  "sendersNoHolder": {
+    "$map": []
+  },
+  "notes": [
+    {
+      "timestamp": 1788256803000,
+      "text": "Do the thing",
+      "note": "[From Alice]"
+    }
+  ],
+  "counted": 1,
+  "model": {
+    "model": "anthropic/claude-sonnet-5",
+    "thinking": null
+  },
+  "photos": 0,
+  "modelRef": "anthropic/claude-sonnet-5"
+}

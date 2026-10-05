@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import { redactPreviewLinks, redactPreviewLinksDeep } from "./preview-kept";
 import { readFile, stat } from "node:fs/promises";
 import { homedir } from "node:os";
-import { stripImageNotes } from "../shared/image-note";
+import type { HBlock, HEntry } from "../shared/harness";
 import { parseLinkMessage } from "../shared/link-message";
 import { isTopicBatch } from "../shared/topic-message";
 import {
@@ -18,12 +18,12 @@ import {
   type SessionShareView,
 } from "../shared/session-share";
 import { parseWakeNudge } from "../shared/wake";
+import { parsePi, strictBranchTo, typedText, type PiFile } from "./harness/pi/reader";
 import { serverRedactor } from "./overseer-redact";
-import { parseLines, type Entry } from "./transcript";
 
 /**
  * The session share view (§app/session-share/content, /never): a session's branch reduced to what a
- * share link's holder may read. An ALLOWLIST over raw entries, built field by field, never a
+ * share link's holder may read. An ALLOWLIST over the branch's entries, built field by field, never a
  * TranscriptItem passed along: user messages (their text and images) and the assistant's reply
  * text (markdown, `vis` fences included). Thinking, tool calls and results, `!` commands, system
  * and custom messages, compactions, model and thinking changes, usage, every custom card, wake
@@ -67,9 +67,9 @@ interface Built {
 const IMAGE_TYPES: ReadonlySet<string> = new Set(SESSION_SHARE_IMAGE_TYPES);
 
 /** Parsed files, re-read only when their size or mtime changed (a live share reads on each append). */
-const parsed = new Map<string, { size: number; mtimeMs: number; entries: Entry[] }>();
+const parsed = new Map<string, { size: number; mtimeMs: number; file: PiFile }>();
 
-async function entriesOf(path: string): Promise<Entry[] | null> {
+async function fileOf(path: string): Promise<PiFile | null> {
   let st;
   try {
     st = await stat(path);
@@ -78,54 +78,22 @@ async function entriesOf(path: string): Promise<Entry[] | null> {
   }
   if (!st.isFile()) return null;
   const had = parsed.get(path);
-  if (had && had.size === st.size && had.mtimeMs === st.mtimeMs) return had.entries;
+  if (had && had.size === st.size && had.mtimeMs === st.mtimeMs) return had.file;
   let text: string;
   try {
     text = await readFile(path, "utf8");
   } catch {
     return null;
   }
-  const entries = parseLines(text);
-  parsed.set(path, { size: st.size, mtimeMs: st.mtimeMs, entries });
-  return entries;
+  const file = parsePi(text);
+  parsed.set(path, { size: st.size, mtimeMs: st.mtimeMs, file });
+  return file;
 }
 
-/**
- * The branch a share shows, chosen strictly (§app.session-share/never): root → `cutEntryId`, or,
- * with no cut, root → the file's last entry that has an id (the leaf, as activeBranch takes it).
- * Unlike transcript.ts's forgiving activeBranch, an id-less record never turns a branched file into
- * one flat list (every abandoned branch included): it is ignored. A genuine pre-id file (no entry
- * has an id, no header of version 2 or later) is linear, as transcript.ts reads it, and has no cut.
- * null, anything ambiguous: a cut not in the file, two entries with one id, a parent that isn't
- * there, a cycle.
- */
-export function branchTo(entries: Entry[], cutEntryId: string | null): Entry[] | null {
-  const body = entries.filter((e) => e.type !== "session");
-  const withId = body.filter((e) => typeof e.id === "string" && e.id);
-  if (!withId.length) {
-    const version = entries.find((e) => e.type === "session")?.version;
-    return cutEntryId || (typeof version === "number" && version >= 2) ? null : body;
-  }
-  const byId = new Map<string, Entry>();
-  for (const e of withId) {
-    if (byId.has(e.id)) return null;
-    byId.set(e.id, e);
-  }
-  let cur = byId.get(cutEntryId ?? withId.at(-1)!.id);
-  if (!cur) return null;
-  const path: Entry[] = [];
-  const seen = new Set<string>();
-  for (;;) {
-    if (seen.has(cur.id)) return null;
-    seen.add(cur.id);
-    path.push(cur);
-    const parent: unknown = cur.parentId;
-    if (parent === null) break;
-    if (typeof parent !== "string") return null;
-    cur = byId.get(parent);
-    if (!cur) return null;
-  }
-  return path.reverse();
+/** The branch a share shows, chosen strictly (§app.session-share/never): root → `cutEntryId`, or root → the
+    file's last entry that has an id; null when anything is ambiguous (the reader's `strictBranchTo`). */
+export function branchTo(file: PiFile, cutEntryId: string | null): HEntry[] | null {
+  return strictBranchTo(file, cutEntryId);
 }
 
 const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -149,20 +117,16 @@ function scrubberFor(cwd: string | undefined): (text: string) => string {
   };
 }
 
-const textBlocks = (content: unknown): string => {
-  if (typeof content === "string") return content;
-  if (!Array.isArray(content)) return "";
-  return content
+const textBlocks = (blocks: readonly HBlock[]): string =>
+  blocks
     .filter((b) => b && typeof b === "object" && b.type === "text" && typeof b.text === "string")
-    .map((b) => b.text as string)
+    .map((b) => (b as { text: string }).text)
     .join("\n");
-};
 
 /** A message's own image blocks, only the served raster types. */
-function imageBlocks(content: unknown): ImageBlock[] {
-  if (!Array.isArray(content)) return [];
+function imageBlocks(blocks: readonly HBlock[]): ImageBlock[] {
   const out: ImageBlock[] = [];
-  for (const b of content)
+  for (const b of blocks)
     if (b && b.type === "image" && typeof b.data === "string" && typeof b.mimeType === "string" && IMAGE_TYPES.has(b.mimeType)) out.push({ data: b.data, mime: b.mimeType });
   return out;
 }
@@ -258,15 +222,15 @@ export function canonicalTime(t: unknown): string | undefined {
  * when `from` is null. null when `from` isn't on the branch (a rewind above it, another branch, a
  * start after the cut): the share then reads as gone. Pure.
  */
-export function sliceBranch(branch: Entry[], from: string | null): Entry[] | null {
+export function sliceBranch(branch: HEntry[], from: string | null): HEntry[] | null {
   if (from === null) return branch;
-  const at = branch.findIndex((e) => e.id === from);
+  const at = branch.findIndex((h) => h.id === from);
   return at < 0 ? null : branch.slice(at);
 }
 
 /** A message the view shows, before any scrub: its entry, role, unscrubbed text and images. */
 interface Shown {
-  e: Entry;
+  e: HEntry;
   role: "user" | "assistant";
   text: string;
   blocks: ImageBlock[];
@@ -277,19 +241,17 @@ interface Shown {
  * cheap): user and assistant messages with text or an image, not a wake nudge or a link partner's
  * message. Pure.
  */
-export function shownEntries(branch: Entry[]): Shown[] {
+export function shownEntries(branch: HEntry[]): Shown[] {
   const out: Shown[] = [];
   for (const e of branch) {
-    if (e.type !== "message") continue;
-    const m = e.message ?? {};
-    const role = m.role;
-    if (role !== "user" && role !== "assistant") continue;
+    if (e.kind !== "user" && e.kind !== "assistant") continue;
+    const role = e.kind;
     // A kept preview link never reaches a share (§app.session-share/never): redacted before any cut.
-    const raw = cutAtToken(redactPreviewLinks(textBlocks(m.content)), SESSION_SHARE_TEXT_CEILING);
+    const raw = cutAtToken(redactPreviewLinks(textBlocks(e.blocks)), SESSION_SHARE_TEXT_CEILING);
     // Not the user's words: a wake nudge, a link partner's message, a topic batch.
     if (role === "user" && (parseWakeNudge(raw) || parseLinkMessage(raw) || isTopicBatch(raw))) continue;
-    const text = withoutImagePaths(role === "user" ? stripImageNotes(raw, m.content) : raw).trim();
-    const blocks = imageBlocks(m.content);
+    const text = withoutImagePaths(typedText(raw, e)).trim();
+    const blocks = imageBlocks(e.blocks);
     if (!text && !blocks.length) continue;
     out.push({ e, role, text, blocks });
   }
@@ -297,9 +259,9 @@ export function shownEntries(branch: Entry[]): Shown[] {
 }
 
 /** `slice` is the branch as built; `earlier`, whether the slice dropped a shown message. */
-function build(entries: Entry[], slice: Entry[], earlier: boolean): Built {
-  const header = entries.find((e) => e.type === "session");
-  const scrub = scrubberFor(typeof header?.cwd === "string" ? header.cwd : undefined);
+function build(file: PiFile, slice: HEntry[], earlier: boolean): Built {
+  const cwd = file.header?.cwd;
+  const scrub = scrubberFor(typeof cwd === "string" ? cwd : undefined);
   const items: SessionShareItem[] = [];
   const ids: string[] = [];
   const images: ImageBlock[] = [];
@@ -307,13 +269,13 @@ function build(entries: Entry[], slice: Entry[], earlier: boolean): Built {
     blocks.length ? blocks.map((b) => ({ n: images.push(b) - 1, mime: b.mime })) : undefined;
   let through: string | null = null;
   for (const e of slice) {
-    const at = canonicalTime(e.timestamp);
+    const at = canonicalTime(e.at);
     if (at) through = at;
   }
   for (const { e, role, text, blocks } of shownEntries(slice)) {
-    const at = canonicalTime(e.timestamp);
+    const at = canonicalTime(e.at);
     const imgs = refs(blocks);
-    ids.push(typeof e.id === "string" ? e.id : "");
+    ids.push(e.id ?? "");
     items.push({ kind: role === "user" ? "user" : "reply", n: items.length, text: cutAtToken(scrub(text), SESSION_SHARE_TEXT_MAX), ...(at ? { at } : {}), ...(imgs ? { images: imgs } : {}) });
   }
   return { items, ids, images, through, earlier };
@@ -331,7 +293,7 @@ const lineages = new Map<string, { id: string; from: string | null; tip: string 
  * start, a rewind, an end moved back or onto another branch). Opaque: nothing of the session is in
  * it. A stale or out-of-order build can only start a new lineage (a spare reset), never keep one.
  */
-function lineageOf(key: string, from: string | null, slice: Entry[]): string {
+function lineageOf(key: string, from: string | null, slice: HEntry[]): string {
   const ids = new Set<string>();
   for (const e of slice) if (typeof e.id === "string") ids.add(e.id);
   const prev = lineages.get(key);
@@ -342,19 +304,19 @@ function lineageOf(key: string, from: string | null, slice: Entry[]): string {
 }
 
 /** The strict branch and its slice, or null (gone). */
-async function sliced(src: Src): Promise<{ entries: Entry[]; branch: Entry[]; slice: Entry[] } | null> {
-  const entries = await entriesOf(src.sessionPath);
-  if (!entries) return null;
-  const branch = branchTo(entries, src.cutEntryId);
+async function sliced(src: Src): Promise<{ file: PiFile; branch: HEntry[]; slice: HEntry[] } | null> {
+  const file = await fileOf(src.sessionPath);
+  if (!file) return null;
+  const branch = branchTo(file, src.cutEntryId);
   const slice = branch && sliceBranch(branch, src.from);
-  return slice ? { entries, branch, slice } : null;
+  return slice ? { file, branch, slice } : null;
 }
 
 async function built(src: Src & { lineageKey?: string }): Promise<(Built & { lineage?: string }) | null> {
   const got = await sliced(src);
   if (!got) return null;
   const earlier = shownEntries(got.branch.slice(0, got.branch.length - got.slice.length)).length > 0;
-  const made = build(got.entries, got.slice, earlier);
+  const made = build(got.file, got.slice, earlier);
   return src.lineageKey ? { ...made, lineage: lineageOf(src.lineageKey, src.from, got.slice) } : made;
 }
 
@@ -413,7 +375,7 @@ export async function shareSpan(src: Src): Promise<SessionShareSpan | undefined>
   const got = await sliced(src);
   if (!got) return undefined;
   const before = shownEntries(got.branch.slice(0, got.branch.length - got.slice.length)).length;
-  const current = src.cutEntryId === null ? got.branch : branchTo(got.entries, null);
+  const current = src.cutEntryId === null ? got.branch : branchTo(got.file, null);
   return {
     first: before + 1,
     last: src.cutEntryId === null ? null : before + shownEntries(got.slice).length,
@@ -448,10 +410,10 @@ export async function sessionShareImage(src: Src, n: number): Promise<{ mime: st
 /** The session's current leaf (the strict branch's last entry; a rewind's marker pins it) and its
     time: what a snapshot's cut is set to at mint and on Update to now. null: no file, or empty. */
 export async function currentLeaf(sessionPath: string): Promise<{ entryId: string; at: string | null } | null> {
-  const entries = await entriesOf(sessionPath);
-  const leaf = entries ? branchTo(entries, null)?.at(-1) : undefined;
+  const file = await fileOf(sessionPath);
+  const leaf = file ? branchTo(file, null)?.at(-1) : undefined;
   if (!leaf || typeof leaf.id !== "string") return null;
-  return { entryId: leaf.id, at: canonicalTime(leaf.timestamp) ?? null };
+  return { entryId: leaf.id, at: canonicalTime(leaf.at) ?? null };
 }
 
 /** A source's bounds, when it reads (else null): the time of its newest entry (a snapshot's cut
@@ -460,8 +422,8 @@ export async function sliceBounds(src: Src): Promise<{ through: string | null; f
   const got = await sliced(src);
   if (!got) return null;
   let through: string | null = null;
-  for (const e of got.slice) through = canonicalTime(e.timestamp) ?? through;
-  return { through, fromAt: src.from === null ? null : (canonicalTime(got.slice[0]?.timestamp) ?? null) };
+  for (const e of got.slice) through = canonicalTime(e.at) ?? through;
+  return { through, fromAt: src.from === null ? null : (canonicalTime(got.slice[0]?.at) ?? null) };
 }
 
 /** Whether a share still reads: its file is there and parses, its branch (the cut's, or the

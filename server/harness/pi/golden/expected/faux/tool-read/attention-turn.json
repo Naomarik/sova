@@ -1,0 +1,34 @@
+{
+  "full": {
+    "turnId": "00000007",
+    "replyAt": 1788350402000,
+    "lastUser": "What is in notes.txt?",
+    "assistantLast": "It has two lines.",
+    "tools": [
+      {
+        "name": "read",
+        "args": "{\"path\":\"notes.txt\"}",
+        "result": "line one\nline two\n",
+        "ok": true
+      }
+    ],
+    "stopReason": "stop",
+    "durationMs": 0
+  },
+  "window4k": {
+    "turnId": "00000007",
+    "replyAt": 1788350402000,
+    "lastUser": "What is in notes.txt?",
+    "assistantLast": "It has two lines.",
+    "tools": [
+      {
+        "name": "read",
+        "args": "{\"path\":\"notes.txt\"}",
+        "result": "line one\nline two\n",
+        "ok": true
+      }
+    ],
+    "stopReason": "stop",
+    "durationMs": 0
+  }
+}

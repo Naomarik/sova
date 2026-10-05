@@ -63,7 +63,9 @@ right end, and the row renders whenever any of streaming, workers or inputs has 
   the session has, "5". The words are the same whether or not the parent's own turn runs. With
   team members among the working ones the noun follows them — "2 of 5 team members working", or
   "3 of 5 workers working" for a mix — and the tooltip adds the split, "1 subagent · 2 team
-  members", on its own line. Either way the words are the tooltip and the accessible name, and
+  members", on its own line. A working worker is a team member when the session's teams list
+  claims it or its own row in the `workers` message names its team, so once the list has any
+  team, the members of a team created after it read as team members before the list catches up. Either way the words are the tooltip and the accessible name, and
   the button's name is its label, so nothing is read twice; the ring is `aria-hidden`. The words
   or count keep `.run-status`'s look (caption, ink-2). A muted chevron says "opens to the right",
   and hover fills the whole control with sunken and lifts the words to ink. It never becomes a

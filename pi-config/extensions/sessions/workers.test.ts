@@ -175,6 +175,15 @@ test("additive fields pass through; invalid values are omitted without rejecting
 	assert.equal(changes.at(-1)![0].effort, "e".repeat(32));
 	h.snapshot([worker("waiting")]);
 	assert.ok(!("effort" in changes.at(-1)![0]), "an older manager's worker stays without effort");
+	// Its team (session-team membership, or a restored member's saved team): copied whole;
+	// non-string, empty or over-limit is dropped; absent stays absent.
+	h.snapshot([{ ...worker("running"), teamId: "team_01" }]);
+	assert.deepEqual(changes.at(-1), [{ ...worker("running"), teamId: "team_01" }]);
+	for (const teamId of [7, "", "t".repeat(65), { id: "team_01" }]) {
+		h.events.emit(WORKERS_SNAPSHOT_EVENT, { version: 1, workers: [{ ...worker("waiting"), teamId }] });
+		assert.deepEqual(changes.at(-1), [worker("waiting")], JSON.stringify(teamId));
+		h.snapshot([worker("running")]);
+	}
 	h.fire("session_shutdown");
 });
 

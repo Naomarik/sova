@@ -12,6 +12,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { after, test } from "node:test";
 import type { ChatServerMessage } from "../shared/protocol";
+import { piSession } from "./harness/pi/testing/handle";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const dir = realpathSync(mkdtempSync(join(tmpdir(), "sova-overseer-mode-")));
@@ -41,7 +42,7 @@ const NORMAL = { mode: "normal", minorModes: [] as string[] };
 /** The mode as this chat holds it, and as its own branch would restore it on the next open. */
 const held = (chat: Chat) => ({ mode: chat.modeState.mode, minorModes: [...chat.modeState.minorModes] });
 const onBranch = (chat: Chat) => {
-  const s = resolveChatMode(chat.session.sessionManager.getBranch());
+  const s = resolveChatMode(piSession(chat).sessionManager.getBranch());
   return { mode: s.mode, minorModes: [...s.minorModes] };
 };
 const postMode = (path: string, body: unknown) =>

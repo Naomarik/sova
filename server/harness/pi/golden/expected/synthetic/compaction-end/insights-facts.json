@@ -1,0 +1,35 @@
+{
+  "teams": [],
+  "reports": {
+    "$map": []
+  },
+  "outline": null,
+  "outlines": [],
+  "compactions": [
+    {
+      "id": "f0000004",
+      "timestamp": "2026-09-01T10:00:04.000Z",
+      "tokensBefore": 101000,
+      "summary": "Step one summarized.",
+      "readFiles": [],
+      "modifiedFiles": [
+        "a.ts"
+      ]
+    }
+  ],
+  "rewinds": [],
+  "explanations": [],
+  "sessionId": "0190a000-0000-7000-8000-f00000000000",
+  "skills": {
+    "offered": [],
+    "used": []
+  },
+  "workerRecords": {
+    "all": [],
+    "active": []
+  },
+  "teamEvents": [],
+  "settled": {
+    "$map": []
+  }
+}

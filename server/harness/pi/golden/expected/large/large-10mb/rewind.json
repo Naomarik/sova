@@ -1,0 +1,133 @@
+{
+  "00000001": {
+    "outcome": {
+      "ok": false,
+      "reason": "not_on_branch",
+      "message": "That input is not on this chat's current branch anymore."
+    },
+    "marks": []
+  },
+  "00000089": {
+    "outcome": {
+      "ok": true,
+      "editorText": "Turn 33: model entry token parser result session rows tool rows golden session token model context golden context result entry parser rows parser tool usage context reader token context window usage entry"
+    },
+    "marks": [
+      {
+        "type": "sova-rewind",
+        "data": {
+          "targetId": "00000089",
+          "fromLeafId": "00000e41"
+        }
+      }
+    ]
+  },
+  "00000110": {
+    "outcome": {
+      "ok": true,
+      "editorText": "Turn 66: parser golden watch golden token result context token fork context token golden model golden rows entry token fork window model watch token usage reader fork watch token tool branch usage"
+    },
+    "marks": [
+      {
+        "type": "sova-rewind",
+        "data": {
+          "targetId": "00000110",
+          "fromLeafId": "00000e41"
+        }
+      }
+    ]
+  },
+  "00000198": {
+    "outcome": {
+      "ok": true,
+      "editorText": "Turn 100: rows window tool window session golden fork branch session fork entry golden branch reader fork result usage branch rows reader watch window reader entry window watch watch model model usage"
+    },
+    "marks": [
+      {
+        "type": "sova-rewind",
+        "data": {
+          "targetId": "00000198",
+          "fromLeafId": "00000e41"
+        }
+      }
+    ]
+  },
+  "0000021f": {
+    "outcome": {
+      "ok": false,
+      "reason": "not_on_branch",
+      "message": "That input is not on this chat's current branch anymore."
+    },
+    "marks": []
+  },
+  "000002a7": {
+    "outcome": {
+      "ok": false,
+      "reason": "not_on_branch",
+      "message": "That input is not on this chat's current branch anymore."
+    },
+    "marks": []
+  },
+  "0000032e": {
+    "outcome": {
+      "ok": false,
+      "reason": "not_on_branch",
+      "message": "That input is not on this chat's current branch anymore."
+    },
+    "marks": []
+  },
+  "000003b6": {
+    "outcome": {
+      "ok": true,
+      "editorText": "Turn 234: watch watch entry fork context token model golden window parser result tool golden rows parser fork rows context tool window reader parser result token parser usage tool context entry entry"
+    },
+    "marks": [
+      {
+        "type": "sova-rewind",
+        "data": {
+          "targetId": "000003b6",
+          "fromLeafId": "00000e41"
+        }
+      }
+    ]
+  },
+  "0000043d": {
+    "outcome": {
+      "ok": true,
+      "editorText": "Turn 267: model golden watch context tool reader branch session model rows result branch branch model entry branch model result model entry golden rows parser reader reader rows usage context context model"
+    },
+    "marks": [
+      {
+        "type": "sova-rewind",
+        "data": {
+          "targetId": "0000043d",
+          "fromLeafId": "00000e41"
+        }
+      }
+    ]
+  },
+  "00000e41": {
+    "outcome": {
+      "ok": false,
+      "reason": "not_on_branch",
+      "message": "That input is not on this chat's current branch anymore."
+    },
+    "marks": []
+  },
+  "000004c1": {
+    "outcome": {
+      "ok": false,
+      "reason": "not_on_branch",
+      "message": "That input is not on this chat's current branch anymore."
+    },
+    "marks": []
+  },
+  "no-such-entry": {
+    "outcome": {
+      "ok": false,
+      "reason": "not_on_branch",
+      "message": "That input is not on this chat's current branch anymore."
+    },
+    "marks": []
+  }
+}

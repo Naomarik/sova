@@ -1,0 +1,60 @@
+{
+  "parse": {
+    "ok": true,
+    "lines": 10
+  },
+  "branch": [
+    "d0000001",
+    "d0000002",
+    "d0000003",
+    "d0000009",
+    "d000000a"
+  ],
+  "fanout": false,
+  "prefixes": {
+    "d0000001": {
+      "ok": false,
+      "reason": "not_assistant",
+      "message": "Only an assistant reply can be forked from.",
+      "status": 400
+    },
+    "d0000002": {
+      "ok": false,
+      "reason": "not_assistant",
+      "message": "Only an assistant reply can be forked from.",
+      "status": 400
+    },
+    "d0000003": {
+      "ok": true,
+      "prefix": [
+        "{\"type\":\"model_change\",\"provider\":\"zai\",\"modelId\":\"glm-5.3\",\"id\":\"d0000001\",\"parentId\":null,\"timestamp\":\"2026-09-01T10:00:01.000Z\"}",
+        "{\"type\":\"message\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"First question\"}],\"timestamp\":1788256802000},\"id\":\"d0000002\",\"parentId\":\"d0000001\",\"timestamp\":\"2026-09-01T10:00:02.000Z\"}",
+        "{\"type\":\"message\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"First answer\"}],\"api\":\"openai-completions\",\"provider\":\"zai\",\"model\":\"glm-5.3\",\"usage\":{\"input\":1200,\"output\":80,\"cacheRead\":400,\"cacheWrite\":0,\"totalTokens\":1680,\"cost\":{\"input\":0.001,\"output\":0.002,\"cacheRead\":0.0001,\"cacheWrite\":0,\"total\":0.0031}},\"stopReason\":\"stop\",\"timestamp\":1788256803000},\"id\":\"d0000003\",\"parentId\":\"d0000002\",\"timestamp\":\"2026-09-01T10:00:03.000Z\"}"
+      ]
+    },
+    "d0000009": {
+      "ok": false,
+      "reason": "not_assistant",
+      "message": "Only an assistant reply can be forked from.",
+      "status": 400
+    },
+    "d000000a": {
+      "ok": false,
+      "reason": "not_assistant",
+      "message": "Only an assistant reply can be forked from.",
+      "status": 400
+    },
+    "d0000004": {
+      "ok": false,
+      "reason": "not_on_branch",
+      "message": "That reply is not on this chat's current branch anymore.",
+      "status": 400
+    },
+    "no-such-entry": {
+      "ok": false,
+      "reason": "not_on_branch",
+      "message": "That reply is not on this chat's current branch anymore.",
+      "status": 400
+    }
+  }
+}

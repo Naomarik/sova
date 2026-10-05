@@ -54,6 +54,7 @@
         "sessionFile": { "type": "string", "minLength": 1, "maxLength": 1024, "description": "Absolute path of the worker's own transcript JSONL. Path only; never its contents. Consumers must not write to it." },
         "sessionId": { "type": "string", "minLength": 1, "maxLength": 64, "description": "Backend session id (the Claude session id for claude-code workers)." },
         "effort": { "type": "string", "minLength": 1, "maxLength": 32, "description": "Thinking/effort level the worker was spawned with (e.g. off, low, medium, high, xhigh, max). Absent when the writer didn't publish one." },
+        "teamId": { "type": "string", "minLength": 1, "maxLength": 64, "description": "(v2) id of the team the worker is a member of (its live session team, or a restored member's saved one). Absent when in no team, or unpublished." },
         "startedAt": { "$ref": "#/$defs/epochMs" },
         "lastActivity": { "$ref": "#/$defs/epochMs" },
         "endedAt": { "$ref": "#/$defs/epochMs" },

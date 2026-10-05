@@ -1,8 +1,7 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { seedReviewer } from "../pi-config/extensions/subagents/subagent-profiles.ts";
-import { stateRoot } from "./state-root";
+import { agentRoot, stateRoot } from "./state-root";
 import type { ExperimentalSettings, WebSettings } from "../shared/protocol";
 
 /**
@@ -89,7 +88,7 @@ export function writeWebSettings(raw: unknown): WebSettings | { error: string } 
   const seeded: Record<string, unknown> = isObject(stored.seeded) ? { ...stored.seeded } : {};
   if (changes.adversarialReview === true && seeded.adversarialReview !== true) {
     try {
-      if (seedReviewer(getAgentDir()).ok) seeded.adversarialReview = true;
+      if (seedReviewer(agentRoot()).ok) seeded.adversarialReview = true;
     } catch (error) {
       console.warn("[settings] seeding the default reviewer failed:", error instanceof Error ? error.message : error);
     }

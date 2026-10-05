@@ -1,0 +1,79 @@
+{
+  "shown": [
+    {
+      "e": {
+        "type": "message",
+        "message": {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "Before the unknown entry"
+            }
+          ],
+          "timestamp": 1788256801000
+        },
+        "id": "b0000001",
+        "parentId": null,
+        "timestamp": "2026-09-01T10:00:01.000Z"
+      },
+      "role": "user",
+      "text": "Before the unknown entry",
+      "blocks": []
+    },
+    {
+      "e": {
+        "type": "message",
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "Reply after the unknown entry"
+            }
+          ],
+          "api": "openai-completions",
+          "provider": "zai",
+          "model": "glm-5.3",
+          "usage": {
+            "input": 1200,
+            "output": 80,
+            "cacheRead": 400,
+            "cacheWrite": 0,
+            "totalTokens": 1680,
+            "cost": {
+              "input": 0.001,
+              "output": 0.002,
+              "cacheRead": 0.0001,
+              "cacheWrite": 0,
+              "total": 0.0031
+            }
+          },
+          "stopReason": "stop",
+          "timestamp": 1788256803000
+        },
+        "id": "b0000003",
+        "parentId": "b0000002",
+        "timestamp": "2026-09-01T10:00:03.000Z"
+      },
+      "role": "assistant",
+      "text": "Reply after the unknown entry",
+      "blocks": []
+    }
+  ],
+  "branchTo": {
+    "leaf": [
+      "b0000001",
+      "b0000002",
+      "b0000003",
+      "b0000004",
+      "b0000005"
+    ],
+    "mid": [
+      "b0000001",
+      "b0000002",
+      "b0000003"
+    ],
+    "missing": null
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "full": {
+    "turnId": "b0000003",
+    "replyAt": 1788256803000,
+    "lastUser": "Before the unknown entry",
+    "assistantLast": "Reply after the unknown entry",
+    "tools": [],
+    "stopReason": "stop",
+    "durationMs": 2000
+  },
+  "window4k": {
+    "turnId": "b0000003",
+    "replyAt": 1788256803000,
+    "lastUser": "Before the unknown entry",
+    "assistantLast": "Reply after the unknown entry",
+    "tools": [],
+    "stopReason": "stop",
+    "durationMs": 2000
+  }
+}

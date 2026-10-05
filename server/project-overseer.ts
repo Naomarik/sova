@@ -1,7 +1,10 @@
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, relative } from "node:path";
-import { type AgentSession, getAgentDir, SessionManager } from "@earendil-works/pi-coding-agent";
+import { agentRoot } from "./state-root";
+import { toolCtx, toPiTool } from "./harness/pi/tools";
+import { createSessionFile } from "./harness/pi/state";
+import { PROJECT_OVERSEER } from "./harness/state-kinds";
 import {
   autonomyMeaning,
   PER_DAY,
@@ -11,7 +14,6 @@ import {
   type PoLimitKind,
   type ProjectOverseerCaps,
   type ProjectOverseerSettings,
-  PROJECT_OVERSEER_ENTRY,
   type CodingStartInput,
   type CodingStartResult,
   type ItemCodeInput,
@@ -23,10 +25,11 @@ import {
   type ProjectOverseerMarkerData,
   type StartedSession,
 } from "../shared/project-overseer";
+import type { HarnessSession } from "../shared/harness";
 import type { OverseerState } from "../shared/protocol";
 import { noteBuildMerged } from "./build-merged";
 import { buildSessionPath, buildSetupEnded, buildSid, newBuildSessionId, noteBuildSettled, noteBuildStarted, probeBuild, readBuild, readBuilds, syncBuildTurn, syncProjectBuilds, withWorktreePath } from "./build-loadout";
-import { acquireChat, BusyError, disposeHeldChat, drainQueueThenAbort, heldChat, isSessionBusy, onAgentSettled, onAgentStarted, registerSpecialLoadout, type ChatSession } from "./chat-manager";
+import { acquireChat, BusyError, disposeHeldChat, drainQueueThenAbort, heldChat, isSessionBusy, onAgentSettled, onAgentStarted, registerSpecialLoadout, type ChatSession, type SessionMarks } from "./chat-manager";
 import { shuttingDown } from "./wrapup-recovery";
 import { listModels } from "./models";
 import { workingSubagents } from "./live";
@@ -34,8 +37,9 @@ import { baseCodingMode, codingModeChoice, describeCodingMode, PLAYBOOK_RUN_KIND
 import { baseAbilities } from "./gathering-abilities";
 import { gitRootOf, readWorktree } from "./project-worktrees";
 import { hostOf, isOrgHostOpen, onOrgHostOpened, setOrgClockForTest, type InvocationReport } from "./org-engine";
-import { cardsNoteMessage, pathOfId, sessionActivity, toolCatalogue } from "./session-prompt";
-import { CARDS_NOTE_MESSAGE, cardsNote, foldCards } from "../shared/overseer-card";
+import { pathOfId, sessionActivity, toolCatalogue } from "./session-prompt";
+import { CARDS_NOTE_MESSAGE, cardsNote } from "../shared/overseer-card";
+import { cardsOnBranch } from "./overseer-run-note";
 import { RootConfinement } from "./overseer-deny";
 import { sessionAttachmentsDir } from "./attachments";
 import { overseerFileTools } from "./overseer-file-tools";
@@ -59,7 +63,8 @@ import { heldActs, projectOfHold } from "./project-holds";
 import type { ActResult } from "./org-host";
 import type { Envelope, LedgerCounts } from "./org-envelope";
 import { ledgerOf } from "./org-stamp";
-import { normalizeEntries, readActiveBranch } from "./transcript";
+import { rowsOf } from "./transcript";
+import { readBranch } from "./harness/pi/reader";
 import { UnreadReplies } from "./unread-replies";
 import { loadDefaults } from "./web-defaults";
 import { addWebSession } from "./web-sessions";
@@ -133,7 +138,7 @@ const PROMPT_FILE = join(import.meta.dirname, "project-overseer-prompt.md");
 interface Rt {
   projectId: string;
   turns: UserTurns;
-  session: AgentSession | null;
+  session: HarnessSession | null;
   /** A look's message was just handed in: the run it starts is the look's (the watch hears `turn/started {look}`). */
   lookStarting?: boolean;
 }
@@ -161,18 +166,13 @@ function createPoFile(projectId: string): { id: string; path: string } {
   const project = projectOf(projectId);
   const sessionsDir = join(dir, "sessions");
   mkdirSync(sessionsDir, { recursive: true });
-  const sm = SessionManager.create(project.root, sessionsDir);
-  const raw = sm.getSessionFile();
-  const header = sm.getHeader();
-  if (!raw || !header) throw new Error("SessionManager did not produce a session file");
-  sm.appendCustomEntry(PROJECT_OVERSEER_ENTRY, { v: 1, projectId } satisfies ProjectOverseerMarkerData);
-  writeFileSync(raw, `${[JSON.stringify(header), ...sm.getEntries().map((e) => JSON.stringify(e))].join("\n")}\n`, { flag: "wx" });
-  const path = canonicalPath(raw);
+  const made = createSessionFile({ cwd: project.root, sessionsDir, seed: [[PROJECT_OVERSEER, { v: 1, projectId } satisfies ProjectOverseerMarkerData]] });
+  const path = canonicalPath(made.path);
   markOwned(path);
-  addWebSession(header.id);
-  markSeen(header.id);
-  setSessionTitle(header.id, cleanSessionTitle(`Overseer · ${project.name}`) ?? null);
-  return { id: header.id, path };
+  addWebSession(made.id);
+  markSeen(made.id);
+  setSessionTitle(made.id, cleanSessionTitle(`Overseer · ${project.name}`) ?? null);
+  return { id: made.id, path };
 }
 
 /**
@@ -257,7 +257,7 @@ export async function clearProjectOverseer(projectId: string): Promise<ProjectOv
   const oldPath = st ? await pathOfId(st.current) : null;
   if (oldPath) {
     const chat = heldChat(oldPath);
-    if (chat?.session.isStreaming) await drainQueueThenAbort(chat.session, (m) => chat.broadcast(m), chat.queue).catch(() => {});
+    if (chat?.harness.isRunning()) await drainQueueThenAbort(chat.harness, (m) => chat.broadcast(m), chat.queue).catch(() => {});
     await disposeHeldChat(oldPath, "The project overseer was cleared. Opening the new conversation.");
   }
   const rt = rtOf(projectId);
@@ -422,11 +422,11 @@ export async function patchProjectOverseer(projectId: string, body: unknown): Pr
   const st = readPoState(p);
   const path = st ? await pathOfId(st.current) : null;
   const chat = path ? heldChat(path) : undefined;
-  if (chat && !chat.session.isStreaming) {
-    const cur = chat.session.model ? `${chat.session.model.provider}/${chat.session.model.id}` : null;
+  if (chat && !chat.harness.isRunning()) {
+    const cur = chat.harness.model()?.ref ?? null;
     try {
       if (s.model && s.model !== cur) await chat.setModelRef(s.model);
-      if (s.thinking && s.thinking !== chat.session.thinkingLevel) chat.setThinking(s.thinking);
+      if (s.thinking && s.thinking !== chat.harness.thinking()) chat.setThinking(s.thinking);
     } catch (err) {
       throw new OrgError(err instanceof Error ? err.message : String(err));
     }
@@ -529,7 +529,7 @@ function toolHost(rt: Rt): PoToolHost {
     placed: () => isPlaced(projectId),
     contributed: (wrap) => contributedTools({ ...partCtx(rt, paths), ...wrap }),
     sessions: () => listSessions(),
-    transcript: async (path) => normalizeEntries(await readActiveBranch(path)),
+    transcript: async (path) => rowsOf(await readBranch(path)),
     codingMode(req) {
       const s = settings();
       return codingModeChoice(req, baseCodingMode(s.codingMode, projectOf(projectId).root), s.codingMode);
@@ -744,8 +744,7 @@ async function overseerRunning(projectId: string): Promise<{ model: string | nul
   const st = readPoState(projectOverseerPaths(projectId));
   const path = st ? await pathOfId(st.current) : null;
   const chat = path ? heldChat(path) : undefined;
-  const m = chat?.session.model;
-  return { model: m ? `${m.provider}/${m.id}` : null, thinking: chat?.session.thinkingLevel ?? null };
+  return { model: chat?.harness.model()?.ref ?? null, thinking: chat?.harness.thinking() ?? null };
 }
 
 export interface StartedCoding {
@@ -936,10 +935,9 @@ export async function removeCodingWorktree(projectId: string, sessionId: unknown
 
 // ---- the runtime loadout ------------------------------------------------------------------------------
 
-function markerOf(sm: { getEntries(): readonly any[] }): ProjectOverseerMarkerData | null {
-  const e = sm.getEntries().find((x) => x.type === "custom" && x.customType === PROJECT_OVERSEER_ENTRY);
-  const d = e?.data;
-  return d && typeof d.projectId === "string" ? { v: 1, projectId: d.projectId } : null;
+/** The file's project overseer marker: the first one written (a malformed first marker reads null). */
+function markerOf(s: SessionMarks): ProjectOverseerMarkerData | null {
+  return s.state.file().first(PROJECT_OVERSEER)?.data ?? null;
 }
 
 /** The runtime whose file this is (the loadout's lookups), or a refusal. */
@@ -959,7 +957,7 @@ export function projectContextFiles<T extends { path: string }>(files: T[], root
 /** What the project overseer's file tools never read, even inside its root: the folders other layers
     reserve (an attached org's workspace: the roster's contacts, every project's transcripts) and pi's
     and Sova's state (the host's link store, every session). */
-const confinedOut = () => [...reservedRoots(), getAgentDir(), join(homedir(), ".pi")];
+const confinedOut = () => [...reservedRoots(), agentRoot(), join(homedir(), ".pi")];
 
 registerSpecialLoadout({
   kind: "project-overseer",
@@ -975,12 +973,12 @@ registerSpecialLoadout({
   },
   // The marker, in the sessions dir of the engine that holds the project, AND a conversation the project's state
   // knows: a fork or a copy elsewhere opens as an ordinary session.
-  matches(sm, path) {
-    const m = markerOf(sm);
+  matches(s, path) {
+    const m = markerOf(s);
     if (!m) return false;
     try {
-      if (!projectOverseerOfPath(path, sm.getSessionId())) return false;
-      return isPoId(projectOverseerPaths(m.projectId), sm.getSessionId());
+      if (!projectOverseerOfPath(path, s.id)) return false;
+      return isPoId(projectOverseerPaths(m.projectId), s.id);
     } catch {
       return false;
     }
@@ -1010,14 +1008,15 @@ registerSpecialLoadout({
           {
             name: "sova-project-overseer",
             factory: (pi) => {
-              for (const t of tools) pi.registerTool(t);
+              for (const t of tools) pi.registerTool(toPiTool(t));
               pi.on("before_agent_start", (event, ctx) => {
                 event.systemPromptOptions.appendSystemPrompt = renderProjectOverseerPrompt(rt.projectId, tools, template);
                 // The open cards, hidden, as the Overseer's (§app.overseer/confirm).
-                return cardsNoteMessage(ctx.sessionManager.getBranch());
+                const note = cardsNote(cardsOnBranch(toolCtx(ctx).branch()), false, sessionActivity());
+                return note ? { message: { customType: CARDS_NOTE_MESSAGE, content: note, display: false as const } } : undefined;
               });
               pi.on("session_compact", (_event, ctx) => {
-                const note = cardsNote(foldCards(ctx.sessionManager.getBranch()), true, sessionActivity());
+                const note = cardsNote(cardsOnBranch(toolCtx(ctx).branch()), true, sessionActivity());
                 if (note) pi.sendMessage({ customType: CARDS_NOTE_MESSAGE, content: note, display: false });
               });
               pi.on("context", (event) => {
@@ -1044,10 +1043,10 @@ registerSpecialLoadout({
   watchSession(session, path) {
     const rt = rtOfPath(path);
     rt.session = session;
-    rt.turns.watch(session.agent);
+    rt.turns.watch(session);
     session.subscribe((event) => {
       // The watch hears the runtime's turns: a look's, another run, the operator's message entering it.
-      if (event.type === "agent_start") {
+      if (event.type === "run.start") {
         const look = !!rt.lookStarting;
         rt.lookStarting = false;
         void watchFact(rt.projectId, "turn/started", { look });
@@ -1056,7 +1055,7 @@ registerSpecialLoadout({
         // The watch starts a fresh message allowance (its ledger/reset-message).
         void watchFact(rt.projectId, "turn/user-entered");
       }
-      if (event.type === "agent_settled") void watchFact(rt.projectId, "turn/ended");
+      if (event.type === "run.settled") void watchFact(rt.projectId, "turn/ended");
     });
   },
   userSend(path, send) {
@@ -1297,15 +1296,15 @@ export const CUT_OFF_DETAIL = "The server restarted during the run.";
 
 /** How an unattended run ended, from its own part of the branch (entries past `from`). */
 function runEnd(chat: ChatSession, from: number, err?: unknown): { outcome: "finished" | "stopped" | "cut-off"; detail?: string } {
-  const mine = chat.session.sessionManager.getBranch().slice(from);
-  const last = [...mine].reverse().find((e) => e.type === "message" && e.message.role === "assistant") as { message: { stopReason?: string; errorMessage?: string } } | undefined;
-  const stop = last?.message.stopReason;
+  const mine = chat.harness.branch().slice(from);
+  const last = [...mine].reverse().find((e) => e.kind === "assistant");
+  const stop = last?.stop;
   const failed = !last || stop === "error" || stop === "aborted" || err !== undefined;
   if (!failed) return { outcome: "finished" };
   if (chat.lastStreamTrip) return { outcome: "stopped", detail: chat.lastStreamTrip.detail };
   if (shuttingDown()) return { outcome: "cut-off", detail: CUT_OFF_DETAIL };
   if (stop === "aborted") return { outcome: "stopped", detail: "Stopped." };
-  if (stop === "error") return { outcome: "stopped", detail: last?.message.errorMessage || "The model failed." };
+  if (stop === "error") return { outcome: "stopped", detail: last?.error || "The model failed." };
   if (err !== undefined) return { outcome: "stopped", detail: err instanceof Error ? err.message : String(err) };
   return { outcome: "stopped", detail: "The run ended without an answer." };
 }
@@ -1347,7 +1346,7 @@ async function runLook(projectId: string, text: string, report: InvocationReport
     if (!path) return report("not-started", "no conversation yet");
     const po = await acquireChat(path);
     po.assertModelAllowed();
-    const from = po.session.sessionManager.getBranch().length;
+    const from = po.harness.branch().length;
     const rt = rtOf(projectId);
     rt.lookStarting = true;
     const { queued, turn } = po.acceptPrompt(`${text}${lookAppendix(projectId)}`, undefined, "server");
@@ -1452,10 +1451,10 @@ export function noteCodingSettled(path: string): void {
 function lastTurnFailed(path: string): boolean {
   const chat = heldChat(path);
   if (!chat) return false;
-  const branch = chat.session.sessionManager.getBranch();
+  const branch = chat.harness.branch();
   for (let i = branch.length - 1; i >= 0; i--) {
-    const e = branch[i] as { type: string; message?: { role?: string; stopReason?: string } };
-    if (e.type === "message" && e.message?.role === "assistant") return e.message.stopReason === "error" || e.message.stopReason === "aborted";
+    const e = branch[i]!;
+    if (e.kind === "assistant") return e.stop === "error" || e.stop === "aborted";
   }
   return false;
 }

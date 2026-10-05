@@ -1,0 +1,30 @@
+{
+  "vocabulary": [
+    "hello"
+  ],
+  "senders": {
+    "$map": [
+      [
+        "00000004",
+        "p_alice"
+      ]
+    ]
+  },
+  "sendersNoHolder": {
+    "$map": []
+  },
+  "notes": [
+    {
+      "timestamp": 1788422400008,
+      "text": "hello",
+      "note": "[From Alice]"
+    }
+  ],
+  "counted": 1,
+  "model": {
+    "model": "faux/faux-1",
+    "thinking": "medium"
+  },
+  "photos": 0,
+  "modelRef": "faux/faux-1"
+}

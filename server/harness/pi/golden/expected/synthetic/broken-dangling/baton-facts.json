@@ -1,0 +1,30 @@
+{
+  "vocabulary": [
+    "Parent is missing"
+  ],
+  "senders": {
+    "$map": [
+      [
+        "l0000003",
+        "p_alice"
+      ]
+    ]
+  },
+  "sendersNoHolder": {
+    "$map": []
+  },
+  "notes": [
+    {
+      "timestamp": 1788256803000,
+      "text": "Parent is missing",
+      "note": "[From Alice]"
+    }
+  ],
+  "counted": 1,
+  "model": {
+    "model": null,
+    "thinking": null
+  },
+  "photos": 0,
+  "modelRef": "zai/glm-5.3"
+}

@@ -1,0 +1,1102 @@
+[
+  {
+    "frame": 0,
+    "state": {
+      "entries": [],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": [
+      "clearTurnError",
+      "announceWorking"
+    ]
+  },
+  {
+    "frame": 1,
+    "state": {
+      "entries": [],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 2,
+    "state": {
+      "entries": [],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 3,
+    "state": {
+      "entries": [],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 4,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "First question",
+          "state": "delivered",
+          "started": true,
+          "images": []
+        }
+      ],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 5,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "First question",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000004"
+        }
+      ],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 6,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "First question",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000004"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [],
+          "done": false,
+          "model": "faux/faux-1"
+        }
+      ],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 7,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "First question",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000004"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": ""
+            }
+          ],
+          "done": false,
+          "model": "faux/faux-1"
+        }
+      ],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 8,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "First question",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000004"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "First answer, wi"
+            }
+          ],
+          "done": false,
+          "model": "faux/faux-1"
+        }
+      ],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 9,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "First question",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000004"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "First answer, with some detail t"
+            }
+          ],
+          "done": false,
+          "model": "faux/faux-1"
+        }
+      ],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 10,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "First question",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000004"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "First answer, with some detail to summarize late"
+            }
+          ],
+          "done": false,
+          "model": "faux/faux-1"
+        }
+      ],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 11,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "First question",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000004"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "First answer, with some detail to summarize later."
+            }
+          ],
+          "done": false,
+          "model": "faux/faux-1"
+        }
+      ],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 12,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "First question",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000004"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "First answer, with some detail to summarize later."
+            }
+          ],
+          "done": false,
+          "model": "faux/faux-1"
+        }
+      ],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 13,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "First question",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000004"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "First answer, with some detail to summarize later."
+            }
+          ],
+          "done": true,
+          "model": "faux/faux-1",
+          "entryId": "00000005"
+        }
+      ],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": [
+      {
+        "context": 2742
+      }
+    ]
+  },
+  {
+    "frame": 14,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "First question",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000004"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "First answer, with some detail to summarize later."
+            }
+          ],
+          "done": true,
+          "model": "faux/faux-1",
+          "entryId": "00000005"
+        }
+      ],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 15,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "First question",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000004"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "First answer, with some detail to summarize later."
+            }
+          ],
+          "done": true,
+          "model": "faux/faux-1",
+          "entryId": "00000005"
+        }
+      ],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 16,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "First question",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000004"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "First answer, with some detail to summarize later."
+            }
+          ],
+          "done": true,
+          "model": "faux/faux-1",
+          "entryId": "00000005"
+        }
+      ],
+      "tools": {},
+      "running": false,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": [
+      "settled"
+    ]
+  },
+  {
+    "frame": 17,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "First question",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000004"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "First answer, with some detail to summarize later."
+            }
+          ],
+          "done": true,
+          "model": "faux/faux-1",
+          "entryId": "00000005"
+        }
+      ],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": [
+      "clearTurnError",
+      "announceWorking"
+    ]
+  },
+  {
+    "frame": 18,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "First question",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000004"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "First answer, with some detail to summarize later."
+            }
+          ],
+          "done": true,
+          "model": "faux/faux-1",
+          "entryId": "00000005"
+        }
+      ],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 19,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "First question",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000004"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "First answer, with some detail to summarize later."
+            }
+          ],
+          "done": true,
+          "model": "faux/faux-1",
+          "entryId": "00000005"
+        },
+        {
+          "kind": "user",
+          "text": "Second question",
+          "state": "delivered",
+          "started": true,
+          "images": []
+        }
+      ],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 20,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "First question",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000004"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "First answer, with some detail to summarize later."
+            }
+          ],
+          "done": true,
+          "model": "faux/faux-1",
+          "entryId": "00000005"
+        },
+        {
+          "kind": "user",
+          "text": "Second question",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000006"
+        }
+      ],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 21,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "First question",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000004"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "First answer, with some detail to summarize later."
+            }
+          ],
+          "done": true,
+          "model": "faux/faux-1",
+          "entryId": "00000005"
+        },
+        {
+          "kind": "user",
+          "text": "Second question",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000006"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [],
+          "done": false,
+          "model": "faux/faux-1"
+        }
+      ],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 22,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "First question",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000004"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "First answer, with some detail to summarize later."
+            }
+          ],
+          "done": true,
+          "model": "faux/faux-1",
+          "entryId": "00000005"
+        },
+        {
+          "kind": "user",
+          "text": "Second question",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000006"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": ""
+            }
+          ],
+          "done": false,
+          "model": "faux/faux-1"
+        }
+      ],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 23,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "First question",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000004"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "First answer, with some detail to summarize later."
+            }
+          ],
+          "done": true,
+          "model": "faux/faux-1",
+          "entryId": "00000005"
+        },
+        {
+          "kind": "user",
+          "text": "Second question",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000006"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "Second answer."
+            }
+          ],
+          "done": false,
+          "model": "faux/faux-1"
+        }
+      ],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 24,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "First question",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000004"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "First answer, with some detail to summarize later."
+            }
+          ],
+          "done": true,
+          "model": "faux/faux-1",
+          "entryId": "00000005"
+        },
+        {
+          "kind": "user",
+          "text": "Second question",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000006"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "Second answer."
+            }
+          ],
+          "done": false,
+          "model": "faux/faux-1"
+        }
+      ],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 25,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "First question",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000004"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "First answer, with some detail to summarize later."
+            }
+          ],
+          "done": true,
+          "model": "faux/faux-1",
+          "entryId": "00000005"
+        },
+        {
+          "kind": "user",
+          "text": "Second question",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000006"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "Second answer."
+            }
+          ],
+          "done": true,
+          "model": "faux/faux-1",
+          "entryId": "00000007"
+        }
+      ],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": [
+      {
+        "context": 1413
+      }
+    ]
+  },
+  {
+    "frame": 26,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "First question",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000004"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "First answer, with some detail to summarize later."
+            }
+          ],
+          "done": true,
+          "model": "faux/faux-1",
+          "entryId": "00000005"
+        },
+        {
+          "kind": "user",
+          "text": "Second question",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000006"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "Second answer."
+            }
+          ],
+          "done": true,
+          "model": "faux/faux-1",
+          "entryId": "00000007"
+        }
+      ],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 27,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "First question",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000004"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "First answer, with some detail to summarize later."
+            }
+          ],
+          "done": true,
+          "model": "faux/faux-1",
+          "entryId": "00000005"
+        },
+        {
+          "kind": "user",
+          "text": "Second question",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000006"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "Second answer."
+            }
+          ],
+          "done": true,
+          "model": "faux/faux-1",
+          "entryId": "00000007"
+        }
+      ],
+      "tools": {},
+      "running": true,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": []
+  },
+  {
+    "frame": 28,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "First question",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000004"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "First answer, with some detail to summarize later."
+            }
+          ],
+          "done": true,
+          "model": "faux/faux-1",
+          "entryId": "00000005"
+        },
+        {
+          "kind": "user",
+          "text": "Second question",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000006"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "Second answer."
+            }
+          ],
+          "done": true,
+          "model": "faux/faux-1",
+          "entryId": "00000007"
+        }
+      ],
+      "tools": {},
+      "running": false,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": [
+      "settled"
+    ]
+  },
+  {
+    "frame": 29,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "First question",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000004"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "First answer, with some detail to summarize later."
+            }
+          ],
+          "done": true,
+          "model": "faux/faux-1",
+          "entryId": "00000005"
+        },
+        {
+          "kind": "user",
+          "text": "Second question",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000006"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "Second answer."
+            }
+          ],
+          "done": true,
+          "model": "faux/faux-1",
+          "entryId": "00000007"
+        }
+      ],
+      "tools": {},
+      "running": false,
+      "activity": "Compacting context",
+      "stopping": false
+    },
+    "effects": [
+      "compacting"
+    ]
+  },
+  {
+    "frame": 30,
+    "state": {
+      "entries": [
+        {
+          "kind": "user",
+          "text": "First question",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000004"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "First answer, with some detail to summarize later."
+            }
+          ],
+          "done": true,
+          "model": "faux/faux-1",
+          "entryId": "00000005"
+        },
+        {
+          "kind": "user",
+          "text": "Second question",
+          "state": "delivered",
+          "started": true,
+          "images": [],
+          "entryId": "00000006"
+        },
+        {
+          "kind": "assistant",
+          "blocks": [
+            {
+              "type": "text",
+              "text": "Second answer."
+            }
+          ],
+          "done": true,
+          "model": "faux/faux-1",
+          "entryId": "00000007"
+        }
+      ],
+      "tools": {},
+      "running": false,
+      "activity": null,
+      "stopping": false
+    },
+    "effects": [
+      "compactingDone",
+      "compacted"
+    ]
+  }
+]

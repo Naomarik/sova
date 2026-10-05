@@ -1,0 +1,14 @@
+{
+  "header": {
+    "type": "session",
+    "version": 3,
+    "id": "00000000-0000-7000-8000-000000000001",
+    "timestamp": "2026-09-03T08:00:00.005Z",
+    "cwd": "/golden-agent/cwd/thinking"
+  },
+  "title": "Can you think first?",
+  "model": "faux/faux-1",
+  "overseer": false,
+  "input": true,
+  "profile": null
+}

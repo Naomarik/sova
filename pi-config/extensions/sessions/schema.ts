@@ -45,6 +45,8 @@ export const WORKER_SESSION_FILE_MAX = 1024;
 export const WORKER_SESSION_ID_MAX = 64;
 /** WorkerEntry.effort cap: level names are short ("off", "medium", "xhigh", "max"). */
 export const WORKER_EFFORT_MAX = 32;
+/** WorkerEntry.teamId cap: ids are short ("team_01"); over-limit is dropped, never truncated. */
+export const WORKER_TEAM_ID_MAX = 64;
 /** WorkerEntry.modes caps: at most this many names, each at most WORKER_MODE_MAX chars ("spec"). */
 export const WORKER_MODES_MAX = 8;
 export const WORKER_MODE_MAX = 32;
@@ -95,6 +97,8 @@ export interface WorkerEntry {
   effort?: string;
   /** The mode extension's minor modes the worker was given at its start (e.g. ["spec"]); absent when none, or unpublished. */
   modes?: string[];
+  /** The team the worker is a member of (its session team, or a restored member's saved one); absent = none, or unpublished. */
+  teamId?: string;
   startedAt?: number;
   lastActivity?: number;
   endedAt?: number;
@@ -280,6 +284,7 @@ function parseWorker(value: unknown): WorkerEntry | undefined {
     // A truncated level would name a different one: same drop-don't-truncate rule.
     effort: whole(value.effort, WORKER_EFFORT_MAX),
     modes: workerModes(value.modes),
+    teamId: whole(value.teamId, WORKER_TEAM_ID_MAX),
     startedAt: num(value.startedAt) ? value.startedAt : undefined,
     lastActivity: num(value.lastActivity) ? value.lastActivity : undefined,
     endedAt: num(value.endedAt) ? value.endedAt : undefined,

@@ -7,7 +7,7 @@ import { type ChildProcessByStdio, spawn } from "node:child_process";
 import { mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, posix, sep } from "node:path";
 import type { Readable } from "node:stream";
-import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import { agentRoot } from "./state-root";
 import {
   buildListDirsArgv,
   buildTargetArgv,
@@ -23,7 +23,7 @@ import { MAX_FOLDER_ENTRIES } from "./folders";
 
 export type { Target };
 
-export const targetsFile = () => targetsFilePath(getAgentDir());
+export const targetsFile = () => targetsFilePath(agentRoot());
 
 /** The local-create rule for New Session: trimmed, absolute, an
  *  existing directory. Local statSync has no deadline. The caller creates with the trimmed cwd. */
@@ -38,7 +38,7 @@ export async function validateNewSessionCwd(raw: string): Promise<string | null>
   return null;
 }
 /** Local placeholder root: a remote session's cwd is <root>/<target>/<remote/abs/path>. */
-export const targetsRoot = () => dirname(placeholderRoot(getAgentDir(), "x"));
+export const targetsRoot = () => dirname(placeholderRoot(agentRoot(), "x"));
 
 /** A target name is one path segment: the builder's charset, and never "." or "..". */
 export const isTargetName = (s: unknown): s is string => typeof s === "string" && /^[A-Za-z0-9._-]+$/.test(s) && s !== "." && s !== "..";
@@ -113,7 +113,7 @@ export function targetDir(name: string, remoteCwd = "/"): string {
   if (!isTargetName(name)) throw new Error(`Invalid target name: ${name}`);
   const remote = normalizeRemotePath(remoteCwd);
   if (!remote) throw new Error(`Remote cwd must be an absolute path: ${remoteCwd}`);
-  return remote === "/" ? placeholderRoot(getAgentDir(), name) : placeholderDir(getAgentDir(), name, remote);
+  return remote === "/" ? placeholderRoot(agentRoot(), name) : placeholderDir(agentRoot(), name, remote);
 }
 
 /** Split a local cwd under the placeholder root into its target and remote cwd, else null. */

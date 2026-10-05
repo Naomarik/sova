@@ -1,0 +1,52 @@
+{
+  "f0000001": {
+    "ok": false,
+    "reason": "not_on_branch",
+    "message": "Nothing on this branch started that reply, so there is nothing to run again."
+  },
+  "f0000001:0": {
+    "ok": false,
+    "reason": "not_on_branch",
+    "message": "Nothing on this branch started that reply, so there is nothing to run again."
+  },
+  "f0000002": {
+    "ok": false,
+    "reason": "not_on_branch",
+    "message": "That is your own message; rewind to it to edit and send it again."
+  },
+  "f0000002:0": {
+    "ok": false,
+    "reason": "not_on_branch",
+    "message": "That is your own message; rewind to it to edit and send it again."
+  },
+  "f0000003": {
+    "ok": true,
+    "userId": "f0000002",
+    "text": "Long work"
+  },
+  "f0000003:0": {
+    "ok": true,
+    "userId": "f0000002",
+    "text": "Long work"
+  },
+  "f0000004": {
+    "ok": true,
+    "userId": "f0000002",
+    "text": "Long work"
+  },
+  "f0000004:0": {
+    "ok": true,
+    "userId": "f0000002",
+    "text": "Long work"
+  },
+  "no-such-entry": {
+    "ok": false,
+    "reason": "not_on_branch",
+    "message": "That reply is not on this chat's current branch anymore."
+  },
+  "no-such-entry:0": {
+    "ok": false,
+    "reason": "not_on_branch",
+    "message": "That reply is not on this chat's current branch anymore."
+  }
+}

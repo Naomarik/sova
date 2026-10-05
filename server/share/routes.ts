@@ -5,7 +5,6 @@ import { SHARE_TEXT_MAX, type GoneWhy } from "../../shared/baton";
 import { linkAccess, noteMessage, sessionPathOf, undoNote } from "../baton";
 import { findLink, hashToken, tokenTag } from "../baton-links";
 import { acquireChat } from "../chat-manager";
-import { liveRead } from "../harness/pi/reader";
 import { OrgError } from "../orgs";
 import { imageForToken, refreshShare, viewForToken } from "./hub";
 import { assertBudget, countUpload, dropStaged, ensureSweep, isPhotoType, photoCount, PhotoRefusal, photosFor, stagePhoto, takeStaged, type SdkImage } from "../baton-images";
@@ -208,7 +207,7 @@ export function createShareApp(): Hono {
     // The photos, read before anything is counted: an expired one sends the page back to upload it.
     let images: SdkImage[] | undefined;
     if (photos && photoIds.length) {
-      if (photoCount(liveRead(chat.session).branch()) + photoIds.length > photos.perConversation)
+      if (photoCount(chat.harness.branch()) + photoIds.length > photos.perConversation)
         return c.json(refusal("photo-limit", "This conversation has reached its photo limit."), 409);
       try {
         images = takeStaged(sessionId, by, photoIds);

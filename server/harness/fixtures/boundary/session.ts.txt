@@ -1,0 +1,33 @@
+// Session-reach ratchet fixtures (§app.harness/session-reaches): pi AgentSession members read through a
+// `.session` property (and AgentSessionRuntime members through `.runtime`), counted in server/ outside
+// server/chat-manager.ts, tests exempt. Each block is scanned as its own file at `path` (default
+// server/fixture.ts) and must give exactly `expect`.
+// ---- S1 a member read expect={"session":1}
+if (chat.session.isStreaming) return;
+// ---- S2 optional chain, a call and a nested member expect={"session":3}
+chat?.session.abort(); chat.session.agent.hasQueuedMessages(); const m = held?.session.model;
+// ---- S3 element access, both sides expect={"session":2}
+chat["session"]["thinkingLevel"]; chat.session["resourceLoader"];
+// ---- S4 destructured from .session expect={"session":2}
+const { isStreaming, model } = chat.session;
+// ---- S5 sessionManager counts here and as a reach expect={"session":1,"reaches":1}
+chat.session.sessionManager;
+// ---- S6 the runtime's members expect={"session":2}
+const s = this.runtime.session; const svc = deps.runtime.services;
+// ---- S7 Sova's own `session` records and pi names they share expect={}
+it.session.sessionId; rec.session.sessionFile; plan.session.path; server.session.once("x", f); q.session.trim();
+// ---- S8 a bare `session` identifier, or the whole session passed on expect={}
+session.isStreaming; drain(chat.session, broadcast); const sess = chat.session;
+// ---- S9 the driving session expect={}
+chat.harness.isRunning(); chat.harness.model()?.ref; chat.harness.queue.hasQueued();
+// ---- S10 the hosted chat is exempt path=server/chat-manager.ts expect={}
+this.session.isStreaming; this.runtime.services.modelRuntime;
+// ---- S11 tests are exempt path=server/chat.test.ts expect={}
+chat.session.isStreaming;
+// ---- S12 the adapter is excluded path=server/harness/pi/session.ts expect={}
+this.runtime.session.isStreaming;
+// ---- S13 outside server/ it is not counted path=src/lib/board.ts expect={}
+r.session.model; i.session.state;
+// ---- S14 a comment or a string never counts expect={}
+// chat.session.isStreaming
+log("chat.session.isStreaming");

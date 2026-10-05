@@ -65,9 +65,9 @@ import { registerUsageRoutes } from "./usage-routes";
 import { archiveSession, cachedTitleOf, cleanupSessions, getSessionSummary, idOf, lastReplyOf, listCwds, listSessionFiles, listSessions, onSessionArchived, onSummaryLineChanged } from "./sessions-index";
 import { cleanSessionTitle, SESSION_TITLE_MAX, setSessionTitle } from "./session-titles";
 import { rowsOf } from "./transcript";
-import { liveRead, readActiveBranch, readBranch, unknownEntries } from "./harness/pi/reader";
+import { readBranch, unknownEntries } from "./harness/pi/reader";
 import { contextOfBranch } from "./harness/pi/usage";
-import { appendToClosedFile, createSessionFile } from "./harness/pi/state";
+import { appendToClosedFile, createSessionFile, extensionEntries } from "./harness/pi/state";
 import { SUBAGENT_PROFILE } from "./harness/state-kinds";
 import { checkTmpImage, deleteAttachment, MAX_ATTACHMENT_BYTES, readTmpImage, saveUploadedImage, sessionAttachmentsDir, UploadError } from "./attachments";
 import { listFolders } from "./folders";
@@ -692,7 +692,7 @@ app.get("/api/sessions/git", async (c) => {
 // Merged worktrees of the session's repository (server/worktree-cleanup.ts, §chat.worktrees/cleanup):
 // the count for a new session's empty state, the dry run, and a removal of exactly the confirmed
 // paths that are still removable. Only when asked; never --force.
-configureCleanup({ summary: (path) => getSessionSummary(path), sessionFiles: listSessionFiles, readBranch: readActiveBranch });
+configureCleanup({ summary: (path) => getSessionSummary(path), sessionFiles: listSessionFiles, readBranch });
 app.get("/api/worktrees/summary", async (c) => {
   const path = resolveSessionPath(c.req.query("path"));
   if (!path) return c.json({ error: "Invalid or missing ?path= (must be a .jsonl under the pi sessions dir)" }, 400);
@@ -1082,7 +1082,7 @@ app.get("/api/transcript/tool", async (c) => {
   if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
   const items = await piToolContent(path, ids, () => {
     const chat = heldChat(path);
-    return chat ? liveRead(chat.session).branch() : undefined;
+    return chat ? chat.harness.branch() : undefined;
   });
   return c.json({ items } satisfies ToolContentResponse);
 });
@@ -1494,7 +1494,7 @@ mountLinks(app, meshApi, {
       branch: async (sid) => {
         const path = await pathOfId(sid);
         if (!path) return [];
-        return heldChat(path)?.session.sessionManager.getBranch() ?? readActiveBranch(path);
+        return extensionEntries(heldChat(path)?.harness.branch() ?? (await readBranch(path)));
       },
       agentDir: agentRoot,
     }),
@@ -1680,7 +1680,7 @@ startScheduleKeeper((path, init) => app.request(path, init));
 startResourceMonitor({
   logDir: join(stateRoot(), "monitor"),
   liveDir: LIVE_DIR,
-  held: () => heldChats().map((c) => ({ path: c.path, sessionId: c.session.sessionId, cwd: c.session.sessionManager.getCwd() })),
+  held: () => heldChats().map((c) => ({ path: c.path, sessionId: c.harness.id, cwd: c.harness.cwd })),
   titleOf: cachedTitleOf,
 });
 // Every attached org's workspace repo: its residence statechart commits whatever changed at most hourly, then pushes.
@@ -1782,7 +1782,7 @@ async function shutdown() {
   markShutdown();
   // The aborts below settle every run: the ledger keeps them as cut off (§app.overseer/auto-resume).
   runLedger.freeze();
-  for (const chat of heldChats()) if (chat.session.isStreaming) chat.session.abort().catch(() => {});
+  for (const chat of heldChats()) if (chat.harness.isRunning()) chat.harness.abort().catch(() => {});
   usagePoller.stop();
   void stopSharedUsageHelper();
   autoTitleSweep.stop();

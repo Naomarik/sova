@@ -1,7 +1,7 @@
 // Run: pnpm test -- server/harness-boundary.test.ts. The harness boundary (§app.harness/boundary): nothing
 // outside server/harness/pi/ reaches pi beyond server/harness/boundary-baseline.json, a list that only
-// shrinks. Three ratchets (pi imports; raw entry reads: calls, shapes, reaches; custom-entry writes and
-// their wrappers), each exact per file, plus the contract's types-only rule and the runner's coverage of
+// shrinks. Four ratchets (pi imports; raw entry reads: calls, shapes, reaches; custom-entry writes and
+// their wrappers; pi agent-session reaches through `.session`), each exact per file, plus the contract's types-only rule and the runner's coverage of
 // every test file. The fixtures in server/harness/fixtures/boundary/ prove each rule's forms.
 // SOVA_BOUNDARY_OUT=<absolute path> writes the computed baseline there (the assertions still run).
 // This file sits at server/ top level on purpose: the server/*.test.ts glob runs it even if the harness
@@ -56,15 +56,16 @@ const resultOf = (s: FileScan) => ({
   shapes: s.shapes.length,
   reaches: s.reaches.length,
   writers: s.writers.length,
+  session: s.sessionReaches.length,
   wrappers: s.wrappers.map((w) => w.name),
   violations: s.violations.map((v) => v.code),
 });
-const EMPTY = { imports: null, calls: 0, shapes: 0, reaches: 0, writers: 0, wrappers: [], violations: [] };
+const EMPTY = { imports: null, calls: 0, shapes: 0, reaches: 0, writers: 0, session: 0, wrappers: [], violations: [] };
 
 describe("the boundary scanner, on fixtures", () => {
   const fixtureFiles = readdirSync(join(REPO, FIXTURES)).filter((f) => f.endsWith(".ts.txt")).sort();
   test("every rule has its fixture file, each with uniquely named blocks", () => {
-    assert.deepEqual(fixtureFiles, ["contract.ts.txt", "imports.ts.txt", "reaches.ts.txt", "readers.ts.txt", "wrappers.ts.txt", "writers.ts.txt"]);
+    assert.deepEqual(fixtureFiles, ["contract.ts.txt", "imports.ts.txt", "reaches.ts.txt", "readers.ts.txt", "session.ts.txt", "wrappers.ts.txt", "writers.ts.txt"]);
     for (const f of fixtureFiles) {
       const names = fixtureBlocks(f).map((b) => b.name);
       assert.ok(names.length >= 9, `${f}: ${names.length} blocks`);
@@ -146,6 +147,19 @@ describe("the ratchets hold exactly at the baseline", () => {
     }
     for (const w of actual.wrappers) if (!baseline.wrappers.includes(w)) problems.push(`${w}: forwards its parameter as a custom entry's type, a new writer. Use SessionState's registered kinds instead.`);
     for (const w of baseline.wrappers) if (!actual.wrappers.includes(w)) problems.push(`${w}: stale wrapper, gone. Delete it from ${BASELINE}'s wrappers.`);
+    fail(problems);
+  });
+
+  test("pi agent-session reaches through .session, outside the chat (§app.harness/session-reaches)", () => {
+    const problems: string[] = [];
+    for (const f of new Set([...Object.keys(actual.session), ...Object.keys(baseline.session ?? {})])) {
+      const now = actual.session[f] ?? 0;
+      const was = baseline.session?.[f];
+      if (was === undefined) problems.push(`${f}: new reaches into pi's agent session${where(scanOf(f).sessionReaches)}. Ask the chat's driving session (chat.harness, shared/harness-session.ts) or a ChatSession method instead.`);
+      else if (now > was) problems.push(`${f}: session reaches ${was} → ${now}${where(scanOf(f).sessionReaches)}. Ask chat.harness (shared/harness-session.ts) instead.`);
+      else if (now === 0) problems.push(`${f}: stale, it has no session reach left. Delete its entry from ${BASELINE}'s session list.`);
+      else if (now < was) problems.push(`${f}: session reaches ${now}, below the baseline's ${was}. Lower it to ${now} in ${BASELINE} in this change.`);
+    }
     fail(problems);
   });
 

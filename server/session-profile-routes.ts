@@ -158,7 +158,7 @@ setPowersHost({
   insight: (path) => getSessionInsight(path),
   held(path) {
     const chat = heldChat(path);
-    return chat ? { streaming: chat.session.isStreaming, queued: chat.queue.size } : null;
+    return chat ? { streaming: chat.harness.isRunning(), queued: chat.queue.size } : null;
   },
   projectRoot: (cwd) => projectRootOf(cwd),
   async send(path, text, delivery, from) {

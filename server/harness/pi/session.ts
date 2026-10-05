@@ -13,6 +13,7 @@ import type {
   HarnessEvent,
   HarnessModel,
   HarnessQueue,
+  HarnessResources,
   HarnessSession,
   HEntry,
   ImageInput,
@@ -26,6 +27,7 @@ import type {
 import { commandContextOf, ownedCommand } from "./commands";
 import { compactSession, rewindSession } from "./history-ops";
 import { historyOf, toHEntry } from "./reader";
+import { resourcesOf } from "./resources";
 import { piSessionState } from "./state";
 import { watchUserMessages } from "./turns";
 import { v1Frame, writtenEntryId } from "./wire";
@@ -109,6 +111,9 @@ export function isAlreadyProcessing(err: unknown): boolean {
   return err instanceof Error && /already processing/i.test(err.message);
 }
 
+/** A pi Model's `input` lists "image". */
+const takesImages = (m: { input?: unknown }): boolean => Array.isArray(m.input) && m.input.includes("image");
+
 /** The pi Model behind each model handle this session gave out. */
 const piModels = new WeakMap<HarnessModel, unknown>();
 
@@ -169,7 +174,7 @@ export class PiHarnessSession implements HarnessSession {
   }
   model(): HarnessModel | null {
     const m = this.s.model;
-    return m ? { ref: `${m.provider}/${m.id}`, provider: m.provider, id: m.id } : null;
+    return m ? { ref: `${m.provider}/${m.id}`, provider: m.provider, id: m.id, images: takesImages(m) } : null;
   }
   thinking(): string {
     return this.s.thinkingLevel;
@@ -214,7 +219,7 @@ export class PiHarnessSession implements HarnessSession {
       const known = models.getModel(ref.split("/")[0] ?? "", ref.slice(ref.indexOf("/") + 1));
       return { ok: false, error: known ? `No credentials configured for ${ref}` : `Unknown model: ${ref || "(empty ref)"}` };
     }
-    const model: HarnessModel = { ref, provider: found.provider, id: found.id };
+    const model: HarnessModel = { ref, provider: found.provider, id: found.id, images: takesImages(found) };
     piModels.set(model, found);
     return { ok: true, model };
   }
@@ -250,6 +255,9 @@ export class PiHarnessSession implements HarnessSession {
   }
   commandContext(): unknown {
     return commandContextOf(this.s.extensionRunner);
+  }
+  resources(): HarnessResources {
+    return resourcesOf(this.s.resourceLoader);
   }
 
   appendUserMessage(text: string, images?: readonly ImageInput[]): EntryId {

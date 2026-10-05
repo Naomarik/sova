@@ -242,7 +242,7 @@ async function createBuildSession(cwd: string, sessionId: string, d: Record<stri
   // set again only when the open didn't take them (a model without auth, an unknown level).
   setOpeningChoice(path, choice);
   const chat = await acquireChat(path);
-  const cur = chat.session.model ? `${chat.session.model.provider}/${chat.session.model.id}` : null;
+  const cur = chat.harness.model()?.ref ?? null;
   if (choice.model && choice.model !== cur) {
     await chat.setModelRef(choice.model);
     if (choice.thinking) chat.setThinking(choice.thinking);
@@ -267,7 +267,7 @@ export async function applyCodingMode(path: string, mode: ProjectCodingMode): Pr
   if (plan !== "command")
     throw new OrgError(plan === "unsupported" ? "the mode extension is not loaded in it" : "it is open in another writer (a terminal, or a process Sova doesn't know)", 409);
   if (!chat.pinMode()) throw new OrgError("its mode entry could not be written", 409);
-  return chat.session.isStreaming ? "after-turn" : "now";
+  return chat.harness.isRunning() ? "after-turn" : "now";
 }
 
 function sessionOf(host: OrgHostApi, e: Effect): { d: Record<string, unknown>; projectId: string; sessionId: string } {

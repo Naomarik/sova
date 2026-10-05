@@ -31,6 +31,7 @@ const overseer = await import("./overseer");
 const sessionPrompt = await import("./session-prompt");
 const tools = await import("./overseer-tools");
 const { UserTurns } = await import("./user-turns");
+const { historyOf } = await import("./harness/pi/reader");
 const view = await import("./overseer-org-view");
 const confirm = await import("./overseer-confirm");
 const { applyCardCall, cardLines } = await import("../shared/overseer-card");
@@ -601,7 +602,7 @@ describe("the confirm card: people and projects, and the click that opens a conf
     ).details;
     const result = (details: unknown, id = "k1") => ({ type: "message", message: { role: "toolResult", toolCallId: id, toolName: "sova_card", details } });
     const user = (text: string) => ({ type: "message", message: { role: "user", content: [{ type: "text", text }] } });
-    const branch = (...more: unknown[]) => [user("start one with Lee"), result(created), ...more];
+    const branch = (...more: unknown[]) => historyOf([user("start one with Lee"), result(created), ...more]);
     const bare = (items: readonly { n?: number }[]) => items.map(({ n: _n, ...it }) => it);
     // An unrelated message before the click leaves the card open: the click still approves.
     assert.deepEqual(overseer.confirmedItems("c_1", branch(user("what's Lee working on?"), user("c_1 a: Start the session with Lee."))), bare(created.card!.items));
@@ -618,7 +619,7 @@ describe("the confirm card: people and projects, and the click that opens a conf
     assert.equal(overseer.confirmedItems("c_1", branch(result(dropped, "k2"), user("c_1 a: Start the session with Lee."))), null, "a dropped card");
     // The model recording the answer later in the same run doesn't take the approval away.
     const answered = applyCardCall([created.card!], { card: "c_1", ops: [{ op: "answer", text: "start", option: "a" }] }, { now: "2026-09-30T10:02:00.000Z" }).details;
-    assert.deepEqual(overseer.confirmedItems("c_1", [...branch(user("c_1 a: Start the session with Lee.")), result(answered, "k3")]), bare(created.card!.items), "recorded after the click");
+    assert.deepEqual(overseer.confirmedItems("c_1", branch(user("c_1 a: Start the session with Lee."), result(answered, "k3"))), bare(created.card!.items), "recorded after the click");
   });
 
   test("UserTurns: a click's card lasts for its own run only; a typed message opens none", () => {

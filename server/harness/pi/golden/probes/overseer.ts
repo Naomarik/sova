@@ -8,6 +8,7 @@ import { readReadinessScan } from "../../../../merge-readiness";
 import { briefedBlockers, listedCleared, promptedOnBranch } from "../../../../overseer-run-note";
 import { lastReplyIn } from "../../../../overseer-tools";
 import { activeBranch, normalizeEntries, parseLines } from "../../../../transcript";
+import { historyOf } from "../../reader";
 import type { Fixture, Probe } from "../golden";
 
 /** A scan read whole, and read on a prefix then again after the rest is appended (it must agree). */
@@ -29,10 +30,11 @@ export const probes: Probe[] = [
     formats: ["pi"],
     run(f) {
       const branch = activeBranch(parseLines(f.text));
+      const history = historyOf(branch);
       return {
-        prompted: promptedOnBranch(branch),
-        briefed: briefedBlockers(branch),
-        cleared: listedCleared(branch),
+        prompted: promptedOnBranch(history),
+        briefed: briefedBlockers(history),
+        cleared: listedCleared(history),
         lastReply: lastReplyIn(normalizeEntries(branch)) ?? null,
         openAlignments: openAlignmentsOf(branch),
       };

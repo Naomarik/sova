@@ -2,7 +2,7 @@
 
 Scenario g and the agent arm grade needs the same way, in code (`fullness.mjs` `scoreNeed`,
 `agent-arm.mjs` `grade`). No model judges a need's score. This file states the rules and works them
-through, so a run can be checked by hand and a second grader can do the hand-reading jobs at the end
+through, so a run can be checked by hand and a reviewing team member can do the hand-reading jobs at the end
 mechanically.
 
 ## The inputs
@@ -65,9 +65,9 @@ For each need the recorded packet baseline answers (`data/g-baseline.json` `valu
 `toc` line or `read` footer the agent saw. A need the agent was shown but chose not to open isn't lost.
 It counts against "answered", and the pull design accepts that.
 
-## Hand-reading jobs for a second grader (rules, then output format)
+## Hand-reading jobs for a reviewer (rules, then output format)
 
-These are the only judgement calls. A grader produces data; the code above applies it.
+These are the only judgement calls. A reviewer (a Claude team member, never a model under test in the agent arm) produces data; the code above applies it.
 
 1. **Probe hits that need a verdict.** Input: a need and a location (`file:line`) where its probe
    matched, with the passage text around it. Read the matching line and its paragraph, then decide:
@@ -78,7 +78,7 @@ These are the only judgement calls. A grader produces data; the code above appli
      Say what the hit was about.
 
    Output one JSON line per hit: `{"key": "C13:3", "status": "in|partial|absent", "at": "file:line", "note": "<one sentence>"}`.
-   Merging a grader's verdicts into `data/comparisons.json` changes the recorded baseline. The
+   Merging a reviewer's verdicts into `data/comparisons.json` changes the recorded baseline. The
    coordinator approves it, and `node scenario-g.mjs --record <base tree>` regenerates the baseline.
 2. **Contents-line "what" quality** (plan §5b.8). Input: a `toc` line's `what` and the passage it
    summarises. Answer `yes` when the sentence says what the promise is, for this promise: its subject,
@@ -86,5 +86,5 @@ These are the only judgement calls. A grader produces data; the code above appli
    empty. Example from the plan: `§chat.composer/anatomy`'s "what" is about the Overseer's Quick Actions
    button, so it gets `no`. Output: `{"id": "§…", "what": "yes|no", "why": "<one sentence>"}`.
 
-A grader needs to read only the pinned spec and these inputs. It sits in the replay worktree, reading
+A reviewer needs to read only the pinned spec and these inputs. It sits in the replay worktree, reading
 `tmp/spec-work/` and writing to `tmp/spec-work/grading/`, and never edits the repo.

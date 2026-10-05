@@ -102,7 +102,7 @@ node agent-arm.mjs grade --out <run dir>     # grade a finished run again; start
   read, contents lines seen, tokens, commands that reach outside the work directory. The guard,
   reported: no need the recorded packet baseline answers is lost unless the agent saw its passage in a
   toc line or a footer.
-- **Rules and worked examples:** [GRADING.md](GRADING.md), including the two hand-reading jobs a second grader may do.
+- **Rules and worked examples:** [GRADING.md](GRADING.md), including the two hand-reading jobs a reviewer may do.
 - **The 8-comparison sample:** C01, C05, C07, C10, C14, C17, C19, C22 (`SAMPLE` in the script).
 
 ## Determinism

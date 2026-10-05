@@ -129,7 +129,7 @@ import { PlaybooksDialog } from "./PlaybooksDialog";
 import type { ModeControl, ModeState } from "./ModeMenu";
 import type { ModelControl } from "./ModelMenu";
 import { ChangesSession } from "./ChangesViewer";
-import { HistoryItems, LiveEntries, type MessageActionsProvider, ThreadScroller, ToolSourceContext, TranscriptSkeleton, TurnError } from "./Thread";
+import { HistoryItems, holdReaderAcrossSwap, LiveEntries, type MessageActionsProvider, ThreadScroller, ToolSourceContext, TranscriptSkeleton, TurnError } from "./Thread";
 import { SubagentLimitRow } from "./SubagentLimitRow";
 import { failureHasRow } from "../lib/subagent-limit";
 import { Banner, Icon } from "./ui";
@@ -480,13 +480,20 @@ export function ChatView(props: {
     try {
       // The rows the list holds, from disk (lib/older-rows): rows whose entry didn't change keep
       // their DOM (open cards, focus), so the turn's own rows are the only new ones. Rows above the
-      // list stay unfetched.
-      const next = await olderRows.refresh();
-      if (next !== "stale") setSessionContext(props.path, contextStateFor(next.context ?? null, next.items)); // authoritative after each turn
-      batch(() => {
+      // list stay unfetched. The streamed rows leave in the same update as the saved rows land: a
+      // row mounting between the two (a drawing reading its width) laid out both copies of the
+      // turn, and the browser's scroll anchoring then took a reader scrolled up to the end. A
+      // reader scrolled up keeps their place through it (the page still holds the streamed rows).
+      let cleared = false;
+      const clearLive = () => {
+        cleared = true;
+        holdReaderAcrossSwap(props.path);
         setLive(reconcile(emptyLive()));
         setCommandRows([]); // local only; the persisted entries now tell the story
-      });
+      };
+      const next = await olderRows.refresh(clearLive);
+      if (next !== "stale") setSessionContext(props.path, contextStateFor(next.context ?? null, next.items)); // authoritative after each turn
+      if (!cleared) batch(clearLive);
     } catch (err) {
       // Keep the streamed turn on screen; it's accurate, just not re-normalized.
       setErrors((e) => [...e, { message: `Couldn't reload the transcript after this run: ${(err as Error).message}` }]);

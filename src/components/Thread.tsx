@@ -11,7 +11,7 @@ import { isObj, resultDetails as detailsOf, str, toolCallArgs, toolResultView } 
 import { toolContent, type ToolSource } from "../lib/tool-content";
 import { stripPastedPaths } from "../lib/path-attachments";
 import { home } from "../lib/ui-state";
-import { ensureRendered, entryIdOf, JUMP_EVENT, loadRow, registerRows, registerTranscript } from "../lib/jump";
+import { ensureRendered, entryIdOf, JUMP_EVENT, loadRow, registerRows, registerTranscript, transcriptRoot } from "../lib/jump";
 import type { RowTarget } from "../lib/older-rows";
 import type { ScrollSpot } from "../lib/transcript-cache";
 import { carriedStart, chunkStart, fillStops, FIRST_CHUNK, type ImagesAt, initialStart, lineCols, nextChunk, rowEstimate, rowIndexFor, windowId } from "../lib/tail-render";
@@ -1400,6 +1400,20 @@ const JUMP_QUIET_MS = 150;
 /** How long the row at the top of the view is held after rows were built above it (ThreadScroller
     `holdView`): they are drawn within a few frames. */
 const HOLD_MS = 600;
+/** How long after the reader's last input, or the last scroll that was theirs, a scroll is still
+    theirs: a wheel's or a key's smooth scroll and a fling go on in scroll events a frame apart. */
+const INPUT_MS = 300;
+/** Sent on a transcript right before its streamed rows give way to the saved rows of the same turn. */
+const SWAP_EVENT = "sova-swap";
+
+/**
+ * Call inside the update that swaps a turn's streamed rows for its saved rows, before it lands (the
+ * page still holds the streamed rows): a view not following keeps its place through the swap
+ * (§chat.transcript/turn-end-keeps-reader).
+ */
+export function holdReaderAcrossSwap(path: string): void {
+  transcriptRoot(path)?.dispatchEvent(new Event(SWAP_EVENT));
+}
 
 /**
  * The transcript scroll region. Follows new content while the user is near the bottom; scrolling
@@ -1435,6 +1449,24 @@ export function ThreadScroller(props: {
     el.scrollTop = el.scrollHeight;
     scrolledTop = el.scrollTop;
     lastGap = 0;
+    seeEnd();
+  };
+  /** The scroll height a view not following is measured against for coming back to the end: the
+      rows as they stood. It rises at once and drops only once the lower height has stood HOLD_MS,
+      so rows first drawn shorter than they are (a turn's saved rows at their estimate, for a frame)
+      never bring the end to the reader. */
+  let endAt = 0;
+  /** When a height lower than `endAt` was first seen, since when it has stood. */
+  let lowSince: number | null = null;
+  const seeEnd = () => {
+    const h = el.scrollHeight;
+    const now = performance.now();
+    if (h < endAt && (lowSince === null || now - lowSince <= HOLD_MS)) {
+      lowSince ??= now;
+      return;
+    }
+    endAt = h;
+    lowSince = null;
   };
   const resumeFollowing = () => {
     follow = true;
@@ -1462,12 +1494,33 @@ export function ThreadScroller(props: {
    * Corrected when the thread's size changes, after layout and before paint; the user's own
    * scroll, or a jump, ends it.
    */
-  let held: { row: HTMLElement; offset: number; until: number; at: number } | null = null;
+  let held: { row: HTMLElement; offset: number; until: number; at: number; swap?: true } | null = null;
   const offsetOf = (row: HTMLElement) => row.getBoundingClientRect().top - el.getBoundingClientRect().top;
   const holdView = () => {
     const s = spot();
     const row = s && !s.follow ? el.querySelector<HTMLElement>(`.thread > .entry[data-entry="${CSS.escape(s.rowId)}"]`) : null;
     held = row ? { row, offset: offsetOf(row), until: performance.now() + HOLD_MS, at: el.scrollTop } : null;
+  };
+  /**
+   * A turn's streamed rows are about to give way to its saved rows (SWAP_EVENT). The row the view
+   * is anchored on may be one of those leaving, and the saved rows are first drawn at an estimate,
+   * which can clamp the view: a view not following holds the last row that stays, the one at its
+   * top or the last one above it. The rows replaced below that one come back at about the height
+   * they had. Every scroll meanwhile may be the browser's (a clamp, its anchoring), so only the
+   * reader's input after the swap ends this hold (`onInput`).
+   */
+  const holdAcrossSwap = () => {
+    if (follow) return;
+    const top = el.getBoundingClientRect().top;
+    const rows = el.querySelectorAll<HTMLElement>(".thread > .entry");
+    for (let i = rows.length - 1; i >= 0; i--) {
+      const box = rows[i]!.getBoundingClientRect();
+      if (box.height === 0 || box.top > top) continue;
+      held = { row: rows[i]!, offset: box.top - top, until: performance.now() + HOLD_MS, at: el.scrollTop, swap: true };
+      // Corrected in the frame the swap lands too, should the thread's size come out the same.
+      requestAnimationFrame(keepHeld);
+      return;
+    }
   };
   const keepHeld = () => {
     if (!held) return;
@@ -1487,19 +1540,26 @@ export function ThreadScroller(props: {
     const up = el.scrollTop < scrolledTop;
     scrolledTop = el.scrollTop;
     if (jumpScrolling) jumpScrolled();
-    // A scroll that moved the held row is the user's (the browser's anchoring keeps it in place).
+    // A scroll right after the reader's input, or right after one of theirs, is theirs too.
+    const reader = readerInput();
+    if (reader) readerAt = performance.now();
+    // A scroll that moved the held row is the user's (the browser's anchoring keeps it in place);
+    // not across a swap (`holdAcrossSwap`).
     if (held && el.scrollTop !== held.at) {
-      if (Math.abs(offsetOf(held.row) - held.offset) >= 1) held = null;
+      if (!held.swap && Math.abs(offsetOf(held.row) - held.offset) >= 1) held = null;
       else held.at = el.scrollTop;
     }
     lastGap = el.scrollHeight - el.scrollTop - el.clientHeight;
+    seeEnd();
     // The view narrowing or widening reflows the rows, and scroll anchoring's correction can come
     // before `viewResized` and `measured` put a following view back at the end: not scrolling away.
     const width = el.clientWidth;
+    let reflowed = false;
     if (width !== scrolledWidth) {
       const first = scrolledWidth === 0;
       scrolledWidth = width;
       if (!first && follow) return;
+      reflowed = !first;
     }
     const near = lastGap < FOLLOW_PX;
     if (near && performance.now() < jumpingUntil) return;
@@ -1510,6 +1570,14 @@ export function ThreadScroller(props: {
     // reader just opened is theirs to look at, so following is re-read from where the view is.
     if (follow && !near && !up && !toggled) return settleSoon();
     if (near === follow) return;
+    // Following comes back only by the reader's hand (§chat.transcript/turn-end-keeps-reader): their
+    // own scroll reaching the end of the rows as they stood (`endAt`), a jump's, a disclosure they
+    // toggled, or the view resized. The browser taking a view that isn't following to the end
+    // (clamped as rows below got shorter or left, or its anchoring adding rows inserted above an
+    // anchor that then left) is not the reader coming back, even mid-scroll: the view stays where
+    // it landed, with Jump to Latest.
+    const reached = endAt - el.scrollTop - el.clientHeight < FOLLOW_PX;
+    if (near && !(reader && reached) && !jumpScrolling && !toggled && !reflowed) return;
     follow = near;
     setAway(near ? null : props.count);
   };
@@ -1558,6 +1626,41 @@ export function ThreadScroller(props: {
     readTo = null;
     touched = true;
   };
+  /** When the reader last gave the transcript input that can scroll it, or last scrolled it
+      (`onScroll` chains a smooth scroll's or a fling's events), and whether a press on it (a
+      scrollbar drag) is still held: a scroll then is theirs. */
+  let readerAt = -Infinity;
+  let pressing = false;
+  const readerInput = () => pressing || performance.now() - readerAt < INPUT_MS;
+  const onInput = (e: Event) => {
+    readerAt = performance.now();
+    // The reader takes the view from here, from where they were: the swap's first frame may not
+    // have been drawn (or corrected) yet, and their input is meant for the view they saw.
+    if (held?.swap) {
+      keepHeld();
+      held = null;
+    }
+    if (e.type === "pointerdown") pressing = true;
+    // A wheel down at the end (of the rows as they stood) scrolls nothing, so no scroll event says
+    // the reader is back there.
+    if (e.type !== "wheel" || (e as WheelEvent).deltaY <= 0 || follow) return;
+    seeEnd();
+    if (endAt - el.scrollTop - el.clientHeight < FOLLOW_PX) {
+      follow = true;
+      setAway(null);
+    }
+  };
+  const onRelease = () => {
+    if (!pressing) return;
+    pressing = false;
+    readerAt = performance.now();
+  };
+  window.addEventListener("pointerup", onRelease, true);
+  window.addEventListener("pointercancel", onRelease, true);
+  onCleanup(() => {
+    window.removeEventListener("pointerup", onRelease, true);
+    window.removeEventListener("pointercancel", onRelease, true);
+  });
   const rowOf = (id: string) => el.querySelector<HTMLElement>(`.thread > .entry[data-entry="${CSS.escape(id)}"]`);
   const drawn = (row: Element) => row.getBoundingClientRect().height > 0;
   /** The last row read, by its row id or by the entry id a live row knew (an assistant message's
@@ -1680,7 +1783,7 @@ export function ThreadScroller(props: {
   // height instead of its estimate (content-visibility, app.css). Only a view that sat at the end
   // is put back there: rows drawn above a view scrolling up (a smooth scroll's first frames are
   // still "following") must not pull it back down.
-  const resized = typeof ResizeObserver === "function" ? new ResizeObserver(() => (keepHeld(), lastGap <= 2 && settle())) : null;
+  const resized = typeof ResizeObserver === "function" ? new ResizeObserver(() => (keepHeld(), seeEnd(), lastGap <= 2 && settle())) : null;
   onCleanup(() => resized?.disconnect());
   // The view itself changing height (the composer's status row appearing, a keyboard) never moves
   // a scroll under way, so while following it always goes back to the end. A scroll event can read
@@ -1823,6 +1926,7 @@ export function ThreadScroller(props: {
           node.addEventListener("toggle", onToggle, true);
           viewResized?.observe(node);
           node.addEventListener("scrollend", () => (jumpScrolling = false));
+          node.addEventListener(SWAP_EVENT, holdAcrossSwap);
           node.addEventListener(JUMP_EVENT, () => {
             jumpingUntil = performance.now() + JUMP_SETTLE_MS;
             jumpScrolling = true;
@@ -1837,6 +1941,7 @@ export function ThreadScroller(props: {
             onCleanup(() => registerTranscript(path, null));
           }
           for (const type of ["wheel", "touchstart", "pointerdown", "keydown"]) node.addEventListener(type, onTouch, { passive: true });
+          for (const type of ["wheel", "touchstart", "touchmove", "touchend", "pointerdown", "keydown"]) node.addEventListener(type, onInput, { passive: true });
           // Kept rows refetched in the background (lib/recent-preload) may already hold rows added
           // after the last row read.
           queueMicrotask(() => restoreSpot() || (toBottom(), holdAtRead()));

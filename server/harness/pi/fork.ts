@@ -24,9 +24,10 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { canonicalPath } from "../../paths";
-import { FANOUT_MEMBER_ENTRY } from "../../chat-manager";
 import { LEGACY_REGISTRY_ENTRY_TYPE, WORKER_MANIFEST_ENTRY_TYPE } from "../../../pi-config/extensions/subagents/worker-transcript.ts";
 import { forkCacheEntry } from "../../../pi-config/extensions/subagents/fork/cache.ts";
+import { FANOUT_MEMBER } from "../state-kinds";
+import { stateViewOf } from "./state";
 
 /** The session format this module copies. A newer or older header is refused, never guessed. */
 const SESSION_VERSION = 3;
@@ -131,7 +132,7 @@ export function activeBranchLines(doc: SourceDoc): { ok: true; branch: SourceLin
 /** Whether the file carries the legacy fanout marker: its copies open with an outline exception
  *  this fork must not inherit. Nothing writes the marker anymore. */
 export function isFanoutSource(doc: SourceDoc): boolean {
-  return doc.lines.some((l) => l.entry?.type === "custom" && l.entry.customType === FANOUT_MEMBER_ENTRY);
+  return stateViewOf(doc.lines.map((l) => l.entry)).has(FANOUT_MEMBER);
 }
 
 /**

@@ -7,6 +7,7 @@ import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { after, describe, test } from "node:test";
 import { PROJECT_OVERSEER_ENTRY, type ProjectOverseerSettings } from "../shared/project-overseer";
+import { stateView } from "./harness/state-view";
 
 const root = realpathSync(mkdtempSync(join(tmpdir(), "sova-po-")));
 // A hosted runtime can still write here after after() ran (pi's catalogs, usage cache): exit is last.
@@ -348,7 +349,7 @@ describe("its gathering sessions, as the person sees them", async () => {
     const handToOperator = (sid: string) =>
       batonTools(sid, { append: () => "" })
         .find((t) => t.name === "hand_to")!
-        .execute("id", { gap: "none", person: "operator", question: "Please build the journal page.", briefing: "Tony asked." } as never, undefined, undefined, { sessionId: "s", cwd: "/", leafId: () => null, rawBranch: () => [] } as never);
+        .execute("id", { gap: "none", person: "operator", question: "Please build the journal page.", briefing: "Tony asked." } as never, undefined, undefined, { sessionId: "s", cwd: "/", leafId: () => null, state: () => stateView([]) } as never);
     const theirs = await baton.createBaton({ orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "Operator's", goal: "g" });
     await handToOperator(theirs.sessionId);
     const mine = await baton.createBaton({ orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "Journal", goal: "g" }, { mintLink: false, envelope: envelopeFor(org.id, project.id, { by: "overseer", attended: true }) });

@@ -8,8 +8,9 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSyn
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, test } from "node:test";
-import type { ToolCtx, ToolResult, ToolSpec } from "../../../shared/harness";
+import type { StateKind, ToolCtx, ToolResult, ToolSpec } from "../../../shared/harness";
 import { loadPi } from "./testing/load-pi.ts";
+import { historyOf } from "./reader";
 import { fromPiTool, toolCtx, toPiTool } from "./tools";
 
 const dir = realpathSync(mkdtempSync(join(tmpdir(), "sova-pi-tools-")));
@@ -20,6 +21,8 @@ const { createAgentSession, DefaultResourceLoader, ModelRuntime, SessionManager,
 const { createFauxCore, fauxAssistantMessage, fauxToolCall } = pi.ai;
 
 const MARK = Symbol.for("sova.test.mark");
+/** A test-only state kind: any object body. */
+const TEST_KIND: StateKind<object> = { type: "sova-test", owner: "sova", fold: "branch-list", parse: (d) => (d && typeof d === "object" ? d : null) };
 const SCHEMA = { type: "object", properties: { text: { type: "string", description: "What to echo." } }, required: ["text"], additionalProperties: false };
 
 /** A spec with every field Sova's tools use; `seen` records each call's arguments. */
@@ -76,7 +79,7 @@ describe("toPiTool", () => {
 });
 
 describe("toolCtx", () => {
-  test("an in-memory session: id, cwd, leaf, raw branch; no key; the name as recorded", () => {
+  test("an in-memory session: id, cwd, leaf, state; no key; the name as recorded", () => {
     const cwd = join(dir, "mem");
     const sm = SessionManager.inMemory(cwd);
     const ctx = { sessionManager: sm, cwd } as never;
@@ -84,7 +87,7 @@ describe("toolCtx", () => {
     assert.equal(empty.sessionId, sm.getSessionId());
     assert.equal(empty.cwd, cwd);
     assert.equal(empty.leafId(), null);
-    assert.deepEqual(empty.rawBranch(), []);
+    assert.equal(empty.state().has(TEST_KIND), false);
     assert.equal(empty.key, null);
     assert.equal(empty.title(), undefined);
     const a = sm.appendCustomEntry("sova-test", { n: 1 });
@@ -92,8 +95,7 @@ describe("toolCtx", () => {
     const c = toolCtx(ctx);
     assert.equal(c.leafId(), sm.getLeafId());
     assert.notEqual(c.leafId(), a);
-    assert.deepEqual(c.rawBranch(), sm.getBranch());
-    assert.equal(c.rawBranch()[0]!.id, a);
+    assert.deepEqual(c.state().list(TEST_KIND), [{ id: a, parentId: null, at: (sm.getBranch()[0] as any).timestamp, data: { n: 1 } }]);
     assert.equal(c.title(), "Named");
     assert.equal(c.title(), sm.getSessionName());
     assert.equal(c.native, ctx, "the pi context rides along");
@@ -105,7 +107,8 @@ describe("toolCtx", () => {
     const id = sm.appendCustomEntry("sova-test", null);
     sm.appendSessionInfo("Later");
     assert.equal(c.leafId(), sm.getLeafId());
-    assert.equal(c.rawBranch()[0]!.id, id);
+    assert.equal(c.state().latest(TEST_KIND), null, "a null body doesn't parse");
+    assert.equal(c.state().written(TEST_KIND)[0]!.id, id);
     assert.equal(c.title(), "Later");
     // The neutral branch reads the same entries, live too (§app.harness/reader).
     assert.deepEqual(c.branch().map((h) => [h.id, h.kind]), [[id, "state"], [sm.getLeafId(), "setting"]]);
@@ -211,7 +214,7 @@ describe("end to end: an extension registers toPiTool(spec) and a run calls it",
       assert.equal(ctx.sessionId, sessionManager.getSessionId());
       assert.equal(ctx.cwd, cwd);
       assert.equal(ctx.leafId(), sessionManager.getLeafId());
-      assert.deepEqual(ctx.rawBranch(), sessionManager.getBranch());
+      assert.deepEqual(ctx.branch(), historyOf(sessionManager.getBranch()));
       const update = events.find((e) => e.type === "tool_execution_update");
       assert.deepEqual(update.partialResult, { content: [{ type: "text", text: "working" }], details: { step: 1 } });
       const end = events.find((e) => e.type === "tool_execution_end");

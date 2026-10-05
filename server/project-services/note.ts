@@ -1,9 +1,9 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { createHash } from "node:crypto";
-import type { HookCtx } from "../../shared/harness";
+import type { HEntry, HookCtx, StateView } from "../../shared/harness";
 import type { VerbResult } from "../../shared/project-contract";
 import { toolCtx } from "../harness/pi/tools";
-import { sandboxInfo } from "../sandbox-state";
+import { sandboxInfoOf } from "../sandbox-state";
 import type { ProjectEngine } from "./engine";
 
 /**
@@ -65,29 +65,27 @@ export function instanceNote(f: NoteFacts, sandboxed: boolean): string {
 
 export const noteDigest = (text: string) => `sha256:${createHash("sha256").update(text).digest("hex").slice(0, 32)}`;
 
-type Entry = { type?: string; customType?: string; details?: unknown };
-
 /** The digest of the last instance note on the branch, or null. */
-export function lastNoteDigest(branch: readonly unknown[]): string | null {
+export function lastNoteDigest(branch: readonly HEntry[]): string | null {
   for (let i = branch.length - 1; i >= 0; i--) {
-    const e = branch[i] as Entry;
-    if (e?.type === "custom_message" && e.customType === NOTE_MESSAGE) {
-      const d = (e.details as { digest?: unknown } | undefined)?.digest;
+    const h = branch[i]!;
+    if (h.kind === "note" && !h.inMessage && h.noteType === NOTE_MESSAGE) {
+      const d = (h.details as { digest?: unknown } | undefined)?.digest;
       return typeof d === "string" ? d : null;
     }
   }
   return null;
 }
 
-/** Whether the session's sandbox is on (its branch's `sandbox` entry). */
-export const sandboxedOf = (branch: readonly unknown[]): boolean => sandboxInfo(branch as Parameters<typeof sandboxInfo>[0]).on;
+/** Whether the session's sandbox is on (its branch's `sandbox` state). */
+export const sandboxedOf = (state: StateView): boolean => sandboxInfoOf(state).on;
 
 /** The hidden message for `text`, carrying its digest. */
 export const noteMessage = (text: string) => ({ customType: NOTE_MESSAGE, content: text, display: false as const, details: { v: 1, digest: noteDigest(text) } });
 
 /** The note of every checkout in `checkouts` that has one, joined; null when none does. */
-export async function currentNote(engine: ProjectEngine, checkouts: readonly string[], branch: readonly unknown[]): Promise<string | null> {
-  const sandboxed = sandboxedOf(branch);
+export async function currentNote(engine: ProjectEngine, checkouts: readonly string[], state: StateView): Promise<string | null> {
+  const sandboxed = sandboxedOf(state);
   const parts: string[] = [];
   for (const c of checkouts) {
     const f = await engine.noteFacts(c);
@@ -99,11 +97,11 @@ export async function currentNote(engine: ProjectEngine, checkouts: readonly str
 const SINGLE = new Set(["create", "up", "apply", "status"]);
 
 /** The note that follows a create, up, apply or status result of one instance (the tools'), or null. */
-export async function resultNote(engine: ProjectEngine, r: VerbResult, branch: readonly unknown[]): Promise<string | null> {
+export async function resultNote(engine: ProjectEngine, r: VerbResult, state: StateView): Promise<string | null> {
   if (!SINGLE.has(r.verb) || !r.instance || !r.checkout || r.instances) return null;
   try {
     const f = await engine.noteFacts(r.checkout);
-    return f ? instanceNote(f, sandboxedOf(branch)) : null;
+    return f ? instanceNote(f, sandboxedOf(state)) : null;
   } catch {
     return null;
   }
@@ -116,7 +114,7 @@ export async function resultNote(engine: ProjectEngine, r: VerbResult, branch: r
 export function registerInstanceNote(pi: ExtensionAPI, engine: () => ProjectEngine, own: (ctx: HookCtx) => Promise<string[]>): void {
   const render = async (ctx: HookCtx): Promise<string | null> => {
     try {
-      return await currentNote(engine(), await own(ctx), ctx.rawBranch());
+      return await currentNote(engine(), await own(ctx), ctx.state());
     } catch {
       return null;
     }
@@ -124,7 +122,7 @@ export function registerInstanceNote(pi: ExtensionAPI, engine: () => ProjectEngi
   pi.on("before_agent_start", async (_event, ctx) => {
     const c = toolCtx(ctx);
     const text = await render(c);
-    if (!text || lastNoteDigest(c.rawBranch()) === noteDigest(text)) return undefined;
+    if (!text || lastNoteDigest(c.branch()) === noteDigest(text)) return undefined;
     return { message: noteMessage(text) };
   });
   pi.on("session_compact", async (_event, ctx) => {

@@ -15,6 +15,8 @@ import { restoreActive as restoreMode } from "../../pi-config/extensions/mode/st
 import { restoreActive as restoreSandbox } from "../../pi-config/extensions/sandbox/state.ts";
 import { FORK_CACHE_ENTRY, inheritedCacheKey } from "../../pi-config/extensions/subagents/fork/cache.ts";
 import { restorePick } from "../../pi-config/extensions/subagents/subagent-profiles.ts";
+import { WORKER_SESSION_ENTRY } from "../../pi-config/extensions/subagents/worker-mark.ts";
+import { LEGACY_REGISTRY_ENTRY_TYPE } from "../../pi-config/extensions/subagents/worker-transcript.ts";
 import { restoreActive as restoreWorktrees } from "../../pi-config/extensions/worktrees/state.ts";
 import { BATON_ENTRY, BATON_HANDOFF_ENTRY, BATON_OFFER_ENTRY, BATON_SENT_ENTRY } from "../../shared/baton";
 import type { StateKind, StateView } from "../../shared/harness";
@@ -25,7 +27,8 @@ import { PROJECT_OVERSEER_ENTRY } from "../../shared/project-overseer";
 import { loadoutOnBranch, LOADOUT_ENTRY } from "../session-loadout";
 import { profileOnBranch } from "../session-profile";
 import { fixtureSets, REPO } from "./pi/golden/golden";
-import { activeBranch, historyOf, parseLines, type Entry } from "./pi/reader";
+import { completionHeaderRef, entryFacts, WORKER_REGISTRY_TYPE, WORKER_SESSION_MARKER } from "../worker-sessions";
+import { activeBranch, historyOf, parseLines, toHEntry, type Entry } from "./pi/reader";
 import { stateViewOf } from "./pi/state";
 import {
   ALIGN_DOC,
@@ -58,6 +61,8 @@ import {
   SESSION_SENT,
   STATE_KINDS,
   SUBAGENT_PROFILE,
+  WORKER_REGISTRY,
+  WORKER_SESSION,
   WORKTREES,
 } from "./state-kinds";
 import { stateView } from "./state-view";
@@ -77,6 +82,38 @@ function markerOfRef(all: readonly any[]) {
   const e = all.find((x) => x.type === "custom" && x.customType === PROJECT_OVERSEER_ENTRY);
   const d = e?.data;
   return d && typeof d.projectId === "string" ? { v: 1, projectId: d.projectId } : null;
+}
+/** server/claude-login-state.ts newestLoginEntry, before the view. */
+function newestLoginRef(branch: readonly any[]) {
+  for (let i = branch.length - 1; i >= 0; i--) {
+    const e = branch[i]!;
+    const d = e.data;
+    if (e.type === "custom" && e.customType === "claude-login" && typeof d?.login === "string")
+      return { login: d.login, ...(typeof d.label === "string" && d.label ? { label: d.label } : {}) };
+  }
+  return undefined;
+}
+/** server/project-overseer-store.ts readPoMarker, its check of one parsed line. */
+const poLineRef = (e: any) =>
+  e?.type === "custom" && e.customType === PROJECT_OVERSEER_ENTRY && typeof e.data?.projectId === "string" ? { v: 1, projectId: e.data.projectId } : null;
+/** server/worker-sessions.ts entryFacts over one parsed line, before the view (with its contentText). */
+function workerFactsRef(e: any): { self: boolean; refs: string[] } {
+  const none = { self: false, refs: [] };
+  const nonEmpty = (v: unknown): v is string => typeof v === "string" && v.trim().length > 0;
+  if (!e || typeof e !== "object") return none;
+  if (e.type === "custom" && e.customType === "subagents-worker-session") return { self: true, refs: [] };
+  if (e.type === "custom" && e.customType === "subagents-worker-registry") {
+    const d = e.data;
+    if (!d || typeof d !== "object") return none;
+    return { self: false, refs: [d.backendSessionFile, d.backendSessionId].filter(nonEmpty).map((s) => s.trim()) };
+  }
+  if (e.type === "custom_message" && e.customType === "subagent-complete") {
+    const c = e.content;
+    const text = typeof c === "string" ? c : Array.isArray(c) ? c.filter((b) => b && typeof b === "object" && b.type === "text" && typeof b.text === "string").map((b) => b.text).join("") : "";
+    const ref = completionHeaderRef(text);
+    return { self: false, refs: ref ? [ref] : [] };
+  }
+  return none;
 }
 /** shared/overseer-grants.ts customOf. */
 const customOfRef = (entry: any, type: string): unknown =>
@@ -149,6 +186,8 @@ const SAMPLES: Record<string, unknown[]> = {
   "claude-login": [{ v: 1, login: "a", label: "A" }, { v: 1, login: "b", from: "a", reason: "limit" }, { v: 1 }, { v: 1, login: 3 }],
   "align-doc": [{ doc: { title: "T", markdown: "m", questions: [] } }, null, "x"],
   "topic-outline": [{ v: 1 }],
+  "subagents-worker-session": [{ v: 1 }, { v: 1, workerId: "ag_02", teamId: "team_01", role: "dev" }, null],
+  "subagents-worker-registry": [{ v: 1, backendSessionFile: "/s/a.jsonl", backendSessionId: "id-1" }, { backendSessionId: " id-2 " }, { backendSessionFile: "/s/b.jsonl" }, { backendSessionFile: "" }, null, "x"],
 };
 const TYPES = Object.keys(SAMPLES);
 
@@ -235,6 +274,8 @@ function compare(s: Session): void {
     assert.deepEqual(b.latest(SANDBOX)?.data, restoreSandbox(s.branch), at("sandbox restoreActive"));
     assert.deepEqual(b.latest(WORKTREES)?.data, restoreWorktrees(s.branch), at("worktrees restoreActive"));
     assert.equal(b.latest(CLAUDE_LOGIN)?.data.login, recordedLogin(s.branch), at("recordedLogin"));
+    const login = b.latest(CLAUDE_LOGIN)?.data;
+    assert.deepEqual(login ? { login: login.login, ...(typeof login.label === "string" && login.label ? { label: login.label } : {}) } : undefined, newestLoginRef(s.branch), at("newestLoginEntry"));
     // file folds
     const cache = f.latest(FORK_CACHE)?.data.key;
     assert.equal(cache === undefined ? undefined : Array.from(cache).slice(0, 64).join(""), inheritedCacheKey(s.all), at("inheritedCacheKey"));
@@ -267,6 +308,15 @@ function compare(s: Session): void {
       const viaView = BATON_EFFECT_KINDS.some((k) => f.written(k).some((r) => (r.data as any)?.key === key));
       assert.equal(viaView, hasEntryRef(s.all, key), at(`hasEntry ${key}`));
     }
+    // one entry at a time: the project overseer marker's line check and the worker-session scan's
+    if (w === 0)
+      for (const e of s.all) {
+        const h = toHEntry(e);
+        const one = h ? stateView([h]) : null;
+        assert.deepEqual(one?.latest(PROJECT_OVERSEER)?.data ?? null, poLineRef(e), at("readPoMarker line"));
+        assert.deepEqual(entryFacts(h), workerFactsRef(e), at("worker-session entryFacts"));
+        assert.equal(one?.has(WORKER_SESSION) ?? false, workerFactsRef(e).self, at("worker-session marker"));
+      }
     // insights' rewinds (on the branch)
     const rewinds = b.list(REWIND).map((r) => decodeRewindRef(r)).filter((x) => x !== null);
     const today = s.branch.filter((e) => e.type === "custom" && e.customType === REWIND.type).map((e) => decodeRewindRef({ id: e.id, at: e.timestamp, data: e.data })).filter((x) => x !== null);
@@ -322,6 +372,8 @@ describe("the state kind registry", () => {
       "sova-session-sent sova branch-list",
       "sova-topic-delivered sova write-only",
       "subagent-profile extension:subagents newest-on-branch",
+      "subagents-worker-registry extension:subagents file-list",
+      "subagents-worker-session extension:subagents presence",
       "worktrees extension:worktrees newest-on-branch",
     ]);
   });
@@ -339,6 +391,10 @@ describe("the state kind registry", () => {
     assert.equal(LOADOUT.type, LOADOUT_ENTRY);
     assert.equal(FORK_CACHE.type, FORK_CACHE_ENTRY);
     assert.equal(ALIGN_DOC.type, ALIGN_ENTRY_TYPE);
+    assert.equal(WORKER_SESSION.type, WORKER_SESSION_ENTRY);
+    assert.equal(WORKER_SESSION.type, WORKER_SESSION_MARKER);
+    assert.equal(WORKER_REGISTRY.type, LEGACY_REGISTRY_ENTRY_TYPE);
+    assert.equal(WORKER_REGISTRY.type, WORKER_REGISTRY_TYPE);
   });
 
   test("kinds are frozen", () => {

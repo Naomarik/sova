@@ -33,10 +33,12 @@ import { DefaultResourceLoader } from "@earendil-works/pi-coding-agent";
 import { CHARS_PER_TOKEN, type SessionSetup, type SessionSetupFile, type SessionSetupSkill } from "../shared/protocol";
 import { acquireChat, assertNotLive, disposeHeldChat, heldChat } from "./chat-manager";
 import { plan, readStoredCwd, type Plan } from "./git-summary";
-import { leavesOut, loadoutOnBranch, normalizeLoadout, type LoadoutEntryData } from "./session-loadout";
+import { leavesOut, normalizeLoadout, type LoadoutEntryData } from "./session-loadout";
 import { getSessionSummary } from "./sessions-index";
 import { agentRoot } from "./state-root";
-import { readActiveBranch } from "./harness/pi/reader";
+import { readBranch } from "./harness/pi/reader";
+import { LOADOUT } from "./harness/state-kinds";
+import { stateView } from "./harness/state-view";
 
 /** How long an answer stays fresh, per folder. The same size as the Git section's TTL. */
 export const SETUP_TTL_MS = 30_000;
@@ -122,7 +124,7 @@ async function sessionSwitches(sessionPath: string): Promise<SessionSwitches> {
   if (chat) return { off: chat.loadoutState?.data ?? null, toggleable: chat.loadoutToggleable };
   try {
     assertNotLive(sessionPath);
-    return { off: loadoutOnBranch((await readActiveBranch(sessionPath)) as unknown as Parameters<typeof loadoutOnBranch>[0]), toggleable: false };
+    return { off: stateView(await readBranch(sessionPath)).latest(LOADOUT)?.data ?? null, toggleable: false };
   } catch {
     return { off: null, toggleable: false };
   }

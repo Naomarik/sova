@@ -13,11 +13,12 @@ import {
   type AlignDetails,
   type AlignDocument,
 } from "../pi-config/extensions/mode/align.ts";
-import { restoreActive } from "../pi-config/extensions/mode/state.ts";
 import { isLinkMessage } from "../shared/link-message";
 import { isTopicBatch } from "../shared/topic-message";
 import { parseWakeNudge } from "../shared/wake";
 import { BranchScan, lineHead, lineMay, toHEntry } from "./harness/pi/reader";
+import { stateViewOf } from "./harness/pi/state";
+import { MODE } from "./harness/state-kinds";
 
 /**
  * The session list's side of alignments (§chat.alignment/session-mark): the mode extension's
@@ -218,7 +219,7 @@ function compactLine(line: string): ScanEntry | null {
  * (the newest `mode` entry on the branch says so) takes the tool away, so nothing could answer them.
  */
 export function waitingAlignOf(branch: readonly ScanEntry[]): SessionAlign | undefined {
-  const active = restoreActive(branch as { type: string; customType?: string; data?: unknown }[]);
+  const active = stateViewOf(branch).latest(MODE)?.data.active;
   if (active && !active.minorModes.includes("align")) return undefined;
   let lastDoc = -1;
   let lastUser = -1;

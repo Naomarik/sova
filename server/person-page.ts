@@ -5,6 +5,8 @@ import type { DecisionRow } from "../shared/decisions";
 import type { NamedRef, Person, PersonConflict, PersonPreview, PersonDecision, PersonLinkRow, PersonPage, PersonRelation, PersonSessionRow, VisitRow } from "../shared/orgs";
 import { accessOf, allBatons, heldOffer, outsiderCut, sessionPathOf } from "./baton";
 import { linkDead, linksOfPerson, type LinkRecord } from "./baton-links";
+import { stateViewOf } from "./harness/pi/state";
+import { BATON_LEASE, BATON_SENT } from "./harness/state-kinds";
 import { readConflicts, readDecisionStore } from "./decisions";
 import { operatorName, orgDir, OrgError, readHistory, readOrg, readProjects, readRoster } from "./orgs";
 import { listDecisions } from "./reconcile";
@@ -53,25 +55,29 @@ export function transcriptFacts(path: string): TranscriptFacts {
     return empty;
   }
   const facts: TranscriptFacts = { sent: new Map(), lapsed: new Map() };
+  const entries: unknown[] = [];
   for (const line of text.split("\n")) {
     if (!line.includes(BATON_SENT_ENTRY) && !line.includes(BATON_LEASE_ENTRY)) continue;
-    let e: Record<string, any>;
     try {
-      e = JSON.parse(line);
+      entries.push(JSON.parse(line));
     } catch {
       continue;
     }
-    if (e?.type !== "custom" || typeof e.data !== "object" || e.data === null) continue;
-    const by = e.data.by;
-    if (typeof by !== "string") continue;
-    if (e.customType === BATON_SENT_ENTRY) {
-      const s = facts.sent.get(by) ?? { n: 0, last: "" };
-      s.n++;
-      if (typeof e.timestamp === "string" && e.timestamp > s.last) s.last = e.timestamp;
-      facts.sent.set(by, s);
-    } else if (e.customType === BATON_LEASE_ENTRY && e.data.event === "expired" && typeof e.data.n === "number") {
-      facts.lapsed.set(by, [...(facts.lapsed.get(by) ?? []), e.data.n]);
-    }
+  }
+  const file = stateViewOf(entries);
+  const byOf = (d: unknown): string | null => (typeof d === "object" && d !== null && typeof (d as { by?: unknown }).by === "string" ? (d as { by: string }).by : null);
+  for (const r of file.written(BATON_SENT)) {
+    const by = byOf(r.data);
+    if (by === null) continue;
+    const s = facts.sent.get(by) ?? { n: 0, last: "" };
+    s.n++;
+    if (typeof r.at === "string" && r.at > s.last) s.last = r.at;
+    facts.sent.set(by, s);
+  }
+  for (const r of file.written(BATON_LEASE)) {
+    const by = byOf(r.data);
+    const d = r.data as { event?: unknown; n?: unknown };
+    if (by !== null && d.event === "expired" && typeof d.n === "number") facts.lapsed.set(by, [...(facts.lapsed.get(by) ?? []), d.n]);
   }
   factCache.set(path, { size: st.size, mtimeMs: st.mtimeMs, facts });
   return facts;

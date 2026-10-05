@@ -12,6 +12,7 @@ import { writeFileSync } from "node:fs";
 import { SessionManager, type AgentSession, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { EntryId, HEntry, SessionState, SessionStateWriter, StateKind, StateView } from "../../../shared/harness";
 import { stateKindOf } from "../state-kinds";
+import { rawOf } from "./reader";
 import { stateView } from "../state-view";
 
 type Manager = Pick<SessionManager, "appendCustomEntry" | "getBranch" | "getEntries">;
@@ -46,6 +47,12 @@ export function stateViewOf(entries: readonly unknown[]): StateView {
     if (h) out.push(h);
   }
   return stateView(out);
+}
+
+/** The custom entries behind `state` HEntries, as pi wrote them, for a pi-config core that folds pi's own entry
+    shape itself (the subagents extension's worker manifests and restore). Other entries are left out. */
+export function extensionEntries(entries: readonly HEntry[]): Record<string, any>[] {
+  return entries.filter((h) => h.kind === "state").map(rawOf);
 }
 
 /** A pi session manager's state. Each call asks the manager again (a test's patch of its methods holds). */

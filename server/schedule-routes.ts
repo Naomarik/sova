@@ -15,7 +15,7 @@ import { readSeen } from "./seen";
 import { writeAutoTitle } from "./session-titles";
 import { listSessions } from "./sessions-index";
 import type { HEntry } from "../shared/harness";
-import { rawOf, readBranch } from "./harness/pi/reader";
+import { readBranch } from "./harness/pi/reader";
 
 /**
  * The playbook schedules' keeper, wired to the real server (§chat/schedules), and their routes.
@@ -60,8 +60,7 @@ export async function lastTurn(path: string): Promise<{ failed: boolean; at: num
     const h = branch[i]!;
     if (!isMessage(h)) continue;
     if (h.kind !== "assistant" || h.stop !== "error") return { failed: false, at: 0 };
-    // The login fold still reads raw entries (SessionState replaces it).
-    const login = chatClaudeLogin(branch.map(rawOf) as never);
+    const login = chatClaudeLogin(branch);
     return { failed: true, at: Date.parse(h.at ?? "") || 0, ...(login?.recorded ? { login: login.id } : {}) };
   }
   return null;

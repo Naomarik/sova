@@ -289,6 +289,44 @@ export function branchOf(entries: readonly HEntry[]): HEntry[] {
   return path.reverse();
 }
 
+/**
+ * A branch chosen strictly (the share view's, §app.session-share/never): root → `cutEntryId`, or,
+ * with no cut, root → the file's last entry that has an id (the leaf, as activeBranch takes it).
+ * Unlike transcript.ts's forgiving activeBranch, an id-less record never turns a branched file into
+ * one flat list (every abandoned branch included): it is ignored. A genuine pre-id file (no entry
+ * has an id, no header of version 2 or later) is linear, as transcript.ts reads it, and has no cut.
+ * null, anything ambiguous: a cut not in the file, two entries with one id, a parent that isn't
+ * there, a cycle. Strict about the parent as the file wrote it: only an explicit null is a root.
+ */
+export function strictBranchTo(file: PiFile, cutEntryId: string | null): HEntry[] | null {
+  const body = file.entries.slice();
+  const withId = body.filter((h): h is HEntry & { id: string } => typeof h.id === "string" && !!h.id);
+  if (!withId.length) {
+    const version = file.header?.version;
+    return cutEntryId || (typeof version === "number" && version >= 2) ? null : body;
+  }
+  const byId = new Map<string, HEntry & { id: string }>();
+  for (const h of withId) {
+    if (byId.has(h.id)) return null;
+    byId.set(h.id, h);
+  }
+  let cur = byId.get(cutEntryId ?? withId.at(-1)!.id);
+  if (!cur) return null;
+  const path: HEntry[] = [];
+  const seen = new Set<string>();
+  for (;;) {
+    if (seen.has(cur.id)) return null;
+    seen.add(cur.id);
+    path.push(cur);
+    const parent: unknown = rawOf(cur).parentId;
+    if (parent === null) break;
+    if (typeof parent !== "string") return null;
+    cur = byId.get(parent);
+    if (!cur) return null;
+  }
+  return path.reverse();
+}
+
 /** A session file's active branch as HEntries. */
 export async function readBranch(path: string): Promise<HEntry[]> {
   return branchOf(parsePi(await readFile(path, "utf8")).entries);
@@ -352,14 +390,21 @@ export function lineHead(line: string): { type: string; id: string; parentId: st
 
 export type LineProbe = "header" | "user" | "assistant" | "toolResult" | { state: string } | { note: string } | { tool: string };
 
+function needleOf(what: LineProbe): string {
+  if (what === "header") return '"type":"session"';
+  if (typeof what === "string") return `"role":"${what}"`;
+  if ("tool" in what) return `"toolName":${JSON.stringify(what.tool)}`;
+  return `"customType":${JSON.stringify("state" in what ? what.state : what.note)}`;
+}
+
 /** Whether a raw line may hold such an entry (a substring test: true can be wrong, false never is, for a
     line pi wrote). */
 export function lineMay(line: string, what: LineProbe): boolean {
-  if (what === "header") return line.includes('"type":"session"');
-  if (typeof what === "string") return line.includes(`"role":"${what}"`);
-  if ("tool" in what) return line.includes(`"toolName":${JSON.stringify(what.tool)}`);
-  return line.includes(`"customType":${JSON.stringify("state" in what ? what.state : what.note)}`);
+  return line.includes(needleOf(what));
 }
+
+/** lineMay's test as bytes, for a search over a file's raw chunks: a file whose bytes lack it holds no such entry. */
+export const lineNeedle = (what: LineProbe): Buffer => Buffer.from(needleOf(what));
 
 /** One raw line as an HEntry, or null for a blank, malformed or header line. */
 export function lineEntry(line: string | Buffer): HEntry | null {

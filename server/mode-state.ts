@@ -19,7 +19,10 @@ import {
   saveState,
   type ModeState,
 } from "../pi-config/extensions/mode/state.ts";
+import type { StateView } from "../shared/harness";
 import type { ModeApplies, ModeInfo } from "../shared/protocol";
+import { stateViewOf } from "./harness/pi/state";
+import { MODE } from "./harness/state-kinds";
 
 export type { ModeState };
 export { MINOR_MODES };
@@ -132,9 +135,12 @@ export type BranchEntries = readonly { type: string; customType?: string; data?:
  * session_start (restoreActive, imported from state.ts), so the server and the runtime agree —
  * including after a server restart. `version` and the shortcuts stay the file's.
  */
-export function resolveChatMode(branch: BranchEntries, file = modeFile()): ModeState {
+export const resolveChatMode = (branch: BranchEntries, file = modeFile()): ModeState => chatModeOf(stateViewOf(branch), file);
+
+/** The same, from a view of the branch's state (its newest usable `mode` record). */
+export function chatModeOf(state: StateView, file = modeFile()): ModeState {
   const base = loadState(file);
-  const active = restoreActive(branch);
+  const active = state.latest(MODE)?.data.active;
   return active ? { ...base, mode: active.mode, strict: active.strict, minorModes: [...active.minorModes] } : base;
 }
 

@@ -44,7 +44,8 @@ import { readLiveRecords, type RawLiveRecord, workerCountsOf } from "./live";
 import { modelProvider, sharedWorkerWindowResolver } from "./models";
 import { resolveSessionPath } from "./paths";
 import { collectSkills, hasSkills, skillLinesOf } from "./skills";
-import { branchOf, parsePi, rawOf } from "./harness/pi/reader";
+import { branchOf, parsePi } from "./harness/pi/reader";
+import { extensionEntries } from "./harness/pi/state";
 import { describeWorktrees, worktreesOf } from "./worktrees-state";
 import { goneWorkOf, REMOVED_EMPTY, treeReadinessOf } from "./merge-readiness";
 import { LAST_KNOWN_REASON, lastKnownUsage, rememberUsage } from "./usage-last-known";
@@ -760,8 +761,6 @@ export function extractFacts(text: string): SessionFacts {
   const isWorkerRecord = (h: HEntry) => h.kind === "state" && WORKER_RECORD_TYPES.has(h.key);
   const branchIds = new Set(branch.map((h) => h.id));
   const records = entries.filter(isWorkerRecord);
-  // State folds (worker records, team events, worktrees) still read the raw entries until state moves.
-  const raw = (hs: readonly HEntry[]): Rec[] => hs.map(rawOf);
   for (const h of branch) {
     if (h.kind === "state" && h.key === TEAM_ENTRY) addTeamEntry(teams, h.data);
     else if (h.kind === "state" && h.key === TEAM_EVENT_TYPE) {
@@ -783,8 +782,9 @@ export function extractFacts(text: string): SessionFacts {
       if (x) explanations.push(x);
     }
   }
-  const allRecords = raw(records);
-  const activeRecords = raw(records.filter((h) => branchIds.has(h.id)));
+  // The subagents extension folds its worker records in pi's own entry shape.
+  const allRecords = extensionEntries(records);
+  const activeRecords = extensionEntries(records.filter((h) => branchIds.has(h.id)));
   return {
     teams: [...teams.values()],
     reports,
@@ -799,7 +799,7 @@ export function extractFacts(text: string): SessionFacts {
     workerRecords: { all: allRecords, active: activeRecords },
     teamEvents,
     settled: settledStates(activeRecords),
-    worktrees: worktreesOf(raw(branch)),
+    worktrees: worktreesOf(branch),
   };
 }
 

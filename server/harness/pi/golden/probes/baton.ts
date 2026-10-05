@@ -4,11 +4,12 @@
 // own messages for the wrap-up. A batch edits only its own probes file, and only to follow a moved function.
 import { photoCount, branchModelRef } from "../../../../baton-images";
 import { countedMessages } from "../../../../baton-recount";
-import { piReplay, recordedModel, recordedPrompt } from "../../../../baton-told";
+import { recordedModel, recordedPrompt } from "../../../../baton-told";
 import { authorNotes, batonView, conversationVocabulary, messageSenders } from "../../../../baton-view";
 import { messagesByPerson } from "../../../../baton-wrapup";
 import { branchTo, shownEntries } from "../../../../session-share-view";
 import { branchOf, parsePi, rawOf } from "../../reader";
+import { piReplay } from "../../system-replay";
 import type { Probe } from "../golden";
 
 const NAMES = { p_alice: "Alice", p_bob: "Bob", p_carol: "Carol", p_dave: "Dave", operator: "Omar" };

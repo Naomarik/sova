@@ -18,7 +18,7 @@ import {
   type SessionShareView,
 } from "../shared/session-share";
 import { parseWakeNudge } from "../shared/wake";
-import { parsePi, rawOf, typedText, type PiFile } from "./harness/pi/reader";
+import { parsePi, strictBranchTo, typedText, type PiFile } from "./harness/pi/reader";
 import { serverRedactor } from "./overseer-redact";
 
 /**
@@ -90,42 +90,10 @@ async function fileOf(path: string): Promise<PiFile | null> {
   return file;
 }
 
-/**
- * The branch a share shows, chosen strictly (§app.session-share/never): root → `cutEntryId`, or,
- * with no cut, root → the file's last entry that has an id (the leaf, as activeBranch takes it).
- * Unlike transcript.ts's forgiving activeBranch, an id-less record never turns a branched file into
- * one flat list (every abandoned branch included): it is ignored. A genuine pre-id file (no entry
- * has an id, no header of version 2 or later) is linear, as transcript.ts reads it, and has no cut.
- * null, anything ambiguous: a cut not in the file, two entries with one id, a parent that isn't
- * there, a cycle. Strict about the parent as the file wrote it: only an explicit null is a root.
- */
+/** The branch a share shows, chosen strictly (§app.session-share/never): root → `cutEntryId`, or root → the
+    file's last entry that has an id; null when anything is ambiguous (the reader's `strictBranchTo`). */
 export function branchTo(file: PiFile, cutEntryId: string | null): HEntry[] | null {
-  const body = file.entries.slice();
-  const withId = body.filter((h): h is HEntry & { id: string } => typeof h.id === "string" && !!h.id);
-  if (!withId.length) {
-    const version = file.header?.version;
-    return cutEntryId || (typeof version === "number" && version >= 2) ? null : body;
-  }
-  const byId = new Map<string, HEntry & { id: string }>();
-  for (const h of withId) {
-    if (byId.has(h.id)) return null;
-    byId.set(h.id, h);
-  }
-  let cur = byId.get(cutEntryId ?? withId.at(-1)!.id);
-  if (!cur) return null;
-  const path: HEntry[] = [];
-  const seen = new Set<string>();
-  for (;;) {
-    if (seen.has(cur.id)) return null;
-    seen.add(cur.id);
-    path.push(cur);
-    const parent: unknown = rawOf(cur).parentId;
-    if (parent === null) break;
-    if (typeof parent !== "string") return null;
-    cur = byId.get(parent);
-    if (!cur) return null;
-  }
-  return path.reverse();
+  return strictBranchTo(file, cutEntryId);
 }
 
 const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");

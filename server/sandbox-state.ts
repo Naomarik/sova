@@ -3,10 +3,13 @@
 // the `sandbox` custom entry it appends on every change. We import exactly its pure state.ts (node
 // builtins only), like mode-state.ts imports mode/state.ts, and never learn what a policy, a level
 // or a backend is beyond the status words in that entry. Without the extension nothing here runs.
-import { describeActive, LEVELS, restoreActive, SANDBOX_ENTRY_TYPE, type SandboxActive, type SandboxState, STATES, stateOf } from "../pi-config/extensions/sandbox/state.ts";
+import { describeActive, LEVELS, type SandboxActive, type SandboxState, STATES, stateOf } from "../pi-config/extensions/sandbox/state.ts";
+import type { StateView } from "../shared/harness";
 import type { ChatServerMessage, SandboxApplyResult, SandboxInfo } from "../shared/protocol";
+import { stateViewOf } from "./harness/pi/state";
+import { SANDBOX } from "./harness/state-kinds";
 
-type Entry = { type: string; customType?: string; data?: unknown };
+type Entry = unknown;
 type Command = { handler(args: string, ctx: any): Promise<void> | void; sourceInfo?: { path?: string } };
 
 /** A branch with no `sandbox` entry: the extension writes one whenever a session comes up on, so
@@ -22,16 +25,18 @@ export function sandboxCommandOf(runner: { getCommand(name: string): Command | u
   return cmd && /[\\/]extensions[\\/]sandbox[\\/]index\.ts$/.test(cmd.sourceInfo?.path ?? "") ? cmd : undefined;
 }
 
-/** This branch's sandbox status: the newest `sandbox` entry, restored by the extension's own rule. */
-export function sandboxInfo(branch: readonly Entry[]): SandboxInfo {
-  const active = restoreActive(branch) ?? OFF;
+/** This branch's sandbox status: the newest usable `sandbox` record (the extension's own rule). */
+export const sandboxInfo = (branch: readonly Entry[]): SandboxInfo => sandboxInfoOf(stateViewOf(branch));
+
+/** The same, from a view of the branch's state. */
+export function sandboxInfoOf(state: StateView): SandboxInfo {
+  const active = state.latest(SANDBOX)?.data ?? OFF;
   return { on: active.on, state: stateOf(active), enforcement: active.enforcement, status: describeActive(active) };
 }
 
 export const sandboxMessage = (branch: readonly Entry[]): ChatServerMessage => ({ type: "sandbox", ...sandboxInfo(branch) });
 
-export const isSandboxEntry = (entry: unknown): boolean =>
-  !!entry && typeof entry === "object" && (entry as Entry).type === "custom" && (entry as Entry).customType === SANDBOX_ENTRY_TYPE;
+export const isSandboxEntry = (entry: unknown): boolean => stateViewOf([entry]).has(SANDBOX);
 
 const BODY_SHAPE = 'Expected JSON body { state: "off" | "subagents" | "on" } or { on: boolean }';
 

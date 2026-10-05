@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { after, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { DEPLOY_VERBS, ordered, type DeployVerb } from "../../shared/project-contract";
+import { stateView } from "../harness/state-view";
 import { authorizeDeploy, DeployFailure } from "./deploy";
 import type { Caller, ProjectEngine } from "./engine";
 import { overseerVerbsTool, projectVerbsTool, type LooseExec } from "./tools";
@@ -73,7 +74,7 @@ const fakeEngine = {
 
 test("project_verbs: a coding session reads deploys and is refused the rest; the global Overseer's reads skip its act wrapper", async () => {
   const tool = projectVerbsTool({ name: "project_verbs", label: "", description: "", promptSnippet: "", engine: () => fakeEngine, caller: async () => session, defaultProject: async () => root });
-  const text = async (params: Record<string, unknown>) => ((await tool.execute("t", params, undefined, undefined, { sessionId: "s", cwd: "/", leafId: () => null, rawBranch: () => [] } as never)) as { content: { text: string }[] }).content[0]!.text;
+  const text = async (params: Record<string, unknown>) => ((await tool.execute("t", params, undefined, undefined, { sessionId: "s", cwd: "/", leafId: () => null, state: () => stateView([]) } as never)) as { content: { text: string }[] }).content[0]!.text;
   assert.doesNotMatch(await text({ verb: "deploy.status" }), /failed/);
   assert.match(await text({ verb: "deploy.run", plan: "pl_0123456789abcdef" }), /^deploy\.run failed \(exit 2\): forbidden: Only the operator ships/);
   assert.match(await text({ verb: "deploy.request", target: "prod", why: "x" }), /forbidden/);
@@ -83,7 +84,7 @@ test("project_verbs: a coding session reads deploys and is refused the rest; the
     return exec(id, p, ...rest);
   };
   const ov = overseerVerbsTool(() => fakeEngine, () => "o", wrap);
-  for (const verb of ["deploy.status", "deploy.logs", "deploy.check", "deploy.plan", "deploy.request"]) await ov.execute("t", { verb, project: root, target: "prod" }, undefined, undefined, { sessionId: "s", cwd: "/", leafId: () => null, rawBranch: () => [] } as never);
+  for (const verb of ["deploy.status", "deploy.logs", "deploy.check", "deploy.plan", "deploy.request"]) await ov.execute("t", { verb, project: root, target: "prod" }, undefined, undefined, { sessionId: "s", cwd: "/", leafId: () => null, state: () => stateView([]) } as never);
   assert.deepEqual(wrapped, ["deploy.plan", "deploy.request"], "only acts go through the turn the user started");
 });
 

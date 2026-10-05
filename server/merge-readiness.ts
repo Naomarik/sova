@@ -7,10 +7,12 @@ import type { AttentionItem, AttentionKind, AttentionTier, ReadinessState, Sessi
 import { parseWakeNudge } from "../shared/wake";
 import { isLinkMessage } from "../shared/link-message";
 import { isTopicBatch } from "../shared/topic-message";
-import { canonical, normalizeMergeDetails, restoreActive, type TrackedWorktree, WORKTREE_MERGE_MESSAGE, WORKTREES_ENTRY_TYPE } from "../pi-config/extensions/worktrees/state.ts";
+import { canonical, normalizeMergeDetails, type TrackedWorktree, WORKTREE_MERGE_MESSAGE, WORKTREES_ENTRY_TYPE } from "../pi-config/extensions/worktrees/state.ts";
 import { deferredOf, followUpFor, type FollowUpInput, type MergeFollowUps } from "./merge-followup";
 import { asksUserOf } from "./signals-store";
-import { atLineStart, BranchScan, lineHead, lineMay, toHEntry } from "./harness/pi/reader";
+import { atLineStart, BranchScan, lineHead, lineMay, lineNeedle, toHEntry } from "./harness/pi/reader";
+import { stateViewOf } from "./harness/pi/state";
+import { WORKTREES } from "./harness/state-kinds";
 import { DIRTY_TTL_MS, execGit, type GitRunner, worktreeInsights, type WorktreeInsights, worktreeStamp } from "./worktrees";
 import { goneTreeState, type GoneState } from "./removed-worktrees";
 
@@ -357,7 +359,7 @@ export function scanLine(line: string, checkIds: Set<string>): ScanEntry | null 
 
 /** The facts of a branch (root first). */
 export function factsOf(branch: readonly ScanEntry[]): FileFacts {
-  const set = restoreActive(branch as { type: string; customType?: string; data?: unknown }[]);
+  const set = stateViewOf(branch).latest(WORKTREES)?.data;
   const merges: MergeCard[] = [];
   let lastCheck: FileFacts["lastCheck"];
   let lastReply: FileFacts["lastReply"];
@@ -382,7 +384,7 @@ export interface ReadinessScan {
   checkIds?: Set<string>;
 }
 
-const MARKER = Buffer.from(`"customType":"${WORKTREES_ENTRY_TYPE}"`);
+const MARKER = lineNeedle({ state: WORKTREES_ENTRY_TYPE });
 const CHUNK = 256 * 1024;
 
 async function hasMarker(path: string, from: number, size: number): Promise<boolean> {

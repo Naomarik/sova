@@ -3,7 +3,7 @@ import { basename, join } from "node:path";
 import type { HEntry, SessionStateWriter, StateKind, ToolSpec } from "../shared/harness";
 import { createSessionFile, toolStateWriter } from "./harness/pi/state";
 import { toolCtx, toPiTool } from "./harness/pi/tools";
-import { BATON, BATON_DECISION, BATON_DONE, BATON_HANDOFF, BATON_LEASE, BATON_OFFER, BATON_PROPOSAL } from "./harness/state-kinds";
+import { BATON, BATON_DECISION, BATON_DONE, BATON_EFFECT_KINDS, BATON_HANDOFF, BATON_LEASE, BATON_OFFER, BATON_PROPOSAL } from "./harness/state-kinds";
 import {
   abilitiesOf,
   BATON_ENTRY,
@@ -426,8 +426,10 @@ type BatonEntry = { kind: StateKind<any>; data: Record<string, unknown> };
 const waitingEntries = new Map<string, BatonEntry[]>();
 
 /** Whether the transcript already has the entry an effect writes (a re-run after a restart writes nothing twice). */
-const hasEntry = (chat: ChatSession, key: string): boolean =>
-  chat.session.sessionManager.getEntries().some((e: any) => e.type === "custom" && e.data?.key === key);
+function hasEntry(chat: ChatSession, key: string): boolean {
+  const file = chat.state.file();
+  return BATON_EFFECT_KINDS.some((k) => file.written(k).some((r) => (r.data as { key?: unknown } | null | undefined)?.key === key));
+}
 
 /** Write a transcript entry the statechart asked for: through the running tool, now, or once the run settles. */
 async function writeEntry(sessionId: string, entry: BatonEntry): Promise<void> {

@@ -10,20 +10,21 @@ import {
   canonical,
   isWithin,
   normalizeMergeDetails,
-  restoreActive,
   sharedWith,
   type TrackedWorktree,
   WORKTREE_MERGE_MESSAGE,
   type WorktreesActive,
 } from "../pi-config/extensions/worktrees/state.ts";
+import { stateViewOf } from "./harness/pi/state";
+import { WORKTREES } from "./harness/state-kinds";
 
 export { WORKTREE_MERGE_MESSAGE };
 
-/** The newest usable `worktrees` entry on a branch, as the extension restores it. Never throws. */
+/** The newest usable `worktrees` record on a branch (raw entries or HEntries), as the extension restores it.
+    Never throws. */
 export function worktreesOf(branch: readonly unknown[]): WorktreesActive | undefined {
   try {
-    // restoreActive checks each entry's shape itself.
-    return restoreActive(branch as Parameters<typeof restoreActive>[0]);
+    return stateViewOf(branch).latest(WORKTREES)?.data;
   } catch {
     return undefined;
   }

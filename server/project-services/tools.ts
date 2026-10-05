@@ -6,8 +6,9 @@ import type { ToolCtx, ToolSpec } from "../../shared/harness";
 import { DEPLOY_READ_VERBS, DEPLOY_VERBS, exitOf, VERBS, type VerbResult } from "../../shared/project-contract";
 import { redactingTool, serverRedactor, type Redactor } from "../overseer-redact";
 import { toPiTool } from "../harness/pi/tools";
+import { WORKTREES } from "../harness/state-kinds";
+import { stateView } from "../harness/state-view";
 import { projectRootOf } from "../project-root";
-import { worktreesOf } from "../worktrees-state";
 import type { Caller, ProjectEngine, VerbAct } from "./engine";
 import { registerInstanceNote, resultNote } from "./note";
 
@@ -149,7 +150,7 @@ export function projectVerbsTool(o: VerbToolOptions): Tool {
       const caller = await o.caller(ctx);
       // No tool result ever carries a share link's URL (§app.project-services/share): the engine gives it to the operator only.
       const r = withoutUrls(await o.engine().run(String(p.verb ?? ""), bodyOf(p, await o.defaultProject(ctx)), caller, signal ? { signal } : {}));
-      const note = await resultNote(o.engine(), r, ctx?.rawBranch() ?? []);
+      const note = await resultNote(o.engine(), r, ctx?.state() ?? stateView([]));
       return { content: [{ type: "text" as const, text: renderResult(r, note) }], details: { v: 1, result: r } };
     },
   };
@@ -175,7 +176,7 @@ function gitTop(cwd: string): Promise<string | null> {
 /** The session's own checkouts: its tracked worktrees, and its cwd's checkout. */
 async function ownCheckouts(ctx: ToolCtx | undefined): Promise<string[]> {
   const own = new Set<string>();
-  for (const t of worktreesOf(ctx?.rawBranch() ?? [])?.trees ?? []) own.add(canonical(t.path));
+  for (const t of ctx?.state().latest(WORKTREES)?.data.trees ?? []) own.add(canonical(t.path));
   const cwd = ctx?.cwd;
   if (cwd) {
     const top = await gitTop(cwd);

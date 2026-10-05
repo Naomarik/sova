@@ -18,7 +18,7 @@ import type { SessionSummary, WorktreeCleanupKept, WorktreeCleanupPlan, Worktree
 import { runGit } from "../pi-config/extensions/worktrees/git.ts";
 import { canonical, isWithin, WORKTREES_ENTRY_TYPE } from "../pi-config/extensions/worktrees/state.ts";
 import { readStoredCwd } from "./git-summary";
-import { lineHeader } from "./harness/pi/reader";
+import { lineHeader, lineNeedle } from "./harness/pi/reader";
 import { worktreesRemoved } from "./merge-readiness";
 import { appendLedger, mergedByContent, resetContentMerges, type RemovedWorktree } from "./removed-worktrees";
 import { sandboxInfo } from "./sandbox-state";
@@ -318,7 +318,6 @@ export async function worktreesSummary(sessionPath: string): Promise<WorktreesSu
 
 // --- refusals ----------------------------------------------------------------------------------
 
-const MARKER = `"customType":"${WORKTREES_ENTRY_TYPE}"`;
 /** A session as a refusal names it: its title, else (none, or a new session's "Untitled") its short id. */
 const nameOf = (s: SessionSummary | null, path: string): string => {
   const title = s?.title?.trim();
@@ -335,7 +334,7 @@ interface FileScan {
   tracks?: { active: Set<string>; sandbox: boolean };
 }
 const scans = new Map<string, FileScan>();
-const MARKER_BYTES = Buffer.from(MARKER);
+const MARKER_BYTES = lineNeedle({ state: WORKTREES_ENTRY_TYPE });
 /** Changed files read at once: a cold scan of hundreds of MB never sits in memory whole. */
 const READ_CONCURRENCY = 4;
 

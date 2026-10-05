@@ -6,6 +6,7 @@ import type { ExtensionContext, ToolDefinition } from "@earendil-works/pi-coding
 import type { HarnessNative, HookCtx, ToolSpec } from "../../../shared/harness";
 import { canonicalPath } from "../../paths";
 import { historyOf } from "./reader";
+import { stateViewOf } from "./state";
 
 /** A pi ExtensionContext as Sova's HookCtx (a ToolCtx plus `key` and `title()`); the pi context rides
     along, opaque, as `native`. Reads are live: each member asks pi's session manager when read, as the
@@ -21,7 +22,7 @@ export function toolCtx(ctx: ExtensionContext): HookCtx {
     },
     leafId: () => sm.getLeafId() ?? null,
     branch: () => historyOf(sm.getBranch()),
-    rawBranch: () => sm.getBranch() as unknown as readonly Record<string, any>[],
+    state: () => stateViewOf(sm.getBranch()),
     get key() {
       const file = sm.getSessionFile();
       return file ? canonicalPath(file) : null;

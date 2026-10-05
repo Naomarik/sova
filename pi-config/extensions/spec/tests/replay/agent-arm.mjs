@@ -197,9 +197,9 @@ export function grade(index, c, events, workRoot) {
     }
     // The readable (text) forms of toc and read: contents lines and the footer's named ids. Passage text in
     // text mode is verbatim, so the raw-text check below finds it.
-    if (!jsons.length && call.tool === "bash" && /sova-spec\.mjs["']?\s+(?:toc|read)\b/.test(cmd)) {
+    if (!jsons.length && call.tool === "bash" && /sova-spec\.mjs["']?\s+["']?(?:toc|read)\b/.test(cmd)) {
       for (const m of text.matchAll(/^ {2}(§[^\s,]+) — /gm)) seenLines.add(m[1]);
-      for (const m of text.matchAll(/^(?:named here|notes about it), not delivered by this call: (.+)$/gm)) for (const id of m[1].match(/§[^\s,]+/g) ?? []) footerNamed.add(id);
+      for (const m of text.matchAll(/^(?:named here|notes about it), not delivered by this (?:call|read): (.+)$/gm)) for (const id of m[1].match(/§[^\s,]+/g) ?? []) footerNamed.add(id);
     }
     // A claims file read by the read tool: the lines it returned.
     if (call.tool === "read" && claimsRel(cmd)) {

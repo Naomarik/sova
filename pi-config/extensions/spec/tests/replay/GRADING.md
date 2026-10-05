@@ -15,7 +15,7 @@ mechanically.
 - **What the arm named:** ids it was shown without their text: `toc` lines, `read` footers' `named`
   and `about`, and packet frontier ids that were not delivered. The agent arm reads both forms: `--json`
   (`lines`, `footer`), and the text form (indented `  §id — ` contents lines; the footer lines
-  "named here, not delivered by this call:" and "notes about it, not delivered by this call:").
+  "named here, not delivered by this call:" and "notes about it, not delivered by this call:"; "… by this read:" since tools' HEAD B). A test renders both through the tree's own `toc` and `read`, so a wording change that breaks the parse fails it.
 - **The frame** (`read`'s first page, M5): its items count as read like any `read` item, in `--json`
   (`frame.items`) and in text (the passage text is printed verbatim).
 

@@ -46,13 +46,16 @@ test("diffCards: a changed value and a changed guard are each a difference; a ro
   assert.equal(d.changed, 4);
 });
 
-/** A copy of this tree with `files` ({tree path: source}) added and each `[file, from, to]` applied; a patch that finds nothing fails the test. */
+/** A copy of this tree with `files` ({tree path: source}) added and each `[file, from, to]` applied; a patch that finds nothing fails the test.
+ *  `{ oneOf: [[[file, from, to], …], …] }` applies the first variant whose targets all exist, for code whose shape differs across milestones. */
 function sabotaged(patches, files = {}) {
   const dir = mkdtempSync(join(tmpdir(), "spec-replay-sabotage-"));
   temps.push(dir);
   for (const sub of ["spec", "mode", "claude-code"]) cpSync(join(TREE, sub), join(dir, sub), { recursive: true });
   for (const [to, from] of Object.entries(files)) cpSync(from, join(dir, to));
-  for (const [file, from, to] of patches) {
+  const has = ([file, from]) => readFileSync(join(dir, file), "utf8").includes(from);
+  for (const patch of patches.flatMap((p) => p.oneOf ? p.oneOf.find((v) => v.every(has)) ?? p.oneOf[0] : [p])) {
+    const [file, from, to] = patch;
     const text = readFileSync(join(dir, file), "utf8");
     assert.ok(text.includes(from), `patch target in ${file}: ${from}`);
     writeFileSync(join(dir, file), text.replace(from, to));
@@ -67,10 +70,15 @@ test("guards catch the do-nothing fixes: the draft always wins, the census goes 
     ["spec/core/sova-spec-draft.mjs", "async function evidenceProblems(root, g, e, draftRelDir) {\n  const out = [];", "async function evidenceProblems(root, g, e, draftRelDir) {\n  const out = [];\n  return out;"],
     ["mode/spec-guard.ts", "\tlet absorbing = false;\n\tif ((op.kind", "\tlet absorbing = true;\n\tif ((op.kind"],
     ["spec/core/packet.mjs", 'const text = bytes.subarray(offset, end).toString("utf8");', 'const text = bytes.subarray(offset, end).toString("utf8").trim();'],
-    // A frame stream that grows into the whole closure.
-    ["spec/core/packet.mjs", 'export const PACKET_PARTS = ["prose", "inventory", "frontier", "code", "findings"];', 'export const PACKET_PARTS = ["prose", "inventory", "frontier", "code", "findings", "frame"];'],
-    ["spec/core/packet.mjs", "frontier: result.frontier, code: result.code, findings,", "frontier: result.frontier, code: result.code, findings, frame: passages,"],
-    ["spec/core/packet.mjs", 'isProse = part === "prose";', 'isProse = part === "prose" || part === "frame";'],
+    // A frame stream that grows into the whole closure: added on a tree without one, widened on a tree with one (M5).
+    { oneOf: [[
+      ["spec/core/packet.mjs", "findings, frame: frame ? frame.passages : [],", "findings, frame: passages,"],
+      ["spec/core/packet.mjs", "  if (!frame) delete streams.frame;\n", ""],
+    ], [
+      ["spec/core/packet.mjs", 'export const PACKET_PARTS = ["prose", "inventory", "frontier", "code", "findings"];', 'export const PACKET_PARTS = ["prose", "inventory", "frontier", "code", "findings", "frame"];'],
+      ["spec/core/packet.mjs", "frontier: result.frontier, code: result.code, findings,", "frontier: result.frontier, code: result.code, findings, frame: passages,"],
+      ["spec/core/packet.mjs", 'isProse = part === "prose";', 'isProse = part === "prose" || part === "frame";'],
+    ]] },
     // Impact stops listing uninvestigated behaviors; the manifest driver silently keeps ours on a same-record clash.
     ["spec/core/sova-spec.mjs", 'for (const [id, r] of ctx.claims) if (r.kind === "behavior" && r.requires === undefined && id !== seed) {', "for (const [id, r] of ctx.claims) if (false) {"],
     ["spec/core/sova-spec-draft.mjs", "if (r.conflict) { conflicts.push({ key: k, kind }); continue; }", "if (r.conflict) { out[k] = o[k]; continue; }"],
@@ -93,7 +101,7 @@ test("guards catch the do-nothing fixes: the draft always wins, the census goes 
 test("f and g catch the cheap slice: a packet that stops following requires reads less and loses needs", { timeout: 600_000 }, async () => {
   const tree = sabotaged([
     ["spec/core/sova-spec.mjs", "    for (const r of [...(rec.requires ?? [])].sort()) edge(r, { reason: \"requires\", of: id });", ""],
-    ["spec/core/packet.mjs", "for (const to of [...[...nearby].sort(), ...[...(rec.requires ?? [])].sort()]) {", "for (const to of [...nearby].sort()) {"],
+    ["spec/core/packet.mjs", ", ...[...(rec.requires ?? [])].sort()", ""],
   ]);
   const card = await runArm(tree, { label: "sabotaged", only: ["f", "g"] });
   assert.equal(card.errors, undefined, JSON.stringify(card.errors));

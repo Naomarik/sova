@@ -1,9 +1,9 @@
 // Sova's per-session state as pi custom entries (§app.harness/state): the one place in server/ that writes
 // them. A write is pi's `appendCustomEntry(kind.type, data)` with the caller's data as given (never copied,
 // normalized or flushed), so the line pi writes is byte-identical to the direct call it replaces, at the same
-// moment: a file opened from disk is written at once, one made by `SessionManager.create` waits for its first
-// assistant message as before, and the deferred open-time appends stay the caller's to flush. A direct append
-// emits nothing (a caller broadcasts its own row); a write from inside a running tool goes through pi's
+// moment: a file opened from disk is written at once, one made by `SessionManager.create` waits, as before, for
+// its first user or assistant message (P11), and the deferred open-time appends stay the caller's to flush. A
+// direct append emits nothing (a caller broadcasts its own row); a write from inside a running tool goes through pi's
 // extension API (`toolStateWriter`), which announces it (`entry_appended`).
 //
 // Set SOVA_STATE_ASSERT=1 to have a write throw when its data doesn't parse as its kind, or its kind isn't
@@ -81,8 +81,8 @@ export interface NewSessionFile {
 }
 
 /**
- * A new session file, written now and whole (pi defers a new session's write to its first assistant message):
- * the header, then each seed record, one per line, created exclusively (an existing file throws). Returns the
+ * A new session file, written now and whole (pi defers a new session's write to its first user or assistant
+ * message, P11): the header, then each seed record, one per line, created exclusively (an existing file throws). Returns the
  * file as pi named it (not canonicalized) and the session id; marking it owned or seen stays the caller's.
  */
 export function createSessionFile(opts: NewSessionFile): { path: string; id: string } {

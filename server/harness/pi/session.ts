@@ -49,7 +49,8 @@ function piOptions(o: SendOptions): Record<string, unknown> {
     const name = PI_OPTION[key];
     if (!name) continue;
     if (key === "source") out[name] = value === undefined ? undefined : PI_SOURCE[value as InputSource];
-    else if (key === "onAccepted") out[name] = value === undefined ? undefined : () => (value as () => void)();
+    // P15: pi 1.0 passes a disposition ("started" | "queued" | "handled"); the contract drops it.
+    else if (key === "onAccepted") out[name] = value === undefined ? undefined : (_disposition: unknown) => (value as () => void)();
     else out[name] = value;
   }
   return out;
@@ -208,8 +209,9 @@ export class PiHarnessSession implements HarnessSession {
   send(text: string, o?: SendOptions): Promise<void> {
     return o ? this.s.prompt(text, piOptions(o) as Parameters<AgentSession["prompt"]>[1]) : this.s.prompt(text);
   }
-  steer(text: string, images?: ImageInput[], o?: { source?: InputSource }): Promise<void> {
-    return o ? this.s.steer(text, images, piOptions(o) as Parameters<AgentSession["steer"]>[2]) : this.s.steer(text, images);
+  /** pi 1.0's steer resolves to a disposition ("queued" | "handled"); the contract drops it. */
+  async steer(text: string, images?: ImageInput[], o?: { source?: InputSource }): Promise<void> {
+    await (o ? this.s.steer(text, images, piOptions(o) as Parameters<AgentSession["steer"]>[2]) : this.s.steer(text, images));
   }
   /** P9: `hasQueued` is the agent's real queue, the rest the session's mirror. */
   get queue(): HarnessQueue {

@@ -483,7 +483,7 @@ describe("pi contract", () => {
     session.dispose();
   });
 
-  test("P11 create-defers / open-flushed: a created session's appends stay unwritten until an assistant message; an opened header-only file writes each append at once", () => {
+  test("P11 create-defers / open-flushed: a created session's appends stay unwritten until a user or assistant message; an opened header-only file writes each append at once", () => {
     const created = SessionManager.create(dir, join(dir, "p11-sessions"));
     created.appendCustomEntry("sova-contract", { n: 1 });
     const file = created.getSessionFile();
@@ -550,20 +550,23 @@ describe("pi contract", () => {
     session.dispose();
   });
 
-  test("P15 accept-vs-complete: prompt() resolves at turn end while preflightResult(true) fires at acceptance (and for a handled command)", async () => {
+  test("P15 accept-vs-complete: prompt() resolves at turn end while preflightResult(\"started\") fires at acceptance (\"handled\" for a handled command, no call for a refused prompt)", async () => {
     const { session, model, events } = await quirkSession({ extensions: [(api) => api.registerCommand("contract", { description: "fixture", handler: async () => {} })] });
     const order: string[] = [];
     const release = model.hold();
-    const run = session.prompt("one", { preflightResult: (ok: boolean) => void order.push(`preflight ${ok}`) }).then(() => void order.push("resolved"));
+    const run = session.prompt("one", { preflightResult: (d) => void order.push(`preflight ${d}`) }).then(() => void order.push("resolved"));
     await until(() => model.calls.length === 1, "the model call");
-    assert.deepEqual(order, ["preflight true"], "accepted, not yet complete");
+    assert.deepEqual(order, ["preflight started"], "accepted, not yet complete");
     assert.equal(events.some((e) => e.type === "agent_end"), false);
+    const refused: string[] = [];
+    await assert.rejects(session.prompt("two", { preflightResult: (d) => void refused.push(d) }), /already processing/);
+    assert.deepEqual(refused, [], "a refused prompt gets no preflight call (0.87.1: false); linkToSdk settles on the rejection");
     release();
     await run;
-    assert.deepEqual(order, ["preflight true", "resolved"]);
-    const handled: boolean[] = [];
-    await session.prompt("/contract", { preflightResult: (ok: boolean) => void handled.push(ok) });
-    assert.deepEqual(handled, [true]);
+    assert.deepEqual(order, ["preflight started", "resolved"]);
+    const handled: string[] = [];
+    await session.prompt("/contract", { preflightResult: (d) => void handled.push(d) });
+    assert.deepEqual(handled, ["handled"]);
     assert.equal(model.calls.length, 1, "a handled command makes no model call");
     session.dispose();
   });

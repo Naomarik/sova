@@ -278,7 +278,7 @@ async function createWebSession(c: Context, cwd: string, start?: { profile: Prof
 }
 
 async function createWebSessionFile(c: Context, cwd: string) {
-  // pi defers writing until the first assistant reply; the header is written now so the session
+  // pi defers writing until the first user or assistant message; the header is written now so the session
   // exists on disk (listable, watchable, openable by path).
   let made: { path: string; id: string };
   try {

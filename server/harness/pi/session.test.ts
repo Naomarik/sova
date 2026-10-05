@@ -134,7 +134,7 @@ describe("PiHarnessSession (§app.harness/session)", () => {
       ["plain", undefined],
     ]);
     assert.deepEqual(calls.map((c) => (c[1] as { source?: string } | undefined)?.source), ["extension", "rpc", "interactive", undefined]);
-    (calls[0]![1] as { preflightResult(ok: boolean): void }).preflightResult(true);
+    (calls[0]![1] as { preflightResult(disposition: string): void }).preflightResult("started");
     assert.equal(accepted, 1);
   });
 

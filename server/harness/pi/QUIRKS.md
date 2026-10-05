@@ -124,9 +124,9 @@ Canary: `P10 leaf-is-last-line: navigateTree({summarize:false}) writes nothing a
 
 ### P11 create-defers / open-flushed
 
-A session `SessionManager.create()` makes stays unwritten until its first assistant message, so Sova's creators write `[header, ...seed]` themselves; a file `SessionManager.open()` reads takes each append at once.
+A session `SessionManager.create()` makes stays unwritten until its first user or assistant message (pi 0.99.0+; through 0.87.1, its first assistant message), so Sova's creators write `[header, ...seed]` themselves; a file `SessionManager.open()` reads takes each append at once.
 
-Canary: `P11 create-defers / open-flushed: a created session's appends stay unwritten until an assistant message; an opened header-only file writes each append at once`.
+Canary: `P11 create-defers / open-flushed: a created session's appends stay unwritten until a user or assistant message; an opened header-only file writes each append at once`.
 
 ### P12 message-end-before-persist
 
@@ -148,9 +148,9 @@ Canary: `P14 command-direct-call: getCommand finds an extension's command with i
 
 ### P15 accept-vs-complete
 
-`prompt()` resolves when the turn ends, while `preflightResult(true)` fires when it is accepted (also for a handled extension command); the driving session's `send` passes it as `onAccepted`, and a link delivery takes acceptance from it.
+`prompt()` resolves when the turn ends, while `preflightResult("started")` fires when it is accepted (`"handled"` for a handled extension command or an input handler that swallows it, `"queued"` for a mid-run delivery); the driving session's `send` passes it as `onAccepted`, dropping the disposition, and a link delivery takes acceptance from it. A refused prompt ("already processing", a compaction in progress, no model or auth) gets no call, and `linkToSdk` settles on the rejection instead. pi 1.0.0 made the argument a disposition (`PromptDisposition`); through 0.87.1 it was a boolean, `preflightResult(false)` on a refusal, which the adapter ignored too, so `onAccepted` fired then as well.
 
-Canary: `P15 accept-vs-complete: prompt() resolves at turn end while preflightResult(true) fires at acceptance (and for a handled command)`.
+Canary: `P15 accept-vs-complete: prompt() resolves at turn end while preflightResult("started") fires at acceptance ("handled" for a handled command, no call for a refused prompt)`.
 
 ### P16 custom-message-idle
 
@@ -160,7 +160,7 @@ Canary: `P16 custom-message-idle: sendCustomMessage with triggerTurn:false on an
 
 ### P17 theme-global
 
-`initTheme()` registers the theme on `globalThis[Symbol.for("@earendil-works/pi-coding-agent:theme")]`, which Sova reads to hand extensions `ctx.ui.theme` (pi does not export the instance).
+`initTheme()` registers the theme on `globalThis[Symbol.for("@earendil-works/pi-coding-agent:theme")]`, which Sova reads to hand extensions `ctx.ui.theme` (pi does not export the instance). Sova names the theme, `initTheme("dark", false)`: pi 1.0 (0.99.0) defaults to `system`, a theme built from the terminal's ANSI palette, where 0.87.1 detected `dark` or `light` from the environment (`dark` on a server). The built-in `dark` is pi's revised palette since 0.99.0, so its escape codes differ from 0.87.1's `dark` (accent 256-colour 140, was 109).
 
 Canary: `P17 theme-global: initTheme registers the theme on globalThis under pi's Symbol.for key`.
 

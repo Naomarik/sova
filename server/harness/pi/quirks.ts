@@ -197,13 +197,13 @@ export const PI_QUIRKS: readonly PiQuirk[] = [
     id: "P11",
     name: "create-defers / open-flushed",
     kind: "semantic",
-    relies: "A session SessionManager.create() makes stays unwritten until its first assistant message, so Sova's creators write [header, ...seed] themselves; a file SessionManager.open() reads takes each append at once.",
+    relies: "A session SessionManager.create() makes stays unwritten until its first user or assistant message (pi 0.99.0+; through 0.87.1, its first assistant message), so Sova's creators write [header, ...seed] themselves; a file SessionManager.open() reads takes each append at once.",
     pi: ["SessionManager.create", "SessionManager.open", "SessionManager.appendCustomEntry"],
     where: [
       { file: "server/harness/pi/state.ts", symbol: "createSessionFile" },
       { file: "server/harness/pi/state.ts", symbol: "appendToClosedFile" },
     ],
-    canary: "P11 create-defers / open-flushed: a created session's appends stay unwritten until an assistant message; an opened header-only file writes each append at once",
+    canary: "P11 create-defers / open-flushed: a created session's appends stay unwritten until a user or assistant message; an opened header-only file writes each append at once",
     retireWhen: "never: the two creation paths depend on it; keep the canary",
   },
   {
@@ -259,13 +259,13 @@ export const PI_QUIRKS: readonly PiQuirk[] = [
     id: "P15",
     name: "accept-vs-complete",
     kind: "semantic",
-    relies: "prompt() resolves when the turn ends, while preflightResult(true) fires when it is accepted (also for a handled extension command); a link delivery takes acceptance from the preflight.",
+    relies: 'prompt() resolves when the turn ends, while preflightResult("started") fires when it is accepted ("handled" for a handled extension command, "queued" mid-run; a refused prompt gets no call); the adapter drops the disposition, and a link delivery takes acceptance from the preflight or, refused, from the rejection.',
     pi: ["AgentSession.prompt", "PromptOptions.preflightResult"],
     where: [
       { file: SESSION, symbol: "PiHarnessSession.send" },
       { file: CM, symbol: "ChatSession.linkToSdk" },
     ],
-    canary: "P15 accept-vs-complete: prompt() resolves at turn end while preflightResult(true) fires at acceptance (and for a handled command)",
+    canary: "P15 accept-vs-complete: prompt() resolves at turn end while preflightResult(\"started\") fires at acceptance (\"handled\" for a handled command, no call for a refused prompt)",
     retireWhen: "never: HarnessSession.send and its onAccepted mirror it; keep the canary",
   },
   {

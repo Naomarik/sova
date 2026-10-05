@@ -45,7 +45,7 @@ const FILES = {
 };
 const CLAIMS = {
   "§f/seed": { kind: "surface", authority: "accepted" },
-  [SEED]: { kind: "behavior", authority: "accepted", requires: [P.dep, P.panel, P.wander], code: ["src/edit.txt"] },
+  [SEED]: { kind: "behavior", authority: "accepted", requires: [P.dep, P.panel, P.wander], embeds: [P.panel], code: ["src/edit.txt"] },
   [P.sibling]: { kind: "behavior", authority: "accepted", requires: [], code: ["src/limits.txt"] },
   "§f/dep": { kind: "surface", authority: "accepted" },
   [P.dep]: { kind: "behavior", authority: "accepted", requires: [P.deep], code: ["src/dep.txt"] },
@@ -142,6 +142,9 @@ async function pull(ctx, repo, index) {
     byDir[dir] = t.lines;
     idsIn(t.footer?.delivered ?? [], delivered);
   }
+  // What arrives unasked with a plain `read` of the seed (first page): its items and any frame items.
+  const unasked = await ctx.tools.runAsync(repo.root, ctx.ws.home, ["read", SEED]);
+  for (const it of [...(unasked.json?.items ?? []), ...(unasked.json?.frame?.items ?? [])]) if (typeof it?.id === "string" && it.id !== SEED) delivered.add(it.id);
   const where = (id) => DIRS.filter((d) => byDir[d].some((l) => l.id === id));
   const line = (id) => DIRS.flatMap((d) => byDir[d]).find((l) => l.id === id);
   // Each planted link shows as a line in the direction a builder would ask for it.

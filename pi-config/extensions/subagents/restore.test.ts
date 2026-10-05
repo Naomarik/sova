@@ -15,6 +15,7 @@ import { BACKEND_REGISTER_EVENT } from "./contracts.ts";
 import { WORKER_MANIFEST_ENTRY_TYPE } from "./registry.ts";
 import { resolvedModel } from "./worker-transcript.ts";
 import { MODE_WORKER_EVENT } from "../mode/events.ts";
+import { ClaudeRunner } from "../claude-code/runner.ts";
 
 const SNAPSHOT = "subagents:workers-snapshot";
 const NO_POLICY_FILE = path.join(os.tmpdir(), "subagents-tests-absent-policy.json");
@@ -286,11 +287,14 @@ test("a claude-code worker resumes by session id through its backend; not loaded
 				isFinished() { return false; }, isSettled() { return this.status === "waiting"; }, finalOutput: () => "",
 				async steer() { return { ok: true }; }, async kill() {}, async dispose() {},
 			};
+			// The real ClaudeRunner's own methods: none may make it a thenable.
+			for (const k of Object.getOwnPropertyNames(ClaudeRunner.prototype)) if (k !== "constructor" && !(k in worker)) { const d = Object.getOwnPropertyDescriptor(ClaudeRunner.prototype, k)!; if (typeof d.value === "function") worker[k] = d.value; }
 			setTimeout(() => { worker.status = "waiting"; handlers.onChange(); }, 5);
 			return worker;
 		},
 	});
-	await m.call("agent_resume", { id: "ag_04" });
+	const resumed = await m.call("agent_resume", { id: "ag_04" });
+	assert.ok(!resumed?.isError, "the resume reports success");
 	assert.deepEqual(created[0].resume, { sessionId: id, startedAt: restoredStart }, "the restored entry's start travels with the resume");
 	assert.deepEqual([created[0].model, created[0].systemPrompt, created[0].permissionMode], ["sonnet", "be terse", "acceptEdits"]);
 	await m.shutdown();

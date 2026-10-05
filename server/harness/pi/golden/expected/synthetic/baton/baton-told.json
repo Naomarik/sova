@@ -1,0 +1,10 @@
+{
+  "prompt": {
+    "prompt": null,
+    "tools": []
+  },
+  "model": {
+    "model": "zai/glm-5.3",
+    "thinking": null
+  }
+}

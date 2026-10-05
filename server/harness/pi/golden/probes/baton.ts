@@ -1,10 +1,12 @@
 // Probes owned by batch E (baton and share): the baton view for the operator and for a person, its senders,
 // author notes and vocabulary, the recount, the recorded model, the photo count, and the share view's
-// shown entries and branch cut. A batch edits only its own probes file, and only to follow a moved function.
+// shown entries and branch cut, the told summary (the recorded prompt, model and thinking) and each person's
+// own messages for the wrap-up. A batch edits only its own probes file, and only to follow a moved function.
 import { photoCount, branchModelRef } from "../../../../baton-images";
 import { countedMessages } from "../../../../baton-recount";
-import { recordedModel } from "../../../../baton-told";
+import { piReplay, recordedModel, recordedPrompt } from "../../../../baton-told";
 import { authorNotes, batonView, conversationVocabulary, messageSenders } from "../../../../baton-view";
+import { messagesByPerson } from "../../../../baton-wrapup";
 import { branchTo, shownEntries } from "../../../../session-share-view";
 import { activeBranch, parseLines } from "../../../../transcript";
 import type { Probe } from "../golden";
@@ -65,6 +67,26 @@ export const probes: Probe[] = [
         shown: shownEntries(branch),
         branchTo: { leaf: ids(branchTo(entries, null)), mid: ids(branchTo(entries, typeof mid === "string" ? mid : null)), missing: ids(branchTo(entries, "no-such-entry")) },
       };
+    },
+  },
+  {
+    name: "baton-told",
+    formats: ["pi"],
+    async run(f) {
+      const branch = activeBranch(parseLines(f.text));
+      const replay = await piReplay();
+      try {
+        return { prompt: recordedPrompt(branch, replay), model: recordedModel(branch) };
+      } catch (err) {
+        return { $throws: String(err) };
+      }
+    },
+  },
+  {
+    name: "baton-wrapup",
+    formats: ["pi"],
+    run(f) {
+      return { mine: messagesByPerson(activeBranch(parseLines(f.text))) };
     },
   },
 ];

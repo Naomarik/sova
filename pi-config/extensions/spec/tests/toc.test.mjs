@@ -305,8 +305,14 @@ test("in on an H2 lists the claims that require its H1; out on an H1 counts what
   assert.equal(toc(root, "§i/whole", "in").lines.length, 0, "an H1 has no parent to reach it through");
   const top = toc(root, "§a/top", "out");
   assert.deepEqual(top.seed.childRequires, { h2s: 1, claims: 3 }, "the seed requires §b/dep, §c/quiet, §z/gone outside; §a.top/hint is inside");
-  assert.match(cli(root, ["toc", "§a/top", "--dir", "out"], { json: false }).r.stdout, /OUT: its 1 H2\(s\) require 3 claim\(s\) outside it: toc each H2 --dir out, or map '§a\/top'/);
+  assert.match(cli(root, ["toc", "§a/top", "--dir", "out"], { json: false }).r.stdout, /OUT: its 1 H2\(s\) require or embed 3 claim\(s\) outside it: toc each H2 --dir out, or map '§a\/top'/);
   assert.equal(toc(root, "§a.top/seed", "out").seed.childRequires, undefined);
+  // An embed outside the H1 counts like a requirement.
+  const m2 = JSON.parse(readFileSync(join(root, ".sova/spec/manifest.json"), "utf8"));
+  m2.claims["§a.top/hint"].embeds = ["§l/panel"]; m2.claims["§l/panel"] = { kind: "surface", requires: [] };
+  write(root, ".sova/spec/manifest.json", JSON.stringify(m2));
+  write(root, ".sova/spec/claims/l/panel.md", "# §l/panel — Panel\n\nA panel drawn inside the hint.\n");
+  assert.deepEqual(toc(root, "§a/top", "out").seed.childRequires, { h2s: 2, claims: 4 });
 });
 
 test("in lists embedders of the claim or its H1 and the notes about either; an about field is a declared why", () => {

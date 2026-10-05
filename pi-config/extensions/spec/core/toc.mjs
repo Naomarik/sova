@@ -352,13 +352,13 @@ export function tocStream(ctx, id, dir, parentOf) {
   }
   const dangling = list.filter((e) => e.dangling).map((e) => e.id);
   if (dangling.length) unknowns.push({ code: "unknown", message: `unknown: no record or span for ${dangling.join(", ")}`, ids: dangling });
-  // An H1 whose own record requires nothing can still have H2s that require claims outside it.
+  // An H1 whose own record requires nothing can still have H2s that require or embed claims outside it.
   let childRequires;
   if (dir === "out" && seed.level === 1 && (ctx.children.get(id) ?? []).length) {
     const inside = new Set([id, ...ctx.children.get(id)]), outside = new Set();
     let h2s = 0;
     for (const c of ctx.children.get(id)) {
-      const ext = (ctx.claims.get(c)?.requires ?? []).filter((t) => !inside.has(t));
+      const r = ctx.claims.get(c), ext = [...(r?.requires ?? []), ...(r?.embeds ?? [])].filter((t) => !inside.has(t));
       if (ext.length) h2s++;
       ext.forEach((t) => outside.add(t));
     }
@@ -378,7 +378,7 @@ export function renderToc(out) {
   L.push(`${s.id} — ${s.title}  ${s.kind}${lab(s)} · ${sizeText(s)}${s.codeFiles ? ` · code ${s.codeFiles} file(s), read names them` : ""}${agreedText(s)}`, `  what: ${s.what}`);
   if (out.dir === "out" && !out.counts.groups.requires && !out.counts.groups.embeds)
     L.push(`${D}: requires: ${s.requires === null && s.kind === "behavior" ? "dependencies uninvestigated (no requires key)" : "none declared"}`);
-  if (s.childRequires) L.push(`${D}: its ${s.childRequires.h2s} H2(s) require ${s.childRequires.claims} claim(s) outside it: toc each H2 --dir out, or map '${s.id}'`);
+  if (s.childRequires) L.push(`${D}: its ${s.childRequires.h2s} H2(s) require or embed ${s.childRequires.claims} claim(s) outside it: toc each H2 --dir out, or map '${s.id}'`);
   let group = null;
   for (const e of out.lines) {
     if (e.group !== group) { group = e.group; L.push(`${D}: ${HEADS[group]}${group.endsWith("-through-parent") ? " " + e.via : ""} (${out.counts.groups[group]})`); }

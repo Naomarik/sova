@@ -136,7 +136,9 @@ lede, blank lines after a span) merge as the gap they sit in; a gap changed diff
 sides is a conflict. New declarations that both sides inserted after the same kept declaration
 are placed in a fixed order: each side's run stays together, and the run whose first identifier
 sorts first comes first, so the bytes don't depend on which side landed first. A file whose kept
-declarations were reordered, or that holds a carriage return, is still compared as a whole file.
+declarations were reordered, that holds a carriage return, or whose graph on any side doesn't
+load, is still compared as a whole file. A merged file must read back as exactly the declarations
+it was merged from, byte for byte, or the promotion is refused as a conflict and nothing is written.
 
 ## §tools.spec/inspection-safety — Refused inputs are not inspected
 

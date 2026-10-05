@@ -14239,6 +14239,7 @@
     "§tools.spec/span-promotion": {
       "kind": "behavior",
       "authority": "accepted",
+      "evidence": "verified",
       "requires": [
         "§tools.spec/promotion-integrity"
       ],

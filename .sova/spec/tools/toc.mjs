@@ -365,7 +365,7 @@ export function tocStream(ctx, id, dir, parentOf) {
     childRequires = { h2s, claims: outside.size };
   }
   const otherDirections = Object.fromEntries(DIRS.filter((d) => d !== dir).map((d) => [d, neighbours(ctx, id, d, parentOf).length]));
-  return { seed: { id, title: titleOf(seed), kind: rec.kind, level: seed.level, ...labelsOf(rec), ...agreedOf(rec), file: seed.file, lines: seed.lines, ...sizeOf(ctx, id), ...whatOf(seed),
+  return { seed: { id, title: titleOf(seed), kind: rec.kind, level: seed.level, ...labelsOf(rec), ...agreedOf(rec), codeFiles: Array.isArray(rec.code) ? rec.code.length : 0, file: seed.file, lines: seed.lines, ...sizeOf(ctx, id), ...whatOf(seed),
     ...(dir === "out" ? { requires: rec.requires === undefined ? null : rec.requires.length } : {}), ...(childRequires ? { childRequires } : {}) }, list, unknowns, otherDirections };
 }
 
@@ -375,7 +375,7 @@ const lab = (e) => (e.labels ? ` · ${[e.labels.authority ?? "-", e.labels.evide
 
 export function renderToc(out) {
   const L = [], s = out.seed, D = out.dir.toUpperCase();
-  L.push(`${s.id} — ${s.title}  ${s.kind}${lab(s)} · ${sizeText(s)}${agreedText(s)}`, `  what: ${s.what}`);
+  L.push(`${s.id} — ${s.title}  ${s.kind}${lab(s)} · ${sizeText(s)}${s.codeFiles ? ` · code ${s.codeFiles} file(s), read names them` : ""}${agreedText(s)}`, `  what: ${s.what}`);
   if (out.dir === "out" && !out.counts.groups.requires && !out.counts.groups.embeds)
     L.push(`${D}: requires: ${s.requires === null && s.kind === "behavior" ? "dependencies uninvestigated (no requires key)" : "none declared"}`);
   if (s.childRequires) L.push(`${D}: its ${s.childRequires.h2s} H2(s) require ${s.childRequires.claims} claim(s) outside it: toc each H2 --dir out, or map '${s.id}'`);

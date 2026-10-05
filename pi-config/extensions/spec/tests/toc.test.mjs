@@ -347,6 +347,23 @@ test("agreed records show who agreed and when, and whether built, in toc and rea
   assert.match(cli(root, ["read", "§a.top/hint"], { json: false }).r.stdout, /^── §a\.top\/hint — Hint .* · agreed 2026-10-05 by operator, not built$/m);
 });
 
+test("read names the claim's own code files (12, then a count, missing marked); toc's seed counts them", () => {
+  const root = fixture(), m = JSON.parse(readFileSync(join(root, ".sova/spec/manifest.json"), "utf8"));
+  const paths = Array.from({ length: 14 }, (_, i) => `src/f${i}.ts`);
+  m.claims["§a.top/seed"].code = paths;
+  write(root, ".sova/spec/manifest.json", JSON.stringify(m));
+  for (const p of paths.filter((_, i) => i !== 1)) write(root, p, "x\n");
+  const it = read(root, ["§a.top/seed"]).items[0];
+  assert.equal(it.code.length, 12); assert.equal(it.codeMore, 2);
+  assert.deepEqual(it.code.slice(0, 3), [{ path: "src/f0.ts", state: "present" }, { path: "src/f1.ts", state: "missing" }, { path: "src/f2.ts", state: "present" }]);
+  assert.equal(it.text, scopeText(root, "§a.top/seed"), "the passage text is unchanged");
+  const text = cli(root, ["read", "§a.top/seed"], { json: false }).r.stdout;
+  assert.match(text, /^ {3}code: src\/f0\.ts, src\/f1\.ts \(missing\), src\/f2\.ts, .*src\/f11\.ts, and 2 more in its record$/m);
+  assert.equal(toc(root, "§a.top/seed", "up").seed.codeFiles, 14);
+  assert.match(cli(root, ["toc", "§a.top/seed", "--dir", "up"], { json: false }).r.stdout, /· code 14 file\(s\), read names them/);
+  assert.equal(read(root, ["§a.top/hint"]).items[0].code, undefined, "no code, no code key");
+});
+
 test("read's footer speaks for the whole read, on every page", () => {
   const root = fixture();
   write(root, ".sova/spec/claims/a/top.md", readFileSync(join(root, ".sova/spec/claims/a/top.md"), "utf8").replace("A hint that only", "A hint about §e/named that only"));

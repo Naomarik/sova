@@ -122,7 +122,8 @@ other, else an HTML comment naming it, else exactly `not mentioned in this claim
 mask fenced code, HTML comments and double-backtick spans; single backticks count, and `§a.b` reads
 as `§a/b`. A line for an id with no record or span is `dangling: true`.
 
-`seed` describes the requested claim the same way; for `out` on an H1 with H2s it adds
+`seed` describes the requested claim the same way, plus `codeFiles` (how many code files its record
+lists; `read` names them); for `out` on an H1 with H2s it adds
 `childRequires: {h2s, claims}`, how many H2s require claims outside the H1 and how many distinct claims. `footer` holds `delivered` (always empty: a
 contents line is never the passage), `listed` and `notListed` for this response, `otherDirections`
 (the line count of each direction not asked) and `unknowns` (`requires-uninvestigated` for a
@@ -130,7 +131,8 @@ behavior with no `requires` key, or for `in` the behaviors that could also requi
 dangling targets). Exit 0 is done without unknowns, 1 is more lines or an unknown, 2 a refusal.
 
 **`read §id [--whole]`** returns one passage, exact, with no closure: `items: [{index, id, kind,
-labels?, title, file, lines, text, fragment}]`, where `text` is byte-for-byte the passage `scope`
+labels?, agreed?, code?, codeMore?, title, file, lines, text, fragment}]`, where `code` is the record's
+first 12 code paths as `{path, state}` (`present`, `missing`, `refused`, …) and `codeMore` counts the rest, where `text` is byte-for-byte the passage `scope`
 returns. An H1 gives its lede; `--whole` gives the lede and then each H2 in declaration order. The
 `footer` names (`named`) the passage's `requires` and prose mentions that this read does not deliver on any of its pages,
 and for an H1 read as its lede, `children` and `wholeBytes`. Exit 0 is done, 1 more, 2 a refusal.

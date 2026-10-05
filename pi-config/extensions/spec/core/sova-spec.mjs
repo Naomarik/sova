@@ -1137,7 +1137,7 @@ function packetMain(opt) {
 }
 
 // The pull commands (toc, read) live in their own modules and reach the graph only through the core's own loader.
-const pullCore = () => ({ findSpec, load, specDir, parentOf, exitOf, findings: () => findings, DEFAULT_SPEC });
+const pullCore = () => ({ findSpec, load, specDir, parentOf, exitOf, findings: () => findings, DEFAULT_SPEC, codeState: (root, p) => safePath(root, p).state });
 // The look commands (map, where, graph, impact --near) also read one source file, through the core's refusal rules.
 const lookCore = () => ({ ...pullCore(), readSource: (root, rel) => readInput(root, rel) });
 

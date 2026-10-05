@@ -8,6 +8,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, test } from "node:test";
 import type { ChatServerMessage } from "../shared/protocol";
+import { piSession } from "./harness/pi/testing/handle";
 
 const agentDir = mkdtempSync(join(tmpdir(), "sova-compact-test-"));
 // A hosted runtime can still write here after after() ran (pi's catalogs, usage cache): exit is last.
@@ -192,7 +193,7 @@ describe("/compact through a real chat runtime", () => {
     // pi's compact() minus the model call: the write goes through the same SessionManager method.
     const released: Array<() => void> = [];
     const compacts: Array<string | undefined> = [];
-    const session = chat.session as any;
+    const session = piSession(chat) as any;
     session.compact = async (instructions?: string) => {
       compacts.push(instructions);
       await new Promise<void>((r) => released.push(r));
@@ -275,19 +276,19 @@ describe("/compact through a real chat runtime", () => {
 
   test("a /compact steer while a turn streams is refused and queues nothing", async () => {
     const t = await open();
-    Object.defineProperty(t.chat.session, "isStreaming", { get: () => true, configurable: true });
+    Object.defineProperty(piSession(t.chat), "isStreaming", { get: () => true, configurable: true });
     t.chat.handle(t.me, { type: "steer", text: "/compact", clientId: "s1" });
     await t.until(() => t.mine.some((m) => m.type === "compact_refused"));
     const refused = t.mine.find((m) => m.type === "compact_refused") as Extract<ChatServerMessage, { type: "compact_refused" }>;
     assert.deepEqual(refused, { type: "compact_refused", id: "s1", reason: "streaming", message: "Stop the turn first, then compact." });
     assert.equal(t.chat.queue.size, 0);
     assert.deepEqual(t.compacts, []);
-    delete (t.chat.session as any).isStreaming;
+    delete (piSession(t.chat) as any).isStreaming;
   });
 
   test("a prompt pi refuses because a compaction just started is held and sent again, never reported as a failure", async () => {
     const t = await open();
-    const session = t.chat.session as any;
+    const session = piSession(t.chat) as any;
     let calls = 0;
     session.prompt = async (text: string) => {
       calls++;
@@ -314,7 +315,7 @@ describe("/compact through a real chat runtime", () => {
 
   test("a compaction Sova did not start (ctx.compact from a hook), idle: every client gets the new branch BEFORE a held message's turn starts", async () => {
     const t = await open();
-    const session = t.chat.session as any;
+    const session = piSession(t.chat) as any;
     // Held while "pi" compacts: an auto compaction flips pi's own isCompacting.
     Object.defineProperty(session, "isCompacting", { get: () => true, configurable: true });
     t.chat.handle(t.me, { type: "prompt", text: "held", clientId: "h1" });
@@ -340,7 +341,7 @@ describe("/compact through a real chat runtime", () => {
 
   test("a compaction that lands mid-turn refreshes at that turn's agent_settled, never inside it", async () => {
     const t = await open();
-    const session = t.chat.session as any;
+    const session = piSession(t.chat) as any;
     Object.defineProperty(session, "isStreaming", { get: () => true, configurable: true });
     session.sessionManager.appendCompaction("overflow summary", "u2", 300);
     session._emit({ type: "compaction_end", reason: "overflow", result: { summary: "overflow summary", tokensBefore: 300 }, aborted: false, willRetry: true });
@@ -354,15 +355,15 @@ describe("/compact through a real chat runtime", () => {
 
   test("a failed or cancelled compaction (no result) refreshes nothing", async () => {
     const t = await open();
-    (t.chat.session as any)._emit({ type: "compaction_end", reason: "threshold", aborted: true, willRetry: false });
-    (t.chat.session as any)._emit({ type: "agent_settled" });
+    (piSession(t.chat) as any)._emit({ type: "compaction_end", reason: "threshold", aborted: true, willRetry: false });
+    (piSession(t.chat) as any)._emit({ type: "agent_settled" });
     await new Promise((r) => setTimeout(r, 20));
     assert.ok(!t.theirs.some((m) => m.type === "hello"));
   });
 
   test("pi's automatic path: isCompacting is still true DURING compaction_end, yet the refresh's hello says false", async () => {
     const t = await open();
-    const session = t.chat.session as any;
+    const session = piSession(t.chat) as any;
     session.sessionManager.appendCompaction("threshold summary", "u2", 300);
     Object.defineProperty(session, "isCompacting", { get: () => true, configurable: true });
     session._emit({ type: "compaction_end", reason: "threshold", result: { summary: "threshold summary", tokensBefore: 300 }, aborted: false, willRetry: false });

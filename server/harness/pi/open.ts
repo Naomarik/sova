@@ -261,7 +261,8 @@ export interface PiOpenFile {
   /** P1: the model and thinking appends pi made while building, to run (in order) before the chat's first
       write. The chat takes this array as its own. */
   readonly deferred: Array<() => void>;
-  /** Build the runtime in `cwd`; `build` is asked for each session the runtime builds. */
+  /** Build the runtime in `cwd`; `build` is asked for each session the runtime builds. The chat holds the
+      runtime only as a PiChatHost (host.ts). */
   start(cwd: string, build: (o: { cwd: string; read: OpenRead }) => Promise<PiBuild>): Promise<AgentSessionRuntime>;
   /** End the P1 hold: pi's own appends write again. Call once the whole open is over. */
   restoreAppends(): void;

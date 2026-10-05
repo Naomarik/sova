@@ -11,6 +11,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { after, describe, test } from "node:test";
 import type { ChatServerMessage, SessionSummary } from "../shared/protocol";
+import { piSession } from "./harness/pi/testing/handle";
 
 const agentDir = realpathSync(mkdtempSync(join(tmpdir(), "sova-profiles-runtime-")));
 process.on("exit", () => rmSync(agentDir, { recursive: true, force: true }));
@@ -111,7 +112,7 @@ type StubReply = { toolCall: { name: string; arguments: Record<string, unknown> 
 const calls = new Map<string, Array<() => Promise<StubReply> | StubReply>>();
 /** Let a runtime run without credentials: auth passes, and the model is a stub. */
 function fakeRuns(chat: Chat): void {
-  const session = chat.session as unknown as {
+  const session = piSession(chat) as unknown as {
     _modelRuntime: { hasConfiguredAuth(p: string): boolean };
     agent: { state: { model: unknown }; getApiKey: unknown; streamFunction: unknown };
     sessionManager: { getSessionId(): string };
@@ -156,25 +157,25 @@ describe("removals hold in the runtime (excludeTools)", () => {
   test("a Read-only reviewer has no shell, edits or workers, even after strict mode and a re-registration", async () => {
     const path = makeSession(profile("reviewer"));
     const chat = await acquireChat(path, true);
-    const active = () => chat.session.getActiveToolNames();
+    const active = () => piSession(chat).getActiveToolNames();
     for (const t of ["bash", "edit", "write", "agent_spawn", "agent_list", "team_create"]) assert.ok(!active().includes(t), `${t} must be gone`);
     for (const t of ["read", "session_list", "session_detail", "session_read"]) assert.ok(active().includes(t), `${t} must be there`);
     assert.ok(!active().includes("session_send"), "reading does not grant sending");
     // Strict delegate hides edit/write and restores its snapshot on the way out: nothing comes back.
-    const cmd = chat.session.extensionRunner.getCommand("mode")!;
-    const ctx = chat.session.extensionRunner.createCommandContext();
+    const cmd = piSession(chat).extensionRunner.getCommand("mode")!;
+    const ctx = piSession(chat).extensionRunner.createCommandContext();
     await cmd.handler("delegate", ctx);
     await cmd.handler("strict on", ctx);
     await cmd.handler("strict off", ctx);
     await cmd.handler("normal", ctx);
-    chat.session.setActiveToolsByName(["read", "bash", "edit", "agent_spawn"]);
+    piSession(chat).setActiveToolsByName(["read", "bash", "edit", "agent_spawn"]);
     for (const t of ["bash", "edit", "write", "agent_spawn"]) assert.ok(!active().includes(t), `${t} came back`);
-    assert.ok(!chat.session.getAllTools().some((t) => t.name === "bash"), "not even in the registry");
+    assert.ok(!piSession(chat).getAllTools().some((t) => t.name === "bash"), "not even in the registry");
   });
 
   test("a Default session is exactly as before: every tool, and no session tools", async () => {
     const chat = await acquireChat(makeSession(), true);
-    const active = chat.session.getActiveToolNames();
+    const active = piSession(chat).getActiveToolNames();
     for (const t of ["bash", "edit", "write", "agent_spawn", "web_search"]) assert.ok(active.includes(t), t);
     assert.ok(!active.some((t) => t.startsWith("session_")));
   });
@@ -192,11 +193,11 @@ describe("applying a pick (§chat.profiles/applying)", () => {
     assert.ok(first.disposed);
     assert.equal(entries(path).filter((e) => e.customType === PROFILE_ENTRY).length, 1);
     const again = await acquireChat(path, true);
-    assert.ok(!again.session.getActiveToolNames().includes("bash"));
+    assert.ok(!piSession(again).getActiveToolNames().includes("bash"));
     assert.equal((await getSessionSummary(path))?.profile?.id, "reviewer");
     // Back to Default: a new entry, newest wins.
     assert.deepEqual(await applyProfile(path, null), { ok: true });
-    assert.ok((await acquireChat(path, true)).session.getActiveToolNames().includes("bash"));
+    assert.ok(piSession(await acquireChat(path, true)).getActiveToolNames().includes("bash"));
     assert.equal((await getSessionSummary(path))?.profile, undefined);
     // A message on the branch fixes it.
     const withMsg = makeSession(profile("reviewer"));
@@ -311,7 +312,7 @@ describe("session_send between sessions (§chat.profiles/session-tools, /deliver
     const held = new Promise<void>((r) => (release = r));
     calls.set(bid, [() => held]);
     busyChat.acceptPrompt("long task");
-    await until(() => busyChat.session.isStreaming);
+    await until(() => piSession(busyChat).isStreaming);
     const { got: busyGot, client: busyClient } = sink();
     busyChat.attach(busyClient);
     // The captain sends to the mini overseer (which relays to `other` with hop 2), and to `busy`.
@@ -326,7 +327,7 @@ describe("session_send between sessions (§chat.profiles/session-tools, /deliver
     assert.deepEqual(row.fromSession, { sessionId: cid, title: "merge everything that's ready" });
     release();
     await until(() => entries(busy).some((e) => e.customType === SESSION_SENT_ENTRY));
-    for (const c of chats) await c.session.waitForIdle();
+    for (const c of chats) await piSession(c).waitForIdle();
 
     const markOf = (path: string) => {
       const es = entries(path);
@@ -367,7 +368,7 @@ describe("session_send between sessions (§chat.profiles/session-tools, /deliver
     const narrow = makeSession(profile("mini-overseer"));
     const [aid, eid] = [a, elsewhere].map(idOfPath) as [string, string];
     const chat = await acquireChat(a, true);
-    const tool = (name: string) => chat.session.agent.state.tools.find((t) => t.name === name)!;
+    const tool = (name: string) => piSession(chat).agent.state.tools.find((t) => t.name === name)!;
     const run = (params: Record<string, unknown>) =>
       tool("session_send")
         .execute("tc", params as never)
@@ -384,7 +385,7 @@ describe("session_send between sessions (§chat.profiles/session-tools, /deliver
     assert.deepEqual(limits.counts(), before, "a refusal takes nothing");
     // The mini overseer sees only its folder.
     const miniChat = await acquireChat(narrow, true);
-    const list = await miniChat.session.agent.state.tools.find((t) => t.name === "session_list")!.execute("tc", {} as never);
+    const list = await piSession(miniChat).agent.state.tools.find((t) => t.name === "session_list")!.execute("tc", {} as never);
     assert.ok(!(list.content[0] as { text: string }).text.includes(eid), "a session in another folder is not listed");
     assert.ok(auditLines().some((l) => l.sessionId === aid && l.outcome === "refused" && /Hop limit/.test(l.error)));
   });
@@ -401,7 +402,7 @@ describe("session_send between sessions (§chat.profiles/session-tools, /deliver
     calls.set(bid, [() => undefined]);
     ca.acceptPrompt("[wake_nudge n1] check the teams");
     await until(() => entries(b).some((e) => e.customType === SESSION_SENT_ENTRY));
-    await ca.session.waitForIdle();
+    await piSession(ca).waitForIdle();
     assert.deepEqual(ca.profileState!.limits!.counts().own, 1);
     assert.deepEqual(ca.profileState!.limits!.counts().turn, 0);
   });

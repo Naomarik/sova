@@ -103,7 +103,7 @@ export class ScriptedModel {
     return this.steps.length;
   }
 
-  /** Make `session` (pi's AgentSession, e.g. `chat.session`) run on this script. Idempotent per object.
+  /** Make `session` (pi's AgentSession, e.g. `piSession(chat)`, testing/handle.ts) run on this script. Idempotent per object.
       The session keeps the model it opened on when it has one (pi recorded it); otherwise it gets this one. */
   attach(session: unknown): this {
     const s = session as StubbedSession;

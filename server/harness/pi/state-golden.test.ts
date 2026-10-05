@@ -19,6 +19,7 @@ import { after, test } from "node:test";
 import type { ChatServerMessage } from "../../../shared/protocol";
 import { Canonicalizer, firstDifference } from "./testing/canonical-jsonl";
 import { ScriptedModel, scriptedModelsJson } from "./testing/scripted-model";
+import { piSession } from "./testing/handle";
 
 // Only the scripted model may answer: no provider key from the environment makes a real one available.
 for (const k of Object.keys(process.env)) if (/_API_KEY$|_AUTH_TOKEN$/.test(k)) delete process.env[k];
@@ -109,13 +110,13 @@ function headerOnly(): string {
 /** Open (or reuse) the held runtime on `path`, running on `model`. */
 async function open(path: string, model: ScriptedModel): Promise<Chat> {
   const chat = await acquireChat(path);
-  model.attach(chat.session);
+  model.attach(piSession(chat));
   return chat;
 }
 /** A turn the chat socket starts, run to its end. */
 async function turn(chat: Chat, text: string, opts?: Parameters<Chat["acceptPrompt"]>[4]): Promise<void> {
   await chat.acceptPrompt(text, undefined, opts ? "server" : "client", undefined, opts).turn;
-  await chat.session.waitForIdle();
+  await piSession(chat).waitForIdle();
 }
 
 /** A scenario's canonical numbering: its files share one id space. Hook notes and tool results are
@@ -153,7 +154,7 @@ test("G1: a 2-turn session rewound to its second input, reopened (sova-rewind; t
   assert.ok(got.some((m) => m.type === "rewound"), JSON.stringify(got.find((m) => m.type === "rewind_refused")));
   await disposeHeldChat(path, "golden");
   const reopened = await open(path, model);
-  assert.equal(reopened.session.sessionManager.getLeafId(), customs(path, "sova-rewind")[0].id, "the marker is the leaf on reopen");
+  assert.equal(piSession(reopened).sessionManager.getLeafId(), customs(path, "sova-rewind")[0].id, "the marker is the leaf on reopen");
   await disposeHeldChat(path, "golden");
   golden("G1-rewind", path);
 
@@ -211,7 +212,7 @@ test("G3: a topic batch delivered with one turn (sova-topic-delivered)", async (
   });
   assert.equal(started, "started");
   await until(() => entered);
-  await chat.session.waitForIdle();
+  await piSession(chat).waitForIdle();
   await disposeHeldChat(path, "golden");
   golden("G3-topic-delivered", path);
 });
@@ -252,7 +253,7 @@ test("G9: the Overseer answers an extension's select dialog (sova-overseer-dialo
   const [dialog] = chat.pendingDialogs();
   chat.answerDialog(dialog!.id, "Blue", "Blue", "ov-golden");
   await done;
-  await chat.session.waitForIdle();
+  await piSession(chat).waitForIdle();
   chat.detach(client);
   await disposeHeldChat(path, "golden");
   golden("G9-dialog-answer", path);
@@ -301,14 +302,14 @@ test("G5: a baton session: seed entries, operator moves with no flush, then a st
   await until(() => customs(c.path, "sova-baton-handoff").length === 3);
   const release = model.hold();
   says(chat, c.sessionId, bob.id, "first");
-  await until(() => chat.session.isStreaming);
+  await until(() => piSession(chat).isStreaming);
   says(chat, c.sessionId, bob.id, "second");
   says(chat, c.sessionId, bob.id, "third");
   await until(() => chat.queue.size === 2);
   await baton.takeBack(c.sessionId);
   release();
   await until(() => customs(c.path, "sova-baton-handoff").length === 4);
-  await chat.session.waitForIdle();
+  await piSession(chat).waitForIdle();
   await disposeHeldChat(c.path, "golden");
   golden("G5-baton", c.path, canon({ [bob.id]: "<BOB>", [org.id]: "<ORG>", [project.id]: "<PROJECT>" }));
 });
@@ -323,8 +324,8 @@ test("G6: record_decision from a scripted tool call (pi.appendEntry inside the t
   model.reply({ toolCall: { name: "record_decision", arguments: { area: "payroll dates", ownerArea: "none", statement: "Pay on the 1st.", quote: "the 1st" } } });
   says(chat, c.sessionId, kim.id, "we pay on the 1st");
   await until(() => customs(c.path, "sova-baton-decision").length === 1);
-  await until(() => !chat.session.isStreaming && model.calls.length === 2);
-  await chat.session.waitForIdle();
+  await until(() => !piSession(chat).isStreaming && model.calls.length === 2);
+  await piSession(chat).waitForIdle();
   assert.ok(got.some((m) => m.type === "append" && JSON.stringify(m).includes("Pay on the 1st.")), "the entry's row is broadcast (entry_appended)");
   chat.detach(client);
   await disposeHeldChat(c.path, "golden");
@@ -350,7 +351,7 @@ test("G7: the Overseer: a rule adopted by a click, carried by /clear, used by a 
   const { client } = sink();
   chat.handle(client, { type: "prompt", text: optionClick(card, "b")!, confirm: card.id } as never);
   await until(() => customs(first.path, RULE_ENTRY).length === 1);
-  await chat.session.waitForIdle();
+  await piSession(chat).waitForIdle();
   const ruleId = customs(first.path, RULE_ENTRY)[0].data.id as string;
 
   const cleared = await overseer.clearOverseer();
@@ -361,7 +362,7 @@ test("G7: the Overseer: a rule adopted by a click, carried by /clear, used by a 
   const revoked = await overseer.revokePermit(ruleId);
   assert.deepEqual(revoked, { ok: true });
   await until(() => customs(target, "sova-overseer-sent").length === 1);
-  await (await acquireChat(target)).session.waitForIdle();
+  await piSession(await acquireChat(target)).waitForIdle();
   await disposeAllChats();
   assert.equal(customs(first.path, GRANT_ENTRY).length + customs(cleared.path, REVOKE_ENTRY).length, 1);
   const c = canon();

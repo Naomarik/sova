@@ -8,6 +8,7 @@ import { join } from "node:path";
 import { after, describe, test } from "node:test";
 import type { SessionSummary, SovaConfirmItem } from "../shared/protocol";
 import type { OverseerToolHost } from "./overseer-tools";
+import { piSession } from "./harness/pi/testing/handle";
 
 const agentDir = mkdtempSync(join(tmpdir(), "sova-overseer-approvals-"));
 process.on("exit", () => rmSync(agentDir, { recursive: true, force: true }));
@@ -132,7 +133,7 @@ describe("/clear carries live rules; approvals lapse", () => {
   test("the new conversation holds each live rule, same id and origin, and nothing else", async () => {
     const old = await ensureOverseer();
     // Written as the server writes them: through the held runtime's session manager.
-    const sm = (await acquireChat(old.path)).session.sessionManager;
+    const sm = piSession(await acquireChat(old.path)).sessionManager;
     const add = (customType: string, data: unknown) => void sm.appendCustomEntry(customType, data);
     const base = { v: 1, card: "c_1", option: "b", label: "Always", createdAt: NOW };
     const sessions = [{ id: "a", title: "Session a" }];

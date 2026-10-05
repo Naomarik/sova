@@ -1,35 +1,13 @@
-// History surgery on pi (§app.harness/session-history): a rewind, a compaction and Stop's drain, over a pi
+// History surgery on pi (§app.harness/session-history): a rewind and a compaction, over a pi
 // AgentSession. PiHarnessSession.rewindTo/compact call these with the runtime's session of the moment; the
 // targets are narrow so tests can drive them with a fake. Every pi member is read at the call.
 import type { AgentSession, SessionManager } from "@earendil-works/pi-coding-agent";
 import type { CompactHooks, CompactOutcome, CompactRefusal, RewindHooks, RewindOutcome } from "../../../shared/harness";
 import { stripImageNotes } from "../../../shared/image-note";
-import type { ChatServerMessage } from "../../../shared/protocol";
 import { withUsageContext } from "../../../pi-config/extensions/llm-inflight/attribution.ts";
 import { REWIND } from "../state-kinds";
 import { historyOf } from "./reader";
 import { piSessionState } from "./state";
-
-/**
- * Stop: drain the queued steers/follow-ups, then abort — the TUI's Esc order
- * (restoreQueuedMessagesToEditor). abort() leaves the queue intact, so the next prompt would
- * send itself first and the stale steer right behind it. Nothing is written to the session file.
- */
-export async function drainQueueThenAbort(
-  session: Pick<AgentSession, "clearQueue" | "abort">,
-  broadcast: (msg: ChatServerMessage) => void,
-  /** Sova's own queue, when the chat has one: it drains BOTH its held items and the SDK's (it
-      calls `clearQueue()` itself), so Stop keeps meaning "nothing queued survives this". Absent
-      leaves the original SDK-only behaviour, which is what a bare session still gets. */
-  queue?: { drain(): Promise<{ steering: string[]; followUp: string[] }> },
-): Promise<void> {
-  // Awaited: the queue's own drain waits out a hand-off parked in an extension `input` handler,
-  // so Stop cannot clear "nothing", hand back no text, and then let that message be delivered
-  // after the user pressed Stop.
-  const { steering, followUp } = queue ? await queue.drain() : session.clearQueue();
-  if (steering.length || followUp.length) broadcast({ type: "queue_cleared", steering, followUp });
-  return session.abort();
-}
 
 /** The members of AgentSession a rewind uses (narrow so tests can drive it with a fake). */
 export interface RewindTarget {

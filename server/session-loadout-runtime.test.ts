@@ -9,6 +9,7 @@ import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSy
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
+import { piSession } from "./harness/pi/testing/handle";
 
 const agentDir = realpathSync(mkdtempSync(join(tmpdir(), "sova-loadout-runtime-")));
 process.on("exit", () => rmSync(agentDir, { recursive: true, force: true }));
@@ -69,8 +70,8 @@ const ok = <T extends { state: string }>(s: T) => {
 test("a switch writes the entry, rebuilds the runtime without the off rows, and the card still lists them", async () => {
   const path = makeSession();
   const before = await acquireChat(path);
-  assert.match(before.session.systemPrompt, /GLOBAL-RULES-MARKER/);
-  assert.match(before.session.systemPrompt, /beta-skill/);
+  assert.match(piSession(before).systemPrompt, /GLOBAL-RULES-MARKER/);
+  assert.match(piSession(before).systemPrompt, /beta-skill/);
   const first = ok(await getSessionSetup(path, { fresh: true }));
   assert.equal(first.toggleable, true);
   assert.ok(first.context.every((f) => !f.off) && first.skills.every((k) => !k.off));
@@ -81,10 +82,10 @@ test("a switch writes the entry, rebuilds the runtime without the off rows, and 
 
   const after = heldChat(path)!;
   assert.notEqual(after, before, "the runtime was rebuilt");
-  assert.doesNotMatch(after.session.systemPrompt, /GLOBAL-RULES-MARKER/);
-  assert.match(after.session.systemPrompt, /LOCAL-RULES-MARKER/);
-  assert.doesNotMatch(after.session.systemPrompt, /beta-skill/);
-  assert.match(after.session.systemPrompt, /alpha-skill/);
+  assert.doesNotMatch(piSession(after).systemPrompt, /GLOBAL-RULES-MARKER/);
+  assert.match(piSession(after).systemPrompt, /LOCAL-RULES-MARKER/);
+  assert.doesNotMatch(piSession(after).systemPrompt, /beta-skill/);
+  assert.match(piSession(after).systemPrompt, /alpha-skill/);
 
   const card = ok((r as { setup: Parameters<typeof ok>[0] }).setup as Awaited<ReturnType<typeof getSessionSetup>>);
   assert.deepEqual(card.context.map((f) => [f.path, !!f.off]), [[GLOBAL, true], [LOCAL, false]]);
@@ -102,14 +103,14 @@ test("a switch writes the entry, rebuilds the runtime without the off rows, and 
   await disposeAllChats();
   clearSetupCache();
   const reopened = await acquireChat(path);
-  assert.doesNotMatch(reopened.session.systemPrompt, /GLOBAL-RULES-MARKER/);
-  assert.doesNotMatch(reopened.session.systemPrompt, /beta-skill/);
+  assert.doesNotMatch(piSession(reopened).systemPrompt, /GLOBAL-RULES-MARKER/);
+  assert.doesNotMatch(piSession(reopened).systemPrompt, /beta-skill/);
 
   // Back on: a later entry with nothing off brings both back.
   const back = await applyLoadout(path, { offContext: [], offSkills: [] });
   assert.equal(back.ok, true);
-  assert.match(heldChat(path)!.session.systemPrompt, /GLOBAL-RULES-MARKER/);
-  assert.match(heldChat(path)!.session.systemPrompt, /beta-skill/);
+  assert.match(piSession(heldChat(path)!).systemPrompt, /GLOBAL-RULES-MARKER/);
+  assert.match(piSession(heldChat(path)!).systemPrompt, /beta-skill/);
 });
 
 test("an unchanged set writes nothing and keeps the runtime", async () => {

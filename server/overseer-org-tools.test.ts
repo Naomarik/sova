@@ -12,6 +12,7 @@ import { basename, join, resolve } from "node:path";
 import { after, describe, test } from "node:test";
 import type { SovaConfirmItem } from "../shared/protocol";
 import type { OverseerToolHost } from "./overseer-tools";
+import { piSession } from "./harness/pi/testing/handle";
 
 const root = realpathSync(mkdtempSync(join(tmpdir(), "sova-oorg-")));
 // A hosted runtime can still write here after after() ran (pi's catalogs, usage cache): exit is last.
@@ -106,7 +107,7 @@ const usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0
 const stubbedSet = new WeakSet<object>();
 async function stubbed(path: string) {
   const chat = await acquireChat(path);
-  const s = chat.session as unknown as { _modelRuntime: { hasConfiguredAuth(p: string): boolean }; agent: { state: { model: unknown }; getApiKey: unknown; streamFunction: unknown } };
+  const s = piSession(chat) as unknown as { _modelRuntime: { hasConfiguredAuth(p: string): boolean }; agent: { state: { model: unknown }; getApiKey: unknown; streamFunction: unknown } };
   if (stubbedSet.has(s)) return chat;
   stubbedSet.add(s);
   s._modelRuntime.hasConfiguredAuth = () => true;
@@ -429,7 +430,7 @@ describe("the organization tools (§app.overseer/org-tools)", async () => {
     const sent = await call("sova_project_overseer", { op: "message", org: org.id, project: project.id, text: "Please check the backups." });
     assert.ok(sent.ok, sent.text);
     assert.match(sent.text, /Sent to \[Ledger overseer\]/);
-    await (await acquireChat(path)).session.waitForIdle();
+    await piSession(await acquireChat(path)).waitForIdle();
     await until(() => readFileSync(path, "utf8").includes(OVERSEER_SENT_ENTRY));
     const lines = readFileSync(path, "utf8").trim().split("\n").map((l) => JSON.parse(l));
     const marker = lines.find((l) => l.customType === OVERSEER_SENT_ENTRY);
@@ -473,7 +474,7 @@ describe("the organization tools (§app.overseer/org-tools)", async () => {
     // The page's own Start Coding Session still needs an item.
     const page = await app.request(`/api/projects/${project.id}/overseer/items/code`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ prompt: "x", title: "y" }) });
     assert.equal(page.status, 400);
-    await (await acquireChat(row.path!)).session.waitForIdle();
+    await piSession(await acquireChat(row.path!)).waitForIdle();
   });
 
   test("marker: no contact value, link token or /h/ URL in any result, refusal or action-log line; the About text only in its one read", () => {

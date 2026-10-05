@@ -157,7 +157,10 @@ export const PI_QUIRKS: readonly PiQuirk[] = [
     kind: "monkey-patch",
     relies: "agent.streamFunction is read at each provider request, so one assigned after construction (the slicing fetch, docs/bun-quirks.md fetch-read-size) answers the next turn.",
     pi: ["Agent.streamFunction"],
-    where: [{ file: "server/runtime-quirks.ts", symbol: "useSlicedProviderReads" }],
+    where: [
+      { file: "server/runtime-quirks.ts", symbol: "useSlicedProviderReads" },
+      { file: "server/harness/pi/host.ts", symbol: "PiChatHost.useSlicedProviderReads" },
+    ],
     canary: "P8 stream-function: agent.streamFunction is read at each request, so one assigned after construction answers the next turn",
     retireWhen: "the fetch-read-size Bun quirk retires (docs/bun-quirks.md), or pi takes a fetch option",
   },

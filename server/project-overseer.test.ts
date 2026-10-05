@@ -8,6 +8,7 @@ import { basename, dirname, join, resolve } from "node:path";
 import { after, describe, test } from "node:test";
 import { PROJECT_OVERSEER_ENTRY, type ProjectOverseerSettings } from "../shared/project-overseer";
 import { stateView } from "./harness/state-view";
+import { piRuntime, piSession } from "./harness/pi/testing/handle";
 
 const root = realpathSync(mkdtempSync(join(tmpdir(), "sova-po-")));
 // A hosted runtime can still write here after after() ran (pi's catalogs, usage cache): exit is last.
@@ -83,9 +84,9 @@ describe("a project overseer", async () => {
     assert.equal(chat.overseer, false, "not the Overseer");
     // A placed project: the org part's reads (no statechart act names them) come with its tools.
     const want = [...new Set([...Object.keys(TOOL_NEEDS), "sova_decisions", "sova_offer", "sova_send_status", ...PO_BUILTINS])].sort();
-    assert.deepEqual([...chat.session.getActiveToolNames()].sort(), want);
-    assert.deepEqual(chat.session.getAllTools().map((t) => t.name).sort(), want, "no bash, edit, write or extension tool");
-    const loaded = chat.runtime.services.resourceLoader.getExtensions().extensions.map((e) => e.path);
+    assert.deepEqual([...piSession(chat).getActiveToolNames()].sort(), want);
+    assert.deepEqual(piSession(chat).getAllTools().map((t) => t.name).sort(), want, "no bash, edit, write or extension tool");
+    const loaded = piRuntime(chat).services.resourceLoader.getExtensions().extensions.map((e) => e.path);
     assert.deepEqual(loaded, ["<inline:sova-project-overseer>"]);
     await assert.rejects(() => chat.switchMode({ mode: "delegate" } as never), ModeRefusedError);
   });
@@ -180,7 +181,7 @@ describe("its reach: the project root only", async () => {
   const run = async (name: string, params: Record<string, unknown>) => {
     const chat = await acquireChat((await po.ensureProjectOverseer(project.id)).path);
     try {
-      return text((await chat.session.getToolDefinition(name)!.execute("tc", params as never, undefined, undefined, undefined as never)) as never);
+      return text((await piSession(chat).getToolDefinition(name)!.execute("tc", params as never, undefined, undefined, undefined as never)) as never);
     } catch (err) {
       return `ERROR: ${(err as Error).message}`;
     }
@@ -196,10 +197,10 @@ describe("its reach: the project root only", async () => {
 
   test("only the project's own context files load, never the host's", async () => {
     const chat = await acquireChat((await po.ensureProjectOverseer(project.id)).path);
-    const files = chat.runtime.services.resourceLoader.getAgentsFiles().agentsFiles;
+    const files = piRuntime(chat).services.resourceLoader.getAgentsFiles().agentsFiles;
     assert.deepEqual(files.map((f) => f.path), [join(projRoot, "AGENTS.md")]);
-    assert.doesNotMatch(chat.session.systemPrompt, /HOST-/);
-    assert.match(chat.session.systemPrompt, /PROJECT context/);
+    assert.doesNotMatch(piSession(chat).systemPrompt, /HOST-/);
+    assert.match(piSession(chat).systemPrompt, /PROJECT context/);
   });
 
   test("a project root may not be, hold or sit inside an org's workspace, nor sit inside Sova's state", async () => {

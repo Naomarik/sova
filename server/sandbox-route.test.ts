@@ -11,6 +11,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { after, test } from "node:test";
 import type { ChatServerMessage } from "../shared/protocol";
+import { piSession } from "./harness/pi/testing/handle";
 
 const absent = process.env.PI_SANDBOX_ROUTE_ABSENT === "1";
 const here = dirname(fileURLToPath(import.meta.url));
@@ -73,7 +74,7 @@ if (absent) {
     // Whatever this machine can enforce (no policy file here: unavailable), it is on and says so.
     assert.ok(["full", "partial", "unavailable"].includes(body.sandbox.enforcement));
     assert.ok(sent.some((m) => m.type === "sandbox" && m.on));
-    const entries = chat.session.sessionManager.getBranch().filter((e) => e.type === "custom" && e.customType === "sandbox");
+    const entries = piSession(chat).sessionManager.getBranch().filter((e) => e.type === "custom" && e.customType === "sandbox");
     assert.equal(entries.length, 1);
     // No transcript row for it: nothing was appended to the pane.
     assert.ok(!sent.some((m) => m.type === "append"));
@@ -88,7 +89,7 @@ if (absent) {
 
   test("three states: { state } sets Off, Subagents only and On, each an entry of its own, and every client hears it", async () => {
     const { path, chat, sent } = await openChat();
-    const entries = () => chat.session.sessionManager.getBranch().filter((e) => e.type === "custom" && e.customType === "sandbox").map((e) => (e as { data: Record<string, unknown> }).data);
+    const entries = () => piSession(chat).sessionManager.getBranch().filter((e) => e.type === "custom" && e.customType === "sandbox").map((e) => (e as { data: Record<string, unknown> }).data);
     sent.length = 0;
     const off = (await (await post(path, { state: "off", on: false })).json()) as { outcome: string; sandbox: { on: boolean; state: string; status: string } };
     assert.equal(off.outcome, "command");

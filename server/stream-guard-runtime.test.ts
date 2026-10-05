@@ -10,6 +10,7 @@ import { after, before, describe, test } from "node:test";
 import { Hono } from "hono";
 import { BATON_SENT_ENTRY } from "../shared/baton";
 import { startStreamStub, stubModelsJson } from "./stream-stub";
+import { piSession } from "./harness/pi/testing/handle";
 
 // Only the stub may answer: no provider key from the environment makes a real model available.
 for (const k of Object.keys(process.env)) if (/_API_KEY$|_AUTH_TOKEN$/.test(k)) delete process.env[k];
@@ -84,7 +85,7 @@ async function liveness<T>(fn: () => Promise<T>): Promise<{ value: T; maxDelayMs
 }
 
 const lastAssistant = (chat: Awaited<ReturnType<typeof acquireChat>>) =>
-  [...chat.session.sessionManager.getBranch()].reverse().find((e: any) => e.type === "message" && e.message?.role === "assistant") as any;
+  [...piSession(chat).sessionManager.getBranch()].reverse().find((e: any) => e.type === "message" && e.message?.role === "assistant") as any;
 
 /** Numbers for the report, printed once. */
 const evidence: Record<string, unknown> = {};
@@ -277,7 +278,7 @@ describe("the stream guard against a runaway stream (real provider path, local s
       assert.equal(row().wrapup?.state, "running");
       // What index.ts's shutdown does: mark, abort every streaming turn, dispose every runtime.
       recovery.markShutdown();
-      (await acquireChat(c.path)).session.abort().catch(() => {});
+      piSession(await acquireChat(c.path)).abort().catch(() => {});
       await disposeAllChats();
       const info = await settledRow();
       recovery.clearShutdownForTest();
@@ -293,7 +294,7 @@ describe("the stream guard against a runaway stream (real provider path, local s
       assert.equal(((await again.json()) as { error: string }).error, "The wrap-up is already running.");
 
       // Stopped with no shutdown (Stop, Take back): failed too, never done.
-      await (await acquireChat(c.path)).session.abort();
+      await piSession(await acquireChat(c.path)).abort();
       const w = await settledRow();
       assert.equal(w?.state, "failed");
       assert.notEqual(w?.error, "The server shut down during the wrap-up.");
@@ -306,7 +307,7 @@ describe("the stream guard against a runaway stream (real provider path, local s
       assert.equal(res.status, 200);
       for (let i = 0; i < 400 && stub.stats.startedAt === null; i++) await new Promise((r) => setTimeout(r, 10));
       recovery.markShutdown();
-      await (await acquireChat(c.path)).session.abort();
+      await piSession(await acquireChat(c.path)).abort();
       const w = await settledRow();
       recovery.clearShutdownForTest();
       assert.equal(w?.state, "failed");

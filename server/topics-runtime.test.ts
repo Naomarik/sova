@@ -11,6 +11,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, afterEach, describe, test } from "node:test";
 import type { ChatServerMessage } from "../shared/protocol";
+import { piSession } from "./harness/pi/testing/handle";
 
 const agentDir = realpathSync(mkdtempSync(join(tmpdir(), "sova-topics-runtime-")));
 process.on("exit", () => rmSync(agentDir, { recursive: true, force: true }));
@@ -87,7 +88,7 @@ type StubReply = { toolCall: { name: string; arguments: Record<string, unknown> 
 /** Per session id: its model calls, in order (a hook may hold the reply back). Empty: plain "ok". */
 const calls = new Map<string, Array<() => Promise<StubReply> | StubReply>>();
 function fakeRuns(chat: Chat): void {
-  const session = chat.session as unknown as {
+  const session = piSession(chat) as unknown as {
     _modelRuntime: { hasConfiguredAuth(p: string): boolean };
     agent: { state: { model: unknown }; getApiKey: unknown; streamFunction: unknown };
     sessionManager: { getSessionId(): string };
@@ -128,7 +129,7 @@ async function turn(chat: Chat, path: string, replies: Array<() => Promise<StubR
   calls.set(idOfPath(path), [...replies, () => undefined]);
   const { client } = sink();
   await new Promise<void>((done) => {
-    const off = chat.session.subscribe((e) => {
+    const off = piSession(chat).subscribe((e) => {
       if (e.type !== "agent_settled") return;
       off();
       done();
@@ -186,7 +187,7 @@ async function ask(cap: Chat, capPath: string, targetPath: string, text: string)
   const r = toolResults(capPath, "session_send")[sends]!;
   assert.equal(r.isError, false, r.text);
   await until(() => userTexts(targetPath).length > before);
-  await (await acquireChat(targetPath, true)).session.waitForIdle();
+  await piSession(await acquireChat(targetPath, true)).waitForIdle();
 }
 
 /** A captain with an open topic, and an ordinary owner session the captain asked on it (so the
@@ -210,11 +211,11 @@ describe("the tools (§chat.topics/open, §chat.topics/push)", () => {
     const plain = await held(makeSession());
     const reader = await held(makeSession(READER));
     const cap = await held(makeSession(CAPTAIN));
-    for (const c of [plain, reader, cap]) assert.ok(c.session.getActiveToolNames().includes("queue_push"));
-    assert.ok(!plain.session.getActiveToolNames().includes("queue_open"));
-    assert.ok(!reader.session.getActiveToolNames().includes("queue_open"), "reading does not open topics");
-    assert.ok(cap.session.getActiveToolNames().includes("queue_open"));
-    const tool = plain.session.getAllTools().find((t) => t.name === "queue_push")!;
+    for (const c of [plain, reader, cap]) assert.ok(piSession(c).getActiveToolNames().includes("queue_push"));
+    assert.ok(!piSession(plain).getActiveToolNames().includes("queue_open"));
+    assert.ok(!piSession(reader).getActiveToolNames().includes("queue_open"), "reading does not open topics");
+    assert.ok(piSession(cap).getActiveToolNames().includes("queue_open"));
+    const tool = piSession(plain).getAllTools().find((t) => t.name === "queue_push")!;
     assert.equal(tool.description, QUEUE_PUSH_DESCRIPTION);
     assert.equal(QUEUE_PUSH_DESCRIPTION, "Push a short note to a topic. Use only when told which topic; never guess one.");
   });
@@ -320,7 +321,7 @@ describe("invitations: only a session its receiver asked may push", () => {
     ]);
     try {
       await new Promise<void>((done) => {
-        const off = cap.session.subscribe((e) => {
+        const off = piSession(cap).subscribe((e) => {
           if (e.type === "agent_settled") (off(), done());
         });
         cap.handle(sink().client, { type: "prompt", text: "ask z" });
@@ -429,7 +430,7 @@ describe("delivery (§chat.topics/delivery, §chat.topics/row)", () => {
     await turn(own, ownPath, [() => push(name, "READY feat/x 0123456"), () => push(name, "also: docs done")]);
     await until(() => batchesIn(capPath).length === 1);
     const cap = (await acquireChat(capPath, true)) as Chat;
-    await cap.session.waitForIdle();
+    await piSession(cap).waitForIdle();
     await until(() => entries(capPath).some((e) => e.customType === TOPIC_DELIVERED_ENTRY));
     const text = batchesIn(capPath)[0]!;
     const b = parseTopicBatch(text)!;
@@ -462,7 +463,7 @@ describe("delivery (§chat.topics/delivery, §chat.topics/row)", () => {
     calls.set(cid, [() => hold, () => undefined]);
     const { client } = sink();
     cap.handle(client, { type: "prompt", text: "long merge" });
-    await until(() => cap.session.isStreaming);
+    await until(() => piSession(cap).isStreaming);
     await turn(own, ownPath, [() => push(name, "READY feat/x 0123456")]);
     await sleep(200); // past the debounce: the drain found it busy
     assert.ok(running.log.some((l) => l.topic === name && l.outcome === "busy"), JSON.stringify(running.log));
@@ -470,7 +471,7 @@ describe("delivery (§chat.topics/delivery, §chat.topics/row)", () => {
     assert.equal(cap.queue.size, 0, "nothing in Sova's web queue");
     release();
     await until(() => batchesIn(capPath).length === 1);
-    await cap.session.waitForIdle();
+    await piSession(cap).waitForIdle();
     await sleep(150);
     assert.equal(batchesIn(capPath).length, 1, "exactly one batch");
     const texts = userTexts(capPath);
@@ -486,14 +487,14 @@ describe("delivery (§chat.topics/delivery, §chat.topics/row)", () => {
     calls.set(cid, [() => hold, () => undefined, () => undefined, () => undefined]);
     const { client } = sink();
     cap.handle(client, { type: "prompt", text: "first" });
-    await until(() => cap.session.isStreaming);
+    await until(() => piSession(cap).isStreaming);
     cap.handle(client, { type: "prompt", text: "typed while busy" });
     await until(() => cap.queue.size === 1);
     await turn(own, ownPath, [() => push(name, "NOT READY: docs")]);
     await sleep(120);
     release();
     await until(() => batchesIn(capPath).length === 1, 6000);
-    await cap.session.waitForIdle();
+    await piSession(cap).waitForIdle();
     const texts = userTexts(capPath);
     const at = (t: string) => texts.indexOf(t);
     assert.ok(at("first") < at("typed while busy"));
@@ -576,17 +577,17 @@ describe("delivery (§chat.topics/delivery, §chat.topics/row)", () => {
 
   test("a batch whose hand-over throws synchronously drops its mark and keeps the notes", async () => {
     const { capPath, cap, name } = await pair();
-    const real = cap.session.prompt.bind(cap.session);
+    const real = piSession(cap).prompt.bind(piSession(cap));
     const marks = () => (cap as unknown as { topicMarks: unknown[] }).topicMarks.length;
     topicStore().push(name, { sessionId: "x", title: "x" }, "READY feat/x 0123456");
     running = delivery();
-    (cap.session as unknown as { prompt: () => Promise<void> }).prompt = () => {
+    (piSession(cap) as unknown as { prompt: () => Promise<void> }).prompt = () => {
       throw new Error("sync refusal");
     };
     assert.equal(await running.drain(name), "refused: sync refusal");
     assert.equal(marks(), 0, "no orphaned mark: gone() ran on the failure path");
     assert.equal(topicStore().pending(name).length, 1, "stays undelivered");
-    (cap.session as unknown as { prompt: typeof real }).prompt = real;
+    (piSession(cap) as unknown as { prompt: typeof real }).prompt = real;
     assert.equal(await running.drain(name), "started", "not stuck in flight: tried again");
     await until(() => batchesIn(capPath).length === 1);
   });
@@ -595,7 +596,7 @@ describe("delivery (§chat.topics/delivery, §chat.topics/row)", () => {
     const { capPath, cap, name } = await pair();
     topicStore().push(name, { sessionId: "x", title: "x" }, "READY feat/x 0123456");
     running = delivery();
-    (cap.session as unknown as { prompt: () => Promise<void> }).prompt = async () => {
+    (piSession(cap) as unknown as { prompt: () => Promise<void> }).prompt = async () => {
       throw new Error("provider down");
     };
     assert.equal(await running.drain(name), "started");
@@ -605,18 +606,18 @@ describe("delivery (§chat.topics/delivery, §chat.topics/row)", () => {
   });
   test("a batch whose prompt resolves without its message entering (an input handler took it) isn't stuck in flight", async () => {
     const { capPath, cap, name } = await pair();
-    const real = cap.session.prompt.bind(cap.session);
+    const real = piSession(cap).prompt.bind(piSession(cap));
     const marks = () => (cap as unknown as { topicMarks: unknown[] }).topicMarks.length;
     topicStore().push(name, { sessionId: "x", title: "x" }, "READY feat/x 0123456");
     running = delivery();
     // What the SDK does when an input handler returns "handled": resolves, no events, no run.
-    (cap.session as unknown as { prompt: () => Promise<void> }).prompt = async () => {};
+    (piSession(cap) as unknown as { prompt: () => Promise<void> }).prompt = async () => {};
     assert.equal(await running.drain(name), "started");
     await sleep(20);
     assert.equal(marks(), 0, "the mark is dropped");
     assert.equal(topicStore().pending(name).length, 1, "stays undelivered");
     assert.equal(batchesIn(capPath).length, 0);
-    (cap.session as unknown as { prompt: typeof real }).prompt = real;
+    (piSession(cap) as unknown as { prompt: typeof real }).prompt = real;
     assert.equal(await running.drain(name), "started", "not stuck in flight: tried again");
     await until(() => batchesIn(capPath).length === 1);
     await until(() => topicStore().pending(name).length === 0);

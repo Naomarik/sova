@@ -34,6 +34,7 @@ import type { ChatClientMessage } from "../../../shared/protocol";
 import { Canonicalizer, firstDifference } from "./testing/canonical-jsonl";
 import { compactFixture } from "./testing/compact-fixture-ext";
 import { SCRIPTED_MODEL, ScriptedModel, scriptedModelsJson } from "./testing/scripted-model";
+import { piSession } from "./testing/handle";
 
 for (const k of Object.keys(process.env)) if (/_API_KEY$|_AUTH_TOKEN$/.test(k)) delete process.env[k];
 const REPO = resolve(import.meta.dirname, "../../..");
@@ -123,9 +124,9 @@ async function ticks(n = 5): Promise<void> {
 }
 /** Wait until the chat is idle with nothing queued anywhere, then let the deferred work run. */
 async function idle(chat: Chat): Promise<void> {
-  const quiet = () => !chat.turnStarting && !chat.session.isStreaming && !chat.isCompacting() && chat.queue.size === 0 && !chat.session.agent.hasQueuedMessages();
+  const quiet = () => !chat.turnStarting && !piSession(chat).isStreaming && !chat.isCompacting() && chat.queue.size === 0 && !piSession(chat).agent.hasQueuedMessages();
   await until(quiet, "idle");
-  await chat.session.waitForIdle();
+  await piSession(chat).waitForIdle();
   await ticks();
   await until(quiet, "idle");
 }
@@ -207,7 +208,7 @@ class Trace {
   /** Record every call into this pi session and every entry it appends, from now on (late-bound,
       the way the chat's own code reaches it: by property, at call time). Idempotent per session. */
   watch(chat: Chat): void {
-    const s = chat.session as unknown as Sdk;
+    const s = piSession(chat) as unknown as Sdk;
     if (this.watched.has(s)) return;
     this.watched.add(s);
     const wrap = (obj: Record<string, (...a: unknown[]) => unknown>, name: string, label = name) => {
@@ -272,7 +273,7 @@ function golden(name: string, paths: string[], trace: Trace, literals: Record<st
 /** Open (or reuse) the held runtime on `path`, on `model`, watched by `trace`. */
 async function open(path: string, model: ScriptedModel, trace: Trace): Promise<Chat> {
   const chat = await acquireChat(path);
-  model.attach(chat.session);
+  model.attach(piSession(chat));
   trace.watch(chat);
   return chat;
 }
@@ -403,7 +404,7 @@ test("S4: Stop with a steer and a follow-up queued: queue_cleared, clearQueue th
   send(chat, trace, b, "B", { type: "prompt", text: "follow one", clientId: "f1" });
   await until(() => trace.has('sdk steer ["steer one"'), "the steer's hand-off");
   send(chat, trace, b, "B", { type: "abort" });
-  await until(() => !chat.session.isStreaming, "the run to stop");
+  await until(() => !piSession(chat).isStreaming, "the run to stop");
   release();
   await idle(chat);
   trace.got("model calls", model.calls.map((c) => ({ n: c.n, aborted: c.aborted })));
@@ -430,7 +431,7 @@ test("S5: rewind to the second input, then reopen: navigate, flush, marker; the 
   await disposeHeldChat(path, "golden");
   chat = await open(path, model, trace);
   ({ a, b } = attachBoth(chat, trace));
-  trace.got("leaf", chat.session.sessionManager.getLeafId());
+  trace.got("leaf", piSession(chat).sessionManager.getLeafId());
   chat.detach(a);
   chat.detach(b);
   await disposeHeldChat(path, "golden");
@@ -518,7 +519,7 @@ test("S9: a prompt made inside agent_settled is deferred into the previous run; 
   const { a, b } = attachBoth(chat, trace);
   let fired = false;
   // After Sova's own listeners (subscribed at bind), as a later subscriber is.
-  const off = chat.session.subscribe((event) => {
+  const off = piSession(chat).subscribe((event) => {
     if (event.type !== "agent_settled" || fired) return;
     fired = true;
     send(chat, trace, b, "B", { type: "prompt", text: "in the settle", clientId: "c2" });

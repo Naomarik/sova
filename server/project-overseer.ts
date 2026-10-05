@@ -257,7 +257,7 @@ export async function clearProjectOverseer(projectId: string): Promise<ProjectOv
   const oldPath = st ? await pathOfId(st.current) : null;
   if (oldPath) {
     const chat = heldChat(oldPath);
-    if (chat?.harness.isRunning()) await drainQueueThenAbort({ clearQueue: () => chat.harness.queue.clear(), abort: () => chat.harness.abort() }, (m) => chat.broadcast(m), chat.queue).catch(() => {});
+    if (chat?.harness.isRunning()) await drainQueueThenAbort(chat.harness, (m) => chat.broadcast(m), chat.queue).catch(() => {});
     await disposeHeldChat(oldPath, "The project overseer was cleared. Opening the new conversation.");
   }
   const rt = rtOf(projectId);

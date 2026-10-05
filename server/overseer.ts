@@ -242,7 +242,7 @@ export async function clearOverseer(): Promise<OverseerInfo> {
   const carried = old && st ? carriedRules(old.branch, old.all, st.current) : [];
   if (oldPath) {
     const chat = heldChat(oldPath);
-    if (chat?.harness.isRunning()) await drainQueueThenAbort({ clearQueue: () => chat.harness.queue.clear(), abort: () => chat.harness.abort() }, (m) => chat.broadcast(m), chat.queue).catch(() => {});
+    if (chat?.harness.isRunning()) await drainQueueThenAbort(chat.harness, (m) => chat.broadcast(m), chat.queue).catch(() => {});
     await disposeHeldChat(oldPath, "The Overseer was cleared. Opening the new conversation.");
   }
   limits.reset();

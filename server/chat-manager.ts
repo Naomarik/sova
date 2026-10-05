@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { runLedger } from "./auto-resume";
 import { closeSync, existsSync, openSync, readSync } from "node:fs";
-import type { AgentSession, AgentSessionRuntime, SessionManager } from "@earendil-works/pi-coding-agent";
 import { LOGIN_UNCHANGED } from "../shared/protocol";
 import { type BatonSentData, OPERATOR } from "../shared/baton";
 import type { ChatClientMessage, ChatModeResult, ChatServerMessage, V1EventFrame, V2EventFrame, ModeApplies, ModeInfo, OverseerDialogAnswerData, OverseerSentMarkerData, QueueItem, RegenerateRefusal, SandboxApplyResult, SandboxInfo, SlashCommand, TranscriptItem, WorkerInfo } from "../shared/protocol";
@@ -28,19 +27,18 @@ import { chatClaudeLogin, claudeLoginAfterHello, claudeLoginMessage, isClaudeLog
 import { rowsOf, rowsOfEntry } from "./transcript";
 import { onWire, withRows } from "./wire-rows";
 import type { CompactOutcome, DialogBridge, HarnessEvent, HarnessSession, HEntry, ImageInput, SessionState, SessionStateWriter, StateKind, StateView } from "../shared/harness";
-import { historyOf, storedAsString } from "./harness/pi/reader";
+import { historyOf, lineHeader, storedAsString } from "./harness/pi/reader";
 import { extensionFlagValues, getModelRuntime, openPiSession, type OpenFlags, type OpenRead, type PiBuild, type PiModelRuntime, warmClaudeCodeProvider as warmPiProvider } from "./harness/pi/open";
 import type { PiLoaderOptions, PiToolDefinition } from "./harness/pi/extension-types";
-import { bindPiExtensions } from "./harness/pi/ui-bridge";
+import { PiChatHost } from "./harness/pi/host";
 import { contextOfBranch } from "./harness/pi/usage";
 import { extensionEntries } from "./harness/pi/state";
-import { isAlreadyProcessing, PiHarnessSession } from "./harness/pi/session";
-import { drainQueueThenAbort, isCompactionInProgress } from "./harness/pi/history-ops";
+import { isAlreadyProcessing } from "./harness/pi/session";
+import { isCompactionInProgress } from "./harness/pi/history-ops";
 import { BATON_SENT, FANOUT_MEMBER, LOADOUT, MODE, OVERSEER, OVERSEER_DIALOG_ANSWER, OVERSEER_SENT, PROFILE, SESSION_SENT, SUBAGENT_PROFILE, TOPIC_DELIVERED } from "./harness/state-kinds";
 import { cutTail, type HistoryPart, pullFields } from "./tail-hello";
 import { isOverseerId } from "./overseer-store";
 import { attachStreamGuard, capsFor, type StreamTrip } from "./stream-guard";
-import { useSlicedProviderReads } from "./runtime-quirks";
 import { targetOfCwd } from "./targets";
 import { sovaToken } from "./auth";
 import { ForeignWriteGuard, markOwned, markOwnedStat, recentForeignWriteAgeSec } from "./write-guard";
@@ -210,8 +208,8 @@ function storedCwd(path: string): string | null {
     const buf = Buffer.alloc(8192);
     const read = readSync(fd, buf, 0, buf.length, 0);
     const firstLine = buf.subarray(0, read).toString("utf8").split("\n", 1)[0] ?? "";
-    const header = JSON.parse(firstLine);
-    return header?.type === "session" && typeof header.cwd === "string" && header.cwd ? header.cwd : null;
+    const cwd = lineHeader(firstLine)?.cwd;
+    return typeof cwd === "string" && cwd ? cwd : null;
   } catch {
     return null;
   } finally {
@@ -314,8 +312,6 @@ export function assertNotLive(path: string): void {
   }
 }
 
-type SdkImage = NonNullable<Parameters<AgentSession["steer"]>[1]>[number];
-
 const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
 const MIME_RE = /^image\/[\w.+-]+$/;
 const BASE64_RE = /^[A-Za-z0-9+/]*={0,2}$/;
@@ -325,11 +321,11 @@ const BASE64_RE = /^[A-Za-z0-9+/]*={0,2}$/;
  * (the stored/SDK shape in 0.86.0, pi-ai types.d.ts:256; docs' `source:{type:"base64"}` wrapper is
  * not what the types take).
  */
-function parseImages(raw: unknown): SdkImage[] | undefined {
+function parseImages(raw: unknown): ImageInput[] | undefined {
   if (raw === undefined || raw === null) return undefined;
   if (!Array.isArray(raw)) throw new Error("images must be an array of {data, mimeType}");
   let total = 0;
-  const out: SdkImage[] = [];
+  const out: ImageInput[] = [];
   raw.forEach((img, i) => {
     const data = img?.data;
     const mimeType = img?.mimeType;
@@ -346,8 +342,27 @@ function parseImages(raw: unknown): SdkImage[] | undefined {
   return out.length ? out : undefined;
 }
 
-/** Stop's drain-then-abort, for the special kinds that stop a chat themselves (harness/pi/history-ops.ts). */
-export { drainQueueThenAbort };
+/**
+ * Stop: drain the queued steers/follow-ups, then abort — the TUI's Esc order
+ * (restoreQueuedMessagesToEditor). abort() leaves the queue intact, so the next prompt would
+ * send itself first and the stale steer right behind it. Nothing is written to the session file.
+ * The special kinds that stop a chat themselves call it too.
+ */
+export async function drainQueueThenAbort(
+  session: Pick<HarnessSession, "queue" | "abort">,
+  broadcast: (msg: ChatServerMessage) => void,
+  /** Sova's own queue, when the chat has one: it drains BOTH its held items and the SDK's (it
+      clears the session's queue itself), so Stop keeps meaning "nothing queued survives this".
+      Absent leaves the original SDK-only behaviour, which is what a bare session still gets. */
+  queue?: { drain(): Promise<{ steering: string[]; followUp: string[] }> },
+): Promise<void> {
+  // Awaited: the queue's own drain waits out a hand-off parked in an extension `input` handler,
+  // so Stop cannot clear "nothing", hand back no text, and then let that message be delivered
+  // after the user pressed Stop.
+  const { steering, followUp } = queue ? await queue.drain() : session.queue.clear();
+  if (steering.length || followUp.length) broadcast({ type: "queue_cleared", steering, followUp });
+  return session.abort();
+}
 
 /**
  * customType of the invisible entry a rewind appends. navigateTree({summarize:false}) only moves
@@ -450,7 +465,7 @@ export interface SpecialLoadout {
       refusal the client is told. Absent: sent as usual, unattributed. `undo` puts back what the
       kind recorded for it when the runtime then refuses the message. `text` and `images`, when
       given, are what is sent instead (a baton session's attached images, inline). */
-  clientSend?(path: string, msg: { images: number; text: string }): { by: string; undo?(): void; text?: string; images?: SdkImage[] };
+  clientSend?(path: string, msg: { images: number; text: string }): { by: string; undo?(): void; text?: string; images?: ImageInput[] };
   /** A client gesture this kind refuses (a message for the client), or null. */
   refuses?(gesture: "rewind" | "regenerate" | "mode"): string | null;
   /** Its composer takes nothing right now (a message for the client), or null: an archived
@@ -833,15 +848,11 @@ class ChatSession {
 
   constructor(
     readonly path: string,
-    readonly runtime: AgentSessionRuntime,
+    /** The pi runtime behind the driving session, held by the adapter (harness/pi/host.ts). */
+    private readonly host: PiChatHost,
     private readonly onDisposed: () => void,
   ) {
-    this.harness = new PiHarnessSession(runtime);
-  }
-
-  /** @internal pi's AgentSession, for what still reaches pi directly and for tests. */
-  get session(): AgentSession {
-    return this.runtime.session;
+    this.harness = host.harness;
   }
 
   /** This session's state (§app.harness/state), on the runtime's current session each time. */
@@ -1329,7 +1340,6 @@ class ChatSession {
   }
 
   async bind(): Promise<void> {
-    const session = this.session;
     const harness = this.harness;
     this.guard = new ForeignWriteGuard(this.path, (id) => harness.hasEntry(id));
     this.guardTimer = setInterval(() => {
@@ -1362,7 +1372,7 @@ class ChatSession {
     this.workersTimer.unref();
     // Provider bodies in reads no bigger than Node's, so the guard's abort lands as soon on any
     // runtime (§app.server-runtime/quirks): the one place it is installed.
-    useSlicedProviderReads(session.agent);
+    this.host.useSlicedProviderReads();
     this.streamGuardOff?.();
     this.streamGuardOff = attachStreamGuard(harness, () => capsFor(this.special), {
       onRunStart: () => (this.lastStreamTrip = null),
@@ -1372,7 +1382,7 @@ class ChatSession {
         this.broadcast({ type: "error", code: "internal", message: `Stopped the turn: ${trip.detail}.` });
       },
     });
-    await bindPiExtensions(session, this.dialogs, (extensionPath, error) =>
+    await this.host.bindExtensions(this.dialogs, (extensionPath, error) =>
       this.broadcast({ type: "error", code: "internal", message: `Extension error (${extensionPath}): ${error}` }),
     );
     this.unsubscribe?.();
@@ -1909,7 +1919,7 @@ class ChatSession {
       isCompacting: this.isCompacting(),
       model: harness.model()?.ref ?? null,
       thinking: harness.thinking(),
-      context: toContextInfo(contextOfBranch(branch), this.runtime.services.modelRuntime),
+      context: toContextInfo(contextOfBranch(branch), this.host.models),
     };
   }
 
@@ -1960,7 +1970,7 @@ class ChatSession {
    */
   acceptPrompt(
     text: string,
-    images?: SdkImage[],
+    images?: ImageInput[],
     origin: QueueItem["origin"] = "server",
     clientId?: string,
     /** `replay: true` = this text came OUT of the transcript, so it is already expanded and must
@@ -2052,7 +2062,7 @@ class ChatSession {
   /** Accept a prompt AND wait for the turn. The /ws/chat path, where the socket reports the
       turn's own failure to the one client that asked for it. A queued message's "turn" is already
       resolved: its failure, when it comes, reports through the queue's own hand-off path. */
-  async prompt(text: string, images?: SdkImage[], origin: QueueItem["origin"] = "server", clientId?: string): Promise<boolean> {
+  async prompt(text: string, images?: ImageInput[], origin: QueueItem["origin"] = "server", clientId?: string): Promise<boolean> {
     const { queued, turn } = this.acceptPrompt(text, images, origin, clientId);
     await turn;
     return queued;
@@ -2407,7 +2417,7 @@ class ChatSession {
             this.keepQueued((it) => !!it.baton && it.baton.by !== OPERATOR).catch(fail);
             return;
           }
-          drainQueueThenAbort({ clearQueue: () => this.harness.queue.clear(), abort: () => this.harness.abort() }, (m) => this.broadcast(m), this.queue).catch(fail);
+          drainQueueThenAbort(this.harness, (m) => this.broadcast(m), this.queue).catch(fail);
           return;
         case "queue_remove": {
           const id = String(msg.id ?? "");
@@ -2664,7 +2674,7 @@ class ChatSession {
     // The branch is now at the point before the user message, so the session is idle and this
     // starts a turn rather than queueing. Its failure reports into this session's pane, where
     // every other turn failure already does.
-    const { turn } = this.acceptPrompt(target.text, target.images as SdkImage[] | undefined, "client", undefined, { replay: true });
+    const { turn } = this.acceptPrompt(target.text, target.images as ImageInput[] | undefined, "client", undefined, { replay: true });
     turn.catch((err) => this.reportTurnFailure(err));
   }
 
@@ -2760,7 +2770,7 @@ class ChatSession {
     // Each worker's context fill, off its own transcript's tail (the record carries no fill);
     // claude-code windows follow the spawn model this session's manifests recorded.
     const workers = withWorkerContext(decodeWorkers(rec.rec?.presence, true), workerContextReader,
-      workerWindowResolver(this.runtime.services.modelRuntime), (id) => this.claudeSpawnModel(id));
+      workerWindowResolver(this.host.models), (id) => this.claudeSpawnModel(id));
     return { type: "workers", working: counts.working, total: counts.total, workers };
   }
 
@@ -2808,7 +2818,7 @@ class ChatSession {
     if (held.get(this.path) === this) held.delete(this.path); // a reload may already hold a newer one
     this.onDisposed();
     try {
-      await this.runtime.dispose();
+      await this.host.dispose();
     } catch (err) {
       console.error("[chat] runtime dispose failed", err);
     }
@@ -3106,9 +3116,9 @@ async function openSession(path: string, onDisposed: () => void): Promise<ChatSe
   // the failure is classified (ConfigError, not "internal") and cheap to repeat.
   const openCwd = sessionCwd ? resolveOpenCwd(path, sessionCwd) : sessionCwd;
   try {
-    const runtime = await file.start(openCwd, build);
+    const host = new PiChatHost(await file.start(openCwd, build));
     let unregisterUsage: (() => void) | undefined;
-    const chat = new ChatSession(path, runtime, () => {
+    const chat = new ChatSession(path, host, () => {
       unregisterUsage?.();
       onDisposed();
     });

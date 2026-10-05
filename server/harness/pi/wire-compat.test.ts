@@ -15,6 +15,7 @@ import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { after, describe, test } from "node:test";
 import type { ChatServerMessage, TranscriptItem, V1EventFrame, WatchServerMessage } from "../../../shared/protocol";
+import { piSession } from "./testing/handle";
 
 const agentDir = realpathSync(mkdtempSync(join(tmpdir(), "sova-wire-compat-")));
 process.env.PI_CODING_AGENT_DIR = agentDir; // before any server module computes its paths
@@ -158,7 +159,7 @@ describe("a chat's clients, per wire, on every faux stream", () => {
 
       // The stream, through the session's own listeners. The entry pi writes a message as stands where
       // the control frames found it (the leaf, read once the event has waited for the write).
-      const sdk = (chat as unknown as { session: Sdk }).session;
+      const sdk = piSession(chat) as unknown as Sdk;
       const sm = sdk.sessionManager;
       const leafId = sm.getLeafId.bind(sm);
       const entryOf = sm.getEntry.bind(sm);

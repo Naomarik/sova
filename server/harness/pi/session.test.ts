@@ -1,6 +1,6 @@
 // Run: pnpm test -- server/harness/pi/session.test.ts. The driving session on pi (§app.harness/session):
 // it looks the runtime's session and every pi method up at each call (a method replaced after open is the one
-// called, the way the chat tests patch `chat.session`), maps Sova's send options and input sources onto pi's in
+// called, the way the chat tests patch pi's session through testing/handle.ts `piSession`), maps Sova's send options and input sources onto pi's in
 // the caller's key order, maps each pi event to exactly one HarnessEvent inside pi's own listener, and wraps a
 // user-message entry point once per agent. Uses a throwaway PI_CODING_AGENT_DIR with no credentials: no model
 // is ever called.
@@ -9,6 +9,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, test } from "node:test";
+import { piSession } from "./testing/handle";
 
 const agentDir = mkdtempSync(join(tmpdir(), "sova-harness-session-test-"));
 process.on("exit", () => rmSync(agentDir, { recursive: true, force: true }));
@@ -44,9 +45,9 @@ type Calls = unknown[][];
 const recorder = (calls: Calls, result: unknown = Promise.resolve()) => (...args: unknown[]) => (calls.push(args), result);
 
 describe("PiHarnessSession (§app.harness/session)", () => {
-  test("late binding: a method patched on chat.session after open is the one the harness calls", async () => {
+  test("late binding: a method patched on the chat's pi session (piSession) after open is the one the harness calls", async () => {
     const chat = await acquireChat(sessionFile("01b0-late"), true);
-    const s = chat.session as any;
+    const s = piSession(chat) as any;
     const prompt: Calls = [];
     const steer: Calls = [];
     const cont: Calls = [];

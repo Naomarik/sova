@@ -53,7 +53,6 @@
     "server/baton-loadout.ts": 4,
     "server/baton-wrapup.ts": 4,
     "server/overseer.ts": 8,
-    "server/project-overseer.ts": 8,
-    "server/session-fork-routes.ts": 1
+    "server/project-overseer.ts": 8
   }
 }

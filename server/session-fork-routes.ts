@@ -80,7 +80,7 @@ export function registerSessionForkRoutes(app: Hono): void {
     }
     const chat = heldChat(path);
     if (chat) {
-      if (chat.disposed || chat.session.isStreaming)
+      if (chat.disposed || chat.harness.isRunning())
         return c.json({ error: "Stop the current turn before forking that session." }, 409);
       if (chat.isCompacting()) return c.json({ error: "Wait for the compaction to finish before forking that session." }, 409);
       if (chat.hasPendingSends())

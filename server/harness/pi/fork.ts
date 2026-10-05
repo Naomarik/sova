@@ -23,10 +23,10 @@ import { randomBytes } from "node:crypto";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
-import { canonicalPath } from "./paths";
-import { FANOUT_MEMBER_ENTRY } from "./chat-manager";
-import { LEGACY_REGISTRY_ENTRY_TYPE, WORKER_MANIFEST_ENTRY_TYPE } from "../pi-config/extensions/subagents/worker-transcript.ts";
-import { forkCacheEntry } from "../pi-config/extensions/subagents/fork/cache.ts";
+import { canonicalPath } from "../../paths";
+import { FANOUT_MEMBER_ENTRY } from "../../chat-manager";
+import { LEGACY_REGISTRY_ENTRY_TYPE, WORKER_MANIFEST_ENTRY_TYPE } from "../../../pi-config/extensions/subagents/worker-transcript.ts";
+import { forkCacheEntry } from "../../../pi-config/extensions/subagents/fork/cache.ts";
 
 /** The session format this module copies. A newer or older header is refused, never guessed. */
 const SESSION_VERSION = 3;

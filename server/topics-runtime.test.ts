@@ -26,6 +26,7 @@ const { acquireChat, disposeAllChats, disposeHeldChat, onReceiverIdle, resolveRe
 const { canonicalPath } = await import("./paths");
 const { archiveSession, getSessionSummary, onSessionArchived } = await import("./sessions-index");
 const { normalizeEntries, readActiveBranch } = await import("./transcript");
+const { historyOf } = await import("./harness/pi/reader");
 const { parseProfile, PROFILE_ENTRY } = await import("../shared/profiles");
 const { parseTopicBatch, formatTopicBatch } = await import("../shared/topic-message");
 const { setTopicStore, topicStore, QUEUE_PUSH_DESCRIPTION, pushNote, namesTopic } = await import("./topics");
@@ -446,7 +447,7 @@ describe("delivery (§chat.topics/delivery, §chat.topics/row)", () => {
     assert.equal(row.topic!.notes.length, 2);
     assert.ok(!items.some((it) => it.kind === "user" && parseTopicBatch(it.text)));
     const reply = items.filter((it) => it.kind === "assistant-text").at(-1)!;
-    const r = resolveRegenerate((await readActiveBranch(capPath)) as never, reply.id);
+    const r = resolveRegenerate(historyOf(await readActiveBranch(capPath)), reply.id);
     assert.equal(!r.ok && r.reason, "topic");
     // It never titles the session.
     assert.equal((await getSessionSummary(capPath))!.title, `task ${n - 1}`);

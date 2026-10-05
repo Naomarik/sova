@@ -212,7 +212,7 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
   restored workers; the dev watcher does not watch these, so an edit there reaches a
   running server only at its next restart). The shared fork core (`pi-config/extensions/subagents/fork/`,
   one owner of every fork's cache logic: Sova's "Fork from here" and the background forks /explain
-  runs) has a server half: `server/chat-manager.ts`, `server/session-fork.ts` and their tests import
+  runs) has a server half: `server/chat-manager.ts`, `server/harness/pi/fork.ts` and their tests import
   `fork/cache.ts` (runtime builtins only, pi types: a fork's inherited prompt-cache key and its
   `sova-fork-cache` entry, the `prompt_cache_key` hook and the Codex `session-id` affinity routing),
   and `server/session-fork-routes.ts` imports `fork/claude.ts` (builtins only, through
@@ -539,7 +539,9 @@ Sova speaks its own harness contract; pi is its one harness, behind one adapter 
   test pass; if a change seems to need it, stop and ask the user. A working-tree baseline that grew
   past `HEAD`'s fails too. `SOVA_BOUNDARY_OUT=<absolute path> pnpm test --
   server/harness-boundary.test.ts` writes the computed baseline for the diff; after a merge,
-  regenerate it on the merged tree.
+  regenerate it on the merged tree. One file entered the baseline by design: `shared/wire-v1.ts`,
+  the v1 wire shim, which must read pi's v1 event names to turn an older server's or peer's frames
+  into `SovaEvent`s; it stays pi-import-free, and no other file joins it.
 - New work is harness-neutral: a server feature imports `shared/harness.ts` and `server/harness/`,
   never pi; new per-session state goes through `SessionState`, never a raw custom entry with a new
   customType; history is read through the neutral reader, never `parseLines` plus a switch on

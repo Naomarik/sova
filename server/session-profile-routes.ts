@@ -10,7 +10,8 @@ import { projectRootOf } from "./project-root";
 import { setPowersHost } from "./session-powers";
 import { resolveChoice, singletonHolder, SingletonRefusal, snapshotKey, type ProfileChoice } from "./session-profile";
 import { getSessionSummary, listSessions } from "./sessions-index";
-import { normalizeEntries, readActiveBranch } from "./transcript";
+import { rowsOf } from "./transcript";
+import { readBranch } from "./harness/pi/reader";
 
 /**
  * Profiles over HTTP (§chat.profiles/applying, /projects, /trust, §app.settings-dialog/profiles),
@@ -153,7 +154,7 @@ setPowersHost({
     const s = (await listSessions()).find((x) => x.id === id);
     return s ? ((await getSessionSummary(s.path)) ?? s) : null;
   },
-  transcript: async (path) => normalizeEntries(await readActiveBranch(path)),
+  transcript: async (path) => rowsOf(await readBranch(path)),
   insight: (path) => getSessionInsight(path),
   held(path) {
     const chat = heldChat(path);

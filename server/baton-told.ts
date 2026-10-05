@@ -2,6 +2,7 @@ import { realpathSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import type { BatonSession, BatonStarted, BatonStartedFor, BatonStarter, BatonTold, BatonToldTool } from "../shared/baton";
+import type { HEntry } from "../shared/harness";
 import { batonById, batonSid, sessionPathOf } from "./baton";
 import { activeBatonTools, batonTools, BATON_TOOLS, renderBatonPrompt } from "./baton-loadout";
 import { photosFor } from "./baton-images";
@@ -13,7 +14,7 @@ import { readManifest } from "./overseer-ideas";
 import { readOverseerState } from "./overseer-store";
 import { readTodos } from "./overseer-todos";
 import { projectOverseerPaths, readPoState } from "./project-overseer-store";
-import { readActiveBranch, type Entry } from "./transcript";
+import { rawOf, readBranch } from "./harness/pi/reader";
 
 /**
  * Who started a gathering session, and what it is told (§app.baton/told): the strip's Started by line
@@ -160,12 +161,10 @@ const toolOf = (t: { name: string; description?: string; parameters?: unknown })
 /**
  * The prompt and tools as the branch's system entries last recorded them. The wrap-up starts at the first
  * entry that adds its tool: the conversation's prompt and tools are those before it, and the wrap-up's own
- * prompt is the replay through it. Pure, given the replay.
+ * prompt is the replay through it. Pure, given the replay, which reads pi's own system messages.
  */
-export function recordedPrompt(branch: readonly Entry[], replay: Replay): RecordedPrompt {
-  const system = branch
-    .filter((e) => e.type === "message" && isObj(e.message) && e.message.role === "system")
-    .map((e) => ({ message: e.message as SystemMessage, at: str(e.timestamp) }));
+export function recordedPrompt(branch: readonly HEntry[], replay: Replay): RecordedPrompt {
+  const system = branch.filter((h) => h.kind === "system").map((h) => ({ message: rawOf(h).message as SystemMessage, at: str(h.at) }));
   const cut = system.findIndex((s) => (s.message.toolsAdded ?? []).some((t) => t.name === WRAPUP_TOOL));
   const before = cut === -1 ? system : system.slice(0, cut);
   const changed = before.filter((s) => Object.keys(s.message.sections ?? {}).length > 0 || str(s.message.content) !== "");
@@ -185,12 +184,12 @@ export function inactiveTools(has: readonly string[]): { name: string; when: str
 }
 
 /** The model and thinking level the branch last recorded, else null. Pure. */
-export function recordedModel(branch: readonly Entry[]): { model: string | null; thinking: string | null } {
+export function recordedModel(branch: readonly HEntry[]): { model: string | null; thinking: string | null } {
   let model: string | null = null;
   let thinking: string | null = null;
-  for (const e of branch) {
-    if (e.type === "model_change" && e.provider && e.modelId) model = `${e.provider}/${e.modelId}`;
-    if (e.type === "thinking_level_change" && typeof e.thinkingLevel === "string") thinking = e.thinkingLevel;
+  for (const h of branch) {
+    if (h.kind === "setting" && h.what === "model" && h.provider && h.modelId) model = `${h.provider}/${h.modelId}`;
+    if (h.kind === "setting" && h.what === "thinking" && typeof h.level === "string") thinking = h.level;
   }
   return { model, thinking };
 }
@@ -201,9 +200,9 @@ export async function toldOf(sessionId: string): Promise<BatonTold | null> {
   if (!hit) return null;
   const { row, dir } = hit;
   const data = batonData(row) ?? {};
-  let branch: Entry[] = [];
+  let branch: HEntry[] = [];
   try {
-    branch = await readActiveBranch(sessionPathOf(dir, row));
+    branch = await readBranch(sessionPathOf(dir, row));
   } catch {
     branch = []; // a session the statechart spawned before its file exists
   }

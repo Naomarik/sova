@@ -1,7 +1,8 @@
 import { BATON_WRAPUP_ENTRY } from "../shared/baton";
+import type { HEntry } from "../shared/harness";
 import { allBatons, batonById, sessionPathOf, setBudgetUsed } from "./baton";
+import { readBranch } from "./harness/pi/reader";
 import { onOrgAttached } from "./orgs";
-import { readActiveBranch } from "./transcript";
 
 /**
  * Messages a crash or kill lost stop counting (§app.baton/hand-off, "What can still lose a waiting
@@ -13,14 +14,12 @@ import { readActiveBranch } from "./transcript";
  * refunds nothing real.
  */
 
-type Entry = { type?: string; customType?: string; message?: { role?: string } };
-
 /** The user messages of a branch before the wrap-up's marker: what the budget counts. */
-export function countedMessages(branch: readonly Entry[]): number {
+export function countedMessages(branch: readonly HEntry[]): number {
   let n = 0;
-  for (const e of branch) {
-    if (e.type === "custom" && e.customType === BATON_WRAPUP_ENTRY) break;
-    if (e.type === "message" && e.message?.role === "user") n++;
+  for (const h of branch) {
+    if (h.kind === "state" && h.key === BATON_WRAPUP_ENTRY) break;
+    if (h.kind === "user") n++;
   }
   return n;
 }
@@ -33,9 +32,9 @@ export async function recountBudgets(dir?: string): Promise<string[]> {
     const hit = batonById(row.sessionId);
     if (!hit || (dir !== undefined && hit.dir !== dir)) continue;
     const seen = hit.row.budget.messagesUsed;
-    let branch: Entry[];
+    let branch: HEntry[];
     try {
-      branch = (await readActiveBranch(sessionPathOf(hit.dir, hit.row))) as Entry[];
+      branch = await readBranch(sessionPathOf(hit.dir, hit.row));
     } catch {
       continue;
     }

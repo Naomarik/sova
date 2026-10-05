@@ -41,7 +41,10 @@ import { resumeCommandOf, resumeWorker, type ResumeOutcome } from "./worker-resu
 import { applySandbox, onSandboxAppend, sandboxCommandOf, sandboxInfo, sandboxMessage, type SandboxHost } from "./sandbox-state";
 import type { SandboxState } from "../pi-config/extensions/sandbox/state.ts";
 import { chatClaudeLogin, claudeLoginAfterHello, claudeLoginMessage, isClaudeLoginEntry, LoginPick, loginName } from "./claude-login-state";
-import { contextForBranch, normalizeEntries, normalizeEntry, withoutSignatures } from "./transcript";
+import { rowsOf, rowsOfEntry, withoutSignatures } from "./transcript";
+import type { HEntry } from "../shared/harness";
+import { historyOf, liveRead, toHEntry } from "./harness/pi/reader";
+import { contextOfBranch } from "./harness/pi/usage";
 import { cutTail, type HistoryPart, pullFields } from "./tail-hello";
 import { isOverseerId } from "./overseer-store";
 import { attachStreamGuard, capsFor, type StreamTrip } from "./stream-guard";
@@ -656,8 +659,8 @@ export async function rewindSession(
     const refused = check();
     if (refused) return refused;
     const sm = session.sessionManager;
-    const target = sm.getBranch().find((e) => e.id === entryId);
-    if (target?.type !== "message" || target.message.role !== "user")
+    const target = historyOf(sm.getBranch()).find((h) => h.id === entryId);
+    if (target?.kind !== "user")
       return { ok: false, reason: "not_on_branch", message: "That input is not on this chat's current branch anymore." };
     const fromLeafId = sm.getLeafId();
     const result = await session.navigateTree(entryId, { summarize: false });
@@ -670,7 +673,7 @@ export async function rewindSession(
     hooks.beforeMarker();
     sm.appendCustomEntry(REWIND_ENTRY, { targetId: entryId, fromLeafId });
     // Without pi 0.87's image resize notes: the composer gets the text as typed, not the model's copy.
-    return { ok: true, editorText: stripImageNotes(result.editorText ?? "", target.message.content) };
+    return { ok: true, editorText: stripImageNotes(result.editorText ?? "", target.blocks) };
   } catch (err) {
     return { ok: false, reason: "internal", message: err instanceof Error ? err.message : String(err) };
   }
@@ -750,13 +753,6 @@ export async function compactSession(
   }
 }
 
-/** A session entry as the branch hands it over; only the fields the rules below read are named. */
-interface BranchEntry {
-  id?: unknown;
-  type?: unknown;
-  message?: { role?: unknown; content?: unknown };
-}
-
 /** What a regenerate resolved to: the user input to replay, exactly as the file stores it. */
 export type RegenerateTarget =
   | { ok: true; userId: string; text: string; images?: QueueImage[] }
@@ -777,24 +773,23 @@ export type RegenerateTarget =
  *   the display text. `TranscriptItem.text` has pi's clipboard paths stripped for rendering; the
  *   model was given them, so a replay that used the display text would send a different message.
  */
-export function resolveRegenerate(branch: readonly BranchEntry[], entryId: string): RegenerateTarget {
+export function resolveRegenerate(branch: readonly HEntry[], entryId: string): RegenerateTarget {
   const notOnBranch = (message: string): RegenerateTarget => ({ ok: false, reason: "not_on_branch", message });
-  let index = branch.findIndex((e) => e.id === entryId);
+  let index = branch.findIndex((h) => h.id === entryId);
   if (index === -1 && entryId.includes(":")) {
     const stem = entryId.slice(0, entryId.indexOf(":"));
-    index = branch.findIndex((e) => e.id === stem);
+    index = branch.findIndex((h) => h.id === stem);
   }
   if (index === -1) return notOnBranch("That reply is not on this chat's current branch anymore.");
-  const isUser = (e: BranchEntry) => e.type === "message" && e.message?.role === "user";
   // Regenerating your own message is Rewind — it hands the text back so you can change it. Saying
   // so here keeps the two gestures from quietly becoming one that resends without asking.
-  if (isUser(branch[index]!)) return notOnBranch("That is your own message; rewind to it to edit and send it again.");
+  if (branch[index]!.kind === "user") return notOnBranch("That is your own message; rewind to it to edit and send it again.");
   for (let i = index; i >= 0; i--) {
     const entry = branch[i]!;
-    if (!isUser(entry)) continue;
-    const content = entry.message?.content;
-    const text = typeof content === "string" ? content : textBlocks(content);
-    const images = imageBlocks(content);
+    if (entry.kind !== "user") continue;
+    // A stored string is one text block, so this is the string itself.
+    const text = textBlocks(entry.blocks);
+    const images = imageBlocks(entry.blocks);
     if (!text.trim() && !images) return notOnBranch("The message that started that turn has nothing left to send.");
     // A WAKE NUDGE is a role:"user" message Sova's own scheduler wrote, rendered as its own card
     // (kind "wake"). Replaying it would put the "[wake_nudge …] Scheduled wakeup fired (set 4m17s
@@ -1535,10 +1530,9 @@ class ChatSession {
     const texts = [...this.linkHeld.splice(0), ...(stopped ? this.linkStopped.splice(0) : [])];
     if (!texts.length) return;
     const onBranch = new Set<string>();
-    for (const e of this.session.sessionManager.getBranch()) {
-      if (e.type !== "message" || e.message.role !== "user") continue;
-      const content = (e.message as { content?: unknown }).content;
-      const link = parseLinkMessage(typeof content === "string" ? content : textBlocks(content));
+    for (const h of liveRead(this.session).branch()) {
+      if (h.kind !== "user") continue;
+      const link = parseLinkMessage(textBlocks(h.blocks));
       if (link) onBranch.add(link.messageId);
     }
     for (const text of texts) {
@@ -1692,7 +1686,7 @@ class ChatSession {
       // one was queued, one was delivered, the run ended. A generous list is cheaper than a
       // precise one, because the cost of a spurious wake is a re-read of two lengths while the
       // cost of a MISSED one is a queue that stops handing messages over until the next turn
-      // boundary — and `normalizeEntry` below is not in a try.
+      // boundary — and `rowsOfEntry` below is not in a try.
       if (event.type === "queue_update") {
         // The mirror's own totals, straight from the SDK. The queue reads GROWTH out of the
         // sequence of these — the only way to tell "an extension queued something" from "our item
@@ -1722,9 +1716,10 @@ class ChatSession {
       }
       if (event.type === "entry_appended" && (event as { entry?: unknown }).entry) {
         // Display entries an extension appended outside a turn (mode markers, align docs, …)
-        // reach the pane now instead of at the next hello/resync. normalizeEntry returns []
+        // reach the pane now instead of at the next hello/resync. rowsOfEntry returns []
         // for entries with nothing to show, so most appends broadcast nothing.
-        const items = normalizeEntry((event as { entry: Record<string, any> }).entry);
+        const appended = toHEntry((event as { entry: unknown }).entry);
+        const items = appended ? rowsOfEntry(appended) : [];
         if (items.length) this.broadcast({ type: "append", items });
         onSandboxAppend(this.sandboxHost, (event as { entry: unknown }).entry);
         if (isClaudeLoginEntry((event as { entry: unknown }).entry)) this.broadcast(this.loginMessage());
@@ -1883,7 +1878,7 @@ class ChatSession {
    * sent message stops it being new.
    */
   private isPristine(): boolean {
-    return !this.session.sessionManager.getBranch().some((e) => e.type === "message" && e.message.role === "user");
+    return !liveRead(this.session).branch().some((h) => h.kind === "user");
   }
 
   /**
@@ -2193,15 +2188,15 @@ class ChatSession {
 
   hello(): Extract<ChatServerMessage, { type: "hello" }> {
     const session = this.session;
-    const branch = session.sessionManager.getBranch();
+    const branch = liveRead(session).branch();
     return {
       type: "hello",
-      items: normalizeEntries(branch),
+      items: rowsOf(branch),
       isStreaming: session.isStreaming,
       isCompacting: this.isCompacting(),
       model: modelLabel(session),
       thinking: session.thinkingLevel,
-      context: toContextInfo(contextForBranch(branch), this.runtime.services.modelRuntime),
+      context: toContextInfo(contextOfBranch(branch), this.runtime.services.modelRuntime),
     };
   }
 
@@ -2372,9 +2367,9 @@ class ChatSession {
       if (entry?.type !== "message" || entry.message.role !== "user") return;
       const markerId = appendSenderMarker(sm, entry.id, send?.sender ?? { kind: "overseer" });
       markOwned(this.path);
-      const marker = sm.getEntry(markerId);
+      const marker = toHEntry(sm.getEntry(markerId));
       if (marker) {
-        const items = normalizeEntry(marker as unknown as Record<string, any>);
+        const items = rowsOfEntry(marker);
         if (items.length) this.broadcast({ type: "append", items });
       }
     });
@@ -2416,12 +2411,12 @@ class ChatSession {
     this.assertNoForeignWrites();
     if (this.session.isStreaming || this.isCompacting()) throw new BusyError("Wait for the reply to finish first.", "busy");
     const sm = this.session.sessionManager;
-    const branch = sm.getBranch();
-    const from = since ? branch.findIndex((e) => e.id === since) + 1 : 0;
+    const branch = historyOf(sm.getBranch());
+    const from = since ? branch.findIndex((h) => h.id === since) + 1 : 0;
     const taken = branch
       .slice(from)
-      .filter((e) => e.type === "message" && e.message.role === "user")
-      .map((e) => (e.type === "message" ? textBlocks((e.message as { content?: unknown }).content) : ""));
+      .map((h) => (h.kind === "user" ? textBlocks(h.blocks) : null))
+      .filter((t): t is string => t !== null);
     this.flushDeferredAppends();
     let n = 0;
     for (const item of items) {
@@ -2436,8 +2431,8 @@ class ChatSession {
       const sender = senderOfItem(item);
       const markerId = sender ? appendSenderMarker(sm, id, sender) : null;
       const items = [id, markerId].flatMap((eid) => {
-        const entry = eid ? sm.getEntry(eid) : undefined;
-        return entry ? normalizeEntry(entry as unknown as Record<string, any>) : [];
+        const entry = eid ? toHEntry(sm.getEntry(eid)) : null;
+        return entry ? rowsOfEntry(entry) : [];
       });
       if (items.length) this.broadcast({ type: "append", items });
       n++;
@@ -2463,9 +2458,9 @@ class ChatSession {
     const sm = this.session.sessionManager;
     const id = sm.appendCustomEntry(customType, data);
     markOwned(this.path);
-    const entry = sm.getEntry(id);
+    const entry = toHEntry(sm.getEntry(id));
     if (entry) {
-      const items = normalizeEntry(entry as unknown as Record<string, any>);
+      const items = rowsOfEntry(entry);
       if (items.length) this.broadcast({ type: "append", items });
     }
     return id;
@@ -2508,9 +2503,9 @@ class ChatSession {
     const data: OverseerDialogAnswerData = { v: 1, title, answer, ...(overseerId ? { overseerId } : {}) };
     const markerId = this.session.sessionManager.appendCustomEntry(OVERSEER_DIALOG_ANSWER_ENTRY, data);
     markOwned(this.path);
-    const marker = this.session.sessionManager.getEntry(markerId);
+    const marker = liveRead(this.session).entry(markerId);
     if (marker) {
-      const items = normalizeEntry(marker as unknown as Record<string, any>);
+      const items = rowsOfEntry(marker);
       if (items.length) this.broadcast({ type: "append", items });
     }
   }
@@ -2938,7 +2933,7 @@ class ChatSession {
   private async regenerate(client: ChatClient, id: string, entryId: string): Promise<void> {
     const refuse = (reason: RegenerateRefusal, message: string) =>
       client.send({ type: "regenerate_refused", id, entryId, reason, message });
-    const target = resolveRegenerate(this.session.sessionManager.getBranch(), entryId);
+    const target = resolveRegenerate(liveRead(this.session).branch(), entryId);
     if (!target.ok) return refuse(target.reason, target.message);
     try {
       this.assertModelAllowed();
@@ -3479,7 +3474,7 @@ async function openSession(path: string, onDisposed: () => void): Promise<ChatSe
     // default degrades to pi's own default instead of failing the open.
     let defaultModel: Awaited<ReturnType<typeof modelRuntime.getAvailable>>[number] | undefined;
     let defaultThinking: ThinkingLevel | undefined;
-    if (!sessionManager.getBranch().some((e) => e.type === "message" && e.message.role === "user")) {
+    if (!historyOf(sessionManager.getBranch()).some((h) => h.kind === "user")) {
       const opening = openingChoices.get(path);
       openingChoices.delete(path);
       const defaults = special ? { model: special.model ?? undefined, thinking: special.thinking ?? undefined } : { ...loadDefaults(), ...opening };

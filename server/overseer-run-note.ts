@@ -1,5 +1,6 @@
+import type { HBlock, HEntry } from "../shared/harness";
 import { OVERSEER_BRIEF_PREFIX, type SessionReadiness } from "../shared/protocol";
-import { CARDS_NOTE_MESSAGE, foldCards, openCardsOf } from "../shared/overseer-card";
+import { CARD_TOOL, CARDS_NOTE_MESSAGE, foldCardDetails, normalizeCardDetails, openCardsOf, type CardDetails, type OverseerCard } from "../shared/overseer-card";
 
 /**
  * The global Overseer's run note (§app.overseer/run-note): the hidden message every run a message
@@ -43,27 +44,29 @@ export interface RunNoteDetails {
   cleared?: string[];
 }
 
-type Entry = { type?: unknown; customType?: unknown; details?: unknown; timestamp?: unknown; message?: { role?: unknown; content?: unknown } };
+const textOf = (blocks: readonly HBlock[]): string => blocks.map((b) => (b.type === "text" && typeof b.text === "string" ? b.text : "")).join("\n");
 
-const textOf = (content: unknown): string =>
-  typeof content === "string"
-    ? content
-    : Array.isArray(content)
-      ? content.map((b) => (b && typeof b === "object" && (b as { type?: unknown }).type === "text" && typeof (b as { text?: unknown }).text === "string" ? (b as { text: string }).text : "")).join("\n")
-      : "";
+/** A successful sova_card result's details (the card it touched), or undefined. */
+export function cardDetailsOf(h: HEntry): CardDetails | undefined {
+  return h.kind === "tool-result" && h.tool === CARD_TOOL && h.isError !== true ? normalizeCardDetails(h.details) : undefined;
+}
+
+/** The cards on a branch (root first): each card's newest snapshot, in the order last touched. */
+export function cardsOnBranch(branch: readonly HEntry[]): OverseerCard[] {
+  return foldCardDetails(branch.map(cardDetailsOf));
+}
 
 /** One blocker line of a brief, as briefText (overseer.ts) writes it: `- <kind>: [<name>](sova://s/<id>)…`. */
 const BRIEF_LINE = /^- ([a-z][a-z-]*): \[[^\]\n]*\]\(sova:\/\/s\/([^)\s]+)\)/;
 
 /** Every blocker the briefs on a branch named, the newest brief's time per key. */
-export function briefedBlockers(branch: readonly unknown[]): BriefedBlocker[] {
+export function briefedBlockers(branch: readonly HEntry[]): BriefedBlocker[] {
   const out = new Map<string, BriefedBlocker>();
-  for (const raw of branch) {
-    const e = raw as Entry;
-    if (e?.type !== "message" || e.message?.role !== "user") continue;
-    const text = textOf(e.message.content);
+  for (const e of branch) {
+    if (e.kind !== "user") continue;
+    const text = textOf(e.blocks);
     if (!text.startsWith(OVERSEER_BRIEF_PREFIX)) continue;
-    const at = typeof e.timestamp === "string" ? Date.parse(e.timestamp) : NaN;
+    const at = typeof e.at === "string" ? Date.parse(e.at) : NaN;
     if (!Number.isFinite(at)) continue;
     for (const line of text.split("\n")) {
       const m = BRIEF_LINE.exec(line.trim());
@@ -77,11 +80,10 @@ export function briefedBlockers(branch: readonly unknown[]): BriefedBlocker[] {
 }
 
 /** What earlier run notes on the branch already listed as cleared (`<key>@<brief ms>`). */
-export function listedCleared(branch: readonly unknown[]): Set<string> {
+export function listedCleared(branch: readonly HEntry[]): Set<string> {
   const out = new Set<string>();
-  for (const raw of branch) {
-    const e = raw as Entry;
-    if (e?.type !== "custom_message" || e.customType !== CARDS_NOTE_MESSAGE) continue;
+  for (const e of branch) {
+    if (e.kind !== "note" || e.inMessage || e.noteType !== CARDS_NOTE_MESSAGE) continue;
     const d = e.details as RunNoteDetails | undefined;
     if (d?.v === 1 && Array.isArray(d.cleared)) for (const k of d.cleared) if (typeof k === "string") out.add(k);
   }
@@ -110,7 +112,7 @@ const linkTo = (name: string, id: string) => `[${name.replace(/[[\]]/g, "")}](so
 
 export interface RunNoteInput {
   now: Date;
-  branch: readonly unknown[];
+  branch: readonly HEntry[];
   /** The digest's act-tier keys now (`id:kind`). `complete`: false when the digest's cap left act items out. */
   act: { keys: ReadonlySet<string>; complete: boolean };
   /** A session's state now, by id; null when it is gone. */
@@ -125,10 +127,10 @@ export interface RunNoteInput {
 
 /** The ids the note will ask `session` about: briefed blockers in the window, open cards' sessions,
     and the sessions in play. */
-export function runNoteSessionIds(branch: readonly unknown[], now: number, prompted: readonly Touched[] = []): string[] {
+export function runNoteSessionIds(branch: readonly HEntry[], now: number, prompted: readonly Touched[] = []): string[] {
   const ids = new Set<string>(sessionsInPlay(branch, now, prompted).map((p) => p.id));
   for (const b of briefedBlockers(branch)) if (now - b.at <= CLEARED_WINDOW_MS) ids.add(b.id);
-  for (const c of openCardsOf(foldCards(branch))) for (const it of c.items) if (it.kind === "session") ids.add(it.id);
+  for (const c of openCardsOf(cardsOnBranch(branch))) for (const it of c.items) if (it.kind === "session") ids.add(it.id);
   return [...ids];
 }
 
@@ -159,7 +161,7 @@ export function runNote(input: RunNoteInput): { content: string; details: RunNot
     parts.push(redact(["[cleared] Blockers your briefs named that no longer need the user. Don't report them as open; check with sova_session before saying more:", ...lines].join("\n")));
 
   const cardLines: string[] = [];
-  for (const c of openCardsOf(foldCards(input.branch))) {
+  for (const c of openCardsOf(cardsOnBranch(input.branch))) {
     const raised = Date.parse(c.createdAt);
     for (const it of c.items) {
       if (it.kind !== "session") continue;
@@ -201,14 +203,12 @@ const PLAY_TOOLS = new Set(["sova_create_session", "sova_send"]);
 
 /** The sessions the Overseer created or sent to, from its successful tool results on the branch:
     this host's only (a peer's carries `host`). Survives a restart, unlike the server's own tracking. */
-export function promptedOnBranch(branch: readonly unknown[]): Touched[] {
+export function promptedOnBranch(branch: readonly HEntry[]): Touched[] {
   const out: Touched[] = [];
-  for (const raw of branch) {
-    const e = raw as { type?: unknown; timestamp?: unknown; message?: { role?: unknown; toolName?: unknown; isError?: unknown; details?: unknown } };
-    const m = e?.type === "message" ? e.message : undefined;
-    if (m?.role !== "toolResult" || !PLAY_TOOLS.has(m.toolName as string) || m.isError === true) continue;
-    const d = m.details as { id?: unknown; host?: unknown } | undefined;
-    const at = typeof e.timestamp === "string" ? Date.parse(e.timestamp) : NaN;
+  for (const e of branch) {
+    if (e.kind !== "tool-result" || !PLAY_TOOLS.has(e.tool as string) || e.isError === true) continue;
+    const d = e.details as { id?: unknown; host?: unknown } | undefined;
+    const at = typeof e.at === "string" ? Date.parse(e.at) : NaN;
     if (typeof d?.id === "string" && d.host === undefined && Number.isFinite(at)) out.push({ id: d.id, at });
   }
   return out;
@@ -219,7 +219,7 @@ export function promptedOnBranch(branch: readonly unknown[]): Touched[] {
  * server's own tracking since it started) and those a brief named, in the last 24 hours (the
  * cleared window); the most recently touched first, at most IN_PLAY_MAX. Pure.
  */
-export function sessionsInPlay(branch: readonly unknown[], now: number, prompted: readonly Touched[] = []): InPlay[] {
+export function sessionsInPlay(branch: readonly HEntry[], now: number, prompted: readonly Touched[] = []): InPlay[] {
   const by = new Map<string, InPlay>();
   const get = (id: string) => by.get(id) ?? by.set(id, { id }).get(id)!;
   for (const t of [...promptedOnBranch(branch), ...prompted]) {

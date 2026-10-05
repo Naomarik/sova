@@ -1,4 +1,4 @@
-import type { ToolCtx, ToolSpec } from "../shared/harness";
+import type { HEntry, ToolCtx, ToolSpec } from "../shared/harness";
 import {
   applyCardCall,
   CARD_ANSWERS_MAX,
@@ -9,7 +9,6 @@ import {
   CARD_OPS,
   CARD_TOOL,
   CardError,
-  cardResultOf,
   checkCardCall,
   foldCardDetails,
   type CardDetails,
@@ -20,6 +19,7 @@ import {
 import { GRANTABLE_ACTS } from "../shared/overseer-grants";
 import { CONFIRM_NOTE_MAX } from "../shared/protocol";
 import { clickOnlyCard, itemsSchema, resolveConfirmItems, type ConfirmLookup } from "./overseer-confirm";
+import { cardDetailsOf } from "./overseer-run-note";
 
 /**
  * `sova_card`, shared by the Overseer and the project overseer (§app.overseer/confirm): the
@@ -58,7 +58,7 @@ export interface CardToolDeps {
   wrap(run: (params: any) => Promise<Out>): Tool["execute"];
   refusal(message: string): Error;
   /** The session's branch when the call's context has none (tests). */
-  branch?(): readonly unknown[];
+  branch?(): readonly HEntry[];
 }
 
 type Ctx = ToolCtx | undefined;
@@ -185,16 +185,14 @@ export function cardTool(d: CardToolDeps): Tool {
   const pending = new Map<string, { session: string; details: CardDetails; at: number }>();
   /** The branch's cards, plus this tool's own results the branch doesn't hold yet. */
   const cardsNow = (ctx: Ctx): OverseerCard[] => {
-    const branch = ctx?.rawBranch() ?? d.branch?.() ?? [];
+    const branch = ctx?.branch() ?? d.branch?.() ?? [];
     const session = ctx?.sessionId ?? "";
     const seen = new Set<string>();
-    for (const e of branch as { type?: string; message?: { role?: string; toolName?: string; toolCallId?: string } }[]) {
-      if (e?.type === "message" && e.message?.role === "toolResult" && e.message.toolName === CARD_TOOL && e.message.toolCallId) seen.add(e.message.toolCallId);
-    }
+    for (const e of branch) if (e.kind === "tool-result" && e.tool === CARD_TOOL && e.callId) seen.add(e.callId);
     const now = Date.now();
     for (const [id, p] of pending) if (seen.has(id) || now - p.at > PENDING_MS) pending.delete(id);
     const extra = [...pending.values()].filter((p) => p.session === session).map((p) => p.details);
-    return foldCardDetails([...branch.map(cardResultOf), ...extra]);
+    return foldCardDetails([...branch.map(cardDetailsOf), ...extra]);
   };
   const run = async (params: any, toolCallId: string, ctx: Ctx): Promise<Out> => {
     try {

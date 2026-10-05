@@ -1,7 +1,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
-import type { ToolSpec } from "../shared/harness";
+import type { HEntry, ToolSpec } from "../shared/harness";
 import { toolCtx, toPiTool } from "./harness/pi/tools";
 import {
   abilitiesOf,
@@ -198,11 +198,11 @@ export function batonTools(sessionId: string, append: AppendEntry): ToolSpec[] {
 /** The nearest user message up the tree from the leaf `id`: where a decision's quote was said. The
     active branch is the leaf's parent chain, root first, so this walks it from its end (at most 200
     entries); a branch that doesn't end at `id` (no leaf yet) has none. */
-export function quoteEntryOf(branch: readonly Record<string, any>[], id: string): string {
+export function quoteEntryOf(branch: readonly HEntry[], id: string): string {
   if (branch.at(-1)?.id !== id) return id;
   for (let i = branch.length - 1, hops = 0; i >= 0 && hops < 200; i--, hops++) {
-    const cur = branch[i] as { id?: string; type?: string; message?: { role?: string } } | undefined;
-    if (cur?.type === "message" && cur.message?.role === "user" && cur.id) return cur.id;
+    const cur = branch[i];
+    if (cur?.kind === "user" && cur.id) return cur.id;
   }
   return id;
 }
@@ -251,11 +251,11 @@ export function recordDecisionTool(sessionId: string, append: AppendEntry, roste
       if (refused) throw new Error(refused.sentence);
       append(BATON_DECISION_ENTRY, { v: 1, area, ownerArea: payload.ownerArea, statement, quote, by: hit.row.holder ?? OPERATOR } satisfies BatonDecisionData);
       const marker = ctx?.leafId() ?? `${Date.now()}`;
-      await modelAct(sessionId, "baton/record-decision", { ...payload, decisionId: `${sessionId}:${marker}`, markerId: marker, entryId: quoteEntryOf(ctx?.rawBranch() ?? [], marker) });
+      await modelAct(sessionId, "baton/record-decision", { ...payload, decisionId: `${sessionId}:${marker}`, markerId: marker, entryId: quoteEntryOf(ctx?.branch() ?? [], marker) });
       refreshShare(sessionId);
       // pi ends the run only when EVERY tool of the batch terminates: when this call rides with a
       // hand_to or goal_done, it must agree, or the model writes one more reply after the turn ended.
-      return { ...say("Recorded."), ...(batchEndsTurn(ctx?.rawBranch() ?? []) ? { terminate: true } : {}) };
+      return { ...say("Recorded."), ...(batchEndsTurn(ctx?.branch() ?? []) ? { terminate: true } : {}) };
     },
   };
 }
@@ -286,7 +286,7 @@ function conversationTools(sessionId: string, append: AppendEntry): ToolSpec[] {
         const chosen =
           !target || !row.holder || row.holder === OPERATOR || target.id === OPERATOR
             ? true
-            : handoffChosen(ctx?.rawBranch() ?? [], row.holder, target.name, row.goal);
+            : handoffChosen(ctx?.branch() ?? [], row.holder, target.name, row.goal);
         const question = clip(params.question, QUESTION_MAX);
         const briefing = clip(params.briefing, BRIEFING_MAX);
         await inTool(sessionId, append, () => handTo(sessionId, String(params.person ?? ""), question, briefing, { chosen }));
@@ -368,12 +368,11 @@ function conversationTools(sessionId: string, append: AppendEntry): ToolSpec[] {
 }
 
 /** Whether the assistant message that made the current tool calls also calls a turn-ending tool. */
-function batchEndsTurn(branch: readonly any[]): boolean {
+function batchEndsTurn(branch: readonly HEntry[]): boolean {
   for (let i = branch.length - 1; i >= 0; i--) {
-    const e = branch[i];
-    if (e?.type !== "message" || e.message?.role !== "assistant") continue;
-    const content = Array.isArray(e.message.content) ? e.message.content : [];
-    return content.some((b: any) => b?.type === "toolCall" && (b.name === "hand_to" || b.name === "goal_done"));
+    const h = branch[i];
+    if (h?.kind !== "assistant") continue;
+    return h.blocks.some((b) => b?.type === "toolCall" && (b.name === "hand_to" || b.name === "goal_done"));
   }
   return false;
 }
@@ -690,7 +689,7 @@ registerSpecialLoadout({
                 const row = batonById(sessionId)?.row;
                 const redacted = redactContext(event.messages, row ? holderPhrases(row, event.messages) : []);
                 // Who wrote each message, added after the redaction (names are no secret).
-                const branch = (ctx ? toolCtx(ctx).rawBranch() : []) as Record<string, any>[];
+                const branch = ctx ? toolCtx(ctx).branch() : [];
                 const messages = row ? labelAuthors(redacted, authorNotes(branch, namesOf(row.orgId), row.holder), event.messages) : redacted;
                 return messages === event.messages ? undefined : { messages };
               });

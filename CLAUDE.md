@@ -549,6 +549,10 @@ Sova speaks its own harness contract; pi is its one harness, behind one adapter 
   event names. A new Sova agent feature is never a new pi-config extension and never a new call to
   an extension's command handler; existing extensions are grandfathered, and the pi-config files
   the server imports stay pi-free (the import ratchet covers them). (§app.harness/new-work)
+- History is `HEntry`s (`shared/harness-history.ts`) from `server/harness/pi/reader.ts`
+  (`readBranch`, `parsePi` + `branchOf`, the line scanners, `ctx.branch()`, `liveRead`), rows from
+  `rowsOf(history)`. `parseLines`/`activeBranch`/`readActiveBranch` and `rawOf` are adapter-internal:
+  outside it they are counted raw reads, left only at state folds until M4 (§app.harness/reader).
 - Paths under the agent directory come from `agentRoot()` (`server/state-root.ts`), never
   `getAgentDir` (§app.harness/agent-root). A Sova tool is a `ToolSpec` (`shared/harness-tools.ts`);
   register it with `toPiTool`, read pi's context in a Sova hook only through `toolCtx(ctx)` (a
@@ -573,7 +577,7 @@ Frontend is SolidJS (NOT React): signals/stores, `<For>/<Show>`, `onCleanup` for
 - `SessionManager.open(path)` is NOT read-only: `loadEntriesFromFile` appends `"\n"` to a trailing
   partial line (`dist/core/session-manager.js:367`) and `_rewriteFile()` (`:754`) rewrites the whole
   file when migrating old versions (`:722`). Never call it on a file a TUI may own —
-  transcript/watch use our own parser (`server/transcript.ts`); `open()` only for webapp-owned chats.
+  transcript/watch use our own parser (`server/harness/pi/reader.ts`); `open()` only for webapp-owned chats.
 - `SessionManager.create(cwd)` defers writing the file until the first assistant reply
   (`_persist()`, `dist/core/session-manager.js:785` — body byte-identical from 0.85.1 through 0.87.1).
   `POST /api/sessions` writes the header line itself so the new session exists on disk immediately.
@@ -592,10 +596,10 @@ Frontend is SolidJS (NOT React): signals/stores, `<For>/<Show>`, `onCleanup` for
   `SessionManager.appendUsage()`; only caller is `dist/core/cache-warmer.js:249` with
   `kind:"cache_warm"`). Cache warming is ON by default (`getCacheWarmingMode()` →`"streaming"`,
   `dist/core/settings-manager.js:637`), so expect these in webapp-owned sessions. The webapp hides
-  both from the transcript (`server/transcript.ts:175` and `:315`) and never counts them: a cache
+  both from the transcript (their `system` and `usage-record` kinds give no rows, `server/transcript.ts` `entryRows`) and never counts them: a cache
   warm's spend is the usage ledger's record, written when the warm call ends (llm-inflight `runtime.ts`). They never move context
   fill: `contextForBranch` reads assistant-message usage only (`messageContextTokens`,
-  `server/transcript.ts:397`).
+  `server/harness/pi/usage.ts`).
   `compaction` entries also gained a `systemMessage` field (additive; we ignore it).
 - **`steer()`/`followUp()` now run extension `input` handlers** (`source` defaults to `"interactive"`,
   `dist/core/agent-session.js` `_queueUserInput`); on 0.85.1 they bypassed them entirely

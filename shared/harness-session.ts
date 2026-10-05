@@ -112,6 +112,45 @@ export type HarnessEvent = { frame(): HarnessFrame } & (
   | { type: "other" }
 );
 
+/** Why a rewind was refused (shared/protocol.ts RewindRefusal). */
+export type RewindRefusal = "streaming" | "compacting" | "busy" | "recent" | "not_on_branch" | "cancelled" | "queued" | "internal";
+export type RewindOutcome = { ok: true; editorText: string } | { ok: false; reason: RewindRefusal; message: string };
+
+/** Why a compaction was refused (shared/protocol.ts CompactRefusal). */
+export type CompactRefusal = "streaming" | "compacting" | "queued" | "busy" | "recent" | "already" | "nothing" | "cancelled" | "internal";
+export type CompactOutcome = { ok: true; entryId: EntryId; tokensBefore: number } | { ok: false; reason: CompactRefusal; message: string };
+
+/** What a history operation asks its caller: the write guards, what a guard's throw means, and whether a
+    message is still on its way out. */
+export interface WriteGuardHooks {
+  /** Runs the write guards; throws when this session may not be written now. */
+  guard(): void;
+  /** A throw from `guard` (or a check the caller runs) as a refusal and its message; null: not a refusal,
+      a failure. */
+  refusal(err: unknown): { reason: "busy" | "recent"; message: string } | null;
+  /** A message is still on its way into the agent (the caller's queue, or the agent's own). */
+  queued(): boolean;
+}
+export interface RewindHooks extends WriteGuardHooks {
+  /** Just before the marker is written: flush the open-time appends. */
+  beforeMarker(): void;
+}
+export interface CompactHooks extends WriteGuardHooks {
+  /** The model policy: throws when the session's model may not be used for the summary. */
+  allowed(): void;
+  /** At the moment the compaction is written, after the guards ran again: flush the open-time appends. */
+  beforeWrite(): void;
+}
+
+/** The extension commands Sova runs directly (never through a send, so no command text reaches the
+    model), each named as the extension that owns it registers it. */
+export type CommandOwner = "mode" | "claude-login" | "sandbox" | "agent-resume";
+
+/** An extension's own command, as the session found it: run its handler with a context the session made. */
+export interface OwnedCommand {
+  handler(args: string, ctx: unknown): Promise<void>;
+}
+
 /** A held session, driven: its reads (SessionRead), its state, its input, its queue and its events. */
 export interface HarnessSession extends SessionRead {
   readonly state: SessionState;
@@ -139,6 +178,15 @@ export interface HarnessSession extends SessionRead {
   /** Stop the run (and a compaction); leaves the queue alone. */
   abort(): Promise<void>;
 
+  // ── history surgery (each reports a refusal, never throws one)
+  /** Move the leaf to just before the user input `entryId` on the active branch and write a marker that
+      keeps the move across a reopen; `editorText` is that input's text. Refused mid-run, mid-compaction,
+      with a message on its way out, or when a guard throws; a refusal writes nothing. */
+  rewindTo(entryId: EntryId, hooks: RewindHooks): Promise<RewindOutcome>;
+  /** Compact the session now, behind the same refusals; the compaction is the only write, guarded and
+      preceded by `beforeWrite` at the moment it happens. */
+  compact(instructions: string | undefined, hooks: CompactHooks): Promise<CompactOutcome>;
+
   // ── config
   /** A model this session may switch to, by ref: one with configured credentials, else why not. */
   findModel(ref: ModelRef): Promise<{ ok: true; model: HarnessModel } | { ok: false; error: string }>;
@@ -149,6 +197,11 @@ export interface HarnessSession extends SessionRead {
   activeTools(): string[];
   registeredTools(): string[];
   commands(): HarnessCommand[];
+  /** `owner`'s own command in this runtime, or undefined (not loaded, or a same-named command another
+      extension registered). */
+  command(owner: CommandOwner): OwnedCommand | undefined;
+  /** A fresh context to run an extension command's handler with. */
+  commandContext(): unknown;
 
   // ── writes outside a turn
   /** A user message entered with no turn; its id. Call refreshContext() after the last one. */

@@ -50,6 +50,8 @@ export interface PiQuirk {
 
 const CM = "server/chat-manager.ts";
 const SESSION = "server/harness/pi/session.ts";
+const OPS = "server/harness/pi/history-ops.ts";
+const COMMANDS = "server/harness/pi/commands.ts";
 
 export const PI_QUIRKS: readonly PiQuirk[] = [
   {
@@ -73,7 +75,10 @@ export const PI_QUIRKS: readonly PiQuirk[] = [
     kind: "monkey-patch",
     relies: "AgentSession.compact() writes its entry through the instance property sessionManager.appendCompaction, so wrapping it runs Sova's write guards and the deferred-append flush at the moment of the write.",
     pi: ["AgentSession.compact", "SessionManager.appendCompaction"],
-    where: [{ file: CM, symbol: "compactSession" }],
+    where: [
+      { file: OPS, symbol: "compactSession" },
+      { file: SESSION, symbol: "PiHarnessSession.compact" },
+    ],
     canary: "P2 compaction-write-wrap: compact() writes through the session manager's appendCompaction instance property",
     retireWhen: "pi offers a pre-write hook for a compaction",
   },
@@ -85,8 +90,8 @@ export const PI_QUIRKS: readonly PiQuirk[] = [
       'compact() refuses with "Already compacted", "Nothing to compact…" and "Compaction cancelled"; prompt() during a compaction throws "Cannot submit a prompt while compaction is in progress…". Sova maps each to a refusal or a held send by that text.',
     pi: ["AgentSession.compact", "AgentSession.prompt"],
     where: [
-      { file: CM, symbol: "compactSession" },
-      { file: CM, symbol: "isCompactionInProgress" },
+      { file: OPS, symbol: "compactSession" },
+      { file: OPS, symbol: "isCompactionInProgress" },
     ],
     canary: "P3 compaction-error-text: pi's compaction refusals and its prompt-while-compacting error read as Sova matches them",
     retireWhen: "pi throws typed errors",
@@ -177,7 +182,8 @@ export const PI_QUIRKS: readonly PiQuirk[] = [
     relies: "navigateTree({summarize:false}) writes nothing and moves only the in-memory leaf, and SessionManager.open takes the file's last line as the leaf; a rewind therefore appends a marker so the move survives a reopen.",
     pi: ["AgentSession.navigateTree", "SessionManager.open", "SessionManager.getLeafId"],
     where: [
-      { file: CM, symbol: "rewindSession" },
+      { file: OPS, symbol: "rewindSession" },
+      { file: SESSION, symbol: "PiHarnessSession.rewindTo" },
       { file: "server/harness/pi/fork.ts", symbol: "activeBranchLines" },
     ],
     canary: "P10 leaf-is-last-line: navigateTree({summarize:false}) writes nothing and moves only the in-memory leaf; open() takes the last line as the leaf",
@@ -232,15 +238,15 @@ export const PI_QUIRKS: readonly PiQuirk[] = [
     relies: "extensionRunner.getCommand(name) returns the command with its handler and sourceInfo.path (Sova checks the owner by that path), and the handler runs outside prompt() with extensionRunner.createCommandContext().",
     pi: ["ExtensionRunner.getCommand", "ExtensionRunner.createCommandContext", "ResolvedCommand.sourceInfo"],
     where: [
-      { file: CM, symbol: "ChatSession.modeCommand" },
-      { file: CM, symbol: "ChatSession.claudeLoginCommand" },
+      { file: COMMANDS, symbol: "ownedCommand" },
+      { file: COMMANDS, symbol: "commandContextOf" },
+      { file: SESSION, symbol: "PiHarnessSession.command" },
+      { file: SESSION, symbol: "PiHarnessSession.commandContext" },
       { file: CM, symbol: "ChatSession.applyMode" },
       { file: CM, symbol: "ChatSession.syncModePrompt" },
       { file: CM, symbol: "ChatSession.applyLoginPick" },
       { file: CM, symbol: "ChatSession.sandboxHost" },
       { file: CM, symbol: "ChatSession.resumeWorker" },
-      { file: "server/sandbox-state.ts", symbol: "sandboxCommandOf" },
-      { file: "server/worker-resume.ts", symbol: "resumeCommandOf" },
     ],
     canary: "P14 command-direct-call: getCommand finds an extension's command with its source path, and its handler runs outside prompt() with createCommandContext()'s ctx",
     retireWhen: "pi offers a public run-command API for embedders",

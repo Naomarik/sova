@@ -567,7 +567,9 @@ Sova speaks its own harness contract; pi is its one harness, behind one adapter 
 ## Conventions
 
 TS strict, ESM, no new dependencies without asking. Server normalizes JSONL entries into
-`TranscriptItem`; frontend renders those, and renders live streaming from the raw passthrough events.
+`TranscriptItem`; frontend renders those, and renders live streaming from `SovaEvent`s (it asks for
+`wire=2`; `shared/wire-v1.ts` maps an older server's v1 frames and rows). `src/` never branches on pi
+event or entry names, and wire additions use `SovaEvent`/`RowFacts` (`shared/harness-wire.ts`).
 Frontend is SolidJS (NOT React): signals/stores, `<For>/<Show>`, `onCleanup` for WS teardown.
 
 - Never keep secrets or machine-specific details in the repo (it is public): no keys, tokens, real IPs, hostnames, tailnet names, device IDs or home paths in code, scripts, tests, docs or commit messages. Read them from a gitignored env file (e.g. `local.env`, with a committed `local.env.example` of placeholders); when you create one, tell the user so they can fill it in.

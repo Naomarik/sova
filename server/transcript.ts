@@ -13,6 +13,7 @@ import {
 } from "../shared/protocol";
 import type { HEntry } from "../shared/harness";
 import { joinedText, rawOf, toHEntry, typedText } from "./harness/pi/reader";
+import { metaOf, withoutSignatures } from "./harness/pi/wire";
 import { PROFILE_ENTRY, SESSION_SENT_ENTRY } from "../shared/profiles";
 import { profileField, profileOnBranch } from "./session-profile";
 import {
@@ -120,36 +121,9 @@ export function sourced(it: TranscriptItem, entry: unknown): TranscriptItem {
   return withSource(it, toHEntry(entry));
 }
 
-const SIGNATURE_KEYS = new Set(["thinkingSignature", "textSignature", "thoughtSignature"]);
-
-/** `v` without any provider signature (encrypted reasoning) at any depth; `v` itself when it holds
-    none, so the common case copies nothing. */
-export function withoutSignatures<T>(v: T): T {
-  if (Array.isArray(v)) {
-    let out: unknown[] | null = null;
-    v.forEach((x, i) => {
-      const y = withoutSignatures(x);
-      if (y !== x) (out ??= v.slice())[i] = y;
-    });
-    return (out ?? v) as T;
-  }
-  if (!v || typeof v !== "object") return v;
-  let out: Record<string, unknown> | null = null;
-  for (const [k, x] of Object.entries(v as Record<string, unknown>)) {
-    if (SIGNATURE_KEYS.has(k)) {
-      out ??= { ...(v as Record<string, unknown>) };
-      delete out[k];
-      continue;
-    }
-    const y = withoutSignatures(x);
-    if (y !== x) (out ??= { ...(v as Record<string, unknown>) })[k] = y;
-  }
-  return (out ?? v) as T;
-}
-
-/** An entry's facts, as its first row carries them (EntryMeta): a pi entry's as pi wrote them (the wire's
-    v1 facts are pi's own fields, read off the raw entry until the wire moves, M3), else the neutral
-    entry's (a Claude Code row's). */
+/** An entry's facts, as its first row carries them on wire 1 (EntryMeta): a pi entry's as pi wrote them
+    (the adapter's metaOf: pi's own fields, its raw usage among them), else the neutral entry's (a Claude
+    Code row's). A wire-2 consumer gets them mapped (server/wire-rows.ts). */
 function factsOf(h: HEntry): EntryMeta {
   const raw = rawOf(h);
   return raw ? metaOf(raw) : neutralFacts(h);
@@ -185,35 +159,6 @@ function neutralFacts(h: HEntry): EntryMeta {
       break;
     default:
       return { type: "unknown" };
-  }
-  return meta;
-}
-
-/** A raw pi entry's facts (EntryMeta). */
-export function metaOf(entry: Entry): EntryMeta {
-  const meta: EntryMeta = { type: typeof entry.type === "string" ? entry.type : "unknown" };
-  if (typeof entry.customType === "string") meta.customType = entry.customType;
-  if (entry.type === "compaction") {
-    if (typeof entry.tokensBefore === "number") meta.tokensBefore = entry.tokensBefore;
-    if (typeof entry.summary === "string") meta.summary = entry.summary;
-    if (entry.details !== undefined) meta.details = entry.details;
-  }
-  const m = entry.message;
-  if (isObj(m)) {
-    const s = (k: string) => (typeof m[k] === "string" ? (m[k] as string) : undefined);
-    const put = <K extends keyof EntryMeta>(k: K, v: EntryMeta[K] | undefined) => {
-      if (v !== undefined) meta[k] = v;
-    };
-    put("role", s("role"));
-    put("provider", s("provider"));
-    put("model", s("model"));
-    if (m.usage !== undefined) meta.usage = m.usage;
-    put("stopReason", s("stopReason"));
-    put("errorMessage", s("errorMessage"));
-    put("toolName", s("toolName"));
-    put("toolCallId", s("toolCallId"));
-    if (typeof m.isError === "boolean") meta.isError = m.isError;
-    if (meta.customType === undefined) put("customType", s("customType"));
   }
   return meta;
 }

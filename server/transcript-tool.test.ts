@@ -21,7 +21,8 @@ mkdirSync(join(agentDir, "sessions", "live"), { recursive: true });
 
 const { app, server } = await import("./index");
 const { canonicalPath } = await import("./paths");
-const { toWireEvent, disposeAllChats } = await import("./chat-manager");
+const { disposeAllChats } = await import("./chat-manager");
+const { toV1Event: toWireEvent } = await import("./harness/pi/wire");
 const { claudeToolContent } = await import("./transcript-tool");
 if (!server.listening) await new Promise((r) => server.once("listening", r));
 const { AUTH_COOKIE, sovaToken } = await import("./auth");

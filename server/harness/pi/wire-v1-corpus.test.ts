@@ -19,8 +19,9 @@ import { isChangeRow } from "../../../src/lib/change-rows";
 import { contextFromItems, messageContextTokens } from "../../../src/lib/context";
 import { contentText, toolResultView } from "../../../src/lib/message";
 import { normalizeClaudeText } from "../../claude-transcript";
-import { metaOf, normalizeEntries } from "../../transcript";
+import { normalizeEntries } from "../../transcript";
 import { activeBranch, parseLines } from "./reader";
+import { metaOf } from "./wire";
 import { fixtureSets, GOLDEN_DIR, shortHash, type FixtureSet } from "./golden/golden";
 
 const sets = fixtureSets();
@@ -34,7 +35,7 @@ const nameOf = (set: FixtureSet, f: FixtureSet["fixtures"][number]): string => {
 
 // ---- The faux streams
 
-/** pi's event as chat-manager's toWireEvent sends it (server/chat-manager.ts:409): a message_update
+/** pi's event as toV1Event sends it (server/harness/pi/wire.ts): a message_update
     without `partial` and its message, a toolcall_start naming its call. Signatures don't matter here. */
 function wireEvent(event: any): unknown {
   if (event?.type !== "message_update") return event;

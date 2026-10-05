@@ -1,0 +1,24 @@
+{
+  "type": "view",
+  "view": {
+    "title": "Golden share",
+    "sharedAt": "2026-10-05T00:00:00.000Z",
+    "mode": "live",
+    "through": "2026-09-01T10:00:10.000Z",
+    "items": [
+      {
+        "kind": "user",
+        "n": 0,
+        "text": "Fork from here please",
+        "at": "2026-09-01T10:00:07.000Z"
+      },
+      {
+        "kind": "reply",
+        "n": 1,
+        "text": "I will check back in five minutes.",
+        "at": "2026-09-01T10:00:10.000Z"
+      }
+    ],
+    "images": 0
+  }
+}

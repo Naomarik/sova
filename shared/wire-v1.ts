@@ -81,7 +81,7 @@ const toolImages = (result: unknown) => (isObj(result) ? imagesFromContent(resul
 
 // ---- Events
 
-/** One streamed assistant event (`message_update`'s `assistantMessageEvent`, as toWireEvent sends it:
+/** One streamed assistant event (`message_update`'s `assistantMessageEvent`, as toV1Event sends it:
     a toolcall_start carries `id` and `toolName`). Its other types (start, done, error) map to none. */
 function partEvent(ev: Record<string, unknown>): SovaEvent[] {
   const at = typeof ev.contentIndex === "number" ? { index: ev.contentIndex } : {};
@@ -122,7 +122,7 @@ function partEvent(ev: Record<string, unknown>): SovaEvent[] {
 }
 
 /**
- * A wire-1 event frame (pi's event as toWireEvent sends it, plus the `entryId` a message_end may
+ * A wire-1 event frame (pi's event as server/harness/pi/wire.ts toV1Event sends it, plus the `entryId` a message_end may
  * carry) as wire-2 events, in order. Every event the live view acts on today maps to one; the ones
  * it ignores (turn_start, turn_end, agent_end, queue_update, a message of any other role, …) map to
  * none.

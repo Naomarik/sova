@@ -162,8 +162,10 @@ node core/sova-spec-draft.mjs merge-manifest --root DIR [--write] [--json]
    `promote … --plan SHA --write` applies exactly that plan. It refuses when
    evidence is missing or stale, when a file or record changed differently in
    both the draft and the current docs, or when the merged graph would not
-   load. Prose is compared as whole files and never merged. Current changes the
-   draft doesn't touch are kept.
+   load. Prose is compared per declaration (an H1 lede or H2 span): edits to
+   different declarations of one file merge, and one declaration changed on both
+   sides is a conflict, never merged as text. Current changes the draft doesn't
+   touch are kept.
 5. **`recover`** rolls back an interrupted promotion. Until it runs, every
    other write refuses.
 6. **`merge-manifest`** resolves a Git merge conflict in `manifest.json` record

@@ -17,8 +17,8 @@
 //       selection incomplete, lock held, pending transaction, race); 2 cannot (usage, corrupt draft,
 //       symlink, core contract, Git unusable).
 // Limits, stated honestly: the machine checks bytes, revisions and graph structure, never that code
-// implements prose; evidence text is the recorder's claim. Prose is merged by whole file: a file changed
-// on both sides is a conflict, never auto-merged. The lock and the before-hash checks keep COOPERATING
+// implements prose; evidence text is the recorder's claim. Prose is merged per declaration (H1 lede or H2
+// span): one changed on both sides, differently, is a conflict, never merged as text. The lock and the before-hash checks keep COOPERATING
 // writers apart; a writer racing between a check and a rename, or a parent directory swapped for a
 // symlink, is not fully prevented with portable fs calls.
 import { open, lstat, mkdir, writeFile, rename, link, unlink, rm, readdir, rmdir, mkdtemp } from "node:fs/promises";
@@ -424,6 +424,76 @@ function merge3(b, c, p) {
   if (c === b) return "apply";        // only the draft changed it
   return "conflict";                  // both changed it, differently
 }
+// One claim file cut at its declarations' spans (the core's lines): the bytes before the first one, then each
+// declaration's span and the gap after it (the blank lines up to the next one, or the file's tail). The pieces
+// concatenate back to the file exactly. → {pre, spans: [{id, text, gap}]} | null (not cut: CR, no or overlapping spans)
+function cutFile(buf, decls, path) {
+  const s = buf.toString("utf8");
+  if (s.includes("\r") || !Buffer.from(s, "utf8").equals(buf)) return null;
+  const ds = [...decls].filter(([, d]) => d.file === path && Array.isArray(d.lines)).map(([id, d]) => ({ id, a: d.lines[0], b: d.lines[1] })).sort((x, y) => x.a - y.a);
+  if (!ds.length || ds.some((d, k) => !(d.a >= 1 && d.b >= d.a && (k === 0 || ds[k - 1].b < d.a)))) return null;
+  const off = [0];
+  for (const l of s.split("\n")) off.push(Math.min(off.at(-1) + l.length + 1, s.length));
+  if (ds.at(-1).b >= off.length) return null;
+  const spans = ds.map((d, k) => ({ id: d.id, text: s.slice(off[d.a - 1], off[d.b]), gap: s.slice(off[d.b], k + 1 < ds.length ? off[ds[k + 1].a - 1] : s.length) }));
+  const pre = s.slice(0, off[ds[0].a - 1]);
+  return pre + spans.map((x) => x.text + x.gap).join("") === s ? { pre, spans } : null;
+}
+// Three-way merge of one claim file per declaration. Each declaration's span and the gap after it merge as their
+// own units; the bytes before the lede are one more. Declarations new on either side hang off the nearest kept
+// declaration before them; when both sides add after the same one, each side's run stays whole and the run whose
+// first id sorts first goes first. → {text, ids: Map id→span text} | {conflicts: [what]} | null (whole-file conflict)
+function mergeSpans(B, C, P) {
+  const conflicts = [];
+  const m3 = (b, c, p, what) => { if (p === b || c === p) return c; if (c === b) return p; conflicts.push(what); return c; };
+  const byId = (x) => new Map(x.spans.map((s, k) => [s.id, { ...s, next: x.spans[k + 1]?.id ?? null }]));
+  const b = byId(B), c = byId(C), p = byId(P);
+  const pre = m3(B.pre, C.pre, P.pre, "the bytes before the lede");
+  const kept = new Map(); // base id → merged {text, gap}
+  for (const { id } of B.spans) {
+    const x = b.get(id), y = c.get(id), z = p.get(id);
+    if (y && z) kept.set(id, { text: m3(x.text, y.text, z.text, id), gap: m3(x.gap, y.gap, z.gap, `the blank lines after ${id}`) });
+    else if (y && y.text !== x.text) conflicts.push(`${id} (changed in current, deleted in the draft)`);
+    else if (z && z.text !== x.text) conflicts.push(`${id} (deleted in current, changed in the draft)`);
+  }
+  // Kept declarations must keep base order on both sides; a reorder is merged as a whole file.
+  const order = (x) => x.spans.map((s) => s.id).filter((id) => kept.has(id)).join("\n");
+  if (order(C) !== order(B) || order(P) !== order(B)) return null;
+  // Runs of new declarations, keyed by the kept (base) declaration they follow ("" = file start).
+  const runs = (x, side) => {
+    const out = new Map(); let anchor = "";
+    for (const s of x.spans) {
+      if (b.has(s.id)) { anchor = s.id; continue; }
+      if (anchor && !kept.has(anchor)) conflicts.push(`${s.id} (added after ${anchor}, which the other side deleted)`);
+      out.set(anchor, [...(out.get(anchor) ?? []), { ...s, side }]);
+    }
+    return out;
+  };
+  const rc = runs(C, "c"), rp = runs(P, "p");
+  const same = (u, v) => u.length === v.length && u.every((s, k) => s.id === v[k].id && s.text === v[k].text && s.gap === v[k].gap);
+  const both = new Set([...rc.values()].flat().map((s) => s.id).filter((id) => p.has(id) && !b.has(id)));
+  for (const id of both) {
+    const anchor = [...rc].find(([, r]) => r.some((s) => s.id === id))[0];
+    if (!rp.has(anchor) || !same(rc.get(anchor), rp.get(anchor))) conflicts.push(`${id} (added on both sides, differently)`);
+  }
+  if (conflicts.length) return { conflicts: uniqSorted(conflicts) };
+  const out = [];
+  for (const anchor of ["", ...B.spans.map((s) => s.id).filter((id) => kept.has(id))]) {
+    if (anchor) out.push({ id: anchor, ...kept.get(anchor), side: "k" });
+    const u = rc.get(anchor) ?? [], v = rp.get(anchor) ?? [];
+    if (same(u, v)) out.push(...u);
+    else out.push(...[u, v].filter((r) => r.length).sort((r1, r2) => (r1[0].id < r2[0].id ? -1 : 1)).flat());
+  }
+  // A declaration followed by one it was not followed by on any side gets a blank line before it.
+  const followed = (s, nextId) => s.side === "k" ? [b, c, p].some((m) => m.get(s.id)?.next === nextId) : (s.side === "c" ? c : p).get(s.id).next === nextId;
+  let text = pre;
+  out.forEach((s, k) => {
+    let piece = s.text + s.gap;
+    if (k + 1 < out.length && !followed(s, out[k + 1].id) && !piece.endsWith("\n\n")) piece += piece.endsWith("\n") ? "\n" : "\n\n";
+    text += piece;
+  });
+  return { text, ids: new Map(out.map((s) => [s.id, s.text])) };
+}
 const recOf = (t, id) => (t.manifest?.claims ?? {})[id];
 async function analyze(root, name, readPolicy, inputSources) {
   const draft = await loadDraft(root, name, inputSources, readPolicy);
@@ -443,6 +513,19 @@ async function analyze(root, name, readPolicy, inputSources) {
     if (b !== p && !changedIds.length) changedIds = ids; // bytes moved outside any span: every declaration in the file owns it
     return { path, base: b, current: c, proposed: p, merge: merge3(b, c, p), ids: b === p ? [] : changedIds };
   });
+  // A file both sides changed merges per declaration when all three graphs load and every side cuts cleanly.
+  const both = files.filter((f) => f.merge === "conflict" && f.base && f.current && f.proposed);
+  const cc = both.length && bc.exit !== 2 && pc.exit !== 2 ? await declsOf(root, SPEC, readPolicy, inputSources) : null;
+  for (const f of both) {
+    if (!cc || cc.exit === 2) continue;
+    const cuts = [[base, bc], [cur, cc], [prop, pc]].map(([t, x]) => cutFile(t.files.get(f.path).buf, x.decls, f.path));
+    const m = cuts.every(Boolean) ? mergeSpans(...cuts) : null;
+    if (!m) continue;
+    if (m.conflicts) { f.spanConflicts = m.conflicts; continue; }
+    const buf = Buffer.from(m.text, "utf8");
+    if (sha(buf) === f.current) { f.merge = "same"; continue; }
+    Object.assign(f, { merge: "merge", merged: { buf, sha256: sha(buf), ids: m.ids } });
+  }
   const records = uniqSorted([base, cur, prop].flatMap((t) => Object.keys(t.manifest?.claims ?? {}))).map((id) => {
     const b = canon(recOf(base, id)), c = canon(recOf(cur, id)), p = canon(recOf(prop, id));
     return { id, merge: merge3(b, c, p), base: b && sha(b), current: c && sha(c), proposed: p && sha(p) };
@@ -576,7 +659,7 @@ async function statusOut(root, a) {
     proposedGraph: { exit: a.pc.exit, errors: a.pc.findings.filter((f) => f.severity === "error") },
     ids, undeclaredFiles: undeclared,
     meta: a.meta.filter((m) => m.merge !== "unchanged"),
-    files: a.files.filter((f) => f.merge !== "unchanged" || f.base !== f.current),
+    files: a.files.filter((f) => f.merge !== "unchanged" || f.base !== f.current).map(({ merged, ...f }) => (merged ? { ...f, merged: merged.sha256 } : f)),
     currentMoved: a.files.filter((f) => f.base !== f.current).map((f) => f.path).concat(a.records.filter((r) => r.base !== r.current).map((r) => r.id)),
     promotions: a.d.promotions,
   };
@@ -834,7 +917,7 @@ async function plan(root, o) {
   for (const f of files) { const missing = f.ids.filter((id) => !ids.has(id)); if (missing.length) refuse("selection-incomplete", `${f.path} also carries unselected changes to ${missing.join(", ")}; files move whole, so select them too (with their evidence) or revert them in the draft`); }
   const records = a.records.filter((r) => r.merge !== "unchanged" && ids.has(r.id));
   const meta = a.meta.filter((m) => m.merge !== "unchanged" && metaSel.has(m.key));
-  for (const u of [...files.map((f) => ({ what: f.path, merge: f.merge })), ...records.map((r) => ({ what: `record ${r.id}`, merge: r.merge })), ...meta.map((m) => ({ what: `manifest ${m.key}`, merge: m.merge }))])
+  for (const u of [...files.map((f) => ({ what: f.spanConflicts ? `${f.path}: ${f.spanConflicts.join(", ")}` : f.path, merge: f.merge })), ...records.map((r) => ({ what: `record ${r.id}`, merge: r.merge })), ...meta.map((m) => ({ what: `manifest ${m.key}`, merge: m.merge }))])
     if (u.merge === "conflict") refuse("conflict", `${u.what} changed in current since the draft was made, differently; current and draft are left as they are — bring the draft up to date by hand (or start a new draft) and retry`);
 
   // Every selected ID that stays current must say, explicitly, that it is not a proposal.
@@ -855,6 +938,7 @@ async function plan(root, o) {
   // Candidate = current tree with only the selected units replaced.
   const cand = new Map([...a.cur.files].filter(([p]) => p !== "manifest.json").map(([p, f]) => [p, f.buf]));
   for (const f of files) if (f.merge === "apply") { if (f.proposed === null) cand.delete(f.path); else cand.set(f.path, a.prop.files.get(f.path).buf); }
+    else if (f.merge === "merge") cand.set(f.path, f.merged.buf);
   let manifestBuf = a.cur.files.get("manifest.json")?.buf ?? null;
   if (records.some((r) => r.merge === "apply") || meta.some((m) => m.merge === "apply")) {
     const m = structuredClone(a.cur.manifest ?? {});
@@ -880,6 +964,14 @@ async function plan(root, o) {
       candidate = { exit: cj.exit, errors, newDangling: dangling, warnings: cj.findings.filter((f) => f.severity === "warn" && !/^code-|^provenance-/.test(f.code)).length };
       if (errors.length) refuse("candidate-invalid", `the merged graph would not load: ${errors.slice(0, 5).map((f) => `${f.code} ${f.message}`).join("; ")}`);
       if (dangling.length) refuse("candidate-dangling", `the merged graph would gain dangling edges: ${dangling.map((f) => f.message).join("; ")}; select the targets too`);
+      // A per-declaration merge must read back as exactly the declarations it was built from, byte for byte.
+      const got = new Map((cj.declarations ?? []).map((d) => [d.id, d]));
+      for (const f of files.filter((x) => x.merge === "merge")) {
+        const back = [...got].filter(([, d]) => d.file === `${SPEC}/${f.path}`).map(([id]) => id).sort().join(",");
+        const lost = [...f.merged.ids].filter(([id, t]) => got.get(id)?.textSha256 !== sha(t.endsWith("\n") ? t : `${t}\n`)).map(([id]) => id);
+        if (lost.length || back !== [...f.merged.ids.keys()].sort().join(","))
+          refuse("conflict", `${f.path}: the per-declaration merge does not read back as the declarations it was built from (${lost.join(", ") || "declarations differ"}); merge it by hand in a new draft from current`);
+      }
     } finally { await rm(tmp, { recursive: true, force: true }); }
   }
   const planSha = sha(JSON.stringify({ draft: o.name, targets }));

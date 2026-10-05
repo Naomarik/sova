@@ -116,29 +116,6 @@ export function BatonStrip(props: {
             <span class="baton-strip-meta">
               {i().orgName} · {i().projectName} · {whereLine(i(), now())} · {i().session.budget.messagesUsed} of {i().session.budget.messagesMax} messages
             </span>
-            {/* What it can do (§app.baton/abilities): from its next reply; the share page never shows it. */}
-            <div class="baton-strip-abilities" role="group" aria-labelledby="baton-strip-abilities-label">
-              <span id="baton-strip-abilities-label">It can:</span>
-              {/* Interactive drawings count only with Draw, so its box waits for Draw. */}
-              <For each={["draw", "drawHtml", "readLinks"] as const}>
-                {(k) => (
-                  <label class="toggle">
-                    <input
-                      type="checkbox"
-                      disabled={!open(i()) || (k === "drawHtml" && !abilitiesOf(i().session).draw)}
-                      checked={abilitiesOf(i().session)[k]}
-                      onChange={(e) => {
-                        const el = e.currentTarget;
-                        const on = el.checked;
-                        void act(() => setBatonAbilities(sid(), { [k]: on }), abilityToast(k, on)).then((ok) => ok || (el.checked = !on));
-                      }}
-                    />
-                    <span class="toggle-box" />
-                    <span>{ABILITY_LABEL[k]}</span>
-                  </label>
-                )}
-              </For>
-            </div>
             {/* Photos are on, but this model can't see them (§app.baton/images). */}
             <Show when={noPhotos() && open(i())}>
               <span class="baton-strip-meta">This model can't see photos: people won't get an attach button.</span>
@@ -240,6 +217,35 @@ export function BatonStrip(props: {
                 {closeArmed() ? "Close — Links Stop Working" : "Close Session"}
               </button>
             </Show>
+          </div>
+          {/* What it can do (§app.baton/abilities): from its next reply; the share page never shows it.
+              A row of its own under the head, so its boxes never stretch the head's text column. */}
+          <div class="baton-strip-row baton-strip-abilities" role="group" aria-labelledby="baton-strip-abilities-label">
+            <span id="baton-strip-abilities-label" class="baton-strip-abilities-label">
+              It can:
+            </span>
+            {/* Interactive drawings count only with Draw, so its box sits right after Draw and waits for
+                it. The boxes wrap as their own group, so a wrapped box lines up under Draw. */}
+            <span class="baton-strip-abilities-boxes">
+            <For each={["draw", "drawHtml", "readLinks"] as const}>
+              {(k) => (
+                <label class="toggle" classList={{ "baton-strip-ability-dependent": k === "drawHtml" }}>
+                  <input
+                    type="checkbox"
+                    disabled={!open(i()) || (k === "drawHtml" && !abilitiesOf(i().session).draw)}
+                    checked={abilitiesOf(i().session)[k]}
+                    onChange={(e) => {
+                      const el = e.currentTarget;
+                      const on = el.checked;
+                      void act(() => setBatonAbilities(sid(), { [k]: on }), abilityToast(k, on)).then((ok) => ok || (el.checked = !on));
+                    }}
+                  />
+                  <span class="toggle-box" />
+                  <span>{ABILITY_LABEL[k]}</span>
+                </label>
+              )}
+            </For>
+            </span>
           </div>
           {/* Send on WhatsApp (§app.outreach/send-link): the holder, or each reached invitee of an open offer. */}
           <Show when={open(i()) && (personHolds(i()) || liveOffer(i()))}>

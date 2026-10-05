@@ -13,6 +13,9 @@ import { PACKET_PARTS, PACKET_HELP, packetBudget, packetError, packetOrder, pack
 import { tocMain, pullCommand } from "./toc.mjs";
 import { readMain } from "./read.mjs";
 import { fieldShape, checkFields, frameOf, frameFinding, aboutNotes } from "./fields.mjs";
+import { lookCommand, graphMain, nearMain } from "./graph.mjs";
+import { mapMain } from "./map.mjs";
+import { whereMain } from "./where.mjs";
 
 const ID_SRC = String.raw`§[a-z][a-z-]*(?:\.[a-z][a-z-]*)?/[a-z][a-z-]*`;
 const ID_RE = new RegExp(`^${ID_SRC}$`);
@@ -1135,11 +1138,18 @@ function packetMain(opt) {
 
 // The pull commands (toc, read) live in their own modules and reach the graph only through the core's own loader.
 const pullCore = () => ({ findSpec, load, specDir, parentOf, exitOf, findings: () => findings, DEFAULT_SPEC });
+// The look commands (map, where, graph, impact --near) also read one source file, through the core's refusal rules.
+const lookCore = () => ({ ...pullCore(), readSource: (root, rel) => readInput(root, rel) });
 
 function main(argv) {
   const pull = pullCommand(argv);
   if (pull?.command === "toc") return tocMain(pull.rest, pullCore());
   if (pull?.command === "read") return readMain(pull.rest, pullCore());
+  const look = lookCommand(argv);
+  if (look?.command === "map") return mapMain(look.rest, lookCore());
+  if (look?.command === "where") return whereMain(look.rest, lookCore());
+  if (look?.command === "graph") return graphMain(look.rest, lookCore());
+  if (look?.command === "impact-near") return nearMain(look.rest, lookCore());
   const opt = parseArgs(argv);
   packetInvocation = argv[0] === "packet" || opt.pos[0] === "packet";
   reviewPolicy = opt["read-policy"] === "review"; assessmentPolicy = false;

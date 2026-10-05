@@ -207,7 +207,7 @@ function tree(root) {
 }
 test("standalone sibling shipment, draft/no-Git and refusal path preserve read-only filesystem", () => {
   const root = fixture(), tools = tmp();
-  for (const name of ["sova-spec.mjs", "packet.mjs", "toc.mjs", "read.mjs", "fields.mjs", "sova-spec-draft.mjs", "sova-spec-review.mjs"]) cpSync(join(dirname(CORE), name), join(tools, name));
+  for (const name of ["sova-spec.mjs", "packet.mjs", "toc.mjs", "read.mjs", "fields.mjs", "graph.mjs", "map.mjs", "where.mjs", "sova-spec-draft.mjs", "sova-spec-review.mjs"]) cpSync(join(dirname(CORE), name), join(tools, name));
   const before = tree(root);
   assert.deepEqual(collect(root, "prose", 1024, join(tools, "sova-spec.mjs")), collect(root, "prose"));
   assert.deepEqual(tree(root), before, "packet writes nothing");

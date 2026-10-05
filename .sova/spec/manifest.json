@@ -14321,6 +14321,87 @@
         "pi-config/extensions/spec/core/README.md",
         "pi-config/extensions/spec/README.md"
       ]
+    },
+    "§tools.spec/graph-payload": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§tools.spec/contents-view"
+      ],
+      "code": [
+        "pi-config/extensions/spec/core/sova-spec.mjs",
+        "pi-config/extensions/spec/core/graph.mjs",
+        "pi-config/extensions/spec/tests/map-fixture.mjs",
+        "pi-config/extensions/spec/core/README.md",
+        "pi-config/extensions/spec/tests/map.test.mjs",
+        "pi-config/extensions/spec/README.md"
+      ]
+    },
+    "§tools.spec/near-impact": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§tools.spec/contents-view"
+      ],
+      "code": [
+        "pi-config/extensions/spec/core/sova-spec.mjs",
+        "pi-config/extensions/spec/core/graph.mjs",
+        "pi-config/extensions/spec/tests/map-fixture.mjs",
+        "pi-config/extensions/spec/core/README.md",
+        "pi-config/extensions/spec/tests/map.test.mjs"
+      ]
+    },
+    "§tools.spec/spec-map": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§tools.spec/contents-view",
+        "§tools.spec/where-lookup"
+      ],
+      "code": [
+        "pi-config/extensions/spec/core/map.mjs",
+        "pi-config/extensions/spec/core/sova-spec.mjs",
+        "pi-config/extensions/spec/core/graph.mjs",
+        "pi-config/extensions/spec/tests/map-fixture.mjs",
+        "pi-config/extensions/spec/core/README.md",
+        "pi-config/extensions/spec/tests/map.test.mjs",
+        "pi-config/extensions/spec/README.md"
+      ]
+    },
+    "§tools.spec/where-lookup": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§tools.spec/contents-view",
+        "§tools.spec/inspection-safety"
+      ],
+      "code": [
+        "pi-config/extensions/spec/core/where.mjs",
+        "pi-config/extensions/spec/core/sova-spec.mjs",
+        "pi-config/extensions/spec/core/graph.mjs",
+        "pi-config/extensions/spec/tests/map-fixture.mjs",
+        "pi-config/extensions/spec/core/README.md",
+        "pi-config/extensions/spec/tests/where.test.mjs",
+        "pi-config/extensions/spec/README.md"
+      ]
+    },
+    "§tools.spec/agreed-promotion": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "requires": [
+        "§tools.spec/promotion-integrity"
+      ],
+      "code": [
+        "pi-config/extensions/spec/core/sova-spec-draft.mjs",
+        "pi-config/extensions/spec/tests/agreed.test.mjs",
+        "pi-config/extensions/spec/DRAFTS.md",
+        "pi-config/extensions/spec/PROMOTE.md"
+      ],
+      "evidence": "verified"
     }
   },
   "boundary": {

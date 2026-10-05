@@ -2,7 +2,8 @@
 // for every entry on the branch (a sample on a large or real session) plus an abandoned and a missing id, the
 // regenerate target and the rewind check for the same ids, and the chat's title. A batch edits only its own probes file, and only to follow a
 // moved function (README.md).
-import { resolveRegenerate, rewindSession, titleOf } from "../../../../chat-manager";
+import { resolveRegenerate, titleOf } from "../../../../chat-manager";
+import { rewindSession } from "../../history-ops";
 import { activeBranchLines, forkPrefix, isFanoutSource, parseSourceDoc } from "../../fork";
 import { activeBranch, historyOf, parseLines } from "../../reader";
 import { linesOrDigest, targetsOf, type Fixture, type Probe } from "../golden";
@@ -75,7 +76,7 @@ export const probes: Probe[] = [
           },
           navigateTree: async () => ({ editorText, cancelled: false }),
         };
-        const outcome = await rewindSession(session as never, id, { guard() {}, beforeMarker() {}, queued: () => false });
+        const outcome = await rewindSession(session as never, id, { guard() {}, refusal: () => null, beforeMarker() {}, queued: () => false });
         out[id] = { outcome, marks };
       }
       return out;

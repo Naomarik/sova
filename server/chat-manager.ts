@@ -19,10 +19,9 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { LOGIN_UNCHANGED, OVERSEER_ENTRY } from "../shared/protocol";
 import { type BatonSentData, OPERATOR } from "../shared/baton";
-import type { ChatClientMessage, ChatModeResult, ChatServerMessage, CompactRefusal, V1EventFrame, V2EventFrame, ModeApplies, ModeInfo, OverseerDialogAnswerData, OverseerSentMarkerData, QueueItem, RegenerateRefusal, RewindRefusal, SandboxApplyResult, SandboxInfo, SlashCommand, TranscriptItem, WorkerInfo } from "../shared/protocol";
+import type { ChatClientMessage, ChatModeResult, ChatServerMessage, V1EventFrame, V2EventFrame, ModeApplies, ModeInfo, OverseerDialogAnswerData, OverseerSentMarkerData, QueueItem, RegenerateRefusal, SandboxApplyResult, SandboxInfo, SlashCommand, TranscriptItem, WorkerInfo } from "../shared/protocol";
 import { COMPACT_COMMAND, COMPACT_IMAGES_REFUSAL, compactCommand } from "../shared/compact";
 import type { LinkedAgentInfo } from "../shared/mesh-links";
-import { stripImageNotes } from "../shared/image-note";
 import { isLinkMessage, parseLinkMessage } from "../shared/link-message";
 import { isTopicBatch } from "../shared/topic-message";
 import { parseWakeNudge } from "../shared/wake";
@@ -37,18 +36,19 @@ import { restorePick, pickEntryFor } from "../pi-config/extensions/subagents/sub
 import { modelAllowed, modelDenial, readModelPolicy } from "./model-policy";
 import { toContextInfo, workerWindowResolver } from "./models";
 import { claudeSpawnModels, WorkerContextReader, withWorkerContext } from "./worker-context";
-import { resumeCommandOf, resumeWorker, type ResumeOutcome } from "./worker-resume";
-import { applySandbox, onSandboxAppend, sandboxCommandOf, sandboxInfo, sandboxMessage, type SandboxHost } from "./sandbox-state";
+import { resumeWorker, type ResumeOutcome } from "./worker-resume";
+import { applySandbox, onSandboxAppend, sandboxInfo, sandboxMessage, type SandboxHost } from "./sandbox-state";
 import type { SandboxState } from "../pi-config/extensions/sandbox/state.ts";
 import { chatClaudeLogin, claudeLoginAfterHello, claudeLoginMessage, isClaudeLoginEntry, LoginPick, loginName } from "./claude-login-state";
 import { rowsOf, rowsOfEntry } from "./transcript";
 import { onWire, withRows } from "./wire-rows";
-import type { HarnessEvent, HarnessSession, HEntry, ImageInput, SessionState, SessionStateWriter, StateKind } from "../shared/harness";
+import type { CompactOutcome, HarnessEvent, HarnessSession, HEntry, ImageInput, SessionState, SessionStateWriter, StateKind } from "../shared/harness";
 import { historyOf } from "./harness/pi/reader";
 import { contextOfBranch } from "./harness/pi/usage";
-import { extensionEntries, piSessionState } from "./harness/pi/state";
+import { extensionEntries } from "./harness/pi/state";
 import { isAlreadyProcessing, PiHarnessSession } from "./harness/pi/session";
-import { BATON_SENT, LOADOUT, MODE, OVERSEER_DIALOG_ANSWER, OVERSEER_SENT, PROFILE, REWIND, SESSION_SENT, SUBAGENT_PROFILE, TOPIC_DELIVERED } from "./harness/state-kinds";
+import { drainQueueThenAbort, isCompactionInProgress } from "./harness/pi/history-ops";
+import { BATON_SENT, LOADOUT, MODE, OVERSEER_DIALOG_ANSWER, OVERSEER_SENT, PROFILE, SESSION_SENT, SUBAGENT_PROFILE, TOPIC_DELIVERED } from "./harness/state-kinds";
 import { cutTail, type HistoryPart, pullFields } from "./tail-hello";
 import { isOverseerId } from "./overseer-store";
 import { attachStreamGuard, capsFor, type StreamTrip } from "./stream-guard";
@@ -70,7 +70,7 @@ import { RunState, SessionLimits, sessionPowersExtension } from "./session-power
 import { queuePushExtension, topicStore } from "./topics";
 import { instrumentModelRuntime } from "../pi-config/extensions/llm-inflight/runtime.ts";
 import { markDegraded } from "../pi-config/extensions/llm-inflight/tracker.ts";
-import { noteUsageSession, registerUsageSession, withUsageContext } from "../pi-config/extensions/llm-inflight/attribution.ts";
+import { noteUsageSession, registerUsageSession } from "../pi-config/extensions/llm-inflight/attribution.ts";
 import { readWebSettings } from "./web-settings";
 
 const GUARD_POLL_MS = 3000;
@@ -472,26 +472,8 @@ function parseImages(raw: unknown): SdkImage[] | undefined {
   return out.length ? out : undefined;
 }
 
-/**
- * Stop: drain the queued steers/follow-ups, then abort — the TUI's Esc order
- * (restoreQueuedMessagesToEditor). abort() leaves the queue intact, so the next prompt would
- * send itself first and the stale steer right behind it. Nothing is written to the session file.
- */
-export async function drainQueueThenAbort(
-  session: Pick<AgentSession, "clearQueue" | "abort">,
-  broadcast: (msg: ChatServerMessage) => void,
-  /** Sova's own queue, when the chat has one: it drains BOTH its held items and the SDK's (it
-      calls `clearQueue()` itself), so Stop keeps meaning "nothing queued survives this". Absent
-      leaves the original SDK-only behaviour, which is what a bare session still gets. */
-  queue?: { drain(): Promise<{ steering: string[]; followUp: string[] }> },
-): Promise<void> {
-  // Awaited: the queue's own drain waits out a hand-off parked in an extension `input` handler,
-  // so Stop cannot clear "nothing", hand back no text, and then let that message be delivered
-  // after the user pressed Stop.
-  const { steering, followUp } = queue ? await queue.drain() : session.clearQueue();
-  if (steering.length || followUp.length) broadcast({ type: "queue_cleared", steering, followUp });
-  return session.abort();
-}
+/** Stop's drain-then-abort, for the special kinds that stop a chat themselves (harness/pi/history-ops.ts). */
+export { drainQueueThenAbort };
 
 /**
  * customType of the invisible entry a rewind appends. navigateTree({summarize:false}) only moves
@@ -624,145 +606,10 @@ function specialFor(sm: Pick<SessionManager, "getEntries" | "getSessionId">, pat
   return entry ? { kind: entry.kind, entry } : null;
 }
 
-export type RewindOutcome = { ok: true; editorText: string } | { ok: false; reason: RewindRefusal; message: string };
-
-/** The members of AgentSession a rewind uses (narrow so tests can drive it with a fake). */
-export interface RewindTarget {
-  readonly isStreaming: boolean;
-  readonly isCompacting: boolean;
-  readonly sessionManager: Pick<SessionManager, "getBranch" | "getLeafId" | "getEntries" | "appendCustomEntry">;
-  navigateTree(targetId: string, options: { summarize: boolean }): Promise<{ editorText?: string; cancelled: boolean }>;
-}
-
-/**
- * Rewind to just before the user input `entryId` on the active branch: navigateTree moves the leaf
- * to that message's parent (root when it is the first input) and returns its text, then the marker
- * above makes the move durable. `guard` runs the write guards (throws BusyError); `beforeMarker`
- * flushes the open-time appends. Those are flushed AFTER navigating, not before: flushed first,
- * they would land on the branch being abandoned and the new branch would lose its model/thinking
- * entries. A refusal writes nothing.
- */
-export async function rewindSession(
-  session: RewindTarget,
-  entryId: string,
-  hooks: { guard(): void; beforeMarker(): void; queued(): boolean },
-): Promise<RewindOutcome> {
-  const check = (): RewindOutcome | null => {
-    try {
-      hooks.guard();
-    } catch (err) {
-      if (!(err instanceof BusyError)) throw err;
-      return { ok: false, reason: err.code === "busy" ? "busy" : "recent", message: err.message };
-    }
-    if (session.isStreaming) return { ok: false, reason: "streaming", message: "Stop the turn first, then rewind." };
-    if (session.isCompacting)
-      return { ok: false, reason: "compacting", message: "Wait for the compaction or rewind in progress to finish, then rewind." };
-    // NOT covered by the isStreaming check above, and this is the point of having it separately:
-    // `steer()` awaits the extension `input` handlers before it queues anything, so a message can
-    // still be on its way out after the turn it was meant to interrupt has ended. Moving the leaf
-    // now would deliver it into the NEW branch on the next run — the abandoned message reappearing
-    // on the branch the user rewound TO. `hooks.queued` answers for Sova's own queue AND the
-    // SDK's, ours or an extension's: all three land the same way.
-    if (hooks.queued())
-      return { ok: false, reason: "queued", message: "A message is still on its way out. Wait for it to send, or press Stop, then rewind." };
-    return null;
-  };
-  try {
-    const refused = check();
-    if (refused) return refused;
-    const sm = session.sessionManager;
-    const target = historyOf(sm.getBranch()).find((h) => h.id === entryId);
-    if (target?.kind !== "user")
-      return { ok: false, reason: "not_on_branch", message: "That input is not on this chat's current branch anymore." };
-    const fromLeafId = sm.getLeafId();
-    const result = await session.navigateTree(entryId, { summarize: false });
-    if (result.cancelled) return { ok: false, reason: "cancelled", message: "An extension cancelled the rewind." };
-    // navigateTree awaits extension handlers; a TUI or foreign writer that appeared meanwhile
-    // still gets no write. The in-memory leaf has moved, but that runtime is write-refused from
-    // here on and a force reconnect reloads it from disk.
-    const late = check();
-    if (late) return late;
-    hooks.beforeMarker();
-    piSessionState(sm).append(REWIND, { targetId: entryId, fromLeafId: fromLeafId! }); // the target is on the branch, so a leaf exists
-    // Without pi 0.87's image resize notes: the composer gets the text as typed, not the model's copy.
-    return { ok: true, editorText: stripImageNotes(result.editorText ?? "", target.blocks) };
-  } catch (err) {
-    return { ok: false, reason: "internal", message: err instanceof Error ? err.message : String(err) };
-  }
-}
-
-export type CompactOutcome = { ok: true; entryId: string; tokensBefore: number } | { ok: false; reason: CompactRefusal; message: string };
-
-/** The members of AgentSession a compaction uses (narrow so tests can drive it with a fake). */
-export interface CompactTarget {
-  readonly isStreaming: boolean;
-  readonly isCompacting: boolean;
-  readonly sessionManager: Pick<SessionManager, "getBranch" | "appendCompaction">;
-  compact(customInstructions?: string): Promise<{ tokensBefore: number }>;
-}
-
-/**
- * Compact the chat now: pi's own `AgentSession.compact(instructions)`, behind the same refusals a
- * rewind has, because pi's compact() would otherwise do two things silently. It calls `abort()`
- * first (agent-session.js compact()), so a compaction started while a turn streams KILLS the turn;
- * and a message still on its way out would land after a summary that never saw it.
- *
- * `guard` runs the write guards (throws BusyError) and `allowed` the model policy (the summary is
- * a model call on the session's own model). The ONE write is pi's `appendCompaction`, and it is
- * wrapped for the call's duration: the write guards run again there — a summary can take minutes,
- * and a TUI that grabbed the file meanwhile must get no write — then `beforeWrite` flushes the
- * open-time appends, so they precede the compaction entry exactly as they precede a prompt. Any
- * refusal or failure therefore writes nothing at all, deferred appends included.
- */
-export async function compactSession(
-  session: CompactTarget,
-  instructions: string | undefined,
-  hooks: { guard(): void; allowed(): void; queued(): boolean; beforeWrite(): void },
-): Promise<CompactOutcome> {
-  const refused = (reason: CompactRefusal, message: string): CompactOutcome => ({ ok: false, reason, message });
-  const fromError = (err: unknown): CompactOutcome => {
-    if (err instanceof BusyError) return refused(err.code === "busy" ? "busy" : "recent", err.message);
-    const message = err instanceof Error ? err.message : String(err);
-    // pi's own refusals and its cancel, by the exact text agent-session.js compact() throws.
-    if (message === "Already compacted") return refused("already", "Already compacted.");
-    if (message.startsWith("Nothing to compact")) return refused("nothing", "Nothing to compact yet.");
-    if (message === "Compaction cancelled") return refused("cancelled", "Compaction cancelled.");
-    return refused("internal", `Compaction failed: ${message}`);
-  };
-  try {
-    hooks.guard();
-    hooks.allowed();
-  } catch (err) {
-    return fromError(err);
-  }
-  if (session.isStreaming) return refused("streaming", "Stop the turn first, then compact.");
-  if (session.isCompacting) return refused("compacting", "A compaction is already running.");
-  // The same window rewindSession's "queued" names: a steer can still be inside the extension
-  // `input` handlers after its turn ended.
-  if (hooks.queued())
-    return refused("queued", "Wait for the queued messages to send, then compact.");
-  // pi refuses this too, but only after announcing a compaction_start; saying it here keeps every
-  // client's pane from flickering "Compacting" for a no-op.
-  if (session.sessionManager.getBranch().at(-1)?.type === "compaction") return fromError(new Error("Already compacted"));
-  const sm = session.sessionManager;
-  const append = sm.appendCompaction;
-  let entryId: string | null = null;
-  sm.appendCompaction = (...args: Parameters<typeof append>) => {
-    hooks.guard();
-    hooks.beforeWrite();
-    entryId = append.apply(sm, args);
-    return entryId;
-  };
-  try {
-    // Its summary call is the session's own, recorded with purpose `compaction` (usage ledger).
-    const result = await withUsageContext({ purpose: "compaction" }, () => session.compact(instructions));
-    if (!entryId) return refused("internal", "Compaction failed: pi reported success but wrote no compaction entry.");
-    return { ok: true, entryId, tokensBefore: result.tokensBefore };
-  } catch (err) {
-    return fromError(err);
-  } finally {
-    sm.appendCompaction = append;
-  }
+/** What a write guard's throw means to a rewind or a compaction: a BusyError is a refusal ("busy" when
+    the TUI owns the file, else "recent"); anything else is a failure. */
+export function busyRefusal(err: unknown): { reason: "busy" | "recent"; message: string } | null {
+  return err instanceof BusyError ? { reason: err.code === "busy" ? "busy" : "recent", message: err.message } : null;
 }
 
 /** What a regenerate resolved to: the user input to replay, exactly as the file stores it. */
@@ -881,11 +728,6 @@ export interface PendingDialog {
   message?: string;
   options?: string[];
   since: number;
-}
-
-/** pi's prompt() refusal while a manual compaction runs (agent-session.js prompt(), 0.87.1). */
-export function isCompactionInProgress(err: unknown): boolean {
-  return err instanceof Error && err.message.startsWith("Cannot submit a prompt while compaction is in progress");
 }
 
 /** Session events after which Sova's queue re-reads the SDK's own queue lengths. `run.settled` and
@@ -1779,7 +1621,7 @@ class ChatSession {
     const cmd = this.modeCommand();
     if (!cmd) return;
     try {
-      await cmd.handler("sync", this.session.extensionRunner.createCommandContext());
+      await cmd.handler("sync", this.harness.commandContext());
     } catch (err) {
       console.error("[chat] /mode sync failed", err);
     }
@@ -1790,8 +1632,7 @@ class ChatSession {
    * (extension-toggle, a name clash). Checked by source so another extension's "mode" never runs.
    */
   private modeCommand() {
-    const cmd = this.session.extensionRunner.getCommand("mode");
-    return cmd && /[\\/]extensions[\\/]mode[\\/]index\.ts$/.test(cmd.sourceInfo?.path ?? "") ? cmd : undefined;
+    return this.harness.command("mode");
   }
 
   /** The chat socket's `profile` message (§chat.profiles/applying). */
@@ -1957,7 +1798,6 @@ class ChatSession {
    */
   async applyMode(state: ModeState): Promise<"skip" | "unsupported" | "command"> {
     if (this.disposed) return "skip"; // a disposed runtime took nothing
-    const session = this.session;
     const streaming = this.harness.isRunning();
     let live = false;
     try {
@@ -1979,7 +1819,7 @@ class ChatSession {
       // minus the prompt text that path falls back to when a command is missing. Internal-ish
       // API: re-check on SDK upgrades. The SDK reports handler errors via emitError; so do we.
       const cmd = this.modeCommand()!;
-      const ctx = session.extensionRunner.createCommandContext();
+      const ctx = this.harness.commandContext();
       this.flushDeferredAppends(); // open-time entries go before the extension's mode marker
       try {
         for (const minor of MINOR_MODES) await cmd.handler(`${minor} ${state.minorModes.includes(minor) ? "on" : "off"}`, ctx);
@@ -2030,8 +1870,7 @@ class ChatSession {
    * source, like modeCommand.
    */
   private claudeLoginCommand() {
-    const cmd = this.session.extensionRunner.getCommand("claude-login");
-    return cmd && /[\\/]extensions[\\/]claude-code[\\/]index\.ts$/.test(cmd.sourceInfo?.path ?? "") ? cmd : undefined;
+    return this.harness.command("claude-login");
   }
 
   /** This chat's Claude login with its waiting pick, as every tab is told it. */
@@ -2077,7 +1916,7 @@ class ChatSession {
       assertNotLive(this.path);
       this.assertNoForeignWrites();
       this.flushDeferredAppends(); // open-time entries go before the claude-login entry
-      await cmd.handler(pick.id, this.session.extensionRunner.createCommandContext());
+      await cmd.handler(pick.id, this.harness.commandContext());
       if (!this.foreignWrite) markOwned(this.path); // the claude-login entry is our write
     } catch (err) {
       failure = err instanceof Error ? err.message : String(err);
@@ -2113,7 +1952,7 @@ class ChatSession {
 
   /** The sandbox extension's /sandbox command in this runtime (server/sandbox-state.ts). */
   private sandboxCommand() {
-    return sandboxCommandOf(this.session.extensionRunner);
+    return this.harness.command("sandbox");
   }
 
   /** This chat's sandbox now (§chat.sandbox/states), or null when its runtime has no sandbox extension. */
@@ -2137,7 +1976,7 @@ class ChatSession {
         }
         return this.disposed || this.hasForeignWrites();
       },
-      commandContext: () => this.session.extensionRunner.createCommandContext(),
+      commandContext: () => this.harness.commandContext(),
       beforeCommand: () => this.flushDeferredAppends(), // open-time entries go before the extension's
       afterCommand: () => {
         if (!this.foreignWrite) markOwned(this.path); // the extension's entry is our write
@@ -2153,9 +1992,9 @@ class ChatSession {
     if (this.disposed) return { ok: false, status: 404, error: "That session isn't open on this server; open the chat first." };
     const outcome = await resumeWorker(
       {
-        command: () => resumeCommandOf(this.session.extensionRunner),
+        command: () => this.harness.command("agent-resume"),
         foreign: () => this.sandboxHost.foreign(),
-        commandContext: () => this.session.extensionRunner.createCommandContext(),
+        commandContext: () => this.harness.commandContext(),
         beforeCommand: () => this.flushDeferredAppends(),
         afterCommand: () => {
           if (!this.foreignWrite) markOwned(this.path); // the extension's registry entry is our write
@@ -2695,7 +2534,7 @@ class ChatSession {
             this.keepQueued((it) => !!it.baton && it.baton.by !== OPERATOR).catch(fail);
             return;
           }
-          drainQueueThenAbort(this.session, (m) => this.broadcast(m), this.queue).catch(fail);
+          drainQueueThenAbort({ clearQueue: () => this.harness.queue.clear(), abort: () => this.harness.abort() }, (m) => this.broadcast(m), this.queue).catch(fail);
           return;
         case "queue_remove": {
           const id = String(msg.id ?? "");
@@ -2844,7 +2683,7 @@ class ChatSession {
   }
 
   /**
-   * The client's /compact (compactSession), then the same refresh a rewind does: pi emits no
+   * The client's /compact (HarnessSession.compact), then the same refresh a rewind does: pi emits no
    * `entry_appended` for a manual compaction's entry, so every client gets a fresh hello (items
    * ending in the compaction row, context null until the next reply), workers and mode. Only the
    * requester gets the outcome. `compactRunning` spans the whole call, from before pi's own
@@ -2861,11 +2700,12 @@ class ChatSession {
     this.compactRunning = true;
     let outcome: CompactOutcome;
     try {
-      outcome = await compactSession(this.session, instructions, {
+      outcome = await this.harness.compact(instructions, {
         guard: () => {
           assertNotLive(this.path);
           this.assertNoForeignWrites();
         },
+        refusal: busyRefusal,
         allowed: () => this.assertModelAllowed(),
         queued: () => this.hasPendingSends(),
         beforeWrite: () => this.flushDeferredAppends(),
@@ -2887,17 +2727,18 @@ class ChatSession {
   }
 
   /**
-   * The client's rewind (rewindSession), then the refresh no SDK event does: every client gets a
+   * The client's rewind (HarnessSession.rewindTo), then the refresh no SDK event does: every client gets a
    * fresh hello (branch-based, so transcript and context fill follow the new leaf) and this chat's
    * mode re-resolved from the new branch, as bind() does (the mode extension re-resolves on
    * session_tree too), with the workers snapshot between them. Only the requester gets the text back.
    */
   private async rewind(client: ChatClient, id: string, entryId: string): Promise<void> {
-    const outcome = await rewindSession(this.session, entryId, {
+    const outcome = await this.harness.rewindTo(entryId, {
       guard: () => {
         assertNotLive(this.path);
         this.assertNoForeignWrites();
       },
+      refusal: busyRefusal,
       queued: () => this.hasPendingSends(),
       beforeMarker: () => this.flushDeferredAppends(),
     });
@@ -2919,7 +2760,7 @@ class ChatSession {
    *
    * Order is load-bearing in two places. The model policy is checked BEFORE the rewind, so a
    * session sitting on a switched-off model refuses without having thrown its branch away. And the
-   * rewind goes through `rewindSession`, so the invisible `sova-rewind` marker is written before
+   * rewind goes through `rewindTo`, so the invisible `sova-rewind` marker is written before
    * the prompt: if the prompt then fails, a reload still lands on the new branch instead of
    * silently restoring the reply the user asked to replace.
    */
@@ -2933,11 +2774,12 @@ class ChatSession {
     } catch (err) {
       return refuse("internal", err instanceof Error ? err.message : String(err));
     }
-    const outcome = await rewindSession(this.session, target.userId, {
+    const outcome = await this.harness.rewindTo(target.userId, {
       guard: () => {
         assertNotLive(this.path);
         this.assertNoForeignWrites();
       },
+      refusal: busyRefusal,
       queued: () => this.hasPendingSends(),
       beforeMarker: () => this.flushDeferredAppends(),
     });

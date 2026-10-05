@@ -4,26 +4,16 @@
 // builtins only), like mode-state.ts imports mode/state.ts, and never learn what a policy, a level
 // or a backend is beyond the status words in that entry. Without the extension nothing here runs.
 import { describeActive, LEVELS, type SandboxActive, type SandboxState, STATES, stateOf } from "../pi-config/extensions/sandbox/state.ts";
-import type { StateView } from "../shared/harness";
+import type { OwnedCommand, StateView } from "../shared/harness";
 import type { ChatServerMessage, SandboxApplyResult, SandboxInfo } from "../shared/protocol";
 import { stateViewOf } from "./harness/pi/state";
 import { SANDBOX } from "./harness/state-kinds";
 
 type Entry = unknown;
-type Command = { handler(args: string, ctx: any): Promise<void> | void; sourceInfo?: { path?: string } };
 
 /** A branch with no `sandbox` entry: the extension writes one whenever a session comes up on, so
     none means Subagents only (§chat.sandbox/states). */
 const OFF: SandboxActive = { version: 1, on: false, level: LEVELS[0]!, backend: "none", enforcement: "none" };
-
-/**
- * The sandbox extension's own /sandbox command in a runtime, or undefined when it isn't loaded.
- * Checked by source, like the mode command, so another extension's "sandbox" never runs.
- */
-export function sandboxCommandOf(runner: { getCommand(name: string): Command | undefined }): Command | undefined {
-  const cmd = runner.getCommand("sandbox");
-  return cmd && /[\\/]extensions[\\/]sandbox[\\/]index\.ts$/.test(cmd.sourceInfo?.path ?? "") ? cmd : undefined;
-}
 
 /** This branch's sandbox status: the newest usable `sandbox` record (the extension's own rule). */
 export const sandboxInfo = (branch: readonly Entry[]): SandboxInfo => sandboxInfoOf(stateViewOf(branch));
@@ -55,7 +45,8 @@ export function parseSandboxBody(body: unknown): { state: SandboxState } | { err
 
 /** What one held chat gives the adapter (ChatSession.sandboxHost). */
 export interface SandboxHost {
-  command(): Command | undefined;
+  /** The sandbox extension's own /sandbox command (HarnessSession.command("sandbox")), or undefined. */
+  command(): OwnedCommand | undefined;
   /** A TUI owns the file or a foreign writer was seen: nothing may be written. */
   foreign(): boolean;
   commandContext(): unknown;

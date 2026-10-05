@@ -39,7 +39,7 @@
   "readers": {
     "server/baton-loadout.ts": {"calls": 1, "shapes": 0, "reaches": 0},
     "server/baton-wrapup.ts": {"calls": 0, "shapes": 0, "reaches": 7},
-    "server/chat-manager.ts": {"calls": 8, "shapes": 9, "reaches": 58},
+    "server/chat-manager.ts": {"calls": 6, "shapes": 8, "reaches": 49},
     "server/index.ts": {"calls": 3, "shapes": 0, "reaches": 4},
     "server/org-test-fixtures.ts": {"calls": 0, "shapes": 1, "reaches": 0},
     "server/overseer-tools.ts": {"calls": 2, "shapes": 0, "reaches": 0},

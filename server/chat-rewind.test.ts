@@ -17,7 +17,8 @@ mkdirSync(join(agentDir, "sessions", "live"), { recursive: true });
 const cwd = join(agentDir, "cwd");
 mkdirSync(cwd, { recursive: true });
 
-const { acquireChat, BusyError, disposeAllChats, REWIND_ENTRY, rewindSession } = await import("./chat-manager");
+const { acquireChat, BusyError, busyRefusal, disposeAllChats, REWIND_ENTRY } = await import("./chat-manager");
+const { rewindSession } = await import("./harness/pi/history-ops");
 const { normalizeEntries, normalizeEntry } = await import("./transcript");
 const { canonicalPath } = await import("./paths");
 
@@ -86,6 +87,7 @@ function fake(entries: any[], opts: { streaming?: boolean; compacting?: boolean;
   };
   const hooks = {
     guard: () => void calls.push("guard"),
+    refusal: busyRefusal,
     queued: () => opts.queued ?? false,
     beforeMarker: () => void calls.push("flush"),
   };

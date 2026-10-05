@@ -104,7 +104,7 @@ genuine pi event streams in the repo (milestone 3 reuses them).
 | `list` (D) | `summary` (the file-derived fields of `getSessionSummary`), `head` (`readHead`), `tail` (`readTailModel`, `readTailContext`, `readTailReply`), `title-input`, `tail-turn` (session-tags), `schedule-last-turn` (`lastTurn`), `project-costs-title` |
 | `baton` (E) | `baton-view` (operator, a person, an invitee before the offer), `baton-facts` (vocabulary, senders, author notes, recount, recorded model, photos), `share-view` (`shownEntries`, `branchTo`) |
 | `overseer` (F) | `overseer-folds` (prompted, briefed, cleared, `lastReplyIn`, open alignments), `align-scan` and `readiness-scan` (whole, a prefix, then grown) |
-| `fork` (H) | `fork` (`parseSourceDoc`, `activeBranchLines`, `forkPrefix` raw lines for every id + an abandoned + a missing one), `regenerate` (every id and its `:0` block), `rewind` (`rewindSession` on a stand-in session), `chat-title` |
+| `fork` (H) | `fork` (`parseSourceDoc`, `activeBranchLines`, `forkPrefix` raw lines for every id + an abandoned + a missing one), `regenerate` (every id and its `:0` block), `rewind` (`rewindSession`, harness/pi/history-ops.ts, on a stand-in session), `chat-title` |
 
 Spend is the usage ledger's (feat/usage-ledger): no transcript reader prices anything, so no probe records
 spend from a session file; project-costs reads only the session's title from one.

@@ -502,7 +502,8 @@ is a separate install and may be another version — a fact read there is not a 
   reload or restart reverts a rewind. It is invisible (normalizeEntry renders unknown custom types as
   nothing; the TUI ignores it too), never LLM context, no usage. It is the `REWIND` kind of the
   registry `server/harness/state-kinds.ts`, written through `SessionState` (pi adapter:
-  `server/harness/pi/state.ts`) by `rewindSession` (`server/chat-manager.ts`), parented on the new
+  `server/harness/pi/state.ts`) by `rewindSession` (`server/harness/pi/history-ops.ts`, the chat's
+  `HarnessSession.rewindTo`), parented on the new
   leaf; the open-time deferred appends are flushed AFTER navigating (before, they would land on the
   abandoned branch). Every other Sova custom entry works the same way (§app.harness/state).
 - SDK: `createAgentSession`, `createAgentSessionRuntime`, `SessionManager.open(path)/create(cwd)`,

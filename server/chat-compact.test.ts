@@ -19,7 +19,8 @@ mkdirSync(join(agentDir, "sessions", "live"), { recursive: true });
 const cwd = join(agentDir, "cwd");
 mkdirSync(cwd, { recursive: true });
 
-const { acquireChat, BusyError, compactSession, disposeAllChats } = await import("./chat-manager");
+const { acquireChat, BusyError, busyRefusal, disposeAllChats } = await import("./chat-manager");
+const { compactSession } = await import("./harness/pi/history-ops");
 const { canonicalPath } = await import("./paths");
 
 after(async () => {
@@ -77,6 +78,7 @@ function fake(opts: { streaming?: boolean; compacting?: boolean; lastIsCompactio
   };
   const hooks = {
     guard: () => void calls.push("guard"),
+    refusal: busyRefusal,
     allowed: () => void calls.push("allowed"),
     queued: () => false,
     beforeWrite: () => void calls.push("flush"),

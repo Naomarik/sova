@@ -11,6 +11,7 @@ requirements within an explicit whole-response budget, with continuation and unk
 Beside the full-closure packet, a contents view (`toc`) lists a claim's one-hop neighbours with what
 each is and why it is linked, and single-passage reads (`read`) return one claim without its chain,
 so the agent chooses what it reads.
+A map (`map`) shows every area on one page, and `where` finds the claims for a source file or a name.
 They change context delivery, not release policy. Structured observation-only assessments are separately
 recorded input-bound comparisons, not proof of requirements truth or mandatory release policy.
 A shipped playbook runs these tools for a review the operator starts, inside limits the operator
@@ -143,6 +144,23 @@ declarations were reordered, that holds a carriage return, or whose graph on any
 load, is still compared as a whole file. A merged file must read back as exactly the declarations
 it was merged from, byte for byte, or the promotion is refused as a conflict and nothing is written.
 
+## §tools.spec/agreed-promotion — An agreed promise lands in the main spec before it is built
+
+A behavior or surface record may carry `agreed: {by, at}`: who agreed to its wording and when (an
+ISO date, optionally with a time). It is written when the person agrees, and it belongs to that
+wording: a promotion may replace the `agreed` of a record current already has only when the same
+promotion also changes that record's prose and the new `at` is not earlier than the old one. A
+promotion that changes `agreed` on unchanged prose, or that removes it without deleting the whole
+record, is refused, so the later build updates the same record and still says who decided, and
+nobody re-stamps a decision silently. A record with `agreed` and no `code` may be
+promoted on doc-only evidence, as notes and sections are: that records the decision, not that
+anything was built. A record reads as built only when it has `code` and the `evidence` label
+`reviewed` or `verified`, so doc-only evidence for an agreed record that declares either one is
+refused, and an agreed record that maps code still needs commit or snapshot evidence of that code.
+An `agreed` that is not an object with a non-empty `by` and a valid date `at`, or that sits on a
+note or section, is refused at evidence and at promotion. `agreed` is a record field, not a label
+value, so a core that predates it still loads a manifest carrying it.
+
 ## §tools.spec/inspection-safety — Refused inputs are not inspected
 
 The core, draft, and review commands validate path configuration before traversing it. Invalid
@@ -220,6 +238,91 @@ scope uncertainty remain distinct; none of these establishes semantic completene
 Raw manifest and claim bytes, traversal identity, safely read provenance inputs, and reported scope
 states participate in cursor binding. Code contents that were not read are not
 snapshotted. Refused inputs are not reopened merely to compute a fingerprint.
+
+## §tools.spec/spec-map — `map` shows every area on one page
+
+The read-only `map` command is an orientation view computed from the manifest and the claim files.
+Without an argument it lists each namespace and, under it, each H1 area with its § id, its heading
+title, its lede's first sentence (the contents view's **what**), its number of claims, its counts by
+declared `authority` and `evidence` label, and how many `requires` edges leave it for other areas
+and arrive from them. After the areas come the hubs, the ten code files the most records list, each
+with that count, and the gap counts: behaviors with no `requires` key, records with no `code`,
+passages with no prose sentence, and records with no interface token (as §tools.spec/where-lookup
+defines one). `map <namespace>` limits all of it to one namespace; a namespace with no area is
+refused. `map '§ns/name'` shows one area: its H1, then its H2s in declaration order, each with kind,
+labels, code count, its declared `requires` count (or "uninvestigated" when it has no `requires` key)
+and how many claims require it; then every `requires` edge that crosses the area's boundary, out and
+in, by § id; then the interface tokens it defines, those in one of its claims' heading or first
+sentence, with how many claims elsewhere use each. An H2 given to `map` shows its area, with a note
+saying so. A count of agreed but unbuilt claims is printed only when the spec records agreement;
+until then the map says "agreed-not-built: not available (no agreed field yet)", and the JSON
+leaves the count out, so it never reads as zero.
+
+`map`, `where` and `impact --near` are bounded and stateless like the contents view: compact JSON
+with `--json` and readable text without, explicit budgets from 1,024 to 32,768 bytes (`map` defaults
+to 32,768 so the whole map usually fits one call, the others to 12,000), lines that do not fit left
+for a continuation cursor bound to every computed line, so a spec change makes it stale, exit 0 when
+done, 1 when more remains or an unknown is named, and 2 for a refusal (usage, unknown id or
+namespace, untrusted graph, a bad or stale cursor, a budget too small for one line) as small JSON.
+The command may follow its flags. They store nothing and run no project code.
+
+## §tools.spec/where-lookup — `where` finds the claims for a file or a name
+
+The read-only `where <path|token>` command answers "which promises cover this?". A path is a file a
+record's `code` lists or that exists under the project root; anything else is a token, and `--token`
+forces that reading. A path-shaped argument that is neither is searched as a token with a line saying
+so. For a path it lists every claim whose `code` names the file, ranked by the interface tokens in
+the claim's own passage that also occur in the file, each shown with the tokens it shares. An
+interface token is a backticked span, outside fenced code and HTML comments, of at least three
+characters with a letter, that looks like a name the code uses: it contains `/`, `.`, `_`, `:`, `#`,
+`-`, `$`, `=` or a bracket, or has a capital after its first letter, or is upper case; plain words
+are not tokens. It occurs in a file when it appears there with no letter, digit, `_` or `$` on
+either side. A token counts for more the fewer records use it (its score is the log of the record
+count over the records using it), and a claim's score is the sum over the tokens it shares. Claims
+sharing no token follow the ranked ones in id order, with their `code` list as the only link. The
+first ten are shown with a line naming how many more there are and the `--all` flag that lists every
+claim naming the file, none dropped. A file no record lists is reported as listed by no claim, exit
+1, with up to ten claims whose interface tokens occur in it under a heading that calls them unmapped
+candidates, a name match and not a mapping, and never as an empty success. The file is read only
+through the core's own refusal rules (inside the root, no symlink on its path, a regular file), and
+only the one file asked about; a file it cannot read is reported as not read, with why, exit 1, and
+its claims are still listed, unranked. For a token it lists the claims whose backticked spans equal
+it or contain it as a whole name: first those that use it in their heading or first sentence, as
+defining it, then the rest, as mentioning it; none found is exit 1.
+
+## §tools.spec/near-impact — `impact --near` lists what a change could reach, one hop at a time
+
+`impact '§id' --near` is a narrowed impact view; `impact` without the flag keeps its output and
+contract. It works on the seed's family: an H1 with its H2s, or an H2 alone together with the
+claims that require its parent H1, which bring it with them (marked as reached through the parent).
+It lists, in this order: the **consumers**, the claims outside the family whose `requires` names a
+family member, one hop only, each with title, kind, labels, size, what and the family members it
+requires, and the why of the first of those its text explains, as a contents line gives it; the
+sections whose `members` name a family member; the **frontier**, the behaviors with no `requires`
+key that belong to the family or whose text names a family member; the **next hop**, the claims that
+require a consumer, by id only; the claims whose text names a family member, by id only; and the
+**code neighbours**, one line per file the family lists that other records list too, fewest other
+records first, with up to twelve of their ids and the count of the rest, named with `where` for the
+whole list. A claim's text names a § in its prose, masked as in the contents view, or in its heading
+after its own id. Behaviors with no `requires` key outside the frontier are counted on one line that
+names plain `impact` as the command that lists them, so none reads as checked. Every group's count
+is on each page.
+
+## §tools.spec/graph-payload — `graph --json` is the one computed graph every view reads
+
+The read-only `graph --json` command prints the spec graph as one deterministic payload, for
+machine consumers such as a static page: a node per declared claim, in id order (id, kind, level,
+namespace, area, title, what and its source, declared labels, passage bytes and, for an H1 with
+H2s, the whole file's bytes, file and lines, the declared `requires` count or null when the key is
+absent, and the number of `code` paths), then the edges, each with its kind: `requires`, `member`,
+`contains` (an H1 to each of its H2s), `mentions` (a claim's text naming another §, as
+§tools.spec/near-impact reads it) and `code` (a claim to a file it lists); an edge to an id with no
+record or span is marked dangling. It is computed on each call from the manifest and the claim files
+and never written into the spec. It is paged under a whole-response budget, 32,768 bytes by default
+and 1,024 to 32,768 when given, with the nodes, then the edges, cut at item boundaries, the counts
+per kind on every page, and a stateless cursor bound to the whole payload; concatenating every page's
+`nodes` and `edges` in order rebuilds the same payload whatever the budget. Without `--json` it
+prints only the counts.
 
 ## §tools.spec/contents-view — `toc` shows one hop of neighbours before anything is read
 

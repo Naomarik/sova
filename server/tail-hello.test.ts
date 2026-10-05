@@ -20,7 +20,8 @@ const cwd = join(agentDir, "cwd");
 mkdirSync(cwd, { recursive: true });
 
 const { cutTail, historyRanges, pullFields, tailStart, TAIL_CHARS, HISTORY_CHUNK_CHARS } = await import("./tail-hello");
-const { activeBranch, normalizeEntries, parseLines } = await import("./transcript");
+const { normalizeEntries } = await import("./transcript");
+const { activeBranch, parseLines } = await import("./harness/pi/reader");
 const { acquireChat, disposeAllChats } = await import("./chat-manager");
 const { canonicalPath } = await import("./paths");
 const { attachWebSockets } = await import("./ws");

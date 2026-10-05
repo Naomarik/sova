@@ -11,9 +11,9 @@ import { readFile, stat } from "node:fs/promises";
 import type { HEntry } from "../shared/harness";
 import type { ContextInfo, TranscriptItem, WireVersion } from "../shared/protocol";
 import { entryOfRow, summarize } from "../shared/row-counts";
-import { branchOf, parsePi, rawOf } from "./harness/pi/reader";
+import { branchOf, parsePi } from "./harness/pi/reader";
 import { chunkStart, HISTORY_CHUNK_CHARS, rangeStart, TAIL_CHARS, TAIL_MIN_ROWS, tailStart } from "./tail-hello";
-import { rowsOf as historyRows, type Entry } from "./transcript";
+import { rowsOf as historyRows } from "./transcript";
 import { rowFor } from "./wire-rows";
 
 /** One file's branch, normalized, with each row's JSON made once. */
@@ -127,10 +127,6 @@ export const asksForRows = (q: RowsQuery): boolean => !!(q.tail || q.before || q
 const MIN_CHARS = 16 * 1024;
 const MAX_CHARS = 8 * 1024 * 1024;
 
-/** The branch as pi's entries, for the context fill (`context`, which reads them until the fill moves onto
-    neutral entries). */
-const piEntries = (rows: Rows): Entry[] => rows.branch.map(rawOf);
-
 /**
  * The TranscriptRows answer for `path` (a session file that exists). `context` resolves the fill
  * for an answer that reaches the end of the branch (`tail`, `from` alone), as the whole-branch
@@ -139,7 +135,7 @@ const piEntries = (rows: Rows): Entry[] => rows.branch.map(rawOf);
 export async function transcriptRows(
   path: string,
   q: RowsQuery,
-  context: (branch: Entry[]) => Promise<ContextInfo | null>,
+  context: (branch: readonly HEntry[]) => Promise<ContextInfo | null>,
   wire: WireVersion = 1,
 ): Promise<RowsAnswer> {
   const rows = await rowsOf(path);
@@ -165,7 +161,7 @@ export async function transcriptRows(
     from = chunkStart(rows.items, rows.sizes, end, chars);
   }
   // The fill, as the whole-branch response carries it, for the answers that reach the end.
-  const ctx = q.tail || !q.before ? `,"context":${JSON.stringify(await context(piEntries(rows)))}` : "";
+  const ctx = q.tail || !q.before ? `,"context":${JSON.stringify(await context(rows.branch))}` : "";
   const summary = JSON.stringify(summarize(rows.items.slice(0, from)));
   return { status: 200, body: `{"items":[${jsonOn(rows, wire).slice(from, end).join(",")}],"older":${from},"olderSummary":${summary}${ctx}}` };
 }
@@ -208,9 +204,9 @@ export function lightRow(it: TranscriptItem): TranscriptItem {
 }
 
 /** The whole branch, each row light (`view=light`), on `wire`, with the fill: `{ items, context }`. */
-export async function transcriptLight(path: string, context: (branch: Entry[]) => Promise<ContextInfo | null>, wire: WireVersion = 1): Promise<string> {
+export async function transcriptLight(path: string, context: (branch: readonly HEntry[]) => Promise<ContextInfo | null>, wire: WireVersion = 1): Promise<string> {
   const rows = await rowsOf(path);
-  return JSON.stringify({ items: rows.items.map((it) => rowFor(lightRow(it), wire)), context: await context(piEntries(rows)) });
+  return JSON.stringify({ items: rows.items.map((it) => rowFor(lightRow(it), wire)), context: await context(rows.branch) });
 }
 
 /** Forget every parsed file (tests). */

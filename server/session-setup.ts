@@ -36,7 +36,7 @@ import { plan, readStoredCwd, type Plan } from "./git-summary";
 import { leavesOut, loadoutOnBranch, normalizeLoadout, type LoadoutEntryData } from "./session-loadout";
 import { getSessionSummary } from "./sessions-index";
 import { agentRoot } from "./state-root";
-import { readActiveBranch } from "./transcript";
+import { readActiveBranch } from "./harness/pi/reader";
 
 /** How long an answer stays fresh, per folder. The same size as the Git section's TTL. */
 export const SETUP_TTL_MS = 30_000;

@@ -49,11 +49,8 @@ import { alignResultOf } from "../pi-config/extensions/mode/align.ts";
 import { argsSummary, contentText as cardText, isObj, SPAWN_TOOLS, spawnName } from "../src/lib/message";
 import { summaryStats } from "../src/lib/tool-diff-stats";
 
-// The parse, the branch rule and the context rule live in the pi adapter's reader (§app.harness/reader);
-// they are re-exported here until the last reader moves onto it (M2-Z). Rows are still built from raw
-// entries: `rowsOf` takes neutral history, so readers that move need not wait for the row builder.
-export { activeBranch, parseLines, readActiveBranch } from "./harness/pi/reader";
-export { contextForBranch, messageContextTokens, type BranchContext } from "./harness/pi/usage";
+// The parse, the branch rule and the context rule live in the pi adapter's reader and usage modules
+// (§app.harness/reader); rows are built from the neutral history they give (`rowsOf`).
 
 export type Entry = Record<string, any>;
 

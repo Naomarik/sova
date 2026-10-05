@@ -1,6 +1,6 @@
 // Probes owned by batch R1 (the reader): what today's parse and branch rule give. A batch edits only its own
 // probes file, and only to follow a moved function: call paths change, post-processing never (README.md).
-import { activeBranch, parseLines } from "../../../../transcript";
+import { activeBranch, parseLines } from "../../reader";
 import type { Probe } from "../golden";
 
 const idOf = (e: Record<string, unknown>) => (typeof e.id === "string" ? e.id : null);

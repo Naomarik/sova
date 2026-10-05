@@ -4,8 +4,7 @@
 // moved function (README.md).
 import { resolveRegenerate, rewindSession, titleOf } from "../../../../chat-manager";
 import { activeBranchLines, forkPrefix, isFanoutSource, parseSourceDoc } from "../../fork";
-import { activeBranch, parseLines } from "../../../../transcript";
-import { historyOf } from "../../reader";
+import { activeBranch, historyOf, parseLines } from "../../reader";
 import { linesOrDigest, targetsOf, type Fixture, type Probe } from "../golden";
 
 /** The ids each per-id probe asks about: the branch's (all, or a sample on a large or real session: targetsOf),

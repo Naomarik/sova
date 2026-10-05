@@ -13,8 +13,8 @@ export const PI = /@earendil-works[/+]/;
 /** Paths the scan skips: the adapter, and the scanner's own files. Each must exist. */
 export const EXCLUDED = ["server/harness/pi/", "server/harness-boundary.test.ts", "server/harness/boundary-scan.ts", "server/harness/fixtures/"];
 
-/** Modules whose raw API is counted by import binding: the adapter's reader, and the transcript, which
-    re-exports it until M2-Z. One raw module using or re-exporting another's raw API is the raw layer
+/** Modules whose raw API is counted by import binding: the adapter's reader, and the transcript (rows
+    from raw entries, `entryOf`). One raw module using or re-exporting another's raw API is the raw layer
     itself, not a reader: every file that imports either is counted. */
 export const RAW_SOURCES = ["server/transcript.ts", "server/harness/pi/reader.ts"];
 export const RAW_API = ["parseLines", "activeBranch", "readActiveBranch", "entryOf", "normalizeEntries", "normalizeEntry", "rawOf"];

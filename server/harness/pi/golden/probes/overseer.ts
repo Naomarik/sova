@@ -7,8 +7,8 @@ import { openAlignmentsOf, readAlignScan } from "../../../../align-state";
 import { readReadinessScan } from "../../../../merge-readiness";
 import { briefedBlockers, listedCleared, promptedOnBranch } from "../../../../overseer-run-note";
 import { lastReplyIn } from "../../../../overseer-tools";
-import { activeBranch, normalizeEntries, parseLines } from "../../../../transcript";
-import { historyOf } from "../../reader";
+import { normalizeEntries } from "../../../../transcript";
+import { activeBranch, historyOf, parseLines } from "../../reader";
 import type { Fixture, Probe } from "../golden";
 
 /** A scan read whole, and read on a prefix then again after the rest is appended (it must agree). */

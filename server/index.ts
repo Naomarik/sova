@@ -65,8 +65,8 @@ import { startSharedUsageHelper, stopSharedUsageHelper } from "./usage-helper/cl
 import { registerUsageRoutes } from "./usage-routes";
 import { archiveSession, cachedTitleOf, cleanupSessions, getSessionSummary, idOf, lastReplyOf, listCwds, listSessionFiles, listSessions, onSessionArchived, onSummaryLineChanged } from "./sessions-index";
 import { cleanSessionTitle, SESSION_TITLE_MAX, setSessionTitle } from "./session-titles";
-import { contextForBranch, readActiveBranch, rowsOf } from "./transcript";
-import { liveRead, rawOf, readBranch, unknownEntries } from "./harness/pi/reader";
+import { rowsOf } from "./transcript";
+import { liveRead, readActiveBranch, readBranch, unknownEntries } from "./harness/pi/reader";
 import { contextOfBranch } from "./harness/pi/usage";
 import { checkTmpImage, deleteAttachment, MAX_ATTACHMENT_BYTES, readTmpImage, saveUploadedImage, sessionAttachmentsDir, UploadError } from "./attachments";
 import { listFolders } from "./folders";
@@ -1052,11 +1052,11 @@ app.get("/api/transcript", async (c) => {
   // `wire=2`: rows with `facts` in place of `meta` (server/wire-rows.ts); else as they always were.
   const wire = wireOf({ get: (name: string) => c.req.query(name) });
   if (c.req.query("view") === "light") {
-    const body = await transcriptLight(path, (branch) => resolveContext(contextForBranch(branch)), wire);
+    const body = await transcriptLight(path, (branch) => resolveContext(contextOfBranch(branch)), wire);
     return c.body(body, 200, { "Content-Type": "application/json; charset=UTF-8" });
   }
   if (asksForRows(q)) {
-    const r = await transcriptRows(path, q, (branch) => resolveContext(contextForBranch(branch)), wire);
+    const r = await transcriptRows(path, q, (branch) => resolveContext(contextOfBranch(branch)), wire);
     if (r.status !== 200) return c.json({ error: r.error, code: r.code }, r.status);
     return c.body(r.body, 200, { "Content-Type": "application/json; charset=UTF-8" });
   }
@@ -1081,7 +1081,7 @@ app.get("/api/transcript/tool", async (c) => {
   if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
   const items = await piToolContent(path, ids, () => {
     const chat = heldChat(path);
-    return chat ? liveRead(chat.session).branch().map(rawOf) : undefined;
+    return chat ? liveRead(chat.session).branch() : undefined;
   });
   return c.json({ items } satisfies ToolContentResponse);
 });

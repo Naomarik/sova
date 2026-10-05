@@ -32,7 +32,8 @@ const { acquireChat, disposeAllChats, heldChat } = await import("./chat-manager"
 const { canonicalPath } = await import("./paths");
 const { applyLoadout, clearSetupCache, getSessionSetup } = await import("./session-setup");
 const { LOADOUT_ENTRY } = await import("./session-loadout");
-const { entryOf, normalizeEntries, readActiveBranch } = await import("./transcript");
+const { entryOf, normalizeEntries } = await import("./transcript");
+const { readActiveBranch } = await import("./harness/pi/reader");
 const { addWebSession } = await import("./web-sessions");
 const { markOwned } = await import("./write-guard");
 

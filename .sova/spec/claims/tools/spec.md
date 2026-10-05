@@ -341,7 +341,10 @@ that embed it, or for an H2 its H1, and the notes about it or its H1, so a claim
 or served by a note never reads as one nothing points at. It never follows a second hop and never
 prints a neighbour's passage. On an H1 with H2s, `out` also says how many of its H2s require or embed
 claims outside it and how many distinct claims those are, pointing at `toc` on each H2 and at `map` on
-the area, so an H1 whose own record requires nothing never reads as an area that needs nothing.
+the area, so an H1 whose own record requires nothing never reads as an area that needs nothing. When
+none does, it says "none of its N H2s requires or embeds a claim outside it"; either way it counts the
+H2s that are behaviors with no `requires` key, whose dependencies are unknown, not none, and names
+them among the unknowns, so an area whose H2s were never investigated never reads as needing nothing.
 
 The output starts with the requested claim itself: its id, title, kind, labels, size, the number of
 code files its record lists (which `read` names), and its own "what". Then each neighbour gets one line, grouped under a heading per kind of link and ordered by id

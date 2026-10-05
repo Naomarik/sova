@@ -3,7 +3,7 @@
 // map.mjs and where.mjs build on the index here.
 import { posix } from "node:path";
 import { aboutNotes } from "./fields.mjs";
-import { mask, namedIn, whatOf, whyOf, titleOf, sizeOf, kb, fingerprintOf, tokenFor, decodeToken, boundedRefusal, emit, sizeIn }
+import { mask, namedIn, whatOf, whyOf, titleOf, sizeOf, kb, fingerprintOf, tokenFor, decodeToken, boundedRefusal, emit, sizeIn, isBuilt }
   from "./toc.mjs";
 
 const ID_RE = /^§[a-z][a-z-]*(?:\.[a-z][a-z-]*)?\/[a-z][a-z-]*$/;
@@ -140,9 +140,7 @@ export function depsOf(rec) {
 }
 
 // ---------------------------------------------------------------- agreement
-// Built = a code list plus one of these evidence labels: the rule of BUILT_LABELS in sova-spec-draft.mjs.
-const BUILT_LABELS = new Set(["reviewed", "verified"]);
-export const isBuilt = (rec) => (rec.code ?? []).length > 0 && BUILT_LABELS.has(rec.evidence);
+// Built is toc.mjs's isBuilt: a code list plus evidence reviewed or verified, the draft tool's rule.
 const agreedOf = (rec) => (rec.agreed && typeof rec.agreed === "object" && typeof rec.agreed.at === "string" ? rec.agreed : null);
 const atTime = (at) => { const n = Date.parse(at); return Number.isNaN(n) ? Date.parse(at.slice(0, 10)) : n; };
 // Over ids: how many carry agreed, and of those not built, how many with the earliest and latest decision dates.

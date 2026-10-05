@@ -285,6 +285,141 @@ test("what: a first sentence wrapped across lines comes out whole; a heading tit
   assert.equal(m["§e/named"].why, "Named, see §a.top/seed", "the title is its own unit, not joined to the body");
 });
 
+test("in on an H2 lists the claims that require its H1; out on an H1 counts what its H2s require", () => {
+  const root = fixture(), m = JSON.parse(readFileSync(join(root, ".sova/spec/manifest.json"), "utf8"));
+  m.claims["§h/user"] = { kind: "behavior", requires: ["§a/top", "§a.top/seed"] };
+  m.claims["§i/whole"] = { kind: "behavior", requires: ["§a/top"] };
+  write(root, ".sova/spec/manifest.json", JSON.stringify(m));
+  write(root, ".sova/spec/claims/h/user.md", "# §h/user — User\n\nIt builds on §a.top/seed directly.\n");
+  write(root, ".sova/spec/claims/i/whole.md", "# §i/whole — Whole\n\nIt follows all of §a/top, every child included.\n");
+  const j = toc(root, "§a.top/hint", "in");
+  assert.deepEqual(j.lines.map((l) => [l.group, l.id, l.via]), [["required-by", "§a.top/seed", undefined], ["required-through-parent", "§h/user", "§a/top"], ["required-through-parent", "§i/whole", "§a/top"]]);
+  assert.equal(byId(j)["§i/whole"].why, "It follows all of §a/top, every child included.", "the why names the H1");
+  assert.equal(byId(j)["§h/user"].whySource, "none");
+  const seed = toc(root, "§a.top/seed", "in");
+  assert.deepEqual(seed.lines.map((l) => [l.group, l.id]), [["required-by", "§c/quiet"], ["required-by", "§h/user"], ["required-through-parent", "§i/whole"]],
+    "a claim that requires both is listed once, directly");
+  assert.equal(toc(root, "§a.top/hint", "out").footer.otherDirections.in, 3);
+  const { r } = cli(root, ["toc", "§a.top/hint", "--dir", "in"], { json: false });
+  assert.match(r.stdout, /^IN: required through its H1 §a\/top \(2\)$/m);
+  assert.equal(toc(root, "§i/whole", "in").lines.length, 0, "an H1 has no parent to reach it through");
+  const top = toc(root, "§a/top", "out");
+  assert.deepEqual(top.seed.childRequires, { h2s: 1, claims: 3, of: 5, uninvestigated: 1 }, "the seed requires §b/dep, §c/quiet, §z/gone outside; §a.top/hint is inside");
+  assert.match(cli(root, ["toc", "§a/top", "--dir", "out"], { json: false }).r.stdout, /OUT: its 1 H2\(s\) require or embed 3 claim\(s\) outside it: toc each H2 --dir out, or map '§a\/top'/);
+  assert.equal(toc(root, "§a.top/seed", "out").seed.childRequires, undefined);
+  // An embed outside the H1 counts like a requirement.
+  const m2 = JSON.parse(readFileSync(join(root, ".sova/spec/manifest.json"), "utf8"));
+  m2.claims["§a.top/hint"].embeds = ["§l/panel"]; m2.claims["§l/panel"] = { kind: "surface", requires: [] };
+  write(root, ".sova/spec/manifest.json", JSON.stringify(m2));
+  write(root, ".sova/spec/claims/l/panel.md", "# §l/panel — Panel\n\nA panel drawn inside the hint.\n");
+  assert.deepEqual(toc(root, "§a/top", "out").seed.childRequires, { h2s: 2, claims: 4, of: 5, uninvestigated: 1 });
+});
+
+test("in lists embedders of the claim or its H1 and the notes about either; an about field is a declared why", () => {
+  const root = fixture(), m = JSON.parse(readFileSync(join(root, ".sova/spec/manifest.json"), "utf8"));
+  m.claims["§j/host"] = { kind: "surface", requires: [], embeds: ["§a/top"] };
+  m.claims["§k/note"] = { kind: "note", about: ["§a/top"] };
+  m.claims["§k/said"] = { kind: "note", about: ["§a.top/hint"] };
+  write(root, ".sova/spec/manifest.json", JSON.stringify(m));
+  write(root, ".sova/spec/claims/j/host.md", "# §j/host — Host\n\nThe host draws the top inside its frame.\n");
+  write(root, ".sova/spec/claims/k/note.md", "# §k/note — Note\n\nA note that names nothing at all.\n");
+  write(root, ".sova/spec/claims/k/said.md", "# §k/said — Said\n\nThis note explains §a.top/hint in prose.\n");
+  const j = toc(root, "§a.top/hint", "in"), l = byId(j);
+  assert.deepEqual(j.lines.map((x) => [x.group, x.id, x.via]),
+    [["required-by", "§a.top/seed", undefined], ["embedded-through-parent", "§j/host", "§a/top"], ["about-it", "§k/said", undefined], ["about-it", "§k/note", "§a/top"]], "notes about it, then notes about its H1");
+  assert.deepEqual([l["§k/note"].why, l["§k/note"].whySource], ["about §a/top (declared on the note)", "declared"]);
+  assert.deepEqual([l["§k/said"].why, l["§k/said"].whySource], ["This note explains §a.top/hint in prose.", "prose"]);
+  const { r } = cli(root, ["toc", "§a.top/hint", "--dir", "in"], { json: false });
+  assert.match(r.stdout, /^IN: embedded through its H1 §a\/top \(1\)$/m);
+  assert.match(r.stdout, /^IN: notes about it \(2\)$/m);
+  assert.deepEqual(toc(root, "§a/top", "in").lines.map((x) => [x.group, x.id]), [["embedded-by", "§j/host"], ["about-it", "§k/note"]]);
+});
+
+test("agreed records show who agreed and when, and whether built, in toc and read", () => {
+  const root = fixture(), m = JSON.parse(readFileSync(join(root, ".sova/spec/manifest.json"), "utf8"));
+  Object.assign(m.claims["§a.top/hint"], { agreed: { by: "operator", at: "2026-10-05" } });
+  Object.assign(m.claims["§c/quiet"], { agreed: { by: "pm", at: "2026-10-01" }, code: ["src/q.txt"], evidence: "verified" });
+  write(root, ".sova/spec/manifest.json", JSON.stringify(m));
+  write(root, "src/q.txt", "q\n");
+  const l = byId(toc(root, "§a.top/seed", "out"));
+  assert.deepEqual(l["§a.top/hint"].agreed, { by: "operator", at: "2026-10-05", built: false });
+  assert.deepEqual(l["§c/quiet"].agreed, { by: "pm", at: "2026-10-01", built: true });
+  assert.equal(l["§b/dep"].agreed, undefined, "no agreed field, no agreed key");
+  const text = cli(root, ["toc", "§a.top/seed", "--dir", "out"], { json: false }).r.stdout;
+  assert.match(text, /§a\.top\/hint — Hint .* · agreed \(decision\) 2026-10-05 by operator, not built$/m);
+  assert.match(text, /§c\/quiet — Quiet .* · agreed \(decision\) 2026-10-01 by pm, built$/m);
+  assert.deepEqual(toc(root, "§a.top/hint", "up").seed.agreed, { by: "operator", at: "2026-10-05", built: false });
+  assert.deepEqual(read(root, ["§a.top/hint"]).items[0].agreed, { by: "operator", at: "2026-10-05", built: false });
+  assert.match(cli(root, ["read", "§a.top/hint"], { json: false }).r.stdout, /^── §a\.top\/hint — Hint .* · agreed \(decision\) 2026-10-05 by operator, not built$/m);
+});
+
+test("read names the claim's own code files (12, then a count, missing marked); toc's seed counts them", () => {
+  const root = fixture(), m = JSON.parse(readFileSync(join(root, ".sova/spec/manifest.json"), "utf8"));
+  const paths = Array.from({ length: 14 }, (_, i) => `src/f${i}.ts`);
+  m.claims["§a.top/seed"].code = paths;
+  write(root, ".sova/spec/manifest.json", JSON.stringify(m));
+  for (const p of paths.filter((_, i) => i !== 1)) write(root, p, "x\n");
+  const it = read(root, ["§a.top/seed"]).items[0];
+  assert.equal(it.code.length, 12); assert.equal(it.codeMore, 2);
+  assert.deepEqual(it.code.slice(0, 3), [{ path: "src/f0.ts", state: "present" }, { path: "src/f1.ts", state: "missing" }, { path: "src/f2.ts", state: "present" }]);
+  assert.equal(it.text, scopeText(root, "§a.top/seed"), "the passage text is unchanged");
+  const text = cli(root, ["read", "§a.top/seed"], { json: false }).r.stdout;
+  assert.match(text, /^ {3}code: src\/f0\.ts, src\/f1\.ts \(missing\), src\/f2\.ts, .*src\/f11\.ts, and 2 more in its record$/m);
+  assert.equal(toc(root, "§a.top/seed", "up").seed.codeFiles, 14);
+  assert.match(cli(root, ["toc", "§a.top/seed", "--dir", "up"], { json: false }).r.stdout, /· code 14 file\(s\), read names them/);
+  assert.equal(read(root, ["§a.top/hint"]).items[0].code, undefined, "no code, no code key");
+});
+
+test("an H1 whose H2s were never investigated says so, never 'requires nothing', and exits 1", () => {
+  const root = fixture(), m = JSON.parse(readFileSync(join(root, ".sova/spec/manifest.json"), "utf8"));
+  m.claims["§m/area"] = { kind: "surface", requires: [] };
+  m.claims["§m.area/one"] = { kind: "behavior" };
+  m.claims["§m.area/two"] = { kind: "behavior", requires: [] };
+  write(root, ".sova/spec/manifest.json", JSON.stringify(m));
+  write(root, ".sova/spec/claims/m/area.md", "# §m/area — Area\n\nAn area of two parts.\n\n## §m.area/one — One\n\nPart one, never investigated.\n\n## §m.area/two — Two\n\nPart two, which needs nothing.\n");
+  const j = toc(root, "§m/area", "out");
+  assert.deepEqual(j.seed.childRequires, { h2s: 0, claims: 0, of: 2, uninvestigated: 1 });
+  assert.equal(j.exit, 1, "an unknown is named");
+  assert.deepEqual(j.footer.unknowns.map((u) => u.code), ["requires-uninvestigated"]);
+  const text = cli(root, ["toc", "§m/area", "--dir", "out"], { json: false }).r.stdout;
+  assert.match(text, /^OUT: none of its 2 H2s requires or embeds a claim outside it; 1 of its 2 H2s have no requires key: their dependencies are unknown, not none$/m);
+  assert.doesNotMatch(text, /its 0 H2\(s\)/);
+  m.claims["§m.area/one"].requires = [];
+  write(root, ".sova/spec/manifest.json", JSON.stringify(m));
+  const k = toc(root, "§m/area", "out");
+  assert.equal(k.exit, 0); assert.equal(k.seed.childRequires.uninvestigated, 0);
+  assert.match(cli(root, ["toc", "§m/area", "--dir", "out"], { json: false }).r.stdout, /^OUT: none of its 2 H2s requires or embeds a claim outside it$/m);
+});
+
+test("read's footer speaks for the whole read, on every page", () => {
+  const root = fixture();
+  write(root, ".sova/spec/claims/a/top.md", readFileSync(join(root, ".sova/spec/claims/a/top.md"), "utf8").replace("A hint that only", "A hint about §e/named that only"));
+  const first = read(root, ["§a/top", "--whole"], { budget: 1024 });
+  assert.equal(first.status, "more");
+  assert.ok(!first.footer.named.some((id) => id.startsWith("§a.top/")), "a passage this read delivers later is not named");
+  const { r } = cli(root, ["read", "§a/top"], { json: false });
+  assert.match(r.stdout, /named here, not delivered by this read: /);
+});
+
+test("what: a colon inside parentheses or quotes doesn't end it; the 20-character floor ignores the list marker", () => {
+  const root = fixture();
+  write(root, ".sova/spec/claims/e/named.md", "# §e/named — Named\n\nLogins (pi `auth.json`: keys, tokens) sync between hosts. More follows.\n");
+  write(root, ".sova/spec/claims/c/quiet.md", "# §c/quiet — Quiet\n\nThe tab says \"All projects: $40\" above the list. Then more.\n");
+  write(root, ".sova/spec/claims/b/dep.md", "# §b/dep — Dep\n\n- **Short run-in.** The real sentence follows.\n");
+  const l = byId(toc(root, "§a.top/seed", "out"));
+  assert.equal(l["§e/named"].what, "Logins (pi `auth.json`: keys, tokens) sync between hosts.");
+  assert.equal(l["§c/quiet"].what, "The tab says \"All projects: $40\" above the list.");
+  assert.equal(l["§b/dep"].what, "**Short run-in.** The real sentence follows.");
+  write(root, ".sova/spec/claims/e/named.md", "# §e/named — Named\n\nOne part: the colon outside brackets still ends it here. More.\n");
+  assert.equal(byId(toc(root, "§a.top/seed", "out"))["§e/named"].what, "One part: the colon outside brackets still ends it here.", "20 characters, so it runs on");
+  // A period inside an open quote is not the end; a quoted sentence that closes the sentence is.
+  write(root, ".sova/spec/claims/e/named.md", "# §e/named — Named\n\nThe list shows \"None yet. Yours appear here.\" until one exists. Then more.\n");
+  write(root, ".sova/spec/claims/c/quiet.md", "# §c/quiet — Quiet\n\nThe button is labelled \"Stop the turn.\" Then more follows.\n");
+  const q = byId(toc(root, "§a.top/seed", "out"));
+  assert.equal(q["§e/named"].what, "The list shows \"None yet. Yours appear here.\" until one exists.");
+  assert.equal(q["§c/quiet"].what, "The button is labelled \"Stop the turn.\"");
+});
+
 test("what: a thematic break is never a prose sentence", () => {
   const root = fixture();
   write(root, ".sova/spec/claims/e/named.md", "# §e/named — Named\n\n| a | b |\n|---|---|\n| 1 | 2 |\n\n---\n");
@@ -292,6 +427,12 @@ test("what: a thematic break is never a prose sentence", () => {
   const l = byId(toc(root, "§a.top/seed", "out"));
   assert.deepEqual([l["§e/named"].whatSource, l["§e/named"].what], ["none", "no prose sentence"]);
   assert.deepEqual([l["§c/quiet"].whatSource, l["§c/quiet"].what], ["prose", "The real sentence comes after the rule."]);
+  // A body that starts with the rule, with and without a blank line after it.
+  write(root, ".sova/spec/claims/e/named.md", "# §e/named — Named\n\n---\n\nAfter a leading rule comes the sentence.\n");
+  write(root, ".sova/spec/claims/c/quiet.md", "# §c/quiet — Quiet\n___\nRight under the rule sits the sentence.\n");
+  const k = byId(toc(root, "§a.top/seed", "out"));
+  assert.deepEqual([k["§e/named"].whatSource, k["§e/named"].what], ["prose", "After a leading rule comes the sentence."]);
+  assert.deepEqual([k["§c/quiet"].whatSource, k["§c/quiet"].what], ["prose", "Right under the rule sits the sentence."]);
 });
 
 test("why: a long sentence is clipped around the target's own mention, never another one in its namespace", () => {

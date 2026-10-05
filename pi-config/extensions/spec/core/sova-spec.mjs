@@ -73,7 +73,7 @@ function parseArgs(argv) {
       const budget = packetBudget(o.budget);
       if (budget === null) o.usage = "packet --budget takes an integer from 1024 to 32768";
       else o.budget = budget;
-    } else if (cmd !== "scope") o.usage = "--budget applies to scope and packet only";
+    } else if (cmd !== "scope") o.usage = "--budget applies to scope, packet, toc, read, map, where, impact --near and graph only";
     else if (!/^\d+$/.test(o.budget) || !Number.isSafeInteger(Number(o.budget))) o.usage = "--budget takes a non-negative integer byte count";
     else o.budget = Number(o.budget);
   }
@@ -695,7 +695,7 @@ function relatedOf(ctx, hits, related, own = () => false) {
     if (rec.kind === "behavior" && rec.requires === undefined)
       add("note", "touched-uninvestigated", `${id} is touched and has no requires key: dependencies not investigated`, { id });
     if (cur.has(id))
-      add("note", "touched-foreign", `${id} is foreign (the task didn't create it) and ${files.get(id).join(", ")} changed: read it with scope; flag it if a user sees a change there, even one your new claim describes; a gap it already had never flags, even one you now rely on`, { id });
+      add("note", "touched-foreign", `${id} is foreign (the task didn't create it) and ${files.get(id).join(", ")} changed: read it with read '${id}'; flag it if a user sees a change there, even one your new claim describes; a gap it already had never flags, even one you now rely on`, { id });
     return { id, kind: rec.kind, ...labelsOf(rec), created: !cur.has(id), file: d?.file, lines: d?.lines, files: files.get(id),
       requires: rec.requires ?? null, consumers: consumersOf(ctx, rev, id).map((c) => ({ id: c.id, depth: c.depth })) };
   });
@@ -1137,7 +1137,7 @@ function packetMain(opt) {
 }
 
 // The pull commands (toc, read) live in their own modules and reach the graph only through the core's own loader.
-const pullCore = () => ({ findSpec, load, specDir, parentOf, exitOf, findings: () => findings, DEFAULT_SPEC });
+const pullCore = () => ({ findSpec, load, specDir, parentOf, exitOf, findings: () => findings, DEFAULT_SPEC, codeState: (root, p) => safePath(root, p).state });
 // The look commands (map, where, graph, impact --near) also read one source file, through the core's refusal rules.
 const lookCore = () => ({ ...pullCore(), readSource: (root, rel) => readInput(root, rel) });
 

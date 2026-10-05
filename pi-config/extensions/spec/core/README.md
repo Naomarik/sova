@@ -104,8 +104,8 @@ loader. Flags may come before or after the command word. `sova-spec --help` does
 
 | `--dir` | Lines | Groups |
 |---|---|---|
-| `out` | the declared `requires`, then the § the claim's prose names without requiring | `requires`, `named` |
-| `in` | the claims whose `requires` name it | `required-by` |
+| `out` | the declared `requires`, the `embeds`, the notes `about` it or its H1, then the § the claim's prose names without requiring | `requires`, `embeds`, `about`, `named` |
+| `in` | the claims whose `requires` name it; the claims that `embeds` it; the notes `about` it; for an H2, also those that require or embed its H1 and the notes about its H1 (`via` names it) | `required-by`, `required-through-parent`, `embedded-by`, `embedded-through-parent`, `about-it` |
 | `down` | an H1's H2s, or a section's members, in declaration order | `children`, `members` |
 | `up` | an H2's parent | `parent` |
 | `mentions` | the claims whose prose names it | `mentioned-by` |
@@ -113,23 +113,28 @@ loader. Flags may come before or after the command word. `sova-spec --help` does
 Each line has `id`, `title`, `kind`, `labels` (when declared), `bytes` (what `read` of it delivers;
 an H1's lede) and `whole` (an H1's lede plus all its H2s), `what` and `whatSource`
 (`prose|blockquote|none`), and, for `out`, `in` and `mentions`, `why` and `whySource`
-(`prose|comment|none`). What is the first prose sentence after the heading: fences, comments,
-tables and headings skipped, a blockquote only when nothing else is prose, at least 20 and at most
+(`prose|comment|declared|none`; `declared` is a note's `about` field when its prose names nothing). A record with
+`agreed` adds `agreed: {by, at, built}` (built: `code` plus evidence `reviewed` or `verified`), and
+the text reads `agreed (decision) <at> by <by>, not built` (or `, built`); `read` items carry it too. What is the first prose sentence after the heading: fences, comments,
+tables, thematic breaks and headings skipped, a blockquote only when nothing else is prose, at least 20 and at most
 200 characters, never code. Why is the first visible-prose sentence of the linking claim naming the
 other, else an HTML comment naming it, else exactly `not mentioned in this claim's text`. Mentions
 mask fenced code, HTML comments and double-backtick spans; single backticks count, and `§a.b` reads
 as `§a/b`. A line for an id with no record or span is `dangling: true`.
 
-`seed` describes the requested claim the same way. `footer` holds `delivered` (always empty: a
+`seed` describes the requested claim the same way, plus `codeFiles` (how many code files its record
+lists; `read` names them); for `out` on an H1 with H2s it adds
+`childRequires: {h2s, claims, of, uninvestigated}`, how many of its `of` H2s require or embed claims outside the H1, how many distinct claims, and how many H2s are behaviors with no `requires` key (also a `requires-uninvestigated` unknown, so exit 1). `footer` holds `delivered` (always empty: a
 contents line is never the passage), `listed` and `notListed` for this response, `otherDirections`
 (the line count of each direction not asked) and `unknowns` (`requires-uninvestigated` for a
 behavior with no `requires` key, or for `in` the behaviors that could also require it; `unknown` for
 dangling targets). Exit 0 is done without unknowns, 1 is more lines or an unknown, 2 a refusal.
 
 **`read §id [--whole]`** returns one passage, exact, with no closure: `items: [{index, id, kind,
-labels?, title, file, lines, text, fragment}]`, where `text` is byte-for-byte the passage `scope`
+labels?, agreed?, code?, codeMore?, title, file, lines, text, fragment}]`, where `code` is the record's
+first 12 code paths as `{path, state}` (`present`, `missing`, `refused`, …) and `codeMore` counts the rest, where `text` is byte-for-byte the passage `scope`
 returns. An H1 gives its lede; `--whole` gives the lede and then each H2 in declaration order. The
-`footer` names (`named`) the passage's `requires` and prose mentions that this call did not deliver,
+`footer` names (`named`) the passage's `requires` and prose mentions that this read does not deliver on any of its pages,
 and for an H1 read as its lede, `children` and `wholeBytes`. Exit 0 is done, 1 more, 2 a refusal.
 
 Both take `--json` (compact JSON) or print readable text, under one whole-response budget either

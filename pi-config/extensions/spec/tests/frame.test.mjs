@@ -134,7 +134,7 @@ test("toc lists embeds, about notes (directly and through the H1) and embedded-b
   const viaH1 = out.lines.find((l) => l.id === "§design.copy/editor");
   assert.equal(viaH1.via, "§s/seed");
   assert.equal(viaH1.whySource, "prose");
-  assert.equal(out.lines.find((l) => l.id === "§design.copy/edit-only").whySource, "none");
+  assert.equal(out.lines.find((l) => l.id === "§design.copy/edit-only").whySource, "declared", "the about field is the written reason");
   assert.equal(out.frame.passages, 2);
   const inn = json(root, ["toc", "§s/panel", "--dir", "in"]);
   assert.deepEqual(inn.lines.map((l) => [l.id, l.group]), [["§s.seed/edit", "embedded-by"]]);
@@ -167,7 +167,7 @@ test("read delivers the seed and what it embeds, whole; names the notes about it
   assert.deepEqual(json(root, ["read", "§design.rules/voice"]).frame.items.map((i) => i.id), ["§design/rules"], "not twice");
   const text = run(root, ["read", "§s.seed/edit"]).stdout;
   assert.match(text, /── §s\/panel — Toolbar \[surface\].*embedded in §s\.seed\/edit/);
-  assert.match(text, /notes about it, not delivered by this call: §design\.copy\/edit-only, §design\.copy\/editor/);
+  assert.match(text, /notes about it, not delivered by this read: §design\.copy\/edit-only, §design\.copy\/editor/);
   assert.match(text, /── frame: always applies, delivered once on this first page \(2 passage\(s\), \d+ B of the 12000 B cap; --no-frame drops it\)\n── §design\/rules — Ground rules \[note\]/);
   assert.match(run(root, ["read", "§s.seed/edit", "--no-frame"]).stdout, /frame: 2 passage\(s\), \d+ B of the 12000 B cap: read it with read --frame/);
   const f = stream(root, ["read", "--frame"]);

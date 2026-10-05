@@ -1,6 +1,6 @@
 // One passage, exact, at its own size: no closure. Node stdlib only; never writes.
 import { pullArgs, openGraph, titleOf, childrenInOrder, sizeOf, namedIn, kb, fingerprintOf, tokenFor, decodeToken,
-  boundedRefusal, emit, sizeIn } from "./toc.mjs";
+  boundedRefusal, emit, sizeIn, agreedOf, agreedText } from "./toc.mjs";
 import { embedsOf, aboutNotes, frameOf, frameSummary, frameLine } from "./fields.mjs";
 
 const READ_NOTICE = "One passage, exact scope text; nothing it requires, contains or mentions is delivered. The footer names those links. Finish fragments at end == total.";
@@ -8,12 +8,20 @@ const READ_NOTICE = "One passage, exact scope text; nothing it requires, contain
 const boundary = (bytes, n) => n === 0 || n === bytes.length || (bytes[n] & 0xc0) !== 0x80;
 const floorBoundary = (bytes, n) => { while (n > 0 && !boundary(bytes, n)) n--; return n; };
 
-function passage(ctx, id, embeddedIn) {
+// A record's own code files: the first CODE_SHOWN with their state, then how many more.
+const CODE_SHOWN = 12;
+function codeOf(ctx, rec, codeState) {
+  const all = Array.isArray(rec.code) ? rec.code : [];
+  if (!all.length || !codeState) return {};
+  return { code: all.slice(0, CODE_SHOWN).map((path) => ({ path, state: codeState(ctx.root, path) })), ...(all.length > CODE_SHOWN ? { codeMore: all.length - CODE_SHOWN } : {}) };
+}
+
+function passage(ctx, id, embeddedIn, codeState) {
   const d = ctx.decls.get(id), rec = ctx.claims.get(id);
   const labels = {};
   if (rec.authority !== undefined) labels.authority = rec.authority;
   if (rec.evidence !== undefined) labels.evidence = rec.evidence;
-  return { id, kind: rec.kind, ...(Object.keys(labels).length ? { labels } : {}), title: titleOf(d), file: d.file, lines: d.lines,
+  return { id, kind: rec.kind, ...(Object.keys(labels).length ? { labels } : {}), ...agreedOf(rec), ...codeOf(ctx, rec, codeState), title: titleOf(d), file: d.file, lines: d.lines,
     ...(embeddedIn ? { embeddedIn } : {}), text: d.text };
 }
 
@@ -44,15 +52,17 @@ function namedNotRead(ctx, ids, delivered) {
   return out;
 }
 
+const codeLine = (p) => `   code: ${p.code.map((c) => c.state === "present" ? c.path : `${c.path} (${c.state})`).join(", ")}${p.codeMore ? `, and ${p.codeMore} more in its record` : ""}`;
+
 export function renderRead(out) {
   const L = [];
   for (const p of out.items) {
     const f = p.fragment, lb = p.labels ? `; ${[p.labels.authority ?? "-", p.labels.evidence ?? "-"].join("/")}` : "";
     const part = f.complete ? kb(f.total) : `bytes ${f.start}-${f.end} of ${f.total}`;
-    L.push(`── ${p.id} — ${p.title} [${p.kind}${lb}] ${p.file}:${p.lines[0]}-${p.lines[1]} (${part})${p.embeddedIn ? ` · embedded in ${p.embeddedIn}` : ""}`, p.text.replace(/\n$/, ""));
+    L.push(`── ${p.id} — ${p.title} [${p.kind}${lb}] ${p.file}:${p.lines[0]}-${p.lines[1]} (${part})${p.embeddedIn ? ` · embedded in ${p.embeddedIn}` : ""}${agreedText(p)}`, ...(p.code && p.fragment.start === 0 ? [codeLine(p)] : []), p.text.replace(/\n$/, ""));
   }
-  L.push(`named here, not delivered by this call: ${out.footer.named.join(", ") || "none"}`);
-  if (out.footer.about?.length) L.push(`notes about it, not delivered by this call: ${out.footer.about.join(", ")}`);
+  L.push(`named here, not delivered by this read: ${out.footer.named.join(", ") || "none"}`);
+  if (out.footer.about?.length) L.push(`notes about it, not delivered by this read: ${out.footer.about.join(", ")}`);
   if (out.footer.children) L.push(`its ${out.footer.children} H2 are not delivered (whole file ${kb(out.footer.wholeBytes)}): read '${out.id}' --whole, or toc '${out.id}' --dir down`);
   if (out.frame?.items) {
     L.push(`── frame: always applies, delivered once on this first page (${out.frame.passages} passage(s), ${out.frame.bytes} B of the ${out.frame.cap} B cap${out.frame.overCap ? ", OVER the cap" : ""}; --no-frame drops it)`);
@@ -77,7 +87,7 @@ export function readMain(argv, core) {
   const whole = !o.frame && !!o.whole && ctx.decls.get(o.id).level === 1;
   const ids = o.frame ? (frameAll?.passages ?? []).map((p) => p.id) : whole ? [o.id, ...kids] : [o.id];
   const all = o.frame ? ids.map((id) => [id, null]) : withEmbeds(ctx, ids);
-  const records = all.map(([id, via]) => passage(ctx, id, via)), delivered = new Set(all.map(([id]) => id));
+  const records = all.map(([id, via]) => passage(ctx, id, via, core.codeState)), delivered = new Set(all.map(([id]) => id));
   const about = o.frame ? [] : aboutNotDelivered(ctx, [...delivered], delivered, core.parentOf);
   const fp = fingerprintOf({ root, spec: o.spec, id: o.frame ? null : o.id, whole, records, ...(frame ? { frame } : {}) });
   let index = 0, offset = 0;

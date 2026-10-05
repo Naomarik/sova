@@ -342,25 +342,43 @@ The read-only `toc '§id' --dir out|in|down|up|mentions` command is a contents v
 claims one hop from the requested one in a single direction, so the reader picks what to open
 instead of receiving a whole dependency chain. `out` lists the claim's declared `requires`, then, in
 a group of their own, the claims its prose names without requiring them; `in` lists the claims whose
-`requires` name it; `down` lists an H1's H2 children, or a section's members, in declaration order;
-`up` gives the parent of an H2; `mentions` lists the claims whose prose names it. Records carrying
-the optional `embeds` and `about` fields add groups of their own to `out` and `in`
-(§tools.spec/record-fields). It never follows a second hop and never prints a neighbour's passage.
+`requires` name it, and for an H2, in a group of their own headed "required through its H1", the
+claims that require its H1, since requiring an H1 brings all of its H2s; `down` lists an H1's H2
+children, or a section's members, in declaration order; `up` gives the parent of an H2; `mentions`
+lists the claims whose prose names it. Records carrying the optional `embeds` and `about` fields
+add groups of their own to `out` and `in` (§tools.spec/record-fields); `in` lists both the claims
+that embed it, or for an H2 its H1, and the notes about it or its H1, so a claim drawn inside another
+or served by a note never reads as one nothing points at. It never follows a second hop and never
+prints a neighbour's passage. On an H1 with H2s, `out` also says how many of its H2s require or embed
+claims outside it and how many distinct claims those are, pointing at `toc` on each H2 and at `map` on
+the area, so an H1 whose own record requires nothing never reads as an area that needs nothing. When
+none does, it says "none of its N H2s requires or embeds a claim outside it"; either way it counts the
+H2s that are behaviors with no `requires` key, whose dependencies are unknown, not none, and counts
+them among the unknowns, so an area whose H2s were never investigated never reads as needing nothing.
 
-The output starts with the requested claim itself: its id, title, kind, labels, size and its own
-"what". Then each neighbour gets one line, grouped under a heading per kind of link and ordered by id
-(`down` keeps declaration order): the § id and its heading title; **what**; for `out`, `in` and
+The output starts with the requested claim itself: its id, title, kind, labels, size, the number of
+code files its record lists (which `read` names), and its own "what". Then each neighbour gets one line, grouped under a heading per kind of link and ordered by id
+(`down` keeps declaration order, and notes about an H2 come before the notes about its H1): the § id and its heading title; **what**; for `out`, `in` and
 `mentions`, **why**; and **size** in UTF-8 bytes, which is what reading it alone costs, and for an H1
 its lede's bytes and its whole file's bytes. **What** is the passage's first prose sentence after its
-heading, verbatim with whitespace collapsed: fenced code, HTML comments, tables and headings are
-skipped, list markers are dropped, a sentence ends at `.`, `?`, `!` or `:` followed by a space (never
-inside a code span) and runs on until it has 20 characters, and anything past 200 characters is cut
+heading, verbatim with whitespace collapsed: fenced code, HTML comments, tables, thematic breaks and
+headings are skipped, list markers are dropped, a sentence ends at `.`, `?`, `!` or `:` followed by a space (never
+inside a code span or an open quote, nor at a closing quote the sentence runs on past in lowercase,
+and a `:` never inside open parentheses or brackets) and runs on until it
+has 20 characters, not counting the list marker, and anything past 200 characters is cut
 with `…`. A blockquote is used only when the passage has no other prose; a passage with none says
 "no prose sentence", with its code's size when it has code, and never quotes code. **Why** is the
 first visible-prose sentence of the linking claim's text that names the other one (the requested
-claim's for `out`, the neighbour's for `in` and `mentions`); failing that, an HTML comment naming it,
-labelled as a comment; failing that, exactly "not mentioned in this claim's text". The JSON says
-which (`whatSource`, `whySource`).
+claim's for `out`, the neighbour's for `in` and `mentions`, naming the H1 for a line reached through
+it), cut to 240 characters around its own mention of the link, with `…` where it is cut; failing
+that, an HTML comment naming it, labelled as a comment; failing that, for a note linked
+by its `about` field, "about §x (declared on the note)", since the field itself is the written reason;
+failing that, exactly "not mentioned in this claim's text". The JSON says which (`whatSource`, and
+`whySource` `prose`, `comment`, `declared` or `none`). A line, and the requested claim, whose record
+carries `agreed` shows who made the decision and when, never that they read its current words, and
+whether it is built (it maps `code` and its
+`evidence` is `reviewed` or `verified`), as "agreed (decision) <at> by <by>, not built" or ", built", the wording `map` uses, so an
+agreed promise not yet built never reads like a built one.
 
 Mentions are found in prose only: text inside fenced code, HTML comments and double-backtick spans
 is masked; single backticks are not, and `§a.b` reads as `§a/b`. A claim never counts as mentioning
@@ -390,13 +408,15 @@ those embed in turn; and its first page
 carries the always-on frame outside the budget (§tools.spec/frame). For an H1 that passage
 is its lede, the text before its first H2; `--whole`
 returns the lede and then every H2 of the file in declaration order, each as its own passage. The
-text is byte-for-byte the passage the `scope` API supplies, with its id, kind, title, file, lines
-and any declared labels, and a passage larger than the budget arrives as exact UTF-8 fragments,
+text is byte-for-byte the passage the `scope` API supplies, with its id, kind, title, file, lines,
+any declared labels and any `agreed` record, shown as in the contents view, and the code files its
+record lists: the first 12 paths, each marked when it is missing or refused, then how many more there
+are, so a builder learns which files keep the promise without the whole closure's code list. A passage larger than the budget arrives as exact UTF-8 fragments,
 as packet prose does, whose concatenation recovers it.
 
 After the passage, a footer names the § it declares through `requires` and the § its prose names
-(masked as in the contents view) that this call did not deliver, so a link left unopened is still
-named; for an H1 read as its lede it also gives the number of H2s left out and the whole file's
+(masked as in the contents view) that this read does not deliver on any of its pages, so a link
+left unopened is still named; for an H1 read as its lede it also gives the number of H2s left out and the whole file's
 size, with the flag that reads it. The default budget is 32,768 bytes, so any single passage of
 ordinary size arrives in one call; explicit budgets are 1,024 to 32,768. The cursor and
 stored-nothing rules are the contents view's, with compact JSON with `--json` and readable text
@@ -418,7 +438,9 @@ An `embeds` edge is a dependency like `requires`: `scope` and `packet` follow it
 delivers each surface it embeds, whole (see §tools.spec/single-read).
 
 An `about` note shows in the contents view under `out` for its target, in an "about" group, and also
-for each H2 of a target H1, marked as reached through that H1. `read` names the notes about the
+for each H2 of a target H1, marked as reached through that H1; it shows the same way under `in`, as a
+note about the claim or about its H1. When the note's prose doesn't name its target, its why is the
+declared field itself ("about §x (declared on the note)"), never "not mentioned". `read` names the notes about the
 passage it delivers, and `packet` adds to its prose the notes about the requested claim, its H1 and
 the surfaces it embeds, each with the reason `about`. On a spec whose records carry none of these
 fields, every existing output is unchanged except packet's help text and its new `frame` part.

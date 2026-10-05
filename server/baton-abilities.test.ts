@@ -11,6 +11,7 @@ import { join } from "node:path";
 import { after, describe, test } from "node:test";
 import { Hono } from "hono";
 import { abilitiesOf } from "../shared/baton";
+import { historyOf } from "./harness/pi/reader";
 
 const root = realpathSync(mkdtempSync(join(tmpdir(), "sova-baton-abilities-")));
 process.env.PI_CODING_AGENT_DIR = join(root, "agent");
@@ -186,10 +187,12 @@ describe("read_link's safety (§app.baton/read-link)", () => {
   });
 
   test("only a link someone wrote, exactly; only http(s); no user name or password", () => {
-    const texts = rl.writtenTexts([
-      { type: "message", message: { role: "user", content: [{ type: "text", text: "See https://example.com/report?q=1 thanks" }] } },
-      { type: "message", message: { role: "assistant", content: [{ type: "text", text: "Try https://model.example/" }] } },
-    ]);
+    const texts = rl.writtenTexts(
+      historyOf([
+        { type: "message", message: { role: "user", content: [{ type: "text", text: "See https://example.com/report?q=1 thanks" }] } },
+        { type: "message", message: { role: "assistant", content: [{ type: "text", text: "Try https://model.example/" }] } },
+      ]),
+    );
     assert.equal(rl.typedInConversation("https://example.com/report?q=1", texts), true);
     assert.equal(rl.typedInConversation("https://example.com/report?q=2", texts), false);
     assert.equal(rl.typedInConversation("https://model.example/", texts), false, "never the model's own");

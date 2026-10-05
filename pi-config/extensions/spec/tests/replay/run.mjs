@@ -8,6 +8,7 @@
 // diff.json to --out (default: a temp dir, printed), and prints a one-screen summary.
 // Exit: 0 every guard held in both arms; 1 a guard failed in either arm; 2 usage or a crashed scenario.
 import "../../../claude-code/tests/hermetic-env.mjs"; // first: a throwaway HOME, whatever the caller's
+import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, writeFileSync, readFileSync, existsSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -46,6 +47,14 @@ export async function runArm(tree, { label, only, pinned } = {}) {
     rows: JSON.parse(normalize(JSON.stringify(rows))),
     ...(errors.length ? { errors: JSON.parse(normalize(JSON.stringify(errors))) } : {}),
   };
+}
+
+/** The harness's own commit, and whether its directory has uncommitted changes. */
+export function harnessCommit() {
+  const here = fileURLToPath(new URL(".", import.meta.url));
+  const head = spawnSync("git", ["-C", here, "rev-parse", "HEAD"], { encoding: "utf8" });
+  const dirty = spawnSync("git", ["-C", here, "status", "--porcelain", "--", "."], { encoding: "utf8" });
+  return head.status === 0 ? { commit: head.stdout.trim(), dirty: Boolean(dirty.stdout.trim()) } : null;
 }
 
 /** A guard's result in one arm: true, false, "n/a" (the tree lacks what it checks; never a pass), or null (absent). */
@@ -92,6 +101,9 @@ export function summary(baseline, candidate, diff) {
   lines.push("", `${diff.changed} of ${diff.rows.length} rows differ; guards failed: baseline ${bf.length}, candidate ${cf.length}`);
   for (const f of cf) lines.push(`  candidate ✗ ${f}`);
   for (const f of bf) lines.push(`  baseline ✗ ${f}`);
+  const targets = diff.rows.filter((r) => /\.target\./.test(r.metric));
+  if (targets.length) lines.push("", "Targets (what a milestone moves; never guards), baseline → candidate:");
+  for (const r of targets) lines.push(`  ${r.metric}: ${r.changed ? change(r.baseline, r.candidate) : `${cell(r.candidate)} (unchanged)`}`);
   return lines.join("\n");
 }
 
@@ -113,6 +125,8 @@ async function main(argv) {
   writeFileSync(join(out, "scorecard-baseline.json"), JSON.stringify(baseline, null, 2) + "\n");
   writeFileSync(join(out, "scorecard-candidate.json"), JSON.stringify(candidate, null, 2) + "\n");
   writeFileSync(join(out, "diff.json"), JSON.stringify(diff, null, 2) + "\n");
+  writeFileSync(join(out, "summary.txt"), summary(baseline, candidate, diff) + "\n");
+  writeFileSync(join(out, "run.json"), JSON.stringify({ baseline: baseline.source ?? baseline.tree, candidate: candidate.source ?? candidate.tree, harness: harnessCommit(), command: ["node", "run.mjs", ...argv].join(" "), date: new Date().toISOString() }, null, 2) + "\n");
   if (opt.json) process.stdout.write(JSON.stringify({ out, diff }) + "\n");
   else console.log(`${summary(baseline, candidate, diff)}\n\nscorecards and diff: ${out}`);
   if (baseline.errors || candidate.errors) return 2;

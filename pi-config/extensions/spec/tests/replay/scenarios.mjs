@@ -63,11 +63,13 @@ const evidence = (ctx, repo, name, id) =>
 
 /** Promote `id` from `name`: preview, and when it plans cleanly, write it and commit the current spec. */
 function promote(ctx, repo, name, id) {
-  const preview = ctx.tools.draft(repo.root, ctx.ws.home, ["promote", name, "--id", id]);
+  // A tool that fails internally measured nothing: the scenario crashes (exit 2), never a guard's pass.
+  const sound = (r) => { if (/(^|\+)internal(\+|$)|^no-json/.test(outcome(r))) throw new Error(`promote ${name} ${id}: ${outcome(r)}: ${(r.json?.findings ?? []).map((f) => f.message).join("; ").split("\n")[0]}`); return r; };
+  const preview = sound(ctx.tools.draft(repo.root, ctx.ws.home, ["promote", name, "--id", id]));
   const refusals = (preview.json?.refusals ?? []).map((x) => x.code).sort();
   const plan = preview.json?.plan;
   if (refusals.length || !plan) return { refused: refusals.length ? refusals : [outcome(preview)], preview };
-  const write = ctx.tools.draft(repo.root, ctx.ws.home, ["promote", name, "--id", id, "--plan", plan, "--write"]);
+  const write = sound(ctx.tools.draft(repo.root, ctx.ws.home, ["promote", name, "--id", id, "--plan", plan, "--write"]));
   const wrote = (write.json?.refusals ?? []).map((x) => x.code);
   if (write.json?.exit !== 0 || wrote.length) return { refused: wrote.length ? wrote.sort() : [outcome(write)], preview: write };
   repo.commit(`promote ${name}`, [".sova/spec"]);
@@ -181,7 +183,118 @@ export async function merging(ctx) {
       guard(`a.${shape}.master-landing-listed`, land.landing && expect.every((id) => landIds.includes(id)), `master landing ${land.landing ? "lists" : "is no landing; lists"} ${landIds.join(",") || "none"}; needs ${expect.join(",")}`),
     ]));
   }
+  rows.push(...sameSpot(ctx));
+  rows.push(...manifestMerge(ctx));
   return rows;
+}
+
+/** A new note H2 in a draft, inserted right before `before` (a heading line of the draft's claim file). */
+function addH2(repo, draft, id, text, before = "## §a.top/two") {
+  replaceIn(repo, draftClaim(draft, "§a.top/one"), before, `## ${id}\n\n${text}\n\n${before}`);
+  const rel = `.sova/spec/drafts/${draft}/spec/manifest.json`;
+  const m = JSON.parse(repo.read(rel));
+  m.claims[id] = { kind: "note", authority: "accepted" };
+  repo.write(rel, JSON.stringify(m, null, 2) + "\n");
+}
+
+const docOnly = (ctx, repo, name, id) =>
+  ctx.tools.draft(repo.root, ctx.ws.home, ["evidence", name, "--id", id, "--by", "replay", "--verification", "fixture: replay scenario", "--doc-only", "--write"]);
+
+/** The H2 ids of a claim file, in order. */
+const h2Order = (text) => [...text.matchAll(/^## (§\S+)/gm)].map((m) => m[1]);
+
+/**
+ * Two drafts from one base each add a new H2 at the same spot (after §a.top/one), landed in both orders; and two
+ * drafts adding the same new id with different text. A target row today: the second landing conflicts whole-file.
+ */
+function sameSpot(ctx) {
+  const land = (order) => {
+    const repo = standard(ctx, `a-same-spot-${order.join("")}`);
+    const texts = { A: ["§a.top/zeta", "Zeta is added by A."], B: ["§a.top/alpha", "Alpha is added by B."] };
+    for (const k of ["A", "B"]) {
+      ctx.tools.draft(repo.root, ctx.ws.home, ["new", `d${k.toLowerCase()}`, "--write"]);
+      addH2(repo, `d${k.toLowerCase()}`, ...texts[k]);
+      docOnly(ctx, repo, `d${k.toLowerCase()}`, texts[k][0]);
+    }
+    const out = order.map((k) => `${k}:${promote(ctx, repo, `d${k.toLowerCase()}`, texts[k][0]).refused.join("+") || "promoted"}`);
+    const file = repo.read(currentClaim("§a.top/one"));
+    const kept = ["A", "B"].every((k) => file.includes(texts[k][1]) || repo.read(draftClaim(`d${k.toLowerCase()}`, "§a.top/one")).includes(texts[k][1])) && file.includes("Plain H3 prose.") && !/^(<<<<<<<|>>>>>>>|=======)/m.test(file);
+    return { out, file, kept };
+  };
+  const ab = land(["A", "B"]), ba = land(["B", "A"]);
+  // The same new id, different text on each side.
+  const repo = standard(ctx, "a-same-spot-same-id");
+  for (const [k, text] of [["C", "Mid says C."], ["D", "Mid says D."]]) {
+    ctx.tools.draft(repo.root, ctx.ws.home, ["new", `d${k.toLowerCase()}`, "--write"]);
+    addH2(repo, `d${k.toLowerCase()}`, "§a.top/mid", text);
+    docOnly(ctx, repo, `d${k.toLowerCase()}`, "§a.top/mid");
+  }
+  const c = promote(ctx, repo, "dc", "§a.top/mid"), d = promote(ctx, repo, "dd", "§a.top/mid");
+  const sameIdKept = repo.read(currentClaim("§a.top/one")).includes("Mid says C.") && repo.read(draftClaim("dd", "§a.top/one")).includes("Mid says D.");
+  return [row("a", "a.target.same-spot", {
+    orderAB: ab.out.join(" "), orderBA: ba.out.join(" "), identical: ab.file === ba.file,
+    h2s: h2Order(ab.file).join(","), sameId: `${c.refused.join("+") || "promoted"}, then ${d.refused.join("+") || "promoted"}`,
+  }, [
+    guard("a.same-spot.same-id-stops", c.refused.length === 0 && d.refused.includes("conflict"), `first: ${c.refused.join("+") || "promoted"}; second: ${d.refused.join("+") || "promoted"}`),
+    guard("a.same-spot.no-prose-lost", ab.kept && ba.kept && sameIdKept, "each added H2 is current or still in its refused draft, in both orders; H3 prose kept; no conflict markers"),
+  ])];
+}
+
+/**
+ * The manifest merge driver (`.gitattributes` → `merge-manifest`), configured repo-locally to the tree under test:
+ * two branches each promote a new record onto one base and merge; then two branches change the same record.
+ */
+function manifestMerge(ctx) {
+  const setup = (label, driver) => {
+    const repo = standard(ctx, label);
+    repo.write(".gitattributes", ".sova/spec/manifest.json merge=sova-spec-manifest\n");
+    repo.commit("attributes", [".gitattributes"]);
+    if (driver) repo.git(["config", "merge.sova-spec-manifest.driver", `node "${join(ctx.tools.core, "sova-spec-draft.mjs")}" merge-manifest --root . --base %O --ours %A --theirs %B --write`]);
+    return repo;
+  };
+  const records = (repo) => Object.keys(JSON.parse(repo.read(".sova/spec/manifest.json")).claims);
+  const twoRecords = (driver) => {
+    const repo = setup(`a-manifest-${driver ? "driver" : "plain"}`, driver);
+    const base = repo.head();
+    const add = (branch, draft, id, text, file, before) => {
+      repo.checkout("-b", branch, base);
+      ctx.tools.draft(repo.root, ctx.ws.home, ["new", draft, "--write"]);
+      replaceIn(repo, `.sova/spec/drafts/${draft}/spec/claims/${file}`, before, `${before}\n\n## ${id}\n\n${text}`);
+      const rel = `.sova/spec/drafts/${draft}/spec/manifest.json`;
+      const m = JSON.parse(repo.read(rel));
+      m.claims[id] = { kind: "note", authority: "accepted" };
+      repo.write(rel, JSON.stringify(m, null, 2) + "\n");
+      docOnly(ctx, repo, draft, id);
+      return promote(ctx, repo, draft, id);
+    };
+    const x = add("x", "dx", "§a.top/xnote", "X's note.", "a/top.md", "Two does Y.");
+    const y = add("y", "dy", "§b.other/ynote", "Y's note.", "b/other.md", "Other does Z.");
+    const m = repo.merge("x");
+    const ids = m.status === 0 ? records(repo) : [];
+    if (m.status !== 0) repo.git(["merge", "--abort"], { allowFail: true });
+    return { promoted: x.refused.length === 0 && y.refused.length === 0, merged: m.status === 0, both: ids.includes("§a.top/xnote") && ids.includes("§b.other/ynote") };
+  };
+  const plain = twoRecords(false), driven = twoRecords(true);
+  // The same record changed differently on both branches must still stop.
+  const repo = setup("a-manifest-same", true);
+  const base = repo.head();
+  const edit = (branch, value) => {
+    repo.checkout("-b", branch, base);
+    const m = JSON.parse(repo.read(".sova/spec/manifest.json"));
+    m.claims["§b/other"].evidence = value;
+    repo.write(".sova/spec/manifest.json", JSON.stringify(m, null, 2) + "\n");
+    repo.commit(`edit ${branch}`, [".sova/spec/manifest.json"]);
+  };
+  edit("p", "reviewed");
+  edit("q", "verified");
+  const same = repo.merge("p");
+  return [row("a", "a.manifest-merge", {
+    withoutDriver: plain.merged ? "merged" : "conflict", withDriver: driven.merged ? "merged" : "conflict", sameRecord: same.status === 0 ? "merged" : "stopped",
+  }, [
+    guard("a.manifest-merge.setup", plain.promoted && driven.promoted, "both branches promoted their record"),
+    guard("a.manifest-merge.two-records-merge", driven.merged && driven.both, `with the driver: ${driven.merged ? "merged" : "conflict"}, ${driven.both ? "both records present" : "a record missing"}`),
+    guard("a.manifest-merge.same-record-stops", same.status !== 0, `the same record changed on both sides: ${same.status === 0 ? "merged" : "stopped"}`),
+  ])];
 }
 
 // ── (b) Evidence ─────────────────────────────────────────────────────────────
@@ -425,17 +538,21 @@ export async function leftovers(ctx) {
   const repo = standard(ctx, "e-drafts");
   const base = repo.head();
   drafted(ctx, repo, "done", "§a.top/one", "One does X.", "One does X, done.");
-  drafted(ctx, repo, "feat", "§a.top/two", "Two does Y.", "Two does Y, featured.");
+  drafted(ctx, repo, "feat", "§a.top/one", "One does X.", "One does X, featured.");
   implement(repo, "src/one.txt", 1, "DONE");
   evidence(ctx, repo, "done", "§a.top/one");
   const pd = promote(ctx, repo, "done", "§a.top/one");
-  // feat now conflicts (same claim file): redone as feat-2 from current, the usual hand re-apply.
-  implement(repo, "src/two.txt", 1, "FEAT");
-  evidence(ctx, repo, "feat", "§a.top/two");
-  const pf = promote(ctx, repo, "feat", "§a.top/two");
-  drafted(ctx, repo, "feat-2", "§a.top/two", "Two does Y.", "Two does Y, featured.");
-  evidence(ctx, repo, "feat-2", "§a.top/two");
-  const pf2 = promote(ctx, repo, "feat-2", "§a.top/two");
+  // feat now conflicts (the same H2 changed differently on both sides): redone as feat-2 from current, the usual hand re-apply.
+  implement(repo, "src/one.txt", 3, "FEAT");
+  evidence(ctx, repo, "feat", "§a.top/one");
+  const pf = promote(ctx, repo, "feat", "§a.top/one");
+  // Only a refused feat needs redoing; if it landed, feat-2 has nothing to re-apply, and e.setup says so.
+  let pf2 = { refused: ["not-needed"] };
+  if (pf.refused.includes("conflict")) {
+    drafted(ctx, repo, "feat-2", "§a.top/one", "One does X, done.", "One does X, done and featured.");
+    evidence(ctx, repo, "feat-2", "§a.top/one");
+    pf2 = promote(ctx, repo, "feat-2", "§a.top/one");
+  } else ctx.tools.draft(repo.root, ctx.ws.home, ["new", "feat-2", "--write"]);
   drafted(ctx, repo, "live", "§b/other", "Other does Z.", "Other does Z, live.");
   const names = ["done", "feat", "feat-2", "live"];
   const outputs = {

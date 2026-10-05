@@ -2,8 +2,8 @@
 // before the real commands exist. replay.test.mjs copies it (with fullness.mjs) into a scratch tree's
 // spec/core and routes `sova-spec.mjs toc|read` to it. It is not the tools' implementation and carries no
 // contract beyond the JSON shape the harness reads:
-//   toc <§id> --dir out|in|down|up|mentions → { id, dir, lines: [{id, title, what, why, whyWritten, bytes}], footer: {named: [§id]} }
-//   read <§id>                              → { id, text, bytes }
+//   toc <§id> --dir out|in|down|up|mentions → { id, dir, seed: {id}, lines: [{id, title, what, whatSource, why, whySource, bytes}], footer: {delivered: []} }
+//   read <§id>                              → { id, items: [{index, id, text}], footer: {named: [§id]} }
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { specIndex, parentOf } from "./fullness.mjs";
@@ -20,7 +20,7 @@ const mentions = (text, target) => new RegExp(`${esc(target)}(?![\\w./-])`).test
 
 const seed = index.passages.get(id);
 if (!seed || !claims[id]) out({ status: "refused", code: "unknown-id" }, 2);
-else if (cmd === "read") out({ id, text: seed.text, bytes: seed.bytes });
+else if (cmd === "read") out({ id, items: [{ index: 0, id, text: seed.text }], footer: { named: [...(claims[id].requires ?? [])].filter((x) => x !== id) } });
 else {
   const dir = flag("--dir");
   const all = Object.keys(claims).filter((x) => index.passages.has(x)).sort();
@@ -37,10 +37,8 @@ else {
       const p = index.passages.get(x);
       const body = p.text.split("\n").slice(1).join(" ").replace(/\s+/g, " ").trim();
       const why = seed.text.split("\n").find((l) => mentions(l, x)) ?? index.passages.get(x).text.split("\n").find((l) => mentions(l, id));
-      return { id: x, title: p.text.split("\n")[0].replace(/^#+ \S+( — )?/, ""), what: body.split(/(?<=[.:])\s/)[0] || "(no text)", why: why ? why.trim() : "no reason is written", whyWritten: Boolean(why), bytes: p.bytes };
+      return { id: x, title: p.text.split("\n")[0].replace(/^#+ \S+( — )?/, ""), what: body.split(/(?<=[.:])\s/)[0] || "(no text)", why: why ? why.trim() : "not mentioned in this claim's text", whySource: why ? "prose" : "none", whatSource: "prose", bytes: p.bytes };
     });
-    const shown = new Set(lines.map((l) => l.id));
-    const named = all.filter((x) => x !== id && !shown.has(x) && mentions(seed.text, x));
-    out({ id, dir, lines, footer: { named } });
+    out({ id, dir, seed: { id }, lines, footer: { delivered: [] } });
   }
 }

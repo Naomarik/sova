@@ -11,7 +11,7 @@ import { spawnSync } from "node:child_process";
 import { readFileSync, writeFileSync, existsSync, realpathSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { specIndex, scoreNeed, readStream, proseTexts, median, pool, idsIn, parentOf } from "./fullness.mjs";
+import { specIndex, scoreNeed, readStream, proseTexts, median, pool, idsIn, parentOf, capability, readToc } from "./fullness.mjs";
 import { Tools, workspace, scrubProcessEnv } from "./lib.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -101,35 +101,29 @@ async function packetArm(ctx, root, index, c) {
   };
 }
 
-/** Does this tree have `toc`? A JSON answer with a `lines` array on the first seed. */
-function hasToc(ctx, root, seed) {
-  const r = ctx.tools.spec(root, ctx.ws.home, ["toc", seed, "--dir", "out"]);
-  return Array.isArray(r.json?.lines);
-}
-
-/** One comparison under the pull proxy: the ids `toc` shows one hop from the seed, in every direction. */
+/** One comparison under the pull proxy: the ids `toc` shows one hop from the seed (its lines), in every direction. */
 async function pullArm(ctx, root, c, baseline) {
   const shown = new Set([c.seed]);
   let bytes = 0, calls = 0;
   const lines = { total: 0, withWhat: 0, withWhy: 0 };
+  const broken = [];
   for (const dir of DIRS) {
-    const r = await ctx.tools.runAsync(root, ctx.ws.home, ["toc", c.seed, "--dir", dir]);
-    calls++;
-    bytes += Buffer.byteLength(r.stdout);
-    if (!r.json) continue;
-    idsIn(r.json.lines ?? [], shown);
-    idsIn(r.json.footer ?? {}, shown);
-    for (const l of r.json.lines ?? []) {
+    const t = await readToc(ctx.tools, root, ctx.ws.home, c.seed, dir);
+    calls += t.calls;
+    bytes += t.bytes;
+    if (!t.ok) broken.push(`${dir}: ${t.refused}`);
+    for (const l of t.lines) {
+      if (typeof l.id === "string") shown.add(l.id);
       lines.total++;
-      if (typeof l.what === "string" && l.what.trim()) lines.withWhat++;
-      if (typeof l.why === "string" && l.why.trim() && l.whyWritten !== false) lines.withWhy++;
+      if (typeof l.what === "string" && l.what.trim() && l.whatSource !== "none") lines.withWhat++;
+      if (l.whySource === "prose" || l.whySource === "comment") lines.withWhy++;
     }
   }
   const passages = baseline?.passageOf ?? [];
   const isShown = (p) => Boolean(p && (shown.has(p)));
   const scored = c.needs.map((n, i) => ({ i, na: n.verdict?.status === "n/a" || !n.probe, p: passages[i] })).filter((x) => !x.na);
   const lost = (baseline?.values ?? []).map((v, i) => (v > 0 && !isShown(passages[i]) ? i : null)).filter((i) => i !== null);
-  return { shown: scored.filter((x) => isShown(x.p)).length, of: scored.length, bytes, calls, lines, lostUnshown: lost };
+  return { shown: scored.filter((x) => isShown(x.p)).length, of: scored.length, bytes, calls, lines, lostUnshown: lost, broken };
 }
 
 export async function fullness(ctx) {
@@ -181,38 +175,44 @@ export async function fullness(ctx) {
     rows.push(row(`g.impact.${seed.slice(1).replace(/[/.]/g, "-")}`, r.json ? { consumers: r.json.consumers?.length ?? null, frontier: r.json.frontier?.length ?? null } : `no-json(status ${r.status})`));
   }
 
-  // The pull proxy.
-  const toc = hasToc(ctx, root, DATA.comparisons[0].seed);
-  if (!toc) {
-    rows.push(row("g.pull.total", "n/a: this tree has no toc"));
+  // The pull proxy: n/a only when the tree's sova-spec.mjs rejects `toc` as an unknown command.
+  const toc = await capability(ctx.tools, root, ctx.ws.home, "toc");
+  if (toc === "absent") {
+    rows.push(row("g.pull.total", "n/a: this tree has no toc", [guard("g.pull.toc-answers", true, "n/a: this tree has no toc", true)]));
     for (const h1 of WHY_FAMILIES) rows.push(row(`g.pull.why.${h1.slice(1).replace("/", "-")}`, "n/a"));
   } else {
-    // Contents-line quality: `--dir out` over each H2 of the family; a why from an HTML comment counted apart.
+    // Contents-line quality: `--dir out` over each H2 of the family. "requires" lines are the declared edges
+    // (the plan's "1 of 6"); a why found only in an HTML comment is counted apart.
     for (const h1 of WHY_FAMILIES) {
       const kids = [...index.passages.values()].filter((p) => parentOf(p.id) === h1).map((p) => p.id);
-      const w = { lines: 0, why: 0, whyProse: 0, what: 0 };
+      const w = { lines: 0, requires: 0, requiresWhyProse: 0, requiresWhyComment: 0, whyProse: 0, whyComment: 0, withWhat: 0 };
       for (const id of kids) {
-        const r = ctx.tools.spec(root, ctx.ws.home, ["toc", id, "--dir", "out"]);
-        for (const l of r.json?.lines ?? []) {
+        const t = await readToc(ctx.tools, root, ctx.ws.home, id, "out");
+        for (const l of t.lines) {
           w.lines++;
-          if (typeof l.what === "string" && l.what.trim()) w.what++;
-          const written = typeof l.why === "string" && l.why.trim() && l.whyWritten !== false;
-          if (written) w.why++;
-          if (written && l.whySource !== "comment") w.whyProse++;
+          if (typeof l.what === "string" && l.what.trim() && l.whatSource !== "none") w.withWhat++;
+          if (l.whySource === "prose") w.whyProse++;
+          if (l.whySource === "comment") w.whyComment++;
+          if (l.group === "requires") {
+            w.requires++;
+            if (l.whySource === "prose") w.requiresWhyProse++;
+            if (l.whySource === "comment") w.requiresWhyComment++;
+          }
         }
       }
-      rows.push(row(`g.pull.why.${h1.slice(1).replace("/", "-")}`, { h2s: kids.length, lines: w.lines, withWhy: w.why, withWhyProseOnly: w.whyProse, withWhat: w.what }));
+      rows.push(row(`g.pull.why.${h1.slice(1).replace("/", "-")}`, { h2s: kids.length, ...w }));
     }
     const pulls = await pool(results, 8, async ({ c }) => ({ c, q: await pullArm(ctx, root, c, baseline?.comparisons[c.id]) }));
     for (const { c, q } of pulls) {
       rows.push(row(`g.pull.${c.id}`, { shown: q.shown, of: q.of, bytes: q.bytes, calls: q.calls, lines: q.lines.total, lost: q.lostUnshown.length }));
     }
+    const broken = pulls.flatMap(({ c, q }) => q.broken.map((b) => `${c.id} ${b}`));
     const lostUnshown = pulls.flatMap(({ c, q }) => q.lostUnshown.map((i) => `${c.id}:${i} ${c.needs[i].need}`));
     const L = pulls.reduce((s, { q }) => ({ total: s.total + q.lines.total, withWhat: s.withWhat + q.lines.withWhat, withWhy: s.withWhy + q.lines.withWhy }), { total: 0, withWhat: 0, withWhy: 0 });
     rows.push(row("g.pull.total", {
-      shown: pulls.reduce((s, { q }) => s + q.shown, 0), of, bytesMedian: median(pulls.map(({ q }) => q.bytes)), callsTotal: pulls.reduce((s, { q }) => s + q.calls, 0),
+      shown: pulls.reduce((s, { q }) => s + q.shown, 0), of, bytesMedian: median(pulls.map(({ q }) => q.bytes)), bytesTotal: pulls.reduce((s, { q }) => s + q.bytes, 0), callsTotal: pulls.reduce((s, { q }) => s + q.calls, 0),
       lines: L.total, linesWithWhat: L.withWhat, linesWithWhy: L.withWhy, answeredByPacketNotShown: lostUnshown.length,
-    }));
+    }, [guard("g.pull.toc-answers", broken.length === 0, broken.length ? `toc failed: ${broken.slice(0, 5).join("; ")}` : "every toc call answered")]));
     // A row, not a guard: one hop is a proxy, and a need two hops out is a fair loss to report. The guard
     // "no need packet answers is lost unless shown" belongs to the agent arm, where the agent may take more hops.
     rows.push(row("g.pull.not-shown", lostUnshown.join("; ") || "none"));
@@ -239,12 +239,20 @@ export async function recordBaseline(tree, { pinned, source } = {}) {
   } finally { ws.dispose(); }
 }
 
+/** The bytes `--record` writes for `tree` (a make-tree.mjs tree names its ref and commit). */
+export async function baselineText(tree) {
+  let source = null;
+  try { source = JSON.parse(readFileSync(join(tree, "../../replay-source.json"), "utf8")); } catch { /* a working tree */ }
+  return JSON.stringify(await recordBaseline(tree, { source: source ? `${source.ref} @ ${source.commit}` : "working tree" }), null, 1) + "\n";
+}
+
+export const BASELINE_PATH = BASELINE_FILE;
+
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const args = process.argv.slice(2);
   if (args[0] !== "--record" || !args[1]) { console.error("usage: node scenario-g.mjs --record <extensions tree>"); process.exit(2); }
-  let source = null;
-  try { source = JSON.parse(readFileSync(join(args[1], "../../replay-source.json"), "utf8")); } catch { /* a working tree */ }
-  const out = await recordBaseline(args[1], { source: source ? `${source.ref} @ ${source.commit}` : "working tree" });
-  writeFileSync(BASELINE_FILE, JSON.stringify(out, null, 1) + "\n");
+  const text = await baselineText(args[1]);
+  writeFileSync(BASELINE_FILE, text);
+  const out = JSON.parse(text);
   console.log(`recorded ${out.total.answered}/${out.total.of} from ${out.tree} → data/g-baseline.json`);
 }

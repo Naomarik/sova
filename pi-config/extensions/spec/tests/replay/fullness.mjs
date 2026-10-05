@@ -138,6 +138,51 @@ export async function readStream(tools, root, home, args) {
   return { calls, exits, items, refused: null };
 }
 
+/**
+ * Does this tree's `sova-spec.mjs` have `cmd` (toc, read)? Asked without arguments: a tree that lacks it answers
+ * `unknown command <cmd>` (exit 2, usage). → "absent" | "present" | "broken" (no JSON at all: never n/a).
+ */
+export async function capability(tools, root, home, cmd) {
+  const r = await tools.runAsync(root, home, [cmd]);
+  if (!r.json) return "broken";
+  const unknown = (r.json.findings ?? []).some((f) => f.code === "usage" && new RegExp(`^unknown command ${cmd}\\b`).test(f.message ?? ""));
+  return r.json.exit === 2 && unknown ? "absent" : "present";
+}
+
+/** Every page of `toc <id> --dir <dir>`, following `next`. → { ok, refused, lines, seed, footer, calls, bytes } */
+export async function readToc(tools, root, home, id, dir) {
+  const args = ["toc", id, "--dir", dir];
+  let r = await tools.runAsync(root, home, args), calls = 1, bytes = Buffer.byteLength(r.stdout);
+  const lines = [], first = r.json;
+  if (!first || first.status === "refused" || first.exit === 2 || !Array.isArray(first.lines)) return { ok: false, refused: first?.code ?? `no-json(status ${r.status})`, lines, seed: null, footer: null, calls, bytes };
+  for (;;) {
+    lines.push(...(r.json.lines ?? []));
+    if (!r.json.next || calls >= 200) break;
+    r = await tools.runAsync(root, home, [...args, "--cursor", r.json.next]);
+    calls++;
+    bytes += Buffer.byteLength(r.stdout);
+    if (!r.json || r.json.status === "refused" || !Array.isArray(r.json.lines)) return { ok: false, refused: r.json?.code ?? "page-unreadable", lines, seed: first.seed, footer: first.footer, calls, bytes };
+  }
+  return { ok: true, refused: null, lines, seed: first.seed ?? null, footer: r.json.footer ?? first.footer ?? null, calls, bytes };
+}
+
+/** `read <id>` (`--whole` when asked), fragments joined across pages. → { ok, refused, text, calls, bytes, footer } */
+export async function readPassage(tools, root, home, id, { whole = false } = {}) {
+  const args = ["read", id, ...(whole ? ["--whole"] : [])];
+  let r = await tools.runAsync(root, home, args), calls = 1, bytes = Buffer.byteLength(r.stdout);
+  if (!r.json || r.json.status === "refused" || r.json.exit === 2 || !Array.isArray(r.json.items)) return { ok: false, refused: r.json?.code ?? `no-json(status ${r.status})`, text: null, calls, bytes, footer: null };
+  const items = [];
+  for (;;) {
+    items.push(...r.json.items);
+    if (!r.json.next || calls >= 200) break;
+    r = await tools.runAsync(root, home, [...args, "--cursor", r.json.next]);
+    calls++;
+    bytes += Buffer.byteLength(r.stdout);
+    if (!r.json || !Array.isArray(r.json.items)) return { ok: false, refused: r.json?.code ?? "page-unreadable", text: null, calls, bytes, footer: null };
+  }
+  return { ok: true, refused: null, text: proseTexts(items).get(id) ?? null, texts: proseTexts(items), calls, bytes, footer: r.json.footer ?? null };
+}
+
 /** Reassemble prose items (fragments joined in order) by id. */
 export function proseTexts(items) {
   const texts = new Map();

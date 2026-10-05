@@ -10,7 +10,7 @@
 // Rows measure; guards hold today and must keep holding; target rows record what today's tools miss by design.
 // The pull checks need `toc` (and `read`); a tree without them reports n/a, never a pass.
 import { Repo, seedSpec } from "./lib.mjs";
-import { specIndex, readStream, proseTexts, idsIn } from "./fullness.mjs";
+import { specIndex, readStream, proseTexts, idsIn, capability, readToc, readPassage } from "./fullness.mjs";
 import { FRAME_CAP, DIRS } from "./scenario-g.mjs";
 
 const row = (scenario, metric, value, guards = []) => ({ scenario, metric, value, guards });
@@ -115,58 +115,66 @@ export async function sliceQuality(ctx) {
   ]));
 
   // ── Under pull ──
-  rows.push(...pull(ctx, repo, index, run));
+  rows.push(...(await pull(ctx, repo, index)));
   return rows;
 }
 
-
-function pull(ctx, repo, index, run) {
-  const probe = run(["toc", SEED, "--dir", "out"]);
-  if (!Array.isArray(probe.json?.lines)) {
-    const na = (name) => guard(name, true, "n/a: this tree has no toc", true);
+/** The pull checks: `toc` on the seed in every direction, then `read` of the seed. */
+async function pull(ctx, repo, index) {
+  const [toc, rd] = await Promise.all(["toc", "read"].map((cmd) => capability(ctx.tools, repo.root, ctx.ws.home, cmd)));
+  const na = (name, what) => guard(name, true, `n/a: this tree has no ${what}`, true);
+  if (toc === "absent") {
     return [
-      row("f", "f.pull.lines", "n/a", [na("f.pull.items-shown"), na("f.pull.what-and-why"), na("f.pull.unrelated-only-in")]),
-      row("f", "f.pull.read", "n/a", [na("f.pull.read-exact")]),
+      row("f", "f.pull.lines", "n/a", [na("f.pull.items-shown", "toc"), na("f.pull.what-and-why", "toc"), na("f.pull.unrelated-only-in", "toc")]),
+      ...(rd === "absent" ? [row("f", "f.pull.read", "n/a", [na("f.pull.read-exact", "read"), na("f.pull.read-names-links", "read")])] : []),
       row("f", "f.pull.target.unasked", "n/a"),
       row("f", "f.pull.target.about-note", "n/a"),
       row("f", "f.pull.target.sibling", "n/a"),
-      row("f", "f.pull.footer", "n/a"),
-    ];
+    ].concat(rd === "absent" ? [] : await readRows(ctx, repo, index, rd));
   }
   const byDir = {};
-  let bytes = 0;
-  const delivered = new Set(), footer = new Set();
+  let bytes = 0, calls = 0;
+  const broken = [], delivered = new Set();
   for (const dir of DIRS) {
-    const r = run(["toc", SEED, "--dir", dir]);
-    bytes += Buffer.byteLength(r.stdout);
-    byDir[dir] = r.json?.lines ?? [];
-    idsIn(r.json?.footer ?? {}, footer);
-    idsIn(r.json?.delivered ?? [], delivered);
+    const t = await readToc(ctx.tools, repo.root, ctx.ws.home, SEED, dir);
+    bytes += t.bytes; calls += t.calls;
+    if (!t.ok) broken.push(`${dir}: ${t.refused}`);
+    byDir[dir] = t.lines;
+    idsIn(t.footer?.delivered ?? [], delivered);
   }
   const where = (id) => DIRS.filter((d) => byDir[d].some((l) => l.id === id));
   const line = (id) => DIRS.flatMap((d) => byDir[d]).find((l) => l.id === id);
   // Each planted link shows as a line in the direction a builder would ask for it.
   const expect = [[P.dep, ["out"]], [P.panel, ["out"]], [P.wander, ["out"]], [P.consumer, ["in", "mentions"]]];
   const unshown = expect.filter(([id, dirs]) => !dirs.some((d) => where(id).includes(d))).map(([id, dirs]) => `${id} (wanted under ${dirs.join("|")}; seen under ${where(id).join(",") || "none"})`);
-  const vague = expect.map(([id]) => line(id)).filter(Boolean).filter((l) => !(typeof l.what === "string" && l.what.trim() && typeof l.why === "string" && l.why.trim())).map((l) => l.id);
+  // A what, and a why or a plain statement that none is written (whySource "none").
+  const said = (s) => typeof s === "string" && s.trim().length > 0;
+  const vague = expect.map(([id]) => line(id)).filter(Boolean).filter((l) => !(said(l.what) && said(l.why) && ["prose", "comment", "none"].includes(l.whySource))).map((l) => l.id);
   const strayUnrelated = where(P.unrelated).filter((d) => d !== "in");
-  const readSeed = run(["read", SEED]);
-  const readText = readSeed.json?.text;
+  const all = DIRS.flatMap((d) => byDir[d]);
   const lines = Object.fromEntries(DIRS.map((d) => [d, byDir[d].length]));
-  const whyWritten = DIRS.flatMap((d) => byDir[d]).filter((l) => typeof l.why === "string" && l.why.trim() && l.whyWritten !== false).length;
-  const unaskedWanted = [P.core, P.panel];
+  const whyProse = all.filter((l) => l.whySource === "prose").length, whyComment = all.filter((l) => l.whySource === "comment").length;
   return [
-    row("f", "f.pull.lines", { ...lines, whyWritten, bytes }, [
-      guard("f.pull.items-shown", unshown.length === 0, unshown.length ? `not shown: ${unshown.join("; ")}` : "every planted link is a contents line in its direction"),
-      guard("f.pull.what-and-why", vague.length === 0, vague.length ? `line without a what or a why: ${vague.join(", ")}` : "every planted line says what it is and why it is linked (or that no reason is written)"),
-      guard("f.pull.unrelated-only-in", strayUnrelated.length === 0, strayUnrelated.length ? `the unrelated consumer shows under ${strayUnrelated.join(",")}` : "the unrelated consumer shows only under --dir in, if at all"),
+    row("f", "f.pull.lines", { ...lines, whyProse, whyComment, bytes, calls }, [
+      guard("f.pull.items-shown", broken.length === 0 && unshown.length === 0, broken.length ? `toc failed: ${broken.join("; ")}` : unshown.length ? `not shown: ${unshown.join("; ")}` : "every planted link is a contents line in its direction"),
+      guard("f.pull.what-and-why", broken.length === 0 && vague.length === 0, vague.length ? `line without a what or a why: ${vague.join(", ")}` : "every planted line says what it is and why it is linked, or that no reason is written"),
+      guard("f.pull.unrelated-only-in", broken.length === 0 && strayUnrelated.length === 0, strayUnrelated.length ? `the unrelated consumer shows under ${strayUnrelated.join(",")}` : "the unrelated consumer shows only under --dir in, if at all"),
     ]),
-    row("f", "f.pull.read", readSeed.json ? { bytes: readText ? Buffer.byteLength(readText) : null, own: index.passages.get(SEED).bytes } : `no-json(status ${readSeed.status})`, [
-      readSeed.json ? guard("f.pull.read-exact", readText === index.passages.get(SEED).text, readText === index.passages.get(SEED).text ? "read returns exactly the seed's passage" : "read's text differs from the seed's source span") : guard("f.pull.read-exact", true, "n/a: this tree has no read", true),
-    ]),
-    row("f", "f.pull.target.unasked", unaskedWanted.map((id) => `${id}:${delivered.has(id) ? "delivered" : "not"}`).join(", ")),
-    row("f", "f.pull.target.about-note", where(P.about).length ? `line under ${where(P.about).join(",")}` : footer.has(P.about) ? "footer" : "absent"),
-    row("f", "f.pull.target.sibling", where(P.sibling).length ? `line under ${where(P.sibling).join(",")}` : footer.has(P.sibling) ? "footer" : "absent"),
-    row("f", "f.pull.footer", [...footer].sort().join(",") || "none"),
+    ...(rd === "absent" ? [row("f", "f.pull.read", "n/a", [na("f.pull.read-exact", "read"), na("f.pull.read-names-links", "read")])] : await readRows(ctx, repo, index, rd)),
+    row("f", "f.pull.target.unasked", [P.core, P.panel].map((id) => `${id}:${delivered.has(id) ? "delivered" : "not"}`).join(", ")),
+    row("f", "f.pull.target.about-note", where(P.about).length ? `line under ${where(P.about).join(",")}` : "absent"),
+    row("f", "f.pull.target.sibling", where(P.sibling).length ? `line under ${where(P.sibling).join(",")}` : "absent"),
   ];
+}
+
+/** `read` of the seed: exactly its span, about its own size, and every link it didn't open still named. */
+async function readRows(ctx, repo, index, capable) {
+  const own = index.passages.get(SEED);
+  const r = capable === "broken" ? { ok: false, refused: "no-json" } : await readPassage(ctx.tools, repo.root, ctx.ws.home, SEED);
+  const named = new Set(r.footer?.named ?? []);
+  const links = [P.dep, P.panel, P.wander].filter((id) => !named.has(id));
+  return [row("f", "f.pull.read", r.ok ? { bytes: r.text ? Buffer.byteLength(r.text) : null, own: own.bytes, calls: r.calls } : `refused: ${r.refused}`, [
+    guard("f.pull.read-exact", r.ok && r.text === own.text, r.ok ? (r.text === own.text ? "read returns exactly the seed's passage" : "read's text differs from the seed's source span") : `read failed: ${r.refused}`),
+    guard("f.pull.read-names-links", r.ok && links.length === 0, links.length ? `links not named by read: ${links.join(", ")}` : "every link of the seed it didn't deliver is named"),
+  ])];
 }

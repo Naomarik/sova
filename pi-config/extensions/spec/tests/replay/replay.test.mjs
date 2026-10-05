@@ -10,8 +10,12 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { runArm, diffCards, summary } from "./run.mjs";
 import { makeTree } from "./make-tree.mjs";
+import { baselineText, BASELINE_PATH, DATA } from "./scenario-g.mjs";
 
 const TREE = fileURLToPath(new URL("../../../", import.meta.url));
+/** The ref g's baseline was recorded from (its `tree` field), and the commit it names. */
+const PINNED_REF = JSON.parse(readFileSync(BASELINE_PATH, "utf8")).tree.split(" @ ")[0];
+const PINNED_REV = DATA.pinned.rev;
 const temps = [];
 process.on("exit", () => { for (const t of temps) rmSync(t, { recursive: true, force: true }); });
 const failed = (card) => card.rows.flatMap((r) => r.guards.filter((g) => !g.ok && !g.na).map((g) => g.name));
@@ -60,14 +64,22 @@ test("guards catch the do-nothing fixes: the draft always wins, the census goes 
     ["spec/core/sova-spec-draft.mjs", "async function evidenceProblems(root, g, e, draftRelDir) {\n  const out = [];", "async function evidenceProblems(root, g, e, draftRelDir) {\n  const out = [];\n  return out;"],
     ["mode/spec-guard.ts", "\tlet absorbing = false;\n\tif ((op.kind", "\tlet absorbing = true;\n\tif ((op.kind"],
     ["spec/core/packet.mjs", 'const text = bytes.subarray(offset, end).toString("utf8");', 'const text = bytes.subarray(offset, end).toString("utf8").trim();'],
+    // A frame stream that grows into the whole closure.
+    ["spec/core/packet.mjs", 'export const PACKET_PARTS = ["prose", "inventory", "frontier", "code", "findings"];', 'export const PACKET_PARTS = ["prose", "inventory", "frontier", "code", "findings", "frame"];'],
+    ["spec/core/packet.mjs", "frontier: result.frontier, code: result.code, findings,", "frontier: result.frontier, code: result.code, findings, frame: passages,"],
+    ["spec/core/packet.mjs", 'isProse = part === "prose";', 'isProse = part === "prose" || part === "frame";'],
+    // Impact stops listing uninvestigated behaviors; the manifest driver silently keeps ours on a same-record clash.
+    ["spec/core/sova-spec.mjs", 'for (const [id, r] of ctx.claims) if (r.kind === "behavior" && r.requires === undefined && id !== seed) {', "for (const [id, r] of ctx.claims) if (false) {"],
+    ["spec/core/sova-spec-draft.mjs", "if (r.conflict) { conflicts.push({ key: k, kind }); continue; }", "if (r.conflict) { out[k] = o[k]; continue; }"],
   ]);
-  const card = await runArm(tree, { label: "sabotaged", only: ["a", "b", "c", "d", "f"] });
+  const card = await runArm(tree, { label: "sabotaged", only: ["a", "b", "c", "d", "e", "f", "g"] });
   const names = failed(card);
   for (const name of [
     "a.diff-h2.no-prose-lost", "a.same-h2.conflict-stops", "a.same-h2.no-prose-lost",
     "a.stacked.master-landing-listed", "b.edit.goes-stale",
+    "a.same-spot.same-id-stops", "a.same-spot.no-prose-lost", "a.manifest-merge.same-record-stops", "e.setup",
     "c.pi.drift-flagged", "c.pi.unclaimed-flagged", "c.claude.drift-flagged", "c.claude.unclaimed-flagged",
-    "d.packet-text-exact", "f.spans-exact",
+    "d.packet-text-exact", "f.spans-exact", "f.frame-cap", "f.true-consumer-kept", "g.packet.text-exact", "g.frame-cap",
   ]) assert.ok(names.includes(name), `${name} fails on the sabotaged tree (failed: ${names.join(", ")})`);
   // …while the rows themselves look better, which is why the guards exist.
   const value = (m) => card.rows.find((r) => r.metric === m)?.value;
@@ -94,7 +106,7 @@ test("f and g catch the cheap slice: a packet that stops following requires read
 const STUB_FILES = { "spec/core/toc-stub.mjs": fileURLToPath(new URL("./toc-stub.mjs", import.meta.url)), "spec/core/fullness.mjs": fileURLToPath(new URL("./fullness.mjs", import.meta.url)) };
 const STUB = ["spec/core/sova-spec.mjs", "if (direct) {\n  try {", "if (direct && [\"toc\", \"read\"].includes(process.argv[2])) await import(\"./toc-stub.mjs\");\nelse if (direct) {\n  try {"];
 
-test("pull checks run only where toc exists: n/a without it, held by a faithful contents view, failed by one that hides out-links", { timeout: 600_000 }, async () => {
+test("pull checks run only where toc exists: n/a without it, held by a faithful contents view, each failed by a contents view that cheats", { timeout: 600_000 }, async () => {
   const plain = await runArm(TREE, { label: "plain", only: ["f"] });
   const na = plain.rows.flatMap((r) => r.guards).filter((g) => g.name.startsWith("f.pull."));
   assert.ok(na.length >= 4 && na.every((g) => g.na), "a tree without toc: every pull guard is n/a, never a pass");
@@ -107,10 +119,32 @@ test("pull checks run only where toc exists: n/a without it, held by a faithful 
   const shown = (card) => card.rows.find((r) => r.metric === "g.pull.total")?.value?.shown;
   assert.ok(shown(good) > 0, "the pull proxy counts needs shown");
 
-  const bad = await runArm(sabotaged([STUB, ["spec/core/toc-stub.mjs", "out: () => claims[id].requires ?? [],", "out: () => [],"], ["spec/core/toc-stub.mjs", "out({ id, dir, lines, footer: { named } });", "out({ id, dir, lines, footer: { named: [] } });"]], STUB_FILES), { label: "stub-hides", only: ["f", "g"] });
+  const T = "spec/core/toc-stub.mjs";
+  const bad = await runArm(sabotaged([STUB,
+    [T, "out: () => claims[id].requires ?? [],", "out: () => [],"],                                  // out-links hidden
+    [T, "what: body.split(/(?<=[.:])\\s/)[0] || \"(no text)\",", "what: \"\","],                      // lines say nothing
+    [T, "mentions: () => all.filter((x) => x !== id && mentions(index.passages.get(x).text, id)),", "mentions: () => all.filter((x) => x !== id),"], // everything "mentions"
+    [T, "up: () => (parentOf(id) ? [parentOf(id)] : []),", ""],                                      // one direction refuses
+    [T, "text: seed.text }], footer: { named: [...(claims[id].requires ?? [])].filter((x) => x !== id) } });", "text: seed.text.trim() }], footer: { named: [] } });"], // read trims, names nothing
+    // packet refuses one real seed and the synthetic one
+    ["spec/core/packet.mjs", "if (!PACKET_PARTS.includes(part)) return packetError(\"usage\", budget);", "if (!PACKET_PARTS.includes(part) || [\"§app/shell\", \"§f.seed/edit\"].includes(identity.id)) return packetError(\"usage\", budget);"],
+  ], STUB_FILES), { label: "stub-hides", only: ["f", "g"] });
   const names = failed(bad);
-  assert.ok(names.includes("f.pull.items-shown"), `f.pull.items-shown fails when out-links are hidden (failed: ${names.join(", ")})`);
-  assert.ok(shown(bad) < shown(good), "fewer needs shown when out-links are hidden");
+  for (const name of ["f.ran", "f.pull.items-shown", "f.pull.what-and-why", "f.pull.unrelated-only-in", "f.pull.read-exact", "f.pull.read-names-links", "g.packet.ran", "g.pull.toc-answers"])
+    assert.ok(names.includes(name), `${name} fails on the sabotaged stub (failed: ${names.join(", ")})`);
+});
+
+test("the manifest-merge guard trips when the driver refuses every merge", { timeout: 600_000 }, async () => {
+  const tree = sabotaged([["spec/core/sova-spec-draft.mjs", "const m = mergeManifests(...texts);", "const m = { conflicts: [{ key: \"any\", kind: \"claim\" }], taken: [], text: \"\" };"]]);
+  const card = await runArm(tree, { label: "sabotaged", only: ["a"] });
+  assert.ok(failed(card).includes("a.manifest-merge.two-records-merge"), `failed: ${failed(card).join(", ")}`);
+});
+
+test("g's recorded baseline is what the pinned revision's tools produce, byte for byte", { timeout: 600_000, skip: spawnSync("git", ["-C", TREE, "cat-file", "-e", `${PINNED_REV}^{commit}`]).status !== 0 && "the pinned revision is not in this checkout" }, async () => {
+  const dest = mkdtempSync(join(tmpdir(), "spec-replay-tree-"));
+  temps.push(dest);
+  const tree = makeTree(PINNED_REF, join(dest, "t"), TREE);
+  assert.equal(await baselineText(tree), readFileSync(BASELINE_PATH, "utf8"), "regenerate with `node scenario-g.mjs --record <tree>` only on purpose");
 });
 
 test("make-tree: a ref's pi-config/extensions, with its commit recorded for the scorecard", { skip: spawnSync("git", ["-C", TREE, "rev-parse", "HEAD"]).status !== 0 && "not in a Git checkout" }, async () => {

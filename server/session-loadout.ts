@@ -1,4 +1,6 @@
 import type { ResourceDiagnostic, Skill } from "@earendil-works/pi-coding-agent";
+import { stateViewOf } from "./harness/pi/state-view-of";
+import { LOADOUT } from "./harness/state-kinds";
 
 /**
  * A session's own context files and skills (§chat.transcript/setup-card-toggles): the hidden
@@ -23,8 +25,6 @@ export interface LoadoutEntryData {
 /** The largest off set the route accepts, per kind; far above any real loadout. */
 export const LOADOUT_MAX = 500;
 
-type BranchEntry = { type: string; customType?: string; data?: unknown };
-
 const strings = (v: unknown): string[] | null =>
   Array.isArray(v) && v.every((s) => typeof s === "string" && s.length > 0 && s.length <= 4096) ? [...new Set(v as string[])] : null;
 
@@ -41,15 +41,10 @@ export function normalizeLoadout(v: unknown): LoadoutEntryData | null {
   return { v: 1, offContext, offSkills };
 }
 
-/** The newest well-formed `sova-loadout` entry on a branch (null: none, everything on). */
-export function loadoutOnBranch(branch: readonly BranchEntry[]): LoadoutEntryData | null {
-  for (let i = branch.length - 1; i >= 0; i--) {
-    const e = branch[i]!;
-    if (e.type !== "custom" || e.customType !== LOADOUT_ENTRY) continue;
-    const d = normalizeLoadout(e.data);
-    if (d) return d;
-  }
-  return null;
+/** The newest well-formed `sova-loadout` entry on a branch (null: none, everything on). The entries are pi's
+    or the reader's (any mix), read through the state view. */
+export function loadoutOnBranch(branch: readonly unknown[]): LoadoutEntryData | null {
+  return stateViewOf(branch).latest(LOADOUT)?.data ?? null;
 }
 
 /** Whether an entry leaves anything out at all. */

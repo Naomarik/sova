@@ -1,12 +1,11 @@
 import { mkdirSync, readFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import type { HEntry, SessionStateWriter, StateKind, ToolSpec } from "../shared/harness";
-import { createSessionFile, toolStateWriter } from "./harness/pi/state";
+import { createSessionFile, stateViewOf, toolStateWriter } from "./harness/pi/state";
 import { toolCtx, toPiTool } from "./harness/pi/tools";
 import { BATON, BATON_DECISION, BATON_DONE, BATON_HANDOFF, BATON_LEASE, BATON_OFFER, BATON_PROPOSAL } from "./harness/state-kinds";
 import {
   abilitiesOf,
-  BATON_ENTRY,
   LIMIT_QUESTION,
   OPERATOR,
   POOL,
@@ -621,7 +620,7 @@ onOrgChange((_orgId, change) => {
 });
 
 
-const isBatonMarked = (sm: { getEntries(): readonly any[] }) => sm.getEntries().some((e) => e.type === "custom" && e.customType === BATON_ENTRY);
+const isBatonMarked = (sm: { getEntries(): readonly unknown[] }) => stateViewOf(sm.getEntries()).has(BATON);
 
 registerSpecialLoadout({
   kind: "baton",

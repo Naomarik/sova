@@ -4,7 +4,7 @@ import { join, relative } from "node:path";
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import { agentRoot } from "./state-root";
 import { toolCtx, toPiTool } from "./harness/pi/tools";
-import { createSessionFile } from "./harness/pi/state";
+import { createSessionFile, stateViewOf } from "./harness/pi/state";
 import { PROJECT_OVERSEER } from "./harness/state-kinds";
 import {
   autonomyMeaning,
@@ -15,7 +15,6 @@ import {
   type PoLimitKind,
   type ProjectOverseerCaps,
   type ProjectOverseerSettings,
-  PROJECT_OVERSEER_ENTRY,
   type CodingStartInput,
   type CodingStartResult,
   type ItemCodeInput,
@@ -937,10 +936,9 @@ export async function removeCodingWorktree(projectId: string, sessionId: unknown
 
 // ---- the runtime loadout ------------------------------------------------------------------------------
 
-function markerOf(sm: { getEntries(): readonly any[] }): ProjectOverseerMarkerData | null {
-  const e = sm.getEntries().find((x) => x.type === "custom" && x.customType === PROJECT_OVERSEER_ENTRY);
-  const d = e?.data;
-  return d && typeof d.projectId === "string" ? { v: 1, projectId: d.projectId } : null;
+/** The file's project overseer marker: the first one written (a malformed first marker reads null). */
+function markerOf(sm: { getEntries(): readonly unknown[] }): ProjectOverseerMarkerData | null {
+  return stateViewOf(sm.getEntries()).first(PROJECT_OVERSEER)?.data ?? null;
 }
 
 /** The runtime whose file this is (the loadout's lookups), or a refusal. */

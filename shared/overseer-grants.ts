@@ -3,11 +3,13 @@
  * not start act anyway. Both come only from the user's click on a card option that proposed one;
  * the server writes them as hidden custom entries in the Overseer's file, which no tool and no
  * model output can write. This module is the pure part: the entry shapes, the grant or rule a
- * click writes, the fold of a file's entries, and the coverage check the acting tools run.
+ * click writes, the fold of a file's entries (the reader's HEntries, `shared/harness-history.ts`),
+ * and the coverage check the acting tools run.
  *
  * Pure TS, no DOM and no node: the server (the click, the tools, the route) and the client (the
  * chip, the panel, the card's state line) read one shape.
  */
+import type { HEntry } from "./harness";
 import type { CardClick, CardOption, OverseerCard } from "./overseer-card";
 
 /** An answer option by its letter (link options carry none): overseer-card's rule, kept here so
@@ -176,10 +178,10 @@ export function normalizeUse(v: unknown): UseEntry | undefined {
   return { v: 1, id: v.id as string, tool: v.tool, sessions: [...(v.sessions as string[])], toolCallId: v.toolCallId, at: v.at };
 }
 
-/** A `custom` entry of one of our types, its data; else undefined. Only `type: "custom"` entries
-    count: a message, a tool result or a custom MESSAGE (what an extension can send) never does. */
-function customOf(entry: unknown, type: string): unknown {
-  if (!isRecord(entry) || entry.type !== "custom" || entry.customType !== type) return undefined;
+/** A state record of one of our types (the reader's `state` entry), its data; else undefined. Only state
+    counts: a message, a tool result or a custom MESSAGE (what an extension can send, a `note`) never does. */
+function customOf(entry: HEntry, type: string): unknown {
+  if (!isRecord(entry) || entry.kind !== "state" || entry.key !== type) return undefined;
   return entry.data;
 }
 
@@ -190,7 +192,7 @@ function customOf(entry: unknown, type: string): unknown {
  * drops the click drops what it wrote); revokes and uses from `all`, the whole file, so a rewind
  * never brings a revoked one back. `now` decides expiry.
  */
-export function foldPermits(branch: readonly unknown[], all: readonly unknown[], now: number): Permit[] {
+export function foldPermits(branch: readonly HEntry[], all: readonly HEntry[], now: number): Permit[] {
   const revoked = new Map<string, string>();
   const uses = new Map<string, Omit<UseEntry, "v" | "id">[]>();
   for (const e of all) {
@@ -225,7 +227,7 @@ export function foldPermits(branch: readonly unknown[], all: readonly unknown[],
  * sessions, card and option, with `from` the conversation its card lives in (`oldId`, or the one
  * it already names when carried before). Approvals for later, revoked rules and uses never carry.
  */
-export function carriedRules(branch: readonly unknown[], all: readonly unknown[], oldId: string): RuleEntry[] {
+export function carriedRules(branch: readonly HEntry[], all: readonly HEntry[], oldId: string): RuleEntry[] {
   const live = new Set(foldPermits(branch, all, Date.now()).filter((p) => p.kind === "rule" && p.status === "live").map((p) => p.id));
   const out: RuleEntry[] = [];
   for (const e of branch) {
@@ -238,7 +240,7 @@ export function carriedRules(branch: readonly unknown[], all: readonly unknown[]
 }
 
 /** The next `g_N` / `r_N` of a file: one past the highest ever written in it, on any branch. */
-export function nextPermitId(all: readonly unknown[], kind: "grant" | "rule"): string {
+export function nextPermitId(all: readonly HEntry[], kind: "grant" | "rule"): string {
   const prefix = kind === "grant" ? "g_" : "r_";
   let max = 0;
   for (const e of all) {
@@ -290,7 +292,7 @@ export function permitsChipText(permits: readonly Permit[]): string {
 export function permitFromClick(
   card: OverseerCard,
   click: CardClick,
-  all: readonly unknown[],
+  all: readonly HEntry[],
   message: string,
   now: string,
 ): { type: typeof GRANT_ENTRY; data: GrantEntry } | { type: typeof RULE_ENTRY; data: RuleEntry } | undefined {
@@ -315,7 +317,7 @@ export function permitFromClick(
 }
 
 /** Whether a message entry id already has a grant or rule (a click writes at most one). */
-export function clickWrote(all: readonly unknown[], message: string): boolean {
+export function clickWrote(all: readonly HEntry[], message: string): boolean {
   return all.some((e) => {
     const d = customOf(e, GRANT_ENTRY) ?? customOf(e, RULE_ENTRY);
     return isRecord(d) && d.message === message;

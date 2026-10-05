@@ -68,7 +68,7 @@ import { promptTodos, readTodos } from "./overseer-todos";
 import type { SubagentTool } from "./overseer-idea-tools";
 import { workerDenial } from "./delegate";
 import { BUILTIN_ALLOWED, overseerTools, type OverseerToolHost, renderTranscript, TurnLimits } from "./overseer-tools";
-import { userMessageText, UserTurns } from "./user-turns";
+import { UserTurns } from "./user-turns";
 import { OVERSEER_SENDER_HEADER, overseerSender, senderSecret } from "./overseer-sender";
 
 import { onSessionPrompted, pathOfId, promptSession, sessionActivity, toolCatalogue, type PromptDelivery, type PromptResult } from "./session-prompt";
@@ -94,7 +94,7 @@ import { probePeer } from "./mesh/hello";
 import { meshLinks } from "./mesh/links";
 import type { PeerLinkRead } from "../shared/mesh-links";
 import { rowsOf } from "./transcript";
-import { activeBranch, joinedText, liveRead, parseLines, readActiveBranch, readBranch } from "./harness/pi/reader";
+import { branchOf, joinedText, liveRead, parsePi, readActiveBranch, readBranch } from "./harness/pi/reader";
 import type { HEntry } from "../shared/harness";
 import { archiveWorktrees } from "./archive-worktrees";
 import { markOwned } from "./write-guard";
@@ -617,10 +617,10 @@ const host: OverseerToolHost = {
   // Approvals and rules (§app.overseer/approvals): read from the current runtime's file each call,
   // so a revoke applies from the next act on.
   permit(tool, sessions) {
-    const sm = overseerSession?.sessionManager;
-    if (!sm) return null;
+    if (!overseerSession) return null;
+    const read = liveRead(overseerSession);
     const now = Date.now();
-    const p = coveringPermit(foldPermits(sm.getBranch(), sm.getEntries(), now), tool, sessions, now);
+    const p = coveringPermit(foldPermits(read.branch(), read.entries(), now), tool, sessions, now);
     return p ? { id: p.id, label: permitLabel(p) } : null;
   },
   aliases: () => readAliases(),
@@ -687,21 +687,15 @@ export function confirmedItems(card: string | null, branch: readonly HEntry[]): 
  * with the card open when it arrived (the people-facing gate's own test), and the option it chose
  * must carry `later` or `rule`. `all` is the whole file (numbering, one write per click). Pure.
  */
-export function permitOnClick(card: string | null, branch: readonly unknown[], all: readonly unknown[], now = new Date().toISOString()): ReturnType<typeof permitFromClick> {
+export function permitOnClick(card: string | null, branch: readonly HEntry[], all: readonly HEntry[], now = new Date().toISOString()): ReturnType<typeof permitFromClick> {
   if (!card) return undefined;
-  const entries = branch as { type?: string; id?: string; message?: { role?: string } }[];
-  let last = -1;
-  for (let i = entries.length - 1; i >= 0; i--) {
-    if (entries[i]?.type === "message" && entries[i]!.message?.role === "user") {
-      last = i;
-      break;
-    }
-  }
-  const message = entries[last]?.id;
+  let last = branch.length - 1;
+  while (last >= 0 && branch[last]!.kind !== "user") last--;
+  const message = branch[last]?.id;
   if (last < 0 || !message || clickWrote(all, message)) return undefined;
-  const c = foldCards(entries.slice(0, last)).find((x) => x.id === card);
+  const c = foldCards(branch.slice(0, last)).find((x) => x.id === card);
   if (!c || c.phase !== "open") return undefined;
-  const click = matchCardClick(c, userMessageText(entries[last]!.message)?.trim() ?? "");
+  const click = matchCardClick(c, joinedText(branch[last]!, { images: false }).trim());
   return click ? permitFromClick(c, click, all, message, now) : undefined;
 }
 
@@ -712,14 +706,17 @@ export function permitLabel(p: Permit): string {
 }
 
 /** The Overseer file's entries: the held runtime's, else read from disk. */
-async function overseerEntries(): Promise<{ path: string; branch: readonly unknown[]; all: readonly unknown[] } | null> {
+async function overseerEntries(): Promise<{ path: string; branch: readonly HEntry[]; all: readonly HEntry[] } | null> {
   const st = readOverseerState();
   const path = st ? await pathOfId(st.current) : null;
   if (!path) return null;
   const chat = heldChat(path);
-  if (chat) return { path, branch: chat.session.sessionManager.getBranch(), all: chat.session.sessionManager.getEntries() };
-  const all = parseLines(await readFile(path, "utf8").catch(() => ""));
-  return { path, branch: activeBranch(all), all };
+  if (chat) {
+    const read = liveRead(chat.session);
+    return { path, branch: read.branch(), all: read.entries() };
+  }
+  const { entries } = parsePi(await readFile(path, "utf8").catch(() => ""));
+  return { path, branch: branchOf(entries), all: entries };
 }
 
 /** GET /api/overseer/autonomy: the running count and cap, and every grant and rule. */
@@ -1026,10 +1023,10 @@ setOverseerRuntime({
         const card = turns.confirmedCard();
         setImmediate(() => {
           try {
-            const sm = session.sessionManager;
-            const w = permitOnClick(card, sm.getBranch(), sm.getEntries());
+            const read = liveRead(session);
+            const w = permitOnClick(card, read.branch(), read.entries());
             if (w) {
-              const state = piSessionState(sm);
+              const state = piSessionState(session.sessionManager);
               if (w.type === RULE_ENTRY) state.append(RULE, w.data);
               else state.append(GRANT, w.data);
             }

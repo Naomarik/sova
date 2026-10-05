@@ -11,6 +11,7 @@
  * needs the host (resolving item ids and link targets) is done by the caller first and handed in
  * as `CardPrepared`.
  */
+import type { HEntry } from "./harness";
 import type { SovaConfirmItem } from "./protocol";
 import { type CardOptionLater, type CardOptionRule, GRANT_DEFAULT_MS, GRANT_MAX_AHEAD_MS, GRANTABLE_ACTS, type GrantableAct } from "./overseer-grants";
 
@@ -649,12 +650,11 @@ function upsert(cards: readonly OverseerCard[], card: OverseerCard): OverseerCar
 
 // ── Fold ─────────────────────────────────────────────────────────────────────
 
-/** The sova_card result of a session entry, when it is one: its details, normalized, else undefined. */
-export function cardResultOf(entry: unknown): CardDetails | undefined {
-  if (!isRecord(entry) || entry.type !== "message") return undefined;
-  const m = entry.message;
-  if (!isRecord(m) || m.role !== "toolResult" || m.toolName !== CARD_TOOL || m.isError === true) return undefined;
-  return normalizeCardDetails(m.details);
+/** The sova_card result of a session entry (the reader's HEntry), when it is one: its details, normalized,
+    else undefined. */
+export function cardResultOf(entry: HEntry): CardDetails | undefined {
+  if (!isRecord(entry) || entry.kind !== "tool-result" || entry.tool !== CARD_TOOL || entry.isError === true) return undefined;
+  return normalizeCardDetails(entry.details);
 }
 
 /** Cards from a run of details in order: each card's newest snapshot, in the order last touched. */
@@ -676,7 +676,7 @@ export function foldCardDetails(details: Iterable<CardDetails | undefined>): Ove
  * The cards of a branch (root first): each card's newest valid snapshot. A failed call (an error
  * result), malformed details and a legacy `sova_confirm` result are never state. Never throws.
  */
-export function foldCards(entries: readonly unknown[]): OverseerCard[] {
+export function foldCards(entries: readonly HEntry[]): OverseerCard[] {
   if (!Array.isArray(entries)) return [];
   return foldCardDetails(entries.map(cardResultOf));
 }

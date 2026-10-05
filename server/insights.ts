@@ -45,6 +45,8 @@ import { modelProvider, sharedWorkerWindowResolver } from "./models";
 import { resolveSessionPath } from "./paths";
 import { collectSkills, hasSkills, skillLinesOf } from "./skills";
 import { branchOf, parsePi, rawOf } from "./harness/pi/reader";
+import { REWIND } from "./harness/state-kinds";
+import { stateView } from "./harness/state-view";
 import { describeWorktrees, worktreesOf } from "./worktrees-state";
 import { goneWorkOf, REMOVED_EMPTY, treeReadinessOf } from "./merge-readiness";
 import { LAST_KNOWN_REASON, lastKnownUsage, rememberUsage } from "./usage-last-known";
@@ -706,12 +708,6 @@ function decodeCompaction(e: Extract<HEntry, { kind: "compaction" }>): Compactio
   };
 }
 
-/** The invisible custom entry a rewind appends — REWIND_ENTRY in chat-manager.ts, which owns the
-    write. The literals are spelled again rather than imported: chat-manager imports THIS module,
-    and the cycle would pull the pi SDK into every path that reads a session's facts, tests
-    included. */
-const REWIND_ENTRY = "sova-rewind";
-
 /** One rewind marker, as chat-manager wrote it: ids and a stamp, no text (the abandoned turns are
     not on this branch). An entry missing either half can't be placed on an axis, so it is dropped. */
 function decodeRewind(e: { id: unknown; at?: unknown; data: unknown }): RewindInfo | null {
@@ -774,14 +770,15 @@ export function extractFacts(text: string): SessionFacts {
     }
     else if (h.kind === "note" && !h.inMessage && h.noteType === "subagent-complete") addReport(reports, h);
     else if (h.kind === "compaction") compactions.push(decodeCompaction(h));
-    else if (h.kind === "state" && h.key === REWIND_ENTRY) {
-      const r = decodeRewind(h);
-      if (r) rewinds.push(r);
-    }
     else if (h.kind === "state" && h.key === EXPLAIN_ENTRY) {
       const x = decodeExplanation(h.data);
       if (x) explanations.push(x);
     }
+  }
+  // The rewind markers on the branch (the registry's REWIND, which chat-manager's rewind writes), oldest first.
+  for (const r of stateView(branch).list(REWIND)) {
+    const x = decodeRewind(r);
+    if (x) rewinds.push(x);
   }
   const allRecords = raw(records);
   const activeRecords = raw(records.filter((h) => branchIds.has(h.id)));

@@ -18,11 +18,28 @@ import { restorePick } from "../../pi-config/extensions/subagents/subagent-profi
 import { restoreActive as restoreWorktrees } from "../../pi-config/extensions/worktrees/state.ts";
 import { BATON_ENTRY, BATON_HANDOFF_ENTRY, BATON_OFFER_ENTRY, BATON_SENT_ENTRY } from "../../shared/baton";
 import type { StateKind, StateView } from "../../shared/harness";
-import { clickWrote, GRANT_ENTRY, nextPermitId, normalizeGrant, normalizeRevoke, normalizeRule, normalizeUse, REVOKE_ENTRY, RULE_ENTRY, USE_ENTRY } from "../../shared/overseer-grants";
+import { applyCardCall, CARD_TOOL, foldCardDetails, foldCards, normalizeCardDetails } from "../../shared/overseer-card";
+import {
+  carriedRules,
+  clickWrote,
+  foldPermits,
+  GRANT_ENTRY,
+  GRANTABLE_ACTS,
+  nextPermitId,
+  normalizeGrant,
+  normalizeRevoke,
+  normalizeRule,
+  normalizeUse,
+  REVOKE_ENTRY,
+  RULE_ENTRY,
+  USE_ENTRY,
+  type Permit,
+  type UseEntry,
+} from "../../shared/overseer-grants";
 import { OVERSEER_ENTRY, OVERSEER_SENT_ENTRY } from "../../shared/protocol";
 import { PROFILE_ENTRY, SESSION_SENT_ENTRY } from "../../shared/profiles";
 import { PROJECT_OVERSEER_ENTRY } from "../../shared/project-overseer";
-import { loadoutOnBranch, LOADOUT_ENTRY } from "../session-loadout";
+import { loadoutOnBranch, LOADOUT_ENTRY, normalizeLoadout } from "../session-loadout";
 import { profileOnBranch } from "../session-profile";
 import { fixtureSets, REPO } from "./pi/golden/golden";
 import { activeBranch, historyOf, parseLines, type Entry } from "./pi/reader";
@@ -78,9 +95,104 @@ function markerOfRef(all: readonly any[]) {
   const d = e?.data;
   return d && typeof d.projectId === "string" ? { v: 1, projectId: d.projectId } : null;
 }
-/** shared/overseer-grants.ts customOf. */
+/** shared/overseer-grants.ts customOf (over raw pi entries, before M4-T4a). */
 const customOfRef = (entry: any, type: string): unknown =>
   !entry || typeof entry !== "object" || Array.isArray(entry) || entry.type !== "custom" || entry.customType !== type ? undefined : entry.data;
+
+// The folds M4-T4a moved onto the view, as they were before it (their bodies, over raw pi entries): the
+// wrappers that replaced them are compared with these, over raw entries and over the reader's HEntries.
+
+/** server/session-profile.ts profileOnBranch. */
+function profileOnBranchRef(branch: readonly any[]) {
+  for (let i = branch.length - 1; i >= 0; i--) {
+    const e = branch[i]!;
+    if (e.type !== "custom" || e.customType !== PROFILE_ENTRY) continue;
+    const d = e.data;
+    if (d && d.v === 1 && (d.profile === null || (typeof d.profile === "object" && typeof d.profile.id === "string"))) return d;
+  }
+  return null;
+}
+/** server/session-loadout.ts loadoutOnBranch. */
+function loadoutOnBranchRef(branch: readonly any[]) {
+  for (let i = branch.length - 1; i >= 0; i--) {
+    const e = branch[i]!;
+    if (e.type !== "custom" || e.customType !== LOADOUT_ENTRY) continue;
+    const d = normalizeLoadout(e.data);
+    if (d) return d;
+  }
+  return null;
+}
+/** shared/overseer-grants.ts foldPermits. */
+function foldPermitsRef(branch: readonly unknown[], all: readonly unknown[], now: number): Permit[] {
+  const revoked = new Map<string, string>();
+  const uses = new Map<string, Omit<UseEntry, "v" | "id">[]>();
+  for (const e of all) {
+    const r = normalizeRevoke(customOfRef(e, REVOKE_ENTRY));
+    if (r && !revoked.has(r.id)) revoked.set(r.id, r.at);
+    const u = normalizeUse(customOfRef(e, USE_ENTRY));
+    if (u) uses.set(u.id, [...(uses.get(u.id) ?? []), { tool: u.tool, sessions: u.sessions, toolCallId: u.toolCallId, at: u.at }]);
+  }
+  const out: Permit[] = [];
+  const seen = new Set<string>();
+  for (const e of branch) {
+    const g = normalizeGrant(customOfRef(e, GRANT_ENTRY));
+    const r = g ? undefined : normalizeRule(customOfRef(e, RULE_ENTRY));
+    const p = g ?? r;
+    if (!p || seen.has(p.id)) continue;
+    seen.add(p.id);
+    const revokedAt = revoked.get(p.id);
+    const common = { id: p.id, card: p.card, option: p.option, label: p.label, createdAt: p.createdAt, uses: uses.get(p.id) ?? [], ...(revokedAt ? { revokedAt } : {}) };
+    if (g) {
+      const status = revokedAt ? "revoked" : Date.parse(g.until) <= now ? "expired" : "live";
+      out.push({ ...common, kind: "grant", sessions: g.sessions, acts: [...GRANTABLE_ACTS], at: g.at, until: g.until, status });
+    } else if (r) {
+      out.push({ ...common, kind: "rule", sessions: r.sessions, acts: r.acts, text: r.text, status: revokedAt ? "revoked" : "live", ...(r.from ? { from: r.from } : {}) });
+    }
+  }
+  return out;
+}
+/** shared/overseer-grants.ts carriedRules. */
+function carriedRulesRef(branch: readonly unknown[], all: readonly unknown[], oldId: string) {
+  const live = new Set(foldPermitsRef(branch, all, Date.parse(NOW_REF)).filter((p) => p.kind === "rule" && p.status === "live").map((p) => p.id));
+  const out = [];
+  for (const e of branch) {
+    const r = normalizeRule(customOfRef(e, RULE_ENTRY));
+    if (!r || !live.has(r.id)) continue;
+    live.delete(r.id);
+    out.push({ ...r, from: r.from ?? oldId });
+  }
+  return out;
+}
+/** shared/overseer-grants.ts nextPermitId. */
+function nextPermitIdRef(all: readonly unknown[], kind: "grant" | "rule"): string {
+  const prefix = kind === "grant" ? "g_" : "r_";
+  let max = 0;
+  for (const e of all) {
+    const d: any = customOfRef(e, kind === "grant" ? GRANT_ENTRY : RULE_ENTRY);
+    const id = d && typeof d === "object" && !Array.isArray(d) ? String(d.id) : "";
+    if (id.startsWith(prefix)) max = Math.max(max, Number(id.slice(2)) || 0);
+  }
+  return `${prefix}${max + 1}`;
+}
+/** shared/overseer-grants.ts clickWrote. */
+const clickWroteRef = (all: readonly unknown[], message: string) =>
+  all.some((e) => {
+    const d: any = customOfRef(e, GRANT_ENTRY) ?? customOfRef(e, RULE_ENTRY);
+    return !!d && typeof d === "object" && !Array.isArray(d) && d.message === message;
+  });
+/** shared/overseer-card.ts cardResultOf, then foldCards. */
+function foldCardsRef(entries: readonly any[]) {
+  return foldCardDetails(
+    entries.map((entry) => {
+      if (!entry || typeof entry !== "object" || Array.isArray(entry) || entry.type !== "message") return undefined;
+      const m = entry.message;
+      if (!m || typeof m !== "object" || Array.isArray(m) || m.role !== "toolResult" || m.toolName !== CARD_TOOL || m.isError === true) return undefined;
+      return normalizeCardDetails(m.details);
+    }),
+  );
+}
+/** The fold's clock: the synthetic grants run to 2999, so expiry is decided by `until: "nope"` alone. */
+const NOW_REF = "2026-06-01T00:00:00.000Z";
 /** server/insights.ts decodeRewind (its `str` and `isRec`). */
 const strRef = (v: unknown) => (typeof v === "string" && v ? v : undefined);
 function decodeRewindRef(e: { id: unknown; at?: unknown; data: unknown }) {
@@ -228,8 +340,8 @@ function compare(s: Session): void {
     const f = fileViews[w]![1];
     const at = (what: string) => `${s.name}: ${what} (${way})`;
     // newest-on-branch
-    assert.deepEqual(b.latest(PROFILE)?.data ?? null, profileOnBranch(s.branch), at("profileOnBranch"));
-    assert.deepEqual(b.latest(LOADOUT)?.data ?? null, loadoutOnBranch(s.branch), at("loadoutOnBranch"));
+    assert.deepEqual(b.latest(PROFILE)?.data ?? null, profileOnBranchRef(s.branch), at("profileOnBranch"));
+    assert.deepEqual(b.latest(LOADOUT)?.data ?? null, loadoutOnBranchRef(s.branch), at("loadoutOnBranch"));
     assert.deepEqual(b.latest(SUBAGENT_PROFILE)?.data.profile, restorePick(s.branch), at("restorePick"));
     assert.deepEqual(b.latest(MODE)?.data.active, restoreMode(s.branch), at("mode restoreActive"));
     assert.deepEqual(b.latest(SANDBOX)?.data, restoreSandbox(s.branch), at("sandbox restoreActive"));
@@ -255,11 +367,11 @@ function compare(s: Session): void {
         const id = r.data && typeof r.data === "object" && !Array.isArray(r.data) ? String((r.data as any).id) : "";
         if (id.startsWith(kind === "grant" ? "g_" : "r_")) max = Math.max(max, Number(id.slice(2)) || 0);
       }
-      assert.equal(`${kind === "grant" ? "g_" : "r_"}${max + 1}`, nextPermitId(s.all, kind), at(`nextPermitId ${kind}`));
+      assert.equal(`${kind === "grant" ? "g_" : "r_"}${max + 1}`, nextPermitIdRef(s.all, kind), at(`nextPermitId ${kind}`));
     }
     for (const message of ["m1", "m2", "m3"]) {
       const viaView = [...f.written(GRANT), ...f.written(RULE)].some((r) => !!r.data && typeof r.data === "object" && !Array.isArray(r.data) && (r.data as any).message === message);
-      assert.equal(viaView, clickWrote(s.all, message), at(`clickWrote ${message}`));
+      assert.equal(viaView, clickWroteRef(s.all, message), at(`clickWrote ${message}`));
     }
     // the baton statechart's key dedupe, for every key its effect records carry
     const keys = new Set(BATON_EFFECT_KINDS.flatMap((k) => f.written(k).map((r) => (r.data as any)?.key).filter((k) => typeof k === "string")));
@@ -287,6 +399,26 @@ function compare(s: Session): void {
       }
     }
   }
+  wrappers(s);
+}
+
+/** The folds moved onto the view (M4-T4a) against their bodies before it: the entries-form wrappers over raw
+    entries and over HEntries, and the HEntry-only folds (approvals, cards) over the reader's entries. */
+function wrappers(s: Session): void {
+  const at = (what: string) => `${s.name}: ${what}`;
+  const hb = historyOf(s.branch);
+  const ha = historyOf(s.all);
+  const profile = profileOnBranchRef(s.branch);
+  assert.equal(profileOnBranch(s.branch), profile, at("profileOnBranch (raw), same object"));
+  assert.equal(profileOnBranch(hb), profile, at("profileOnBranch (hentry), same object"));
+  assert.deepEqual(loadoutOnBranch(s.branch), loadoutOnBranchRef(s.branch), at("loadoutOnBranch (raw)"));
+  assert.deepEqual(loadoutOnBranch(hb), loadoutOnBranchRef(s.branch), at("loadoutOnBranch (hentry)"));
+  const now = Date.parse(NOW_REF);
+  assert.deepEqual(foldPermits(hb, ha, now), foldPermitsRef(s.branch, s.all, now), at("foldPermits"));
+  assert.deepEqual(carriedRules(hb, ha, "old"), carriedRulesRef(s.branch, s.all, "old"), at("carriedRules"));
+  for (const kind of ["grant", "rule"] as const) assert.equal(nextPermitId(ha, kind), nextPermitIdRef(s.all, kind), at(`nextPermitId ${kind}`));
+  for (const message of ["m1", "m2", "m3"]) assert.equal(clickWrote(ha, message), clickWroteRef(s.all, message), at(`clickWrote ${message}`));
+  assert.deepEqual(foldCards(hb), foldCardsRef(s.branch), at("foldCards"));
 }
 
 describe("the state kind registry", () => {
@@ -333,7 +465,6 @@ describe("the state kind registry", () => {
       return m![1];
     };
     assert.equal(REWIND.type, constant("server/chat-manager.ts", "REWIND_ENTRY"));
-    assert.equal(REWIND.type, constant("server/insights.ts", "REWIND_ENTRY"));
     assert.equal(FANOUT_MEMBER.type, constant("server/chat-manager.ts", "FANOUT_MEMBER_ENTRY"));
     assert.equal(STATE_KINDS.get("sova-topic-delivered")?.type, constant("server/chat-manager.ts", "TOPIC_DELIVERED_ENTRY"));
     assert.equal(LOADOUT.type, LOADOUT_ENTRY);
@@ -373,5 +504,22 @@ describe("the view gives today's folds", () => {
   test("on the golden corpus (the real sample when present)", () => {
     assert.ok(GOLDEN.length > 0);
     for (const s of GOLDEN) compare(s);
+  });
+
+  test("card results fold from the reader's tool results as from pi's (neither corpus carries one)", () => {
+    const made = applyCardCall([], { ops: [{ op: "create", title: "Go?", options: [{ label: "Yes" }, { label: "No" }] }] }, { now: ISO });
+    const answered = applyCardCall([made.details.card!], { card: "c_1", ops: [{ op: "drop", reason: "done" }] }, { now: ISO });
+    const result = (id: string, details: unknown, extra: object = {}) => ({ type: "message", id, parentId: null, message: { role: "toolResult", toolCallId: id, toolName: CARD_TOOL, content: [], details, ...extra } });
+    const lists = [
+      [result("a1", made.details)],
+      [result("a1", made.details), result("a2", answered.details)],
+      [result("a1", made.details), result("a2", answered.details, { isError: true })],
+      [result("a1", made.details), result("a2", answered.details, { toolName: "sova_confirm" })],
+      [result("a1", made.details), result("a2", { v: 1, card: { id: "c_1" } })],
+      [result("a1", made.details), { type: "custom_message", id: "a2", parentId: null, customType: CARD_TOOL, content: "", display: false, details: answered.details }],
+    ];
+    for (const [i, raw] of lists.entries()) assert.deepEqual(foldCards(historyOf(raw as Entry[])), foldCardsRef(raw), `list ${i}`);
+    assert.equal(foldCards(historyOf(lists[1] as Entry[]))[0]?.phase, "dropped");
+    assert.equal(foldCards(historyOf(lists[2] as Entry[]))[0]?.phase, "open", "an error result is not state");
   });
 });

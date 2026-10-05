@@ -10,9 +10,11 @@
 // registered (a check for tests; off, a write never throws a new error).
 import { writeFileSync } from "node:fs";
 import { SessionManager, type AgentSession, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import type { EntryId, HEntry, SessionState, SessionStateWriter, StateKind, StateView } from "../../../shared/harness";
+import type { EntryId, SessionState, SessionStateWriter, StateKind } from "../../../shared/harness";
 import { stateKindOf } from "../state-kinds";
-import { stateView } from "../state-view";
+import { stateViewOf } from "./state-view-of";
+
+export { stateViewOf };
 
 type Manager = Pick<SessionManager, "appendCustomEntry" | "getBranch" | "getEntries">;
 
@@ -20,32 +22,6 @@ function checked<T>(kind: StateKind<T>, data: T): void {
   if (process.env.SOVA_STATE_ASSERT !== "1") return;
   if (stateKindOf(kind.type) !== kind) throw new Error(`SessionState: ${kind.type} is not a registered state kind (server/harness/state-kinds.ts)`);
   if (kind.parse(data) === null) throw new Error(`SessionState: the data written as ${kind.type} doesn't parse as one`);
-}
-
-const isObj = (v: unknown): v is Record<string, any> => !!v && typeof v === "object";
-
-/** A raw pi entry's state entry (as the reader's `toHEntry` makes one), an HEntry as is, else null. */
-function stateEntryOf(e: unknown): HEntry | null {
-  if (!isObj(e)) return null;
-  if ("kind" in e) return e.kind === "state" ? (e as HEntry) : null;
-  if (e.type !== "custom") return null;
-  const h: Record<string, any> = { id: typeof e.id === "string" ? e.id : null, parentId: typeof e.parentId === "string" ? e.parentId : null };
-  if (e.timestamp !== undefined) h.at = e.timestamp;
-  h.kind = "state";
-  h.key = e.customType;
-  h.data = e.data;
-  return h as HEntry;
-}
-
-/** A view over raw pi entries (a branch or a file as pi or `parseLines` gives them), HEntries, or a mix: the
-    form today's fold helpers take (`(entries: readonly unknown[])`), so each folds through the view. */
-export function stateViewOf(entries: readonly unknown[]): StateView {
-  const out: HEntry[] = [];
-  for (const e of entries) {
-    const h = stateEntryOf(e);
-    if (h) out.push(h);
-  }
-  return stateView(out);
 }
 
 /** A pi session manager's state. Each call asks the manager again (a test's patch of its methods holds). */

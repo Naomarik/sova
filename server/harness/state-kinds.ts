@@ -101,7 +101,8 @@ export const PROFILE = kind<ProfileEntryData>(PROFILE_ENTRY, "newest-on-branch",
 });
 
 /** The session's context files and skills left out (newest on the branch wins), `normalizeLoadout`. */
-export const LOADOUT = kind<LoadoutEntryData>("sova-loadout", "newest-on-branch", normalizeLoadout);
+// Called through, not referenced: session-loadout folds through this registry, so the two modules form a cycle.
+export const LOADOUT = kind<LoadoutEntryData>("sova-loadout", "newest-on-branch", (d) => normalizeLoadout(d));
 
 /** Beside a user message another session sent, as the transcript's row reads it. */
 export const SESSION_SENT = kind<SessionSentData>(SESSION_SENT_ENTRY, "branch-list", (d) =>

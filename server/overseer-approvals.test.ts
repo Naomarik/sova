@@ -19,6 +19,7 @@ const { DEFAULT_CAPS } = await import("./overseer-store");
 const { applyCardCall, optionClick } = await import("../shared/overseer-card");
 const { coveringPermit, foldPermits, GRANT_ENTRY, REVOKE_ENTRY, RULE_ENTRY, USE_ENTRY } = await import("../shared/overseer-grants");
 const { acquireChat, disposeAllChats } = await import("./chat-manager");
+const { historyOf } = await import("./harness/pi/reader");
 
 after(async () => {
   await disposeAllChats();
@@ -36,21 +37,23 @@ const result = { type: "message", id: "e1", message: { role: "toolResult", toolC
 let n = 0;
 const user = (text: string) => ({ type: "message", id: `u${++n}`, message: { role: "user", content: [{ type: "text", text }] } });
 const click = optionClick(card.card!, "b")!;
+/** permitOnClick over pi's entries as the reader gives them (the Overseer passes its live read). */
+const onClick = (c: string | null, branch: readonly unknown[], all: readonly unknown[]) => permitOnClick(c, historyOf(branch), historyOf(all), NOW);
 
 describe("the click writes the grant (permitOnClick)", () => {
   test("only an exact click on an open card, marked as a click, writes; and only once", () => {
     const clicked = [user("keep them going"), result, user(click)];
-    const w = permitOnClick("c_1", clicked, clicked, NOW);
+    const w = onClick("c_1", clicked, clicked);
     assert.equal(w?.type, GRANT_ENTRY);
     assert.deepEqual(w?.data.sessions.map((s) => s.id), ["a", "b"]);
-    assert.equal(permitOnClick(null, clicked, clicked, NOW), undefined, "the same text, not marked as a click (typed)");
-    assert.equal(permitOnClick("c_1", [result, user("yes, continue later")], [], NOW), undefined, "typed text");
-    assert.equal(permitOnClick("c_1", [result, user(`${click} please`)], [], NOW), undefined, "text that only looks like the click");
+    assert.equal(onClick(null, clicked, clicked), undefined, "the same text, not marked as a click (typed)");
+    assert.equal(onClick("c_1", [result, user("yes, continue later")], []), undefined, "typed text");
+    assert.equal(onClick("c_1", [result, user(`${click} please`)], []), undefined, "text that only looks like the click");
     const written = [...clicked, { type: "custom", customType: GRANT_ENTRY, data: w!.data }];
-    assert.equal(permitOnClick("c_1", clicked, written, NOW), undefined, "a click writes once");
+    assert.equal(onClick("c_1", clicked, written), undefined, "a click writes once");
     const dropped = applyCardCall([card.card!], { card: "c_1", ops: [{ op: "drop", reason: "done" }] }, { now: NOW }).details;
     const closed = [result, { type: "message", message: { role: "toolResult", toolCallId: "k2", toolName: "sova_card", details: dropped } }, user(click)];
-    assert.equal(permitOnClick("c_1", closed, closed, NOW), undefined, "a closed card");
+    assert.equal(onClick("c_1", closed, closed), undefined, "a closed card");
   });
 });
 
@@ -58,7 +61,7 @@ describe("unattended acts under a grant (the tools' check)", () => {
   /** sova_send and sova_create_session over a fake server, unattended; the host folds a real entry list. */
   function harness() {
     const clicked = [result, user(click)];
-    const entries: unknown[] = [...clicked, { type: "custom", customType: GRANT_ENTRY, data: permitOnClick("c_1", clicked, clicked, NOW)!.data }];
+    const entries: unknown[] = [...clicked, { type: "custom", customType: GRANT_ENTRY, data: onClick("c_1", clicked, clicked)!.data }];
     const sent: unknown[] = [];
     const summary = (id: string) => ({ id, path: `/s/${id}.jsonl`, title: `Session ${id}` }) as SessionSummary;
     const host = {
@@ -76,7 +79,7 @@ describe("unattended acts under a grant (the tools' check)", () => {
       attended: () => false,
       confirmed: () => null,
       permit: (tool: string, ids: string[]) => {
-        const p = coveringPermit(foldPermits(entries, entries, Date.now()), tool, ids, Date.now());
+        const p = coveringPermit(foldPermits(historyOf(entries), historyOf(entries), Date.now()), tool, ids, Date.now());
         return p ? { id: p.id, label: permitLabel(p) } : null;
       },
       used: (id: string, tool: string, sessions: string[], toolCallId: string) => entries.push({ type: "custom", customType: USE_ENTRY, data: { v: 1, id, tool, sessions, toolCallId, at: new Date().toISOString() } }),

@@ -42,7 +42,8 @@ nothing switches to Node, and no `runtime-fallback.json` or `runtime-bun-boots` 
 (§chat.profiles/live-commit): `name` is the runtime this process runs on (`"bun"` when
 `process.versions.bun` is set, else `"node"`), `version` that runtime's version, `chosen` the
 runtime the choice asks for (`"node"` when its environment has `SOVA_RUNTIME=node`, else `"bun"`),
-read once at start.
+read once at start. The answer's other fields, `unknownEntries` among them (a number only, never an
+entry's type or content: the route needs no sign-in), are §chat.profiles/live-commit's.
 
 ## §app.server-runtime/quirks — Runtime differences, worked around in one place
 

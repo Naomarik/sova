@@ -188,7 +188,8 @@ async function readRows(ctx, repo, index, capable) {
   const own = index.passages.get(SEED);
   const r = capable === "broken" ? { ok: false, refused: "no-json" } : await readPassage(ctx.tools, repo.root, ctx.ws.home, SEED);
   const named = new Set(r.footer?.named ?? []);
-  const links = [P.dep, P.panel, P.wander].filter((id) => !named.has(id));
+  // A link read delivered (an embed arrives whole) needs no name; every other one must be named.
+  const links = [P.dep, P.panel, P.wander].filter((id) => !named.has(id) && !r.texts?.has(id));
   return [row("f", "f.pull.read", r.ok ? { bytes: r.text ? Buffer.byteLength(r.text) : null, own: own.bytes, calls: r.calls } : `refused: ${r.refused}`, [
     guard("f.pull.read-exact", r.ok && r.text === own.text, r.ok ? (r.text === own.text ? "read returns exactly the seed's passage" : "read's text differs from the seed's source span") : `read failed: ${r.refused}`),
     guard("f.pull.read-names-links", r.ok && links.length === 0, links.length ? `links not named by read: ${links.join(", ")}` : "every link of the seed it didn't deliver is named"),

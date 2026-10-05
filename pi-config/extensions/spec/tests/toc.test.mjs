@@ -364,6 +364,12 @@ test("what: a thematic break is never a prose sentence", () => {
   const l = byId(toc(root, "§a.top/seed", "out"));
   assert.deepEqual([l["§e/named"].whatSource, l["§e/named"].what], ["none", "no prose sentence"]);
   assert.deepEqual([l["§c/quiet"].whatSource, l["§c/quiet"].what], ["prose", "The real sentence comes after the rule."]);
+  // A body that starts with the rule, with and without a blank line after it.
+  write(root, ".sova/spec/claims/e/named.md", "# §e/named — Named\n\n---\n\nAfter a leading rule comes the sentence.\n");
+  write(root, ".sova/spec/claims/c/quiet.md", "# §c/quiet — Quiet\n___\nRight under the rule sits the sentence.\n");
+  const k = byId(toc(root, "§a.top/seed", "out"));
+  assert.deepEqual([k["§e/named"].whatSource, k["§e/named"].what], ["prose", "After a leading rule comes the sentence."]);
+  assert.deepEqual([k["§c/quiet"].whatSource, k["§c/quiet"].what], ["prose", "Right under the rule sits the sentence."]);
 });
 
 test("why: a long sentence is clipped around the target's own mention, never another one in its namespace", () => {

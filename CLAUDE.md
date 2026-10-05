@@ -538,7 +538,7 @@ Sova speaks its own harness contract; pi is its one harness, behind one adapter 
   `import.meta.resolve`, or any string naming the package) anywhere else in `server/`, `shared/`,
   `src/` (tests included), or in a pi-config file the server or the web app imports at runtime,
   fails `pnpm test`. Only the adapter may import `pi-config/extensions/subagents/adapters/pi.ts`.
-- `server/harness-boundary.test.ts` keeps four ratchets against `server/harness/boundary-baseline.json`,
+- `server/harness-boundary.test.ts` keeps five ratchets against `server/harness/boundary-baseline.json`,
   exact per file (tests are not counted for reads and writes):
   pi imports (runtime or type); raw pi entry reads — `calls` (the transcript's raw API by import
   binding: `parseLines`, `activeBranch`, `readActiveBranch`, `entryOf`, `normalizeEntries`,
@@ -549,7 +549,11 @@ Sova speaks its own harness contract; pi is its one harness, behind one adapter 
   `liveRead`/`stateOf` bridges); and custom-entry writes (`appendCustomEntry`, `appendEntry`,
   `appendSpecialEntry`, every call site whatever its type argument, plus any function that forwards
   its own parameter as the entry type, listed in `wrappers`); and pi agent-session reaches through
-  `.session` (`chat.session.isStreaming`, a `.session.` member read; ask `chat.harness` instead).
+  `.session` (`chat.session.isStreaming`, a `.session.` member read; ask `chat.harness` instead); and
+  uses of `extensionEntries` (raw custom entries for pi-config cores), in its `extension` list. With no
+  baseline at all, it fails a production import of `server/harness/pi/testing/` or `host-registry.ts`, a
+  cast of `chat.harness` (or a string-named member on it), and a StateKind cast, declared or built
+  outside `server/harness/state-kinds.ts`.
   Above the baseline fails, and so does
   below it — lower the baseline in the change that removes the hit. It also fails when a test file
   under `server/`, `shared/` or `src/` is matched by no glob in `scripts/run-tests.mjs`.

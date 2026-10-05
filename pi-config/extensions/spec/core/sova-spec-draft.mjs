@@ -40,6 +40,10 @@ const ID_RE = /^§[a-z][a-z-]*(?:\.[a-z][a-z-]*)?\/[a-z][a-z-]*$/;
 const HEX = /^[0-9a-f]{64}$/;
 // Kinds that carry no implementation: their prose may be promoted on --doc-only evidence.
 const DOC_ONLY_KINDS = new Set(["note", "section"]);
+// Kinds whose record may say who agreed to its wording before it is built (`agreed: {by, at}`); with no `code`
+// such a record may land on --doc-only evidence too. Built = `code` plus one of BUILT_LABELS as its `evidence`.
+const AGREED_KINDS = new Set(["behavior", "surface"]), BUILT_LABELS = new Set(["reviewed", "verified"]);
+const AGREED_AT = /^(\d{4}-\d{2}-\d{2})(?:T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:\d{2}))?$/;
 const STARTER = JSON.stringify({ formatVersion: 1, claims: {} }, null, 2) + "\n";
 const SECRET_DIRS = new Set([".git", ".hg", ".svn", ".ssh", ".gnupg", ".aws", ".azure", ".kube", ".docker"]);
 // Credential data by name (secrets.json, .env, id_rsa…), not source or docs named after secrets (secrets.ts, secrets.md).
@@ -495,6 +499,26 @@ function mergeSpans(B, C, P) {
   return { text, ids: new Map(out.map((s) => [s.id, s.text])) };
 }
 const recOf = (t, id) => (t.manifest?.claims ?? {})[id];
+// A record's `agreed: {by, at}`: who agreed to its wording, and when. → null (absent or well-formed) | what is wrong
+function agreedProblem(rec) {
+  if (rec?.agreed === undefined) return null;
+  const x = rec.agreed, day = obj(x) && typeof x.at === "string" ? AGREED_AT.exec(x.at)?.[1] : undefined;
+  if (!AGREED_KINDS.has(rec.kind)) return `agreed sits on a ${rec.kind}; only behavior and surface records are agreed before they are built`;
+  if (!obj(x) || Object.keys(x).some((k) => k !== "by" && k !== "at") || typeof x.by !== "string" || !x.by.trim() || !day ||
+      Number.isNaN(Date.parse(x.at)) || new Date(`${day}T00:00:00Z`).toISOString().slice(0, 10) !== day)
+    return `agreed must be {"by": "<who agreed>", "at": "<ISO date, optionally with a time>"}`;
+  return null;
+}
+// Why a changed ID cannot take --doc-only evidence → null when it can: notes and sections carry no implementation;
+// an agreed behavior or surface may land before it is built, while nothing in its record says it was.
+function docOnlyRefusal(c) {
+  if (DOC_ONLY_KINDS.has(c.kind)) return null;
+  if (c.agreed === undefined) return `kind ${c.kind} without agreed`;
+  if (c.agreedProblem) return `${c.kind}: ${c.agreedProblem}`;
+  if (c.code.length) return `${c.kind} that maps code: an agreed record that is built takes commit or snapshot evidence`;
+  if (BUILT_LABELS.has(c.evidenceLabel)) return `${c.kind} labelled evidence "${c.evidenceLabel}", which says it was built and checked`;
+  return null;
+}
 async function analyze(root, name, readPolicy, inputSources) {
   const draft = await loadDraft(root, name, inputSources, readPolicy);
   const { d, rel, base } = draft;
@@ -544,6 +568,7 @@ async function analyze(root, name, readPolicy, inputSources) {
     c.deleted = recOf(prop, c.id) === undefined && !pc.decls.has(c.id);
     c.binding = { recordSha: recOf(prop, c.id) === undefined ? null : sha(canon(recOf(prop, c.id))), textSha256: pc.decls.get(c.id)?.textSha256 ?? null };
     c.code = uniqSorted((rec?.code ?? []).filter((p) => typeof p === "string"));
+    c.agreed = rec?.agreed; c.agreedProblem = agreedProblem(rec); c.evidenceLabel = rec?.evidence;
   }
   return { ...draft, prop, cur, pc, bc, files, records, meta, changed };
 }
@@ -591,7 +616,8 @@ async function evidenceState(root, a, g, c) {
   const reasons = [];
   if (bound.recordSha !== c.binding.recordSha) reasons.push("the proposed record changed after evidence was recorded");
   if (bound.textSha256 !== c.binding.textSha256) reasons.push("the proposed prose changed after evidence was recorded");
-  if (e.mode === "doc-only" && !DOC_ONLY_KINDS.has(c.kind)) reasons.push(`--doc-only evidence does not cover kind ${c.kind}`);
+  const docOnly = e.mode === "doc-only" && docOnlyRefusal(c);
+  if (docOnly) reasons.push(`--doc-only evidence does not cover ${docOnly}`);
   if (e.mode !== "doc-only" && !c.deleted && !e.inputs.some((i) => i.state === "present"))
     reasons.push("evidence has no present implementation file");
   for (const p of c.code) if (e.mode !== "doc-only" && !e.inputs.some((i) => i.path === p && (c.deleted || i.state === "present")))
@@ -836,7 +862,9 @@ async function cmdEvidence(root, o) {
       if (!c) throw new Fail(1, "not-changed", `${id} is not changed by draft ${o.name}; evidence binds to a proposed change`);
       return c;
     });
-    if (o["doc-only"]) { const bad = targets.filter((c) => !DOC_ONLY_KINDS.has(c.kind)); if (bad.length) throw new Fail(1, "doc-only-refused", `--doc-only covers only ${[...DOC_ONLY_KINDS].join("/")} kinds, not ${bad.map((c) => `${c.id} (${c.kind})`).join(", ")}`); }
+    if (o["doc-only"]) { const bad = targets.filter((c) => docOnlyRefusal(c)); if (bad.length) throw new Fail(1, "doc-only-refused", `--doc-only covers only ${[...DOC_ONLY_KINDS].join("/")} kinds and agreed ${[...AGREED_KINDS].join("/")} records with no code, not ${bad.map((c) => `${c.id} (${docOnlyRefusal(c)})`).join(", ")}`); }
+    const malformed = targets.filter((c) => !c.deleted && c.agreedProblem);
+    if (malformed.length) throw new Fail(1, "agreed-invalid", malformed.map((c) => `${c.id}: ${c.agreedProblem}`).join("; "));
     if (o.snapshot && g.git) throw new Fail(1, "git-requires-commit", "this is a Git project: name the implementation commit with --commit REV; without permission to commit, leave evidence pending and say so");
     if (o.commit !== undefined && !g.git) throw new Fail(1, "not-git", "this is not a Git project: use --snapshot to retain the implementation bytes");
     const paths = o["doc-only"] ? [] : uniqSorted([...targets.flatMap((c) => c.code), ...o.path]);
@@ -925,6 +953,15 @@ async function plan(root, o) {
     const auth = recOf(a.prop, id)?.authority;
     if (auth === "candidate") refuse("candidate-label", `${id} is still labelled authority "candidate" in the draft; a promoted record is current, so relabel it ("accepted" once the user adopted it) before recording evidence`);
     else if (auth !== "accepted" && auth !== "migrated") refuse("authority-missing", `${id} declares no authority label; set "authority": "accepted" (or keep "migrated" for ported text) in the draft record before recording evidence`);
+    const bad = agreedProblem(recOf(a.prop, id));
+    if (bad) refuse("agreed-invalid", `${id}: ${bad}`);
+    // `agreed` belongs to the wording it was given for: the build keeps it; only reworded prose, agreed again, replaces it.
+    const was = recOf(a.cur, id)?.agreed, now = recOf(a.prop, id)?.agreed, r = a.records.find((x) => x.id === id);
+    if (was !== undefined && r?.merge === "apply" && canon(now) !== canon(was)) {
+      if (now === undefined) refuse("agreed-rewritten", `${id} was agreed ${JSON.stringify(was)} in current; agreed is removed only by deleting the whole record`);
+      else if (!a.changed.get(id).text) refuse("agreed-rewritten", `${id} was agreed ${JSON.stringify(was)} in current and its prose is unchanged; agreed is replaced only when the promotion rewords the prose it was given for`);
+      else if (!bad && obj(was) && typeof was.at === "string" && Date.parse(now.at) < Date.parse(was.at)) refuse("agreed-rewritten", `${id}: the new agreed at ${now.at} is earlier than current's ${was.at}`);
+    }
   }
   const evidence = [];
   for (const id of [...ids].filter((x) => a.changed.has(x)).sort()) {

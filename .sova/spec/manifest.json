@@ -14349,6 +14349,20 @@
         "pi-config/extensions/spec/tests/where.test.mjs",
         "pi-config/extensions/spec/README.md"
       ]
+    },
+    "§tools.spec/agreed-promotion": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "requires": [
+        "§tools.spec/promotion-integrity"
+      ],
+      "code": [
+        "pi-config/extensions/spec/core/sova-spec-draft.mjs",
+        "pi-config/extensions/spec/tests/agreed.test.mjs",
+        "pi-config/extensions/spec/DRAFTS.md",
+        "pi-config/extensions/spec/PROMOTE.md"
+      ],
+      "evidence": "verified"
     }
   },
   "boundary": {

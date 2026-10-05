@@ -144,6 +144,23 @@ declarations were reordered, that holds a carriage return, or whose graph on any
 load, is still compared as a whole file. A merged file must read back as exactly the declarations
 it was merged from, byte for byte, or the promotion is refused as a conflict and nothing is written.
 
+## §tools.spec/agreed-promotion — An agreed promise lands in the main spec before it is built
+
+A behavior or surface record may carry `agreed: {by, at}`: who agreed to its wording and when (an
+ISO date, optionally with a time). It is written when the person agrees, and it belongs to that
+wording: a promotion may replace the `agreed` of a record current already has only when the same
+promotion also changes that record's prose and the new `at` is not earlier than the old one. A
+promotion that changes `agreed` on unchanged prose, or that removes it without deleting the whole
+record, is refused, so the later build updates the same record and still says who decided, and
+nobody re-stamps a decision silently. A record with `agreed` and no `code` may be
+promoted on doc-only evidence, as notes and sections are: that records the decision, not that
+anything was built. A record reads as built only when it has `code` and the `evidence` label
+`reviewed` or `verified`, so doc-only evidence for an agreed record that declares either one is
+refused, and an agreed record that maps code still needs commit or snapshot evidence of that code.
+An `agreed` that is not an object with a non-empty `by` and a valid date `at`, or that sits on a
+note or section, is refused at evidence and at promotion. `agreed` is a record field, not a label
+value, so a core that predates it still loads a manifest carrying it.
+
 ## §tools.spec/inspection-safety — Refused inputs are not inspected
 
 The core, draft, and review commands validate path configuration before traversing it. Invalid

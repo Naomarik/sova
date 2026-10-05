@@ -48,7 +48,7 @@ import type { HEntry, SessionState, SessionStateWriter, StateKind } from "../sha
 import { historyOf, liveRead, toHEntry } from "./harness/pi/reader";
 import { contextOfBranch } from "./harness/pi/usage";
 import { piSessionState } from "./harness/pi/state";
-import { BATON_SENT, LOADOUT, MODE, OVERSEER_DIALOG_ANSWER, OVERSEER_SENT, PROFILE, REWIND, SESSION_SENT, stateKindOf, SUBAGENT_PROFILE, TOPIC_DELIVERED } from "./harness/state-kinds";
+import { BATON_SENT, LOADOUT, MODE, OVERSEER_DIALOG_ANSWER, OVERSEER_SENT, PROFILE, REWIND, SESSION_SENT, SUBAGENT_PROFILE, TOPIC_DELIVERED } from "./harness/state-kinds";
 import { cutTail, type HistoryPart, pullFields } from "./tail-hello";
 import { isOverseerId } from "./overseer-store";
 import { attachStreamGuard, capsFor, type StreamTrip } from "./stream-guard";
@@ -2481,14 +2481,6 @@ class ChatSession {
       if (items.length) this.broadcast({ type: "append", items });
     }
     return id;
-  }
-
-  /** TEMPORARY (M4-T2 to M4-T3): appendStateRow for a caller that has only the type; the baton callers move
-      to appendStateRow with their kinds, and this goes. Every type they write is registered. */
-  appendSpecialEntry(customType: string, data: unknown): string {
-    const kind = stateKindOf(customType);
-    if (!kind) throw new Error(`${customType} is not a registered state kind`);
-    return this.appendStateRow(kind, data);
   }
 
   /** The extension dialogs waiting on an answer right now (live-pending: a browser is attached). */

@@ -1,17 +1,12 @@
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync } from "node:fs";
 import { basename, join } from "node:path";
-import { SessionManager } from "@earendil-works/pi-coding-agent";
-import type { HEntry, ToolSpec } from "../shared/harness";
+import type { HEntry, SessionStateWriter, StateKind, ToolSpec } from "../shared/harness";
+import { createSessionFile, toolStateWriter } from "./harness/pi/state";
 import { toolCtx, toPiTool } from "./harness/pi/tools";
+import { BATON, BATON_DECISION, BATON_DONE, BATON_HANDOFF, BATON_LEASE, BATON_OFFER, BATON_PROPOSAL } from "./harness/state-kinds";
 import {
   abilitiesOf,
-  BATON_DECISION_ENTRY,
-  BATON_DONE_ENTRY,
   BATON_ENTRY,
-  BATON_HANDOFF_ENTRY,
-  BATON_LEASE_ENTRY,
-  BATON_OFFER_ENTRY,
-  BATON_PROPOSAL_ENTRY,
   LIMIT_QUESTION,
   OPERATOR,
   POOL,
@@ -163,19 +158,17 @@ async function interruptReply(chat: ChatSession): Promise<void> {
 
 export { LIMIT_QUESTION };
 
-type AppendEntry = (customType: string, data: unknown) => void;
-
 /**
- * While a tool of the session runs, the extension's own appendEntry writes its transcript entries
+ * While a tool of the session runs, the extension's own writer writes its transcript entries
  * (the statechart's `baton-entry` effects of that step run inside the call, before it returns).
  */
-const toolAppend = new Map<string, AppendEntry>();
-async function inTool<T>(sessionId: string, append: AppendEntry, f: () => Promise<T>): Promise<T> {
-  toolAppend.set(sessionId, append);
+const toolAppend = new Map<string, SessionStateWriter>();
+async function inTool<T>(sessionId: string, state: SessionStateWriter, f: () => Promise<T>): Promise<T> {
+  toolAppend.set(sessionId, state);
   try {
     return await f();
   } finally {
-    if (toolAppend.get(sessionId) === append) toolAppend.delete(sessionId);
+    if (toolAppend.get(sessionId) === state) toolAppend.delete(sessionId);
   }
 }
 
@@ -187,12 +180,12 @@ async function modelAct(sessionId: string, event: string, payload: Record<string
   if (!out.taken) throw new Error(out.refusal?.sentence ?? "That can't be done now.");
 }
 
-/** The tools, bound to one session. `append` is the extension's own appendEntry. */
-export function batonTools(sessionId: string, append: AppendEntry): ToolSpec[] {
+/** The tools, bound to one session. `state` is the extension's own writer (`toolStateWriter`). */
+export function batonTools(sessionId: string, state: SessionStateWriter): ToolSpec[] {
   const hit = batonById(sessionId);
   const roster = hit ? readRoster(hit.row.orgId) : [];
-  const [handTo, goalDone, ...rest] = conversationTools(sessionId, append);
-  return [handTo!, goalDone!, recordDecisionTool(sessionId, append, roster), ...rest];
+  const [handTo, goalDone, ...rest] = conversationTools(sessionId, state);
+  return [handTo!, goalDone!, recordDecisionTool(sessionId, state, roster), ...rest];
 }
 
 /** The nearest user message up the tree from the leaf `id`: where a decision's quote was said. The
@@ -209,7 +202,7 @@ export function quoteEntryOf(branch: readonly HEntry[], id: string): string {
 
 /** record_decision, its owner areas listed as the roster has them now (the call itself always
     checks the roster as it is then). */
-export function recordDecisionTool(sessionId: string, append: AppendEntry, roster: readonly Person[]): ToolSpec {
+export function recordDecisionTool(sessionId: string, state: SessionStateWriter, roster: readonly Person[]): ToolSpec {
   return {
     name: "record_decision",
     label: "Record decision",
@@ -249,7 +242,7 @@ export function recordDecisionTool(sessionId: string, append: AppendEntry, roste
       const sid = batonSid(hit.row.orgId, sessionId);
       const refused = host.explain(sid, "baton/record-decision", { ...payload, decisionId: "?", entryId: "?", markerId: "?" }, actorOn("model")(hit.row.orgId, hit.row.projectId));
       if (refused) throw new Error(refused.sentence);
-      append(BATON_DECISION_ENTRY, { v: 1, area, ownerArea: payload.ownerArea, statement, quote, by: hit.row.holder ?? OPERATOR } satisfies BatonDecisionData);
+      state.append(BATON_DECISION, { v: 1, area, ownerArea: payload.ownerArea, statement, quote, by: hit.row.holder ?? OPERATOR } satisfies BatonDecisionData);
       const marker = ctx?.leafId() ?? `${Date.now()}`;
       await modelAct(sessionId, "baton/record-decision", { ...payload, decisionId: `${sessionId}:${marker}`, markerId: marker, entryId: quoteEntryOf(ctx?.branch() ?? [], marker) });
       refreshShare(sessionId);
@@ -261,7 +254,7 @@ export function recordDecisionTool(sessionId: string, append: AppendEntry, roste
 }
 
 /** hand_to, goal_done, propose_roster_edit and the wrap-up's tool. */
-function conversationTools(sessionId: string, append: AppendEntry): ToolSpec[] {
+function conversationTools(sessionId: string, state: SessionStateWriter): ToolSpec[] {
   return [
     {
       name: "hand_to",
@@ -289,11 +282,11 @@ function conversationTools(sessionId: string, append: AppendEntry): ToolSpec[] {
             : handoffChosen(ctx?.branch() ?? [], row.holder, target.name, row.goal);
         const question = clip(params.question, QUESTION_MAX);
         const briefing = clip(params.briefing, BRIEFING_MAX);
-        await inTool(sessionId, append, () => handTo(sessionId, String(params.person ?? ""), question, briefing, { chosen }));
+        await inTool(sessionId, state, () => handTo(sessionId, String(params.person ?? ""), question, briefing, { chosen }));
         // The move's transcript entry, numbered as the statechart numbered it.
         const after = batonById(sessionId)!.row;
         const h = after.handoffs[after.handoffs.length - 1]!;
-        append(BATON_HANDOFF_ENTRY, { v: 1, n: h.n, from: h.from, to: h.to, question: h.question, briefing: h.briefing } satisfies BatonHandoffData);
+        state.append(BATON_HANDOFF, { v: 1, n: h.n, from: h.from, to: h.to, question: h.question, briefing: h.briefing } satisfies BatonHandoffData);
         refreshShare(sessionId);
         return { ...say(`Handed to ${nameOf(row.orgId, h.to)}. Your turn has ended.`), terminate: true };
       },
@@ -304,7 +297,7 @@ function conversationTools(sessionId: string, append: AppendEntry): ToolSpec[] {
       description: "The goal is met and the answers are checked. Give a short summary of what was established. Ends the conversation.",
       parameters: obj({ summary: str("What was established, in a few sentences. Everyone in the conversation sees it: say it in your own words (never the goal's), name people by name only, never by role or job title, and never say how the answers are recorded or under which area.") }, ["summary"]) as any,
       async execute(_id, params: any) {
-        await inTool(sessionId, append, () => markDone(sessionId, clip(params.summary, BRIEFING_MAX)));
+        await inTool(sessionId, state, () => markDone(sessionId, clip(params.summary, BRIEFING_MAX)));
         refreshShare(sessionId);
         return { ...say("Recorded as done. The conversation is over."), terminate: true };
       },
@@ -342,7 +335,7 @@ function conversationTools(sessionId: string, append: AppendEntry): ToolSpec[] {
         const named = (p: Person) => !!name && p.name.toLowerCase() === name.toLowerCase();
         const same = roster.find((p) => named(p) && p.status !== "left") ?? roster.find((p) => named(p) && p.status === "left");
         const personId = shortId("p_");
-        await inTool(sessionId, append, () =>
+        await inTool(sessionId, state, () =>
           modelAct(sessionId, "baton/propose", {
             personId,
             name,
@@ -429,27 +422,28 @@ export function redactContext<M>(messages: M[], phrases: readonly string[]): M[]
 // ---- the baton statechart's effects, facts and wrap-up (registered on every org's engine) -----------------------
 
 /** Transcript entries that met a run in flight (the transcript takes none mid-run): written when it settles. */
-const waitingEntries = new Map<string, { customType: string; data: Record<string, unknown> }[]>();
+type BatonEntry = { kind: StateKind<any>; data: Record<string, unknown> };
+const waitingEntries = new Map<string, BatonEntry[]>();
 
 /** Whether the transcript already has the entry an effect writes (a re-run after a restart writes nothing twice). */
 const hasEntry = (chat: ChatSession, key: string): boolean =>
   chat.session.sessionManager.getEntries().some((e: any) => e.type === "custom" && e.data?.key === key);
 
 /** Write a transcript entry the statechart asked for: through the running tool, now, or once the run settles. */
-async function writeEntry(sessionId: string, customType: string, data: Record<string, unknown>): Promise<void> {
+async function writeEntry(sessionId: string, entry: BatonEntry): Promise<void> {
   const inTurn = toolAppend.get(sessionId);
-  if (inTurn) return void inTurn(customType, data);
+  if (inTurn) return void inTurn.append(entry.kind, entry.data);
   const hit = batonById(sessionId);
   if (!hit) return;
   const path = sessionPathOf(hit.dir, hit.row);
   const chat = await acquireChat(path);
-  if (typeof data.key === "string" && hasEntry(chat, data.key)) return;
+  if (typeof entry.data.key === "string" && hasEntry(chat, entry.data.key)) return;
   const waiting = waitingEntries.get(path);
-  if (waiting) return void waiting.push({ customType, data });
+  if (waiting) return void waiting.push(entry);
   try {
-    chat.appendSpecialEntry(customType, data);
+    chat.appendStateRow(entry.kind, entry.data);
   } catch (err) {
-    if (err instanceof BusyError) waitingEntries.set(path, [{ customType, data }]);
+    if (err instanceof BusyError) waitingEntries.set(path, [entry]);
     else throw err;
   }
 }
@@ -461,47 +455,43 @@ export async function flushEntries(path: string): Promise<void> {
   const chat = await acquireChat(path);
   if (chat.session.isStreaming || chat.isCompacting()) return; // the next settle writes them
   waitingEntries.delete(path);
-  for (const e of waiting) if (typeof e.data.key !== "string" || !hasEntry(chat, e.data.key)) chat.appendSpecialEntry(e.customType, e.data);
+  for (const e of waiting) if (typeof e.data.key !== "string" || !hasEntry(chat, e.data.key)) chat.appendStateRow(e.kind, e.data);
 }
 
 /** The statechart's `baton-entry` as the transcript's custom entry. */
-function entryOf(e: Effect): { customType: string; data: Record<string, unknown> } | null {
+function entryOf(e: Effect): BatonEntry | null {
   const key = e.key;
   switch (e.type) {
     case "handoff":
-      return { customType: BATON_HANDOFF_ENTRY, data: { v: 1, n: e.n, from: e.from, to: e.to, question: e.question, briefing: e.briefing ?? "", key } };
+      return { kind: BATON_HANDOFF, data: { v: 1, n: e.n, from: e.from, to: e.to, question: e.question, briefing: e.briefing ?? "", key } };
     case "offer":
-      return { customType: BATON_OFFER_ENTRY, data: { v: 1, n: e.n, offerId: e.offerId, from: e.from, to: e.to, question: e.question, briefing: e.briefing ?? "", key } };
+      return { kind: BATON_OFFER, data: { v: 1, n: e.n, offerId: e.offerId, from: e.from, to: e.to, question: e.question, briefing: e.briefing ?? "", key } };
     case "lease":
-      return { customType: BATON_LEASE_ENTRY, data: { v: 1, n: e.n, offerId: e.offerId, event: e.event, by: e.by, key } };
+      return { kind: BATON_LEASE, data: { v: 1, n: e.n, offerId: e.offerId, event: e.event, by: e.by, key } };
     case "done":
-      return { customType: BATON_DONE_ENTRY, data: { v: 1, summary: e.summary, key } };
+      return { kind: BATON_DONE, data: { v: 1, summary: e.summary, key } };
     case "proposal":
-      return { customType: BATON_PROPOSAL_ENTRY, data: { v: 1, personId: e.personId, name: e.name, role: e.role, why: e.why, by: e.by, key } };
+      return { kind: BATON_PROPOSAL, data: { v: 1, personId: e.personId, name: e.name, role: e.role, why: e.why, by: e.by, key } };
     default:
       return null;
   }
 }
 
 /** Make the session file of a new baton session (its header, the `sova-baton` marker, the first hand-off or offer). */
-function createSessionFile(orgId: string, sessionId: string, data: Record<string, unknown>): string {
+function createBatonFile(orgId: string, sessionId: string, data: Record<string, unknown>): string {
   const dir = orgDir(orgId);
   const have = batonFileOf(dir, sessionId);
   if (have) return have;
   const sessionsDir = join(dir, "sessions");
   mkdirSync(sessionsDir, { recursive: true });
-  const sm = SessionManager.create(dir, sessionsDir, { id: sessionId });
-  const raw = sm.getSessionFile();
-  const header = sm.getHeader();
-  if (!raw || !header) throw new Error("SessionManager did not produce a session file");
-  sm.appendCustomEntry(BATON_ENTRY, { v: 1, orgId, projectId: String(data.projectId) } satisfies BatonMarkerData);
+  const seed: [StateKind<any>, unknown][] = [[BATON, { v: 1, orgId, projectId: String(data.projectId) } satisfies BatonMarkerData]];
   const first = ((data.handoffs as Record<string, unknown>[] | undefined) ?? [])[0];
   const offer = ((data.offers as Record<string, unknown>[] | undefined) ?? [])[0];
   if (first && offer && first.offerId === offer.id)
-    sm.appendCustomEntry(BATON_OFFER_ENTRY, { v: 1, n: 1, offerId: String(offer.id), from: OPERATOR, to: offer.to as string[], question: String(offer.question), briefing: String(offer.briefing ?? "") } satisfies BatonOfferData);
-  else if (first) sm.appendCustomEntry(BATON_HANDOFF_ENTRY, { v: 1, n: 1, from: OPERATOR, to: String(first.to), question: String(first.question), briefing: String(first.briefing ?? "") } satisfies BatonHandoffData);
-  // Written now, like every web session (SessionManager.create defers its own write).
-  writeFileSync(raw, `${[JSON.stringify(header), ...sm.getEntries().map((e) => JSON.stringify(e))].join("\n")}\n`, { flag: "wx" });
+    seed.push([BATON_OFFER, { v: 1, n: 1, offerId: String(offer.id), from: OPERATOR, to: offer.to as string[], question: String(offer.question), briefing: String(offer.briefing ?? "") } satisfies BatonOfferData]);
+  else if (first) seed.push([BATON_HANDOFF, { v: 1, n: 1, from: OPERATOR, to: String(first.to), question: String(first.question), briefing: String(first.briefing ?? "") } satisfies BatonHandoffData]);
+  // Written now, like every web session.
+  const raw = createSessionFile({ cwd: dir, sessionsDir, id: sessionId, seed }).path;
   const path = canonicalPath(raw);
   markOwned(path);
   addWebSession(sessionId);
@@ -516,7 +506,7 @@ const sidOfEffect = (e: Effect): string => String(e.sessionId).split("/").slice(
 export function registerBatonEffects(host: OrgHostApi, orgId: string): void {
   host.effects.register("create-session", async (e) => {
     const sessionId = sidOfEffect(e);
-    return { file: createSessionFile(orgId, sessionId, host.data(e.sessionId) ?? {}) };
+    return { file: createBatonFile(orgId, sessionId, host.data(e.sessionId) ?? {}) };
   });
 
   // A link per person the statechart names (the first holder, a hand-off's, an offer's invitees). The tokens go
@@ -579,7 +569,7 @@ export function registerBatonEffects(host: OrgHostApi, orgId: string): void {
 
   host.effects.register("baton-entry", async (e) => {
     const entry = entryOf(e);
-    if (entry) await writeEntry(sidOfEffect(e), entry.customType, entry.data);
+    if (entry) await writeEntry(sidOfEffect(e), entry);
     refreshShare(sidOfEffect(e));
     return {};
   });
@@ -658,8 +648,8 @@ registerSpecialLoadout({
           {
             name: "sova-baton",
             factory: (pi) => {
-              const append: AppendEntry = (type, data) => pi.appendEntry(type, data);
-              for (const t of batonTools(sessionId, append)) pi.registerTool(toPiTool(t));
+              const state = toolStateWriter(pi);
+              for (const t of batonTools(sessionId, state)) pi.registerTool(toPiTool(t));
               pi.registerTool(toPiTool(readLinkTool(sessionId)));
               let offered = JSON.stringify(ownerAreaSchema(readRoster(hit.row.orgId)).enum);
               pi.on("before_agent_start", (event, ctx) => {
@@ -671,7 +661,7 @@ registerSpecialLoadout({
                   const now = JSON.stringify(ownerAreaSchema(roster).enum);
                   if (now !== offered) {
                     offered = now;
-                    pi.registerTool(toPiTool(recordDecisionTool(sessionId, append, roster)));
+                    pi.registerTool(toPiTool(recordDecisionTool(sessionId, state, roster)));
                   }
                   // Its abilities as they are now: the operator may have changed them since the last run.
                   pi.setActiveTools(activeBatonTools(sessionId));

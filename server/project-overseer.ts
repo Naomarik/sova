@@ -1,9 +1,11 @@
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, relative } from "node:path";
-import { type AgentSession, SessionManager } from "@earendil-works/pi-coding-agent";
+import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import { agentRoot } from "./state-root";
 import { toolCtx, toPiTool } from "./harness/pi/tools";
+import { createSessionFile } from "./harness/pi/state";
+import { PROJECT_OVERSEER } from "./harness/state-kinds";
 import {
   autonomyMeaning,
   PER_DAY,
@@ -165,18 +167,13 @@ function createPoFile(projectId: string): { id: string; path: string } {
   const project = projectOf(projectId);
   const sessionsDir = join(dir, "sessions");
   mkdirSync(sessionsDir, { recursive: true });
-  const sm = SessionManager.create(project.root, sessionsDir);
-  const raw = sm.getSessionFile();
-  const header = sm.getHeader();
-  if (!raw || !header) throw new Error("SessionManager did not produce a session file");
-  sm.appendCustomEntry(PROJECT_OVERSEER_ENTRY, { v: 1, projectId } satisfies ProjectOverseerMarkerData);
-  writeFileSync(raw, `${[JSON.stringify(header), ...sm.getEntries().map((e) => JSON.stringify(e))].join("\n")}\n`, { flag: "wx" });
-  const path = canonicalPath(raw);
+  const made = createSessionFile({ cwd: project.root, sessionsDir, seed: [[PROJECT_OVERSEER, { v: 1, projectId } satisfies ProjectOverseerMarkerData]] });
+  const path = canonicalPath(made.path);
   markOwned(path);
-  addWebSession(header.id);
-  markSeen(header.id);
-  setSessionTitle(header.id, cleanSessionTitle(`Overseer · ${project.name}`) ?? null);
-  return { id: header.id, path };
+  addWebSession(made.id);
+  markSeen(made.id);
+  setSessionTitle(made.id, cleanSessionTitle(`Overseer · ${project.name}`) ?? null);
+  return { id: made.id, path };
 }
 
 /**

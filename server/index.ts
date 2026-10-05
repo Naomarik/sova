@@ -6,7 +6,6 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
-import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { type Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { compress } from "hono/compress";
@@ -68,6 +67,8 @@ import { cleanSessionTitle, SESSION_TITLE_MAX, setSessionTitle } from "./session
 import { rowsOf } from "./transcript";
 import { liveRead, readActiveBranch, readBranch, unknownEntries } from "./harness/pi/reader";
 import { contextOfBranch } from "./harness/pi/usage";
+import { appendToClosedFile, createSessionFile } from "./harness/pi/state";
+import { SUBAGENT_PROFILE } from "./harness/state-kinds";
 import { checkTmpImage, deleteAttachment, MAX_ATTACHMENT_BYTES, readTmpImage, saveUploadedImage, sessionAttachmentsDir, UploadError } from "./attachments";
 import { listFolders } from "./folders";
 import { listProjectFiles } from "./files";
@@ -265,10 +266,7 @@ async function createWebSession(c: Context, cwd: string, start?: { profile: Prof
   }
   const made = await createWebSessionFile(c, cwd);
   if (made instanceof Response) return made;
-  if (subagentProfile !== undefined) {
-    const sm = SessionManager.open(made.path);
-    sm.appendCustomEntry("subagent-profile", { v: 1, profile: subagentProfile });
-  }
+  if (subagentProfile !== undefined) appendToClosedFile(made.path, SUBAGENT_PROFILE, { v: 1, profile: subagentProfile });
   if (!start || !pick) return c.json(made, 201);
   const applied = await applyProfile(made.path, pick, start.by ?? "start");
   if (!applied.ok) return c.json({ error: `Created the session, but its profile was not set: ${applied.error}`, session: made }, applied.status);
@@ -280,18 +278,21 @@ async function createWebSession(c: Context, cwd: string, start?: { profile: Prof
 }
 
 async function createWebSessionFile(c: Context, cwd: string) {
-  const sm = SessionManager.create(resolve(cwd));
-  const rawPath = sm.getSessionFile();
-  const header = sm.getHeader();
-  if (!rawPath || !header) return c.json({ error: "SessionManager did not produce a session file" }, 500);
-  // SessionManager defers writing until the first assistant reply; write the header now so
-  // the session exists on disk (listable, watchable, openable by path).
-  writeFileSync(rawPath, `${JSON.stringify(header)}\n`, { flag: "wx" });
-  const path = canonicalPath(rawPath); // same key resolveSessionPath() will produce
+  // pi defers writing until the first assistant reply; the header is written now so the session
+  // exists on disk (listable, watchable, openable by path).
+  let made: { path: string; id: string };
+  try {
+    made = createSessionFile({ cwd: resolve(cwd) });
+  } catch (err) {
+    const noFile = "SessionManager did not produce a session file";
+    if (err instanceof Error && err.message === noFile) return c.json({ error: noFile }, 500);
+    throw err;
+  }
+  const path = canonicalPath(made.path); // same key resolveSessionPath() will produce
   markOwned(path); // fresh mtime is ours, not a foreign writer's
-  addWebSession(header.id);
+  addWebSession(made.id);
   // Seen at birth: whoever made it is looking at it, so its first reply can later read as unread.
-  markSeen(header.id);
+  markSeen(made.id);
   const summary = await getSessionSummary(path);
   if (!summary) return c.json({ error: "Failed to read back new session" }, 500);
   return summary;

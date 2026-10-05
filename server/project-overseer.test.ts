@@ -346,7 +346,7 @@ describe("its gathering sessions, as the person sees them", async () => {
     const before = store.readMemo(p).pending.length;
     const { batonTools } = await import("./baton-loadout");
     const handToOperator = (sid: string) =>
-      batonTools(sid, () => {})
+      batonTools(sid, { append: () => "" })
         .find((t) => t.name === "hand_to")!
         .execute("id", { gap: "none", person: "operator", question: "Please build the journal page.", briefing: "Tony asked." } as never, undefined, undefined, { sessionId: "s", cwd: "/", leafId: () => null, rawBranch: () => [] } as never);
     const theirs = await baton.createBaton({ orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "Operator's", goal: "g" });

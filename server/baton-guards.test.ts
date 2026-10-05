@@ -59,7 +59,7 @@ describe("hand_to: the person talking chooses who answers next", () => {
 
   test("the tool refuses a person the holder did not choose, and says what to do; a chosen one goes through", async () => {
     const c = await baton.createBaton({ orgId: org.id, projectId: project.id, to: maria.id, publicTitle: "Bank details", goal: "Find out who may change supplier bank details." });
-    const hand = batonTools(c.sessionId, () => {}).find((t) => t.name === "hand_to")!;
+    const hand = batonTools(c.sessionId, { append: () => "" }).find((t) => t.name === "hand_to")!;
     let branch: any[] = [...user(maria.id, "No idea who handles that, sorry.")];
     const call = (person: string) => hand.execute("id", { person, question: "Who may change bank details?", briefing: "Maria asked." } as never, undefined, undefined, { sessionId: "s", cwd: "/", leafId: () => null, branch: () => h(branch) } as never);
     await assert.rejects(call("Nadia Haddad"), /Maria Lopez has not chosen Nadia Haddad.*ask them to choose/);
@@ -69,7 +69,7 @@ describe("hand_to: the person talking chooses who answers next", () => {
     assert.equal(baton.batonById(c.sessionId)!.row.holder, tony.id);
     // The operator is always reachable, and an operator holder picks freely.
     const d = await baton.createBaton({ orgId: org.id, projectId: project.id, to: maria.id, publicTitle: "x", goal: "g" });
-    const handD = batonTools(d.sessionId, () => {}).find((t) => t.name === "hand_to")!;
+    const handD = batonTools(d.sessionId, { append: () => "" }).find((t) => t.name === "hand_to")!;
     await handD.execute("id", { person: "operator", question: "q?", briefing: "b" } as never, undefined, undefined, { sessionId: "s", cwd: "/", leafId: () => null, branch: () => [] } as never);
     assert.equal(baton.batonById(d.sessionId)!.row.holder, "operator");
   });

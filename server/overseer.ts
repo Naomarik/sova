@@ -1,11 +1,13 @@
 import { randomBytes, timingSafeEqual } from "node:crypto";
-import { closeSync, mkdirSync, openSync, readFileSync, readSync, statSync, writeFileSync } from "node:fs";
+import { closeSync, mkdirSync, openSync, readFileSync, readSync, statSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
-import { type AgentSession, SessionManager } from "@earendil-works/pi-coding-agent";
+import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import { agentRoot } from "./state-root";
 import { fromPiTool, toolCtx, toPiTool } from "./harness/pi/tools";
+import { createSessionFile, piSessionState, stateOf } from "./harness/pi/state";
+import { GRANT, GRANT_USE, OVERSEER, REVOKE, RULE } from "./harness/state-kinds";
 import { loadPolicyFile, policyFilePath } from "../pi-config/extensions/sandbox/policy.ts";
 import {
   OVERSEER_BRIEF_PREFIX,
@@ -72,7 +74,7 @@ import { OVERSEER_SENDER_HEADER, overseerSender, senderSecret } from "./overseer
 import { onSessionPrompted, pathOfId, promptSession, sessionActivity, toolCatalogue, type PromptDelivery, type PromptResult } from "./session-prompt";
 import { contactRedactor } from "./overseer-org-view";
 import { CARDS_NOTE_MESSAGE, cardsNote, clickItems, foldCards, matchCardClick } from "../shared/overseer-card";
-import { actsText, carriedRules, clickWrote, coveringPermit, foldPermits, type Permit, permitFromClick, REVOKE_ENTRY, RULE_ENTRY, type RuleEntry, sessionsText, USE_ENTRY } from "../shared/overseer-grants";
+import { actsText, carriedRules, clickWrote, coveringPermit, foldPermits, type Permit, permitFromClick, RULE_ENTRY, type RuleEntry, sessionsText } from "../shared/overseer-grants";
 import { readAliases, sessionName, setAlias } from "./session-names";
 import { RESUME_DELAY_MS, resumeInterrupted, runLedger } from "./auto-resume";
 import { schedulesForWire } from "./schedules";
@@ -167,19 +169,12 @@ const sentOrSet = (e: HEntry): boolean =>
 function createOverseerFile(carried: readonly RuleEntry[] = []): { id: string; path: string } {
   const dir = overseerDir();
   mkdirSync(dir, { recursive: true });
-  const sm = SessionManager.create(dir);
-  const raw = sm.getSessionFile();
-  const header = sm.getHeader();
-  if (!raw || !header) throw new Error("SessionManager did not produce a session file");
-  // The marker rides the hand-written file, like the fanout member marker: appended to the manager
-  // first, then [header, ...entries] is the whole file (SessionManager.create defers its own write).
-  sm.appendCustomEntry(OVERSEER_ENTRY, { v: 1 });
-  for (const rule of carried) sm.appendCustomEntry(RULE_ENTRY, rule);
-  writeFileSync(raw, `${[JSON.stringify(header), ...sm.getEntries().map((e) => JSON.stringify(e))].join("\n")}\n`, { flag: "wx" });
-  const path = canonicalPath(raw);
+  // The marker (then each carried rule) is written with the header, in one whole file.
+  const made = createSessionFile({ cwd: dir, seed: [[OVERSEER, { v: 1 }], ...carried.map((rule) => [RULE, rule] as const)] });
+  const path = canonicalPath(made.path);
   markOwned(path);
-  markSeen(header.id);
-  return { id: header.id, path };
+  markSeen(made.id);
+  return { id: made.id, path };
 }
 
 /** Delete history files that fell off the end (>20). Through the cleanup "paths" mode, so the same
@@ -631,7 +626,7 @@ const host: OverseerToolHost = {
   aliases: () => readAliases(),
   setAlias: (id, alias) => setAlias(id, alias),
   used(id, tool, sessions, toolCallId) {
-    overseerSession?.sessionManager.appendCustomEntry(USE_ENTRY, { v: 1, id, tool, sessions, toolCallId, at: new Date().toISOString() });
+    if (overseerSession) stateOf(overseerSession).append(GRANT_USE, { v: 1, id, tool, sessions, toolCallId, at: new Date().toISOString() });
   },
   explorer: () => readOverseerSettings().explorer,
   explorerCwd: () => overseerDir(),
@@ -743,7 +738,7 @@ export async function revokePermit(id: string): Promise<{ ok: true } | { ok: fal
   if (!e || !p) return { ok: false, status: 404, error: `No approval or rule ${id} in the current Overseer conversation.` };
   if (p.status !== "live") return { ok: false, status: 409, error: `${id} has already ${p.status === "expired" ? "expired" : "been revoked"}.` };
   const chat = await acquireChat(e.path);
-  chat.session.sessionManager.appendCustomEntry(REVOKE_ENTRY, { v: 1, id, at: new Date().toISOString(), by: "user" });
+  stateOf(chat.session).append(REVOKE, { v: 1, id, at: new Date().toISOString(), by: "user" });
   return { ok: true };
 }
 
@@ -1033,7 +1028,11 @@ setOverseerRuntime({
           try {
             const sm = session.sessionManager;
             const w = permitOnClick(card, sm.getBranch(), sm.getEntries());
-            if (w) sm.appendCustomEntry(w.type, w.data);
+            if (w) {
+              const state = piSessionState(sm);
+              if (w.type === RULE_ENTRY) state.append(RULE, w.data);
+              else state.append(GRANT, w.data);
+            }
           } catch (err) {
             console.warn("[overseer] approval not written:", err instanceof Error ? err.message : String(err));
           }

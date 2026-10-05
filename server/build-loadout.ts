@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
-import { existsSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 import { resolve } from "node:path";
-import { SessionManager } from "@earendil-works/pi-coding-agent";
+import { createSessionFile } from "./harness/pi/state";
 import { readAlignScan } from "./align-state";
 import { acquireChat, isSessionBusy, setOpeningChoice } from "./chat-manager";
 import { noteBuildMerged } from "./build-merged";
@@ -214,12 +214,7 @@ export function buildSetupEnded(projectId: string, sid: string, ms = 120_000): P
 async function makeSessionFile(cwd: string, sessionId: string): Promise<string> {
   const cwdError = await validateNewSessionCwd(cwd);
   if (cwdError) throw new Error(cwdError);
-  const sm = SessionManager.create(resolve(cwd), undefined, { id: sessionId });
-  const raw = sm.getSessionFile();
-  const header = sm.getHeader();
-  if (!raw || !header) throw new Error("SessionManager did not produce a session file");
-  writeFileSync(raw, `${JSON.stringify(header)}\n`, { flag: "wx" });
-  const path = canonicalPath(raw);
+  const path = canonicalPath(createSessionFile({ cwd: resolve(cwd), id: sessionId }).path);
   markOwned(path);
   addWebSession(sessionId);
   markSeen(sessionId);

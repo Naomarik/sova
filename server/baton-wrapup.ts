@@ -12,6 +12,7 @@ import type { Person } from "../shared/orgs";
 import { batonById, sessionPathOf } from "./baton";
 import { acquireChat } from "./chat-manager";
 import { liveRead } from "./harness/pi/reader";
+import { BATON_WRAPUP } from "./harness/state-kinds";
 import { aboutSomeoneElse, detectLanguage } from "./baton-guards";
 import { withoutAuthorNotes } from "./baton-view";
 import { applyChange, operatorName, readHistory, readRoster } from "./orgs";
@@ -302,7 +303,7 @@ export async function runWrapup(sessionId: string, normalTools: readonly string[
   let run: Run = { applied: [], refused: [], called: false };
   let error: string | undefined;
   try {
-    chat.appendSpecialEntry(BATON_WRAPUP_ENTRY, { v: 1, phase: "start" } satisfies BatonWrapupData);
+    chat.appendStateRow(BATON_WRAPUP, { v: 1, phase: "start" } satisfies BatonWrapupData);
     run = beginWrapupRun(sessionId);
     chat.session.setActiveToolsByName([WRAPUP_TOOL]);
     // The usage ledger records this turn's calls as the session's wrap-up (the project card's split).
@@ -332,7 +333,7 @@ export async function runWrapup(sessionId: string, normalTools: readonly string[
   }
   await inferLanguages(sessionId, row, liveRead(chat.session).branch(), run);
   try {
-    chat.appendSpecialEntry(BATON_WRAPUP_ENTRY, {
+    chat.appendStateRow(BATON_WRAPUP, {
       v: 1,
       phase: "end",
       applied: run.applied,

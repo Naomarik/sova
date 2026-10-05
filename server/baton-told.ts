@@ -214,7 +214,7 @@ export async function toldOf(sessionId: string): Promise<BatonTold | null> {
     // Never run: what the next reply would get, rendered now (the only render; labelled a preview).
     prompt = { kind: "preview", text: renderBatonPrompt(sessionId, undefined, !!(await photosFor(row, dir, undefined, branch).catch(() => null))) };
     const active = new Set(activeBatonTools(sessionId));
-    tools = [...batonTools(sessionId, () => {}), readLinkTool(sessionId)].filter((t) => active.has(t.name)).map(toolOf);
+    tools = [...batonTools(sessionId, { append: () => "" }), readLinkTool(sessionId)].filter((t) => active.has(t.name)).map(toolOf);
   }
   const { model, thinking } = recordedModel(branch);
   const startedFor = startedForOf(row, data);

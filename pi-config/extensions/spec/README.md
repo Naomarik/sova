@@ -31,6 +31,7 @@ to assert that those decisions have been implemented.
 | `core/sova-spec-review.mjs` | The review companion: `prepare`, `record`, `status`. It keeps the exact bytes a review compared |
 | `core/sova-spec-assess.mjs` | Observation-only input-bound dispositions and metadata-only receipts: `prepare`, `record`, `status` |
 | `tests/*.test.mjs` | Black-box fixture tests that spawn the CLIs against temporary projects |
+| [`GOALS.md`](GOALS.md) | What the spec system is for: its goals and constraints. A change to these tools names the goal it serves and is measured against today's tools (`tests/replay/`) |
 
 ## Core (read-only)
 

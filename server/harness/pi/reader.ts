@@ -32,9 +32,14 @@ export function activeBranch(entries: Entry[]): Entry[] {
   if (body.some((e) => typeof e.id !== "string")) return body;
   const byId = new Map<string, Entry>();
   for (const e of body) byId.set(e.id, e);
+  return walkUp(byId, body[body.length - 1]!);
+}
+
+/** activeBranch's walk: from `leaf` up by parentId (a cycle stops it), returned root-first. */
+function walkUp(byId: ReadonlyMap<string, Entry>, leaf: Entry): Entry[] {
   const path: Entry[] = [];
   const seen = new Set<string>();
-  let cur: Entry | undefined = body[body.length - 1];
+  let cur: Entry | undefined = leaf;
   while (cur && !seen.has(cur.id)) {
     seen.add(cur.id);
     path.push(cur);
@@ -53,6 +58,8 @@ export async function readActiveBranch(path: string): Promise<Entry[]> {
 /** Where an HEntry keeps the raw entry it was made from: a non-enumerable property, so JSON, spreads and
     deep equality never see it (a process-wide WeakMap cost every parse more than the conversion did). */
 const RAW = Symbol("raw");
+/** One descriptor for every hidden raw (defineProperty reads it at the call): no object per entry. */
+const RAW_DESC: PropertyDescriptor = { value: undefined };
 
 /** TEMPORARY (M2 to M4): the raw entry an HEntry was made from, for the state folds that still read pi's
     custom entries. Counted by the boundary's reader ratchet. */
@@ -247,7 +254,9 @@ export function toHEntry(raw: unknown): HEntry | null {
     h.type = type;
     noteUnknown(type, h.id);
   }
-  Object.defineProperty(h, RAW, { value: e });
+  RAW_DESC.value = e;
+  Object.defineProperty(h, RAW, RAW_DESC);
+  RAW_DESC.value = undefined;
   return h as HEntry;
 }
 
@@ -299,9 +308,6 @@ export function parsePi(text: string): PiFile {
 const KNOWN_TYPES = new Set(["message", "model_change", "thinking_level_change", "session_info", "label", "compaction", "branch_summary", "usage", "context_edit", "custom", "custom_message"]);
 const KNOWN_ROLES = new Set(["user", "assistant", "toolResult", "bashExecution", "custom", "branchSummary", "compactionSummary", "system"]);
 
-/** Whether toHEntry would make a raw (non-header) entry `kind: "unknown"`. */
-const isUnknown = (e: Entry): boolean => (e.type === "message" ? !(isObj(e.message) && KNOWN_ROLES.has(e.message.role)) : !KNOWN_TYPES.has(e.type));
-
 export interface PiBranch {
   /** The first header in the file, null when it has none. */
   header: HHeader | null;
@@ -321,24 +327,36 @@ export interface PiBranch {
 export function parsePiBranch(text: string, opts: { ids?: boolean; states?: ReadonlySet<unknown> } = {}): PiBranch {
   let header: HHeader | null = null;
   const all = parseLines(text);
+  // One pass (each entry's type and id read once): the header, the unknown count, and activeBranch's index.
+  const body: Entry[] = [];
+  const byId = new Map<string, Entry>();
+  let linear = false;
   for (const raw of all) {
-    if (raw.type === "session") header ??= headerOf(raw);
-    else if (isUnknown(raw)) noteUnknown(unknownTypeOf(raw), typeof raw.id === "string" ? raw.id : null);
+    const type = raw.type;
+    if (type === "session") {
+      header ??= headerOf(raw);
+      continue;
+    }
+    body.push(raw);
+    const id = raw.id;
+    if (type === "message" ? !(isObj(raw.message) && KNOWN_ROLES.has(raw.message.role)) : !KNOWN_TYPES.has(type))
+      noteUnknown(unknownTypeOf(raw), typeof id === "string" ? id : null);
+    if (typeof id === "string") byId.set(id, raw);
+    else linear = true;
   }
-  const onBranch = activeBranch(all);
+  const onBranch = body.length === 0 ? [] : linear ? body : walkUp(byId, body[body.length - 1]!);
   const branch = historyOf(onBranch);
   const out: PiBranch = { header, branch };
   if (opts.ids) {
-    const ids = new Set<string>();
+    const ids = new Set<string>(byId.keys());
     if (typeof header?.id === "string") ids.add(header.id);
-    for (const e of all) if (e.type !== "session" && typeof e.id === "string") ids.add(e.id);
     out.ids = ids;
   }
   if (opts.states) {
     const converted = new Map<Entry, HEntry>();
     for (let i = 0; i < onBranch.length; i++) converted.set(onBranch[i]!, branch[i]!);
     const states: HEntry[] = [];
-    for (const e of all) {
+    for (const e of body) {
       if (e.type === "custom" && opts.states.has(e.customType)) states.push(converted.get(e) ?? toHEntry(e)!);
     }
     out.states = states;

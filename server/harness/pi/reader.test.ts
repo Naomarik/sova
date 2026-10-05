@@ -13,7 +13,7 @@ import { normalizeEntries, normalizeEntry, rowsOf, rowsOfEntry } from "../../tra
 import { fixtureSets } from "./golden/golden";
 import { largeSessionText } from "./golden/fixtures/large.ts";
 import {
-  activeBranch, BranchScan, branchOf, firstText, historyOf, joinedText, lineEntry, lineHead, lineHeader, lineMay, liveRead, parseLines, parsePi,
+  activeBranch, BranchScan, branchOf, firstText, historyOf, joinedText, lineEntry, lineHead, lineHeader, lineMay, liveHistory, liveRead, parseLines, parsePi, parsePiBranch,
   rawOf, readBranch, readTailBranch, resetUnknownEntries, toHEntry, typedText, unknownEntries, type Entry,
 } from "./reader";
 import { loadPi } from "./testing/load-pi.ts";
@@ -158,6 +158,18 @@ describe("unknown entries (§app.harness/unknown-entries)", () => {
     assert.equal(unknownEntries(), 4, "a known file adds nothing (an unknown block is not an unknown entry)");
   });
 
+  test("parsePiBranch converts only the branch, yet counts every unknown entry in the file as parsePi does", () => {
+    for (const name of ["unknown", "unknown-noid"]) {
+      const text = fixtures.find((f) => f.name === name)!.text;
+      resetUnknownEntries();
+      parsePi(text);
+      const counted = unknownEntries();
+      resetUnknownEntries();
+      parsePiBranch(text);
+      assert.equal(unknownEntries(), counted, name);
+    }
+  });
+
   test("the transcript's rows count the same entries, once each with the reader's reads", () => {
     const text = fixtures.find((f) => f.name === "unknown")!.text;
     resetUnknownEntries();
@@ -184,6 +196,40 @@ describe("unknown entries (§app.harness/unknown-entries)", () => {
 
 describe("files", () => {
   const all = fixtures.find((f) => f.set === "synthetic" && f.name === "all-types")!;
+
+  test("parsePiBranch is parsePi + branchOf on every fixture: the branch, the header, every id, the state entries in file order", () => {
+    for (const f of fixtures) {
+      const file = parsePi(f.text);
+      const keys = new Set<unknown>(["mode", "subagents-registry"]);
+      const got = parsePiBranch(f.text, { ids: true, states: keys });
+      assert.deepEqual(got.branch, branchOf(file.entries), f.name);
+      assert.deepEqual(got.branch.map(rawOf), branchOf(file.entries).map(rawOf), f.name);
+      assert.deepEqual(got.header, file.header, f.name);
+      const ids = new Set([file.header?.id, ...file.entries.map((h) => h.id)].filter((id): id is string => typeof id === "string"));
+      assert.deepEqual(got.ids, ids, f.name);
+      const states = file.entries.filter((h) => h.kind === "state" && keys.has(h.key));
+      assert.deepEqual(got.states, states, f.name);
+      assert.deepEqual(got.states!.map(rawOf), states.map(rawOf), f.name);
+    }
+  });
+
+  test("liveHistory is historyOf, each entry converted once per owner; a replaced or moved entry is converted again", () => {
+    const raw = parseLines(fixtures.find((f) => f.set === "synthetic" && f.name === "all-types")!.text).filter((e) => e.type !== "session");
+    const owner = {};
+    const first = liveHistory(owner, "branch", raw);
+    assert.deepEqual(first, historyOf(raw));
+    const again = liveHistory(owner, "branch", raw);
+    assert.notEqual(again, first, "a new array every call");
+    assert.ok(again.every((h, i) => h === first[i]), "the same HEntries");
+    const swapped = { ...raw[1]!, id: "swapped" };
+    const next = liveHistory(owner, "branch", [raw[0]!, swapped, ...raw.slice(2)]);
+    assert.equal(next[0], first[0]);
+    assert.notEqual(next[1], first[1]);
+    assert.equal(next[1]!.id, "swapped");
+    assert.equal(rawOf(next[1]!), swapped);
+    assert.deepEqual(liveHistory(owner, "entries", raw), historyOf(raw), "entries are memoized apart from the branch");
+    assert.deepEqual(liveHistory({}, "branch", raw.slice(1)), historyOf(raw.slice(1)), "another owner has its own");
+  });
 
   test("readBranch reads a file as parsePi + branchOf", async () => {
     assert.deepEqual((await readBranch(all.path)).map((h) => h.id), branchOf(parsePi(all.text).entries).map((h) => h.id));

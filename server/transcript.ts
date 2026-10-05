@@ -100,8 +100,14 @@ const SOURCE = Symbol("source");
     WeakMap over every cached row cost each GC more than the rows did. */
 const sources = {
   get: (it: TranscriptItem | undefined): HEntry | undefined => (it as { [SOURCE]?: HEntry } | undefined)?.[SOURCE],
-  set: (it: TranscriptItem, h: HEntry): void => void Object.defineProperty(it, SOURCE, { value: h, writable: true, configurable: true }),
+  set(it: TranscriptItem, h: HEntry): void {
+    SOURCE_DESC.value = h;
+    Object.defineProperty(it, SOURCE, SOURCE_DESC);
+    SOURCE_DESC.value = undefined;
+  },
 };
+/** One descriptor for every row's source (defineProperty reads it at the call): no object per row. */
+const SOURCE_DESC: PropertyDescriptor = { value: undefined, writable: true, configurable: true };
 
 /** The entry a row was made from (server-side only; never serialized). */
 export const sourceOf = (it: TranscriptItem): HEntry | undefined => sources.get(it);

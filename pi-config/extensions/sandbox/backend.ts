@@ -7,12 +7,13 @@
  * this machine (`probe`). Silent unconfined passthrough is never a legal answer: a backend that
  * cannot enforce returns `{ ok: false }` and the caller refuses the tool call.
  */
-import { lstatSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
+import { lstatSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { DarwinSeatbeltBackend } from "./backends/darwin-seatbelt.ts";
 import { LinuxBwrapBackend } from "./backends/linux-bwrap.ts";
 import { UnsupportedBackend } from "./backends/unsupported.ts";
+import { defaultIo, type RealpathIo, tolerantRealpath } from "./realpath.ts";
 
 /** "full" is OFF: it never reaches a backend. */
 export type Level = "read-only" | "workspace-write" | "full";
@@ -164,12 +165,14 @@ export function backendFor(platform: NodeJS.Platform = process.platform): Backen
  * points out of a root is seen at its real location, and a path that does not exist yet still has
  * a canonical spelling.
  */
-export function canonicalizePath(path: string, base = process.cwd()): string {
+export function canonicalizePath(path: string, base = process.cwd(), io: RealpathIo = defaultIo, platform: NodeJS.Platform = process.platform): string {
 	let head = isAbsolute(path) ? resolve(path) : resolve(base, path);
 	const rest: string[] = [];
 	for (;;) {
 		try {
-			return rest.length ? join(realpathSync(head), ...rest.reverse()) : realpathSync(head);
+			// realpathSync, except on darwin where an EPERM/EACCES (Bun on TCC dirs) is resolved per component.
+			const real = tolerantRealpath(head, io, platform);
+			return rest.length ? join(real, ...rest.reverse()) : real;
 		} catch (err) {
 			const code = (err as NodeJS.ErrnoException).code;
 			if (code !== "ENOENT" && code !== "ENOTDIR") throw err;

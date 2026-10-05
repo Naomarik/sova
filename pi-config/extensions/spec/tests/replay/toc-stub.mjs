@@ -4,7 +4,7 @@
 // contract beyond the JSON shape the harness reads:
 //   toc <§id> --dir out|in|down|up|mentions → { id, dir, seed: {id}, lines: [{id, title, what, whatSource, why, whySource, bytes}], footer: {delivered: []} }
 //   read <§id>                              → { id, items: [{index, id, text}], footer: {named: [§id]} }
-import { readFileSync } from "node:fs";
+import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { specIndex, parentOf } from "./fullness.mjs";
 
@@ -23,7 +23,7 @@ if (cmd === "where") {
   // where [--all] <path>: every claim whose code names the path.
   const path = argv.slice(1).find((a) => !a.startsWith("--") && a !== flag("--root"));
   const hits = Object.keys(claims).filter((x) => (claims[x].code ?? []).includes(path)).sort();
-  out({ query: path, total: hits.length, counts: { claims: hits.length, ranked: 0 }, lines: hits.map((x) => ({ id: x })) });
+  out({ query: path, file: { path, state: existsSync(join(root, path)) ? "read" : "missing" }, total: hits.length, counts: { claims: hits.length, ranked: 0 }, lines: hits.map((x) => ({ id: x })) });
 } else if (cmd === "impact" && argv.includes("--near")) {
   // impact <§id> --near: requirers of the seed's family are consumers; uninvestigated behaviors that mention it, frontier.
   const family = Object.keys(claims).filter((x) => x === id || parentOf(x) === id);

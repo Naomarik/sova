@@ -132,6 +132,7 @@ test("pull checks run only where toc exists: n/a without it, held by a faithful 
     [T, "mentions: () => all.filter((x) => x !== id && mentions(index.passages.get(x).text, id)),", "mentions: () => all.filter((x) => x !== id),"], // everything "mentions"
     [T, "up: () => (parentOf(id) ? [parentOf(id)] : []),", ""],                                      // one direction refuses
     [T, "lines: hits.map((x) => ({ id: x }))", "lines: hits.slice(1).map((x) => ({ id: x }))"],              // where drops a claim
+    [T, "? \"read\" : \"missing\"", "? \"missing\" : \"missing\""],                                         // where never reads the file
     [T, "family.some((f) => mentions(index.passages.get(x)?.text ?? \"\", f))", "x.endsWith(\"/unrelated\")"], // near keeps the wrong consumer
     [T, "out({ id, near: true,", "out({ id, near: true, ...(id === \"§chat/composer\" ? { status: \"refused\", exit: 2 } : {}),"], // near refuses one seed
     [T, "text: seed.text }], footer: { named: [...(claims[id].requires ?? [])].filter((x) => x !== id) } });", "text: seed.text.trim() }], footer: { named: [] } });"], // read trims, names nothing
@@ -139,7 +140,7 @@ test("pull checks run only where toc exists: n/a without it, held by a faithful 
     ["spec/core/packet.mjs", "if (!PACKET_PARTS.includes(part)) return packetError(\"usage\", budget);", "if (!PACKET_PARTS.includes(part) || [\"§app/shell\", \"§f.seed/edit\"].includes(identity.id)) return packetError(\"usage\", budget);"],
   ], STUB_FILES), { label: "stub-hides", only: ["f", "g"] });
   const names = failed(bad);
-  for (const name of ["f.ran", "f.pull.items-shown", "f.pull.what-and-why", "f.pull.unrelated-only-in", "f.pull.read-exact", "f.pull.read-names-links", "g.packet.ran", "g.pull.toc-answers", "f.near.true-consumer-kept", "f.near.unrelated-off-frontier", "g.where.all-listed", "g.impact-near.answers"])
+  for (const name of ["f.ran", "f.pull.items-shown", "f.pull.what-and-why", "f.pull.unrelated-only-in", "f.pull.read-exact", "f.pull.read-names-links", "g.packet.ran", "g.pull.toc-answers", "f.near.true-consumer-kept", "f.near.unrelated-off-frontier", "g.where.all-listed", "g.impact-near.answers", "g.where.file-read", "g.where.ranked-file-read"])
     assert.ok(names.includes(name), `${name} fails on the sabotaged stub (failed: ${names.join(", ")})`);
 });
 

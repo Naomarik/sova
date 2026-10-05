@@ -250,19 +250,22 @@ async function mapRows(ctx, root) {
 
   const where = await accepts(ctx.tools, root, ctx.ws.home, ["where", WHERE_ALL]);
   if (where === "absent") {
-    rows.push(row("g.where.all", "n/a: this tree has no where", [guard("g.where.all-listed", true, "n/a: this tree has no where", true)]));
-    rows.push(row("g.target.where-ranked", "n/a: this tree has no where"));
+    rows.push(row("g.where.all", "n/a: this tree has no where", [guard("g.where.all-listed", true, "n/a: this tree has no where", true), guard("g.where.file-read", true, "n/a: this tree has no where", true)]));
+    rows.push(row("g.target.where-ranked", "n/a: this tree has no where", [guard("g.where.ranked-file-read", true, "n/a: this tree has no where", true)]));
   } else {
     const claims = JSON.parse(readFileSync(join(root, ".sova/spec/manifest.json"), "utf8")).claims;
     const mapping = Object.entries(claims).filter(([, r]) => (r.code ?? []).includes(WHERE_ALL)).map(([id]) => id);
     const all = await readLines(ctx.tools, root, ctx.ws.home, ["where", "--all", WHERE_ALL]);
     const listed = new Set(all.lines.map((l) => l.id));
     const missing = mapping.filter((id) => !listed.has(id));
-    rows.push(row("g.where.all", { file: WHERE_ALL, mapped: mapping.length, listed: listed.size, calls: all.calls }, [
+    // The source file is archived beside the pinned spec; a where that couldn't read it ranks nothing, which is ✗, never a quiet 0.
+    const fileRead = (r) => guard(`g.where.${r === all ? "file-read" : "ranked-file-read"}`, r.first?.file?.state === "read", `file.state ${r.first?.file?.state ?? "absent"}`);
+    rows.push(row("g.where.all", { file: WHERE_ALL, state: all.first?.file?.state ?? null, mapped: mapping.length, listed: listed.size, calls: all.calls }, [
       guard("g.where.all-listed", all.ok && missing.length === 0, !all.ok ? `where --all failed: ${all.refused}` : missing.length ? `not listed: ${missing.slice(0, 5).join(", ")}${missing.length > 5 ? ` … ${missing.length - 5} more` : ""}` : `all ${mapping.length} claims whose code names the file are listed`),
+      fileRead(all),
     ]));
     const ranked = await readLines(ctx.tools, root, ctx.ws.home, ["where", WHERE_RANKED]);
-    rows.push(row("g.target.where-ranked", ranked.ok ? { file: WHERE_RANKED, total: ranked.first?.total ?? null, shown: ranked.lines.length, ranked: ranked.first?.counts?.ranked ?? null, bytes: ranked.bytes } : `refused: ${ranked.refused}`));
+    rows.push(row("g.target.where-ranked", ranked.ok ? { file: WHERE_RANKED, state: ranked.first?.file?.state ?? null, total: ranked.first?.total ?? null, shown: ranked.lines.length, ranked: ranked.first?.counts?.ranked ?? null, bytes: ranked.bytes } : `refused: ${ranked.refused}`, [fileRead(ranked)]));
   }
   return rows;
 }

@@ -1,23 +1,19 @@
 // Run: npx tsx --test src/lib/spend.test.ts (or npm test)
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { ModelSpend, SessionUsage, TranscriptItem } from "../../shared/protocol";
-import { absoluteTime, anyCost, firstLine, originLabel, spendRows, spentAnything, timelineEntries } from "./spend";
+import type { TranscriptItem } from "../../shared/protocol";
+import type { UsageOrigin, UsageSessionModelRow, UsageSessionSpend, UsageSpend, UsageWorkerRow } from "../../shared/usage/wire";
+import { absoluteTime, firstLine, headChipSpend, headChipWords, headerTokenWords, transcriptHeaderSid, originLabel, paneTitleCost, spendTitle, spendUsd, spentAnything, timelineEntries, transcriptHeaderSpend, usageTabRows, workerRowSpend, workerSpendOf } from "./spend";
 
-const spend = (model: string, origin: ModelSpend["origin"], input: number, output: number, cost?: number): ModelSpend => ({
-  model,
-  origin,
-  input,
-  output,
-  cacheRead: 0,
-  cacheWrite: 0,
-  ...(cost === undefined ? {} : { cost }),
-});
-
-const usage = (models: ModelSpend[]): SessionUsage => ({
-  total: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-  main: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+const zero = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cacheWrite1h: 0 };
+const sum = (input: number, output: number, usd = 0, calls = 1): UsageSpend => ({ usd, tokens: { ...zero, input, output }, usdBy: zero, calls, unpricedTokens: 0 });
+const row = (model: string, origin: UsageOrigin, input: number, output: number): UsageSessionModelRow => ({ ...sum(input, output), origin, provider: "p", model, status: "priced" });
+const worker = (sid: string, parent: string, id?: string): UsageWorkerRow => ({ ...sum(1, 1), sid, parent, withWorkers: sum(2, 2), ...(id ? { worker: id } : {}) });
+const spend = (models: UsageSessionModelRow[], workerList: UsageWorkerRow[] = [], calls = models.length): Pick<UsageSessionSpend, "sid" | "models" | "total" | "workerList"> => ({
+  sid: "s1",
   models,
+  total: sum(0, 0, 0, calls),
+  workerList,
 });
 
 const info = (id: string, text: string, timestamp?: string): TranscriptItem => ({
@@ -30,56 +26,100 @@ const info = (id: string, text: string, timestamp?: string): TranscriptItem => (
 
 test("originLabel names the three origins", () => {
   assert.equal(originLabel("main"), "Main thread");
-  assert.equal(originLabel("subagents"), "Subagents");
-  assert.equal(originLabel("team"), "Team");
+  assert.equal(originLabel("oneshot"), "Side calls");
+  assert.equal(originLabel("worker"), "Subagents");
 });
 
-test("spendRows puts the main thread first, then the biggest spender", () => {
-  const rows = spendRows(
-    usage([
-      spend("team-model", "team", 10, 10),
-      spend("sub-small", "subagents", 1, 1),
-      spend("sub-big", "subagents", 100, 100),
-      spend("main-b", "main", 5, 5),
-      spend("main-a", "main", 50, 50),
-    ]),
+test("usageTabRows puts the main thread first, then side calls, then subagents, the biggest spender first in each", () => {
+  const rows = usageTabRows(
+    spend([row("sub-small", "worker", 1, 1), row("title", "oneshot", 2, 2), row("sub-big", "worker", 100, 100), row("main-b", "main", 5, 5), row("main-a", "main", 50, 50)]),
   );
   assert.deepEqual(
     rows.map((r) => r.model),
-    ["main-a", "main-b", "sub-big", "sub-small", "team-model"],
+    ["main-a", "main-b", "title", "sub-big", "sub-small"],
   );
 });
 
-test("spendRows keeps two equal rows in a stable order and never mutates its input", () => {
-  const models = [spend("b", "main", 1, 1), spend("a", "main", 1, 1)];
-  const source = usage(models);
+test("usageTabRows keeps two equal rows in a stable order and never mutates its input", () => {
+  const source = spend([row("b", "main", 1, 1), row("a", "main", 1, 1)]);
   assert.deepEqual(
-    spendRows(source).map((r) => r.model),
+    usageTabRows(source).map((r) => r.model),
     ["a", "b"],
   );
   assert.deepEqual(
     source.models.map((r) => r.model),
     ["b", "a"],
   );
+  assert.deepEqual(usageTabRows(undefined), []);
 });
 
-test("spendRows survives an older server with no usage at all", () => {
-  assert.deepEqual(spendRows(undefined), []);
-});
-
-test("spentAnything: a counted token, a row, or an unknown worker — never an empty or absent usage", () => {
+test("spentAnything: a recorded call, never an absent answer", () => {
   assert.equal(spentAnything(undefined), false);
-  assert.equal(spentAnything(usage([])), false);
-  assert.equal(spentAnything({ ...usage([]), total: { input: 0, output: 0, cacheRead: 12, cacheWrite: 0 } }), true);
-  assert.equal(spentAnything(usage([spend("a", "main", 0, 0)])), true);
-  assert.equal(spentAnything({ ...usage([]), unavailable: ["ag_04"] }), true);
+  assert.equal(spentAnything(spend([])), false);
+  assert.equal(spentAnything(spend([], [], 1)), true);
 });
 
-test("anyCost asks whether a Cost column would say anything", () => {
-  assert.equal(anyCost([]), false);
-  assert.equal(anyCost([spend("a", "main", 1, 1)]), false);
-  assert.equal(anyCost([spend("a", "main", 1, 1, 0)]), false);
-  assert.equal(anyCost([spend("a", "main", 1, 1), spend("b", "team", 1, 1, 0.004)]), true);
+test("dollars are always said, at API prices; the title carries the split", () => {
+  assert.equal(spendUsd(0), "$0.00");
+  assert.equal(spendUsd(0.004), "<$0.01");
+  assert.equal(spendUsd(1240.5), "$1,240.50");
+  assert.equal(spendTitle({ usd: 0.72, tokens: { ...zero, input: 1200, output: 30, cacheRead: 5000, cacheWrite: 0 } }), "1.2k in · 30 out · 5k cache read · 0 cache write · $0.72");
+});
+
+test("a listed worker's spend is its row under this session, matched by worker id", () => {
+  const list = [worker("w-a", "s1", "ag_01"), worker("w-b", "w-a", "ag_01"), worker("w-c", "other", "ag_02")];
+  assert.equal(workerSpendOf(spend([], list), "ag_01")?.sid, "w-a", "a nested worker with the same id is not this session's");
+  assert.equal(workerSpendOf(spend([], list), "ag_02")?.sid, "w-c", "the only row with that id");
+  assert.equal(workerSpendOf(spend([], list), "ag_09"), null);
+  assert.equal(workerSpendOf(undefined, "ag_01"), null);
+});
+// One test per surface: each reads its figure straight off the ledger's answer, never a sum of its own.
+const answer = (sid: string, total: UsageSpend, workerList: UsageWorkerRow[] = []) => ({ sid, total, workerList });
+
+test("head chip: the answer's total, once it is this session's and something was spoken", () => {
+  const t = sum(1000, 200, 0.5, 3);
+  assert.equal(headChipSpend(answer("s1", t), "s1"), t, "the very object the ledger sent");
+  assert.equal(headChipSpend(answer("s0", t), "s1"), null, "an answer for the previous session never shows");
+  assert.equal(headChipSpend(undefined, "s1"), null, "no figure before the answer");
+  assert.equal(headChipSpend(answer("s1", sum(0, 0, 0, 0)), "s1"), null, "nothing recorded");
+  assert.equal(headChipSpend(answer("s1", { ...sum(0, 0, 0.1, 2), tokens: { ...zero, cacheRead: 900 } }), "s1"), null, "cache only: nothing spoken");
+  assert.equal(headChipSpend(answer("s1", t), null), null);
+});
+
+test("worker row: the worker's withWorkers figure, nothing for a worker with no call", () => {
+  const w = { ...worker("w-a", "s1", "ag_01"), withWorkers: sum(7, 3, 2, 4) };
+  const idle = { ...worker("w-b", "s1", "ag_02"), withWorkers: sum(0, 0, 0, 0) };
+  const spend = answer("s1", sum(0, 0), [w, idle]);
+  assert.equal(workerRowSpend(spend, "ag_01"), w.withWorkers, "own and its workers', never only its own");
+  assert.equal(workerRowSpend(spend, "ag_02"), null);
+  assert.equal(workerRowSpend(spend, "ag_03"), null, "no row: no tokens, never 0");
+  assert.equal(workerRowSpend(undefined, "ag_01"), null);
+});
+
+test("transcript header: the worker's own answer's total, once it has a call", () => {
+  const t = sum(5, 5, 0.2, 1);
+  assert.equal(transcriptHeaderSpend({ total: t }), t);
+  assert.equal(transcriptHeaderSpend({ total: sum(0, 0, 0, 0) }), null);
+  assert.equal(transcriptHeaderSpend(undefined), null);
+});
+
+test("head chip words: input + output as the text, the split and cost in the title", () => {
+  const w = headChipWords({ ...sum(53_000, 200, 0.72), tokens: { ...zero, input: 53_000, output: 200, cacheRead: 9_000 } });
+  assert.deepEqual(w, { text: "53k tokens", label: "53k tokens — show usage", title: "53k in · 200 out · 9k cache read · 0 cache write · $0.72" });
+});
+
+test("transcript header: the sid its roster row names, never derived; {n} tok", () => {
+  const spend = answer("s1", sum(0, 0), [worker("claude-uuid", "s1", "ag_02")]);
+  assert.equal(transcriptHeaderSid(spend, "ag_02"), "claude-uuid", "a Claude Code worker's Claude session id, as the ledger records it");
+  assert.equal(transcriptHeaderSid(spend, "ag_05"), null, "not listed yet: no header figure");
+  assert.equal(transcriptHeaderSid(undefined, "ag_02"), null);
+  assert.deepEqual(headerTokenWords(sum(1200, 34, 0.004)), { text: "1.2k tok", title: "1.2k in · 34 out · 0 cache read · 0 cache write · <$0.01" });
+});
+
+test("workspace pane title: the answer's total dollars, left out at zero", () => {
+  assert.equal(paneTitleCost({ total: sum(1, 1, 12.5) }), "$12.50 this session");
+  assert.equal(paneTitleCost({ total: sum(1, 1, 0) }), null);
+  assert.equal(paneTitleCost(undefined), null);
 });
 
 test("firstLine takes one line and cuts on a word", () => {

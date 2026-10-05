@@ -91,16 +91,12 @@ test("hidden workers: the active branch's unlisted ones, newest first, with the 
   assert.equal(res.workers[0]!.status, "killed", "an ended worker keeps its ending");
 });
 
-test("hidden workers carry the usage their record saved, never their transcript's", async () => {
+test("hidden workers carry no spend (the usage ledger's), and their transcript still opens", async () => {
   publish(newest40);
   const byId = new Map((await getHiddenWorkers(owner)).workers.map((w) => [w.id, w]));
   const ag01 = byId.get("ag_01")!;
-  assert.equal(ag01.usageSource, "snapshot");
-  assert.deepEqual(ag01.usage, { input: 1, output: 2, cacheRead: 30, cacheWrite: 4, cost: 0.01 }, "the snapshot, not the transcript's 99,999");
-  assert.equal(ag01.usageAsOf, T0 + 60_000);
+  for (const k of ["usage", "usageSource", "usageAsOf"]) assert.ok(!(k in ag01), k);
   assert.equal(ag01.sessionFile, ag01File, "its transcript still opens from the row");
-  assert.equal(byId.get("ag_02")!.usageSource, "unavailable", "no saved usage is unavailable, never 0");
-  assert.equal(byId.get("ag_02")!.usage, undefined);
 });
 
 test("a record whose list gained a hidden worker stops offering it", async () => {

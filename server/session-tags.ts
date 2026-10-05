@@ -15,6 +15,7 @@ import { maySend, terminalSession } from "./decide-settings";
 import { serverRedactor } from "./overseer-redact";
 import { stateRoot } from "./state-root";
 import { sessionsChanged } from "./list-generation";
+import { withUsageContext } from "../pi-config/extensions/llm-inflight/attribution.ts";
 
 /**
  * Session tags (plan §5): a topic and a "throwaway" probability per session, answered
@@ -509,7 +510,10 @@ export class SessionTagger {
       const now = this.now();
       if (!needsTagging(readStore().sessions[row.id], turn.turnId, now)) return { kind: "fresh" };
       const state = tagState(row, turn, now, this.deps.redact);
-      const result = await this.deps.provider().decide({ purpose: "tags", state, questions: TAG_QUESTIONS, dedupeKey: `tags:${row.id}`, ...(opts.signal ? { signal: opts.signal } : {}) });
+      // The usage ledger: the tags' decision is the session's one-shot.
+      const result = await withUsageContext({ owner: row.id, cwd: row.cwd, kind: "oneshot" }, () =>
+        this.deps.provider().decide({ purpose: "tags", state, questions: TAG_QUESTIONS, dedupeKey: `tags:${row.id}`, ...(opts.signal ? { signal: opts.signal } : {}) }),
+      );
       const a = result.answers;
       let before: SessionTags | undefined;
       const store = update((s) => {

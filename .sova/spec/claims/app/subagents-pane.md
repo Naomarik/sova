@@ -161,20 +161,14 @@ right: it sends the pane back the way it came.
 
 **The token Σ** sits beside the working count as a second neutral chip, `{n} tokens` in mono
 (`.subagents-usage`), left out when nothing has been spent. It is the **session's** spend, the
-same figure the Usage tab headlines (§app.subagents-pane/tabs): the main thread on the active
-branch plus this session's listed workers (`SessionUsage.total`). **Until the insight has loaded
-the chip is left out**, so it never shows one figure and then another. Only a loaded insight with
-no session usage at all (an older server) falls back to the workers' **session-lifetime** total:
-every worker this session ever started, on any branch, including the ones the manager's retention cap and the live record's 40-row cap
-dropped, so it is normally larger than the rows add up to. While the runtime runs that lifetime
-total never goes down. After a server restart it is **rebuilt from the workers' transcripts**
-(§app.worker-restore/usage-from-transcripts), which may give a different total than the one shown
-before: the rebuild counts what the live count left out (cache-warm calls), and a Claude Code
-worker's cost is its last snapshot's. The Usage tab's Subagent lifetime line keeps saying that
-figure. The headline is input + output, the §chat/context-window token format. Everything the headline hides
-is in the `title`: `{in} in · {out} out · {cacheRead} cache read · {cacheWrite} cache write`,
-the cost (`$0.72`, `<$0.01`) when a backend reports one, and, on the lifetime fallback, the head
-count it covers ("57 subagents so far"). **The chip is a button**: it opens the Usage tab, and its
+same figure the Usage tab headlines (§app.subagents-pane/tabs), read from the usage ledger
+(§app.insights/usage-ledger, `GET /api/usage/session`): every call the session made, on every
+branch, retries and housekeeping included, the side calls made for it, and every worker under it
+at any depth. **Until that answer has loaded the chip is left out**, so it never shows one figure
+and then another. A server restart changes nothing about it: the ledger is on disk. The headline is
+input + output, the §chat/context-window token format. Everything the headline hides
+is in the `title`: `{in} in · {out} out · {cacheRead} cache read · {cacheWrite} cache write` and
+the cost at API prices (`$0.72`, `<$0.01`). **The chip is a button**: it opens the Usage tab, and its
 accessible name says so ("53.2k tokens — show usage"). Under 520px of pane the chip goes and the
 working count stays: one answers whether anything is happening, the other only how much it cost;
 the Usage tab stays one tap away in the strip.
@@ -210,14 +204,14 @@ strip, empty or not: a tab that came and went would move the strip under the rea
   Repository's is a clean repository's layout (its root, three facts, a two-line last commit and
   the Read line), and Worktrees' is as tall as its empty line; uncommitted changes, and each
   tracked worktree, still add their height when they land.
-- **Usage** is what the session has spent, off the same insight the pane polls. First the
-  headline, `{n} tokens in and out · $x` (input + output; cache in its `title`). Then a table with
-  one row per model × origin, the main thread first and then the biggest spender: Model · Where
-  (Main thread, Subagents, Team) · In · Out · Cache read · Cache write, and Cost only when a
-  backend reports USD, with a **Main thread Σ** footer. Then the notes: "Main thread counts the
-  active branch only.", the snapshot-cost note and "Usage unavailable for …"
-  (§app.worker-restore/restore). Then this session's workers: `{n} subagents · {w} working` and
-  the Subagent lifetime line. Under 400px of pane the table stacks, one block per row: Model and
+- **Usage** is what the session has spent, from the usage ledger (§app.insights/usage-ledger,
+  `GET /api/usage/session`, polled while the tab shows). First the headline,
+  `{n} tokens in and out · $x` (input + output; cache in its `title`; dollars at API prices,
+  subscriptions included). Then a table with one row per model × origin, the main thread first and
+  then the biggest spender: Model · Where (Main thread, Side calls, Subagents) · In · Out ·
+  Cache read · Cache write · Cost, with a **Main thread Σ** footer. Every branch counts, retries
+  and housekeeping included; a fork counts only its own calls. Then this session's workers:
+  `{n} subagents · {w} working`. Under 400px of pane the table stacks, one block per row: Model and
   Where on its first line, each count labelled under it. Before anything is spent the tab says
   "Nothing spent in this session yet." (the worker count still shows when there are workers);
   while the first load is out it shows a placeholder, never that line.
@@ -317,18 +311,18 @@ list/detail. From 1280 the column is 40vw and asks its own box, so it's side by 
   | `restored`, mid-task at the restart (`interruptedAt`) | `.chip.chip-warn` Interrupted | `{provider}` · `{model}` · `{tokens}` · as of `{HH:MM}` |
   | a team member whose `ejectedAt` is set (§app.teams/seats) | `.chip` + dot, Ejected, **before** the status chip, which stays | unchanged |
 
-  **Tokens** are that worker's own running total (input + output, mono, the same §chat/context-window format and
-  the same split-and-cost `title` as the head's Σ). A worker that has spent nothing yet shows
-  none, and so does a worker from a pi-config that doesn't publish counts: the meta line then
-  reads exactly as it did before. It is one worker's spend, never the Σ.
+  **Tokens** are that worker's spend from the usage ledger (§app.insights/usage-ledger: its own
+  calls and its own workers', at any depth; input + output, mono, the same §chat/context-window
+  format and the same split-and-cost `title` as the head's Σ). A worker with no recorded call yet
+  shows none: the meta line then reads exactly as it did before. It is one worker's spend, never
+  the Σ.
   "As of" is `endedAt`, else `lastActivity`, mono 12-hour, the full ISO time in `title`. **Only a
   live-sourced Working or Starting chip pulses**, so each row has one pulsing thing at most.
   **Restored** workers (§app.worker-restore/restore) are the ones the session recorded before a
   server restart: no process runs them and they never pulse. One that was idle at the restart
   reads Restored, one that was mid-task reads Interrupted (warn: the turn it was on never
-  finished), and one that had ended keeps its ending's chip. Usage rebuilt from a snapshot says
-  so in the meta line's visible "as of {time}" (the tokens' `title` has no time), and a worker whose usage can't be read shows
-  "usage unavailable" in the tokens' place, never 0. While
+  finished), and one that had ended keeps its ending's chip; its tokens are the ledger's, as for
+  any worker, so a restart never changes them. While
   the pane's connection is down, nothing pulses and every row reads "as of" the last update.
 - **Context ring.** Each row shows how full that worker's **own** context is
   (§app.subagents-pane/context-fill) as the session row does: §chat.context-window/sidebar-ring's
@@ -380,8 +374,7 @@ When the record's worker count is larger than the list, the end of the list says
   past the list again (a new worker pushed an older one out of the record), they come back.
 - **Appended rows** are built from the session's own worker records: their final status (a
   worker that was alive when its host went away reads Restored or Interrupted, as after a
-  restart), model, and the **token count saved in the record** (its last usage snapshot), not
-  the worker's transcript. A worker with no saved count shows "usage unavailable". They look like
+  restart), model, and its tokens from the usage ledger, like every row. They look like
   any other settled row and open the same read-only transcript.
 - **Nothing runs in the background for it.** Polls, pushes and the insight never read these
   rows; only the click does. While the request runs the button is disabled and reads
@@ -437,11 +430,10 @@ webapp never writes to it (CLAUDE.md: no file locking).
   separator belongs to the fact it introduces**: each `·` is inside its own fact's element, not a
   sibling before it, so a wrapped line starts with its own dot and no wrap can strand one. The
   model opens the line, undotted. The
-  token number here is the **open transcript's own**
-  total, counted from the file as it is tailed (`/ws/watch` sends it with every `snapshot` and
-  `append`), so it ticks while you watch instead of waiting for the next worker snapshot; it
-  falls back to the row's number when the server doesn't report one. A Claude Code transcript
-  carries no cost, so that `title` shows counts only.
+  token number here is the worker's spend from the usage ledger (§app.insights/usage-ledger,
+  `GET /api/usage/session` for the worker's own session id), the same figure as its row, read
+  while the transcript is open so it moves as the worker's calls end; its `title` carries the
+  split and the cost at API prices, for a Claude Code worker too.
   The head repeats the row on purpose: in list/detail, the list
   isn't on screen. There, the back button leads the head, and title, chips and meta sit beside
   it in `.subagents-view-id`.

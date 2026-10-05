@@ -68,6 +68,8 @@ export interface TransferDeps {
   /** A local session's sandbox now (server/link-sandbox.ts). */
   sandboxOf(sessionId: string): Promise<LinkSandbox>;
   selfNodeId(): string | null;
+  /** Whether a node id is one of this host's names (§mesh.links/host-names). */
+  isSelf(nodeId: string): boolean;
   /** The link still runs (an ended link's offers are cancelled by the sweeper). */
   linkLive(linkId: string): boolean;
   /** A GET to a member host by nodeId (mesh peerFetch); throws when it can't be reached. */
@@ -183,6 +185,24 @@ export class LinkTransfers {
       }
     }
     this.byLink = map;
+    // An offer naming this host by another of its names (made before it joined a tailnet) takes the
+    // name it keeps for itself (§mesh.links/host-names).
+    const self = this.deps.selfNodeId();
+    if (self) {
+      for (const [linkId, offers] of map) {
+        let changed = false;
+        const fix = (r: LinkMemberRef) => {
+          if (r.nodeId === self || !this.deps.isSelf(r.nodeId)) return;
+          r.nodeId = self;
+          changed = true;
+        };
+        for (const o of offers) {
+          fix(o.from);
+          for (const r of o.recipients) fix(r.to);
+        }
+        if (changed) this.saveLink(linkId);
+      }
+    }
     return map;
   }
 
@@ -218,8 +238,8 @@ export class LinkTransfers {
   }
   /** As the sender, or as a recipient row. */
   ofSession(sessionId: string): LinkOffer[] {
-    const self = this.deps.selfNodeId();
-    return this.all().filter((o) => (o.from.sessionId === sessionId && o.from.nodeId === self) || o.recipients.some((r) => r.to.sessionId === sessionId && r.to.nodeId === self));
+    const self = (nodeId: string) => this.deps.isSelf(nodeId);
+    return this.all().filter((o) => (o.from.sessionId === sessionId && self(o.from.nodeId)) || o.recipients.some((r) => r.to.sessionId === sessionId && self(r.to.nodeId)));
   }
   /** Insert or replace, written at once. */
   put(offer: LinkOffer): void {

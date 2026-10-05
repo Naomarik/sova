@@ -5,7 +5,9 @@ A **link** joins two or more Sova-hosted sessions (pi or claude-code backend), e
 mesh host, into a remote team whose members can message each other and hand each other
 files. A member is always a session its own host runs: never a remote target, never a TUI-live
 session, never a worker's session, and never an Overseer, project-overseer, baton or other
-organization's session (§app/baton, §app/project-overseer, §app.session-list/organizations). A session is still driven only by the host whose disk holds
+organization's session (§app/baton, §app/project-overseer, §app.session-list/organizations). A
+link with a member on a LAN pairing (§mesh/lan) joins only two hosts: the host making it and that
+pairing (§mesh.links/host-names). A session is still driven only by the host whose disk holds
 its file (§mesh/remote-sessions): every message and every file lands through the member's own
 host. A link moves messages and the files its members offer (§mesh.links/offers), never session
 files; sessions still never sync (§mesh/sync). While the mesh is off no link can exist, and nothing
@@ -16,14 +18,18 @@ does, never part of making or keeping a link.
 
 - **What it is.** `{id, createdAt, createdBy, members[], endedAt?}`. The id is `lk_` plus random
   hex, minted by the creating host. A member is `{nodeId, sessionId, path}`: the host by its
-  Tailscale node identity, the session by id, and its path on its own host, resolved when the link
-  is made. A member host's peer id and label are never stored: they are looked up from this host's
+  node identity as the host keeping the record knows it (its Tailscale node identity, or
+  `lan:<pin>` for a LAN pairing; §mesh.links/host-names), the session by id, and its path on its
+  own host, resolved when the link is made. A member host's peer id and label are never stored: they are looked up from this host's
   `peers.json` by node identity whenever they are used (a peer's id here can be changed). **One
   member per host**: a link never joins two sessions on the same host, and making one is refused.
 - **Its own identity.** A host that doesn't know its own node identity (a phone that identifies
   callers by address, §mesh.peers/address-identity) learns it from the first member host that
   sends it a link, which names the recipient's identity as it knows it, or by asking any peer.
-- **Where it lives.** Every member host keeps the same record in `<stateRoot>/mesh-links.json`
+  Each peer's answer to that question is also kept, per peer, as the name that peer knows this
+  host by (§mesh.links/host-names).
+- **Where it lives.** Every member host keeps a copy of the same link, each naming the hosts in its
+  own terms (§mesh.links/host-names), in `<stateRoot>/mesh-links.json`
   (`{version: 1, links: []}`, mode 0600, written atomically like `peers.json`); inboxes and the
   outbox live under `<stateRoot>/mesh-links/`. The creating host writes its copy and sends it to
   every other member host over the peer listener; a host that is down gets it from the creating
@@ -37,7 +43,37 @@ does, never part of making or keeping a link.
   its members are idle, and it needs nothing to be re-established: the next message is delivered
   if the member's host is up, or held until it is. It survives restarts of any host.
 - **Unreachable, never dropped.** A member whose host is not in this host's `peers.json` is shown
-  as unreachable here; the link is kept.
+  as unreachable here; the link is kept. Only a copy naming, in a LAN pairing's terms, a host this
+  host doesn't know is refused when it arrives (§mesh.links/host-names).
+
+## §mesh.links/host-names — A host is named the way each peer knows it
+
+- **A host can have two names.** Its Tailscale node identity, which its tailnet peers know it by,
+  and `lan:<its pin>` (§mesh.lan/identity), which every LAN pairing knows it by, whichever side
+  dials (§mesh.lan/pairing). A host on a tailnet and on a LAN pairing has both. The name it keeps
+  for itself is its listener's Tailscale identity when it has one, else the one it learnt
+  (§mesh.links/record).
+- **Each host keeps a link in its own terms.** Its copy names itself by the name it keeps for
+  itself, and every other host by that host's node id in its own `peers.json`.
+- **Sent in the receiver's terms.** When a host sends a member host a link's copy, a message or a
+  file offer, it names itself by the name that host knows it by: what that host's whoami answered
+  (kept per peer), else `lan:<pin>` to a LAN pairing and its Tailscale identity to a tailnet peer.
+  Every other host is named as the sending host knows it. Something held in the outbox is named
+  when it goes, so it carries the newest answer.
+- **Any of its names is itself.** A host takes each of its own names, and every name a peer's
+  whoami gave it, as itself; an id that names one of its peers is never itself. A link, message or
+  offer that names it by any of them is kept under the name it keeps for itself, and records it
+  wrote under another of its names (a link made before it joined a tailnet) are read and rewritten
+  that way when it starts. A copy that names this host twice is refused. Who sent something is
+  still only the listener's verified caller, never a name in the body.
+- **A host it can't name is refused.** A link copy that names a host other than this one and the
+  caller, which this host's `peers.json` doesn't list, is refused (not a member), never stored,
+  when that host is named by a LAN id or the copy came from a LAN pairing: this host could neither
+  reach that member nor tell who it is. A tailnet id is the host's own everywhere, so on a tailnet
+  such a member is kept and shown as unreachable.
+- **Links across a LAN pairing join two hosts.** A LAN pairing names only the hosts it pairs with,
+  by their LAN names, so a link with a member on a LAN pairing has only two hosts: the host making
+  it and that pairing (§app.overseer/links-tools).
 
 ## §mesh.links/delivery — A message reaches the member through its own host
 
@@ -88,7 +124,10 @@ does, never part of making or keeping a link.
 - **Outbox for an offline host.** A send that can't reach the member's host (it is down or doesn't
   answer) goes to this host's `<stateRoot>/mesh-links/outbox.jsonl` and is retried when that peer
   comes up, and on a 60-second timer only while the outbox holds something. A refusal from the
-  peer is final and is not retried. A host on a build without links answers not-found; that is
+  peer is final and is not retried. A link's copy held for a host that was down and refused once
+  that host is back (its session is gone, it can't take the link) ends the link: the creating host
+  ends it on every host, as `sova_unlink` does, and the link keeps why (`endedWhy`), which a member's
+  link tools give when they refuse the ended link and `sova_links` shows. A host on a build without links answers not-found; that is
   final too, and never retried. The outbox survives restarts. A delivery (a link copy, an end, a
   message or an offer) to a peer this host's own grant withholds links from (§mesh.peers/grants)
   is refused at once, never held in the outbox, and that peer is not marked down.
@@ -132,7 +171,9 @@ are inert too.
 - **`link_offer {paths, to?, dest?, exclude?, note?, link?}`**, **`link_accept {offer, dest}`**,
   **`link_decline {offer, reason?}`** and **`link_offers {}`**: file offers (§mesh.links/offers).
 
-Each refuses, with a sentence saying so, when the session is in no link. The tools talk only to
+Each refuses, with a sentence saying so, when the session is in no link. When `link_send` or
+`link_offer` is refused because the session's link has ended and that link keeps why
+(§mesh.links/delivery), the sentence gives the reason the session's most recent such link ended. The tools talk only to
 the session's own host, which does every peer hop; the extension knows nothing about the mesh.
 While a session is linked, each run's prompt gets a short section that changes only when a link
 is made or ended (partner names and ids, the tools; no live state such as up, down, working or

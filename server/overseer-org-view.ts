@@ -6,7 +6,7 @@ import type { NamedChange, OrgChange, OrgNeedsYou, OrgProject, Person, PersonCon
 import { AUTONOMY_MEANING, LIMIT_WHAT, PO_LIMIT_KINDS, type ProjectOverseerInfo } from "../shared/project-overseer";
 import { allBatons, batonById, nameOf, sessionPathOf, workspaceHasFile } from "./baton";
 import { personPage } from "./person-page";
-import { projectCost } from "./project-costs";
+import { projectCostLine } from "./project-costs";
 import { listDecisions } from "./reconcile";
 import { operatorName, orgCosts, orgDir, orgOfProject, readHistory, readIndex, readOrg, readOrgAbout, readOrgHistory, readProjects, readRoster, recentChanges } from "./orgs";
 import { projectOverseerPaths } from "./project-overseer-store";
@@ -466,8 +466,8 @@ export async function projectView(projectId: string, items = false, now = Date.n
   lines.push("");
   if (orgId) lines.push(`Last owner update: ${update ? `${ago(update.at, now)}${update.withdrawnAt ? " (taken down)" : ""}` : "none"}`);
   try {
-    const cost = await projectCost(projectId);
-    lines.push(`Cost: ${usd(cost.totalUsd)} at API prices, ${plural(cost.sessions, "session")} counted${cost.unpriced.length ? `; some tokens unpriced (${cost.unpriced.map((u) => u.model).join(", ")})` : ""}`);
+    // Formatted by the usage helper: the main loop parses none of its answer.
+    lines.push(await projectCostLine(projectId));
   } catch {
     lines.push("Cost: unavailable");
   }

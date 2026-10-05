@@ -8,7 +8,7 @@
 // working (nothing runs it); resuming needs a runtime, so nothing here is `resumable`.
 
 import { stat } from "node:fs/promises";
-import type { TokenUsage, TokenUsageTotal, WorkerInfo, WorkerStatus } from "../shared/protocol";
+import type { WorkerInfo, WorkerStatus } from "../shared/protocol";
 import {
   type FoldedWorkerManifest,
   manifestModes,
@@ -27,8 +27,6 @@ type Entry = Record<string, any>;
 export interface RestoredWorkers {
   /** Workers with a record on the active branch, newest activity first by the caller's sort. */
   workers: WorkerInfo[];
-  /** Lifetime Σ over every worker on every branch whose usage could be read; absent when none. */
-  usageTotal?: TokenUsageTotal;
 }
 
 /** An ended worker keeps its ending; anything that was alive when its host went away is restored. */
@@ -84,18 +82,10 @@ export class WorkerRestorer {
       }),
     );
     const workers: WorkerInfo[] = [];
-    const counted: WorkerUsage[] = [];
-    let asOf: number | undefined;
     for (const { m, summary, usage } of views) {
-      const snapshotAt = usage.source === "snapshot" ? usage.asOf : usage.costSource === "snapshot" ? usage.costAsOf : undefined;
-      if (usage.source !== "none") {
-        counted.push(usage);
-        if (snapshotAt !== undefined) asOf = Math.min(asOf ?? Infinity, snapshotAt);
-      }
-      if (!m.onActiveBranch) continue;
-      workers.push(workerInfo(m, summary, usage, snapshotAt, resolveWindow));
+      if (m.onActiveBranch) workers.push(workerInfo(m, summary, usage, resolveWindow));
     }
-    return { workers, ...(counted.length > 0 ? { usageTotal: totalOf(counted, asOf) } : {}) };
+    return { workers };
   }
 }
 
@@ -109,33 +99,12 @@ export function workersFromRecords(entries: readonly Entry[], branch: readonly E
   // The fold keeps first-record order, which is spawn order.
   for (const m of [...manifests.values()].reverse()) {
     if (!m.onActiveBranch || skip.has(m.workerId)) continue;
-    const usage = resolveWorkerUsage(undefined, m.usageSnapshot);
-    out.push(workerInfo(m, null, usage, usage.source === "snapshot" ? usage.asOf : undefined, resolveWindow));
+    out.push(workerInfo(m, null, resolveWorkerUsage(undefined, m.usageSnapshot), resolveWindow));
   }
   return out;
 }
 
-function tokens(u: WorkerUsage): TokenUsage {
-  return {
-    input: u.input, output: u.output, cacheRead: u.cacheRead, cacheWrite: u.cacheWrite,
-    ...(u.cost !== undefined && u.cost > 0 ? { cost: u.cost } : {}),
-  };
-}
-
-function totalOf(usages: WorkerUsage[], asOf: number | undefined): TokenUsageTotal {
-  // Nothing publishes these workers, so every one of them was rebuilt from its record: restored.
-  const t: TokenUsageTotal = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, workers: usages.length, restored: usages.length };
-  let cost = 0;
-  for (const u of usages) {
-    t.input += u.input; t.output += u.output; t.cacheRead += u.cacheRead; t.cacheWrite += u.cacheWrite;
-    cost += u.cost ?? 0;
-  }
-  if (cost > 0) t.cost = cost;
-  if (asOf !== undefined) t.asOf = asOf;
-  return t;
-}
-
-function workerInfo(m: FoldedWorkerManifest, summary: WorkerTranscriptSummary | null, usage: WorkerUsage, snapshotAt: number | undefined, resolveWindow: WindowResolver): WorkerInfo {
+function workerInfo(m: FoldedWorkerManifest, summary: WorkerTranscriptSummary | null, usage: WorkerUsage, resolveWindow: WindowResolver): WorkerInfo {
   const status = statusOf(m);
   // The model it ran under, as its running record names it (haiku-4.5 in every state): the
   // protocol's one rule, shared with the subagents extension.
@@ -165,14 +134,9 @@ function workerInfo(m: FoldedWorkerManifest, summary: WorkerTranscriptSummary | 
   if (m.team) w.teamId = m.team.teamId;
   const preview = summary?.lastAssistantText ?? m.spec?.taskPreview;
   if (preview) w.preview = preview.length > 200 ? `${preview.slice(0, 200)}…` : preview;
-  if (usage.source === "none") w.usageSource = "unavailable";
-  else {
-    w.usageSource = usage.source;
-    w.usage = tokens(usage);
-    if (snapshotAt !== undefined) w.usageAsOf = snapshotAt;
-    // Model replies, when its transcript or snapshot counted them; an older record says nothing.
-    if (typeof usage.turns === "number") w.turns = usage.turns;
-  }
+  // Model replies, when its transcript or snapshot counted them; an older record says nothing.
+  // (What it spent is the usage ledger's, never counted here.)
+  if (usage.source !== "none" && typeof usage.turns === "number") w.turns = usage.turns;
   // The extension's rule, so a hosted and an unhosted view agree: a worker that was idle when its
   // host went away is merely restored; one that was running (or lost, or never reported a status)
   // was cut off mid-turn.

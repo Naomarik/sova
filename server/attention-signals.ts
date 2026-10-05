@@ -9,6 +9,7 @@ import { maySend, terminalSession } from "./decide-settings";
 import type { RawLiveRecord } from "./live";
 import { isLooping, readSignals, signalsFile, type StoredStall, updateSignals, workerKey } from "./signals-store";
 import { activeBranch, parseLines } from "./transcript";
+import { withUsageContext } from "../pi-config/extensions/llm-inflight/attribution.ts";
 
 /**
  * Attention signals (Settings → Decisions → "needs you" marks): every FINISHED turn of a main
@@ -610,7 +611,8 @@ export class AttentionSignals {
     }
     const key = `${s.id}:${facts.turnId}`;
     const state = questions.stuck ? turnState(s.title, facts) : asksState(s.title, facts);
-    const result = await this.decide(key, "attention", state, questions);
+    // The usage ledger: this decision is the session's one-shot.
+    const result = await withUsageContext({ owner: s.id, cwd: s.cwd, kind: "oneshot" }, () => this.decide(key, "attention", state, questions));
     if (!result) return false;
     // The feature or the session's eligibility may have changed while the call ran: then drop it.
     if (exclusionReason(s, this.d.settings(), this.d.held(s.path), this.d.home)) return true;
@@ -762,7 +764,8 @@ export class AttentionSignals {
     }
     // A stuck check is keyed by its time slot.
     const dedupe = `${key}:stuck:${Math.floor(now / WORKER_STUCK_EVERY_MS)}`;
-    const result = await this.decide(dedupe, "worker", workerState(w, summary, now), { stuck: STUCK });
+    // The usage ledger: a worker's stuck check is a one-shot of the session that runs it.
+    const result = await withUsageContext({ owner: parent.id, cwd: parent.cwd, kind: "oneshot" }, () => this.decide(dedupe, "worker", workerState(w, summary, now), { stuck: STUCK }));
     if (!result) return false;
     // Two strikes: a looping answer counts only after a looping one before it in the same turn.
     const strikes = isLooping(result.answers) ? (sameTurn && prev && isLooping(prev.answers) ? (prev.strikes ?? 1) : 0) + 1 : 0;

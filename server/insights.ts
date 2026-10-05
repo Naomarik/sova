@@ -8,7 +8,6 @@ import type {
   CompactionInfo,
   ExplanationInfo,
   LiveAgentSession,
-  ModelSpend,
   OutlineSnapshot,
   OutlineTopic,
   RewindInfo,
@@ -16,14 +15,10 @@ import type {
   SessionInsight,
   SessionOutline,
   SessionSkills,
-  SessionUsage,
-  SpendOrigin,
   TeamDuty,
   TeamEvent,
   TeamInfo,
   TeamMember,
-  TokenUsage,
-  TokenUsageTotal,
   ClaudeLoginRow,
   ClaudePoolInfo,
   ClaudePoolLogin,
@@ -529,9 +524,6 @@ interface SessionFacts {
   sessionId: string | null;
   /** explain-doc entries on the active branch (the store is the other half; see explanations()). */
   explanations: ExplanationInfo[];
-  /** Main-thread spend from the active branch's assistant usage, per model (a model switch adds
-      a row). Workers are NOT included: they join in getSessionInsight from the live record. */
-  usage: { main: ModelSpendTotal; models: ModelSpendTotal[] };
   /** Which skills the branch's prompt offered, and which were loaded: see skills.ts. */
   skills: SessionSkills;
   /** The durable worker records (registry/manifest entries) on EVERY branch, in file order, and
@@ -550,29 +542,6 @@ interface SessionFacts {
 const FACTS_MAX = 64;
 const factsCache = new Map<string, { mtimeMs: number; size: number; facts: SessionFacts }>();
 
-/** A mutable token/cost Σ (protocol TokenUsage minus the optional cost). */
-interface ModelSpendTotal {
-  model: string;
-  input: number;
-  output: number;
-  cacheRead: number;
-  cacheWrite: number;
-  cost: number;
-}
-const zeroSpend = (model: string): ModelSpendTotal => ({ model, input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0 });
-const amount = (value: unknown): number =>
-  typeof value === "number" && Number.isFinite(value) && value > 0 ? value : 0;
-/** Assistant usage carries cost as {total}; WorkerUsage.cost is already a number. */
-type UsageLike = { input?: unknown; output?: unknown; cacheRead?: unknown; cacheWrite?: unknown; cost?: unknown };
-function addUsage(t: ModelSpendTotal, u: UsageLike | undefined | null): void {
-  if (!u || typeof u !== "object") return;
-  t.input += amount(u.input);
-  t.output += amount(u.output);
-  t.cacheRead += amount(u.cacheRead);
-  t.cacheWrite += amount(u.cacheWrite);
-  t.cost += amount(isRec(u.cost) ? u.cost.total : u.cost);
-}
-const spentSpend = (t: ModelSpendTotal): boolean => t.input + t.output + t.cacheRead + t.cacheWrite > 0;
 
 function decodeMember(m: unknown): RosterTeam["members"][number] | null {
   if (!isRec(m)) return null;
@@ -785,8 +754,6 @@ function extractFacts(text: string): SessionFacts {
   const rewinds: RewindInfo[] = [];
   const explanations: ExplanationInfo[] = [];
   const teamEvents: TeamEvent[] = [];
-  const main = zeroSpend("");
-  const byModel = new Map<string, ModelSpendTotal>();
   const entries = parseLines(text);
   const header = entries.find((e) => e.type === "session");
   const branch = activeBranch(entries);
@@ -812,19 +779,8 @@ function extractFacts(text: string): SessionFacts {
     else if (e.type === "custom" && e.customType === EXPLAIN_ENTRY) {
       const x = decodeExplanation(e.data);
       if (x) explanations.push(x);
-    } else if (e.type === "message" && e.message?.role === "assistant" && isRec(e.message)) {
-      // Per-model main-thread spend: assistant entries carry their own provider/model + usage.
-      const m = e.message;
-      if (typeof m.provider === "string" && typeof m.model === "string") {
-        const ref = `${m.provider}/${m.model}`;
-        const row = byModel.get(ref) ?? zeroSpend(ref);
-        addUsage(row, m.usage);
-        byModel.set(ref, row);
-        addUsage(main, m.usage);
-      }
     }
   }
-  const models = [...byModel.values()].filter(spentSpend).sort((a, b) => a.model.localeCompare(b.model));
   const activeRecords = allRecords.filter((e) => branchIds.has(e.id));
   return {
     teams: [...teams.values()],
@@ -836,7 +792,6 @@ function extractFacts(text: string): SessionFacts {
     rewinds,
     explanations,
     sessionId: (header ? str(header.id) : undefined) ?? null,
-    usage: { main, models },
     skills: collectSkills(branch),
     workerRecords: { all: allRecords, active: activeRecords },
     teamEvents,
@@ -856,7 +811,7 @@ function workerCwds(records: Rec[]): Map<string, string> {
   return out;
 }
 
-const EMPTY_FACTS: SessionFacts = { teams: [], reports: new Map(), outline: null, outlines: [], compactions: [], rewinds: [], explanations: [], sessionId: null, usage: { main: zeroSpend(""), models: [] }, skills: { offered: [], used: [] }, workerRecords: { all: [], active: [] }, teamEvents: [], settled: new Map() };
+const EMPTY_FACTS: SessionFacts = { teams: [], reports: new Map(), outline: null, outlines: [], compactions: [], rewinds: [], explanations: [], sessionId: null, skills: { offered: [], used: [] }, workerRecords: { all: [], active: [] }, teamEvents: [], settled: new Map() };
 
 async function sessionFacts(path: string): Promise<SessionFacts> {
   try {
@@ -903,28 +858,6 @@ function workerStatus(v: unknown): WorkerStatus {
   return WORKER_ALIASES[s] ?? "running"; // schema: unknown ⇒ running
 }
 
-/** Token counts are advisory: a bad field is 0, a non-object usage is dropped. */
-function decodeUsage(v: unknown): TokenUsage | undefined {
-  if (!isRec(v)) return undefined;
-  const cost = num(v.cost);
-  return {
-    input: count(v.input), output: count(v.output), cacheRead: count(v.cacheRead), cacheWrite: count(v.cacheWrite),
-    ...(cost !== undefined && cost > 0 ? { cost } : {}),
-  };
-}
-
-/** presence.workerUsage: the session-lifetime Σ. It covers workers the record no longer lists,
-    so it is never recomputed from presence.workers. */
-export function decodeUsageTotal(presence: Rec | undefined): TokenUsageTotal | undefined {
-  if (!isRec(presence?.workerUsage)) return undefined;
-  const usage = decodeUsage(presence.workerUsage);
-  const asOf = num(presence.workerUsage.asOf);
-  const restored = count(presence.workerUsage.restored);
-  return usage
-    ? { ...usage, workers: count(presence.workerUsage.workers), ...(asOf !== undefined ? { asOf } : {}), ...(restored > 0 ? { restored } : {}) }
-    : undefined;
-}
-
 /** `hosted`: the record is one of this server's own runtimes, the only place Sova can resume a
     restored worker. Anyone else's `resumable` (a TUI's) is dropped. */
 function decodeWorker(w: unknown, hosted: boolean): WorkerInfo | null {
@@ -954,17 +887,9 @@ function decodeWorker(w: unknown, hosted: boolean): WorkerInfo | null {
     if (t !== undefined) out[k] = t;
   }
   if (w.outcome === "success" || w.outcome === "error" || w.outcome === "aborted") out.outcome = w.outcome;
-  const usage = decodeUsage(w.usage);
-  if (usage) out.usage = usage;
-  // Top-level beside usage (the record's size trim drops usage first); absent stays unknown.
+  // The record's own usage fields are the TUI's; what a worker spent is the usage ledger's.
+  // Absent turns stay unknown.
   if (typeof w.turns === "number" && Number.isSafeInteger(w.turns) && w.turns >= 0) out.turns = w.turns;
-  // Restored workers (subagents extension): where their number came from, and since when. The
-  // record's "none" is the wire's "unavailable": no number, and the pane must not read 0.
-  const source = w.usageSource === "none" ? "unavailable" : w.usageSource;
-  if (source === "transcript" || source === "snapshot" || source === "unavailable") out.usageSource = source;
-  if (out.usageSource === "unavailable") delete out.usage;
-  const asOf = num(w.usageAsOf);
-  if (asOf !== undefined && out.usageSource !== "unavailable") out.usageAsOf = asOf;
   const interrupted = num(w.interruptedAt);
   if (interrupted !== undefined) out.interruptedAt = interrupted;
   if (hosted && w.resumable === true) out.resumable = true;
@@ -1053,7 +978,6 @@ async function liveSession({ sessionFile, pid, rec }: RawLiveRecord): Promise<Li
         error: workers.filter((w) => w.status === "error").length,
         killed: workers.filter((w) => w.status === "killed").length,
       };
-  const usageTotal = decodeUsageTotal(presence);
   // Only expose paths the rest of the API accepts as session keys.
   const path = sessionFile ? resolveSessionPath(sessionFile) : null;
   const teams = path ? joinTeams(await sessionFacts(path), path, workers) : [];
@@ -1069,7 +993,6 @@ async function liveSession({ sessionFile, pid, rec }: RawLiveRecord): Promise<Li
     state: sessionState(presence, session),
     workerCounts,
     workers,
-    ...(usageTotal ? { usageTotal } : {}),
     teams,
   };
 }
@@ -1213,15 +1136,11 @@ export async function getSessionInsight(path: string): Promise<SessionInsight> {
   const workers = live
     ? withWorkerContext(decodeWorkers(presence, live.pid === process.pid), contextReader, resolveWindow, claudeSpawnModels(facts.workerRecords.all))
     : restored && restored.workers.length > 0 ? restored.workers : null;
-  const usageTotal = live ? decodeUsageTotal(presence) : restored?.usageTotal;
   // The record lists at most 40 of the workers it counts: the pane offers the rest on request.
   const counted = live ? workerCountsOf(live.rec)?.total : undefined;
   const workerTotal = workers && counted !== undefined && counted > workers.length ? counted : undefined;
-  // Teams first: joinTeams gives each member its teamId, and a member's spend is a "team" row. Built
-  // after, the hosted view filed members under subagents while the file view (which knows the
-  // team from the record) said team.
+  // What the session spent is the usage ledger's (/api/usage/session), never counted here.
   const teams = joinTeams(facts, path, workers);
-  const usage = buildUsage(facts, workers, usageTotal);
   // A worker's own transcript is the only record of what it loaded (see server/worker-skills.ts).
   // mtime-cached, because this endpoint is polled every 3s while the pane is open.
   const skillsLoaded = workers && workers.length > 0 ? await workerSkills(workers) : undefined;
@@ -1235,8 +1154,6 @@ export async function getSessionInsight(path: string): Promise<SessionInsight> {
     ...(workerTotal !== undefined ? { workerTotal } : {}),
     ...(hasSkills(facts.skills) ? { skills: facts.skills } : {}),
     ...(skillsLoaded ? { workerSkills: skillsLoaded } : {}),
-    ...(usageTotal ? { usageTotal } : {}),
-    ...(usage ? { usage } : {}),
     explanations: await explanations(facts),
     ...(await worktreeRows(facts, workers, path)),
     ...(await linkRows(facts.sessionId, path)),
@@ -1293,55 +1210,6 @@ const goneOfReadiness = (rd: WorktreeReadiness): NonNullable<SessionWorktreeInfo
   rd.state === "merged" ? "merged" : rd.why === "not merged" ? "unmerged" : rd.why === REMOVED_EMPTY ? "empty" : "unknown";
 
 const withReadiness = (row: SessionWorktreeInfo, readiness: WorktreeReadiness | undefined): SessionWorktreeInfo => (readiness ? { ...row, readiness } : row);
-
-/** SessionUsage = main rows from the branch tally + worker rows from the live record (team
- *  members via teamId), or undefined while nothing was spent. The lifetime workers Σ rides along
- *  separately: it can exceed the worker rows (evicted workers). */
-function buildUsage(
-  facts: SessionFacts,
-  workers: WorkerInfo[] | null,
-  usageTotal: TokenUsageTotal | undefined,
-): SessionUsage | undefined {
-  const byKey = new Map<string, { t: ModelSpendTotal; origin: SpendOrigin; asOf?: number }>();
-  for (const m of facts.usage.models) byKey.set(`main:${m.model}`, { t: { ...m }, origin: "main" });
-  const unavailable: string[] = [];
-  for (const w of workers ?? []) {
-    if (w.usageSource === "unavailable") unavailable.push(w.id); // unknown, which is not 0
-    if (!w.usage) continue; // nothing spent yet / older pi-config
-    const origin: SpendOrigin = w.teamId ? "team" : "subagents";
-    const model = w.model || "unknown";
-    const key = `${origin}:${model}`;
-    const acc = byKey.get(key) ?? { t: zeroSpend(model), origin };
-    addUsage(acc.t, w.usage);
-    // A snapshot row is only as true as its oldest part: that is the time it can claim.
-    // (a Claude worker's cost alone can be one: its transcript records tokens, never cost).
-    if (w.usageAsOf !== undefined) acc.asOf = Math.min(acc.asOf ?? Infinity, w.usageAsOf);
-    byKey.set(key, acc);
-  }
-  const order = { main: 0, subagents: 1, team: 2 } as const;
-  const accs = [...byKey.values()].filter((a) => spentSpend(a.t));
-  accs.sort((a, b) => order[a.origin] - order[b.origin] || a.t.model.localeCompare(b.t.model));
-  const total = zeroSpend("");
-  for (const a of accs) addUsage(total, a.t);
-  if (!spentSpend(total) && unavailable.length === 0) return undefined;
-  return {
-    total: toUsage(total),
-    main: toUsage(facts.usage.main),
-    models: accs.map((a) => ({ ...spendOf(a.t, a.origin), ...(a.asOf !== undefined ? { asOf: a.asOf } : {}) })),
-    ...(usageTotal ? { workersTotal: usageTotal } : {}),
-    ...(unavailable.length > 0 ? { unavailable } : {}),
-  };
-}
-
-/** ModelSpendTotal → the wire shapes (cost only when it was reported). */
-const toUsage = (t: ModelSpendTotal): TokenUsage => ({
-  input: t.input,
-  output: t.output,
-  cacheRead: t.cacheRead,
-  cacheWrite: t.cacheWrite,
-  ...(t.cost > 0 ? { cost: t.cost } : {}),
-});
-const spendOf = (t: ModelSpendTotal, origin: SpendOrigin): ModelSpend => ({ model: t.model, origin, ...toUsage(t) });
 
 /** A session's team members with a standing duty (monitor, coordinator), by worker id: attention
     signals never judge them stuck (server/attention-signals.ts), since they poll on purpose. */

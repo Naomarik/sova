@@ -7,6 +7,7 @@ kept, plus one number per call: at its end, its reply's **output tokens** (reaso
 never input or cache reads) go into a ring of 60 epoch-aligned 30 s slots (30 minutes), spread
 evenly back over the time the reply streamed. No payload, prompt, reply or credential is read or
 stored, and nothing is written per token: the tokens change with the call's end, as one change.
+At that same end each call also appends one usage record, its token counts only (below).
 
 ## The pieces
 
@@ -67,6 +68,36 @@ stored, and nothing is written per token: the tokens change with the call's end,
   includes, transitively (a worker reports its own producer and its own `folded`). A reader skips
   any record or worker file whose producer is already folded into a count it took. This covers a
   worker that also loads the sessions extension (the agent_spawn `extensions` parameter allows it).
+
+## The usage ledger
+
+The same call ends also write the process's **usage records** (`usage-record.ts`: the shape, the
+strict parse and the writer; `<agent dir>/usage/v1/<UTC day>/<producer>.jsonl`, one line per call,
+token counts only, never a price):
+
+- `runtime.ts`: one record per pi call with tokens, at its stream's end (a deferred handle at its
+  final reply), key `pi:<session>:<message.timestamp>:<provider>/<model>` for a registered
+  session's reply, else `<producer>:<seq>`. A `claude-code-cli` reply is skipped once a bridge
+  records that provider in this process.
+- `claude.ts` + `claude-usage.ts` (an observer created with `usage`): one record per Anthropic
+  message id (`cc:<id>`), its `message_start` / `message_delta` / `assistant` usage merged by the
+  max per field; at each `result`, a `claude-residual` per model for what the cumulative
+  `modelUsage` shows beyond the recorded messages, against the session's last total in
+  `<agent dir>/usage/cc-baseline/<claude session>.json` (`ccr:<session>:<total>:<model>`). A
+  resume, fork or re-adoption with no baseline takes its first result as the baseline; a replayed
+  result at or under it adds nothing. Workers (`claude-code/runner.ts`) and the provider bridge
+  (`provider/session-bridge.ts`) both record; the bridge claims `claude-code-cli` from the runtime.
+- `record.ts`: `recordUsage` (fills producer, device, key), `recordClaudeEnvelope` for a
+  `claude -p --output-format json` run (`cp:<envelope session>:<model>`; Sova's decisions and
+  titles, topic-outline's Claude summarizer), and the provider claim.
+- `attribution.ts`: whose call it is. A request's `sessionId` is a routing id: it names the owner
+  only when that session registered (`registerUsageSession`: this extension at `session_start`,
+  Sova's chat manager for its hosted chats, `noteUsageSession` for an Overseer's kind). Otherwise
+  the caller's `withUsageContext({owner, cwd, purpose, kind, project, starter})` (an
+  AsyncLocalStorage scope, so concurrent side calls keep their own), else the process's only
+  session, else none. `withUsagePurpose` marks a side call that never falls back. A pi worker
+  names its parent from `PI_USAGE_PARENT=<parent session>:<worker id>`, which the subagents
+  extension sets at every spawn (a Claude Code worker's runner reads it from its spawn options).
 
 ## Who counts what
 

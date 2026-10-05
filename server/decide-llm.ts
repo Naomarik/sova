@@ -7,6 +7,9 @@ import { join } from "node:path";
 // provider as background work (§app.provider-limits/queue), within its own timeout.
 import { acquireSlot, defaultAgentDir, whileHolding, type Slot } from "../pi-config/extensions/provider-limits/gate.ts";
 import { beginLlmCall } from "../pi-config/extensions/llm-inflight/tracker.ts";
+// The usage ledger (builtins only): a pi call records itself in the runtime; a `claude -p` run here.
+import { resolveUsageAttribution, withUsagePurpose } from "../pi-config/extensions/llm-inflight/attribution.ts";
+import { recordClaudeEnvelope } from "../pi-config/extensions/llm-inflight/record.ts";
 import type { ModelPolicy, WorkerChoice } from "../shared/protocol";
 import {
   DecisionError,
@@ -130,7 +133,10 @@ export function createLlmProvider(choice: WorkerChoice, deps: LlmProviderDeps): 
       if (denied) throw fail("unavailable", denied);
       const started = Date.now();
       const prompt = buildPrompt(req);
-      const out = choice.backend === "pi" ? await runPi(choice, prompt, req, deps, timeoutMs, fail) : await runClaude(choice, prompt, req, deps, timeoutMs, fail);
+      // Its usage record names the session its caller named (usage context), else none.
+      const out = await withUsagePurpose(usagePurposeOf(req), () =>
+        choice.backend === "pi" ? runPi(choice, prompt, req, deps, timeoutMs, fail) : runClaude(choice, prompt, req, deps, timeoutMs, fail),
+      );
       let answers;
       try {
         answers = normalizeAnswers(req.questions, out.json);
@@ -141,6 +147,9 @@ export function createLlmProvider(choice: WorkerChoice, deps: LlmProviderDeps): 
     },
   };
 }
+
+/** A decision's usage-ledger purpose: a project's reconcile run is its own, every other one `decide`. Pure. */
+export const usagePurposeOf = (req: Pick<DecisionRequest, "purpose">): string => (req.purpose === "reconcile" ? "reconcile" : "decide");
 
 export type Fail = (failure: DecisionFailure, message: string) => DecisionError;
 type RunOut = { json: unknown; usage?: DecisionUsage };
@@ -366,8 +375,13 @@ export async function claudeRun(argv: string[], input: string, deps: LlmProvider
   // request isn't visible, so the bounds are approximate. A timeout or an abort kills the
   // process, and the call ends at its exit, not at the kill.
   const call = beginLlmCall({ source: "claude-oneshot", approximate: true });
+  // Whose call it is, as the caller's usage context says when the run starts; recorded from its envelope.
+  const who = resolveUsageAttribution();
+  const model = argv[argv.indexOf("--model") + 1];
   try {
-    return await claudeSpawn(argv, input, deps, Math.max(1, timeoutMs - (Date.now() - started)), fail, signal, call);
+    const stdout = await claudeSpawn(argv, input, deps, Math.max(1, timeoutMs - (Date.now() - started)), fail, signal, call);
+    recordClaudeEnvelope(stdout, who, argv.includes("--model") ? model : undefined);
+    return stdout;
   } finally {
     slot?.release();
   }

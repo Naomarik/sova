@@ -111,7 +111,6 @@ import { GroupPicker } from "./GroupPicker";
 import { EMPTY_GROUP_REASON, NO_GROUPS_NOTE } from "../lib/group-picker";
 import { RemoteGroupDot } from "./RemoteStatus";
 import { Banner, Icon, trapFocus } from "./ui";
-import { SHARES_HREF } from "../lib/session-shares";
 import { showSummaries } from "../lib/summary-line";
 import {
   effectiveHostFilter,
@@ -1248,8 +1247,6 @@ export function Sidebar(props: {
   peerWork?: WorkPeer[];
   /** The insights page that's open (`#/usage` or `#/agents`), for aria-current on its foot row. */
   insightsPage: "usage" | "agents" | null;
-  /** `#/shares` is open, for aria-current on its foot row (§app.session-share/shares-page). */
-  sharesOpen?: boolean;
   /** Opens the Settings dialog from the foot's gear. */
   onOpenSettings(): void;
   /** The viewport is ≥768px: the only width where the pane can collapse to the spine. */
@@ -1954,8 +1951,8 @@ export function Sidebar(props: {
     </Show>
   );
 
-  /** The foot's four rows, as §app.insights/sidebar-foot draws them: the host filter (mesh only),
-      the Usage glance with its monitor button, Agents with its Settings gear, and Shares. On the
+  /** The foot's rows, as §app.insights/sidebar-foot draws them: the host filter (mesh only), the
+      Usage glance with its monitor button, and Agents with its Settings gear. On the
       desktop they sit in `.sidebar-foot`; on a phone the foot bar's sheet holds them, verbatim. */
   const FootRows = () => (
     <>
@@ -1982,11 +1979,6 @@ export function Sidebar(props: {
         </button>
       </div>
       <AgentsFootRow />
-      {/* Every public link, and who is looking (§app.session-share/shares-page). */}
-      <a class="list-row list-row-interactive insights-row sidebar-foot-link" href={SHARES_HREF} aria-current={props.sharesOpen ? "page" : undefined}>
-        <Icon name="external" />
-        <span class="insights-row-text">Shares</span>
-      </a>
     </>
   );
 
@@ -2169,7 +2161,7 @@ export function Sidebar(props: {
       facts.push(workSentence().replace(/\.$/, ""));
       const caps = glance().flatMap((p) => [p.full, ...(p.others ?? [])]);
       if (caps.length) facts.push(caps.join(". "));
-      return `${facts.join(". ")}. Open hosts, usage, agents and shares.`;
+      return `${facts.join(". ")}. Open hosts, usage and agents.`;
     };
     return (
       <>
@@ -2216,7 +2208,7 @@ export function Sidebar(props: {
               class="modal sidebar-foot-sheet"
               role="dialog"
               aria-modal="true"
-              aria-label="Hosts, usage, agents and shares"
+              aria-label="Hosts, usage and agents"
               ref={(el) => trapFocus(el)}
               onKeyDown={(e) => {
                 if (e.key === "Escape") close();
@@ -2414,9 +2406,6 @@ export function Sidebar(props: {
             aria-label={agentsLabel()}
           >
             <Icon name="worker" />
-          </a>
-          <a class="button button-icon spine-item" href={SHARES_HREF} aria-current={props.sharesOpen ? "page" : undefined} title="Shares" aria-label="Shares">
-            <Icon name="external" />
           </a>
           <button type="button" class="button button-icon spine-item" title="Settings" aria-label="Settings" onClick={() => props.onOpenSettings()}>
             <Icon name="settings" />

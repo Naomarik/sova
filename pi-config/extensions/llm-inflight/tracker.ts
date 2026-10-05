@@ -203,6 +203,11 @@ function changed(s: State): void {
 	}
 }
 
+/** This process's producer id (its usage records' file name, usage-record.ts). */
+export function producerId(): string {
+	return state().producer;
+}
+
 /** Start one logical call: from its issue until its response ends, fails or is aborted. */
 export function beginLlmCall(opts: {
 	source: LlmCallSource | string;

@@ -163,7 +163,7 @@ are never empty.
 These differ between the runtimes but need nothing in `server/runtime-quirks.ts`. They have no
 canary because they are test-harness or tooling facts, not bugs Sova works around.
 
-- **NODE_TEST_CONTEXT is unset under `bun test`.** `server/model-prices.ts` turns its price
+- **NODE_TEST_CONTEXT is unset under `bun test`.** `server/usage-helper/price-book.ts` turns its price
   refresh off when it sees Node's runner. Under `bun test` it would fetch models.dev, and the mesh
   tests' "no outbound request" checks would fail. The Bun runner sets `SOVA_PRICES_FETCH=off`.
 - **Loader hooks:** `module.register` and `module.registerHooks` don't apply under Bun. Tests that

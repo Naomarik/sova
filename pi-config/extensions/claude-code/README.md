@@ -20,7 +20,7 @@ directly, never a shell alias. No credentials are copied into configuration.
 
 ## Discover models
 
-Use `agent_models` with `backend: "claude-code"`, or `/subagents models opus`.
+Use `agent_models` with `backend: "claude-code"`.
 Choices and effort levels come from the installed CLI's initialize response,
 without a model request. Only model metadata is returned, never account details.
 The CLI's list no longer carries the 1M-context forms it still accepts, so

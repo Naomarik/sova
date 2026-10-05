@@ -3537,28 +3537,9 @@ export function registerSubagents(
 			return view;
 		});
 	};
-	const command = async (args: string, ctx: ExtensionContext) => {
-		if (!args.trim()) return openModal(ctx);
-		if (!/^models(?:\s|$)/.test(args.trim())) {
-			ctx.ui.notify("Usage: /subagents or /subagents models [search]", "info");
-			return;
-		}
-		context(ctx);
-		const catalog = await modelCatalog(ctx);
-		if (shuttingDown) return;
-		for (const error of catalog.errors) ctx.ui.notify(`${error.backend}: ${error.error}`, "warning");
-		const matches = matchingModels(catalog.models, args.trim().slice(6).trim());
-		if (!matches.length) { ctx.ui.notify("No matching subagent models.", "warning"); return; }
-		const labels = matches.map(model => `[${model.backend}] ${model.id} — ${model.name}`);
-		const choice = await ctx.ui.select("Choose a subagent model", labels);
-		if (choice === undefined || shuttingDown) return;
-		const selected = matches[labels.indexOf(choice)];
-		if (selected) ctx.ui.setEditorText(`Use a ${selected.backend} subagent with model ${selected.id} to `);
-	};
 	for (const name of ["agents", "subagents"]) pi.registerCommand(name, {
-		description: "Open the subagent monitor, or models [search] to choose a worker model",
-		getArgumentCompletions: (prefix) => "models".startsWith(prefix) ? [{ value: "models", label: "models", description: "Discover and choose a worker model" }] : null,
-		handler: command,
+		description: "Open the subagent monitor",
+		handler: async (_args, ctx) => openModal(ctx),
 	});
 	// `/team <objective>` planning request: one extension-origin message
 	// (customType "team-plan", displayed) telling the parent agent to plan and

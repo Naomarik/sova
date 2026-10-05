@@ -13,13 +13,13 @@ Run `/reload` once after installation, then press **Ctrl+P** or use `/palette`.
 - `/palette <category>` opens directly at a root category by id (matched
   case-insensitively), e.g. `/palette mode`.
 - Categories include models, thinking, mode, sessions, settings, providers,
-  export, display, installed extension commands, prompt templates, and skills.
+  export, display and installed extension commands.
 - Rows marked `○`/`◉` are on/off toggles: Enter flips them in place and the
   palette stays open (footer: *Enter toggle*). A failed toggle shows an inline
   error without closing.
 - Extension commands are discovered when the palette opens. Each has Run and
-  With arguments options. Skills/templates compose editable text for review;
-  they do not start a model request until you submit from the main editor.
+  With arguments options. Skills and prompt templates are not listed: they
+  start model work, so type them in the editor.
 - Sharing asks for confirmation before uploading anything.
 - Session-changing operations are blocked while Pi is busy.
 

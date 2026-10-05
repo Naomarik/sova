@@ -127,8 +127,9 @@ test('render stays within terminal width, including unicode and resizing', () =>
 });
 function harness() {
   const events = new Map(); const commands = new Map(); const shortcuts = new Map();
-  const sent = []; const notices = []; let draft = 'unfinished draft'; let picker;
+  const sent = []; const notices = []; let draft = 'unfinished draft'; let picker; let roots;
   const listeners = new Map();
+  const commandList = [{ name: 'agents', source: 'extension', description: 'Manage agents' }];
   const bus = {
     on(name, handler) {
       const set = listeners.get(name) ?? new Set(); set.add(handler); listeners.set(name, set);
@@ -141,7 +142,7 @@ function harness() {
   const pi = { events: bus, on: (name, cb) => events.set(name, cb),
     registerCommand: (name, config) => commands.set(name, config),
     registerShortcut: (name, config) => shortcuts.set(name, config),
-    getCommands: () => [{ name: 'agents', source: 'extension', description: 'Manage agents' }],
+    getCommands: () => commandList,
     sendUserMessage: (...args) => sent.push(args),
   };
   let target = 'All settings';
@@ -154,6 +155,7 @@ function harness() {
     custom: async factory => {
       let selected;
       const p = factory({ requestRender() {}, terminal: { rows: 32 } }, theme, keys, item => { selected = item; });
+      roots = p.stack[0].items;
       p.handleInput(target); p.handleInput('\r');
       // Extensions have a confirmation submenu.
       if (!selected) p.handleInput('\r');
@@ -162,7 +164,8 @@ function harness() {
   } };
   extension(pi); events.get('session_start')({}, ctx);
   return { ctx, events, bus, commands, shortcuts, sent, notices, fakeEditor,
-    draft: () => draft, picker: () => picker, choose: text => { target = text; } };
+    draft: () => draft, picker: () => picker, choose: text => { target = text; },
+    commandList, roots: () => roots };
 }
 test('built-in dispatch opens real UI without sending to model and restores draft', async () => {
   const h = harness();
@@ -176,6 +179,20 @@ test('extension commands use explicit dispatch and preserve draft', async () => 
   await h.shortcuts.get('ctrl+p').handler(h.ctx);
   assert.deepEqual(h.sent, [['/agents', { expandPromptTemplates: true, deliverAs: 'followUp' }]]);
   assert.equal(h.draft(), 'unfinished draft');
+});
+test('skills and prompt templates have no palette root; extension commands keep theirs', async () => {
+  const h = harness(); h.choose('Display');
+  h.commandList.push({ name: 'skill:review', source: 'skill', description: 'Review code' },
+    { name: 'fix', source: 'prompt', description: 'Fix template' });
+  await h.shortcuts.get('ctrl+p').handler(h.ctx);
+  const labels = h.roots().map(root => root.label);
+  assert.ok(labels.includes('Extensions'));
+  assert.ok(!labels.includes('Skills') && !labels.includes('Prompt templates'), labels.join(', '));
+  const ids = []; const walk = items => { for (const item of items) { ids.push(item.id); walk(item.children ?? []); } };
+  walk(h.roots());
+  assert.ok(ids.includes('extension:agents'));
+  assert.ok(!ids.some(id => /skill:review|fix/.test(id)), ids.filter(id => /skill|fix/.test(id)).join(', '));
+  assert.deepEqual(h.sent, []);
 });
 test('session-changing actions are blocked while busy', async () => {
   const h = harness(); h.choose('New session'); h.ctx.isIdle = () => false;

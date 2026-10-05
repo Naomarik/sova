@@ -21,7 +21,7 @@ installs with `install.sh` alone, without the web app.
 | `models.json` | Extra providers and model overrides (local Ollama and Ollama Cloud) |
 | `extensions/subagents/` | Background subagents with steering, wake-on-complete, fork, a monitor, and native coordinated teams |
 | `extensions/claude-code/` | `claude-code` worker backend for the subagent tools, driving the installed Claude Code CLI |
-| `extensions/command-palette/` | `Ctrl+P` palette over models, sessions, settings, extension commands and skills |
+| `extensions/command-palette/` | `Ctrl+P` palette over models, sessions, settings and extension commands |
 | `extensions/extension-toggle/` | `/extensions` to switch extensions on and off in-session |
 | `extensions/compact-handoff/` | `/compact-handoff [focus \| cancel]`: a read-only background fork of the session writes a handoff note, which is saved to `~/.pi/agent/compact-handoffs/<session id>.md` and the session's `compact-handoff` entry, then the session compacts; after this and every later compaction the newest note on the branch is added back, hidden, right after the summary |
 | `extensions/explain/` | `/explain <topic>`: one forked subagent writes a self-contained HTML explanation into `~/.pi/agent/explanations/`, kept forever and read in Sova |

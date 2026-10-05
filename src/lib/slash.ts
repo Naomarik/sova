@@ -57,6 +57,7 @@ export const TUI_ONLY_COMMANDS: ReadonlySet<string> = new Set([
   "extensions",
   "websearch",
   "subagents",
+  "agents",
 ]);
 
 /** Whether the "/" menu leaves this command out: TUI-only ones, and "team" in every form. */
@@ -90,8 +91,8 @@ export interface LocalCommandOptions {
 /**
  * The local command a message is, if any. A bare "/agents" or
  * "/subagents" opens the subagents pane here: the runtime's monitor is TUI-only, so forwarding it
- * only earns a "requires Pi's interactive TUI" notice. With arguments ("/subagents models …") it
- * is the runtime's command and goes through untouched. A bare "/new" starts a fresh session in the
+ * only earns a "requires Pi's interactive TUI" notice. With arguments ("/agents now") it is the
+ * runtime's command and goes through untouched. A bare "/new" starts a fresh session in the
  * same folder, like the TUI's own; the runtime doesn't register it. A bare "/tree" opens the
  * session pane's Timeline filtered to your messages, where rows rewind the chat: pi's own "/tree" is a TUI built-in, so
  * sent as a prompt it would reach the model as literal text. A bare "/timeline" opens the pane's

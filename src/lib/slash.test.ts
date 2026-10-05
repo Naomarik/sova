@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { enterRunsLocal, localCommand, menuCommands, slashMenuSuppressed, tuiOnlyCommand } from "./slash";
+import { TUI_ONLY_COMMANDS, enterRunsLocal, localCommand, menuCommands, slashMenuSuppressed, tuiOnlyCommand } from "./slash";
 
 test("localCommand claims a bare /agents and /subagents", () => {
   assert.equal(localCommand("/agents"), "subagents");
@@ -9,7 +9,7 @@ test("localCommand claims a bare /agents and /subagents", () => {
 });
 
 test("localCommand leaves everything else to the runtime", () => {
-  assert.equal(localCommand("/subagents models haiku"), null); // the runtime's model picker
+  assert.equal(localCommand("/subagents now"), null); // the runtime's (it opens its terminal monitor)
   assert.equal(localCommand("/agents please"), null);
   assert.equal(localCommand("/team"), null);
   assert.equal(localCommand("agents"), null);
@@ -124,15 +124,25 @@ test("/mode is local only where the Overseer turns it on, arguments and all", ()
 });
 
 test("menuCommands leaves TUI-only commands and every form of team out of the menu", () => {
-  const names = ["compact", "sessions", "sessions-back", "palette", "usage", "subagents", "websearch", "team", "team:x", "team-y", "teammate", "remote", "btw:new", "skill:omarchy"];
+  const names = ["compact", "sessions", "sessions-back", "palette", "usage", "subagents", "agents", "websearch", "team", "team:x", "team-y", "teammate", "remote", "btw:new", "skill:omarchy"];
   const shown = menuCommands(names.map((name) => ({ name, source: "extension" as const }))).map((c) => c.name);
   assert.deepEqual(shown, ["compact", "teammate", "remote", "btw:new", "skill:omarchy"]);
+});
+
+test("/agents, like /subagents, only opens the terminal monitor: TUI-only, left out of the menu, still a local command typed bare", () => {
+  assert.ok(TUI_ONLY_COMMANDS.has("agents") && TUI_ONLY_COMMANDS.has("subagents"));
+  const shown = menuCommands(["agents", "subagents", "compact"].map((name) => ({ name, source: "extension" as const }))).map((c) => c.name);
+  assert.deepEqual(shown, ["compact"]);
+  assert.equal(tuiOnlyCommand("/agents"), "agents");
+  assert.equal(localCommand("/agents"), "subagents");
+  assert.equal(enterRunsLocal("/agents", "Enter", false), true);
 });
 
 test("tuiOnlyCommand names a bare TUI-only command typed in full, nothing else", () => {
   assert.equal(tuiOnlyCommand("/sessions"), "sessions");
   assert.equal(tuiOnlyCommand("  /usage-refresh "), "usage-refresh");
-  assert.equal(tuiOnlyCommand("/subagents models x"), null);
+  assert.equal(tuiOnlyCommand("/subagents now"), null);
+  assert.equal(tuiOnlyCommand("/agents x"), null);
   assert.equal(tuiOnlyCommand("/sess"), null);
   assert.equal(tuiOnlyCommand("/team"), null);
   assert.equal(tuiOnlyCommand("/remote"), null);

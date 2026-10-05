@@ -77,6 +77,11 @@ export function SubagentProfilesSettings() {
   const [openSections, setOpenSections] = createSignal<Set<EditorSection>>(new Set(["delegate"]));
   let editorEl: HTMLElement | undefined;
   let backButton: HTMLButtonElement | undefined;
+  /** Bring `el` to the panel's top. The panel alone scrolls: scrollIntoView would also scroll the modal, hiding its title. */
+  const scrollToTop = (el: HTMLElement | null | undefined) => {
+    const panel = el?.closest<HTMLElement>(".settings-panel");
+    if (el && panel) panel.scrollTop += el.getBoundingClientRect().top - panel.getBoundingClientRect().top;
+  };
 
   /** The resource read only when it isn't in an error state. */
   const safeInfo = () => (info.error ? undefined : info());
@@ -104,7 +109,7 @@ export function SubagentProfilesSettings() {
     setOpenSections(new Set<EditorSection>(["delegate", section]));
     setEditorShown(true);
     queueMicrotask(() => {
-      editorEl?.scrollIntoView({ block: "start" });
+      scrollToTop(editorEl);
       if (focus) backButton?.focus();
     });
   };
@@ -135,7 +140,7 @@ export function SubagentProfilesSettings() {
     if (settingsSection() !== "spec" || !inEditor()) return;
     clearSettingsSection();
     setOpen("spec", true);
-    requestAnimationFrame(() => document.getElementById("subagents-spec")?.scrollIntoView({ block: "start" }));
+    requestAnimationFrame(() => scrollToTop(document.getElementById("subagents-spec")));
   });
   // A section that comes to hold something Save waits for opens itself — once, when it starts to,
   // so the user can still fold it while they fix something else.

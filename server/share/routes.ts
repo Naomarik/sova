@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { extname, join, resolve } from "node:path";
 import { Hono } from "hono";
 import { SHARE_TEXT_MAX, type GoneWhy } from "../../shared/baton";
+import { FRAME_HOST_NAME, FRAME_HOST_PATH, frameHostHeaders } from "../../shared/vis-frame-host";
 import { linkAccess, noteMessage, sessionPathOf, undoNote } from "../baton";
 import { findLink, hashToken, tokenTag } from "../baton-links";
 import { acquireChat } from "../chat-manager";
@@ -95,8 +96,10 @@ const SECURITY_HEADERS: Record<string, string> = {
   "X-Content-Type-Options": "nosniff",
   "X-Frame-Options": "DENY",
 };
+// frame-src: only the frame host (§chat.markdown/visuals), and it confines the frame's own
+// navigations to this host; never a blob: or data: frame.
 export const PAGE_CSP =
-  "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'";
+  "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'";
 
 const MIME: Record<string, string> = {
   ".js": "text/javascript; charset=utf-8",
@@ -117,13 +120,17 @@ export function createShareApp(): Hono {
   ensureSweep();
   app.use("*", async (c, next) => {
     await next();
-    for (const [k, v] of Object.entries(SECURITY_HEADERS)) c.header(k, v);
+    // The frame host alone may be framed, by its own host (frameHostHeaders): every other answer, never.
+    const framable = c.req.path === FRAME_HOST_PATH && c.res.status === 200;
+    for (const [k, v] of Object.entries(SECURITY_HEADERS)) if (!(framable && k === "X-Frame-Options")) c.header(k, v);
   });
 
   app.get("/h/assets/:name", (c) => {
     const name = c.req.param("name");
     const file = join(shareDist(), "assets", name);
     if (!/^[A-Za-z0-9_-][A-Za-z0-9._-]*$/.test(name) || !existsSync(file)) return c.json({ error: "Not found" }, 404);
+    // The one HTML asset: the frame host of a share page's interactive drawings (§chat.markdown/visuals).
+    if (name === FRAME_HOST_NAME) return c.body(readFileSync(file), 200, frameHostHeaders());
     return c.body(readFileSync(file), 200, { "Content-Type": MIME[extname(name)] ?? "application/octet-stream" });
   });
 

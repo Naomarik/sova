@@ -3,6 +3,7 @@ import { createStore, reconcile } from "solid-js/store";
 import { SHARE_TEXT_MAX, type BatonView, type GoneWhy, type ShareServerMessage } from "../../shared/baton";
 import { HOP_LOST_CLOSE, RECONNECT_BACKOFF_MS } from "../../shared/public-links";
 import { PhotoFormatError, processPhoto, sizeLabel, uploadPhoto, type UploadRefusal } from "./photos";
+import { batonKinds } from "./markdown";
 import { Item, LinkedText, MessagePhotos, Reply } from "./thread";
 import { visitTab } from "./visit-tab";
 
@@ -345,7 +346,7 @@ export function ShareApp() {
           </Show>
         </header>
         <section class="share-thread" aria-label="Conversation">
-          <For each={view()?.items ?? []}>{(it) => <Item item={it} photo={photoSrc} viewer={view()?.viewer?.name} />}</For>
+          <For each={view()?.items ?? []}>{(it) => <Item item={it} photo={photoSrc} viewer={view()?.viewer?.name} drawings={view()?.drawings} />}</For>
           <For each={pending()}>
             {(t) => (
               <article class="share-msg share-msg-own" aria-label="You, sending">
@@ -364,7 +365,7 @@ export function ShareApp() {
           <Show when={streaming()}>
             <article class="share-msg share-msg-reply" aria-label="Facilitator, writing">
               <span class="share-who">Facilitator · writing</span>
-              <Reply text={streaming()} streaming />
+              <Reply text={streaming()} streaming kinds={batonKinds(view()?.drawings?.html === true)} />
             </article>
           </Show>
         </section>

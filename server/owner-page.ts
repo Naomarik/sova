@@ -364,6 +364,7 @@ export async function ownerConversation(orgId: string, handle: string, now = Dat
     publicTitle: view.publicTitle,
     state: view.state,
     holder: view.holder,
+    drawings: view.drawings,
     viewer: { name: nameOf(ctx, ctx.owner.id).name, canWrite: false },
     items: opaqueSenders(view.items, ctx.owner.id),
   };

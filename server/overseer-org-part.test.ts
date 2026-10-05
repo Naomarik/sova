@@ -129,21 +129,26 @@ describe("its levels (§app.project-overseer/autonomy-levels)", () => {
 
 describe("gathering abilities (§app.baton/abilities)", () => {
   const abilitiesOf = (r: unknown) => baton.batonById((r as { details: { id: string } }).details.id)!.row.abilities;
-  test("a start with no abilities gets the project's set: Automatic is draw on, read links off", async () => {
-    assert.deepEqual(abilitiesOf(await run("sova_start_gathering", gather)), { draw: true, readLinks: false });
+  test("a start with no abilities gets the project's set: Automatic is draw on, read links and interactive drawings off", async () => {
+    assert.deepEqual(abilitiesOf(await run("sova_start_gathering", gather)), { draw: true, readLinks: false, drawHtml: false });
   });
-  test("it may turn draw off or on, and read links only when the project allows it", async () => {
-    await settings(portal.id, { gatheringAbilities: { draw: false, readLinks: false } });
-    assert.deepEqual(abilitiesOf(await run("sova_start_gathering", { ...gather, abilities: { draw: true } })), { draw: true, readLinks: false });
+  test("it may turn draw off or on, and read links or interactive drawings only when the project allows them", async () => {
+    await settings(portal.id, { gatheringAbilities: { draw: false, readLinks: false, drawHtml: false } });
+    assert.deepEqual(abilitiesOf(await run("sova_start_gathering", { ...gather, abilities: { draw: true } })), { draw: true, readLinks: false, drawHtml: false });
     const before = ownBatons().length;
     await assert.rejects(
       () => run("sova_offer", { gap: "none", people: ["Tony", "Ana"], why: "Nobody has said this yet.", public_title: "x", goal: "g", question: "q?", abilities: { read_links: true } }),
       /Reading links is off for this project's gathering sessions; the operator can allow it on the project page\./,
     );
-    assert.equal(ownBatons().length, before, "the refusal reached no statechart, so it started nothing");
-    await settings(portal.id, { gatheringAbilities: { draw: true, readLinks: true } });
-    assert.deepEqual(abilitiesOf(await run("sova_start_gathering", { ...gather, abilities: { draw: false } })), { draw: false, readLinks: true });
-    assert.deepEqual(abilitiesOf(await run("sova_start_gathering", { ...gather, abilities: { read_links: false } })), { draw: true, readLinks: false });
+    await assert.rejects(
+      () => run("sova_start_gathering", { ...gather, abilities: { draw: true, draw_html: true } }),
+      /Interactive drawings are off for this project's gathering sessions; the operator can allow them on the project page\./,
+    );
+    assert.equal(ownBatons().length, before, "the refusals reached no statechart, so they started nothing");
+    await settings(portal.id, { gatheringAbilities: { draw: true, readLinks: true, drawHtml: true } });
+    assert.deepEqual(abilitiesOf(await run("sova_start_gathering", { ...gather, abilities: { draw: false } })), { draw: false, readLinks: true, drawHtml: true });
+    assert.deepEqual(abilitiesOf(await run("sova_start_gathering", { ...gather, abilities: { read_links: false } })), { draw: true, readLinks: false, drawHtml: true });
+    assert.deepEqual(abilitiesOf(await run("sova_start_gathering", { ...gather, abilities: { draw_html: false } })), { draw: true, readLinks: true, drawHtml: false });
     await settings(portal.id, { gatheringAbilities: null });
   });
   test("an unknown ability or a non-boolean is refused before anything starts", async () => {

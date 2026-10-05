@@ -26,6 +26,7 @@ import { Banner, Chip, Icon } from "./ui";
 import "../orgs.css";
 
 const errText = (err: unknown) => (err instanceof ApiError || err instanceof Error ? err.message : String(err));
+const ABILITY_LABEL = { draw: "Draw", drawHtml: "Interactive drawings (HTML)", readLinks: "Read links" } as const;
 
 /**
  * The baton strip (§app/baton) above a baton session's transcript: where the baton is (a person,
@@ -118,12 +119,13 @@ export function BatonStrip(props: {
             {/* What it can do (§app.baton/abilities): from its next reply; the share page never shows it. */}
             <div class="baton-strip-abilities" role="group" aria-labelledby="baton-strip-abilities-label">
               <span id="baton-strip-abilities-label">It can:</span>
-              <For each={["draw", "readLinks"] as const}>
+              {/* Interactive drawings count only with Draw, so its box waits for Draw. */}
+              <For each={["draw", "drawHtml", "readLinks"] as const}>
                 {(k) => (
                   <label class="toggle">
                     <input
                       type="checkbox"
-                      disabled={!open(i())}
+                      disabled={!open(i()) || (k === "drawHtml" && !abilitiesOf(i().session).draw)}
                       checked={abilitiesOf(i().session)[k]}
                       onChange={(e) => {
                         const el = e.currentTarget;
@@ -132,7 +134,7 @@ export function BatonStrip(props: {
                       }}
                     />
                     <span class="toggle-box" />
-                    <span>{k === "draw" ? "Draw" : "Read links"}</span>
+                    <span>{ABILITY_LABEL[k]}</span>
                   </label>
                 )}
               </For>

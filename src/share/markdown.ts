@@ -17,27 +17,37 @@ md.renderer.rules.link_open = (tokens, idx, options, env, self) => {
 // No images: a reply could otherwise make the reader's browser fetch any URL.
 md.disable("image");
 
-/** The drawings a share or owner page draws (§app.baton/outsider-view): the business kinds. */
-export const SHARE_VIS_KINDS: ReadonlySet<string> = new Set(["flow", "chart", "matrix", "timeline", "tree", "steps", "wireframe", "layers"]);
+/** The figures a share or owner page draws (§app.baton/outsider-view): the business kinds, state
+    and sequence. */
+export const SHARE_VIS_KINDS: ReadonlySet<string> = new Set(["flow", "chart", "matrix", "timeline", "tree", "steps", "wireframe", "layers", "state", "sequence"]);
 export const BROKEN_DRAWING = "A drawing couldn't be shown here.";
 
-/** The drawings a session share draws (§app/session-share/content): the business kinds plus the
-    technical ones that draw safely under the share page's CSP. `svg` draws as an image (no script,
-    no network); `code` and `html` show as their source, since the highlighter isn't in this build
-    and the page's CSP runs no frame's script. */
+/** The drawings a session share draws (§app/session-share/content): the figures plus the technical
+    kinds that draw safely there. `svg` draws as an image (no script, no network); `code` and
+    `html` show as their source, since the highlighter isn't in this build and a session share runs
+    no frame. */
 export const SESSION_VIS_KINDS: ShareVisKinds = {
-  drawn: new Set([...SHARE_VIS_KINDS, "sequence", "state"]),
+  drawn: SHARE_VIS_KINDS,
   image: new Set(["svg"]),
   source: new Set(["code", "html"]),
 };
-/** Which fences a page draws: `drawn` mounts a figure, `image` draws an svg as an <img>, `source`
-    shows the parsed document as escaped text. Any other kind is the one quiet line. */
+/** Which fences a page draws: `drawn` mounts a figure, `image` draws an svg as an <img>, `frame`
+    mounts a sandboxed frame (`vis html`), `source` shows the parsed document as escaped text. Any
+    other kind is the one quiet line. */
 export interface ShareVisKinds {
   drawn: ReadonlySet<string>;
   image?: ReadonlySet<string>;
+  frame?: ReadonlySet<string>;
   source?: ReadonlySet<string>;
 }
-const BATON_KINDS: ShareVisKinds = { drawn: SHARE_VIS_KINDS };
+const BATON_KINDS: ShareVisKinds = { drawn: SHARE_VIS_KINDS, image: new Set(["svg"]) };
+const BATON_HTML_KINDS: ShareVisKinds = { ...BATON_KINDS, frame: new Set(["html"]) };
+/** A baton conversation's drawings (share and owner pages): `html` runs in a frame only while the
+    session can draw interactive drawings (the view's `drawings.html`); never `code`. */
+export const batonKinds = (html: boolean): ShareVisKinds => (html ? BATON_HTML_KINDS : BATON_KINDS);
+
+/** An svg drawn as an image needs its namespace, or the browser shows a broken image. */
+const withXmlns = (svg: string): string => svg.replace(/^((?:<\?xml[^>]*>\s*)?)<svg(?![^>]*\sxmlns=)/i, '$1<svg xmlns="http://www.w3.org/2000/svg"');
 const SOURCE_CAPTION: Record<string, string> = { html: "An interactive drawing, shown as its source.", code: "Code" };
 
 export interface ShareVisual {
@@ -73,15 +83,15 @@ md.renderer.rules.fence = (tokens, idx, options, e, self) => {
     const lines = t.content.split("\n").length - 1;
     return `<div class="md-vis-pending"><p class="md-vis-pending-line"><span class="md-vis-pending-dot" aria-hidden="true"></span>Drawing ${esc(kind || "a visual")}… <span class="md-vis-pending-count">${lines} ${lines === 1 ? "line" : "lines"}</span></p></div>\n`;
   }
-  const { drawn, image, source } = env.kinds;
+  const { drawn, image, frame, source } = env.kinds;
   // The word as written parses (an alias reads as its kind); the kind it draws as decides the rest.
   const word = kind;
   kind = canonicalKind(word);
-  const r = drawn.has(kind) || image?.has(kind) || source?.has(kind) ? parseVis(word, t.content) : null;
+  const r = drawn.has(kind) || image?.has(kind) || frame?.has(kind) || source?.has(kind) ? parseVis(word, t.content) : null;
   if (!r?.ok) return `<p class="share-vis-broken">${BROKEN_DRAWING}</p>\n`;
   const title = (r.spec as { title?: string }).title;
   if (image?.has(kind)) {
-    const svg = (r.spec as unknown as { source: string }).source;
+    const svg = withXmlns((r.spec as unknown as { source: string }).source);
     const alt = esc(title ?? "A drawing");
     return `<figure class="share-vis-image">${title ? `<figcaption class="share-vis-caption">${esc(title)}</figcaption>` : ""}<img src="data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}" alt="${alt}"></figure>\n`;
   }
@@ -91,12 +101,13 @@ md.renderer.rules.fence = (tokens, idx, options, e, self) => {
     const caption = title ?? SOURCE_CAPTION[kind] ?? "Source";
     return `<figure class="share-vis-source"><figcaption class="share-vis-caption">${esc(caption)}</figcaption><pre><code>${esc(text)}</code></pre></figure>\n`;
   }
+  // A figure, or a frame: both mount into a placeholder (vis.tsx).
   const i = env.visuals.push({ kind, spec: r.spec }) - 1;
   return `<div class="md-vis" data-vis="${i}" data-vis-key="${hash(`${kind}\0${t.content}`)}"></div>\n`;
 };
 
 /** `streaming`: the reply is still being written, so an unclosed fence is one still open.
-    `kinds`: the fences drawn (the business kinds unless a page says otherwise). */
+    `kinds`: the fences drawn (a baton conversation's without html unless a page says otherwise). */
 export function renderShareMarkdown(text: string, streaming = false, kinds: ShareVisKinds = BATON_KINDS): { html: string; visuals: ShareVisual[] } {
   const env: Env = { kinds, visuals: [], openFence: null, fences: 0 };
   const open = streaming ? unclosedFence(text) : null;

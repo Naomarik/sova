@@ -1,7 +1,8 @@
 import { existsSync } from "node:fs";
 import { request, type IncomingHttpHeaders, type IncomingMessage, type ServerResponse } from "node:http";
 import { join } from "node:path";
-import { ASSET_MAX_BYTES, ASSET_TYPES, type ShareGatewaySetting } from "../../shared/public-links";
+import { ASSET_MAX_BYTES, ASSET_NAME_TYPES, ASSET_TYPES, type ShareGatewaySetting } from "../../shared/public-links";
+import { FRAME_HOST_NAME, frameHostHeaders } from "../../shared/vis-frame-host";
 import { SESSION_SHARE_IMAGE_MAX_BYTES } from "../../shared/session-share";
 import { findLink, hashToken } from "../baton-links";
 import { meshApi } from "../mesh";
@@ -152,8 +153,10 @@ export function routeOf(pathname: string): Route | null {
   return null;
 }
 
-/** The content type a hashed asset is served with, by its extension; null for any other. */
+/** The content type a hashed asset is served with, by its extension, or by its exact name (the
+    frame host); null for any other. */
 function assetType(name: string): string | null {
+  if (Object.hasOwn(ASSET_NAME_TYPES, name)) return ASSET_NAME_TYPES[name]!;
   const dot = name.lastIndexOf(".");
   if (dot < 1 || name.includes("..")) return null;
   const ext = name.slice(dot + 1);
@@ -382,6 +385,8 @@ export function createGatewayRouter(opts: GatewayRouterOptions = {}): GatewayRou
       }
       res.writeHead(200, {
         "Content-Type": type,
+        // The frame host carries its own sandbox CSP and SAMEORIGIN, as its origin would send it.
+        ...(name === FRAME_HOST_NAME ? frameHostHeaders() : {}),
         ...SHARE_RESPONSE_HEADERS,
         ...(Number.isFinite(declared) ? { "Content-Length": String(declared) } : {}),
       });

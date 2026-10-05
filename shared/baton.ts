@@ -195,17 +195,28 @@ export interface WrapupInfo {
 
 /** A row of `baton.json` in the org's workspace repo. */
 /** What a gathering session can do beyond talking (§app.baton/abilities): draw the share page's
-    drawings, and open links someone wrote in the conversation (`read_link`). */
+    drawings, interactive ones (`vis html`) too, and open links someone wrote in the conversation
+    (`read_link`). */
 export interface GatheringAbilities {
   draw: boolean;
   readLinks: boolean;
+  /** Interactive drawings: takes effect only with `draw` (drawsHtml). */
+  drawHtml: boolean;
 }
 
 /** Automatic: what a project with no setting gives its gathering sessions. */
-export const AUTOMATIC_ABILITIES: GatheringAbilities = { draw: true, readLinks: false };
+export const AUTOMATIC_ABILITIES: GatheringAbilities = { draw: true, readLinks: false, drawHtml: false };
 
-/** A session with no `abilities` on its row (started before them) has neither. */
-export const abilitiesOf = (row: Pick<BatonSession, "abilities">): GatheringAbilities => ({ draw: row.abilities?.draw === true, readLinks: row.abilities?.readLinks === true });
+/** A session with no `abilities` on its row (started before them) has none; one from before
+    interactive drawings has none of those. */
+export const abilitiesOf = (row: Pick<BatonSession, "abilities">): GatheringAbilities => ({
+  draw: row.abilities?.draw === true,
+  readLinks: row.abilities?.readLinks === true,
+  drawHtml: row.abilities?.drawHtml === true,
+});
+
+/** Whether a set draws `vis html`: interactive drawings count only while it can draw. */
+export const drawsHtml = (a: GatheringAbilities): boolean => a.draw && a.drawHtml;
 
 export interface BatonSession {
   sessionId: string;
@@ -529,6 +540,9 @@ export interface BatonView {
         the page shows its paperclip (§app.baton/images). */
     photos?: { perMessage: number; maxBytes: number };
   };
+  /** Which drawings the page runs, from the session's abilities as they are now
+      (§app.baton/outsider-view): `html`, a reply's `vis html` in a frame; else its quiet line. */
+  drawings: { html: boolean };
   items: BatonViewItem[];
 }
 

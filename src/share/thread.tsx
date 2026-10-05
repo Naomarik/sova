@@ -1,9 +1,9 @@
 import { createEffect, createSignal, For, Match, onCleanup, Show, Switch } from "solid-js";
-import type { BatonViewImage, BatonViewItem } from "../../shared/baton";
+import type { BatonView, BatonViewImage, BatonViewItem } from "../../shared/baton";
 import { linkSegments } from "../lib/share-linkify";
 import "./thread.css";
 import { createMarkdownPatcher } from "../vis/hydrate";
-import { renderShareMarkdown, type ShareVisKinds, type ShareVisual } from "./markdown";
+import { batonKinds, renderShareMarkdown, type ShareVisKinds, type ShareVisual } from "./markdown";
 import { mountShareVisual } from "./vis";
 
 // A conversation's items as an outsider reads them: the share page and the owner page render the
@@ -124,8 +124,9 @@ export function MessagePhotos(props: { srcs: string[]; from: string }) {
     went to, not as an invitation to them. `photo`: where a message's photo `n` is served (the
     share page); without it a message's photos show as their count (the owner page). `viewer`: the
     name of whoever reads (the share page): the first hand-off to them is "Your question", since the
-    status line above already names them. */
-export function Item(props: { item: BatonViewItem; reader?: boolean; photo?: (n: number) => string; viewer?: string }) {
+    status line above already names them. `drawings`: the view's, so a reply's `vis html` runs in
+    a frame only while the session allows it (§app.baton/outsider-view). */
+export function Item(props: { item: BatonViewItem; reader?: boolean; photo?: (n: number) => string; viewer?: string; drawings?: BatonView["drawings"] }) {
   const it = props.item;
   const photos = (m: { images?: BatonViewImage[] }) => m.images ?? [];
   return (
@@ -152,7 +153,7 @@ export function Item(props: { item: BatonViewItem; reader?: boolean; photo?: (n:
         {(r) => (
           <article class="share-msg share-msg-reply" aria-label="Facilitator">
             <span class="share-who">Facilitator</span>
-            <Reply text={r().text} />
+            <Reply text={r().text} kinds={batonKinds(props.drawings?.html === true)} />
             <Show when={r().cutOff}>
               <p class="share-cutoff">This reply was cut off.</p>
             </Show>

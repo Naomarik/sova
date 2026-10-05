@@ -1,4 +1,5 @@
 import type { MeshHello } from "./protocol";
+import { FRAME_HOST_NAME } from "./vis-frame-host";
 
 /**
  * Wire types for public share links (§mesh.public): how a host's `/h/` and `/i/` links become
@@ -299,6 +300,11 @@ export const ASSET_TYPES: Readonly<Record<string, string>> = {
   woff2: "font/woff2",
   svg: "image/svg+xml",
   png: "image/png",
+};
+/** Assets typed by their exact name, never by extension: the frame host (shared/vis-frame-host.ts),
+    the one HTML asset, passed with its own headers. Any other `.html` name is never fetched. */
+export const ASSET_NAME_TYPES: Readonly<Record<string, string>> = {
+  [FRAME_HOST_NAME]: "text/html; charset=utf-8",
 };
 
 // ---- gateway → routed host ingress --------------------------------------------------------------

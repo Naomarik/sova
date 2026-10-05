@@ -597,7 +597,7 @@ function BatonSection(props: { org: OrgDetail; start?: string; act: Act; onLinks
         ...(thinking() ? { thinking: thinking() } : {}),
         ...(limit().trim() ? { messagesMax: Number(limit()) } : {}),
         ...(parent() ? { parentSessionId: parent() } : {}),
-        abilities: { draw: ability("draw"), readLinks: ability("readLinks") },
+        abilities: { draw: ability("draw"), readLinks: ability("readLinks"), drawHtml: ability("drawHtml") },
       });
     }, Array.isArray(who) ? `Offered to ${who.length} people.` : "Hand-off session started.");
     if (!ok || !started) return;
@@ -781,6 +781,12 @@ function BatonSection(props: { org: OrgDetail; start?: string; act: Act; onLinks
                 <input type="checkbox" checked={ability("draw")} onChange={(e) => setChosen((c) => ({ ...c, draw: e.currentTarget.checked }))} />
                 <span class="toggle-box" />
                 <span>Draw</span>
+              </label>
+              {/* Counts only with Draw, so its box waits for Draw. */}
+              <label class="toggle">
+                <input type="checkbox" disabled={!ability("draw")} checked={ability("drawHtml")} onChange={(e) => setChosen((c) => ({ ...c, drawHtml: e.currentTarget.checked }))} />
+                <span class="toggle-box" />
+                <span>Interactive drawings (HTML)</span>
               </label>
               <label class="toggle">
                 <input type="checkbox" checked={ability("readLinks")} onChange={(e) => setChosen((c) => ({ ...c, readLinks: e.currentTarget.checked }))} />

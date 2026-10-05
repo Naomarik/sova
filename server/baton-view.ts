@@ -8,6 +8,8 @@ import {
   CUT_REPLY_MAX,
   LIMIT_QUESTION,
   LIMIT_REACHED_FOR_PEOPLE,
+  abilitiesOf,
+  drawsHtml,
   OPERATOR,
   type BatonSession,
   type BatonView,
@@ -155,7 +157,7 @@ export function labelAuthors<M>(messages: M[], notes: readonly AuthorNote[], ori
 }
 
 export interface ViewInput {
-  row: Pick<BatonSession, "publicTitle" | "state" | "holder">;
+  row: Pick<BatonSession, "publicTitle" | "state" | "holder" | "abilities">;
   /** The active branch, oldest first (server/transcript.ts readActiveBranch). */
   branch: Entry[];
   /** personId (and "operator") → display name. */
@@ -265,6 +267,8 @@ export function batonView(input: ViewInput): BatonView {
     publicTitle: redact(input.row.publicTitle),
     state: input.row.state,
     holder: input.row.holder === null || input.untilOffer !== undefined ? null : name(input.row.holder),
+    // The session's abilities as they are now: the strip's change reaches the page's next view.
+    drawings: { html: drawsHtml(abilitiesOf(input.row)) },
     items,
   };
 }

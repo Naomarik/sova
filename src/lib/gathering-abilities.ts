@@ -14,13 +14,23 @@ export function abilitiesKey(a: GatheringAbilities | null): AbilitiesKey {
   return a.draw ? (a.readLinks ? "draw+links" : "draw") : a.readLinks ? "links" : "none";
 }
 
-export function abilitiesOfKey(key: AbilitiesKey): GatheringAbilities | null {
+/** The select's set; `drawHtml` is the separate checkbox's current value, carried over so a select
+    change never silently clears it (Automatic has none). */
+export function abilitiesOfKey(key: AbilitiesKey, drawHtml = false): GatheringAbilities | null {
   if (key === "auto") return null;
-  return { draw: key === "draw" || key === "draw+links", readLinks: key === "links" || key === "draw+links" };
+  return { draw: key === "draw" || key === "draw+links", readLinks: key === "links" || key === "draw+links", drawHtml };
 }
 
-/** "draw, read links" · "draw" · "read links" · "nothing extra": the hint's words for a set. */
-export const abilitiesWords = (a: GatheringAbilities): string => [a.draw ? "draw" : "", a.readLinks ? "read links" : ""].filter(Boolean).join(", ") || "nothing extra";
+/** Whether the project page's Interactive drawings checkbox can change: only while the select draws. */
+export const drawHtmlSettable = (key: AbilitiesKey): boolean => key === "draw" || key === "draw+links";
 
+/** "draw, read links" · "draw with interactive drawings" · "read links" · "nothing extra": the hint's words for a set. */
+export const abilitiesWords = (a: GatheringAbilities): string =>
+  [a.draw ? (a.drawHtml ? "draw with interactive drawings" : "draw") : "", a.readLinks ? "read links" : ""].filter(Boolean).join(", ") || "nothing extra";
+
+const TOAST_WORD: Record<keyof GatheringAbilities, string> = { draw: "Drawing", drawHtml: "Interactive drawings", readLinks: "Reading links" };
 /** The strip's toast for one checkbox's change: it applies from the next reply. */
-export const abilityToast = (which: keyof GatheringAbilities, on: boolean): string => `${which === "draw" ? "Drawing" : "Reading links"} ${on ? "on" : "off"} from its next reply.`;
+export const abilityToast = (which: keyof GatheringAbilities, on: boolean): string => `${TOAST_WORD[which]} ${on ? "on" : "off"} from its next reply.`;
+
+/** The project page's toast for its Interactive drawings checkbox. */
+export const drawHtmlSavedToast = (on: boolean): string => `Gathering sessions: interactive drawings ${on ? "on" : "off"}.`;

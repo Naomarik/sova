@@ -39,7 +39,7 @@ const app = new Hono();
 registerOrgRoutes(app);
 const post = (path: string, body?: unknown) => app.request(path, { method: "POST", headers: { "Content-Type": "application/json" }, ...(body ? { body: JSON.stringify(body) } : {}) });
 const poPaths = projectOverseerPaths(project.id);
-const setProject = (a: { draw: boolean; readLinks: boolean } | null) => writePoSettings(poPaths, { ...readPoSettings(poPaths), gatheringAbilities: a });
+const setProject = (a: { draw: boolean; readLinks: boolean; drawHtml?: boolean } | null) => writePoSettings(poPaths, { ...readPoSettings(poPaths), gatheringAbilities: a && { drawHtml: false, ...a } });
 const start = (abilities?: object) => baton.createBaton({ orgId: org.id, projectId: project.id, to: dana.id, publicTitle: "Dashboard", goal: "What the dashboard shows", ...(abilities ? { abilities } : {}) });
 
 async function until(cond: () => boolean, ms = 3000): Promise<void> {
@@ -79,30 +79,36 @@ function says(chat: Awaited<ReturnType<typeof stubChat>>, sessionId: string, tex
 const entriesOf = (path: string) => readFileSync(path, "utf8").trim().split("\n").map((l) => JSON.parse(l));
 
 describe("the project's setting and each start (§app.baton/abilities)", () => {
-  test("Automatic is draw on, read links off; a bad stored value reads as Automatic; a PATCH is strict", () => {
+  test("Automatic is draw on, read links and interactive drawings off; a bad stored value reads as Automatic; a PATCH is strict", () => {
     setProject(null);
-    assert.deepEqual(baton.projectAbilities(org.id, project.id), { draw: true, readLinks: false });
+    assert.deepEqual(baton.projectAbilities(org.id, project.id), { draw: true, readLinks: false, drawHtml: false });
     assert.equal(ab.parseAbilities({ draw: "yes", readLinks: false }), null);
-    assert.throws(() => patchPoSettings(poPaths, { gatheringAbilities: { draw: true } }), /gatheringAbilities must be null \(Automatic\) or \{ draw, readLinks \}/);
-    assert.deepEqual(patchPoSettings(poPaths, { gatheringAbilities: { draw: false, readLinks: true } }).gatheringAbilities, { draw: false, readLinks: true });
+    assert.equal(ab.parseAbilities({ draw: true, readLinks: false, drawHtml: "yes" }), null);
+    assert.deepEqual(ab.parseAbilities({ draw: true, readLinks: false }), { draw: true, readLinks: false, drawHtml: false }, "a file from before interactive drawings reads them as off");
+    assert.throws(() => patchPoSettings(poPaths, { gatheringAbilities: { draw: true } as never }), /gatheringAbilities must be null \(Automatic\) or \{ draw, readLinks, drawHtml\? \}/);
+    assert.throws(() => patchPoSettings(poPaths, { gatheringAbilities: { draw: true, readLinks: false, drawHtml: 1 } as never }), /gatheringAbilities must be null/);
+    assert.deepEqual(patchPoSettings(poPaths, { gatheringAbilities: { draw: false, readLinks: true } as never }).gatheringAbilities, { draw: false, readLinks: true, drawHtml: false });
+    assert.deepEqual(patchPoSettings(poPaths, { gatheringAbilities: { draw: true, readLinks: false, drawHtml: true } }).gatheringAbilities, { draw: true, readLinks: false, drawHtml: true });
     assert.equal(patchPoSettings(poPaths, { gatheringAbilities: null }).gatheringAbilities, null);
   });
 
   test("a start writes the project's set on the row; the operator's choice goes over it; a non-boolean is a 400", async () => {
     setProject({ draw: false, readLinks: true });
-    assert.deepEqual(baton.batonById((await start()).sessionId)!.row.abilities, { draw: false, readLinks: true });
-    assert.deepEqual(baton.batonById((await start({ draw: true })).sessionId)!.row.abilities, { draw: true, readLinks: true });
+    assert.deepEqual(baton.batonById((await start()).sessionId)!.row.abilities, { draw: false, readLinks: true, drawHtml: false });
+    assert.deepEqual(baton.batonById((await start({ draw: true })).sessionId)!.row.abilities, { draw: true, readLinks: true, drawHtml: false });
     setProject(null);
-    const res = await post("/api/baton", { orgId: org.id, projectId: project.id, to: dana.id, publicTitle: "T", goal: "g", abilities: { readLinks: true } });
+    const res = await post("/api/baton", { orgId: org.id, projectId: project.id, to: dana.id, publicTitle: "T", goal: "g", abilities: { readLinks: true, drawHtml: true } });
     assert.equal(res.status, 201);
-    assert.deepEqual(baton.batonById(((await res.json()) as { sessionId: string }).sessionId)!.row.abilities, { draw: true, readLinks: true }, "the operator may turn read links on");
+    assert.deepEqual(baton.batonById(((await res.json()) as { sessionId: string }).sessionId)!.row.abilities, { draw: true, readLinks: true, drawHtml: true }, "the operator may turn read links and interactive drawings on");
     const bad = await post("/api/baton", { orgId: org.id, projectId: project.id, to: dana.id, publicTitle: "T", goal: "g", abilities: { draw: "no" } });
     assert.equal(bad.status, 400);
     assert.match(((await bad.json()) as { error: string }).error, /abilities\.draw must be true or false/);
+    const badHtml = await post("/api/baton", { orgId: org.id, projectId: project.id, to: dana.id, publicTitle: "T", goal: "g", abilities: { drawHtml: "yes" } });
+    assert.equal(badHtml.status, 400);
   });
 
-  test("a row with no abilities (started before them) has neither", async () => {
-    assert.deepEqual(abilitiesOf({}), { draw: false, readLinks: false });
+  test("a row with no abilities (started before them) has none", async () => {
+    assert.deepEqual(abilitiesOf({}), { draw: false, readLinks: false, drawHtml: false });
     const c = await start({ readLinks: true });
     assert.deepEqual(loadout.activeBatonTools(c.sessionId), [...loadout.BATON_TOOLS, rl.READ_LINK_TOOL]);
     assert.doesNotMatch(loadout.renderBatonPrompt(c.sessionId).replace(/# Drawings[\s\S]*/, ""), /```vis/);
@@ -113,29 +119,45 @@ describe("the project's setting and each start (§app.baton/abilities)", () => {
     const c = await start();
     const res = await post(`/api/baton/${c.sessionId}/abilities`, { readLinks: true });
     assert.equal(res.status, 200);
-    assert.deepEqual(((await res.json()) as { session: { abilities: unknown } }).session.abilities, { draw: true, readLinks: true });
+    assert.deepEqual(((await res.json()) as { session: { abilities: unknown } }).session.abilities, { draw: true, readLinks: true, drawHtml: false });
+    const html = await post(`/api/baton/${c.sessionId}/abilities`, { drawHtml: true });
+    assert.equal(html.status, 200);
+    assert.deepEqual(((await html.json()) as { session: { abilities: unknown } }).session.abilities, { draw: true, readLinks: true, drawHtml: true });
     await baton.closeBaton(c.sessionId);
     const closed = await post(`/api/baton/${c.sessionId}/abilities`, { draw: false });
     assert.equal(closed.status, 409);
   });
 
-  test("the overseers' ceiling: read links only when the project allows it; draw either way", () => {
-    const base = { draw: true, readLinks: false };
+  test("the overseers' ceiling: read links and interactive drawings only when the project allows them; draw either way", () => {
+    const base = { draw: true, readLinks: false, drawHtml: false };
     assert.deepEqual(ab.overseerAbilities({ read_links: true }, base), { error: ab.READ_LINKS_REFUSED });
-    assert.deepEqual(ab.overseerAbilities({ draw: false }, base), { draw: false, readLinks: false });
-    assert.deepEqual(ab.overseerAbilities({ draw: true, read_links: true }, { draw: false, readLinks: true }), { draw: true, readLinks: true });
+    assert.deepEqual(ab.overseerAbilities({ draw_html: true }, base), { error: ab.DRAW_HTML_REFUSED });
+    assert.deepEqual(ab.overseerAbilities({ draw: false }, base), { draw: false, readLinks: false, drawHtml: false });
+    assert.deepEqual(ab.overseerAbilities({ draw: true, read_links: true }, { draw: false, readLinks: true, drawHtml: false }), { draw: true, readLinks: true, drawHtml: false });
+    const withHtml = { draw: true, readLinks: false, drawHtml: true };
+    assert.deepEqual(ab.overseerAbilities({ draw_html: false }, withHtml), { draw: true, readLinks: false, drawHtml: false }, "an overseer may turn it off");
+    assert.deepEqual(ab.overseerAbilities({ draw_html: true }, withHtml), withHtml, "and on, when the project's set has it");
+    assert.deepEqual(ab.overseerAbilities({ drawHtml: true }, withHtml), { error: "Unknown ability drawHtml: use draw, draw_html or read_links." });
     assert.deepEqual(ab.overseerAbilities(undefined, base), base);
   });
 });
 
 describe("the prompt and the tools a run gets", () => {
-  test("drawing: the guide and its rules are in the prompt only while the session can draw", async () => {
+  test("drawing: the guide's tier follows the abilities; code is never taught, html only with interactive drawings", async () => {
     setProject(null);
     const on = loadout.renderBatonPrompt((await start()).sessionId);
     assert.match(on, /# Drawings/);
     assert.match(on, /Never draw people, roles, the roster, who decides what/);
-    assert.match(on, /```vis chart/);
-    assert.doesNotMatch(on, /vis html|vis svg|## sequence|## code/, "only the kinds the share page draws");
+    for (const kind of ["chart", "state", "sequence", "svg"]) assert.match(on, new RegExp(`^\`\`\`vis ${kind}$`, "m"), kind);
+    assert.match(on, /a sequence's actors are systems or steps/);
+    assert.doesNotMatch(on, /vis html|## html|## code|vis code/, "Draw alone: no html, never code");
+    const html = loadout.renderBatonPrompt((await start({ drawHtml: true })).sessionId);
+    assert.match(html, /^## html$/m);
+    assert.match(html, /^```vis html$/m);
+    assert.match(html, /Never ask for a password, contact details/);
+    assert.doesNotMatch(html, /## code|vis code/, "never code");
+    const htmlNoDraw = loadout.renderBatonPrompt((await start({ draw: false, drawHtml: true })).sessionId);
+    assert.doesNotMatch(htmlNoDraw, /# Drawings|```vis/, "interactive drawings count only with Draw");
     assert.match(on, /You cannot read files, run commands or browse\./);
     const off = loadout.renderBatonPrompt((await start({ draw: false, readLinks: true })).sessionId);
     assert.doesNotMatch(off, /# Drawings|```vis/);

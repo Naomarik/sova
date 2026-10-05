@@ -882,6 +882,10 @@ function decodeWorker(w: unknown, hosted: boolean): WorkerInfo | null {
   const sessionId = str(w.sessionId);
   if (sessionFile) out.sessionFile = sessionFile;
   if (sessionId) out.sessionId = sessionId;
+  // The record's own team id (a live member's session team, a restored member's saved one), so
+  // the ws `workers` rows name it too; insights' joinTeams overwrites it from the team entries.
+  const teamId = str(w.teamId);
+  if (teamId) out.teamId = teamId;
   for (const k of ["startedAt", "lastActivity", "endedAt"] as const) {
     const t = num(w[k]);
     if (t !== undefined) out[k] = t;

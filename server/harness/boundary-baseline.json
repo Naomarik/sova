@@ -45,7 +45,7 @@
     "server/baton-told.ts": {"calls": 1, "shapes": 0, "reaches": 0},
     "server/baton-wrapup.ts": {"calls": 0, "shapes": 0, "reaches": 7},
     "server/build-loadout.ts": {"calls": 0, "shapes": 0, "reaches": 3},
-    "server/chat-manager.ts": {"calls": 28, "shapes": 13, "reaches": 89},
+    "server/chat-manager.ts": {"calls": 28, "shapes": 11, "reaches": 87},
     "server/claude-login-state.ts": {"calls": 0, "shapes": 4, "reaches": 0},
     "server/git-diff.ts": {"calls": 0, "shapes": 3, "reaches": 0},
     "server/index.ts": {"calls": 3, "shapes": 0, "reaches": 8},
@@ -78,15 +78,13 @@
   "writers": {
     "server/baton-loadout.ts": 6,
     "server/baton-wrapup.ts": 2,
-    "server/chat-manager.ts": 11,
     "server/index.ts": 1,
     "server/overseer.ts": 5,
     "server/project-overseer.ts": 1
   },
   "wrappers": [
     "server/baton-loadout.ts:append",
-    "server/baton-loadout.ts:writeEntry",
-    "server/chat-manager.ts:appendSpecialEntry"
+    "server/baton-loadout.ts:writeEntry"
   ],
   "piAdapter": []
 }

@@ -224,6 +224,37 @@ test("the backstop leaves a clean drawing, one the plain pass already redacted, 
   assert.deepEqual(hits, []);
 });
 
+// Fences are found as the page's own parser finds them: a list item or a quote holds one too.
+const drawn = (t: string) => renderShareMarkdown(t, false, batonKinds(true));
+const quietLines = (html: string) => html.split(BROKEN_DRAWING).length - 1;
+
+test("the backstop withholds drawings nested in a list item or a quote, and a nested fence never hides a later one", () => {
+  const hits: string[] = [];
+  const both = markupBackstop("- ```vis html\n  <p>S&#101;cret</p>\n  ```\n\n```vis svg\n<text>Sec<b>ret</b></text>\n```", ["Secret"], (k) => hits.push(k));
+  assert.deepEqual(hits.sort(), ["html", "svg"]);
+  assert.doesNotMatch(both, /S&#101;cret|Sec<b>ret/);
+  const page = drawn(both);
+  assert.deepEqual(page.visuals, [], "nothing drawn");
+  assert.equal(quietLines(page.html), 2, "each fence is the quiet line");
+  assert.doesNotMatch(page.html, /<svg|&lt;text|cret/);
+
+  const quote = said("> ```vis svg\n> <svg viewBox='0 0 9 9'><text>d&#105;rect and technical</text></svg>\n> ```\n\nAfter.");
+  assert.equal(quote, "> ```vis withheld\n> ```\n\nAfter.");
+  assert.equal(quietLines(drawn(quote).html), 1);
+
+  // A clean nested fence stays drawn; its indented close never swallows the fence after it.
+  const mixed = said("1. Steps:\n   ```vis html\n   <p>Totals</p>\n   ```\n2. Next\n\n```vis html\n<p>D&#105;rect and technical</p>\n```");
+  const r = drawn(mixed);
+  assert.equal(r.visuals.length, 1, "the clean nested drawing still draws");
+  assert.equal(quietLines(r.html), 1, "the later one is withheld");
+});
+
+test("while a reply streams, an unclosed nested drawing that hides a phrase is dropped with all after it", () => {
+  assert.equal(said("Look:\n\n- ```vis html\n  <p>S&#101;cret"), "Look:\n\n- ```vis html\n  <p>S&#101;cret", "not this session's phrase: kept");
+  assert.equal(markupBackstop("Look:\n\n- ```vis html\n  <p>S&#101;cret", ["Secret"]), "Look:\n");
+  assert.equal(markupBackstop("Look:\n\n> ```vis svg\n> <text>Sec<b>ret", ["Secret"]), "Look:\n");
+});
+
 test("while a reply streams, an unclosed drawing that hides a phrase is left out of the text, with all after it", () => {
   const hits: string[] = [];
   const streaming = "Look:\n```vis svg\n<svg viewBox='0 0 9 9'><text>Dir<tspan>ect and tech";

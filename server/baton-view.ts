@@ -17,6 +17,7 @@ import {
   type PersonRef,
 } from "../shared/baton";
 import { stripImageNotes } from "../shared/image-note";
+import { shareFences } from "../src/share/markdown";
 import { visKindWord } from "../src/vis/parse";
 import { canonicalKind } from "../src/vis/registry";
 import { REDACTED } from "./overseer-redact";
@@ -57,7 +58,8 @@ export function redactPhrases(text: string, phrases: readonly string[]): string 
 }
 
 /** What a withheld drawing becomes: a fence of no kind a page draws, so it shows the quiet line. */
-export const WITHHELD_FENCE = "```vis withheld\n```";
+const WITHHELD_KIND = "vis withheld";
+export const WITHHELD_FENCE = `\`\`\`${WITHHELD_KIND}\n\`\`\``;
 
 /** The text a person would read in markup: entities and script escapes decoded; `tags` "" joins
     what a tag split (`Sec<b>ret`), " " keeps words a tag separated apart (`Secret<br>phrase`). */
@@ -84,46 +86,34 @@ function phraseIn(texts: readonly string[], phrase: string): boolean {
  * The markup backstop (§app.baton/outsider-view), after the plain pass (redactPhrases): a `vis html`
  * or `vis svg` fence is checked again with its entities and escapes decoded and its tags stripped,
  * since a phrase written `S&#101;cret` or `Sec<b>ret` would pass the plain pass and still read
- * whole on the person's page. A phrase found that way withholds the whole fence (WITHHELD_FENCE);
- * an unclosed one (a reply still streaming) is dropped from the text with everything after it, so
- * its source never crosses the socket. `onHit` hears which kind, never the phrase. Pure.
+ * whole on the person's page. Fences are found exactly as the page finds them, by its own
+ * markdown-it parse (src/share/markdown.ts shareFences): nested in a list item or a quote too, and a
+ * vis line inside another code block is no fence. A phrase found that way withholds the whole fence:
+ * its opening line becomes `vis withheld` (its list or quote prefix kept, so it stays where it was)
+ * and its body goes, which the page draws as the quiet line. An unclosed one (a reply still
+ * streaming) is dropped with everything after it, so its source never crosses the socket. `onHit`
+ * hears which kind, never the phrase. Pure.
  */
 export function markupBackstop(text: string, phrases: readonly string[], onHit?: (kind: string) => void): string {
   if (!phrases.length || !/vis/i.test(text)) return text;
   const lines = text.split("\n");
-  const out: string[] = [];
-  let i = 0;
-  while (i < lines.length) {
-    const open = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(lines[i]!);
-    const word = open ? visKindWord(open[2]!) : null;
+  // Last first, so an earlier fence's line numbers still hold.
+  for (const f of shareFences(text).reverse()) {
+    const word = visKindWord(f.info);
     const kind = word ? canonicalKind(word) : null;
-    if (!open || (kind !== "html" && kind !== "svg")) {
-      // Any other fence passes whole, so a vis line inside a code block is never read as a fence.
-      if (open) {
-        let j = i + 1;
-        while (j < lines.length && !closes(lines[j]!, open[1]!)) j++;
-        out.push(...lines.slice(i, Math.min(j + 1, lines.length)));
-        i = j + 1;
-      } else out.push(lines[i++]!);
+    if (kind !== "html" && kind !== "svg") continue;
+    const texts = markupTexts(f.content);
+    if (!phrases.some((p) => p && phraseIn(texts, p))) continue;
+    onHit?.(kind);
+    if (!f.closed) {
+      lines.length = f.start;
       continue;
     }
-    let j = i + 1;
-    while (j < lines.length && !closes(lines[j]!, open[1]!)) j++;
-    const closed = j < lines.length;
-    const texts = markupTexts(lines.slice(i + 1, j).join("\n"));
-    if (phrases.some((p) => p && phraseIn(texts, p))) {
-      onHit?.(kind);
-      if (!closed) break;
-      out.push(WITHHELD_FENCE);
-    } else out.push(...lines.slice(i, closed ? j + 1 : j));
-    i = j + 1;
+    const open = lines[f.start]!;
+    lines.splice(f.start, f.end - 1 - f.start, `${open.slice(0, open.indexOf(f.markup))}${f.markup}${WITHHELD_KIND}`);
   }
-  return out.join("\n");
+  return lines.join("\n");
 }
-const closes = (line: string, marker: string): boolean => {
-  const m = /^ {0,3}(`{3,}|~{3,})\s*$/.exec(line);
-  return !!m && m[1]![0] === marker[0] && m[1]!.length >= marker.length;
-};
 
 /**
  * Which profile phrases are secrets here (§app.organizations/privacy): a phrase that is also

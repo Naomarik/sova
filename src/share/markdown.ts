@@ -106,6 +106,34 @@ md.renderer.rules.fence = (tokens, idx, options, e, self) => {
   return `<div class="md-vis" data-vis="${i}" data-vis-key="${hash(`${kind}\0${t.content}`)}"></div>\n`;
 };
 
+/** One fenced block as this page's parser finds it, nested in a list item or a quote included:
+    its info string, its body (container indentation removed), its lines `[start, end)` of the
+    text, the marker that opened it, and whether a closing marker ends it (else it runs to the end
+    of its container: a reply still streaming). */
+export interface ShareFence {
+  info: string;
+  content: string;
+  start: number;
+  end: number;
+  markup: string;
+  closed: boolean;
+}
+
+/** Every fenced block the share page would render from `text`, by the same parse (§app.baton/outsider-view).
+    The server's markup backstop reads these (server/baton-view.ts), so this module stays DOM-free. */
+export function shareFences(text: string): ShareFence[] {
+  const lines = text.split("\n");
+  return md
+    .parse(text, {})
+    .filter((t) => t.type === "fence" && t.map)
+    .map((t) => {
+      const [start, end] = t.map!;
+      const last = (lines[end - 1] ?? "").replace(/^[\s>]*/, "").trimEnd();
+      const closed = end - 1 > start && last.length >= t.markup.length && last === t.markup[0]!.repeat(last.length);
+      return { info: t.info, content: t.content, start, end, markup: t.markup, closed };
+    });
+}
+
 /** `streaming`: the reply is still being written, so an unclosed fence is one still open.
     `kinds`: the fences drawn (a baton conversation's without html unless a page says otherwise). */
 export function renderShareMarkdown(text: string, streaming = false, kinds: ShareVisKinds = BATON_KINDS): { html: string; visuals: ShareVisual[] } {
